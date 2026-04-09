@@ -1,0 +1,54 @@
+{
+  "name": "zenmind-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ZenMind Desktop shell for builtin services",
+  "main": "dist-electron/main/index.js",
+  "scripts": {
+    "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "build": "npm run sync:assets && npm run build:main && npm run build:renderer",
+    "dev": "node ./scripts/dev.mjs",
+    "start": "npm run dev",
+    "dist:mac": "npm run build && electron-builder --mac --arm64",
+    "test": "npm run build && node --test ./test/*.test.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "@types/react": "^18.3.24",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.0.4",
+    "electron": "^36.2.1",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7"
+  },
+  "build": {
+    "appId": "cc.zenmind.desktop",
+    "productName": "ZenMind Desktop",
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/resources/services",
+        "to": "services"
+      }
+    ],
+    "mac": {
+      "identity": null,
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools"
+    }
+  }
+}

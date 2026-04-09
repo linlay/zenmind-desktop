@@ -1,0 +1,582 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
+import type { App } from "electron";
+import type {
+  ServiceCommandResult,
+  ServiceConfigReadResult,
+  ServiceId,
+  ServiceImportResult,
+  ServiceLogsMeta,
+  ServiceState
+} from "../shared/contracts";
+import { builtinServices, getBuiltinService, type BuiltinServiceDefinition } from "./service-registry";
+
+const startedThisSession = new Set<ServiceId>();
+const bundleValidationCache = new Map<string, { key: string; missingEntries: string[] }>();
+
+function isPackaged(app: App) {
+  return app.isPackaged;
+}
+
+function getBuiltinAssetsRoot(app: App) {
+  if (process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT) {
+    return process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+  }
+  return isPackaged(app)
+    ? path.join(process.resourcesPath, "services")
+    : path.join(process.cwd(), "build", "resources", "services");
+}
+
+export function getInstallDir(app: App, service: BuiltinServiceDefinition) {
+  return path.join(app.getPath("userData"), "services", service.id, service.version);
+}
+
+function getAssetPath(app: App, service: BuiltinServiceDefinition) {
+  return path.join(getBuiltinAssetsRoot(app), service.id, service.assetFileName);
+}
+
+function ensureDir(targetPath: string) {
+  fs.mkdirSync(targetPath, { recursive: true });
+}
+
+function fileExists(targetPath: string) {
+  return fs.existsSync(targetPath);
+}
+
+export function fixShellScriptPermissions(rootDir: string) {
+  if (!fs.existsSync(rootDir)) {
+    return;
+  }
+
+  const queue = [rootDir];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        queue.push(entryPath);
+        continue;
+      }
+      if (entry.name.endsWith(".sh")) {
+        fs.chmodSync(entryPath, 0o755);
+      }
+    }
+  }
+}
+
+function listMissingRuntimeFiles(service: BuiltinServiceDefinition, installDir: string) {
+  return service.runtime.requiredPaths.filter((relativePath) => !fileExists(path.join(installDir, relativePath)));
+}
+
+function isInstallHealthy(service: BuiltinServiceDefinition, installDir: string) {
+  return listMissingRuntimeFiles(service, installDir).length === 0;
+}
+
+function listTarEntries(tarPath: string) {
+  const output = execFileSync("tar", ["-tzf", tarPath], { encoding: "utf8" });
+  return new Set(
+    output
+      .split(/\r?\n/u)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  );
+}
+
+function listMissingBundleEntries(service: BuiltinServiceDefinition, tarPath: string) {
+  const stat = fs.statSync(tarPath);
+  const cacheKey = `${stat.size}:${stat.mtimeMs}`;
+  const cached = bundleValidationCache.get(tarPath);
+  if (cached && cached.key === cacheKey) {
+    return cached.missingEntries;
+  }
+
+  const entries = listTarEntries(tarPath);
+  const missingEntries = service.runtime.requiredPaths.filter((relativePath) => {
+    const expectedPath = `${service.bundleTopLevelDir}/${relativePath}`;
+    if (entries.has(expectedPath) || entries.has(`${expectedPath}/`)) {
+      return false;
+    }
+    const prefix = expectedPath.endsWith("/") ? expectedPath : `${expectedPath}/`;
+    return ![...entries].some((entry) => entry.startsWith(prefix));
+  });
+  bundleValidationCache.set(tarPath, {
+    key: cacheKey,
+    missingEntries
+  });
+  return missingEntries;
+}
+
+function ensureBundleAssetHealthy(app: App, service: BuiltinServiceDefinition) {
+  const assetPath = getAssetPath(app, service);
+  if (!fileExists(assetPath)) {
+    throw new Error(`桌面端内置资源缺失：${assetPath}`);
+  }
+
+  const missingEntries = listMissingBundleEntries(service, assetPath);
+  if (missingEntries.length > 0) {
+    throw new Error(`桌面端内置资源不完整，缺少：${missingEntries.join(", ")}`);
+  }
+
+  return assetPath;
+}
+
+function parseEnvFileContent(content: string) {
+  const env = new Map<string, string>();
+  for (const line of content.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex <= 0) {
+      continue;
+    }
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const value = trimmed.slice(separatorIndex + 1).trim();
+    env.set(key, value.replace(/^['"]|['"]$/gu, ""));
+  }
+  return env;
+}
+
+function readEnvFile(filePath: string) {
+  if (!fs.existsSync(filePath)) {
+    return new Map<string, string>();
+  }
+  return parseEnvFileContent(fs.readFileSync(filePath, "utf8"));
+}
+
+function parsePort(service: BuiltinServiceDefinition, env: Map<string, string>) {
+  const value = env.get(service.web.portEnvKey);
+  if (!value) {
+    return service.web.defaultPort;
+  }
+
+  if (service.id === "agent-container-hub") {
+    const pieces = value.split(":");
+    const port = Number.parseInt(pieces[pieces.length - 1] ?? "", 10);
+    return Number.isFinite(port) ? port : service.web.defaultPort;
+  }
+
+  const port = Number.parseInt(value, 10);
+  return Number.isFinite(port) ? port : service.web.defaultPort;
+}
+
+function getWebUrl(service: BuiltinServiceDefinition, env: Map<string, string>) {
+  const port = parsePort(service, env);
+  const routePath = service.web.routePath;
+  return routePath ? `http://127.0.0.1:${port}${routePath}` : `http://127.0.0.1:${port}`;
+}
+
+function readPid(pidFilePath: string) {
+  if (!fs.existsSync(pidFilePath)) {
+    return null;
+  }
+  const raw = fs.readFileSync(pidFilePath, "utf8").trim();
+  const pid = Number.parseInt(raw, 10);
+  return Number.isFinite(pid) ? pid : null;
+}
+
+function isProcessRunning(pid: number | null) {
+  if (!pid) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function runExecFile(command: string, args: string[], cwd: string) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    execFile(command, args, { cwd }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(`${error.message}\n${stderr}`.trim()));
+        return;
+      }
+      resolve({
+        stdout: stdout.toString(),
+        stderr: stderr.toString()
+      });
+    });
+  });
+}
+
+function containerEngineAvailable() {
+  const docker = spawnSync("sh", ["-lc", "command -v docker"], { encoding: "utf8" });
+  if (docker.status === 0) {
+    return "docker";
+  }
+
+  const podman = spawnSync("sh", ["-lc", "command -v podman"], { encoding: "utf8" });
+  if (podman.status === 0) {
+    return "podman";
+  }
+
+  return "";
+}
+
+function collectPrerequisites(service: BuiltinServiceDefinition, installDir: string) {
+  const prerequisites: string[] = [];
+  const envPath = path.join(installDir, ".env");
+  if (!fs.existsSync(envPath)) {
+    prerequisites.push("缺少 .env 配置文件");
+  }
+
+  for (const target of service.importTargets) {
+    const targetPath = path.join(installDir, target.relativePath);
+    if (target.required && !fs.existsSync(targetPath)) {
+      prerequisites.push(`缺少 ${target.label}`);
+    }
+  }
+
+  if (service.id === "agent-container-hub" && !containerEngineAvailable()) {
+    prerequisites.push("未检测到 Docker 或 Podman");
+  }
+
+  return prerequisites;
+}
+
+function ensureDefaultConfig(service: BuiltinServiceDefinition, installDir: string) {
+  for (const configFile of service.configFiles) {
+    const targetPath = path.join(installDir, configFile.relativePath);
+    if (fs.existsSync(targetPath)) {
+      continue;
+    }
+    if (!configFile.templateRelativePath) {
+      continue;
+    }
+    const templatePath = path.join(installDir, configFile.templateRelativePath);
+    if (fs.existsSync(templatePath)) {
+      fs.copyFileSync(templatePath, targetPath);
+    }
+  }
+}
+
+export async function installBuiltinService(app: App, serviceId: ServiceId) {
+  const service = getBuiltinService(serviceId);
+  const assetPath = ensureBundleAssetHealthy(app, service);
+
+  const finalInstallDir = getInstallDir(app, service);
+  if (fs.existsSync(finalInstallDir) && isInstallHealthy(service, finalInstallDir)) {
+    ensureDefaultConfig(service, finalInstallDir);
+    fixShellScriptPermissions(finalInstallDir);
+    return finalInstallDir;
+  }
+
+  const versionRoot = path.dirname(finalInstallDir);
+  ensureDir(versionRoot);
+  const preservedEnvPath = path.join(finalInstallDir, ".env");
+  const hasPreservedEnv = fileExists(preservedEnvPath);
+  const preservedEnv = hasPreservedEnv ? fs.readFileSync(preservedEnvPath, "utf8") : "";
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `${service.id}-extract-`));
+  try {
+    execFileSync("tar", ["-xzf", assetPath, "-C", tempRoot]);
+    const entries = fs.readdirSync(tempRoot);
+    if (entries.length !== 1) {
+      throw new Error(`unexpected archive layout for ${service.id}`);
+    }
+    const extractedRoot = path.join(tempRoot, entries[0]);
+    fs.rmSync(finalInstallDir, { recursive: true, force: true });
+    fs.renameSync(extractedRoot, finalInstallDir);
+    ensureDefaultConfig(service, finalInstallDir);
+    if (hasPreservedEnv) {
+      fs.writeFileSync(path.join(finalInstallDir, ".env"), preservedEnv, "utf8");
+    }
+    fixShellScriptPermissions(finalInstallDir);
+    return finalInstallDir;
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+export async function listServices(app: App) {
+  return Promise.all(builtinServices.map((service) => getServiceState(app, service.id)));
+}
+
+export async function getServiceState(app: App, serviceId: ServiceId): Promise<ServiceState> {
+  const service = getBuiltinService(serviceId);
+  const installDir = getInstallDir(app, service);
+  const installed = fs.existsSync(installDir);
+  const pidFilePath = path.join(installDir, service.runtime.pidRelativePath);
+  const logFilePath = path.join(installDir, service.runtime.logRelativePath);
+  const configFiles = service.configFiles.map((configFile) => {
+    const absolutePath = path.join(installDir, configFile.relativePath);
+    return {
+      key: configFile.key,
+      label: configFile.label,
+      relativePath: configFile.relativePath,
+      absolutePath,
+      required: configFile.required,
+      exists: fs.existsSync(absolutePath)
+    };
+  });
+
+  const env = installed ? readEnvFile(path.join(installDir, ".env")) : new Map<string, string>();
+  const port = parsePort(service, env);
+  const webUrl = installed ? getWebUrl(service, env) : service.web.routePath ? `http://127.0.0.1:${service.web.defaultPort}${service.web.routePath}` : "";
+  const pid = installed ? readPid(pidFilePath) : null;
+  const missingRuntimeFiles = installed ? listMissingRuntimeFiles(service, installDir) : [];
+  const prerequisites = installed && missingRuntimeFiles.length === 0 ? collectPrerequisites(service, installDir) : [];
+  const running = installed && missingRuntimeFiles.length === 0 && isProcessRunning(pid);
+
+  let status: ServiceState["status"] = "not-installed";
+  let statusLabel = "未安装";
+  let message = "尚未安装到本地运行目录。";
+
+  if (installed) {
+    status = "stopped";
+    statusLabel = "已停止";
+    message = "服务已安装，可手动启动。";
+  }
+
+  if (installed && missingRuntimeFiles.length > 0) {
+    status = "error";
+    statusLabel = "安装损坏";
+    message = `安装目录缺少关键文件：${missingRuntimeFiles.join(", ")}`;
+  }
+
+  if (!installed) {
+    try {
+      ensureBundleAssetHealthy(app, service);
+    } catch (error) {
+      status = "error";
+      statusLabel = "资源损坏";
+      message = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  if (installed && missingRuntimeFiles.length === 0 && prerequisites.length > 0) {
+    const hasDependencyError = prerequisites.some((item) => item.includes("Docker") || item.includes("Podman"));
+    status = hasDependencyError ? "dependency-missing" : "config-required";
+    statusLabel = hasDependencyError ? "依赖未满足" : "待配置";
+    message = prerequisites.join("；");
+  }
+
+  if (running) {
+    status = "running";
+    statusLabel = "运行中";
+    message = `服务进程正在运行。${webUrl ? `入口：${webUrl}` : ""}`.trim();
+  }
+
+  return {
+    id: service.id,
+    name: service.name,
+    kind: service.kind,
+    version: service.version,
+    description: service.description,
+    installDir,
+    installed,
+    status,
+    statusLabel,
+    message,
+    configFiles,
+    healthMeta: {
+      pid,
+      pidFilePath,
+      logFilePath,
+      webUrl,
+      port,
+      prerequisites
+    }
+  };
+}
+
+async function runServiceCommand(app: App, service: BuiltinServiceDefinition, command: string[], successMessage: string) {
+  const installDir = getInstallDir(app, service);
+  if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
+    await installBuiltinService(app, service.id);
+  }
+  await runExecFile(command[0], command.slice(1), installDir);
+  return {
+    ok: true,
+    message: successMessage,
+    service: await getServiceState(app, service.id)
+  } satisfies ServiceCommandResult;
+}
+
+export async function startService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
+  const current = await getServiceState(app, serviceId);
+  if (!current.installed || current.status === "error") {
+    await installBuiltinService(app, serviceId);
+  }
+  const nextState = await getServiceState(app, serviceId);
+  if (
+    nextState.status === "config-required" ||
+    nextState.status === "dependency-missing" ||
+    nextState.status === "error"
+  ) {
+    return {
+      ok: false,
+      message: nextState.message,
+      service: nextState
+    };
+  }
+  if (nextState.status === "running") {
+    return {
+      ok: true,
+      message: `${nextState.name} 已在运行。`,
+      service: nextState
+    };
+  }
+
+  const service = getBuiltinService(serviceId);
+  const result = await runServiceCommand(app, service, service.runtime.startCommand, `${service.name} 已启动。`);
+  startedThisSession.add(serviceId);
+  return result;
+}
+
+export async function stopService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
+  const service = getBuiltinService(serviceId);
+  const current = await getServiceState(app, serviceId);
+  if (!current.installed) {
+    return {
+      ok: true,
+      message: `${service.name} 尚未安装。`,
+      service: current
+    };
+  }
+  if (current.status !== "running") {
+    return {
+      ok: true,
+      message: `${service.name} 当前未运行。`,
+      service: current
+    };
+  }
+
+  const result = await runServiceCommand(app, service, service.runtime.stopCommand, `${service.name} 已停止。`);
+  startedThisSession.delete(serviceId);
+  return result;
+}
+
+export async function restartService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
+  await stopService(app, serviceId);
+  return startService(app, serviceId);
+}
+
+export async function readServiceConfig(app: App, serviceId: ServiceId, key: string): Promise<ServiceConfigReadResult> {
+  const service = getBuiltinService(serviceId);
+  const configFile = service.configFiles.find((item) => item.key === key);
+  if (!configFile) {
+    throw new Error(`unknown config key: ${key}`);
+  }
+
+  const installDir = getInstallDir(app, service);
+  if (!fs.existsSync(installDir)) {
+    return {
+      ok: true,
+      path: path.join(installDir, configFile.relativePath),
+      content: ""
+    };
+  }
+
+  const filePath = path.join(installDir, configFile.relativePath);
+  if (!fs.existsSync(filePath) && configFile.templateRelativePath) {
+    const templatePath = path.join(installDir, configFile.templateRelativePath);
+    if (fs.existsSync(templatePath)) {
+      fs.copyFileSync(templatePath, filePath);
+    }
+  }
+
+  return {
+    ok: true,
+    path: filePath,
+    content: fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : ""
+  };
+}
+
+export async function writeServiceConfig(
+  app: App,
+  serviceId: ServiceId,
+  key: string,
+  content: string
+): Promise<ServiceCommandResult> {
+  const service = getBuiltinService(serviceId);
+  const configFile = service.configFiles.find((item) => item.key === key);
+  if (!configFile) {
+    throw new Error(`unknown config key: ${key}`);
+  }
+
+  const installDir = getInstallDir(app, service);
+  if (!fs.existsSync(installDir)) {
+    await installBuiltinService(app, serviceId);
+  }
+
+  const filePath = path.join(installDir, configFile.relativePath);
+  ensureDir(path.dirname(filePath));
+  fs.writeFileSync(filePath, content, "utf8");
+
+  return {
+    ok: true,
+    message: `${service.name} 配置已保存。`,
+    service: await getServiceState(app, serviceId)
+  };
+}
+
+export async function importServiceFile(
+  app: App,
+  serviceId: ServiceId,
+  targetKey: string,
+  sourcePath: string
+): Promise<ServiceImportResult> {
+  const service = getBuiltinService(serviceId);
+  const target = service.importTargets.find((item) => item.key === targetKey);
+  if (!target) {
+    throw new Error(`unknown import target: ${targetKey}`);
+  }
+
+  const installDir = getInstallDir(app, service);
+  if (!fs.existsSync(installDir)) {
+    await installBuiltinService(app, serviceId);
+  }
+
+  const targetPath = path.join(installDir, target.relativePath);
+  ensureDir(path.dirname(targetPath));
+  fs.copyFileSync(sourcePath, targetPath);
+
+  return {
+    ok: true,
+    message: `${target.label} 已导入。`,
+    targetPath,
+    service: await getServiceState(app, serviceId)
+  };
+}
+
+export async function getServiceLogsMeta(app: App, serviceId: ServiceId): Promise<ServiceLogsMeta> {
+  const state = await getServiceState(app, serviceId);
+  return {
+    ok: true,
+    logPath: state.healthMeta.logFilePath,
+    exists: fs.existsSync(state.healthMeta.logFilePath)
+  };
+}
+
+export async function stopStartedServices(app: App) {
+  for (const serviceId of [...startedThisSession]) {
+    try {
+      await stopService(app, serviceId);
+    } catch (error) {
+      console.error(`failed to stop ${serviceId} during app shutdown`, error);
+    }
+  }
+}
+
+export const __testInternals = {
+  parseEnvFileContent,
+  parsePort,
+  getWebUrl,
+  containerEngineAvailable,
+  fixShellScriptPermissions,
+  listMissingRuntimeFiles,
+  isInstallHealthy,
+  listMissingBundleEntries,
+  ensureBundleAssetHealthy
+};
