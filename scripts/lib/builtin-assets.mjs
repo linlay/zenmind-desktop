@@ -2,10 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
+// monorepo 根目录：zenmind-desktop 的上一级
+const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
+
 export const builtinServices = [
   {
     id: "agent-container-hub",
-    sourceDir: "/Users/linlay/Project/zenmind/agent-container-hub/dist/release",
+    sourceDir: path.join(WORKSPACE_ROOT, "agent-container-hub", "dist", "release"),
     assetFileName: "agent-container-hub-program-v0.1.0-darwin-arm64.tar.gz",
     bundleTopLevelDir: "agent-container-hub",
     version: "v0.1.0",
@@ -18,16 +21,17 @@ export const builtinServices = [
     ]
   },
   {
-    id: "pan-webclient",
-    sourceDir: "/Users/linlay/Project/zenmind/pan-webclient/dist/release",
-    assetFileName: "pan-webclient-program-v0.1.0-darwin-arm64.tar.gz",
-    bundleTopLevelDir: "pan-webclient",
+    id: "zenmind-app-server",
+    sourceDir: path.join(WORKSPACE_ROOT, "zenmind-app-server", "dist", "release"),
+    assetFileName: "zenmind-app-server-program-v0.1.0-darwin-arm64.tar.gz",
+    bundleTopLevelDir: "zenmind-app-server",
     version: "v0.1.0",
     requiredBundleEntries: [
-      "pan-api",
+      "app-server",
       "start.sh",
       "stop.sh",
       ".env.example",
+      "schema.sql",
       "frontend/dist/index.html"
     ]
   }
@@ -63,11 +67,12 @@ export function findMissingBundleEntries(service, entries) {
 }
 
 export function validateBundleArchive(service, tarPath) {
+  const serviceRoot = path.join(WORKSPACE_ROOT, service.id);
   if (!fs.existsSync(tarPath)) {
     throw new Error(
       `missing builtin asset for ${service.id}: ${tarPath}\n` +
         `Please regenerate the upstream release bundle, for example:\n` +
-        `cd /Users/linlay/Project/zenmind/${service.id} && make release-program`
+        `cd ${serviceRoot} && make release-program`
     );
   }
 
@@ -78,7 +83,7 @@ export function validateBundleArchive(service, tarPath) {
       `invalid builtin bundle for ${service.id}: ${tarPath}\n` +
         `Missing required entries: ${missingEntries.join(", ")}\n` +
         `Please regenerate the upstream release bundle, for example:\n` +
-        `cd /Users/linlay/Project/zenmind/${service.id} && make release-program`
+        `cd ${serviceRoot} && make release-program`
     );
   }
 }

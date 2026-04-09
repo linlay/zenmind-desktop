@@ -1,4 +1,4 @@
-export type ServiceId = "agent-container-hub" | "pan-webclient";
+export type ServiceId = string;
 export type ServiceKind = "builtin" | "plugin";
 export type ServiceStatus =
   | "not-installed"
@@ -37,6 +37,7 @@ export interface ServiceState {
   status: ServiceStatus;
   statusLabel: string;
   message: string;
+  hasFrontend: boolean;
   configFiles: ServiceConfigFile[];
   healthMeta: ServiceHealthMeta;
 }
@@ -66,6 +67,56 @@ export interface ServiceImportResult {
   service: ServiceState;
 }
 
+export interface PanAuthStatus {
+  configured: boolean;
+  path: string;
+  message: string;
+}
+
+export interface PanAuthImportResult {
+  ok: boolean;
+  message: string;
+  status: PanAuthStatus;
+}
+
+export interface PanAuthEnsureResult {
+  ok: boolean;
+  refreshed: boolean;
+  message: string;
+}
+
+export interface PluginManifest {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  hasFrontend: boolean;
+  configFiles?: Array<{
+    key: string;
+    label: string;
+    relativePath: string;
+    templateRelativePath?: string;
+    required: boolean;
+  }>;
+  runtime: {
+    pidRelativePath: string;
+    logRelativePath: string;
+    startCommand: string[];
+    stopCommand: string[];
+  };
+  web?: {
+    routePath: string;
+    portEnvKey: string;
+    defaultPort: number;
+  };
+}
+
+export interface PluginInstallResult {
+  ok: boolean;
+  message: string;
+  serviceId?: string;
+}
+
 export interface DesktopApi {
   services: {
     list: () => Promise<ServiceState[]>;
@@ -78,5 +129,14 @@ export interface DesktopApi {
     writeConfig: (serviceId: ServiceId, key: string, content: string) => Promise<ServiceCommandResult>;
     importFile: (serviceId: ServiceId, targetKey: string) => Promise<ServiceImportResult>;
     getLogsMeta: (serviceId: ServiceId) => Promise<ServiceLogsMeta>;
+  };
+  plugins: {
+    install: () => Promise<PluginInstallResult>;
+    uninstall: (serviceId: ServiceId) => Promise<PluginInstallResult>;
+  };
+  panAuth: {
+    importPrivateKey: () => Promise<PanAuthImportResult>;
+    getStatus: () => Promise<PanAuthStatus>;
+    ensureSession: (webUrl: string) => Promise<PanAuthEnsureResult>;
   };
 }

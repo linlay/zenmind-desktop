@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { ServiceId, ServiceKind } from "../shared/contracts";
+import type { ServiceId, ServiceKind, PluginManifest } from "../shared/contracts";
 
 export interface BuiltinServiceDefinition {
   id: ServiceId;
@@ -9,6 +9,7 @@ export interface BuiltinServiceDefinition {
   description: string;
   assetFileName: string;
   bundleTopLevelDir: string;
+  hasFrontend: boolean;
   configFiles: Array<{
     key: string;
     label: string;
@@ -46,6 +47,7 @@ export const builtinServices: BuiltinServiceDefinition[] = [
     description: "宿主机容器服务，负责为后续智能体运行时提供沙箱能力。",
     assetFileName: "agent-container-hub-program-v0.1.0-darwin-arm64.tar.gz",
     bundleTopLevelDir: "agent-container-hub",
+    hasFrontend: false,
     configFiles: [
       {
         key: "env",
@@ -77,13 +79,14 @@ export const builtinServices: BuiltinServiceDefinition[] = [
     prerequisites: ["Docker 或 Podman"]
   },
   {
-    id: "pan-webclient",
-    name: "网盘",
+    id: "zenmind-app-server",
+    name: "认证服务",
     kind: "builtin",
     version: "v0.1.0",
-    description: "内置网盘服务，包含 Go 后端和已构建 React 前端。",
-    assetFileName: "pan-webclient-program-v0.1.0-darwin-arm64.tar.gz",
-    bundleTopLevelDir: "pan-webclient",
+    description: "认证与管理服务，提供 OAuth2/OIDC、管理后台、App 访问令牌和设备管理。",
+    assetFileName: "zenmind-app-server-program-v0.1.0-darwin-arm64.tar.gz",
+    bundleTopLevelDir: "zenmind-app-server",
+    hasFrontend: true,
     configFiles: [
       {
         key: "env",
@@ -93,38 +96,70 @@ export const builtinServices: BuiltinServiceDefinition[] = [
         required: true
       }
     ],
-    importTargets: [
-      {
-        key: "local-public-key",
-        label: "RSA 公钥",
-        relativePath: path.join("configs", "local-public-key.pem"),
-        required: true
-      }
-    ],
+    importTargets: [],
     runtime: {
-      pidRelativePath: path.join(".runtime", "pan-api.pid"),
-      logRelativePath: path.join(".runtime", "pan-api.log"),
-      startCommand: ["./start.sh"],
+      pidRelativePath: path.join(".runtime", "app-server.pid"),
+      logRelativePath: path.join(".runtime", "app-server.log"),
+      startCommand: ["./start.sh", "--daemon"],
       stopCommand: ["./stop.sh"],
       requiredPaths: [
-        "pan-api",
+        "app-server",
         "start.sh",
         "stop.sh",
         ".env.example",
+        "schema.sql",
         path.join("frontend", "dist", "index.html")
       ]
     },
     web: {
-      routePath: "/pan/",
-      portEnvKey: "API_PORT",
-      defaultPort: 8080
+      routePath: "/admin/",
+      portEnvKey: "SERVER_PORT",
+      defaultPort: 11950
     },
-    prerequisites: ["导入 local-public-key.pem 真实 RSA 公钥"]
+    prerequisites: []
   }
 ];
 
+const pluginServices = new Map<string, BuiltinServiceDefinition>();
+
+export function registerPlugin(manifest: PluginManifest): BuiltinServiceDefinition {
+  const def: BuiltinServiceDefinition = {
+    id: manifest.id,
+    name: manifest.name,
+    kind: "plugin",
+    version: manifest.version,
+    description: manifest.description,
+    assetFileName: "",
+    bundleTopLevelDir: manifest.id,
+    hasFrontend: manifest.hasFrontend,
+    configFiles: (manifest.configFiles ?? []).map((c) => ({ ...c })),
+    importTargets: [],
+    runtime: {
+      pidRelativePath: manifest.runtime.pidRelativePath,
+      logRelativePath: manifest.runtime.logRelativePath,
+      startCommand: manifest.runtime.startCommand,
+      stopCommand: manifest.runtime.stopCommand,
+      requiredPaths: []
+    },
+    web: manifest.web
+      ? { routePath: manifest.web.routePath, portEnvKey: manifest.web.portEnvKey, defaultPort: manifest.web.defaultPort }
+      : { routePath: "", portEnvKey: "", defaultPort: 0 },
+    prerequisites: []
+  };
+  pluginServices.set(manifest.id, def);
+  return def;
+}
+
+export function unregisterPlugin(serviceId: string) {
+  pluginServices.delete(serviceId);
+}
+
+export function getAllServices(): BuiltinServiceDefinition[] {
+  return [...builtinServices, ...pluginServices.values()];
+}
+
 export function getBuiltinService(serviceId: ServiceId): BuiltinServiceDefinition {
-  const service = builtinServices.find((item) => item.id === serviceId);
+  const service = builtinServices.find((item) => item.id === serviceId) ?? pluginServices.get(serviceId);
   if (!service) {
     throw new Error(`unknown service id: ${serviceId}`);
   }

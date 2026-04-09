@@ -1,5 +1,6 @@
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
+import { ensurePanSession, getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import {
   getServiceLogsMeta,
   getServiceState,
@@ -13,6 +14,7 @@ import {
   stopStartedServices,
   writeServiceConfig
 } from "./service-manager";
+import { installPluginFromArchive, loadInstalledPlugins, uninstallPlugin } from "./plugin-loader";
 import type { ServiceId } from "../shared/contracts";
 
 let mainWindow: BrowserWindow | null = null;
@@ -66,6 +68,10 @@ function createWindow() {
     });
   }
 
+  if (process.env.VITE_DEV_SERVER_URL) {
+    mainWindow.webContents.openDevTools();
+  }
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -109,9 +115,49 @@ function registerIpcHandlers() {
   ipcMain.handle("services.getLogsMeta", async (_event, serviceId: ServiceId) => {
     return getServiceLogsMeta(app, serviceId);
   });
+  ipcMain.handle("plugins.install", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "选择插件包 (.tar.gz)",
+      properties: ["openFile"],
+      filters: [{ name: "Plugin Archive", extensions: ["gz", "tgz"] }]
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, message: "已取消安装。" };
+    }
+    return installPluginFromArchive(app, result.filePaths[0]);
+  });
+  ipcMain.handle("plugins.uninstall", async (_event, serviceId: ServiceId) => {
+    return uninstallPlugin(app, serviceId);
+  });
+  ipcMain.handle("panAuth.importPrivateKey", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "选择要导入的 App 私钥",
+      properties: ["openFile"]
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      const status = getPanAuthStatus(app);
+      return {
+        ok: false,
+        message: "已取消导入 Desktop App 私钥。",
+        status
+      };
+    }
+
+    const status = importPanPrivateKey(app, result.filePaths[0]);
+    return {
+      ok: true,
+      message: status.message,
+      status
+    };
+  });
+  ipcMain.handle("panAuth.getStatus", async () => getPanAuthStatus(app));
+  ipcMain.handle("panAuth.ensureSession", async (_event, webUrl: string) => {
+    return ensurePanSession(app, mainWindow?.webContents.session.cookies ?? session.defaultSession.cookies, webUrl);
+  });
 }
 
 app.whenReady().then(() => {
+  loadInstalledPlugins(app);
   registerIpcHandlers();
   createWindow();
   app.on("activate", () => {

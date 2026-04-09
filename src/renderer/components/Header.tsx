@@ -1,15 +1,25 @@
 import { NavLink } from "react-router-dom";
+import { useServices } from "../services/ServicesContext";
 
-const navItems = [
+const staticNavItems = [
   { to: "/control-center", label: "控制中心" },
   { to: "/assistant", label: "小宅助理" },
-  { to: "/agents", label: "智能体" },
-  { to: "/pan", label: "网盘" },
+  { to: "/agents", label: "智能体" }
+];
+
+const tailNavItems = [
   { to: "/market", label: "插件市场" },
   { to: "/help", label: "帮助" }
 ];
 
 export function Header() {
+  const { services } = useServices();
+  const pluginNavItems = services
+    .filter((s) => s.kind === "plugin" && s.hasFrontend && s.status === "running")
+    .map((s) => ({ to: `/plugin/${s.id}`, label: s.name }));
+
+  const navItems = [...staticNavItems, ...pluginNavItems, ...tailNavItems];
+
   return (
     <header className="app-header">
       <div className="brand-block">

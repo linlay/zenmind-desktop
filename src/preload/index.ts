@@ -15,6 +15,15 @@ const api: DesktopApi = {
     importFile: (serviceId: ServiceId, targetKey: string) =>
       ipcRenderer.invoke("services.importFile", serviceId, targetKey),
     getLogsMeta: (serviceId: ServiceId) => ipcRenderer.invoke("services.getLogsMeta", serviceId)
+  },
+  plugins: {
+    install: () => ipcRenderer.invoke("plugins.install"),
+    uninstall: (serviceId: ServiceId) => ipcRenderer.invoke("plugins.uninstall", serviceId)
+  },
+  panAuth: {
+    importPrivateKey: () => ipcRenderer.invoke("panAuth.importPrivateKey"),
+    getStatus: () => ipcRenderer.invoke("panAuth.getStatus"),
+    ensureSession: (webUrl: string) => ipcRenderer.invoke("panAuth.ensureSession", webUrl)
   }
 };
 

@@ -5,7 +5,8 @@
 
 当前仓库重点覆盖两类内置服务：
 - `agent-container-hub`：宿主机容器服务，为后续智能体运行时提供沙箱能力。
-- `pan-webclient`：内置网盘服务，包含 Go 后端和已构建前端页面。
+- `zenmind-app-server`：认证与管理服务，提供 OAuth2/OIDC、管理后台和 App 访问令牌。
+- `pan-webclient`：网盘服务，通过插件系统导入。
 
 ## 2. 快速开始
 ### 前置要求
@@ -98,4 +99,5 @@ npm test
 - 启动失败时，先检查控制中心展示的状态文案、日志文件路径和 PID 文件路径。
 - `agent-container-hub` 无法启动时，优先检查 Docker 或 Podman 是否可用。
 - `pan-webclient` 无法启动时，优先确认 `.env` 已生成且 `local-public-key.pem` 已导入。
+- 密钥对可通过控制中心从认证服务（zenmind-app-server）自动导出并分发给 pan-webclient。
 - 若测试失败，请先确认 `build/resources/services` 中的内置资源已同步完成。

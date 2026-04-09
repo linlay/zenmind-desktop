@@ -1,7 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Header } from "./components/Header";
 import { ControlCenterPage } from "./pages/ControlCenterPage";
-import { PanPage } from "./pages/PanPage";
+import { PluginPage } from "./pages/PluginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { ServicesProvider } from "./services/ServicesContext";
 
@@ -32,7 +32,7 @@ export function App() {
                 />
               }
             />
-            <Route path="/pan" element={<PanPage />} />
+            <Route path="/plugin/:pluginId" element={<PluginPage />} />
             <Route
               path="/market"
               element={

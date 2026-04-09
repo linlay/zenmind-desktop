@@ -12,7 +12,8 @@ import type {
   ServiceId,
   ServiceImportResult,
   ServiceLogsMeta,
-  ServiceState
+  ServiceState,
+  PluginInstallResult
 } from "@shared/contracts";
 
 interface ServicesContextValue {
@@ -28,6 +29,8 @@ interface ServicesContextValue {
   writeConfig: (serviceId: ServiceId, key: string, content: string) => Promise<ServiceCommandResult>;
   importFile: (serviceId: ServiceId, key: string) => Promise<ServiceImportResult>;
   getLogsMeta: (serviceId: ServiceId) => Promise<ServiceLogsMeta>;
+  installPlugin: () => Promise<PluginInstallResult>;
+  uninstallPlugin: (serviceId: ServiceId) => Promise<PluginInstallResult>;
 }
 
 const ServicesContext = createContext<ServicesContextValue | null>(null);
@@ -94,7 +97,17 @@ export function ServicesProvider({ children }: PropsWithChildren) {
       await refresh();
       return result;
     },
-    getLogsMeta: (serviceId) => window.electronAPI.services.getLogsMeta(serviceId)
+    getLogsMeta: (serviceId) => window.electronAPI.services.getLogsMeta(serviceId),
+    installPlugin: async () => {
+      const result = await window.electronAPI.plugins.install();
+      await refresh();
+      return result;
+    },
+    uninstallPlugin: async (serviceId) => {
+      const result = await window.electronAPI.plugins.uninstall(serviceId);
+      await refresh();
+      return result;
+    }
   };
 
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;

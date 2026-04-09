@@ -11,7 +11,9 @@ import type {
   ServiceLogsMeta,
   ServiceState
 } from "../shared/contracts";
-import { builtinServices, getBuiltinService, type BuiltinServiceDefinition } from "./service-registry";
+import { builtinServices, getAllServices, getBuiltinService, type BuiltinServiceDefinition } from "./service-registry";
+import { getPluginInstallDir } from "./plugin-loader";
+import { ensureKeyPairForPan } from "./pan-auth";
 
 const startedThisSession = new Set<ServiceId>();
 const bundleValidationCache = new Map<string, { key: string; missingEntries: string[] }>();
@@ -30,6 +32,9 @@ function getBuiltinAssetsRoot(app: App) {
 }
 
 export function getInstallDir(app: App, service: BuiltinServiceDefinition) {
+  if (service.kind === "plugin") {
+    return getPluginInstallDir(app, service.id);
+  }
   return path.join(app.getPath("userData"), "services", service.id, service.version);
 }
 
@@ -299,7 +304,7 @@ export async function installBuiltinService(app: App, serviceId: ServiceId) {
 }
 
 export async function listServices(app: App) {
-  return Promise.all(builtinServices.map((service) => getServiceState(app, service.id)));
+  return Promise.all(getAllServices().map((service) => getServiceState(app, service.id)));
 }
 
 export async function getServiceState(app: App, serviceId: ServiceId): Promise<ServiceState> {
@@ -344,7 +349,7 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     message = `安装目录缺少关键文件：${missingRuntimeFiles.join(", ")}`;
   }
 
-  if (!installed) {
+  if (!installed && service.kind === "builtin") {
     try {
       ensureBundleAssetHealthy(app, service);
     } catch (error) {
@@ -378,6 +383,7 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     status,
     statusLabel,
     message,
+    hasFrontend: service.hasFrontend,
     configFiles,
     healthMeta: {
       pid,
@@ -388,6 +394,18 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
       prerequisites
     }
   };
+}
+
+function ensurePreStartRequirements(app: App, service: BuiltinServiceDefinition) {
+  if (service.id === "pan-webclient") {
+    const installDir = getInstallDir(app, service);
+    const publicKeyPath = path.join(installDir, "configs", "local-public-key.pem");
+    if (!fs.existsSync(publicKeyPath)) {
+      const { publicKeyPem } = ensureKeyPairForPan(app);
+      fs.mkdirSync(path.dirname(publicKeyPath), { recursive: true });
+      fs.writeFileSync(publicKeyPath, publicKeyPem, "utf8");
+    }
+  }
 }
 
 async function runServiceCommand(app: App, service: BuiltinServiceDefinition, command: string[], successMessage: string) {
@@ -429,6 +447,7 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
   }
 
   const service = getBuiltinService(serviceId);
+  ensurePreStartRequirements(app, service);
   const result = await runServiceCommand(app, service, service.runtime.startCommand, `${service.name} 已启动。`);
   startedThisSession.add(serviceId);
   return result;

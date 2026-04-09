@@ -59,9 +59,17 @@ a {
   gap: 18px;
   min-height: 52px;
   padding: 10px 22px;
+  padding-left: 80px;
   backdrop-filter: blur(18px);
   background: rgba(255, 249, 241, 0.72);
   border-bottom: 1px solid rgba(93, 62, 40, 0.08);
+  -webkit-app-region: drag;
+}
+
+.app-header a,
+.app-header button,
+.app-header nav {
+  -webkit-app-region: no-drag;
 }
 
 .brand-block {
@@ -197,6 +205,128 @@ a {
   background: rgba(244, 226, 189, 0.72);
 }
 
+.control-center-page {
+  min-height: calc(100vh - 140px);
+}
+
+.control-center-shell {
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.service-sider,
+.control-center-detail,
+.control-center-empty {
+  max-height: calc(100vh - 260px);
+}
+
+.service-sider {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--paper-soft);
+  box-shadow: var(--panel-shadow);
+  overflow: hidden;
+}
+
+.service-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100vh - 288px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.service-nav-card {
+  width: 100%;
+  padding: 16px;
+  border: 1px solid rgba(67, 47, 28, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.56);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.service-nav-card:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(191, 91, 44, 0.18);
+}
+
+.service-nav-card.is-active {
+  border-color: rgba(191, 91, 44, 0.36);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(191, 91, 44, 0.08);
+}
+
+.service-nav-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.service-nav-card h2 {
+  margin: 0;
+  font-size: 22px;
+  font-family: "Iowan Old Style", "Baskerville", serif;
+}
+
+.service-nav-card p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.status-dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: rgba(68, 49, 32, 0.24);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.38);
+}
+
+.status-dot.running {
+  background: #66976e;
+}
+
+.status-dot.warning {
+  background: #d0a834;
+}
+
+.status-dot.danger {
+  background: #ca6048;
+}
+
+.status-dot.idle {
+  background: rgba(68, 49, 32, 0.28);
+}
+
+.status-dot.loading {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(191, 91, 44, 0.3);
+  border-top-color: var(--accent);
+  background: transparent;
+  animation: status-spin 0.8s linear infinite;
+}
+
 .service-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -205,6 +335,10 @@ a {
 
 .service-card {
   padding: 22px;
+}
+
+.control-center-detail {
+  overflow-y: auto;
 }
 
 .service-card-head {
@@ -384,6 +518,23 @@ a {
   font-size: 13px;
 }
 
+.pan-auth-panel {
+  margin-bottom: 18px;
+}
+
+.pan-auth-copy,
+.pan-auth-status {
+  margin: 10px 0 0;
+}
+
+.pan-auth-status {
+  color: var(--warning);
+}
+
+.pan-auth-status.is-ready {
+  color: var(--olive);
+}
+
 .config-editor {
   width: 100%;
   min-height: 220px;
@@ -404,6 +555,10 @@ a {
 .pan-frame-shell {
   overflow: hidden;
   padding: 12px;
+}
+
+.pan-session-box {
+  margin-bottom: 0;
 }
 
 .pan-frame {
@@ -446,21 +601,36 @@ a {
   text-align: center;
 }
 
+@keyframes status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 1080px) {
   .page-head,
   .config-head,
   .config-footer,
   .inline-actions,
   .service-card-head,
+  .service-nav-card-head,
   .app-header {
     flex-direction: column;
     align-items: flex-start;
   }
 
+  .control-center-shell,
   .service-grid,
   .meta-grid,
   .summary-strip {
     grid-template-columns: 1fr;
+  }
+
+  .service-sider,
+  .control-center-detail,
+  .control-center-empty,
+  .service-nav-list {
+    max-height: none;
   }
 
   .app-main {
