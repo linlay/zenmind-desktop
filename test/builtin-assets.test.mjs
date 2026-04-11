@@ -42,7 +42,44 @@ test("actual synced agent-container-hub asset includes required entries", () => 
   const entries = listTarEntries(assetPath);
   assert.ok(entries.has("agent-container-hub/start.sh"));
   assert.ok(entries.has("agent-container-hub/stop.sh"));
-  assert.ok(entries.has("agent-container-hub/agent-container-hub"));
+  assert.ok(entries.has("agent-container-hub/backend/agent-container-hub"));
+  assert.ok(entries.has("agent-container-hub/manifest.json"));
+});
+
+test("actual synced agent-platform asset includes required entries", () => {
+  const service = builtinServices.find((item) => item.id === "agent-platform");
+  assert.ok(service);
+  const assetPath = path.join(
+    process.cwd(),
+    "build",
+    "resources",
+    "services",
+    service.id,
+    service.assetFileName
+  );
+  validateBundleArchive(service, assetPath);
+
+  const entries = listTarEntries(assetPath);
+  assert.ok(entries.has("agent-platform/start.sh"));
+  assert.ok(entries.has("agent-platform/stop.sh"));
+  assert.ok(entries.has("agent-platform/agent-platform-runner"));
+});
+
+test("actual synced zenmind-app-server asset includes frontend dist", () => {
+  const service = builtinServices.find((item) => item.id === "zenmind-app-server");
+  assert.ok(service);
+  const assetPath = path.join(
+    process.cwd(),
+    "build",
+    "resources",
+    "services",
+    service.id,
+    service.assetFileName
+  );
+  validateBundleArchive(service, assetPath);
+
+  const entries = listTarEntries(assetPath);
+  assert.ok(entries.has("zenmind-app-server/frontend/dist/index.html"));
 });
 
 test("validateBundleArchive fails when required entries are missing", () => {

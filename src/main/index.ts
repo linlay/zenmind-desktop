@@ -1,6 +1,8 @@
 import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
+import { issueAgentAccessToken } from "./agent-auth";
 import { ensurePanSession, getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
+import { loadBuiltinServices } from "./builtin-loader";
 import {
   getServiceLogsMeta,
   getServiceState,
@@ -25,7 +27,7 @@ function getRendererEntry() {
   if (devServerUrl) {
     return devServerUrl;
   }
-  return path.join(__dirname, "..", "..", "dist", "index.html");
+  return path.join(__dirname, "..", "..", "dist-renderer", "index.html");
 }
 
 function createWindow() {
@@ -154,9 +156,13 @@ function registerIpcHandlers() {
   ipcMain.handle("panAuth.ensureSession", async (_event, webUrl: string) => {
     return ensurePanSession(app, mainWindow?.webContents.session.cookies ?? session.defaultSession.cookies, webUrl);
   });
+  ipcMain.handle("agentAuth.issueAccessToken", async (_event, reason: "missing" | "unauthorized") => {
+    return issueAgentAccessToken(app, reason);
+  });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  loadBuiltinServices(app);
   loadInstalledPlugins(app);
   registerIpcHandlers();
   createWindow();
@@ -175,7 +181,7 @@ app.on("before-quit", (event) => {
   isHandlingQuit = true;
   stopStartedServices(app)
     .catch((error) => {
-      console.error("failed while stopping services during quit", error);
+      console.error("failed while shutting down desktop services", error);
     })
     .finally(() => {
       app.quit();

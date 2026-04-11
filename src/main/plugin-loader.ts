@@ -2,21 +2,21 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import type { App } from "electron";
-import type { PluginManifest } from "../shared/contracts";
-import { registerPlugin, unregisterPlugin, getBuiltinService } from "./service-registry";
+import { readManifestFile } from "./manifest-utils";
+import { clearServices, getService, registerService, unregisterService } from "./service-registry";
 import { fixShellScriptPermissions } from "./service-manager";
 
 function getPluginsRoot(app: App) {
   return path.join(app.getPath("userData"), "plugins");
 }
 
-function readManifest(pluginDir: string): PluginManifest | null {
-  const manifestPath = path.join(pluginDir, "plugin-manifest.json");
+function readManifest(pluginDir: string) {
+  const manifestPath = path.join(pluginDir, "manifest.json");
   if (!fs.existsSync(manifestPath)) {
     return null;
   }
   try {
-    return JSON.parse(fs.readFileSync(manifestPath, "utf8")) as PluginManifest;
+    return readManifestFile(manifestPath);
   } catch {
     return null;
   }
@@ -24,6 +24,7 @@ function readManifest(pluginDir: string): PluginManifest | null {
 
 export function loadInstalledPlugins(app: App) {
   const root = getPluginsRoot(app);
+  clearServices("plugin");
   if (!fs.existsSync(root)) {
     return;
   }
@@ -33,7 +34,7 @@ export function loadInstalledPlugins(app: App) {
     }
     const manifest = readManifest(path.join(root, entry.name));
     if (manifest) {
-      registerPlugin(manifest);
+      registerService(manifest, { defaultKind: "plugin" });
     }
   }
 }
@@ -57,14 +58,14 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
     const extractedDir = path.join(tmpDir, entries[0]);
     const manifest = readManifest(extractedDir);
     if (!manifest) {
-      throw new Error("插件包缺少 plugin-manifest.json");
+      throw new Error("插件包缺少 manifest.json");
     }
 
     const targetDir = path.join(root, manifest.id);
     fs.rmSync(targetDir, { recursive: true, force: true });
     fs.renameSync(extractedDir, targetDir);
     fixShellScriptPermissions(targetDir);
-    registerPlugin(manifest);
+    registerService(manifest, { defaultKind: "plugin" });
     return { ok: true, message: `插件 ${manifest.name} 已安装。`, serviceId: manifest.id };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -73,12 +74,12 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
 
 export async function uninstallPlugin(app: App, serviceId: string) {
   // Verify it's a plugin, not builtin
-  const def = getBuiltinService(serviceId);
+  const def = getService(serviceId);
   if (def.kind !== "plugin") {
     return { ok: false, message: "内置服务不可卸载。" };
   }
   const dir = getPluginInstallDir(app, serviceId);
   fs.rmSync(dir, { recursive: true, force: true });
-  unregisterPlugin(serviceId);
+  unregisterService(serviceId);
   return { ok: true, message: `插件 ${def.name} 已卸载。` };
 }

@@ -24,6 +24,9 @@ const api: DesktopApi = {
     importPrivateKey: () => ipcRenderer.invoke("panAuth.importPrivateKey"),
     getStatus: () => ipcRenderer.invoke("panAuth.getStatus"),
     ensureSession: (webUrl: string) => ipcRenderer.invoke("panAuth.ensureSession", webUrl)
+  },
+  agentAuth: {
+    issueAccessToken: (reason) => ipcRenderer.invoke("agentAuth.issueAccessToken", reason)
   }
 };
 

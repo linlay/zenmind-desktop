@@ -11,35 +11,44 @@ import type {
   ServiceLogsMeta,
   ServiceState
 } from "../shared/contracts";
-import { builtinServices, getAllServices, getBuiltinService, type BuiltinServiceDefinition } from "./service-registry";
+import type { ServiceDefinition } from "./manifest-utils";
+import { getBuiltinAssetsRoot } from "./builtin-loader";
+import { getAllServices, getService } from "./service-registry";
 import { getPluginInstallDir } from "./plugin-loader";
 import { ensureKeyPairForPan } from "./pan-auth";
+import { readEnvFile, parseEnvFileContent } from "./env-file";
 
 const startedThisSession = new Set<ServiceId>();
+
+function buildServiceEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  const extraPaths = [
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/opt/podman/bin",
+    path.join(os.homedir(), ".local", "bin"),
+  ];
+  const current = (env.PATH ?? "").split(":");
+  const merged = [...new Set([...current, ...extraPaths])];
+  env.PATH = merged.join(":");
+  return env;
+}
+
 const bundleValidationCache = new Map<string, { key: string; missingEntries: string[] }>();
 
-function isPackaged(app: App) {
-  return app.isPackaged;
-}
-
-function getBuiltinAssetsRoot(app: App) {
-  if (process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT) {
-    return process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
-  }
-  return isPackaged(app)
-    ? path.join(process.resourcesPath, "services")
-    : path.join(process.cwd(), "build", "resources", "services");
-}
-
-export function getInstallDir(app: App, service: BuiltinServiceDefinition) {
+export function getInstallDir(app: App, service: ServiceDefinition) {
   if (service.kind === "plugin") {
     return getPluginInstallDir(app, service.id);
   }
   return path.join(app.getPath("userData"), "services", service.id, service.version);
 }
 
-function getAssetPath(app: App, service: BuiltinServiceDefinition) {
-  return path.join(getBuiltinAssetsRoot(app), service.id, service.assetFileName);
+function getAssetPath(app: App, service: ServiceDefinition) {
+  if (!service.desktop.assetFileName) {
+    throw new Error(`桌面端内置资源缺少 assetFileName：${service.id}`);
+  }
+  return path.join(getBuiltinAssetsRoot(app), service.id, service.desktop.assetFileName);
 }
 
 function ensureDir(targetPath: string) {
@@ -75,11 +84,11 @@ export function fixShellScriptPermissions(rootDir: string) {
   }
 }
 
-function listMissingRuntimeFiles(service: BuiltinServiceDefinition, installDir: string) {
+function listMissingRuntimeFiles(service: ServiceDefinition, installDir: string) {
   return service.runtime.requiredPaths.filter((relativePath) => !fileExists(path.join(installDir, relativePath)));
 }
 
-function isInstallHealthy(service: BuiltinServiceDefinition, installDir: string) {
+function isInstallHealthy(service: ServiceDefinition, installDir: string) {
   return listMissingRuntimeFiles(service, installDir).length === 0;
 }
 
@@ -93,7 +102,7 @@ function listTarEntries(tarPath: string) {
   );
 }
 
-function listMissingBundleEntries(service: BuiltinServiceDefinition, tarPath: string) {
+function listMissingBundleEntries(service: ServiceDefinition, tarPath: string) {
   const stat = fs.statSync(tarPath);
   const cacheKey = `${stat.size}:${stat.mtimeMs}`;
   const cached = bundleValidationCache.get(tarPath);
@@ -103,7 +112,7 @@ function listMissingBundleEntries(service: BuiltinServiceDefinition, tarPath: st
 
   const entries = listTarEntries(tarPath);
   const missingEntries = service.runtime.requiredPaths.filter((relativePath) => {
-    const expectedPath = `${service.bundleTopLevelDir}/${relativePath}`;
+    const expectedPath = `${service.desktop.bundleTopLevelDir}/${relativePath}`;
     if (entries.has(expectedPath) || entries.has(`${expectedPath}/`)) {
       return false;
     }
@@ -117,7 +126,7 @@ function listMissingBundleEntries(service: BuiltinServiceDefinition, tarPath: st
   return missingEntries;
 }
 
-function ensureBundleAssetHealthy(app: App, service: BuiltinServiceDefinition) {
+function ensureBundleAssetHealthy(app: App, service: ServiceDefinition) {
   const assetPath = getAssetPath(app, service);
   if (!fileExists(assetPath)) {
     throw new Error(`桌面端内置资源缺失：${assetPath}`);
@@ -131,32 +140,55 @@ function ensureBundleAssetHealthy(app: App, service: BuiltinServiceDefinition) {
   return assetPath;
 }
 
-function parseEnvFileContent(content: string) {
-  const env = new Map<string, string>();
-  for (const line of content.split(/\r?\n/u)) {
+function upsertEnvFileContent(content: string, updates: Map<string, string>) {
+  const lines = content.split(/\r?\n/u);
+  if (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+
+  const pending = new Map(updates);
+  const nextLines = lines.map((line) => {
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex <= 0) {
+      return line;
+    }
+
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) {
-      continue;
+      return line;
     }
-    const separatorIndex = trimmed.indexOf("=");
-    if (separatorIndex <= 0) {
-      continue;
+
+    const key = line.slice(0, separatorIndex).trim();
+    if (!pending.has(key)) {
+      return line;
     }
-    const key = trimmed.slice(0, separatorIndex).trim();
-    const value = trimmed.slice(separatorIndex + 1).trim();
-    env.set(key, value.replace(/^['"]|['"]$/gu, ""));
+
+    const value = pending.get(key) ?? "";
+    pending.delete(key);
+    return `${key}=${value}`;
+  });
+
+  if (pending.size > 0 && nextLines.length > 0 && nextLines[nextLines.length - 1]?.trim() !== "") {
+    nextLines.push("");
   }
-  return env;
+
+  for (const [key, value] of pending) {
+    nextLines.push(`${key}=${value}`);
+  }
+
+  return `${nextLines.join("\n")}\n`;
 }
 
-function readEnvFile(filePath: string) {
-  if (!fs.existsSync(filePath)) {
-    return new Map<string, string>();
-  }
-  return parseEnvFileContent(fs.readFileSync(filePath, "utf8"));
+function writeEnvFileUpdates(filePath: string, updates: Map<string, string>) {
+  const current = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
+  ensureDir(path.dirname(filePath));
+  fs.writeFileSync(filePath, upsertEnvFileContent(current, updates), "utf8");
 }
 
-function parsePort(service: BuiltinServiceDefinition, env: Map<string, string>) {
+function parsePort(service: ServiceDefinition, env: Map<string, string>) {
+  if (!service.web.portEnvKey) {
+    return service.web.defaultPort;
+  }
   const value = env.get(service.web.portEnvKey);
   if (!value) {
     return service.web.defaultPort;
@@ -172,8 +204,11 @@ function parsePort(service: BuiltinServiceDefinition, env: Map<string, string>) 
   return Number.isFinite(port) ? port : service.web.defaultPort;
 }
 
-function getWebUrl(service: BuiltinServiceDefinition, env: Map<string, string>) {
+function getWebUrl(service: ServiceDefinition, env: Map<string, string>) {
   const port = parsePort(service, env);
+  if (!port) {
+    return "";
+  }
   const routePath = service.web.routePath;
   return routePath ? `http://127.0.0.1:${port}${routePath}` : `http://127.0.0.1:${port}`;
 }
@@ -201,7 +236,7 @@ function isProcessRunning(pid: number | null) {
 
 function runExecFile(command: string, args: string[], cwd: string) {
   return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    execFile(command, args, { cwd }, (error, stdout, stderr) => {
+    execFile(command, args, { cwd, env: buildServiceEnv() }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(`${error.message}\n${stderr}`.trim()));
         return;
@@ -215,12 +250,13 @@ function runExecFile(command: string, args: string[], cwd: string) {
 }
 
 function containerEngineAvailable() {
-  const docker = spawnSync("sh", ["-lc", "command -v docker"], { encoding: "utf8" });
+  const env = buildServiceEnv();
+  const docker = spawnSync("sh", ["-lc", "command -v docker"], { encoding: "utf8", env });
   if (docker.status === 0) {
     return "docker";
   }
 
-  const podman = spawnSync("sh", ["-lc", "command -v podman"], { encoding: "utf8" });
+  const podman = spawnSync("sh", ["-lc", "command -v podman"], { encoding: "utf8", env });
   if (podman.status === 0) {
     return "podman";
   }
@@ -228,7 +264,7 @@ function containerEngineAvailable() {
   return "";
 }
 
-function collectPrerequisites(service: BuiltinServiceDefinition, installDir: string) {
+function collectPrerequisites(service: ServiceDefinition, installDir: string) {
   const prerequisites: string[] = [];
   const envPath = path.join(installDir, ".env");
   if (!fs.existsSync(envPath)) {
@@ -249,7 +285,7 @@ function collectPrerequisites(service: BuiltinServiceDefinition, installDir: str
   return prerequisites;
 }
 
-function ensureDefaultConfig(service: BuiltinServiceDefinition, installDir: string) {
+function ensureDefaultConfig(service: ServiceDefinition, installDir: string) {
   for (const configFile of service.configFiles) {
     const targetPath = path.join(installDir, configFile.relativePath);
     if (fs.existsSync(targetPath)) {
@@ -266,7 +302,10 @@ function ensureDefaultConfig(service: BuiltinServiceDefinition, installDir: stri
 }
 
 export async function installBuiltinService(app: App, serviceId: ServiceId) {
-  const service = getBuiltinService(serviceId);
+  const service = getService(serviceId);
+  if (service.kind !== "builtin") {
+    throw new Error(`service ${serviceId} is not a builtin service`);
+  }
   const assetPath = ensureBundleAssetHealthy(app, service);
 
   const finalInstallDir = getInstallDir(app, service);
@@ -308,7 +347,7 @@ export async function listServices(app: App) {
 }
 
 export async function getServiceState(app: App, serviceId: ServiceId): Promise<ServiceState> {
-  const service = getBuiltinService(serviceId);
+  const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
   const installed = fs.existsSync(installDir);
   const pidFilePath = path.join(installDir, service.runtime.pidRelativePath);
@@ -327,7 +366,7 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
 
   const env = installed ? readEnvFile(path.join(installDir, ".env")) : new Map<string, string>();
   const port = parsePort(service, env);
-  const webUrl = installed ? getWebUrl(service, env) : service.web.routePath ? `http://127.0.0.1:${service.web.defaultPort}${service.web.routePath}` : "";
+  const webUrl = installed ? getWebUrl(service, env) : getWebUrl(service, new Map<string, string>());
   const pid = installed ? readPid(pidFilePath) : null;
   const missingRuntimeFiles = installed ? listMissingRuntimeFiles(service, installDir) : [];
   const prerequisites = installed && missingRuntimeFiles.length === 0 ? collectPrerequisites(service, installDir) : [];
@@ -383,7 +422,7 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     status,
     statusLabel,
     message,
-    hasFrontend: service.hasFrontend,
+    frontendMode: service.frontend.mode,
     configFiles,
     healthMeta: {
       pid,
@@ -396,7 +435,14 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   };
 }
 
-function ensurePreStartRequirements(app: App, service: BuiltinServiceDefinition) {
+const agentPlatformDefaultContainerHubBaseUrls = new Set([
+  "",
+  "http://127.0.0.1:11960",
+  "http://localhost:11960",
+  "http://host.docker.internal:11960"
+]);
+
+async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {
   if (service.id === "pan-webclient") {
     const installDir = getInstallDir(app, service);
     const publicKeyPath = path.join(installDir, "configs", "local-public-key.pem");
@@ -405,13 +451,48 @@ function ensurePreStartRequirements(app: App, service: BuiltinServiceDefinition)
       fs.mkdirSync(path.dirname(publicKeyPath), { recursive: true });
       fs.writeFileSync(publicKeyPath, publicKeyPem, "utf8");
     }
+    return;
+  }
+
+  if (service.id === "agent-platform") {
+    const installDir = getInstallDir(app, service);
+    const envPath = path.join(installDir, ".env");
+    const env = readEnvFile(envPath);
+    const hubState = await getServiceState(app, "agent-container-hub");
+    const desiredHubBaseUrl = `http://127.0.0.1:${hubState.healthMeta.port}`;
+    const currentHubBaseUrl = env.get("AGENT_CONTAINER_HUB_BASE_URL") ?? "";
+    const updates = new Map<string, string>();
+
+    if (agentPlatformDefaultContainerHubBaseUrls.has(currentHubBaseUrl)) {
+      updates.set("AGENT_CONTAINER_HUB_BASE_URL", desiredHubBaseUrl);
+    }
+    if (!env.get("SERVER_PORT")) {
+      updates.set("SERVER_PORT", String(service.web.defaultPort));
+    }
+    updates.set("AGENT_AUTH_ENABLED", "true");
+    updates.set("AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE", path.join("configs", "local-public-key.pem"));
+
+    if (updates.size > 0) {
+      writeEnvFileUpdates(envPath, updates);
+    }
+
+    const { publicKeyPem } = ensureKeyPairForPan(app);
+    const publicKeyPath = path.join(installDir, "configs", "local-public-key.pem");
+    ensureDir(path.dirname(publicKeyPath));
+    fs.writeFileSync(publicKeyPath, publicKeyPem, "utf8");
   }
 }
 
-async function runServiceCommand(app: App, service: BuiltinServiceDefinition, command: string[], successMessage: string) {
+async function runServiceCommand(app: App, service: ServiceDefinition, command: string[], successMessage: string) {
   const installDir = getInstallDir(app, service);
   if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
+    if (service.kind !== "builtin") {
+      throw new Error(`${service.name} 未安装或安装已损坏。`);
+    }
     await installBuiltinService(app, service.id);
+  }
+  if (command.length === 0) {
+    throw new Error(`${service.name} 缺少可执行脚本定义。`);
   }
   await runExecFile(command[0], command.slice(1), installDir);
   return {
@@ -423,7 +504,7 @@ async function runServiceCommand(app: App, service: BuiltinServiceDefinition, co
 
 export async function startService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
   const current = await getServiceState(app, serviceId);
-  if (!current.installed || current.status === "error") {
+  if ((!current.installed || current.status === "error") && current.kind === "builtin") {
     await installBuiltinService(app, serviceId);
   }
   const nextState = await getServiceState(app, serviceId);
@@ -446,15 +527,15 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
     };
   }
 
-  const service = getBuiltinService(serviceId);
-  ensurePreStartRequirements(app, service);
-  const result = await runServiceCommand(app, service, service.runtime.startCommand, `${service.name} 已启动。`);
+  const service = getService(serviceId);
+  await ensurePreStartRequirements(app, service);
+  const result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
   startedThisSession.add(serviceId);
   return result;
 }
 
 export async function stopService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
-  const service = getBuiltinService(serviceId);
+  const service = getService(serviceId);
   const current = await getServiceState(app, serviceId);
   if (!current.installed) {
     return {
@@ -471,7 +552,7 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
     };
   }
 
-  const result = await runServiceCommand(app, service, service.runtime.stopCommand, `${service.name} 已停止。`);
+  const result = await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`);
   startedThisSession.delete(serviceId);
   return result;
 }
@@ -482,7 +563,7 @@ export async function restartService(app: App, serviceId: ServiceId): Promise<Se
 }
 
 export async function readServiceConfig(app: App, serviceId: ServiceId, key: string): Promise<ServiceConfigReadResult> {
-  const service = getBuiltinService(serviceId);
+  const service = getService(serviceId);
   const configFile = service.configFiles.find((item) => item.key === key);
   if (!configFile) {
     throw new Error(`unknown config key: ${key}`);
@@ -518,7 +599,7 @@ export async function writeServiceConfig(
   key: string,
   content: string
 ): Promise<ServiceCommandResult> {
-  const service = getBuiltinService(serviceId);
+  const service = getService(serviceId);
   const configFile = service.configFiles.find((item) => item.key === key);
   if (!configFile) {
     throw new Error(`unknown config key: ${key}`);
@@ -546,7 +627,7 @@ export async function importServiceFile(
   targetKey: string,
   sourcePath: string
 ): Promise<ServiceImportResult> {
-  const service = getBuiltinService(serviceId);
+  const service = getService(serviceId);
   const target = service.importTargets.find((item) => item.key === targetKey);
   if (!target) {
     throw new Error(`unknown import target: ${targetKey}`);
@@ -597,5 +678,7 @@ export const __testInternals = {
   listMissingRuntimeFiles,
   isInstallHealthy,
   listMissingBundleEntries,
-  ensureBundleAssetHealthy
+  ensureBundleAssetHealthy,
+  upsertEnvFileContent,
+  ensurePreStartRequirements
 };

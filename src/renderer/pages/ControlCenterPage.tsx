@@ -265,7 +265,7 @@ export function ControlCenterPage() {
               >
                 重启
               </button>
-              {selectedService.hasFrontend && selectedService.status === "running" ? (
+              {selectedService.frontendMode !== "none" && selectedService.status === "running" ? (
                 <button
                   type="button"
                   onClick={() => navigate(`/plugin/${selectedService.id}`)}

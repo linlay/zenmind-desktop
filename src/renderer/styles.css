@@ -549,10 +549,18 @@ a {
 
 .pan-page,
 .empty-state {
-  min-height: calc(100vh - 140px);
+  min-height: calc(100vh - 136px);
+}
+
+.pan-page {
+  display: flex;
+  flex-direction: column;
 }
 
 .pan-frame-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   padding: 12px;
 }
@@ -563,7 +571,8 @@ a {
 
 .pan-frame {
   width: 100%;
-  min-height: calc(100vh - 236px);
+  flex: 1;
+  min-height: calc(100vh - 160px);
   border: 0;
   border-radius: 16px;
   background: white;

@@ -3,10 +3,18 @@
 ## 1. 项目简介
 `zenmind-desktop` 是 ZenMind 的桌面端壳项目，基于 Electron、React 和 Vite 构建。它负责把内置服务打包进桌面应用，并提供统一的安装、配置、启动、停止、重启和日志查看入口。
 
-当前仓库重点覆盖两类内置服务：
+当前 Desktop 已统一切换到 `manifest.json` 驱动架构：
+- 内置服务从 `.tar.gz` 资源包里的 `manifest.json` 自动发现。
+- 插件从 `userData/plugins/*/manifest.json` 自动扫描注册。
+- Desktop 不再在 `service-registry.ts` 中硬编码任何内置服务结构。
+
+当前仓库重点覆盖两类服务：
 - `agent-container-hub`：宿主机容器服务，为后续智能体运行时提供沙箱能力。
+- `agent-platform`：智能体运行时服务。
 - `zenmind-app-server`：认证与管理服务，提供 OAuth2/OIDC、管理后台和 App 访问令牌。
 - `pan-webclient`：网盘服务，通过插件系统导入。
+
+桌面端不再启动统一静态资源服务。各服务在自己的端口上直接提供前端，渲染层 iframe 直接访问对应 `healthMeta.webUrl`。
 
 ## 2. 快速开始
 ### 前置要求
@@ -50,11 +58,19 @@ npm test
 - 开发环境默认从 `build/resources/services` 读取内置服务资源包。
 - 打包后默认从应用资源目录下的 `services` 读取。
 - 如需覆盖资源目录，可设置环境变量 `ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT`。
+- 每个内置资源包都必须在根目录包含 `manifest.json`，Desktop 会从中读取 `kind`、`scripts`、`runtime`、`web` 和 `desktop` 扩展字段。
+
+### 前端访问模式
+- `frontendMode: "none"`：无前端，仅在控制中心管理。
+- `frontendMode: "embedded"`：前端内嵌在服务自身二进制中，可在详情页打开，但不会出现在顶部导航。
+- `frontendMode: "standalone"`：前端由服务自身端口直接提供，详情页可打开，运行中会出现在顶部导航。
+- iframe 直接访问服务状态里的 `healthMeta.webUrl`，例如 `http://127.0.0.1:11950/admin/`。
 
 ### 服务配置文件
 - 服务安装后会写入用户数据目录下的 `services/<service-id>/<version>/`。
 - 每个内置服务默认会从 `.env.example` 复制生成 `.env`，随后由桌面端进行读写。
 - `pan-webclient` 还需要导入真实的 `local-public-key.pem` 才能满足启动前置条件。
+- 插件安装目录位于 Electron `userData/plugins/<service-id>/`，插件清单文件固定为 `manifest.json`。
 
 ### 敏感信息管理
 - 真实密钥、证书和本地环境差异配置不提交到仓库。
@@ -79,7 +95,9 @@ npm run dist:mac
 ### 打包资源约定
 - `package.json` 中的 `build.files` 会打入桌面应用运行所需代码。
 - `build.extraResources` 会把 `build/resources/services` 下的内置服务资源复制进应用包。
-- 如新增内置服务，需先补齐资源同步逻辑和服务注册，再执行打包。
+- `npm run sync:assets` 会扫描工作区各项目 `dist/release/*.tar.gz`，只同步 `manifest.json.kind === "builtin"` 的资源包。
+- Desktop 通过 bundle 内的 `manifest.json.desktop.bundleTopLevelDir` 和 `runtime.requiredPaths` 校验资源完整性。
+- 如新增内置服务，需要保证 release bundle 内自带完整 `manifest.json`，再执行打包。
 
 ## 5. 运维
 ### 常用命令

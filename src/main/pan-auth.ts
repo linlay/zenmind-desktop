@@ -56,6 +56,10 @@ function readRsaPrivateKey(filePath: string): KeyObject {
   return parseRsaPrivateKey(content);
 }
 
+export function readPanPrivateKey(app: App): KeyObject {
+  return readRsaPrivateKey(getPanPrivateKeyPath(app));
+}
+
 function resolveCookieUrl(webUrl: string) {
   return new URL("/", webUrl).toString();
 }
@@ -95,7 +99,7 @@ async function sessionIsHealthy(webUrl: string, cookies: CookieLike[], fetchImpl
   return response.ok;
 }
 
-function createDesktopAccessToken(privateKey: KeyObject, now = Date.now()) {
+export function createDesktopAccessToken(privateKey: KeyObject, now = Date.now()) {
   const exp = Math.floor(now / 1000) + ACCESS_TOKEN_TTL_SECONDS;
   const header = encodeBase64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const payload = encodeBase64Url(JSON.stringify({ sub: "desktop-app", exp }));
