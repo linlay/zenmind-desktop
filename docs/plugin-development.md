@@ -2,13 +2,17 @@
 
 ## 插件包结构
 
-插件以 `.tar.gz` 格式分发，解压后应包含单个顶层目录：
+插件按平台分发：
+- macOS / Linux 使用 `.tar.gz`
+- Windows 使用 `.zip`
+
+两种格式解压后都应包含单个顶层目录，内部目录结构保持一致：
 
 ```text
 my-plugin/
   manifest.json           # 必须 — 插件清单
-  start.sh                # 启动脚本
-  stop.sh                 # 停止脚本
+  start.sh|start.ps1      # 启动脚本
+  stop.sh|stop.ps1        # 停止脚本
   .env.example            # 配置模板（可选）
   my-binary               # 服务可执行文件（可选）
   frontend/dist/          # 前端构建产物（可选，frontend.mode != "none" 时需要）
@@ -82,6 +86,11 @@ my-plugin/
 | `web` | ❌ | `frontend.mode != "none"` 时通常需要，定义端口和路由 |
 | `desktop` | ❌ | Desktop 专用扩展字段，插件通常只需要 `bundleTopLevelDir` |
 
+脚本约定：
+- macOS / Linux 插件使用 `.sh` 脚本，例如 `start.sh`、`stop.sh`、`deploy.sh`
+- Windows 插件使用 `.ps1` 脚本，例如 `start.ps1`、`stop.ps1`、`deploy.ps1`
+- `manifest.json` 中的 `scripts.start`、`scripts.stop`、`scripts.deploy` 应与对应平台脚本文件名保持一致
+
 兼容性说明：
 - Desktop 不再扫描 `plugin-manifest.json`。
 - 如 `manifest.json` 中仍保留旧字段 `frontendMode` / `hasFrontend` / `runtime.startCommand`，当前会做兼容映射，但不建议继续使用。
@@ -106,10 +115,21 @@ my-plugin/
 
 ## 安装方式
 
-在控制中心页面点击“安装插件”按钮，选择 `.tar.gz` 包即可。
+Desktop 按平台只接受对应格式的插件包：
+- Desktop macOS / Linux 版只接受 `.tar.gz`
+- Desktop Windows 版只接受 `.zip`
 
 ## 打包示例
 
 ```bash
 tar -czf my-plugin-v1.0.0-darwin-arm64.tar.gz my-plugin/
 ```
+
+```powershell
+Compress-Archive -Path .\my-plugin -DestinationPath .\my-plugin-v1.0.0-windows-amd64.zip -Force
+```
+
+命名规范：
+- `<id>-<version>-darwin-<arch>.tar.gz`
+- `<id>-<version>-linux-<arch>.tar.gz`
+- `<id>-<version>-windows-<arch>.zip`

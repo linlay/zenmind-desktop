@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFile, execFileSync, spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import type { App } from "electron";
 import type {
   ServiceCommandResult,
@@ -17,8 +17,20 @@ import { getAllServices, getService } from "./service-registry";
 import { getPluginInstallDir } from "./plugin-loader";
 import { ensureKeyPairForPan } from "./pan-auth";
 import { readEnvFile, parseEnvFileContent } from "./env-file";
+import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
+import { getServicesRoot } from "./user-paths";
 
 const startedThisSession = new Set<ServiceId>();
+
+type ExecResult = {
+  stdout: string;
+  stderr: string;
+};
+
+type PowerShellCapturePayload = ExecResult & {
+  hadError: boolean;
+  exitCode: number;
+};
 
 function buildServiceEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -46,7 +58,7 @@ export function getInstallDir(app: App, service: ServiceDefinition) {
   if (service.kind === "plugin") {
     return getPluginInstallDir(app, service.id);
   }
-  return path.join(app.getPath("userData"), "services", service.id, service.version);
+  return path.join(getServicesRoot(app), service.id, service.version);
 }
 
 function getAssetPath(app: App, service: ServiceDefinition) {
@@ -97,25 +109,19 @@ function isInstallHealthy(service: ServiceDefinition, installDir: string) {
   return listMissingRuntimeFiles(service, installDir).length === 0;
 }
 
-function listTarEntries(tarPath: string) {
-  const output = execFileSync("tar", ["-tzf", tarPath], { encoding: "utf8" });
-  return new Set(
-    output
-      .split(/\r?\n/u)
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-  );
+function listTarEntries(archivePath: string) {
+  return listArchiveEntries(archivePath);
 }
 
-function listMissingBundleEntries(service: ServiceDefinition, tarPath: string) {
-  const stat = fs.statSync(tarPath);
+function listMissingBundleEntries(service: ServiceDefinition, archivePath: string) {
+  const stat = fs.statSync(archivePath);
   const cacheKey = `${stat.size}:${stat.mtimeMs}`;
-  const cached = bundleValidationCache.get(tarPath);
+  const cached = bundleValidationCache.get(archivePath);
   if (cached && cached.key === cacheKey) {
     return cached.missingEntries;
   }
 
-  const entries = listTarEntries(tarPath);
+  const entries = listTarEntries(archivePath);
   const missingEntries = service.runtime.requiredPaths.filter((relativePath) => {
     const expectedPath = `${service.desktop.bundleTopLevelDir}/${relativePath}`;
     if (entries.has(expectedPath) || entries.has(`${expectedPath}/`)) {
@@ -124,25 +130,28 @@ function listMissingBundleEntries(service: ServiceDefinition, tarPath: string) {
     const prefix = expectedPath.endsWith("/") ? expectedPath : `${expectedPath}/`;
     return ![...entries].some((entry) => entry.startsWith(prefix));
   });
-  bundleValidationCache.set(tarPath, {
+  bundleValidationCache.set(archivePath, {
     key: cacheKey,
     missingEntries
   });
   return missingEntries;
 }
 
-function ensureBundleAssetHealthy(app: App, service: ServiceDefinition) {
-  const assetPath = getAssetPath(app, service);
-  if (!fileExists(assetPath)) {
-    throw new Error(`桌面端内置资源缺失：${assetPath}`);
+function ensureArchiveHealthy(service: ServiceDefinition, archivePath: string, sourceLabel: string) {
+  if (!fileExists(archivePath)) {
+    throw new Error(`${sourceLabel}缺失：${archivePath}`);
   }
 
-  const missingEntries = listMissingBundleEntries(service, assetPath);
+  const missingEntries = listMissingBundleEntries(service, archivePath);
   if (missingEntries.length > 0) {
-    throw new Error(`桌面端内置资源不完整，缺少：${missingEntries.join(", ")}`);
+    throw new Error(`${sourceLabel}不完整，缺少：${missingEntries.join(", ")}`);
   }
 
-  return assetPath;
+  return archivePath;
+}
+
+function ensureBundleAssetHealthy(app: App, service: ServiceDefinition) {
+  return ensureArchiveHealthy(service, getAssetPath(app, service), "桌面端内置资源");
 }
 
 function upsertEnvFileContent(content: string, updates: Map<string, string>) {
@@ -218,6 +227,10 @@ function getWebUrl(service: ServiceDefinition, env: Map<string, string>) {
   return routePath ? `http://127.0.0.1:${port}${routePath}` : `http://127.0.0.1:${port}`;
 }
 
+function resolveRuntimePath(installDir: string, relativePath: string) {
+  return relativePath ? path.join(installDir, relativePath) : "";
+}
+
 function readPid(pidFilePath: string) {
   if (!fs.existsSync(pidFilePath)) {
     return null;
@@ -246,28 +259,164 @@ function windowsPowerShellPath() {
   return path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
 
+function quotePowerShell(value: string) {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function encodePowerShellArray(values: string[]) {
+  if (values.length === 0) {
+    return "@()";
+  }
+  return `@(${values.map((value) => quotePowerShell(value)).join(", ")})`;
+}
+
+function decodeBase64Utf8(content: string) {
+  const trimmed = content.trim();
+  return trimmed ? Buffer.from(trimmed, "base64").toString("utf8") : "";
+}
+
+function coerceExecText(value: string | Buffer) {
+  return typeof value === "string" ? value : value.toString("utf8");
+}
+
+function normalizeCapturedText(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function decodePowerShellCapturePayload(value: string | Buffer): PowerShellCapturePayload | null {
+  const content = coerceExecText(value).trim();
+  if (!content) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(decodeBase64Utf8(content)) as Record<string, unknown>;
+    return {
+      stdout: normalizeCapturedText(parsed.stdout),
+      stderr: normalizeCapturedText(parsed.stderr),
+      hadError: parsed.hadError === true,
+      exitCode: typeof parsed.exitCode === "number" && Number.isFinite(parsed.exitCode) ? parsed.exitCode : 0
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildPowerShellCaptureCommand(scriptPath: string, args: string[]) {
+  return `
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$scriptPath = ${quotePowerShell(scriptPath)}
+$scriptArgs = ${encodePowerShellArray(args)}
+$stdout = [System.Collections.Generic.List[string]]::new()
+$stderr = [System.Collections.Generic.List[string]]::new()
+$hadError = $false
+$nativeExitCode = 0
+function Add-CapturedText([System.Collections.Generic.List[string]]$Lines, [object]$Value) {
+  if ($null -eq $Value) {
+    return
+  }
+  $text = [string]$Value
+  if ([string]::IsNullOrWhiteSpace($text)) {
+    return
+  }
+  $Lines.Add($text.TrimEnd([char]13, [char]10))
+}
+try {
+  & $scriptPath @scriptArgs *>&1 | ForEach-Object {
+    if ($_ -is [System.Management.Automation.ErrorRecord]) {
+      $hadError = $true
+      Add-CapturedText $stderr ($_ | Out-String)
+    } elseif ($_ -is [System.Management.Automation.InformationRecord]) {
+      Add-CapturedText $stdout $_.MessageData
+    } else {
+      Add-CapturedText $stdout $_
+    }
+  }
+  if (-not $?) {
+    $hadError = $true
+  }
+  if ($LASTEXITCODE) {
+    $nativeExitCode = $LASTEXITCODE
+  }
+} catch {
+  $hadError = $true
+  Add-CapturedText $stderr ($_ | Out-String)
+}
+$payload = @{
+  stdout = ($stdout -join [Environment]::NewLine)
+  stderr = ($stderr -join [Environment]::NewLine)
+  hadError = $hadError
+  exitCode = $nativeExitCode
+} | ConvertTo-Json -Compress
+$bytes = [System.Text.Encoding]::UTF8.GetBytes([string]$payload)
+[Console]::Out.Write([System.Convert]::ToBase64String($bytes))
+if ($hadError -or $nativeExitCode -ne 0) {
+  exit 1
+}
+`;
+}
+
+function formatExecErrorMessage(errorMessage: string, result: ExecResult) {
+  const details = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n");
+  return details || errorMessage;
+}
+
+function runPowerShellScript(scriptPath: string, args: string[], cwd: string) {
+  const captureCommand = buildPowerShellCaptureCommand(scriptPath, args);
+  return new Promise<ExecResult>((resolve, reject) => {
+    execFile(
+      windowsPowerShellPath(),
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", captureCommand],
+      { cwd, env: buildServiceEnv() },
+      (error, stdout, stderr) => {
+        const decoded = decodePowerShellCapturePayload(stdout);
+        const result = decoded ?? {
+          stdout: "",
+          stderr: [coerceExecText(stderr).trim(), coerceExecText(stdout).trim()].filter(Boolean).join("\n")
+        };
+
+        if (error) {
+          reject(new Error(formatExecErrorMessage(error.message, result)));
+          return;
+        }
+
+        resolve({
+          stdout: result.stdout,
+          stderr: result.stderr
+        });
+      }
+    );
+  });
+}
+
 function resolveExecCommand(command: string, args: string[], cwd: string) {
   if (IS_WINDOWS && command.toLowerCase().endsWith(".ps1")) {
     const scriptPath = path.isAbsolute(command) ? command : path.join(cwd, command);
     return {
-      command: windowsPowerShellPath(),
-      args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, ...args]
+      command: scriptPath,
+      args,
+      powershellScript: true
     };
   }
-  return { command, args };
+  return { command, args, powershellScript: false };
 }
 
 function runExecFile(command: string, args: string[], cwd: string) {
   const resolved = resolveExecCommand(command, args, cwd);
-  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+  if (resolved.powershellScript) {
+    return runPowerShellScript(resolved.command, resolved.args, cwd);
+  }
+
+  return new Promise<ExecResult>((resolve, reject) => {
     execFile(resolved.command, resolved.args, { cwd, env: buildServiceEnv() }, (error, stdout, stderr) => {
       if (error) {
-        reject(new Error(`${error.message}\n${stderr}`.trim()));
+        reject(new Error(`${error.message}\n${coerceExecText(stderr)}`.trim()));
         return;
       }
       resolve({
-        stdout: stdout.toString(),
-        stderr: stderr.toString()
+        stdout: coerceExecText(stdout),
+        stderr: coerceExecText(stderr)
       });
     });
   });
@@ -325,15 +474,26 @@ function ensureDefaultConfig(service: ServiceDefinition, installDir: string) {
   }
 }
 
-export async function installBuiltinService(app: App, serviceId: ServiceId) {
+type InstallBuiltinServiceOptions = {
+  force?: boolean;
+  archivePath?: string;
+};
+
+export async function installBuiltinService(
+  app: App,
+  serviceId: ServiceId,
+  options: InstallBuiltinServiceOptions = {}
+) {
   const service = getService(serviceId);
   if (service.kind !== "builtin") {
     throw new Error(`service ${serviceId} is not a builtin service`);
   }
-  const assetPath = ensureBundleAssetHealthy(app, service);
+  const assetPath = options.archivePath
+    ? ensureArchiveHealthy(service, options.archivePath, "安装包")
+    : ensureBundleAssetHealthy(app, service);
 
   const finalInstallDir = getInstallDir(app, service);
-  if (fs.existsSync(finalInstallDir) && isInstallHealthy(service, finalInstallDir)) {
+  if (!options.force && fs.existsSync(finalInstallDir) && isInstallHealthy(service, finalInstallDir)) {
     ensureDefaultConfig(service, finalInstallDir);
     fixShellScriptPermissions(finalInstallDir);
     return finalInstallDir;
@@ -347,14 +507,14 @@ export async function installBuiltinService(app: App, serviceId: ServiceId) {
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `${service.id}-extract-`));
   try {
-    execFileSync("tar", ["-xzf", assetPath, "-C", tempRoot]);
+    extractArchiveToDir(assetPath, tempRoot);
     const entries = fs.readdirSync(tempRoot);
     if (entries.length !== 1) {
       throw new Error(`unexpected archive layout for ${service.id}`);
     }
     const extractedRoot = path.join(tempRoot, entries[0]);
     fs.rmSync(finalInstallDir, { recursive: true, force: true });
-    fs.renameSync(extractedRoot, finalInstallDir);
+    fs.cpSync(extractedRoot, finalInstallDir, { recursive: true });
     ensureDefaultConfig(service, finalInstallDir);
     if (hasPreservedEnv) {
       fs.writeFileSync(path.join(finalInstallDir, ".env"), preservedEnv, "utf8");
@@ -374,8 +534,9 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
   const installed = fs.existsSync(installDir);
-  const pidFilePath = path.join(installDir, service.runtime.pidRelativePath);
-  const logFilePath = path.join(installDir, service.runtime.logRelativePath);
+  const pidFilePath = resolveRuntimePath(installDir, service.runtime.pidRelativePath);
+  const logFilePath = resolveRuntimePath(installDir, service.runtime.logRelativePath);
+  const errorLogFilePath = resolveRuntimePath(installDir, service.runtime.errorLogRelativePath);
   const configFiles = service.configFiles.map((configFile) => {
     const absolutePath = path.join(installDir, configFile.relativePath);
     return {
@@ -452,6 +613,7 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
       pid,
       pidFilePath,
       logFilePath,
+      errorLogFilePath,
       webUrl,
       port,
       prerequisites
@@ -693,6 +855,28 @@ export async function stopStartedServices(app: App) {
   }
 }
 
+export async function stopRunningServices(app: App) {
+  const services = await listServices(app);
+  const failures: string[] = [];
+
+  for (const service of services) {
+    if (service.status !== "running") {
+      continue;
+    }
+
+    try {
+      await stopService(app, service.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push(`${service.name}: ${message}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`停止运行中服务失败：${failures.join("；")}`);
+  }
+}
+
 export const __testInternals = {
   parseEnvFileContent,
   parsePort,
@@ -704,5 +888,6 @@ export const __testInternals = {
   listMissingBundleEntries,
   ensureBundleAssetHealthy,
   upsertEnvFileContent,
-  ensurePreStartRequirements
+  ensurePreStartRequirements,
+  decodePowerShellCapturePayload
 };

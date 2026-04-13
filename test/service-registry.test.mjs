@@ -50,5 +50,31 @@ test("registerPlugin preserves explicit frontendMode", () => {
   });
 
   assert.equal(definition.frontendMode, "embedded");
+  assert.equal(definition.runtime.errorLogRelativePath, "");
   unregisterPlugin("embedded-plugin");
+});
+
+test("registerPlugin preserves runtime.errorLogRelativePath when provided", () => {
+  const definition = registerPlugin({
+    id: "windows-plugin",
+    name: "Windows Plugin",
+    version: "v1.0.0",
+    description: "windows manifest",
+    frontendMode: "none",
+    runtime: {
+      pidRelativePath: ".runtime/windows.pid",
+      logRelativePath: ".runtime/windows.log",
+      errorLogRelativePath: ".runtime/windows.stderr.log",
+      startCommand: ["./start.ps1", "--daemon"],
+      stopCommand: ["./stop.ps1"]
+    },
+    web: {
+      routePath: "",
+      portEnvKey: "PORT",
+      defaultPort: 0
+    }
+  });
+
+  assert.equal(definition.runtime.errorLogRelativePath, ".runtime/windows.stderr.log");
+  unregisterPlugin("windows-plugin");
 });

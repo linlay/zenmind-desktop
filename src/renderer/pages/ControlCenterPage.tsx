@@ -40,8 +40,20 @@ function statusDotClass(status: ServiceState["status"]) {
 type ActionScope = "lifecycle" | "detail";
 
 export function ControlCenterPage() {
-  const { services, loading, error, installBuiltin, start, stop, restart, readConfig, writeConfig, importFile, refresh, installPlugin, uninstallPlugin } =
-    useServices();
+  const {
+    services,
+    loading,
+    error,
+    installBuiltin,
+    start,
+    stop,
+    restart,
+    readConfig,
+    writeConfig,
+    refresh,
+    installPlugin,
+    uninstallPlugin
+  } = useServices();
   const navigate = useNavigate();
   const [activeId, setActiveId] = useState<ServiceId | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<ServiceId | null>(null);
@@ -213,6 +225,10 @@ export function ControlCenterPage() {
                 <dd>{selectedService.healthMeta.logFilePath}</dd>
               </div>
               <div>
+                <dt>错误日志</dt>
+                <dd>{selectedService.healthMeta.errorLogFilePath || "无"}</dd>
+              </div>
+              <div>
                 <dt>PID 文件</dt>
                 <dd>{selectedService.healthMeta.pidFilePath}</dd>
               </div>
@@ -231,7 +247,8 @@ export function ControlCenterPage() {
             ) : null}
 
             <div className="action-row">
-              {selectedService.kind === "builtin" ? (
+              {selectedService.kind === "builtin" &&
+              (selectedService.status === "not-installed" || selectedService.status === "stopped") ? (
                 <button
                   type="button"
                   onClick={() => runAction(selectedService.id, "lifecycle", () => installBuiltin(selectedService.id))}

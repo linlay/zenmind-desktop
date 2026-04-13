@@ -13,14 +13,15 @@
 - `agent-platform`：智能体运行时服务。
 - `zenmind-app-server`：认证与管理服务，提供 OAuth2/OIDC、管理后台和 App 访问令牌。
 - `pan-webclient`：网盘服务，通过插件系统导入。
+- `agent-webclient`：智能体前端，通过插件系统导入。
 
-桌面端不再启动统一静态资源服务。各服务在自己的端口上直接提供前端，渲染层 iframe 直接访问对应 `healthMeta.webUrl`。
+桌面端不再启动统一静态资源服务。各服务在自己的端口上直接提供前端，渲染层 iframe 直接访问对应 `healthMeta.webUrl`。需要认证的插件（`agent-webclient`、`pan-webclient`）通过 postMessage Token Bridge 获取 Desktop 签发的 JWT。
 
 ## 2. 快速开始
 ### 前置要求
 - Node.js 18 及以上
 - npm 9 及以上
-- macOS arm64 开发环境
+- macOS arm64 或 Windows x64 开发环境
 - `tar` 命令可用
 - 如需启动 `agent-container-hub`，本机需要 Docker 或 Podman
 
@@ -42,7 +43,6 @@ npm run build
 ```
 
 该命令会依次执行：
-- `npm run sync:assets`：同步内置服务资源到 `build/resources/services`
 - `npm run build:main`：编译 Electron 主进程与 preload
 - `npm run build:renderer`：构建 React 渲染层
 
@@ -53,7 +53,18 @@ npm test
 
 测试会先执行完整构建，再运行 `test/*.test.mjs` 下的 Node 测试。
 
-## 3. 配置说明
+## 3. 调试面板
+
+桌面应用在开发模式和打包后的正式版本中，都支持通过快捷键打开或关闭 Chromium DevTools 调试面板。
+
+| 平台 | 快捷键 | 效果 |
+|------|--------|------|
+| macOS | `Cmd + Option + I` | 打开/关闭 DevTools 调试面板 |
+| Windows | `Ctrl + Shift + I` | 打开/关闭 DevTools 调试面板 |
+
+DevTools 可用于查看控制台日志、网络请求、DOM 结构以及页面运行时状态，便于排查桌面端和嵌入页面的问题。
+
+## 4. 配置说明
 ### 内置资源目录
 - 开发环境默认从 `build/resources/services` 读取内置服务资源包。
 - 打包后默认从应用资源目录下的 `services` 读取。
@@ -62,50 +73,60 @@ npm test
 
 ### 前端访问模式
 - `frontendMode: "none"`：无前端，仅在控制中心管理。
-- `frontendMode: "embedded"`：前端内嵌在服务自身二进制中，可在详情页打开，但不会出现在顶部导航。
+- `frontendMode: "embedded"`：前端由服务自身进程托管，可在详情页打开，但不会出现在顶部导航。
 - `frontendMode: "standalone"`：前端由服务自身端口直接提供，详情页可打开，运行中会出现在顶部导航。
 - iframe 直接访问服务状态里的 `healthMeta.webUrl`，例如 `http://127.0.0.1:11950/admin/`。
+- 需要认证的插件（`agent-webclient`、`pan-webclient`）通过 `auth-bridge.ts` 构建带参数的嵌入 URL，并通过 postMessage Token Bridge 获取 JWT。
 
 ### 服务配置文件
 - 服务安装后会写入用户数据目录下的 `services/<service-id>/<version>/`。
 - 每个内置服务默认会从 `.env.example` 复制生成 `.env`，随后由桌面端进行读写。
-- `pan-webclient` 还需要导入真实的 `local-public-key.pem` 才能满足启动前置条件。
 - 插件安装目录位于 Electron `userData/plugins/<service-id>/`，插件清单文件固定为 `manifest.json`。
 
 ### 敏感信息管理
 - 真实密钥、证书和本地环境差异配置不提交到仓库。
+- RSA 密钥对由 Desktop 统一管理，存储在 `userData/credentials/` 下。
 - `.env.local`、编辑器配置和构建产物应由 `.gitignore` 管理。
 - 示例配置应保留在随服务分发的模板文件中，不要把真实值写入文档。
 
-## 4. 部署
+## 5. 部署
 ### 桌面构建
 ```bash
 npm run build
 ```
 
-构建完成后，渲染层产物位于 `dist/`，Electron 主进程产物位于 `dist-electron/`。
+构建完成后，渲染层产物位于 `dist-renderer/`，Electron 主进程产物位于 `dist-electron/`。
 
 ### macOS 打包
 ```bash
 npm run dist:mac
 ```
 
-当前仓库的打包配置以 macOS arm64 为主，使用 `electron-builder` 输出 DMG 安装包。对外显示名称保持为 `ZenMind Desktop`。
+使用 `electron-builder` 输出 DMG 安装包，目标 arm64 架构，使用 ad-hoc 签名。
+
+### Windows 打包
+```bash
+npm run dist:win
+```
+
+使用 `electron-builder` 输出 NSIS 安装包，目标 x64 架构。
 
 ### 打包资源约定
 - `package.json` 中的 `build.files` 会打入桌面应用运行所需代码。
 - `build.extraResources` 会把 `build/resources/services` 下的内置服务资源复制进应用包。
-- `npm run sync:assets` 会扫描工作区各项目 `dist/release/*.tar.gz`，只同步 `manifest.json.kind === "builtin"` 的资源包。
+- `npm run sync:assets` 会扫描工作区各项目 `dist/release/*.tar.gz`，只同步 `manifest.json.kind === "builtin"` 的资源包。支持 `--os` 和 `--arch` 参数按平台过滤。
 - Desktop 通过 bundle 内的 `manifest.json.desktop.bundleTopLevelDir` 和 `runtime.requiredPaths` 校验资源完整性。
 - 如新增内置服务，需要保证 release bundle 内自带完整 `manifest.json`，再执行打包。
 
-## 5. 运维
+## 6. 运维
 ### 常用命令
 ```bash
 npm run sync:assets
 npm run dev
 npm run build
 npm test
+npm run dist:mac
+npm run dist:win
 ```
 
 ### 日志与运行状态
@@ -116,6 +137,6 @@ npm test
 ### 常见排查
 - 启动失败时，先检查控制中心展示的状态文案、日志文件路径和 PID 文件路径。
 - `agent-container-hub` 无法启动时，优先检查 Docker 或 Podman 是否可用。
-- `pan-webclient` 无法启动时，优先确认 `.env` 已生成且 `local-public-key.pem` 已导入。
-- 密钥对可通过控制中心从认证服务（zenmind-app-server）自动导出并分发给 pan-webclient。
+- `pan-webclient` 无法启动时，优先确认 `.env` 已生成且 RSA 公钥已自动写入。
+- 密钥对由 Desktop 统一管理，启动 `agent-platform` 或 `pan-webclient` 时会自动生成并分发。
 - 若测试失败，请先确认 `build/resources/services` 中的内置资源已同步完成。

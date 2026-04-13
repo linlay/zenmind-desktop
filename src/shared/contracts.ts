@@ -22,6 +22,7 @@ export interface ServiceHealthMeta {
   pid: number | null;
   pidFilePath: string;
   logFilePath: string;
+  errorLogFilePath: string;
   webUrl: string;
   port: number | null;
   prerequisites: string[];
@@ -80,12 +81,6 @@ export interface PanAuthImportResult {
   status: PanAuthStatus;
 }
 
-export interface PanAuthEnsureResult {
-  ok: boolean;
-  refreshed: boolean;
-  message: string;
-}
-
 export type AgentAuthRefreshReason = "missing" | "unauthorized";
 
 export interface AgentAuthIssueResult {
@@ -140,6 +135,7 @@ export interface ManifestConfigFile {
 export interface ManifestRuntime {
   pidRelativePath?: string;
   logRelativePath?: string;
+  errorLogRelativePath?: string;
   requiredPaths?: string[];
 }
 
@@ -178,6 +174,14 @@ export interface PluginInstallResult {
   serviceId?: string;
 }
 
+export interface DataRootChangeResult {
+  ok: boolean;
+  message: string;
+  dataRoot: string;
+}
+
+export type NavigateListener = (path: string) => void;
+
 export interface DesktopApi {
   services: {
     list: () => Promise<ServiceState[]>;
@@ -198,9 +202,13 @@ export interface DesktopApi {
   panAuth: {
     importPrivateKey: () => Promise<PanAuthImportResult>;
     getStatus: () => Promise<PanAuthStatus>;
-    ensureSession: (webUrl: string) => Promise<PanAuthEnsureResult>;
   };
   agentAuth: {
     issueAccessToken: (reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
   };
+  settings: {
+    getDataRoot: () => Promise<string>;
+    changeDataRoot: () => Promise<DataRootChangeResult>;
+  };
+  onNavigate: (listener: NavigateListener) => () => void;
 }

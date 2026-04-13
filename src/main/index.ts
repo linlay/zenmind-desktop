@@ -1,7 +1,15 @@
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  type MenuItemConstructorOptions,
+  type OpenDialogOptions
+} from "electron";
 import { issueAgentAccessToken } from "./agent-auth";
-import { ensurePanSession, getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
+import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import { loadBuiltinServices } from "./builtin-loader";
 import {
   getServiceLogsMeta,
@@ -13,11 +21,19 @@ import {
   restartService,
   startService,
   stopService,
+  stopRunningServices,
   stopStartedServices,
   writeServiceConfig
 } from "./service-manager";
-import { installPluginFromArchive, loadInstalledPlugins, uninstallPlugin } from "./plugin-loader";
+import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
+import { handlePluginUninstall } from "./plugin-uninstall";
 import type { ServiceId } from "../shared/contracts";
+import {
+  getDataRoot,
+  loadUserPaths,
+  migrateDataRoot,
+  saveDataRoot
+} from "./user-paths";
 
 let mainWindow: BrowserWindow | null = null;
 let isHandlingQuit = false;
@@ -70,19 +86,178 @@ function createWindow() {
     });
   }
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.webContents.openDevTools();
-  }
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.isAutoRepeat || input.key.toLowerCase() !== "i") {
+      return;
+    }
+
+    const isMacDevToolsShortcut =
+      process.platform === "darwin" && input.meta && input.alt && !input.control && !input.shift;
+    const isDesktopDevToolsShortcut =
+      process.platform !== "darwin" && input.control && input.shift && !input.meta && !input.alt;
+
+    if (!isMacDevToolsShortcut && !isDesktopDevToolsShortcut) {
+      return;
+    }
+
+    event.preventDefault();
+    mainWindow?.webContents.toggleDevTools();
+  });
 
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  return mainWindow;
+}
+
+function getOrCreateMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow;
+  }
+  return createWindow();
+}
+
+function navigateMainWindow(targetPath: string) {
+  const targetWindow = getOrCreateMainWindow();
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  if (targetWindow.isMinimized()) {
+    targetWindow.restore();
+  }
+  targetWindow.focus();
+
+  const sendNavigate = () => {
+    if (!targetWindow.isDestroyed()) {
+      targetWindow.webContents.send("app.navigate", targetPath);
+    }
+  };
+
+  if (targetWindow.webContents.isLoadingMainFrame()) {
+    targetWindow.webContents.once("did-finish-load", sendNavigate);
+    return;
+  }
+
+  sendNavigate();
+}
+
+function showDirectoryDialog(title: string, defaultPath: string, ownerWindow: BrowserWindow | null = mainWindow) {
+  const options: OpenDialogOptions = {
+    title,
+    defaultPath,
+    buttonLabel: "选择目录",
+    properties: ["openDirectory", "createDirectory"]
+  };
+  if (ownerWindow) {
+    return dialog.showOpenDialog(ownerWindow, options);
+  }
+  return dialog.showOpenDialog(options);
+}
+
+function showFileDialog(options: OpenDialogOptions, ownerWindow: BrowserWindow | null = mainWindow) {
+  if (ownerWindow) {
+    return dialog.showOpenDialog(ownerWindow, options);
+  }
+  return dialog.showOpenDialog(options);
+}
+
+function showArchiveDialog(title: string) {
+  const isWindows = process.platform === "win32";
+  return showFileDialog({
+    title,
+    properties: ["openFile"],
+    filters: [{ name: "Archive", extensions: isWindows ? ["zip"] : ["gz", "tgz"] }]
+  });
+}
+
+function buildApplicationMenu() {
+  const isMac = process.platform === "darwin";
+  const settingsItem: MenuItemConstructorOptions = {
+    label: isMac ? "设置..." : "设置",
+    accelerator: "CmdOrCtrl+,",
+    click: () => navigateMainWindow("/settings")
+  };
+
+  const template: MenuItemConstructorOptions[] = [
+    isMac
+      ? {
+          label: app.name,
+          submenu: [
+            { role: "about" },
+            { type: "separator" },
+            settingsItem,
+            { type: "separator" },
+            { role: "services" },
+            { type: "separator" },
+            { role: "hide" },
+            { role: "hideOthers" },
+            { role: "unhide" },
+            { type: "separator" },
+            { role: "quit" }
+          ]
+        }
+      : {
+          label: "File",
+          submenu: [settingsItem, { type: "separator" }, { role: "quit" }]
+        },
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    { role: "windowMenu" }
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+async function initializeDataRoot() {
+  const current = loadUserPaths(app);
+  if (process.platform !== "win32" || current.configured) {
+    return;
+  }
+
+  const defaultRoot = app.getPath("userData");
+  const result = await showDirectoryDialog("选择 ZenMind Desktop 数据目录", defaultRoot, null);
+  const selectedRoot =
+    result.canceled || result.filePaths.length === 0 ? defaultRoot : result.filePaths[0];
+  try {
+    saveDataRoot(app, selectedRoot);
+  } catch (error) {
+    console.error("failed to initialize custom data root", error);
+    saveDataRoot(app, defaultRoot);
+  }
 }
 
 function registerIpcHandlers() {
   ipcMain.handle("services.list", async () => listServices(app));
   ipcMain.handle("services.installBuiltin", async (_event, serviceId: ServiceId) => {
-    await installBuiltinService(app, serviceId);
+    const current = await getServiceState(app, serviceId);
+    if (current.kind !== "builtin") {
+      throw new Error(`service ${serviceId} is not a builtin service`);
+    }
+    if (current.status === "running") {
+      return {
+        ok: false,
+        message: "服务正在运行中，请先停止后再安装。",
+        service: current
+      };
+    }
+
+    const result = await showArchiveDialog(
+      process.platform === "win32" ? "选择内置服务安装包 (.zip)" : "选择内置服务安装包 (.tar.gz)"
+    );
+    if (result.canceled || result.filePaths.length === 0) {
+      return {
+        ok: false,
+        message: "已取消安装。",
+        service: await getServiceState(app, serviceId)
+      };
+    }
+
+    await installBuiltinService(app, serviceId, {
+      force: true,
+      archivePath: result.filePaths[0]
+    });
     return {
       ok: true,
       message: "内置服务已安装。",
@@ -100,7 +275,7 @@ function registerIpcHandlers() {
     return writeServiceConfig(app, serviceId, key, content);
   });
   ipcMain.handle("services.importFile", async (_event, serviceId: ServiceId, targetKey: string) => {
-    const result = await dialog.showOpenDialog({
+    const result = await showFileDialog({
       title: "选择要导入的文件",
       properties: ["openFile"]
     });
@@ -118,21 +293,19 @@ function registerIpcHandlers() {
     return getServiceLogsMeta(app, serviceId);
   });
   ipcMain.handle("plugins.install", async () => {
-    const result = await dialog.showOpenDialog({
-      title: "选择插件包 (.tar.gz)",
-      properties: ["openFile"],
-      filters: [{ name: "Plugin Archive", extensions: ["gz", "tgz"] }]
-    });
+    const result = await showArchiveDialog(
+      process.platform === "win32" ? "选择插件包 (.zip)" : "选择插件包 (.tar.gz)"
+    );
     if (result.canceled || result.filePaths.length === 0) {
       return { ok: false, message: "已取消安装。" };
     }
     return installPluginFromArchive(app, result.filePaths[0]);
   });
   ipcMain.handle("plugins.uninstall", async (_event, serviceId: ServiceId) => {
-    return uninstallPlugin(app, serviceId);
+    return handlePluginUninstall(app, serviceId, mainWindow);
   });
   ipcMain.handle("panAuth.importPrivateKey", async () => {
-    const result = await dialog.showOpenDialog({
+    const result = await showFileDialog({
       title: "选择要导入的 App 私钥",
       properties: ["openFile"]
     });
@@ -153,19 +326,65 @@ function registerIpcHandlers() {
     };
   });
   ipcMain.handle("panAuth.getStatus", async () => getPanAuthStatus(app));
-  ipcMain.handle("panAuth.ensureSession", async (_event, webUrl: string) => {
-    return ensurePanSession(app, mainWindow?.webContents.session.cookies ?? session.defaultSession.cookies, webUrl);
-  });
   ipcMain.handle("agentAuth.issueAccessToken", async (_event, reason: "missing" | "unauthorized") => {
     return issueAgentAccessToken(app, reason);
+  });
+  ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
+  ipcMain.handle("settings.changeDataRoot", async () => {
+    if (process.platform !== "win32") {
+      return {
+        ok: false,
+        message: "仅 Windows 支持修改数据目录。",
+        dataRoot: getDataRoot(app)
+      };
+    }
+
+    const currentRoot = getDataRoot(app);
+    const result = await showDirectoryDialog("选择新的 ZenMind Desktop 数据目录", currentRoot);
+    if (result.canceled || result.filePaths.length === 0) {
+      return {
+        ok: false,
+        message: "已取消修改数据目录。",
+        dataRoot: currentRoot
+      };
+    }
+
+    const nextRoot = result.filePaths[0];
+    if (path.resolve(nextRoot) === path.resolve(currentRoot)) {
+      return {
+        ok: true,
+        message: "数据目录未发生变化。",
+        dataRoot: currentRoot
+      };
+    }
+
+    try {
+      await stopRunningServices(app);
+      await migrateDataRoot(app, currentRoot, nextRoot);
+      loadInstalledPlugins(app);
+
+      return {
+        ok: true,
+        message: `数据目录已迁移到 ${getDataRoot(app)}。运行中的服务已停止，请按需重新启动。`,
+        dataRoot: getDataRoot(app)
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        dataRoot: currentRoot
+      };
+    }
   });
 }
 
 app.whenReady().then(async () => {
+  await initializeDataRoot();
   loadBuiltinServices(app);
   loadInstalledPlugins(app);
   registerIpcHandlers();
   createWindow();
+  buildApplicationMenu();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();

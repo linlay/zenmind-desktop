@@ -13,8 +13,27 @@ function normalizeTarEntry(entry) {
   return trimmed.endsWith("/") ? trimmed : trimmed;
 }
 
-export function listTarEntries(tarPath) {
-  const output = execFileSync("tar", ["-tzf", tarPath], { encoding: "utf8" });
+function isZipArchive(archivePath) {
+  return archivePath.toLowerCase().endsWith(".zip");
+}
+
+export function listArchiveEntries(archivePath) {
+  const output = isZipArchive(archivePath)
+    ? execFileSync("unzip", ["-l", archivePath], { encoding: "utf8" })
+    : execFileSync("tar", ["-tzf", archivePath], { encoding: "utf8" });
+
+  if (isZipArchive(archivePath)) {
+    return new Set(
+      output
+        .split(/\r?\n/u)
+        .map((line) => {
+          const match = line.match(/^\s*\d+\s+\S+\s+\S+\s+(.*)$/u);
+          return match ? normalizeTarEntry(match[1]) : "";
+        })
+        .filter(Boolean)
+    );
+  }
+
   return new Set(
     output
       .split(/\r?\n/u)
@@ -23,17 +42,19 @@ export function listTarEntries(tarPath) {
   );
 }
 
-export function readManifestFromArchive(tarPath) {
-  const manifestEntry = [...listTarEntries(tarPath)].find(
+export function readManifestFromArchive(archivePath) {
+  const manifestEntry = [...listArchiveEntries(archivePath)].find(
     (entry) => entry.endsWith("/manifest.json") || entry === "manifest.json"
   );
   if (!manifestEntry) {
     return null;
   }
 
-  const manifestContent = execFileSync("tar", ["-xzf", tarPath, "-O", manifestEntry], {
-    encoding: "utf8"
-  });
+  const manifestContent = isZipArchive(archivePath)
+    ? execFileSync("unzip", ["-p", archivePath, manifestEntry], { encoding: "utf8" })
+    : execFileSync("tar", ["-xzf", archivePath, "-O", manifestEntry], {
+        encoding: "utf8"
+      });
   return JSON.parse(manifestContent);
 }
 
@@ -51,7 +72,7 @@ function listReleaseArchives() {
     }
 
     for (const asset of fs.readdirSync(releaseDir, { withFileTypes: true })) {
-      if (!asset.isFile() || !asset.name.endsWith(".tar.gz")) {
+      if (!asset.isFile() || (!asset.name.endsWith(".tar.gz") && !asset.name.endsWith(".zip"))) {
         continue;
       }
       archives.push(path.join(releaseDir, asset.name));
@@ -65,8 +86,8 @@ function listReleaseArchives() {
 export function discoverBuiltinServices({ os, arch } = {}) {
   const services = [];
 
-  for (const tarPath of listReleaseArchives()) {
-    const manifest = readManifestFromArchive(tarPath);
+  for (const archivePath of listReleaseArchives()) {
+    const manifest = readManifestFromArchive(archivePath);
     if (!manifest || manifest.kind !== "builtin") {
       continue;
     }
@@ -82,13 +103,13 @@ export function discoverBuiltinServices({ os, arch } = {}) {
       ? manifest.runtime.requiredPaths.filter((entry) => typeof entry === "string" && entry.trim())
       : [];
     if (requiredBundleEntries.length === 0) {
-      throw new Error(`builtin manifest missing runtime.requiredPaths: ${tarPath}`);
+      throw new Error(`builtin manifest missing runtime.requiredPaths: ${archivePath}`);
     }
 
     services.push({
       id: manifest.id,
-      sourceDir: path.dirname(tarPath),
-      assetFileName: path.basename(tarPath),
+      sourceDir: path.dirname(archivePath),
+      assetFileName: path.basename(archivePath),
       bundleTopLevelDir: manifest.desktop?.bundleTopLevelDir ?? manifest.id,
       version: manifest.version,
       requiredBundleEntries
@@ -111,21 +132,21 @@ export function findMissingBundleEntries(service, entries) {
   });
 }
 
-export function validateBundleArchive(service, tarPath) {
+export function validateBundleArchive(service, archivePath) {
   const serviceRoot = path.join(WORKSPACE_ROOT, service.id);
-  if (!fs.existsSync(tarPath)) {
+  if (!fs.existsSync(archivePath)) {
     throw new Error(
-      `missing builtin asset for ${service.id}: ${tarPath}\n` +
+      `missing builtin asset for ${service.id}: ${archivePath}\n` +
         `Please regenerate the upstream release bundle, for example:\n` +
         `cd ${serviceRoot} && make release-program`
     );
   }
 
-  const entries = listTarEntries(tarPath);
+  const entries = listArchiveEntries(archivePath);
   const missingEntries = findMissingBundleEntries(service, entries);
   if (missingEntries.length > 0) {
     throw new Error(
-      `invalid builtin bundle for ${service.id}: ${tarPath}\n` +
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
         `Missing required entries: ${missingEntries.join(", ")}\n` +
         `Please regenerate the upstream release bundle, for example:\n` +
         `cd ${serviceRoot} && make release-program`
@@ -146,9 +167,9 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), { os, arch } = {}
 
     const serviceDir = path.join(outputRoot, service.id);
     fs.mkdirSync(serviceDir, { recursive: true });
-    const outputTarPath = path.join(serviceDir, service.assetFileName);
-    fs.copyFileSync(sourcePath, outputTarPath);
-    validateBundleArchive(service, outputTarPath);
+    const outputArchivePath = path.join(serviceDir, service.assetFileName);
+    fs.copyFileSync(sourcePath, outputArchivePath);
+    validateBundleArchive(service, outputArchivePath);
 
     return {
       id: service.id,

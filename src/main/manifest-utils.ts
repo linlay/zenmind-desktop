@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import type {
   FrontendMode,
   Manifest,
@@ -16,6 +15,7 @@ import type {
   ServiceId,
   ServiceKind
 } from "../shared/contracts";
+import { listArchiveEntries, readFileFromArchive } from "./archive-utils";
 
 export interface ServiceImportTarget {
   key: string;
@@ -33,6 +33,7 @@ export interface ServiceDefinition extends Manifest {
   runtime: ManifestRuntime & {
     pidRelativePath: string;
     logRelativePath: string;
+    errorLogRelativePath: string;
     requiredPaths: string[];
   };
   web: ManifestWeb;
@@ -169,10 +170,12 @@ function resolveRuntime(raw: Record<string, unknown>) {
   return {
     pidRelativePath: asOptionalString(runtime.pidRelativePath) ?? "",
     logRelativePath: asOptionalString(runtime.logRelativePath) ?? "",
+    errorLogRelativePath: asOptionalString(runtime.errorLogRelativePath) ?? "",
     requiredPaths: asStringArray(runtime.requiredPaths)
   } satisfies ManifestRuntime & {
     pidRelativePath: string;
     logRelativePath: string;
+    errorLogRelativePath: string;
     requiredPaths: string[];
   };
 }
@@ -257,11 +260,6 @@ function resolveCommand(command: ManifestCommand | undefined) {
     return null;
   }
 
-  if (entry.endsWith(".ps1")) {
-    const shell = process.platform === "win32" ? "powershell" : "pwsh";
-    return [shell, "-ExecutionPolicy", "Bypass", "-File", normalizeExecutable(entry), ...args];
-  }
-
   return [normalizeExecutable(entry), ...args];
 }
 
@@ -313,24 +311,20 @@ export function readManifestFile(manifestPath: string) {
   return JSON.parse(fs.readFileSync(manifestPath, "utf8")) as Manifest;
 }
 
-export function listTarEntries(tarPath: string) {
-  const output = execFileSync("tar", ["-tzf", tarPath], { encoding: "utf8" });
-  return output
-    .split(/\r?\n/u)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+export function listTarEntries(archivePath: string) {
+  return [...listArchiveEntries(archivePath)];
 }
 
-export function findManifestEntry(tarPath: string) {
-  return listTarEntries(tarPath).find((entry) => entry.endsWith("/manifest.json") || entry === "manifest.json") ?? null;
+export function findManifestEntry(archivePath: string) {
+  return listTarEntries(archivePath).find((entry) => entry.endsWith("/manifest.json") || entry === "manifest.json") ?? null;
 }
 
-export function readManifestFromArchive(tarPath: string) {
-  const manifestEntry = findManifestEntry(tarPath);
+export function readManifestFromArchive(archivePath: string) {
+  const manifestEntry = findManifestEntry(archivePath);
   if (!manifestEntry) {
-    throw new Error(`archive does not contain manifest.json: ${tarPath}`);
+    throw new Error(`archive does not contain manifest.json: ${archivePath}`);
   }
 
-  const manifestContent = execFileSync("tar", ["-xzf", tarPath, "-O", manifestEntry], { encoding: "utf8" });
+  const manifestContent = readFileFromArchive(archivePath, manifestEntry);
   return JSON.parse(manifestContent) as Manifest;
 }

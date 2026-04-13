@@ -16,7 +16,7 @@ test("renderer entry uses HashRouter for Electron routing", () => {
 });
 
 test("built index uses relative asset paths", () => {
-  const builtIndex = fs.readFileSync(path.join(projectRoot, "dist", "index.html"), "utf8");
+  const builtIndex = fs.readFileSync(path.join(projectRoot, "dist-renderer", "index.html"), "utf8");
 
   assert.doesNotMatch(builtIndex, /src="\/assets\//);
   assert.doesNotMatch(builtIndex, /href="\/assets\//);

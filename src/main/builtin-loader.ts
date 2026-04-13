@@ -25,6 +25,7 @@ function listBuiltinArchivePaths(root: string) {
     return [];
   }
 
+  const extension = process.platform === "win32" ? ".zip" : ".tar.gz";
   const archivePaths: string[] = [];
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     if (!entry.isDirectory()) {
@@ -33,7 +34,7 @@ function listBuiltinArchivePaths(root: string) {
 
     const serviceDir = path.join(root, entry.name);
     for (const asset of fs.readdirSync(serviceDir, { withFileTypes: true })) {
-      if (!asset.isFile() || !asset.name.endsWith(".tar.gz")) {
+      if (!asset.isFile() || !asset.name.endsWith(extension)) {
         continue;
       }
       archivePaths.push(path.join(serviceDir, asset.name));
@@ -60,6 +61,23 @@ function readCachedManifest(tarPath: string) {
   return manifest;
 }
 
+function getCurrentManifestOs() {
+  switch (process.platform) {
+    case "win32":
+      return "windows";
+    case "darwin":
+      return "darwin";
+    case "linux":
+      return "linux";
+    default:
+      return process.platform;
+  }
+}
+
+function isPlatformMatch(manifestOs: string) {
+  return manifestOs.trim().toLowerCase() === getCurrentManifestOs();
+}
+
 export function loadBuiltinServices(app: App) {
   clearServices("builtin");
 
@@ -67,6 +85,9 @@ export function loadBuiltinServices(app: App) {
   const loaded = [];
   for (const tarPath of listBuiltinArchivePaths(builtinAssetsRoot)) {
     const manifest = readCachedManifest(tarPath);
+    if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
+      continue;
+    }
     const definition = registerService(manifest, {
       defaultKind: "builtin",
       desktop: {

@@ -1,14 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import type { App } from "electron";
 import { readManifestFile } from "./manifest-utils";
 import { clearServices, getService, registerService, unregisterService } from "./service-registry";
 import { fixShellScriptPermissions } from "./service-manager";
-
-function getPluginsRoot(app: App) {
-  return path.join(app.getPath("userData"), "plugins");
-}
+import { extractArchiveToDir } from "./archive-utils";
+import { getPluginsRoot } from "./user-paths";
 
 function readManifest(pluginDir: string) {
   const manifestPath = path.join(pluginDir, "manifest.json");
@@ -50,7 +47,7 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
   // Extract to temp dir first to read manifest
   const tmpDir = fs.mkdtempSync(path.join(root, ".tmp-"));
   try {
-    execFileSync("tar", ["-xzf", archivePath, "-C", tmpDir]);
+    extractArchiveToDir(archivePath, tmpDir);
     const entries = fs.readdirSync(tmpDir);
     if (entries.length !== 1) {
       throw new Error("插件包应包含单个顶层目录");
@@ -63,7 +60,7 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
 
     const targetDir = path.join(root, manifest.id);
     fs.rmSync(targetDir, { recursive: true, force: true });
-    fs.renameSync(extractedDir, targetDir);
+    fs.cpSync(extractedDir, targetDir, { recursive: true });
     fixShellScriptPermissions(targetDir);
     registerService(manifest, { defaultKind: "plugin" });
     return { ok: true, message: `插件 ${manifest.name} 已安装。`, serviceId: manifest.id };
@@ -77,6 +74,11 @@ export async function uninstallPlugin(app: App, serviceId: string) {
   const def = getService(serviceId);
   if (def.kind !== "plugin") {
     return { ok: false, message: "内置服务不可卸载。" };
+  }
+  const { getServiceState, stopService } = await import("./service-manager");
+  const currentState = await getServiceState(app, serviceId);
+  if (currentState.status === "running") {
+    await stopService(app, serviceId);
   }
   const dir = getPluginInstallDir(app, serviceId);
   fs.rmSync(dir, { recursive: true, force: true });

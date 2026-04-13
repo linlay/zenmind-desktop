@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DesktopApi, ServiceId } from "../shared/contracts";
+import type { DesktopApi, NavigateListener, ServiceId } from "../shared/contracts";
 
 const api: DesktopApi = {
   services: {
@@ -22,11 +22,24 @@ const api: DesktopApi = {
   },
   panAuth: {
     importPrivateKey: () => ipcRenderer.invoke("panAuth.importPrivateKey"),
-    getStatus: () => ipcRenderer.invoke("panAuth.getStatus"),
-    ensureSession: (webUrl: string) => ipcRenderer.invoke("panAuth.ensureSession", webUrl)
+    getStatus: () => ipcRenderer.invoke("panAuth.getStatus")
   },
   agentAuth: {
     issueAccessToken: (reason) => ipcRenderer.invoke("agentAuth.issueAccessToken", reason)
+  },
+  settings: {
+    getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
+    changeDataRoot: () => ipcRenderer.invoke("settings.changeDataRoot")
+  },
+  onNavigate: (listener: NavigateListener) => {
+    const handleNavigate = (_event: Electron.IpcRendererEvent, path: string) => {
+      listener(path);
+    };
+
+    ipcRenderer.on("app.navigate", handleNavigate);
+    return () => {
+      ipcRenderer.off("app.navigate", handleNavigate);
+    };
   }
 };
 

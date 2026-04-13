@@ -9,8 +9,9 @@ import { createVerify, generateKeyPairSync } from "node:crypto";
 const require = createRequire(import.meta.url);
 const {
   __testInternals,
-  ensurePanSession,
-  getPanPrivateKeyPath
+  ensureKeyPairForPan,
+  getPanAuthStatus,
+  importPanPrivateKey
 } = require("../dist-electron/main/pan-auth.js");
 
 function createAppStub(userDataRoot) {
@@ -18,27 +19,6 @@ function createAppStub(userDataRoot) {
     getPath(name) {
       assert.equal(name, "userData");
       return userDataRoot;
-    }
-  };
-}
-
-function createCookieStore() {
-  const store = [];
-  return {
-    async get() {
-      return [...store];
-    },
-    async set(details) {
-      const next = {
-        name: details.name,
-        value: details.value
-      };
-      const index = store.findIndex((cookie) => cookie.name === next.name);
-      if (index >= 0) {
-        store[index] = next;
-      } else {
-        store.push(next);
-      }
     }
   };
 }
@@ -74,116 +54,51 @@ test("createDesktopAccessToken produces RS256 jwt for desktop-app subject", () =
   );
 });
 
-test("ensurePanSession exchanges session and reuses healthy cookies", async () => {
-  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-  const privateKeyPem = privateKey.export({ type: "pkcs1", format: "pem" });
+test("ensureKeyPairForPan generates and then reuses the shared rsa key pair", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-pan-auth-"));
   const app = createAppStub(tempRoot);
-  const cookieStore = createCookieStore();
-  const privateKeyPath = getPanPrivateKeyPath(app);
-  fs.mkdirSync(path.dirname(privateKeyPath), { recursive: true });
-  fs.writeFileSync(privateKeyPath, privateKeyPem, "utf8");
-
-  let exchangeCount = 0;
-  let sessionCheckCount = 0;
-  const fetchImpl = async (url, init = {}) => {
-    const headers = new Headers(init.headers ?? undefined);
-    if (url === "http://127.0.0.1:8080/pan/api/web/session/me") {
-      sessionCheckCount += 1;
-      if (headers.get("Cookie") === "pan_session=desktop-session") {
-        return new Response(JSON.stringify({ username: "desktop-app", authMethod: "session" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-      return new Response(JSON.stringify({ message: "missing or invalid credentials" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    if (url === "http://127.0.0.1:8080/pan/api/app/session/exchange") {
-      exchangeCount += 1;
-      assert.match(String(headers.get("Authorization")), /^Bearer .+\..+\..+$/);
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          username: "desktop-app",
-          sessionCookieName: "pan_session",
-          sessionToken: "desktop-session",
-          maxAgeSeconds: 86400,
-          expiresAt: Math.floor(Date.now() / 1000) + 86400
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        }
-      );
-    }
-
-    return new Response("", { status: 404 });
-  };
-  const webUrl = "http://127.0.0.1:8080/pan/";
 
   try {
-    const first = await ensurePanSession(app, cookieStore, webUrl, fetchImpl);
-    assert.deepEqual(first, {
-      ok: true,
-      refreshed: true,
-      message: "已建立 Desktop 网盘会话。"
+    const first = ensureKeyPairForPan(app);
+    assert.match(first.publicKeyPem, /BEGIN PUBLIC KEY/);
+    assert.equal(fs.existsSync(first.privateKeyPath), true);
+    assert.deepEqual(getPanAuthStatus(app), {
+      configured: true,
+      path: first.privateKeyPath,
+      message: "Desktop App 私钥已就绪。"
     });
-    assert.equal(exchangeCount, 1);
 
-    const second = await ensurePanSession(app, cookieStore, webUrl, fetchImpl);
-    assert.deepEqual(second, {
-      ok: true,
-      refreshed: false,
-      message: "Desktop 网盘会话已就绪。"
-    });
-    assert.equal(exchangeCount, 1);
-    assert.equal(sessionCheckCount, 1);
+    const second = ensureKeyPairForPan(app);
+    assert.equal(second.privateKeyPath, first.privateKeyPath);
+    assert.equal(second.publicKeyPem, first.publicKeyPem);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
-test("ensurePanSession surfaces exchange failures", async () => {
-  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-  const privateKeyPem = privateKey.export({ type: "pkcs1", format: "pem" });
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-pan-auth-fail-"));
+test("importPanPrivateKey validates and installs the rsa private key", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-pan-auth-import-"));
+  const sourceDir = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-pan-auth-source-"));
   const app = createAppStub(tempRoot);
-  const cookieStore = createCookieStore();
-  const privateKeyPath = getPanPrivateKeyPath(app);
-  fs.mkdirSync(path.dirname(privateKeyPath), { recursive: true });
-  fs.writeFileSync(privateKeyPath, privateKeyPem, "utf8");
-
-  const fetchImpl = async (url) => {
-    if (url === "http://127.0.0.1:8080/pan/api/web/session/me") {
-      return new Response(JSON.stringify({ message: "missing or invalid credentials" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    if (url === "http://127.0.0.1:8080/pan/api/app/session/exchange") {
-      return new Response(JSON.stringify({ message: "token expired" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    return new Response("", { status: 404 });
-  };
-  const webUrl = "http://127.0.0.1:8080/pan/";
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const sourcePath = path.join(sourceDir, "desktop-app.pem");
+  fs.writeFileSync(
+    sourcePath,
+    privateKey.export({ type: "pkcs1", format: "pem" }),
+    "utf8"
+  );
 
   try {
-    const result = await ensurePanSession(app, cookieStore, webUrl, fetchImpl);
-    assert.deepEqual(result, {
-      ok: false,
-      refreshed: false,
-      message: "token expired"
+    const status = importPanPrivateKey(app, sourcePath);
+    assert.equal(status.configured, true);
+    assert.equal(fs.existsSync(status.path), true);
+    assert.deepEqual(getPanAuthStatus(app), {
+      configured: true,
+      path: status.path,
+      message: "Desktop App 私钥已就绪。"
     });
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(sourceDir, { recursive: true, force: true });
   }
 });

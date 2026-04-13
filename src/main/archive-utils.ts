@@ -1,0 +1,134 @@
+import { execFileSync } from "node:child_process";
+
+function isZipArchive(archivePath: string) {
+  return archivePath.toLowerCase().endsWith(".zip");
+}
+
+function isTarArchive(archivePath: string) {
+  const normalized = archivePath.toLowerCase();
+  return normalized.endsWith(".tar.gz") || normalized.endsWith(".tgz");
+}
+
+function ensureSupportedArchive(archivePath: string) {
+  if (isZipArchive(archivePath)) {
+    if (process.platform !== "win32") {
+      throw new Error(`zip archives are only supported on Windows: ${archivePath}`);
+    }
+    return "zip" as const;
+  }
+
+  if (isTarArchive(archivePath)) {
+    if (process.platform === "win32") {
+      throw new Error(`tar.gz archives are not supported on Windows: ${archivePath}`);
+    }
+    return "tar" as const;
+  }
+
+  throw new Error(`unsupported archive format: ${archivePath}`);
+}
+
+function quotePowerShell(value: string) {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function runPowerShell(script: string) {
+  return execFileSync(
+    "powershell",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+    { encoding: "utf8" }
+  );
+}
+
+function decodeBase64Utf8(content: string) {
+  const trimmed = content.trim();
+  return trimmed ? Buffer.from(trimmed, "base64").toString("utf8") : "";
+}
+
+// PowerShell stdout follows the active code page, so return UTF-8 text as Base64.
+function runPowerShellForUtf8Text(script: string) {
+  return decodeBase64Utf8(runPowerShell(script));
+}
+
+export function listArchiveEntries(archivePath: string) {
+  const archiveType = ensureSupportedArchive(archivePath);
+  if (archiveType === "zip") {
+    const output = runPowerShellForUtf8Text(`
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [System.IO.Compression.ZipFile]::OpenRead(${quotePowerShell(archivePath)})
+try {
+  $entries = @($zip.Entries | ForEach-Object { $_.FullName })
+  $json = if ($entries.Count -eq 0) { "[]" } else { ConvertTo-Json -Compress -InputObject $entries }
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes([string]$json)
+  [Console]::Out.Write([System.Convert]::ToBase64String($bytes))
+} finally {
+  $zip.Dispose()
+}
+`);
+    const entries = JSON.parse(output) as unknown;
+    if (!Array.isArray(entries)) {
+      throw new Error(`unexpected zip entry listing output: ${archivePath}`);
+    }
+
+    return new Set(
+      entries
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    );
+  }
+
+  const output = execFileSync("tar", ["-tzf", archivePath], { encoding: "utf8" });
+
+  return new Set(
+    output
+      .split(/\r?\n/u)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  );
+}
+
+export function extractArchiveToDir(archivePath: string, targetDir: string) {
+  const archiveType = ensureSupportedArchive(archivePath);
+  if (archiveType === "zip") {
+    runPowerShell(
+      `Expand-Archive -LiteralPath ${quotePowerShell(archivePath)} -DestinationPath ${quotePowerShell(targetDir)} -Force`
+    );
+    return;
+  }
+
+  execFileSync("tar", ["-xzf", archivePath, "-C", targetDir]);
+}
+
+export function readFileFromArchive(archivePath: string, entryPath: string) {
+  const archiveType = ensureSupportedArchive(archivePath);
+  if (archiveType === "zip") {
+    return runPowerShellForUtf8Text(`
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [System.IO.Compression.ZipFile]::OpenRead(${quotePowerShell(archivePath)})
+try {
+  $entry = $zip.GetEntry(${quotePowerShell(entryPath)})
+  if ($null -eq $entry) {
+    throw ${quotePowerShell(`archive entry not found: ${entryPath}`)}
+  }
+
+  $stream = $entry.Open()
+  try {
+    $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8, $true)
+    try {
+      $content = $reader.ReadToEnd()
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes([string]$content)
+      [Console]::Out.Write([System.Convert]::ToBase64String($bytes))
+    } finally {
+      $reader.Dispose()
+    }
+  } finally {
+    $stream.Dispose()
+  }
+} finally {
+  $zip.Dispose()
+}
+`);
+  }
+
+  return execFileSync("tar", ["-xzf", archivePath, "-O", entryPath], { encoding: "utf8" });
+}

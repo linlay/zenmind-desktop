@@ -12,7 +12,7 @@
   --danger: #9e3a2a;
   --warning: #8d6517;
   --panel-shadow: 0 20px 48px rgba(80, 55, 26, 0.12);
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-family: "Avenir Next", "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
 }
 
 * {
@@ -57,8 +57,8 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  min-height: 52px;
-  padding: 10px 22px;
+  min-height: 40px;
+  padding: 0px 22px;
   padding-left: 80px;
   backdrop-filter: blur(18px);
   background: rgba(255, 249, 241, 0.72);
@@ -144,7 +144,7 @@ a {
 .placeholder-copy h1,
 .empty-state h1 {
   margin: 0;
-  font-family: "Iowan Old Style", "Baskerville", serif;
+  font-family: "Iowan Old Style", "Baskerville", "SimSun", "PingFang SC", serif;
   font-size: clamp(34px, 5vw, 54px);
   line-height: 0.98;
 }
@@ -165,10 +165,11 @@ a {
 }
 
 .summary-strip div,
+.data-root-card,
 .feedback-banner,
 .loading-box,
 .service-card,
-.pan-frame-shell,
+/* .pan-frame-shell, */
 .empty-state,
 .placeholder-page {
   border: 1px solid var(--line);
@@ -186,7 +187,7 @@ a {
 
 .summary-strip strong {
   font-size: 28px;
-  font-family: "Iowan Old Style", "Baskerville", serif;
+  font-family: "Iowan Old Style", "Baskerville", "SimSun", "PingFang SC", serif;
 }
 
 .summary-strip span {
@@ -205,8 +206,44 @@ a {
   background: rgba(244, 226, 189, 0.72);
 }
 
-.control-center-page {
+.control-center-page,
+.settings-page {
   min-height: calc(100vh - 140px);
+}
+
+.data-root-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+.data-root-card h2 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  font-family: "Iowan Old Style", "Baskerville", "SimSun", "PingFang SC", serif;
+}
+
+.data-root-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  min-width: min(100%, 360px);
+}
+
+.data-root-path {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.52);
+  color: var(--ink);
+  font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: break-word;
 }
 
 .control-center-shell {
@@ -279,7 +316,7 @@ a {
 .service-nav-card h2 {
   margin: 0;
   font-size: 22px;
-  font-family: "Iowan Old Style", "Baskerville", serif;
+  font-family: "Iowan Old Style", "Baskerville", "SimSun", "PingFang SC", serif;
 }
 
 .service-nav-card p {
@@ -351,7 +388,7 @@ a {
 .service-card h2 {
   margin: 0;
   font-size: 28px;
-  font-family: "Iowan Old Style", "Baskerville", serif;
+  font-family: "Iowan Old Style", "Baskerville", "SimSun", "PingFang SC", serif;
 }
 
 .service-description,
@@ -549,12 +586,14 @@ a {
 
 .pan-page,
 .empty-state {
-  min-height: calc(100vh - 136px);
+  /* min-height: calc(100vh - 136px); */
+  min-height: calc(100vh - 40px);
 }
 
 .pan-page {
   display: flex;
   flex-direction: column;
+  margin: -28px -26px -36px -26px;
 }
 
 .pan-frame-shell {
@@ -562,7 +601,7 @@ a {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding: 12px;
+  /* padding: 12px; */
 }
 
 .pan-session-box {
@@ -574,7 +613,7 @@ a {
   flex: 1;
   min-height: calc(100vh - 160px);
   border: 0;
-  border-radius: 16px;
+  /* border-radius: 16px; */
   background: white;
 }
 
@@ -618,6 +657,8 @@ a {
 
 @media (max-width: 1080px) {
   .page-head,
+  .data-root-card,
+  .data-root-actions,
   .config-head,
   .config-footer,
   .inline-actions,
