@@ -22,16 +22,21 @@ const startedThisSession = new Set<ServiceId>();
 
 function buildServiceEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  const extraPaths = [
-    "/usr/local/bin",
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-    "/opt/podman/bin",
-    path.join(os.homedir(), ".local", "bin"),
-  ];
-  const current = (env.PATH ?? "").split(":");
+  const extraPaths = process.platform === "win32"
+    ? []
+    : [
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/opt/podman/bin",
+        path.join(os.homedir(), ".local", "bin"),
+      ];
+  if (extraPaths.length === 0) {
+    return env;
+  }
+  const current = (env.PATH ?? "").split(path.delimiter).filter(Boolean);
   const merged = [...new Set([...current, ...extraPaths])];
-  env.PATH = merged.join(":");
+  env.PATH = merged.join(path.delimiter);
   return env;
 }
 
@@ -234,9 +239,28 @@ function isProcessRunning(pid: number | null) {
   }
 }
 
+const IS_WINDOWS = process.platform === "win32";
+
+function windowsPowerShellPath() {
+  const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+  return path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+}
+
+function resolveExecCommand(command: string, args: string[], cwd: string) {
+  if (IS_WINDOWS && command.toLowerCase().endsWith(".ps1")) {
+    const scriptPath = path.isAbsolute(command) ? command : path.join(cwd, command);
+    return {
+      command: windowsPowerShellPath(),
+      args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, ...args]
+    };
+  }
+  return { command, args };
+}
+
 function runExecFile(command: string, args: string[], cwd: string) {
+  const resolved = resolveExecCommand(command, args, cwd);
   return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    execFile(command, args, { cwd, env: buildServiceEnv() }, (error, stdout, stderr) => {
+    execFile(resolved.command, resolved.args, { cwd, env: buildServiceEnv() }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(`${error.message}\n${stderr}`.trim()));
         return;
@@ -251,16 +275,16 @@ function runExecFile(command: string, args: string[], cwd: string) {
 
 function containerEngineAvailable() {
   const env = buildServiceEnv();
-  const docker = spawnSync("sh", ["-lc", "command -v docker"], { encoding: "utf8", env });
-  if (docker.status === 0) {
+  const probe = IS_WINDOWS
+    ? (name: string) => spawnSync("where.exe", [name], { encoding: "utf8", env })
+    : (name: string) => spawnSync("sh", ["-lc", `command -v ${name}`], { encoding: "utf8", env });
+
+  if (probe("docker").status === 0) {
     return "docker";
   }
-
-  const podman = spawnSync("sh", ["-lc", "command -v podman"], { encoding: "utf8", env });
-  if (podman.status === 0) {
+  if (probe("podman").status === 0) {
     return "podman";
   }
-
   return "";
 }
 

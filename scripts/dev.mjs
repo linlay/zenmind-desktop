@@ -18,6 +18,7 @@ function run(cmd, args, options = {}) {
     cwd: projectRoot,
     stdio: "inherit",
     env: process.env,
+    shell: isWindows,
     ...options
   });
 }
@@ -75,7 +76,9 @@ function shutdown(code = 0) {
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 
-await runAndWait(npmCmd, ["run", "sync:assets"]);
+const syncOs = isWindows ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
+const syncArch = process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "arm64" : process.arch;
+await runAndWait(npmCmd, ["run", "sync:assets", "--", `--os=${syncOs}`, `--arch=${syncArch}`]);
 await runAndWait(npmCmd, ["run", "build:main"]);
 
 track(run(npmCmd, ["exec", "vite", "--", "--host", "127.0.0.1"]));
@@ -85,6 +88,7 @@ const electron = track(
   spawn(electronBinary, ["."], {
     cwd: projectRoot,
     stdio: "inherit",
+    shell: isWindows,
     env: {
       ...process.env,
       VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
