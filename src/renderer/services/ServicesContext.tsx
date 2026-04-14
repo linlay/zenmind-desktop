@@ -21,6 +21,7 @@ interface ServicesContextValue {
   loading: boolean;
   error: string;
   refresh: () => Promise<void>;
+  installBuiltinFromBundle: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
   installBuiltin: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
   start: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
   stop: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
@@ -84,6 +85,8 @@ export function ServicesProvider({ children }: PropsWithChildren) {
     loading,
     error,
     refresh,
+    installBuiltinFromBundle: (serviceId) =>
+      wrapCommand(() => window.electronAPI.services.installBuiltinFromBundle(serviceId)),
     installBuiltin: (serviceId) =>
       wrapCommand(() => window.electronAPI.services.installBuiltin(serviceId)),
     start: (serviceId) => wrapCommand(() => window.electronAPI.services.start(serviceId)),

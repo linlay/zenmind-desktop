@@ -230,6 +230,26 @@ async function initializeDataRoot() {
 
 function registerIpcHandlers() {
   ipcMain.handle("services.list", async () => listServices(app));
+  ipcMain.handle("services.installBuiltinFromBundle", async (_event, serviceId: ServiceId) => {
+    const current = await getServiceState(app, serviceId);
+    if (current.kind !== "builtin") {
+      throw new Error(`service ${serviceId} is not a builtin service`);
+    }
+    if (current.status === "running") {
+      return {
+        ok: false,
+        message: "服务正在运行中，请先停止后再安装。",
+        service: current
+      };
+    }
+
+    await installBuiltinService(app, serviceId);
+    return {
+      ok: true,
+      message: "内置服务已安装。",
+      service: await getServiceState(app, serviceId)
+    };
+  });
   ipcMain.handle("services.installBuiltin", async (_event, serviceId: ServiceId) => {
     const current = await getServiceState(app, serviceId);
     if (current.kind !== "builtin") {

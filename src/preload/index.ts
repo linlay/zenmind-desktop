@@ -4,6 +4,8 @@ import type { DesktopApi, NavigateListener, ServiceId } from "../shared/contract
 const api: DesktopApi = {
   services: {
     list: () => ipcRenderer.invoke("services.list"),
+    installBuiltinFromBundle: (serviceId: ServiceId) =>
+      ipcRenderer.invoke("services.installBuiltinFromBundle", serviceId),
     installBuiltin: (serviceId: ServiceId) => ipcRenderer.invoke("services.installBuiltin", serviceId),
     getStatus: (serviceId: ServiceId) => ipcRenderer.invoke("services.getStatus", serviceId),
     start: (serviceId: ServiceId) => ipcRenderer.invoke("services.start", serviceId),

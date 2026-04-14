@@ -185,6 +185,7 @@ export type NavigateListener = (path: string) => void;
 export interface DesktopApi {
   services: {
     list: () => Promise<ServiceState[]>;
+    installBuiltinFromBundle: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
     installBuiltin: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
     getStatus: (serviceId: ServiceId) => Promise<ServiceState>;
     start: (serviceId: ServiceId) => Promise<ServiceCommandResult>;

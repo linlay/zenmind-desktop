@@ -44,6 +44,7 @@ export function ControlCenterPage() {
     services,
     loading,
     error,
+    installBuiltinFromBundle,
     installBuiltin,
     start,
     stop,
@@ -247,15 +248,29 @@ export function ControlCenterPage() {
             ) : null}
 
             <div className="action-row">
+              {selectedService.kind === "builtin" && selectedService.status === "not-installed" ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    runAction(selectedService.id, "lifecycle", () => installBuiltinFromBundle(selectedService.id))
+                  }
+                  className="action-button primary"
+                  disabled={activeId === selectedService.id}
+                >
+                  安装
+                </button>
+              ) : null}
               {selectedService.kind === "builtin" &&
-              (selectedService.status === "not-installed" || selectedService.status === "stopped") ? (
+              (selectedService.status === "not-installed" ||
+                selectedService.status === "stopped" ||
+                selectedService.status === "error") ? (
                 <button
                   type="button"
                   onClick={() => runAction(selectedService.id, "lifecycle", () => installBuiltin(selectedService.id))}
                   className="action-button ghost"
                   disabled={activeId === selectedService.id}
                 >
-                  安装
+                  重新安装
                 </button>
               ) : null}
               <button
