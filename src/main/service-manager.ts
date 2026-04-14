@@ -32,17 +32,62 @@ type PowerShellCapturePayload = ExecResult & {
   exitCode: number;
 };
 
+let shellPathEntriesCache: string[] | null = null;
+
+function getStaticServicePaths() {
+  if (process.platform === "win32") {
+    return [];
+  }
+
+  return [
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/opt/podman/bin",
+    "/Applications/Docker.app/Contents/Resources/bin",
+    "/Applications/OrbStack.app/Contents/MacOS/bin",
+    path.join(os.homedir(), ".local", "bin")
+  ];
+}
+
+function getShellPathEntries() {
+  if (process.platform === "win32") {
+    return [];
+  }
+  if (shellPathEntriesCache) {
+    return shellPathEntriesCache;
+  }
+
+  const shellPath = process.env.SHELL;
+  if (!shellPath) {
+    shellPathEntriesCache = [];
+    return shellPathEntriesCache;
+  }
+
+  try {
+    const result = spawnSync(shellPath, ["-lc", "printf '%s' \"$PATH\""], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+      },
+      timeout: 1500
+    });
+    if (result.status === 0 && !result.error) {
+      shellPathEntriesCache = result.stdout.split(path.delimiter).filter(Boolean);
+      return shellPathEntriesCache;
+    }
+  } catch {
+    // Fall back to the static service paths when the login shell cannot be probed.
+  }
+
+  shellPathEntriesCache = [];
+  return shellPathEntriesCache;
+}
+
 function buildServiceEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  const extraPaths = process.platform === "win32"
-    ? []
-    : [
-        "/usr/local/bin",
-        "/opt/homebrew/bin",
-        "/opt/homebrew/sbin",
-        "/opt/podman/bin",
-        path.join(os.homedir(), ".local", "bin"),
-      ];
+  const extraPaths = [...getStaticServicePaths(), ...getShellPathEntries()];
   if (extraPaths.length === 0) {
     return env;
   }
@@ -628,6 +673,12 @@ const agentPlatformDefaultContainerHubBaseUrls = new Set([
   "http://host.docker.internal:11960"
 ]);
 
+const agentWebclientDefaultBaseUrls = new Set([
+  "",
+  "http://127.0.0.1:11949",
+  "http://localhost:11949"
+]);
+
 async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {
   if (service.id === "pan-webclient") {
     const installDir = getInstallDir(app, service);
@@ -644,13 +695,17 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     const installDir = getInstallDir(app, service);
     const envPath = path.join(installDir, ".env");
     const env = readEnvFile(envPath);
-    const hubState = await getServiceState(app, "agent-container-hub");
-    const desiredHubBaseUrl = `http://127.0.0.1:${hubState.healthMeta.port}`;
     const currentHubBaseUrl = env.get("AGENT_CONTAINER_HUB_BASE_URL") ?? "";
     const updates = new Map<string, string>();
 
-    if (agentPlatformDefaultContainerHubBaseUrls.has(currentHubBaseUrl)) {
-      updates.set("AGENT_CONTAINER_HUB_BASE_URL", desiredHubBaseUrl);
+    try {
+      const hubState = await getServiceState(app, "agent-container-hub");
+      const desiredHubBaseUrl = `http://127.0.0.1:${hubState.healthMeta.port}`;
+      if (agentPlatformDefaultContainerHubBaseUrls.has(currentHubBaseUrl)) {
+        updates.set("AGENT_CONTAINER_HUB_BASE_URL", desiredHubBaseUrl);
+      }
+    } catch {
+      // Agent Platform can run without Container Hub being registered in Desktop.
     }
     if (!env.get("SERVER_PORT")) {
       updates.set("SERVER_PORT", String(service.web.defaultPort));
@@ -666,6 +721,28 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     const publicKeyPath = path.join(installDir, "configs", "local-public-key.pem");
     ensureDir(path.dirname(publicKeyPath));
     fs.writeFileSync(publicKeyPath, publicKeyPem, "utf8");
+    return;
+  }
+
+  if (service.id === "agent-webclient") {
+    const installDir = getInstallDir(app, service);
+    const envPath = path.join(installDir, ".env");
+    const env = readEnvFile(envPath);
+    const platformState = await getServiceState(app, "agent-platform");
+    const desiredBaseUrl = `http://127.0.0.1:${platformState.healthMeta.port || 11949}`;
+    const currentBaseUrl = env.get("BASE_URL") ?? "";
+    const updates = new Map<string, string>();
+
+    if (agentWebclientDefaultBaseUrls.has(currentBaseUrl)) {
+      updates.set("BASE_URL", desiredBaseUrl);
+    }
+    if (!env.get("PORT")) {
+      updates.set("PORT", String(service.web.defaultPort));
+    }
+
+    if (updates.size > 0) {
+      writeEnvFileUpdates(envPath, updates);
+    }
   }
 }
 

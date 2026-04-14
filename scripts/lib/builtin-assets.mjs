@@ -5,6 +5,10 @@ import { execFileSync } from "node:child_process";
 // monorepo 根目录：zenmind-desktop 的上一级
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 
+function isArchiveFileName(fileName) {
+  return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
+}
+
 function normalizeTarEntry(entry) {
   const trimmed = entry.trim();
   if (!trimmed) {
@@ -60,6 +64,39 @@ export function readManifestFromArchive(archivePath) {
 
 function listReleaseArchives() {
   const archives = [];
+  const seenArchiveKeys = new Set();
+  const seenServiceBuilds = new Set();
+
+  function tryAddArchive(archivePath) {
+    if (seenArchiveKeys.has(archivePath)) {
+      return;
+    }
+
+    let manifest;
+    try {
+      manifest = readManifestFromArchive(archivePath);
+    } catch {
+      return;
+    }
+
+    if (!manifest || manifest.kind !== "builtin") {
+      return;
+    }
+
+    const buildKey = [
+      manifest.id,
+      manifest.version,
+      manifest.platform?.os ?? "",
+      manifest.platform?.arch ?? ""
+    ].join("|");
+    if (seenServiceBuilds.has(buildKey)) {
+      return;
+    }
+
+    seenArchiveKeys.add(archivePath);
+    seenServiceBuilds.add(buildKey);
+    archives.push(archivePath);
+  }
 
   for (const entry of fs.readdirSync(WORKSPACE_ROOT, { withFileTypes: true })) {
     if (!entry.isDirectory()) {
@@ -72,11 +109,18 @@ function listReleaseArchives() {
     }
 
     for (const asset of fs.readdirSync(releaseDir, { withFileTypes: true })) {
-      if (!asset.isFile() || (!asset.name.endsWith(".tar.gz") && !asset.name.endsWith(".zip"))) {
+      if (!asset.isFile() || !isArchiveFileName(asset.name)) {
         continue;
       }
-      archives.push(path.join(releaseDir, asset.name));
+      tryAddArchive(path.join(releaseDir, asset.name));
     }
+  }
+
+  for (const entry of fs.readdirSync(WORKSPACE_ROOT, { withFileTypes: true })) {
+    if (!entry.isFile() || !isArchiveFileName(entry.name)) {
+      continue;
+    }
+    tryAddArchive(path.join(WORKSPACE_ROOT, entry.name));
   }
 
   archives.sort((left, right) => left.localeCompare(right));

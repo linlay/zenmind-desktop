@@ -30,7 +30,7 @@ export function loadInstalledPlugins(app: App) {
       continue;
     }
     const manifest = readManifest(path.join(root, entry.name));
-    if (manifest) {
+    if (manifest?.kind === "plugin") {
       registerService(manifest, { defaultKind: "plugin" });
     }
   }
@@ -56,6 +56,13 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
     const manifest = readManifest(extractedDir);
     if (!manifest) {
       throw new Error("插件包缺少 manifest.json");
+    }
+    if (manifest.kind === "builtin") {
+      return {
+        ok: false,
+        message: `安装包 ${manifest.name} 是内置服务，请在控制中心对应服务卡片中安装。`,
+        serviceId: manifest.id
+      };
     }
 
     const targetDir = path.join(root, manifest.id);

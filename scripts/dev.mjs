@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import http from "node:http";
 import path from "node:path";
 import process from "node:process";
@@ -12,6 +12,44 @@ const electronBinary = path.join(
   ".bin",
   isWindows ? "electron.cmd" : "electron"
 );
+
+function detectSyncArch() {
+  if (process.platform !== "darwin") {
+    return process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "arm64" : process.arch;
+  }
+
+  try {
+    const translated = execFileSync("sysctl", ["-in", "sysctl.proc_translated"], { encoding: "utf8" }).trim();
+    if (translated === "1") {
+      return "arm64";
+    }
+  } catch {
+    // Continue with other host-architecture probes.
+  }
+
+  try {
+    const arm64Capable = execFileSync("sysctl", ["-in", "hw.optional.arm64"], { encoding: "utf8" }).trim();
+    if (arm64Capable === "1") {
+      return "arm64";
+    }
+  } catch {
+    // Continue with uname fallback when sysctl keys are unavailable.
+  }
+
+  try {
+    const machine = execFileSync("uname", ["-m"], { encoding: "utf8" }).trim();
+    if (machine === "arm64" || machine === "aarch64") {
+      return "arm64";
+    }
+    if (machine === "x86_64" || machine === "amd64") {
+      return "amd64";
+    }
+  } catch {
+    // Fall back to the Node architecture when uname is unavailable.
+  }
+
+  return process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "arm64" : process.arch;
+}
 
 function run(cmd, args, options = {}) {
   return spawn(cmd, args, {
@@ -77,7 +115,7 @@ process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 
 const syncOs = isWindows ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
-const syncArch = process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "arm64" : process.arch;
+const syncArch = detectSyncArch();
 await runAndWait(npmCmd, ["run", "sync:assets", "--", `--os=${syncOs}`, `--arch=${syncArch}`]);
 await runAndWait(npmCmd, ["run", "build:main"]);
 

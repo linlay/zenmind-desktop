@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { getPluginInstallDir, installPluginFromArchive, uninstallPlugin } = require("../dist-electron/main/plugin-loader.js");
+const { getPluginInstallDir, installPluginFromArchive, loadInstalledPlugins, uninstallPlugin } = require("../dist-electron/main/plugin-loader.js");
 const {
   __testInternals: registryInternals,
   getService,
@@ -85,6 +85,117 @@ test("installPluginFromArchive installs a tar.gz bundle and registers the plugin
   assert.equal(fs.existsSync(path.join(installDir, "start.sh")), true);
   assert.equal(fs.existsSync(path.join(installDir, "stop.sh")), true);
   assert.equal(getService("test-plugin").name, "Test Plugin");
+});
+
+test("installPluginFromArchive rejects builtin bundles with a helpful message", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-builtin-reject-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const fixtureRoot = path.join(tempRoot, "fixture-root");
+  const bundleRoot = path.join(fixtureRoot, "builtin-service");
+  const archivePath = path.join(tempRoot, "builtin-service-v1.0.0.tar.gz");
+  const app = createApp(userDataRoot);
+
+  registryInternals.clearServices();
+  t.after(() => {
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  fs.mkdirSync(path.join(bundleRoot, "run"), { recursive: true });
+  fs.writeFileSync(
+    path.join(bundleRoot, "manifest.json"),
+    `${JSON.stringify(
+      {
+        id: "builtin-service",
+        name: "Builtin Service",
+        kind: "builtin",
+        version: "v1.0.0",
+        description: "fixture builtin",
+        frontend: {
+          mode: "none"
+        },
+        scripts: {
+          start: "start.sh",
+          stop: "stop.sh"
+        },
+        runtime: {
+          pidRelativePath: "run/builtin-service.pid",
+          logRelativePath: "run/builtin-service.log",
+          requiredPaths: ["manifest.json", "start.sh", "stop.sh", "run"]
+        },
+        web: {
+          routePath: "",
+          portEnvKey: "PORT",
+          defaultPort: 9300
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  fs.writeFileSync(path.join(bundleRoot, "start.sh"), "#!/usr/bin/env bash\necho start\n", "utf8");
+  fs.writeFileSync(path.join(bundleRoot, "stop.sh"), "#!/usr/bin/env bash\necho stop\n", "utf8");
+  execFileSync("tar", ["-czf", archivePath, "-C", fixtureRoot, "builtin-service"]);
+
+  const result = await installPluginFromArchive(app, archivePath);
+
+  assert.equal(result.ok, false);
+  assert.match(result.message, /是内置服务/);
+  assert.equal(result.serviceId, "builtin-service");
+  assert.equal(fs.existsSync(getPluginInstallDir(app, "builtin-service")), false);
+  assert.throws(() => getService("builtin-service"), /unknown service id: builtin-service/);
+});
+
+test("loadInstalledPlugins ignores builtin bundles accidentally left in the plugins directory", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-load-ignore-builtin-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const pluginDir = path.join(userDataRoot, "plugins", "builtin-service");
+  const app = createApp(userDataRoot);
+
+  registryInternals.clearServices();
+  t.after(() => {
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  fs.mkdirSync(pluginDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(pluginDir, "manifest.json"),
+    `${JSON.stringify(
+      {
+        id: "builtin-service",
+        name: "Builtin Service",
+        kind: "builtin",
+        version: "v1.0.0",
+        description: "fixture builtin",
+        frontend: {
+          mode: "none"
+        },
+        scripts: {
+          start: "start.sh",
+          stop: "stop.sh"
+        },
+        runtime: {
+          pidRelativePath: "run/builtin-service.pid",
+          logRelativePath: "run/builtin-service.log",
+          requiredPaths: ["manifest.json"]
+        },
+        web: {
+          routePath: "",
+          portEnvKey: "PORT",
+          defaultPort: 9300
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  loadInstalledPlugins(app);
+
+  assert.throws(() => getService("builtin-service"), /unknown service id: builtin-service/);
 });
 
 test("uninstallPlugin stops a running plugin before deleting its install dir", async (t) => {

@@ -61,21 +61,22 @@ function getSyncedAsset(serviceId) {
   };
 }
 
-test("actual synced agent-container-hub asset includes required entries", () => {
-  const { service, assetPath } = getSyncedAsset("agent-container-hub");
+test("actual synced agent-webclient asset includes backend and frontend dist", () => {
+  const { service, assetPath } = getSyncedAsset("agent-webclient");
   validateBundleArchive(service, assetPath);
 
   const entries = listArchiveEntries(assetPath);
   if (assetPath.endsWith(".zip")) {
-    assert.ok(entries.has("agent-container-hub/start.ps1"));
-    assert.ok(entries.has("agent-container-hub/stop.ps1"));
-    assert.ok(entries.has("agent-container-hub/backend/agent-container-hub.exe"));
+    assert.ok(entries.has("agent-webclient/start.ps1"));
+    assert.ok(entries.has("agent-webclient/stop.ps1"));
+    assert.ok(entries.has("agent-webclient/backend/agent-webclient.exe"));
   } else {
-    assert.ok(entries.has("agent-container-hub/start.sh"));
-    assert.ok(entries.has("agent-container-hub/stop.sh"));
-    assert.ok(entries.has("agent-container-hub/backend/agent-container-hub"));
+    assert.ok(entries.has("agent-webclient/start.sh"));
+    assert.ok(entries.has("agent-webclient/stop.sh"));
+    assert.ok(entries.has("agent-webclient/backend/agent-webclient"));
   }
-  assert.ok(entries.has("agent-container-hub/manifest.json"));
+  assert.ok(entries.has("agent-webclient/manifest.json"));
+  assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
 });
 
 test("actual synced agent-platform asset includes required entries", () => {
@@ -94,37 +95,12 @@ test("actual synced agent-platform asset includes required entries", () => {
   }
 });
 
-test("actual synced zenmind-app-server asset includes frontend dist", () => {
-  const { service, assetPath } = getSyncedAsset("zenmind-app-server");
-  validateBundleArchive(service, assetPath);
-
-  const entries = listArchiveEntries(assetPath);
-  assert.ok(entries.has("zenmind-app-server/frontend/dist/index.html"));
-});
-
-test("actual synced zenmind-app-server windows asset includes split stderr log template", (t) => {
-  const { assetPath } = getSyncedAsset("zenmind-app-server");
-  if (!assetPath.endsWith(".zip")) {
-    t.skip("synced asset is not a Windows zip bundle");
-    return;
-  }
-
-  const programCommon = execFileSync(
-    "unzip",
-    ["-p", assetPath, "zenmind-app-server/scripts/program-common.ps1"],
-    { encoding: "utf8" }
-  );
-
-  assert.match(programCommon, /\$Script:ErrorLogFile = Join-Path \$Script:RunDir 'zenmind-app-server\.stderr\.log'/);
-  assert.match(programCommon, /-RedirectStandardError \$Script:ErrorLogFile/);
-});
-
 test("validateBundleArchive fails when required entries are missing", () => {
-  const service = builtinServices.find((item) => item.id === "agent-container-hub");
+  const service = builtinServices.find((item) => item.id === "agent-platform");
   assert.ok(service);
 
   const fixture = createTarBundle(service, {
-    ".env.example": "BIND_ADDR=127.0.0.1:11960\n",
+    ".env.example": "SERVER_PORT=11949\n",
     "README.txt": "broken bundle\n"
   });
 

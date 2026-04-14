@@ -33,22 +33,44 @@ function currentManifestOs() {
   }
 }
 
+function findCurrentPlatformReleaseArchive(serviceId) {
+  const releaseDir = path.join(WORKSPACE_ROOT, serviceId, "dist", "release");
+  const currentOs = currentManifestOs();
+  const releaseCandidates = fs.existsSync(releaseDir)
+    ? fs.readdirSync(releaseDir).map((entry) => path.join(releaseDir, entry))
+    : [];
+  const workspaceCandidates = fs
+    .readdirSync(WORKSPACE_ROOT)
+    .filter((entry) => entry.startsWith(`${serviceId}-`) && (entry.endsWith(".tar.gz") || entry.endsWith(".zip")))
+    .map((entry) => path.join(WORKSPACE_ROOT, entry));
+
+  return [...releaseCandidates, ...workspaceCandidates].find((archivePath) => {
+    const archiveName = path.basename(archivePath);
+    return archiveName.includes(`-${currentOs}-`) && (archiveName.endsWith(".tar.gz") || archiveName.endsWith(".zip"));
+  });
+}
+
 function createCurrentPlatformAssetsFixture() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtins-"));
   const assetsRoot = path.join(tempRoot, "services");
-  const builtins = ["agent-container-hub", "agent-platform"];
+  const containerHubBundleRoot = path.join(tempRoot, "agent-container-hub");
+  const containerHubAssetDir = path.join(assetsRoot, "agent-container-hub");
+  const containerHubArchivePath = path.join(
+    containerHubAssetDir,
+    "agent-container-hub-v0.1.0-darwin-arm64.tar.gz"
+  );
 
-  for (const serviceId of builtins) {
-    const releaseDir = path.join(WORKSPACE_ROOT, serviceId, "dist", "release");
-    const archiveName = fs
-      .readdirSync(releaseDir)
-      .find((entry) => entry.includes(`-${currentManifestOs()}-`) && (entry.endsWith(".tar.gz") || entry.endsWith(".zip")));
+  writeContainerHubBundleRoot(containerHubBundleRoot);
+  fs.mkdirSync(containerHubAssetDir, { recursive: true });
+  execFileSync("tar", ["-czf", containerHubArchivePath, "-C", tempRoot, "agent-container-hub"]);
 
-    assert.ok(archiveName, `missing ${currentManifestOs()} release archive for ${serviceId}`);
+  for (const serviceId of ["agent-platform", "agent-webclient"]) {
+    const archivePath = findCurrentPlatformReleaseArchive(serviceId);
+    assert.ok(archivePath, `missing ${currentManifestOs()} release archive for ${serviceId}`);
 
     const targetDir = path.join(assetsRoot, serviceId);
     fs.mkdirSync(targetDir, { recursive: true });
-    fs.copyFileSync(path.join(releaseDir, archiveName), path.join(targetDir, archiveName));
+    fs.copyFileSync(archivePath, path.join(targetDir, path.basename(archivePath)));
   }
 
   return {
@@ -429,6 +451,34 @@ test("ensurePreStartRequirements injects container hub url and auth public key f
   const publicKeyPath = path.join(platformInstallDir, "configs", "local-public-key.pem");
   assert.ok(fs.existsSync(publicKeyPath));
   assert.match(fs.readFileSync(publicKeyPath, "utf8"), /BEGIN PUBLIC KEY/);
+
+  restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("ensurePreStartRequirements rewrites agent-webclient default BASE_URL to local agent-platform", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-webclient-prestart-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+  const platformService = getBuiltinService("agent-platform");
+  const webclientService = getBuiltinService("agent-webclient");
+  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+  const webclientInstallDir = path.join(userDataRoot, "services", webclientService.id, webclientService.version);
+
+  fs.mkdirSync(path.join(platformInstallDir, "run"), { recursive: true });
+  fs.mkdirSync(webclientInstallDir, { recursive: true });
+  fs.writeFileSync(path.join(platformInstallDir, ".env"), "SERVER_PORT=12949\n", "utf8");
+  fs.writeFileSync(
+    path.join(webclientInstallDir, ".env"),
+    "BASE_URL=http://localhost:11949\n",
+    "utf8"
+  );
+
+  await __testInternals.ensurePreStartRequirements(app, webclientService);
+
+  const envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
+  assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
+  assert.match(envContent, /PORT=11948/);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
