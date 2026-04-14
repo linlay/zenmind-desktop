@@ -42,6 +42,13 @@
       {
         "from": "build/resources/services",
         "to": "services"
+      },
+      {
+        "from": "scripts",
+        "to": ".",
+        "filter": [
+          "uninstall.sh"
+        ]
       }
     ],
     "mac": {
@@ -62,7 +69,9 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": true,
+      "include": "build/installer.nsh"
     }
   }
 }

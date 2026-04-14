@@ -111,9 +111,15 @@ npm run dist:win
 
 使用 `electron-builder` 输出 NSIS 安装包，目标 x64 架构。
 
+### 卸载
+- macOS：运行 `/Applications/ZenMind Desktop.app/Contents/Resources/uninstall.sh`。脚本会先检查应用是否仍在运行，随后删除 `/Applications/ZenMind Desktop.app`，并弹出对话框询问是否清理 `~/Library/Application Support/zenmind-desktop/` 下的数据。
+- Windows：通过控制面板或开始菜单中的卸载入口执行 NSIS 卸载器。卸载时会弹出确认框，询问是否删除 `%APPDATA%\zenmind-desktop\` 下的数据目录。
+
 ### 打包资源约定
 - `package.json` 中的 `build.files` 会打入桌面应用运行所需代码。
 - `build.extraResources` 会把 `build/resources/services` 下的内置服务资源复制进应用包。
+- `build.extraResources` 同时会把 `scripts/uninstall.sh` 放入 macOS 应用包资源目录，供完整卸载使用。
+- `build/installer.nsh` 会注入 NSIS 卸载流程，在 Windows 上给用户选择是否清理应用数据。
 - `npm run sync:assets` 会扫描工作区各项目 `dist/release/*.tar.gz`，只同步 `manifest.json.kind === "builtin"` 的资源包。支持 `--os` 和 `--arch` 参数按平台过滤。
 - Desktop 通过 bundle 内的 `manifest.json.desktop.bundleTopLevelDir` 和 `runtime.requiredPaths` 校验资源完整性。
 - 如新增内置服务，需要保证 release bundle 内自带完整 `manifest.json`，再执行打包。
