@@ -110,6 +110,7 @@ a {
 }
 
 .app-sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -442,6 +443,28 @@ a {
     0 8px 16px rgba(0, 0, 0, 0.24);
 }
 
+/* ── 窗口拖拽区域（macOS hiddenInset 标题栏） ── */
+
+.app-sidebar::before,
+.app-main::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  -webkit-app-region: drag;
+  z-index: 10;
+}
+
+.app-sidebar::before { height: 34px; }
+.app-main::before { height: 28px; }
+
+.app-sidebar a,
+.app-sidebar button,
+.app-sidebar nav {
+  -webkit-app-region: no-drag;
+}
+
 .app-header {
   position: sticky;
   top: 0;
@@ -570,6 +593,7 @@ a {
 }
 
 .app-main {
+  position: relative;
   min-height: 100vh;
   overflow: auto;
   padding: 28px 26px 36px;
