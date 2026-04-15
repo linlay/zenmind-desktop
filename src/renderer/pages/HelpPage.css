@@ -1,16 +1,25 @@
 .help-page {
-  min-height: calc(100vh - 140px);
-  background: #ffffff;
+  position: relative;
+  min-height: calc(100vh - 40px);
   margin: -28px -26px -36px;
-  padding: 28px 26px 36px;
+  padding: 36px 40px 60px;
+}
+
+/* 全屏白色背景层，覆盖 body 渐变 */
+.help-page::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: #ffffff;
 }
 
 /* ── 双栏布局 ── */
 
 .help-layout {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 48px;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 56px;
   align-items: start;
 }
 
@@ -18,17 +27,16 @@
 
 .help-sidebar {
   position: sticky;
-  top: 68px;
-  padding-top: 4px;
+  top: 60px;
+  padding-top: 8px;
 }
 
 .help-sidebar-title {
-  margin: 0 0 20px;
-  padding: 0 14px;
-  font-size: 16px;
+  margin: 0 0 24px;
+  padding: 0;
+  font-size: 15px;
   font-weight: 600;
   color: var(--ink);
-  letter-spacing: 0.01em;
 }
 
 .help-nav {
@@ -39,13 +47,13 @@
 
 .help-nav-btn {
   width: 100%;
-  padding: 10px 14px;
+  padding: 9px 14px;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
   color: var(--ink-soft);
   font-size: 14px;
-  font-weight: 450;
+  font-weight: 400;
   text-align: left;
   cursor: pointer;
   transition:
@@ -54,41 +62,40 @@
 }
 
 .help-nav-btn:hover {
-  background: rgba(191, 91, 44, 0.06);
   color: var(--ink);
 }
 
 .help-nav-btn.is-active {
-  background: rgba(191, 91, 44, 0.12);
+  background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 550;
+  font-weight: 500;
 }
 
 /* ── 右侧主体 ── */
 
 .help-main {
-  max-width: 720px;
+  max-width: 680px;
   padding-bottom: 80px;
 }
 
 /* ── 页面标题 ── */
 
 .help-hero {
-  margin-bottom: 40px;
+  margin-bottom: 48px;
 }
 
 .help-hero-title {
   margin: 0 0 12px;
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.3;
   color: var(--ink);
   letter-spacing: -0.01em;
 }
 
 .help-hero-desc {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--ink-soft);
   line-height: 1.6;
 }
@@ -116,7 +123,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  padding: 20px 4px;
+  padding: 20px 0;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -124,11 +131,11 @@
 }
 
 .help-faq-trigger:hover {
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
 .help-faq-question {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--ink);
   text-align: left;
@@ -154,7 +161,7 @@
 }
 
 .help-faq-answer {
-  padding: 0 4px 20px;
+  padding: 0 0 20px;
   color: var(--ink-soft);
   font-size: 14px;
   line-height: 1.75;
@@ -184,36 +191,36 @@
 
 .help-faq-answer code {
   padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(56, 40, 26, 0.07);
+  border-radius: 5px;
+  background: #f5f5f5;
   font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .help-faq-answer pre {
   margin: 8px 0;
   padding: 12px 14px;
-  border-radius: 10px;
-  background: rgba(56, 40, 26, 0.06);
+  border-radius: 8px;
+  background: #f5f5f5;
   overflow-x: auto;
 }
 
 .help-faq-answer pre code {
   padding: 0;
   background: transparent;
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.6;
 }
 
 .help-faq-answer kbd {
   display: inline-block;
   padding: 2px 7px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid #e0e0e0;
+  border-radius: 5px;
+  background: #fafafa;
   font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
   font-size: 12px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .help-faq-answer strong {
@@ -225,7 +232,7 @@
 @media (max-width: 1080px) {
   .help-page {
     margin: -20px -18px -28px;
-    padding: 20px 18px 28px;
+    padding: 24px 18px 36px;
   }
 
   .help-layout {
@@ -256,6 +263,6 @@
   }
 
   .help-hero-title {
-    font-size: 26px;
+    font-size: 24px;
   }
 }

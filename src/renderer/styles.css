@@ -691,3 +691,15 @@ a {
     min-height: 62vh;
   }
 }
+
+/* ── 帮助页白色主题覆盖 ── */
+
+.theme-help body,
+html.theme-help body {
+  background: #ffffff;
+}
+
+html.theme-help .app-header {
+  background: rgba(255, 255, 255, 0.85);
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}

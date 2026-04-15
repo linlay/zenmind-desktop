@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import "./HelpPage.css";
 
@@ -442,6 +442,12 @@ export function HelpPage() {
   const [openItems, setOpenItems] = useState<Set<string>>(new Set());
   const bodyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const contentRef = useRef<HTMLDivElement>(null);
+
+  /* ── 进入/离开时切换 header 为白色主题 ── */
+  useEffect(() => {
+    document.documentElement.classList.add("theme-help");
+    return () => document.documentElement.classList.remove("theme-help");
+  }, []);
 
   const currentCategory = HELP_CATEGORIES.find((c) => c.id === activeCat) ?? HELP_CATEGORIES[0];
 
