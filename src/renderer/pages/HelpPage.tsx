@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import "./HelpPage.css";
 
 /* ================================================================
@@ -32,8 +33,15 @@ const HELP_CATEGORIES: HelpCategory[] = [
               它基于 Electron 构建，提供服务发现、安装、启停、日志查看和配置管理等能力。
             </p>
             <p>
-              应用支持两种服务来源：<strong>内置服务</strong>（随应用打包分发）和
-              <strong>插件</strong>（运行时通过 <code>.tar.gz</code> 包导入）。
+              应用支持两种服务来源：
+              <Link className="help-inline-link" to="/control-center">
+                <strong>内置服务</strong>
+              </Link>
+              （随应用打包分发）和
+              <Link className="help-inline-link" to="/market">
+                <strong>插件</strong>
+              </Link>
+              （运行时通过 <code>.tar.gz</code> 包导入）。
             </p>
           </>
         ),
@@ -49,7 +57,13 @@ const HELP_CATEGORIES: HelpCategory[] = [
               <li>
                 <strong>Windows</strong>：运行 NSIS 安装包，按提示完成安装
               </li>
-              <li>首次启动后，控制中心会列出所有内置服务，点击"安装"即可部署</li>
+              <li>
+                首次启动后，
+                <Link className="help-inline-link" to="/control-center">
+                  控制中心
+                </Link>
+                会列出所有内置服务，点击"安装"即可部署
+              </li>
               <li>安装完成后点击"启动"按钮，服务状态变为绿色即表示运行正常</li>
             </ol>
           </>
@@ -182,7 +196,13 @@ const HELP_CATEGORIES: HelpCategory[] = [
               每个服务的安装目录下都有一份 <code>.env.example</code> 配置模板。如果你需要重置配置：
             </p>
             <ol>
-              <li>在控制中心找到对应服务，打开详情</li>
+              <li>
+                在
+                <Link className="help-inline-link" to="/control-center">
+                  控制中心
+                </Link>
+                找到对应服务，打开详情
+              </li>
               <li>
                 删除或重命名当前 <code>.env</code> 文件
               </li>
@@ -233,7 +253,13 @@ const HELP_CATEGORIES: HelpCategory[] = [
                   <code>tar -czf my-plugin.tar.gz -C /path/to my-plugin/</code>
                 </pre>
               </li>
-              <li>在控制中心点击"安装插件"按钮，选择打包好的文件</li>
+              <li>
+                在
+                <Link className="help-inline-link" to="/control-center">
+                  控制中心
+                </Link>
+                点击"安装插件"按钮，选择打包好的文件
+              </li>
               <li>安装完成后，插件会立即出现在控制中心的服务列表中</li>
             </ol>
           </>
@@ -307,7 +333,13 @@ const HELP_CATEGORIES: HelpCategory[] = [
         question: "日志文件在哪里？",
         answer: (
           <>
-            <p>每个服务的日志路径可在控制中心详情卡片中查看。通常位于服务安装目录下：</p>
+            <p>
+              每个服务的日志路径可在
+              <Link className="help-inline-link" to="/control-center">
+                控制中心
+              </Link>
+              详情卡片中查看。通常位于服务安装目录下：
+            </p>
             <ul>
               <li>
                 <strong>标准输出日志</strong>：<code>run/stdout.log</code> 或服务自定义路径
@@ -319,7 +351,13 @@ const HELP_CATEGORIES: HelpCategory[] = [
                 agent-container-hub 的日志在 <code>run/</code> 目录下
               </li>
             </ul>
-            <p>你也可以通过控制中心的"日志"标签页直接查看日志内容。</p>
+            <p>
+              你也可以通过
+              <Link className="help-inline-link" to="/control-center">
+                控制中心
+              </Link>
+              的相关服务详情直接查看日志路径和运行信息。
+            </p>
           </>
         ),
       },
@@ -415,13 +453,22 @@ const HELP_CATEGORIES: HelpCategory[] = [
             <p>固定导航项：</p>
             <ul>
               <li>
-                <strong>控制中心</strong>：管理所有服务的启停和配置
+                <Link className="help-inline-link" to="/control-center">
+                  <strong>控制中心</strong>
+                </Link>
+                ：管理所有服务的启停和配置
               </li>
               <li>
-                <strong>插件市场</strong>：浏览和安装插件（即将推出）
+                <Link className="help-inline-link" to="/market">
+                  <strong>插件市场</strong>
+                </Link>
+                ：浏览和安装插件（即将推出）
               </li>
               <li>
-                <strong>帮助</strong>：当前页面
+                <Link className="help-inline-link" to="/help">
+                  <strong>帮助</strong>
+                </Link>
+                ：当前页面
               </li>
             </ul>
           </>

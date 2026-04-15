@@ -10,7 +10,12 @@ const tailNavItems = [
   { to: "/help", label: "帮助" }
 ];
 
-export function Header() {
+type HeaderProps = {
+  themeMode: "light" | "dark";
+  onToggleTheme: () => void;
+};
+
+export function Header({ themeMode, onToggleTheme }: HeaderProps) {
   const { services } = useServices();
   const serviceNavItems = services
     .filter((s) => s.frontendMode === "standalone" && s.status === "running")
@@ -34,6 +39,17 @@ export function Header() {
             {item.label}
           </NavLink>
         ))}
+        <button
+          type="button"
+          className="theme-toggle"
+          onClick={onToggleTheme}
+          aria-label={themeMode === "light" ? "切换到黑版" : "切换到白版"}
+        >
+          <span className="theme-toggle-icon" aria-hidden="true">
+            {themeMode === "light" ? "◐" : "◑"}
+          </span>
+          <span>{themeMode === "light" ? "黑版" : "白版"}</span>
+        </button>
       </nav>
     </header>
   );
