@@ -1190,7 +1190,7 @@ a {
 
 .pan-page,
 .empty-state {
-  min-height: calc(100vh - 40px);
+  min-height: 100vh;
 }
 
 .pan-page {
@@ -1212,9 +1212,9 @@ a {
   overflow: hidden;
 }
 
-:root[data-theme="dark"] .pan-frame-shell {
+/* :root[data-theme="dark"] .pan-frame-shell {
   padding: 18px 18px 20px;
-}
+} */
 
 .pan-session-box {
   margin-bottom: 0;
@@ -1228,10 +1228,10 @@ a {
   background: white;
 }
 
-:root[data-theme="dark"] .pan-frame {
+/* :root[data-theme="dark"] .pan-frame {
   border-radius: 22px;
   box-shadow: 0 24px 50px rgba(0, 0, 0, 0.34);
-}
+} */
 
 .empty-state,
 .placeholder-page {
