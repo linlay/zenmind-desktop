@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { Header } from "./components/Header";
 import { ControlCenterPage } from "./pages/ControlCenterPage";
+import { HelpPage } from "./pages/HelpPage";
 import { PluginPage } from "./pages/PluginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -52,15 +53,7 @@ function AppShell() {
               />
             }
           />
-          <Route
-            path="/help"
-            element={
-              <PlaceholderPage
-                title="帮助"
-                description="帮助中心后续可承载安装指导、日志说明、服务依赖说明与常见问题。"
-              />
-            }
-          />
+          <Route path="/help" element={<HelpPage />} />
         </Routes>
       </main>
     </div>
