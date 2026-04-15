@@ -1,160 +1,188 @@
 .help-page {
   min-height: calc(100vh - 140px);
+  background: #ffffff;
+  margin: -28px -26px -36px;
+  padding: 28px 26px 36px;
 }
 
-.help-shell {
+/* ── 双栏布局 ── */
+
+.help-layout {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
-  gap: 18px;
+  gap: 48px;
   align-items: start;
 }
 
-/* ── 左侧导航 ── */
+/* ── 左侧边栏 ── */
 
-.help-sider {
+.help-sidebar {
   position: sticky;
   top: 68px;
-  padding: 14px;
-  border-radius: 22px;
+  padding-top: 4px;
 }
 
-.help-nav-list {
+.help-sidebar-title {
+  margin: 0 0 20px;
+  padding: 0 14px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+
+.help-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
-.help-nav-item {
+.help-nav-btn {
   width: 100%;
   padding: 10px 14px;
-  border: 1px solid transparent;
-  border-radius: 14px;
+  border: none;
+  border-radius: 10px;
   background: transparent;
   color: var(--ink-soft);
   font-size: 14px;
+  font-weight: 450;
   text-align: left;
   cursor: pointer;
   transition:
-    background-color 180ms ease,
-    border-color 180ms ease,
-    color 180ms ease;
+    background-color 160ms ease,
+    color 160ms ease;
 }
 
-.help-nav-item:hover {
+.help-nav-btn:hover {
   background: rgba(191, 91, 44, 0.06);
   color: var(--ink);
 }
 
-.help-nav-item.is-active {
-  border-color: rgba(191, 91, 44, 0.18);
-  background: rgba(191, 91, 44, 0.10);
+.help-nav-btn.is-active {
+  background: rgba(191, 91, 44, 0.12);
+  color: var(--accent);
+  font-weight: 550;
+}
+
+/* ── 右侧主体 ── */
+
+.help-main {
+  max-width: 720px;
+  padding-bottom: 80px;
+}
+
+/* ── 页面标题 ── */
+
+.help-hero {
+  margin-bottom: 40px;
+}
+
+.help-hero-title {
+  margin: 0 0 12px;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.25;
   color: var(--ink);
+  letter-spacing: -0.01em;
 }
 
-/* ── 内容区 ── */
+.help-hero-desc {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
 
-.help-content {
+/* ── FAQ 列表 ── */
+
+.help-faq-list {
   display: flex;
   flex-direction: column;
-  gap: 36px;
 }
 
-.help-section {
-  scroll-margin-top: 80px;
+.help-faq-item {
+  border-bottom: 1px solid var(--line);
 }
 
-.help-section .eyebrow {
-  margin-bottom: 4px;
+.help-faq-item:first-child {
+  border-top: 1px solid var(--line);
 }
 
-.help-section h2 {
-  margin: 0 0 16px;
-  font-size: 24px;
-  font-family: "Iowan Old Style", "Baskerville", "SimSun", "PingFang SC", serif;
-}
+/* ── FAQ 触发按钮 ── */
 
-/* ── 手风琴 ── */
-
-.accordion-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.accordion-item {
-  border-radius: 16px;
-  overflow: hidden;
-}
-
-.accordion-trigger {
+.help-faq-trigger {
   width: 100%;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  padding: 14px 18px;
+  gap: 16px;
+  padding: 20px 4px;
   border: none;
-  border-radius: 16px;
   background: transparent;
-  color: var(--ink);
-  font-size: 15px;
-  font-weight: 500;
-  text-align: left;
   cursor: pointer;
-  transition: background-color 180ms ease;
+  transition: opacity 160ms ease;
 }
 
-.accordion-trigger:hover {
-  background: transparent;
+.help-faq-trigger:hover {
+  opacity: 0.7;
 }
 
-.accordion-chevron {
+.help-faq-question {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+  text-align: left;
+  line-height: 1.5;
+}
+
+.help-faq-chevron {
   flex: none;
-  font-size: 14px;
   color: var(--ink-soft);
-  transition: transform 300ms ease;
+  transition: transform 280ms ease;
 }
 
-.accordion-item.is-open .accordion-chevron {
-  transform: rotate(90deg);
+.help-faq-item.is-open .help-faq-chevron {
+  transform: rotate(180deg);
 }
 
-.accordion-body {
+/* ── FAQ 展开内容 ── */
+
+.help-faq-body {
   max-height: 0;
   overflow: hidden;
   transition: max-height 300ms ease;
 }
 
-.accordion-body-inner {
-  padding: 0 18px 16px;
+.help-faq-answer {
+  padding: 0 4px 20px;
   color: var(--ink-soft);
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.75;
 }
 
-.accordion-body-inner p {
+.help-faq-answer p {
   margin: 0 0 10px;
 }
 
-.accordion-body-inner p:last-child {
+.help-faq-answer p:last-child {
   margin-bottom: 0;
 }
 
-.accordion-body-inner ul,
-.accordion-body-inner ol {
+.help-faq-answer ul,
+.help-faq-answer ol {
   margin: 0 0 10px;
   padding-left: 20px;
 }
 
-.accordion-body-inner li {
+.help-faq-answer li {
   margin-bottom: 6px;
 }
 
-.accordion-body-inner li:last-child {
+.help-faq-answer li:last-child {
   margin-bottom: 0;
 }
 
-.accordion-body-inner code {
+.help-faq-answer code {
   padding: 2px 6px;
   border-radius: 6px;
   background: rgba(56, 40, 26, 0.07);
@@ -162,22 +190,22 @@
   font-size: 12px;
 }
 
-.accordion-body-inner pre {
+.help-faq-answer pre {
   margin: 8px 0;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: 10px;
   background: rgba(56, 40, 26, 0.06);
   overflow-x: auto;
 }
 
-.accordion-body-inner pre code {
+.help-faq-answer pre code {
   padding: 0;
   background: transparent;
   font-size: 12px;
   line-height: 1.6;
 }
 
-.accordion-body-inner kbd {
+.help-faq-answer kbd {
   display: inline-block;
   padding: 2px 7px;
   border: 1px solid var(--line);
@@ -188,33 +216,46 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
-.accordion-body-inner strong {
+.help-faq-answer strong {
   color: var(--ink);
 }
 
 /* ── 响应式 ── */
 
 @media (max-width: 1080px) {
-  .help-shell {
+  .help-page {
+    margin: -20px -18px -28px;
+    padding: 20px 18px 28px;
+  }
+
+  .help-layout {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 
-  .help-sider {
+  .help-sidebar {
     position: static;
-    padding: 10px;
   }
 
-  .help-nav-list {
+  .help-sidebar-title {
+    display: none;
+  }
+
+  .help-nav {
     flex-direction: row;
     gap: 6px;
     overflow-x: auto;
     padding-bottom: 4px;
   }
 
-  .help-nav-item {
+  .help-nav-btn {
     white-space: nowrap;
     flex: none;
     padding: 8px 14px;
     font-size: 13px;
+  }
+
+  .help-hero-title {
+    font-size: 26px;
   }
 }
