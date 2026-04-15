@@ -90,6 +90,7 @@ my-plugin/
 - macOS / Linux 插件使用 `.sh` 脚本，例如 `start.sh`、`stop.sh`、`deploy.sh`
 - Windows 插件使用 `.ps1` 脚本，例如 `start.ps1`、`stop.ps1`、`deploy.ps1`
 - `manifest.json` 中的 `scripts.start`、`scripts.stop`、`scripts.deploy` 应与对应平台脚本文件名保持一致
+- `scripts.deploy` 会被 Desktop 作为“初始化”钩子执行；脚本需要幂等，能够安全重复运行
 
 兼容性说明：
 - Desktop 不再扫描 `plugin-manifest.json`。
@@ -99,7 +100,7 @@ my-plugin/
 
 ### 无前端 (`frontend.mode: "none"`)
 - 注册后在控制中心左侧边栏显示服务卡片。
-- 点击可查看服务详情、启停、配置。
+- 导入后先进入“待初始化”，完成初始化后才可正常启停、配置。
 
 ### 内嵌前端 (`frontend.mode: "embedded"`)
 - 同样在控制中心显示服务卡片。
@@ -118,6 +119,12 @@ my-plugin/
 Desktop 按平台只接受对应格式的插件包：
 - Desktop macOS / Linux 版只接受 `.tar.gz`
 - Desktop Windows 版只接受 `.zip`
+
+导入与初始化分为两步：
+1. 在控制中心点击“导入插件”，选择平台对应的插件包。
+2. Desktop 解压并注册插件，服务卡片进入“待初始化”状态。
+3. 用户按需修改从模板回填的配置后，点击“初始化”。
+4. Desktop 会补齐缺失配置文件、修复脚本权限并执行 `scripts.deploy`。
 
 ## 打包示例
 

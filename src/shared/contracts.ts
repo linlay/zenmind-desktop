@@ -3,6 +3,7 @@ export type ServiceKind = "builtin" | "plugin";
 export type FrontendMode = "none" | "embedded" | "standalone";
 export type ServiceStatus =
   | "not-installed"
+  | "initialization-required"
   | "stopped"
   | "running"
   | "config-required"
@@ -54,6 +55,8 @@ export interface ServiceConfigReadResult {
   ok: boolean;
   path: string;
   content: string;
+  exists: boolean;
+  source: "file" | "template" | "missing";
 }
 
 export interface ServiceLogsMeta {
@@ -187,6 +190,7 @@ export interface DesktopApi {
     list: () => Promise<ServiceState[]>;
     installBuiltinFromBundle: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
     installBuiltin: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
+    initialize: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
     getStatus: (serviceId: ServiceId) => Promise<ServiceState>;
     start: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
     stop: (serviceId: ServiceId) => Promise<ServiceCommandResult>;

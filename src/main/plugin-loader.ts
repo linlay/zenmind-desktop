@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
-import { readManifestFile } from "./manifest-utils";
+import { normalizeManifest, readManifestFile } from "./manifest-utils";
 import { clearServices, getService, registerService, unregisterService } from "./service-registry";
 import { fixShellScriptPermissions } from "./service-manager";
 import { extractArchiveToDir } from "./archive-utils";
@@ -16,6 +16,26 @@ function readManifest(pluginDir: string) {
     return readManifestFile(manifestPath);
   } catch {
     return null;
+  }
+}
+
+function preserveExistingConfigFiles(targetDir: string, relativePaths: string[]) {
+  const preserved = new Map<string, string>();
+  for (const relativePath of relativePaths) {
+    const absolutePath = path.join(targetDir, relativePath);
+    if (!fs.existsSync(absolutePath)) {
+      continue;
+    }
+    preserved.set(relativePath, fs.readFileSync(absolutePath, "utf8"));
+  }
+  return preserved;
+}
+
+function restorePreservedConfigFiles(targetDir: string, preserved: Map<string, string>) {
+  for (const [relativePath, content] of preserved) {
+    const absolutePath = path.join(targetDir, relativePath);
+    fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+    fs.writeFileSync(absolutePath, content, "utf8");
   }
 }
 
@@ -58,19 +78,31 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
       throw new Error("插件包缺少 manifest.json");
     }
     if (manifest.kind === "builtin") {
-      return {
-        ok: false,
-        message: `安装包 ${manifest.name} 是内置服务，请在控制中心对应服务卡片中安装。`,
-        serviceId: manifest.id
-      };
+      registerService(manifest, {
+        defaultKind: "builtin",
+        desktop: {
+          assetFileName: path.basename(archivePath),
+          bundleTopLevelDir: manifest.desktop?.bundleTopLevelDir ?? entries[0]
+        }
+      });
+      const { installBuiltinService } = await import("./service-manager");
+      await installBuiltinService(app, manifest.id, { force: true, archivePath });
+      return { ok: true, message: `内置服务 ${manifest.name} 已安装。`, serviceId: manifest.id };
     }
+    const definition = normalizeManifest(manifest, { defaultKind: "plugin" });
 
     const targetDir = path.join(root, manifest.id);
+    const preservedConfigFiles = preserveExistingConfigFiles(
+      targetDir,
+      definition.configFiles.map((configFile) => configFile.relativePath)
+    );
     fs.rmSync(targetDir, { recursive: true, force: true });
     fs.cpSync(extractedDir, targetDir, { recursive: true });
+    restorePreservedConfigFiles(targetDir, preservedConfigFiles);
+    fs.rmSync(path.join(targetDir, ".zenmind-desktop"), { recursive: true, force: true });
     fixShellScriptPermissions(targetDir);
     registerService(manifest, { defaultKind: "plugin" });
-    return { ok: true, message: `插件 ${manifest.name} 已安装。`, serviceId: manifest.id };
+    return { ok: true, message: `插件 ${manifest.name} 已导入，请完成初始化。`, serviceId: manifest.id };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

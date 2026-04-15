@@ -85,6 +85,16 @@ function getShellPathEntries() {
   return shellPathEntriesCache;
 }
 
+type InitializationState = {
+  version: string;
+  status: "succeeded" | "failed";
+  updatedAt: string;
+  lastError?: string;
+};
+
+const INITIALIZATION_STATE_DIRNAME = ".zenmind-desktop";
+const INITIALIZATION_STATE_FILE = "init-state.json";
+
 function buildServiceEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   const extraPaths = [...getStaticServicePaths(), ...getShellPathEntries()];
@@ -119,6 +129,55 @@ function ensureDir(targetPath: string) {
 
 function fileExists(targetPath: string) {
   return fs.existsSync(targetPath);
+}
+
+function getInitializationStatePath(installDir: string) {
+  return path.join(installDir, INITIALIZATION_STATE_DIRNAME, INITIALIZATION_STATE_FILE);
+}
+
+function readInitializationState(installDir: string): InitializationState | null {
+  const filePath = getInitializationStatePath(installDir);
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, unknown>;
+    const version = typeof parsed.version === "string" ? parsed.version : "";
+    const status = parsed.status === "succeeded" || parsed.status === "failed" ? parsed.status : null;
+    const updatedAt = typeof parsed.updatedAt === "string" ? parsed.updatedAt : "";
+    const lastError = typeof parsed.lastError === "string" && parsed.lastError.trim() ? parsed.lastError : undefined;
+    if (!version || !status || !updatedAt) {
+      return null;
+    }
+    return {
+      version,
+      status,
+      updatedAt,
+      ...(lastError ? { lastError } : {})
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isAssetNewerThanInstall(assetPath: string, installDir: string) {
+  try {
+    const assetMtime = fs.statSync(assetPath).mtimeMs;
+    const initStatePath = getInitializationStatePath(installDir);
+    if (!fs.existsSync(initStatePath)) {
+      return true;
+    }
+    return assetMtime > fs.statSync(initStatePath).mtimeMs;
+  } catch {
+    return true;
+  }
+}
+
+function writeInitializationState(installDir: string, state: InitializationState) {
+  const filePath = getInitializationStatePath(installDir);
+  ensureDir(path.dirname(filePath));
+  fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
 
 export function fixShellScriptPermissions(rootDir: string) {
@@ -514,9 +573,39 @@ function ensureDefaultConfig(service: ServiceDefinition, installDir: string) {
     }
     const templatePath = path.join(installDir, configFile.templateRelativePath);
     if (fs.existsSync(templatePath)) {
+      ensureDir(path.dirname(targetPath));
       fs.copyFileSync(templatePath, targetPath);
     }
   }
+}
+
+async function ensureInitializationRequirements(app: App, service: ServiceDefinition, installDir: string) {
+  if (service.id !== "pan-webclient") {
+    return;
+  }
+
+  const publicKeyPath = path.join(installDir, "configs", "local-public-key.pem");
+  if (fs.existsSync(publicKeyPath)) {
+    return;
+  }
+
+  const { publicKeyPem } = ensureKeyPairForPan(app);
+  ensureDir(path.dirname(publicKeyPath));
+  fs.writeFileSync(publicKeyPath, publicKeyPem, "utf8");
+}
+
+async function ensureMutableInstallDir(app: App, service: ServiceDefinition) {
+  const installDir = getInstallDir(app, service);
+  if (fs.existsSync(installDir)) {
+    return installDir;
+  }
+
+  if (service.kind === "builtin") {
+    await installBuiltinService(app, service.id);
+    return getInstallDir(app, service);
+  }
+
+  throw new Error(`${service.name} 尚未导入，请先导入插件。`);
 }
 
 type InstallBuiltinServiceOptions = {
@@ -538,9 +627,17 @@ export async function installBuiltinService(
     : ensureBundleAssetHealthy(app, service);
 
   const finalInstallDir = getInstallDir(app, service);
-  if (!options.force && fs.existsSync(finalInstallDir) && isInstallHealthy(service, finalInstallDir)) {
-    ensureDefaultConfig(service, finalInstallDir);
-    fixShellScriptPermissions(finalInstallDir);
+  const needsExtract =
+    options.force ||
+    !fs.existsSync(finalInstallDir) ||
+    !isInstallHealthy(service, finalInstallDir) ||
+    isAssetNewerThanInstall(assetPath, finalInstallDir);
+
+  if (!needsExtract) {
+    const initialization = await initializeService(app, serviceId);
+    if (!initialization.ok) {
+      throw new Error(initialization.message);
+    }
     return finalInstallDir;
   }
 
@@ -560,15 +657,73 @@ export async function installBuiltinService(
     const extractedRoot = path.join(tempRoot, entries[0]);
     fs.rmSync(finalInstallDir, { recursive: true, force: true });
     fs.cpSync(extractedRoot, finalInstallDir, { recursive: true });
-    ensureDefaultConfig(service, finalInstallDir);
     if (hasPreservedEnv) {
       fs.writeFileSync(path.join(finalInstallDir, ".env"), preservedEnv, "utf8");
     }
-    fixShellScriptPermissions(finalInstallDir);
+    const initialization = await initializeService(app, serviceId);
+    if (!initialization.ok) {
+      throw new Error(initialization.message);
+    }
     return finalInstallDir;
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+}
+
+export async function initializeService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
+  const service = getService(serviceId);
+  const installDir = getInstallDir(app, service);
+  const currentState = await getServiceState(app, serviceId);
+
+  if (!currentState.installed) {
+    return {
+      ok: false,
+      message: service.kind === "plugin" ? `${service.name} 尚未导入，请先导入插件。` : `${service.name} 尚未安装。`,
+      service: currentState
+    };
+  }
+
+  if (!isInstallHealthy(service, installDir)) {
+    return {
+      ok: false,
+      message: currentState.message,
+      service: currentState
+    };
+  }
+
+  try {
+    ensureDefaultConfig(service, installDir);
+    fixShellScriptPermissions(installDir);
+    await ensureInitializationRequirements(app, service, installDir);
+    if (service.deployCommand) {
+      await runExecFile(service.deployCommand[0], service.deployCommand.slice(1), installDir);
+    }
+    writeInitializationState(installDir, {
+      version: service.version,
+      status: "succeeded",
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    writeInitializationState(installDir, {
+      version: service.version,
+      status: "failed",
+      updatedAt: new Date().toISOString(),
+      lastError: error instanceof Error ? error.message : String(error)
+    });
+    const nextState = await getServiceState(app, serviceId);
+    return {
+      ok: false,
+      message: nextState.message,
+      service: nextState
+    };
+  }
+
+  const nextState = await getServiceState(app, serviceId);
+  return {
+    ok: true,
+    message: `${service.name} 已初始化。`,
+    service: nextState
+  };
 }
 
 export async function listServices(app: App) {
@@ -599,7 +754,14 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   const webUrl = installed ? getWebUrl(service, env) : getWebUrl(service, new Map<string, string>());
   const pid = installed ? readPid(pidFilePath) : null;
   const missingRuntimeFiles = installed ? listMissingRuntimeFiles(service, installDir) : [];
-  const prerequisites = installed && missingRuntimeFiles.length === 0 ? collectPrerequisites(service, installDir) : [];
+  const initializationState =
+    installed && missingRuntimeFiles.length === 0 ? readInitializationState(installDir) : null;
+  const initializationSucceeded =
+    initializationState?.status === "succeeded" && initializationState.version === service.version;
+  const prerequisites =
+    installed && missingRuntimeFiles.length === 0 && initializationSucceeded
+      ? collectPrerequisites(service, installDir)
+      : [];
   const running = installed && missingRuntimeFiles.length === 0 && isProcessRunning(pid);
 
   let status: ServiceState["status"] = "not-installed";
@@ -618,6 +780,18 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     message = `安装目录缺少关键文件：${missingRuntimeFiles.join(", ")}`;
   }
 
+  if (installed && missingRuntimeFiles.length === 0 && !initializationSucceeded) {
+    if (initializationState?.status === "failed" && initializationState.version === service.version) {
+      status = "error";
+      statusLabel = "初始化失败";
+      message = initializationState.lastError ? `初始化失败：${initializationState.lastError}` : "初始化失败，请重试。";
+    } else {
+      status = "initialization-required";
+      statusLabel = "待初始化";
+      message = service.kind === "plugin" ? "插件已导入，请先完成初始化。" : "服务已安装，请先完成初始化。";
+    }
+  }
+
   if (!installed && service.kind === "builtin") {
     try {
       ensureBundleAssetHealthy(app, service);
@@ -628,14 +802,14 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     }
   }
 
-  if (installed && missingRuntimeFiles.length === 0 && prerequisites.length > 0) {
+  if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && prerequisites.length > 0) {
     const hasDependencyError = prerequisites.some((item) => item.includes("Docker") || item.includes("Podman"));
     status = hasDependencyError ? "dependency-missing" : "config-required";
     statusLabel = hasDependencyError ? "依赖未满足" : "待配置";
     message = prerequisites.join("；");
   }
 
-  if (running) {
+  if (running && initializationSucceeded) {
     status = "running";
     statusLabel = "运行中";
     message = `服务进程正在运行。${webUrl ? `入口：${webUrl}` : ""}`.trim();
@@ -680,17 +854,6 @@ const agentWebclientDefaultBaseUrls = new Set([
 ]);
 
 async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {
-  if (service.id === "pan-webclient") {
-    const installDir = getInstallDir(app, service);
-    const publicKeyPath = path.join(installDir, "configs", "local-public-key.pem");
-    if (!fs.existsSync(publicKeyPath)) {
-      const { publicKeyPem } = ensureKeyPairForPan(app);
-      fs.mkdirSync(path.dirname(publicKeyPath), { recursive: true });
-      fs.writeFileSync(publicKeyPath, publicKeyPem, "utf8");
-    }
-    return;
-  }
-
   if (service.id === "agent-platform") {
     const installDir = getInstallDir(app, service);
     const envPath = path.join(installDir, ".env");
@@ -767,6 +930,26 @@ async function runServiceCommand(app: App, service: ServiceDefinition, command: 
 
 export async function startService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
   const current = await getServiceState(app, serviceId);
+  const service = getService(serviceId);
+  const installDir = getInstallDir(app, service);
+  const initializationState = current.installed ? readInitializationState(installDir) : null;
+
+  if (current.status === "initialization-required") {
+    return {
+      ok: false,
+      message: current.message,
+      service: current
+    };
+  }
+
+  if (initializationState?.status === "failed" && initializationState.version === service.version) {
+    return {
+      ok: false,
+      message: current.message,
+      service: current
+    };
+  }
+
   if ((!current.installed || current.status === "error") && current.kind === "builtin") {
     await installBuiltinService(app, serviceId);
   }
@@ -790,7 +973,6 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
     };
   }
 
-  const service = getService(serviceId);
   await ensurePreStartRequirements(app, service);
   const result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
   startedThisSession.add(serviceId);
@@ -837,22 +1019,42 @@ export async function readServiceConfig(app: App, serviceId: ServiceId, key: str
     return {
       ok: true,
       path: path.join(installDir, configFile.relativePath),
-      content: ""
+      content: "",
+      exists: false,
+      source: "missing"
     };
   }
 
   const filePath = path.join(installDir, configFile.relativePath);
-  if (!fs.existsSync(filePath) && configFile.templateRelativePath) {
+  if (fs.existsSync(filePath)) {
+    return {
+      ok: true,
+      path: filePath,
+      content: fs.readFileSync(filePath, "utf8"),
+      exists: true,
+      source: "file"
+    };
+  }
+
+  if (configFile.templateRelativePath) {
     const templatePath = path.join(installDir, configFile.templateRelativePath);
     if (fs.existsSync(templatePath)) {
-      fs.copyFileSync(templatePath, filePath);
+      return {
+        ok: true,
+        path: filePath,
+        content: fs.readFileSync(templatePath, "utf8"),
+        exists: false,
+        source: "template"
+      };
     }
   }
 
   return {
     ok: true,
     path: filePath,
-    content: fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : ""
+    content: "",
+    exists: false,
+    source: "missing"
   };
 }
 
@@ -868,10 +1070,7 @@ export async function writeServiceConfig(
     throw new Error(`unknown config key: ${key}`);
   }
 
-  const installDir = getInstallDir(app, service);
-  if (!fs.existsSync(installDir)) {
-    await installBuiltinService(app, serviceId);
-  }
+  const installDir = await ensureMutableInstallDir(app, service);
 
   const filePath = path.join(installDir, configFile.relativePath);
   ensureDir(path.dirname(filePath));
@@ -896,10 +1095,7 @@ export async function importServiceFile(
     throw new Error(`unknown import target: ${targetKey}`);
   }
 
-  const installDir = getInstallDir(app, service);
-  if (!fs.existsSync(installDir)) {
-    await installBuiltinService(app, serviceId);
-  }
+  const installDir = await ensureMutableInstallDir(app, service);
 
   const targetPath = path.join(installDir, target.relativePath);
   ensureDir(path.dirname(targetPath));
@@ -966,5 +1162,7 @@ export const __testInternals = {
   ensureBundleAssetHealthy,
   upsertEnvFileContent,
   ensurePreStartRequirements,
-  decodePowerShellCapturePayload
+  decodePowerShellCapturePayload,
+  getInitializationStatePath,
+  readInitializationState
 };

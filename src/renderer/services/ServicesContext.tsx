@@ -23,6 +23,7 @@ interface ServicesContextValue {
   refresh: () => Promise<void>;
   installBuiltinFromBundle: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
   installBuiltin: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
+  initialize: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
   start: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
   stop: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
   restart: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
@@ -89,6 +90,8 @@ export function ServicesProvider({ children }: PropsWithChildren) {
       wrapCommand(() => window.electronAPI.services.installBuiltinFromBundle(serviceId)),
     installBuiltin: (serviceId) =>
       wrapCommand(() => window.electronAPI.services.installBuiltin(serviceId)),
+    initialize: (serviceId) =>
+      wrapCommand(() => window.electronAPI.services.initialize(serviceId)),
     start: (serviceId) => wrapCommand(() => window.electronAPI.services.start(serviceId)),
     stop: (serviceId) => wrapCommand(() => window.electronAPI.services.stop(serviceId)),
     restart: (serviceId) => wrapCommand(() => window.electronAPI.services.restart(serviceId)),

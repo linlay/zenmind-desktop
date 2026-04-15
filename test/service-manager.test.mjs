@@ -11,12 +11,16 @@ const {
   __testInternals,
   getServiceState,
   getInstallDir,
-  installBuiltinService
+  initializeService,
+  installBuiltinService,
+  readServiceConfig,
+  startService
 } = require("../dist-electron/main/service-manager.js");
 const { loadBuiltinServices } = require("../dist-electron/main/builtin-loader.js");
 const {
   __testInternals: registryInternals,
-  getBuiltinService
+  getBuiltinService,
+  registerPlugin
 } = require("../dist-electron/main/service-registry.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 
@@ -222,6 +226,82 @@ function createContainerHubBundleFixture(tempRoot, options = {}) {
   };
 }
 
+function writePluginInstallRoot(installDir, options = {}) {
+  const pluginId = options.id ?? "test-plugin";
+  const pluginName = options.name ?? "Test Plugin";
+  const version = options.version ?? "v1.0.0";
+  const deployScriptContent =
+    options.deployScriptContent === undefined
+      ? "#!/usr/bin/env bash\nprintf deployed > run/deploy-marker.txt\n"
+      : options.deployScriptContent;
+  const requiredPaths = ["manifest.json", "start.sh", "stop.sh", ".env.example"];
+
+  fs.mkdirSync(path.join(installDir, "run"), { recursive: true });
+  fs.writeFileSync(path.join(installDir, ".env.example"), "PORT=9300\n", "utf8");
+  fs.writeFileSync(path.join(installDir, "start.sh"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
+  fs.writeFileSync(path.join(installDir, "stop.sh"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
+
+  const scripts = {
+    start: "start.sh",
+    stop: "stop.sh"
+  };
+  if (deployScriptContent !== false) {
+    fs.writeFileSync(path.join(installDir, "deploy.sh"), deployScriptContent, "utf8");
+    requiredPaths.push("deploy.sh");
+    scripts.deploy = "deploy.sh";
+  }
+
+  fs.writeFileSync(
+    path.join(installDir, "manifest.json"),
+    `${JSON.stringify(
+      {
+        id: pluginId,
+        name: pluginName,
+        kind: "plugin",
+        version,
+        description: "fixture plugin",
+        frontend: {
+          mode: "none"
+        },
+        scripts,
+        configFiles: [
+          {
+            key: "env",
+            label: ".env",
+            relativePath: ".env",
+            templateRelativePath: ".env.example",
+            required: true
+          }
+        ],
+        runtime: {
+          pidRelativePath: "run/test-plugin.pid",
+          logRelativePath: "run/test-plugin.log",
+          requiredPaths
+        },
+        web: {
+          routePath: "",
+          portEnvKey: "PORT",
+          defaultPort: 9300
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  for (const scriptName of ["start.sh", "stop.sh", "deploy.sh"]) {
+    const scriptPath = path.join(installDir, scriptName);
+    if (fs.existsSync(scriptPath)) {
+      fs.chmodSync(scriptPath, 0o755);
+    }
+  }
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
+  registerPlugin(manifest);
+  return manifest;
+}
+
 test("parseEnvFileContent keeps key values and strips quotes", () => {
   const env = __testInternals.parseEnvFileContent(`
 # comment
@@ -316,6 +396,8 @@ test("installBuiltinService repairs damaged install and preserves env", async ()
   assert.ok(fs.existsSync(path.join(installDir, "backend", "agent-container-hub")));
   assert.ok(fs.existsSync(path.join(installDir, "manifest.json")));
   assert.equal(__testInternals.isInstallHealthy(service, installDir), true);
+  assert.notEqual((await getServiceState(app, service.id)).status, "initialization-required");
+  assert.equal(__testInternals.readInitializationState(installDir)?.status, "succeeded");
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -419,6 +501,103 @@ test("installBuiltinService installs from selected archive when archivePath is p
   );
 
   restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("initializeService copies template, runs deploy hook, and records success state", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-init-success-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir);
+
+  const before = await getServiceState(app, "test-plugin");
+  assert.equal(before.status, "initialization-required");
+
+  const result = await initializeService(app, "test-plugin");
+
+  assert.equal(result.ok, true);
+  assert.equal(fs.readFileSync(path.join(installDir, ".env"), "utf8"), "PORT=9300\n");
+  assert.equal(fs.readFileSync(path.join(installDir, "run", "deploy-marker.txt"), "utf8"), "deployed");
+  const initializationState = __testInternals.readInitializationState(installDir);
+  assert.ok(initializationState);
+  assert.deepEqual(initializationState, {
+    version: "v1.0.0",
+    status: "succeeded",
+    updatedAt: initializationState.updatedAt
+  });
+
+  const state = await getServiceState(app, "test-plugin");
+  assert.equal(state.status, "stopped");
+
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("initializeService records failed state and surfaces initialization error", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-init-failure-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    deployScriptContent: "#!/usr/bin/env bash\necho deploy failed >&2\nexit 1\n"
+  });
+
+  const result = await initializeService(app, "test-plugin");
+  assert.equal(result.ok, false);
+  assert.equal(__testInternals.readInitializationState(installDir)?.status, "failed");
+
+  const state = await getServiceState(app, "test-plugin");
+  assert.equal(state.status, "error");
+  assert.match(state.message, /初始化失败/u);
+  assert.match(state.message, /deploy failed/u);
+
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("readServiceConfig returns template content without creating target file", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-config-template-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    deployScriptContent: false
+  });
+
+  const result = await readServiceConfig(app, "test-plugin", "env");
+  assert.equal(result.exists, false);
+  assert.equal(result.source, "template");
+  assert.equal(result.content, "PORT=9300\n");
+  assert.equal(fs.existsSync(path.join(installDir, ".env")), false);
+
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("startService rejects services that still require initialization", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-init-required-start-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    deployScriptContent: false
+  });
+
+  const result = await startService(app, "test-plugin");
+  assert.equal(result.ok, false);
+  assert.equal(result.service.status, "initialization-required");
+  assert.match(result.message, /请先完成初始化/u);
+
+  registryInternals.clearServices();
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 

@@ -7,6 +7,7 @@ const api: DesktopApi = {
     installBuiltinFromBundle: (serviceId: ServiceId) =>
       ipcRenderer.invoke("services.installBuiltinFromBundle", serviceId),
     installBuiltin: (serviceId: ServiceId) => ipcRenderer.invoke("services.installBuiltin", serviceId),
+    initialize: (serviceId: ServiceId) => ipcRenderer.invoke("services.initialize", serviceId),
     getStatus: (serviceId: ServiceId) => ipcRenderer.invoke("services.getStatus", serviceId),
     start: (serviceId: ServiceId) => ipcRenderer.invoke("services.start", serviceId),
     stop: (serviceId: ServiceId) => ipcRenderer.invoke("services.stop", serviceId),

@@ -95,8 +95,9 @@
 当前通过 preload 暴露的 IPC 能力如下：
 
 ### services 命名空间
-- `services.list`：列出所有服务状态（包含内置服务和已安装插件）。
+- `services.list`：列出所有服务状态（包含内置服务和已导入插件）。
 - `services.installBuiltin`：安装指定内置服务。
+- `services.initialize`：执行服务初始化流程（补默认配置、修复脚本权限、执行 `scripts.deploy`）。
 - `services.getStatus`：读取单个服务状态。
 - `services.start`：启动服务。
 - `services.stop`：停止服务。
@@ -107,7 +108,7 @@
 - `services.getLogsMeta`：读取日志路径与存在性信息。
 
 ### plugins 命名空间
-- `plugins.install`：弹出文件选择对话框，选择 `.tar.gz` 插件包进行安装。
+- `plugins.install`：弹出文件选择对话框，选择 `.tar.gz` 插件包进行导入。
 - `plugins.uninstall`：卸载指定插件（弹出确认对话框，确认后删除目录并注销注册）。
 
 ### panAuth 命名空间
@@ -129,12 +130,13 @@ my-plugin/
 ```
 
 ### 插件生命周期
-1. 用户在控制中心点击"安装插件"，选择 `.tar.gz` 包。
+1. 用户在控制中心点击"导入插件"，选择 `.tar.gz` 包。
 2. 主进程解压到 `userData/plugins/{id}/`，读取 `manifest.json` 并注册。
-3. 控制中心左侧边栏立即出现新服务卡片。
-4. 启动后，`frontendMode !== "none"` 的插件会在详情区显示"打开前端"按钮；`frontendMode === "standalone"` 时会出现在顶部导航栏。
-5. 下次启动 Electron 时，`loadInstalledPlugins` 自动扫描 `userData/plugins/` 并重新注册。
-6. 卸载时弹出确认对话框，确认后停止运行中的服务、删除插件目录并从注册表移除。
+3. 控制中心左侧边栏立即出现新服务卡片，状态为"待初始化"。
+4. 用户完成必要的配置编辑后，点击"初始化"；Desktop 会补齐模板配置、修复脚本权限，并执行 `scripts.deploy`。
+5. 初始化成功后，插件进入可启动状态；启动后，`frontendMode !== "none"` 的插件会在详情区显示"打开前端"按钮；`frontendMode === "standalone"` 时会出现在顶部导航栏。
+6. 下次启动 Electron 时，`loadInstalledPlugins` 自动扫描 `userData/plugins/` 并重新注册；未初始化的插件仍会保持"待初始化"。
+7. 卸载时弹出确认对话框，确认后停止运行中的服务、删除插件目录并从注册表移除。
 
 ### 认证桥接
 需要认证的插件（如 `agent-webclient`、`pan-webclient`）通过 postMessage Token Bridge 与 Desktop 通信：
@@ -149,7 +151,7 @@ my-plugin/
 - `agent-platform` 作为 builtin 启动前会自动注入 Container Hub 地址、`SERVER_PORT`、`AGENT_AUTH_ENABLED=true` 和本地 RSA 公钥路径。
 - 渲染层必须继续使用 `HashRouter`，以避免 Electron 文件协议下的路由问题。
 - 生产环境从 `process.resourcesPath/services` 读取内置资源；开发环境从 `build/resources/services` 读取。
-- 服务安装后会自动尝试把模板配置复制为 `.env`，因此配置模板应始终随服务资源一起分发。
+- 服务初始化阶段会尝试把模板配置复制为 `.env`，因此配置模板应始终随服务资源一起分发。
 - 桌面端退出时会在 `before-quit` 中停止本次会话启动过的服务。
 - preload 脚本在 Electron 窗口创建时加载，修改后必须重启整个 Electron 进程才能生效，仅刷新页面无效。
 - 顶部导航栏由 `Header.tsx` 动态生成，固定项为"控制中心"（前）和"插件市场"、"帮助"（后），运行中且 `frontendMode === "standalone"` 的服务会自动插入中间。

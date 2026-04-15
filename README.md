@@ -6,6 +6,7 @@
 当前 Desktop 已统一切换到 `manifest.json` 驱动架构：
 - 内置服务从 `.tar.gz` 资源包里的 `manifest.json` 自动发现。
 - 插件从 `userData/plugins/*/manifest.json` 自动扫描注册。
+- 插件导入后需要在控制中心执行一次初始化；Desktop 会补齐模板配置并执行 `scripts.deploy`。
 - Desktop 不再在 `service-registry.ts` 中硬编码任何内置服务结构。
 
 当前仓库重点覆盖两类服务：
@@ -80,8 +81,9 @@ DevTools 可用于查看控制台日志、网络请求、DOM 结构以及页面�
 
 ### 服务配置文件
 - 服务安装后会写入用户数据目录下的 `services/<service-id>/<version>/`。
-- 每个内置服务默认会从 `.env.example` 复制生成 `.env`，随后由桌面端进行读写。
-- 插件安装目录位于 Electron `userData/plugins/<service-id>/`，插件清单文件固定为 `manifest.json`。
+- 每个内置服务会在安装时自动完成初始化；缺失的 `.env` 会从 `.env.example` 复制生成，随后由桌面端进行读写。
+- 插件目录位于 Electron `userData/plugins/<service-id>/`，插件清单文件固定为 `manifest.json`。
+- 插件导入只负责解包和注册；点击控制中心中的“初始化”后，Desktop 才会补齐缺失配置、修复脚本权限并执行 `scripts.deploy`。
 
 ### 敏感信息管理
 - 真实密钥、证书和本地环境差异配置不提交到仓库。
@@ -109,7 +111,15 @@ npm run dist:mac
 npm run dist:win
 ```
 
-使用 `electron-builder` 输出 NSIS 安装包，目标 x64 架构。
+Windows 主机上会直接使用 `electron-builder` 输出 NSIS 安装包，目标 x64 架构。
+
+在 macOS 或 Linux 主机上，`npm run dist:win` 会改为通过 Docker 启动官方 `electronuserland/builder:wine` 镜像生成 Windows NSIS 包，而不是直接在宿主机上运行 `electron-builder`。这样可以规避宿主 macOS 生成损坏 NSIS 卸载器、在 Windows 上卸载时报 `Installer integrity check has failed` 的问题。
+
+非 Windows 主机执行该命令前需要满足：
+- 已安装并启动 Docker Desktop 或其他兼容 Docker 的运行时
+- 容器可以访问 npm registry 以安装依赖
+
+如果机器上已经残留旧的 per-user/per-machine 双安装记录，建议先手动清理旧版本，再验证新包的安装和卸载。
 
 ### 卸载
 - macOS：运行 `/Applications/ZenMind Desktop.app/Contents/Resources/uninstall.sh`。脚本会先检查应用是否仍在运行，随后删除 `/Applications/ZenMind Desktop.app`，并弹出对话框询问是否清理 `~/Library/Application Support/zenmind-desktop/` 下的数据。

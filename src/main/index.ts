@@ -5,6 +5,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  session,
   type MenuItemConstructorOptions,
   type OpenDialogOptions
 } from "electron";
@@ -14,6 +15,7 @@ import { loadBuiltinServices } from "./builtin-loader";
 import {
   getServiceLogsMeta,
   getServiceState,
+  initializeService,
   importServiceFile,
   installBuiltinService,
   listServices,
@@ -244,6 +246,7 @@ function registerIpcHandlers() {
     }
 
     await installBuiltinService(app, serviceId);
+    await session.defaultSession.clearCache();
     return {
       ok: true,
       message: "内置服务已安装。",
@@ -278,11 +281,15 @@ function registerIpcHandlers() {
       force: true,
       archivePath: result.filePaths[0]
     });
+    await session.defaultSession.clearCache();
     return {
       ok: true,
       message: "内置服务已安装。",
       service: await getServiceState(app, serviceId)
     };
+  });
+  ipcMain.handle("services.initialize", async (_event, serviceId: ServiceId) => {
+    return initializeService(app, serviceId);
   });
   ipcMain.handle("services.getStatus", async (_event, serviceId: ServiceId) => getServiceState(app, serviceId));
   ipcMain.handle("services.start", async (_event, serviceId: ServiceId) => startService(app, serviceId));
@@ -317,9 +324,13 @@ function registerIpcHandlers() {
       process.platform === "win32" ? "选择插件包 (.zip)" : "选择插件包 (.tar.gz)"
     );
     if (result.canceled || result.filePaths.length === 0) {
-      return { ok: false, message: "已取消安装。" };
+      return { ok: false, message: "已取消导入。" };
     }
-    return installPluginFromArchive(app, result.filePaths[0]);
+    const installResult = await installPluginFromArchive(app, result.filePaths[0]);
+    if (installResult.ok) {
+      await session.defaultSession.clearCache();
+    }
+    return installResult;
   });
   ipcMain.handle("plugins.uninstall", async (_event, serviceId: ServiceId) => {
     return handlePluginUninstall(app, serviceId, mainWindow);

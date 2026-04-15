@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ServiceId, ServiceState } from "@shared/contracts";
+import type { ServiceConfigReadResult, ServiceId, ServiceState } from "@shared/contracts";
 import { useServices } from "../services/ServicesContext";
 import { useNavigate } from "react-router-dom";
 
@@ -8,6 +8,7 @@ function statusClass(status: ServiceState["status"]) {
     case "running":
       return "running";
     case "config-required":
+    case "initialization-required":
       return "warning";
     case "dependency-missing":
       return "warning";
@@ -26,6 +27,7 @@ function statusDotClass(status: ServiceState["status"]) {
     case "running":
       return "running";
     case "config-required":
+    case "initialization-required":
     case "dependency-missing":
       return "warning";
     case "error":
@@ -38,6 +40,11 @@ function statusDotClass(status: ServiceState["status"]) {
 }
 
 type ActionScope = "lifecycle" | "detail";
+type ConfigMeta = Pick<ServiceConfigReadResult, "path" | "exists" | "source">;
+
+function shouldShowInitializeAction(service: ServiceState) {
+  return service.status === "initialization-required" || service.message.startsWith("初始化失败");
+}
 
 export function ControlCenterPage() {
   const {
@@ -46,6 +53,7 @@ export function ControlCenterPage() {
     error,
     installBuiltinFromBundle,
     installBuiltin,
+    initialize,
     start,
     stop,
     restart,
@@ -61,7 +69,7 @@ export function ControlCenterPage() {
   const [pendingAction, setPendingAction] = useState<{ serviceId: ServiceId; scope: ActionScope } | null>(null);
   const [feedback, setFeedback] = useState("");
   const [configCache, setConfigCache] = useState<Record<string, string>>({});
-  const [configPaths, setConfigPaths] = useState<Record<string, string>>({});
+  const [configMeta, setConfigMeta] = useState<Record<string, ConfigMeta>>({});
 
   useEffect(() => {
     if (services.length === 0) {
@@ -79,7 +87,7 @@ export function ControlCenterPage() {
       return;
     }
 
-    const missingServices = services.filter((service) => service.installed && !(service.id in configCache));
+    const missingServices = services.filter((service) => service.installed && !(service.id in configMeta));
     if (missingServices.length === 0) {
       return;
     }
@@ -94,28 +102,66 @@ export function ControlCenterPage() {
             }
             return { ...current, [service.id]: result.content };
           });
-          setConfigPaths((current) => ({ ...current, [service.id]: result.path }));
+          setConfigMeta((current) => {
+            if (service.id in current) {
+              return current;
+            }
+            return {
+              ...current,
+              [service.id]: {
+                path: result.path,
+                exists: result.exists,
+                source: result.source
+              }
+            };
+          });
         } catch {
           setConfigCache((current) => ({ ...current, [service.id]: current[service.id] ?? "" }));
+          setConfigMeta((current) => ({
+            ...current,
+            [service.id]: {
+              path: "",
+              exists: false,
+              source: "missing"
+            }
+          }));
         }
       })
     );
-  }, [configCache, readConfig, services]);
+  }, [configMeta, readConfig, services]);
 
   const serviceCounts = {
     total: services.length,
     running: services.filter((service) => service.status === "running").length,
     pending: services.filter(
-      (service) => service.status === "config-required" || service.status === "dependency-missing"
+      (service) =>
+        service.status === "initialization-required" ||
+        service.status === "config-required" ||
+        service.status === "dependency-missing"
     ).length
   };
 
   const selectedService = services.find((service) => service.id === selectedServiceId) ?? services[0] ?? null;
+  const selectedConfigMeta = selectedService ? configMeta[selectedService.id] : undefined;
+
+  function invalidateConfig(serviceId: ServiceId) {
+    setConfigCache((current) => {
+      const next = { ...current };
+      delete next[serviceId];
+      return next;
+    });
+    setConfigMeta((current) => {
+      const next = { ...current };
+      delete next[serviceId];
+      return next;
+    });
+  }
 
   async function runAction(
     serviceId: ServiceId,
     scope: ActionScope,
-    action: () => Promise<{ ok: boolean; message: string }>
+    action: () => Promise<{ ok: boolean; message: string }>,
+    options: { invalidateConfig?: boolean } = {}
   ) {
     setActiveId(serviceId);
     if (scope === "lifecycle") {
@@ -124,12 +170,28 @@ export function ControlCenterPage() {
     try {
       const result = await action();
       setFeedback(result.message);
+      if (result.ok && options.invalidateConfig) {
+        invalidateConfig(serviceId);
+      }
     } catch (reason) {
       setFeedback(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setActiveId((current) => (current === serviceId ? null : current));
       setPendingAction((current) => (current?.serviceId === serviceId ? null : current));
       await refresh();
+    }
+  }
+
+  async function handleInstallPlugin() {
+    try {
+      const result = await installPlugin();
+      setFeedback(result.message);
+      if (result.ok && result.serviceId) {
+        invalidateConfig(result.serviceId);
+        setSelectedServiceId(result.serviceId);
+      }
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
@@ -159,9 +221,9 @@ export function ControlCenterPage() {
           <button
             type="button"
             className="action-button ghost"
-            onClick={() => installPlugin()}
+            onClick={() => void handleInstallPlugin()}
           >
-            安装插件
+            导入插件
           </button>
         </div>
       </div>
@@ -252,12 +314,28 @@ export function ControlCenterPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    runAction(selectedService.id, "lifecycle", () => installBuiltinFromBundle(selectedService.id))
+                    runAction(selectedService.id, "lifecycle", () => installBuiltinFromBundle(selectedService.id), {
+                      invalidateConfig: true
+                    })
                   }
                   className="action-button primary"
                   disabled={activeId === selectedService.id}
                 >
                   安装
+                </button>
+              ) : null}
+              {shouldShowInitializeAction(selectedService) ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    runAction(selectedService.id, "lifecycle", () => initialize(selectedService.id), {
+                      invalidateConfig: true
+                    })
+                  }
+                  className="action-button primary"
+                  disabled={activeId === selectedService.id}
+                >
+                  {selectedService.status === "initialization-required" ? "初始化" : "重新初始化"}
                 </button>
               ) : null}
               {selectedService.kind === "builtin" &&
@@ -266,7 +344,11 @@ export function ControlCenterPage() {
                 selectedService.status === "error") ? (
                 <button
                   type="button"
-                  onClick={() => runAction(selectedService.id, "lifecycle", () => installBuiltin(selectedService.id))}
+                  onClick={() =>
+                    runAction(selectedService.id, "lifecycle", () => installBuiltin(selectedService.id), {
+                      invalidateConfig: true
+                    })
+                  }
                   className="action-button ghost"
                   disabled={activeId === selectedService.id}
                 >
@@ -309,10 +391,17 @@ export function ControlCenterPage() {
               {selectedService.kind === "plugin" ? (
                 <button
                   type="button"
-                  onClick={() => runAction(selectedService.id, "lifecycle", async () => {
-                    const r = await uninstallPlugin(selectedService.id);
-                    return { ok: r.ok, message: r.message };
-                  })}
+                  onClick={() =>
+                    runAction(
+                      selectedService.id,
+                      "lifecycle",
+                      async () => {
+                        const r = await uninstallPlugin(selectedService.id);
+                        return { ok: r.ok, message: r.message };
+                      },
+                      { invalidateConfig: true }
+                    )
+                  }
                   className="action-button ghost"
                   disabled={activeId === selectedService.id}
                 >
@@ -324,7 +413,7 @@ export function ControlCenterPage() {
             <div className="config-panel">
               <div className="config-head">
                 <h3>原文配置</h3>
-                <span>{configPaths[selectedService.id] ?? "将自动创建 .env"}</span>
+                <span>{selectedConfigMeta?.path || "将自动创建 .env"}</span>
               </div>
               <textarea
                 className="config-editor"
@@ -339,8 +428,13 @@ export function ControlCenterPage() {
                   type="button"
                   className="action-button primary"
                   onClick={() =>
-                    runAction(selectedService.id, "detail", () =>
-                      writeConfig(selectedService.id, "env", configCache[selectedService.id] ?? "")
+                    runAction(
+                      selectedService.id,
+                      "detail",
+                      () => writeConfig(selectedService.id, "env", configCache[selectedService.id] ?? ""),
+                      {
+                        invalidateConfig: true
+                      }
                     )
                   }
                   disabled={activeId === selectedService.id}
@@ -348,6 +442,9 @@ export function ControlCenterPage() {
                   保存配置
                 </button>
               </div>
+              {selectedConfigMeta?.source === "template" ? (
+                <p className="service-message">当前内容来自模板，保存或初始化后才会写入目标文件。</p>
+              ) : null}
             </div>
           </article>
         ) : (

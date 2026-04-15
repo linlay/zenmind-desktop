@@ -1,17 +1,15 @@
 import { execFileSync, spawn } from "node:child_process";
 import http from "node:http";
-import path from "node:path";
 import process from "node:process";
+import {
+  buildElectronSpawnErrorMessage,
+  resolveValidatedElectronBinaryPath
+} from "./lib/electron-installation.mjs";
 
 const projectRoot = process.cwd();
 const isWindows = process.platform === "win32";
 const npmCmd = isWindows ? "npm.cmd" : "npm";
-const electronBinary = path.join(
-  projectRoot,
-  "node_modules",
-  ".bin",
-  isWindows ? "electron.cmd" : "electron"
-);
+const electronBinary = resolveValidatedElectronBinaryPath();
 
 function detectSyncArch() {
   if (process.platform !== "darwin") {
@@ -133,5 +131,15 @@ const electron = track(
     }
   })
 );
+
+electron.once("error", (error) => {
+  console.error(
+    buildElectronSpawnErrorMessage({
+      electronBinaryPath: electronBinary,
+      error
+    })
+  );
+  shutdown(1);
+});
 
 electron.once("exit", (code) => shutdown(code ?? 0));

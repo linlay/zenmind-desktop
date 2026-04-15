@@ -13,6 +13,7 @@
     "start": "npm run dev",
     "dist:mac": "node ./scripts/sync-builtin-assets.mjs --os=darwin --arch=arm64 && npm run build && electron-builder --mac --arm64",
     "dist:win": "node ./scripts/sync-builtin-assets.mjs --os=windows --arch=amd64 && npm run build && electron-builder --win --x64",
+    "dist:win-docker": "node ./scripts/dist-win.mjs",
     "test": "npm run build && node --test ./test/*.test.mjs"
   },
   "dependencies": {
@@ -70,7 +71,6 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "perMachine": true,
       "include": "build/installer.nsh"
     }
   }
