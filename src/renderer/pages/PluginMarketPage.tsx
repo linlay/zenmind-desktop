@@ -257,11 +257,6 @@ export function PluginMarketPage() {
             >
               {activeTab === "plugins" ? "查看服务" : "本地导入"}
             </button>
-            <button type="button" className="market-toolbar-icon" aria-label="更多操作">
-              <span />
-              <span />
-              <span />
-            </button>
           </div>
         </div>
 
