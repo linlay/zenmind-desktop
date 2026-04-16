@@ -40,6 +40,10 @@ import {
 let mainWindow: BrowserWindow | null = null;
 let isHandlingQuit = false;
 
+// Keep dev Electron runs on the same data root as packaged builds.
+app.setName("ZenMind Desktop");
+app.setPath("userData", path.join(app.getPath("appData"), "zenmind-desktop"));
+
 function getRendererEntry() {
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {

@@ -63,15 +63,9 @@ export function readManifestFromArchive(archivePath) {
 }
 
 function listReleaseArchives() {
-  const archives = [];
-  const seenArchiveKeys = new Set();
-  const seenServiceBuilds = new Set();
+  const archivesByBuildKey = new Map();
 
   function tryAddArchive(archivePath) {
-    if (seenArchiveKeys.has(archivePath)) {
-      return;
-    }
-
     let manifest;
     try {
       manifest = readManifestFromArchive(archivePath);
@@ -89,13 +83,12 @@ function listReleaseArchives() {
       manifest.platform?.os ?? "",
       manifest.platform?.arch ?? ""
     ].join("|");
-    if (seenServiceBuilds.has(buildKey)) {
-      return;
+    const expectedFileName = manifest.desktop?.assetFileName ?? "";
+    const preference = path.basename(archivePath) === expectedFileName ? 1 : 0;
+    const current = archivesByBuildKey.get(buildKey);
+    if (!current || preference > current.preference) {
+      archivesByBuildKey.set(buildKey, { archivePath, preference });
     }
-
-    seenArchiveKeys.add(archivePath);
-    seenServiceBuilds.add(buildKey);
-    archives.push(archivePath);
   }
 
   for (const entry of fs.readdirSync(WORKSPACE_ROOT, { withFileTypes: true })) {
@@ -123,8 +116,9 @@ function listReleaseArchives() {
     tryAddArchive(path.join(WORKSPACE_ROOT, entry.name));
   }
 
-  archives.sort((left, right) => left.localeCompare(right));
-  return archives;
+  return [...archivesByBuildKey.values()]
+    .map((entry) => entry.archivePath)
+    .sort((left, right) => left.localeCompare(right));
 }
 
 export function discoverBuiltinServices({ os, arch } = {}) {
