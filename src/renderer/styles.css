@@ -30,11 +30,11 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg-canvas: #17181A;
-  --surface: #2B2D30;
-  --surface-strong: #2B2D30;
-  --surface-soft: #1F2024;
-  --surface-sidebar: #2B2D30;
+  --bg-canvas: #0D0E10;
+  --surface: #161719;
+  --surface-strong: #161719;
+  --surface-soft: #111214;
+  --surface-sidebar: #161719;
   --ink: #F2F3F5;
   --ink-soft: #C9CDD4;
   --ink-muted: #86909C;
@@ -170,22 +170,19 @@ a {
   display: grid;
   place-items: center;
   flex: none;
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #ffffff;
-  font-size: 16px;
-  font-weight: 700;
+  width: 42px;
+  height: 42px;
 }
 
 :root[data-theme="dark"] .sidebar-avatar {
-  background: var(--accent);
-  color: #ffffff;
+  background: transparent;
+  color: inherit;
 }
 
-.sidebar-avatar span {
-  transform: none;
+.sidebar-avatar svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .sidebar-profile-copy {
@@ -262,19 +259,15 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  color: currentColor;
+  width: 22px;
+  height: 22px;
+  flex: none;
 }
 
 .sidebar-link-icon svg {
-  width: 20px;
-  height: 20px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.75;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .sidebar-link-label {
@@ -694,8 +687,8 @@ a {
 .control-center-hero {
   position: relative;
   align-items: stretch;
-  gap: 20px;
-  padding: 22px 24px;
+  gap: 16px;
+  padding: 18px 24px;
   border: 1px solid rgba(38, 99, 235, 0.12);
   border-radius: 20px;
   background:
@@ -719,12 +712,12 @@ a {
 }
 
 :root[data-theme="dark"] .control-center-hero {
-  border-color: rgba(79, 136, 255, 0.18);
+  border-color: rgba(74, 104, 164, 0.10);
   background:
-    radial-gradient(circle at top left, rgba(79, 136, 255, 0.18), transparent 28%),
-    radial-gradient(circle at 85% 18%, rgba(34, 211, 238, 0.14), transparent 22%),
-    linear-gradient(135deg, rgba(20, 24, 34, 0.96) 0%, rgba(18, 24, 35, 0.98) 100%);
-  box-shadow: 0 20px 44px rgba(2, 6, 23, 0.28);
+    radial-gradient(circle at top left, rgba(50, 68, 110, 0.12), transparent 28%),
+    radial-gradient(circle at 85% 18%, rgba(36, 60, 100, 0.06), transparent 22%),
+    linear-gradient(135deg, rgba(16, 18, 24, 0.98) 0%, rgba(13, 15, 20, 0.99) 100%);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.36);
 }
 
 .control-center-hero-copy,
@@ -736,7 +729,7 @@ a {
 .control-center-hero-copy {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 8px;
   max-width: 760px;
 }
 
@@ -779,8 +772,8 @@ a {
 }
 
 :root[data-theme="dark"] .control-center-summary-strip div {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(28, 34, 48, 0.82);
+  border-color: rgba(100, 118, 150, 0.10);
   box-shadow: none;
 }
 
@@ -1059,16 +1052,16 @@ a {
 }
 
 :root[data-theme="dark"] .service-group-action {
-  background: rgba(79, 136, 255, 0.14);
-  color: #b7ccff;
+  background: rgba(70, 96, 150, 0.22);
+  color: #cfdbff;
 }
 
 :root[data-theme="dark"] .service-group-action:hover {
-  background: rgba(79, 136, 255, 0.2);
+  background: rgba(78, 108, 169, 0.28);
 }
 
 :root[data-theme="dark"] .service-group-action.service-group-action-primary {
-  background: var(--accent);
+  background: linear-gradient(180deg, #5b86e5 0%, #4f79d6 100%);
   color: #ffffff;
 }
 
@@ -1116,7 +1109,8 @@ a {
 }
 
 :root[data-theme="dark"] .service-nav-card.is-active {
-  background: var(--accent);
+  background: linear-gradient(180deg, #5a84e4 0%, #4b74cf 100%);
+  box-shadow: inset 0 0 0 1px rgba(118, 156, 236, 0.16);
 }
 
 .service-nav-card.is-active p {
@@ -1501,7 +1495,7 @@ a {
 
 :root[data-theme="dark"] .config-editor {
   border-color: var(--line);
-  background: #1a1b1e;
+  background: #0F1012;
 }
 
 /* ── Plugin / Pan Page ── */

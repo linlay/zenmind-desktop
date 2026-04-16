@@ -281,9 +281,6 @@ export function ControlCenterPage() {
       <div className="page-head control-center-hero">
         <div className="control-center-hero-copy">
           <h1>控制中心</h1>
-          <p className="page-copy">
-            管理 ZenMind Desktop 内置服务与插件的安装、配置、启动和日志。
-          </p>
         </div>
         <div className="control-center-hero-panel">
           <div className="summary-strip control-center-summary-strip">

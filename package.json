@@ -53,6 +53,7 @@
       }
     ],
     "mac": {
+      "icon": "build/icons/icon.icns",
       "identity": null,
       "target": [
         "dmg"
@@ -64,6 +65,7 @@
     },
     "afterPack": "./scripts/fix-mac-sign.js",
     "win": {
+      "icon": "build/icons/icon.ico",
       "target": [
         "nsis"
       ]
