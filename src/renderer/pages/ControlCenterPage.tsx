@@ -54,9 +54,6 @@ export function ControlCenterPage() {
     installBuiltinFromBundle,
     installBuiltin,
     initialize,
-    start,
-    stop,
-    restart,
     readConfig,
     writeConfig,
     refresh,
@@ -197,30 +194,43 @@ export function ControlCenterPage() {
 
   return (
     <section className="control-center-page">
-      <div className="page-head">
-        <div>
-          <p className="eyebrow">CONTROL CENTER</p>
+      <div className="page-head control-center-hero">
+        <div className="control-center-hero-copy">
+          <div className="control-center-hero-badges">
+            <span className="control-center-chip">CONTROL CENTER</span>
+            <span className="control-center-chip is-live">Workspace Live</span>
+          </div>
           <h1>服务控制中心</h1>
           <p className="page-copy">
             管理 ZenMind Desktop 内置服务与插件的安装、配置、启动和日志。
           </p>
+          <div className="control-center-hero-meta">
+            <span>服务装配</span>
+            <span>状态监控</span>
+            <span>配置与日志</span>
+          </div>
         </div>
-        <div className="summary-strip">
-          <div>
-            <strong>{serviceCounts.total}</strong>
-            <span>已登记服务</span>
-          </div>
-          <div>
-            <strong>{serviceCounts.running}</strong>
-            <span>运行中</span>
-          </div>
-          <div>
-            <strong>{serviceCounts.pending}</strong>
-            <span>待处理</span>
+        <div className="control-center-hero-panel">
+          <div className="summary-strip control-center-summary-strip">
+            <div>
+              <span className="summary-kicker">Registry</span>
+              <strong>{serviceCounts.total}</strong>
+              <span>已登记服务</span>
+            </div>
+            <div>
+              <span className="summary-kicker">Running</span>
+              <strong>{serviceCounts.running}</strong>
+              <span>运行中</span>
+            </div>
+            <div>
+              <span className="summary-kicker">Needs Care</span>
+              <strong>{serviceCounts.pending}</strong>
+              <span>待处理</span>
+            </div>
           </div>
           <button
             type="button"
-            className="action-button ghost"
+            className="action-button primary control-center-import"
             onClick={() => void handleInstallPlugin()}
           >
             导入插件
@@ -357,37 +367,11 @@ export function ControlCenterPage() {
               ) : null}
               <button
                 type="button"
-                onClick={() => runAction(selectedService.id, "lifecycle", () => start(selectedService.id))}
-                className="action-button primary"
-                disabled={activeId === selectedService.id}
-              >
-                启动
-              </button>
-              <button
-                type="button"
-                onClick={() => runAction(selectedService.id, "lifecycle", () => stop(selectedService.id))}
+                onClick={() => navigate("/market")}
                 className="action-button"
-                disabled={activeId === selectedService.id}
               >
-                停止
+                前往插件市场操作
               </button>
-              <button
-                type="button"
-                onClick={() => runAction(selectedService.id, "lifecycle", () => restart(selectedService.id))}
-                className="action-button"
-                disabled={activeId === selectedService.id}
-              >
-                重启
-              </button>
-              {selectedService.frontendMode !== "none" && selectedService.status === "running" ? (
-                <button
-                  type="button"
-                  onClick={() => navigate(`/plugin/${selectedService.id}`)}
-                  className="action-button primary"
-                >
-                  打开前端
-                </button>
-              ) : null}
               {selectedService.kind === "plugin" ? (
                 <button
                   type="button"

@@ -14,11 +14,11 @@ type ThemeMode = "light" | "dark";
 
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
-const DEFAULT_SIDEBAR_WIDTH = 232;
-const MIN_SIDEBAR_WIDTH = 208;
+const DEFAULT_SIDEBAR_WIDTH = 196;
+const MIN_SIDEBAR_WIDTH = 176;
 const MAX_SIDEBAR_WIDTH = 340;
-const COLLAPSED_SIDEBAR_WIDTH = 108;
-const COLLAPSE_THRESHOLD = 164;
+const COLLAPSED_SIDEBAR_WIDTH = 76;
+const COLLAPSE_THRESHOLD = 118;
 
 type SidebarState = {
   collapsed: boolean;
@@ -186,11 +186,7 @@ function AppShell() {
         ].filter(Boolean).join(" ")}
         style={{ "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
-        <AppSidebar
-          themeMode={themeMode}
-          onToggleTheme={toggleTheme}
-          isCollapsed={sidebarState.collapsed}
-        />
+        <AppSidebar isCollapsed={sidebarState.collapsed} />
         <button
           type="button"
           className="app-sidebar-resizer"
@@ -215,7 +211,10 @@ function AppShell() {
           <Routes>
             <Route path="/" element={<Navigate to="/control-center" replace />} />
             <Route path="/control-center" element={<ControlCenterPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            <Route
+              path="/settings"
+              element={<SettingsPage themeMode={themeMode} onToggleTheme={toggleTheme} />}
+            />
             <Route
               path="/assistant"
               element={

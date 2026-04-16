@@ -8,8 +8,6 @@ const staticNavItems = [
 ] as const;
 
 type AppSidebarProps = {
-  themeMode: "light" | "dark";
-  onToggleTheme: () => void;
   isCollapsed: boolean;
 };
 
@@ -70,7 +68,7 @@ function SidebarIcon({ kind }: { kind: string }) {
   }
 }
 
-export function AppSidebar({ themeMode, onToggleTheme, isCollapsed }: AppSidebarProps) {
+export function AppSidebar({ isCollapsed }: AppSidebarProps) {
   const { services } = useServices();
   const serviceNavItems = services
     .filter((service) => service.frontendMode === "standalone" && service.status === "running")
@@ -129,17 +127,6 @@ export function AppSidebar({ themeMode, onToggleTheme, isCollapsed }: AppSidebar
           </span>
           <span className="sidebar-link-label">设置</span>
         </NavLink>
-        <button
-          type="button"
-          className="theme-toggle sidebar-theme-toggle"
-          onClick={onToggleTheme}
-          aria-label={themeMode === "light" ? "切换到黑版" : "切换到白版"}
-        >
-          <span className="theme-toggle-icon" aria-hidden="true">
-            {themeMode === "light" ? "◐" : "◑"}
-          </span>
-          <span>{themeMode === "light" ? "黑版" : "白版"}</span>
-        </button>
       </div>
     </aside>
   );

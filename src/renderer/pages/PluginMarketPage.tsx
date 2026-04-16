@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
+import type { ServiceConfigReadResult, ServiceId } from "@shared/contracts";
 import "./PluginMarketPage.css";
 
 type MarketTab = "plugins" | "skills";
@@ -21,6 +22,8 @@ type UploadedSkill = {
   name: string;
   description: string;
 };
+
+type ConfigMeta = Pick<ServiceConfigReadResult, "path" | "exists" | "source">;
 
 const PLUGIN_ORDER = ["Container Hub", "智能体平台", "小宅助理", "认证服务"];
 
@@ -125,15 +128,25 @@ const CLOUD_SKILLS: CloudSkill[] = [
 
 const GROUP_ORDER: SkillGroup[] = ["推荐", "系统", "个人"];
 
+function pluginStatusDotClass(status: string) {
+  return status === "running" ? "is-running" : "is-idle";
+}
+
 export function PluginMarketPage() {
   const navigate = useNavigate();
-  const { services } = useServices();
+  const { services, start, stop, restart, readConfig, writeConfig } = useServices();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [activeTab, setActiveTab] = useState<MarketTab>("plugins");
   const [pluginQuery, setPluginQuery] = useState("");
   const [skillQuery, setSkillQuery] = useState("");
   const [skillScope, setSkillScope] = useState<"全部" | "云端" | "本地">("全部");
   const [feedback, setFeedback] = useState("");
+  const [isBatchStarting, setIsBatchStarting] = useState(false);
+  const [pendingServiceId, setPendingServiceId] = useState<string | null>(null);
+  const [savingServiceId, setSavingServiceId] = useState<string | null>(null);
+  const [selectedServiceId, setSelectedServiceId] = useState<ServiceId | null>(null);
+  const [configCache, setConfigCache] = useState<Record<string, string>>({});
+  const [configMeta, setConfigMeta] = useState<Record<string, ConfigMeta>>({});
   const [uploadedSkills, setUploadedSkills] = useState<UploadedSkill[]>([]);
   const [downloadedSkillIds, setDownloadedSkillIds] = useState<string[]>([
     "image-gen",
@@ -157,6 +170,65 @@ export function PluginMarketPage() {
       `${service.name} ${service.description}`.toLowerCase().includes(normalized)
     );
   }, [marketPlugins, pluginQuery]);
+
+  useEffect(() => {
+    if (marketPlugins.length === 0) {
+      setSelectedServiceId(null);
+      return;
+    }
+
+    setSelectedServiceId((current) =>
+      current && marketPlugins.some((service) => service.id === current) ? current : marketPlugins[0]?.id ?? null
+    );
+  }, [marketPlugins]);
+
+  const selectedPlugin =
+    filteredPlugins.find((service) => service.id === selectedServiceId) ??
+    marketPlugins.find((service) => service.id === selectedServiceId) ??
+    filteredPlugins[0] ??
+    null;
+
+  useEffect(() => {
+    if (!selectedPlugin || !selectedPlugin.installed || configMeta[selectedPlugin.id]) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void readConfig(selectedPlugin.id, "env")
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setConfigCache((current) => ({ ...current, [selectedPlugin.id]: result.content }));
+        setConfigMeta((current) => ({
+          ...current,
+          [selectedPlugin.id]: {
+            path: result.path,
+            exists: result.exists,
+            source: result.source
+          }
+        }));
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setConfigCache((current) => ({ ...current, [selectedPlugin.id]: current[selectedPlugin.id] ?? "" }));
+        setConfigMeta((current) => ({
+          ...current,
+          [selectedPlugin.id]: {
+            path: "",
+            exists: false,
+            source: "missing"
+          }
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [configMeta, readConfig, selectedPlugin]);
 
   const groupedSkills = useMemo(() => {
     const normalized = skillQuery.trim().toLowerCase();
@@ -219,6 +291,88 @@ export function PluginMarketPage() {
     setFeedback(`已从云端下载 skill：${skill.name}`);
   }
 
+  async function handlePluginCommand(
+    serviceId: string,
+    command: () => Promise<{ ok: boolean; message: string }>
+  ) {
+    setPendingServiceId(serviceId);
+    try {
+      const result = await command();
+      setFeedback(result.message);
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setPendingServiceId((current) => (current === serviceId ? null : current));
+    }
+  }
+
+  async function handleStartAllPlugins() {
+    if (marketPlugins.length === 0) {
+      setFeedback("当前没有可启动的服务。");
+      return;
+    }
+
+    setIsBatchStarting(true);
+
+    const startedNames: string[] = [];
+    const skippedNames: string[] = [];
+    const failedMessages: string[] = [];
+
+    try {
+      for (const plugin of marketPlugins) {
+        if (plugin.status === "running") {
+          skippedNames.push(plugin.name);
+          continue;
+        }
+
+        try {
+          const result = await start(plugin.id);
+          if (result.ok) {
+            startedNames.push(plugin.name);
+          } else {
+            failedMessages.push(`${plugin.name}：${result.message}`);
+          }
+        } catch (reason) {
+          failedMessages.push(
+            `${plugin.name}：${reason instanceof Error ? reason.message : String(reason)}`
+          );
+        }
+      }
+
+      const summary = [
+        startedNames.length > 0 ? `已启动 ${startedNames.join("、")}` : "",
+        skippedNames.length > 0 ? `已跳过运行中的 ${skippedNames.join("、")}` : "",
+        failedMessages.length > 0 ? failedMessages.join("；") : ""
+      ]
+        .filter(Boolean)
+        .join("。");
+
+      setFeedback(summary || "批量启动完成。");
+    } finally {
+      setIsBatchStarting(false);
+    }
+  }
+
+  async function handleSaveConfig(serviceId: ServiceId) {
+    setSavingServiceId(serviceId);
+    try {
+      const result = await writeConfig(serviceId, "env", configCache[serviceId] ?? "");
+      setFeedback(result.message);
+      setConfigMeta((current) => ({
+        ...current,
+        [serviceId]: {
+          path: current[serviceId]?.path ?? "",
+          exists: true,
+          source: "file"
+        }
+      }));
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSavingServiceId((current) => (current === serviceId ? null : current));
+    }
+  }
+
   return (
     <section className="market-page">
       <div className="market-shell">
@@ -247,6 +401,16 @@ export function PluginMarketPage() {
           </div>
 
           <div className="market-toolbar">
+            {activeTab === "plugins" ? (
+              <button
+                type="button"
+                className="market-toolbar-btn market-toolbar-btn-primary"
+                onClick={() => void handleStartAllPlugins()}
+                disabled={isBatchStarting}
+              >
+                {isBatchStarting ? "启动中..." : "一键启动"}
+              </button>
+            ) : null}
             <button type="button" className="market-toolbar-btn" onClick={() => navigate("/control-center")}>
               管理
             </button>
@@ -292,17 +456,115 @@ export function PluginMarketPage() {
                 {filteredPlugins.map((plugin) => (
                   <article
                     key={plugin.id}
-                    className={`market-plugin-feature${plugin.name === "Container Hub" ? " is-active" : ""}`}
-                    onClick={() => navigate(`/plugin/${plugin.id}`)}
+                    className={`market-plugin-feature${selectedPlugin?.id === plugin.id ? " is-active" : ""}`}
+                    onClick={() => setSelectedServiceId(plugin.id)}
                   >
                     <div className="market-plugin-feature-head">
-                      <h2>{plugin.name}</h2>
-                      <span className="market-plugin-status-dot" aria-hidden="true" />
+                      <div className="market-plugin-feature-title">
+                        <h2>{plugin.name}</h2>
+                        <span className="market-plugin-status-text">{plugin.statusLabel}</span>
+                      </div>
+                      <span
+                        className={`market-plugin-status-dot ${pluginStatusDotClass(plugin.status)}${pendingServiceId === plugin.id ? " is-pending" : ""}`}
+                        aria-hidden="true"
+                      />
                     </div>
                     <p>{plugin.description}</p>
+                    <div className="market-plugin-actions">
+                      <button
+                        type="button"
+                        className="action-button primary market-plugin-action"
+                        disabled={pendingServiceId === plugin.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handlePluginCommand(plugin.id, () => start(plugin.id));
+                        }}
+                      >
+                        启动
+                      </button>
+                      <button
+                        type="button"
+                        className="action-button market-plugin-action"
+                        disabled={pendingServiceId === plugin.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handlePluginCommand(plugin.id, () => stop(plugin.id));
+                        }}
+                      >
+                        停止
+                      </button>
+                      <button
+                        type="button"
+                        className="action-button market-plugin-action"
+                        disabled={pendingServiceId === plugin.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handlePluginCommand(plugin.id, () => restart(plugin.id));
+                        }}
+                      >
+                        重启
+                      </button>
+                      {plugin.frontendMode !== "none" && plugin.status === "running" ? (
+                        <button
+                          type="button"
+                          className="action-button primary market-plugin-action"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            navigate(`/plugin/${plugin.id}`);
+                          }}
+                        >
+                          打开前端
+                        </button>
+                      ) : null}
+                    </div>
                   </article>
                 ))}
               </div>
+
+              {selectedPlugin ? (
+                <section className="market-plugin-detail service-card">
+                  <div className="service-card-head">
+                    <div>
+                      <p className="service-kicker">{selectedPlugin.version}</p>
+                      <h2>{selectedPlugin.name}</h2>
+                    </div>
+                    <span className={`status-pill ${pluginStatusDotClass(selectedPlugin.status).replace("is-", "")}`}>
+                      {selectedPlugin.statusLabel}
+                    </span>
+                  </div>
+
+                  <p className="service-description">{selectedPlugin.description}</p>
+                  <p className="service-message">{selectedPlugin.message}</p>
+
+                  <div className="config-panel market-plugin-config">
+                    <div className="config-head">
+                      <h3>原文配置</h3>
+                      <span>{configMeta[selectedPlugin.id]?.path || "将自动创建 .env"}</span>
+                    </div>
+                    <textarea
+                      className="config-editor"
+                      value={configCache[selectedPlugin.id] ?? ""}
+                      onChange={(event) =>
+                        setConfigCache((current) => ({ ...current, [selectedPlugin.id]: event.target.value }))
+                      }
+                      spellCheck={false}
+                    />
+                    <div className="config-footer">
+                      <button
+                        type="button"
+                        className="action-button primary"
+                        onClick={() => void handleSaveConfig(selectedPlugin.id)}
+                        disabled={savingServiceId === selectedPlugin.id}
+                      >
+                        保存配置
+                      </button>
+                    </div>
+                    {configMeta[selectedPlugin.id]?.source === "template" ? (
+                      <p className="service-message">当前内容来自模板，保存后才会写入目标文件。</p>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
             </div>
           ) : (
             <div className="market-content">

@@ -85,6 +85,7 @@
 
 .help-main {
   min-width: 0;
+  width: 100%;
   background: #ffffff;
   padding: 56px 72px 72px;
   border-radius: 24px;
@@ -97,14 +98,15 @@
 
 .help-hero {
   margin-bottom: 40px;
+  width: min(100%, 1100px);
 }
 
 .help-hero-title {
   margin: 0 0 12px;
-  font-size: 40px;
-  line-height: 1.15;
+  font-size: 30px;
+  line-height: 1.2;
   font-weight: 700;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.03em;
   color: var(--ink);
 }
 
@@ -132,7 +134,7 @@
 }
 
 .help-faq-list {
-  width: min(100%, 820px);
+  width: min(100%, 1100px);
 }
 
 .help-faq-item {
@@ -309,7 +311,7 @@
   }
 
   .help-hero-title {
-    font-size: 32px;
+    font-size: 24px;
   }
 
   .help-hero-desc {

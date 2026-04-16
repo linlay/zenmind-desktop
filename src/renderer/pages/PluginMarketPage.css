@@ -150,7 +150,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  overflow: hidden;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .market-filter-bar {
@@ -204,10 +205,7 @@
 
 .market-plugin-panel,
 .market-skill-groups {
-  flex: 1;
   min-height: 0;
-  overflow: auto;
-  padding-right: 4px;
 }
 
 .market-plugin-panel {
@@ -215,9 +213,25 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   align-content: start;
+  overflow: visible;
+  padding-right: 0;
+  flex: none;
+}
+
+.market-skill-groups {
+  flex: 1;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.market-plugin-detail {
+  margin-top: 4px;
 }
 
 .market-plugin-feature {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   padding: 20px;
   border-radius: 8px;
   border: 1px solid var(--line);
@@ -238,8 +252,13 @@
   border-color: transparent;
 }
 
-.market-plugin-feature.is-active p {
+.market-plugin-feature.is-active p,
+.market-plugin-feature.is-active .market-plugin-status-text {
   color: rgba(255, 255, 255, 0.85);
+}
+
+.market-plugin-feature.is-active .market-plugin-status-text {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .market-plugin-feature-head {
@@ -247,13 +266,28 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
 }
 
-.market-plugin-feature-head h2 {
-  margin: 0;
+.market-plugin-feature-title {
+  min-width: 0;
+}
+
+.market-plugin-feature-title h2 {
+  margin: 0 0 6px;
   font-size: 16px;
   font-weight: 600;
+}
+
+.market-plugin-status-text {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(31, 35, 41, 0.06);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .market-plugin-feature p {
@@ -268,7 +302,74 @@
   width: 12px;
   height: 12px;
   border-radius: 999px;
+  margin-top: 4px;
+  background: var(--ink-muted);
+}
+
+.market-plugin-status-dot.is-running {
   background: var(--success);
+}
+
+.market-plugin-status-dot.is-warning {
+  background: #ffb020;
+}
+
+.market-plugin-status-dot.is-danger {
+  background: #f04438;
+}
+
+.market-plugin-status-dot.is-idle {
+  background: var(--ink-muted);
+}
+
+.market-plugin-status-dot.is-pending {
+  animation: market-plugin-pulse 1s ease-in-out infinite;
+}
+
+.market-plugin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.market-plugin-action {
+  min-width: 84px;
+}
+
+.market-plugin-feature.is-active .market-plugin-action {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.market-plugin-feature.is-active .market-plugin-action:not(.primary) {
+  background: rgba(255, 255, 255, 0.96);
+  color: #1f2937;
+}
+
+.market-plugin-feature.is-active .market-plugin-action.primary {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.market-plugin-feature.is-active .market-plugin-action.primary:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.market-plugin-feature.is-active .market-plugin-action:not(.primary):hover {
+  border-color: rgba(255, 255, 255, 0.42);
+}
+
+@keyframes market-plugin-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(0.82);
+    opacity: 0.56;
+  }
 }
 
 /* ── Skill Actions ── */
@@ -593,6 +694,11 @@
   background: var(--accent);
 }
 
+:root[data-theme="dark"] .market-plugin-status-text {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.86);
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 1100px) {
@@ -622,5 +728,10 @@
   .market-plugin-panel,
   .market-skill-groups {
     overflow: visible;
+  }
+
+  .market-plugin-action {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
   }
 }
