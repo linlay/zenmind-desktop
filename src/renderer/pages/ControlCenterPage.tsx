@@ -3,6 +3,8 @@ import type { ServiceConfigReadResult, ServiceId, ServiceState } from "@shared/c
 import { useServices } from "../services/ServicesContext";
 import { useNavigate } from "react-router-dom";
 
+const QUICK_START_ORDER = ["Container Hub", "智能体平台", "小宅助理", "认证服务"];
+
 function statusClass(status: ServiceState["status"]) {
   switch (status) {
     case "running":
@@ -41,6 +43,7 @@ function statusDotClass(status: ServiceState["status"]) {
 
 type ActionScope = "lifecycle" | "detail";
 type ConfigMeta = Pick<ServiceConfigReadResult, "path" | "exists" | "source">;
+type ServiceGroupKey = "core" | "market";
 
 function shouldShowInitializeAction(service: ServiceState) {
   return service.status === "initialization-required" || service.message.startsWith("初始化失败");
@@ -54,6 +57,9 @@ export function ControlCenterPage() {
     installBuiltinFromBundle,
     installBuiltin,
     initialize,
+    start,
+    stop,
+    restart,
     readConfig,
     writeConfig,
     refresh,
@@ -65,6 +71,8 @@ export function ControlCenterPage() {
   const [selectedServiceId, setSelectedServiceId] = useState<ServiceId | null>(null);
   const [pendingAction, setPendingAction] = useState<{ serviceId: ServiceId; scope: ActionScope } | null>(null);
   const [feedback, setFeedback] = useState("");
+  const [isBatchStarting, setIsBatchStarting] = useState(false);
+  const [expandedGroup, setExpandedGroup] = useState<ServiceGroupKey | null>("core");
   const [configCache, setConfigCache] = useState<Record<string, string>>({});
   const [configMeta, setConfigMeta] = useState<Record<string, ConfigMeta>>({});
 
@@ -129,17 +137,23 @@ export function ControlCenterPage() {
 
   const serviceCounts = {
     total: services.length,
-    running: services.filter((service) => service.status === "running").length,
-    pending: services.filter(
-      (service) =>
-        service.status === "initialization-required" ||
-        service.status === "config-required" ||
-        service.status === "dependency-missing"
-    ).length
+    running: services.filter((service) => service.status === "running").length
   };
 
+  const coreServices = QUICK_START_ORDER
+    .map((name) => services.find((service) => service.name === name))
+    .filter((service): service is ServiceState => Boolean(service));
+
+  const marketServices = services.filter((service) => service.kind === "plugin");
+
   const selectedService = services.find((service) => service.id === selectedServiceId) ?? services[0] ?? null;
-  const selectedConfigMeta = selectedService ? configMeta[selectedService.id] : undefined;
+  const activeDetailService =
+    expandedGroup === null
+      ? null
+      : expandedGroup === "core"
+        ? coreServices.find((service) => service.id === selectedService?.id) ?? coreServices[0] ?? null
+        : marketServices.find((service) => service.id === selectedService?.id) ?? marketServices[0] ?? null;
+  const selectedConfigMeta = activeDetailService ? configMeta[activeDetailService.id] : undefined;
 
   function invalidateConfig(serviceId: ServiceId) {
     setConfigCache((current) => {
@@ -151,6 +165,25 @@ export function ControlCenterPage() {
       const next = { ...current };
       delete next[serviceId];
       return next;
+    });
+  }
+
+  function toggleGroup(group: ServiceGroupKey) {
+    setExpandedGroup((current) => {
+      if (current === group) {
+        return null;
+      }
+
+      const nextSelectedService =
+        group === "core"
+          ? coreServices.find((service) => service.id === selectedService?.id) ?? coreServices[0] ?? null
+          : marketServices.find((service) => service.id === selectedService?.id) ?? marketServices[0] ?? null;
+
+      if (nextSelectedService) {
+        setSelectedServiceId(nextSelectedService.id);
+      }
+
+      return group;
     });
   }
 
@@ -192,49 +225,79 @@ export function ControlCenterPage() {
     }
   }
 
+  async function handleQuickStart() {
+    const orderedServices = QUICK_START_ORDER
+      .map((name) => services.find((service) => service.name === name))
+      .filter((service): service is ServiceState => Boolean(service));
+
+    if (orderedServices.length === 0) {
+      setFeedback("当前没有可一键启动的服务。");
+      return;
+    }
+
+    setIsBatchStarting(true);
+
+    const startedNames: string[] = [];
+    const skippedNames: string[] = [];
+    const failedMessages: string[] = [];
+
+    try {
+      for (const service of orderedServices) {
+        if (service.status === "running") {
+          skippedNames.push(service.name);
+          continue;
+        }
+
+        try {
+          const result = await start(service.id);
+          if (result.ok) {
+            startedNames.push(service.name);
+          } else {
+            failedMessages.push(`${service.name}：${result.message}`);
+          }
+        } catch (reason) {
+          failedMessages.push(
+            `${service.name}：${reason instanceof Error ? reason.message : String(reason)}`
+          );
+        }
+      }
+
+      const summary = [
+        startedNames.length > 0 ? `已启动 ${startedNames.join("、")}` : "",
+        skippedNames.length > 0 ? `已跳过运行中的 ${skippedNames.join("、")}` : "",
+        failedMessages.length > 0 ? failedMessages.join("；") : ""
+      ]
+        .filter(Boolean)
+        .join("。");
+
+      setFeedback(summary || "一键启动完成。");
+    } finally {
+      setIsBatchStarting(false);
+    }
+  }
+
   return (
     <section className="control-center-page">
       <div className="page-head control-center-hero">
         <div className="control-center-hero-copy">
-          <div className="control-center-hero-badges">
-            <span className="control-center-chip">CONTROL CENTER</span>
-            <span className="control-center-chip is-live">Workspace Live</span>
-          </div>
-          <h1>服务控制中心</h1>
+          <h1>控制中心</h1>
           <p className="page-copy">
             管理 ZenMind Desktop 内置服务与插件的安装、配置、启动和日志。
           </p>
-          <div className="control-center-hero-meta">
-            <span>服务装配</span>
-            <span>状态监控</span>
-            <span>配置与日志</span>
-          </div>
         </div>
         <div className="control-center-hero-panel">
           <div className="summary-strip control-center-summary-strip">
             <div>
-              <span className="summary-kicker">Registry</span>
+              <span className="summary-kicker">已登记</span>
               <strong>{serviceCounts.total}</strong>
               <span>已登记服务</span>
             </div>
             <div>
-              <span className="summary-kicker">Running</span>
+              <span className="summary-kicker">运行中</span>
               <strong>{serviceCounts.running}</strong>
               <span>运行中</span>
             </div>
-            <div>
-              <span className="summary-kicker">Needs Care</span>
-              <strong>{serviceCounts.pending}</strong>
-              <span>待处理</span>
-            </div>
           </div>
-          <button
-            type="button"
-            className="action-button primary control-center-import"
-            onClick={() => void handleInstallPlugin()}
-          >
-            导入插件
-          </button>
         </div>
       </div>
 
@@ -244,150 +307,242 @@ export function ControlCenterPage() {
 
       <div className="control-center-shell">
         <aside className="service-sider">
-          <div className="service-nav-list">
-            {services.map((service) => {
-              const isSelected = selectedService?.id === service.id;
-              const isPendingLifecycle =
-                pendingAction?.scope === "lifecycle" && pendingAction.serviceId === service.id;
+          <div className="service-accordion">
+            {[
+              {
+                key: "core" as const,
+                title: "控制中心",
+                subtitle: `${coreServices.length} 个核心服务`,
+                services: coreServices,
+                empty: "暂无核心服务"
+              },
+              {
+                key: "market" as const,
+                title: "插件市场",
+                subtitle: `${marketServices.length} 个插件`,
+                services: marketServices,
+                empty: "暂无已导入插件"
+              }
+            ].map((group) => {
+              const isOpen = expandedGroup === group.key;
 
               return (
-                <button
-                  key={service.id}
-                  type="button"
-                  className={`service-nav-card${isSelected ? " is-active" : ""}`}
-                  onClick={() => setSelectedServiceId(service.id)}
-                  aria-pressed={isSelected}
+                <section
+                  key={group.key}
+                  className={`service-group${isOpen ? " is-open" : ""}`}
                 >
-                  <div className="service-nav-card-head">
-                    <h2>{service.name}</h2>
-                    <span
-                      className={`status-dot ${isPendingLifecycle ? "loading" : statusDotClass(service.status)}`}
-                      title={isPendingLifecycle ? "处理中" : service.statusLabel}
-                      aria-hidden="true"
-                    />
+                  <div className="service-group-head">
+                    <button
+                      type="button"
+                      className="service-group-trigger"
+                      onClick={() => toggleGroup(group.key)}
+                      aria-expanded={isOpen}
+                    >
+                      <div className="service-group-copy">
+                        <h2>{group.title}</h2>
+                        <span>{group.subtitle}</span>
+                      </div>
+                    </button>
+                    {group.key === "core" ? (
+                      <button
+                        type="button"
+                        className="action-button service-group-action"
+                        onClick={() => void handleQuickStart()}
+                        disabled={isBatchStarting}
+                      >
+                        {isBatchStarting ? "启动中..." : "一键启动"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="action-button service-group-action service-group-action-primary"
+                        onClick={() => void handleInstallPlugin()}
+                      >
+                        导入插件
+                      </button>
+                    )}
                   </div>
-                  <p>{service.description}</p>
-                </button>
+
+                  {isOpen ? (
+                    <div className="service-nav-list">
+                      {group.services.length > 0 ? (
+                        group.services.map((service) => {
+                          const isSelected = selectedService?.id === service.id;
+                          const isPendingLifecycle =
+                            pendingAction?.scope === "lifecycle" && pendingAction.serviceId === service.id;
+
+                          return (
+                            <button
+                              key={service.id}
+                              type="button"
+                              className={`service-nav-card${isSelected ? " is-active" : ""}`}
+                              onClick={() => setSelectedServiceId(service.id)}
+                              aria-pressed={isSelected}
+                            >
+                              <div className="service-nav-card-head">
+                                <h3>{service.name}</h3>
+                                <span
+                                  className={`status-dot ${isPendingLifecycle ? "loading" : statusDotClass(service.status)}`}
+                                  title={isPendingLifecycle ? "处理中" : service.statusLabel}
+                                  aria-hidden="true"
+                                />
+                              </div>
+                              <p>{service.description}</p>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="service-group-empty">{group.empty}</div>
+                      )}
+                    </div>
+                  ) : null}
+                </section>
               );
             })}
           </div>
         </aside>
 
-        {selectedService ? (
+        {activeDetailService ? (
           <article className="service-card control-center-detail">
             <div className="service-card-head">
               <div>
-                <p className="service-kicker">{selectedService.version}</p>
-                <h2>{selectedService.name}</h2>
+                <p className="service-kicker">{activeDetailService.version}</p>
+                <h2>{activeDetailService.name}</h2>
               </div>
-              <span className={`status-pill ${statusClass(selectedService.status)}`}>
-                {selectedService.statusLabel}
+              <span className={`status-pill ${statusClass(activeDetailService.status)}`}>
+                {activeDetailService.statusLabel}
               </span>
             </div>
 
-            <p className="service-description">{selectedService.description}</p>
-            <p className="service-message">{selectedService.message}</p>
+            <p className="service-description">{activeDetailService.description}</p>
+            <p className="service-message">{activeDetailService.message}</p>
 
             <dl className="meta-grid">
               <div>
                 <dt>安装目录</dt>
-                <dd>{selectedService.installDir}</dd>
+                <dd>{activeDetailService.installDir}</dd>
               </div>
               <div>
                 <dt>日志文件</dt>
-                <dd>{selectedService.healthMeta.logFilePath}</dd>
+                <dd>{activeDetailService.healthMeta.logFilePath}</dd>
               </div>
               <div>
                 <dt>错误日志</dt>
-                <dd>{selectedService.healthMeta.errorLogFilePath || "无"}</dd>
+                <dd>{activeDetailService.healthMeta.errorLogFilePath || "无"}</dd>
               </div>
               <div>
                 <dt>PID 文件</dt>
-                <dd>{selectedService.healthMeta.pidFilePath}</dd>
+                <dd>{activeDetailService.healthMeta.pidFilePath}</dd>
               </div>
               <div>
                 <dt>访问入口</dt>
-                <dd>{selectedService.healthMeta.webUrl || "无"}</dd>
+                <dd>{activeDetailService.healthMeta.webUrl || "无"}</dd>
               </div>
             </dl>
 
-            {selectedService.healthMeta.prerequisites.length > 0 ? (
+            {activeDetailService.healthMeta.prerequisites.length > 0 ? (
               <div className="prereq-box">
-                {selectedService.healthMeta.prerequisites.map((item) => (
+                {activeDetailService.healthMeta.prerequisites.map((item) => (
                   <span key={item}>{item}</span>
                 ))}
               </div>
             ) : null}
 
             <div className="action-row">
-              {selectedService.kind === "builtin" && selectedService.status === "not-installed" ? (
+              {activeDetailService.kind === "builtin" && activeDetailService.status === "not-installed" ? (
                 <button
                   type="button"
                   onClick={() =>
-                    runAction(selectedService.id, "lifecycle", () => installBuiltinFromBundle(selectedService.id), {
+                    runAction(activeDetailService.id, "lifecycle", () => installBuiltinFromBundle(activeDetailService.id), {
                       invalidateConfig: true
                     })
                   }
                   className="action-button primary"
-                  disabled={activeId === selectedService.id}
+                  disabled={activeId === activeDetailService.id}
                 >
                   安装
                 </button>
               ) : null}
-              {shouldShowInitializeAction(selectedService) ? (
+              {shouldShowInitializeAction(activeDetailService) ? (
                 <button
                   type="button"
                   onClick={() =>
-                    runAction(selectedService.id, "lifecycle", () => initialize(selectedService.id), {
+                    runAction(activeDetailService.id, "lifecycle", () => initialize(activeDetailService.id), {
                       invalidateConfig: true
                     })
                   }
                   className="action-button primary"
-                  disabled={activeId === selectedService.id}
+                  disabled={activeId === activeDetailService.id}
                 >
-                  {selectedService.status === "initialization-required" ? "初始化" : "重新初始化"}
+                  {activeDetailService.status === "initialization-required" ? "初始化" : "重新初始化"}
                 </button>
               ) : null}
-              {selectedService.kind === "builtin" &&
-              (selectedService.status === "not-installed" ||
-                selectedService.status === "stopped" ||
-                selectedService.status === "error") ? (
+              {activeDetailService.kind === "builtin" &&
+              (activeDetailService.status === "not-installed" ||
+                activeDetailService.status === "stopped" ||
+                activeDetailService.status === "error") ? (
                 <button
                   type="button"
                   onClick={() =>
-                    runAction(selectedService.id, "lifecycle", () => installBuiltin(selectedService.id), {
+                    runAction(activeDetailService.id, "lifecycle", () => installBuiltin(activeDetailService.id), {
                       invalidateConfig: true
                     })
                   }
                   className="action-button ghost"
-                  disabled={activeId === selectedService.id}
+                  disabled={activeId === activeDetailService.id}
                 >
                   重新安装
                 </button>
               ) : null}
               <button
                 type="button"
-                onClick={() => navigate("/market")}
-                className="action-button"
+                onClick={() => runAction(activeDetailService.id, "lifecycle", () => start(activeDetailService.id))}
+                className="action-button primary"
+                disabled={activeId === activeDetailService.id}
               >
-                前往插件市场操作
+                启动
               </button>
-              {selectedService.kind === "plugin" ? (
+              <button
+                type="button"
+                onClick={() => runAction(activeDetailService.id, "lifecycle", () => stop(activeDetailService.id))}
+                className="action-button"
+                disabled={activeId === activeDetailService.id}
+              >
+                停止
+              </button>
+              <button
+                type="button"
+                onClick={() => runAction(activeDetailService.id, "lifecycle", () => restart(activeDetailService.id))}
+                className="action-button"
+                disabled={activeId === activeDetailService.id}
+              >
+                重启
+              </button>
+              {activeDetailService.frontendMode !== "none" && activeDetailService.status === "running" ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/plugin/${activeDetailService.id}`)}
+                  className="action-button primary"
+                >
+                  打开前端
+                </button>
+              ) : null}
+              {activeDetailService.kind === "plugin" ? (
                 <button
                   type="button"
                   onClick={() =>
                     runAction(
-                      selectedService.id,
+                      activeDetailService.id,
                       "lifecycle",
                       async () => {
-                        const r = await uninstallPlugin(selectedService.id);
+                        const r = await uninstallPlugin(activeDetailService.id);
                         return { ok: r.ok, message: r.message };
                       },
                       { invalidateConfig: true }
                     )
                   }
                   className="action-button ghost"
-                  disabled={activeId === selectedService.id}
+                  disabled={activeId === activeDetailService.id}
                 >
                   卸载插件
                 </button>
@@ -401,9 +556,9 @@ export function ControlCenterPage() {
               </div>
               <textarea
                 className="config-editor"
-                value={configCache[selectedService.id] ?? ""}
+                value={configCache[activeDetailService.id] ?? ""}
                 onChange={(event) =>
-                  setConfigCache((current) => ({ ...current, [selectedService.id]: event.target.value }))
+                  setConfigCache((current) => ({ ...current, [activeDetailService.id]: event.target.value }))
                 }
                 spellCheck={false}
               />
@@ -413,15 +568,15 @@ export function ControlCenterPage() {
                   className="action-button primary"
                   onClick={() =>
                     runAction(
-                      selectedService.id,
+                      activeDetailService.id,
                       "detail",
-                      () => writeConfig(selectedService.id, "env", configCache[selectedService.id] ?? ""),
+                      () => writeConfig(activeDetailService.id, "env", configCache[activeDetailService.id] ?? ""),
                       {
                         invalidateConfig: true
                       }
                     )
                   }
-                  disabled={activeId === selectedService.id}
+                  disabled={activeId === activeDetailService.id}
                 >
                   保存配置
                 </button>
