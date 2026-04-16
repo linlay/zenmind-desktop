@@ -6,7 +6,11 @@ import {
   getPluginAuthBridgeProtocol,
 } from "../../shared/auth-bridge";
 
-export function PluginPage() {
+type PluginPageProps = {
+  hostTheme: "light" | "dark";
+};
+
+export function PluginPage({ hostTheme }: PluginPageProps) {
   const { pluginId } = useParams<{ pluginId: string }>();
   const { services } = useServices();
   const service = services.find((s) => s.id === pluginId);
@@ -19,8 +23,8 @@ export function PluginPage() {
     [service?.id],
   );
   const embeddedUrl = useMemo(() => {
-    return buildPluginEmbeddedUrl(service?.id, webUrl);
-  }, [service?.id, webUrl]);
+    return buildPluginEmbeddedUrl(service?.id, webUrl, { hostTheme });
+  }, [hostTheme, service?.id, webUrl]);
 
   useEffect(() => {
     setBridgeError("");
