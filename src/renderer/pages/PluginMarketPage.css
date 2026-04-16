@@ -1,0 +1,626 @@
+/* ══════════════════════════════════════════════
+   Plugin Market Page — Feishu Design Style
+   ══════════════════════════════════════════════ */
+
+.market-page {
+  min-height: calc(100vh - 64px);
+}
+
+.market-shell {
+  height: calc(100vh - 72px);
+  display: flex;
+  flex-direction: column;
+  padding: 8px 4px 0;
+  overflow: hidden;
+}
+
+/* ── Top Bar ── */
+
+.market-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.market-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.market-tab {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+.market-tab.is-active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--panel-shadow);
+}
+
+/* ── Toolbar ── */
+
+.market-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.market-toolbar-btn,
+.market-toolbar-icon {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+.market-toolbar-btn:hover,
+.market-toolbar-icon:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.market-toolbar-btn-primary {
+  background: var(--surface);
+}
+
+.market-toolbar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 32px;
+  padding: 0;
+}
+
+.market-toolbar-icon span {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+/* ── Body ── */
+
+.market-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  max-width: 1040px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.market-hero {
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.market-hero h1 {
+  margin: 0 0 6px;
+  font-size: clamp(24px, 2.6vw, 32px);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.market-hero p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.market-feedback {
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid rgba(38, 99, 235, 0.14);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14px;
+}
+
+/* ── Content ── */
+
+.market-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.market-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  gap: 8px;
+}
+
+.market-filter-bar-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.market-search,
+.market-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.market-search svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  stroke: var(--ink-muted);
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.market-search input,
+.market-select select {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+
+.market-select select {
+  cursor: pointer;
+}
+
+/* ── Plugin Panel ── */
+
+.market-plugin-panel,
+.market-skill-groups {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.market-plugin-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.market-plugin-feature {
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--panel-shadow);
+  cursor: pointer;
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.market-plugin-feature:hover {
+  border-color: var(--accent-glow);
+  box-shadow: var(--panel-shadow-hover);
+}
+
+.market-plugin-feature.is-active {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.market-plugin-feature.is-active p {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.market-plugin-feature-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.market-plugin-feature-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.market-plugin-feature p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.market-plugin-status-dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--success);
+}
+
+/* ── Skill Actions ── */
+
+.market-skill-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.market-skill-action-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-end;
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--panel-shadow);
+}
+
+.market-skill-action-card h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.market-skill-action-card p:not(.eyebrow) {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ── Skill Groups ── */
+
+.market-group + .market-group {
+  margin-top: 20px;
+}
+
+.market-group-head {
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.market-group-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.market-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.market-skill-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background-color 0.2s ease-in-out;
+}
+
+.market-skill-card:hover {
+  background: var(--surface-soft);
+}
+
+.market-skill-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: var(--panel-shadow);
+}
+
+.market-skill-copy {
+  min-width: 0;
+}
+
+.market-skill-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.market-skill-title-row h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.market-skill-copy p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.market-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 180, 42, 0.1);
+  color: #00874a;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.market-badge-local {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.market-skill-action,
+.market-skill-action-static {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(31, 35, 41, 0.04);
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+.market-skill-action:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.market-skill-action-static {
+  cursor: default;
+}
+
+/* ── Skill Icon Variants ── */
+
+.market-icon-sora {
+  background: linear-gradient(135deg, #0e5fd7, #092f7a);
+  color: #ffffff;
+}
+
+.market-icon-doc,
+.market-icon-ant,
+.market-icon-openai {
+  background: var(--surface);
+}
+
+.market-icon-sheet {
+  background: #dff5e5;
+  color: #237846;
+}
+
+.market-icon-playwright {
+  background: #eef5ff;
+  color: #3690ff;
+}
+
+.market-icon-image {
+  background: #fff5e0;
+  color: #996600;
+}
+
+.market-icon-creator {
+  background: #ffe8d0;
+  color: #994400;
+}
+
+.market-icon-installer {
+  background: #fff3cc;
+  color: #997700;
+}
+
+.market-icon-figma {
+  background: #262626;
+  color: #ffffff;
+}
+
+.market-icon-pdf {
+  background: #ff6b6b;
+  color: #ffffff;
+}
+
+.market-icon-local {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.market-hidden-input {
+  display: none;
+}
+
+/* ── Dark Mode ── */
+
+:root[data-theme="dark"] .market-tabs {
+  background: var(--surface-soft);
+  border-color: var(--line);
+}
+
+:root[data-theme="dark"] .market-toolbar-btn,
+:root[data-theme="dark"] .market-toolbar-icon,
+:root[data-theme="dark"] .market-search,
+:root[data-theme="dark"] .market-select,
+:root[data-theme="dark"] .market-skill-action-card,
+:root[data-theme="dark"] .market-plugin-feature {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+:root[data-theme="dark"] .market-tab.is-active {
+  background: var(--surface);
+}
+
+:root[data-theme="dark"] .market-tab {
+  color: var(--ink-soft);
+}
+
+:root[data-theme="dark"] .market-tab.is-active,
+:root[data-theme="dark"] .market-toolbar-btn,
+:root[data-theme="dark"] .market-toolbar-icon,
+:root[data-theme="dark"] .market-search input,
+:root[data-theme="dark"] .market-select select,
+:root[data-theme="dark"] .market-hero h1,
+:root[data-theme="dark"] .market-group-head h2,
+:root[data-theme="dark"] .market-plugin-feature-head h2,
+:root[data-theme="dark"] .market-skill-title-row h3 {
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .market-hero p,
+:root[data-theme="dark"] .market-skill-action-card p:not(.eyebrow),
+:root[data-theme="dark"] .market-plugin-feature p,
+:root[data-theme="dark"] .market-skill-copy p {
+  color: var(--ink-soft);
+}
+
+:root[data-theme="dark"] .market-search svg {
+  stroke: var(--ink-muted);
+}
+
+:root[data-theme="dark"] .market-search input::placeholder {
+  color: var(--ink-muted);
+}
+
+:root[data-theme="dark"] .market-feedback {
+  background: var(--accent-soft);
+  border-color: rgba(79, 136, 255, 0.2);
+}
+
+:root[data-theme="dark"] .market-group-head {
+  border-bottom-color: var(--line);
+}
+
+:root[data-theme="dark"] .market-skill-action,
+:root[data-theme="dark"] .market-skill-action-static {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink-soft);
+}
+
+:root[data-theme="dark"] .market-skill-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme="dark"] .market-skill-icon {
+  border-color: var(--line);
+}
+
+:root[data-theme="dark"] .market-icon-doc,
+:root[data-theme="dark"] .market-icon-ant,
+:root[data-theme="dark"] .market-icon-openai,
+:root[data-theme="dark"] .market-icon-local {
+  background: var(--surface-soft);
+  color: var(--ink-soft);
+}
+
+:root[data-theme="dark"] .market-icon-sheet {
+  color: #1f8f4d;
+}
+
+:root[data-theme="dark"] .market-icon-playwright {
+  color: #4a99ff;
+}
+
+:root[data-theme="dark"] .market-icon-image {
+  background: rgba(255, 245, 224, 0.1);
+  color: #cc9933;
+}
+
+:root[data-theme="dark"] .market-icon-creator,
+:root[data-theme="dark"] .market-icon-installer {
+  background: rgba(255, 230, 180, 0.1);
+  color: #cc8833;
+}
+
+:root[data-theme="dark"] .market-badge {
+  background: rgba(39, 195, 70, 0.14);
+  color: #4cd080;
+}
+
+:root[data-theme="dark"] .market-badge-local {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+:root[data-theme="dark"] .market-plugin-feature.is-active {
+  background: var(--accent);
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 1100px) {
+  .market-plugin-panel,
+  .market-skill-grid,
+  .market-skill-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .market-shell {
+    height: auto;
+    min-height: calc(100vh - 72px);
+    overflow: visible;
+  }
+
+  .market-topbar,
+  .market-filter-bar {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .market-body,
+  .market-content,
+  .market-plugin-panel,
+  .market-skill-groups {
+    overflow: visible;
+  }
+}
