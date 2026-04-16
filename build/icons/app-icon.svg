@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="ZenMind Desktop icon">
+  <rect x="128" y="128" width="768" height="768" rx="168" fill="#c4b5fd"/>
+  <rect x="298" y="248" width="128" height="512" rx="64" fill="#a78bfa"/>
+  <rect x="598" y="248" width="128" height="512" rx="64" fill="#a78bfa"/>
+  <rect x="214" y="550" width="384" height="172" rx="68" fill="#8b5cf6"/>
+  <rect x="426" y="302" width="384" height="172" rx="68" fill="#8b5cf6"/>
+  <circle cx="678" cy="388" r="56" fill="#10b981"/>
+</svg>

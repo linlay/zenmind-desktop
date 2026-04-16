@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { useServices } from "../services/ServicesContext";
 
-export function SettingsPage() {
+type SettingsPageProps = {
+  themeMode: "light" | "dark";
+  onToggleTheme: () => void;
+};
+
+export function SettingsPage({ themeMode, onToggleTheme }: SettingsPageProps) {
   const { refresh } = useServices();
   const [feedback, setFeedback] = useState("");
   const [dataRoot, setDataRoot] = useState("");
@@ -58,13 +63,63 @@ export function SettingsPage() {
           <p className="eyebrow">SETTINGS</p>
           <h1>设置</h1>
           <p className="page-copy">
-            管理 ZenMind Desktop 的本地数据目录。运行时数据会写入这个根目录，包含
+            管理 ZenMind Desktop 的外观与本地数据目录。运行时数据会写入这个根目录，包含
             <code>services</code>、<code>plugins</code> 和 <code>credentials</code>。
           </p>
         </div>
       </div>
 
       {feedback ? <div className="feedback-banner">{feedback}</div> : null}
+
+      <div className="data-root-card settings-theme-card">
+        <div>
+          <p className="eyebrow">APPEARANCE</p>
+          <h2>主题模式</h2>
+          <p className="page-copy">
+            在浅色与深色界面之间切换。当前为
+            <strong>{themeMode === "light" ? "浅色" : "深色"}</strong>
+            模式。
+          </p>
+        </div>
+        <div className="settings-theme-actions">
+          <button
+            type="button"
+            className={themeMode === "light" ? "settings-theme-option is-active" : "settings-theme-option"}
+            onClick={() => {
+              if (themeMode !== "light") {
+                onToggleTheme();
+              }
+            }}
+          >
+            <span className="settings-theme-preview settings-theme-preview-light" aria-hidden="true">
+              <span />
+              <span />
+            </span>
+            <span className="settings-theme-copy">
+              <strong>浅色</strong>
+              <span>更明亮、通透的工作界面</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={themeMode === "dark" ? "settings-theme-option is-active" : "settings-theme-option"}
+            onClick={() => {
+              if (themeMode !== "dark") {
+                onToggleTheme();
+              }
+            }}
+          >
+            <span className="settings-theme-preview settings-theme-preview-dark" aria-hidden="true">
+              <span />
+              <span />
+            </span>
+            <span className="settings-theme-copy">
+              <strong>深色</strong>
+              <span>更沉静，适合夜间或专注场景</span>
+            </span>
+          </button>
+        </div>
+      </div>
 
       <div className="data-root-card">
         <div>
