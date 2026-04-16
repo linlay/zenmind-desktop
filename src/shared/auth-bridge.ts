@@ -25,7 +25,8 @@ export function getPluginAuthBridgeProtocol(
 
 export function buildPluginEmbeddedUrl(
   serviceId: string | undefined,
-  webUrl: string
+  webUrl: string,
+  themeMode?: "light" | "dark"
 ): string {
   if (!webUrl) {
     return "";
@@ -37,6 +38,9 @@ export function buildPluginEmbeddedUrl(
   }
   if (serviceId === "agent-webclient" || serviceId === "pan-webclient") {
     url.searchParams.set("desktopApp", "1");
+  }
+  if (themeMode) {
+    url.searchParams.set("hostTheme", themeMode);
   }
   return url.toString();
 }

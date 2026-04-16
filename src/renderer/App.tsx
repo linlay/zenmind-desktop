@@ -233,7 +233,7 @@ function AppShell() {
                 />
               }
             />
-            <Route path="/plugin/:pluginId" element={<PluginPage />} />
+            <Route path="/plugin/:pluginId" element={<PluginPage themeMode={themeMode} />} />
             <Route path="/market" element={<PluginMarketPage />} />
             <Route path="/help" element={<HelpPage />} />
           </Routes>
