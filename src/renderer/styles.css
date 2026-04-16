@@ -99,7 +99,7 @@ a {
 .app-content {
   flex: 1;
   min-width: 0;
-  min-height: 100vh;
+  height: 100vh;
   border-radius: 0;
   background: var(--surface);
   border: none;
@@ -435,6 +435,29 @@ a {
   background: rgba(255, 255, 255, 0.14);
 }
 
+/* ── 窗口拖拽区域（macOS hiddenInset 标题栏） ── */
+
+.app-sidebar::before,
+.app-main::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  -webkit-app-region: drag;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.app-sidebar::before { height: 56px; }
+.app-main::before { height: 20px; }
+
+.app-sidebar a,
+.app-sidebar button,
+.app-sidebar nav {
+  -webkit-app-region: no-drag;
+}
+
 /* ── Header (legacy) ── */
 
 .app-header {
@@ -553,8 +576,7 @@ a {
 /* ── Main Content ── */
 
 .app-main {
-  position: relative;
-  min-height: 100vh;
+  height: 100vh;
   overflow: auto;
   padding: 20px 24px 28px;
 }
@@ -1505,13 +1527,27 @@ a {
 
 .pan-page,
 .empty-state {
-  min-height: 100vh;
+  /* min-height: calc(100vh - 40px); */
+  height: 100vh;
 }
 
 .pan-page {
+  position: relative;
   display: flex;
   flex-direction: column;
-  margin: -28px -26px -36px;
+  margin: -20px -24px -28px;
+}
+
+.pan-page::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  -webkit-app-region: drag;
+  z-index: 10;
+  pointer-events: none;
 }
 
 :root[data-theme="dark"] .pan-page {
