@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import type { ServiceConfigReadResult, ServiceId, ServiceState } from "@shared/contracts";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { ServiceConfigReadResult, ServiceId, ServiceLogTarget, ServiceState } from "@shared/contracts";
 import { useServices } from "../services/ServicesContext";
 import { useNavigate } from "react-router-dom";
 
@@ -44,9 +44,252 @@ function statusDotClass(status: ServiceState["status"]) {
 type ActionScope = "lifecycle" | "detail";
 type ConfigMeta = Pick<ServiceConfigReadResult, "path" | "exists" | "source">;
 type ServiceGroupKey = "core" | "market";
+type MetaItem = {
+  key: string;
+  label: string;
+  value: string;
+  actionLabel?: string;
+  disabled?: boolean;
+  onAction?: () => void;
+};
+type LogMatch = {
+  start: number;
+  end: number;
+};
+type LogViewerState = {
+  open: boolean;
+  loading: boolean;
+  serviceId: ServiceId | null;
+  target: ServiceLogTarget;
+  title: string;
+  path: string;
+  exists: boolean;
+  content: string;
+  truncated: boolean;
+  startOffset: number;
+  totalBytes: number;
+  query: string;
+  error: string;
+};
 
 function shouldShowInitializeAction(service: ServiceState) {
   return service.status === "initialization-required" || service.message.startsWith("初始化失败");
+}
+
+function getErrorLogDisplay(service: ServiceState) {
+  if (service.healthMeta.errorLogFilePath) {
+    return service.healthMeta.errorLogFilePath;
+  }
+  if (service.healthMeta.logFilePath) {
+    return "无独立错误日志，stderr 已并入日志文件";
+  }
+  return "未声明";
+}
+
+function createEmptyLogViewerState(): LogViewerState {
+  return {
+    open: false,
+    loading: false,
+    serviceId: null,
+    target: "main",
+    title: "",
+    path: "",
+    exists: false,
+    content: "",
+    truncated: false,
+    startOffset: 0,
+    totalBytes: 0,
+    query: "",
+    error: ""
+  };
+}
+
+function findLogMatches(content: string, query: string): LogMatch[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const normalizedContent = content.toLowerCase();
+  const matches: LogMatch[] = [];
+  let searchFrom = 0;
+
+  while (searchFrom < normalizedContent.length) {
+    const index = normalizedContent.indexOf(normalizedQuery, searchFrom);
+    if (index === -1) {
+      break;
+    }
+
+    matches.push({ start: index, end: index + normalizedQuery.length });
+    searchFrom = index + normalizedQuery.length;
+  }
+
+  return matches;
+}
+
+function renderLogContent(content: string, matches: LogMatch[], activeMatchIndex: number): ReactNode {
+  if (content.length === 0 || matches.length === 0) {
+    return content;
+  }
+
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+
+  matches.forEach((match, index) => {
+    if (match.start > cursor) {
+      nodes.push(
+        <span key={`chunk-${cursor}`}>
+          {content.slice(cursor, match.start)}
+        </span>
+      );
+    }
+
+    nodes.push(
+      <mark
+        key={`match-${match.start}`}
+        className={`log-match${index === activeMatchIndex ? " is-active" : ""}`}
+        data-match-index={index}
+      >
+        {content.slice(match.start, match.end)}
+      </mark>
+    );
+    cursor = match.end;
+  });
+
+  if (cursor < content.length) {
+    nodes.push(
+      <span key={`chunk-${cursor}`}>
+        {content.slice(cursor)}
+      </span>
+    );
+  }
+
+  return nodes;
+}
+
+type LogViewerModalProps = {
+  state: LogViewerState;
+  onClose: () => void;
+  onQueryChange: (query: string) => void;
+};
+
+function LogViewerModal({ state, onClose, onQueryChange }: LogViewerModalProps) {
+  const contentRef = useRef<HTMLPreElement | null>(null);
+  const deferredQuery = useDeferredValue(state.query);
+  const matches = useMemo(() => findLogMatches(state.content, deferredQuery), [state.content, deferredQuery]);
+  const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
+
+  useEffect(() => {
+    if (!state.open) {
+      setActiveMatchIndex(-1);
+      return;
+    }
+
+    setActiveMatchIndex(matches.length > 0 ? 0 : -1);
+  }, [deferredQuery, matches.length, state.open, state.serviceId, state.target]);
+
+  useEffect(() => {
+    if (!state.open || activeMatchIndex < 0) {
+      return;
+    }
+
+    const activeMatch = contentRef.current?.querySelector(`[data-match-index="${activeMatchIndex}"]`);
+    if (activeMatch instanceof HTMLElement) {
+      activeMatch.scrollIntoView({
+        block: "center",
+        inline: "nearest"
+      });
+    }
+  }, [activeMatchIndex, state.open]);
+
+  if (!state.open) {
+    return null;
+  }
+
+  const hasMatches = matches.length > 0;
+  const resultSummary =
+    deferredQuery.trim().length > 0
+      ? `${hasMatches ? activeMatchIndex + 1 : 0} / ${matches.length}`
+      : "输入关键词检索";
+
+  function selectRelativeMatch(direction: 1 | -1) {
+    if (matches.length === 0) {
+      return;
+    }
+    setActiveMatchIndex((current) => {
+      const nextIndex = current < 0 ? 0 : (current + direction + matches.length) % matches.length;
+      return nextIndex;
+    });
+  }
+
+  return (
+    <div
+      className="log-viewer-backdrop"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        className="log-viewer-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="log-viewer-title"
+      >
+        <header className="log-viewer-head">
+          <div className="log-viewer-copy">
+            <h3 id="log-viewer-title">{state.title}</h3>
+            <p>{state.path || "未声明日志路径"}</p>
+          </div>
+          <button type="button" className="action-button log-viewer-close" onClick={onClose}>
+            关闭
+          </button>
+        </header>
+
+        <div className="log-viewer-toolbar">
+          <label className="log-viewer-search">
+            <span>检索</span>
+            <input
+              type="search"
+              value={state.query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder="输入关键词"
+              disabled={state.loading}
+            />
+          </label>
+          <div className="log-viewer-match-nav">
+            <span>{resultSummary}</span>
+            <button type="button" className="action-button" onClick={() => selectRelativeMatch(-1)} disabled={!hasMatches}>
+              上一个
+            </button>
+            <button type="button" className="action-button" onClick={() => selectRelativeMatch(1)} disabled={!hasMatches}>
+              下一个
+            </button>
+          </div>
+        </div>
+
+        {state.truncated ? <div className="log-viewer-tip">当前仅显示最近 256KB 日志内容。</div> : null}
+        {state.error ? <div className="feedback-banner warning-banner">{state.error}</div> : null}
+
+        <div className="log-viewer-body">
+          {state.loading ? <div className="loading-box">正在读取日志…</div> : null}
+          {!state.loading && !state.error && !state.exists ? (
+            <div className="log-viewer-empty">日志文件不存在或尚未生成。</div>
+          ) : null}
+          {!state.loading && !state.error && state.exists && state.content.length === 0 ? (
+            <div className="log-viewer-empty">日志文件为空。</div>
+          ) : null}
+          {!state.loading && !state.error && state.exists && state.content.length > 0 ? (
+            <pre ref={contentRef} className="log-viewer-content">
+              {renderLogContent(state.content, matches, activeMatchIndex)}
+            </pre>
+          ) : null}
+        </div>
+      </section>
+    </div>
+  );
 }
 
 export function ControlCenterPage() {
@@ -62,11 +305,13 @@ export function ControlCenterPage() {
     restart,
     readConfig,
     writeConfig,
+    readLog,
     refresh,
     installPlugin,
     uninstallPlugin
   } = useServices();
   const navigate = useNavigate();
+  const logRequestIdRef = useRef(0);
   const [activeId, setActiveId] = useState<ServiceId | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<ServiceId | null>(null);
   const [pendingAction, setPendingAction] = useState<{ serviceId: ServiceId; scope: ActionScope } | null>(null);
@@ -75,6 +320,7 @@ export function ControlCenterPage() {
   const [expandedGroup, setExpandedGroup] = useState<ServiceGroupKey | null>("core");
   const [configCache, setConfigCache] = useState<Record<string, string>>({});
   const [configMeta, setConfigMeta] = useState<Record<string, ConfigMeta>>({});
+  const [logViewer, setLogViewer] = useState<LogViewerState>(() => createEmptyLogViewerState());
 
   useEffect(() => {
     if (services.length === 0) {
@@ -154,6 +400,79 @@ export function ControlCenterPage() {
         ? coreServices.find((service) => service.id === selectedService?.id) ?? coreServices[0] ?? null
         : marketServices.find((service) => service.id === selectedService?.id) ?? marketServices[0] ?? null;
   const selectedConfigMeta = activeDetailService ? configMeta[activeDetailService.id] : undefined;
+  const errorLogDisplay = activeDetailService ? getErrorLogDisplay(activeDetailService) : "未声明";
+
+  function closeLogViewer() {
+    logRequestIdRef.current += 1;
+    setLogViewer(createEmptyLogViewerState());
+  }
+
+  async function openLogViewer(service: ServiceState, target: ServiceLogTarget, title: string) {
+    const requestId = logRequestIdRef.current + 1;
+    logRequestIdRef.current = requestId;
+
+    setLogViewer({
+      ...createEmptyLogViewerState(),
+      open: true,
+      loading: true,
+      serviceId: service.id,
+      target,
+      title
+    });
+
+    try {
+      const result = await readLog(service.id, target);
+      if (logRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setLogViewer({
+        ...createEmptyLogViewerState(),
+        open: true,
+        loading: false,
+        serviceId: service.id,
+        target,
+        title,
+        path: result.path,
+        exists: result.exists,
+        content: result.content,
+        truncated: result.truncated,
+        startOffset: result.startOffset,
+        totalBytes: result.totalBytes
+      });
+    } catch (reason) {
+      if (logRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setLogViewer({
+        ...createEmptyLogViewerState(),
+        open: true,
+        loading: false,
+        serviceId: service.id,
+        target,
+        title,
+        error: reason instanceof Error ? reason.message : String(reason)
+      });
+    }
+  }
+
+  useEffect(() => {
+    if (!logViewer.open) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeLogViewer();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [logViewer.open]);
 
   function invalidateConfig(serviceId: ServiceId) {
     setConfigCache((current) => {
@@ -275,6 +594,56 @@ export function ControlCenterPage() {
       setIsBatchStarting(false);
     }
   }
+
+  const metaItems: MetaItem[] = activeDetailService
+    ? [
+        {
+          key: "installDir",
+          label: "安装目录",
+          value: activeDetailService.installDir || "未声明"
+        },
+        {
+          key: "logFile",
+          label: "日志文件",
+          value: activeDetailService.healthMeta.logFilePath || "未声明",
+          actionLabel: activeDetailService.healthMeta.logFilePath ? "打开" : undefined,
+          onAction: activeDetailService.healthMeta.logFilePath
+            ? () => void openLogViewer(activeDetailService, "main", `${activeDetailService.name} · 日志文件`)
+            : undefined
+        },
+        {
+          key: "errorLog",
+          label: "错误日志",
+          value: errorLogDisplay,
+          actionLabel: activeDetailService.healthMeta.errorLogFilePath ? "打开" : undefined,
+          onAction: activeDetailService.healthMeta.errorLogFilePath
+            ? () => void openLogViewer(activeDetailService, "error", `${activeDetailService.name} · 错误日志`)
+            : undefined
+        },
+        {
+          key: "pidFile",
+          label: "PID 文件",
+          value: activeDetailService.healthMeta.pidFilePath || "未声明"
+        },
+        {
+          key: "webUrl",
+          label: "访问入口",
+          value: activeDetailService.healthMeta.webUrl || "无",
+          actionLabel:
+            activeDetailService.frontendMode !== "none" &&
+            activeDetailService.status === "running" &&
+            activeDetailService.healthMeta.webUrl
+              ? "打开"
+              : undefined,
+          onAction:
+            activeDetailService.frontendMode !== "none" &&
+            activeDetailService.status === "running" &&
+            activeDetailService.healthMeta.webUrl
+              ? () => navigate(`/plugin/${activeDetailService.id}`)
+              : undefined
+        }
+      ]
+    : [];
 
   return (
     <section className="control-center-page">
@@ -415,26 +784,24 @@ export function ControlCenterPage() {
             <p className="service-message">{activeDetailService.message}</p>
 
             <dl className="meta-grid">
-              <div>
-                <dt>安装目录</dt>
-                <dd>{activeDetailService.installDir}</dd>
-              </div>
-              <div>
-                <dt>日志文件</dt>
-                <dd>{activeDetailService.healthMeta.logFilePath}</dd>
-              </div>
-              <div>
-                <dt>错误日志</dt>
-                <dd>{activeDetailService.healthMeta.errorLogFilePath || "无"}</dd>
-              </div>
-              <div>
-                <dt>PID 文件</dt>
-                <dd>{activeDetailService.healthMeta.pidFilePath}</dd>
-              </div>
-              <div>
-                <dt>访问入口</dt>
-                <dd>{activeDetailService.healthMeta.webUrl || "无"}</dd>
-              </div>
+              {metaItems.map((item) => (
+                <div key={item.key} className="meta-grid-item">
+                  <div className="meta-grid-head">
+                    <dt>{item.label}</dt>
+                    {item.actionLabel && item.onAction ? (
+                      <button
+                        type="button"
+                        className="action-button meta-grid-action"
+                        onClick={item.onAction}
+                        disabled={item.disabled}
+                      >
+                        {item.actionLabel}
+                      </button>
+                    ) : null}
+                  </div>
+                  <dd>{item.value}</dd>
+                </div>
+              ))}
             </dl>
 
             {activeDetailService.healthMeta.prerequisites.length > 0 ? (
@@ -587,6 +954,12 @@ export function ControlCenterPage() {
           <div className="loading-box control-center-empty">暂无已登记服务。</div>
         )}
       </div>
+
+      <LogViewerModal
+        state={logViewer}
+        onClose={closeLogViewer}
+        onQueryChange={(query) => setLogViewer((current) => ({ ...current, query }))}
+      />
     </section>
   );
 }

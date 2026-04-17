@@ -11,6 +11,8 @@ import type {
   ServiceConfigReadResult,
   ServiceId,
   ServiceImportResult,
+  ServiceLogReadResult,
+  ServiceLogTarget,
   ServiceLogsMeta,
   ServiceState,
   PluginInstallResult
@@ -31,6 +33,7 @@ interface ServicesContextValue {
   writeConfig: (serviceId: ServiceId, key: string, content: string) => Promise<ServiceCommandResult>;
   importFile: (serviceId: ServiceId, key: string) => Promise<ServiceImportResult>;
   getLogsMeta: (serviceId: ServiceId) => Promise<ServiceLogsMeta>;
+  readLog: (serviceId: ServiceId, target: ServiceLogTarget) => Promise<ServiceLogReadResult>;
   installPlugin: () => Promise<PluginInstallResult>;
   uninstallPlugin: (serviceId: ServiceId) => Promise<PluginInstallResult>;
 }
@@ -104,6 +107,7 @@ export function ServicesProvider({ children }: PropsWithChildren) {
       return result;
     },
     getLogsMeta: (serviceId) => window.electronAPI.services.getLogsMeta(serviceId),
+    readLog: (serviceId, target) => window.electronAPI.services.readLog(serviceId, target),
     installPlugin: async () => {
       const result = await window.electronAPI.plugins.install();
       await refresh();

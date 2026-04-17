@@ -1,6 +1,7 @@
 export type ServiceId = string;
 export type ServiceKind = "builtin" | "plugin";
 export type FrontendMode = "none" | "embedded" | "standalone";
+export type ServiceLogTarget = "main" | "error";
 export type ServiceStatus =
   | "not-installed"
   | "initialization-required"
@@ -63,6 +64,16 @@ export interface ServiceLogsMeta {
   ok: boolean;
   logPath: string;
   exists: boolean;
+}
+
+export interface ServiceLogReadResult {
+  ok: boolean;
+  path: string;
+  exists: boolean;
+  content: string;
+  truncated: boolean;
+  startOffset: number;
+  totalBytes: number;
 }
 
 export interface ServiceImportResult {
@@ -199,6 +210,7 @@ export interface DesktopApi {
     writeConfig: (serviceId: ServiceId, key: string, content: string) => Promise<ServiceCommandResult>;
     importFile: (serviceId: ServiceId, targetKey: string) => Promise<ServiceImportResult>;
     getLogsMeta: (serviceId: ServiceId) => Promise<ServiceLogsMeta>;
+    readLog: (serviceId: ServiceId, target: ServiceLogTarget) => Promise<ServiceLogReadResult>;
   };
   plugins: {
     install: () => Promise<PluginInstallResult>;

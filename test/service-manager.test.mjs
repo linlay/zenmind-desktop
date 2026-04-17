@@ -13,6 +13,7 @@ const {
   getInstallDir,
   initializeService,
   installBuiltinService,
+  readServiceLog,
   readServiceConfig,
   startService
 } = require("../dist-electron/main/service-manager.js");
@@ -230,6 +231,7 @@ function writePluginInstallRoot(installDir, options = {}) {
   const pluginId = options.id ?? "test-plugin";
   const pluginName = options.name ?? "Test Plugin";
   const version = options.version ?? "v1.0.0";
+  const errorLogRelativePath = options.errorLogRelativePath ?? null;
   const deployScriptContent =
     options.deployScriptContent === undefined
       ? "#!/usr/bin/env bash\nprintf deployed > run/deploy-marker.txt\n"
@@ -276,6 +278,7 @@ function writePluginInstallRoot(installDir, options = {}) {
         runtime: {
           pidRelativePath: "run/test-plugin.pid",
           logRelativePath: "run/test-plugin.log",
+          ...(errorLogRelativePath ? { errorLogRelativePath } : {}),
           requiredPaths
         },
         web: {
@@ -416,6 +419,88 @@ test("getServiceState exposes runtime error log path when manifest defines it", 
   assert.equal(state.healthMeta.errorLogFilePath, path.join(installDir, "run", "agent-container-hub.stderr.log"));
 
   restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("readServiceLog returns main log tail metadata and content", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-read-main-log-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+  const logContent = "line one\nline two\n";
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    deployScriptContent: false
+  });
+  fs.writeFileSync(path.join(installDir, "run", "test-plugin.log"), logContent, "utf8");
+
+  const result = await readServiceLog(app, "test-plugin", "main");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.path, path.join(installDir, "run", "test-plugin.log"));
+  assert.equal(result.exists, true);
+  assert.equal(result.content, logContent);
+  assert.equal(result.truncated, false);
+  assert.equal(result.startOffset, 0);
+  assert.equal(result.totalBytes, Buffer.byteLength(logContent));
+
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("readServiceLog returns missing metadata for absent error log file", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-read-missing-error-log-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+  const errorLogPath = path.join(installDir, "run", "test-plugin.stderr.log");
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    deployScriptContent: false,
+    errorLogRelativePath: "run/test-plugin.stderr.log"
+  });
+
+  const result = await readServiceLog(app, "test-plugin", "error");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.path, errorLogPath);
+  assert.equal(result.exists, false);
+  assert.equal(result.content, "");
+  assert.equal(result.truncated, false);
+  assert.equal(result.startOffset, 0);
+  assert.equal(result.totalBytes, 0);
+
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("readServiceLog reads only the configured tail window for large files", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-read-large-log-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+  const windowBytes = __testInternals.LOG_READ_WINDOW_BYTES;
+  const largeLogContent = "0123456789abcdef".repeat(Math.ceil((windowBytes + 96) / 16));
+  const expectedContent = largeLogContent.slice(largeLogContent.length - windowBytes);
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    deployScriptContent: false
+  });
+  fs.writeFileSync(path.join(installDir, "run", "test-plugin.log"), largeLogContent, "utf8");
+
+  const result = await readServiceLog(app, "test-plugin", "main");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.exists, true);
+  assert.equal(result.truncated, true);
+  assert.equal(result.startOffset, largeLogContent.length - windowBytes);
+  assert.equal(result.totalBytes, largeLogContent.length);
+  assert.equal(result.content, expectedContent);
+
+  registryInternals.clearServices();
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
