@@ -54,6 +54,7 @@ my-plugin/
   "runtime": {
     "pidRelativePath": ".runtime/my-plugin.pid",
     "logRelativePath": ".runtime/my-plugin.log",
+    "errorLogRelativePath": ".runtime/my-plugin.stderr.log",
     "requiredPaths": [
       "my-binary",
       "start.sh",
@@ -85,6 +86,8 @@ my-plugin/
 | `runtime` | ✅ | 运行时元数据（PID/日志路径、bundle 完整性校验项） |
 | `web` | ❌ | `frontend.mode != "none"` 时通常需要，定义端口和路由 |
 | `desktop` | ❌ | Desktop 专用扩展字段，插件通常只需要 `bundleTopLevelDir` |
+
+`runtime.errorLogRelativePath` 是可选字段，用于声明独立 stderr 文件路径；如果插件把 stderr 合并进主日志，可省略该字段。
 
 脚本约定：
 - macOS / Linux 插件使用 `.sh` 脚本，例如 `start.sh`、`stop.sh`、`deploy.sh`

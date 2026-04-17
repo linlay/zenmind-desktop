@@ -78,9 +78,9 @@
 - `FrontendMode`：`"none" | "embedded" | "standalone"`，区分服务前端暴露方式。
 - `ServiceStatus`：描述未安装、已停止、运行中、缺配置、缺依赖、错误等状态。
 - `ServiceConfigFile`：单个配置文件的键、标签、相对路径、绝对路径、是否必须和是否存在。
-- `ServiceHealthMeta`：PID、PID 文件路径、日志路径、访问入口、端口和前置条件列表。
+- `ServiceHealthMeta`：PID、PID 文件路径、主日志路径、可选的独立错误日志路径、访问入口、端口和前置条件列表。
 - `ServiceState`：渲染层展示服务卡片时使用的统一结构，包含 `frontendMode` 字段。
-- `Manifest`：内置服务和插件共用的统一清单结构，包含 `kind`、`frontend`、`api`、`backend`、`scripts`、`configFiles`、`runtime`、`web`、`prerequisites` 与 `desktop` 扩展字段。
+- `Manifest`：内置服务和插件共用的统一清单结构，包含 `kind`、`frontend`、`api`、`backend`、`scripts`、`configFiles`、`runtime`、`web`、`prerequisites` 与 `desktop` 扩展字段；其中 `runtime.errorLogRelativePath` 仅在服务实际生成独立 stderr 文件时填写。
 - `ManifestCommand`：`string | string[]`，支持单字符串或命令数组两种写法。
 - `DesktopApi`：preload 暴露给渲染层的完整 API 接口定义。
 - `AgentAuthRefreshReason`：`"missing" | "unauthorized"`，令牌签发原因。

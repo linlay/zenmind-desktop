@@ -342,13 +342,13 @@ const HELP_CATEGORIES: HelpCategory[] = [
             </p>
             <ul>
               <li>
-                <strong>标准输出日志</strong>：<code>run/stdout.log</code> 或服务自定义路径
+                <strong>主日志</strong>：来自服务清单中的 <code>runtime.logRelativePath</code>，控制中心详情页会显示实际路径
               </li>
               <li>
-                <strong>错误日志</strong>：<code>run/stderr.log</code> 或服务自定义路径
+                <strong>独立错误日志</strong>：仅当服务清单声明 <code>runtime.errorLogRelativePath</code> 时才会单独显示
               </li>
               <li>
-                agent-container-hub 的日志在 <code>run/</code> 目录下
+                当前 macOS / Linux 内置服务默认将 <code>stderr</code> 合并写入主日志，不会额外生成单独错误日志文件
               </li>
             </ul>
             <p>

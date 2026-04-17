@@ -8,6 +8,8 @@ import type {
   ServiceConfigReadResult,
   ServiceId,
   ServiceImportResult,
+  ServiceLogReadResult,
+  ServiceLogTarget,
   ServiceLogsMeta,
   ServiceState
 } from "../shared/contracts";
@@ -21,6 +23,7 @@ import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
 import { getServicesRoot } from "./user-paths";
 
 const startedThisSession = new Set<ServiceId>();
+const LOG_READ_WINDOW_BYTES = 256 * 1024;
 
 type ExecResult = {
   stdout: string;
@@ -1118,6 +1121,76 @@ export async function getServiceLogsMeta(app: App, serviceId: ServiceId): Promis
   };
 }
 
+export async function readServiceLog(
+  app: App,
+  serviceId: ServiceId,
+  target: ServiceLogTarget
+): Promise<ServiceLogReadResult> {
+  const state = await getServiceState(app, serviceId);
+  const filePath = target === "error" ? state.healthMeta.errorLogFilePath : state.healthMeta.logFilePath;
+
+  if (!filePath) {
+    return {
+      ok: true,
+      path: "",
+      exists: false,
+      content: "",
+      truncated: false,
+      startOffset: 0,
+      totalBytes: 0
+    };
+  }
+
+  try {
+    const stat = fs.statSync(filePath);
+    const totalBytes = stat.size;
+    const startOffset = Math.max(0, totalBytes - LOG_READ_WINDOW_BYTES);
+    const bytesToRead = totalBytes - startOffset;
+
+    if (bytesToRead === 0) {
+      return {
+        ok: true,
+        path: filePath,
+        exists: true,
+        content: "",
+        truncated: false,
+        startOffset,
+        totalBytes
+      };
+    }
+
+    const descriptor = fs.openSync(filePath, "r");
+    try {
+      const buffer = Buffer.alloc(bytesToRead);
+      const bytesRead = fs.readSync(descriptor, buffer, 0, bytesToRead, startOffset);
+      return {
+        ok: true,
+        path: filePath,
+        exists: true,
+        content: buffer.toString("utf8", 0, bytesRead),
+        truncated: startOffset > 0,
+        startOffset,
+        totalBytes
+      };
+    } finally {
+      fs.closeSync(descriptor);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return {
+        ok: true,
+        path: filePath,
+        exists: false,
+        content: "",
+        truncated: false,
+        startOffset: 0,
+        totalBytes: 0
+      };
+    }
+    throw error;
+  }
+}
+
 export async function stopStartedServices(app: App) {
   for (const serviceId of [...startedThisSession]) {
     try {
@@ -1151,6 +1224,7 @@ export async function stopRunningServices(app: App) {
 }
 
 export const __testInternals = {
+  LOG_READ_WINDOW_BYTES,
   parseEnvFileContent,
   parsePort,
   getWebUrl,
