@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import type {
   App,
   BrowserWindow,
@@ -1091,11 +1092,42 @@ async function buildCommandResult(
   };
 }
 
+function waitForPortRelease(port: number, timeoutMs = 6000): Promise<boolean> {
+  const startedAt = Date.now();
+  return new Promise((resolve) => {
+    const check = () => {
+      if (Date.now() - startedAt >= timeoutMs) {
+        resolve(false);
+        return;
+      }
+      const socket = new net.Socket();
+      socket.setTimeout(300);
+      socket.once("connect", () => {
+        socket.destroy();
+        setTimeout(check, 400);
+      });
+      socket.once("timeout", () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.once("error", () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.connect(port, "127.0.0.1");
+    };
+    check();
+  });
+}
+
 async function restartManagedCodeAssistantService(
   app: App,
   serviceState: ServiceState,
   deps: Pick<SetCodeAssistantEnabledDeps, "getServiceState" | "startService" | "stopService">
 ) {
+  const config = readManagedConfig(app);
+  const relayPort = config?.relayPort ?? DEFAULT_RELAY_PORT;
+
   if (serviceState.status === "running") {
     const stopResult = await deps.stopService(app, CLAUDE_CODE_RELAY_PLUGIN_ID);
     serviceState = await deps.getServiceState(app, CLAUDE_CODE_RELAY_PLUGIN_ID);
@@ -1105,6 +1137,19 @@ async function restartManagedCodeAssistantService(
         message: stopResult.message,
         serviceState
       };
+    }
+
+    const portReleased = await waitForPortRelease(relayPort);
+    if (!portReleased) {
+      try {
+        execSync(`lsof -ti :${relayPort} | xargs kill -9 2>/dev/null || true`, {
+          encoding: "utf8",
+          timeout: 3000
+        });
+        await waitForPortRelease(relayPort, 2000);
+      } catch {
+        // Best-effort force kill; proceed to start regardless.
+      }
     }
   }
 
