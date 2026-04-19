@@ -8,6 +8,7 @@ import type {
   ServiceConfigReadResult,
   ServiceId,
   ServiceImportResult,
+  ServiceLogReadOptions,
   ServiceLogReadResult,
   ServiceLogTarget,
   ServiceLogsMeta,
@@ -905,6 +906,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     if (!env.get("PORT")) {
       updates.set("PORT", String(service.web.defaultPort));
     }
+    updates.set("NODE_BIN", process.execPath);
 
     if (updates.size > 0) {
       writeEnvFileUpdates(envPath, updates);
@@ -1124,7 +1126,8 @@ export async function getServiceLogsMeta(app: App, serviceId: ServiceId): Promis
 export async function readServiceLog(
   app: App,
   serviceId: ServiceId,
-  target: ServiceLogTarget
+  target: ServiceLogTarget,
+  options: ServiceLogReadOptions = {}
 ): Promise<ServiceLogReadResult> {
   const state = await getServiceState(app, serviceId);
   const filePath = target === "error" ? state.healthMeta.errorLogFilePath : state.healthMeta.logFilePath;
@@ -1137,6 +1140,9 @@ export async function readServiceLog(
       content: "",
       truncated: false,
       startOffset: 0,
+      endOffset: 0,
+      hasPrevious: false,
+      resetRequired: false,
       totalBytes: 0
     };
   }
@@ -1144,8 +1150,23 @@ export async function readServiceLog(
   try {
     const stat = fs.statSync(filePath);
     const totalBytes = stat.size;
-    const startOffset = Math.max(0, totalBytes - LOG_READ_WINDOW_BYTES);
-    const bytesToRead = totalBytes - startOffset;
+    const requestedLimitBytes =
+      typeof options.limitBytes === "number" && Number.isFinite(options.limitBytes)
+        ? Math.floor(options.limitBytes)
+        : LOG_READ_WINDOW_BYTES;
+    const limitBytes = Math.min(
+      LOG_READ_WINDOW_BYTES,
+      Math.max(1, requestedLimitBytes)
+    );
+    const requestedBeforeOffset =
+      typeof options.beforeOffset === "number" && Number.isFinite(options.beforeOffset)
+        ? Math.max(0, Math.floor(options.beforeOffset))
+        : undefined;
+    const resetRequired = requestedBeforeOffset !== undefined && requestedBeforeOffset > totalBytes;
+    const requestedEndOffset =
+      requestedBeforeOffset === undefined || resetRequired ? totalBytes : Math.min(requestedBeforeOffset, totalBytes);
+    const requestedStartOffset = Math.max(0, requestedEndOffset - limitBytes);
+    const bytesToRead = requestedEndOffset - requestedStartOffset;
 
     if (bytesToRead === 0) {
       return {
@@ -1153,8 +1174,11 @@ export async function readServiceLog(
         path: filePath,
         exists: true,
         content: "",
-        truncated: false,
-        startOffset,
+        truncated: requestedStartOffset > 0,
+        startOffset: requestedStartOffset,
+        endOffset: requestedEndOffset,
+        hasPrevious: requestedStartOffset > 0,
+        resetRequired,
         totalBytes
       };
     }
@@ -1162,14 +1186,37 @@ export async function readServiceLog(
     const descriptor = fs.openSync(filePath, "r");
     try {
       const buffer = Buffer.alloc(bytesToRead);
-      const bytesRead = fs.readSync(descriptor, buffer, 0, bytesToRead, startOffset);
+      const bytesRead = fs.readSync(descriptor, buffer, 0, bytesToRead, requestedStartOffset);
+      const actualEndOffset = requestedStartOffset + bytesRead;
+      let alignedStartOffset = requestedStartOffset;
+      let contentStartIndex = 0;
+      let startsOnLineBoundary = requestedStartOffset === 0;
+
+      if (!startsOnLineBoundary && requestedStartOffset > 0) {
+        const previousByte = Buffer.alloc(1);
+        const previousByteCount = fs.readSync(descriptor, previousByte, 0, 1, requestedStartOffset - 1);
+        startsOnLineBoundary = previousByteCount === 1 && previousByte[0] === 0x0a;
+      }
+
+      if (!startsOnLineBoundary && requestedStartOffset > 0 && bytesRead > 0) {
+        const newlineIndex = buffer.indexOf(0x0a, 0);
+        if (newlineIndex !== -1 && newlineIndex + 1 < bytesRead) {
+          contentStartIndex = newlineIndex + 1;
+          alignedStartOffset += contentStartIndex;
+        }
+      }
+
+      const hasPrevious = alignedStartOffset > 0;
       return {
         ok: true,
         path: filePath,
         exists: true,
-        content: buffer.toString("utf8", 0, bytesRead),
-        truncated: startOffset > 0,
-        startOffset,
+        content: buffer.toString("utf8", contentStartIndex, bytesRead),
+        truncated: hasPrevious,
+        startOffset: alignedStartOffset,
+        endOffset: actualEndOffset,
+        hasPrevious,
+        resetRequired,
         totalBytes
       };
     } finally {
@@ -1184,6 +1231,9 @@ export async function readServiceLog(
         content: "",
         truncated: false,
         startOffset: 0,
+        endOffset: 0,
+        hasPrevious: false,
+        resetRequired: false,
         totalBytes: 0
       };
     }

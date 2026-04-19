@@ -52,24 +52,30 @@ type MetaItem = {
   disabled?: boolean;
   onAction?: () => void;
 };
+type LogPage = {
+  startOffset: number;
+  endOffset: number;
+  content: string;
+};
 type LogMatch = {
   start: number;
   end: number;
 };
 type LogViewerState = {
   open: boolean;
-  loading: boolean;
+  loadingInitial: boolean;
+  loadingPrevious: boolean;
   serviceId: ServiceId | null;
   target: ServiceLogTarget;
   title: string;
   path: string;
   exists: boolean;
-  content: string;
-  truncated: boolean;
-  startOffset: number;
+  pages: LogPage[];
+  hasPrevious: boolean;
   totalBytes: number;
   query: string;
   error: string;
+  notice: string;
 };
 
 function shouldShowInitializeAction(service: ServiceState) {
@@ -89,19 +95,34 @@ function getErrorLogDisplay(service: ServiceState) {
 function createEmptyLogViewerState(): LogViewerState {
   return {
     open: false,
-    loading: false,
+    loadingInitial: false,
+    loadingPrevious: false,
     serviceId: null,
     target: "main",
     title: "",
     path: "",
     exists: false,
-    content: "",
-    truncated: false,
-    startOffset: 0,
+    pages: [],
+    hasPrevious: false,
     totalBytes: 0,
     query: "",
-    error: ""
+    error: "",
+    notice: ""
   };
+}
+
+function buildLogPages(result: { exists: boolean; content: string; startOffset: number; endOffset: number }): LogPage[] {
+  if (!result.exists || result.content.length === 0) {
+    return [];
+  }
+
+  return [
+    {
+      startOffset: result.startOffset,
+      endOffset: result.endOffset,
+      content: result.content
+    }
+  ];
 }
 
 function findLogMatches(content: string, query: string): LogMatch[] {
@@ -171,22 +192,49 @@ type LogViewerModalProps = {
   state: LogViewerState;
   onClose: () => void;
   onQueryChange: (query: string) => void;
+  onLoadPrevious: () => Promise<{ prependedLength: number; resetRequired: boolean } | null>;
 };
 
-function LogViewerModal({ state, onClose, onQueryChange }: LogViewerModalProps) {
+function LogViewerModal({ state, onClose, onQueryChange, onLoadPrevious }: LogViewerModalProps) {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLPreElement | null>(null);
+  const pendingMatchStartRef = useRef<number | null | undefined>(undefined);
   const deferredQuery = useDeferredValue(state.query);
-  const matches = useMemo(() => findLogMatches(state.content, deferredQuery), [state.content, deferredQuery]);
+  const joinedContent = useMemo(() => state.pages.map((page) => page.content).join(""), [state.pages]);
+  const matches = useMemo(() => findLogMatches(joinedContent, deferredQuery), [joinedContent, deferredQuery]);
   const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
 
   useEffect(() => {
     if (!state.open) {
+      pendingMatchStartRef.current = undefined;
       setActiveMatchIndex(-1);
       return;
     }
 
     setActiveMatchIndex(matches.length > 0 ? 0 : -1);
-  }, [deferredQuery, matches.length, state.open, state.serviceId, state.target]);
+  }, [deferredQuery, state.open, state.serviceId, state.target]);
+
+  useEffect(() => {
+    const pendingMatchStart = pendingMatchStartRef.current;
+    if (pendingMatchStart === undefined) {
+      return;
+    }
+
+    pendingMatchStartRef.current = undefined;
+    if (pendingMatchStart === null) {
+      setActiveMatchIndex(matches.length > 0 ? 0 : -1);
+      return;
+    }
+
+    const restoredIndex = matches.findIndex((match) => match.start === pendingMatchStart);
+    if (restoredIndex >= 0) {
+      setActiveMatchIndex(restoredIndex);
+      return;
+    }
+
+    const nearestIndex = matches.findIndex((match) => match.start > pendingMatchStart);
+    setActiveMatchIndex(nearestIndex >= 0 ? nearestIndex : matches.length > 0 ? matches.length - 1 : -1);
+  }, [matches]);
 
   useEffect(() => {
     if (!state.open || activeMatchIndex < 0) {
@@ -207,6 +255,8 @@ function LogViewerModal({ state, onClose, onQueryChange }: LogViewerModalProps) 
   }
 
   const hasMatches = matches.length > 0;
+  const hasLoadedContent = joinedContent.length > 0;
+  const isPartialLoad = state.pages.length > 0 ? state.pages[0].startOffset > 0 : state.hasPrevious;
   const resultSummary =
     deferredQuery.trim().length > 0
       ? `${hasMatches ? activeMatchIndex + 1 : 0} / ${matches.length}`
@@ -220,6 +270,40 @@ function LogViewerModal({ state, onClose, onQueryChange }: LogViewerModalProps) 
       const nextIndex = current < 0 ? 0 : (current + direction + matches.length) % matches.length;
       return nextIndex;
     });
+  }
+
+  async function handleLoadPrevious() {
+    if (state.loadingInitial || state.loadingPrevious || !state.hasPrevious) {
+      return;
+    }
+
+    const currentActiveMatch = activeMatchIndex >= 0 ? matches[activeMatchIndex] : null;
+    const scrollContainer = bodyRef.current;
+    const previousScrollHeight = scrollContainer?.scrollHeight ?? 0;
+    const previousScrollTop = scrollContainer?.scrollTop ?? 0;
+    const result = await onLoadPrevious();
+    if (!result) {
+      return;
+    }
+
+    if (deferredQuery.trim()) {
+      pendingMatchStartRef.current = result.resetRequired
+        ? null
+        : currentActiveMatch
+          ? currentActiveMatch.start + result.prependedLength
+          : null;
+    }
+
+    if (!result.resetRequired && scrollContainer) {
+      window.requestAnimationFrame(() => {
+        const nextScrollContainer = bodyRef.current;
+        if (!nextScrollContainer) {
+          return;
+        }
+        const nextScrollHeight = nextScrollContainer.scrollHeight;
+        nextScrollContainer.scrollTop = previousScrollTop + (nextScrollHeight - previousScrollHeight);
+      });
+    }
   }
 
   return (
@@ -256,7 +340,7 @@ function LogViewerModal({ state, onClose, onQueryChange }: LogViewerModalProps) 
               value={state.query}
               onChange={(event) => onQueryChange(event.target.value)}
               placeholder="输入关键词"
-              disabled={state.loading}
+              disabled={state.loadingInitial || state.loadingPrevious}
             />
           </label>
           <div className="log-viewer-match-nav">
@@ -270,20 +354,39 @@ function LogViewerModal({ state, onClose, onQueryChange }: LogViewerModalProps) 
           </div>
         </div>
 
-        {state.truncated ? <div className="log-viewer-tip">当前仅显示最近 256KB 日志内容。</div> : null}
+        <div className="log-viewer-tip-row">
+          <div className="log-viewer-tip">检索范围：已加载内容</div>
+          {isPartialLoad ? <div className="log-viewer-tip">当前仍有更早日志未加载。</div> : null}
+        </div>
+        {state.notice ? <div className="feedback-banner">{state.notice}</div> : null}
         {state.error ? <div className="feedback-banner warning-banner">{state.error}</div> : null}
 
-        <div className="log-viewer-body">
-          {state.loading ? <div className="loading-box">正在读取日志…</div> : null}
-          {!state.loading && !state.error && !state.exists ? (
+        <div ref={bodyRef} className="log-viewer-body">
+          {state.loadingInitial ? <div className="loading-box">正在读取日志…</div> : null}
+          {!state.loadingInitial && state.exists && (state.hasPrevious || state.loadingPrevious) ? (
+            <div className="log-viewer-pagination">
+              <button
+                type="button"
+                className="action-button"
+                onClick={() => void handleLoadPrevious()}
+                disabled={state.loadingPrevious}
+              >
+                {state.loadingPrevious ? "加载中..." : "加载更早日志"}
+              </button>
+            </div>
+          ) : null}
+          {!state.loadingInitial && state.exists && !state.hasPrevious && state.pages.length > 0 ? (
+            <div className="log-viewer-pagination-hint">已到日志开头</div>
+          ) : null}
+          {!state.loadingInitial && !state.exists ? (
             <div className="log-viewer-empty">日志文件不存在或尚未生成。</div>
           ) : null}
-          {!state.loading && !state.error && state.exists && state.content.length === 0 ? (
+          {!state.loadingInitial && state.exists && !hasLoadedContent ? (
             <div className="log-viewer-empty">日志文件为空。</div>
           ) : null}
-          {!state.loading && !state.error && state.exists && state.content.length > 0 ? (
+          {!state.loadingInitial && state.exists && hasLoadedContent ? (
             <pre ref={contentRef} className="log-viewer-content">
-              {renderLogContent(state.content, matches, activeMatchIndex)}
+              {renderLogContent(joinedContent, matches, activeMatchIndex)}
             </pre>
           ) : null}
         </div>
@@ -408,13 +511,13 @@ export function ControlCenterPage() {
   }
 
   async function openLogViewer(service: ServiceState, target: ServiceLogTarget, title: string) {
-    const requestId = logRequestIdRef.current + 1;
-    logRequestIdRef.current = requestId;
+    const sessionToken = logRequestIdRef.current + 1;
+    logRequestIdRef.current = sessionToken;
 
     setLogViewer({
       ...createEmptyLogViewerState(),
       open: true,
-      loading: true,
+      loadingInitial: true,
       serviceId: service.id,
       target,
       title
@@ -422,38 +525,126 @@ export function ControlCenterPage() {
 
     try {
       const result = await readLog(service.id, target);
-      if (logRequestIdRef.current !== requestId) {
+      if (logRequestIdRef.current !== sessionToken) {
         return;
       }
 
       setLogViewer({
         ...createEmptyLogViewerState(),
         open: true,
-        loading: false,
+        loadingInitial: false,
         serviceId: service.id,
         target,
         title,
         path: result.path,
         exists: result.exists,
-        content: result.content,
-        truncated: result.truncated,
-        startOffset: result.startOffset,
+        pages: buildLogPages(result),
+        hasPrevious: result.hasPrevious,
         totalBytes: result.totalBytes
       });
     } catch (reason) {
-      if (logRequestIdRef.current !== requestId) {
+      if (logRequestIdRef.current !== sessionToken) {
         return;
       }
 
       setLogViewer({
         ...createEmptyLogViewerState(),
         open: true,
-        loading: false,
+        loadingInitial: false,
         serviceId: service.id,
         target,
         title,
         error: reason instanceof Error ? reason.message : String(reason)
       });
+    }
+  }
+
+  async function loadPreviousLogPage() {
+    if (
+      !logViewer.open ||
+      !logViewer.serviceId ||
+      logViewer.loadingInitial ||
+      logViewer.loadingPrevious ||
+      !logViewer.hasPrevious
+    ) {
+      return null;
+    }
+
+    const sessionToken = logRequestIdRef.current;
+    const currentViewer = logViewer;
+    const beforeOffset = currentViewer.pages[0]?.startOffset ?? 0;
+
+    setLogViewer((current) => ({
+      ...current,
+      loadingPrevious: true,
+      error: "",
+      notice: ""
+    }));
+
+    try {
+      const result = await readLog(currentViewer.serviceId, currentViewer.target, {
+        beforeOffset
+      });
+      if (logRequestIdRef.current !== sessionToken) {
+        return null;
+      }
+
+      const replacementPages = buildLogPages(result);
+      if (result.resetRequired) {
+        setLogViewer({
+          ...createEmptyLogViewerState(),
+          open: true,
+          loadingInitial: false,
+          loadingPrevious: false,
+          serviceId: currentViewer.serviceId,
+          target: currentViewer.target,
+          title: currentViewer.title,
+          path: result.path,
+          exists: result.exists,
+          pages: replacementPages,
+          hasPrevious: result.hasPrevious,
+          totalBytes: result.totalBytes,
+          query: currentViewer.query,
+          notice: "日志已轮转，已刷新到最新内容。"
+        });
+        return {
+          prependedLength: result.content.length,
+          resetRequired: true
+        };
+      }
+
+      const nextPages = !result.exists
+        ? []
+        : replacementPages.length > 0
+          ? [...replacementPages, ...currentViewer.pages]
+          : currentViewer.pages;
+      setLogViewer({
+        ...currentViewer,
+        path: result.path,
+        exists: result.exists,
+        pages: nextPages,
+        hasPrevious: result.hasPrevious,
+        totalBytes: result.totalBytes,
+        loadingInitial: false,
+        loadingPrevious: false,
+        error: "",
+        notice: ""
+      });
+      return {
+        prependedLength: replacementPages[0]?.content.length ?? 0,
+        resetRequired: false
+      };
+    } catch (reason) {
+      if (logRequestIdRef.current !== sessionToken) {
+        return null;
+      }
+
+      setLogViewer((current) => ({
+        ...current,
+        loadingPrevious: false,
+        error: reason instanceof Error ? reason.message : String(reason)
+      }));
+      return null;
     }
   }
 
@@ -959,6 +1150,7 @@ export function ControlCenterPage() {
         state={logViewer}
         onClose={closeLogViewer}
         onQueryChange={(query) => setLogViewer((current) => ({ ...current, query }))}
+        onLoadPrevious={loadPreviousLogPage}
       />
     </section>
   );

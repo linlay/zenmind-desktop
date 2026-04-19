@@ -443,6 +443,9 @@ test("readServiceLog returns main log tail metadata and content", async () => {
   assert.equal(result.content, logContent);
   assert.equal(result.truncated, false);
   assert.equal(result.startOffset, 0);
+  assert.equal(result.endOffset, Buffer.byteLength(logContent));
+  assert.equal(result.hasPrevious, false);
+  assert.equal(result.resetRequired, false);
   assert.equal(result.totalBytes, Buffer.byteLength(logContent));
 
   registryInternals.clearServices();
@@ -470,7 +473,40 @@ test("readServiceLog returns missing metadata for absent error log file", async 
   assert.equal(result.content, "");
   assert.equal(result.truncated, false);
   assert.equal(result.startOffset, 0);
+  assert.equal(result.endOffset, 0);
+  assert.equal(result.hasPrevious, false);
+  assert.equal(result.resetRequired, false);
   assert.equal(result.totalBytes, 0);
+
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("readServiceLog paginates older chunks by beforeOffset without overlap", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-read-paginated-log-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+  const logContent = "aaaa\nbbbb\ncccc\ndddd\neeee\n";
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    deployScriptContent: false
+  });
+  fs.writeFileSync(path.join(installDir, "run", "test-plugin.log"), logContent, "utf8");
+
+  const latestPage = await readServiceLog(app, "test-plugin", "main", { limitBytes: 10 });
+  const previousPage = await readServiceLog(app, "test-plugin", "main", {
+    beforeOffset: latestPage.startOffset,
+    limitBytes: 10
+  });
+
+  assert.equal(latestPage.endOffset, Buffer.byteLength(logContent));
+  assert.equal(latestPage.content, "dddd\neeee\n");
+  assert.equal(latestPage.hasPrevious, true);
+  assert.equal(previousPage.endOffset, latestPage.startOffset);
+  assert.equal(previousPage.content, "bbbb\ncccc\n");
+  assert.equal(previousPage.hasPrevious, true);
 
   registryInternals.clearServices();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -497,8 +533,67 @@ test("readServiceLog reads only the configured tail window for large files", asy
   assert.equal(result.exists, true);
   assert.equal(result.truncated, true);
   assert.equal(result.startOffset, largeLogContent.length - windowBytes);
+  assert.equal(result.endOffset, largeLogContent.length);
+  assert.equal(result.hasPrevious, true);
+  assert.equal(result.resetRequired, false);
   assert.equal(result.totalBytes, largeLogContent.length);
   assert.equal(result.content, expectedContent);
+
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("readServiceLog resets to latest chunk when beforeOffset exceeds current file size", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-read-rotated-log-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+  const logContent = "new-tail\n";
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    deployScriptContent: false
+  });
+  fs.writeFileSync(path.join(installDir, "run", "test-plugin.log"), logContent, "utf8");
+
+  const result = await readServiceLog(app, "test-plugin", "main", {
+    beforeOffset: 1024,
+    limitBytes: 32
+  });
+
+  assert.equal(result.content, logContent);
+  assert.equal(result.startOffset, 0);
+  assert.equal(result.endOffset, Buffer.byteLength(logContent));
+  assert.equal(result.hasPrevious, false);
+  assert.equal(result.resetRequired, true);
+
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("readServiceLog aligns non-zero chunk starts to the next full log line", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-read-aligned-log-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+  const firstLine = "very-long-first-line-without-break-until-here\n";
+  const secondLine = "second-line\n";
+  const logContent = `${firstLine}${secondLine}`;
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    deployScriptContent: false
+  });
+  fs.writeFileSync(path.join(installDir, "run", "test-plugin.log"), logContent, "utf8");
+
+  const result = await readServiceLog(app, "test-plugin", "main", {
+    limitBytes: secondLine.length + 8
+  });
+
+  assert.equal(result.startOffset, firstLine.length);
+  assert.equal(result.endOffset, Buffer.byteLength(logContent));
+  assert.equal(result.content, secondLine);
+  assert.equal(result.hasPrevious, true);
 
   registryInternals.clearServices();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -743,6 +838,7 @@ test("ensurePreStartRequirements rewrites agent-webclient default BASE_URL to lo
   const envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
   assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
   assert.match(envContent, /PORT=11948/);
+  assert.match(envContent, new RegExp(`NODE_BIN=${process.execPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });

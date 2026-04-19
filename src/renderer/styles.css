@@ -1656,15 +1656,34 @@ a {
 }
 
 .log-viewer-tip {
-  padding: 10px 20px 0;
   color: var(--ink-muted);
   font-size: 12px;
+}
+
+.log-viewer-tip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px 0;
 }
 
 .log-viewer-body {
   min-height: 0;
   padding: 16px 20px 20px;
   overflow: auto;
+}
+
+.log-viewer-pagination {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.log-viewer-pagination-hint {
+  margin-bottom: 14px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 .log-viewer-empty {
@@ -1934,7 +1953,8 @@ code {
 
   .log-viewer-head,
   .log-viewer-toolbar,
-  .log-viewer-match-nav {
+  .log-viewer-match-nav,
+  .log-viewer-tip-row {
     flex-direction: column;
     align-items: flex-start;
   }
