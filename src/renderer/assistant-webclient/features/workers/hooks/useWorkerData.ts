@@ -4,6 +4,7 @@ import { useAppContext } from '@/app/state/AppContext';
 import { getAgent, getAgents, getChats, getTeams, setAccessToken } from '@/features/transport/lib/apiClientProxy';
 import type { Agent, Chat, Team, WorkerRow } from '@/app/state/types';
 import { isAppMode } from '@/shared/utils/routing';
+import { hasNativeAgentWebClientHost } from '@/shared/utils/host';
 import {
   refreshWorkerDataWithCoordinator,
   type WorkerDataSnapshot,
@@ -20,12 +21,13 @@ export function shouldStartInitialWorkerRefresh(input: {
   hasStarted: boolean;
   appMode: boolean;
   hasAccessToken: boolean;
+  hasNativeHost?: boolean;
 }): boolean {
   if (input.hasStarted) {
     return false;
   }
 
-  if (input.appMode && !input.hasAccessToken) {
+  if (input.appMode && !input.hasAccessToken && !input.hasNativeHost) {
     return false;
   }
 
@@ -243,6 +245,7 @@ export function useWorkerData(input: {
       hasStarted: initialRefreshStartedRef.current,
       appMode,
       hasAccessToken: Boolean(String(state.accessToken || '').trim()),
+      hasNativeHost: hasNativeAgentWebClientHost(),
     })) {
       return;
     }
