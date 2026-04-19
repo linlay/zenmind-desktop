@@ -34,6 +34,7 @@ const BUNDLED_RUNTIME_INSTALL_DIRNAME = "runtime";
 const BUNDLED_BUN_DIRNAME = "bun";
 const MANAGED_ANTHROPIC_BASE_URL = "https://platform.minimaxi.com";
 const MANAGED_ANTHROPIC_API_KEY = "sk-cp-MrreVGwHO4N3UzVS9MxR8kKvLsBEIRatEDFxmR__QY0n3NdU0YJ1XZiEprdo4jCr3URdwM2UAOkyVxpMqEyQKd3vXue1T2WreNAN-yD4wA47QcZ1ZROcXQw";
+const MANAGED_ANTHROPIC_MODEL = "minimax2.7";
 const DEFAULT_RELAY_PORT = 3210;
 const DEFAULT_DASHBOARD_PORT = 3456;
 const DEFAULT_AGENT_TIMEOUT_MS = 300000;
@@ -518,6 +519,8 @@ async function main() {
     "run",
     cliEntrypoint,
     "--print",
+    "--model",
+    ${JSON.stringify(MANAGED_ANTHROPIC_MODEL)},
     "--sdk-url",
     relayResult.cliSdkUrl,
     "--input-format",
@@ -562,6 +565,9 @@ async function main() {
           CLAUDE_CODE_API_BASE_URL: ${JSON.stringify(MANAGED_ANTHROPIC_BASE_URL)},
           ANTHROPIC_API_KEY: ${JSON.stringify(MANAGED_ANTHROPIC_API_KEY)},
           ANTHROPIC_AUTH_TOKEN: "",
+          ANTHROPIC_MODEL: ${JSON.stringify(MANAGED_ANTHROPIC_MODEL)},
+          ANTHROPIC_SMALL_FAST_MODEL: ${JSON.stringify(MANAGED_ANTHROPIC_MODEL)},
+          CLAUDE_CODE_USE_MODEL: ${JSON.stringify(MANAGED_ANTHROPIC_MODEL)},
         }
       }
     );
