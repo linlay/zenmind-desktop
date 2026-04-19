@@ -30,7 +30,7 @@ import {
 } from "./service-manager";
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
-import type { ServiceId, ServiceLogTarget } from "../shared/contracts";
+import type { ServiceId, ServiceLogReadOptions, ServiceLogTarget } from "../shared/contracts";
 import {
   getDataRoot,
   loadUserPaths,
@@ -324,9 +324,12 @@ function registerIpcHandlers() {
   ipcMain.handle("services.getLogsMeta", async (_event, serviceId: ServiceId) => {
     return getServiceLogsMeta(app, serviceId);
   });
-  ipcMain.handle("services.readLog", async (_event, serviceId: ServiceId, target: ServiceLogTarget) => {
-    return readServiceLog(app, serviceId, target);
-  });
+  ipcMain.handle(
+    "services.readLog",
+    async (_event, serviceId: ServiceId, target: ServiceLogTarget, options?: ServiceLogReadOptions) => {
+      return readServiceLog(app, serviceId, target, options);
+    }
+  );
   ipcMain.handle("plugins.install", async () => {
     const result = await showArchiveDialog(
       process.platform === "win32" ? "选择插件包 (.zip)" : "选择插件包 (.tar.gz)"

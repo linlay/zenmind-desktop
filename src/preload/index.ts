@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DesktopApi, NavigateListener, ServiceId, ServiceLogTarget } from "../shared/contracts";
+import type {
+  DesktopApi,
+  NavigateListener,
+  ServiceId,
+  ServiceLogReadOptions,
+  ServiceLogTarget
+} from "../shared/contracts";
 
 const api: DesktopApi = {
   services: {
@@ -18,8 +24,8 @@ const api: DesktopApi = {
     importFile: (serviceId: ServiceId, targetKey: string) =>
       ipcRenderer.invoke("services.importFile", serviceId, targetKey),
     getLogsMeta: (serviceId: ServiceId) => ipcRenderer.invoke("services.getLogsMeta", serviceId),
-    readLog: (serviceId: ServiceId, target: ServiceLogTarget) =>
-      ipcRenderer.invoke("services.readLog", serviceId, target)
+    readLog: (serviceId: ServiceId, target: ServiceLogTarget, options?: ServiceLogReadOptions) =>
+      ipcRenderer.invoke("services.readLog", serviceId, target, options)
   },
   plugins: {
     install: () => ipcRenderer.invoke("plugins.install"),

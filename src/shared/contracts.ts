@@ -66,6 +66,11 @@ export interface ServiceLogsMeta {
   exists: boolean;
 }
 
+export interface ServiceLogReadOptions {
+  beforeOffset?: number;
+  limitBytes?: number;
+}
+
 export interface ServiceLogReadResult {
   ok: boolean;
   path: string;
@@ -73,6 +78,9 @@ export interface ServiceLogReadResult {
   content: string;
   truncated: boolean;
   startOffset: number;
+  endOffset: number;
+  hasPrevious: boolean;
+  resetRequired: boolean;
   totalBytes: number;
 }
 
@@ -210,7 +218,11 @@ export interface DesktopApi {
     writeConfig: (serviceId: ServiceId, key: string, content: string) => Promise<ServiceCommandResult>;
     importFile: (serviceId: ServiceId, targetKey: string) => Promise<ServiceImportResult>;
     getLogsMeta: (serviceId: ServiceId) => Promise<ServiceLogsMeta>;
-    readLog: (serviceId: ServiceId, target: ServiceLogTarget) => Promise<ServiceLogReadResult>;
+    readLog: (
+      serviceId: ServiceId,
+      target: ServiceLogTarget,
+      options?: ServiceLogReadOptions
+    ) => Promise<ServiceLogReadResult>;
   };
   plugins: {
     install: () => Promise<PluginInstallResult>;
