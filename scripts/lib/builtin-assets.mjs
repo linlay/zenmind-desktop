@@ -5,6 +5,85 @@ import { execFileSync } from "node:child_process";
 // monorepo 根目录：zenmind-desktop 的上一级
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 
+function pathMtimeMs(targetPath) {
+  if (!fs.existsSync(targetPath)) {
+    return 0;
+  }
+
+  const stats = fs.statSync(targetPath);
+  if (!stats.isDirectory()) {
+    return stats.mtimeMs;
+  }
+
+  let newest = stats.mtimeMs;
+  for (const entry of fs.readdirSync(targetPath, { withFileTypes: true })) {
+    newest = Math.max(newest, pathMtimeMs(path.join(targetPath, entry.name)));
+  }
+  return newest;
+}
+
+export function needsArchiveRefresh(archivePath, sourcePaths) {
+  if (!fs.existsSync(archivePath)) {
+    return true;
+  }
+
+  const archiveMtimeMs = pathMtimeMs(archivePath);
+  const sourceMtimeMs = sourcePaths.reduce(
+    (newest, sourcePath) => Math.max(newest, pathMtimeMs(sourcePath)),
+    0
+  );
+  return sourceMtimeMs > archiveMtimeMs;
+}
+
+function refreshAgentPlatformReleaseArchive({ os, arch } = {}) {
+  if (!os || !arch) {
+    return;
+  }
+
+  const repoRoot = path.join(WORKSPACE_ROOT, "agent-platform");
+  const versionPath = path.join(repoRoot, "VERSION");
+  const releaseScriptPath = path.join(repoRoot, "scripts", "release-program.sh");
+  if (!fs.existsSync(versionPath) || !fs.existsSync(releaseScriptPath)) {
+    return;
+  }
+
+  const version = fs.readFileSync(versionPath, "utf8").trim();
+  const archiveExtension = os === "windows" ? "zip" : "tar.gz";
+  const archivePath = path.join(
+    repoRoot,
+    "dist",
+    "release",
+    `agent-platform-${version}-${os}-${arch}.${archiveExtension}`
+  );
+  const sourcePaths = [
+    path.join(repoRoot, "VERSION"),
+    path.join(repoRoot, "Makefile"),
+    path.join(repoRoot, "README.md"),
+    path.join(repoRoot, "scripts", "release-program.sh"),
+    path.join(repoRoot, "cmd", "agent-platform-runner"),
+    path.join(repoRoot, "internal", "app", "app.go"),
+    path.join(repoRoot, "internal", "config", "config.go"),
+    path.join(repoRoot, "internal", "server", "server.go"),
+    path.join(repoRoot, "internal", "server", "handler_query.go"),
+    path.join(repoRoot, "internal", "server", "proxy_handler.go"),
+    path.join(repoRoot, "internal", "server", "ws_routes.go"),
+    path.join(repoRoot, "internal", "ws")
+  ];
+
+  if (!needsArchiveRefresh(archivePath, sourcePaths)) {
+    return;
+  }
+
+  execFileSync("make", ["release-program", `PROGRAM_TARGET_MATRIX=${os}/${arch}`], {
+    cwd: repoRoot,
+    stdio: "inherit"
+  });
+}
+
+function refreshKnownReleaseArchives(options = {}) {
+  refreshAgentPlatformReleaseArchive(options);
+}
+
 function isArchiveFileName(fileName) {
   return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
 }
@@ -194,6 +273,7 @@ export function validateBundleArchive(service, archivePath) {
 
 export function syncBuiltinAssets(projectRoot = process.cwd(), { os, arch } = {}) {
   const outputRoot = path.join(projectRoot, "build", "resources", "services");
+  refreshKnownReleaseArchives({ os, arch });
   const services = discoverBuiltinServices({ os, arch });
 
   fs.rmSync(outputRoot, { recursive: true, force: true });

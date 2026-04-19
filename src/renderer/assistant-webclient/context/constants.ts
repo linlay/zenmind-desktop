@@ -1,0 +1,14 @@
+export const ARTIFACT_AUTO_COLLAPSE_MS = 3000;
+export const PLAN_AUTO_COLLAPSE_MS = 2000;
+export const REASONING_AUTO_COLLAPSE_MS = 1500;
+export const MAX_EVENTS = 1000;
+export const MAX_DEBUG_LINES = 220;
+export const COMPOSER_MIN_LINES = 1;
+export const COMPOSER_MAX_LINES = 2;
+export const TABLET_BREAKPOINT = 768;
+export const MOBILE_BREAKPOINT = 1080;
+export const DESKTOP_FIXED_BREAKPOINT = 1280;
+export const FRONTEND_VIEWPORT_TYPES = new Set(['html', 'qlc']);
+export const ACCESS_TOKEN_STORAGE_KEY = 'agent-webclient.accessToken';
+
+export type LayoutMode = 'desktop-fixed' | 'tablet-mixed' | 'mobile-drawer';

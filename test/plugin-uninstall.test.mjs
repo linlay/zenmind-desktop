@@ -75,3 +75,24 @@ test("handlePluginUninstall confirms before delegating to uninstall", async () =
   assert.equal(calls[1].receivedApp, app);
   assert.equal(calls[1].receivedServiceId, "example-plugin");
 });
+
+test("handlePluginUninstall blocks managed code assistant relay removal", async () => {
+  const result = await handlePluginUninstall({}, "claude-code-relay", null, {
+    getServiceById: () => ({
+      id: "claude-code-relay",
+      name: "代码助手",
+      kind: "plugin"
+    }),
+    showMessageBox: async () => {
+      throw new Error("should not ask for confirmation");
+    },
+    uninstall: async () => {
+      throw new Error("should not uninstall the managed plugin");
+    }
+  });
+
+  assert.deepEqual(result, {
+    ok: false,
+    message: "代码助手集成由 Desktop 托管，暂不支持卸载。"
+  });
+});

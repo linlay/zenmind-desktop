@@ -5,9 +5,10 @@
   "description": "ZenMind Desktop shell for builtin services",
   "main": "dist-electron/main/index.js",
   "scripts": {
+    "prepare:assistant-native": "node ./scripts/generate-assistant-native-css.mjs",
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
     "build:main": "tsc -p tsconfig.main.json",
-    "build:renderer": "vite build",
+    "build:renderer": "npm run prepare:assistant-native && vite build",
     "build": "npm run build:main && npm run build:renderer",
     "dev": "node ./scripts/dev.mjs",
     "start": "npm run dev",
@@ -17,23 +18,37 @@
     "test": "npm run build && node --test ./test/*.test.mjs"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.1.1",
+    "@ant-design/x": "^1.6.1",
+    "@ant-design/x-markdown": "^2.5.0",
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/manrope": "^5.2.8",
+    "@fontsource/material-symbols-rounded": "^5.2.41",
+    "@fontsource/syne": "^5.2.7",
+    "antd": "^5.29.3",
+    "katex": "^0.16.45",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.1"
   },
   "devDependencies": {
+    "@esbuild/darwin-x64": "^0.28.0",
+    "@rollup/rollup-darwin-x64": "^4.60.1",
     "@types/node": "^24.5.2",
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^5.0.4",
+    "dmg-license": "^1.0.11",
     "electron": "^36.2.1",
     "electron-builder": "^24.13.3",
+    "postcss": "^8.5.10",
+    "postcss-prefix-selector": "^2.1.1",
     "typescript": "^5.9.2",
     "vite": "^7.1.7"
   },
   "build": {
     "appId": "cc.zenmind.desktop",
-    "productName": "ZenMind Desktop",
+    "productName": "国泰君安期货",
     "files": [
       "dist-renderer/**/*",
       "dist-electron/**/*",
@@ -43,6 +58,10 @@
       {
         "from": "build/resources/services",
         "to": "services"
+      },
+      {
+        "from": "build/resources/code-assistant-runtime",
+        "to": "code-assistant-runtime"
       },
       {
         "from": "scripts",

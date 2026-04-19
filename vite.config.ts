@@ -6,10 +6,20 @@ export default defineConfig({
   base: "./",
   plugins: [react()],
   resolve: {
-    alias: {
-      "@renderer": path.resolve(__dirname, "src/renderer"),
-      "@shared": path.resolve(__dirname, "src/shared")
-    }
+    alias: [
+      {
+        find: /^@\//,
+        replacement: `${path.resolve(__dirname, "src/renderer/assistant-webclient")}/`
+      },
+      {
+        find: "@renderer",
+        replacement: path.resolve(__dirname, "src/renderer")
+      },
+      {
+        find: "@shared",
+        replacement: path.resolve(__dirname, "src/shared")
+      }
+    ]
   },
   server: {
     port: 5173,

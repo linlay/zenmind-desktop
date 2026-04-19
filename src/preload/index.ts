@@ -38,6 +38,17 @@ const api: DesktopApi = {
   agentAuth: {
     issueAccessToken: (reason) => ipcRenderer.invoke("agentAuth.issueAccessToken", reason)
   },
+  codeAssistant: {
+    getStatus: () => ipcRenderer.invoke("codeAssistant.getStatus"),
+    ensureReady: () => ipcRenderer.invoke("codeAssistant.ensureReady"),
+    restartRuntime: () => ipcRenderer.invoke("codeAssistant.restartRuntime"),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke("codeAssistant.setEnabled", enabled),
+    setFullAccessGranted: (granted: boolean) =>
+      ipcRenderer.invoke("codeAssistant.setFullAccessGranted", granted),
+    getRepoContext: () => ipcRenderer.invoke("codeAssistant.getRepoContext"),
+    selectRepoPath: () => ipcRenderer.invoke("codeAssistant.selectRepoPath"),
+    setBranch: (branch: string) => ipcRenderer.invoke("codeAssistant.setBranch", branch)
+  },
   settings: {
     getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
     changeDataRoot: () => ipcRenderer.invoke("settings.changeDataRoot")

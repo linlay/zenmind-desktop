@@ -30,16 +30,16 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg-canvas: #0D0E10;
-  --surface: #161719;
-  --surface-strong: #161719;
-  --surface-soft: #111214;
-  --surface-sidebar: #161719;
+  --bg-canvas: #16181D;
+  --surface: #242831;
+  --surface-strong: #242831;
+  --surface-soft: #1C2026;
+  --surface-sidebar: #20242C;
   --ink: #F2F3F5;
   --ink-soft: #C9CDD4;
   --ink-muted: #86909C;
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.14);
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.16);
   --accent: #4F88FF;
   --accent-strong: #75A5FF;
   --accent-soft: rgba(79, 136, 255, 0.16);
@@ -48,8 +48,8 @@
   --warning: #FF9A2E;
   --danger: #F76560;
   --info: #A55EEA;
-  --panel-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
-  --panel-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.32);
+  --panel-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --panel-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.28);
 }
 
 /* ── Reset ── */
@@ -577,9 +577,26 @@ a {
 /* ── Main Content ── */
 
 .app-main {
+  position: relative;
   height: 100vh;
   overflow: auto;
   padding: 20px 24px 28px;
+}
+
+.app-route-layer {
+  min-height: 100%;
+}
+
+.app-route-layer.is-hidden {
+  display: none;
+}
+
+.assistant-route-layer {
+  height: 100%;
+}
+
+.assistant-route-placeholder {
+  display: none;
 }
 
 /* ── Page Head ── */
@@ -1041,6 +1058,13 @@ a {
 
 .service-group.is-open .service-group-head {
   border-bottom: 1px solid var(--line);
+}
+
+.service-group-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .service-group-action {
@@ -1941,6 +1965,11 @@ code {
   .service-group-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .service-group-actions {
+    align-self: flex-start;
+    justify-content: flex-start;
   }
 
   .service-group-action {

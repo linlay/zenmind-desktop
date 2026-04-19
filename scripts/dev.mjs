@@ -17,7 +17,22 @@ function detectSyncArch() {
   }
 
   try {
-    const translated = execFileSync("sysctl", ["-in", "sysctl.proc_translated"], { encoding: "utf8" }).trim();
+    const arm64Host = execFileSync("arch", ["-arm64", "uname", "-m"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+    if (arm64Host === "arm64" || arm64Host === "aarch64") {
+      return "arm64";
+    }
+  } catch {
+    // Continue with other host-architecture probes.
+  }
+
+  try {
+    const translated = execFileSync("sysctl", ["-in", "sysctl.proc_translated"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
     if (translated === "1") {
       return "arm64";
     }
@@ -26,7 +41,10 @@ function detectSyncArch() {
   }
 
   try {
-    const arm64Capable = execFileSync("sysctl", ["-in", "hw.optional.arm64"], { encoding: "utf8" }).trim();
+    const arm64Capable = execFileSync("sysctl", ["-in", "hw.optional.arm64"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
     if (arm64Capable === "1") {
       return "arm64";
     }
@@ -35,7 +53,10 @@ function detectSyncArch() {
   }
 
   try {
-    const machine = execFileSync("uname", ["-m"], { encoding: "utf8" }).trim();
+    const machine = execFileSync("uname", ["-m"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
     if (machine === "arm64" || machine === "aarch64") {
       return "arm64";
     }
@@ -115,6 +136,7 @@ process.on("SIGTERM", () => shutdown(0));
 const syncOs = isWindows ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
 const syncArch = detectSyncArch();
 await runAndWait(npmCmd, ["run", "sync:assets", "--", `--os=${syncOs}`, `--arch=${syncArch}`]);
+await runAndWait(npmCmd, ["run", "prepare:assistant-native"]);
 await runAndWait(npmCmd, ["run", "build:main"]);
 
 track(run(npmCmd, ["exec", "vite", "--", "--host", "127.0.0.1"]));

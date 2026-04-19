@@ -6,6 +6,7 @@ import {
   type MessageBoxReturnValue
 } from "electron";
 import type { PluginInstallResult, ServiceId } from "../shared/contracts";
+import { isManagedClaudeCodeRelayPlugin } from "./code-assistant";
 import { uninstallPlugin } from "./plugin-loader";
 import { getService } from "./service-registry";
 
@@ -50,6 +51,10 @@ export async function handlePluginUninstall(
   const showMessageBox = deps.showMessageBox ?? (dialog.showMessageBox.bind(dialog) as ShowMessageBox);
   const uninstall = deps.uninstall ?? uninstallPlugin;
   const service = getServiceById(serviceId);
+
+  if (isManagedClaudeCodeRelayPlugin(serviceId)) {
+    return { ok: false, message: "代码助手集成由 Desktop 托管，暂不支持卸载。" };
+  }
 
   if (service.kind !== "plugin") {
     return { ok: false, message: "内置服务不可卸载。" };

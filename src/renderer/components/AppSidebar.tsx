@@ -1,31 +1,49 @@
 import { NavLink } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
+import { EXTERNAL_EXPERIMENTAL_ITEMS } from "../App";
 import { BrandMark, SidebarIllustration } from "./BrandMark";
 
 const staticNavItems = [
   { to: "/control-center", label: "控制中心", icon: "control" },
+  { to: "/assistant", label: "小宅助理", icon: "assistant" },
   { to: "/market", label: "插件市场", icon: "market" },
   { to: "/help", label: "帮助", icon: "help" }
 ] as const;
 
 type AppSidebarProps = {
   isCollapsed: boolean;
+  experimentalEnabled: boolean;
 };
 
-export function AppSidebar({ isCollapsed }: AppSidebarProps) {
+export function AppSidebar({ isCollapsed, experimentalEnabled }: AppSidebarProps) {
   const { services } = useServices();
   const serviceNavItems = services
-    .filter((service) => service.frontendMode === "standalone" && service.status === "running")
+    .filter(
+      (service) =>
+        service.id !== "agent-webclient" &&
+        service.frontendMode === "standalone" &&
+        service.status === "running"
+    )
     .map((service) => ({
       to: `/plugin/${service.id}`,
       label: service.name,
-      icon: service.id === "agent-webclient" ? "assistant" : "service"
+      icon: "service" as const
     }));
+
+  const experimentalItems = experimentalEnabled
+    ? EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => ({
+        to: `/external/${item.id}`,
+        label: item.label,
+        icon: item.icon
+      }))
+    : [];
 
   const navItems = [
     staticNavItems[0],
+    staticNavItems[1],
     ...serviceNavItems,
-    ...staticNavItems.slice(1)
+    ...experimentalItems,
+    ...staticNavItems.slice(2)
   ];
 
   return (
@@ -36,7 +54,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
             <BrandMark />
           </div>
           <div className="sidebar-profile-copy">
-            <h2 className="sidebar-profile-name">ZenMind</h2>
+            <h2 className="sidebar-profile-name">国泰君安期货</h2>
             <p className="sidebar-profile-meta">桌面工作台</p>
           </div>
         </div>

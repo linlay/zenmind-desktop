@@ -4,9 +4,16 @@ import { useServices } from "../services/ServicesContext";
 type SettingsPageProps = {
   themeMode: "light" | "dark";
   onToggleTheme: () => void;
+  experimentalEnabled: boolean;
+  onToggleExperimental: () => void;
 };
 
-export function SettingsPage({ themeMode, onToggleTheme }: SettingsPageProps) {
+export function SettingsPage({
+  themeMode,
+  onToggleTheme,
+  experimentalEnabled,
+  onToggleExperimental
+}: SettingsPageProps) {
   const { refresh } = useServices();
   const [feedback, setFeedback] = useState("");
   const [dataRoot, setDataRoot] = useState("");
@@ -118,6 +125,26 @@ export function SettingsPage({ themeMode, onToggleTheme }: SettingsPageProps) {
               <span>更沉静，适合夜间或专注场景</span>
             </span>
           </button>
+        </div>
+      </div>
+
+      <div className="data-root-card">
+        <div>
+          <p className="eyebrow">EXPERIMENTAL</p>
+          <h2>实验性功能</h2>
+          <p className="page-copy">
+            开启后，侧边栏会显示<strong>国小君平台</strong>和<strong>秋而工作站</strong>等实验性入口。
+          </p>
+        </div>
+        <div className="data-root-actions">
+          <label className="experimental-switch" style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={experimentalEnabled}
+              onChange={onToggleExperimental}
+            />
+            <span>{experimentalEnabled ? "已开启" : "未开启"}</span>
+          </label>
         </div>
       </div>
 

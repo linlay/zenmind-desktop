@@ -234,7 +234,8 @@ function resolveDesktop(
 
   return {
     assetFileName,
-    bundleTopLevelDir
+    bundleTopLevelDir,
+    autoStart: asBoolean(desktop.autoStart)
   } satisfies ManifestDesktop & { bundleTopLevelDir: string };
 }
 

@@ -8,7 +8,9 @@ type SidebarIllustrationKind =
   | "market"
   | "help"
   | "settings"
-  | "service";
+  | "service"
+  | "futures"
+  | "autumn";
 
 type SidebarIllustrationProps = {
   kind: SidebarIllustrationKind;
@@ -136,11 +138,50 @@ function SettingsIcon({ className }: { className?: string }) {
 }
 
 export function BrandMark({ className }: BrandMarkProps) {
+  // The brand logo is loaded from /public/brand-icon.png so the official
+  // corporate asset can be dropped in without code changes.
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
-      <rect x="2" y="2" width="20" height="20" rx="5" fill="#2663EB" />
-      <path d="M7 7h10v2.4L11.2 15.6H17V18H7v-2.4L12.8 9.4H7z" fill="#FFFFFF" />
-    </svg>
+    <img
+      src="./brand-icon.png"
+      alt="品牌标识"
+      className={className}
+      style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: 8 }}
+      onError={(event) => {
+        // Fallback: hide broken image if asset not yet provided.
+        (event.currentTarget as HTMLImageElement).style.visibility = "hidden";
+      }}
+    />
+  );
+}
+
+function FuturesIcon({ className }: { className?: string }) {
+  return (
+    <IconFrame className={className}>
+      <rect x="24" y="24" width="208" height="208" rx="40" fill="#1D4ED8" />
+      <rect x="24" y="24" width="208" height="208" rx="40" fill="#FFFFFF" opacity="0.08" />
+      {/* candlesticks */}
+      <line x1="72" y1="70" x2="72" y2="190" stroke="#FFFFFF" strokeWidth="6" strokeLinecap="round" />
+      <rect x="60" y="100" width="24" height="56" rx="4" fill="#FFFFFF" />
+      <line x1="128" y1="56" x2="128" y2="200" stroke="#FFFFFF" strokeWidth="6" strokeLinecap="round" />
+      <rect x="116" y="80" width="24" height="80" rx="4" fill="#34D399" />
+      <line x1="184" y1="86" x2="184" y2="178" stroke="#FFFFFF" strokeWidth="6" strokeLinecap="round" />
+      <rect x="172" y="110" width="24" height="44" rx="4" fill="#F87171" />
+    </IconFrame>
+  );
+}
+
+function AutumnIcon({ className }: { className?: string }) {
+  return (
+    <IconFrame className={className}>
+      <rect x="24" y="24" width="208" height="208" rx="40" fill="#F97316" />
+      <rect x="24" y="24" width="208" height="208" rx="40" fill="#FFFFFF" opacity="0.08" />
+      {/* leaf shape */}
+      <path
+        d="M128 56c-40 20-64 54-64 92 0 24 16 44 40 52 4-20 14-38 30-52-10 18-14 36-14 52 26-4 48-22 58-46 12-28 6-62-14-94-8-14-24-14-36-4z"
+        fill="#FFFFFF"
+      />
+      <path d="M128 96v104" stroke="#F97316" strokeWidth="6" strokeLinecap="round" />
+    </IconFrame>
   );
 }
 
@@ -156,6 +197,10 @@ export function SidebarIllustration({ kind, className }: SidebarIllustrationProp
       return <SettingsIcon className={className} />;
     case "service":
       return <ConsoleIcon className={className} />;
+    case "futures":
+      return <FuturesIcon className={className} />;
+    case "autumn":
+      return <AutumnIcon className={className} />;
     case "control":
     default:
       return <ControlCenterIcon className={className} />;

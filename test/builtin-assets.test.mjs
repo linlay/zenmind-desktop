@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import {
   builtinServices,
   listArchiveEntries,
+  needsArchiveRefresh,
   validateBundleArchive
 } from "../scripts/lib/builtin-assets.mjs";
 
@@ -155,4 +156,44 @@ test("validateBundleArchive accepts zip bundles", () => {
   assert.ok(entries.has("agent-container-hub/backend/agent-container-hub.exe"));
 
   fs.rmSync(fixture.root, { recursive: true, force: true });
+});
+
+test("needsArchiveRefresh returns true when sources are newer than the archive", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-refresh-"));
+  const archivePath = path.join(root, "bundle.tar.gz");
+  const sourcePath = path.join(root, "internal", "server.go");
+
+  fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+  fs.writeFileSync(archivePath, "archive\n", "utf8");
+  fs.writeFileSync(sourcePath, "source\n", "utf8");
+
+  const now = new Date();
+  const older = new Date(now.getTime() - 10_000);
+  const newer = new Date(now.getTime() + 10_000);
+  fs.utimesSync(archivePath, older, older);
+  fs.utimesSync(sourcePath, newer, newer);
+
+  assert.equal(needsArchiveRefresh(archivePath, [sourcePath]), true);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("needsArchiveRefresh returns false when the archive is current", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-refresh-"));
+  const archivePath = path.join(root, "bundle.tar.gz");
+  const sourcePath = path.join(root, "internal", "server.go");
+
+  fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+  fs.writeFileSync(archivePath, "archive\n", "utf8");
+  fs.writeFileSync(sourcePath, "source\n", "utf8");
+
+  const now = new Date();
+  const older = new Date(now.getTime() - 10_000);
+  const newer = new Date(now.getTime() + 10_000);
+  fs.utimesSync(sourcePath, older, older);
+  fs.utimesSync(archivePath, newer, newer);
+
+  assert.equal(needsArchiveRefresh(archivePath, [sourcePath]), false);
+
+  fs.rmSync(root, { recursive: true, force: true });
 });

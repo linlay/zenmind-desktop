@@ -1,0 +1,105 @@
+.ConfirmDialog {
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+  border-radius: 20px;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.ConfirmDialog .Pagination {
+  font-size: 12px;
+}
+
+.ConfirmDialog .IgnoreButton {
+  color: var(--text-muted);
+}
+
+.ConfirmDialog .IgnoreButton span:last-child {
+  margin-left: 4px;
+  background-color: var(--accent-soft, rgba(0, 0, 0, 0.06));
+  padding: 1px 8px;
+  border-radius: 10px;
+  color: var(--text-main);
+}
+
+.ConfirmDialog .FormItem {
+  margin-bottom: 0;
+}
+
+.QuestionWrapper {
+}
+
+.QuestionWrapper .Question {
+  padding: 10px;
+  gap: 16px;
+}
+
+.QuestionWrapper .Question :first-child {
+  flex: 1;
+}
+
+.QuestionWrapper .QuestionText {
+  min-width: 0;
+}
+
+.QuestionWrapper .QuestionHeading {
+  color: var(--text-main);
+  font-weight: bold;
+}
+
+.QuestionWrapper .QuestionPrompt {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.QuestionWrapper .InputField {
+  margin: 0 10px 10px;
+  width: auto;
+}
+
+.QuestionWrapper .CheckboxGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.QuestionWrapper .Option {
+  padding: 10px;
+  border-radius: 10px;
+  color: var(--text-muted);
+}
+
+.QuestionWrapper .Option:hover:not(.FreeText),
+.QuestionWrapper .Option:focus-within:not(.FreeText) {
+  background-color: var(--bg-hover);
+}
+
+.QuestionWrapper .Option .Info {
+  color: var(--text-main);
+  font-weight: bold;
+}
+
+.QuestionWrapper .FreeText {
+  padding: 10px 18px;
+}
+
+.QuestionWrapper .CheckboxGroup :global(.Selected) {
+  color: var(--colorTextSecondary);
+  background-color: var(--bg-hover);
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  display: none;
+}
+
+.QuestionWrapper .CheckboxGroup :global(.ant-checkbox) {
+  display: none;
+}
+
+.QuestionWrapper .CheckboxGroup :global(.ant-checkbox-wrapper-checked .Selected) {
+  display: block;
+}
+
+.QuestionWrapper .CheckboxGroup :global(.ant-checkbox-wrapper > :last-child) {
+  flex: 1;
+}

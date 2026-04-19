@@ -2,7 +2,8 @@ import { NavLink } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
 
 const staticNavItems = [
-  { to: "/control-center", label: "控制中心" }
+  { to: "/control-center", label: "控制中心" },
+  { to: "/assistant", label: "小宅助理" }
 ];
 
 const tailNavItems = [
@@ -18,7 +19,7 @@ type HeaderProps = {
 export function Header({ themeMode, onToggleTheme }: HeaderProps) {
   const { services } = useServices();
   const serviceNavItems = services
-    .filter((s) => s.frontendMode === "standalone" && s.status === "running")
+    .filter((s) => s.id !== "agent-webclient" && s.frontendMode === "standalone" && s.status === "running")
     .map((s) => ({ to: `/plugin/${s.id}`, label: s.name }));
 
   const navItems = [...staticNavItems, ...serviceNavItems, ...tailNavItems];

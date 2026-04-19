@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -15,7 +16,8 @@ const {
   installBuiltinService,
   readServiceLog,
   readServiceConfig,
-  startService
+  startService,
+  stopService
 } = require("../dist-electron/main/service-manager.js");
 const { loadBuiltinServices } = require("../dist-electron/main/builtin-loader.js");
 const {
@@ -232,6 +234,7 @@ function writePluginInstallRoot(installDir, options = {}) {
   const pluginName = options.name ?? "Test Plugin";
   const version = options.version ?? "v1.0.0";
   const errorLogRelativePath = options.errorLogRelativePath ?? null;
+  const defaultPort = options.defaultPort ?? 9300;
   const deployScriptContent =
     options.deployScriptContent === undefined
       ? "#!/usr/bin/env bash\nprintf deployed > run/deploy-marker.txt\n"
@@ -239,7 +242,7 @@ function writePluginInstallRoot(installDir, options = {}) {
   const requiredPaths = ["manifest.json", "start.sh", "stop.sh", ".env.example"];
 
   fs.mkdirSync(path.join(installDir, "run"), { recursive: true });
-  fs.writeFileSync(path.join(installDir, ".env.example"), "PORT=9300\n", "utf8");
+  fs.writeFileSync(path.join(installDir, ".env.example"), `PORT=${defaultPort}\n`, "utf8");
   fs.writeFileSync(path.join(installDir, "start.sh"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
   fs.writeFileSync(path.join(installDir, "stop.sh"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
 
@@ -284,7 +287,7 @@ function writePluginInstallRoot(installDir, options = {}) {
         web: {
           routePath: "",
           portEnvKey: "PORT",
-          defaultPort: 9300
+          defaultPort
         }
       },
       null,
@@ -303,6 +306,147 @@ function writePluginInstallRoot(installDir, options = {}) {
   const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
   registerPlugin(manifest);
   return manifest;
+}
+
+function writeManagedBuiltinBundleRoot(bundleRoot, options = {}) {
+  const serviceId = options.id ?? "managed-builtin";
+  const serviceName = options.name ?? "Managed Builtin";
+  const version = options.version ?? "v0.1.0";
+  const defaultPort = options.defaultPort ?? 9400;
+  const portEnvKey = options.portEnvKey ?? "PORT";
+  const routePath = options.routePath ?? "/";
+  const pidFileName = options.pidFileName ?? `${serviceId}.pid`;
+  const envExampleContent = options.envExampleContent ?? `${portEnvKey}=${defaultPort}\n`;
+  const failAfterSpawn = options.failAfterSpawn === true;
+  const listenOnPort = options.listenOnPort === true;
+
+  fs.mkdirSync(path.join(bundleRoot, "scripts"), { recursive: true });
+  fs.writeFileSync(path.join(bundleRoot, ".env.example"), envExampleContent, "utf8");
+  fs.writeFileSync(
+    path.join(bundleRoot, "scripts", "daemon.js"),
+    listenOnPort
+      ? [
+          "const http = require('node:http');",
+          `const port = ${JSON.stringify(defaultPort)};`,
+          "const server = http.createServer((_, res) => {",
+          "  res.writeHead(200, { 'content-type': 'text/plain' });",
+          "  res.end('ok');",
+          "});",
+          "server.listen(port, '127.0.0.1');"
+        ].join("\n") + "\n"
+      : "setInterval(() => {}, 1000);\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(bundleRoot, "scripts", "start.js"),
+    [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const { spawn } = require('node:child_process');",
+      "const runDir = path.join(process.cwd(), 'run');",
+      "fs.mkdirSync(runDir, { recursive: true });",
+      "const child = spawn(process.execPath, [path.join(process.cwd(), 'scripts', 'daemon.js')], {",
+      "  detached: true,",
+      "  stdio: 'ignore'",
+      "});",
+      "child.unref();",
+      `fs.writeFileSync(path.join(runDir, '${pidFileName}'), String(child.pid), 'utf8');`,
+      ...(failAfterSpawn ? ["process.stderr.write('backend failed to start after spawn\\n');", "process.exit(1);"] : [])
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(bundleRoot, "scripts", "stop.js"),
+    [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      `const pidPath = path.join(process.cwd(), 'run', '${pidFileName}');`,
+      "if (!fs.existsSync(pidPath)) {",
+      "  process.exit(0);",
+      "}",
+      "try {",
+      "  process.kill(Number(fs.readFileSync(pidPath, 'utf8')), 'SIGTERM');",
+      "} catch {}",
+      "fs.rmSync(pidPath, { force: true });"
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(bundleRoot, "manifest.json"),
+    `${JSON.stringify(
+      {
+        id: serviceId,
+        name: serviceName,
+        kind: "builtin",
+        version,
+        description: "managed builtin fixture",
+        frontend: {
+          mode: "none"
+        },
+        scripts: {
+          start: [process.execPath, "scripts/start.js"],
+          stop: [process.execPath, "scripts/stop.js"]
+        },
+        configFiles: [
+          {
+            key: "env",
+            label: ".env",
+            relativePath: ".env",
+            templateRelativePath: ".env.example",
+            required: true
+          }
+        ],
+        runtime: {
+          pidRelativePath: `run/${pidFileName}`,
+          logRelativePath: `run/${serviceId}.log`,
+          requiredPaths: [
+            "manifest.json",
+            ".env.example",
+            "scripts/daemon.js",
+            "scripts/start.js",
+            "scripts/stop.js"
+          ]
+        },
+        web: {
+          routePath,
+          portEnvKey,
+          defaultPort
+        },
+        desktop: {
+          assetFileName: `${serviceId}-${version}-darwin-arm64.tar.gz`,
+          bundleTopLevelDir: serviceId
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+}
+
+function createManagedBuiltinBundleFixture(tempRoot, options = {}) {
+  const serviceId = options.id ?? "managed-builtin";
+  const version = options.version ?? "v0.1.0";
+  const assetsRoot = path.join(tempRoot, "assets");
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const bundleRoot = path.join(tempRoot, serviceId);
+  const assetDir = path.join(assetsRoot, serviceId);
+  const archivePath = path.join(assetDir, `${serviceId}-${version}-darwin-arm64.tar.gz`);
+  const installDir = path.join(userDataRoot, "services", serviceId, version);
+
+  writeManagedBuiltinBundleRoot(bundleRoot, options);
+  fs.mkdirSync(assetDir, { recursive: true });
+  execFileSync("tar", ["-czf", archivePath, "-C", tempRoot, serviceId]);
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(bundleRoot, "manifest.json"), "utf8"));
+  registerPlugin(manifest);
+
+  return {
+    assetsRoot,
+    userDataRoot,
+    installDir,
+    manifest
+  };
 }
 
 test("parseEnvFileContent keeps key values and strips quotes", () => {
@@ -599,6 +743,38 @@ test("readServiceLog aligns non-zero chunk starts to the next full log line", as
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("getServiceState treats a listening service port as running even when the pid file is missing", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-port-running-state-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+  const port = 19300;
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end("ok");
+  });
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    defaultPort: port
+  });
+  await initializeService(app, "test-plugin");
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
+
+  const state = await getServiceState(app, "test-plugin");
+
+  assert.equal(state.status, "running");
+  assert.equal(state.healthMeta.pid, null);
+  assert.match(state.message, /服务端口正在监听/u);
+
+  await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve(undefined))));
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
 test("decodePowerShellCapturePayload restores UTF-8 error text", () => {
   const payload = Buffer.from(
     JSON.stringify({
@@ -781,6 +957,181 @@ test("startService rejects services that still require initialization", async ()
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("startService auto-installs and initializes builtin services", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-auto-start-"));
+  const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+
+  registryInternals.clearServices();
+
+  try {
+    const fixture = createManagedBuiltinBundleFixture(tempRoot, {
+      id: "managed-builtin",
+      name: "Managed Builtin",
+      defaultPort: 19400
+    });
+    process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = fixture.assetsRoot;
+
+    const app = createApp(fixture.userDataRoot);
+    const result = await startService(app, fixture.manifest.id);
+    assert.equal(result.ok, true);
+    assert.equal(fs.existsSync(path.join(fixture.installDir, ".env")), true);
+    assert.equal(__testInternals.readInitializationState(fixture.installDir)?.status, "succeeded");
+
+    const state = await getServiceState(app, fixture.manifest.id);
+    assert.equal(state.status, "running");
+
+    await stopService(app, fixture.manifest.id);
+  } finally {
+    registryInternals.clearServices();
+    if (previousAssetsRoot) {
+      process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
+    } else {
+      delete process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("startService treats already-running services as success even when start command exits non-zero", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-recover-running-"));
+  const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+
+  registryInternals.clearServices();
+
+  try {
+    const fixture = createManagedBuiltinBundleFixture(tempRoot, {
+      id: "managed-builtin",
+      name: "Managed Builtin",
+      defaultPort: 19410,
+      failAfterSpawn: true
+    });
+    process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = fixture.assetsRoot;
+
+    const app = createApp(fixture.userDataRoot);
+    const result = await startService(app, fixture.manifest.id);
+    assert.equal(result.ok, true);
+    assert.equal(result.service.status, "running");
+
+    await stopService(app, fixture.manifest.id);
+  } finally {
+    registryInternals.clearServices();
+    if (previousAssetsRoot) {
+      process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
+    } else {
+      delete process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("startService does not relaunch a service when its port is already listening but the pid file is missing", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-port-recover-"));
+  const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+  const port = 20000 + Math.floor(Math.random() * 10000);
+
+  registryInternals.clearServices();
+
+  try {
+    const fixture = createManagedBuiltinBundleFixture(tempRoot, {
+      id: "managed-builtin",
+      name: "Managed Builtin",
+      defaultPort: port,
+      listenOnPort: true
+    });
+    process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = fixture.assetsRoot;
+
+    const app = createApp(fixture.userDataRoot);
+    const firstStart = await startService(app, fixture.manifest.id);
+    assert.equal(firstStart.ok, true);
+
+    const pidFilePath = path.join(fixture.installDir, "run", "managed-builtin.pid");
+    assert.equal(fs.existsSync(pidFilePath), true);
+    const originalPid = Number(fs.readFileSync(pidFilePath, "utf8"));
+    fs.rmSync(pidFilePath, { force: true });
+
+    let recoveredState = await getServiceState(app, fixture.manifest.id);
+    for (let attempt = 0; attempt < 5 && recoveredState.status !== "running"; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      recoveredState = await getServiceState(app, fixture.manifest.id);
+    }
+    assert.equal(recoveredState.status, "running");
+
+    const secondStart = await startService(app, fixture.manifest.id);
+    assert.equal(secondStart.ok, true);
+    assert.equal(secondStart.service.status, "running");
+    assert.match(secondStart.message, /已在运行/u);
+
+    try {
+      process.kill(originalPid, "SIGTERM");
+    } catch {
+      // Ignore already-stopped children during test cleanup.
+    }
+  } finally {
+    registryInternals.clearServices();
+    if (previousAssetsRoot) {
+      process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
+    } else {
+      delete process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("startService on agent-webclient auto-starts agent-platform without requiring container hub", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-webclient-deps-"));
+  const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+
+  registryInternals.clearServices();
+
+  try {
+    const hubFixture = createManagedBuiltinBundleFixture(tempRoot, {
+      id: "agent-container-hub",
+      name: "Container Hub",
+      defaultPort: 11960,
+      portEnvKey: "BIND_ADDR"
+    });
+    const platformFixture = createManagedBuiltinBundleFixture(tempRoot, {
+      id: "agent-platform",
+      name: "智能体平台",
+      defaultPort: 12949,
+      portEnvKey: "SERVER_PORT",
+      routePath: "/agent/"
+    });
+    const webclientFixture = createManagedBuiltinBundleFixture(tempRoot, {
+      id: "agent-webclient",
+      name: "小宅助理",
+      defaultPort: 11948,
+      envExampleContent: "BASE_URL=http://localhost:11949\nPORT=11948\n"
+    });
+    process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = hubFixture.assetsRoot;
+
+    const app = createApp(platformFixture.userDataRoot);
+    const result = await startService(app, "agent-webclient");
+    assert.equal(result.ok, true);
+
+    const hubState = await getServiceState(app, "agent-container-hub");
+    const platformState = await getServiceState(app, "agent-platform");
+    const webclientState = await getServiceState(app, "agent-webclient");
+    assert.notEqual(hubState.status, "running");
+    assert.equal(platformState.status, "running");
+    assert.equal(webclientState.status, "running");
+
+    const webclientEnv = fs.readFileSync(path.join(webclientFixture.installDir, ".env"), "utf8");
+    assert.match(webclientEnv, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
+
+    await stopService(app, "agent-webclient");
+    await stopService(app, "agent-platform");
+  } finally {
+    registryInternals.clearServices();
+    if (previousAssetsRoot) {
+      process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
+    } else {
+      delete process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("ensurePreStartRequirements injects container hub url and auth public key for agent platform", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-prestart-"));
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -804,6 +1155,7 @@ test("ensurePreStartRequirements injects container hub url and auth public key f
   const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
   assert.match(envContent, /AGENT_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960/);
   assert.match(envContent, /SERVER_PORT=11949/);
+  assert.match(envContent, /AGENT_WS_ENABLED=true/);
   assert.match(envContent, /AGENT_AUTH_ENABLED=true/);
   assert.match(envContent, /AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem/);
 

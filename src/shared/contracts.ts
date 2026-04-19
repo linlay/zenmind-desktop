@@ -170,6 +170,7 @@ export interface ManifestWeb {
 export interface ManifestDesktop {
   assetFileName?: string;
   bundleTopLevelDir?: string;
+  autoStart?: boolean;
 }
 
 export interface Manifest {
@@ -194,6 +195,41 @@ export interface PluginInstallResult {
   ok: boolean;
   message: string;
   serviceId?: string;
+}
+
+export interface CodeAssistantStatus {
+  enabled: boolean;
+  fullAccessGranted: boolean;
+  running: boolean;
+  configured: boolean;
+  repoSelected: boolean;
+  repoPath: string;
+  cliConnected: boolean;
+  recovering: boolean;
+  ready: boolean;
+  error?: string;
+}
+
+export interface CodeAssistantCommandResult {
+  ok: boolean;
+  message: string;
+  prompted?: boolean;
+  status: CodeAssistantStatus;
+}
+
+export interface CodeAssistantRepoContext {
+  repoPath: string;
+  repoExists: boolean;
+  isGitRepo: boolean;
+  userSelected: boolean;
+  currentBranch: string;
+  branches: string[];
+}
+
+export interface CodeAssistantRepoCommandResult {
+  ok: boolean;
+  message: string;
+  context: CodeAssistantRepoContext;
 }
 
 export interface DataRootChangeResult {
@@ -234,6 +270,16 @@ export interface DesktopApi {
   };
   agentAuth: {
     issueAccessToken: (reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
+  };
+  codeAssistant: {
+    getStatus: () => Promise<CodeAssistantStatus>;
+    ensureReady: () => Promise<CodeAssistantCommandResult>;
+    restartRuntime: () => Promise<CodeAssistantCommandResult>;
+    setEnabled: (enabled: boolean) => Promise<CodeAssistantCommandResult>;
+    setFullAccessGranted: (granted: boolean) => Promise<CodeAssistantCommandResult>;
+    getRepoContext: () => Promise<CodeAssistantRepoContext>;
+    selectRepoPath: () => Promise<CodeAssistantRepoCommandResult>;
+    setBranch: (branch: string) => Promise<CodeAssistantRepoCommandResult>;
   };
   settings: {
     getDataRoot: () => Promise<string>;

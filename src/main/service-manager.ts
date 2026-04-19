@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { execFile, spawnSync } from "node:child_process";
@@ -16,6 +17,11 @@ import type {
 } from "../shared/contracts";
 import type { ServiceDefinition } from "./manifest-utils";
 import { getBuiltinAssetsRoot } from "./builtin-loader";
+import {
+  CLAUDE_CODE_RELAY_PLUGIN_ID,
+  ensureManagedAgentDefinition,
+  readManagedConfigFile
+} from "./code-assistant";
 import { getAllServices, getService } from "./service-registry";
 import { getPluginInstallDir } from "./plugin-loader";
 import { ensureKeyPairForPan } from "./pan-auth";
@@ -360,6 +366,35 @@ function isProcessRunning(pid: number | null) {
   }
 }
 
+function isPortReachable(port: number) {
+  if (!Number.isFinite(port) || port <= 0) {
+    return Promise.resolve(false);
+  }
+
+  return new Promise<boolean>((resolve) => {
+    const socket = net.createConnection({
+      host: "127.0.0.1",
+      port
+    });
+
+    const settle = (value: boolean) => {
+      if (!socket.destroyed) {
+        socket.destroy();
+      }
+      resolve(value);
+    };
+
+    socket.setTimeout(500);
+    socket.once("connect", () => settle(true));
+    socket.once("timeout", () => settle(false));
+    socket.once("error", () => settle(false));
+  });
+}
+
+function waitFor(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const IS_WINDOWS = process.platform === "win32";
 
 function windowsPowerShellPath() {
@@ -545,6 +580,26 @@ function containerEngineAvailable() {
   return "";
 }
 
+function commandAvailable(name: string) {
+  const env = buildServiceEnv();
+  const probe = IS_WINDOWS
+    ? spawnSync("where.exe", [name], { encoding: "utf8", env })
+    : spawnSync("sh", ["-lc", `command -v ${name}`], { encoding: "utf8", env });
+  return probe.status === 0;
+}
+
+function getCodeAssistantBundledRuntimePath(installDir: string) {
+  return path.join(installDir, "runtime", "claude-code-guotai");
+}
+
+function getCodeAssistantBundledBunPath(installDir: string) {
+  return path.join(installDir, "runtime", "bun", process.platform === "win32" ? "bun.exe" : "bun");
+}
+
+function codeAssistantBunAvailable(installDir: string) {
+  return fs.existsSync(getCodeAssistantBundledBunPath(installDir)) || commandAvailable("bun");
+}
+
 function collectPrerequisites(service: ServiceDefinition, installDir: string) {
   const prerequisites: string[] = [];
   const envPath = path.join(installDir, ".env");
@@ -561,6 +616,27 @@ function collectPrerequisites(service: ServiceDefinition, installDir: string) {
 
   if (service.id === "agent-container-hub" && !containerEngineAvailable()) {
     prerequisites.push("未检测到 Docker 或 Podman");
+  }
+
+  if (service.id === CLAUDE_CODE_RELAY_PLUGIN_ID) {
+    const configPath = path.join(installDir, "managed-config.json");
+    const config = readManagedConfigFile(configPath, getCodeAssistantBundledRuntimePath(installDir));
+    if (!config) {
+      prerequisites.push("缺少代码助手托管配置");
+      return prerequisites;
+    }
+    if (!config.enabled) {
+      prerequisites.push("代码助手当前已停用，请重新启用");
+    }
+    if (!config.authToken) {
+      prerequisites.push("代码助手令牌未配置");
+    }
+    if (!fs.existsSync(config.repoPath)) {
+      prerequisites.push(`claude-code-guotai 项目不存在：${config.repoPath}`);
+    }
+    if (!codeAssistantBunAvailable(installDir)) {
+      prerequisites.push("未检测到 Bun 运行时");
+    }
   }
 
   return prerequisites;
@@ -766,7 +842,16 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     installed && missingRuntimeFiles.length === 0 && initializationSucceeded
       ? collectPrerequisites(service, installDir)
       : [];
-  const running = installed && missingRuntimeFiles.length === 0 && isProcessRunning(pid);
+  const runningByPid = installed && missingRuntimeFiles.length === 0 && isProcessRunning(pid);
+  const runningByPort =
+    !runningByPid &&
+    installed &&
+    missingRuntimeFiles.length === 0 &&
+    initializationSucceeded &&
+    prerequisites.length === 0 &&
+    port > 0 &&
+    (await isPortReachable(port));
+  const running = runningByPid || runningByPort;
 
   let status: ServiceState["status"] = "not-installed";
   let statusLabel = "未安装";
@@ -816,7 +901,8 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   if (running && initializationSucceeded) {
     status = "running";
     statusLabel = "运行中";
-    message = `服务进程正在运行。${webUrl ? `入口：${webUrl}` : ""}`.trim();
+    const runtimeSource = runningByPort && !runningByPid ? "服务端口正在监听。" : "服务进程正在运行。";
+    message = `${runtimeSource}${webUrl ? `入口：${webUrl}` : ""}`.trim();
   }
 
   return {
@@ -877,6 +963,9 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     if (!env.get("SERVER_PORT")) {
       updates.set("SERVER_PORT", String(service.web.defaultPort));
     }
+    if ((env.get("AGENT_WS_ENABLED") ?? "").toLowerCase() !== "true") {
+      updates.set("AGENT_WS_ENABLED", "true");
+    }
     updates.set("AGENT_AUTH_ENABLED", "true");
     updates.set("AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE", path.join("configs", "local-public-key.pem"));
 
@@ -911,6 +1000,45 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     if (updates.size > 0) {
       writeEnvFileUpdates(envPath, updates);
     }
+    return;
+  }
+
+  if (service.id === CLAUDE_CODE_RELAY_PLUGIN_ID) {
+    const installDir = getInstallDir(app, service);
+    const envPath = path.join(installDir, ".env");
+    const env = readEnvFile(envPath);
+    const config = readManagedConfigFile(
+      path.join(installDir, "managed-config.json"),
+      getCodeAssistantBundledRuntimePath(installDir)
+    );
+    if (!config) {
+      throw new Error("缺少代码助手托管配置。");
+    }
+    if (!config.enabled) {
+      throw new Error("代码助手尚未启用，请先启用代码助手。");
+    }
+    if (!config.authToken) {
+      throw new Error("代码助手令牌未配置，请重新启用代码助手。");
+    }
+    if (!fs.existsSync(config.repoPath)) {
+      throw new Error(`claude-code-guotai 项目不存在：${config.repoPath}`);
+    }
+    if (!codeAssistantBunAvailable(installDir)) {
+      throw new Error("未检测到 Bun 运行时。");
+    }
+
+    const updates = new Map<string, string>();
+    if ((env.get("PORT") ?? "") !== String(config.relayPort)) {
+      updates.set("PORT", String(config.relayPort));
+    }
+    if ((env.get("DASHBOARD_PORT") ?? "") !== String(config.dashboardPort)) {
+      updates.set("DASHBOARD_PORT", String(config.dashboardPort));
+    }
+    if (updates.size > 0) {
+      writeEnvFileUpdates(envPath, updates);
+    }
+
+    ensureManagedAgentDefinition(app, config);
   }
 }
 
@@ -933,13 +1061,30 @@ async function runServiceCommand(app: App, service: ServiceDefinition, command: 
   } satisfies ServiceCommandResult;
 }
 
+async function prepareBuiltinService(app: App, serviceId: ServiceId) {
+  const service = getService(serviceId);
+  if (service.kind !== "builtin") {
+    return;
+  }
+  await installBuiltinService(app, serviceId);
+}
+
+async function ensureDependentServicesReady(app: App, service: ServiceDefinition) {
+  if (service.id === "agent-webclient") {
+    const platformResult = await startService(app, "agent-platform");
+    if (!platformResult.ok) {
+      throw new Error(`智能体平台未就绪：${platformResult.message}`);
+    }
+  }
+}
+
 export async function startService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
   const current = await getServiceState(app, serviceId);
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
   const initializationState = current.installed ? readInitializationState(installDir) : null;
 
-  if (current.status === "initialization-required") {
+  if (current.status === "initialization-required" && current.kind !== "builtin") {
     return {
       ok: false,
       message: current.message,
@@ -955,11 +1100,20 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
     };
   }
 
-  if ((!current.installed || current.status === "error") && current.kind === "builtin") {
-    await installBuiltinService(app, serviceId);
+  try {
+    await prepareBuiltinService(app, serviceId);
+  } catch (error) {
+    const nextState = await getServiceState(app, serviceId);
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : String(error),
+      service: nextState
+    };
   }
+
   const nextState = await getServiceState(app, serviceId);
   if (
+    nextState.status === "initialization-required" ||
     nextState.status === "config-required" ||
     nextState.status === "dependency-missing" ||
     nextState.status === "error"
@@ -978,10 +1132,45 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
     };
   }
 
-  await ensurePreStartRequirements(app, service);
-  const result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
-  startedThisSession.add(serviceId);
-  return result;
+  try {
+    await ensureDependentServicesReady(app, service);
+  } catch (error) {
+    const latestState = await getServiceState(app, serviceId);
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : String(error),
+      service: latestState
+    };
+  }
+
+  try {
+    await ensurePreStartRequirements(app, service);
+    const result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
+    startedThisSession.add(serviceId);
+    return result;
+  } catch (error) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const recoveredState = await getServiceState(app, serviceId);
+      if (recoveredState.status === "running") {
+        startedThisSession.add(serviceId);
+        return {
+          ok: true,
+          message: `${recoveredState.name} 已在运行。`,
+          service: recoveredState
+        };
+      }
+      if (attempt < 4) {
+        await waitFor(200);
+      }
+    }
+
+    const recoveredState = await getServiceState(app, serviceId);
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : String(error),
+      service: recoveredState
+    };
+  }
 }
 
 export async function stopService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
@@ -1279,6 +1468,7 @@ export const __testInternals = {
   parsePort,
   getWebUrl,
   containerEngineAvailable,
+  commandAvailable,
   fixShellScriptPermissions,
   listMissingRuntimeFiles,
   isInstallHealthy,
@@ -1286,6 +1476,8 @@ export const __testInternals = {
   ensureBundleAssetHealthy,
   upsertEnvFileContent,
   ensurePreStartRequirements,
+  prepareBuiltinService,
+  ensureDependentServicesReady,
   decodePowerShellCapturePayload,
   getInitializationStatePath,
   readInitializationState

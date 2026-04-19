@@ -10,6 +10,18 @@ import {
   type OpenDialogOptions
 } from "electron";
 import { issueAgentAccessToken } from "./agent-auth";
+import {
+  ensureCodeAssistantReady,
+  ensureManagedClaudeCodeRelayPlugin,
+  syncManagedCodeAssistantAgentDefinition,
+  setCodeAssistantEnabled,
+  setCodeAssistantFullAccessGranted,
+  getCodeAssistantIntegrationStatus,
+  restartCodeAssistantRuntime,
+  getCodeAssistantRepoContext,
+  updateCodeAssistantRepoPath,
+  setCodeAssistantBranch
+} from "./code-assistant";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import { loadBuiltinServices } from "./builtin-loader";
 import {
@@ -37,12 +49,14 @@ import {
   migrateDataRoot,
   saveDataRoot
 } from "./user-paths";
+import { getAllServices } from "./service-registry";
 
 let mainWindow: BrowserWindow | null = null;
 let isHandlingQuit = false;
+const DESKTOP_OPTIONAL_AUTO_START_SERVICE_IDS = new Set(["agent-container-hub"]);
 
 // Keep dev Electron runs on the same data root as packaged builds.
-app.setName("ZenMind Desktop");
+app.setName("国泰君安期货");
 app.setPath("userData", path.join(app.getPath("appData"), "zenmind-desktop"));
 
 function getRendererEntry() {
@@ -65,7 +79,8 @@ function createWindow() {
       preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      webviewTag: true
     }
   });
 
@@ -79,6 +94,13 @@ function createWindow() {
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     console.error("renderer process exited unexpectedly", details);
+  });
+
+  mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
+    console.error("preload failed", {
+      preloadPath,
+      error: error?.stack || String(error)
+    });
   });
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -224,7 +246,7 @@ async function initializeDataRoot() {
   }
 
   const defaultRoot = app.getPath("userData");
-  const result = await showDirectoryDialog("选择 ZenMind Desktop 数据目录", defaultRoot, null);
+  const result = await showDirectoryDialog("选择 国泰君安期货 数据目录", defaultRoot, null);
   const selectedRoot =
     result.canceled || result.filePaths.length === 0 ? defaultRoot : result.filePaths[0];
   try {
@@ -371,6 +393,88 @@ function registerIpcHandlers() {
   ipcMain.handle("agentAuth.issueAccessToken", async (_event, reason: "missing" | "unauthorized") => {
     return issueAgentAccessToken(app, reason);
   });
+  ipcMain.handle("codeAssistant.getStatus", async () => {
+    try {
+      const service = await getServiceState(app, "claude-code-relay");
+      return getCodeAssistantIntegrationStatus(app, service);
+    } catch (error) {
+      return {
+        enabled: false,
+        fullAccessGranted: false,
+        running: false,
+        configured: false,
+        repoSelected: false,
+        repoPath: "",
+        cliConnected: false,
+        recovering: false,
+        ready: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  ipcMain.handle("codeAssistant.ensureReady", async () => {
+    return ensureCodeAssistantReady(app, mainWindow, {
+      getServiceState,
+      initializeService,
+      startService,
+      stopService,
+      showMessageBox: async (ownerWindow, options) =>
+        ownerWindow ? dialog.showMessageBox(ownerWindow, options) : dialog.showMessageBox(options)
+    });
+  });
+  ipcMain.handle("codeAssistant.restartRuntime", async () => {
+    return restartCodeAssistantRuntime(app, {
+      getServiceState,
+      initializeService,
+      startService,
+      stopService,
+      showMessageBox: async (ownerWindow, options) =>
+        ownerWindow ? dialog.showMessageBox(ownerWindow, options) : dialog.showMessageBox(options)
+    });
+  });
+  ipcMain.handle("codeAssistant.setEnabled", async (_event, enabled: boolean) => {
+    return setCodeAssistantEnabled(app, enabled, mainWindow, {
+      getServiceState,
+      initializeService,
+      startService,
+      stopService,
+      showMessageBox: async (ownerWindow, options) =>
+        ownerWindow ? dialog.showMessageBox(ownerWindow, options) : dialog.showMessageBox(options)
+    });
+  });
+  ipcMain.handle("codeAssistant.setFullAccessGranted", async (_event, granted: boolean) => {
+    return setCodeAssistantFullAccessGranted(app, granted, mainWindow, {
+      getServiceState,
+      initializeService,
+      startService,
+      stopService,
+      showMessageBox: async (ownerWindow, options) =>
+        ownerWindow ? dialog.showMessageBox(ownerWindow, options) : dialog.showMessageBox(options)
+    });
+  });
+  ipcMain.handle("codeAssistant.getRepoContext", async () => {
+    return getCodeAssistantRepoContext(app);
+  });
+  ipcMain.handle("codeAssistant.selectRepoPath", async () => {
+    const context = getCodeAssistantRepoContext(app);
+    const defaultPath = context.repoExists ? context.repoPath : app.getPath("home");
+    const result = await showDirectoryDialog("选择代码助手工作目录", defaultPath);
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, message: "已取消选择。", context };
+    }
+    return updateCodeAssistantRepoPath(app, result.filePaths[0], {
+      getServiceState,
+      startService,
+      stopService
+    });
+  });
+  ipcMain.handle("codeAssistant.setBranch", async (_event, branch: string) => {
+    return setCodeAssistantBranch(app, branch, {
+      getServiceState,
+      startService,
+      stopService
+    });
+  });
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
   ipcMain.handle("settings.changeDataRoot", async () => {
     if (process.platform !== "win32") {
@@ -382,7 +486,7 @@ function registerIpcHandlers() {
     }
 
     const currentRoot = getDataRoot(app);
-    const result = await showDirectoryDialog("选择新的 ZenMind Desktop 数据目录", currentRoot);
+    const result = await showDirectoryDialog("选择新的 国泰君安期货 数据目录", currentRoot);
     if (result.canceled || result.filePaths.length === 0) {
       return {
         ok: false,
@@ -403,7 +507,9 @@ function registerIpcHandlers() {
     try {
       await stopRunningServices(app);
       await migrateDataRoot(app, currentRoot, nextRoot);
+      ensureManagedClaudeCodeRelayPlugin(app);
       loadInstalledPlugins(app);
+      await initializeManagedCodeAssistantPlugin();
 
       return {
         ok: true,
@@ -420,13 +526,47 @@ function registerIpcHandlers() {
   });
 }
 
+async function initializeManagedCodeAssistantPlugin() {
+  try {
+    const state = await getServiceState(app, "claude-code-relay");
+    if (state.status === "initialization-required") {
+      await initializeService(app, "claude-code-relay");
+    }
+    syncManagedCodeAssistantAgentDefinition(app);
+  } catch (error) {
+    console.error("failed to initialize managed code assistant plugin", error);
+  }
+}
+
+async function autoStartDesktopServices() {
+  for (const service of getAllServices()) {
+    if (!service.desktop.autoStart) {
+      continue;
+    }
+    if (DESKTOP_OPTIONAL_AUTO_START_SERVICE_IDS.has(service.id)) {
+      continue;
+    }
+    try {
+      const result = await startService(app, service.id);
+      if (!result.ok) {
+        console.warn(`auto-start skipped for ${service.id}: ${result.message}`);
+      }
+    } catch (error) {
+      console.error(`failed to auto-start ${service.id}`, error);
+    }
+  }
+}
+
 app.whenReady().then(async () => {
   await initializeDataRoot();
   loadBuiltinServices(app);
+  ensureManagedClaudeCodeRelayPlugin(app);
   loadInstalledPlugins(app);
+  await initializeManagedCodeAssistantPlugin();
   registerIpcHandlers();
   createWindow();
   buildApplicationMenu();
+  void autoStartDesktopServices();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();

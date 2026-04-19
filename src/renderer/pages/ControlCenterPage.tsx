@@ -1,9 +1,8 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ServiceConfigReadResult, ServiceId, ServiceLogTarget, ServiceState } from "@shared/contracts";
+import { summarizeCoreServices } from "@shared/control-center";
 import { useServices } from "../services/ServicesContext";
 import { useNavigate } from "react-router-dom";
-
-const QUICK_START_ORDER = ["Container Hub", "智能体平台", "小宅助理", "认证服务"];
 
 function statusClass(status: ServiceState["status"]) {
   switch (status) {
@@ -420,6 +419,7 @@ export function ControlCenterPage() {
   const [pendingAction, setPendingAction] = useState<{ serviceId: ServiceId; scope: ActionScope } | null>(null);
   const [feedback, setFeedback] = useState("");
   const [isBatchStarting, setIsBatchStarting] = useState(false);
+  const [isBatchInstallingCore, setIsBatchInstallingCore] = useState(false);
   const [expandedGroup, setExpandedGroup] = useState<ServiceGroupKey | null>("core");
   const [configCache, setConfigCache] = useState<Record<string, string>>({});
   const [configMeta, setConfigMeta] = useState<Record<string, ConfigMeta>>({});
@@ -489,9 +489,13 @@ export function ControlCenterPage() {
     running: services.filter((service) => service.status === "running").length
   };
 
-  const coreServices = QUICK_START_ORDER
-    .map((name) => services.find((service) => service.name === name))
-    .filter((service): service is ServiceState => Boolean(service));
+  const {
+    coreServices,
+    expectedCount: expectedCoreServiceCount,
+    installedCount: installedCoreServiceCount,
+    missingInstallServices: missingCoreInstallServices
+  } = summarizeCoreServices(services);
+  const needsCoreInstallAction = missingCoreInstallServices.length > 0;
 
   const marketServices = services.filter((service) => service.kind === "plugin");
 
@@ -736,9 +740,7 @@ export function ControlCenterPage() {
   }
 
   async function handleQuickStart() {
-    const orderedServices = QUICK_START_ORDER
-      .map((name) => services.find((service) => service.name === name))
-      .filter((service): service is ServiceState => Boolean(service));
+    const orderedServices = coreServices;
 
     if (orderedServices.length === 0) {
       setFeedback("当前没有可一键启动的服务。");
@@ -783,6 +785,45 @@ export function ControlCenterPage() {
       setFeedback(summary || "一键启动完成。");
     } finally {
       setIsBatchStarting(false);
+    }
+  }
+
+  async function handleInstallMissingCoreServices() {
+    if (missingCoreInstallServices.length === 0) {
+      setFeedback("核心服务已全部安装。");
+      return;
+    }
+
+    setIsBatchInstallingCore(true);
+
+    const installedNames: string[] = [];
+    const failedMessages: string[] = [];
+
+    try {
+      for (const service of missingCoreInstallServices) {
+        try {
+          const result = await installBuiltinFromBundle(service.id);
+          if (result.ok) {
+            installedNames.push(service.name);
+            invalidateConfig(service.id);
+          } else {
+            failedMessages.push(`${service.name}：${result.message}`);
+          }
+        } catch (reason) {
+          failedMessages.push(`${service.name}：${reason instanceof Error ? reason.message : String(reason)}`);
+        }
+      }
+
+      const summary = [
+        installedNames.length > 0 ? `已安装 ${installedNames.join("、")}` : "",
+        failedMessages.length > 0 ? failedMessages.join("；") : ""
+      ]
+        .filter(Boolean)
+        .join("。");
+
+      setFeedback(summary || "核心服务安装完成。");
+    } finally {
+      setIsBatchInstallingCore(false);
     }
   }
 
@@ -841,6 +882,11 @@ export function ControlCenterPage() {
       <div className="page-head control-center-hero">
         <div className="control-center-hero-copy">
           <h1>控制中心</h1>
+          <p className="page-copy">
+            {needsCoreInstallAction
+              ? `检测到核心服务已安装 ${installedCoreServiceCount}/${expectedCoreServiceCount}，建议先补齐安装再执行一键启动。`
+              : "统一管理核心服务与插件的安装、初始化和运行状态。"}
+          </p>
         </div>
         <div className="control-center-hero-panel">
           <div className="summary-strip control-center-summary-strip">
@@ -869,7 +915,7 @@ export function ControlCenterPage() {
               {
                 key: "core" as const,
                 title: "控制中心",
-                subtitle: `${coreServices.length} 个核心服务`,
+                subtitle: `${expectedCoreServiceCount} 个核心服务 · 已安装 ${installedCoreServiceCount}/${expectedCoreServiceCount}`,
                 services: coreServices,
                 empty: "暂无核心服务"
               },
@@ -901,14 +947,26 @@ export function ControlCenterPage() {
                       </div>
                     </button>
                     {group.key === "core" ? (
-                      <button
-                        type="button"
-                        className="action-button service-group-action"
-                        onClick={() => void handleQuickStart()}
-                        disabled={isBatchStarting}
-                      >
-                        {isBatchStarting ? "启动中..." : "一键启动"}
-                      </button>
+                      <div className="service-group-actions">
+                        {needsCoreInstallAction ? (
+                          <button
+                            type="button"
+                            className="action-button service-group-action service-group-action-primary"
+                            onClick={() => void handleInstallMissingCoreServices()}
+                            disabled={isBatchInstallingCore || isBatchStarting}
+                          >
+                            {isBatchInstallingCore ? "安装中..." : "安装缺失服务"}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="action-button service-group-action"
+                          onClick={() => void handleQuickStart()}
+                          disabled={isBatchStarting || isBatchInstallingCore}
+                        >
+                          {isBatchStarting ? "启动中..." : "一键启动"}
+                        </button>
+                      </div>
                     ) : (
                       <button
                         type="button"
