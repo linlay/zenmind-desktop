@@ -32,7 +32,8 @@ const BUNDLED_RUNTIME_RESOURCE_DIR = "code-assistant-runtime";
 const BUNDLED_RUNTIME_DIRNAME = "claude-code-guotai";
 const BUNDLED_RUNTIME_INSTALL_DIRNAME = "runtime";
 const BUNDLED_BUN_DIRNAME = "bun";
-const MANAGED_ANTHROPIC_BASE_URL = "https://api.minimaxi.com/anthropic";
+const MANAGED_ANTHROPIC_BASE_URL = "https://platform.minimaxi.com";
+const MANAGED_ANTHROPIC_API_KEY = "sk-cp-MrreVGwHO4N3UzVS9MxR8kKvLsBEIRatEDFxmR__QY0n3NdU0YJ1XZiEprdo4jCr3URdwM2UAOkyVxpMqEyQKd3vXue1T2WreNAN-yD4wA47QcZ1ZROcXQw";
 const DEFAULT_RELAY_PORT = 3210;
 const DEFAULT_DASHBOARD_PORT = 3456;
 const DEFAULT_AGENT_TIMEOUT_MS = 300000;
@@ -489,46 +490,16 @@ async function main() {
     throw new Error(\`代码助手 CLI 入口不存在：\${cliEntrypoint}\`);
   }
 
-  const anthropicBaseUrl = pickFirstString(
-    process.env.ANTHROPIC_BASE_URL,
-    env.get("ANTHROPIC_BASE_URL"),
-    process.env.CLAUDE_CODE_API_BASE_URL,
-    env.get("CLAUDE_CODE_API_BASE_URL"),
-    claudeSettingsEnv.get("ANTHROPIC_BASE_URL"),
-    claudeSettingsEnv.get("CLAUDE_CODE_API_BASE_URL"),
-    ${JSON.stringify(MANAGED_ANTHROPIC_BASE_URL)}
-  );
-  const claudeCodeApiBaseUrl = pickFirstString(
-    process.env.CLAUDE_CODE_API_BASE_URL,
-    env.get("CLAUDE_CODE_API_BASE_URL"),
-    claudeSettingsEnv.get("CLAUDE_CODE_API_BASE_URL"),
-    anthropicBaseUrl
-  );
-  const anthropicAuthToken = pickFirstString(
-    process.env.ANTHROPIC_AUTH_TOKEN,
-    env.get("ANTHROPIC_AUTH_TOKEN"),
-    claudeSettingsEnv.get("ANTHROPIC_AUTH_TOKEN")
-  );
-  const anthropicApiKey = pickFirstString(
-    process.env.ANTHROPIC_API_KEY,
-    env.get("ANTHROPIC_API_KEY"),
-    claudeSettingsEnv.get("ANTHROPIC_API_KEY")
-  );
-
-  if (!anthropicAuthToken && !anthropicApiKey) {
-    throw new Error(
-      "未找到 Claude 凭证，请先在本机 Claude 中登录，或在代码助手 .env 中配置 ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY。"
-    );
-  }
+  // 强制使用 MiniMax API，忽略所有环境变量和用户级 Claude 配置
+  const anthropicBaseUrl = ${JSON.stringify(MANAGED_ANTHROPIC_BASE_URL)};
+  const claudeCodeApiBaseUrl = anthropicBaseUrl;
+  const anthropicApiKey = ${JSON.stringify(MANAGED_ANTHROPIC_API_KEY)};
 
   process.env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
   process.env.CLAUDE_CODE_API_BASE_URL = claudeCodeApiBaseUrl;
-  if (anthropicAuthToken) {
-    process.env.ANTHROPIC_AUTH_TOKEN = anthropicAuthToken;
-  }
-  if (anthropicApiKey) {
-    process.env.ANTHROPIC_API_KEY = anthropicApiKey;
-  }
+  process.env.ANTHROPIC_API_KEY = anthropicApiKey;
+  // 清除可能存在的 auth token，避免与 API key 冲突
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
 
   await assertPortAvailable(relayPort);
   await assertPortAvailable(dashboardPort);
@@ -587,10 +558,10 @@ async function main() {
           ...process.env,
           CLAUDE_RELAY_SUBPROCESS: "1",
           CLAUDE_CODE_INCLUDE_PARTIAL_MESSAGES: "1",
-          ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
-          CLAUDE_CODE_API_BASE_URL: process.env.CLAUDE_CODE_API_BASE_URL,
-          ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN,
-          ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY
+          ANTHROPIC_BASE_URL: ${JSON.stringify(MANAGED_ANTHROPIC_BASE_URL)},
+          CLAUDE_CODE_API_BASE_URL: ${JSON.stringify(MANAGED_ANTHROPIC_BASE_URL)},
+          ANTHROPIC_API_KEY: ${JSON.stringify(MANAGED_ANTHROPIC_API_KEY)},
+          ANTHROPIC_AUTH_TOKEN: "",
         }
       }
     );
