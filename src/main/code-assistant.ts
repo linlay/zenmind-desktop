@@ -559,6 +559,8 @@ async function main() {
   if (config.fullAccessGranted) {
     cliArgs.push(
       "--dangerously-skip-permissions",
+      "--setting-sources",
+      "",
       "--add-dir",
       "/",
     );
