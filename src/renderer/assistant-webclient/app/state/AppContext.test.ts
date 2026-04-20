@@ -336,6 +336,22 @@ describe('appReducer conversation reset behavior', () => {
     expect(resetByMode.transportMode).toBe('sse');
   });
 
+  it('ignores duplicate access-token updates when there is nothing to clear', () => {
+    const baseState = createInitialState();
+    const state = {
+      ...baseState,
+      accessToken: 'token_1',
+      wsErrorMessage: '',
+    };
+
+    const next = appReducer(state, {
+      type: 'SET_ACCESS_TOKEN',
+      token: 'token_1',
+    });
+
+    expect(next).toBe(state);
+  });
+
   it('resets voice chat runtime state and input mode during conversation reset', () => {
     const baseState = createInitialState();
     const state = {

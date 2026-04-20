@@ -457,6 +457,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 		case "SET_WS_ERROR_MESSAGE":
 			return { ...state, wsErrorMessage: String(action.message || "") };
 		case "SET_ACCESS_TOKEN":
+			if (state.accessToken === action.token && !state.wsErrorMessage) {
+				return state;
+			}
 			return {
 				...state,
 				accessToken: action.token,

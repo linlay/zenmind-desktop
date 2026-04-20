@@ -287,10 +287,16 @@ export function registerAttachRunListener(
 function buildWsClient(
 	options: ConnectWsTransportOptions,
 	accessToken: string,
+	resolveAccessToken?: (
+		reason: Parameters<typeof ensureAccessToken>[0],
+	) => Promise<string>,
 ): WsClient {
 	const initWsClientImpl = options.initWsClientImpl ?? initWsClient;
 	return initWsClientImpl({
 		accessToken,
+		resolveAccessToken: resolveAccessToken
+			? async (reason) => resolveAccessToken(reason)
+			: undefined,
 		onStatusChange: (status) => {
 			options.dispatch({ type: "SET_WS_STATUS", status });
 		},
@@ -356,6 +362,8 @@ function buildWsClient(
 
 			options.handleEvent(liveEvent);
 		},
+		heartbeatTimeoutMs: 120_000,
+		healthCheckIntervalMs: 15_000,
 	});
 }
 
@@ -412,7 +420,11 @@ export async function connectWsTransport(
 		if (isCancelled()) {
 			return;
 		}
-		const client = buildWsClient(options, accessToken);
+		const client = buildWsClient(
+			options,
+			accessToken,
+			appMode ? resolveToken : undefined,
+		);
 		await client.connect();
 	};
 
@@ -507,7 +519,7 @@ export function useWsTransport() {
 
 		void connectWsTransport({
 			dispatch,
-			state,
+			state: stateRef.current,
 			stateRef,
 			handleEvent,
 			isCancelled: () => cancelled,
@@ -537,5 +549,35 @@ export function useWsTransport() {
 			dispatch({ type: "SET_WS_ERROR_MESSAGE", message: "" });
 			dispatch({ type: "SET_WS_STATUS", status: "disconnected" });
 		};
-	}, [dispatch, handleEvent, state.accessToken, state.transportMode, stateRef]);
+	}, [dispatch, handleEvent, state.transportMode, stateRef]);
+
+	useEffect(() => {
+		if (state.transportMode !== "ws") {
+			return;
+		}
+
+		const accessToken = String(
+			stateRef.current.accessToken || state.accessToken || "",
+		).trim();
+		const wsClient = getWsClient();
+		if (!wsClient || !accessToken) {
+			return;
+		}
+
+		wsClient.updateOptions({ accessToken });
+
+		if (wsClient.getStatus() === "connected" || wsClient.getStatus() === "connecting") {
+			return;
+		}
+
+		void wsClient.connect().catch((error) => {
+			const normalized = toWsConnectionError(error, {
+				appMode: isAppMode(),
+				hasAccessToken: true,
+			});
+			dispatch({ type: "SET_WS_ERROR_MESSAGE", message: normalized.message });
+			dispatch({ type: "SET_WS_STATUS", status: "error" });
+			appendWsDebug(dispatch, `[live] ${normalized.message}`);
+		});
+	}, [dispatch, state.accessToken, state.transportMode, stateRef]);
 }
