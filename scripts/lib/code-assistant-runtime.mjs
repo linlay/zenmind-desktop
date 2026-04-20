@@ -124,7 +124,9 @@ function resolveBundledBunPath({ targetOs, targetArch, explicitPath }) {
   const hostArch = detectHostTargetArch();
   if (hostOs !== targetOs || hostArch !== targetArch) {
     throw new Error(
-      `无法为 ${targetOs}/${targetArch} 自动定位 Bun，请通过 --bun 或 ZENMIND_DESKTOP_BUNDLED_BUN_PATH 显式指定。`
+      `无法为 ${targetOs}/${targetArch} 自动定位 Bun。` +
+        `请通过 --bun 或 ZENMIND_DESKTOP_BUNDLED_BUN_PATH 显式指定目标平台的 bun` +
+        `${targetOs === "windows" ? ".exe" : ""}。`
     );
   }
 

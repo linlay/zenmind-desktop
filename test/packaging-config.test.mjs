@@ -24,7 +24,7 @@ test("electron-builder packaging includes uninstall resources and NSIS uninstall
     to: ".",
     filter: ["uninstall.sh"]
   });
-  assert.match(packageJson.scripts?.["dist:win"] ?? "", /electron-builder --win --x64/);
+  assert.equal(packageJson.scripts?.["dist:win"], "node ./scripts/dist-win.mjs");
   assert.equal(packageJson.scripts?.["dist:win-docker"], "node ./scripts/dist-win.mjs");
   assert.notEqual(packageJson.build?.nsis?.perMachine, true);
   assert.equal(packageJson.build?.nsis?.include, "build/installer.nsh");
@@ -42,4 +42,5 @@ test("custom uninstall assets exist with the expected data cleanup targets", () 
   assert.match(uninstallScript, /APP_PATH="\/Applications\/\$\{APP_NAME\}\.app"/);
   assert.match(uninstallScript, /Library\/Application Support\/zenmind-desktop/);
   assert.match(distWinScript, /electronuserland\/builder:wine/);
+  assert.match(distWinScript, /ZENMIND_DESKTOP_BUNDLED_BUN_PATH/);
 });

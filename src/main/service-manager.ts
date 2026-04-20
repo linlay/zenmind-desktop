@@ -1167,6 +1167,7 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
   const initializationState = current.installed ? readInitializationState(installDir) : null;
+  const wasRunningBeforeStart = current.status === "running";
 
   if (current.status === "initialization-required" && current.kind !== "builtin") {
     return {
@@ -1209,11 +1210,16 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
     };
   }
   if (nextState.status === "running") {
-    return {
-      ok: true,
-      message: `${nextState.name} 已在运行。`,
-      service: nextState
-    };
+    // A fresh install can falsely look "running" if some unrelated local process
+    // already occupies the service port. Only short-circuit when we already knew
+    // this service was running, or when we still have its pid metadata.
+    if (wasRunningBeforeStart || nextState.healthMeta.pid) {
+      return {
+        ok: true,
+        message: `${nextState.name} 已在运行。`,
+        service: nextState
+      };
+    }
   }
 
   try {

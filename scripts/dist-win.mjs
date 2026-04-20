@@ -3,10 +3,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 const projectRoot = process.cwd();
 const isWindows = process.platform === "win32";
 const npmCmd = isWindows ? "npm.cmd" : "npm";
+const scriptPath = fileURLToPath(import.meta.url);
+const DEFAULT_DOCKER_BUN_PATH = "/tmp/zenmind-bundled-bun.exe";
 
 function run(cmd, args, options = {}) {
   return spawn(cmd, args, {
@@ -44,6 +47,43 @@ function getElectronBuilderCacheDir() {
   return null;
 }
 
+export function resolveBundledWindowsBunPath(env = process.env) {
+  const configuredPath = env.ZENMIND_DESKTOP_BUNDLED_BUN_PATH?.trim() ?? "";
+  if (!configuredPath) {
+    return null;
+  }
+
+  const absolutePath = path.resolve(configuredPath);
+  if (!fs.existsSync(absolutePath)) {
+    throw new Error(
+      `未找到 Windows 版 bun.exe：${absolutePath}。请将 ZENMIND_DESKTOP_BUNDLED_BUN_PATH 指向可读取的 bun.exe。`
+    );
+  }
+  if (!fs.statSync(absolutePath).isFile()) {
+    throw new Error(
+      `ZENMIND_DESKTOP_BUNDLED_BUN_PATH 必须指向单个 bun.exe 文件，当前得到的是：${absolutePath}`
+    );
+  }
+  if (path.basename(absolutePath).toLowerCase() !== "bun.exe") {
+    throw new Error(
+      `ZENMIND_DESKTOP_BUNDLED_BUN_PATH 必须指向 Windows 版 bun.exe，当前文件名为：${path.basename(absolutePath)}`
+    );
+  }
+  return absolutePath;
+}
+
+function ensureNonWindowsBundledBun() {
+  const bundledBunPath = resolveBundledWindowsBunPath();
+  if (bundledBunPath) {
+    return bundledBunPath;
+  }
+
+  throw new Error(
+    "非 Windows 主机构建 Windows 安装包时，必须先提供 Windows 版 bun.exe。请设置 " +
+      "ZENMIND_DESKTOP_BUNDLED_BUN_PATH=/绝对路径/bun.exe 后再执行 npm run dist:win。"
+  );
+}
+
 async function buildOnWindowsHost() {
   await runAndWait(npmCmd, ["run", "sync:assets", "--", "--os=windows", "--arch=amd64"]);
   await runAndWait(npmCmd, ["run", "build"]);
@@ -53,6 +93,7 @@ async function buildOnWindowsHost() {
 async function buildWithDocker() {
   const npmCacheDir = path.join(os.homedir(), ".npm");
   const electronBuilderCacheDir = getElectronBuilderCacheDir();
+  const bundledBunPath = ensureNonWindowsBundledBun();
 
   fs.mkdirSync(npmCacheDir, { recursive: true });
   if (electronBuilderCacheDir != null) {
@@ -65,7 +106,11 @@ async function buildWithDocker() {
     "--volume",
     `${projectRoot}:/project`,
     "--volume",
-    `${npmCacheDir}:/root/.npm`
+    `${npmCacheDir}:/root/.npm`,
+    "--volume",
+    `${bundledBunPath}:${DEFAULT_DOCKER_BUN_PATH}:ro`,
+    "--env",
+    `ZENMIND_DESKTOP_BUNDLED_BUN_PATH=${DEFAULT_DOCKER_BUN_PATH}`
   ];
 
   if (electronBuilderCacheDir != null) {
@@ -89,8 +134,14 @@ async function buildWithDocker() {
   await runAndWait("docker", dockerArgs, { shell: false });
 }
 
-if (isWindows) {
-  await buildOnWindowsHost();
-} else {
+export async function main() {
+  if (isWindows) {
+    await buildOnWindowsHost();
+    return;
+  }
   await buildWithDocker();
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(scriptPath)) {
+  await main();
 }

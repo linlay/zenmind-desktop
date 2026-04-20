@@ -123,6 +123,28 @@ async function canListenOnLocalPort() {
   }
 }
 
+async function getAvailableLocalPort() {
+  const server = http.createServer();
+  try {
+    const port = await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          reject(new Error("failed to allocate a local tcp port"));
+          return;
+        }
+        resolve(address.port);
+      });
+    });
+    return port;
+  } finally {
+    if (server.listening) {
+      await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve(undefined))));
+    }
+  }
+}
+
 function loadBuiltinsForTest(userDataRoot, assetsRoot) {
   const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
   const generatedAssets = assetsRoot ? null : createCurrentPlatformAssetsFixture();
@@ -1123,31 +1145,39 @@ test("startService does not relaunch a service when its port is already listenin
 });
 
 test("startService on agent-webclient auto-starts agent-platform without requiring container hub", async () => {
+  if (!(await canListenOnLocalPort())) {
+    return;
+  }
+
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-webclient-deps-"));
   const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
 
   registryInternals.clearServices();
 
   try {
+    const hubPort = await getAvailableLocalPort();
+    const platformPort = await getAvailableLocalPort();
+    const webclientPort = await getAvailableLocalPort();
+
     const hubFixture = createManagedBuiltinBundleFixture(tempRoot, {
       id: "agent-container-hub",
       name: "Container Hub",
-      defaultPort: 11960,
+      defaultPort: hubPort,
       portEnvKey: "BIND_ADDR",
       portFormat: "host:port"
     });
     const platformFixture = createManagedBuiltinBundleFixture(tempRoot, {
       id: "agent-platform",
       name: "智能体平台",
-      defaultPort: 12949,
+      defaultPort: platformPort,
       portEnvKey: "SERVER_PORT",
       routePath: "/agent/"
     });
     const webclientFixture = createManagedBuiltinBundleFixture(tempRoot, {
       id: "agent-webclient",
       name: "小宅助理",
-      defaultPort: 11948,
-      envExampleContent: "BASE_URL=http://localhost:11949\nPORT=11948\n",
+      defaultPort: webclientPort,
+      envExampleContent: `BASE_URL=http://localhost:${platformPort}\nPORT=${webclientPort}\n`,
       prerequisites: ["agent-platform"],
       desktop: {
         envBindings: [
@@ -1156,7 +1186,7 @@ test("startService on agent-webclient auto-starts agent-platform without requiri
             fromService: "agent-platform",
             template: "http://127.0.0.1:{{port}}",
             onlyIfDefault: true,
-            defaults: ["", "http://127.0.0.1:11949", "http://localhost:11949"]
+            defaults: ["", `http://127.0.0.1:${platformPort}`, `http://localhost:${platformPort}`]
           },
           {
             key: "PORT",
@@ -1184,7 +1214,7 @@ test("startService on agent-webclient auto-starts agent-platform without requiri
     assert.equal(webclientState.status, "running");
 
     const webclientEnv = fs.readFileSync(path.join(webclientFixture.installDir, ".env"), "utf8");
-    assert.match(webclientEnv, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
+    assert.match(webclientEnv, new RegExp(`BASE_URL=http://127\\.0\\.0\\.1:${platformPort}`));
 
     await stopService(app, "agent-webclient");
     await stopService(app, "agent-platform");

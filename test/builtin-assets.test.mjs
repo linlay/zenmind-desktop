@@ -8,6 +8,7 @@ import {
   builtinServices,
   listArchiveEntries,
   needsArchiveRefresh,
+  readManifestFromArchive,
   validateBundleArchive
 } from "../scripts/lib/builtin-assets.mjs";
 
@@ -58,26 +59,24 @@ function getSyncedAsset(serviceId) {
 
   return {
     service,
-    assetPath: path.join(serviceDir, assetFileName)
+    assetPath: path.join(serviceDir, assetFileName),
+    manifest: readManifestFromArchive(path.join(serviceDir, assetFileName))
   };
 }
 
 test("actual synced agent-webclient asset includes backend and frontend dist", () => {
-  const { service, assetPath } = getSyncedAsset("agent-webclient");
+  const { service, assetPath, manifest } = getSyncedAsset("agent-webclient");
   validateBundleArchive(service, assetPath);
 
   const entries = listArchiveEntries(assetPath);
-  if (assetPath.endsWith(".zip")) {
-    assert.ok(entries.has("agent-webclient/start.ps1"));
-    assert.ok(entries.has("agent-webclient/stop.ps1"));
-    assert.ok(entries.has("agent-webclient/backend/server.js"));
-  } else {
-    assert.ok(entries.has("agent-webclient/start.sh"));
-    assert.ok(entries.has("agent-webclient/stop.sh"));
-    assert.ok(entries.has("agent-webclient/backend/server.js"));
-  }
+  const startEntry = `${service.bundleTopLevelDir}/${Array.isArray(manifest.scripts?.start) ? manifest.scripts.start[0] : manifest.scripts?.start}`;
+  const stopEntry = `${service.bundleTopLevelDir}/${manifest.scripts?.stop}`;
+  const backendEntry = `${service.bundleTopLevelDir}/${manifest.backend?.entry ?? ""}`;
+
+  assert.ok(entries.has(startEntry));
+  assert.ok(entries.has(stopEntry));
   assert.ok(entries.has("agent-webclient/manifest.json"));
-  assert.ok(entries.has("agent-webclient/backend/package.json"));
+  assert.ok(entries.has(backendEntry));
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
 });
 

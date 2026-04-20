@@ -118,6 +118,15 @@ Windows 主机上会直接使用 `electron-builder` 输出 NSIS 安装包，目�
 非 Windows 主机执行该命令前需要满足：
 - 已安装并启动 Docker Desktop 或其他兼容 Docker 的运行时
 - 容器可以访问 npm registry 以安装依赖
+- 必须通过 `ZENMIND_DESKTOP_BUNDLED_BUN_PATH` 提供 Windows 版 `bun.exe`
+
+示例：
+```bash
+export ZENMIND_DESKTOP_BUNDLED_BUN_PATH=/absolute/path/to/bun.exe
+npm run dist:win
+```
+
+若未提供 `bun.exe`，打包会在开始阶段直接失败，并提示需要设置 `ZENMIND_DESKTOP_BUNDLED_BUN_PATH` 或在同步资源时传入 `--bun`。
 
 如果机器上已经残留旧的 per-user/per-machine 双安装记录，建议先手动清理旧版本，再验证新包的安装和卸载。
 
