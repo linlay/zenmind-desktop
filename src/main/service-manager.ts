@@ -322,7 +322,7 @@ function parsePort(service: ServiceDefinition, env: Map<string, string>) {
     return service.web.defaultPort;
   }
 
-  if (service.id === "agent-container-hub") {
+  if (service.web.portFormat === "host:port") {
     const pieces = value.split(":");
     const port = Number.parseInt(pieces[pieces.length - 1] ?? "", 10);
     return Number.isFinite(port) ? port : service.web.defaultPort;
@@ -393,6 +393,19 @@ function isPortReachable(port: number) {
 
 function waitFor(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function findPidByPort(port: number): number | null {
+  try {
+    const result = spawnSync("lsof", ["-ti", `:${port}`, "-sTCP:LISTEN"], { encoding: "utf8", timeout: 5000 });
+    if (result.status !== 0 || !result.stdout) {
+      return null;
+    }
+    const pid = Number.parseInt(result.stdout.trim().split("\n")[0], 10);
+    return Number.isFinite(pid) ? pid : null;
+  } catch {
+    return null;
+  }
 }
 
 const IS_WINDOWS = process.platform === "win32";
@@ -600,7 +613,131 @@ function codeAssistantBunAvailable(installDir: string) {
   return fs.existsSync(getCodeAssistantBundledBunPath(installDir)) || commandAvailable("bun");
 }
 
-function collectPrerequisites(service: ServiceDefinition, installDir: string) {
+function getRegisteredServiceIds() {
+  return new Set(getAllServices().map((candidate) => candidate.id));
+}
+
+function getServiceDependencyIds(service: ServiceDefinition) {
+  const registeredIds = getRegisteredServiceIds();
+  return service.prerequisites.filter((prerequisite) => prerequisite !== service.id && registeredIds.has(prerequisite));
+}
+
+function getNonServicePrerequisites(service: ServiceDefinition) {
+  const dependencyIds = new Set(getServiceDependencyIds(service));
+  return service.prerequisites.filter((prerequisite) => !dependencyIds.has(prerequisite));
+}
+
+function formatSystemRequirementToken(token: string) {
+  const normalized = token.trim().toLowerCase();
+  switch (normalized) {
+    case "docker":
+      return "Docker";
+    case "podman":
+      return "Podman";
+    case "bun":
+      return "Bun";
+    default:
+      return token.trim();
+  }
+}
+
+function formatSystemRequirementLabel(requirement: string) {
+  return requirement
+    .split("|")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => formatSystemRequirementToken(item))
+    .join(" 或 ");
+}
+
+function getMissingSystemRequirementLabels(service: ServiceDefinition) {
+  return service.desktop.systemRequirements.flatMap((requirement) => {
+    const commands = requirement
+      .split("|")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+    if (commands.length === 0) {
+      return [];
+    }
+    if (commands.some((command) => commandAvailable(command))) {
+      return [];
+    }
+    return [formatSystemRequirementLabel(requirement)];
+  });
+}
+
+function getEnvBindingTemplateContext(service: ServiceDefinition, sourceState?: ServiceState | null) {
+  return {
+    port:
+      sourceState?.healthMeta.port && Number.isFinite(sourceState.healthMeta.port)
+        ? String(sourceState.healthMeta.port)
+        : "",
+    webUrl: sourceState?.healthMeta.webUrl ?? "",
+    processExecPath: process.execPath,
+    serviceDefaultPort: String(service.web.defaultPort),
+    serviceId: service.id,
+    serviceName: service.name
+  };
+}
+
+function templateVariablesResolved(template: string, context: Record<string, string>) {
+  const matches = [...template.matchAll(/{{\s*([a-zA-Z0-9_]+)\s*}}/g)];
+  return matches.every((match) => (context[match[1] ?? ""] ?? "") !== "");
+}
+
+function renderEnvBindingTemplate(template: string, context: Record<string, string>) {
+  return template.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, key: string) => context[key] ?? "");
+}
+
+async function resolveEnvBindings(app: App, service: ServiceDefinition, env: Map<string, string>) {
+  const updates = new Map<string, string>();
+
+  for (const binding of service.desktop.envBindings) {
+    let sourceState: ServiceState | null = null;
+    if (binding.fromService) {
+      try {
+        sourceState = await getServiceState(app, binding.fromService);
+      } catch {
+        continue;
+      }
+    }
+
+    const template = binding.template ?? binding.value ?? "";
+    if (!template) {
+      continue;
+    }
+
+    const context = getEnvBindingTemplateContext(service, sourceState);
+    if (!templateVariablesResolved(template, context)) {
+      continue;
+    }
+
+    const desiredValue = renderEnvBindingTemplate(template, context).trim();
+    if (!desiredValue) {
+      continue;
+    }
+
+    const currentValue = env.get(binding.key) ?? "";
+    if (binding.onlyIfDefault) {
+      const defaults = new Set(binding.defaults ?? []);
+      if (currentValue && !defaults.has(currentValue)) {
+        continue;
+      }
+    }
+
+    if (currentValue !== desiredValue) {
+      updates.set(binding.key, desiredValue);
+    }
+  }
+
+  return updates;
+}
+
+function collectPrerequisites(
+  service: ServiceDefinition,
+  installDir: string,
+  missingSystemRequirementLabels = getMissingSystemRequirementLabels(service)
+) {
   const prerequisites: string[] = [];
   const envPath = path.join(installDir, ".env");
   if (!fs.existsSync(envPath)) {
@@ -614,9 +751,8 @@ function collectPrerequisites(service: ServiceDefinition, installDir: string) {
     }
   }
 
-  if (service.id === "agent-container-hub" && !containerEngineAvailable()) {
-    prerequisites.push("未检测到 Docker 或 Podman");
-  }
+  prerequisites.push(...getNonServicePrerequisites(service));
+  prerequisites.push(...missingSystemRequirementLabels.map((label) => `未检测到 ${label}`));
 
   if (service.id === CLAUDE_CODE_RELAY_PLUGIN_ID) {
     const configPath = path.join(installDir, "managed-config.json");
@@ -838,9 +974,13 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     installed && missingRuntimeFiles.length === 0 ? readInitializationState(installDir) : null;
   const initializationSucceeded =
     initializationState?.status === "succeeded" && initializationState.version === service.version;
+  const missingSystemRequirementLabels =
+    installed && missingRuntimeFiles.length === 0 && initializationSucceeded
+      ? getMissingSystemRequirementLabels(service)
+      : [];
   const prerequisites =
     installed && missingRuntimeFiles.length === 0 && initializationSucceeded
-      ? collectPrerequisites(service, installDir)
+      ? collectPrerequisites(service, installDir, missingSystemRequirementLabels)
       : [];
   const runningByPid = installed && missingRuntimeFiles.length === 0 && isProcessRunning(pid);
   const runningByPort =
@@ -892,7 +1032,7 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   }
 
   if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && prerequisites.length > 0) {
-    const hasDependencyError = prerequisites.some((item) => item.includes("Docker") || item.includes("Podman"));
+    const hasDependencyError = missingSystemRequirementLabels.length > 0;
     status = hasDependencyError ? "dependency-missing" : "config-required";
     statusLabel = hasDependencyError ? "依赖未满足" : "待配置";
     message = prerequisites.join("；");
@@ -916,7 +1056,9 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     status,
     statusLabel,
     message,
+    frontend: service.frontend,
     frontendMode: service.frontend.mode,
+    desktop: service.desktop,
     configFiles,
     healthMeta: {
       pid,
@@ -930,49 +1072,17 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   };
 }
 
-const agentPlatformDefaultContainerHubBaseUrls = new Set([
-  "",
-  "http://127.0.0.1:11960",
-  "http://localhost:11960",
-  "http://host.docker.internal:11960"
-]);
-
-const agentWebclientDefaultBaseUrls = new Set([
-  "",
-  "http://127.0.0.1:11949",
-  "http://localhost:11949"
-]);
-
 async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {
+  const installDir = getInstallDir(app, service);
+  const envPath = path.join(installDir, ".env");
+  const env = readEnvFile(envPath);
+  const updates = await resolveEnvBindings(app, service, env);
+
+  if (updates.size > 0) {
+    writeEnvFileUpdates(envPath, updates);
+  }
+
   if (service.id === "agent-platform") {
-    const installDir = getInstallDir(app, service);
-    const envPath = path.join(installDir, ".env");
-    const env = readEnvFile(envPath);
-    const currentHubBaseUrl = env.get("AGENT_CONTAINER_HUB_BASE_URL") ?? "";
-    const updates = new Map<string, string>();
-
-    try {
-      const hubState = await getServiceState(app, "agent-container-hub");
-      const desiredHubBaseUrl = `http://127.0.0.1:${hubState.healthMeta.port}`;
-      if (agentPlatformDefaultContainerHubBaseUrls.has(currentHubBaseUrl)) {
-        updates.set("AGENT_CONTAINER_HUB_BASE_URL", desiredHubBaseUrl);
-      }
-    } catch {
-      // Agent Platform can run without Container Hub being registered in Desktop.
-    }
-    if (!env.get("SERVER_PORT")) {
-      updates.set("SERVER_PORT", String(service.web.defaultPort));
-    }
-    if ((env.get("AGENT_WS_ENABLED") ?? "").toLowerCase() !== "true") {
-      updates.set("AGENT_WS_ENABLED", "true");
-    }
-    updates.set("AGENT_AUTH_ENABLED", "true");
-    updates.set("AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE", path.join("configs", "local-public-key.pem"));
-
-    if (updates.size > 0) {
-      writeEnvFileUpdates(envPath, updates);
-    }
-
     const { publicKeyPem } = ensureKeyPairForPan(app);
     const publicKeyPath = path.join(installDir, "configs", "local-public-key.pem");
     ensureDir(path.dirname(publicKeyPath));
@@ -980,33 +1090,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     return;
   }
 
-  if (service.id === "agent-webclient") {
-    const installDir = getInstallDir(app, service);
-    const envPath = path.join(installDir, ".env");
-    const env = readEnvFile(envPath);
-    const platformState = await getServiceState(app, "agent-platform");
-    const desiredBaseUrl = `http://127.0.0.1:${platformState.healthMeta.port || 11949}`;
-    const currentBaseUrl = env.get("BASE_URL") ?? "";
-    const updates = new Map<string, string>();
-
-    if (agentWebclientDefaultBaseUrls.has(currentBaseUrl)) {
-      updates.set("BASE_URL", desiredBaseUrl);
-    }
-    if (!env.get("PORT")) {
-      updates.set("PORT", String(service.web.defaultPort));
-    }
-    updates.set("NODE_BIN", process.execPath);
-
-    if (updates.size > 0) {
-      writeEnvFileUpdates(envPath, updates);
-    }
-    return;
-  }
-
   if (service.id === CLAUDE_CODE_RELAY_PLUGIN_ID) {
-    const installDir = getInstallDir(app, service);
-    const envPath = path.join(installDir, ".env");
-    const env = readEnvFile(envPath);
     const config = readManagedConfigFile(
       path.join(installDir, "managed-config.json"),
       getCodeAssistantBundledRuntimePath(installDir)
@@ -1070,10 +1154,10 @@ async function prepareBuiltinService(app: App, serviceId: ServiceId) {
 }
 
 async function ensureDependentServicesReady(app: App, service: ServiceDefinition) {
-  if (service.id === "agent-webclient") {
-    const platformResult = await startService(app, "agent-platform");
-    if (!platformResult.ok) {
-      throw new Error(`智能体平台未就绪：${platformResult.message}`);
+  for (const dependencyId of getServiceDependencyIds(service)) {
+    const dependencyResult = await startService(app, dependencyId);
+    if (!dependencyResult.ok) {
+      throw new Error(`${dependencyResult.service.name} 未就绪：${dependencyResult.message}`);
     }
   }
 }
@@ -1191,9 +1275,53 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
     };
   }
 
-  const result = await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`);
+  await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`);
   startedThisSession.delete(serviceId);
-  return result;
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const state = await getServiceState(app, serviceId);
+    if (state.status !== "running") {
+      return { ok: true, message: `${service.name} 已停止。`, service: state };
+    }
+    await waitFor(500);
+  }
+
+  // stop script finished but process still alive — force kill via pid or port
+  const installDir = getInstallDir(app, service);
+  const pidFilePath = resolveRuntimePath(installDir, service.runtime.pidRelativePath);
+  const pid = readPid(pidFilePath);
+  if (isProcessRunning(pid)) {
+    try { process.kill(pid!, "SIGTERM"); } catch { /* ignore */ }
+    await waitFor(2000);
+    if (isProcessRunning(pid)) {
+      try { process.kill(pid!, "SIGKILL"); } catch { /* ignore */ }
+      await waitFor(500);
+    }
+  }
+
+  if (pid === null || !isProcessRunning(pid)) {
+    // pid file missing or pid dead — try to find process by port
+    const env = readEnvFile(path.join(installDir, ".env"));
+    const port = parsePort(service, env);
+    if (port > 0 && (await isPortReachable(port))) {
+      const portPid = findPidByPort(port);
+      if (portPid && portPid !== process.pid) {
+        try { process.kill(portPid, "SIGTERM"); } catch { /* ignore */ }
+        await waitFor(2000);
+        if (isProcessRunning(portPid)) {
+          try { process.kill(portPid, "SIGKILL"); } catch { /* ignore */ }
+          await waitFor(500);
+        }
+      }
+    }
+  }
+
+  const finalState = await getServiceState(app, serviceId);
+  return {
+    ok: finalState.status !== "running",
+    message: finalState.status !== "running" ? `${service.name} 已停止。` : `${service.name} 停止超时，进程可能仍在运行。`,
+    service: finalState
+  };
 }
 
 export async function restartService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
@@ -1469,6 +1597,7 @@ export const __testInternals = {
   getWebUrl,
   containerEngineAvailable,
   commandAvailable,
+  resolveEnvBindings,
   fixShellScriptPermissions,
   listMissingRuntimeFiles,
   isInstallHealthy,

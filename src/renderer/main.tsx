@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import { App } from "./App";
+import { registerBuiltinAuthBridgeProtocols } from "../shared/auth-bridge";
 import "./styles.css";
 
 try {
@@ -10,6 +11,8 @@ try {
 } catch {
   document.documentElement.dataset.theme = "light";
 }
+
+registerBuiltinAuthBridgeProtocols();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

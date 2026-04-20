@@ -23,8 +23,8 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
     [service?.id],
   );
   const embeddedUrl = useMemo(() => {
-    return buildPluginEmbeddedUrl(service?.id, webUrl, { hostTheme });
-  }, [hostTheme, service?.id, webUrl]);
+    return buildPluginEmbeddedUrl(service, webUrl, { hostTheme });
+  }, [hostTheme, service, webUrl]);
 
   useEffect(() => {
     setBridgeError("");

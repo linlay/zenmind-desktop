@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ServiceConfigReadResult, ServiceId, ServiceLogTarget, ServiceState } from "@shared/contracts";
-import { CORE_SERVICE_SLOTS, summarizeCoreServices } from "@shared/control-center";
+import { getOrderedCoreServices, summarizeCoreServices } from "@shared/control-center";
 import { useServices } from "../services/ServicesContext";
 import { useNavigate } from "react-router-dom";
 
@@ -501,9 +501,9 @@ export function ControlCenterPage() {
 
   const marketServices = services.filter((service) => service.kind === "plugin");
 
-  const coreSlots = CORE_SERVICE_SLOTS.map((slot) => ({
-    name: slot.label,
-    service: coreServices.find((service) => service.id === slot.id) ?? null
+  const coreSlots = getOrderedCoreServices(services).map((service) => ({
+    name: service.name,
+    service
   }));
 
   const selectedService = services.find((service) => service.id === selectedServiceId) ?? services[0] ?? null;

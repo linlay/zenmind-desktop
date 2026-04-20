@@ -70,13 +70,14 @@ test("actual synced agent-webclient asset includes backend and frontend dist", (
   if (assetPath.endsWith(".zip")) {
     assert.ok(entries.has("agent-webclient/start.ps1"));
     assert.ok(entries.has("agent-webclient/stop.ps1"));
-    assert.ok(entries.has("agent-webclient/backend/agent-webclient.exe"));
+    assert.ok(entries.has("agent-webclient/backend/server.js"));
   } else {
     assert.ok(entries.has("agent-webclient/start.sh"));
     assert.ok(entries.has("agent-webclient/stop.sh"));
-    assert.ok(entries.has("agent-webclient/backend/agent-webclient"));
+    assert.ok(entries.has("agent-webclient/backend/server.js"));
   }
   assert.ok(entries.has("agent-webclient/manifest.json"));
+  assert.ok(entries.has("agent-webclient/backend/package.json"));
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
 });
 

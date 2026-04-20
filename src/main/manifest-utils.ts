@@ -4,14 +4,17 @@ import type {
   FrontendMode,
   Manifest,
   ManifestApi,
+  ManifestAutoStart,
   ManifestBackend,
   ManifestCommand,
   ManifestConfigFile,
   ManifestDesktop,
+  ManifestEnvBinding,
   ManifestFrontend,
   ManifestRuntime,
   ManifestScripts,
   ManifestWeb,
+  ManifestWebPortFormat,
   ServiceId,
   ServiceKind
 } from "../shared/contracts";
@@ -40,6 +43,8 @@ export interface ServiceDefinition extends Manifest {
   prerequisites: string[];
   desktop: ManifestDesktop & {
     bundleTopLevelDir: string;
+    envBindings: ManifestEnvBinding[];
+    systemRequirements: string[];
   };
   assetFileName: string;
   bundleTopLevelDir: string;
@@ -87,6 +92,49 @@ function asNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function asStringRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string"
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function isManifestAutoStart(value: unknown): value is ManifestAutoStart {
+  return typeof value === "boolean" || value === "optional";
+}
+
+function isManifestWebPortFormat(value: unknown): value is ManifestWebPortFormat {
+  return value === "number" || value === "host:port";
+}
+
+function resolveEnvBindings(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const bindings: ManifestEnvBinding[] = [];
+  for (const item of value) {
+    const binding = asObject(item);
+    const key = asOptionalString(binding.key);
+    if (!key) {
+      continue;
+    }
+    bindings.push({
+      key,
+      fromService: asOptionalString(binding.fromService),
+      template: asOptionalString(binding.template),
+      value: asOptionalString(binding.value),
+      onlyIfDefault: asBoolean(binding.onlyIfDefault),
+      defaults: asStringArray(binding.defaults)
+    });
+  }
+  return bindings;
+}
+
 function isFrontendMode(value: unknown): value is FrontendMode {
   return value === "none" || value === "embedded" || value === "standalone";
 }
@@ -125,7 +173,10 @@ function resolveFrontend(raw: Record<string, unknown>) {
     hostManaged: asBoolean(frontend.hostManaged),
     dist: asOptionalString(frontend.dist),
     index: asOptionalString(frontend.index),
-    spa: asBoolean(frontend.spa)
+    spa: asBoolean(frontend.spa),
+    hideFromNav: asBoolean(frontend.hideFromNav),
+    embedPath: asOptionalString(frontend.embedPath),
+    embedParams: asStringRecord(frontend.embedParams)
   } satisfies ManifestFrontend;
 }
 
@@ -215,7 +266,8 @@ function resolveWeb(raw: Record<string, unknown>) {
   return {
     routePath: asString(web.routePath),
     portEnvKey: asString(web.portEnvKey),
-    defaultPort: asNumber(web.defaultPort) ?? 0
+    defaultPort: asNumber(web.defaultPort) ?? 0,
+    portFormat: isManifestWebPortFormat(web.portFormat) ? web.portFormat : "number"
   } satisfies ManifestWeb;
 }
 
@@ -235,7 +287,10 @@ function resolveDesktop(
   return {
     assetFileName,
     bundleTopLevelDir,
-    autoStart: asBoolean(desktop.autoStart)
+    autoStart: isManifestAutoStart(desktop.autoStart) ? desktop.autoStart : undefined,
+    displayOrder: asNumber(desktop.displayOrder),
+    envBindings: resolveEnvBindings(desktop.envBindings),
+    systemRequirements: asStringArray(desktop.systemRequirements)
   } satisfies ManifestDesktop & { bundleTopLevelDir: string };
 }
 

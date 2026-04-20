@@ -96,6 +96,33 @@ function createApp(userDataRoot) {
   };
 }
 
+async function canListenOnLocalPort() {
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end("ok");
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    return true;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error) {
+      const code = error.code;
+      if (code === "EPERM" || code === "EACCES") {
+        return false;
+      }
+    }
+    throw error;
+  } finally {
+    if (server.listening) {
+      await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve(undefined))));
+    }
+  }
+}
+
 function loadBuiltinsForTest(userDataRoot, assetsRoot) {
   const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
   const generatedAssets = assetsRoot ? null : createCurrentPlatformAssetsFixture();
@@ -189,11 +216,14 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
         web: {
           routePath: "/",
           portEnvKey: "BIND_ADDR",
-          defaultPort: 11960
+          defaultPort: 11960,
+          portFormat: "host:port"
         },
         desktop: {
+          autoStart: "optional",
           assetFileName: "agent-container-hub-v0.1.0-darwin-arm64.tar.gz",
-          bundleTopLevelDir: "agent-container-hub"
+          bundleTopLevelDir: "agent-container-hub",
+          systemRequirements: ["docker|podman"]
         }
       },
       null,
@@ -314,11 +344,19 @@ function writeManagedBuiltinBundleRoot(bundleRoot, options = {}) {
   const version = options.version ?? "v0.1.0";
   const defaultPort = options.defaultPort ?? 9400;
   const portEnvKey = options.portEnvKey ?? "PORT";
+  const portFormat = options.portFormat ?? "number";
   const routePath = options.routePath ?? "/";
   const pidFileName = options.pidFileName ?? `${serviceId}.pid`;
   const envExampleContent = options.envExampleContent ?? `${portEnvKey}=${defaultPort}\n`;
   const failAfterSpawn = options.failAfterSpawn === true;
   const listenOnPort = options.listenOnPort === true;
+  const frontend = options.frontend ?? { mode: "none" };
+  const prerequisites = options.prerequisites ?? [];
+  const desktop = {
+    assetFileName: `${serviceId}-${version}-darwin-arm64.tar.gz`,
+    bundleTopLevelDir: serviceId,
+    ...(options.desktop ?? {})
+  };
 
   fs.mkdirSync(path.join(bundleRoot, "scripts"), { recursive: true });
   fs.writeFileSync(path.join(bundleRoot, ".env.example"), envExampleContent, "utf8");
@@ -380,9 +418,7 @@ function writeManagedBuiltinBundleRoot(bundleRoot, options = {}) {
         kind: "builtin",
         version,
         description: "managed builtin fixture",
-        frontend: {
-          mode: "none"
-        },
+        frontend,
         scripts: {
           start: [process.execPath, "scripts/start.js"],
           stop: [process.execPath, "scripts/stop.js"]
@@ -410,12 +446,11 @@ function writeManagedBuiltinBundleRoot(bundleRoot, options = {}) {
         web: {
           routePath,
           portEnvKey,
-          defaultPort
+          defaultPort,
+          portFormat
         },
-        desktop: {
-          assetFileName: `${serviceId}-${version}-darwin-arm64.tar.gz`,
-          bundleTopLevelDir: serviceId
-        }
+        prerequisites,
+        desktop
       },
       null,
       2
@@ -743,7 +778,12 @@ test("readServiceLog aligns non-zero chunk starts to the next full log line", as
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("getServiceState treats a listening service port as running even when the pid file is missing", async () => {
+test("getServiceState treats a listening service port as running even when the pid file is missing", async (t) => {
+  if (!(await canListenOnLocalPort())) {
+    t.skip("sandbox blocks local port binding");
+    return;
+  }
+
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-port-running-state-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const installDir = path.join(userDataRoot, "plugins", "test-plugin");
@@ -1024,7 +1064,12 @@ test("startService treats already-running services as success even when start co
   }
 });
 
-test("startService does not relaunch a service when its port is already listening but the pid file is missing", async () => {
+test("startService does not relaunch a service when its port is already listening but the pid file is missing", async (t) => {
+  if (!(await canListenOnLocalPort())) {
+    t.skip("sandbox blocks local port binding");
+    return;
+  }
+
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-port-recover-"));
   const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
   const port = 20000 + Math.floor(Math.random() * 10000);
@@ -1088,7 +1133,8 @@ test("startService on agent-webclient auto-starts agent-platform without requiri
       id: "agent-container-hub",
       name: "Container Hub",
       defaultPort: 11960,
-      portEnvKey: "BIND_ADDR"
+      portEnvKey: "BIND_ADDR",
+      portFormat: "host:port"
     });
     const platformFixture = createManagedBuiltinBundleFixture(tempRoot, {
       id: "agent-platform",
@@ -1101,7 +1147,28 @@ test("startService on agent-webclient auto-starts agent-platform without requiri
       id: "agent-webclient",
       name: "小宅助理",
       defaultPort: 11948,
-      envExampleContent: "BASE_URL=http://localhost:11949\nPORT=11948\n"
+      envExampleContent: "BASE_URL=http://localhost:11949\nPORT=11948\n",
+      prerequisites: ["agent-platform"],
+      desktop: {
+        envBindings: [
+          {
+            key: "BASE_URL",
+            fromService: "agent-platform",
+            template: "http://127.0.0.1:{{port}}",
+            onlyIfDefault: true,
+            defaults: ["", "http://127.0.0.1:11949", "http://localhost:11949"]
+          },
+          {
+            key: "PORT",
+            value: "{{serviceDefaultPort}}",
+            onlyIfDefault: true
+          },
+          {
+            key: "NODE_BIN",
+            value: "{{processExecPath}}"
+          }
+        ]
+      }
     });
     process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = hubFixture.assetsRoot;
 
@@ -1134,64 +1201,158 @@ test("startService on agent-webclient auto-starts agent-platform without requiri
 
 test("ensurePreStartRequirements injects container hub url and auth public key for agent platform", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-prestart-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot);
-  const hubService = getBuiltinService("agent-container-hub");
-  const platformService = getBuiltinService("agent-platform");
-  const hubInstallDir = path.join(userDataRoot, "services", hubService.id, hubService.version);
-  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+  registryInternals.clearServices();
 
-  fs.mkdirSync(hubInstallDir, { recursive: true });
-  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
-  fs.writeFileSync(path.join(hubInstallDir, ".env"), "BIND_ADDR=0.0.0.0:12960\n", "utf8");
-  fs.writeFileSync(
-    path.join(platformInstallDir, ".env"),
-    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\n",
-    "utf8"
-  );
+  try {
+    createManagedBuiltinBundleFixture(tempRoot, {
+      id: "agent-container-hub",
+      name: "Container Hub",
+      defaultPort: 11960,
+      portEnvKey: "BIND_ADDR",
+      portFormat: "host:port"
+    });
+    const platformFixture = createManagedBuiltinBundleFixture(tempRoot, {
+      id: "agent-platform",
+      name: "智能体平台",
+      defaultPort: 11949,
+      portEnvKey: "SERVER_PORT",
+      desktop: {
+        envBindings: [
+          {
+            key: "AGENT_CONTAINER_HUB_BASE_URL",
+            fromService: "agent-container-hub",
+            template: "http://127.0.0.1:{{port}}",
+            onlyIfDefault: true,
+            defaults: [
+              "",
+              "http://127.0.0.1:11960",
+              "http://localhost:11960",
+              "http://host.docker.internal:11960"
+            ]
+          },
+          {
+            key: "SERVER_PORT",
+            value: "{{serviceDefaultPort}}",
+            onlyIfDefault: true
+          },
+          {
+            key: "AGENT_WS_ENABLED",
+            value: "true"
+          },
+          {
+            key: "AGENT_AUTH_ENABLED",
+            value: "true"
+          },
+          {
+            key: "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE",
+            value: "configs/local-public-key.pem"
+          }
+        ]
+      }
+    });
+    const app = createApp(platformFixture.userDataRoot);
+    const hubService = getBuiltinService("agent-container-hub");
+    const platformService = getBuiltinService("agent-platform");
+    const hubInstallDir = path.join(platformFixture.userDataRoot, "services", hubService.id, hubService.version);
+    const platformInstallDir = path.join(
+      platformFixture.userDataRoot,
+      "services",
+      platformService.id,
+      platformService.version
+    );
 
-  await __testInternals.ensurePreStartRequirements(app, platformService);
+    fs.mkdirSync(hubInstallDir, { recursive: true });
+    fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+    fs.writeFileSync(path.join(hubInstallDir, ".env"), "BIND_ADDR=0.0.0.0:12960\n", "utf8");
+    fs.writeFileSync(
+      path.join(platformInstallDir, ".env"),
+      "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\n",
+      "utf8"
+    );
 
-  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
-  assert.match(envContent, /AGENT_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960/);
-  assert.match(envContent, /SERVER_PORT=11949/);
-  assert.match(envContent, /AGENT_WS_ENABLED=true/);
-  assert.match(envContent, /AGENT_AUTH_ENABLED=true/);
-  assert.match(envContent, /AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem/);
+    await __testInternals.ensurePreStartRequirements(app, platformService);
 
-  const publicKeyPath = path.join(platformInstallDir, "configs", "local-public-key.pem");
-  assert.ok(fs.existsSync(publicKeyPath));
-  assert.match(fs.readFileSync(publicKeyPath, "utf8"), /BEGIN PUBLIC KEY/);
+    const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+    assert.match(envContent, /AGENT_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960/);
+    assert.match(envContent, /SERVER_PORT=11949/);
+    assert.match(envContent, /AGENT_WS_ENABLED=true/);
+    assert.match(envContent, /AGENT_AUTH_ENABLED=true/);
+    assert.match(envContent, /AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem/);
 
-  restore();
-  fs.rmSync(tempRoot, { recursive: true, force: true });
+    const publicKeyPath = path.join(platformInstallDir, "configs", "local-public-key.pem");
+    assert.ok(fs.existsSync(publicKeyPath));
+    assert.match(fs.readFileSync(publicKeyPath, "utf8"), /BEGIN PUBLIC KEY/);
+  } finally {
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("ensurePreStartRequirements rewrites agent-webclient default BASE_URL to local agent-platform", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-webclient-prestart-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot);
-  const platformService = getBuiltinService("agent-platform");
-  const webclientService = getBuiltinService("agent-webclient");
-  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
-  const webclientInstallDir = path.join(userDataRoot, "services", webclientService.id, webclientService.version);
+  registryInternals.clearServices();
 
-  fs.mkdirSync(path.join(platformInstallDir, "run"), { recursive: true });
-  fs.mkdirSync(webclientInstallDir, { recursive: true });
-  fs.writeFileSync(path.join(platformInstallDir, ".env"), "SERVER_PORT=12949\n", "utf8");
-  fs.writeFileSync(
-    path.join(webclientInstallDir, ".env"),
-    "BASE_URL=http://localhost:11949\n",
-    "utf8"
-  );
+  try {
+    const platformFixture = createManagedBuiltinBundleFixture(tempRoot, {
+      id: "agent-platform",
+      name: "智能体平台",
+      defaultPort: 12949,
+      portEnvKey: "SERVER_PORT"
+    });
+    createManagedBuiltinBundleFixture(tempRoot, {
+      id: "agent-webclient",
+      name: "小宅助理",
+      defaultPort: 11948,
+      desktop: {
+        envBindings: [
+          {
+            key: "BASE_URL",
+            fromService: "agent-platform",
+            template: "http://127.0.0.1:{{port}}",
+            onlyIfDefault: true,
+            defaults: ["", "http://127.0.0.1:11949", "http://localhost:11949"]
+          },
+          {
+            key: "PORT",
+            value: "{{serviceDefaultPort}}",
+            onlyIfDefault: true
+          },
+          {
+            key: "NODE_BIN",
+            value: "{{processExecPath}}"
+          }
+        ]
+      }
+    });
+    const app = createApp(platformFixture.userDataRoot);
+    const platformService = getBuiltinService("agent-platform");
+    const webclientService = getBuiltinService("agent-webclient");
+    const platformInstallDir = path.join(
+      platformFixture.userDataRoot,
+      "services",
+      platformService.id,
+      platformService.version
+    );
+    const webclientInstallDir = path.join(
+      platformFixture.userDataRoot,
+      "services",
+      webclientService.id,
+      webclientService.version
+    );
 
-  await __testInternals.ensurePreStartRequirements(app, webclientService);
+    fs.mkdirSync(path.join(platformInstallDir, "run"), { recursive: true });
+    fs.mkdirSync(webclientInstallDir, { recursive: true });
+    fs.writeFileSync(path.join(platformInstallDir, ".env"), "SERVER_PORT=12949\n", "utf8");
+    fs.writeFileSync(path.join(webclientInstallDir, ".env"), "BASE_URL=http://localhost:11949\n", "utf8");
 
-  const envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
-  assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
-  assert.match(envContent, /PORT=11948/);
-  assert.match(envContent, new RegExp(`NODE_BIN=${process.execPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    await __testInternals.ensurePreStartRequirements(app, webclientService);
 
-  restore();
-  fs.rmSync(tempRoot, { recursive: true, force: true });
+    const envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
+    assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
+    assert.match(envContent, /PORT=11948/);
+    assert.match(envContent, new RegExp(`NODE_BIN=${process.execPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  } finally {
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });

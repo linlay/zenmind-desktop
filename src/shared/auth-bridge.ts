@@ -1,18 +1,40 @@
+import type { ManifestFrontend } from "./contracts";
+
 export type PluginAuthBridgeProtocol = {
   requestType: string;
   responseType: string;
 };
 
-const AUTH_BRIDGE_PROTOCOLS: Record<string, PluginAuthBridgeProtocol> = {
-  "agent-webclient": {
+type EmbeddedServiceLike = {
+  id?: string | null;
+  frontend?: Pick<ManifestFrontend, "embedPath" | "embedParams"> | null;
+};
+
+const authBridgeRegistry = new Map<string, PluginAuthBridgeProtocol>();
+
+export function registerAuthBridgeProtocol(serviceId: string, protocol: PluginAuthBridgeProtocol) {
+  const normalizedServiceId = serviceId.trim();
+  if (!normalizedServiceId) {
+    throw new Error("serviceId is required");
+  }
+
+  authBridgeRegistry.set(normalizedServiceId, protocol);
+}
+
+export function clearAuthBridgeProtocols() {
+  authBridgeRegistry.clear();
+}
+
+export function registerBuiltinAuthBridgeProtocols() {
+  registerAuthBridgeProtocol("agent-webclient", {
     requestType: "zenmind:agent-app-auth:request",
     responseType: "zenmind:agent-app-auth:response"
-  },
-  "pan-webclient": {
+  });
+  registerAuthBridgeProtocol("pan-webclient", {
     requestType: "zenmind:pan-app-auth:request",
     responseType: "zenmind:pan-app-auth:response"
-  }
-};
+  });
+}
 
 export function getPluginAuthBridgeProtocol(
   serviceId?: string | null
@@ -20,11 +42,11 @@ export function getPluginAuthBridgeProtocol(
   if (!serviceId) {
     return null;
   }
-  return AUTH_BRIDGE_PROTOCOLS[serviceId] ?? null;
+  return authBridgeRegistry.get(serviceId) ?? null;
 }
 
 export function buildPluginEmbeddedUrl(
-  serviceId: string | undefined,
+  service: EmbeddedServiceLike | undefined,
   webUrl: string,
   options: {
     hostTheme?: "light" | "dark";
@@ -35,14 +57,18 @@ export function buildPluginEmbeddedUrl(
   }
 
   const url = new URL(webUrl);
-  if (serviceId === "agent-webclient") {
-    url.pathname = "/appagent";
+  if (service?.frontend?.embedPath) {
+    url.pathname = service.frontend.embedPath;
   }
-  if (serviceId === "agent-webclient" || serviceId === "pan-webclient") {
-    url.searchParams.set("desktopApp", "1");
-    if (options.hostTheme) {
-      url.searchParams.set("hostTheme", options.hostTheme);
-    }
+
+  const embedParams = service?.frontend?.embedParams ?? {};
+  for (const [key, value] of Object.entries(embedParams)) {
+    url.searchParams.set(key, value);
   }
+
+  if (options.hostTheme && (service?.frontend?.embedPath || Object.keys(embedParams).length > 0)) {
+    url.searchParams.set("hostTheme", options.hostTheme);
+  }
+
   return url.toString();
 }

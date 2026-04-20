@@ -115,7 +115,12 @@ test("loadBuiltinServices skips builtin archives from other platforms", () => {
       arch: "test"
     },
     frontend: {
-      mode: "none"
+      mode: "standalone",
+      hideFromNav: true,
+      embedPath: "/embedded",
+      embedParams: {
+        desktopApp: "1"
+      }
     },
     scripts: {
       start: "start.sh",
@@ -123,6 +128,23 @@ test("loadBuiltinServices skips builtin archives from other platforms", () => {
     },
     runtime: {
       requiredPaths: ["manifest.json"]
+    },
+    web: {
+      routePath: "/",
+      portEnvKey: "BIND_ADDR",
+      defaultPort: 9100,
+      portFormat: "host:port"
+    },
+    desktop: {
+      autoStart: "optional",
+      displayOrder: 7,
+      envBindings: [
+        {
+          key: "BASE_URL",
+          fromService: "agent-platform",
+          template: "http://127.0.0.1:{{port}}"
+        }
+      ]
     }
   });
 
@@ -158,6 +180,22 @@ test("loadBuiltinServices skips builtin archives from other platforms", () => {
     assert.equal(loaded.length, 1);
     assert.equal(loaded[0].description, `${matchedOs} build`);
     assert.equal(loaded[0].assetFileName, matchedArchiveName);
+    assert.equal(loaded[0].desktop.autoStart, "optional");
+    assert.equal(loaded[0].desktop.displayOrder, 7);
+    assert.equal(loaded[0].frontend.hideFromNav, true);
+    assert.equal(loaded[0].frontend.embedPath, "/embedded");
+    assert.deepEqual(loaded[0].frontend.embedParams, { desktopApp: "1" });
+    assert.equal(loaded[0].web.portFormat, "host:port");
+    assert.deepEqual(loaded[0].desktop.envBindings, [
+      {
+        key: "BASE_URL",
+        fromService: "agent-platform",
+        template: "http://127.0.0.1:{{port}}",
+        value: undefined,
+        onlyIfDefault: undefined,
+        defaults: []
+      }
+    ]);
     assert.equal(service.description, `${matchedOs} build`);
     assert.equal(service.platform?.os, matchedOs);
   } finally {

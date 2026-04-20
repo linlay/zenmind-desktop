@@ -265,53 +265,75 @@ test("ensureCodeAssistantReady writes managed config, syncs codeAssistant agent,
 test("setCodeAssistantFullAccessGranted is a compatibility no-op that keeps workspace-first mode", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-code-assistant-full-access-"));
   const app = createApp(path.join(tempRoot, "user-data"));
-  ensureManagedClaudeCodeRelayPlugin(app);
+  const bundledRuntimeRoot = createBundledRuntimeFixture(tempRoot);
+  const previousRuntimeRoot = process.env.ZENMIND_DESKTOP_CODE_ASSISTANT_RUNTIME_ROOT;
 
-  const serviceState = createServiceState({
-    status: "running",
-    installDir: __testInternals.getPluginRoot(app)
-  });
+  try {
+    process.env.ZENMIND_DESKTOP_CODE_ASSISTANT_RUNTIME_ROOT = bundledRuntimeRoot;
+    ensureManagedClaudeCodeRelayPlugin(app);
+    const agentsDir = path.join(tempRoot, "agents");
+    const platformEnvPath = path.join(
+      app.getPath("userData"),
+      "services",
+      "agent-platform",
+      "v0.1.0",
+      ".env"
+    );
+    fs.mkdirSync(path.dirname(platformEnvPath), { recursive: true });
+    fs.mkdirSync(agentsDir, { recursive: true });
+    fs.writeFileSync(platformEnvPath, `AGENTS_DIR=${agentsDir}\n`, "utf8");
 
-  __testInternals.writeManagedConfig(app, {
-    repoPath: path.join(__testInternals.getPluginRoot(app), "runtime", "claude-code-guotai"),
-    relayPort: 3210,
-    dashboardPort: 3456,
-    authToken: "existing-token",
-    fullAccessGranted: false,
-    enabled: true,
-    userSelectedRepo: true
-  });
+    const serviceState = createServiceState({
+      status: "running",
+      installDir: __testInternals.getPluginRoot(app)
+    });
 
-  let stopCalled = false;
-  let startCalled = false;
-  const result = await setCodeAssistantFullAccessGranted(app, true, null, {
-    getServiceState: async () => ({ ...serviceState }),
-    initializeService: async () => ({ ok: true, message: "代码助手已初始化。" }),
-    startService: async () => {
-      startCalled = true;
-      serviceState.status = "running";
-      return { ok: true, message: "代码助手已启动。" };
-    },
-    stopService: async () => {
-      stopCalled = true;
-      serviceState.status = "stopped";
-      return { ok: true, message: "代码助手已停止。" };
-    },
-    showMessageBox: async () => ({ response: 1, checkboxChecked: false })
-  });
+    __testInternals.writeManagedConfig(app, {
+      repoPath: path.join(__testInternals.getPluginRoot(app), "runtime", "claude-code-guotai"),
+      relayPort: 3210,
+      dashboardPort: 3456,
+      authToken: "existing-token",
+      fullAccessGranted: false,
+      enabled: true,
+      userSelectedRepo: true
+    });
 
-  const config = __testInternals.readManagedConfig(app);
+    let stopCalled = false;
+    let startCalled = false;
+    const result = await setCodeAssistantFullAccessGranted(app, true, null, {
+      getServiceState: async () => ({ ...serviceState }),
+      initializeService: async () => ({ ok: true, message: "代码助手已初始化。" }),
+      startService: async () => {
+        startCalled = true;
+        serviceState.status = "running";
+        return { ok: true, message: "代码助手已启动。" };
+      },
+      stopService: async () => {
+        stopCalled = true;
+        serviceState.status = "stopped";
+        return { ok: true, message: "代码助手已停止。" };
+      },
+      showMessageBox: async () => ({ response: 1, checkboxChecked: false })
+    });
 
-  assert.equal(result.ok, true);
-  assert.equal("prompted" in result, false);
-  assert.equal(result.status.enabled, true);
-  assert.match(result.message, /工作空间优先/u);
-  assert.equal(config.enabled, true);
-  assert.equal(config.fullAccessGranted, true);
-  assert.equal(stopCalled, false);
-  assert.equal(startCalled, false);
+    const config = __testInternals.readManagedConfig(app);
 
-  fs.rmSync(tempRoot, { recursive: true, force: true });
+    assert.equal(result.ok, true);
+    assert.equal("prompted" in result, false);
+    assert.equal(result.status.enabled, true);
+    assert.match(result.message, /工作空间优先/u);
+    assert.equal(config.enabled, true);
+    assert.equal(config.fullAccessGranted, true);
+    assert.equal(stopCalled, false);
+    assert.equal(startCalled, false);
+  } finally {
+    if (previousRuntimeRoot) {
+      process.env.ZENMIND_DESKTOP_CODE_ASSISTANT_RUNTIME_ROOT = previousRuntimeRoot;
+    } else {
+      delete process.env.ZENMIND_DESKTOP_CODE_ASSISTANT_RUNTIME_ROOT;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("syncManagedCodeAssistantAgentDefinition refreshes a stale codeAssistant token", async () => {

@@ -19,7 +19,7 @@ type HeaderProps = {
 export function Header({ themeMode, onToggleTheme }: HeaderProps) {
   const { services } = useServices();
   const serviceNavItems = services
-    .filter((s) => s.id !== "agent-webclient" && s.frontendMode === "standalone" && s.status === "running")
+    .filter((s) => !s.frontend.hideFromNav && s.frontendMode === "standalone" && s.status === "running")
     .map((s) => ({ to: `/plugin/${s.id}`, label: s.name }));
 
   const navItems = [...staticNavItems, ...serviceNavItems, ...tailNavItems];

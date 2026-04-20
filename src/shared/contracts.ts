@@ -2,6 +2,8 @@ export type ServiceId = string;
 export type ServiceKind = "builtin" | "plugin";
 export type FrontendMode = "none" | "embedded" | "standalone";
 export type ServiceLogTarget = "main" | "error";
+export type ManifestAutoStart = boolean | "optional";
+export type ManifestWebPortFormat = "number" | "host:port";
 export type ServiceStatus =
   | "not-installed"
   | "initialization-required"
@@ -41,7 +43,9 @@ export interface ServiceState {
   status: ServiceStatus;
   statusLabel: string;
   message: string;
+  frontend: ManifestFrontend;
   frontendMode: FrontendMode;
+  desktop: ManifestDesktop;
   configFiles: ServiceConfigFile[];
   healthMeta: ServiceHealthMeta;
 }
@@ -125,6 +129,9 @@ export interface ManifestFrontend {
   dist?: string;
   index?: string;
   spa?: boolean;
+  hideFromNav?: boolean;
+  embedPath?: string;
+  embedParams?: Record<string, string>;
 }
 
 export interface ManifestApi {
@@ -165,12 +172,25 @@ export interface ManifestWeb {
   routePath: string;
   portEnvKey: string;
   defaultPort: number;
+  portFormat?: ManifestWebPortFormat;
+}
+
+export interface ManifestEnvBinding {
+  key: string;
+  fromService?: string;
+  template?: string;
+  value?: string;
+  onlyIfDefault?: boolean;
+  defaults?: string[];
 }
 
 export interface ManifestDesktop {
   assetFileName?: string;
   bundleTopLevelDir?: string;
-  autoStart?: boolean;
+  autoStart?: ManifestAutoStart;
+  displayOrder?: number;
+  envBindings?: ManifestEnvBinding[];
+  systemRequirements?: string[];
 }
 
 export interface Manifest {

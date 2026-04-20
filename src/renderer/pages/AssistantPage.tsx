@@ -49,7 +49,9 @@ export function AssistantPage({ hostTheme, visible = true }: AssistantPageProps)
   const [repoContext, setRepoContext] = useState<CodeAssistantRepoContext | null>(null);
   const [repoPending, setRepoPending] = useState(false);
   const autoPrepareKeyRef = useRef("");
+  const autoPrepareDisabledRef = useRef(false);
   const hasLoadedCodeAssistantRef = useRef(false);
+  const prevServiceStatesRef = useRef<{ webclient: string; platform: string; relay: string }>({ webclient: "", platform: "", relay: "" });
 
   const service = useMemo(
     () => services.find((item) => item.id === "agent-webclient") ?? null,
@@ -272,11 +274,47 @@ export function AssistantPage({ hostTheme, visible = true }: AssistantPageProps)
   }
 
   useEffect(() => {
+    if (assistantReady) {
+      autoPrepareDisabledRef.current = false;
+      prevServiceStatesRef.current = { webclient: "", platform: "", relay: "" };
+      return;
+    }
+
+    if (actionState !== "idle") {
+      prevServiceStatesRef.current = {
+        webclient: service?.status ?? "",
+        platform: platformService?.status ?? "",
+        relay: codeRelayService?.status ?? "",
+      };
+      return;
+    }
+
+    const prev = prevServiceStatesRef.current;
+    const externalStop =
+      (prev.webclient === "running" && service?.status !== "running") ||
+      (prev.platform === "running" && platformService?.status !== "running") ||
+      (prev.relay === "running" && codeRelayService?.status !== "running");
+
+    if (externalStop) {
+      autoPrepareDisabledRef.current = true;
+    }
+
+    prevServiceStatesRef.current = {
+      webclient: service?.status ?? "",
+      platform: platformService?.status ?? "",
+      relay: codeRelayService?.status ?? "",
+    };
+  }, [actionState, assistantReady, service?.status, platformService?.status, codeRelayService?.status]);
+
+  useEffect(() => {
     if (!visible) {
       return;
     }
     if (assistantReady) {
       autoPrepareKeyRef.current = "";
+      return;
+    }
+    if (autoPrepareDisabledRef.current) {
       return;
     }
     if (
@@ -399,21 +437,25 @@ export function AssistantPage({ hostTheme, visible = true }: AssistantPageProps)
     !codeAssistantStatus ||
     !codeAssistantStatus.enabled ||
     !codeAssistantStatus.running;
-  const primaryAction = shouldPrepareCodeAssistant
-    ? () =>
-        void runAction(
-          "preparing-code-assistant",
-          () => window.electronAPI.codeAssistant.ensureReady(),
-          codeAssistantStatus?.enabled
-            ? "正在启动代码助手..."
-            : "正在启用代码助手并准备运行环境..."
-        )
-    : () =>
-        void runAction(
-          retryActionState,
-          () => (service.status === "running" ? restart(service.id) : start(service.id)),
-          retryPendingMessage
-        );
+  const primaryAction = () => {
+    autoPrepareDisabledRef.current = false;
+    if (shouldPrepareCodeAssistant) {
+      void runAction(
+        "preparing-code-assistant",
+        () => window.electronAPI.codeAssistant.ensureReady(),
+        codeAssistantStatus?.enabled
+          ? "正在启动代码助手..."
+          : "正在启用代码助手并准备运行环境..."
+      );
+      return;
+    }
+
+    void runAction(
+      retryActionState,
+      () => (service.status === "running" ? restart(service.id) : start(service.id)),
+      retryPendingMessage
+    );
+  };
   const primaryActionLabel = shouldPrepareCodeAssistant
     ? pending
       ? "准备中..."

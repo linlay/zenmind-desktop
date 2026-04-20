@@ -29,7 +29,7 @@ export function AppSidebar({ isCollapsed, experimentalEnabled, customSidebarItem
   const serviceNavItems: SidebarNavItem[] = services
     .filter(
       (service) =>
-        service.id !== "agent-webclient" &&
+        !service.frontend.hideFromNav &&
         service.frontendMode === "standalone" &&
         service.status === "running"
     )

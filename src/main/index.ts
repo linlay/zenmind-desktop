@@ -50,6 +50,7 @@ import type {
   ServiceLogReadOptions,
   ServiceLogTarget
 } from "../shared/contracts";
+import { registerBuiltinAuthBridgeProtocols } from "../shared/auth-bridge";
 import {
   getDataRoot,
   loadUserPaths,
@@ -67,7 +68,6 @@ import {
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isHandlingQuit = false;
-const DESKTOP_OPTIONAL_AUTO_START_SERVICE_IDS = new Set(["agent-container-hub"]);
 
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName("国泰君安期货");
@@ -675,10 +675,7 @@ async function initializeManagedCodeAssistantPlugin() {
 
 async function autoStartDesktopServices() {
   for (const service of getAllServices()) {
-    if (!service.desktop.autoStart) {
-      continue;
-    }
-    if (DESKTOP_OPTIONAL_AUTO_START_SERVICE_IDS.has(service.id)) {
+    if (!service.desktop.autoStart || service.desktop.autoStart === "optional") {
       continue;
     }
     try {
@@ -695,6 +692,7 @@ async function autoStartDesktopServices() {
 app.whenReady().then(async () => {
   await initializeDataRoot();
   loadBuiltinServices(app);
+  registerBuiltinAuthBridgeProtocols();
   ensureManagedClaudeCodeRelayPlugin(app);
   loadInstalledPlugins(app);
   await initializeManagedCodeAssistantPlugin();
