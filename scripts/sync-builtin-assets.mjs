@@ -15,4 +15,10 @@ const runtimeManifest = syncCodeAssistantRuntime(process.cwd(), platform);
 const platformLabel = platform.os ? ` (${platform.os}/${platform.arch ?? "*"})` : "";
 
 console.log(`synced ${manifest.length} builtin service assets${platformLabel}`);
-console.log(`synced code assistant runtime${platformLabel} from ${runtimeManifest.sourceRoot}`);
+if (runtimeManifest?.skipped) {
+  console.log(
+    `skipped code assistant runtime${platformLabel} (reason: ${runtimeManifest.reason})`
+  );
+} else {
+  console.log(`synced code assistant runtime${platformLabel} from ${runtimeManifest.sourceRoot}`);
+}

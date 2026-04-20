@@ -211,22 +211,50 @@ export function syncCodeAssistantRuntime(
   const existingManifestPath = path.join(outputRoot, "manifest.json");
   const existingBundledCli = path.join(outputRoot, "claude-code-guotai", "dist", "cli.js");
   const existingBundledBun = path.join(outputRoot, "bun", getBunBinaryName(normalizedOs));
-  if (
-    !fs.existsSync(runtimeSourceRoot) &&
+  const hasExistingArtifacts =
     fs.existsSync(existingManifestPath) &&
     fs.existsSync(existingBundledCli) &&
-    fs.existsSync(existingBundledBun)
-  ) {
+    fs.existsSync(existingBundledBun);
+  const sourceRootExists = fs.existsSync(runtimeSourceRoot);
+
+  if (!sourceRootExists && hasExistingArtifacts) {
     console.log(
       `[code-assistant-runtime] 未找到源码目录 ${runtimeSourceRoot}，复用已有产物 ${outputRoot}`
     );
     return JSON.parse(fs.readFileSync(existingManifestPath, "utf8"));
   }
 
+  // 同事首次 clone 本仓库但未同时 clone claude-code-guotai 时，既没有源码也没有旧产物。
+  // 此时不抛错，改为打印警告并跳过，让 `npm run dev` 能继续跑；代码助手功能将在运行期提示缺失。
+  const allowSkip = process.env.ZENMIND_DESKTOP_ALLOW_MISSING_CODE_ASSISTANT !== "0";
+  if (!sourceRootExists && !hasExistingArtifacts && allowSkip) {
+    console.warn(
+      `[code-assistant-runtime] 未找到源码目录 ${runtimeSourceRoot}，已跳过代码助手运行时同步。` +
+        `如需启用代码助手，请将 claude-code-guotai clone 到上述路径，或通过 ZENMIND_DESKTOP_CODE_ASSISTANT_SOURCE_ROOT 指定源码目录，然后重新执行 npm run sync:assets。`
+    );
+    return {
+      skipped: true,
+      reason: "source-missing",
+      sourceRoot: runtimeSourceRoot,
+      platform: { os: normalizedOs, arch: normalizedArch }
+    };
+  }
+
   ensureRuntimeBuildUpToDate(runtimeSourceRoot);
   const distRoot = path.join(runtimeSourceRoot, "dist");
   const cliPath = path.join(distRoot, "cli.js");
   if (!fs.existsSync(cliPath)) {
+    if (allowSkip && !hasExistingArtifacts) {
+      console.warn(
+        `[code-assistant-runtime] 未找到代码助手构建产物 ${cliPath}，已跳过同步。请先在 ${runtimeSourceRoot} 中执行 bun run build 或使用 ZENMIND_DESKTOP_ALLOW_MISSING_CODE_ASSISTANT=0 强制报错。`
+      );
+      return {
+        skipped: true,
+        reason: "dist-missing",
+        sourceRoot: runtimeSourceRoot,
+        platform: { os: normalizedOs, arch: normalizedArch }
+      };
+    }
     throw new Error(`缺少代码助手 dist/cli.js：${cliPath}`);
   }
 
