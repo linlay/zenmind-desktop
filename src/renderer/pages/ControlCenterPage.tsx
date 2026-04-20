@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ServiceConfigReadResult, ServiceId, ServiceLogTarget, ServiceState } from "@shared/contracts";
-import { summarizeCoreServices } from "@shared/control-center";
+import { CORE_SERVICE_NAMES, summarizeCoreServices } from "@shared/control-center";
 import { useServices } from "../services/ServicesContext";
 import { useNavigate } from "react-router-dom";
 
@@ -499,6 +499,11 @@ export function ControlCenterPage() {
 
   const marketServices = services.filter((service) => service.kind === "plugin");
 
+  const coreSlots = CORE_SERVICE_NAMES.map((name) => ({
+    name,
+    service: coreServices.find((service) => service.name === name) ?? null
+  }));
+
   const selectedService = services.find((service) => service.id === selectedServiceId) ?? services[0] ?? null;
   const activeDetailService =
     expandedGroup === null
@@ -980,7 +985,53 @@ export function ControlCenterPage() {
 
                   {isOpen ? (
                     <div className="service-nav-list">
-                      {group.services.length > 0 ? (
+                      {group.key === "core" ? (
+                        coreSlots.map((slot) => {
+                          if (!slot.service) {
+                            return (
+                              <div
+                                key={`core-missing-${slot.name}`}
+                                className="service-nav-card is-placeholder"
+                                aria-disabled="true"
+                              >
+                                <div className="service-nav-card-head">
+                                  <h3>{slot.name}</h3>
+                                  <span
+                                    className="status-dot idle"
+                                    title="未安装"
+                                    aria-hidden="true"
+                                  />
+                                </div>
+                                <p>未安装，请执行“安装缺失服务”。</p>
+                              </div>
+                            );
+                          }
+                          const service = slot.service;
+                          const isSelected = selectedService?.id === service.id;
+                          const isPendingLifecycle =
+                            pendingAction?.scope === "lifecycle" && pendingAction.serviceId === service.id;
+
+                          return (
+                            <button
+                              key={service.id}
+                              type="button"
+                              className={`service-nav-card${isSelected ? " is-active" : ""}`}
+                              onClick={() => setSelectedServiceId(service.id)}
+                              aria-pressed={isSelected}
+                            >
+                              <div className="service-nav-card-head">
+                                <h3>{service.name}</h3>
+                                <span
+                                  className={`status-dot ${isPendingLifecycle ? "loading" : statusDotClass(service.status)}`}
+                                  title={isPendingLifecycle ? "处理中" : service.statusLabel}
+                                  aria-hidden="true"
+                                />
+                              </div>
+                              <p>{service.description}</p>
+                            </button>
+                          );
+                        })
+                      ) : group.services.length > 0 ? (
                         group.services.map((service) => {
                           const isSelected = selectedService?.id === service.id;
                           const isPendingLifecycle =

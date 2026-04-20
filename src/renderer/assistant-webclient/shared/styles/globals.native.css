@@ -2416,6 +2416,11 @@
   color: #2d5fd4;
 }
 
+.assistant-native-root .code-assistant-context-badge.is-workspace {
+  background: color-mix(in srgb, #edf4ff 82%, var(--bg-elev-2));
+  color: #2d5fd4;
+}
+
 .assistant-native-root .code-assistant-context-helper {
   color: var(--ink-muted);
   font-size: 12px;

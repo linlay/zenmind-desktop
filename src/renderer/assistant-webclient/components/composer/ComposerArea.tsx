@@ -59,6 +59,75 @@ import { message } from "antd";
 import { AwaitingHtmlContainer } from "../awaiting/AwaitingHtmlContainer";
 import { getAwaitingRenderMode } from "../awaiting/protocol";
 
+const AWAITING_EXPIRED_MESSAGE =
+  "该确认已过期，请重新发起或继续当前对话";
+
+function isAwaitingIdentityMismatch(
+  activeAwaiting: { runId: string; awaitingId: string },
+  payload: AIAwaitSubmitPayloadData,
+): boolean {
+  return (
+    payload.runId !== activeAwaiting.runId ||
+    payload.awaitingId !== activeAwaiting.awaitingId
+  );
+}
+
+function isExpiredAwaitingFailure(status: string, detail: string): boolean {
+  const normalized = `${status} ${detail}`.toLowerCase();
+  return (
+    normalized.includes("unknown awaitingid") ||
+    normalized.includes("unknown awaiting id") ||
+    normalized.includes("awaiting not found") ||
+    normalized.includes("runid does not match awaiting") ||
+    normalized.includes("unmatched awaiting") ||
+    status === "not_found" ||
+    status === "already_resolved"
+  );
+}
+
+function getSubmitErrorText(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error || "");
+}
+
+/**
+ * Extract `status` and `detail` from an ApiError's `.data` payload so
+ * that `isExpiredAwaitingFailure` can match relay-side envelope fields
+ * like `{ ok: false, status: "not_found", detail: "awaiting not found" }`
+ * which would otherwise be lost because `ApiError.message` only carries
+ * the top-level `msg` field (often just "error").
+ */
+function extractSubmitErrorFields(error: unknown): {
+  status: string;
+  detail: string;
+} {
+  const fallback = { status: "", detail: getSubmitErrorText(error) };
+  if (
+    error != null &&
+    typeof error === "object" &&
+    "data" in error &&
+    error.data != null &&
+    typeof error.data === "object"
+  ) {
+    const data = error.data as Record<string, unknown>;
+    return {
+      status: typeof data.status === "string" ? data.status : fallback.status,
+      detail:
+        typeof data.detail === "string" && data.detail
+          ? data.detail
+          : typeof data.msg === "string" && data.msg
+            ? data.msg
+            : fallback.detail,
+    };
+  }
+  return fallback;
+}
+
 interface ComposerAttachment {
   id: string;
   name: string;
@@ -947,14 +1016,37 @@ export const ComposerArea: React.FC = () => {
     resetEventCache();
   }, [dispatch, resetEventCache]);
 
+  // When the submit returns "expired" / "already_resolved" / "unknown awaitingId",
+  // the backend CLI has already moved on (auto-resolved by timeout).  The current
+  // WS stream may be stale — no further run.complete event will match the old run.
+  // Force streaming off + abort the connection so the user is not stuck.
+  const forceRecoverFromExpiredAwaiting = useCallback(() => {
+    dispatch({ type: "CLEAR_ACTIVE_AWAITING" });
+    resetEventCache();
+    state.abortController?.abort();
+    dispatch({ type: "SET_STREAMING", streaming: false });
+    dispatch({ type: "SET_ABORT_CONTROLLER", controller: null });
+  }, [dispatch, resetEventCache, state.abortController]);
+
   const handleAwaitingSubmit = useCallback(
     async (payload: AIAwaitSubmitPayloadData) => {
       if (!activeAwaiting) return;
+      const activePayload = {
+        ...payload,
+        runId: activeAwaiting.runId,
+        awaitingId: activeAwaiting.awaitingId,
+      };
+      if (isAwaitingIdentityMismatch(activeAwaiting, payload)) {
+        dispatch({
+          type: "APPEND_DEBUG",
+          line: `[awaiting] repaired stale submit awaitingId=${payload.awaitingId}, runId=${payload.runId} -> awaitingId=${activePayload.awaitingId}, runId=${activePayload.runId}`,
+        });
+      }
       try {
         const response = await submitAwaiting({
-          runId: payload.runId,
-          awaitingId: payload.awaitingId,
-          params: payload.params,
+          runId: activePayload.runId,
+          awaitingId: activePayload.awaitingId,
+          params: activePayload.params,
         });
         const responseData = response.data as Record<string, unknown> | null;
         const accepted = Boolean(responseData?.accepted ?? true);
@@ -966,7 +1058,12 @@ export const ComposerArea: React.FC = () => {
         if (!accepted) {
           if (status === "already_resolved") {
             void message.info("已被其他终端提交");
-            clearActiveAwaiting();
+            forceRecoverFromExpiredAwaiting();
+            return response;
+          }
+          if (isExpiredAwaitingFailure(status, detail)) {
+            void message.warning(AWAITING_EXPIRED_MESSAGE);
+            forceRecoverFromExpiredAwaiting();
             return response;
           }
           throw `提交未命中：${detail}`;
@@ -978,10 +1075,17 @@ export const ComposerArea: React.FC = () => {
           line: `[awaiting] submitted awaitingId=${activeAwaiting.awaitingId}, runId=${activeAwaiting.runId}, detail=${detail}`,
         });
       } catch (error) {
+        const { status: errStatus, detail: errDetail } =
+          extractSubmitErrorFields(error);
+        if (isExpiredAwaitingFailure(errStatus, errDetail)) {
+          void message.warning(AWAITING_EXPIRED_MESSAGE);
+          forceRecoverFromExpiredAwaiting();
+          return;
+        }
         return error;
       }
     },
-    [activeAwaiting, awaitingAnswers, clearActiveAwaiting, dispatch],
+    [activeAwaiting, awaitingAnswers, clearActiveAwaiting, forceRecoverFromExpiredAwaiting, dispatch],
   );
 
   const handlePatchActiveAwaiting = useCallback(

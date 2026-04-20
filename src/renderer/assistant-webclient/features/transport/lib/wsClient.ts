@@ -9,6 +9,8 @@ export type WsConnectionStatus =
 	| "connected"
 	| "error";
 
+export type WsAccessTokenRefreshReason = "missing" | "unauthorized";
+
 interface WsRequestFrame {
 	frame: "request";
 	type: string;
@@ -81,6 +83,10 @@ export interface WsClientOptions {
 	accessToken?: string;
 	onStatusChange?: (status: WsConnectionStatus) => void;
 	onPush?: (frame: WsPushFrame) => void;
+	onAccessTokenChange?: (token: string) => void;
+	resolveAccessToken?: (
+		reason: WsAccessTokenRefreshReason,
+	) => Promise<string | null>;
 	heartbeatTimeoutMs?: number;
 	reconnectBaseDelayMs?: number;
 	reconnectMaxDelayMs?: number;
@@ -297,6 +303,8 @@ export class WsClient {
 	private readonly activeStreams = new Map<string, ActiveStream>();
 	private onStatusChange?: (status: WsConnectionStatus) => void;
 	private onPush?: (frame: WsPushFrame) => void;
+	private onAccessTokenChange?: (token: string) => void;
+	private resolveAccessToken?: WsClientOptions["resolveAccessToken"];
 	private readonly heartbeatTimeoutMs: number;
 	private readonly reconnectBaseDelayMs: number;
 	private readonly reconnectMaxDelayMs: number;
@@ -307,6 +315,8 @@ export class WsClient {
 		this.accessToken = String(options.accessToken || "").trim();
 		this.onStatusChange = options.onStatusChange;
 		this.onPush = options.onPush;
+		this.onAccessTokenChange = options.onAccessTokenChange;
+		this.resolveAccessToken = options.resolveAccessToken;
 		this.heartbeatTimeoutMs = Math.max(1000, options.heartbeatTimeoutMs ?? 45_000);
 		this.reconnectBaseDelayMs = Math.max(100, options.reconnectBaseDelayMs ?? 1_000);
 		this.reconnectMaxDelayMs = Math.max(
@@ -329,6 +339,12 @@ export class WsClient {
 		}
 		if (options.onPush !== undefined) {
 			this.onPush = options.onPush;
+		}
+		if (options.onAccessTokenChange !== undefined) {
+			this.onAccessTokenChange = options.onAccessTokenChange;
+		}
+		if (options.resolveAccessToken !== undefined) {
+			this.resolveAccessToken = options.resolveAccessToken;
 		}
 	}
 
@@ -549,10 +565,42 @@ export class WsClient {
 		}
 
 		this.expectedClose = false;
+		this.clearReconnectTimer();
 		this.setStatus("connecting");
 		this.lastSeenAt = Date.now();
 
-		this.connectPromise = new Promise<void>((resolve, reject) => {
+		this.connectPromise = (async () => {
+			try {
+				await this.openSocket();
+			} catch (error) {
+				if (signal?.aborted) {
+					throw error;
+				}
+				const refreshed = await this.refreshAccessToken("unauthorized");
+				if (!refreshed) {
+					throw error;
+				}
+				await this.openSocket();
+			}
+		})()
+			.catch((error) => {
+				if (this.expectedClose) {
+					this.setStatus("disconnected");
+				} else {
+					this.setStatus("error");
+					this.scheduleReconnect();
+				}
+				throw error;
+			})
+			.finally(() => {
+				this.connectPromise = null;
+			});
+
+		return this.waitForConnection(signal);
+	}
+
+	private openSocket(): Promise<void> {
+		return new Promise<void>((resolve, reject) => {
 			const socket = new WebSocket(buildWsUrl(this.accessToken));
 			this.socket = socket;
 
@@ -576,10 +624,7 @@ export class WsClient {
 
 			const handleError = () => {
 				cleanupBeforeOpen();
-				this.connectPromise = null;
 				this.socket = null;
-				this.setStatus("error");
-				this.scheduleReconnect();
 				reject(
 					toWsConnectionError(new Error("WebSocket connection failed"), {
 						hasAccessToken: Boolean(this.accessToken),
@@ -589,13 +634,7 @@ export class WsClient {
 
 			const handleCloseBeforeOpen = () => {
 				cleanupBeforeOpen();
-				this.connectPromise = null;
-				if (!this.expectedClose) {
-					this.setStatus("error");
-					this.scheduleReconnect();
-				} else {
-					this.setStatus("disconnected");
-				}
+				this.socket = null;
 				reject(
 					toWsConnectionError(new WsClientDisconnectedError(), {
 						hasAccessToken: Boolean(this.accessToken),
@@ -606,11 +645,7 @@ export class WsClient {
 			socket.addEventListener("open", handleOpen);
 			socket.addEventListener("error", handleError);
 			socket.addEventListener("close", handleCloseBeforeOpen);
-		}).finally(() => {
-			this.connectPromise = null;
 		});
-
-		return this.waitForConnection(signal);
 	}
 
 	private waitForConnection(signal?: AbortSignal): Promise<void> {
@@ -643,6 +678,25 @@ export class WsClient {
 					reject(error);
 				});
 		});
+	}
+
+	private async refreshAccessToken(
+		reason: WsAccessTokenRefreshReason,
+	): Promise<boolean> {
+		if (!this.resolveAccessToken) {
+			return false;
+		}
+
+		const nextToken = String(
+			(await this.resolveAccessToken(reason)) || "",
+		).trim();
+		if (!nextToken) {
+			return false;
+		}
+
+		this.accessToken = nextToken;
+		this.onAccessTokenChange?.(nextToken);
+		return true;
 	}
 
 	private readonly handleMessage = (event: MessageEvent) => {

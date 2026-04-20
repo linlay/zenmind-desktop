@@ -146,8 +146,13 @@ test("ensureManagedClaudeCodeRelayPlugin bootstraps a managed plugin and marks i
   assert.match(relayScript, /registerRespawnCli/);
   assert.match(relayScript, /childRestarting/);
   assert.match(relayScript, /spawnCliProcess/);
+  assert.match(relayScript, /"--permission-mode",\s*"default"/);
+  assert.match(relayScript, /"--add-dir",\s*effectiveCwd/);
+  assert.doesNotMatch(relayScript, /"--add-dir",\s*"\/"/);
+  assert.doesNotMatch(relayScript, /--dangerously-skip-permissions/);
   assert.match(startScript, /runtime\/bun\/bun/);
   assert.equal(configTemplate.repoPath, path.join(installDir, "runtime", "claude-code-guotai"));
+  assert.equal(configTemplate.fullAccessGranted, true);
   assert.doesNotMatch(relayScript, /serveDashboard/);
   assert.doesNotMatch(relayScript, /CLAUDE_LIVE_LOG/);
   assert.equal(initResult.ok, true);
@@ -179,7 +184,7 @@ test("parseRelayStatusPayload accepts both nested relay status envelopes and fla
   );
 });
 
-test("ensureCodeAssistantReady writes managed config, syncs codeAssistant agent, and starts the managed plugin in restricted mode by default", async () => {
+test("ensureCodeAssistantReady writes managed config, syncs codeAssistant agent, and starts the managed plugin in workspace-first mode", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-code-assistant-ready-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const app = createApp(userDataRoot);
@@ -238,7 +243,7 @@ test("ensureCodeAssistantReady writes managed config, syncs codeAssistant agent,
       path.join(__testInternals.getPluginRoot(app), "runtime", "claude-code-guotai")
     );
     assert.equal(config.enabled, true);
-    assert.equal(config.fullAccessGranted, false);
+    assert.equal(config.fullAccessGranted, true);
     assert.ok(config.authToken);
     assert.match(agentContent, /baseUrl: http:\/\/127\.0\.0\.1:3210/);
     assert.match(agentContent, new RegExp(`token: "${config.authToken}"`));
@@ -252,7 +257,7 @@ test("ensureCodeAssistantReady writes managed config, syncs codeAssistant agent,
   }
 });
 
-test("setCodeAssistantFullAccessGranted enables full access directly and restarts the managed service", async () => {
+test("setCodeAssistantFullAccessGranted is a compatibility no-op that keeps workspace-first mode", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-code-assistant-full-access-"));
   const app = createApp(path.join(tempRoot, "user-data"));
   ensureManagedClaudeCodeRelayPlugin(app);
@@ -272,14 +277,18 @@ test("setCodeAssistantFullAccessGranted enables full access directly and restart
     userSelectedRepo: true
   });
 
+  let stopCalled = false;
+  let startCalled = false;
   const result = await setCodeAssistantFullAccessGranted(app, true, null, {
     getServiceState: async () => ({ ...serviceState }),
     initializeService: async () => ({ ok: true, message: "代码助手已初始化。" }),
     startService: async () => {
+      startCalled = true;
       serviceState.status = "running";
       return { ok: true, message: "代码助手已启动。" };
     },
     stopService: async () => {
+      stopCalled = true;
       serviceState.status = "stopped";
       return { ok: true, message: "代码助手已停止。" };
     },
@@ -291,8 +300,11 @@ test("setCodeAssistantFullAccessGranted enables full access directly and restart
   assert.equal(result.ok, true);
   assert.equal("prompted" in result, false);
   assert.equal(result.status.enabled, true);
+  assert.match(result.message, /工作空间优先/u);
   assert.equal(config.enabled, true);
   assert.equal(config.fullAccessGranted, true);
+  assert.equal(stopCalled, false);
+  assert.equal(startCalled, false);
 
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });

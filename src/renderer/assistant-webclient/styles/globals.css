@@ -2477,6 +2477,11 @@ html[data-theme='dark'] .worker-chat-float-btn:hover {
   color: #2d5fd4;
 }
 
+.code-assistant-context-badge.is-workspace {
+  background: color-mix(in srgb, #edf4ff 82%, var(--bg-elev-2));
+  color: #2d5fd4;
+}
+
 .code-assistant-context-helper {
   color: var(--ink-muted);
   font-size: 12px;

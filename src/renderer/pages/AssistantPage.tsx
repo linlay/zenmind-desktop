@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { NativeApp } from "../assistant-webclient/NativeApp";
 import { useServices } from "../services/ServicesContext";
 import type { CodeAssistantRepoContext, CodeAssistantStatus, ServiceState } from "@shared/contracts";
-import type { HostCodeAssistantAccessMode } from "../assistant-webclient/lib/host";
 import "../assistant-page.css";
 
 type AssistantPageProps = {
@@ -11,8 +10,6 @@ type AssistantPageProps = {
   visible?: boolean;
 };
 
-const PERMISSION_BANNER_ACK_STORAGE_KEY = "zenmind-desktop.code-assistant.permission-banner.ack";
-const PERMISSION_BANNER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const MANAGED_CODE_ASSISTANT_AGENT_KEY = "codeAssistant";
 const CODE_ASSISTANT_CLI_WAIT_TIMEOUT_MS = 20_000;
 const CODE_ASSISTANT_CLI_WAIT_INTERVAL_MS = 800;
@@ -22,8 +19,7 @@ type ActionState =
   | "starting"
   | "restarting"
   | "preparing-code-assistant"
-  | "restarting-code-assistant"
-  | "updating-code-access";
+  | "restarting-code-assistant";
 
 type ActionResult = {
   ok: boolean;
@@ -31,29 +27,6 @@ type ActionResult = {
   prompted?: boolean;
   status?: CodeAssistantStatus;
 };
-
-function readPermissionBannerAckAt() {
-  if (typeof window === "undefined") {
-    return 0;
-  }
-  const raw = window.localStorage.getItem(PERMISSION_BANNER_ACK_STORAGE_KEY);
-  if (!raw) {
-    return 0;
-  }
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
-function writePermissionBannerAckAt(timestamp: number) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(PERMISSION_BANNER_ACK_STORAGE_KEY, String(timestamp));
-}
-
-function shouldShowPermissionBanner(lastAckAt: number) {
-  return lastAckAt <= 0 || Date.now() - lastAckAt >= PERMISSION_BANNER_INTERVAL_MS;
-}
 
 function wait(ms: number) {
   return new Promise<void>((resolve) => {
@@ -75,7 +48,6 @@ export function AssistantPage({ hostTheme, visible = true }: AssistantPageProps)
   const [codeAssistantLoading, setCodeAssistantLoading] = useState(true);
   const [repoContext, setRepoContext] = useState<CodeAssistantRepoContext | null>(null);
   const [repoPending, setRepoPending] = useState(false);
-  const [permissionBannerAckAt, setPermissionBannerAckAt] = useState(() => readPermissionBannerAckAt());
   const autoPrepareKeyRef = useRef("");
   const hasLoadedCodeAssistantRef = useRef(false);
 
@@ -146,7 +118,7 @@ export function AssistantPage({ hostTheme, visible = true }: AssistantPageProps)
         }
         setCodeAssistantStatus({
           enabled: false,
-          fullAccessGranted: false,
+          fullAccessGranted: true,
           running: false,
           configured: false,
           repoSelected: false,
@@ -326,7 +298,7 @@ export function AssistantPage({ hostTheme, visible = true }: AssistantPageProps)
       codeRelayService.status,
       codeAssistantStatus.enabled ? "enabled" : "disabled",
       codeAssistantStatus.running ? "relay-running" : "relay-stopped",
-      codeAssistantStatus.fullAccessGranted ? "full-access" : "restricted",
+      codeAssistantStatus.repoSelected ? "workspace-selected" : "workspace-missing",
       codeAssistantStatus.error ?? ""
     ].join("|");
     if (autoPrepareKeyRef.current === attemptKey) {
@@ -398,21 +370,18 @@ export function AssistantPage({ hostTheme, visible = true }: AssistantPageProps)
   }
 
   const pending = actionState !== "idle";
-  const updatingAccess = actionState === "updating-code-access";
   const shouldKeepLiveShell =
     visible &&
     coreAssistantReady &&
     codeAssistantStatus?.enabled === true &&
-    (assistantReady || updatingAccess || codeAssistantRecovering || codeAssistantStatus?.running === true);
+    (assistantReady || codeAssistantRecovering || codeAssistantStatus?.running === true);
   const codeAssistantStatusLabel = resolveCodeAssistantStatusLabel(codeAssistantStatus, codeRelayService);
   const repoSelected = codeAssistantStatus?.repoSelected === true;
-  const accessMode = codeAssistantStatus?.fullAccessGranted ? "global" : "folder";
-  const accessModeLabel = resolveAccessModeLabel(codeAssistantStatus, repoSelected);
   const serviceStatuses = [
     { label: "小宅助理", value: service.statusLabel },
     { label: "智能体平台", value: platformService.statusLabel },
     { label: "代码助手", value: codeAssistantStatusLabel },
-    { label: "访问模式", value: accessModeLabel }
+    { label: "工作空间", value: resolveWorkspaceStatusLabel(codeAssistantStatus, repoSelected) }
   ];
   const detailMessage = resolveDetailMessage(
     service,
@@ -446,93 +415,18 @@ export function AssistantPage({ hostTheme, visible = true }: AssistantPageProps)
           retryPendingMessage
         );
   const primaryActionLabel = shouldPrepareCodeAssistant
-    ? pending && !updatingAccess
+    ? pending
       ? "准备中..."
       : codeAssistantStatus?.enabled
         ? "启动代码助手"
         : "启用代码助手"
-    : pending && !updatingAccess
+    : pending
       ? "准备中..."
       : "重新准备小宅助理";
-  const alternateAccessMode: HostCodeAssistantAccessMode = accessMode === "global" ? "folder" : "global";
-  const alternateAccessModeLabel = alternateAccessMode === "global" ? "切到全局访问" : "切到指定文件夹";
   const showManualCodeAssistantRestart =
     Boolean(codeAssistantStatus?.enabled) &&
     Boolean(codeAssistantStatus?.running) &&
     codeAssistantStatus?.cliConnected === false;
-  const acknowledgePermissionBanner = () => {
-    const nextAckAt = Date.now();
-    setPermissionBannerAckAt(nextAckAt);
-    writePermissionBannerAckAt(nextAckAt);
-  };
-  const showPermissionBanner = visible && assistantReady && shouldShowPermissionBanner(permissionBannerAckAt);
-  const handleSelectAccessMode = (targetMode: HostCodeAssistantAccessMode) => {
-    if (!codeAssistantStatus) {
-      return;
-    }
-    if (targetMode === "global") {
-      if (codeAssistantStatus.fullAccessGranted) {
-        return;
-      }
-      void runAction(
-        "updating-code-access",
-        () => window.electronAPI.codeAssistant.setFullAccessGranted(true),
-        "正在切换为全局访问...",
-        {
-          onSettled: (result) => {
-            if (result.ok || result.prompted) {
-              acknowledgePermissionBanner();
-            }
-          }
-        }
-      );
-      return;
-    }
-
-    void runAction(
-      "updating-code-access",
-      async () => {
-        let latestStatus = codeAssistantStatus;
-        let latestContext = repoContext;
-
-        if (!latestStatus.repoSelected) {
-          setRepoPending(true);
-          try {
-            const repoResult = await window.electronAPI.codeAssistant.selectRepoPath();
-            setRepoContext(repoResult.context);
-            latestContext = repoResult.context;
-            const refreshedStatus = await window.electronAPI.codeAssistant.getStatus();
-            setCodeAssistantStatus(refreshedStatus);
-            latestStatus = refreshedStatus;
-            if (!repoResult.ok || !repoResult.context.userSelected) {
-              return {
-                ok: false,
-                message: repoResult.message || "请先选择一个工作目录。",
-                status: refreshedStatus
-              };
-            }
-          } finally {
-            setRepoPending(false);
-          }
-        }
-
-        if (!latestStatus.fullAccessGranted) {
-          const latestRepoPath = latestContext?.repoPath ?? "";
-          const latestRepoName = latestRepoPath
-            ? latestRepoPath.split(/[\\/]/u).filter(Boolean).pop() ?? latestRepoPath
-            : "";
-          return {
-            ok: true,
-            message: `代码助手已切换为指定文件夹模式${latestRepoName ? `：${latestRepoName}` : ""}`,
-            status: latestStatus
-          };
-        }
-
-        return window.electronAPI.codeAssistant.setFullAccessGranted(false);
-      },
-      repoSelected ? "正在切换为指定文件夹模式..." : "正在选择代码助手工作目录..."
-    );
-  };
 
   const handleSelectRepo = async () => {
     setRepoPending(true);
@@ -587,57 +481,11 @@ export function AssistantPage({ hostTheme, visible = true }: AssistantPageProps)
     ? "加载中..."
     : repoContext.userSelected && repoBasename
       ? repoBasename
-      : "选择工作目录";
+      : "选择工作空间";
 
   if (shouldKeepLiveShell) {
     return (
       <section className="assistant-route-shell assistant-route-shell-live">
-        {feedback && (
-          <div
-            className={`assistant-live-feedback ${
-              /失败|异常|不存在|不是 Git|未提交修改/u.test(feedback) ? "is-warning" : ""
-            }`.trim()}
-          >
-            {feedback}
-          </div>
-        )}
-        {showPermissionBanner && (
-          <div className="assistant-live-toolbar">
-            <div className="assistant-live-toolbar-copy">
-              <span className={`assistant-access-indicator ${codeAssistantStatus?.fullAccessGranted ? "is-full-access" : "is-limited"}`}>
-                代码助手 {accessModeLabel}
-              </span>
-              <p>WS 模式下会保持常驻挂载，并在后台自动维持连接。关闭或完成设置后，7 天内不再提醒。</p>
-            </div>
-            <div className="assistant-live-toolbar-actions">
-              {showManualCodeAssistantRestart && (
-                <button
-                  type="button"
-                  className="primary-link secondary-link assistant-action-button"
-                  disabled={pending}
-                  onClick={handleRestartCodeAssistant}
-                >
-                  {actionState === "restarting-code-assistant" ? "重启中..." : "重启代码助手"}
-                </button>
-              )}
-              <button
-                type="button"
-                className="assistant-live-toolbar-close"
-                onClick={acknowledgePermissionBanner}
-              >
-                关闭
-              </button>
-              <button
-                type="button"
-                className="primary-link secondary-link assistant-action-button"
-                disabled={pending || !codeAssistantStatus}
-                onClick={() => handleSelectAccessMode(alternateAccessMode)}
-              >
-                {updatingAccess ? "切换中..." : alternateAccessModeLabel}
-              </button>
-            </div>
-          </div>
-        )}
         <NativeApp
           serviceBaseUrl={service.healthMeta.webUrl}
           themeMode={hostTheme}
@@ -665,23 +513,6 @@ export function AssistantPage({ hostTheme, visible = true }: AssistantPageProps)
                   message: codeAssistantStatus.recovering
                     ? "代码助手正在后台重连 CLI，请稍候..."
                     : undefined
-                }
-              : null
-          }
-          codeAssistantAccess={
-            codeAssistantStatus
-              ? {
-                  agentKey: MANAGED_CODE_ASSISTANT_AGENT_KEY,
-                  mode: codeAssistantStatus.fullAccessGranted ? "global" : "folder",
-                  pending: updatingAccess,
-                  title: codeAssistantStatus.fullAccessGranted
-                    ? "当前为全局访问"
-                    : repoSelected
-                      ? "当前仅允许访问所选目录"
-                      : "先选择一个目录，再切到指定文件夹模式",
-                  globalLabel: "全局访问",
-                  folderLabel: "指定文件夹",
-                  onSelectMode: handleSelectAccessMode
                 }
               : null
           }
@@ -751,15 +582,6 @@ export function AssistantPage({ hostTheme, visible = true }: AssistantPageProps)
               {primaryActionLabel}
             </button>
 
-            <button
-              type="button"
-              className="primary-link secondary-link assistant-action-button"
-              disabled={pending || !codeAssistantStatus}
-              onClick={() => handleSelectAccessMode(alternateAccessMode)}
-            >
-              {updatingAccess ? "切换中..." : alternateAccessModeLabel}
-            </button>
-
             <Link className="primary-link secondary-link" to="/control-center">
               前往控制中心
             </Link>
@@ -801,12 +623,10 @@ function resolveDetailMessage(
   if (platformService.status !== "running") {
     return platformService.message || "智能体平台尚未就绪，Desktop 正在尝试自动拉起它。";
   }
-  if (!codeAssistantStatus.fullAccessGranted) {
-    if (!codeAssistantStatus.repoSelected) {
-      return "代码助手当前准备切到指定文件夹模式，但还没有选定工作目录。选择一个文件夹后，它就只会在该目录里工作。";
-    }
-    return "代码助手当前只会访问你选定的工作目录。需要时可以随时切回全局访问，无需退出当前会话。";
+  if (!codeAssistantStatus.repoSelected) {
+    return "代码助手尚未选择工作空间。选择后，它会优先在该目录内处理；访问外部位置时会请求确认。";
   }
+  return "代码助手会优先在当前工作空间内处理；访问外部位置时会通过确认继续。";
   return webclientService.message || "小宅助理当前还没有进入可用状态。";
 }
 
@@ -821,10 +641,7 @@ function resolveCodeAssistantStatusLabel(
     return "已停用";
   }
   if (status.ready) {
-    if (status.fullAccessGranted) {
-      return "运行中（全局）";
-    }
-    return status.repoSelected ? "运行中（指定文件夹）" : "运行中（待选目录）";
+    return status.repoSelected ? "运行中" : "运行中（待选工作空间）";
   }
   if (status.running && !status.cliConnected) {
     return "已断连";
@@ -838,12 +655,9 @@ function resolveCodeAssistantStatusLabel(
   return relayService?.statusLabel ?? "待启动";
 }
 
-function resolveAccessModeLabel(status: CodeAssistantStatus | null, repoSelected: boolean) {
+function resolveWorkspaceStatusLabel(status: CodeAssistantStatus | null, repoSelected: boolean) {
   if (!status) {
     return "检查中";
   }
-  if (status.fullAccessGranted) {
-    return "全局访问";
-  }
-  return repoSelected ? "指定文件夹" : "指定文件夹（待选择）";
+  return repoSelected ? "已选择" : "待选择";
 }

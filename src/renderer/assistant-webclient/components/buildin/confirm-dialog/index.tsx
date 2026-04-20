@@ -128,10 +128,14 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   const doSubmit = useCallback((payload: AIAwaitSubmitPayloadData) => {
     setLoading(true);
     const pending = callbackRef.current?.onSubmit?.(
-      normalizeSubmitPayload(payload, questions),
+      normalizeSubmitPayload({
+        ...payload,
+        runId: data?.runId || "",
+        awaitingId: data?.awaitingId || "",
+      }, questions),
     );
     pending?.finally(() => setLoading(false));
-  }, [questions]);
+  }, [data?.awaitingId, data?.runId, questions]);
 
   const doIgnore = useCallback(() => {
     callbackRef.current?.onSubmit?.({

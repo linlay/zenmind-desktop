@@ -1149,6 +1149,15 @@ a {
   background: rgba(31, 35, 41, 0.04);
 }
 
+.service-nav-card.is-placeholder {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.service-nav-card.is-placeholder:hover {
+  background: transparent;
+}
+
 :root[data-theme="dark"] .service-nav-card:hover {
   background: rgba(255, 255, 255, 0.04);
 }

@@ -155,7 +155,11 @@ export const QuestionDialog: React.FC<ConfirmDialogProps> = ({
     setSubmitError("");
     try {
       const result = await callbackRef.current?.onSubmit?.(
-        normalizeSubmitPayload(payload, questions),
+        normalizeSubmitPayload({
+          ...payload,
+          runId: data?.runId || "",
+          awaitingId: data?.awaitingId || "",
+        }, questions),
       );
       const errorText = getSubmitErrorText(result);
       if (errorText) {
@@ -164,7 +168,7 @@ export const QuestionDialog: React.FC<ConfirmDialogProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [questions]);
+  }, [data?.awaitingId, data?.runId, questions]);
 
   const doIgnore = useCallback(() => {
     callbackRef.current?.onSubmit?.({

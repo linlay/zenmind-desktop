@@ -475,7 +475,6 @@ describe("WsClient", () => {
 		const secondSocket = MockWebSocket.instances[1];
 		expect(secondSocket.url).toBe("ws://localhost:3000/ws?token=token_b");
 	});
-
 	it("swallows reconnect handshake failures while preserving error state", async () => {
 		jest.useFakeTimers();
 		const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -513,5 +512,33 @@ describe("WsClient", () => {
 			client.disconnect();
 			warnSpy.mockRestore();
 		}
+	});
+
+	it("refreshes the access token before reconnecting after an established socket drops", async () => {
+		jest.useFakeTimers();
+		const onAccessTokenChange = jest.fn();
+		const resolveAccessToken = jest.fn().mockResolvedValue("token_b");
+		const client = createClient({
+			accessToken: "token_a",
+			onAccessTokenChange,
+			resolveAccessToken,
+			reconnectBaseDelayMs: 1_000,
+			reconnectMaxDelayMs: 1_000,
+		});
+
+		const firstConnect = client.connect();
+		const firstSocket = MockWebSocket.instances[0];
+		firstSocket.open();
+		await expect(firstConnect).resolves.toBeUndefined();
+
+		firstSocket.close(1006, "server disconnected");
+		expect(client.getStatus()).toBe("error");
+
+		jest.advanceTimersByTime(1_000);
+		expect(resolveAccessToken).toHaveBeenCalledWith("unauthorized");
+		expect(MockWebSocket.instances).toHaveLength(2);
+		const secondSocket = MockWebSocket.instances[1];
+		expect(secondSocket.url).toBe("ws://localhost:3000/ws?token=token_b");
+		expect(onAccessTokenChange).toHaveBeenCalledWith("token_b");
 	});
 });

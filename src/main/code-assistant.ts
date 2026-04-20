@@ -32,9 +32,9 @@ const BUNDLED_RUNTIME_RESOURCE_DIR = "code-assistant-runtime";
 const BUNDLED_RUNTIME_DIRNAME = "claude-code-guotai";
 const BUNDLED_RUNTIME_INSTALL_DIRNAME = "runtime";
 const BUNDLED_BUN_DIRNAME = "bun";
-const MANAGED_ANTHROPIC_BASE_URL = "https://platform.minimaxi.com";
+const MANAGED_ANTHROPIC_BASE_URL = "https://api.minimaxi.com/anthropic";
 const MANAGED_ANTHROPIC_API_KEY = "sk-cp-MrreVGwHO4N3UzVS9MxR8kKvLsBEIRatEDFxmR__QY0n3NdU0YJ1XZiEprdo4jCr3URdwM2UAOkyVxpMqEyQKd3vXue1T2WreNAN-yD4wA47QcZ1ZROcXQw";
-const MANAGED_ANTHROPIC_MODEL = "minimax2.7";
+const MANAGED_ANTHROPIC_MODEL = "MiniMax-M2.7";
 const DEFAULT_RELAY_PORT = 3210;
 const DEFAULT_DASHBOARD_PORT = 3456;
 const DEFAULT_AGENT_TIMEOUT_MS = 300000;
@@ -203,7 +203,7 @@ function defaultManagedConfig(app?: App): ManagedClaudeCodeRelayConfig {
     relayPort: DEFAULT_RELAY_PORT,
     dashboardPort: DEFAULT_DASHBOARD_PORT,
     authToken: "",
-    fullAccessGranted: false,
+    fullAccessGranted: true,
     enabled: false,
     userSelectedRepo: false
   };
@@ -232,7 +232,7 @@ function normalizeManagedConfig(
     relayPort: normalizeNumber(raw.relayPort, DEFAULT_RELAY_PORT),
     dashboardPort: normalizeNumber(raw.dashboardPort, DEFAULT_DASHBOARD_PORT),
     authToken: normalizeString(raw.authToken, ""),
-    fullAccessGranted: normalizeBoolean(raw.fullAccessGranted, false),
+    fullAccessGranted: normalizeBoolean(raw.fullAccessGranted, true),
     enabled: normalizeBoolean(raw.enabled, false),
     userSelectedRepo: normalizeBoolean(raw.userSelectedRepo, false)
   };
@@ -530,22 +530,14 @@ async function main() {
     "--verbose",
   ];
 
-  if (config.fullAccessGranted) {
-    cliArgs.push(
-      "--dangerously-skip-permissions",
-      "--setting-sources",
-      "",
-      "--add-dir",
-      "/",
-    );
-  } else {
-    cliArgs.push(
-      "--setting-sources",
-      "",
-      "--add-dir",
-      effectiveCwd,
-    );
-  }
+  cliArgs.push(
+    "--setting-sources",
+    "",
+    "--permission-mode",
+    "default",
+    "--add-dir",
+    effectiveCwd,
+  );
 
   let exiting = false;
   let childRestarting = false;
@@ -1262,7 +1254,7 @@ export async function setCodeAssistantEnabled(
 
 export async function setCodeAssistantFullAccessGranted(
   app: App,
-  granted: boolean,
+  _granted: boolean,
   ownerWindow: BrowserWindow | null,
   deps: SetCodeAssistantEnabledDeps
 ): Promise<CodeAssistantCommandResult> {
@@ -1278,18 +1270,9 @@ export async function setCodeAssistantFullAccessGranted(
   }
 
   const previousConfig = readManagedConfig(app) ?? defaultManagedConfig(app);
-  if (!granted && !previousConfig.userSelectedRepo) {
-    return buildCommandResult(
-      app,
-      serviceState,
-      false,
-      "请先选择一个工作目录，再切换到指定文件夹模式。",
-      deps
-    );
-  }
   const nextConfig = updateManagedConfig(app, {
     enabled: previousConfig.enabled,
-    fullAccessGranted: granted,
+    fullAccessGranted: true,
     authToken: previousConfig.authToken || generateToken()
   });
 
@@ -1306,29 +1289,12 @@ export async function setCodeAssistantFullAccessGranted(
     );
   }
 
-  if (nextConfig.enabled) {
-    const restartResult = await restartManagedCodeAssistantService(app, serviceState, deps);
-    return buildCommandResult(
-      app,
-      restartResult.serviceState,
-      restartResult.ok,
-      restartResult.ok
-        ? granted
-          ? "代码助手已切换为全局访问。"
-          : "代码助手已切换为指定文件夹模式。"
-        : restartResult.message,
-      deps
-    );
-  }
-
   serviceState = await deps.getServiceState(app, CLAUDE_CODE_RELAY_PLUGIN_ID);
   return buildCommandResult(
     app,
     serviceState,
     true,
-    granted
-      ? "已为代码助手保存全局访问偏好，启用后生效。"
-      : "已为代码助手保存指定文件夹偏好，启用后生效。",
+    "代码助手已使用工作空间优先模式；访问外部位置时会请求确认。",
     deps
   );
 }
@@ -1413,15 +1379,15 @@ export async function updateCodeAssistantRepoPath(
     return { ok: false, message: "未指定目录。", context: getCodeAssistantRepoContext(app) };
   }
   if (!fs.existsSync(trimmed) || !fs.statSync(trimmed).isDirectory()) {
-    return { ok: false, message: `目录不存在：${trimmed}`, context: getCodeAssistantRepoContext(app) };
+    return { ok: false, message: `工作空间不存在：${trimmed}`, context: getCodeAssistantRepoContext(app) };
   }
   updateManagedConfig(app, { workingDirectory: trimmed, userSelectedRepo: true });
   const restart = await restartIfRunning(app, deps);
   const context = getCodeAssistantRepoContext(app);
   if (!restart.ok) {
-    return { ok: false, message: `已切换目录，但重启代码助手失败：${restart.message}`, context };
+    return { ok: false, message: `已切换工作空间，但重启代码助手失败：${restart.message}`, context };
   }
-  return { ok: true, message: `代码助手目录已切换为：${trimmed}`, context };
+  return { ok: true, message: `代码助手工作空间已切换为：${trimmed}`, context };
 }
 
 export async function setCodeAssistantBranch(
@@ -1437,10 +1403,10 @@ export async function setCodeAssistantBranch(
   const config = readManagedConfig(app) ?? defaultManagedConfig(app);
   const cwd = effectiveWorkingDirectory(config);
   if (!cwd || !fs.existsSync(cwd)) {
-    return { ok: false, message: "代码助手工作目录不存在。", context: getCodeAssistantRepoContext(app) };
+    return { ok: false, message: "代码助手工作空间不存在。", context: getCodeAssistantRepoContext(app) };
   }
   if (!fs.existsSync(path.join(cwd, ".git"))) {
-    return { ok: false, message: "当前工作目录不是 Git 仓库。", context: getCodeAssistantRepoContext(app) };
+    return { ok: false, message: "当前工作空间不是 Git 仓库。", context: getCodeAssistantRepoContext(app) };
   }
   const currentContext = getCodeAssistantRepoContext(app);
   if (currentContext.currentBranch === target) {

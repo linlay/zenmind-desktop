@@ -458,7 +458,7 @@ function registerIpcHandlers() {
   ipcMain.handle("codeAssistant.selectRepoPath", async () => {
     const context = getCodeAssistantRepoContext(app);
     const defaultPath = context.repoExists ? context.repoPath : app.getPath("home");
-    const result = await showDirectoryDialog("选择代码助手工作目录", defaultPath);
+    const result = await showDirectoryDialog("选择代码助手工作空间", defaultPath);
     if (result.canceled || result.filePaths.length === 0) {
       return { ok: false, message: "已取消选择。", context };
     }

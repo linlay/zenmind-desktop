@@ -1,11 +1,7 @@
 import React from "react";
 import { useAppState } from "@/app/state/AppContext";
 import { resolveCurrentWorkerSummary } from "@/features/workers/lib/currentWorker";
-import {
-	resolveHostCodeAssistantAccess,
-	resolveHostCodeAssistantRepo,
-	type HostCodeAssistantAccessMode,
-} from "@/shared/utils/host";
+import { resolveHostCodeAssistantRepo } from "@/shared/utils/host";
 import { MaterialIcon } from "@/shared/ui/MaterialIcon";
 import { UiButton } from "@/shared/ui/UiButton";
 
@@ -33,16 +29,15 @@ function isCodeAssistantWorker(
 export const CodeAssistantContextBar: React.FC = () => {
 	const state = useAppState();
 	const currentWorker = resolveCurrentWorkerSummary(state);
-	const codeAssistantAccess = resolveHostCodeAssistantAccess();
 	const codeAssistantRepo = resolveHostCodeAssistantRepo();
 	const [branchMenuOpen, setBranchMenuOpen] = React.useState(false);
 	const menuRef = React.useRef<HTMLDivElement | null>(null);
 
 	const showBar =
-		Boolean(codeAssistantAccess || codeAssistantRepo) &&
+		Boolean(codeAssistantRepo) &&
 		isCodeAssistantWorker(
 			currentWorker,
-			codeAssistantAccess?.agentKey || codeAssistantRepo?.agentKey || "",
+			codeAssistantRepo?.agentKey || "",
 		);
 
 	React.useEffect(() => {
@@ -60,175 +55,127 @@ export const CodeAssistantContextBar: React.FC = () => {
 		return () => document.removeEventListener("mousedown", handler);
 	}, [branchMenuOpen]);
 
-	React.useEffect(() => {
-		if (codeAssistantAccess?.mode !== "folder" && branchMenuOpen) {
-			setBranchMenuOpen(false);
-		}
-	}, [branchMenuOpen, codeAssistantAccess?.mode]);
-
-	const handleSelectMode = React.useCallback(
-		(targetMode: HostCodeAssistantAccessMode) => {
-			if (!codeAssistantAccess) {
-				return;
-			}
-			const currentMode = codeAssistantAccess.mode;
-			if (codeAssistantAccess.pending || currentMode === targetMode) {
-				return;
-			}
-			void Promise.resolve(codeAssistantAccess.onSelectMode(targetMode)).catch(
-				() => undefined,
-			);
-		},
-		[codeAssistantAccess],
-	);
-
-	if (!showBar || !codeAssistantAccess || !codeAssistantRepo) {
+	if (!showBar || !codeAssistantRepo) {
 		return null;
 	}
 
-	const mode = codeAssistantAccess.mode;
 	const folderSelected = codeAssistantRepo.userSelected;
-	const showScopedRepoControls = mode === "folder";
-	const modeLabel =
-		mode === "global"
-			? codeAssistantAccess.globalLabel || "全局访问"
-			: codeAssistantAccess.folderLabel || "指定文件夹";
-	const helperText =
-		mode === "global"
-			? "当前可访问本机全部目录"
-			: folderSelected
-				? `当前仅限 ${codeAssistantRepo.repoLabel || "所选目录"}`
-				: "先选择一个目录，再限制代码助手只访问该目录";
+	const controlsBlocked = Boolean(state.activeAwaiting) || state.streaming;
+	const controlsDisabled = codeAssistantRepo.pending || controlsBlocked;
+	const controlsBlockedTitle = controlsBlocked
+		? "请先完成当前回复或确认，再切换工作空间设置"
+		: "";
+	const workspaceLabel = folderSelected
+		? codeAssistantRepo.repoLabel || "所选目录"
+		: "未选择";
+	const helperText = folderSelected
+		? "优先在该工作空间内处理；访问外部位置时会请求确认"
+		: "选择工作空间后，代码助手会优先在该目录内处理";
 
 	return (
 		<div className="code-assistant-context-bar" ref={menuRef}>
 			<div className="code-assistant-context-main">
 				<div className="code-assistant-context-group">
-					{showScopedRepoControls ? (
-						<>
+					<UiButton
+						className={`code-assistant-scope-button ${folderSelected ? "is-selected" : "is-empty"}`}
+						variant="secondary"
+						size="sm"
+						disabled={controlsDisabled}
+						title={
+							controlsBlockedTitle ||
+							(folderSelected
+								? codeAssistantRepo.repoPath
+								: "选择代码助手的工作空间")
+						}
+						aria-label="选择代码助手工作空间"
+						onClick={() => {
+							if (controlsDisabled) {
+								return;
+							}
+							setBranchMenuOpen(false);
+							void Promise.resolve(codeAssistantRepo.onSelectRepo()).catch(
+								() => undefined,
+							);
+						}}
+					>
+						<MaterialIcon name="folder_open" />
+						<span className="code-assistant-scope-button-label">
+							{folderSelected
+								? codeAssistantRepo.repoLabel || "工作空间"
+								: "选择工作空间"}
+						</span>
+					</UiButton>
+
+					{folderSelected && codeAssistantRepo.branches.length > 0 ? (
+						<div className="code-assistant-branch-wrapper">
 							<UiButton
-								className={`code-assistant-scope-button ${folderSelected ? "is-selected" : "is-empty"}`}
+								className="code-assistant-scope-button"
 								variant="secondary"
 								size="sm"
-								disabled={codeAssistantRepo.pending}
+								disabled={controlsDisabled}
 								title={
-									folderSelected
-										? codeAssistantRepo.repoPath
-										: "选择代码助手的工作目录"
+									controlsBlockedTitle ||
+									(codeAssistantRepo.currentBranch
+										? `当前分支：${codeAssistantRepo.currentBranch}`
+										: "选择 Git 分支")
 								}
-								aria-label="选择代码助手工作目录"
+								aria-label="选择 Git 分支"
+								aria-expanded={branchMenuOpen}
 								onClick={() => {
-									setBranchMenuOpen(false);
-									void Promise.resolve(codeAssistantRepo.onSelectRepo()).catch(
-										() => undefined,
-									);
+									if (controlsDisabled) {
+										return;
+									}
+									setBranchMenuOpen((prev) => !prev);
 								}}
 							>
-								<MaterialIcon name="folder_open" />
+								<MaterialIcon name="call_split" />
 								<span className="code-assistant-scope-button-label">
-									{codeAssistantRepo.repoLabel || "选择工作目录"}
+									{codeAssistantRepo.currentBranch || "选择分支"}
 								</span>
+								<MaterialIcon name="expand_more" />
 							</UiButton>
-
-							{folderSelected && codeAssistantRepo.branches.length > 0 ? (
-								<div className="code-assistant-branch-wrapper">
-									<UiButton
-										className="code-assistant-scope-button"
-										variant="secondary"
-										size="sm"
-										disabled={codeAssistantRepo.pending}
-										title={
-											codeAssistantRepo.currentBranch
-												? `当前分支：${codeAssistantRepo.currentBranch}`
-												: "选择 Git 分支"
-										}
-										aria-label="选择 Git 分支"
-										aria-expanded={branchMenuOpen}
-										onClick={() => setBranchMenuOpen((prev) => !prev)}
-									>
-										<MaterialIcon name="call_split" />
-										<span className="code-assistant-scope-button-label">
-											{codeAssistantRepo.currentBranch || "选择分支"}
-										</span>
-										<MaterialIcon name="expand_more" />
-									</UiButton>
-									{branchMenuOpen ? (
-										<div className="code-assistant-branch-menu" role="menu">
-											{codeAssistantRepo.branches.map((branch) => (
-												<button
-													key={branch}
-													type="button"
-													role="menuitemradio"
-													aria-checked={
-														branch === codeAssistantRepo.currentBranch
-													}
-													className={`code-assistant-branch-menu-item ${branch === codeAssistantRepo.currentBranch ? "is-current" : ""}`}
-													onClick={() => {
-														setBranchMenuOpen(false);
-														if (branch === codeAssistantRepo.currentBranch) {
-															return;
-														}
-														void Promise.resolve(
-															codeAssistantRepo.onSelectBranch(branch),
-														).catch(() => undefined);
-													}}
-												>
-													<span
-														className="code-assistant-branch-menu-dot"
-														aria-hidden="true"
-													/>
-													<span className="code-assistant-branch-menu-name">
-														{branch}
-													</span>
-												</button>
-											))}
-										</div>
-									) : null}
+							{branchMenuOpen ? (
+								<div className="code-assistant-branch-menu" role="menu">
+									{codeAssistantRepo.branches.map((branch) => (
+										<button
+											key={branch}
+											type="button"
+											role="menuitemradio"
+											aria-checked={branch === codeAssistantRepo.currentBranch}
+											className={`code-assistant-branch-menu-item ${branch === codeAssistantRepo.currentBranch ? "is-current" : ""}`}
+											disabled={controlsDisabled}
+											onClick={() => {
+												setBranchMenuOpen(false);
+												if (
+													controlsDisabled ||
+													branch === codeAssistantRepo.currentBranch
+												) {
+													return;
+												}
+												void Promise.resolve(
+													codeAssistantRepo.onSelectBranch(branch),
+												).catch(() => undefined);
+											}}
+										>
+											<span
+												className="code-assistant-branch-menu-dot"
+												aria-hidden="true"
+											/>
+											<span className="code-assistant-branch-menu-name">
+												{branch}
+											</span>
+										</button>
+									))}
 								</div>
 							) : null}
-						</>
+						</div>
 					) : null}
-				</div>
-
-				<div
-					className="code-assistant-mode-group"
-					role="tablist"
-					aria-label="代码助手访问模式"
-				>
-					<button
-						type="button"
-						role="tab"
-						aria-selected={mode === "global"}
-						className={`code-assistant-mode-chip ${mode === "global" ? "is-active" : ""}`}
-						disabled={codeAssistantAccess.pending}
-						onClick={() => handleSelectMode("global")}
-					>
-						<span
-							className="code-assistant-mode-dot is-global"
-							aria-hidden="true"
-						/>
-						<span>{codeAssistantAccess.globalLabel || "全局访问"}</span>
-					</button>
-					<button
-						type="button"
-						role="tab"
-						aria-selected={mode === "folder"}
-						className={`code-assistant-mode-chip ${mode === "folder" ? "is-active" : ""}`}
-						disabled={codeAssistantAccess.pending}
-						onClick={() => handleSelectMode("folder")}
-					>
-						<span
-							className="code-assistant-mode-dot is-folder"
-							aria-hidden="true"
-						/>
-						<span>{codeAssistantAccess.folderLabel || "指定文件夹"}</span>
-					</button>
 				</div>
 			</div>
 
 			<div className="code-assistant-context-meta">
-				<span className={`code-assistant-context-badge is-${mode}`}>
-					{modeLabel}
+				<span className="code-assistant-context-badge is-workspace">
+					工作空间：{workspaceLabel}
 				</span>
 				<span className="code-assistant-context-helper">{helperText}</span>
 			</div>

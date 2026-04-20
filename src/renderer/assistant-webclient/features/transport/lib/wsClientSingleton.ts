@@ -5,9 +5,16 @@ let wsClientAccessToken = "";
 
 export function initWsClient(options: WsClientOptions = {}): WsClient {
 	const accessToken = String(options.accessToken || "").trim();
+	const normalizedOptions: WsClientOptions = {
+		...options,
+		onAccessTokenChange: (token) => {
+			wsClientAccessToken = String(token || "").trim();
+			options.onAccessTokenChange?.(token);
+		},
+	};
 
 	if (wsClient && wsClientAccessToken === accessToken) {
-		wsClient.updateOptions(options);
+		wsClient.updateOptions(normalizedOptions);
 		return wsClient;
 	}
 
@@ -15,7 +22,7 @@ export function initWsClient(options: WsClientOptions = {}): WsClient {
 		wsClient.disconnect();
 	}
 
-	wsClient = new WsClient(options);
+	wsClient = new WsClient(normalizedOptions);
 	wsClientAccessToken = accessToken;
 	return wsClient;
 }
