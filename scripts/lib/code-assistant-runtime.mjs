@@ -206,6 +206,23 @@ export function syncCodeAssistantRuntime(
   const normalizedOs = normalizeTargetOs(targetOs);
   const normalizedArch = normalizeTargetArch(targetArch);
   const runtimeSourceRoot = path.resolve(sourceRoot);
+
+  const outputRoot = path.join(projectRoot, "build", "resources", "code-assistant-runtime");
+  const existingManifestPath = path.join(outputRoot, "manifest.json");
+  const existingBundledCli = path.join(outputRoot, "claude-code-guotai", "dist", "cli.js");
+  const existingBundledBun = path.join(outputRoot, "bun", getBunBinaryName(normalizedOs));
+  if (
+    !fs.existsSync(runtimeSourceRoot) &&
+    fs.existsSync(existingManifestPath) &&
+    fs.existsSync(existingBundledCli) &&
+    fs.existsSync(existingBundledBun)
+  ) {
+    console.log(
+      `[code-assistant-runtime] 未找到源码目录 ${runtimeSourceRoot}，复用已有产物 ${outputRoot}`
+    );
+    return JSON.parse(fs.readFileSync(existingManifestPath, "utf8"));
+  }
+
   ensureRuntimeBuildUpToDate(runtimeSourceRoot);
   const distRoot = path.join(runtimeSourceRoot, "dist");
   const cliPath = path.join(distRoot, "cli.js");
@@ -213,7 +230,6 @@ export function syncCodeAssistantRuntime(
     throw new Error(`缺少代码助手 dist/cli.js：${cliPath}`);
   }
 
-  const outputRoot = path.join(projectRoot, "build", "resources", "code-assistant-runtime");
   const bundledRuntimeRoot = path.join(outputRoot, "claude-code-guotai");
   const bundledBunPath = resolveBundledBunPath({
     targetOs: normalizedOs,
