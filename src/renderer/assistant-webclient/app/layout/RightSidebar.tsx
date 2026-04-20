@@ -249,6 +249,7 @@ export const RightSidebar: React.FC = () => {
   const state = useAppState();
   const dispatch = useAppDispatch();
   const preview = state.attachmentPreview;
+  const isLogsView = state.rightSidebarView === "logs";
   const desktopSidebarVisible =
     state.desktopDebugSidebarEnabled || Boolean(preview);
   const showHeader = state.layoutMode !== "desktop-fixed" || Boolean(preview);
@@ -350,10 +351,16 @@ export const RightSidebar: React.FC = () => {
     >
       {showHeader && (
         <div className="sidebar-head">
-          <h2>{preview ? "资源预览" : "调试面板"}</h2>
+          <h2>{preview ? "资源预览" : isLogsView ? "终端日志" : "调试面板"}</h2>
           <UiButton
             className="drawer-close"
-            aria-label={preview ? "关闭资源预览" : "关闭调试面板"}
+            aria-label={
+              preview
+                ? "关闭资源预览"
+                : isLogsView
+                  ? "关闭终端日志"
+                  : "关闭调试面板"
+            }
             variant="ghost"
             size="sm"
             iconOnly
@@ -366,6 +373,18 @@ export const RightSidebar: React.FC = () => {
 
       {preview ? (
         <AttachmentPreviewPanel />
+      ) : isLogsView ? (
+        <div className="debug-panel">
+          {state.debugLines.length === 0 ? (
+            <div className="list">
+              <div className="status-line">暂无终端日志</div>
+            </div>
+          ) : (
+            <pre className="debug-log" id="debug-log">
+              {state.debugLines.join("\n")}
+            </pre>
+          )}
+        </div>
       ) : (
         <div className="debug-panel">
           <div className="list" id="events-list">

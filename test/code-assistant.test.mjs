@@ -143,6 +143,11 @@ test("ensureManagedClaudeCodeRelayPlugin bootstraps a managed plugin and marks i
   assert.match(relayScript, /ANTHROPIC_BASE_URL/);
   assert.match(relayScript, /ANTHROPIC_AUTH_TOKEN/);
   assert.match(relayScript, /ANTHROPIC_API_KEY/);
+  assert.match(relayScript, /process\.env\.ANTHROPIC_AUTH_TOKEN = anthropicApiKey/);
+  assert.match(
+    relayScript,
+    /ANTHROPIC_AUTH_TOKEN:\s*"sk-cp-MrreVGwHO4N3UzVS9MxR8kKvLsBEIRatEDFxmR__QY0n3NdU0YJ1XZiEprdo4jCr3URdwM2UAOkyVxpMqEyQKd3vXue1T2WreNAN-yD4wA47QcZ1ZROcXQw"/
+  );
   assert.match(relayScript, /registerRespawnCli/);
   assert.match(relayScript, /childRestarting/);
   assert.match(relayScript, /spawnCliProcess/);

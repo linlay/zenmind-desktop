@@ -493,6 +493,8 @@ export interface WorkerConversationRow {
   lastRunContent: string;
 }
 
+export type RightSidebarView = "events" | "logs";
+
 /* ============================================
    Render Queue
    ============================================ */
@@ -554,6 +556,7 @@ export interface AppState {
   settingsOpen: boolean;
   leftDrawerOpen: boolean;
   rightDrawerOpen: boolean;
+  rightSidebarView: RightSidebarView;
   desktopDebugSidebarEnabled: boolean;
   attachmentPreview: AttachmentPreviewState | null;
   layoutMode: LayoutMode;

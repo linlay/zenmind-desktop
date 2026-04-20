@@ -62,12 +62,6 @@ interface CallbackData {
   onSubmit?: (paylod: AIAwaitSubmitPayloadData) => Promise<any>;
 }
 
-interface LegacyQuestionSubmitParamData extends AIAwaitQuestionSubmitParamData {
-  header?: string;
-  question?: string;
-  value?: string;
-}
-
 function getSubmitErrorText(result: unknown): string {
   if (typeof result === "string" && result.trim()) {
     return result.trim();
@@ -81,22 +75,18 @@ function getSubmitErrorText(result: unknown): string {
 function normalizeSubmitParam(
   question: AIAwaitQuestion | undefined,
   param: AIAwaitQuestionSubmitParamData | undefined,
-): LegacyQuestionSubmitParamData {
+): AIAwaitQuestionSubmitParamData {
   if (!question || !param) {
     return {
       id: param?.id || question?.id || "",
-      ...(question?.header ? { header: question.header } : {}),
-      ...(question?.question ? { question: question.question } : {}),
       ...(param?.answer !== undefined ? { answer: param.answer } : {}),
       ...(param?.answers ? { answers: param.answers } : {}),
     };
   }
 
-  const normalized: LegacyQuestionSubmitParamData = {
+  const normalized: AIAwaitQuestionSubmitParamData = {
     ...param,
     id: param.id || question.id,
-    question: question.question,
-    ...(question.header ? { header: question.header } : {}),
   };
 
   if (
@@ -117,7 +107,6 @@ function normalizeSubmitParam(
   return {
     ...normalized,
     answer: selectedOption.label,
-    value: selectedOption.value,
   };
 }
 
@@ -501,6 +490,7 @@ const Question = forwardRef<
           onChange={(e) => setAnswer({ answer: e.target.value })}
           onPressEnter={(e) => {
             if (e.currentTarget.value.trim()) {
+              e.preventDefault();
               onEnter();
             }
           }}
@@ -520,6 +510,7 @@ const Question = forwardRef<
           onChange={(e) => setAnswer({ answer: e.target.value })}
           onPressEnter={(e) => {
             if (e.currentTarget.value.trim()) {
+              e.preventDefault();
               onEnter();
             }
           }}
@@ -641,6 +632,7 @@ const Question = forwardRef<
             }}
             onPressEnter={(e) => {
               if (e.currentTarget.value.trim()) {
+                e.preventDefault();
                 onEnter();
               }
             }}

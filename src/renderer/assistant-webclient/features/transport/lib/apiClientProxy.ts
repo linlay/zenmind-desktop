@@ -147,9 +147,7 @@ export function submitTool(params: {
 	toolId: string;
 	params: Record<string, unknown>;
 }): Promise<ApiResponse> {
-	return routeRequest("/api/submit", params, () => submitToolHttp(params), {
-		fallbackOnConnectFailure: false,
-	});
+	return submitToolHttp(params);
 }
 
 export function submitAwaiting(params: {
@@ -157,9 +155,7 @@ export function submitAwaiting(params: {
 	awaitingId: string;
 	params: AIAwaitSubmitParamData[];
 }): Promise<ApiResponse> {
-	return routeRequest("/api/submit", params, () => submitAwaitingHttp(params), {
-		fallbackOnConnectFailure: false,
-	});
+	return submitAwaitingHttp(params);
 }
 
 export function interruptChat(params: QueryLikeParams): Promise<ApiResponse> {

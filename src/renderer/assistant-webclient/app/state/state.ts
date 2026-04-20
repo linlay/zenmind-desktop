@@ -113,6 +113,7 @@ export function createInitialState(): AppState {
 		settingsOpen: false,
 		leftDrawerOpen: layoutMode !== "mobile-drawer",
 		rightDrawerOpen: false,
+		rightSidebarView: "events",
 		desktopDebugSidebarEnabled: false,
 		attachmentPreview: null,
 		layoutMode,

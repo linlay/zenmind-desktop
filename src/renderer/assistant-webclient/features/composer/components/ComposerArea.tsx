@@ -177,6 +177,8 @@ export const ComposerArea: React.FC = () => {
   const isComposingRef = useRef(false);
   const pendingSendRef = useRef(false);
   const pendingSentMessageRef = useRef("");
+  const awaitingSubmitInFlightRef = useRef<string | null>(null);
+  const awaitingSubmitResolvedRef = useRef<string | null>(null);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
@@ -957,6 +959,17 @@ export const ComposerArea: React.FC = () => {
     resetEventCache();
   }, [dispatch, resetEventCache]);
 
+  useEffect(() => {
+    const nextKey = activeAwaiting?.key || null;
+    if (!nextKey) {
+      awaitingSubmitInFlightRef.current = null;
+      return;
+    }
+    if (awaitingSubmitResolvedRef.current !== nextKey) {
+      awaitingSubmitResolvedRef.current = null;
+    }
+  }, [activeAwaiting?.key]);
+
   // When the submit returns "expired" / "already_resolved" / "unknown awaitingId",
   // the backend CLI has already moved on (auto-resolved by timeout).  The current
   // WS stream may be stale — no further run.complete event will match the old run.
@@ -973,12 +986,24 @@ export const ComposerArea: React.FC = () => {
     async (payload: AIAwaitSubmitPayloadData) => {
       if (!activeAwaiting) return;
       const activePayload = buildActiveAwaitingSubmitPayload(activeAwaiting, payload);
+      const submitKey = `${activePayload.runId}#${activePayload.awaitingId}`;
+      if (
+        awaitingSubmitInFlightRef.current === submitKey
+        || awaitingSubmitResolvedRef.current === submitKey
+      ) {
+        dispatch({
+          type: "APPEND_DEBUG",
+          line: `[awaiting] ignored duplicate submit awaitingId=${activePayload.awaitingId}, runId=${activePayload.runId}`,
+        });
+        return;
+      }
       if (isAwaitingIdentityMismatch(activeAwaiting, payload)) {
         dispatch({
           type: "APPEND_DEBUG",
           line: `[awaiting] repaired stale submit awaitingId=${payload.awaitingId}, runId=${payload.runId} -> awaitingId=${activePayload.awaitingId}, runId=${activePayload.runId}`,
         });
       }
+      awaitingSubmitInFlightRef.current = submitKey;
       try {
         const response = await submitAwaiting({
           runId: activePayload.runId,
@@ -1006,6 +1031,7 @@ export const ComposerArea: React.FC = () => {
           throw `提交未命中：${detail}`;
         }
 
+        awaitingSubmitResolvedRef.current = submitKey;
         clearActiveAwaiting();
         dispatch({
           type: "APPEND_DEBUG",
@@ -1020,6 +1046,10 @@ export const ComposerArea: React.FC = () => {
           return;
         }
         return error;
+      } finally {
+        if (awaitingSubmitInFlightRef.current === submitKey) {
+          awaitingSubmitInFlightRef.current = null;
+        }
       }
     },
     [activeAwaiting, clearActiveAwaiting, forceRecoverFromExpiredAwaiting, dispatch],

@@ -491,7 +491,8 @@ async function main() {
     throw new Error(\`代码助手 CLI 入口不存在：\${cliEntrypoint}\`);
   }
 
-  // 强制使用 MiniMax API，忽略所有环境变量和用户级 Claude 配置
+  // 强制使用 MiniMax API，忽略所有环境变量和用户级 Claude 配置。
+  // MiniMax Anthropic 兼容接口要求 Bearer Authorization 头，不能只传 x-api-key。
   const anthropicBaseUrl = ${JSON.stringify(MANAGED_ANTHROPIC_BASE_URL)};
   const claudeCodeApiBaseUrl = anthropicBaseUrl;
   const anthropicApiKey = ${JSON.stringify(MANAGED_ANTHROPIC_API_KEY)};
@@ -499,8 +500,7 @@ async function main() {
   process.env.ANTHROPIC_BASE_URL = anthropicBaseUrl;
   process.env.CLAUDE_CODE_API_BASE_URL = claudeCodeApiBaseUrl;
   process.env.ANTHROPIC_API_KEY = anthropicApiKey;
-  // 清除可能存在的 auth token，避免与 API key 冲突
-  delete process.env.ANTHROPIC_AUTH_TOKEN;
+  process.env.ANTHROPIC_AUTH_TOKEN = anthropicApiKey;
 
   await assertPortAvailable(relayPort);
   await assertPortAvailable(dashboardPort);
@@ -556,7 +556,7 @@ async function main() {
           ANTHROPIC_BASE_URL: ${JSON.stringify(MANAGED_ANTHROPIC_BASE_URL)},
           CLAUDE_CODE_API_BASE_URL: ${JSON.stringify(MANAGED_ANTHROPIC_BASE_URL)},
           ANTHROPIC_API_KEY: ${JSON.stringify(MANAGED_ANTHROPIC_API_KEY)},
-          ANTHROPIC_AUTH_TOKEN: "",
+          ANTHROPIC_AUTH_TOKEN: ${JSON.stringify(MANAGED_ANTHROPIC_API_KEY)},
           ANTHROPIC_MODEL: ${JSON.stringify(MANAGED_ANTHROPIC_MODEL)},
           ANTHROPIC_SMALL_FAST_MODEL: ${JSON.stringify(MANAGED_ANTHROPIC_MODEL)},
           CLAUDE_CODE_USE_MODEL: ${JSON.stringify(MANAGED_ANTHROPIC_MODEL)},

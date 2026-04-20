@@ -35,10 +35,10 @@ function createService(overrides = {}) {
 test("summarizeCoreServices returns core services in quick-start order and tracks missing installs", () => {
   const summary = summarizeCoreServices([
     createService({ id: "plugin-1", name: "示例插件", kind: "plugin", installed: true, status: "running" }),
-    createService({ id: "auth", name: "认证服务", installed: true, status: "stopped" }),
+    createService({ id: "zenmind-app-server", name: "认证服务", installed: true, status: "stopped" }),
     createService({ id: "webclient", name: "小宅助理", installed: false, status: "not-installed" }),
-    createService({ id: "hub", name: "Container Hub", installed: true, status: "running" }),
-    createService({ id: "platform", name: "智能体平台", installed: true, status: "stopped" })
+    createService({ id: "agent-container-hub", name: "Container Hub", installed: true, status: "running" }),
+    createService({ id: "agent-platform", name: "智能体平台", installed: true, status: "stopped" })
   ]);
 
   assert.equal(summary.expectedCount, 3);
@@ -53,12 +53,27 @@ test("summarizeCoreServices returns core services in quick-start order and track
 
 test("summarizeCoreServices reports no missing installs when all core services are installed", () => {
   const summary = summarizeCoreServices([
-    createService({ id: "hub", name: "Container Hub", installed: true, status: "running" }),
-    createService({ id: "platform", name: "智能体平台", installed: true, status: "running" }),
+    createService({ id: "agent-container-hub", name: "Container Hub", installed: true, status: "running" }),
+    createService({ id: "agent-platform", name: "智能体平台", installed: true, status: "running" }),
     createService({ id: "webclient", name: "小宅助理", installed: true, status: "stopped" }),
-    createService({ id: "auth", name: "认证服务", installed: true, status: "stopped" })
+    createService({ id: "zenmind-app-server", name: "认证服务", installed: true, status: "stopped" })
   ]);
 
   assert.equal(summary.installedCount, 3);
   assert.deepEqual(summary.missingInstallServices, []);
+});
+
+test("summarizeCoreServices still recognizes auth service when manifest name falls back to service id", () => {
+  const summary = summarizeCoreServices([
+    createService({ id: "agent-container-hub", name: "Container Hub", installed: true, status: "running" }),
+    createService({ id: "agent-platform", name: "智能体平台", installed: true, status: "running" }),
+    createService({ id: "zenmind-app-server", name: "zenmind-app-server", installed: true, status: "stopped" })
+  ]);
+
+  assert.equal(summary.installedCount, 3);
+  assert.deepEqual(summary.coreServices.map((service) => service.id), [
+    "agent-container-hub",
+    "agent-platform",
+    "zenmind-app-server"
+  ]);
 });

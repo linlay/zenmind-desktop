@@ -373,6 +373,51 @@ describe("apiClientProxy", () => {
 		});
 	});
 
+	it("keeps submit requests on http even when ws mode is selected", async () => {
+		const proxy = await import("./apiClientProxy");
+		proxy.setTransportModeProvider(() => "ws");
+		mockApiClient.submitTool.mockResolvedValue({
+			status: 200,
+			code: 0,
+			msg: "ok",
+			data: { accepted: true },
+		});
+		mockApiClient.submitAwaiting.mockResolvedValue({
+			status: 200,
+			code: 0,
+			msg: "ok",
+			data: { accepted: true },
+		});
+
+		await expect(
+			proxy.submitTool({
+				runId: "run_ws",
+				toolId: "tool_ws",
+				params: { city: "shanghai" },
+			}),
+		).resolves.toMatchObject({ data: { accepted: true } });
+		await expect(
+			proxy.submitAwaiting({
+				runId: "run_ws",
+				awaitingId: "await_ws",
+				params: [{ id: "q1", answer: "周边游" }],
+			}),
+		).resolves.toMatchObject({ data: { accepted: true } });
+
+		expect(mockInitWsClient).not.toHaveBeenCalled();
+		expect(mockGetWsClient).not.toHaveBeenCalled();
+		expect(mockApiClient.submitTool).toHaveBeenCalledWith({
+			runId: "run_ws",
+			toolId: "tool_ws",
+			params: { city: "shanghai" },
+		});
+		expect(mockApiClient.submitAwaiting).toHaveBeenCalledWith({
+			runId: "run_ws",
+			awaitingId: "await_ws",
+			params: [{ id: "q1", answer: "周边游" }],
+		});
+	});
+
 	it("routes interrupt and steer over http when sse mode is selected", async () => {
 		const proxy = await import("./apiClientProxy");
 		proxy.setTransportModeProvider(() => "sse");

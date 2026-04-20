@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ServiceConfigReadResult, ServiceId, ServiceLogTarget, ServiceState } from "@shared/contracts";
-import { CORE_SERVICE_NAMES, summarizeCoreServices } from "@shared/control-center";
+import { CORE_SERVICE_SLOTS, summarizeCoreServices } from "@shared/control-center";
 import { useServices } from "../services/ServicesContext";
 import { useNavigate } from "react-router-dom";
 
@@ -441,7 +441,9 @@ export function ControlCenterPage() {
       return;
     }
 
-    const missingServices = services.filter((service) => service.installed && !(service.id in configMeta));
+    const missingServices = services.filter(
+      (service) => service.configFiles.some((configFile) => configFile.key === "env") && !(service.id in configMeta)
+    );
     if (missingServices.length === 0) {
       return;
     }
@@ -474,7 +476,7 @@ export function ControlCenterPage() {
           setConfigMeta((current) => ({
             ...current,
             [service.id]: {
-              path: "",
+              path: service.installDir ? `${service.installDir}/.env` : "",
               exists: false,
               source: "missing"
             }
@@ -499,9 +501,9 @@ export function ControlCenterPage() {
 
   const marketServices = services.filter((service) => service.kind === "plugin");
 
-  const coreSlots = CORE_SERVICE_NAMES.map((name) => ({
-    name,
-    service: coreServices.find((service) => service.name === name) ?? null
+  const coreSlots = CORE_SERVICE_SLOTS.map((slot) => ({
+    name: slot.label,
+    service: coreServices.find((service) => service.id === slot.id) ?? null
   }));
 
   const selectedService = services.find((service) => service.id === selectedServiceId) ?? services[0] ?? null;
@@ -511,6 +513,7 @@ export function ControlCenterPage() {
       : expandedGroup === "core"
         ? coreServices.find((service) => service.id === selectedService?.id) ?? coreServices[0] ?? null
         : marketServices.find((service) => service.id === selectedService?.id) ?? marketServices[0] ?? null;
+  const activeEnvConfig = activeDetailService?.configFiles.find((item) => item.key === "env") ?? null;
   const selectedConfigMeta = activeDetailService ? configMeta[activeDetailService.id] : undefined;
   const errorLogDisplay = activeDetailService ? getErrorLogDisplay(activeDetailService) : "未声明";
 
@@ -1216,38 +1219,44 @@ export function ControlCenterPage() {
             <div className="config-panel">
               <div className="config-head">
                 <h3>原文配置</h3>
-                <span>{selectedConfigMeta?.path || "将自动创建 .env"}</span>
+                <span>{activeEnvConfig ? (selectedConfigMeta?.path || "将自动创建 .env") : "当前服务未声明 .env"}</span>
               </div>
-              <textarea
-                className="config-editor"
-                value={configCache[activeDetailService.id] ?? ""}
-                onChange={(event) =>
-                  setConfigCache((current) => ({ ...current, [activeDetailService.id]: event.target.value }))
-                }
-                spellCheck={false}
-              />
-              <div className="config-footer">
-                <button
-                  type="button"
-                  className="action-button primary"
-                  onClick={() =>
-                    runAction(
-                      activeDetailService.id,
-                      "detail",
-                      () => writeConfig(activeDetailService.id, "env", configCache[activeDetailService.id] ?? ""),
-                      {
-                        invalidateConfig: true
+              {activeEnvConfig ? (
+                <>
+                  <textarea
+                    className="config-editor"
+                    value={configCache[activeDetailService.id] ?? ""}
+                    onChange={(event) =>
+                      setConfigCache((current) => ({ ...current, [activeDetailService.id]: event.target.value }))
+                    }
+                    spellCheck={false}
+                  />
+                  <div className="config-footer">
+                    <button
+                      type="button"
+                      className="action-button primary"
+                      onClick={() =>
+                        runAction(
+                          activeDetailService.id,
+                          "detail",
+                          () => writeConfig(activeDetailService.id, "env", configCache[activeDetailService.id] ?? ""),
+                          {
+                            invalidateConfig: true
+                          }
+                        )
                       }
-                    )
-                  }
-                  disabled={activeId === activeDetailService.id}
-                >
-                  保存配置
-                </button>
-              </div>
-              {selectedConfigMeta?.source === "template" ? (
-                <p className="service-message">当前内容来自模板，保存或初始化后才会写入目标文件。</p>
-              ) : null}
+                      disabled={activeId === activeDetailService.id}
+                    >
+                      保存配置
+                    </button>
+                  </div>
+                  {selectedConfigMeta?.source === "template" ? (
+                    <p className="service-message">当前内容来自模板，保存或初始化后才会写入目标文件。</p>
+                  ) : null}
+                </>
+              ) : (
+                <p className="service-message">当前服务没有声明可编辑的 `.env` 配置文件。</p>
+              )}
             </div>
           </article>
         ) : (

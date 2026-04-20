@@ -9,6 +9,7 @@ import { CommandStatusOverlay } from "@/app/layout/CommandStatusOverlay";
 import { TopNav } from "@/app/layout/TopNav";
 import { BottomDock } from "@/app/layout/BottomDock";
 import { LeftSidebar } from "@/app/layout/LeftSidebar";
+import { WorkerChatSidebar } from "@/app/layout/WorkerChatSidebar";
 import { RightSidebar } from "@/app/layout/RightSidebar";
 import { DrawerOverlay } from "@/app/layout/DrawerOverlay";
 import { ConversationStage } from "@/features/timeline/components/ConversationStage";
@@ -96,6 +97,7 @@ export const AppShell: React.FC = () => {
 			<TopNav />
 			<LeftSidebar />
 			<ConversationStage />
+			<WorkerChatSidebar />
 			<RightSidebar />
 			<BottomDock />
 			<CommandStatusOverlay />

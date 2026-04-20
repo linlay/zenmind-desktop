@@ -171,6 +171,34 @@ test("loadBuiltinServices skips builtin archives from other platforms", () => {
   }
 });
 
+test("loadBuiltinServices registers fallback core builtins even when assets are missing", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-loader-fallback-"));
+  const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+  const assetsRoot = path.join(tempRoot, "assets");
+  const userDataRoot = path.join(tempRoot, "user-data");
+
+  fs.mkdirSync(assetsRoot, { recursive: true });
+  registryInternals.clearServices();
+  process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = assetsRoot;
+
+  try {
+    const loaded = loadBuiltinServices(createApp(userDataRoot));
+
+    assert.equal(loaded.length, 0);
+    assert.equal(getBuiltinService("agent-container-hub").name, "Container Hub");
+    assert.equal(getBuiltinService("agent-platform").name, "智能体平台");
+    assert.equal(getBuiltinService("zenmind-app-server").name, "认证服务");
+  } finally {
+    registryInternals.clearServices();
+    if (previousAssetsRoot) {
+      process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
+    } else {
+      delete process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("loadBuiltinServices preserves UTF-8 manifest content from Windows zip archives", { skip: process.platform !== "win32" }, () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-loader-utf8-"));
   const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
