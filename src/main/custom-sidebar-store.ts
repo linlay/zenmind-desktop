@@ -5,9 +5,10 @@ import type {
   CustomSidebarItem,
   CustomSidebarItemInput
 } from "../shared/contracts";
+import { CUSTOM_SIDEBAR_ICON_IDS } from "../shared/custom-sidebar-icons";
 
 const CUSTOM_SIDEBAR_FILE = "custom-sidebar-items.json";
-const MAX_CUSTOM_SIDEBAR_ITEMS = 30;
+const MAX_CUSTOM_SIDEBAR_ITEMS = CUSTOM_SIDEBAR_ICON_IDS.length;
 
 type StoredCustomSidebarItems = {
   items: CustomSidebarItem[];
@@ -64,7 +65,15 @@ function normalizeLabel(inputLabel: string | undefined, url: string) {
   }
 }
 
-function normalizeItem(item: Partial<CustomSidebarItem>): CustomSidebarItem | null {
+function isKnownIconId(iconId: unknown): iconId is string {
+  return typeof iconId === "string" && (CUSTOM_SIDEBAR_ICON_IDS as readonly string[]).includes(iconId);
+}
+
+function pickNextIconId(usedIconIds: Set<string>) {
+  return CUSTOM_SIDEBAR_ICON_IDS.find((iconId) => !usedIconIds.has(iconId)) ?? null;
+}
+
+function normalizeItem(item: Partial<CustomSidebarItem>, usedIconIds: Set<string>): CustomSidebarItem | null {
   if (typeof item.id !== "string" || typeof item.label !== "string" || typeof item.url !== "string") {
     return null;
   }
@@ -72,10 +81,18 @@ function normalizeItem(item: Partial<CustomSidebarItem>): CustomSidebarItem | nu
   try {
     const url = normalizeUrl(item.url);
     const now = Date.now();
+    const iconId = isKnownIconId(item.iconId) && !usedIconIds.has(item.iconId)
+      ? item.iconId
+      : pickNextIconId(usedIconIds);
+    if (!iconId) {
+      return null;
+    }
+    usedIconIds.add(iconId);
     return {
       id: item.id.trim() || createItemId(),
       label: normalizeLabel(item.label, url),
       url,
+      iconId,
       createdAt: typeof item.createdAt === "number" ? item.createdAt : now,
       updatedAt: typeof item.updatedAt === "number" ? item.updatedAt : now
     };
@@ -95,16 +112,21 @@ function readItems(app: App): CustomSidebarItem[] {
     if (!Array.isArray(parsed.items)) {
       return [];
     }
-    const seen = new Set<string>();
-    return parsed.items
-      .map((item) => normalizeItem(item))
-      .filter((item): item is CustomSidebarItem => {
-        if (!item || seen.has(item.id)) {
-          return false;
-        }
-        seen.add(item.id);
-        return true;
-      });
+    const seenIds = new Set<string>();
+    const usedIconIds = new Set<string>();
+    const items: CustomSidebarItem[] = [];
+    for (const rawItem of parsed.items) {
+      if (typeof rawItem?.id === "string" && seenIds.has(rawItem.id)) {
+        continue;
+      }
+      const item = normalizeItem(rawItem, usedIconIds);
+      if (!item || seenIds.has(item.id)) {
+        continue;
+      }
+      seenIds.add(item.id);
+      items.push(item);
+    }
+    return items;
   } catch (error) {
     console.warn("failed to read custom sidebar items", error);
     return [];
@@ -152,11 +174,23 @@ export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
       };
     }
 
+    const usedIconIds = new Set(items.map((item) => item.iconId));
+    const iconId = pickNextIconId(usedIconIds);
+    if (!iconId) {
+      return {
+        ok: false,
+        item: null,
+        items,
+        message: "图标库已用完，请先删除一个自定义侧边栏入口。"
+      };
+    }
+
     const now = Date.now();
     const item: CustomSidebarItem = {
       id: createItemId(),
       label: normalizeLabel(input.label, url),
       url,
+      iconId,
       createdAt: now,
       updatedAt: now
     };
@@ -202,5 +236,6 @@ export function removeCustomSidebarItem(app: App, id: string) {
 export const __testInternals = {
   getCustomSidebarPath,
   normalizeUrl,
-  normalizeLabel
+  normalizeLabel,
+  pickNextIconId
 };

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useServices } from "../services/ServicesContext";
+import { CustomSidebarIcon } from "../components/BrandMark";
 import type { CustomSidebarItem, CustomSidebarItemsResult } from "@shared/contracts";
 
 type SettingsPageProps = {
@@ -208,7 +209,7 @@ export function SettingsPage({
           <h2>自定义侧边栏</h2>
           <p className="page-copy">
             默认集成的功能入口保持固定，不能修改或删除。你可以在这里添加自己的网页入口，
-            例如输入 <code>www.baidu.com</code>，下次启动后也会保留在侧边栏。
+            例如输入 <code>www.baidu.com</code>，下次启动后也会保留在侧边栏。新增入口会自动从图标库分配不重复图标。
           </p>
         </div>
         <div className="custom-sidebar-panel">
@@ -252,9 +253,14 @@ export function SettingsPage({
             <div className="custom-sidebar-list">
               {customSidebarItems.map((item) => (
                 <div className="custom-sidebar-row" key={item.id}>
-                  <div>
-                    <strong>{item.label}</strong>
-                    <span>{item.url}</span>
+                  <div className="custom-sidebar-row-main">
+                    <span className="custom-sidebar-row-icon" aria-hidden="true">
+                      <CustomSidebarIcon iconId={item.iconId} />
+                    </span>
+                    <div className="custom-sidebar-row-copy">
+                      <strong>{item.label}</strong>
+                      <span>{item.url}</span>
+                    </div>
                   </div>
                   <button
                     type="button"

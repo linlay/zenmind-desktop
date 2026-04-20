@@ -1,8 +1,10 @@
+import { CUSTOM_SIDEBAR_ICONS } from "@shared/custom-sidebar-icons";
+
 type BrandMarkProps = {
   className?: string;
 };
 
-type SidebarIllustrationKind =
+export type SidebarIllustrationKind =
   | "control"
   | "assistant"
   | "market"
@@ -17,6 +19,20 @@ type SidebarIllustrationProps = {
   kind: SidebarIllustrationKind;
   className?: string;
 };
+
+const customSidebarIconDataUris = new Map<string, string>();
+
+function getCustomSidebarIconDataUri(iconId: string) {
+  const cached = customSidebarIconDataUris.get(iconId);
+  if (cached) {
+    return cached;
+  }
+
+  const icon = CUSTOM_SIDEBAR_ICONS.find((candidate) => candidate.id === iconId) ?? CUSTOM_SIDEBAR_ICONS[0];
+  const dataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(icon.svg)}`;
+  customSidebarIconDataUris.set(iconId, dataUri);
+  return dataUri;
+}
 
 function IconFrame({
   className,
@@ -151,6 +167,17 @@ export function BrandMark({ className }: BrandMarkProps) {
         // Fallback: hide broken image if asset not yet provided.
         (event.currentTarget as HTMLImageElement).style.visibility = "hidden";
       }}
+    />
+  );
+}
+
+export function CustomSidebarIcon({ iconId, className }: { iconId: string; className?: string }) {
+  return (
+    <img
+      src={getCustomSidebarIconDataUri(iconId)}
+      alt=""
+      aria-hidden="true"
+      className={className}
     />
   );
 }

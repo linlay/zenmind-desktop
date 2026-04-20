@@ -1,15 +1,22 @@
 import { NavLink } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
 import { EXTERNAL_EXPERIMENTAL_ITEMS } from "../App";
-import { BrandMark, SidebarIllustration } from "./BrandMark";
+import { BrandMark, CustomSidebarIcon, SidebarIllustration, type SidebarIllustrationKind } from "./BrandMark";
 import type { CustomSidebarItem } from "@shared/contracts";
 
-const staticNavItems = [
+type SidebarNavItem = {
+  to: string;
+  label: string;
+  icon: SidebarIllustrationKind;
+  iconId?: string;
+};
+
+const staticNavItems: SidebarNavItem[] = [
   { to: "/control-center", label: "控制中心", icon: "control" },
   { to: "/assistant", label: "小宅助理", icon: "assistant" },
   { to: "/market", label: "插件市场", icon: "market" },
   { to: "/help", label: "帮助", icon: "help" }
-] as const;
+];
 
 type AppSidebarProps = {
   isCollapsed: boolean;
@@ -19,7 +26,7 @@ type AppSidebarProps = {
 
 export function AppSidebar({ isCollapsed, experimentalEnabled, customSidebarItems }: AppSidebarProps) {
   const { services } = useServices();
-  const serviceNavItems = services
+  const serviceNavItems: SidebarNavItem[] = services
     .filter(
       (service) =>
         service.id !== "agent-webclient" &&
@@ -29,10 +36,10 @@ export function AppSidebar({ isCollapsed, experimentalEnabled, customSidebarItem
     .map((service) => ({
       to: `/plugin/${service.id}`,
       label: service.name,
-      icon: "service" as const
+      icon: "service"
     }));
 
-  const experimentalItems = experimentalEnabled
+  const experimentalItems: SidebarNavItem[] = experimentalEnabled
     ? EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => ({
         to: `/external/${item.id}`,
         label: item.label,
@@ -40,10 +47,11 @@ export function AppSidebar({ isCollapsed, experimentalEnabled, customSidebarItem
       }))
     : [];
 
-  const customItems = customSidebarItems.map((item) => ({
+  const customItems: SidebarNavItem[] = customSidebarItems.map((item) => ({
     to: `/custom-sidebar/${item.id}`,
     label: item.label,
-    icon: "custom" as const
+    icon: "custom",
+    iconId: item.iconId
   }));
 
   const navItems = [
@@ -79,7 +87,7 @@ export function AppSidebar({ isCollapsed, experimentalEnabled, customSidebarItem
             }
           >
             <span className="sidebar-link-icon">
-              <SidebarIllustration kind={item.icon} />
+              {item.iconId ? <CustomSidebarIcon iconId={item.iconId} /> : <SidebarIllustration kind={item.icon} />}
             </span>
             <span className="sidebar-link-label">{item.label}</span>
           </NavLink>

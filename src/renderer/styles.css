@@ -267,10 +267,12 @@ a {
   flex: none;
 }
 
-.sidebar-link-icon svg {
+.sidebar-link-icon svg,
+.sidebar-link-icon img {
   width: 100%;
   height: 100%;
   display: block;
+  object-fit: contain;
 }
 
 .sidebar-link-label {
@@ -1056,22 +1058,45 @@ a {
   padding: 12px;
 }
 
-.custom-sidebar-row div {
+.custom-sidebar-row-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
 }
 
-.custom-sidebar-row strong,
-.custom-sidebar-row span {
+.custom-sidebar-row-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(14, 165, 233, 0.10);
+}
+
+.custom-sidebar-row-icon img {
+  width: 24px;
+  height: 24px;
   display: block;
 }
 
-.custom-sidebar-row strong {
+.custom-sidebar-row-copy {
+  min-width: 0;
+}
+
+.custom-sidebar-row-copy strong,
+.custom-sidebar-row-copy span {
+  display: block;
+}
+
+.custom-sidebar-row-copy strong {
   color: var(--ink);
   font-size: 14px;
   line-height: 1.4;
 }
 
-.custom-sidebar-row span {
+.custom-sidebar-row-copy span {
   margin-top: 2px;
   color: var(--ink-muted);
   font-size: 12px;

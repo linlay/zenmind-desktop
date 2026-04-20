@@ -259,6 +259,7 @@ export interface CustomSidebarItem {
   id: string;
   label: string;
   url: string;
+  iconId: string;
   createdAt: number;
   updatedAt: number;
 }
