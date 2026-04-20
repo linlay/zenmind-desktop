@@ -1,7 +1,9 @@
 import {
 	normalizeThemeMode,
 	resolveInitialThemeMode,
+	STATION_STORE_KEY,
 	THEME_STORAGE_KEY,
+	writeStoredThemeMode,
 } from "./theme";
 
 describe("theme helpers", () => {
@@ -78,5 +80,56 @@ describe("theme helpers", () => {
 		});
 
 		expect(resolveInitialThemeMode()).toBe("dark");
+	});
+
+	it("falls back to STATION_STORE when the webclient theme is not stored", () => {
+		Object.defineProperty(globalThis, "window", {
+			configurable: true,
+			value: {
+				location: {
+					search: "?desktopApp=1",
+				},
+			},
+		});
+		Object.defineProperty(globalThis, "localStorage", {
+			configurable: true,
+			value: {
+				getItem: (key: string) =>
+					key === STATION_STORE_KEY ? '{"theme":"dark","avatar":"g.gif"}' : null,
+			},
+		});
+		Object.defineProperty(globalThis, "document", {
+			configurable: true,
+			value: {
+				documentElement: {
+					getAttribute: () => "light",
+				},
+			},
+		});
+
+		expect(resolveInitialThemeMode()).toBe("dark");
+	});
+
+	it("writes theme changes into STATION_STORE while preserving existing fields", () => {
+		const values = new Map<string, string>([
+			[STATION_STORE_KEY, '{"avatar":"g.gif","theme":"light","themeIndex":0}'],
+		]);
+		Object.defineProperty(globalThis, "localStorage", {
+			configurable: true,
+			value: {
+				getItem: (key: string) => values.get(key) ?? null,
+				setItem: (key: string, value: string) => {
+					values.set(key, value);
+				},
+			},
+		});
+
+		writeStoredThemeMode("dark");
+
+		expect(JSON.parse(values.get(STATION_STORE_KEY) || "{}")).toEqual({
+			avatar: "g.gif",
+			theme: "dark",
+			themeIndex: 0,
+		});
 	});
 });

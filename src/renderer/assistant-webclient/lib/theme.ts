@@ -7,6 +7,7 @@ import {
 export type ThemeMode = "light" | "dark";
 
 export const THEME_STORAGE_KEY = "agent-webclient.themeMode";
+export const STATION_STORE_KEY = "STATION_STORE";
 
 export function normalizeThemeMode(value: unknown): ThemeMode {
 	return value === "dark" ? "dark" : "light";
@@ -45,7 +46,7 @@ export function readStoredThemeMode(): ThemeMode | null {
 	try {
 		const stored = localStorage.getItem(THEME_STORAGE_KEY);
 		if (!stored) {
-			return null;
+			return readStationStoreThemeMode();
 		}
 		return normalizeThemeMode(stored);
 	} catch (_error) {
@@ -53,7 +54,51 @@ export function readStoredThemeMode(): ThemeMode | null {
 	}
 }
 
+export function readStationStoreThemeMode(): ThemeMode | null {
+	if (typeof localStorage === "undefined") {
+		return null;
+	}
+	try {
+		const stored = localStorage.getItem(STATION_STORE_KEY);
+		if (!stored) {
+			return null;
+		}
+		const parsed = JSON.parse(stored) as { theme?: unknown } | null;
+		if (!parsed || typeof parsed !== "object" || !parsed.theme) {
+			return null;
+		}
+		return normalizeThemeMode(parsed.theme);
+	} catch (_error) {
+		return null;
+	}
+}
+
+export function writeStationStoreThemeMode(themeMode: ThemeMode): void {
+	if (typeof localStorage === "undefined") {
+		return;
+	}
+	try {
+		const stored = localStorage.getItem(STATION_STORE_KEY);
+		const parsed = stored ? JSON.parse(stored) : {};
+		const store =
+			parsed && typeof parsed === "object" && !Array.isArray(parsed)
+				? parsed
+				: {};
+		localStorage.setItem(
+			STATION_STORE_KEY,
+			JSON.stringify({ ...store, theme: themeMode }),
+		);
+	} catch (_error) {
+		try {
+			localStorage.setItem(STATION_STORE_KEY, JSON.stringify({ theme: themeMode }));
+		} catch (_innerError) {
+			// Ignore storage write failures and keep the in-memory theme state.
+		}
+	}
+}
+
 export function writeStoredThemeMode(themeMode: ThemeMode): void {
+	writeStationStoreThemeMode(themeMode);
 	if (hasNativeAgentWebClientHost()) {
 		return;
 	}

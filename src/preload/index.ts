@@ -53,6 +53,10 @@ const api: DesktopApi = {
     getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
     changeDataRoot: () => ipcRenderer.invoke("settings.changeDataRoot")
   },
+  credentials: {
+    getQiuerLogin: () => ipcRenderer.invoke("credentials.getQiuerLogin"),
+    saveQiuerLogin: (credentials) => ipcRenderer.invoke("credentials.saveQiuerLogin", credentials)
+  },
   onNavigate: (listener: NavigateListener) => {
     const handleNavigate = (_event: Electron.IpcRendererEvent, path: string) => {
       listener(path);

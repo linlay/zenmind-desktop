@@ -238,6 +238,23 @@ export interface DataRootChangeResult {
   dataRoot: string;
 }
 
+export interface QiuerLoginCredentials {
+  account: string;
+  password: string;
+  updatedAt: number;
+}
+
+export interface QiuerLoginCredentialsResult {
+  ok: boolean;
+  credentials: QiuerLoginCredentials | null;
+  message: string;
+}
+
+export interface SaveQiuerLoginCredentialsResult {
+  ok: boolean;
+  message: string;
+}
+
 export type NavigateListener = (path: string) => void;
 
 export interface DesktopApi {
@@ -284,6 +301,10 @@ export interface DesktopApi {
   settings: {
     getDataRoot: () => Promise<string>;
     changeDataRoot: () => Promise<DataRootChangeResult>;
+  };
+  credentials: {
+    getQiuerLogin: () => Promise<QiuerLoginCredentialsResult>;
+    saveQiuerLogin: (credentials: { account: string; password: string }) => Promise<SaveQiuerLoginCredentialsResult>;
   };
   onNavigate: (listener: NavigateListener) => () => void;
 }

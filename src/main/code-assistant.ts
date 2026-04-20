@@ -501,6 +501,11 @@ async function main() {
   process.env.CLAUDE_CODE_API_BASE_URL = claudeCodeApiBaseUrl;
   process.env.ANTHROPIC_API_KEY = anthropicApiKey;
   process.env.ANTHROPIC_AUTH_TOKEN = anthropicApiKey;
+  // The AGW proxy awaiting submit bridge is not ready yet; keep interviews in normal chat.
+  process.env.CLAUDE_CODE_DISABLE_HITL = "1";
+  process.env.CLAUDE_CODE_DISABLE_HUMAN_IN_THE_LOOP = "1";
+  process.env.CLAUDE_CODE_DISABLE_ASK_USER_QUESTION_MODAL = "1";
+  process.env.CLAUDE_CODE_DISABLE_ASK_USER_QUESTION = "1";
 
   await assertPortAvailable(relayPort);
   await assertPortAvailable(dashboardPort);

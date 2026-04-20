@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-04-20T04:07:27.425Z",
+  "generatedAt": "2026-04-20T05:34:34.773Z",
   "platform": {
     "os": "darwin",
     "arch": "arm64"
   },
   "sourceRoot": "/Users/jialin/Desktop/claude-code-guotai",
-  "relayChunkFile": "chunk-3nw6rqj4.js",
+  "relayChunkFile": "chunk-mahw510k.js",
   "files": {
     "cli": "claude-code-guotai/dist/cli.js",
     "relayEntrypoint": "claude-code-guotai/desktop/relay-entry.mjs",

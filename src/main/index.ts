@@ -50,6 +50,7 @@ import {
   saveDataRoot
 } from "./user-paths";
 import { getAllServices } from "./service-registry";
+import { getQiuerLoginCredentials, saveQiuerLoginCredentials } from "./credential-store";
 
 let mainWindow: BrowserWindow | null = null;
 let isHandlingQuit = false;
@@ -523,6 +524,10 @@ function registerIpcHandlers() {
         dataRoot: currentRoot
       };
     }
+  });
+  ipcMain.handle("credentials.getQiuerLogin", async () => getQiuerLoginCredentials(app));
+  ipcMain.handle("credentials.saveQiuerLogin", async (_event, credentials: { account: string; password: string }) => {
+    return saveQiuerLoginCredentials(app, credentials);
   });
 }
 
