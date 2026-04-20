@@ -10,7 +10,8 @@ type SidebarIllustrationKind =
   | "settings"
   | "service"
   | "futures"
-  | "autumn";
+  | "autumn"
+  | "custom";
 
 type SidebarIllustrationProps = {
   kind: SidebarIllustrationKind;
@@ -185,6 +186,26 @@ function AutumnIcon({ className }: { className?: string }) {
   );
 }
 
+function CustomWebIcon({ className }: { className?: string }) {
+  return (
+    <IconFrame className={className}>
+      <rect x="28" y="44" width="200" height="168" rx="28" fill="#0EA5E9" />
+      <path d="M28 78a28 28 0 0 1 28-28h144a28 28 0 0 1 28 28v28H28z" fill="#38BDF8" />
+      <circle cx="64" cy="78" r="8" fill="#E0F2FE" />
+      <circle cx="92" cy="78" r="8" fill="#E0F2FE" />
+      <circle cx="120" cy="78" r="8" fill="#E0F2FE" />
+      <path
+        d="M72 144h112M72 172h72"
+        stroke="#FFFFFF"
+        strokeWidth="12"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <path d="M164 132l24 24-24 24" stroke="#BAE6FD" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </IconFrame>
+  );
+}
+
 export function SidebarIllustration({ kind, className }: SidebarIllustrationProps) {
   switch (kind) {
     case "assistant":
@@ -201,6 +222,8 @@ export function SidebarIllustration({ kind, className }: SidebarIllustrationProp
       return <FuturesIcon className={className} />;
     case "autumn":
       return <AutumnIcon className={className} />;
+    case "custom":
+      return <CustomWebIcon className={className} />;
     case "control":
     default:
       return <ControlCenterIcon className={className} />;

@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
 import { EXTERNAL_EXPERIMENTAL_ITEMS } from "../App";
 import { BrandMark, SidebarIllustration } from "./BrandMark";
+import type { CustomSidebarItem } from "@shared/contracts";
 
 const staticNavItems = [
   { to: "/control-center", label: "控制中心", icon: "control" },
@@ -13,9 +14,10 @@ const staticNavItems = [
 type AppSidebarProps = {
   isCollapsed: boolean;
   experimentalEnabled: boolean;
+  customSidebarItems: CustomSidebarItem[];
 };
 
-export function AppSidebar({ isCollapsed, experimentalEnabled }: AppSidebarProps) {
+export function AppSidebar({ isCollapsed, experimentalEnabled, customSidebarItems }: AppSidebarProps) {
   const { services } = useServices();
   const serviceNavItems = services
     .filter(
@@ -38,11 +40,18 @@ export function AppSidebar({ isCollapsed, experimentalEnabled }: AppSidebarProps
       }))
     : [];
 
+  const customItems = customSidebarItems.map((item) => ({
+    to: `/custom-sidebar/${item.id}`,
+    label: item.label,
+    icon: "custom" as const
+  }));
+
   const navItems = [
     staticNavItems[0],
     staticNavItems[1],
     ...serviceNavItems,
     ...experimentalItems,
+    ...customItems,
     ...staticNavItems.slice(2)
   ];
 

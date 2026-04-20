@@ -975,6 +975,143 @@ a {
   word-break: break-word;
 }
 
+.custom-sidebar-card {
+  align-items: stretch;
+}
+
+.custom-sidebar-copy {
+  min-width: 280px;
+}
+
+.custom-sidebar-panel {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 520px);
+}
+
+.custom-sidebar-form {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(180px, 1.2fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.custom-sidebar-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.custom-sidebar-form input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.custom-sidebar-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.custom-sidebar-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.custom-sidebar-empty,
+.custom-sidebar-row {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.custom-sidebar-empty {
+  padding: 14px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+.custom-sidebar-list {
+  display: grid;
+  gap: 8px;
+}
+
+.custom-sidebar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+}
+
+.custom-sidebar-row div {
+  min-width: 0;
+}
+
+.custom-sidebar-row strong,
+.custom-sidebar-row span {
+  display: block;
+}
+
+.custom-sidebar-row strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.custom-sidebar-row span {
+  margin-top: 2px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-button,
+.danger-text-button {
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.text-button:hover,
+.danger-text-button:hover {
+  background: var(--accent-soft);
+}
+
+.danger-text-button {
+  flex: none;
+  color: var(--danger);
+}
+
+.danger-text-button:hover {
+  background: rgba(245, 63, 63, 0.1);
+}
+
+.text-button:disabled,
+.danger-text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 /* ── Control Center Shell ── */
 
 .control-center-shell {
@@ -1962,6 +2099,14 @@ code {
   .control-center-hero-actions {
     width: 100%;
     flex-direction: column;
+  }
+
+  .custom-sidebar-panel {
+    width: 100%;
+  }
+
+  .custom-sidebar-form {
+    grid-template-columns: 1fr;
   }
 
   .service-sider,

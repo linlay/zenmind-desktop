@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   DesktopApi,
+  AssistantWorkerOpenRequest,
   NavigateListener,
   ServiceId,
   ServiceLogReadOptions,
@@ -57,6 +58,11 @@ const api: DesktopApi = {
     getQiuerLogin: () => ipcRenderer.invoke("credentials.getQiuerLogin"),
     saveQiuerLogin: (credentials) => ipcRenderer.invoke("credentials.saveQiuerLogin", credentials)
   },
+  customSidebar: {
+    list: () => ipcRenderer.invoke("customSidebar.list"),
+    add: (input) => ipcRenderer.invoke("customSidebar.add", input),
+    remove: (id: string) => ipcRenderer.invoke("customSidebar.remove", id)
+  },
   onNavigate: (listener: NavigateListener) => {
     const handleNavigate = (_event: Electron.IpcRendererEvent, path: string) => {
       listener(path);
@@ -65,6 +71,19 @@ const api: DesktopApi = {
     ipcRenderer.on("app.navigate", handleNavigate);
     return () => {
       ipcRenderer.off("app.navigate", handleNavigate);
+    };
+  },
+  onOpenAssistantWorker: (listener) => {
+    const handleOpenAssistantWorker = (
+      _event: Electron.IpcRendererEvent,
+      request: AssistantWorkerOpenRequest
+    ) => {
+      listener(request);
+    };
+
+    ipcRenderer.on("app.openAssistantWorker", handleOpenAssistantWorker);
+    return () => {
+      ipcRenderer.off("app.openAssistantWorker", handleOpenAssistantWorker);
     };
   }
 };

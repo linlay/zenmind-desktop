@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="tray chat icon">
+  <g>
+    <rect x="48" y="38" width="110" height="110" rx="24" fill="#9CCAFF"/>
+    <path
+      d="M91 70h74c27 0 43 16 43 43v30c0 27-16 43-43 43h-36l-30 31v-31h-8c-27 0-43-16-43-43v-30c0-27 16-43 43-43z"
+      fill="#3B82F6"/>
+    <circle cx="98" cy="128" r="10" fill="#FFFFFF"/>
+    <circle cx="134" cy="128" r="10" fill="#FFFFFF"/>
+    <circle cx="170" cy="128" r="10" fill="#FFFFFF"/>
+  </g>
+</svg>

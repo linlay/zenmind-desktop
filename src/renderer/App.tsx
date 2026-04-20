@@ -11,12 +11,14 @@ import { PluginMarketPage } from "./pages/PluginMarketPage";
 import { PluginPage } from "./pages/PluginPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ServicesProvider } from "./services/ServicesContext";
+import type { AssistantWorkerOpenRequest, CustomSidebarItem } from "@shared/contracts";
 
 type ThemeMode = "light" | "dark";
 
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
 const EXPERIMENTAL_STORAGE_KEY = "zenmind-desktop.experimental";
+const ASSISTANT_WORKER_INTENT_STORAGE_KEY = "zenmind-desktop.assistantWorkerIntent";
 
 export const EXTERNAL_EXPERIMENTAL_ITEMS = [
   { id: "guoxiao", label: "国小君平台", url: "https://gtjaqh.net/home/#/home", icon: "futures" as const },
@@ -33,6 +35,26 @@ type SidebarState = {
   collapsed: boolean;
   width: number;
 };
+
+function dispatchAssistantWorkerIntent(request: AssistantWorkerOpenRequest) {
+  try {
+    window.sessionStorage.setItem(
+      ASSISTANT_WORKER_INTENT_STORAGE_KEY,
+      JSON.stringify({
+        ...request,
+        createdAt: Date.now()
+      })
+    );
+  } catch {
+    // Ignore storage failures; the live event still handles already-mounted assistant views.
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("agent:select-worker", {
+      detail: request
+    })
+  );
+}
 
 function AppShell() {
   const navigate = useNavigate();
@@ -81,6 +103,19 @@ function AppShell() {
       return false;
     }
   });
+  const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
+
+  async function refreshCustomSidebarItems() {
+    const result = await window.electronAPI.customSidebar.list();
+    if (result.ok) {
+      setCustomSidebarItems(result.items);
+    }
+    return result;
+  }
+
+  useEffect(() => {
+    refreshCustomSidebarItems().catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     try {
@@ -93,6 +128,15 @@ function AppShell() {
   useEffect(() => {
     return window.electronAPI.onNavigate((targetPath) => {
       navigate(targetPath);
+    });
+  }, [navigate]);
+
+  useEffect(() => {
+    return window.electronAPI.onOpenAssistantWorker((request) => {
+      navigate("/assistant");
+      window.requestAnimationFrame(() => {
+        dispatchAssistantWorkerIntent(request);
+      });
     });
   }, [navigate]);
 
@@ -213,7 +257,11 @@ function AppShell() {
         ].filter(Boolean).join(" ")}
         style={{ "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
-        <AppSidebar isCollapsed={sidebarState.collapsed} experimentalEnabled={experimentalEnabled} />
+        <AppSidebar
+          isCollapsed={sidebarState.collapsed}
+          experimentalEnabled={experimentalEnabled}
+          customSidebarItems={customSidebarItems}
+        />
         <button
           type="button"
           className="app-sidebar-resizer"
@@ -256,6 +304,9 @@ function AppShell() {
                     onToggleTheme={toggleTheme}
                     experimentalEnabled={experimentalEnabled}
                     onToggleExperimental={() => setExperimentalEnabled((v) => !v)}
+                    customSidebarItems={customSidebarItems}
+                    onCustomSidebarItemsChange={setCustomSidebarItems}
+                    onRefreshCustomSidebarItems={refreshCustomSidebarItems}
                   />
                 }
               />
@@ -279,6 +330,13 @@ function AppShell() {
                     />
                   ))
                 : null}
+              {customSidebarItems.map((item) => (
+                <Route
+                  key={item.id}
+                  path={`/custom-sidebar/${item.id}`}
+                  element={<ExternalWebviewPage title={item.label} url={item.url} />}
+                />
+              ))}
               <Route path="/market" element={<PluginMarketPage />} />
               <Route path="/help" element={<HelpPage />} />
             </Routes>

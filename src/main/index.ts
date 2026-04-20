@@ -5,7 +5,9 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeImage,
   session,
+  Tray,
   type MenuItemConstructorOptions,
   type OpenDialogOptions
 } from "electron";
@@ -42,7 +44,12 @@ import {
 } from "./service-manager";
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
-import type { ServiceId, ServiceLogReadOptions, ServiceLogTarget } from "../shared/contracts";
+import type {
+  AssistantWorkerOpenRequest,
+  ServiceId,
+  ServiceLogReadOptions,
+  ServiceLogTarget
+} from "../shared/contracts";
 import {
   getDataRoot,
   loadUserPaths,
@@ -51,8 +58,14 @@ import {
 } from "./user-paths";
 import { getAllServices } from "./service-registry";
 import { getQiuerLoginCredentials, saveQiuerLoginCredentials } from "./credential-store";
+import {
+  addCustomSidebarItem,
+  listCustomSidebarItems,
+  removeCustomSidebarItem
+} from "./custom-sidebar-store";
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let isHandlingQuit = false;
 const DESKTOP_OPTIONAL_AUTO_START_SERVICE_IDS = new Set(["agent-container-hub"]);
 
@@ -134,11 +147,36 @@ function createWindow() {
     mainWindow?.webContents.toggleDevTools();
   });
 
+  mainWindow.on("close", (event) => {
+    if (isHandlingQuit) {
+      return;
+    }
+    event.preventDefault();
+    mainWindow?.hide();
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
 
   return mainWindow;
+}
+
+function showMainWindow(targetPath?: string) {
+  const targetWindow = getOrCreateMainWindow();
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  if (targetWindow.isMinimized()) {
+    targetWindow.restore();
+  }
+  targetWindow.show();
+  targetWindow.focus();
+
+  if (targetPath) {
+    navigateMainWindow(targetPath);
+  }
 }
 
 function getOrCreateMainWindow() {
@@ -157,6 +195,7 @@ function navigateMainWindow(targetPath: string) {
   if (targetWindow.isMinimized()) {
     targetWindow.restore();
   }
+  targetWindow.show();
   targetWindow.focus();
 
   const sendNavigate = () => {
@@ -171,6 +210,90 @@ function navigateMainWindow(targetPath: string) {
   }
 
   sendNavigate();
+}
+
+function openAssistantWorker(request: AssistantWorkerOpenRequest) {
+  showMainWindow("/assistant");
+
+  const targetWindow = mainWindow;
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  const sendOpenAssistantWorker = () => {
+    if (!targetWindow.isDestroyed()) {
+      targetWindow.webContents.send("app.openAssistantWorker", request);
+    }
+  };
+
+  if (targetWindow.webContents.isLoadingMainFrame()) {
+    targetWindow.webContents.once("did-finish-load", sendOpenAssistantWorker);
+    return;
+  }
+
+  setTimeout(sendOpenAssistantWorker, 100);
+}
+
+function createTrayIcon() {
+  const platformIconPath =
+    process.platform === "win32"
+      ? path.join(__dirname, "..", "..", "build", "icons", "icon.ico")
+      : path.join(__dirname, "..", "..", "build", "icons", "icon-16.png");
+  const iconPaths = [
+    path.join(__dirname, "..", "..", "dist-renderer", "tray-icon.png"),
+    path.join(__dirname, "..", "..", "public", "tray-icon.png"),
+    platformIconPath,
+    path.join(__dirname, "..", "..", "public", "brand-icon.png")
+  ];
+  const icon =
+    iconPaths
+      .map((iconPath) => nativeImage.createFromPath(iconPath))
+      .find((candidate) => !candidate.isEmpty()) ?? nativeImage.createEmpty();
+  return icon.resize({ width: 18, height: 18 });
+}
+
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
+    {
+      label: "和灵犀聊天",
+      click: () =>
+        openAssistantWorker({
+          displayName: "灵犀",
+          role: "确认对话示例",
+          focusComposerOnComplete: true
+        })
+    },
+    {
+      label: "打开国泰君安期货",
+      click: () => showMainWindow()
+    },
+    {
+      label: "设置",
+      click: () => showMainWindow("/settings")
+    },
+    { type: "separator" },
+    {
+      label: "退出",
+      click: () => app.quit()
+    }
+  ]);
+}
+
+function createAppTray() {
+  if (tray) {
+    return tray;
+  }
+
+  tray = new Tray(createTrayIcon());
+  const trayMenu = buildTrayMenu();
+  tray.setToolTip("国泰君安期货");
+  if (process.platform !== "darwin") {
+    tray.setContextMenu(trayMenu);
+  }
+  tray.on("click", () => showMainWindow());
+  tray.on("right-click", () => tray?.popUpContextMenu(trayMenu));
+
+  return tray;
 }
 
 function showDirectoryDialog(title: string, defaultPath: string, ownerWindow: BrowserWindow | null = mainWindow) {
@@ -529,6 +652,13 @@ function registerIpcHandlers() {
   ipcMain.handle("credentials.saveQiuerLogin", async (_event, credentials: { account: string; password: string }) => {
     return saveQiuerLoginCredentials(app, credentials);
   });
+  ipcMain.handle("customSidebar.list", async () => listCustomSidebarItems(app));
+  ipcMain.handle("customSidebar.add", async (_event, input: { label?: string; url: string }) => {
+    return addCustomSidebarItem(app, input);
+  });
+  ipcMain.handle("customSidebar.remove", async (_event, id: string) => {
+    return removeCustomSidebarItem(app, id);
+  });
 }
 
 async function initializeManagedCodeAssistantPlugin() {
@@ -570,12 +700,11 @@ app.whenReady().then(async () => {
   await initializeManagedCodeAssistantPlugin();
   registerIpcHandlers();
   createWindow();
+  createAppTray();
   buildApplicationMenu();
   void autoStartDesktopServices();
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    showMainWindow();
   });
 });
 
@@ -595,7 +724,7 @@ app.on("before-quit", (event) => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
+  if (isHandlingQuit && process.platform !== "darwin") {
     app.quit();
   }
 });

@@ -255,7 +255,49 @@ export interface SaveQiuerLoginCredentialsResult {
   message: string;
 }
 
+export interface CustomSidebarItem {
+  id: string;
+  label: string;
+  url: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CustomSidebarItemInput {
+  label?: string;
+  url: string;
+}
+
+export interface CustomSidebarItemsResult {
+  ok: boolean;
+  items: CustomSidebarItem[];
+  message: string;
+}
+
+export interface CustomSidebarItemResult {
+  ok: boolean;
+  item: CustomSidebarItem | null;
+  items: CustomSidebarItem[];
+  message: string;
+}
+
+export interface CustomSidebarDeleteResult {
+  ok: boolean;
+  items: CustomSidebarItem[];
+  message: string;
+}
+
 export type NavigateListener = (path: string) => void;
+
+export interface AssistantWorkerOpenRequest {
+  workerKey?: string;
+  agentKey?: string;
+  displayName?: string;
+  role?: string;
+  focusComposerOnComplete?: boolean;
+}
+
+export type AssistantWorkerOpenListener = (request: AssistantWorkerOpenRequest) => void;
 
 export interface DesktopApi {
   services: {
@@ -306,5 +348,11 @@ export interface DesktopApi {
     getQiuerLogin: () => Promise<QiuerLoginCredentialsResult>;
     saveQiuerLogin: (credentials: { account: string; password: string }) => Promise<SaveQiuerLoginCredentialsResult>;
   };
+  customSidebar: {
+    list: () => Promise<CustomSidebarItemsResult>;
+    add: (input: CustomSidebarItemInput) => Promise<CustomSidebarItemResult>;
+    remove: (id: string) => Promise<CustomSidebarDeleteResult>;
+  };
   onNavigate: (listener: NavigateListener) => () => void;
+  onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
 }

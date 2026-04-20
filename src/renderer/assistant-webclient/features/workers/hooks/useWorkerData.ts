@@ -17,6 +17,24 @@ import {
 } from '@/features/chats/lib/chatSummary';
 import { upsertAgentSummary } from '@/features/workers/lib/agentSummary';
 
+const ASSISTANT_WORKER_INTENT_STORAGE_KEY = 'zenmind-desktop.assistantWorkerIntent';
+const ASSISTANT_WORKER_INTENT_MAX_AGE_MS = 10 * 60 * 1000;
+
+type WorkerSelectionDetail = {
+  workerKey?: unknown;
+  agentKey?: unknown;
+  displayName?: unknown;
+  workerName?: unknown;
+  name?: unknown;
+  role?: unknown;
+  focusComposerOnComplete?: unknown;
+  createdAt?: unknown;
+};
+
+function normalizeWorkerLabel(value: unknown): string {
+  return String(value || '').trim().toLowerCase();
+}
+
 export function shouldStartInitialWorkerRefresh(input: {
   hasStarted: boolean;
   appMode: boolean;
@@ -79,6 +97,54 @@ export function useWorkerData(input: {
     if (defaultTeamKey) return defaultTeamKey;
     return rows[0]?.key || '';
   }, [findDefaultTeamWorkerKey, stateRef]);
+
+  const resolveWorkerKeyFromLabel = useCallback((detail: WorkerSelectionDetail): string => {
+    const requestedLabels = [detail.displayName, detail.workerName, detail.name]
+      .map(normalizeWorkerLabel)
+      .filter(Boolean);
+    if (requestedLabels.length === 0) {
+      return '';
+    }
+
+    const rows = stateRef.current.workerRows || [];
+    const requestedRole = normalizeWorkerLabel(detail.role);
+    if (requestedRole) {
+      const exactRoleMatch = rows.find((row) => {
+        const displayName = normalizeWorkerLabel(row.displayName);
+        const sourceId = normalizeWorkerLabel(row.sourceId);
+        const role = normalizeWorkerLabel(row.role);
+        const labelMatches = requestedLabels.includes(displayName) || requestedLabels.includes(sourceId);
+        return labelMatches && role === requestedRole;
+      });
+      if (exactRoleMatch) {
+        return exactRoleMatch.key;
+      }
+    }
+
+    const exactMatch = rows.find((row) => {
+      const displayName = normalizeWorkerLabel(row.displayName);
+      const sourceId = normalizeWorkerLabel(row.sourceId);
+      return requestedLabels.includes(displayName) || requestedLabels.includes(sourceId);
+    });
+    if (exactMatch) {
+      return exactMatch.key;
+    }
+
+    const fuzzyMatch = rows.find((row) => {
+      const displayName = normalizeWorkerLabel(row.displayName);
+      if (!displayName) {
+        return false;
+      }
+      return requestedLabels.some((label) => displayName.includes(label) || label.includes(displayName));
+    });
+    return fuzzyMatch?.key || '';
+  }, [stateRef]);
+
+  const resolveWorkerKeyFromDetail = useCallback((detail: WorkerSelectionDetail): string => {
+    const requestedWorkerKey = String(detail.workerKey || '').trim();
+    const fallbackWorkerKey = extractAgentWorkerKey(detail);
+    return requestedWorkerKey || fallbackWorkerKey || resolveWorkerKeyFromLabel(detail);
+  }, [extractAgentWorkerKey, resolveWorkerKeyFromLabel]);
 
   const rebuildWorkerRowsFromState = useCallback((overrides: WorkerRefreshOverrides = {}) => {
     const current = stateRef.current;
@@ -236,6 +302,59 @@ export function useWorkerData(input: {
     }
   }, [dispatch, extractAgentWorkerKey, rebuildWorkerRowsFromState, stateRef]);
 
+  const selectWorkerFromDetail = useCallback(async (detail: WorkerSelectionDetail): Promise<boolean> => {
+    const focusComposerOnComplete = Boolean(detail.focusComposerOnComplete);
+    let nextWorkerKey = resolveWorkerKeyFromDetail(detail);
+
+    if (!nextWorkerKey && (detail.displayName || detail.workerName || detail.name)) {
+      await refreshWorkerData();
+      nextWorkerKey = resolveWorkerKeyFromDetail(detail);
+    }
+
+    if (!nextWorkerKey) {
+      return false;
+    }
+
+    const resolvedWorkerKey = await ensureAgentLoadedForWorkerSelection({
+      ...detail,
+      workerKey: nextWorkerKey,
+    });
+    await selectWorkerConversation(resolvedWorkerKey || nextWorkerKey, { focusComposerOnComplete });
+    return true;
+  }, [
+    ensureAgentLoadedForWorkerSelection,
+    refreshWorkerData,
+    resolveWorkerKeyFromDetail,
+    selectWorkerConversation,
+  ]);
+
+  const clearPendingAssistantWorkerIntent = useCallback(() => {
+    try {
+      window.sessionStorage.removeItem(ASSISTANT_WORKER_INTENT_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const readPendingAssistantWorkerIntent = useCallback((): WorkerSelectionDetail | null => {
+    try {
+      const raw = window.sessionStorage.getItem(ASSISTANT_WORKER_INTENT_STORAGE_KEY);
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw) as WorkerSelectionDetail;
+      const createdAt = Number(parsed.createdAt || 0);
+      if (createdAt > 0 && Date.now() - createdAt > ASSISTANT_WORKER_INTENT_MAX_AGE_MS) {
+        clearPendingAssistantWorkerIntent();
+        return null;
+      }
+      return parsed;
+    } catch {
+      clearPendingAssistantWorkerIntent();
+      return null;
+    }
+  }, [clearPendingAssistantWorkerIntent]);
+
   useEffect(() => {
     setAccessToken(state.accessToken);
   }, [state.accessToken]);
@@ -324,26 +443,59 @@ export function useWorkerData(input: {
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = ((e as CustomEvent).detail || {}) as {
-        workerKey?: string;
-        agentKey?: string;
-        focusComposerOnComplete?: boolean;
-      };
-      const focusComposerOnComplete = Boolean((e as CustomEvent).detail?.focusComposerOnComplete);
-      const requestedWorkerKey = String(detail.workerKey || '').trim();
-      const fallbackWorkerKey = extractAgentWorkerKey(detail);
-      const nextWorkerKey = requestedWorkerKey || fallbackWorkerKey;
-      if (!nextWorkerKey) return;
-
-      ensureAgentLoadedForWorkerSelection(detail)
-        .then((resolvedWorkerKey) => (
-          selectWorkerConversation(resolvedWorkerKey || nextWorkerKey, { focusComposerOnComplete })
-        ))
+      const detail = ((e as CustomEvent).detail || {}) as WorkerSelectionDetail;
+      selectWorkerFromDetail(detail)
+        .then((handled) => {
+          if (handled) {
+            clearPendingAssistantWorkerIntent();
+          }
+        })
         .catch(() => undefined);
     };
     window.addEventListener('agent:select-worker', handler);
     return () => window.removeEventListener('agent:select-worker', handler);
-  }, [ensureAgentLoadedForWorkerSelection, extractAgentWorkerKey, selectWorkerConversation]);
+  }, [clearPendingAssistantWorkerIntent, selectWorkerFromDetail]);
+
+  useEffect(() => {
+    let disposed = false;
+    let retryTimer: number | null = null;
+
+    const tryPendingIntent = () => {
+      if (disposed) {
+        return;
+      }
+      const intent = readPendingAssistantWorkerIntent();
+      if (!intent) {
+        return;
+      }
+
+      selectWorkerFromDetail(intent)
+        .then((handled) => {
+          if (disposed) {
+            return;
+          }
+          if (handled) {
+            clearPendingAssistantWorkerIntent();
+            return;
+          }
+          retryTimer = window.setTimeout(tryPendingIntent, 1000);
+        })
+        .catch(() => {
+          if (!disposed) {
+            retryTimer = window.setTimeout(tryPendingIntent, 1000);
+          }
+        });
+    };
+
+    tryPendingIntent();
+
+    return () => {
+      disposed = true;
+      if (retryTimer != null) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, [clearPendingAssistantWorkerIntent, readPendingAssistantWorkerIntent, selectWorkerFromDetail]);
 
   return {
     loadAgents,
