@@ -43,4 +43,8 @@ test("custom uninstall assets exist with the expected data cleanup targets", () 
   assert.match(uninstallScript, /Library\/Application Support\/zenmind-desktop/);
   assert.match(distWinScript, /electronuserland\/builder:wine/);
   assert.match(distWinScript, /ZENMIND_DESKTOP_BUNDLED_BUN_PATH/);
+  assert.match(distWinScript, /HTTP_PROXY/);
+  assert.match(distWinScript, /http_proxy/);
+  assert.match(distWinScript, /host\.docker\.internal/);
+  assert.match(distWinScript, /npm install --force/);
 });

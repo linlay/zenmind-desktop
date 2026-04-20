@@ -96,6 +96,29 @@ function createApp(userDataRoot) {
   };
 }
 
+function quotePowerShell(value) {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function createArchive(bundleRoot, archivePath) {
+  if (archivePath.toLowerCase().endsWith(".zip")) {
+    execFileSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `Compress-Archive -LiteralPath ${quotePowerShell(bundleRoot)} -DestinationPath ${quotePowerShell(archivePath)} -Force`
+      ],
+      { stdio: "pipe" }
+    );
+    return;
+  }
+
+  execFileSync("tar", ["-czf", archivePath, "-C", path.dirname(bundleRoot), path.basename(bundleRoot)]);
+}
+
 async function canListenOnLocalPort() {
   const server = http.createServer((_req, res) => {
     res.writeHead(200, { "content-type": "text/plain" });
@@ -171,27 +194,53 @@ function loadBuiltinsForTest(userDataRoot, assetsRoot) {
 }
 
 function writeContainerHubBundleRoot(bundleRoot, options = {}) {
+  const serviceId = options.id ?? "agent-container-hub";
+  const version = options.version ?? "v0.1.0";
+  const backendEntry = options.backendEntry ?? "backend/agent-container-hub";
+  const bundleTopLevelDir = options.bundleTopLevelDir ?? path.basename(bundleRoot);
+  const assetFileName = options.assetFileName ?? `${serviceId}-${version}-darwin-arm64.tar.gz`;
+  const startScriptName = options.startScriptName ?? "start.sh";
+  const stopScriptName = options.stopScriptName ?? "stop.sh";
+  const deployScriptName = options.deployScriptName ?? "deploy.sh";
   const startScriptContent = options.startScriptContent ?? "#!/usr/bin/env bash\necho start\n";
+  const stopScriptContent = options.stopScriptContent ?? "#!/usr/bin/env bash\necho stop\n";
+  const deployScriptContent = options.deployScriptContent ?? "#!/usr/bin/env bash\necho deploy\n";
+  const runtimeRequiredPaths = options.runtimeRequiredPaths ?? [
+    backendEntry,
+    startScriptName,
+    stopScriptName,
+    deployScriptName,
+    "scripts/program-common.sh",
+    ".env.example",
+    "manifest.json",
+    "configs/environments"
+  ];
+  const scripts = options.scripts ?? {
+    start: [startScriptName, "--daemon"],
+    stop: stopScriptName,
+    deploy: deployScriptName
+  };
 
   fs.mkdirSync(path.join(bundleRoot, "backend"), { recursive: true });
   fs.mkdirSync(path.join(bundleRoot, "configs", "environments"), { recursive: true });
   fs.mkdirSync(path.join(bundleRoot, "data", "rootfs"), { recursive: true });
   fs.mkdirSync(path.join(bundleRoot, "data", "builds"), { recursive: true });
   fs.mkdirSync(path.join(bundleRoot, "scripts"), { recursive: true });
-  fs.writeFileSync(path.join(bundleRoot, "backend", "agent-container-hub"), "binary", "utf8");
-  fs.writeFileSync(path.join(bundleRoot, "deploy.sh"), "#!/usr/bin/env bash\necho deploy\n", "utf8");
-  fs.writeFileSync(path.join(bundleRoot, "start.sh"), startScriptContent, "utf8");
-  fs.writeFileSync(path.join(bundleRoot, "stop.sh"), "#!/usr/bin/env bash\necho stop\n", "utf8");
+  fs.mkdirSync(path.dirname(path.join(bundleRoot, backendEntry)), { recursive: true });
+  fs.writeFileSync(path.join(bundleRoot, backendEntry), "binary", "utf8");
+  fs.writeFileSync(path.join(bundleRoot, deployScriptName), deployScriptContent, "utf8");
+  fs.writeFileSync(path.join(bundleRoot, startScriptName), startScriptContent, "utf8");
+  fs.writeFileSync(path.join(bundleRoot, stopScriptName), stopScriptContent, "utf8");
   fs.writeFileSync(path.join(bundleRoot, "scripts", "program-common.sh"), "#!/usr/bin/env bash\n", "utf8");
   fs.writeFileSync(path.join(bundleRoot, ".env.example"), "BIND_ADDR=127.0.0.1:11960\n", "utf8");
   fs.writeFileSync(
     path.join(bundleRoot, "manifest.json"),
     `${JSON.stringify(
       {
-        id: "agent-container-hub",
+        id: serviceId,
         name: "Container Hub",
         kind: "builtin",
-        version: "v0.1.0",
+        version,
         description: "fixture",
         frontend: {
           mode: "embedded",
@@ -204,13 +253,9 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
           enabled: true
         },
         backend: {
-          entry: "backend/agent-container-hub"
+          entry: backendEntry
         },
-        scripts: {
-          start: ["start.sh", "--daemon"],
-          stop: "stop.sh",
-          deploy: "deploy.sh"
-        },
+        scripts,
         configFiles: [
           {
             key: "env",
@@ -224,16 +269,7 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
           pidRelativePath: "run/agent-container-hub.pid",
           logRelativePath: "run/agent-container-hub.log",
           errorLogRelativePath: "run/agent-container-hub.stderr.log",
-          requiredPaths: [
-            "backend/agent-container-hub",
-            "start.sh",
-            "stop.sh",
-            "deploy.sh",
-            "scripts/program-common.sh",
-            ".env.example",
-            "manifest.json",
-            "configs/environments"
-          ]
+          requiredPaths: runtimeRequiredPaths
         },
         web: {
           routePath: "/",
@@ -243,8 +279,8 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
         },
         desktop: {
           autoStart: "optional",
-          assetFileName: "agent-container-hub-v0.1.0-darwin-arm64.tar.gz",
-          bundleTopLevelDir: "agent-container-hub",
+          assetFileName,
+          bundleTopLevelDir,
           systemRequirements: ["docker|podman"]
         }
       },
@@ -271,7 +307,7 @@ function createContainerHubBundleFixture(tempRoot, options = {}) {
 
   writeContainerHubBundleRoot(tarBundleRoot, options);
   fs.mkdirSync(serviceAssetDir, { recursive: true });
-  execFileSync("tar", ["-czf", tarPath, "-C", tarFixtureRoot, "agent-container-hub"]);
+  createArchive(tarBundleRoot, tarPath);
 
   return {
     assetsRoot,
@@ -889,7 +925,7 @@ test("installBuiltinService force reinstalls healthy install and preserves env",
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("installBuiltinService installs from selected archive when archivePath is provided", async () => {
+test("installBuiltinService uses selected archive manifest when archivePath is provided", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-selected-archive-install-"));
   const builtinArchiveStartScript = "#!/usr/bin/env bash\necho builtin start\n";
   const selectedArchiveStartScript = "#!/usr/bin/env bash\necho selected start\n";
@@ -897,26 +933,115 @@ test("installBuiltinService installs from selected archive when archivePath is p
     startScriptContent: builtinArchiveStartScript
   });
   const selectedArchiveRoot = path.join(tempRoot, "selected-root");
-  const selectedBundleRoot = path.join(selectedArchiveRoot, "agent-container-hub");
+  const selectedBundleDirName = "agent-container-hub-selected";
+  const selectedBundleRoot = path.join(selectedArchiveRoot, selectedBundleDirName);
   const selectedArchivePath = path.join(tempRoot, "agent-container-hub-selected.tar.gz");
 
   writeContainerHubBundleRoot(selectedBundleRoot, {
+    bundleTopLevelDir: selectedBundleDirName,
+    startScriptName: "start-selected.sh",
+    stopScriptName: "stop-selected.sh",
+    deployScriptName: "deploy-selected.sh",
     startScriptContent: selectedArchiveStartScript
   });
-  execFileSync("tar", ["-czf", selectedArchivePath, "-C", selectedArchiveRoot, "agent-container-hub"]);
+  createArchive(selectedBundleRoot, selectedArchivePath);
 
   const { app, restore } = loadBuiltinsForTest(builtinFixture.userDataRoot, builtinFixture.assetsRoot);
   const service = getBuiltinService("agent-container-hub");
+  const builtinAssetFileName = service.desktop.assetFileName;
 
   await installBuiltinService(app, service.id, {
     force: true,
     archivePath: selectedArchivePath
   });
 
-  assert.equal(
-    fs.readFileSync(path.join(builtinFixture.installDir, "start.sh"), "utf8"),
-    selectedArchiveStartScript
+  const installedService = getBuiltinService(service.id);
+
+  assert.equal(installedService.desktop.assetFileName, builtinAssetFileName);
+  assert.equal(installedService.desktop.bundleTopLevelDir, selectedBundleDirName);
+  assert.equal(fs.existsSync(path.join(builtinFixture.installDir, "start.sh")), false);
+  assert.equal(fs.readFileSync(path.join(builtinFixture.installDir, "start-selected.sh"), "utf8"), selectedArchiveStartScript);
+  assert.equal(__testInternals.isInstallHealthy(installedService, builtinFixture.installDir), true);
+  assert.equal(__testInternals.readInitializationState(builtinFixture.installDir)?.status, "succeeded");
+  assert.notEqual((await getServiceState(app, service.id)).status, "error");
+
+  restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("installBuiltinService rejects selected archive when manifest id does not match serviceId", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-selected-archive-id-mismatch-"));
+  const assetsRoot = path.join(tempRoot, "assets");
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const selectedArchiveRoot = path.join(tempRoot, "selected-root");
+  const selectedBundleDirName = "agent-container-hub-selected";
+  const selectedBundleRoot = path.join(selectedArchiveRoot, selectedBundleDirName);
+  const selectedArchivePath = path.join(tempRoot, "agent-container-hub-selected.tar.gz");
+
+  fs.mkdirSync(assetsRoot, { recursive: true });
+  writeContainerHubBundleRoot(selectedBundleRoot, {
+    id: "other-service",
+    bundleTopLevelDir: selectedBundleDirName
+  });
+  createArchive(selectedBundleRoot, selectedArchivePath);
+
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+
+  await assert.rejects(
+    () =>
+      installBuiltinService(app, "agent-container-hub", {
+        force: true,
+        archivePath: selectedArchivePath
+      }),
+    /安装包 manifest id 不匹配：期望 agent-container-hub，实际 other-service/u
   );
+  assert.equal(fs.existsSync(path.join(userDataRoot, "services", "agent-container-hub")), false);
+
+  restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("installBuiltinService accepts Windows zip archives using archive manifest requiredPaths", { skip: process.platform !== "win32" }, async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-selected-archive-win-"));
+  const assetsRoot = path.join(tempRoot, "assets");
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "services", "agent-container-hub", "v0.1.0");
+  const selectedArchiveRoot = path.join(tempRoot, "selected-root");
+  const selectedBundleDirName = "agent-container-hub-windows";
+  const selectedBundleRoot = path.join(selectedArchiveRoot, selectedBundleDirName);
+  const selectedArchivePath = path.join(tempRoot, "agent-container-hub-selected.zip");
+
+  fs.mkdirSync(assetsRoot, { recursive: true });
+  writeContainerHubBundleRoot(selectedBundleRoot, {
+    bundleTopLevelDir: selectedBundleDirName,
+    assetFileName: "agent-container-hub-v0.1.0-windows-amd64.zip",
+    startScriptName: "start.ps1",
+    stopScriptName: "stop.ps1",
+    deployScriptName: "deploy.ps1",
+    startScriptContent: "Write-Output 'start'\n",
+    stopScriptContent: "Write-Output 'stop'\n",
+    deployScriptContent: "Write-Output 'deploy'\n"
+  });
+  createArchive(selectedBundleRoot, selectedArchivePath);
+
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const service = getBuiltinService("agent-container-hub");
+  const builtinAssetFileName = service.desktop.assetFileName;
+
+  await installBuiltinService(app, service.id, {
+    force: true,
+    archivePath: selectedArchivePath
+  });
+
+  const installedService = getBuiltinService(service.id);
+
+  assert.equal(installedService.desktop.assetFileName, builtinAssetFileName);
+  assert.equal(installedService.desktop.bundleTopLevelDir, selectedBundleDirName);
+  assert.equal(fs.existsSync(path.join(installDir, "start.sh")), false);
+  assert.ok(fs.existsSync(path.join(installDir, "start.ps1")));
+  assert.equal(__testInternals.isInstallHealthy(installedService, installDir), true);
+  assert.equal(__testInternals.readInitializationState(installDir)?.status, "succeeded");
+  assert.notEqual((await getServiceState(app, service.id)).status, "error");
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });

@@ -15,14 +15,14 @@ import type {
   ServiceLogsMeta,
   ServiceState
 } from "../shared/contracts";
-import type { ServiceDefinition } from "./manifest-utils";
+import { normalizeManifest, readManifestFromArchive, type ServiceDefinition } from "./manifest-utils";
 import { getBuiltinAssetsRoot } from "./builtin-loader";
 import {
   CLAUDE_CODE_RELAY_PLUGIN_ID,
   ensureManagedAgentDefinition,
   readManagedConfigFile
 } from "./code-assistant";
-import { getAllServices, getService } from "./service-registry";
+import { getAllServices, getService, registerService } from "./service-registry";
 import { getPluginInstallDir } from "./plugin-loader";
 import { ensureKeyPairForPan } from "./pan-auth";
 import { readEnvFile, parseEnvFileContent } from "./env-file";
@@ -829,6 +829,28 @@ type InstallBuiltinServiceOptions = {
   archivePath?: string;
 };
 
+function resolveBuiltinArchiveInstall(serviceId: ServiceId, archivePath: string) {
+  const archiveManifest = readManifestFromArchive(archivePath);
+  const archiveService = normalizeManifest(archiveManifest, {
+    defaultKind: "builtin",
+    desktop: {
+      assetFileName: path.basename(archivePath)
+    }
+  });
+
+  if (archiveService.id !== serviceId) {
+    throw new Error(`安装包 manifest id 不匹配：期望 ${serviceId}，实际 ${archiveService.id}`);
+  }
+  if (archiveService.kind !== "builtin") {
+    throw new Error(`安装包不是内置服务：${archiveService.id}`);
+  }
+
+  return {
+    archiveManifest,
+    archiveService
+  };
+}
+
 export async function installBuiltinService(
   app: App,
   serviceId: ServiceId,
@@ -838,15 +860,27 @@ export async function installBuiltinService(
   if (service.kind !== "builtin") {
     throw new Error(`service ${serviceId} is not a builtin service`);
   }
-  const assetPath = options.archivePath
-    ? ensureArchiveHealthy(service, options.archivePath, "安装包")
-    : ensureBundleAssetHealthy(app, service);
 
-  const finalInstallDir = getInstallDir(app, service);
+  const archivePath = options.archivePath;
+  const archiveInstall = archivePath ? resolveBuiltinArchiveInstall(serviceId, archivePath) : null;
+  const assetPath = archiveInstall
+    ? ensureArchiveHealthy(archiveInstall.archiveService, archivePath!, "安装包")
+    : ensureBundleAssetHealthy(app, service);
+  const installService = archiveInstall
+    ? registerService(archiveInstall.archiveManifest, {
+        defaultKind: "builtin",
+        desktop: {
+          assetFileName: service.desktop.assetFileName,
+          bundleTopLevelDir: archiveInstall.archiveService.desktop.bundleTopLevelDir
+        }
+      })
+    : service;
+
+  const finalInstallDir = getInstallDir(app, installService);
   const needsExtract =
     options.force ||
     !fs.existsSync(finalInstallDir) ||
-    !isInstallHealthy(service, finalInstallDir) ||
+    !isInstallHealthy(installService, finalInstallDir) ||
     isAssetNewerThanInstall(assetPath, finalInstallDir);
 
   if (!needsExtract) {

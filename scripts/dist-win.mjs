@@ -10,6 +10,17 @@ const isWindows = process.platform === "win32";
 const npmCmd = isWindows ? "npm.cmd" : "npm";
 const scriptPath = fileURLToPath(import.meta.url);
 const DEFAULT_DOCKER_BUN_PATH = "/tmp/zenmind-bundled-bun.exe";
+const DOCKER_PROXY_ENV_KEYS = [
+  "http_proxy",
+  "https_proxy",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "no_proxy",
+  "NO_PROXY",
+  "all_proxy",
+  "ALL_PROXY"
+];
+const DOCKER_HOST_PROXY_HOSTNAME = "host.docker.internal";
 
 function run(cmd, args, options = {}) {
   return spawn(cmd, args, {
@@ -45,6 +56,31 @@ function getElectronBuilderCacheDir() {
       : path.join(os.homedir(), ".cache", "electron-builder");
   }
   return null;
+}
+
+function getDockerProxyArgs(env = process.env) {
+  const dockerProxyArgs = [];
+  for (const key of DOCKER_PROXY_ENV_KEYS) {
+    const value = env[key]?.trim();
+    if (!value) {
+      continue;
+    }
+    dockerProxyArgs.push("--env", `${key}=${normalizeDockerProxyValue(value)}`);
+  }
+  return dockerProxyArgs;
+}
+
+function normalizeDockerProxyValue(value) {
+  try {
+    const url = new URL(value);
+    if (url.hostname === "127.0.0.1" || url.hostname === "localhost") {
+      url.hostname = DOCKER_HOST_PROXY_HOSTNAME;
+      return url.toString();
+    }
+  } catch {
+    // Leave non-URL proxy values unchanged.
+  }
+  return value;
 }
 
 export function resolveBundledWindowsBunPath(env = process.env) {
@@ -103,6 +139,8 @@ async function buildWithDocker() {
   const dockerArgs = [
     "run",
     "--rm",
+    "--add-host",
+    `${DOCKER_HOST_PROXY_HOSTNAME}:host-gateway`,
     "--volume",
     `${projectRoot}:/project`,
     "--volume",
@@ -112,6 +150,7 @@ async function buildWithDocker() {
     "--env",
     `ZENMIND_DESKTOP_BUNDLED_BUN_PATH=${DEFAULT_DOCKER_BUN_PATH}`
   ];
+  dockerArgs.push(...getDockerProxyArgs());
 
   if (electronBuilderCacheDir != null) {
     dockerArgs.push("--volume", `${electronBuilderCacheDir}:/root/.cache/electron-builder`);
@@ -124,7 +163,7 @@ async function buildWithDocker() {
     "/bin/bash",
     "-lc",
     [
-      "npm install",
+      "npm install --force",
       "node ./scripts/sync-builtin-assets.mjs --os=windows --arch=amd64",
       "npm run build",
       "npx electron-builder --win --x64"
