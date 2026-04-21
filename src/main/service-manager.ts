@@ -16,7 +16,7 @@ import type {
   ServiceState
 } from "../shared/contracts";
 import { normalizeManifest, readManifestFromArchive, type ServiceDefinition } from "./manifest-utils";
-import { getBuiltinAssetsRoot } from "./builtin-loader";
+import { applyBuiltinManifestFallback, getBuiltinAssetsRoot } from "./builtin-loader";
 import {
   CLAUDE_CODE_RELAY_PLUGIN_ID,
   ensureManagedAgentDefinition,
@@ -624,7 +624,41 @@ function getServiceDependencyIds(service: ServiceDefinition) {
 
 function getNonServicePrerequisites(service: ServiceDefinition) {
   const dependencyIds = new Set(getServiceDependencyIds(service));
-  return service.prerequisites.filter((prerequisite) => !dependencyIds.has(prerequisite));
+  return service.prerequisites
+    .filter((prerequisite) => !dependencyIds.has(prerequisite))
+    .filter((prerequisite) => {
+      if (service.id !== "agent-container-hub") {
+        return true;
+      }
+      return !/(^|[^a-z])(docker|podman)([^a-z]|$)/i.test(prerequisite);
+    });
+}
+
+function resolveContainerHubEngineMode(
+  service: ServiceDefinition,
+  env: Map<string, string>,
+  options: {
+    platform?: NodeJS.Platform;
+    availableEngine?: string;
+  } = {}
+) {
+  const configuredEngine = (env.get("ENGINE") ?? "").trim().toLowerCase();
+  if (configuredEngine) {
+    return configuredEngine;
+  }
+  if (service.id !== "agent-container-hub") {
+    return "";
+  }
+
+  const platform = options.platform ?? process.platform;
+  const availableEngine = options.availableEngine ?? containerEngineAvailable();
+  if (!availableEngine) {
+    return "local";
+  }
+  if (platform === "win32" && !availableEngine) {
+    return "local";
+  }
+  return "";
 }
 
 function formatSystemRequirementToken(token: string) {
@@ -650,13 +684,21 @@ function formatSystemRequirementLabel(requirement: string) {
     .join(" 或 ");
 }
 
-function getMissingSystemRequirementLabels(service: ServiceDefinition) {
+function getMissingSystemRequirementLabels(service: ServiceDefinition, env = new Map<string, string>()) {
+  const effectiveEngine = resolveContainerHubEngineMode(service, env);
   return service.desktop.systemRequirements.flatMap((requirement) => {
     const commands = requirement
       .split("|")
       .map((item) => item.trim().toLowerCase())
       .filter(Boolean);
     if (commands.length === 0) {
+      return [];
+    }
+    if (
+      service.id === "agent-container-hub" &&
+      effectiveEngine === "local" &&
+      commands.some((command) => command === "docker" || command === "podman")
+    ) {
       return [];
     }
     if (commands.some((command) => commandAvailable(command))) {
@@ -736,7 +778,7 @@ async function resolveEnvBindings(app: App, service: ServiceDefinition, env: Map
 function collectPrerequisites(
   service: ServiceDefinition,
   installDir: string,
-  missingSystemRequirementLabels = getMissingSystemRequirementLabels(service)
+  missingSystemRequirementLabels = getMissingSystemRequirementLabels(service, readEnvFile(path.join(installDir, ".env")))
 ) {
   const prerequisites: string[] = [];
   const envPath = path.join(installDir, ".env");
@@ -830,7 +872,7 @@ type InstallBuiltinServiceOptions = {
 };
 
 function resolveBuiltinArchiveInstall(serviceId: ServiceId, archivePath: string) {
-  const archiveManifest = readManifestFromArchive(archivePath);
+  const archiveManifest = applyBuiltinManifestFallback(readManifestFromArchive(archivePath));
   const archiveService = normalizeManifest(archiveManifest, {
     defaultKind: "builtin",
     desktop: {
@@ -1010,7 +1052,7 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     initializationState?.status === "succeeded" && initializationState.version === service.version;
   const missingSystemRequirementLabels =
     installed && missingRuntimeFiles.length === 0 && initializationSucceeded
-      ? getMissingSystemRequirementLabels(service)
+      ? getMissingSystemRequirementLabels(service, env)
       : [];
   const prerequisites =
     installed && missingRuntimeFiles.length === 0 && initializationSucceeded
@@ -1111,6 +1153,14 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   const envPath = path.join(installDir, ".env");
   const env = readEnvFile(envPath);
   const updates = await resolveEnvBindings(app, service, env);
+
+  if (service.id === "agent-container-hub") {
+    const effectiveEngine = resolveContainerHubEngineMode(service, env);
+    if (!(env.get("ENGINE") ?? "").trim() && effectiveEngine === "local") {
+      updates.set("ENGINE", "local");
+      env.set("ENGINE", "local");
+    }
+  }
 
   if (updates.size > 0) {
     writeEnvFileUpdates(envPath, updates);
@@ -1637,6 +1687,8 @@ export const __testInternals = {
   getWebUrl,
   containerEngineAvailable,
   commandAvailable,
+  getNonServicePrerequisites,
+  resolveContainerHubEngineMode,
   resolveEnvBindings,
   fixShellScriptPermissions,
   listMissingRuntimeFiles,

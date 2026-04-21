@@ -5,20 +5,23 @@ describe('shouldStartInitialWorkerRefresh', () => {
     expect(shouldStartInitialWorkerRefresh({
       hasStarted: false,
       appMode: false,
-      hasAccessToken: false,
+      accessToken: '',
+      lastStartedToken: '',
     })).toBe(true);
     expect(shouldStartInitialWorkerRefresh({
       hasStarted: false,
       appMode: false,
-      hasAccessToken: true,
+      accessToken: 'desktop-token',
+      lastStartedToken: '',
     })).toBe(true);
   });
 
-  it('does not auto refresh again after the initial refresh has started', () => {
+  it('does not auto refresh again after the initial refresh has started with the same token', () => {
     expect(shouldStartInitialWorkerRefresh({
       hasStarted: true,
       appMode: false,
-      hasAccessToken: true,
+      accessToken: 'desktop-token',
+      lastStartedToken: 'desktop-token',
     })).toBe(false);
   });
 
@@ -26,21 +29,42 @@ describe('shouldStartInitialWorkerRefresh', () => {
     expect(shouldStartInitialWorkerRefresh({
       hasStarted: false,
       appMode: true,
-      hasAccessToken: false,
+      accessToken: '',
+      lastStartedToken: '',
     })).toBe(false);
 
     expect(shouldStartInitialWorkerRefresh({
       hasStarted: false,
       appMode: true,
-      hasAccessToken: true,
+      accessToken: 'desktop-token',
+      lastStartedToken: '',
     })).toBe(true);
   });
 
-  it('keeps the first-fetch rule independent from websocket readiness', () => {
+  it('retries once after desktop token hydration finishes', () => {
+    expect(shouldStartInitialWorkerRefresh({
+      hasStarted: true,
+      appMode: true,
+      accessToken: 'desktop-token',
+      lastStartedToken: '',
+    })).toBe(true);
+  });
+
+  it('does not retry when app-mode token stays empty after the first attempt', () => {
+    expect(shouldStartInitialWorkerRefresh({
+      hasStarted: true,
+      appMode: true,
+      accessToken: '',
+      lastStartedToken: '',
+    })).toBe(false);
+  });
+
+  it('keeps the first-fetch rule independent from websocket readiness in standalone mode', () => {
     expect(shouldStartInitialWorkerRefresh({
       hasStarted: false,
       appMode: false,
-      hasAccessToken: true,
+      accessToken: 'desktop-token',
+      lastStartedToken: '',
     })).toBe(true);
   });
 });

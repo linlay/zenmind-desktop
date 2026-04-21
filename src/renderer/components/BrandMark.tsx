@@ -155,8 +155,6 @@ function SettingsIcon({ className }: { className?: string }) {
 }
 
 export function BrandMark({ className }: BrandMarkProps) {
-  // The brand logo is loaded from /public/brand-icon.png so the official
-  // corporate asset can be dropped in without code changes.
   return (
     <img
       src="./brand-icon.png"
@@ -164,7 +162,6 @@ export function BrandMark({ className }: BrandMarkProps) {
       className={className}
       style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: 8 }}
       onError={(event) => {
-        // Fallback: hide broken image if asset not yet provided.
         (event.currentTarget as HTMLImageElement).style.visibility = "hidden";
       }}
     />

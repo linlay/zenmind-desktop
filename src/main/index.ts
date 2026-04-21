@@ -255,17 +255,17 @@ function createTrayIcon() {
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     {
-      label: "和灵犀聊天",
+      label: "和小宅聊天",
       click: () =>
         openAssistantWorker({
-          displayName: "灵犀",
+          displayName: "小宅",
           role: "确认对话示例",
           focusComposerOnComplete: true
         })
     },
     {
       label: "打开国泰君安期货",
-      click: () => showMainWindow()
+      click: () => showMainWindow("/assistant")
     },
     {
       label: "设置",
@@ -290,7 +290,7 @@ function createAppTray() {
   if (process.platform !== "darwin") {
     tray.setContextMenu(trayMenu);
   }
-  tray.on("click", () => showMainWindow());
+  tray.on("click", () => showMainWindow("/assistant"));
   tray.on("right-click", () => tray?.popUpContextMenu(trayMenu));
 
   return tray;
@@ -702,7 +702,7 @@ app.whenReady().then(async () => {
   buildApplicationMenu();
   void autoStartDesktopServices();
   app.on("activate", () => {
-    showMainWindow();
+    showMainWindow("/assistant");
   });
 });
 

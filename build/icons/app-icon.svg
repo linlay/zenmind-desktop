@@ -1,15 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="desktop app icon">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#3B82F6"/>
-      <stop offset="1" stop-color="#1D4ED8"/>
-    </linearGradient>
-  </defs>
-  <rect x="64" y="64" width="896" height="896" rx="192" fill="url(#bg)"/>
-  <rect x="64" y="64" width="896" height="896" rx="192" fill="#FFFFFF" opacity="0.06"/>
-  <text x="512" y="660" text-anchor="middle" font-size="640" font-weight="800" fill="#FFFFFF"
-        font-family="PingFang SC, Hiragino Sans GB, Microsoft YaHei, Source Han Sans, sans-serif">期</text>
-  <g stroke="#FFFFFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.85">
-    <polyline points="200,820 300,760 400,800 500,720 600,760 700,680 820,620"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="moon embrace app icon">
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="#111111"/>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="#FFFFFF" opacity="0.03"/>
+  <circle cx="512" cy="392" r="232" fill="#D4AF37" opacity="0.18"/>
+  <path d="M304 270Q512 192 720 270Q512 252 304 270Z" fill="#F8FAFC"/>
+  <path d="M210 418Q512 310 814 418Q512 384 210 418Z" fill="#F8FAFC"/>
+  <polygon points="612,448 566,448 370,632 416,632" fill="#D4AF37"/>
+  <path d="M286 690Q512 654 738 690Q512 726 286 690Z" fill="#F8FAFC"/>
 </svg>

@@ -6,6 +6,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import {
   builtinServices,
+  discoverBuiltinServices,
   listArchiveEntries,
   needsArchiveRefresh,
   readManifestFromArchive,
@@ -196,4 +197,64 @@ test("needsArchiveRefresh returns false when the archive is current", () => {
   assert.equal(needsArchiveRefresh(archivePath, [sourcePath]), false);
 
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("discoverBuiltinServices also scans archives from external zenmind-dist roots", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-external-dist-"));
+  const distRoot = path.join(root, "zenmind-dist");
+  const serviceDir = path.join(distRoot, "external-builtin");
+  const archivePath = path.join(serviceDir, "external-builtin-v1.0.0-windows-amd64.zip");
+  const previousRoots = process.env.ZENMIND_DESKTOP_BUILTIN_DIST_ROOTS;
+
+  fs.mkdirSync(serviceDir, { recursive: true });
+
+  const fixture = createZipBundle(
+    {
+      id: "external-builtin",
+      bundleTopLevelDir: "external-builtin"
+    },
+    {
+      "manifest.json": JSON.stringify({
+        id: "external-builtin",
+        kind: "builtin",
+        version: "v1.0.0",
+        platform: {
+          os: "windows",
+          arch: "amd64"
+        },
+        scripts: {
+          start: "start.ps1",
+          stop: "stop.ps1"
+        },
+        runtime: {
+          requiredPaths: ["manifest.json", "start.ps1", "stop.ps1"]
+        },
+        desktop: {
+          assetFileName: "external-builtin-v1.0.0-windows-amd64.zip",
+          bundleTopLevelDir: "external-builtin"
+        }
+      }),
+      "start.ps1": "Write-Host start\n",
+      "stop.ps1": "Write-Host stop\n"
+    }
+  );
+
+  fs.copyFileSync(fixture.zipPath, archivePath);
+  process.env.ZENMIND_DESKTOP_BUILTIN_DIST_ROOTS = distRoot;
+
+  try {
+    const services = discoverBuiltinServices({ os: "windows", arch: "amd64" });
+    const service = services.find((item) => item.id === "external-builtin");
+
+    assert.ok(service);
+    assert.equal(service.assetFileName, "external-builtin-v1.0.0-windows-amd64.zip");
+  } finally {
+    if (previousRoots) {
+      process.env.ZENMIND_DESKTOP_BUILTIN_DIST_ROOTS = previousRoots;
+    } else {
+      delete process.env.ZENMIND_DESKTOP_BUILTIN_DIST_ROOTS;
+    }
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

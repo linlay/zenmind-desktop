@@ -1,11 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="tray chat icon">
-  <g>
-    <rect x="48" y="38" width="110" height="110" rx="24" fill="#9CCAFF"/>
-    <path
-      d="M91 70h74c27 0 43 16 43 43v30c0 27-16 43-43 43h-36l-30 31v-31h-8c-27 0-43-16-43-43v-30c0-27 16-43 43-43z"
-      fill="#3B82F6"/>
-    <circle cx="98" cy="128" r="10" fill="#FFFFFF"/>
-    <circle cx="134" cy="128" r="10" fill="#FFFFFF"/>
-    <circle cx="170" cy="128" r="10" fill="#FFFFFF"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="moon embrace tray icon">
+  <rect x="16" y="16" width="224" height="224" rx="56" fill="#111111"/>
+  <rect x="16" y="16" width="224" height="224" rx="56" fill="#FFFFFF" opacity="0.03"/>
+  <circle cx="128" cy="98" r="60" fill="#D4AF37" opacity="0.2"/>
+  <path d="M56 68Q128 40 200 68Q128 62 56 68Z" fill="#F8FAFC"/>
+  <path d="M30 108Q128 74 226 108Q128 96 30 108Z" fill="#F8FAFC"/>
+  <polygon points="166,118 150,118 84,180 100,180" fill="#D4AF37"/>
+  <path d="M48 194Q128 182 208 194Q128 206 48 194Z" fill="#F8FAFC"/>
 </svg>

@@ -1443,6 +1443,44 @@ test("ensurePreStartRequirements injects container hub url and auth public key f
   }
 });
 
+test("resolveContainerHubEngineMode falls back to local mode on Windows when no engine is available", () => {
+  const service = {
+    id: "agent-container-hub"
+  };
+
+  assert.equal(
+    __testInternals.resolveContainerHubEngineMode(service, new Map(), {
+      platform: "win32",
+      availableEngine: ""
+    }),
+    "local"
+  );
+  assert.equal(
+    __testInternals.resolveContainerHubEngineMode(service, new Map([["ENGINE", "docker"]]), {
+      platform: "win32",
+      availableEngine: ""
+    }),
+    "docker"
+  );
+  assert.equal(
+    __testInternals.resolveContainerHubEngineMode(service, new Map(), {
+      platform: "darwin",
+      availableEngine: ""
+    }),
+    "local"
+  );
+});
+
+test("getNonServicePrerequisites does not hard-block container hub with docker text hints", () => {
+  assert.deepEqual(
+    __testInternals.getNonServicePrerequisites({
+      id: "agent-container-hub",
+      prerequisites: ["Docker 或 Podman", "other-service"]
+    }),
+    ["other-service"]
+  );
+});
+
 test("ensurePreStartRequirements rewrites agent-webclient default BASE_URL to local agent-platform", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-webclient-prestart-"));
   registryInternals.clearServices();

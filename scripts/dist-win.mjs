@@ -10,6 +10,7 @@ const isWindows = process.platform === "win32";
 const npmCmd = isWindows ? "npm.cmd" : "npm";
 const scriptPath = fileURLToPath(import.meta.url);
 const DEFAULT_DOCKER_BUN_PATH = "/tmp/zenmind-bundled-bun.exe";
+const DEFAULT_DOCKER_BUILTIN_DIST_ROOT = "/tmp/zenmind-builtin-dist";
 const DOCKER_PROXY_ENV_KEYS = [
   "http_proxy",
   "https_proxy",
@@ -120,6 +121,17 @@ function ensureNonWindowsBundledBun() {
   );
 }
 
+function resolveExternalBuiltinDistRoots() {
+  const configuredRoots = (process.env.ZENMIND_DESKTOP_BUILTIN_DIST_ROOTS ?? "")
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => path.resolve(entry));
+  const siblingDistRoot = path.resolve(projectRoot, "..", "zenmind-dist");
+  const candidates = [siblingDistRoot, ...configuredRoots];
+  return [...new Set(candidates)].filter((root) => fs.existsSync(root));
+}
+
 async function buildOnWindowsHost() {
   await runAndWait(npmCmd, ["run", "sync:assets", "--", "--os=windows", "--arch=amd64"]);
   await runAndWait(npmCmd, ["run", "build"]);
@@ -130,6 +142,7 @@ async function buildWithDocker() {
   const npmCacheDir = path.join(os.homedir(), ".npm");
   const electronBuilderCacheDir = getElectronBuilderCacheDir();
   const bundledBunPath = ensureNonWindowsBundledBun();
+  const builtinDistRoots = resolveExternalBuiltinDistRoots();
 
   fs.mkdirSync(npmCacheDir, { recursive: true });
   if (electronBuilderCacheDir != null) {
@@ -150,6 +163,15 @@ async function buildWithDocker() {
     "--env",
     `ZENMIND_DESKTOP_BUNDLED_BUN_PATH=${DEFAULT_DOCKER_BUN_PATH}`
   ];
+  const dockerBuiltinDistRoots = [];
+  builtinDistRoots.forEach((root, index) => {
+    const mountPath = `${DEFAULT_DOCKER_BUILTIN_DIST_ROOT}-${index}`;
+    dockerArgs.push("--volume", `${root}:${mountPath}:ro`);
+    dockerBuiltinDistRoots.push(mountPath);
+  });
+  if (dockerBuiltinDistRoots.length > 0) {
+    dockerArgs.push("--env", `ZENMIND_DESKTOP_BUILTIN_DIST_ROOTS=${dockerBuiltinDistRoots.join(":")}`);
+  }
   dockerArgs.push(...getDockerProxyArgs());
 
   if (electronBuilderCacheDir != null) {

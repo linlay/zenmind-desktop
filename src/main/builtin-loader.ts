@@ -188,6 +188,40 @@ const FALLBACK_BUILTIN_MANIFESTS: Manifest[] = [
   }
 ] as const;
 
+function mergeManifestObject<T>(base: T | undefined, override: T | undefined): T | undefined {
+  if (!base) {
+    return override;
+  }
+  if (!override) {
+    return base;
+  }
+  return {
+    ...(base as object),
+    ...(override as object)
+  } as T;
+}
+
+export function applyBuiltinManifestFallback(manifest: Manifest): Manifest {
+  const fallback = FALLBACK_BUILTIN_MANIFESTS.find((candidate) => candidate.id === manifest.id);
+  if (!fallback) {
+    return manifest;
+  }
+
+  return {
+    ...fallback,
+    ...manifest,
+    frontend: mergeManifestObject(fallback.frontend, manifest.frontend) ?? fallback.frontend,
+    api: mergeManifestObject(fallback.api, manifest.api),
+    backend: mergeManifestObject(fallback.backend, manifest.backend),
+    scripts: mergeManifestObject(fallback.scripts, manifest.scripts) ?? fallback.scripts,
+    configFiles: manifest.configFiles ?? fallback.configFiles,
+    runtime: mergeManifestObject(fallback.runtime, manifest.runtime) ?? fallback.runtime,
+    web: mergeManifestObject(fallback.web, manifest.web),
+    prerequisites: manifest.prerequisites ?? fallback.prerequisites,
+    desktop: mergeManifestObject(fallback.desktop, manifest.desktop)
+  };
+}
+
 function isPackaged(app: App) {
   return app.isPackaged;
 }
@@ -297,7 +331,7 @@ export function loadBuiltinServices(app: App) {
   const builtinAssetsRoot = getBuiltinAssetsRoot(app);
   const loaded = [];
   for (const tarPath of listBuiltinArchivePaths(builtinAssetsRoot)) {
-    const manifest = readCachedManifest(tarPath);
+    const manifest = applyBuiltinManifestFallback(readCachedManifest(tarPath));
     if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
       continue;
     }

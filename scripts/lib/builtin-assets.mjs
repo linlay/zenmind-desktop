@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 
 // monorepo 根目录：zenmind-desktop 的上一级
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
+const DEFAULT_EXTERNAL_DIST_ROOT = path.join(WORKSPACE_ROOT, "zenmind-dist");
 
 function pathMtimeMs(targetPath) {
   if (!fs.existsSync(targetPath)) {
@@ -86,6 +87,17 @@ function refreshKnownReleaseArchives(options = {}) {
 
 function isArchiveFileName(fileName) {
   return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
+}
+
+function getExternalBuiltinDistRoots(env = process.env) {
+  const configuredRoots = (env.ZENMIND_DESKTOP_BUILTIN_DIST_ROOTS ?? "")
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => path.resolve(entry));
+
+  const roots = [DEFAULT_EXTERNAL_DIST_ROOT, ...configuredRoots];
+  return [...new Set(roots)].filter((root) => fs.existsSync(root));
 }
 
 function normalizeTarEntry(entry) {
@@ -193,6 +205,25 @@ function listReleaseArchives() {
       continue;
     }
     tryAddArchive(path.join(WORKSPACE_ROOT, entry.name));
+  }
+
+  for (const distRoot of getExternalBuiltinDistRoots()) {
+    for (const entry of fs.readdirSync(distRoot, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        const serviceDir = path.join(distRoot, entry.name);
+        for (const asset of fs.readdirSync(serviceDir, { withFileTypes: true })) {
+          if (!asset.isFile() || !isArchiveFileName(asset.name)) {
+            continue;
+          }
+          tryAddArchive(path.join(serviceDir, asset.name));
+        }
+        continue;
+      }
+
+      if (entry.isFile() && isArchiveFileName(entry.name)) {
+        tryAddArchive(path.join(distRoot, entry.name));
+      }
+    }
   }
 
   return [...archivesByBuildKey.values()]

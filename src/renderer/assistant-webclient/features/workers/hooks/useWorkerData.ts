@@ -4,7 +4,6 @@ import { useAppContext } from '@/app/state/AppContext';
 import { getAgent, getAgents, getChats, getTeams, setAccessToken } from '@/features/transport/lib/apiClientProxy';
 import type { Agent, Chat, Team, WorkerRow } from '@/app/state/types';
 import { isAppMode } from '@/shared/utils/routing';
-import { hasNativeAgentWebClientHost } from '@/shared/utils/host';
 import {
   refreshWorkerDataWithCoordinator,
   type WorkerDataSnapshot,
@@ -38,18 +37,21 @@ function normalizeWorkerLabel(value: unknown): string {
 export function shouldStartInitialWorkerRefresh(input: {
   hasStarted: boolean;
   appMode: boolean;
-  hasAccessToken: boolean;
-  hasNativeHost?: boolean;
+  accessToken: string;
+  lastStartedToken: string;
 }): boolean {
+  const accessToken = String(input.accessToken || '').trim();
+  const lastStartedToken = String(input.lastStartedToken || '').trim();
+
   if (input.hasStarted) {
-    return false;
+    return Boolean(accessToken) && accessToken !== lastStartedToken;
   }
 
-  if (input.appMode && !input.hasAccessToken && !input.hasNativeHost) {
-    return false;
+  if (!input.appMode) {
+    return true;
   }
 
-  return true;
+  return Boolean(accessToken);
 }
 
 export function useWorkerData(input: {
@@ -59,6 +61,7 @@ export function useWorkerData(input: {
   const { loadChat, selectWorkerConversation } = input;
   const { state, dispatch, stateRef } = useAppContext();
   const initialRefreshStartedRef = useRef(false);
+  const initialRefreshTokenRef = useRef('');
   const appMode = isAppMode();
 
   const extractAgentWorkerKey = useCallback((detail: { workerKey?: unknown; agentKey?: unknown }): string => {
@@ -360,19 +363,22 @@ export function useWorkerData(input: {
   }, [state.accessToken]);
 
   useEffect(() => {
+    const accessToken = String(state.accessToken || '').trim();
+
     if (!shouldStartInitialWorkerRefresh({
       hasStarted: initialRefreshStartedRef.current,
       appMode,
-      hasAccessToken: Boolean(String(state.accessToken || '').trim()),
-      hasNativeHost: hasNativeAgentWebClientHost(),
+      accessToken,
+      lastStartedToken: initialRefreshTokenRef.current,
     })) {
       return;
     }
 
     initialRefreshStartedRef.current = true;
-    setAccessToken(stateRef.current.accessToken);
+    initialRefreshTokenRef.current = accessToken;
+    setAccessToken(accessToken);
     refreshWorkerData().catch(() => undefined);
-  }, [appMode, refreshWorkerData, state.accessToken, stateRef]);
+  }, [appMode, refreshWorkerData, state.accessToken]);
 
   useEffect(() => {
     const handler = (e: Event) => {
