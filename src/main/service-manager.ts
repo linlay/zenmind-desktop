@@ -262,6 +262,13 @@ function ensureBundleAssetHealthy(app: App, service: ServiceDefinition) {
   return ensureArchiveHealthy(service, getAssetPath(app, service), "桌面端内置资源");
 }
 
+function formatEnvValue(value: string) {
+  if (/^[A-Za-z0-9_./:@-]+$/u.test(value)) {
+    return value;
+  }
+  return `"${value.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"')}"`;
+}
+
 function upsertEnvFileContent(content: string, updates: Map<string, string>) {
   const lines = content.split(/\r?\n/u);
   if (lines.length > 0 && lines[lines.length - 1] === "") {
@@ -287,7 +294,7 @@ function upsertEnvFileContent(content: string, updates: Map<string, string>) {
 
     const value = pending.get(key) ?? "";
     pending.delete(key);
-    return `${key}=${value}`;
+    return `${key}=${formatEnvValue(value)}`;
   });
 
   if (pending.size > 0 && nextLines.length > 0 && nextLines[nextLines.length - 1]?.trim() !== "") {
@@ -295,7 +302,7 @@ function upsertEnvFileContent(content: string, updates: Map<string, string>) {
   }
 
   for (const [key, value] of pending) {
-    nextLines.push(`${key}=${value}`);
+    nextLines.push(`${key}=${formatEnvValue(value)}`);
   }
 
   return `${nextLines.join("\n")}\n`;

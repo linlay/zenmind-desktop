@@ -310,10 +310,12 @@ test("parseEnvFileContent keeps key values and strips quotes", () => {
 # comment
 API_PORT=8088
 WEB_SESSION_SECRET='top-secret'
+NODE_BIN="/Applications/国泰君安期货 3.app/Contents/MacOS/国泰君安期货"
 `);
 
   assert.equal(env.get("API_PORT"), "8088");
   assert.equal(env.get("WEB_SESSION_SECRET"), "top-secret");
+  assert.equal(env.get("NODE_BIN"), "/Applications/国泰君安期货 3.app/Contents/MacOS/国泰君安期货");
 });
 
 test("service install dir follows userData/services/<id>/<version>", () => {
@@ -838,7 +840,11 @@ test("ensurePreStartRequirements rewrites agent-webclient default BASE_URL to lo
   const envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
   assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
   assert.match(envContent, /PORT=11948/);
-  assert.match(envContent, new RegExp(`NODE_BIN=${process.execPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
+  assert.match(
+    envContent,
+    new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+  );
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
