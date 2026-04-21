@@ -64,7 +64,7 @@ export function AppSidebar({ isCollapsed, experimentalEnabled, customSidebarItem
             <BrandMark />
           </div>
           <div className="sidebar-profile-copy">
-            <h2 className="sidebar-profile-name">ZenMind</h2>
+            <h2 className="sidebar-profile-name">国泰君安期货</h2>
             <p className="sidebar-profile-meta">桌面工作台</p>
           </div>
         </div>

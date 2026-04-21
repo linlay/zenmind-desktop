@@ -61,22 +61,41 @@ function getSyncedAsset(serviceId) {
   };
 }
 
-test("actual synced agent-webclient asset includes backend and frontend dist", () => {
-  const { service, assetPath } = getSyncedAsset("agent-webclient");
+function getWorkspaceAsset(serviceId, osName) {
+  const service = builtinServices.find(
+    (item) => item.id === serviceId && item.assetFileName.includes(`-${osName}-`)
+  );
+  assert.ok(service, `missing builtin service metadata for ${serviceId}/${osName}`);
+  return {
+    service,
+    assetPath: path.join(service.sourceDir, service.assetFileName)
+  };
+}
+
+function currentManifestOs() {
+  switch (process.platform) {
+    case "win32":
+      return "windows";
+    case "darwin":
+      return "darwin";
+    case "linux":
+      return "linux";
+    default:
+      return process.platform;
+  }
+}
+
+test("agent-webclient release asset remains available for manual install", () => {
+  const { service, assetPath } = getWorkspaceAsset("agent-webclient", currentManifestOs());
   validateBundleArchive(service, assetPath);
 
   const entries = listArchiveEntries(assetPath);
-  if (assetPath.endsWith(".zip")) {
-    assert.ok(entries.has("agent-webclient/start.ps1"));
-    assert.ok(entries.has("agent-webclient/stop.ps1"));
-    assert.ok(entries.has("agent-webclient/backend/agent-webclient.exe"));
-  } else {
-    assert.ok(entries.has("agent-webclient/start.sh"));
-    assert.ok(entries.has("agent-webclient/stop.sh"));
-    assert.ok(entries.has("agent-webclient/backend/agent-webclient"));
-  }
   assert.ok(entries.has("agent-webclient/manifest.json"));
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
+});
+
+test("synced builtin assets exclude agent-webclient so it is not bundled in the installer", () => {
+  assert.equal(fs.existsSync(path.join(process.cwd(), "build", "resources", "services", "agent-webclient")), false);
 });
 
 test("actual synced agent-platform asset includes required entries", () => {

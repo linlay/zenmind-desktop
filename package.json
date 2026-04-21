@@ -2,7 +2,7 @@
   "name": "zenmind-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "ZenMind Desktop shell for builtin services",
+  "description": "国泰君安期货应用壳",
   "main": "dist-electron/main/index.js",
   "scripts": {
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
@@ -33,7 +33,7 @@
   },
   "build": {
     "appId": "cc.zenmind.desktop",
-    "productName": "ZenMind Desktop",
+    "productName": "国泰君安期货",
     "files": [
       "dist-renderer/**/*",
       "dist-electron/**/*",
