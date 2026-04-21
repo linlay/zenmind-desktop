@@ -5,7 +5,9 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeImage,
   session,
+  Tray,
   type MenuItemConstructorOptions,
   type OpenDialogOptions
 } from "electron";
@@ -30,7 +32,17 @@ import {
 } from "./service-manager";
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
-import type { ServiceId, ServiceLogReadOptions, ServiceLogTarget } from "../shared/contracts";
+import {
+  addCustomSidebarItem,
+  listCustomSidebarItems,
+  removeCustomSidebarItem
+} from "./custom-sidebar-store";
+import type {
+  AssistantWorkerOpenRequest,
+  ServiceId,
+  ServiceLogReadOptions,
+  ServiceLogTarget
+} from "../shared/contracts";
 import {
   getDataRoot,
   loadUserPaths,
@@ -39,7 +51,9 @@ import {
 } from "./user-paths";
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let isHandlingQuit = false;
+const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName("ZenMind Desktop");
@@ -65,7 +79,8 @@ function createWindow() {
       preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      webviewTag: true
     }
   });
 
@@ -79,6 +94,13 @@ function createWindow() {
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     console.error("renderer process exited unexpectedly", details);
+  });
+
+  mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
+    console.error("preload failed", {
+      preloadPath,
+      error: error?.stack || String(error)
+    });
   });
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -111,6 +133,14 @@ function createWindow() {
     mainWindow?.webContents.toggleDevTools();
   });
 
+  mainWindow.on("close", (event) => {
+    if (isHandlingQuit) {
+      return;
+    }
+    event.preventDefault();
+    mainWindow?.hide();
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -125,6 +155,23 @@ function getOrCreateMainWindow() {
   return createWindow();
 }
 
+function showMainWindow(targetPath?: string) {
+  const targetWindow = getOrCreateMainWindow();
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  if (targetWindow.isMinimized()) {
+    targetWindow.restore();
+  }
+  targetWindow.show();
+  targetWindow.focus();
+
+  if (targetPath) {
+    navigateMainWindow(targetPath);
+  }
+}
+
 function navigateMainWindow(targetPath: string) {
   const targetWindow = getOrCreateMainWindow();
   if (!targetWindow || targetWindow.isDestroyed()) {
@@ -134,6 +181,7 @@ function navigateMainWindow(targetPath: string) {
   if (targetWindow.isMinimized()) {
     targetWindow.restore();
   }
+  targetWindow.show();
   targetWindow.focus();
 
   const sendNavigate = () => {
@@ -148,6 +196,90 @@ function navigateMainWindow(targetPath: string) {
   }
 
   sendNavigate();
+}
+
+function openAssistantWorker(request: AssistantWorkerOpenRequest) {
+  showMainWindow(ASSISTANT_TARGET_PATH);
+
+  const targetWindow = mainWindow;
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  const sendOpenAssistantWorker = () => {
+    if (!targetWindow.isDestroyed()) {
+      targetWindow.webContents.send("app.openAssistantWorker", request);
+    }
+  };
+
+  if (targetWindow.webContents.isLoadingMainFrame()) {
+    targetWindow.webContents.once("did-finish-load", sendOpenAssistantWorker);
+    return;
+  }
+
+  setTimeout(sendOpenAssistantWorker, 100);
+}
+
+function createTrayIcon() {
+  const platformIconPath =
+    process.platform === "win32"
+      ? path.join(__dirname, "..", "..", "build", "icons", "icon.ico")
+      : path.join(__dirname, "..", "..", "build", "icons", "icon-16.png");
+  const iconPaths = [
+    path.join(__dirname, "..", "..", "dist-renderer", "tray-icon.png"),
+    path.join(__dirname, "..", "..", "public", "tray-icon.png"),
+    platformIconPath,
+    path.join(__dirname, "..", "..", "public", "brand-icon.png")
+  ];
+  const icon =
+    iconPaths
+      .map((iconPath) => nativeImage.createFromPath(iconPath))
+      .find((candidate) => !candidate.isEmpty()) ?? nativeImage.createEmpty();
+  return icon.resize({ width: 18, height: 18 });
+}
+
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
+    {
+      label: "和小宅聊天",
+      click: () =>
+        openAssistantWorker({
+          displayName: "小宅",
+          role: "确认对话示例",
+          focusComposerOnComplete: true
+        })
+    },
+    {
+      label: "打开国泰君安期货",
+      click: () => showMainWindow(ASSISTANT_TARGET_PATH)
+    },
+    {
+      label: "设置",
+      click: () => showMainWindow("/settings")
+    },
+    { type: "separator" },
+    {
+      label: "退出",
+      click: () => app.quit()
+    }
+  ]);
+}
+
+function createAppTray() {
+  if (tray) {
+    return tray;
+  }
+
+  tray = new Tray(createTrayIcon());
+  const trayMenu = buildTrayMenu();
+  tray.setToolTip("国泰君安期货");
+  if (process.platform !== "darwin") {
+    tray.setContextMenu(trayMenu);
+  }
+  tray.on("click", () => showMainWindow(ASSISTANT_TARGET_PATH));
+  tray.on("right-click", () => tray?.popUpContextMenu(trayMenu));
+
+  return tray;
 }
 
 function showDirectoryDialog(title: string, defaultPath: string, ownerWindow: BrowserWindow | null = mainWindow) {
@@ -371,6 +503,13 @@ function registerIpcHandlers() {
   ipcMain.handle("agentAuth.issueAccessToken", async (_event, reason: "missing" | "unauthorized") => {
     return issueAgentAccessToken(app, reason);
   });
+  ipcMain.handle("customSidebar.list", async () => listCustomSidebarItems(app));
+  ipcMain.handle("customSidebar.add", async (_event, input: { label?: string; url: string }) => {
+    return addCustomSidebarItem(app, input);
+  });
+  ipcMain.handle("customSidebar.remove", async (_event, id: string) => {
+    return removeCustomSidebarItem(app, id);
+  });
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
   ipcMain.handle("settings.changeDataRoot", async () => {
     if (process.platform !== "win32") {
@@ -426,11 +565,10 @@ app.whenReady().then(async () => {
   loadInstalledPlugins(app);
   registerIpcHandlers();
   createWindow();
+  createAppTray();
   buildApplicationMenu();
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    showMainWindow();
   });
 });
 
@@ -450,7 +588,7 @@ app.on("before-quit", (event) => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
+  if (process.platform !== "darwin" && isHandlingQuit) {
     app.quit();
   }
 });
