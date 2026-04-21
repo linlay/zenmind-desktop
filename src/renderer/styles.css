@@ -188,6 +188,13 @@ a {
   display: block;
 }
 
+.sidebar-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
 .sidebar-profile-copy {
   min-width: 0;
   transition: opacity 0.2s ease-in-out;
@@ -267,7 +274,8 @@ a {
   flex: none;
 }
 
-.sidebar-link-icon svg {
+.sidebar-link-icon svg,
+.sidebar-link-icon img {
   width: 100%;
   height: 100%;
   display: block;
@@ -624,6 +632,45 @@ a {
   line-height: 1.7;
 }
 
+.pan-page,
+.empty-state {
+  height: 100vh;
+}
+
+.pan-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: -20px -24px -28px;
+}
+
+.pan-page::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  -webkit-app-region: drag;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.pan-frame-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pan-frame {
+  width: 100%;
+  flex: 1;
+  min-height: calc(100vh - 160px);
+  border: 0;
+  background: #fff;
+}
+
 /* ── Summary Strip ── */
 
 .summary-strip {
@@ -956,6 +1003,166 @@ a {
   font-size: 12px;
   line-height: 1.6;
   word-break: break-word;
+}
+
+.custom-sidebar-card {
+  align-items: stretch;
+}
+
+.custom-sidebar-copy {
+  min-width: 280px;
+}
+
+.custom-sidebar-panel {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 520px);
+}
+
+.custom-sidebar-form {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(180px, 1.2fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.custom-sidebar-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.custom-sidebar-form input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.custom-sidebar-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.custom-sidebar-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.custom-sidebar-empty,
+.custom-sidebar-row {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.custom-sidebar-empty {
+  padding: 14px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+.custom-sidebar-list {
+  display: grid;
+  gap: 8px;
+}
+
+.custom-sidebar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+}
+
+.custom-sidebar-row-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.custom-sidebar-row-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(14, 165, 233, 0.1);
+}
+
+.custom-sidebar-row-icon img {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.custom-sidebar-row-copy {
+  min-width: 0;
+}
+
+.custom-sidebar-row-copy strong,
+.custom-sidebar-row-copy span {
+  display: block;
+}
+
+.custom-sidebar-row-copy strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.custom-sidebar-row-copy span {
+  margin-top: 2px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-button,
+.danger-text-button {
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.text-button:hover,
+.danger-text-button:hover {
+  background: var(--accent-soft);
+}
+
+.danger-text-button {
+  flex: none;
+  color: var(--danger);
+}
+
+.danger-text-button:hover {
+  background: rgba(245, 63, 63, 0.1);
+}
+
+.text-button:disabled,
+.danger-text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 /* ── Control Center Shell ── */
@@ -1891,6 +2098,7 @@ code {
   .data-root-card,
   .data-root-actions,
   .settings-theme-actions,
+  .custom-sidebar-form,
   .config-head,
   .config-footer,
   .inline-actions,
@@ -1907,6 +2115,10 @@ code {
   .meta-grid,
   .summary-strip {
     grid-template-columns: 1fr;
+  }
+
+  .custom-sidebar-panel {
+    width: 100%;
   }
 
   .control-center-hero {

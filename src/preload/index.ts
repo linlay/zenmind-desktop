@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  AssistantWorkerOpenListener,
+  AssistantWorkerOpenRequest,
   DesktopApi,
   NavigateListener,
   ServiceId,
@@ -42,6 +44,11 @@ const api: DesktopApi = {
     getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
     changeDataRoot: () => ipcRenderer.invoke("settings.changeDataRoot")
   },
+  customSidebar: {
+    list: () => ipcRenderer.invoke("customSidebar.list"),
+    add: (input) => ipcRenderer.invoke("customSidebar.add", input),
+    remove: (id: string) => ipcRenderer.invoke("customSidebar.remove", id)
+  },
   onNavigate: (listener: NavigateListener) => {
     const handleNavigate = (_event: Electron.IpcRendererEvent, path: string) => {
       listener(path);
@@ -50,6 +57,19 @@ const api: DesktopApi = {
     ipcRenderer.on("app.navigate", handleNavigate);
     return () => {
       ipcRenderer.off("app.navigate", handleNavigate);
+    };
+  },
+  onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => {
+    const handleOpenAssistantWorker = (
+      _event: Electron.IpcRendererEvent,
+      request: AssistantWorkerOpenRequest
+    ) => {
+      listener(request);
+    };
+
+    ipcRenderer.on("app.openAssistantWorker", handleOpenAssistantWorker);
+    return () => {
+      ipcRenderer.off("app.openAssistantWorker", handleOpenAssistantWorker);
     };
   }
 };
