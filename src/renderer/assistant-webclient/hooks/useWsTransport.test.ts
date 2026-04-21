@@ -356,6 +356,34 @@ describe("connectWsTransport", () => {
 		expect(secondConnect).toHaveBeenCalledTimes(1);
 	});
 
+	it("wires token refresh and disables idle heartbeat disconnects for the ws client", async () => {
+		const connect = jest.fn<Promise<void>, []>().mockResolvedValue(undefined);
+		const initWsClientImpl = jest.fn(() => ({ connect }) as any);
+		const ensureAccessTokenImpl = jest.fn().mockResolvedValue("token_a");
+		const state = createState({ accessToken: "" });
+		const stateRef = { current: state };
+
+		await connectWsTransport({
+			dispatch,
+			state,
+			stateRef,
+			handleEvent,
+			isAppModeImpl: () => true,
+			ensureAccessTokenImpl,
+			initWsClientImpl,
+			destroyWsClientImpl: jest.fn(),
+		});
+
+		expect(initWsClientImpl).toHaveBeenCalledWith(
+			expect.objectContaining({
+				accessToken: "token_a",
+				resolveAccessToken: expect.any(Function),
+				heartbeatTimeoutMs: 0,
+				healthCheckIntervalMs: 15_000,
+			}),
+		);
+	});
+
 	it("upserts chat.created for a different chat via websocket push", async () => {
 		const { initWsClientImpl, getOnPush } = createConnectedWsClient();
 		const state = createState({ accessToken: "token_local", chatId: "chat_active" });

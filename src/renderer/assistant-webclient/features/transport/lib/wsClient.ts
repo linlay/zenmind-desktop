@@ -317,7 +317,10 @@ export class WsClient {
 		this.onPush = options.onPush;
 		this.onAccessTokenChange = options.onAccessTokenChange;
 		this.resolveAccessToken = options.resolveAccessToken;
-		this.heartbeatTimeoutMs = Math.max(1000, options.heartbeatTimeoutMs ?? 45_000);
+		this.heartbeatTimeoutMs =
+			options.heartbeatTimeoutMs == null
+				? 45_000
+				: Math.max(0, options.heartbeatTimeoutMs);
 		this.reconnectBaseDelayMs = Math.max(100, options.reconnectBaseDelayMs ?? 1_000);
 		this.reconnectMaxDelayMs = Math.max(
 			this.reconnectBaseDelayMs,
@@ -866,6 +869,9 @@ export class WsClient {
 
 	private startHealthCheck(): void {
 		this.clearHealthCheckTimer();
+		if (this.heartbeatTimeoutMs <= 0) {
+			return;
+		}
 		this.healthCheckTimer = setInterval(() => {
 			if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
 				return;

@@ -356,7 +356,7 @@ describe("connectWsTransport", () => {
 		expect(secondConnect).toHaveBeenCalledTimes(1);
 	});
 
-	it("wires token refresh and relaxed heartbeat settings into the ws client", async () => {
+	it("wires token refresh and disables idle heartbeat disconnects for the ws client", async () => {
 		const connect = jest.fn<Promise<void>, []>().mockResolvedValue(undefined);
 		const initWsClientImpl = jest.fn(() => ({ connect }) as any);
 		const ensureAccessTokenImpl = jest.fn().mockResolvedValue("token_a");
@@ -378,7 +378,7 @@ describe("connectWsTransport", () => {
 			expect.objectContaining({
 				accessToken: "token_a",
 				resolveAccessToken: expect.any(Function),
-				heartbeatTimeoutMs: 120_000,
+				heartbeatTimeoutMs: 0,
 				healthCheckIntervalMs: 15_000,
 			}),
 		);

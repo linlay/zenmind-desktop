@@ -418,6 +418,23 @@ describe("WsClient", () => {
 		expect(statuses).toContain("error");
 	});
 
+	it("keeps idle sockets open when heartbeat timeout is disabled", async () => {
+		jest.useFakeTimers();
+		const client = new WsClient({
+			heartbeatTimeoutMs: 0,
+		});
+
+		client.connect();
+		const socket = MockWebSocket.instances[0];
+		socket.open();
+		await flushMicrotasks();
+
+		jest.advanceTimersByTime(5 * 60_000);
+		expect(socket.closeCalls).toBe(0);
+		expect(MockWebSocket.instances).toHaveLength(1);
+		expect(client.getStatus()).toBe("connected");
+	});
+
 	it("does not reconnect after an explicit disconnect", async () => {
 		jest.useFakeTimers();
 		const client = new WsClient();

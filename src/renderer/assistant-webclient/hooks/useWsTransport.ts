@@ -366,7 +366,9 @@ function buildWsClient(
 
 			options.handleEvent(liveEvent);
 		},
-		heartbeatTimeoutMs: 120_000,
+		// The desktop-hosted backend does not guarantee periodic heartbeat frames,
+		// so treating idle periods as dead connections causes false disconnects.
+		heartbeatTimeoutMs: 0,
 		healthCheckIntervalMs: 15_000,
 	});
 }
