@@ -956,16 +956,6 @@ export function ControlCenterPage() {
                     </button>
                     {group.key === "core" ? (
                       <div className="service-group-actions">
-                        {needsCoreInstallAction ? (
-                          <button
-                            type="button"
-                            className="action-button service-group-action service-group-action-primary"
-                            onClick={() => void handleInstallMissingCoreServices()}
-                            disabled={isBatchInstallingCore || isBatchStarting}
-                          >
-                            {isBatchInstallingCore ? "安装中..." : "安装缺失服务"}
-                          </button>
-                        ) : null}
                         <button
                           type="button"
                           className="action-button service-group-action"
