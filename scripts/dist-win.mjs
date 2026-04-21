@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 
 const projectRoot = process.cwd();
+const workspaceRoot = path.resolve(projectRoot, "..");
 const isWindows = process.platform === "win32";
 const npmCmd = isWindows ? "npm.cmd" : "npm";
 
@@ -62,8 +63,10 @@ async function buildWithDocker() {
   const dockerArgs = [
     "run",
     "--rm",
+    "--platform",
+    "linux/amd64",
     "--volume",
-    `${projectRoot}:/project`,
+    `${workspaceRoot}:/workspace`,
     "--volume",
     `${npmCacheDir}:/root/.npm`
   ];
@@ -74,7 +77,7 @@ async function buildWithDocker() {
 
   dockerArgs.push(
     "--workdir",
-    "/project",
+    "/workspace/zenmind-desktop",
     "electronuserland/builder:wine",
     "/bin/bash",
     "-lc",

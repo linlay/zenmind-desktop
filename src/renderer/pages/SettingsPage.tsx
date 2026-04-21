@@ -125,7 +125,7 @@ export function SettingsPage({
           <p className="eyebrow">SETTINGS</p>
           <h1>设置</h1>
           <p className="page-copy">
-            管理 ZenMind Desktop 的外观与本地数据目录。运行时数据会写入这个根目录，包含
+            管理国泰君安期货的外观与本地数据目录。运行时数据会写入这个根目录，包含
             <code>services</code>、<code>plugins</code> 和 <code>credentials</code>；
             自定义侧边栏会保存到本机设置文件。
           </p>

@@ -56,7 +56,7 @@ let isHandlingQuit = false;
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 
 // Keep dev Electron runs on the same data root as packaged builds.
-app.setName("ZenMind Desktop");
+app.setName("国泰君安期货");
 app.setPath("userData", path.join(app.getPath("appData"), "zenmind-desktop"));
 
 function getRendererEntry() {
@@ -356,7 +356,7 @@ async function initializeDataRoot() {
   }
 
   const defaultRoot = app.getPath("userData");
-  const result = await showDirectoryDialog("选择 ZenMind Desktop 数据目录", defaultRoot, null);
+  const result = await showDirectoryDialog("选择国泰君安期货数据目录", defaultRoot, null);
   const selectedRoot =
     result.canceled || result.filePaths.length === 0 ? defaultRoot : result.filePaths[0];
   try {
@@ -521,7 +521,7 @@ function registerIpcHandlers() {
     }
 
     const currentRoot = getDataRoot(app);
-    const result = await showDirectoryDialog("选择新的 ZenMind Desktop 数据目录", currentRoot);
+    const result = await showDirectoryDialog("选择新的国泰君安期货数据目录", currentRoot);
     if (result.canceled || result.filePaths.length === 0) {
       return {
         ok: false,

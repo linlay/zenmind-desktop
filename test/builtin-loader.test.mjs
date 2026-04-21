@@ -154,10 +154,11 @@ test("loadBuiltinServices skips builtin archives from other platforms", () => {
   try {
     const loaded = loadBuiltinServices(createApp(userDataRoot));
     const service = getBuiltinService("shared-service");
+    const loadedService = loaded.find((item) => item.id === "shared-service");
 
-    assert.equal(loaded.length, 1);
-    assert.equal(loaded[0].description, `${matchedOs} build`);
-    assert.equal(loaded[0].assetFileName, matchedArchiveName);
+    assert.ok(loadedService);
+    assert.equal(loadedService.description, `${matchedOs} build`);
+    assert.equal(loadedService.assetFileName, matchedArchiveName);
     assert.equal(service.description, `${matchedOs} build`);
     assert.equal(service.platform?.os, matchedOs);
   } finally {

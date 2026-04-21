@@ -25,11 +25,11 @@ const HELP_CATEGORIES: HelpCategory[] = [
     label: "热门问题",
     items: [
       {
-        question: "什么是 ZenMind Desktop？",
+        question: "什么是国泰君安期货？",
         answer: (
           <>
             <p>
-              ZenMind Desktop 是一个桌面端控制壳应用，用于统一管理和运行内置服务与第三方插件。
+              国泰君安期货是一个桌面控制壳应用，用于统一管理和运行内置服务与第三方插件。
               它基于 Electron 构建，提供服务发现、安装、启停、日志查看和配置管理等能力。
             </p>
             <p>
@@ -52,7 +52,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
           <>
             <ol>
               <li>
-                <strong>macOS</strong>：打开 <code>.dmg</code> 文件，将 ZenMind 拖入"应用程序"文件夹
+                <strong>macOS</strong>：打开 <code>.dmg</code> 文件，将国泰君安期货拖入"应用程序"文件夹
               </li>
               <li>
                 <strong>Windows</strong>：运行 NSIS 安装包，按提示完成安装
@@ -405,7 +405,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
             <p>如果遇到无法自行解决的问题，建议提交时附上以下信息：</p>
             <ol>
               <li>操作系统版本和架构</li>
-              <li>ZenMind Desktop 版本号</li>
+              <li>国泰君安期货版本号</li>
               <li>出问题的服务名称和状态截图</li>
               <li>相关日志文件内容（脱敏处理后）</li>
               <li>复现步骤</li>

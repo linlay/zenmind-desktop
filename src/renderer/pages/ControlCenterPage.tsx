@@ -3,7 +3,30 @@ import type { ServiceConfigReadResult, ServiceId, ServiceLogTarget, ServiceState
 import { useServices } from "../services/ServicesContext";
 import { useNavigate } from "react-router-dom";
 
-const QUICK_START_ORDER = ["Container Hub", "智能体平台", "小宅助理", "认证服务"];
+const CORE_MODULES = [
+  {
+    id: "agent-container-hub",
+    name: "Container Hub",
+    description: "宿主机容器服务，负责为后续智能体运行时提供沙箱能力。"
+  },
+  {
+    id: "agent-platform",
+    name: "智能体平台",
+    description: "AI Agent 运行时，提供对话、工具执行和沙箱能力。"
+  },
+  {
+    id: "agent-webclient",
+    name: "小宅助理",
+    description: "独立进程模式的 AGENT Web 客户端，负责静态资源托管并代理 API 请求。"
+  },
+  {
+    id: "zenmind-app-server",
+    name: "认证服务",
+    description: "认证与管理服务，提供 OAuth2/OIDC、管理后台、App 访问令牌和设备管理。"
+  }
+] as const;
+
+const QUICK_START_ORDER = CORE_MODULES.map((module) => module.id);
 
 function statusClass(status: ServiceState["status"]) {
   switch (status) {
@@ -44,6 +67,9 @@ function statusDotClass(status: ServiceState["status"]) {
 type ActionScope = "lifecycle" | "detail";
 type ConfigMeta = Pick<ServiceConfigReadResult, "path" | "exists" | "source">;
 type ServiceGroupKey = "core" | "market";
+type CoreModuleEntry = (typeof CORE_MODULES)[number] & {
+  service: ServiceState | null;
+};
 type MetaItem = {
   key: string;
   label: string;
@@ -420,28 +446,44 @@ export function ControlCenterPage() {
   const [pendingAction, setPendingAction] = useState<{ serviceId: ServiceId; scope: ActionScope } | null>(null);
   const [feedback, setFeedback] = useState("");
   const [isBatchStarting, setIsBatchStarting] = useState(false);
-  const [expandedGroup, setExpandedGroup] = useState<ServiceGroupKey | null>("core");
+  const [expandedGroup, setExpandedGroup] = useState<ServiceGroupKey | null>(null);
   const [configCache, setConfigCache] = useState<Record<string, string>>({});
   const [configMeta, setConfigMeta] = useState<Record<string, ConfigMeta>>({});
   const [logViewer, setLogViewer] = useState<LogViewerState>(() => createEmptyLogViewerState());
 
+  const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services]);
+  const coreModules = useMemo<CoreModuleEntry[]>(
+    () =>
+      CORE_MODULES.map((module) => ({
+        ...module,
+        service: serviceById.get(module.id) ?? null
+      })),
+    [serviceById]
+  );
+  const coreServices = useMemo(
+    () => coreModules.map((module) => module.service).filter((service): service is ServiceState => Boolean(service)),
+    [coreModules]
+  );
+  const marketServices = useMemo(() => services.filter((service) => service.kind === "plugin"), [services]);
+
   useEffect(() => {
-    if (services.length === 0) {
+    const currentGroupIds = [...coreModules.map((module) => module.id), ...marketServices.map((service) => service.id)];
+
+    if (currentGroupIds.length === 0) {
       setSelectedServiceId(null);
       return;
     }
 
-    setSelectedServiceId((current) =>
-      current && services.some((service) => service.id === current) ? current : services[0].id
-    );
-  }, [services]);
+    setSelectedServiceId((current) => (current && currentGroupIds.includes(current) ? current : currentGroupIds[0]));
+  }, [coreModules, marketServices]);
 
   useEffect(() => {
-    if (services.length === 0) {
+    const installedServiceIds = new Set(services.filter((service) => service.installed).map((service) => service.id));
+    if (installedServiceIds.size === 0) {
       return;
     }
 
-    const missingServices = services.filter((service) => service.installed && !(service.id in configMeta));
+    const missingServices = services.filter((service) => installedServiceIds.has(service.id) && !(service.id in configMeta));
     if (missingServices.length === 0) {
       return;
     }
@@ -488,20 +530,11 @@ export function ControlCenterPage() {
     total: services.length,
     running: services.filter((service) => service.status === "running").length
   };
-
-  const coreServices = QUICK_START_ORDER
-    .map((name) => services.find((service) => service.name === name))
-    .filter((service): service is ServiceState => Boolean(service));
-
-  const marketServices = services.filter((service) => service.kind === "plugin");
-
-  const selectedService = services.find((service) => service.id === selectedServiceId) ?? services[0] ?? null;
-  const activeDetailService =
-    expandedGroup === null
-      ? null
-      : expandedGroup === "core"
-        ? coreServices.find((service) => service.id === selectedService?.id) ?? coreServices[0] ?? null
-        : marketServices.find((service) => service.id === selectedService?.id) ?? marketServices[0] ?? null;
+  const selectedCoreModule = coreModules.find((module) => module.id === selectedServiceId) ?? coreModules[0] ?? null;
+  const selectedMarketService =
+    marketServices.find((service) => service.id === selectedServiceId) ?? null;
+  const activeDetailService = selectedMarketService ?? selectedCoreModule?.service ?? null;
+  const activeCoreModule = selectedMarketService ? null : selectedCoreModule;
   const selectedConfigMeta = activeDetailService ? configMeta[activeDetailService.id] : undefined;
   const errorLogDisplay = activeDetailService ? getErrorLogDisplay(activeDetailService) : "未声明";
 
@@ -679,21 +712,24 @@ export function ControlCenterPage() {
   }
 
   function toggleGroup(group: ServiceGroupKey) {
+    if (group === "core") {
+      const nextSelectedCore = coreModules.find((module) => module.id === selectedServiceId) ?? coreModules[0] ?? null;
+      if (nextSelectedCore) {
+        setSelectedServiceId(nextSelectedCore.id);
+      }
+      return;
+    }
+
     setExpandedGroup((current) => {
-      if (current === group) {
-        return null;
+      const nextExpanded = current === "market" ? null : "market";
+      if (nextExpanded === "market") {
+        const nextSelectedMarket =
+          marketServices.find((service) => service.id === selectedServiceId) ?? marketServices[0] ?? null;
+        if (nextSelectedMarket) {
+          setSelectedServiceId(nextSelectedMarket.id);
+        }
       }
-
-      const nextSelectedService =
-        group === "core"
-          ? coreServices.find((service) => service.id === selectedService?.id) ?? coreServices[0] ?? null
-          : marketServices.find((service) => service.id === selectedService?.id) ?? marketServices[0] ?? null;
-
-      if (nextSelectedService) {
-        setSelectedServiceId(nextSelectedService.id);
-      }
-
-      return group;
+      return nextExpanded;
     });
   }
 
@@ -737,7 +773,7 @@ export function ControlCenterPage() {
 
   async function handleQuickStart() {
     const orderedServices = QUICK_START_ORDER
-      .map((name) => services.find((service) => service.name === name))
+      .map((serviceId) => serviceById.get(serviceId))
       .filter((service): service is ServiceState => Boolean(service));
 
     if (orderedServices.length === 0) {
@@ -869,8 +905,8 @@ export function ControlCenterPage() {
               {
                 key: "core" as const,
                 title: "控制中心",
-                subtitle: `${coreServices.length} 个核心服务`,
-                services: coreServices,
+                subtitle: `${coreModules.length} 个核心服务`,
+                services: coreModules,
                 empty: "暂无核心服务"
               },
               {
@@ -881,7 +917,7 @@ export function ControlCenterPage() {
                 empty: "暂无已导入插件"
               }
             ].map((group) => {
-              const isOpen = expandedGroup === group.key;
+              const isOpen = group.key === "core" ? true : expandedGroup === group.key;
 
               return (
                 <section
@@ -923,28 +959,35 @@ export function ControlCenterPage() {
                   {isOpen ? (
                     <div className="service-nav-list">
                       {group.services.length > 0 ? (
-                        group.services.map((service) => {
-                          const isSelected = selectedService?.id === service.id;
+                        group.services.map((item) => {
+                          const service = "service" in item ? item.service : item;
+                          const cardId = "service" in item ? item.id : item.id;
+                          const cardName = "service" in item ? item.name : item.name;
+                          const cardDescription = "service" in item ? item.description : item.description;
+                          const isSelected = selectedServiceId === cardId;
                           const isPendingLifecycle =
-                            pendingAction?.scope === "lifecycle" && pendingAction.serviceId === service.id;
+                            Boolean(service) &&
+                            pendingAction?.scope === "lifecycle" &&
+                            pendingAction.serviceId === service.id;
+                          const statusLabel = service ? service.statusLabel : "待接入";
 
                           return (
                             <button
-                              key={service.id}
+                              key={cardId}
                               type="button"
                               className={`service-nav-card${isSelected ? " is-active" : ""}`}
-                              onClick={() => setSelectedServiceId(service.id)}
+                              onClick={() => setSelectedServiceId(cardId)}
                               aria-pressed={isSelected}
                             >
                               <div className="service-nav-card-head">
-                                <h3>{service.name}</h3>
+                                <h3>{cardName}</h3>
                                 <span
-                                  className={`status-dot ${isPendingLifecycle ? "loading" : statusDotClass(service.status)}`}
-                                  title={isPendingLifecycle ? "处理中" : service.statusLabel}
+                                  className={`status-dot ${isPendingLifecycle ? "loading" : service ? statusDotClass(service.status) : "idle"}`}
+                                  title={isPendingLifecycle ? "处理中" : statusLabel}
                                   aria-hidden="true"
                                 />
                               </div>
-                              <p>{service.description}</p>
+                              <p>{cardDescription}</p>
                             </button>
                           );
                         })
@@ -1133,13 +1176,30 @@ export function ControlCenterPage() {
                   }
                   disabled={activeId === activeDetailService.id}
                 >
-                  保存配置
+                  {activeDetailService.kind === "builtin" && activeDetailService.status === "not-installed"
+                    ? "保存配置并安装"
+                    : "保存配置"}
                 </button>
               </div>
               {selectedConfigMeta?.source === "template" ? (
                 <p className="service-message">当前内容来自模板，保存或初始化后才会写入目标文件。</p>
               ) : null}
             </div>
+          </article>
+        ) : activeCoreModule ? (
+          <article className="service-card control-center-detail">
+            <div className="service-card-head">
+              <div>
+                <p className="service-kicker">默认集成模块</p>
+                <h2>{activeCoreModule.name}</h2>
+              </div>
+              <span className="status-pill idle">待接入</span>
+            </div>
+
+            <p className="service-description">{activeCoreModule.description}</p>
+            <p className="service-message">
+              该模块会默认展示在控制中心中。当前运行时还没有读到对应服务清单，请确认内置资源已同步到应用后再进行配置和安装。
+            </p>
           </article>
         ) : (
           <div className="loading-box control-center-empty">暂无已登记服务。</div>
