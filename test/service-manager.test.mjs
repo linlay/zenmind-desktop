@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -231,6 +231,7 @@ function writePluginInstallRoot(installDir, options = {}) {
   const pluginId = options.id ?? "test-plugin";
   const pluginName = options.name ?? "Test Plugin";
   const version = options.version ?? "v1.0.0";
+  const port = options.port ?? 9300;
   const errorLogRelativePath = options.errorLogRelativePath ?? null;
   const deployScriptContent =
     options.deployScriptContent === undefined
@@ -239,7 +240,7 @@ function writePluginInstallRoot(installDir, options = {}) {
   const requiredPaths = ["manifest.json", "start.sh", "stop.sh", ".env.example"];
 
   fs.mkdirSync(path.join(installDir, "run"), { recursive: true });
-  fs.writeFileSync(path.join(installDir, ".env.example"), "PORT=9300\n", "utf8");
+  fs.writeFileSync(path.join(installDir, ".env.example"), `PORT=${port}\n`, "utf8");
   fs.writeFileSync(path.join(installDir, "start.sh"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
   fs.writeFileSync(path.join(installDir, "stop.sh"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
 
@@ -284,7 +285,7 @@ function writePluginInstallRoot(installDir, options = {}) {
         web: {
           routePath: "",
           portEnvKey: "PORT",
-          defaultPort: 9300
+          defaultPort: port
         }
       },
       null,
@@ -763,6 +764,92 @@ test("readServiceConfig returns template content without creating target file", 
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("startService treats a matching port listener as already running and restores the pid file", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-port-detect-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+  const port = 19300 + Math.floor(Math.random() * 1000);
+  const pidFilePath = path.join(installDir, "run", "test-plugin.pid");
+  let child = null;
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    port,
+    deployScriptContent: false
+  });
+  fs.writeFileSync(path.join(installDir, ".env"), `PORT=${port}\n`, "utf8");
+  fs.writeFileSync(
+    path.join(installDir, "start.sh"),
+    "#!/usr/bin/env bash\necho should-not-run >&2\nexit 1\n",
+    "utf8"
+  );
+  fs.chmodSync(path.join(installDir, "start.sh"), 0o755);
+  fs.writeFileSync(
+    (() => {
+      const initStatePath = __testInternals.getInitializationStatePath(installDir);
+      fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
+      return initStatePath;
+    })(),
+    `${JSON.stringify(
+      {
+        version: "v1.0.0",
+        status: "succeeded",
+        updatedAt: new Date().toISOString()
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const serverScriptPath = path.join(installDir, "server.js");
+  fs.writeFileSync(
+    serverScriptPath,
+    `const http = require("node:http");
+const server = http.createServer((_req, res) => res.end("ok"));
+server.listen(${port}, "127.0.0.1");
+setInterval(() => {}, 1000);
+`,
+    "utf8"
+  );
+
+  try {
+    child = spawn(process.execPath, [serverScriptPath], {
+      cwd: installDir,
+      detached: true,
+      stdio: "ignore"
+    });
+    child.unref();
+
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const state = await getServiceState(app, "test-plugin");
+      if (state.status === "running") {
+        const result = await startService(app, "test-plugin");
+        assert.equal(result.ok, true);
+        assert.equal(result.service.status, "running");
+        assert.equal(result.service.healthMeta.pid, child.pid);
+        assert.equal(fs.readFileSync(pidFilePath, "utf8").trim(), String(child.pid));
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    assert.fail("service was not detected as running before timeout");
+  } finally {
+    if (child?.pid) {
+      try {
+        process.kill(child.pid);
+      } catch {
+        // Child may already be gone when the test finishes.
+      }
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("startService rejects services that still require initialization", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-init-required-start-"));
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -783,17 +870,21 @@ test("startService rejects services that still require initialization", async ()
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements injects container hub url and auth public key for agent platform", async () => {
+test("ensurePreStartRequirements injects container hub url, desktop runtime paths, and local no-auth mode for agent platform", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-prestart-"));
   const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
   const { app, restore } = loadBuiltinsForTest(userDataRoot);
   const hubService = getBuiltinService("agent-container-hub");
   const platformService = getBuiltinService("agent-platform");
   const hubInstallDir = path.join(userDataRoot, "services", hubService.id, hubService.version);
   const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+  const desktopRuntimeRoot = path.join(homeRoot, "zenmind");
 
   fs.mkdirSync(hubInstallDir, { recursive: true });
   fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  fs.mkdirSync(path.join(desktopRuntimeRoot, "registries"), { recursive: true });
+  fs.mkdirSync(path.join(desktopRuntimeRoot, "agents"), { recursive: true });
   fs.writeFileSync(path.join(hubInstallDir, ".env"), "BIND_ADDR=0.0.0.0:12960\n", "utf8");
   fs.writeFileSync(
     path.join(platformInstallDir, ".env"),
@@ -801,17 +892,36 @@ test("ensurePreStartRequirements injects container hub url and auth public key f
     "utf8"
   );
 
-  await __testInternals.ensurePreStartRequirements(app, platformService);
+  const previousHome = process.env.HOME;
+  process.env.HOME = homeRoot;
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+  }
 
   const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
   assert.match(envContent, /AGENT_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960/);
   assert.match(envContent, /SERVER_PORT=11949/);
-  assert.match(envContent, /AGENT_AUTH_ENABLED=true/);
-  assert.match(envContent, /AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem/);
-
-  const publicKeyPath = path.join(platformInstallDir, "configs", "local-public-key.pem");
-  assert.ok(fs.existsSync(publicKeyPath));
-  assert.match(fs.readFileSync(publicKeyPath, "utf8"), /BEGIN PUBLIC KEY/);
+  assert.match(envContent, /AGENT_AUTH_ENABLED=false/);
+  assert.doesNotMatch(envContent, /AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=/);
+  const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
+  assert.match(
+    envContent,
+    new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+  );
+  assert.match(
+    envContent,
+    new RegExp(`REGISTRIES_DIR=${path.join(desktopRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+  );
+  assert.match(
+    envContent,
+    new RegExp(`AGENTS_DIR=${path.join(desktopRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+  );
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
