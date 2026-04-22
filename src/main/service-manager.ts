@@ -111,6 +111,31 @@ function buildServiceEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+function resolveNodeBin() {
+  const serviceEnv = buildServiceEnv();
+  const locator = process.platform === "win32" ? "where" : "which";
+  try {
+    const result = spawnSync(locator, ["node"], {
+      encoding: "utf8",
+      env: serviceEnv,
+      timeout: 1500
+    });
+    if (result.status === 0 && !result.error) {
+      const resolved = result.stdout
+        .split(/\r?\n/u)
+        .map((entry) => entry.trim())
+        .find(Boolean);
+      if (resolved) {
+        return resolved;
+      }
+    }
+  } catch {
+    // Fall back to Electron when the host does not expose a standalone Node runtime.
+  }
+
+  return process.execPath;
+}
+
 const bundleValidationCache = new Map<string, { key: string; missingEntries: string[] }>();
 
 export function getInstallDir(app: App, service: ServiceDefinition) {
@@ -365,6 +390,131 @@ function isProcessRunning(pid: number | null) {
   } catch {
     return false;
   }
+}
+
+function listListeningPids(port: number) {
+  if (!Number.isFinite(port) || port <= 0) {
+    return [];
+  }
+
+  const env = buildServiceEnv();
+
+  try {
+    if (IS_WINDOWS) {
+      const result = spawnSync("netstat", ["-ano", "-p", "tcp"], {
+        encoding: "utf8",
+        env,
+        timeout: 1500
+      });
+      if (result.status !== 0 || result.error) {
+        return [];
+      }
+
+      const pids = new Set<number>();
+      for (const line of result.stdout.split(/\r?\n/u)) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("TCP")) {
+          continue;
+        }
+
+        const parts = trimmed.split(/\s+/u);
+        const localAddress = parts[1] ?? "";
+        const state = (parts[3] ?? "").toUpperCase();
+        const pidText = parts[4] ?? "";
+        if (state !== "LISTENING") {
+          continue;
+        }
+
+        const parsedPort = Number.parseInt(localAddress.split(":").at(-1) ?? "", 10);
+        const pid = Number.parseInt(pidText, 10);
+        if (parsedPort === port && Number.isFinite(pid)) {
+          pids.add(pid);
+        }
+      }
+
+      return [...pids];
+    }
+
+    const result = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], {
+      encoding: "utf8",
+      env,
+      timeout: 1500
+    });
+    if (result.status !== 0 || result.error) {
+      return [];
+    }
+
+    return [...new Set(
+      result.stdout
+        .split(/\r?\n/u)
+        .map((line) => Number.parseInt(line.trim(), 10))
+        .filter((pid) => Number.isFinite(pid))
+    )];
+  } catch {
+    return [];
+  }
+}
+
+function readProcessCommand(pid: number) {
+  if (!Number.isFinite(pid) || pid <= 0) {
+    return "";
+  }
+
+  const env = buildServiceEnv();
+
+  try {
+    if (IS_WINDOWS) {
+      const query = `(Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}").CommandLine`;
+      const result = spawnSync(windowsPowerShellPath(), ["-NoProfile", "-Command", query], {
+        encoding: "utf8",
+        env,
+        timeout: 1500
+      });
+      if (result.status !== 0 || result.error) {
+        return "";
+      }
+      return result.stdout.trim();
+    }
+
+    const result = spawnSync("ps", ["-p", String(pid), "-o", "command="], {
+      encoding: "utf8",
+      env,
+      timeout: 1500
+    });
+    if (result.status !== 0 || result.error) {
+      return "";
+    }
+    return result.stdout.trim();
+  } catch {
+    return "";
+  }
+}
+
+function normalizeProcessPath(value: string) {
+  return path.normalize(value).replace(/\\/gu, "/");
+}
+
+function pidMatchesInstallDir(pid: number, installDir: string) {
+  const command = readProcessCommand(pid);
+  if (!command) {
+    return false;
+  }
+
+  return normalizeProcessPath(command).includes(normalizeProcessPath(installDir));
+}
+
+function detectManagedServicePid(installDir: string, port: number) {
+  for (const pid of listListeningPids(port)) {
+    if (pidMatchesInstallDir(pid, installDir)) {
+      return pid;
+    }
+  }
+  return null;
+}
+
+function writePidFile(pidFilePath: string, pid: number) {
+  ensureDir(path.dirname(pidFilePath));
+  fs.writeFileSync(pidFilePath, `${pid}\n`, "utf8");
 }
 
 const IS_WINDOWS = process.platform === "win32";
@@ -763,7 +913,7 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   const env = installed ? readEnvFile(path.join(installDir, ".env")) : new Map<string, string>();
   const port = parsePort(service, env);
   const webUrl = installed ? getWebUrl(service, env) : getWebUrl(service, new Map<string, string>());
-  const pid = installed ? readPid(pidFilePath) : null;
+  const pidFromFile = installed ? readPid(pidFilePath) : null;
   const missingRuntimeFiles = installed ? listMissingRuntimeFiles(service, installDir) : [];
   const initializationState =
     installed && missingRuntimeFiles.length === 0 ? readInitializationState(installDir) : null;
@@ -773,7 +923,22 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     installed && missingRuntimeFiles.length === 0 && initializationSucceeded
       ? collectPrerequisites(service, installDir)
       : [];
-  const running = installed && missingRuntimeFiles.length === 0 && isProcessRunning(pid);
+  let pid = pidFromFile;
+  let running = installed && missingRuntimeFiles.length === 0 && isProcessRunning(pid);
+  let conflictingPortPid: number | null = null;
+
+  if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !running && port > 0) {
+    const detectedPid = detectManagedServicePid(installDir, port);
+    if (detectedPid) {
+      pid = detectedPid;
+      running = true;
+      if (pidFromFile !== detectedPid) {
+        writePidFile(pidFilePath, detectedPid);
+      }
+    } else {
+      conflictingPortPid = listListeningPids(port).find((candidatePid) => candidatePid !== pidFromFile) ?? null;
+    }
+  }
 
   let status: ServiceState["status"] = "not-installed";
   let statusLabel = "未安装";
@@ -820,6 +985,12 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     message = prerequisites.join("；");
   }
 
+  if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !running && conflictingPortPid) {
+    status = "error";
+    statusLabel = "端口冲突";
+    message = `端口 ${port} 已被其他进程占用（PID ${conflictingPortPid}）。`;
+  }
+
   if (running && initializationSucceeded) {
     status = "running";
     statusLabel = "运行中";
@@ -864,6 +1035,29 @@ const agentWebclientDefaultBaseUrls = new Set([
   "http://localhost:11949"
 ]);
 
+const agentPlatformDesktopRuntimePaths = [
+  ["REGISTRIES_DIR", "registries"],
+  ["TOOLS_DIR", "tools"],
+  ["OWNER_DIR", "owner"],
+  ["AGENTS_DIR", "agents"],
+  ["TEAMS_DIR", "teams"],
+  ["ROOT_DIR", "root"],
+  ["SCHEDULES_DIR", "schedules"],
+  ["CHATS_DIR", "chats"],
+  ["MEMORY_DIR", "memory"],
+  ["PAN_DIR", "pan"],
+  ["SKILLS_MARKET_DIR", "skills-market"]
+] as const;
+
+function resolveDesktopRuntimeRoot() {
+  const candidate = path.join(os.homedir(), "zenmind");
+  const requiredDirs = ["registries", "agents"];
+  if (!requiredDirs.every((dirName) => fs.existsSync(path.join(candidate, dirName)))) {
+    return null;
+  }
+  return candidate;
+}
+
 async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {
   if (service.id === "agent-platform") {
     const installDir = getInstallDir(app, service);
@@ -884,17 +1078,21 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     if (!env.get("SERVER_PORT")) {
       updates.set("SERVER_PORT", String(service.web.defaultPort));
     }
-    updates.set("AGENT_AUTH_ENABLED", "true");
-    updates.set("AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE", path.join("configs", "local-public-key.pem"));
+    updates.set("AGENT_AUTH_ENABLED", "false");
+    updates.set("NODE_BIN", resolveNodeBin());
+
+    const desktopRuntimeRoot = resolveDesktopRuntimeRoot();
+    if (desktopRuntimeRoot) {
+      for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
+        if (!env.get(key)) {
+          updates.set(key, path.join(desktopRuntimeRoot, relativePath));
+        }
+      }
+    }
 
     if (updates.size > 0) {
       writeEnvFileUpdates(envPath, updates);
     }
-
-    const { publicKeyPem } = ensureKeyPairForPan(app);
-    const publicKeyPath = path.join(installDir, "configs", "local-public-key.pem");
-    ensureDir(path.dirname(publicKeyPath));
-    fs.writeFileSync(publicKeyPath, publicKeyPem, "utf8");
     return;
   }
 
@@ -913,7 +1111,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     if (!env.get("PORT")) {
       updates.set("PORT", String(service.web.defaultPort));
     }
-    updates.set("NODE_BIN", process.execPath);
+    updates.set("NODE_BIN", resolveNodeBin());
 
     if (updates.size > 0) {
       writeEnvFileUpdates(envPath, updates);
@@ -1293,6 +1491,7 @@ export const __testInternals = {
   ensureBundleAssetHealthy,
   upsertEnvFileContent,
   ensurePreStartRequirements,
+  resolveNodeBin,
   decodePowerShellCapturePayload,
   getInitializationStatePath,
   readInitializationState
