@@ -22,6 +22,7 @@ const MIN_SIDEBAR_WIDTH = 176;
 const MAX_SIDEBAR_WIDTH = 340;
 const COLLAPSED_SIDEBAR_WIDTH = 76;
 const COLLAPSE_THRESHOLD = 118;
+const MAC_OVERLAY_SIDEBAR_WIDTH = 332;
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 
 export const EXTERNAL_EXPERIMENTAL_ITEMS = [
@@ -34,9 +35,37 @@ type SidebarState = {
   width: number;
 };
 
+function isMacOverlaySidebarPlatform() {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+
+  const platform =
+    (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ??
+    navigator.platform ??
+    navigator.userAgent;
+
+  return /mac/i.test(platform);
+}
+
+function SidebarToggleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="4" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M10 4v16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M6.5 8h1M6.5 12h1M6.5 16h1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function AppShell() {
   const navigate = useNavigate();
   const appShellRef = useRef<HTMLDivElement | null>(null);
+  const macSidebarShellRef = useRef<HTMLDivElement | null>(null);
+  const macSidebarToggleRef = useRef<HTMLButtonElement | null>(null);
+  const sidebarResizePointerIdRef = useRef<number | null>(null);
+  const sidebarResizeCleanupRef = useRef<(() => void) | null>(null);
+  const isMacOverlaySidebar = isMacOverlaySidebarPlatform();
   const sidebarDragMovedRef = useRef(false);
   const sidebarDragStartRef = useRef(0);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -57,18 +86,18 @@ function AppShell() {
     try {
       const savedValue = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
       if (!savedValue) {
-        return { collapsed: false, width: DEFAULT_SIDEBAR_WIDTH };
+        return { collapsed: isMacOverlaySidebar, width: DEFAULT_SIDEBAR_WIDTH };
       }
       const parsed = JSON.parse(savedValue) as Partial<SidebarState>;
       const width = typeof parsed.width === "number"
         ? Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed.width))
         : DEFAULT_SIDEBAR_WIDTH;
       return {
-        collapsed: parsed.collapsed === true,
+        collapsed: typeof parsed.collapsed === "boolean" ? parsed.collapsed : isMacOverlaySidebar,
         width
       };
     } catch {
-      return { collapsed: false, width: DEFAULT_SIDEBAR_WIDTH };
+      return { collapsed: isMacOverlaySidebar, width: DEFAULT_SIDEBAR_WIDTH };
     }
   });
   const [isSidebarDragging, setIsSidebarDragging] = useState(false);
@@ -147,6 +176,43 @@ function AppShell() {
     };
   }, [isSidebarDragging]);
 
+  useEffect(() => () => {
+    sidebarResizeCleanupRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    if (!isMacOverlaySidebar || sidebarState.collapsed) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+
+      if (macSidebarShellRef.current?.contains(target) || macSidebarToggleRef.current?.contains(target)) {
+        return;
+      }
+
+      closeMacOverlaySidebar();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeMacOverlaySidebar();
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMacOverlaySidebar, sidebarState.collapsed]);
+
   function toggleTheme() {
     setThemeMode((current) => (current === "light" ? "dark" : "light"));
   }
@@ -182,32 +248,88 @@ function AppShell() {
     });
   }
 
-  function startSidebarResize(startClientX: number) {
-    if (window.innerWidth <= 1080) {
+  function startSidebarResize(startClientX: number, pointerId: number, handle: HTMLButtonElement) {
+    if (isMacOverlaySidebar || window.innerWidth <= 1080) {
       return;
     }
 
+    sidebarResizeCleanupRef.current?.();
     sidebarDragMovedRef.current = false;
     sidebarDragStartRef.current = startClientX;
+    sidebarResizePointerIdRef.current = pointerId;
     setIsSidebarDragging(true);
     updateSidebarWidth(resolveSidebarWidth(startClientX));
 
+    try {
+      handle.setPointerCapture(pointerId);
+    } catch {
+      // Some platforms may reject pointer capture for transient pointer state changes.
+    }
+
     const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== sidebarResizePointerIdRef.current) {
+        return;
+      }
       if (Math.abs(event.clientX - sidebarDragStartRef.current) > 3) {
         sidebarDragMovedRef.current = true;
       }
       updateSidebarWidth(resolveSidebarWidth(event.clientX));
     };
 
-    const handlePointerUp = (event: PointerEvent) => {
-      commitSidebarWidth(resolveSidebarWidth(event.clientX));
+    const finishResize = (clientX?: number) => {
+      const finalWidth = resolveSidebarWidth(clientX ?? sidebarDragStartRef.current);
+      commitSidebarWidth(finalWidth);
       setIsSidebarDragging(false);
+      sidebarResizePointerIdRef.current = null;
+      sidebarResizeCleanupRef.current = null;
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      window.removeEventListener("blur", handleWindowBlur);
+      handle.removeEventListener("lostpointercapture", handleLostPointerCapture);
+      try {
+        if (handle.hasPointerCapture(pointerId)) {
+          handle.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // Ignore if capture is already gone.
+      }
     };
 
+    const handlePointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== sidebarResizePointerIdRef.current) {
+        return;
+      }
+      finishResize(event.clientX);
+    };
+
+    const handlePointerCancel = (event: PointerEvent) => {
+      if (event.pointerId !== sidebarResizePointerIdRef.current) {
+        return;
+      }
+      finishResize(event.clientX);
+    };
+
+    const handleLostPointerCapture = () => {
+      if (sidebarResizePointerIdRef.current !== pointerId) {
+        return;
+      }
+      finishResize();
+    };
+
+    const handleWindowBlur = () => {
+      if (sidebarResizePointerIdRef.current !== pointerId) {
+        return;
+      }
+      finishResize();
+    };
+
+    sidebarResizeCleanupRef.current = () => finishResize();
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    window.addEventListener("blur", handleWindowBlur);
+    handle.addEventListener("lostpointercapture", handleLostPointerCapture);
   }
 
   function toggleSidebarCollapsed() {
@@ -218,48 +340,100 @@ function AppShell() {
     );
   }
 
+  function openMacOverlaySidebar() {
+    setSidebarState((current) => ({ ...current, collapsed: false }));
+  }
+
+  function closeMacOverlaySidebar() {
+    setSidebarState((current) => ({ ...current, collapsed: true }));
+  }
+
   const sidebarWidth = sidebarState.collapsed
-    ? COLLAPSED_SIDEBAR_WIDTH
-    : sidebarState.width;
+    ? (isMacOverlaySidebar ? MAC_OVERLAY_SIDEBAR_WIDTH : COLLAPSED_SIDEBAR_WIDTH)
+    : (isMacOverlaySidebar ? MAC_OVERLAY_SIDEBAR_WIDTH : sidebarState.width);
   const experimentalItemMap = new Map(EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => [item.id, item]));
   const customSidebarItemMap = new Map(customSidebarItems.map((item) => [item.id, item]));
 
   return (
-    <div className="app-shell" ref={appShellRef}>
+    <div
+      className={[
+        "app-shell",
+        isMacOverlaySidebar ? "is-mac-overlay-sidebar" : ""
+      ].filter(Boolean).join(" ")}
+      ref={appShellRef}
+    >
+      <div className="app-window-drag-region" aria-hidden="true" />
+      {isMacOverlaySidebar ? (
+        <>
+          <button
+            ref={macSidebarToggleRef}
+            type="button"
+            className={[
+              "app-sidebar-toggle",
+              sidebarState.collapsed ? "" : "is-active"
+            ].filter(Boolean).join(" ")}
+            aria-label={sidebarState.collapsed ? "打开侧边栏" : "收起侧边栏"}
+            aria-expanded={!sidebarState.collapsed}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (sidebarState.collapsed) {
+                openMacOverlaySidebar();
+                return;
+              }
+              closeMacOverlaySidebar();
+            }}
+          >
+            <SidebarToggleIcon />
+          </button>
+        </>
+      ) : null}
       <div
+        ref={isMacOverlaySidebar ? macSidebarShellRef : undefined}
         className={[
           "app-sidebar-shell",
-          sidebarState.collapsed ? "is-collapsed" : "",
+          !isMacOverlaySidebar && sidebarState.collapsed ? "is-collapsed" : "",
+          isMacOverlaySidebar && !sidebarState.collapsed ? "is-open" : "",
+          isMacOverlaySidebar ? "is-overlay" : "",
           isSidebarDragging ? "is-resizing" : ""
         ].filter(Boolean).join(" ")}
         style={{ "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
+        <div className="app-sidebar-drag-region" aria-hidden="true" />
         <AppSidebar
-          isCollapsed={sidebarState.collapsed}
+          isCollapsed={!isMacOverlaySidebar && sidebarState.collapsed}
           experimentalEnabled={experimentalEnabled}
           customSidebarItems={customSidebarItems}
+          onNavigateItem={
+            isMacOverlaySidebar ? () => closeMacOverlaySidebar() : undefined
+          }
         />
-        <button
-          type="button"
-          className="app-sidebar-resizer"
-          aria-label={sidebarState.collapsed ? "展开侧边栏" : "调整或收起侧边栏"}
-          onClick={() => {
-            if (sidebarDragMovedRef.current) {
-              sidebarDragMovedRef.current = false;
-              return;
-            }
-            toggleSidebarCollapsed();
-          }}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            startSidebarResize(event.clientX);
-          }}
-        >
-          <span className="app-sidebar-resizer-grip" aria-hidden="true" />
-        </button>
+        {!isMacOverlaySidebar ? (
+          <button
+            type="button"
+            className="app-sidebar-resizer"
+            aria-label={sidebarState.collapsed ? "展开侧边栏" : "调整或收起侧边栏"}
+            onClick={() => {
+              if (sidebarDragMovedRef.current) {
+                sidebarDragMovedRef.current = false;
+                return;
+              }
+              toggleSidebarCollapsed();
+            }}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              if (!event.isPrimary || event.button !== 0) {
+                return;
+              }
+              startSidebarResize(event.clientX, event.pointerId, event.currentTarget);
+            }}
+          >
+            <span className="app-sidebar-resizer-grip" aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
       <div className="app-content">
         <main className="app-main">
+          <div className="app-main-drag-region" aria-hidden="true" />
           <Routes>
             <Route path="/" element={<Navigate to="/control-center" replace />} />
             <Route path="/control-center" element={<ControlCenterPage />} />

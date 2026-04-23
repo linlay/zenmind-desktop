@@ -21,15 +21,21 @@ type AppSidebarProps = {
   isCollapsed: boolean;
   experimentalEnabled: boolean;
   customSidebarItems: CustomSidebarItem[];
+  onNavigateItem?: () => void;
 };
 
-export function AppSidebar({ isCollapsed, experimentalEnabled, customSidebarItems }: AppSidebarProps) {
+export function AppSidebar({
+  isCollapsed,
+  experimentalEnabled,
+  customSidebarItems,
+  onNavigateItem
+}: AppSidebarProps) {
   const { services } = useServices();
   const serviceNavItems: SidebarNavItem[] = services
     .filter((service) => service.frontendMode === "standalone" && service.status === "running")
     .map((service) => ({
       to: `/plugin/${service.id}`,
-      label: service.name,
+      label: service.id === "agent-webclient" ? "智能助理" : service.name,
       icon: service.id === "agent-webclient" ? "assistant" : "service"
     }));
 
@@ -75,6 +81,7 @@ export function AppSidebar({ isCollapsed, experimentalEnabled, customSidebarItem
           <NavLink
             key={item.to}
             to={item.to}
+            onClick={onNavigateItem}
             className={({ isActive }) =>
               isActive ? "sidebar-link sidebar-link-active" : "sidebar-link"
             }
@@ -90,6 +97,7 @@ export function AppSidebar({ isCollapsed, experimentalEnabled, customSidebarItem
       <div className="sidebar-footer">
         <NavLink
           to="/settings"
+          onClick={onNavigateItem}
           className={({ isActive }) =>
             isActive ? "sidebar-link sidebar-link-active sidebar-link-utility" : "sidebar-link sidebar-link-utility"
           }
