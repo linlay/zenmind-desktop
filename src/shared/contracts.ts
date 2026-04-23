@@ -196,12 +196,6 @@ export interface PluginInstallResult {
   serviceId?: string;
 }
 
-export interface DataRootChangeResult {
-  ok: boolean;
-  message: string;
-  dataRoot: string;
-}
-
 export type NavigateListener = (path: string) => void;
 
 export interface CustomSidebarItem {
@@ -280,7 +274,6 @@ export interface DesktopApi {
   };
   settings: {
     getDataRoot: () => Promise<string>;
-    changeDataRoot: () => Promise<DataRootChangeResult>;
   };
   customSidebar: {
     list: () => Promise<CustomSidebarItemsResult>;

@@ -6,9 +6,14 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import {
   builtinServices,
+  discoverBuiltinServices,
   listArchiveEntries,
+  syncBuiltinAssets,
   validateBundleArchive
 } from "../scripts/lib/builtin-assets.mjs";
+
+const BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
+let hasSyncedActualAssets = false;
 
 function createTarBundle(service, files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-asset-"));
@@ -42,7 +47,79 @@ function createZipBundle(service, files) {
   return { root, zipPath };
 }
 
+function withEnv(name, value, fn) {
+  const previousValue = process.env[name];
+  if (value == null) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+
+  try {
+    return fn();
+  } finally {
+    if (previousValue == null) {
+      delete process.env[name];
+    } else {
+      process.env[name] = previousValue;
+    }
+  }
+}
+
+function writeBuiltinTarArchive({
+  archivePath,
+  id,
+  version,
+  os,
+  arch,
+  assetFileName,
+  requiredBundleEntries = ["start.sh", "stop.sh", ".env.example", "manifest.json"]
+}) {
+  const service = {
+    id,
+    bundleTopLevelDir: id,
+    requiredBundleEntries
+  };
+  const fixture = createTarBundle(service, {
+    "start.sh": "#!/bin/sh\nexit 0\n",
+    "stop.sh": "#!/bin/sh\nexit 0\n",
+    ".env.example": "SERVER_PORT=12000\n",
+    "manifest.json": JSON.stringify({
+      id,
+      kind: "builtin",
+      version,
+      platform: {
+        os,
+        arch
+      },
+      runtime: {
+        requiredPaths: requiredBundleEntries
+      },
+      desktop: {
+        bundleTopLevelDir: id,
+        assetFileName
+      }
+    })
+  });
+
+  fs.mkdirSync(path.dirname(archivePath), { recursive: true });
+  fs.copyFileSync(fixture.tarPath, archivePath);
+  fs.rmSync(fixture.root, { recursive: true, force: true });
+}
+
+function ensureSyncedAssets() {
+  if (hasSyncedActualAssets) {
+    return;
+  }
+
+  const manifest = withEnv(BUILTIN_ASSETS_SOURCE_ENV, null, () => syncBuiltinAssets(process.cwd()));
+  assert.ok(manifest.length > 0, "expected at least one builtin asset to sync for tests");
+  hasSyncedActualAssets = true;
+}
+
 function getSyncedAsset(serviceId) {
+  ensureSyncedAssets();
+
   const serviceDir = path.join(process.cwd(), "build", "resources", "services", serviceId);
   const assetFileName = fs
     .readdirSync(serviceDir)
@@ -90,6 +167,16 @@ test("agent-webclient release asset remains available for manual install", () =>
   validateBundleArchive(service, assetPath);
 
   const entries = listArchiveEntries(assetPath);
+  if (assetPath.endsWith(".zip")) {
+    assert.ok(entries.has("agent-webclient/start.ps1"));
+    assert.ok(entries.has("agent-webclient/stop.ps1"));
+    assert.ok(entries.has("agent-webclient/deploy.ps1"));
+  } else {
+    assert.ok(entries.has("agent-webclient/start.sh"));
+    assert.ok(entries.has("agent-webclient/stop.sh"));
+    assert.ok(entries.has("agent-webclient/deploy.sh"));
+  }
+  assert.ok(entries.has("agent-webclient/backend/server.js"));
   assert.ok(entries.has("agent-webclient/manifest.json"));
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
 });
@@ -179,4 +266,75 @@ test("validateBundleArchive accepts zip bundles", () => {
   assert.ok(entries.has("agent-container-hub/backend/agent-container-hub.exe"));
 
   fs.rmSync(fixture.root, { recursive: true, force: true });
+});
+
+test("ZENMIND_BUILTIN_ASSETS_SOURCE overrides workspace fallback and syncs builtin assets", () => {
+  const workspaceRoot = path.resolve(process.cwd(), "..");
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-source-"));
+  const serviceId = `builtin-env-priority-${Date.now()}`;
+  const version = "v9.9.9";
+  const platform = {
+    os: `${serviceId}-os`,
+    arch: `${serviceId}-arch`
+  };
+  const fallbackAssetFileName = `${serviceId}-${version}-expected.tar.gz`;
+  const fallbackArchivePath = path.join(workspaceRoot, fallbackAssetFileName);
+  const sourceRoot = path.join(tempRoot, "source");
+  const sourceArchivePath = path.join(sourceRoot, serviceId, `${serviceId}-${version}-env.tar.gz`);
+  const projectRoot = path.join(tempRoot, "project");
+
+  writeBuiltinTarArchive({
+    archivePath: fallbackArchivePath,
+    id: serviceId,
+    version,
+    os: platform.os,
+    arch: platform.arch,
+    assetFileName: fallbackAssetFileName
+  });
+  writeBuiltinTarArchive({
+    archivePath: sourceArchivePath,
+    id: serviceId,
+    version,
+    os: platform.os,
+    arch: platform.arch,
+    assetFileName: fallbackAssetFileName
+  });
+
+  try {
+    const fallbackServices = withEnv(BUILTIN_ASSETS_SOURCE_ENV, null, () =>
+      discoverBuiltinServices(platform)
+    );
+    assert.equal(fallbackServices.length, 1);
+    assert.equal(fallbackServices[0].sourceDir, workspaceRoot);
+    assert.equal(fallbackServices[0].assetFileName, fallbackAssetFileName);
+
+    const configuredServices = withEnv(BUILTIN_ASSETS_SOURCE_ENV, sourceRoot, () =>
+      discoverBuiltinServices(platform)
+    );
+    assert.equal(configuredServices.length, 1);
+    assert.equal(configuredServices[0].sourceDir, path.dirname(sourceArchivePath));
+    assert.equal(configuredServices[0].assetFileName, path.basename(sourceArchivePath));
+
+    const syncedManifest = withEnv(BUILTIN_ASSETS_SOURCE_ENV, sourceRoot, () =>
+      syncBuiltinAssets(projectRoot, platform)
+    );
+    assert.deepEqual(syncedManifest, [
+      {
+        id: serviceId,
+        version,
+        assetFileName: path.basename(sourceArchivePath)
+      }
+    ]);
+
+    const outputRoot = path.join(projectRoot, "build", "resources", "services");
+    const outputManifest = JSON.parse(
+      fs.readFileSync(path.join(outputRoot, "manifest.json"), "utf8")
+    );
+    assert.equal(outputManifest.services.length, 1);
+    assert.deepEqual(outputManifest.services, syncedManifest);
+    assert.ok(fs.existsSync(path.join(outputRoot, serviceId, path.basename(sourceArchivePath))));
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(fallbackArchivePath, { force: true });
+  }
 });

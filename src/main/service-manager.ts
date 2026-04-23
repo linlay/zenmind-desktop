@@ -689,7 +689,7 @@ function decodePowerShellCapturePayload(value: string | Buffer): PowerShellCaptu
   }
 }
 
-function buildPowerShellCaptureCommand(scriptPath: string, args: string[]) {
+function buildPowerShellWrapperScript(scriptPath: string, args: string[]) {
   return `
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -710,14 +710,15 @@ function Add-CapturedText([System.Collections.Generic.List[string]]$Lines, [obje
   $Lines.Add($text.TrimEnd([char]13, [char]10))
 }
 try {
-  & $scriptPath @scriptArgs *>&1 | ForEach-Object {
-    if ($_ -is [System.Management.Automation.ErrorRecord]) {
+  $output = & $scriptPath @scriptArgs 2>&1
+  foreach ($item in @($output)) {
+    if ($item -is [System.Management.Automation.ErrorRecord]) {
       $hadError = $true
-      Add-CapturedText $stderr ($_ | Out-String)
-    } elseif ($_ -is [System.Management.Automation.InformationRecord]) {
-      Add-CapturedText $stdout $_.MessageData
+      Add-CapturedText $stderr ($item | Out-String)
+    } elseif ($item -is [System.Management.Automation.InformationRecord]) {
+      Add-CapturedText $stdout $item.MessageData
     } else {
-      Add-CapturedText $stdout $_
+      Add-CapturedText $stdout $item
     }
   }
   if (-not $?) {
@@ -750,13 +751,22 @@ function formatExecErrorMessage(errorMessage: string, result: ExecResult) {
 }
 
 function runPowerShellScript(scriptPath: string, args: string[], cwd: string) {
-  const captureCommand = buildPowerShellCaptureCommand(scriptPath, args);
+  const wrapperScriptPath = path.join(
+    os.tmpdir(),
+    `zenmind-powershell-wrapper-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`
+  );
+  fs.writeFileSync(wrapperScriptPath, buildPowerShellWrapperScript(scriptPath, args), "utf8");
   return new Promise<ExecResult>((resolve, reject) => {
     execFile(
       windowsPowerShellPath(),
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", captureCommand],
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", wrapperScriptPath],
       { cwd, env: buildServiceEnv() },
       (error, stdout, stderr) => {
+        try {
+          fs.rmSync(wrapperScriptPath, { force: true });
+        } catch {
+          // Ignore wrapper cleanup failures and surface the script result instead.
+        }
         const decoded = decodePowerShellCapturePayload(stdout);
         const result = decoded ?? {
           stdout: "",
@@ -811,16 +821,23 @@ function runExecFile(command: string, args: string[], cwd: string) {
 
 function containerEngineAvailable() {
   const env = buildServiceEnv();
-  const probe = IS_WINDOWS
-    ? (name: string) => spawnSync("where.exe", [name], { encoding: "utf8", env })
-    : (name: string) => spawnSync("sh", ["-lc", `command -v ${name}`], { encoding: "utf8", env });
+  const exists = IS_WINDOWS
+    ? (name: string) => spawnSync("where.exe", [name], { encoding: "utf8", env }).status === 0
+    : (name: string) => spawnSync("sh", ["-lc", `command -v ${name}`], { encoding: "utf8", env }).status === 0;
+  const reachable = (name: string) =>
+    spawnSync(name, ["info"], {
+      encoding: "utf8",
+      env,
+      timeout: 5000,
+      stdio: "ignore"
+    }).status === 0;
 
-  if (probe("docker").status === 0) {
-    return "docker";
+  for (const engine of ["docker", "podman"]) {
+    if (exists(engine) && reachable(engine)) {
+      return engine;
+    }
   }
-  if (probe("podman").status === 0) {
-    return "podman";
-  }
+
   return "";
 }
 
