@@ -33,10 +33,17 @@ import {
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
+  detectPortConflict,
+  isPortConflictError,
+  killProcessByPid,
+  showPortConflictDialog
+} from "./port-conflict";
+import {
   addCustomSidebarItem,
   listCustomSidebarItems,
   removeCustomSidebarItem
 } from "./custom-sidebar-store";
+import { getService } from "./service-registry";
 import type {
   AssistantWorkerOpenRequest,
   ServiceId,
@@ -56,6 +63,12 @@ const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName("国泰君安期货");
 app.setPath("userData", path.join(app.getPath("appData"), "zenmind-desktop"));
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 function getRendererEntry() {
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
@@ -384,6 +397,41 @@ function buildApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+async function handleServiceStart(serviceId: ServiceId) {
+  try {
+    return await startService(app, serviceId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!isPortConflictError(message)) {
+      throw error;
+    }
+
+    const service = getService(serviceId);
+    const currentState = await getServiceState(app, serviceId).catch(() => null);
+    const conflict = await detectPortConflict(message, service, {
+      fallbackPort: currentState?.healthMeta.port ?? null
+    });
+    if (!conflict?.processInfo) {
+      throw error;
+    }
+
+    const confirmed = await showPortConflictDialog(mainWindow, conflict.port, conflict.processInfo);
+    if (!confirmed) {
+      throw error;
+    }
+
+    const killed = await killProcessByPid(conflict.processInfo.pid);
+    if (!killed) {
+      throw new Error(
+        `无法终止占用端口 ${conflict.port} 的进程 ${conflict.processInfo.name} (PID ${conflict.processInfo.pid})。`
+      );
+    }
+
+    await delay(500);
+    return startService(app, serviceId);
+  }
+}
+
 function registerIpcHandlers() {
   ipcMain.handle("services.list", async () => listServices(app));
   ipcMain.handle("services.installBuiltinFromBundle", async (_event, serviceId: ServiceId) => {
@@ -446,7 +494,7 @@ function registerIpcHandlers() {
     return initializeService(app, serviceId);
   });
   ipcMain.handle("services.getStatus", async (_event, serviceId: ServiceId) => getServiceState(app, serviceId));
-  ipcMain.handle("services.start", async (_event, serviceId: ServiceId) => startService(app, serviceId));
+  ipcMain.handle("services.start", async (_event, serviceId: ServiceId) => handleServiceStart(serviceId));
   ipcMain.handle("services.stop", async (_event, serviceId: ServiceId) => stopService(app, serviceId));
   ipcMain.handle("services.restart", async (_event, serviceId: ServiceId) => restartService(app, serviceId));
   ipcMain.handle("services.readConfig", async (_event, serviceId: ServiceId, key: string) => {

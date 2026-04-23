@@ -12,22 +12,13 @@ type SettingsPageProps = {
   onRefreshCustomSidebarItems: () => Promise<CustomSidebarItemsResult>;
 };
 
-export function SettingsPage({
-  themeMode,
-  onToggleTheme,
-  experimentalEnabled,
-  onToggleExperimental,
-  customSidebarItems,
-  onCustomSidebarItemsChange,
-  onRefreshCustomSidebarItems
-}: SettingsPageProps) {
-  const [feedback, setFeedback] = useState("");
+type WindowsDataRootCardProps = {
+  onError: (message: string) => void;
+};
+
+function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
   const [dataRoot, setDataRoot] = useState("");
   const [dataRootLoading, setDataRootLoading] = useState(true);
-  const [customSidebarLabel, setCustomSidebarLabel] = useState("");
-  const [customSidebarUrl, setCustomSidebarUrl] = useState("");
-  const [customSidebarPending, setCustomSidebarPending] = useState(false);
-  const [deletingCustomSidebarId, setDeletingCustomSidebarId] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +32,7 @@ export function SettingsPage({
       })
       .catch((reason) => {
         if (!cancelled) {
-          setFeedback(reason instanceof Error ? reason.message : String(reason));
+          onError(reason instanceof Error ? reason.message : String(reason));
         }
       })
       .finally(() => {
@@ -53,7 +44,39 @@ export function SettingsPage({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [onError]);
+
+  return (
+    <div className="data-root-card">
+      <div>
+        <p className="eyebrow">DATA ROOT</p>
+        <h2>数据目录</h2>
+        <p className="page-copy">
+          Windows 安装版会自动跟随安装目录，并以只读方式显示当前数据目录。
+        </p>
+      </div>
+      <div className="data-root-actions">
+        <div className="data-root-path">{dataRootLoading ? "正在读取..." : dataRoot || "未配置"}</div>
+      </div>
+    </div>
+  );
+}
+
+export function SettingsPage({
+  themeMode,
+  onToggleTheme,
+  experimentalEnabled,
+  onToggleExperimental,
+  customSidebarItems,
+  onCustomSidebarItemsChange,
+  onRefreshCustomSidebarItems
+}: SettingsPageProps) {
+  const isWindows = navigator.userAgent.includes("Windows");
+  const [feedback, setFeedback] = useState("");
+  const [customSidebarLabel, setCustomSidebarLabel] = useState("");
+  const [customSidebarUrl, setCustomSidebarUrl] = useState("");
+  const [customSidebarPending, setCustomSidebarPending] = useState(false);
+  const [deletingCustomSidebarId, setDeletingCustomSidebarId] = useState("");
 
   async function handleAddCustomSidebarItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -105,9 +128,15 @@ export function SettingsPage({
           <p className="eyebrow">SETTINGS</p>
           <h1>设置</h1>
           <p className="page-copy">
-            管理国泰君安期货的外观与本地数据目录。运行时数据会写入这个根目录，包含
-            <code>services</code>、<code>plugins</code> 和 <code>credentials</code>。
-            Windows 安装版会默认使用安装目录下的 <code>data</code> 文件夹；自定义侧边栏会保存到本机设置文件。
+            {isWindows ? (
+              <>
+                管理国泰君安期货的外观、本地数据目录和自定义侧边栏。运行时数据会写入这个根目录，包含
+                <code>services</code>、<code>plugins</code> 和 <code>credentials</code>。
+                Windows 安装版会默认使用安装目录下的 <code>data</code> 文件夹；自定义侧边栏会保存到本机设置文件。
+              </>
+            ) : (
+              <>管理国泰君安期货的外观、实验性功能和自定义侧边栏。自定义侧边栏会保存到本机设置文件。</>
+            )}
           </p>
         </div>
       </div>
@@ -250,18 +279,7 @@ export function SettingsPage({
         </div>
       </div>
 
-      <div className="data-root-card">
-        <div>
-          <p className="eyebrow">DATA ROOT</p>
-          <h2>数据目录</h2>
-          <p className="page-copy">
-            Windows 安装版会自动跟随安装目录；macOS 继续使用系统默认的应用数据目录。
-          </p>
-        </div>
-        <div className="data-root-actions">
-          <div className="data-root-path">{dataRootLoading ? "正在读取..." : dataRoot || "未配置"}</div>
-        </div>
-      </div>
+      {isWindows ? <WindowsDataRootCard onError={setFeedback} /> : null}
     </section>
   );
 }
