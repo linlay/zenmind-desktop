@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 
 // monorepo 根目录：zenmind-desktop 的上一级
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
+const BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
 
 function isArchiveFileName(fileName) {
   return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
@@ -62,10 +63,66 @@ export function readManifestFromArchive(archivePath) {
   return JSON.parse(manifestContent);
 }
 
+function listArchivesInDirectory(directoryPath) {
+  if (!fs.existsSync(directoryPath)) {
+    return [];
+  }
+
+  return fs
+    .readdirSync(directoryPath, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && isArchiveFileName(entry.name))
+    .map((entry) => path.join(directoryPath, entry.name));
+}
+
+function listConfiguredReleaseArchives(sourceRoot) {
+  if (!fs.existsSync(sourceRoot)) {
+    throw new Error(`${BUILTIN_ASSETS_SOURCE_ENV} does not exist: ${sourceRoot}`);
+  }
+
+  if (!fs.statSync(sourceRoot).isDirectory()) {
+    throw new Error(`${BUILTIN_ASSETS_SOURCE_ENV} must point to a directory: ${sourceRoot}`);
+  }
+
+  const archives = [];
+  for (const entry of fs.readdirSync(sourceRoot, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      archives.push(...listArchivesInDirectory(path.join(sourceRoot, entry.name)));
+      continue;
+    }
+
+    if (entry.isFile() && isArchiveFileName(entry.name)) {
+      archives.push(path.join(sourceRoot, entry.name));
+    }
+  }
+
+  return archives.sort((left, right) => left.localeCompare(right));
+}
+
+function listWorkspaceReleaseArchives() {
+  const archives = [];
+
+  for (const entry of fs.readdirSync(WORKSPACE_ROOT, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    archives.push(...listArchivesInDirectory(path.join(WORKSPACE_ROOT, entry.name, "dist", "release")));
+  }
+
+  for (const entry of fs.readdirSync(WORKSPACE_ROOT, { withFileTypes: true })) {
+    if (!entry.isFile() || !isArchiveFileName(entry.name)) {
+      continue;
+    }
+    archives.push(path.join(WORKSPACE_ROOT, entry.name));
+  }
+
+  return archives.sort((left, right) => left.localeCompare(right));
+}
+
 function listReleaseArchives() {
   const archivesByBuildKey = new Map();
 
-  function tryAddArchive(archivePath) {
+  function tryAddArchive(archivePath, sourcePreference = 0) {
     let manifest;
     try {
       manifest = readManifestFromArchive(archivePath);
@@ -84,36 +141,31 @@ function listReleaseArchives() {
       manifest.platform?.arch ?? ""
     ].join("|");
     const expectedFileName = manifest.desktop?.assetFileName ?? "";
-    const preference = path.basename(archivePath) === expectedFileName ? 1 : 0;
+    const fileNamePreference = path.basename(archivePath) === expectedFileName ? 1 : 0;
     const current = archivesByBuildKey.get(buildKey);
-    if (!current || preference > current.preference) {
-      archivesByBuildKey.set(buildKey, { archivePath, preference });
+    if (
+      !current ||
+      sourcePreference > current.sourcePreference ||
+      (sourcePreference === current.sourcePreference &&
+        fileNamePreference > current.fileNamePreference)
+    ) {
+      archivesByBuildKey.set(buildKey, {
+        archivePath,
+        sourcePreference,
+        fileNamePreference
+      });
     }
   }
 
-  for (const entry of fs.readdirSync(WORKSPACE_ROOT, { withFileTypes: true })) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-
-    const releaseDir = path.join(WORKSPACE_ROOT, entry.name, "dist", "release");
-    if (!fs.existsSync(releaseDir)) {
-      continue;
-    }
-
-    for (const asset of fs.readdirSync(releaseDir, { withFileTypes: true })) {
-      if (!asset.isFile() || !isArchiveFileName(asset.name)) {
-        continue;
-      }
-      tryAddArchive(path.join(releaseDir, asset.name));
+  const configuredSourceRoot = process.env[BUILTIN_ASSETS_SOURCE_ENV]?.trim();
+  if (configuredSourceRoot) {
+    for (const archivePath of listConfiguredReleaseArchives(configuredSourceRoot)) {
+      tryAddArchive(archivePath, 2);
     }
   }
 
-  for (const entry of fs.readdirSync(WORKSPACE_ROOT, { withFileTypes: true })) {
-    if (!entry.isFile() || !isArchiveFileName(entry.name)) {
-      continue;
-    }
-    tryAddArchive(path.join(WORKSPACE_ROOT, entry.name));
+  for (const archivePath of listWorkspaceReleaseArchives()) {
+    tryAddArchive(archivePath, 1);
   }
 
   return [...archivesByBuildKey.values()]

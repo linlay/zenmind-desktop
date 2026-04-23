@@ -1,15 +1,9 @@
-import {
-  dialog,
-  type App,
-  type BrowserWindow,
-  type MessageBoxOptions,
-  type MessageBoxReturnValue
-} from "electron";
+import type { App, BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from "electron";
 import type { PluginInstallResult, ServiceId } from "../shared/contracts";
 import { uninstallPlugin } from "./plugin-loader";
 import { getService } from "./service-registry";
 
-type ShowMessageBox = typeof dialog.showMessageBox;
+type ShowMessageBox = typeof import("electron").dialog.showMessageBox;
 
 interface HandlePluginUninstallDeps {
   getServiceById?: typeof getService;
@@ -27,6 +21,11 @@ export function buildPluginUninstallDialogOptions(serviceName: string): MessageB
     message: `确定要卸载插件 ${serviceName} 吗？`,
     detail: "插件目录将被删除，此操作不可撤销。"
   };
+}
+
+function getDefaultShowMessageBox(): ShowMessageBox {
+  const electronDialog = (require("electron") as typeof import("electron")).dialog;
+  return electronDialog.showMessageBox.bind(electronDialog) as ShowMessageBox;
 }
 
 async function showPluginUninstallDialog(
@@ -47,7 +46,7 @@ export async function handlePluginUninstall(
   deps: HandlePluginUninstallDeps = {}
 ): Promise<PluginInstallResult> {
   const getServiceById = deps.getServiceById ?? getService;
-  const showMessageBox = deps.showMessageBox ?? (dialog.showMessageBox.bind(dialog) as ShowMessageBox);
+  const showMessageBox = deps.showMessageBox ?? getDefaultShowMessageBox();
   const uninstall = deps.uninstall ?? uninstallPlugin;
   const service = getServiceById(serviceId);
 

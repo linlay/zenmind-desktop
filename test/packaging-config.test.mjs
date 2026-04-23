@@ -30,7 +30,7 @@ test("electron-builder packaging includes uninstall resources and NSIS uninstall
   assert.equal(packageJson.build?.nsis?.include, "build/installer.nsh");
 });
 
-test("custom uninstall assets exist with the expected data cleanup targets", () => {
+test("custom uninstall assets exist with silent legacy cleanup and no data prompt", () => {
   const installerScript = fs.readFileSync(installerIncludePath, "utf8");
   const uninstallScript = fs.readFileSync(uninstallScriptPath, "utf8");
   const distWinScript = fs.readFileSync(distWinScriptPath, "utf8");
@@ -38,10 +38,25 @@ test("custom uninstall assets exist with the expected data cleanup targets", () 
 
   assert.ok(tempOutPathMatch, "custom uninstall should switch CWD to $TEMP before reading shell vars");
   assert.match(installerScript, /SetShellVarContext current/);
-  assert.match(installerScript, /国泰君安期货 app data/);
-  assert.match(installerScript, /\$APPDATA\\zenmind-desktop/);
+  assert.match(
+    installerScript,
+    /IfFileExists "\$APPDATA\\zenmind-desktop\\user-paths\.json" removeLegacyData doneLegacyDataCleanup/
+  );
+  assert.match(installerScript, /RMDir \/r "\$APPDATA\\zenmind-desktop"/);
+  assert.doesNotMatch(installerScript, /MessageBox/);
   assert.match(uninstallScript, /APP_NAME="国泰君安期货"/);
   assert.match(uninstallScript, /APP_PATH="\/Applications\/\$\{APP_NAME\}\.app"/);
   assert.match(uninstallScript, /Library\/Application Support\/zenmind-desktop/);
   assert.match(distWinScript, /electronuserland\/builder:wine/);
+});
+
+test("dist-win docker flow syncs builtin assets on the host before entering Docker", () => {
+  const distWinScript = fs.readFileSync(distWinScriptPath, "utf8");
+
+  assert.match(distWinScript, /async function syncWindowsBuiltinAssets\(\)/);
+  assert.match(distWinScript, /await syncWindowsBuiltinAssets\(\);\s*\n\s*const npmCacheDir/);
+  assert.doesNotMatch(
+    distWinScript,
+    /"node \.\/scripts\/sync-builtin-assets\.mjs --os=windows --arch=amd64"/
+  );
 });
