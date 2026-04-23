@@ -143,7 +143,7 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
   }
 
   return (
-    <section className="pan-page">
+    <section className="pan-page pan-page-embedded">
       <div className="pan-drag-region" aria-hidden="true" />
       <div className="pan-frame-shell">
         <iframe

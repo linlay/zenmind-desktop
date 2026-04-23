@@ -4,7 +4,7 @@
 `zenmind-desktop` 是一个桌面端控制壳项目，目标是把内置服务和第三方插件随 Electron 应用分发，并提供统一的服务控制台。桌面端负责发现内置服务、运行时加载插件、安装资源包、写入默认配置、执行启动与停止脚本，并向渲染层暴露服务状态与控制能力。
 
 项目支持两种服务来源：
-- **内置服务（builtin）**：随应用打包分发，当前包含 `agent-container-hub`、`agent-platform` 和 `zenmind-app-server`。
+- **内置服务（builtin）**：随应用打包分发，当前包含 `agent-container-hub`、`agent-platform`、`agent-webclient` 和 `zenmind-app-server`。
 - **插件（plugin）**：运行时通过 `.tar.gz` 包导入，存储在 `userData/plugins/` 目录，启动时自动扫描加载。插件包必须包含 `manifest.json` 清单文件。
 
 前端按三种模式区分：
@@ -147,7 +147,7 @@ my-plugin/
 ## 8. 开发要点
 - 开发模式依赖 `scripts/dev.mjs` 串起资源同步、主进程编译、Vite 启动和 Electron 启动。
 - 内置资源必须先经过 `npm run sync:assets`，否则安装与测试会因为缺少资源包失败。
-- `npm run sync:assets` 会从工作区各项目的 `dist/release/*.tar.gz` 中提取 `manifest.json`，只同步 `kind === "builtin"` 的 bundle。支持 `--os` 和 `--arch` 参数按平台过滤。
+- `npm run sync:assets` 会从工作区各项目和聚合产物目录中提取 builtin bundle 的 `manifest.json`，只同步 `kind === "builtin"` 的 bundle。支持 `--os` 和 `--arch` 参数按平台过滤。
 - `agent-platform` 作为 builtin 启动前会自动注入 Container Hub 地址、`SERVER_PORT`、`AGENT_AUTH_ENABLED=true` 和本地 RSA 公钥路径。
 - 渲染层必须继续使用 `HashRouter`，以避免 Electron 文件协议下的路由问题。
 - 生产环境从 `process.resourcesPath/services` 读取内置资源；开发环境从 `build/resources/services` 读取。
@@ -172,6 +172,6 @@ my-plugin/
 - 当前打包目标主要是 macOS arm64 和 Windows x64，其他平台尚未在本仓库配置完整分发链路。
 - 内置服务资源依赖外部打包产物，资源包内容缺失会直接导致安装或测试失败。
 - `agent-container-hub` 依赖本机可用的 Docker 或 Podman。
-- `pan-webclient` 和 `agent-webclient` 已从内置服务移除，改为通过插件系统导入。
+- `pan-webclient` 仍通过插件系统导入；`agent-webclient` 已恢复为内置服务，缺失资源时优先检查发布包发现链路。
 - 服务运行目录位于 Electron `userData` 路径下，实际行为与当前操作系统用户环境相关。
 - RSA 密钥对由 Desktop 统一管理，存储在 `userData/credentials/` 下，同时用于 pan-webclient 和 agent-platform 的认证。

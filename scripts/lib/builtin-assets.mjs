@@ -9,6 +9,19 @@ function isArchiveFileName(fileName) {
   return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
 }
 
+function scanArchiveDirectory(dirPath, tryAddArchive) {
+  if (!fs.existsSync(dirPath)) {
+    return;
+  }
+
+  for (const asset of fs.readdirSync(dirPath, { withFileTypes: true })) {
+    if (!asset.isFile() || !isArchiveFileName(asset.name)) {
+      continue;
+    }
+    tryAddArchive(path.join(dirPath, asset.name));
+  }
+}
+
 function normalizeTarEntry(entry) {
   const trimmed = entry.trim();
   if (!trimmed) {
@@ -84,7 +97,11 @@ function listReleaseArchives() {
       manifest.platform?.arch ?? ""
     ].join("|");
     const expectedFileName = manifest.desktop?.assetFileName ?? "";
-    const preference = path.basename(archivePath) === expectedFileName ? 1 : 0;
+    const archiveDir = path.dirname(archivePath);
+    const preference =
+      (archivePath.includes(`${path.sep}dist${path.sep}release${path.sep}`) ? 100 : 0) +
+      (path.basename(archiveDir) === manifest.id ? 10 : 0) +
+      (path.basename(archivePath) === expectedFileName ? 1 : 0);
     const current = archivesByBuildKey.get(buildKey);
     if (!current || preference > current.preference) {
       archivesByBuildKey.set(buildKey, { archivePath, preference });
@@ -96,16 +113,18 @@ function listReleaseArchives() {
       continue;
     }
 
-    const releaseDir = path.join(WORKSPACE_ROOT, entry.name, "dist", "release");
-    if (!fs.existsSync(releaseDir)) {
-      continue;
-    }
+    const entryRoot = path.join(WORKSPACE_ROOT, entry.name);
+    scanArchiveDirectory(path.join(entryRoot, "dist", "release"), tryAddArchive);
+    scanArchiveDirectory(entryRoot, tryAddArchive);
 
-    for (const asset of fs.readdirSync(releaseDir, { withFileTypes: true })) {
-      if (!asset.isFile() || !isArchiveFileName(asset.name)) {
+    for (const child of fs.readdirSync(entryRoot, { withFileTypes: true })) {
+      if (!child.isDirectory()) {
         continue;
       }
-      tryAddArchive(path.join(releaseDir, asset.name));
+
+      const childRoot = path.join(entryRoot, child.name);
+      scanArchiveDirectory(path.join(childRoot, "dist", "release"), tryAddArchive);
+      scanArchiveDirectory(childRoot, tryAddArchive);
     }
   }
 

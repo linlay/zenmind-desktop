@@ -145,6 +145,10 @@ export function getInstallDir(app: App, service: ServiceDefinition) {
   return path.join(getServicesRoot(app), service.id, service.version);
 }
 
+function getBuiltinServiceVersionRoot(app: App, serviceId: ServiceId) {
+  return path.join(getServicesRoot(app), serviceId);
+}
+
 function getAssetPath(app: App, service: ServiceDefinition) {
   if (!service.desktop.assetFileName) {
     throw new Error(`桌面端内置资源缺少 assetFileName：${service.id}`);
@@ -517,6 +521,124 @@ function writePidFile(pidFilePath: string, pid: number) {
   fs.writeFileSync(pidFilePath, `${pid}\n`, "utf8");
 }
 
+function listBuiltinSiblingInstallDirs(app: App, service: ServiceDefinition, currentInstallDir: string) {
+  const versionRoot = getBuiltinServiceVersionRoot(app, service.id);
+  if (!fs.existsSync(versionRoot)) {
+    return [];
+  }
+
+  return fs.readdirSync(versionRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(versionRoot, entry.name))
+    .filter((installDir) => path.normalize(installDir) !== path.normalize(currentInstallDir));
+}
+
+function readPreservedEnvFromSiblingInstallDirs(siblingInstallDirs: string[]) {
+  const candidates = siblingInstallDirs
+    .map((installDir) => {
+      const envPath = path.join(installDir, ".env");
+      if (!fileExists(envPath)) {
+        return null;
+      }
+
+      try {
+        return {
+          envPath,
+          content: fs.readFileSync(envPath, "utf8"),
+          mtimeMs: fs.statSync(envPath).mtimeMs
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter((item): item is { envPath: string; content: string; mtimeMs: number } => Boolean(item))
+    .sort((left, right) => right.mtimeMs - left.mtimeMs);
+
+  return candidates[0]?.content ?? "";
+}
+
+function waitForProcessExit(pid: number, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isProcessRunning(pid)) {
+      return true;
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+  }
+  return !isProcessRunning(pid);
+}
+
+function terminateProcess(pid: number) {
+  if (!isProcessRunning(pid)) {
+    return true;
+  }
+
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    return !isProcessRunning(pid);
+  }
+
+  if (waitForProcessExit(pid, 2500)) {
+    return true;
+  }
+
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    return !isProcessRunning(pid);
+  }
+
+  return waitForProcessExit(pid, 1000);
+}
+
+async function stopBuiltinInstallDir(service: ServiceDefinition, installDir: string) {
+  const stopCommand = service.stopCommand;
+  if (stopCommand.length > 0) {
+    try {
+      await runExecFile(stopCommand[0], stopCommand.slice(1), installDir);
+    } catch {
+      // Fall back to direct PID termination below.
+    }
+  }
+
+  const pidFilePath = resolveRuntimePath(installDir, service.runtime.pidRelativePath);
+  const pidFromFile = readPid(pidFilePath);
+  if (pidFromFile && pidMatchesInstallDir(pidFromFile, installDir)) {
+    terminateProcess(pidFromFile);
+  }
+
+  const port = parsePort(service, readEnvFile(path.join(installDir, ".env")));
+  if (port > 0) {
+    for (const pid of listListeningPids(port)) {
+      if (pidMatchesInstallDir(pid, installDir)) {
+        terminateProcess(pid);
+      }
+    }
+  }
+}
+
+async function reconcileBuiltinSiblingInstallDirs(app: App, service: ServiceDefinition, currentInstallDir: string) {
+  const siblingInstallDirs = listBuiltinSiblingInstallDirs(app, service, currentInstallDir);
+  if (siblingInstallDirs.length === 0) {
+    return siblingInstallDirs;
+  }
+
+  for (const installDir of siblingInstallDirs) {
+    await stopBuiltinInstallDir(service, installDir);
+
+    const pidFilePath = resolveRuntimePath(installDir, service.runtime.pidRelativePath);
+    const pidFromFile = readPid(pidFilePath);
+    if (pidFromFile && isProcessRunning(pidFromFile) && pidMatchesInstallDir(pidFromFile, installDir)) {
+      continue;
+    }
+
+    fs.rmSync(installDir, { recursive: true, force: true });
+  }
+
+  return siblingInstallDirs;
+}
+
 const IS_WINDOWS = process.platform === "win32";
 
 function windowsPowerShellPath() {
@@ -788,11 +910,20 @@ export async function installBuiltinService(
     : ensureBundleAssetHealthy(app, service);
 
   const finalInstallDir = getInstallDir(app, service);
+  const siblingInstallDirs = listBuiltinSiblingInstallDirs(app, service, finalInstallDir);
   const needsExtract =
     options.force ||
     !fs.existsSync(finalInstallDir) ||
     !isInstallHealthy(service, finalInstallDir) ||
     isAssetNewerThanInstall(assetPath, finalInstallDir);
+
+  const preservedEnvPath = path.join(finalInstallDir, ".env");
+  const hasCurrentEnv = fileExists(preservedEnvPath);
+  const preservedEnv = hasCurrentEnv
+    ? fs.readFileSync(preservedEnvPath, "utf8")
+    : readPreservedEnvFromSiblingInstallDirs(siblingInstallDirs);
+
+  await reconcileBuiltinSiblingInstallDirs(app, service, finalInstallDir);
 
   if (!needsExtract) {
     const initialization = await initializeService(app, serviceId);
@@ -804,9 +935,6 @@ export async function installBuiltinService(
 
   const versionRoot = path.dirname(finalInstallDir);
   ensureDir(versionRoot);
-  const preservedEnvPath = path.join(finalInstallDir, ".env");
-  const hasPreservedEnv = fileExists(preservedEnvPath);
-  const preservedEnv = hasPreservedEnv ? fs.readFileSync(preservedEnvPath, "utf8") : "";
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `${service.id}-extract-`));
   try {
@@ -818,7 +946,7 @@ export async function installBuiltinService(
     const extractedRoot = path.join(tempRoot, entries[0]);
     fs.rmSync(finalInstallDir, { recursive: true, force: true });
     fs.cpSync(extractedRoot, finalInstallDir, { recursive: true });
-    if (hasPreservedEnv) {
+    if (preservedEnv) {
       fs.writeFileSync(path.join(finalInstallDir, ".env"), preservedEnv, "utf8");
     }
     const initialization = await initializeService(app, serviceId);

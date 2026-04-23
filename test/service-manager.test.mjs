@@ -39,17 +39,29 @@ function currentManifestOs() {
 }
 
 function findCurrentPlatformReleaseArchive(serviceId) {
-  const releaseDir = path.join(WORKSPACE_ROOT, serviceId, "dist", "release");
   const currentOs = currentManifestOs();
-  const releaseCandidates = fs.existsSync(releaseDir)
-    ? fs.readdirSync(releaseDir).map((entry) => path.join(releaseDir, entry))
-    : [];
+  const candidateDirs = [
+    path.join(WORKSPACE_ROOT, serviceId, "dist", "release"),
+    path.join(WORKSPACE_ROOT, serviceId),
+    path.join(WORKSPACE_ROOT, "zenmind-dist", serviceId)
+  ];
+  const candidates = [];
+
+  for (const dirPath of candidateDirs) {
+    if (!fs.existsSync(dirPath)) {
+      continue;
+    }
+    for (const entry of fs.readdirSync(dirPath)) {
+      candidates.push(path.join(dirPath, entry));
+    }
+  }
+
   const workspaceCandidates = fs
     .readdirSync(WORKSPACE_ROOT)
     .filter((entry) => entry.startsWith(`${serviceId}-`) && (entry.endsWith(".tar.gz") || entry.endsWith(".zip")))
     .map((entry) => path.join(WORKSPACE_ROOT, entry));
 
-  return [...releaseCandidates, ...workspaceCandidates].find((archivePath) => {
+  return [...candidates, ...workspaceCandidates].find((archivePath) => {
     const archiveName = path.basename(archivePath);
     return archiveName.includes(`-${currentOs}-`) && (archiveName.endsWith(".tar.gz") || archiveName.endsWith(".zip"));
   });
@@ -404,6 +416,29 @@ test("installBuiltinService repairs damaged install and preserves env", async ()
   assert.equal(__testInternals.isInstallHealthy(service, installDir), true);
   assert.notEqual((await getServiceState(app, service.id)).status, "initialization-required");
   assert.equal(__testInternals.readInitializationState(installDir)?.status, "succeeded");
+
+  restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("installBuiltinService migrates env from sibling version directories and removes stale versions", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sibling-install-migrate-"));
+  const envContent = "BIND_ADDR=127.0.0.1:13000\n";
+  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot);
+  const siblingInstallDir = path.join(userDataRoot, "services", "agent-container-hub", "v9.9.9");
+
+  fs.mkdirSync(siblingInstallDir, { recursive: true });
+  fs.writeFileSync(path.join(siblingInstallDir, ".env"), envContent, "utf8");
+  fs.writeFileSync(path.join(siblingInstallDir, ".env.example"), "BIND_ADDR=127.0.0.1:11960\n", "utf8");
+  fs.writeFileSync(path.join(siblingInstallDir, "README.txt"), "stale version\n", "utf8");
+
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const service = getBuiltinService("agent-container-hub");
+
+  await installBuiltinService(app, service.id);
+
+  assert.equal(fs.readFileSync(path.join(installDir, ".env"), "utf8"), envContent);
+  assert.equal(fs.existsSync(siblingInstallDir), false);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });

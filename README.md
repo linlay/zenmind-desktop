@@ -12,9 +12,9 @@
 当前仓库重点覆盖两类服务：
 - `agent-container-hub`：宿主机容器服务，为后续智能体运行时提供沙箱能力。
 - `agent-platform`：智能体运行时服务。
+- `agent-webclient`：小宅助理前端，作为内置服务随 Desktop 分发。
 - `zenmind-app-server`：认证与管理服务，提供 OAuth2/OIDC、管理后台和 App 访问令牌。
 - `pan-webclient`：网盘服务，通过插件系统导入。
-- `agent-webclient`：智能体前端，通过插件系统导入。
 
 桌面端不再启动统一静态资源服务。各服务在自己的端口上直接提供前端，渲染层 iframe 直接访问对应 `healthMeta.webUrl`。需要认证的插件（`agent-webclient`、`pan-webclient`）通过 postMessage Token Bridge 获取 Desktop 签发的 JWT。
 
@@ -130,7 +130,7 @@ Windows 主机上会直接使用 `electron-builder` 输出 NSIS 安装包，目�
 - `build.extraResources` 会把 `build/resources/services` 下的内置服务资源复制进应用包。
 - `build.extraResources` 同时会把 `scripts/uninstall.sh` 放入 macOS 应用包资源目录，供完整卸载使用。
 - `build/installer.nsh` 会注入 NSIS 卸载流程，在 Windows 上给用户选择是否清理应用数据。
-- `npm run sync:assets` 会扫描工作区各项目 `dist/release/*.tar.gz`，只同步 `manifest.json.kind === "builtin"` 的资源包。支持 `--os` 和 `--arch` 参数按平台过滤。
+- `npm run sync:assets` 会扫描工作区内各服务目录以及聚合产物目录中的发布包，只同步 `manifest.json.kind === "builtin"` 的资源包。支持 `--os` 和 `--arch` 参数按平台过滤。
 - Desktop 通过 bundle 内的 `manifest.json.desktop.bundleTopLevelDir` 和 `runtime.requiredPaths` 校验资源完整性。
 - 如新增内置服务，需要保证 release bundle 内自带完整 `manifest.json`，再执行打包。
 

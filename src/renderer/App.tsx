@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { AppSidebar } from "./components/AppSidebar";
 import { ControlCenterPage } from "./pages/ControlCenterPage";
 import { ExternalWebviewPage } from "./pages/ExternalWebviewPage";
@@ -59,6 +59,7 @@ function SidebarToggleIcon() {
 }
 
 function AppShell() {
+  const location = useLocation();
   const navigate = useNavigate();
   const appShellRef = useRef<HTMLDivElement | null>(null);
   const macSidebarShellRef = useRef<HTMLDivElement | null>(null);
@@ -353,12 +354,18 @@ function AppShell() {
     : (isMacOverlaySidebar ? MAC_OVERLAY_SIDEBAR_WIDTH : sidebarState.width);
   const experimentalItemMap = new Map(EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => [item.id, item]));
   const customSidebarItemMap = new Map(customSidebarItems.map((item) => [item.id, item]));
+  const usesRightCornerToggle =
+    isMacOverlaySidebar &&
+    (location.pathname.startsWith("/plugin/") ||
+      location.pathname.startsWith("/external/") ||
+      location.pathname.startsWith("/custom-sidebar/"));
 
   return (
     <div
       className={[
         "app-shell",
-        isMacOverlaySidebar ? "is-mac-overlay-sidebar" : ""
+        isMacOverlaySidebar ? "is-mac-overlay-sidebar" : "",
+        usesRightCornerToggle ? "has-right-corner-toggle" : ""
       ].filter(Boolean).join(" ")}
       ref={appShellRef}
     >

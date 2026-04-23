@@ -565,6 +565,35 @@ a {
   left: 220px;
 }
 
+.app-shell.is-mac-overlay-sidebar.has-right-corner-toggle .app-window-drag-region {
+  left: 0;
+  right: 72px;
+}
+
+.app-shell.is-mac-overlay-sidebar.has-right-corner-toggle .app-sidebar-toggle {
+  top: 52px;
+  right: 18px;
+  left: auto;
+  width: 42px;
+  height: 42px;
+  background: rgba(255, 255, 255, 0.48);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 8px 18px rgba(148, 163, 184, 0.14);
+}
+
+.app-shell.is-mac-overlay-sidebar.has-right-corner-toggle .app-sidebar-toggle svg {
+  width: 22px;
+  height: 22px;
+}
+
+.app-shell.is-mac-overlay-sidebar.has-right-corner-toggle .app-sidebar-toggle:hover {
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 10px 22px rgba(148, 163, 184, 0.16);
+}
+
 .app-shell.is-mac-overlay-sidebar .app-sidebar-toggle:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.72);

@@ -94,8 +94,13 @@ test("agent-webclient release asset remains available for manual install", () =>
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
 });
 
-test("synced builtin assets exclude agent-webclient so it is not bundled in the installer", () => {
-  assert.equal(fs.existsSync(path.join(process.cwd(), "build", "resources", "services", "agent-webclient")), false);
+test("synced builtin assets include agent-webclient so assistant entry is available in desktop", () => {
+  const { service, assetPath } = getSyncedAsset("agent-webclient");
+  validateBundleArchive(service, assetPath);
+
+  const entries = listArchiveEntries(assetPath);
+  assert.ok(entries.has("agent-webclient/manifest.json"));
+  assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
 });
 
 test("actual synced agent-platform asset includes required entries", () => {
