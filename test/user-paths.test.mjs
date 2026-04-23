@@ -8,17 +8,16 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   __testInternals,
+  ensureDataRoot,
   getCredentialsRoot,
   getDataRoot,
   getPluginsRoot,
-  getServicesRoot,
-  loadUserPaths,
-  migrateDataRoot,
-  saveDataRoot
+  getServicesRoot
 } = require("../dist-electron/main/user-paths.js");
 
-function createApp(userDataRoot) {
+function createApp(userDataRoot, { isPackaged = false } = {}) {
   return {
+    isPackaged,
     getPath(name) {
       assert.equal(name, "userData");
       return userDataRoot;
@@ -26,99 +25,58 @@ function createApp(userDataRoot) {
   };
 }
 
-test("loadUserPaths falls back to userData when config file is absent", (t) => {
-  const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-paths-default-"));
+test("getDataRoot falls back to userData when app is not packaged", (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-paths-default-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
   const app = createApp(userDataRoot);
 
   t.after(() => {
-    __testInternals.resetState();
-    fs.rmSync(userDataRoot, { recursive: true, force: true });
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  const loaded = loadUserPaths(app);
-
-  assert.deepEqual(loaded, {
-    configured: false,
-    dataRoot: path.resolve(userDataRoot)
-  });
   assert.equal(getDataRoot(app), path.resolve(userDataRoot));
+  assert.equal(fs.existsSync(userDataRoot), true);
 });
 
-test("saveDataRoot persists config and exposes managed subdirectories", (t) => {
-  const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-paths-save-"));
-  const dataRoot = path.join(userDataRoot, "custom-data");
+test("ensureDataRoot creates managed subdirectories under the current data root", (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-paths-managed-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
   const app = createApp(userDataRoot);
 
   t.after(() => {
-    __testInternals.resetState();
-    fs.rmSync(userDataRoot, { recursive: true, force: true });
-  });
-
-  const savedRoot = saveDataRoot(app, dataRoot);
-  const configPath = __testInternals.getConfigPath(app);
-
-  assert.equal(savedRoot, path.resolve(dataRoot));
-  assert.deepEqual(JSON.parse(fs.readFileSync(configPath, "utf8")), {
-    dataRoot: path.resolve(dataRoot)
-  });
-  assert.equal(getServicesRoot(app), path.join(path.resolve(dataRoot), "services"));
-  assert.equal(getPluginsRoot(app), path.join(path.resolve(dataRoot), "plugins"));
-  assert.equal(getCredentialsRoot(app), path.join(path.resolve(dataRoot), "credentials"));
-  assert.equal(fs.existsSync(getServicesRoot(app)), true);
-  assert.equal(fs.existsSync(getPluginsRoot(app)), true);
-  assert.equal(fs.existsSync(getCredentialsRoot(app)), true);
-});
-
-test("migrateDataRoot copies managed data and cleans old directories", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-paths-migrate-"));
-  const oldUserDataRoot = path.join(tempRoot, "user-data");
-  const oldDataRoot = path.join(tempRoot, "data-a");
-  const newDataRoot = path.join(tempRoot, "data-b");
-  const app = createApp(oldUserDataRoot);
-
-  t.after(() => {
-    __testInternals.resetState();
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  saveDataRoot(app, oldDataRoot);
-  fs.mkdirSync(path.join(oldDataRoot, "services", "svc"), { recursive: true });
-  fs.mkdirSync(path.join(oldDataRoot, "plugins", "plugin-a"), { recursive: true });
-  fs.mkdirSync(path.join(oldDataRoot, "credentials"), { recursive: true });
-  fs.writeFileSync(path.join(oldDataRoot, "services", "svc", "manifest.json"), "{\"id\":\"svc\"}\n", "utf8");
-  fs.writeFileSync(path.join(oldDataRoot, "plugins", "plugin-a", "manifest.json"), "{\"id\":\"plugin-a\"}\n", "utf8");
-  fs.writeFileSync(path.join(oldDataRoot, "credentials", "key.pem"), "secret\n", "utf8");
+  const dataRoot = ensureDataRoot(app);
 
-  await migrateDataRoot(app, oldDataRoot, newDataRoot);
-
-  assert.equal(getDataRoot(app), path.resolve(newDataRoot));
-  assert.equal(fs.existsSync(path.join(newDataRoot, "services", "svc", "manifest.json")), true);
-  assert.equal(fs.existsSync(path.join(newDataRoot, "plugins", "plugin-a", "manifest.json")), true);
-  assert.equal(fs.existsSync(path.join(newDataRoot, "credentials", "key.pem")), true);
-  assert.equal(fs.existsSync(path.join(oldDataRoot, "services")), false);
-  assert.equal(fs.existsSync(path.join(oldDataRoot, "plugins")), false);
-  assert.equal(fs.existsSync(path.join(oldDataRoot, "credentials")), false);
+  assert.equal(dataRoot, path.resolve(userDataRoot));
+  for (const dirName of __testInternals.MANAGED_DATA_DIRS) {
+    assert.equal(fs.existsSync(path.join(dataRoot, dirName)), true);
+  }
 });
 
-test("migrateDataRoot keeps old data when target already contains managed files", async (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-paths-conflict-"));
-  const oldUserDataRoot = path.join(tempRoot, "user-data");
-  const oldDataRoot = path.join(tempRoot, "data-a");
-  const newDataRoot = path.join(tempRoot, "data-b");
-  const app = createApp(oldUserDataRoot);
+test("packaged Windows builds use the installation directory data folder", () => {
+  const dataRoot = __testInternals.resolveDefaultDataRoot({
+    platform: "win32",
+    isPackaged: true,
+    userDataPath: String.raw`C:\Users\alice\AppData\Roaming\zenmind-desktop`,
+    execPath: String.raw`D:\国泰君安期货\国泰君安期货.exe`
+  });
+
+  assert.equal(dataRoot, String.raw`D:\国泰君安期货\data`);
+});
+
+test("managed directory helpers join from the computed data root", (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-paths-helpers-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  const expectedRoot = path.resolve(userDataRoot);
 
   t.after(() => {
-    __testInternals.resetState();
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  saveDataRoot(app, oldDataRoot);
-  fs.mkdirSync(path.join(oldDataRoot, "services", "svc"), { recursive: true });
-  fs.writeFileSync(path.join(oldDataRoot, "services", "svc", "manifest.json"), "{\"id\":\"svc\"}\n", "utf8");
-  fs.mkdirSync(path.join(newDataRoot, "services"), { recursive: true });
-  fs.writeFileSync(path.join(newDataRoot, "services", "occupied.txt"), "busy\n", "utf8");
-
-  await assert.rejects(() => migrateDataRoot(app, oldDataRoot, newDataRoot), /目标目录已包含现有 services 数据/);
-  assert.equal(fs.existsSync(path.join(oldDataRoot, "services", "svc", "manifest.json")), true);
-  assert.equal(getDataRoot(app), path.resolve(oldDataRoot));
+  assert.equal(getServicesRoot(app), path.join(expectedRoot, "services"));
+  assert.equal(getPluginsRoot(app), path.join(expectedRoot, "plugins"));
+  assert.equal(getCredentialsRoot(app), path.join(expectedRoot, "credentials"));
 });

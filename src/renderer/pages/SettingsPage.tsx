@@ -1,5 +1,4 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { useServices } from "../services/ServicesContext";
 import { CustomSidebarIcon } from "../components/BrandMark";
 import type { CustomSidebarItem, CustomSidebarItemsResult } from "../../shared/contracts";
 
@@ -22,16 +21,13 @@ export function SettingsPage({
   onCustomSidebarItemsChange,
   onRefreshCustomSidebarItems
 }: SettingsPageProps) {
-  const { refresh } = useServices();
   const [feedback, setFeedback] = useState("");
   const [dataRoot, setDataRoot] = useState("");
   const [dataRootLoading, setDataRootLoading] = useState(true);
-  const [dataRootPending, setDataRootPending] = useState(false);
   const [customSidebarLabel, setCustomSidebarLabel] = useState("");
   const [customSidebarUrl, setCustomSidebarUrl] = useState("");
   const [customSidebarPending, setCustomSidebarPending] = useState(false);
   const [deletingCustomSidebarId, setDeletingCustomSidebarId] = useState("");
-  const isWindows = navigator.userAgent.toLowerCase().includes("windows");
 
   useEffect(() => {
     let cancelled = false;
@@ -58,22 +54,6 @@ export function SettingsPage({
       cancelled = true;
     };
   }, []);
-
-  async function handleChangeDataRoot() {
-    setDataRootPending(true);
-    try {
-      const result = await window.electronAPI.settings.changeDataRoot();
-      setFeedback(result.message);
-      setDataRoot(result.dataRoot);
-      if (result.ok) {
-        await refresh();
-      }
-    } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setDataRootPending(false);
-    }
-  }
 
   async function handleAddCustomSidebarItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -126,8 +106,8 @@ export function SettingsPage({
           <h1>设置</h1>
           <p className="page-copy">
             管理国泰君安期货的外观与本地数据目录。运行时数据会写入这个根目录，包含
-            <code>services</code>、<code>plugins</code> 和 <code>credentials</code>；
-            自定义侧边栏会保存到本机设置文件。
+            <code>services</code>、<code>plugins</code> 和 <code>credentials</code>。
+            Windows 安装版会默认使用安装目录下的 <code>data</code> 文件夹；自定义侧边栏会保存到本机设置文件。
           </p>
         </div>
       </div>
@@ -275,23 +255,11 @@ export function SettingsPage({
           <p className="eyebrow">DATA ROOT</p>
           <h2>数据目录</h2>
           <p className="page-copy">
-            修改后会迁移现有数据，并停止当前运行中的服务。
+            Windows 安装版会自动跟随安装目录；macOS 继续使用系统默认的应用数据目录。
           </p>
         </div>
         <div className="data-root-actions">
           <div className="data-root-path">{dataRootLoading ? "正在读取..." : dataRoot || "未配置"}</div>
-          {isWindows ? (
-            <button
-              type="button"
-              className="action-button ghost"
-              onClick={() => void handleChangeDataRoot()}
-              disabled={dataRootPending}
-            >
-              {dataRootPending ? "迁移中..." : "修改"}
-            </button>
-          ) : (
-            <span className="muted-inline">仅 Windows 支持修改</span>
-          )}
         </div>
       </div>
     </section>

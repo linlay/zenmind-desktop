@@ -43,10 +43,8 @@ import type {
   ServiceLogTarget
 } from "../shared/contracts";
 import {
+  ensureDataRoot,
   getDataRoot,
-  loadUserPaths,
-  migrateDataRoot,
-  saveDataRoot
 } from "./user-paths";
 
 let mainWindow: BrowserWindow | null = null;
@@ -281,19 +279,6 @@ function createAppTray() {
   return tray;
 }
 
-function showDirectoryDialog(title: string, defaultPath: string, ownerWindow: BrowserWindow | null = mainWindow) {
-  const options: OpenDialogOptions = {
-    title,
-    defaultPath,
-    buttonLabel: "选择目录",
-    properties: ["openDirectory", "createDirectory"]
-  };
-  if (ownerWindow) {
-    return dialog.showOpenDialog(ownerWindow, options);
-  }
-  return dialog.showOpenDialog(options);
-}
-
 function showFileDialog(options: OpenDialogOptions, ownerWindow: BrowserWindow | null = mainWindow) {
   if (ownerWindow) {
     return dialog.showOpenDialog(ownerWindow, options);
@@ -346,24 +331,6 @@ function buildApplicationMenu() {
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-}
-
-async function initializeDataRoot() {
-  const current = loadUserPaths(app);
-  if (process.platform !== "win32" || current.configured) {
-    return;
-  }
-
-  const defaultRoot = app.getPath("userData");
-  const result = await showDirectoryDialog("选择国泰君安期货数据目录", defaultRoot, null);
-  const selectedRoot =
-    result.canceled || result.filePaths.length === 0 ? defaultRoot : result.filePaths[0];
-  try {
-    saveDataRoot(app, selectedRoot);
-  } catch (error) {
-    console.error("failed to initialize custom data root", error);
-    saveDataRoot(app, defaultRoot);
-  }
 }
 
 function registerIpcHandlers() {
@@ -510,56 +477,10 @@ function registerIpcHandlers() {
     return removeCustomSidebarItem(app, id);
   });
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
-  ipcMain.handle("settings.changeDataRoot", async () => {
-    if (process.platform !== "win32") {
-      return {
-        ok: false,
-        message: "仅 Windows 支持修改数据目录。",
-        dataRoot: getDataRoot(app)
-      };
-    }
-
-    const currentRoot = getDataRoot(app);
-    const result = await showDirectoryDialog("选择新的国泰君安期货数据目录", currentRoot);
-    if (result.canceled || result.filePaths.length === 0) {
-      return {
-        ok: false,
-        message: "已取消修改数据目录。",
-        dataRoot: currentRoot
-      };
-    }
-
-    const nextRoot = result.filePaths[0];
-    if (path.resolve(nextRoot) === path.resolve(currentRoot)) {
-      return {
-        ok: true,
-        message: "数据目录未发生变化。",
-        dataRoot: currentRoot
-      };
-    }
-
-    try {
-      await stopRunningServices(app);
-      await migrateDataRoot(app, currentRoot, nextRoot);
-      loadInstalledPlugins(app);
-
-      return {
-        ok: true,
-        message: `数据目录已迁移到 ${getDataRoot(app)}。运行中的服务已停止，请按需重新启动。`,
-        dataRoot: getDataRoot(app)
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        message: error instanceof Error ? error.message : String(error),
-        dataRoot: currentRoot
-      };
-    }
-  });
 }
 
-app.whenReady().then(async () => {
-  await initializeDataRoot();
+app.whenReady().then(() => {
+  ensureDataRoot(app);
   loadBuiltinServices(app);
   loadInstalledPlugins(app);
   registerIpcHandlers();
