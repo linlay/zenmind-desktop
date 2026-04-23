@@ -359,18 +359,20 @@ function AppShell() {
     (location.pathname.startsWith("/plugin/") ||
       location.pathname.startsWith("/external/") ||
       location.pathname.startsWith("/custom-sidebar/"));
+  const showMacOverlayToggle = isMacOverlaySidebar;
+  const isMacOverlaySidebarOpen = isMacOverlaySidebar && !sidebarState.collapsed;
 
   return (
     <div
       className={[
         "app-shell",
         isMacOverlaySidebar ? "is-mac-overlay-sidebar" : "",
-        usesRightCornerToggle ? "has-right-corner-toggle" : ""
+        showMacOverlayToggle ? "has-right-corner-toggle" : ""
       ].filter(Boolean).join(" ")}
       ref={appShellRef}
     >
       <div className="app-window-drag-region" aria-hidden="true" />
-      {isMacOverlaySidebar ? (
+      {showMacOverlayToggle ? (
         <>
           <button
             ref={macSidebarToggleRef}
@@ -399,7 +401,7 @@ function AppShell() {
         className={[
           "app-sidebar-shell",
           !isMacOverlaySidebar && sidebarState.collapsed ? "is-collapsed" : "",
-          isMacOverlaySidebar && !sidebarState.collapsed ? "is-open" : "",
+          isMacOverlaySidebarOpen ? "is-open" : "",
           isMacOverlaySidebar ? "is-overlay" : "",
           isSidebarDragging ? "is-resizing" : ""
         ].filter(Boolean).join(" ")}
@@ -411,7 +413,7 @@ function AppShell() {
           experimentalEnabled={experimentalEnabled}
           customSidebarItems={customSidebarItems}
           onNavigateItem={
-            isMacOverlaySidebar ? () => closeMacOverlaySidebar() : undefined
+            showMacOverlayToggle ? () => closeMacOverlaySidebar() : undefined
           }
         />
         {!isMacOverlaySidebar ? (
