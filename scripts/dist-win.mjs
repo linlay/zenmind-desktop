@@ -44,13 +44,19 @@ function getElectronBuilderCacheDir() {
   return null;
 }
 
-async function buildOnWindowsHost() {
+async function syncWindowsBuiltinAssets() {
   await runAndWait(npmCmd, ["run", "sync:assets", "--", "--os=windows", "--arch=amd64"]);
+}
+
+async function buildOnWindowsHost() {
+  await syncWindowsBuiltinAssets();
   await runAndWait(npmCmd, ["run", "build"]);
   await runAndWait(npmCmd, ["exec", "electron-builder", "--", "--win", "--x64"]);
 }
 
 async function buildWithDocker() {
+  await syncWindowsBuiltinAssets();
+
   const npmCacheDir = path.join(os.homedir(), ".npm");
   const electronBuilderCacheDir = getElectronBuilderCacheDir();
 
@@ -80,7 +86,6 @@ async function buildWithDocker() {
     "-lc",
     [
       "npm install",
-      "node ./scripts/sync-builtin-assets.mjs --os=windows --arch=amd64",
       "npm run build",
       "npx electron-builder --win --x64"
     ].join(" && ")

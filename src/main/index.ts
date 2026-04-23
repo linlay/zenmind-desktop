@@ -25,7 +25,6 @@ import {
   startService,
   stopService,
   stopRunningServices,
-  stopStartedServices,
   writeServiceConfig
 } from "./service-manager";
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
@@ -440,7 +439,7 @@ app.on("before-quit", (event) => {
   }
   event.preventDefault();
   isHandlingQuit = true;
-  stopStartedServices(app)
+  stopRunningServices(app)
     .catch((error) => {
       console.error("failed while shutting down desktop services", error);
     })
