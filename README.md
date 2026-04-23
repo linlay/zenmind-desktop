@@ -113,7 +113,13 @@ npm run dist:win
 
 Windows 主机上会直接使用 `electron-builder` 输出 NSIS 安装包，目标 x64 架构。
 
-在 macOS 或 Linux 主机上，`npm run dist:win` 会改为通过 Docker 启动官方 `electronuserland/builder:wine` 镜像生成 Windows NSIS 包，而不是直接在宿主机上运行 `electron-builder`。这样可以规避宿主 macOS 生成损坏 NSIS 卸载器、在 Windows 上卸载时报 `Installer integrity check has failed` 的问题。
+在 macOS 或 Linux 主机上，请改用：
+
+```bash
+npm run dist:win-docker
+```
+
+该命令会先在宿主机执行 `npm run sync:assets -- --os=windows --arch=amd64`，把内置服务资源同步到 `build/resources/services/`，随后再通过 Docker 启动官方 `electronuserland/builder:wine` 镜像生成 Windows NSIS 包。这样可以规避宿主 macOS 生成损坏 NSIS 卸载器、在 Windows 上卸载时报 `Installer integrity check has failed` 的问题，同时避免容器内访问不到 monorepo 其他项目产物。
 
 非 Windows 主机执行该命令前需要满足：
 - 已安装并启动 Docker Desktop 或其他兼容 Docker 的运行时
@@ -130,7 +136,8 @@ Windows 主机上会直接使用 `electron-builder` 输出 NSIS 安装包，目�
 - `build.extraResources` 会把 `build/resources/services` 下的内置服务资源复制进应用包。
 - `build.extraResources` 同时会把 `scripts/uninstall.sh` 放入 macOS 应用包资源目录，供完整卸载使用。
 - `build/installer.nsh` 会注入 NSIS 卸载流程，在 Windows 上给用户选择是否清理应用数据。
-- `npm run sync:assets` 会扫描工作区各项目 `dist/release/*.tar.gz`，只同步 `manifest.json.kind === "builtin"` 的资源包。支持 `--os` 和 `--arch` 参数按平台过滤。
+- `npm run sync:assets` 会扫描工作区各项目 `dist/release/` 下的 `.tar.gz` / `.zip` 资源包，只同步 `manifest.json.kind === "builtin"` 的产物。支持 `--os` 和 `--arch` 参数按平台过滤。
+- 如设置 `ZENMIND_BUILTIN_ASSETS_SOURCE`，`sync:assets` 会优先从该目录扫描 `<service-id>/<archive-file>` 结构的预收集产物，再 fallback 到工作区自动发现。`../zenmind-dist` 就符合这个目录结构。
 - Desktop 通过 bundle 内的 `manifest.json.desktop.bundleTopLevelDir` 和 `runtime.requiredPaths` 校验资源完整性。
 - 如新增内置服务，需要保证 release bundle 内自带完整 `manifest.json`，再执行打包。
 
@@ -143,6 +150,7 @@ npm run build
 npm test
 npm run dist:mac
 npm run dist:win
+npm run dist:win-docker
 ```
 
 ### 日志与运行状态

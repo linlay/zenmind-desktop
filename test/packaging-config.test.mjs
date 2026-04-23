@@ -43,3 +43,14 @@ test("custom uninstall assets exist with the expected data cleanup targets", () 
   assert.match(uninstallScript, /Library\/Application Support\/zenmind-desktop/);
   assert.match(distWinScript, /electronuserland\/builder:wine/);
 });
+
+test("dist-win docker flow syncs builtin assets on the host before entering Docker", () => {
+  const distWinScript = fs.readFileSync(distWinScriptPath, "utf8");
+
+  assert.match(distWinScript, /async function syncWindowsBuiltinAssets\(\)/);
+  assert.match(distWinScript, /await syncWindowsBuiltinAssets\(\);\s*\n\s*const npmCacheDir/);
+  assert.doesNotMatch(
+    distWinScript,
+    /"node \.\/scripts\/sync-builtin-assets\.mjs --os=windows --arch=amd64"/
+  );
+});

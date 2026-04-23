@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const childProcess = require("node:child_process");
 const {
   __testInternals,
   getServiceState,
@@ -303,6 +304,39 @@ function writePluginInstallRoot(installDir, options = {}) {
   const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
   registerPlugin(manifest);
   return manifest;
+}
+
+function createSpawnSyncResult(status) {
+  return {
+    status,
+    stdout: "",
+    stderr: ""
+  };
+}
+
+function isCommandLookup(command, args, name) {
+  return (
+    (command === "where.exe" && args[0] === name) ||
+    (command === "sh" && args[0] === "-lc" && args[1] === `command -v ${name}`)
+  );
+}
+
+function withSpawnSyncMock(mockImplementation, run) {
+  const previousSpawnSync = childProcess.spawnSync;
+  const previousShell = process.env.SHELL;
+  childProcess.spawnSync = mockImplementation;
+  delete process.env.SHELL;
+
+  try {
+    return run();
+  } finally {
+    childProcess.spawnSync = previousSpawnSync;
+    if (previousShell === undefined) {
+      delete process.env.SHELL;
+    } else {
+      process.env.SHELL = previousShell;
+    }
+  }
 }
 
 test("parseEnvFileContent keeps key values and strips quotes", () => {
@@ -618,6 +652,43 @@ test("decodePowerShellCapturePayload restores UTF-8 error text", () => {
     hadError: true,
     exitCode: 1
   });
+});
+
+test("containerEngineAvailable requires a reachable engine daemon", () => {
+  const detected = withSpawnSyncMock((command, args = []) => {
+    if (isCommandLookup(command, args, "docker")) {
+      return createSpawnSyncResult(0);
+    }
+    if (isCommandLookup(command, args, "podman")) {
+      return createSpawnSyncResult(0);
+    }
+    if ((command === "docker" || command === "podman") && args[0] === "info") {
+      return createSpawnSyncResult(1);
+    }
+    assert.fail(`unexpected spawnSync call: ${command} ${args.join(" ")}`);
+  }, () => __testInternals.containerEngineAvailable());
+
+  assert.equal(detected, "");
+});
+
+test("containerEngineAvailable falls back to podman when docker daemon is unreachable", () => {
+  const detected = withSpawnSyncMock((command, args = []) => {
+    if (isCommandLookup(command, args, "docker")) {
+      return createSpawnSyncResult(0);
+    }
+    if (isCommandLookup(command, args, "podman")) {
+      return createSpawnSyncResult(0);
+    }
+    if (command === "docker" && args[0] === "info") {
+      return createSpawnSyncResult(1);
+    }
+    if (command === "podman" && args[0] === "info") {
+      return createSpawnSyncResult(0);
+    }
+    assert.fail(`unexpected spawnSync call: ${command} ${args.join(" ")}`);
+  }, () => __testInternals.containerEngineAvailable());
+
+  assert.equal(detected, "podman");
 });
 
 test("installBuiltinService force reinstalls healthy install and preserves env", async () => {
