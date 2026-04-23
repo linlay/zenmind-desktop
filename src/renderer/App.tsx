@@ -1,24 +1,33 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { AppSidebar } from "./components/AppSidebar";
 import { ControlCenterPage } from "./pages/ControlCenterPage";
+import { ExternalWebviewPage } from "./pages/ExternalWebviewPage";
 import { HelpPage } from "./pages/HelpPage";
 import { PluginMarketPage } from "./pages/PluginMarketPage";
 import { PluginPage } from "./pages/PluginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ServicesProvider } from "./services/ServicesContext";
+import type { CustomSidebarItem } from "../shared/contracts";
 
 type ThemeMode = "light" | "dark";
 
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
+const EXPERIMENTAL_STORAGE_KEY = "zenmind-desktop.experimental";
 const DEFAULT_SIDEBAR_WIDTH = 196;
 const MIN_SIDEBAR_WIDTH = 176;
 const MAX_SIDEBAR_WIDTH = 340;
 const COLLAPSED_SIDEBAR_WIDTH = 76;
 const COLLAPSE_THRESHOLD = 118;
+const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
+
+export const EXTERNAL_EXPERIMENTAL_ITEMS = [
+  { id: "guoxiao", label: "国小君平台", url: "https://gtjaqh.net/home/#/home", icon: "futures" as const },
+  { id: "qiuer", label: "秋而工作站", url: "https://station.qiuer.net/", icon: "autumn" as const }
+] as const;
 
 type SidebarState = {
   collapsed: boolean;
@@ -63,12 +72,41 @@ function AppShell() {
     }
   });
   const [isSidebarDragging, setIsSidebarDragging] = useState(false);
+  const [experimentalEnabled, setExperimentalEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    try {
+      return window.localStorage.getItem(EXPERIMENTAL_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
+
+  async function refreshCustomSidebarItems() {
+    const result = await window.electronAPI.customSidebar.list();
+    if (result.ok) {
+      setCustomSidebarItems(result.items);
+    }
+    return result;
+  }
 
   useEffect(() => {
     return window.electronAPI.onNavigate((targetPath) => {
       navigate(targetPath);
     });
   }, [navigate]);
+
+  useEffect(() => {
+    return window.electronAPI.onOpenAssistantWorker(() => {
+      navigate(ASSISTANT_TARGET_PATH);
+    });
+  }, [navigate]);
+
+  useEffect(() => {
+    refreshCustomSidebarItems().catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
@@ -86,6 +124,14 @@ function AppShell() {
       // Ignore persistence failures and keep the in-memory sidebar state usable.
     }
   }, [sidebarState]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(EXPERIMENTAL_STORAGE_KEY, experimentalEnabled ? "true" : "false");
+    } catch {
+      // Ignore persistence failures and keep the in-memory setting usable.
+    }
+  }, [experimentalEnabled]);
 
   useEffect(() => {
     if (!isSidebarDragging) {
@@ -175,6 +221,8 @@ function AppShell() {
   const sidebarWidth = sidebarState.collapsed
     ? COLLAPSED_SIDEBAR_WIDTH
     : sidebarState.width;
+  const experimentalItemMap = new Map(EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => [item.id, item]));
+  const customSidebarItemMap = new Map(customSidebarItems.map((item) => [item.id, item]));
 
   return (
     <div className="app-shell" ref={appShellRef}>
@@ -186,7 +234,11 @@ function AppShell() {
         ].filter(Boolean).join(" ")}
         style={{ "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
-        <AppSidebar isCollapsed={sidebarState.collapsed} />
+        <AppSidebar
+          isCollapsed={sidebarState.collapsed}
+          experimentalEnabled={experimentalEnabled}
+          customSidebarItems={customSidebarItems}
+        />
         <button
           type="button"
           className="app-sidebar-resizer"
@@ -213,7 +265,17 @@ function AppShell() {
             <Route path="/control-center" element={<ControlCenterPage />} />
             <Route
               path="/settings"
-              element={<SettingsPage themeMode={themeMode} onToggleTheme={toggleTheme} />}
+              element={
+                <SettingsPage
+                  themeMode={themeMode}
+                  onToggleTheme={toggleTheme}
+                  experimentalEnabled={experimentalEnabled}
+                  onToggleExperimental={() => setExperimentalEnabled((value) => !value)}
+                  customSidebarItems={customSidebarItems}
+                  onCustomSidebarItemsChange={setCustomSidebarItems}
+                  onRefreshCustomSidebarItems={refreshCustomSidebarItems}
+                />
+              }
             />
             <Route
               path="/assistant"
@@ -233,6 +295,8 @@ function AppShell() {
                 />
               }
             />
+            <Route path="/external/:itemId" element={<ExternalItemRoute itemMap={experimentalItemMap} />} />
+            <Route path="/custom-sidebar/:itemId" element={<ExternalItemRoute itemMap={customSidebarItemMap} />} />
             <Route path="/plugin/:pluginId" element={<PluginPage hostTheme={themeMode} />} />
             <Route path="/market" element={<PluginMarketPage />} />
             <Route path="/help" element={<HelpPage />} />
@@ -249,4 +313,24 @@ export function App() {
       <AppShell />
     </ServicesProvider>
   );
+}
+
+function ExternalItemRoute({
+  itemMap
+}: {
+  itemMap: Map<string, { label: string; url: string }>;
+}) {
+  const { itemId = "" } = useParams<{ itemId: string }>();
+  const item = itemMap.get(itemId);
+
+  if (!item) {
+    return (
+      <PlaceholderPage
+        title="入口不存在"
+        description="没有找到对应的侧边栏入口，请返回设置页检查是否已被删除。"
+      />
+    );
+  }
+
+  return <ExternalWebviewPage title={item.label} url={item.url} />;
 }

@@ -1,4 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="ZenMind Desktop icon">
-  <rect x="128" y="128" width="768" height="768" rx="168" fill="#2663EB" />
-  <path d="M320 320h384v92L481.28 611.84H704V704H320v-92l222.72-199.68H320z" fill="#FFFFFF" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="moon embrace app icon">
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="#111111"/>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="#FFFFFF" opacity="0.03"/>
+  <circle cx="512" cy="392" r="232" fill="#D4AF37" opacity="0.18"/>
+  <path d="M304 270Q512 192 720 270Q512 252 304 270Z" fill="#F8FAFC"/>
+  <path d="M210 418Q512 310 814 418Q512 384 210 418Z" fill="#F8FAFC"/>
+  <polygon points="612,448 566,448 370,632 416,632" fill="#D4AF37"/>
+  <path d="M286 690Q512 654 738 690Q512 726 286 690Z" fill="#F8FAFC"/>
 </svg>
