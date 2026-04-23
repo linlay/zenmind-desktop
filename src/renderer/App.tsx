@@ -113,6 +113,10 @@ function AppShell() {
     }
   });
   const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
+  const usesEmbeddedSurface =
+    location.pathname.startsWith("/plugin/") ||
+    location.pathname.startsWith("/external/") ||
+    location.pathname.startsWith("/custom-sidebar/");
 
   async function refreshCustomSidebarItems() {
     const result = await window.electronAPI.customSidebar.list();
@@ -146,6 +150,13 @@ function AppShell() {
       // Ignore persistence failures and keep the in-memory theme switch usable.
     }
   }, [themeMode]);
+
+  useEffect(() => {
+    document.body.classList.toggle("embedded-surface-body", usesEmbeddedSurface);
+    return () => {
+      document.body.classList.remove("embedded-surface-body");
+    };
+  }, [usesEmbeddedSurface]);
 
   useEffect(() => {
     try {
@@ -356,9 +367,7 @@ function AppShell() {
   const customSidebarItemMap = new Map(customSidebarItems.map((item) => [item.id, item]));
   const usesRightCornerToggle =
     isMacOverlaySidebar &&
-    (location.pathname.startsWith("/plugin/") ||
-      location.pathname.startsWith("/external/") ||
-      location.pathname.startsWith("/custom-sidebar/"));
+    usesEmbeddedSurface;
   const showMacOverlayToggle = isMacOverlaySidebar;
   const isMacOverlaySidebarOpen = isMacOverlaySidebar && !sidebarState.collapsed;
 
@@ -367,6 +376,7 @@ function AppShell() {
       className={[
         "app-shell",
         isMacOverlaySidebar ? "is-mac-overlay-sidebar" : "",
+        usesEmbeddedSurface ? "has-embedded-surface" : "",
         showMacOverlayToggle ? "has-right-corner-toggle" : ""
       ].filter(Boolean).join(" ")}
       ref={appShellRef}

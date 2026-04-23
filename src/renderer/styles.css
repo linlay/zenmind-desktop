@@ -77,9 +77,26 @@ body,
 
 body {
   color: var(--ink);
-  background: var(--bg-canvas);
-  background-attachment: fixed;
-  padding: 8px;
+  background: #fff;
+  padding: 0 8px 8px;
+  position: relative;
+}
+
+body.embedded-surface-body {
+  padding: 0;
+  background: #fff;
+}
+
+body.embedded-surface-body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background: #fff;
+  pointer-events: none;
+  z-index: 0;
 }
 
 :root[data-theme="dark"] body {
@@ -117,6 +134,18 @@ a {
   -webkit-backdrop-filter: blur(32px) saturate(155%);
   app-region: drag;
   -webkit-app-region: drag;
+}
+
+.app-shell.has-embedded-surface {
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.app-shell.has-embedded-surface::before {
+  display: none;
 }
 
 .app-shell::before {
@@ -162,6 +191,10 @@ a {
   pointer-events: auto;
   -webkit-user-select: none;
   user-select: none;
+}
+
+.app-shell.has-embedded-surface .app-window-drag-region {
+  display: none;
 }
 
 .app-sidebar-toggle,
@@ -960,10 +993,8 @@ a {
 }
 
 .pan-drag-region {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  position: relative;
+  flex: none;
   height: 20px;
   app-region: drag;
   -webkit-app-region: drag;
@@ -2307,10 +2338,8 @@ a {
 }
 
 .pan-drag-region {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  position: relative;
+  flex: none;
   height: 20px;
   app-region: drag;
   -webkit-app-region: drag;
