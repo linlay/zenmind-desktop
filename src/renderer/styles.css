@@ -4,16 +4,20 @@
 
 :root {
   color-scheme: light;
-  --bg-canvas: #F2F3F5;
-  --surface: #FFFFFF;
-  --surface-strong: #FFFFFF;
-  --surface-soft: #F7F8FA;
-  --surface-sidebar: #F7F8FA;
+  --window-radius: 18px;
+  --bg-canvas:
+    radial-gradient(circle at 8% 0%, rgba(122, 201, 255, 0.48), transparent 28%),
+    radial-gradient(circle at 92% 100%, rgba(150, 210, 255, 0.42), transparent 32%),
+    linear-gradient(180deg, #4A9EDB 0%, #6CB1E4 26%, #A9D0F2 58%, #B6D8F4 100%);
+  --surface: rgba(255, 255, 255, 0.18);
+  --surface-strong: rgba(255, 255, 255, 0.74);
+  --surface-soft: rgba(255, 255, 255, 0.28);
+  --surface-sidebar: rgba(216, 240, 251, 0.64);
   --ink: #1D2129;
   --ink-soft: #4E5969;
   --ink-muted: #86909C;
-  --line: #E5E6EB;
-  --line-strong: #C9CDD4;
+  --line: rgba(148, 163, 184, 0.18);
+  --line-strong: rgba(148, 163, 184, 0.28);
   --accent: #2663EB;
   --accent-strong: #1D4ED8;
   --accent-soft: #E8F0FF;
@@ -30,10 +34,14 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg-canvas: #0D0E10;
-  --surface: #161719;
-  --surface-strong: #161719;
-  --surface-soft: #111214;
+  --bg-canvas:
+    radial-gradient(circle at 16% 8%, rgba(72, 110, 176, 0.28), transparent 26%),
+    radial-gradient(circle at 84% 14%, rgba(52, 110, 160, 0.22), transparent 24%),
+    radial-gradient(circle at 68% 80%, rgba(28, 88, 120, 0.18), transparent 28%),
+    linear-gradient(180deg, #09111C 0%, #0D1520 100%);
+  --surface: rgba(14, 20, 30, 0.62);
+  --surface-strong: rgba(16, 23, 34, 0.76);
+  --surface-soft: rgba(14, 20, 30, 0.5);
   --surface-sidebar: #161719;
   --ink: #F2F3F5;
   --ink-soft: #C9CDD4;
@@ -70,6 +78,8 @@ body,
 body {
   color: var(--ink);
   background: var(--bg-canvas);
+  background-attachment: fixed;
+  padding: 8px;
 }
 
 :root[data-theme="dark"] body {
@@ -90,28 +100,114 @@ a {
 /* ── App Shell ── */
 
 .app-shell {
+  position: relative;
   height: 100%;
+  min-height: 0;
   display: flex;
   align-items: stretch;
   gap: 0;
   padding: 0;
+  border-radius: var(--window-radius);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.28);
+  border: none;
+  box-shadow:
+    0 20px 52px rgba(26, 66, 112, 0.18);
+  backdrop-filter: blur(32px) saturate(155%);
+  -webkit-backdrop-filter: blur(32px) saturate(155%);
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
+.app-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 8% 6%, rgba(255, 255, 255, 0.42), transparent 14%),
+    radial-gradient(circle at 50% 78%, rgba(196, 225, 252, 0.28), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.66) 46%, rgba(196, 225, 252, 0.78) 100%);
+  pointer-events: none;
+}
+
+.app-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.app-shell button,
+.app-shell a,
+.app-shell input,
+.app-shell textarea,
+.app-shell select,
+.app-shell nav,
+.app-shell iframe,
+.app-shell webview,
+.app-shell [role="button"],
+.app-shell [contenteditable="true"] {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.app-window-drag-region {
+  position: absolute;
+  top: 0;
+  left: 88px;
+  right: 0;
+  height: 56px;
+  z-index: 4;
+  app-region: drag;
+  -webkit-app-region: drag;
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.app-sidebar-toggle,
+.app-sidebar-backdrop {
+  display: none;
 }
 
 .app-content {
+  position: relative;
   flex: 1;
   min-width: 0;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   border-radius: 0;
-  background: var(--surface);
+  overflow: hidden;
+  isolation: isolate;
+  background: transparent;
   border: none;
-  border-left: 1px solid var(--line);
+  border-left: none;
   box-shadow: none;
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+}
+
+.app-content::before {
+  display: none;
+}
+
+.app-content > * {
+  position: relative;
+  z-index: 1;
 }
 
 :root[data-theme="dark"] .app-content {
-  background: var(--surface);
+  background: rgba(11, 18, 28, 0.48);
   border-color: var(--line);
-  box-shadow: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 28px 64px rgba(0, 0, 0, 0.34);
+}
+
+:root[data-theme="dark"] .app-content::before {
+  background:
+    radial-gradient(circle at 16% 12%, rgba(81, 121, 196, 0.18), transparent 22%),
+    radial-gradient(circle at 86% 10%, rgba(56, 111, 158, 0.14), transparent 20%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
 }
 
 /* ── Sidebar Shell ── */
@@ -121,10 +217,17 @@ a {
   top: 0;
   width: var(--app-sidebar-width, 232px);
   min-width: var(--app-sidebar-width, 232px);
-  min-height: 100vh;
+  min-height: 100%;
+  overflow: hidden;
+  border-radius: 0;
   contain: layout paint;
   will-change: width;
+  z-index: 2;
   transition: width 0.2s ease-in-out, min-width 0.2s ease-in-out;
+}
+
+.app-sidebar-shell::before {
+  display: none;
 }
 
 .app-sidebar-shell.is-resizing {
@@ -137,19 +240,48 @@ a {
   flex-direction: column;
   gap: 14px;
   width: 100%;
-  min-height: 100vh;
-  padding: 56px 10px 12px;
-  background: var(--surface-sidebar);
+  min-height: 100%;
+  padding: 40px 10px 12px;
+  background: transparent;
   border: none;
+  border-right: none;
   border-radius: 0;
   box-shadow: none;
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
   overflow: hidden;
 }
 
 :root[data-theme="dark"] .app-sidebar {
-  background: var(--surface-sidebar);
+  background: rgba(10, 16, 24, 0.4);
   border: none;
-  box-shadow: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    10px 0 30px rgba(0, 0, 0, 0.24);
+}
+
+.app-sidebar::after {
+  display: none;
+}
+
+.app-sidebar-shell::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
+  pointer-events: none;
+  z-index: 3;
+}
+
+:root[data-theme="dark"] .app-sidebar::after {
+  background:
+    radial-gradient(circle at 16% 10%, rgba(81, 121, 196, 0.14), transparent 22%),
+    radial-gradient(circle at 84% 12%, rgba(56, 111, 158, 0.1), transparent 20%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
 }
 
 /* ── Sidebar Profile ── */
@@ -158,7 +290,9 @@ a {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 4px 6px;
+  padding: 2px 6px 0;
+  position: relative;
+  z-index: 1;
 }
 
 .sidebar-profile-card {
@@ -166,7 +300,7 @@ a {
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 52px;
+  min-height: 48px;
 }
 
 .sidebar-avatar {
@@ -227,6 +361,10 @@ a {
   flex-direction: column;
   gap: 2px;
   padding: 0 2px;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .sidebar-link {
@@ -236,33 +374,46 @@ a {
   min-height: 38px;
   padding: 0 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 14px;
   color: var(--ink-soft);
-  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+  transition:
+    background-color 0.2s ease-in-out,
+    border-color 0.2s ease-in-out,
+    color 0.2s ease-in-out,
+    box-shadow 0.2s ease-in-out;
 }
 
 .sidebar-link:hover {
   color: var(--ink);
-  background: rgba(31, 35, 41, 0.04);
-  border-color: transparent;
+  background: rgba(255, 255, 255, 0.26);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 :root[data-theme="dark"] .sidebar-link:hover {
   color: var(--ink);
   background: rgba(255, 255, 255, 0.06);
-  border-color: transparent;
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .sidebar-link-active {
   color: var(--accent);
-  background: var(--accent-soft);
-  border-color: transparent;
+  background: rgba(209, 221, 231, 0.5);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(10px) saturate(118%);
+  -webkit-backdrop-filter: blur(10px) saturate(118%);
 }
 
 :root[data-theme="dark"] .sidebar-link-active {
   color: var(--accent-strong);
-  background: var(--accent-soft);
-  border-color: transparent;
+  background: rgba(79, 136, 255, 0.12);
+  border-color: rgba(79, 136, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 8px 18px rgba(0, 0, 0, 0.18);
 }
 
 .sidebar-link-icon {
@@ -298,6 +449,8 @@ a {
   flex-direction: column;
   gap: 2px;
   padding: 8px 2px 0;
+  position: relative;
+  z-index: 1;
   border-top: 1px solid var(--line);
 }
 
@@ -316,12 +469,12 @@ a {
 /* ── Sidebar Collapsed ── */
 
 .app-sidebar.is-collapsed {
-  padding: 56px 8px 12px;
+  padding: 40px 8px 8px;
 }
 
 .app-sidebar.is-collapsed .app-sidebar-top {
   justify-content: center;
-  padding: 4px 0 0;
+  padding: 2px 0 0;
 }
 
 .app-sidebar.is-collapsed .sidebar-profile-card {
@@ -371,7 +524,7 @@ a {
 }
 
 .app-sidebar.is-collapsed .sidebar-footer {
-  padding: 8px 0 0;
+  padding: 6px 0 0;
 }
 
 .app-sidebar.is-collapsed .sidebar-link-utility {
@@ -379,6 +532,122 @@ a {
   padding: 0;
   justify-content: center;
   border-radius: 8px;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 24px;
+  left: 168px;
+  z-index: 30;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.56);
+  color: rgba(71, 85, 105, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.44),
+    0 12px 28px rgba(148, 163, 184, 0.16);
+  backdrop-filter: blur(22px) saturate(145%);
+  -webkit-backdrop-filter: blur(22px) saturate(145%);
+  cursor: pointer;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  transition: transform 0.22s ease, background-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-window-drag-region {
+  left: 220px;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-sidebar-toggle:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.56),
+    0 14px 30px rgba(148, 163, 184, 0.2);
+}
+
+.app-shell.is-mac-overlay-sidebar .app-sidebar-toggle.is-active {
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.app-shell.is-mac-overlay-sidebar .app-sidebar-toggle svg {
+  width: 28px;
+  height: 28px;
+  display: block;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-sidebar-shell {
+  position: absolute;
+  top: 24px;
+  left: 16px;
+  bottom: 16px;
+  width: min(var(--app-sidebar-width), calc(100% - 32px));
+  min-width: 0;
+  max-width: 360px;
+  z-index: 20;
+  overflow: hidden;
+  border-radius: 28px;
+  box-shadow:
+    0 18px 42px rgba(96, 128, 164, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  transform: translateX(calc(-100% - 20px));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.2, 1), opacity 0.22s ease;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-sidebar-shell.is-open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-sidebar-shell::after {
+  display: none;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-sidebar {
+  min-height: 100%;
+  padding: 92px 14px 14px;
+  background:
+    linear-gradient(180deg, rgba(248, 252, 255, 0.78) 0%, rgba(223, 242, 252, 0.74) 100%);
+  border-radius: inherit;
+  backdrop-filter: blur(26px) saturate(150%);
+  -webkit-backdrop-filter: blur(26px) saturate(150%);
+  pointer-events: auto;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-sidebar-top {
+  padding: 0 8px 4px;
+}
+
+.app-shell.is-mac-overlay-sidebar .sidebar-footer {
+  padding-bottom: 6px;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-content {
+  width: 100%;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-sidebar a,
+.app-shell.is-mac-overlay-sidebar .app-sidebar button,
+.app-shell.is-mac-overlay-sidebar .app-sidebar nav {
+  pointer-events: auto;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-sidebar-drag-region {
+  display: none;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-main-drag-region {
+  display: none;
 }
 
 /* ── Sidebar Resizer ── */
@@ -446,25 +715,30 @@ a {
 
 /* ── 窗口拖拽区域（macOS hiddenInset 标题栏） ── */
 
-.app-sidebar::before,
-.app-main::before {
-  content: "";
+.app-sidebar-drag-region,
+.app-main-drag-region {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
+  app-region: drag;
   -webkit-app-region: drag;
   z-index: 10;
-  pointer-events: none;
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-.app-sidebar::before { height: 56px; }
-.app-main::before { height: 20px; }
+.app-sidebar-drag-region { height: 56px; }
+.app-main-drag-region { height: 20px; }
 
 .app-sidebar a,
 .app-sidebar button,
 .app-sidebar nav {
+  app-region: no-drag;
   -webkit-app-region: no-drag;
+  position: relative;
+  z-index: 1;
 }
 
 /* ── Header (legacy) ── */
@@ -481,6 +755,7 @@ a {
   padding: 0 24px 0 80px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
+  app-region: drag;
   -webkit-app-region: drag;
 }
 
@@ -492,6 +767,7 @@ a {
 .app-header a,
 .app-header button,
 .app-header nav {
+  app-region: no-drag;
   -webkit-app-region: no-drag;
 }
 
@@ -585,9 +861,19 @@ a {
 /* ── Main Content ── */
 
 .app-main {
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   overflow: auto;
   padding: 20px 24px 28px;
+  background: transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.app-main::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 /* ── Page Head ── */
@@ -644,16 +930,18 @@ a {
   margin: -20px -24px -28px;
 }
 
-.pan-page::before {
-  content: "";
+.pan-drag-region {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 20px;
+  app-region: drag;
   -webkit-app-region: drag;
   z-index: 10;
-  pointer-events: none;
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .pan-frame-shell {
@@ -687,10 +975,12 @@ a {
 .service-card,
 .empty-state,
 .placeholder-page {
-  border: 1px solid var(--line);
+  border: none;
   border-radius: 8px;
-  background: var(--surface);
-  box-shadow: var(--panel-shadow);
+  background: rgba(255, 255, 255, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 10px 24px rgba(26, 66, 112, 0.06);
 }
 
 .summary-strip div {
@@ -761,36 +1051,23 @@ a {
   position: relative;
   align-items: stretch;
   gap: 16px;
-  padding: 18px 24px;
-  border: 1px solid rgba(38, 99, 235, 0.12);
-  border-radius: 20px;
-  background:
-    radial-gradient(circle at top left, rgba(82, 145, 255, 0.18), transparent 32%),
-    radial-gradient(circle at 85% 18%, rgba(56, 189, 248, 0.14), transparent 22%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 248, 255, 0.98) 100%);
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+  padding: 12px 0 8px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   overflow: hidden;
 }
 
 .control-center-hero::after {
-  content: "";
-  position: absolute;
-  right: 18px;
-  bottom: -28px;
-  width: 180px;
-  height: 180px;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(38, 99, 235, 0.12) 0%, rgba(38, 99, 235, 0) 68%);
-  pointer-events: none;
+  display: none;
 }
 
 :root[data-theme="dark"] .control-center-hero {
-  border-color: rgba(74, 104, 164, 0.10);
-  background:
-    radial-gradient(circle at top left, rgba(50, 68, 110, 0.12), transparent 28%),
-    radial-gradient(circle at 85% 18%, rgba(36, 60, 100, 0.06), transparent 22%),
-    linear-gradient(135deg, rgba(16, 18, 24, 0.98) 0%, rgba(13, 15, 20, 0.99) 100%);
-  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.36);
+  background: transparent;
+  box-shadow: none;
 }
 
 .control-center-hero-copy,
@@ -838,16 +1115,19 @@ a {
   min-height: 110px;
   justify-content: flex-end;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(38, 99, 235, 0.08);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 10px 24px rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
 }
 
 :root[data-theme="dark"] .control-center-summary-strip div {
-  background: rgba(28, 34, 48, 0.82);
-  border-color: rgba(100, 118, 150, 0.10);
-  box-shadow: none;
+  background: rgba(18, 24, 36, 0.5);
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .control-center-summary-strip strong {
@@ -1177,16 +1457,18 @@ a {
 .service-sider,
 .control-center-detail,
 .control-center-empty {
-  max-height: calc(100vh - 260px);
+  max-height: none;
 }
 
 .service-sider {
   padding: 8px;
-  border: 1px solid var(--line);
+  border: none;
   border-radius: 8px;
-  background: var(--surface-soft);
-  box-shadow: none;
-  overflow: auto;
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 10px 24px rgba(26, 66, 112, 0.05);
+  overflow: visible;
 }
 
 .service-accordion {
@@ -1197,9 +1479,9 @@ a {
 }
 
 .service-group {
-  border: 1px solid var(--line);
+  border: none;
   border-radius: 12px;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.2);
   overflow: hidden;
 }
 
@@ -1247,7 +1529,7 @@ a {
 }
 
 .service-group.is-open .service-group-head {
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .service-group-action {
@@ -1437,7 +1719,53 @@ a {
 }
 
 .control-center-detail {
-  overflow-y: auto;
+  overflow: visible;
+}
+
+/* ── Scrollbars ── */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(127, 155, 184, 0.42) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(127, 155, 184, 0.38);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(127, 155, 184, 0.56);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+:root[data-theme="dark"] * {
+  scrollbar-color: rgba(160, 180, 205, 0.3) transparent;
+}
+
+:root[data-theme="dark"] *::-webkit-scrollbar-thumb {
+  background: rgba(160, 180, 205, 0.28);
+  background-clip: padding-box;
+}
+
+:root[data-theme="dark"] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(160, 180, 205, 0.42);
+  background-clip: padding-box;
 }
 
 .service-card-head {
@@ -1540,8 +1868,8 @@ a {
   gap: 8px;
   padding: 10px 12px;
   border-radius: 4px;
-  background: var(--surface-soft);
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.22);
+  border: none;
 }
 
 .meta-grid-head {
@@ -1681,8 +2009,8 @@ a {
 .config-panel {
   padding: 14px;
   border-radius: 8px;
-  background: var(--surface-soft);
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.22);
+  border: none;
 }
 
 :root[data-theme="dark"] .config-panel {
@@ -1949,16 +2277,18 @@ a {
   margin: -20px -24px -28px;
 }
 
-.pan-page::before {
-  content: "";
+.pan-drag-region {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 20px;
+  app-region: drag;
   -webkit-app-region: drag;
   z-index: 10;
-  pointer-events: none;
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 :root[data-theme="dark"] .pan-page {

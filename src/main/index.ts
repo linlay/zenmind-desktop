@@ -6,6 +6,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  shell,
   session,
   Tray,
   type MenuItemConstructorOptions,
@@ -67,6 +68,32 @@ function getRendererEntry() {
   return path.join(__dirname, "..", "..", "dist-renderer", "index.html");
 }
 
+function parseHttpUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed;
+    }
+  } catch {
+    // Ignore invalid URLs and let the fallback path handle them.
+  }
+  return null;
+}
+
+function shouldOpenPopupInCurrentWebview(currentUrl: string, targetUrl: string) {
+  const target = parseHttpUrl(targetUrl);
+  if (!target) {
+    return false;
+  }
+
+  const current = parseHttpUrl(currentUrl);
+  if (!current) {
+    return true;
+  }
+
+  return current.origin === target.origin;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -74,7 +101,7 @@ function createWindow() {
     minWidth: 1180,
     minHeight: 760,
     backgroundColor: "#F7F8FA",
-    titleBarStyle: "hiddenInset",
+    titleBarStyle: "hidden",
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true,
@@ -100,6 +127,26 @@ function createWindow() {
     console.error("preload failed", {
       preloadPath,
       error: error?.stack || String(error)
+    });
+  });
+
+  mainWindow.webContents.on("did-attach-webview", (_event, contents) => {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (shouldOpenPopupInCurrentWebview(contents.getURL(), url)) {
+        setImmediate(() => {
+          if (!contents.isDestroyed()) {
+            contents.loadURL(url).catch((error) => {
+              console.error("failed to open webview popup in place", { url, error });
+            });
+          }
+        });
+        return { action: "deny" };
+      }
+
+      void shell.openExternal(url).catch((error) => {
+        console.error("failed to open external popup url", { url, error });
+      });
+      return { action: "deny" };
     });
   });
 
@@ -235,7 +282,11 @@ function createTrayIcon() {
     iconPaths
       .map((iconPath) => nativeImage.createFromPath(iconPath))
       .find((candidate) => !candidate.isEmpty()) ?? nativeImage.createEmpty();
-  return icon.resize({ width: 18, height: 18 });
+  const resizedIcon = icon.resize({ width: 20, height: 20 });
+  if (process.platform === "darwin") {
+    resizedIcon.setTemplateImage(true);
+  }
+  return resizedIcon;
 }
 
 function buildTrayMenu() {

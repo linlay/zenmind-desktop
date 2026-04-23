@@ -8,6 +8,7 @@ type ExternalWebviewPageProps = {
 export function ExternalWebviewPage({ title, url }: ExternalWebviewPageProps) {
   return (
     <section className="pan-page">
+      <div className="pan-drag-region" aria-hidden="true" />
       <div className="pan-frame-shell">
         {createElement("webview", {
           src: url,

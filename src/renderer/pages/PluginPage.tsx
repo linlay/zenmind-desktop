@@ -144,6 +144,7 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
 
   return (
     <section className="pan-page">
+      <div className="pan-drag-region" aria-hidden="true" />
       <div className="pan-frame-shell">
         <iframe
           ref={iframeRef}
