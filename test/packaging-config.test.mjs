@@ -38,7 +38,9 @@ test("custom uninstall assets exist with the expected data cleanup targets", () 
 
   assert.ok(tempOutPathMatch, "custom uninstall should switch CWD to $TEMP before reading shell vars");
   assert.match(installerScript, /SetShellVarContext current/);
+  assert.match(installerScript, /国泰君安期货 app data/);
   assert.match(installerScript, /\$APPDATA\\zenmind-desktop/);
+  assert.match(uninstallScript, /APP_NAME="国泰君安期货"/);
   assert.match(uninstallScript, /APP_PATH="\/Applications\/\$\{APP_NAME\}\.app"/);
   assert.match(uninstallScript, /Library\/Application Support\/zenmind-desktop/);
   assert.match(distWinScript, /electronuserland\/builder:wine/);

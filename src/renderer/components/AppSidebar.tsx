@@ -1,20 +1,31 @@
 import { NavLink } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
-import { BrandMark, SidebarIllustration } from "./BrandMark";
+import { EXTERNAL_EXPERIMENTAL_ITEMS } from "../App";
+import { BrandMark, CustomSidebarIcon, SidebarIllustration, type SidebarIllustrationKind } from "./BrandMark";
+import type { CustomSidebarItem } from "../../shared/contracts";
 
-const staticNavItems = [
+type SidebarNavItem = {
+  to: string;
+  label: string;
+  icon: SidebarIllustrationKind;
+  iconId?: string;
+};
+
+const staticNavItems: SidebarNavItem[] = [
   { to: "/control-center", label: "控制中心", icon: "control" },
   { to: "/market", label: "插件市场", icon: "market" },
   { to: "/help", label: "帮助", icon: "help" }
-] as const;
+];
 
 type AppSidebarProps = {
   isCollapsed: boolean;
+  experimentalEnabled: boolean;
+  customSidebarItems: CustomSidebarItem[];
 };
 
-export function AppSidebar({ isCollapsed }: AppSidebarProps) {
+export function AppSidebar({ isCollapsed, experimentalEnabled, customSidebarItems }: AppSidebarProps) {
   const { services } = useServices();
-  const serviceNavItems = services
+  const serviceNavItems: SidebarNavItem[] = services
     .filter((service) => service.frontendMode === "standalone" && service.status === "running")
     .map((service) => ({
       to: `/plugin/${service.id}`,
@@ -22,9 +33,26 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
       icon: service.id === "agent-webclient" ? "assistant" : "service"
     }));
 
+  const experimentalItems: SidebarNavItem[] = experimentalEnabled
+    ? EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => ({
+        to: `/external/${item.id}`,
+        label: item.label,
+        icon: item.icon
+      }))
+    : [];
+
+  const customItems: SidebarNavItem[] = customSidebarItems.map((item) => ({
+    to: `/custom-sidebar/${item.id}`,
+    label: item.label,
+    icon: "custom",
+    iconId: item.iconId
+  }));
+
   const navItems = [
     staticNavItems[0],
     ...serviceNavItems,
+    ...experimentalItems,
+    ...customItems,
     ...staticNavItems.slice(1)
   ];
 
@@ -36,7 +64,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
             <BrandMark />
           </div>
           <div className="sidebar-profile-copy">
-            <h2 className="sidebar-profile-name">ZenMind</h2>
+            <h2 className="sidebar-profile-name">国泰君安期货</h2>
             <p className="sidebar-profile-meta">桌面工作台</p>
           </div>
         </div>
@@ -52,7 +80,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
             }
           >
             <span className="sidebar-link-icon">
-              <SidebarIllustration kind={item.icon} />
+              {item.iconId ? <CustomSidebarIcon iconId={item.iconId} /> : <SidebarIllustration kind={item.icon} />}
             </span>
             <span className="sidebar-link-label">{item.label}</span>
           </NavLink>

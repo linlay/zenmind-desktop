@@ -1,7 +1,7 @@
-# zenmind-desktop
+# 国泰君安期货
 
 ## 1. 项目简介
-`zenmind-desktop` 是 ZenMind 的桌面端壳项目，基于 Electron、React 和 Vite 构建。它负责把内置服务打包进桌面应用，并提供统一的安装、配置、启动、停止、重启和日志查看入口。
+`zenmind-desktop` 是国泰君安期货的应用壳项目，基于 Electron、React 和 Vite 构建。它负责把内置服务打包进桌面应用，并提供统一的安装、配置、启动、停止、重启和日志查看入口。
 
 当前 Desktop 已统一切换到 `manifest.json` 驱动架构：
 - 内置服务从 `.tar.gz` 资源包里的 `manifest.json` 自动发现。
@@ -128,7 +128,7 @@ npm run dist:win-docker
 如果机器上已经残留旧的 per-user/per-machine 双安装记录，建议先手动清理旧版本，再验证新包的安装和卸载。
 
 ### 卸载
-- macOS：运行 `/Applications/ZenMind Desktop.app/Contents/Resources/uninstall.sh`。脚本会先检查应用是否仍在运行，随后删除 `/Applications/ZenMind Desktop.app`，并弹出对话框询问是否清理 `~/Library/Application Support/zenmind-desktop/` 下的数据。
+- macOS：运行 `/Applications/国泰君安期货.app/Contents/Resources/uninstall.sh`。脚本会先检查应用是否仍在运行，随后删除 `/Applications/国泰君安期货.app`，并弹出对话框询问是否清理 `~/Library/Application Support/zenmind-desktop/` 下的数据。
 - Windows：通过控制面板或开始菜单中的卸载入口执行 NSIS 卸载器。卸载时会弹出确认框，询问是否删除 `%APPDATA%\zenmind-desktop\` 下的数据目录。
 
 ### 打包资源约定
