@@ -95,13 +95,13 @@ const HELP_CATEGORIES: HelpCategory[] = [
         question: "数据目录在哪里？",
         answer: (
           <>
-            <p>应用运行数据存储在 Electron 的 <code>userData</code> 路径下：</p>
+            <p>应用运行数据存储在桌面端的数据目录中：</p>
             <ul>
               <li>
                 <strong>macOS</strong>：<code>~/Library/Application Support/zenmind-desktop/</code>
               </li>
               <li>
-                <strong>Windows</strong>：<code>%APPDATA%/zenmind-desktop/</code>
+                <strong>Windows</strong>：<code>&lt;安装目录&gt;\data\</code>，例如 <code>D:\国泰君安期货\data\</code>
               </li>
             </ul>
             <p>

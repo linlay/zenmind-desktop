@@ -12,7 +12,6 @@ const {
   removeCustomSidebarItem,
   __testInternals
 } = require("../dist-electron/main/custom-sidebar-store.js");
-const { saveDataRoot, __testInternals: userPathTestInternals } = require("../dist-electron/main/user-paths.js");
 
 function createApp(userDataRoot) {
   return {
@@ -26,15 +25,11 @@ function createApp(userDataRoot) {
 test("custom sidebar items persist locally with normalized URLs", (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-custom-sidebar-"));
   const userDataRoot = path.join(tempRoot, "user-data");
-  const dataRoot = path.join(tempRoot, "data");
   const app = createApp(userDataRoot);
 
   t.after(() => {
-    userPathTestInternals.resetState();
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
-
-  saveDataRoot(app, dataRoot);
 
   const added = addCustomSidebarItem(app, {
     label: "百度",
@@ -56,15 +51,11 @@ test("custom sidebar items persist locally with normalized URLs", (t) => {
 test("custom sidebar rejects duplicates and deletes only custom items", (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-custom-sidebar-delete-"));
   const userDataRoot = path.join(tempRoot, "user-data");
-  const dataRoot = path.join(tempRoot, "data");
   const app = createApp(userDataRoot);
 
   t.after(() => {
-    userPathTestInternals.resetState();
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
-
-  saveDataRoot(app, dataRoot);
 
   const added = addCustomSidebarItem(app, {
     url: "https://www.baidu.com"
@@ -89,15 +80,11 @@ test("custom sidebar rejects duplicates and deletes only custom items", (t) => {
 test("custom sidebar assigns icon library entries without repeating current items", (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-custom-sidebar-icons-"));
   const userDataRoot = path.join(tempRoot, "user-data");
-  const dataRoot = path.join(tempRoot, "data");
   const app = createApp(userDataRoot);
 
   t.after(() => {
-    userPathTestInternals.resetState();
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
-
-  saveDataRoot(app, dataRoot);
 
   const first = addCustomSidebarItem(app, {
     label: "Google",

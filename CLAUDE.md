@@ -1,11 +1,75 @@
 # CLAUDE.md
 
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+## 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+---
+
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
 ## 1. 项目概览
 `zenmind-desktop` 是一个桌面端控制壳项目，目标是把内置服务和第三方插件随 Electron 应用分发，并提供统一的服务控制台。桌面端负责发现内置服务、运行时加载插件、安装资源包、写入默认配置、执行启动与停止脚本，并向渲染层暴露服务状态与控制能力。
 
 项目支持两种服务来源：
 - **内置服务（builtin）**：随应用打包分发，当前包含 `agent-container-hub`、`agent-platform` 和 `zenmind-app-server`。
-- **插件（plugin）**：运行时通过 `.tar.gz` 包导入，存储在 `userData/plugins/` 目录，启动时自动扫描加载。插件包必须包含 `manifest.json` 清单文件。
+- **插件（plugin）**：运行时通过 `.tar.gz` 包导入，存储在数据目录 `plugins/` 目录，启动时自动扫描加载。插件包必须包含 `manifest.json` 清单文件。Windows 打包版的数据目录固定为 `<安装目录>\data\`，macOS 和开发模式继续使用 Electron `userData`。
 
 前端按三种模式区分：
 - **无前端**（`frontendMode: "none"`）：只在控制中心显示。
@@ -131,11 +195,11 @@ my-plugin/
 
 ### 插件生命周期
 1. 用户在控制中心点击"导入插件"，选择 `.tar.gz` 包。
-2. 主进程解压到 `userData/plugins/{id}/`，读取 `manifest.json` 并注册。
+2. 主进程解压到数据目录 `plugins/{id}/`，读取 `manifest.json` 并注册。
 3. 控制中心左侧边栏立即出现新服务卡片，状态为"待初始化"。
 4. 用户完成必要的配置编辑后，点击"初始化"；Desktop 会补齐模板配置、修复脚本权限，并执行 `scripts.deploy`。
 5. 初始化成功后，插件进入可启动状态；启动后，`frontendMode !== "none"` 的插件会在详情区显示"打开前端"按钮；`frontendMode === "standalone"` 时会出现在顶部导航栏。
-6. 下次启动 Electron 时，`loadInstalledPlugins` 自动扫描 `userData/plugins/` 并重新注册；未初始化的插件仍会保持"待初始化"。
+6. 下次启动 Electron 时，`loadInstalledPlugins` 自动扫描数据目录 `plugins/` 并重新注册；未初始化的插件仍会保持"待初始化"。
 7. 卸载时弹出确认对话框，确认后停止运行中的服务、删除插件目录并从注册表移除。
 
 ### 认证桥接
@@ -173,5 +237,5 @@ my-plugin/
 - 内置服务资源依赖外部打包产物，资源包内容缺失会直接导致安装或测试失败。
 - `agent-container-hub` 依赖本机可用的 Docker 或 Podman。
 - `pan-webclient` 和 `agent-webclient` 已从内置服务移除，改为通过插件系统导入。
-- 服务运行目录位于 Electron `userData` 路径下，实际行为与当前操作系统用户环境相关。
-- RSA 密钥对由 Desktop 统一管理，存储在 `userData/credentials/` 下，同时用于 pan-webclient 和 agent-platform 的认证。
+- 服务运行目录位于数据目录下；Windows 打包版默认是 `<安装目录>\data\`，macOS 和开发模式继续使用 Electron `userData`。
+- RSA 密钥对由 Desktop 统一管理，存储在数据目录 `credentials/` 下，同时用于 pan-webclient 和 agent-platform 的认证。

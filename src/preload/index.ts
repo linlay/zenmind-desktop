@@ -41,8 +41,7 @@ const api: DesktopApi = {
     issueAccessToken: (reason) => ipcRenderer.invoke("agentAuth.issueAccessToken", reason)
   },
   settings: {
-    getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
-    changeDataRoot: () => ipcRenderer.invoke("settings.changeDataRoot")
+    getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot")
   },
   customSidebar: {
     list: () => ipcRenderer.invoke("customSidebar.list"),
