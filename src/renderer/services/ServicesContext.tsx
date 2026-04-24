@@ -44,42 +44,85 @@ interface ServicesContextValue {
 }
 
 const ServicesContext = createContext<ServicesContextValue | null>(null);
+const SERVICE_POLL_INTERVAL_MS = 5000;
+
+function createServicesSnapshot(services: ServiceState[]) {
+  return JSON.stringify(services);
+}
 
 export function ServicesProvider({ children }: PropsWithChildren) {
   const [services, setServices] = useState<ServiceState[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const mountedRef = useRef(true);
+  const refreshPromiseRef = useRef<Promise<void> | null>(null);
+  const servicesSnapshotRef = useRef(createServicesSnapshot([]));
 
   async function refresh() {
-    try {
-      const next = await window.electronAPI.services.list();
-      if (!mountedRef.current) {
-        return;
-      }
-      setServices(next);
-      setError("");
-    } catch (reason) {
-      if (!mountedRef.current) {
-        return;
-      }
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      if (mountedRef.current) {
-        setLoading(false);
-      }
+    if (refreshPromiseRef.current) {
+      return refreshPromiseRef.current;
     }
+
+    const refreshTask = (async () => {
+      try {
+        const next = await window.electronAPI.services.list();
+        if (!mountedRef.current) {
+          return;
+        }
+
+        const nextSnapshot = createServicesSnapshot(next);
+        if (nextSnapshot !== servicesSnapshotRef.current) {
+          servicesSnapshotRef.current = nextSnapshot;
+          setServices(next);
+        }
+
+        setError((current) => (current ? "" : current));
+      } catch (reason) {
+        if (!mountedRef.current) {
+          return;
+        }
+        setError(reason instanceof Error ? reason.message : String(reason));
+      } finally {
+        refreshPromiseRef.current = null;
+        if (mountedRef.current) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    refreshPromiseRef.current = refreshTask;
+    return refreshTask;
   }
 
   useEffect(() => {
     mountedRef.current = true;
     void refresh();
-    const timer = window.setInterval(() => {
+
+    const refreshIfVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
       void refresh();
-    }, 3000);
+    };
+
+    const timer = window.setInterval(() => {
+      refreshIfVisible();
+    }, SERVICE_POLL_INTERVAL_MS);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refresh();
+      }
+    };
+
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       mountedRef.current = false;
       window.clearInterval(timer);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 

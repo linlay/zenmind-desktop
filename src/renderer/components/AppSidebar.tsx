@@ -1,8 +1,10 @@
+import type { MouseEvent } from "react";
 import { NavLink } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
 import { EXTERNAL_EXPERIMENTAL_ITEMS } from "../App";
 import { BrandMark, CustomSidebarIcon, SidebarIllustration, type SidebarIllustrationKind } from "./BrandMark";
 import type { CustomSidebarItem } from "../../shared/contracts";
+import { getServiceDisplayName } from "../service-display";
 
 type SidebarNavItem = {
   to: string;
@@ -17,35 +19,43 @@ const staticNavItems: SidebarNavItem[] = [
   { to: "/help", label: "帮助", icon: "help" }
 ];
 
+const assistantNavItem: SidebarNavItem = {
+  to: "/plugin/agent-webclient",
+  label: "智能助理",
+  icon: "assistant"
+};
+
 type AppSidebarProps = {
   isCollapsed: boolean;
-  experimentalEnabled: boolean;
+  currentPath: string;
   customSidebarItems: CustomSidebarItem[];
+  pendingNavigationPath: string | null;
+  onRequestNavigate?: (targetPath: string) => boolean;
   onNavigateItem?: () => void;
 };
 
 export function AppSidebar({
   isCollapsed,
-  experimentalEnabled,
+  currentPath,
   customSidebarItems,
+  pendingNavigationPath,
+  onRequestNavigate,
   onNavigateItem
 }: AppSidebarProps) {
   const { services } = useServices();
   const serviceNavItems: SidebarNavItem[] = services
-    .filter((service) => service.frontendMode === "standalone" && service.status === "running")
+    .filter((service) => service.id !== "agent-webclient" && service.frontendMode === "standalone" && service.status === "running")
     .map((service) => ({
       to: `/plugin/${service.id}`,
-      label: service.id === "agent-webclient" ? "智能助理" : service.name,
-      icon: service.id === "agent-webclient" ? "assistant" : "service"
+      label: getServiceDisplayName(service.id, service.name),
+      icon: "service"
     }));
 
-  const experimentalItems: SidebarNavItem[] = experimentalEnabled
-    ? EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => ({
-        to: `/external/${item.id}`,
-        label: item.label,
-        icon: item.icon
-      }))
-    : [];
+  const experimentalItems: SidebarNavItem[] = EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => ({
+    to: `/external/${item.id}`,
+    label: item.label,
+    icon: item.icon
+  }));
 
   const customItems: SidebarNavItem[] = customSidebarItems.map((item) => ({
     to: `/custom-sidebar/${item.id}`,
@@ -55,12 +65,27 @@ export function AppSidebar({
   }));
 
   const navItems = [
+    assistantNavItem,
     staticNavItems[0],
     ...serviceNavItems,
     ...experimentalItems,
     ...customItems,
     ...staticNavItems.slice(1)
   ];
+
+  function handleItemClick(event: MouseEvent<HTMLAnchorElement>, targetPath: string) {
+    if (targetPath === currentPath) {
+      event.preventDefault();
+      return;
+    }
+
+    if (onRequestNavigate && !onRequestNavigate(targetPath)) {
+      event.preventDefault();
+      return;
+    }
+
+    onNavigateItem?.();
+  }
 
   return (
     <aside className={isCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
@@ -70,21 +95,26 @@ export function AppSidebar({
             <BrandMark />
           </div>
           <div className="sidebar-profile-copy">
-            <h2 className="sidebar-profile-name">国泰君安期货</h2>
+            <h2 className="sidebar-profile-name">ZenMind</h2>
             <p className="sidebar-profile-meta">桌面工作台</p>
           </div>
         </div>
       </div>
 
-      <nav className="sidebar-nav" aria-label="Primary Navigation">
+      <nav className={pendingNavigationPath ? "sidebar-nav is-busy" : "sidebar-nav"} aria-label="Primary Navigation">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
-            onClick={onNavigateItem}
+            onClick={(event) => handleItemClick(event, item.to)}
             className={({ isActive }) =>
-              isActive ? "sidebar-link sidebar-link-active" : "sidebar-link"
+              [
+                "sidebar-link",
+                isActive ? "sidebar-link-active" : "",
+                pendingNavigationPath === item.to ? "sidebar-link-pending" : ""
+              ].filter(Boolean).join(" ")
             }
+            aria-disabled={Boolean(pendingNavigationPath && pendingNavigationPath !== item.to)}
           >
             <span className="sidebar-link-icon">
               {item.iconId ? <CustomSidebarIcon iconId={item.iconId} /> : <SidebarIllustration kind={item.icon} />}
@@ -94,13 +124,19 @@ export function AppSidebar({
         ))}
       </nav>
 
-      <div className="sidebar-footer">
+      <div className={pendingNavigationPath ? "sidebar-footer is-busy" : "sidebar-footer"}>
         <NavLink
           to="/settings"
-          onClick={onNavigateItem}
+          onClick={(event) => handleItemClick(event, "/settings")}
           className={({ isActive }) =>
-            isActive ? "sidebar-link sidebar-link-active sidebar-link-utility" : "sidebar-link sidebar-link-utility"
+            [
+              "sidebar-link",
+              "sidebar-link-utility",
+              isActive ? "sidebar-link-active" : "",
+              pendingNavigationPath === "/settings" ? "sidebar-link-pending" : ""
+            ].filter(Boolean).join(" ")
           }
+          aria-disabled={Boolean(pendingNavigationPath && pendingNavigationPath !== "/settings")}
         >
           <span className="sidebar-link-icon">
             <SidebarIllustration kind="settings" />

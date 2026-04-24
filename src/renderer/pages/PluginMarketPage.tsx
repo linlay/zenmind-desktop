@@ -3,6 +3,7 @@ import type { ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
 import "./PluginMarketPage.css";
+import { getServiceDisplayName } from "../service-display";
 
 type MarketTab = "plugins" | "skills";
 type SkillGroup = "推荐" | "系统" | "个人";
@@ -22,7 +23,8 @@ type UploadedSkill = {
   description: string;
 };
 
-const PLUGIN_ORDER = ["Container Hub", "智能体平台", "小宅助理", "认证服务"];
+const SKILLS_MARKET_VISIBLE = false;
+const PLUGIN_ORDER = ["agent-container-hub", "agent-platform", "agent-webclient", "zenmind-app-server"];
 
 const CLOUD_SKILLS: CloudSkill[] = [
   {
@@ -144,8 +146,8 @@ export function PluginMarketPage() {
   ]);
 
   const marketPlugins = useMemo(() => {
-    const nameMap = new Map(services.map((service) => [service.name, service]));
-    return PLUGIN_ORDER.map((name) => nameMap.get(name)).filter(Boolean);
+    const idMap = new Map(services.map((service) => [service.id, service]));
+    return PLUGIN_ORDER.map((id) => idMap.get(id)).filter(Boolean);
   }, [services]);
 
   const filteredPlugins = useMemo(() => {
@@ -154,7 +156,7 @@ export function PluginMarketPage() {
       return marketPlugins;
     }
     return marketPlugins.filter((service) =>
-      `${service.name} ${service.description}`.toLowerCase().includes(normalized)
+      `${getServiceDisplayName(service.id, service.name)} ${service.description}`.toLowerCase().includes(normalized)
     );
   }, [marketPlugins, pluginQuery]);
 
@@ -219,6 +221,8 @@ export function PluginMarketPage() {
     setFeedback(`已从云端下载 skill：${skill.name}`);
   }
 
+  const currentTab: MarketTab = SKILLS_MARKET_VISIBLE ? activeTab : "plugins";
+
   return (
     <section className="market-page">
       <div className="market-shell">
@@ -226,7 +230,7 @@ export function PluginMarketPage() {
           <div className="market-tabs" role="tablist" aria-label="市场页签">
             <button
               type="button"
-              className={activeTab === "plugins" ? "market-tab is-active" : "market-tab"}
+              className={currentTab === "plugins" ? "market-tab is-active" : "market-tab"}
               onClick={() => {
                 setActiveTab("plugins");
                 setFeedback("");
@@ -234,16 +238,18 @@ export function PluginMarketPage() {
             >
               插件
             </button>
-            <button
-              type="button"
-              className={activeTab === "skills" ? "market-tab is-active" : "market-tab"}
-              onClick={() => {
-                setActiveTab("skills");
-                setFeedback("");
-              }}
-            >
-              技能
-            </button>
+            {SKILLS_MARKET_VISIBLE ? (
+              <button
+                type="button"
+                className={currentTab === "skills" ? "market-tab is-active" : "market-tab"}
+                onClick={() => {
+                  setActiveTab("skills");
+                  setFeedback("");
+                }}
+              >
+                技能
+              </button>
+            ) : null}
           </div>
 
           <div className="market-toolbar">
@@ -253,18 +259,18 @@ export function PluginMarketPage() {
             <button
               type="button"
               className="market-toolbar-btn market-toolbar-btn-primary"
-              onClick={activeTab === "plugins" ? () => navigate("/control-center") : openLocalPicker}
+              onClick={currentTab === "plugins" ? () => navigate("/control-center") : openLocalPicker}
             >
-              {activeTab === "plugins" ? "查看服务" : "本地导入"}
+              {currentTab === "plugins" ? "查看服务" : "本地导入"}
             </button>
           </div>
         </div>
 
         <div className="market-body">
           <header className="market-hero">
-            <h1>{activeTab === "plugins" ? "插件市场" : "技能市场"}</h1>
+            <h1>{currentTab === "plugins" ? "插件市场" : "技能市场"}</h1>
             <p>
-              {activeTab === "plugins"
+              {currentTab === "plugins"
                 ? "集中展示当前桌面可用的核心插件入口。"
                 : "支持从本地上传技能包，或从云端技能库下载到当前环境。"}
             </p>
@@ -272,7 +278,7 @@ export function PluginMarketPage() {
 
           {feedback ? <div className="market-feedback">{feedback}</div> : null}
 
-          {activeTab === "plugins" ? (
+          {currentTab === "plugins" ? (
             <div className="market-content">
               <div className="market-filter-bar market-filter-bar-single">
                 <label className="market-search">
@@ -292,11 +298,11 @@ export function PluginMarketPage() {
                 {filteredPlugins.map((plugin) => (
                   <article
                     key={plugin.id}
-                    className={`market-plugin-feature${plugin.name === "Container Hub" ? " is-active" : ""}`}
+                    className={`market-plugin-feature${plugin.id === "agent-container-hub" ? " is-active" : ""}`}
                     onClick={() => navigate(`/plugin/${plugin.id}`)}
                   >
                     <div className="market-plugin-feature-head">
-                      <h2>{plugin.name}</h2>
+                      <h2>{getServiceDisplayName(plugin.id, plugin.name)}</h2>
                       <span className="market-plugin-status-dot" aria-hidden="true" />
                     </div>
                     <p>{plugin.description}</p>

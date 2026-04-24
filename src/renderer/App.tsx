@@ -9,21 +9,25 @@ import { PluginMarketPage } from "./pages/PluginMarketPage";
 import { PluginPage } from "./pages/PluginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { ServicesProvider } from "./services/ServicesContext";
-import type { CustomSidebarItem } from "../shared/contracts";
+import { ServicesProvider, useServices } from "./services/ServicesContext";
+import type { CustomSidebarItem, ServiceId, ServiceState } from "../shared/contracts";
+import { getServiceDisplayName } from "./service-display";
 
 type ThemeMode = "light" | "dark";
 
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
-const EXPERIMENTAL_STORAGE_KEY = "zenmind-desktop.experimental";
+const NEW_USER_ENV_BANNER_SEEN_STORAGE_KEY = "zenmind-desktop.new-user-env-banner.seen";
+const NEW_USER_ENV_BANNER_DISMISSED_STORAGE_KEY = "zenmind-desktop.new-user-env-banner.dismissed";
 const DEFAULT_SIDEBAR_WIDTH = 196;
 const MIN_SIDEBAR_WIDTH = 176;
 const MAX_SIDEBAR_WIDTH = 340;
-const COLLAPSED_SIDEBAR_WIDTH = 76;
+const COLLAPSED_SIDEBAR_WIDTH = 60;
 const COLLAPSE_THRESHOLD = 118;
-const MAC_OVERLAY_SIDEBAR_WIDTH = 332;
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
+const SIDEBAR_NAVIGATION_LOCK_MS = 900;
+const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
+const STARTUP_LOADING_TIMEOUT_MS = 45000;
 
 export const EXTERNAL_EXPERIMENTAL_ITEMS = [
   { id: "guoxiao", label: "国小君平台", url: "https://gtjaqh.net/home/#/home", icon: "futures" as const },
@@ -35,40 +39,17 @@ type SidebarState = {
   width: number;
 };
 
-function isMacOverlaySidebarPlatform() {
-  if (typeof navigator === "undefined") {
-    return false;
-  }
-
-  const platform =
-    (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ??
-    navigator.platform ??
-    navigator.userAgent;
-
-  return /mac/i.test(platform);
-}
-
-function SidebarToggleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="16" rx="4" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M10 4v16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M6.5 8h1M6.5 12h1M6.5 16h1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const appShellRef = useRef<HTMLDivElement | null>(null);
-  const macSidebarShellRef = useRef<HTMLDivElement | null>(null);
-  const macSidebarToggleRef = useRef<HTMLButtonElement | null>(null);
+  const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
   const sidebarResizePointerIdRef = useRef<number | null>(null);
   const sidebarResizeCleanupRef = useRef<(() => void) | null>(null);
-  const isMacOverlaySidebar = isMacOverlaySidebarPlatform();
   const sidebarDragMovedRef = useRef(false);
   const sidebarDragStartRef = useRef(0);
+  const startupNavigationDoneRef = useRef(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") {
       return "light";
@@ -87,36 +68,63 @@ function AppShell() {
     try {
       const savedValue = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
       if (!savedValue) {
-        return { collapsed: isMacOverlaySidebar, width: DEFAULT_SIDEBAR_WIDTH };
+        return { collapsed: false, width: DEFAULT_SIDEBAR_WIDTH };
       }
       const parsed = JSON.parse(savedValue) as Partial<SidebarState>;
       const width = typeof parsed.width === "number"
         ? Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed.width))
         : DEFAULT_SIDEBAR_WIDTH;
       return {
-        collapsed: typeof parsed.collapsed === "boolean" ? parsed.collapsed : isMacOverlaySidebar,
+        collapsed: typeof parsed.collapsed === "boolean" ? parsed.collapsed : false,
         width
       };
     } catch {
-      return { collapsed: isMacOverlaySidebar, width: DEFAULT_SIDEBAR_WIDTH };
+      return { collapsed: false, width: DEFAULT_SIDEBAR_WIDTH };
     }
   });
   const [isSidebarDragging, setIsSidebarDragging] = useState(false);
-  const [experimentalEnabled, setExperimentalEnabled] = useState<boolean>(() => {
+  const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
+  const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
+  const [startupTimedOut, setStartupTimedOut] = useState(false);
+  const [startupGateDismissed, setStartupGateDismissed] = useState(false);
+  const [showNewUserEnvBanner, setShowNewUserEnvBanner] = useState(() => {
     if (typeof window === "undefined") {
       return false;
     }
     try {
-      return window.localStorage.getItem(EXPERIMENTAL_STORAGE_KEY) === "true";
+      const storage = window.localStorage;
+      const hasSeenBanner =
+        storage.getItem(NEW_USER_ENV_BANNER_SEEN_STORAGE_KEY) === "true" ||
+        storage.getItem(NEW_USER_ENV_BANNER_DISMISSED_STORAGE_KEY) === "true";
+      if (hasSeenBanner) {
+        return false;
+      }
+
+      const hasExistingUsage =
+        storage.getItem(THEME_STORAGE_KEY) !== null ||
+        storage.getItem(SIDEBAR_STORAGE_KEY) !== null;
+      if (hasExistingUsage) {
+        storage.setItem(NEW_USER_ENV_BANNER_SEEN_STORAGE_KEY, "true");
+        return false;
+      }
+
+      storage.setItem(NEW_USER_ENV_BANNER_SEEN_STORAGE_KEY, "true");
+      return true;
     } catch {
       return false;
     }
   });
-  const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
   const usesEmbeddedSurface =
     location.pathname.startsWith("/plugin/") ||
     location.pathname.startsWith("/external/") ||
     location.pathname.startsWith("/custom-sidebar/");
+  const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
+    services.find((service) => service.id === serviceId) ?? null
+  );
+  const startupAllReady =
+    !servicesLoading &&
+    startupServices.every((service) => service?.status === "running");
+  const showStartupGate = !startupGateDismissed && !startupAllReady;
 
   async function refreshCustomSidebarItems() {
     const result = await window.electronAPI.customSidebar.list();
@@ -143,6 +151,32 @@ function AppShell() {
   }, []);
 
   useEffect(() => {
+    if (!startupAllReady || startupNavigationDoneRef.current) {
+      return;
+    }
+
+    startupNavigationDoneRef.current = true;
+    setStartupGateDismissed(true);
+    setStartupTimedOut(false);
+
+    if (!startupGateDismissed) {
+      navigate(ASSISTANT_TARGET_PATH, { replace: true });
+    }
+  }, [navigate, startupAllReady, startupGateDismissed]);
+
+  useEffect(() => {
+    if (!showStartupGate) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setStartupTimedOut(true);
+    }, STARTUP_LOADING_TIMEOUT_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [showStartupGate]);
+
+  useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
@@ -167,14 +201,6 @@ function AppShell() {
   }, [sidebarState]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(EXPERIMENTAL_STORAGE_KEY, experimentalEnabled ? "true" : "false");
-    } catch {
-      // Ignore persistence failures and keep the in-memory setting usable.
-    }
-  }, [experimentalEnabled]);
-
-  useEffect(() => {
     if (!isSidebarDragging) {
       document.body.style.removeProperty("cursor");
       document.body.style.removeProperty("user-select");
@@ -189,44 +215,42 @@ function AppShell() {
   }, [isSidebarDragging]);
 
   useEffect(() => () => {
+    if (sidebarNavigationUnlockTimerRef.current !== null) {
+      window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
+    }
     sidebarResizeCleanupRef.current?.();
   }, []);
 
   useEffect(() => {
-    if (!isMacOverlaySidebar || sidebarState.collapsed) {
+    if (!pendingSidebarNavigationPath) {
       return;
     }
 
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (!target) {
-        return;
-      }
+    if (location.pathname !== pendingSidebarNavigationPath) {
+      return;
+    }
 
-      if (macSidebarShellRef.current?.contains(target) || macSidebarToggleRef.current?.contains(target)) {
-        return;
-      }
-
-      closeMacOverlaySidebar();
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeMacOverlaySidebar();
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isMacOverlaySidebar, sidebarState.collapsed]);
+    if (sidebarNavigationUnlockTimerRef.current !== null) {
+      window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
+    }
+    sidebarNavigationUnlockTimerRef.current = window.setTimeout(() => {
+      setPendingSidebarNavigationPath(null);
+      sidebarNavigationUnlockTimerRef.current = null;
+    }, 220);
+  }, [location.pathname, pendingSidebarNavigationPath]);
 
   function toggleTheme() {
     setThemeMode((current) => (current === "light" ? "dark" : "light"));
+  }
+
+  function dismissNewUserEnvBanner() {
+    setShowNewUserEnvBanner(false);
+    try {
+      window.localStorage.setItem(NEW_USER_ENV_BANNER_SEEN_STORAGE_KEY, "true");
+      window.localStorage.setItem(NEW_USER_ENV_BANNER_DISMISSED_STORAGE_KEY, "true");
+    } catch {
+      // Ignore persistence failures and still let users close the banner for the current session.
+    }
   }
 
   function updateSidebarWidth(nextWidth: number) {
@@ -261,7 +285,7 @@ function AppShell() {
   }
 
   function startSidebarResize(startClientX: number, pointerId: number, handle: HTMLButtonElement) {
-    if (isMacOverlaySidebar || window.innerWidth <= 1080) {
+    if (window.innerWidth <= 1080) {
       return;
     }
 
@@ -352,109 +376,117 @@ function AppShell() {
     );
   }
 
-  function openMacOverlaySidebar() {
-    setSidebarState((current) => ({ ...current, collapsed: false }));
-  }
+  function requestSidebarNavigation(targetPath: string) {
+    if (targetPath === location.pathname) {
+      return false;
+    }
 
-  function closeMacOverlaySidebar() {
-    setSidebarState((current) => ({ ...current, collapsed: true }));
+    if (pendingSidebarNavigationPath) {
+      return false;
+    }
+
+    setPendingSidebarNavigationPath(targetPath);
+    if (sidebarNavigationUnlockTimerRef.current !== null) {
+      window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
+    }
+    sidebarNavigationUnlockTimerRef.current = window.setTimeout(() => {
+      setPendingSidebarNavigationPath(null);
+      sidebarNavigationUnlockTimerRef.current = null;
+    }, SIDEBAR_NAVIGATION_LOCK_MS);
+    return true;
   }
 
   const sidebarWidth = sidebarState.collapsed
-    ? (isMacOverlaySidebar ? MAC_OVERLAY_SIDEBAR_WIDTH : COLLAPSED_SIDEBAR_WIDTH)
-    : (isMacOverlaySidebar ? MAC_OVERLAY_SIDEBAR_WIDTH : sidebarState.width);
+    ? COLLAPSED_SIDEBAR_WIDTH
+    : sidebarState.width;
   const experimentalItemMap = new Map(EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => [item.id, item]));
   const customSidebarItemMap = new Map(customSidebarItems.map((item) => [item.id, item]));
-  const usesRightCornerToggle =
-    isMacOverlaySidebar &&
-    usesEmbeddedSurface;
-  const showMacOverlayToggle = isMacOverlaySidebar;
-  const isMacOverlaySidebarOpen = isMacOverlaySidebar && !sidebarState.collapsed;
+
+  if (showStartupGate) {
+    return (
+      <StartupLoadingScreen
+        servicesLoading={servicesLoading}
+        servicesError={servicesError}
+        startupServices={startupServices}
+        timedOut={startupTimedOut}
+        onRefresh={() => void refreshServices()}
+        onOpenControlCenter={() => {
+          setStartupGateDismissed(true);
+          navigate("/control-center", { replace: true });
+        }}
+      />
+    );
+  }
 
   return (
     <div
       className={[
         "app-shell",
-        isMacOverlaySidebar ? "is-mac-overlay-sidebar" : "",
-        usesEmbeddedSurface ? "has-embedded-surface" : "",
-        showMacOverlayToggle ? "has-right-corner-toggle" : ""
+        usesEmbeddedSurface ? "has-embedded-surface" : ""
       ].filter(Boolean).join(" ")}
       ref={appShellRef}
     >
       <div className="app-window-drag-region" aria-hidden="true" />
-      {showMacOverlayToggle ? (
-        <>
-          <button
-            ref={macSidebarToggleRef}
-            type="button"
-            className={[
-              "app-sidebar-toggle",
-              sidebarState.collapsed ? "" : "is-active"
-            ].filter(Boolean).join(" ")}
-            aria-label={sidebarState.collapsed ? "打开侧边栏" : "收起侧边栏"}
-            aria-expanded={!sidebarState.collapsed}
-            onClick={(event) => {
-              event.stopPropagation();
-              if (sidebarState.collapsed) {
-                openMacOverlaySidebar();
-                return;
-              }
-              closeMacOverlaySidebar();
-            }}
-          >
-            <SidebarToggleIcon />
-          </button>
-        </>
-      ) : null}
       <div
-        ref={isMacOverlaySidebar ? macSidebarShellRef : undefined}
         className={[
           "app-sidebar-shell",
-          !isMacOverlaySidebar && sidebarState.collapsed ? "is-collapsed" : "",
-          isMacOverlaySidebarOpen ? "is-open" : "",
-          isMacOverlaySidebar ? "is-overlay" : "",
+          sidebarState.collapsed ? "is-collapsed" : "",
           isSidebarDragging ? "is-resizing" : ""
         ].filter(Boolean).join(" ")}
         style={{ "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
         <div className="app-sidebar-drag-region" aria-hidden="true" />
         <AppSidebar
-          isCollapsed={!isMacOverlaySidebar && sidebarState.collapsed}
-          experimentalEnabled={experimentalEnabled}
+          isCollapsed={sidebarState.collapsed}
+          currentPath={location.pathname}
           customSidebarItems={customSidebarItems}
-          onNavigateItem={
-            showMacOverlayToggle ? () => closeMacOverlaySidebar() : undefined
-          }
+          pendingNavigationPath={pendingSidebarNavigationPath}
+          onRequestNavigate={requestSidebarNavigation}
+          onNavigateItem={undefined}
         />
-        {!isMacOverlaySidebar ? (
-          <button
-            type="button"
-            className="app-sidebar-resizer"
-            aria-label={sidebarState.collapsed ? "展开侧边栏" : "调整或收起侧边栏"}
-            onClick={() => {
-              if (sidebarDragMovedRef.current) {
-                sidebarDragMovedRef.current = false;
-                return;
-              }
-              toggleSidebarCollapsed();
-            }}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              if (!event.isPrimary || event.button !== 0) {
-                return;
-              }
-              startSidebarResize(event.clientX, event.pointerId, event.currentTarget);
-            }}
-          >
-            <span className="app-sidebar-resizer-grip" aria-hidden="true" />
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className="app-sidebar-resizer"
+          aria-label={sidebarState.collapsed ? "展开侧边栏" : "调整或收起侧边栏"}
+          onClick={() => {
+            if (sidebarDragMovedRef.current) {
+              sidebarDragMovedRef.current = false;
+              return;
+            }
+            toggleSidebarCollapsed();
+          }}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            if (!event.isPrimary || event.button !== 0) {
+              return;
+            }
+            startSidebarResize(event.clientX, event.pointerId, event.currentTarget);
+          }}
+        >
+          <span className="app-sidebar-resizer-grip" aria-hidden="true" />
+        </button>
       </div>
       <div className="app-content">
         <main className="app-main">
           <div className="app-main-drag-region" aria-hidden="true" />
+          {!usesEmbeddedSurface && showNewUserEnvBanner ? (
+            <section className="new-user-banner" role="status" aria-live="polite">
+              <div className="new-user-banner-copy">
+                <strong>首次使用请先装载 `env.zip`</strong>
+                <span>新用户完成环境装载后，再继续后续服务初始化会更顺畅。</span>
+              </div>
+              <button
+                type="button"
+                className="new-user-banner-close"
+                aria-label="关闭提示"
+                onClick={dismissNewUserEnvBanner}
+              >
+                知道了
+              </button>
+            </section>
+          ) : null}
           <Routes>
-            <Route path="/" element={<Navigate to="/control-center" replace />} />
+            <Route path="/" element={<Navigate to={ASSISTANT_TARGET_PATH} replace />} />
             <Route path="/control-center" element={<ControlCenterPage />} />
             <Route
               path="/settings"
@@ -462,8 +494,6 @@ function AppShell() {
                 <SettingsPage
                   themeMode={themeMode}
                   onToggleTheme={toggleTheme}
-                  experimentalEnabled={experimentalEnabled}
-                  onToggleExperimental={() => setExperimentalEnabled((value) => !value)}
                   customSidebarItems={customSidebarItems}
                   onCustomSidebarItemsChange={setCustomSidebarItems}
                   onRefreshCustomSidebarItems={refreshCustomSidebarItems}
@@ -498,6 +528,104 @@ function AppShell() {
       </div>
     </div>
   );
+}
+
+function StartupLoadingScreen({
+  servicesLoading,
+  servicesError,
+  startupServices,
+  timedOut,
+  onRefresh,
+  onOpenControlCenter
+}: {
+  servicesLoading: boolean;
+  servicesError: string;
+  startupServices: Array<ServiceState | null>;
+  timedOut: boolean;
+  onRefresh: () => void;
+  onOpenControlCenter: () => void;
+}) {
+  const readyCount = startupServices.filter((service) => service?.status === "running").length;
+  const totalCount = startupServices.length;
+
+  return (
+    <div className="startup-loading-screen">
+      <div className="startup-loading-card">
+        <div className="startup-loading-mark" aria-hidden="true">Z</div>
+        <p className="eyebrow">STARTING UP</p>
+        <h1>{timedOut ? "启动时间有点久" : "正在启动 ZenMind"}</h1>
+        <p className="page-copy">
+          {timedOut
+            ? "核心服务还没有全部准备好。你可以继续等待，或先进入控制中心查看启动状态。"
+            : "正在依次拉起认证服务、智能体平台和小宅助理，准备好后会自动进入智能助理。"}
+        </p>
+
+        <div className="startup-loading-progress" aria-hidden="true">
+          <span
+            className="startup-loading-progress-bar"
+            style={{ width: `${(readyCount / Math.max(totalCount, 1)) * 100}%` }}
+          />
+        </div>
+
+        <div className="startup-loading-summary">
+          <strong>{readyCount}/{totalCount}</strong>
+          <span>核心服务已就绪</span>
+        </div>
+
+        <div className="startup-loading-list">
+          {startupServices.map((service, index) => {
+            const fallbackId = STARTUP_SERVICE_IDS[index] as ServiceId;
+            const displayName = service
+              ? getServiceDisplayName(service.id, service.name)
+              : getStartupServiceFallbackName(fallbackId);
+            const statusLabel = service
+              ? service.status === "running"
+                ? "已就绪"
+                : service.statusLabel
+              : servicesLoading
+                ? "读取中..."
+                : "等待启动";
+
+            return (
+              <div className="startup-loading-item" key={fallbackId}>
+                <span className={`startup-loading-dot${service?.status === "running" ? " is-ready" : ""}`} aria-hidden="true" />
+                <div className="startup-loading-copy">
+                  <strong>{displayName}</strong>
+                  <span>{statusLabel}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {servicesError ? <div className="startup-loading-error">{servicesError}</div> : null}
+
+        {timedOut ? (
+          <div className="startup-loading-actions">
+            <button type="button" className="action-button" onClick={onRefresh}>
+              重新检查
+            </button>
+            <button type="button" className="text-button" onClick={onOpenControlCenter}>
+              进入控制中心
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function getStartupServiceFallbackName(serviceId: ServiceId) {
+  switch (serviceId) {
+    case "zenmind-app-server":
+      return "认证服务";
+    case "agent-platform":
+      return "智能体平台";
+    case "agent-webclient":
+      return "小宅助理";
+    default:
+      return serviceId;
+  }
 }
 
 export function App() {
