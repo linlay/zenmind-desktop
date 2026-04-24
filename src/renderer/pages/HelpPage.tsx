@@ -25,11 +25,11 @@ const HELP_CATEGORIES: HelpCategory[] = [
     label: "热门问题",
     items: [
       {
-        question: "什么是国泰君安期货？",
+        question: "什么是 ZenMind？",
         answer: (
           <>
             <p>
-              国泰君安期货是一个桌面控制壳应用，用于统一管理和运行内置服务与第三方插件。
+              ZenMind 是一个桌面控制壳应用，用于统一管理和运行内置服务与第三方插件。
               它基于 Electron 构建，提供服务发现、安装、启停、日志查看和配置管理等能力。
             </p>
             <p>
@@ -52,7 +52,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
           <>
             <ol>
               <li>
-                <strong>macOS</strong>：打开 <code>.dmg</code> 文件，将国泰君安期货拖入"应用程序"文件夹
+                <strong>macOS</strong>：打开 <code>.dmg</code> 文件，将 ZenMind 拖入"应用程序"文件夹
               </li>
               <li>
                 <strong>Windows</strong>：运行 NSIS 安装包，按提示完成安装
@@ -81,7 +81,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
                 <strong>Node.js</strong>：v18 或更高版本（开发环境）
               </li>
               <li>
-                <strong>Docker / Podman</strong>：如需使用 agent-container-hub 服务，需要安装
+                <strong>Docker / Podman</strong>：如需使用容器仓库（agent-container-hub）服务，需要安装
                 Docker Desktop 或 Podman
               </li>
               <li>
@@ -101,7 +101,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
                 <strong>macOS</strong>：<code>~/Library/Application Support/zenmind-desktop/</code>
               </li>
               <li>
-                <strong>Windows</strong>：<code>&lt;安装目录&gt;\data\</code>，例如 <code>D:\国泰君安期货\data\</code>
+                <strong>Windows</strong>：<code>&lt;安装目录&gt;\data\</code>，例如 <code>D:\ZenMind\data\</code>
               </li>
             </ul>
             <p>
@@ -118,10 +118,10 @@ const HELP_CATEGORIES: HelpCategory[] = [
             <p>内置服务的推荐启动顺序：</p>
             <ol>
               <li>
-                <strong>agent-container-hub</strong>（最先启动，确保 Docker/Podman 可用）
+                <strong>容器仓库（agent-container-hub）</strong>（最先启动，确保 Docker/Podman 可用）
               </li>
               <li>
-                <strong>agent-platform</strong>（依赖 container-hub）
+                <strong>agent-platform</strong>（依赖容器仓库）
               </li>
               <li>
                 <strong>zenmind-app-server</strong>（可独立启动）
@@ -152,8 +152,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
                 查看服务日志（在详情卡片中点击"日志"标签），定位具体错误信息
               </li>
               <li>
-                确认依赖服务是否已启动。例如 agent-platform 依赖
-                agent-container-hub 先运行
+                确认依赖服务是否已启动。例如 agent-platform 依赖容器仓库先运行
               </li>
               <li>尝试"重启"按钮，有时进程残留会导致启动失败</li>
             </ol>
@@ -181,7 +180,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
               <code>dependency-missing</code> 表示该服务的前置依赖未满足。常见原因包括：
             </p>
             <ul>
-              <li>agent-container-hub 需要 Docker 或 Podman，但本机未安装或未启动</li>
+              <li>容器仓库（agent-container-hub）需要 Docker 或 Podman，但本机未安装或未启动</li>
               <li>某些服务依赖其他内置服务先完成安装</li>
             </ul>
             <p>请根据详情卡片中的"前置条件"列表逐项检查并满足依赖。</p>
@@ -392,7 +391,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
               <li>PID 文件路径可在详情卡片的健康信息中查看</li>
               <li>如果服务异常退出，PID 文件可能残留。此时重启服务会自动清理</li>
               <li>
-                应用退出时（<code>before-quit</code>）会自动停止本次会话启动过的所有服务
+                应用退出时（<code>before-quit</code>）会记录正在运行的服务，并在下次启动后尝试恢复
               </li>
             </ul>
           </>
@@ -405,7 +404,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
             <p>如果遇到无法自行解决的问题，建议提交时附上以下信息：</p>
             <ol>
               <li>操作系统版本和架构</li>
-              <li>国泰君安期货版本号</li>
+              <li>ZenMind 版本号</li>
               <li>出问题的服务名称和状态截图</li>
               <li>相关日志文件内容（脱敏处理后）</li>
               <li>复现步骤</li>

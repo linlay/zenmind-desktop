@@ -231,6 +231,13 @@ export interface CustomSidebarDeleteResult {
   message: string;
 }
 
+export interface CustomSidebarTransferResult {
+  ok: boolean;
+  items: CustomSidebarItem[];
+  path: string;
+  message: string;
+}
+
 export interface AssistantWorkerOpenRequest {
   workerKey?: string;
   agentKey?: string;
@@ -240,6 +247,13 @@ export interface AssistantWorkerOpenRequest {
 }
 
 export type AssistantWorkerOpenListener = (request: AssistantWorkerOpenRequest) => void;
+
+export interface WebviewPopupNavigateRequest {
+  guestId: number;
+  url: string;
+}
+
+export type WebviewPopupNavigateListener = (request: WebviewPopupNavigateRequest) => void;
 
 export interface DesktopApi {
   services: {
@@ -279,7 +293,10 @@ export interface DesktopApi {
     list: () => Promise<CustomSidebarItemsResult>;
     add: (input: CustomSidebarItemInput) => Promise<CustomSidebarItemResult>;
     remove: (id: string) => Promise<CustomSidebarDeleteResult>;
+    import: () => Promise<CustomSidebarTransferResult>;
+    export: () => Promise<CustomSidebarTransferResult>;
   };
   onNavigate: (listener: NavigateListener) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
+  onWebviewPopupNavigate: (listener: WebviewPopupNavigateListener) => () => void;
 }

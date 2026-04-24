@@ -1,8 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="white separated Z tray icon">
-  <g fill="#FFFFFF" transform="translate(-44 -44) scale(1.22)">
-    <path d="M120 120Q200 70 280 120Q200 95 120 120Z"/>
-    <path d="M60 180Q200 110 340 180Q200 145 60 180Z"/>
-    <polygon points="240,190 270,190 160,290 130,290"/>
-    <rect x="115" y="290" width="170" height="18"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="white hollow cloud tray icon">
+  <defs>
+    <path
+      id="white-cloud"
+      d="M350 200A90 90 0 0 1 275 330A90 90 0 0 1 125 330A90 90 0 0 1 50 200A90 90 0 0 1 125 70A90 90 0 0 1 275 70A90 90 0 0 1 350 200Z"
+    />
+    <mask id="white-hollow-mask">
+      <rect width="400" height="400" fill="white"/>
+      <g fill="black">
+        <path d="M120 135Q200 100 280 135Q200 125 120 135Z"/>
+        <path d="M60 180Q200 115 340 180Q200 160 60 180Z"/>
+        <polygon points="240,190 270,190 160,290 130,290"/>
+        <rect x="115" y="290" width="170" height="16"/>
+      </g>
+    </mask>
+  </defs>
+  <g mask="url(#white-hollow-mask)">
+    <use href="#white-cloud" fill="#FFFFFF" transform="rotate(15 200 200)"/>
   </g>
 </svg>

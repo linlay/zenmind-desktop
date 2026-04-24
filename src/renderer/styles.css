@@ -74,12 +74,12 @@ body,
 body {
   color: var(--ink);
   background: #fff;
-  padding: 0 8px 8px;
+  padding: 0;
   position: relative;
 }
 
 body.embedded-surface-body {
-  padding: 0 8px 8px;
+  padding: 0;
   background: #fff;
 }
 
@@ -187,7 +187,7 @@ a {
 }
 
 .app-shell.has-embedded-surface .app-window-drag-region {
-  display: block;
+  display: none;
 }
 
 .app-sidebar-toggle,
@@ -530,7 +530,7 @@ a {
 /* ── Sidebar Collapsed ── */
 
 .app-sidebar.is-collapsed {
-  padding: 36px 4px 8px;
+  padding: 36px 2px 8px;
 }
 
 .app-sidebar.is-collapsed .app-sidebar-top {
@@ -545,9 +545,9 @@ a {
 }
 
 .app-sidebar.is-collapsed .sidebar-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   font-size: 14px;
 }
 
@@ -565,14 +565,19 @@ a {
 }
 
 .app-sidebar.is-collapsed .sidebar-link {
-  width: 36px;
-  min-height: 36px;
+  width: 40px;
+  min-height: 40px;
   padding: 0;
   flex-direction: row;
   justify-content: center;
   margin: 0 auto;
   gap: 0;
-  border-radius: 10px;
+  border-radius: 11px;
+}
+
+.app-sidebar.is-collapsed .sidebar-link-icon {
+  width: 26px;
+  height: 26px;
 }
 
 .app-sidebar.is-collapsed .sidebar-link-label {
@@ -594,12 +599,12 @@ a {
 }
 
 .app-sidebar.is-collapsed .sidebar-link-utility {
-  width: 36px;
-  min-height: 36px;
+  width: 40px;
+  min-height: 40px;
   padding: 0;
   justify-content: center;
   margin: 0 auto;
-  border-radius: 10px;
+  border-radius: 11px;
 }
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar-toggle {
@@ -682,15 +687,15 @@ a {
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar-shell {
   position: absolute;
-  top: 24px;
-  left: 16px;
-  bottom: 16px;
-  width: min(var(--app-sidebar-width), calc(100% - 32px));
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(var(--app-sidebar-width), 100%);
   min-width: 0;
   max-width: 360px;
   z-index: 20;
   overflow: hidden;
-  border-radius: 28px;
+  border-radius: 0;
   box-shadow:
     0 18px 42px rgba(96, 128, 164, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.32);
@@ -719,6 +724,10 @@ a {
   backdrop-filter: blur(26px) saturate(150%);
   -webkit-backdrop-filter: blur(26px) saturate(150%);
   pointer-events: auto;
+}
+
+.app-shell.is-mac-overlay-sidebar .app-sidebar.is-collapsed {
+  padding: 48px 2px 8px;
 }
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar-top {
@@ -830,7 +839,7 @@ a {
 .app-main-drag-region { height: 20px; }
 
 .app-shell.has-embedded-surface .app-main-drag-region {
-  height: 56px;
+  display: none;
 }
 
 .app-sidebar a,
@@ -1481,7 +1490,10 @@ a {
 
 .control-center-summary-strip div {
   min-height: 96px;
+  flex-direction: row;
+  align-items: center;
   justify-content: center;
+  gap: 24px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.42);
   border: 1px solid rgba(255, 255, 255, 0.48);
@@ -1499,9 +1511,15 @@ a {
 }
 
 .control-center-summary-strip strong {
+  flex: none;
   font-size: 32px;
   line-height: 1;
   letter-spacing: -0.03em;
+}
+
+.control-center-summary-strip .summary-kicker {
+  margin: 0;
+  white-space: nowrap;
 }
 
 .control-center-import {
@@ -1819,16 +1837,19 @@ a {
   display: grid;
   grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .service-sider,
 .control-center-detail,
 .control-center-empty {
+  align-self: stretch;
   max-height: none;
 }
 
 .service-sider {
+  display: flex;
+  flex-direction: column;
   padding: 8px;
   border: none;
   border-radius: 8px;
@@ -1849,6 +1870,7 @@ a {
 .service-accordion {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 10px;
   padding-right: 2px;
 }
@@ -2019,14 +2041,18 @@ a {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  align-items: flex-start;
+  align-items: center;
   margin-bottom: 6px;
 }
 
 .service-nav-card h3 {
+  min-width: 0;
   margin: 0;
   font-size: 14px;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .service-nav-card p {
@@ -2040,26 +2066,29 @@ a {
   -webkit-line-clamp: 2;
 }
 
-.service-nav-card-foot {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
-}
-
 .service-nav-version {
   display: inline-flex;
   align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  min-height: 18px;
   color: currentColor;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 
-.service-nav-card:not(.is-active) .service-nav-version {
+.service-nav-version-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: currentColor;
+}
+
+.service-nav-card:not(.is-active) .service-nav-version-status {
   background: rgba(38, 99, 235, 0.08);
   color: var(--ink-muted);
 }
@@ -2070,7 +2099,6 @@ a {
   flex: none;
   width: 10px;
   height: 10px;
-  margin-top: 4px;
   border-radius: 999px;
   background: var(--ink-muted);
 }
@@ -2176,6 +2204,7 @@ a {
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+  margin-bottom: 10px;
 }
 
 .service-card-badges {
@@ -2193,9 +2222,14 @@ a {
 
 .service-description,
 .service-message {
+  margin: 0 0 10px;
   color: var(--ink-soft);
   font-size: 14px;
   line-height: 1.7;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .service-inline-meta {
@@ -2203,9 +2237,9 @@ a {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  margin: 0 0 14px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.26);
 }
 
@@ -2296,17 +2330,17 @@ a {
 
 .meta-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  margin: 0 0 16px;
+  margin: 0 0 12px;
 }
 
 .meta-grid-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.22);
   border: none;
 }

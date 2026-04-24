@@ -37,8 +37,12 @@ export function buildPluginEmbeddedUrl(
   const url = new URL(webUrl);
   if (serviceId === "agent-webclient") {
     url.pathname = "/appagent";
+    url.searchParams.set("desktopApp", "1");
+    if (options.hostTheme) {
+      url.searchParams.set("hostTheme", options.hostTheme);
+    }
   }
-  if (serviceId === "agent-webclient" || serviceId === "pan-webclient") {
+  if (serviceId === "pan-webclient") {
     url.searchParams.set("desktopApp", "1");
     if (options.hostTheme) {
       url.searchParams.set("hostTheme", options.hostTheme);

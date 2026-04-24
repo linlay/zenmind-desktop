@@ -15,10 +15,19 @@ test("buildPluginEmbeddedUrl appends desktopApp=1 for pan-webclient", () => {
   );
 });
 
-test("buildPluginEmbeddedUrl rewrites agent-webclient to /appagent and appends desktopApp=1", () => {
+test("buildPluginEmbeddedUrl rewrites agent-webclient to /appagent with desktopApp=1", () => {
   assert.equal(
     buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/"),
     "http://127.0.0.1:9090/appagent?desktopApp=1"
+  );
+});
+
+test("buildPluginEmbeddedUrl keeps hostTheme for agent-webclient with desktopApp=1", () => {
+  assert.equal(
+    buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {
+      hostTheme: "dark"
+    }),
+    "http://127.0.0.1:9090/appagent?desktopApp=1&hostTheme=dark"
   );
 });
 

@@ -60,10 +60,10 @@ test("packaged Windows builds use the installation directory data folder", () =>
     platform: "win32",
     isPackaged: true,
     userDataPath: String.raw`C:\Users\alice\AppData\Roaming\zenmind-desktop`,
-    execPath: String.raw`D:\国泰君安期货\国泰君安期货.exe`
+    execPath: String.raw`D:\ZenMind\ZenMind.exe`
   });
 
-  assert.equal(dataRoot, String.raw`D:\国泰君安期货\data`);
+  assert.equal(dataRoot, String.raw`D:\ZenMind\data`);
 });
 
 test("managed directory helpers join from the computed data root", (t) => {

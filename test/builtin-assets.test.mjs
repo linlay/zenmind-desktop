@@ -8,6 +8,7 @@ import {
   builtinServices,
   discoverBuiltinServices,
   listArchiveEntries,
+  readManifestFromArchive,
   syncBuiltinAssets,
   validateBundleArchive
 } from "../scripts/lib/builtin-assets.mjs";
@@ -188,6 +189,10 @@ test("synced builtin assets include agent-webclient so assistant entry is availa
   const entries = listArchiveEntries(assetPath);
   assert.ok(entries.has("agent-webclient/manifest.json"));
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
+
+  const manifest = readManifestFromArchive(assetPath);
+  assert.equal(manifest?.frontend?.embedPath, "/appagent");
+  assert.equal(manifest?.frontend?.embedParams?.desktopApp, "1");
 });
 
 test("actual synced agent-platform asset includes required entries", () => {

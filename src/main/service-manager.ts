@@ -21,7 +21,7 @@ import { getPluginInstallDir } from "./plugin-loader";
 import { ensureKeyPairForPan } from "./pan-auth";
 import { readEnvFile, parseEnvFileContent } from "./env-file";
 import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
-import { getServicesRoot } from "./user-paths";
+import { getDataRoot, getServicesRoot } from "./user-paths";
 
 const startedThisSession = new Set<ServiceId>();
 const LOG_READ_WINDOW_BYTES = 256 * 1024;
@@ -96,8 +96,16 @@ type InitializationState = {
   lastError?: string;
 };
 
+type LastRunningServicesState = {
+  runningServiceIds: ServiceId[];
+  updatedAt: string;
+};
+
 const INITIALIZATION_STATE_DIRNAME = ".zenmind-desktop";
 const INITIALIZATION_STATE_FILE = "init-state.json";
+const LAST_RUNNING_SERVICES_FILE = "last-running-services.json";
+const DEFAULT_STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
+const RESTORE_PRIORITY = ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 
 function buildServiceEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -134,6 +142,33 @@ function resolveNodeBin() {
   }
 
   return process.execPath;
+}
+
+function resolveCommandBin(command: string) {
+  const normalized = command.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const serviceEnv = buildServiceEnv();
+  const locator = process.platform === "win32" ? "where" : "which";
+  try {
+    const result = spawnSync(locator, [normalized], {
+      encoding: "utf8",
+      env: serviceEnv,
+      timeout: 1500
+    });
+    if (result.status === 0 && !result.error) {
+      return result.stdout
+        .split(/\r?\n/u)
+        .map((entry) => entry.trim())
+        .find(Boolean) ?? "";
+    }
+  } catch {
+    // Fall back to an empty string when the host command cannot be located.
+  }
+
+  return "";
 }
 
 const bundleValidationCache = new Map<string, { key: string; missingEntries: string[] }>();
@@ -209,6 +244,60 @@ function isAssetNewerThanInstall(assetPath: string, installDir: string) {
 
 function writeInitializationState(installDir: string, state: InitializationState) {
   const filePath = getInitializationStatePath(installDir);
+  ensureDir(path.dirname(filePath));
+  fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
+
+function getLastRunningServicesStatePath(app: App) {
+  return path.join(getDataRoot(app), INITIALIZATION_STATE_DIRNAME, LAST_RUNNING_SERVICES_FILE);
+}
+
+function orderServiceIdsForRestore(serviceIds: ServiceId[]) {
+  const priority = new Map<ServiceId, number>(RESTORE_PRIORITY.map((serviceId, index) => [serviceId, index]));
+  return [...new Set(serviceIds)].sort((left, right) => {
+    const leftPriority = priority.get(left) ?? RESTORE_PRIORITY.length;
+    const rightPriority = priority.get(right) ?? RESTORE_PRIORITY.length;
+    if (leftPriority !== rightPriority) {
+      return leftPriority - rightPriority;
+    }
+    return left.localeCompare(right);
+  });
+}
+
+function getDefaultStartupServiceIds() {
+  return [...DEFAULT_STARTUP_SERVICE_IDS];
+}
+
+function getServiceIdsToRestore(app: App) {
+  return orderServiceIdsForRestore([
+    ...getDefaultStartupServiceIds(),
+    ...readLastRunningServices(app)
+  ]);
+}
+
+function readLastRunningServices(app: App): ServiceId[] {
+  const filePath = getLastRunningServicesStatePath(app);
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, unknown>;
+    const runningServiceIds = Array.isArray(parsed.runningServiceIds)
+      ? parsed.runningServiceIds.filter((value): value is ServiceId => typeof value === "string" && value.trim().length > 0)
+      : [];
+    return orderServiceIdsForRestore(runningServiceIds);
+  } catch {
+    return [];
+  }
+}
+
+function writeLastRunningServices(app: App, serviceIds: ServiceId[]) {
+  const filePath = getLastRunningServicesStatePath(app);
+  const state: LastRunningServicesState = {
+    runningServiceIds: orderServiceIdsForRestore(serviceIds),
+    updatedAt: new Date().toISOString()
+  };
   ensureDir(path.dirname(filePath));
   fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
@@ -1180,6 +1269,24 @@ const agentWebclientDefaultBaseUrls = new Set([
   "http://localhost:11949"
 ]);
 
+function agentWebclientInstallNeedsRefresh(installDir: string) {
+  const serverPath = path.join(installDir, "backend", "server.js");
+  if (!fs.existsSync(serverPath)) {
+    return false;
+  }
+
+  try {
+    const serverContent = fs.readFileSync(serverPath, "utf8");
+    return (
+      !serverContent.includes("const httpProxy = require('http-proxy');") ||
+      !serverContent.includes("function createWebSocketProxy(") ||
+      !serverContent.includes("server.on('upgrade'")
+    );
+  } catch {
+    return true;
+  }
+}
+
 const agentPlatformDesktopRuntimePaths = [
   ["REGISTRIES_DIR", "registries"],
   ["TOOLS_DIR", "tools"],
@@ -1192,6 +1299,17 @@ const agentPlatformDesktopRuntimePaths = [
   ["MEMORY_DIR", "memory"],
   ["PAN_DIR", "pan"],
   ["SKILLS_MARKET_DIR", "skills-market"]
+] as const;
+
+const agentPlatformDisabledGatewayEnvKeys = [
+  "AGENT_GATEWAY_WS_URL",
+  "GATEWAY_WS_URL",
+  "GATEWAY_USER_ID",
+  "GATEWAY_TICKET",
+  "GATEWAY_AGENT_KEY",
+  "GATEWAY_CHANNEL",
+  "GATEWAY_UPLOAD_PATH",
+  "GATEWAY_AUTH_TOKEN"
 ] as const;
 
 function resolveDesktopRuntimeRoot() {
@@ -1225,6 +1343,13 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     }
     updates.set("AGENT_AUTH_ENABLED", "false");
     updates.set("NODE_BIN", resolveNodeBin());
+    const resolvedNpxBin = resolveCommandBin("npx");
+    if (resolvedNpxBin) {
+      updates.set("CLAUDE_CODE_ACP_COMMAND", resolvedNpxBin);
+    }
+    for (const key of agentPlatformDisabledGatewayEnvKeys) {
+      updates.set(key, "");
+    }
 
     const desktopRuntimeRoot = resolveDesktopRuntimeRoot();
     if (desktopRuntimeRoot) {
@@ -1243,6 +1368,13 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 
   if (service.id === "agent-webclient") {
     const installDir = getInstallDir(app, service);
+    const assetPath = ensureBundleAssetHealthy(app, service);
+    const forceRefresh = agentWebclientInstallNeedsRefresh(installDir);
+    if (forceRefresh || isAssetNewerThanInstall(assetPath, installDir)) {
+      await installBuiltinService(app, service.id, {
+        force: forceRefresh
+      });
+    }
     const envPath = path.join(installDir, ".env");
     const env = readEnvFile(envPath);
     const platformState = await getServiceState(app, "agent-platform");
@@ -1603,13 +1735,14 @@ export async function stopStartedServices(app: App) {
 
 export async function stopRunningServices(app: App) {
   const services = await listServices(app);
+  const runningServices = services.filter((service) => service.status === "running");
+  writeLastRunningServices(
+    app,
+    runningServices.map((service) => service.id)
+  );
   const failures: string[] = [];
 
-  for (const service of services) {
-    if (service.status !== "running") {
-      continue;
-    }
-
+  for (const service of runningServices) {
     try {
       await stopService(app, service.id);
     } catch (error) {
@@ -1621,6 +1754,36 @@ export async function stopRunningServices(app: App) {
   if (failures.length > 0) {
     throw new Error(`停止运行中服务失败：${failures.join("；")}`);
   }
+}
+
+export async function restoreRunningServices(app: App) {
+  const serviceIds = getServiceIdsToRestore(app);
+  const restored: ServiceId[] = [];
+  const failures: string[] = [];
+
+  for (const serviceId of serviceIds) {
+    try {
+      getService(serviceId);
+    } catch {
+      continue;
+    }
+
+    try {
+      const result = await startService(app, serviceId);
+      if (result.ok) {
+        restored.push(serviceId);
+      } else {
+        failures.push(`${serviceId}: ${result.message}`);
+      }
+    } catch (error) {
+      failures.push(`${serviceId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  return {
+    restored,
+    failures
+  };
 }
 
 export const __testInternals = {
@@ -1636,8 +1799,15 @@ export const __testInternals = {
   ensureBundleAssetHealthy,
   upsertEnvFileContent,
   ensurePreStartRequirements,
+  agentWebclientInstallNeedsRefresh,
   resolveNodeBin,
   decodePowerShellCapturePayload,
   getInitializationStatePath,
-  readInitializationState
+  readInitializationState,
+  getLastRunningServicesStatePath,
+  getDefaultStartupServiceIds,
+  getServiceIdsToRestore,
+  orderServiceIdsForRestore,
+  readLastRunningServices,
+  writeLastRunningServices
 };

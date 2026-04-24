@@ -100,6 +100,45 @@ function normalizeItem(item: Partial<CustomSidebarItem>, usedIconIds: Set<string
   }
 }
 
+function sanitizeItems(rawItems: Partial<CustomSidebarItem>[]) {
+  const seenIds = new Set<string>();
+  const seenUrls = new Set<string>();
+  const usedIconIds = new Set<string>();
+  const items: CustomSidebarItem[] = [];
+
+  for (const rawItem of rawItems) {
+    if (typeof rawItem?.id === "string" && seenIds.has(rawItem.id)) {
+      continue;
+    }
+
+    const item = normalizeItem(rawItem, usedIconIds);
+    if (!item || seenIds.has(item.id) || seenUrls.has(item.url)) {
+      continue;
+    }
+
+    seenIds.add(item.id);
+    seenUrls.add(item.url);
+    items.push(item);
+  }
+
+  return items;
+}
+
+function parseItemsPayload(raw: unknown) {
+  if (Array.isArray(raw)) {
+    return raw as Partial<CustomSidebarItem>[];
+  }
+  if (raw && typeof raw === "object" && Array.isArray((raw as Partial<StoredCustomSidebarItems>).items)) {
+    return (raw as Partial<StoredCustomSidebarItems>).items as Partial<CustomSidebarItem>[];
+  }
+  return [];
+}
+
+function parseItemsFileContent(content: string) {
+  const parsed = JSON.parse(content) as unknown;
+  return sanitizeItems(parseItemsPayload(parsed));
+}
+
 function readItems(app: App): CustomSidebarItem[] {
   const targetPath = getCustomSidebarPath(app);
   if (!fs.existsSync(targetPath)) {
@@ -107,26 +146,7 @@ function readItems(app: App): CustomSidebarItem[] {
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(targetPath, "utf8")) as Partial<StoredCustomSidebarItems>;
-    if (!Array.isArray(parsed.items)) {
-      return [];
-    }
-
-    const seenIds = new Set<string>();
-    const usedIconIds = new Set<string>();
-    const items: CustomSidebarItem[] = [];
-    for (const rawItem of parsed.items) {
-      if (typeof rawItem?.id === "string" && seenIds.has(rawItem.id)) {
-        continue;
-      }
-      const item = normalizeItem(rawItem, usedIconIds);
-      if (!item || seenIds.has(item.id)) {
-        continue;
-      }
-      seenIds.add(item.id);
-      items.push(item);
-    }
-    return items;
+    return parseItemsFileContent(fs.readFileSync(targetPath, "utf8"));
   } catch (error) {
     console.warn("failed to read custom sidebar items", error);
     return [];
@@ -229,9 +249,66 @@ export function removeCustomSidebarItem(app: App, id: string) {
   };
 }
 
+export function importCustomSidebarItems(app: App, fileContent: string) {
+  const currentItems = readItems(app);
+
+  try {
+    const importedItems = parseItemsFileContent(fileContent);
+    if (importedItems.length === 0) {
+      return {
+        ok: false,
+        items: currentItems,
+        message: "导入文件中没有可用的侧边栏入口。"
+      };
+    }
+
+    const currentUrls = new Set(currentItems.map((item) => item.url));
+    const mergedRawItems = [
+      ...currentItems,
+      ...importedItems.filter((item) => !currentUrls.has(item.url))
+    ];
+    const nextItems = sanitizeItems(mergedRawItems);
+    const addedCount = nextItems.length - currentItems.length;
+
+    if (addedCount <= 0) {
+      return {
+        ok: false,
+        items: currentItems,
+        message: "导入的入口已全部存在于当前侧边栏中。"
+      };
+    }
+
+    writeItems(app, nextItems);
+    return {
+      ok: true,
+      items: nextItems,
+      message: `已导入 ${addedCount} 个侧边栏入口。`
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      items: currentItems,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+export function exportCustomSidebarItems(app: App) {
+  const items = readItems(app);
+  return JSON.stringify(
+    {
+      exportedAt: new Date().toISOString(),
+      items
+    },
+    null,
+    2
+  );
+}
+
 export const __testInternals = {
   getCustomSidebarPath,
   normalizeUrl,
   normalizeLabel,
-  pickNextIconId
+  pickNextIconId,
+  parseItemsFileContent
 };

@@ -5,8 +5,6 @@ import type { CustomSidebarItem, CustomSidebarItemsResult } from "../../shared/c
 type SettingsPageProps = {
   themeMode: "light" | "dark";
   onToggleTheme: () => void;
-  experimentalEnabled: boolean;
-  onToggleExperimental: () => void;
   customSidebarItems: CustomSidebarItem[];
   onCustomSidebarItemsChange: (items: CustomSidebarItem[]) => void;
   onRefreshCustomSidebarItems: () => Promise<CustomSidebarItemsResult>;
@@ -65,8 +63,6 @@ function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
 export function SettingsPage({
   themeMode,
   onToggleTheme,
-  experimentalEnabled,
-  onToggleExperimental,
   customSidebarItems,
   onCustomSidebarItemsChange,
   onRefreshCustomSidebarItems
@@ -76,6 +72,7 @@ export function SettingsPage({
   const [customSidebarLabel, setCustomSidebarLabel] = useState("");
   const [customSidebarUrl, setCustomSidebarUrl] = useState("");
   const [customSidebarPending, setCustomSidebarPending] = useState(false);
+  const [customSidebarTransferPending, setCustomSidebarTransferPending] = useState("");
   const [deletingCustomSidebarId, setDeletingCustomSidebarId] = useState("");
 
   async function handleAddCustomSidebarItem(event: FormEvent<HTMLFormElement>) {
@@ -121,6 +118,32 @@ export function SettingsPage({
     }
   }
 
+  async function handleImportCustomSidebarItems() {
+    setCustomSidebarTransferPending("import");
+    try {
+      const result = await window.electronAPI.customSidebar.import();
+      setFeedback(result.message);
+      onCustomSidebarItemsChange(result.items);
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setCustomSidebarTransferPending("");
+    }
+  }
+
+  async function handleExportCustomSidebarItems() {
+    setCustomSidebarTransferPending("export");
+    try {
+      const result = await window.electronAPI.customSidebar.export();
+      setFeedback(result.path ? `${result.message} ${result.path}` : result.message);
+      onCustomSidebarItemsChange(result.items);
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setCustomSidebarTransferPending("");
+    }
+  }
+
   return (
     <section className="settings-page">
       <div className="page-head">
@@ -130,12 +153,12 @@ export function SettingsPage({
           <p className="page-copy">
             {isWindows ? (
               <>
-                管理国泰君安期货的外观、本地数据目录和自定义侧边栏。运行时数据会写入这个根目录，包含
+                在这里调整界面风格、查看数据目录，并管理固定在左侧的常用入口。运行数据会写入此目录，包含
                 <code>services</code>、<code>plugins</code> 和 <code>credentials</code>。
-                Windows 安装版会默认使用安装目录下的 <code>data</code> 文件夹；自定义侧边栏会保存到本机设置文件。
+                Windows 安装版默认使用安装目录下的 <code>data</code> 文件夹；自定义入口仅保存在当前设备。
               </>
             ) : (
-              <>管理国泰君安期货的外观、实验性功能和自定义侧边栏。自定义侧边栏会保存到本机设置文件。</>
+              <>在这里调整界面风格，并管理固定在左侧的常用入口。自定义入口仅保存在当前设备。</>
             )}
           </p>
         </div>
@@ -148,9 +171,9 @@ export function SettingsPage({
           <p className="eyebrow">APPEARANCE</p>
           <h2>主题模式</h2>
           <p className="page-copy">
-            在浅色与深色界面之间切换。当前为
+            选择你更习惯的界面风格。当前正在使用
             <strong>{themeMode === "light" ? "浅色" : "深色"}</strong>
-            模式。
+            主题。
           </p>
         </div>
         <div className="settings-theme-actions">
@@ -169,7 +192,7 @@ export function SettingsPage({
             </span>
             <span className="settings-theme-copy">
               <strong>浅色</strong>
-              <span>更明亮、通透的工作界面</span>
+              <span>适合白天和明亮环境</span>
             </span>
           </button>
           <button
@@ -187,25 +210,9 @@ export function SettingsPage({
             </span>
             <span className="settings-theme-copy">
               <strong>深色</strong>
-              <span>更沉静，适合夜间或专注场景</span>
+              <span>适合夜间和长时间专注</span>
             </span>
           </button>
-        </div>
-      </div>
-
-      <div className="data-root-card">
-        <div>
-          <p className="eyebrow">EXPERIMENTAL</p>
-          <h2>实验性功能</h2>
-          <p className="page-copy">
-            开启后，侧边栏会显示<strong>国小君平台</strong>和<strong>秋而工作站</strong>等实验性入口。
-          </p>
-        </div>
-        <div className="data-root-actions">
-          <label className="experimental-switch" style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-            <input type="checkbox" checked={experimentalEnabled} onChange={onToggleExperimental} />
-            <span>{experimentalEnabled ? "已开启" : "未开启"}</span>
-          </label>
         </div>
       </div>
 
@@ -214,27 +221,26 @@ export function SettingsPage({
           <p className="eyebrow">SIDEBAR</p>
           <h2>自定义侧边栏</h2>
           <p className="page-copy">
-            默认集成的功能入口保持固定，不能修改或删除。你可以在这里添加自己的网页入口，
-            例如输入 <code>www.baidu.com</code>，下次启动后也会保留在侧边栏。新增入口会自动从图标库分配不重复图标。
+            把常用网页固定到左侧，打开应用就能直接访问。自定义入口会保存在当前设备，也支持通过导入、导出迁移；系统入口不支持修改或删除。
           </p>
         </div>
         <div className="custom-sidebar-panel">
           <form className="custom-sidebar-form" onSubmit={(event) => void handleAddCustomSidebarItem(event)}>
             <label>
-              <span>入口名称</span>
+              <span>显示名称</span>
               <input
                 value={customSidebarLabel}
                 onChange={(event) => setCustomSidebarLabel(event.target.value)}
-                placeholder="例如：百度"
+                placeholder="例如：Jira、知识库"
                 maxLength={24}
               />
             </label>
             <label>
-              <span>网站地址</span>
+              <span>网页地址</span>
               <input
                 value={customSidebarUrl}
                 onChange={(event) => setCustomSidebarUrl(event.target.value)}
-                placeholder="例如：www.baidu.com"
+                placeholder="支持输入完整链接或域名，例如 jira.example.com"
                 required
               />
             </label>
@@ -244,13 +250,31 @@ export function SettingsPage({
           </form>
 
           <div className="custom-sidebar-list-head">
-            <strong>我的侧边栏</strong>
-            <button type="button" className="text-button" onClick={() => void handleReloadCustomSidebarItems()}>
-              刷新
-            </button>
+            <strong>已添加的入口</strong>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => void handleImportCustomSidebarItems()}
+                disabled={customSidebarTransferPending !== ""}
+              >
+                {customSidebarTransferPending === "import" ? "导入中..." : "导入"}
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => void handleExportCustomSidebarItems()}
+                disabled={customSidebarTransferPending !== ""}
+              >
+                {customSidebarTransferPending === "export" ? "导出中..." : "导出"}
+              </button>
+              <button type="button" className="text-button" onClick={() => void handleReloadCustomSidebarItems()}>
+                刷新
+              </button>
+            </div>
           </div>
           {customSidebarItems.length === 0 ? (
-            <div className="custom-sidebar-empty">还没有自定义入口。添加后会显示在默认功能入口下方。</div>
+            <div className="custom-sidebar-empty">还没有添加自定义入口，添加后会显示在系统入口下方。</div>
           ) : (
             <div className="custom-sidebar-list">
               {customSidebarItems.map((item) => (

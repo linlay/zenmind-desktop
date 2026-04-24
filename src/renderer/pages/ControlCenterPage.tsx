@@ -2,11 +2,12 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode 
 import type { ServiceConfigReadResult, ServiceId, ServiceLogTarget, ServiceState } from "@shared/contracts";
 import { useServices } from "../services/ServicesContext";
 import { useNavigate } from "react-router-dom";
+import { getServiceDisplayName } from "../service-display";
 
 const CORE_MODULES = [
   {
     id: "agent-container-hub",
-    name: "Container Hub",
+    name: "容器仓库",
     description: "宿主机容器服务，负责为后续智能体运行时提供沙箱能力。"
   },
   {
@@ -26,7 +27,11 @@ const CORE_MODULES = [
   }
 ] as const;
 
-const QUICK_START_ORDER = CORE_MODULES.map((module) => module.id);
+const QUICK_START_ORDER = [
+  "zenmind-app-server",
+  "agent-platform",
+  "agent-webclient"
+] as const;
 
 function statusClass(status: ServiceState["status"]) {
   switch (status) {
@@ -51,12 +56,11 @@ function statusDotClass(status: ServiceState["status"]) {
   switch (status) {
     case "running":
       return "running";
+    case "error":
+      return "danger";
     case "config-required":
     case "initialization-required":
     case "dependency-missing":
-      return "warning";
-    case "error":
-      return "danger";
     case "stopped":
     case "not-installed":
     default:
@@ -74,6 +78,7 @@ type MetaItem = {
   key: string;
   label: string;
   value: string;
+  title?: string;
   actionLabel?: string;
   disabled?: boolean;
   onAction?: () => void;
@@ -537,6 +542,7 @@ export function ControlCenterPage() {
   const activeCoreModule = selectedMarketService ? null : selectedCoreModule;
   const selectedConfigMeta = activeDetailService ? configMeta[activeDetailService.id] : undefined;
   const errorLogDisplay = activeDetailService ? getErrorLogDisplay(activeDetailService) : "未声明";
+  const detailEndpoint = activeDetailService?.healthMeta.webUrl ?? "";
 
   function closeLogViewer() {
     logRequestIdRef.current += 1;
@@ -777,7 +783,7 @@ export function ControlCenterPage() {
       .filter((service): service is ServiceState => Boolean(service));
 
     if (orderedServices.length === 0) {
-      setFeedback("当前没有可一键启动的服务。");
+      setFeedback("当前没有可一键启动的服务。容器仓库需要手动启动。");
       return;
     }
 
@@ -790,20 +796,20 @@ export function ControlCenterPage() {
     try {
       for (const service of orderedServices) {
         if (service.status === "running") {
-          skippedNames.push(service.name);
+          skippedNames.push(getServiceDisplayName(service.id, service.name));
           continue;
         }
 
         try {
           const result = await start(service.id);
           if (result.ok) {
-            startedNames.push(service.name);
+            startedNames.push(getServiceDisplayName(service.id, service.name));
           } else {
-            failedMessages.push(`${service.name}：${result.message}`);
+            failedMessages.push(`${getServiceDisplayName(service.id, service.name)}：${result.message}`);
           }
         } catch (reason) {
           failedMessages.push(
-            `${service.name}：${reason instanceof Error ? reason.message : String(reason)}`
+            `${getServiceDisplayName(service.id, service.name)}：${reason instanceof Error ? reason.message : String(reason)}`
           );
         }
       }
@@ -827,47 +833,44 @@ export function ControlCenterPage() {
         {
           key: "installDir",
           label: "安装目录",
-          value: activeDetailService.installDir || "未声明"
+          value: activeDetailService.installDir || "未声明",
+          title: activeDetailService.installDir || "未声明"
         },
         {
           key: "logFile",
           label: "日志文件",
           value: activeDetailService.healthMeta.logFilePath || "未声明",
+          title: activeDetailService.healthMeta.logFilePath || "未声明",
           actionLabel: activeDetailService.healthMeta.logFilePath ? "打开" : undefined,
           onAction: activeDetailService.healthMeta.logFilePath
-            ? () => void openLogViewer(activeDetailService, "main", `${activeDetailService.name} · 日志文件`)
+            ? () =>
+                void openLogViewer(
+                  activeDetailService,
+                  "main",
+                  `${getServiceDisplayName(activeDetailService.id, activeDetailService.name)} · 日志文件`
+                )
             : undefined
         },
         {
           key: "errorLog",
           label: "错误日志",
           value: errorLogDisplay,
+          title: errorLogDisplay,
           actionLabel: activeDetailService.healthMeta.errorLogFilePath ? "打开" : undefined,
           onAction: activeDetailService.healthMeta.errorLogFilePath
-            ? () => void openLogViewer(activeDetailService, "error", `${activeDetailService.name} · 错误日志`)
+            ? () =>
+                void openLogViewer(
+                  activeDetailService,
+                  "error",
+                  `${getServiceDisplayName(activeDetailService.id, activeDetailService.name)} · 错误日志`
+                )
             : undefined
         },
         {
           key: "pidFile",
           label: "PID 文件",
-          value: activeDetailService.healthMeta.pidFilePath || "未声明"
-        },
-        {
-          key: "webUrl",
-          label: "访问入口",
-          value: activeDetailService.healthMeta.webUrl || "无",
-          actionLabel:
-            activeDetailService.frontendMode !== "none" &&
-            activeDetailService.status === "running" &&
-            activeDetailService.healthMeta.webUrl
-              ? "打开"
-              : undefined,
-          onAction:
-            activeDetailService.frontendMode !== "none" &&
-            activeDetailService.status === "running" &&
-            activeDetailService.healthMeta.webUrl
-              ? () => navigate(`/plugin/${activeDetailService.id}`)
-              : undefined
+          value: activeDetailService.healthMeta.pidFilePath || "未声明",
+          title: activeDetailService.healthMeta.pidFilePath || "未声明"
         }
       ]
     : [];
@@ -879,19 +882,17 @@ export function ControlCenterPage() {
           <h1>控制中心</h1>
         </div>
         <div className="control-center-hero-panel">
-          <div className="summary-strip control-center-summary-strip">
-            <div>
-              <span className="summary-kicker">已登记</span>
-              <strong>{serviceCounts.total}</strong>
-              <span>已登记服务</span>
-            </div>
-            <div>
-              <span className="summary-kicker">运行中</span>
-              <strong>{serviceCounts.running}</strong>
-              <span>运行中</span>
+            <div className="summary-strip control-center-summary-strip">
+              <div>
+                <span className="summary-kicker">服务总数</span>
+                <strong>{serviceCounts.total}</strong>
+              </div>
+              <div>
+                <span className="summary-kicker">运行实例</span>
+                <strong>{serviceCounts.running}</strong>
+              </div>
             </div>
           </div>
-        </div>
       </div>
 
       {feedback ? <div className="feedback-banner">{feedback}</div> : null}
@@ -962,7 +963,10 @@ export function ControlCenterPage() {
                         group.services.map((item) => {
                           const service = "service" in item ? item.service : item;
                           const cardId = "service" in item ? item.id : item.id;
-                          const cardName = "service" in item ? item.name : item.name;
+                          const cardName =
+                            "service" in item && service
+                              ? getServiceDisplayName(service.id, item.name)
+                              : item.name;
                           const cardDescription = "service" in item ? item.description : item.description;
                           const isSelected = selectedServiceId === cardId;
                           const isPendingLifecycle =
@@ -970,6 +974,11 @@ export function ControlCenterPage() {
                             pendingAction?.scope === "lifecycle" &&
                             pendingAction.serviceId === service.id;
                           const statusLabel = service ? service.statusLabel : "待接入";
+                          const statusClassName = isPendingLifecycle
+                            ? "loading"
+                            : service
+                              ? statusDotClass(service.status)
+                              : "idle";
 
                           return (
                             <button
@@ -981,11 +990,21 @@ export function ControlCenterPage() {
                             >
                               <div className="service-nav-card-head">
                                 <h3>{cardName}</h3>
-                                <span
-                                  className={`status-dot ${isPendingLifecycle ? "loading" : service ? statusDotClass(service.status) : "idle"}`}
-                                  title={isPendingLifecycle ? "处理中" : statusLabel}
-                                  aria-hidden="true"
-                                />
+                                {service ? (
+                                  <span
+                                    className="service-nav-version-status"
+                                    title={isPendingLifecycle ? "处理中" : `${service.version} · ${statusLabel}`}
+                                  >
+                                    <span className="service-nav-version">{service.version}</span>
+                                    <span className={`status-dot ${statusClassName}`} aria-hidden="true" />
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`status-dot ${statusClassName}`}
+                                    title={statusLabel}
+                                    aria-hidden="true"
+                                  />
+                                )}
                               </div>
                               <p>{cardDescription}</p>
                             </button>
@@ -1006,16 +1025,33 @@ export function ControlCenterPage() {
           <article className="service-card control-center-detail">
             <div className="service-card-head">
               <div>
-                <p className="service-kicker">{activeDetailService.version}</p>
-                <h2>{activeDetailService.name}</h2>
+                <h2>{getServiceDisplayName(activeDetailService.id, activeDetailService.name)}</h2>
               </div>
-              <span className={`status-pill ${statusClass(activeDetailService.status)}`}>
-                {activeDetailService.statusLabel}
-              </span>
+              <div className="service-card-badges">
+                <span className="status-pill muted">{activeDetailService.version}</span>
+                <span className={`status-pill ${statusClass(activeDetailService.status)}`}>
+                  {activeDetailService.statusLabel}
+                </span>
+              </div>
             </div>
 
-            <p className="service-description">{activeDetailService.description}</p>
-            <p className="service-message">{activeDetailService.message}</p>
+            {detailEndpoint ? (
+              <div className="service-inline-meta">
+                <span className="service-inline-meta-label">访问入口</span>
+                <span className="service-inline-meta-value" title={detailEndpoint}>
+                  {detailEndpoint}
+                </span>
+                {activeDetailService.frontendMode !== "none" && activeDetailService.status === "running" ? (
+                  <button
+                    type="button"
+                    className="action-button"
+                    onClick={() => navigate(`/plugin/${activeDetailService.id}`)}
+                  >
+                    打开
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
 
             <dl className="meta-grid">
               {metaItems.map((item) => (
@@ -1033,7 +1069,7 @@ export function ControlCenterPage() {
                       </button>
                     ) : null}
                   </div>
-                  <dd>{item.value}</dd>
+                  <dd title={item.title || item.value}>{item.value}</dd>
                 </div>
               ))}
             </dl>

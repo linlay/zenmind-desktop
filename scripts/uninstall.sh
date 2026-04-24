@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-APP_NAME="国泰君安期货"
+APP_NAME="ZenMind"
 APP_PATH="/Applications/${APP_NAME}.app"
 DATA_PATH="${HOME}/Library/Application Support/zenmind-desktop"
 
@@ -13,7 +13,7 @@ show_dialog() {
 }
 
 is_app_running() {
-  osascript -e 'tell application "System Events" to return (name of processes) contains "国泰君安期货"'
+  osascript -e 'tell application "System Events" to return (name of processes) contains "ZenMind"'
 }
 
 remove_application_bundle() {
@@ -30,15 +30,15 @@ remove_application_bundle() {
 
 prompt_for_data_cleanup() {
   osascript <<'APPLESCRIPT'
-button returned of (display dialog "Do you also want to delete 国泰君安期货 app data?
+button returned of (display dialog "Do you also want to delete ZenMind app data?
 
 This removes settings, services, plugins, and credentials." buttons {"Keep Data", "Delete Data"} default button "Keep Data" with icon caution)
 APPLESCRIPT
 }
 
 if [ "$(is_app_running)" = "true" ]; then
-  show_dialog "国泰君安期货 is still running. Quit the app and run this uninstall script again."
-  printf '%s\n' "国泰君安期货 is still running. Quit it and rerun this script."
+  show_dialog "ZenMind is still running. Quit the app and run this uninstall script again."
+  printf '%s\n' "ZenMind is still running. Quit it and rerun this script."
   exit 1
 fi
 
@@ -51,4 +51,4 @@ else
   printf '%s\n' "Kept app data: $DATA_PATH"
 fi
 
-printf '%s\n' "国泰君安期货 uninstall finished."
+printf '%s\n' "ZenMind uninstall finished."

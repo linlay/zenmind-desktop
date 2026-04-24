@@ -1,19 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="cyan blue gradient Z app icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="color hollow cloud app icon">
   <defs>
-    <linearGradient id="cyan-blue-icon" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#00F0FF"/>
-      <stop offset="50%" stop-color="#0088FF"/>
-      <stop offset="100%" stop-color="#0033FF"/>
+    <path
+      id="color-cloud"
+      d="M350 200A90 90 0 0 1 275 330A90 90 0 0 1 125 330A90 90 0 0 1 50 200A90 90 0 0 1 125 70A90 90 0 0 1 275 70A90 90 0 0 1 350 200Z"
+    />
+    <linearGradient id="deep-cyan-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0096C7"/>
+      <stop offset="50%" stop-color="#0077B6"/>
+      <stop offset="100%" stop-color="#023E8A"/>
     </linearGradient>
-    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#0F172A" flood-opacity="0.12"/>
-    </filter>
+    <mask id="color-hollow-mask">
+      <rect width="400" height="400" fill="white"/>
+      <g fill="black">
+        <path d="M120 135Q200 100 280 135Q200 125 120 135Z"/>
+        <path d="M60 180Q200 115 340 180Q200 160 60 180Z"/>
+        <polygon points="240,190 270,190 160,290 130,290"/>
+        <rect x="115" y="290" width="170" height="16"/>
+      </g>
+    </mask>
   </defs>
-  <rect x="24" y="24" width="352" height="352" rx="96" fill="#FFFFFF" filter="url(#soft-shadow)"/>
-  <g fill="url(#cyan-blue-icon)">
-    <path d="M120 120Q200 70 280 120Q200 95 120 120Z"/>
-    <path d="M60 180Q200 110 340 180Q200 145 60 180Z"/>
-    <polygon points="240,190 270,190 160,290 130,290"/>
-    <rect x="115" y="290" width="170" height="18"/>
+  <g mask="url(#color-hollow-mask)">
+    <use href="#color-cloud" fill="url(#deep-cyan-blue)" transform="rotate(15 200 200)"/>
   </g>
 </svg>

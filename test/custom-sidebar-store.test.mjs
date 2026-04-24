@@ -8,6 +8,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   addCustomSidebarItem,
+  exportCustomSidebarItems,
+  importCustomSidebarItems,
   listCustomSidebarItems,
   removeCustomSidebarItem,
   __testInternals
@@ -111,4 +113,66 @@ test("custom sidebar assigns icon library entries without repeating current item
   assert.equal(reused.ok, true);
   assert.equal(reused.item?.iconId, "desktop-01");
   assert.equal(new Set(reused.items.map((item) => item.iconId)).size, reused.items.length);
+});
+
+test("custom sidebar export and import preserve items across machines", (t) => {
+  const sourceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-custom-sidebar-export-source-"));
+  const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-custom-sidebar-export-target-"));
+  const sourceApp = createApp(path.join(sourceRoot, "user-data"));
+  const targetApp = createApp(path.join(targetRoot, "user-data"));
+
+  t.after(() => {
+    fs.rmSync(sourceRoot, { recursive: true, force: true });
+    fs.rmSync(targetRoot, { recursive: true, force: true });
+  });
+
+  addCustomSidebarItem(sourceApp, {
+    label: "百度",
+    url: "www.baidu.com"
+  });
+  addCustomSidebarItem(sourceApp, {
+    label: "GitHub",
+    url: "github.com"
+  });
+
+  const exported = exportCustomSidebarItems(sourceApp);
+  const imported = importCustomSidebarItems(targetApp, exported);
+
+  assert.equal(imported.ok, true);
+  assert.equal(imported.items.length, 2);
+  assert.deepEqual(
+    imported.items.map((item) => item.url),
+    ["https://www.baidu.com/", "https://github.com/"]
+  );
+});
+
+test("custom sidebar import merges new items and skips existing URLs", (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-custom-sidebar-import-"));
+  const app = createApp(path.join(tempRoot, "user-data"));
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  addCustomSidebarItem(app, {
+    label: "百度",
+    url: "www.baidu.com"
+  });
+
+  const imported = importCustomSidebarItems(
+    app,
+    JSON.stringify({
+      items: [
+        { id: "a", label: "百度", url: "https://www.baidu.com/" },
+        { id: "b", label: "GitHub", url: "github.com" }
+      ]
+    })
+  );
+
+  assert.equal(imported.ok, true);
+  assert.equal(imported.items.length, 2);
+  assert.deepEqual(
+    imported.items.map((item) => item.url),
+    ["https://www.baidu.com/", "https://github.com/"]
+  );
 });

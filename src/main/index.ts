@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import {
   app,
@@ -10,7 +11,8 @@ import {
   session,
   Tray,
   type MenuItemConstructorOptions,
-  type OpenDialogOptions
+  type OpenDialogOptions,
+  type SaveDialogOptions
 } from "electron";
 import { issueAgentAccessToken } from "./agent-auth";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
@@ -24,6 +26,7 @@ import {
   installBuiltinService,
   listServices,
   readServiceConfig,
+  restoreRunningServices,
   restartService,
   startService,
   stopService,
@@ -40,6 +43,8 @@ import {
 } from "./port-conflict";
 import {
   addCustomSidebarItem,
+  exportCustomSidebarItems,
+  importCustomSidebarItems,
   listCustomSidebarItems,
   removeCustomSidebarItem
 } from "./custom-sidebar-store";
@@ -61,7 +66,7 @@ let isHandlingQuit = false;
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 
 // Keep dev Electron runs on the same data root as packaged builds.
-app.setName("国泰君安期货");
+app.setName("ZenMind");
 app.setPath("userData", path.join(app.getPath("appData"), "zenmind-desktop"));
 
 function delay(ms: number) {
@@ -141,14 +146,40 @@ function createWindow() {
   });
 
   mainWindow.webContents.on("did-attach-webview", (_event, contents) => {
+    contents.on("did-fail-load", (_guestEvent, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+      if (errorCode === -3) {
+        return;
+      }
+      console.error("webview failed to load", {
+        guestId: contents.id,
+        errorCode,
+        errorDescription,
+        validatedUrl,
+        isMainFrame
+      });
+    });
+
+    contents.on("render-process-gone", (_guestEvent, details) => {
+      console.error("webview render process exited unexpectedly", {
+        guestId: contents.id,
+        details
+      });
+    });
+
     contents.setWindowOpenHandler(({ url }) => {
       if (shouldOpenPopupInCurrentWebview(contents.getURL(), url)) {
         setImmediate(() => {
-          if (!contents.isDestroyed()) {
-            contents.loadURL(url).catch((error) => {
-              console.error("failed to open webview popup in place", { url, error });
+          if (!mainWindow || mainWindow.isDestroyed()) {
+            void shell.openExternal(url).catch((error) => {
+              console.error("failed to recover webview popup externally", { url, error });
             });
+            return;
           }
+
+          mainWindow.webContents.send("webview.popupNavigate", {
+            guestId: contents.id,
+            url
+          });
         });
         return { action: "deny" };
       }
@@ -311,7 +342,7 @@ function buildTrayMenu() {
         })
     },
     {
-      label: "打开国泰君安期货",
+      label: "打开 ZenMind",
       click: () => showMainWindow(ASSISTANT_TARGET_PATH)
     },
     {
@@ -333,7 +364,7 @@ function createAppTray() {
 
   tray = new Tray(createTrayIcon());
   const trayMenu = buildTrayMenu();
-  tray.setToolTip("国泰君安期货");
+  tray.setToolTip("ZenMind");
   if (process.platform !== "darwin") {
     tray.setContextMenu(trayMenu);
   }
@@ -348,6 +379,16 @@ function showFileDialog(options: OpenDialogOptions, ownerWindow: BrowserWindow |
     return dialog.showOpenDialog(ownerWindow, options);
   }
   return dialog.showOpenDialog(options);
+}
+
+function showSaveDialog(
+  options: SaveDialogOptions,
+  ownerWindow: BrowserWindow | null = mainWindow
+) {
+  if (ownerWindow) {
+    return dialog.showSaveDialog(ownerWindow, options);
+  }
+  return dialog.showSaveDialog(options);
 }
 
 function showArchiveDialog(title: string) {
@@ -575,6 +616,55 @@ function registerIpcHandlers() {
   ipcMain.handle("customSidebar.remove", async (_event, id: string) => {
     return removeCustomSidebarItem(app, id);
   });
+  ipcMain.handle("customSidebar.import", async () => {
+    const result = await showFileDialog({
+      title: "导入侧边栏配置",
+      properties: ["openFile"],
+      filters: [{ name: "JSON", extensions: ["json"] }]
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return {
+        ok: false,
+        items: listCustomSidebarItems(app).items,
+        path: "",
+        message: "已取消导入侧边栏配置。"
+      };
+    }
+
+    const importPath = result.filePaths[0];
+    const fileContent = await fs.promises.readFile(importPath, "utf8");
+    const importResult = importCustomSidebarItems(app, fileContent);
+    return {
+      ...importResult,
+      path: importPath
+    };
+  });
+  ipcMain.handle("customSidebar.export", async () => {
+    const saveResult = await showSaveDialog({
+      title: "导出侧边栏配置",
+      defaultPath: path.join(getDataRoot(app), "custom-sidebar-items.json"),
+      filters: [{ name: "JSON", extensions: ["json"] }]
+    });
+
+    if (saveResult.canceled || !saveResult.filePath) {
+      return {
+        ok: false,
+        items: listCustomSidebarItems(app).items,
+        path: "",
+        message: "已取消导出侧边栏配置。"
+      };
+    }
+
+    const filePath = saveResult.filePath;
+    await fs.promises.writeFile(filePath, `${exportCustomSidebarItems(app)}\n`, "utf8");
+    return {
+      ok: true,
+      items: listCustomSidebarItems(app).items,
+      path: filePath,
+      message: "已导出侧边栏配置。"
+    };
+  });
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
 }
 
@@ -586,6 +676,15 @@ app.whenReady().then(() => {
   createWindow();
   createAppTray();
   buildApplicationMenu();
+  void restoreRunningServices(app)
+    .then((result) => {
+      if (result.failures.length > 0) {
+        console.error("failed to restore running services from last session", result.failures);
+      }
+    })
+    .catch((error) => {
+      console.error("failed to restore running services from last session", error);
+    });
   app.on("activate", () => {
     showMainWindow();
   });

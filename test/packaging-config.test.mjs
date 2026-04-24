@@ -44,7 +44,7 @@ test("custom uninstall assets exist with silent legacy cleanup and no data promp
   );
   assert.match(installerScript, /RMDir \/r "\$APPDATA\\zenmind-desktop"/);
   assert.doesNotMatch(installerScript, /MessageBox/);
-  assert.match(uninstallScript, /APP_NAME="国泰君安期货"/);
+  assert.match(uninstallScript, /APP_NAME="ZenMind"/);
   assert.match(uninstallScript, /APP_PATH="\/Applications\/\$\{APP_NAME\}\.app"/);
   assert.match(uninstallScript, /Library\/Application Support\/zenmind-desktop/);
   assert.match(distWinScript, /electronuserland\/builder:wine/);

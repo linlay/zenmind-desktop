@@ -5,6 +5,7 @@ import {
   buildPluginEmbeddedUrl,
   getPluginAuthBridgeProtocol,
 } from "../../shared/auth-bridge";
+import { getServiceDisplayName } from "../service-display";
 
 type PluginPageProps = {
   hostTheme: "light" | "dark";
@@ -14,6 +15,7 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
   const { pluginId } = useParams<{ pluginId: string }>();
   const { services } = useServices();
   const service = services.find((s) => s.id === pluginId);
+  const serviceDisplayName = service ? getServiceDisplayName(service.id, service.name) : "";
   const [bridgeError, setBridgeError] = useState("");
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
@@ -108,7 +110,7 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
     return (
       <section className="empty-state">
         <p className="eyebrow">PLUGIN</p>
-        <h1>{service.name} 暂未就绪</h1>
+        <h1>{serviceDisplayName} 暂未就绪</h1>
         <p>{service.message}</p>
         <Link className="primary-link" to="/control-center">
           前往控制中心
@@ -120,7 +122,7 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
   if (service.frontendMode === "none" || !webUrl) {
     return (
       <section className="empty-state">
-        <h1>{service.name}</h1>
+        <h1>{serviceDisplayName}</h1>
         <p>该服务没有前端页面。</p>
         <Link className="primary-link" to="/control-center">
           返回控制中心
@@ -133,7 +135,7 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
     return (
       <section className="empty-state">
         <p className="eyebrow">PLUGIN</p>
-        <h1>{service.name}</h1>
+        <h1>{serviceDisplayName}</h1>
         <p>认证桥接失败：{bridgeError}</p>
         <Link className="primary-link" to="/control-center">
           返回控制中心
@@ -149,7 +151,7 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
         <iframe
           ref={iframeRef}
           src={embeddedUrl}
-          title={service.name}
+          title={serviceDisplayName}
           className="pan-frame"
         />
       </div>

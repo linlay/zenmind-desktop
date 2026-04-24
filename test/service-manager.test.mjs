@@ -3,16 +3,16 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const childProcess = require("node:child_process");
-const {
-  __testInternals,
-  getServiceState,
-  getInstallDir,
-  initializeService,
+  const {
+    __testInternals,
+    getServiceState,
+    getInstallDir,
+    initializeService,
   installBuiltinService,
   readServiceLog,
   readServiceConfig,
@@ -357,12 +357,12 @@ test("parseEnvFileContent keeps key values and strips quotes", () => {
 # comment
 API_PORT=8088
 WEB_SESSION_SECRET='top-secret'
-NODE_BIN="/Applications/国泰君安期货 3.app/Contents/MacOS/国泰君安期货"
+NODE_BIN="/Applications/ZenMind 3.app/Contents/MacOS/ZenMind"
 `);
 
   assert.equal(env.get("API_PORT"), "8088");
   assert.equal(env.get("WEB_SESSION_SECRET"), "top-secret");
-  assert.equal(env.get("NODE_BIN"), "/Applications/国泰君安期货 3.app/Contents/MacOS/国泰君安期货");
+  assert.equal(env.get("NODE_BIN"), "/Applications/ZenMind 3.app/Contents/MacOS/ZenMind");
 });
 
 test("service install dir follows userData/services/<id>/<version>", () => {
@@ -994,7 +994,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   fs.writeFileSync(path.join(hubInstallDir, ".env"), "BIND_ADDR=0.0.0.0:12960\n", "utf8");
   fs.writeFileSync(
     path.join(platformInstallDir, ".env"),
-    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\n",
+    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n",
     "utf8"
   );
 
@@ -1015,11 +1015,25 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   assert.match(envContent, /SERVER_PORT=11949/);
   assert.match(envContent, /AGENT_AUTH_ENABLED=false/);
   assert.doesNotMatch(envContent, /AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=/);
+  assert.match(envContent, /^GATEWAY_WS_URL=""$/m);
+  assert.match(envContent, /^GATEWAY_USER_ID=""$/m);
   const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
   assert.match(
     envContent,
     new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
+  const npxLocator = process.platform === "win32" ? "where" : "which";
+  const npxResult = spawnSync(npxLocator, ["npx"], { encoding: "utf8", timeout: 1500 });
+  if (npxResult.status === 0 && !npxResult.error) {
+    const resolvedNpx = npxResult.stdout.split(/\r?\n/u).map((entry) => entry.trim()).find(Boolean);
+    if (resolvedNpx) {
+      const expectedNpxLiteral = resolvedNpx.includes(" ") ? `"${resolvedNpx}"` : resolvedNpx;
+      assert.match(
+        envContent,
+        new RegExp(`CLAUDE_CODE_ACP_COMMAND=${expectedNpxLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+      );
+    }
+  }
   assert.match(
     envContent,
     new RegExp(`REGISTRIES_DIR=${path.join(desktopRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
@@ -1033,7 +1047,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements rewrites agent-webclient default BASE_URL to local agent-platform", async () => {
+test("ensurePreStartRequirements refreshes stale agent-webclient install and rewrites BASE_URL to local agent-platform", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-webclient-prestart-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const { app, restore } = loadBuiltinsForTest(userDataRoot);
@@ -1043,17 +1057,26 @@ test("ensurePreStartRequirements rewrites agent-webclient default BASE_URL to lo
   const webclientInstallDir = path.join(userDataRoot, "services", webclientService.id, webclientService.version);
 
   fs.mkdirSync(path.join(platformInstallDir, "run"), { recursive: true });
-  fs.mkdirSync(webclientInstallDir, { recursive: true });
   fs.writeFileSync(path.join(platformInstallDir, ".env"), "SERVER_PORT=12949\n", "utf8");
+  await installBuiltinService(app, webclientService.id);
   fs.writeFileSync(
     path.join(webclientInstallDir, ".env"),
     "BASE_URL=http://localhost:11949\n",
     "utf8"
   );
+  fs.writeFileSync(
+    path.join(webclientInstallDir, "backend", "server.js"),
+    "const { createProxyMiddleware } = require('http-proxy-middleware');\n",
+    "utf8"
+  );
+
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(webclientInstallDir), true);
 
   await __testInternals.ensurePreStartRequirements(app, webclientService);
 
   const envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
+  const serverContent = fs.readFileSync(path.join(webclientInstallDir, "backend", "server.js"), "utf8");
+  const manifest = JSON.parse(fs.readFileSync(path.join(webclientInstallDir, "manifest.json"), "utf8"));
   assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
   assert.match(envContent, /PORT=11948/);
   const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
@@ -1061,7 +1084,76 @@ test("ensurePreStartRequirements rewrites agent-webclient default BASE_URL to lo
     envContent,
     new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
+  assert.match(serverContent, /function createWebSocketProxy\(/);
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(webclientInstallDir), false);
+  assert.equal(manifest.frontend.embedPath, "/appagent");
+  assert.equal(manifest.frontend.embedParams?.desktopApp, undefined);
 
   restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("last running services state round-trips through disk", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-last-running-services-"));
+  const app = createApp(tempRoot);
+
+  __testInternals.writeLastRunningServices(app, [
+    "agent-platform",
+    "agent-webclient",
+    "agent-platform",
+    "zenmind-app-server"
+  ]);
+
+  const statePath = __testInternals.getLastRunningServicesStatePath(app);
+  assert.ok(fs.existsSync(statePath));
+  assert.deepEqual(__testInternals.readLastRunningServices(app), [
+    "agent-platform",
+    "agent-webclient",
+    "zenmind-app-server"
+  ]);
+
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("restore order prioritizes service dependencies", () => {
+  assert.deepEqual(
+    __testInternals.orderServiceIdsForRestore([
+      "agent-webclient",
+      "zenmind-app-server",
+      "agent-platform",
+      "agent-container-hub",
+      "custom-plugin"
+    ]),
+    [
+      "agent-container-hub",
+      "zenmind-app-server",
+      "agent-platform",
+      "agent-webclient",
+      "custom-plugin"
+    ]
+  );
+});
+
+test("startup restore always includes default quick-start services", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-default-startup-services-"));
+  const app = createApp(tempRoot);
+
+  __testInternals.writeLastRunningServices(app, [
+    "custom-plugin",
+    "agent-webclient"
+  ]);
+
+  assert.deepEqual(__testInternals.getDefaultStartupServiceIds(), [
+    "zenmind-app-server",
+    "agent-platform",
+    "agent-webclient"
+  ]);
+  assert.deepEqual(__testInternals.getServiceIdsToRestore(app), [
+    "zenmind-app-server",
+    "agent-platform",
+    "agent-webclient",
+    "custom-plugin"
+  ]);
+
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });

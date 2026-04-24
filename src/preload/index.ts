@@ -6,7 +6,9 @@ import type {
   NavigateListener,
   ServiceId,
   ServiceLogReadOptions,
-  ServiceLogTarget
+  ServiceLogTarget,
+  WebviewPopupNavigateListener,
+  WebviewPopupNavigateRequest
 } from "../shared/contracts";
 
 const api: DesktopApi = {
@@ -46,7 +48,9 @@ const api: DesktopApi = {
   customSidebar: {
     list: () => ipcRenderer.invoke("customSidebar.list"),
     add: (input) => ipcRenderer.invoke("customSidebar.add", input),
-    remove: (id: string) => ipcRenderer.invoke("customSidebar.remove", id)
+    remove: (id: string) => ipcRenderer.invoke("customSidebar.remove", id),
+    import: () => ipcRenderer.invoke("customSidebar.import"),
+    export: () => ipcRenderer.invoke("customSidebar.export")
   },
   onNavigate: (listener: NavigateListener) => {
     const handleNavigate = (_event: Electron.IpcRendererEvent, path: string) => {
@@ -69,6 +73,19 @@ const api: DesktopApi = {
     ipcRenderer.on("app.openAssistantWorker", handleOpenAssistantWorker);
     return () => {
       ipcRenderer.off("app.openAssistantWorker", handleOpenAssistantWorker);
+    };
+  },
+  onWebviewPopupNavigate: (listener: WebviewPopupNavigateListener) => {
+    const handleWebviewPopupNavigate = (
+      _event: Electron.IpcRendererEvent,
+      request: WebviewPopupNavigateRequest
+    ) => {
+      listener(request);
+    };
+
+    ipcRenderer.on("webview.popupNavigate", handleWebviewPopupNavigate);
+    return () => {
+      ipcRenderer.off("webview.popupNavigate", handleWebviewPopupNavigate);
     };
   }
 };
