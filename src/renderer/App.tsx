@@ -392,10 +392,6 @@ function AppShell() {
       return false;
     }
 
-    if (pendingSidebarNavigationPath) {
-      return false;
-    }
-
     setPendingSidebarNavigationPath(targetPath);
     if (sidebarNavigationUnlockTimerRef.current !== null) {
       window.clearTimeout(sidebarNavigationUnlockTimerRef.current);

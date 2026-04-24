@@ -101,7 +101,7 @@ export function AppSidebar({
         </div>
       </div>
 
-      <nav className={pendingNavigationPath ? "sidebar-nav is-busy" : "sidebar-nav"} aria-label="Primary Navigation">
+      <nav className="sidebar-nav" aria-label="Primary Navigation">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -114,7 +114,6 @@ export function AppSidebar({
                 pendingNavigationPath === item.to ? "sidebar-link-pending" : ""
               ].filter(Boolean).join(" ")
             }
-            aria-disabled={Boolean(pendingNavigationPath && pendingNavigationPath !== item.to)}
           >
             <span className="sidebar-link-icon">
               {item.iconId ? <CustomSidebarIcon iconId={item.iconId} /> : <SidebarIllustration kind={item.icon} />}
@@ -124,7 +123,7 @@ export function AppSidebar({
         ))}
       </nav>
 
-      <div className={pendingNavigationPath ? "sidebar-footer is-busy" : "sidebar-footer"}>
+      <div className="sidebar-footer">
         <NavLink
           to="/settings"
           onClick={(event) => handleItemClick(event, "/settings")}
@@ -136,7 +135,6 @@ export function AppSidebar({
               pendingNavigationPath === "/settings" ? "sidebar-link-pending" : ""
             ].filter(Boolean).join(" ")
           }
-          aria-disabled={Boolean(pendingNavigationPath && pendingNavigationPath !== "/settings")}
         >
           <span className="sidebar-link-icon">
             <SidebarIllustration kind="settings" />

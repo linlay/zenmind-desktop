@@ -398,11 +398,6 @@ a {
     box-shadow 0.2s ease-in-out;
 }
 
-.sidebar-nav.is-busy .sidebar-link,
-.sidebar-footer.is-busy .sidebar-link-utility {
-  pointer-events: none;
-}
-
 .sidebar-link-pending {
   opacity: 0.76;
   cursor: wait;
@@ -727,7 +722,7 @@ a {
 }
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar.is-collapsed {
-  padding: 48px 2px 8px;
+  padding: 28px 2px 8px;
 }
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar-top {
