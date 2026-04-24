@@ -57,7 +57,26 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   const distWinScript = fs.readFileSync(distWinScriptPath, "utf8");
 
   assert.match(distWinScript, /async function syncWindowsBuiltinAssets\(\)/);
-  assert.match(distWinScript, /await syncWindowsBuiltinAssets\(\);\s*\n\s*const npmCacheDir/);
+  assert.match(
+    distWinScript,
+    /await syncWindowsBuiltinAssets\(\);\s*\n\s*await runAndWait\(npmCmd, \["run", "build"\]\);\s*\n\s*const npmCacheDir/
+  );
+  assert.match(
+    distWinScript,
+    /"--volume",\s*\n\s*"zenmind-desktop-node-modules:\/project\/node_modules",/
+  );
+  assert.match(
+    distWinScript,
+    /"npm install --no-package-lock",\s*\n\s*"npx electron-builder --win --x64"/
+  );
+  assert.doesNotMatch(
+    distWinScript,
+    /"npm install(?: --no-package-lock)?",\s*\n\s*"npm run build",\s*\n\s*"npx electron-builder --win --x64"/
+  );
+  assert.doesNotMatch(
+    distWinScript,
+    /"--volume",\s*\n\s*"\/project\/node_modules",/
+  );
   assert.doesNotMatch(
     distWinScript,
     /"node \.\/scripts\/sync-builtin-assets\.mjs --os=windows --arch=amd64"/

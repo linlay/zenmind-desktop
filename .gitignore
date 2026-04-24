@@ -33,3 +33,5 @@ playwright-report/
 
 *.pid
 *.pid.lock
+
+package-lock.json

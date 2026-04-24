@@ -5,7 +5,6 @@ import path from "node:path";
 import process from "node:process";
 
 const projectRoot = process.cwd();
-const workspaceRoot = path.resolve(projectRoot, "..");
 const isWindows = process.platform === "win32";
 const npmCmd = isWindows ? "npm.cmd" : "npm";
 
@@ -57,6 +56,7 @@ async function buildOnWindowsHost() {
 
 async function buildWithDocker() {
   await syncWindowsBuiltinAssets();
+  await runAndWait(npmCmd, ["run", "build"]);
 
   const npmCacheDir = path.join(os.homedir(), ".npm");
   const electronBuilderCacheDir = getElectronBuilderCacheDir();
@@ -69,10 +69,10 @@ async function buildWithDocker() {
   const dockerArgs = [
     "run",
     "--rm",
-    "--platform",
-    "linux/amd64",
     "--volume",
-    `${workspaceRoot}:/workspace`,
+    `${projectRoot}:/project`,
+    "--volume",
+    "zenmind-desktop-node-modules:/project/node_modules",
     "--volume",
     `${npmCacheDir}:/root/.npm`
   ];
@@ -83,13 +83,12 @@ async function buildWithDocker() {
 
   dockerArgs.push(
     "--workdir",
-    "/workspace/zenmind-desktop",
+    "/project",
     "electronuserland/builder:wine",
     "/bin/bash",
     "-lc",
     [
-      "npm install",
-      "npm run build",
+      "npm install --no-package-lock",
       "npx electron-builder --win --x64"
     ].join(" && ")
   );
