@@ -38,6 +38,44 @@ type PowerShellCapturePayload = ExecResult & {
 
 let shellPathEntriesCache: string[] | null = null;
 
+function listExistingDirs(paths: string[]) {
+  return paths.filter((dirPath) => {
+    try {
+      return fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+}
+
+function getUserNodeToolPaths() {
+  const homeDir = os.homedir();
+  const candidates = [
+    path.join(homeDir, ".local", "bin"),
+    path.join(homeDir, ".volta", "bin"),
+    path.join(homeDir, ".asdf", "shims"),
+    path.join(homeDir, ".npm-global", "bin"),
+    path.join(homeDir, "bin")
+  ];
+  const nvmVersionsRoot = path.join(homeDir, ".nvm", "versions", "node");
+
+  try {
+    if (fs.existsSync(nvmVersionsRoot) && fs.statSync(nvmVersionsRoot).isDirectory()) {
+      const versionBins = fs
+        .readdirSync(nvmVersionsRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => path.join(nvmVersionsRoot, entry.name, "bin"))
+        .sort()
+        .reverse();
+      candidates.push(...versionBins);
+    }
+  } catch {
+    // Ignore unreadable user-managed Node installations and keep probing other paths.
+  }
+
+  return listExistingDirs(candidates);
+}
+
 function getStaticServicePaths() {
   if (process.platform === "win32") {
     return [
@@ -54,7 +92,7 @@ function getStaticServicePaths() {
     "/opt/podman/bin",
     "/Applications/Docker.app/Contents/Resources/bin",
     "/Applications/OrbStack.app/Contents/MacOS/bin",
-    path.join(os.homedir(), ".local", "bin")
+    ...getUserNodeToolPaths()
   ];
 }
 
@@ -66,7 +104,10 @@ function getShellPathEntries() {
     return shellPathEntriesCache;
   }
 
-  const shellPath = process.env.SHELL;
+  const shellPath =
+    process.env.SHELL
+    || (fs.existsSync("/bin/zsh") ? "/bin/zsh" : "")
+    || (fs.existsSync("/bin/bash") ? "/bin/bash" : "");
   if (!shellPath) {
     shellPathEntriesCache = [];
     return shellPathEntriesCache;
@@ -173,6 +214,10 @@ function resolveCommandBin(command: string) {
   }
 
   return "";
+}
+
+function isCommandBasenameMatch(command: string, expected: string) {
+  return path.basename(command).toLowerCase() === expected.toLowerCase();
 }
 
 const bundleValidationCache = new Map<string, { key: string; missingEntries: string[] }>();
@@ -1290,6 +1335,15 @@ const agentPlatformDefaultContainerHubBaseUrls = new Set([
   "http://host.docker.internal:11960"
 ]);
 
+const LEGACY_LOCAL_CLI_ACP_RELAY_PORT = "3210";
+const DEFAULT_LOCAL_CLI_ACP_RELAY_PORT = "3220";
+const legacyCodeAssistantProxyBaseUrls = new Set([
+  `http://127.0.0.1:${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}`,
+  `http://localhost:${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}`,
+  `http://127.0.0.1:${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}/`,
+  `http://localhost:${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}/`
+]);
+
 const agentWebclientDefaultBaseUrls = new Set([
   "",
   "http://127.0.0.1:11949",
@@ -1350,6 +1404,118 @@ function resolveDesktopRuntimeRoot() {
   return candidate;
 }
 
+function resolveAgentPlatformAgentsDir(env: Map<string, string>, desktopRuntimeRoot: string | null) {
+  const configuredAgentsDir = env.get("AGENTS_DIR")?.trim();
+  if (configuredAgentsDir) {
+    return configuredAgentsDir;
+  }
+  if (!desktopRuntimeRoot) {
+    return "";
+  }
+  return path.join(desktopRuntimeRoot, "agents");
+}
+
+function migrateLegacyCodeAssistantProxyConfig(agentConfigPath: string, relayPort: string) {
+  if (!agentConfigPath || !fs.existsSync(agentConfigPath)) {
+    return false;
+  }
+
+  const content = fs.readFileSync(agentConfigPath, "utf8");
+  const lines = content.split(/\r?\n/u);
+  let modeIsProxy = false;
+  let inProxyConfig = false;
+  let mutated = false;
+
+  const nextLines = lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return line;
+    }
+
+    if (/^[A-Za-z0-9_-]+:/u.test(trimmed) && !trimmed.startsWith("baseUrl:") && !trimmed.startsWith("token:") && !trimmed.startsWith("timeoutMs:")) {
+      if (!trimmed.startsWith("proxyConfig:")) {
+        inProxyConfig = false;
+      }
+    }
+
+    if (trimmed === "mode: PROXY") {
+      modeIsProxy = true;
+      return line;
+    }
+
+    if (trimmed.startsWith("mode:") && trimmed !== "mode: PROXY") {
+      modeIsProxy = false;
+      inProxyConfig = false;
+      return line;
+    }
+
+    if (trimmed === "proxyConfig:") {
+      inProxyConfig = modeIsProxy;
+      return line;
+    }
+
+    if (!modeIsProxy || !inProxyConfig) {
+      return line;
+    }
+
+    const baseUrlMatch = line.match(/^(\s*baseUrl:\s*)(\S+)(\s*)$/u);
+    if (!baseUrlMatch) {
+      return line;
+    }
+
+    const [, prefix, rawValue, suffix] = baseUrlMatch;
+    if (!legacyCodeAssistantProxyBaseUrls.has(rawValue)) {
+      return line;
+    }
+
+    mutated = true;
+    return `${prefix}http://127.0.0.1:${relayPort}${suffix}`;
+  });
+
+  if (!mutated) {
+    return false;
+  }
+
+  fs.writeFileSync(agentConfigPath, `${nextLines.join("\n")}\n`, "utf8");
+  console.warn(
+    `[service-manager] Migrated codeAssistant proxyConfig.baseUrl from legacy relay port ${LEGACY_LOCAL_CLI_ACP_RELAY_PORT} to ${relayPort}: ${agentConfigPath}`
+  );
+  return true;
+}
+
+function resolveAcpCommandForDesktop(env: Map<string, string>) {
+  const currentAcpCommand = env.get("CLAUDE_CODE_ACP_COMMAND") ?? "";
+  const currentAcpArgs = env.get("CLAUDE_CODE_ACP_ARGS") ?? "";
+  const usesDefaultAcpCommand =
+    !currentAcpCommand
+    || isCommandBasenameMatch(currentAcpCommand, "npx")
+    || isCommandBasenameMatch(currentAcpCommand, "claude-code-acp");
+  const usesDefaultAcpArgs =
+    !currentAcpArgs || currentAcpArgs.trim() === "-y @zed-industries/claude-code-acp";
+  const resolvedClaudeCodeAcpBin = resolveCommandBin("claude-code-acp");
+  if (resolvedClaudeCodeAcpBin && usesDefaultAcpCommand) {
+    return {
+      command: resolvedClaudeCodeAcpBin,
+      args: usesDefaultAcpArgs ? "" : currentAcpArgs
+    };
+  }
+
+  const resolvedNpxBin = resolveCommandBin("npx");
+  if (resolvedNpxBin && (!currentAcpCommand || isCommandBasenameMatch(currentAcpCommand, "npx"))) {
+    return {
+      command: resolvedNpxBin,
+      args: usesDefaultAcpArgs ? "-y @zed-industries/claude-code-acp" : currentAcpArgs
+    };
+  }
+
+  if (usesDefaultAcpCommand) {
+    console.warn(
+      `[service-manager] Unable to resolve claude-code-acp or npx from Desktop PATH. Existing command="${currentAcpCommand || "(empty)"}"`
+    );
+  }
+  return null;
+}
+
 async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {
   if (service.id === "agent-platform") {
     const installDir = getInstallDir(app, service);
@@ -1357,6 +1523,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     const env = readEnvFile(envPath);
     const currentHubBaseUrl = env.get("AGENT_CONTAINER_HUB_BASE_URL") ?? "";
     const updates = new Map<string, string>();
+    const currentRelayPort = env.get("LOCAL_CLI_ACP_RELAY_PORT") ?? "";
 
     try {
       const hubState = await getServiceState(app, "agent-container-hub");
@@ -1370,11 +1537,20 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     if (!env.get("SERVER_PORT")) {
       updates.set("SERVER_PORT", String(service.web.defaultPort));
     }
+    if (!currentRelayPort || currentRelayPort === LEGACY_LOCAL_CLI_ACP_RELAY_PORT) {
+      updates.set("LOCAL_CLI_ACP_RELAY_PORT", DEFAULT_LOCAL_CLI_ACP_RELAY_PORT);
+      if (currentRelayPort === LEGACY_LOCAL_CLI_ACP_RELAY_PORT) {
+        console.warn(
+          `[service-manager] Detected legacy local-cli-acp-relay port ${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}; migrating agent-platform to ${DEFAULT_LOCAL_CLI_ACP_RELAY_PORT}`
+        );
+      }
+    }
     updates.set("AGENT_AUTH_ENABLED", "false");
     updates.set("NODE_BIN", resolveNodeBin());
-    const resolvedNpxBin = resolveCommandBin("npx");
-    if (resolvedNpxBin) {
-      updates.set("CLAUDE_CODE_ACP_COMMAND", resolvedNpxBin);
+    const resolvedAcpCommand = resolveAcpCommandForDesktop(env);
+    if (resolvedAcpCommand) {
+      updates.set("CLAUDE_CODE_ACP_COMMAND", resolvedAcpCommand.command);
+      updates.set("CLAUDE_CODE_ACP_ARGS", resolvedAcpCommand.args);
     }
     for (const key of agentPlatformDisabledGatewayEnvKeys) {
       updates.set(key, "");
@@ -1387,6 +1563,15 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
           updates.set(key, path.join(desktopRuntimeRoot, relativePath));
         }
       }
+    }
+
+    const agentsDir = resolveAgentPlatformAgentsDir(env, desktopRuntimeRoot);
+    const relayPort = updates.get("LOCAL_CLI_ACP_RELAY_PORT") ?? currentRelayPort ?? DEFAULT_LOCAL_CLI_ACP_RELAY_PORT;
+    const codeAssistantConfigPath = agentsDir ? path.join(agentsDir, "codeAssistant", "agent.yml") : "";
+    if (migrateLegacyCodeAssistantProxyConfig(codeAssistantConfigPath, relayPort) && currentRelayPort === LEGACY_LOCAL_CLI_ACP_RELAY_PORT) {
+      console.warn(
+        `[service-manager] codeAssistant proxyConfig.baseUrl was still pointing at legacy relay port ${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}; expected ${relayPort}`
+      );
     }
 
     if (updates.size > 0) {
@@ -1844,6 +2029,8 @@ export const __testInternals = {
   ensurePreStartRequirements,
   agentWebclientInstallNeedsRefresh,
   resolveNodeBin,
+  resolveAcpCommandForDesktop,
+  migrateLegacyCodeAssistantProxyConfig,
   decodePowerShellCapturePayload,
   runExecFile,
   getInitializationStatePath,

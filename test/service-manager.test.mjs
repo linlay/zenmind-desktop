@@ -986,6 +986,8 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   const hubInstallDir = path.join(userDataRoot, "services", hubService.id, hubService.version);
   const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
   const desktopRuntimeRoot = path.join(homeRoot, "zenmind");
+  const codeAssistantDir = path.join(desktopRuntimeRoot, "agents", "codeAssistant");
+  const codeAssistantConfigPath = path.join(codeAssistantDir, "agent.yml");
 
   fs.mkdirSync(hubInstallDir, { recursive: true });
   fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
@@ -994,7 +996,13 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   fs.writeFileSync(path.join(hubInstallDir, ".env"), "BIND_ADDR=0.0.0.0:12960\n", "utf8");
   fs.writeFileSync(
     path.join(platformInstallDir, ".env"),
-    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n",
+    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nLOCAL_CLI_ACP_RELAY_PORT=3210\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n",
+    "utf8"
+  );
+  fs.mkdirSync(codeAssistantDir, { recursive: true });
+  fs.writeFileSync(
+    codeAssistantConfigPath,
+    "name: codeAssistant\ncolor: \"#10B981\"\nmode: PROXY\nproxyConfig:\n  baseUrl: http://127.0.0.1:3210\n  token: \"demo-token\"\n  timeoutMs: 300000\n",
     "utf8"
   );
 
@@ -1013,6 +1021,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
   assert.match(envContent, /AGENT_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960/);
   assert.match(envContent, /SERVER_PORT=11949/);
+  assert.match(envContent, /LOCAL_CLI_ACP_RELAY_PORT=3220/);
   assert.match(envContent, /AGENT_AUTH_ENABLED=false/);
   assert.doesNotMatch(envContent, /AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=/);
   assert.match(envContent, /^GATEWAY_WS_URL=""$/m);
@@ -1022,16 +1031,30 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
     envContent,
     new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
-  const npxLocator = process.platform === "win32" ? "where" : "which";
-  const npxResult = spawnSync(npxLocator, ["npx"], { encoding: "utf8", timeout: 1500 });
-  if (npxResult.status === 0 && !npxResult.error) {
-    const resolvedNpx = npxResult.stdout.split(/\r?\n/u).map((entry) => entry.trim()).find(Boolean);
-    if (resolvedNpx) {
-      const expectedNpxLiteral = resolvedNpx.includes(" ") ? `"${resolvedNpx}"` : resolvedNpx;
+  const locator = process.platform === "win32" ? "where" : "which";
+  const acpResult = spawnSync(locator, ["claude-code-acp"], { encoding: "utf8", timeout: 1500 });
+  if (acpResult.status === 0 && !acpResult.error) {
+    const resolvedAcp = acpResult.stdout.split(/\r?\n/u).map((entry) => entry.trim()).find(Boolean);
+    if (resolvedAcp) {
+      const expectedAcpLiteral = resolvedAcp.includes(" ") ? `"${resolvedAcp}"` : resolvedAcp;
       assert.match(
         envContent,
-        new RegExp(`CLAUDE_CODE_ACP_COMMAND=${expectedNpxLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+        new RegExp(`CLAUDE_CODE_ACP_COMMAND=${expectedAcpLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
       );
+      assert.match(envContent, /^CLAUDE_CODE_ACP_ARGS=""$/m);
+    }
+  } else {
+    const npxResult = spawnSync(locator, ["npx"], { encoding: "utf8", timeout: 1500 });
+    if (npxResult.status === 0 && !npxResult.error) {
+      const resolvedNpx = npxResult.stdout.split(/\r?\n/u).map((entry) => entry.trim()).find(Boolean);
+      if (resolvedNpx) {
+        const expectedNpxLiteral = resolvedNpx.includes(" ") ? `"${resolvedNpx}"` : resolvedNpx;
+        assert.match(
+          envContent,
+          new RegExp(`CLAUDE_CODE_ACP_COMMAND=${expectedNpxLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+        );
+        assert.match(envContent, /^CLAUDE_CODE_ACP_ARGS="-y @zed-industries\/claude-code-acp"$/m);
+      }
     }
   }
   assert.match(
@@ -1042,6 +1065,61 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
     envContent,
     new RegExp(`AGENTS_DIR=${path.join(desktopRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
+  const agentConfigContent = fs.readFileSync(codeAssistantConfigPath, "utf8");
+  assert.match(agentConfigContent, /baseUrl: http:\/\/127\.0\.0\.1:3220/);
+  assert.doesNotMatch(agentConfigContent, /baseUrl: http:\/\/127\.0\.0\.1:3210/);
+
+  restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("ensurePreStartRequirements preserves custom relay port and custom codeAssistant proxy baseUrl", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-custom-prestart-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+  const platformService = getBuiltinService("agent-platform");
+  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+  const desktopRuntimeRoot = path.join(homeRoot, "zenmind");
+  const customAgentsDir = path.join(tempRoot, "custom-agents");
+  const codeAssistantDir = path.join(customAgentsDir, "codeAssistant");
+  const codeAssistantConfigPath = path.join(codeAssistantDir, "agent.yml");
+
+  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  fs.mkdirSync(path.join(desktopRuntimeRoot, "registries"), { recursive: true });
+  fs.mkdirSync(path.join(desktopRuntimeRoot, "agents"), { recursive: true });
+  fs.mkdirSync(codeAssistantDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(platformInstallDir, ".env"),
+    `HOST_PORT=11949\nLOCAL_CLI_ACP_RELAY_PORT=4555\nAGENTS_DIR=${customAgentsDir}\nCLAUDE_CODE_ACP_COMMAND=/custom/bin/claude-code-acp\nCLAUDE_CODE_ACP_ARGS=--stdio\n`,
+    "utf8"
+  );
+  fs.writeFileSync(
+    codeAssistantConfigPath,
+    "name: codeAssistant\nmode: PROXY\nproxyConfig:\n  baseUrl: http://127.0.0.1:4555\n  token: \"demo-token\"\n",
+    "utf8"
+  );
+
+  const previousHome = process.env.HOME;
+  process.env.HOME = homeRoot;
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+  }
+
+  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+  assert.match(envContent, /LOCAL_CLI_ACP_RELAY_PORT=4555/);
+  assert.match(envContent, /AGENTS_DIR=/);
+  assert.match(envContent, /CLAUDE_CODE_ACP_COMMAND=\/custom\/bin\/claude-code-acp/);
+  assert.match(envContent, /CLAUDE_CODE_ACP_ARGS=--stdio/);
+  const agentConfigContent = fs.readFileSync(codeAssistantConfigPath, "utf8");
+  assert.match(agentConfigContent, /baseUrl: http:\/\/127\.0\.0\.1:4555/);
+  assert.doesNotMatch(agentConfigContent, /3220/);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });

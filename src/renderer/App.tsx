@@ -11,6 +11,7 @@ import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ServicesProvider, useServices } from "./services/ServicesContext";
 import type { CustomSidebarItem, ServiceId, ServiceState } from "../shared/contracts";
+import { getStartupBlockingService, isStartupServiceWaiting } from "../shared/startup-gate";
 import { getServiceDisplayName } from "./service-display";
 
 type ThemeMode = "light" | "dark";
@@ -126,7 +127,8 @@ function AppShell() {
   const startupAllReady =
     !servicesLoading &&
     startupServices.every((service) => service?.status === "running");
-  const showStartupGate = !startupGateDismissed && !startupAllReady;
+  const startupBlockingService = getStartupBlockingService(startupServices, servicesLoading);
+  const showStartupGate = !startupGateDismissed && !startupAllReady && !startupBlockingService;
 
   async function refreshCustomSidebarItems() {
     const result = await window.electronAPI.customSidebar.list();
@@ -165,6 +167,16 @@ function AppShell() {
       navigate(ASSISTANT_TARGET_PATH, { replace: true });
     }
   }, [navigate, startupAllReady, startupGateDismissed]);
+
+  useEffect(() => {
+    if (startupGateDismissed || !startupBlockingService) {
+      return;
+    }
+
+    setStartupGateDismissed(true);
+    setStartupTimedOut(false);
+    navigate("/control-center", { replace: true });
+  }, [navigate, startupBlockingService, startupGateDismissed]);
 
   useEffect(() => {
     refreshServicesRef.current = refreshServices;
@@ -628,12 +640,6 @@ function StartupLoadingScreen({
       </div>
     </div>
   );
-}
-
-function isWaitingForStartup(service: ServiceState) {
-  return service.status === "not-installed" ||
-    service.status === "initialization-required" ||
-    service.status === "stopped";
 }
 
 function getStartupServiceFallbackName(serviceId: ServiceId) {

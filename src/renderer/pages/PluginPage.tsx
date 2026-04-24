@@ -17,6 +17,8 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
   const service = services.find((s) => s.id === pluginId);
   const serviceDisplayName = service ? getServiceDisplayName(service.id, service.name) : "";
   const [bridgeError, setBridgeError] = useState("");
+  const [bridgeReady, setBridgeReady] = useState(false);
+  const [iframeInstanceKey, setIframeInstanceKey] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const webUrl = service?.healthMeta.webUrl ?? "";
@@ -33,7 +35,10 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
   }, [service?.id, embeddedUrl]);
 
   useEffect(() => {
+    setBridgeReady(false);
+
     if (!bridgeProtocol) {
+      setBridgeReady(true);
       return;
     }
 
@@ -89,10 +94,19 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
     };
 
     window.addEventListener("message", handleMessage);
+    setBridgeReady(true);
     return () => {
+      setBridgeReady(false);
       window.removeEventListener("message", handleMessage);
     };
   }, [bridgeProtocol]);
+
+  useEffect(() => {
+    if (service?.status !== "running" || !embeddedUrl) {
+      return;
+    }
+    setIframeInstanceKey((current) => current + 1);
+  }, [embeddedUrl, service?.status]);
 
   if (!service) {
     return (
@@ -148,12 +162,21 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
     <section className="pan-page pan-page-embedded">
       <div className="pan-drag-region" aria-hidden="true" />
       <div className="pan-frame-shell">
-        <iframe
-          ref={iframeRef}
-          src={embeddedUrl}
-          title={serviceDisplayName}
-          className="pan-frame"
-        />
+        {bridgeReady ? (
+          <iframe
+            key={`${service?.id ?? "service"}:${iframeInstanceKey}:${embeddedUrl}`}
+            ref={iframeRef}
+            src={embeddedUrl}
+            title={serviceDisplayName}
+            className="pan-frame"
+          />
+        ) : (
+          <section className="empty-state">
+            <p className="eyebrow">PLUGIN</p>
+            <h1>{serviceDisplayName}</h1>
+            <p>正在准备认证上下文…</p>
+          </section>
+        )}
       </div>
     </section>
   );
