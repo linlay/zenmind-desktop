@@ -33,7 +33,7 @@ import {
   stopRunningServices,
   writeServiceConfig
 } from "./service-manager";
-import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
+import { installBundledPlugins, installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
   detectPortConflict,
@@ -63,6 +63,7 @@ import {
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isHandlingQuit = false;
+let serviceMutationQueue = Promise.resolve();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 
 // Keep dev Electron runs on the same data root as packaged builds.
@@ -268,9 +269,16 @@ function notifyServicesChanged() {
 }
 
 async function runServiceMutation<T>(task: () => Promise<T>) {
+  const previousTask = serviceMutationQueue;
+  let releaseQueue = () => {};
+  serviceMutationQueue = new Promise<void>((resolve) => {
+    releaseQueue = resolve;
+  });
+  await previousTask;
   try {
     return await task();
   } finally {
+    releaseQueue();
     notifyServicesChanged();
   }
 }
@@ -688,15 +696,18 @@ function registerIpcHandlers() {
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   ensureDataRoot(app);
   loadBuiltinServices(app);
+  await installBundledPlugins(app).catch((error) => {
+    console.error("failed to install bundled plugins", error);
+  });
   loadInstalledPlugins(app);
   registerIpcHandlers();
   createWindow();
   createAppTray();
   buildApplicationMenu();
-  void restoreRunningServices(app, { onProgress: notifyServicesChanged })
+  void runServiceMutation(() => restoreRunningServices(app, { onProgress: notifyServicesChanged }))
     .then((result) => {
       notifyServicesChanged();
       if (result.failures.length > 0) {

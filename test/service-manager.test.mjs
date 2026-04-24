@@ -1087,7 +1087,7 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   assert.match(serverContent, /function createWebSocketProxy\(/);
   assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(webclientInstallDir), false);
   assert.equal(manifest.frontend.embedPath, "/appagent");
-  assert.equal(manifest.frontend.embedParams?.desktopApp, undefined);
+  assert.equal(manifest.frontend.embedParams?.desktopApp, "1");
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -1107,9 +1107,9 @@ test("last running services state round-trips through disk", () => {
   const statePath = __testInternals.getLastRunningServicesStatePath(app);
   assert.ok(fs.existsSync(statePath));
   assert.deepEqual(__testInternals.readLastRunningServices(app), [
+    "zenmind-app-server",
     "agent-platform",
-    "agent-webclient",
-    "zenmind-app-server"
+    "agent-webclient"
   ]);
 
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -1155,5 +1155,36 @@ test("startup restore always includes default quick-start services", () => {
     "custom-plugin"
   ]);
 
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("runExecFile resolves when a daemon child keeps stdout open", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-run-exec-daemon-"));
+  const scriptPath = path.join(tempRoot, "start.sh");
+  fs.writeFileSync(
+    scriptPath,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "sleep 3 &",
+      "echo $! > daemon.pid",
+      "echo started"
+    ].join("\n"),
+    "utf8"
+  );
+  fs.chmodSync(scriptPath, 0o755);
+
+  const startedAt = Date.now();
+  const result = await __testInternals.runExecFile("./start.sh", [], tempRoot);
+  const elapsedMs = Date.now() - startedAt;
+  assert.ok(elapsedMs < 2500, `expected command to resolve before daemon exits, took ${elapsedMs}ms`);
+  assert.match(result.stdout, /started/);
+
+  const pid = Number(fs.readFileSync(path.join(tempRoot, "daemon.pid"), "utf8"));
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    // Process may already be gone on a slow host.
+  }
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });

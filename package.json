@@ -6,13 +6,14 @@
   "main": "dist-electron/main/index.js",
   "scripts": {
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
+    "sync:plugins": "node ./scripts/sync-bundled-plugins.mjs",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:renderer",
     "dev": "node ./scripts/dev.mjs",
     "start": "npm run dev",
-    "dist:mac": "node ./scripts/sync-builtin-assets.mjs --os=darwin --arch=arm64 && npm run build && electron-builder --mac --arm64",
-    "dist:win": "node ./scripts/sync-builtin-assets.mjs --os=windows --arch=amd64 && npm run build && electron-builder --win --x64",
+    "dist:mac": "node ./scripts/sync-builtin-assets.mjs --os=darwin --arch=arm64 && node ./scripts/sync-bundled-plugins.mjs --os=darwin --arch=arm64 && npm run build && electron-builder --mac --arm64",
+    "dist:win": "node ./scripts/sync-builtin-assets.mjs --os=windows --arch=amd64 && node ./scripts/sync-bundled-plugins.mjs --os=windows --arch=amd64 && npm run build && electron-builder --win --x64",
     "dist:win-docker": "node ./scripts/dist-win.mjs",
     "test": "npm run build && node --test ./test/*.test.mjs"
   },
@@ -43,6 +44,10 @@
       {
         "from": "build/resources/services",
         "to": "services"
+      },
+      {
+        "from": "build/resources/plugins",
+        "to": "plugins"
       },
       {
         "from": "scripts",

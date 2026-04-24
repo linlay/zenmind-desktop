@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFile, spawnSync } from "node:child_process";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import type { App } from "electron";
 import type {
   ServiceCommandResult,
@@ -895,14 +895,37 @@ function runExecFile(command: string, args: string[], cwd: string) {
   }
 
   return new Promise<ExecResult>((resolve, reject) => {
-    execFile(resolved.command, resolved.args, { cwd, env: buildServiceEnv() }, (error, stdout, stderr) => {
-      if (error) {
-        reject(new Error(`${error.message}\n${coerceExecText(stderr)}`.trim()));
+    if (!fs.existsSync(cwd)) {
+      reject(new Error(`工作目录不存在：${cwd}`));
+      return;
+    }
+
+    const child = spawn(resolved.command, resolved.args, {
+      cwd,
+      env: buildServiceEnv(),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      stdoutChunks.push(chunk);
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderrChunks.push(chunk);
+    });
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      const stdout = Buffer.concat(stdoutChunks).toString("utf8");
+      const stderr = Buffer.concat(stderrChunks).toString("utf8");
+      if (code !== 0) {
+        const status = signal ? `signal ${signal}` : `code ${code ?? -1}`;
+        reject(new Error(`Command failed: ${resolved.command} ${resolved.args.join(" ")} exited with ${status}\n${stderr || stdout}`.trim()));
         return;
       }
       resolve({
-        stdout: coerceExecText(stdout),
-        stderr: coerceExecText(stderr)
+        stdout,
+        stderr
       });
     });
   });
@@ -1278,7 +1301,9 @@ function agentWebclientInstallNeedsRefresh(installDir: string) {
   try {
     const serverContent = fs.readFileSync(serverPath, "utf8");
     return (
-      !serverContent.includes("const httpProxy = require('http-proxy');") ||
+      serverContent.includes("const httpProxy = require('http-proxy');") ||
+      !serverContent.includes("const https = require('https');") ||
+      !serverContent.includes("(secure ? https : http).request") ||
       !serverContent.includes("function createWebSocketProxy(") ||
       !serverContent.includes("server.on('upgrade'")
     );
@@ -1807,6 +1832,7 @@ export const __testInternals = {
   agentWebclientInstallNeedsRefresh,
   resolveNodeBin,
   decodePowerShellCapturePayload,
+  runExecFile,
   getInitializationStatePath,
   readInitializationState,
   getLastRunningServicesStatePath,

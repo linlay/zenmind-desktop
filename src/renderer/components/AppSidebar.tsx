@@ -4,7 +4,7 @@ import { useServices } from "../services/ServicesContext";
 import { EXTERNAL_EXPERIMENTAL_ITEMS } from "../App";
 import { BrandMark, CustomSidebarIcon, SidebarIllustration, type SidebarIllustrationKind } from "./BrandMark";
 import type { CustomSidebarItem } from "../../shared/contracts";
-import { getServiceDisplayName } from "../service-display";
+import { getServiceDisplayName, shouldShowServiceNavigationTab } from "../service-display";
 
 type SidebarNavItem = {
   to: string;
@@ -44,7 +44,7 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const { services } = useServices();
   const serviceNavItems: SidebarNavItem[] = services
-    .filter((service) => service.id !== "agent-webclient" && service.frontendMode === "standalone" && service.status === "running")
+    .filter(shouldShowServiceNavigationTab)
     .map((service) => ({
       to: `/plugin/${service.id}`,
       label: getServiceDisplayName(service.id, service.name),

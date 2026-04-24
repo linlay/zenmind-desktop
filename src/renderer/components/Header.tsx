@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
+import { getServiceDisplayName, shouldShowServiceNavigationTab } from "../service-display";
 
 const staticNavItems = [
   { to: "/control-center", label: "控制中心" }
@@ -18,8 +19,8 @@ type HeaderProps = {
 export function Header({ themeMode, onToggleTheme }: HeaderProps) {
   const { services } = useServices();
   const serviceNavItems = services
-    .filter((s) => s.frontendMode === "standalone" && s.status === "running")
-    .map((s) => ({ to: `/plugin/${s.id}`, label: s.name }));
+    .filter(shouldShowServiceNavigationTab)
+    .map((s) => ({ to: `/plugin/${s.id}`, label: getServiceDisplayName(s.id, s.name) }));
 
   const navItems = [...staticNavItems, ...serviceNavItems, ...tailNavItems];
 
