@@ -28,6 +28,7 @@ const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
+const STARTUP_STATUS_REFRESH_MS = 1500;
 
 export const EXTERNAL_EXPERIMENTAL_ITEMS = [
   { id: "guoxiao", label: "国小君平台", url: "https://gtjaqh.net/home/#/home", icon: "futures" as const },
@@ -50,6 +51,7 @@ function AppShell() {
   const sidebarDragMovedRef = useRef(false);
   const sidebarDragStartRef = useRef(0);
   const startupNavigationDoneRef = useRef(false);
+  const refreshServicesRef = useRef(refreshServices);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") {
       return "light";
@@ -165,13 +167,22 @@ function AppShell() {
   }, [navigate, startupAllReady, startupGateDismissed]);
 
   useEffect(() => {
+    refreshServicesRef.current = refreshServices;
+  }, [refreshServices]);
+
+  useEffect(() => {
     if (!showStartupGate) {
       return;
     }
+    void refreshServicesRef.current();
+    const refreshInterval = window.setInterval(() => {
+      void refreshServicesRef.current();
+    }, STARTUP_STATUS_REFRESH_MS);
     const timer = window.setTimeout(() => {
       setStartupTimedOut(true);
     }, STARTUP_LOADING_TIMEOUT_MS);
     return () => {
+      window.clearInterval(refreshInterval);
       window.clearTimeout(timer);
     };
   }, [showStartupGate]);
@@ -547,6 +558,7 @@ function StartupLoadingScreen({
 }) {
   const readyCount = startupServices.filter((service) => service?.status === "running").length;
   const totalCount = startupServices.length;
+  const activeServiceIndex = startupServices.findIndex((service) => service?.status !== "running");
 
   return (
     <div className="startup-loading-screen">
@@ -578,10 +590,17 @@ function StartupLoadingScreen({
             const displayName = service
               ? getServiceDisplayName(service.id, service.name)
               : getStartupServiceFallbackName(fallbackId);
+            const isActiveStartupService =
+              !timedOut &&
+              index === activeServiceIndex &&
+              service !== null &&
+              isWaitingForStartup(service);
             const statusLabel = service
               ? service.status === "running"
                 ? "已就绪"
-                : service.statusLabel
+                : isActiveStartupService
+                  ? "启动中..."
+                  : service.statusLabel
               : servicesLoading
                 ? "读取中..."
                 : "等待启动";
@@ -613,6 +632,12 @@ function StartupLoadingScreen({
       </div>
     </div>
   );
+}
+
+function isWaitingForStartup(service: ServiceState) {
+  return service.status === "not-installed" ||
+    service.status === "initialization-required" ||
+    service.status === "stopped";
 }
 
 function getStartupServiceFallbackName(serviceId: ServiceId) {

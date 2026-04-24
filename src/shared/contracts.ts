@@ -197,6 +197,7 @@ export interface PluginInstallResult {
 }
 
 export type NavigateListener = (path: string) => void;
+export type ServicesChangedListener = () => void;
 
 export interface CustomSidebarItem {
   id: string;
@@ -297,6 +298,7 @@ export interface DesktopApi {
     export: () => Promise<CustomSidebarTransferResult>;
   };
   onNavigate: (listener: NavigateListener) => () => void;
+  onServicesChanged: (listener: ServicesChangedListener) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
   onWebviewPopupNavigate: (listener: WebviewPopupNavigateListener) => () => void;
 }

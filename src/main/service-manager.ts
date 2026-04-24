@@ -1756,7 +1756,10 @@ export async function stopRunningServices(app: App) {
   }
 }
 
-export async function restoreRunningServices(app: App) {
+export async function restoreRunningServices(
+  app: App,
+  options: { onProgress?: (serviceId: ServiceId) => void } = {}
+) {
   const serviceIds = getServiceIdsToRestore(app);
   const restored: ServiceId[] = [];
   const failures: string[] = [];
@@ -1777,6 +1780,8 @@ export async function restoreRunningServices(app: App) {
       }
     } catch (error) {
       failures.push(`${serviceId}: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      options.onProgress?.(serviceId);
     }
   }
 

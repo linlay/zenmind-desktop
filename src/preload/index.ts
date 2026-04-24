@@ -4,6 +4,7 @@ import type {
   AssistantWorkerOpenRequest,
   DesktopApi,
   NavigateListener,
+  ServicesChangedListener,
   ServiceId,
   ServiceLogReadOptions,
   ServiceLogTarget,
@@ -60,6 +61,16 @@ const api: DesktopApi = {
     ipcRenderer.on("app.navigate", handleNavigate);
     return () => {
       ipcRenderer.off("app.navigate", handleNavigate);
+    };
+  },
+  onServicesChanged: (listener: ServicesChangedListener) => {
+    const handleServicesChanged = () => {
+      listener();
+    };
+
+    ipcRenderer.on("services.changed", handleServicesChanged);
+    return () => {
+      ipcRenderer.off("services.changed", handleServicesChanged);
     };
   },
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => {

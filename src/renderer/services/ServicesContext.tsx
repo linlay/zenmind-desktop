@@ -44,8 +44,6 @@ interface ServicesContextValue {
 }
 
 const ServicesContext = createContext<ServicesContextValue | null>(null);
-const SERVICE_POLL_INTERVAL_MS = 5000;
-
 function createServicesSnapshot(services: ServiceState[]) {
   return JSON.stringify(services);
 }
@@ -105,10 +103,6 @@ export function ServicesProvider({ children }: PropsWithChildren) {
       void refresh();
     };
 
-    const timer = window.setInterval(() => {
-      refreshIfVisible();
-    }, SERVICE_POLL_INTERVAL_MS);
-
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         void refresh();
@@ -117,12 +111,15 @@ export function ServicesProvider({ children }: PropsWithChildren) {
 
     window.addEventListener("focus", refreshIfVisible);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    const removeServicesChangedListener = window.electronAPI.onServicesChanged(() => {
+      void refresh();
+    });
 
     return () => {
       mountedRef.current = false;
-      window.clearInterval(timer);
       window.removeEventListener("focus", refreshIfVisible);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      removeServicesChangedListener();
     };
   }, []);
 

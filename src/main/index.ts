@@ -260,6 +260,21 @@ function showMainWindow(targetPath?: string) {
   }
 }
 
+function notifyServicesChanged() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send("services.changed");
+}
+
+async function runServiceMutation<T>(task: () => Promise<T>) {
+  try {
+    return await task();
+  } finally {
+    notifyServicesChanged();
+  }
+}
+
 function navigateMainWindow(targetPath: string) {
   const targetWindow = getOrCreateMainWindow();
   if (!targetWindow || targetWindow.isDestroyed()) {
@@ -475,7 +490,7 @@ async function handleServiceStart(serviceId: ServiceId) {
 
 function registerIpcHandlers() {
   ipcMain.handle("services.list", async () => listServices(app));
-  ipcMain.handle("services.installBuiltinFromBundle", async (_event, serviceId: ServiceId) => {
+  ipcMain.handle("services.installBuiltinFromBundle", async (_event, serviceId: ServiceId) => runServiceMutation(async () => {
     const current = await getServiceState(app, serviceId);
     if (current.kind !== "builtin") {
       throw new Error(`service ${serviceId} is not a builtin service`);
@@ -495,8 +510,8 @@ function registerIpcHandlers() {
       message: "内置服务已安装。",
       service: await getServiceState(app, serviceId)
     };
-  });
-  ipcMain.handle("services.installBuiltin", async (_event, serviceId: ServiceId) => {
+  }));
+  ipcMain.handle("services.installBuiltin", async (_event, serviceId: ServiceId) => runServiceMutation(async () => {
     const current = await getServiceState(app, serviceId);
     if (current.kind !== "builtin") {
       throw new Error(`service ${serviceId} is not a builtin service`);
@@ -530,34 +545,39 @@ function registerIpcHandlers() {
       message: "内置服务已安装。",
       service: await getServiceState(app, serviceId)
     };
-  });
+  }));
   ipcMain.handle("services.initialize", async (_event, serviceId: ServiceId) => {
-    return initializeService(app, serviceId);
+    return runServiceMutation(() => initializeService(app, serviceId));
   });
   ipcMain.handle("services.getStatus", async (_event, serviceId: ServiceId) => getServiceState(app, serviceId));
-  ipcMain.handle("services.start", async (_event, serviceId: ServiceId) => handleServiceStart(serviceId));
-  ipcMain.handle("services.stop", async (_event, serviceId: ServiceId) => stopService(app, serviceId));
-  ipcMain.handle("services.restart", async (_event, serviceId: ServiceId) => restartService(app, serviceId));
+  ipcMain.handle("services.start", async (_event, serviceId: ServiceId) =>
+    runServiceMutation(() => handleServiceStart(serviceId)));
+  ipcMain.handle("services.stop", async (_event, serviceId: ServiceId) =>
+    runServiceMutation(() => stopService(app, serviceId)));
+  ipcMain.handle("services.restart", async (_event, serviceId: ServiceId) =>
+    runServiceMutation(() => restartService(app, serviceId)));
   ipcMain.handle("services.readConfig", async (_event, serviceId: ServiceId, key: string) => {
     return readServiceConfig(app, serviceId, key);
   });
   ipcMain.handle("services.writeConfig", async (_event, serviceId: ServiceId, key: string, content: string) => {
-    return writeServiceConfig(app, serviceId, key, content);
+    return runServiceMutation(() => writeServiceConfig(app, serviceId, key, content));
   });
   ipcMain.handle("services.importFile", async (_event, serviceId: ServiceId, targetKey: string) => {
-    const result = await showFileDialog({
-      title: "选择要导入的文件",
-      properties: ["openFile"]
+    return runServiceMutation(async () => {
+      const result = await showFileDialog({
+        title: "选择要导入的文件",
+        properties: ["openFile"]
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return {
+          ok: false,
+          message: "已取消导入。",
+          targetPath: "",
+          service: await getServiceState(app, serviceId)
+        };
+      }
+      return importServiceFile(app, serviceId, targetKey, result.filePaths[0]);
     });
-    if (result.canceled || result.filePaths.length === 0) {
-      return {
-        ok: false,
-        message: "已取消导入。",
-        targetPath: "",
-        service: await getServiceState(app, serviceId)
-      };
-    }
-    return importServiceFile(app, serviceId, targetKey, result.filePaths[0]);
   });
   ipcMain.handle("services.getLogsMeta", async (_event, serviceId: ServiceId) => {
     return getServiceLogsMeta(app, serviceId);
@@ -568,7 +588,7 @@ function registerIpcHandlers() {
       return readServiceLog(app, serviceId, target, options);
     }
   );
-  ipcMain.handle("plugins.install", async () => {
+  ipcMain.handle("plugins.install", async () => runServiceMutation(async () => {
     const result = await showArchiveDialog(
       process.platform === "win32" ? "选择插件包 (.zip)" : "选择插件包 (.tar.gz)"
     );
@@ -580,9 +600,9 @@ function registerIpcHandlers() {
       await session.defaultSession.clearCache();
     }
     return installResult;
-  });
+  }));
   ipcMain.handle("plugins.uninstall", async (_event, serviceId: ServiceId) => {
-    return handlePluginUninstall(app, serviceId, mainWindow);
+    return runServiceMutation(() => handlePluginUninstall(app, serviceId, mainWindow));
   });
   ipcMain.handle("panAuth.importPrivateKey", async () => {
     const result = await showFileDialog({
@@ -676,8 +696,9 @@ app.whenReady().then(() => {
   createWindow();
   createAppTray();
   buildApplicationMenu();
-  void restoreRunningServices(app)
+  void restoreRunningServices(app, { onProgress: notifyServicesChanged })
     .then((result) => {
+      notifyServicesChanged();
       if (result.failures.length > 0) {
         console.error("failed to restore running services from last session", result.failures);
       }
