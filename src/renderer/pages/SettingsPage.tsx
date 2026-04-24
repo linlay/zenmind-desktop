@@ -50,7 +50,7 @@ function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
         <p className="eyebrow">DATA ROOT</p>
         <h2>数据目录</h2>
         <p className="page-copy">
-          Windows 安装版会自动跟随安装目录，并以只读方式显示当前数据目录。
+          Windows 安装版会自动跟随安装目录，默认使用只读方式显示数据目录。
         </p>
       </div>
       <div className="data-root-actions">
@@ -153,12 +153,11 @@ export function SettingsPage({
           <p className="page-copy">
             {isWindows ? (
               <>
-                在这里调整界面风格、查看数据目录，并管理固定在左侧的常用入口。运行数据会写入此目录，包含
-                <code>services</code>、<code>plugins</code> 和 <code>credentials</code>。
-                Windows 安装版默认使用安装目录下的 <code>data</code> 文件夹；自定义入口仅保存在当前设备。
+                调整界面风格，管理左侧固定入口，并查看数据存储目录（包含 <code>services</code>、<code>plugins</code> 等）。
+                安装版默认使用安装目录下的 <code>data</code> 文件夹，自定义入口仅保存在本地。
               </>
             ) : (
-              <>在这里调整界面风格，并管理固定在左侧的常用入口。自定义入口仅保存在当前设备。</>
+              <>调整界面风格，并管理左侧固定入口。自定义入口仅保存在本地。</>
             )}
           </p>
         </div>
@@ -221,7 +220,7 @@ export function SettingsPage({
           <p className="eyebrow">SIDEBAR</p>
           <h2>自定义侧边栏</h2>
           <p className="page-copy">
-            把常用网页固定到左侧，打开应用就能直接访问。自定义入口会保存在当前设备，也支持通过导入、导出迁移；系统入口不支持修改或删除。
+            将常用网页固定至左侧便捷访问。自定义入口仅保存在本地，支持导入导出，系统入口不可修改。
           </p>
         </div>
         <div className="custom-sidebar-panel">

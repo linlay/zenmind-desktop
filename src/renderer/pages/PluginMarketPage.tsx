@@ -271,8 +271,8 @@ export function PluginMarketPage() {
             <h1>{currentTab === "plugins" ? "插件市场" : "技能市场"}</h1>
             <p>
               {currentTab === "plugins"
-                ? "集中展示当前桌面可用的核心插件入口。"
-                : "支持从本地上传技能包，或从云端技能库下载到当前环境。"}
+                ? "展示当前桌面可用的核心插件。"
+                : "支持本地导入或从云端下载技能包。"}
             </p>
           </header>
 
@@ -350,7 +350,7 @@ export function PluginMarketPage() {
                   <div>
                     <p className="eyebrow">云端下载</p>
                     <h2>从云端技能库下载</h2>
-                    <p>按推荐、系统和个人分类浏览，点击右侧按钮即可下载。</p>
+                    <p>按分类浏览云端技能，点击即可下载至本地。</p>
                   </div>
                   <button type="button" className="market-toolbar-btn" onClick={() => setSkillScope("云端")}>
                     浏览云端

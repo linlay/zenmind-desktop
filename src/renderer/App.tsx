@@ -479,8 +479,8 @@ function AppShell() {
           {!usesEmbeddedSurface && showNewUserEnvBanner ? (
             <section className="new-user-banner" role="status" aria-live="polite">
               <div className="new-user-banner-copy">
-                <strong>首次使用请先装载 `env.zip`</strong>
-                <span>新用户完成环境装载后，再继续后续服务初始化会更顺畅。</span>
+                <strong>装载运行环境</strong>
+                <span>首次使用请先装载 `.env`，以确保服务正常运行。</span>
               </div>
               <button
                 type="button"
@@ -512,7 +512,7 @@ function AppShell() {
               element={
                 <PlaceholderPage
                   title="小宅助理"
-                  description="这里会承接后续的小宅助理桌面入口。本期先完成服务宿主、控制中心和网盘装配。"
+                  description="桌面端助理功能建设中，敬请期待。"
                 />
               }
             />
@@ -521,7 +521,7 @@ function AppShell() {
               element={
                 <PlaceholderPage
                   title="智能体"
-                  description="智能体工作台会在后续核心能力接入后启用。当前先保留独立页面和导航位置。"
+                  description="智能体工作台建设中，敬请期待。"
                 />
               }
             />
@@ -561,11 +561,11 @@ function StartupLoadingScreen({
       <div className="startup-loading-card">
         <div className="startup-loading-mark" aria-hidden="true">Z</div>
         <p className="eyebrow">STARTING UP</p>
-        <h1>{timedOut ? "启动时间有点久" : "正在启动 ZenMind"}</h1>
+        <h1>{timedOut ? "启动缓慢" : "正在启动 ZenMind"}</h1>
         <p className="page-copy">
           {timedOut
-            ? "核心服务还没有全部准备好。你可以继续等待，或先进入控制中心查看启动状态。"
-            : "正在依次拉起认证服务、智能体平台和小宅助理，准备好后会自动进入智能助理。"}
+            ? "部分核心服务启动超时。请继续等待，或进入控制中心排查。"
+            : "正在启动核心服务，完成后将自动进入系统。"}
         </p>
 
         <div className="startup-loading-progress" aria-hidden="true">
@@ -669,7 +669,7 @@ function ExternalItemRoute({
     return (
       <PlaceholderPage
         title="入口不存在"
-        description="没有找到对应的侧边栏入口，请返回设置页检查是否已被删除。"
+        description="该侧边栏入口不存在或已被删除，请在设置中检查。"
       />
     );
   }
