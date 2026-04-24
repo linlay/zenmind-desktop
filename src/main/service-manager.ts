@@ -40,7 +40,11 @@ let shellPathEntriesCache: string[] | null = null;
 
 function getStaticServicePaths() {
   if (process.platform === "win32") {
-    return [];
+    return [
+      path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Docker", "Docker", "resources", "bin"),
+      path.join(process.env.ProgramFiles ?? "C:\\Program Files", "RedHat", "Podman"),
+      path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Podman")
+    ];
   }
 
   return [
@@ -1423,6 +1427,15 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 
 async function runServiceCommand(app: App, service: ServiceDefinition, command: string[], successMessage: string) {
   const installDir = getInstallDir(app, service);
+  if (service.kind === "builtin") {
+    const assetPath = ensureBundleAssetHealthy(app, service);
+    if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir) || isAssetNewerThanInstall(assetPath, installDir)) {
+      await installBuiltinService(app, service.id);
+    }
+  } else if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
+    throw new Error(`${service.name} 未安装或安装已损坏。`);
+  }
+
   if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
     if (service.kind !== "builtin") {
       throw new Error(`${service.name} 未安装或安装已损坏。`);
