@@ -70,6 +70,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 项目支持两种服务来源：
 - **内置服务（builtin）**：随应用打包分发，当前包含 `agent-container-hub`、`agent-platform`、`agent-webclient` 和 `zenmind-app-server`。
 - **插件（plugin）**：运行时通过 `.tar.gz` 包导入，存储在数据目录 `plugins/` 目录，启动时自动扫描加载。插件包必须包含 `manifest.json` 清单文件。Windows 打包版的数据目录固定为 `<安装目录>\data\`，macOS 和开发模式继续使用 Electron `userData`。
+- Desktop 不再随安装包内置任何插件，插件统一通过导入归档包接入。
 
 前端按三种模式区分：
 - **无前端**（`frontendMode: "none"`）：只在控制中心显示。
@@ -236,6 +237,6 @@ my-plugin/
 - 当前打包目标主要是 macOS arm64 和 Windows x64，其他平台尚未在本仓库配置完整分发链路。
 - 内置服务资源依赖外部打包产物，资源包内容缺失会直接导致安装或测试失败。
 - `agent-container-hub` 依赖本机可用的 Docker 或 Podman。
-- `pan-webclient` 仍通过插件系统导入；`agent-webclient` 已恢复为内置服务，缺失资源时优先检查发布包发现链路。
+- `pan-webclient` 仍通过插件系统导入；Desktop 不再打包任何内置插件，缺失插件时优先检查导入产物。
 - 服务运行目录位于数据目录下；Windows 打包版默认是 `<安装目录>\data\`，macOS 和开发模式继续使用 Electron `userData`。
 - RSA 密钥对由 Desktop 统一管理，存储在数据目录 `credentials/` 下，同时用于 pan-webclient 和 agent-platform 的认证。

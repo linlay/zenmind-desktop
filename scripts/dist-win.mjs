@@ -47,7 +47,6 @@ function getElectronBuilderCacheDir() {
 
 async function syncWindowsBuiltinAssets() {
   await runAndWait(npmCmd, ["run", "sync:assets", "--", "--os=windows", "--arch=amd64"]);
-  await runAndWait(npmCmd, ["run", "sync:plugins", "--", "--os=windows", "--arch=amd64"]);
 }
 
 async function buildOnWindowsHost() {

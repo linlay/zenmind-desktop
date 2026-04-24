@@ -6,6 +6,7 @@
 当前 Desktop 已统一切换到 `manifest.json` 驱动架构：
 - 内置服务从 `.tar.gz` 资源包里的 `manifest.json` 自动发现。
 - 插件从数据目录 `plugins/*/manifest.json` 自动扫描注册。Windows 安装版的数据目录默认为 `<安装目录>\data\`，macOS 和开发模式继续使用 Electron `userData`。
+- Desktop 不再随安装包内置任何插件，插件统一通过导入 archive 的方式接入。
 - 插件导入后需要在控制中心执行一次初始化；Desktop 会补齐模板配置并执行 `scripts.deploy`。
 - Desktop 不再在 `service-registry.ts` 中硬编码任何内置服务结构。
 

@@ -33,7 +33,7 @@ import {
   stopRunningServices,
   writeServiceConfig
 } from "./service-manager";
-import { installBundledPlugins, installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
+import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
   detectPortConflict,
@@ -703,9 +703,6 @@ function registerIpcHandlers() {
 app.whenReady().then(async () => {
   ensureDataRoot(app);
   loadBuiltinServices(app);
-  await installBundledPlugins(app).catch((error) => {
-    console.error("failed to install bundled plugins", error);
-  });
   loadInstalledPlugins(app);
   registerIpcHandlers();
   createWindow();

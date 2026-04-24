@@ -18,12 +18,15 @@ test("electron-builder packaging includes uninstall resources and NSIS uninstall
   const packageJson = loadPackageJson();
   const extraResources = packageJson.build?.extraResources ?? [];
   const uninstallResource = extraResources.find((entry) => entry.from === "scripts");
+  const pluginsResource = extraResources.find((entry) => entry.from === "build/resources/plugins");
 
   assert.deepEqual(uninstallResource, {
     from: "scripts",
     to: ".",
     filter: ["uninstall.sh"]
   });
+  assert.equal(pluginsResource, undefined);
+  assert.equal(packageJson.scripts?.["sync:plugins"], undefined);
   assert.match(packageJson.scripts?.["dist:win"] ?? "", /electron-builder --win --x64/);
   assert.equal(packageJson.scripts?.["dist:win-docker"], "node ./scripts/dist-win.mjs");
   assert.notEqual(packageJson.build?.nsis?.perMachine, true);
