@@ -31,11 +31,13 @@ function quotePowerShell(value: string) {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+const SYNC_TIMEOUT_MS = 30_000;
+
 function runPowerShell(script: string) {
   return execFileSync(
     "powershell",
     ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-    { encoding: "utf8" }
+    { encoding: "utf8", timeout: SYNC_TIMEOUT_MS }
   );
 }
 
@@ -77,7 +79,7 @@ try {
     );
   }
 
-  const output = execFileSync("tar", ["-tzf", archivePath], { encoding: "utf8" });
+  const output = execFileSync("tar", ["-tzf", archivePath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS });
 
   return new Set(
     output
@@ -96,7 +98,7 @@ export function extractArchiveToDir(archivePath: string, targetDir: string) {
     return;
   }
 
-  execFileSync("tar", ["-xzf", archivePath, "-C", targetDir]);
+  execFileSync("tar", ["-xzf", archivePath, "-C", targetDir], { timeout: SYNC_TIMEOUT_MS });
 }
 
 export function readFileFromArchive(archivePath: string, entryPath: string) {
@@ -130,5 +132,5 @@ try {
 `);
   }
 
-  return execFileSync("tar", ["-xzf", archivePath, "-O", entryPath], { encoding: "utf8" });
+  return execFileSync("tar", ["-xzf", archivePath, "-O", entryPath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS });
 }

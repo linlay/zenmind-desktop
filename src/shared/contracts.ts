@@ -170,6 +170,16 @@ export interface ManifestWeb {
 export interface ManifestDesktop {
   assetFileName?: string;
   bundleTopLevelDir?: string;
+  envBindings?: ManifestEnvBinding[];
+}
+
+export interface ManifestEnvBinding {
+  key: string;
+  value?: string;
+  fromService?: string;
+  template?: string;
+  onlyIfDefault?: boolean;
+  defaults?: string[];
 }
 
 export interface Manifest {

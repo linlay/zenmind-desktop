@@ -8,6 +8,7 @@ import type {
   ManifestCommand,
   ManifestConfigFile,
   ManifestDesktop,
+  ManifestEnvBinding,
   ManifestFrontend,
   ManifestRuntime,
   ManifestScripts,
@@ -40,6 +41,7 @@ export interface ServiceDefinition extends Manifest {
   prerequisites: string[];
   desktop: ManifestDesktop & {
     bundleTopLevelDir: string;
+    envBindings: ManifestEnvBinding[];
   };
   assetFileName: string;
   bundleTopLevelDir: string;
@@ -219,6 +221,33 @@ function resolveWeb(raw: Record<string, unknown>) {
   } satisfies ManifestWeb;
 }
 
+function resolveEnvBindings(raw: Record<string, unknown>): ManifestEnvBinding[] {
+  const desktop = asObject(raw.desktop);
+  if (!Array.isArray(desktop.envBindings)) {
+    return [];
+  }
+  const result: ManifestEnvBinding[] = [];
+  for (const item of desktop.envBindings) {
+    const binding = asObject(item);
+    const key = asString(binding.key).trim();
+    if (!key) continue;
+    const entry: ManifestEnvBinding = { key };
+    const value = asOptionalString(binding.value);
+    if (value !== undefined) entry.value = value;
+    const fromService = asOptionalString(binding.fromService);
+    if (fromService !== undefined) entry.fromService = fromService;
+    const template = asOptionalString(binding.template);
+    if (template !== undefined) entry.template = template;
+    const onlyIfDefault = asBoolean(binding.onlyIfDefault);
+    if (onlyIfDefault !== undefined) entry.onlyIfDefault = onlyIfDefault;
+    if (Array.isArray(binding.defaults)) {
+      entry.defaults = binding.defaults.filter((d): d is string => typeof d === "string");
+    }
+    result.push(entry);
+  }
+  return result;
+}
+
 function resolveDesktop(
   raw: Record<string, unknown>,
   options: NormalizeManifestOptions,
@@ -231,11 +260,13 @@ function resolveDesktop(
     options.desktop?.bundleTopLevelDir ??
     asOptionalString(desktop.bundleTopLevelDir) ??
     serviceId;
+  const envBindings = resolveEnvBindings(raw);
 
   return {
     assetFileName,
-    bundleTopLevelDir
-  } satisfies ManifestDesktop & { bundleTopLevelDir: string };
+    bundleTopLevelDir,
+    envBindings
+  } satisfies ManifestDesktop & { bundleTopLevelDir: string; envBindings: ManifestEnvBinding[] };
 }
 
 function normalizeExecutable(entry: string) {

@@ -1073,7 +1073,7 @@ test("startService rejects services that still require initialization", async ()
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements injects container hub url, desktop runtime paths, and enables the local relay for agent platform", async () => {
+test("ensurePreStartRequirements injects container hub url, desktop runtime paths, and manifest auth defaults for agent platform", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-prestart-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
@@ -1121,12 +1121,13 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
   assert.match(envContent, /AGENT_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960/);
   assert.match(envContent, /SERVER_PORT=11949/);
-  assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_ENABLED=true$/m);
-  assert.match(envContent, /LOCAL_CLI_ACP_RELAY_PORT=3220/);
-  assert.match(envContent, /AGENT_AUTH_ENABLED=false/);
-  assert.doesNotMatch(envContent, /AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=/);
-  assert.match(envContent, /^GATEWAY_WS_URL=""$/m);
-  assert.match(envContent, /^GATEWAY_USER_ID=""$/m);
+  assert.match(envContent, /^AGENT_WS_ENABLED=true$/m);
+  assert.match(envContent, /^AGENT_AUTH_ENABLED=true$/m);
+  assert.match(envContent, /^AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
+  assert.match(envContent, /^GATEWAY_WS_URL=$/m);
+  assert.match(envContent, /^GATEWAY_USER_ID=$/m);
+  assert.doesNotMatch(envContent, /=""/);
+
   const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
   assert.match(
     envContent,
@@ -1167,8 +1168,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
     new RegExp(`AGENTS_DIR=${path.join(desktopRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
   const agentConfigContent = fs.readFileSync(codeAssistantConfigPath, "utf8");
-  assert.match(agentConfigContent, /baseUrl: http:\/\/127\.0\.0\.1:3220/);
-  assert.doesNotMatch(agentConfigContent, /baseUrl: http:\/\/127\.0\.0\.1:3210/);
+  assert.match(agentConfigContent, /baseUrl: http:\/\/127\.0\.0\.1:3210/);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });

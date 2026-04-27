@@ -430,6 +430,9 @@ function ensureBundleAssetHealthy(app: App, service: ServiceDefinition) {
 }
 
 function formatEnvValue(value: string) {
+  if (value === "") {
+    return "";
+  }
   if (/^[A-Za-z0-9_./:@-]+$/u.test(value)) {
     return value;
   }
@@ -749,18 +752,6 @@ function parseRelayPort(env: Map<string, string>) {
   return Number.isFinite(port) ? port : Number.parseInt(DEFAULT_LOCAL_CLI_ACP_RELAY_PORT, 10);
 }
 
-function isEnvFlagDisabled(value: string | undefined) {
-  switch ((value ?? "").trim().toLowerCase()) {
-    case "false":
-    case "0":
-    case "no":
-    case "off":
-      return true;
-    default:
-      return false;
-  }
-}
-
 function cleanupAgentPlatformRelayBeforeStart(installDir: string, env: Map<string, string>) {
   const relayPidFilePath = path.join(installDir, "run", "local-cli-acp-relay.pid");
   const relayPort = parseRelayPort(env);
@@ -973,7 +964,7 @@ function runPowerShellScript(scriptPath: string, args: string[], cwd: string) {
     execFile(
       windowsPowerShellPath(),
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", wrapperScriptPath],
-      { cwd, env: buildServiceEnv() },
+      { cwd, env: buildServiceEnv(), timeout: 60_000 },
       (error, stdout, stderr) => {
         try {
           fs.rmSync(wrapperScriptPath, { force: true });
@@ -1032,14 +1023,22 @@ function runExecFile(command: string, args: string[], cwd: string) {
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
 
+    const killTimer = setTimeout(() => {
+      child.kill("SIGKILL");
+    }, 60_000);
+
     child.stdout?.on("data", (chunk: Buffer) => {
       stdoutChunks.push(chunk);
     });
     child.stderr?.on("data", (chunk: Buffer) => {
       stderrChunks.push(chunk);
     });
-    child.once("error", reject);
+    child.once("error", (err) => {
+      clearTimeout(killTimer);
+      reject(err);
+    });
     child.once("exit", (code, signal) => {
+      clearTimeout(killTimer);
       const stdout = Buffer.concat(stdoutChunks).toString("utf8");
       const stderr = Buffer.concat(stderrChunks).toString("utf8");
       if (code !== 0) {
@@ -1403,28 +1402,8 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   };
 }
 
-const agentPlatformDefaultContainerHubBaseUrls = new Set([
-  "",
-  "http://127.0.0.1:11960",
-  "http://localhost:11960",
-  "http://host.docker.internal:11960"
-]);
-
-const LEGACY_LOCAL_CLI_ACP_RELAY_PORT = "3210";
-const DEFAULT_LOCAL_CLI_ACP_RELAY_ENABLED = "true";
 const DEFAULT_LOCAL_CLI_ACP_RELAY_PORT = "3220";
-const legacyCodeAssistantProxyBaseUrls = new Set([
-  `http://127.0.0.1:${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}`,
-  `http://localhost:${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}`,
-  `http://127.0.0.1:${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}/`,
-  `http://localhost:${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}/`
-]);
 
-const agentWebclientDefaultBaseUrls = new Set([
-  "",
-  "http://127.0.0.1:11949",
-  "http://localhost:11949"
-]);
 
 function agentWebclientInstallNeedsRefresh(installDir: string) {
   const serverPath = path.join(installDir, "backend", "server.js");
@@ -1639,73 +1618,7 @@ function resolveLegacyAgentPlatformRuntimeRootMigration(app: App, env: Map<strin
   return preferredRuntimeRoot;
 }
 
-function migrateLegacyCodeAssistantProxyConfig(agentConfigPath: string, relayPort: string) {
-  if (!agentConfigPath || !fs.existsSync(agentConfigPath)) {
-    return false;
-  }
 
-  const content = fs.readFileSync(agentConfigPath, "utf8");
-  const lines = content.split(/\r?\n/u);
-  let modeIsProxy = false;
-  let inProxyConfig = false;
-  let mutated = false;
-
-  const nextLines = lines.map((line) => {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      return line;
-    }
-
-    if (/^[A-Za-z0-9_-]+:/u.test(trimmed) && !trimmed.startsWith("baseUrl:") && !trimmed.startsWith("token:") && !trimmed.startsWith("timeoutMs:")) {
-      if (!trimmed.startsWith("proxyConfig:")) {
-        inProxyConfig = false;
-      }
-    }
-
-    if (trimmed === "mode: PROXY") {
-      modeIsProxy = true;
-      return line;
-    }
-
-    if (trimmed.startsWith("mode:") && trimmed !== "mode: PROXY") {
-      modeIsProxy = false;
-      inProxyConfig = false;
-      return line;
-    }
-
-    if (trimmed === "proxyConfig:") {
-      inProxyConfig = modeIsProxy;
-      return line;
-    }
-
-    if (!modeIsProxy || !inProxyConfig) {
-      return line;
-    }
-
-    const baseUrlMatch = line.match(/^(\s*baseUrl:\s*)(\S+)(\s*)$/u);
-    if (!baseUrlMatch) {
-      return line;
-    }
-
-    const [, prefix, rawValue, suffix] = baseUrlMatch;
-    if (!legacyCodeAssistantProxyBaseUrls.has(rawValue)) {
-      return line;
-    }
-
-    mutated = true;
-    return `${prefix}http://127.0.0.1:${relayPort}${suffix}`;
-  });
-
-  if (!mutated) {
-    return false;
-  }
-
-  fs.writeFileSync(agentConfigPath, `${nextLines.join("\n")}\n`, "utf8");
-  console.warn(
-    `[service-manager] Migrated codeAssistant proxyConfig.baseUrl from legacy relay port ${LEGACY_LOCAL_CLI_ACP_RELAY_PORT} to ${relayPort}: ${agentConfigPath}`
-  );
-  return true;
-}
 
 function resolveAcpCommandForDesktop(env: Map<string, string>) {
   const currentAcpCommand = env.get("CLAUDE_CODE_ACP_COMMAND") ?? "";
@@ -1740,43 +1653,47 @@ function resolveAcpCommandForDesktop(env: Map<string, string>) {
   return null;
 }
 
-async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {
-  if (service.id === "agent-platform") {
-    const installDir = getInstallDir(app, service);
-    const envPath = path.join(installDir, ".env");
-    const env = readEnvFile(envPath);
-    const currentHubBaseUrl = env.get("AGENT_CONTAINER_HUB_BASE_URL") ?? "";
-    const currentRelayEnabled = env.get("LOCAL_CLI_ACP_RELAY_ENABLED");
-    const updates = new Map<string, string>();
-    const currentRelayPort = env.get("LOCAL_CLI_ACP_RELAY_PORT") ?? "";
+async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<string, string>, updates: Map<string, string>) {
+  for (const binding of service.desktop.envBindings) {
+    const currentValue = env.get(binding.key) ?? "";
 
-    try {
-      const hubState = await getServiceState(app, "agent-container-hub");
-      const desiredHubBaseUrl = `http://127.0.0.1:${hubState.healthMeta.port}`;
-      if (agentPlatformDefaultContainerHubBaseUrls.has(currentHubBaseUrl)) {
-        updates.set("AGENT_CONTAINER_HUB_BASE_URL", desiredHubBaseUrl);
-      }
-    } catch {
-      // Agent Platform can run without Container Hub being registered in Desktop.
-    }
-    if (!env.get("SERVER_PORT")) {
-      updates.set("SERVER_PORT", String(service.web.defaultPort));
-    }
-    if (!currentRelayEnabled || isEnvFlagDisabled(currentRelayEnabled)) {
-      updates.set("LOCAL_CLI_ACP_RELAY_ENABLED", DEFAULT_LOCAL_CLI_ACP_RELAY_ENABLED);
-      if (isEnvFlagDisabled(currentRelayEnabled)) {
-        console.warn("[service-manager] Migrated Desktop local relay setting from disabled to enabled.");
+    if (binding.onlyIfDefault) {
+      const defaults = new Set(binding.defaults ?? [""]);
+      if (!defaults.has(currentValue)) {
+        continue;
       }
     }
-    if (!currentRelayPort || currentRelayPort === LEGACY_LOCAL_CLI_ACP_RELAY_PORT) {
-      updates.set("LOCAL_CLI_ACP_RELAY_PORT", DEFAULT_LOCAL_CLI_ACP_RELAY_PORT);
-      if (currentRelayPort === LEGACY_LOCAL_CLI_ACP_RELAY_PORT) {
-        console.warn(
-          `[service-manager] Detected legacy local-cli-acp-relay port ${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}; migrating agent-platform to ${DEFAULT_LOCAL_CLI_ACP_RELAY_PORT}`
-        );
+
+    if (binding.fromService && binding.template) {
+      try {
+        const depState = await getServiceState(app, binding.fromService);
+        const port = depState.healthMeta.port ?? 0;
+        const resolved = binding.template.replace("{{port}}", String(port));
+        updates.set(binding.key, resolved);
+      } catch {
+        // Dependency service not registered; skip this binding.
       }
+      continue;
     }
-    updates.set("AGENT_AUTH_ENABLED", "false");
+
+    if (binding.value !== undefined) {
+      const resolved = binding.value.replace("{{serviceDefaultPort}}", String(service.web.defaultPort));
+      updates.set(binding.key, resolved);
+    }
+  }
+}
+
+async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {
+  const installDir = getInstallDir(app, service);
+  const envPath = path.join(installDir, ".env");
+  const env = readEnvFile(envPath);
+  const updates = new Map<string, string>();
+
+  // Apply manifest-declared envBindings generically.
+  await applyEnvBindings(app, service, env, updates);
+
+  // Service-specific logic that cannot be expressed via envBindings.
+  if (service.id === "agent-platform") {
     updates.set("NODE_BIN", resolveNodeBin());
     const resolvedAcpCommand = resolveAcpCommandForDesktop(env);
     if (resolvedAcpCommand) {
@@ -1806,24 +1723,9 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
         }
       }
     }
-
-    const agentsDir = resolveAgentPlatformAgentsDir(env, desktopRuntimeRoot);
-    const relayPort = updates.get("LOCAL_CLI_ACP_RELAY_PORT") ?? currentRelayPort ?? DEFAULT_LOCAL_CLI_ACP_RELAY_PORT;
-    const codeAssistantConfigPath = agentsDir ? path.join(agentsDir, "codeAssistant", "agent.yml") : "";
-    if (migrateLegacyCodeAssistantProxyConfig(codeAssistantConfigPath, relayPort) && currentRelayPort === LEGACY_LOCAL_CLI_ACP_RELAY_PORT) {
-      console.warn(
-        `[service-manager] codeAssistant proxyConfig.baseUrl was still pointing at legacy relay port ${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}; expected ${relayPort}`
-      );
-    }
-
-    if (updates.size > 0) {
-      writeEnvFileUpdates(envPath, updates);
-    }
-    return;
   }
 
   if (service.id === "agent-webclient") {
-    const installDir = getInstallDir(app, service);
     const assetPath = ensureBundleAssetHealthy(app, service);
     const forceRefresh = agentWebclientInstallNeedsRefresh(installDir);
     if (forceRefresh || isAssetNewerThanInstall(assetPath, installDir)) {
@@ -1831,24 +1733,11 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
         force: forceRefresh
       });
     }
-    const envPath = path.join(installDir, ".env");
-    const env = readEnvFile(envPath);
-    const platformState = await getServiceState(app, "agent-platform");
-    const desiredBaseUrl = `http://127.0.0.1:${platformState.healthMeta.port || 11949}`;
-    const currentBaseUrl = env.get("BASE_URL") ?? "";
-    const updates = new Map<string, string>();
-
-    if (agentWebclientDefaultBaseUrls.has(currentBaseUrl)) {
-      updates.set("BASE_URL", desiredBaseUrl);
-    }
-    if (!env.get("PORT")) {
-      updates.set("PORT", String(service.web.defaultPort));
-    }
     updates.set("NODE_BIN", resolveNodeBin());
+  }
 
-    if (updates.size > 0) {
-      writeEnvFileUpdates(envPath, updates);
-    }
+  if (updates.size > 0) {
+    writeEnvFileUpdates(envPath, updates);
   }
 }
 
@@ -2303,7 +2192,6 @@ export const __testInternals = {
   resolveAcpCommandForDesktop,
   cleanupAgentPlatformRelayBeforeStart,
   resolveLegacyAgentPlatformRuntimeRootMigration,
-  migrateLegacyCodeAssistantProxyConfig,
   decodePowerShellCapturePayload,
   runExecFile,
   getInitializationStatePath,
