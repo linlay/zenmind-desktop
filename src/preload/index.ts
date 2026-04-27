@@ -8,6 +8,8 @@ import type {
   ServiceId,
   ServiceLogReadOptions,
   ServiceLogTarget,
+  StartupRestoreState,
+  StartupRestoreStateListener,
   WebviewPopupNavigateListener,
   WebviewPopupNavigateRequest
 } from "../shared/contracts";
@@ -15,6 +17,7 @@ import type {
 const api: DesktopApi = {
   services: {
     list: () => ipcRenderer.invoke("services.list"),
+    getStartupRestoreState: () => ipcRenderer.invoke("services.getStartupRestoreState"),
     installBuiltinFromBundle: (serviceId: ServiceId) =>
       ipcRenderer.invoke("services.installBuiltinFromBundle", serviceId),
     installBuiltin: (serviceId: ServiceId) => ipcRenderer.invoke("services.installBuiltin", serviceId),
@@ -44,7 +47,9 @@ const api: DesktopApi = {
     issueAccessToken: (reason) => ipcRenderer.invoke("agentAuth.issueAccessToken", reason)
   },
   settings: {
-    getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot")
+    getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
+    getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
+    setSidebarTranslucency: (enabled) => ipcRenderer.invoke("settings.setSidebarTranslucency", enabled)
   },
   customSidebar: {
     list: () => ipcRenderer.invoke("customSidebar.list"),
@@ -71,6 +76,16 @@ const api: DesktopApi = {
     ipcRenderer.on("services.changed", handleServicesChanged);
     return () => {
       ipcRenderer.off("services.changed", handleServicesChanged);
+    };
+  },
+  onStartupRestoreState: (listener: StartupRestoreStateListener) => {
+    const handleStartupRestoreState = (_event: Electron.IpcRendererEvent, state: StartupRestoreState) => {
+      listener(state);
+    };
+
+    ipcRenderer.on("services.startupRestoreState", handleStartupRestoreState);
+    return () => {
+      ipcRenderer.off("services.startupRestoreState", handleStartupRestoreState);
     };
   },
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => {

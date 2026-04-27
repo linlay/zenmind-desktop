@@ -10,20 +10,20 @@ import { PluginPage } from "./pages/PluginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ServicesProvider, useServices } from "./services/ServicesContext";
-import type { CustomSidebarItem, ServiceId, ServiceState } from "../shared/contracts";
-import { getStartupBlockingService, isStartupServiceWaiting } from "../shared/startup-gate";
+import type { CustomSidebarItem, ServiceId, ServiceState, StartupRestoreState } from "../shared/contracts";
 import { getServiceDisplayName } from "./service-display";
 
 type ThemeMode = "light" | "dark";
 
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
+const SIDEBAR_TRANSLUCENCY_STORAGE_KEY = "zenmind-desktop.sidebar-translucency";
 const NEW_USER_ENV_BANNER_SEEN_STORAGE_KEY = "zenmind-desktop.new-user-env-banner.seen";
 const NEW_USER_ENV_BANNER_DISMISSED_STORAGE_KEY = "zenmind-desktop.new-user-env-banner.dismissed";
 const DEFAULT_SIDEBAR_WIDTH = 196;
 const MIN_SIDEBAR_WIDTH = 176;
 const MAX_SIDEBAR_WIDTH = 340;
-const COLLAPSED_SIDEBAR_WIDTH = 54;
+const COLLAPSED_SIDEBAR_WIDTH = 64;
 const COLLAPSE_THRESHOLD = 118;
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
@@ -31,15 +31,41 @@ const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webc
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
 const STARTUP_STATUS_REFRESH_MS = 1500;
 
-export const EXTERNAL_EXPERIMENTAL_ITEMS = [
-  { id: "guoxiao", label: "国小君平台", url: "https://gtjaqh.net/home/#/home", icon: "futures" as const },
-  { id: "qiuer", label: "秋而工作站", url: "https://station.qiuer.net/", icon: "autumn" as const }
-] as const;
+export const EXTERNAL_EXPERIMENTAL_ITEMS = [] as const;
 
 type SidebarState = {
   collapsed: boolean;
   width: number;
 };
+
+function inferDesktopPlatform() {
+  if (typeof navigator === "undefined") {
+    return "";
+  }
+  const userAgent = navigator.userAgent;
+  if (userAgent.includes("Macintosh") || userAgent.includes("Mac OS X")) {
+    return "darwin";
+  }
+  if (userAgent.includes("Windows")) {
+    return "win32";
+  }
+  return "";
+}
+
+function createFallbackStartupRestoreState(): StartupRestoreState {
+  return {
+    phase: "idle",
+    serviceOrder: [...STARTUP_SERVICE_IDS],
+    currentServiceId: null,
+    failedServiceId: null,
+    message: "",
+    updatedAt: "",
+    services: STARTUP_SERVICE_IDS.map((serviceId) => ({
+      serviceId,
+      phase: "pending"
+    }))
+  };
+}
 
 function AppShell() {
   const location = useLocation();
@@ -53,6 +79,7 @@ function AppShell() {
   const sidebarDragStartRef = useRef(0);
   const startupNavigationDoneRef = useRef(false);
   const refreshServicesRef = useRef(refreshServices);
+  const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") {
       return "light";
@@ -85,11 +112,22 @@ function AppShell() {
       return { collapsed: false, width: DEFAULT_SIDEBAR_WIDTH };
     }
   });
+  const [sidebarTranslucencyEnabled, setSidebarTranslucencyEnabled] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    try {
+      return window.localStorage.getItem(SIDEBAR_TRANSLUCENCY_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
   const [isSidebarDragging, setIsSidebarDragging] = useState(false);
   const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [startupGateDismissed, setStartupGateDismissed] = useState(false);
+  const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
   const [showNewUserEnvBanner, setShowNewUserEnvBanner] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -121,14 +159,22 @@ function AppShell() {
     location.pathname.startsWith("/plugin/") ||
     location.pathname.startsWith("/external/") ||
     location.pathname.startsWith("/custom-sidebar/");
+  const isMac = desktopPlatform === "darwin";
   const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
     services.find((service) => service.id === serviceId) ?? null
   );
   const startupAllReady =
     !servicesLoading &&
     startupServices.every((service) => service?.status === "running");
-  const startupBlockingService = getStartupBlockingService(startupServices, servicesLoading);
-  const showStartupGate = !startupGateDismissed && !startupAllReady && !startupBlockingService;
+  const resolvedStartupRestoreState = startupRestoreState ?? createFallbackStartupRestoreState();
+  const showStartupGate =
+    !startupGateDismissed && (
+      startupRestoreState === null ||
+      resolvedStartupRestoreState.phase === "idle" ||
+      resolvedStartupRestoreState.phase === "running" ||
+      resolvedStartupRestoreState.phase === "failed" ||
+      (resolvedStartupRestoreState.phase === "succeeded" && !startupAllReady)
+    );
 
   async function refreshCustomSidebarItems() {
     const result = await window.electronAPI.customSidebar.list();
@@ -136,6 +182,12 @@ function AppShell() {
       setCustomSidebarItems(result.items);
     }
     return result;
+  }
+
+  async function refreshStartupRestoreState() {
+    const nextState = await window.electronAPI.services.getStartupRestoreState();
+    setStartupRestoreState(nextState);
+    return nextState;
   }
 
   useEffect(() => {
@@ -155,32 +207,89 @@ function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (!startupAllReady || startupNavigationDoneRef.current) {
+    let cancelled = false;
+    window.electronAPI.settings
+      .getPlatform()
+      .then((platform) => {
+        if (!cancelled) {
+          setDesktopPlatform(platform);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      startupGateDismissed ||
+      resolvedStartupRestoreState.phase !== "succeeded" ||
+      !startupAllReady ||
+      startupNavigationDoneRef.current
+    ) {
       return;
     }
 
     startupNavigationDoneRef.current = true;
     setStartupGateDismissed(true);
     setStartupTimedOut(false);
-
-    if (!startupGateDismissed) {
-      navigate(ASSISTANT_TARGET_PATH, { replace: true });
-    }
-  }, [navigate, startupAllReady, startupGateDismissed]);
+    navigate(ASSISTANT_TARGET_PATH, { replace: true });
+  }, [navigate, resolvedStartupRestoreState.phase, startupAllReady, startupGateDismissed]);
 
   useEffect(() => {
-    if (startupGateDismissed || !startupBlockingService) {
+    if (startupGateDismissed || resolvedStartupRestoreState.phase !== "failed") {
       return;
     }
 
     setStartupGateDismissed(true);
     setStartupTimedOut(false);
-    navigate("/control-center", { replace: true });
-  }, [navigate, startupBlockingService, startupGateDismissed]);
+    navigate("/control-center", {
+      replace: true,
+      state: {
+        startupFailure: {
+          serviceId: resolvedStartupRestoreState.failedServiceId,
+          message: resolvedStartupRestoreState.message
+        }
+      }
+    });
+  }, [
+    navigate,
+    resolvedStartupRestoreState.failedServiceId,
+    resolvedStartupRestoreState.message,
+    resolvedStartupRestoreState.phase,
+    startupGateDismissed
+  ]);
 
   useEffect(() => {
     refreshServicesRef.current = refreshServices;
   }, [refreshServices]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    refreshStartupRestoreState()
+      .then((nextState) => {
+        if (cancelled) {
+          return;
+        }
+        setStartupRestoreState(nextState);
+      })
+      .catch(() => undefined);
+
+    const removeListener = window.electronAPI.onStartupRestoreState((nextState) => {
+      if (cancelled) {
+        return;
+      }
+      setStartupRestoreState(nextState);
+    });
+
+    return () => {
+      cancelled = true;
+      removeListener();
+    };
+  }, []);
 
   useEffect(() => {
     if (!showStartupGate) {
@@ -190,11 +299,15 @@ function AppShell() {
     const refreshInterval = window.setInterval(() => {
       void refreshServicesRef.current();
     }, STARTUP_STATUS_REFRESH_MS);
+    const startupStateInterval = window.setInterval(() => {
+      void refreshStartupRestoreState().catch(() => undefined);
+    }, STARTUP_STATUS_REFRESH_MS);
     const timer = window.setTimeout(() => {
       setStartupTimedOut(true);
     }, STARTUP_LOADING_TIMEOUT_MS);
     return () => {
       window.clearInterval(refreshInterval);
+      window.clearInterval(startupStateInterval);
       window.clearTimeout(timer);
     };
   }, [showStartupGate]);
@@ -207,6 +320,26 @@ function AppShell() {
       // Ignore persistence failures and keep the in-memory theme switch usable.
     }
   }, [themeMode]);
+
+  useEffect(() => {
+    const shouldApply = isMac && sidebarTranslucencyEnabled && !showStartupGate;
+    document.body.classList.toggle("mac-translucent-sidebar-body", shouldApply);
+    if (isMac) {
+      try {
+        window.localStorage.setItem(
+          SIDEBAR_TRANSLUCENCY_STORAGE_KEY,
+          sidebarTranslucencyEnabled ? "true" : "false"
+        );
+      } catch {
+        // Ignore persistence failures and keep the in-memory translucency switch usable.
+      }
+    }
+    window.electronAPI.settings.setSidebarTranslucency(shouldApply).catch(() => undefined);
+
+    return () => {
+      document.body.classList.remove("mac-translucent-sidebar-body");
+    };
+  }, [isMac, showStartupGate, sidebarTranslucencyEnabled]);
 
   useEffect(() => {
     document.body.classList.toggle("embedded-surface-body", usesEmbeddedSurface);
@@ -427,8 +560,12 @@ function AppShell() {
         servicesLoading={servicesLoading}
         servicesError={servicesError}
         startupServices={startupServices}
+        startupRestoreState={resolvedStartupRestoreState}
         timedOut={startupTimedOut}
-        onRefresh={() => void refreshServices()}
+        onRefresh={() => {
+          void refreshServices();
+          void refreshStartupRestoreState().catch(() => undefined);
+        }}
         onOpenControlCenter={() => {
           setStartupGateDismissed(true);
           navigate("/control-center", { replace: true });
@@ -441,9 +578,11 @@ function AppShell() {
     <div
       className={[
         "app-shell",
-        usesEmbeddedSurface ? "has-embedded-surface" : ""
+        usesEmbeddedSurface ? "has-embedded-surface" : "",
+        isMac && sidebarTranslucencyEnabled ? "is-mac-translucent-sidebar" : ""
       ].filter(Boolean).join(" ")}
       ref={appShellRef}
+      style={{ "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
     >
       <div className="app-window-drag-region" aria-hidden="true" />
       <div
@@ -459,7 +598,6 @@ function AppShell() {
           isCollapsed={sidebarState.collapsed}
           currentPath={location.pathname}
           customSidebarItems={customSidebarItems}
-          pendingNavigationPath={pendingSidebarNavigationPath}
           onRequestNavigate={requestSidebarNavigation}
           onNavigateItem={undefined}
         />
@@ -486,24 +624,24 @@ function AppShell() {
         </button>
       </div>
       <div className="app-content">
+        {!usesEmbeddedSurface && showNewUserEnvBanner ? (
+          <section className="new-user-banner" role="status" aria-live="polite" aria-atomic="true">
+            <div className="new-user-banner-copy">
+              <strong>装载运行环境</strong>
+              <span>首次使用请先装载 `.env`，以确保服务正常运行。</span>
+            </div>
+            <button
+              type="button"
+              className="new-user-banner-close"
+              aria-label="关闭提示"
+              onClick={dismissNewUserEnvBanner}
+            >
+              知道了
+            </button>
+          </section>
+        ) : null}
         <main className="app-main">
           <div className="app-main-drag-region" aria-hidden="true" />
-          {!usesEmbeddedSurface && showNewUserEnvBanner ? (
-            <section className="new-user-banner" role="status" aria-live="polite">
-              <div className="new-user-banner-copy">
-                <strong>装载运行环境</strong>
-                <span>首次使用请先装载 `.env`，以确保服务正常运行。</span>
-              </div>
-              <button
-                type="button"
-                className="new-user-banner-close"
-                aria-label="关闭提示"
-                onClick={dismissNewUserEnvBanner}
-              >
-                知道了
-              </button>
-            </section>
-          ) : null}
           <Routes>
             <Route path="/" element={<Navigate to={ASSISTANT_TARGET_PATH} replace />} />
             <Route path="/control-center" element={<ControlCenterPage />} />
@@ -513,6 +651,9 @@ function AppShell() {
                 <SettingsPage
                   themeMode={themeMode}
                   onToggleTheme={toggleTheme}
+                  isMac={isMac}
+                  sidebarTranslucencyEnabled={isMac && sidebarTranslucencyEnabled}
+                  onToggleSidebarTranslucency={() => setSidebarTranslucencyEnabled((current) => !current)}
                   customSidebarItems={customSidebarItems}
                   onCustomSidebarItemsChange={setCustomSidebarItems}
                   onRefreshCustomSidebarItems={refreshCustomSidebarItems}
@@ -553,6 +694,7 @@ function StartupLoadingScreen({
   servicesLoading,
   servicesError,
   startupServices,
+  startupRestoreState,
   timedOut,
   onRefresh,
   onOpenControlCenter
@@ -560,13 +702,13 @@ function StartupLoadingScreen({
   servicesLoading: boolean;
   servicesError: string;
   startupServices: Array<ServiceState | null>;
+  startupRestoreState: StartupRestoreState;
   timedOut: boolean;
   onRefresh: () => void;
   onOpenControlCenter: () => void;
 }) {
-  const readyCount = startupServices.filter((service) => service?.status === "running").length;
-  const totalCount = startupServices.length;
-  const activeServiceIndex = startupServices.findIndex((service) => service?.status !== "running");
+  const readyCount = startupRestoreState.services.filter((service) => service.phase === "succeeded").length;
+  const totalCount = startupRestoreState.serviceOrder.length;
 
   return (
     <div className="startup-loading-screen">
@@ -593,29 +735,47 @@ function StartupLoadingScreen({
         </div>
 
         <div className="startup-loading-list">
-          {startupServices.map((service, index) => {
-            const fallbackId = STARTUP_SERVICE_IDS[index] as ServiceId;
+          {startupRestoreState.serviceOrder.map((serviceId, index) => {
+            const fallbackId = serviceId as ServiceId;
+            const service = startupServices[index] ?? null;
+            const startupServiceState = startupRestoreState.services.find((item) => item.serviceId === fallbackId);
             const displayName = service
               ? getServiceDisplayName(service.id, service.name)
               : getStartupServiceFallbackName(fallbackId);
+            const previousServicesReady = startupRestoreState.serviceOrder
+              .slice(0, index)
+              .every((previousServiceId) => {
+                const previousServiceState = startupRestoreState.services.find((item) => item.serviceId === previousServiceId);
+                return previousServiceState?.phase === "succeeded";
+              });
+            const startupPhase = startupServiceState?.phase ?? "pending";
             const isActiveStartupService =
-              !timedOut &&
-              index === activeServiceIndex &&
-              service !== null &&
-              isWaitingForStartup(service);
-            const statusLabel = service
-              ? service.status === "running"
-                ? "已就绪"
+              !timedOut && startupPhase === "starting";
+            const isReady = startupPhase === "succeeded";
+            const isFailed = startupPhase === "failed";
+            const statusLabel = isReady
+              ? "已就绪"
+              : isFailed
+                ? "启动失败"
                 : isActiveStartupService
                   ? "启动中..."
-                  : service.statusLabel
-              : servicesLoading
-                ? "读取中..."
-                : "等待启动";
+                  : !previousServicesReady
+                    ? "等待前序服务"
+                    : servicesLoading && startupRestoreState.phase === "idle"
+                      ? "读取中..."
+                      : "等待启动";
 
             return (
               <div className="startup-loading-item" key={fallbackId}>
-                <span className={`startup-loading-dot${service?.status === "running" ? " is-ready" : ""}`} aria-hidden="true" />
+                <span
+                  className={[
+                    "startup-loading-dot",
+                    isReady ? "is-ready" : "",
+                    isActiveStartupService && !isReady ? "is-active" : "",
+                    isFailed ? "is-failed" : ""
+                  ].filter(Boolean).join(" ")}
+                  aria-hidden="true"
+                />
                 <div className="startup-loading-copy">
                   <strong>{displayName}</strong>
                   <span>{statusLabel}</span>
@@ -625,6 +785,9 @@ function StartupLoadingScreen({
           })}
         </div>
 
+        {startupRestoreState.phase === "failed" && startupRestoreState.message ? (
+          <div className="startup-loading-error">{startupRestoreState.message}</div>
+        ) : null}
         {servicesError ? <div className="startup-loading-error">{servicesError}</div> : null}
 
         {timedOut ? (

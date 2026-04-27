@@ -29,7 +29,6 @@ type AppSidebarProps = {
   isCollapsed: boolean;
   currentPath: string;
   customSidebarItems: CustomSidebarItem[];
-  pendingNavigationPath: string | null;
   onRequestNavigate?: (targetPath: string) => boolean;
   onNavigateItem?: () => void;
 };
@@ -38,7 +37,6 @@ export function AppSidebar({
   isCollapsed,
   currentPath,
   customSidebarItems,
-  pendingNavigationPath,
   onRequestNavigate,
   onNavigateItem
 }: AppSidebarProps) {
@@ -110,8 +108,7 @@ export function AppSidebar({
             className={({ isActive }) =>
               [
                 "sidebar-link",
-                isActive ? "sidebar-link-active" : "",
-                pendingNavigationPath === item.to ? "sidebar-link-pending" : ""
+                isActive ? "sidebar-link-active" : ""
               ].filter(Boolean).join(" ")
             }
           >
@@ -131,8 +128,7 @@ export function AppSidebar({
             [
               "sidebar-link",
               "sidebar-link-utility",
-              isActive ? "sidebar-link-active" : "",
-              pendingNavigationPath === "/settings" ? "sidebar-link-pending" : ""
+              isActive ? "sidebar-link-active" : ""
             ].filter(Boolean).join(" ")
           }
         >

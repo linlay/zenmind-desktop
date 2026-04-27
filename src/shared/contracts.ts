@@ -199,6 +199,27 @@ export interface PluginInstallResult {
 export type NavigateListener = (path: string) => void;
 export type ServicesChangedListener = () => void;
 
+export type StartupRestorePhase = "idle" | "running" | "succeeded" | "failed";
+export type StartupRestoreServicePhase = "pending" | "starting" | "succeeded" | "failed" | "skipped";
+
+export interface StartupRestoreServiceState {
+  serviceId: ServiceId;
+  phase: StartupRestoreServicePhase;
+  message?: string;
+}
+
+export interface StartupRestoreState {
+  phase: StartupRestorePhase;
+  serviceOrder: ServiceId[];
+  currentServiceId: ServiceId | null;
+  failedServiceId: ServiceId | null;
+  message: string;
+  updatedAt: string;
+  services: StartupRestoreServiceState[];
+}
+
+export type StartupRestoreStateListener = (state: StartupRestoreState) => void;
+
 export interface CustomSidebarItem {
   id: string;
   label: string;
@@ -239,6 +260,13 @@ export interface CustomSidebarTransferResult {
   message: string;
 }
 
+export interface SidebarTranslucencyResult {
+  ok: boolean;
+  enabled: boolean;
+  effective: boolean;
+  message: string;
+}
+
 export interface AssistantWorkerOpenRequest {
   workerKey?: string;
   agentKey?: string;
@@ -259,6 +287,7 @@ export type WebviewPopupNavigateListener = (request: WebviewPopupNavigateRequest
 export interface DesktopApi {
   services: {
     list: () => Promise<ServiceState[]>;
+    getStartupRestoreState: () => Promise<StartupRestoreState>;
     installBuiltinFromBundle: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
     installBuiltin: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
     initialize: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
@@ -289,6 +318,8 @@ export interface DesktopApi {
   };
   settings: {
     getDataRoot: () => Promise<string>;
+    getPlatform: () => Promise<string>;
+    setSidebarTranslucency: (enabled: boolean) => Promise<SidebarTranslucencyResult>;
   };
   customSidebar: {
     list: () => Promise<CustomSidebarItemsResult>;
@@ -299,6 +330,7 @@ export interface DesktopApi {
   };
   onNavigate: (listener: NavigateListener) => () => void;
   onServicesChanged: (listener: ServicesChangedListener) => () => void;
+  onStartupRestoreState: (listener: StartupRestoreStateListener) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
   onWebviewPopupNavigate: (listener: WebviewPopupNavigateListener) => () => void;
 }

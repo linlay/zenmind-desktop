@@ -53,7 +53,9 @@ import type {
   AssistantWorkerOpenRequest,
   ServiceId,
   ServiceLogReadOptions,
-  ServiceLogTarget
+  ServiceLogTarget,
+  StartupRestoreServiceState,
+  StartupRestoreState
 } from "../shared/contracts";
 import {
   ensureDataRoot,
@@ -65,6 +67,8 @@ let tray: Tray | null = null;
 let isHandlingQuit = false;
 let serviceMutationQueue = Promise.resolve();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
+const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
+let startupRestoreState = createStartupRestoreState();
 
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName("ZenMind");
@@ -110,16 +114,42 @@ function shouldOpenPopupInCurrentWebview(currentUrl: string, targetUrl: string) 
   return current.origin === target.origin;
 }
 
+function setSidebarTranslucency(enabled: boolean) {
+  const effective = process.platform === "darwin";
+  if (!effective) {
+    return {
+      ok: true,
+      enabled: false,
+      effective: false,
+      message: "半透明侧边栏仅在 macOS 生效。"
+    };
+  }
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setVibrancy(enabled ? "under-window" : null);
+    mainWindow.setBackgroundColor(enabled ? "#00000000" : "#FFFFFF");
+  }
+
+  return {
+    ok: true,
+    enabled,
+    effective: true,
+    message: enabled ? "已开启半透明侧边栏。" : "已关闭半透明侧边栏。"
+  };
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 920,
     minWidth: 1180,
     minHeight: 760,
-    backgroundColor: "#FFFFFF",
+    show: false,
+    backgroundColor: process.platform === "darwin" ? "#00000000" : "#FFFFFF",
     ...(process.platform === "darwin"
       ? {
-          titleBarStyle: "hidden" as const
+          titleBarStyle: "hidden" as const,
+          transparent: true
         }
       : {}),
     webPreferences: {
@@ -129,6 +159,14 @@ function createWindow() {
       sandbox: false,
       webviewTag: true
     }
+  });
+
+  mainWindow.once("ready-to-show", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    mainWindow.show();
+    mainWindow.focus();
   });
 
   mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
@@ -270,6 +308,91 @@ function notifyServicesChanged() {
     return;
   }
   mainWindow.webContents.send("services.changed");
+}
+
+function createStartupRestoreState(phase: StartupRestoreState["phase"] = "idle"): StartupRestoreState {
+  return {
+    phase,
+    serviceOrder: [...STARTUP_RESTORE_SERVICE_ORDER],
+    currentServiceId: null,
+    failedServiceId: null,
+    message: "",
+    updatedAt: new Date().toISOString(),
+    services: STARTUP_RESTORE_SERVICE_ORDER.map<StartupRestoreServiceState>((serviceId) => ({
+      serviceId,
+      phase: "pending"
+    }))
+  };
+}
+
+function cloneStartupRestoreState(state: StartupRestoreState) {
+  return {
+    ...state,
+    serviceOrder: [...state.serviceOrder],
+    services: state.services.map((service) => ({ ...service }))
+  } satisfies StartupRestoreState;
+}
+
+function commitStartupRestoreState(nextState: StartupRestoreState) {
+  startupRestoreState = {
+    ...cloneStartupRestoreState(nextState),
+    updatedAt: new Date().toISOString()
+  };
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send("services.startupRestoreState", cloneStartupRestoreState(startupRestoreState));
+}
+
+function beginStartupRestoreSession() {
+  commitStartupRestoreState(createStartupRestoreState("running"));
+}
+
+function updateStartupRestoreService(serviceId: ServiceId, phase: StartupRestoreServiceState["phase"], message = "") {
+  const currentState = cloneStartupRestoreState(startupRestoreState);
+  const nextServices = currentState.services.map((service) =>
+    service.serviceId === serviceId
+      ? {
+          ...service,
+          phase,
+          message
+        }
+      : service
+  );
+
+  if (phase === "starting") {
+    commitStartupRestoreState({
+      ...currentState,
+      phase: "running",
+      currentServiceId: serviceId,
+      failedServiceId: null,
+      message,
+      services: nextServices
+    });
+    return;
+  }
+
+  if (phase === "failed") {
+    commitStartupRestoreState({
+      ...currentState,
+      phase: "failed",
+      currentServiceId: null,
+      failedServiceId: serviceId,
+      message,
+      services: nextServices
+    });
+    return;
+  }
+
+  const allSucceeded = nextServices.every((service) => service.phase === "succeeded");
+  commitStartupRestoreState({
+    ...currentState,
+    phase: allSucceeded ? "succeeded" : "running",
+    currentServiceId: null,
+    failedServiceId: null,
+    message: allSucceeded ? "核心服务已全部就绪。" : message,
+    services: nextServices
+  });
 }
 
 async function runServiceMutation<T>(task: () => Promise<T>) {
@@ -502,6 +625,7 @@ async function handleServiceStart(serviceId: ServiceId) {
 
 function registerIpcHandlers() {
   ipcMain.handle("services.list", async () => listServices(app));
+  ipcMain.handle("services.getStartupRestoreState", async () => cloneStartupRestoreState(startupRestoreState));
   ipcMain.handle("services.installBuiltinFromBundle", async (_event, serviceId: ServiceId) => runServiceMutation(async () => {
     const current = await getServiceState(app, serviceId);
     if (current.kind !== "builtin") {
@@ -698,6 +822,10 @@ function registerIpcHandlers() {
     };
   });
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
+  ipcMain.handle("settings.getPlatform", async () => process.platform);
+  ipcMain.handle("settings.setSidebarTranslucency", async (_event, enabled: boolean) =>
+    setSidebarTranslucency(enabled)
+  );
 }
 
 app.whenReady().then(async () => {
@@ -708,14 +836,43 @@ app.whenReady().then(async () => {
   createWindow();
   createAppTray();
   buildApplicationMenu();
-  void runServiceMutation(() => restoreRunningServices(app, { onProgress: notifyServicesChanged }))
+  beginStartupRestoreSession();
+  void runServiceMutation(() =>
+    restoreRunningServices(app, {
+      onStarting: (serviceId) => {
+        updateStartupRestoreService(serviceId, "starting", "启动中...");
+      },
+      onProgress: (serviceId, phase, message) => {
+        updateStartupRestoreService(serviceId, phase, message);
+        notifyServicesChanged();
+      }
+    })
+  )
     .then((result) => {
+      if (result.failures.length === 0 && startupRestoreState.phase === "running") {
+        commitStartupRestoreState({
+          ...startupRestoreState,
+          phase: "succeeded",
+          currentServiceId: null,
+          failedServiceId: null,
+          message: "核心服务已全部就绪。"
+        });
+      }
       notifyServicesChanged();
       if (result.failures.length > 0) {
         console.error("failed to restore running services from last session", result.failures);
       }
     })
     .catch((error) => {
+      if (startupRestoreState.phase === "running") {
+        commitStartupRestoreState({
+          ...startupRestoreState,
+          phase: "failed",
+          currentServiceId: null,
+          failedServiceId: startupRestoreState.currentServiceId,
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
       console.error("failed to restore running services from last session", error);
     });
   app.on("activate", () => {

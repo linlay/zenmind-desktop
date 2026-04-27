@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ServiceConfigReadResult, ServiceId, ServiceLogTarget, ServiceState } from "@shared/contracts";
 import { useServices } from "../services/ServicesContext";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { getServiceDisplayName } from "../service-display";
 
 const CORE_MODULES = [
@@ -445,6 +445,7 @@ export function ControlCenterPage() {
     uninstallPlugin
   } = useServices();
   const navigate = useNavigate();
+  const location = useLocation();
   const logRequestIdRef = useRef(0);
   const [activeId, setActiveId] = useState<ServiceId | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<ServiceId | null>(null);
@@ -470,6 +471,12 @@ export function ControlCenterPage() {
     [coreModules]
   );
   const marketServices = useMemo(() => services.filter((service) => service.kind === "plugin"), [services]);
+  const startupFailure = (location.state as {
+    startupFailure?: {
+      serviceId: ServiceId | null;
+      message: string;
+    };
+  } | null)?.startupFailure;
 
   useEffect(() => {
     const currentGroupIds = [...coreModules.map((module) => module.id), ...marketServices.map((service) => service.id)];
@@ -481,6 +488,19 @@ export function ControlCenterPage() {
 
     setSelectedServiceId((current) => (current && currentGroupIds.includes(current) ? current : currentGroupIds[0]));
   }, [coreModules, marketServices]);
+
+  useEffect(() => {
+    if (!startupFailure) {
+      return;
+    }
+
+    if (startupFailure.serviceId) {
+      setSelectedServiceId(startupFailure.serviceId);
+    }
+    if (startupFailure.message) {
+      setFeedback(startupFailure.message);
+    }
+  }, [startupFailure]);
 
   useEffect(() => {
     const installedServiceIds = new Set(services.filter((service) => service.installed).map((service) => service.id));

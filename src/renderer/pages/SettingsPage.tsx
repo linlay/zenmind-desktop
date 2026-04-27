@@ -5,6 +5,9 @@ import type { CustomSidebarItem, CustomSidebarItemsResult } from "../../shared/c
 type SettingsPageProps = {
   themeMode: "light" | "dark";
   onToggleTheme: () => void;
+  isMac: boolean;
+  sidebarTranslucencyEnabled: boolean;
+  onToggleSidebarTranslucency: () => void;
   customSidebarItems: CustomSidebarItem[];
   onCustomSidebarItemsChange: (items: CustomSidebarItem[]) => void;
   onRefreshCustomSidebarItems: () => Promise<CustomSidebarItemsResult>;
@@ -63,6 +66,9 @@ function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
 export function SettingsPage({
   themeMode,
   onToggleTheme,
+  isMac,
+  sidebarTranslucencyEnabled,
+  onToggleSidebarTranslucency,
   customSidebarItems,
   onCustomSidebarItemsChange,
   onRefreshCustomSidebarItems
@@ -214,6 +220,22 @@ export function SettingsPage({
           </button>
         </div>
       </div>
+
+      {isMac ? (
+        <div className="data-root-card settings-switch-card">
+          <h2>半透明侧边栏</h2>
+          <button
+            type="button"
+            className={sidebarTranslucencyEnabled ? "settings-switch is-on" : "settings-switch"}
+            role="switch"
+            aria-checked={sidebarTranslucencyEnabled}
+            aria-label="半透明侧边栏"
+            onClick={onToggleSidebarTranslucency}
+          >
+            <span aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
 
       <div className="data-root-card custom-sidebar-card">
         <div className="custom-sidebar-copy">

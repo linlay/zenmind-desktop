@@ -443,25 +443,30 @@ function upsertEnvFileContent(content: string, updates: Map<string, string>) {
   }
 
   const pending = new Map(updates);
-  const nextLines = lines.map((line) => {
+  const applied = new Set<string>();
+  const nextLines = lines.flatMap((line) => {
     const separatorIndex = line.indexOf("=");
     if (separatorIndex <= 0) {
-      return line;
+      return [line];
     }
 
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) {
-      return line;
+      return [line];
     }
 
     const key = line.slice(0, separatorIndex).trim();
+    if (applied.has(key)) {
+      return [];
+    }
     if (!pending.has(key)) {
-      return line;
+      return [line];
     }
 
     const value = pending.get(key) ?? "";
     pending.delete(key);
-    return `${key}=${formatEnvValue(value)}`;
+    applied.add(key);
+    return [`${key}=${formatEnvValue(value)}`];
   });
 
   if (pending.size > 0 && nextLines.length > 0 && nextLines[nextLines.length - 1]?.trim() !== "") {
@@ -728,6 +733,52 @@ function terminateProcess(pid: number) {
   }
 
   return waitForProcessExit(pid, 1000);
+}
+
+function removePidFile(pidFilePath: string) {
+  try {
+    fs.rmSync(pidFilePath, { force: true });
+  } catch {
+    // Ignore pid cleanup failures and let the next startup attempt surface a real error if needed.
+  }
+}
+
+function parseRelayPort(env: Map<string, string>) {
+  const value = env.get("LOCAL_CLI_ACP_RELAY_PORT") ?? DEFAULT_LOCAL_CLI_ACP_RELAY_PORT;
+  const port = Number.parseInt(value, 10);
+  return Number.isFinite(port) ? port : Number.parseInt(DEFAULT_LOCAL_CLI_ACP_RELAY_PORT, 10);
+}
+
+function cleanupAgentPlatformRelayBeforeStart(installDir: string, env: Map<string, string>) {
+  const relayPidFilePath = path.join(installDir, "run", "local-cli-acp-relay.pid");
+  const relayPort = parseRelayPort(env);
+  const relayPids = new Set<number>();
+  const pidFromFile = readPid(relayPidFilePath);
+
+  if (pidFromFile && pidMatchesInstallDir(pidFromFile, installDir)) {
+    relayPids.add(pidFromFile);
+  }
+
+  for (const pid of listListeningPids(relayPort)) {
+    if (pidMatchesInstallDir(pid, installDir)) {
+      relayPids.add(pid);
+    }
+  }
+
+  for (const pid of relayPids) {
+    terminateProcess(pid);
+  }
+
+  removePidFile(relayPidFilePath);
+}
+
+function isAgentPlatformRelayStartupConflict(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("local-cli-acp-relay is already running with pid") ||
+    message.includes("local relay failed to start") ||
+    message.includes("EADDRINUSE")
+  );
 }
 
 async function stopBuiltinInstallDir(service: ServiceDefinition, installDir: string) {
@@ -1336,6 +1387,7 @@ const agentPlatformDefaultContainerHubBaseUrls = new Set([
 ]);
 
 const LEGACY_LOCAL_CLI_ACP_RELAY_PORT = "3210";
+const DEFAULT_LOCAL_CLI_ACP_RELAY_ENABLED = "false";
 const DEFAULT_LOCAL_CLI_ACP_RELAY_PORT = "3220";
 const legacyCodeAssistantProxyBaseUrls = new Set([
   `http://127.0.0.1:${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}`,
@@ -1395,13 +1447,79 @@ const agentPlatformDisabledGatewayEnvKeys = [
   "GATEWAY_AUTH_TOKEN"
 ] as const;
 
-function resolveDesktopRuntimeRoot() {
-  const candidate = path.join(os.homedir(), "zenmind");
-  const requiredDirs = ["registries", "agents"];
-  if (!requiredDirs.every((dirName) => fs.existsSync(path.join(candidate, dirName)))) {
-    return null;
+function expandHomeShortcut(value: string) {
+  const trimmed = value.trim();
+  const homeDir = process.env.HOME || os.homedir();
+  if (trimmed === "~") {
+    return homeDir;
   }
-  return candidate;
+  if (trimmed.startsWith("~/")) {
+    return path.join(homeDir, trimmed.slice(2));
+  }
+  return trimmed;
+}
+
+function normalizeConfigPath(value: string) {
+  return path.normalize(expandHomeShortcut(value)).replace(/\\/gu, "/");
+}
+
+function countMatchingFiles(rootDir: string, maxDepth: number, predicate: (filePath: string) => boolean, depth = 0): number {
+  if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) {
+    return 0;
+  }
+
+  let count = 0;
+  for (const entry of fs.readdirSync(rootDir, { withFileTypes: true })) {
+    const entryPath = path.join(rootDir, entry.name);
+    if (entry.isFile() && predicate(entryPath)) {
+      count += 1;
+      continue;
+    }
+    if (entry.isDirectory() && depth < maxDepth) {
+      count += countMatchingFiles(entryPath, maxDepth, predicate, depth + 1);
+    }
+  }
+  return count;
+}
+
+function getAgentPlatformRuntimeRootScore(runtimeRoot: string) {
+  if (!runtimeRoot || !fs.existsSync(runtimeRoot) || !fs.statSync(runtimeRoot).isDirectory()) {
+    return -1;
+  }
+
+  const agentsDir = path.join(runtimeRoot, "agents");
+  const registriesDir = path.join(runtimeRoot, "registries");
+  const chatsDir = path.join(runtimeRoot, "chats");
+  const teamsDir = path.join(runtimeRoot, "teams");
+  const existingTopLevelDirs = ["agents", "registries", "teams", "chats", "skills-market"]
+    .filter((dirName) => fs.existsSync(path.join(runtimeRoot, dirName)))
+    .length;
+  const agentCount = countMatchingFiles(agentsDir, 2, (filePath) => path.basename(filePath) === "agent.yml");
+  const registryCount = countMatchingFiles(registriesDir, 2, (filePath) => /\.(json|ya?ml)$/u.test(filePath));
+  const chatCount = countMatchingFiles(
+    chatsDir,
+    2,
+    (filePath) => path.basename(filePath) === "chats.db" || filePath.endsWith(".jsonl")
+  );
+  const teamCount = countMatchingFiles(teamsDir, 1, (filePath) => /\.(json|ya?ml)$/u.test(filePath));
+
+  return existingTopLevelDirs + agentCount * 100 + registryCount * 10 + teamCount * 3 + chatCount * 2;
+}
+
+function resolveDesktopRuntimeRoot() {
+  const homeDir = process.env.HOME || os.homedir();
+  const candidates = [
+    path.join(homeDir, ".zenmind"),
+    path.join(homeDir, "Desktop", "zenmind-env"),
+    path.join(homeDir, "zenmind")
+  ];
+  for (const candidate of candidates) {
+    const score = getAgentPlatformRuntimeRootScore(candidate);
+    if (score > 0) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 function resolveAgentPlatformAgentsDir(env: Map<string, string>, desktopRuntimeRoot: string | null) {
@@ -1409,10 +1527,66 @@ function resolveAgentPlatformAgentsDir(env: Map<string, string>, desktopRuntimeR
   if (configuredAgentsDir) {
     return configuredAgentsDir;
   }
+  const configuredRuntimeRoot = env.get("RUNTIME_DIR")?.trim();
+  if (configuredRuntimeRoot) {
+    return path.join(configuredRuntimeRoot, "agents");
+  }
+  if (hasConfiguredAgentPlatformRuntimePath(env)) {
+    return "";
+  }
   if (!desktopRuntimeRoot) {
     return "";
   }
   return path.join(desktopRuntimeRoot, "agents");
+}
+
+function hasConfiguredAgentPlatformRuntimePath(env: Map<string, string>) {
+  if (env.get("RUNTIME_DIR")?.trim()) {
+    return true;
+  }
+  return agentPlatformDesktopRuntimePaths.some(([key]) => Boolean(env.get(key)?.trim()));
+}
+
+function resolveLegacyAgentPlatformRuntimeRootMigration(env: Map<string, string>) {
+  if (env.get("RUNTIME_DIR")?.trim()) {
+    return null;
+  }
+
+  const configuredRuntimePaths = agentPlatformDesktopRuntimePaths
+    .map(([key]) => env.get(key)?.trim() ?? "")
+    .filter(Boolean);
+  if (configuredRuntimePaths.length === 0) {
+    return null;
+  }
+
+  const homeDir = process.env.HOME || os.homedir();
+  const legacyRuntimeRoot = path.join(homeDir, "zenmind");
+  const normalizedLegacyRoot = normalizeConfigPath(legacyRuntimeRoot);
+  const allPathsStillUseLegacyRoot = configuredRuntimePaths.every((configuredPath) => {
+    const normalizedPath = normalizeConfigPath(configuredPath);
+    return normalizedPath === normalizedLegacyRoot || normalizedPath.startsWith(`${normalizedLegacyRoot}/`);
+  });
+  if (!allPathsStillUseLegacyRoot) {
+    return null;
+  }
+
+  const preferredRuntimeRoot = resolveDesktopRuntimeRoot();
+  if (!preferredRuntimeRoot) {
+    return null;
+  }
+
+  const normalizedPreferredRoot = normalizeConfigPath(preferredRuntimeRoot);
+  if (normalizedPreferredRoot === normalizedLegacyRoot) {
+    return null;
+  }
+
+  const legacyScore = getAgentPlatformRuntimeRootScore(legacyRuntimeRoot);
+  const preferredScore = getAgentPlatformRuntimeRootScore(preferredRuntimeRoot);
+  if (preferredScore <= legacyScore) {
+    return null;
+  }
+
+  return preferredRuntimeRoot;
 }
 
 function migrateLegacyCodeAssistantProxyConfig(agentConfigPath: string, relayPort: string) {
@@ -1537,6 +1711,9 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     if (!env.get("SERVER_PORT")) {
       updates.set("SERVER_PORT", String(service.web.defaultPort));
     }
+    if (!env.has("LOCAL_CLI_ACP_RELAY_ENABLED")) {
+      updates.set("LOCAL_CLI_ACP_RELAY_ENABLED", DEFAULT_LOCAL_CLI_ACP_RELAY_ENABLED);
+    }
     if (!currentRelayPort || currentRelayPort === LEGACY_LOCAL_CLI_ACP_RELAY_PORT) {
       updates.set("LOCAL_CLI_ACP_RELAY_PORT", DEFAULT_LOCAL_CLI_ACP_RELAY_PORT);
       if (currentRelayPort === LEGACY_LOCAL_CLI_ACP_RELAY_PORT) {
@@ -1556,8 +1733,19 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
       updates.set(key, "");
     }
 
+    const migratedRuntimeRoot = resolveLegacyAgentPlatformRuntimeRootMigration(env);
+    if (migratedRuntimeRoot) {
+      const homeDir = process.env.HOME || os.homedir();
+      for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
+        updates.set(key, path.join(migratedRuntimeRoot, relativePath));
+      }
+      console.warn(
+        `[service-manager] Migrated agent-platform runtime paths from legacy desktop default ${path.join(homeDir, "zenmind")} to ${migratedRuntimeRoot}`
+      );
+    }
+
     const desktopRuntimeRoot = resolveDesktopRuntimeRoot();
-    if (desktopRuntimeRoot) {
+    if (desktopRuntimeRoot && !hasConfiguredAgentPlatformRuntimePath(env)) {
       for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
         if (!env.get(key)) {
           updates.set(key, path.join(desktopRuntimeRoot, relativePath));
@@ -1684,7 +1872,24 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
   }
 
   await ensurePreStartRequirements(app, service);
-  const result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
+  if (service.id === "agent-platform") {
+    const env = readEnvFile(path.join(installDir, ".env"));
+    cleanupAgentPlatformRelayBeforeStart(installDir, env);
+  }
+  let result: ServiceCommandResult;
+
+  try {
+    result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
+  } catch (error) {
+    if (service.id !== "agent-platform" || !isAgentPlatformRelayStartupConflict(error)) {
+      throw error;
+    }
+
+    const env = readEnvFile(path.join(installDir, ".env"));
+    cleanupAgentPlatformRelayBeforeStart(installDir, env);
+    result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
+  }
+
   startedThisSession.add(serviceId);
   return result;
 }
@@ -1708,6 +1913,10 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
   }
 
   const result = await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`);
+  if (service.id === "agent-platform") {
+    const env = readEnvFile(path.join(getInstallDir(app, service), ".env"));
+    cleanupAgentPlatformRelayBeforeStart(getInstallDir(app, service), env);
+  }
   startedThisSession.delete(serviceId);
   return result;
 }
@@ -1981,7 +2190,10 @@ export async function stopRunningServices(app: App) {
 
 export async function restoreRunningServices(
   app: App,
-  options: { onProgress?: (serviceId: ServiceId) => void } = {}
+  options: {
+    onStarting?: (serviceId: ServiceId) => void;
+    onProgress?: (serviceId: ServiceId, phase: "succeeded" | "failed", message: string) => void;
+  } = {}
 ) {
   const serviceIds = getServiceIdsToRestore(app);
   const restored: ServiceId[] = [];
@@ -1995,16 +2207,21 @@ export async function restoreRunningServices(
     }
 
     try {
+      options.onStarting?.(serviceId);
       const result = await startService(app, serviceId);
       if (result.ok) {
         restored.push(serviceId);
+        options.onProgress?.(serviceId, "succeeded", result.message);
       } else {
         failures.push(`${serviceId}: ${result.message}`);
+        options.onProgress?.(serviceId, "failed", result.message);
+        break;
       }
     } catch (error) {
-      failures.push(`${serviceId}: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      options.onProgress?.(serviceId);
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push(`${serviceId}: ${message}`);
+      options.onProgress?.(serviceId, "failed", message);
+      break;
     }
   }
 
@@ -2030,6 +2247,8 @@ export const __testInternals = {
   agentWebclientInstallNeedsRefresh,
   resolveNodeBin,
   resolveAcpCommandForDesktop,
+  cleanupAgentPlatformRelayBeforeStart,
+  resolveLegacyAgentPlatformRuntimeRootMigration,
   migrateLegacyCodeAssistantProxyConfig,
   decodePowerShellCapturePayload,
   runExecFile,
