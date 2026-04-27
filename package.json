@@ -6,8 +6,10 @@
   "main": "dist-electron/main/index.js",
   "scripts": {
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
-    "build:main": "tsc -p tsconfig.main.json",
-    "build:renderer": "vite build",
+    "clean:main": "node -e \"require('node:fs').rmSync('dist-electron', { recursive: true, force: true })\"",
+    "clean:renderer": "node -e \"require('node:fs').rmSync('dist-renderer', { recursive: true, force: true })\"",
+    "build:main": "npm run clean:main && tsc -p tsconfig.main.json",
+    "build:renderer": "npm run clean:renderer && vite build",
     "build": "npm run build:main && npm run build:renderer",
     "dev": "node ./scripts/dev.mjs",
     "start": "npm run dev",
