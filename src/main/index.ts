@@ -20,6 +20,8 @@ import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import { loadBuiltinServices } from "./builtin-loader";
 import {
   cleanupAgentPlatformRelayForApp,
+  captureManagedProcessCleanupSnapshot,
+  forceCleanupManagedProcesses,
   getServiceLogsMeta,
   readServiceLog,
   getServiceState,
@@ -386,13 +388,13 @@ function updateStartupRestoreService(serviceId: ServiceId, phase: StartupRestore
     return;
   }
 
-  const allSucceeded = nextServices.every((service) => service.phase === "succeeded");
+  const allCompleted = nextServices.every((service) => service.phase === "succeeded" || service.phase === "skipped");
   commitStartupRestoreState({
     ...currentState,
-    phase: allSucceeded ? "succeeded" : "running",
+    phase: allCompleted ? "succeeded" : "running",
     currentServiceId: null,
     failedServiceId: null,
-    message: allSucceeded ? "核心服务已全部就绪。" : message,
+    message: allCompleted ? "核心服务已全部就绪。" : message,
     services: nextServices
   });
 }
@@ -899,9 +901,14 @@ app.on("before-quit", (event) => {
   }
   event.preventDefault();
   isHandlingQuit = true;
+  const processCleanupSnapshot = captureManagedProcessCleanupSnapshot(app);
   stopRunningServices(app)
     .catch((error) => {
       console.error("failed while shutting down desktop services", error);
+    })
+    .then(() => forceCleanupManagedProcesses(app, processCleanupSnapshot))
+    .catch((error) => {
+      console.error("failed while force-cleaning desktop service processes", error);
     })
     .finally(() => {
       try {

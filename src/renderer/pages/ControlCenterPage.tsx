@@ -1062,8 +1062,9 @@ export function ControlCenterPage() {
                   <span
                     className="service-inline-meta-value truncated-hover-value"
                     data-full-value={detailEndpoint}
+                    title={detailEndpoint}
                   >
-                    {detailEndpoint}
+                    <span className="truncated-hover-text">{detailEndpoint}</span>
                   </span>
                   {activeDetailService.frontendMode !== "none" && activeDetailService.status === "running" ? (
                     <button
@@ -1097,8 +1098,9 @@ export function ControlCenterPage() {
                   <dd
                     className="truncated-hover-value"
                     data-full-value={item.title || item.value}
+                    title={item.title || item.value}
                   >
-                    {item.value}
+                    <span className="truncated-hover-text">{item.value}</span>
                   </dd>
                 </div>
               ))}

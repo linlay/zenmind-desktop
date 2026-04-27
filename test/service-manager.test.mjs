@@ -507,6 +507,147 @@ setInterval(() => {}, 1000);
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("buildProcessTreePids returns descendants before the root process", () => {
+  const result = __testInternals.buildProcessTreePids(10, [
+    { pid: 10, ppid: 1 },
+    { pid: 11, ppid: 10 },
+    { pid: 12, ppid: 11 },
+    { pid: 13, ppid: 10 },
+    { pid: 99, ppid: 1 }
+  ]);
+
+  assert.deepEqual(result, [12, 11, 13, 10]);
+});
+
+test("process tree parsers read ps and PowerShell process tables", () => {
+  assert.deepEqual(__testInternals.parseProcessTreeRowsFromPs(" 10 1\n 11 10\n"), [
+    { pid: 10, ppid: 1 },
+    { pid: 11, ppid: 10 }
+  ]);
+  assert.deepEqual(
+    __testInternals.parseProcessTreeRowsFromPowerShell(
+      JSON.stringify([
+        { ProcessId: 20, ParentProcessId: 1 },
+        { ProcessId: 21, ParentProcessId: 20 }
+      ])
+    ),
+    [
+      { pid: 20, ppid: 1 },
+      { pid: 21, ppid: 20 }
+    ]
+  );
+});
+
+test("collectManagedRootPids only includes pid-file processes from the service install dir", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-managed-root-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+  const fixturePath = path.join(installDir, "worker-fixture.mjs");
+  let child = null;
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    port: 0,
+    deployScriptContent: false
+  });
+  fs.writeFileSync(fixturePath, "setInterval(() => {}, 1000);\n", "utf8");
+
+  try {
+    child = spawn(process.execPath, [fixturePath], {
+      cwd: installDir,
+      stdio: "ignore"
+    });
+    assert.ok(child.pid, "expected fixture process to expose a pid");
+    fs.writeFileSync(path.join(installDir, "run", "test-plugin.pid"), `${child.pid}\n`, "utf8");
+
+    const roots = __testInternals.collectManagedRootPids(app);
+    assert.equal(roots.some((root) => root.pid === child.pid && root.serviceId === "test-plugin"), true);
+
+    fs.writeFileSync(path.join(installDir, "run", "test-plugin.pid"), `${process.pid}\n`, "utf8");
+    const nextRoots = __testInternals.collectManagedRootPids(app);
+    assert.equal(nextRoots.some((root) => root.pid === process.pid), false);
+  } finally {
+    if (child?.pid) {
+      try {
+        process.kill(child.pid, "SIGTERM");
+      } catch {
+        // Process may already be gone when the test finishes.
+      }
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("collectManagedRootPids includes agent-platform relay pid files", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-managed-relay-root-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "agent-platform");
+  const app = createApp(userDataRoot);
+  const relayDir = path.join(installDir, "local-cli-acp-relay");
+  const relayPath = path.join(relayDir, "relay-fixture.mjs");
+  let child = null;
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    id: "agent-platform",
+    port: 0,
+    deployScriptContent: false
+  });
+  fs.mkdirSync(relayDir, { recursive: true });
+  fs.writeFileSync(relayPath, "setInterval(() => {}, 1000);\n", "utf8");
+
+  try {
+    child = spawn(process.execPath, [relayPath], {
+      cwd: installDir,
+      stdio: "ignore"
+    });
+    assert.ok(child.pid, "expected relay fixture process to expose a pid");
+    fs.writeFileSync(path.join(installDir, "run", "local-cli-acp-relay.pid"), `${child.pid}\n`, "utf8");
+
+    const roots = __testInternals.collectManagedRootPids(app);
+    assert.equal(roots.some((root) => root.pid === child.pid && root.serviceId === "agent-platform"), true);
+  } finally {
+    if (child?.pid) {
+      try {
+        process.kill(child.pid, "SIGTERM");
+      } catch {
+        // Process may already be gone when the test finishes.
+      }
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("mergeCleanupTargets preserves pre-quit process tree snapshots", () => {
+  const merged = __testInternals.mergeCleanupTargets(
+    [
+      {
+        pid: 100,
+        serviceId: "test-plugin",
+        pidFilePaths: ["/tmp/test-plugin.pid"],
+        treePids: [102, 101, 100]
+      }
+    ],
+    []
+  );
+
+  assert.deepEqual(merged, [
+    {
+      pid: 100,
+      serviceId: "test-plugin",
+      pidFilePaths: ["/tmp/test-plugin.pid"],
+      treePids: [102, 101, 100]
+    }
+  ]);
+});
+
+test("terminateProcessTree treats already-exited pids as cleaned up", () => {
+  assert.equal(__testInternals.terminateProcessTree(99999999), true);
+});
+
 test("listMissingRuntimeFiles detects damaged install directories", () => {
   const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-damaged-registry-"));
   const { restore } = loadBuiltinsForTest(userDataRoot);
@@ -944,6 +1085,31 @@ test("initializeService records failed state and surfaces initialization error",
 
   registryInternals.clearServices();
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("installBuiltinService prepares agent platform desktop config during first initialization", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-first-init-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const installDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+
+  try {
+    await installBuiltinService(app, "agent-platform");
+
+    const envContent = fs.readFileSync(path.join(installDir, ".env"), "utf8");
+    assert.match(envContent, /^AGENT_AUTH_ENABLED=true$/m);
+    assert.match(envContent, /^AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
+    assert.match(envContent, /^SERVER_PORT=11949$/m);
+    assert.equal(fs.existsSync(path.join(installDir, "configs", "local-public-key.pem")), true);
+  } finally {
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("readServiceConfig returns template content without creating target file", async () => {
@@ -1613,6 +1779,58 @@ test("restoreRunningServices stops after the first startup failure", async () =>
   assert.equal(result.failures.length, 1);
   assert.match(result.failures[0], /plugin-a/u);
   assert.equal(fs.existsSync(path.join(pluginBFolder, "run", "started.txt")), false);
+
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("restoreRunningServices skips services that still need foreground install or initialization", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-restore-skip-install-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  const startupEvents = [];
+
+  registryInternals.clearServices();
+  registerPlugin({
+    id: "plugin-a",
+    name: "Plugin A",
+    kind: "plugin",
+    version: "v1.0.0",
+    description: "missing fixture plugin",
+    frontend: {
+      mode: "none"
+    },
+    scripts: {
+      start: "start.sh",
+      stop: "stop.sh"
+    },
+    runtime: {
+      pidRelativePath: "run/plugin-a.pid",
+      logRelativePath: "run/plugin-a.log",
+      requiredPaths: ["start.sh", "stop.sh", "manifest.json"]
+    },
+    web: {
+      routePath: "",
+      portEnvKey: "PORT",
+      defaultPort: 9310
+    }
+  });
+  __testInternals.writeLastRunningServices(app, ["plugin-a"]);
+
+  const result = await restoreRunningServices(app, {
+    onStarting: (serviceId) => {
+      startupEvents.push(`start:${serviceId}`);
+    },
+    onProgress: (serviceId, phase) => {
+      startupEvents.push(`progress:${serviceId}:${phase}`);
+    }
+  });
+
+  assert.deepEqual(startupEvents, [
+    "progress:plugin-a:skipped"
+  ]);
+  assert.equal(result.restored.length, 0);
+  assert.equal(result.failures.length, 0);
 
   registryInternals.clearServices();
   fs.rmSync(tempRoot, { recursive: true, force: true });

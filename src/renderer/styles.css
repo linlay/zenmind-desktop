@@ -2351,9 +2351,6 @@ a {
   min-width: 0;
   flex: 1;
   position: relative;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--ink);
   font-size: 13px;
 }
@@ -2469,20 +2466,27 @@ a {
 .meta-grid dd {
   margin: 0;
   position: relative;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 12px;
   line-height: 1.5;
   word-break: break-word;
 }
 
 .truncated-hover-value {
+  display: block;
   position: relative;
+  min-width: 0;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.truncated-hover-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .truncated-hover-value:hover {
-  overflow: visible;
   z-index: 24;
 }
 

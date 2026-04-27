@@ -31,6 +31,21 @@ type ExecResult = {
   stderr: string;
 };
 
+type ProcessTreeRow = {
+  pid: number;
+  ppid: number;
+};
+
+type ManagedRootPid = {
+  pid: number;
+  serviceId: ServiceId;
+  pidFilePaths: string[];
+};
+
+type ManagedProcessCleanupTarget = ManagedRootPid & {
+  treePids: number[];
+};
+
 type PowerShellCapturePayload = ExecResult & {
   hadError: boolean;
   exitCode: number;
@@ -640,6 +655,112 @@ function readProcessCommand(pid: number) {
   }
 }
 
+function parseProcessTreeRowsFromPs(stdout: string): ProcessTreeRow[] {
+  return stdout
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [pidText, ppidText] = line.split(/\s+/u);
+      const pid = Number.parseInt(pidText ?? "", 10);
+      const ppid = Number.parseInt(ppidText ?? "", 10);
+      return { pid, ppid };
+    })
+    .filter((row) => Number.isFinite(row.pid) && row.pid > 0 && Number.isFinite(row.ppid) && row.ppid >= 0);
+}
+
+function parseProcessTreeRowsFromPowerShell(stdout: string): ProcessTreeRow[] {
+  const trimmed = stdout.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    const entries = Array.isArray(parsed) ? parsed : [parsed];
+    return entries
+      .map((entry) => {
+        const item = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+        const pid = typeof item.ProcessId === "number" ? item.ProcessId : Number.parseInt(String(item.ProcessId ?? ""), 10);
+        const ppid =
+          typeof item.ParentProcessId === "number"
+            ? item.ParentProcessId
+            : Number.parseInt(String(item.ParentProcessId ?? ""), 10);
+        return { pid, ppid };
+      })
+      .filter((row) => Number.isFinite(row.pid) && row.pid > 0 && Number.isFinite(row.ppid) && row.ppid >= 0);
+  } catch {
+    return [];
+  }
+}
+
+function readProcessTreeRows() {
+  const env = buildServiceEnv();
+
+  try {
+    if (IS_WINDOWS) {
+      const command = [
+        "$ErrorActionPreference = 'SilentlyContinue'",
+        "Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId | ConvertTo-Json -Compress"
+      ].join("; ");
+      const result = spawnSync(windowsPowerShellPath(), ["-NoProfile", "-Command", command], {
+        encoding: "utf8",
+        env,
+        timeout: 3000
+      });
+      if (result.status !== 0 || result.error) {
+        return [];
+      }
+      return parseProcessTreeRowsFromPowerShell(result.stdout);
+    }
+
+    const result = spawnSync("ps", ["-axo", "pid=,ppid="], {
+      encoding: "utf8",
+      env,
+      timeout: 3000
+    });
+    if (result.status !== 0 || result.error) {
+      return [];
+    }
+    return parseProcessTreeRowsFromPs(result.stdout);
+  } catch {
+    return [];
+  }
+}
+
+function buildProcessTreePids(rootPid: number, rows: ProcessTreeRow[]) {
+  if (!Number.isFinite(rootPid) || rootPid <= 0) {
+    return [];
+  }
+
+  const childrenByParent = new Map<number, number[]>();
+  for (const row of rows) {
+    const children = childrenByParent.get(row.ppid) ?? [];
+    children.push(row.pid);
+    childrenByParent.set(row.ppid, children);
+  }
+
+  const visited = new Set<number>();
+  const ordered: number[] = [];
+  const visit = (pid: number) => {
+    if (visited.has(pid)) {
+      return;
+    }
+    visited.add(pid);
+    for (const childPid of childrenByParent.get(pid) ?? []) {
+      visit(childPid);
+    }
+    ordered.push(pid);
+  };
+
+  visit(rootPid);
+  return ordered;
+}
+
+function listProcessTreePids(rootPid: number) {
+  return buildProcessTreePids(rootPid, readProcessTreeRows());
+}
+
 function normalizeProcessPath(value: string) {
   return path.normalize(value).replace(/\\/gu, "/");
 }
@@ -738,6 +859,69 @@ function terminateProcess(pid: number) {
   return waitForProcessExit(pid, 1000);
 }
 
+function waitForProcessesExit(pids: number[], timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (pids.every((pid) => !isProcessRunning(pid))) {
+      return true;
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+  }
+  return pids.every((pid) => !isProcessRunning(pid));
+}
+
+function signalProcessList(pids: number[], signal: NodeJS.Signals) {
+  for (const pid of pids) {
+    if (!isProcessRunning(pid)) {
+      continue;
+    }
+    try {
+      process.kill(pid, signal);
+    } catch {
+      // The process may have exited between the liveness check and signal delivery.
+    }
+  }
+}
+
+function terminateProcessList(pids: number[]) {
+  const uniquePids = [...new Set(pids)].filter((pid) => Number.isFinite(pid) && pid > 0);
+  if (uniquePids.length === 0 || uniquePids.every((pid) => !isProcessRunning(pid))) {
+    return true;
+  }
+
+  signalProcessList(uniquePids, "SIGTERM");
+  if (waitForProcessesExit(uniquePids, 2500)) {
+    return true;
+  }
+
+  signalProcessList(uniquePids, "SIGKILL");
+  return waitForProcessesExit(uniquePids, 1000);
+}
+
+function terminateProcessTree(rootPid: number) {
+  if (!isProcessRunning(rootPid)) {
+    return true;
+  }
+
+  if (IS_WINDOWS) {
+    try {
+      const result = spawnSync("taskkill.exe", ["/PID", String(rootPid), "/T", "/F"], {
+        encoding: "utf8",
+        env: buildServiceEnv(),
+        timeout: 5000
+      });
+      if (result.status === 0 || !isProcessRunning(rootPid)) {
+        return true;
+      }
+    } catch {
+      // Fall back to process table traversal below.
+    }
+  }
+
+  const treePids = listProcessTreePids(rootPid);
+  return terminateProcessList(treePids.length > 0 ? treePids : [rootPid]);
+}
+
 function removePidFile(pidFilePath: string) {
   try {
     fs.rmSync(pidFilePath, { force: true });
@@ -785,6 +969,127 @@ export function cleanupAgentPlatformRelayForApp(app: App) {
   const envPath = path.join(installDir, ".env");
   const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
   cleanupAgentPlatformRelayBeforeStart(installDir, env);
+}
+
+function addManagedRootPid(
+  roots: Map<number, ManagedRootPid>,
+  serviceId: ServiceId,
+  pid: number | null,
+  installDir: string,
+  pidFilePath = ""
+) {
+  if (!pid || !pidMatchesInstallDir(pid, installDir)) {
+    return;
+  }
+
+  const existing = roots.get(pid);
+  if (existing) {
+    if (pidFilePath) {
+      existing.pidFilePaths.push(pidFilePath);
+    }
+    return;
+  }
+
+  roots.set(pid, {
+    pid,
+    serviceId,
+    pidFilePaths: pidFilePath ? [pidFilePath] : []
+  });
+}
+
+function collectManagedRootPids(app: App) {
+  const roots = new Map<number, ManagedRootPid>();
+
+  for (const service of getAllServices()) {
+    const installDir = getInstallDir(app, service);
+    if (!fs.existsSync(installDir)) {
+      continue;
+    }
+
+    const pidFilePath = resolveRuntimePath(installDir, service.runtime.pidRelativePath);
+    addManagedRootPid(roots, service.id, readPid(pidFilePath), installDir, pidFilePath);
+
+    const envPath = path.join(installDir, ".env");
+    const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
+    const port = parsePort(service, env);
+    if (port > 0) {
+      for (const pid of listListeningPids(port)) {
+        addManagedRootPid(roots, service.id, pid, installDir);
+      }
+    }
+
+    if (service.id === "agent-platform") {
+      const relayPidFilePath = path.join(installDir, "run", "local-cli-acp-relay.pid");
+      addManagedRootPid(roots, service.id, readPid(relayPidFilePath), installDir, relayPidFilePath);
+
+      const relayPort = parseRelayPort(env);
+      for (const pid of listListeningPids(relayPort)) {
+        addManagedRootPid(roots, service.id, pid, installDir);
+      }
+    }
+  }
+
+  return [...roots.values()];
+}
+
+export function captureManagedProcessCleanupSnapshot(app: App) {
+  return collectManagedRootPids(app).map((root): ManagedProcessCleanupTarget => ({
+    ...root,
+    treePids: listProcessTreePids(root.pid)
+  }));
+}
+
+function mergeCleanupTargets(targets: ManagedProcessCleanupTarget[], roots: ManagedRootPid[]) {
+  const merged = new Map<number, ManagedProcessCleanupTarget>();
+
+  for (const target of targets) {
+    merged.set(target.pid, {
+      ...target,
+      pidFilePaths: [...target.pidFilePaths],
+      treePids: [...target.treePids]
+    });
+  }
+
+  for (const root of roots) {
+    const existing = merged.get(root.pid);
+    if (existing) {
+      existing.pidFilePaths.push(...root.pidFilePaths);
+      if (existing.treePids.length === 0) {
+        existing.treePids = listProcessTreePids(root.pid);
+      }
+      continue;
+    }
+
+    merged.set(root.pid, {
+      ...root,
+      pidFilePaths: [...root.pidFilePaths],
+      treePids: listProcessTreePids(root.pid)
+    });
+  }
+
+  return [...merged.values()];
+}
+
+export async function forceCleanupManagedProcesses(app: App, snapshot: ManagedProcessCleanupTarget[] = []) {
+  const roots = mergeCleanupTargets(snapshot, collectManagedRootPids(app));
+  const failures: string[] = [];
+
+  for (const root of roots) {
+    const terminated = root.treePids.length > 0
+      ? terminateProcessList(root.treePids)
+      : terminateProcessTree(root.pid);
+    for (const pidFilePath of root.pidFilePaths) {
+      removePidFile(pidFilePath);
+    }
+
+    if (!terminated && root.treePids.some((pid) => isProcessRunning(pid))) {
+      failures.push(`${root.serviceId}: PID ${root.pid}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    console.error(`failed to force-clean managed service processes: ${failures.join("; ")}`);
+  }
 }
 
 function isAgentPlatformRelayStartupConflict(error: unknown) {
@@ -1115,10 +1420,17 @@ function ensureDefaultConfig(service: ServiceDefinition, installDir: string) {
 }
 
 async function ensureInitializationRequirements(app: App, service: ServiceDefinition, installDir: string) {
-  if (service.id !== "pan-webclient") {
-    return;
+  if (service.id === "agent-platform") {
+    await ensureAgentPlatformDesktopConfig(app, service, installDir);
+    ensureLocalAuthPublicKey(app, installDir);
   }
 
+  if (service.id === "pan-webclient") {
+    ensureLocalAuthPublicKey(app, installDir);
+  }
+}
+
+function ensureLocalAuthPublicKey(app: App, installDir: string) {
   const publicKeyPath = path.join(installDir, "configs", "local-public-key.pem");
   if (fs.existsSync(publicKeyPath)) {
     return;
@@ -1683,8 +1995,56 @@ async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<s
   }
 }
 
+async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefinition, installDir: string) {
+  const envPath = path.join(installDir, ".env");
+  const env = readEnvFile(envPath);
+  const updates = new Map<string, string>();
+
+  await applyEnvBindings(app, service, env, updates);
+
+  updates.set("NODE_BIN", resolveNodeBin());
+  const resolvedAcpCommand = resolveAcpCommandForDesktop(env);
+  if (resolvedAcpCommand) {
+    updates.set("CLAUDE_CODE_ACP_COMMAND", resolvedAcpCommand.command);
+    updates.set("CLAUDE_CODE_ACP_ARGS", resolvedAcpCommand.args);
+  }
+  for (const key of agentPlatformDisabledGatewayEnvKeys) {
+    updates.set(key, "");
+  }
+
+  const migratedRuntimeRoot = resolveLegacyAgentPlatformRuntimeRootMigration(app, env);
+  if (migratedRuntimeRoot) {
+    const homeDir = resolveHomeDir(app);
+    for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
+      updates.set(key, path.join(migratedRuntimeRoot, relativePath));
+    }
+    console.warn(
+      `[service-manager] Migrated agent-platform runtime paths from legacy desktop default ${path.join(homeDir, "zenmind")} to ${migratedRuntimeRoot}`
+    );
+  }
+
+  const desktopRuntimeRoot = resolveDesktopRuntimeRoot(app);
+  if (desktopRuntimeRoot && !hasConfiguredAgentPlatformRuntimePath(env)) {
+    for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
+      if (!env.get(key)) {
+        updates.set(key, path.join(desktopRuntimeRoot, relativePath));
+      }
+    }
+  }
+
+  if (updates.size > 0) {
+    writeEnvFileUpdates(envPath, updates);
+  }
+}
+
 async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {
   const installDir = getInstallDir(app, service);
+  if (service.id === "agent-platform") {
+    await ensureAgentPlatformDesktopConfig(app, service, installDir);
+    ensureLocalAuthPublicKey(app, installDir);
+    return;
+  }
+
   const envPath = path.join(installDir, ".env");
   const env = readEnvFile(envPath);
   const updates = new Map<string, string>();
@@ -1693,38 +2053,6 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   await applyEnvBindings(app, service, env, updates);
 
   // Service-specific logic that cannot be expressed via envBindings.
-  if (service.id === "agent-platform") {
-    updates.set("NODE_BIN", resolveNodeBin());
-    const resolvedAcpCommand = resolveAcpCommandForDesktop(env);
-    if (resolvedAcpCommand) {
-      updates.set("CLAUDE_CODE_ACP_COMMAND", resolvedAcpCommand.command);
-      updates.set("CLAUDE_CODE_ACP_ARGS", resolvedAcpCommand.args);
-    }
-    for (const key of agentPlatformDisabledGatewayEnvKeys) {
-      updates.set(key, "");
-    }
-
-    const migratedRuntimeRoot = resolveLegacyAgentPlatformRuntimeRootMigration(app, env);
-    if (migratedRuntimeRoot) {
-      const homeDir = resolveHomeDir(app);
-      for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
-        updates.set(key, path.join(migratedRuntimeRoot, relativePath));
-      }
-      console.warn(
-        `[service-manager] Migrated agent-platform runtime paths from legacy desktop default ${path.join(homeDir, "zenmind")} to ${migratedRuntimeRoot}`
-      );
-    }
-
-    const desktopRuntimeRoot = resolveDesktopRuntimeRoot(app);
-    if (desktopRuntimeRoot && !hasConfiguredAgentPlatformRuntimePath(env)) {
-      for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
-        if (!env.get(key)) {
-          updates.set(key, path.join(desktopRuntimeRoot, relativePath));
-        }
-      }
-    }
-  }
-
   if (service.id === "agent-webclient") {
     const assetPath = ensureBundleAssetHealthy(app, service);
     const forceRefresh = agentWebclientInstallNeedsRefresh(installDir);
@@ -2135,7 +2463,7 @@ export async function restoreRunningServices(
   app: App,
   options: {
     onStarting?: (serviceId: ServiceId) => void;
-    onProgress?: (serviceId: ServiceId, phase: "succeeded" | "failed", message: string) => void;
+    onProgress?: (serviceId: ServiceId, phase: "succeeded" | "failed" | "skipped", message: string) => void;
   } = {}
 ) {
   const serviceIds = getServiceIdsToRestore(app);
@@ -2150,6 +2478,12 @@ export async function restoreRunningServices(
     }
 
     try {
+      const current = await getServiceState(app, serviceId);
+      if (current.status === "not-installed" || current.status === "initialization-required") {
+        options.onProgress?.(serviceId, "skipped", current.message);
+        continue;
+      }
+
       options.onStarting?.(serviceId);
       const result = await startService(app, serviceId);
       if (result.ok) {
@@ -2191,6 +2525,14 @@ export const __testInternals = {
   resolveNodeBin,
   resolveAcpCommandForDesktop,
   cleanupAgentPlatformRelayBeforeStart,
+  parseProcessTreeRowsFromPs,
+  parseProcessTreeRowsFromPowerShell,
+  buildProcessTreePids,
+  collectManagedRootPids,
+  captureManagedProcessCleanupSnapshot,
+  mergeCleanupTargets,
+  terminateProcessTree,
+  terminateProcessList,
   resolveLegacyAgentPlatformRuntimeRootMigration,
   decodePowerShellCapturePayload,
   runExecFile,
