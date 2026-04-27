@@ -98,23 +98,36 @@ function createCurrentPlatformAssetsFixture() {
   };
 }
 
-function createApp(userDataRoot) {
+function createApp(userDataRoot, options = {}) {
+  const {
+    isPackaged = false,
+    homePath = process.env.HOME ?? os.homedir(),
+    desktopPath = path.join(homePath, "Desktop")
+  } = options;
   return {
-    isPackaged: false,
+    isPackaged,
     getPath(name) {
-      assert.equal(name, "userData");
-      return userDataRoot;
+      switch (name) {
+        case "userData":
+          return userDataRoot;
+        case "home":
+          return homePath;
+        case "desktop":
+          return desktopPath;
+        default:
+          assert.fail(`unexpected app.getPath(${name})`);
+      }
     }
   };
 }
 
-function loadBuiltinsForTest(userDataRoot, assetsRoot) {
+function loadBuiltinsForTest(userDataRoot, assetsRoot, appOptions = {}) {
   const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
   const generatedAssets = assetsRoot ? null : createCurrentPlatformAssetsFixture();
   process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = assetsRoot ?? generatedAssets.assetsRoot;
 
   registryInternals.clearServices();
-  const app = createApp(userDataRoot);
+  const app = createApp(userDataRoot, appOptions);
   loadBuiltinServices(app);
 
   return {
@@ -1060,11 +1073,14 @@ test("startService rejects services that still require initialization", async ()
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements injects container hub url, desktop runtime paths, and local no-auth mode for agent platform", async () => {
+test("ensurePreStartRequirements injects container hub url, desktop runtime paths, and enables the local relay for agent platform", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-prestart-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
   const hubService = getBuiltinService("agent-container-hub");
   const platformService = getBuiltinService("agent-platform");
   const hubInstallDir = path.join(userDataRoot, "services", hubService.id, hubService.version);
@@ -1080,7 +1096,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   fs.writeFileSync(path.join(hubInstallDir, ".env"), "BIND_ADDR=0.0.0.0:12960\n", "utf8");
   fs.writeFileSync(
     path.join(platformInstallDir, ".env"),
-    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nLOCAL_CLI_ACP_RELAY_PORT=3210\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n",
+    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nLOCAL_CLI_ACP_RELAY_ENABLED=false\nLOCAL_CLI_ACP_RELAY_PORT=3210\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n",
     "utf8"
   );
   fs.mkdirSync(codeAssistantDir, { recursive: true });
@@ -1105,7 +1121,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
   assert.match(envContent, /AGENT_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960/);
   assert.match(envContent, /SERVER_PORT=11949/);
-  assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_ENABLED=false$/m);
+  assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_ENABLED=true$/m);
   assert.match(envContent, /LOCAL_CLI_ACP_RELAY_PORT=3220/);
   assert.match(envContent, /AGENT_AUTH_ENABLED=false/);
   assert.doesNotMatch(envContent, /AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=/);
@@ -1162,7 +1178,10 @@ test("ensurePreStartRequirements preserves custom relay port and custom codeAssi
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-custom-prestart-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
   const platformService = getBuiltinService("agent-platform");
   const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
   const desktopRuntimeRoot = path.join(homeRoot, "zenmind");
@@ -1216,7 +1235,10 @@ test("ensurePreStartRequirements preserves legacy RUNTIME_DIR without injecting 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-runtime-root-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
   const platformService = getBuiltinService("agent-platform");
   const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
   const legacyRuntimeRoot = path.join(tempRoot, "legacy-runtime");
@@ -1267,7 +1289,10 @@ test("ensurePreStartRequirements migrates stale legacy desktop runtime paths to 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-runtime-migrate-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
   const platformService = getBuiltinService("agent-platform");
   const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
   const legacyRuntimeRoot = path.join(homeRoot, "zenmind");
@@ -1328,6 +1353,78 @@ test("ensurePreStartRequirements migrates stale legacy desktop runtime paths to 
   assert.match(
     envContent,
     new RegExp(`REGISTRIES_DIR=${path.join(preferredRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+  );
+  assert.doesNotMatch(
+    envContent,
+    new RegExp(`AGENTS_DIR=${path.join(legacyRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+  );
+
+  restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("ensurePreStartRequirements uses the resolved desktop path when the runtime root lives outside ~/Desktop", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-runtime-desktop-path-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const desktopPath = path.join(homeRoot, "OneDrive", "Desktop");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+  const legacyRuntimeRoot = path.join(homeRoot, "zenmind");
+  const desktopRuntimeRoot = path.join(desktopPath, "zenmind-env");
+
+  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  fs.mkdirSync(path.join(legacyRuntimeRoot, "chats"), { recursive: true });
+  fs.mkdirSync(path.join(desktopRuntimeRoot, "agents", "desktopAgent"), { recursive: true });
+  fs.mkdirSync(path.join(desktopRuntimeRoot, "registries", "providers"), { recursive: true });
+  fs.mkdirSync(path.join(desktopRuntimeRoot, "teams"), { recursive: true });
+  fs.mkdirSync(path.join(desktopRuntimeRoot, "chats"), { recursive: true });
+  fs.writeFileSync(path.join(desktopRuntimeRoot, "agents", "desktopAgent", "agent.yml"), "name: desktop\n", "utf8");
+  fs.writeFileSync(path.join(desktopRuntimeRoot, "registries", "providers", "desktop.yml"), "key: desktop\n", "utf8");
+
+  fs.writeFileSync(
+    path.join(platformInstallDir, ".env"),
+    [
+      "HOST_PORT=11949",
+      `REGISTRIES_DIR=${legacyRuntimeRoot}/registries`,
+      `OWNER_DIR=${legacyRuntimeRoot}/owner`,
+      `AGENTS_DIR=${legacyRuntimeRoot}/agents`,
+      `TEAMS_DIR=${legacyRuntimeRoot}/teams`,
+      `ROOT_DIR=${legacyRuntimeRoot}/root`,
+      `SCHEDULES_DIR=${legacyRuntimeRoot}/schedules`,
+      `CHATS_DIR=${legacyRuntimeRoot}/chats`,
+      `MEMORY_DIR=${legacyRuntimeRoot}/memory`,
+      `PAN_DIR=${legacyRuntimeRoot}/pan`,
+      `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`,
+      "LOCAL_CLI_ACP_RELAY_PORT=3220"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const previousHome = process.env.HOME;
+  process.env.HOME = homeRoot;
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+  }
+
+  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+  assert.match(
+    envContent,
+    new RegExp(`AGENTS_DIR=${path.join(desktopRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+  );
+  assert.match(
+    envContent,
+    new RegExp(`REGISTRIES_DIR=${path.join(desktopRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
   assert.doesNotMatch(
     envContent,

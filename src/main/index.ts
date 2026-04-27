@@ -18,6 +18,7 @@ import { issueAgentAccessToken } from "./agent-auth";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import { loadBuiltinServices } from "./builtin-loader";
 import {
+  cleanupAgentPlatformRelayForApp,
   getServiceLogsMeta,
   readServiceLog,
   getServiceState,
@@ -891,6 +892,11 @@ app.on("before-quit", (event) => {
       console.error("failed while shutting down desktop services", error);
     })
     .finally(() => {
+      try {
+        cleanupAgentPlatformRelayForApp(app);
+      } catch (error) {
+        console.error("failed while cleaning up local code-assistant relay", error);
+      }
       app.quit();
     });
 });

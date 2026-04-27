@@ -18,7 +18,17 @@ interface HelpCategory {
   items: HelpItem[];
 }
 
-const HELP_CATEGORIES: HelpCategory[] = [
+type HelpPageProps = {
+  isWindows: boolean;
+};
+
+function getHelpCategories(isWindows: boolean): HelpCategory[] {
+  const pluginArchiveLabel = isWindows ? ".zip" : ".tar.gz";
+  const pluginArchiveCommand = isWindows
+    ? "Compress-Archive -LiteralPath .\\my-plugin -DestinationPath .\\my-plugin.zip"
+    : "tar -czf my-plugin.tar.gz -C /path/to my-plugin/";
+
+  return [
   /* ── 热门问题 ── */
   {
     id: "popular",
@@ -41,7 +51,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
               <Link className="help-inline-link" to="/market">
                 <strong>插件</strong>
               </Link>
-              （运行时通过 <code>.tar.gz</code> 包导入）。
+              （运行时通过 <code>{pluginArchiveLabel}</code> 包导入）。
             </p>
           </>
         ),
@@ -227,7 +237,7 @@ const HELP_CATEGORIES: HelpCategory[] = [
             <p>请检查以下几点：</p>
             <ul>
               <li>
-                插件包 (<code>.tar.gz</code>) 内必须包含有效的{" "}
+                插件包 (<code>{pluginArchiveLabel}</code>) 内必须包含有效的{" "}
                 <code>manifest.json</code> 文件
               </li>
               <li>
@@ -247,9 +257,9 @@ const HELP_CATEGORIES: HelpCategory[] = [
             <ol>
               <li>确保插件根目录包含有效的 <code>manifest.json</code></li>
               <li>
-                将插件目录打包为 <code>.tar.gz</code> 文件：
+                将插件目录打包为 <code>{pluginArchiveLabel}</code> 文件：
                 <pre>
-                  <code>tar -czf my-plugin.tar.gz -C /path/to my-plugin/</code>
+                  <code>{pluginArchiveCommand}</code>
                 </pre>
               </li>
               <li>
@@ -475,7 +485,8 @@ const HELP_CATEGORIES: HelpCategory[] = [
       },
     ],
   },
-];
+  ];
+}
 
 /* ================================================================
  *  组件
@@ -483,8 +494,9 @@ const HELP_CATEGORIES: HelpCategory[] = [
 
 const ACCORDION_FALLBACK_HEIGHT = 800;
 
-export function HelpPage() {
-  const [activeCat, setActiveCat] = useState(HELP_CATEGORIES[0].id);
+export function HelpPage({ isWindows }: HelpPageProps) {
+  const helpCategories = getHelpCategories(isWindows);
+  const [activeCat, setActiveCat] = useState(() => helpCategories[0]?.id ?? "popular");
   const [openItems, setOpenItems] = useState<Set<string>>(new Set());
   const bodyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const contentRef = useRef<HTMLDivElement>(null);
@@ -495,7 +507,7 @@ export function HelpPage() {
     return () => document.documentElement.classList.remove("theme-help");
   }, []);
 
-  const currentCategory = HELP_CATEGORIES.find((c) => c.id === activeCat) ?? HELP_CATEGORIES[0];
+  const currentCategory = helpCategories.find((c) => c.id === activeCat) ?? helpCategories[0];
 
   /* ── 切换类别 ── */
   const switchCategory = useCallback((catId: string) => {
@@ -522,7 +534,7 @@ export function HelpPage() {
         <aside className="help-sidebar">
           <h2 className="help-sidebar-title">支持中心</h2>
           <nav className="help-nav">
-            {HELP_CATEGORIES.map((cat) => (
+            {helpCategories.map((cat) => (
               <button
                 key={cat.id}
                 className={`help-nav-btn${activeCat === cat.id ? " is-active" : ""}`}

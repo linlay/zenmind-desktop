@@ -6,6 +6,7 @@ type SettingsPageProps = {
   themeMode: "light" | "dark";
   onToggleTheme: () => void;
   isMac: boolean;
+  isWindows: boolean;
   sidebarTranslucencyEnabled: boolean;
   onToggleSidebarTranslucency: () => void;
   customSidebarItems: CustomSidebarItem[];
@@ -67,13 +68,13 @@ export function SettingsPage({
   themeMode,
   onToggleTheme,
   isMac,
+  isWindows,
   sidebarTranslucencyEnabled,
   onToggleSidebarTranslucency,
   customSidebarItems,
   onCustomSidebarItemsChange,
   onRefreshCustomSidebarItems
 }: SettingsPageProps) {
-  const isWindows = navigator.userAgent.includes("Windows");
   const [feedback, setFeedback] = useState("");
   const [customSidebarLabel, setCustomSidebarLabel] = useState("");
   const [customSidebarUrl, setCustomSidebarUrl] = useState("");

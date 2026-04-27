@@ -749,6 +749,18 @@ function parseRelayPort(env: Map<string, string>) {
   return Number.isFinite(port) ? port : Number.parseInt(DEFAULT_LOCAL_CLI_ACP_RELAY_PORT, 10);
 }
 
+function isEnvFlagDisabled(value: string | undefined) {
+  switch ((value ?? "").trim().toLowerCase()) {
+    case "false":
+    case "0":
+    case "no":
+    case "off":
+      return true;
+    default:
+      return false;
+  }
+}
+
 function cleanupAgentPlatformRelayBeforeStart(installDir: string, env: Map<string, string>) {
   const relayPidFilePath = path.join(installDir, "run", "local-cli-acp-relay.pid");
   const relayPort = parseRelayPort(env);
@@ -770,6 +782,18 @@ function cleanupAgentPlatformRelayBeforeStart(installDir: string, env: Map<strin
   }
 
   removePidFile(relayPidFilePath);
+}
+
+export function cleanupAgentPlatformRelayForApp(app: App) {
+  const service = getService("agent-platform");
+  const installDir = getInstallDir(app, service);
+  if (!fs.existsSync(installDir)) {
+    return;
+  }
+
+  const envPath = path.join(installDir, ".env");
+  const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
+  cleanupAgentPlatformRelayBeforeStart(installDir, env);
 }
 
 function isAgentPlatformRelayStartupConflict(error: unknown) {
@@ -1387,7 +1411,7 @@ const agentPlatformDefaultContainerHubBaseUrls = new Set([
 ]);
 
 const LEGACY_LOCAL_CLI_ACP_RELAY_PORT = "3210";
-const DEFAULT_LOCAL_CLI_ACP_RELAY_ENABLED = "false";
+const DEFAULT_LOCAL_CLI_ACP_RELAY_ENABLED = "true";
 const DEFAULT_LOCAL_CLI_ACP_RELAY_PORT = "3220";
 const legacyCodeAssistantProxyBaseUrls = new Set([
   `http://127.0.0.1:${LEGACY_LOCAL_CLI_ACP_RELAY_PORT}`,
@@ -1447,20 +1471,43 @@ const agentPlatformDisabledGatewayEnvKeys = [
   "GATEWAY_AUTH_TOKEN"
 ] as const;
 
-function expandHomeShortcut(value: string) {
+function resolveHomeDir(app?: App | null) {
+  try {
+    const homePath = app?.getPath("home")?.trim();
+    if (homePath) {
+      return homePath;
+    }
+  } catch {
+    // Fall back to the process home directory when Electron does not expose a home path yet.
+  }
+  return process.env.HOME || os.homedir();
+}
+
+function resolveDesktopDir(app?: App | null, homeDir = resolveHomeDir(app)) {
+  try {
+    const desktopPath = app?.getPath("desktop")?.trim();
+    if (desktopPath) {
+      return desktopPath;
+    }
+  } catch {
+    // Fall back to the conventional desktop location when Electron cannot resolve it.
+  }
+  return path.join(homeDir, "Desktop");
+}
+
+function expandHomeShortcut(value: string, homeDir = resolveHomeDir()) {
   const trimmed = value.trim();
-  const homeDir = process.env.HOME || os.homedir();
   if (trimmed === "~") {
     return homeDir;
   }
-  if (trimmed.startsWith("~/")) {
+  if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
     return path.join(homeDir, trimmed.slice(2));
   }
   return trimmed;
 }
 
-function normalizeConfigPath(value: string) {
-  return path.normalize(expandHomeShortcut(value)).replace(/\\/gu, "/");
+function normalizeConfigPath(value: string, homeDir = resolveHomeDir()) {
+  return path.normalize(expandHomeShortcut(value, homeDir)).replace(/\\/gu, "/");
 }
 
 function countMatchingFiles(rootDir: string, maxDepth: number, predicate: (filePath: string) => boolean, depth = 0): number {
@@ -1506,13 +1553,16 @@ function getAgentPlatformRuntimeRootScore(runtimeRoot: string) {
   return existingTopLevelDirs + agentCount * 100 + registryCount * 10 + teamCount * 3 + chatCount * 2;
 }
 
-function resolveDesktopRuntimeRoot() {
-  const homeDir = process.env.HOME || os.homedir();
-  const candidates = [
+function resolveDesktopRuntimeRoot(app?: App | null) {
+  const homeDir = resolveHomeDir(app);
+  const desktopDir = resolveDesktopDir(app, homeDir);
+  const legacyDesktopDir = path.join(homeDir, "Desktop");
+  const candidates = [...new Set([
     path.join(homeDir, ".zenmind"),
-    path.join(homeDir, "Desktop", "zenmind-env"),
+    path.join(desktopDir, "zenmind-env"),
+    path.join(legacyDesktopDir, "zenmind-env"),
     path.join(homeDir, "zenmind")
-  ];
+  ])];
   for (const candidate of candidates) {
     const score = getAgentPlatformRuntimeRootScore(candidate);
     if (score > 0) {
@@ -1547,7 +1597,7 @@ function hasConfiguredAgentPlatformRuntimePath(env: Map<string, string>) {
   return agentPlatformDesktopRuntimePaths.some(([key]) => Boolean(env.get(key)?.trim()));
 }
 
-function resolveLegacyAgentPlatformRuntimeRootMigration(env: Map<string, string>) {
+function resolveLegacyAgentPlatformRuntimeRootMigration(app: App, env: Map<string, string>) {
   if (env.get("RUNTIME_DIR")?.trim()) {
     return null;
   }
@@ -1559,23 +1609,23 @@ function resolveLegacyAgentPlatformRuntimeRootMigration(env: Map<string, string>
     return null;
   }
 
-  const homeDir = process.env.HOME || os.homedir();
+  const homeDir = resolveHomeDir(app);
   const legacyRuntimeRoot = path.join(homeDir, "zenmind");
-  const normalizedLegacyRoot = normalizeConfigPath(legacyRuntimeRoot);
+  const normalizedLegacyRoot = normalizeConfigPath(legacyRuntimeRoot, homeDir);
   const allPathsStillUseLegacyRoot = configuredRuntimePaths.every((configuredPath) => {
-    const normalizedPath = normalizeConfigPath(configuredPath);
+    const normalizedPath = normalizeConfigPath(configuredPath, homeDir);
     return normalizedPath === normalizedLegacyRoot || normalizedPath.startsWith(`${normalizedLegacyRoot}/`);
   });
   if (!allPathsStillUseLegacyRoot) {
     return null;
   }
 
-  const preferredRuntimeRoot = resolveDesktopRuntimeRoot();
+  const preferredRuntimeRoot = resolveDesktopRuntimeRoot(app);
   if (!preferredRuntimeRoot) {
     return null;
   }
 
-  const normalizedPreferredRoot = normalizeConfigPath(preferredRuntimeRoot);
+  const normalizedPreferredRoot = normalizeConfigPath(preferredRuntimeRoot, homeDir);
   if (normalizedPreferredRoot === normalizedLegacyRoot) {
     return null;
   }
@@ -1696,6 +1746,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     const envPath = path.join(installDir, ".env");
     const env = readEnvFile(envPath);
     const currentHubBaseUrl = env.get("AGENT_CONTAINER_HUB_BASE_URL") ?? "";
+    const currentRelayEnabled = env.get("LOCAL_CLI_ACP_RELAY_ENABLED");
     const updates = new Map<string, string>();
     const currentRelayPort = env.get("LOCAL_CLI_ACP_RELAY_PORT") ?? "";
 
@@ -1711,8 +1762,11 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     if (!env.get("SERVER_PORT")) {
       updates.set("SERVER_PORT", String(service.web.defaultPort));
     }
-    if (!env.has("LOCAL_CLI_ACP_RELAY_ENABLED")) {
+    if (!currentRelayEnabled || isEnvFlagDisabled(currentRelayEnabled)) {
       updates.set("LOCAL_CLI_ACP_RELAY_ENABLED", DEFAULT_LOCAL_CLI_ACP_RELAY_ENABLED);
+      if (isEnvFlagDisabled(currentRelayEnabled)) {
+        console.warn("[service-manager] Migrated Desktop local relay setting from disabled to enabled.");
+      }
     }
     if (!currentRelayPort || currentRelayPort === LEGACY_LOCAL_CLI_ACP_RELAY_PORT) {
       updates.set("LOCAL_CLI_ACP_RELAY_PORT", DEFAULT_LOCAL_CLI_ACP_RELAY_PORT);
@@ -1733,9 +1787,9 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
       updates.set(key, "");
     }
 
-    const migratedRuntimeRoot = resolveLegacyAgentPlatformRuntimeRootMigration(env);
+    const migratedRuntimeRoot = resolveLegacyAgentPlatformRuntimeRootMigration(app, env);
     if (migratedRuntimeRoot) {
-      const homeDir = process.env.HOME || os.homedir();
+      const homeDir = resolveHomeDir(app);
       for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
         updates.set(key, path.join(migratedRuntimeRoot, relativePath));
       }
@@ -1744,7 +1798,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
       );
     }
 
-    const desktopRuntimeRoot = resolveDesktopRuntimeRoot();
+    const desktopRuntimeRoot = resolveDesktopRuntimeRoot(app);
     if (desktopRuntimeRoot && !hasConfiguredAgentPlatformRuntimePath(env)) {
       for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
         if (!env.get(key)) {

@@ -160,6 +160,7 @@ function AppShell() {
     location.pathname.startsWith("/external/") ||
     location.pathname.startsWith("/custom-sidebar/");
   const isMac = desktopPlatform === "darwin";
+  const isWindows = desktopPlatform === "win32";
   const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
     services.find((service) => service.id === serviceId) ?? null
   );
@@ -652,6 +653,7 @@ function AppShell() {
                   themeMode={themeMode}
                   onToggleTheme={toggleTheme}
                   isMac={isMac}
+                  isWindows={isWindows}
                   sidebarTranslucencyEnabled={isMac && sidebarTranslucencyEnabled}
                   onToggleSidebarTranslucency={() => setSidebarTranslucencyEnabled((current) => !current)}
                   customSidebarItems={customSidebarItems}
@@ -682,7 +684,7 @@ function AppShell() {
             <Route path="/custom-sidebar/:itemId" element={<ExternalItemRoute itemMap={customSidebarItemMap} />} />
             <Route path="/plugin/:pluginId" element={<PluginPage hostTheme={themeMode} />} />
             <Route path="/market" element={<PluginMarketPage />} />
-            <Route path="/help" element={<HelpPage />} />
+            <Route path="/help" element={<HelpPage isWindows={isWindows} />} />
           </Routes>
         </main>
       </div>
