@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode 
 import type { ServiceConfigReadResult, ServiceId, ServiceLogTarget, ServiceState } from "@shared/contracts";
 import { useServices } from "../services/ServicesContext";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getServiceDisplayName } from "../service-display";
+import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName } from "../service-display";
 
 const CORE_MODULES = [
   {
@@ -17,7 +17,7 @@ const CORE_MODULES = [
   },
   {
     id: "agent-webclient",
-    name: "小宅助理",
+    name: AGENT_WEBCLIENT_DISPLAY_NAME,
     description: "独立进程模式的 AGENT Web 客户端，负责静态资源托管并代理 API 请求。"
   },
   {
@@ -1058,18 +1058,23 @@ export function ControlCenterPage() {
             {detailEndpoint ? (
               <div className="service-inline-meta">
                 <span className="service-inline-meta-label">访问入口</span>
-                <span className="service-inline-meta-value" title={detailEndpoint}>
-                  {detailEndpoint}
-                </span>
-                {activeDetailService.frontendMode !== "none" && activeDetailService.status === "running" ? (
-                  <button
-                    type="button"
-                    className="action-button"
-                    onClick={() => navigate(`/plugin/${activeDetailService.id}`)}
+                <div className="service-inline-meta-main">
+                  <span
+                    className="service-inline-meta-value truncated-hover-value"
+                    data-full-value={detailEndpoint}
                   >
-                    打开
-                  </button>
-                ) : null}
+                    {detailEndpoint}
+                  </span>
+                  {activeDetailService.frontendMode !== "none" && activeDetailService.status === "running" ? (
+                    <button
+                      type="button"
+                      className="action-button service-inline-meta-open"
+                      onClick={() => navigate(`/plugin/${activeDetailService.id}`)}
+                    >
+                      打开
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ) : null}
 
@@ -1089,7 +1094,12 @@ export function ControlCenterPage() {
                       </button>
                     ) : null}
                   </div>
-                  <dd title={item.title || item.value}>{item.value}</dd>
+                  <dd
+                    className="truncated-hover-value"
+                    data-full-value={item.title || item.value}
+                  >
+                    {item.value}
+                  </dd>
                 </div>
               ))}
             </dl>

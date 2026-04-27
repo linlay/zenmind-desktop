@@ -15,6 +15,9 @@ import type {
 } from "../shared/contracts";
 
 const api: DesktopApi = {
+  clipboard: {
+    writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text)
+  },
   services: {
     list: () => ipcRenderer.invoke("services.list"),
     getStartupRestoreState: () => ipcRenderer.invoke("services.getStartupRestoreState"),

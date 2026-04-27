@@ -28,6 +28,7 @@ const assistantNavItem: SidebarNavItem = {
 type AppSidebarProps = {
   isCollapsed: boolean;
   currentPath: string;
+  pendingPath?: string | null;
   customSidebarItems: CustomSidebarItem[];
   onRequestNavigate?: (targetPath: string) => boolean;
   onNavigateItem?: () => void;
@@ -36,6 +37,7 @@ type AppSidebarProps = {
 export function AppSidebar({
   isCollapsed,
   currentPath,
+  pendingPath,
   customSidebarItems,
   onRequestNavigate,
   onNavigateItem
@@ -108,7 +110,7 @@ export function AppSidebar({
             className={({ isActive }) =>
               [
                 "sidebar-link",
-                isActive ? "sidebar-link-active" : ""
+                (isActive || pendingPath === item.to) ? "sidebar-link-active" : ""
               ].filter(Boolean).join(" ")
             }
           >
@@ -128,7 +130,7 @@ export function AppSidebar({
             [
               "sidebar-link",
               "sidebar-link-utility",
-              isActive ? "sidebar-link-active" : ""
+              (isActive || pendingPath === "/settings") ? "sidebar-link-active" : ""
             ].filter(Boolean).join(" ")
           }
         >

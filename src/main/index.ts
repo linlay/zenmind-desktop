@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
@@ -765,6 +766,17 @@ function registerIpcHandlers() {
   ipcMain.handle("panAuth.getStatus", async () => getPanAuthStatus(app));
   ipcMain.handle("agentAuth.issueAccessToken", async (_event, reason: "missing" | "unauthorized") => {
     return issueAgentAccessToken(app, reason);
+  });
+  ipcMain.handle("clipboard.writeText", async (_event, text: string) => {
+    try {
+      clipboard.writeText(String(text ?? ""));
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
   });
   ipcMain.handle("customSidebar.list", async () => listCustomSidebarItems(app));
   ipcMain.handle("customSidebar.add", async (_event, input: { label?: string; url: string }) => {

@@ -11,6 +11,9 @@ type PluginPageProps = {
   hostTheme: "light" | "dark";
 };
 
+const AGENT_APP_CLIPBOARD_REQUEST_TYPE = "zenmind:agent-app-clipboard:request";
+const AGENT_APP_CLIPBOARD_RESPONSE_TYPE = "zenmind:agent-app-clipboard:response";
+
 export function PluginPage({ hostTheme }: PluginPageProps) {
   const { pluginId } = useParams<{ pluginId: string }>();
   const { services } = useServices();
@@ -42,8 +45,22 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
       return;
     }
 
+    const isMessageFromEmbeddedFrame = (event: MessageEvent) => {
+      if (event.source === iframeRef.current?.contentWindow) {
+        return true;
+      }
+      if (!embeddedUrl || !event.origin || event.origin === "null") {
+        return false;
+      }
+      try {
+        return event.origin === new URL(embeddedUrl).origin;
+      } catch {
+        return false;
+      }
+    };
+
     const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
+      if (!isMessageFromEmbeddedFrame(event)) {
         return;
       }
 
@@ -93,13 +110,63 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
         });
     };
 
+    const handleClipboardMessage = (event: MessageEvent) => {
+      if (!isMessageFromEmbeddedFrame(event)) {
+        return;
+      }
+
+      const payload = event.data as {
+        type?: string;
+        requestId?: string;
+        text?: string;
+      } | null;
+      if (
+        !payload ||
+        payload.type !== AGENT_APP_CLIPBOARD_REQUEST_TYPE ||
+        !payload.requestId
+      ) {
+        return;
+      }
+
+      void window.electronAPI.clipboard
+        .writeText(typeof payload.text === "string" ? payload.text : "")
+        .then((result) => {
+          const targetOrigin =
+            event.origin && event.origin !== "null" ? event.origin : "*";
+          iframeRef.current?.contentWindow?.postMessage(
+            {
+              type: AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
+              requestId: payload.requestId,
+              ok: result.ok,
+              message: result.message ?? ""
+            },
+            targetOrigin,
+          );
+        })
+        .catch((reason) => {
+          const targetOrigin =
+            event.origin && event.origin !== "null" ? event.origin : "*";
+          iframeRef.current?.contentWindow?.postMessage(
+            {
+              type: AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
+              requestId: payload.requestId,
+              ok: false,
+              message: reason instanceof Error ? reason.message : String(reason)
+            },
+            targetOrigin,
+          );
+        });
+    };
+
     window.addEventListener("message", handleMessage);
+    window.addEventListener("message", handleClipboardMessage);
     setBridgeReady(true);
     return () => {
       setBridgeReady(false);
       window.removeEventListener("message", handleMessage);
+      window.removeEventListener("message", handleClipboardMessage);
     };
-  }, [bridgeProtocol]);
+  }, [bridgeProtocol, embeddedUrl]);
 
   useEffect(() => {
     if (service?.status !== "running" || !embeddedUrl) {

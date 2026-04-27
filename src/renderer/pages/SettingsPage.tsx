@@ -266,7 +266,7 @@ export function SettingsPage({
                 required
               />
             </label>
-            <button type="submit" className="action-button" disabled={customSidebarPending}>
+            <button type="submit" className="action-button custom-sidebar-submit" disabled={customSidebarPending}>
               {customSidebarPending ? "添加中..." : "添加到侧边栏"}
             </button>
           </form>

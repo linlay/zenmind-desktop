@@ -11,7 +11,7 @@ import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ServicesProvider, useServices } from "./services/ServicesContext";
 import type { CustomSidebarItem, ServiceId, ServiceState, StartupRestoreState } from "../shared/contracts";
-import { getServiceDisplayName } from "./service-display";
+import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName } from "./service-display";
 
 type ThemeMode = "light" | "dark";
 
@@ -598,6 +598,7 @@ function AppShell() {
         <AppSidebar
           isCollapsed={sidebarState.collapsed}
           currentPath={location.pathname}
+          pendingPath={pendingSidebarNavigationPath}
           customSidebarItems={customSidebarItems}
           onRequestNavigate={requestSidebarNavigation}
           onNavigateItem={undefined}
@@ -666,7 +667,7 @@ function AppShell() {
               path="/assistant"
               element={
                 <PlaceholderPage
-                  title="小宅助理"
+                  title={AGENT_WEBCLIENT_DISPLAY_NAME}
                   description="桌面端助理功能建设中，敬请期待。"
                 />
               }
@@ -814,7 +815,7 @@ function getStartupServiceFallbackName(serviceId: ServiceId) {
     case "agent-platform":
       return "智能体平台";
     case "agent-webclient":
-      return "小宅助理";
+      return AGENT_WEBCLIENT_DISPLAY_NAME;
     default:
       return serviceId;
   }

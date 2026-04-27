@@ -13,7 +13,7 @@
 当前仓库重点覆盖两类服务：
 - `agent-container-hub`：宿主机容器服务，为后续智能体运行时提供沙箱能力。
 - `agent-platform`：智能体运行时服务。
-- `agent-webclient`：小宅助理前端，作为内置服务随 Desktop 分发。
+- `agent-webclient`：智能助理前端，作为内置服务随 Desktop 分发。
 - `zenmind-app-server`：认证与管理服务，提供 OAuth2/OIDC、管理后台和 App 访问令牌。
 - `pan-webclient`：网盘服务，通过插件系统导入。
 

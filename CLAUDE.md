@@ -125,7 +125,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `src/renderer`
   - `pages/ControlCenterPage.tsx`：服务控制中心。
   - `pages/PluginPage.tsx`：通用服务前端页面，通过 iframe 加载服务 web 入口，支持 postMessage Token Bridge 认证。
-  - `pages/PlaceholderPage.tsx`：占位页面，用于小宅助理、智能体、插件市场、帮助等预留入口。
+  - `pages/PlaceholderPage.tsx`：占位页面，用于智能助理、智能体、插件市场、帮助等预留入口。
   - `components/Header.tsx`：顶部导航栏，动态展示运行中且 `frontendMode === "standalone"` 的服务入口。
   - `services/ServicesContext.tsx`：React Context，封装所有服务和插件操作。
 - `src/shared`

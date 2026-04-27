@@ -295,6 +295,9 @@ export interface WebviewPopupNavigateRequest {
 export type WebviewPopupNavigateListener = (request: WebviewPopupNavigateRequest) => void;
 
 export interface DesktopApi {
+  clipboard: {
+    writeText: (text: string) => Promise<{ ok: boolean; message?: string }>;
+  };
   services: {
     list: () => Promise<ServiceState[]>;
     getStartupRestoreState: () => Promise<StartupRestoreState>;
