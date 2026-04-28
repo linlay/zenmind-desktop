@@ -167,10 +167,18 @@ export interface ManifestWeb {
   defaultPort: number;
 }
 
+export interface ManifestDesktopBridge {
+  category: "bridge";
+  channelId: string;
+  channelName: string;
+  gatewayInfoEndpoint: string;
+}
+
 export interface ManifestDesktop {
   assetFileName?: string;
   bundleTopLevelDir?: string;
   envBindings?: ManifestEnvBinding[];
+  bridge?: ManifestDesktopBridge;
 }
 
 export interface ManifestEnvBinding {

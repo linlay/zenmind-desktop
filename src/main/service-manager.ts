@@ -1376,18 +1376,41 @@ function runExecFile(command: string, args: string[], cwd: string) {
   });
 }
 
+let containerEngineDiagOnce = false;
 function containerEngineAvailable() {
   const env = buildServiceEnv();
-  const exists = IS_WINDOWS
-    ? (name: string) => spawnSync("where.exe", [name], { encoding: "utf8", env }).status === 0
-    : (name: string) => spawnSync("sh", ["-lc", `command -v ${name}`], { encoding: "utf8", env }).status === 0;
-  const reachable = (name: string) =>
-    spawnSync(name, ["info"], {
+  const diagOnce = !containerEngineDiagOnce;
+  containerEngineDiagOnce = true;
+  if (diagOnce) {
+    const pathPreview = (env.PATH ?? "").split(path.delimiter).slice(0, 8).join(" | ");
+    console.log(`[container-engine] PATH(top 8): ${pathPreview}`);
+  }
+
+  const exists = (name: string) => {
+    const opts = { encoding: "utf8" as const, env };
+    const r = IS_WINDOWS
+      ? spawnSync("where.exe", [name], opts)
+      : spawnSync("sh", ["-lc", `command -v ${name}`], opts);
+    if (diagOnce) {
+      console.log(`[container-engine] ${IS_WINDOWS ? "where.exe" : "command -v"} ${name} → status=${r.status} stdout=${r.stdout?.trim()?.split(/\r?\n/u)[0] ?? ""}`);
+    }
+    return r.status === 0;
+  };
+
+  const reachable = (name: string) => {
+    const start = Date.now();
+    const r = spawnSync(name, ["info"], {
       encoding: "utf8",
       env,
-      timeout: 5000,
+      timeout: 15000,
       stdio: "ignore"
-    }).status === 0;
+    });
+    const ms = Date.now() - start;
+    if (diagOnce) {
+      console.log(`[container-engine] ${name} info → status=${r.status} signal=${r.signal} elapsed=${ms}ms error=${r.error?.message ?? ""}`);
+    }
+    return r.status === 0;
+  };
 
   for (const engine of ["docker", "podman"]) {
     if (exists(engine) && reachable(engine)) {
@@ -2343,34 +2366,51 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
       service: nextState
     };
   }
+  let result: ServiceCommandResult;
   if (nextState.status === "running") {
-    return {
+    result = {
       ok: true,
       message: `${nextState.name} 已在运行。`,
       service: nextState
     };
-  }
-
-  await ensurePreStartRequirements(app, service);
-  if (service.id === "agent-platform") {
-    const env = readEnvFile(path.join(installDir, ".env"));
-    cleanupAgentPlatformRelayBeforeStart(installDir, env);
-  }
-  let result: ServiceCommandResult;
-
-  try {
-    result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
-  } catch (error) {
-    if (service.id !== "agent-platform" || !isAgentPlatformRelayStartupConflict(error)) {
-      throw error;
+  } else {
+    await ensurePreStartRequirements(app, service);
+    if (service.id === "agent-platform") {
+      const env = readEnvFile(path.join(installDir, ".env"));
+      cleanupAgentPlatformRelayBeforeStart(installDir, env);
     }
 
-    const env = readEnvFile(path.join(installDir, ".env"));
-    cleanupAgentPlatformRelayBeforeStart(installDir, env);
-    result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
+    try {
+      result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
+    } catch (error) {
+      if (service.id !== "agent-platform" || !isAgentPlatformRelayStartupConflict(error)) {
+        throw error;
+      }
+
+      const env = readEnvFile(path.join(installDir, ".env"));
+      cleanupAgentPlatformRelayBeforeStart(installDir, env);
+      result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
+    }
+
+    startedThisSession.add(serviceId);
   }
 
-  startedThisSession.add(serviceId);
+  // Bridge registration hook（无论是否已在运行都走一遍，幂等）
+  if (service.kind === "plugin") {
+    const { registerBridge } = await import("./bridge-registrar");
+    try {
+      const regResult = await registerBridge(app, serviceId);
+      if (!regResult.ok) {
+        result = {
+          ...result,
+          message: `${result.message} (但桥接注册失败: ${regResult.message})`
+        };
+      }
+    } catch (error) {
+      console.warn(`[service-manager] Bridge registration failed for ${serviceId}:`, error);
+    }
+  }
+
   return result;
 }
 
@@ -2398,6 +2438,20 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
     cleanupAgentPlatformRelayBeforeStart(getInstallDir(app, service), env);
   }
   startedThisSession.delete(serviceId);
+
+  // Bridge unregistration hook
+  if (service.kind === "plugin") {
+    const { unregisterBridge } = await import("./bridge-registrar");
+    try {
+      const unregResult = await unregisterBridge(app, serviceId);
+      if (!unregResult.ok) {
+        console.warn(`[service-manager] Bridge unregistration failed for ${serviceId}: ${unregResult.message}`);
+      }
+    } catch (error) {
+      console.warn(`[service-manager] Bridge unregistration failed for ${serviceId}:`, error);
+    }
+  }
+
   return result;
 }
 
@@ -2701,11 +2755,15 @@ export async function restoreRunningServices(
       }
 
       options.onStarting?.(serviceId);
+      const startedAt = Date.now();
       const result = await startService(app, serviceId);
+      const elapsedMs = Date.now() - startedAt;
       if (result.ok) {
+        console.info(`[service-manager] restored ${serviceId} in ${elapsedMs}ms`);
         restored.push(serviceId);
         options.onProgress?.(serviceId, "succeeded", result.message);
       } else {
+        console.warn(`[service-manager] failed to restore ${serviceId} after ${elapsedMs}ms: ${result.message}`);
         failures.push(`${serviceId}: ${result.message}`);
         options.onProgress?.(serviceId, "failed", result.message);
         break;
