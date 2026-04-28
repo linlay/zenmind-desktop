@@ -1715,6 +1715,9 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
 }
 
 const DEFAULT_LOCAL_CLI_ACP_RELAY_PORT = "3220";
+const LOCAL_CLI_ACP_RELAY_ENABLED_KEY = "LOCAL_CLI_ACP_RELAY_ENABLED";
+const LOCAL_CLI_ACP_RELAY_USER_ENABLED_KEY = "LOCAL_CLI_ACP_RELAY_USER_ENABLED";
+const DEFAULT_CLAUDE_CODE_ACP_ARGS = "-y @zed-industries/claude-code-acp";
 
 
 function agentWebclientInstallNeedsRefresh(installDir: string) {
@@ -1965,6 +1968,54 @@ function resolveAcpCommandForDesktop(env: Map<string, string>) {
   return null;
 }
 
+function isTruthyEnvValue(value: string) {
+  switch (value.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "yes":
+    case "on":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function usesDefaultDesktopAcpConfig(env: Map<string, string>) {
+  const relayPort = (env.get("LOCAL_CLI_ACP_RELAY_PORT") ?? DEFAULT_LOCAL_CLI_ACP_RELAY_PORT).trim();
+  const currentAcpCommand = (env.get("CLAUDE_CODE_ACP_COMMAND") ?? "").trim();
+  const currentAcpArgs = (env.get("CLAUDE_CODE_ACP_ARGS") ?? "").trim();
+  const usesDefaultAcpCommand =
+    !currentAcpCommand
+    || isCommandBasenameMatch(currentAcpCommand, "npx")
+    || isCommandBasenameMatch(currentAcpCommand, "claude-code-acp");
+  const usesDefaultAcpArgs = !currentAcpArgs || currentAcpArgs === DEFAULT_CLAUDE_CODE_ACP_ARGS;
+  return relayPort === DEFAULT_LOCAL_CLI_ACP_RELAY_PORT && usesDefaultAcpCommand && usesDefaultAcpArgs;
+}
+
+function shouldDisableAgentPlatformRelayByDefault(env: Map<string, string>) {
+  const currentRelayEnabled = (env.get(LOCAL_CLI_ACP_RELAY_ENABLED_KEY) ?? "").trim();
+  if (!currentRelayEnabled) {
+    return true;
+  }
+  if (!isTruthyEnvValue(currentRelayEnabled)) {
+    return false;
+  }
+  const userEnabled = isTruthyEnvValue(env.get(LOCAL_CLI_ACP_RELAY_USER_ENABLED_KEY) ?? "");
+  if (userEnabled) {
+    return false;
+  }
+  return usesDefaultDesktopAcpConfig(env);
+}
+
+function normalizeAgentPlatformEnvContent(content: string) {
+  const env = parseEnvFileContent(content);
+  const relayEnabled = isTruthyEnvValue(env.get(LOCAL_CLI_ACP_RELAY_ENABLED_KEY) ?? "");
+  return upsertEnvFileContent(
+    content,
+    new Map([[LOCAL_CLI_ACP_RELAY_USER_ENABLED_KEY, relayEnabled ? "true" : "false"]])
+  );
+}
+
 async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<string, string>, updates: Map<string, string>) {
   for (const binding of service.desktop.envBindings) {
     const currentValue = env.get(binding.key) ?? "";
@@ -1999,13 +2050,12 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   const envPath = path.join(installDir, ".env");
   const env = readEnvFile(envPath);
   const updates = new Map<string, string>();
-  const currentRelayEnabled = (env.get("LOCAL_CLI_ACP_RELAY_ENABLED") ?? "").trim();
 
   await applyEnvBindings(app, service, env, updates);
 
   updates.set("NODE_BIN", resolveNodeBin());
-  if (!currentRelayEnabled) {
-    updates.set("LOCAL_CLI_ACP_RELAY_ENABLED", "false");
+  if (shouldDisableAgentPlatformRelayByDefault(env)) {
+    updates.set(LOCAL_CLI_ACP_RELAY_ENABLED_KEY, "false");
   }
   const resolvedAcpCommand = resolveAcpCommandForDesktop(env);
   if (resolvedAcpCommand) {
@@ -2268,7 +2318,11 @@ export async function writeServiceConfig(
 
   const filePath = path.join(installDir, configFile.relativePath);
   ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, content, "utf8");
+  const normalizedContent =
+    service.id === "agent-platform" && key === "env"
+      ? normalizeAgentPlatformEnvContent(content)
+      : content;
+  fs.writeFileSync(filePath, normalizedContent, "utf8");
 
   return {
     ok: true,
@@ -2528,6 +2582,8 @@ export const __testInternals = {
   agentWebclientInstallNeedsRefresh,
   resolveNodeBin,
   resolveAcpCommandForDesktop,
+  normalizeAgentPlatformEnvContent,
+  shouldDisableAgentPlatformRelayByDefault,
   cleanupAgentPlatformRelayBeforeStart,
   parseProcessTreeRowsFromPs,
   parseProcessTreeRowsFromPowerShell,

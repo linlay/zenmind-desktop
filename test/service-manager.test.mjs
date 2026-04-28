@@ -388,6 +388,18 @@ test("upsertEnvFileContent replaces duplicated keys without leaving stale values
   assert.equal(next, "AGENTS_DIR=/tmp/new-agents\nOTHER_KEY=demo\n");
 });
 
+test("normalizeAgentPlatformEnvContent records whether ACP relay was manually enabled", () => {
+  const enabledContent = __testInternals.normalizeAgentPlatformEnvContent(
+    "HOST_PORT=11949\nLOCAL_CLI_ACP_RELAY_ENABLED=true\n"
+  );
+  const disabledContent = __testInternals.normalizeAgentPlatformEnvContent(
+    "HOST_PORT=11949\nLOCAL_CLI_ACP_RELAY_ENABLED=false\n"
+  );
+
+  assert.match(enabledContent, /^LOCAL_CLI_ACP_RELAY_USER_ENABLED=true$/m);
+  assert.match(disabledContent, /^LOCAL_CLI_ACP_RELAY_USER_ENABLED=false$/m);
+});
+
 test("service install dir follows userData/services/<id>/<version>", () => {
   const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-service-dir-"));
   const { app, restore } = loadBuiltinsForTest(userDataRoot);
@@ -1239,6 +1251,79 @@ test("startService rejects services that still require initialization", async ()
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("startService returns a port conflict error for agent-container-hub when an external process occupies the port", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-hub-port-conflict-"));
+  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot);
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const service = getBuiltinService("agent-container-hub");
+  const port = 19600 + Math.floor(Math.random() * 1000);
+  const listenerScriptPath = path.join(tempRoot, "external-listener.mjs");
+  const previousSpawnSync = childProcess.spawnSync;
+  let child = null;
+
+  fs.writeFileSync(
+    listenerScriptPath,
+    `import http from "node:http";
+const server = http.createServer((_req, res) => res.end("ok"));
+server.listen(${port}, "127.0.0.1");
+setInterval(() => {}, 1000);
+`,
+    "utf8"
+  );
+
+  try {
+    await installBuiltinService(app, service.id);
+    fs.writeFileSync(path.join(installDir, ".env"), `BIND_ADDR=127.0.0.1:${port}\n`, "utf8");
+
+    child = spawn(process.execPath, [listenerScriptPath], {
+      detached: true,
+      stdio: "ignore"
+    });
+    child.unref();
+
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      if (spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN"]).status === 0) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    childProcess.spawnSync = (command, args = [], options = {}) => {
+      if (isCommandLookup(command, args, "docker")) {
+        return createSpawnSyncResult(0);
+      }
+      if (isCommandLookup(command, args, "podman")) {
+        return createSpawnSyncResult(1);
+      }
+      if (command === "docker" && args[0] === "info") {
+        return createSpawnSyncResult(0);
+      }
+      return previousSpawnSync(command, args, options);
+    };
+
+    const state = await getServiceState(app, service.id);
+    assert.equal(state.status, "error");
+    assert.match(state.message, new RegExp(`端口 ${port} 已被其他进程占用`));
+
+    const result = await startService(app, service.id);
+    assert.equal(result.ok, false);
+    assert.equal(result.service.status, "error");
+    assert.match(result.message, new RegExp(`端口 ${port} 已被其他进程占用`));
+  } finally {
+    childProcess.spawnSync = previousSpawnSync;
+    if (child?.pid) {
+      try {
+        process.kill(child.pid);
+      } catch {
+        // Child may already be gone when the test finishes.
+      }
+    }
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("ensurePreStartRequirements injects container hub url, desktop runtime paths, and manifest auth defaults for agent platform", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-prestart-"));
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -1393,6 +1478,95 @@ test("ensurePreStartRequirements preserves custom relay port and custom codeAssi
   const agentConfigContent = fs.readFileSync(codeAssistantConfigPath, "utf8");
   assert.match(agentConfigContent, /baseUrl: http:\/\/127\.0\.0\.1:4555/);
   assert.doesNotMatch(agentConfigContent, /3220/);
+
+  restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("ensurePreStartRequirements migrates stale default ACP relay settings back to disabled", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-acp-migrate-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+
+  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(platformInstallDir, ".env"),
+    [
+      "HOST_PORT=11949",
+      "LOCAL_CLI_ACP_RELAY_ENABLED=true",
+      "LOCAL_CLI_ACP_RELAY_PORT=3220",
+      "CLAUDE_CODE_ACP_COMMAND=/Users/example/.nvm/versions/node/v22.22.1/bin/npx",
+      `CLAUDE_CODE_ACP_ARGS=${JSON.stringify("-y @zed-industries/claude-code-acp")}`
+    ].join("\n"),
+    "utf8"
+  );
+
+  const previousHome = process.env.HOME;
+  process.env.HOME = homeRoot;
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+  }
+
+  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+  assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_ENABLED=false$/m);
+  assert.doesNotMatch(envContent, /^LOCAL_CLI_ACP_RELAY_USER_ENABLED=true$/m);
+
+  restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("ensurePreStartRequirements preserves manually enabled ACP relay when the user marker is present", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-acp-user-enabled-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+
+  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(platformInstallDir, ".env"),
+    [
+      "HOST_PORT=11949",
+      "LOCAL_CLI_ACP_RELAY_ENABLED=true",
+      "LOCAL_CLI_ACP_RELAY_USER_ENABLED=true",
+      "LOCAL_CLI_ACP_RELAY_PORT=3220",
+      "CLAUDE_CODE_ACP_COMMAND=/Users/example/.nvm/versions/node/v22.22.1/bin/npx",
+      `CLAUDE_CODE_ACP_ARGS=${JSON.stringify("-y @zed-industries/claude-code-acp")}`
+    ].join("\n"),
+    "utf8"
+  );
+
+  const previousHome = process.env.HOME;
+  process.env.HOME = homeRoot;
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+  }
+
+  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+  assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_ENABLED=true$/m);
+  assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_USER_ENABLED=true$/m);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
