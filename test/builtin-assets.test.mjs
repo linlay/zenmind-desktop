@@ -44,7 +44,23 @@ function createZipBundle(service, files) {
   }
 
   const zipPath = path.join(root, `${service.id}.zip`);
-  execFileSync("zip", ["-qr", zipPath, service.bundleTopLevelDir], { cwd: root });
+  if (process.platform === "win32") {
+    const relativeRoot = service.bundleTopLevelDir.replace(/'/g, "''");
+    const escapedZipPath = zipPath.replace(/'/g, "''");
+    execFileSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `Compress-Archive -Path '${relativeRoot}' -DestinationPath '${escapedZipPath}' -Force`
+      ],
+      { cwd: root }
+    );
+  } else {
+    execFileSync("zip", ["-qr", zipPath, service.bundleTopLevelDir], { cwd: root });
+  }
   return { root, zipPath };
 }
 

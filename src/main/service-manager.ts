@@ -173,6 +173,10 @@ const LAST_RUNNING_SERVICES_FILE = "last-running-services.json";
 const DEFAULT_STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const RESTORE_PRIORITY = ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 
+function shouldPreferBundledAssetOnStart(serviceId: ServiceId) {
+  return DEFAULT_STARTUP_SERVICE_IDS.includes(serviceId as (typeof DEFAULT_STARTUP_SERVICE_IDS)[number]);
+}
+
 function buildServiceEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   const extraPaths = [...getStaticServicePaths(), ...getShellPathEntries()];
@@ -1915,6 +1919,8 @@ function resolveDesktopRuntimeRoot(app?: App | null) {
   const legacyDesktopDir = path.join(homeDir, "Desktop");
   const candidates = [...new Set([
     path.join(homeDir, ".zenmind"),
+    path.join(desktopDir, ".zenmind"),
+    path.join(legacyDesktopDir, ".zenmind"),
     path.join(desktopDir, "zenmind-env"),
     path.join(legacyDesktopDir, "zenmind-env"),
     path.join(homeDir, "zenmind")
@@ -2290,25 +2296,39 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
   const current = await getServiceState(app, serviceId);
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
-  const initializationState = current.installed ? readInitializationState(installDir) : null;
+  const shouldRefreshFromBundledAsset =
+    service.kind === "builtin" &&
+    shouldPreferBundledAssetOnStart(serviceId) &&
+    current.status !== "running";
 
-  if (current.status === "initialization-required") {
+  if (shouldRefreshFromBundledAsset) {
+    await installBuiltinService(app, serviceId, {
+      force: true
+    });
+  }
+
+  const refreshedState = shouldRefreshFromBundledAsset
+    ? await getServiceState(app, serviceId)
+    : current;
+  const initializationState = refreshedState.installed ? readInitializationState(installDir) : null;
+
+  if (refreshedState.status === "initialization-required") {
     return {
       ok: false,
-      message: current.message,
-      service: current
+      message: refreshedState.message,
+      service: refreshedState
     };
   }
 
   if (initializationState?.status === "failed" && initializationState.version === service.version) {
     return {
       ok: false,
-      message: current.message,
-      service: current
+      message: refreshedState.message,
+      service: refreshedState
     };
   }
 
-  if ((!current.installed || current.status === "error") && current.kind === "builtin") {
+  if ((!refreshedState.installed || refreshedState.status === "error") && refreshedState.kind === "builtin") {
     await installBuiltinService(app, serviceId);
   }
   const nextState = await getServiceState(app, serviceId);
@@ -2672,7 +2692,10 @@ export async function restoreRunningServices(
 
     try {
       const current = await getServiceState(app, serviceId);
-      if (current.status === "not-installed" || current.status === "initialization-required") {
+      if (
+        (current.kind === "plugin" && current.status === "not-installed") ||
+        current.status === "initialization-required"
+      ) {
         options.onProgress?.(serviceId, "skipped", current.message);
         continue;
       }

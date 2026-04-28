@@ -98,6 +98,172 @@ function createCurrentPlatformAssetsFixture() {
   };
 }
 
+function createBuiltinRestoreFixture() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-restore-"));
+  const assetsRoot = path.join(tempRoot, "assets");
+  const bundleRoot = path.join(tempRoot, "custom-builtin");
+  const serviceDir = path.join(assetsRoot, "custom-builtin");
+  const isWindows = process.platform === "win32";
+  const archiveFileName = isWindows ? "custom-builtin-v1.0.0-windows-amd64.zip" : "custom-builtin-v1.0.0-darwin-arm64.tar.gz";
+  const archivePath = path.join(serviceDir, archiveFileName);
+
+  fs.mkdirSync(path.join(bundleRoot, "run"), { recursive: true });
+  fs.mkdirSync(serviceDir, { recursive: true });
+
+  if (isWindows) {
+    fs.mkdirSync(path.join(bundleRoot, "scripts"), { recursive: true });
+    fs.writeFileSync(
+      path.join(bundleRoot, "start.ps1"),
+      [
+        "$runDir = Join-Path $PSScriptRoot 'run'",
+        "New-Item -ItemType Directory -Path $runDir -Force | Out-Null",
+        "Set-Content -LiteralPath (Join-Path $runDir 'started.txt') -Value 'started'"
+      ].join("\r\n"),
+      "utf8"
+    );
+    fs.writeFileSync(path.join(bundleRoot, "stop.ps1"), "exit 0\r\n", "utf8");
+    fs.writeFileSync(path.join(bundleRoot, "scripts", "program-common.ps1"), "# fixture\r\n", "utf8");
+    fs.writeFileSync(path.join(bundleRoot, ".env.example"), "PORT=0\r\n", "utf8");
+    fs.writeFileSync(
+      path.join(bundleRoot, "manifest.json"),
+      `${JSON.stringify({
+        id: "custom-builtin",
+        name: "Custom Builtin",
+        kind: "builtin",
+        version: "v1.0.0",
+        description: "fixture builtin",
+        platform: {
+          os: "windows",
+          arch: "amd64"
+        },
+        frontend: {
+          mode: "none"
+        },
+        scripts: {
+          start: "start.ps1",
+          stop: "stop.ps1"
+        },
+        configFiles: [
+          {
+            key: "env",
+            label: ".env",
+            relativePath: ".env",
+            templateRelativePath: ".env.example",
+            required: true
+          }
+        ],
+        runtime: {
+          pidRelativePath: "run/custom-builtin.pid",
+          logRelativePath: "run/custom-builtin.log",
+          requiredPaths: [
+            "start.ps1",
+            "stop.ps1",
+            "scripts/program-common.ps1",
+            ".env.example",
+            "manifest.json"
+          ]
+        },
+        web: {
+          routePath: "",
+          portEnvKey: "PORT",
+          defaultPort: 0
+        },
+        desktop: {
+          assetFileName: archiveFileName,
+          bundleTopLevelDir: "custom-builtin"
+        }
+      }, null, 2)}\n`,
+      "utf8"
+    );
+    execFileSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `Compress-Archive -Path 'custom-builtin' -DestinationPath '${archivePath.replace(/'/g, "''")}' -Force`
+      ],
+      { cwd: tempRoot }
+    );
+  } else {
+    fs.mkdirSync(path.join(bundleRoot, "scripts"), { recursive: true });
+    fs.writeFileSync(
+      path.join(bundleRoot, "start.sh"),
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "mkdir -p run",
+        "printf started > run/started.txt"
+      ].join("\n"),
+      "utf8"
+    );
+    fs.writeFileSync(path.join(bundleRoot, "stop.sh"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
+    fs.writeFileSync(path.join(bundleRoot, "scripts", "program-common.sh"), "#!/usr/bin/env bash\n", "utf8");
+    fs.writeFileSync(path.join(bundleRoot, ".env.example"), "PORT=0\n", "utf8");
+    fs.writeFileSync(
+      path.join(bundleRoot, "manifest.json"),
+      `${JSON.stringify({
+        id: "custom-builtin",
+        name: "Custom Builtin",
+        kind: "builtin",
+        version: "v1.0.0",
+        description: "fixture builtin",
+        platform: {
+          os: process.platform === "darwin" ? "darwin" : "linux",
+          arch: process.arch === "x64" ? "amd64" : process.arch
+        },
+        frontend: {
+          mode: "none"
+        },
+        scripts: {
+          start: "start.sh",
+          stop: "stop.sh"
+        },
+        configFiles: [
+          {
+            key: "env",
+            label: ".env",
+            relativePath: ".env",
+            templateRelativePath: ".env.example",
+            required: true
+          }
+        ],
+        runtime: {
+          pidRelativePath: "run/custom-builtin.pid",
+          logRelativePath: "run/custom-builtin.log",
+          requiredPaths: [
+            "start.sh",
+            "stop.sh",
+            "scripts/program-common.sh",
+            ".env.example",
+            "manifest.json"
+          ]
+        },
+        web: {
+          routePath: "",
+          portEnvKey: "PORT",
+          defaultPort: 0
+        },
+        desktop: {
+          assetFileName: archiveFileName,
+          bundleTopLevelDir: "custom-builtin"
+        }
+      }, null, 2)}\n`,
+      "utf8"
+    );
+    fs.chmodSync(path.join(bundleRoot, "start.sh"), 0o755);
+    fs.chmodSync(path.join(bundleRoot, "stop.sh"), 0o755);
+    fs.chmodSync(path.join(bundleRoot, "scripts", "program-common.sh"), 0o755);
+    execFileSync("tar", ["-czf", archivePath, "-C", tempRoot, "custom-builtin"]);
+  }
+
+  return {
+    tempRoot,
+    assetsRoot
+  };
+}
+
 function createApp(userDataRoot, options = {}) {
   const {
     isPackaged = false,
@@ -1807,6 +1973,74 @@ test("ensurePreStartRequirements uses the resolved desktop path when the runtime
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("ensurePreStartRequirements also detects a hidden .zenmind runtime root on the desktop", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-runtime-hidden-desktop-root-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const desktopPath = path.join(homeRoot, "OneDrive", "Desktop");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+  const legacyRuntimeRoot = path.join(homeRoot, "zenmind");
+  const desktopRuntimeRoot = path.join(desktopPath, ".zenmind");
+
+  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  fs.mkdirSync(path.join(legacyRuntimeRoot, "chats"), { recursive: true });
+  fs.mkdirSync(path.join(desktopRuntimeRoot, "agents", "desktopAgent"), { recursive: true });
+  fs.mkdirSync(path.join(desktopRuntimeRoot, "registries", "providers"), { recursive: true });
+  fs.mkdirSync(path.join(desktopRuntimeRoot, "teams"), { recursive: true });
+  fs.mkdirSync(path.join(desktopRuntimeRoot, "chats"), { recursive: true });
+  fs.writeFileSync(path.join(desktopRuntimeRoot, "agents", "desktopAgent", "agent.yml"), "name: desktop\n", "utf8");
+  fs.writeFileSync(path.join(desktopRuntimeRoot, "registries", "providers", "desktop.yml"), "key: desktop\n", "utf8");
+
+  fs.writeFileSync(
+    path.join(platformInstallDir, ".env"),
+    [
+      "HOST_PORT=11949",
+      `REGISTRIES_DIR=${legacyRuntimeRoot}/registries`,
+      `OWNER_DIR=${legacyRuntimeRoot}/owner`,
+      `AGENTS_DIR=${legacyRuntimeRoot}/agents`,
+      `TEAMS_DIR=${legacyRuntimeRoot}/teams`,
+      `ROOT_DIR=${legacyRuntimeRoot}/root`,
+      `SCHEDULES_DIR=${legacyRuntimeRoot}/schedules`,
+      `CHATS_DIR=${legacyRuntimeRoot}/chats`,
+      `MEMORY_DIR=${legacyRuntimeRoot}/memory`,
+      `PAN_DIR=${legacyRuntimeRoot}/pan`,
+      `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`,
+      "LOCAL_CLI_ACP_RELAY_PORT=3220"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const previousHome = process.env.HOME;
+  process.env.HOME = homeRoot;
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+  }
+
+  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+  assert.match(
+    envContent,
+    new RegExp(`AGENTS_DIR=${path.join(desktopRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+  );
+  assert.match(
+    envContent,
+    new RegExp(`REGISTRIES_DIR=${path.join(desktopRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+  );
+
+  restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
 test("ensurePreStartRequirements refreshes stale agent-webclient install and rewrites BASE_URL to local agent-platform", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-webclient-prestart-"));
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -2040,6 +2274,39 @@ test("restoreRunningServices skips services that still need foreground install o
 
   registryInternals.clearServices();
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("restoreRunningServices auto-installs and starts builtin services that are not installed yet", async () => {
+  const fixture = createBuiltinRestoreFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
+  const startupEvents = [];
+
+  try {
+    __testInternals.writeLastRunningServices(app, ["custom-builtin"]);
+
+    const result = await restoreRunningServices(app, {
+      onStarting: (serviceId) => {
+        startupEvents.push(`start:${serviceId}`);
+      },
+      onProgress: (serviceId, phase) => {
+        startupEvents.push(`progress:${serviceId}:${phase}`);
+      }
+    });
+
+    assert.deepEqual(startupEvents, [
+      "start:custom-builtin",
+      "progress:custom-builtin:succeeded"
+    ]);
+    assert.deepEqual(result.failures, []);
+    assert.equal(
+      fs.existsSync(path.join(userDataRoot, "services", "custom-builtin", "v1.0.0", "run", "started.txt")),
+      true
+    );
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("runExecFile resolves when a daemon child keeps stdout open", async () => {

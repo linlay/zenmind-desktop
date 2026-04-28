@@ -35,13 +35,33 @@ function isZipArchive(archivePath) {
   return archivePath.toLowerCase().endsWith(".zip");
 }
 
+function canUseUnzip() {
+  try {
+    execFileSync("unzip", ["-v"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function listArchiveEntries(archivePath) {
   const execOpts = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] };
   const output = isZipArchive(archivePath)
-    ? execFileSync("unzip", ["-l", archivePath], execOpts)
+    ? canUseUnzip()
+      ? execFileSync("unzip", ["-l", archivePath], execOpts)
+      : execFileSync("tar", ["-tf", archivePath], execOpts)
     : execFileSync("tar", ["-tzf", archivePath], execOpts);
 
   if (isZipArchive(archivePath)) {
+    if (!canUseUnzip()) {
+      return new Set(
+        output
+          .split(/\r?\n/u)
+          .map((entry) => normalizeTarEntry(entry))
+          .filter(Boolean)
+      );
+    }
+
     return new Set(
       output
         .split(/\r?\n/u)
@@ -71,7 +91,9 @@ export function readManifestFromArchive(archivePath) {
 
   const execOpts = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] };
   const manifestContent = isZipArchive(archivePath)
-    ? execFileSync("unzip", ["-p", archivePath, manifestEntry], execOpts)
+    ? canUseUnzip()
+      ? execFileSync("unzip", ["-p", archivePath, manifestEntry], execOpts)
+      : execFileSync("tar", ["-xOf", archivePath, manifestEntry], execOpts)
     : execFileSync("tar", ["-xzf", archivePath, "-O", manifestEntry], execOpts);
   return JSON.parse(manifestContent);
 }
