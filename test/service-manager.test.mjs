@@ -388,16 +388,40 @@ test("upsertEnvFileContent replaces duplicated keys without leaving stale values
   assert.equal(next, "AGENTS_DIR=/tmp/new-agents\nOTHER_KEY=demo\n");
 });
 
-test("normalizeAgentPlatformEnvContent records whether ACP relay was manually enabled", () => {
-  const enabledContent = __testInternals.normalizeAgentPlatformEnvContent(
+test("normalizeAgentPlatformEnvContentForSave records whether ACP relay was manually enabled", () => {
+  const enabledContent = __testInternals.normalizeAgentPlatformEnvContentForSave(
     "HOST_PORT=11949\nLOCAL_CLI_ACP_RELAY_ENABLED=true\n"
   );
-  const disabledContent = __testInternals.normalizeAgentPlatformEnvContent(
+  const disabledContent = __testInternals.normalizeAgentPlatformEnvContentForSave(
     "HOST_PORT=11949\nLOCAL_CLI_ACP_RELAY_ENABLED=false\n"
   );
 
   assert.match(enabledContent, /^LOCAL_CLI_ACP_RELAY_USER_ENABLED=true$/m);
   assert.match(disabledContent, /^LOCAL_CLI_ACP_RELAY_USER_ENABLED=false$/m);
+});
+
+test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys and migrates supported replacements", () => {
+  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
+    [
+      "AGENT_AUTH_ENABLED=false",
+      "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=configs/old.pem",
+      "AGENT_CONTAINER_HUB_BASE_URL=http://127.0.0.1:11960",
+      "RUNTIME_DIR=/tmp/legacy-runtime",
+      "GATEWAY_WS_URL=ws://127.0.0.1:17999/gw",
+      "HOST_PORT=11949"
+    ].join("\n")
+  );
+
+  assert.match(next, /^AUTH_ENABLED=false$/m);
+  assert.match(next, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/old\.pem$/m);
+  assert.match(next, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:11960$/m);
+  assert.match(next, /^AGENTS_DIR=\/tmp\/legacy-runtime\/agents$/m);
+  assert.match(next, /^REGISTRIES_DIR=\/tmp\/legacy-runtime\/registries$/m);
+  assert.doesNotMatch(next, /^AGENT_AUTH_ENABLED=/m);
+  assert.doesNotMatch(next, /^AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
+  assert.doesNotMatch(next, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
+  assert.doesNotMatch(next, /^RUNTIME_DIR=/m);
+  assert.doesNotMatch(next, /^GATEWAY_WS_URL=/m);
 });
 
 test("service install dir follows userData/services/<id>/<version>", () => {
@@ -1114,8 +1138,8 @@ test("installBuiltinService prepares agent platform desktop config during first 
     await installBuiltinService(app, "agent-platform");
 
     const envContent = fs.readFileSync(path.join(installDir, ".env"), "utf8");
-    assert.match(envContent, /^AGENT_AUTH_ENABLED=true$/m);
-    assert.match(envContent, /^AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
+    assert.match(envContent, /^AUTH_ENABLED=true$/m);
+    assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
     assert.match(envContent, /^SERVER_PORT=11949$/m);
     assert.equal(fs.existsSync(path.join(installDir, "configs", "local-public-key.pem")), true);
   } finally {
@@ -1370,15 +1394,17 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   }
 
   const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
-  assert.match(envContent, /AGENT_CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960/);
+  assert.match(envContent, /CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960/);
   assert.match(envContent, /SERVER_PORT=11949/);
   assert.match(envContent, /^AGENT_WS_ENABLED=true$/m);
-  assert.match(envContent, /^AGENT_AUTH_ENABLED=true$/m);
-  assert.match(envContent, /^AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
+  assert.match(envContent, /^AUTH_ENABLED=true$/m);
+  assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
   assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_ENABLED=false$/m);
-  assert.match(envContent, /^GATEWAY_WS_URL=$/m);
-  assert.match(envContent, /^GATEWAY_USER_ID=$/m);
-  assert.doesNotMatch(envContent, /=""/);
+  assert.doesNotMatch(envContent, /^GATEWAY_WS_URL=/m);
+  assert.doesNotMatch(envContent, /^GATEWAY_USER_ID=/m);
+  assert.doesNotMatch(envContent, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
+  assert.doesNotMatch(envContent, /^AGENT_AUTH_ENABLED=/m);
+  assert.doesNotMatch(envContent, /^AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
 
   const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
   assert.match(
@@ -1572,7 +1598,7 @@ test("ensurePreStartRequirements preserves manually enabled ACP relay when the u
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements preserves legacy RUNTIME_DIR without injecting desktop runtime paths", async () => {
+test("ensurePreStartRequirements migrates legacy RUNTIME_DIR to supported runtime paths", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-runtime-root-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
@@ -1614,12 +1640,15 @@ test("ensurePreStartRequirements preserves legacy RUNTIME_DIR without injecting 
   }
 
   const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+  assert.doesNotMatch(envContent, /^RUNTIME_DIR=/m);
   assert.match(
     envContent,
-    new RegExp(`RUNTIME_DIR=${legacyRuntimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+    new RegExp(`REGISTRIES_DIR=${path.join(legacyRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
-  assert.doesNotMatch(envContent, /REGISTRIES_DIR=/);
-  assert.doesNotMatch(envContent, /AGENTS_DIR=/);
+  assert.match(
+    envContent,
+    new RegExp(`AGENTS_DIR=${path.join(legacyRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+  );
   assert.match(envContent, /LOCAL_CLI_ACP_RELAY_PORT=3220/);
 
   restore();

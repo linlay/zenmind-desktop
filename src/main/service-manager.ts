@@ -1718,6 +1718,66 @@ const DEFAULT_LOCAL_CLI_ACP_RELAY_PORT = "3220";
 const LOCAL_CLI_ACP_RELAY_ENABLED_KEY = "LOCAL_CLI_ACP_RELAY_ENABLED";
 const LOCAL_CLI_ACP_RELAY_USER_ENABLED_KEY = "LOCAL_CLI_ACP_RELAY_USER_ENABLED";
 const DEFAULT_CLAUDE_CODE_ACP_ARGS = "-y @zed-industries/claude-code-acp";
+const AGENT_PLATFORM_DEPRECATED_ENV_KEYS = [
+  "GATEWAY_USER_ID",
+  "GATEWAY_TICKET",
+  "GATEWAY_AGENT_KEY",
+  "GATEWAY_CHANNEL",
+  "GATEWAY_UPLOAD_PATH",
+  "GATEWAY_DOWNLOAD_PATH",
+  "GATEWAY_AUTH_TOKEN",
+  "GATEWAY_WS_URL",
+  "AGENT_GATEWAY_WS_URL",
+  "GATEWAY_JWT_TOKEN",
+  "GATEWAY_BASE_URL",
+  "AGENT_GATEWAY_WS_TOKEN",
+  "AGENT_GATEWAY_WS_HANDSHAKE_TIMEOUT_MS",
+  "AGENT_GATEWAY_WS_RECONNECT_MIN_MS",
+  "AGENT_GATEWAY_WS_RECONNECT_MAX_MS",
+  "AGENT_AUTH_ENABLED",
+  "AGENT_AUTH_JWKS_URI",
+  "AGENT_AUTH_ISSUER",
+  "AGENT_AUTH_JWKS_CACHE_SECONDS",
+  "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE",
+  "AGENT_CONTAINER_HUB_ENABLED",
+  "AGENT_CONTAINER_HUB_BASE_URL",
+  "AGENT_CONTAINER_HUB_AUTH_TOKEN",
+  "AGENT_CONTAINER_HUB_DEFAULT_ENVIRONMENT_ID",
+  "AGENT_CONTAINER_HUB_REQUEST_TIMEOUT_MS",
+  "AGENT_CONTAINER_HUB_DEFAULT_SANDBOX_LEVEL",
+  "AGENT_CONTAINER_HUB_AGENT_IDLE_TIMEOUT_MS",
+  "AGENT_CONTAINER_HUB_DESTROY_QUEUE_DELAY_MS",
+  "AGENT_STREAM_INCLUDE_TOOL_PAYLOAD_EVENTS",
+  "AGENT_STREAM_INCLUDE_DEBUG_EVENTS",
+  "RUNTIME_DIR",
+  "AGENT_CONFIG_DIR",
+  "AGENT_AGENTS_EXTERNAL_DIR",
+  "AGENT_TEAMS_EXTERNAL_DIR",
+  "AGENT_MODELS_EXTERNAL_DIR",
+  "AGENT_PROVIDERS_EXTERNAL_DIR",
+  "AGENT_TOOLS_EXTERNAL_DIR",
+  "AGENT_SKILLS_EXTERNAL_DIR",
+  "AGENT_VIEWPORTS_EXTERNAL_DIR",
+  "AGENT_MCP_SERVERS_REGISTRY_EXTERNAL_DIR",
+  "AGENT_VIEWPORT_SERVERS_REGISTRY_EXTERNAL_DIR",
+  "AGENT_SCHEDULE_EXTERNAL_DIR",
+  "AGENT_DATA_EXTERNAL_DIR"
+] as const;
+
+const AGENT_PLATFORM_ENV_KEY_RENAMES = new Map<string, string>([
+  ["AGENT_AUTH_ENABLED", "AUTH_ENABLED"],
+  ["AGENT_AUTH_JWKS_URI", "AUTH_JWKS_URI"],
+  ["AGENT_AUTH_ISSUER", "AUTH_ISSUER"],
+  ["AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE", "AUTH_LOCAL_PUBLIC_KEY_FILE"],
+  ["AGENT_CONTAINER_HUB_BASE_URL", "CONTAINER_HUB_BASE_URL"],
+  ["AGENT_STREAM_INCLUDE_TOOL_PAYLOAD_EVENTS", "STREAM_INCLUDE_TOOL_PAYLOAD_EVENTS"],
+  ["AGENT_STREAM_INCLUDE_DEBUG_EVENTS", "STREAM_INCLUDE_DEBUG_EVENTS"],
+  ["AGENT_AGENTS_EXTERNAL_DIR", "AGENTS_DIR"],
+  ["AGENT_TEAMS_EXTERNAL_DIR", "TEAMS_DIR"],
+  ["AGENT_TOOLS_EXTERNAL_DIR", "TOOLS_DIR"],
+  ["AGENT_SKILLS_EXTERNAL_DIR", "SKILLS_MARKET_DIR"],
+  ["AGENT_SCHEDULE_EXTERNAL_DIR", "SCHEDULES_DIR"]
+]);
 
 
 function agentWebclientInstallNeedsRefresh(installDir: string) {
@@ -1752,17 +1812,6 @@ const agentPlatformDesktopRuntimePaths = [
   ["MEMORY_DIR", "memory"],
   ["PAN_DIR", "pan"],
   ["SKILLS_MARKET_DIR", "skills-market"]
-] as const;
-
-const agentPlatformDisabledGatewayEnvKeys = [
-  "AGENT_GATEWAY_WS_URL",
-  "GATEWAY_WS_URL",
-  "GATEWAY_USER_ID",
-  "GATEWAY_TICKET",
-  "GATEWAY_AGENT_KEY",
-  "GATEWAY_CHANNEL",
-  "GATEWAY_UPLOAD_PATH",
-  "GATEWAY_AUTH_TOKEN"
 ] as const;
 
 function resolveHomeDir(app?: App | null) {
@@ -2007,18 +2056,68 @@ function shouldDisableAgentPlatformRelayByDefault(env: Map<string, string>) {
   return usesDefaultDesktopAcpConfig(env);
 }
 
-function normalizeAgentPlatformEnvContent(content: string) {
+function removeEnvKeysFromContent(content: string, keys: readonly string[]) {
+  const blocked = new Set(keys);
+  const nextLines = content
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        return true;
+      }
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex <= 0) {
+        return true;
+      }
+      const key = trimmed.slice(0, separatorIndex).trim();
+      return !blocked.has(key);
+    });
+
+  if (nextLines.length === 0) {
+    return "";
+  }
+  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
+}
+
+function normalizeAgentPlatformEnvContentForRuntime(content: string) {
   const env = parseEnvFileContent(content);
+  const migrated = new Map<string, string>();
+
+  for (const [oldKey, newKey] of AGENT_PLATFORM_ENV_KEY_RENAMES) {
+    const oldValue = env.get(oldKey)?.trim();
+    const newValue = env.get(newKey)?.trim();
+    if (oldValue && !newValue) {
+      migrated.set(newKey, oldValue);
+    }
+  }
+
+  const legacyRuntimeRoot = env.get("RUNTIME_DIR")?.trim();
+  if (legacyRuntimeRoot) {
+    for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
+      if (!env.get(key)?.trim()) {
+        migrated.set(key, path.join(legacyRuntimeRoot, relativePath));
+      }
+    }
+  }
+
+  return upsertEnvFileContent(removeEnvKeysFromContent(content, AGENT_PLATFORM_DEPRECATED_ENV_KEYS), migrated);
+}
+
+function normalizeAgentPlatformEnvContentForSave(content: string) {
+  const env = parseEnvFileContent(normalizeAgentPlatformEnvContentForRuntime(content));
   const relayEnabled = isTruthyEnvValue(env.get(LOCAL_CLI_ACP_RELAY_ENABLED_KEY) ?? "");
   return upsertEnvFileContent(
-    content,
+    normalizeAgentPlatformEnvContentForRuntime(content),
     new Map([[LOCAL_CLI_ACP_RELAY_USER_ENABLED_KEY, relayEnabled ? "true" : "false"]])
   );
 }
 
 async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<string, string>, updates: Map<string, string>) {
   for (const binding of service.desktop.envBindings) {
-    const currentValue = env.get(binding.key) ?? "";
+    const bindingKey = service.id === "agent-platform"
+      ? (AGENT_PLATFORM_ENV_KEY_RENAMES.get(binding.key) ?? binding.key)
+      : binding.key;
+    const currentValue = env.get(bindingKey) ?? "";
 
     if (binding.onlyIfDefault) {
       const defaults = new Set(binding.defaults ?? [""]);
@@ -2032,7 +2131,7 @@ async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<s
         const depState = await getServiceState(app, binding.fromService);
         const port = depState.healthMeta.port ?? 0;
         const resolved = binding.template.replace("{{port}}", String(port));
-        updates.set(binding.key, resolved);
+        updates.set(bindingKey, resolved);
       } catch {
         // Dependency service not registered; skip this binding.
       }
@@ -2041,14 +2140,19 @@ async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<s
 
     if (binding.value !== undefined) {
       const resolved = binding.value.replace("{{serviceDefaultPort}}", String(service.web.defaultPort));
-      updates.set(binding.key, resolved);
+      updates.set(bindingKey, resolved);
     }
   }
 }
 
 async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefinition, installDir: string) {
   const envPath = path.join(installDir, ".env");
-  const env = readEnvFile(envPath);
+  const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+  const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(currentContent);
+  if (normalizedContent !== currentContent) {
+    fs.writeFileSync(envPath, normalizedContent, "utf8");
+  }
+  const env = parseEnvFileContent(normalizedContent);
   const updates = new Map<string, string>();
 
   await applyEnvBindings(app, service, env, updates);
@@ -2061,9 +2165,6 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   if (resolvedAcpCommand) {
     updates.set("CLAUDE_CODE_ACP_COMMAND", resolvedAcpCommand.command);
     updates.set("CLAUDE_CODE_ACP_ARGS", resolvedAcpCommand.args);
-  }
-  for (const key of agentPlatformDisabledGatewayEnvKeys) {
-    updates.set(key, "");
   }
 
   const migratedRuntimeRoot = resolveLegacyAgentPlatformRuntimeRootMigration(app, env);
@@ -2320,7 +2421,7 @@ export async function writeServiceConfig(
   ensureDir(path.dirname(filePath));
   const normalizedContent =
     service.id === "agent-platform" && key === "env"
-      ? normalizeAgentPlatformEnvContent(content)
+      ? normalizeAgentPlatformEnvContentForSave(content)
       : content;
   fs.writeFileSync(filePath, normalizedContent, "utf8");
 
@@ -2582,7 +2683,8 @@ export const __testInternals = {
   agentWebclientInstallNeedsRefresh,
   resolveNodeBin,
   resolveAcpCommandForDesktop,
-  normalizeAgentPlatformEnvContent,
+  normalizeAgentPlatformEnvContentForRuntime,
+  normalizeAgentPlatformEnvContentForSave,
   shouldDisableAgentPlatformRelayByDefault,
   cleanupAgentPlatformRelayBeforeStart,
   parseProcessTreeRowsFromPs,
