@@ -408,6 +408,7 @@ test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys and
       "AGENT_CONTAINER_HUB_BASE_URL=http://127.0.0.1:11960",
       "RUNTIME_DIR=/tmp/legacy-runtime",
       "GATEWAY_WS_URL=ws://127.0.0.1:17999/gw",
+      "CLAUDE_CODE_ACP_ARGS=-y @zed-industries/claude-code-acp",
       "HOST_PORT=11949"
     ].join("\n")
   );
@@ -417,6 +418,7 @@ test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys and
   assert.match(next, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:11960$/m);
   assert.match(next, /^AGENTS_DIR=\/tmp\/legacy-runtime\/agents$/m);
   assert.match(next, /^REGISTRIES_DIR=\/tmp\/legacy-runtime\/registries$/m);
+  assert.match(next, /^CLAUDE_CODE_ACP_ARGS='-y @zed-industries\/claude-code-acp'$/m);
   assert.doesNotMatch(next, /^AGENT_AUTH_ENABLED=/m);
   assert.doesNotMatch(next, /^AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
   assert.doesNotMatch(next, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
@@ -1433,7 +1435,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
           envContent,
           new RegExp(`CLAUDE_CODE_ACP_COMMAND=${expectedNpxLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
         );
-        assert.match(envContent, /^CLAUDE_CODE_ACP_ARGS="-y @zed-industries\/claude-code-acp"$/m);
+        assert.match(envContent, /^CLAUDE_CODE_ACP_ARGS='-y @zed-industries\/claude-code-acp'$/m);
       }
     }
   }

@@ -2069,6 +2069,24 @@ function shouldDisableAgentPlatformRelayByDefault(env: Map<string, string>) {
   return usesDefaultDesktopAcpConfig(env);
 }
 
+function shellQuoteEnvValue(value: string) {
+  return `'${value.replace(/'/gu, "'\\''")}'`;
+}
+
+function normalizeShellSourcedAgentPlatformEnvValues(env: Map<string, string>, updates: Map<string, string>) {
+  const acpArgs = env.get("CLAUDE_CODE_ACP_ARGS")?.trim() ?? "";
+  if (/\s/u.test(acpArgs) && !/^(['"]).*\1$/u.test(acpArgs)) {
+    updates.set("CLAUDE_CODE_ACP_ARGS", shellQuoteEnvValue(acpArgs));
+  }
+}
+
+function normalizeShellSourcedAgentPlatformEnvUpdates(updates: Map<string, string>) {
+  const acpArgs = updates.get("CLAUDE_CODE_ACP_ARGS")?.trim() ?? "";
+  if (/\s/u.test(acpArgs) && !/^(['"]).*\1$/u.test(acpArgs)) {
+    updates.set("CLAUDE_CODE_ACP_ARGS", shellQuoteEnvValue(acpArgs));
+  }
+}
+
 function removeEnvKeysFromContent(content: string, keys: readonly string[]) {
   const blocked = new Set(keys);
   const nextLines = content
@@ -2112,6 +2130,8 @@ function normalizeAgentPlatformEnvContentForRuntime(content: string) {
       }
     }
   }
+
+  normalizeShellSourcedAgentPlatformEnvValues(env, migrated);
 
   return upsertEnvFileContent(removeEnvKeysFromContent(content, AGENT_PLATFORM_DEPRECATED_ENV_KEYS), migrated);
 }
@@ -2201,6 +2221,7 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   }
 
   if (updates.size > 0) {
+    normalizeShellSourcedAgentPlatformEnvUpdates(updates);
     writeEnvFileUpdates(envPath, updates);
   }
 }
