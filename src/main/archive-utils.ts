@@ -31,7 +31,7 @@ function quotePowerShell(value: string) {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-const SYNC_TIMEOUT_MS = 30_000;
+const SYNC_TIMEOUT_MS = 300_000;
 
 function runPowerShell(script: string) {
   return execFileSync(
@@ -92,9 +92,12 @@ try {
 export function extractArchiveToDir(archivePath: string, targetDir: string) {
   const archiveType = ensureSupportedArchive(archivePath);
   if (archiveType === "zip") {
-    runPowerShell(
-      `Expand-Archive -LiteralPath ${quotePowerShell(archivePath)} -DestinationPath ${quotePowerShell(targetDir)} -Force`
-    );
+    runPowerShell(`
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$dest = ${quotePowerShell(targetDir)}
+if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Recurse -Force }
+[System.IO.Compression.ZipFile]::ExtractToDirectory(${quotePowerShell(archivePath)}, $dest)
+`);
     return;
   }
 

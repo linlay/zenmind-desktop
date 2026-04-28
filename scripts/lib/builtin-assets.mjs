@@ -36,9 +36,10 @@ function isZipArchive(archivePath) {
 }
 
 export function listArchiveEntries(archivePath) {
+  const execOpts = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] };
   const output = isZipArchive(archivePath)
-    ? execFileSync("unzip", ["-l", archivePath], { encoding: "utf8" })
-    : execFileSync("tar", ["-tzf", archivePath], { encoding: "utf8" });
+    ? execFileSync("unzip", ["-l", archivePath], execOpts)
+    : execFileSync("tar", ["-tzf", archivePath], execOpts);
 
   if (isZipArchive(archivePath)) {
     return new Set(
@@ -68,11 +69,10 @@ export function readManifestFromArchive(archivePath) {
     return null;
   }
 
+  const execOpts = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] };
   const manifestContent = isZipArchive(archivePath)
-    ? execFileSync("unzip", ["-p", archivePath, manifestEntry], { encoding: "utf8" })
-    : execFileSync("tar", ["-xzf", archivePath, "-O", manifestEntry], {
-        encoding: "utf8"
-      });
+    ? execFileSync("unzip", ["-p", archivePath, manifestEntry], execOpts)
+    : execFileSync("tar", ["-xzf", archivePath, "-O", manifestEntry], execOpts);
   return JSON.parse(manifestContent);
 }
 

@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
 import http from "node:http";
+import path from "node:path";
 import process from "node:process";
 import {
   buildElectronSpawnErrorMessage,
@@ -10,6 +11,13 @@ const projectRoot = process.cwd();
 const isWindows = process.platform === "win32";
 const npmCmd = isWindows ? "npm.cmd" : "npm";
 const electronBinary = resolveValidatedElectronBinaryPath();
+
+// 把当前 Node 的目录顶到 PATH 最前，并显式声明 NODE_BIN，
+// 让 Electron 子进程里的 service-manager 不用再去 `where node` 摸路径
+const nodeBin = process.execPath;
+const nodeDir = path.dirname(nodeBin);
+process.env.PATH = `${nodeDir}${path.delimiter}${process.env.PATH ?? ""}`;
+process.env.ZENMIND_NODE_BIN = nodeBin;
 
 function detectSyncArch() {
   if (process.platform !== "darwin") {
@@ -121,15 +129,24 @@ track(run(npmCmd, ["exec", "vite", "--", "--host", "127.0.0.1"]));
 await waitForUrl("http://127.0.0.1:5173");
 
 const electron = track(
-  spawn(electronBinary, ["."], {
-    cwd: projectRoot,
-    stdio: "inherit",
-    shell: isWindows,
-    env: {
-      ...process.env,
-      VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
-    }
-  })
+  isWindows
+    ? spawn(`chcp 65001 >NUL && "${electronBinary}" .`, {
+        cwd: projectRoot,
+        stdio: "inherit",
+        shell: true,
+        env: {
+          ...process.env,
+          VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
+        }
+      })
+    : spawn(electronBinary, ["."], {
+        cwd: projectRoot,
+        stdio: "inherit",
+        env: {
+          ...process.env,
+          VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
+        }
+      })
 );
 
 electron.once("error", (error) => {

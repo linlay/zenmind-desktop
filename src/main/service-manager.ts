@@ -93,10 +93,16 @@ function getUserNodeToolPaths() {
 
 function getStaticServicePaths() {
   if (process.platform === "win32") {
+    const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
+    const localAppData = process.env.LOCALAPPDATA ?? "";
+    const appData = process.env.APPDATA ?? "";
     return [
-      path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Docker", "Docker", "resources", "bin"),
-      path.join(process.env.ProgramFiles ?? "C:\\Program Files", "RedHat", "Podman"),
-      path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Podman")
+      path.join(programFiles, "nodejs"),
+      path.join(programFiles, "Docker", "Docker", "resources", "bin"),
+      path.join(programFiles, "RedHat", "Podman"),
+      path.join(programFiles, "Podman"),
+      ...(localAppData ? [path.join(localAppData, "Programs", "nodejs")] : []),
+      ...(appData ? [path.join(appData, "npm")] : [])
     ];
   }
 
@@ -180,6 +186,10 @@ function buildServiceEnv(): NodeJS.ProcessEnv {
 }
 
 function resolveNodeBin() {
+  const explicit = process.env.ZENMIND_NODE_BIN?.trim();
+  if (explicit && fs.existsSync(explicit)) {
+    return explicit;
+  }
   const serviceEnv = buildServiceEnv();
   const locator = process.platform === "win32" ? "where" : "which";
   try {
@@ -448,10 +458,13 @@ function formatEnvValue(value: string) {
   if (value === "") {
     return "";
   }
-  if (/^[A-Za-z0-9_./:@-]+$/u.test(value)) {
-    return value;
+  // 只在含换行时加引号（多行值无法不带引号）。其它一律原样写：
+  // - 反斜杠路径不会被转义成 `\\`（PowerShell naive 加载器读不懂转义）
+  // - 含空格或特殊字符也直接写（PS 整行 IndexOf('=') 解析能正确分割）
+  if (/[\n\r]/u.test(value)) {
+    return `"${value.replace(/"/gu, '\\"')}"`;
   }
-  return `"${value.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"')}"`;
+  return value;
 }
 
 function upsertEnvFileContent(content: string, updates: Map<string, string>) {
