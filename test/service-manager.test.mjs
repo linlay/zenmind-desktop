@@ -1262,7 +1262,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   fs.writeFileSync(path.join(hubInstallDir, ".env"), "BIND_ADDR=0.0.0.0:12960\n", "utf8");
   fs.writeFileSync(
     path.join(platformInstallDir, ".env"),
-    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nLOCAL_CLI_ACP_RELAY_ENABLED=false\nLOCAL_CLI_ACP_RELAY_PORT=3210\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n",
+    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nLOCAL_CLI_ACP_RELAY_PORT=3210\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n",
     "utf8"
   );
   fs.mkdirSync(codeAssistantDir, { recursive: true });
@@ -1290,6 +1290,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   assert.match(envContent, /^AGENT_WS_ENABLED=true$/m);
   assert.match(envContent, /^AGENT_AUTH_ENABLED=true$/m);
   assert.match(envContent, /^AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
+  assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_ENABLED=false$/m);
   assert.match(envContent, /^GATEWAY_WS_URL=$/m);
   assert.match(envContent, /^GATEWAY_USER_ID=$/m);
   assert.doesNotMatch(envContent, /=""/);

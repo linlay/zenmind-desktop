@@ -1999,10 +1999,14 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   const envPath = path.join(installDir, ".env");
   const env = readEnvFile(envPath);
   const updates = new Map<string, string>();
+  const currentRelayEnabled = (env.get("LOCAL_CLI_ACP_RELAY_ENABLED") ?? "").trim();
 
   await applyEnvBindings(app, service, env, updates);
 
   updates.set("NODE_BIN", resolveNodeBin());
+  if (!currentRelayEnabled) {
+    updates.set("LOCAL_CLI_ACP_RELAY_ENABLED", "false");
+  }
   const resolvedAcpCommand = resolveAcpCommandForDesktop(env);
   if (resolvedAcpCommand) {
     updates.set("CLAUDE_CODE_ACP_COMMAND", resolvedAcpCommand.command);
