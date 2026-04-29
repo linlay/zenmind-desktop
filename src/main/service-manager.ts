@@ -46,6 +46,17 @@ type ManagedProcessCleanupTarget = ManagedRootPid & {
   treePids: number[];
 };
 
+type ManagedServiceStopState = {
+  mainPidFilePath: string;
+  managedMainPid: number | null;
+  port: number;
+  managedPortPids: number[];
+  relayPidFilePath: string;
+  managedRelayPid: number | null;
+  relayPort: number;
+  managedRelayPortPids: number[];
+};
+
 type PowerShellCapturePayload = ExecResult & {
   hadError: boolean;
   exitCode: number;
@@ -970,7 +981,11 @@ function cleanupAgentPlatformRelayBeforeStart(installDir: string, env: Map<strin
   }
 
   for (const pid of relayPids) {
-    terminateProcess(pid);
+    if (IS_WINDOWS) {
+      terminateProcessTree(pid);
+    } else {
+      terminateProcess(pid);
+    }
   }
 
   removePidFile(relayPidFilePath);
@@ -1118,6 +1133,173 @@ function isAgentPlatformRelayStartupConflict(error: unknown) {
   );
 }
 
+function collectManagedServiceStopState(
+  service: ServiceDefinition,
+  installDir: string,
+  env: Map<string, string>
+): ManagedServiceStopState {
+  const mainPidFilePath = resolveRuntimePath(installDir, service.runtime.pidRelativePath);
+  const mainPid = readPid(mainPidFilePath);
+  const managedMainPid =
+    mainPid && isProcessRunning(mainPid) && pidMatchesInstallDir(mainPid, installDir)
+      ? mainPid
+      : null;
+  const port = parsePort(service, env);
+  const managedPortPids =
+    port > 0
+      ? [...new Set(listListeningPids(port).filter((pid) => pidMatchesInstallDir(pid, installDir)))]
+      : [];
+
+  const relayPidFilePath =
+    service.id === "agent-platform"
+      ? path.join(installDir, "run", "local-cli-acp-relay.pid")
+      : "";
+  const relayPid = relayPidFilePath ? readPid(relayPidFilePath) : null;
+  const managedRelayPid =
+    relayPid && isProcessRunning(relayPid) && pidMatchesInstallDir(relayPid, installDir)
+      ? relayPid
+      : null;
+  const relayPort = service.id === "agent-platform" ? parseRelayPort(env) : 0;
+  const managedRelayPortPids =
+    relayPort > 0
+      ? [...new Set(listListeningPids(relayPort).filter((pid) => pidMatchesInstallDir(pid, installDir)))]
+      : [];
+
+  return {
+    mainPidFilePath,
+    managedMainPid,
+    port,
+    managedPortPids,
+    relayPidFilePath,
+    managedRelayPid,
+    relayPort,
+    managedRelayPortPids
+  };
+}
+
+function buildManagedServiceStopIssues(
+  service: ServiceDefinition,
+  state: ManagedServiceStopState,
+  phase: "stop" | "cleanup"
+) {
+  const issues: string[] = [];
+
+  if (phase === "stop" && state.managedMainPid) {
+    issues.push(`stop script returned but process still alive (pid=${state.managedMainPid})`);
+  }
+  if (phase === "cleanup" && state.managedMainPid) {
+    issues.push(`managed process still alive after cleanup (pid=${state.managedMainPid})`);
+  }
+  if (state.port > 0 && state.managedPortPids.length > 0) {
+    issues.push(`port ${state.port} still occupied by managed process after ${phase}`);
+  }
+
+  if (service.id === "agent-platform") {
+    if (phase === "stop" && state.managedRelayPid) {
+      issues.push(`stop script returned but relay process still alive (pid=${state.managedRelayPid})`);
+    }
+    if (phase === "cleanup" && state.managedRelayPid) {
+      issues.push(`relay process still alive after cleanup (pid=${state.managedRelayPid})`);
+    }
+    if (state.relayPort > 0 && state.managedRelayPortPids.length > 0) {
+      const suffix = phase === "cleanup" ? "cleanup" : "stop";
+      issues.push(`relay port ${state.relayPort} still occupied by managed process after ${suffix}`);
+    }
+  }
+
+  return issues;
+}
+
+function forceStopServiceInstallDir(
+  service: ServiceDefinition,
+  installDir: string,
+  env: Map<string, string>,
+  options: {
+    isWindows?: boolean;
+    collectState?: typeof collectManagedServiceStopState;
+    terminateProcessImpl?: typeof terminateProcess;
+    terminateProcessTreeImpl?: typeof terminateProcessTree;
+    removePidFileImpl?: typeof removePidFile;
+  } = {}
+) {
+  const isWindows = options.isWindows ?? IS_WINDOWS;
+  const collectState = options.collectState ?? collectManagedServiceStopState;
+  const terminateProcessImpl = options.terminateProcessImpl ?? terminateProcess;
+  const terminateProcessTreeImpl = options.terminateProcessTreeImpl ?? terminateProcessTree;
+  const removePidFileImpl = options.removePidFileImpl ?? removePidFile;
+  const state = collectState(service, installDir, env);
+  const pidsToTerminate = [
+    state.managedMainPid,
+    ...state.managedPortPids,
+    state.managedRelayPid,
+    ...state.managedRelayPortPids
+  ].filter((pid): pid is number => typeof pid === "number" && Number.isFinite(pid) && pid > 0);
+  let allTerminated = true;
+
+  for (const pid of [...new Set(pidsToTerminate)]) {
+    const terminated = isWindows ? terminateProcessTreeImpl(pid) : terminateProcessImpl(pid);
+    allTerminated = terminated && allTerminated;
+  }
+
+  if (state.mainPidFilePath) {
+    removePidFileImpl(state.mainPidFilePath);
+  }
+  if (state.relayPidFilePath) {
+    removePidFileImpl(state.relayPidFilePath);
+  }
+
+  return allTerminated;
+}
+
+function ensureManagedServiceStoppedForPlatform(
+  service: ServiceDefinition,
+  installDir: string,
+  env: Map<string, string>,
+  options: {
+    isWindows?: boolean;
+    collectState?: typeof collectManagedServiceStopState;
+    forceStop?: typeof forceStopServiceInstallDir;
+  } = {}
+) {
+  const isWindows = options.isWindows ?? IS_WINDOWS;
+  if (!isWindows) {
+    return {
+      ok: true,
+      forcedCleanup: false,
+      message: ""
+    };
+  }
+
+  const collectState = options.collectState ?? collectManagedServiceStopState;
+  const forceStop = options.forceStop ?? forceStopServiceInstallDir;
+  const afterStopState = collectState(service, installDir, env);
+  const stopIssues = buildManagedServiceStopIssues(service, afterStopState, "stop");
+  if (stopIssues.length === 0) {
+    return {
+      ok: true,
+      forcedCleanup: false,
+      message: ""
+    };
+  }
+
+  forceStop(service, installDir, env);
+  const afterCleanupState = collectState(service, installDir, env);
+  const cleanupIssues = buildManagedServiceStopIssues(service, afterCleanupState, "cleanup");
+  if (cleanupIssues.length === 0) {
+    return {
+      ok: true,
+      forcedCleanup: true,
+      message: stopIssues.join("; ")
+    };
+  }
+
+  return {
+    ok: false,
+    forcedCleanup: true,
+    message: cleanupIssues.join("; ")
+  };
+}
+
 async function stopBuiltinInstallDir(service: ServiceDefinition, installDir: string) {
   const stopCommand = service.stopCommand;
   if (stopCommand.length > 0) {
@@ -1128,20 +1310,9 @@ async function stopBuiltinInstallDir(service: ServiceDefinition, installDir: str
     }
   }
 
-  const pidFilePath = resolveRuntimePath(installDir, service.runtime.pidRelativePath);
-  const pidFromFile = readPid(pidFilePath);
-  if (pidFromFile && pidMatchesInstallDir(pidFromFile, installDir)) {
-    terminateProcess(pidFromFile);
-  }
-
-  const port = parsePort(service, readEnvFile(path.join(installDir, ".env")));
-  if (port > 0) {
-    for (const pid of listListeningPids(port)) {
-      if (pidMatchesInstallDir(pid, installDir)) {
-        terminateProcess(pid);
-      }
-    }
-  }
+  const envPath = path.join(installDir, ".env");
+  const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
+  forceStopServiceInstallDir(service, installDir, env);
 }
 
 async function reconcileBuiltinSiblingInstallDirs(app: App, service: ServiceDefinition, currentInstallDir: string) {
@@ -1934,6 +2105,10 @@ function resolveDesktopRuntimeRoot(app?: App | null) {
   return null;
 }
 
+function resolvePreferredAgentPlatformRuntimeRoot(app?: App | null) {
+  return resolveDesktopRuntimeRoot(app) ?? path.join(resolveHomeDir(app), ".zenmind");
+}
+
 function resolveAgentPlatformAgentsDir(env: Map<string, string>, desktopRuntimeRoot: string | null) {
   const configuredAgentsDir = env.get("AGENTS_DIR")?.trim();
   if (configuredAgentsDir) {
@@ -2217,8 +2392,8 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
     );
   }
 
-  const desktopRuntimeRoot = resolveDesktopRuntimeRoot(app);
-  if (desktopRuntimeRoot && !hasConfiguredAgentPlatformRuntimePath(env)) {
+  const desktopRuntimeRoot = resolvePreferredAgentPlatformRuntimeRoot(app);
+  if (!hasConfiguredAgentPlatformRuntimePath(env)) {
     for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
       if (!env.get(key)) {
         updates.set(key, path.join(desktopRuntimeRoot, relativePath));
@@ -2393,17 +2568,30 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
   }
 
   const result = await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`);
-  if (service.id === "agent-platform") {
-    const env = readEnvFile(path.join(getInstallDir(app, service), ".env"));
-    cleanupAgentPlatformRelayBeforeStart(getInstallDir(app, service), env);
+  const installDir = getInstallDir(app, service);
+  const envPath = path.join(installDir, ".env");
+  const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
+  const stopVerification = ensureManagedServiceStoppedForPlatform(service, installDir, env);
+  if (!stopVerification.ok) {
+    throw new Error(stopVerification.message);
   }
   startedThisSession.delete(serviceId);
   return result;
 }
 
+async function runServiceRestart(
+  stopOperation: () => Promise<ServiceCommandResult>,
+  startOperation: () => Promise<ServiceCommandResult>
+) {
+  await stopOperation();
+  return startOperation();
+}
+
 export async function restartService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
-  await stopService(app, serviceId);
-  return startService(app, serviceId);
+  return runServiceRestart(
+    () => stopService(app, serviceId),
+    () => startService(app, serviceId)
+  );
 }
 
 export async function readServiceConfig(app: App, serviceId: ServiceId, key: string): Promise<ServiceConfigReadResult> {
@@ -2752,9 +2940,13 @@ export const __testInternals = {
   mergeCleanupTargets,
   terminateProcessTree,
   terminateProcessList,
+  collectManagedServiceStopState,
+  forceStopServiceInstallDir,
+  ensureManagedServiceStoppedForPlatform,
   resolveLegacyAgentPlatformRuntimeRootMigration,
   decodePowerShellCapturePayload,
   runExecFile,
+  runServiceRestart,
   getInitializationStatePath,
   readInitializationState,
   getLastRunningServicesStatePath,

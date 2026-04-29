@@ -18,8 +18,6 @@ type ThemeMode = "light" | "dark";
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
 const SIDEBAR_TRANSLUCENCY_STORAGE_KEY = "zenmind-desktop.sidebar-translucency";
-const NEW_USER_ENV_BANNER_SEEN_STORAGE_KEY = "zenmind-desktop.new-user-env-banner.seen";
-const NEW_USER_ENV_BANNER_DISMISSED_STORAGE_KEY = "zenmind-desktop.new-user-env-banner.dismissed";
 const DEFAULT_SIDEBAR_WIDTH = 196;
 const MIN_SIDEBAR_WIDTH = 176;
 const MAX_SIDEBAR_WIDTH = 340;
@@ -128,33 +126,6 @@ function AppShell() {
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [startupGateDismissed, setStartupGateDismissed] = useState(false);
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
-  const [showNewUserEnvBanner, setShowNewUserEnvBanner] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-    try {
-      const storage = window.localStorage;
-      const hasSeenBanner =
-        storage.getItem(NEW_USER_ENV_BANNER_SEEN_STORAGE_KEY) === "true" ||
-        storage.getItem(NEW_USER_ENV_BANNER_DISMISSED_STORAGE_KEY) === "true";
-      if (hasSeenBanner) {
-        return false;
-      }
-
-      const hasExistingUsage =
-        storage.getItem(THEME_STORAGE_KEY) !== null ||
-        storage.getItem(SIDEBAR_STORAGE_KEY) !== null;
-      if (hasExistingUsage) {
-        storage.setItem(NEW_USER_ENV_BANNER_SEEN_STORAGE_KEY, "true");
-        return false;
-      }
-
-      storage.setItem(NEW_USER_ENV_BANNER_SEEN_STORAGE_KEY, "true");
-      return true;
-    } catch {
-      return false;
-    }
-  });
   const usesEmbeddedSurface =
     location.pathname.startsWith("/plugin/") ||
     location.pathname.startsWith("/external/") ||
@@ -400,16 +371,6 @@ function AppShell() {
     setThemeMode((current) => (current === "light" ? "dark" : "light"));
   }
 
-  function dismissNewUserEnvBanner() {
-    setShowNewUserEnvBanner(false);
-    try {
-      window.localStorage.setItem(NEW_USER_ENV_BANNER_SEEN_STORAGE_KEY, "true");
-      window.localStorage.setItem(NEW_USER_ENV_BANNER_DISMISSED_STORAGE_KEY, "true");
-    } catch {
-      // Ignore persistence failures and still let users close the banner for the current session.
-    }
-  }
-
   function updateSidebarWidth(nextWidth: number) {
     setSidebarState((current) => ({
       collapsed: nextWidth <= COLLAPSE_THRESHOLD,
@@ -626,22 +587,6 @@ function AppShell() {
         </button>
       </div>
       <div className="app-content">
-        {!usesEmbeddedSurface && showNewUserEnvBanner ? (
-          <section className="new-user-banner" role="status" aria-live="polite" aria-atomic="true">
-            <div className="new-user-banner-copy">
-              <strong>装载运行环境</strong>
-              <span>首次使用请先装载 `.env`，以确保服务正常运行。</span>
-            </div>
-            <button
-              type="button"
-              className="new-user-banner-close"
-              aria-label="关闭提示"
-              onClick={dismissNewUserEnvBanner}
-            >
-              知道了
-            </button>
-          </section>
-        ) : null}
         <main className="app-main">
           <div className="app-main-drag-region" aria-hidden="true" />
           <Routes>

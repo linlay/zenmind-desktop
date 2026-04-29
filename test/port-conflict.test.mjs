@@ -8,6 +8,7 @@ const {
   detectPortConflict,
   extractPortFromError,
   isPortConflictError,
+  killProcessByPid,
   showPortConflictDialog
 } = require("../dist-electron/main/port-conflict.js");
 
@@ -86,4 +87,23 @@ test("detectPortConflict prefers extracted port over fallback and default port",
       name: "test-service"
     }
   });
+});
+
+test("killProcessByPid prefers taskkill on Windows", async () => {
+  const signals = [];
+  const killed = await killProcessByPid(4321, {
+    platform: "win32",
+    processRef: {
+      pid: 99,
+      kill(pid, signal) {
+        signals.push({ pid, signal });
+        throw Object.assign(new Error("should not use process.kill"), { code: "EPERM" });
+      }
+    },
+    taskkill: async (pid) => pid === 4321,
+    wait: async () => {}
+  });
+
+  assert.equal(killed, true);
+  assert.deepEqual(signals, [{ pid: 4321, signal: 0 }]);
 });

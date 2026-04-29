@@ -78,6 +78,12 @@ let startupRestoreState = createStartupRestoreState();
 app.setName("ZenMind");
 app.setPath("userData", path.join(app.getPath("appData"), "zenmind-desktop"));
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.exit(0);
+}
+
 function delay(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
@@ -843,57 +849,63 @@ function registerIpcHandlers() {
   );
 }
 
-app.whenReady().then(async () => {
-  ensureDataRoot(app);
-  loadBuiltinServices(app);
-  loadInstalledPlugins(app);
-  registerIpcHandlers();
-  createWindow();
-  createAppTray();
-  buildApplicationMenu();
-  beginStartupRestoreSession();
-  void runServiceMutation(() =>
-    restoreRunningServices(app, {
-      onStarting: (serviceId) => {
-        updateStartupRestoreService(serviceId, "starting", "启动中...");
-      },
-      onProgress: (serviceId, phase, message) => {
-        updateStartupRestoreService(serviceId, phase, message);
-        notifyServicesChanged();
-      }
-    })
-  )
-    .then((result) => {
-      if (result.failures.length === 0 && startupRestoreState.phase === "running") {
-        commitStartupRestoreState({
-          ...startupRestoreState,
-          phase: "succeeded",
-          currentServiceId: null,
-          failedServiceId: null,
-          message: "核心服务已全部就绪。"
-        });
-      }
-      notifyServicesChanged();
-      if (result.failures.length > 0) {
-        console.error("failed to restore running services from last session", result.failures);
-      }
-    })
-    .catch((error) => {
-      if (startupRestoreState.phase === "running") {
-        commitStartupRestoreState({
-          ...startupRestoreState,
-          phase: "failed",
-          currentServiceId: null,
-          failedServiceId: startupRestoreState.currentServiceId,
-          message: error instanceof Error ? error.message : String(error)
-        });
-      }
-      console.error("failed to restore running services from last session", error);
-    });
-  app.on("activate", () => {
+if (gotSingleInstanceLock) {
+  app.on("second-instance", () => {
     showMainWindow();
   });
-});
+
+  app.whenReady().then(async () => {
+    ensureDataRoot(app);
+    loadBuiltinServices(app);
+    loadInstalledPlugins(app);
+    registerIpcHandlers();
+    createWindow();
+    createAppTray();
+    buildApplicationMenu();
+    beginStartupRestoreSession();
+    void runServiceMutation(() =>
+      restoreRunningServices(app, {
+        onStarting: (serviceId) => {
+          updateStartupRestoreService(serviceId, "starting", "启动中...");
+        },
+        onProgress: (serviceId, phase, message) => {
+          updateStartupRestoreService(serviceId, phase, message);
+          notifyServicesChanged();
+        }
+      })
+    )
+      .then((result) => {
+        if (result.failures.length === 0 && startupRestoreState.phase === "running") {
+          commitStartupRestoreState({
+            ...startupRestoreState,
+            phase: "succeeded",
+            currentServiceId: null,
+            failedServiceId: null,
+            message: "核心服务已全部就绪。"
+          });
+        }
+        notifyServicesChanged();
+        if (result.failures.length > 0) {
+          console.error("failed to restore running services from last session", result.failures);
+        }
+      })
+      .catch((error) => {
+        if (startupRestoreState.phase === "running") {
+          commitStartupRestoreState({
+            ...startupRestoreState,
+            phase: "failed",
+            currentServiceId: null,
+            failedServiceId: startupRestoreState.currentServiceId,
+            message: error instanceof Error ? error.message : String(error)
+          });
+        }
+        console.error("failed to restore running services from last session", error);
+      });
+    app.on("activate", () => {
+      showMainWindow();
+    });
+  });
+}
 
 app.on("before-quit", (event) => {
   if (isHandlingQuit) {

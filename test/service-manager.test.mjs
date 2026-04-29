@@ -852,6 +852,137 @@ test("terminateProcessTree treats already-exited pids as cleaned up", () => {
   assert.equal(__testInternals.terminateProcessTree(99999999), true);
 });
 
+function createManagedStopState(overrides = {}) {
+  return {
+    mainPidFilePath: "/tmp/test-service.pid",
+    managedMainPid: null,
+    port: 0,
+    managedPortPids: [],
+    relayPidFilePath: "",
+    managedRelayPid: null,
+    relayPort: 0,
+    managedRelayPortPids: [],
+    ...overrides
+  };
+}
+
+test("ensureManagedServiceStoppedForPlatform forces cleanup on Windows when stop leaves the main process alive", () => {
+  const snapshots = [
+    createManagedStopState({ managedMainPid: 4321 }),
+    createManagedStopState()
+  ];
+  let forceCalls = 0;
+
+  const result = __testInternals.ensureManagedServiceStoppedForPlatform(
+    { id: "test-plugin" },
+    "/tmp/test-plugin",
+    new Map(),
+    {
+      isWindows: true,
+      collectState: () => snapshots.shift(),
+      forceStop: () => {
+        forceCalls += 1;
+        return true;
+      }
+    }
+  );
+
+  assert.equal(forceCalls, 1);
+  assert.deepEqual(result, {
+    ok: true,
+    forcedCleanup: true,
+    message: "stop script returned but process still alive (pid=4321)"
+  });
+});
+
+test("ensureManagedServiceStoppedForPlatform fails on Windows when managed port remains occupied after cleanup", () => {
+  const snapshots = [
+    createManagedStopState({ port: 11949, managedPortPids: [4321] }),
+    createManagedStopState({ port: 11949, managedPortPids: [4321] })
+  ];
+  let forceCalls = 0;
+
+  const result = __testInternals.ensureManagedServiceStoppedForPlatform(
+    { id: "agent-platform" },
+    "/tmp/agent-platform",
+    new Map(),
+    {
+      isWindows: true,
+      collectState: () => snapshots.shift(),
+      forceStop: () => {
+        forceCalls += 1;
+        return false;
+      }
+    }
+  );
+
+  assert.equal(forceCalls, 1);
+  assert.deepEqual(result, {
+    ok: false,
+    forcedCleanup: true,
+    message: "port 11949 still occupied by managed process after cleanup"
+  });
+});
+
+test("forceStopServiceInstallDir cleans both main and relay managed processes for agent-platform on Windows", () => {
+  const terminatedPids = [];
+  const removedPidFiles = [];
+
+  const terminated = __testInternals.forceStopServiceInstallDir(
+    { id: "agent-platform" },
+    "/tmp/agent-platform",
+    new Map(),
+    {
+      isWindows: true,
+      collectState: () =>
+        createManagedStopState({
+          mainPidFilePath: "/tmp/agent-platform.pid",
+          managedMainPid: 101,
+          port: 11949,
+          managedPortPids: [102],
+          relayPidFilePath: "/tmp/local-cli-acp-relay.pid",
+          managedRelayPid: 201,
+          relayPort: 3220,
+          managedRelayPortPids: [202]
+        }),
+      terminateProcessTreeImpl: (pid) => {
+        terminatedPids.push(pid);
+        return true;
+      },
+      removePidFileImpl: (pidFilePath) => {
+        removedPidFiles.push(pidFilePath);
+      }
+    }
+  );
+
+  assert.equal(terminated, true);
+  assert.deepEqual(terminatedPids, [101, 102, 201, 202]);
+  assert.deepEqual(removedPidFiles, ["/tmp/agent-platform.pid", "/tmp/local-cli-acp-relay.pid"]);
+});
+
+test("runServiceRestart does not start the service when stop fails", async () => {
+  let started = false;
+
+  await assert.rejects(
+    __testInternals.runServiceRestart(
+      async () => {
+        throw new Error("stop failed");
+      },
+      async () => {
+        started = true;
+        return {
+          ok: true,
+          message: "started",
+          service: null
+        };
+      }
+    ),
+    /stop failed/
+  );
+
+  assert.equal(started, false);
+});
+
 test("listMissingRuntimeFiles detects damaged install directories", () => {
   const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-damaged-registry-"));
   const { restore } = loadBuiltinsForTest(userDataRoot);
@@ -1306,9 +1437,50 @@ test("installBuiltinService prepares agent platform desktop config during first 
     await installBuiltinService(app, "agent-platform");
 
     const envContent = fs.readFileSync(path.join(installDir, ".env"), "utf8");
+    const preferredRuntimeRoot = path.join(homeRoot, ".zenmind");
     assert.match(envContent, /^AUTH_ENABLED=true$/m);
     assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
     assert.match(envContent, /^SERVER_PORT=11949$/m);
+    assert.match(
+      envContent,
+      new RegExp(`REGISTRIES_DIR=${path.join(preferredRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+    );
+    assert.match(
+      envContent,
+      new RegExp(`OWNER_DIR=${path.join(preferredRuntimeRoot, "owner").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+    );
+    assert.match(
+      envContent,
+      new RegExp(`AGENTS_DIR=${path.join(preferredRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+    );
+    assert.match(
+      envContent,
+      new RegExp(`TEAMS_DIR=${path.join(preferredRuntimeRoot, "teams").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+    );
+    assert.match(
+      envContent,
+      new RegExp(`ROOT_DIR=${path.join(preferredRuntimeRoot, "root").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+    );
+    assert.match(
+      envContent,
+      new RegExp(`SCHEDULES_DIR=${path.join(preferredRuntimeRoot, "schedules").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+    );
+    assert.match(
+      envContent,
+      new RegExp(`CHATS_DIR=${path.join(preferredRuntimeRoot, "chats").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+    );
+    assert.match(
+      envContent,
+      new RegExp(`MEMORY_DIR=${path.join(preferredRuntimeRoot, "memory").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+    );
+    assert.match(
+      envContent,
+      new RegExp(`SKILLS_MARKET_DIR=${path.join(preferredRuntimeRoot, "skills-market").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+    );
+    assert.match(
+      envContent,
+      new RegExp(`PAN_DIR=${path.join(preferredRuntimeRoot, "pan").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+    );
     assert.equal(fs.existsSync(path.join(installDir, "configs", "local-public-key.pem")), true);
   } finally {
     restore();

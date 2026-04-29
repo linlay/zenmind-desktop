@@ -34,6 +34,8 @@ interface ShowPortConflictDialogDeps {
 interface KillProcessDeps {
   processRef?: Pick<NodeJS.Process, "kill" | "pid">;
   wait?: (ms: number) => Promise<void>;
+  platform?: NodeJS.Platform;
+  taskkill?: (pid: number) => Promise<boolean>;
 }
 
 function normalizePort(port: number | null | undefined) {
@@ -231,6 +233,22 @@ function isProcessGone(pid: number, processRef: Pick<NodeJS.Process, "kill" | "p
   }
 }
 
+async function killWindowsProcessTreeByPid(
+  pid: number,
+  processRef: Pick<NodeJS.Process, "kill" | "pid"> = process
+) {
+  return new Promise<boolean>((resolve) => {
+    execFile("taskkill.exe", ["/PID", String(pid), "/T", "/F"], (error) => {
+      if (!error || isProcessGone(pid, processRef)) {
+        resolve(true);
+        return;
+      }
+
+      resolve(false);
+    });
+  });
+}
+
 export async function killProcessByPid(pid: number, deps: KillProcessDeps = {}) {
   const normalizedPid = Number.parseInt(String(pid), 10);
   if (!Number.isInteger(normalizedPid) || normalizedPid < 1) {
@@ -238,11 +256,20 @@ export async function killProcessByPid(pid: number, deps: KillProcessDeps = {}) 
   }
 
   const processRef = deps.processRef ?? process;
+  const platform = deps.platform ?? process.platform;
   if (normalizedPid === processRef.pid) {
     return false;
   }
 
   const wait = deps.wait ?? delay;
+  if (platform === "win32") {
+    const taskkill = deps.taskkill ?? ((targetPid: number) => killWindowsProcessTreeByPid(targetPid, processRef));
+    const killed = await taskkill(normalizedPid);
+    if (killed) {
+      await wait(250);
+      return isProcessGone(normalizedPid, processRef);
+    }
+  }
 
   try {
     processRef.kill(normalizedPid, "SIGTERM");
@@ -271,5 +298,6 @@ export async function killProcessByPid(pid: number, deps: KillProcessDeps = {}) 
 }
 
 export const __testInternals = {
-  buildPortConflictDialogOptions
+  buildPortConflictDialogOptions,
+  killWindowsProcessTreeByPid
 };

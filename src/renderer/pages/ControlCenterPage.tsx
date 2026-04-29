@@ -471,12 +471,15 @@ export function ControlCenterPage() {
     [coreModules]
   );
   const marketServices = useMemo(() => services.filter((service) => service.kind === "plugin"), [services]);
-  const startupFailure = (location.state as {
+  const navigationState = location.state as {
     startupFailure?: {
       serviceId: ServiceId | null;
       message: string;
     };
-  } | null)?.startupFailure;
+    selectedServiceId?: ServiceId;
+  } | null;
+  const startupFailure = navigationState?.startupFailure;
+  const selectedServiceIdFromNavigation = navigationState?.selectedServiceId;
 
   useEffect(() => {
     const currentGroupIds = [...coreModules.map((module) => module.id), ...marketServices.map((service) => service.id)];
@@ -501,6 +504,13 @@ export function ControlCenterPage() {
       setFeedback(startupFailure.message);
     }
   }, [startupFailure]);
+
+  useEffect(() => {
+    if (!selectedServiceIdFromNavigation) {
+      return;
+    }
+    setSelectedServiceId(selectedServiceIdFromNavigation);
+  }, [selectedServiceIdFromNavigation]);
 
   useEffect(() => {
     const installedServiceIds = new Set(services.filter((service) => service.installed).map((service) => service.id));
