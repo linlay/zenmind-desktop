@@ -28,7 +28,8 @@ function normalizeTarEntry(entry) {
   if (!trimmed) {
     return "";
   }
-  return trimmed.endsWith("/") ? trimmed : trimmed;
+  // Normalize backslashes to forward slashes for cross-platform consistency
+  return trimmed.replace(/\\/g, "/");
 }
 
 function isZipArchive(archivePath) {
@@ -83,19 +84,27 @@ export function listArchiveEntries(archivePath) {
 
 export function readManifestFromArchive(archivePath) {
   const manifestEntry = [...listArchiveEntries(archivePath)].find(
-    (entry) => entry.endsWith("/manifest.json") || entry === "manifest.json"
+    (entry) =>
+      entry === "manifest.json" ||
+      entry.endsWith("/manifest.json") ||
+      entry.endsWith("\\manifest.json")
   );
   if (!manifestEntry) {
     return null;
   }
 
   const execOpts = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] };
-  const manifestContent = isZipArchive(archivePath)
-    ? canUseUnzip()
-      ? execFileSync("unzip", ["-p", archivePath, manifestEntry], execOpts)
-      : execFileSync("tar", ["-xOf", archivePath, manifestEntry], execOpts)
-    : execFileSync("tar", ["-xzf", archivePath, "-O", manifestEntry], execOpts);
-  return JSON.parse(manifestContent);
+  let raw;
+  if (!isZipArchive(archivePath)) {
+    raw = execFileSync("tar", ["-xzf", archivePath, "-O", manifestEntry], execOpts);
+  } else if (canUseUnzip()) {
+    // 通配符同时覆盖正斜杠（标准 zip）和反斜杠（PowerShell Compress-Archive 旧产物）
+    raw = execFileSync("unzip", ["-p", archivePath, "*manifest.json"], execOpts);
+  } else {
+    raw = execFileSync("tar", ["-xOf", archivePath, manifestEntry], execOpts);
+  }
+  const stripped = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;  // 去 UTF-8 BOM
+  return JSON.parse(stripped);
 }
 
 function listArchivesInDirectory(directoryPath) {
