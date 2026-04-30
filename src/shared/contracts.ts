@@ -311,9 +311,347 @@ export interface WebviewOpenTabRequest {
 
 export type WebviewOpenTabListener = (request: WebviewOpenTabRequest) => void;
 
+export type AssistantMessageRole = "user" | "assistant";
+
+export type AssistantRunAction = "chat" | "summarize_page" | "explain_selection" | "extract_todos";
+
+export interface AssistantPageContext {
+  url: string;
+  title: string;
+  selectedText: string;
+  metaDescription: string;
+  headings: string[];
+  bodyText: string;
+  browserTarget?: {
+    kind: "webview";
+    webContentsId: number;
+    surfaceId?: string;
+    surfaceLabel?: string;
+    currentUrl?: string;
+    browserSkill?: string;
+  };
+}
+
+export interface AssistantChatMessage {
+  id: string;
+  role: AssistantMessageRole;
+  content: string;
+  createdAt: string;
+  runId?: string;
+  attachments?: AssistantAttachment[];
+}
+
+export interface AssistantChatSummary {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  lastMessage: string;
+  messageCount: number;
+}
+
+export interface AssistantChatDetail {
+  summary: AssistantChatSummary;
+  messages: AssistantChatMessage[];
+  events: AssistantRunEvent[];
+}
+
+export interface AssistantSettingsPublic {
+  baseURL: string;
+  model: string;
+  configured: boolean;
+  apiKeyConfigured: boolean;
+  source?: "desktop" | "agent-platform";
+  sourceLabel?: string;
+}
+
+export interface AssistantSettingsInput {
+  baseURL?: string;
+  model?: string;
+  apiKey?: string;
+  clearApiKey?: boolean;
+}
+
+export interface AssistantAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  text: string;
+  dataUrl?: string;
+  truncated?: boolean;
+  error?: string;
+}
+
+export interface AssistantAttachmentPickResult {
+  ok: boolean;
+  chatId: string;
+  message: string;
+  attachments: AssistantAttachment[];
+}
+
+export interface AssistantPastedImageInput {
+  name?: string;
+  mimeType: string;
+  data: ArrayBuffer;
+}
+
+export interface AssistantStartRunRequest {
+  chatId?: string | null;
+  message: string;
+  action?: AssistantRunAction;
+  pageContext?: AssistantPageContext | null;
+  attachments?: AssistantAttachment[];
+  historyBeforeMessageId?: string;
+}
+
+export interface AssistantStartRunResult {
+  ok: boolean;
+  runId: string;
+  chatId: string;
+  message: string;
+}
+
+export interface AssistantStopRunResult {
+  ok: boolean;
+  message: string;
+}
+
+export type AssistantVoiceCorrectionLocale = "zh-CN-mixed-en";
+
+export interface AssistantVoiceCorrectionRequest {
+  text: string;
+  locale: AssistantVoiceCorrectionLocale;
+}
+
+export interface AssistantVoiceCorrectionResult {
+  ok: boolean;
+  text: string;
+  message: string;
+}
+
+export interface AssistantVoiceTranscriptionRequest {
+  mimeType: string;
+  data: ArrayBuffer;
+  locale: AssistantVoiceCorrectionLocale;
+}
+
+export interface AssistantVoiceTranscriptionResult {
+  ok: boolean;
+  text: string;
+  message: string;
+}
+
+export type AssistantAwaitingMode = "approval" | "question" | "form";
+
+export interface AssistantAwaitingQuestion {
+  id: string;
+  label: string;
+  header?: string;
+  question?: string;
+  type?: "text" | "number" | "select" | "multi-select" | "password";
+  placeholder?: string;
+  required?: boolean;
+  allowFreeText?: boolean;
+  freeTextPlaceholder?: string;
+  options?: Array<{
+    label: string;
+    value?: string;
+    description?: string;
+  }>;
+}
+
+export interface AssistantAwaitingApprovalOption {
+  label: string;
+  description?: string;
+  decision: string;
+}
+
+export interface AssistantAwaitingApproval {
+  id: string;
+  command?: string;
+  ruleKey?: string;
+  description?: string;
+  summary?: string;
+  risk?: string;
+  cwd?: string;
+  paths?: string[];
+  options?: AssistantAwaitingApprovalOption[];
+  allowFreeText?: boolean;
+  freeTextPlaceholder?: string;
+}
+
+export interface AssistantAwaitingForm {
+  id: string;
+  action?: string;
+  form?: Record<string, unknown> | null;
+  title?: string;
+}
+
+export interface AssistantAwaitingPayload {
+  awaitingId: string;
+  mode: AssistantAwaitingMode;
+  title: string;
+  description?: string;
+  toolName?: string;
+  runId: string;
+  chatId: string;
+  createdAt?: number | string;
+  timeout?: number | null;
+  timeoutMs?: number;
+  questions?: AssistantAwaitingQuestion[];
+  approvals?: AssistantAwaitingApproval[];
+  approval?: {
+    summary: string;
+    risk?: string;
+    command?: string;
+    cwd?: string;
+    paths?: string[];
+    options?: AssistantAwaitingApprovalOption[];
+    allowFreeText?: boolean;
+    freeTextPlaceholder?: string;
+  };
+  forms?: AssistantAwaitingForm[];
+  viewportKey?: string;
+  viewportHtml?: string;
+  loading?: boolean;
+  loadError?: string;
+  resolvedByOther?: boolean;
+}
+
+export interface AssistantSubmitAwaitingRequest {
+  awaitingId: string;
+  runId?: string;
+  chatId?: string;
+  action: "submit" | "reject" | "dismiss";
+  params?: unknown[];
+  reason?: string;
+}
+
+export interface AssistantSubmitAwaitingResult {
+  ok: boolean;
+  message: string;
+}
+
+export type AssistantRunEventType =
+  | "request.query"
+  | "chat.start"
+  | "run.start"
+  | "content.delta"
+  | "tool.start"
+  | "tool.args"
+  | "tool.result"
+  | "tool.end"
+  | "awaiting.confirm"
+  | "awaiting.ask"
+  | "awaiting.answer"
+  | "artifact.publish"
+  | "run.complete"
+  | "run.error"
+  | "run.interrupt"
+  | "run.stopped"
+  | "done";
+
+export type AssistantRunEventStatus =
+  | "running"
+  | "waiting"
+  | "ok"
+  | "answered"
+  | "rejected"
+  | "cancelled"
+  | "timeout"
+  | "error"
+  | "blocked"
+  | "stopped";
+
+export interface AssistantRunEvent {
+  id: string;
+  seq: number;
+  runId: string;
+  chatId: string;
+  type: AssistantRunEventType;
+  createdAt: string;
+  status?: AssistantRunEventStatus;
+  message?: string;
+  delta?: string;
+  toolCallId?: string;
+  toolName?: string;
+  action?: string;
+  target?: string;
+  error?: string;
+  awaiting?: AssistantAwaitingPayload;
+  awaitingId?: string;
+  mode?: AssistantAwaitingMode;
+  viewportType?: string;
+  viewportKey?: string;
+  timeout?: number | null;
+  timeoutMs?: number;
+  timestamp?: number;
+  questions?: AssistantAwaitingQuestion[];
+  approvals?: AssistantAwaitingApproval[];
+  forms?: AssistantAwaitingForm[];
+  data?: unknown;
+}
+
+export type AssistantEventType =
+  | "delta"
+  | "done"
+  | "error"
+  | "stopped"
+  | AssistantRunEventType;
+
+export interface AssistantEvent {
+  id?: string;
+  seq?: number;
+  runId: string;
+  chatId: string;
+  type: AssistantEventType;
+  createdAt?: string;
+  status?: AssistantRunEventStatus;
+  delta?: string;
+  message?: string;
+  toolCallId?: string;
+  toolName?: string;
+  action?: string;
+  target?: string;
+  error?: string;
+  awaiting?: AssistantAwaitingPayload;
+  awaitingId?: string;
+  mode?: AssistantAwaitingMode;
+  viewportType?: string;
+  viewportKey?: string;
+  timeout?: number | null;
+  timeoutMs?: number;
+  timestamp?: number;
+  questions?: AssistantAwaitingQuestion[];
+  approvals?: AssistantAwaitingApproval[];
+  forms?: AssistantAwaitingForm[];
+  data?: unknown;
+}
+
+export type AssistantEventListener = (event: AssistantEvent) => void;
+
 export interface DesktopApi {
   clipboard: {
     writeText: (text: string) => Promise<{ ok: boolean; message?: string }>;
+  };
+  assistant: {
+    getSettings: () => Promise<AssistantSettingsPublic>;
+    saveSettings: (input: AssistantSettingsInput) => Promise<AssistantSettingsPublic>;
+    listChats: () => Promise<AssistantChatSummary[]>;
+    getChat: (chatId: string) => Promise<AssistantChatDetail | null>;
+    pickAttachments: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
+    addPastedImage: (
+      chatId: string | null | undefined,
+      input: AssistantPastedImageInput
+    ) => Promise<AssistantAttachmentPickResult>;
+    startRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
+    stopRun: (runId: string) => Promise<AssistantStopRunResult>;
+    correctVoiceText: (request: AssistantVoiceCorrectionRequest) => Promise<AssistantVoiceCorrectionResult>;
+    transcribeVoiceAudio: (request: AssistantVoiceTranscriptionRequest) => Promise<AssistantVoiceTranscriptionResult>;
+    submitAwaiting: (request: AssistantSubmitAwaitingRequest) => Promise<AssistantSubmitAwaitingResult>;
+    deleteChat: (chatId: string) => Promise<{ ok: boolean; message: string }>;
+    onAssistantEvent: (listener: AssistantEventListener) => () => void;
   };
   services: {
     list: () => Promise<ServiceState[]>;

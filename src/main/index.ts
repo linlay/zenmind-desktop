@@ -10,7 +10,10 @@ import {
   nativeImage,
   shell,
   session,
+  systemPreferences,
   Tray,
+  webContents,
+  type MediaAccessPermissionRequest,
   type MenuItemConstructorOptions,
   type OpenDialogOptions,
   type SaveDialogOptions
@@ -53,8 +56,35 @@ import {
   listCustomSidebarItems,
   removeCustomSidebarItem
 } from "./custom-sidebar-store";
+import {
+  deleteAssistantChat,
+  getAssistantChat,
+  listAssistantChats
+} from "./assistant/chat-store";
+import {
+  getAgentPlatformMinimaxSettingsPublic,
+  loadAgentPlatformMinimaxSettings
+} from "./assistant/agent-platform-config";
+import {
+  getAssistantSettings,
+  readAssistantSettings,
+  saveAssistantSettings
+} from "./assistant/settings-store";
+import { AssistantRuntime } from "./assistant/runtime";
+import { BrowserUseController, type BrowserSurface } from "./assistant/browser-use";
+import { PageAgentLLMProxy } from "./assistant/page-agent-proxy";
+import {
+  createAssistantAttachmentFromPastedImage,
+  createAssistantAttachmentsFromFiles
+} from "./assistant/attachment-store";
 import { getService } from "./service-registry";
 import type {
+  AssistantSettingsInput,
+  AssistantStartRunRequest,
+  AssistantSubmitAwaitingRequest,
+  AssistantVoiceCorrectionRequest,
+  AssistantVoiceTranscriptionRequest,
+  AssistantPastedImageInput,
   AssistantWorkerOpenRequest,
   ServiceId,
   ServiceLogReadOptions,
@@ -72,6 +102,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isHandlingQuit = false;
 let serviceMutationQueue = Promise.resolve();
+const pageAgentProxy = new PageAgentLLMProxy();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 let startupRestoreState = createStartupRestoreState();
@@ -272,6 +303,43 @@ function getOrCreateMainWindow() {
   return createWindow();
 }
 
+function isMainRendererContents(contentsId: number) {
+  return Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.id === contentsId);
+}
+
+function configureMediaPermissions() {
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    if (permission !== "media" || !isMainRendererContents(contents.id)) {
+      callback(false);
+      return;
+    }
+
+    const mediaDetails = details as MediaAccessPermissionRequest;
+    if (mediaDetails.mediaTypes && !mediaDetails.mediaTypes.includes("audio")) {
+      callback(false);
+      return;
+    }
+
+    if (process.platform === "darwin") {
+      void systemPreferences.askForMediaAccess("microphone")
+        .then((granted) => {
+          callback(granted);
+        })
+        .catch(() => {
+          callback(false);
+        });
+      return;
+    }
+
+    if (process.platform === "win32") {
+      callback(true);
+      return;
+    }
+
+    callback(true);
+  });
+}
+
 function showMainWindow(targetPath?: string) {
   const targetWindow = getOrCreateMainWindow();
   if (!targetWindow || targetWindow.isDestroyed()) {
@@ -430,6 +498,138 @@ function navigateMainWindow(targetPath: string) {
   sendNavigate();
 }
 
+function normalizeSurfaceMatchText(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//u, "")
+    .replace(/^www\./u, "")
+    .replace(/\/+$/u, "");
+}
+
+function customSidebarItemMatchesSurfaceTarget(item: BrowserSurface, target: string) {
+  const normalizedTarget = normalizeSurfaceMatchText(target);
+  if (!normalizedTarget) {
+    return false;
+  }
+  const candidates = [
+    item.id,
+    item.label,
+    item.url,
+    (() => {
+      try {
+        return new URL(item.url).hostname;
+      } catch {
+        return "";
+      }
+    })()
+  ].map(normalizeSurfaceMatchText);
+
+  return candidates.some((candidate) =>
+    candidate === normalizedTarget ||
+    candidate.includes(normalizedTarget) ||
+    normalizedTarget.includes(candidate)
+  );
+}
+
+function findWebContentsForSurfaceUrl(surfaceUrl: string) {
+  let target: URL | null = null;
+  try {
+    target = new URL(surfaceUrl);
+  } catch {
+    return null;
+  }
+
+  return webContents.getAllWebContents().find((contents) => {
+    if (contents.isDestroyed()) {
+      return false;
+    }
+    if (contents.getType() !== "webview") {
+      return false;
+    }
+    try {
+      const current = new URL(contents.getURL());
+      return (
+        current.href === target.href ||
+        current.hostname === target.hostname ||
+        current.href.startsWith(target.href)
+      );
+    } catch {
+      return false;
+    }
+  }) ?? null;
+}
+
+function listBrowserSurfaces(): BrowserSurface[] {
+  return listCustomSidebarItems(app).items.map((item) => {
+    const contents = findWebContentsForSurfaceUrl(item.url);
+    return {
+      id: item.id,
+      label: item.label,
+      url: item.url,
+      active: Boolean(contents),
+      currentUrl: contents?.getURL(),
+      title: contents?.getTitle(),
+      webContentsId: contents?.id
+    };
+  });
+}
+
+async function activateBrowserSurface(target: string) {
+  const surfaces = listBrowserSurfaces();
+  const surface = surfaces.find((candidate) => customSidebarItemMatchesSurfaceTarget(candidate, target));
+  if (!surface) {
+    return {
+      ok: false,
+      action: "activate_surface",
+      target,
+      error: "surface_not_found",
+      message: `没有找到匹配的侧边栏入口：${target}`,
+      data: {
+        surfaces
+      }
+    };
+  }
+
+  navigateMainWindow(`/custom-sidebar/${surface.id}`);
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    await delay(250);
+    const contents = findWebContentsForSurfaceUrl(surface.url);
+    if (contents) {
+      const activatedSurface = {
+        ...surface,
+        active: true,
+        currentUrl: contents.getURL(),
+        title: contents.getTitle(),
+        webContentsId: contents.id
+      } satisfies BrowserSurface;
+      return {
+        ok: true,
+        action: "activate_surface",
+        target,
+        url: activatedSurface.currentUrl,
+        title: activatedSurface.title,
+        message: `已打开「${activatedSurface.label}」。`,
+        data: {
+          surface: activatedSurface
+        }
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    action: "activate_surface",
+    target,
+    url: surface.url,
+    error: "surface_load_timeout",
+    message: `已切换到「${surface.label}」，但还没有拿到可操作的网页实例。`,
+    data: {
+      surface
+    }
+  };
+}
+
 function openAssistantWorker(request: AssistantWorkerOpenRequest) {
   showMainWindow(ASSISTANT_TARGET_PATH);
 
@@ -477,10 +677,10 @@ function createTrayIcon() {
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     {
-      label: "和小宅聊天",
+      label: "和 ZenMind助手聊天",
       click: () =>
         openAssistantWorker({
-          displayName: "小宅",
+          displayName: "ZenMind助手",
           role: "确认对话示例",
           focusComposerOnComplete: true
         })
@@ -618,6 +818,151 @@ async function handleServiceStart(serviceId: ServiceId) {
 }
 
 function registerIpcHandlers() {
+  const browserUseController = new BrowserUseController();
+  const assistantBrowserUse = {
+    listSurfaces: async () => listBrowserSurfaces(),
+    activateSurface: async (target: string) => activateBrowserSurface(target),
+    observePage: (webContentsId: number) => browserUseController.observePage(webContentsId),
+    click: (webContentsId: number, input: { elementRef?: string; target?: string }) =>
+      browserUseController.click(webContentsId, input),
+    fillFields: (webContentsId: number, fields: Parameters<BrowserUseController["fillFields"]>[1]) =>
+      browserUseController.fillFields(webContentsId, fields),
+    autofillForm: (webContentsId: number, input?: Parameters<BrowserUseController["autofillForm"]>[1]) =>
+      browserUseController.autofillForm(webContentsId, input),
+    executeAgentTask: (
+      webContentsId: number,
+      input: Parameters<BrowserUseController["executeAgentTask"]>[1],
+      options?: {
+        signal?: AbortSignal;
+        onEvent?: (event: { type?: string; message?: string; data?: unknown }) => void;
+      }
+    ) =>
+      browserUseController.executeAgentTask(webContentsId, input, {
+        settings: loadAgentPlatformMinimaxSettings(app) ?? readAssistantSettings(app),
+        proxy: pageAgentProxy,
+        signal: options?.signal,
+        onEvent: options?.onEvent
+      }),
+    selectOption: (webContentsId: number, input: Parameters<BrowserUseController["selectOption"]>[1]) =>
+      browserUseController.selectOption(webContentsId, input),
+    setChecked: (webContentsId: number, input: Parameters<BrowserUseController["setChecked"]>[1]) =>
+      browserUseController.setChecked(webContentsId, input),
+    submit: (webContentsId: number, input?: Parameters<BrowserUseController["submit"]>[1]) =>
+      browserUseController.submit(webContentsId, input),
+    clickElementByText: (webContentsId: number, target: string) =>
+      browserUseController.clickElementByText(webContentsId, target),
+    fillBestInput: (webContentsId: number, value: string) =>
+      browserUseController.fillBestInput(webContentsId, value),
+    fillBestInputAndSubmit: (webContentsId: number, value: string) =>
+      browserUseController.fillBestInputAndSubmit(webContentsId, value),
+    readPageContext: (webContentsId: number) => browserUseController.readPageContext(webContentsId)
+  };
+  const assistantRuntime = new AssistantRuntime(app, (event) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    mainWindow.webContents.send("assistant.event", event);
+  }, assistantBrowserUse, {
+    resolveContainerHub: async () => {
+      const state = await getServiceState(app, "agent-container-hub").catch((error) => {
+        return {
+          status: "error",
+          message: error instanceof Error ? error.message : String(error),
+          healthMeta: {
+            webUrl: "",
+            port: null
+          }
+        };
+      });
+      if (state.status !== "running") {
+        return {
+          baseURL: "",
+          unavailableReason: state.message || "Container Hub 未运行，请先在控制中心启动容器仓库服务。"
+        };
+      }
+      const baseURL = state.healthMeta.webUrl || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "");
+      return {
+        baseURL,
+        defaultEnvironmentName: "shell",
+        timeoutMs: 30000
+      };
+    }
+  });
+
+  ipcMain.handle("assistant.getSettings", async () => getAgentPlatformMinimaxSettingsPublic(app) ?? getAssistantSettings(app));
+  ipcMain.handle("assistant.saveSettings", async (_event, input: AssistantSettingsInput) =>
+    saveAssistantSettings(app, input)
+  );
+  ipcMain.handle("assistant.listChats", async () => listAssistantChats(app));
+  ipcMain.handle("assistant.getChat", async (_event, chatId: string) => getAssistantChat(app, chatId));
+  ipcMain.handle("assistant.pickAttachments", async (_event, chatId?: string | null) => {
+    const result = await showFileDialog({
+      title: "选择要给 ZenMind助手读取的附件",
+      properties: ["openFile", "multiSelections"],
+      filters: [
+        {
+          name: "可读取文本或常见文档",
+          extensions: [
+            "txt",
+            "md",
+            "csv",
+            "json",
+            "jsonl",
+            "log",
+            "html",
+            "xml",
+            "yml",
+            "yaml",
+            "png",
+            "jpg",
+            "jpeg",
+            "webp",
+            "gif",
+            "pdf",
+            "docx",
+            "xlsx",
+            "pptx"
+          ]
+        },
+        { name: "所有文件", extensions: ["*"] }
+      ]
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return {
+        ok: false,
+        chatId: chatId ?? "",
+        message: "已取消选择附件。",
+        attachments: []
+      };
+    }
+    return createAssistantAttachmentsFromFiles(app, chatId, result.filePaths);
+  });
+  ipcMain.handle(
+    "assistant.addPastedImage",
+    async (_event, chatId: string | null | undefined, input: AssistantPastedImageInput) =>
+      createAssistantAttachmentFromPastedImage(app, chatId, input)
+  );
+  ipcMain.handle("assistant.deleteChat", async (_event, chatId: string) => {
+    deleteAssistantChat(app, chatId);
+    return {
+      ok: true,
+      message: "已删除对话。"
+    };
+  });
+  ipcMain.handle("assistant.startRun", async (_event, request: AssistantStartRunRequest) =>
+    assistantRuntime.startRun(request)
+  );
+  ipcMain.handle("assistant.stopRun", async (_event, runId: string) => assistantRuntime.stopRun(runId));
+  ipcMain.handle("assistant.correctVoiceText", async (_event, request: AssistantVoiceCorrectionRequest) =>
+    assistantRuntime.correctVoiceText(request)
+  );
+  ipcMain.handle("assistant.transcribeVoiceAudio", async (_event, request: AssistantVoiceTranscriptionRequest) =>
+    assistantRuntime.transcribeVoiceAudio(request)
+  );
+  ipcMain.handle("assistant.submitAwaiting", async (_event, request: AssistantSubmitAwaitingRequest) =>
+    assistantRuntime.submitAwaiting(request)
+  );
+
   ipcMain.handle("services.list", async () => listServices(app));
   ipcMain.handle("services.getStartupRestoreState", async () => cloneStartupRestoreState(startupRestoreState));
   ipcMain.handle("services.installBuiltinFromBundle", async (_event, serviceId: ServiceId) => runServiceMutation(async () => {
@@ -843,6 +1188,7 @@ if (gotSingleInstanceLock) {
     loadBuiltinServices(app);
     loadInstalledPlugins(app);
     registerIpcHandlers();
+    configureMediaPermissions();
     createWindow();
     createAppTray();
     buildApplicationMenu();
@@ -904,6 +1250,7 @@ app.on("before-quit", (event) => {
       } catch (error) {
         console.error("failed while cleaning up local code-assistant relay", error);
       }
+      pageAgentProxy.close();
       app.quit();
     });
 });

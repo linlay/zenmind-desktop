@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { CustomSidebarIcon } from "../components/BrandMark";
-import type { CustomSidebarItem, CustomSidebarItemsResult } from "../../shared/contracts";
+import type { AssistantSettingsPublic, CustomSidebarItem, CustomSidebarItemsResult } from "../../shared/contracts";
 
 type SettingsPageProps = {
   themeMode: "light" | "dark";
@@ -81,6 +81,35 @@ export function SettingsPage({
   const [customSidebarPending, setCustomSidebarPending] = useState(false);
   const [customSidebarTransferPending, setCustomSidebarTransferPending] = useState("");
   const [deletingCustomSidebarId, setDeletingCustomSidebarId] = useState("");
+  const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
+  const [assistantBaseURL, setAssistantBaseURL] = useState("");
+  const [assistantModel, setAssistantModel] = useState("");
+  const [assistantApiKey, setAssistantApiKey] = useState("");
+  const [assistantClearApiKey, setAssistantClearApiKey] = useState(false);
+  const [assistantSettingsPending, setAssistantSettingsPending] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.assistant
+      .getSettings()
+      .then((settings) => {
+        if (cancelled) {
+          return;
+        }
+        setAssistantSettings(settings);
+        setAssistantBaseURL(settings.baseURL);
+        setAssistantModel(settings.model);
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setFeedback(reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleAddCustomSidebarItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -151,6 +180,27 @@ export function SettingsPage({
     }
   }
 
+  async function handleSaveAssistantSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAssistantSettingsPending(true);
+    try {
+      const settings = await window.electronAPI.assistant.saveSettings({
+        baseURL: assistantBaseURL,
+        model: assistantModel,
+        ...(assistantApiKey.trim() ? { apiKey: assistantApiKey } : {}),
+        clearApiKey: assistantClearApiKey
+      });
+      setAssistantSettings(settings);
+      setAssistantApiKey("");
+      setAssistantClearApiKey(false);
+      setFeedback(settings.configured ? "助手模型配置已保存。" : "助手模型配置已保存，请补齐 API Key 后使用。");
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setAssistantSettingsPending(false);
+    }
+  }
+
   return (
     <section className="settings-page">
       <div className="page-head">
@@ -171,6 +221,78 @@ export function SettingsPage({
       </div>
 
       {feedback ? <div className="feedback-banner">{feedback}</div> : null}
+
+      <div className="data-root-card assistant-settings-card">
+        <div className="custom-sidebar-copy">
+          <p className="eyebrow">ASSISTANT</p>
+          <h2>助手模型</h2>
+          <p className="page-copy">
+            配置 OpenAI-compatible 模型后，ZenMind助手会在右侧抽屉中直接问答和总结当前页面。
+            API Key 只保存在本机主进程配置里。
+          </p>
+          {assistantSettings?.source === "agent-platform" ? (
+            <p className="settings-inline-note">
+              当前正在复用 {assistantSettings.sourceLabel ?? "agent-platform"} 配置，下面的 Desktop 配置仅作为备用。
+            </p>
+          ) : null}
+          {assistantSettings?.apiKeyConfigured ? (
+            <p className="settings-inline-note">已保存 API Key。留空不会覆盖现有密钥。</p>
+          ) : (
+            <p className="settings-inline-note">尚未保存 API Key。</p>
+          )}
+        </div>
+        <form className="assistant-settings-form" onSubmit={(event) => void handleSaveAssistantSettings(event)}>
+          <label>
+            <span>Base URL</span>
+            <input
+              value={assistantBaseURL}
+              onChange={(event) => setAssistantBaseURL(event.target.value)}
+              placeholder="https://api.openai.com/v1"
+              required
+            />
+          </label>
+          <label>
+            <span>模型</span>
+            <input
+              value={assistantModel}
+              onChange={(event) => setAssistantModel(event.target.value)}
+              placeholder="gpt-4o-mini"
+              required
+            />
+          </label>
+          <label>
+            <span>API Key</span>
+            <input
+              value={assistantApiKey}
+              onChange={(event) => {
+                setAssistantApiKey(event.target.value);
+                if (event.target.value.trim()) {
+                  setAssistantClearApiKey(false);
+                }
+              }}
+              placeholder={assistantSettings?.apiKeyConfigured ? "已保存，留空不变" : "请输入 API Key"}
+              type="password"
+              autoComplete="off"
+            />
+          </label>
+          <label className="assistant-settings-checkbox">
+            <input
+              type="checkbox"
+              checked={assistantClearApiKey}
+              onChange={(event) => {
+                setAssistantClearApiKey(event.target.checked);
+                if (event.target.checked) {
+                  setAssistantApiKey("");
+                }
+              }}
+            />
+            <span>清除已保存的 API Key</span>
+          </label>
+          <button type="submit" className="text-button" disabled={assistantSettingsPending}>
+            {assistantSettingsPending ? "保存中..." : "保存助手配置"}
+          </button>
+        </form>
+      </div>
 
       <div className="data-root-card settings-theme-card">
         <div>

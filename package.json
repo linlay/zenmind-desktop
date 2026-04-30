@@ -6,7 +6,8 @@
   "main": "dist-electron/main/index.js",
   "scripts": {
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
-    "build:main": "tsc -p tsconfig.main.json",
+    "build:page-agent-bridge": "node ./scripts/build-page-agent-bridge.mjs",
+    "build:main": "tsc -p tsconfig.main.json && npm run build:page-agent-bridge",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:renderer",
     "dev": "node ./scripts/dev.mjs",
@@ -17,10 +18,13 @@
     "test": "npm run build && node --test ./test/*.test.mjs"
   },
   "dependencies": {
+    "@page-agent/core": "^1.8.1",
+    "@page-agent/page-controller": "^1.8.1",
     "js-yaml": "^4.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.1"
+    "react-router-dom": "^6.30.1",
+    "zod": "^4.4.1"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
@@ -57,6 +61,10 @@
     "mac": {
       "icon": "build/icons/icon.icns",
       "identity": null,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "ZenMind 使用麦克风将你的语音输入转成文字。",
+        "NSSpeechRecognitionUsageDescription": "ZenMind 使用系统语音识别将你的语音输入转成文字。"
+      },
       "target": [
         "dmg"
       ],

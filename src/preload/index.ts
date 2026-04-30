@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  AssistantEvent,
+  AssistantEventListener,
+  AssistantPastedImageInput,
+  AssistantSettingsInput,
+  AssistantSubmitAwaitingRequest,
+  AssistantStartRunRequest,
+  AssistantVoiceCorrectionRequest,
+  AssistantVoiceTranscriptionRequest,
   AssistantWorkerOpenListener,
   AssistantWorkerOpenRequest,
   DesktopApi,
@@ -17,6 +25,33 @@ import type {
 const api: DesktopApi = {
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text)
+  },
+  assistant: {
+    getSettings: () => ipcRenderer.invoke("assistant.getSettings"),
+    saveSettings: (input: AssistantSettingsInput) => ipcRenderer.invoke("assistant.saveSettings", input),
+    listChats: () => ipcRenderer.invoke("assistant.listChats"),
+    getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
+    pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("assistant.pickAttachments", chatId),
+    addPastedImage: (chatId: string | null | undefined, input: AssistantPastedImageInput) =>
+      ipcRenderer.invoke("assistant.addPastedImage", chatId, input),
+    startRun: (request: AssistantStartRunRequest) => ipcRenderer.invoke("assistant.startRun", request),
+    stopRun: (runId: string) => ipcRenderer.invoke("assistant.stopRun", runId),
+    correctVoiceText: (request: AssistantVoiceCorrectionRequest) =>
+      ipcRenderer.invoke("assistant.correctVoiceText", request),
+    transcribeVoiceAudio: (request: AssistantVoiceTranscriptionRequest) =>
+      ipcRenderer.invoke("assistant.transcribeVoiceAudio", request),
+    submitAwaiting: (request: AssistantSubmitAwaitingRequest) => ipcRenderer.invoke("assistant.submitAwaiting", request),
+    deleteChat: (chatId: string) => ipcRenderer.invoke("assistant.deleteChat", chatId),
+    onAssistantEvent: (listener: AssistantEventListener) => {
+      const handleAssistantEvent = (_event: Electron.IpcRendererEvent, payload: AssistantEvent) => {
+        listener(payload);
+      };
+
+      ipcRenderer.on("assistant.event", handleAssistantEvent);
+      return () => {
+        ipcRenderer.off("assistant.event", handleAssistantEvent);
+      };
+    }
   },
   services: {
     list: () => ipcRenderer.invoke("services.list"),

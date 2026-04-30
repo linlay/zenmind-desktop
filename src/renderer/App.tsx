@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
+import { AssistantDock, type AssistantDockMode } from "./components/AssistantDock";
 import { AppSidebar } from "./components/AppSidebar";
 import { ControlCenterPage } from "./pages/ControlCenterPage";
 import { ExternalWebviewPage } from "./pages/ExternalWebviewPage";
@@ -23,6 +24,7 @@ type ThemeMode = "light" | "dark";
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
 const SIDEBAR_TRANSLUCENCY_STORAGE_KEY = "zenmind-desktop.sidebar-translucency";
+const ASSISTANT_DOCK_MODE_STORAGE_KEY = "zenmind-desktop.assistant-dock-mode";
 const DEFAULT_SIDEBAR_WIDTH = 196;
 const MIN_SIDEBAR_WIDTH = 176;
 const MAX_SIDEBAR_WIDTH = 340;
@@ -126,6 +128,17 @@ function AppShell() {
       return false;
     }
   });
+  const [assistantDockOpen, setAssistantDockOpen] = useState(false);
+  const [assistantDockMode, setAssistantDockMode] = useState<AssistantDockMode>(() => {
+    if (typeof window === "undefined") {
+      return "full";
+    }
+    try {
+      return window.localStorage.getItem(ASSISTANT_DOCK_MODE_STORAGE_KEY) === "compact" ? "compact" : "full";
+    } catch {
+      return "full";
+    }
+  });
   const [isSidebarDragging, setIsSidebarDragging] = useState(false);
   const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
   const [customSidebarItemsLoaded, setCustomSidebarItemsLoaded] = useState(false);
@@ -175,6 +188,13 @@ function AppShell() {
     return nextState;
   }
 
+  function openAssistantDock(mode?: AssistantDockMode) {
+    if (mode) {
+      setAssistantDockMode(mode);
+    }
+    setAssistantDockOpen(true);
+  }
+
   useEffect(() => {
     return window.electronAPI.onNavigate((targetPath) => {
       navigate(targetPath);
@@ -183,9 +203,9 @@ function AppShell() {
 
   useEffect(() => {
     return window.electronAPI.onOpenAssistantWorker(() => {
-      navigate(ASSISTANT_TARGET_PATH);
+      openAssistantDock("compact");
     });
-  }, [navigate]);
+  }, []);
 
   useEffect(() => {
     refreshCustomSidebarItems().catch(() => undefined);
@@ -342,6 +362,14 @@ function AppShell() {
       document.body.classList.remove("embedded-surface-body");
     };
   }, [usesEmbeddedSurface]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ASSISTANT_DOCK_MODE_STORAGE_KEY, assistantDockMode);
+    } catch {
+      // Ignore persistence failures and keep the current session state.
+    }
+  }, [assistantDockMode]);
 
   useEffect(() => {
     try {
@@ -577,6 +605,10 @@ function AppShell() {
       className={[
         "app-shell",
         usesEmbeddedSurface ? "has-embedded-surface" : "",
+        assistantDockOpen ? "has-assistant-dock" : "",
+        assistantDockOpen ? `has-assistant-dock-${assistantDockMode}` : "",
+        isMac ? "is-mac-platform" : "",
+        isWindows ? "is-windows-platform" : "",
         isMac && sidebarTranslucencyEnabled ? "is-mac-translucent-sidebar" : ""
       ].filter(Boolean).join(" ")}
       ref={appShellRef}
@@ -664,12 +696,7 @@ function AppShell() {
             />
             <Route
               path="/assistant"
-              element={
-                <PlaceholderPage
-                  title={AGENT_WEBCLIENT_DISPLAY_NAME}
-                  description="桌面端助理功能建设中，敬请期待。"
-                />
-              }
+              element={<Navigate to={ASSISTANT_TARGET_PATH} replace />}
             />
             <Route
               path="/agents"
@@ -688,6 +715,21 @@ function AppShell() {
           </Routes>
         </main>
       </div>
+      <AssistantDock
+        open={assistantDockOpen}
+        mode={assistantDockMode}
+        isMac={isMac}
+        isWindows={isWindows}
+        onOpen={() => openAssistantDock("compact")}
+        onClose={() => {
+          setAssistantDockOpen(false);
+        }}
+        onModeChange={setAssistantDockMode}
+        onOpenSettings={() => {
+          setAssistantDockOpen(false);
+          navigate("/settings");
+        }}
+      />
       {showStartupCard ? (
         <StartupLoadingScreen
           servicesLoading={servicesLoading}
@@ -958,6 +1000,8 @@ function CustomSidebarSurfaceHost({
           <ExternalWebviewPage
             key={itemId}
             active={activeItemId === itemId}
+            surfaceId={itemId}
+            surfaceLabel={item.label}
             title={item.label}
             url={item.url}
           />
@@ -984,7 +1028,7 @@ function ExternalItemRoute({
     );
   }
 
-  return <ExternalWebviewPage title={item.label} url={item.url} />;
+  return <ExternalWebviewPage surfaceId={itemId} surfaceLabel={item.label} title={item.label} url={item.url} />;
 }
 
 function CustomSidebarRouteFallback({

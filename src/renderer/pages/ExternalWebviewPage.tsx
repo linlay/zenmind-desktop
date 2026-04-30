@@ -1,9 +1,13 @@
 import { createElement, useEffect, useRef, useState } from "react";
+import type { AssistantPageContext } from "../../shared/contracts";
+import { registerAssistantPageContextProvider } from "../services/assistantPageContext";
 
 type ExternalWebviewPageProps = {
   title: string;
   url: string;
   active?: boolean;
+  surfaceId?: string;
+  surfaceLabel?: string;
 };
 
 type ExternalWebviewTabState = {
@@ -25,18 +29,24 @@ type ExternalWebviewTabPatch = Partial<Pick<
   "title" | "currentUrl" | "guestId" | "canGoBack" | "isLoading"
 >>;
 
-const NEW_TAB_URL = "about:blank";
-const NEW_TAB_TITLE = "新标签页";
-const BOOKMARK_BAR_ITEMS = [
-  { label: "手机新标签页", tone: "blue" },
-  { label: "云台", tone: "cyan" },
-  { label: "Server Integration", tone: "purple" },
-  { label: "腾讯云", tone: "red" },
-  { label: "Google Service", tone: "yellow" },
-  { label: "jialin Notebook", tone: "black" },
-  { label: "Tencent Cloud", tone: "blue" },
-  { label: "Claude Code 源码", tone: "cyan" }
-] as const;
+const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
+  const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+  const readMetaDescription = () => {
+    const meta = document.querySelector('meta[name="description"], meta[property="og:description"]');
+    return normalize(meta?.getAttribute("content") || "");
+  };
+  return {
+    url: String(location.href || ""),
+    title: normalize(document.title || ""),
+    selectedText: normalize(getSelection()?.toString() || "").slice(0, 8000),
+    metaDescription: readMetaDescription(),
+    headings: Array.from(document.querySelectorAll("h1, h2, h3"))
+      .map((node) => normalize(node.textContent || ""))
+      .filter(Boolean)
+      .slice(0, 24),
+    bodyText: normalize(document.body?.innerText || "").slice(0, 40000)
+  };
+})()`;
 
 type ExternalWebviewPaneProps = {
   tab: ExternalWebviewTabState;
@@ -45,15 +55,7 @@ type ExternalWebviewPaneProps = {
   onWebviewRefChange: (tabId: string, webview: Electron.WebviewTag | null) => void;
 };
 
-function isNewTabUrl(url: string) {
-  return url === "" || url === NEW_TAB_URL;
-}
-
 function getFallbackTabTitle(defaultTitle: string, url: string) {
-  if (isNewTabUrl(url)) {
-    return NEW_TAB_TITLE;
-  }
-
   const trimmedTitle = defaultTitle.trim();
   if (trimmedTitle) {
     return trimmedTitle;
@@ -62,6 +64,16 @@ function getFallbackTabTitle(defaultTitle: string, url: string) {
   try {
     const parsedUrl = new URL(url);
     return parsedUrl.hostname.replace(/^www\./u, "") || url;
+  } catch {
+    return url;
+  }
+}
+
+function getUrlDisplayLabel(url: string) {
+  try {
+    const parsedUrl = new URL(url);
+    const pathname = parsedUrl.pathname === "/" ? "" : parsedUrl.pathname;
+    return `${parsedUrl.hostname}${pathname}` || url;
   } catch {
     return url;
   }
@@ -84,8 +96,10 @@ function normalizeEditableUrl(rawValue: string) {
   }
 }
 
-function getTabDisplayTitle(tab: ExternalWebviewTabState) {
-  return isNewTabUrl(tab.currentUrl) ? NEW_TAB_TITLE : tab.title;
+function getTabMonogram(title: string, url: string) {
+  const source = title.trim() || getUrlDisplayLabel(url);
+  const match = source.match(/[A-Za-z0-9\u4e00-\u9fa5]/u);
+  return match ? match[0].toUpperCase() : "·";
 }
 
 function readEventString(event: Event, key: string) {
@@ -110,34 +124,12 @@ function RefreshIcon() {
   );
 }
 
-function GoogleIcon() {
+function SearchIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="#4285f4"
-        d="M23.5 12.3c0-.8-.1-1.5-.2-2.2H12v4.2h6.5c-.3 1.4-1.1 2.6-2.3 3.4v2.8h3.7c2.2-2 3.6-4.9 3.6-8.2Z"
-      />
-      <path
-        fill="#34a853"
-        d="M12 24c3.1 0 5.8-1 7.7-2.8l-3.7-2.8c-1 .7-2.4 1.1-4 1.1-3 0-5.6-2-6.5-4.8H1.8v2.9C3.7 21.4 7.6 24 12 24Z"
-      />
-      <path
-        fill="#fbbc05"
-        d="M5.5 14.7a7.2 7.2 0 0 1 0-4.7V7.1H1.8A12 12 0 0 0 1.8 17.6l3.7-2.9Z"
-      />
-      <path
-        fill="#ea4335"
-        d="M12 4.5c1.7 0 3.2.6 4.4 1.7l3.3-3.3A11.2 11.2 0 0 0 12 0C7.6 0 3.7 2.6 1.8 6.4L5.5 9.3C6.4 6.5 9 4.5 12 4.5Z"
-      />
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="8.5" cy="8.5" r="4.75" />
+      <path d="m12 12 4.25 4.25" />
     </svg>
-  );
-}
-
-function ChromeTabIcon() {
-  return (
-    <span className="external-webview-tab-chrome-mark" aria-hidden="true">
-      <span className="external-webview-tab-chrome-center" />
-    </span>
   );
 }
 
@@ -145,32 +137,6 @@ function PlusIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
       <path d="M10 4.5v11M4.5 10h11" />
-    </svg>
-  );
-}
-
-function ChevronDownIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="m5.5 7.5 4.5 4.5 4.5-4.5" />
-    </svg>
-  );
-}
-
-function ExtensionsIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M7.5 3.5h5v3h1.4a2.1 2.1 0 0 1 0 4.2h-1.4v5.8h-5v-2a2 2 0 1 0-4 0v2h-1v-5.8h1.4a2.1 2.1 0 1 0 0-4.2H2.5v-3h5Z" />
-    </svg>
-  );
-}
-
-function MoreIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <circle cx="10" cy="4.5" r="1.25" />
-      <circle cx="10" cy="10" r="1.25" />
-      <circle cx="10" cy="15.5" r="1.25" />
     </svg>
   );
 }
@@ -301,10 +267,9 @@ function ExternalWebviewPane({
   );
 }
 
-export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageProps) {
+export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabel }: ExternalWebviewPageProps) {
   const tabSequenceRef = useRef(0);
   const webviewRefs = useRef(new Map<string, Electron.WebviewTag>());
-  const addressInputRef = useRef<HTMLInputElement | null>(null);
   const surfaceKeyRef = useRef(`${title}\u0000${url}`);
   const activeRef = useRef(active !== false);
   const surfaceVisibilityProps = active === undefined
@@ -316,14 +281,13 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
 
   const createTab = (initialUrl: string, preferredTitle: string) => {
     tabSequenceRef.current += 1;
-    const resolvedUrl = initialUrl.trim() || NEW_TAB_URL;
     return {
       id: `external-tab-${tabSequenceRef.current}`,
-      title: getFallbackTabTitle(preferredTitle, resolvedUrl),
-      currentUrl: resolvedUrl,
+      title: getFallbackTabTitle(preferredTitle, initialUrl),
+      currentUrl: initialUrl,
       guestId: null,
       canGoBack: false,
-      isLoading: !isNewTabUrl(resolvedUrl)
+      isLoading: true
     } satisfies ExternalWebviewTabState;
   };
 
@@ -336,8 +300,7 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
   };
 
   const [browserState, setBrowserState] = useState<ExternalWebviewBrowserState>(() => createInitialBrowserState());
-  const [addressInputValue, setAddressInputValue] = useState(() => isNewTabUrl(url) ? "" : url);
-  const [addressInputFocused, setAddressInputFocused] = useState(false);
+  const [addressInputValue, setAddressInputValue] = useState(() => url);
   const browserStateRef = useRef(browserState);
 
   useEffect(() => {
@@ -356,10 +319,10 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
     surfaceKeyRef.current = nextSurfaceKey;
     webviewRefs.current.clear();
     setBrowserState(createInitialBrowserState());
-    setAddressInputValue(isNewTabUrl(url) ? "" : url);
+    setAddressInputValue(url);
   }, [title, url]);
 
-  const openTab = (nextUrl = NEW_TAB_URL, preferredTitle = NEW_TAB_TITLE) => {
+  const openTab = (nextUrl: string, preferredTitle = "") => {
     const nextTab = createTab(nextUrl, preferredTitle);
     setBrowserState((currentState) => ({
       tabs: [...currentState.tabs, nextTab],
@@ -463,20 +426,69 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
   const activeTab = browserState.tabs.find((tab) => tab.id === browserState.activeTabId) ?? browserState.tabs[0];
 
   useEffect(() => {
-    const nextUrl = activeTab?.currentUrl ?? url;
-    setAddressInputValue(isNewTabUrl(nextUrl) ? "" : nextUrl);
-  }, [activeTab?.id, activeTab?.currentUrl, url]);
-
-  useEffect(() => {
-    if (active === false || !activeTab || !isNewTabUrl(activeTab.currentUrl)) {
-      return;
+    if (active === false || !activeTab) {
+      return undefined;
     }
 
-    const animationFrame = window.requestAnimationFrame(() => {
-      addressInputRef.current?.focus();
+    return registerAssistantPageContextProvider(async () => {
+      const currentState = browserStateRef.current;
+      const currentActiveTab = currentState.tabs.find((tab) => tab.id === currentState.activeTabId) ?? currentState.tabs[0];
+      if (!currentActiveTab || !activeRef.current) {
+        return null;
+      }
+
+      const activeWebview = webviewRefs.current.get(currentActiveTab.id);
+      if (!activeWebview) {
+        return {
+          url: currentActiveTab.currentUrl,
+          title: currentActiveTab.title,
+          selectedText: "",
+          metaDescription: "",
+          headings: [],
+          bodyText: ""
+        } satisfies AssistantPageContext;
+      }
+
+      try {
+        const webContentsId = activeWebview.getWebContentsId();
+        const pageContext = await activeWebview.executeJavaScript(WEBVIEW_PAGE_CONTEXT_SCRIPT, true);
+        return {
+          url: typeof pageContext?.url === "string" ? pageContext.url : currentActiveTab.currentUrl,
+          title: typeof pageContext?.title === "string" && pageContext.title
+            ? pageContext.title
+            : currentActiveTab.title,
+          selectedText: typeof pageContext?.selectedText === "string" ? pageContext.selectedText : "",
+          metaDescription: typeof pageContext?.metaDescription === "string" ? pageContext.metaDescription : "",
+          headings: Array.isArray(pageContext?.headings)
+            ? pageContext.headings.filter((item: unknown): item is string => typeof item === "string")
+            : [],
+          bodyText: typeof pageContext?.bodyText === "string" ? pageContext.bodyText : "",
+          browserTarget: Number.isFinite(webContentsId)
+            ? {
+                kind: "webview",
+                webContentsId,
+                surfaceId,
+                surfaceLabel: surfaceLabel ?? title,
+                currentUrl: currentActiveTab.currentUrl
+              }
+            : undefined
+        } satisfies AssistantPageContext;
+      } catch {
+        return {
+          url: currentActiveTab.currentUrl,
+          title: currentActiveTab.title,
+          selectedText: "",
+          metaDescription: "",
+          headings: [],
+          bodyText: ""
+        } satisfies AssistantPageContext;
+      }
     });
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, [active, activeTab?.id, activeTab?.currentUrl]);
+  }, [active, activeTab?.id, surfaceId, surfaceLabel, title]);
+
+  useEffect(() => {
+    setAddressInputValue(activeTab?.currentUrl ?? url);
+  }, [activeTab?.id, activeTab?.currentUrl, url]);
 
   const handleGoBack = () => {
     if (!activeTab?.canGoBack) {
@@ -519,14 +531,9 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
       return;
     }
 
-    if (!addressInputValue.trim()) {
-      setAddressInputValue(isNewTabUrl(activeTab.currentUrl) ? "" : activeTab.currentUrl);
-      return;
-    }
-
     const normalizedUrl = normalizeEditableUrl(addressInputValue);
     if (!normalizedUrl) {
-      setAddressInputValue(isNewTabUrl(activeTab.currentUrl) ? "" : activeTab.currentUrl);
+      setAddressInputValue(activeTab.currentUrl);
       return;
     }
 
@@ -539,7 +546,7 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
     void activeWebview.loadURL(normalizedUrl).then(() => {
       setAddressInputValue(normalizedUrl);
     }).catch(() => {
-      setAddressInputValue(isNewTabUrl(activeTab.currentUrl) ? "" : activeTab.currentUrl);
+      setAddressInputValue(activeTab.currentUrl);
     });
   };
 
@@ -552,7 +559,6 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
             {browserState.tabs.map((tab) => {
               const isActive = tab.id === browserState.activeTabId;
               const canClose = browserState.tabs.length > 1;
-              const tabTitle = getTabDisplayTitle(tab);
               return (
                 <div
                   key={tab.id}
@@ -570,9 +576,9 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
                       className={`external-webview-tab-favicon${tab.isLoading ? " is-loading" : ""}`}
                       aria-hidden="true"
                     >
-                      {tab.isLoading ? <span className="external-webview-tab-favicon-spinner" /> : <ChromeTabIcon />}
+                      {tab.isLoading ? <span className="external-webview-tab-favicon-spinner" /> : getTabMonogram(tab.title, tab.currentUrl)}
                     </span>
-                    <span className="external-webview-tab-title">{tabTitle}</span>
+                    <span className="external-webview-tab-title">{tab.title}</span>
                   </button>
                   {canClose ? (
                     <button
@@ -582,7 +588,7 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
                         event.stopPropagation();
                         closeTab(tab.id);
                       }}
-                      aria-label={`关闭 ${tabTitle}`}
+                      aria-label={`关闭 ${tab.title}`}
                     >
                       <CloseIcon />
                     </button>
@@ -594,34 +600,25 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
           <button
             type="button"
             className="external-webview-tab-add"
-            onClick={() => openTab()}
+            onClick={() => openTab(url, title)}
             aria-label="新建标签页"
             title="新建标签页"
           >
             <PlusIcon />
           </button>
-          <button
-            type="button"
-            className="external-webview-tab-search"
-            aria-label="搜索标签页"
-            title="搜索标签页"
-          >
-            <ChevronDownIcon />
-          </button>
         </div>
         <div className="external-webview-toolbar">
           <div className="external-webview-toolbar-actions">
-            {activeTab?.canGoBack ? (
-              <button
-                type="button"
-                className="external-webview-toolbar-button"
-                onClick={handleGoBack}
-                aria-label="后退"
-                title="后退"
-              >
-                <ArrowLeftIcon />
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="external-webview-toolbar-button"
+              onClick={handleGoBack}
+              disabled={!activeTab?.canGoBack}
+              aria-label="后退"
+              title="后退"
+            >
+              <ArrowLeftIcon />
+            </button>
             <button
               type="button"
               className="external-webview-toolbar-button"
@@ -632,18 +629,11 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
               <RefreshIcon />
             </button>
           </div>
-          <div
-            className={[
-              "external-webview-toolbar-location",
-              addressInputFocused ? "is-focused" : "",
-              activeTab && isNewTabUrl(activeTab.currentUrl) ? "is-new-tab" : ""
-            ].filter(Boolean).join(" ")}
-          >
+          <div className="external-webview-toolbar-location">
             <span className="external-webview-toolbar-location-icon" aria-hidden="true">
-              <GoogleIcon />
+              <SearchIcon />
             </span>
             <input
-              ref={addressInputRef}
               type="text"
               className="external-webview-toolbar-location-input"
               value={addressInputValue}
@@ -651,12 +641,7 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
                 setAddressInputValue(event.target.value);
               }}
               onBlur={() => {
-                setAddressInputFocused(false);
-                const nextUrl = activeTab?.currentUrl ?? url;
-                setAddressInputValue(isNewTabUrl(nextUrl) ? "" : nextUrl);
-              }}
-              onFocus={() => {
-                setAddressInputFocused(true);
+                setAddressInputValue(activeTab?.currentUrl ?? url);
               }}
               onKeyDown={(event) => {
                 if (event.key !== "Enter") {
@@ -672,26 +657,6 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
               aria-label="网页地址"
             />
           </div>
-          <div className="external-webview-toolbar-right">
-            <button type="button" className="external-webview-toolbar-button" aria-label="扩展程序" title="扩展程序">
-              <ExtensionsIcon />
-            </button>
-            <span className="external-webview-toolbar-divider" aria-hidden="true" />
-            <button type="button" className="external-webview-profile-button" aria-label="个人资料" title="个人资料">
-              n
-            </button>
-            <button type="button" className="external-webview-toolbar-button" aria-label="更多" title="更多">
-              <MoreIcon />
-            </button>
-          </div>
-        </div>
-        <div className="external-webview-bookmarks-bar" aria-hidden="true">
-          {BOOKMARK_BAR_ITEMS.map((item) => (
-            <span className="external-webview-bookmark-item" key={item.label}>
-              <span className={`external-webview-bookmark-icon is-${item.tone}`} />
-              <span className="external-webview-bookmark-label">{item.label}</span>
-            </span>
-          ))}
         </div>
       </div>
       <div className="pan-frame-shell external-webview-frame-shell">
