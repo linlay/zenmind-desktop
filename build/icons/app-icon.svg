@@ -1,25 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="color hollow cloud app icon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="vibrant hollow cloud app icon">
   <defs>
     <path
-      id="color-cloud"
-      d="M350 200A90 90 0 0 1 275 330A90 90 0 0 1 125 330A90 90 0 0 1 50 200A90 90 0 0 1 125 70A90 90 0 0 1 275 70A90 90 0 0 1 350 200Z"
+      id="hex-cloud-color"
+      d="M 350 200
+         A 90 90 0 0 1 275 330
+         A 90 90 0 0 1 125 330
+         A 90 90 0 0 1 50 200
+         A 90 90 0 0 1 125 70
+         A 90 90 0 0 1 275 70
+         A 90 90 0 0 1 350 200 Z"
     />
-    <linearGradient id="deep-cyan-blue" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0096C7"/>
-      <stop offset="50%" stop-color="#0077B6"/>
-      <stop offset="100%" stop-color="#023E8A"/>
+    <linearGradient id="vibrant-cyan-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F2FE" />
+      <stop offset="50%" stop-color="#00C6FF" />
+      <stop offset="100%" stop-color="#0072FF" />
     </linearGradient>
-    <mask id="color-hollow-mask">
-      <rect width="400" height="400" fill="white"/>
+    <mask id="mask-color-hollow">
+      <rect width="400" height="400" fill="white" />
       <g fill="black">
-        <path d="M120 135Q200 100 280 135Q200 125 120 135Z"/>
-        <path d="M60 180Q200 115 340 180Q200 160 60 180Z"/>
-        <polygon points="240,190 270,190 160,290 130,290"/>
-        <rect x="115" y="290" width="170" height="16"/>
+        <path d="M 120 135 Q 200 96 280 135 Q 200 129 120 135 Z" />
+        <path d="M 60 180 Q 200 108 340 180 Q 200 167 60 180 Z" />
+        <polygon points="235.5,190 274.5,190 164.5,290 125.5,290" />
+        <rect x="115" y="290" width="170" height="21" />
       </g>
     </mask>
   </defs>
-  <g mask="url(#color-hollow-mask)">
-    <use href="#color-cloud" fill="url(#deep-cyan-blue)" transform="rotate(15 200 200)"/>
+  <g mask="url(#mask-color-hollow)">
+    <use href="#hex-cloud-color" fill="url(#vibrant-cyan-blue)" transform="rotate(15, 200, 200)" />
   </g>
 </svg>

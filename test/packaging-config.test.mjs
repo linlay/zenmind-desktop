@@ -67,7 +67,7 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   );
   assert.match(
     distWinScript,
-    /"npm install --no-package-lock",\s*\n\s*"npx electron-builder --win --x64"/
+    /"npm install --no-package-lock --ignore-scripts",\s*\n\s*"npx electron-builder --win --x64"/
   );
   assert.doesNotMatch(
     distWinScript,

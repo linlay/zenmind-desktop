@@ -10,8 +10,8 @@ import type {
   ServiceLogTarget,
   StartupRestoreState,
   StartupRestoreStateListener,
-  WebviewPopupNavigateListener,
-  WebviewPopupNavigateRequest
+  WebviewOpenTabListener,
+  WebviewOpenTabRequest
 } from "../shared/contracts";
 
 const api: DesktopApi = {
@@ -104,17 +104,17 @@ const api: DesktopApi = {
       ipcRenderer.off("app.openAssistantWorker", handleOpenAssistantWorker);
     };
   },
-  onWebviewPopupNavigate: (listener: WebviewPopupNavigateListener) => {
-    const handleWebviewPopupNavigate = (
+  onWebviewOpenTab: (listener: WebviewOpenTabListener) => {
+    const handleWebviewOpenTab = (
       _event: Electron.IpcRendererEvent,
-      request: WebviewPopupNavigateRequest
+      request: WebviewOpenTabRequest
     ) => {
       listener(request);
     };
 
-    ipcRenderer.on("webview.popupNavigate", handleWebviewPopupNavigate);
+    ipcRenderer.on("webview.openTab", handleWebviewOpenTab);
     return () => {
-      ipcRenderer.off("webview.popupNavigate", handleWebviewPopupNavigate);
+      ipcRenderer.off("webview.openTab", handleWebviewOpenTab);
     };
   }
 };

@@ -8,6 +8,7 @@ import type {
   ManifestCommand,
   ManifestConfigFile,
   ManifestDesktop,
+  ManifestDesktopBridge,
   ManifestEnvBinding,
   ManifestFrontend,
   ManifestRuntime,
@@ -42,6 +43,7 @@ export interface ServiceDefinition extends Manifest {
   desktop: ManifestDesktop & {
     bundleTopLevelDir: string;
     envBindings: ManifestEnvBinding[];
+    bridge?: ManifestDesktopBridge;
   };
   assetFileName: string;
   bundleTopLevelDir: string;
@@ -262,11 +264,22 @@ function resolveDesktop(
     serviceId;
   const envBindings = resolveEnvBindings(raw);
 
+  const bridgeRaw = asObject(desktop.bridge);
+  const bridge: ManifestDesktopBridge | undefined = bridgeRaw.category === "bridge"
+    ? {
+        category: "bridge" as const,
+        channelId: asString(bridgeRaw.channelId),
+        channelName: asString(bridgeRaw.channelName),
+        gatewayInfoEndpoint: asString(bridgeRaw.gatewayInfoEndpoint)
+      }
+    : undefined;
+
   return {
     assetFileName,
     bundleTopLevelDir,
-    envBindings
-  } satisfies ManifestDesktop & { bundleTopLevelDir: string; envBindings: ManifestEnvBinding[] };
+    envBindings,
+    bridge
+  } satisfies ManifestDesktop & { bundleTopLevelDir: string; envBindings: ManifestEnvBinding[]; bridge?: ManifestDesktopBridge };
 }
 
 function normalizeExecutable(entry: string) {

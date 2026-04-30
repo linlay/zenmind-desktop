@@ -88,7 +88,7 @@ async function buildWithDocker() {
     "/bin/bash",
     "-lc",
     [
-      "npm install --no-package-lock",
+      "npm install --no-package-lock --ignore-scripts",
       "npx electron-builder --win --x64"
     ].join(" && ")
   );

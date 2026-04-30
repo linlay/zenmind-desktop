@@ -9,13 +9,16 @@ import { getServiceDisplayName } from "../service-display";
 
 type PluginPageProps = {
   hostTheme: "light" | "dark";
+  pluginId?: string;
+  active?: boolean;
 };
 
 const AGENT_APP_CLIPBOARD_REQUEST_TYPE = "zenmind:agent-app-clipboard:request";
 const AGENT_APP_CLIPBOARD_RESPONSE_TYPE = "zenmind:agent-app-clipboard:response";
 
-export function PluginPage({ hostTheme }: PluginPageProps) {
-  const { pluginId } = useParams<{ pluginId: string }>();
+export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: PluginPageProps) {
+  const { pluginId: routePluginId } = useParams<{ pluginId: string }>();
+  const pluginId = pluginIdProp ?? routePluginId ?? "";
   const { services } = useServices();
   const service = services.find((s) => s.id === pluginId);
   const serviceDisplayName = service ? getServiceDisplayName(service.id, service.name) : "";
@@ -23,6 +26,12 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
   const [bridgeReady, setBridgeReady] = useState(false);
   const [iframeInstanceKey, setIframeInstanceKey] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const surfaceVisibilityProps = active === undefined
+    ? {}
+    : {
+        hidden: !active,
+        "aria-hidden": !active
+      };
 
   const webUrl = service?.healthMeta.webUrl ?? "";
   const bridgeProtocol = useMemo(
@@ -177,7 +186,7 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
 
   if (!service) {
     return (
-      <section className="empty-state">
+      <section className="empty-state" {...surfaceVisibilityProps}>
         <h1>服务未注册</h1>
         <p>未找到 ID 为 {pluginId} 的服务。</p>
         <Link className="primary-link" to="/control-center">
@@ -189,7 +198,7 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
 
   if (service.status !== "running") {
     return (
-      <section className="empty-state">
+      <section className="empty-state" {...surfaceVisibilityProps}>
         <p className="eyebrow">PLUGIN</p>
         <h1>{serviceDisplayName} 暂未就绪</h1>
         <p>{service.message}</p>
@@ -202,7 +211,7 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
 
   if (service.frontendMode === "none" || !webUrl) {
     return (
-      <section className="empty-state">
+      <section className="empty-state" {...surfaceVisibilityProps}>
         <h1>{serviceDisplayName}</h1>
         <p>该服务没有前端页面。</p>
         <Link className="primary-link" to="/control-center">
@@ -214,7 +223,7 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
 
   if (bridgeError) {
     return (
-      <section className="empty-state">
+      <section className="empty-state" {...surfaceVisibilityProps}>
         <p className="eyebrow">PLUGIN</p>
         <h1>{serviceDisplayName}</h1>
         <p>认证桥接失败：{bridgeError}</p>
@@ -226,7 +235,7 @@ export function PluginPage({ hostTheme }: PluginPageProps) {
   }
 
   return (
-    <section className="pan-page pan-page-embedded">
+    <section className="pan-page pan-page-embedded" {...surfaceVisibilityProps}>
       <div className="pan-drag-region" aria-hidden="true" />
       <div className="pan-frame-shell">
         {bridgeReady ? (

@@ -30,8 +30,8 @@ import {
   installBuiltinService,
   listServices,
   readServiceConfig,
-  restoreRunningServices,
   restartService,
+  runStartupPreparation,
   startService,
   stopService,
   stopRunningServices,
@@ -45,6 +45,7 @@ import {
   killProcessByPid,
   showPortConflictDialog
 } from "./port-conflict";
+import { resolveWebviewOpenDisposition } from "./webview-open-tab";
 import {
   addCustomSidebarItem,
   exportCustomSidebarItems,
@@ -58,6 +59,7 @@ import type {
   ServiceId,
   ServiceLogReadOptions,
   ServiceLogTarget,
+  StartupRestoreMode,
   StartupRestoreServiceState,
   StartupRestoreState
 } from "../shared/contracts";
@@ -78,6 +80,12 @@ let startupRestoreState = createStartupRestoreState();
 app.setName("ZenMind");
 app.setPath("userData", path.join(app.getPath("appData"), "zenmind-desktop"));
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.exit(0);
+}
+
 function delay(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
@@ -90,32 +98,6 @@ function getRendererEntry() {
     return devServerUrl;
   }
   return path.join(__dirname, "..", "..", "dist-renderer", "index.html");
-}
-
-function parseHttpUrl(value: string) {
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return parsed;
-    }
-  } catch {
-    // Ignore invalid URLs and let the fallback path handle them.
-  }
-  return null;
-}
-
-function shouldOpenPopupInCurrentWebview(currentUrl: string, targetUrl: string) {
-  const target = parseHttpUrl(targetUrl);
-  if (!target) {
-    return false;
-  }
-
-  const current = parseHttpUrl(currentUrl);
-  if (!current) {
-    return true;
-  }
-
-  return current.origin === target.origin;
 }
 
 function setSidebarTranslucency(enabled: boolean) {
@@ -214,17 +196,17 @@ function createWindow() {
     });
 
     contents.setWindowOpenHandler(({ url }) => {
-      if (shouldOpenPopupInCurrentWebview(contents.getURL(), url)) {
+      if (resolveWebviewOpenDisposition(url) === "tab") {
         setImmediate(() => {
           if (!mainWindow || mainWindow.isDestroyed()) {
             void shell.openExternal(url).catch((error) => {
-              console.error("failed to recover webview popup externally", { url, error });
+              console.error("failed to recover webview tab request externally", { url, error });
             });
             return;
           }
 
-          mainWindow.webContents.send("webview.popupNavigate", {
-            guestId: contents.id,
+          mainWindow.webContents.send("webview.openTab", {
+            sourceGuestId: contents.id,
             url
           });
         });
@@ -314,8 +296,12 @@ function notifyServicesChanged() {
   mainWindow.webContents.send("services.changed");
 }
 
-function createStartupRestoreState(phase: StartupRestoreState["phase"] = "idle"): StartupRestoreState {
+function createStartupRestoreState(
+  phase: StartupRestoreState["phase"] = "idle",
+  mode: StartupRestoreMode = "restore"
+): StartupRestoreState {
   return {
+    mode,
     phase,
     serviceOrder: [...STARTUP_RESTORE_SERVICE_ORDER],
     currentServiceId: null,
@@ -348,8 +334,8 @@ function commitStartupRestoreState(nextState: StartupRestoreState) {
   mainWindow.webContents.send("services.startupRestoreState", cloneStartupRestoreState(startupRestoreState));
 }
 
-function beginStartupRestoreSession() {
-  commitStartupRestoreState(createStartupRestoreState("running"));
+function beginStartupRestoreSession(mode: StartupRestoreMode) {
+  commitStartupRestoreState(createStartupRestoreState("running", mode));
 }
 
 function updateStartupRestoreService(serviceId: ServiceId, phase: StartupRestoreServiceState["phase"], message = "") {
@@ -364,38 +350,42 @@ function updateStartupRestoreService(serviceId: ServiceId, phase: StartupRestore
       : service
   );
 
-  if (phase === "starting") {
+  if (phase === "installing" || phase === "initializing" || phase === "starting") {
     commitStartupRestoreState({
       ...currentState,
       phase: "running",
       currentServiceId: serviceId,
-      failedServiceId: null,
       message,
       services: nextServices
     });
     return;
   }
 
-  if (phase === "failed") {
-    commitStartupRestoreState({
-      ...currentState,
-      phase: "failed",
-      currentServiceId: null,
-      failedServiceId: serviceId,
-      message,
-      services: nextServices
-    });
-    return;
-  }
-
-  const allCompleted = nextServices.every((service) => service.phase === "succeeded" || service.phase === "skipped");
+  const allCompleted = nextServices.every((service) =>
+    service.phase === "succeeded" || service.phase === "skipped"
+  );
   commitStartupRestoreState({
     ...currentState,
     phase: allCompleted ? "succeeded" : "running",
     currentServiceId: null,
-    failedServiceId: null,
+    failedServiceId: phase === "failed" ? serviceId : currentState.failedServiceId,
     message: allCompleted ? "核心服务已全部就绪。" : message,
     services: nextServices
+  });
+}
+
+function finishStartupRestoreSession(mode: StartupRestoreMode, failures: string[]) {
+  const currentState = cloneStartupRestoreState(startupRestoreState);
+  const failedServiceId = failures.length > 0
+    ? currentState.services.find((service) => service.phase === "failed")?.serviceId ?? currentState.failedServiceId
+    : null;
+  commitStartupRestoreState({
+    ...currentState,
+    mode,
+    phase: failures.length > 0 ? "failed" : "succeeded",
+    currentServiceId: null,
+    failedServiceId,
+    message: failures.length > 0 ? failures.join("；") : "核心服务已全部就绪。"
   });
 }
 
@@ -843,17 +833,23 @@ function registerIpcHandlers() {
   );
 }
 
-app.whenReady().then(async () => {
-  ensureDataRoot(app);
-  loadBuiltinServices(app);
-  loadInstalledPlugins(app);
-  registerIpcHandlers();
-  createWindow();
-  createAppTray();
-  buildApplicationMenu();
-  beginStartupRestoreSession();
-  void runServiceMutation(() =>
-    restoreRunningServices(app, {
+if (gotSingleInstanceLock) {
+  app.on("second-instance", () => {
+    showMainWindow();
+  });
+
+  app.whenReady().then(async () => {
+    ensureDataRoot(app);
+    loadBuiltinServices(app);
+    loadInstalledPlugins(app);
+    registerIpcHandlers();
+    createWindow();
+    createAppTray();
+    buildApplicationMenu();
+    void runServiceMutation(() => runStartupPreparation(app, {
+      onModeResolved: (mode) => {
+        beginStartupRestoreSession(mode);
+      },
       onStarting: (serviceId) => {
         updateStartupRestoreService(serviceId, "starting", "启动中...");
       },
@@ -861,39 +857,31 @@ app.whenReady().then(async () => {
         updateStartupRestoreService(serviceId, phase, message);
         notifyServicesChanged();
       }
-    })
-  )
-    .then((result) => {
-      if (result.failures.length === 0 && startupRestoreState.phase === "running") {
-        commitStartupRestoreState({
-          ...startupRestoreState,
-          phase: "succeeded",
-          currentServiceId: null,
-          failedServiceId: null,
-          message: "核心服务已全部就绪。"
-        });
-      }
-      notifyServicesChanged();
-      if (result.failures.length > 0) {
-        console.error("failed to restore running services from last session", result.failures);
-      }
-    })
-    .catch((error) => {
-      if (startupRestoreState.phase === "running") {
-        commitStartupRestoreState({
-          ...startupRestoreState,
-          phase: "failed",
-          currentServiceId: null,
-          failedServiceId: startupRestoreState.currentServiceId,
-          message: error instanceof Error ? error.message : String(error)
-        });
-      }
-      console.error("failed to restore running services from last session", error);
+    }))
+      .then((result) => {
+        finishStartupRestoreSession(result.mode, result.failures);
+        notifyServicesChanged();
+        if (result.failures.length > 0) {
+          console.error("failed to prepare startup services", result.failures);
+        }
+      })
+      .catch((error) => {
+        if (startupRestoreState.phase === "running") {
+          commitStartupRestoreState({
+            ...startupRestoreState,
+            phase: "failed",
+            currentServiceId: null,
+            failedServiceId: startupRestoreState.currentServiceId,
+            message: error instanceof Error ? error.message : String(error)
+          });
+        }
+        console.error("failed to prepare startup services", error);
+      });
+    app.on("activate", () => {
+      showMainWindow();
     });
-  app.on("activate", () => {
-    showMainWindow();
   });
-});
+}
 
 app.on("before-quit", (event) => {
   if (isHandlingQuit) {

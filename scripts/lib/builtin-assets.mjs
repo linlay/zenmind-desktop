@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
@@ -28,19 +29,41 @@ function normalizeTarEntry(entry) {
   if (!trimmed) {
     return "";
   }
-  return trimmed.endsWith("/") ? trimmed : trimmed;
+  // Normalize backslashes to forward slashes for cross-platform consistency
+  return trimmed.replace(/\\/g, "/");
 }
 
 function isZipArchive(archivePath) {
   return archivePath.toLowerCase().endsWith(".zip");
 }
 
+function canUseUnzip() {
+  try {
+    execFileSync("unzip", ["-v"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function listArchiveEntries(archivePath) {
+  const execOpts = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] };
   const output = isZipArchive(archivePath)
-    ? execFileSync("unzip", ["-l", archivePath], { encoding: "utf8" })
-    : execFileSync("tar", ["-tzf", archivePath], { encoding: "utf8" });
+    ? canUseUnzip()
+      ? execFileSync("unzip", ["-l", archivePath], execOpts)
+      : execFileSync("tar", ["-tf", archivePath], execOpts)
+    : execFileSync("tar", ["-tzf", archivePath], execOpts);
 
   if (isZipArchive(archivePath)) {
+    if (!canUseUnzip()) {
+      return new Set(
+        output
+          .split(/\r?\n/u)
+          .map((entry) => normalizeTarEntry(entry))
+          .filter(Boolean)
+      );
+    }
+
     return new Set(
       output
         .split(/\r?\n/u)
@@ -62,18 +85,56 @@ export function listArchiveEntries(archivePath) {
 
 export function readManifestFromArchive(archivePath) {
   const manifestEntry = [...listArchiveEntries(archivePath)].find(
-    (entry) => entry.endsWith("/manifest.json") || entry === "manifest.json"
+    (entry) =>
+      entry === "manifest.json" ||
+      entry.endsWith("/manifest.json") ||
+      entry.endsWith("\\manifest.json")
   );
   if (!manifestEntry) {
     return null;
   }
 
-  const manifestContent = isZipArchive(archivePath)
-    ? execFileSync("unzip", ["-p", archivePath, manifestEntry], { encoding: "utf8" })
-    : execFileSync("tar", ["-xzf", archivePath, "-O", manifestEntry], {
-        encoding: "utf8"
-      });
-  return JSON.parse(manifestContent);
+  const execOpts = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] };
+  let raw;
+  if (!isZipArchive(archivePath)) {
+    raw = execFileSync("tar", ["-xzf", archivePath, "-O", manifestEntry], execOpts);
+  } else if (canUseUnzip()) {
+    // 通配符同时覆盖正斜杠（标准 zip）和反斜杠（PowerShell Compress-Archive 旧产物）
+    raw = execFileSync("unzip", ["-p", archivePath, "*manifest.json"], execOpts);
+  } else {
+    raw = execFileSync("tar", ["-xOf", archivePath, manifestEntry], execOpts);
+  }
+  const stripped = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;  // 去 UTF-8 BOM
+  return JSON.parse(stripped);
+}
+
+export function readArchiveEntryText(archivePath, entryPath) {
+  const normalizedEntryPath = normalizeTarEntry(entryPath);
+  const matchedEntry = [...listArchiveEntries(archivePath)].find((entry) => entry === normalizedEntryPath);
+  if (!matchedEntry) {
+    return null;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-archive-"));
+  try {
+    if (!isZipArchive(archivePath)) {
+      execFileSync("tar", ["-xzf", archivePath, "-C", tempRoot], { stdio: "ignore" });
+    } else if (canUseUnzip()) {
+      execFileSync("unzip", ["-qq", archivePath, "-d", tempRoot], { stdio: "ignore" });
+    } else {
+      execFileSync("tar", ["-xf", archivePath, "-C", tempRoot], { stdio: "ignore" });
+    }
+
+    const extractedPath = path.join(tempRoot, ...matchedEntry.split("/"));
+    if (!fs.existsSync(extractedPath)) {
+      return null;
+    }
+
+    const raw = fs.readFileSync(extractedPath, "utf8");
+    return raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 }
 
 function listArchivesInDirectory(directoryPath) {
@@ -235,11 +296,64 @@ export function discoverBuiltinServices({ os, arch } = {}) {
       assetFileName: path.basename(archivePath),
       bundleTopLevelDir: manifest.desktop?.bundleTopLevelDir ?? manifest.id,
       version: manifest.version,
+      platform: {
+        os: manifest.platform?.os ?? "",
+        arch: manifest.platform?.arch ?? ""
+      },
       requiredBundleEntries
     });
   }
 
-  return services;
+  const latestByServiceKey = new Map();
+  for (const service of services) {
+    const platformKey = [service.id, service.platform.os, service.platform.arch].join("|");
+    const current = latestByServiceKey.get(platformKey);
+    if (!current || compareBuiltinVersions(service.version, current.version) > 0) {
+      latestByServiceKey.set(platformKey, service);
+    }
+  }
+
+  return [...latestByServiceKey.values()].sort((left, right) => {
+    const leftKey = `${left.id}|${left.assetFileName}`;
+    const rightKey = `${right.id}|${right.assetFileName}`;
+    return leftKey.localeCompare(rightKey);
+  });
+}
+
+function normalizeBuiltinVersion(version) {
+  return version
+    .trim()
+    .replace(/^v/iu, "")
+    .split(".")
+    .map((segment) => {
+      const match = segment.match(/^(\d+)(.*)$/u);
+      if (!match) {
+        return { number: Number.NaN, suffix: segment };
+      }
+      return {
+        number: Number.parseInt(match[1], 10),
+        suffix: match[2] ?? ""
+      };
+    });
+}
+
+function compareBuiltinVersions(leftVersion, rightVersion) {
+  const left = normalizeBuiltinVersion(leftVersion);
+  const right = normalizeBuiltinVersion(rightVersion);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = left[index] ?? { number: 0, suffix: "" };
+    const rightPart = right[index] ?? { number: 0, suffix: "" };
+    const leftNumber = Number.isFinite(leftPart.number) ? leftPart.number : -1;
+    const rightNumber = Number.isFinite(rightPart.number) ? rightPart.number : -1;
+    if (leftNumber !== rightNumber) {
+      return leftNumber - rightNumber;
+    }
+    if (leftPart.suffix !== rightPart.suffix) {
+      return leftPart.suffix.localeCompare(rightPart.suffix);
+    }
+  }
+  return 0;
 }
 
 export const builtinServices = discoverBuiltinServices();
@@ -253,6 +367,87 @@ export function findMissingBundleEntries(service, entries) {
     const normalizedPrefix = expectedPath.endsWith("/") ? expectedPath : `${expectedPath}/`;
     return ![...entries].some((entry) => entry.startsWith(normalizedPrefix));
   });
+}
+
+function validateAgentPlatformBundleArchive(service, archivePath) {
+  const manifest = readManifestFromArchive(archivePath);
+  const disallowedLegacyEnvBindings = new Set([
+    "AGENT_CONTAINER_HUB_BASE_URL",
+    "AGENT_AUTH_ENABLED",
+    "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE"
+  ]);
+  const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
+    ? manifest.desktop.envBindings
+      .map((binding) => (binding && typeof binding.key === "string" ? binding.key.trim() : ""))
+      .filter(Boolean)
+    : [];
+  const legacyEnvBinding = envBindingKeys.find((key) => disallowedLegacyEnvBindings.has(key));
+  if (legacyEnvBinding) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Detected legacy desktop env binding ${legacyEnvBinding} in manifest.json.\n` +
+        `This usually means a pre-runtime or stale agent-platform bundle was selected instead of the clean Desktop release bundle.`
+    );
+  }
+
+  const programCommonPath = `${service.bundleTopLevelDir}/scripts/program-common.sh`;
+  const programCommon = readArchiveEntryText(archivePath, programCommonPath);
+  if (
+    programCommon &&
+    programCommon.includes('LOCAL_CLI_ACP_RELAY_ENABLED="${LOCAL_CLI_ACP_RELAY_ENABLED:-true}"')
+  ) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Detected a legacy agent-platform relay default that enables LOCAL_CLI_ACP_RELAY on fresh installs.\n` +
+        `Please rebuild or reselect the clean Desktop release bundle where the relay default is false.`
+    );
+  }
+}
+
+function validateZenmindAppServerBundleArchive(service, archivePath) {
+  const envExamplePath = `${service.bundleTopLevelDir}/.env.example`;
+  const envExample = readArchiveEntryText(archivePath, envExamplePath);
+  if (!envExample || !envExample.includes("FRONTEND_DIST_DIR=./frontend/dist")) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Detected a stale zenmind-app-server env template without FRONTEND_DIST_DIR=./frontend/dist.\n` +
+        `Please rebuild or reselect the Desktop-ready program bundle.`
+    );
+  }
+
+  const isWindowsArchive = archivePath.endsWith(".zip");
+  const programCommonPath = isWindowsArchive
+    ? `${service.bundleTopLevelDir}/scripts/program-common.ps1`
+    : `${service.bundleTopLevelDir}/scripts/program-common.sh`;
+  const programCommon = readArchiveEntryText(archivePath, programCommonPath);
+  if (!programCommon) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Missing ${programCommonPath} in the Desktop-ready program bundle.`
+    );
+  }
+
+  if (isWindowsArchive) {
+    if (!programCommon.includes("Resolve-ProgramFrontendDistDir") || !programCommon.includes("$env:FRONTEND_DIST_DIR")) {
+      throw new Error(
+        `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+          `Detected a stale zenmind-app-server Windows launcher without FRONTEND_DIST_DIR handling.\n` +
+          `Please rebuild or reselect the Desktop-ready program bundle.`
+      );
+    }
+    return;
+  }
+
+  if (
+    !programCommon.includes('FRONTEND_DIST_DIR="${FRONTEND_DIST_DIR:-./frontend/dist}"') ||
+    !programCommon.includes('nohup "$BACKEND_BIN"')
+  ) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Detected a stale zenmind-app-server launcher without Desktop compatibility markers.\n` +
+        `Please rebuild or reselect the Desktop-ready program bundle.`
+    );
+  }
 }
 
 export function validateBundleArchive(service, archivePath) {
@@ -274,6 +469,13 @@ export function validateBundleArchive(service, archivePath) {
         `Please regenerate the upstream release bundle, for example:\n` +
         `cd ${serviceRoot} && make release-program`
     );
+  }
+
+  if (service.id === "agent-platform") {
+    validateAgentPlatformBundleArchive(service, archivePath);
+  }
+  if (service.id === "zenmind-app-server") {
+    validateZenmindAppServerBundleArchive(service, archivePath);
   }
 }
 

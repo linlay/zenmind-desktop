@@ -253,7 +253,7 @@ export function SettingsPage({
               <input
                 value={customSidebarLabel}
                 onChange={(event) => setCustomSidebarLabel(event.target.value)}
-                placeholder="例如：Jira、知识库"
+                placeholder="例如：官网、知识库"
                 maxLength={24}
               />
             </label>
@@ -266,9 +266,11 @@ export function SettingsPage({
                 required
               />
             </label>
-            <button type="submit" className="action-button custom-sidebar-submit" disabled={customSidebarPending}>
-              {customSidebarPending ? "添加中..." : "添加到侧边栏"}
-            </button>
+            <div className="custom-sidebar-submit-wrap">
+              <button type="submit" className="text-button custom-sidebar-submit" disabled={customSidebarPending}>
+                {customSidebarPending ? "添加中..." : "添加到侧边栏"}
+              </button>
+            </div>
           </form>
 
           <div className="custom-sidebar-list-head">
