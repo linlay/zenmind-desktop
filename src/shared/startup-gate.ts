@@ -1,4 +1,4 @@
-import type { ServiceState } from "./contracts";
+import type { ServiceState, StartupRestoreState } from "./contracts";
 
 const STARTUP_WAITING_STATUSES = new Set<ServiceState["status"]>([
   "not-installed",
@@ -24,4 +24,38 @@ export function getStartupBlockingService(startupServices: Array<ServiceState | 
     return null;
   }
   return startupServices.find((service) => service !== null && STARTUP_BLOCKING_STATUSES.has(service.status)) ?? null;
+}
+
+export function shouldShowStartupProgressCard(
+  startupRestoreState: StartupRestoreState | null,
+  startupAllReady: boolean
+) {
+  if (!startupRestoreState || startupRestoreState.mode !== "bootstrap") {
+    return false;
+  }
+
+  return (
+    startupRestoreState.phase === "idle" ||
+    startupRestoreState.phase === "running" ||
+    startupRestoreState.phase === "failed" ||
+    (startupRestoreState.phase === "succeeded" && !startupAllReady)
+  );
+}
+
+export function shouldAutoOpenAssistant(startupRestoreState: StartupRestoreState | null, startupAllReady: boolean) {
+  return startupRestoreState?.mode === "bootstrap" &&
+    startupRestoreState.phase === "succeeded" &&
+    startupAllReady;
+}
+
+export function resolveStartupRootPath(startupRestoreState: StartupRestoreState | null, startupAllReady: boolean) {
+  if (!startupRestoreState) {
+    return null;
+  }
+
+  if (startupRestoreState.mode === "bootstrap" && !startupAllReady) {
+    return "/control-center";
+  }
+
+  return "/plugin/agent-webclient";
 }

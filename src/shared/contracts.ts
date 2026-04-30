@@ -217,8 +217,16 @@ export interface PluginInstallResult {
 export type NavigateListener = (path: string) => void;
 export type ServicesChangedListener = () => void;
 
+export type StartupRestoreMode = "restore" | "bootstrap";
 export type StartupRestorePhase = "idle" | "running" | "succeeded" | "failed";
-export type StartupRestoreServicePhase = "pending" | "starting" | "succeeded" | "failed" | "skipped";
+export type StartupRestoreServicePhase =
+  | "pending"
+  | "installing"
+  | "initializing"
+  | "starting"
+  | "succeeded"
+  | "failed"
+  | "skipped";
 
 export interface StartupRestoreServiceState {
   serviceId: ServiceId;
@@ -227,6 +235,7 @@ export interface StartupRestoreServiceState {
 }
 
 export interface StartupRestoreState {
+  mode: StartupRestoreMode;
   phase: StartupRestorePhase;
   serviceOrder: ServiceId[];
   currentServiceId: ServiceId | null;
@@ -295,12 +304,12 @@ export interface AssistantWorkerOpenRequest {
 
 export type AssistantWorkerOpenListener = (request: AssistantWorkerOpenRequest) => void;
 
-export interface WebviewPopupNavigateRequest {
-  guestId: number;
+export interface WebviewOpenTabRequest {
+  sourceGuestId: number;
   url: string;
 }
 
-export type WebviewPopupNavigateListener = (request: WebviewPopupNavigateRequest) => void;
+export type WebviewOpenTabListener = (request: WebviewOpenTabRequest) => void;
 
 export interface DesktopApi {
   clipboard: {
@@ -353,5 +362,5 @@ export interface DesktopApi {
   onServicesChanged: (listener: ServicesChangedListener) => () => void;
   onStartupRestoreState: (listener: StartupRestoreStateListener) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
-  onWebviewPopupNavigate: (listener: WebviewPopupNavigateListener) => () => void;
+  onWebviewOpenTab: (listener: WebviewOpenTabListener) => () => void;
 }

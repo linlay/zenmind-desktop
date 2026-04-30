@@ -871,7 +871,7 @@ export function ControlCenterPage() {
           label: "日志文件",
           value: activeDetailService.healthMeta.logFilePath || "未声明",
           title: activeDetailService.healthMeta.logFilePath || "未声明",
-          actionLabel: activeDetailService.healthMeta.logFilePath ? "打开" : undefined,
+          actionLabel: activeDetailService.healthMeta.logFilePath ? "查看日志" : undefined,
           onAction: activeDetailService.healthMeta.logFilePath
             ? () =>
                 void openLogViewer(
@@ -886,7 +886,7 @@ export function ControlCenterPage() {
           label: "错误日志",
           value: errorLogDisplay,
           title: errorLogDisplay,
-          actionLabel: activeDetailService.healthMeta.errorLogFilePath ? "打开" : undefined,
+          actionLabel: activeDetailService.healthMeta.errorLogFilePath ? "查看日志" : undefined,
           onAction: activeDetailService.healthMeta.errorLogFilePath
             ? () =>
                 void openLogViewer(
@@ -1072,17 +1072,16 @@ export function ControlCenterPage() {
                   <span
                     className="service-inline-meta-value truncated-hover-value"
                     data-full-value={detailEndpoint}
-                    title={detailEndpoint}
                   >
                     <span className="truncated-hover-text">{detailEndpoint}</span>
                   </span>
                   {activeDetailService.frontendMode !== "none" && activeDetailService.status === "running" ? (
                     <button
                       type="button"
-                      className="action-button service-inline-meta-open"
+                      className="text-button control-center-link-action service-inline-meta-open"
                       onClick={() => navigate(`/plugin/${activeDetailService.id}`)}
                     >
-                      打开
+                      查看
                     </button>
                   ) : null}
                 </div>
@@ -1091,13 +1090,16 @@ export function ControlCenterPage() {
 
             <dl className="meta-grid">
               {metaItems.map((item) => (
-                <div key={item.key} className="meta-grid-item">
+                <div
+                  key={item.key}
+                  className={`meta-grid-item${item.actionLabel && item.onAction ? " has-action" : ""}`}
+                >
                   <div className="meta-grid-head">
                     <dt>{item.label}</dt>
                     {item.actionLabel && item.onAction ? (
                       <button
                         type="button"
-                        className="action-button meta-grid-action"
+                        className="text-button control-center-link-action meta-grid-action"
                         onClick={item.onAction}
                         disabled={item.disabled}
                       >
@@ -1108,7 +1110,6 @@ export function ControlCenterPage() {
                   <dd
                     className="truncated-hover-value"
                     data-full-value={item.title || item.value}
-                    title={item.title || item.value}
                   >
                     <span className="truncated-hover-text">{item.value}</span>
                   </dd>

@@ -8,6 +8,7 @@ import {
   builtinServices,
   discoverBuiltinServices,
   listArchiveEntries,
+  readArchiveEntryText,
   readManifestFromArchive,
   syncBuiltinAssets,
   validateBundleArchive
@@ -227,6 +228,33 @@ test("actual synced agent-platform asset includes required entries", () => {
   }
 });
 
+test("actual synced agent-platform asset keeps relay disabled by default for fresh Desktop installs", () => {
+  const { assetPath } = getSyncedAsset("agent-platform");
+  const manifest = readManifestFromArchive(assetPath);
+  const programCommon = readArchiveEntryText(assetPath, "agent-platform/scripts/program-common.sh");
+
+  assert.ok(programCommon, "expected bundled agent-platform program-common.sh to be readable");
+  assert.match(
+    programCommon,
+    /LOCAL_CLI_ACP_RELAY_ENABLED="\$\{LOCAL_CLI_ACP_RELAY_ENABLED:-false\}"/
+  );
+  assert.ok(
+    Array.isArray(manifest?.desktop?.envBindings),
+    "expected bundled agent-platform manifest to declare desktop env bindings"
+  );
+  const disallowedLegacyEnvBindings = new Set([
+    "AGENT_CONTAINER_HUB_BASE_URL",
+    "AGENT_AUTH_ENABLED",
+    "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE"
+  ]);
+  assert.ok(
+    manifest.desktop.envBindings.every(
+      (binding) => typeof binding?.key === "string" && !disallowedLegacyEnvBindings.has(binding.key)
+    ),
+    "expected bundled agent-platform manifest to avoid legacy desktop env bindings"
+  );
+});
+
 test("validateBundleArchive fails when required entries are missing", () => {
   const service = builtinServices.find((item) => item.id === "agent-platform");
   assert.ok(service);
@@ -239,6 +267,47 @@ test("validateBundleArchive fails when required entries are missing", () => {
   assert.throws(
     () => validateBundleArchive(service, fixture.tarPath),
     /Missing required entries: .*start\.sh/
+  );
+
+  fs.rmSync(fixture.root, { recursive: true, force: true });
+});
+
+test("validateBundleArchive rejects legacy agent-platform bundles that enable relay by default", () => {
+  const service = builtinServices.find((item) => item.id === "agent-platform");
+  assert.ok(service);
+
+  const fixture = createTarBundle(service, {
+    "backend/agent-platform-runner": "binary\n",
+    "local-cli-acp-relay/relay.mjs": "console.log('relay');\n",
+    "start.sh": "#!/usr/bin/env bash\nexit 0\n",
+    "stop.sh": "#!/usr/bin/env bash\nexit 0\n",
+    "deploy.sh": "#!/usr/bin/env bash\nexit 0\n",
+    "scripts/program-common.sh": 'LOCAL_CLI_ACP_RELAY_ENABLED="${LOCAL_CLI_ACP_RELAY_ENABLED:-true}"\n',
+    ".env.example": "# LOCAL_CLI_ACP_RELAY_ENABLED=true\n",
+    "configs/container-hub.example.yml": "containerHub: {}\n",
+    "runtime/registries/providers/.keep": "\n",
+    "manifest.json": JSON.stringify({
+      id: "agent-platform",
+      kind: "builtin",
+      version: "v0.1.1",
+      runtime: {
+        requiredPaths: service.requiredBundleEntries
+      },
+      desktop: {
+        bundleTopLevelDir: service.bundleTopLevelDir,
+        envBindings: [
+          {
+            key: "AGENT_AUTH_ENABLED",
+            value: "true"
+          }
+        ]
+      }
+    })
+  });
+
+  assert.throws(
+    () => validateBundleArchive(service, fixture.tarPath),
+    /legacy agent-platform relay default|legacy desktop env binding/
   );
 
   fs.rmSync(fixture.root, { recursive: true, force: true });
@@ -357,5 +426,43 @@ test("ZENMIND_BUILTIN_ASSETS_SOURCE overrides workspace fallback and syncs built
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
     fs.rmSync(fallbackArchivePath, { force: true });
+  }
+});
+
+test("discoverBuiltinServices keeps only the newest version per service and platform", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-latest-"));
+  const sourceRoot = path.join(tempRoot, "source");
+  const serviceDir = path.join(sourceRoot, "latest-only-service");
+  const platform = {
+    os: "latest-only-os",
+    arch: "latest-only-arch"
+  };
+
+  writeBuiltinTarArchive({
+    archivePath: path.join(serviceDir, "latest-only-service-v0.1.0.tar.gz"),
+    id: "latest-only-service",
+    version: "v0.1.0",
+    os: platform.os,
+    arch: platform.arch,
+    assetFileName: "latest-only-service-v0.1.0.tar.gz"
+  });
+  writeBuiltinTarArchive({
+    archivePath: path.join(serviceDir, "latest-only-service-v0.2.0.tar.gz"),
+    id: "latest-only-service",
+    version: "v0.2.0",
+    os: platform.os,
+    arch: platform.arch,
+    assetFileName: "latest-only-service-v0.2.0.tar.gz"
+  });
+
+  try {
+    const services = withEnv(BUILTIN_ASSETS_SOURCE_ENV, sourceRoot, () =>
+      discoverBuiltinServices(platform)
+    );
+    assert.equal(services.length, 1);
+    assert.equal(services[0].version, "v0.2.0");
+    assert.equal(services[0].assetFileName, "latest-only-service-v0.2.0.tar.gz");
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });

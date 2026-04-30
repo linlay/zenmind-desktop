@@ -16,6 +16,7 @@ const childProcess = require("node:child_process");
     installBuiltinService,
     readServiceLog,
     readServiceConfig,
+    runStartupPreparation,
     restoreRunningServices,
     startService
 } = require("../dist-electron/main/service-manager.js");
@@ -262,6 +263,273 @@ function createBuiltinRestoreFixture() {
     tempRoot,
     assetsRoot
   };
+}
+
+function createStartupCoreAssetsFixture(options = {}) {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-startup-core-assets-"));
+  const assetsRoot = path.join(tempRoot, "assets");
+  const isWindows = process.platform === "win32";
+  const portBase = 28000 + Math.floor(Math.random() * 2000);
+  const services = [
+    {
+      id: "zenmind-app-server",
+      name: "认证服务",
+      frontend: { mode: "standalone", entry: "/admin/" },
+      web: { routePath: "/admin/", portEnvKey: "SERVER_PORT", defaultPort: portBase + 2 },
+      envExample: `SERVER_PORT=${portBase + 2}\nFRONTEND_DIST_DIR=./frontend/dist\n`,
+      extraPaths: [["frontend", "dist"], ["scripts"]]
+    },
+    {
+      id: "agent-platform",
+      name: "智能体平台",
+      frontend: { mode: "none" },
+      web: { routePath: "", portEnvKey: "SERVER_PORT", defaultPort: portBase + 1 },
+      envExample: `SERVER_PORT=${portBase + 1}\n`,
+      extraPaths: [["configs"], ["runtime"], ["scripts"]]
+    },
+    {
+      id: "agent-webclient",
+      name: "小宅助理",
+      frontend: { mode: "standalone", entry: "/" },
+      web: { routePath: "/", portEnvKey: "PORT", defaultPort: portBase },
+      envExample: `PORT=${portBase}\n`,
+      extraPaths: [["backend"], ["frontend", "dist"], ["scripts"]]
+    }
+  ];
+
+  for (const service of services) {
+    const bundleRoot = path.join(tempRoot, service.id);
+    const assetDir = path.join(assetsRoot, service.id);
+    const archiveFileName = isWindows
+      ? `${service.id}-v1.0.0-windows-amd64.zip`
+      : `${service.id}-v1.0.0-darwin-arm64.tar.gz`;
+    const archivePath = path.join(assetDir, archiveFileName);
+
+    for (const segments of service.extraPaths) {
+      fs.mkdirSync(path.join(bundleRoot, ...segments), { recursive: true });
+    }
+    fs.mkdirSync(path.join(bundleRoot, "run"), { recursive: true });
+    fs.mkdirSync(assetDir, { recursive: true });
+
+    if (service.id === "agent-webclient") {
+      fs.writeFileSync(
+        path.join(bundleRoot, "backend", "server.js"),
+        [
+          "const http = require('http');",
+          "const https = require('https');",
+          "const server = http.createServer();",
+          "function createWebSocketProxy() {",
+          "  return (secure ? https : http).request;",
+          "}",
+          "server.on('upgrade', () => {});",
+          "module.exports = { createWebSocketProxy };"
+        ].join("\n") + "\n",
+        "utf8"
+      );
+      fs.writeFileSync(path.join(bundleRoot, "frontend", "dist", "index.html"), "<html></html>\n", "utf8");
+    }
+    if (service.id === "zenmind-app-server") {
+      fs.writeFileSync(
+        path.join(bundleRoot, "frontend", "dist", "index.html"),
+        [
+          "<!doctype html>",
+          "<html>",
+          "<head>",
+          "  <script type=\"module\" src=\"/admin/assets/index.js\"></script>",
+          "  <link rel=\"stylesheet\" href=\"/admin/assets/index.css\">",
+          "</head>",
+          "<body></body>",
+          "</html>"
+        ].join("\n") + "\n",
+        "utf8"
+      );
+    }
+
+    const pidRelativePath = path.join("run", `${service.id}.pid`);
+    const startFileName = isWindows ? "start.ps1" : "start.sh";
+    const stopFileName = isWindows ? "stop.ps1" : "stop.sh";
+    const programCommonName = isWindows ? "program-common.ps1" : "program-common.sh";
+
+    if (isWindows) {
+      fs.writeFileSync(
+        path.join(bundleRoot, startFileName),
+        [
+          "$runDir = Join-Path $PSScriptRoot 'run'",
+          "New-Item -ItemType Directory -Path $runDir -Force | Out-Null",
+          options.failOnStartServiceId === service.id
+            ? "throw 'fixture start failure'"
+            : [
+                "$proc = Start-Process -FilePath powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','Start-Sleep -Seconds 300' -WindowStyle Hidden -PassThru",
+                `$proc.Id | Set-Content -LiteralPath (Join-Path $PSScriptRoot '${pidRelativePath.replace(/\\/g, "/")}')`,
+                "Set-Content -LiteralPath (Join-Path $runDir 'started.txt') -Value 'started'"
+              ].join("\r\n")
+        ].join("\r\n"),
+        "utf8"
+      );
+      fs.writeFileSync(
+        path.join(bundleRoot, stopFileName),
+        [
+          `$pidFile = Join-Path $PSScriptRoot '${pidRelativePath.replace(/\\/g, "/")}'`,
+          "if (Test-Path -LiteralPath $pidFile) {",
+          "  $pidValue = (Get-Content -LiteralPath $pidFile -Raw).Trim()",
+          "  if ($pidValue) { Stop-Process -Id ([int]$pidValue) -ErrorAction SilentlyContinue }",
+          "  Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue",
+          "}"
+        ].join("\r\n"),
+        "utf8"
+      );
+      fs.writeFileSync(path.join(bundleRoot, "scripts", programCommonName), "# fixture\r\n", "utf8");
+    } else {
+      fs.writeFileSync(
+        path.join(bundleRoot, startFileName),
+        [
+          "#!/usr/bin/env bash",
+          "set -euo pipefail",
+          "mkdir -p run",
+          options.failOnStartServiceId === service.id
+            ? "echo fixture start failure >&2\nexit 1"
+            : [
+                `node -e "setInterval(() => {}, 1000)" >/dev/null 2>&1 &`,
+                `echo $! > ${pidRelativePath}`,
+                "printf started > run/started.txt"
+              ].join("\n")
+        ].join("\n"),
+        "utf8"
+      );
+      fs.writeFileSync(
+        path.join(bundleRoot, stopFileName),
+        [
+          "#!/usr/bin/env bash",
+          "set -euo pipefail",
+          `if [ -f "${pidRelativePath}" ]; then`,
+          `  kill "$(cat "${pidRelativePath}")" >/dev/null 2>&1 || true`,
+          `  rm -f "${pidRelativePath}"`,
+          "fi"
+        ].join("\n"),
+        "utf8"
+      );
+      const programCommonContent = service.id === "zenmind-app-server"
+        ? [
+            "#!/usr/bin/env bash",
+            'FRONTEND_DIST_DIR="${FRONTEND_DIST_DIR:-./frontend/dist}"',
+            'nohup "$BACKEND_BIN" >/dev/null 2>&1 &'
+          ].join("\n") + "\n"
+        : "#!/usr/bin/env bash\n";
+      fs.writeFileSync(path.join(bundleRoot, "scripts", programCommonName), programCommonContent, "utf8");
+      fs.chmodSync(path.join(bundleRoot, startFileName), 0o755);
+      fs.chmodSync(path.join(bundleRoot, stopFileName), 0o755);
+      fs.chmodSync(path.join(bundleRoot, "scripts", programCommonName), 0o755);
+    }
+
+    fs.writeFileSync(path.join(bundleRoot, ".env.example"), service.envExample, "utf8");
+    fs.writeFileSync(
+      path.join(bundleRoot, "manifest.json"),
+      `${JSON.stringify({
+        id: service.id,
+        name: service.name,
+        kind: "builtin",
+        version: "v1.0.0",
+        description: "fixture",
+        frontend: service.frontend,
+        scripts: {
+          start: startFileName,
+          stop: stopFileName
+        },
+        configFiles: [
+          {
+            key: "env",
+            label: ".env",
+            relativePath: ".env",
+            templateRelativePath: ".env.example",
+            required: true
+          }
+        ],
+        runtime: {
+          pidRelativePath,
+          requiredPaths: [
+            startFileName,
+            stopFileName,
+            path.join("scripts", programCommonName),
+            ".env.example",
+            "manifest.json",
+            ...(service.id === "agent-platform" ? ["configs", "runtime"] : []),
+            ...(service.id === "agent-webclient" ? [path.join("backend", "server.js"), path.join("frontend", "dist", "index.html")] : []),
+            ...(service.id === "zenmind-app-server" ? [path.join("frontend", "dist", "index.html")] : [])
+          ]
+        },
+        web: service.web,
+        desktop: {
+          assetFileName: archiveFileName,
+          bundleTopLevelDir: service.id
+        }
+      }, null, 2)}\n`,
+      "utf8"
+    );
+
+    if (isWindows) {
+      execFileSync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          `Compress-Archive -Path '${service.id}' -DestinationPath '${archivePath.replace(/'/g, "''")}' -Force`
+        ],
+        { cwd: tempRoot }
+      );
+    } else {
+      execFileSync("tar", ["-czf", archivePath, "-C", tempRoot, service.id]);
+    }
+  }
+
+  return {
+    tempRoot,
+    assetsRoot
+  };
+}
+
+async function stopStartupCoreProcesses(app) {
+  for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    try {
+      const state = await getServiceState(app, serviceId);
+      if (state.status === "running") {
+        const pid = state.healthMeta.pid;
+        if (pid) {
+          try {
+            process.kill(pid);
+          } catch {
+            // Process may already be gone during fixture cleanup.
+          }
+        }
+      }
+    } catch {
+      // Ignore cleanup failures for synthetic fixtures.
+    }
+  }
+}
+
+function isPidRunning(pid) {
+  if (!pid) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForPidExit(pid) {
+  for (let i = 0; i < 20; i += 1) {
+    if (!isPidRunning(pid)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
 }
 
 function createApp(userDataRoot, options = {}) {
@@ -590,6 +858,36 @@ test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys and
   assert.doesNotMatch(next, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
   assert.doesNotMatch(next, /^RUNTIME_DIR=/m);
   assert.doesNotMatch(next, /^GATEWAY_WS_URL=/m);
+});
+
+test("normalizeAgentPlatformEnvContentForRuntime removes legacy chat ticket gates and ignores placeholder image secrets", () => {
+  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
+    [
+      "HOST_PORT=11949",
+      "CHAT_RESOURCE_TICKET_ENABLED=true",
+      "CHAT_IMAGE_TOKEN_SECRET=replace-with-your-chat-image-token-secret"
+    ].join("\n")
+  );
+
+  assert.match(next, /^HOST_PORT=11949$/m);
+  assert.doesNotMatch(next, /^CHAT_RESOURCE_TICKET_ENABLED=/m);
+  assert.doesNotMatch(next, /^CHAT_IMAGE_TOKEN_SECRET=/m);
+  assert.doesNotMatch(next, /^CHAT_RESOURCE_TICKET_SECRET=/m);
+});
+
+test("normalizeAgentPlatformEnvContentForRuntime migrates real legacy image token secrets to resource ticket config", () => {
+  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
+    [
+      "HOST_PORT=11949",
+      "CHAT_IMAGE_TOKEN_SECRET=my-secret",
+      "CHAT_IMAGE_TOKEN_TTL_SECONDS=300"
+    ].join("\n")
+  );
+
+  assert.match(next, /^CHAT_RESOURCE_TICKET_SECRET=my-secret$/m);
+  assert.match(next, /^CHAT_RESOURCE_TICKET_TTL_SECONDS=300$/m);
+  assert.doesNotMatch(next, /^CHAT_IMAGE_TOKEN_SECRET=/m);
+  assert.doesNotMatch(next, /^CHAT_IMAGE_TOKEN_TTL_SECONDS=/m);
 });
 
 test("service install dir follows userData/services/<id>/<version>", () => {
@@ -1049,6 +1347,53 @@ test("installBuiltinService migrates env from sibling version directories and re
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("installBuiltinService normalizes preserved agent-platform env from current and sibling installs", async () => {
+  for (const source of ["current-version", "sibling-version"]) {
+    const fixture = createStartupCoreAssetsFixture();
+    const userDataRoot = path.join(fixture.tempRoot, "user-data");
+    const homeRoot = path.join(fixture.tempRoot, "home");
+    const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, {
+      homePath: homeRoot,
+      desktopPath: path.join(homeRoot, "Desktop")
+    });
+    const service = getBuiltinService("agent-platform");
+    const installDir = getInstallDir(app, service);
+    const sourceDir = source === "current-version"
+      ? installDir
+      : path.join(userDataRoot, "services", service.id, "v0.9.0");
+    const legacyEnv = [
+      "HOST_PORT=11949",
+      "CHAT_RESOURCE_TICKET_ENABLED=true",
+      "CHAT_IMAGE_TOKEN_SECRET=my-secret",
+      "CHAT_IMAGE_TOKEN_TTL_SECONDS=300"
+    ].join("\n") + "\n";
+
+    fs.mkdirSync(sourceDir, { recursive: true });
+    fs.writeFileSync(path.join(sourceDir, ".env"), legacyEnv, "utf8");
+
+    try {
+      await installBuiltinService(app, service.id);
+
+      const envContent = fs.readFileSync(path.join(installDir, ".env"), "utf8");
+      assert.match(envContent, /^CHAT_RESOURCE_TICKET_SECRET=my-secret$/m);
+      assert.match(envContent, /^CHAT_RESOURCE_TICKET_TTL_SECONDS=300$/m);
+      assert.doesNotMatch(envContent, /^CHAT_RESOURCE_TICKET_ENABLED=/m);
+      assert.doesNotMatch(envContent, /^CHAT_IMAGE_TOKEN_SECRET=/m);
+      assert.doesNotMatch(envContent, /^CHAT_IMAGE_TOKEN_TTL_SECONDS=/m);
+      assert.equal(
+        fs.readFileSync(path.join(installDir, ".env.legacy-backup"), "utf8"),
+        legacyEnv
+      );
+      if (source === "sibling-version") {
+        assert.equal(fs.existsSync(sourceDir), false);
+      }
+    } finally {
+      restore();
+      fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+    }
+  }
 });
 
 test("getServiceState exposes runtime error log path when manifest defines it", async () => {
@@ -1711,7 +2056,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   fs.writeFileSync(path.join(hubInstallDir, ".env"), "BIND_ADDR=0.0.0.0:12960\n", "utf8");
   fs.writeFileSync(
     path.join(platformInstallDir, ".env"),
-    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nLOCAL_CLI_ACP_RELAY_PORT=3210\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n",
+    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nCHAT_RESOURCE_TICKET_ENABLED=true\nCHAT_IMAGE_TOKEN_SECRET=replace-with-your-chat-image-token-secret\nLOCAL_CLI_ACP_RELAY_PORT=3210\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n",
     "utf8"
   );
   fs.mkdirSync(codeAssistantDir, { recursive: true });
@@ -1739,12 +2084,20 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   assert.match(envContent, /^AGENT_WS_ENABLED=true$/m);
   assert.match(envContent, /^AUTH_ENABLED=true$/m);
   assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
+  assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
   assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_ENABLED=false$/m);
   assert.doesNotMatch(envContent, /^GATEWAY_WS_URL=/m);
   assert.doesNotMatch(envContent, /^GATEWAY_USER_ID=/m);
   assert.doesNotMatch(envContent, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
   assert.doesNotMatch(envContent, /^AGENT_AUTH_ENABLED=/m);
   assert.doesNotMatch(envContent, /^AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
+  assert.doesNotMatch(envContent, /^CHAT_RESOURCE_TICKET_ENABLED=/m);
+  assert.doesNotMatch(envContent, /^CHAT_IMAGE_TOKEN_SECRET=/m);
+  assert.doesNotMatch(envContent, /^CHAT_RESOURCE_TICKET_SECRET=/m);
+  assert.match(
+    fs.readFileSync(path.join(platformInstallDir, ".env.legacy-backup"), "utf8"),
+    /^CHAT_RESOURCE_TICKET_ENABLED=true$/m
+  );
 
   const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
   assert.match(
@@ -1844,6 +2197,46 @@ test("ensurePreStartRequirements preserves custom relay port and custom codeAssi
   const agentConfigContent = fs.readFileSync(codeAssistantConfigPath, "utf8");
   assert.match(agentConfigContent, /baseUrl: http:\/\/127\.0\.0\.1:4555/);
   assert.doesNotMatch(agentConfigContent, /3220/);
+
+  restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("ensurePreStartRequirements preserves a custom provider api key env part", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-provider-key-part-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+
+  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(platformInstallDir, ".env"),
+    [
+      "HOST_PORT=11949",
+      "PROVIDER_APIKEY_KEY_PART=custom-key-part"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const previousHome = process.env.HOME;
+  process.env.HOME = homeRoot;
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+  }
+
+  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+  assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=custom-key-part$/m);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -2259,6 +2652,136 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("ensurePreStartRequirements refreshes stale zenmind-app-server install when admin frontend paths drift", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-app-server-prestart-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const fixture = createStartupCoreAssetsFixture();
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
+  const service = getBuiltinService("zenmind-app-server");
+  const installDir = path.join(userDataRoot, "services", service.id, service.version);
+
+  await installBuiltinService(app, service.id);
+  const installedManifestPath = path.join(installDir, "manifest.json");
+  const installedManifest = JSON.parse(fs.readFileSync(installedManifestPath, "utf8"));
+  fs.writeFileSync(
+    installedManifestPath,
+    JSON.stringify({
+      ...installedManifest,
+      frontend: {
+        ...installedManifest.frontend,
+        entry: "/"
+      },
+      web: {
+        ...installedManifest.web,
+        routePath: "/"
+      }
+    }, null, 2),
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(installDir, "frontend", "dist", "index.html"),
+    "<!doctype html><html><head><script type=\"module\" src=\"/assets/index.js\"></script></head><body></body></html>\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(installDir, ".env"),
+    `SERVER_PORT=${service.web.defaultPort}\n`,
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(installDir, "scripts", "program-common.sh"),
+    "#!/usr/bin/env bash\n\"$BACKEND_BIN\" >\"$BACKEND_LOG\" 2>&1 &\n",
+    "utf8"
+  );
+
+  assert.equal(__testInternals.zenmindAppServerInstallNeedsRefresh(installDir), true);
+
+  await __testInternals.ensurePreStartRequirements(app, service);
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
+  const indexContent = fs.readFileSync(path.join(installDir, "frontend", "dist", "index.html"), "utf8");
+  const envContent = fs.readFileSync(path.join(installDir, ".env"), "utf8");
+  const programCommon = fs.readFileSync(path.join(installDir, "scripts", "program-common.sh"), "utf8");
+  assert.equal(manifest.frontend.entry, "/admin/");
+  assert.equal(manifest.web.routePath, "/admin/");
+  assert.match(indexContent, /\/admin\/assets\//);
+  assert.match(envContent, /FRONTEND_DIST_DIR=\.\/frontend\/dist/);
+  assert.match(programCommon, /nohup "\$BACKEND_BIN"/);
+  assert.equal(__testInternals.zenmindAppServerInstallNeedsRefresh(installDir), false);
+
+  restore();
+  fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("startService refreshes a stale running zenmind-app-server install before reusing it", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const service = getBuiltinService("zenmind-app-server");
+  const installDir = path.join(userDataRoot, "services", service.id, service.version);
+
+  try {
+    await installBuiltinService(app, service.id);
+    const firstStart = await startService(app, service.id);
+    assert.equal(firstStart.ok, true);
+    assert.equal(firstStart.service.status, "running");
+    const oldPid = firstStart.service.healthMeta.pid;
+    assert.ok(oldPid, "expected first start to record a pid");
+
+    const installedManifestPath = path.join(installDir, "manifest.json");
+    const installedManifest = JSON.parse(fs.readFileSync(installedManifestPath, "utf8"));
+    fs.writeFileSync(
+      installedManifestPath,
+      JSON.stringify({
+        ...installedManifest,
+        frontend: {
+          ...installedManifest.frontend,
+          entry: "/"
+        },
+        web: {
+          ...installedManifest.web,
+          routePath: "/"
+        }
+      }, null, 2),
+      "utf8"
+    );
+    fs.writeFileSync(
+      path.join(installDir, "frontend", "dist", "index.html"),
+      "<!doctype html><html><head><script type=\"module\" src=\"/assets/index.js\"></script></head><body></body></html>\n",
+      "utf8"
+    );
+    fs.writeFileSync(
+      path.join(installDir, ".env"),
+      `SERVER_PORT=${service.web.defaultPort}\n`,
+      "utf8"
+    );
+    fs.writeFileSync(
+      path.join(installDir, "scripts", "program-common.sh"),
+      "#!/usr/bin/env bash\n\"$BACKEND_BIN\" >\"$BACKEND_LOG\" 2>&1 &\n",
+      "utf8"
+    );
+
+    const secondStart = await startService(app, service.id);
+    assert.equal(secondStart.ok, true);
+    assert.equal(secondStart.service.status, "running");
+    assert.notEqual(secondStart.service.healthMeta.pid, oldPid);
+    assert.equal(await waitForPidExit(oldPid), true);
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
+    const indexContent = fs.readFileSync(path.join(installDir, "frontend", "dist", "index.html"), "utf8");
+    const envContent = fs.readFileSync(path.join(installDir, ".env"), "utf8");
+    assert.equal(manifest.frontend.entry, "/admin/");
+    assert.equal(manifest.web.routePath, "/admin/");
+    assert.match(indexContent, /\/admin\/assets\//);
+    assert.match(envContent, /FRONTEND_DIST_DIR=\.\/frontend\/dist/);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("last running services state round-trips through disk", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-last-running-services-"));
   const app = createApp(tempRoot);
@@ -2476,6 +2999,108 @@ test("restoreRunningServices auto-installs and starts builtin services that are 
       true
     );
   } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runStartupPreparation bootstraps packaged first launch with the three core services", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+
+  try {
+    const result = await runStartupPreparation(app);
+    assert.equal(result.mode, "bootstrap");
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.equal(fs.existsSync(path.join(userDataRoot, "services", "agent-container-hub")), false);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runStartupPreparation does not reinstall healthy packaged core services", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+
+  try {
+    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+      await installBuiltinService(app, serviceId);
+    }
+
+    const markerPath = path.join(userDataRoot, "services", "agent-platform", "v1.0.0", "marker.txt");
+    fs.writeFileSync(markerPath, "keep", "utf8");
+
+    const result = await runStartupPreparation(app);
+    assert.equal(result.mode, "restore");
+    assert.deepEqual(result.failures, []);
+    assert.equal(fs.existsSync(markerPath), true);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runStartupPreparation reinitializes packaged core services that are missing init state", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+
+  try {
+    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+      await installBuiltinService(app, serviceId);
+    }
+
+    const platformService = getBuiltinService("agent-platform");
+    const platformInstallDir = getInstallDir(app, platformService);
+    fs.rmSync(path.dirname(__testInternals.getInitializationStatePath(platformInstallDir)), { recursive: true, force: true });
+
+    const result = await runStartupPreparation(app);
+    assert.equal(result.mode, "bootstrap");
+    assert.deepEqual(result.failures, []);
+    assert.equal(fs.existsSync(__testInternals.getInitializationStatePath(platformInstallDir)), true);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runStartupPreparation continues after one bootstrap failure and reports the failure", async () => {
+  const fixture = createStartupCoreAssetsFixture({ failOnStartServiceId: "zenmind-app-server" });
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+
+  try {
+    const result = await runStartupPreparation(app);
+    assert.equal(result.mode, "bootstrap");
+    assert.equal(result.failures.length, 1);
+    assert.match(result.failures[0], /zenmind-app-server/u);
+    assert.deepEqual(result.started, ["agent-platform", "agent-webclient"]);
+    assert.equal(fs.existsSync(path.join(userDataRoot, "services", "agent-platform", "v1.0.0", "run", "started.txt")), true);
+    assert.equal(fs.existsSync(path.join(userDataRoot, "services", "agent-webclient", "v1.0.0", "run", "started.txt")), true);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runStartupPreparation keeps development launches on restore mode by default", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: false });
+
+  try {
+    const result = await runStartupPreparation(app);
+    assert.equal(result.mode, "restore");
+  } finally {
+    await stopStartupCoreProcesses(app);
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   }

@@ -93,6 +93,11 @@ export function removeChannel(installDir: string, channelId: string): void {
 
   delete existing[channelId];
 
+  if (Object.keys(existing).length === 0) {
+    fs.rmSync(filePath, { force: true });
+    return;
+  }
+
   const yamlContent = yaml.dump({ channels: existing }, {
     indent: 2,
     lineWidth: -1,
