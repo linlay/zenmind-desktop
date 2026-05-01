@@ -5,9 +5,11 @@ import {
   BrowserWindow,
   clipboard,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
+  screen,
   shell,
   session,
   systemPreferences,
@@ -97,11 +99,23 @@ import {
   ensureDataRoot,
   getDataRoot,
 } from "./user-paths";
+import {
+  getQuickAssistantBounds,
+  isQuickAssistantMediaPermissionAllowed,
+  isQuickAssistantSupportedPlatform,
+  QUICK_ASSISTANT_ROUTE,
+  QUICK_ASSISTANT_SHORTCUT
+} from "./quick-assistant";
 
 let mainWindow: BrowserWindow | null = null;
+let quickAssistantWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isHandlingQuit = false;
 let serviceMutationQueue = Promise.resolve();
+let quickAssistantInteractionState = {
+  busy: false,
+  mouseInside: false
+};
 const pageAgentProxy = new PageAgentLLMProxy();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -129,6 +143,141 @@ function getRendererEntry() {
     return devServerUrl;
   }
   return path.join(__dirname, "..", "..", "dist-renderer", "index.html");
+}
+
+function getRendererRouteUrl(routePath: string) {
+  const rendererEntry = getRendererEntry();
+  if (process.env.VITE_DEV_SERVER_URL) {
+    return `${rendererEntry.replace(/\/$/u, "")}/#${routePath}`;
+  }
+  return rendererEntry;
+}
+
+function loadRendererRoute(targetWindow: BrowserWindow, routePath: string) {
+  const rendererEntry = getRendererEntry();
+  if (process.env.VITE_DEV_SERVER_URL) {
+    return targetWindow.loadURL(getRendererRouteUrl(routePath));
+  }
+  return targetWindow.loadFile(rendererEntry, { hash: routePath });
+}
+
+function getQuickAssistantWorkArea() {
+  const cursorPoint = screen.getCursorScreenPoint();
+  return screen.getDisplayNearestPoint(cursorPoint).workArea;
+}
+
+function applyQuickAssistantBounds(expanded: boolean) {
+  if (!quickAssistantWindow || quickAssistantWindow.isDestroyed()) {
+    return;
+  }
+  quickAssistantWindow.setBounds(getQuickAssistantBounds({
+    expanded,
+    workArea: getQuickAssistantWorkArea()
+  }), true);
+}
+
+function createQuickAssistantWindow() {
+  if (!isQuickAssistantSupportedPlatform(process.platform)) {
+    return null;
+  }
+  if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
+    return quickAssistantWindow;
+  }
+
+  quickAssistantWindow = new BrowserWindow({
+    ...getQuickAssistantBounds({
+      expanded: false,
+      workArea: getQuickAssistantWorkArea()
+    }),
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    backgroundColor: "#00000000",
+    title: "Zman Quick Assistant",
+    webPreferences: {
+      preload: path.join(__dirname, "..", "preload", "index.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+
+  quickAssistantWindow.setAlwaysOnTop(true, "floating");
+  quickAssistantWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  quickAssistantWindow.on("blur", () => {
+    setTimeout(() => {
+      if (
+        !quickAssistantWindow ||
+        quickAssistantWindow.isDestroyed() ||
+        quickAssistantWindow.isFocused() ||
+        quickAssistantInteractionState.busy ||
+        quickAssistantInteractionState.mouseInside
+      ) {
+        return;
+      }
+      quickAssistantWindow.hide();
+    }, 120);
+  });
+
+  quickAssistantWindow.on("closed", () => {
+    quickAssistantWindow = null;
+    quickAssistantInteractionState = {
+      busy: false,
+      mouseInside: false
+    };
+  });
+
+  loadRendererRoute(quickAssistantWindow, QUICK_ASSISTANT_ROUTE).catch((error) => {
+    console.error("failed to load quick assistant renderer", error);
+  });
+
+  return quickAssistantWindow;
+}
+
+function showQuickAssistantWindow() {
+  if (!isQuickAssistantSupportedPlatform(process.platform)) {
+    return;
+  }
+  const targetWindow = createQuickAssistantWindow();
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+  quickAssistantInteractionState = {
+    busy: false,
+    mouseInside: false
+  };
+  applyQuickAssistantBounds(false);
+  targetWindow.show();
+  targetWindow.focus();
+}
+
+function toggleQuickAssistantWindow() {
+  if (!isQuickAssistantSupportedPlatform(process.platform)) {
+    return;
+  }
+  if (quickAssistantWindow && !quickAssistantWindow.isDestroyed() && quickAssistantWindow.isVisible()) {
+    quickAssistantWindow.hide();
+    return;
+  }
+  showQuickAssistantWindow();
+}
+
+function registerQuickAssistantShortcut() {
+  if (!isQuickAssistantSupportedPlatform(process.platform)) {
+    return;
+  }
+  const registered = globalShortcut.register(QUICK_ASSISTANT_SHORTCUT, toggleQuickAssistantWindow);
+  if (!registered) {
+    console.warn(`failed to register quick assistant shortcut: ${QUICK_ASSISTANT_SHORTCUT}`);
+  }
 }
 
 function setSidebarTranslucency(enabled: boolean) {
@@ -303,19 +452,20 @@ function getOrCreateMainWindow() {
   return createWindow();
 }
 
-function isMainRendererContents(contentsId: number) {
-  return Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.id === contentsId);
-}
-
 function configureMediaPermissions() {
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    if (permission !== "media" || !isMainRendererContents(contents.id)) {
-      callback(false);
-      return;
-    }
-
     const mediaDetails = details as MediaAccessPermissionRequest;
-    if (mediaDetails.mediaTypes && !mediaDetails.mediaTypes.includes("audio")) {
+    const mainContentsId = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : null;
+    const quickContentsId = quickAssistantWindow && !quickAssistantWindow.isDestroyed()
+      ? quickAssistantWindow.webContents.id
+      : null;
+    if (!isQuickAssistantMediaPermissionAllowed({
+      permission,
+      contentsId: contents.id,
+      mainContentsId,
+      quickContentsId,
+      mediaTypes: mediaDetails.mediaTypes
+    })) {
       callback(false);
       return;
     }
@@ -858,10 +1008,12 @@ function registerIpcHandlers() {
     readPageContext: (webContentsId: number) => browserUseController.readPageContext(webContentsId)
   };
   const assistantRuntime = new AssistantRuntime(app, (event) => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return;
+    for (const targetWindow of [mainWindow, quickAssistantWindow]) {
+      if (!targetWindow || targetWindow.isDestroyed()) {
+        continue;
+      }
+      targetWindow.webContents.send("assistant.event", event);
     }
-    mainWindow.webContents.send("assistant.event", event);
   }, assistantBrowserUse, {
     resolveContainerHub: async () => {
       const state = await getServiceState(app, "agent-container-hub").catch((error) => {
@@ -962,6 +1114,46 @@ function registerIpcHandlers() {
   ipcMain.handle("assistant.submitAwaiting", async (_event, request: AssistantSubmitAwaitingRequest) =>
     assistantRuntime.submitAwaiting(request)
   );
+
+  ipcMain.handle("quickAssistant.setExpanded", async (_event, expanded: boolean) => {
+    if (isQuickAssistantSupportedPlatform(process.platform)) {
+      applyQuickAssistantBounds(Boolean(expanded));
+    }
+    return { ok: true };
+  });
+  ipcMain.handle("quickAssistant.setInteractionState", async (_event, state: { busy?: boolean; mouseInside?: boolean }) => {
+    quickAssistantInteractionState = {
+      ...quickAssistantInteractionState,
+      ...(typeof state?.busy === "boolean" ? { busy: state.busy } : {}),
+      ...(typeof state?.mouseInside === "boolean" ? { mouseInside: state.mouseInside } : {})
+    };
+    return { ok: true };
+  });
+  ipcMain.handle("quickAssistant.hide", async () => {
+    if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
+      quickAssistantWindow.hide();
+    }
+    return { ok: true };
+  });
+  ipcMain.handle("quickAssistant.openMainAssistant", async (_event, chatId?: string | null) => {
+    if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
+      quickAssistantWindow.hide();
+    }
+    openAssistantWorker({
+      chatId: chatId ?? undefined,
+      displayName: "Zman",
+      role: "快速助手",
+      focusComposerOnComplete: true
+    });
+    return { ok: true };
+  });
+  ipcMain.handle("quickAssistant.openSettings", async () => {
+    if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
+      quickAssistantWindow.hide();
+    }
+    showMainWindow("/settings");
+    return { ok: true };
+  });
 
   ipcMain.handle("services.list", async () => listServices(app));
   ipcMain.handle("services.getStartupRestoreState", async () => cloneStartupRestoreState(startupRestoreState));
@@ -1192,6 +1384,7 @@ if (gotSingleInstanceLock) {
     createWindow();
     createAppTray();
     buildApplicationMenu();
+    registerQuickAssistantShortcut();
     void runServiceMutation(() => runStartupPreparation(app, {
       onModeResolved: (mode) => {
         beginStartupRestoreSession(mode);
@@ -1253,6 +1446,12 @@ app.on("before-quit", (event) => {
       pageAgentProxy.close();
       app.quit();
     });
+});
+
+app.on("will-quit", () => {
+  if (isQuickAssistantSupportedPlatform(process.platform)) {
+    globalShortcut.unregister(QUICK_ASSISTANT_SHORTCUT);
+  }
 });
 
 app.on("window-all-closed", () => {

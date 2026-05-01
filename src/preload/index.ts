@@ -89,6 +89,13 @@ const api: DesktopApi = {
     getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
     setSidebarTranslucency: (enabled) => ipcRenderer.invoke("settings.setSidebarTranslucency", enabled)
   },
+  quickAssistant: {
+    setExpanded: (expanded: boolean) => ipcRenderer.invoke("quickAssistant.setExpanded", expanded),
+    setInteractionState: (state) => ipcRenderer.invoke("quickAssistant.setInteractionState", state),
+    hide: () => ipcRenderer.invoke("quickAssistant.hide"),
+    openMainAssistant: (chatId?: string | null) => ipcRenderer.invoke("quickAssistant.openMainAssistant", chatId),
+    openSettings: () => ipcRenderer.invoke("quickAssistant.openSettings")
+  },
   customSidebar: {
     list: () => ipcRenderer.invoke("customSidebar.list"),
     add: (input) => ipcRenderer.invoke("customSidebar.add", input),

@@ -13,6 +13,7 @@ import type {
   AssistantVoiceCorrectionLocale
 } from "../../shared/contracts";
 import { AssistantAwaitingDialog } from "./AssistantAwaitingDialog";
+import { AssistantMarkdownContent } from "./AssistantMarkdownContent";
 import { getAssistantPageContext } from "../services/assistantPageContext";
 
 export type AssistantDockMode = "full" | "compact";
@@ -25,6 +26,7 @@ type AssistantDockProps = {
   onOpen: () => void;
   onClose: () => void;
   onModeChange: (mode: AssistantDockMode) => void;
+  requestedChatId?: string | null;
   onOpenSettings: () => void;
 };
 
@@ -491,6 +493,7 @@ export function AssistantDock({
   onOpen,
   onClose,
   onModeChange,
+  requestedChatId,
   onOpenSettings
 }: AssistantDockProps) {
   const [settings, setSettings] = useState<AssistantSettingsPublic | null>(null);
@@ -596,6 +599,13 @@ export function AssistantDock({
       setFeedback(reason instanceof Error ? reason.message : String(reason));
     });
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !requestedChatId || requestedChatId === activeChatIdRef.current) {
+      return;
+    }
+    void loadChat(requestedChatId);
+  }, [open, requestedChatId]);
 
   useEffect(() => {
     return window.electronAPI.assistant.onAssistantEvent((event) => {
@@ -1551,7 +1561,14 @@ export function AssistantDock({
             <span>{message.role === "user" ? "你" : "ZenMind"}</span>
             {message.role === "assistant" ? renderRunTimeline(message.runId) : null}
             <div className="assistant-message-body">
-              <p>{message.content || (message.role === "assistant" ? "正在思考..." : "")}</p>
+              {message.role === "assistant" ? (
+                <AssistantMarkdownContent
+                  className="assistant-message-markdown"
+                  content={message.content || "正在思考..."}
+                />
+              ) : (
+                <p className="assistant-message-text">{message.content}</p>
+              )}
               {renderMessageAttachments(message)}
               {renderMessageActions(message, index)}
             </div>

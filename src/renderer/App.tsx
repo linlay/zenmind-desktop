@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
 import { AssistantDock, type AssistantDockMode } from "./components/AssistantDock";
 import { AppSidebar } from "./components/AppSidebar";
+import { QuickAssistant } from "./components/QuickAssistant";
 import { ControlCenterPage } from "./pages/ControlCenterPage";
 import { ExternalWebviewPage } from "./pages/ExternalWebviewPage";
 import { HelpPage } from "./pages/HelpPage";
@@ -11,7 +12,7 @@ import { PluginPage } from "./pages/PluginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ServicesProvider, useServices } from "./services/ServicesContext";
-import type { CustomSidebarItem, ServiceId, ServiceState, StartupRestoreState } from "../shared/contracts";
+import type { AssistantWorkerOpenRequest, CustomSidebarItem, ServiceId, ServiceState, StartupRestoreState } from "../shared/contracts";
 import {
   resolveStartupRootPath,
   shouldAutoOpenAssistant,
@@ -129,6 +130,7 @@ function AppShell() {
     }
   });
   const [assistantDockOpen, setAssistantDockOpen] = useState(false);
+  const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [assistantDockMode, setAssistantDockMode] = useState<AssistantDockMode>(() => {
     if (typeof window === "undefined") {
       return "full";
@@ -202,7 +204,8 @@ function AppShell() {
   }, [navigate]);
 
   useEffect(() => {
-    return window.electronAPI.onOpenAssistantWorker(() => {
+    return window.electronAPI.onOpenAssistantWorker((request) => {
+      setAssistantDockOpenRequest(request);
       openAssistantDock("compact");
     });
   }, []);
@@ -725,6 +728,7 @@ function AppShell() {
           setAssistantDockOpen(false);
         }}
         onModeChange={setAssistantDockMode}
+        requestedChatId={assistantDockOpenRequest?.chatId ?? null}
         onOpenSettings={() => {
           setAssistantDockOpen(false);
           navigate("/settings");
@@ -922,6 +926,11 @@ function getStartupServiceFallbackName(serviceId: ServiceId) {
 }
 
 export function App() {
+  const location = useLocation();
+  if (location.pathname === "/quick-assistant") {
+    return <QuickAssistant />;
+  }
+
   return (
     <ServicesProvider>
       <AppShell />

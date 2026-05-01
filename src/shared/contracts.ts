@@ -297,6 +297,7 @@ export interface SidebarTranslucencyResult {
 export interface AssistantWorkerOpenRequest {
   workerKey?: string;
   agentKey?: string;
+  chatId?: string;
   displayName?: string;
   role?: string;
   focusComposerOnComplete?: boolean;
@@ -688,6 +689,13 @@ export interface DesktopApi {
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
     setSidebarTranslucency: (enabled: boolean) => Promise<SidebarTranslucencyResult>;
+  };
+  quickAssistant: {
+    setExpanded: (expanded: boolean) => Promise<{ ok: boolean }>;
+    setInteractionState: (state: { busy?: boolean; mouseInside?: boolean }) => Promise<{ ok: boolean }>;
+    hide: () => Promise<{ ok: boolean }>;
+    openMainAssistant: (chatId?: string | null) => Promise<{ ok: boolean }>;
+    openSettings: () => Promise<{ ok: boolean }>;
   };
   customSidebar: {
     list: () => Promise<CustomSidebarItemsResult>;

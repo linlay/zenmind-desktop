@@ -156,6 +156,12 @@ test("assistant prompt truncates page context before model request", () => {
   assert.match(messages.at(-1).content, /当前页面上下文/);
 });
 
+test("assistant prompt asks for chat-friendly answer formatting", () => {
+  assert.match(promptBuilderInternals.SYSTEM_PROMPT, /输出要适合聊天阅读/);
+  assert.match(promptBuilderInternals.SYSTEM_PROMPT, /少用多级 Markdown 标题/);
+  assert.match(promptBuilderInternals.SYSTEM_PROMPT, /只有在比较结构化数据时才使用表格/);
+});
+
 test("assistant prompt injects runtime context for non-page questions", () => {
   const messages = buildAssistantMessages({
     history: [],
