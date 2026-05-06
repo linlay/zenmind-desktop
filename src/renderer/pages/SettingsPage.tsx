@@ -1,6 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { CustomSidebarIcon } from "../components/BrandMark";
-import type { AssistantSettingsPublic, CustomSidebarItem, CustomSidebarItemsResult } from "../../shared/contracts";
+import type {
+  AssistantMemorySettings,
+  AssistantMemorySummary,
+  AssistantMemoryStorage,
+  AssistantMemoryStats,
+  AssistantSettingsPublic,
+  CustomSidebarItem,
+  CustomSidebarItemsResult
+} from "../../shared/contracts";
 
 type SettingsPageProps = {
   themeMode: "light" | "dark";
@@ -17,6 +25,22 @@ type SettingsPageProps = {
 type WindowsDataRootCardProps = {
   onError: (message: string) => void;
 };
+
+function formatMemoryTime(value: string | null | undefined) {
+  if (!value) {
+    return "暂无";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "暂无";
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
 
 function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
   const [dataRoot, setDataRoot] = useState("");
@@ -87,6 +111,11 @@ export function SettingsPage({
   const [assistantApiKey, setAssistantApiKey] = useState("");
   const [assistantClearApiKey, setAssistantClearApiKey] = useState(false);
   const [assistantSettingsPending, setAssistantSettingsPending] = useState(false);
+  const [memorySettings, setMemorySettings] = useState<AssistantMemorySettings | null>(null);
+  const [memoryStats, setMemoryStats] = useState<AssistantMemoryStats | null>(null);
+  const [memoryStorage, setMemoryStorage] = useState<AssistantMemoryStorage | null>(null);
+  const [memoryRecentAudit, setMemoryRecentAudit] = useState<AssistantMemorySummary["recentAudit"]>(null);
+  const [memoryPending, setMemoryPending] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -96,9 +125,7 @@ export function SettingsPage({
         if (cancelled) {
           return;
         }
-        setAssistantSettings(settings);
-        setAssistantBaseURL(settings.baseURL);
-        setAssistantModel(settings.model);
+        applyAssistantSettings(settings);
       })
       .catch((reason) => {
         if (!cancelled) {
@@ -110,6 +137,39 @@ export function SettingsPage({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.assistant
+      .getMemorySummary()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setMemorySettings(result.settings);
+        setMemoryStats(result.stats);
+        setMemoryStorage(result.storage);
+        setMemoryRecentAudit(result.recentAudit ?? null);
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setFeedback(reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function refreshMemoryItems() {
+    const result = await window.electronAPI.assistant.getMemorySummary();
+    setMemorySettings(result.settings);
+    setMemoryStats(result.stats);
+    setMemoryStorage(result.storage);
+    setMemoryRecentAudit(result.recentAudit ?? null);
+    return result;
+  }
 
   async function handleAddCustomSidebarItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -180,24 +240,93 @@ export function SettingsPage({
     }
   }
 
+  function applyAssistantSettings(settings: AssistantSettingsPublic) {
+    setAssistantSettings(settings);
+    setAssistantBaseURL(settings.baseURL);
+    setAssistantModel(settings.model);
+  }
+
   async function handleSaveAssistantSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAssistantSettingsPending(true);
     try {
       const settings = await window.electronAPI.assistant.saveSettings({
         baseURL: assistantBaseURL,
-        model: assistantModel,
-        ...(assistantApiKey.trim() ? { apiKey: assistantApiKey } : {}),
-        clearApiKey: assistantClearApiKey
-      });
-      setAssistantSettings(settings);
-      setAssistantApiKey("");
-      setAssistantClearApiKey(false);
-      setFeedback(settings.configured ? "助手模型配置已保存。" : "助手模型配置已保存，请补齐 API Key 后使用。");
+	        model: assistantModel,
+	        ...(assistantApiKey.trim() ? { apiKey: assistantApiKey } : {}),
+	        clearApiKey: assistantClearApiKey
+	      });
+	      applyAssistantSettings(settings);
+	      setAssistantApiKey("");
+	      setAssistantClearApiKey(false);
+	      setFeedback(settings.configured ? "助手模型配置已保存。" : "助手模型配置已保存，请补齐 API Key 后使用。");
     } catch (reason) {
       setFeedback(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setAssistantSettingsPending(false);
+    }
+  }
+
+  async function handleToggleMemoryEnabled() {
+    if (!memorySettings) {
+      return;
+    }
+    setMemoryPending("settings");
+    try {
+      const nextSettings = await window.electronAPI.assistant.saveMemorySettings({
+        ...memorySettings,
+        enabled: !memorySettings.enabled
+      });
+      setMemorySettings(nextSettings);
+      setFeedback(nextSettings.enabled ? "助手记忆已开启。" : "助手记忆已关闭。");
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setMemoryPending("");
+    }
+  }
+
+  async function handleToggleMemoryAutoLearn() {
+    if (!memorySettings) {
+      return;
+    }
+    setMemoryPending("settings");
+    try {
+      const nextSettings = await window.electronAPI.assistant.saveMemorySettings({
+        ...memorySettings,
+        autoLearn: !memorySettings.autoLearn
+      });
+      setMemorySettings(nextSettings);
+      setFeedback(nextSettings.autoLearn ? "自动学习已开启。" : "自动学习已关闭。");
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setMemoryPending("");
+    }
+  }
+
+  async function handleClearMemoryItems() {
+    setMemoryPending("clear");
+    try {
+      const result = await window.electronAPI.assistant.clearMemoryItems();
+      setFeedback(result.message);
+      await refreshMemoryItems();
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setMemoryPending("");
+    }
+  }
+
+  async function handleOpenMemoryDirectory() {
+    setMemoryPending("open");
+    try {
+      const result = await window.electronAPI.assistant.openMemoryDirectory();
+      setFeedback(result.message);
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setMemoryPending("");
     }
   }
 
@@ -221,78 +350,6 @@ export function SettingsPage({
       </div>
 
       {feedback ? <div className="feedback-banner">{feedback}</div> : null}
-
-      <div className="data-root-card assistant-settings-card">
-        <div className="custom-sidebar-copy">
-          <p className="eyebrow">ASSISTANT</p>
-          <h2>助手模型</h2>
-          <p className="page-copy">
-            配置 OpenAI-compatible 模型后，ZenMind助手会在右侧抽屉中直接问答和总结当前页面。
-            API Key 只保存在本机主进程配置里。
-          </p>
-          {assistantSettings?.source === "agent-platform" ? (
-            <p className="settings-inline-note">
-              当前正在复用 {assistantSettings.sourceLabel ?? "agent-platform"} 配置，下面的 Desktop 配置仅作为备用。
-            </p>
-          ) : null}
-          {assistantSettings?.apiKeyConfigured ? (
-            <p className="settings-inline-note">已保存 API Key。留空不会覆盖现有密钥。</p>
-          ) : (
-            <p className="settings-inline-note">尚未保存 API Key。</p>
-          )}
-        </div>
-        <form className="assistant-settings-form" onSubmit={(event) => void handleSaveAssistantSettings(event)}>
-          <label>
-            <span>Base URL</span>
-            <input
-              value={assistantBaseURL}
-              onChange={(event) => setAssistantBaseURL(event.target.value)}
-              placeholder="https://api.openai.com/v1"
-              required
-            />
-          </label>
-          <label>
-            <span>模型</span>
-            <input
-              value={assistantModel}
-              onChange={(event) => setAssistantModel(event.target.value)}
-              placeholder="gpt-4o-mini"
-              required
-            />
-          </label>
-          <label>
-            <span>API Key</span>
-            <input
-              value={assistantApiKey}
-              onChange={(event) => {
-                setAssistantApiKey(event.target.value);
-                if (event.target.value.trim()) {
-                  setAssistantClearApiKey(false);
-                }
-              }}
-              placeholder={assistantSettings?.apiKeyConfigured ? "已保存，留空不变" : "请输入 API Key"}
-              type="password"
-              autoComplete="off"
-            />
-          </label>
-          <label className="assistant-settings-checkbox">
-            <input
-              type="checkbox"
-              checked={assistantClearApiKey}
-              onChange={(event) => {
-                setAssistantClearApiKey(event.target.checked);
-                if (event.target.checked) {
-                  setAssistantApiKey("");
-                }
-              }}
-            />
-            <span>清除已保存的 API Key</span>
-          </label>
-          <button type="submit" className="text-button" disabled={assistantSettingsPending}>
-            {assistantSettingsPending ? "保存中..." : "保存助手配置"}
-          </button>
-        </form>
-      </div>
 
       <div className="data-root-card settings-theme-card">
         <div>
@@ -450,6 +507,170 @@ export function SettingsPage({
       </div>
 
       {isWindows ? <WindowsDataRootCard onError={setFeedback} /> : null}
+
+      <div className="data-root-card assistant-settings-card">
+        <div className="custom-sidebar-copy">
+          <p className="eyebrow">ASSISTANT</p>
+          <h2>助手模型</h2>
+          <p className="page-copy">
+            配置 OpenAI-compatible 模型后，ZenMind助手会在右侧抽屉中直接问答和总结当前页面。
+            API Key 只保存在本机主进程配置里。
+          </p>
+          {assistantSettings?.source === "agent-platform" ? (
+            <p className="settings-inline-note">
+              当前正在复用 {assistantSettings.sourceLabel ?? "agent-platform"} 配置，下面的 Desktop 配置仅作为备用。
+            </p>
+          ) : null}
+          {assistantSettings?.apiKeyConfigured ? (
+            <p className="settings-inline-note">已保存 API Key。留空不会覆盖现有密钥。</p>
+          ) : (
+            <p className="settings-inline-note">尚未保存 API Key。</p>
+          )}
+        </div>
+        <form className="assistant-settings-form" onSubmit={(event) => void handleSaveAssistantSettings(event)}>
+          <label>
+            <span>Base URL</span>
+            <input
+              value={assistantBaseURL}
+              onChange={(event) => setAssistantBaseURL(event.target.value)}
+              placeholder="https://api.openai.com/v1"
+              required
+            />
+          </label>
+          <label>
+            <span>模型</span>
+            <input
+              value={assistantModel}
+              onChange={(event) => setAssistantModel(event.target.value)}
+              placeholder="gpt-4o"
+              required
+            />
+          </label>
+          <label>
+            <span>API Key</span>
+            <input
+              value={assistantApiKey}
+              onChange={(event) => {
+                setAssistantApiKey(event.target.value);
+                if (event.target.value.trim()) {
+                  setAssistantClearApiKey(false);
+                }
+              }}
+              placeholder={assistantSettings?.apiKeyConfigured ? "已保存，留空不变" : "请输入 API Key"}
+              type="password"
+              autoComplete="off"
+            />
+          </label>
+          <label className="assistant-settings-checkbox">
+            <input
+              type="checkbox"
+              checked={assistantClearApiKey}
+              onChange={(event) => {
+                setAssistantClearApiKey(event.target.checked);
+                if (event.target.checked) {
+                  setAssistantApiKey("");
+                }
+              }}
+            />
+            <span>清除已保存的 API Key</span>
+          </label>
+          <button type="submit" className="text-button" disabled={assistantSettingsPending}>
+            {assistantSettingsPending ? "保存中..." : "保存助手配置"}
+          </button>
+        </form>
+      </div>
+
+      <div className="data-root-card assistant-memory-card">
+        <div className="custom-sidebar-copy">
+          <p className="eyebrow">MEMORY</p>
+          <h2>助手记忆</h2>
+          <p className="page-copy">
+            侧边栏助手会在本机静默学习长期偏好和可复用结论，并在后续回答中按需引用。
+          </p>
+          <p className="settings-inline-note">
+            共 {memoryStats?.total ?? 0} 条，稳定 {memoryStats?.factCount ?? 0} 条，观察 {memoryStats?.observationCount ?? 0} 条。
+          </p>
+          <p className="settings-inline-note">
+            最近学习：{formatMemoryTime(memoryStats?.lastLearnedAt)}；最近引用：{formatMemoryTime(memoryStats?.lastReferencedAt)}
+          </p>
+          <p className="settings-inline-note">
+            最近记录：{memoryRecentAudit?.operation || "暂无"}
+            {memoryRecentAudit?.status ? ` / ${memoryRecentAudit.status}` : ""}
+            {memoryRecentAudit?.reason ? ` / ${memoryRecentAudit.reason}` : ""}
+          </p>
+        </div>
+        <div className="assistant-memory-panel">
+          <div className="assistant-memory-switches">
+            <div className="assistant-memory-switch-row">
+              <span>记忆召回</span>
+              <button
+                type="button"
+                className={memorySettings?.enabled ? "settings-switch is-on" : "settings-switch"}
+                role="switch"
+                aria-checked={Boolean(memorySettings?.enabled)}
+                aria-label="记忆召回"
+                disabled={!memorySettings || memoryPending === "settings"}
+                onClick={() => void handleToggleMemoryEnabled()}
+              >
+                <span aria-hidden="true" />
+              </button>
+            </div>
+            <div className="assistant-memory-switch-row">
+              <span>自动学习</span>
+              <button
+                type="button"
+                className={memorySettings?.autoLearn ? "settings-switch is-on" : "settings-switch"}
+                role="switch"
+                aria-checked={Boolean(memorySettings?.autoLearn)}
+                aria-label="自动学习"
+                disabled={!memorySettings || memoryPending === "settings"}
+                onClick={() => void handleToggleMemoryAutoLearn()}
+              >
+                <span aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+          <div className="custom-sidebar-list-head">
+            <strong>本地存储</strong>
+            <span className="assistant-memory-storage-actions">
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => void handleOpenMemoryDirectory()}
+                disabled={memoryPending === "open"}
+              >
+                {memoryPending === "open" ? "打开中..." : "打开记忆目录"}
+              </button>
+              <button
+                type="button"
+                className="danger-text-button"
+                onClick={() => void handleClearMemoryItems()}
+                disabled={(memoryStats?.total ?? 0) === 0 || memoryPending === "clear"}
+              >
+                {memoryPending === "clear" ? "清空中..." : "清空"}
+              </button>
+            </span>
+          </div>
+          <div className="assistant-memory-storage">
+            <div>
+              <span>记忆目录</span>
+              <code>{memoryStorage?.directoryPath ?? "正在读取..."}</code>
+            </div>
+            <div>
+              <span>结构化记忆</span>
+              <code>{memoryStorage?.recordsPath ?? "正在读取..."}</code>
+            </div>
+            <div>
+              <span>静态长期记忆</span>
+              <code>{memoryStorage?.staticPath ?? "正在读取..."}</code>
+            </div>
+            <div>
+              <span>审计日志</span>
+              <code>{memoryStorage?.auditPath ?? "正在读取..."}</code>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }

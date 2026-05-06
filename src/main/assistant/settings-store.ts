@@ -5,7 +5,7 @@ import type { AssistantSettingsInput, AssistantSettingsPublic } from "../../shar
 
 const SETTINGS_FILE = "settings.json";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL = "gpt-4o";
 
 export type AssistantSettingsPrivate = {
   baseURL: string;

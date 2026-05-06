@@ -404,6 +404,44 @@ function validateAgentPlatformBundleArchive(service, archivePath) {
   }
 }
 
+function validateAgentWebclientBundleArchive(service, archivePath) {
+  const manifest = readManifestFromArchive(archivePath);
+  const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
+    ? manifest.desktop.envBindings
+      .map((binding) => (binding && typeof binding.key === "string" ? binding.key.trim() : ""))
+      .filter(Boolean)
+    : [];
+  for (const requiredKey of ["BASE_URL", "WS_BASE_URL"]) {
+    if (!envBindingKeys.includes(requiredKey)) {
+      throw new Error(
+        `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+          `Missing desktop env binding ${requiredKey} in manifest.json.\n` +
+          `Please rebuild the Desktop-ready agent-webclient bundle.`
+      );
+    }
+  }
+
+  const serverPath = `${service.bundleTopLevelDir}/backend/server.js`;
+  const serverContent = readArchiveEntryText(archivePath, serverPath);
+  if (
+    !serverContent ||
+    serverContent.includes("(secure ? https : http).request") ||
+    serverContent.includes("httpProxy.createProxyServer") ||
+    serverContent.includes("function buildUpgradeRequest(") ||
+    serverContent.includes("const net = require('net');") ||
+    serverContent.includes("const tls = require('tls');") ||
+    !serverContent.includes("function createWebSocketProxy(") ||
+    !serverContent.includes("proxy.upgrade(req, socket, head)") ||
+    !serverContent.includes("server.on('upgrade'")
+  ) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Detected a stale agent-webclient websocket proxy in backend/server.js.\n` +
+        `Please rebuild the bundle with the http-proxy-middleware WebSocket upgrade proxy.`
+    );
+  }
+}
+
 function validateZenmindAppServerBundleArchive(service, archivePath) {
   const envExamplePath = `${service.bundleTopLevelDir}/.env.example`;
   const envExample = readArchiveEntryText(archivePath, envExamplePath);
@@ -473,6 +511,9 @@ export function validateBundleArchive(service, archivePath) {
 
   if (service.id === "agent-platform") {
     validateAgentPlatformBundleArchive(service, archivePath);
+  }
+  if (service.id === "agent-webclient") {
+    validateAgentWebclientBundleArchive(service, archivePath);
   }
   if (service.id === "zenmind-app-server") {
     validateZenmindAppServerBundleArchive(service, archivePath);

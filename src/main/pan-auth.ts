@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   createPrivateKey,
+  randomUUID,
   createSign,
   type KeyObject
 } from "node:crypto";
@@ -10,7 +11,7 @@ import type { PanAuthStatus } from "../shared/contracts";
 import { getCredentialsRoot } from "./user-paths";
 
 const PAN_PRIVATE_KEY_FILE_NAME = "pan-app-private-key.pem";
-const ACCESS_TOKEN_TTL_SECONDS = 5 * 60;
+const ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 
 function ensureDir(targetPath: string) {
   fs.mkdirSync(targetPath, { recursive: true });
@@ -46,9 +47,15 @@ export function readPanPrivateKey(app: App): KeyObject {
 }
 
 export function createDesktopAccessToken(privateKey: KeyObject, now = Date.now()) {
-  const exp = Math.floor(now / 1000) + ACCESS_TOKEN_TTL_SECONDS;
+  const iat = Math.floor(now / 1000);
+  const exp = iat + ACCESS_TOKEN_TTL_SECONDS;
   const header = encodeBase64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const payload = encodeBase64Url(JSON.stringify({ sub: "desktop-app", exp }));
+  const payload = encodeBase64Url(JSON.stringify({
+    sub: "desktop-app",
+    iat,
+    exp,
+    jti: randomUUID()
+  }));
   const signer = createSign("RSA-SHA256");
   signer.update(`${header}.${payload}`);
   signer.end();

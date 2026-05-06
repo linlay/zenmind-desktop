@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -18,7 +19,8 @@ const childProcess = require("node:child_process");
     readServiceConfig,
     runStartupPreparation,
     restoreRunningServices,
-    startService
+    startService,
+    stopService
 } = require("../dist-electron/main/service-manager.js");
 const { loadBuiltinServices } = require("../dist-electron/main/builtin-loader.js");
 const {
@@ -27,6 +29,29 @@ const {
   registerPlugin
 } = require("../dist-electron/main/service-registry.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
+
+function getAvailableLocalPort(host = "127.0.0.1") {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, host, () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : null;
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        if (!port) {
+          reject(new Error("Failed to allocate a local test port."));
+          return;
+        }
+        resolve(port);
+      });
+    });
+  });
+}
 
 function currentManifestOs() {
   switch (process.platform) {
@@ -316,10 +341,11 @@ function createStartupCoreAssetsFixture(options = {}) {
         path.join(bundleRoot, "backend", "server.js"),
         [
           "const http = require('http');",
-          "const https = require('https');",
+          "const { createProxyMiddleware } = require('http-proxy-middleware');",
           "const server = http.createServer();",
           "function createWebSocketProxy() {",
-          "  return (secure ? https : http).request;",
+          "  const proxy = createProxyMiddleware({ target: 'http://127.0.0.1:11949', ws: true });",
+          "  return { ws(req, socket, head) { proxy.upgrade(req, socket, head); } };",
           "}",
           "server.on('upgrade', () => {});",
           "module.exports = { createWebSocketProxy };"
@@ -582,6 +608,8 @@ function loadBuiltinsForTest(userDataRoot, assetsRoot, appOptions = {}) {
 
 function writeContainerHubBundleRoot(bundleRoot, options = {}) {
   const startScriptContent = options.startScriptContent ?? "#!/usr/bin/env bash\necho start\n";
+  const bindAddr = options.bindAddr ?? "127.0.0.1:11960";
+  const defaultPort = Number(String(bindAddr).match(/:(\d+)$/u)?.[1] || 11960);
 
   fs.mkdirSync(path.join(bundleRoot, "backend"), { recursive: true });
   fs.mkdirSync(path.join(bundleRoot, "configs", "environments"), { recursive: true });
@@ -593,7 +621,7 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
   fs.writeFileSync(path.join(bundleRoot, "start.sh"), startScriptContent, "utf8");
   fs.writeFileSync(path.join(bundleRoot, "stop.sh"), "#!/usr/bin/env bash\necho stop\n", "utf8");
   fs.writeFileSync(path.join(bundleRoot, "scripts", "program-common.sh"), "#!/usr/bin/env bash\n", "utf8");
-  fs.writeFileSync(path.join(bundleRoot, ".env.example"), "BIND_ADDR=127.0.0.1:11960\n", "utf8");
+  fs.writeFileSync(path.join(bundleRoot, ".env.example"), `BIND_ADDR=${bindAddr}\n`, "utf8");
   fs.writeFileSync(
     path.join(bundleRoot, "manifest.json"),
     `${JSON.stringify(
@@ -648,7 +676,7 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
         web: {
           routePath: "/",
           portEnvKey: "BIND_ADDR",
-          defaultPort: 11960
+          defaultPort
         },
         desktop: {
           assetFileName: "agent-container-hub-v0.1.0-darwin-arm64.tar.gz",
@@ -684,6 +712,22 @@ function createContainerHubBundleFixture(tempRoot, options = {}) {
     assetsRoot,
     userDataRoot,
     installDir,
+    tarBundleRoot
+  };
+}
+
+function addContainerHubAssetToFixture(fixture, options = {}) {
+  const tarFixtureRoot = path.join(fixture.tempRoot, "agent-container-hub-asset-root");
+  const tarBundleRoot = path.join(tarFixtureRoot, "agent-container-hub");
+  const serviceAssetDir = path.join(fixture.assetsRoot, "agent-container-hub");
+  const tarPath = path.join(serviceAssetDir, "agent-container-hub-v0.1.0-darwin-arm64.tar.gz");
+
+  writeContainerHubBundleRoot(tarBundleRoot, options);
+  fs.mkdirSync(serviceAssetDir, { recursive: true });
+  execFileSync("tar", ["-czf", tarPath, "-C", tarFixtureRoot, "agent-container-hub"]);
+
+  return {
+    tarPath,
     tarBundleRoot
   };
 }
@@ -1962,10 +2006,12 @@ test("startService rejects services that still require initialization", async ()
 
 test("startService returns a port conflict error for agent-container-hub when an external process occupies the port", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-hub-port-conflict-"));
-  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot);
+  const port = await getAvailableLocalPort();
+  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot, {
+    bindAddr: `127.0.0.1:${port}`
+  });
   const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
   const service = getBuiltinService("agent-container-hub");
-  const port = 19600 + Math.floor(Math.random() * 1000);
   const listenerScriptPath = path.join(tempRoot, "external-listener.mjs");
   const previousSpawnSync = childProcess.spawnSync;
   let child = null;
@@ -2027,6 +2073,160 @@ setInterval(() => {}, 1000);
       } catch {
         // Child may already be gone when the test finishes.
       }
+    }
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("startService verifies command success and reports delayed container hub crash", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-hub-start-verify-"));
+  const port = await getAvailableLocalPort();
+  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot, {
+    bindAddr: `127.0.0.1:${port}`,
+    startScriptContent: [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "mkdir -p run",
+      "printf '%s\\n' 999999 > run/agent-container-hub.pid",
+      "printf start-ok > run/agent-container-hub.log",
+      "exit 0"
+    ].join("\n")
+  });
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const service = getBuiltinService("agent-container-hub");
+  const previousSpawnSync = childProcess.spawnSync;
+
+  try {
+    await installBuiltinService(app, service.id);
+    const initStatePath = __testInternals.getInitializationStatePath(installDir);
+    fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
+    fs.writeFileSync(
+      initStatePath,
+      `${JSON.stringify({
+        version: service.version,
+        status: "succeeded",
+        updatedAt: new Date().toISOString()
+      }, null, 2)}\n`,
+      "utf8"
+    );
+
+    childProcess.spawnSync = (command, args = [], options = {}) => {
+      if (isCommandLookup(command, args, "docker")) {
+        return createSpawnSyncResult(0);
+      }
+      if (isCommandLookup(command, args, "podman")) {
+        return createSpawnSyncResult(1);
+      }
+      if (command === "docker" && args[0] === "info") {
+        return createSpawnSyncResult(0);
+      }
+      return previousSpawnSync(command, args, options);
+    };
+
+    const result = await startService(app, service.id);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.service.status, "stopped");
+    assert.equal(result.verification.verified, false);
+    assert.equal(result.verification.desired, "running");
+    assert.equal(result.verification.actualStatus, "stopped");
+    assert.ok(result.verification.issues.some((issue) => /复查|stopped|PID|端口|runtime-info/u.test(issue)));
+    assert.match(result.message, /启动命令已执行|启动命令执行过/);
+    assert.match(result.message, /复查失败|未确认启动/);
+  } finally {
+    childProcess.spawnSync = previousSpawnSync;
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("startService verifies running container hub with port and runtime-info probe", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("This fixture uses a POSIX shell daemon; Windows service verification is covered by process and port parser tests.");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-hub-start-ok-"));
+  const port = await getAvailableLocalPort();
+  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot, {
+    bindAddr: `127.0.0.1:${port}`,
+    startScriptContent: [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "mkdir -p run",
+      "cat > run/container-hub-fixture.js <<'NODE'",
+      "const http = require('node:http');",
+      `const port = ${port};`,
+      "const server = http.createServer((req, res) => {",
+      "  if (req.url === '/api/runtime-info') {",
+      "    res.writeHead(200, { 'content-type': 'application/json' });",
+      "    res.end(JSON.stringify({ engine: 'docker', ok: true }));",
+      "    return;",
+      "  }",
+      "  res.writeHead(200, { 'content-type': 'text/html' });",
+      "  res.end('<!doctype html><title>Container Hub</title>');",
+      "});",
+      "server.listen(port, '127.0.0.1');",
+      "process.on('SIGTERM', () => server.close(() => process.exit(0)));",
+      "NODE",
+      "node \"$PWD/run/container-hub-fixture.js\" > run/agent-container-hub.log 2> run/agent-container-hub.stderr.log &",
+      "printf '%s\\n' \"$!\" > run/agent-container-hub.pid",
+      "for attempt in $(seq 1 50); do",
+      `  node -e "require('node:http').get('http://127.0.0.1:${port}/api/runtime-info', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))" && exit 0`,
+      "  sleep 0.05",
+      "done",
+      "exit 1"
+    ].join("\n")
+  });
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const service = getBuiltinService("agent-container-hub");
+  const previousSpawnSync = childProcess.spawnSync;
+
+  try {
+    await installBuiltinService(app, service.id);
+    const initStatePath = __testInternals.getInitializationStatePath(installDir);
+    fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
+    fs.writeFileSync(
+      initStatePath,
+      `${JSON.stringify({
+        version: service.version,
+        status: "succeeded",
+        updatedAt: new Date().toISOString()
+      }, null, 2)}\n`,
+      "utf8"
+    );
+
+    childProcess.spawnSync = (command, args = [], options = {}) => {
+      if (isCommandLookup(command, args, "docker")) {
+        return createSpawnSyncResult(0);
+      }
+      if (isCommandLookup(command, args, "podman")) {
+        return createSpawnSyncResult(1);
+      }
+      if (command === "docker" && args[0] === "info") {
+        return createSpawnSyncResult(0);
+      }
+      return previousSpawnSync(command, args, options);
+    };
+
+    const result = await startService(app, service.id);
+
+    assert.equal(result.ok, true, JSON.stringify(result, null, 2));
+    assert.equal(result.service.status, "running");
+    assert.equal(result.service.healthMeta.port, port);
+    assert.equal(result.verification.verified, true);
+    assert.equal(result.verification.portListening, true);
+    assert.equal(result.verification.httpOk, true);
+    assert.equal(result.verification.runtimeInfoOk, true);
+  } finally {
+    childProcess.spawnSync = previousSpawnSync;
+    const pidPath = path.join(installDir, "run", "agent-container-hub.pid");
+    const pid = Number(fs.existsSync(pidPath) ? fs.readFileSync(pidPath, "utf8").trim() : 0);
+    if (pid > 0) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {}
     }
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -2143,6 +2343,48 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("startService starts agent-platform when desktop-managed container hub is unavailable", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  addContainerHubAssetToFixture(fixture);
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const previousSpawnSync = childProcess.spawnSync;
+
+  try {
+    await installBuiltinService(app, "agent-container-hub");
+    await installBuiltinService(app, "agent-platform");
+
+    const platformService = getBuiltinService("agent-platform");
+    const platformInstallDir = getInstallDir(app, platformService);
+    fs.appendFileSync(
+      path.join(platformInstallDir, ".env"),
+      "CONTAINER_HUB_BASE_URL=http://127.0.0.1:11960\n",
+      "utf8"
+    );
+
+    childProcess.spawnSync = (command, args = [], options = {}) => {
+      if (isCommandLookup(command, args, "docker") || isCommandLookup(command, args, "podman")) {
+        return createSpawnSyncResult(1);
+      }
+      if ((command === "docker" || command === "podman") && args[0] === "info") {
+        return createSpawnSyncResult(1);
+      }
+      return spawnSync(command, args, options);
+    };
+
+    const result = await startService(app, "agent-platform");
+
+    assert.equal(result.ok, true, result.message);
+    assert.equal(result.service.status, "running");
+    assert.equal(fs.existsSync(path.join(platformInstallDir, "run", "started.txt")), true);
+  } finally {
+    childProcess.spawnSync = previousSpawnSync;
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("ensurePreStartRequirements preserves custom relay port and custom codeAssistant proxy baseUrl", async () => {
@@ -2620,12 +2862,21 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   await installBuiltinService(app, webclientService.id);
   fs.writeFileSync(
     path.join(webclientInstallDir, ".env"),
-    "BASE_URL=http://localhost:11949\n",
+    "BASE_URL=http://localhost:11949\nWS_BASE_URL=http://localhost:11949\n",
     "utf8"
   );
   fs.writeFileSync(
     path.join(webclientInstallDir, "backend", "server.js"),
-    "const { createProxyMiddleware } = require('http-proxy-middleware');\n",
+    [
+      "const http = require('http');",
+      "const https = require('https');",
+      "const server = http.createServer();",
+      "function createWebSocketProxy() {",
+      "  return (secure ? https : http).request;",
+      "}",
+      "server.on('upgrade', () => {});",
+      "module.exports = { createWebSocketProxy };"
+    ].join("\n") + "\n",
     "utf8"
   );
 
@@ -2637,6 +2888,7 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   const serverContent = fs.readFileSync(path.join(webclientInstallDir, "backend", "server.js"), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(webclientInstallDir, "manifest.json"), "utf8"));
   assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
+  assert.match(envContent, /WS_BASE_URL=http:\/\/127\.0\.0\.1:12949/);
   assert.match(envContent, /PORT=11948/);
   const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
   assert.match(
@@ -2644,6 +2896,12 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
     new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
   assert.match(serverContent, /function createWebSocketProxy\(/);
+  assert.match(serverContent, /proxy\.upgrade\(req, socket, head\)/);
+  assert.doesNotMatch(serverContent, /function buildUpgradeRequest\(/);
+  assert.doesNotMatch(serverContent, /const net = require\('net'\);/);
+  assert.doesNotMatch(serverContent, /const tls = require\('tls'\);/);
+  assert.doesNotMatch(serverContent, /httpProxy\.createProxyServer/);
+  assert.doesNotMatch(serverContent, /\(secure \? https : http\)\.request/);
   assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(webclientInstallDir), false);
   assert.equal(manifest.frontend.embedPath, "/appagent");
   assert.equal(manifest.frontend.embedParams?.desktopApp, "1");
@@ -2775,6 +3033,72 @@ test("startService refreshes a stale running zenmind-app-server install before r
     assert.equal(manifest.web.routePath, "/admin/");
     assert.match(indexContent, /\/admin\/assets\//);
     assert.match(envContent, /FRONTEND_DIST_DIR=\.\/frontend\/dist/);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("startService restarts a running agent-webclient after agent-platform is manually restarted", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+
+  try {
+    const firstPlatformStart = await startService(app, "agent-platform");
+    assert.equal(firstPlatformStart.ok, true, firstPlatformStart.message);
+
+    const firstWebclientStart = await startService(app, "agent-webclient");
+    assert.equal(firstWebclientStart.ok, true, firstWebclientStart.message);
+    const firstWebclientPid = firstWebclientStart.service.healthMeta.pid;
+    assert.ok(firstWebclientPid, "expected agent-webclient to have a pid after first start");
+
+    const platformStop = await stopService(app, "agent-platform");
+    assert.equal(platformStop.ok, true, platformStop.message);
+
+    const secondPlatformStart = await startService(app, "agent-platform");
+    assert.equal(secondPlatformStart.ok, true, secondPlatformStart.message);
+
+    const webclientState = await getServiceState(app, "agent-webclient");
+    assert.equal(webclientState.status, "running");
+    assert.ok(webclientState.healthMeta.pid, "expected agent-webclient to have a pid after platform restart");
+    assert.notEqual(webclientState.healthMeta.pid, firstWebclientPid);
+    assert.equal(await waitForPidExit(firstWebclientPid), true);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("startService restarts a running agent-webclient when agent-platform is refreshed while running", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const platformArchiveDir = path.join(fixture.assetsRoot, "agent-platform");
+  const platformArchivePath = path.join(platformArchiveDir, fs.readdirSync(platformArchiveDir)[0]);
+
+  try {
+    const firstPlatformStart = await startService(app, "agent-platform");
+    assert.equal(firstPlatformStart.ok, true, firstPlatformStart.message);
+
+    const firstWebclientStart = await startService(app, "agent-webclient");
+    assert.equal(firstWebclientStart.ok, true, firstWebclientStart.message);
+    const firstWebclientPid = firstWebclientStart.service.healthMeta.pid;
+    assert.ok(firstWebclientPid, "expected agent-webclient to have a pid after first start");
+
+    const future = new Date(Date.now() + 10_000);
+    fs.utimesSync(platformArchivePath, future, future);
+
+    const secondPlatformStart = await startService(app, "agent-platform");
+    assert.equal(secondPlatformStart.ok, true, secondPlatformStart.message);
+
+    const webclientState = await getServiceState(app, "agent-webclient");
+    assert.equal(webclientState.status, "running");
+    assert.ok(webclientState.healthMeta.pid, "expected agent-webclient to have a pid after platform refresh");
+    assert.notEqual(webclientState.healthMeta.pid, firstWebclientPid);
+    assert.equal(await waitForPidExit(firstWebclientPid), true);
   } finally {
     await stopStartupCoreProcesses(app);
     restore();
@@ -2971,6 +3295,44 @@ test("restoreRunningServices skips services that still need foreground install o
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("restoreRunningServices keeps default startup services running when optional container hub is unavailable", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  addContainerHubAssetToFixture(fixture);
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const previousSpawnSync = childProcess.spawnSync;
+
+  try {
+    await installBuiltinService(app, "agent-container-hub");
+    __testInternals.writeLastRunningServices(app, ["agent-container-hub"]);
+
+    childProcess.spawnSync = (command, args = [], options = {}) => {
+      if (isCommandLookup(command, args, "docker") || isCommandLookup(command, args, "podman")) {
+        return createSpawnSyncResult(1);
+      }
+      if ((command === "docker" || command === "podman") && args[0] === "info") {
+        return createSpawnSyncResult(1);
+      }
+      return spawnSync(command, args, options);
+    };
+
+    const result = await restoreRunningServices(app);
+
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.restored, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+      const service = getBuiltinService(serviceId);
+      const installDir = getInstallDir(app, service);
+      assert.equal(fs.existsSync(path.join(installDir, "run", "started.txt")), true);
+    }
+  } finally {
+    childProcess.spawnSync = previousSpawnSync;
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("restoreRunningServices auto-installs and starts builtin services that are not installed yet", async () => {
   const fixture = createBuiltinRestoreFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
@@ -2991,9 +3353,12 @@ test("restoreRunningServices auto-installs and starts builtin services that are 
 
     assert.deepEqual(startupEvents, [
       "start:custom-builtin",
-      "progress:custom-builtin:succeeded"
+      "progress:custom-builtin:failed"
     ]);
-    assert.deepEqual(result.failures, []);
+    assert.equal(result.restored.length, 0);
+    assert.equal(result.failures.length, 1);
+    assert.match(result.failures[0], /custom-builtin/);
+    assert.match(result.failures[0], /复查失败|未确认启动/);
     assert.equal(
       fs.existsSync(path.join(userDataRoot, "services", "custom-builtin", "v1.0.0", "run", "started.txt")),
       true

@@ -6,8 +6,7 @@
   "main": "dist-electron/main/index.js",
   "scripts": {
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
-    "build:page-agent-bridge": "node ./scripts/build-page-agent-bridge.mjs",
-    "build:main": "tsc -p tsconfig.main.json && npm run build:page-agent-bridge",
+    "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:renderer",
     "dev": "node ./scripts/dev.mjs",
@@ -18,9 +17,14 @@
     "test": "npm run build && node --test ./test/*.test.mjs"
   },
   "dependencies": {
-    "@page-agent/core": "^1.8.1",
-    "@page-agent/page-controller": "^1.8.1",
+    "@napi-rs/canvas": "^0.1.100",
+    "docx": "^9.6.1",
+    "exceljs": "^4.4.0",
+    "fast-xml-parser": "^5.7.2",
     "js-yaml": "^4.1.0",
+    "jszip": "^3.10.1",
+    "pdfjs-dist": "^5.7.284",
+    "pptxgenjs": "^4.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.1",

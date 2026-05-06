@@ -76,15 +76,60 @@ function isAttachment(value: unknown): value is AssistantAttachment {
   );
 }
 
+function sanitizeAttachmentDocument(document: AssistantAttachment["document"]) {
+  if (!document || typeof document !== "object") {
+    return undefined;
+  }
+  const format = document.format;
+  const readStatus = document.readStatus;
+  if (
+    !["text", "pdf", "docx", "xlsx", "pptx", "zip", "image", "binary"].includes(format) ||
+    !["readable", "truncated", "unreadable"].includes(readStatus) ||
+    !Number.isFinite(document.extractedChars)
+  ) {
+    return undefined;
+  }
+  return {
+    format,
+    readStatus,
+    extractedChars: document.extractedChars,
+    truncated: Boolean(document.truncated),
+    ...(Number.isFinite(document.pageCount) ? { pageCount: document.pageCount } : {}),
+    ...(Array.isArray(document.sheetNames)
+      ? { sheetNames: document.sheetNames.filter((sheetName) => typeof sheetName === "string").slice(0, 100) }
+      : {}),
+	    ...(Number.isFinite(document.slideCount) ? { slideCount: document.slideCount } : {}),
+	    ...(document.imageMode === "vision" ? { imageMode: "vision" as const } : {}),
+	    ...(typeof document.errorCode === "string" ? { errorCode: document.errorCode } : {}),
+	    ...(typeof document.visionSummary === "string" ? { visionSummary: document.visionSummary.slice(0, 20000) } : {}),
+	    ...(document.visionStatus === "pending" ||
+	      document.visionStatus === "readable" ||
+	      document.visionStatus === "failed" ||
+	      document.visionStatus === "unavailable"
+	      ? { visionStatus: document.visionStatus }
+	      : {})
+	  };
+	}
+
 export function sanitizeAssistantAttachmentForHistory(attachment: AssistantAttachment): AssistantAttachment {
+  const document = sanitizeAttachmentDocument(attachment.document);
   return {
     id: attachment.id,
     name: attachment.name,
     mimeType: attachment.mimeType,
     sizeBytes: Number.isFinite(attachment.sizeBytes) ? attachment.sizeBytes : 0,
     text: attachment.text ?? "",
-    ...(attachment.truncated ? { truncated: true } : {}),
-    ...(attachment.error ? { error: attachment.error } : {})
+    ...(attachment.kind === "artifact" ? { kind: "artifact" as const } : attachment.kind === "input" ? { kind: "input" as const } : {}),
+    ...(attachment.artifactId ? { artifactId: attachment.artifactId } : {}),
+    ...(attachment.description ? { description: attachment.description } : {}),
+    ...(attachment.sha256 ? { sha256: attachment.sha256 } : {}),
+	    ...(attachment.url ? { url: attachment.url } : {}),
+	    ...(attachment.hidden ? { hidden: true } : {}),
+	    ...(attachment.sourceAttachmentId ? { sourceAttachmentId: attachment.sourceAttachmentId } : {}),
+	    ...(Number.isFinite(attachment.pageNumber) ? { pageNumber: attachment.pageNumber } : {}),
+	    ...(attachment.truncated ? { truncated: true } : {}),
+    ...(attachment.error ? { error: attachment.error } : {}),
+    ...(document ? { document } : {})
   };
 }
 
@@ -411,6 +456,37 @@ export function appendAssistantMessageToRoot(
   };
 }
 
+export function updateAssistantMessageAttachmentsToRoot(
+  rootDir: string,
+  chatId: string,
+  messageId: string,
+  attachments: AssistantAttachment[]
+) {
+  const existing = readChat(rootDir, chatId);
+  if (!existing) {
+    return null;
+  }
+  const normalizedAttachments = Array.isArray(attachments)
+    ? attachments.filter(isAttachment).map(sanitizeAssistantAttachmentForHistory)
+    : [];
+  const messages = existing.messages.map((message) => message.id === messageId
+    ? {
+        ...message,
+        ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {})
+      }
+    : message);
+  const chat: StoredChat = {
+    summary: existing.summary,
+    messages
+  };
+  writeChat(rootDir, chat);
+  upsertIndexSummary(rootDir, chat.summary);
+  return {
+    ...chat,
+    events: readAssistantEventsFromRoot(rootDir, chatId)
+  };
+}
+
 export function ensureAssistantChatFromRoot(rootDir: string, chatId: string | null | undefined, title = "新的对话") {
   const now = new Date().toISOString();
   const resolvedChatId = chatId || createChatId();
@@ -470,6 +546,15 @@ export function getAssistantChatDir(app: App, chatId: string) {
 
 export function appendAssistantMessage(app: App, chatId: string | null | undefined, message: AssistantChatMessage) {
   return appendAssistantMessageToRoot(getAssistantRoot(app), chatId, message);
+}
+
+export function updateAssistantMessageAttachments(
+  app: App,
+  chatId: string,
+  messageId: string,
+  attachments: AssistantAttachment[]
+) {
+  return updateAssistantMessageAttachmentsToRoot(getAssistantRoot(app), chatId, messageId, attachments);
 }
 
 export function ensureAssistantChat(app: App, chatId: string | null | undefined, title?: string) {

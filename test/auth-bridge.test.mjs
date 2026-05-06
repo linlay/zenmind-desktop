@@ -31,6 +31,16 @@ test("buildPluginEmbeddedUrl keeps hostTheme for agent-webclient with desktopApp
   );
 });
 
+test("buildPluginEmbeddedUrl carries desktop auth context for agent-webclient", () => {
+  assert.equal(
+    buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {
+      hostTheme: "dark",
+      desktopAuthContext: "webclient:101:platform:202"
+    }),
+    "http://127.0.0.1:9090/appagent?desktopApp=1&hostTheme=dark&desktopAuthContext=webclient%3A101%3Aplatform%3A202"
+  );
+});
+
 test("getPluginAuthBridgeProtocol returns per-service request and response types", () => {
   assert.deepEqual(getPluginAuthBridgeProtocol("pan-webclient"), {
     requestType: "zenmind:pan-app-auth:request",

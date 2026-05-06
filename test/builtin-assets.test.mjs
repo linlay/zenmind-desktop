@@ -210,6 +210,11 @@ test("synced builtin assets include agent-webclient so assistant entry is availa
   const manifest = readManifestFromArchive(assetPath);
   assert.equal(manifest?.frontend?.embedPath, "/appagent");
   assert.equal(manifest?.frontend?.embedParams?.desktopApp, "1");
+  const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
+    ? manifest.desktop.envBindings.map((binding) => binding?.key)
+    : [];
+  assert.ok(envBindingKeys.includes("BASE_URL"));
+  assert.ok(envBindingKeys.includes("WS_BASE_URL"));
 });
 
 test("actual synced agent-platform asset includes required entries", () => {

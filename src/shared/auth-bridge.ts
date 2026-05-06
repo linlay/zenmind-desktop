@@ -28,6 +28,7 @@ export function buildPluginEmbeddedUrl(
   webUrl: string,
   options: {
     hostTheme?: "light" | "dark";
+    desktopAuthContext?: string;
   } = {}
 ): string {
   if (!webUrl) {
@@ -40,6 +41,9 @@ export function buildPluginEmbeddedUrl(
     url.searchParams.set("desktopApp", "1");
     if (options.hostTheme) {
       url.searchParams.set("hostTheme", options.hostTheme);
+    }
+    if (options.desktopAuthContext?.trim()) {
+      url.searchParams.set("desktopAuthContext", options.desktopAuthContext.trim());
     }
   }
   if (serviceId === "pan-webclient") {

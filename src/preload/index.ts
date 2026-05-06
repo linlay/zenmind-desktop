@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   AssistantEvent,
   AssistantEventListener,
+  AssistantMemorySettingsInput,
   AssistantPastedImageInput,
   AssistantSettingsInput,
   AssistantSubmitAwaitingRequest,
@@ -12,6 +13,7 @@ import type {
   AssistantWorkerOpenRequest,
   DesktopApi,
   NavigateListener,
+  NativeDialogVisibilityListener,
   ServicesChangedListener,
   ServiceId,
   ServiceLogReadOptions,
@@ -29,6 +31,14 @@ const api: DesktopApi = {
   assistant: {
     getSettings: () => ipcRenderer.invoke("assistant.getSettings"),
     saveSettings: (input: AssistantSettingsInput) => ipcRenderer.invoke("assistant.saveSettings", input),
+    getMemorySettings: () => ipcRenderer.invoke("assistant.getMemorySettings"),
+    saveMemorySettings: (input: AssistantMemorySettingsInput) =>
+      ipcRenderer.invoke("assistant.saveMemorySettings", input),
+    getMemorySummary: () => ipcRenderer.invoke("assistant.getMemorySummary"),
+    openMemoryDirectory: () => ipcRenderer.invoke("assistant.openMemoryDirectory"),
+    listMemoryItems: () => ipcRenderer.invoke("assistant.listMemoryItems"),
+    deleteMemoryItem: (memoryId: string) => ipcRenderer.invoke("assistant.deleteMemoryItem", memoryId),
+    clearMemoryItems: () => ipcRenderer.invoke("assistant.clearMemoryItems"),
     listChats: () => ipcRenderer.invoke("assistant.listChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
     pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("assistant.pickAttachments", chatId),
@@ -41,6 +51,8 @@ const api: DesktopApi = {
     transcribeVoiceAudio: (request: AssistantVoiceTranscriptionRequest) =>
       ipcRenderer.invoke("assistant.transcribeVoiceAudio", request),
     submitAwaiting: (request: AssistantSubmitAwaitingRequest) => ipcRenderer.invoke("assistant.submitAwaiting", request),
+    openAttachment: (chatId: string, attachmentId: string) =>
+      ipcRenderer.invoke("assistant.openAttachment", chatId, attachmentId),
     deleteChat: (chatId: string) => ipcRenderer.invoke("assistant.deleteChat", chatId),
     onAssistantEvent: (listener: AssistantEventListener) => {
       const handleAssistantEvent = (_event: Electron.IpcRendererEvent, payload: AssistantEvent) => {
@@ -77,6 +89,14 @@ const api: DesktopApi = {
     install: () => ipcRenderer.invoke("plugins.install"),
     uninstall: (serviceId: ServiceId) => ipcRenderer.invoke("plugins.uninstall", serviceId)
   },
+  market: {
+    list: () => ipcRenderer.invoke("market.list"),
+    refresh: () => ipcRenderer.invoke("market.refresh"),
+    install: (itemId: string) => ipcRenderer.invoke("market.install", itemId),
+    update: (itemId: string) => ipcRenderer.invoke("market.update", itemId),
+    uninstall: (itemId: string) => ipcRenderer.invoke("market.uninstall", itemId),
+    importSkill: () => ipcRenderer.invoke("market.importSkill")
+  },
   panAuth: {
     importPrivateKey: () => ipcRenderer.invoke("panAuth.importPrivateKey"),
     getStatus: () => ipcRenderer.invoke("panAuth.getStatus")
@@ -91,7 +111,20 @@ const api: DesktopApi = {
   },
   quickAssistant: {
     setExpanded: (expanded: boolean) => ipcRenderer.invoke("quickAssistant.setExpanded", expanded),
+    setDisplayMode: (mode: "compact" | "attachment" | "expanded") =>
+      ipcRenderer.invoke("quickAssistant.setDisplayMode", mode),
     setInteractionState: (state) => ipcRenderer.invoke("quickAssistant.setInteractionState", state),
+    onCompactModeRequested: (listener) => {
+      const handleCompactModeRequested = () => {
+        listener();
+      };
+
+      ipcRenderer.on("quickAssistant.compactModeRequested", handleCompactModeRequested);
+      return () => {
+        ipcRenderer.off("quickAssistant.compactModeRequested", handleCompactModeRequested);
+      };
+    },
+    pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("quickAssistant.pickAttachments", chatId),
     hide: () => ipcRenderer.invoke("quickAssistant.hide"),
     openMainAssistant: (chatId?: string | null) => ipcRenderer.invoke("quickAssistant.openMainAssistant", chatId),
     openSettings: () => ipcRenderer.invoke("quickAssistant.openSettings")
@@ -157,6 +190,19 @@ const api: DesktopApi = {
     ipcRenderer.on("webview.openTab", handleWebviewOpenTab);
     return () => {
       ipcRenderer.off("webview.openTab", handleWebviewOpenTab);
+    };
+  },
+  onNativeDialogVisibility: (listener: NativeDialogVisibilityListener) => {
+    const handleNativeDialogVisibility = (
+      _event: Electron.IpcRendererEvent,
+      state: Parameters<NativeDialogVisibilityListener>[0]
+    ) => {
+      listener(state);
+    };
+
+    ipcRenderer.on("app.nativeDialogVisibility", handleNativeDialogVisibility);
+    return () => {
+      ipcRenderer.off("app.nativeDialogVisibility", handleNativeDialogVisibility);
     };
   }
 };

@@ -50,6 +50,31 @@ export interface ServiceCommandResult {
   ok: boolean;
   message: string;
   service: ServiceState;
+  verification?: ServiceVerification;
+}
+
+export type ServiceDesiredStatus = "running" | "stopped";
+
+export interface ServiceVerificationProbe {
+  target: string;
+  ok: boolean;
+  statusCode?: number;
+  contentType?: string;
+  message?: string;
+}
+
+export interface ServiceVerification {
+  verified: boolean;
+  desired: ServiceDesiredStatus;
+  actualStatus: ServiceStatus;
+  pidAlive: boolean;
+  portListening: boolean;
+  managedPortPid: number | null;
+  httpOk: boolean | null;
+  runtimeInfoOk: boolean | null;
+  checkedAt: string;
+  issues: string[];
+  probes: ServiceVerificationProbe[];
 }
 
 export interface ServiceConfigReadResult {
@@ -315,6 +340,7 @@ export type WebviewOpenTabListener = (request: WebviewOpenTabRequest) => void;
 export type AssistantMessageRole = "user" | "assistant";
 
 export type AssistantRunAction = "chat" | "summarize_page" | "explain_selection" | "extract_todos";
+export type AssistantPermissionMode = "default" | "full_access";
 
 export interface AssistantPageContext {
   url: string;
@@ -323,6 +349,9 @@ export interface AssistantPageContext {
   metaDescription: string;
   headings: string[];
   bodyText: string;
+  shellSidebarText?: string;
+  leftRegionText?: string;
+  modalText?: string;
   browserTarget?: {
     kind: "webview";
     webContentsId: number;
@@ -373,6 +402,93 @@ export interface AssistantSettingsInput {
   clearApiKey?: boolean;
 }
 
+export type AssistantMemoryKind = "fact" | "observation";
+export type AssistantMemoryStatus = "active" | "open" | "archived";
+
+export interface AssistantMemoryItem {
+  id: string;
+  kind: AssistantMemoryKind;
+  title: string;
+  summary: string;
+  category: string;
+  tags: string[];
+  importance: number;
+  confidence: number;
+  status: AssistantMemoryStatus;
+  sourceChatId?: string;
+  sourceRunId?: string;
+  referenceCount: number;
+  reason?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastReferencedAt?: string;
+}
+
+export interface AssistantMemorySettings {
+  enabled: boolean;
+  autoLearn: boolean;
+  maxItems: number;
+  maxChars: number;
+}
+
+export interface AssistantMemorySettingsInput {
+  enabled?: boolean;
+  autoLearn?: boolean;
+  maxItems?: number;
+  maxChars?: number;
+}
+
+export interface AssistantMemoryStats {
+  total: number;
+  factCount: number;
+  observationCount: number;
+  lastLearnedAt: string | null;
+  lastReferencedAt: string | null;
+}
+
+export interface AssistantMemoryStorage {
+  recordsPath: string;
+  staticPath: string;
+  auditPath: string;
+  directoryPath: string;
+}
+
+export interface AssistantMemoryAuditSummary {
+  operation: string;
+  status: string;
+  reason?: string;
+  stored?: number;
+  skipped?: number;
+  updated?: number;
+  archived?: number;
+  timestamp: string;
+}
+
+export interface AssistantMemorySummary {
+  settings: AssistantMemorySettings;
+  stats: AssistantMemoryStats;
+  storage: AssistantMemoryStorage;
+  directoryPath: string;
+  recentAudit: AssistantMemoryAuditSummary | null;
+}
+
+export type AssistantDocumentFormat = "text" | "pdf" | "docx" | "xlsx" | "pptx" | "zip" | "image" | "binary";
+export type AssistantDocumentReadStatus = "readable" | "truncated" | "unreadable";
+
+export interface AssistantAttachmentDocument {
+  format: AssistantDocumentFormat;
+  readStatus: AssistantDocumentReadStatus;
+  extractedChars: number;
+  truncated: boolean;
+  pageCount?: number;
+  sheetNames?: string[];
+  slideCount?: number;
+  imageMode?: "vision";
+  errorCode?: string;
+  visionSummary?: string;
+  visionStatus?: "pending" | "readable" | "failed" | "unavailable";
+}
+
 export interface AssistantAttachment {
   id: string;
   name: string;
@@ -382,6 +498,15 @@ export interface AssistantAttachment {
   dataUrl?: string;
   truncated?: boolean;
   error?: string;
+  kind?: "input" | "artifact";
+  artifactId?: string;
+  description?: string;
+  sha256?: string;
+  url?: string;
+  document?: AssistantAttachmentDocument;
+  hidden?: boolean;
+  sourceAttachmentId?: string;
+  pageNumber?: number;
 }
 
 export interface AssistantAttachmentPickResult {
@@ -389,6 +514,68 @@ export interface AssistantAttachmentPickResult {
   chatId: string;
   message: string;
   attachments: AssistantAttachment[];
+}
+
+export type MarketItemType = "plugin" | "skill";
+export type MarketInstallState =
+  | "not-installed"
+  | "installed"
+  | "update-available"
+  | "local-imported"
+  | "incompatible"
+  | "installing"
+  | "failed";
+
+export interface MarketAsset {
+  url: string;
+  sha256?: string;
+  sizeBytes: number;
+  archiveType: "tar.gz" | "zip" | "skill" | "md";
+  platform?: string;
+}
+
+export interface MarketCatalogItem {
+  id: string;
+  type: MarketItemType;
+  name: string;
+  version: string;
+  description: string;
+  tags: string[];
+  minDesktopVersion?: string;
+  assets: Record<string, MarketAsset>;
+}
+
+export interface MarketItem {
+  id: string;
+  type: MarketItemType;
+  name: string;
+  version: string;
+  description: string;
+  tags: string[];
+  state: MarketInstallState;
+  source: "cloud" | "local";
+  installedVersion?: string;
+  installPath?: string;
+  serviceId?: string;
+  message?: string;
+}
+
+export interface MarketListResult {
+  ok: boolean;
+  sourceUrl: string;
+  offline: boolean;
+  message: string;
+  items: MarketItem[];
+}
+
+export interface MarketCommandResult {
+  ok: boolean;
+  itemId: string;
+  type: MarketItemType;
+  state: MarketInstallState;
+  message: string;
+  serviceId?: string;
+  installPath?: string;
 }
 
 export interface AssistantPastedImageInput {
@@ -401,6 +588,7 @@ export interface AssistantStartRunRequest {
   chatId?: string | null;
   message: string;
   action?: AssistantRunAction;
+  permissionMode?: AssistantPermissionMode;
   pageContext?: AssistantPageContext | null;
   attachments?: AssistantAttachment[];
   historyBeforeMessageId?: string;
@@ -411,6 +599,9 @@ export interface AssistantStartRunResult {
   runId: string;
   chatId: string;
   message: string;
+  permissionMode?: AssistantPermissionMode;
+  fullAccessExpiresAt?: string | null;
+  fullAccessRemainingMs?: number;
 }
 
 export interface AssistantStopRunResult {
@@ -591,6 +782,8 @@ export interface AssistantRunEvent {
   questions?: AssistantAwaitingQuestion[];
   approvals?: AssistantAwaitingApproval[];
   forms?: AssistantAwaitingForm[];
+  artifactCount?: number;
+  artifacts?: unknown[];
   data?: unknown;
 }
 
@@ -627,10 +820,13 @@ export interface AssistantEvent {
   questions?: AssistantAwaitingQuestion[];
   approvals?: AssistantAwaitingApproval[];
   forms?: AssistantAwaitingForm[];
+  artifactCount?: number;
+  artifacts?: unknown[];
   data?: unknown;
 }
 
 export type AssistantEventListener = (event: AssistantEvent) => void;
+export type NativeDialogVisibilityListener = (state: { open: boolean }) => void;
 
 export interface DesktopApi {
   clipboard: {
@@ -639,6 +835,18 @@ export interface DesktopApi {
   assistant: {
     getSettings: () => Promise<AssistantSettingsPublic>;
     saveSettings: (input: AssistantSettingsInput) => Promise<AssistantSettingsPublic>;
+    getMemorySettings: () => Promise<AssistantMemorySettings>;
+    saveMemorySettings: (input: AssistantMemorySettingsInput) => Promise<AssistantMemorySettings>;
+    getMemorySummary: () => Promise<AssistantMemorySummary>;
+    openMemoryDirectory: () => Promise<{ ok: boolean; message: string; path?: string }>;
+    listMemoryItems: () => Promise<{
+      items: AssistantMemoryItem[];
+      settings: AssistantMemorySettings;
+      stats: AssistantMemoryStats;
+      storage: AssistantMemoryStorage;
+    }>;
+    deleteMemoryItem: (memoryId: string) => Promise<{ ok: boolean; message: string }>;
+    clearMemoryItems: () => Promise<{ ok: boolean; message: string; deletedCount: number }>;
     listChats: () => Promise<AssistantChatSummary[]>;
     getChat: (chatId: string) => Promise<AssistantChatDetail | null>;
     pickAttachments: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
@@ -651,6 +859,7 @@ export interface DesktopApi {
     correctVoiceText: (request: AssistantVoiceCorrectionRequest) => Promise<AssistantVoiceCorrectionResult>;
     transcribeVoiceAudio: (request: AssistantVoiceTranscriptionRequest) => Promise<AssistantVoiceTranscriptionResult>;
     submitAwaiting: (request: AssistantSubmitAwaitingRequest) => Promise<AssistantSubmitAwaitingResult>;
+    openAttachment: (chatId: string, attachmentId: string) => Promise<{ ok: boolean; message: string; path?: string }>;
     deleteChat: (chatId: string) => Promise<{ ok: boolean; message: string }>;
     onAssistantEvent: (listener: AssistantEventListener) => () => void;
   };
@@ -678,6 +887,14 @@ export interface DesktopApi {
     install: () => Promise<PluginInstallResult>;
     uninstall: (serviceId: ServiceId) => Promise<PluginInstallResult>;
   };
+  market: {
+    list: () => Promise<MarketListResult>;
+    refresh: () => Promise<MarketListResult>;
+    install: (itemId: string) => Promise<MarketCommandResult>;
+    update: (itemId: string) => Promise<MarketCommandResult>;
+    uninstall: (itemId: string) => Promise<MarketCommandResult>;
+    importSkill: () => Promise<MarketCommandResult>;
+  };
   panAuth: {
     importPrivateKey: () => Promise<PanAuthImportResult>;
     getStatus: () => Promise<PanAuthStatus>;
@@ -692,7 +909,10 @@ export interface DesktopApi {
   };
   quickAssistant: {
     setExpanded: (expanded: boolean) => Promise<{ ok: boolean }>;
+    setDisplayMode: (mode: "compact" | "attachment" | "expanded") => Promise<{ ok: boolean }>;
     setInteractionState: (state: { busy?: boolean; mouseInside?: boolean }) => Promise<{ ok: boolean }>;
+    onCompactModeRequested: (listener: () => void) => () => void;
+    pickAttachments: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
     hide: () => Promise<{ ok: boolean }>;
     openMainAssistant: (chatId?: string | null) => Promise<{ ok: boolean }>;
     openSettings: () => Promise<{ ok: boolean }>;
@@ -709,4 +929,5 @@ export interface DesktopApi {
   onStartupRestoreState: (listener: StartupRestoreStateListener) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
   onWebviewOpenTab: (listener: WebviewOpenTabListener) => () => void;
+  onNativeDialogVisibility: (listener: NativeDialogVisibilityListener) => () => void;
 }

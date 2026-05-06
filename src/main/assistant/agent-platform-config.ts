@@ -267,12 +267,20 @@ export function loadAgentPlatformVoiceAsrSettings(app: App): AssistantSettingsPr
   });
 }
 
-export function getAgentPlatformMinimaxSettingsPublic(app: App): AssistantSettingsPublic | null {
-  const settings = loadAgentPlatformMinimaxSettings(app);
+export function loadAgentPlatformAssistantSettings(app: App): AssistantSettingsPrivate | null {
+  return loadAgentPlatformProviderSettings(app, "openai") ?? loadAgentPlatformMinimaxSettings(app);
+}
+
+export function getAgentPlatformSettingsPublic(app: App): AssistantSettingsPublic | null {
+  const settings = loadAgentPlatformAssistantSettings(app);
   if (!settings) {
     return null;
   }
-  return toPublicAssistantSettings(settings, "agent-platform", "agent-platform MiniMax");
+  return toPublicAssistantSettings(settings, "agent-platform", "agent-platform");
+}
+
+export function getAgentPlatformMinimaxSettingsPublic(app: App): AssistantSettingsPublic | null {
+  return getAgentPlatformSettingsPublic(app);
 }
 
 export const __testInternals = {

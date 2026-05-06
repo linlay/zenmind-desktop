@@ -5,33 +5,30 @@ import {
   normalizeBrowserText
 } from "./browser-intent";
 import type { AssistantPageContext } from "../../shared/contracts";
-import type { AssistantSettingsPrivate } from "./settings-store";
-import type { PageAgentLLMProxy } from "./page-agent-proxy";
 import {
-  buildPageAgentBridgeCallExpression,
-  buildPageAgentBridgeInstallExpression,
-  compactPageAgentHistory,
-  readPageAgentBridgeSource,
-  type PageAgentBridgeEvent,
-  type PageAgentBridgeResult,
-  type PageAgentBridgeStartResult,
-  type PageAgentBridgeStatus
-} from "./page-agent-bridge";
+  extractBrowserItemsFromHtml,
+  type BrowserExtractionRequest,
+  type BrowserRuntimeExtractionResult
+} from "./browser-runtime";
 
-type DebuggerLike = {
+export type DebuggerLike = {
   isAttached: () => boolean;
   attach: (protocolVersion?: string) => void;
   detach: () => void;
   sendCommand: (method: string, commandParams?: Record<string, unknown>) => Promise<unknown>;
 };
 
-type WebContentsLike = {
+export type WebContentsLike = {
   id: number;
   isDestroyed: () => boolean;
   focus: () => void;
   getURL: () => string;
   getTitle?: () => string;
   debugger: DebuggerLike;
+};
+
+export type BrowserUseControllerOptions = {
+  resolveWebContents?: (webContentsId: number) => WebContentsLike | null | undefined;
 };
 
 export type BrowserClickResult =
@@ -72,8 +69,18 @@ export type BrowserSurface = {
   webContentsId?: number;
 };
 
+export type BrowserAgentTaskInput = {
+  task: string;
+  target?: string;
+  allowSensitive?: boolean;
+  systemInstruction?: string;
+  maxSteps?: number;
+};
+
 export type BrowserObservedElement = BrowserElementCandidate & {
   elementRef: string;
+  ref?: string;
+  selector?: string;
   kind: "button" | "link" | "input" | "select" | "checkbox" | "radio" | "text" | "other";
   unsafe: boolean;
 };
@@ -81,6 +88,8 @@ export type BrowserObservedElement = BrowserElementCandidate & {
 export type BrowserObservedField = {
   index: number;
   elementRef: string;
+  ref?: string;
+  selector?: string;
   label: string;
   tagName: string;
   type: string;
@@ -117,6 +126,76 @@ export type BrowserToolResult = {
   data?: unknown;
 };
 
+export type BrowserRuntimeSnapshot = {
+  snapshotId?: string;
+  url: string;
+  title: string;
+  observation?: BrowserObservation;
+  pageContext?: AssistantPageContext;
+  accessibility?: unknown[];
+  screenshot?: {
+    mimeType: "image/png" | "image/jpeg";
+    data: string;
+  };
+};
+
+export type BrowserElementRef = {
+  ref: string;
+  snapshotId: string;
+  rawElementRef: string;
+  selector?: string;
+  text?: string;
+  label?: string;
+  tagName?: string;
+  role?: string;
+  kind: BrowserObservedElement["kind"] | "field";
+  unsafe?: boolean;
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  pageSignature: {
+    url: string;
+    title: string;
+  };
+  fingerprint: string;
+};
+
+export type BrowserActionSnapshot = BrowserRuntimeSnapshot & {
+  snapshotId: string;
+  readyState: string;
+  elements: BrowserElementRef[];
+  fields: BrowserElementRef[];
+  observation: BrowserObservation;
+};
+
+export type BrowserActionabilityCheck = {
+  ok: boolean;
+  reason?: string;
+  reasons?: string[];
+  x?: number;
+  y?: number;
+  rect?: { x: number; y: number; width: number; height: number };
+};
+
+export type BrowserVerification = {
+  ok: boolean;
+  reason?: string;
+  before?: unknown;
+  after?: unknown;
+};
+
+export type BrowserWaitCondition = {
+  type: "dom_stable" | "text_present" | "text_gone" | "url_changed" | "title_changed" | "result_count";
+  text?: string;
+  previousUrl?: string;
+  previousTitle?: string;
+  count?: number;
+  timeoutMs?: number;
+};
+
 export type BrowserFieldInput = {
   field?: string;
   label?: string;
@@ -128,21 +207,7 @@ export type BrowserAutofillInput = {
   instruction?: string;
   skill?: string;
   submit?: boolean;
-};
-
-export type BrowserAgentTaskInput = {
-  task: string;
-  target?: string;
   allowSensitive?: boolean;
-  maxSteps?: number;
-  systemInstruction?: string;
-};
-
-export type BrowserAgentTaskOptions = {
-  settings: AssistantSettingsPrivate;
-  proxy: PageAgentLLMProxy;
-  signal?: AbortSignal;
-  onEvent?: (event: PageAgentBridgeEvent) => void;
 };
 
 type ElementRefPayload = {
@@ -236,8 +301,6 @@ const READ_PAGE_CONTEXT_SCRIPT = `(() => {
     bodyText: normalize(document.body?.innerText || "").slice(0, 40000)
   };
 })()`;
-
-let cachedPageAgentBridgeSource: string | null = null;
 
 const OBSERVE_PAGE_SCRIPT = `(() => {
   const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
@@ -801,6 +864,52 @@ const FILL_BEST_INPUT_SCRIPT = `(value) => {
   return { ok: true, inputLabel: describe(element) };
 }`;
 
+const READ_HTML_SCRIPT = `(() => [
+  String(document.body?.innerText || ""),
+  "<!--ZENMIND_HTML_SOURCE-->",
+  String(document.documentElement?.outerHTML || "")
+].join("\\n"))()`;
+
+const READ_READY_STATE_SCRIPT = `(() => String(document.readyState || ""))()`;
+
+const ACTIONABILITY_SCRIPT = `(input) => {
+  const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+  const parseRef = (value) => {
+    if (!value || typeof value !== "string") return {};
+    try { return JSON.parse(value); } catch { return { selector: value }; }
+  };
+  const ref = parseRef(input?.rawElementRef || input?.elementRef || "");
+  const selector = input?.selector || ref.selector || "";
+  let element = null;
+  if (selector) {
+    try { element = document.querySelector(selector); } catch {}
+  }
+  if (!element) {
+    return { ok: false, reason: "not_found", reasons: ["元素已不在当前 DOM 中"] };
+  }
+  const rect = element.getBoundingClientRect();
+  const reasons = [];
+  if (!rect || rect.width < 4 || rect.height < 4) reasons.push("元素尺寸过小或不可见");
+  if (rect.bottom < 0 || rect.right < 0 || rect.top > innerHeight || rect.left > innerWidth) reasons.push("元素不在当前视口内");
+  const style = getComputedStyle(element);
+  if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity || "1") <= 0.05) reasons.push("元素隐藏");
+  if (element.disabled || element.getAttribute("aria-disabled") === "true") reasons.push("元素 disabled");
+  const x = Math.max(1, Math.min(innerWidth - 1, rect.left + rect.width / 2));
+  const y = Math.max(1, Math.min(innerHeight - 1, rect.top + rect.height / 2));
+  const topElement = document.elementFromPoint(x, y);
+  if (topElement && topElement !== element && !element.contains(topElement) && !topElement.contains(element)) {
+    reasons.push("元素中心点被 " + normalize(topElement.getAttribute("aria-label") || topElement.id || topElement.className || topElement.tagName) + " 遮挡");
+  }
+  return {
+    ok: reasons.length === 0,
+    reason: reasons.length > 0 ? (reasons.some((reason) => /遮挡/.test(reason)) ? "covered" : "not_actionable") : "",
+    reasons,
+    x,
+    y,
+    rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+  };
+}`;
+
 function getElectronWebContents() {
   const electron = require("electron") as typeof import("electron");
   return electron.webContents;
@@ -810,6 +919,14 @@ function delay(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function browserErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error ?? "");
+}
+
+function isTransientBrowserContextError(error: unknown) {
+  return /Cannot find default execution context|Execution context was destroyed|Cannot find context with specified id|context.*destroyed|target.*(?:closed|navigat)|frame.*(?:detached|navigat)|页面.*导航|上下文.*销毁/iu.test(browserErrorMessage(error));
 }
 
 async function withDebugger<T>(contents: WebContentsLike, task: (debuggerApi: DebuggerLike) => Promise<T>) {
@@ -828,35 +945,47 @@ async function withDebugger<T>(contents: WebContentsLike, task: (debuggerApi: De
   }
 }
 
-async function evaluateWithCDP<T>(contents: WebContentsLike, expression: string): Promise<T> {
-  return withDebugger(contents, async (debuggerApi) => {
-    const result = await debuggerApi.sendCommand("Runtime.evaluate", {
-      expression,
-      awaitPromise: true,
-      returnByValue: true
-    }) as {
-      result?: { value?: T };
-      exceptionDetails?: {
-        text?: string;
-        exception?: {
-          description?: string;
-          value?: unknown;
+async function evaluateWithCDP<T>(contents: WebContentsLike, expression: string, maxAttempts = 3): Promise<T> {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await withDebugger(contents, async (debuggerApi) => {
+        const result = await debuggerApi.sendCommand("Runtime.evaluate", {
+          expression,
+          awaitPromise: true,
+          returnByValue: true
+        }) as {
+          result?: { value?: T };
+          exceptionDetails?: {
+            text?: string;
+            exception?: {
+              description?: string;
+              value?: unknown;
+            };
+          };
         };
-      };
-    };
 
-    if (result.exceptionDetails) {
-      const details = [
-        result.exceptionDetails.exception?.description,
-        result.exceptionDetails.exception?.value,
-        result.exceptionDetails.text
-      ].filter((item) => item !== undefined && item !== null && String(item).trim())
-        .map((item) => String(item).trim());
-      throw new Error(details[0] || "网页脚本执行失败。");
+        if (result.exceptionDetails) {
+          const details = [
+            result.exceptionDetails.exception?.description,
+            result.exceptionDetails.exception?.value,
+            result.exceptionDetails.text
+          ].filter((item) => item !== undefined && item !== null && String(item).trim())
+            .map((item) => String(item).trim());
+          throw new Error(details[0] || "网页脚本执行失败。");
+        }
+
+        return result.result?.value as T;
+      });
+    } catch (error) {
+      lastError = error;
+      if (!isTransientBrowserContextError(error) || attempt >= maxAttempts) {
+        throw error;
+      }
+      await delay(180 * attempt);
     }
-
-    return result.result?.value as T;
-  });
+  }
+  throw lastError instanceof Error ? lastError : new Error("网页脚本执行失败。");
 }
 
 async function dispatchClickWithCDP(contents: WebContentsLike, x: number, y: number) {
@@ -908,13 +1037,6 @@ function buildFillInputExpression(value: string) {
 
 function buildUnaryExpression(script: string, input: unknown) {
   return `(${script})(${JSON.stringify(input)})`;
-}
-
-function getPageAgentBridgeSource() {
-  if (!cachedPageAgentBridgeSource) {
-    cachedPageAgentBridgeSource = readPageAgentBridgeSource();
-  }
-  return cachedPageAgentBridgeSource;
 }
 
 function parseElementRef(value: string | undefined): ElementRefPayload {
@@ -1135,38 +1257,6 @@ function buildAutofillFields(observation: BrowserObservation, input: BrowserAuto
   return fields;
 }
 
-function normalizePageAgentResult(value: unknown): PageAgentBridgeResult {
-  if (!value || typeof value !== "object") {
-    return {
-      success: false,
-      data: "PageAgent 没有返回有效结果。",
-      history: []
-    };
-  }
-  const result = value as PageAgentBridgeResult;
-  return {
-    success: Boolean(result.success),
-    data: typeof result.data === "string" ? result.data : "",
-    history: Array.isArray(result.history) ? result.history : []
-  };
-}
-
-function pageAgentEventMessage(event: PageAgentBridgeEvent) {
-  if (typeof event.message === "string" && event.message.trim()) {
-    return event.message;
-  }
-  switch (event.type) {
-    case "activity":
-      return "PageAgent 活动已更新。";
-    case "history":
-      return "PageAgent 完成一步操作。";
-    case "status":
-      return "PageAgent 状态已更新。";
-    default:
-      return "PageAgent 进度已更新。";
-  }
-}
-
 function isGenericSearchSubmitTarget(target: string) {
   return /^(搜索|搜一下|查询|检索|百度一下|search)$/iu.test(normalizeBrowserText(target));
 }
@@ -1175,6 +1265,8 @@ async function waitForPageSettle(contents: WebContentsLike, timeoutMs = 8000) {
   const startedAt = Date.now();
   let lastSignature = "";
   let stableCount = 0;
+  let sawReadableState = false;
+  let lastTransientError: unknown = null;
 
   await delay(500);
   while (Date.now() - startedAt < timeoutMs) {
@@ -1195,6 +1287,7 @@ async function waitForPageSettle(contents: WebContentsLike, timeoutMs = 8000) {
           loadingText: /页面加载中|loading/i.test(text.slice(0, 200))
         };
       })()`);
+      sawReadableState = true;
       const signature = `${state.url}|${state.title}|${state.textLength}`;
       if (state.readyState !== "loading" && !state.loadingText && state.textLength > 20 && signature === lastSignature) {
         stableCount += 1;
@@ -1205,15 +1298,30 @@ async function waitForPageSettle(contents: WebContentsLike, timeoutMs = 8000) {
         return;
       }
       lastSignature = signature;
-    } catch {
+    } catch (error) {
+      if (isTransientBrowserContextError(error)) {
+        lastTransientError = error;
+      }
       stableCount = 0;
     }
     await delay(450);
   }
+  if (!sawReadableState && lastTransientError) {
+    throw new Error(`page_context_not_ready: ${browserErrorMessage(lastTransientError)}`);
+  }
 }
 
 export class BrowserUseController {
+  private readonly refStore = new Map<string, BrowserElementRef>();
+  private snapshotCounter = 0;
+
+  constructor(private readonly options: BrowserUseControllerOptions = {}) {}
+
   private getWebContents(webContentsId: number): WebContentsLike {
+    const resolved = this.options.resolveWebContents?.(webContentsId);
+    if (resolved && !resolved.isDestroyed()) {
+      return resolved;
+    }
     const contents = getElectronWebContents().fromId(webContentsId) as WebContentsLike | undefined;
     if (!contents || contents.isDestroyed()) {
       throw new Error("当前网页已经不可操作，请刷新或重新打开页面。");
@@ -1226,7 +1334,106 @@ export class BrowserUseController {
     return evaluateWithCDP<BrowserElementCandidate[]>(contents, OBSERVE_CLICKABLES_SCRIPT);
   }
 
-  async observePage(webContentsId: number): Promise<BrowserObservation> {
+  private refStoreKey(webContentsId: number, ref: string) {
+    return `${webContentsId}:${ref}`;
+  }
+
+  private pageSignature(contents: WebContentsLike, fallback?: { url?: string; title?: string }) {
+    return {
+      url: fallback?.url || contents.getURL(),
+      title: fallback?.title || contents.getTitle?.() || ""
+    };
+  }
+
+  private rememberRefs(webContentsId: number, refs: BrowserElementRef[]) {
+    for (const ref of refs) {
+      this.refStore.set(this.refStoreKey(webContentsId, ref.ref), ref);
+    }
+  }
+
+  private getStoredRef(webContentsId: number, ref: string | undefined) {
+    if (!ref || !ref.startsWith("@")) {
+      return null;
+    }
+    return this.refStore.get(this.refStoreKey(webContentsId, ref)) ?? null;
+  }
+
+  private isStoredRefStale(contents: WebContentsLike, ref: BrowserElementRef) {
+    const current = this.pageSignature(contents);
+    return current.url !== ref.pageSignature.url || current.title !== ref.pageSignature.title;
+  }
+
+  private buildElementRefs(
+    snapshotId: string,
+    contents: WebContentsLike,
+    observation: BrowserObservation
+  ) {
+    const signature = this.pageSignature(contents, observation);
+    const toRef = (
+      prefix: "@e" | "@f",
+      item: BrowserObservedElement | BrowserObservedField,
+      index: number,
+      kind: BrowserElementRef["kind"]
+    ): BrowserElementRef => {
+      const raw = parseElementRef(item.elementRef);
+      const text = "text" in item ? item.text : "";
+      const label = "label" in item ? item.label : raw.label;
+      const selector = raw.selector;
+      const bounds = {
+        x: item.x,
+        y: item.y,
+        width: item.width,
+        height: item.height
+      };
+      const ref = `${prefix}${index + 1}`;
+      return {
+        ref,
+        snapshotId,
+        rawElementRef: item.elementRef,
+        selector,
+        text,
+        label,
+        tagName: item.tagName,
+        role: item.role,
+        kind,
+        unsafe: "unsafe" in item ? item.unsafe : false,
+        bounds,
+        pageSignature: signature,
+        fingerprint: [
+          selector,
+          normalizeBrowserText(text || ""),
+          normalizeBrowserText(label || ""),
+          Math.round(bounds.x),
+          Math.round(bounds.y),
+          Math.round(bounds.width),
+          Math.round(bounds.height)
+        ].join("|")
+      };
+    };
+    const elements = observation.elements.map((element, index) => toRef("@e", element, index, element.kind));
+    const fields = observation.fields.map((field, index) => toRef("@f", field, index, "field"));
+    return { elements, fields };
+  }
+
+  private applySnapshotRefs(observation: BrowserObservation, refs: { elements: BrowserElementRef[]; fields: BrowserElementRef[] }) {
+    return {
+      ...observation,
+      elements: observation.elements.map((element, index) => ({
+        ...element,
+        elementRef: refs.elements[index]?.ref || element.elementRef,
+        ref: refs.elements[index]?.ref,
+        selector: refs.elements[index]?.selector
+      })),
+      fields: observation.fields.map((field, index) => ({
+        ...field,
+        elementRef: refs.fields[index]?.ref || field.elementRef,
+        ref: refs.fields[index]?.ref,
+        selector: refs.fields[index]?.selector
+      }))
+    };
+  }
+
+  async observePageRaw(webContentsId: number): Promise<BrowserObservation> {
     const contents = this.getWebContents(webContentsId);
     const observation = await evaluateWithCDP<BrowserObservation>(contents, OBSERVE_PAGE_SCRIPT);
     return {
@@ -1240,151 +1447,197 @@ export class BrowserUseController {
     };
   }
 
-  async executeAgentTask(
-    webContentsId: number,
-    input: BrowserAgentTaskInput,
-    options: BrowserAgentTaskOptions
-  ): Promise<BrowserToolResult> {
+  async navigateUrl(webContentsId: number, input: { url: string; label?: string }): Promise<BrowserToolResult> {
     const contents = this.getWebContents(webContentsId);
-    const task = String(input.task || "").trim();
-    if (!task) {
+    const targetUrl = String(input.url || "").trim();
+    if (!targetUrl) {
       return {
         ok: false,
-        action: "agent_execute",
-        url: contents.getURL(),
-        error: "invalid_arguments",
-        message: "PageAgent 任务不能为空。"
-      };
-    }
-    if (!options.settings.apiKey.trim() || !options.settings.model.trim()) {
-      return {
-        ok: false,
-        action: "agent_execute",
-        url: contents.getURL(),
-        error: "model_not_configured",
-        message: "请先配置助手模型 API Key 和模型名称。"
+        action: "navigate",
+        error: "missing_url",
+        message: "缺少要打开的网址。"
       };
     }
 
-    const installed = await evaluateWithCDP<boolean>(
-      contents,
-      buildPageAgentBridgeInstallExpression(getPageAgentBridgeSource())
-    );
-    if (!installed) {
-      return {
-        ok: false,
-        action: "agent_execute",
-        url: contents.getURL(),
-        error: "page_agent_bridge_install_failed",
-        message: "PageAgent bridge 注入失败。"
-      };
-    }
+    await withDebugger(contents, async (debuggerApi) => {
+      await debuggerApi.sendCommand("Page.enable").catch(() => undefined);
+      await debuggerApi.sendCommand("Page.navigate", { url: targetUrl });
+    });
+    await waitForPageSettle(contents, 9000).catch(() => undefined);
 
-    const proxySession = await options.proxy.register(options.settings);
-    let runId = "";
-    let aborted = false;
-    const abortHandler = () => {
-      aborted = true;
-      if (runId) {
-        void evaluateWithCDP(contents, buildPageAgentBridgeCallExpression("stop", [runId])).catch(() => undefined);
-      }
+    const pageContext = await this.readPageContext(webContentsId).catch(() => null);
+    return {
+      ok: true,
+      action: "navigate",
+      target: targetUrl,
+      url: pageContext?.url || contents.getURL(),
+      title: pageContext?.title || contents.getTitle?.() || "",
+      message: `已在当前网页打开${input.label || targetUrl}。`
     };
-    options.signal?.addEventListener("abort", abortHandler, { once: true });
-
-    try {
-      const start = await evaluateWithCDP<PageAgentBridgeStartResult>(
-        contents,
-        buildPageAgentBridgeCallExpression("start", {
-          task,
-          baseURL: proxySession.baseURL,
-          token: proxySession.token,
-          model: options.settings.model,
-          allowSensitive: Boolean(input.allowSensitive),
-          maxSteps: input.maxSteps ?? 20,
-          systemInstruction: input.systemInstruction
-        })
-      );
-      runId = start.runId;
-
-      while (true) {
-        if (aborted || options.signal?.aborted) {
-          throw new Error("aborted");
-        }
-        const events = await evaluateWithCDP<PageAgentBridgeEvent[]>(
-          contents,
-          buildPageAgentBridgeCallExpression("drainEvents", [runId])
-        ).catch(() => []);
-        for (const event of events) {
-          options.onEvent?.({
-            ...event,
-            message: pageAgentEventMessage(event)
-          });
-        }
-
-        const status = await evaluateWithCDP<PageAgentBridgeStatus>(
-          contents,
-          buildPageAgentBridgeCallExpression("getResult", [runId])
-        );
-        if (!status.ok) {
-          return {
-            ok: false,
-            action: "agent_execute",
-            url: contents.getURL(),
-            error: status.error || "page_agent_status_failed",
-            message: "PageAgent 状态读取失败。"
-          };
-        }
-        if (status.status === "completed" || status.status === "error" || status.status === "stopped") {
-          const finalEvents = await evaluateWithCDP<PageAgentBridgeEvent[]>(
-            contents,
-            buildPageAgentBridgeCallExpression("drainEvents", [runId])
-          ).catch(() => []);
-          for (const event of finalEvents) {
-            options.onEvent?.({
-              ...event,
-              message: pageAgentEventMessage(event)
-            });
-          }
-          const result = normalizePageAgentResult(status.result);
-          await waitForPageSettle(contents, 3500).catch(() => undefined);
-          const pageContext = await this.readPageContext(webContentsId).catch(() => null);
-          const finalText = result.data || (result.success ? "PageAgent 任务完成。" : "PageAgent 任务未完成。");
-          return {
-            ok: Boolean(result.success),
-            action: "agent_execute",
-            target: input.target || task,
-            url: pageContext?.url || contents.getURL(),
-            title: pageContext?.title || contents.getTitle?.() || "",
-            error: result.success ? undefined : status.status === "stopped" ? "page_agent_stopped" : "page_agent_failed",
-            message: result.success ? finalText : `PageAgent 未完成：${finalText}`,
-            data: {
-              success: Boolean(result.success),
-              finalText,
-              history: compactPageAgentHistory(result.history),
-              url: pageContext?.url || contents.getURL(),
-              title: pageContext?.title || contents.getTitle?.() || "",
-              pageContext
-            }
-          };
-        }
-        await delay(350);
-      }
-    } finally {
-      options.signal?.removeEventListener("abort", abortHandler);
-      options.proxy.revoke(proxySession.token);
-      if (runId) {
-        await evaluateWithCDP(contents, buildPageAgentBridgeCallExpression("cleanup", [runId])).catch(() => undefined);
-      }
-    }
   }
 
-  async click(webContentsId: number, input: { elementRef?: string; target?: string }): Promise<BrowserToolResult> {
+  async snapshotPage(webContentsId: number): Promise<BrowserActionSnapshot> {
+    const contents = this.getWebContents(webContentsId);
+    const snapshotId = `snap_${Date.now().toString(36)}_${(this.snapshotCounter += 1).toString(36)}`;
+    const [observationResult, pageContextResult, accessibilityResult, domSnapshotResult] = await Promise.allSettled([
+      this.observePageRaw(webContentsId),
+      this.readPageContext(webContentsId),
+      this.readAccessibilitySnapshot(webContentsId),
+      withDebugger(contents, async (debuggerApi) => {
+        await debuggerApi.sendCommand("DOMSnapshot.enable").catch(() => undefined);
+        return debuggerApi.sendCommand("DOMSnapshot.captureSnapshot", {
+          computedStyles: ["display", "visibility", "opacity", "pointer-events"]
+        });
+      })
+    ]);
+    const rawObservation = observationResult.status === "fulfilled"
+      ? observationResult.value
+      : {
+          ok: true as const,
+          action: "observe" as const,
+          url: contents.getURL(),
+          title: contents.getTitle?.() || "",
+          bodyText: "",
+          elements: [],
+          fields: []
+        };
+    const refs = this.buildElementRefs(snapshotId, contents, rawObservation);
+    this.rememberRefs(webContentsId, [...refs.elements, ...refs.fields]);
+    const observation = this.applySnapshotRefs(rawObservation, refs);
+    const pageContext = pageContextResult.status === "fulfilled" ? pageContextResult.value : undefined;
+    return {
+      snapshotId,
+      readyState: "",
+      url: pageContext?.url || rawObservation.url || contents.getURL(),
+      title: pageContext?.title || rawObservation.title || contents.getTitle?.() || "",
+      observation,
+      pageContext,
+      accessibility: accessibilityResult.status === "fulfilled" ? accessibilityResult.value : [],
+      elements: refs.elements,
+      fields: refs.fields,
+      ...(domSnapshotResult.status === "fulfilled" ? { domSnapshot: domSnapshotResult.value } as Record<string, unknown> : {})
+    } as BrowserActionSnapshot;
+  }
+
+  async observePage(webContentsId: number): Promise<BrowserObservation> {
+    return (await this.snapshotPage(webContentsId)).observation;
+  }
+
+  async waitForPageSettle(webContentsId: number, timeoutMs = 8000): Promise<void> {
+    const contents = this.getWebContents(webContentsId);
+    await waitForPageSettle(contents, timeoutMs);
+  }
+
+  private async checkActionability(contents: WebContentsLike, ref: BrowserElementRef): Promise<BrowserActionabilityCheck> {
+    if (!ref.selector && !ref.rawElementRef) {
+      return {
+        ok: false,
+        reason: "missing_selector",
+        reasons: ["缺少可定位 selector"]
+      };
+    }
+    const result = await evaluateWithCDP<BrowserActionabilityCheck>(
+      contents,
+      buildUnaryExpression(ACTIONABILITY_SCRIPT, {
+        selector: ref.selector,
+        rawElementRef: ref.rawElementRef,
+        elementRef: ref.rawElementRef
+      })
+    ).catch((error) => ({
+      ok: false,
+      reason: "actionability_check_failed",
+      reasons: [error instanceof Error ? error.message : String(error)]
+    }));
+    if (typeof result?.ok === "boolean") {
+      return result;
+    }
+    return {
+      ok: true,
+      x: ref.bounds.x,
+      y: ref.bounds.y,
+      reasons: []
+    };
+  }
+
+  async click(webContentsId: number, input: { elementRef?: string; target?: string; allowSensitive?: boolean }): Promise<BrowserToolResult> {
     const contents = this.getWebContents(webContentsId);
     const target = (input.target ?? "").trim();
-    if (!input.elementRef && target && isGenericSearchSubmitTarget(target)) {
-      return this.submit(webContentsId, { target });
+    const storedRef = this.getStoredRef(webContentsId, input.elementRef);
+    if (input.elementRef?.startsWith("@") && !storedRef) {
+      return {
+        ok: false,
+        action: "click",
+        target,
+        url: contents.getURL(),
+        error: "ref_not_found",
+        message: "这个页面引用已经不存在，请重新观察页面。"
+      };
     }
-    if (target && isPotentiallySensitiveClickTarget(target)) {
+    if (storedRef) {
+      if (this.isStoredRefStale(contents, storedRef)) {
+        return {
+          ok: false,
+          action: "click",
+          target: storedRef.text || storedRef.label || target,
+          url: contents.getURL(),
+          error: "stale_ref",
+          message: "页面已经变化，这个元素引用已失效，请重新观察页面后再操作。",
+          data: {
+            ref: storedRef.ref,
+            snapshotId: storedRef.snapshotId,
+            previous: storedRef.pageSignature,
+            current: this.pageSignature(contents)
+          }
+        };
+      }
+      if (!input.allowSensitive && (storedRef.unsafe || isPotentiallySensitiveClickTarget(storedRef.text || storedRef.label || target))) {
+        return {
+          ok: false,
+          action: "click",
+          target: storedRef.text || storedRef.label || target,
+          url: contents.getURL(),
+          error: "sensitive_action_blocked",
+          message: `“${storedRef.text || storedRef.label || target}”可能涉及敏感操作，已停止自动点击。请用户确认后再执行。`
+        };
+      }
+      const check = await this.checkActionability(contents, storedRef);
+      if (!check.ok) {
+        return {
+          ok: false,
+          action: "click",
+          target: storedRef.text || storedRef.label || target,
+          url: contents.getURL(),
+          error: "element_not_actionable",
+          message: `元素当前不可操作：${(check.reasons || [check.reason || "不可操作"]).join("；")}`,
+          data: {
+            ref: storedRef,
+            actionability: check
+          }
+        };
+      }
+      contents.focus();
+      await dispatchClickWithCDP(contents, Number(check.x ?? storedRef.bounds.x), Number(check.y ?? storedRef.bounds.y));
+      await waitForPageSettle(contents, 3500);
+      return {
+        ok: true,
+        action: "click",
+        target: storedRef.text || storedRef.label || target,
+        url: contents.getURL(),
+        title: contents.getTitle?.() || "",
+        message: `已点击“${storedRef.text || storedRef.label || target}”。`,
+        data: {
+          element: storedRef,
+          verification: {
+            ok: true,
+            actionability: check
+          }
+        }
+      };
+    }
+    if (!input.elementRef && target && isGenericSearchSubmitTarget(target)) {
+      return this.submit(webContentsId, { target, allowSensitive: input.allowSensitive });
+    }
+    if (!input.allowSensitive && target && isPotentiallySensitiveClickTarget(target)) {
       return {
         ok: false,
         action: "click",
@@ -1422,7 +1675,7 @@ export class BrowserUseController {
         }
       };
     }
-    if (selected.unsafe || isPotentiallySensitiveClickTarget(selected.text || selected.ariaLabel || target)) {
+    if (!input.allowSensitive && (selected.unsafe || isPotentiallySensitiveClickTarget(selected.text || selected.ariaLabel || target))) {
       return {
         ok: false,
         action: "click",
@@ -1434,7 +1687,42 @@ export class BrowserUseController {
     }
 
     contents.focus();
-    await dispatchClickWithCDP(contents, selected.x, selected.y);
+    const selectedRef: BrowserElementRef = {
+      ref: selected.ref || selected.elementRef,
+      snapshotId: "semantic",
+      rawElementRef: selected.elementRef,
+      selector: selected.selector ?? parseElementRef(selected.elementRef).selector,
+      text: selected.text,
+      label: selected.ariaLabel,
+      tagName: selected.tagName,
+      role: selected.role,
+      kind: selected.kind,
+      unsafe: selected.unsafe,
+      bounds: {
+        x: selected.x,
+        y: selected.y,
+        width: selected.width,
+        height: selected.height
+      },
+      pageSignature: this.pageSignature(contents, observation),
+      fingerprint: selected.elementRef
+    };
+    const check = await this.checkActionability(contents, selectedRef);
+    if (!check.ok) {
+      return {
+        ok: false,
+        action: "click",
+        target: selected.text || target,
+        url: contents.getURL(),
+        error: "element_not_actionable",
+        message: `元素当前不可操作：${(check.reasons || [check.reason || "不可操作"]).join("；")}`,
+        data: {
+          element: selected,
+          actionability: check
+        }
+      };
+    }
+    await dispatchClickWithCDP(contents, Number(check.x ?? selected.x), Number(check.y ?? selected.y));
     await waitForPageSettle(contents, 3500);
     return {
       ok: true,
@@ -1460,9 +1748,10 @@ export class BrowserUseController {
       const matched = item.elementRef
         ? observation.fields.find((field) => field.elementRef === item.elementRef)
         : chooseBestField(observation.fields, target);
+      const storedFieldRef = this.getStoredRef(webContentsId, item.elementRef ?? matched?.elementRef);
       const input = {
         ...item,
-        elementRef: item.elementRef ?? matched?.elementRef,
+        elementRef: storedFieldRef?.rawElementRef ?? item.elementRef ?? matched?.elementRef,
         field: item.field ?? item.label ?? matched?.label
       };
       const result = await evaluateWithCDP<{ ok: boolean; label?: string; value?: string; message?: string }>(
@@ -1528,7 +1817,7 @@ export class BrowserUseController {
     const filledMessage = result.ok ? result.message || `已自动填写 ${fields.length} 个字段。` : result.message || "自动填写表单失败。";
     let submitResult: BrowserToolResult | null = null;
     if (result.ok && input.submit) {
-      submitResult = await this.submit(webContentsId, { target: "提交" });
+      submitResult = await this.submit(webContentsId, { target: "提交", allowSensitive: input.allowSensitive });
     }
 
     return {
@@ -1559,9 +1848,13 @@ export class BrowserUseController {
 
   async setChecked(webContentsId: number, input: { field?: string; label?: string; elementRef?: string; checked: boolean }): Promise<BrowserToolResult> {
     const contents = this.getWebContents(webContentsId);
+    const storedRef = this.getStoredRef(webContentsId, input.elementRef);
     const result = await evaluateWithCDP<{ ok: boolean; label?: string; checked?: boolean; message?: string }>(
       contents,
-      buildUnaryExpression(SET_CHECKED_SCRIPT, input)
+      buildUnaryExpression(SET_CHECKED_SCRIPT, {
+        ...input,
+        elementRef: storedRef?.rawElementRef ?? input.elementRef
+      })
     );
     return {
       ok: result.ok,
@@ -1576,10 +1869,10 @@ export class BrowserUseController {
     };
   }
 
-  async submit(webContentsId: number, input: { target?: string; elementRef?: string } = {}): Promise<BrowserToolResult> {
+  async submit(webContentsId: number, input: { target?: string; elementRef?: string; allowSensitive?: boolean } = {}): Promise<BrowserToolResult> {
     const contents = this.getWebContents(webContentsId);
     const target = (input.target ?? "").trim();
-    if (target && isPotentiallySensitiveClickTarget(target) && !/搜索|查询|百度一下/u.test(target)) {
+    if (!input.allowSensitive && target && isPotentiallySensitiveClickTarget(target) && !/搜索|查询|百度一下/u.test(target)) {
       return {
         ok: false,
         action: "submit",
@@ -1591,9 +1884,13 @@ export class BrowserUseController {
     }
 
     contents.focus();
+    const storedRef = this.getStoredRef(webContentsId, input.elementRef);
     const result = await evaluateWithCDP<{ ok: boolean; mode?: string; label?: string; x?: number; y?: number; message?: string }>(
       contents,
-      buildUnaryExpression(SUBMIT_SCRIPT, input)
+      buildUnaryExpression(SUBMIT_SCRIPT, {
+        ...input,
+        elementRef: storedRef?.rawElementRef ?? input.elementRef
+      })
     );
     if (!result.ok) {
       return {
@@ -1605,7 +1902,7 @@ export class BrowserUseController {
         message: result.message || "没有找到可提交的按钮或表单。"
       };
     }
-    if (result.label && isPotentiallySensitiveClickTarget(result.label) && !/搜索|查询|百度一下/u.test(result.label)) {
+    if (!input.allowSensitive && result.label && isPotentiallySensitiveClickTarget(result.label) && !/搜索|查询|百度一下/u.test(result.label)) {
       return {
         ok: false,
         action: "submit",
@@ -1722,6 +2019,144 @@ export class BrowserUseController {
         kind: "webview",
         webContentsId
       }
+    };
+  }
+
+  async captureScreenshot(webContentsId: number): Promise<BrowserRuntimeSnapshot["screenshot"]> {
+    const contents = this.getWebContents(webContentsId);
+    const result = await withDebugger(contents, async (debuggerApi) => {
+      await debuggerApi.sendCommand("Page.enable").catch(() => undefined);
+      return debuggerApi.sendCommand("Page.captureScreenshot", {
+        format: "jpeg",
+        quality: 60,
+        captureBeyondViewport: false
+      }) as Promise<{ data?: string }>;
+    });
+    return result.data
+      ? {
+          mimeType: "image/jpeg",
+          data: result.data
+        }
+      : undefined;
+  }
+
+  async readAccessibilitySnapshot(webContentsId: number): Promise<unknown[]> {
+    const contents = this.getWebContents(webContentsId);
+    const result = await withDebugger(contents, async (debuggerApi) => {
+      await debuggerApi.sendCommand("Accessibility.enable").catch(() => undefined);
+      return debuggerApi.sendCommand("Accessibility.getFullAXTree", {}) as Promise<{ nodes?: unknown[] }>;
+    });
+    return Array.isArray(result.nodes) ? result.nodes.slice(0, 240) : [];
+  }
+
+  async createRuntimeSnapshot(webContentsId: number): Promise<BrowserRuntimeSnapshot> {
+    const snapshot = await this.snapshotPage(webContentsId);
+    const screenshot = await this.captureScreenshot(webContentsId).catch(() => undefined);
+    return {
+      ...snapshot,
+      ...(screenshot ? { screenshot } : {})
+    };
+  }
+
+  async extractPage(webContentsId: number, extraction: BrowserExtractionRequest): Promise<BrowserRuntimeExtractionResult> {
+    const contents = this.getWebContents(webContentsId);
+    const html = await evaluateWithCDP<string>(contents, READ_HTML_SCRIPT);
+    return extractBrowserItemsFromHtml(html, contents.getURL(), extraction);
+  }
+
+  async waitForCondition(webContentsId: number, condition: BrowserWaitCondition = { type: "dom_stable" }): Promise<BrowserToolResult> {
+    const contents = this.getWebContents(webContentsId);
+    const timeoutMs = condition.timeoutMs ?? 8000;
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const state = await evaluateWithCDP<{
+        url: string;
+        title: string;
+        text: string;
+        readyState: string;
+      }>(contents, `(() => ({
+        url: String(location.href || ""),
+        title: String(document.title || ""),
+        text: String(document.body?.innerText || ""),
+        readyState: String(document.readyState || "")
+      }))()`).catch(() => null);
+      if (state) {
+        const matched =
+          condition.type === "dom_stable"
+            ? state.readyState !== "loading"
+            : condition.type === "text_present"
+              ? Boolean(condition.text && state.text.includes(condition.text))
+              : condition.type === "text_gone"
+                ? Boolean(condition.text && !state.text.includes(condition.text))
+                : condition.type === "url_changed"
+                  ? Boolean(condition.previousUrl && state.url !== condition.previousUrl)
+                  : condition.type === "title_changed"
+                    ? Boolean(condition.previousTitle && state.title !== condition.previousTitle)
+                    : condition.type === "result_count"
+                      ? state.text.split(/\r?\n/u).filter((line) => normalizeBrowserText(line).length > 1).length >= (condition.count ?? 1)
+                      : false;
+        if (matched) {
+          return {
+            ok: true,
+            action: "wait",
+            url: state.url,
+            title: state.title,
+            message: "等待条件已满足。",
+            data: {
+              condition,
+              elapsedMs: Date.now() - startedAt,
+              verification: { ok: true }
+            }
+          };
+        }
+      }
+      await delay(250);
+    }
+    return {
+      ok: false,
+      action: "wait",
+      url: contents.getURL(),
+      title: contents.getTitle?.() || "",
+      error: "wait_timeout",
+      message: "等待条件超时未满足。",
+      data: {
+        condition,
+        elapsedMs: Date.now() - startedAt,
+        verification: { ok: false, reason: "timeout" }
+      }
+    };
+  }
+
+  async sendCdpCommand(
+    webContentsId: number,
+    input: { method: string; params?: Record<string, unknown> }
+  ): Promise<BrowserToolResult> {
+    const contents = this.getWebContents(webContentsId);
+    const method = String(input.method || "").trim();
+    if (!/^[A-Za-z]+(?:\.[A-Za-z0-9_]+)+$/u.test(method)) {
+      return {
+        ok: false,
+        action: "cdp_command",
+        error: "invalid_method",
+        message: "CDP method 格式无效。"
+      };
+    }
+
+    const params = input.params && typeof input.params === "object" && !Array.isArray(input.params)
+      ? input.params
+      : {};
+    const data = await withDebugger(contents, async (debuggerApi) => {
+      return debuggerApi.sendCommand(method, params);
+    });
+    await waitForPageSettle(contents, 1500).catch(() => undefined);
+    return {
+      ok: true,
+      action: "cdp_command",
+      target: method,
+      url: contents.getURL(),
+      title: contents.getTitle?.() || "",
+      message: `已执行 CDP 命令：${method}。`,
+      data
     };
   }
 }

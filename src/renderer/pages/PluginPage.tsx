@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
+import { registerAssistantPageContextProvider } from "../services/assistantPageContext";
 import {
   buildPluginEmbeddedUrl,
   getPluginAuthBridgeProtocol,
 } from "../../shared/auth-bridge";
 import { getServiceDisplayName } from "../service-display";
+import type { AssistantPageContext } from "../../shared/contracts";
 
 type PluginPageProps = {
   hostTheme: "light" | "dark";
@@ -15,12 +17,81 @@ type PluginPageProps = {
 
 const AGENT_APP_CLIPBOARD_REQUEST_TYPE = "zenmind:agent-app-clipboard:request";
 const AGENT_APP_CLIPBOARD_RESPONSE_TYPE = "zenmind:agent-app-clipboard:response";
+const MAX_PLUGIN_PAGE_CONTEXT_HEADINGS = 24;
+const MAX_PLUGIN_PAGE_CONTEXT_BODY_TEXT = 40000;
+
+function normalizeWhitespace(value: string) {
+  return value.replace(/\s+/gu, " ").trim();
+}
+
+function buildPluginIframeFallbackContext(
+  serviceDisplayName: string,
+  embeddedUrl: string,
+  webUrl: string
+): AssistantPageContext {
+  const normalizedName = normalizeWhitespace(serviceDisplayName || "内嵌应用");
+  const fallbackUrl = embeddedUrl || webUrl || window.location.href;
+  return {
+    url: fallbackUrl,
+    title: normalizedName || "内嵌应用",
+    selectedText: "",
+    metaDescription: "",
+    headings: [],
+    bodyText: [
+      `当前左侧区域是内嵌应用「${normalizedName || "内嵌应用"}」。`,
+      "宿主当前无法直接读取这个 iframe 内部的列表、卡片或正文文本。",
+      "如果用户追问左侧区域里具体有什么，请明确说明当前看不到其内部细节，不要猜测网站、应用名称或列表项。"
+    ].join(" ")
+  };
+}
+
+function tryReadPluginIframePageContext(
+  iframe: HTMLIFrameElement | null,
+  serviceDisplayName: string,
+  embeddedUrl: string,
+  webUrl: string
+): AssistantPageContext | null {
+  const frameWindow = iframe?.contentWindow;
+  if (!frameWindow) {
+    return null;
+  }
+
+  try {
+    const frameDocument = frameWindow.document;
+    const frameLocation = frameWindow.location;
+    const title = normalizeWhitespace(frameDocument.title || serviceDisplayName || "内嵌应用");
+    const selectedText = normalizeWhitespace(frameWindow.getSelection?.()?.toString() ?? "");
+    const metaDescription = normalizeWhitespace(
+      frameDocument.querySelector('meta[name="description"]')?.getAttribute("content") ?? ""
+    );
+    const headings = Array.from(frameDocument.querySelectorAll("h1, h2, h3"))
+      .map((heading) => normalizeWhitespace(heading.textContent ?? ""))
+      .filter(Boolean)
+      .slice(0, MAX_PLUGIN_PAGE_CONTEXT_HEADINGS);
+    const bodyText = normalizeWhitespace(frameDocument.body?.innerText || frameDocument.body?.textContent || "")
+      .slice(0, MAX_PLUGIN_PAGE_CONTEXT_BODY_TEXT);
+
+    return {
+      url: frameLocation.href || embeddedUrl || webUrl || window.location.href,
+      title,
+      selectedText,
+      metaDescription,
+      headings,
+      bodyText
+    };
+  } catch {
+    return null;
+  }
+}
 
 export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: PluginPageProps) {
   const { pluginId: routePluginId } = useParams<{ pluginId: string }>();
   const pluginId = pluginIdProp ?? routePluginId ?? "";
   const { services } = useServices();
   const service = services.find((s) => s.id === pluginId);
+  const agentPlatformService = service?.id === "agent-webclient"
+    ? services.find((s) => s.id === "agent-platform")
+    : null;
   const serviceDisplayName = service ? getServiceDisplayName(service.id, service.name) : "";
   const [bridgeError, setBridgeError] = useState("");
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -38,9 +109,17 @@ export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: Plugin
     () => getPluginAuthBridgeProtocol(service?.id),
     [service?.id],
   );
+  const iframeReloadKey = [
+    service?.healthMeta.pid ?? "",
+    service?.id === "agent-webclient" ? agentPlatformService?.status ?? "" : "",
+    service?.id === "agent-webclient" ? agentPlatformService?.healthMeta.pid ?? "" : ""
+  ].join(":");
   const embeddedUrl = useMemo(() => {
-    return buildPluginEmbeddedUrl(service?.id, webUrl, { hostTheme });
-  }, [hostTheme, service?.id, webUrl]);
+    return buildPluginEmbeddedUrl(service?.id, webUrl, {
+      hostTheme,
+      desktopAuthContext: service?.id === "agent-webclient" ? iframeReloadKey : undefined
+    });
+  }, [hostTheme, iframeReloadKey, service?.id, webUrl]);
 
   useEffect(() => {
     setBridgeError("");
@@ -182,7 +261,27 @@ export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: Plugin
       return;
     }
     setIframeInstanceKey((current) => current + 1);
-  }, [embeddedUrl, service?.status]);
+  }, [embeddedUrl, iframeReloadKey, service?.status]);
+
+  useEffect(() => {
+    if (active === false || service?.status !== "running") {
+      return undefined;
+    }
+
+    return registerAssistantPageContextProvider(async () => {
+      const iframeContext = tryReadPluginIframePageContext(
+        iframeRef.current,
+        serviceDisplayName,
+        embeddedUrl,
+        webUrl
+      );
+      if (iframeContext) {
+        return iframeContext;
+      }
+
+      return buildPluginIframeFallbackContext(serviceDisplayName, embeddedUrl, webUrl);
+    });
+  }, [active, embeddedUrl, service?.status, serviceDisplayName, webUrl]);
 
   if (!service) {
     return (

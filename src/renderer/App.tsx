@@ -18,6 +18,12 @@ import {
   shouldAutoOpenAssistant,
   shouldShowStartupProgressCard
 } from "../shared/startup-gate";
+import {
+  BUILTIN_BROWSER_DEFAULT_URL,
+  BUILTIN_BROWSER_ROUTE,
+  BUILTIN_BROWSER_SURFACE_ID,
+  BUILTIN_BROWSER_SURFACE_LABEL
+} from "../shared/browser-surfaces";
 import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName } from "./service-display";
 
 type ThemeMode = "light" | "dark";
@@ -131,6 +137,7 @@ function AppShell() {
   });
   const [assistantDockOpen, setAssistantDockOpen] = useState(false);
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
+  const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [assistantDockMode, setAssistantDockMode] = useState<AssistantDockMode>(() => {
     if (typeof window === "undefined") {
       return "full";
@@ -159,7 +166,9 @@ function AppShell() {
   const usesEmbeddedSurface =
     location.pathname.startsWith("/plugin/") ||
     location.pathname.startsWith("/external/") ||
+    location.pathname === BUILTIN_BROWSER_ROUTE ||
     location.pathname.startsWith("/custom-sidebar/");
+  const isMarketRoute = location.pathname === "/market";
   const isMac = desktopPlatform === "darwin";
   const isWindows = desktopPlatform === "win32";
   const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
@@ -206,7 +215,13 @@ function AppShell() {
   useEffect(() => {
     return window.electronAPI.onOpenAssistantWorker((request) => {
       setAssistantDockOpenRequest(request);
-      openAssistantDock("compact");
+      openAssistantDock("full");
+    });
+  }, []);
+
+  useEffect(() => {
+    return window.electronAPI.onNativeDialogVisibility((state) => {
+      setNativeDialogVisible(state.platform === "darwin" && state.open);
     });
   }, []);
 
@@ -608,6 +623,7 @@ function AppShell() {
       className={[
         "app-shell",
         usesEmbeddedSurface ? "has-embedded-surface" : "",
+        isMarketRoute ? "has-market-controls" : "",
         assistantDockOpen ? "has-assistant-dock" : "",
         assistantDockOpen ? `has-assistant-dock-${assistantDockMode}` : "",
         isMac ? "is-mac-platform" : "",
@@ -711,6 +727,17 @@ function AppShell() {
               }
             />
             <Route path="/external/:itemId" element={<ExternalItemRoute itemMap={experimentalItemMap} />} />
+            <Route
+              path={BUILTIN_BROWSER_ROUTE}
+              element={
+                <ExternalWebviewPage
+                  surfaceId={BUILTIN_BROWSER_SURFACE_ID}
+                  surfaceLabel={BUILTIN_BROWSER_SURFACE_LABEL}
+                  title={BUILTIN_BROWSER_SURFACE_LABEL}
+                  url={BUILTIN_BROWSER_DEFAULT_URL}
+                />
+              }
+            />
             <Route path="/custom-sidebar/:itemId" element={<CustomSidebarRouteFallback itemMap={customSidebarItemMap} />} />
             <Route path="/plugin/:pluginId" element={null} />
             <Route path="/market" element={<PluginMarketPage />} />
@@ -723,7 +750,8 @@ function AppShell() {
         mode={assistantDockMode}
         isMac={isMac}
         isWindows={isWindows}
-        onOpen={() => openAssistantDock("compact")}
+        nativeDialogVisible={nativeDialogVisible}
+        onOpen={() => openAssistantDock("full")}
         onClose={() => {
           setAssistantDockOpen(false);
         }}

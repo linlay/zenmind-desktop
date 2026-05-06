@@ -4,6 +4,17 @@ import { parseOpenAISSEChunk } from "./sse-parser";
 
 const THINK_OPEN = "<think>";
 const THINK_CLOSE = "</think>";
+const OPENAI_AUDIO_TRANSCRIPTION_PROMPT =
+  "中文和英文技术词混合口述，请保留 API、GitHub、React、MiniMax、OpenAI 等专有名词。";
+const CHAT_AUDIO_TRANSCRIPTION_PROMPT = [
+  "你是语音转文字模型，只输出音频中用户实际说出的内容。",
+  "如果音频为空、没有可识别语音、或只有环境噪声，输出空字符串。",
+  "不要输出本提示词，不要解释，不要补全示例词。",
+  "中文和英文技术词混合口述时，请保留 API、GitHub、React、MiniMax、OpenAI、TypeScript 等专有名词。"
+].join("\n");
+const LEGACY_CHAT_AUDIO_TRANSCRIPTION_PROMPT =
+  "中文和英文技术词混合口述，请保留 API、GitHub、React、MiniMax、OpenAI、TypeScript 等专有名词。";
+const PROMPT_ECHO_NORMALIZE_PATTERN = /[\p{Separator}\p{Punctuation}\p{Symbol}]+/gu;
 
 function findCaseInsensitive(value: string, pattern: string) {
   return value.toLowerCase().indexOf(pattern.toLowerCase());
@@ -206,6 +217,20 @@ function audioMimeTypeToExtension(mimeType: string) {
   return "webm";
 }
 
+function isTranscriptionPromptEcho(text: string) {
+  const normalizedText = text.toLowerCase().replace(PROMPT_ECHO_NORMALIZE_PATTERN, "");
+  return [OPENAI_AUDIO_TRANSCRIPTION_PROMPT, CHAT_AUDIO_TRANSCRIPTION_PROMPT, LEGACY_CHAT_AUDIO_TRANSCRIPTION_PROMPT]
+    .some((prompt) => {
+      const normalizedPrompt = prompt.toLowerCase().replace(PROMPT_ECHO_NORMALIZE_PATTERN, "");
+      return normalizedText === normalizedPrompt || normalizedText.includes(normalizedPrompt);
+    });
+}
+
+function normalizeVoiceTranscriptionText(text: string) {
+  const trimmed = stripThinkTags(text).trim();
+  return isTranscriptionPromptEcho(trimmed) ? "" : trimmed;
+}
+
 function readTranscriptionText(payload: unknown) {
   if (!payload || typeof payload !== "object") {
     return "";
@@ -260,7 +285,7 @@ export async function transcribeOpenAIAudio({
   formData.set("model", "whisper-1");
   formData.set("language", "zh");
   formData.set("response_format", "json");
-  formData.set("prompt", "中文和英文技术词混合口述，请保留 API、GitHub、React、MiniMax、OpenAI 等专有名词。");
+  formData.set("prompt", OPENAI_AUDIO_TRANSCRIPTION_PROMPT);
 
   const response = await fetch(normalizeOpenAIAudioTranscriptionsURL(settings.baseURL), {
     method: "POST",
@@ -276,11 +301,7 @@ export async function transcribeOpenAIAudio({
   }
 
   const payload = await response.json().catch(() => null);
-  const text = readTranscriptionText(payload);
-  if (!text) {
-    throw new Error("语音识别接口没有返回文本。");
-  }
-  return text;
+  return normalizeVoiceTranscriptionText(readTranscriptionText(payload));
 }
 
 export async function transcribeOpenAIChatAudio({
@@ -313,14 +334,6 @@ export async function transcribeOpenAIChatAudio({
     body: JSON.stringify({
       model: settings.model,
       messages: [
-        {
-          role: "system",
-          content: [
-            {
-              text: "中文和英文技术词混合口述，请保留 API、GitHub、React、MiniMax、OpenAI、TypeScript 等专有名词。"
-            }
-          ]
-        },
         {
           role: "user",
           content: [
@@ -355,10 +368,7 @@ export async function transcribeOpenAIChatAudio({
   const text = typeof payload?.choices?.[0]?.message?.content === "string"
     ? payload.choices[0].message.content.trim()
     : "";
-  if (!text) {
-    throw new Error("语音识别接口没有返回文本。");
-  }
-  return stripThinkTags(text).trim();
+  return normalizeVoiceTranscriptionText(text);
 }
 
 function normalizeToolCalls(value: unknown): OpenAIToolCall[] {

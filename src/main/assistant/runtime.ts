@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import type { App } from "electron";
 import type {
   AssistantAwaitingPayload,
   AssistantAwaitingQuestion,
+  AssistantAttachment,
+  AssistantChatMessage,
   AssistantEvent,
   AssistantPageContext,
+  AssistantPermissionMode,
   AssistantRunEvent,
   AssistantRunEventStatus,
   AssistantSubmitAwaitingRequest,
@@ -12,6 +16,8 @@ import type {
   AssistantStartRunRequest,
   AssistantStartRunResult,
   AssistantStopRunResult,
+  ServiceCommandResult,
+  ServiceState,
   AssistantVoiceCorrectionRequest,
   AssistantVoiceCorrectionResult,
   AssistantVoiceTranscriptionRequest,
@@ -21,9 +27,14 @@ import {
   appendAssistantEvent,
   appendAssistantMessage,
   createAssistantMessage,
-  getAssistantChat
+  getAssistantChat,
+  updateAssistantMessageAttachments
 } from "./chat-store";
-import { hydrateAssistantAttachmentsForChat } from "./attachment-store";
+import {
+  createAssistantArtifactAttachmentsFromFiles,
+  hydrateAssistantAttachmentsForChat,
+  refreshAssistantAttachmentsForRun
+} from "./attachment-store";
 import { loadAgentPlatformMinimaxSettings, loadAgentPlatformVoiceAsrSettings } from "./agent-platform-config";
 import { readAssistantSettings } from "./settings-store";
 import { convertAudioBufferToWavBuffer } from "./audio-conversion";
@@ -52,16 +63,34 @@ import {
   moveDesktopFiles,
   planDesktopOrganize,
   readDesktopFile,
+  readDesktopDocument,
   runHostCommand,
   writeDesktopFile,
   type DesktopMoveOperation
 } from "./desktop-tools";
+import {
+  createDocxFile,
+  createPdfFile,
+  createPptxFile,
+  createXlsxFile,
+  OFFICE_MIME_TYPES
+} from "./office-tools";
 import {
   buildContainerHubRunSessionId,
   ContainerHubClient,
   getAssistantWorkspacePath,
   type ContainerHubConfig
 } from "./container-hub";
+import type {
+  DocxCreateInput,
+  OfficeToolResult,
+  PdfCreateInput,
+  PdfRenderer,
+  PptxCreateInput,
+  XlsxCreateInput
+} from "./office-tools";
+import { canDescribeImageWithVision, describeImageWithVision } from "./vision-provider";
+import { routeAssistantToolRequest } from "./capability-broker";
 
 type AssistantBrowserUseTool = {
   listSurfaces?: () => Promise<BrowserSurface[]>;
@@ -107,6 +136,7 @@ type AssistantBrowserUseTool = {
 
 const MAX_BROWSER_TOOL_STEPS = 16;
 const DEFAULT_AWAITING_TIMEOUT_MS = 5 * 60 * 1000;
+const FULL_ACCESS_DURATION_MS = 10 * 60 * 1000;
 const DEFAULT_SANDBOX_ENVIRONMENT = "shell";
 const VOICE_CORRECTION_TIMEOUT_MS = 20000;
 const VOICE_TRANSCRIPTION_TIMEOUT_MS = 60000;
@@ -125,11 +155,15 @@ const VOICE_CORRECTION_SYSTEM_PROMPT = [
 ].join("\n");
 
 const BROWSER_ACTION_PATTERN =
-  /(浏览器|左边网页|左侧网页|当前网页|网页里|侧边栏|页面流程|打开|进入|点击|点开|填写|填表|填好|补全|完善|随便填|输入|搜索|搜一下|查一下|查询|查找|检索|筛选|过滤|翻页|上一页|下一页|勾选|取消勾选|选择|下拉|提交|表单|读取.*(?:网页|页面|结果)|总结.*结果)/u;
+  /(浏览器|左边网页|左侧网页|当前网页|网页里|侧边栏|页面流程|打开|进入|点击|点开|启动|停止|重启|填写|填表|填好|补全|完善|随便填|输入|搜索|搜一下|查一下|查询|查找|检索|筛选|过滤|翻页|上一页|下一页|勾选|取消勾选|选择|下拉|提交|表单|读取.*(?:网页|页面|结果)|总结.*结果)/u;
 const WEB_QUERY_PATTERN =
   /(搜索|搜一下|查一下|查询|查找|检索|筛选|过滤|翻页|上一页|下一页|读取.*(?:网页|页面|结果)|总结.*结果)/u;
 const PAGE_CONTEXT_ONLY_PATTERN =
   /(?:(?:当前|这个|这页|左边|左侧)?(?:页面|网页)|这条内容|这篇文章|选中文本|当前内容).*(?:讲|说|是什么|有哪些|总结|概括|分析|提炼|说明|内容|重点|待办|风险)|(?:总结|概括|分析|提炼|说明).*(?:(?:当前|这个|这页|左边|左侧)?(?:页面|网页)|这条内容|这篇文章|选中文本|当前内容)/u;
+const ATTACHMENT_CONTEXT_PATTERN =
+  /(?:附件|上传|刚才上传|文件|文档|pdf|PDF|Word|Excel|PPT|图片|截图|这张图|这个图|这份|扫描件|页图|里面有什么|有哪些内容|有什么内容|总结下|总结一下|概括|分析|解析|读取|阅读|识别|OCR)/u;
+const EXPLICIT_WEB_SURFACE_PATTERN =
+  /(?:百度|谷歌|Google|Bing|网页|浏览器|网站|网址|URL|https?:\/\/|左侧网页|左边网页|当前网页|页面里|打开网页|搜索网页|上网搜索|操作左侧|操作左边)/iu;
 const DIRECT_ANSWER_PATTERN =
   /(直接回答|不用看页面|不要看页面|别看页面|不用基于页面|不要基于页面|不基于当前页|不用查网页|不用搜索)/u;
 const BROWSER_FORM_FILL_PATTERN =
@@ -360,11 +394,12 @@ const BROWSER_TOOL_DEFINITIONS: OpenAIToolDefinition[] = [
 ];
 
 const DESKTOP_ACTION_PATTERN =
-  /(桌面|文件|目录|列出|读取|写入|保存|创建|生成|整理|移动|归档|html|贪吃蛇|命令|终端|bash|shell|沙箱|sandbox|container)/iu;
+  /(桌面|文件|目录|列出|读取|写入|保存|创建|生成|发布|产物|整理|移动|归档|html|贪吃蛇|命令|终端|bash|shell|沙箱|sandbox|container|启动.*(?:应用|软件|程序|Docker|Claude)|打开.*(?:应用|软件|程序|Docker|Claude)|操作系统.*(?:应用|软件|程序))/iu;
 
 const DESKTOP_AGENT_SYSTEM_PROMPT = [
   "你是 Desktop 单智能体 desktop-xiaozhai，可以在 ZenMind Desktop 内通过工具完成受限桌面任务。",
-  "如果用户要列出、读取、整理、生成或保存桌面文件，必须调用 desktop_* 工具，不要假装已经看到了文件。",
+  "如果用户要列出、读取、整理、生成或保存桌面文件，必须调用 desktop_* 工具，不要假装已经看到了文件；读取 PDF、Office、ZIP、图片或聊天附件时优先调用 desktop_read_document。",
+  "如果用户问题指向本轮上传附件、图片、截图或 PDF 内容，不要调用 Browser 搜索网页；只有用户明确要求百度、网页、浏览器或左侧页面操作时才使用 Browser。",
   `如果用户明确要求 human in the loop、HITL、AGW、弹窗采访、问用户问题或让你通过弹窗收集信息，必须调用 ${AGW_ASK_USER_QUESTION_TOOL_NAME} 工具；不要把问题直接写在普通聊天回复里。`,
   "AGW awaiting 问题必须使用结构化 questions：每项包含 question、type，选择题提供 options；需要多选时用 type=select 且 multiSelect=true。",
   "默认桌面目标就是 Electron app.getPath(\"desktop\")；生成单文件网页或小游戏时，优先写一个完整可打开的 .html 文件到桌面。",
@@ -403,6 +438,100 @@ const DESKTOP_TOOL_DEFINITIONS: OpenAIToolDefinition[] = [
         },
         required: ["path"],
         additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "desktop_read_document",
+      description: "Read and extract text from a PDF, Word, Excel, PowerPoint, ZIP, image, or chat attachment under Desktop or assistant workspace. Images and scanned PDFs use the configured vision model.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Desktop-relative or allowed absolute file path." },
+          attachmentId: { type: "string", description: "Current chat attachment id, if reading an uploaded attachment." },
+          pages: { type: "string", description: "Optional PDF page range hint, such as 1-3." },
+          sheet: { type: "string", description: "Optional spreadsheet sheet name hint." },
+          maxChars: { type: "number" }
+        },
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "desktop_create_docx",
+      description: "Create a Word .docx document on the Desktop or assistant workspace. User approval is required.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          filename: { type: "string" },
+          title: { type: "string" },
+          content: { type: "string" },
+          contentFormat: { type: "string", enum: ["plain", "markdown"] },
+          overwrite: { type: "boolean" }
+        },
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "desktop_create_pdf",
+      description: "Create a PDF document on the Desktop or assistant workspace. User approval is required.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          filename: { type: "string" },
+          title: { type: "string" },
+          content: { type: "string" },
+          contentFormat: { type: "string", enum: ["plain", "markdown", "html"] },
+          overwrite: { type: "boolean" }
+        },
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "desktop_create_xlsx",
+      description: "Create an Excel .xlsx workbook on the Desktop or assistant workspace. User approval is required.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          filename: { type: "string" },
+          title: { type: "string" },
+          sheets: { type: "array" },
+          content: { type: "string" },
+          overwrite: { type: "boolean" }
+        },
+        additionalProperties: true
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "desktop_create_pptx",
+      description: "Create a PowerPoint .pptx deck on the Desktop or assistant workspace. User approval is required.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          filename: { type: "string" },
+          title: { type: "string" },
+          slides: { type: "array" },
+          content: { type: "string" },
+          overwrite: { type: "boolean" }
+        },
+        additionalProperties: true
       }
     }
   },
@@ -562,9 +691,25 @@ const DESKTOP_TOOL_DEFINITIONS: OpenAIToolDefinition[] = [
           title: { type: "string" },
           path: { type: "string" },
           mimeType: { type: "string" },
-          description: { type: "string" }
+          description: { type: "string" },
+          artifacts: { type: "array" }
         },
-        required: ["title", "path"],
+        additionalProperties: true
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "host_app_launch",
+      description: "Launch an allowlisted local desktop application such as Docker Desktop, Claude, Chrome, Edge, or Terminal. User approval is required.",
+      parameters: {
+        type: "object",
+        properties: {
+          appName: { type: "string" },
+          app_name_or_path: { type: "string" },
+          command: { type: "string" }
+        },
         additionalProperties: false
       }
     }
@@ -615,8 +760,18 @@ type BrowserToolLoopState = {
   lastResult: BrowserToolResult | null;
   runId: string;
   chatId: string;
+  permissionMode: AssistantPermissionMode;
   abortSignal: AbortSignal;
   tasks: Array<{ task: string; status: "pending" | "in_progress" | "completed" }>;
+};
+
+type RunArtifactInput = {
+  path: string;
+  artifactId?: string;
+  name?: string;
+  mimeType?: string;
+  description?: string;
+  type?: string;
 };
 
 type ContainerHubResolverResult = ContainerHubConfig & {
@@ -624,6 +779,12 @@ type ContainerHubResolverResult = ContainerHubConfig & {
 };
 
 type AssistantRuntimeDependencies = {
+  openExternalUrl?: (url: string) => Promise<void>;
+  renderPdf?: PdfRenderer;
+  services?: {
+    list?: () => Promise<ServiceState[]>;
+    control?: (serviceId: string, operation: "start" | "stop" | "restart") => Promise<ServiceCommandResult>;
+  };
   resolveContainerHub?: () => Promise<ContainerHubResolverResult | null>;
 };
 
@@ -668,6 +829,183 @@ function isAskUserQuestionToolName(toolName: string) {
   );
 }
 
+function decodePseudoToolText(value: string) {
+  return value
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/giu, "$1")
+    .replace(/&quot;/giu, "\"")
+    .replace(/&apos;/giu, "'")
+    .replace(/&lt;/giu, "<")
+    .replace(/&gt;/giu, ">")
+    .replace(/&amp;/giu, "&")
+    .trim();
+}
+
+function parsePseudoJsonObject(value: string) {
+  const trimmed = decodePseudoToolText(value);
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parsePseudoToolArgs(body: string) {
+  const args: Record<string, unknown> = {};
+  const parameterPattern = /<(?:arg|parameter)(?:\s+name=(?:"([^"]+)"|'([^']+)'|([^\s>]+)))?[^>]*>([\s\S]*?)<\/(?:arg|parameter)>/giu;
+  let match: RegExpExecArray | null;
+  while ((match = parameterPattern.exec(body))) {
+    const name = decodePseudoToolText(match[1] || match[2] || match[3] || "");
+    const value = decodePseudoToolText(match[4] || "");
+    const parsedObject = parsePseudoJsonObject(value);
+    if (parsedObject && (!name || name === "input" || name === "arguments")) {
+      Object.assign(args, parsedObject);
+      continue;
+    }
+    if (name) {
+      args[name] = parsedObject ?? value;
+      continue;
+    }
+    if (parsedObject) {
+      Object.assign(args, parsedObject);
+    } else if (value) {
+      args.value = value;
+    }
+  }
+  return args;
+}
+
+function pseudoBrowserTargetFromLocator(locator: string) {
+  const hasText = locator.match(/has-text\((?:"([^"]+)"|'([^']+)')\)/iu);
+  if (hasText) {
+    return (hasText[1] || hasText[2] || "").trim();
+  }
+  const quoted = locator.match(/(?:"([^"]+)"|'([^']+)')/u);
+  return (quoted?.[1] || quoted?.[2] || locator).trim();
+}
+
+function pseudoCommandLooksLikeHostAppLaunch(command: unknown) {
+  const text = maybeString(command) || "";
+  return /^(?:open\s+.*-a\s+|Start-Process\s+|start\s+)/iu.test(text);
+}
+
+function normalizePseudoToolName(name: string, args: Record<string, unknown>) {
+  const normalized = name.trim();
+  if (normalized === "browser_dom_click") {
+    return "browser_click";
+  }
+  if (normalized === "bash_sandbox" && pseudoCommandLooksLikeHostAppLaunch(args.command)) {
+    return "host_app_launch";
+  }
+  return normalized;
+}
+
+function findPseudoAttachmentForDocumentRead(
+  request: AssistantStartRunRequest,
+  args: Record<string, unknown>
+) {
+  const attachments = Array.isArray(request.attachments)
+    ? request.attachments.filter((attachment) => attachment.kind !== "artifact" && !attachment.hidden)
+    : [];
+  if (attachments.length === 0) {
+    return null;
+  }
+  const attachmentId = maybeString(args.attachmentId);
+  if (attachmentId) {
+    return attachments.find((attachment) => attachment.id === attachmentId) ?? null;
+  }
+  const rawPath = maybeString(args.path) || maybeString(args.filePath) || maybeString(args.file_path) || maybeString(args.filename);
+  const basename = rawPath ? path.basename(rawPath) : "";
+  if (basename) {
+    const matched = attachments.find((attachment) => attachment.name === basename || attachment.name.endsWith(basename));
+    if (matched) {
+      return matched;
+    }
+  }
+  return attachments.length === 1 ? attachments[0] : null;
+}
+
+function normalizePseudoToolArgs(
+  toolName: string,
+  args: Record<string, unknown>,
+  request: AssistantStartRunRequest
+) {
+  const normalized = { ...args };
+  if (toolName === "browser_click") {
+    const locator = maybeString(normalized.locator);
+    const value = maybeString(normalized.value);
+    const target = maybeString(normalized.target);
+    if (target === "text" && value) {
+      normalized.target = value;
+    } else if (locator && (!target || /^(?:left|right|current|page)$/iu.test(target))) {
+      normalized.target = pseudoBrowserTargetFromLocator(locator);
+    } else if (!target && locator) {
+      normalized.target = pseudoBrowserTargetFromLocator(locator);
+    }
+    if ((request as { permissionMode?: string }).permissionMode === "full_access") {
+      normalized.allowSensitive = true;
+    }
+  }
+  if (toolName === "desktop_read_document") {
+    const filePath = maybeString(normalized.path) || maybeString(normalized.filePath) || maybeString(normalized.file_path);
+    if (filePath && !normalized.path) {
+      normalized.path = filePath;
+    }
+    const attachment = findPseudoAttachmentForDocumentRead(request, normalized);
+    if (attachment) {
+      normalized.attachmentId = attachment.id;
+      delete normalized.path;
+    }
+  }
+  return normalized;
+}
+
+function stripPseudoToolMarkup(text: string) {
+  return text
+    .replace(/<invoke\s+name=(?:"[^"]+"|'[^']+'|[^\s>]+)[^>]*>[\s\S]*?<\/invoke>/giu, "")
+    .replace(/<\/?(?:function_calls|functions|tool_calls|result)>/giu, "")
+    .trim();
+}
+
+function extractPseudoToolCallsFromText(text: string, request: AssistantStartRunRequest) {
+  const toolCalls: OpenAIToolCall[] = [];
+  let hasOperatorModeRequest = false;
+  const invokePattern = /<invoke\s+name=(?:"([^"]+)"|'([^']+)'|([^\s>]+))[^>]*>([\s\S]*?)<\/invoke>/giu;
+  let match: RegExpExecArray | null;
+  while ((match = invokePattern.exec(text))) {
+    const rawName = decodePseudoToolText(match[1] || match[2] || match[3] || "");
+    const rawArgs = parsePseudoToolArgs(match[4] || "");
+    const toolName = normalizePseudoToolName(rawName, rawArgs);
+    if (toolName === "operator_mode_request") {
+      hasOperatorModeRequest = true;
+      continue;
+    }
+    if (!toolName) {
+      continue;
+    }
+    toolCalls.push({
+      id: `pseudo_tool_${Date.now().toString(36)}_${toolCalls.length}`,
+      type: "function",
+      function: {
+        name: toolName,
+        arguments: JSON.stringify(normalizePseudoToolArgs(toolName, rawArgs, request))
+      }
+    });
+  }
+  return {
+    toolCalls,
+    hasOperatorModeRequest,
+    visibleText: stripPseudoToolMarkup(text)
+  };
+}
+
+function operatorModePseudoFallbackMessage() {
+  return "现在只有“询问后操作”和“完全允许控制”两种权限模式，请在输入栏切换。";
+}
+
 function normalizeAgwQuestionType(candidate: Record<string, unknown>): AssistantAwaitingQuestion["type"] {
   const rawType = maybeString(candidate.type)?.toLowerCase();
   if (rawType === "number" || rawType === "password") {
@@ -699,9 +1037,9 @@ function normalizeAgwQuestionOptions(value: unknown): AssistantAwaitingQuestion[
       continue;
     }
     options.push({
-        label,
-        value: maybeString(option.value),
-        description: maybeString(option.description)
+      label,
+      value: maybeString(option.value),
+      description: maybeString(option.description)
     });
   }
   return options.length > 0 ? options : undefined;
@@ -1078,35 +1416,35 @@ function compactBrowserToolResult(result: BrowserToolResult): BrowserToolResult 
         bodyText: compactToolText(data.bodyText, 4000),
         elements: Array.isArray(data.elements)
           ? data.elements.slice(0, 80).map((item) => {
-              const element = item as Record<string, unknown>;
-              return {
-                index: element.index,
-                elementRef: element.elementRef,
-                kind: element.kind,
-                text: compactToolText(element.text, 160),
-                ariaLabel: compactToolText(element.ariaLabel, 120),
-                tagName: element.tagName,
-                role: element.role,
-                unsafe: element.unsafe
-              };
-            })
+            const element = item as Record<string, unknown>;
+            return {
+              index: element.index,
+              elementRef: element.elementRef,
+              kind: element.kind,
+              text: compactToolText(element.text, 160),
+              ariaLabel: compactToolText(element.ariaLabel, 120),
+              tagName: element.tagName,
+              role: element.role,
+              unsafe: element.unsafe
+            };
+          })
           : data.elements,
         fields: Array.isArray(data.fields)
           ? data.fields.slice(0, 80).map((item) => {
-              const field = item as Record<string, unknown>;
-              return {
-                index: field.index,
-                elementRef: field.elementRef,
-                label: compactToolText(field.label, 160),
-                tagName: field.tagName,
-                type: field.type,
-                role: field.role,
-                value: compactToolText(field.value, 120),
-                placeholder: compactToolText(field.placeholder, 160),
-                required: field.required,
-                options: Array.isArray(field.options) ? field.options.slice(0, 20) : field.options
-              };
-            })
+            const field = item as Record<string, unknown>;
+            return {
+              index: field.index,
+              elementRef: field.elementRef,
+              label: compactToolText(field.label, 160),
+              tagName: field.tagName,
+              type: field.type,
+              role: field.role,
+              value: compactToolText(field.value, 120),
+              placeholder: compactToolText(field.placeholder, 160),
+              required: field.required,
+              options: Array.isArray(field.options) ? field.options.slice(0, 20) : field.options
+            };
+          })
           : data.fields
       }
     };
@@ -1145,10 +1483,10 @@ function compactBrowserToolResult(result: BrowserToolResult): BrowserToolResult 
         title: data.title,
         pageContext: pageContext
           ? {
-              ...pageContext,
-              bodyText: compactToolText(pageContext.bodyText, 4000),
-              selectedText: compactToolText(pageContext.selectedText, 1200)
-            }
+            ...pageContext,
+            bodyText: compactToolText(pageContext.bodyText, 4000),
+            selectedText: compactToolText(pageContext.selectedText, 1200)
+          }
           : pageContext
       }
     };
@@ -1225,6 +1563,16 @@ function browserToolStartMessage(toolName: string, args: Record<string, unknown>
       return "正在读取桌面文件列表。";
     case "desktop_read_file":
       return target ? `正在读取「${target}」。` : "正在读取文件。";
+    case "desktop_read_document":
+      return target ? `正在解析「${target}」。` : "正在解析文档。";
+    case "desktop_create_docx":
+      return target ? `准备生成 Word 文档「${target}」。` : "准备生成 Word 文档。";
+    case "desktop_create_pdf":
+      return target ? `准备生成 PDF「${target}」。` : "准备生成 PDF。";
+    case "desktop_create_xlsx":
+      return target ? `准备生成 Excel 文档「${target}」。` : "准备生成 Excel 文档。";
+    case "desktop_create_pptx":
+      return target ? `准备生成 PPT「${target}」。` : "准备生成 PPT。";
     case "desktop_write_file":
       return target ? `准备写入「${target}」。` : "准备写入文件。";
     case "desktop_plan_organize":
@@ -1278,19 +1626,66 @@ type ActiveRun = {
   controller: AbortController;
   chatId: string;
   text: string;
+  attachments: AssistantAttachment[];
+  permissionMode: AssistantPermissionMode;
+  fullAccessExpiresAt: number | null;
   seq: number;
 };
 
 export class AssistantRuntime {
   private readonly activeRuns = new Map<string, ActiveRun>();
   private readonly pendingAwaitings = new Map<string, PendingAwaiting>();
+  private readonly fullAccessGrants = new Map<string, number>();
 
   constructor(
     private readonly app: App,
     private readonly emitEvent: (event: AssistantEvent) => void,
     private readonly browserUse?: AssistantBrowserUseTool,
     private readonly dependencies: AssistantRuntimeDependencies = {}
-  ) {}
+  ) { }
+
+  private getFullAccessExpiresAt(chatId?: string | null, now = Date.now()) {
+    if (!chatId) {
+      return null;
+    }
+    const expiresAt = this.fullAccessGrants.get(chatId) ?? null;
+    if (!expiresAt) {
+      return null;
+    }
+    if (expiresAt <= now) {
+      this.fullAccessGrants.delete(chatId);
+      return null;
+    }
+    return expiresAt;
+  }
+
+  private grantFullAccess(chatId: string, now = Date.now()) {
+    const expiresAt = now + FULL_ACCESS_DURATION_MS;
+    this.fullAccessGrants.set(chatId, expiresAt);
+    return expiresAt;
+  }
+
+  private hasFullAccess(state: Pick<BrowserToolLoopState, "permissionMode">) {
+    return state.permissionMode === "full_access";
+  }
+
+  private async requestApproval(
+    state: BrowserToolLoopState,
+    input: Omit<AssistantAwaitingPayload, "awaitingId" | "runId" | "chatId">
+  ) {
+    if (this.hasFullAccess(state)) {
+      return { action: "submit", params: [], reason: "" } as AwaitingAnswer;
+    }
+    return this.requestAwaiting(state.runId, state.chatId, input);
+  }
+
+  getOperatorModeStatus(_chatId?: string | null) {
+    return {
+      active: false,
+      expiresAt: null,
+      remainingMs: 0
+    };
+  }
 
   async correctVoiceText(request: AssistantVoiceCorrectionRequest): Promise<AssistantVoiceCorrectionResult> {
     const text = request.text.trim();
@@ -1429,6 +1824,141 @@ export class AssistantRuntime {
     };
   }
 
+  private stripImageDataUrl(attachment: AssistantAttachment): AssistantAttachment {
+    if (!attachment.dataUrl) {
+      return attachment;
+    }
+    const { dataUrl: _dataUrl, ...withoutDataUrl } = attachment;
+    return withoutDataUrl;
+  }
+
+  private async prepareVisionAttachments({
+    runId,
+    chatId,
+    attachments,
+    settings,
+    signal
+  }: {
+    runId: string;
+    chatId: string;
+    attachments: AssistantAttachment[];
+    settings: ReturnType<typeof readAssistantSettings>;
+    signal: AbortSignal;
+  }) {
+    if (!attachments.some((attachment) => attachment.dataUrl?.startsWith("data:image/"))) {
+      return {
+        attachments,
+        changed: false
+      };
+    }
+
+    let changed = false;
+    const prepared: AssistantAttachment[] = [];
+
+    for (const attachment of attachments) {
+      if (!attachment.dataUrl?.startsWith("data:image/")) {
+        prepared.push(attachment);
+        continue;
+      }
+
+      changed = true;
+      const baseDocument = attachment.document ?? {
+        format: "image" as const,
+        readStatus: "unreadable" as const,
+        extractedChars: 0,
+        truncated: false,
+        imageMode: "vision" as const
+      };
+
+      if (baseDocument.visionSummary) {
+        prepared.push(this.stripImageDataUrl(attachment));
+        continue;
+      }
+
+      if (!canDescribeImageWithVision(settings, attachment.dataUrl)) {
+        prepared.push({
+          ...this.stripImageDataUrl(attachment),
+          error: [attachment.error, "当前 MiniMax 配置无法调用图片理解接口，无法理解图片内容。"].filter(Boolean).join(" "),
+          document: {
+            ...baseDocument,
+            imageMode: "vision",
+            visionStatus: "unavailable",
+            errorCode: baseDocument.errorCode || "vision_unavailable"
+          }
+        });
+        continue;
+      }
+
+      const target = attachment.hidden && attachment.pageNumber
+        ? `${attachment.name}（扫描 PDF 第 ${attachment.pageNumber} 页）`
+        : attachment.name;
+      this.emitRunEvent(runId, chatId, {
+        type: "tool.start",
+        status: "running",
+        toolName: "vision_describe",
+        action: "vision_describe",
+        target,
+        message: `正在识别「${target}」。`
+      });
+
+      try {
+        const result = await describeImageWithVision({
+          settings,
+          name: target,
+          dataUrl: attachment.dataUrl,
+          signal
+        });
+        const visionText = `视觉识别结果（${target}）：\n${result.summary}`;
+        prepared.push({
+          ...this.stripImageDataUrl(attachment),
+          text: [attachment.text, visionText].filter(Boolean).join("\n\n"),
+          document: {
+            ...baseDocument,
+            readStatus: "readable",
+            extractedChars: Math.max(baseDocument.extractedChars, result.summary.length),
+            imageMode: "vision",
+            visionSummary: result.summary,
+            visionStatus: "readable"
+          }
+        });
+        this.emitRunEvent(runId, chatId, {
+          type: "tool.result",
+          status: "ok",
+          toolName: "vision_describe",
+          action: "vision_describe",
+          target,
+          message: `已识别「${target}」。`
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        prepared.push({
+          ...this.stripImageDataUrl(attachment),
+          error: [attachment.error, `视觉识别失败：${message}`].filter(Boolean).join(" "),
+          document: {
+            ...baseDocument,
+            imageMode: "vision",
+            visionStatus: "failed",
+            errorCode: "vision_unavailable"
+          }
+        });
+        this.emitRunEvent(runId, chatId, {
+          type: "tool.result",
+          status: "error",
+          toolName: "vision_describe",
+          action: "vision_describe",
+          target,
+          message: `识别「${target}」失败：${message}`,
+          error: message
+        });
+      }
+    }
+
+    return {
+      attachments: prepared,
+      changed
+    };
+  }
+
   startRun(request: AssistantStartRunRequest): AssistantStartRunResult {
     const message = request.message.trim();
     if (!message) {
@@ -1468,11 +1998,23 @@ export class AssistantRuntime {
     const chat = appendAssistantMessage(this.app, request.chatId, userMessage);
     const chatId = chat.summary.id;
     const controller = new AbortController();
+    const now = Date.now();
+    const fullAccessExpiresAt = request.permissionMode === "full_access"
+      ? this.grantFullAccess(chatId, now)
+      : this.getFullAccessExpiresAt(chatId, now);
+    const permissionMode: AssistantPermissionMode = fullAccessExpiresAt ? "full_access" : "default";
+    const effectiveRequest: AssistantStartRunRequest = {
+      ...request,
+      permissionMode
+    };
 
     this.activeRuns.set(runId, {
       controller,
       chatId,
       text: "",
+      attachments: [],
+      permissionMode,
+      fullAccessExpiresAt,
       seq: 0
     });
 
@@ -1482,7 +2024,8 @@ export class AssistantRuntime {
       message: "已收到请求。",
       data: {
         agentKey: "desktop-xiaozhai",
-        action: request.action ?? "chat"
+        action: request.action ?? "chat",
+        permissionMode
       }
     });
     this.emitRunEvent(runId, chatId, {
@@ -1500,24 +2043,18 @@ export class AssistantRuntime {
       data: {
         action: request.action ?? "chat",
         hasPageContext: Boolean(request.pageContext),
-        attachmentCount: request.attachments?.length ?? 0
+        attachmentCount: request.attachments?.filter((attachment) => !attachment.hidden).length ?? 0
       }
-    });
-
-    const messages = buildAssistantMessages({
-      history,
-      message,
-      action: request.action ?? "chat",
-      pageContext: request.pageContext ?? null,
-      attachments: hydratedAttachments
     });
 
     void this.executeRun({
       runId,
       chatId,
-      request,
+      request: effectiveRequest,
+      userMessageId: userMessage.id,
       userText: message,
-      messages,
+      history,
+      attachments: hydratedAttachments,
       settings,
       controller
     });
@@ -1526,7 +2063,10 @@ export class AssistantRuntime {
       ok: true,
       runId,
       chatId,
-      message: "已开始生成。"
+      message: "已开始生成。",
+      permissionMode,
+      fullAccessExpiresAt: fullAccessExpiresAt ? new Date(fullAccessExpiresAt).toISOString() : null,
+      fullAccessRemainingMs: fullAccessExpiresAt ? Math.max(0, fullAccessExpiresAt - now) : 0
     };
   }
 
@@ -1709,7 +2249,7 @@ export class AssistantRuntime {
       return;
     }
     if (activeRun.text.trim()) {
-      appendAssistantMessage(this.app, chatId, createAssistantMessage("assistant", activeRun.text, runId));
+      appendAssistantMessage(this.app, chatId, createAssistantMessage("assistant", activeRun.text, runId, activeRun.attachments));
     }
     this.emitRunEvent(runId, chatId, {
       type: "run.stopped",
@@ -1728,16 +2268,20 @@ export class AssistantRuntime {
     runId,
     chatId,
     request,
+    userMessageId,
     userText,
-    messages,
+    history,
+    attachments,
     settings,
     controller
   }: {
     runId: string;
     chatId: string;
     request: AssistantStartRunRequest;
+    userMessageId: string;
     userText: string;
-    messages: ReturnType<typeof buildAssistantMessages>;
+    history: AssistantChatMessage[];
+    attachments: AssistantAttachment[];
     settings: ReturnType<typeof readAssistantSettings>;
     controller: AbortController;
   }) {
@@ -1747,6 +2291,30 @@ export class AssistantRuntime {
     }
 
     try {
+      const refreshedAttachmentContext = await refreshAssistantAttachmentsForRun(
+        this.app,
+        chatId,
+        attachments
+      );
+      const visionPreparation = await this.prepareVisionAttachments({
+        runId,
+        chatId,
+        attachments: refreshedAttachmentContext.attachments,
+        settings,
+        signal: controller.signal
+      });
+      const preparedAttachments = visionPreparation.attachments;
+      if (refreshedAttachmentContext.changed || visionPreparation.changed) {
+        updateAssistantMessageAttachments(this.app, chatId, userMessageId, preparedAttachments);
+      }
+      const messages = buildAssistantMessages({
+        history,
+        message: userText,
+        action: request.action ?? "chat",
+        pageContext: request.pageContext ?? null,
+        attachments: preparedAttachments
+      });
+
       if (this.shouldExecuteDirectHumanInLoop(request, userText)) {
         await this.executeDirectHumanInLoop({
           runId,
@@ -1791,14 +2359,16 @@ export class AssistantRuntime {
         }
       }
 
-      if (this.shouldUseAgentTools(userText, request)) {
+      const toolRoutingText = this.buildToolRoutingText(userText, history);
+      if (this.shouldUseAgentTools(toolRoutingText, request)) {
         await this.executeBrowserToolLoop({
           runId,
           chatId,
           request,
           messages,
           settings,
-          controller
+          controller,
+          desktopOnlyTools: this.shouldUseDesktopOnlyTools(toolRoutingText, request)
         });
         return;
       }
@@ -1821,23 +2391,37 @@ export class AssistantRuntime {
         return;
       }
 
+      let streamedText = "";
       await streamOpenAIChatCompletion({
         settings,
         messages,
         signal: controller.signal,
         onDelta: (delta) => {
-          const currentRun = this.activeRuns.get(runId);
-          if (!currentRun) {
-            return;
-          }
-          currentRun.text += delta;
-          this.emitRunEvent(runId, chatId, {
-            type: "content.delta",
-            delta,
-            status: "running"
-          });
+          streamedText += delta;
         }
       });
+
+      const pseudo = extractPseudoToolCallsFromText(streamedText, request);
+      if (pseudo.hasOperatorModeRequest && pseudo.toolCalls.length === 0) {
+        this.completeWithAssistantText(runId, chatId, operatorModePseudoFallbackMessage());
+        return;
+      }
+      if (pseudo.toolCalls.length > 0) {
+        await this.executePseudoToolCalls({
+          runId,
+          chatId,
+          request,
+          messages,
+          settings,
+          controller,
+          pseudo
+        });
+        return;
+      }
+
+      if (streamedText) {
+        this.emitAssistantDelta(runId, chatId, streamedText);
+      }
 
       this.finishAssistantRun(runId, chatId);
     } catch (error) {
@@ -1869,11 +2453,12 @@ export class AssistantRuntime {
   }
 
   private completeWithAssistantText(runId: string, chatId: string, text: string) {
-    if (!this.activeRuns.has(runId)) {
+    const activeRun = this.activeRuns.get(runId);
+    if (!activeRun) {
       return;
     }
     this.emitAssistantDelta(runId, chatId, text);
-    appendAssistantMessage(this.app, chatId, createAssistantMessage("assistant", text, runId));
+    appendAssistantMessage(this.app, chatId, createAssistantMessage("assistant", text, runId, activeRun.attachments));
     this.emitRunEvent(runId, chatId, {
       type: "run.complete",
       status: "ok",
@@ -1903,7 +2488,7 @@ export class AssistantRuntime {
   private finishAssistantRun(runId: string, chatId: string) {
     const finalRun = this.activeRuns.get(runId);
     if (finalRun?.text.trim()) {
-      appendAssistantMessage(this.app, chatId, createAssistantMessage("assistant", finalRun.text, runId));
+      appendAssistantMessage(this.app, chatId, createAssistantMessage("assistant", finalRun.text, runId, finalRun.attachments));
     }
     this.emitRunEvent(runId, chatId, {
       type: "run.complete",
@@ -1928,7 +2513,18 @@ export class AssistantRuntime {
     if (HUMAN_IN_LOOP_PATTERN.test(userText) || DESKTOP_ACTION_PATTERN.test(userText)) {
       return true;
     }
-    const hasBrowserTooling = Boolean(this.browserUse?.observePage || this.browserUse?.listSurfaces || this.browserUse?.executeAgentTask);
+    if (this.shouldKeepAttachmentQuestionLocal(request, userText)) {
+      return false;
+    }
+    const hasBrowserTooling = Boolean(
+      this.browserUse?.observePage ||
+      this.browserUse?.listSurfaces ||
+      this.browserUse?.executeAgentTask ||
+      this.browserUse?.click ||
+      this.browserUse?.fillFields ||
+      this.browserUse?.autofillForm ||
+      this.browserUse?.submit
+    );
     if (!hasBrowserTooling || !BROWSER_ACTION_PATTERN.test(userText)) {
       return false;
     }
@@ -1941,6 +2537,33 @@ export class AssistantRuntime {
       return false;
     }
     return true;
+  }
+
+  private buildToolRoutingText(userText: string, history: AssistantChatMessage[]) {
+    const recent = history.slice(-4).map((message) => message.content).join("\n");
+    if (!recent) {
+      return userText;
+    }
+    const officeFollowUp = /(word|excel|pdf|ppt|docx|xlsx|pptx|文档|表格|幻灯片|演示|生成|创建)/iu.test(recent) &&
+      !EXPLICIT_WEB_SURFACE_PATTERN.test(userText);
+    return officeFollowUp ? `${recent}\n${userText}` : userText;
+  }
+
+  private shouldUseDesktopOnlyTools(userText: string, request: AssistantStartRunRequest) {
+    return Boolean(
+      this.shouldKeepAttachmentQuestionLocal(request, userText) ||
+      (DESKTOP_ACTION_PATTERN.test(userText) && !EXPLICIT_WEB_SURFACE_PATTERN.test(userText))
+    );
+  }
+
+  private shouldKeepAttachmentQuestionLocal(request: AssistantStartRunRequest, userText: string) {
+    const hasAttachments = Array.isArray(request.attachments) &&
+      request.attachments.some((attachment) => attachment.kind !== "artifact" && !attachment.hidden);
+    return Boolean(
+      hasAttachments &&
+      ATTACHMENT_CONTEXT_PATTERN.test(userText) &&
+      !EXPLICIT_WEB_SURFACE_PATTERN.test(userText)
+    );
   }
 
   private shouldAnswerMissingBrowserQueryFromContext(
@@ -2264,10 +2887,11 @@ export class AssistantRuntime {
       }
     });
 
+    const runFullAccess = this.activeRuns.get(runId)?.permissionMode === "full_access";
     let result: BrowserToolResult;
     if (!this.browserUse?.executeAgentTask || !webContentsId) {
       result = this.missingBrowserTargetResult("agent_execute");
-    } else if (isSensitiveBrowserAgentTask(task)) {
+    } else if (isSensitiveBrowserAgentTask(task) && !runFullAccess) {
       const answer = await this.requestAwaiting(runId, chatId, {
         mode: "approval",
         title: "确认 PageAgent 敏感网页操作",
@@ -2282,7 +2906,7 @@ export class AssistantRuntime {
         ? await runAgent(true) ?? this.missingBrowserTargetResult("agent_execute")
         : this.userCancelledToolResult("agent_execute", answer);
     } else {
-      result = await runAgent(false) ?? this.missingBrowserTargetResult("agent_execute");
+      result = await runAgent(runFullAccess && isSensitiveBrowserAgentTask(task)) ?? this.missingBrowserTargetResult("agent_execute");
     }
 
     if (controller.signal.aborted) {
@@ -2391,7 +3015,8 @@ export class AssistantRuntime {
     messages,
     settings,
     controller,
-    extraMessages = []
+    extraMessages = [],
+    desktopOnlyTools = false
   }: {
     runId: string;
     chatId: string;
@@ -2400,6 +3025,7 @@ export class AssistantRuntime {
     settings: ReturnType<typeof readAssistantSettings>;
     controller: AbortController;
     extraMessages?: OpenAIChatMessage[];
+    desktopOnlyTools?: boolean;
   }) {
     const loopMessages: OpenAIChatMessage[] = [
       ...this.buildBrowserToolMessages(messages),
@@ -2412,6 +3038,7 @@ export class AssistantRuntime {
       lastResult: null,
       runId,
       chatId,
+      permissionMode: this.activeRuns.get(runId)?.permissionMode ?? "default",
       abortSignal: controller.signal,
       tasks: []
     };
@@ -2425,15 +3052,27 @@ export class AssistantRuntime {
       const completion = await completeOpenAIChatCompletion({
         settings,
         messages: loopMessages,
-        tools: AGENT_TOOL_DEFINITIONS,
+        tools: desktopOnlyTools ? DESKTOP_TOOL_DEFINITIONS : AGENT_TOOL_DEFINITIONS,
         signal: controller.signal
       });
+      const pseudo = completion.tool_calls.length === 0
+        ? extractPseudoToolCallsFromText(completion.content, request)
+        : null;
+      if (pseudo?.hasOperatorModeRequest && pseudo.toolCalls.length === 0) {
+        this.completeWithAssistantText(runId, chatId, operatorModePseudoFallbackMessage());
+        return;
+      }
+      if (pseudo?.toolCalls.length) {
+        completion.content = pseudo.visibleText;
+        completion.tool_calls = pseudo.toolCalls;
+      }
 
       if (completion.tool_calls.length === 0) {
+        const hasArtifacts = (this.activeRuns.get(runId)?.attachments.length ?? 0) > 0;
         this.completeWithAssistantText(
           runId,
           chatId,
-          completion.content.trim() || "已完成浏览器操作。"
+          completion.content.trim() || (hasArtifacts ? "已生成以下产物。" : "已完成浏览器操作。")
         );
         return;
       }
@@ -2568,6 +3207,116 @@ export class AssistantRuntime {
     return `${text.slice(0, 12000)}...[tool result truncated ${text.length - 12000} chars]`;
   }
 
+  private async executePseudoToolCalls({
+    runId,
+    chatId,
+    request,
+    messages,
+    settings,
+    controller,
+    pseudo
+  }: {
+    runId: string;
+    chatId: string;
+    request: AssistantStartRunRequest;
+    messages: ReturnType<typeof buildAssistantMessages>;
+    settings: ReturnType<typeof readAssistantSettings>;
+    controller: AbortController;
+    pseudo: ReturnType<typeof extractPseudoToolCallsFromText>;
+  }) {
+    const state: BrowserToolLoopState = {
+      pageContext: request.pageContext ?? null,
+      webContentsId: request.pageContext?.browserTarget?.webContentsId ?? null,
+      userText: request.message,
+      lastResult: null,
+      runId,
+      chatId,
+      permissionMode: this.activeRuns.get(runId)?.permissionMode ?? "default",
+      abortSignal: controller.signal,
+      tasks: []
+    };
+    const extraMessages: OpenAIChatMessage[] = [{
+      role: "assistant",
+      content: pseudo.visibleText || null,
+      tool_calls: pseudo.toolCalls
+    }];
+
+    for (const toolCall of pseudo.toolCalls) {
+      if (controller.signal.aborted) {
+        throw new Error("aborted");
+      }
+      const toolArgs = this.parseToolArgs(toolCall);
+      this.emitRunEvent(runId, chatId, {
+        type: "tool.start",
+        status: "running",
+        toolCallId: toolCall.id,
+        toolName: toolCall.function.name,
+        action: toolCall.function.name,
+        target: summarizeToolTarget(toolCall.function.name, toolArgs),
+        message: browserToolStartMessage(toolCall.function.name, toolArgs)
+      });
+      this.emitRunEvent(runId, chatId, {
+        type: "tool.args",
+        status: "running",
+        toolCallId: toolCall.id,
+        toolName: toolCall.function.name,
+        action: toolCall.function.name,
+        target: summarizeToolTarget(toolCall.function.name, toolArgs),
+        data: toolArgs
+      });
+      const result = await this.executeBrowserTool(toolCall, state);
+      state.lastResult = result;
+      const compactResult = compactBrowserToolResult(result);
+      this.emitRunEvent(runId, chatId, {
+        type: "tool.result",
+        status: browserToolStatus(result),
+        toolCallId: toolCall.id,
+        toolName: toolCall.function.name,
+        action: result.action,
+        target: result.target ?? summarizeToolTarget(toolCall.function.name, toolArgs),
+        message: browserToolResultMessage(result),
+        error: result.error,
+        data: compactResult
+      });
+      this.emitRunEvent(runId, chatId, {
+        type: "tool.end",
+        status: browserToolStatus(result),
+        toolCallId: toolCall.id,
+        toolName: toolCall.function.name,
+        action: result.action,
+        target: result.target ?? summarizeToolTarget(toolCall.function.name, toolArgs),
+        message: browserToolResultMessage(result),
+        error: result.error
+      });
+      extraMessages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        name: toolCall.function.name,
+        content: this.stringifyToolResult(result)
+      });
+
+      if (shouldAutoFinishBrowserAction(request.message, result)) {
+        this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+        return;
+      }
+      if (result.error === "user_rejected" || result.error === "user_dismissed") {
+        this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+        return;
+      }
+    }
+
+    await this.executeBrowserToolLoop({
+      runId,
+      chatId,
+      request,
+      messages,
+      settings,
+      controller,
+      extraMessages,
+      desktopOnlyTools: pseudo.toolCalls.every((toolCall) => toolCall.function.name.startsWith("desktop_"))
+    });
+  }
+
   private parseToolArgs(toolCall: OpenAIToolCall) {
     try {
       const parsed = JSON.parse(toolCall.function.arguments || "{}") as unknown;
@@ -2600,20 +3349,20 @@ export class AssistantRuntime {
         const activeTarget = state.pageContext?.browserTarget;
         const activeSurface = activeTarget
           ? {
-              id: activeTarget.surfaceId ?? "current",
-              label: activeTarget.surfaceLabel ?? state.pageContext?.title ?? "当前网页",
-              url: activeTarget.currentUrl ?? state.pageContext?.url ?? "",
-              currentUrl: state.pageContext?.url,
-              title: state.pageContext?.title,
-              active: true,
-              webContentsId: activeTarget.webContentsId
-            } satisfies BrowserSurface
+            id: activeTarget.surfaceId ?? "current",
+            label: activeTarget.surfaceLabel ?? state.pageContext?.title ?? "当前网页",
+            url: activeTarget.currentUrl ?? state.pageContext?.url ?? "",
+            currentUrl: state.pageContext?.url,
+            title: state.pageContext?.title,
+            active: true,
+            webContentsId: activeTarget.webContentsId
+          } satisfies BrowserSurface
           : null;
         const merged = activeSurface
           ? [
-              activeSurface,
-              ...surfaces.filter((surface) => surface.id !== activeSurface.id && surface.url !== activeSurface.url)
-            ]
+            activeSurface,
+            ...surfaces.filter((surface) => surface.id !== activeSurface.id && surface.url !== activeSurface.url)
+          ]
           : surfaces;
         return {
           ok: true,
@@ -2702,7 +3451,7 @@ export class AssistantRuntime {
         }
 
         let allowSensitive = false;
-        if (isSensitiveBrowserAgentTask(task, target)) {
+        if (isSensitiveBrowserAgentTask(task, target) && !this.hasFullAccess(state)) {
           const answer = await this.requestAwaiting(state.runId, state.chatId, {
             mode: "approval",
             title: "确认 PageAgent 敏感网页操作",
@@ -2716,6 +3465,8 @@ export class AssistantRuntime {
           if (answer.action !== "submit") {
             return this.userCancelledToolResult("agent_execute", answer);
           }
+          allowSensitive = true;
+        } else if (this.hasFullAccess(state) && isSensitiveBrowserAgentTask(task, target)) {
           allowSensitive = true;
         }
 
@@ -2765,7 +3516,7 @@ export class AssistantRuntime {
         if (!webContentsId || !this.browserUse?.click) {
           return this.missingBrowserTargetResult("click");
         }
-        const input: { elementRef?: string; target?: string } = {};
+        const input: { elementRef?: string; target?: string; allowSensitive?: boolean } = {};
         const elementRef = maybeString(args.elementRef);
         const target = maybeString(args.target);
         if (elementRef) {
@@ -2773,6 +3524,9 @@ export class AssistantRuntime {
         }
         if (target) {
           input.target = target;
+        }
+        if (args.allowSensitive === true) {
+          input.allowSensitive = true;
         }
         if (!elementRef && target && isGenericSearchSubmitTarget(target) && this.browserUse.submit) {
           return this.browserUse.submit(webContentsId, input);
@@ -2786,32 +3540,32 @@ export class AssistantRuntime {
         }
         const fields = Array.isArray(args.fields)
           ? args.fields
-              .map((field): BrowserFieldInput | null => {
-                if (!field || typeof field !== "object") {
-                  return null;
-                }
-                const candidate = field as Record<string, unknown>;
-                if (typeof candidate.value !== "string") {
-                  return null;
-                }
-                const normalized: BrowserFieldInput = {
-                  value: candidate.value
-                };
-                const elementRef = maybeString(candidate.elementRef);
-                const fieldName = maybeString(candidate.field);
-                const label = maybeString(candidate.label);
-                if (elementRef) {
-                  normalized.elementRef = elementRef;
-                }
-                if (fieldName) {
-                  normalized.field = fieldName;
-                }
-                if (label) {
-                  normalized.label = label;
-                }
-                return normalized;
-              })
-              .filter((field): field is BrowserFieldInput => Boolean(field))
+            .map((field): BrowserFieldInput | null => {
+              if (!field || typeof field !== "object") {
+                return null;
+              }
+              const candidate = field as Record<string, unknown>;
+              if (typeof candidate.value !== "string") {
+                return null;
+              }
+              const normalized: BrowserFieldInput = {
+                value: candidate.value
+              };
+              const elementRef = maybeString(candidate.elementRef);
+              const fieldName = maybeString(candidate.field);
+              const label = maybeString(candidate.label);
+              if (elementRef) {
+                normalized.elementRef = elementRef;
+              }
+              if (fieldName) {
+                normalized.field = fieldName;
+              }
+              if (label) {
+                normalized.label = label;
+              }
+              return normalized;
+            })
+            .filter((field): field is BrowserFieldInput => Boolean(field))
           : [];
         if (fields.length === 0) {
           return {
@@ -2833,7 +3587,7 @@ export class AssistantRuntime {
         const submit = typeof args.submit === "boolean"
           ? args.submit
           : !/(不用提交|不要提交|别提交|不提交|无需提交|先别提交)/u.test(state.userText)
-            && /(提交|保存|确认提交)/u.test(state.userText);
+          && /(提交|保存|确认提交)/u.test(state.userText);
         const input: { instruction?: string; skill?: string; submit?: boolean } = {
           instruction,
           submit
@@ -2956,8 +3710,38 @@ export class AssistantRuntime {
           };
         });
       }
+      case "desktop_read_document": {
+        try {
+          const result = await readDesktopDocument(this.app, {
+            path: maybeString(args.path),
+            attachmentId: maybeString(args.attachmentId),
+            pages: maybeString(args.pages),
+            sheet: maybeString(args.sheet),
+            maxChars: maybeNumber(args.maxChars)
+          }, state.chatId, { signal: state.abortSignal });
+          return {
+            ok: true,
+            action: "desktop_read_document",
+            target: result.path,
+            message: result.error
+              ? `已读取文档元信息，但有解析说明：${result.error}`
+              : `已读取文档：${result.path}`,
+            data: {
+              ...result,
+              content: compactToolText(result.content, 12000)
+            }
+          };
+        } catch (error) {
+          return {
+            ok: false,
+            action: "desktop_read_document",
+            error: "desktop_tool_failed",
+            message: error instanceof Error ? error.message : String(error)
+          };
+        }
+      }
       case "desktop_write_file": {
-        const answer = await this.requestAwaiting(state.runId, state.chatId, {
+        const answer = await this.requestApproval(state, {
           mode: "approval",
           title: "确认写入桌面文件",
           description: "助手准备在允许的桌面目录中写入文件。",
@@ -2978,25 +3762,31 @@ export class AssistantRuntime {
             content: typeof args.content === "string" ? args.content : "",
             overwrite: Boolean(args.overwrite)
           }, state.chatId);
-          this.emitRunEvent(state.runId, state.chatId, {
-            type: "artifact.publish",
-            status: "ok",
-            action: "artifact_publish",
-            target: result.path,
-            message: `已生成文件：${result.path}`,
-            data: {
-              title: maybeString(args.filename) || maybeString(args.path) || "桌面文件",
-              path: result.path
-            }
+          const published = this.publishArtifactAttachmentForRun(state, {
+            path: result.path,
+            name: path.basename(result.path),
+            mimeType: "",
+            description: maybeString(args.filename) || maybeString(args.path) || "桌面文件",
+            type: "file"
           });
           return {
             ok: true,
             action: "desktop_write_file",
             target: result.path,
             message: `已写入文件：${result.path}`,
-            data: result
+            data: {
+              ...result,
+              artifact: published.artifacts[0] ?? null,
+              artifacts: published.artifacts
+            }
           };
         });
+      }
+      case "desktop_create_docx":
+      case "desktop_create_pdf":
+      case "desktop_create_xlsx":
+      case "desktop_create_pptx": {
+        return this.executeOfficeCreateTool(state, toolName, args);
       }
       case "desktop_plan_organize": {
         return this.wrapDesktopTool("plan_organize", () => {
@@ -3014,7 +3804,7 @@ export class AssistantRuntime {
       }
       case "desktop_move_files": {
         const moves = this.parseMoveOperations(args.moves);
-        const answer = await this.requestAwaiting(state.runId, state.chatId, {
+        const answer = await this.requestApproval(state, {
           mode: "approval",
           title: "确认移动桌面文件",
           description: "助手准备按整理预览移动桌面文件。",
@@ -3040,7 +3830,7 @@ export class AssistantRuntime {
       }
       case "bash": {
         const command = maybeString(args.command) || "";
-        const answer = await this.requestAwaiting(state.runId, state.chatId, {
+        const answer = await this.requestApproval(state, {
           mode: "approval",
           title: "确认执行宿主机命令",
           description: maybeString(args.description) || "助手准备在本机执行命令。",
@@ -3072,6 +3862,69 @@ export class AssistantRuntime {
       case "bash_sandbox": {
         return this.executeSandboxBash(state, args);
       }
+      case "host_app_launch": {
+        const decision = routeAssistantToolRequest({
+          toolName,
+          args,
+          platform: process.platform,
+          permissionMode: state.permissionMode
+        });
+        if (decision.denied) {
+          return {
+            ok: false,
+            action: "host_app_launch",
+            error: "host_app_denied",
+            message: decision.message
+          };
+        }
+        const command = maybeString(decision.args.command);
+        if (!command) {
+          return {
+            ok: false,
+            action: "host_app_launch",
+            error: "missing_command",
+            message: "没有解析到可启动的白名单本机应用。"
+          };
+        }
+        const appName = maybeString(decision.args.appName) || maybeString(decision.args.app_name_or_path) || maybeString(decision.args.app) || command;
+        const answer = await this.requestApproval(state, {
+          mode: "approval",
+          title: "确认启动本机应用",
+          description: "助手准备启动一个白名单本机应用。",
+          toolName: "host_app_launch",
+          approval: {
+            summary: appName,
+            risk: "会在本机启动应用。",
+            command
+          }
+        });
+        if (answer.action !== "submit") {
+          return this.userCancelledToolResult("host_app_launch", answer);
+        }
+        try {
+          const result = await runHostCommand(this.app, {
+            command,
+            cwd: maybeString(args.cwd),
+            timeoutMs: maybeNumber(args.timeoutMs) ?? maybeNumber(args.timeout_ms)
+          }, state.chatId);
+          return {
+            ok: result.ok,
+            action: "host_app_launch",
+            target: appName,
+            error: result.ok ? undefined : "host_app_launch_failed",
+            message: result.ok ? `已启动应用：${appName}` : `启动应用失败：${appName}`,
+            data: result
+          };
+        } catch (error) {
+          return {
+            ok: false,
+            action: "host_app_launch",
+            target: appName,
+            error: "host_app_launch_failed",
+            message: error instanceof Error ? error.message : String(error)
+          };
+        }
+      }
       case AGW_ASK_USER_QUESTION_TOOL_NAME:
       case LEGACY_ASK_USER_QUESTION_TOOL_NAME:
       case CLAUDE_ASK_USER_QUESTION_TOOL_NAME: {
@@ -3096,26 +3949,18 @@ export class AssistantRuntime {
         };
       }
       case "artifact_publish": {
-        const data = {
-          title: maybeString(args.title) || "产物",
-          path: maybeString(args.path) || "",
-          mimeType: maybeString(args.mimeType) || "",
-          description: maybeString(args.description) || ""
-        };
-        this.emitRunEvent(state.runId, state.chatId, {
-          type: "artifact.publish",
-          status: "ok",
-          action: "artifact_publish",
-          target: data.path,
-          message: `已发布产物：${data.title}`,
-          data
-        });
+        const inputs = this.normalizeArtifactPublishInputs(args, toolCall.id);
+        const published = this.publishArtifactAttachmentsForRun(state, inputs);
         return {
-          ok: true,
+          ok: published.ok,
           action: "artifact_publish",
-          target: data.path,
-          message: `已发布产物：${data.title}`,
-          data
+          target: inputs[0]?.path,
+          error: published.ok ? undefined : "artifact_publish_failed",
+          message: published.message,
+          data: {
+            artifacts: published.artifacts,
+            errors: published.errors
+          }
         };
       }
       case "plan_add_tasks": {
@@ -3167,6 +4012,191 @@ export class AssistantRuntime {
         message: error instanceof Error ? error.message : String(error)
       };
     }
+  }
+
+  private async executeOfficeCreateTool(
+    state: BrowserToolLoopState,
+    toolName: string,
+    args: Record<string, unknown>
+  ): Promise<BrowserToolResult> {
+    const target = maybeString(args.path) || maybeString(args.filename) || maybeString(args.title) || toolName;
+    const answer = await this.requestApproval(state, {
+      mode: "approval",
+      title: "确认生成桌面文档",
+      description: "助手准备在允许的桌面目录中生成 Office/PDF 文件。",
+      toolName,
+      approval: {
+        summary: target,
+        risk: "会在本机文件系统中创建或覆盖文档文件。",
+        paths: [maybeString(args.path) || maybeString(args.filename) || ""].filter(Boolean)
+      }
+    });
+    if (answer.action !== "submit") {
+      return this.userCancelledToolResult(toolName, answer);
+    }
+
+    try {
+      let result: OfficeToolResult;
+      let mimeType = "";
+      let artifactType = "document";
+      if (toolName === "desktop_create_docx") {
+        result = await createDocxFile(this.app, this.buildDocxInput(args), state.chatId);
+        mimeType = OFFICE_MIME_TYPES.docx;
+      } else if (toolName === "desktop_create_pdf") {
+        result = await createPdfFile(this.app, this.buildPdfInput(args), state.chatId, {
+          renderPdf: this.dependencies.renderPdf
+        });
+        mimeType = OFFICE_MIME_TYPES.pdf;
+      } else if (toolName === "desktop_create_xlsx") {
+        result = await createXlsxFile(this.app, this.buildXlsxInput(args), state.chatId);
+        mimeType = OFFICE_MIME_TYPES.xlsx;
+        artifactType = "spreadsheet";
+      } else {
+        result = await createPptxFile(this.app, this.buildPptxInput(args), state.chatId);
+        mimeType = OFFICE_MIME_TYPES.pptx;
+        artifactType = "presentation";
+      }
+
+      const published = this.publishArtifactAttachmentForRun(state, {
+        path: result.path,
+        name: path.basename(result.path),
+        mimeType,
+        description: maybeString(args.title) || path.basename(result.path),
+        type: artifactType
+      });
+      return {
+        ok: true,
+        action: toolName,
+        target: result.path,
+        message: `已生成文件：${result.path}`,
+        data: {
+          ...result,
+          artifact: published.artifacts[0] ?? null,
+          artifacts: published.artifacts
+        }
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        action: toolName,
+        error: "desktop_tool_failed",
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  private publishArtifactAttachmentForRun(
+    state: BrowserToolLoopState,
+    input: RunArtifactInput
+  ) {
+    return this.publishArtifactAttachmentsForRun(state, [input]);
+  }
+
+  private publishArtifactAttachmentsForRun(
+    state: BrowserToolLoopState,
+    inputs: RunArtifactInput[]
+  ) {
+    const result = createAssistantArtifactAttachmentsFromFiles(this.app, state.chatId, inputs, {
+      fallbackArtifactId: `artifact_${state.runId}_${Date.now().toString(36)}`
+    });
+    const activeRun = this.activeRuns.get(state.runId);
+    if (activeRun && result.attachments.length > 0) {
+      activeRun.attachments.push(...result.attachments);
+    }
+    this.emitRunEvent(state.runId, state.chatId, {
+      type: "artifact.publish",
+      status: result.ok ? "ok" : "error",
+      action: "artifact_publish",
+      target: inputs[0]?.path || "",
+      message: result.message,
+      artifactCount: result.artifacts.length,
+      artifacts: result.artifacts,
+      data: {
+        ...result,
+        attachments: result.attachments
+      }
+    });
+    return result;
+  }
+
+  private normalizeArtifactPublishInputs(args: Record<string, unknown>, fallbackArtifactId: string): RunArtifactInput[] {
+    const rawArtifacts = Array.isArray(args.artifacts) ? args.artifacts : [];
+    const normalized: RunArtifactInput[] = [];
+    for (const [index, item] of rawArtifacts.entries()) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const candidate = item as Record<string, unknown>;
+      const artifactPath = maybeString(candidate.path);
+      if (!artifactPath) {
+        continue;
+      }
+      normalized.push({
+        artifactId: maybeString(candidate.artifactId) || (rawArtifacts.length === 1 ? fallbackArtifactId : `${fallbackArtifactId}_${index}`),
+        path: artifactPath,
+        name: maybeString(candidate.name) || path.basename(artifactPath),
+        mimeType: maybeString(candidate.mimeType),
+        description: maybeString(candidate.description),
+        type: maybeString(candidate.type) || "file"
+      });
+    }
+    if (normalized.length > 0) {
+      return normalized;
+    }
+    const artifactPath = maybeString(args.path) || "";
+    const title = maybeString(args.title) || "产物";
+    return [{
+      artifactId: fallbackArtifactId,
+      path: artifactPath,
+      name: path.basename(artifactPath) || title,
+      mimeType: maybeString(args.mimeType),
+      description: maybeString(args.description) || title,
+      type: "file"
+    }];
+  }
+
+  private buildDocxInput(args: Record<string, unknown>): DocxCreateInput {
+    return {
+      path: maybeString(args.path),
+      filename: maybeString(args.filename),
+      title: maybeString(args.title),
+      content: typeof args.content === "string" ? args.content : "",
+      contentFormat: args.contentFormat === "markdown" ? "markdown" : "plain",
+      overwrite: Boolean(args.overwrite)
+    };
+  }
+
+  private buildPdfInput(args: Record<string, unknown>): PdfCreateInput {
+    return {
+      path: maybeString(args.path),
+      filename: maybeString(args.filename),
+      title: maybeString(args.title),
+      content: typeof args.content === "string" ? args.content : "",
+      contentFormat: args.contentFormat === "html" || args.contentFormat === "markdown" ? args.contentFormat : "plain",
+      overwrite: Boolean(args.overwrite)
+    };
+  }
+
+  private buildXlsxInput(args: Record<string, unknown>): XlsxCreateInput {
+    return {
+      path: maybeString(args.path),
+      filename: maybeString(args.filename),
+      title: maybeString(args.title),
+      sheets: Array.isArray(args.sheets) ? args.sheets as XlsxCreateInput["sheets"] : undefined,
+      content: typeof args.content === "string" ? args.content : "",
+      overwrite: Boolean(args.overwrite)
+    };
+  }
+
+  private buildPptxInput(args: Record<string, unknown>): PptxCreateInput {
+    return {
+      path: maybeString(args.path),
+      filename: maybeString(args.filename),
+      title: maybeString(args.title),
+      slides: Array.isArray(args.slides) ? args.slides as PptxCreateInput["slides"] : undefined,
+      content: typeof args.content === "string" ? args.content : "",
+      overwrite: Boolean(args.overwrite)
+    };
   }
 
   private userCancelledToolResult(action: string, answer: AwaitingAnswer): BrowserToolResult {

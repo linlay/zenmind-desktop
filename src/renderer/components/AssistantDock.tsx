@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type WheelEvent } from "react";
 import type {
   AssistantAttachment,
   AssistantAttachmentPickResult,
@@ -7,11 +7,15 @@ import type {
   AssistantChatMessage,
   AssistantChatSummary,
   AssistantPageContext,
+  AssistantPermissionMode,
   AssistantRunEvent,
+  AssistantRunEventStatus,
   AssistantRunAction,
   AssistantSettingsPublic,
-  AssistantVoiceCorrectionLocale
+  AssistantVoiceCorrectionLocale,
+  DesktopApi
 } from "../../shared/contracts";
+import { ZENMIND_ASSISTANT_WONDERS } from "../../shared/assistant-capabilities";
 import { AssistantAwaitingDialog } from "./AssistantAwaitingDialog";
 import { AssistantMarkdownContent } from "./AssistantMarkdownContent";
 import { getAssistantPageContext } from "../services/assistantPageContext";
@@ -23,6 +27,7 @@ type AssistantDockProps = {
   mode: AssistantDockMode;
   isMac: boolean;
   isWindows: boolean;
+  nativeDialogVisible?: boolean;
   onOpen: () => void;
   onClose: () => void;
   onModeChange: (mode: AssistantDockMode) => void;
@@ -33,6 +38,7 @@ type AssistantDockProps = {
 type VoiceState = "idle" | "recording" | "correcting";
 
 const VOICE_CORRECTION_LOCALE: AssistantVoiceCorrectionLocale = "zh-CN-mixed-en";
+const FULL_ACCESS_DURATION_MS = 10 * 60 * 1000;
 const VOICE_AUDIO_MIME_TYPES = [
   "audio/webm;codecs=opus",
   "audio/webm",
@@ -47,8 +53,18 @@ const STRUCTURED_ASSISTANT_EVENT_TYPES = new Set([
   "content.delta",
   "tool.start",
   "tool.args",
+  "tool.route",
   "tool.result",
+  "tool.verify",
   "tool.end",
+  "memory.reference",
+  "memory.recalled",
+  "memory.stored",
+  "memory.skipped",
+  "intent.classified",
+  "voice.transcribed",
+  "voice.corrected",
+  "voice.needs_review",
   "awaiting.confirm",
   "awaiting.ask",
   "awaiting.answer",
@@ -92,12 +108,31 @@ function getRunEventText(event: AssistantRunEvent) {
       return "已进入桌面单智能体会话。";
     case "run.start":
       return "已开始生成。";
+    case "intent.classified":
+      return "已识别本轮意图。";
+    case "memory.recalled":
+    case "memory.reference":
+      return "已引用本地记忆。";
+    case "memory.stored":
+      return "已保存本地记忆。";
+    case "memory.skipped":
+      return "已跳过低价值记忆。";
+    case "voice.transcribed":
+      return "语音识别完成。";
+    case "voice.corrected":
+      return "语音文本已纠正。";
+    case "voice.needs_review":
+      return "语音文本需要确认。";
+    case "tool.route":
+      return "已选择工具。";
     case "tool.start":
       return event.toolName ? `正在执行 ${event.toolName}。` : "正在执行工具。";
     case "tool.args":
       return event.toolName ? `${event.toolName} 参数已准备。` : "工具参数已准备。";
     case "tool.result":
       return event.status === "ok" ? "工具执行完成。" : "工具执行未完成。";
+    case "tool.verify":
+      return event.status === "ok" ? "工具结果已复查。" : "工具结果未通过复查。";
     case "tool.end":
       return event.status === "ok" ? "工具已结束。" : "工具已停止。";
     case "awaiting.confirm":
@@ -129,29 +164,10 @@ function getAssistantErrorContent(event: AssistantEvent) {
   return event.message || (event.error ? `生成失败：${event.error}` : "生成失败。");
 }
 
-function getRunEventTone(event: AssistantRunEvent) {
-  if (event.type === "awaiting.confirm" || event.type === "awaiting.ask" || event.status === "blocked" || event.status === "waiting") {
-    return "is-blocked";
-  }
-  if (event.type === "run.error" || event.status === "error") {
-    return "is-error";
-  }
-  if (event.status === "timeout" || event.status === "rejected" || event.status === "cancelled") {
-    return "is-blocked";
-  }
-  if (event.type === "run.stopped" || event.status === "stopped") {
-    return "is-stopped";
-  }
-  if (event.type === "tool.start" || event.type === "run.start" || event.status === "running") {
-    return "is-running";
-  }
-  return "is-ok";
-}
-
 function getRunTimelineStatusText(runId: string, runningRunId: string | null, events: AssistantRunEvent[]) {
   const lastEvent = events[events.length - 1];
   if (!lastEvent) {
-    return "";
+    return runningRunId === runId ? "运行中" : "";
   }
   if (lastEvent.type === "awaiting.confirm" || lastEvent.type === "awaiting.ask" || lastEvent.status === "blocked" || lastEvent.status === "waiting") {
     return "待确认";
@@ -212,6 +228,384 @@ function getAssistantEventAwaitingPayload(event: AssistantRunEvent): AssistantAw
 type SpeechRecognitionAlternativeLike = {
   transcript?: string;
 };
+
+type AssistantMemoryReference = {
+  id?: string;
+  title?: string;
+  path?: string;
+  lineStart?: number;
+  lineEnd?: number;
+  excerpt?: string;
+  reason?: string;
+};
+
+type OperatorModeInfo = {
+  expiresAt: number;
+  remainingMs: number;
+};
+
+type AssistantTimelineRecordStatus = AssistantRunEventStatus | "pending";
+
+type AssistantTimelineToolRecord = {
+  id: string;
+  title: string;
+  status: AssistantTimelineRecordStatus;
+  statusLabel: string;
+  verificationLabel?: string;
+  argsData?: unknown;
+  resultData?: unknown;
+  resultText: string;
+  errorText: string;
+};
+
+type AssistantTimelineToolItem = {
+  kind: "tool";
+  id: string;
+  title: string;
+  status: AssistantTimelineRecordStatus;
+  statusLabel: string;
+  records: AssistantTimelineToolRecord[];
+};
+
+type AssistantTimelineTextItem = {
+  kind: "thinking" | "awaiting" | "artifact";
+  id: string;
+  title: string;
+  text: string;
+  status: AssistantTimelineRecordStatus;
+};
+
+type AssistantTimelineItem = AssistantTimelineToolItem | AssistantTimelineTextItem;
+
+const TOOL_LABELS: Record<string, string> = {
+  browser_observe: "观察网页",
+  browser_snapshot: "页面快照",
+  browser_wait: "等待网页",
+  browser_extract: "提取结果",
+  browser_open_url: "打开网页",
+  browser_navigate: "网页导航",
+  browser_click: "点击页面",
+  browser_fill: "填写输入",
+  browser_autofill: "自动填表",
+  browser_select: "选择选项",
+  browser_check: "切换选项",
+  browser_submit: "提交页面",
+  browser_read: "读取网页",
+  browser_cdp_command: "CDP 命令",
+  service_list: "服务列表",
+  service_control: "服务控制",
+  service_verify: "服务复查",
+  desktop_file_read: "读取文件",
+  desktop_file_write: "写入文件",
+  desktop_file_list: "查看目录",
+  desktop_create_docx: "生成 Word",
+  desktop_create_pdf: "生成 PDF",
+  desktop_create_xlsx: "生成 Excel",
+  desktop_create_pptx: "生成 PPT",
+  host_app_launch: "启动应用",
+  bash_sandbox: "执行命令",
+  operator_mode_request: "权限模式",
+  operator_mode_revoke: "权限模式",
+  artifact_publish: "生成产物",
+  _ask_user_question_: "询问用户"
+};
+
+const MAX_TIMELINE_DETAIL_LENGTH = 1800;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function getAssistantMemoryReferences(event: AssistantRunEvent): AssistantMemoryReference[] {
+  if (event.type !== "memory.reference" || !isRecord(event.data) || !Array.isArray(event.data.references)) {
+    return [];
+  }
+  return event.data.references
+    .filter(isRecord)
+    .map((reference) => ({
+      id: typeof reference.id === "string" ? reference.id : undefined,
+      title: typeof reference.title === "string" ? reference.title : undefined,
+      path: typeof reference.path === "string" ? reference.path : undefined,
+      lineStart: typeof reference.lineStart === "number" ? reference.lineStart : undefined,
+      lineEnd: typeof reference.lineEnd === "number" ? reference.lineEnd : undefined,
+      excerpt: typeof reference.excerpt === "string" ? reference.excerpt : undefined,
+      reason: typeof reference.reason === "string" ? reference.reason : undefined
+    }))
+    .filter((reference) => reference.title || reference.excerpt || reference.path);
+}
+
+function getNestedRecord(value: unknown, key: string) {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const child = value[key];
+  return isRecord(child) ? child : null;
+}
+
+function getOperatorModeInfo(events: AssistantRunEvent[], nowMs: number): OperatorModeInfo | null {
+  const operatorEvents = events
+    .filter((event) => event.toolName === "operator_mode_request" || event.toolName === "operator_mode_revoke")
+    .sort((left, right) => right.seq - left.seq);
+  const latest = operatorEvents[0];
+  if (!latest || latest.toolName === "operator_mode_revoke" || latest.status !== "ok") {
+    return null;
+  }
+  const resultData = getNestedRecord(latest.data, "data");
+  const grant = getNestedRecord(resultData, "grant");
+  const expiresAt = typeof grant?.expiresAt === "number" ? grant.expiresAt : 0;
+  if (!expiresAt || expiresAt <= nowMs) {
+    return null;
+  }
+  return {
+    expiresAt,
+    remainingMs: expiresAt - nowMs
+  };
+}
+
+function formatOperatorModeRemaining(remainingMs: number) {
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function truncateTimelineText(value: string, maxLength = MAX_TIMELINE_DETAIL_LENGTH) {
+  const normalized = value.trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength)}\n...`;
+}
+
+function formatTimelineValue(value: unknown, maxLength = MAX_TIMELINE_DETAIL_LENGTH): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return truncateTimelineText(value, maxLength);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  try {
+    return truncateTimelineText(JSON.stringify(value, null, 2), maxLength);
+  } catch {
+    return truncateTimelineText(String(value), maxLength);
+  }
+}
+
+function formatTimelineInlineValue(value: unknown) {
+  return formatTimelineValue(value, 260).replace(/\s+/g, " ").trim();
+}
+
+function getTimelineStatusLabel(status?: AssistantTimelineRecordStatus) {
+  switch (status) {
+    case "running":
+    case "waiting":
+      return "运行中";
+    case "ok":
+    case "answered":
+      return "完成";
+    case "rejected":
+      return "已拒绝";
+    case "cancelled":
+      return "已取消";
+    case "timeout":
+      return "已超时";
+    case "error":
+    case "blocked":
+      return "异常";
+    case "stopped":
+      return "已停止";
+    case "pending":
+    default:
+      return "等待中";
+  }
+}
+
+function getTimelineVerificationLabel(data: unknown) {
+  const root = isRecord(data) ? data : null;
+  const nestedData = root ? getNestedRecord(root, "data") : null;
+  const verification = root
+    ? getNestedRecord(root, "verification") ?? getNestedRecord(nestedData, "verification")
+    : null;
+  const error = typeof root?.error === "string"
+    ? root.error
+    : typeof nestedData?.error === "string"
+      ? nestedData.error
+      : "";
+  if (verification) {
+    if (typeof verification.verified === "boolean") {
+      return verification.verified ? "已验证" : "验证失败";
+    }
+    if (typeof verification.enoughItems === "boolean") {
+      return verification.enoughItems ? "已验证" : "结果不足";
+    }
+  }
+  if (error === "insufficient_items") {
+    return "结果不足";
+  }
+  if (error === "stale_ref") {
+    return "ref 已失效";
+  }
+  return "";
+}
+
+function getToolDisplayName(event: AssistantRunEvent) {
+  const key = event.toolName || event.action || "";
+  if (key && TOOL_LABELS[key]) {
+    return TOOL_LABELS[key];
+  }
+  if (event.message && event.type === "tool.start") {
+    return event.message.replace(/[。.]$/u, "");
+  }
+  if (event.toolName) {
+    return event.toolName.replace(/^_+|_+$/g, "").replace(/[_-]+/g, " ");
+  }
+  return "执行工具";
+}
+
+function getToolGroupKey(event: AssistantRunEvent) {
+  return [
+    event.toolName || "tool",
+    event.action || "",
+    event.toolCallId ? "" : event.target || ""
+  ].join(":");
+}
+
+function getToolRecordKey(event: AssistantRunEvent, groupKey: string) {
+  return event.toolCallId || groupKey;
+}
+
+function createToolRecord(event: AssistantRunEvent, index: number): AssistantTimelineToolRecord {
+  const status = event.status || "pending";
+  return {
+    id: getToolRecordKey(event, `${event.toolName || "tool"}:${index}`),
+    title: `第 ${index + 1} 次`,
+    status,
+    statusLabel: getTimelineStatusLabel(status),
+    resultText: event.message || "",
+    errorText: event.error || ""
+  };
+}
+
+function updateToolRecordStatus(record: AssistantTimelineToolRecord, status?: AssistantRunEventStatus) {
+  if (!status) {
+    return;
+  }
+  record.status = status;
+  record.statusLabel = getTimelineStatusLabel(status);
+}
+
+function buildRunTimelineItems(
+  events: AssistantRunEvent[],
+  runId: string,
+  runningRunId: string | null
+): AssistantTimelineItem[] {
+  const sortedEvents = events
+    .filter((event) => event.runId === runId)
+    .sort((left, right) => left.seq - right.seq);
+  const items: AssistantTimelineItem[] = [];
+  const toolItemsByKey = new Map<string, AssistantTimelineToolItem>();
+  const toolRecordsByKey = new Map<string, AssistantTimelineToolRecord>();
+
+  const ensureToolItem = (event: AssistantRunEvent) => {
+    const groupKey = getToolGroupKey(event);
+    let item = toolItemsByKey.get(groupKey);
+    if (!item) {
+      const status = event.status || "pending";
+      item = {
+        kind: "tool",
+        id: `tool-${groupKey}-${event.seq}`,
+        title: getToolDisplayName(event),
+        status,
+        statusLabel: getTimelineStatusLabel(status),
+        records: []
+      };
+      toolItemsByKey.set(groupKey, item);
+      items.push(item);
+    }
+    return { item, groupKey };
+  };
+
+  const ensureToolRecord = (event: AssistantRunEvent, item: AssistantTimelineToolItem, groupKey: string) => {
+    const recordKey = getToolRecordKey(event, groupKey);
+    let record = toolRecordsByKey.get(recordKey);
+    if (!record || event.type === "tool.start") {
+      record = createToolRecord(event, item.records.length);
+      item.records.push(record);
+      toolRecordsByKey.set(recordKey, record);
+    }
+    return record;
+  };
+
+  for (const event of sortedEvents) {
+    if (event.type === "tool.route" || event.type === "tool.start" || event.type === "tool.args" || event.type === "tool.result" || event.type === "tool.verify" || event.type === "tool.end") {
+      const { item, groupKey } = ensureToolItem(event);
+      const record = ensureToolRecord(event, item, groupKey);
+      updateToolRecordStatus(record, event.status);
+      if (event.type === "tool.args") {
+        record.argsData = event.data;
+      }
+      if (event.type === "tool.result") {
+        record.resultData = event.data;
+        record.resultText = event.message || formatTimelineValue(event.data) || record.resultText;
+        record.errorText = event.error || record.errorText;
+        record.verificationLabel = getTimelineVerificationLabel(event.data) || record.verificationLabel;
+      }
+      if (event.type === "tool.verify") {
+        record.verificationLabel = event.message || getTimelineStatusLabel(event.status || "ok");
+        record.errorText = event.error || record.errorText;
+      }
+      if (event.type === "tool.end" && event.message && !record.resultText) {
+        record.resultText = event.message;
+      }
+      item.status = record.status;
+      item.statusLabel = record.statusLabel;
+      continue;
+    }
+
+    if (event.type === "awaiting.confirm" || event.type === "awaiting.ask" || event.type === "awaiting.answer") {
+      const status = event.status || (event.type === "awaiting.answer" ? "answered" : "waiting");
+      items.push({
+        kind: "awaiting",
+        id: event.id,
+        title: event.type === "awaiting.answer" ? "用户确认" : "等待确认",
+        text: getRunEventText(event),
+        status
+      });
+      continue;
+    }
+
+    if (event.type === "artifact.publish") {
+      const status = event.status || "ok";
+      items.push({
+        kind: "artifact",
+        id: event.id,
+        title: "生成产物",
+        text: getRunEventText(event),
+        status
+      });
+    }
+  }
+
+  const isRunning = runningRunId === runId;
+  if (items.length > 0 || isRunning) {
+    items.unshift({
+      kind: "thinking",
+      id: `thinking-${runId}`,
+      title: isRunning ? "思考中..." : "思考过程",
+      text: isRunning
+        ? items.length > 0
+          ? "正在根据上下文推进下一步。"
+          : "正在理解请求并整理下一步。"
+        : "本轮运行过程已整理完成。",
+      status: isRunning ? "running" : "ok"
+    });
+  }
+
+  return items;
+}
 
 type SpeechRecognitionResultLike = {
   isFinal: boolean;
@@ -291,6 +685,33 @@ function normalizeVoiceFeedbackMessage(message: string) {
   return compact.length > maxLength ? `${compact.slice(0, maxLength)}...` : compact;
 }
 
+function containsVoiceReviewSensitiveText(text: string) {
+  return /(?:https?:\/\/|www\.|\/Users\/|[A-Za-z]:\\|(?:^|\s)(?:npm|pnpm|yarn|git|bun|node|rm|mv|cp|sudo)\s+)/iu.test(text);
+}
+
+function formatVoiceCorrectionFeedback(result: Awaited<ReturnType<DesktopApi["assistant"]["correctVoiceText"]>>) {
+  const baseMessage = normalizeVoiceFeedbackMessage(result.message);
+  if (!result.ok) {
+    return baseMessage;
+  }
+  const corrected = result.correctedText || result.text;
+  const needsReview =
+    result.changeLevel === "major" ||
+    containsVoiceReviewSensitiveText(corrected) ||
+    (result.uncertainTerms?.length ?? 0) > 0;
+  const terms = result.glossaryHits?.length ? `；命中术语：${result.glossaryHits.slice(0, 3).join("、")}` : "";
+  if (needsReview) {
+    return `语音文本已放入输入框，请确认后发送${terms}。`;
+  }
+  return terms ? `${baseMessage}${terms}` : baseMessage;
+}
+
+function waitForAssistantDockPaint() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
 function createOptimisticMessage(
   role: AssistantChatMessage["role"],
   content: string,
@@ -306,6 +727,82 @@ function createOptimisticMessage(
     ...(runId ? { runId } : {}),
     ...(messageAttachments ? { attachments: messageAttachments } : {})
   } satisfies AssistantChatMessage;
+}
+
+function mergeAssistantAttachments(
+  current: AssistantAttachment[] | undefined,
+  next: AssistantAttachment[]
+) {
+  if (next.length === 0) {
+    return current;
+  }
+  const merged = [...(current ?? [])];
+  const knownIds = new Set(merged.map((attachment) => attachment.id));
+  for (const attachment of next) {
+    if (!knownIds.has(attachment.id)) {
+      merged.push(attachment);
+      knownIds.add(attachment.id);
+    }
+  }
+  return merged;
+}
+
+function artifactRecordToAttachment(value: unknown): AssistantAttachment | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const id = typeof record.attachmentId === "string" ? record.attachmentId : "";
+  const name = typeof record.name === "string" ? record.name : "";
+  if (!id || !name) {
+    return null;
+  }
+  return {
+    id,
+    name,
+    mimeType: typeof record.mimeType === "string" ? record.mimeType : "application/octet-stream",
+    sizeBytes: typeof record.sizeBytes === "number" && Number.isFinite(record.sizeBytes) ? record.sizeBytes : 0,
+    text: "",
+    kind: "artifact",
+    ...(typeof record.artifactId === "string" ? { artifactId: record.artifactId } : {}),
+    ...(typeof record.description === "string" ? { description: record.description } : {}),
+    ...(typeof record.sha256 === "string" ? { sha256: record.sha256 } : {}),
+    ...(typeof record.url === "string" ? { url: record.url } : {})
+  };
+}
+
+function getArtifactAttachmentsFromEvent(event: AssistantRunEvent) {
+  if (event.type !== "artifact.publish") {
+    return [];
+  }
+  const data = event.data && typeof event.data === "object" && !Array.isArray(event.data)
+    ? event.data as Record<string, unknown>
+    : {};
+  const rawArtifacts = Array.isArray(event.artifacts)
+    ? event.artifacts
+    : Array.isArray(data.artifacts)
+      ? data.artifacts
+      : event.artifact
+        ? [event.artifact]
+        : data.artifact
+          ? [data.artifact]
+          : [];
+  return rawArtifacts
+    .map(artifactRecordToAttachment)
+    .filter((attachment): attachment is AssistantAttachment => Boolean(attachment));
+}
+
+function getArtifactAttachmentsFromMessages(messages: AssistantChatMessage[]) {
+  const artifacts = new Map<string, AssistantAttachment>();
+  for (const message of messages) {
+    for (const attachment of message.attachments ?? []) {
+      if (attachment.kind !== "artifact") {
+        continue;
+      }
+      artifacts.set(attachment.artifactId || attachment.id, attachment);
+    }
+  }
+  return Array.from(artifacts.values()).reverse();
 }
 
 function hasUsefulPageText(pageContext: AssistantPageContext | null) {
@@ -378,6 +875,49 @@ function getVoiceCaptureErrorMessage(reason: unknown, isMac: boolean, isWindows:
   return error?.message || "语音输入启动失败。";
 }
 
+function normalizeChatText(value: string) {
+  return value.replace(/\s+/gu, " ").trim();
+}
+
+function getChatDisplayTitle(chat: AssistantChatSummary | null | undefined, fallback = "当前对话") {
+  return normalizeChatText(chat?.title ?? "") || fallback;
+}
+
+function getChatPreview(chat: AssistantChatSummary) {
+  return normalizeChatText(chat.lastMessage) || `${chat.messageCount} 条消息`;
+}
+
+function getChatAvatarLabel(title: string) {
+  return title.trim().charAt(0).toLocaleUpperCase() || "Z";
+}
+
+function formatChatUpdatedAt(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+  const diffMs = Math.max(0, Date.now() - timestamp);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (diffMs < minute) {
+    return "刚刚";
+  }
+  if (diffMs < hour) {
+    return `${Math.floor(diffMs / minute)} 分钟前`;
+  }
+  if (diffMs < day) {
+    return `${Math.floor(diffMs / hour)} 小时前`;
+  }
+  if (diffMs < 7 * day) {
+    return `${Math.floor(diffMs / day)} 天前`;
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
+    day: "numeric"
+  }).format(new Date(timestamp));
+}
+
 function ZenMindLogoIcon() {
   return (
     <img
@@ -394,6 +934,17 @@ function PaperclipIcon() {
     <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
       <path d="m8.8 12.2 5.1-5.1a3.3 3.3 0 0 1 4.6 4.6l-6.3 6.3a5 5 0 0 1-7.1-7.1l6.7-6.7" />
       <path d="m10 13.4 5.6-5.6a1.8 1.8 0 0 1 2.5 2.5l-5.8 5.8a2.5 2.5 0 0 1-3.5-3.5" />
+    </svg>
+  );
+}
+
+function FileArtifactIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3v5h5" />
+      <path d="M8 13h8" />
+      <path d="M8 17h6" />
     </svg>
   );
 }
@@ -465,6 +1016,25 @@ function NewChatIcon() {
   );
 }
 
+function HistoryIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <path d="M3 4v5h5" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m16 16 4 4" />
+    </svg>
+  );
+}
+
 function CompactIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
@@ -485,11 +1055,81 @@ function ExpandIcon() {
   );
 }
 
+function ThinkingIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M12 3a7 7 0 0 0-4 12.74V18h8v-2.26A7 7 0 0 0 12 3Z" />
+      <path d="M9 21h6" />
+      <path d="M10 9h.01" />
+      <path d="M14 9h.01" />
+      <path d="M10.5 12.5a2.6 2.6 0 0 0 3 0" />
+    </svg>
+  );
+}
+
+function ToolIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="m14.7 6.3 3-3a4 4 0 0 1-5 5l-7.4 7.4a2 2 0 0 0 3 3l7.4-7.4a4 4 0 0 1-1-5Z" />
+    </svg>
+  );
+}
+
+function DocumentIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M6 3h8l4 4v14H6z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 13h6" />
+      <path d="M9 17h4" />
+    </svg>
+  );
+}
+
+function AwaitingIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M12 6v6l4 2" />
+      <path d="M21 12a9 9 0 1 1-4.3-7.7" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M12 3 19 6v5c0 4.6-2.7 8-7 10-4.3-2-7-5.4-7-10V6l7-3Z" />
+      <path d="M12 8v4" />
+      <path d="M12 16h.01" />
+    </svg>
+  );
+}
+
+function HandIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11" />
+      <path d="M11 11V4.5a1.5 1.5 0 0 1 3 0V11" />
+      <path d="M14 11V6a1.5 1.5 0 0 1 3 0v7" />
+      <path d="M8 12 6.8 10.8a1.6 1.6 0 0 0-2.3 2.2l4.2 5A6 6 0 0 0 19 14v-3a1.5 1.5 0 0 0-3 0" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
 export function AssistantDock({
   open,
   mode,
   isMac,
   isWindows,
+  nativeDialogVisible = false,
   onOpen,
   onClose,
   onModeChange,
@@ -507,14 +1147,24 @@ export function AssistantDock({
   const [loadingChatId, setLoadingChatId] = useState("");
   const [attachments, setAttachments] = useState<AssistantAttachment[]>([]);
   const [activeAwaiting, setActiveAwaiting] = useState<AssistantAwaitingPayload | null>(null);
+  const [artifactDockVisible, setArtifactDockVisible] = useState(true);
+  const [hiddenArtifactIds, setHiddenArtifactIds] = useState<Set<string>>(() => new Set());
+  const [attachmentPickerVisible, setAttachmentPickerVisible] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [voiceSupported, setVoiceSupported] = useState(() => canUseVoiceInput());
   const [voiceFeedback, setVoiceFeedback] = useState("");
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [permissionMode, setPermissionMode] = useState<AssistantPermissionMode>("default");
+  const [fullAccessExpiresAt, setFullAccessExpiresAt] = useState<number | null>(null);
+  const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
+  const [chatHistoryQuery, setChatHistoryQuery] = useState("");
   const activeChatIdRef = useRef<string | null>(activeChatId);
   const runningRunIdRef = useRef<string | null>(runningRunId);
   const runMessageIdsRef = useRef(new Map<string, string>());
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatHistoryRef = useRef<HTMLDivElement | null>(null);
+  const chatHistorySearchRef = useRef<HTMLInputElement | null>(null);
   const draftRef = useRef(draft);
   const voiceRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceMediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -542,9 +1192,69 @@ export function AssistantDock({
     draftRef.current = draft;
   }, [draft]);
 
+  useEffect(() => {
+    if (!open) {
+      setChatHistoryOpen(false);
+      setChatHistoryQuery("");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!chatHistoryOpen) {
+      return undefined;
+    }
+
+    const focusTimer = window.setTimeout(() => {
+      chatHistorySearchRef.current?.focus();
+    }, 0);
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && chatHistoryRef.current?.contains(target)) {
+        return;
+      }
+      setChatHistoryOpen(false);
+    };
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setChatHistoryOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [chatHistoryOpen]);
+
   function updateDraft(nextDraft: string) {
     draftRef.current = nextDraft;
     setDraft(nextDraft);
+  }
+
+  function getEffectivePermissionMode(now = Date.now()): AssistantPermissionMode {
+    return permissionMode === "full_access" && Boolean(fullAccessExpiresAt && fullAccessExpiresAt > now)
+      ? "full_access"
+      : "default";
+  }
+
+  function formatFullAccessRemaining(remainingMs: number) {
+    const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  }
+
+  function handlePermissionModeChange(nextMode: AssistantPermissionMode) {
+    if (nextMode === "full_access") {
+      setPermissionMode("full_access");
+      setFullAccessExpiresAt(Date.now() + FULL_ACCESS_DURATION_MS);
+      return;
+    }
+    setPermissionMode("default");
+    setFullAccessExpiresAt(null);
   }
 
   function resizeComposerTextarea() {
@@ -643,6 +1353,20 @@ export function AssistantDock({
           )
         );
         return;
+      }
+
+      if (event.type === "artifact.publish" && messageId) {
+        const artifactAttachments = getArtifactAttachmentsFromEvent(event);
+        if (artifactAttachments.length > 0) {
+          setArtifactDockVisible(true);
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === messageId
+                ? { ...message, attachments: mergeAssistantAttachments(message.attachments, artifactAttachments) }
+                : message
+            )
+          );
+        }
       }
 
       if (isTerminalAssistantEvent(event)) {
@@ -768,6 +1492,23 @@ export function AssistantDock({
     messagesEndRef.current?.scrollIntoView({ block: "end" });
   }, [messages, runEvents, open, mode]);
 
+  useEffect(() => {
+    if (!getOperatorModeInfo(runEvents, Date.now()) && !(fullAccessExpiresAt && fullAccessExpiresAt > Date.now())) {
+      return undefined;
+    }
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [runEvents, fullAccessExpiresAt]);
+
+  useEffect(() => {
+    if (permissionMode !== "full_access" || !fullAccessExpiresAt || fullAccessExpiresAt > nowMs) {
+      return;
+    }
+    setPermissionMode("default");
+    setFullAccessExpiresAt(null);
+  }, [fullAccessExpiresAt, nowMs, permissionMode]);
+
   async function loadChat(chatId: string) {
     setLoadingChatId(chatId);
     setFeedback("");
@@ -782,6 +1523,8 @@ export function AssistantDock({
       setRunEvents(chat.events ?? []);
       setAttachments([]);
       setActiveAwaiting(null);
+      setArtifactDockVisible(true);
+      setChatHistoryOpen(false);
     } catch (reason) {
       setFeedback(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -795,8 +1538,12 @@ export function AssistantDock({
     setRunEvents([]);
     setAttachments([]);
     setActiveAwaiting(null);
+    setArtifactDockVisible(true);
+    setHiddenArtifactIds(new Set());
     setFeedback("");
     setVoiceFeedback("");
+    setChatHistoryOpen(false);
+    setChatHistoryQuery("");
   }
 
   async function collectPageContext(action: AssistantRunAction | "chat") {
@@ -837,10 +1584,11 @@ export function AssistantDock({
         setVoiceFeedback("检测到手动编辑，已保留当前输入。");
         return;
       }
-      if (result.ok && result.text.trim()) {
-        updateDraft(mergeVoiceText(baseDraft, result.text));
+      const correctedText = (result.correctedText || result.text).trim();
+      if (result.ok && correctedText) {
+        updateDraft(mergeVoiceText(baseDraft, correctedText));
       }
-      setVoiceFeedback(result.message);
+      setVoiceFeedback(formatVoiceCorrectionFeedback(result));
     } catch (reason) {
       if (voiceCorrectionRequestIdRef.current === requestId) {
         setVoiceFeedback(reason instanceof Error ? reason.message : String(reason));
@@ -1101,7 +1849,7 @@ export function AssistantDock({
   ) {
     const attachmentsForRun = overrideAttachments ?? attachments;
     const shouldClearComposerAttachments = overrideAttachments === undefined;
-    const content = message.trim() || (attachmentsForRun.length > 0 ? "请结合附件和当前页面内容进行总结。" : "");
+    const content = message.trim() || (attachmentsForRun.length > 0 ? "请解析附件内容。" : "");
     if ((!content && attachmentsForRun.length === 0) || runningRunId) {
       return;
     }
@@ -1132,10 +1880,12 @@ export function AssistantDock({
       }
     }
 
+    const permissionModeForRun = getEffectivePermissionMode();
     const result = await window.electronAPI.assistant.startRun({
       chatId: activeChatId,
       message: content,
       action,
+      permissionMode: permissionModeForRun,
       pageContext,
       attachments: attachmentsForRun,
       historyBeforeMessageId: options.historyBeforeMessageId
@@ -1143,6 +1893,15 @@ export function AssistantDock({
     if (!result.ok) {
       setFeedback(result.message);
       return;
+    }
+    if (result.fullAccessExpiresAt) {
+      const expiresAt = Date.parse(result.fullAccessExpiresAt);
+      if (Number.isFinite(expiresAt) && expiresAt > Date.now()) {
+        setPermissionMode("full_access");
+        setFullAccessExpiresAt(expiresAt);
+      }
+    } else if (permissionModeForRun === "default") {
+      setFullAccessExpiresAt(null);
     }
 
     setActiveChatId(result.chatId);
@@ -1173,6 +1932,14 @@ export function AssistantDock({
     void startRun(draft, "chat");
   }
 
+  function handleWonderClick(prompt: string) {
+    updateDraft(prompt);
+    window.requestAnimationFrame(() => {
+      resizeComposerTextarea();
+      composerTextareaRef.current?.focus();
+    });
+  }
+
   async function handleStopRun() {
     if (!runningRunId) {
       return;
@@ -1183,17 +1950,22 @@ export function AssistantDock({
     }
   }
 
-  async function handleDeleteActiveChat() {
-    if (!activeChatId || runningRunId) {
+  async function handleDeleteChat(chatId: string) {
+    if (!chatId || runningRunId) {
       return;
     }
-    const result = await window.electronAPI.assistant.deleteChat(activeChatId);
+    const isActiveChat = chatId === activeChatIdRef.current;
+    const result = await window.electronAPI.assistant.deleteChat(chatId);
     setFeedback(result.message);
-    setActiveChatId(null);
-    setMessages([]);
-    setRunEvents([]);
-    setAttachments([]);
-    setActiveAwaiting(null);
+    if (isActiveChat) {
+      setActiveChatId(null);
+      setMessages([]);
+      setRunEvents([]);
+      setAttachments([]);
+      setActiveAwaiting(null);
+      setArtifactDockVisible(true);
+      setHiddenArtifactIds(new Set());
+    }
     await refreshSettingsAndChats();
   }
 
@@ -1210,14 +1982,7 @@ export function AssistantDock({
         ...result.attachments.filter((attachment) => !existingIds.has(attachment.id))
       ];
     });
-    const unreadableCount = result.attachments.filter(
-      (attachment) => attachment.error && !attachment.text.trim() && !attachment.dataUrl
-    ).length;
-    if (unreadableCount > 0) {
-      setFeedback(`${unreadableCount} 个附件已保存，但暂时不能直接发送给模型识别。`);
-    } else {
-      setFeedback(result.message);
-    }
+    setFeedback(result.message);
     await refreshSettingsAndChats();
   }
 
@@ -1226,11 +1991,17 @@ export function AssistantDock({
       return;
     }
     setFeedback("");
+    setAttachmentPickerVisible(true);
     try {
+      if (isMac) {
+        await waitForAssistantDockPaint();
+      }
       const result = await window.electronAPI.assistant.pickAttachments(activeChatId);
       await appendAttachmentResult(result);
     } catch (reason) {
       setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setAttachmentPickerVisible(false);
     }
   }
 
@@ -1266,7 +2037,15 @@ export function AssistantDock({
   }
 
   function removeAttachment(id: string) {
-    setAttachments((current) => current.filter((attachment) => attachment.id !== id));
+    setAttachments((current) => current.filter((attachment) => attachment.id !== id && attachment.sourceAttachmentId !== id));
+  }
+
+  function hideArtifactAttachment(id: string) {
+    setHiddenArtifactIds((current) => {
+      const next = new Set(current);
+      next.add(id);
+      return next;
+    });
   }
 
   async function submitAwaiting(input: { action: "submit" | "reject" | "dismiss"; params?: unknown[]; reason?: string }) {
@@ -1312,15 +2091,42 @@ export function AssistantDock({
     return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`;
   }
 
+  function formatAttachmentDocumentStatus(attachment: AssistantAttachment) {
+    const document = attachment.document;
+    if (!document) {
+      return "";
+    }
+    if (document.imageMode === "vision" && document.readStatus === "readable") {
+      return "图片已进入视觉上下文";
+    }
+    if (document.readStatus === "truncated") {
+      return "已解析，内容已截断";
+    }
+    if (document.readStatus === "readable") {
+      return "已解析";
+    }
+    return document.errorCode ? `不可解析：${document.errorCode}` : "不可解析";
+  }
+
+  function isAttachmentReadable(attachment: AssistantAttachment) {
+    return attachment.document?.readStatus
+      ? attachment.document.readStatus !== "unreadable"
+      : Boolean(attachment.text.trim() || attachment.dataUrl || !attachment.error);
+  }
+
+  function attachmentStatusTitle(attachment: AssistantAttachment) {
+    return [formatAttachmentDocumentStatus(attachment), attachment.error, attachment.name].filter(Boolean).join("，");
+  }
+
   function formatMessageForClipboard(message: AssistantChatMessage) {
     const parts = [message.content.trim()].filter(Boolean);
-    const messageAttachments = message.attachments ?? [];
+    const messageAttachments = (message.attachments ?? []).filter((attachment) => !attachment.hidden);
     if (messageAttachments.length > 0) {
       parts.push([
         "附件：",
         ...messageAttachments.map((attachment) => {
           const size = formatAttachmentSize(attachment.sizeBytes);
-          const suffix = [size, attachment.error].filter(Boolean).join("，");
+          const suffix = [size, formatAttachmentDocumentStatus(attachment), attachment.error].filter(Boolean).join("，");
           return suffix ? `- ${attachment.name}（${suffix}）` : `- ${attachment.name}`;
         })
       ].join("\n"));
@@ -1335,6 +2141,29 @@ export function AssistantDock({
     }
     const result = await window.electronAPI.clipboard.writeText(text);
     setFeedback(result.ok ? "已复制到剪贴板。" : result.message || "复制失败。");
+  }
+
+  async function openMessageAttachment(attachment: AssistantAttachment) {
+    if (!activeChatId) {
+      setFeedback("请先打开对应对话后再打开附件。");
+      return;
+    }
+    const result = await window.electronAPI.assistant.openAttachment(activeChatId, attachment.id);
+    setFeedback(result.ok ? "已打开产物。" : result.message || "打开产物失败。");
+  }
+
+  function handleArtifactListWheel(event: WheelEvent<HTMLUListElement>) {
+    const list = event.currentTarget;
+    if (list.scrollWidth <= list.clientWidth + 1 || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+      return;
+    }
+    const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+    const maxScrollLeft = list.scrollWidth - list.clientWidth;
+    if ((delta < 0 && list.scrollLeft <= 0) || (delta > 0 && list.scrollLeft >= maxScrollLeft - 1)) {
+      return;
+    }
+    list.scrollLeft = Math.max(0, Math.min(maxScrollLeft, list.scrollLeft + delta));
+    event.preventDefault();
   }
 
   function findRegenerateSourceMessage(message: AssistantChatMessage, index: number) {
@@ -1389,10 +2218,64 @@ export function AssistantDock({
     if (chats.length === 0 && !activeChatId) {
       return null;
     }
-    const recentChats = chats.slice(0, 4);
+    const activeChat = activeChatId
+      ? chats.find((chat) => chat.id === activeChatId) ?? null
+      : null;
+    const firstUserMessage = messages.find((message) => message.role === "user");
+    const activeChatTitle = activeChat
+      ? getChatDisplayTitle(activeChat)
+      : normalizeChatText(firstUserMessage?.content ?? "") || "当前对话";
+    const query = normalizeChatText(chatHistoryQuery).toLocaleLowerCase();
+    const matchesQuery = (chat: AssistantChatSummary) => {
+      if (!query) {
+        return true;
+      }
+      return `${chat.title} ${chat.lastMessage}`.toLocaleLowerCase().includes(query);
+    };
+    const visibleChats = chats.filter(matchesQuery);
+    const visibleCurrentChat = activeChat && matchesQuery(activeChat) ? activeChat : null;
+    const visibleHistoryChats = visibleChats.filter((chat) => chat.id !== activeChatId);
+    const hasVisibleChats = Boolean(visibleCurrentChat || visibleHistoryChats.length > 0);
+
+    const renderHistoryRow = (chat: AssistantChatSummary, isActive: boolean) => {
+      const title = getChatDisplayTitle(chat, "未命名对话");
+      const meta = [getChatPreview(chat), formatChatUpdatedAt(chat.updatedAt)].filter(Boolean).join(" · ");
+      return (
+        <div className={isActive ? "assistant-history-row is-active" : "assistant-history-row"} key={chat.id}>
+          <button
+            type="button"
+            className="assistant-history-row-main"
+            onClick={() => void loadChat(chat.id)}
+            disabled={Boolean(runningRunId)}
+            aria-current={isActive ? "true" : undefined}
+          >
+            <span className="assistant-history-avatar" aria-hidden="true">
+              {getChatAvatarLabel(title)}
+            </span>
+            <span className="assistant-history-copy">
+              <span className="assistant-history-title">{title}</span>
+              <span className="assistant-history-meta">{meta}</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="assistant-history-row-delete"
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleDeleteChat(chat.id);
+            }}
+            disabled={Boolean(runningRunId)}
+            aria-label={`删除历史记录：${title}`}
+            title="删除"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+      );
+    };
 
     return (
-      <div className="assistant-dock-chatbar">
+      <div className="assistant-dock-chatbar" ref={chatHistoryRef}>
         <button
           type="button"
           className={!activeChatId ? "assistant-dock-chat-pill is-active" : "assistant-dock-chat-pill"}
@@ -1401,29 +2284,62 @@ export function AssistantDock({
         >
           新对话
         </button>
-        <div className="assistant-dock-chat-list" aria-label="最近会话">
-          {recentChats.map((chat) => (
-            <button
-              type="button"
-              className={chat.id === activeChatId ? "assistant-dock-chat-pill is-active" : "assistant-dock-chat-pill"}
-              onClick={() => void loadChat(chat.id)}
-              disabled={Boolean(runningRunId)}
-              title={chat.title}
-              key={chat.id}
-            >
-              {chat.title}
-            </button>
-          ))}
-        </div>
-        {activeChatId ? (
-          <button
-            type="button"
-            className="assistant-dock-chat-delete"
-            onClick={() => void handleDeleteActiveChat()}
-            disabled={Boolean(runningRunId)}
-          >
-            删除
-          </button>
+        <button
+          type="button"
+          className={[
+            "assistant-dock-chat-pill",
+            "assistant-dock-history-toggle",
+            activeChatId ? "assistant-dock-current-chat" : "",
+            chatHistoryOpen ? "is-open" : ""
+          ].filter(Boolean).join(" ")}
+          onClick={() => setChatHistoryOpen((current) => !current)}
+          disabled={Boolean(runningRunId || chats.length === 0)}
+          aria-haspopup="dialog"
+          aria-expanded={chatHistoryOpen}
+        >
+          {activeChatId ? (
+            <>
+              <span>{activeChatTitle}</span>
+              <ChevronDownIcon />
+            </>
+          ) : (
+            <>
+              <HistoryIcon />
+              <span>历史记录</span>
+              <span className="assistant-dock-history-count">{chats.length}</span>
+            </>
+          )}
+        </button>
+        {chatHistoryOpen ? (
+          <div className="assistant-history-popover" role="dialog" aria-label="历史记录">
+            <label className="assistant-history-search">
+              <SearchIcon />
+              <input
+                ref={chatHistorySearchRef}
+                value={chatHistoryQuery}
+                onChange={(event) => setChatHistoryQuery(event.target.value)}
+                placeholder="搜索历史记录"
+                aria-label="搜索历史记录"
+              />
+            </label>
+            <div className="assistant-history-scroll">
+              {visibleCurrentChat ? (
+                <section className="assistant-history-section" aria-label="当前对话">
+                  <div className="assistant-history-section-title">当前对话</div>
+                  {renderHistoryRow(visibleCurrentChat, true)}
+                </section>
+              ) : null}
+              {visibleHistoryChats.length > 0 ? (
+                <section className="assistant-history-section" aria-label="最近记录">
+                  <div className="assistant-history-section-title">最近记录</div>
+                  {visibleHistoryChats.map((chat) => renderHistoryRow(chat, false))}
+                </section>
+              ) : null}
+              {!hasVisibleChats ? (
+                <div className="assistant-history-empty">没有匹配的历史记录</div>
+              ) : null}
+            </div>
+          </div>
         ) : null}
       </div>
     );
@@ -1442,46 +2358,204 @@ export function AssistantDock({
     );
   }
 
-  function renderRunTimeline(runId?: string) {
-    if (!runId) {
+  function renderOperatorModeBanner() {
+    if (!operatorModeInfo) {
       return null;
     }
-    const timelineEvents = runEvents
-      .filter((event) =>
-        event.runId === runId &&
-        (
-          event.type === "tool.start" ||
-          event.type === "tool.result" ||
-          event.type === "tool.end" ||
-          event.type === "awaiting.confirm" ||
-          event.type === "awaiting.ask" ||
-          event.type === "awaiting.answer" ||
-          event.type === "artifact.publish"
-        )
-      )
-      .sort((left, right) => left.seq - right.seq);
-    if (timelineEvents.length === 0) {
+    return (
+      <div className="assistant-operator-banner" role="status" aria-live="polite">
+        <div>
+          <strong>完全允许控制已开启</strong>
+          <span>当前会话临时授权，剩余 {formatOperatorModeRemaining(operatorModeInfo.remainingMs)}</span>
+        </div>
+        {runningRunId ? (
+          <button type="button" onClick={() => void handleStopRun()}>
+            停止当前操作
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderTimelineIcon(kind: AssistantTimelineItem["kind"]) {
+    if (kind === "thinking") {
+      return <ThinkingIcon />;
+    }
+    if (kind === "tool") {
+      return <ToolIcon />;
+    }
+    if (kind === "awaiting") {
+      return <AwaitingIcon />;
+    }
+    return <DocumentIcon />;
+  }
+
+  function renderTimelineDataBlock(label: string, data: unknown, fallback = "") {
+    const entries = isRecord(data)
+      ? Object.entries(data)
+          .filter(([, value]) => value !== undefined && value !== null && formatTimelineInlineValue(value))
+          .slice(0, 8)
+      : [];
+    const fallbackText = fallback.trim();
+    if (entries.length === 0 && !fallbackText) {
       return null;
     }
 
     return (
-      <details className="assistant-run-timeline">
+      <div className="assistant-run-data-block">
+        <span className="assistant-run-data-label">{label}</span>
+        {entries.length > 0 ? (
+          <dl className="assistant-run-data-table">
+            {entries.map(([key, value]) => (
+              <div key={key}>
+                <dt>{key}</dt>
+                <dd>{formatTimelineInlineValue(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+        {fallbackText ? (
+          <pre className="assistant-run-data-pre">{fallbackText}</pre>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderTimelineToolRecord(record: AssistantTimelineToolRecord) {
+    const argsBlock = renderTimelineDataBlock("参数", record.argsData);
+    const resultBlock = renderTimelineDataBlock("结果", record.resultData, record.resultText);
+    const errorBlock = record.errorText
+      ? renderTimelineDataBlock("异常", null, record.errorText)
+      : null;
+
+    return (
+      <div className="assistant-run-tool-card" data-record-status={record.status} key={record.id}>
+        <div className="assistant-run-tool-card-head">
+          <span>{record.title}</span>
+          <span>{record.verificationLabel || record.statusLabel}</span>
+        </div>
+        <div className="assistant-run-tool-card-body">
+          {argsBlock}
+          {resultBlock}
+          {errorBlock}
+          {!argsBlock && !resultBlock && !errorBlock ? (
+            <p className="assistant-run-tool-empty">{record.statusLabel}</p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  function renderTimelineItem(item: AssistantTimelineItem) {
+    if (item.kind === "tool") {
+      return (
+        <div className={`assistant-run-item is-${item.kind}`} data-item-status={item.status} key={item.id}>
+          <span className={`assistant-run-item-icon is-${item.kind}`} aria-hidden="true">
+            {renderTimelineIcon(item.kind)}
+          </span>
+          <details className="assistant-run-tool" defaultOpen>
+            <summary className="assistant-run-tool-trigger">
+              <span className="assistant-run-item-title">{item.title}</span>
+              <span className="assistant-run-tool-dots" aria-label={item.statusLabel}>
+                {item.records.map((record) => (
+                  <span
+                    className="assistant-run-tool-dot"
+                    data-record-status={record.status}
+                    key={record.id}
+                  />
+                ))}
+              </span>
+              <span className="assistant-run-tool-chevron" aria-hidden="true" />
+            </summary>
+            <div className="assistant-run-tool-records">
+              {item.records.map(renderTimelineToolRecord)}
+            </div>
+          </details>
+        </div>
+      );
+    }
+
+    return (
+      <div className={`assistant-run-item is-${item.kind}`} data-item-status={item.status} key={item.id}>
+        <span className={`assistant-run-item-icon is-${item.kind}`} aria-hidden="true">
+          {renderTimelineIcon(item.kind)}
+        </span>
+        <div className="assistant-run-item-content">
+          <span className="assistant-run-item-title">{item.title}</span>
+          {item.text ? <p className="assistant-run-item-text">{item.text}</p> : null}
+        </div>
+      </div>
+    );
+  }
+
+  function renderRunTimeline(runId?: string) {
+    if (!runId) {
+      return null;
+    }
+    const runEventsForTimeline = runEvents
+      .filter((event) => event.runId === runId)
+      .sort((left, right) => left.seq - right.seq);
+    const timelineItems = buildRunTimelineItems(runEventsForTimeline, runId, runningRunId);
+    if (timelineItems.length === 0) {
+      return null;
+    }
+    const stepCount = Math.max(1, timelineItems.filter((item) => item.kind !== "thinking").length);
+
+    return (
+      <details className="assistant-run-timeline" defaultOpen>
         <summary className="assistant-run-summary" aria-label="展开或收起助手思考过程">
           <span className="assistant-run-summary-caret" aria-hidden="true" />
           <span className="assistant-run-summary-label">思考过程</span>
-          <span className="assistant-run-summary-count">{timelineEvents.length} 步</span>
-          <span className="assistant-run-summary-status">{getRunTimelineStatusText(runId, runningRunId, timelineEvents)}</span>
+          <span className="assistant-run-summary-count">{stepCount} 步</span>
+          <span className="assistant-run-summary-status">
+            {getRunTimelineStatusText(runId, runningRunId, runEventsForTimeline)}
+          </span>
         </summary>
-        <div className="assistant-run-events" aria-label="助手运行状态">
-          {timelineEvents.map((event) => {
-            const text = getRunEventText(event);
-            if (!text) {
-              return null;
-            }
+        <div className="assistant-run-lane" aria-label="助手运行状态">
+          {timelineItems.map(renderTimelineItem)}
+        </div>
+      </details>
+    );
+  }
+
+  function renderMemoryReferences(runId?: string) {
+    if (!runId) {
+      return null;
+    }
+    const references = runEvents
+      .filter((event) => event.runId === runId && event.type === "memory.reference")
+      .sort((left, right) => left.seq - right.seq)
+      .flatMap(getAssistantMemoryReferences);
+    if (references.length === 0) {
+      return null;
+    }
+
+    return (
+      <details className="assistant-memory-references">
+        <summary>
+          <span className="assistant-memory-caret" aria-hidden="true" />
+          <span>{references.length} 条记忆引用</span>
+        </summary>
+        <div className="assistant-memory-reference-list">
+          {references.map((reference, index) => {
+            const lineText = reference.lineStart && reference.lineEnd
+              ? reference.lineStart === reference.lineEnd
+                ? `${reference.lineStart} 行`
+                : `${reference.lineStart}-${reference.lineEnd} 行`
+              : "";
+            const key = reference.id || `${reference.path || "memory"}-${index}`;
             return (
-              <div className={`assistant-run-event ${getRunEventTone(event)}`} key={event.id}>
-                <span className="assistant-run-event-dot" aria-hidden="true" />
-                <span className="assistant-run-event-text">{text}</span>
+              <div className="assistant-memory-reference" key={key}>
+                <div className="assistant-memory-reference-title">
+                  <span>{reference.title || "本地长期记忆"}</span>
+                  {lineText ? <em>{lineText}</em> : null}
+                </div>
+                {reference.excerpt ? (
+                  <p>{reference.excerpt}</p>
+                ) : reference.path ? (
+                  <p>存储于 {reference.path}</p>
+                ) : null}
+                {reference.reason ? <p>召回原因：{reference.reason}</p> : null}
               </div>
             );
           })}
@@ -1490,21 +2564,80 @@ export function AssistantDock({
     );
   }
 
+  function renderArtifactDock(variant: AssistantDockMode) {
+    const artifactAttachments = getArtifactAttachmentsFromMessages(messages)
+      .filter((attachment) => !hiddenArtifactIds.has(attachment.artifactId || attachment.id));
+    if (artifactAttachments.length === 0 || !artifactDockVisible) {
+      return null;
+    }
+    return (
+      <div className={`assistant-artifact-dock assistant-artifact-dock-${variant}`} aria-label="生成的产物">
+        <ul className="assistant-artifact-list" onWheel={handleArtifactListWheel}>
+          {artifactAttachments.map((attachment) => {
+            const size = formatAttachmentSize(attachment.sizeBytes) || attachment.mimeType;
+            const artifactKey = attachment.artifactId || attachment.id;
+            return (
+              <li className="assistant-artifact-item" key={artifactKey}>
+                <button
+                  type="button"
+                  className="assistant-artifact-card"
+                  onClick={() => void openMessageAttachment(attachment)}
+                  title={attachment.name}
+                >
+                  <span className="assistant-artifact-card-file-shell">
+                    <span className="assistant-artifact-card-file-icon" aria-hidden="true">
+                      <FileArtifactIcon />
+                    </span>
+                    <span className="assistant-artifact-card-file-copy">
+                      <span className="assistant-artifact-card-title">{attachment.name}</span>
+                      {size ? <span className="assistant-artifact-card-subtitle">{size}</span> : null}
+                    </span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="assistant-artifact-remove"
+                  onClick={() => hideArtifactAttachment(artifactKey)}
+                  aria-label={`隐藏产物 ${attachment.name}`}
+                  title="隐藏产物"
+                >
+                  <CloseIcon />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="assistant-artifact-actions">
+          <button
+            type="button"
+            className="assistant-artifact-collapse"
+            onClick={() => setArtifactDockVisible(false)}
+            aria-label="隐藏产物列表"
+            title="隐藏产物"
+          >
+            <ChevronDownIcon />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   function renderMessageAttachments(message: AssistantChatMessage) {
     const messageAttachments = message.attachments ?? [];
-    if (messageAttachments.length === 0) {
+    const regularAttachments = messageAttachments.filter((attachment) => attachment.kind !== "artifact" && !attachment.hidden);
+    if (regularAttachments.length === 0) {
       return null;
     }
     return (
       <div className="assistant-message-attachments" aria-label="消息附件">
-        {messageAttachments.map((attachment) => (
+        {regularAttachments.map((attachment) => (
           <span
             className={
-              attachment.text.trim() || !attachment.error
+              isAttachmentReadable(attachment)
                 ? "assistant-message-attachment-chip"
                 : "assistant-message-attachment-chip has-warning"
             }
-            title={attachment.error || attachment.name}
+            title={attachmentStatusTitle(attachment)}
             key={attachment.id}
           >
             <PaperclipIcon />
@@ -1569,6 +2702,7 @@ export function AssistantDock({
               ) : (
                 <p className="assistant-message-text">{message.content}</p>
               )}
+              {message.role === "assistant" ? renderMemoryReferences(message.runId) : null}
               {renderMessageAttachments(message)}
               {renderMessageActions(message, index)}
             </div>
@@ -1579,10 +2713,41 @@ export function AssistantDock({
     );
   }
 
+  function renderEmptyState() {
+    return (
+      <div className="assistant-dock-empty">
+        <span className="assistant-dock-empty-mark" aria-hidden="true">
+          <ZenMindLogoIcon />
+        </span>
+        <strong>你有什么想法？</strong>
+        <div className="assistant-dock-wonders" aria-label="推荐问题">
+          {ZENMIND_ASSISTANT_WONDERS.map((prompt) => (
+            <button
+              type="button"
+              className="assistant-dock-wonder-button"
+              key={prompt}
+              onClick={() => handleWonderClick(prompt)}
+              disabled={Boolean(runningRunId)}
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   function renderComposer(variant: AssistantDockMode) {
     const configured = settings?.configured ?? false;
     const voiceBusy = voiceState === "recording" || voiceState === "correcting";
     const canSubmit = configured && !voiceBusy && (draft.trim().length > 0 || attachments.length > 0);
+    const effectivePermissionMode = getEffectivePermissionMode(nowMs);
+    const fullAccessRemainingMs = effectivePermissionMode === "full_access" && fullAccessExpiresAt
+      ? Math.max(0, fullAccessExpiresAt - nowMs)
+      : 0;
+    const permissionTitle = effectivePermissionMode === "full_access"
+      ? `完全允许控制，${formatFullAccessRemaining(fullAccessRemainingMs)} 内不再二次确认`
+      : "询问后操作，危险操作会先确认";
     const voiceButtonDisabled = !configured || !voiceSupported || Boolean(runningRunId) || voiceState === "correcting";
     const voiceButtonTitle = !configured
       ? "请先配置助手模型"
@@ -1603,17 +2768,17 @@ export function AssistantDock({
         onSubmit={(event) => void handleSubmit(event)}
       >
         <div className="assistant-dock-composer-shell">
-          {attachments.length > 0 ? (
+          {attachments.some((attachment) => !attachment.hidden) ? (
             <div className="assistant-dock-attachments" aria-label="已选择附件">
-              {attachments.map((attachment) => (
+              {attachments.filter((attachment) => !attachment.hidden).map((attachment) => (
                 <span
                   className={
-                    attachment.text.trim() || attachment.dataUrl
+                    isAttachmentReadable(attachment)
                       ? "assistant-dock-attachment-chip"
                       : "assistant-dock-attachment-chip has-warning"
                   }
                   key={attachment.id}
-                  title={attachment.error || attachment.name}
+                  title={attachmentStatusTitle(attachment)}
                 >
                   {attachment.name}
                   <button
@@ -1651,6 +2816,34 @@ export function AssistantDock({
               >
                 <PaperclipIcon />
               </button>
+              <label
+                className={[
+                  "assistant-dock-permission-control",
+                  effectivePermissionMode === "full_access" ? "is-full-access" : ""
+                ].filter(Boolean).join(" ")}
+                title={permissionTitle}
+              >
+                <span className="assistant-dock-permission-icon">
+                  {effectivePermissionMode === "full_access" ? <ShieldIcon /> : <HandIcon />}
+                </span>
+                <select
+                  value={effectivePermissionMode}
+                  onChange={(event) => handlePermissionModeChange(event.target.value as AssistantPermissionMode)}
+                  disabled={Boolean(runningRunId)}
+                  aria-label="助手权限模式"
+                >
+                  <option value="default">询问后操作</option>
+                  <option value="full_access">完全允许控制</option>
+                </select>
+                <span className="assistant-dock-permission-chevron">
+                  <ChevronDownIcon />
+                </span>
+                {effectivePermissionMode === "full_access" ? (
+                  <span className="assistant-dock-permission-countdown">
+                    {formatFullAccessRemaining(fullAccessRemainingMs)}
+                  </span>
+                ) : null}
+              </label>
             </div>
             <div className="assistant-dock-composer-actions">
               <button
@@ -1724,16 +2917,11 @@ export function AssistantDock({
         {renderChatbar()}
         {renderConfigEmpty()}
         {renderFeedback()}
+        {renderOperatorModeBanner()}
         <div className="assistant-dock-full-body">
-          {messages.length === 0 ? (
-            <div className="assistant-dock-empty">
-              <span className="assistant-dock-empty-mark" aria-hidden="true">
-                <ZenMindLogoIcon />
-              </span>
-              <strong>你有什么想法？</strong>
-            </div>
-          ) : renderMessages()}
+          {messages.length === 0 ? renderEmptyState() : renderMessages()}
         </div>
+        {renderArtifactDock("full")}
         {renderComposer("full")}
       </>
     );
@@ -1777,25 +2965,25 @@ export function AssistantDock({
         {renderChatbar()}
         {renderConfigEmpty()}
         {renderFeedback()}
+        {renderOperatorModeBanner()}
         <div className="assistant-dock-compact-body">
-          {messages.length === 0 ? (
-            <div className="assistant-dock-empty">
-              <span className="assistant-dock-empty-mark" aria-hidden="true">
-                <ZenMindLogoIcon />
-              </span>
-              <strong>你有什么想法？</strong>
-            </div>
-          ) : renderMessages()}
+          {messages.length === 0 ? renderEmptyState() : renderMessages()}
         </div>
+        {renderArtifactDock("compact")}
         {renderComposer("compact")}
       </>
     );
   }
 
+  const operatorModeInfo = getOperatorModeInfo(runEvents, nowMs);
+  const shouldHideForNativeDialog = isMac && nativeDialogVisible && !attachmentPickerVisible;
+  const shouldSuspendCompactDismissLayer = shouldHideForNativeDialog || (isMac && attachmentPickerVisible);
+  const shouldRenderCompactDismissLayer = open && mode === "compact" && !shouldSuspendCompactDismissLayer;
   const rootClassName = [
     "assistant-dock-root",
     open ? "is-open" : "",
     `is-${mode}`,
+    shouldHideForNativeDialog ? "is-native-dialog-open" : "",
     isMac ? "is-mac" : "",
     isWindows ? "is-windows" : ""
   ].filter(Boolean).join(" ");
@@ -1808,7 +2996,10 @@ export function AssistantDock({
           <span>助手</span>
         </button>
       ) : null}
-      <aside className={rootClassName} aria-hidden={!open} aria-label="ZenMind 助手">
+      {shouldRenderCompactDismissLayer ? (
+        <div className="assistant-dock-outside-dismiss" role="presentation" onMouseDown={onClose} />
+      ) : null}
+      <aside className={rootClassName} aria-hidden={!open || shouldHideForNativeDialog} aria-label="ZenMind 助手">
         {mode === "full" ? renderFullMode() : renderCompactMode()}
         {activeAwaiting ? <AssistantAwaitingDialog awaiting={activeAwaiting} onSubmit={submitAwaiting} /> : null}
       </aside>

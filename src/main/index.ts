@@ -18,7 +18,8 @@ import {
   type MediaAccessPermissionRequest,
   type MenuItemConstructorOptions,
   type OpenDialogOptions,
-  type SaveDialogOptions
+  type SaveDialogOptions,
+  type WebContents
 } from "electron";
 import { issueAgentAccessToken } from "./agent-auth";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
@@ -40,10 +41,19 @@ import {
   startService,
   stopService,
   stopRunningServices,
+  verifyServiceState,
   writeServiceConfig
 } from "./service-manager";
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
+import {
+  importSkillFromPath,
+  installMarketItem,
+  listMarketItems,
+  refreshMarketCatalog,
+  uninstallMarketItem,
+  updateMarketItem
+} from "./marketplace";
 import {
   detectPortConflict,
   isPortConflictError,
@@ -72,15 +82,28 @@ import {
   readAssistantSettings,
   saveAssistantSettings
 } from "./assistant/settings-store";
+import {
+  clearAssistantMemoryItems,
+  deleteAssistantMemoryItem,
+  getAssistantMemoryDirectory,
+  getAssistantMemorySettings,
+  getAssistantMemorySummary,
+  getAssistantMemoryStats,
+  getAssistantMemoryStorageFromRoot,
+  listAssistantMemoryItems,
+  saveAssistantMemorySettings
+} from "./assistant/memory-store";
 import { AssistantRuntime } from "./assistant/runtime";
 import { BrowserUseController, type BrowserSurface } from "./assistant/browser-use";
-import { PageAgentLLMProxy } from "./assistant/page-agent-proxy";
+import { SystemChromeController } from "./assistant/system-chrome";
 import {
   createAssistantAttachmentFromPastedImage,
-  createAssistantAttachmentsFromFiles
+  createAssistantAttachmentsFromFiles,
+  resolveAssistantAttachmentPath
 } from "./assistant/attachment-store";
 import { getService } from "./service-registry";
 import type {
+  AssistantMemorySettingsInput,
   AssistantSettingsInput,
   AssistantStartRunRequest,
   AssistantSubmitAwaitingRequest,
@@ -96,28 +119,40 @@ import type {
   StartupRestoreState
 } from "../shared/contracts";
 import {
+  BUILTIN_BROWSER_DEFAULT_URL,
+  BUILTIN_BROWSER_ROUTE,
+  BUILTIN_BROWSER_SURFACE_ID,
+  BUILTIN_BROWSER_SURFACE_LABEL,
+  isBuiltinBrowserSurfaceTarget,
+  resolveBuiltinBrowserUrl
+} from "../shared/browser-surfaces";
+import {
   ensureDataRoot,
   getDataRoot,
 } from "./user-paths";
+import { safeConsoleError } from "./safe-console";
 import {
+  createQuickAssistantWindowState,
   getQuickAssistantBounds,
   isQuickAssistantMediaPermissionAllowed,
   isQuickAssistantSupportedPlatform,
+  QUICK_ASSISTANT_COMPACT_REQUEST_CHANNEL,
   QUICK_ASSISTANT_ROUTE,
-  QUICK_ASSISTANT_SHORTCUT
+  QUICK_ASSISTANT_SHORTCUT,
+  type QuickAssistantDisplayMode
 } from "./quick-assistant";
 
 let mainWindow: BrowserWindow | null = null;
 let quickAssistantWindow: BrowserWindow | null = null;
+let quickAssistantDismissWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isHandlingQuit = false;
 let serviceMutationQueue = Promise.resolve();
-let quickAssistantInteractionState = {
-  busy: false,
-  mouseInside: false
-};
-const pageAgentProxy = new PageAgentLLMProxy();
+let nativeDialogVisibilityDepth = 0;
+let quickAssistantVisibleBeforeNativeDialog = false;
+const quickAssistantState = createQuickAssistantWindowState();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
+const QUICK_ASSISTANT_DISMISS_URL = "zenmind://quick-assistant-dismiss";
 const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 let startupRestoreState = createStartupRestoreState();
 
@@ -166,14 +201,124 @@ function getQuickAssistantWorkArea() {
   return screen.getDisplayNearestPoint(cursorPoint).workArea;
 }
 
-function applyQuickAssistantBounds(expanded: boolean) {
+function applyQuickAssistantBounds(mode: QuickAssistantDisplayMode = quickAssistantState.getDisplayMode()) {
   if (!quickAssistantWindow || quickAssistantWindow.isDestroyed()) {
     return;
   }
   quickAssistantWindow.setBounds(getQuickAssistantBounds({
-    expanded,
+    mode,
     workArea: getQuickAssistantWorkArea()
   }), true);
+}
+
+function requestQuickAssistantCompactMode(targetWindow: BrowserWindow) {
+  const snapshot = quickAssistantState.prepareCompactShow();
+  applyQuickAssistantBounds(snapshot.displayMode);
+  const sendCompactRequest = () => {
+    if (targetWindow.isDestroyed()) {
+      return;
+    }
+    targetWindow.webContents.send(QUICK_ASSISTANT_COMPACT_REQUEST_CHANNEL);
+  };
+
+  if (targetWindow.webContents.isLoadingMainFrame()) {
+    targetWindow.webContents.once("did-finish-load", sendCompactRequest);
+    return;
+  }
+  sendCompactRequest();
+}
+
+function getQuickAssistantDismissHtml() {
+  return [
+    "<!doctype html>",
+    "<html>",
+    "<head>",
+    "<meta charset=\"utf-8\">",
+    "<style>",
+    "html,body,#hit{width:100%;height:100%;margin:0;background:transparent;}",
+    "</style>",
+    "</head>",
+    "<body>",
+    "<div id=\"hit\" aria-hidden=\"true\"></div>",
+    "<script>",
+    "const dismiss=()=>{",
+    "  if(window.electronAPI?.quickAssistant?.hide){",
+    "    void window.electronAPI.quickAssistant.hide();",
+    "    return;",
+    "  }",
+    `  window.location.href=${JSON.stringify(QUICK_ASSISTANT_DISMISS_URL)};`,
+    "};",
+    "[\"pointerdown\",\"mousedown\",\"click\",\"touchstart\"].forEach((eventName)=>{",
+    "  document.addEventListener(eventName,dismiss,{capture:true});",
+    "});",
+    "</script>",
+    "</body>",
+    "</html>"
+  ].join("");
+}
+
+function createQuickAssistantDismissWindow() {
+  if (!isQuickAssistantSupportedPlatform(process.platform)) {
+    return null;
+  }
+  if (quickAssistantDismissWindow && !quickAssistantDismissWindow.isDestroyed()) {
+    return quickAssistantDismissWindow;
+  }
+
+  quickAssistantDismissWindow = new BrowserWindow({
+    ...getQuickAssistantWorkArea(),
+    show: false,
+    frame: false,
+    transparent: true,
+    focusable: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    backgroundColor: "#00000000",
+    title: "Zman Quick Assistant Dismiss Layer",
+    webPreferences: {
+      preload: path.join(__dirname, "..", "preload", "index.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+
+  quickAssistantDismissWindow.setAlwaysOnTop(true, "floating");
+  quickAssistantDismissWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  quickAssistantDismissWindow.webContents.on("will-navigate", (event, url) => {
+    if (!url.startsWith(QUICK_ASSISTANT_DISMISS_URL)) {
+      return;
+    }
+    event.preventDefault();
+    hideQuickAssistantAfterOutsideFocus();
+  });
+  quickAssistantDismissWindow.on("closed", () => {
+    quickAssistantDismissWindow = null;
+  });
+  void quickAssistantDismissWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getQuickAssistantDismissHtml())}`);
+
+  return quickAssistantDismissWindow;
+}
+
+function showQuickAssistantDismissWindow() {
+  const dismissWindow = createQuickAssistantDismissWindow();
+  if (!dismissWindow || dismissWindow.isDestroyed()) {
+    return;
+  }
+  dismissWindow.setBounds(getQuickAssistantWorkArea(), true);
+  dismissWindow.showInactive();
+}
+
+function hideQuickAssistantDismissWindow() {
+  if (!quickAssistantDismissWindow || quickAssistantDismissWindow.isDestroyed() || !quickAssistantDismissWindow.isVisible()) {
+    return;
+  }
+  quickAssistantDismissWindow.hide();
 }
 
 function createQuickAssistantWindow() {
@@ -211,15 +356,18 @@ function createQuickAssistantWindow() {
 
   quickAssistantWindow.setAlwaysOnTop(true, "floating");
   quickAssistantWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  quickAssistantWindow.on("hide", () => {
+    hideQuickAssistantDismissWindow();
+  });
 
   quickAssistantWindow.on("blur", () => {
     setTimeout(() => {
+      const interactionState = quickAssistantState.getInteractionState();
       if (
         !quickAssistantWindow ||
         quickAssistantWindow.isDestroyed() ||
         quickAssistantWindow.isFocused() ||
-        quickAssistantInteractionState.busy ||
-        quickAssistantInteractionState.mouseInside
+        interactionState.busy
       ) {
         return;
       }
@@ -229,10 +377,8 @@ function createQuickAssistantWindow() {
 
   quickAssistantWindow.on("closed", () => {
     quickAssistantWindow = null;
-    quickAssistantInteractionState = {
-      busy: false,
-      mouseInside: false
-    };
+    hideQuickAssistantDismissWindow();
+    quickAssistantState.prepareCompactShow();
   });
 
   loadRendererRoute(quickAssistantWindow, QUICK_ASSISTANT_ROUTE).catch((error) => {
@@ -240,6 +386,41 @@ function createQuickAssistantWindow() {
   });
 
   return quickAssistantWindow;
+}
+
+function hideQuickAssistantForNativeDialog() {
+  quickAssistantVisibleBeforeNativeDialog = Boolean(
+    quickAssistantWindow &&
+      !quickAssistantWindow.isDestroyed() &&
+      quickAssistantWindow.isVisible()
+  );
+  if (!quickAssistantVisibleBeforeNativeDialog || !quickAssistantWindow || quickAssistantWindow.isDestroyed()) {
+    return;
+  }
+  quickAssistantWindow.hide();
+}
+
+function restoreQuickAssistantAfterNativeDialog() {
+  if (!quickAssistantVisibleBeforeNativeDialog) {
+    return;
+  }
+  quickAssistantVisibleBeforeNativeDialog = false;
+  if (!quickAssistantWindow || quickAssistantWindow.isDestroyed()) {
+    return;
+  }
+  showQuickAssistantDismissWindow();
+  quickAssistantWindow.show();
+  quickAssistantWindow.focus();
+}
+
+function hideQuickAssistantAfterOutsideFocus() {
+  if (!quickAssistantWindow || quickAssistantWindow.isDestroyed() || !quickAssistantWindow.isVisible()) {
+    return;
+  }
+  if (quickAssistantState.getInteractionState().busy) {
+    return;
+  }
+  quickAssistantWindow.hide();
 }
 
 function showQuickAssistantWindow() {
@@ -250,12 +431,10 @@ function showQuickAssistantWindow() {
   if (!targetWindow || targetWindow.isDestroyed()) {
     return;
   }
-  quickAssistantInteractionState = {
-    busy: false,
-    mouseInside: false
-  };
-  applyQuickAssistantBounds(false);
+  requestQuickAssistantCompactMode(targetWindow);
+  showQuickAssistantDismissWindow();
   targetWindow.show();
+  targetWindow.moveTop();
   targetWindow.focus();
 }
 
@@ -304,6 +483,25 @@ function setSidebarTranslucency(enabled: boolean) {
   };
 }
 
+async function collectWebviewLoadDiagnostics(contents: Electron.WebContents, validatedUrl: string) {
+  const sessionRef = contents.session;
+  let resolvedProxy = "unknown";
+  try {
+    resolvedProxy = await sessionRef.resolveProxy(validatedUrl);
+  } catch (error) {
+    resolvedProxy = `resolve-proxy-failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+
+  return {
+    guestId: contents.id,
+    currentUrl: contents.getURL(),
+    validatedUrl,
+    userAgent: contents.getUserAgent(),
+    resolvedProxy,
+    sessionPartition: sessionRef.getStoragePath() || "default"
+  };
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -336,7 +534,7 @@ function createWindow() {
   });
 
   mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
-    console.error("renderer failed to load", {
+    safeConsoleError("renderer failed to load", {
       errorCode,
       errorDescription,
       validatedUrl
@@ -344,14 +542,21 @@ function createWindow() {
   });
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
-    console.error("renderer process exited unexpectedly", details);
+    safeConsoleError("renderer process exited unexpectedly", details);
   });
 
   mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
-    console.error("preload failed", {
+    safeConsoleError("preload failed", {
       preloadPath,
       error: error?.stack || String(error)
     });
+  });
+
+  mainWindow.on("focus", () => {
+    if (nativeDialogVisibilityDepth > 0) {
+      return;
+    }
+    hideQuickAssistantAfterOutsideFocus();
   });
 
   mainWindow.webContents.on("did-attach-webview", (_event, contents) => {
@@ -359,17 +564,29 @@ function createWindow() {
       if (errorCode === -3) {
         return;
       }
-      console.error("webview failed to load", {
-        guestId: contents.id,
-        errorCode,
-        errorDescription,
-        validatedUrl,
-        isMainFrame
-      });
+      void collectWebviewLoadDiagnostics(contents, validatedUrl)
+        .then((diagnostics) => {
+          safeConsoleError("webview failed to load", {
+            errorCode,
+            errorDescription,
+            isMainFrame,
+            ...diagnostics
+          });
+        })
+        .catch((error) => {
+          safeConsoleError("webview failed to load", {
+            guestId: contents.id,
+            errorCode,
+            errorDescription,
+            validatedUrl,
+            isMainFrame,
+            diagnosticsError: error instanceof Error ? error.message : String(error)
+          });
+        });
     });
 
     contents.on("render-process-gone", (_guestEvent, details) => {
-      console.error("webview render process exited unexpectedly", {
+      safeConsoleError("webview render process exited unexpectedly", {
         guestId: contents.id,
         details
       });
@@ -380,7 +597,7 @@ function createWindow() {
         setImmediate(() => {
           if (!mainWindow || mainWindow.isDestroyed()) {
             void shell.openExternal(url).catch((error) => {
-              console.error("failed to recover webview tab request externally", { url, error });
+              safeConsoleError("failed to recover webview tab request externally", { url, error });
             });
             return;
           }
@@ -394,7 +611,7 @@ function createWindow() {
       }
 
       void shell.openExternal(url).catch((error) => {
-        console.error("failed to open external popup url", { url, error });
+        safeConsoleError("failed to open external popup url", { url, error });
       });
       return { action: "deny" };
     });
@@ -710,22 +927,77 @@ function findWebContentsForSurfaceUrl(surfaceUrl: string) {
   }) ?? null;
 }
 
+function builtinBrowserSurface(contents: WebContents | null, url = BUILTIN_BROWSER_DEFAULT_URL): BrowserSurface {
+  return {
+    id: BUILTIN_BROWSER_SURFACE_ID,
+    label: BUILTIN_BROWSER_SURFACE_LABEL,
+    url,
+    active: Boolean(contents),
+    currentUrl: contents?.getURL(),
+    title: contents?.getTitle(),
+    webContentsId: contents?.id
+  };
+}
+
 function listBrowserSurfaces(): BrowserSurface[] {
-  return listCustomSidebarItems(app).items.map((item) => {
-    const contents = findWebContentsForSurfaceUrl(item.url);
-    return {
-      id: item.id,
-      label: item.label,
-      url: item.url,
-      active: Boolean(contents),
-      currentUrl: contents?.getURL(),
-      title: contents?.getTitle(),
-      webContentsId: contents?.id
-    };
+  const builtinContents = findWebContentsForSurfaceUrl(BUILTIN_BROWSER_DEFAULT_URL);
+  return [
+    builtinBrowserSurface(builtinContents),
+    ...listCustomSidebarItems(app).items.map((item) => {
+      const contents = findWebContentsForSurfaceUrl(item.url);
+      return {
+        id: item.id,
+        label: item.label,
+        url: item.url,
+        active: Boolean(contents),
+        currentUrl: contents?.getURL(),
+        title: contents?.getTitle(),
+        webContentsId: contents?.id
+      };
+    })
+  ];
+}
+
+async function openBrowserUrl(input: { url: string; label?: string }) {
+  const targetUrl = input.url || BUILTIN_BROWSER_DEFAULT_URL;
+  navigateMainWindow(BUILTIN_BROWSER_ROUTE);
+  await delay(450);
+  mainWindow?.webContents.send("webview.openTab", {
+    sourceGuestId: -1,
+    url: targetUrl
   });
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    await delay(250);
+    const contents = findWebContentsForSurfaceUrl(targetUrl);
+    if (contents) {
+      const surface = builtinBrowserSurface(contents, targetUrl);
+      return {
+        ok: true,
+        action: "open_url",
+        target: targetUrl,
+        url: contents.getURL(),
+        title: contents.getTitle(),
+        message: `已打开「${input.label || BUILTIN_BROWSER_SURFACE_LABEL}」。`,
+        data: {
+          surface
+        }
+      };
+    }
+  }
+  return {
+    ok: false,
+    action: "open_url",
+    target: targetUrl,
+    url: targetUrl,
+    error: "browser_webview_not_ready",
+    message: `已尝试打开「${input.label || targetUrl}」，但没有拿到可操作的网页目标。`
+  };
 }
 
 async function activateBrowserSurface(target: string) {
+  if (isBuiltinBrowserSurfaceTarget(target)) {
+    return openBrowserUrl(resolveBuiltinBrowserUrl(target));
+  }
   const surfaces = listBrowserSurfaces();
   const surface = surfaces.find((candidate) => customSidebarItemMatchesSurfaceTarget(candidate, target));
   if (!surface) {
@@ -868,21 +1140,121 @@ function createAppTray() {
   return tray;
 }
 
-function showFileDialog(options: OpenDialogOptions, ownerWindow: BrowserWindow | null = mainWindow) {
-  if (ownerWindow) {
-    return dialog.showOpenDialog(ownerWindow, options);
+function emitNativeDialogVisibility(open: boolean) {
+  const payload = {
+    open,
+    platform: process.platform
+  };
+
+  for (const targetWindow of [mainWindow, quickAssistantWindow]) {
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      continue;
+    }
+    targetWindow.webContents.send("app.nativeDialogVisibility", payload);
   }
-  return dialog.showOpenDialog(options);
 }
 
-function showSaveDialog(
+function beginNativeDialogVisibility() {
+  if (process.platform !== "darwin") {
+    return () => undefined;
+  }
+
+  nativeDialogVisibilityDepth += 1;
+  if (nativeDialogVisibilityDepth === 1) {
+    hideQuickAssistantForNativeDialog();
+    emitNativeDialogVisibility(true);
+  }
+
+  return () => {
+    nativeDialogVisibilityDepth = Math.max(0, nativeDialogVisibilityDepth - 1);
+    if (nativeDialogVisibilityDepth === 0) {
+      emitNativeDialogVisibility(false);
+      restoreQuickAssistantAfterNativeDialog();
+    }
+  };
+}
+
+function waitForNativeDialogLayout() {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, 16);
+  });
+}
+
+async function showFileDialog(options: OpenDialogOptions, ownerWindow: BrowserWindow | null = mainWindow) {
+  const endNativeDialogVisibility = beginNativeDialogVisibility();
+  try {
+    if (process.platform === "darwin") {
+      // macOS sheets can appear below transparent-window renderer overlays; let the UI hide them first.
+      await waitForNativeDialogLayout();
+    }
+    if (ownerWindow) {
+      return await dialog.showOpenDialog(ownerWindow, options);
+    }
+    return await dialog.showOpenDialog(options);
+  } finally {
+    endNativeDialogVisibility();
+  }
+}
+
+async function showSaveDialog(
   options: SaveDialogOptions,
   ownerWindow: BrowserWindow | null = mainWindow
 ) {
-  if (ownerWindow) {
-    return dialog.showSaveDialog(ownerWindow, options);
+  const endNativeDialogVisibility = beginNativeDialogVisibility();
+  try {
+    if (process.platform === "darwin") {
+      await waitForNativeDialogLayout();
+    }
+    if (ownerWindow) {
+      return await dialog.showSaveDialog(ownerWindow, options);
+    }
+    return await dialog.showSaveDialog(options);
+  } finally {
+    endNativeDialogVisibility();
   }
-  return dialog.showSaveDialog(options);
+}
+
+async function pickAssistantAttachments(chatId: string | null | undefined, ownerWindow: BrowserWindow | null) {
+  const result = await showFileDialog({
+    title: "选择要给 ZenMind助手读取的附件",
+    properties: ["openFile", "multiSelections"],
+    filters: [
+      {
+        name: "可读取文本或常见文档",
+        extensions: [
+          "txt",
+          "md",
+          "csv",
+          "json",
+          "jsonl",
+          "log",
+          "html",
+          "xml",
+          "yml",
+          "yaml",
+          "png",
+          "jpg",
+          "jpeg",
+          "webp",
+          "gif",
+          "pdf",
+          "docx",
+          "xlsx",
+          "pptx"
+        ]
+      },
+      { name: "所有文件", extensions: ["*"] }
+    ]
+  }, ownerWindow);
+  if (result.canceled || result.filePaths.length === 0) {
+    return {
+      ok: false,
+      chatId: chatId ?? "",
+      message: "已取消选择附件。",
+      attachments: []
+    };
+  }
+  return createAssistantAttachmentsFromFiles(app, chatId, result.filePaths);
 }
 
 function showArchiveDialog(title: string) {
@@ -967,32 +1339,67 @@ async function handleServiceStart(serviceId: ServiceId) {
   }
 }
 
+async function renderAssistantPdf(html: string) {
+  const pdfWindow = new BrowserWindow({
+    show: false,
+    width: 960,
+    height: 1280,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  try {
+    pdfWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    pdfWindow.webContents.on("will-navigate", (event) => {
+      event.preventDefault();
+    });
+    const dataUrl = `data:text/html;charset=utf-8;base64,${Buffer.from(html, "utf8").toString("base64")}`;
+    await pdfWindow.loadURL(dataUrl);
+    const pdf = await pdfWindow.webContents.printToPDF({
+      printBackground: true,
+      preferCSSPageSize: true,
+      pageSize: "A4"
+    });
+    return Buffer.from(pdf);
+  } finally {
+    if (!pdfWindow.isDestroyed()) {
+      pdfWindow.destroy();
+    }
+  }
+}
+
 function registerIpcHandlers() {
-  const browserUseController = new BrowserUseController();
+  const systemChromeController = new SystemChromeController(app);
+  const browserUseController = new BrowserUseController({
+    resolveWebContents: (webContentsId) => systemChromeController.resolveWebContents(webContentsId)
+  });
   const assistantBrowserUse = {
-    listSurfaces: async () => listBrowserSurfaces(),
-    activateSurface: async (target: string) => activateBrowserSurface(target),
+    listSurfaces: async () => [
+      ...listBrowserSurfaces(),
+      ...await systemChromeController.listSurfaces()
+    ],
+    activateSurface: async (target: string) => {
+      const embeddedResult = await activateBrowserSurface(target);
+      if (embeddedResult.ok) {
+        return embeddedResult;
+      }
+      return systemChromeController.activateSurface(target);
+    },
     observePage: (webContentsId: number) => browserUseController.observePage(webContentsId),
+    snapshotPage: (webContentsId: number) => browserUseController.snapshotPage(webContentsId),
     click: (webContentsId: number, input: { elementRef?: string; target?: string }) =>
       browserUseController.click(webContentsId, input),
+    navigateUrl: (webContentsId: number, input: { url: string; label?: string }) =>
+      browserUseController.navigateUrl(webContentsId, input),
     fillFields: (webContentsId: number, fields: Parameters<BrowserUseController["fillFields"]>[1]) =>
       browserUseController.fillFields(webContentsId, fields),
     autofillForm: (webContentsId: number, input?: Parameters<BrowserUseController["autofillForm"]>[1]) =>
       browserUseController.autofillForm(webContentsId, input),
-    executeAgentTask: (
-      webContentsId: number,
-      input: Parameters<BrowserUseController["executeAgentTask"]>[1],
-      options?: {
-        signal?: AbortSignal;
-        onEvent?: (event: { type?: string; message?: string; data?: unknown }) => void;
-      }
-    ) =>
-      browserUseController.executeAgentTask(webContentsId, input, {
-        settings: loadAgentPlatformMinimaxSettings(app) ?? readAssistantSettings(app),
-        proxy: pageAgentProxy,
-        signal: options?.signal,
-        onEvent: options?.onEvent
-      }),
+    waitForPageSettle: (webContentsId: number, timeoutMs?: number) =>
+      browserUseController.waitForPageSettle(webContentsId, timeoutMs),
+    openUrl: (input: { url: string; label?: string }) => systemChromeController.openUrl(input),
     selectOption: (webContentsId: number, input: Parameters<BrowserUseController["selectOption"]>[1]) =>
       browserUseController.selectOption(webContentsId, input),
     setChecked: (webContentsId: number, input: Parameters<BrowserUseController["setChecked"]>[1]) =>
@@ -1005,7 +1412,16 @@ function registerIpcHandlers() {
       browserUseController.fillBestInput(webContentsId, value),
     fillBestInputAndSubmit: (webContentsId: number, value: string) =>
       browserUseController.fillBestInputAndSubmit(webContentsId, value),
-    readPageContext: (webContentsId: number) => browserUseController.readPageContext(webContentsId)
+    readPageContext: (webContentsId: number) => browserUseController.readPageContext(webContentsId),
+    captureScreenshot: (webContentsId: number) => browserUseController.captureScreenshot(webContentsId),
+    readAccessibilitySnapshot: (webContentsId: number) => browserUseController.readAccessibilitySnapshot(webContentsId),
+    createRuntimeSnapshot: (webContentsId: number) => browserUseController.createRuntimeSnapshot(webContentsId),
+    waitForCondition: (webContentsId: number, condition?: Parameters<BrowserUseController["waitForCondition"]>[1]) =>
+      browserUseController.waitForCondition(webContentsId, condition),
+    extractPage: (webContentsId: number, extraction: Parameters<BrowserUseController["extractPage"]>[1]) =>
+      browserUseController.extractPage(webContentsId, extraction),
+    sendCdpCommand: (webContentsId: number, input: { method: string; params?: Record<string, unknown> }) =>
+      browserUseController.sendCdpCommand(webContentsId, input)
   };
   const assistantRuntime = new AssistantRuntime(app, (event) => {
     for (const targetWindow of [mainWindow, quickAssistantWindow]) {
@@ -1015,6 +1431,22 @@ function registerIpcHandlers() {
       targetWindow.webContents.send("assistant.event", event);
     }
   }, assistantBrowserUse, {
+    openExternalUrl: async (url) => {
+      await shell.openExternal(url);
+    },
+    renderPdf: renderAssistantPdf,
+    services: {
+      list: async () => listServices(app),
+      control: async (serviceId, operation) => {
+        if (operation === "stop") {
+          return stopService(app, serviceId);
+        }
+        if (operation === "restart") {
+          return restartService(app, serviceId);
+        }
+        return handleServiceStart(serviceId);
+      }
+    },
     resolveContainerHub: async () => {
       const state = await getServiceState(app, "agent-container-hub").catch((error) => {
         return {
@@ -1032,6 +1464,13 @@ function registerIpcHandlers() {
           unavailableReason: state.message || "Container Hub 未运行，请先在控制中心启动容器仓库服务。"
         };
       }
+      const verification = await verifyServiceState(app, "agent-container-hub", "running").catch(() => null);
+      if (verification && !verification.verified) {
+        return {
+          baseURL: "",
+          unavailableReason: `Container Hub 未通过运行复查：${verification.issues.join("；") || "状态未验证"}`
+        };
+      }
       const baseURL = state.healthMeta.webUrl || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "");
       return {
         baseURL,
@@ -1045,50 +1484,45 @@ function registerIpcHandlers() {
   ipcMain.handle("assistant.saveSettings", async (_event, input: AssistantSettingsInput) =>
     saveAssistantSettings(app, input)
   );
+  ipcMain.handle("assistant.getMemorySettings", async () => getAssistantMemorySettings(app));
+  ipcMain.handle("assistant.saveMemorySettings", async (_event, input: AssistantMemorySettingsInput) =>
+    saveAssistantMemorySettings(app, input)
+  );
+  ipcMain.handle("assistant.getMemorySummary", async () => getAssistantMemorySummary(app));
+  ipcMain.handle("assistant.openMemoryDirectory", async () => {
+    const directoryPath = getAssistantMemoryDirectory(app);
+    fs.mkdirSync(directoryPath, { recursive: true });
+    // macOS and Windows both use Electron's shell helper, but keep the platform
+    // branch explicit because packaged path/open behavior is platform-sensitive.
+    let error = "";
+    if (process.platform === "darwin") {
+      error = await shell.openPath(directoryPath);
+    } else if (process.platform === "win32") {
+      error = await shell.openPath(directoryPath);
+    } else {
+      error = await shell.openPath(directoryPath);
+    }
+    return {
+      ok: !error,
+      message: error ? `打开记忆目录失败：${error}` : "已打开助手记忆目录。",
+      path: directoryPath
+    };
+  });
+  ipcMain.handle("assistant.listMemoryItems", async () => ({
+    items: listAssistantMemoryItems(app),
+    settings: getAssistantMemorySettings(app),
+    stats: getAssistantMemoryStats(app),
+    storage: getAssistantMemoryStorageFromRoot(app.getPath("userData"))
+  }));
+  ipcMain.handle("assistant.deleteMemoryItem", async (_event, memoryId: string) =>
+    deleteAssistantMemoryItem(app, memoryId)
+  );
+  ipcMain.handle("assistant.clearMemoryItems", async () => clearAssistantMemoryItems(app));
   ipcMain.handle("assistant.listChats", async () => listAssistantChats(app));
   ipcMain.handle("assistant.getChat", async (_event, chatId: string) => getAssistantChat(app, chatId));
-  ipcMain.handle("assistant.pickAttachments", async (_event, chatId?: string | null) => {
-    const result = await showFileDialog({
-      title: "选择要给 ZenMind助手读取的附件",
-      properties: ["openFile", "multiSelections"],
-      filters: [
-        {
-          name: "可读取文本或常见文档",
-          extensions: [
-            "txt",
-            "md",
-            "csv",
-            "json",
-            "jsonl",
-            "log",
-            "html",
-            "xml",
-            "yml",
-            "yaml",
-            "png",
-            "jpg",
-            "jpeg",
-            "webp",
-            "gif",
-            "pdf",
-            "docx",
-            "xlsx",
-            "pptx"
-          ]
-        },
-        { name: "所有文件", extensions: ["*"] }
-      ]
-    });
-    if (result.canceled || result.filePaths.length === 0) {
-      return {
-        ok: false,
-        chatId: chatId ?? "",
-        message: "已取消选择附件。",
-        attachments: []
-      };
-    }
-    return createAssistantAttachmentsFromFiles(app, chatId, result.filePaths);
-  });
+  ipcMain.handle("assistant.pickAttachments", async (_event, chatId?: string | null) =>
+    pickAssistantAttachments(chatId, mainWindow)
+  );
   ipcMain.handle(
     "assistant.addPastedImage",
     async (_event, chatId: string | null | undefined, input: AssistantPastedImageInput) =>
@@ -1114,19 +1548,52 @@ function registerIpcHandlers() {
   ipcMain.handle("assistant.submitAwaiting", async (_event, request: AssistantSubmitAwaitingRequest) =>
     assistantRuntime.submitAwaiting(request)
   );
+  ipcMain.handle("assistant.openAttachment", async (_event, chatId: string, attachmentId: string) => {
+    try {
+      const attachmentPath = resolveAssistantAttachmentPath(app, chatId, attachmentId);
+      // macOS and Windows both use Electron's shell helper, but keep the platform
+      // branch explicit because packaged file-opening behavior is platform-sensitive.
+      let error = "";
+      if (process.platform === "darwin") {
+        error = await shell.openPath(attachmentPath);
+      } else if (process.platform === "win32") {
+        error = await shell.openPath(attachmentPath);
+      } else {
+        error = await shell.openPath(attachmentPath);
+      }
+      return {
+        ok: !error,
+        message: error ? `打开附件失败：${error}` : "已打开附件。",
+        path: attachmentPath
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        path: ""
+      };
+    }
+  });
 
   ipcMain.handle("quickAssistant.setExpanded", async (_event, expanded: boolean) => {
     if (isQuickAssistantSupportedPlatform(process.platform)) {
-      applyQuickAssistantBounds(Boolean(expanded));
+      quickAssistantState.setExpanded(Boolean(expanded));
+      applyQuickAssistantBounds();
     }
     return { ok: true };
   });
+  ipcMain.handle("quickAssistant.setDisplayMode", async (_event, mode: QuickAssistantDisplayMode) => {
+    if (isQuickAssistantSupportedPlatform(process.platform)) {
+      quickAssistantState.setDisplayMode(mode);
+      applyQuickAssistantBounds();
+    }
+    return { ok: true };
+  });
+  ipcMain.handle("quickAssistant.pickAttachments", async (_event, chatId?: string | null) =>
+    pickAssistantAttachments(chatId, null)
+  );
   ipcMain.handle("quickAssistant.setInteractionState", async (_event, state: { busy?: boolean; mouseInside?: boolean }) => {
-    quickAssistantInteractionState = {
-      ...quickAssistantInteractionState,
-      ...(typeof state?.busy === "boolean" ? { busy: state.busy } : {}),
-      ...(typeof state?.mouseInside === "boolean" ? { mouseInside: state.mouseInside } : {})
-    };
+    quickAssistantState.setInteractionState(state);
     return { ok: true };
   });
   ipcMain.handle("quickAssistant.hide", async () => {
@@ -1271,6 +1738,46 @@ function registerIpcHandlers() {
   ipcMain.handle("plugins.uninstall", async (_event, serviceId: ServiceId) => {
     return runServiceMutation(() => handlePluginUninstall(app, serviceId, mainWindow));
   });
+  ipcMain.handle("market.list", async () => listMarketItems(app));
+  ipcMain.handle("market.refresh", async () => refreshMarketCatalog(app));
+  ipcMain.handle("market.install", async (_event, itemId: string) => runServiceMutation(async () => {
+    const result = await installMarketItem(app, itemId);
+    if (result.ok) {
+      await session.defaultSession.clearCache();
+    }
+    return result;
+  }));
+  ipcMain.handle("market.update", async (_event, itemId: string) => runServiceMutation(async () => {
+    const result = await updateMarketItem(app, itemId);
+    if (result.ok) {
+      await session.defaultSession.clearCache();
+    }
+    return result;
+  }));
+  ipcMain.handle("market.uninstall", async (_event, itemId: string) =>
+    runServiceMutation(() => uninstallMarketItem(app, itemId)));
+  ipcMain.handle("market.importSkill", async () => runServiceMutation(async () => {
+    const result = await showFileDialog({
+      title: "选择 Skill 包或 SKILL.md",
+      properties: ["openFile"],
+      filters: [
+        {
+          name: "Skill",
+          extensions: process.platform === "win32" ? ["zip", "skill", "md"] : ["gz", "tgz", "skill", "md"]
+        }
+      ]
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return {
+        ok: false,
+        itemId: "",
+        type: "skill",
+        state: "failed",
+        message: "已取消导入。"
+      };
+    }
+    return importSkillFromPath(app, result.filePaths[0]);
+  }));
   ipcMain.handle("panAuth.importPrivateKey", async () => {
     const result = await showFileDialog({
       title: "选择要导入的 App 私钥",
@@ -1417,6 +1924,9 @@ if (gotSingleInstanceLock) {
         console.error("failed to prepare startup services", error);
       });
     app.on("activate", () => {
+      if (nativeDialogVisibilityDepth > 0) {
+        return;
+      }
       showMainWindow();
     });
   });
@@ -1443,7 +1953,6 @@ app.on("before-quit", (event) => {
       } catch (error) {
         console.error("failed while cleaning up local code-assistant relay", error);
       }
-      pageAgentProxy.close();
       app.quit();
     });
 });

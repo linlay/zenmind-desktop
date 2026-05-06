@@ -2,6 +2,24 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import type { App } from "electron";
+import { resolveAssistantAttachmentPath } from "./attachment-store";
+import {
+  createImageDocumentMetadata,
+  extractDocumentTextFromFile,
+  renderPdfPagesForVision
+} from "./document-extract";
+import { loadAgentPlatformMinimaxSettings } from "./agent-platform-config";
+import { readAssistantSettings } from "./settings-store";
+import { canDescribeImageWithVision, describeImageWithVision } from "./vision-provider";
+import type { AssistantAttachmentDocument } from "../../shared/contracts";
+export {
+  listHostStartupItems,
+  removeHostStartupItems,
+  type HostStartupEnvironment,
+  type HostStartupItem,
+  type HostStartupListResult,
+  type HostStartupRemoveResult
+} from "./host-startup-items";
 
 export type DesktopFileEntry = {
   name: string;
@@ -24,6 +42,19 @@ export type DesktopOrganizePlan = {
   skipped: string[];
 };
 
+export type DesktopDeleteResult = {
+  deleted: string[];
+};
+
+export type DesktopDocumentReadResult = {
+  path: string;
+  sizeBytes: number;
+  content: string;
+  truncated: boolean;
+  document: AssistantAttachmentDocument;
+  error?: string;
+};
+
 export type HostCommandResult = {
   ok: boolean;
   command: string;
@@ -36,6 +67,8 @@ export type HostCommandResult = {
 
 const MAX_LIST_ENTRIES = 500;
 const MAX_READ_BYTES = 1024 * 1024;
+const MAX_DOCUMENT_READ_BYTES = 32 * 1024 * 1024;
+const MAX_DOCUMENT_IMAGE_CONTEXT_BYTES = 5 * 1024 * 1024;
 const MAX_COMMAND_BUFFER_BYTES = 512 * 1024;
 
 const ORGANIZE_FOLDERS: Array<{ folder: string; extensions: string[] }> = [
@@ -191,6 +224,189 @@ export function readDesktopFile(app: App, input: { path?: string }, chatId?: str
   };
 }
 
+function guessImageMimeType(filePath: string) {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".gif":
+      return "image/gif";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".png":
+      return "image/png";
+    case ".webp":
+      return "image/webp";
+    default:
+      return "";
+  }
+}
+
+function readVisionCapableSettings(app: App) {
+  return loadAgentPlatformMinimaxSettings(app) ?? readAssistantSettings(app);
+}
+
+async function readImageDocumentWithVision(
+  app: App,
+  filePath: string,
+  stat: fs.Stats,
+  signal: AbortSignal
+): Promise<DesktopDocumentReadResult | null> {
+  const mimeType = guessImageMimeType(filePath);
+  if (!mimeType) {
+    return null;
+  }
+  if (stat.size > MAX_DOCUMENT_IMAGE_CONTEXT_BYTES) {
+    const imageDocument = createImageDocumentMetadata({
+      readable: false,
+      error: "图片已保存，但超过 5MB，未发送给 MiniMax 图片理解接口。",
+      errorCode: "image_too_large_for_vision"
+    });
+    return {
+      path: filePath,
+      sizeBytes: stat.size,
+      content: "",
+      truncated: false,
+      document: imageDocument.document,
+      error: imageDocument.error
+    };
+  }
+
+  const buffer = fs.readFileSync(filePath);
+  const dataUrl = `data:${mimeType};base64,${buffer.toString("base64")}`;
+  const settings = readVisionCapableSettings(app);
+  if (!canDescribeImageWithVision(settings, dataUrl)) {
+    const imageDocument = createImageDocumentMetadata({
+      readable: false,
+      error: "当前 MiniMax 配置无法调用图片理解接口，无法理解图片内容。",
+      errorCode: "vision_unavailable"
+    });
+    return {
+      path: filePath,
+      sizeBytes: stat.size,
+      content: "",
+      truncated: false,
+      document: {
+        ...imageDocument.document,
+        visionStatus: "unavailable"
+      },
+      error: imageDocument.error
+    };
+  }
+
+  const result = await describeImageWithVision({
+    settings,
+    name: path.basename(filePath),
+    dataUrl,
+    signal
+  });
+  const document: AssistantAttachmentDocument = {
+    format: "image",
+    readStatus: "readable",
+    extractedChars: result.summary.length,
+    truncated: false,
+    imageMode: "vision",
+    visionSummary: result.summary,
+    visionStatus: "readable"
+  };
+  return {
+    path: filePath,
+    sizeBytes: stat.size,
+    content: result.summary,
+    truncated: false,
+    document
+  };
+}
+
+async function readScannedPdfWithVision(
+  app: App,
+  filePath: string,
+  stat: fs.Stats,
+  extracted: Awaited<ReturnType<typeof extractDocumentTextFromFile>>,
+  signal: AbortSignal
+): Promise<DesktopDocumentReadResult | null> {
+  if (extracted.errorCode !== "scanned_pdf_no_text") {
+    return null;
+  }
+  const pageImages = await renderPdfPagesForVision(filePath);
+  const settings = readVisionCapableSettings(app);
+  if (!pageImages.some((pageImage) => canDescribeImageWithVision(settings, pageImage.dataUrl))) {
+    return null;
+  }
+  const summaries: string[] = [];
+  for (const pageImage of pageImages) {
+    if (!canDescribeImageWithVision(settings, pageImage.dataUrl)) {
+      continue;
+    }
+    const result = await describeImageWithVision({
+      settings,
+      name: `${path.basename(filePath)} 第 ${pageImage.pageNumber} 页`,
+      dataUrl: pageImage.dataUrl,
+      signal
+    });
+    summaries.push(`Page ${pageImage.pageNumber}\n${result.summary}`);
+  }
+  const content = summaries.join("\n\n");
+  if (!content.trim()) {
+    return null;
+  }
+  return {
+    path: filePath,
+    sizeBytes: stat.size,
+    content,
+    truncated: false,
+    document: {
+      ...extracted.document,
+      readStatus: "readable",
+      extractedChars: content.length,
+      visionSummary: content,
+      visionStatus: "readable"
+    }
+  };
+}
+
+export async function readDesktopDocument(
+  app: App,
+  input: { path?: string; attachmentId?: string; pages?: string; sheet?: string; maxChars?: number },
+  chatId?: string | null,
+  options: { signal?: AbortSignal } = {}
+): Promise<DesktopDocumentReadResult> {
+  const attachmentId = String(input.attachmentId ?? "").trim();
+  const filePath = attachmentId
+    ? (() => {
+        if (!chatId) {
+          throw new Error("读取聊天附件需要当前 chatId。");
+        }
+        return resolveAssistantAttachmentPath(app, chatId, attachmentId);
+      })()
+    : resolveDesktopToolPath(app, input.path, chatId);
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile()) {
+    throw new Error(`不是可读取文档：${filePath}`);
+  }
+  if (stat.size > MAX_DOCUMENT_READ_BYTES) {
+    throw new Error(`文档超过 ${MAX_DOCUMENT_READ_BYTES} bytes，不能直接读取：${filePath}`);
+  }
+  const signal = options.signal ?? new AbortController().signal;
+  const imageRead = await readImageDocumentWithVision(app, filePath, stat, signal);
+  if (imageRead) {
+    return imageRead;
+  }
+  const extracted = await extractDocumentTextFromFile(filePath, {
+    maxChars: input.maxChars
+  });
+  const scannedPdfRead = await readScannedPdfWithVision(app, filePath, stat, extracted, signal);
+  if (scannedPdfRead) {
+    return scannedPdfRead;
+  }
+  return {
+    path: filePath,
+    sizeBytes: stat.size,
+    content: extracted.text,
+    truncated: extracted.truncated,
+    document: extracted.document,
+    ...(extracted.error ? { error: extracted.error } : {})
+  };
+}
+
 export function writeDesktopFile(
   app: App,
   input: { path?: string; filename?: string; content?: string; overwrite?: boolean },
@@ -200,18 +416,40 @@ export function writeDesktopFile(
   if (!targetInput) {
     throw new Error("写入文件需要 path 或 filename。");
   }
-  const filePath = resolveDesktopToolPath(app, targetInput, chatId);
-  const existedBefore = fs.existsSync(filePath);
-  if (existedBefore && !input.overwrite) {
-    throw new Error(`文件已存在，请确认覆盖或换一个文件名：${filePath}`);
+  const filePath = resolveDesktopWriteFilePath(app, input, chatId);
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+    throw new Error(`写入目标是目录，请提供文件名：${filePath}`);
   }
-  ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, String(input.content ?? ""), "utf8");
+  const existedBefore = fs.existsSync(filePath);
+  const finalPath = existedBefore && !input.overwrite ? uniqueDestination(filePath) : filePath;
+  ensureDir(path.dirname(finalPath));
+  fs.writeFileSync(finalPath, String(input.content ?? ""), "utf8");
   return {
-    path: filePath,
+    path: finalPath,
+    requestedPath: filePath,
     sizeBytes: Buffer.byteLength(String(input.content ?? ""), "utf8"),
-    overwritten: existedBefore
+    overwritten: existedBefore && Boolean(input.overwrite),
+    renamed: existedBefore && !input.overwrite
   };
+}
+
+function resolveDesktopWriteFilePath(
+  app: App,
+  input: { path?: string; filename?: string },
+  chatId?: string | null
+) {
+  const rawPath = String(input.path ?? "").trim();
+  const rawFilename = String(input.filename ?? "").trim();
+  if (rawPath && rawFilename) {
+    const resolvedPath = resolveDesktopToolPath(app, rawPath, chatId);
+    const shouldJoinFilename = fs.existsSync(resolvedPath)
+      ? fs.statSync(resolvedPath).isDirectory()
+      : !path.extname(resolvedPath);
+    return shouldJoinFilename
+      ? resolveDesktopToolPath(app, path.join(resolvedPath, rawFilename), chatId)
+      : resolvedPath;
+  }
+  return resolveDesktopToolPath(app, rawPath || rawFilename, chatId);
 }
 
 function folderForExtension(extension: string) {
@@ -273,6 +511,27 @@ export function moveDesktopFiles(app: App, input: { moves?: DesktopMoveOperation
   return { moved: completed };
 }
 
+export function deleteDesktopFiles(
+  app: App,
+  input: { paths?: string[] },
+  chatId?: string | null
+): DesktopDeleteResult {
+  const paths = Array.isArray(input.paths) ? input.paths : [];
+  if (paths.length === 0) {
+    throw new Error("删除文件需要 paths 数组。");
+  }
+  const deleted: string[] = [];
+  for (const item of paths) {
+    const filePath = resolveDesktopToolPath(app, item, chatId);
+    if (!fs.existsSync(filePath)) {
+      continue;
+    }
+    fs.rmSync(filePath, { recursive: true, force: false });
+    deleted.push(filePath);
+  }
+  return { deleted };
+}
+
 function commandShell() {
   if (isWindowsPlatform()) {
     return {
@@ -295,20 +554,51 @@ function commandShell() {
   };
 }
 
-export function runHostCommand(
-  app: App,
-  input: { command?: string; cwd?: string; timeoutMs?: number },
-  chatId?: string | null
-): Promise<HostCommandResult> {
-  const command = String(input.command ?? "").trim();
-  if (!command) {
-    throw new Error("执行命令需要 command。");
-  }
-  const cwd = resolveDesktopToolPath(app, input.cwd || "", chatId);
-  const shell = commandShell();
-  const timeout = Math.min(Math.max(Number(input.timeoutMs) || 30000, 1000), 120000);
+function isWindowsPlatformName(platform: string) {
+  return platform === "win32" || platform === "windows";
+}
 
-  return new Promise((resolve) => {
+function buildPortKillRecoveryCommand(command: string, stderr: string, platform: string = process.platform) {
+  if (!/no such process|not a process|找不到|不存在/iu.test(stderr)) {
+    return null;
+  }
+  const match = command.trim().match(/^kill\s+(-9\s+)?(\d{2,5})$/u);
+  if (!match?.[2]) {
+    return null;
+  }
+  const port = Number(match[2]);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    return null;
+  }
+  const force = Boolean(match[1]);
+  if (isWindowsPlatformName(platform)) {
+    return [
+      `$pid = (Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess)`,
+      "if ($pid) {",
+      `  Stop-Process -Id $pid${force ? " -Force" : ""}`,
+      "} else {",
+      `  throw "No process is listening on port ${port}"`,
+      "}"
+    ].join("; ");
+  }
+  // macOS/Linux: when a bare numeric kill fails, treat common dev-server ports as ports and resolve the real PID.
+  return [
+    `pid="$(lsof -nP -tiTCP:${port} -sTCP:LISTEN | head -n 1)"`,
+    "if [ -n \"$pid\" ]; then",
+    `kill ${force ? "-9 " : ""}"$pid"`,
+    "else",
+    `echo "No process is listening on port ${port}" >&2; exit 1`,
+    "fi"
+  ].join("; ");
+}
+
+function execHostShellCommand(
+  shell: ReturnType<typeof commandShell>,
+  command: string,
+  cwd: string,
+  timeout: number
+) {
+  return new Promise<HostCommandResult>((resolve) => {
     execFile(shell.file, [...shell.args, command], {
       cwd,
       timeout,
@@ -334,11 +624,44 @@ export function runHostCommand(
   });
 }
 
+export function runHostCommand(
+  app: App,
+  input: { command?: string; cwd?: string; timeoutMs?: number },
+  chatId?: string | null
+): Promise<HostCommandResult> {
+  const command = String(input.command ?? "").trim();
+  if (!command) {
+    throw new Error("执行命令需要 command。");
+  }
+  const cwd = resolveDesktopToolPath(app, input.cwd || "", chatId);
+  const shell = commandShell();
+  const timeout = Math.min(Math.max(Number(input.timeoutMs) || 30000, 1000), 120000);
+
+  return execHostShellCommand(shell, command, cwd, timeout).then(async (result) => {
+    if (result.ok || result.timedOut) {
+      return result;
+    }
+    const recoveryCommand = buildPortKillRecoveryCommand(command, result.stderr, shell.platform);
+    if (!recoveryCommand) {
+      return result;
+    }
+    const recovered = await execHostShellCommand(shell, recoveryCommand, cwd, timeout);
+    return {
+      ...recovered,
+      command,
+      stdout: [result.stdout, recovered.stdout].filter(Boolean).join("\n"),
+      stderr: [result.stderr, recovered.stderr].filter(Boolean).join("\n")
+    };
+  });
+}
+
 export const __testInternals = {
   MAX_LIST_ENTRIES,
   MAX_READ_BYTES,
+  MAX_DOCUMENT_READ_BYTES,
   folderForExtension,
   getAllowedDesktopToolRoots,
   isInsideOrSame,
-  resolveDesktopToolPath
+  resolveDesktopToolPath,
+  buildPortKillRecoveryCommand
 };
