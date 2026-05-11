@@ -125,7 +125,6 @@ export function PluginMarketPage() {
   const [pluginQuery, setPluginQuery] = useState("");
   const [skillQuery, setSkillQuery] = useState("");
   const [skillScope, setSkillScope] = useState<SkillScope>("全部");
-  const [feedback, setFeedback] = useState("");
   const [marketResult, setMarketResult] = useState<MarketListResult>(createEmptyMarketResult);
   const [isLoadingMarket, setIsLoadingMarket] = useState(true);
   const [busyItemId, setBusyItemId] = useState("");
@@ -144,11 +143,8 @@ export function PluginMarketPage() {
       }
       const next = await command();
       setMarketResult(next);
-      if (next.offline || force) {
-        setFeedback(next.message);
-      }
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      console.warn("[market-page] failed to load market data", reason);
     } finally {
       setIsLoadingMarket(false);
     }
@@ -182,11 +178,10 @@ export function PluginMarketPage() {
       if (!install) {
         throw createMissingPluginApiError("install");
       }
-      const result = await install();
-      setFeedback(result.message);
+      await install();
       await refreshEverything();
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      console.warn("[market-page] failed to import plugin", reason);
     } finally {
       setIsImportingPlugin(false);
     }
@@ -199,11 +194,10 @@ export function PluginMarketPage() {
       if (!importSkill) {
         throw createMissingMarketApiError("importSkill");
       }
-      const result = await importSkill();
-      setFeedback(result.message);
+      await importSkill();
       await refreshEverything();
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      console.warn("[market-page] failed to import skill", reason);
     } finally {
       setIsImportingSkill(false);
     }
@@ -217,11 +211,10 @@ export function PluginMarketPage() {
       if (!action) {
         throw createMissingMarketApiError(commandName);
       }
-      const result = await action(item.id);
-      setFeedback(result.message);
+      await action(item.id);
       await refreshEverything();
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      console.warn(`[market-page] failed to ${item.state === "update-available" ? "update" : "install"} ${item.id}`, reason);
     } finally {
       setBusyItemId("");
     }
@@ -234,11 +227,10 @@ export function PluginMarketPage() {
       if (!uninstall) {
         throw createMissingMarketApiError("uninstall");
       }
-      const result = await uninstall(item.id);
-      setFeedback(result.message);
+      await uninstall(item.id);
       await refreshEverything();
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      console.warn(`[market-page] failed to uninstall ${item.id}`, reason);
     } finally {
       setBusyItemId("");
     }
@@ -332,7 +324,6 @@ export function PluginMarketPage() {
               className={activeTab === "plugins" ? "market-tab is-active" : "market-tab"}
               onClick={() => {
                 setActiveTab("plugins");
-                setFeedback("");
               }}
             >
               插件
@@ -342,7 +333,6 @@ export function PluginMarketPage() {
               className={activeTab === "skills" ? "market-tab is-active" : "market-tab"}
               onClick={() => {
                 setActiveTab("skills");
-                setFeedback("");
               }}
             >
               技能
@@ -380,8 +370,6 @@ export function PluginMarketPage() {
             <h1>{currentTitle}</h1>
             <p>{currentSubtitle}</p>
           </header>
-
-          {feedback ? <div className="market-feedback">{feedback}</div> : null}
 
           {activeTab === "plugins" ? (
             <div className="market-content">

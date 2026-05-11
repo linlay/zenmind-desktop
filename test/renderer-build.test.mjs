@@ -38,13 +38,20 @@ test("plugin market guards stale preload market api before skill import", () => 
     path.join(projectRoot, "src", "renderer", "pages", "PluginMarketPage.tsx"),
     "utf8"
   );
+  const marketStyles = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "PluginMarketPage.css"),
+    "utf8"
+  );
 
   assert.match(marketPage, /function getMarketApi\(/);
   assert.match(marketPage, /function getPluginApi\(/);
   assert.match(marketPage, /MARKET_API_UNAVAILABLE_MESSAGE/);
   assert.match(marketPage, /PLUGIN_API_UNAVAILABLE_MESSAGE/);
+  assert.match(marketPage, /console\.warn\("\[market-page\] failed to load market data"/);
   assert.doesNotMatch(marketPage, /window\.electronAPI\.market\.importSkill\(\)/);
   assert.doesNotMatch(marketPage, /installPlugin\(\)/);
+  assert.doesNotMatch(marketPage, /market-feedback/);
+  assert.doesNotMatch(marketStyles, /\.market-feedback/);
 });
 
 test("market route disables the global drag overlay above toolbar controls", () => {
