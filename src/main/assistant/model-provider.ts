@@ -165,7 +165,7 @@ export function normalizeModelHTTPErrorMessage(status: number, body: string) {
   const providerMessage = readProviderErrorMessage(body);
   const errorText = `${providerMessage} ${body}`.toLowerCase();
   if (status === 401 || /invalid api key|unauthorized|authorized_error|api key/i.test(errorText)) {
-    return "模型请求未通过鉴权（HTTP 401）：API Key 无效或已过期。请在设置里更新助手模型 API Key，或检查 agent-platform 对应 provider 配置。";
+    return "模型请求未通过鉴权（HTTP 401）：API Key 无效或已过期。请检查 agent-platform 的 minimax provider 配置。";
   }
   if (status === 403) {
     return "模型请求被拒绝（HTTP 403）：当前 API Key 没有调用该模型的权限，请检查模型名称、账户权限或 provider 配置。";
@@ -270,7 +270,7 @@ export async function transcribeOpenAIAudio({
   signal: AbortSignal;
 }) {
   if (!settings.apiKey.trim()) {
-    throw new Error("请先配置助手模型 API Key。");
+    throw new Error("请先配置 agent-platform 的 minimax provider API Key。");
   }
 
   const normalizedMimeType = mimeType.trim() || "audio/webm";
@@ -316,7 +316,7 @@ export async function transcribeOpenAIChatAudio({
   signal: AbortSignal;
 }) {
   if (!settings.apiKey.trim()) {
-    throw new Error("请先配置语音识别模型 API Key。");
+    throw new Error("请先配置 agent-platform 的 minimax provider API Key。");
   }
   if (!settings.model.trim()) {
     throw new Error("请先配置语音识别模型名称。");
@@ -421,7 +421,7 @@ export async function completeOpenAIChatCompletion({
   toolChoice?: "auto" | "none";
 }): Promise<OpenAIChatCompletionMessage> {
   if (!settings.apiKey.trim()) {
-    throw new Error("请先配置助手模型 API Key。");
+    throw new Error("请先配置 agent-platform 的 minimax provider API Key。");
   }
   if (!settings.model.trim()) {
     throw new Error("请先配置助手模型名称。");
@@ -484,7 +484,7 @@ export async function streamOpenAIChatCompletion({
   onDelta: (delta: string) => void;
 }) {
   if (!settings.apiKey.trim()) {
-    throw new Error("请先配置助手模型 API Key。");
+    throw new Error("请先配置 agent-platform 的 minimax provider API Key。");
   }
   if (!settings.model.trim()) {
     throw new Error("请先配置助手模型名称。");

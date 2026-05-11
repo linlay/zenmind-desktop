@@ -386,20 +386,31 @@ function validateAgentPlatformBundleArchive(service, archivePath) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
         `Detected legacy desktop env binding ${legacyEnvBinding} in manifest.json.\n` +
-        `This usually means a pre-runtime or stale agent-platform bundle was selected instead of the clean Desktop release bundle.`
+      `This usually means a pre-runtime or stale agent-platform bundle was selected instead of the clean Desktop release bundle.`
+    );
+  }
+
+  const entries = listArchiveEntries(archivePath);
+  if ([...entries].some((entry) => entry.includes("local-cli-acp-relay"))) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Detected legacy relay residue inside the agent-platform bundle.\n` +
+        `Please rebuild the clean Desktop release bundle where local-cli-acp-relay ships as a separate plugin.`
     );
   }
 
   const programCommonPath = `${service.bundleTopLevelDir}/scripts/program-common.sh`;
   const programCommon = readArchiveEntryText(archivePath, programCommonPath);
+  const envExamplePath = `${service.bundleTopLevelDir}/.env.example`;
+  const envExample = readArchiveEntryText(archivePath, envExamplePath);
   if (
-    programCommon &&
-    programCommon.includes('LOCAL_CLI_ACP_RELAY_ENABLED="${LOCAL_CLI_ACP_RELAY_ENABLED:-true}"')
+    (programCommon && /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_/u.test(programCommon)) ||
+    (envExample && /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_/u.test(envExample))
   ) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected a legacy agent-platform relay default that enables LOCAL_CLI_ACP_RELAY on fresh installs.\n` +
-        `Please rebuild or reselect the clean Desktop release bundle where the relay default is false.`
+        `Detected legacy relay residue in the bundled startup/config files.\n` +
+        `Please rebuild or reselect the clean Desktop release bundle where relay settings live in the standalone plugin.`
     );
   }
 }

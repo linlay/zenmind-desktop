@@ -4,13 +4,13 @@ import type { App } from "electron";
 import type { AssistantSettingsInput, AssistantSettingsPublic } from "../../shared/contracts";
 
 const SETTINGS_FILE = "settings.json";
-const DEFAULT_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_MODEL = "gpt-4o";
+const DEFAULT_VOICE_CORRECTION_ENABLED = true;
 
 export type AssistantSettingsPrivate = {
   baseURL: string;
   model: string;
   apiKey: string;
+  voiceCorrectionEnabled: boolean;
 };
 
 function getAssistantRoot(app: App) {
@@ -30,14 +30,27 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
     ? value as Partial<AssistantSettingsPrivate>
     : {};
   return {
-    baseURL: typeof candidate.baseURL === "string" && candidate.baseURL.trim()
-      ? candidate.baseURL.trim()
-      : DEFAULT_BASE_URL,
-    model: typeof candidate.model === "string" && candidate.model.trim()
-      ? candidate.model.trim()
-      : DEFAULT_MODEL,
-    apiKey: typeof candidate.apiKey === "string" ? candidate.apiKey : ""
+    baseURL: "",
+    model: "",
+    apiKey: "",
+    voiceCorrectionEnabled: typeof candidate.voiceCorrectionEnabled === "boolean"
+      ? candidate.voiceCorrectionEnabled
+      : DEFAULT_VOICE_CORRECTION_ENABLED
   };
+}
+
+function toStoredAssistantSettings(settings: AssistantSettingsPrivate) {
+  return {
+    voiceCorrectionEnabled: settings.voiceCorrectionEnabled
+  };
+}
+
+function needsSanitizedWrite(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return "apiKey" in candidate || "baseURL" in candidate || "model" in candidate || "clearApiKey" in candidate;
 }
 
 export function toPublicAssistantSettings(
@@ -51,6 +64,7 @@ export function toPublicAssistantSettings(
     model: settings.model,
     configured: Boolean(settings.baseURL.trim() && settings.model.trim() && apiKeyConfigured),
     apiKeyConfigured,
+    voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
     source,
     ...(sourceLabel ? { sourceLabel } : {})
   };
@@ -61,7 +75,12 @@ export function readAssistantSettingsFromRoot(rootDir: string): AssistantSetting
   const settingsPath = getSettingsPath(rootDir);
   try {
     const raw = fs.readFileSync(settingsPath, "utf8");
-    return normalizeStoredSettings(JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    const settings = normalizeStoredSettings(parsed);
+    if (needsSanitizedWrite(parsed)) {
+      fs.writeFileSync(settingsPath, `${JSON.stringify(toStoredAssistantSettings(settings), null, 2)}\n`, "utf8");
+    }
+    return settings;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return normalizeStoredSettings(null);
@@ -81,20 +100,15 @@ export function saveAssistantSettingsToRoot(
   ensureRoot(rootDir);
   const current = readAssistantSettingsFromRoot(rootDir);
   const next: AssistantSettingsPrivate = {
-    baseURL: typeof input.baseURL === "string" && input.baseURL.trim()
-      ? input.baseURL.trim()
-      : current.baseURL,
-    model: typeof input.model === "string" && input.model.trim()
-      ? input.model.trim()
-      : current.model,
-    apiKey: input.clearApiKey
-      ? ""
-      : typeof input.apiKey === "string"
-        ? input.apiKey.trim()
-        : current.apiKey
+    baseURL: "",
+    model: "",
+    apiKey: "",
+    voiceCorrectionEnabled: typeof input.voiceCorrectionEnabled === "boolean"
+      ? input.voiceCorrectionEnabled
+      : current.voiceCorrectionEnabled
   };
 
-  fs.writeFileSync(getSettingsPath(rootDir), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  fs.writeFileSync(getSettingsPath(rootDir), `${JSON.stringify(toStoredAssistantSettings(next), null, 2)}\n`, "utf8");
   return toPublicAssistantSettings(next);
 }
 
@@ -111,8 +125,8 @@ export function saveAssistantSettings(app: App, input: AssistantSettingsInput): 
 }
 
 export const __testInternals = {
-  DEFAULT_BASE_URL,
-  DEFAULT_MODEL,
+  DEFAULT_VOICE_CORRECTION_ENABLED,
   getAssistantRoot,
-  normalizeStoredSettings
+  normalizeStoredSettings,
+  toStoredAssistantSettings
 };

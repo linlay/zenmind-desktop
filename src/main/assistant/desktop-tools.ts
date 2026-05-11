@@ -68,7 +68,7 @@ export type HostCommandResult = {
 const MAX_LIST_ENTRIES = 500;
 const MAX_READ_BYTES = 1024 * 1024;
 const MAX_DOCUMENT_READ_BYTES = 32 * 1024 * 1024;
-const MAX_DOCUMENT_IMAGE_CONTEXT_BYTES = 5 * 1024 * 1024;
+const MAX_DOCUMENT_IMAGE_CONTEXT_BYTES = 10 * 1024 * 1024;
 const MAX_COMMAND_BUFFER_BYTES = 512 * 1024;
 
 const ORGANIZE_FOLDERS: Array<{ folder: string; extensions: string[] }> = [
@@ -89,6 +89,10 @@ function isWindowsPlatform() {
 
 function isMacPlatform() {
   return process.platform === "darwin";
+}
+
+function formatDesktopSizeLimit(sizeBytes: number) {
+  return `${Math.round(sizeBytes / 1024 / 1024)}MB`;
 }
 
 function normalizeForCompare(value: string) {
@@ -257,7 +261,7 @@ async function readImageDocumentWithVision(
   if (stat.size > MAX_DOCUMENT_IMAGE_CONTEXT_BYTES) {
     const imageDocument = createImageDocumentMetadata({
       readable: false,
-      error: "图片已保存，但超过 5MB，未发送给 MiniMax 图片理解接口。",
+      error: `图片已保存，但超过 ${formatDesktopSizeLimit(MAX_DOCUMENT_IMAGE_CONTEXT_BYTES)}，未发送给 MiniMax 图片理解接口。`,
       errorCode: "image_too_large_for_vision"
     });
     return {

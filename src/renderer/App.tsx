@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
 import { AssistantDock, type AssistantDockMode } from "./components/AssistantDock";
 import { AppSidebar } from "./components/AppSidebar";
+import { DesktopPet } from "./components/DesktopPet";
 import { QuickAssistant } from "./components/QuickAssistant";
 import { ControlCenterPage } from "./pages/ControlCenterPage";
 import { ExternalWebviewPage } from "./pages/ExternalWebviewPage";
@@ -24,6 +25,7 @@ import {
   BUILTIN_BROWSER_SURFACE_ID,
   BUILTIN_BROWSER_SURFACE_LABEL
 } from "../shared/browser-surfaces";
+import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName } from "./service-display";
 
 type ThemeMode = "light" | "dark";
@@ -957,6 +959,9 @@ export function App() {
   const location = useLocation();
   if (location.pathname === "/quick-assistant") {
     return <QuickAssistant />;
+  }
+  if (location.pathname === DESKTOP_PET_ROUTE) {
+    return <DesktopPet />;
   }
 
   return (

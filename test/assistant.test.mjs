@@ -8,6 +8,7 @@ import crypto from "node:crypto";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const projectRoot = process.cwd();
 const JSZip = require("jszip");
 const ExcelJS = require("exceljs");
 const {
@@ -32,8 +33,10 @@ const {
   upsertExplicitUserMemoryFromRoot
 } = require("../dist-electron/main/assistant/memory-store.js");
 const {
+  getAgentPlatformSettingsPublic,
   loadAgentPlatformMinimaxSettings,
-  loadAgentPlatformProviderSettings
+  loadAgentPlatformProviderSettings,
+  loadAgentPlatformVoiceAsrSettings
 } = require("../dist-electron/main/assistant/agent-platform-config.js");
 const {
   __testInternals: chatStoreInternals,
@@ -166,6 +169,31 @@ function makeApp(root) {
   };
 }
 
+function writeAgentPlatformMinimaxProvider(root, { apiKey = "sk-secret", modelId = "demo-model" } = {}) {
+  const registries = path.join(root, "Desktop", "zenmind-env", "registries");
+  fs.mkdirSync(path.join(registries, "providers"), { recursive: true });
+  fs.mkdirSync(path.join(registries, "models"), { recursive: true });
+  fs.writeFileSync(
+    path.join(registries, "providers", "minimax.yml"),
+    [
+      "key: minimax",
+      "baseUrl: https://example.com",
+      `apiKey: ${apiKey}`,
+      "defaultModel: demo-model",
+      "protocols:",
+      "  OPENAI:",
+      "    endpointPath: /v1/chat/completions",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(registries, "models", "demo-model.yml"),
+    ["key: demo-model", "provider: minimax", "protocol: OPENAI", `modelId: ${modelId}`, ""].join("\n"),
+    "utf8"
+  );
+}
+
 function makePdfBuffer(text) {
   const escaped = String(text).replace(/\\/gu, "\\\\").replace(/\(/gu, "\\(").replace(/\)/gu, "\\)");
   const stream = `BT /F1 18 Tf 72 720 Td (${escaped}) Tj ET`;
@@ -218,21 +246,148 @@ async function writeZipFixture(filePath, text) {
   fs.writeFileSync(filePath, await zip.generateAsync({ type: "nodebuffer" }));
 }
 
-test("assistant settings masks api key in public reads", (t) => {
+test("assistant settings never persists local api keys", (t) => {
   const root = makeTempRoot(t);
   const settings = saveAssistantSettingsToRoot(root, {
     baseURL: "https://example.com/v1/",
     model: "demo-model",
-    apiKey: "sk-secret"
+    apiKey: "sk-secret",
+    voiceCorrectionEnabled: false
   });
 
-  assert.equal(settings.configured, true);
-  assert.equal(settings.apiKeyConfigured, true);
+  assert.equal(settings.configured, false);
+  assert.equal(settings.apiKeyConfigured, false);
   assert.equal(Object.hasOwn(settings, "apiKey"), false);
-  assert.equal(readAssistantSettingsFromRoot(root).apiKey, "sk-secret");
+  assert.equal(readAssistantSettingsFromRoot(root).apiKey, "");
 
   const publicSettings = getAssistantSettingsFromRoot(root);
   assert.deepEqual(publicSettings, settings);
+
+  const stored = JSON.parse(fs.readFileSync(path.join(root, "settings.json"), "utf8"));
+  assert.deepEqual(stored, { voiceCorrectionEnabled: false });
+  assert.equal(JSON.stringify(stored).includes("sk-secret"), false);
+});
+
+test("assistant settings migrates legacy plaintext api keys out of local settings", (t) => {
+  const root = makeTempRoot(t);
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(path.join(root, "settings.json"), JSON.stringify({
+    baseURL: "https://example.com/v1",
+    model: "demo-model",
+    apiKey: "sk-legacy",
+    voiceCorrectionEnabled: false
+  }, null, 2));
+
+  const privateSettings = readAssistantSettingsFromRoot(root);
+  assert.equal(privateSettings.apiKey, "");
+  assert.equal(privateSettings.baseURL, "");
+  assert.equal(privateSettings.model, "");
+  assert.equal(privateSettings.voiceCorrectionEnabled, false);
+
+  const stored = JSON.parse(fs.readFileSync(path.join(root, "settings.json"), "utf8"));
+  assert.deepEqual(stored, { voiceCorrectionEnabled: false });
+  assert.equal(JSON.stringify(stored).includes("sk-legacy"), false);
+});
+
+test("assistant settings persist the voice correction toggle", (t) => {
+  const root = makeTempRoot(t);
+
+  const defaults = getAssistantSettingsFromRoot(root);
+  assert.equal(defaults.voiceCorrectionEnabled, true);
+
+  const updated = saveAssistantSettingsToRoot(root, {
+    voiceCorrectionEnabled: false
+  });
+  assert.equal(updated.voiceCorrectionEnabled, false);
+  assert.equal(readAssistantSettingsFromRoot(root).voiceCorrectionEnabled, false);
+  assert.equal(getAssistantSettingsFromRoot(root).voiceCorrectionEnabled, false);
+});
+
+test("assistant image attachments allow a 10MB visual context budget", () => {
+  const attachmentStore = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "assistant", "attachment-store.ts"),
+    "utf8"
+  );
+  const desktopTools = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "assistant", "desktop-tools.ts"),
+    "utf8"
+  );
+
+  assert.match(attachmentStore, /MAX_ATTACHMENT_IMAGE_CONTEXT_BYTES = 10 \* 1024 \* 1024/);
+  assert.match(attachmentStore, /formatAttachmentSizeLimit\(MAX_ATTACHMENT_IMAGE_CONTEXT_BYTES\)/);
+  assert.match(desktopTools, /MAX_DOCUMENT_IMAGE_CONTEXT_BYTES = 10 \* 1024 \* 1024/);
+  assert.match(desktopTools, /formatDesktopSizeLimit\(MAX_DOCUMENT_IMAGE_CONTEXT_BYTES\)/);
+  assert.doesNotMatch(attachmentStore, /超过 5MB/);
+  assert.doesNotMatch(desktopTools, /超过 5MB/);
+});
+
+test("assistant chat store recovers from corrupt index chat and event files", (t) => {
+  const root = makeTempRoot(t);
+  const first = appendAssistantMessageToRoot(root, null, createAssistantMessage("user", "你好"));
+  const chatId = first.summary.id;
+  const chatsRoot = path.join(root, "chats");
+  const indexPath = path.join(chatsRoot, "index.json");
+  const chatPath = path.join(chatsRoot, chatId, "chat.json");
+  const eventsPath = path.join(chatsRoot, chatId, "events.jsonl");
+
+  fs.writeFileSync(indexPath, "{broken", "utf8");
+  assert.deepEqual(listAssistantChatsFromRoot(root), []);
+  assert.ok(fs.readdirSync(chatsRoot).some((fileName) => fileName.startsWith("index.json.corrupt-")));
+
+  fs.writeFileSync(chatPath, "{broken", "utf8");
+  assert.equal(getAssistantChatFromRoot(root, chatId), null);
+  assert.ok(fs.readdirSync(path.dirname(chatPath)).some((fileName) => fileName.startsWith("chat.json.corrupt-")));
+
+  appendAssistantEventToRoot(root, {
+    id: "evt_good",
+    seq: 1,
+    runId: "run_1",
+    chatId,
+    type: "run.start",
+    createdAt: new Date().toISOString()
+  });
+  fs.appendFileSync(eventsPath, "{broken\n", "utf8");
+  assert.deepEqual(chatStoreInternals.readAssistantEventsFromRoot(root, chatId), []);
+  assert.ok(fs.readdirSync(path.dirname(eventsPath)).some((fileName) => fileName.startsWith("events.jsonl.corrupt-")));
+});
+
+test("assistant attachment import reports progress and enforces total batch size", async (t) => {
+  const root = makeTempRoot(t);
+  const source = path.join(root, "notes.md");
+  fs.writeFileSync(source, "# 标题\n附件正文", "utf8");
+  const progress = [];
+  const result = await createAssistantAttachmentsFromFiles(makeApp(root), null, [source], {
+    taskId: "task_progress",
+    useWorker: false,
+    onProgress: (event) => progress.push(event)
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.taskId, "task_progress");
+  assert.ok(progress.some((event) => event.phase === "copying"));
+  assert.ok(progress.some((event) => event.phase === "extracting"));
+  assert.equal(progress.at(-1).phase, "complete");
+  assert.equal(progress.at(-1).done, true);
+
+  const largePath = path.join(root, "large.bin");
+  const fd = fs.openSync(largePath, "w");
+  try {
+    fs.ftruncateSync(fd, 65 * 1024 * 1024);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const oversizedProgress = [];
+  const oversized = await createAssistantAttachmentsFromFiles(makeApp(root), null, [largePath], {
+    taskId: "task_large",
+    useWorker: false,
+    onProgress: (event) => oversizedProgress.push(event)
+  });
+
+  assert.equal(oversized.ok, false);
+  assert.equal(oversized.attachments.length, 0);
+  assert.match(oversized.message, /附件总大小超过 64MB/);
+  assert.equal(oversizedProgress.at(-1).phase, "error");
+  assert.equal(oversizedProgress.at(-1).done, true);
 });
 
 test("assistant memory store reads local side assistant memory", (t) => {
@@ -434,8 +589,245 @@ test("assistant memory recall references include match reasons", (t) => {
 
   assert.equal(snapshot.references.length, 1);
   assert.equal(snapshot.references[0].title, "回复偏好");
-  assert.match(snapshot.references[0].reason, /偏好|当前会话|关键词/);
+  assert.match(snapshot.references[0].reason, /偏好|当前会话|关键词|回复风格/);
   assert.match(snapshot.content, /召回原因/);
+});
+
+test("assistant memory retrieval keeps non-food memories out of food preference recall", (t) => {
+  const root = makeTempRoot(t);
+  upsertAssistantMemoryItemsFromRoot(root, [
+    {
+      kind: "fact",
+      title: "饮食偏好-米饭",
+      summary: "用户喜欢吃米饭，这是一个稳定的饮食偏好。",
+      category: "preference",
+      tags: ["food", "rice", "diet-preference"],
+      importance: 9
+    },
+    {
+      kind: "fact",
+      title: "饮食偏好-葡萄",
+      summary: "用户喜欢吃葡萄，这是用户当前明确表达的饮食偏好。",
+      category: "preference",
+      tags: ["food", "fruit", "diet-preference"],
+      importance: 8
+    },
+    {
+      kind: "observation",
+      title: "容器仓库未启动导致定时任务失败",
+      summary: "定时任务报错 dial tcp 127.0.0.1:11960 connection refused，原因是容器仓库服务未运行。",
+      category: "bugfix",
+      tags: ["容器仓库", "运行", "服务"],
+      importance: 8
+    },
+    {
+      kind: "fact",
+      title: "王者荣耀游戏偏好",
+      summary: "用户喜欢玩王者荣耀游戏。",
+      category: "preference",
+      tags: ["game", "play"],
+      importance: 7
+    }
+  ], {
+    chatId: "chat_food_precision",
+    runId: "run_food_precision"
+  });
+
+  const snapshot = readAssistantMemorySnapshotFromRoot(root, {
+    query: "我喜欢吃什么",
+    chatId: "chat_food_precision",
+    maxItems: 5,
+    maxChars: 4000
+  });
+
+  assert.ok(snapshot.references.length >= 1);
+  assert.equal(snapshot.references.some((reference) => /饮食偏好-/.test(reference.title)), true);
+  assert.equal(snapshot.references.some((reference) => /容器仓库|王者荣耀/.test(reference.title)), false);
+  assert.doesNotMatch(snapshot.content, /容器仓库|王者荣耀/);
+});
+
+test("assistant memory retrieval keeps non-response preferences out of reply-style recall", (t) => {
+  const root = makeTempRoot(t);
+  upsertAssistantMemoryItemsFromRoot(root, [
+    {
+      kind: "fact",
+      title: "回复偏好",
+      summary: "用户偏好：回答先给结论，再给行动项。",
+      category: "preference",
+      tags: ["reply", "style"],
+      importance: 9
+    },
+    {
+      kind: "fact",
+      title: "饮食偏好-米饭",
+      summary: "用户喜欢吃米饭，这是一个稳定的饮食偏好。",
+      category: "preference",
+      tags: ["food", "rice"],
+      importance: 8
+    },
+    {
+      kind: "fact",
+      title: "王者荣耀游戏偏好",
+      summary: "用户喜欢玩王者荣耀游戏。",
+      category: "preference",
+      tags: ["game", "play"],
+      importance: 7
+    }
+  ], {
+    chatId: "chat_reply_precision",
+    runId: "run_reply_precision"
+  });
+
+  const snapshot = readAssistantMemorySnapshotFromRoot(root, {
+    query: "按我的偏好回复一下",
+    chatId: "chat_reply_precision",
+    maxItems: 5,
+    maxChars: 4000
+  });
+
+  assert.equal(snapshot.references.length, 1);
+  assert.equal(snapshot.references[0].title, "回复偏好");
+  assert.doesNotMatch(snapshot.content, /米饭|王者荣耀/);
+});
+
+test("assistant memory retrieval only recalls current-session observations for process questions", (t) => {
+  const root = makeTempRoot(t);
+  upsertAssistantMemoryItemsFromRoot(root, [{
+    kind: "observation",
+    title: "当前会话排查过程",
+    summary: "刚才确认过服务端口 11960 未启动，并准备重启容器仓库服务。",
+    category: "bugfix",
+    tags: ["端口", "服务", "排查"],
+    importance: 8
+  }], {
+    chatId: "chat_current_process",
+    runId: "run_current_process"
+  });
+
+  const genericSnapshot = readAssistantMemorySnapshotFromRoot(root, {
+    query: "帮我写一段欢迎语",
+    chatId: "chat_current_process",
+    maxItems: 5,
+    maxChars: 4000
+  });
+  assert.equal(genericSnapshot.content, "");
+  assert.equal(genericSnapshot.references.length, 0);
+
+  const processSnapshot = readAssistantMemorySnapshotFromRoot(root, {
+    query: "刚才这个问题我们排查到哪一步了？",
+    chatId: "chat_current_process",
+    maxItems: 5,
+    maxChars: 4000
+  });
+  assert.match(processSnapshot.content, /11960/);
+  assert.match(processSnapshot.content, /<Current Session>/);
+  assert.equal(processSnapshot.references.length, 1);
+});
+
+test("assistant memory retrieval allows cross-chat workflow recall without polluting preference queries", (t) => {
+  const root = makeTempRoot(t);
+  upsertAssistantMemoryItemsFromRoot(root, [{
+    kind: "observation",
+    title: "MCP mock 服务端口连接被拒",
+    summary: "MCP mock 服务端口 11969 连接被拒，导致 initialize 同步失败。",
+    category: "bugfix",
+    tags: ["mcp", "mock", "11969"],
+    importance: 8
+  }], {
+    chatId: "chat_old_mcp",
+    runId: "run_old_mcp"
+  });
+
+  const preferenceSnapshot = readAssistantMemorySnapshotFromRoot(root, {
+    query: "我喜欢吃什么",
+    chatId: "chat_new_mcp",
+    maxItems: 5,
+    maxChars: 4000
+  });
+  assert.equal(preferenceSnapshot.references.length, 0);
+  assert.doesNotMatch(preferenceSnapshot.content, /11969|MCP mock/);
+
+  const workflowSnapshot = readAssistantMemorySnapshotFromRoot(root, {
+    query: "之前 MCP mock 服务 initialize 失败是什么原因？",
+    chatId: "chat_new_mcp",
+    maxItems: 5,
+    maxChars: 4000
+  });
+  assert.match(workflowSnapshot.content, /11969/);
+  assert.match(workflowSnapshot.content, /<Relevant Observations>/);
+  assert.equal(workflowSnapshot.references.length, 1);
+});
+
+test("assistant memory retrieval lazily normalizes legacy records for faceted recall", (t) => {
+  const root = makeTempRoot(t);
+  const now = new Date().toISOString();
+  const storage = getAssistantMemoryStorageFromRoot(root);
+  fs.mkdirSync(path.dirname(storage.recordsPath), { recursive: true });
+  fs.writeFileSync(storage.recordsPath, `${JSON.stringify({
+    items: [{
+      id: "mem_legacy_food",
+      kind: "fact",
+      title: "饮食偏好-葡萄",
+      summary: "用户喜欢吃葡萄，这是用户当前明确表达的饮食偏好。",
+      category: "preference",
+      tags: ["food", "diet-preference"],
+      importance: 9,
+      confidence: 0.95,
+      status: "active",
+      referenceCount: 0,
+      createdAt: now,
+      updatedAt: now
+    }]
+  }, null, 2)}\n`, "utf8");
+
+  const snapshot = readAssistantMemorySnapshotFromRoot(root, {
+    query: "我喜欢吃什么",
+    chatId: "chat_legacy_food",
+    maxItems: 5,
+    maxChars: 4000
+  });
+
+  assert.match(snapshot.content, /葡萄/);
+  assert.equal(snapshot.references.length, 1);
+  const [item] = listAssistantMemoryItemsFromRoot(root);
+  assert.equal(item.scopeType, "user");
+  assert.equal(item.facet, "food_preference");
+  assert.equal(item.subjectKey, "food:葡萄");
+});
+
+test("assistant memory recall audit records intent and layered selection counts", (t) => {
+  const root = makeTempRoot(t);
+  upsertAssistantMemoryItemsFromRoot(root, [{
+    kind: "fact",
+    title: "回复偏好",
+    summary: "用户偏好：回答先给结论，再给行动项。",
+    category: "preference",
+    tags: ["reply", "style"],
+    importance: 9
+  }], {
+    chatId: "chat_audit",
+    runId: "run_audit"
+  });
+
+  const snapshot = readAssistantMemorySnapshotFromRoot(root, {
+    query: "按我的偏好回复一下",
+    chatId: "chat_audit",
+    maxItems: 5,
+    maxChars: 4000
+  });
+  assert.equal(snapshot.references.length, 1);
+
+  const auditPath = getAssistantMemoryStorageFromRoot(root).auditPath;
+  const lastAudit = fs.readFileSync(auditPath, "utf8")
+    .trim()
+    .split(/\r?\n/u)
+    .map((line) => JSON.parse(line))
+    .at(-1);
+  assert.equal(lastAudit.operation, "recall");
+  assert.equal(lastAudit.queryIntent, "response_style");
+  assert.equal(lastAudit.candidateCountsByLayer.stable, 1);
+  assert.equal(lastAudit.selectedCountsByLayer.stable, 1);
+  assert.deepEqual(lastAudit.selectedIds, [snapshot.references[0].id]);
 });
 
 test("assistant memory upsert archives conflicting memories and skips low confidence candidates", (t) => {
@@ -794,12 +1186,14 @@ test("assistant prompt asks for chat-friendly answer formatting", () => {
   assert.match(promptBuilderInternals.SYSTEM_PROMPT, /只有在比较结构化数据时才使用表格/);
 });
 
-test("assistant prompt describes ZenMind side assistant capabilities without platform runtime", () => {
-  assert.match(promptBuilderInternals.SYSTEM_PROMPT, /ZenMind 侧边助手/);
+test("assistant prompt describes unified ZenMind capabilities without legacy runtime identity", () => {
+  assert.match(promptBuilderInternals.SYSTEM_PROMPT, /你是 ZenMind/);
   assert.match(promptBuilderInternals.SYSTEM_PROMPT, /browser_\*/);
   assert.match(promptBuilderInternals.SYSTEM_PROMPT, /desktop_\*/);
-  assert.match(promptBuilderInternals.SYSTEM_PROMPT, /不依赖 agent-platform/);
+  assert.match(promptBuilderInternals.SYSTEM_PROMPT, /agent-platform 的 minimax provider/);
   assert.doesNotMatch(promptBuilderInternals.SYSTEM_PROMPT, /desktop-xiaozhai/);
+  assert.doesNotMatch(promptBuilderInternals.SYSTEM_PROMPT, /Zman/);
+  assert.doesNotMatch(promptBuilderInternals.SYSTEM_PROMPT, /小宅/);
   assert.doesNotMatch(promptBuilderInternals.SYSTEM_PROMPT, /bash_sandbox|operator_mode_request|全权接管/);
 });
 
@@ -1170,7 +1564,149 @@ test("assistant runtime silently learns local memory after successful runs", asy
   assert.match(learned[0].summary, /先给结论/);
 });
 
-test("assistant memory UI avoids rendering stored memory bodies", () => {
+test("assistant runtime completes chat before background auto-learn finishes", async (t) => {
+  const root = makeTempRoot(t);
+  saveAssistantSettingsToRoot(path.join(root, "assistant"), {
+    baseURL: "https://example.com/v1",
+    model: "demo-model",
+    apiKey: "sk-secret"
+  });
+
+  let resolveLearningFetch;
+  const learningFetchDone = new Promise((resolve) => {
+    resolveLearningFetch = resolve;
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    const payload = JSON.parse(String(init.body));
+    if (payload.stream === false) {
+      await learningFetchDone;
+      return new Response(JSON.stringify({
+        choices: [{
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              memories: [{
+                kind: "fact",
+                title: "回答偏好",
+                summary: "用户偏好：回答先给结论。",
+                category: "preference",
+                confidence: 0.9,
+                importance: 8
+              }]
+            })
+          }
+        }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+    return new Response('data: {"choices":[{"delta":{"content":"好的，记住了。"}}]}\n\ndata: [DONE]\n\n', {
+      status: 200,
+      headers: { "content-type": "text/event-stream" }
+    });
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const events = [];
+  const runtime = new AssistantRuntime(makeApp(root), (event) => {
+    events.push(event);
+  });
+  const start = runtime.startRun({
+    message: "以后回答请先给结论",
+    action: "chat"
+  });
+  assert.equal(start.ok, true);
+
+  await waitForCondition(() => {
+    assert.equal(events.some((event) => event.runId === start.runId && event.type === "run.complete"), true);
+    assert.equal(events.some((event) => event.runId === start.runId && event.type === "done"), true);
+  });
+
+  resolveLearningFetch();
+  const backgroundStored = await waitForCondition(() => {
+    const completion = events.find((event) => event.runId === start.runId && event.type === "run.complete");
+    const memoryStored = events.find((event) => event.runId === start.runId && event.type === "memory.stored");
+    assert.ok(completion);
+    assert.ok(memoryStored);
+    assert.ok((memoryStored.seq ?? 0) > (completion.seq ?? 0));
+    return memoryStored;
+  });
+  assert.match(JSON.stringify(backgroundStored.data), /回答偏好/);
+});
+
+test("assistant runtime recalls explicit food preference in later chat turns", async (t) => {
+  const root = makeTempRoot(t);
+  saveAssistantSettingsToRoot(path.join(root, "assistant"), {
+    baseURL: "https://example.com/v1",
+    model: "demo-model",
+    apiKey: "sk-secret"
+  });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    const payload = JSON.parse(String(init.body));
+    if (payload.stream === false) {
+      return new Response(JSON.stringify({
+        choices: [{
+          message: {
+            role: "assistant",
+            content: JSON.stringify({ memories: [] })
+          }
+        }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+    const transcript = JSON.stringify(payload.messages);
+    if (/我喜欢吃什么/.test(transcript)) {
+      assert.match(transcript, /<运行时记忆>/);
+      assert.match(transcript, /饮食偏好-米饭/);
+    }
+    return new Response('data: {"choices":[{"delta":{"content":"知道了。"}}]}\n\ndata: [DONE]\n\n', {
+      status: 200,
+      headers: { "content-type": "text/event-stream" }
+    });
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const events = [];
+  const runtime = new AssistantRuntime(makeApp(root), (event) => {
+    events.push(event);
+  });
+
+  const first = runtime.startRun({
+    message: "我喜欢吃米饭",
+    action: "chat"
+  });
+  assert.equal(first.ok, true);
+  await waitForCondition(() => {
+    assert.equal(events.some((event) => event.runId === first.runId && isTerminalEvent(event)), true);
+  });
+  assert.equal(listAssistantMemoryItemsFromRoot(root).some((item) => item.title === "饮食偏好-米饭"), true);
+
+  const second = runtime.startRun({
+    chatId: first.chatId,
+    message: "我喜欢吃什么",
+    action: "chat"
+  });
+  assert.equal(second.ok, true);
+  await waitForCondition(() => {
+    assert.equal(events.some((event) => event.runId === second.runId && isTerminalEvent(event)), true);
+  });
+
+  const memoryEvent = events.find((event) => event.runId === second.runId && event.type === "memory.reference");
+  assert.equal(memoryEvent?.status, "ok");
+  assert.equal(memoryEvent?.data.references.some((reference) => reference.title === "饮食偏好-米饭"), true);
+});
+
+test("assistant memory UI renders recent memory previews without delete controls", () => {
   const projectRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
   const settingsPageSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "SettingsPage.tsx"),
@@ -1181,9 +1717,10 @@ test("assistant memory UI avoids rendering stored memory bodies", () => {
     "utf8"
   );
 
-  assert.doesNotMatch(settingsPageSource, /最近记忆/);
-  assert.doesNotMatch(settingsPageSource, /truncateMemorySummary/);
-  assert.doesNotMatch(settingsPageSource, /handleDeleteMemoryItem/);
+  assert.match(settingsPageSource, /最近记忆/);
+  assert.match(settingsPageSource, /assistant\.listMemoryItems\(\)/);
+  assert.match(settingsPageSource, /formatMemoryPreview/);
+  assert.doesNotMatch(settingsPageSource, /deleteMemoryItem/);
   assert.match(settingsPageSource, /recordsPath/);
   assert.match(settingsPageSource, /auditPath/);
   assert.match(assistantDockSource, /<p>\{reference\.excerpt\}<\/p>/);
@@ -1892,6 +2429,46 @@ test("assistant imports MiniMax settings from agent-platform registries", (t) =>
   assert.equal(settings.apiKey, "sk-test");
 });
 
+test("assistant agent-platform public settings preserve local voice correction preference", (t) => {
+  const root = makeTempRoot(t);
+  const registries = path.join(root, "zenmind-env", "registries");
+  fs.mkdirSync(path.join(root, "Desktop", "agent-platform"), { recursive: true });
+  fs.mkdirSync(path.join(registries, "providers"), { recursive: true });
+  fs.mkdirSync(path.join(registries, "models"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "Desktop", "agent-platform", ".env"),
+    `REGISTRIES_DIR=${registries}\n`,
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(registries, "providers", "openai.yml"),
+    [
+      "key: openai",
+      "baseUrl: https://api.openai.com",
+      "apiKey: sk-provider",
+      "defaultModel: gpt-4o",
+      "protocols:",
+      "  OPENAI:",
+      "    endpointPath: /v1/chat/completions",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(registries, "models", "gpt-4o.yml"),
+    ["key: gpt-4o", "provider: openai", "protocol: OPENAI", "modelId: gpt-4o", ""].join("\n"),
+    "utf8"
+  );
+  saveAssistantSettingsToRoot(path.join(root, "assistant"), {
+    voiceCorrectionEnabled: false
+  });
+
+  const settings = getAgentPlatformSettingsPublic(makeApp(root));
+  assert.equal(settings.source, "agent-platform");
+  assert.equal(settings.voiceCorrectionEnabled, false);
+  assert.equal(settings.configured, true);
+});
+
 test("assistant decrypts AES MiniMax provider keys with agent-platform key part", (t) => {
   const root = makeTempRoot(t);
   const registries = path.join(root, "zenmind-env", "registries");
@@ -1951,6 +2528,25 @@ test("assistant imports provider settings from the preferred hidden runtime regi
   assert.equal(settings.baseURL, "https://dashscope.aliyuncs.com/compatible-mode/v1");
   assert.equal(settings.model, "qwen3-asr-flash");
   assert.equal(settings.apiKey, "sk-bailian");
+});
+
+test("assistant voice ASR ignores placeholder provider keys", (t) => {
+  const root = makeTempRoot(t);
+  const registries = path.join(root, ".zenmind", "registries");
+  fs.mkdirSync(path.join(registries, "providers"), { recursive: true });
+  fs.writeFileSync(
+    path.join(registries, "providers", "bailian.yml"),
+    [
+      "key: bailian",
+      "baseUrl: https://dashscope.aliyuncs.com/compatible-mode",
+      "apiKey: your-bailian-api-key",
+      "defaultModel: qwen3.5-plus",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  assert.equal(loadAgentPlatformVoiceAsrSettings(makeApp(root)), null);
 });
 
 test("assistant can fall back to Desktop minimax.yml provider config", (t) => {
@@ -3635,11 +4231,7 @@ test("assistant runtime routes explicit human-in-loop requests through AGW await
 
 test("assistant voice correction preserves mixed Chinese and English text without chat side effects", async (t) => {
   const root = makeTempRoot(t);
-  saveAssistantSettingsToRoot(path.join(root, "assistant"), {
-    baseURL: "https://example.com/v1",
-    model: "demo-model",
-    apiKey: "sk-secret"
-  });
+  writeAgentPlatformMinimaxProvider(root);
 
   const originalFetch = globalThis.fetch;
   const requests = [];
@@ -3705,11 +4297,7 @@ test("assistant voice correction preserves mixed Chinese and English text withou
 
 test("assistant voice correction keeps ASR text when model correction fails", async (t) => {
   const root = makeTempRoot(t);
-  saveAssistantSettingsToRoot(path.join(root, "assistant"), {
-    baseURL: "https://example.com/v1",
-    model: "demo-model",
-    apiKey: "sk-secret"
-  });
+  writeAgentPlatformMinimaxProvider(root);
 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({
@@ -3737,6 +4325,24 @@ test("assistant voice correction keeps ASR text when model correction fails", as
   assert.deepEqual(events, []);
 });
 
+test("assistant voice correction quietly keeps ASR text when minimax provider is unavailable", async (t) => {
+  const root = makeTempRoot(t);
+  const events = [];
+  const runtime = new AssistantRuntime(makeApp(root), (event) => events.push(event));
+
+  const result = await runtime.correctVoiceText({
+    text: "帮我看一下 open ai",
+    locale: "zh-CN-mixed-en"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.text, "帮我看一下 open ai");
+  assert.equal(result.correctedText, "帮我看一下 open ai");
+  assert.equal(result.changeLevel, "none");
+  assert.equal(result.message, "语音文本已确认。");
+  assert.deepEqual(events, []);
+});
+
 test("assistant model provider derives audio transcription endpoint from chat endpoint", () => {
   assert.equal(
     normalizeOpenAIAudioTranscriptionsURL("https://api.openai.com/v1"),
@@ -3746,6 +4352,41 @@ test("assistant model provider derives audio transcription endpoint from chat en
     normalizeOpenAIAudioTranscriptionsURL("https://example.com/v1/chat/completions"),
     "https://example.com/v1/audio/transcriptions"
   );
+});
+
+test("assistant voice transcription does not reuse minimax chat provider as ASR fallback", async (t) => {
+  const root = makeTempRoot(t);
+  const providerDir = path.join(root, "Desktop", "zenmind-env", "registries", "providers");
+  fs.mkdirSync(providerDir, { recursive: true });
+  fs.writeFileSync(path.join(providerDir, "minimax.yml"), [
+    "key: minimax",
+    "baseUrl: https://api.minimaxi.com",
+    "apiKey: sk-minimax",
+    "defaultModel: minimax-m2_7-openai",
+    ""
+  ].join("\n"), "utf8");
+
+  const originalFetch = globalThis.fetch;
+  let requestCount = 0;
+  globalThis.fetch = async () => {
+    requestCount += 1;
+    throw new Error("minimax provider must not be used for ASR fallback");
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const runtime = new AssistantRuntime(makeApp(root), () => {});
+  const result = await runtime.transcribeVoiceAudio({
+    mimeType: "audio/webm",
+    data: new Uint8Array([1, 2, 3, 4]).buffer,
+    locale: "zh-CN-mixed-en"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(requestCount, 0);
+  assert.match(result.message, /云端语音识别 provider/);
+  assert.match(result.message, /qwen3-asr-flash/);
 });
 
 test("assistant voice transcription sends recorded audio without chat side effects", async (t) => {
@@ -7280,7 +7921,7 @@ test("assistant runtime publishes legacy artifact paths into assistant message a
   assert.equal(artifactEvent.data.artifacts[0].attachmentId, assistantMessage.attachments[0].id);
 });
 
-test("assistant runtime publishes XiaoZhai artifact arrays from chat workspace", async (t) => {
+test("assistant runtime publishes ZenMind artifact arrays from chat workspace", async (t) => {
   const root = makeTempRoot(t);
   const app = makeApp(root);
   const chatId = "chat_workspace_artifact";

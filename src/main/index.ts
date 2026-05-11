@@ -4,6 +4,7 @@ import {
   app,
   BrowserWindow,
   clipboard,
+  desktopCapturer,
   dialog,
   globalShortcut,
   ipcMain,
@@ -18,14 +19,17 @@ import {
   type MediaAccessPermissionRequest,
   type MenuItemConstructorOptions,
   type OpenDialogOptions,
+  type Display,
+  type NativeImage,
+  type Rectangle,
   type SaveDialogOptions,
-  type WebContents
+  type WebContents,
+  type WebFrameMain
 } from "electron";
 import { issueAgentAccessToken } from "./agent-auth";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import { loadBuiltinServices } from "./builtin-loader";
 import {
-  cleanupAgentPlatformRelayForApp,
   captureManagedProcessCleanupSnapshot,
   forceCleanupManagedProcesses,
   getServiceLogsMeta,
@@ -97,18 +101,24 @@ import { AssistantRuntime } from "./assistant/runtime";
 import { BrowserUseController, type BrowserSurface } from "./assistant/browser-use";
 import { SystemChromeController } from "./assistant/system-chrome";
 import {
+  cancelAssistantAttachmentTask,
+  createAssistantAttachmentFromImageBuffer,
   createAssistantAttachmentFromPastedImage,
   createAssistantAttachmentsFromFiles,
   resolveAssistantAttachmentPath
 } from "./assistant/attachment-store";
 import { getService } from "./service-registry";
 import type {
+  AssistantEvent,
+  AssistantAttachmentTaskProgress,
   AssistantMemorySettingsInput,
   AssistantSettingsInput,
   AssistantStartRunRequest,
   AssistantSubmitAwaitingRequest,
   AssistantVoiceCorrectionRequest,
   AssistantVoiceTranscriptionRequest,
+  DesktopPetAgentOption,
+  DesktopPetSettingsInput,
   AssistantPastedImageInput,
   AssistantWorkerOpenRequest,
   ServiceId,
@@ -130,7 +140,29 @@ import {
   ensureDataRoot,
   getDataRoot,
 } from "./user-paths";
+import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { safeConsoleError } from "./safe-console";
+import { AgentPlatformPetStatusClient } from "./agent-platform-pet-status";
+import { AgentPlatformPetStreamClient } from "./agent-platform-pet-stream";
+import {
+  clampDesktopPetPosition,
+  createDesktopPetState,
+  createDefaultDesktopPetLocalStatus,
+  getDesktopPetContextMenuItems,
+  getAnchoredDesktopPetBounds,
+  getDesktopPetLogicalPositionFromBounds,
+  getDesktopPetWindowSize,
+  type DesktopPetBoundAgentStatus,
+  type DesktopPetLocalStatus,
+  type DesktopPetWindowMode,
+  isDesktopPetSupportedPlatform,
+  readDesktopPetStoredState,
+  saveDesktopPetSettings,
+  sanitizeDesktopPetAppearanceId,
+  sanitizeDesktopPetBoundAgentKey,
+  toDesktopPetSettings
+} from "./desktop-pet";
+import { DesktopPetPreviewProjector } from "./desktop-pet-preview";
 import {
   createQuickAssistantWindowState,
   getQuickAssistantBounds,
@@ -143,22 +175,56 @@ import {
 } from "./quick-assistant";
 
 let mainWindow: BrowserWindow | null = null;
+let desktopPetWindow: BrowserWindow | null = null;
 let quickAssistantWindow: BrowserWindow | null = null;
 let quickAssistantDismissWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isHandlingQuit = false;
+let pendingMainWindowCloseCancel: (() => void) | null = null;
 let serviceMutationQueue = Promise.resolve();
 let nativeDialogVisibilityDepth = 0;
 let quickAssistantVisibleBeforeNativeDialog = false;
 const quickAssistantState = createQuickAssistantWindowState();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
+const AGENT_WEBCLIENT_APP_PATHNAME = "/appagent";
+const AGENT_WEBCLIENT_OPEN_RETRY_COUNT = 24;
+const AGENT_WEBCLIENT_OPEN_RETRY_MS = 180;
+const DESKTOP_PET_DRAG_FORCE_END_MS = 4_000;
 const QUICK_ASSISTANT_DISMISS_URL = "zenmind://quick-assistant-dismiss";
 const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
+const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
+const MAC_FULLSCREEN_CLOSE_FALLBACK_MS = 2200;
 let startupRestoreState = createStartupRestoreState();
 
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName("ZenMind");
 app.setPath("userData", path.join(app.getPath("appData"), "zenmind-desktop"));
+
+let desktopPetSettings = readDesktopPetStoredState(app, process.platform);
+let desktopPetLocalStatus: DesktopPetLocalStatus = createDefaultDesktopPetLocalStatus(desktopPetSettings);
+let desktopPetAgentStatus: DesktopPetBoundAgentStatus | null = null;
+let desktopPetAgentOptions: DesktopPetAgentOption[] = [];
+let desktopPetState = createDesktopPetState(desktopPetSettings, {
+  supported: isDesktopPetSupportedPlatform(process.platform),
+  visible: false,
+  localStatus: desktopPetLocalStatus,
+  agentStatus: desktopPetAgentStatus,
+  agentOptions: desktopPetAgentOptions
+});
+let desktopPetIdleResetTimer: ReturnType<typeof setTimeout> | null = null;
+let desktopPetDragTimer: ReturnType<typeof setInterval> | null = null;
+let desktopPetDragState: {
+  startPoint: { x: number; y: number };
+  lastPoint: { x: number; y: number };
+  moved: boolean;
+  startedAt: number;
+} | null = null;
+let agentPlatformPetStatusClient: AgentPlatformPetStatusClient | null = null;
+let agentPlatformPetStreamClient: AgentPlatformPetStreamClient | null = null;
+const desktopPetPreviewProjector = new DesktopPetPreviewProjector();
+let desktopPetPreviewRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let desktopPetWindowBoundsUpdateInProgress = false;
+let desktopPetMouseInteractive = true;
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -194,6 +260,781 @@ function loadRendererRoute(targetWindow: BrowserWindow, routePath: string) {
     return targetWindow.loadURL(getRendererRouteUrl(routePath));
   }
   return targetWindow.loadFile(rendererEntry, { hash: routePath });
+}
+
+function clearDesktopPetIdleResetTimer() {
+  if (desktopPetIdleResetTimer) {
+    clearTimeout(desktopPetIdleResetTimer);
+    desktopPetIdleResetTimer = null;
+  }
+}
+
+function clearDesktopPetPreviewRefreshTimer() {
+  if (desktopPetPreviewRefreshTimer) {
+    clearTimeout(desktopPetPreviewRefreshTimer);
+    desktopPetPreviewRefreshTimer = null;
+  }
+}
+
+function getDesktopPetWindowMode(): DesktopPetWindowMode {
+  const panel = desktopPetPreviewProjector.getPanel();
+  if (!panel?.visible) {
+    const messagePreview = typeof desktopPetState.messagePreview === "string"
+      ? desktopPetState.messagePreview.trim()
+      : "";
+    const hint = typeof desktopPetState.hint === "string"
+      ? desktopPetState.hint.trim()
+      : "";
+    const shouldShowBubble = desktopPetState.status === "idle"
+      ? messagePreview.length > 0 || desktopPetState.unreadCount > 0
+      : hint.length > 0 ||
+        desktopPetState.status === "running" ||
+        desktopPetState.status === "awaiting" ||
+        desktopPetState.status === "done" ||
+        desktopPetState.status === "error";
+    return shouldShowBubble ? "bubble" : "base";
+  }
+  return panel.expanded ? "preview-expanded" : "preview-collapsed";
+}
+
+function getDesktopPetVisible() {
+  return Boolean(
+    desktopPetSettings.enabled &&
+    desktopPetWindow &&
+    !desktopPetWindow.isDestroyed() &&
+    desktopPetWindow.isVisible()
+  );
+}
+
+function ensureAgentPlatformPetStatusClient() {
+  if (!isDesktopPetSupportedPlatform(process.platform)) {
+    return null;
+  }
+  if (agentPlatformPetStatusClient) {
+    return agentPlatformPetStatusClient;
+  }
+  agentPlatformPetStatusClient = new AgentPlatformPetStatusClient({
+    app,
+    getBoundAgentKey: () => desktopPetSettings.boundAgentKey,
+    getServiceState,
+    issueAccessToken: issueAgentAccessToken,
+    onStatus: (status) => {
+      desktopPetAgentStatus = status;
+      refreshDesktopPetState();
+    },
+    onAgents: (agents) => {
+      desktopPetAgentOptions = agents;
+      refreshDesktopPetState();
+    },
+    onBoundAgentKeyResolved: (resolvedKey, previousKey) => {
+      if (resolvedKey === previousKey || resolvedKey === desktopPetSettings.boundAgentKey) {
+        return;
+      }
+      desktopPetSettings = saveDesktopPetSettings(app, {
+        boundAgentKey: resolvedKey
+      }, process.platform);
+      refreshDesktopPetState();
+    },
+    onRunStarted: ({ runId, chatId }) => {
+      // AgentPlatformPetStatusClient already filters this callback to the bound agent.
+      ensureAgentPlatformPetStreamClient()?.attach(runId, chatId);
+    },
+    onRunFinished: ({ runId, chatId, message }) => {
+      const panel = desktopPetPreviewProjector.getPanel();
+      const resolvedRunId = runId || (panel && (!chatId || panel.chatId === chatId) ? panel.runId : "");
+      if (!resolvedRunId) {
+        return;
+      }
+      ingestDesktopPetAgentEvent({
+        runId: resolvedRunId,
+        chatId: chatId ?? panel?.chatId ?? null,
+        type: "run.complete",
+        createdAt: new Date().toISOString(),
+        message
+      }, {
+        source: "agent-platform-status",
+        transportMode: "ws"
+      });
+    },
+    onDebug: (message) => {
+      console.warn(`[desktop-pet] agent-platform status unavailable: ${message}`);
+    }
+  });
+  return agentPlatformPetStatusClient;
+}
+
+function ensureAgentPlatformPetStreamClient() {
+  if (!isDesktopPetSupportedPlatform(process.platform)) {
+    return null;
+  }
+  if (agentPlatformPetStreamClient) {
+    return agentPlatformPetStreamClient;
+  }
+  agentPlatformPetStreamClient = new AgentPlatformPetStreamClient({
+    app,
+    getServiceState,
+    issueAccessToken: issueAgentAccessToken,
+    onEvent: (event) => {
+      ingestDesktopPetAgentEvent(event, {
+        source: "agent-platform-attach",
+        transportMode: "sse"
+      });
+    },
+    onDebug: (message) => {
+      console.warn(`[desktop-pet] agent-platform stream unavailable: ${message}`);
+    }
+  });
+  return agentPlatformPetStreamClient;
+}
+
+function startAgentPlatformPetStatusClient() {
+  if (!desktopPetSettings.enabled) {
+    return;
+  }
+  ensureAgentPlatformPetStatusClient()?.start();
+}
+
+function stopAgentPlatformPetStatusClient() {
+  agentPlatformPetStatusClient?.stop();
+  agentPlatformPetStatusClient = null;
+  agentPlatformPetStreamClient?.stop();
+  agentPlatformPetStreamClient = null;
+  desktopPetAgentStatus = null;
+  desktopPetAgentOptions = [];
+}
+
+function scheduleAgentPlatformPetStatusRefresh(delayMs = 0, force = false) {
+  if (!force && !desktopPetSettings.enabled) {
+    return;
+  }
+  ensureAgentPlatformPetStatusClient()?.scheduleRefresh(delayMs);
+}
+
+function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
+  if (Object.keys(patch).length > 0) {
+    desktopPetLocalStatus = {
+      ...desktopPetLocalStatus,
+      ...patch
+    };
+  }
+  const visible = getDesktopPetVisible();
+  desktopPetState = createDesktopPetState(desktopPetSettings, {
+    supported: isDesktopPetSupportedPlatform(process.platform),
+    visible,
+    localStatus: desktopPetLocalStatus,
+    agentStatus: desktopPetAgentStatus,
+    agentOptions: desktopPetAgentOptions,
+    previewPanel: desktopPetPreviewProjector.getPanel()
+  });
+  applyDesktopPetWindowBounds();
+  if (
+    desktopPetSettings.unreadCount !== desktopPetState.unreadCount ||
+    desktopPetSettings.lastVisible !== visible
+  ) {
+    desktopPetSettings = saveDesktopPetSettings(app, {
+      unreadCount: desktopPetState.unreadCount,
+      lastVisible: visible
+    }, process.platform);
+  }
+  for (const targetWindow of [mainWindow, desktopPetWindow]) {
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      continue;
+    }
+    targetWindow.webContents.send("desktopPet.state", desktopPetState);
+  }
+  if (tray && process.platform !== "darwin") {
+    tray.setContextMenu(buildTrayMenu());
+  }
+  return desktopPetState;
+}
+
+function scheduleDesktopPetIdleReset(timeoutMs = 4200, clearPreview = false) {
+  clearDesktopPetIdleResetTimer();
+  desktopPetIdleResetTimer = setTimeout(() => {
+    if (clearPreview) {
+      desktopPetPreviewProjector.clear();
+    }
+    refreshDesktopPetState({
+      status: "idle",
+      hint: "",
+      unreadCount: 0
+    });
+    desktopPetIdleResetTimer = null;
+  }, timeoutMs);
+}
+
+function getDesktopPetDisplayBounds(position?: { x: number; y: number }) {
+  if (position) {
+    return screen.getDisplayMatching({
+      x: position.x,
+      y: position.y,
+      width: 1,
+      height: 1
+    }).bounds;
+  }
+  return screen.getPrimaryDisplay().bounds;
+}
+
+function getDesktopPetBounds() {
+  return getAnchoredDesktopPetBounds(
+    desktopPetSettings.position,
+    getDesktopPetDisplayBounds(desktopPetSettings.position),
+    getDesktopPetWindowMode()
+  );
+}
+
+function applyDesktopPetWindowBounds() {
+  if (!isDesktopPetSupportedPlatform(process.platform) || !desktopPetWindow || desktopPetWindow.isDestroyed()) {
+    return;
+  }
+  if (desktopPetDragState) {
+    return;
+  }
+  const nextBounds = getDesktopPetBounds();
+  const currentBounds = desktopPetWindow.getBounds();
+  if (
+    currentBounds.x === nextBounds.x &&
+    currentBounds.y === nextBounds.y &&
+    currentBounds.width === nextBounds.width &&
+    currentBounds.height === nextBounds.height
+  ) {
+    return;
+  }
+  desktopPetWindowBoundsUpdateInProgress = true;
+  desktopPetWindow.setBounds(nextBounds, false);
+  setTimeout(() => {
+    desktopPetWindowBoundsUpdateInProgress = false;
+  }, 0);
+}
+
+function persistDesktopPetPosition() {
+  if (!desktopPetWindow || desktopPetWindow.isDestroyed()) {
+    return;
+  }
+  if (desktopPetDragState || desktopPetWindowBoundsUpdateInProgress) {
+    return;
+  }
+  const bounds = desktopPetWindow.getBounds();
+  const logicalPosition = getDesktopPetLogicalPositionFromBounds(bounds, getDesktopPetWindowMode());
+  const currentPosition = desktopPetSettings.position;
+  if (currentPosition && currentPosition.x === logicalPosition.x && currentPosition.y === logicalPosition.y) {
+    return;
+  }
+  desktopPetSettings = saveDesktopPetSettings(app, {
+    position: logicalPosition
+  }, process.platform);
+  refreshDesktopPetState();
+}
+
+function moveDesktopPetWindowBy(delta: { x?: unknown; y?: unknown }) {
+  if (!isDesktopPetSupportedPlatform(process.platform) || !desktopPetWindow || desktopPetWindow.isDestroyed()) {
+    return { ok: false };
+  }
+  const deltaX = Number(delta.x);
+  const deltaY = Number(delta.y);
+  if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) {
+    return { ok: false };
+  }
+  if (deltaX === 0 && deltaY === 0) {
+    return { ok: true };
+  }
+
+  const currentBounds = desktopPetWindow.getBounds();
+  const cursorPoint = screen.getCursorScreenPoint();
+  const size = getDesktopPetWindowSize(getDesktopPetWindowMode());
+  const nextBounds = clampDesktopPetPosition({
+    x: currentBounds.x + Math.round(deltaX),
+    y: currentBounds.y + Math.round(deltaY)
+  }, getDesktopPetDisplayBounds(cursorPoint), size);
+  desktopPetWindow.setBounds(nextBounds, false);
+  desktopPetWindow.moveTop();
+  return { ok: true };
+}
+
+function clearDesktopPetDragTimer() {
+  if (desktopPetDragTimer) {
+    clearInterval(desktopPetDragTimer);
+    desktopPetDragTimer = null;
+  }
+}
+
+function beginDesktopPetWindowDrag(point: { x?: unknown; y?: unknown }) {
+  if (!isDesktopPetSupportedPlatform(process.platform) || !desktopPetWindow || desktopPetWindow.isDestroyed()) {
+    return { ok: false };
+  }
+  const startX = Number(point.x);
+  const startY = Number(point.y);
+  const fallbackPoint = screen.getCursorScreenPoint();
+  const startPoint = {
+    x: Number.isFinite(startX) ? startX : fallbackPoint.x,
+    y: Number.isFinite(startY) ? startY : fallbackPoint.y
+  };
+  clearDesktopPetDragTimer();
+  desktopPetDragState = {
+    startPoint,
+    lastPoint: startPoint,
+    moved: false,
+    startedAt: Date.now()
+  };
+
+  desktopPetDragTimer = setInterval(() => {
+    if (!desktopPetDragState || !desktopPetWindow || desktopPetWindow.isDestroyed()) {
+      clearDesktopPetDragTimer();
+      return;
+    }
+    if (Date.now() - desktopPetDragState.startedAt > DESKTOP_PET_DRAG_FORCE_END_MS) {
+      endDesktopPetWindowDrag();
+      return;
+    }
+
+    const cursorPoint = screen.getCursorScreenPoint();
+    const totalDeltaX = cursorPoint.x - desktopPetDragState.startPoint.x;
+    const totalDeltaY = cursorPoint.y - desktopPetDragState.startPoint.y;
+    if (!desktopPetDragState.moved && Math.hypot(totalDeltaX, totalDeltaY) < 4) {
+      return;
+    }
+
+    const deltaX = cursorPoint.x - desktopPetDragState.lastPoint.x;
+    const deltaY = cursorPoint.y - desktopPetDragState.lastPoint.y;
+    desktopPetDragState.moved = true;
+    desktopPetDragState.lastPoint = cursorPoint;
+    if (deltaX !== 0 || deltaY !== 0) {
+      moveDesktopPetWindowBy({ x: deltaX, y: deltaY });
+    }
+  }, 16);
+
+  return { ok: true };
+}
+
+function endDesktopPetWindowDrag() {
+  const moved = Boolean(desktopPetDragState?.moved);
+  desktopPetDragState = null;
+  clearDesktopPetDragTimer();
+  if (moved) {
+    persistDesktopPetPosition();
+  }
+  return {
+    ok: true,
+    moved
+  };
+}
+
+function hideDesktopPetWindow(disable = false) {
+  endDesktopPetWindowDrag();
+  setDesktopPetWindowMouseInteractive(false);
+  if (disable && desktopPetSettings.enabled) {
+    clearDesktopPetIdleResetTimer();
+    clearDesktopPetPreviewRefreshTimer();
+    desktopPetPreviewProjector.clear();
+    desktopPetSettings = saveDesktopPetSettings(app, {
+      enabled: false,
+      lastVisible: false,
+      unreadCount: 0
+    }, process.platform);
+    desktopPetLocalStatus = createDefaultDesktopPetLocalStatus({
+      ...desktopPetSettings,
+      unreadCount: 0
+    });
+    stopAgentPlatformPetStatusClient();
+  }
+  if (desktopPetWindow && !desktopPetWindow.isDestroyed() && desktopPetWindow.isVisible()) {
+    desktopPetWindow.hide();
+  }
+  return refreshDesktopPetState({
+    ...(disable ? { unreadCount: 0 } : {})
+  });
+}
+
+function setDesktopPetWindowMouseInteractive(interactive: boolean) {
+  if (!desktopPetWindow || desktopPetWindow.isDestroyed()) {
+    desktopPetMouseInteractive = true;
+    return { ok: false };
+  }
+  if (desktopPetMouseInteractive === interactive) {
+    return { ok: true };
+  }
+  desktopPetMouseInteractive = interactive;
+  if (process.platform === "darwin") {
+    desktopPetWindow.setIgnoreMouseEvents(!interactive, { forward: true });
+  } else {
+    desktopPetWindow.setIgnoreMouseEvents(false);
+  }
+  return { ok: true };
+}
+
+function collectWebFrames(frame: WebFrameMain, frames: WebFrameMain[] = []) {
+  frames.push(frame);
+  for (const childFrame of frame.frames) {
+    collectWebFrames(childFrame, frames);
+  }
+  return frames;
+}
+
+function isAgentWebclientAppFrame(frame: WebFrameMain) {
+  try {
+    return new URL(frame.url).pathname === AGENT_WEBCLIENT_APP_PATHNAME;
+  } catch {
+    return false;
+  }
+}
+
+function createAgentWebclientOpenScript(request: {
+  chatId: string;
+  agentKey: string;
+  focusComposerOnComplete: boolean;
+}) {
+  const chatId = request.chatId.trim();
+  const agentKey = request.agentKey.trim();
+  if (chatId) {
+    return [
+      "window.dispatchEvent(new CustomEvent('agent:load-chat', {",
+      `  detail: ${JSON.stringify({
+        chatId,
+        focusComposerOnComplete: request.focusComposerOnComplete
+      })}`,
+      "}));",
+      "true;"
+    ].join("\n");
+  }
+  if (agentKey) {
+    return [
+      "window.dispatchEvent(new CustomEvent('agent:select-worker', {",
+      `  detail: ${JSON.stringify({
+        agentKey,
+        focusComposerOnComplete: request.focusComposerOnComplete
+      })}`,
+      "}));",
+      "true;"
+    ].join("\n");
+  }
+  return "true;";
+}
+
+function dispatchAgentWebclientOpenRequest(
+  targetWindow: BrowserWindow,
+  request: {
+    chatId: string;
+    agentKey: string;
+    focusComposerOnComplete: boolean;
+  }
+) {
+  const script = createAgentWebclientOpenScript(request);
+  const frames = collectWebFrames(targetWindow.webContents.mainFrame).filter(isAgentWebclientAppFrame);
+  let dispatched = false;
+  for (const frame of frames) {
+    dispatched = true;
+    frame.executeJavaScript(script).catch((error) => {
+      console.warn("[desktop-pet] failed to open agent webclient chat", error);
+    });
+  }
+  return dispatched;
+}
+
+function scheduleAgentWebclientOpenRequest(
+  targetWindow: BrowserWindow,
+  request: {
+    chatId: string;
+    agentKey: string;
+    focusComposerOnComplete: boolean;
+  },
+  attempt = 0
+) {
+  if (targetWindow.isDestroyed()) {
+    return;
+  }
+  if (dispatchAgentWebclientOpenRequest(targetWindow, request)) {
+    return;
+  }
+  if (attempt >= AGENT_WEBCLIENT_OPEN_RETRY_COUNT) {
+    console.warn("[desktop-pet] agent webclient frame was not ready for desktop pet open request");
+    return;
+  }
+  setTimeout(() => {
+    scheduleAgentWebclientOpenRequest(targetWindow, request, attempt + 1);
+  }, AGENT_WEBCLIENT_OPEN_RETRY_MS);
+}
+
+async function markAgentPlatformChatReadFromDesktopPet(chatId: string) {
+  const normalizedChatId = chatId.trim();
+  if (!normalizedChatId) {
+    return;
+  }
+  try {
+    const serviceState = await getServiceState(app, "agent-platform");
+    const baseUrl = serviceState.status === "running" ? serviceState.healthMeta.webUrl.trim() : "";
+    if (!baseUrl) {
+      return;
+    }
+    const tokenResult = await issueAgentAccessToken(app, "missing");
+    if (!tokenResult.ok || !tokenResult.token.trim()) {
+      return;
+    }
+    const response = await fetch(new URL("/api/read", baseUrl), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${tokenResult.token.trim()}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ chatId: normalizedChatId })
+    });
+    if (!response.ok) {
+      throw new Error(`agent-platform /api/read returned HTTP ${response.status}`);
+    }
+    const payload = await response.json() as { data?: unknown };
+    const data = typeof payload.data === "object" && payload.data !== null
+      ? payload.data as { agentKey?: unknown; agentUnreadCount?: unknown }
+      : {};
+    const agentKey = typeof data.agentKey === "string" ? data.agentKey.trim() : "";
+    const rawUnreadCount = Number(data.agentUnreadCount);
+    const fallbackUnreadCount = Math.max(0, (desktopPetAgentStatus?.unreadCount ?? 1) - 1);
+    const unreadCount = Number.isFinite(rawUnreadCount) && rawUnreadCount >= 0
+      ? Math.round(rawUnreadCount)
+      : fallbackUnreadCount;
+
+    if (!desktopPetAgentStatus || (agentKey && agentKey !== desktopPetAgentStatus.agentKey)) {
+      return;
+    }
+    desktopPetAgentStatus = {
+      ...desktopPetAgentStatus,
+      chatId: normalizedChatId,
+      unreadCount,
+      stale: false,
+      updatedAt: new Date().toISOString()
+    };
+    refreshDesktopPetState();
+  } catch (error) {
+    console.warn("[desktop-pet] failed to mark agent chat read", error);
+  } finally {
+    scheduleAgentPlatformPetStatusRefresh(250, true);
+  }
+}
+
+function openAssistantFromDesktopPet() {
+  const targetChatId = desktopPetState.chatId ??
+    (desktopPetLocalStatus.status !== "idle" ? desktopPetLocalStatus.chatId : null);
+  const agentKey = desktopPetAgentStatus?.agentKey ||
+    desktopPetState.boundAgentKey ||
+    desktopPetSettings.boundAgentKey;
+  showMainWindow(ASSISTANT_TARGET_PATH);
+  const targetWindow = mainWindow;
+  if (targetWindow && !targetWindow.isDestroyed()) {
+    scheduleAgentWebclientOpenRequest(targetWindow, {
+      chatId: targetChatId ?? "",
+      agentKey,
+      focusComposerOnComplete: desktopPetState.status !== "running"
+    });
+  }
+  if (targetChatId && desktopPetState.unreadCount > 0) {
+    void markAgentPlatformChatReadFromDesktopPet(targetChatId);
+  }
+  return { ok: true };
+}
+
+function requestDesktopPetDance() {
+  if (!desktopPetWindow || desktopPetWindow.isDestroyed()) {
+    return { ok: false };
+  }
+  desktopPetWindow.webContents.send("desktopPet.danceRequested");
+  return { ok: true };
+}
+
+function buildDesktopPetContextMenu() {
+  const template = getDesktopPetContextMenuItems(desktopPetSettings.appearanceId)
+    .map((item): MenuItemConstructorOptions => ({
+      label: item.label,
+      click: () => {
+        if (item.action === "dance") {
+          requestDesktopPetDance();
+          return;
+        }
+        hideDesktopPetWindow(true);
+      }
+    }));
+  return Menu.buildFromTemplate(template);
+}
+
+function createDesktopPetWindow() {
+  if (!isDesktopPetSupportedPlatform(process.platform)) {
+    return null;
+  }
+  if (desktopPetWindow && !desktopPetWindow.isDestroyed()) {
+    return desktopPetWindow;
+  }
+
+  desktopPetWindow = new BrowserWindow({
+    ...getDesktopPetBounds(),
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    title: "ZenMind Desktop Xianzun",
+    backgroundColor: "#00000000",
+    webPreferences: {
+      preload: path.join(__dirname, "..", "preload", "index.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      devTools: false,
+      sandbox: false
+    }
+  });
+
+  desktopPetWindow.setAlwaysOnTop(true, "floating");
+  desktopPetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  setDesktopPetWindowMouseInteractive(false);
+  desktopPetWindow.on("move", persistDesktopPetPosition);
+  desktopPetWindow.on("show", () => {
+    setDesktopPetWindowMouseInteractive(false);
+    refreshDesktopPetState();
+  });
+  desktopPetWindow.on("hide", () => {
+    setDesktopPetWindowMouseInteractive(false);
+    refreshDesktopPetState();
+  });
+  desktopPetWindow.on("close", (event) => {
+    if (isHandlingQuit) {
+      return;
+    }
+    event.preventDefault();
+    hideDesktopPetWindow(true);
+  });
+  desktopPetWindow.on("closed", () => {
+    endDesktopPetWindowDrag();
+    desktopPetWindow = null;
+    desktopPetMouseInteractive = true;
+    refreshDesktopPetState();
+  });
+  desktopPetWindow.webContents.on("context-menu", (_event, params) => {
+    endDesktopPetWindowDrag();
+    if (!desktopPetWindow || desktopPetWindow.isDestroyed()) {
+      return;
+    }
+    buildDesktopPetContextMenu().popup({
+      window: desktopPetWindow,
+      x: params.x,
+      y: params.y
+    });
+  });
+
+  loadRendererRoute(desktopPetWindow, DESKTOP_PET_ROUTE).catch((error) => {
+    console.error("failed to load desktop pet renderer", error);
+  });
+  return desktopPetWindow;
+}
+
+function showDesktopPetWindow() {
+  if (!isDesktopPetSupportedPlatform(process.platform)) {
+    return refreshDesktopPetState();
+  }
+  desktopPetSettings = saveDesktopPetSettings(app, {
+    enabled: true,
+    lastVisible: true
+  }, process.platform);
+  startAgentPlatformPetStatusClient();
+  const targetWindow = createDesktopPetWindow();
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return refreshDesktopPetState();
+  }
+
+  const bounds = getDesktopPetBounds();
+  targetWindow.setBounds(bounds, true);
+  targetWindow.showInactive();
+  targetWindow.moveTop();
+  return refreshDesktopPetState();
+}
+
+function getDesktopPetStatusPatchFromPreview(panel: ReturnType<DesktopPetPreviewProjector["getPanel"]>) {
+  if (!panel) {
+    return null;
+  }
+  if (panel.status === "waiting") {
+    return {
+      status: "awaiting" as const,
+      hint: "思考中",
+      chatId: panel.chatId,
+      unreadCount: 0
+    };
+  }
+  if (panel.status === "done") {
+    return {
+      status: "done" as const,
+      hint: "已完成",
+      chatId: panel.chatId,
+      unreadCount: 0
+    };
+  }
+  if (panel.status === "error") {
+    return {
+      status: "error" as const,
+      hint: "出错了",
+      chatId: panel.chatId,
+      unreadCount: 0
+    };
+  }
+  if (panel.status === "stopped") {
+    return {
+      status: "idle" as const,
+      hint: "",
+      chatId: panel.chatId,
+      unreadCount: 0
+    };
+  }
+  return {
+    status: "running" as const,
+    hint: "思考中",
+    chatId: panel.chatId,
+    unreadCount: 0
+  };
+}
+
+function refreshDesktopPetPreviewThrottled() {
+  if (desktopPetPreviewRefreshTimer) {
+    return;
+  }
+  desktopPetPreviewRefreshTimer = setTimeout(() => {
+    desktopPetPreviewRefreshTimer = null;
+    const patch = getDesktopPetStatusPatchFromPreview(desktopPetPreviewProjector.getPanel());
+    refreshDesktopPetState(patch ?? {});
+  }, 120);
+}
+
+function ingestDesktopPetAgentEvent(event: unknown, meta: { source?: string; transportMode?: string } = {}) {
+  if (!isDesktopPetSupportedPlatform(process.platform)) {
+    return;
+  }
+  const result = desktopPetPreviewProjector.ingest(event, meta);
+  if (!result.changed) {
+    return;
+  }
+
+  if (result.holdMs) {
+    scheduleDesktopPetIdleReset(result.holdMs, true);
+  } else {
+    clearDesktopPetIdleResetTimer();
+  }
+
+  if (result.refresh === "throttled") {
+    refreshDesktopPetPreviewThrottled();
+    return;
+  }
+
+  clearDesktopPetPreviewRefreshTimer();
+  const patch = getDesktopPetStatusPatchFromPreview(result.panel);
+  refreshDesktopPetState(patch ?? {});
+}
+
+function handleDesktopPetAssistantEvent(event: AssistantEvent) {
+  if (!isDesktopPetSupportedPlatform(process.platform)) {
+    return;
+  }
+  ingestDesktopPetAgentEvent(event, {
+    source: "local",
+    transportMode: "local"
+  });
 }
 
 function getQuickAssistantWorkArea() {
@@ -279,11 +1120,12 @@ function createQuickAssistantDismissWindow() {
     skipTaskbar: true,
     hasShadow: false,
     backgroundColor: "#00000000",
-    title: "Zman Quick Assistant Dismiss Layer",
+    title: "ZenMind Quick Assistant Dismiss Layer",
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      devTools: false,
       sandbox: false
     }
   });
@@ -345,11 +1187,12 @@ function createQuickAssistantWindow() {
     skipTaskbar: true,
     hasShadow: false,
     backgroundColor: "#00000000",
-    title: "Zman Quick Assistant",
+    title: "ZenMind Quick Assistant",
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      devTools: false,
       sandbox: false
     }
   });
@@ -449,6 +1292,436 @@ function toggleQuickAssistantWindow() {
   showQuickAssistantWindow();
 }
 
+type ScreenshotCaptureSource = "sidebar" | "quick-assistant";
+
+type ScreenshotSelectionRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+function createScreenshotSelectionHtml(selectionId: string) {
+  const doneUrl = `zenmind://screenshot-selection/${selectionId}`;
+  return [
+    "<!doctype html>",
+    "<html>",
+    "<head>",
+    "<meta charset=\"utf-8\">",
+    "<style>",
+    "html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent;}",
+    "body{cursor:crosshair;user-select:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}",
+    "#shade{position:fixed;inset:-2px;background:rgba(15,23,42,.24);pointer-events:none;}",
+    "#box{position:fixed;display:none;border:2px solid rgba(59,130,246,.98);background:rgba(59,130,246,.16);box-shadow:0 0 0 9999px rgba(15,23,42,.38),0 12px 30px rgba(15,23,42,.22);}",
+    "#hint{position:fixed;left:50%;top:28px;transform:translateX(-50%);padding:9px 14px;border-radius:999px;background:rgba(17,24,39,.82);color:#fff;font-size:13px;font-weight:650;letter-spacing:.01em;box-shadow:0 10px 30px rgba(15,23,42,.24);}",
+    "</style>",
+    "</head>",
+    "<body>",
+    "<div id=\"shade\" aria-hidden=\"true\"></div>",
+    "<div id=\"box\" aria-hidden=\"true\"></div>",
+    "<div id=\"hint\">拖拽选择截屏范围，Esc 取消</div>",
+    "<script>",
+    `const doneUrl=${JSON.stringify(doneUrl)};`,
+    "const box=document.getElementById('box');",
+    "const hint=document.getElementById('hint');",
+    "const minSize=8;",
+    "let dragging=false;",
+    "let startX=0;",
+    "let startY=0;",
+    "let currentRect=null;",
+    "function clamp(value,min,max){return Math.max(min,Math.min(value,max));}",
+    "function finish(action,rect){const params=new URLSearchParams({action});if(rect){params.set('rect',JSON.stringify(rect));}window.location.href=doneUrl+'?'+params.toString();}",
+    "function updateBox(clientX,clientY){const endX=clamp(clientX,0,window.innerWidth);const endY=clamp(clientY,0,window.innerHeight);const x=Math.min(startX,endX);const y=Math.min(startY,endY);const width=Math.abs(endX-startX);const height=Math.abs(endY-startY);currentRect={x,y,width,height};box.style.display='block';box.style.left=x+'px';box.style.top=y+'px';box.style.width=width+'px';box.style.height=height+'px';}",
+    "window.addEventListener('pointerdown',(event)=>{if(event.button!==0){return;}dragging=true;startX=clamp(event.clientX,0,window.innerWidth);startY=clamp(event.clientY,0,window.innerHeight);currentRect={x:startX,y:startY,width:0,height:0};hint.textContent='松开鼠标完成截屏，Esc 取消';box.style.display='block';updateBox(event.clientX,event.clientY);try{document.body.setPointerCapture(event.pointerId);}catch{}});",
+    "window.addEventListener('pointermove',(event)=>{if(!dragging){return;}updateBox(event.clientX,event.clientY);});",
+    "window.addEventListener('pointerup',(event)=>{if(!dragging){return;}dragging=false;try{document.body.releasePointerCapture(event.pointerId);}catch{}updateBox(event.clientX,event.clientY);if(!currentRect||currentRect.width<minSize||currentRect.height<minSize){box.style.display='none';hint.textContent='范围太小，请拖拽选择更大的区域，Esc 取消';return;}finish('select',currentRect);});",
+    "window.addEventListener('keydown',(event)=>{if(event.key==='Escape'){finish('cancel');}});",
+    "</script>",
+    "</body>",
+    "</html>"
+  ].join("");
+}
+
+function parseScreenshotSelectionUrl(value: string, selectionId: string) {
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "zenmind:" ||
+      url.hostname !== "screenshot-selection" ||
+      url.pathname !== `/${selectionId}`
+    ) {
+      return undefined;
+    }
+    if (url.searchParams.get("action") === "cancel") {
+      return null;
+    }
+    const rawRect = url.searchParams.get("rect");
+    if (!rawRect) {
+      return null;
+    }
+    const rect = JSON.parse(rawRect) as Partial<ScreenshotSelectionRect>;
+    if (
+      typeof rect.x !== "number" ||
+      typeof rect.y !== "number" ||
+      typeof rect.width !== "number" ||
+      typeof rect.height !== "number" ||
+      rect.width < 1 ||
+      rect.height < 1
+    ) {
+      return null;
+    }
+    return {
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function selectScreenshotRegion(display: Display) {
+  return new Promise<ScreenshotSelectionRect | null>((resolve) => {
+    const selectionId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const overlayWindow = new BrowserWindow({
+      ...display.bounds,
+      show: false,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      ...(process.platform === "darwin" ? { roundedCorners: false } : {}),
+      backgroundColor: "#00000000",
+      title: "ZenMind Screenshot Selection",
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true
+      }
+    });
+    let settled = false;
+    const settle = (rect: ScreenshotSelectionRect | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      overlayWindow.webContents.off("will-navigate", handleNavigate);
+      if (!overlayWindow.isDestroyed()) {
+        overlayWindow.close();
+      }
+      resolve(rect);
+    };
+    const handleNavigate = (event: Electron.Event, url: string) => {
+      const selection = parseScreenshotSelectionUrl(url, selectionId);
+      if (selection === undefined) {
+        return;
+      }
+      event.preventDefault();
+      settle(selection);
+    };
+
+    if (process.platform === "darwin") {
+      overlayWindow.setAlwaysOnTop(true, "screen-saver");
+      overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    } else if (process.platform === "win32") {
+      overlayWindow.setAlwaysOnTop(true, "screen-saver");
+    } else {
+      overlayWindow.setAlwaysOnTop(true);
+    }
+
+    overlayWindow.webContents.on("will-navigate", handleNavigate);
+    overlayWindow.on("closed", () => settle(null));
+    overlayWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(createScreenshotSelectionHtml(selectionId))}`)
+      .then(() => {
+        if (overlayWindow.isDestroyed()) {
+          return;
+        }
+        overlayWindow.show();
+        overlayWindow.moveTop();
+        overlayWindow.focus();
+      })
+      .catch(() => settle(null));
+  });
+}
+
+function getScreenshotPermissionMessage() {
+  if (process.platform === "darwin") {
+    const status = systemPreferences.getMediaAccessStatus("screen");
+    if (status === "denied" || status === "restricted") {
+      return "ZenMind 没有屏幕录制权限。请在系统设置 > 隐私与安全性 > 屏幕录制中允许 ZenMind 后重试。";
+    }
+    return "";
+  }
+  if (process.platform === "win32") {
+    return "";
+  }
+  return "当前平台暂不支持截屏提问。";
+}
+
+function getDisplayThumbnailSize(display: Display) {
+  const scaleFactor = Number.isFinite(display.scaleFactor) && display.scaleFactor > 0
+    ? display.scaleFactor
+    : 1;
+  if (process.platform === "darwin") {
+    return {
+      width: Math.max(1, Math.round(display.size.width * scaleFactor)),
+      height: Math.max(1, Math.round(display.size.height * scaleFactor))
+    };
+  }
+  if (process.platform === "win32") {
+    return {
+      width: Math.max(1, Math.round(display.size.width * scaleFactor)),
+      height: Math.max(1, Math.round(display.size.height * scaleFactor))
+    };
+  }
+  return {
+    width: Math.max(1, Math.round(display.size.width * scaleFactor)),
+    height: Math.max(1, Math.round(display.size.height * scaleFactor))
+  };
+}
+
+function chooseDisplaySource(
+  sources: Electron.DesktopCapturerSource[],
+  display: Display,
+  thumbnailSize: { width: number; height: number }
+) {
+  const displayId = String(display.id);
+  return sources.find((source) => source.display_id === displayId) ??
+    sources.find((source) => {
+      const size = source.thumbnail.getSize();
+      return Math.abs(size.width - thumbnailSize.width) <= 2 &&
+        Math.abs(size.height - thumbnailSize.height) <= 2;
+    }) ??
+    sources[0] ??
+    null;
+}
+
+async function captureDisplayImage(display: Display) {
+  const thumbnailSize = getDisplayThumbnailSize(display);
+  const sources = await desktopCapturer.getSources({
+    types: ["screen"],
+    thumbnailSize,
+    fetchWindowIcons: false
+  });
+  const source = chooseDisplaySource(sources, display, thumbnailSize);
+  if (!source || source.thumbnail.isEmpty()) {
+    throw new Error("没有获取到可用的屏幕截图，请检查系统截屏权限后重试。");
+  }
+  return source.thumbnail;
+}
+
+function intersectRect(a: Rectangle, b: Rectangle): Rectangle | null {
+  const left = Math.max(a.x, b.x);
+  const top = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  const width = right - left;
+  const height = bottom - top;
+  if (width < 1 || height < 1) {
+    return null;
+  }
+  return {
+    x: left,
+    y: top,
+    width,
+    height
+  };
+}
+
+function getScreenshotSelectionGlobalRect(
+  displayBounds: Rectangle,
+  selection: ScreenshotSelectionRect
+): Rectangle {
+  return {
+    x: displayBounds.x + selection.x,
+    y: displayBounds.y + selection.y,
+    width: selection.width,
+    height: selection.height
+  };
+}
+
+function getScreenshotWindowFallbackTargets(source: ScreenshotCaptureSource) {
+  const targets: BrowserWindow[] = [];
+  const addTarget = (targetWindow: BrowserWindow | null) => {
+    if (
+      targetWindow &&
+      !targetWindow.isDestroyed() &&
+      targetWindow.isVisible() &&
+      !targets.includes(targetWindow)
+    ) {
+      targets.push(targetWindow);
+    }
+  };
+
+  if (source === "quick-assistant") {
+    addTarget(mainWindow);
+    addTarget(quickAssistantWindow);
+    return targets;
+  }
+
+  addTarget(mainWindow);
+  return targets;
+}
+
+async function captureWindowSelectionFallback(
+  displayBounds: Rectangle,
+  selection: ScreenshotSelectionRect,
+  source: ScreenshotCaptureSource
+) {
+  const selectionBounds = getScreenshotSelectionGlobalRect(displayBounds, selection);
+  for (const targetWindow of getScreenshotWindowFallbackTargets(source)) {
+    const contentBounds = targetWindow.getContentBounds();
+    const intersection = intersectRect(selectionBounds, contentBounds);
+    if (!intersection) {
+      continue;
+    }
+    const captured = await targetWindow.webContents.capturePage({
+      x: clampInteger(intersection.x - contentBounds.x, 0, Math.max(0, contentBounds.width - 1)),
+      y: clampInteger(intersection.y - contentBounds.y, 0, Math.max(0, contentBounds.height - 1)),
+      width: clampInteger(intersection.width, 1, contentBounds.width),
+      height: clampInteger(intersection.height, 1, contentBounds.height)
+    });
+    if (!captured.isEmpty()) {
+      return captured;
+    }
+  }
+  return null;
+}
+
+function clampInteger(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(Math.round(value), max));
+}
+
+function cropScreenshotImage(
+  image: NativeImage,
+  displayBounds: Rectangle,
+  selection: ScreenshotSelectionRect
+) {
+  const imageSize = image.getSize();
+  const ratioX = imageSize.width / Math.max(1, displayBounds.width);
+  const ratioY = imageSize.height / Math.max(1, displayBounds.height);
+  const x = clampInteger(selection.x * ratioX, 0, Math.max(0, imageSize.width - 1));
+  const y = clampInteger(selection.y * ratioY, 0, Math.max(0, imageSize.height - 1));
+  const width = clampInteger(selection.width * ratioX, 1, Math.max(1, imageSize.width - x));
+  const height = clampInteger(selection.height * ratioY, 1, Math.max(1, imageSize.height - y));
+  return image.crop({ x, y, width, height });
+}
+
+async function captureScreenshotImage(
+  display: Display,
+  selection: ScreenshotSelectionRect,
+  source: ScreenshotCaptureSource
+) {
+  let screenCaptureFailure: Error | null = null;
+  try {
+    const image = await captureDisplayImage(display);
+    const cropped = cropScreenshotImage(image, display.bounds, selection);
+    if (cropped.isEmpty()) {
+      throw new Error("截屏区域为空，请重新选择更大的范围。");
+    }
+    return cropped;
+  } catch (error) {
+    screenCaptureFailure = error instanceof Error ? error : new Error(String(error));
+  }
+
+  const fallback = await captureWindowSelectionFallback(display.bounds, selection, source);
+  if (fallback && !fallback.isEmpty()) {
+    return fallback;
+  }
+
+  if (process.platform === "darwin" && screenCaptureFailure.message.includes("没有获取到可用的屏幕截图")) {
+    throw new Error(
+      "没有获取到系统屏幕截图源，也无法从当前 ZenMind 窗口截取该区域。请确认选择范围在 ZenMind 窗口内，或在系统设置 > 隐私与安全性 > 屏幕录制中允许 ZenMind。"
+    );
+  }
+
+  if (process.platform === "win32" && screenCaptureFailure.message.includes("没有获取到可用的屏幕截图")) {
+    throw new Error("没有获取到系统屏幕截图源，也无法从当前 ZenMind 窗口截取该区域，请重新选择窗口内区域后重试。");
+  }
+
+  throw screenCaptureFailure;
+}
+
+function createScreenshotAttachmentName() {
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/\.\d{3}Z$/u, "")
+    .replace(/[-:T]/gu, "");
+  return `screenshot-${timestamp}.png`;
+}
+
+async function captureAssistantScreenshot(
+  chatId: string | null | undefined,
+  source: ScreenshotCaptureSource
+) {
+  const permissionMessage = getScreenshotPermissionMessage();
+  if (permissionMessage) {
+    return {
+      ok: false,
+      chatId: chatId ?? "",
+      message: permissionMessage,
+      attachments: []
+    };
+  }
+
+  const shouldRestoreQuickAssistant = source === "quick-assistant" &&
+    Boolean(quickAssistantWindow && !quickAssistantWindow.isDestroyed() && quickAssistantWindow.isVisible());
+  if (source === "quick-assistant") {
+    quickAssistantState.setInteractionState({ busy: true, mouseInside: true });
+    hideQuickAssistantDismissWindow();
+    if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
+      quickAssistantWindow.hide();
+    }
+    await delay(140);
+  }
+
+  try {
+    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const selection = await selectScreenshotRegion(display);
+    if (!selection) {
+      return {
+        ok: false,
+        chatId: chatId ?? "",
+        message: "已取消截屏。",
+        attachments: []
+      };
+    }
+
+    await delay(80);
+    const cropped = await captureScreenshotImage(display, selection, source);
+    return createAssistantAttachmentFromImageBuffer(app, chatId, {
+      name: createScreenshotAttachmentName(),
+      mimeType: "image/png",
+      buffer: cropped.toPNG(),
+      fallbackBaseName: "screenshot",
+      unsupportedMessage: "截屏图片格式暂不支持。",
+      readableMessage: "已截取 1 张屏幕图片，图片已进入视觉上下文。",
+      oversizedVisionMessage: "截屏已保存，但过大，未发送给模型视觉接口。"
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      chatId: chatId ?? "",
+      message: error instanceof Error ? error.message : String(error),
+      attachments: []
+    };
+  } finally {
+    if (source === "quick-assistant") {
+      quickAssistantState.setInteractionState({ busy: false, mouseInside: false });
+      if (shouldRestoreQuickAssistant && quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
+        showQuickAssistantDismissWindow();
+        quickAssistantWindow.show();
+        quickAssistantWindow.focus();
+      }
+    }
+  }
+}
+
 function registerQuickAssistantShortcut() {
   if (!isQuickAssistantSupportedPlatform(process.platform)) {
     return;
@@ -500,6 +1773,138 @@ async function collectWebviewLoadDiagnostics(contents: Electron.WebContents, val
     resolvedProxy,
     sessionPartition: sessionRef.getStoragePath() || "default"
   };
+}
+
+function cancelPendingMainWindowClose() {
+  pendingMainWindowCloseCancel?.();
+  pendingMainWindowCloseCancel = null;
+}
+
+function hideMainWindowImmediately(targetWindow: BrowserWindow) {
+  pendingMainWindowCloseCancel = null;
+  if (targetWindow.isDestroyed()) {
+    return;
+  }
+  targetWindow.hide();
+}
+
+function hideDarwinMainWindowForClose(targetWindow: BrowserWindow) {
+  if (!targetWindow.isFullScreen()) {
+    hideMainWindowImmediately(targetWindow);
+    return;
+  }
+
+  cancelPendingMainWindowClose();
+
+  let completed = false;
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  const clearPendingClose = () => {
+    for (const timer of timers) {
+      clearTimeout(timer);
+    }
+    timers.clear();
+    if (!targetWindow.isDestroyed()) {
+      targetWindow.off("leave-full-screen", scheduleDestroy);
+    }
+    pendingMainWindowCloseCancel = null;
+  };
+  const scheduleTimer = (callback: () => void, timeoutMs: number) => {
+    const timer = setTimeout(() => {
+      timers.delete(timer);
+      callback();
+    }, timeoutMs);
+    timers.add(timer);
+  };
+  const destroyWindow = () => {
+    if (completed) {
+      return;
+    }
+    completed = true;
+    clearPendingClose();
+    targetWindow.destroy();
+  };
+  const scheduleDestroy = () => {
+    scheduleTimer(destroyWindow, MAC_FULLSCREEN_CLOSE_DELAY_MS);
+  };
+
+  pendingMainWindowCloseCancel = () => {
+    if (completed) {
+      return;
+    }
+    completed = true;
+    clearPendingClose();
+  };
+
+  targetWindow.once("leave-full-screen", scheduleDestroy);
+  scheduleTimer(destroyWindow, MAC_FULLSCREEN_CLOSE_FALLBACK_MS);
+  // macOS native fullscreen lives in its own Space; hiding there can leave a black Space behind.
+  targetWindow.setFullScreen(false);
+}
+
+function hideWindowsMainWindowForClose(targetWindow: BrowserWindow) {
+  if (targetWindow.isFullScreen()) {
+    targetWindow.setFullScreen(false);
+  }
+  hideMainWindowImmediately(targetWindow);
+}
+
+function hideMainWindowForClose(targetWindow: BrowserWindow) {
+  if (process.platform === "darwin") {
+    hideDarwinMainWindowForClose(targetWindow);
+    return;
+  }
+
+  if (process.platform === "win32") {
+    hideWindowsMainWindowForClose(targetWindow);
+    return;
+  }
+
+  hideMainWindowImmediately(targetWindow);
+}
+
+function shouldRecreateDarwinMainWindowForActivation(targetWindow: BrowserWindow) {
+  if (process.platform !== "darwin") {
+    return false;
+  }
+  return Boolean(pendingMainWindowCloseCancel) || targetWindow.isFullScreen();
+}
+
+function discardDarwinMainWindowForActivation(targetWindow: BrowserWindow) {
+  cancelPendingMainWindowClose();
+  if (!targetWindow.isDestroyed()) {
+    targetWindow.destroy();
+  }
+  if (mainWindow === targetWindow) {
+    mainWindow = null;
+  }
+}
+
+function getMainWindowForActivation() {
+  const existingWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!existingWindow) {
+    return createWindow();
+  }
+
+  if (shouldRecreateDarwinMainWindowForActivation(existingWindow)) {
+    discardDarwinMainWindowForActivation(existingWindow);
+    return createWindow();
+  }
+
+  return existingWindow;
+}
+
+function normalizeMainWindowBeforeShow(targetWindow: BrowserWindow) {
+  cancelPendingMainWindowClose();
+
+  if (process.platform === "darwin") {
+    return;
+  }
+
+  if (process.platform === "win32") {
+    if (targetWindow.isFullScreen()) {
+      targetWindow.setFullScreen(false);
+    }
+  }
 }
 
 function createWindow() {
@@ -652,10 +2057,15 @@ function createWindow() {
       return;
     }
     event.preventDefault();
-    mainWindow?.hide();
+    const targetWindow = mainWindow;
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      return;
+    }
+    hideMainWindowForClose(targetWindow);
   });
 
   mainWindow.on("closed", () => {
+    cancelPendingMainWindowClose();
     mainWindow = null;
   });
 
@@ -708,10 +2118,12 @@ function configureMediaPermissions() {
 }
 
 function showMainWindow(targetPath?: string) {
-  const targetWindow = getOrCreateMainWindow();
+  const targetWindow = getMainWindowForActivation();
   if (!targetWindow || targetWindow.isDestroyed()) {
     return;
   }
+
+  normalizeMainWindowBeforeShow(targetWindow);
 
   if (targetWindow.isMinimized()) {
     targetWindow.restore();
@@ -725,6 +2137,7 @@ function showMainWindow(targetPath?: string) {
 }
 
 function notifyServicesChanged() {
+  scheduleAgentPlatformPetStatusRefresh(1000);
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
@@ -840,10 +2253,12 @@ async function runServiceMutation<T>(task: () => Promise<T>) {
 }
 
 function navigateMainWindow(targetPath: string) {
-  const targetWindow = getOrCreateMainWindow();
+  const targetWindow = getMainWindowForActivation();
   if (!targetWindow || targetWindow.isDestroyed()) {
     return;
   }
+
+  normalizeMainWindowBeforeShow(targetWindow);
 
   if (targetWindow.isMinimized()) {
     targetWindow.restore();
@@ -1099,10 +2514,10 @@ function createTrayIcon() {
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     {
-      label: "和 ZenMind助手聊天",
+      label: "和 ZenMind 聊天",
       click: () =>
         openAssistantWorker({
-          displayName: "ZenMind助手",
+          displayName: "ZenMind",
           role: "确认对话示例",
           focusComposerOnComplete: true
         })
@@ -1115,6 +2530,21 @@ function buildTrayMenu() {
       label: "设置",
       click: () => showMainWindow("/settings")
     },
+    ...(isDesktopPetSupportedPlatform(process.platform)
+      ? [
+          { type: "separator" as const },
+          {
+            label: desktopPetSettings.enabled ? "关闭桌面仙尊" : "显示桌面仙尊",
+            click: () => {
+              if (desktopPetSettings.enabled) {
+                hideDesktopPetWindow(true);
+                return;
+              }
+              showDesktopPetWindow();
+            }
+          }
+        ]
+      : []),
     { type: "separator" },
     {
       label: "退出",
@@ -1129,13 +2559,12 @@ function createAppTray() {
   }
 
   tray = new Tray(createTrayIcon());
-  const trayMenu = buildTrayMenu();
   tray.setToolTip("ZenMind");
   if (process.platform !== "darwin") {
-    tray.setContextMenu(trayMenu);
+    tray.setContextMenu(buildTrayMenu());
   }
   tray.on("click", () => showMainWindow(ASSISTANT_TARGET_PATH));
-  tray.on("right-click", () => tray?.popUpContextMenu(trayMenu));
+  tray.on("right-click", () => tray?.popUpContextMenu(buildTrayMenu()));
 
   return tray;
 }
@@ -1151,6 +2580,15 @@ function emitNativeDialogVisibility(open: boolean) {
       continue;
     }
     targetWindow.webContents.send("app.nativeDialogVisibility", payload);
+  }
+}
+
+function emitAssistantAttachmentProgress(progress: AssistantAttachmentTaskProgress) {
+  for (const targetWindow of [mainWindow, quickAssistantWindow]) {
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      continue;
+    }
+    targetWindow.webContents.send("assistant.attachmentProgress", progress);
   }
 }
 
@@ -1216,7 +2654,7 @@ async function showSaveDialog(
 
 async function pickAssistantAttachments(chatId: string | null | undefined, ownerWindow: BrowserWindow | null) {
   const result = await showFileDialog({
-    title: "选择要给 ZenMind助手读取的附件",
+    title: "选择要给 ZenMind 读取的附件",
     properties: ["openFile", "multiSelections"],
     filters: [
       {
@@ -1254,7 +2692,9 @@ async function pickAssistantAttachments(chatId: string | null | undefined, owner
       attachments: []
     };
   }
-  return createAssistantAttachmentsFromFiles(app, chatId, result.filePaths);
+  return createAssistantAttachmentsFromFiles(app, chatId, result.filePaths, {
+    onProgress: emitAssistantAttachmentProgress
+  });
 }
 
 function showArchiveDialog(title: string) {
@@ -1430,6 +2870,7 @@ function registerIpcHandlers() {
       }
       targetWindow.webContents.send("assistant.event", event);
     }
+    handleDesktopPetAssistantEvent(event);
   }, assistantBrowserUse, {
     openExternalUrl: async (url) => {
       await shell.openExternal(url);
@@ -1523,10 +2964,16 @@ function registerIpcHandlers() {
   ipcMain.handle("assistant.pickAttachments", async (_event, chatId?: string | null) =>
     pickAssistantAttachments(chatId, mainWindow)
   );
+  ipcMain.handle("assistant.cancelAttachmentTask", async (_event, taskId: string) =>
+    cancelAssistantAttachmentTask(taskId)
+  );
   ipcMain.handle(
     "assistant.addPastedImage",
     async (_event, chatId: string | null | undefined, input: AssistantPastedImageInput) =>
       createAssistantAttachmentFromPastedImage(app, chatId, input)
+  );
+  ipcMain.handle("assistant.captureScreenshot", async (_event, chatId?: string | null) =>
+    captureAssistantScreenshot(chatId, "sidebar")
   );
   ipcMain.handle("assistant.deleteChat", async (_event, chatId: string) => {
     deleteAssistantChat(app, chatId);
@@ -1592,6 +3039,12 @@ function registerIpcHandlers() {
   ipcMain.handle("quickAssistant.pickAttachments", async (_event, chatId?: string | null) =>
     pickAssistantAttachments(chatId, null)
   );
+  ipcMain.handle("quickAssistant.cancelAttachmentTask", async (_event, taskId: string) =>
+    cancelAssistantAttachmentTask(taskId)
+  );
+  ipcMain.handle("quickAssistant.captureScreenshot", async (_event, chatId?: string | null) =>
+    captureAssistantScreenshot(chatId, "quick-assistant")
+  );
   ipcMain.handle("quickAssistant.setInteractionState", async (_event, state: { busy?: boolean; mouseInside?: boolean }) => {
     quickAssistantState.setInteractionState(state);
     return { ok: true };
@@ -1608,7 +3061,7 @@ function registerIpcHandlers() {
     }
     openAssistantWorker({
       chatId: chatId ?? undefined,
-      displayName: "Zman",
+      displayName: "ZenMind",
       role: "快速助手",
       focusComposerOnComplete: true
     });
@@ -1870,6 +3323,81 @@ function registerIpcHandlers() {
       message: "已导出侧边栏配置。"
     };
   });
+  ipcMain.handle("desktopPet.getSettings", async () => toDesktopPetSettings(desktopPetSettings));
+  ipcMain.handle("desktopPet.getState", async () => {
+    if (desktopPetSettings.enabled) {
+      scheduleAgentPlatformPetStatusRefresh(0);
+    }
+    return refreshDesktopPetState();
+  });
+  ipcMain.handle("desktopPet.saveSettings", async (_event, input: DesktopPetSettingsInput) => {
+    if (!isDesktopPetSupportedPlatform(process.platform)) {
+      return refreshDesktopPetState();
+    }
+    const nextBoundAgentKey = typeof input.boundAgentKey === "string"
+      ? sanitizeDesktopPetBoundAgentKey(input.boundAgentKey)
+      : desktopPetSettings.boundAgentKey;
+    const nextAppearanceId = typeof input.appearanceId === "string"
+      ? sanitizeDesktopPetAppearanceId(input.appearanceId)
+      : desktopPetSettings.appearanceId;
+    const boundAgentChanged = nextBoundAgentKey !== desktopPetSettings.boundAgentKey;
+    const appearanceChanged = nextAppearanceId !== desktopPetSettings.appearanceId;
+    if (boundAgentChanged || appearanceChanged) {
+      desktopPetSettings = saveDesktopPetSettings(app, {
+        boundAgentKey: nextBoundAgentKey,
+        appearanceId: nextAppearanceId
+      }, process.platform);
+    }
+    if (boundAgentChanged) {
+      desktopPetAgentStatus = null;
+    }
+    if (typeof input.enabled === "boolean") {
+      if (input.enabled) {
+        showDesktopPetWindow();
+      } else {
+        hideDesktopPetWindow(true);
+      }
+    }
+    if (boundAgentChanged) {
+      scheduleAgentPlatformPetStatusRefresh(0);
+    }
+    return refreshDesktopPetState();
+  });
+  ipcMain.handle("desktopPet.show", async () => showDesktopPetWindow());
+  ipcMain.handle("desktopPet.hide", async () => hideDesktopPetWindow(true));
+  ipcMain.handle("desktopPet.openAssistant", async () => openAssistantFromDesktopPet());
+  ipcMain.handle("desktopPet.moveBy", async (event, delta: { x?: unknown; y?: unknown }) => {
+    if (!desktopPetWindow || desktopPetWindow.isDestroyed() || event.sender !== desktopPetWindow.webContents) {
+      return { ok: false };
+    }
+    return moveDesktopPetWindowBy(delta);
+  });
+  ipcMain.handle("desktopPet.beginDrag", async (event, point: { x?: unknown; y?: unknown }) => {
+    if (!desktopPetWindow || desktopPetWindow.isDestroyed() || event.sender !== desktopPetWindow.webContents) {
+      return { ok: false };
+    }
+    return beginDesktopPetWindowDrag(point);
+  });
+  ipcMain.handle("desktopPet.endDrag", async (event) => {
+    if (!desktopPetWindow || desktopPetWindow.isDestroyed() || event.sender !== desktopPetWindow.webContents) {
+      return { ok: false, moved: false };
+    }
+    return endDesktopPetWindowDrag();
+  });
+  ipcMain.handle("desktopPet.setPreviewExpanded", async (event, expanded: boolean) => {
+    if (!desktopPetWindow || desktopPetWindow.isDestroyed() || event.sender !== desktopPetWindow.webContents) {
+      return { ok: false };
+    }
+    desktopPetPreviewProjector.setExpanded(Boolean(expanded));
+    refreshDesktopPetState();
+    return { ok: true };
+  });
+  ipcMain.handle("desktopPet.setMouseInteractive", async (event, interactive: boolean) => {
+    if (!desktopPetWindow || desktopPetWindow.isDestroyed() || event.sender !== desktopPetWindow.webContents) {
+      return { ok: false };
+    }
+    return setDesktopPetWindowMouseInteractive(Boolean(interactive));
+  });
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
   ipcMain.handle("settings.getPlatform", async () => process.platform);
   ipcMain.handle("settings.setSidebarTranslucency", async (_event, enabled: boolean) =>
@@ -1889,6 +3417,11 @@ if (gotSingleInstanceLock) {
     registerIpcHandlers();
     configureMediaPermissions();
     createWindow();
+    if (isDesktopPetSupportedPlatform(process.platform) && desktopPetSettings.enabled) {
+      showDesktopPetWindow();
+    } else {
+      refreshDesktopPetState();
+    }
     createAppTray();
     buildApplicationMenu();
     registerQuickAssistantShortcut();
@@ -1948,16 +3481,13 @@ app.on("before-quit", (event) => {
       console.error("failed while force-cleaning desktop service processes", error);
     })
     .finally(() => {
-      try {
-        cleanupAgentPlatformRelayForApp(app);
-      } catch (error) {
-        console.error("failed while cleaning up local code-assistant relay", error);
-      }
       app.quit();
     });
 });
 
 app.on("will-quit", () => {
+  clearDesktopPetIdleResetTimer();
+  stopAgentPlatformPetStatusClient();
   if (isQuickAssistantSupportedPlatform(process.platform)) {
     globalShortcut.unregister(QUICK_ASSISTANT_SHORTCUT);
   }

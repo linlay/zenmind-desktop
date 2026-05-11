@@ -23,6 +23,8 @@ const GENERIC_QUERY_TOKENS = new Set([
   "内容",
   "告诉",
   "告诉我",
+  "什么",
+  "喜欢",
   "搜索",
   "总结",
   "工作流",
@@ -57,6 +59,23 @@ const DEFAULT_MEMORY_SETTINGS: AssistantMemorySettings = {
   maxChars: 4000
 };
 
+type AssistantMemoryScopeType = "user" | "chat";
+type AssistantMemoryFacet =
+  | "food_preference"
+  | "response_style"
+  | "constraint"
+  | "workflow"
+  | "decision"
+  | "general";
+
+type MemoryQueryIntent =
+  | "food_preference"
+  | "response_style"
+  | "constraint"
+  | "workflow_or_bugfix"
+  | "history_or_previous_process"
+  | "general";
+
 export type AssistantMemoryReference = {
   id: string;
   title: string;
@@ -84,6 +103,9 @@ export type AssistantMemoryUpsertInput = {
   title?: string;
   summary?: string;
   category?: string;
+  scopeType?: string;
+  facet?: string;
+  subjectKey?: string;
   tags?: string[];
   importance?: number;
   confidence?: number;
@@ -104,6 +126,25 @@ export type AssistantMemoryUpsertResult = {
 type RuntimeMemorySelection = {
   item: AssistantMemoryItem;
   reason: string;
+  score: number;
+  layer: "stable" | "session" | "observation";
+};
+
+type LayeredRuntimeMemorySelection = {
+  queryIntent: MemoryQueryIntent;
+  stableFacts: RuntimeMemorySelection[];
+  currentSession: RuntimeMemorySelection[];
+  relevantObservations: RuntimeMemorySelection[];
+  candidateCountsByLayer: {
+    stable: number;
+    session: number;
+    observation: number;
+  };
+  selectedCountsByLayer: {
+    stable: number;
+    session: number;
+    observation: number;
+  };
 };
 
 type StoredMemoryRecords = {
@@ -203,6 +244,32 @@ function normalizeMemoryStatus(status: unknown, kind: AssistantMemoryKind): Assi
   return kind === "observation" ? "open" : "active";
 }
 
+function normalizeMemoryScopeType(scopeType: unknown, kind: AssistantMemoryKind): AssistantMemoryScopeType {
+  const normalized = asString(scopeType).toLowerCase();
+  if (normalized === "chat") {
+    return "chat";
+  }
+  if (normalized === "user") {
+    return "user";
+  }
+  return kind === "observation" ? "chat" : "user";
+}
+
+function normalizeMemoryFacet(facet: unknown): AssistantMemoryFacet | "" {
+  const normalized = asString(facet).toLowerCase();
+  switch (normalized) {
+    case "food_preference":
+    case "response_style":
+    case "constraint":
+    case "workflow":
+    case "decision":
+    case "general":
+      return normalized;
+    default:
+      return "";
+  }
+}
+
 function normalizeTags(tags: unknown): string[] {
   if (!Array.isArray(tags)) {
     return [];
@@ -233,13 +300,32 @@ function normalizeMemoryItem(value: unknown): AssistantMemoryItem | null {
   const status = normalizeMemoryStatus(value.status, kind);
   const now = new Date().toISOString();
   const title = asString(value.title, summary).slice(0, 120) || "本地记忆";
+  const scopeType = normalizeMemoryScopeType(value.scopeType, kind);
+  const category = normalizeCategory(value.category);
+  const tags = Array.isArray(value.tags) ? value.tags.map((tag) => asString(tag)).filter(Boolean) : [];
+  const facet = normalizeMemoryFacet(value.facet) || inferMemoryFacet({
+    category,
+    title,
+    summary,
+    tags
+  });
+  const subjectKey = asString(value.subjectKey) || inferMemorySubjectKey({
+    category,
+    title,
+    summary,
+    tags,
+    facet
+  });
   return {
     id,
     kind,
     title,
     summary,
-    category: normalizeCategory(value.category),
-    tags: normalizeTags(value.tags),
+    category,
+    scopeType,
+    ...(facet ? { facet } : {}),
+    ...(subjectKey ? { subjectKey } : {}),
+    tags: normalizeTags(tags),
     importance: clampNumber(value.importance, kind === "fact" ? 8 : 6, 1, 10),
     confidence: clampNumber(value.confidence, 0.75, 0, 1),
     status,
@@ -290,6 +376,81 @@ function normalizeTopicSubject(value: string) {
     .slice(0, 48);
 }
 
+function buildGenericSubjectKey(prefix: string, value: string) {
+  const subject = normalizeTopicSubject(value);
+  return subject ? `${prefix}:${subject}` : "";
+}
+
+function inferMemoryFacet(input: { category?: string; title?: string; summary: string; tags?: string[] }): AssistantMemoryFacet {
+  const category = normalizeCategory(input.category);
+  const haystack = normalizeForHash([
+    input.title ?? "",
+    input.summary,
+    category,
+    ...(input.tags ?? [])
+  ].join(" "));
+  if (isLikedFoodPreferenceMemory({
+    category,
+    title: input.title,
+    summary: input.summary,
+    tags: input.tags
+  })) {
+    return "food_preference";
+  }
+  if (isResponseStyleMemoryText(category, input.tags ?? [], haystack)) {
+    return "response_style";
+  }
+  if (category === "constraint" || /约束|规则|必须|不要|不能|禁止|constraint|rule/iu.test(haystack)) {
+    return "constraint";
+  }
+  if (category === "decision" || /决定|采用|选用|决策|decision|chosen|decided/iu.test(haystack)) {
+    return "decision";
+  }
+  if (["workflow", "bugfix"].includes(category) || /流程|步骤|排查|修复|发布|部署|调试|workflow|debug|deploy|bugfix|runbook/iu.test(haystack)) {
+    return "workflow";
+  }
+  return "general";
+}
+
+function inferMemorySubjectKey(input: {
+  category?: string;
+  title?: string;
+  summary: string;
+  tags?: string[];
+  facet?: AssistantMemoryFacet | "";
+}) {
+  const facet = input.facet || inferMemoryFacet(input);
+  const title = input.title ?? "";
+  const summary = input.summary;
+  const tags = input.tags ?? [];
+  const category = normalizeCategory(input.category);
+  const subject = extractDietPreferenceSubject({ title, summary, tags });
+  if (facet === "food_preference" && subject) {
+    return `food:${subject}`;
+  }
+  const topic = canonicalMemoryTopic({
+    title,
+    summary,
+    tags
+  });
+  if (topic.startsWith("response:")) {
+    return topic;
+  }
+  if (facet === "response_style") {
+    return buildGenericSubjectKey("response", title || summary);
+  }
+  if (facet === "constraint") {
+    return buildGenericSubjectKey("constraint", title || summary);
+  }
+  if (facet === "workflow") {
+    return buildGenericSubjectKey(category === "bugfix" ? "bugfix" : "workflow", title || summary);
+  }
+  if (facet === "decision") {
+    return buildGenericSubjectKey("decision", title || summary);
+  }
+  return "";
+}
+
 function memoryFingerprint(input: { kind: string; category: string; summary: string }) {
   return createHash("sha256")
     .update(`${input.kind}\0${input.category}\0${normalizeForHash(input.summary)}`)
@@ -333,12 +494,28 @@ function canonicalMemoryTopic(input: { title?: string; summary: string; tags?: s
   return "";
 }
 
-function memoryDedupeKey(input: { kind: string; category: string; title?: string; summary: string; tags?: string[] }) {
+function memoryDedupeKey(input: {
+  kind: string;
+  category: string;
+  title?: string;
+  summary: string;
+  tags?: string[];
+  facet?: string;
+  subjectKey?: string;
+}) {
+  const facet = normalizeMemoryFacet(input.facet) || inferMemoryFacet(input);
+  const subjectKey = asString(input.subjectKey) || inferMemorySubjectKey({
+    ...input,
+    facet
+  });
+  if (subjectKey) {
+    return `${normalizeMemoryKind(input.kind)}\0${normalizeCategory(input.category)}\0${facet || "general"}\0${subjectKey}`;
+  }
   const topic = canonicalMemoryTopic(input);
   if (!topic) {
     return "";
   }
-  return `${input.kind}\0${input.category}\0${topic}`;
+  return `${normalizeMemoryKind(input.kind)}\0${normalizeCategory(input.category)}\0${topic}`;
 }
 
 function isLikedFoodPreferenceMemory(input: { category: string; title?: string; summary: string; tags?: string[] }) {
@@ -357,9 +534,17 @@ function isLikedFoodPreferenceMemory(input: { category: string; title?: string; 
   return /(饮食|食物|吃饭|饭|菜谱|food|meal|diet|recipe|dinner|lunch|breakfast|口味|主食|米饭|地沟油|rice)/iu.test(haystack);
 }
 
-function memorySlotKey(input: { kind: string; category: string; title?: string; summary: string; tags?: string[] }) {
-  if (isLikedFoodPreferenceMemory(input)) {
-    return `${input.kind}\0preference\0diet:liked-food`;
+function memorySlotKey(input: {
+  kind: string;
+  category: string;
+  title?: string;
+  summary: string;
+  tags?: string[];
+  facet?: string;
+}) {
+  const facet = normalizeMemoryFacet(input.facet) || inferMemoryFacet(input);
+  if (facet === "food_preference") {
+    return `${normalizeMemoryKind(input.kind)}\0preference\0food_preference`;
   }
   return "";
 }
@@ -369,7 +554,7 @@ function isAdditivePreferenceText(text: string) {
 }
 
 function shouldReplaceSlotMemory(input: AssistantMemoryUpsertInput, slotKey: string) {
-  if (!slotKey.endsWith("\0diet:liked-food")) {
+  if (!slotKey.endsWith("\0food_preference")) {
     return false;
   }
   const incomingText = [
@@ -465,7 +650,21 @@ function normalizeUpsertInput(
 
   const now = new Date().toISOString();
   const category = normalizeCategory(input.category);
+  const scopeType = normalizeMemoryScopeType(input.scopeType, kind);
   const nextTags = normalizeTags(input.tags);
+  const facet = normalizeMemoryFacet(input.facet) || inferMemoryFacet({
+    category,
+    title,
+    summary,
+    tags: nextTags
+  });
+  const subjectKey = asString(input.subjectKey) || inferMemorySubjectKey({
+    category,
+    title,
+    summary,
+    tags: nextTags,
+    facet
+  });
   const reason = asString(input.reason).slice(0, 500);
   if (existing) {
     return {
@@ -474,6 +673,9 @@ function normalizeUpsertInput(
         title,
         summary,
         category,
+        scopeType,
+        ...(facet ? { facet } : {}),
+        ...(subjectKey ? { subjectKey } : {}),
         tags: Array.from(new Set([...existing.tags, ...nextTags])),
         importance: Math.max(existing.importance, clampNumber(input.importance, existing.importance, 1, 10)),
         confidence: Math.max(existing.confidence, clampNumber(input.confidence, existing.confidence, 0, 1)),
@@ -493,6 +695,9 @@ function normalizeUpsertInput(
       title,
       summary,
       category,
+      scopeType,
+      ...(facet ? { facet } : {}),
+      ...(subjectKey ? { subjectKey } : {}),
       tags: nextTags,
       importance: clampNumber(input.importance, kind === "fact" ? 8 : 6, 1, 10),
       confidence: clampNumber(input.confidence, 0.75, 0, 1),
@@ -527,6 +732,7 @@ function scoreStaticMemoryText(title: string, text: string, query: string) {
     title,
     summary: text,
     category: inferStaticMemoryCategory(`${title}\n${text}`),
+    scopeType: "user",
     tags: [],
     importance: 7,
     confidence: 1,
@@ -535,7 +741,19 @@ function scoreStaticMemoryText(title: string, text: string, query: string) {
     createdAt: "",
     updatedAt: ""
   };
-  return scoreMemoryForQuery(pseudoItem, query, "");
+  const intent = detectMemoryQueryIntent(query);
+  const gated = gateRuntimeMemoryCandidate(pseudoItem, {
+    query,
+    chatId: "",
+    intent,
+    layer: "stable"
+  });
+  return gated.eligible ? scoreEligibleMemoryForQuery(pseudoItem, {
+    query,
+    chatId: "",
+    intent,
+    layer: "stable"
+  }) : 0;
 }
 
 function parseStaticMemoryChunks(content: string, query: string): StaticMemoryChunk[] {
@@ -637,7 +855,11 @@ function extractQueryTokens(query: string) {
 }
 
 function hasFoodQueryIntent(query: string) {
-  return /吃|饭|餐|菜谱|菜品|食物|饮食|口味|主食|早餐|午餐|晚餐|晚饭|夜宵|宵夜|点外卖|做什么菜|food|meal|dinner|lunch|breakfast|recipe/iu.test(query);
+  return /喜欢吃|爱吃|吃什么|吃啥|吃点什么|吃哪|饭|餐|菜谱|菜品|食物|饮食|口味|主食|早餐|午餐|晚餐|晚饭|夜宵|宵夜|点外卖|做什么菜|food|meal|dinner|lunch|breakfast|recipe/iu.test(query);
+}
+
+function hasResponsePreferenceQueryIntent(query: string) {
+  return /(?:按我(?:的)?(?:偏好|习惯|风格)|回复风格|回答风格|输出风格|怎么回复|如何回复|如何回答|怎么回答|回答偏好|回复偏好)|(?:(?:偏好|习惯|风格).*(?:回复|回答|输出)|(?:回复|回答|输出).*(?:偏好|习惯|风格))/iu.test(query);
 }
 
 function isFoodRelatedMemory(item: AssistantMemoryItem, haystack: string) {
@@ -650,127 +872,314 @@ function isFoodRelatedMemory(item: AssistantMemoryItem, haystack: string) {
   return /饮食|米饭|吃饭|菜谱|食物|口味|晚饭|午饭|早餐|food|rice|meal|diet|recipe|dinner|lunch|breakfast/iu.test(haystack);
 }
 
-function scoreMemoryForQuery(item: AssistantMemoryItem, query: string, chatId: string) {
-  if (item.status === "archived") {
-    return 0;
+function isResponseStyleMemory(item: AssistantMemoryItem, haystack: string) {
+  return isResponseStyleMemoryText(item.category, item.tags, haystack);
+}
+
+function isResponseStyleMemoryText(category: string, tags: string[], haystack: string) {
+  if (tags.some((tag) => /reply|response|answer|style|conclusion|concise|回答|回复|输出|风格|结论/iu.test(tag))) {
+    return true;
   }
-  const haystack = normalizeForHash([
+  return category === "preference" && /回答|回复|输出|风格|结论|简洁|详细|answer|response|reply|style|conclusion|concise|detailed/iu.test(haystack);
+}
+
+function detectMemoryQueryIntent(query: string): MemoryQueryIntent {
+  const normalized = normalizeForHash(query);
+  if (hasResponsePreferenceQueryIntent(normalized)) {
+    return "response_style";
+  }
+  if (hasFoodQueryIntent(normalized)) {
+    return "food_preference";
+  }
+  if (/约束|规则|要求|必须|不要|不能|禁止|限制|constraint|rule|requirement/iu.test(normalized)) {
+    return "constraint";
+  }
+  if (/部署|发布|排查|流程|工作流|怎么做|如何做|失败|报错|修复|调试|端口|服务|bug|bugfix|workflow|deploy|debug|runbook|incident/iu.test(normalized)) {
+    return "workflow_or_bugfix";
+  }
+  if (/刚才|刚刚|上次|之前|前面|上一轮|这次|本次|过程|步骤|怎么处理|怎么解决|历史|previous|before|last time|earlier/iu.test(normalized)) {
+    return "history_or_previous_process";
+  }
+  return "general";
+}
+
+function getMemoryFacet(item: AssistantMemoryItem): AssistantMemoryFacet {
+  return normalizeMemoryFacet(item.facet) || inferMemoryFacet(item);
+}
+
+function getMemorySubjectKey(item: AssistantMemoryItem) {
+  return asString(item.subjectKey) || inferMemorySubjectKey({
+    category: item.category,
+    title: item.title,
+    summary: item.summary,
+    tags: item.tags,
+    facet: getMemoryFacet(item)
+  });
+}
+
+function buildMemoryHaystack(item: AssistantMemoryItem) {
+  return normalizeForHash([
     item.title,
     item.summary,
     item.category,
     item.kind,
+    item.facet ?? "",
+    item.subjectKey ?? "",
     ...item.tags
   ].join(" "));
-  const tokens = extractQueryTokens(query);
+}
+
+function getRuntimeMemoryLayer(item: AssistantMemoryItem, chatId: string): RuntimeMemorySelection["layer"] | "" {
+  const scopeType = normalizeMemoryScopeType(item.scopeType, item.kind);
+  if (item.kind === "fact" && scopeType === "user") {
+    return "stable";
+  }
+  if (item.kind === "observation" && chatId && item.sourceChatId === chatId) {
+    return "session";
+  }
+  if (item.kind === "observation") {
+    return "observation";
+  }
+  return "";
+}
+
+function queryMatchesSubjectKey(query: string, subjectKey: string) {
+  if (!subjectKey) {
+    return false;
+  }
+  const [, subject = subjectKey] = subjectKey.split(":");
+  return Boolean(subject && normalizeTopicSubject(query).includes(subject));
+}
+
+function hasNonGenericQueryTokenMatch(item: AssistantMemoryItem, query: string) {
+  const haystack = buildMemoryHaystack(item);
+  return extractQueryTokens(query).some((token) => haystack.includes(token));
+}
+
+function gateRuntimeMemoryCandidate(
+  item: AssistantMemoryItem,
+  options: {
+    query: string;
+    chatId: string;
+    intent: MemoryQueryIntent;
+    layer: RuntimeMemorySelection["layer"];
+  }
+): { eligible: boolean; reason: string } {
+  if (item.status === "archived") {
+    return { eligible: false, reason: "archived" };
+  }
+  const facet = getMemoryFacet(item);
+  const subjectKey = getMemorySubjectKey(item);
+  const tokenMatched = hasNonGenericQueryTokenMatch(item, options.query);
+  const subjectMatched = queryMatchesSubjectKey(options.query, subjectKey);
+  switch (options.intent) {
+    case "food_preference":
+      return facet === "food_preference"
+        ? { eligible: true, reason: "facet:food_preference" }
+        : { eligible: false, reason: `facet:${facet}:not_food_preference` };
+    case "response_style":
+      return facet === "response_style"
+        ? { eligible: true, reason: "facet:response_style" }
+        : { eligible: false, reason: `facet:${facet}:not_response_style` };
+    case "constraint":
+      if (facet === "constraint" || item.category === "constraint") {
+        return { eligible: true, reason: "facet:constraint" };
+      }
+      if (item.kind === "fact" && item.confidence >= 0.8 && (tokenMatched || subjectMatched)) {
+        return { eligible: true, reason: "high_confidence_fact_match" };
+      }
+      return { eligible: false, reason: "not_constraint" };
+    case "workflow_or_bugfix":
+      if (facet === "workflow" || facet === "decision" || ["workflow", "bugfix", "decision"].includes(item.category)) {
+        return tokenMatched || subjectMatched || options.layer === "session"
+          ? { eligible: true, reason: "workflow_or_decision_match" }
+          : { eligible: false, reason: "workflow_without_specific_match" };
+      }
+      if (options.layer === "session" && item.kind === "observation" && (tokenMatched || subjectMatched)) {
+        return { eligible: true, reason: "current_session_observation_match" };
+      }
+      return { eligible: false, reason: "not_workflow_or_bugfix" };
+    case "history_or_previous_process":
+      if (options.layer === "session" && item.kind === "observation") {
+        return { eligible: true, reason: "current_session_process" };
+      }
+      if (facet === "workflow" || facet === "decision" || ["workflow", "bugfix", "decision"].includes(item.category)) {
+        return tokenMatched || subjectMatched
+          ? { eligible: true, reason: "historical_process_match" }
+          : { eligible: false, reason: "historical_process_without_specific_match" };
+      }
+      return { eligible: false, reason: "not_history_or_process" };
+    case "general":
+    default:
+      if (item.kind !== "fact" || normalizeMemoryScopeType(item.scopeType, item.kind) !== "user") {
+        return { eligible: false, reason: "general_requires_stable_fact" };
+      }
+      if (facet !== "general" && facet !== "decision" && facet !== "constraint") {
+        return { eligible: false, reason: `general_excludes_${facet}` };
+      }
+      if (item.confidence < 0.75) {
+        return { eligible: false, reason: "low_confidence_general_fact" };
+      }
+      return tokenMatched || subjectMatched
+        ? { eligible: true, reason: subjectMatched ? "subject_match" : "keyword_match" }
+        : { eligible: false, reason: "no_specific_match" };
+  }
+}
+
+function scoreEligibleMemoryForQuery(
+  item: AssistantMemoryItem,
+  options: {
+    query: string;
+    chatId: string;
+    intent: MemoryQueryIntent;
+    layer: RuntimeMemorySelection["layer"];
+  }
+) {
+  const facet = getMemoryFacet(item);
+  const subjectKey = getMemorySubjectKey(item);
+  const haystack = buildMemoryHaystack(item);
+  const tokens = extractQueryTokens(options.query);
   let score = 0;
-  let matched = false;
-  const foodIntent = hasFoodQueryIntent(query);
-  const foodMemory = isFoodRelatedMemory(item, haystack);
 
+  if (queryMatchesSubjectKey(options.query, subjectKey)) {
+    score += 80;
+  }
+  if (
+    (options.intent === "food_preference" && facet === "food_preference") ||
+    (options.intent === "response_style" && facet === "response_style") ||
+    (options.intent === "constraint" && facet === "constraint") ||
+    (options.intent === "workflow_or_bugfix" && ["workflow", "decision"].includes(facet)) ||
+    (options.intent === "history_or_previous_process" && ["workflow", "decision"].includes(facet))
+  ) {
+    score += 48;
+  }
   for (const token of tokens) {
-    if (foodMemory && !foodIntent) {
-      continue;
-    }
     if (haystack.includes(token)) {
-      matched = true;
-      score += 6;
+      score += token.length >= 4 ? 12 : 6;
     }
   }
-
-  const normalizedQuery = normalizeForHash(query);
-  if (normalizedQuery && haystack.includes(normalizedQuery) && (!foodMemory || foodIntent)) {
-    matched = true;
-    score += 30;
-  }
-  if (/偏好|习惯|风格|口味/u.test(query) && item.category === "preference" && (!foodMemory || foodIntent)) {
-    matched = true;
-    score += 20;
-  }
-  if (foodIntent && foodMemory) {
-    matched = true;
-    score += 22;
-  }
-  if (/约束|规则|必须|不要|不能/u.test(query) && item.category === "constraint") {
-    matched = true;
-    score += 20;
-  }
-  if (/部署|发布|排查|流程|怎么做|上次/u.test(query) && ["workflow", "bugfix", "decision"].includes(item.category)) {
-    matched = true;
-    score += 12;
-  }
-
-  if (!matched) {
-    return 0;
-  }
-  score += item.importance + item.referenceCount * 0.5;
-  if (chatId && item.sourceChatId === chatId) {
+  score += item.importance * 2;
+  score += Math.min(10, item.referenceCount * 0.5);
+  if (options.chatId && item.sourceChatId === options.chatId) {
     score += 8;
   }
-  if (item.kind === "fact") {
-    score += 8;
+  if (options.layer === "stable") {
+    score += 10;
+  } else if (options.layer === "session") {
+    score += 6;
+  }
+  if (item.updatedAt) {
+    const ageMs = Date.now() - Date.parse(item.updatedAt);
+    if (Number.isFinite(ageMs) && ageMs >= 0) {
+      score += Math.max(0, 6 - ageMs / (1000 * 60 * 60 * 24 * 30));
+    }
   }
   return score;
 }
 
-function describeMemoryRecallReason(item: AssistantMemoryItem, query: string, chatId: string) {
+function describeMemoryRecallReason(
+  item: AssistantMemoryItem,
+  options: {
+    query: string;
+    chatId: string;
+    intent: MemoryQueryIntent;
+    layer: RuntimeMemorySelection["layer"];
+    gateReason: string;
+  }
+) {
   const reasons: string[] = [];
-  const haystack = normalizeForHash([
-    item.title,
-    item.summary,
-    item.category,
-    item.kind,
-    ...item.tags
-  ].join(" "));
-  const tokens = extractQueryTokens(query);
-  if (chatId && item.sourceChatId === chatId) {
+  const haystack = buildMemoryHaystack(item);
+  const tokens = extractQueryTokens(options.query);
+  const facet = getMemoryFacet(item);
+  if (options.chatId && item.sourceChatId === options.chatId) {
     reasons.push("当前会话相关");
   }
-  if (/偏好|习惯|风格|口味/u.test(query) && item.category === "preference") {
-    reasons.push("匹配用户偏好");
+  if (options.intent === "food_preference" && facet === "food_preference") {
+    reasons.push("匹配饮食偏好");
   }
-  if (/约束|规则|必须|不要|不能/u.test(query) && item.category === "constraint") {
+  if (options.intent === "response_style" && facet === "response_style") {
+    reasons.push("匹配回复风格");
+  }
+  if (options.intent === "constraint" && (facet === "constraint" || item.category === "constraint")) {
     reasons.push("匹配明确约束");
   }
-  if (/部署|发布|排查|流程|怎么做|上次/u.test(query) && ["workflow", "bugfix", "decision"].includes(item.category)) {
-    reasons.push("匹配任务类型");
+  if (["workflow_or_bugfix", "history_or_previous_process"].includes(options.intent) && ["workflow", "decision"].includes(facet)) {
+    reasons.push(options.layer === "session" ? "匹配当前会话过程" : "匹配历史任务过程");
+  }
+  if (queryMatchesSubjectKey(options.query, getMemorySubjectKey(item))) {
+    reasons.push("匹配记忆主题");
   }
   const matchedTokens = tokens.filter((token) => haystack.includes(token)).slice(0, 3);
   if (matchedTokens.length > 0) {
     reasons.push(`匹配关键词：${matchedTokens.join("、")}`);
   }
-  if (hasFoodQueryIntent(query) && isFoodRelatedMemory(item, haystack)) {
-    reasons.push("匹配饮食场景");
-  }
-  return reasons.length > 0 ? reasons.join("；") : "与当前问题相关";
+  return reasons.length > 0 ? reasons.join("；") : options.gateReason || "与当前问题相关";
 }
 
-function selectRuntimeMemoryItems(
-  rootDir: string,
-  options: Required<Pick<AssistantMemorySnapshotOptions, "query" | "chatId" | "maxItems" | "maxChars">>
+function compareRuntimeMemorySelection(left: RuntimeMemorySelection, right: RuntimeMemorySelection) {
+  if (left.score !== right.score) {
+    return right.score - left.score;
+  }
+  return right.item.updatedAt.localeCompare(left.item.updatedAt);
+}
+
+function layerBudget(maxItems: number, layer: RuntimeMemorySelection["layer"]) {
+  if (layer === "stable") {
+    return Math.max(1, Math.min(maxItems, Math.ceil(maxItems * 0.65)));
+  }
+  if (layer === "session") {
+    return Math.max(1, Math.min(2, maxItems));
+  }
+  return Math.max(0, maxItems);
+}
+
+function selectLayerItems(
+  items: AssistantMemoryItem[],
+  options: {
+    query: string;
+    chatId: string;
+    intent: MemoryQueryIntent;
+    layer: RuntimeMemorySelection["layer"];
+    maxItems: number;
+  },
+  selectedDedupeKeys: Set<string>
 ) {
-  const selected: RuntimeMemorySelection[] = [];
-  const selectedDedupeKeys = new Set<string>();
-  const scored = listAssistantMemoryItemsFromRoot(rootDir)
-    .map((item) => ({
-      item,
-      score: scoreMemoryForQuery(item, options.query, options.chatId)
-    }))
-    .filter((entry) => entry.score > 0)
-    .sort((left, right) => {
-      if (left.score !== right.score) {
-        return right.score - left.score;
+  if (options.maxItems <= 0) {
+    return [];
+  }
+  const selections = items
+    .map((item) => {
+      const gate = gateRuntimeMemoryCandidate(item, options);
+      if (!gate.eligible) {
+        return null;
       }
-      return right.item.updatedAt.localeCompare(left.item.updatedAt);
-    });
-  for (const entry of scored) {
-    const dedupeKey = memoryDedupeKey(entry.item);
+      const score = scoreEligibleMemoryForQuery(item, options);
+      if (score <= 0) {
+        return null;
+      }
+      return {
+        item,
+        score,
+        layer: options.layer,
+        reason: describeMemoryRecallReason(item, {
+          query: options.query,
+          chatId: options.chatId,
+          intent: options.intent,
+          layer: options.layer,
+          gateReason: gate.reason
+        })
+      };
+    })
+    .filter((entry): entry is RuntimeMemorySelection => Boolean(entry))
+    .sort(compareRuntimeMemorySelection);
+
+  const selected: RuntimeMemorySelection[] = [];
+  for (const selection of selections) {
+    const dedupeKey = memoryDedupeKey(selection.item);
     if (dedupeKey && selectedDedupeKeys.has(dedupeKey)) {
       continue;
     }
-    selected.push({
-      item: entry.item,
-      reason: describeMemoryRecallReason(entry.item, options.query, options.chatId)
-    });
+    selected.push(selection);
     if (dedupeKey) {
       selectedDedupeKeys.add(dedupeKey);
     }
@@ -781,12 +1190,83 @@ function selectRuntimeMemoryItems(
   return selected;
 }
 
-function renderRuntimeMemory(selections: RuntimeMemorySelection[], maxChars: number) {
+function selectRuntimeMemoryItems(
+  rootDir: string,
+  options: Required<Pick<AssistantMemorySnapshotOptions, "query" | "chatId" | "maxItems" | "maxChars">>
+) : LayeredRuntimeMemorySelection {
+  const queryIntent = detectMemoryQueryIntent(options.query);
+  const selectedDedupeKeys = new Set<string>();
+  const allItems = listAssistantMemoryItemsFromRoot(rootDir);
+  const layered = allItems.reduce<{
+    stable: AssistantMemoryItem[];
+    session: AssistantMemoryItem[];
+    observation: AssistantMemoryItem[];
+  }>((accumulator, item) => {
+    const layer = getRuntimeMemoryLayer(item, options.chatId);
+    if (layer) {
+      accumulator[layer].push(item);
+    }
+    return accumulator;
+  }, {
+    stable: [],
+    session: [],
+    observation: []
+  });
+  const stableFacts = selectLayerItems(layered.stable, {
+    query: options.query,
+    chatId: options.chatId,
+    intent: queryIntent,
+    layer: "stable",
+    maxItems: layerBudget(options.maxItems, "stable")
+  }, selectedDedupeKeys);
+  const remainingAfterStable = Math.max(0, options.maxItems - stableFacts.length);
+  const currentSession = selectLayerItems(layered.session, {
+    query: options.query,
+    chatId: options.chatId,
+    intent: queryIntent,
+    layer: "session",
+    maxItems: Math.min(layerBudget(options.maxItems, "session"), remainingAfterStable)
+  }, selectedDedupeKeys);
+  const remainingAfterSession = Math.max(0, options.maxItems - stableFacts.length - currentSession.length);
+  const relevantObservations = selectLayerItems(layered.observation, {
+    query: options.query,
+    chatId: options.chatId,
+    intent: queryIntent,
+    layer: "observation",
+    maxItems: remainingAfterSession
+  }, selectedDedupeKeys);
+  return {
+    queryIntent,
+    stableFacts,
+    currentSession,
+    relevantObservations,
+    candidateCountsByLayer: {
+      stable: layered.stable.length,
+      session: layered.session.length,
+      observation: layered.observation.length
+    },
+    selectedCountsByLayer: {
+      stable: stableFacts.length,
+      session: currentSession.length,
+      observation: relevantObservations.length
+    }
+  };
+}
+
+function flattenRuntimeMemorySelection(selection: LayeredRuntimeMemorySelection) {
+  return [
+    ...selection.stableFacts,
+    ...selection.currentSession,
+    ...selection.relevantObservations
+  ];
+}
+
+function renderMemoryLayerSection(title: string, selections: RuntimeMemorySelection[]) {
   if (selections.length === 0) {
     return "";
   }
-  const rendered = [
-    "<运行时记忆>",
+  return [
+    `<${title}>`,
     ...selections.map((selection, index) => {
       const item = selection.item;
       const label = item.kind === "fact" ? "稳定记忆" : "历史观察";
@@ -794,6 +1274,23 @@ function renderRuntimeMemory(selections: RuntimeMemorySelection[], maxChars: num
       const recallReason = selection.reason ? ` 召回原因：${selection.reason}` : "";
       return `${index + 1}. [${label}/${item.category}] ${item.title}：${item.summary}${source}${recallReason}`;
     }),
+    `</${title}>`
+  ].join("\n");
+}
+
+function renderRuntimeMemory(selection: LayeredRuntimeMemorySelection, maxChars: number) {
+  const sections = [
+    renderMemoryLayerSection("Stable Memory", selection.stableFacts),
+    renderMemoryLayerSection("Current Session", selection.currentSession),
+    renderMemoryLayerSection("Relevant Observations", selection.relevantObservations)
+  ].filter(Boolean);
+  if (sections.length === 0) {
+    return "";
+  }
+  const rendered = [
+    "<运行时记忆>",
+    `Query Intent: ${selection.queryIntent}`,
+    ...sections,
     "</运行时记忆>"
   ].join("\n");
   if (rendered.length <= maxChars) {
@@ -802,20 +1299,20 @@ function renderRuntimeMemory(selections: RuntimeMemorySelection[], maxChars: num
   return `${rendered.slice(0, Math.max(0, maxChars - 24))}\n...[记忆已截断]`;
 }
 
-function buildRuntimeMemoryReferences(selections: RuntimeMemorySelection[]): AssistantMemoryReference[] {
-  return selections.map((selection, index) => {
+function buildRuntimeMemoryReferences(selection: LayeredRuntimeMemorySelection): AssistantMemoryReference[] {
+  return flattenRuntimeMemorySelection(selection).map((selection, index) => {
     const item = selection.item;
     return {
-    id: item.id,
-    title: item.title || "本地运行时记忆",
-    path: ASSISTANT_MEMORY_RECORDS_RELATIVE_PATH,
-    lineStart: index + 1,
-    lineEnd: index + 1,
-    excerpt: item.summary.length > MAX_MEMORY_REFERENCE_EXCERPT_LENGTH
-      ? `${item.summary.slice(0, MAX_MEMORY_REFERENCE_EXCERPT_LENGTH)}...`
-      : item.summary,
-    reason: selection.reason
-  };
+      id: item.id,
+      title: item.title || "本地运行时记忆",
+      path: ASSISTANT_MEMORY_RECORDS_RELATIVE_PATH,
+      lineStart: index + 1,
+      lineEnd: index + 1,
+      excerpt: item.summary.length > MAX_MEMORY_REFERENCE_EXCERPT_LENGTH
+        ? `${item.summary.slice(0, MAX_MEMORY_REFERENCE_EXCERPT_LENGTH)}...`
+        : item.summary,
+      reason: selection.reason
+    };
   });
 }
 
@@ -898,14 +1395,17 @@ export function upsertAssistantMemoryItemsFromRoot(
       category,
       title: input.title,
       summary,
-      tags: input.tags
+      tags: input.tags,
+      facet: input.facet,
+      subjectKey: input.subjectKey
     });
     const slotKey = memorySlotKey({
       kind,
       category,
       title: input.title,
       summary,
-      tags: input.tags
+      tags: input.tags,
+      facet: input.facet
     });
     let existing = byFingerprint.get(fingerprint) ?? (dedupeKey ? byDedupeKey.get(dedupeKey) : undefined);
     if (existing && dedupeKey && isConflictingMemory(existing, input)) {
@@ -1182,7 +1682,22 @@ export function readAssistantMemorySnapshotFromRoot(
         maxItems,
         maxChars
       })
-    : [];
+    : {
+        queryIntent: detectMemoryQueryIntent(options.query ?? ""),
+        stableFacts: [],
+        currentSession: [],
+        relevantObservations: [],
+        candidateCountsByLayer: {
+          stable: 0,
+          session: 0,
+          observation: 0
+        },
+        selectedCountsByLayer: {
+          stable: 0,
+          session: 0,
+          observation: 0
+        }
+      };
   const runtimeBlock = renderRuntimeMemory(runtimeItems, maxChars);
   const runtimeReferences = buildRuntimeMemoryReferences(runtimeItems);
   let staticBlock = renderStaticMemory(staticChunks, maxChars);
@@ -1190,7 +1705,7 @@ export function readAssistantMemorySnapshotFromRoot(
     staticBlock = "<静态长期记忆>\n</静态长期记忆>";
   }
   const staticReferences = buildAssistantMemoryReferences(staticChunks);
-  markReferencedMemoryItems(rootDir, runtimeItems.map((selection) => selection.item));
+  markReferencedMemoryItems(rootDir, flattenRuntimeMemorySelection(runtimeItems).map((selection) => selection.item));
 
   const content = [
     staticBlock,
@@ -1204,6 +1719,11 @@ export function readAssistantMemorySnapshotFromRoot(
       query: options.query ?? "",
       chatId: options.chatId ?? "",
       referenced: staticReferences.length + runtimeReferences.length,
+      queryIntent: runtimeItems.queryIntent,
+      candidateCountsByLayer: runtimeItems.candidateCountsByLayer,
+      selectedCountsByLayer: runtimeItems.selectedCountsByLayer,
+      selectedIds: runtimeReferences.map((reference) => reference.id),
+      selectedReasons: runtimeReferences.map((reference) => reference.reason ?? ""),
       maxItems,
       maxChars
     });

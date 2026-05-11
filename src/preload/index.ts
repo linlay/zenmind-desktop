@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   AssistantEvent,
   AssistantEventListener,
+  AssistantAttachmentProgressListener,
   AssistantMemorySettingsInput,
   AssistantPastedImageInput,
   AssistantSettingsInput,
@@ -9,8 +10,10 @@ import type {
   AssistantStartRunRequest,
   AssistantVoiceCorrectionRequest,
   AssistantVoiceTranscriptionRequest,
+  DesktopPetDanceRequestedListener,
   AssistantWorkerOpenListener,
   AssistantWorkerOpenRequest,
+  DesktopPetStateListener,
   DesktopApi,
   NavigateListener,
   NativeDialogVisibilityListener,
@@ -42,8 +45,10 @@ const api: DesktopApi = {
     listChats: () => ipcRenderer.invoke("assistant.listChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
     pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("assistant.pickAttachments", chatId),
+    cancelAttachmentTask: (taskId: string) => ipcRenderer.invoke("assistant.cancelAttachmentTask", taskId),
     addPastedImage: (chatId: string | null | undefined, input: AssistantPastedImageInput) =>
       ipcRenderer.invoke("assistant.addPastedImage", chatId, input),
+    captureScreenshot: (chatId?: string | null) => ipcRenderer.invoke("assistant.captureScreenshot", chatId),
     startRun: (request: AssistantStartRunRequest) => ipcRenderer.invoke("assistant.startRun", request),
     stopRun: (runId: string) => ipcRenderer.invoke("assistant.stopRun", runId),
     correctVoiceText: (request: AssistantVoiceCorrectionRequest) =>
@@ -62,6 +67,19 @@ const api: DesktopApi = {
       ipcRenderer.on("assistant.event", handleAssistantEvent);
       return () => {
         ipcRenderer.off("assistant.event", handleAssistantEvent);
+      };
+    },
+    onAttachmentProgress: (listener: AssistantAttachmentProgressListener) => {
+      const handleAttachmentProgress = (
+        _event: Electron.IpcRendererEvent,
+        payload: Parameters<AssistantAttachmentProgressListener>[0]
+      ) => {
+        listener(payload);
+      };
+
+      ipcRenderer.on("assistant.attachmentProgress", handleAttachmentProgress);
+      return () => {
+        ipcRenderer.off("assistant.attachmentProgress", handleAttachmentProgress);
       };
     }
   },
@@ -109,9 +127,45 @@ const api: DesktopApi = {
     getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
     setSidebarTranslucency: (enabled) => ipcRenderer.invoke("settings.setSidebarTranslucency", enabled)
   },
+  desktopPet: {
+    getSettings: () => ipcRenderer.invoke("desktopPet.getSettings"),
+    getState: () => ipcRenderer.invoke("desktopPet.getState"),
+    saveSettings: (input) => ipcRenderer.invoke("desktopPet.saveSettings", input),
+    show: () => ipcRenderer.invoke("desktopPet.show"),
+    hide: () => ipcRenderer.invoke("desktopPet.hide"),
+    openAssistant: () => ipcRenderer.invoke("desktopPet.openAssistant"),
+    moveBy: (delta) => ipcRenderer.invoke("desktopPet.moveBy", delta),
+    beginDrag: (point) => ipcRenderer.invoke("desktopPet.beginDrag", point),
+    endDrag: () => ipcRenderer.invoke("desktopPet.endDrag"),
+    setPreviewExpanded: (expanded) => ipcRenderer.invoke("desktopPet.setPreviewExpanded", expanded),
+    setMouseInteractive: (interactive) => ipcRenderer.invoke("desktopPet.setMouseInteractive", interactive),
+    onStateChanged: (listener: DesktopPetStateListener) => {
+      const handleDesktopPetStateChanged = (
+        _event: Electron.IpcRendererEvent,
+        state: Parameters<DesktopPetStateListener>[0]
+      ) => {
+        listener(state);
+      };
+
+      ipcRenderer.on("desktopPet.state", handleDesktopPetStateChanged);
+      return () => {
+        ipcRenderer.off("desktopPet.state", handleDesktopPetStateChanged);
+      };
+    },
+    onDanceRequested: (listener: DesktopPetDanceRequestedListener) => {
+      const handleDesktopPetDanceRequested = () => {
+        listener();
+      };
+
+      ipcRenderer.on("desktopPet.danceRequested", handleDesktopPetDanceRequested);
+      return () => {
+        ipcRenderer.off("desktopPet.danceRequested", handleDesktopPetDanceRequested);
+      };
+    }
+  },
   quickAssistant: {
     setExpanded: (expanded: boolean) => ipcRenderer.invoke("quickAssistant.setExpanded", expanded),
-    setDisplayMode: (mode: "compact" | "attachment" | "expanded") =>
+    setDisplayMode: (mode: "compact" | "attachment" | "compactMenu" | "menu" | "expanded") =>
       ipcRenderer.invoke("quickAssistant.setDisplayMode", mode),
     setInteractionState: (state) => ipcRenderer.invoke("quickAssistant.setInteractionState", state),
     onCompactModeRequested: (listener) => {
@@ -125,6 +179,8 @@ const api: DesktopApi = {
       };
     },
     pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("quickAssistant.pickAttachments", chatId),
+    captureScreenshot: (chatId?: string | null) => ipcRenderer.invoke("quickAssistant.captureScreenshot", chatId),
+    cancelAttachmentTask: (taskId: string) => ipcRenderer.invoke("quickAssistant.cancelAttachmentTask", taskId),
     hide: () => ipcRenderer.invoke("quickAssistant.hide"),
     openMainAssistant: (chatId?: string | null) => ipcRenderer.invoke("quickAssistant.openMainAssistant", chatId),
     openSettings: () => ipcRenderer.invoke("quickAssistant.openSettings")

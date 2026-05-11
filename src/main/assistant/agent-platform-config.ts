@@ -5,7 +5,7 @@ import type { App } from "electron";
 import yaml from "js-yaml";
 import type { AssistantSettingsPublic } from "../../shared/contracts";
 import type { AssistantSettingsPrivate } from "./settings-store";
-import { toPublicAssistantSettings } from "./settings-store";
+import { readAssistantSettings, toPublicAssistantSettings } from "./settings-store";
 
 type ProviderConfig = {
   key?: string;
@@ -140,6 +140,14 @@ function resolveProviderAPIKey(providerKey: string, raw: string, env: Map<string
   }
 }
 
+function looksLikePlaceholderProviderAPIKey(apiKey: string) {
+  const normalized = apiKey.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  return /(?:your|example|demo|placeholder|replace[-_\s]*me|change[-_\s]*me|xxx)/iu.test(normalized);
+}
+
 function resolveProviderConfigLocation(app: App, providerKey = "minimax"): ProviderConfigLocation | null {
   const env = readAgentPlatformEnv(app);
   const desktopPath = getPathOrFallback(app, "desktop", path.join(getPathOrFallback(app, "home", process.env.HOME || ""), "Desktop"));
@@ -197,6 +205,7 @@ export function loadAgentPlatformMinimaxSettings(app: App): AssistantSettingsPri
   if (!location) {
     return null;
   }
+  const localSettings = readAssistantSettings(app);
 
   const provider = loadYamlFile<ProviderConfig>(location.providerPath);
   if (!provider?.baseUrl || !provider.apiKey) {
@@ -214,7 +223,8 @@ export function loadAgentPlatformMinimaxSettings(app: App): AssistantSettingsPri
   return {
     baseURL: endpointToBaseURL(provider.baseUrl, endpointPath),
     model: modelId,
-    apiKey: resolveProviderAPIKey(provider.key || "minimax", provider.apiKey, location.env)
+    apiKey: resolveProviderAPIKey(provider.key || "minimax", provider.apiKey, location.env),
+    voiceCorrectionEnabled: localSettings.voiceCorrectionEnabled
   };
 }
 
@@ -224,6 +234,7 @@ export function loadAgentPlatformProviderSettings(
   options: {
     modelKey?: string;
     modelId?: string;
+    rejectPlaceholderApiKey?: boolean;
   } = {}
 ): AssistantSettingsPrivate | null {
   const normalizedProviderKey = providerKey.trim();
@@ -235,6 +246,7 @@ export function loadAgentPlatformProviderSettings(
   if (!location) {
     return null;
   }
+  const localSettings = readAssistantSettings(app);
 
   const provider = loadYamlFile<ProviderConfig>(location.providerPath);
   if (!provider?.baseUrl || !provider.apiKey) {
@@ -253,17 +265,23 @@ export function loadAgentPlatformProviderSettings(
     return null;
   }
   const endpointPath = provider.protocols?.OPENAI?.endpointPath || "/v1/chat/completions";
+  const apiKey = resolveProviderAPIKey(provider.key || normalizedProviderKey, provider.apiKey, location.env);
+  if (options.rejectPlaceholderApiKey && looksLikePlaceholderProviderAPIKey(apiKey)) {
+    return null;
+  }
 
   return {
     baseURL: endpointToBaseURL(provider.baseUrl, endpointPath),
     model: modelId,
-    apiKey: resolveProviderAPIKey(provider.key || normalizedProviderKey, provider.apiKey, location.env)
+    apiKey,
+    voiceCorrectionEnabled: localSettings.voiceCorrectionEnabled
   };
 }
 
 export function loadAgentPlatformVoiceAsrSettings(app: App): AssistantSettingsPrivate | null {
   return loadAgentPlatformProviderSettings(app, "bailian", {
-    modelId: "qwen3-asr-flash"
+    modelId: "qwen3-asr-flash",
+    rejectPlaceholderApiKey: true
   });
 }
 
@@ -289,5 +307,6 @@ export const __testInternals = {
   readAgentPlatformEnv,
   resolveProviderConfigLocation,
   resolveProviderAPIKey,
+  looksLikePlaceholderProviderAPIKey,
   loadAgentPlatformProviderSettings
 };

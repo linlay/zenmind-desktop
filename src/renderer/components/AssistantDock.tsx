@@ -3,7 +3,6 @@ import type {
   AssistantAttachment,
   AssistantAttachmentPickResult,
   AssistantAwaitingPayload,
-  AssistantEvent,
   AssistantChatMessage,
   AssistantChatSummary,
   AssistantPageContext,
@@ -18,6 +17,23 @@ import type {
 import { ZENMIND_ASSISTANT_WONDERS } from "../../shared/assistant-capabilities";
 import { AssistantAwaitingDialog } from "./AssistantAwaitingDialog";
 import { AssistantMarkdownContent } from "./AssistantMarkdownContent";
+import { AttachmentImagePreview } from "./AttachmentImagePreview";
+import {
+  getArtifactAttachmentsFromEvent,
+  getArtifactAttachmentsFromMessages,
+  mergeAssistantAttachments
+} from "../services/assistantArtifacts";
+import {
+  attachRunningAssistantPlaceholder,
+  ensureAssistantMessageForRun as ensureRemoteAssistantMessageForRun,
+  getAssistantErrorContent,
+  getAssistantEventAwaitingPayload,
+  getLatestPendingAwaitingPayload,
+  getLatestRunningRunId,
+  isStructuredAssistantEvent,
+  isTerminalAssistantEvent,
+  shouldEnsureAssistantMessageForEvent
+} from "../services/assistantEventState";
 import { getAssistantPageContext } from "../services/assistantPageContext";
 
 export type AssistantDockMode = "full" | "compact";
@@ -46,57 +62,6 @@ const VOICE_AUDIO_MIME_TYPES = [
   "audio/ogg;codecs=opus"
 ];
 
-const STRUCTURED_ASSISTANT_EVENT_TYPES = new Set([
-  "request.query",
-  "chat.start",
-  "run.start",
-  "content.delta",
-  "tool.start",
-  "tool.args",
-  "tool.route",
-  "tool.result",
-  "tool.verify",
-  "tool.end",
-  "memory.reference",
-  "memory.recalled",
-  "memory.stored",
-  "memory.skipped",
-  "intent.classified",
-  "voice.transcribed",
-  "voice.corrected",
-  "voice.needs_review",
-  "awaiting.confirm",
-  "awaiting.ask",
-  "awaiting.answer",
-  "artifact.publish",
-  "run.complete",
-  "run.error",
-  "run.interrupt",
-  "done",
-  "run.stopped"
-]);
-
-function isStructuredAssistantEvent(event: AssistantEvent): event is AssistantRunEvent {
-  return (
-    STRUCTURED_ASSISTANT_EVENT_TYPES.has(event.type) &&
-    typeof event.id === "string" &&
-    typeof event.seq === "number" &&
-    typeof event.createdAt === "string"
-  );
-}
-
-function isTerminalAssistantEvent(event: AssistantEvent) {
-  return (
-    event.type === "done" ||
-    event.type === "stopped" ||
-    event.type === "error" ||
-    event.type === "run.complete" ||
-    event.type === "run.stopped" ||
-    event.type === "run.error" ||
-    event.type === "done"
-  );
-}
-
 function getRunEventText(event: AssistantRunEvent) {
   if (event.message) {
     return event.message;
@@ -108,8 +73,6 @@ function getRunEventText(event: AssistantRunEvent) {
       return "已进入桌面单智能体会话。";
     case "run.start":
       return "已开始生成。";
-    case "intent.classified":
-      return "已识别本轮意图。";
     case "memory.recalled":
     case "memory.reference":
       return "已引用本地记忆。";
@@ -117,22 +80,12 @@ function getRunEventText(event: AssistantRunEvent) {
       return "已保存本地记忆。";
     case "memory.skipped":
       return "已跳过低价值记忆。";
-    case "voice.transcribed":
-      return "语音识别完成。";
-    case "voice.corrected":
-      return "语音文本已纠正。";
-    case "voice.needs_review":
-      return "语音文本需要确认。";
-    case "tool.route":
-      return "已选择工具。";
     case "tool.start":
       return event.toolName ? `正在执行 ${event.toolName}。` : "正在执行工具。";
     case "tool.args":
       return event.toolName ? `${event.toolName} 参数已准备。` : "工具参数已准备。";
     case "tool.result":
       return event.status === "ok" ? "工具执行完成。" : "工具执行未完成。";
-    case "tool.verify":
-      return event.status === "ok" ? "工具结果已复查。" : "工具结果未通过复查。";
     case "tool.end":
       return event.status === "ok" ? "工具已结束。" : "工具已停止。";
     case "awaiting.confirm":
@@ -160,10 +113,6 @@ function getRunEventText(event: AssistantRunEvent) {
   }
 }
 
-function getAssistantErrorContent(event: AssistantEvent) {
-  return event.message || (event.error ? `生成失败：${event.error}` : "生成失败。");
-}
-
 function getRunTimelineStatusText(runId: string, runningRunId: string | null, events: AssistantRunEvent[]) {
   const lastEvent = events[events.length - 1];
   if (!lastEvent) {
@@ -182,47 +131,6 @@ function getRunTimelineStatusText(runId: string, runningRunId: string | null, ev
     return "运行中";
   }
   return "已完成";
-}
-
-function getAssistantEventAwaitingPayload(event: AssistantRunEvent): AssistantAwaitingPayload | null {
-  if (event.awaiting) {
-    return event.awaiting;
-  }
-  if (event.type !== "awaiting.ask" || !event.awaitingId) {
-    return null;
-  }
-  const data = event.data && typeof event.data === "object" && !Array.isArray(event.data)
-    ? event.data as Partial<AssistantAwaitingPayload>
-    : {};
-  const mode = event.mode === "approval" || event.mode === "form" || event.mode === "question"
-    ? event.mode
-    : event.questions?.length
-      ? "question"
-      : event.approvals?.length
-        ? "approval"
-        : event.forms?.length
-          ? "form"
-          : "question";
-  return {
-    awaitingId: event.awaitingId,
-    mode,
-    title: data.title || event.message || (mode === "question" ? "需要你补充信息" : "需要你确认"),
-    description: data.description,
-    toolName: event.toolName,
-    runId: event.runId,
-    chatId: event.chatId,
-    createdAt: event.timestamp ?? event.createdAt,
-    timeout: event.timeout ?? data.timeout ?? null,
-    timeoutMs: event.timeoutMs ?? data.timeoutMs,
-    questions: event.questions ?? data.questions,
-    approvals: event.approvals ?? data.approvals,
-    forms: event.forms ?? data.forms,
-    viewportKey: event.viewportKey ?? data.viewportKey,
-    viewportHtml: data.viewportHtml,
-    loading: data.loading,
-    loadError: data.loadError,
-    resolvedByOther: data.resolvedByOther
-  };
 }
 
 type SpeechRecognitionAlternativeLike = {
@@ -540,7 +448,7 @@ function buildRunTimelineItems(
   };
 
   for (const event of sortedEvents) {
-    if (event.type === "tool.route" || event.type === "tool.start" || event.type === "tool.args" || event.type === "tool.result" || event.type === "tool.verify" || event.type === "tool.end") {
+    if (event.type === "tool.start" || event.type === "tool.args" || event.type === "tool.result" || event.type === "tool.end") {
       const { item, groupKey } = ensureToolItem(event);
       const record = ensureToolRecord(event, item, groupKey);
       updateToolRecordStatus(record, event.status);
@@ -552,10 +460,6 @@ function buildRunTimelineItems(
         record.resultText = event.message || formatTimelineValue(event.data) || record.resultText;
         record.errorText = event.error || record.errorText;
         record.verificationLabel = getTimelineVerificationLabel(event.data) || record.verificationLabel;
-      }
-      if (event.type === "tool.verify") {
-        record.verificationLabel = event.message || getTimelineStatusLabel(event.status || "ok");
-        record.errorText = event.error || record.errorText;
       }
       if (event.type === "tool.end" && event.message && !record.resultText) {
         record.resultText = event.message;
@@ -729,82 +633,6 @@ function createOptimisticMessage(
   } satisfies AssistantChatMessage;
 }
 
-function mergeAssistantAttachments(
-  current: AssistantAttachment[] | undefined,
-  next: AssistantAttachment[]
-) {
-  if (next.length === 0) {
-    return current;
-  }
-  const merged = [...(current ?? [])];
-  const knownIds = new Set(merged.map((attachment) => attachment.id));
-  for (const attachment of next) {
-    if (!knownIds.has(attachment.id)) {
-      merged.push(attachment);
-      knownIds.add(attachment.id);
-    }
-  }
-  return merged;
-}
-
-function artifactRecordToAttachment(value: unknown): AssistantAttachment | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  const id = typeof record.attachmentId === "string" ? record.attachmentId : "";
-  const name = typeof record.name === "string" ? record.name : "";
-  if (!id || !name) {
-    return null;
-  }
-  return {
-    id,
-    name,
-    mimeType: typeof record.mimeType === "string" ? record.mimeType : "application/octet-stream",
-    sizeBytes: typeof record.sizeBytes === "number" && Number.isFinite(record.sizeBytes) ? record.sizeBytes : 0,
-    text: "",
-    kind: "artifact",
-    ...(typeof record.artifactId === "string" ? { artifactId: record.artifactId } : {}),
-    ...(typeof record.description === "string" ? { description: record.description } : {}),
-    ...(typeof record.sha256 === "string" ? { sha256: record.sha256 } : {}),
-    ...(typeof record.url === "string" ? { url: record.url } : {})
-  };
-}
-
-function getArtifactAttachmentsFromEvent(event: AssistantRunEvent) {
-  if (event.type !== "artifact.publish") {
-    return [];
-  }
-  const data = event.data && typeof event.data === "object" && !Array.isArray(event.data)
-    ? event.data as Record<string, unknown>
-    : {};
-  const rawArtifacts = Array.isArray(event.artifacts)
-    ? event.artifacts
-    : Array.isArray(data.artifacts)
-      ? data.artifacts
-      : event.artifact
-        ? [event.artifact]
-        : data.artifact
-          ? [data.artifact]
-          : [];
-  return rawArtifacts
-    .map(artifactRecordToAttachment)
-    .filter((attachment): attachment is AssistantAttachment => Boolean(attachment));
-}
-
-function getArtifactAttachmentsFromMessages(messages: AssistantChatMessage[]) {
-  const artifacts = new Map<string, AssistantAttachment>();
-  for (const message of messages) {
-    for (const attachment of message.attachments ?? []) {
-      if (attachment.kind !== "artifact") {
-        continue;
-      }
-      artifacts.set(attachment.artifactId || attachment.id, attachment);
-    }
-  }
-  return Array.from(artifacts.values()).reverse();
-}
-
 function hasUsefulPageText(pageContext: AssistantPageContext | null) {
   if (!pageContext) {
     return false;
@@ -934,6 +762,18 @@ function PaperclipIcon() {
     <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
       <path d="m8.8 12.2 5.1-5.1a3.3 3.3 0 0 1 4.6 4.6l-6.3 6.3a5 5 0 0 1-7.1-7.1l6.7-6.7" />
       <path d="m10 13.4 5.6-5.6a1.8 1.8 0 0 1 2.5 2.5l-5.8 5.8a2.5 2.5 0 0 1-3.5-3.5" />
+    </svg>
+  );
+}
+
+function ScreenshotIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+      <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+      <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+      <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+      <path d="M9 9h6v6H9z" />
     </svg>
   );
 }
@@ -1146,6 +986,7 @@ export function AssistantDock({
   const [feedback, setFeedback] = useState("");
   const [loadingChatId, setLoadingChatId] = useState("");
   const [attachments, setAttachments] = useState<AssistantAttachment[]>([]);
+  const [activeAttachmentTaskId, setActiveAttachmentTaskId] = useState<string | null>(null);
   const [activeAwaiting, setActiveAwaiting] = useState<AssistantAwaitingPayload | null>(null);
   const [artifactDockVisible, setArtifactDockVisible] = useState(true);
   const [hiddenArtifactIds, setHiddenArtifactIds] = useState<Set<string>>(() => new Set());
@@ -1158,9 +999,14 @@ export function AssistantDock({
   const [fullAccessExpiresAt, setFullAccessExpiresAt] = useState<number | null>(null);
   const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
   const [chatHistoryQuery, setChatHistoryQuery] = useState("");
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [attachmentMenuPinned, setAttachmentMenuPinned] = useState(false);
+  const [previewImageAttachment, setPreviewImageAttachment] = useState<AssistantAttachment | null>(null);
   const activeChatIdRef = useRef<string | null>(activeChatId);
   const runningRunIdRef = useRef<string | null>(runningRunId);
   const runMessageIdsRef = useRef(new Map<string, string>());
+  const attachmentMenuRef = useRef<HTMLDivElement | null>(null);
+  const attachmentMenuCloseTimerRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const chatHistoryRef = useRef<HTMLDivElement | null>(null);
@@ -1175,6 +1021,7 @@ export function AssistantDock({
   const voiceFinalTranscriptRef = useRef("");
   const voiceStopRequestedRef = useRef(false);
   const voiceCancelCorrectionRef = useRef(false);
+  const voiceRecognitionFallbackToRecorderRef = useRef(false);
   const voiceCorrectionRequestIdRef = useRef(0);
   const voiceRecognitionStartingRef = useRef(false);
   const voiceRecognitionActiveRef = useRef(false);
@@ -1196,8 +1043,41 @@ export function AssistantDock({
     if (!open) {
       setChatHistoryOpen(false);
       setChatHistoryQuery("");
+      closeAttachmentMenu();
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!attachmentMenuOpen) {
+      return undefined;
+    }
+    const handleDocumentPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && attachmentMenuRef.current?.contains(target)) {
+        return;
+      }
+      closeAttachmentMenu();
+    };
+    const handleDocumentKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeAttachmentMenu();
+      }
+    };
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleDocumentPointerDown);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [attachmentMenuOpen]);
+
+  useEffect(() => {
+    if (runningRunId) {
+      closeAttachmentMenu();
+    }
+  }, [runningRunId]);
+
+  useEffect(() => () => clearAttachmentMenuCloseTimer(), []);
 
   useEffect(() => {
     if (!chatHistoryOpen) {
@@ -1232,6 +1112,14 @@ export function AssistantDock({
   function updateDraft(nextDraft: string) {
     draftRef.current = nextDraft;
     setDraft(nextDraft);
+  }
+
+  function ensureAssistantMessageForRun(runId: string) {
+    return ensureRemoteAssistantMessageForRun(runId, runMessageIdsRef.current, setMessages, "remote_");
+  }
+
+  function attachRunningPlaceholder(messagesForChat: AssistantChatMessage[], runId: string | null) {
+    return attachRunningAssistantPlaceholder(messagesForChat, runId, runMessageIdsRef.current, "remote_");
   }
 
   function getEffectivePermissionMode(now = Date.now()): AssistantPermissionMode {
@@ -1302,6 +1190,13 @@ export function AssistantDock({
   }, []);
 
   useEffect(() => {
+    return window.electronAPI.assistant.onAttachmentProgress((progress) => {
+      setActiveAttachmentTaskId(progress.done ? null : progress.taskId);
+      setFeedback(progress.message);
+    });
+  }, []);
+
+  useEffect(() => {
     if (!open) {
       return;
     }
@@ -1311,7 +1206,7 @@ export function AssistantDock({
   }, [open]);
 
   useEffect(() => {
-    if (!open || !requestedChatId || requestedChatId === activeChatIdRef.current) {
+    if (!open || !requestedChatId) {
       return;
     }
     void loadChat(requestedChatId);
@@ -1319,6 +1214,7 @@ export function AssistantDock({
 
   useEffect(() => {
     return window.electronAPI.assistant.onAssistantEvent((event) => {
+      const isActiveChatEvent = event.chatId === activeChatIdRef.current;
       if (isStructuredAssistantEvent(event)) {
         setRunEvents((current) => {
           if (current.some((item) => item.id === event.id)) {
@@ -1326,14 +1222,18 @@ export function AssistantDock({
           }
           return [...current, event];
         });
-        if (event.type === "awaiting.ask") {
+        if (isActiveChatEvent && event.type === "run.start") {
+          setRunningRunId(event.runId);
+          ensureAssistantMessageForRun(event.runId);
+        }
+        if (isActiveChatEvent && event.type === "awaiting.ask") {
           const awaiting = getAssistantEventAwaitingPayload(event);
           if (awaiting) {
             setActiveAwaiting(awaiting);
           }
         }
-        if (event.type === "awaiting.answer") {
-          const awaitingId = event.awaiting?.awaitingId;
+        if (isActiveChatEvent && event.type === "awaiting.answer") {
+          const awaitingId = event.awaiting?.awaitingId ?? event.awaitingId;
           setActiveAwaiting((current) => {
             if (!current || (awaitingId && current.awaitingId !== awaitingId)) {
               return current;
@@ -1343,7 +1243,8 @@ export function AssistantDock({
         }
       }
 
-      const messageId = runMessageIdsRef.current.get(event.runId);
+      const messageId = runMessageIdsRef.current.get(event.runId) ??
+        (isActiveChatEvent && shouldEnsureAssistantMessageForEvent(event) ? ensureAssistantMessageForRun(event.runId) : undefined);
       if ((event.type === "delta" || event.type === "content.delta") && messageId && event.delta) {
         setMessages((current) =>
           current.map((message) =>
@@ -1431,6 +1332,7 @@ export function AssistantDock({
           (event) => event.runId === runId && isTerminalAssistantEvent(event)
         );
         if (terminalEvent) {
+          activeChatIdRef.current = chat.summary.id;
           setActiveChatId(chat.summary.id);
           setMessages(chat.messages);
           runMessageIdsRef.current.delete(runId);
@@ -1461,6 +1363,7 @@ export function AssistantDock({
     return () => {
       voiceStopRequestedRef.current = true;
       voiceCancelCorrectionRef.current = true;
+      voiceRecognitionFallbackToRecorderRef.current = false;
       voiceCorrectionRequestIdRef.current += 1;
       stopRecordedVoiceInput(true);
       voiceRecognitionRef.current?.abort();
@@ -1477,6 +1380,7 @@ export function AssistantDock({
 
     voiceStopRequestedRef.current = true;
     voiceCancelCorrectionRef.current = true;
+    voiceRecognitionFallbackToRecorderRef.current = false;
     voiceCorrectionRequestIdRef.current += 1;
     if (voiceState === "recording") {
       stopRecordedVoiceInput(true);
@@ -1518,11 +1422,15 @@ export function AssistantDock({
         setFeedback("该对话不存在或已被删除。");
         return;
       }
+      const events = chat.events ?? [];
+      const runningChatRunId = getLatestRunningRunId(events);
+      activeChatIdRef.current = chat.summary.id;
       setActiveChatId(chat.summary.id);
-      setMessages(chat.messages);
-      setRunEvents(chat.events ?? []);
+      setMessages(attachRunningPlaceholder(chat.messages, runningChatRunId));
+      setRunEvents(events);
+      setRunningRunId(runningChatRunId);
       setAttachments([]);
-      setActiveAwaiting(null);
+      setActiveAwaiting(getLatestPendingAwaitingPayload(events));
       setArtifactDockVisible(true);
       setChatHistoryOpen(false);
     } catch (reason) {
@@ -1533,6 +1441,7 @@ export function AssistantDock({
   }
 
   function startNewChat() {
+    activeChatIdRef.current = null;
     setActiveChatId(null);
     setMessages([]);
     setRunEvents([]);
@@ -1557,6 +1466,16 @@ export function AssistantDock({
     return pageContext;
   }
 
+  async function finalizeVoiceTranscript(transcript: string) {
+    const voiceText = transcript.trim();
+    if (!voiceText) {
+      setVoiceState("idle");
+      return;
+    }
+
+    await correctVoiceTranscript(voiceText);
+  }
+
   async function correctVoiceTranscript(transcript: string) {
     const voiceText = transcript.trim();
     if (!voiceText) {
@@ -1570,7 +1489,7 @@ export function AssistantDock({
     const expectedDraft = mergeVoiceText(baseDraft, voiceText);
     updateDraft(expectedDraft);
     setVoiceState("correcting");
-    setVoiceFeedback("正在纠正语音文本...");
+    setVoiceFeedback("正在整理语音文本...");
 
     try {
       const result = await window.electronAPI.assistant.correctVoiceText({
@@ -1646,21 +1565,46 @@ export function AssistantDock({
     recognition.onerror = (event) => {
       voiceRecognitionStartingRef.current = false;
       voiceRecognitionActiveRef.current = false;
-      if (!voiceStopRequestedRef.current && event.error !== "aborted") {
-        setVoiceFeedback(event.message || getVoiceErrorMessage(event.error));
+      const hasTranscript = Boolean(voiceCurrentTranscriptRef.current.trim());
+      const shouldFallbackToRecorder =
+        !voiceStopRequestedRef.current &&
+        event.error === "network" &&
+        !hasTranscript &&
+        canUseRecordedVoiceInput();
+      if (
+        !voiceStopRequestedRef.current &&
+        event.error !== "aborted" &&
+        !hasTranscript
+      ) {
+        if (shouldFallbackToRecorder) {
+          setVoiceFeedback("内部语音识别网络不可用，正在切换录音转写...");
+        } else {
+          setVoiceFeedback(event.message || getVoiceErrorMessage(event.error));
+        }
       }
-      voiceCancelCorrectionRef.current = true;
+      voiceRecognitionFallbackToRecorderRef.current = shouldFallbackToRecorder;
+      voiceCancelCorrectionRef.current = !hasTranscript && !shouldFallbackToRecorder;
       setVoiceState("idle");
     };
     recognition.onend = () => {
       voiceRecognitionStartingRef.current = false;
       voiceRecognitionActiveRef.current = false;
       const shouldSkipCorrection = voiceCancelCorrectionRef.current;
+      const shouldFallbackToRecorder = voiceRecognitionFallbackToRecorderRef.current;
       const transcript = voiceCurrentTranscriptRef.current;
       voiceStopRequestedRef.current = false;
       voiceCancelCorrectionRef.current = false;
+      voiceRecognitionFallbackToRecorderRef.current = false;
+      if (shouldFallbackToRecorder) {
+        void startRecordedVoiceInput({
+          force: true,
+          preserveBaseDraft: true,
+          feedback: "内部语音识别网络不可用，已切换录音转写，点击麦克风结束。"
+        });
+        return;
+      }
       if (!shouldSkipCorrection && transcript.trim()) {
-        void correctVoiceTranscript(transcript);
+        void finalizeVoiceTranscript(transcript);
         return;
       }
       setVoiceState("idle");
@@ -1719,25 +1663,29 @@ export function AssistantDock({
         setVoiceState("idle");
         return;
       }
-      await correctVoiceTranscript(result.text);
+      await finalizeVoiceTranscript(result.text);
     } catch (reason) {
       setVoiceFeedback(normalizeVoiceFeedbackMessage(reason instanceof Error ? reason.message : "语音识别失败。"));
       setVoiceState("idle");
     }
   }
 
-  async function startRecordedVoiceInput() {
-    if (runningRunId || voiceState !== "idle" || voiceRecorderActiveRef.current) {
+  async function startRecordedVoiceInput(
+    options: { force?: boolean; preserveBaseDraft?: boolean; feedback?: string } = {}
+  ) {
+    if (runningRunId || voiceRecorderActiveRef.current || (!options.force && voiceState !== "idle")) {
       return;
     }
 
-    voiceBaseDraftRef.current = draftRef.current;
+    if (!options.preserveBaseDraft) {
+      voiceBaseDraftRef.current = draftRef.current;
+    }
     voiceCurrentTranscriptRef.current = "";
     voiceFinalTranscriptRef.current = "";
     voiceStopRequestedRef.current = false;
     voiceCancelCorrectionRef.current = false;
     voiceAudioChunksRef.current = [];
-    setVoiceFeedback("正在监听，点击麦克风结束。");
+    setVoiceFeedback(options.feedback || "正在监听，点击麦克风结束。");
     setVoiceState("recording");
 
     try {
@@ -1796,6 +1744,7 @@ export function AssistantDock({
     voiceFinalTranscriptRef.current = "";
     voiceStopRequestedRef.current = false;
     voiceCancelCorrectionRef.current = false;
+    voiceRecognitionFallbackToRecorderRef.current = false;
     voiceRecognitionStartingRef.current = true;
     setVoiceState("recording");
     try {
@@ -1816,7 +1765,11 @@ export function AssistantDock({
       await startRecordedVoiceInput();
       return;
     }
-    startSpeechRecognitionInput();
+    if (getSpeechRecognitionConstructor()) {
+      startSpeechRecognitionInput();
+      return;
+    }
+    setVoiceFeedback(getVoiceUnsupportedMessage(isMac, isWindows));
   }
 
   function stopVoiceInput() {
@@ -1854,17 +1807,17 @@ export function AssistantDock({
       return;
     }
     if (!settings?.configured) {
-      setFeedback("请先在设置中配置助手模型。");
+      setFeedback("请先配置 agent-platform 的 minimax provider。");
       return;
     }
 
     if (voiceState === "recording") {
       stopVoiceInput();
-      setVoiceFeedback("录音已停止，正在准备纠正语音文本...");
+      setVoiceFeedback("录音已停止，正在处理语音输入...");
       return;
     }
     if (voiceState === "correcting") {
-      setVoiceFeedback("语音文本正在纠正，请稍后发送。");
+      setVoiceFeedback("语音输入正在处理中，请稍后发送。");
       return;
     }
 
@@ -1881,15 +1834,22 @@ export function AssistantDock({
     }
 
     const permissionModeForRun = getEffectivePermissionMode();
-    const result = await window.electronAPI.assistant.startRun({
-      chatId: activeChatId,
-      message: content,
-      action,
-      permissionMode: permissionModeForRun,
-      pageContext,
-      attachments: attachmentsForRun,
-      historyBeforeMessageId: options.historyBeforeMessageId
-    });
+    let result;
+    try {
+      result = await window.electronAPI.assistant.startRun({
+        chatId: activeChatId,
+        message: content,
+        action,
+        permissionMode: permissionModeForRun,
+        source: "sidebar",
+        pageContext,
+        attachments: attachmentsForRun,
+        historyBeforeMessageId: options.historyBeforeMessageId
+      });
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      return;
+    }
     if (!result.ok) {
       setFeedback(result.message);
       return;
@@ -1904,14 +1864,15 @@ export function AssistantDock({
       setFullAccessExpiresAt(null);
     }
 
+    const shouldResetMessages = activeChatIdRef.current !== result.chatId && messages.length === 0;
+    activeChatIdRef.current = result.chatId;
     setActiveChatId(result.chatId);
     const userMessage = createOptimisticMessage("user", content, result.runId, attachmentsForRun);
     const assistantMessage = createOptimisticMessage("assistant", "", result.runId);
     runMessageIdsRef.current.set(result.runId, assistantMessage.id);
     setRunningRunId(result.runId);
     setMessages((current) => {
-      const shouldReset = activeChatIdRef.current !== result.chatId && current.length === 0;
-      return [...(shouldReset ? [] : current), userMessage, assistantMessage];
+      return [...(shouldResetMessages ? [] : current), userMessage, assistantMessage];
     });
     updateDraft("");
     if (shouldClearComposerAttachments) {
@@ -1957,8 +1918,9 @@ export function AssistantDock({
     const isActiveChat = chatId === activeChatIdRef.current;
     const result = await window.electronAPI.assistant.deleteChat(chatId);
     setFeedback(result.message);
-    if (isActiveChat) {
-      setActiveChatId(null);
+	    if (isActiveChat) {
+	      activeChatIdRef.current = null;
+	      setActiveChatId(null);
       setMessages([]);
       setRunEvents([]);
       setAttachments([]);
@@ -1974,7 +1936,8 @@ export function AssistantDock({
       setFeedback(result.message);
       return;
     }
-    setActiveChatId(result.chatId);
+	    activeChatIdRef.current = result.chatId;
+	    setActiveChatId(result.chatId);
     setAttachments((current) => {
       const existingIds = new Set(current.map((attachment) => attachment.id));
       return [
@@ -1987,7 +1950,7 @@ export function AssistantDock({
   }
 
   async function handlePickAttachments() {
-    if (runningRunId) {
+    if (runningRunId || activeAttachmentTaskId) {
       return;
     }
     setFeedback("");
@@ -2003,6 +1966,84 @@ export function AssistantDock({
     } finally {
       setAttachmentPickerVisible(false);
     }
+  }
+
+  async function handleCaptureScreenshot() {
+    if (runningRunId || activeAttachmentTaskId) {
+      return;
+    }
+    setFeedback("");
+    try {
+      const result = await window.electronAPI.assistant.captureScreenshot(activeChatId);
+      await appendAttachmentResult(result);
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function handleCancelAttachmentTask() {
+    if (!activeAttachmentTaskId) {
+      return;
+    }
+    const result = await window.electronAPI.assistant.cancelAttachmentTask(activeAttachmentTaskId);
+    setFeedback(result.message);
+    if (result.ok) {
+      setActiveAttachmentTaskId(null);
+    }
+  }
+
+  function clearAttachmentMenuCloseTimer() {
+    if (attachmentMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(attachmentMenuCloseTimerRef.current);
+      attachmentMenuCloseTimerRef.current = null;
+    }
+  }
+
+  function closeAttachmentMenu() {
+    clearAttachmentMenuCloseTimer();
+    setAttachmentMenuOpen(false);
+    setAttachmentMenuPinned(false);
+  }
+
+  function showAttachmentMenu() {
+    if (runningRunId || activeAttachmentTaskId) {
+      return;
+    }
+    clearAttachmentMenuCloseTimer();
+    setAttachmentMenuOpen(true);
+  }
+
+  function hideAttachmentMenuOnLeave() {
+    if (!attachmentMenuPinned) {
+      clearAttachmentMenuCloseTimer();
+      attachmentMenuCloseTimerRef.current = window.setTimeout(() => {
+        attachmentMenuCloseTimerRef.current = null;
+        setAttachmentMenuOpen(false);
+      }, 180);
+    }
+  }
+
+  function toggleAttachmentMenu() {
+    if (runningRunId || activeAttachmentTaskId) {
+      return;
+    }
+    if (attachmentMenuOpen && attachmentMenuPinned) {
+      closeAttachmentMenu();
+      return;
+    }
+    clearAttachmentMenuCloseTimer();
+    setAttachmentMenuOpen(true);
+    setAttachmentMenuPinned(true);
+  }
+
+  async function handlePickAttachmentsFromMenu() {
+    closeAttachmentMenu();
+    await handlePickAttachments();
+  }
+
+  async function handleCaptureScreenshotFromMenu() {
+    closeAttachmentMenu();
+    await handleCaptureScreenshot();
   }
 
   async function handleComposerPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
@@ -2114,6 +2155,10 @@ export function AssistantDock({
       : Boolean(attachment.text.trim() || attachment.dataUrl || !attachment.error);
   }
 
+  function canPreviewImageAttachment(attachment: AssistantAttachment) {
+    return Boolean(attachment.dataUrl && attachment.mimeType.toLowerCase().startsWith("image/"));
+  }
+
   function attachmentStatusTitle(attachment: AssistantAttachment) {
     return [formatAttachmentDocumentStatus(attachment), attachment.error, attachment.name].filter(Boolean).join("，");
   }
@@ -2198,9 +2243,32 @@ export function AssistantDock({
 
   function renderFeedback() {
     const notices = [
-      feedback,
-      voiceFeedback,
-      loadingChatId ? "正在读取对话..." : ""
+      feedback
+        ? {
+            id: "feedback",
+            message: feedback,
+            action: activeAttachmentTaskId
+              ? {
+                  label: "取消",
+                  onClick: () => void handleCancelAttachmentTask()
+                }
+              : null,
+            onDismiss: () => setFeedback("")
+          }
+        : null,
+      voiceFeedback
+        ? {
+            id: "voice-feedback",
+            message: voiceFeedback,
+            onDismiss: () => setVoiceFeedback("")
+          }
+        : null,
+      loadingChatId
+        ? {
+            id: "loading-chat",
+            message: "正在读取对话..."
+          }
+        : null
     ].filter(Boolean);
     if (notices.length === 0) {
       return null;
@@ -2208,7 +2276,32 @@ export function AssistantDock({
     return (
       <div className="assistant-dock-feedback-stack">
         {notices.map((notice) => (
-          <div className="assistant-dock-feedback" key={notice}>{notice}</div>
+          <div
+            className={`assistant-dock-feedback${notice.onDismiss ? " is-dismissible" : ""}`}
+            key={notice.id}
+          >
+            <span className="assistant-dock-feedback-text">{notice.message}</span>
+            {notice.action ? (
+              <button
+                type="button"
+                className="assistant-dock-feedback-action"
+                onClick={notice.action.onClick}
+              >
+                {notice.action.label}
+              </button>
+            ) : null}
+            {notice.onDismiss ? (
+              <button
+                type="button"
+                className="assistant-dock-feedback-dismiss"
+                onClick={notice.onDismiss}
+                aria-label="关闭提示"
+                title="关闭"
+              >
+                <CloseIcon />
+              </button>
+            ) : null}
+          </div>
         ))}
       </div>
     );
@@ -2748,15 +2841,16 @@ export function AssistantDock({
     const permissionTitle = effectivePermissionMode === "full_access"
       ? `完全允许控制，${formatFullAccessRemaining(fullAccessRemainingMs)} 内不再二次确认`
       : "询问后操作，危险操作会先确认";
+    const permissionModeLabel = effectivePermissionMode === "full_access" ? "完全允许控制" : "询问后操作";
     const voiceButtonDisabled = !configured || !voiceSupported || Boolean(runningRunId) || voiceState === "correcting";
     const voiceButtonTitle = !configured
-      ? "请先配置助手模型"
+      ? "请先配置 minimax provider"
       : !voiceSupported
         ? getVoiceUnsupportedMessage(isMac, isWindows)
         : voiceState === "recording"
           ? "停止语音输入"
           : voiceState === "correcting"
-            ? "正在纠正语音文本"
+            ? "正在处理语音输入"
             : "语音输入";
 
     return (
@@ -2770,27 +2864,44 @@ export function AssistantDock({
         <div className="assistant-dock-composer-shell">
           {attachments.some((attachment) => !attachment.hidden) ? (
             <div className="assistant-dock-attachments" aria-label="已选择附件">
-              {attachments.filter((attachment) => !attachment.hidden).map((attachment) => (
-                <span
-                  className={
-                    isAttachmentReadable(attachment)
-                      ? "assistant-dock-attachment-chip"
-                      : "assistant-dock-attachment-chip has-warning"
-                  }
-                  key={attachment.id}
-                  title={attachmentStatusTitle(attachment)}
-                >
-                  {attachment.name}
+              {attachments.filter((attachment) => !attachment.hidden).map((attachment) => {
+                const canPreviewImage = canPreviewImageAttachment(attachment);
+                return (
+                  <span
+                    className={[
+                      isAttachmentReadable(attachment)
+                        ? "assistant-dock-attachment-chip"
+                        : "assistant-dock-attachment-chip has-warning",
+                      canPreviewImage ? "is-image-previewable" : ""
+                    ].filter(Boolean).join(" ")}
+                    key={attachment.id}
+                    title={canPreviewImage ? `点击预览：${attachment.name}` : attachmentStatusTitle(attachment)}
+                  >
+                    {canPreviewImage ? (
+                      <button
+                        type="button"
+                        className="assistant-dock-attachment-preview-button"
+                        onClick={() => setPreviewImageAttachment(attachment)}
+                        aria-label={`预览图片 ${attachment.name}`}
+                      >
+                        <img src={attachment.dataUrl} alt="" draggable={false} />
+                        <span>{attachment.name}</span>
+                      </button>
+                    ) : (
+                      <span className="assistant-dock-attachment-name">{attachment.name}</span>
+                    )}
                   <button
                     type="button"
+                    className="assistant-dock-attachment-remove"
                     onClick={() => removeAttachment(attachment.id)}
                     aria-label={`移除附件 ${attachment.name}`}
-                    disabled={Boolean(runningRunId)}
+                    disabled={Boolean(runningRunId) || Boolean(activeAttachmentTaskId)}
                   >
                     <CloseIcon />
                   </button>
                 </span>
-              ))}
+                );
+              })}
             </div>
           ) : null}
           <textarea
@@ -2806,16 +2917,43 @@ export function AssistantDock({
           />
           <div className="assistant-dock-composer-toolbar">
             <div className="assistant-dock-composer-tools">
-              <button
-                type="button"
-                className="assistant-dock-tool-button"
-                onClick={() => void handlePickAttachments()}
-                disabled={Boolean(runningRunId)}
-                aria-label="添加附件"
-                title="添加附件"
+              <div
+                className="assistant-dock-attachment-entry attachment-action-menu-root"
+                ref={attachmentMenuRef}
+                onPointerEnter={showAttachmentMenu}
+                onPointerLeave={hideAttachmentMenuOnLeave}
               >
-                <PaperclipIcon />
-              </button>
+                <button
+                  type="button"
+                  className="assistant-dock-tool-button"
+                  onClick={toggleAttachmentMenu}
+                  disabled={Boolean(runningRunId) || Boolean(activeAttachmentTaskId)}
+                  aria-label="添加附件"
+                  title="添加附件"
+                  aria-haspopup="menu"
+                  aria-expanded={attachmentMenuOpen}
+                >
+                  <PaperclipIcon />
+                </button>
+                <div
+                  className={[
+                    "attachment-action-menu",
+                    "assistant-dock-attachment-action-menu",
+                    attachmentMenuOpen ? "is-open" : ""
+                  ].filter(Boolean).join(" ")}
+                  role="menu"
+                  aria-label="附件操作"
+                >
+                  <button type="button" className="attachment-action-menu-item" onClick={() => void handlePickAttachmentsFromMenu()} role="menuitem">
+                    <PaperclipIcon />
+                    <span>添加附件</span>
+                  </button>
+                  <button type="button" className="attachment-action-menu-item" onClick={() => void handleCaptureScreenshotFromMenu()} role="menuitem">
+                    <ScreenshotIcon />
+                    <span>截屏提问</span>
+                  </button>
+                </div>
+              </div>
               <label
                 className={[
                   "assistant-dock-permission-control",
@@ -2823,19 +2961,23 @@ export function AssistantDock({
                 ].filter(Boolean).join(" ")}
                 title={permissionTitle}
               >
-                <span className="assistant-dock-permission-icon">
-                  {effectivePermissionMode === "full_access" ? <ShieldIcon /> : <HandIcon />}
-                </span>
                 <select
                   value={effectivePermissionMode}
                   onChange={(event) => handlePermissionModeChange(event.target.value as AssistantPermissionMode)}
                   disabled={Boolean(runningRunId)}
                   aria-label="助手权限模式"
+                  title={permissionTitle}
                 >
                   <option value="default">询问后操作</option>
                   <option value="full_access">完全允许控制</option>
                 </select>
-                <span className="assistant-dock-permission-chevron">
+                <span className="assistant-dock-permission-icon" aria-hidden="true">
+                  {effectivePermissionMode === "full_access" ? <ShieldIcon /> : <HandIcon />}
+                </span>
+                <span className="assistant-dock-permission-value" aria-hidden="true">
+                  {permissionModeLabel}
+                </span>
+                <span className="assistant-dock-permission-chevron" aria-hidden="true">
                   <ChevronDownIcon />
                 </span>
                 {effectivePermissionMode === "full_access" ? (
@@ -2991,7 +3133,7 @@ export function AssistantDock({
   return (
     <>
       {!open ? (
-        <button type="button" className="assistant-dock-fab" onClick={onOpen} aria-label="打开 ZenMind助手">
+        <button type="button" className="assistant-dock-fab" onClick={onOpen} aria-label="打开 ZenMind">
           <ZenMindLogoIcon />
           <span>助手</span>
         </button>
@@ -2999,10 +3141,14 @@ export function AssistantDock({
       {shouldRenderCompactDismissLayer ? (
         <div className="assistant-dock-outside-dismiss" role="presentation" onMouseDown={onClose} />
       ) : null}
-      <aside className={rootClassName} aria-hidden={!open || shouldHideForNativeDialog} aria-label="ZenMind 助手">
+      <aside className={rootClassName} aria-hidden={!open || shouldHideForNativeDialog} aria-label="ZenMind">
         {mode === "full" ? renderFullMode() : renderCompactMode()}
         {activeAwaiting ? <AssistantAwaitingDialog awaiting={activeAwaiting} onSubmit={submitAwaiting} /> : null}
       </aside>
+      <AttachmentImagePreview
+        attachment={previewImageAttachment}
+        onClose={() => setPreviewImageAttachment(null)}
+      />
     </>
   );
 }

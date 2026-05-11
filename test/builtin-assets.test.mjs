@@ -259,16 +259,18 @@ test("actual synced agent-platform asset includes required entries", () => {
   }
 });
 
-test("actual synced agent-platform asset keeps relay disabled by default for fresh Desktop installs", () => {
+test("actual synced agent-platform asset no longer bundles the local relay", () => {
   const { assetPath } = getSyncedAsset("agent-platform");
   const manifest = readManifestFromArchive(assetPath);
   const programCommon = readArchiveEntryText(assetPath, "agent-platform/scripts/program-common.sh");
+  const envExample = readArchiveEntryText(assetPath, "agent-platform/.env.example");
+  const entries = listArchiveEntries(assetPath);
 
   assert.ok(programCommon, "expected bundled agent-platform program-common.sh to be readable");
-  assert.match(
-    programCommon,
-    /LOCAL_CLI_ACP_RELAY_ENABLED="\$\{LOCAL_CLI_ACP_RELAY_ENABLED:-false\}"/
-  );
+  assert.ok(envExample, "expected bundled agent-platform .env.example to be readable");
+  assert.equal([...entries].some((entry) => entry.includes("local-cli-acp-relay")), false);
+  assert.doesNotMatch(programCommon, /LOCAL_CLI_ACP_RELAY_/);
+  assert.doesNotMatch(envExample, /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_/);
   assert.ok(
     Array.isArray(manifest?.desktop?.envBindings),
     "expected bundled agent-platform manifest to declare desktop env bindings"
@@ -303,7 +305,7 @@ test("validateBundleArchive fails when required entries are missing", () => {
   fs.rmSync(fixture.root, { recursive: true, force: true });
 });
 
-test("validateBundleArchive rejects legacy agent-platform bundles that enable relay by default", () => {
+test("validateBundleArchive rejects legacy agent-platform bundles that still embed relay assets", () => {
   const service = builtinServices.find((item) => item.id === "agent-platform");
   assert.ok(service);
 
@@ -313,7 +315,7 @@ test("validateBundleArchive rejects legacy agent-platform bundles that enable re
     "start.sh": "#!/usr/bin/env bash\nexit 0\n",
     "stop.sh": "#!/usr/bin/env bash\nexit 0\n",
     "deploy.sh": "#!/usr/bin/env bash\nexit 0\n",
-    "scripts/program-common.sh": 'LOCAL_CLI_ACP_RELAY_ENABLED="${LOCAL_CLI_ACP_RELAY_ENABLED:-true}"\n',
+    "scripts/program-common.sh": 'echo legacy relay bundle\n',
     ".env.example": "# LOCAL_CLI_ACP_RELAY_ENABLED=true\n",
     "configs/container-hub.example.yml": "containerHub: {}\n",
     "runtime/registries/providers/.keep": "\n",
@@ -338,7 +340,7 @@ test("validateBundleArchive rejects legacy agent-platform bundles that enable re
 
   assert.throws(
     () => validateBundleArchive(service, fixture.tarPath),
-    /legacy agent-platform relay default|legacy desktop env binding/
+    /legacy desktop env binding|legacy relay residue/
   );
 
   fs.rmSync(fixture.root, { recursive: true, force: true });

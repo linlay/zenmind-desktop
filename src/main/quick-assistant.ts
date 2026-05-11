@@ -12,12 +12,22 @@ export const QUICK_ASSISTANT_ATTACHMENT_SIZE = {
   height: 128
 } as const;
 
+export const QUICK_ASSISTANT_COMPACT_MENU_SIZE = {
+  width: 430,
+  height: 138
+} as const;
+
+export const QUICK_ASSISTANT_MENU_SIZE = {
+  width: 430,
+  height: 184
+} as const;
+
 export const QUICK_ASSISTANT_EXPANDED_SIZE = {
   width: 500,
   height: 600
 } as const;
 
-export type QuickAssistantDisplayMode = "compact" | "attachment" | "expanded";
+export type QuickAssistantDisplayMode = "compact" | "attachment" | "compactMenu" | "menu" | "expanded";
 
 type Platform = NodeJS.Platform | string;
 
@@ -50,7 +60,7 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function normalizeDisplayMode(mode: QuickAssistantDisplayMode | undefined, expanded?: boolean) {
-  if (mode === "compact" || mode === "attachment" || mode === "expanded") {
+  if (mode === "compact" || mode === "attachment" || mode === "compactMenu" || mode === "menu" || mode === "expanded") {
     return mode;
   }
   return expanded ? "expanded" : "compact";
@@ -68,6 +78,10 @@ export function getQuickAssistantBounds({
   const displayMode = normalizeDisplayMode(mode, expanded);
   const targetSize = displayMode === "expanded"
     ? QUICK_ASSISTANT_EXPANDED_SIZE
+    : displayMode === "compactMenu"
+      ? QUICK_ASSISTANT_COMPACT_MENU_SIZE
+    : displayMode === "menu"
+      ? QUICK_ASSISTANT_MENU_SIZE
     : displayMode === "attachment"
       ? QUICK_ASSISTANT_ATTACHMENT_SIZE
       : QUICK_ASSISTANT_COMPACT_SIZE;

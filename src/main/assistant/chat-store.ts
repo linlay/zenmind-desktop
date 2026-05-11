@@ -58,6 +58,41 @@ function ensureChatsRoot(rootDir: string) {
   fs.mkdirSync(getChatsRoot(rootDir), { recursive: true });
 }
 
+function backupCorruptFile(filePath: string) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return "";
+    }
+    const backupPath = `${filePath}.corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    fs.renameSync(filePath, backupPath);
+    return backupPath;
+  } catch {
+    return "";
+  }
+}
+
+function atomicWriteFile(filePath: string, content: string) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tempPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${Date.now().toString(36)}.${randomUUID().slice(0, 8)}.tmp`
+  );
+  fs.writeFileSync(tempPath, content, "utf8");
+  fs.renameSync(tempPath, filePath);
+}
+
+function readJsonFileOrRecover<T>(filePath: string, fallback: T): T {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return fallback;
+    }
+    backupCorruptFile(filePath);
+    return fallback;
+  }
+}
+
 function createChatId() {
   return `chat_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
 }
@@ -278,24 +313,16 @@ export function createAssistantMessage(
 
 function readIndex(rootDir: string): StoredIndex {
   ensureChatsRoot(rootDir);
-  try {
-    const raw = fs.readFileSync(getIndexPath(rootDir), "utf8");
-    const parsed = JSON.parse(raw) as Partial<StoredIndex>;
-    return {
-      chats: Array.isArray(parsed.chats) ? parsed.chats.filter(isChatSummary) : []
-    };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { chats: [] };
-    }
-    throw error;
-  }
+  const parsed = readJsonFileOrRecover<Partial<StoredIndex>>(getIndexPath(rootDir), {});
+  return {
+    chats: Array.isArray(parsed.chats) ? parsed.chats.filter(isChatSummary) : []
+  };
 }
 
 function writeIndex(rootDir: string, index: StoredIndex) {
   ensureChatsRoot(rootDir);
   const sorted = [...index.chats].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  fs.writeFileSync(getIndexPath(rootDir), `${JSON.stringify({ chats: sorted }, null, 2)}\n`, "utf8");
+  atomicWriteFile(getIndexPath(rootDir), `${JSON.stringify({ chats: sorted }, null, 2)}\n`);
 }
 
 function isChatSummary(value: unknown): value is AssistantChatSummary {
@@ -341,63 +368,75 @@ export function createChatTitle(content: string) {
 function writeChat(rootDir: string, chat: StoredChat) {
   ensureChatsRoot(rootDir);
   fs.mkdirSync(getChatDir(rootDir, chat.summary.id), { recursive: true });
-  fs.writeFileSync(getChatPath(rootDir, chat.summary.id), `${JSON.stringify(chat, null, 2)}\n`, "utf8");
+  atomicWriteFile(getChatPath(rootDir, chat.summary.id), `${JSON.stringify(chat, null, 2)}\n`);
 }
 
 function readChat(rootDir: string, chatId: string): AssistantChatDetail | null {
   ensureChatsRoot(rootDir);
-  try {
-    const chatPath = fs.existsSync(getChatPath(rootDir, chatId))
-      ? getChatPath(rootDir, chatId)
-      : getLegacyChatPath(rootDir, chatId);
-    const raw = fs.readFileSync(chatPath, "utf8");
-    const parsed = JSON.parse(raw) as Partial<StoredChat>;
-    if (!isChatSummary(parsed.summary)) {
-      return null;
-    }
-    const messages = Array.isArray(parsed.messages)
-      ? parsed.messages.map(normalizeMessage).filter((message): message is AssistantChatMessage => Boolean(message))
-      : [];
-    return {
-      summary: parsed.summary,
-      messages: mergeLegacyStoredAttachments(rootDir, chatId, messages),
-      events: readAssistantEventsFromRoot(rootDir, chatId)
-    };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return null;
-    }
-    throw error;
+  const chatPath = fs.existsSync(getChatPath(rootDir, chatId))
+    ? getChatPath(rootDir, chatId)
+    : getLegacyChatPath(rootDir, chatId);
+  const parsed = readJsonFileOrRecover<Partial<StoredChat> | null>(chatPath, null);
+  if (!parsed || !isChatSummary(parsed.summary)) {
+    return null;
   }
+  const messages = Array.isArray(parsed.messages)
+    ? parsed.messages.map(normalizeMessage).filter((message): message is AssistantChatMessage => Boolean(message))
+    : [];
+  return {
+    summary: parsed.summary,
+    messages: mergeLegacyStoredAttachments(rootDir, chatId, messages),
+    events: readAssistantEventsFromRoot(rootDir, chatId)
+  };
 }
 
 export function readAssistantEventsFromRoot(rootDir: string, chatId: string) {
   ensureChatsRoot(rootDir);
+  const eventsPath = getEventsPath(rootDir, chatId);
   try {
-    const raw = fs.readFileSync(getEventsPath(rootDir, chatId), "utf8");
-    return raw
-      .split(/\r?\n/u)
-      .filter(Boolean)
-      .map((line) => {
-        try {
-          return JSON.parse(line) as unknown;
-        } catch {
-          return null;
+    const raw = fs.readFileSync(eventsPath, "utf8");
+    const parsedEvents: AssistantRunEvent[] = [];
+    let corrupt = false;
+    for (const line of raw.split(/\r?\n/u).filter(Boolean)) {
+      try {
+        const parsed = JSON.parse(line) as unknown;
+        if (isRunEvent(parsed)) {
+          parsedEvents.push(parsed);
+        } else {
+          corrupt = true;
         }
-      })
-      .filter(isRunEvent);
+      } catch {
+        corrupt = true;
+      }
+    }
+    if (corrupt) {
+      backupCorruptFile(eventsPath);
+      atomicWriteFile(eventsPath, "");
+      return [];
+    }
+    return parsedEvents;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return [];
     }
-    throw error;
+    backupCorruptFile(eventsPath);
+    return [];
   }
 }
 
 export function appendAssistantEventToRoot(rootDir: string, event: AssistantRunEvent) {
   ensureChatsRoot(rootDir);
   fs.mkdirSync(getChatDir(rootDir, event.chatId), { recursive: true });
-  fs.appendFileSync(getEventsPath(rootDir, event.chatId), `${JSON.stringify(event)}\n`, "utf8");
+  const eventsPath = getEventsPath(rootDir, event.chatId);
+  let existing = "";
+  try {
+    existing = fs.readFileSync(eventsPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      backupCorruptFile(eventsPath);
+    }
+  }
+  atomicWriteFile(eventsPath, `${existing}${JSON.stringify(event)}\n`);
   return event;
 }
 

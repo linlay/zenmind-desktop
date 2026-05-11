@@ -319,6 +319,113 @@ export interface SidebarTranslucencyResult {
   message: string;
 }
 
+export type DesktopPetStatus = "idle" | "running" | "awaiting" | "done" | "error";
+export type DesktopPetAgentPresence = "available" | "busy" | "away" | "offline";
+
+export interface DesktopPetSettings {
+  enabled: boolean;
+  boundAgentKey: string;
+  appearanceId: string;
+}
+
+export interface DesktopPetSettingsInput {
+  enabled?: boolean;
+  boundAgentKey?: string;
+  appearanceId?: string;
+}
+
+export interface DesktopPetAppearanceOption {
+  id: string;
+  displayName: string;
+  description: string;
+  assetBasePath: string;
+  previewAssetPath: string;
+}
+
+export interface DesktopPetAgentOption {
+  agentKey: string;
+  displayName: string;
+  role: string;
+  unreadCount: number;
+}
+
+export type DesktopPetPreviewItemKind =
+  | "thinking"
+  | "content"
+  | "tool"
+  | "action"
+  | "awaiting"
+  | "awaiting-answer"
+  | "artifact"
+  | "plan"
+  | "task"
+  | "status";
+
+export type DesktopPetPreviewItemStatus =
+  | "pending"
+  | "running"
+  | "waiting"
+  | "success"
+  | "error"
+  | "cancelled"
+  | "done";
+
+export interface DesktopPetPreviewItem {
+  id: string;
+  kind: DesktopPetPreviewItemKind;
+  title: string;
+  text: string;
+  detailText?: string;
+  status: DesktopPetPreviewItemStatus;
+  createdAt: string;
+}
+
+export interface DesktopPetPreviewAwaiting {
+  awaitingId: string;
+  mode: AssistantAwaitingMode | "";
+  count: number;
+  title: string;
+  timeoutMs?: number | null;
+}
+
+export interface DesktopPetPreviewPanel {
+  runId: string;
+  chatId: string | null;
+  visible: boolean;
+  expanded: boolean;
+  title: string;
+  summary: string;
+  status: "running" | "waiting" | "done" | "error" | "stopped";
+  items: DesktopPetPreviewItem[];
+  artifactCount: number;
+  awaiting?: DesktopPetPreviewAwaiting;
+  updatedAt: string;
+}
+
+export interface DesktopPetState {
+  supported: boolean;
+  enabled: boolean;
+  visible: boolean;
+  status: DesktopPetStatus;
+  hint: string;
+  messagePreview: string;
+  unreadCount: number;
+  chatId: string | null;
+  appearanceId: string;
+  appearanceOptions: DesktopPetAppearanceOption[];
+  boundAgentKey: string;
+  agentDisplayName: string;
+  agentRole: string;
+  agentPresence: DesktopPetAgentPresence;
+  agentStatusStale: boolean;
+  agentOptions: DesktopPetAgentOption[];
+  previewPanel: DesktopPetPreviewPanel | null;
+  updatedAt: string;
+}
+
+export type DesktopPetStateListener = (state: DesktopPetState) => void;
+export type DesktopPetDanceRequestedListener = () => void;
+
 export interface AssistantWorkerOpenRequest {
   workerKey?: string;
   agentKey?: string;
@@ -341,6 +448,7 @@ export type AssistantMessageRole = "user" | "assistant";
 
 export type AssistantRunAction = "chat" | "summarize_page" | "explain_selection" | "extract_todos";
 export type AssistantPermissionMode = "default" | "full_access";
+export type AssistantRunSource = "sidebar" | "quick-assistant";
 
 export interface AssistantPageContext {
   url: string;
@@ -391,15 +499,13 @@ export interface AssistantSettingsPublic {
   model: string;
   configured: boolean;
   apiKeyConfigured: boolean;
+  voiceCorrectionEnabled: boolean;
   source?: "desktop" | "agent-platform";
   sourceLabel?: string;
 }
 
 export interface AssistantSettingsInput {
-  baseURL?: string;
-  model?: string;
-  apiKey?: string;
-  clearApiKey?: boolean;
+  voiceCorrectionEnabled?: boolean;
 }
 
 export type AssistantMemoryKind = "fact" | "observation";
@@ -411,6 +517,9 @@ export interface AssistantMemoryItem {
   title: string;
   summary: string;
   category: string;
+  scopeType?: "user" | "chat";
+  facet?: string;
+  subjectKey?: string;
   tags: string[];
   importance: number;
   confidence: number;
@@ -514,6 +623,38 @@ export interface AssistantAttachmentPickResult {
   chatId: string;
   message: string;
   attachments: AssistantAttachment[];
+  taskId?: string;
+  cancelled?: boolean;
+}
+
+export type AssistantAttachmentTaskPhase =
+  | "queued"
+  | "scanning"
+  | "copying"
+  | "extracting"
+  | "rendering"
+  | "complete"
+  | "cancelled"
+  | "error";
+
+export interface AssistantAttachmentTaskProgress {
+  taskId: string;
+  chatId: string;
+  phase: AssistantAttachmentTaskPhase;
+  processedFiles: number;
+  totalFiles: number;
+  processedBytes: number;
+  totalBytes: number;
+  message: string;
+  done?: boolean;
+  cancelled?: boolean;
+}
+
+export type AssistantAttachmentProgressListener = (progress: AssistantAttachmentTaskProgress) => void;
+
+export interface AssistantAttachmentCancelResult {
+  ok: boolean;
+  message: string;
 }
 
 export type MarketItemType = "plugin" | "skill";
@@ -589,6 +730,7 @@ export interface AssistantStartRunRequest {
   message: string;
   action?: AssistantRunAction;
   permissionMode?: AssistantPermissionMode;
+  source?: AssistantRunSource;
   pageContext?: AssistantPageContext | null;
   attachments?: AssistantAttachment[];
   historyBeforeMessageId?: string;
@@ -610,6 +752,7 @@ export interface AssistantStopRunResult {
 }
 
 export type AssistantVoiceCorrectionLocale = "zh-CN-mixed-en";
+export type AssistantVoiceChangeLevel = "none" | "minor" | "major";
 
 export interface AssistantVoiceCorrectionRequest {
   text: string;
@@ -620,6 +763,12 @@ export interface AssistantVoiceCorrectionResult {
   ok: boolean;
   text: string;
   message: string;
+  rawText?: string;
+  correctedText?: string;
+  changeLevel?: AssistantVoiceChangeLevel;
+  confidence?: number;
+  glossaryHits?: string[];
+  uncertainTerms?: string[];
 }
 
 export interface AssistantVoiceTranscriptionRequest {
@@ -632,6 +781,12 @@ export interface AssistantVoiceTranscriptionResult {
   ok: boolean;
   text: string;
   message: string;
+  rawText?: string;
+  correctedText?: string;
+  changeLevel?: AssistantVoiceChangeLevel;
+  confidence?: number;
+  glossaryHits?: string[];
+  uncertainTerms?: string[];
 }
 
 export type AssistantAwaitingMode = "approval" | "question" | "form";
@@ -727,22 +882,128 @@ export interface AssistantSubmitAwaitingResult {
 
 export type AssistantRunEventType =
   | "request.query"
+  | "request.submit"
+  | "request.steer"
   | "chat.start"
+  | "chat.update"
+  | "chat.created"
+  | "chat.updated"
+  | "chat.read"
+  | "chat.unread"
   | "run.start"
+  | "run.cancel"
   | "content.delta"
+  | "content.start"
+  | "content.snapshot"
+  | "content.end"
+  | "reasoning.start"
+  | "reasoning.delta"
+  | "reasoning.snapshot"
+  | "reasoning.end"
+  | "memory.reference"
+  | "memory.recalled"
+  | "memory.stored"
+  | "memory.skipped"
   | "tool.start"
   | "tool.args"
+  | "tool.snapshot"
   | "tool.result"
   | "tool.end"
+  | "action.start"
+  | "action.args"
+  | "action.snapshot"
+  | "action.result"
+  | "action.end"
   | "awaiting.confirm"
   | "awaiting.ask"
+  | "awaiting.payload"
   | "awaiting.answer"
   | "artifact.publish"
+  | "plan.create"
+  | "plan.update"
+  | "task.start"
+  | "task.complete"
+  | "task.fail"
+  | "task.cancel"
+  | "source.publish"
   | "run.complete"
   | "run.error"
   | "run.interrupt"
   | "run.stopped"
+  | "run.expired"
   | "done";
+
+export const ASSISTANT_RUN_EVENT_TYPES = [
+  "request.query",
+  "request.submit",
+  "request.steer",
+  "chat.start",
+  "chat.update",
+  "chat.created",
+  "chat.updated",
+  "chat.read",
+  "chat.unread",
+  "run.start",
+  "run.cancel",
+  "content.delta",
+  "content.start",
+  "content.snapshot",
+  "content.end",
+  "reasoning.start",
+  "reasoning.delta",
+  "reasoning.snapshot",
+  "reasoning.end",
+  "memory.reference",
+  "memory.recalled",
+  "memory.stored",
+  "memory.skipped",
+  "tool.start",
+  "tool.args",
+  "tool.snapshot",
+  "tool.result",
+  "tool.end",
+  "action.start",
+  "action.args",
+  "action.snapshot",
+  "action.result",
+  "action.end",
+  "awaiting.confirm",
+  "awaiting.ask",
+  "awaiting.payload",
+  "awaiting.answer",
+  "artifact.publish",
+  "plan.create",
+  "plan.update",
+  "task.start",
+  "task.complete",
+  "task.fail",
+  "task.cancel",
+  "source.publish",
+  "run.complete",
+  "run.error",
+  "run.interrupt",
+  "run.stopped",
+  "run.expired",
+  "done"
+] as const satisfies readonly AssistantRunEventType[];
+
+export const ASSISTANT_LEGACY_STREAM_EVENT_TYPES = [
+  "delta",
+  "done",
+  "error",
+  "stopped"
+] as const;
+
+export const ASSISTANT_TERMINAL_EVENT_TYPES = [
+  "done",
+  "stopped",
+  "error",
+  "run.complete",
+  "run.stopped",
+  "run.error",
+  "run.interrupt",
+  "run.expired"
+] as const satisfies readonly AssistantEventType[];
 
 export type AssistantRunEventStatus =
   | "running"
@@ -763,6 +1024,7 @@ export interface AssistantRunEvent {
   chatId: string;
   type: AssistantRunEventType;
   createdAt: string;
+  source?: AssistantRunSource;
   status?: AssistantRunEventStatus;
   message?: string;
   delta?: string;
@@ -801,6 +1063,7 @@ export interface AssistantEvent {
   chatId: string;
   type: AssistantEventType;
   createdAt?: string;
+  source?: AssistantRunSource;
   status?: AssistantRunEventStatus;
   delta?: string;
   message?: string;
@@ -850,6 +1113,8 @@ export interface DesktopApi {
     listChats: () => Promise<AssistantChatSummary[]>;
     getChat: (chatId: string) => Promise<AssistantChatDetail | null>;
     pickAttachments: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
+    captureScreenshot: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
+    cancelAttachmentTask: (taskId: string) => Promise<AssistantAttachmentCancelResult>;
     addPastedImage: (
       chatId: string | null | undefined,
       input: AssistantPastedImageInput
@@ -862,6 +1127,7 @@ export interface DesktopApi {
     openAttachment: (chatId: string, attachmentId: string) => Promise<{ ok: boolean; message: string; path?: string }>;
     deleteChat: (chatId: string) => Promise<{ ok: boolean; message: string }>;
     onAssistantEvent: (listener: AssistantEventListener) => () => void;
+    onAttachmentProgress: (listener: AssistantAttachmentProgressListener) => () => void;
   };
   services: {
     list: () => Promise<ServiceState[]>;
@@ -907,12 +1173,29 @@ export interface DesktopApi {
     getPlatform: () => Promise<string>;
     setSidebarTranslucency: (enabled: boolean) => Promise<SidebarTranslucencyResult>;
   };
+  desktopPet: {
+    getSettings: () => Promise<DesktopPetSettings>;
+    getState: () => Promise<DesktopPetState>;
+    saveSettings: (input: DesktopPetSettingsInput) => Promise<DesktopPetState>;
+    show: () => Promise<DesktopPetState>;
+    hide: () => Promise<DesktopPetState>;
+    openAssistant: () => Promise<{ ok: boolean }>;
+    moveBy: (delta: { x: number; y: number }) => Promise<{ ok: boolean }>;
+    beginDrag: (point: { x: number; y: number }) => Promise<{ ok: boolean }>;
+    endDrag: () => Promise<{ ok: boolean; moved: boolean }>;
+    setPreviewExpanded: (expanded: boolean) => Promise<{ ok: boolean }>;
+    setMouseInteractive: (interactive: boolean) => Promise<{ ok: boolean }>;
+    onStateChanged: (listener: DesktopPetStateListener) => () => void;
+    onDanceRequested: (listener: DesktopPetDanceRequestedListener) => () => void;
+  };
   quickAssistant: {
     setExpanded: (expanded: boolean) => Promise<{ ok: boolean }>;
-    setDisplayMode: (mode: "compact" | "attachment" | "expanded") => Promise<{ ok: boolean }>;
+    setDisplayMode: (mode: "compact" | "attachment" | "compactMenu" | "menu" | "expanded") => Promise<{ ok: boolean }>;
     setInteractionState: (state: { busy?: boolean; mouseInside?: boolean }) => Promise<{ ok: boolean }>;
     onCompactModeRequested: (listener: () => void) => () => void;
     pickAttachments: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
+    captureScreenshot: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
+    cancelAttachmentTask: (taskId: string) => Promise<AssistantAttachmentCancelResult>;
     hide: () => Promise<{ ok: boolean }>;
     openMainAssistant: (chatId?: string | null) => Promise<{ ok: boolean }>;
     openSettings: () => Promise<{ ok: boolean }>;

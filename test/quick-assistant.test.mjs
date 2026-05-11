@@ -7,6 +7,7 @@ const {
   isQuickAssistantSupportedPlatform,
   QUICK_ASSISTANT_ATTACHMENT_SIZE,
   QUICK_ASSISTANT_COMPACT_SIZE,
+  QUICK_ASSISTANT_COMPACT_MENU_SIZE,
   QUICK_ASSISTANT_SHORTCUT,
   createQuickAssistantWindowState
 } = await import("../dist-electron/main/quick-assistant.js");
@@ -43,6 +44,23 @@ test("quick assistant attachment mode keeps file previews inside the compact pop
   });
 });
 
+test("quick assistant compact menu only reserves room for the upload action", () => {
+  assert.equal(QUICK_ASSISTANT_COMPACT_MENU_SIZE.width, 430);
+  assert.equal(QUICK_ASSISTANT_COMPACT_MENU_SIZE.height, 138);
+
+  const bounds = getQuickAssistantBounds({
+    mode: "compactMenu",
+    workArea: { x: 0, y: 25, width: 1440, height: 875 }
+  });
+
+  assert.deepEqual(bounds, {
+    x: 505,
+    y: 656,
+    width: QUICK_ASSISTANT_COMPACT_MENU_SIZE.width,
+    height: QUICK_ASSISTANT_COMPACT_MENU_SIZE.height
+  });
+});
+
 test("quick assistant resets display mode to compact before shortcut show", () => {
   const state = createQuickAssistantWindowState();
 
@@ -50,6 +68,7 @@ test("quick assistant resets display mode to compact before shortcut show", () =
   assert.equal(state.setExpanded(true), true);
   assert.equal(state.getDisplayMode(), "expanded");
   assert.equal(state.setDisplayMode("attachment"), "attachment");
+  assert.equal(state.setDisplayMode("compactMenu"), "compactMenu");
   state.setInteractionState({ busy: true, mouseInside: true });
   const snapshot = state.prepareCompactShow();
 

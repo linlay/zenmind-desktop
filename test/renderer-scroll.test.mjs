@@ -47,6 +47,12 @@ test("main content keeps a dedicated titlebar drag strip", () => {
   assert.match(dragRegionRule, /-webkit-app-region:\s*drag;/);
 });
 
+test("mac sidebar drag strip leaves the traffic-light controls clickable", () => {
+  const dragRegionRule = readRule(".app-shell.is-mac-platform .app-sidebar-drag-region");
+
+  assert.match(dragRegionRule, /left:\s*var\(--mac-traffic-light-safe-area\);/);
+});
+
 test("external webview tabs are excluded from the window drag region", () => {
   const tabStripRule = readRule(".external-webview-tab-strip");
   const tabRule = readRule(".external-webview-tab");

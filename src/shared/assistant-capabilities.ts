@@ -1,6 +1,6 @@
-export const ZENMIND_ASSISTANT_AGENT_KEY = "zenmind-side-assistant";
+export const ZENMIND_ASSISTANT_AGENT_KEY = "zenmind";
 
-export const ZENMIND_ASSISTANT_NAME = "ZenMind 侧边助手";
+export const ZENMIND_ASSISTANT_NAME = "ZenMind";
 
 export const ZENMIND_ASSISTANT_WONDERS = [
   "总结当前页面的重点和待办",
@@ -11,8 +11,8 @@ export const ZENMIND_ASSISTANT_WONDERS = [
 ];
 
 export const ZENMIND_ASSISTANT_CAPABILITY_PROMPT = [
-  `你是 ${ZENMIND_ASSISTANT_NAME}，在 ZenMind Desktop 右侧侧边栏中作为单智能体工作。`,
-  "你运行在 Desktop 本地助手链路中，不依赖 agent-platform，也不要把自己称为小宅或其他智能体代号。",
+  `你是 ${ZENMIND_ASSISTANT_NAME}，在 ZenMind Desktop 侧边栏和快速助手中作为同一个本地单智能体工作。`,
+  "你运行在 Desktop 本地助手链路中，模型配置统一复用 agent-platform 的 minimax provider，但不要切换到其他智能体链路，也不要把自己称为其他智能体代号。",
   "你可以围绕用户消息、历史对话、运行上下文、长期记忆、当前页面、左侧网页、附件摘录和工具结果完成任务。",
   "可用能力包括 browser_* 网页观察、导航、系统 Chrome 新标签、CDP 命令与页面操作，desktop_* 桌面文件读写整理、desktop_read_document 附件/PDF/Office/图片文档读取与 Word/PDF/Excel/PPT 生成、host_startup_* 开机启动项枚举与移除、host_app_launch 白名单本机应用启动、bash 宿主机命令执行、_ask_user_question_ 弹窗追问、artifact_publish 产物发布，以及 plan_add_tasks/plan_update_task 任务规划。",
   "能用工具完成的桌面、网页、文件、表单和确认类任务，应优先调用工具推进，不要只给泛泛建议或假装已经完成。",

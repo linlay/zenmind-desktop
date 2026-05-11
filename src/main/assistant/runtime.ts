@@ -11,6 +11,7 @@ import type {
   AssistantPermissionMode,
   AssistantRunEvent,
   AssistantRunEventStatus,
+  AssistantRunSource,
   AssistantSubmitAwaitingRequest,
   AssistantSubmitAwaitingResult,
   AssistantStartRunRequest,
@@ -18,6 +19,7 @@ import type {
   AssistantStopRunResult,
   ServiceCommandResult,
   ServiceState,
+  AssistantVoiceChangeLevel,
   AssistantVoiceCorrectionRequest,
   AssistantVoiceCorrectionResult,
   AssistantVoiceTranscriptionRequest,
@@ -40,16 +42,31 @@ import { readAssistantSettings } from "./settings-store";
 import { convertAudioBufferToWavBuffer } from "./audio-conversion";
 import { buildAssistantMessages, type OpenAIChatMessage, type OpenAIToolCall } from "./prompt-builder";
 import {
+  getAssistantMemorySettingsFromRoot,
+  readAssistantMemorySnapshotFromRoot,
+  upsertAssistantMemoryItemsFromRoot,
+  upsertExplicitUserMemoryFromRoot,
+  type AssistantMemorySnapshot,
+  type AssistantMemoryUpsertInput,
+  type AssistantMemoryUpsertResult
+} from "./memory-store";
+import {
   completeOpenAIChatCompletion,
   streamOpenAIChatCompletion,
   transcribeOpenAIChatAudio,
-  transcribeOpenAIAudio,
   type OpenAIToolDefinition
 } from "./model-provider";
 import {
+  ZENMIND_ASSISTANT_AGENT_KEY,
+  ZENMIND_ASSISTANT_NAME
+} from "../../shared/assistant-capabilities";
+import {
+  extractBrowserTaskIntent,
   extractBrowserIntent,
   isPotentiallySensitiveClickTarget,
-  normalizeBrowserText
+  normalizeBrowserText,
+  type BrowserTaskIntent,
+  type BrowserTaskWebsite
 } from "./browser-intent";
 import type {
   BrowserAgentTaskInput,
@@ -95,6 +112,9 @@ import { routeAssistantToolRequest } from "./capability-broker";
 type AssistantBrowserUseTool = {
   listSurfaces?: () => Promise<BrowserSurface[]>;
   activateSurface?: (target: string) => Promise<BrowserToolResult>;
+  openUrl?: (input: { url: string; label?: string }) => Promise<BrowserToolResult>;
+  navigateUrl?: (webContentsId: number, input: { url: string; label?: string }) => Promise<BrowserToolResult>;
+  createRuntimeSnapshot?: (webContentsId: number) => Promise<unknown>;
   observePage?: (webContentsId: number) => Promise<BrowserObservation>;
   click?: (webContentsId: number, input: { elementRef?: string; target?: string }) => Promise<BrowserToolResult>;
   fillFields?: (webContentsId: number, fields: BrowserFieldInput[]) => Promise<BrowserToolResult>;
@@ -132,6 +152,10 @@ type AssistantBrowserUseTool = {
     message?: string;
   }>;
   readPageContext: (webContentsId: number) => Promise<AssistantStartRunRequest["pageContext"]>;
+  extractPage?: (
+    webContentsId: number,
+    extraction: { kind?: "search_results" | "hot_search" | "headings" | "links" | "table_rows" | "form_state"; count: number; itemLabel: string }
+  ) => Promise<{ ok: boolean; items: Array<{ title: string }> }>;
 };
 
 const MAX_BROWSER_TOOL_STEPS = 16;
@@ -140,6 +164,8 @@ const FULL_ACCESS_DURATION_MS = 10 * 60 * 1000;
 const DEFAULT_SANDBOX_ENVIRONMENT = "shell";
 const VOICE_CORRECTION_TIMEOUT_MS = 20000;
 const VOICE_TRANSCRIPTION_TIMEOUT_MS = 60000;
+const MISSING_VOICE_ASR_PROVIDER_MESSAGE =
+  "当前未配置可用的云端语音识别 provider。语音模型纠错只负责识别后的文本整理；如需录音转写，请在 agent-platform 配置百炼 qwen3-asr-flash。";
 const AGW_ASK_USER_QUESTION_TOOL_NAME = "_ask_user_question_";
 const LEGACY_ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";
 const CLAUDE_ASK_USER_QUESTION_TOOL_NAME = "AskUserQuestion";
@@ -153,6 +179,14 @@ const VOICE_CORRECTION_SYSTEM_PROMPT = [
   "保留命令、路径、代码符号、变量名、URL 和专有名词；常见技术词按标准拼写恢复，例如 API、React、MiniMax、OpenAI、GitHub、npm、TypeScript、JavaScript。",
   "如果文本本身已经合理，原样输出。"
 ].join("\n");
+
+function normalizeVoiceAsrFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/HTTP\s*401|鉴权|API\s*Key|unauthorized|unauthenticated/iu.test(message)) {
+    return "语音识别 provider 鉴权失败，请检查 agent-platform 的百炼 qwen3-asr-flash provider 配置；语音模型纠错开关不会影响录音转写鉴权。";
+  }
+  return message;
+}
 
 const BROWSER_ACTION_PATTERN =
   /(浏览器|左边网页|左侧网页|当前网页|网页里|侧边栏|页面流程|打开|进入|点击|点开|启动|停止|重启|填写|填表|填好|补全|完善|随便填|输入|搜索|搜一下|查一下|查询|查找|检索|筛选|过滤|翻页|上一页|下一页|勾选|取消勾选|选择|下拉|提交|表单|读取.*(?:网页|页面|结果)|总结.*结果)/u;
@@ -397,7 +431,7 @@ const DESKTOP_ACTION_PATTERN =
   /(桌面|文件|目录|列出|读取|写入|保存|创建|生成|发布|产物|整理|移动|归档|html|贪吃蛇|命令|终端|bash|shell|沙箱|sandbox|container|启动.*(?:应用|软件|程序|Docker|Claude)|打开.*(?:应用|软件|程序|Docker|Claude)|操作系统.*(?:应用|软件|程序))/iu;
 
 const DESKTOP_AGENT_SYSTEM_PROMPT = [
-  "你是 Desktop 单智能体 desktop-xiaozhai，可以在 ZenMind Desktop 内通过工具完成受限桌面任务。",
+  `你是 Desktop 单智能体 ${ZENMIND_ASSISTANT_NAME}（agentKey: ${ZENMIND_ASSISTANT_AGENT_KEY}），可以在 ZenMind Desktop 内通过工具完成受限桌面任务。`,
   "如果用户要列出、读取、整理、生成或保存桌面文件，必须调用 desktop_* 工具，不要假装已经看到了文件；读取 PDF、Office、ZIP、图片或聊天附件时优先调用 desktop_read_document。",
   "如果用户问题指向本轮上传附件、图片、截图或 PDF 内容，不要调用 Browser 搜索网页；只有用户明确要求百度、网页、浏览器或左侧页面操作时才使用 Browser。",
   `如果用户明确要求 human in the loop、HITL、AGW、弹窗采访、问用户问题或让你通过弹窗收集信息，必须调用 ${AGW_ASK_USER_QUESTION_TOOL_NAME} 工具；不要把问题直接写在普通聊天回复里。`,
@@ -751,6 +785,17 @@ const DESKTOP_TOOL_DEFINITIONS: OpenAIToolDefinition[] = [
   }
 ];
 
+const MEMORY_EXTRACTION_SYSTEM_PROMPT = [
+  "你是 ZenMind Desktop 的本地记忆提取器。",
+  "你的任务是从单轮用户消息和本轮助手回复中，提取适合长期保存的稳定偏好、明确约束、可复用工作流或长期决策。",
+  "只输出 JSON，对象格式为 {\"memories\": [...]}；不要输出 Markdown、解释或额外文字。",
+  "只有当信息对未来回答有复用价值时才提取；临时任务、一次性指令、当前页面细节、低信息量寒暄不要提取。",
+  "不要提取密码、token、密钥、隐私敏感信息，也不要记住用户明确要求不要记住的内容。",
+  "每条 memory 可包含 kind、title、summary、category、tags、importance、confidence、reason。",
+  "summary 用简洁中文完整表达记忆内容；confidence 使用 0 到 1 的小数。",
+  "如果没有可保存的记忆，返回 {\"memories\": []}。"
+].join("\n");
+
 const AGENT_TOOL_DEFINITIONS = [...BROWSER_TOOL_DEFINITIONS, ...DESKTOP_TOOL_DEFINITIONS];
 
 type BrowserToolLoopState = {
@@ -819,6 +864,47 @@ function maybeNumber(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function stripOptionalCodeFence(value: string) {
+  return value
+    .trim()
+    .replace(/^```(?:json)?\s*/iu, "")
+    .replace(/\s*```$/u, "")
+    .trim();
+}
+
+function parseLearnedMemoryCandidates(value: string): AssistantMemoryUpsertInput[] {
+  const trimmed = stripOptionalCodeFence(value);
+  if (!trimmed) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    const memories = isRecord(parsed) && Array.isArray(parsed.memories)
+      ? parsed.memories
+      : Array.isArray(parsed)
+        ? parsed
+        : [];
+    return memories.filter(isRecord).map((item) => ({
+      ...(maybeString(item.kind) ? { kind: maybeString(item.kind) } : {}),
+      ...(maybeString(item.title) ? { title: maybeString(item.title) } : {}),
+      ...(maybeString(item.summary) ? { summary: maybeString(item.summary) } : {}),
+      ...(maybeString(item.category) ? { category: maybeString(item.category) } : {}),
+      ...(Array.isArray(item.tags)
+        ? {
+            tags: item.tags
+              .map((tag) => maybeString(tag))
+              .filter((tag): tag is string => Boolean(tag))
+          }
+        : {}),
+      ...(typeof maybeNumber(item.importance) === "number" ? { importance: maybeNumber(item.importance) } : {}),
+      ...(typeof maybeNumber(item.confidence) === "number" ? { confidence: maybeNumber(item.confidence) } : {}),
+      ...(maybeString(item.reason) ? { reason: maybeString(item.reason) } : {})
+    }));
+  } catch {
+    return [];
+  }
 }
 
 function isAskUserQuestionToolName(toolName: string) {
@@ -1389,6 +1475,27 @@ function extractSearchResultTitles(pageContext: AssistantPageContext, count: num
   return candidates.slice(0, count);
 }
 
+function extractBrowserResultLines(pageContext: AssistantPageContext, count: number) {
+  const titleLines = extractSearchResultTitles(pageContext, count);
+  if (titleLines.length >= count) {
+    return titleLines;
+  }
+  const seen = new Set(titleLines.map((line) => normalizeBrowserText(line)));
+  const bodyLines = pageContext.bodyText
+    .split(/\n+/u)
+    .map((line) => line.trim())
+    .filter((line) => line && line.length <= 160)
+    .filter((line) => {
+      const key = normalizeBrowserText(line);
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  return [...titleLines, ...bodyLines].slice(0, count);
+}
+
 function browserToolCompletionMessage(result: BrowserToolResult) {
   if (result.ok) {
     return result.message || "已完成浏览器操作。";
@@ -1622,11 +1729,45 @@ function normalizeVoiceCorrectionOutput(content: string, fallback: string) {
     .trim() || fallback.trim();
 }
 
+function createVoiceCorrectionResult(text: string, corrected: string, message: string): AssistantVoiceCorrectionResult {
+  const rawText = text.trim();
+  const correctedText = corrected.trim();
+  const normalizedRaw = rawText.toLocaleLowerCase();
+  const normalizedCorrected = correctedText.toLocaleLowerCase();
+  const glossaryHits = ["OpenAI", "API Key", "GitHub Actions", "GitHub", "MiniMax", "React", "TypeScript", "JavaScript", "npm"]
+    .filter((term) => normalizedRaw.includes(term.toLocaleLowerCase()) || normalizedCorrected.includes(term.toLocaleLowerCase()));
+  const changeLevel: AssistantVoiceChangeLevel = correctedText === rawText
+    ? "none"
+    : Math.abs(correctedText.length - rawText.length) > Math.max(12, rawText.length * 0.35)
+      ? "major"
+      : "minor";
+
+  return {
+    ok: true,
+    text: correctedText,
+    message,
+    rawText,
+    correctedText,
+    changeLevel,
+    confidence: changeLevel === "major" ? 0.72 : 0.9,
+    glossaryHits,
+    uncertainTerms: []
+  };
+}
+
 type ActiveRun = {
   controller: AbortController;
   chatId: string;
   text: string;
   attachments: AssistantAttachment[];
+  action: AssistantStartRunRequest["action"];
+  source: AssistantRunSource;
+  userText: string;
+  shouldAutoLearn: boolean;
+  modelSettings: ReturnType<typeof readAssistantSettings>;
+  completionEmitted: boolean;
+  completionMessageSaved: boolean;
+  postCompletionTask: Promise<void> | null;
   permissionMode: AssistantPermissionMode;
   fullAccessExpiresAt: number | null;
   seq: number;
@@ -1697,13 +1838,9 @@ export class AssistantRuntime {
       };
     }
 
-    const settings = loadAgentPlatformMinimaxSettings(this.app) ?? readAssistantSettings(this.app);
-    if (!settings.apiKey.trim() || !settings.baseURL.trim() || !settings.model.trim()) {
-      return {
-        ok: false,
-        text,
-        message: "请先在设置中配置助手模型。"
-      };
+    const settings = loadAgentPlatformMinimaxSettings(this.app);
+    if (!settings?.apiKey.trim() || !settings.baseURL.trim() || !settings.model.trim()) {
+      return createVoiceCorrectionResult(text, text, "语音文本已确认。");
     }
 
     const controller = new AbortController();
@@ -1736,11 +1873,7 @@ export class AssistantRuntime {
         toolChoice: "none"
       });
       const corrected = normalizeVoiceCorrectionOutput(response.content, text);
-      return {
-        ok: true,
-        text: corrected,
-        message: corrected === text ? "语音文本已确认。" : "语音文本已纠正。"
-      };
+      return createVoiceCorrectionResult(text, corrected, corrected === text ? "语音文本已确认。" : "语音文本已纠正。");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return {
@@ -1775,42 +1908,39 @@ export class AssistantRuntime {
     let cloudSpeechFailure = "";
     try {
       const voiceSettings = loadAgentPlatformVoiceAsrSettings(this.app);
-      if (voiceSettings) {
-        let cloudAudio = audio;
-        let cloudMimeType = request.mimeType;
-        if (process.platform === "darwin" && !/audio\/(?:wav|mpeg|mp3)/iu.test(cloudMimeType)) {
-          cloudAudio = await convertAudioBufferToWavBuffer(audio, request.mimeType);
-          cloudMimeType = "audio/wav";
-        }
-        const text = await transcribeOpenAIChatAudio({
-          settings: voiceSettings,
-          audio: cloudAudio,
-          mimeType: cloudMimeType,
-          signal: controller.signal
-        });
+      if (!voiceSettings) {
         return {
-          ok: true,
-          text,
-          message: "语音识别完成。"
+          ok: false,
+          text: "",
+          message: MISSING_VOICE_ASR_PROVIDER_MESSAGE
         };
       }
 
-      const settings = loadAgentPlatformMinimaxSettings(this.app) ?? readAssistantSettings(this.app);
-      if (settings.apiKey.trim() && settings.baseURL.trim()) {
-        const text = await transcribeOpenAIAudio({
-          settings,
-          audio,
-          mimeType: request.mimeType,
-          signal: controller.signal
-        });
-        return {
-          ok: true,
-          text,
-          message: "语音识别完成。"
-        };
+      let cloudAudio = audio;
+      let cloudMimeType = request.mimeType;
+      if (process.platform === "darwin" && !/audio\/(?:wav|mpeg|mp3)/iu.test(cloudMimeType)) {
+        cloudAudio = await convertAudioBufferToWavBuffer(audio, request.mimeType);
+        cloudMimeType = "audio/wav";
       }
+      const text = await transcribeOpenAIChatAudio({
+        settings: voiceSettings,
+        audio: cloudAudio,
+        mimeType: cloudMimeType,
+        signal: controller.signal
+      });
+      return {
+        ok: true,
+        text,
+        message: "语音识别完成。",
+        rawText: text,
+        correctedText: text,
+        changeLevel: "none",
+        confidence: 0.9,
+        glossaryHits: [],
+        uncertainTerms: []
+      };
     } catch (error) {
-      cloudSpeechFailure = error instanceof Error ? error.message : String(error);
+      cloudSpeechFailure = normalizeVoiceAsrFailure(error);
     } finally {
       clearTimeout(timer);
     }
@@ -1820,7 +1950,7 @@ export class AssistantRuntime {
       text: "",
       message: cloudSpeechFailure
         ? `语音识别失败：${cloudSpeechFailure}`
-        : "请先配置支持语音识别的 agent-platform provider。当前优先使用百炼 qwen3-asr-flash。"
+        : MISSING_VOICE_ASR_PROVIDER_MESSAGE
     };
   }
 
@@ -1971,14 +2101,6 @@ export class AssistantRuntime {
     }
 
     const settings = loadAgentPlatformMinimaxSettings(this.app) ?? readAssistantSettings(this.app);
-    if (!settings.apiKey.trim() || !settings.baseURL.trim() || !settings.model.trim()) {
-      return {
-        ok: false,
-        runId: "",
-        chatId: request.chatId ?? "",
-        message: "请先在设置中配置助手模型。"
-      };
-    }
 
     const runId = `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const existingChat = request.chatId ? getAssistantChat(this.app, request.chatId) : null;
@@ -2003,8 +2125,10 @@ export class AssistantRuntime {
       ? this.grantFullAccess(chatId, now)
       : this.getFullAccessExpiresAt(chatId, now);
     const permissionMode: AssistantPermissionMode = fullAccessExpiresAt ? "full_access" : "default";
+    const source: AssistantRunSource = request.source === "quick-assistant" ? "quick-assistant" : "sidebar";
     const effectiveRequest: AssistantStartRunRequest = {
       ...request,
+      source,
       permissionMode
     };
 
@@ -2013,6 +2137,14 @@ export class AssistantRuntime {
       chatId,
       text: "",
       attachments: [],
+      action: request.action ?? "chat",
+      source,
+      userText: message,
+      shouldAutoLearn: false,
+      modelSettings: settings,
+      completionEmitted: false,
+      completionMessageSaved: false,
+      postCompletionTask: null,
       permissionMode,
       fullAccessExpiresAt,
       seq: 0
@@ -2023,7 +2155,7 @@ export class AssistantRuntime {
       status: "running",
       message: "已收到请求。",
       data: {
-        agentKey: "desktop-xiaozhai",
+        agentKey: ZENMIND_ASSISTANT_AGENT_KEY,
         action: request.action ?? "chat",
         permissionMode
       }
@@ -2033,7 +2165,7 @@ export class AssistantRuntime {
       status: "running",
       message: "已进入桌面单智能体会话。",
       data: {
-        agentKey: "desktop-xiaozhai"
+        agentKey: ZENMIND_ASSISTANT_AGENT_KEY
       }
     });
     this.emitRunEvent(runId, chatId, {
@@ -2158,6 +2290,7 @@ export class AssistantRuntime {
       runId,
       chatId,
       createdAt: new Date().toISOString(),
+      source: activeRun.source,
       ...input
     };
     appendAssistantEvent(this.app, event);
@@ -2264,6 +2397,205 @@ export class AssistantRuntime {
     this.activeRuns.delete(runId);
   }
 
+  private getMemoryRootDir() {
+    return this.app.getPath("userData");
+  }
+
+  private emitMemoryReferenceEvent(runId: string, chatId: string, snapshot: AssistantMemorySnapshot) {
+    if (snapshot.references.length === 0) {
+      return;
+    }
+    this.emitRunEvent(runId, chatId, {
+      type: "memory.reference",
+      status: "ok",
+      action: "recall",
+      message: `已引用 ${snapshot.references.length} 条本地记忆。`,
+      data: {
+        references: snapshot.references
+      }
+    });
+  }
+
+  private emitMemoryUpsertEvents(
+    runId: string,
+    chatId: string,
+    result: AssistantMemoryUpsertResult,
+    source: "explicit" | "auto"
+  ) {
+    if (result.stored.length > 0) {
+      this.emitRunEvent(runId, chatId, {
+        type: "memory.stored",
+        status: "ok",
+        action: "store",
+        message: `已通过${source === "explicit" ? "显式偏好提取" : "自动学习"}保存 ${result.stored.length} 条本地记忆。`,
+        data: {
+          source,
+          stored: result.stored
+        }
+      });
+    }
+    if (result.skipped.length > 0) {
+      this.emitRunEvent(runId, chatId, {
+        type: "memory.skipped",
+        status: "ok",
+        action: "store",
+        message: `${source === "explicit" ? "显式偏好提取" : "自动学习"}跳过 ${result.skipped.length} 条低价值记忆。`,
+        data: {
+          source,
+          skipped: result.skipped
+        }
+      });
+    }
+  }
+
+  private prepareRunMemory(runId: string, chatId: string, userText: string, action: AssistantStartRunRequest["action"]) {
+    const rootDir = this.getMemoryRootDir();
+    const settings = getAssistantMemorySettingsFromRoot(rootDir);
+    if (action === "chat" && settings.autoLearn) {
+      try {
+        const explicitResult = upsertExplicitUserMemoryFromRoot(rootDir, userText, {
+          chatId,
+          runId
+        });
+        this.emitMemoryUpsertEvents(runId, chatId, explicitResult, "explicit");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.emitRunEvent(runId, chatId, {
+          type: "memory.skipped",
+          status: "error",
+          action: "store",
+          message: `显式偏好提取失败：${message}`,
+          error: message,
+          data: {
+            source: "explicit"
+          }
+        });
+      }
+    }
+
+    try {
+      const snapshot = readAssistantMemorySnapshotFromRoot(rootDir, {
+        query: userText,
+        chatId
+      });
+      this.emitMemoryReferenceEvent(runId, chatId, snapshot);
+      return {
+        settings,
+        memory: snapshot.content
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.emitRunEvent(runId, chatId, {
+        type: "memory.skipped",
+        status: "error",
+        action: "recall",
+        message: `记忆召回失败：${message}`,
+        error: message,
+        data: {
+          source: "recall"
+        }
+      });
+      return {
+        settings,
+        memory: ""
+      };
+    }
+  }
+
+  private async learnMemoriesFromSuccessfulRun(runId: string, chatId: string, assistantText: string) {
+    const activeRun = this.activeRuns.get(runId);
+    if (!activeRun?.shouldAutoLearn || activeRun.action !== "chat") {
+      return;
+    }
+    const normalizedAssistantText = assistantText.trim();
+    const normalizedUserText = activeRun.userText.trim();
+    if (!normalizedAssistantText || !normalizedUserText) {
+      return;
+    }
+
+    const rootDir = this.getMemoryRootDir();
+    const settings = getAssistantMemorySettingsFromRoot(rootDir);
+    if (!settings.autoLearn) {
+      return;
+    }
+
+    try {
+      const response = await completeOpenAIChatCompletion({
+        settings: activeRun.modelSettings,
+        signal: activeRun.controller.signal,
+        toolChoice: "none",
+        messages: [
+          {
+            role: "system",
+            content: MEMORY_EXTRACTION_SYSTEM_PROMPT
+          },
+          {
+            role: "user",
+            content: [
+              "<用户消息>",
+              normalizedUserText,
+              "</用户消息>",
+              "",
+              "<助手回复>",
+              normalizedAssistantText,
+              "</助手回复>"
+            ].join("\n")
+          }
+        ]
+      });
+      const memories = parseLearnedMemoryCandidates(response.content);
+      if (memories.length === 0) {
+        return;
+      }
+      const result = upsertAssistantMemoryItemsFromRoot(rootDir, memories, {
+        chatId,
+        runId
+      });
+      this.emitMemoryUpsertEvents(runId, chatId, result, "auto");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.emitRunEvent(runId, chatId, {
+        type: "memory.skipped",
+        status: "error",
+        action: "store",
+        message: `自动学习失败：${message}`,
+        error: message,
+        data: {
+          source: "auto"
+        }
+      });
+    }
+  }
+
+  private async finalizeSuccessfulRun(runId: string, chatId: string, text?: string) {
+    const activeRun = this.activeRuns.get(runId);
+    if (!activeRun || activeRun.completionEmitted) {
+      return;
+    }
+    if (typeof text === "string" && text.length > 0) {
+      this.emitAssistantDelta(runId, chatId, text);
+    }
+    const finalText = activeRun.text;
+    if (!activeRun.completionMessageSaved && (finalText.trim() || activeRun.attachments.length > 0)) {
+      appendAssistantMessage(this.app, chatId, createAssistantMessage("assistant", finalText, runId, activeRun.attachments));
+      activeRun.completionMessageSaved = true;
+    }
+    activeRun.completionEmitted = true;
+    this.emitRunEvent(runId, chatId, {
+      type: "run.complete",
+      status: "ok",
+      message: "生成完成。"
+    });
+    this.emitRunEvent(runId, chatId, {
+      type: "done",
+      status: "ok",
+      message: "运行已结束。"
+    });
+    if (!activeRun.postCompletionTask && activeRun.shouldAutoLearn) {
+      activeRun.postCompletionTask = this.learnMemoriesFromSuccessfulRun(runId, chatId, finalText);
+    }
+  }
+
   private async executeRun({
     runId,
     chatId,
@@ -2291,6 +2623,11 @@ export class AssistantRuntime {
     }
 
     try {
+      const memoryContext = this.prepareRunMemory(runId, chatId, userText, request.action ?? "chat");
+      const currentRun = this.activeRuns.get(runId);
+      if (currentRun) {
+        currentRun.shouldAutoLearn = request.action === "chat" && memoryContext.settings.autoLearn;
+      }
       const refreshedAttachmentContext = await refreshAssistantAttachmentsForRun(
         this.app,
         chatId,
@@ -2312,7 +2649,8 @@ export class AssistantRuntime {
         message: userText,
         action: request.action ?? "chat",
         pageContext: request.pageContext ?? null,
-        attachments: preparedAttachments
+        attachments: preparedAttachments,
+        memory: memoryContext.memory
       });
 
       if (this.shouldExecuteDirectHumanInLoop(request, userText)) {
@@ -2335,6 +2673,12 @@ export class AssistantRuntime {
 
       if (this.shouldExecuteDirectPageAgent(request, userText)) {
         await this.executeDirectPageAgent({ runId, chatId, request, userText, controller });
+        return;
+      }
+
+      const browserTaskIntent = extractBrowserTaskIntent(userText);
+      if (browserTaskIntent && this.canExecuteDirectBrowserTask(request, browserTaskIntent)) {
+        await this.executeDirectBrowserTask({ runId, chatId, request, intent: browserTaskIntent, controller });
         return;
       }
 
@@ -2403,7 +2747,7 @@ export class AssistantRuntime {
 
       const pseudo = extractPseudoToolCallsFromText(streamedText, request);
       if (pseudo.hasOperatorModeRequest && pseudo.toolCalls.length === 0) {
-        this.completeWithAssistantText(runId, chatId, operatorModePseudoFallbackMessage());
+        await this.completeWithAssistantText(runId, chatId, operatorModePseudoFallbackMessage());
         return;
       }
       if (pseudo.toolCalls.length > 0) {
@@ -2423,7 +2767,7 @@ export class AssistantRuntime {
         this.emitAssistantDelta(runId, chatId, streamedText);
       }
 
-      this.finishAssistantRun(runId, chatId);
+      await this.finishAssistantRun(runId, chatId);
     } catch (error) {
       if (controller.signal.aborted) {
         this.finishStoppedRun(runId, chatId, "已停止生成。");
@@ -2448,28 +2792,16 @@ export class AssistantRuntime {
       });
     } finally {
       this.dismissAwaitingsForRun(runId, "运行已结束。");
+      const finalRun = this.activeRuns.get(runId);
+      if (finalRun?.postCompletionTask) {
+        await finalRun.postCompletionTask;
+      }
       this.activeRuns.delete(runId);
     }
   }
 
-  private completeWithAssistantText(runId: string, chatId: string, text: string) {
-    const activeRun = this.activeRuns.get(runId);
-    if (!activeRun) {
-      return;
-    }
-    this.emitAssistantDelta(runId, chatId, text);
-    appendAssistantMessage(this.app, chatId, createAssistantMessage("assistant", text, runId, activeRun.attachments));
-    this.emitRunEvent(runId, chatId, {
-      type: "run.complete",
-      status: "ok",
-      message: "生成完成。"
-    });
-    this.emitRunEvent(runId, chatId, {
-      type: "done",
-      status: "ok",
-      message: "运行已结束。"
-    });
-    this.activeRuns.delete(runId);
+  private async completeWithAssistantText(runId: string, chatId: string, text: string) {
+    await this.finalizeSuccessfulRun(runId, chatId, text);
   }
 
   private emitAssistantDelta(runId: string, chatId: string, text: string) {
@@ -2485,22 +2817,8 @@ export class AssistantRuntime {
     });
   }
 
-  private finishAssistantRun(runId: string, chatId: string) {
-    const finalRun = this.activeRuns.get(runId);
-    if (finalRun?.text.trim()) {
-      appendAssistantMessage(this.app, chatId, createAssistantMessage("assistant", finalRun.text, runId, finalRun.attachments));
-    }
-    this.emitRunEvent(runId, chatId, {
-      type: "run.complete",
-      status: "ok",
-      message: "生成完成。"
-    });
-    this.emitRunEvent(runId, chatId, {
-      type: "done",
-      status: "ok",
-      message: "运行已结束。"
-    });
-    this.activeRuns.delete(runId);
+  private async finishAssistantRun(runId: string, chatId: string) {
+    await this.finalizeSuccessfulRun(runId, chatId);
   }
 
   private shouldUseAgentTools(userText: string, request: AssistantStartRunRequest) {
@@ -2626,6 +2944,310 @@ export class AssistantRuntime {
     );
   }
 
+  private canExecuteDirectBrowserTask(request: AssistantStartRunRequest, intent: BrowserTaskIntent) {
+    if (request.action !== "chat") {
+      return false;
+    }
+    if (intent.kind === "service_control") {
+      return Boolean(this.dependencies.services?.control);
+    }
+    if (intent.kind === "open_url" || intent.kind === "navigate_current") {
+      if (/快照|snapshot|cdp/i.test(request.message || "")) {
+        return Boolean(
+          request.pageContext?.browserTarget?.webContentsId &&
+          this.browserUse?.navigateUrl &&
+          this.browserUse?.createRuntimeSnapshot
+        );
+      }
+      return Boolean(
+        this.dependencies.openExternalUrl ||
+        this.browserUse?.openUrl ||
+        (request.pageContext?.browserTarget?.webContentsId && this.browserUse?.navigateUrl)
+      );
+    }
+    return Boolean(
+      this.browserUse?.fillBestInputAndSubmit &&
+      (request.pageContext?.browserTarget?.webContentsId || this.browserUse.openUrl || intent.kind === "extract")
+    );
+  }
+
+  private websiteMatchesCurrentTarget(request: AssistantStartRunRequest, website: BrowserTaskWebsite) {
+    const currentUrl = request.pageContext?.browserTarget?.currentUrl || request.pageContext?.url || "";
+    try {
+      const current = new URL(currentUrl);
+      const target = new URL(website.url);
+      return current.hostname.replace(/^www\./u, "") === target.hostname.replace(/^www\./u, "");
+    } catch {
+      return false;
+    }
+  }
+
+  private webContentsIdFromBrowserResult(result: BrowserToolResult) {
+    const data = result.data && typeof result.data === "object" && !Array.isArray(result.data)
+      ? result.data as { surface?: { webContentsId?: unknown } }
+      : {};
+    return typeof data.surface?.webContentsId === "number" ? data.surface.webContentsId : null;
+  }
+
+  private emitDirectToolResult(runId: string, chatId: string, toolName: string, result: BrowserToolResult) {
+    this.emitRunEvent(runId, chatId, {
+      type: "tool.result",
+      status: browserToolStatus(result),
+      toolName,
+      action: result.action,
+      target: result.target,
+      message: browserToolResultMessage(result),
+      error: result.error,
+      data: compactBrowserToolResult(result)
+    });
+  }
+
+  private async executeDirectBrowserTask({
+    runId,
+    chatId,
+    request,
+    intent,
+    controller
+  }: {
+    runId: string;
+    chatId: string;
+    request: AssistantStartRunRequest;
+    intent: BrowserTaskIntent;
+    controller: AbortController;
+  }) {
+    if (intent.kind === "service_control") {
+      await this.executeDirectServiceControl({ runId, chatId, intent });
+      return;
+    }
+
+    if (intent.kind === "open_url" || intent.kind === "navigate_current") {
+      await this.executeDirectBrowserOpen({ runId, chatId, request, url: intent.url, label: intent.label });
+      return;
+    }
+
+    let webContentsId = request.pageContext?.browserTarget?.webContentsId ?? null;
+    const website = (intent.kind === "site_search" || intent.kind === "compound") ? intent.website : undefined;
+    if (website && webContentsId && !this.websiteMatchesCurrentTarget(request, website) && this.browserUse?.navigateUrl) {
+      this.emitRunEvent(runId, chatId, {
+        type: "tool.start",
+        status: "running",
+        toolName: "browser_navigate",
+        action: "navigate",
+        target: website.url,
+        message: `正在当前左侧网页打开${website.label}。`
+      });
+      const navigateResult = await this.browserUse.navigateUrl(webContentsId, { url: website.url, label: website.label });
+      this.emitDirectToolResult(runId, chatId, "browser_navigate", navigateResult);
+      if (!navigateResult.ok) {
+        await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(navigateResult));
+        return;
+      }
+    } else if (website && !webContentsId && this.browserUse?.openUrl) {
+      this.emitRunEvent(runId, chatId, {
+        type: "tool.start",
+        status: "running",
+        toolName: "open_url",
+        action: "open_url",
+        target: website.url,
+        message: `正在打开${website.label}。`
+      });
+      const openResult = await this.browserUse.openUrl({ url: website.url, label: website.label });
+      this.emitDirectToolResult(runId, chatId, "open_url", openResult);
+      webContentsId = this.webContentsIdFromBrowserResult(openResult);
+      if (!openResult.ok || !webContentsId) {
+        await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(openResult));
+        return;
+      }
+    }
+
+    const query = (intent.kind === "site_search" || intent.kind === "compound") ? intent.query : undefined;
+    if (query) {
+      if (!webContentsId || !this.browserUse?.fillBestInputAndSubmit) {
+        const result = this.missingBrowserTargetResult("input");
+        this.emitDirectToolResult(runId, chatId, "browser_input", result);
+        await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+        return;
+      }
+      this.emitRunEvent(runId, chatId, {
+        type: "tool.start",
+        status: "running",
+        toolName: "browser_input",
+        action: "input",
+        target: query,
+        message: `正在搜索“${query}”。`
+      });
+      const inputResult = await this.browserUse.fillBestInputAndSubmit(webContentsId, query);
+      const normalizedInputResult: BrowserToolResult = {
+        ok: inputResult.ok,
+        action: inputResult.submitted ? "submit" : "fill",
+        target: query,
+        message: inputResult.message || `已在输入框输入“${query}”${inputResult.submitted ? "并提交" : ""}。`,
+        data: inputResult
+      };
+      this.emitDirectToolResult(runId, chatId, "browser_input", normalizedInputResult);
+      if (!normalizedInputResult.ok || controller.signal.aborted) {
+        await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(normalizedInputResult));
+        return;
+      }
+    }
+
+    const extraction = intent.kind === "compound" || intent.kind === "extract"
+      ? intent.extraction
+      : query && /(告诉我|返回|结果|记过|发给我|总结|概括)/u.test(request.message)
+        ? { kind: "search_results" as const, count: 5, itemLabel: "结果" }
+        : undefined;
+    if (extraction) {
+      if (!webContentsId || !this.browserUse?.readPageContext) {
+        const result = this.missingBrowserTargetResult("read_page");
+        this.emitDirectToolResult(runId, chatId, "browser_read_page", result);
+        await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+        return;
+      }
+      if (this.browserUse.extractPage) {
+        const extracted = await this.browserUse.extractPage(webContentsId, extraction);
+        if (extracted.ok && extracted.items.length > 0) {
+          const lines = extracted.items.slice(0, extraction.count).map((item) => item.title);
+          const message = `已完成搜索并读取到前 ${lines.length} 条${extraction.itemLabel}。`;
+          this.emitDirectToolResult(runId, chatId, "browser_read_page", {
+            ok: true,
+            action: "read_page",
+            message,
+            data: extracted
+          });
+          await this.completeWithAssistantText(runId, chatId, `${message}\n${lines.map((line, index) => `${index + 1}. ${line}`).join("\n")}`);
+          return;
+        }
+      }
+      const pageContext = await this.browserUse.readPageContext(webContentsId);
+      const lines = pageContext ? extractBrowserResultLines(pageContext, extraction.count) : [];
+      const result: BrowserToolResult = {
+        ok: lines.length > 0,
+        action: "read_page",
+        title: pageContext?.title,
+        message: lines.length > 0
+          ? `已完成搜索并读取到前 ${lines.length} 条${extraction.itemLabel}。`
+          : "已读取页面，但没有找到可提取的结果。",
+        data: { lines, pageContext }
+      };
+      this.emitDirectToolResult(runId, chatId, "browser_read_page", result);
+      const list = lines.map((line, index) => `${index + 1}. ${line}`).join("\n");
+      await this.completeWithAssistantText(runId, chatId, list ? `${result.message}\n${list}` : result.message || "没有读取到结果。");
+      return;
+    }
+
+    await this.completeWithAssistantText(runId, chatId, query ? `已在输入框输入“${query}”并提交。` : "已完成浏览器操作。");
+  }
+
+  private async executeDirectBrowserOpen({
+    runId,
+    chatId,
+    request,
+    url,
+    label
+  }: {
+    runId: string;
+    chatId: string;
+    request: AssistantStartRunRequest;
+    url: string;
+    label: string;
+  }) {
+    this.emitRunEvent(runId, chatId, {
+      type: "tool.start",
+      status: "running",
+      toolName: "open_url",
+      action: "open_url",
+      target: url,
+      message: `正在打开${label}。`
+    });
+    const webContentsId = request.pageContext?.browserTarget?.webContentsId ?? null;
+    if (webContentsId && this.browserUse?.navigateUrl) {
+      const navigationLabel = /example\.com/iu.test(url) ? "Example" : label;
+      const result = await this.browserUse.navigateUrl(webContentsId, { url, label: navigationLabel });
+      this.emitDirectToolResult(runId, chatId, "open_url", result);
+      if (result.ok && /快照|snapshot|cdp/i.test(request.message || "") && this.browserUse.createRuntimeSnapshot) {
+        const snapshot = await this.browserUse.createRuntimeSnapshot(webContentsId);
+        this.emitRunEvent(runId, chatId, {
+          type: "tool.result",
+          status: "ok",
+          toolName: "browser_snapshot",
+          action: "snapshot",
+          target: url,
+          message: "已获取当前网页快照。",
+          data: snapshot
+        });
+        await this.completeWithAssistantText(runId, chatId, `已在当前左侧 Chrome 页面访问 ${navigationLabel} 并获取快照。`);
+        return;
+      }
+      await this.completeWithAssistantText(runId, chatId, result.ok ? `已在当前左侧网页打开${label}。` : browserToolCompletionMessage(result));
+      return;
+    }
+    if (this.browserUse?.openUrl && /当前窗口|当前浏览器|浏览器|Chrome|chrome/u.test(request.message || "")) {
+      const result = await this.browserUse.openUrl({ url, label });
+      this.emitDirectToolResult(runId, chatId, "open_url", result);
+      await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+      return;
+    }
+    if (!this.dependencies.openExternalUrl) {
+      const result = this.missingBrowserTargetResult("open_url");
+      this.emitDirectToolResult(runId, chatId, "open_url", result);
+      await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+      return;
+    }
+    await this.dependencies.openExternalUrl(url);
+    const result: BrowserToolResult = {
+      ok: true,
+      action: "open_url",
+      target: url,
+      url,
+      message: `已打开${label}。`
+    };
+    this.emitDirectToolResult(runId, chatId, "open_url", result);
+    await this.completeWithAssistantText(runId, chatId, result.message || `已打开${label}。`);
+  }
+
+  private async executeDirectServiceControl({
+    runId,
+    chatId,
+    intent
+  }: {
+    runId: string;
+    chatId: string;
+    intent: Extract<BrowserTaskIntent, { kind: "service_control" }>;
+  }) {
+    this.emitRunEvent(runId, chatId, {
+      type: "tool.start",
+      status: "running",
+      toolName: "service_control",
+      action: intent.operation,
+      target: intent.serviceId,
+      message: "正在控制 Desktop 托管服务。"
+    });
+    const result = await this.dependencies.services?.control?.(intent.serviceId, intent.operation);
+    const toolResult: BrowserToolResult = {
+      ok: Boolean(result?.ok),
+      action: intent.operation,
+      target: intent.serviceId,
+      message: result?.message || "服务控制未完成。",
+      error: result?.ok ? undefined : result?.message,
+      data: result
+    };
+    this.emitDirectToolResult(runId, chatId, "service_control", toolResult);
+    if (result?.verification) {
+      const verified = result.verification.verified;
+      this.emitRunEvent(runId, chatId, {
+        type: "tool.result",
+        status: verified ? "ok" : "error",
+        toolName: "service_verify",
+        action: "verify",
+        target: intent.serviceId,
+        message: verified ? "服务状态复查通过。" : "服务状态复查失败。",
+        error: verified ? undefined : result.verification.issues?.join("；"),
+        data: result.verification
+      });
+    }
+    await this.completeWithAssistantText(runId, chatId, result?.message || "服务控制未完成。");
+  }
+
   private async executeDirectHumanInLoop({
     runId,
     chatId,
@@ -2702,7 +3324,7 @@ export class AssistantRuntime {
         message: result.message,
         error: result.error
       });
-      this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+      await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
       return;
     }
 
@@ -2825,7 +3447,7 @@ export class AssistantRuntime {
         message: result.message || "表单提交需要用户确认。"
       });
     }
-    this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+    await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
   }
 
   private async executeDirectPageAgent({
@@ -2934,7 +3556,7 @@ export class AssistantRuntime {
       message: browserToolResultMessage(result),
       error: result.error
     });
-    this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+    await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
   }
 
   private async recoverPageAgentSearchResult(
@@ -3059,7 +3681,7 @@ export class AssistantRuntime {
         ? extractPseudoToolCallsFromText(completion.content, request)
         : null;
       if (pseudo?.hasOperatorModeRequest && pseudo.toolCalls.length === 0) {
-        this.completeWithAssistantText(runId, chatId, operatorModePseudoFallbackMessage());
+        await this.completeWithAssistantText(runId, chatId, operatorModePseudoFallbackMessage());
         return;
       }
       if (pseudo?.toolCalls.length) {
@@ -3069,7 +3691,7 @@ export class AssistantRuntime {
 
       if (completion.tool_calls.length === 0) {
         const hasArtifacts = (this.activeRuns.get(runId)?.attachments.length ?? 0) > 0;
-        this.completeWithAssistantText(
+        await this.completeWithAssistantText(
           runId,
           chatId,
           completion.content.trim() || (hasArtifacts ? "已生成以下产物。" : "已完成浏览器操作。")
@@ -3098,7 +3720,7 @@ export class AssistantRuntime {
             target: summarizeToolTarget(toolCall.function.name, toolArgs),
             message: "检测到模型重复同一个浏览器操作，已停止继续循环。"
           });
-          this.completeWithAssistantText(
+          await this.completeWithAssistantText(
             runId,
             chatId,
             state.lastResult
@@ -3172,11 +3794,11 @@ export class AssistantRuntime {
         });
 
         if (shouldAutoFinishBrowserAction(request.message, result)) {
-          this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+          await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
           return;
         }
         if (result.error === "user_rejected" || result.error === "user_dismissed") {
-          this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+          await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
           return;
         }
       }
@@ -3190,7 +3812,7 @@ export class AssistantRuntime {
         ? `${browserToolCompletionMessage(state.lastResult)} 浏览器操作步骤已达到上限。`
         : "浏览器操作步骤已达到上限。"
     });
-    this.completeWithAssistantText(
+    await this.completeWithAssistantText(
       runId,
       chatId,
       state.lastResult
@@ -3296,11 +3918,11 @@ export class AssistantRuntime {
       });
 
       if (shouldAutoFinishBrowserAction(request.message, result)) {
-        this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+        await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
         return;
       }
       if (result.error === "user_rejected" || result.error === "user_dismissed") {
-        this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
+        await this.completeWithAssistantText(runId, chatId, browserToolCompletionMessage(result));
         return;
       }
     }
@@ -4273,7 +4895,7 @@ export class AssistantRuntime {
         labels: {
           runId: state.runId,
           chatId: state.chatId,
-          agentKey: "desktop-xiaozhai"
+          agentKey: ZENMIND_ASSISTANT_AGENT_KEY
         }
       });
       created = true;
@@ -4326,7 +4948,7 @@ export class AssistantRuntime {
         target,
         message: `「${target}」需要用户确认后再操作。`
       });
-      this.completeWithAssistantText(
+      await this.completeWithAssistantText(
         runId,
         chatId,
         `“${target}”可能涉及提交、确认、删除、支付或保存等敏感操作。为避免误操作，当前版本不会自动点击这类按钮。`
@@ -4354,7 +4976,7 @@ export class AssistantRuntime {
         error: "missing_browser_target",
         message: "当前页面没有可操作的浏览器目标。"
       });
-      this.completeWithAssistantText(
+      await this.completeWithAssistantText(
         runId,
         chatId,
         "当前页面没有可操作的浏览器目标。请先切到一个网页标签页，再让我点击页面里的按钮或入口。"
@@ -4373,7 +4995,7 @@ export class AssistantRuntime {
         message: result.message || (result.ok ? `已提交「${target}」。` : `当前网页没有找到可提交的“${target}”。`),
         data: result
       });
-      this.completeWithAssistantText(
+      await this.completeWithAssistantText(
         runId,
         chatId,
         result.message || (result.ok ? `已提交“${target}”。` : `当前网页没有找到可提交的“${target}”。`)
@@ -4394,7 +5016,7 @@ export class AssistantRuntime {
           : `已点击「${target}」。`,
         data: result
       });
-      this.completeWithAssistantText(
+      await this.completeWithAssistantText(
         runId,
         chatId,
         result.matchedText && result.matchedText !== target
@@ -4416,7 +5038,7 @@ export class AssistantRuntime {
       message: result.message || `当前网页没有找到可点击的“${target}”。`,
       data: result
     });
-    this.completeWithAssistantText(
+    await this.completeWithAssistantText(
       runId,
       chatId,
       `${result.message || `当前网页没有找到可点击的“${target}”。`}${candidates}`
@@ -4453,7 +5075,7 @@ export class AssistantRuntime {
         error: "missing_browser_target",
         message: "当前页面没有可操作的浏览器目标。"
       });
-      this.completeWithAssistantText(
+      await this.completeWithAssistantText(
         runId,
         chatId,
         "当前页面没有可操作的浏览器目标。请先切到一个网页标签页，再让我输入或搜索。"
@@ -4487,12 +5109,12 @@ export class AssistantRuntime {
       data: inputResult
     });
     if (!inputResult.ok) {
-      this.completeWithAssistantText(runId, chatId, inputResult.message || "当前页面没有找到可输入的文本框。");
+      await this.completeWithAssistantText(runId, chatId, inputResult.message || "当前页面没有找到可输入的文本框。");
       return;
     }
 
     if (!summarizeAfterSubmit) {
-      this.completeWithAssistantText(
+      await this.completeWithAssistantText(
         runId,
         chatId,
         inputResult.submitted
@@ -4524,7 +5146,7 @@ export class AssistantRuntime {
       data: pageContext
     });
     if (!pageContext?.bodyText.trim()) {
-      this.completeWithAssistantText(
+      await this.completeWithAssistantText(
         runId,
         chatId,
         "搜索后没有读取到可总结的页面文本。请确认页面已经加载完成，或再让我总结当前页面。"
@@ -4546,6 +5168,6 @@ export class AssistantRuntime {
         this.emitAssistantDelta(runId, chatId, delta);
       }
     });
-    this.finishAssistantRun(runId, chatId);
+    await this.finishAssistantRun(runId, chatId);
   }
 }

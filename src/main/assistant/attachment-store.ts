@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { isMainThread, Worker } from "node:worker_threads";
 import type { App } from "electron";
 import type {
   AssistantAttachment,
+  AssistantAttachmentTaskProgress,
   AssistantAttachmentPickResult,
   AssistantPastedImageInput
 } from "../../shared/contracts";
@@ -15,9 +17,31 @@ import {
 } from "./document-extract";
 
 const MAX_ATTACHMENT_FILE_BYTES = 32 * 1024 * 1024;
-export const MAX_ATTACHMENT_IMAGE_CONTEXT_BYTES = 5 * 1024 * 1024;
+const MAX_ATTACHMENT_BATCH_BYTES = 64 * 1024 * 1024;
+export const MAX_ATTACHMENT_IMAGE_CONTEXT_BYTES = 10 * 1024 * 1024;
 export const MAX_ATTACHMENT_TEXT_LENGTH = 20000;
 const TEXT_PREVIEW_BYTES = 512 * 1024;
+
+type AttachmentTaskOptions = {
+  taskId?: string;
+  useWorker?: boolean;
+  onProgress?: (progress: AssistantAttachmentTaskProgress) => void;
+};
+
+type AttachmentWorkerMessage =
+  | { type: "progress"; progress: AssistantAttachmentTaskProgress }
+  | { type: "result"; result: AssistantAttachmentPickResult }
+  | { type: "error"; message: string };
+
+type ActiveAttachmentTask = {
+  worker: Worker;
+  resolve: (result: AssistantAttachmentPickResult) => void;
+  reject: (error: Error) => void;
+  chatId: string;
+  settled: boolean;
+};
+
+const activeAttachmentTasks = new Map<string, ActiveAttachmentTask>();
 
 const TEXT_EXTENSIONS = new Set([
   ".c",
@@ -58,6 +82,55 @@ const REFRESHABLE_DOCUMENT_FORMATS = new Set(["text", "pdf", "docx", "xlsx", "pp
 
 function createAttachmentId() {
   return `att_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
+}
+
+function createAttachmentTaskId() {
+  return `attachment_task_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
+}
+
+function formatAttachmentSizeLimit(sizeBytes: number) {
+  return `${Math.round(sizeBytes / 1024 / 1024)}MB`;
+}
+
+function emitAttachmentProgress(
+  options: AttachmentTaskOptions,
+  progress: Omit<AssistantAttachmentTaskProgress, "taskId">
+) {
+  if (!options.taskId || !options.onProgress) {
+    return;
+  }
+  options.onProgress({
+    taskId: options.taskId,
+    ...progress
+  });
+}
+
+function createCancelledAttachmentResult(chatId: string, taskId: string): AssistantAttachmentPickResult {
+  return {
+    ok: false,
+    chatId,
+    message: "已取消附件处理。",
+    attachments: [],
+    taskId,
+    cancelled: true
+  };
+}
+
+async function getAttachmentBatchStats(filePaths: string[]) {
+  let totalBytes = 0;
+  let fileCount = 0;
+  for (const filePath of filePaths) {
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (stat.isFile()) {
+        totalBytes += stat.size;
+        fileCount += 1;
+      }
+    } catch {
+      fileCount += 1;
+    }
+  }
+  return { totalBytes, fileCount };
 }
 
 function safeFilename(name: string) {
@@ -144,7 +217,7 @@ function createImageDataUrl(buffer: Buffer, mimeType: string) {
   if (buffer.length > MAX_ATTACHMENT_IMAGE_CONTEXT_BYTES) {
     return {
       dataUrl: "",
-      error: "图片已保存，但超过 5MB，未发送给模型视觉接口。"
+      error: `图片已保存，但超过 ${formatAttachmentSizeLimit(MAX_ATTACHMENT_IMAGE_CONTEXT_BYTES)}，未发送给模型视觉接口。`
     };
   }
 
@@ -463,27 +536,213 @@ export function resolveAssistantAttachmentPath(app: App, chatId: string, attachm
 export async function createAssistantAttachmentsFromFiles(
   app: App,
   chatId: string | null | undefined,
-  filePaths: string[]
+  filePaths: string[],
+  options: AttachmentTaskOptions = {}
+): Promise<AssistantAttachmentPickResult> {
+  const taskId = options.taskId || createAttachmentTaskId();
+  const nextOptions = { ...options, taskId };
+  const initialChatId = chatId ?? "";
+  emitAttachmentProgress(nextOptions, {
+    chatId: initialChatId,
+    phase: "queued",
+    processedFiles: 0,
+    totalFiles: filePaths.length,
+    processedBytes: 0,
+    totalBytes: 0,
+    message: "正在准备附件处理。"
+  });
+
+  if (filePaths.length > 0) {
+    const stats = await getAttachmentBatchStats(filePaths);
+    if (stats.totalBytes > MAX_ATTACHMENT_BATCH_BYTES) {
+      const message = `附件总大小超过 ${formatAttachmentSizeLimit(MAX_ATTACHMENT_BATCH_BYTES)}，未保存。`;
+      emitAttachmentProgress(nextOptions, {
+        chatId: initialChatId,
+        phase: "error",
+        processedFiles: 0,
+        totalFiles: filePaths.length,
+        processedBytes: 0,
+        totalBytes: stats.totalBytes,
+        message,
+        done: true
+      });
+      return {
+        ok: false,
+        chatId: initialChatId,
+        message,
+        attachments: [],
+        taskId
+      };
+    }
+  }
+
+  if (nextOptions.useWorker !== false && isMainThread) {
+    return createAssistantAttachmentsFromFilesInWorker(app, chatId, filePaths, nextOptions);
+  }
+
+  return createAssistantAttachmentsFromFilesInProcess(app, chatId, filePaths, nextOptions);
+}
+
+async function createAssistantAttachmentsFromFilesInWorker(
+  app: App,
+  chatId: string | null | undefined,
+  filePaths: string[],
+  options: Required<Pick<AttachmentTaskOptions, "taskId">> & AttachmentTaskOptions
+): Promise<AssistantAttachmentPickResult> {
+  const workerPath = path.join(__dirname, "attachment-worker.js");
+  return new Promise<AssistantAttachmentPickResult>((resolve, reject) => {
+    const worker = new Worker(workerPath, {
+      workerData: {
+        userDataPath: app.getPath("userData"),
+        chatId,
+        filePaths,
+        taskId: options.taskId
+      }
+    });
+    const activeTask: ActiveAttachmentTask = {
+      worker,
+      resolve,
+      reject,
+      chatId: chatId ?? "",
+      settled: false
+    };
+    activeAttachmentTasks.set(options.taskId, activeTask);
+    worker.on("message", (message: AttachmentWorkerMessage) => {
+      if (message.type === "progress") {
+        if (message.progress.chatId) {
+          activeTask.chatId = message.progress.chatId;
+        }
+        options.onProgress?.(message.progress);
+        return;
+      }
+      if (message.type === "result") {
+        activeTask.settled = true;
+        activeAttachmentTasks.delete(options.taskId);
+        resolve({ ...message.result, taskId: options.taskId });
+        return;
+      }
+      activeTask.settled = true;
+      activeAttachmentTasks.delete(options.taskId);
+      reject(new Error(message.message));
+    });
+    worker.on("error", (error) => {
+      if (activeTask.settled) {
+        return;
+      }
+      activeTask.settled = true;
+      activeAttachmentTasks.delete(options.taskId);
+      reject(error);
+    });
+    worker.on("exit", (code) => {
+      if (activeTask.settled) {
+        return;
+      }
+      activeTask.settled = true;
+      activeAttachmentTasks.delete(options.taskId);
+      if (code === 0) {
+        resolve(createCancelledAttachmentResult(chatId ?? "", options.taskId));
+        return;
+      }
+      reject(new Error(`附件处理 worker 异常退出：${code}`));
+    });
+  });
+}
+
+export function cancelAssistantAttachmentTask(taskId: string) {
+  const task = activeAttachmentTasks.get(taskId);
+  if (!task) {
+    return {
+      ok: false,
+      message: "没有找到正在处理的附件任务。"
+    };
+  }
+  task.settled = true;
+  activeAttachmentTasks.delete(taskId);
+  task.worker.terminate().catch(() => undefined);
+  task.resolve(createCancelledAttachmentResult(task.chatId, taskId));
+  return {
+    ok: true,
+    message: "已取消附件处理。"
+  };
+}
+
+export async function createAssistantAttachmentsFromFilesInProcess(
+  app: Pick<App, "getPath">,
+  chatId: string | null | undefined,
+  filePaths: string[],
+  options: AttachmentTaskOptions = {}
 ): Promise<AssistantAttachmentPickResult> {
   if (filePaths.length === 0) {
     return {
       ok: false,
       chatId: chatId ?? "",
       message: "未选择附件。",
-      attachments: []
+      attachments: [],
+      ...(options.taskId ? { taskId: options.taskId } : {})
     };
   }
 
-  const chat = ensureAssistantChat(app, chatId, "新的对话");
-  const chatDir = getAssistantChatDir(app, chat.summary.id);
+  const chat = ensureAssistantChat(app as App, chatId, "新的对话");
+  const chatDir = getAssistantChatDir(app as App, chat.summary.id);
   const attachmentsDir = path.join(chatDir, "attachments");
   fs.mkdirSync(attachmentsDir, { recursive: true });
 
   const attachments: AssistantAttachment[] = [];
+  let totalBytes = 0;
   for (const filePath of filePaths) {
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.isFile()) {
+        totalBytes += stat.size;
+      }
+    } catch {
+      // The per-file branch below will surface the concrete error as an unreadable attachment.
+    }
+  }
+  let processedBytes = 0;
+  emitAttachmentProgress(options, {
+    chatId: chat.summary.id,
+    phase: "scanning",
+    processedFiles: 0,
+    totalFiles: filePaths.length,
+    processedBytes,
+    totalBytes,
+    message: "正在检查附件。"
+  });
+
+  for (const [index, filePath] of filePaths.entries()) {
     const id = createAttachmentId();
     const name = safeFilename(filePath);
-    const stat = fs.statSync(filePath);
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(filePath);
+    } catch (error) {
+      attachments.push({
+        id,
+        name,
+        mimeType: "application/octet-stream",
+        sizeBytes: 0,
+        text: "",
+        error: error instanceof Error ? error.message : "附件读取失败。",
+        document: {
+          format: "binary",
+          readStatus: "unreadable",
+          extractedChars: 0,
+          truncated: false,
+          errorCode: "stat_failed"
+        }
+      });
+      emitAttachmentProgress(options, {
+        chatId: chat.summary.id,
+        phase: "error",
+        processedFiles: index + 1,
+        totalFiles: filePaths.length,
+        processedBytes,
+        totalBytes,
+        message: `${name} 读取失败。`
+      });
+      continue;
+    }
     if (!stat.isFile()) {
       attachments.push({
         id,
@@ -499,6 +758,15 @@ export async function createAssistantAttachmentsFromFiles(
           truncated: false,
           errorCode: "not_file"
         }
+      });
+      emitAttachmentProgress(options, {
+        chatId: chat.summary.id,
+        phase: "error",
+        processedFiles: index + 1,
+        totalFiles: filePaths.length,
+        processedBytes,
+        totalBytes,
+        message: `${name} 不是文件。`
       });
       continue;
     }
@@ -519,11 +787,30 @@ export async function createAssistantAttachmentsFromFiles(
           errorCode: "file_too_large"
         }
       });
+      processedBytes += stat.size;
+      emitAttachmentProgress(options, {
+        chatId: chat.summary.id,
+        phase: "error",
+        processedFiles: index + 1,
+        totalFiles: filePaths.length,
+        processedBytes,
+        totalBytes,
+        message: `${name} 超过 ${formatAttachmentSizeLimit(MAX_ATTACHMENT_FILE_BYTES)}，已跳过。`
+      });
       continue;
     }
 
     const storedName = `${id}_${name}`;
     const storedPath = path.join(attachmentsDir, storedName);
+    emitAttachmentProgress(options, {
+      chatId: chat.summary.id,
+      phase: "copying",
+      processedFiles: index,
+      totalFiles: filePaths.length,
+      processedBytes,
+      totalBytes,
+      message: `正在保存 ${name}。`
+    });
     fs.copyFileSync(filePath, storedPath);
     const storedBuffer = fs.readFileSync(storedPath);
     const hash = createHash("sha256").update(storedBuffer).digest("hex");
@@ -531,6 +818,15 @@ export async function createAssistantAttachmentsFromFiles(
     const imageContext = isSupportedImage(mimeType, filePath)
       ? createImageDataUrl(storedBuffer, mimeType)
       : { dataUrl: "", error: "" };
+    emitAttachmentProgress(options, {
+      chatId: chat.summary.id,
+      phase: "extracting",
+      processedFiles: index,
+      totalFiles: filePaths.length,
+      processedBytes,
+      totalBytes,
+      message: `正在解析 ${name}。`
+    });
     const extracted = imageContext.dataUrl || imageContext.error
       ? createImageDocumentMetadata({
           readable: Boolean(imageContext.dataUrl),
@@ -556,6 +852,15 @@ export async function createAssistantAttachmentsFromFiles(
 
 	    if (extracted.errorCode === "scanned_pdf_no_text") {
 	      try {
+          emitAttachmentProgress(options, {
+            chatId: chat.summary.id,
+            phase: "rendering",
+            processedFiles: index,
+            totalFiles: filePaths.length,
+            processedBytes,
+            totalBytes,
+            message: `正在渲染 ${name} 的扫描页。`
+          });
 	        const pageImages = await renderPdfPagesForVision(storedPath);
 	        if (pageImages.length > 0) {
 	          attachment.text = `该 PDF 没有可复制文字，已渲染前 ${pageImages.length} 页为视觉页图。`;
@@ -602,6 +907,16 @@ export async function createAssistantAttachmentsFromFiles(
 	    }
 
 	    writeAttachmentMetadata(attachmentsDir, attachment, storedName, hash);
+    processedBytes += stat.size;
+    emitAttachmentProgress(options, {
+      chatId: chat.summary.id,
+      phase: "extracting",
+      processedFiles: index + 1,
+      totalFiles: filePaths.length,
+      processedBytes,
+      totalBytes,
+      message: `${name} 已处理。`
+    });
 	  }
 
 	  const visibleAttachments = attachments.filter((attachment) => !attachment.hidden);
@@ -610,17 +925,29 @@ export async function createAssistantAttachmentsFromFiles(
 	  const imageCount = visibleAttachments.filter((attachment) => attachment.dataUrl).length;
 	  const hiddenScanPageCount = attachments.filter((attachment) => attachment.hidden && attachment.dataUrl).length;
 	  const unreadableCount = visibleAttachments.filter((attachment) => attachment.document?.readStatus === "unreadable").length;
+  const message = [
+    `已添加 ${visibleAttachments.length} 个附件，已解析 ${readableCount} 个`,
+    truncatedCount > 0 ? `${truncatedCount} 个已截断` : "",
+    imageCount > 0 ? `${imageCount} 张图片已进入视觉上下文` : "",
+    hiddenScanPageCount > 0 ? `${hiddenScanPageCount} 页扫描页图已进入视觉上下文` : "",
+    unreadableCount > 0 ? `${unreadableCount} 个无可读文本或暂不支持解析` : ""
+  ].filter(Boolean).join("，") + "。";
+  emitAttachmentProgress(options, {
+    chatId: chat.summary.id,
+    phase: "complete",
+    processedFiles: filePaths.length,
+    totalFiles: filePaths.length,
+    processedBytes,
+    totalBytes,
+    message,
+    done: true
+  });
 	  return {
 	    ok: attachments.length > 0,
 	    chatId: chat.summary.id,
-	    message: [
-	      `已添加 ${visibleAttachments.length} 个附件，已解析 ${readableCount} 个`,
-	      truncatedCount > 0 ? `${truncatedCount} 个已截断` : "",
-	      imageCount > 0 ? `${imageCount} 张图片已进入视觉上下文` : "",
-	      hiddenScanPageCount > 0 ? `${hiddenScanPageCount} 页扫描页图已进入视觉上下文` : "",
-	      unreadableCount > 0 ? `${unreadableCount} 个无可读文本或暂不支持解析` : ""
-	    ].filter(Boolean).join("，") + "。",
-    attachments
+	    message,
+    attachments,
+    ...(options.taskId ? { taskId: options.taskId } : {})
   };
 }
 
@@ -719,6 +1046,30 @@ export function createAssistantAttachmentFromPastedImage(
   chatId: string | null | undefined,
   input: AssistantPastedImageInput
 ): AssistantAttachmentPickResult {
+  return createAssistantAttachmentFromImageBuffer(app, chatId, {
+    name: input.name,
+    mimeType: input.mimeType,
+    buffer: pastedImageDataToBuffer(input.data),
+    fallbackBaseName: "pasted-image",
+    unsupportedMessage: "剪贴板里不是当前支持的图片格式。",
+    readableMessage: "已粘贴 1 张图片，图片已进入视觉上下文。",
+    oversizedVisionMessage: "图片已保存，但过大，未发送给模型视觉接口。"
+  });
+}
+
+export function createAssistantAttachmentFromImageBuffer(
+  app: App,
+  chatId: string | null | undefined,
+  input: {
+    name?: string;
+    mimeType?: string;
+    buffer: Buffer;
+    fallbackBaseName?: string;
+    unsupportedMessage?: string;
+    readableMessage?: string;
+    oversizedVisionMessage?: string;
+  }
+): AssistantAttachmentPickResult {
   const chat = ensureAssistantChat(app, chatId, "新的对话");
   const chatDir = getAssistantChatDir(app, chat.summary.id);
   const attachmentsDir = path.join(chatDir, "attachments");
@@ -726,14 +1077,14 @@ export function createAssistantAttachmentFromPastedImage(
 
   const id = createAttachmentId();
   const mimeType = input.mimeType || "image/png";
-  const fallbackName = `pasted-image${getImageExtensionFromMimeType(mimeType)}`;
+  const fallbackName = `${input.fallbackBaseName || "image"}${getImageExtensionFromMimeType(mimeType)}`;
   const name = safeFilename(input.name || fallbackName);
-  const buffer = pastedImageDataToBuffer(input.data);
+  const buffer = input.buffer;
   if (!isSupportedImage(mimeType, name)) {
     return {
       ok: false,
       chatId: chat.summary.id,
-      message: "剪贴板里不是当前支持的图片格式。",
+      message: input.unsupportedMessage || "不是当前支持的图片格式。",
       attachments: []
     };
   }
@@ -773,8 +1124,8 @@ export function createAssistantAttachmentFromPastedImage(
     ok: true,
     chatId: chat.summary.id,
     message: imageContext.dataUrl
-      ? "已粘贴 1 张图片，图片已进入视觉上下文。"
-      : "图片已保存，但过大，未发送给模型视觉接口。",
+      ? input.readableMessage || "已添加 1 张图片，图片已进入视觉上下文。"
+      : input.oversizedVisionMessage || "图片已保存，但过大，未发送给模型视觉接口。",
     attachments: [attachment]
   };
 }

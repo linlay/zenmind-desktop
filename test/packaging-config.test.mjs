@@ -20,6 +20,7 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
   const extraResources = packageJson.build?.extraResources ?? [];
   const uninstallResource = extraResources.find((entry) => entry.from === "scripts");
   const pluginsResource = extraResources.find((entry) => entry.from === "build/resources/plugins");
+  const voiceAsrResource = extraResources.find((entry) => entry.from === "build/resources/voice-asr");
 
   assert.deepEqual(uninstallResource, {
     from: "scripts",
@@ -34,7 +35,11 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
   assert.equal(packageJson.scripts?.["stage:app"], "node ./scripts/stage-app.mjs");
   assert.match(packageJson.scripts?.["dist:mac"] ?? "", /stage:app -- --os=darwin --arch=arm64/);
   assert.match(packageJson.scripts?.["dist:win"] ?? "", /stage:app -- --os=win32 --arch=x64/);
+  assert.equal(voiceAsrResource, undefined);
   assert.equal(packageJson.scripts?.["sync:plugins"], undefined);
+  assert.equal(packageJson.scripts?.["prepare:voice-asr"], undefined);
+  assert.doesNotMatch(packageJson.scripts?.["dist:mac"] ?? "", /prepare:voice-asr/);
+  assert.doesNotMatch(packageJson.scripts?.["dist:win"] ?? "", /prepare:voice-asr/);
   assert.match(packageJson.scripts?.["dist:win"] ?? "", /electron-builder --win --x64/);
   assert.equal(packageJson.scripts?.["dist:win-docker"], "node ./scripts/dist-win.mjs");
   assert.notEqual(packageJson.build?.nsis?.perMachine, true);
@@ -66,6 +71,7 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   const stageAppScript = fs.readFileSync(stageAppScriptPath, "utf8");
 
   assert.match(distWinScript, /async function syncWindowsBuiltinAssets\(\)/);
+  assert.doesNotMatch(distWinScript, /prepareWindowsVoiceAsrAssets/);
   assert.match(
     distWinScript,
     /await syncWindowsBuiltinAssets\(\);\s*\n\s*await runAndWait\(npmCmd, \["run", "build"\]\);\s*\n\s*const npmCacheDir/

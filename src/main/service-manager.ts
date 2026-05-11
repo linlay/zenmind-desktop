@@ -57,10 +57,6 @@ type ManagedServiceStopState = {
   managedMainPid: number | null;
   port: number;
   managedPortPids: number[];
-  relayPidFilePath: string;
-  managedRelayPid: number | null;
-  relayPort: number;
-  managedRelayPortPids: number[];
 };
 
 type PowerShellCapturePayload = ExecResult & {
@@ -1015,51 +1011,6 @@ function removePidFile(pidFilePath: string) {
   }
 }
 
-function parseRelayPort(env: Map<string, string>) {
-  const value = env.get("LOCAL_CLI_ACP_RELAY_PORT") ?? DEFAULT_LOCAL_CLI_ACP_RELAY_PORT;
-  const port = Number.parseInt(value, 10);
-  return Number.isFinite(port) ? port : Number.parseInt(DEFAULT_LOCAL_CLI_ACP_RELAY_PORT, 10);
-}
-
-function cleanupAgentPlatformRelayBeforeStart(installDir: string, env: Map<string, string>) {
-  const relayPidFilePath = path.join(installDir, "run", "local-cli-acp-relay.pid");
-  const relayPort = parseRelayPort(env);
-  const relayPids = new Set<number>();
-  const pidFromFile = readPid(relayPidFilePath);
-
-  if (pidFromFile && pidMatchesInstallDir(pidFromFile, installDir)) {
-    relayPids.add(pidFromFile);
-  }
-
-  for (const pid of listListeningPids(relayPort)) {
-    if (pidMatchesInstallDir(pid, installDir)) {
-      relayPids.add(pid);
-    }
-  }
-
-  for (const pid of relayPids) {
-    if (IS_WINDOWS) {
-      terminateProcessTree(pid);
-    } else {
-      terminateProcess(pid);
-    }
-  }
-
-  removePidFile(relayPidFilePath);
-}
-
-export function cleanupAgentPlatformRelayForApp(app: App) {
-  const service = getService("agent-platform");
-  const installDir = getInstallDir(app, service);
-  if (!fs.existsSync(installDir)) {
-    return;
-  }
-
-  const envPath = path.join(installDir, ".env");
-  const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
-  cleanupAgentPlatformRelayBeforeStart(installDir, env);
-}
-
 function addManagedRootPid(
   roots: Map<number, ManagedRootPid>,
   serviceId: ServiceId,
@@ -1103,16 +1054,6 @@ function collectManagedRootPids(app: App) {
     const port = parsePort(service, env);
     if (port > 0) {
       for (const pid of listListeningPids(port)) {
-        addManagedRootPid(roots, service.id, pid, installDir);
-      }
-    }
-
-    if (service.id === "agent-platform") {
-      const relayPidFilePath = path.join(installDir, "run", "local-cli-acp-relay.pid");
-      addManagedRootPid(roots, service.id, readPid(relayPidFilePath), installDir, relayPidFilePath);
-
-      const relayPort = parseRelayPort(env);
-      for (const pid of listListeningPids(relayPort)) {
         addManagedRootPid(roots, service.id, pid, installDir);
       }
     }
@@ -1181,15 +1122,6 @@ export async function forceCleanupManagedProcesses(app: App, snapshot: ManagedPr
   }
 }
 
-function isAgentPlatformRelayStartupConflict(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes("local-cli-acp-relay is already running with pid") ||
-    message.includes("local relay failed to start") ||
-    message.includes("EADDRINUSE")
-  );
-}
-
 function collectManagedServiceStopState(
   service: ServiceDefinition,
   installDir: string,
@@ -1207,30 +1139,11 @@ function collectManagedServiceStopState(
       ? [...new Set(listListeningPids(port).filter((pid) => pidMatchesInstallDir(pid, installDir)))]
       : [];
 
-  const relayPidFilePath =
-    service.id === "agent-platform"
-      ? path.join(installDir, "run", "local-cli-acp-relay.pid")
-      : "";
-  const relayPid = relayPidFilePath ? readPid(relayPidFilePath) : null;
-  const managedRelayPid =
-    relayPid && isProcessRunning(relayPid) && pidMatchesInstallDir(relayPid, installDir)
-      ? relayPid
-      : null;
-  const relayPort = service.id === "agent-platform" ? parseRelayPort(env) : 0;
-  const managedRelayPortPids =
-    relayPort > 0
-      ? [...new Set(listListeningPids(relayPort).filter((pid) => pidMatchesInstallDir(pid, installDir)))]
-      : [];
-
   return {
     mainPidFilePath,
     managedMainPid,
     port,
-    managedPortPids,
-    relayPidFilePath,
-    managedRelayPid,
-    relayPort,
-    managedRelayPortPids
+    managedPortPids
   };
 }
 
@@ -1249,19 +1162,6 @@ function buildManagedServiceStopIssues(
   }
   if (state.port > 0 && state.managedPortPids.length > 0) {
     issues.push(`port ${state.port} still occupied by managed process after ${phase}`);
-  }
-
-  if (service.id === "agent-platform") {
-    if (phase === "stop" && state.managedRelayPid) {
-      issues.push(`stop script returned but relay process still alive (pid=${state.managedRelayPid})`);
-    }
-    if (phase === "cleanup" && state.managedRelayPid) {
-      issues.push(`relay process still alive after cleanup (pid=${state.managedRelayPid})`);
-    }
-    if (state.relayPort > 0 && state.managedRelayPortPids.length > 0) {
-      const suffix = phase === "cleanup" ? "cleanup" : "stop";
-      issues.push(`relay port ${state.relayPort} still occupied by managed process after ${suffix}`);
-    }
   }
 
   return issues;
@@ -1287,9 +1187,7 @@ function forceStopServiceInstallDir(
   const state = collectState(service, installDir, env);
   const pidsToTerminate = [
     state.managedMainPid,
-    ...state.managedPortPids,
-    state.managedRelayPid,
-    ...state.managedRelayPortPids
+    ...state.managedPortPids
   ].filter((pid): pid is number => typeof pid === "number" && Number.isFinite(pid) && pid > 0);
   let allTerminated = true;
 
@@ -1300,9 +1198,6 @@ function forceStopServiceInstallDir(
 
   if (state.mainPidFilePath) {
     removePidFileImpl(state.mainPidFilePath);
-  }
-  if (state.relayPidFilePath) {
-    removePidFileImpl(state.relayPidFilePath);
   }
 
   return allTerminated;
@@ -1691,6 +1586,10 @@ async function ensureInitializationRequirements(app: App, service: ServiceDefini
   if (service.id === "agent-platform") {
     await ensureAgentPlatformDesktopConfig(app, service, installDir);
     ensureLocalAuthPublicKey(app, installDir);
+  }
+
+  if (service.id === LOCAL_CLI_ACP_RELAY_PLUGIN_ID) {
+    await ensureLocalCliAcpRelayDesktopConfig(app, installDir);
   }
 
   if (service.id === "pan-webclient") {
@@ -2254,22 +2153,35 @@ async function restartAgentWebclientAfterPlatformStart(app: App, platformResult:
     return {
       ...platformResult,
       ok: false,
-      message: `${platformResult.message} 但小宅助理刷新失败：${webclientResult.message}`
+      message: `${platformResult.message} 但智能助理刷新失败：${webclientResult.message}`
     };
   }
   return platformResult;
 }
 
 const DEFAULT_LOCAL_CLI_ACP_RELAY_PORT = "3220";
-const LOCAL_CLI_ACP_RELAY_ENABLED_KEY = "LOCAL_CLI_ACP_RELAY_ENABLED";
-const LOCAL_CLI_ACP_RELAY_USER_ENABLED_KEY = "LOCAL_CLI_ACP_RELAY_USER_ENABLED";
+const LOCAL_CLI_ACP_RELAY_PLUGIN_ID = "local-cli-acp-relay";
 const DEFAULT_CLAUDE_CODE_ACP_ARGS = "-y @zed-industries/claude-code-acp";
+const DEFAULT_LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS = "60000";
+const DEFAULT_LOCAL_CLI_ACP_RUN_TIMEOUT_MS = "600000";
 const DEFAULT_PROVIDER_APIKEY_KEY_PART = "0.1.0";
 const AGENT_BASH_SHELL_EXECUTABLE_KEY = "AGENT_BASH_SHELL_EXECUTABLE";
 const AGENT_BASH_SHELL_ARGS_KEY = "AGENT_BASH_SHELL_ARGS";
 const WINDOWS_AGENT_BASH_SHELL_EXECUTABLE = "powershell.exe";
 const WINDOWS_AGENT_BASH_SHELL_ARGS = "-NoProfile,-ExecutionPolicy,Bypass,-Command,{{command}}";
 const AGENT_PLATFORM_LEGACY_ENV_BACKUP_FILE = ".env.legacy-backup";
+const AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS = [
+  "LOCAL_CLI_ACP_RELAY_ENABLED",
+  "LOCAL_CLI_ACP_RELAY_USER_ENABLED",
+  "LOCAL_CLI_ACP_RELAY_PORT",
+  "LOCAL_CLI_ACP_RELAY_AUTH_TOKEN",
+  "LOCAL_CLI_ACP_DEFAULT_CWD",
+  "LOCAL_CLI_ACP_ALLOWED_CWD_ROOTS",
+  "LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS",
+  "LOCAL_CLI_ACP_RUN_TIMEOUT_MS",
+  "CLAUDE_CODE_ACP_COMMAND",
+  "CLAUDE_CODE_ACP_ARGS"
+] as const;
 const AGENT_PLATFORM_DEPRECATED_ENV_KEYS = [
   "GATEWAY_USER_ID",
   "GATEWAY_TICKET",
@@ -2748,7 +2660,6 @@ function applyAgentPlatformWindowsHostShellDefaults(
   updates.set(AGENT_BASH_SHELL_ARGS_KEY, WINDOWS_AGENT_BASH_SHELL_ARGS);
   return true;
 }
-
 function shellQuoteEnvValue(value: string) {
   return `'${value.replace(/'/gu, "'\\''")}'`;
 }
@@ -2901,12 +2812,153 @@ function normalizeAgentPlatformEnvContentForRuntime(content: string) {
 }
 
 function normalizeAgentPlatformEnvContentForSave(content: string) {
-  const env = parseEnvFileContent(normalizeAgentPlatformEnvContentForRuntime(content));
-  const relayEnabled = isTruthyEnvValue(env.get(LOCAL_CLI_ACP_RELAY_ENABLED_KEY) ?? "");
-  return upsertEnvFileContent(
+  return removeEnvKeysFromContent(
     normalizeAgentPlatformEnvContentForRuntime(content),
-    new Map([[LOCAL_CLI_ACP_RELAY_USER_ENABLED_KEY, relayEnabled ? "true" : "false"]])
+    AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS
   );
+}
+
+function resolveLocalCliAcpRelayDefaultCwd(app?: App | null) {
+  return resolveDesktopDir(app);
+}
+
+function canOverrideLocalCliAcpRelayValue(currentValue: string, defaultValue: string) {
+  const normalized = currentValue.trim();
+  if (!normalized) {
+    return true;
+  }
+  return normalized === defaultValue;
+}
+
+function readInstalledServiceEnv(app: App, serviceId: ServiceId) {
+  try {
+    const service = getService(serviceId);
+    const installDir = getInstallDir(app, service);
+    const envPath = path.join(installDir, ".env");
+    const content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+    return {
+      installDir,
+      envPath,
+      content,
+      env: parseEnvFileContent(content)
+    };
+  } catch {
+    return null;
+  }
+}
+
+function migrateLegacyAgentPlatformRelayEnv(
+  app: App,
+  env: Map<string, string>,
+  updates: Map<string, string>
+) {
+  const platformEnvInfo = readInstalledServiceEnv(app, "agent-platform");
+  if (!platformEnvInfo || !platformEnvInfo.content.trim()) {
+    return;
+  }
+
+  const migrationRules = [
+    {
+      legacyKey: "LOCAL_CLI_ACP_RELAY_PORT",
+      pluginKey: "PORT",
+      defaultValue: DEFAULT_LOCAL_CLI_ACP_RELAY_PORT
+    },
+    {
+      legacyKey: "LOCAL_CLI_ACP_RELAY_AUTH_TOKEN",
+      pluginKey: "AUTH_TOKEN",
+      defaultValue: ""
+    },
+    {
+      legacyKey: "LOCAL_CLI_ACP_DEFAULT_CWD",
+      pluginKey: "DEFAULT_CWD",
+      defaultValue: "~/Desktop"
+    },
+    {
+      legacyKey: "LOCAL_CLI_ACP_ALLOWED_CWD_ROOTS",
+      pluginKey: "ALLOWED_CWD_ROOTS",
+      defaultValue: "~/Desktop"
+    },
+    {
+      legacyKey: "LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS",
+      pluginKey: "HANDSHAKE_TIMEOUT_MS",
+      defaultValue: DEFAULT_LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS
+    },
+    {
+      legacyKey: "LOCAL_CLI_ACP_RUN_TIMEOUT_MS",
+      pluginKey: "RUN_TIMEOUT_MS",
+      defaultValue: DEFAULT_LOCAL_CLI_ACP_RUN_TIMEOUT_MS
+    },
+    {
+      legacyKey: "CLAUDE_CODE_ACP_COMMAND",
+      pluginKey: "CLAUDE_CODE_ACP_COMMAND",
+      defaultValue: ""
+    },
+    {
+      legacyKey: "CLAUDE_CODE_ACP_ARGS",
+      pluginKey: "CLAUDE_CODE_ACP_ARGS",
+      defaultValue: ""
+    }
+  ] as const;
+
+  for (const rule of migrationRules) {
+    const currentValue = updates.get(rule.pluginKey) ?? env.get(rule.pluginKey) ?? "";
+    if (!canOverrideLocalCliAcpRelayValue(currentValue, rule.defaultValue)) {
+      continue;
+    }
+
+    const legacyValue = platformEnvInfo.env.get(rule.legacyKey)?.trim() ?? "";
+    if (!legacyValue) {
+      continue;
+    }
+    updates.set(rule.pluginKey, legacyValue);
+  }
+
+  const cleanedContent = removeEnvKeysFromContent(platformEnvInfo.content, AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS);
+  if (cleanedContent !== platformEnvInfo.content) {
+    fs.writeFileSync(platformEnvInfo.envPath, cleanedContent, "utf8");
+  }
+}
+
+async function ensureLocalCliAcpRelayDesktopConfig(app: App, installDir: string) {
+  const envPath = path.join(installDir, ".env");
+  const env = readEnvFile(envPath);
+  const updates = new Map<string, string>();
+
+  migrateLegacyAgentPlatformRelayEnv(app, env, updates);
+
+  if (!env.get("PORT")?.trim()) {
+    updates.set("PORT", DEFAULT_LOCAL_CLI_ACP_RELAY_PORT);
+  }
+  if (!env.get("DEFAULT_CWD")?.trim()) {
+    updates.set("DEFAULT_CWD", resolveLocalCliAcpRelayDefaultCwd(app));
+  }
+  if (!env.get("ALLOWED_CWD_ROOTS")?.trim()) {
+    updates.set("ALLOWED_CWD_ROOTS", resolveLocalCliAcpRelayDefaultCwd(app));
+  }
+  if (!env.get("HANDSHAKE_TIMEOUT_MS")?.trim()) {
+    updates.set("HANDSHAKE_TIMEOUT_MS", DEFAULT_LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS);
+  }
+  if (!env.get("RUN_TIMEOUT_MS")?.trim()) {
+    updates.set("RUN_TIMEOUT_MS", DEFAULT_LOCAL_CLI_ACP_RUN_TIMEOUT_MS);
+  }
+  if (!env.get("NODE_BIN")?.trim()) {
+    updates.set("NODE_BIN", resolveNodeBin());
+  }
+
+  const effectiveEnv = new Map(env);
+  for (const [key, value] of updates) {
+    effectiveEnv.set(key, value);
+  }
+  const resolvedAcpCommand = resolveAcpCommandForDesktop(effectiveEnv);
+  if (resolvedAcpCommand) {
+    updates.set("CLAUDE_CODE_ACP_COMMAND", resolvedAcpCommand.command);
+    updates.set("CLAUDE_CODE_ACP_ARGS", resolvedAcpCommand.args);
+  }
+
+  if (updates.size > 0) {
+    normalizeShellSourcedAgentPlatformEnvUpdates(updates);
+    writeEnvFileUpdates(envPath, updates);
+  }
 }
 
 async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<string, string>, updates: Map<string, string>) {
@@ -3057,6 +3109,10 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     return;
   }
 
+  if (service.id === LOCAL_CLI_ACP_RELAY_PLUGIN_ID) {
+    await ensureLocalCliAcpRelayDesktopConfig(app, installDir);
+  }
+
   const envPath = path.join(installDir, ".env");
   const env = readEnvFile(envPath);
   const updates = new Map<string, string>();
@@ -3197,23 +3253,7 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
     };
   } else {
     await ensurePreStartRequirements(app, service);
-    if (service.id === "agent-platform") {
-      const env = readEnvFile(path.join(installDir, ".env"));
-      cleanupAgentPlatformRelayBeforeStart(installDir, env);
-    }
-
-    try {
-      result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
-    } catch (error) {
-      if (service.id !== "agent-platform" || !isAgentPlatformRelayStartupConflict(error)) {
-        throw error;
-      }
-
-      const env = readEnvFile(path.join(installDir, ".env"));
-      cleanupAgentPlatformRelayBeforeStart(installDir, env);
-      result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
-    }
-
+    result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
     startedThisSession.add(serviceId);
   }
 

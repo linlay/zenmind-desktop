@@ -3,13 +3,61 @@ import type {
   AssistantAttachment,
   AssistantAttachmentPickResult,
   AssistantChatMessage,
-  AssistantEvent,
-  AssistantRunEvent,
   AssistantSettingsPublic
 } from "../../shared/contracts";
 import { AssistantMarkdownContent } from "./AssistantMarkdownContent";
+import {
+  getArtifactAttachmentsFromEvent,
+  getArtifactAttachmentsFromMessages,
+  mergeAssistantAttachments
+} from "../services/assistantArtifacts";
+import {
+  ensureAssistantMessageForRun as ensureRemoteAssistantMessageForRun,
+  isStructuredAssistantEvent,
+  isTerminalAssistantEvent,
+  shouldEnsureAssistantMessageForEvent
+} from "../services/assistantEventState";
 
 type VoiceState = "idle" | "recording" | "transcribing";
+
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  [index: number]: { transcript: string };
+};
+
+type SpeechRecognitionResultEventLike = {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: SpeechRecognitionResultLike;
+  };
+};
+
+type SpeechRecognitionErrorEventLike = {
+  error: string;
+  message?: string;
+};
+
+type SpeechRecognitionLike = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onstart: (() => void) | null;
+  onresult: ((event: SpeechRecognitionResultEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+};
+
+type SpeechRecognitionConstructorLike = new () => SpeechRecognitionLike;
+
+type SpeechRecognitionWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructorLike;
+  webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
+};
 
 const VOICE_TRANSCRIPTION_TIMEOUT_MS = 45000;
 const VOICE_CORRECTION_TIMEOUT_MS = 20000;
@@ -20,34 +68,6 @@ const VOICE_MIME_TYPES = [
   "audio/mp4",
   "audio/ogg;codecs=opus"
 ];
-
-const STRUCTURED_EVENT_TYPES = new Set([
-  "request.query",
-  "chat.start",
-  "run.start",
-  "content.delta",
-  "artifact.publish",
-  "run.complete",
-  "run.error",
-  "run.stopped",
-  "done"
-]);
-
-function isStructuredEvent(event: AssistantEvent): event is AssistantRunEvent {
-  return STRUCTURED_EVENT_TYPES.has(event.type) &&
-    typeof event.id === "string" &&
-    typeof event.seq === "number" &&
-    typeof event.createdAt === "string";
-}
-
-function isTerminalEvent(event: AssistantEvent) {
-  return event.type === "done" ||
-    event.type === "run.complete" ||
-    event.type === "run.error" ||
-    event.type === "run.stopped" ||
-    event.type === "error" ||
-    event.type === "stopped";
-}
 
 function createLocalMessage(
   role: AssistantChatMessage["role"],
@@ -65,82 +85,6 @@ function createLocalMessage(
   } satisfies AssistantChatMessage;
 }
 
-function mergeAssistantAttachments(
-  current: AssistantAttachment[] | undefined,
-  next: AssistantAttachment[]
-) {
-  if (next.length === 0) {
-    return current;
-  }
-  const merged = [...(current ?? [])];
-  const knownIds = new Set(merged.map((attachment) => attachment.id));
-  for (const attachment of next) {
-    if (!knownIds.has(attachment.id)) {
-      merged.push(attachment);
-      knownIds.add(attachment.id);
-    }
-  }
-  return merged;
-}
-
-function artifactRecordToAttachment(value: unknown): AssistantAttachment | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  const id = typeof record.attachmentId === "string" ? record.attachmentId : "";
-  const name = typeof record.name === "string" ? record.name : "";
-  if (!id || !name) {
-    return null;
-  }
-  return {
-    id,
-    name,
-    mimeType: typeof record.mimeType === "string" ? record.mimeType : "application/octet-stream",
-    sizeBytes: typeof record.sizeBytes === "number" && Number.isFinite(record.sizeBytes) ? record.sizeBytes : 0,
-    text: "",
-    kind: "artifact",
-    ...(typeof record.artifactId === "string" ? { artifactId: record.artifactId } : {}),
-    ...(typeof record.description === "string" ? { description: record.description } : {}),
-    ...(typeof record.sha256 === "string" ? { sha256: record.sha256 } : {}),
-    ...(typeof record.url === "string" ? { url: record.url } : {})
-  };
-}
-
-function getArtifactAttachmentsFromEvent(event: AssistantRunEvent) {
-  if (event.type !== "artifact.publish") {
-    return [];
-  }
-  const data = event.data && typeof event.data === "object" && !Array.isArray(event.data)
-    ? event.data as Record<string, unknown>
-    : {};
-  const rawArtifacts = Array.isArray(event.artifacts)
-    ? event.artifacts
-    : Array.isArray(data.artifacts)
-      ? data.artifacts
-      : event.artifact
-        ? [event.artifact]
-        : data.artifact
-          ? [data.artifact]
-          : [];
-  return rawArtifacts
-    .map(artifactRecordToAttachment)
-    .filter((attachment): attachment is AssistantAttachment => Boolean(attachment));
-}
-
-function getArtifactAttachmentsFromMessages(messages: AssistantChatMessage[]) {
-  const artifacts = new Map<string, AssistantAttachment>();
-  for (const message of messages) {
-    for (const attachment of message.attachments ?? []) {
-      if (attachment.kind !== "artifact") {
-        continue;
-      }
-      artifacts.set(attachment.artifactId || attachment.id, attachment);
-    }
-  }
-  return Array.from(artifacts.values()).reverse();
-}
-
 function getPreferredVoiceMimeType() {
   if (typeof window === "undefined" || typeof window.MediaRecorder === "undefined") {
     return "";
@@ -155,6 +99,34 @@ function canUseVoiceRecorder() {
     typeof window !== "undefined" &&
     typeof window.MediaRecorder !== "undefined"
   );
+}
+
+function getSpeechRecognitionConstructor() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const browserWindow = window as SpeechRecognitionWindow;
+  return browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition ?? null;
+}
+
+function canUseVoiceInput() {
+  return canUseVoiceRecorder() || Boolean(getSpeechRecognitionConstructor());
+}
+
+function getVoiceRecognitionErrorMessage(error: string) {
+  switch (error) {
+    case "not-allowed":
+    case "service-not-allowed":
+      return "麦克风权限未开启。";
+    case "no-speech":
+      return "没有识别到语音，请再试一次。";
+    case "audio-capture":
+      return "无法访问麦克风。";
+    case "network":
+      return "语音识别网络异常，请稍后重试。";
+    default:
+      return "语音识别失败，请重新尝试。";
+  }
 }
 
 function withVoiceTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -196,6 +168,18 @@ function PlusIcon() {
     <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
       <path d="M12 5v14" />
       <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function ScreenshotIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+      <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+      <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+      <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+      <path d="M9 9h6v6H9z" />
     </svg>
   );
 }
@@ -268,7 +252,7 @@ function ChevronDownIcon() {
   );
 }
 
-function ZmanMarkIcon() {
+function ZenMindMarkIcon() {
   return (
     <img
       src="./brand-icon.png"
@@ -284,17 +268,24 @@ export function QuickAssistant() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AssistantChatMessage[]>([]);
   const [attachments, setAttachments] = useState<AssistantAttachment[]>([]);
+  const [activeAttachmentTaskId, setActiveAttachmentTaskId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [runningRunId, setRunningRunId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [voiceExpandedComposer, setVoiceExpandedComposer] = useState(false);
-  const [voiceSupported, setVoiceSupported] = useState(() => canUseVoiceRecorder());
+  const [voiceSupported, setVoiceSupported] = useState(() => canUseVoiceInput());
   const [isExpanded, setIsExpanded] = useState(false);
   const [artifactDockVisible, setArtifactDockVisible] = useState(true);
   const [hiddenArtifactIds, setHiddenArtifactIds] = useState<Set<string>>(() => new Set());
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [attachmentMenuPinned, setAttachmentMenuPinned] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const attachmentMenuRef = useRef<HTMLDivElement | null>(null);
+  const attachmentMenuCloseTimerRef = useRef<number | null>(null);
+  const attachmentMenuOpenTimerRef = useRef<number | null>(null);
+  const draftRef = useRef(draft);
   const activeChatIdRef = useRef<string | null>(activeChatId);
   const runningRunIdRef = useRef<string | null>(runningRunId);
   const runMessageIdsRef = useRef(new Map<string, string>());
@@ -302,13 +293,65 @@ export function QuickAssistant() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
   const voiceCancelRef = useRef(false);
+  const voiceRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceRecognitionActiveRef = useRef(false);
+  const voiceRecognitionTranscriptRef = useRef("");
+  const voiceRecognitionStopRequestedRef = useRef(false);
+  const voiceRecognitionFallbackToRecorderRef = useRef(false);
+  const voiceBaseDraftRef = useRef("");
   const voiceOperationIdRef = useRef(0);
   const visibleAttachments = attachments.filter((attachment) => !attachment.hidden);
+  const isSmallTrayMode = !isExpanded && visibleAttachments.length === 0 && !voiceExpandedComposer;
   const quickAssistantDisplayMode = isExpanded
     ? "expanded"
+    : attachmentMenuOpen
+      ? isSmallTrayMode
+        ? "compactMenu"
+        : "menu"
     : visibleAttachments.length > 0 || voiceExpandedComposer
       ? "attachment"
       : "compact";
+  const showScreenshotMenuItem = !isSmallTrayMode;
+  const hasDraft = draft.trim().length > 0;
+  const showSendAction = hasDraft || attachments.some((attachment) => !attachment.hidden);
+  const canSubmit = showSendAction && !runningRunId && voiceState === "idle";
+  const voiceStatus = voiceState === "recording"
+    ? "正在监听，点击麦克风结束。"
+    : voiceState === "transcribing"
+      ? "正在识别语音..."
+      : "";
+  const composerStatus = isExpanded ? voiceStatus || feedback : "";
+  const composerHasStatus = Boolean(composerStatus);
+  const composerSingleLine = !voiceExpandedComposer && !composerHasStatus;
+  const attachmentMenuDisabled = Boolean(runningRunId) || Boolean(activeAttachmentTaskId) || voiceState !== "idle";
+
+  async function refreshAssistantSettings() {
+    const nextSettings = await window.electronAPI.assistant.getSettings();
+    setSettings(nextSettings);
+    return nextSettings;
+  }
+
+  function applyVoiceTextToDraft(text: string) {
+    const normalizedText = text.trim();
+    if (!normalizedText) {
+      return;
+    }
+    setVoiceExpandedComposer(normalizedText.length > 42 || normalizedText.includes("\n"));
+    setDraft((current) => {
+      const nextDraft = appendVoiceText(current, normalizedText);
+      draftRef.current = nextDraft;
+      return nextDraft;
+    });
+    textareaRef.current?.focus();
+  }
+
+  function ensureAssistantMessageForRun(runId: string) {
+    return ensureRemoteAssistantMessageForRun(runId, runMessageIdsRef.current, setMessages, "quick_remote_");
+  }
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
@@ -322,23 +365,55 @@ export function QuickAssistant() {
   }, [runningRunId, voiceState]);
 
   useEffect(() => {
+    if (!attachmentMenuOpen) {
+      return undefined;
+    }
+    const handleDocumentPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && attachmentMenuRef.current?.contains(target)) {
+        return;
+      }
+      closeAttachmentMenu();
+    };
+    const handleDocumentKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeAttachmentMenu();
+      }
+    };
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleDocumentPointerDown);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [attachmentMenuOpen]);
+
+  useEffect(() => {
+    if (attachmentMenuDisabled) {
+      closeAttachmentMenu();
+    }
+  }, [attachmentMenuDisabled]);
+
+  useEffect(() => () => clearAttachmentMenuCloseTimer(), []);
+
+  useEffect(() => {
     document.body.classList.add("quick-assistant-body");
-    void window.electronAPI.assistant.getSettings().then(setSettings).catch((reason) => {
+    void refreshAssistantSettings().catch((reason) => {
       setIsExpanded(true);
       setFeedback(reason instanceof Error ? reason.message : String(reason));
     });
-    setVoiceSupported(canUseVoiceRecorder());
+    setVoiceSupported(canUseVoiceInput());
     textareaRef.current?.focus();
     return () => {
       document.body.classList.remove("quick-assistant-body");
-      stopVoiceRecording(true);
+      stopVoiceInput(true);
       void window.electronAPI.quickAssistant.setInteractionState({ busy: false, mouseInside: false });
     };
   }, []);
 
   useEffect(() => {
     return window.electronAPI.quickAssistant.onCompactModeRequested(() => {
-      stopVoiceRecording(true);
+      stopVoiceInput(true);
       setIsExpanded(false);
       setFeedback("");
       setVoiceState("idle");
@@ -373,14 +448,26 @@ export function QuickAssistant() {
 
   useEffect(() => {
     return window.electronAPI.assistant.onAssistantEvent((event) => {
-      if (!isStructuredEvent(event)) {
-        if (isTerminalEvent(event) && event.runId && runningRunIdRef.current === event.runId) {
+      const isActiveChatEvent = event.chatId === activeChatIdRef.current;
+      if (!isStructuredAssistantEvent(event)) {
+        if (isTerminalAssistantEvent(event) && event.runId && runningRunIdRef.current === event.runId) {
           setRunningRunId(null);
         }
         return;
       }
 
-      const messageId = runMessageIdsRef.current.get(event.runId);
+      if (isActiveChatEvent && event.type === "run.start") {
+        setRunningRunId(event.runId);
+        ensureAssistantMessageForRun(event.runId);
+      }
+      if (isActiveChatEvent && event.type === "awaiting.ask") {
+        setIsExpanded(true);
+        setFeedback("需要确认，已打开主窗口继续处理。");
+        void window.electronAPI.quickAssistant.openMainAssistant(event.chatId);
+      }
+
+      const messageId = runMessageIdsRef.current.get(event.runId) ??
+        (isActiveChatEvent && shouldEnsureAssistantMessageForEvent(event) ? ensureAssistantMessageForRun(event.runId) : undefined);
       if (event.type === "content.delta" && messageId && event.delta) {
         setMessages((current) => current.map((message) =>
           message.id === messageId
@@ -401,7 +488,7 @@ export function QuickAssistant() {
         }
       }
 
-      if (!isTerminalEvent(event)) {
+      if (!isTerminalAssistantEvent(event)) {
         return;
       }
 
@@ -423,6 +510,15 @@ export function QuickAssistant() {
       runMessageIdsRef.current.delete(event.runId);
       if (runningRunIdRef.current === event.runId) {
         setRunningRunId(null);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    return window.electronAPI.assistant.onAttachmentProgress((progress) => {
+      setActiveAttachmentTaskId(progress.done ? null : progress.taskId);
+      if (!progress.cancelled) {
+        showFeedback(progress.message);
       }
     });
   }, []);
@@ -455,6 +551,181 @@ export function QuickAssistant() {
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     mediaStreamRef.current = null;
     mediaRecorderRef.current = null;
+  }
+
+  function ensureVoiceRecognition() {
+    const Recognition = getSpeechRecognitionConstructor();
+    if (!Recognition) {
+      setVoiceSupported(false);
+      return null;
+    }
+    setVoiceSupported(true);
+    if (voiceRecognitionRef.current) {
+      return voiceRecognitionRef.current;
+    }
+
+    const recognition = new Recognition();
+    recognition.lang = "zh-CN";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => {
+      voiceRecognitionActiveRef.current = true;
+      voiceRecognitionTranscriptRef.current = "";
+      setVoiceState("recording");
+      setFeedback("正在监听，点击麦克风结束。");
+    };
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let index = 0; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        transcript = `${transcript}${result[0]?.transcript ?? ""}`;
+      }
+      if (transcript.trim()) {
+        voiceRecognitionTranscriptRef.current = transcript;
+      }
+    };
+    recognition.onerror = (event) => {
+      voiceRecognitionActiveRef.current = false;
+      const hasTranscript = Boolean(voiceRecognitionTranscriptRef.current.trim());
+      const shouldFallbackToRecorder =
+        !voiceRecognitionStopRequestedRef.current &&
+        event.error === "network" &&
+        !hasTranscript &&
+        canUseVoiceRecorder();
+      if (
+        !voiceRecognitionStopRequestedRef.current &&
+        event.error !== "aborted" &&
+        !hasTranscript
+      ) {
+        if (shouldFallbackToRecorder) {
+          showFeedback("内部语音识别网络异常，正在切换录音转写...");
+        } else {
+          showFeedback(event.message || getVoiceRecognitionErrorMessage(event.error));
+        }
+      }
+      voiceRecognitionFallbackToRecorderRef.current = shouldFallbackToRecorder;
+      setVoiceState("idle");
+    };
+    recognition.onend = () => {
+      voiceRecognitionActiveRef.current = false;
+      const transcript = voiceRecognitionTranscriptRef.current;
+      const shouldFallbackToRecorder = voiceRecognitionFallbackToRecorderRef.current;
+      const shouldApplyTranscript = !voiceRecognitionStopRequestedRef.current && transcript.trim();
+      voiceRecognitionStopRequestedRef.current = false;
+      voiceRecognitionFallbackToRecorderRef.current = false;
+      if (shouldFallbackToRecorder) {
+        void startVoiceRecorderInput({
+          feedback: "内部语音识别网络异常，已切换录音转写，点击麦克风结束。"
+        });
+        return;
+      }
+      if (shouldApplyTranscript) {
+        const operationId = voiceOperationIdRef.current;
+        void applyTranscribedVoiceText(transcript, operationId);
+        return;
+      }
+      setVoiceState("idle");
+    };
+
+    voiceRecognitionRef.current = recognition;
+    return recognition;
+  }
+
+  function stopVoiceRecognition(cancel: boolean) {
+    if (cancel) {
+      voiceOperationIdRef.current += 1;
+      voiceRecognitionTranscriptRef.current = "";
+      voiceRecognitionStopRequestedRef.current = true;
+      voiceRecognitionFallbackToRecorderRef.current = false;
+    }
+    const recognition = voiceRecognitionRef.current;
+    if (!recognition) {
+      return;
+    }
+    if (voiceRecognitionActiveRef.current) {
+      try {
+        recognition.stop();
+      } catch (reason) {
+        showFeedback(reason instanceof Error ? reason.message : "语音输入停止失败。");
+        setVoiceState("idle");
+      }
+    } else if (cancel) {
+      try {
+        recognition.abort();
+      } catch {
+        // Ignore abort errors during cleanup.
+      }
+      setVoiceState("idle");
+    }
+  }
+
+  function stopVoiceInput(cancel: boolean) {
+    if (voiceRecognitionActiveRef.current) {
+      stopVoiceRecognition(cancel);
+      return;
+    }
+    if (mediaRecorderRef.current) {
+      stopVoiceRecording(cancel);
+      return;
+    }
+    if (cancel) {
+      stopVoiceRecognition(true);
+    }
+  }
+
+  async function applyTranscribedVoiceText(transcriptText: string, operationId: number) {
+    if (operationId !== voiceOperationIdRef.current) {
+      return;
+    }
+    const text = transcriptText.trim();
+    if (!text) {
+      setFeedback("");
+      setVoiceState("idle");
+      return;
+    }
+    const baseDraft = voiceBaseDraftRef.current;
+    if (draftRef.current !== baseDraft) {
+      showFeedback("检测到手动编辑，已保留当前输入。");
+      setVoiceState("idle");
+      return;
+    }
+    const recognizedDraft = appendVoiceText(baseDraft, text);
+    setVoiceExpandedComposer(text.length > 42 || text.includes("\n"));
+    draftRef.current = recognizedDraft;
+    setDraft(recognizedDraft);
+    textareaRef.current?.focus();
+
+    setVoiceState("transcribing");
+    setFeedback("正在整理语音文本...");
+    const corrected = await withVoiceTimeout(
+      window.electronAPI.assistant.correctVoiceText({
+        text,
+        locale: "zh-CN-mixed-en"
+      }),
+      VOICE_CORRECTION_TIMEOUT_MS,
+      "语音文本整理超时，已保留原始识别结果。"
+    ).catch((reason) => {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      return null;
+    });
+    if (operationId !== voiceOperationIdRef.current) {
+      return;
+    }
+    const correctedText = corrected ? (corrected.correctedText || corrected.text).trim() : "";
+    if (draftRef.current !== recognizedDraft) {
+      showFeedback("检测到手动编辑，已保留当前输入。");
+      setVoiceState("idle");
+      return;
+    }
+    const finalText = corrected?.ok && correctedText ? correctedText : text;
+    const finalDraft = appendVoiceText(baseDraft, finalText);
+    setVoiceExpandedComposer(finalText.length > 42 || finalText.includes("\n"));
+    draftRef.current = finalDraft;
+    setDraft(finalDraft);
+    textareaRef.current?.focus();
+    setFeedback("");
+    setVoiceState("idle");
   }
 
   async function finishVoiceRecording(mimeType: string, operationId: number) {
@@ -504,27 +775,7 @@ export function QuickAssistant() {
         setFeedback("");
         return;
       }
-      setFeedback("正在整理语音文本...");
-      const corrected = await withVoiceTimeout(
-        window.electronAPI.assistant.correctVoiceText({
-          text: transcript.text,
-          locale: "zh-CN-mixed-en"
-        }),
-        VOICE_CORRECTION_TIMEOUT_MS,
-        "语音文本整理超时，已保留原始识别结果。"
-      ).catch((reason) => {
-        setFeedback(reason instanceof Error ? reason.message : String(reason));
-        return null;
-      });
-      if (operationId !== voiceOperationIdRef.current) {
-        return;
-      }
-      const correctedText = corrected ? (corrected.correctedText || corrected.text).trim() : "";
-      const text = corrected?.ok && correctedText ? correctedText : transcript.text;
-      setVoiceExpandedComposer(text.length > 42 || text.includes("\n"));
-      setDraft((current) => appendVoiceText(current, text));
-      setFeedback("");
-      textareaRef.current?.focus();
+      await applyTranscribedVoiceText(transcript.text, operationId);
     } catch (reason) {
       showFeedback(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -534,20 +785,7 @@ export function QuickAssistant() {
     }
   }
 
-  async function toggleVoice() {
-    if (voiceState === "recording") {
-      stopVoiceRecording(false);
-      return;
-    }
-    if (voiceState === "transcribing") {
-      setFeedback("语音正在识别，请稍候。");
-      return;
-    }
-    if (!voiceSupported || runningRunId) {
-      showFeedback("当前环境无法访问麦克风语音输入。");
-      return;
-    }
-    setFeedback("");
+  async function startVoiceRecorderInput(options: { feedback?: string } = {}) {
     const mimeType = getPreferredVoiceMimeType();
     const operationId = voiceOperationIdRef.current + 1;
     voiceOperationIdRef.current = operationId;
@@ -587,11 +825,50 @@ export function QuickAssistant() {
       };
       recorder.start();
       setVoiceState("recording");
-      setFeedback("正在监听，点击麦克风结束。");
+      setFeedback(options.feedback || "正在监听，点击麦克风结束。");
     } catch (reason) {
       showFeedback(reason instanceof Error ? reason.message : "麦克风权限未开启。");
       setVoiceState("idle");
     }
+  }
+
+  async function toggleVoice() {
+    if (voiceState === "recording") {
+      stopVoiceInput(false);
+      return;
+    }
+    if (voiceState === "transcribing") {
+      setFeedback("语音正在识别，请稍候。");
+      return;
+    }
+    if (!voiceSupported || runningRunId) {
+      showFeedback("当前环境无法访问麦克风语音输入。");
+      return;
+    }
+    setFeedback("");
+    voiceBaseDraftRef.current = draftRef.current;
+    if (canUseVoiceRecorder()) {
+      await startVoiceRecorderInput();
+      return;
+    }
+    const recognition = ensureVoiceRecognition();
+    if (recognition) {
+      const operationId = voiceOperationIdRef.current + 1;
+      voiceOperationIdRef.current = operationId;
+      voiceRecognitionTranscriptRef.current = "";
+      voiceRecognitionStopRequestedRef.current = false;
+      voiceRecognitionFallbackToRecorderRef.current = false;
+      try {
+        recognition.start();
+        return;
+      } catch (reason) {
+        showFeedback(reason instanceof Error ? reason.message : "语音输入启动失败。");
+        setVoiceState("idle");
+        return;
+      }
+    }
+
+    showFeedback("当前环境无法访问前端语音识别。");
   }
 
   function formatAttachmentSize(sizeBytes: number) {
@@ -628,6 +905,10 @@ export function QuickAssistant() {
     return attachment.document?.readStatus
       ? attachment.document.readStatus !== "unreadable"
       : Boolean(attachment.text.trim() || attachment.dataUrl || !attachment.error);
+  }
+
+  function canPreviewImageAttachment(attachment: AssistantAttachment) {
+    return Boolean(attachment.dataUrl && attachment.mimeType.toLowerCase().startsWith("image/"));
   }
 
   function attachmentStatusTitle(attachment: AssistantAttachment) {
@@ -759,12 +1040,12 @@ export function QuickAssistant() {
       return;
     }
     if (!settings?.configured) {
-      showFeedback("请先在设置中配置助手模型。");
+      showFeedback("请先配置 agent-platform 的 minimax provider。");
       return;
     }
     if (voiceState === "recording") {
-      stopVoiceRecording(false);
-      setFeedback("录音已停止，正在识别语音。");
+      stopVoiceInput(false);
+      setFeedback("语音已停止，正在整理文本。");
       return;
     }
     if (voiceState === "transcribing") {
@@ -779,6 +1060,7 @@ export function QuickAssistant() {
         chatId: activeChatId,
         message: content,
         action: "chat",
+        source: "quick-assistant",
         pageContext: null,
         attachments
       });
@@ -791,8 +1073,9 @@ export function QuickAssistant() {
       return;
     }
 
-    setIsExpanded(true);
-    setActiveChatId(result.chatId);
+	    setIsExpanded(true);
+	    activeChatIdRef.current = result.chatId;
+	    setActiveChatId(result.chatId);
     const userMessage = createLocalMessage("user", content, result.runId, attachments);
     const assistantMessage = createLocalMessage("assistant", "", result.runId);
     runMessageIdsRef.current.set(result.runId, assistantMessage.id);
@@ -816,12 +1099,13 @@ export function QuickAssistant() {
     void startRun();
   }
 
-  function startNewChat() {
-    if (runningRunId) {
-      return;
-    }
-    stopVoiceRecording(true);
-    setActiveChatId(null);
+	  function startNewChat() {
+	    if (runningRunId) {
+	      return;
+	    }
+	    stopVoiceInput(true);
+	    activeChatIdRef.current = null;
+	    setActiveChatId(null);
     setMessages([]);
     setAttachments([]);
     setHiddenArtifactIds(new Set());
@@ -847,18 +1131,6 @@ export function QuickAssistant() {
     setVoiceExpandedComposer(value.trim().length > 0 && (value.length > 42 || value.includes("\n")));
   }
 
-  const hasDraft = draft.trim().length > 0;
-  const showSendAction = hasDraft || attachments.some((attachment) => !attachment.hidden);
-  const canSubmit = showSendAction && !runningRunId && voiceState === "idle";
-  const voiceStatus = voiceState === "recording"
-    ? "正在监听，点击麦克风结束。"
-    : voiceState === "transcribing"
-      ? "正在识别语音..."
-      : "";
-  const composerStatus = isExpanded ? voiceStatus || feedback : "";
-  const composerHasStatus = Boolean(composerStatus);
-  const composerSingleLine = !voiceExpandedComposer && !composerHasStatus;
-
   async function appendAttachmentResult(result: AssistantAttachmentPickResult) {
     if (!result.ok) {
       if (!result.message.includes("取消")) {
@@ -866,7 +1138,8 @@ export function QuickAssistant() {
       }
       return;
     }
-    setActiveChatId(result.chatId);
+	    activeChatIdRef.current = result.chatId;
+	    setActiveChatId(result.chatId);
     setAttachments((current) => {
       const existingIds = new Set(current.map((attachment) => attachment.id));
       return [
@@ -878,7 +1151,7 @@ export function QuickAssistant() {
   }
 
   async function chooseAttachmentFiles() {
-    if (runningRunId || voiceState !== "idle") {
+    if (runningRunId || activeAttachmentTaskId || voiceState !== "idle") {
       return;
     }
     try {
@@ -889,11 +1162,104 @@ export function QuickAssistant() {
     }
   }
 
+  async function captureScreenshotQuestion() {
+    if (runningRunId || activeAttachmentTaskId || voiceState !== "idle") {
+      return;
+    }
+    try {
+      const result = await window.electronAPI.quickAssistant.captureScreenshot(activeChatId);
+      await appendAttachmentResult(result);
+    } catch (reason) {
+      showFeedback(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function cancelAttachmentTask() {
+    if (!activeAttachmentTaskId) {
+      return;
+    }
+    const result = await window.electronAPI.quickAssistant.cancelAttachmentTask(activeAttachmentTaskId);
+    showFeedback(result.message);
+    if (result.ok) {
+      setActiveAttachmentTaskId(null);
+    }
+  }
+
+  function clearAttachmentMenuCloseTimer() {
+    if (attachmentMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(attachmentMenuCloseTimerRef.current);
+      attachmentMenuCloseTimerRef.current = null;
+    }
+  }
+
+  function clearAttachmentMenuOpenTimer() {
+    if (attachmentMenuOpenTimerRef.current !== null) {
+      window.clearTimeout(attachmentMenuOpenTimerRef.current);
+      attachmentMenuOpenTimerRef.current = null;
+    }
+  }
+
+  function closeAttachmentMenu() {
+    clearAttachmentMenuOpenTimer();
+    clearAttachmentMenuCloseTimer();
+    setAttachmentMenuOpen(false);
+    setAttachmentMenuPinned(false);
+  }
+
+  function showAttachmentMenu() {
+    if (attachmentMenuDisabled) {
+      return;
+    }
+    clearAttachmentMenuCloseTimer();
+    if (attachmentMenuOpen || attachmentMenuOpenTimerRef.current !== null) {
+      return;
+    }
+    attachmentMenuOpenTimerRef.current = window.setTimeout(() => {
+      attachmentMenuOpenTimerRef.current = null;
+      setAttachmentMenuOpen(true);
+    }, 420);
+  }
+
+  function hideAttachmentMenuOnLeave() {
+    clearAttachmentMenuOpenTimer();
+    if (!attachmentMenuPinned) {
+      clearAttachmentMenuCloseTimer();
+      attachmentMenuCloseTimerRef.current = window.setTimeout(() => {
+        attachmentMenuCloseTimerRef.current = null;
+        setAttachmentMenuOpen(false);
+      }, 180);
+    }
+  }
+
+  function toggleAttachmentMenu() {
+    if (attachmentMenuDisabled) {
+      return;
+    }
+    clearAttachmentMenuOpenTimer();
+    if (attachmentMenuOpen && attachmentMenuPinned) {
+      closeAttachmentMenu();
+      return;
+    }
+    setAttachmentMenuOpen(true);
+    setAttachmentMenuPinned(true);
+  }
+
+  async function handleChooseAttachmentFromMenu() {
+    closeAttachmentMenu();
+    await chooseAttachmentFiles();
+  }
+
+  async function handleCaptureScreenshotFromMenu() {
+    closeAttachmentMenu();
+    await captureScreenshotQuestion();
+  }
+
   return (
     <div
       className={[
         "quick-assistant",
         isExpanded ? "is-expanded" : "is-compact",
+        attachmentMenuOpen ? "is-menu-open" : "",
         !isExpanded && visibleAttachments.length > 0 ? "has-attachments" : ""
       ].filter(Boolean).join(" ")}
       onPointerEnter={() => void window.electronAPI.quickAssistant.setInteractionState({ mouseInside: true })}
@@ -918,14 +1284,14 @@ export function QuickAssistant() {
         <main className="quick-assistant-content">
           {messages.length === 0 ? (
             <div className="quick-empty">
-              <ZmanMarkIcon />
-              <span>你可以直接问 Zman。</span>
+              <ZenMindMarkIcon />
+              <span>你可以直接问 ZenMind。</span>
             </div>
           ) : (
             <div className="quick-message-list">
               {messages.map((message) => (
                 <article key={message.id} className={`quick-message is-${message.role}`}>
-                  {message.role === "assistant" ? <ZmanMarkIcon /> : null}
+                  {message.role === "assistant" ? <ZenMindMarkIcon /> : null}
                   {message.role === "assistant" ? (
                     <AssistantMarkdownContent
                       className="quick-message-markdown"
@@ -948,6 +1314,11 @@ export function QuickAssistant() {
                   去设置
                 </button>
               ) : null}
+              {activeAttachmentTaskId ? (
+                <button type="button" onClick={() => void cancelAttachmentTask()}>
+                  取消
+                </button>
+              ) : null}
             </div>
           ) : null}
         </main>
@@ -955,36 +1326,47 @@ export function QuickAssistant() {
       {renderArtifactDock()}
       {visibleAttachments.length > 0 ? (
         <div className="quick-attachment-strip">
-          {visibleAttachments.map((attachment) => (
-            <span
-              key={attachment.id}
-              className={
-                isAttachmentReadable(attachment)
-                  ? "quick-attachment-preview-card"
-                  : "quick-attachment-preview-card has-warning"
-              }
-              title={attachmentStatusTitle(attachment)}
-            >
-              {attachment.dataUrl ? (
-                <img src={attachment.dataUrl} alt="" draggable={false} />
-              ) : (
-                <span className="quick-attachment-preview-file">
-                  {attachment.document?.format?.toUpperCase() || attachment.mimeType.split("/").pop()?.toUpperCase() || "FILE"}
-                </span>
-              )}
-              <strong>{attachment.name}</strong>
-              <small>{formatAttachmentSize(attachment.sizeBytes) || attachment.mimeType || "附件"}</small>
-              <button
-                type="button"
-                className="quick-attachment-remove"
-                onClick={() => removeAttachment(attachment.id)}
-                aria-label={`移除附件 ${attachment.name}`}
-                disabled={Boolean(runningRunId)}
+          {visibleAttachments.map((attachment) => {
+            const canPreviewImage = canPreviewImageAttachment(attachment);
+            return (
+              <span
+                key={attachment.id}
+                className={[
+                  isAttachmentReadable(attachment)
+                    ? "quick-attachment-preview-card"
+                    : "quick-attachment-preview-card has-warning",
+                  canPreviewImage ? "is-image-previewable" : ""
+                ].filter(Boolean).join(" ")}
+                title={canPreviewImage ? `在主窗口预览：${attachment.name}` : attachmentStatusTitle(attachment)}
               >
-                <CloseIcon />
-              </button>
-            </span>
-          ))}
+                {canPreviewImage ? (
+                  <button
+                    type="button"
+                    className="quick-attachment-preview-image-button"
+                    onClick={() => void window.electronAPI.quickAssistant.openMainAssistant(activeChatId)}
+                    aria-label={`在主窗口预览图片 ${attachment.name}`}
+                  >
+                    <img src={attachment.dataUrl} alt="" draggable={false} />
+                  </button>
+                ) : (
+                  <span className="quick-attachment-preview-file">
+                    {attachment.document?.format?.toUpperCase() || attachment.mimeType.split("/").pop()?.toUpperCase() || "FILE"}
+                  </span>
+                )}
+                <strong>{attachment.name}</strong>
+                <small>{formatAttachmentSize(attachment.sizeBytes) || attachment.mimeType || "附件"}</small>
+                <button
+                  type="button"
+                  className="quick-attachment-remove"
+                  onClick={() => removeAttachment(attachment.id)}
+                  aria-label={`移除附件 ${attachment.name}`}
+                  disabled={Boolean(runningRunId)}
+                >
+                  <CloseIcon />
+                </button>
+              </span>
+            );
+          })}
         </div>
       ) : null}
       <form
@@ -997,24 +1379,51 @@ export function QuickAssistant() {
         ].filter(Boolean).join(" ")}
         onSubmit={handleSubmit}
       >
-        <div className="quick-attachment-entry">
+        <div
+          className="quick-attachment-entry attachment-action-menu-root"
+          ref={attachmentMenuRef}
+          onPointerEnter={showAttachmentMenu}
+          onPointerLeave={hideAttachmentMenuOnLeave}
+        >
           <button
             type="button"
             className="quick-tool-button quick-attach-button"
-            onClick={() => void chooseAttachmentFiles()}
-            disabled={Boolean(runningRunId) || voiceState !== "idle"}
-            aria-label="添加附件"
-            title="添加附件"
+            onClick={toggleAttachmentMenu}
+            disabled={attachmentMenuDisabled}
+            aria-label="附件操作"
+            title="附件操作"
+            aria-haspopup="menu"
+            aria-expanded={attachmentMenuOpen}
           >
             <PlusIcon />
           </button>
+          <div
+            className={[
+              "attachment-action-menu",
+              "quick-attachment-action-menu",
+              attachmentMenuOpen ? "is-open" : ""
+            ].filter(Boolean).join(" ")}
+            role="menu"
+            aria-label="附件操作"
+          >
+            <button type="button" className="attachment-action-menu-item" onClick={() => void handleChooseAttachmentFromMenu()} role="menuitem">
+              <PlusIcon />
+              <span>上传文件</span>
+            </button>
+            {showScreenshotMenuItem ? (
+              <button type="button" className="attachment-action-menu-item" onClick={() => void handleCaptureScreenshotFromMenu()} role="menuitem">
+                <ScreenshotIcon />
+                <span>截屏提问</span>
+              </button>
+            ) : null}
+          </div>
         </div>
         <textarea
           ref={textareaRef}
           value={draft}
           onChange={(event) => handleDraftChange(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="问问 Zman"
+          placeholder="问问 ZenMind"
           rows={1}
           disabled={Boolean(runningRunId)}
         />
@@ -1067,7 +1476,12 @@ export function QuickAssistant() {
         </button>
         {composerStatus ? (
           <div className="quick-composer-status" aria-live="polite">
-            {composerStatus}
+            <span>{composerStatus}</span>
+            {activeAttachmentTaskId ? (
+              <button type="button" onClick={() => void cancelAttachmentTask()}>
+                取消
+              </button>
+            ) : null}
           </div>
         ) : null}
       </form>

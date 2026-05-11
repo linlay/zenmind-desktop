@@ -86,7 +86,7 @@ const CLICK_VERB_PATTERN =
   /(?:帮我点击|帮我打开|帮我进入|帮我点|点击|点一下|点开|打开|进入|选择|选中|切到|跳到)\s*[“"']?(.+?)[”"']?\s*$/u;
 const SERVICE_CONTROL_CLICK_PATTERN =
   /(?:(?:左侧|左边|当前|这个)?(?:页面|网页)|控制中心|服务|容器仓库|智能体平台|智能助理).*(?:无法启动|启动起来|启动一下|帮我启动|启动|重新启动|重启)|(?:启动|重新启动|重启).*(?:(?:左侧|左边|当前|这个)?(?:页面|网页)|控制中心|服务|容器仓库|智能体平台|智能助理)/u;
-const POLITE_PREFIX_PATTERN = /^(?:请|麻烦|麻烦你|帮我|给我|小宅|zenmind助手|ZenMind助手|在当前页面|在这个页面|在网页里|在页面里|你能不能|能不能)+/u;
+const POLITE_PREFIX_PATTERN = /^(?:请|麻烦|麻烦你|帮我|给我|zenmind(?:\s*助手)?|在当前页面|在这个页面|在网页里|在页面里|你能不能|能不能)+/iu;
 const TARGET_SUFFIX_PATTERN = /(?:这个|一下|按钮|入口|卡片|菜单|页面|链接|流程|应用|选项|吧|呀|。|！|!|\.)+$/u;
 const SENSITIVE_CLICK_PATTERN =
   /(提交|确认|确定|同意|批准|删除|移除|清空|支付|付款|下单|购买|转账|发送|登录|登陆|注册|退出|注销|保存|授权|允许|导出|上传|取消预约|取消订单|关闭账户|开通|签署|签章)/u;
@@ -116,7 +116,7 @@ const SEARCH_RESULTS_PATTERN = /(?:搜索的?结果|结果页|主结果|自然�
 const SERVICE_NAME_ALIASES: Array<{ pattern: RegExp; serviceId: string }> = [
   { pattern: /容器仓库|容器服务|container\s*hub|agent-container-hub/iu, serviceId: "agent-container-hub" },
   { pattern: /智能体平台|agent-platform/iu, serviceId: "agent-platform" },
-  { pattern: /智能助理|小宅助理|agent-webclient/iu, serviceId: "agent-webclient" },
+  { pattern: /智能助理|agent-webclient/iu, serviceId: "agent-webclient" },
   { pattern: /认证服务|管理后台|zenmind-app-server/iu, serviceId: "zenmind-app-server" }
 ];
 const KNOWN_WEBSITES: Array<{ pattern: RegExp; website: BrowserTaskWebsite }> = [
@@ -266,6 +266,13 @@ function extractTaskSearchQuery(message: string) {
   return match?.[1] ? cleanTaskSearchQuery(match[1]) : "";
 }
 
+function extractFreshNewsQuery(message: string) {
+  if (!/(今天|今日|现在|当前|最新).*(热点|新闻|资讯|消息|热搜)/u.test(message)) {
+    return "";
+  }
+  return /今天/u.test(message) ? "今天热点新闻" : "今日热点新闻";
+}
+
 function extractServiceTaskIntent(message: string): BrowserTaskIntent | null {
   const service = SERVICE_NAME_ALIASES.find((entry) => entry.pattern.test(message));
   if (!service || !SERVICE_CONTROL_CLICK_PATTERN.test(message)) {
@@ -308,7 +315,15 @@ export function extractBrowserTaskIntent(message: string): BrowserTaskIntent | n
 
   const extraction = extractRequestedTaskExtraction(trimmed);
   const website = extractWebsiteForTask(trimmed);
-  const query = extractTaskSearchQuery(trimmed);
+  const query = extractTaskSearchQuery(trimmed) || extractFreshNewsQuery(trimmed);
+  if (website && !query && /打开|进入|访问|启动/u.test(trimmed)) {
+    return {
+      kind: "open_url",
+      url: website.url,
+      label: website.label,
+      newTab: true
+    };
+  }
   if (HOT_SEARCH_PATTERN.test(trimmed) && extraction?.kind === "hot_search") {
     return {
       kind: "compound",
@@ -329,6 +344,17 @@ export function extractBrowserTaskIntent(message: string): BrowserTaskIntent | n
       kind: "site_search",
       website,
       query
+    };
+  }
+  if (query && /热点|新闻|资讯|消息|热搜/u.test(query)) {
+    return {
+      kind: "compound",
+      query,
+      extraction: extraction ?? {
+        kind: "search_results",
+        count: 5,
+        itemLabel: "结果"
+      }
     };
   }
   if (extraction && !query) {
