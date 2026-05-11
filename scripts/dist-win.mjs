@@ -51,7 +51,9 @@ async function syncWindowsBuiltinAssets() {
 async function buildOnWindowsHost() {
   await syncWindowsBuiltinAssets();
   await runAndWait(npmCmd, ["run", "build"]);
+  await runAndWait(npmCmd, ["run", "stage:app", "--", "--os=win32", "--arch=x64"]);
   await runAndWait(npmCmd, ["exec", "electron-builder", "--", "--win", "--x64"]);
+  await runAndWait(nodeBin(), ["./scripts/verify-win-package.mjs"]);
 }
 
 async function buildWithDocker() {
@@ -89,11 +91,17 @@ async function buildWithDocker() {
     "-lc",
     [
       "npm install --no-package-lock --ignore-scripts",
-      "npx electron-builder --win --x64"
+      "node ./scripts/stage-app.mjs --os=win32 --arch=x64",
+      "npx electron-builder --win --x64",
+      "node ./scripts/verify-win-package.mjs"
     ].join(" && ")
   );
 
   await runAndWait("docker", dockerArgs, { shell: false });
+}
+
+function nodeBin() {
+  return process.execPath;
 }
 
 if (isWindows) {

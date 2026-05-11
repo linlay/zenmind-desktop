@@ -9,12 +9,13 @@ const packageJsonPath = path.join(projectRoot, "package.json");
 const installerIncludePath = path.join(projectRoot, "build", "installer.nsh");
 const uninstallScriptPath = path.join(projectRoot, "scripts", "uninstall.sh");
 const distWinScriptPath = path.join(projectRoot, "scripts", "dist-win.mjs");
+const stageAppScriptPath = path.join(projectRoot, "scripts", "stage-app.mjs");
 
 function loadPackageJson() {
   return JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
 }
 
-test("electron-builder packaging includes uninstall resources and NSIS uninstall hook", () => {
+test("electron-builder packaging uses staged app input, restricted locales, and NSIS uninstall hook", () => {
   const packageJson = loadPackageJson();
   const extraResources = packageJson.build?.extraResources ?? [];
   const uninstallResource = extraResources.find((entry) => entry.from === "scripts");
@@ -26,6 +27,13 @@ test("electron-builder packaging includes uninstall resources and NSIS uninstall
     filter: ["uninstall.sh"]
   });
   assert.equal(pluginsResource, undefined);
+  assert.equal(packageJson.build?.directories?.app, "build/app");
+  assert.deepEqual(packageJson.build?.electronLanguages, ["zh-CN", "en-US"]);
+  assert.match(packageJson.scripts?.["build:main"] ?? "", /build:main:types/);
+  assert.match(packageJson.scripts?.["build:main"] ?? "", /build:main:bundle/);
+  assert.equal(packageJson.scripts?.["stage:app"], "node ./scripts/stage-app.mjs");
+  assert.match(packageJson.scripts?.["dist:mac"] ?? "", /stage:app -- --os=darwin --arch=arm64/);
+  assert.match(packageJson.scripts?.["dist:win"] ?? "", /stage:app -- --os=win32 --arch=x64/);
   assert.equal(packageJson.scripts?.["sync:plugins"], undefined);
   assert.match(packageJson.scripts?.["dist:win"] ?? "", /electron-builder --win --x64/);
   assert.equal(packageJson.scripts?.["dist:win-docker"], "node ./scripts/dist-win.mjs");
@@ -55,6 +63,7 @@ test("custom uninstall assets exist with silent legacy cleanup and no data promp
 
 test("dist-win docker flow syncs builtin assets on the host before entering Docker", () => {
   const distWinScript = fs.readFileSync(distWinScriptPath, "utf8");
+  const stageAppScript = fs.readFileSync(stageAppScriptPath, "utf8");
 
   assert.match(distWinScript, /async function syncWindowsBuiltinAssets\(\)/);
   assert.match(
@@ -67,8 +76,30 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   );
   assert.match(
     distWinScript,
-    /"npm install --no-package-lock --ignore-scripts",\s*\n\s*"npx electron-builder --win --x64"/
+    /"npm install --no-package-lock --ignore-scripts",\s*\n\s*"node \.\/scripts\/stage-app\.mjs --os=win32 --arch=x64",\s*\n\s*"npx electron-builder --win --x64",\s*\n\s*"node \.\/scripts\/verify-win-package\.mjs"/
   );
+  assert.match(
+    distWinScript,
+    /await runAndWait\(npmCmd, \["run", "stage:app", "--", "--os=win32", "--arch=x64"\]\);/
+  );
+  assert.match(
+    distWinScript,
+    /await runAndWait\(nodeBin\(\), \["\.\/scripts\/verify-win-package\.mjs"\]\);/
+  );
+  assert.match(stageAppScript, /"build", "bundle", "dist-electron"/);
+  assert.match(stageAppScript, /"build", "app"/);
+  assert.match(stageAppScript, /"dist-renderer"/);
+  assert.match(stageAppScript, /main:\s*"dist-electron\/main\/index\.js"/);
+  assert.match(stageAppScript, /"@napi-rs\/canvas": desktopPackage\.dependencies/);
+  assert.match(stageAppScript, /--platform=\$\{target\.os\}/);
+  assert.match(stageAppScript, /--arch=\$\{target\.arch\}/);
+  assert.match(stageAppScript, /"--omit=dev"/);
+  assert.match(stageAppScript, /"--include=optional"/);
+  assert.match(stageAppScript, /"--ignore-scripts"/);
+  assert.match(stageAppScript, /"--no-package-lock"/);
+  assert.match(stageAppScript, /@napi-rs\/canvas-win32-x64-msvc/);
+  assert.match(stageAppScript, /unexpected linux canvas runtime packages in win32 stage/);
+  assert.doesNotMatch(stageAppScript, /exceljs|docx|pptxgenjs|pdfjs-dist|zod/);
   assert.doesNotMatch(
     distWinScript,
     /"npm install(?: --no-package-lock)?",\s*\n\s*"npm run build",\s*\n\s*"npx electron-builder --win --x64"/

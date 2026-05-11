@@ -1,0 +1,14 @@
+{
+  "name": "zenmind-desktop",
+  "version": "0.1.0",
+  "description": "ZenMind 应用壳",
+  "main": "dist-electron/main/index.js",
+  "productName": "ZenMind",
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.100"
+  },
+  "zenmindBuildTarget": {
+    "os": "win32",
+    "arch": "x64"
+  }
+}

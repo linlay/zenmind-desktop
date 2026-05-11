@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   builtinServices,
   discoverBuiltinServices,
@@ -15,6 +16,7 @@ import {
 } from "../scripts/lib/builtin-assets.mjs";
 
 const BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
+const desktopProjectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let hasSyncedActualAssets = false;
 
 function createTarBundle(service, files) {
@@ -130,7 +132,12 @@ function ensureSyncedAssets() {
     return;
   }
 
-  const manifest = withEnv(BUILTIN_ASSETS_SOURCE_ENV, null, () => syncBuiltinAssets(process.cwd()));
+  const manifest = withEnv(BUILTIN_ASSETS_SOURCE_ENV, null, () =>
+    syncBuiltinAssets(process.cwd(), {
+      os: currentManifestOs(),
+      arch: currentManifestArch()
+    })
+  );
   assert.ok(manifest.length > 0, "expected at least one builtin asset to sync for tests");
   hasSyncedActualAssets = true;
 }
@@ -180,6 +187,17 @@ function currentManifestOs() {
   }
 }
 
+function currentManifestArch() {
+  switch (process.arch) {
+    case "x64":
+      return "amd64";
+    case "arm64":
+      return "arm64";
+    default:
+      return process.arch;
+  }
+}
+
 test("agent-webclient release asset remains available for manual install", () => {
   const { service, assetPath } = getWorkspaceAsset("agent-webclient", currentManifestOs());
   validateBundleArchive(service, assetPath);
@@ -194,9 +212,16 @@ test("agent-webclient release asset remains available for manual install", () =>
     assert.ok(entries.has("agent-webclient/stop.sh"));
     assert.ok(entries.has("agent-webclient/deploy.sh"));
   }
-  assert.ok(entries.has("agent-webclient/backend/server.js"));
+  assert.ok(entries.has("agent-webclient/backend/server.cjs"));
   assert.ok(entries.has("agent-webclient/manifest.json"));
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
+  assert.equal(entries.has("agent-webclient/README.txt"), false);
+  assert.equal(entries.has("agent-webclient/backend/package.json"), false);
+  assert.equal(entries.has("agent-webclient/backend/package-lock.json"), false);
+  assert.equal(
+    [...entries].some((entry) => entry.startsWith("agent-webclient/backend/node_modules/")),
+    false
+  );
 });
 
 test("synced builtin assets include agent-webclient so assistant entry is available in desktop", () => {
@@ -208,6 +233,7 @@ test("synced builtin assets include agent-webclient so assistant entry is availa
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
 
   const manifest = readManifestFromArchive(assetPath);
+  assert.equal(manifest?.backend?.entry, "backend/server.cjs");
   assert.equal(manifest?.frontend?.embedPath, "/appagent");
   assert.equal(manifest?.frontend?.embedParams?.desktopApp, "1");
   const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
@@ -364,7 +390,7 @@ test("validateBundleArchive accepts zip bundles", () => {
 });
 
 test("ZENMIND_BUILTIN_ASSETS_SOURCE overrides workspace fallback and syncs builtin assets", () => {
-  const workspaceRoot = path.resolve(process.cwd(), "..");
+  const workspaceRoot = path.resolve(desktopProjectRoot, "..");
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-source-"));
   const serviceId = `builtin-env-priority-${Date.now()}`;
   const version = "v9.9.9";

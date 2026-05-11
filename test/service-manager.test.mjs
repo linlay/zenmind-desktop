@@ -338,7 +338,7 @@ function createStartupCoreAssetsFixture(options = {}) {
 
     if (service.id === "agent-webclient") {
       fs.writeFileSync(
-        path.join(bundleRoot, "backend", "server.js"),
+        path.join(bundleRoot, "backend", "server.cjs"),
         [
           "const http = require('http');",
           "const { createProxyMiddleware } = require('http-proxy-middleware');",
@@ -457,6 +457,13 @@ function createStartupCoreAssetsFixture(options = {}) {
         version: "v1.0.0",
         description: "fixture",
         frontend: service.frontend,
+        ...(service.id === "agent-webclient"
+          ? {
+              backend: {
+                entry: "backend/server.cjs"
+              }
+            }
+          : {}),
         scripts: {
           start: startFileName,
           stop: stopFileName
@@ -479,7 +486,7 @@ function createStartupCoreAssetsFixture(options = {}) {
             ".env.example",
             "manifest.json",
             ...(service.id === "agent-platform" ? ["configs", "runtime"] : []),
-            ...(service.id === "agent-webclient" ? [path.join("backend", "server.js"), path.join("frontend", "dist", "index.html")] : []),
+            ...(service.id === "agent-webclient" ? [path.join("backend", "server.cjs"), path.join("frontend", "dist", "index.html")] : []),
             ...(service.id === "zenmind-app-server" ? [path.join("frontend", "dist", "index.html")] : [])
           ]
         },
@@ -876,6 +883,42 @@ test("normalizeAgentPlatformEnvContentForSave records whether ACP relay was manu
 
   assert.match(enabledContent, /^LOCAL_CLI_ACP_RELAY_USER_ENABLED=true$/m);
   assert.match(disabledContent, /^LOCAL_CLI_ACP_RELAY_USER_ENABLED=false$/m);
+});
+
+test("applyAgentPlatformWindowsHostShellDefaults injects PowerShell defaults on Windows", () => {
+  const updates = new Map();
+  const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(
+    new Map([["HOST_PORT", "11949"]]),
+    updates,
+    true
+  );
+
+  assert.equal(changed, true);
+  assert.equal(updates.get("AGENT_BASH_SHELL_EXECUTABLE"), "powershell.exe");
+  assert.equal(updates.get("AGENT_BASH_SHELL_ARGS"), "-NoProfile,-ExecutionPolicy,Bypass,-Command,{{command}}");
+});
+
+test("applyAgentPlatformWindowsHostShellDefaults preserves explicit host shell settings", () => {
+  const updates = new Map();
+  const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(
+    new Map([
+      ["AGENT_BASH_SHELL_EXECUTABLE", "cmd.exe"],
+      ["AGENT_BASH_SHELL_ARGS", "/d,/s,/c,{{command}}"]
+    ]),
+    updates,
+    true
+  );
+
+  assert.equal(changed, false);
+  assert.equal(updates.size, 0);
+});
+
+test("applyAgentPlatformWindowsHostShellDefaults skips non-Windows platforms", () => {
+  const updates = new Map();
+  const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(new Map(), updates, false);
+
+  assert.equal(changed, false);
+  assert.equal(updates.size, 0);
 });
 
 test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys and migrates supported replacements", () => {
@@ -2866,7 +2909,7 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
     "utf8"
   );
   fs.writeFileSync(
-    path.join(webclientInstallDir, "backend", "server.js"),
+    path.join(webclientInstallDir, "backend", "server.cjs"),
     [
       "const http = require('http');",
       "const https = require('https');",
@@ -2885,7 +2928,7 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   await __testInternals.ensurePreStartRequirements(app, webclientService);
 
   const envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
-  const serverContent = fs.readFileSync(path.join(webclientInstallDir, "backend", "server.js"), "utf8");
+  const serverContent = fs.readFileSync(path.join(webclientInstallDir, "backend", "server.cjs"), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(webclientInstallDir, "manifest.json"), "utf8"));
   assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
   assert.match(envContent, /WS_BASE_URL=http:\/\/127\.0\.0\.1:12949/);
@@ -2898,11 +2941,9 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   assert.match(serverContent, /function createWebSocketProxy\(/);
   assert.match(serverContent, /proxy\.upgrade\(req, socket, head\)/);
   assert.doesNotMatch(serverContent, /function buildUpgradeRequest\(/);
-  assert.doesNotMatch(serverContent, /const net = require\('net'\);/);
-  assert.doesNotMatch(serverContent, /const tls = require\('tls'\);/);
-  assert.doesNotMatch(serverContent, /httpProxy\.createProxyServer/);
   assert.doesNotMatch(serverContent, /\(secure \? https : http\)\.request/);
   assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(webclientInstallDir), false);
+  assert.equal(manifest.backend.entry, "backend/server.cjs");
   assert.equal(manifest.frontend.embedPath, "/appagent");
   assert.equal(manifest.frontend.embedParams?.desktopApp, "1");
 

@@ -6,18 +6,22 @@
   "main": "dist-electron/main/index.js",
   "scripts": {
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
-    "build:main": "tsc -p tsconfig.main.json",
+    "build:main:types": "tsc -p tsconfig.main.json",
+    "build:main:bundle": "node ./scripts/build-main-bundle.mjs",
+    "build:main": "npm run build:main:types && npm run build:main:bundle",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:renderer",
+    "stage:app": "node ./scripts/stage-app.mjs",
     "dev": "node ./scripts/dev.mjs",
     "start": "npm run dev",
-    "dist:mac": "node ./scripts/sync-builtin-assets.mjs --os=darwin --arch=arm64 && npm run build && electron-builder --mac --arm64",
-    "dist:win": "node ./scripts/sync-builtin-assets.mjs --os=windows --arch=amd64 && npm run build && electron-builder --win --x64",
+    "dist:mac": "node ./scripts/sync-builtin-assets.mjs --os=darwin --arch=arm64 && npm run build && npm run stage:app -- --os=darwin --arch=arm64 && electron-builder --mac --arm64",
+    "dist:win": "node ./scripts/sync-builtin-assets.mjs --os=windows --arch=amd64 && npm run build && npm run stage:app -- --os=win32 --arch=x64 && electron-builder --win --x64",
     "dist:win-docker": "node ./scripts/dist-win.mjs",
     "test": "npm run build && node --test ./test/*.test.mjs"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.100",
+    "@page-agent/core": "^1.8.1",
     "docx": "^9.6.1",
     "exceljs": "^4.4.0",
     "fast-xml-parser": "^5.7.2",
@@ -44,11 +48,23 @@
   "build": {
     "appId": "cc.zenmind.desktop",
     "productName": "ZenMind",
+    "directories": {
+      "app": "build/app"
+    },
     "files": [
       "dist-renderer/**/*",
       "dist-electron/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/**/*",
+      "!node_modules/@napi-rs/canvas-linux-*",
+      "!node_modules/@napi-rs/canvas-linux-*/**/*",
+      "!node_modules/**/*.d.ts",
+      "!node_modules/**/*.map"
     ],
+    "asarUnpack": [
+      "node_modules/@napi-rs/canvas-*/**/*"
+    ],
+    "npmRebuild": false,
     "extraResources": [
       {
         "from": "build/resources/services",
@@ -77,6 +93,10 @@
         ".*"
       ]
     },
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
     "afterPack": "./scripts/fix-mac-sign.js",
     "win": {
       "icon": "build/icons/icon.ico",

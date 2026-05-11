@@ -2265,6 +2265,10 @@ const LOCAL_CLI_ACP_RELAY_ENABLED_KEY = "LOCAL_CLI_ACP_RELAY_ENABLED";
 const LOCAL_CLI_ACP_RELAY_USER_ENABLED_KEY = "LOCAL_CLI_ACP_RELAY_USER_ENABLED";
 const DEFAULT_CLAUDE_CODE_ACP_ARGS = "-y @zed-industries/claude-code-acp";
 const DEFAULT_PROVIDER_APIKEY_KEY_PART = "0.1.0";
+const AGENT_BASH_SHELL_EXECUTABLE_KEY = "AGENT_BASH_SHELL_EXECUTABLE";
+const AGENT_BASH_SHELL_ARGS_KEY = "AGENT_BASH_SHELL_ARGS";
+const WINDOWS_AGENT_BASH_SHELL_EXECUTABLE = "powershell.exe";
+const WINDOWS_AGENT_BASH_SHELL_ARGS = "-NoProfile,-ExecutionPolicy,Bypass,-Command,{{command}}";
 const AGENT_PLATFORM_LEGACY_ENV_BACKUP_FILE = ".env.legacy-backup";
 const AGENT_PLATFORM_DEPRECATED_ENV_KEYS = [
   "GATEWAY_USER_ID",
@@ -2339,7 +2343,35 @@ const AGENT_PLATFORM_ENV_KEY_RENAMES = new Map<string, string>([
 
 
 function agentWebclientInstallNeedsRefresh(installDir: string) {
-  const serverPath = path.join(installDir, "backend", "server.js");
+  const manifestPath = path.join(installDir, "manifest.json");
+  let backendEntry = "backend/server.cjs";
+  try {
+    if (fs.existsSync(manifestPath)) {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+        backend?: { entry?: unknown } | null;
+        runtime?: { requiredPaths?: unknown } | null;
+      };
+      if (typeof manifest.backend?.entry === "string" && manifest.backend.entry.trim()) {
+        backendEntry = manifest.backend.entry.trim();
+      }
+      const requiredPaths = Array.isArray(manifest.runtime?.requiredPaths)
+        ? manifest.runtime.requiredPaths.filter((entry): entry is string => typeof entry === "string")
+        : [];
+      if (
+        backendEntry === "backend/server.js" ||
+        requiredPaths.includes("backend/package.json") ||
+        requiredPaths.includes("backend/node_modules")
+      ) {
+        return true;
+      }
+    }
+  } catch {
+    return true;
+  }
+
+  const serverPath = fs.existsSync(path.join(installDir, backendEntry))
+    ? path.join(installDir, backendEntry)
+    : path.join(installDir, "backend", "server.js");
   if (!fs.existsSync(serverPath)) {
     return false;
   }
@@ -2348,10 +2380,7 @@ function agentWebclientInstallNeedsRefresh(installDir: string) {
     const serverContent = fs.readFileSync(serverPath, "utf8");
     return (
       serverContent.includes("(secure ? https : http).request") ||
-      serverContent.includes("httpProxy.createProxyServer") ||
       serverContent.includes("function buildUpgradeRequest(") ||
-      serverContent.includes("const net = require('net');") ||
-      serverContent.includes("const tls = require('tls');") ||
       !serverContent.includes("function createWebSocketProxy(") ||
       !serverContent.includes("proxy.upgrade(req, socket, head)") ||
       !serverContent.includes("server.on('upgrade'")
@@ -2699,6 +2728,27 @@ function shouldDisableAgentPlatformRelayByDefault(env: Map<string, string>) {
   return usesDefaultDesktopAcpConfig(env);
 }
 
+function applyAgentPlatformWindowsHostShellDefaults(
+  env: Map<string, string>,
+  updates: Map<string, string>,
+  isWindows = IS_WINDOWS
+) {
+  if (!isWindows) {
+    return false;
+  }
+  const hasExplicitShell =
+    Boolean(env.get(AGENT_BASH_SHELL_EXECUTABLE_KEY)?.trim()) ||
+    Boolean(env.get(AGENT_BASH_SHELL_ARGS_KEY)?.trim()) ||
+    updates.has(AGENT_BASH_SHELL_EXECUTABLE_KEY) ||
+    updates.has(AGENT_BASH_SHELL_ARGS_KEY);
+  if (hasExplicitShell) {
+    return false;
+  }
+  updates.set(AGENT_BASH_SHELL_EXECUTABLE_KEY, WINDOWS_AGENT_BASH_SHELL_EXECUTABLE);
+  updates.set(AGENT_BASH_SHELL_ARGS_KEY, WINDOWS_AGENT_BASH_SHELL_ARGS);
+  return true;
+}
+
 function shellQuoteEnvValue(value: string) {
   return `'${value.replace(/'/gu, "'\\''")}'`;
 }
@@ -2956,6 +3006,7 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   if (!env.get("PROVIDER_APIKEY_KEY_PART")?.trim()) {
     updates.set("PROVIDER_APIKEY_KEY_PART", DEFAULT_PROVIDER_APIKEY_KEY_PART);
   }
+  applyAgentPlatformWindowsHostShellDefaults(env, updates);
   if (shouldDisableAgentPlatformRelayByDefault(env)) {
     updates.set(LOCAL_CLI_ACP_RELAY_ENABLED_KEY, "false");
   }
@@ -3710,6 +3761,7 @@ export const __testInternals = {
   normalizeAgentPlatformEnvContentForRuntime,
   normalizeAgentPlatformEnvContentForSave,
   shouldDisableAgentPlatformRelayByDefault,
+  applyAgentPlatformWindowsHostShellDefaults,
   cleanupAgentPlatformRelayBeforeStart,
   parseProcessTreeRowsFromPs,
   parseProcessTreeRowsFromPowerShell,
