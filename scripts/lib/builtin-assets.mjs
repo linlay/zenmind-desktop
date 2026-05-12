@@ -417,6 +417,7 @@ function validateAgentPlatformBundleArchive(service, archivePath) {
 
 function validateAgentWebclientBundleArchive(service, archivePath) {
   const manifest = readManifestFromArchive(archivePath);
+  const isWindowsArchive = archivePath.endsWith(".zip");
   const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
     ? manifest.desktop.envBindings
       .map((binding) => (binding && typeof binding.key === "string" ? binding.key.trim() : ""))
@@ -441,6 +442,39 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
   }
 
   const entries = listArchiveEntries(archivePath);
+  const programCommonPath = isWindowsArchive
+    ? `${service.bundleTopLevelDir}/scripts/program-common.ps1`
+    : `${service.bundleTopLevelDir}/scripts/program-common.sh`;
+  const programCommon = readArchiveEntryText(archivePath, programCommonPath);
+  if (!programCommon) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Missing ${programCommonPath} in the Desktop-ready agent-webclient bundle.`
+    );
+  }
+
+  const staleRuntimeMarkers = isWindowsArchive
+    ? ["BackendPackageFile", "BackendModulesDir", "backend\\package.json", "backend\\node_modules"]
+    : ["BACKEND_PACKAGE_FILE", "BACKEND_NODE_MODULES_DIR", "backend/package.json", "backend/node_modules"];
+  const staleRuntimeMarker = staleRuntimeMarkers.find((marker) => programCommon.includes(marker));
+  if (staleRuntimeMarker) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Detected stale launcher runtime check ${JSON.stringify(staleRuntimeMarker)} in ${programCommonPath}.\n` +
+        `The Desktop-ready agent-webclient bundle is self-contained in backend/server.cjs and must not require backend/package.json or backend/node_modules.`
+    );
+  }
+  const hasBundleRelativeBackendEntry = isWindowsArchive
+    ? /\$Script:BackendEntry\s*=\s*Join-Path\s+\(Join-Path\s+\$Script:BundleRoot\s+['"]backend['"]\)\s+['"]server\.cjs['"]/u.test(programCommon)
+    : /BACKEND_ENTRY=["']\$\{?BUNDLE_ROOT\}?\/backend\/server\.cjs["']/u.test(programCommon);
+  if (!hasBundleRelativeBackendEntry) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Expected ${programCommonPath} to launch $BUNDLE_ROOT/backend/server.cjs instead of an absolute or legacy backend path.\n` +
+        `Please rebuild the Desktop-ready agent-webclient bundle.`
+    );
+  }
+
   const forbiddenEntries = [
     `${service.bundleTopLevelDir}/backend/package.json`,
     `${service.bundleTopLevelDir}/backend/package-lock.json`,

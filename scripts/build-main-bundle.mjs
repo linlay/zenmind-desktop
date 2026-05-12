@@ -32,6 +32,7 @@ export async function buildMainBundle(rootDir = projectRoot) {
     absWorkingDir: rootDir,
     entryPoints: {
       "main/index": path.join(rootSrc, "main", "index.ts"),
+      "main/attachment-worker": path.join(rootSrc, "main", "assistant", "attachment-worker.ts"),
       "preload/index": path.join(rootSrc, "preload", "index.ts")
     },
     outdir,

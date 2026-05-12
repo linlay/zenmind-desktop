@@ -10,6 +10,7 @@ const installerIncludePath = path.join(projectRoot, "build", "installer.nsh");
 const uninstallScriptPath = path.join(projectRoot, "scripts", "uninstall.sh");
 const distWinScriptPath = path.join(projectRoot, "scripts", "dist-win.mjs");
 const stageAppScriptPath = path.join(projectRoot, "scripts", "stage-app.mjs");
+const buildMainBundleScriptPath = path.join(projectRoot, "scripts", "build-main-bundle.mjs");
 
 function loadPackageJson() {
   return JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
@@ -22,6 +23,9 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
   const pluginsResource = extraResources.find((entry) => entry.from === "build/resources/plugins");
   const voiceAsrResource = extraResources.find((entry) => entry.from === "build/resources/voice-asr");
 
+  assert.equal(packageJson.dependencies?.["@ffmpeg-installer/ffmpeg"], "^1.1.0");
+  assert.ok(packageJson.build?.asarUnpack?.includes("node_modules/@ffmpeg-installer/*/ffmpeg"));
+  assert.ok(packageJson.build?.asarUnpack?.includes("node_modules/@ffmpeg-installer/*/ffmpeg.exe"));
   assert.deepEqual(uninstallResource, {
     from: "scripts",
     to: ".",
@@ -69,6 +73,7 @@ test("custom uninstall assets exist with silent legacy cleanup and no data promp
 test("dist-win docker flow syncs builtin assets on the host before entering Docker", () => {
   const distWinScript = fs.readFileSync(distWinScriptPath, "utf8");
   const stageAppScript = fs.readFileSync(stageAppScriptPath, "utf8");
+  const buildMainBundleScript = fs.readFileSync(buildMainBundleScriptPath, "utf8");
 
   assert.match(distWinScript, /async function syncWindowsBuiltinAssets\(\)/);
   assert.doesNotMatch(distWinScript, /prepareWindowsVoiceAsrAssets/);
@@ -96,15 +101,22 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   assert.match(stageAppScript, /"build", "app"/);
   assert.match(stageAppScript, /"dist-renderer"/);
   assert.match(stageAppScript, /main:\s*"dist-electron\/main\/index\.js"/);
+  assert.match(buildMainBundleScript, /"main\/attachment-worker"/);
+  assert.match(buildMainBundleScript, /"main",\s*"assistant",\s*"attachment-worker\.ts"/);
   assert.match(stageAppScript, /"@napi-rs\/canvas": desktopPackage\.dependencies/);
-  assert.match(stageAppScript, /--platform=\$\{target\.os\}/);
-  assert.match(stageAppScript, /--arch=\$\{target\.arch\}/);
+  assert.match(stageAppScript, /"@ffmpeg-installer\/ffmpeg": desktopPackage\.dependencies/);
+  assert.match(stageAppScript, /--os=\$\{target\.os\}/);
+  assert.match(stageAppScript, /--cpu=\$\{target\.arch\}/);
   assert.match(stageAppScript, /"--omit=dev"/);
   assert.match(stageAppScript, /"--include=optional"/);
   assert.match(stageAppScript, /"--ignore-scripts"/);
   assert.match(stageAppScript, /"--no-package-lock"/);
   assert.match(stageAppScript, /@napi-rs\/canvas-win32-x64-msvc/);
+  assert.match(stageAppScript, /@ffmpeg-installer\/darwin-arm64/);
+  assert.match(stageAppScript, /@ffmpeg-installer\/win32-x64/);
+  assert.match(stageAppScript, /ffmpeg\.exe/);
   assert.match(stageAppScript, /unexpected linux canvas runtime packages in win32 stage/);
+  assert.match(stageAppScript, /unexpected non-windows ffmpeg runtime packages in win32 stage/);
   assert.doesNotMatch(stageAppScript, /exceljs|docx|pptxgenjs|pdfjs-dist|zod/);
   assert.doesNotMatch(
     distWinScript,

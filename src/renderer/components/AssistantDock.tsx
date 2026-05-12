@@ -11,8 +11,7 @@ import type {
   AssistantRunEventStatus,
   AssistantRunAction,
   AssistantSettingsPublic,
-  AssistantVoiceCorrectionLocale,
-  DesktopApi
+  AssistantVoiceCorrectionLocale
 } from "../../shared/contracts";
 import { ZENMIND_ASSISTANT_WONDERS } from "../../shared/assistant-capabilities";
 import { AssistantAwaitingDialog } from "./AssistantAwaitingDialog";
@@ -44,6 +43,7 @@ type AssistantDockProps = {
   isMac: boolean;
   isWindows: boolean;
   nativeDialogVisible?: boolean;
+  showLauncher?: boolean;
   onOpen: () => void;
   onClose: () => void;
   onModeChange: (mode: AssistantDockMode) => void;
@@ -53,7 +53,7 @@ type AssistantDockProps = {
 
 type VoiceState = "idle" | "recording" | "correcting";
 
-const VOICE_CORRECTION_LOCALE: AssistantVoiceCorrectionLocale = "zh-CN-mixed-en";
+const VOICE_TRANSCRIPTION_LOCALE: AssistantVoiceCorrectionLocale = "zh-CN-mixed-en";
 const FULL_ACCESS_DURATION_MS = 10 * 60 * 1000;
 const VOICE_AUDIO_MIME_TYPES = [
   "audio/webm;codecs=opus",
@@ -589,27 +589,6 @@ function normalizeVoiceFeedbackMessage(message: string) {
   return compact.length > maxLength ? `${compact.slice(0, maxLength)}...` : compact;
 }
 
-function containsVoiceReviewSensitiveText(text: string) {
-  return /(?:https?:\/\/|www\.|\/Users\/|[A-Za-z]:\\|(?:^|\s)(?:npm|pnpm|yarn|git|bun|node|rm|mv|cp|sudo)\s+)/iu.test(text);
-}
-
-function formatVoiceCorrectionFeedback(result: Awaited<ReturnType<DesktopApi["assistant"]["correctVoiceText"]>>) {
-  const baseMessage = normalizeVoiceFeedbackMessage(result.message);
-  if (!result.ok) {
-    return baseMessage;
-  }
-  const corrected = result.correctedText || result.text;
-  const needsReview =
-    result.changeLevel === "major" ||
-    containsVoiceReviewSensitiveText(corrected) ||
-    (result.uncertainTerms?.length ?? 0) > 0;
-  const terms = result.glossaryHits?.length ? `；命中术语：${result.glossaryHits.slice(0, 3).join("、")}` : "";
-  if (needsReview) {
-    return `语音文本已放入输入框，请确认后发送${terms}。`;
-  }
-  return terms ? `${baseMessage}${terms}` : baseMessage;
-}
-
 function waitForAssistantDockPaint() {
   return new Promise<void>((resolve) => {
     window.requestAnimationFrame(() => resolve());
@@ -970,6 +949,7 @@ export function AssistantDock({
   isMac,
   isWindows,
   nativeDialogVisible = false,
+  showLauncher = true,
   onOpen,
   onClose,
   onModeChange,
@@ -1473,50 +1453,22 @@ export function AssistantDock({
       return;
     }
 
-    await correctVoiceTranscript(voiceText);
+    applyVoiceTranscript(voiceText);
   }
 
-  async function correctVoiceTranscript(transcript: string) {
+  function applyVoiceTranscript(transcript: string) {
     const voiceText = transcript.trim();
     if (!voiceText) {
       setVoiceState("idle");
       return;
     }
 
-    const requestId = voiceCorrectionRequestIdRef.current + 1;
-    voiceCorrectionRequestIdRef.current = requestId;
     const baseDraft = voiceBaseDraftRef.current;
     const expectedDraft = mergeVoiceText(baseDraft, voiceText);
     updateDraft(expectedDraft);
-    setVoiceState("correcting");
-    setVoiceFeedback("正在整理语音文本...");
-
-    try {
-      const result = await window.electronAPI.assistant.correctVoiceText({
-        text: voiceText,
-        locale: VOICE_CORRECTION_LOCALE
-      });
-      if (voiceCorrectionRequestIdRef.current !== requestId) {
-        return;
-      }
-      if (draftRef.current !== expectedDraft) {
-        setVoiceFeedback("检测到手动编辑，已保留当前输入。");
-        return;
-      }
-      const correctedText = (result.correctedText || result.text).trim();
-      if (result.ok && correctedText) {
-        updateDraft(mergeVoiceText(baseDraft, correctedText));
-      }
-      setVoiceFeedback(formatVoiceCorrectionFeedback(result));
-    } catch (reason) {
-      if (voiceCorrectionRequestIdRef.current === requestId) {
-        setVoiceFeedback(reason instanceof Error ? reason.message : String(reason));
-      }
-    } finally {
-      if (voiceCorrectionRequestIdRef.current === requestId) {
-        setVoiceState("idle");
-      }
-    }
+    // Voice correction is temporarily paused; keep the ASR text without calling the correction IPC.
+    setVoiceFeedback("");
+    setVoiceState("idle");
   }
 
   function ensureVoiceRecognition() {
@@ -1656,7 +1608,7 @@ export function AssistantDock({
       const result = await window.electronAPI.assistant.transcribeVoiceAudio({
         mimeType: blob.type || "audio/webm",
         data: await blob.arrayBuffer(),
-        locale: VOICE_CORRECTION_LOCALE
+        locale: VOICE_TRANSCRIPTION_LOCALE
       });
       if (!result.ok) {
         setVoiceFeedback(normalizeVoiceFeedbackMessage(result.message));
@@ -3132,7 +3084,7 @@ export function AssistantDock({
 
   return (
     <>
-      {!open ? (
+      {showLauncher && !open ? (
         <button type="button" className="assistant-dock-fab" onClick={onOpen} aria-label="打开 ZenMind">
           <ZenMindLogoIcon />
           <span>助手</span>

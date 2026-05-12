@@ -455,7 +455,7 @@ export function DesktopPet() {
         showBubble ? "has-bubble" : "",
         isDragging ? "is-dragging" : ""
       ].filter(Boolean).join(" ")}
-      aria-label="ZenMind 桌面仙尊"
+      aria-label="ZenMind 桌面宠物"
     >
       <div
         className="desktop-pet-hitbox"

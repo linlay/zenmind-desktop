@@ -25,6 +25,31 @@ test("sidebar does not expose the built-in Chrome surface", () => {
   assert.doesNotMatch(sidebarSource, /BUILTIN_BROWSER_ROUTE/);
 });
 
+test("assistant launcher sits beside settings in the sidebar footer", () => {
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const sidebarSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "components", "AppSidebar.tsx"),
+    "utf8"
+  );
+  const assistantDock = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
+    "utf8"
+  );
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+
+  assert.match(appShell, /onOpenAssistantDock=\{\(\) => openAssistantDock\("full"\)\}/);
+  assert.match(appShell, /showLauncher=\{false\}/);
+  assert.match(sidebarSource, /sidebar-footer-actions/);
+  assert.match(sidebarSource, /sidebar-assistant-launcher/);
+  assert.match(sidebarSource, /aria-label="打开 ZenMind 助手"/);
+  assert.match(assistantDock, /showLauncher = true/);
+  assert.match(assistantDock, /showLauncher && !open/);
+  assert.match(
+    globalStyles,
+    /\.sidebar-footer-actions\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*1fr\);/
+  );
+});
+
 test("built index uses relative asset paths", () => {
   const builtIndex = fs.readFileSync(path.join(projectRoot, "dist-renderer", "index.html"), "utf8");
 
@@ -65,6 +90,41 @@ test("market route disables the global drag overlay above toolbar controls", () 
   assert.match(appShell, /has-market-controls/);
   assert.match(globalStyles, /\.app-shell\.has-market-controls\s+\.app-window-drag-region/);
   assert.match(marketStyles, /-webkit-app-region:\s*no-drag;/);
+});
+
+test("plugin embedded route keeps a mac window drag lane clear of iframe controls", () => {
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+
+  assert.match(appShell, /usesPluginSurface/);
+  assert.match(appShell, /has-plugin-surface/);
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-plugin-surface\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*block;[\s\S]*?left:\s*calc\(var\(--app-sidebar-width,\s*196px\)\s*\+\s*280px\);[\s\S]*?right:\s*184px;[\s\S]*?height:\s*34px;/
+  );
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-plugin-surface\.has-assistant-dock-full\s+\.app-window-drag-region\s*\{[\s\S]*?right:\s*calc\(var\(--assistant-dock-embedded-width\)\s*\+\s*184px\);/
+  );
+});
+
+test("desktop shell starts window drag from non-interactive mac regions", () => {
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+
+  assert.match(appShell, /WINDOW_DRAG_EXCLUDED_SELECTOR/);
+  assert.match(appShell, /"iframe"/);
+  assert.match(appShell, /"webview"/);
+  assert.match(appShell, /"\.app-sidebar-resizer"/);
+  assert.match(appShell, /onPointerDownCapture=\{handleDesktopWindowPointerDown\}/);
+  assert.match(appShell, /window\.electronAPI\.windowDrag\.begin/);
+  assert.match(preload, /windowDrag:\s*\{[\s\S]*?ipcRenderer\.invoke\("windowDrag\.begin"/);
+  assert.match(contracts, /windowDrag:\s*\{[\s\S]*?begin:\s*\(point:\s*\{\s*x:\s*number;\s*y:\s*number\s*\}/);
+  assert.match(mainProcess, /MAIN_WINDOW_DRAG_FORCE_END_MS/);
+  assert.match(mainProcess, /process\.platform !== "darwin"[\s\S]*?return \{ ok: false \};/);
+  assert.match(mainProcess, /ipcMain\.handle\("windowDrag\.begin"/);
 });
 
 test("external webview tabs use repeatable pointer reordering", () => {
@@ -293,7 +353,7 @@ test("quick assistant popup keeps ask and voice recovery controls visible", () =
   assert.match(mainProcess, /devTools:\s*false/);
 });
 
-test("assistant voice UI no longer exposes a correction toggle and always follows the fixed correction flow", () => {
+test("assistant voice UI no longer exposes a correction toggle and temporarily skips correction requests", () => {
   const settingsPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "SettingsPage.tsx"),
     "utf8"
@@ -318,7 +378,8 @@ test("assistant voice UI no longer exposes a correction toggle and always follow
   assert.doesNotMatch(quickAssistant, /isVoiceCorrectionEnabled/);
   assert.doesNotMatch(quickAssistant, /!isVoiceCorrectionEnabled\(latestSettings\)/);
   assert.match(quickAssistant, /applyVoiceTextToDraft/);
-  assert.match(quickAssistant, /correctVoiceText\(/);
+  assert.doesNotMatch(quickAssistant, /correctVoiceText/);
+  assert.match(quickAssistant, /Voice correction is temporarily paused/);
   assert.match(quickAssistant, /getSpeechRecognitionConstructor\(\)/);
   assert.match(quickAssistant, /当前环境无法访问前端语音识别/);
   assert.match(quickAssistant, /voiceBaseDraftRef/);
@@ -330,7 +391,9 @@ test("assistant voice UI no longer exposes a correction toggle and always follow
   assert.match(toggleVoice, /canUseVoiceRecorder\(\)[\s\S]{0,120}await startVoiceRecorderInput\(\)/);
   assert.doesNotMatch(assistantDock, /isVoiceCorrectionEnabled/);
   assert.doesNotMatch(assistantDock, /!isVoiceCorrectionEnabled\(latestSettings\)/);
-  assert.match(assistantDock, /correctVoiceTranscript/);
+  assert.doesNotMatch(assistantDock, /correctVoiceText/);
+  assert.match(assistantDock, /applyVoiceTranscript/);
+  assert.match(assistantDock, /Voice correction is temporarily paused/);
   assert.match(assistantDock, /canUseRecordedVoiceInput\(\) \|\| Boolean\(getSpeechRecognitionConstructor\(\)\)/);
   assert.match(assistantDock, /voiceRecognitionFallbackToRecorderRef\.current = shouldFallbackToRecorder/);
 
@@ -339,7 +402,7 @@ test("assistant voice UI no longer exposes a correction toggle and always follow
   const startVoiceInput = assistantDock.slice(startVoiceInputIndex, stopVoiceInputIndex);
   assert.match(startVoiceInput, /getSpeechRecognitionConstructor\(\)/);
   assert.match(startVoiceInput, /canUseRecordedVoiceInput\(\)[\s\S]{0,120}await startRecordedVoiceInput\(\)/);
-  assert.match(assistantRuntime, /loadAgentPlatformVoiceAsrSettings/);
+  assert.match(assistantRuntime, /tryLoadAgentPlatformVoiceAsrSettings/);
   assert.match(assistantRuntime, /transcribeOpenAIChatAudio/);
   assert.match(assistantRuntime, /qwen3-asr-flash/);
 });
@@ -351,7 +414,7 @@ test("desktop pet appearance picker confirms persistence before success feedback
   );
 
   assert.match(settingsPage, /nextState\.appearanceId === appearanceId/);
-  assert.match(settingsPage, /桌面仙尊形象切换未生效/);
+  assert.match(settingsPage, /桌面宠物形象切换未生效/);
   assert.match(settingsPage, /disabled=\{Boolean\(desktopPetAppearancePending\) && !selected\}/);
   assert.doesNotMatch(settingsPage, /disabled=\{Boolean\(desktopPetAppearancePending\) \|\| selected\}/);
 });

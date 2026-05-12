@@ -6,21 +6,21 @@ export const DESKTOP_PET_APPEARANCE_OPTIONS = [
   {
     id: DEFAULT_DESKTOP_PET_APPEARANCE_ID,
     displayName: "小宅",
-    description: "默认蓝色形象，保持现有仙尊外观。",
+    description: "默认蓝色形象，保持现有宠物外观。",
     assetBasePath: "./desktop-pet",
     previewAssetPath: "./desktop-pet/pet-idle.png"
   },
   {
     id: "dario",
     displayName: "Dario",
-    description: "皱眉卷发的仙尊，适合高压专注时刻。",
+    description: "皱眉卷发的宠物，适合高压专注时刻。",
     assetBasePath: "./desktop-pet/dario",
     previewAssetPath: "./desktop-pet/dario/pet-idle.png"
   },
   {
     id: "mini-sama",
     displayName: "Mini Sama",
-    description: "焦虑又机灵的仙尊，适合董事会混乱能量。",
+    description: "焦虑又机灵的宠物，适合董事会混乱能量。",
     assetBasePath: "./desktop-pet/mini-sama",
     previewAssetPath: "./desktop-pet/mini-sama/pet-idle.png"
   }

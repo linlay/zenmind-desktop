@@ -1173,6 +1173,10 @@ export interface DesktopApi {
     getPlatform: () => Promise<string>;
     setSidebarTranslucency: (enabled: boolean) => Promise<SidebarTranslucencyResult>;
   };
+  windowDrag: {
+    begin: (point: { x: number; y: number }) => Promise<{ ok: boolean }>;
+    end: () => Promise<{ ok: boolean; moved: boolean }>;
+  };
   desktopPet: {
     getSettings: () => Promise<DesktopPetSettings>;
     getState: () => Promise<DesktopPetState>;

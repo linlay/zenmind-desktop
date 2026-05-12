@@ -29,7 +29,10 @@ type AppSidebarProps = {
   isCollapsed: boolean;
   currentPath: string;
   pendingPath?: string | null;
+  assistantDockOpen?: boolean;
   customSidebarItems: CustomSidebarItem[];
+  onOpenAssistantDock?: () => void;
+  onCloseAssistantDock?: () => void;
   onRequestNavigate?: (targetPath: string) => boolean;
   onNavigateItem?: () => void;
 };
@@ -38,7 +41,10 @@ export function AppSidebar({
   isCollapsed,
   currentPath,
   pendingPath,
+  assistantDockOpen = false,
   customSidebarItems,
+  onOpenAssistantDock,
+  onCloseAssistantDock,
   onRequestNavigate,
   onNavigateItem
 }: AppSidebarProps) {
@@ -74,6 +80,10 @@ export function AppSidebar({
   ];
 
   function handleItemClick(event: MouseEvent<HTMLAnchorElement>, targetPath: string) {
+    if (targetPath === "/settings") {
+      onCloseAssistantDock?.();
+    }
+
     if (targetPath === currentPath) {
       event.preventDefault();
       return;
@@ -84,6 +94,11 @@ export function AppSidebar({
       return;
     }
 
+    onNavigateItem?.();
+  }
+
+  function handleAssistantDockClick() {
+    onOpenAssistantDock?.();
     onNavigateItem?.();
   }
 
@@ -123,22 +138,41 @@ export function AppSidebar({
       </nav>
 
       <div className="sidebar-footer">
-        <NavLink
-          to="/settings"
-          onClick={(event) => handleItemClick(event, "/settings")}
-          className={({ isActive }) =>
-            [
+        <div className="sidebar-footer-actions">
+          <NavLink
+            to="/settings"
+            onClick={(event) => handleItemClick(event, "/settings")}
+            className={({ isActive }) =>
+              [
+                "sidebar-link",
+                "sidebar-link-utility",
+                !assistantDockOpen && (isActive || pendingPath === "/settings") ? "sidebar-link-active" : ""
+              ].filter(Boolean).join(" ")
+            }
+          >
+            <span className="sidebar-link-icon">
+              <SidebarIllustration kind="settings" />
+            </span>
+            <span className="sidebar-link-label">设置</span>
+          </NavLink>
+          <button
+            type="button"
+            className={[
               "sidebar-link",
               "sidebar-link-utility",
-              (isActive || pendingPath === "/settings") ? "sidebar-link-active" : ""
-            ].filter(Boolean).join(" ")
-          }
-        >
-          <span className="sidebar-link-icon">
-            <SidebarIllustration kind="settings" />
-          </span>
-          <span className="sidebar-link-label">设置</span>
-        </NavLink>
+              "sidebar-assistant-launcher",
+              assistantDockOpen ? "sidebar-link-active" : ""
+            ].filter(Boolean).join(" ")}
+            onClick={handleAssistantDockClick}
+            aria-label="打开 ZenMind 助手"
+            aria-pressed={assistantDockOpen}
+          >
+            <span className="sidebar-link-icon">
+              <SidebarIllustration kind="assistant" />
+            </span>
+            <span className="sidebar-link-label">助手</span>
+          </button>
+        </div>
       </div>
     </aside>
   );

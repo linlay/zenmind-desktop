@@ -37,7 +37,10 @@ import {
   hydrateAssistantAttachmentsForChat,
   refreshAssistantAttachmentsForRun
 } from "./attachment-store";
-import { loadAgentPlatformMinimaxSettings, loadAgentPlatformVoiceAsrSettings } from "./agent-platform-config";
+import {
+  tryLoadAgentPlatformMinimaxSettings,
+  tryLoadAgentPlatformVoiceAsrSettings
+} from "./agent-platform-config";
 import { readAssistantSettings } from "./settings-store";
 import { convertAudioBufferToWavBuffer } from "./audio-conversion";
 import { buildAssistantMessages, type OpenAIChatMessage, type OpenAIToolCall } from "./prompt-builder";
@@ -1838,7 +1841,7 @@ export class AssistantRuntime {
       };
     }
 
-    const settings = loadAgentPlatformMinimaxSettings(this.app);
+    const settings = tryLoadAgentPlatformMinimaxSettings(this.app);
     if (!settings?.apiKey.trim() || !settings.baseURL.trim() || !settings.model.trim()) {
       return createVoiceCorrectionResult(text, text, "语音文本已确认。");
     }
@@ -1907,7 +1910,7 @@ export class AssistantRuntime {
 
     let cloudSpeechFailure = "";
     try {
-      const voiceSettings = loadAgentPlatformVoiceAsrSettings(this.app);
+      const voiceSettings = tryLoadAgentPlatformVoiceAsrSettings(this.app);
       if (!voiceSettings) {
         return {
           ok: false,
@@ -2100,7 +2103,7 @@ export class AssistantRuntime {
       };
     }
 
-    const settings = loadAgentPlatformMinimaxSettings(this.app) ?? readAssistantSettings(this.app);
+    const settings = tryLoadAgentPlatformMinimaxSettings(this.app) ?? readAssistantSettings(this.app);
 
     const runId = `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const existingChat = request.chatId ? getAssistantChat(this.app, request.chatId) : null;

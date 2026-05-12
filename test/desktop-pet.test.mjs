@@ -148,15 +148,15 @@ test("desktop pet stores a safe appearance id", () => {
 test("desktop pet context menu only offers dance for the classic appearance", () => {
   assert.deepEqual(
     getDesktopPetContextMenuItems(DEFAULT_DESKTOP_PET_APPEARANCE_ID).map((item) => item.label),
-    ["跳舞", "关闭仙尊"]
+    ["跳舞", "关闭宠物"]
   );
   assert.deepEqual(
     getDesktopPetContextMenuItems("dario").map((item) => item.label),
-    ["关闭仙尊"]
+    ["关闭宠物"]
   );
   assert.deepEqual(
     getDesktopPetContextMenuItems("mini-sama").map((item) => item.label),
-    ["关闭仙尊"]
+    ["关闭宠物"]
   );
 });
 
@@ -266,7 +266,7 @@ test("desktop pet shows bound agent unread count while idle", () => {
       role: "平台总管",
       presence: "available",
       unreadCount: 8,
-      latestPreview: "仙尊大人，久坐伤身，请起身活动一下...",
+      latestPreview: "宠物提醒：久坐伤身，请起身活动一下...",
       chatId: "chat-x",
       hasPendingAwaiting: false,
       stale: false,
@@ -458,7 +458,7 @@ test("desktop pet does not render read long previews inside the floating bubble"
       role: "平台总管",
       presence: "available",
       unreadCount: 0,
-      latestPreview: "这是一段很长很长的回复内容，不应该塞进桌面仙尊的气泡里展示。",
+      latestPreview: "这是一段很长很长的回复内容，不应该塞进桌面宠物的气泡里展示。",
       chatId: "agent-chat",
       hasPendingAwaiting: false,
       stale: false,
@@ -517,7 +517,7 @@ test("desktop pet truncates unread long previews for message reactions", () => {
       role: "平台总管",
       presence: "available",
       unreadCount: 1,
-      latestPreview: "这是一段很长很长的回复内容，不应该塞进桌面仙尊的气泡里展示，也不应该把仙尊窗口撑开。",
+      latestPreview: "这是一段很长很长的回复内容，不应该塞进桌面宠物的气泡里展示，也不应该把宠物窗口撑开。",
       chatId: "agent-chat",
       hasPendingAwaiting: false,
       stale: false,
@@ -526,7 +526,7 @@ test("desktop pet truncates unread long previews for message reactions", () => {
   });
 
   assert.equal(state.status, "idle");
-  assert.equal(state.messagePreview, "这是一段很长很长的回复内容，不应该塞进桌面仙尊的气泡里展示…");
+  assert.equal(state.messagePreview, "这是一段很长很长的回复内容，不应该塞进桌面宠物的气泡里展示…");
   assert.equal(state.messagePreview.length, 30);
   assert.equal(state.unreadCount, 1);
 });
@@ -646,12 +646,12 @@ test("agent-platform snapshot migrates legacy xiaozhai binding to zenmi", () => 
   const status = buildStatusFromPlatform({
     boundAgentKey: "xiaozhai",
     agents: [{ key: "zenmi", name: "小宅", role: "平台总管", stats: { unreadCount: 8 } }],
-    chats: [{ chatId: "chat-zenmi", agentKey: "zenmi", updatedAt: 9, lastRunContent: "仙尊大人，久坐伤身" }]
+    chats: [{ chatId: "chat-zenmi", agentKey: "zenmi", updatedAt: 9, lastRunContent: "宠物提醒：久坐伤身" }]
   });
 
   assert.equal(status.agentKey, "zenmi");
   assert.equal(status.displayName, "小宅");
-  assert.equal(status.latestPreview, "仙尊大人，久坐伤身");
+  assert.equal(status.latestPreview, "宠物提醒：久坐伤身");
   assert.equal(status.unreadCount, 8);
 });
 
@@ -659,13 +659,13 @@ test("agent-platform snapshot self-heals partial zen binding to zenmi", () => {
   const status = buildStatusFromPlatform({
     boundAgentKey: "zen",
     agents: [{ key: "zenmi", name: "小宅", role: "平台总管", stats: { unreadCount: 8 } }],
-    chats: [{ chatId: "chat-zenmi", agentKey: "zenmi", updatedAt: 9, lastRunContent: "仙尊大人，久坐伤身" }]
+    chats: [{ chatId: "chat-zenmi", agentKey: "zenmi", updatedAt: 9, lastRunContent: "宠物提醒：久坐伤身" }]
   });
 
   assert.equal(status.agentKey, "zenmi");
   assert.equal(status.displayName, "小宅");
   assert.equal(status.presence, "available");
-  assert.equal(status.latestPreview, "仙尊大人，久坐伤身");
+  assert.equal(status.latestPreview, "宠物提醒：久坐伤身");
   assert.equal(status.unreadCount, 8);
 });
 

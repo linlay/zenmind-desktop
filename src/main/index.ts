@@ -184,11 +184,19 @@ let pendingMainWindowCloseCancel: (() => void) | null = null;
 let serviceMutationQueue = Promise.resolve();
 let nativeDialogVisibilityDepth = 0;
 let quickAssistantVisibleBeforeNativeDialog = false;
+let mainWindowDragTimer: ReturnType<typeof setInterval> | null = null;
+let mainWindowDragState: {
+  startPoint: { x: number; y: number };
+  lastPoint: { x: number; y: number };
+  moved: boolean;
+  startedAt: number;
+} | null = null;
 const quickAssistantState = createQuickAssistantWindowState();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const AGENT_WEBCLIENT_APP_PATHNAME = "/appagent";
 const AGENT_WEBCLIENT_OPEN_RETRY_COUNT = 24;
 const AGENT_WEBCLIENT_OPEN_RETRY_MS = 180;
+const MAIN_WINDOW_DRAG_FORCE_END_MS = 8_000;
 const DESKTOP_PET_DRAG_FORCE_END_MS = 4_000;
 const QUICK_ASSISTANT_DISMISS_URL = "zenmind://quick-assistant-dismiss";
 const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -1907,6 +1915,77 @@ function normalizeMainWindowBeforeShow(targetWindow: BrowserWindow) {
   }
 }
 
+function clearMainWindowDragTimer() {
+  if (mainWindowDragTimer) {
+    clearInterval(mainWindowDragTimer);
+    mainWindowDragTimer = null;
+  }
+}
+
+function beginMainWindowDrag(point: { x?: unknown; y?: unknown }) {
+  if (process.platform !== "darwin" || !mainWindow || mainWindow.isDestroyed()) {
+    return { ok: false };
+  }
+  if (mainWindow.isFullScreen()) {
+    return { ok: false };
+  }
+
+  const startX = Number(point.x);
+  const startY = Number(point.y);
+  const fallbackPoint = screen.getCursorScreenPoint();
+  const startPoint = {
+    x: Number.isFinite(startX) ? startX : fallbackPoint.x,
+    y: Number.isFinite(startY) ? startY : fallbackPoint.y
+  };
+
+  clearMainWindowDragTimer();
+  mainWindowDragState = {
+    startPoint,
+    lastPoint: startPoint,
+    moved: false,
+    startedAt: Date.now()
+  };
+
+  mainWindowDragTimer = setInterval(() => {
+    if (!mainWindowDragState || !mainWindow || mainWindow.isDestroyed()) {
+      clearMainWindowDragTimer();
+      return;
+    }
+    if (mainWindow.isFullScreen() || Date.now() - mainWindowDragState.startedAt > MAIN_WINDOW_DRAG_FORCE_END_MS) {
+      endMainWindowDrag();
+      return;
+    }
+
+    const cursorPoint = screen.getCursorScreenPoint();
+    const totalDeltaX = cursorPoint.x - mainWindowDragState.startPoint.x;
+    const totalDeltaY = cursorPoint.y - mainWindowDragState.startPoint.y;
+    if (!mainWindowDragState.moved && Math.hypot(totalDeltaX, totalDeltaY) < 4) {
+      return;
+    }
+
+    const deltaX = cursorPoint.x - mainWindowDragState.lastPoint.x;
+    const deltaY = cursorPoint.y - mainWindowDragState.lastPoint.y;
+    mainWindowDragState.moved = true;
+    mainWindowDragState.lastPoint = cursorPoint;
+    if (deltaX !== 0 || deltaY !== 0) {
+      const bounds = mainWindow.getBounds();
+      mainWindow.setPosition(bounds.x + Math.round(deltaX), bounds.y + Math.round(deltaY), false);
+    }
+  }, 16);
+
+  return { ok: true };
+}
+
+function endMainWindowDrag() {
+  const moved = Boolean(mainWindowDragState?.moved);
+  mainWindowDragState = null;
+  clearMainWindowDragTimer();
+  return {
+    ok: true,
+    moved
+  };
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -2053,6 +2132,7 @@ function createWindow() {
   });
 
   mainWindow.on("close", (event) => {
+    endMainWindowDrag();
     if (isHandlingQuit) {
       return;
     }
@@ -2065,6 +2145,7 @@ function createWindow() {
   });
 
   mainWindow.on("closed", () => {
+    endMainWindowDrag();
     cancelPendingMainWindowClose();
     mainWindow = null;
   });
@@ -2534,7 +2615,7 @@ function buildTrayMenu() {
       ? [
           { type: "separator" as const },
           {
-            label: desktopPetSettings.enabled ? "关闭桌面仙尊" : "显示桌面仙尊",
+            label: desktopPetSettings.enabled ? "关闭桌面宠物" : "显示桌面宠物",
             click: () => {
               if (desktopPetSettings.enabled) {
                 hideDesktopPetWindow(true);
@@ -3322,6 +3403,18 @@ function registerIpcHandlers() {
       path: filePath,
       message: "已导出侧边栏配置。"
     };
+  });
+  ipcMain.handle("windowDrag.begin", async (event, point: { x?: unknown; y?: unknown }) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+      return { ok: false };
+    }
+    return beginMainWindowDrag(point);
+  });
+  ipcMain.handle("windowDrag.end", async (event) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+      return { ok: false, moved: false };
+    }
+    return endMainWindowDrag();
   });
   ipcMain.handle("desktopPet.getSettings", async () => toDesktopPetSettings(desktopPetSettings));
   ipcMain.handle("desktopPet.getState", async () => {

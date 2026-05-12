@@ -20,6 +20,7 @@
     "test": "npm run build && node --test ./test/*.test.mjs"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@napi-rs/canvas": "^0.1.100",
     "@page-agent/core": "^1.8.1",
     "docx": "^9.6.1",
@@ -62,6 +63,8 @@
       "!node_modules/**/*.map"
     ],
     "asarUnpack": [
+      "node_modules/@ffmpeg-installer/*/ffmpeg",
+      "node_modules/@ffmpeg-installer/*/ffmpeg.exe",
       "node_modules/@napi-rs/canvas-*/**/*"
     ],
     "npmRebuild": false,

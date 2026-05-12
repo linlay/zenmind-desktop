@@ -60,7 +60,6 @@ type SpeechRecognitionWindow = Window & {
 };
 
 const VOICE_TRANSCRIPTION_TIMEOUT_MS = 45000;
-const VOICE_CORRECTION_TIMEOUT_MS = 20000;
 
 const VOICE_MIME_TYPES = [
   "audio/webm;codecs=opus",
@@ -695,35 +694,7 @@ export function QuickAssistant() {
     draftRef.current = recognizedDraft;
     setDraft(recognizedDraft);
     textareaRef.current?.focus();
-
-    setVoiceState("transcribing");
-    setFeedback("正在整理语音文本...");
-    const corrected = await withVoiceTimeout(
-      window.electronAPI.assistant.correctVoiceText({
-        text,
-        locale: "zh-CN-mixed-en"
-      }),
-      VOICE_CORRECTION_TIMEOUT_MS,
-      "语音文本整理超时，已保留原始识别结果。"
-    ).catch((reason) => {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
-      return null;
-    });
-    if (operationId !== voiceOperationIdRef.current) {
-      return;
-    }
-    const correctedText = corrected ? (corrected.correctedText || corrected.text).trim() : "";
-    if (draftRef.current !== recognizedDraft) {
-      showFeedback("检测到手动编辑，已保留当前输入。");
-      setVoiceState("idle");
-      return;
-    }
-    const finalText = corrected?.ok && correctedText ? correctedText : text;
-    const finalDraft = appendVoiceText(baseDraft, finalText);
-    setVoiceExpandedComposer(finalText.length > 42 || finalText.includes("\n"));
-    draftRef.current = finalDraft;
-    setDraft(finalDraft);
-    textareaRef.current?.focus();
+    // Voice correction is temporarily paused; keep the ASR text without calling the correction IPC.
     setFeedback("");
     setVoiceState("idle");
   }

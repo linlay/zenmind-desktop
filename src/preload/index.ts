@@ -127,6 +127,10 @@ const api: DesktopApi = {
     getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
     setSidebarTranslucency: (enabled) => ipcRenderer.invoke("settings.setSidebarTranslucency", enabled)
   },
+  windowDrag: {
+    begin: (point) => ipcRenderer.invoke("windowDrag.begin", point),
+    end: () => ipcRenderer.invoke("windowDrag.end")
+  },
   desktopPet: {
     getSettings: () => ipcRenderer.invoke("desktopPet.getSettings"),
     getState: () => ipcRenderer.invoke("desktopPet.getState"),

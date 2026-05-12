@@ -8,7 +8,7 @@ import {
   extractDocumentTextFromFile,
   renderPdfPagesForVision
 } from "./document-extract";
-import { loadAgentPlatformMinimaxSettings } from "./agent-platform-config";
+import { tryLoadAgentPlatformMinimaxSettings } from "./agent-platform-config";
 import { readAssistantSettings } from "./settings-store";
 import { canDescribeImageWithVision, describeImageWithVision } from "./vision-provider";
 import type { AssistantAttachmentDocument } from "../../shared/contracts";
@@ -245,7 +245,7 @@ function guessImageMimeType(filePath: string) {
 }
 
 function readVisionCapableSettings(app: App) {
-  return loadAgentPlatformMinimaxSettings(app) ?? readAssistantSettings(app);
+  return tryLoadAgentPlatformMinimaxSettings(app) ?? readAssistantSettings(app);
 }
 
 async function readImageDocumentWithVision(

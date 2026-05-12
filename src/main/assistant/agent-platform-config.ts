@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import type { App } from "electron";
 import yaml from "js-yaml";
 import type { AssistantSettingsPublic } from "../../shared/contracts";
+import { getServicesRoot } from "../user-paths";
 import type { AssistantSettingsPrivate } from "./settings-store";
 import { readAssistantSettings, toPublicAssistantSettings } from "./settings-store";
 
@@ -82,6 +83,7 @@ function getPathOrFallback(app: App, name: "desktop" | "home", fallback: string)
 
 const PROVIDER_API_KEY_ENV_PART = "PROVIDER_APIKEY_KEY_PART";
 const PROVIDER_API_KEY_CODE_PART = "zenmind-provider";
+const DEFAULT_PROVIDER_API_KEY_ENV_PART = "0.1.0";
 const AES_WRAPPED_PATTERN = /^AES\((.+)\)$/u;
 
 type ProviderConfigLocation = {
@@ -90,8 +92,43 @@ type ProviderConfigLocation = {
   env: Map<string, string>;
 };
 
+function getPathMtimeMs(filePath: string) {
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+function listInstalledAgentPlatformEnvPaths(app: App) {
+  const serviceRoot = path.join(getServicesRoot(app), "agent-platform");
+  try {
+    return fs.readdirSync(serviceRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(serviceRoot, entry.name, ".env"))
+      .filter((envPath) => fs.existsSync(envPath))
+      .sort((left, right) => getPathMtimeMs(right) - getPathMtimeMs(left));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}
+
 function readAgentPlatformEnv(app: App) {
-  return parseEnv(readTextIfExists(path.join(app.getPath("desktop"), "agent-platform", ".env")));
+  const desktopPath = getPathOrFallback(app, "desktop", path.join(getPathOrFallback(app, "home", process.env.HOME || ""), "Desktop"));
+  const envPaths = [
+    ...listInstalledAgentPlatformEnvPaths(app),
+    path.join(desktopPath, "agent-platform", ".env")
+  ];
+  const merged = new Map<string, string>();
+  for (const envPath of [...new Set(envPaths)].reverse()) {
+    for (const [key, value] of parseEnv(readTextIfExists(envPath))) {
+      merged.set(key, value);
+    }
+  }
+  return merged;
 }
 
 function resolveProviderAPIKey(providerKey: string, raw: string, env: Map<string, string>) {
@@ -101,10 +138,9 @@ function resolveProviderAPIKey(providerKey: string, raw: string, env: Map<string
     return trimmed;
   }
 
-  const envPart = process.env[PROVIDER_API_KEY_ENV_PART]?.trim() || env.get(PROVIDER_API_KEY_ENV_PART)?.trim() || "";
-  if (!envPart) {
-    throw new Error(`agent-platform provider ${providerKey} apiKey 解密失败：缺少 ${PROVIDER_API_KEY_ENV_PART}。`);
-  }
+  const envPart = process.env[PROVIDER_API_KEY_ENV_PART]?.trim() ||
+    env.get(PROVIDER_API_KEY_ENV_PART)?.trim() ||
+    DEFAULT_PROVIDER_API_KEY_ENV_PART;
 
   let payload: Buffer;
   try {
@@ -289,8 +325,40 @@ export function loadAgentPlatformAssistantSettings(app: App): AssistantSettingsP
   return loadAgentPlatformProviderSettings(app, "openai") ?? loadAgentPlatformMinimaxSettings(app);
 }
 
+function warnAgentPlatformSettingsLoadFailure(scope: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(`[assistant] Failed to load agent-platform ${scope} settings: ${message}`);
+}
+
+export function tryLoadAgentPlatformMinimaxSettings(app: App): AssistantSettingsPrivate | null {
+  try {
+    return loadAgentPlatformMinimaxSettings(app);
+  } catch (error) {
+    warnAgentPlatformSettingsLoadFailure("minimax", error);
+    return null;
+  }
+}
+
+export function tryLoadAgentPlatformVoiceAsrSettings(app: App): AssistantSettingsPrivate | null {
+  try {
+    return loadAgentPlatformVoiceAsrSettings(app);
+  } catch (error) {
+    warnAgentPlatformSettingsLoadFailure("voice-asr", error);
+    return null;
+  }
+}
+
+export function tryLoadAgentPlatformAssistantSettings(app: App): AssistantSettingsPrivate | null {
+  try {
+    return loadAgentPlatformAssistantSettings(app);
+  } catch (error) {
+    warnAgentPlatformSettingsLoadFailure("assistant", error);
+    return null;
+  }
+}
+
 export function getAgentPlatformSettingsPublic(app: App): AssistantSettingsPublic | null {
-  const settings = loadAgentPlatformAssistantSettings(app);
+  const settings = tryLoadAgentPlatformAssistantSettings(app);
   if (!settings) {
     return null;
   }

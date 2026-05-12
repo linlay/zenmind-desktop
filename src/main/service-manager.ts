@@ -369,6 +369,13 @@ function needsBundledAssetRefresh(app: App, service: ServiceDefinition) {
   }
 
   const installDir = getInstallDir(app, service);
+  let assetPath: string;
+  try {
+    assetPath = ensureBundleAssetHealthy(app, service);
+  } catch {
+    return false;
+  }
+
   if (!fs.existsSync(installDir)) {
     return true;
   }
@@ -377,7 +384,6 @@ function needsBundledAssetRefresh(app: App, service: ServiceDefinition) {
     if (serviceInstallNeedsRefresh(service, installDir)) {
       return true;
     }
-    const assetPath = ensureBundleAssetHealthy(app, service);
     return isAssetNewerThanInstall(assetPath, installDir);
   } catch {
     return false;
@@ -520,6 +526,18 @@ function ensureArchiveHealthy(service: ServiceDefinition, archivePath: string, s
 
 function ensureBundleAssetHealthy(app: App, service: ServiceDefinition) {
   return ensureArchiveHealthy(service, getAssetPath(app, service), "桌面端内置资源");
+}
+
+function getOptionalBundleAssetPath(app: App, service: ServiceDefinition) {
+  try {
+    return ensureBundleAssetHealthy(app, service);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[service-manager] builtin asset unavailable for ${service.id}; using installed service when possible: ${message}`
+    );
+    return null;
+  }
 }
 
 function formatEnvValue(value: string) {
@@ -1646,6 +1664,7 @@ export async function installBuiltinService(
     options.force ||
     !fs.existsSync(finalInstallDir) ||
     !isInstallHealthy(service, finalInstallDir) ||
+    serviceInstallNeedsRefresh(service, finalInstallDir) ||
     isAssetNewerThanInstall(assetPath, finalInstallDir);
 
   const preservedEnvPath = path.join(finalInstallDir, ".env");
@@ -1660,7 +1679,7 @@ export async function installBuiltinService(
   await reconcileBuiltinSiblingInstallDirs(app, service, finalInstallDir);
 
   if (!needsExtract) {
-    const initialization = await initializeService(app, serviceId);
+    const initialization = await initializeServiceInternal(app, serviceId, { skipInstallRefresh: true });
     if (!initialization.ok) {
       throw new Error(initialization.message);
     }
@@ -1686,7 +1705,7 @@ export async function installBuiltinService(
         writeAgentPlatformLegacyEnvBackupIfNeeded(finalInstallDir, preservedEnv.backupContent);
       }
     }
-    const initialization = await initializeService(app, serviceId);
+    const initialization = await initializeServiceInternal(app, serviceId, { skipInstallRefresh: true });
     if (!initialization.ok) {
       throw new Error(initialization.message);
     }
@@ -1697,6 +1716,14 @@ export async function installBuiltinService(
 }
 
 export async function initializeService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
+  return initializeServiceInternal(app, serviceId);
+}
+
+async function initializeServiceInternal(
+  app: App,
+  serviceId: ServiceId,
+  options: { skipInstallRefresh?: boolean } = {}
+): Promise<ServiceCommandResult> {
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
   const currentState = await getServiceState(app, serviceId);
@@ -1714,6 +1741,26 @@ export async function initializeService(app: App, serviceId: ServiceId): Promise
       ok: false,
       message: currentState.message,
       service: currentState
+    };
+  }
+
+  if (!options.skipInstallRefresh && service.kind === "builtin" && serviceInstallNeedsRefresh(service, installDir)) {
+    try {
+      await installBuiltinService(app, service.id, { force: true });
+    } catch (error) {
+      const nextState = await getServiceState(app, serviceId);
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        service: nextState
+      };
+    }
+
+    const nextState = await getServiceState(app, serviceId);
+    return {
+      ok: true,
+      message: `${service.name} 已重新安装并初始化。`,
+      service: nextState
     };
   }
 
@@ -2256,6 +2303,8 @@ const AGENT_PLATFORM_ENV_KEY_RENAMES = new Map<string, string>([
 
 function agentWebclientInstallNeedsRefresh(installDir: string) {
   const manifestPath = path.join(installDir, "manifest.json");
+  const programCommonShPath = path.join(installDir, "scripts", "program-common.sh");
+  const programCommonPs1Path = path.join(installDir, "scripts", "program-common.ps1");
   let backendEntry = "backend/server.cjs";
   try {
     if (fs.existsSync(manifestPath)) {
@@ -2274,6 +2323,24 @@ function agentWebclientInstallNeedsRefresh(installDir: string) {
         requiredPaths.includes("backend/package.json") ||
         requiredPaths.includes("backend/node_modules")
       ) {
+        return true;
+      }
+    }
+
+    const staleUnixLauncherMarkers = ["BACKEND_PACKAGE_FILE", "BACKEND_NODE_MODULES_DIR", "backend/package.json", "backend/node_modules"];
+    if (fs.existsSync(programCommonShPath)) {
+      const programCommon = fs.readFileSync(programCommonShPath, "utf8");
+      const hasInvalidAbsoluteBackendEntry = /BACKEND_ENTRY=["']\/backend\/server\.cjs["']/u.test(programCommon);
+      if (hasInvalidAbsoluteBackendEntry || staleUnixLauncherMarkers.some((marker) => programCommon.includes(marker))) {
+        return true;
+      }
+    }
+
+    const staleWindowsLauncherMarkers = ["BackendPackageFile", "BackendModulesDir", "backend\\package.json", "backend\\node_modules"];
+    if (fs.existsSync(programCommonPs1Path)) {
+      const programCommon = fs.readFileSync(programCommonPs1Path, "utf8");
+      const hasInvalidAbsoluteBackendEntry = /\$Script:BackendEntry\s*=\s*["']\\?backend\\server\.cjs["']/u.test(programCommon);
+      if (hasInvalidAbsoluteBackendEntry || staleWindowsLauncherMarkers.some((marker) => programCommon.includes(marker))) {
         return true;
       }
     }
@@ -2599,45 +2666,6 @@ function resolveAcpCommandForDesktop(env: Map<string, string>) {
     );
   }
   return null;
-}
-
-function isTruthyEnvValue(value: string) {
-  switch (value.trim().toLowerCase()) {
-    case "1":
-    case "true":
-    case "yes":
-    case "on":
-      return true;
-    default:
-      return false;
-  }
-}
-
-function usesDefaultDesktopAcpConfig(env: Map<string, string>) {
-  const relayPort = (env.get("LOCAL_CLI_ACP_RELAY_PORT") ?? DEFAULT_LOCAL_CLI_ACP_RELAY_PORT).trim();
-  const currentAcpCommand = (env.get("CLAUDE_CODE_ACP_COMMAND") ?? "").trim();
-  const currentAcpArgs = (env.get("CLAUDE_CODE_ACP_ARGS") ?? "").trim();
-  const usesDefaultAcpCommand =
-    !currentAcpCommand
-    || isCommandBasenameMatch(currentAcpCommand, "npx")
-    || isCommandBasenameMatch(currentAcpCommand, "claude-code-acp");
-  const usesDefaultAcpArgs = !currentAcpArgs || currentAcpArgs === DEFAULT_CLAUDE_CODE_ACP_ARGS;
-  return relayPort === DEFAULT_LOCAL_CLI_ACP_RELAY_PORT && usesDefaultAcpCommand && usesDefaultAcpArgs;
-}
-
-function shouldDisableAgentPlatformRelayByDefault(env: Map<string, string>) {
-  const currentRelayEnabled = (env.get(LOCAL_CLI_ACP_RELAY_ENABLED_KEY) ?? "").trim();
-  if (!currentRelayEnabled) {
-    return true;
-  }
-  if (!isTruthyEnvValue(currentRelayEnabled)) {
-    return false;
-  }
-  const userEnabled = isTruthyEnvValue(env.get(LOCAL_CLI_ACP_RELAY_USER_ENABLED_KEY) ?? "");
-  if (userEnabled) {
-    return false;
-  }
-  return usesDefaultDesktopAcpConfig(env);
 }
 
 function applyAgentPlatformWindowsHostShellDefaults(
@@ -3059,14 +3087,6 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
     updates.set("PROVIDER_APIKEY_KEY_PART", DEFAULT_PROVIDER_APIKEY_KEY_PART);
   }
   applyAgentPlatformWindowsHostShellDefaults(env, updates);
-  if (shouldDisableAgentPlatformRelayByDefault(env)) {
-    updates.set(LOCAL_CLI_ACP_RELAY_ENABLED_KEY, "false");
-  }
-  const resolvedAcpCommand = resolveAcpCommandForDesktop(env);
-  if (resolvedAcpCommand) {
-    updates.set("CLAUDE_CODE_ACP_COMMAND", resolvedAcpCommand.command);
-    updates.set("CLAUDE_CODE_ACP_ARGS", resolvedAcpCommand.args);
-  }
   if (!env.get("CLOUDFLARED_BIN")?.trim()) {
     const cloudflaredBin = resolveCloudflaredBin();
     if (cloudflaredBin) {
@@ -3122,9 +3142,9 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 
   // Service-specific logic that cannot be expressed via envBindings.
   if (service.id === "agent-webclient") {
-    const assetPath = ensureBundleAssetHealthy(app, service);
+    const assetPath = getOptionalBundleAssetPath(app, service);
     const forceRefresh = agentWebclientInstallNeedsRefresh(installDir);
-    if (forceRefresh || isAssetNewerThanInstall(assetPath, installDir)) {
+    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, installDir))) {
       await installBuiltinService(app, service.id, {
         force: forceRefresh
       });
@@ -3133,9 +3153,9 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   }
 
   if (service.id === "zenmind-app-server") {
-    const assetPath = ensureBundleAssetHealthy(app, service);
+    const assetPath = getOptionalBundleAssetPath(app, service);
     const forceRefresh = zenmindAppServerInstallNeedsRefresh(installDir);
-    if (forceRefresh || isAssetNewerThanInstall(assetPath, installDir)) {
+    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, installDir))) {
       await installBuiltinService(app, service.id, {
         force: forceRefresh
       });
@@ -3164,8 +3184,13 @@ async function runServiceCommand(
   const installDir = getInstallDir(app, service);
   const shouldRefreshBuiltinAsset = options.refreshBuiltinAsset !== false;
   if (service.kind === "builtin" && shouldRefreshBuiltinAsset) {
-    const assetPath = ensureBundleAssetHealthy(app, service);
-    if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir) || isAssetNewerThanInstall(assetPath, installDir)) {
+    const assetPath = getOptionalBundleAssetPath(app, service);
+    if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
+      if (!assetPath) {
+        throw new Error(`${service.name} 未安装或安装已损坏。`);
+      }
+      await installBuiltinService(app, service.id);
+    } else if (assetPath && isAssetNewerThanInstall(assetPath, installDir)) {
       await installBuiltinService(app, service.id);
     }
   } else if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
@@ -3179,6 +3204,7 @@ async function runServiceCommand(
     if (!shouldRefreshBuiltinAsset) {
       throw new Error(`${service.name} 未安装或安装已损坏。`);
     }
+    ensureBundleAssetHealthy(app, service);
     await installBuiltinService(app, service.id);
   }
   if (command.length === 0) {
@@ -3800,9 +3826,7 @@ export const __testInternals = {
   resolveAcpCommandForDesktop,
   normalizeAgentPlatformEnvContentForRuntime,
   normalizeAgentPlatformEnvContentForSave,
-  shouldDisableAgentPlatformRelayByDefault,
   applyAgentPlatformWindowsHostShellDefaults,
-  cleanupAgentPlatformRelayBeforeStart,
   parseProcessTreeRowsFromPs,
   parseProcessTreeRowsFromPowerShell,
   buildProcessTreePids,

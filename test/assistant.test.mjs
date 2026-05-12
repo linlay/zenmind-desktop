@@ -2506,6 +2506,43 @@ test("assistant decrypts AES MiniMax provider keys with agent-platform key part"
   assert.equal(settings.apiKey, "sk-decrypted");
 });
 
+test("assistant reads provider env from the installed agent-platform service directory", (t) => {
+  const root = makeTempRoot(t);
+  const registries = path.join(root, ".zenmind", "registries");
+  fs.mkdirSync(path.join(root, "services", "agent-platform", "1.0.0"), { recursive: true });
+  fs.mkdirSync(path.join(registries, "providers"), { recursive: true });
+  fs.mkdirSync(path.join(registries, "models"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "services", "agent-platform", "1.0.0", ".env"),
+    `REGISTRIES_DIR=${registries}\nPROVIDER_APIKEY_KEY_PART=0.1.0\n`,
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(registries, "providers", "minimax.yml"),
+    [
+      "key: minimax",
+      "baseUrl: https://api.minimaxi.com",
+      `apiKey: ${encryptProviderAPIKey("0.1.0", "sk-installed-service")}`,
+      "defaultModel: minimax-m2_7-openai",
+      "protocols:",
+      "  OPENAI:",
+      "    endpointPath: /v1/chat/completions",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(registries, "models", "minimax-m2_7-openai.yml"),
+    ["key: minimax-m2_7-openai", "provider: minimax", "protocol: OPENAI", "modelId: MiniMax-M2.7", ""].join("\n"),
+    "utf8"
+  );
+
+  const settings = loadAgentPlatformMinimaxSettings(makeApp(root));
+  assert.equal(settings.baseURL, "https://api.minimaxi.com/v1");
+  assert.equal(settings.model, "MiniMax-M2.7");
+  assert.equal(settings.apiKey, "sk-installed-service");
+});
+
 test("assistant imports provider settings from the preferred hidden runtime registry", (t) => {
   const root = makeTempRoot(t);
   const registries = path.join(root, ".zenmind", "registries");
@@ -2580,6 +2617,30 @@ test("assistant can fall back to Desktop minimax.yml provider config", (t) => {
   assert.equal(settings.baseURL, "https://api.minimaxi.com/v1");
   assert.equal(settings.model, "MiniMax-M2.7");
   assert.equal(settings.apiKey, "sk-desktop-minimax");
+});
+
+test("assistant falls back to the default provider key part when env is missing", (t) => {
+  const root = makeTempRoot(t);
+  fs.mkdirSync(path.join(root, "Desktop"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "Desktop", "minimax.yml"),
+    [
+      "key: minimax",
+      "baseUrl: https://api.minimaxi.com",
+      `apiKey: ${encryptProviderAPIKey("0.1.0", "sk-default-key-part")}`,
+      "defaultModel: minimax-m2_7-openai",
+      "protocols:",
+      "  OPENAI:",
+      "    endpointPath: /v1/chat/completions",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  const settings = loadAgentPlatformMinimaxSettings(makeApp(root));
+  assert.equal(settings.baseURL, "https://api.minimaxi.com/v1");
+  assert.equal(settings.model, "MiniMax-M2.7");
+  assert.equal(settings.apiKey, "sk-default-key-part");
 });
 
 test("assistant chat store writes index, chat detail, and delete", (t) => {

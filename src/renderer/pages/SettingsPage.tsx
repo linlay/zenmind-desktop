@@ -385,7 +385,7 @@ export function SettingsPage({
         enabled: !desktopPetState?.enabled
       });
       setDesktopPetState(nextState);
-      setFeedback(nextState.enabled ? "桌面仙尊已开启。" : "桌面仙尊已关闭。");
+      setFeedback(nextState.enabled ? "桌面宠物已开启。" : "桌面宠物已关闭。");
     } catch (reason) {
       setFeedback(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -405,9 +405,9 @@ export function SettingsPage({
       });
       setDesktopPetState(nextState);
       if (nextState.appearanceId === appearanceId) {
-        setFeedback(`桌面仙尊形象已切换为 ${selectedAppearance?.displayName ?? appearanceId}。`);
+        setFeedback(`桌面宠物形象已切换为 ${selectedAppearance?.displayName ?? appearanceId}。`);
       } else {
-        setFeedback("桌面仙尊形象切换未生效，请重启应用后再试。");
+        setFeedback("桌面宠物形象切换未生效，请重启应用后再试。");
       }
     } catch (reason) {
       setFeedback(reason instanceof Error ? reason.message : String(reason));
@@ -430,7 +430,7 @@ export function SettingsPage({
       });
       setDesktopPetState(nextState);
       setDesktopPetBoundAgentKey(nextState.boundAgentKey);
-      setFeedback(`桌面仙尊已绑定到 ${nextState.boundAgentKey}。`);
+      setFeedback(`桌面宠物已绑定到 ${nextState.boundAgentKey}。`);
     } catch (reason) {
       setFeedback(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -528,18 +528,18 @@ export function SettingsPage({
       {isMac ? (
         <div className="data-root-card settings-switch-card desktop-pet-settings-card">
           <div>
-            <p className="eyebrow">DESKTOP XIANZUN</p>
-            <h2>选择仙尊</h2>
+            <p className="eyebrow">DESKTOP PET</p>
+            <h2>选择宠物</h2>
             <p className="page-copy">
-              仙尊只服务侧边栏助手，会在等待回答、完成或出错时做轻提醒。右键仙尊可直接关闭。
+              宠物只服务侧边栏助手，会在等待回答、完成或出错时做轻提醒。右键宠物可直接关闭。
             </p>
             <p className="settings-inline-note">
               当前状态：{desktopPetState?.enabled ? "已开启" : "已关闭"}
               {desktopPetState?.enabled && desktopPetState.visible ? " / 已显示" : ""}
             </p>
-            <div className="desktop-pet-appearance-section" aria-label="仙尊形象">
+            <div className="desktop-pet-appearance-section" aria-label="宠物形象">
               <div className="desktop-pet-appearance-heading">
-                <span>仙尊形象</span>
+                <span>宠物形象</span>
                 <small>当前：{desktopPetAppearanceOptions.find((appearance) => appearance.id === currentDesktopPetAppearanceId)?.displayName ?? "小宅"}</small>
               </div>
               <div className="desktop-pet-appearance-grid">
@@ -626,7 +626,7 @@ export function SettingsPage({
             className={desktopPetState?.enabled ? "settings-switch is-on" : "settings-switch"}
             role="switch"
             aria-checked={Boolean(desktopPetState?.enabled)}
-            aria-label="桌面仙尊"
+            aria-label="桌面宠物"
             disabled={desktopPetPending}
             onClick={() => void handleToggleDesktopPet()}
           >

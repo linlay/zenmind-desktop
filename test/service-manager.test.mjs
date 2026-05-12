@@ -441,6 +441,11 @@ function createStartupCoreAssetsFixture(options = {}) {
             'FRONTEND_DIST_DIR="${FRONTEND_DIST_DIR:-./frontend/dist}"',
             'nohup "$BACKEND_BIN" >/dev/null 2>&1 &'
           ].join("\n") + "\n"
+        : service.id === "agent-webclient"
+          ? [
+              "#!/usr/bin/env bash",
+              'BACKEND_ENTRY="$BUNDLE_ROOT/backend/server.cjs"'
+            ].join("\n") + "\n"
         : "#!/usr/bin/env bash\n";
       fs.writeFileSync(path.join(bundleRoot, "scripts", programCommonName), programCommonContent, "utf8");
       fs.chmodSync(path.join(bundleRoot, startFileName), 0o755);
@@ -2810,6 +2815,105 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("agentWebclientInstallNeedsRefresh catches server.cjs installs with stale dependency checks", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-webclient-stale-launcher-"));
+  const installDir = path.join(tempRoot, "agent-webclient");
+
+  fs.mkdirSync(path.join(installDir, "backend"), { recursive: true });
+  fs.mkdirSync(path.join(installDir, "scripts"), { recursive: true });
+  fs.writeFileSync(
+    path.join(installDir, "manifest.json"),
+    JSON.stringify({
+      backend: {
+        entry: "backend/server.cjs"
+      },
+      runtime: {
+        requiredPaths: [
+          "backend/server.cjs",
+          "start.sh",
+          "stop.sh",
+          "deploy.sh",
+          "scripts/program-common.sh",
+          ".env.example",
+          "manifest.json",
+          "frontend/dist/index.html"
+        ]
+      }
+    }, null, 2),
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(installDir, "backend", "server.cjs"),
+    [
+      "const http = require('http');",
+      "const server = http.createServer();",
+      "function createWebSocketProxy() {",
+      "  return { upgrade(req, socket, head) { proxy.upgrade(req, socket, head); } };",
+      "}",
+      "const proxy = createWebSocketProxy();",
+      "server.on('upgrade', (req, socket, head) => proxy.upgrade(req, socket, head));"
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(installDir, "scripts", "program-common.sh"),
+    [
+      "#!/usr/bin/env bash",
+      "BACKEND_ENTRY=\"$BUNDLE_ROOT/backend/server.cjs\"",
+      "BACKEND_PACKAGE_FILE=\"$BUNDLE_ROOT/backend/package.json\"",
+      "BACKEND_NODE_MODULES_DIR=\"$BUNDLE_ROOT/backend/node_modules\""
+    ].join("\n") + "\n",
+    "utf8"
+  );
+
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), true);
+
+  fs.writeFileSync(
+    path.join(installDir, "scripts", "program-common.sh"),
+    "#!/usr/bin/env bash\nBACKEND_ENTRY=\"$BUNDLE_ROOT/backend/server.cjs\"\n",
+    "utf8"
+  );
+
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), false);
+
+  fs.writeFileSync(
+    path.join(installDir, "scripts", "program-common.sh"),
+    "#!/usr/bin/env bash\nBACKEND_ENTRY=\"/backend/server.cjs\"\n",
+    "utf8"
+  );
+
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), true);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("initializeService refreshes stale agent-webclient launcher before deploy", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const service = getBuiltinService("agent-webclient");
+  const installDir = path.join(userDataRoot, "services", service.id, service.version);
+  const programCommonPath = path.join(installDir, "scripts", "program-common.sh");
+
+  await installBuiltinService(app, service.id);
+  fs.writeFileSync(
+    programCommonPath,
+    "#!/usr/bin/env bash\nBACKEND_ENTRY=\"/backend/server.cjs\"\n",
+    "utf8"
+  );
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), true);
+
+  const result = await initializeService(app, service.id);
+  assert.equal(result.ok, true);
+
+  const programCommon = fs.readFileSync(programCommonPath, "utf8");
+  assert.match(programCommon, /BACKEND_ENTRY="\$BUNDLE_ROOT\/backend\/server\.cjs"/);
+  assert.doesNotMatch(programCommon, /BACKEND_ENTRY="\/backend\/server\.cjs"/);
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), false);
+
+  restore();
+  fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
 });
 
 test("ensurePreStartRequirements refreshes stale zenmind-app-server install when admin frontend paths drift", async () => {

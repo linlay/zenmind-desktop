@@ -127,7 +127,7 @@ export function getDesktopPetContextMenuItems(appearanceId: unknown): DesktopPet
       : []),
     {
       action: "hide",
-      label: "关闭仙尊"
+      label: "关闭宠物"
     }
   ];
 }

@@ -1903,6 +1903,18 @@ body.quick-assistant-body,
   display: none;
 }
 
+.app-shell.is-mac-platform.has-plugin-surface .app-window-drag-region {
+  display: block;
+  left: calc(var(--app-sidebar-width, 196px) + 280px);
+  right: 184px;
+  height: 34px;
+  z-index: 12;
+}
+
+.app-shell.is-mac-platform.has-plugin-surface.has-assistant-dock-full .app-window-drag-region {
+  right: calc(var(--assistant-dock-embedded-width) + 184px);
+}
+
 .app-sidebar-toggle,
 .app-sidebar-backdrop {
   display: none;
@@ -4944,7 +4956,11 @@ body.quick-assistant-body,
   padding: 0 10px;
   border: 1px solid transparent;
   border-radius: 14px;
+  appearance: none;
+  background: transparent;
   color: var(--ink-soft);
+  cursor: pointer;
+  text-align: left;
   transition:
     background-color 0.2s ease-in-out,
     border-color 0.2s ease-in-out,
@@ -5019,6 +5035,13 @@ body.quick-assistant-body,
   border-top: 1px solid var(--line);
 }
 
+.sidebar-footer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
 .sidebar-link-utility {
   min-height: 38px;
 }
@@ -5037,6 +5060,13 @@ body.quick-assistant-body,
   margin-right: 6px;
   padding: 0 14px;
   border-radius: 14px;
+}
+
+.app-sidebar:not(.is-collapsed) .sidebar-footer-actions .sidebar-link {
+  justify-content: flex-start;
+  margin-left: 6px;
+  margin-right: 6px;
+  padding: 0 14px;
 }
 
 /* ── Sidebar Collapsed ── */
@@ -5108,6 +5138,13 @@ body.quick-assistant-body,
   padding: 6px 0 0;
   margin-left: 0;
   margin-right: 0;
+}
+
+.app-sidebar.is-collapsed .sidebar-footer-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 .app-sidebar.is-collapsed .sidebar-link-utility {
@@ -7703,6 +7740,66 @@ body.quick-assistant-body,
 .muted-inline {
   color: var(--ink-muted);
   font-size: 12px;
+}
+
+.config-file-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.config-file-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.config-file-tab:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.config-file-tab.is-active {
+  border-color: rgba(38, 99, 235, 0.45);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.config-file-source {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+
+.config-file-source.is-file {
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--success);
+}
+
+.config-file-source.is-template {
+  background: rgba(245, 158, 11, 0.14);
+  color: var(--warning);
+}
+
+.config-file-source.is-missing,
+.config-file-source.is-pending {
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--ink-muted);
 }
 
 .pan-auth-panel {

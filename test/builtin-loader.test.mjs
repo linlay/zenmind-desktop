@@ -233,6 +233,72 @@ test("loadBuiltinServices preserves UTF-8 manifest content from Windows zip arch
   }
 });
 
+test("loadBuiltinServices falls back to installed builtin manifests when synced assets are unavailable", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-loader-installed-"));
+  const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+  const assetsRoot = path.join(tempRoot, "empty-assets");
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const manifestPath = path.join(userDataRoot, "services", "agent-platform", "v1.0.0", "manifest.json");
+  const matchedOs = getCurrentManifestOs();
+
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+  fs.mkdirSync(assetsRoot, { recursive: true });
+  fs.writeFileSync(
+    manifestPath,
+    `${JSON.stringify({
+      id: "agent-platform",
+      name: "智能体平台",
+      kind: "builtin",
+      version: "v1.0.0",
+      description: "installed fallback",
+      platform: {
+        os: matchedOs,
+        arch: "test"
+      },
+      frontend: {
+        mode: "none"
+      },
+      scripts: {
+        start: "start.sh",
+        stop: "stop.sh"
+      },
+      configFiles: [
+        {
+          key: "env",
+          label: "环境变量",
+          relativePath: ".env"
+        }
+      ],
+      runtime: {
+        requiredPaths: ["manifest.json"]
+      }
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = assetsRoot;
+  registryInternals.clearServices();
+
+  try {
+    const loaded = loadBuiltinServices(createApp(userDataRoot));
+    const service = getBuiltinService("agent-platform");
+
+    assert.equal(loaded.length, 1);
+    assert.equal(loaded[0].id, "agent-platform");
+    assert.equal(loaded[0].description, "installed fallback");
+    assert.equal(service.name, "智能体平台");
+    assert.equal(service.configFiles[0].relativePath, ".env");
+  } finally {
+    registryInternals.clearServices();
+    if (previousAssetsRoot) {
+      process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
+    } else {
+      delete process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("listArchiveEntries preserves UTF-8 zip entry names on Windows", { skip: process.platform !== "win32" }, () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-archive-utils-utf8-"));
   const archivePath = path.join(tempRoot, "utf8-service.zip");
