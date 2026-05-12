@@ -142,6 +142,7 @@ const api: DesktopApi = {
     beginDrag: (point) => ipcRenderer.invoke("desktopPet.beginDrag", point),
     endDrag: () => ipcRenderer.invoke("desktopPet.endDrag"),
     setPreviewExpanded: (expanded) => ipcRenderer.invoke("desktopPet.setPreviewExpanded", expanded),
+    dismissPreview: () => ipcRenderer.invoke("desktopPet.dismissPreview"),
     setMouseInteractive: (interactive) => ipcRenderer.invoke("desktopPet.setMouseInteractive", interactive),
     onStateChanged: (listener: DesktopPetStateListener) => {
       const handleDesktopPetStateChanged = (

@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url);
 const childProcess = require("node:child_process");
   const {
     __testInternals,
+    forceCleanupManagedProcesses,
     getServiceState,
     getInstallDir,
     initializeService,
@@ -20,7 +21,8 @@ const childProcess = require("node:child_process");
     runStartupPreparation,
     restoreRunningServices,
     startService,
-    stopService
+    stopService,
+    stopRunningServicesForShutdown
 } = require("../dist-electron/main/service-manager.js");
 const { loadBuiltinServices } = require("../dist-electron/main/builtin-loader.js");
 const {
@@ -569,6 +571,63 @@ async function waitForPidExit(pid) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   return false;
+}
+
+function markInstallInitialized(installDir, version = "v1.0.0") {
+  const initStatePath = __testInternals.getInitializationStatePath(installDir);
+  fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
+  fs.writeFileSync(
+    initStatePath,
+    `${JSON.stringify({
+      version,
+      status: "succeeded",
+      updatedAt: new Date().toISOString()
+    }, null, 2)}\n`,
+    "utf8"
+  );
+}
+
+function writeExecutableFile(filePath, content) {
+  fs.writeFileSync(filePath, content, "utf8");
+  fs.chmodSync(filePath, 0o755);
+}
+
+function prepareRunningPluginFixture(userDataRoot, options = {}) {
+  const pluginId = options.id ?? "test-plugin";
+  const installDir = path.join(userDataRoot, "plugins", pluginId);
+  writePluginInstallRoot(installDir, {
+    id: pluginId,
+    name: options.name ?? pluginId,
+    port: options.port ?? 0,
+    deployScriptContent: false
+  });
+  fs.copyFileSync(path.join(installDir, ".env.example"), path.join(installDir, ".env"));
+  markInstallInitialized(installDir);
+
+  if (options.stopScriptContent) {
+    writeExecutableFile(path.join(installDir, "stop.sh"), options.stopScriptContent);
+  }
+
+  const workerPath = path.join(installDir, `${pluginId}-worker.mjs`);
+  fs.writeFileSync(workerPath, "setInterval(() => {}, 1000);\n", "utf8");
+  const startResult = spawnSync(
+    "sh",
+    ["-c", 'nohup "$1" "$2" >/dev/null 2>&1 & echo $!', "zenmind-fixture", process.execPath, workerPath],
+    {
+      cwd: installDir,
+      encoding: "utf8"
+    }
+  );
+  assert.equal(startResult.status, 0, startResult.stderr || startResult.stdout);
+  const pid = Number.parseInt(startResult.stdout.trim(), 10);
+  assert.ok(Number.isFinite(pid) && pid > 0, `expected fixture pid, got ${startResult.stdout}`);
+  fs.writeFileSync(path.join(installDir, "run", "test-plugin.pid"), `${pid}\n`, "utf8");
+
+  return {
+    child: { pid },
+    installDir,
+    pluginId
+  };
 }
 
 function createApp(userDataRoot, options = {}) {
@@ -3506,4 +3565,178 @@ test("runExecFile resolves when a daemon child keeps stdout open", async () => {
     // Process may already be gone on a slow host.
   }
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("stopRunningServicesForShutdown returns quickly when a stop script times out and force cleanup releases the process", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("This fixture uses POSIX shell scripts; Windows cleanup is covered by the process-tree unit tests.");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-shutdown-timeout-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  let fixture = null;
+
+  registryInternals.clearServices();
+
+  try {
+    fixture = prepareRunningPluginFixture(userDataRoot, {
+      id: "shutdown-slow-plugin",
+      stopScriptContent: [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "sleep 1",
+        'if [ -f "run/test-plugin.pid" ]; then',
+        '  kill "$(cat "run/test-plugin.pid")" >/dev/null 2>&1 || true',
+        '  rm -f "run/test-plugin.pid"',
+        "fi"
+      ].join("\n")
+    });
+
+    const snapshot = __testInternals.captureManagedProcessCleanupSnapshot(app);
+    const startedAt = Date.now();
+    const result = await stopRunningServicesForShutdown(app, { stopCommandTimeoutMs: 75 });
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(result.ok, false);
+    assert.equal(result.failures.length, 1);
+    assert.match(result.failures[0].message, /timed out/u);
+    assert.ok(elapsedMs < 800, `expected shutdown stop to return quickly, took ${elapsedMs}ms`);
+    assert.equal(isPidRunning(fixture.child.pid), true);
+
+    await forceCleanupManagedProcesses(app, snapshot);
+    assert.equal(await waitForPidExit(fixture.child.pid), true);
+  } finally {
+    if (fixture?.child?.pid && isPidRunning(fixture.child.pid)) {
+      try {
+        process.kill(fixture.child.pid, "SIGKILL");
+      } catch {
+        // Process may already be gone after cleanup.
+      }
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("stopRunningServicesForShutdown stops running services concurrently", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("This fixture uses POSIX shell scripts; Windows cleanup is covered by the process-tree unit tests.");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-shutdown-concurrent-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const sharedDir = path.join(tempRoot, "shutdown-stop-barrier");
+  const app = createApp(userDataRoot);
+  const fixtures = [];
+
+  registryInternals.clearServices();
+
+  const createBarrierStopScript = (self, peer) => [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    `shared_dir=${JSON.stringify(sharedDir)}`,
+    'mkdir -p "$shared_dir"',
+    `touch "$shared_dir/${self}.started"`,
+    "deadline=$((SECONDS + 2))",
+    `while [ ! -f "$shared_dir/${peer}.started" ]; do`,
+    "  if [ \"$SECONDS\" -ge \"$deadline\" ]; then",
+    "    echo peer stop script did not start >&2",
+    "    exit 7",
+    "  fi",
+    "  sleep 0.05",
+    "done",
+    'if [ -f "run/test-plugin.pid" ]; then',
+    '  kill "$(cat "run/test-plugin.pid")" >/dev/null 2>&1 || true',
+    '  rm -f "run/test-plugin.pid"',
+    "fi"
+  ].join("\n");
+
+  try {
+    fixtures.push(prepareRunningPluginFixture(userDataRoot, {
+      id: "shutdown-peer-a",
+      stopScriptContent: createBarrierStopScript("a", "b")
+    }));
+    fixtures.push(prepareRunningPluginFixture(userDataRoot, {
+      id: "shutdown-peer-b",
+      stopScriptContent: createBarrierStopScript("b", "a")
+    }));
+
+    const startedAt = Date.now();
+    const result = await stopRunningServicesForShutdown(app, { stopCommandTimeoutMs: 3000 });
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(result.ok, true);
+    assert.equal(result.stopped.length, 2);
+    assert.deepEqual(result.runningServiceIds.sort(), ["shutdown-peer-a", "shutdown-peer-b"]);
+    assert.ok(elapsedMs < 1500, `expected concurrent stop to finish before the barrier timeout, took ${elapsedMs}ms`);
+    assert.equal(await waitForPidExit(fixtures[0].child.pid), true);
+    assert.equal(await waitForPidExit(fixtures[1].child.pid), true);
+  } finally {
+    for (const fixture of fixtures) {
+      if (fixture.child?.pid && isPidRunning(fixture.child.pid)) {
+        try {
+          process.kill(fixture.child.pid, "SIGKILL");
+        } catch {
+          // Process may already be gone after the stop script.
+        }
+      }
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("stopService keeps the normal command timeout outside the shutdown path", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("This fixture uses POSIX shell scripts; Windows service stopping is covered by platform-specific tests.");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-stop-normal-timeout-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  const previousVerifyDelay = process.env.ZENMIND_SERVICE_VERIFY_DELAY_MS;
+  let fixture = null;
+
+  registryInternals.clearServices();
+  process.env.ZENMIND_SERVICE_VERIFY_DELAY_MS = "0";
+
+  try {
+    fixture = prepareRunningPluginFixture(userDataRoot, {
+      id: "normal-stop-plugin",
+      stopScriptContent: [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "sleep 0.15",
+        'if [ -f "run/test-plugin.pid" ]; then',
+        '  kill "$(cat "run/test-plugin.pid")" >/dev/null 2>&1 || true',
+        '  rm -f "run/test-plugin.pid"',
+        "fi"
+      ].join("\n")
+    });
+
+    const result = await stopService(app, "normal-stop-plugin");
+
+    assert.equal(result.ok, true, result.message);
+    assert.equal(result.service.status, "stopped");
+    assert.equal(await waitForPidExit(fixture.child.pid), true);
+  } finally {
+    if (previousVerifyDelay === undefined) {
+      delete process.env.ZENMIND_SERVICE_VERIFY_DELAY_MS;
+    } else {
+      process.env.ZENMIND_SERVICE_VERIFY_DELAY_MS = previousVerifyDelay;
+    }
+    if (fixture?.child?.pid && isPidRunning(fixture.child.pid)) {
+      try {
+        process.kill(fixture.child.pid, "SIGKILL");
+      } catch {
+        // Process may already be gone after the stop script.
+      }
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });

@@ -1009,7 +1009,7 @@ export function ControlCenterPage() {
               },
               {
                 key: "market" as const,
-                title: "插件市场",
+                title: "功能市场",
                 subtitle: `${marketServices.length} 个插件`,
                 services: marketServices,
                 empty: "暂无已导入插件"

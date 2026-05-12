@@ -60,7 +60,7 @@ function formatPetHint(status: DesktopPetStatus) {
     return "思考中";
   }
   if (status === "done") {
-    return "已完成";
+    return "暂无回复预览";
   }
   if (status === "error") {
     return "出错了";
@@ -84,6 +84,20 @@ function formatPreviewStatus(status: DesktopPetPreviewItemStatus) {
     default:
       return "待处理";
   }
+}
+
+const DESKTOP_PET_INLINE_PREVIEW_MAX_LENGTH = 30;
+
+function formatInlinePetPreview(value: string) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= DESKTOP_PET_INLINE_PREVIEW_MAX_LENGTH) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, DESKTOP_PET_INLINE_PREVIEW_MAX_LENGTH - 3)).trimEnd()}...`;
+}
+
+function shouldShowSecondaryPreview(primary: string, secondary: string) {
+  return Boolean(secondary) && secondary !== primary;
 }
 
 type DesktopPetDragState = {
@@ -323,7 +337,13 @@ export function DesktopPet() {
   const bubbleText = visualStatus === "message"
     ? messagePreview || "有新消息"
     : statusBubbleText;
+  const inlineBubbleText = formatInlinePetPreview(bubbleText);
   const showPreviewPanel = !isDragging && Boolean(previewPanel);
+  const previewTitle = previewPanel ? formatInlinePetPreview(previewPanel.title) : "";
+  const previewSummary = previewPanel && previewPanel.expanded
+    ? formatInlinePetPreview(previewPanel.summary)
+    : "";
+  const showPreviewSummary = shouldShowSecondaryPreview(previewTitle, previewSummary);
   const showBubble = !isDragging && !showPreviewPanel && bubbleText.length > 0;
   const showUnreadBadge = unreadCount > 0;
   const unreadText = unreadCount > 99 ? "99+" : String(unreadCount);
@@ -334,6 +354,14 @@ export function DesktopPet() {
 
   function handlePreviewClick(event: ReactMouseEvent<HTMLElement>) {
     event.stopPropagation();
+    if (!previewPanel) {
+      return;
+    }
+    if (previewPanel.status === "done") {
+      void window.electronAPI.desktopPet.dismissPreview();
+      return;
+    }
+    void window.electronAPI.desktopPet.setPreviewExpanded(!previewPanel.expanded);
   }
 
   function togglePreviewExpanded(event: ReactMouseEvent<HTMLButtonElement>) {
@@ -479,8 +507,8 @@ export function DesktopPet() {
             <div className="desktop-pet-preview-head">
               <span className="desktop-pet-preview-status-dot" aria-hidden="true" />
               <div className="desktop-pet-preview-copy">
-                <strong>{previewPanel.title}</strong>
-                <span>{previewPanel.summary}</span>
+                <strong>{previewTitle}</strong>
+                {showPreviewSummary ? <span>{previewSummary}</span> : null}
               </div>
               <button
                 type="button"
@@ -499,12 +527,15 @@ export function DesktopPet() {
               <ol className="desktop-pet-preview-list">
                 {previewPanel.items.map((item) => {
                   const itemDetailText = item.detailText ?? item.text;
+                  const itemTitle = formatInlinePetPreview(item.title);
+                  const itemDetailPreview = formatInlinePetPreview(itemDetailText);
+                  const showItemDetail = shouldShowSecondaryPreview(itemTitle, itemDetailPreview);
                   return (
                     <li key={item.id} className={`desktop-pet-preview-item is-${item.status}`}>
                       <span className="desktop-pet-preview-item-dot" aria-hidden="true" />
                       <div className="desktop-pet-preview-item-copy">
-                        <strong>{item.title}</strong>
-                        {itemDetailText ? <span>{itemDetailText}</span> : null}
+                        <strong>{itemTitle}</strong>
+                        {showItemDetail ? <span>{itemDetailPreview}</span> : null}
                       </div>
                       <small>{formatPreviewStatus(item.status)}</small>
                     </li>
@@ -518,7 +549,7 @@ export function DesktopPet() {
             className={`desktop-pet-speech is-${visualStatus === "message" ? "message" : displayStatus}`}
             aria-live="polite"
           >
-            <span>{bubbleText}</span>
+            <span>{inlineBubbleText}</span>
           </div>
         ) : null}
         <button

@@ -1188,6 +1188,7 @@ export interface DesktopApi {
     beginDrag: (point: { x: number; y: number }) => Promise<{ ok: boolean }>;
     endDrag: () => Promise<{ ok: boolean; moved: boolean }>;
     setPreviewExpanded: (expanded: boolean) => Promise<{ ok: boolean }>;
+    dismissPreview: () => Promise<{ ok: boolean }>;
     setMouseInteractive: (interactive: boolean) => Promise<{ ok: boolean }>;
     onStateChanged: (listener: DesktopPetStateListener) => () => void;
     onDanceRequested: (listener: DesktopPetDanceRequestedListener) => () => void;

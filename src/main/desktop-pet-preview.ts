@@ -65,12 +65,34 @@ export type DesktopPetSseParseResult = {
 
 const MAX_ITEMS = 8;
 const SUMMARY_MAX_LENGTH = 42;
+const REPLY_PREVIEW_MAX_LENGTH = 30;
 const ITEM_TEXT_MAX_LENGTH = 96;
 const DETAIL_TEXT_MAX_LENGTH = 220;
-const DONE_HOLD_MS = 4_200;
+const DONE_HOLD_MS = 12_000;
 const ERROR_HOLD_MS = 5_200;
 const STOPPED_HOLD_MS = 2_500;
 const DONE_SENTINEL = "[DONE]";
+const DONE_FALLBACK_SUMMARY = "暂无回复预览";
+const GENERIC_DONE_SUMMARIES = new Set([
+  "已完成",
+  "完成",
+  "任务已完成",
+  "生成完成",
+  "生成完成。",
+  "处理完成",
+  "处理完成。",
+  "运行完成",
+  "运行完成。",
+  "回复已生成",
+  "正在生成回复",
+  "回复生成中",
+  "正在整理思路",
+  "思考中",
+  "思考中...",
+  "开始处理请求",
+  "打开对话查看完整回复",
+  DONE_FALLBACK_SUMMARY
+]);
 const SENSITIVE_KEY_PATTERN = /\b(password|passwd|token|secret|api[_-]?key|authorization|cookie)\b/iu;
 const PREVIEW_TEXT_FIELD_KEYS = [
   "message",
@@ -120,6 +142,14 @@ function truncateText(value: string, maxLength: number) {
     return normalized;
   }
   return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function truncateReplyPreview(value: string) {
+  const normalized = normalizeWhitespace(value);
+  if (normalized.length <= REPLY_PREVIEW_MAX_LENGTH) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, REPLY_PREVIEW_MAX_LENGTH - 3)).trimEnd()}...`;
 }
 
 function readRecordPreviewText(value: Record<string, unknown>, maxLength: number) {
@@ -376,11 +406,46 @@ function terminalStatus(event: DesktopPetPreviewEvent): {
   if (event.type === "run.cancel" || event.type === "run.stopped" || event.type === "run.interrupt" || event.status === "stopped") {
     return { title: "已停止", status: "stopped", itemStatus: "cancelled", holdMs: STOPPED_HOLD_MS };
   }
-  return { title: "已完成", status: "done", itemStatus: "success", holdMs: DONE_HOLD_MS };
+  return { title: DONE_FALLBACK_SUMMARY, status: "done", itemStatus: "success", holdMs: DONE_HOLD_MS };
 }
 
-function readContentText(event: DesktopPetPreviewEvent) {
-  return sanitizeDesktopPetPreviewText(event.delta || event.text || event.content || event.message, ITEM_TEXT_MAX_LENGTH);
+function isGenericDoneSummary(value: string) {
+  return GENERIC_DONE_SUMMARIES.has(normalizeWhitespace(value));
+}
+
+function terminalTitleForPanel(terminal: ReturnType<typeof terminalStatus>, summary: string) {
+  return terminal.status === "done" ? summary : terminal.title;
+}
+
+function resolveTerminalSummary(
+  event: DesktopPetPreviewEvent,
+  terminal: ReturnType<typeof terminalStatus>,
+  currentSummary: string,
+  responsePreview: string,
+  canUseCurrentSummary: boolean
+) {
+  const candidate = sanitizeDesktopPetPreviewText(event.error || event.message || event.data, DETAIL_TEXT_MAX_LENGTH);
+  if (terminal.status !== "done") {
+    return sanitizeDesktopPetPreviewText(candidate || terminal.title, SUMMARY_MAX_LENGTH);
+  }
+  if (candidate && !isGenericDoneSummary(candidate)) {
+    return truncateReplyPreview(candidate);
+  }
+  const latestResponsePreview = sanitizeDesktopPetPreviewText(responsePreview, DETAIL_TEXT_MAX_LENGTH);
+  if (latestResponsePreview && !isGenericDoneSummary(latestResponsePreview)) {
+    return truncateReplyPreview(latestResponsePreview);
+  }
+  const previousSummary = canUseCurrentSummary
+    ? sanitizeDesktopPetPreviewText(currentSummary, DETAIL_TEXT_MAX_LENGTH)
+    : "";
+  if (previousSummary && !isGenericDoneSummary(previousSummary)) {
+    return truncateReplyPreview(previousSummary);
+  }
+  return DONE_FALLBACK_SUMMARY;
+}
+
+function readContentText(event: DesktopPetPreviewEvent, maxLength = ITEM_TEXT_MAX_LENGTH) {
+  return sanitizeDesktopPetPreviewText(event.delta || event.text || event.content || event.message, maxLength);
 }
 
 function readDetailText(...values: unknown[]) {
@@ -560,6 +625,7 @@ export class DesktopPetPreviewProjector {
   private panel: DesktopPetPreviewPanel | null = null;
   private expanded = false;
   private seenKeys = new Set<string>();
+  private responsePreview = "";
 
   getPanel() {
     return this.panel;
@@ -567,6 +633,7 @@ export class DesktopPetPreviewProjector {
 
   clear() {
     this.panel = null;
+    this.responsePreview = "";
     this.seenKeys.clear();
     return this.panel;
   }
@@ -596,6 +663,7 @@ export class DesktopPetPreviewProjector {
 
     if (!this.panel || isStartEvent(event.type)) {
       this.panel = createDefaultPanel(event, this.expanded);
+      this.responsePreview = "";
       this.seenKeys.clear();
     } else if (event.runId !== this.panel.runId) {
       if (this.panel.status === "waiting" && !isStartEvent(event.type)) {
@@ -648,9 +716,10 @@ export class DesktopPetPreviewProjector {
     }
 
     if (event.type.startsWith("content.")) {
-      const text = readContentText(event) || "正在生成回复";
+      const responsePreview = this.rememberResponsePreview(event);
+      const text = responsePreview ? truncateReplyPreview(responsePreview) : "正在生成回复";
       const done = event.type === "content.end" || event.type === "content.snapshot";
-      const detailText = readContentDetail(event) || text;
+      const detailText = sanitizeDesktopPetPreviewText(responsePreview, DETAIL_TEXT_MAX_LENGTH) || readContentDetail(event) || text;
       this.panel.summary = text;
       this.upsertItem("content", "content", done ? "回复已生成" : "回复生成中", text, done ? "success" : "running", event.createdAt, detailText);
       return undefined;
@@ -742,18 +811,31 @@ export class DesktopPetPreviewProjector {
 
     if (isTerminalEvent(event.type)) {
       const terminal = terminalStatus(event);
-      const summary = sanitizeDesktopPetPreviewText(event.error || event.message || event.data, SUMMARY_MAX_LENGTH) || terminal.title;
+      const canUseCurrentSummary = this.panel.items.some((item) => item.id !== "run:start");
+      const summary = resolveTerminalSummary(event, terminal, this.panel.summary, this.responsePreview, canUseCurrentSummary);
+      const title = terminalTitleForPanel(terminal, summary);
       const detailText = readEventDetailField(event, "error", "message", "summary", "description", "output", "stderr", "result") ||
         summary;
-      this.panel.title = terminal.title;
+      this.panel.title = title;
       this.panel.status = terminal.status;
       this.panel.summary = summary;
       this.panel.awaiting = undefined;
-      this.upsertItem("run:terminal", "status", terminal.title, summary, terminal.itemStatus, event.createdAt, detailText);
+      this.upsertItem("run:terminal", "status", title, summary, terminal.itemStatus, event.createdAt, detailText);
       return terminal.holdMs;
     }
 
     return undefined;
+  }
+
+  private rememberResponsePreview(event: DesktopPetPreviewEvent) {
+    const incoming = readContentText(event, DETAIL_TEXT_MAX_LENGTH);
+    if (!incoming || isGenericDoneSummary(incoming)) {
+      return this.responsePreview;
+    }
+    this.responsePreview = event.type === "content.delta"
+      ? sanitizeDesktopPetPreviewText(`${this.responsePreview}${incoming}`, DETAIL_TEXT_MAX_LENGTH)
+      : incoming;
+    return this.responsePreview;
   }
 
   private upsertItem(

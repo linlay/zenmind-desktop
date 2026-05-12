@@ -55,7 +55,8 @@ const AGENT_PLATFORM_REFRESH_DEBOUNCE_MS = 350;
 const AGENT_PLATFORM_UNAVAILABLE_RETRY_MS = 12_000;
 const AGENT_PLATFORM_DONE_REFRESH_MS = 4_200;
 const AGENT_PLATFORM_DONE_REMINDER_MAX_AGE_MS = 10 * 60 * 1000;
-const AGENT_PLATFORM_STATUS_PREVIEWS = new Set(["思考中", "已完成", "出错了", "目标智能体未在线"]);
+const AGENT_PLATFORM_DONE_FALLBACK_PREVIEW = "暂无回复预览";
+const AGENT_PLATFORM_STATUS_PREVIEWS = new Set(["思考中", "已完成", "回复已生成", "出错了", "目标智能体未在线", "打开对话查看完整回复", AGENT_PLATFORM_DONE_FALLBACK_PREVIEW]);
 
 function toText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -282,6 +283,12 @@ function readFrameData(frame: AgentPlatformPetPushFrame): Record<string, unknown
   return {};
 }
 
+function readFrameAgentKey(data: Record<string, unknown>) {
+  const nestedChat = isObjectRecord(data.chat) ? data.chat : {};
+  const nestedRun = isObjectRecord(data.run) ? data.run : {};
+  return toText(data.agentKey) || toText(nestedChat.agentKey) || toText(nestedRun.agentKey);
+}
+
 function readFramePreviewText(data: Record<string, unknown>) {
   const nestedChat = isObjectRecord(data.chat) ? data.chat : {};
   const nestedRun = isObjectRecord(data.run) ? data.run : {};
@@ -306,11 +313,14 @@ function readCompletionPreview(data: Record<string, unknown>, fallback = "") {
   const fallbackPreview = toText(fallback);
   return fallbackPreview && !AGENT_PLATFORM_STATUS_PREVIEWS.has(fallbackPreview)
     ? fallbackPreview
-    : "已完成";
+    : AGENT_PLATFORM_DONE_FALLBACK_PREVIEW;
 }
 
 function getFrameChatId(frame: AgentPlatformPetPushFrame) {
-  return toText(readFrameData(frame).chatId);
+  const data = readFrameData(frame);
+  const nestedChat = isObjectRecord(data.chat) ? data.chat : {};
+  const nestedRun = isObjectRecord(data.run) ? data.run : {};
+  return toText(data.chatId) || toText(nestedChat.chatId) || toText(nestedRun.chatId);
 }
 
 async function readApiJson<T>(url: string, token: string): Promise<T> {
@@ -381,7 +391,7 @@ export function applyAgentPlatformPetPush(
 ): DesktopPetBoundAgentStatus | null {
   const frameType = toText(frame.type);
   const data = readFrameData(frame);
-  const eventAgentKey = toText(data.agentKey);
+  const eventAgentKey = readFrameAgentKey(data);
   const normalizedBoundAgentKey = current?.agentKey || sanitizeDesktopPetBoundAgentKey(boundAgentKey);
   if (eventAgentKey && eventAgentKey !== normalizedBoundAgentKey) {
     return current;
@@ -416,6 +426,28 @@ export function applyAgentPlatformPetPush(
         frameType === "chat.read" ? "decrement" : "increment"
       ),
       presence: currentPresence === "busy" || currentPresence === "away" ? currentPresence : "available",
+      stale: false,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  if (frameType === "chat.updated") {
+    const chatId = getFrameChatId(frame);
+    const latestPreview = readFramePreviewText(data);
+    if (!latestPreview) {
+      return current;
+    }
+    if (!eventAgentKey && (!current?.chatId || !chatId || current.chatId !== chatId)) {
+      return current;
+    }
+    return {
+      ...(current ?? buildAgentPlatformPetStatus({ boundAgentKey: normalizedBoundAgentKey, agents: [], chats: [] })),
+      agentKey: normalizedBoundAgentKey,
+      chatId: chatId || current?.chatId || null,
+      presence: "away",
+      unreadCount: readUnreadCountFromPush(data, current?.unreadCount ?? 0),
+      latestPreview,
+      hasPendingAwaiting: false,
       stale: false,
       updatedAt: new Date().toISOString()
     };
@@ -472,7 +504,7 @@ export function applyAgentPlatformCompletionReminder(
     return current;
   }
   const data = readFrameData(frame);
-  const eventAgentKey = toText(data.agentKey);
+  const eventAgentKey = readFrameAgentKey(data);
   const normalizedBoundAgentKey = current?.agentKey || sanitizeDesktopPetBoundAgentKey(boundAgentKey);
   if (eventAgentKey && eventAgentKey !== normalizedBoundAgentKey) {
     return current;
@@ -672,7 +704,7 @@ export class AgentPlatformPetStatusClient {
         this.finishedChats.delete(chatId);
       }
       const runId = toText(frameData.runId);
-      const eventAgentKey = toText(frameData.agentKey);
+      const eventAgentKey = readFrameAgentKey(frameData);
       const matchedAgentKey = nextStatus?.agentKey || boundAgentKey;
       if (runId && eventAgentKey && eventAgentKey === matchedAgentKey) {
         this.options.onRunStarted?.({
@@ -687,7 +719,7 @@ export class AgentPlatformPetStatusClient {
         this.rememberFinishedChat(chatId);
       }
       const runId = toText(frameData.runId);
-      const eventAgentKey = toText(frameData.agentKey);
+      const eventAgentKey = readFrameAgentKey(frameData);
       const matchedAgentKey = nextStatus.agentKey || boundAgentKey;
       if ((runId || chatId) && (!eventAgentKey || eventAgentKey === matchedAgentKey)) {
         this.options.onRunFinished?.({
@@ -706,7 +738,8 @@ export class AgentPlatformPetStatusClient {
     if (
       frameType === "chat.unread" ||
       frameType === "chat.read" ||
-      frameType === "chat.read_all"
+      frameType === "chat.read_all" ||
+      frameType === "chat.updated"
     ) {
       this.scheduleRefresh(nextStatus?.presence === "away" ? AGENT_PLATFORM_DONE_REFRESH_MS : AGENT_PLATFORM_REFRESH_DEBOUNCE_MS);
     } else if (frameType === "run.finished") {

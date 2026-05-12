@@ -200,6 +200,8 @@ const INITIALIZATION_STATE_FILE = "init-state.json";
 const LAST_RUNNING_SERVICES_FILE = "last-running-services.json";
 const DEFAULT_STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const RESTORE_PRIORITY = ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"] as const;
+const SERVICE_COMMAND_TIMEOUT_MS = 60_000;
+const SHUTDOWN_SERVICE_STOP_TIMEOUT_MS = 2_500;
 
 function buildServiceEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -1417,17 +1419,28 @@ function formatExecErrorMessage(errorMessage: string, result: ExecResult) {
   return details || errorMessage;
 }
 
-function runPowerShellScript(scriptPath: string, args: string[], cwd: string) {
+type RunExecFileOptions = {
+  timeoutMs?: number;
+};
+
+function getCommandTimeoutMs(timeoutMs: number | undefined) {
+  return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? Math.floor(timeoutMs)
+    : SERVICE_COMMAND_TIMEOUT_MS;
+}
+
+function runPowerShellScript(scriptPath: string, args: string[], cwd: string, options: RunExecFileOptions = {}) {
   const wrapperScriptPath = path.join(
     os.tmpdir(),
     `zenmind-powershell-wrapper-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`
   );
   fs.writeFileSync(wrapperScriptPath, buildPowerShellWrapperScript(scriptPath, args), "utf8");
+  const timeoutMs = getCommandTimeoutMs(options.timeoutMs);
   return new Promise<ExecResult>((resolve, reject) => {
     execFile(
       windowsPowerShellPath(),
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", wrapperScriptPath],
-      { cwd, env: buildServiceEnv(), timeout: 60_000 },
+      { cwd, env: buildServiceEnv(), timeout: timeoutMs },
       (error, stdout, stderr) => {
         try {
           fs.rmSync(wrapperScriptPath, { force: true });
@@ -1466,10 +1479,11 @@ function resolveExecCommand(command: string, args: string[], cwd: string) {
   return { command, args, powershellScript: false };
 }
 
-function runExecFile(command: string, args: string[], cwd: string) {
+function runExecFile(command: string, args: string[], cwd: string, options: RunExecFileOptions = {}) {
   const resolved = resolveExecCommand(command, args, cwd);
+  const timeoutMs = getCommandTimeoutMs(options.timeoutMs);
   if (resolved.powershellScript) {
-    return runPowerShellScript(resolved.command, resolved.args, cwd);
+    return runPowerShellScript(resolved.command, resolved.args, cwd, { timeoutMs });
   }
 
   return new Promise<ExecResult>((resolve, reject) => {
@@ -1485,10 +1499,13 @@ function runExecFile(command: string, args: string[], cwd: string) {
     });
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
+    let didTimeout = false;
 
     const killTimer = setTimeout(() => {
+      didTimeout = true;
       child.kill("SIGKILL");
-    }, 60_000);
+    }, timeoutMs);
+    killTimer.unref?.();
 
     child.stdout?.on("data", (chunk: Buffer) => {
       stdoutChunks.push(chunk);
@@ -1504,6 +1521,10 @@ function runExecFile(command: string, args: string[], cwd: string) {
       clearTimeout(killTimer);
       const stdout = Buffer.concat(stdoutChunks).toString("utf8");
       const stderr = Buffer.concat(stderrChunks).toString("utf8");
+      if (didTimeout) {
+        reject(new Error(`Command timed out after ${timeoutMs}ms: ${resolved.command} ${resolved.args.join(" ")}\n${stderr || stdout}`.trim()));
+        return;
+      }
       if (code !== 0) {
         const status = signal ? `signal ${signal}` : `code ${code ?? -1}`;
         reject(new Error(`Command failed: ${resolved.command} ${resolved.args.join(" ")} exited with ${status}\n${stderr || stdout}`.trim()));
@@ -3172,6 +3193,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 
 type RunServiceCommandOptions = {
   refreshBuiltinAsset?: boolean;
+  timeoutMs?: number;
 };
 
 async function runServiceCommand(
@@ -3210,7 +3232,9 @@ async function runServiceCommand(
   if (command.length === 0) {
     throw new Error(`${service.name} 缺少可执行脚本定义。`);
   }
-  await runExecFile(command[0], command.slice(1), installDir);
+  await runExecFile(command[0], command.slice(1), installDir, {
+    timeoutMs: options.timeoutMs
+  });
   return {
     ok: true,
     message: successMessage,
@@ -3636,6 +3660,107 @@ export async function stopRunningServices(app: App) {
   if (failures.length > 0) {
     throw new Error(`停止运行中服务失败：${failures.join("；")}`);
   }
+}
+
+type ShutdownServiceStopResult = {
+  ok: boolean;
+  serviceId: ServiceId;
+  serviceName: string;
+  elapsedMs: number;
+  message: string;
+};
+
+function getShutdownStopCommandTimeoutMs(timeoutMs: number | undefined) {
+  return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? Math.floor(timeoutMs)
+    : SHUTDOWN_SERVICE_STOP_TIMEOUT_MS;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function stopServiceForShutdown(
+  app: App,
+  serviceState: ServiceState,
+  timeoutMs: number
+): Promise<ShutdownServiceStopResult> {
+  const service = getService(serviceState.id);
+  const startedAt = Date.now();
+
+  try {
+    await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`, {
+      refreshBuiltinAsset: false,
+      timeoutMs
+    });
+    startedThisSession.delete(service.id);
+    const elapsedMs = Date.now() - startedAt;
+    console.log(`[service-manager] shutdown stop succeeded for ${service.id} in ${elapsedMs}ms`);
+    return {
+      ok: true,
+      serviceId: service.id,
+      serviceName: service.name,
+      elapsedMs,
+      message: ""
+    };
+  } catch (error) {
+    const elapsedMs = Date.now() - startedAt;
+    const message = getErrorMessage(error);
+    console.warn(`[service-manager] shutdown stop failed for ${service.id} after ${elapsedMs}ms: ${message}`);
+    return {
+      ok: false,
+      serviceId: service.id,
+      serviceName: service.name,
+      elapsedMs,
+      message
+    };
+  }
+}
+
+export async function stopRunningServicesForShutdown(
+  app: App,
+  options: { stopCommandTimeoutMs?: number } = {}
+) {
+  const startedAt = Date.now();
+  const timeoutMs = getShutdownStopCommandTimeoutMs(options.stopCommandTimeoutMs);
+  const services = await listServices(app);
+  const runningServices = services.filter((service) => service.status === "running");
+  writeLastRunningServices(
+    app,
+    runningServices.map((service) => service.id)
+  );
+
+  if (runningServices.length === 0) {
+    console.log("[service-manager] shutdown stop skipped: no running services");
+    return {
+      ok: true,
+      timeoutMs,
+      elapsedMs: Date.now() - startedAt,
+      runningServiceIds: [] as ServiceId[],
+      stopped: [] as ShutdownServiceStopResult[],
+      failures: [] as ShutdownServiceStopResult[]
+    };
+  }
+
+  const results = await Promise.all(
+    runningServices.map((service) => stopServiceForShutdown(app, service, timeoutMs))
+  );
+  const stopped = results.filter((result) => result.ok);
+  const failures = results.filter((result) => !result.ok);
+  const elapsedMs = Date.now() - startedAt;
+
+  console.log(
+    `[service-manager] shutdown stop summary: services=${runningServices.length} stopped=${stopped.length} failed=${failures.length} elapsedMs=${elapsedMs} timeoutMs=${timeoutMs}`
+  );
+
+  return {
+    ok: failures.length === 0,
+    timeoutMs,
+    elapsedMs,
+    runningServiceIds: runningServices.map((service) => service.id),
+    stopped,
+    failures
+  };
 }
 
 export async function restoreRunningServices(

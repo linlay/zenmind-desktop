@@ -1892,8 +1892,8 @@ test("assistant prompt includes structured native left regions and modal content
       metaDescription: "",
       headings: ["控制中心", "容器仓库"],
       bodyText: "右侧详情展示容器仓库配置。",
-      shellSidebarText: "智能助理 控制中心 百度 国小君 插件市场 帮助 设置",
-      leftRegionText: "控制中心 4 个核心服务 容器仓库 智能体平台 智能助理 认证服务 插件市场 3 个插件",
+      shellSidebarText: "智能助理 控制中心 百度 国小君 功能市场 帮助 设置",
+      leftRegionText: "控制中心 4 个核心服务 容器仓库 智能体平台 智能助理 认证服务 功能市场 3 个插件",
       modalText: "容器仓库 · 日志文件 输入关键词 检索范围 已加载内容 已到日志开头"
     }
   });

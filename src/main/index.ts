@@ -44,7 +44,7 @@ import {
   runStartupPreparation,
   startService,
   stopService,
-  stopRunningServices,
+  stopRunningServicesForShutdown,
   verifyServiceState,
   writeServiceConfig
 } from "./service-manager";
@@ -162,7 +162,7 @@ import {
   sanitizeDesktopPetBoundAgentKey,
   toDesktopPetSettings
 } from "./desktop-pet";
-import { DesktopPetPreviewProjector } from "./desktop-pet-preview";
+import { DesktopPetPreviewProjector, normalizeDesktopPetAgentEvent } from "./desktop-pet-preview";
 import {
   createQuickAssistantWindowState,
   getQuickAssistantBounds,
@@ -202,11 +202,27 @@ const QUICK_ASSISTANT_DISMISS_URL = "zenmind://quick-assistant-dismiss";
 const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
 const MAC_FULLSCREEN_CLOSE_FALLBACK_MS = 2200;
+const ZENMIND_APP_ID = "cc.zenmind.desktop";
+const ZENMIND_PRODUCT_NAME = "ZenMind";
+const DESKTOP_PET_DONE_PREVIEW_FALLBACK = "暂无回复预览";
+const DESKTOP_PET_GENERIC_DONE_PREVIEWS = new Set([
+  "思考中",
+  "已完成",
+  "回复已生成",
+  "正在生成回复",
+  "生成完成",
+  "生成完成。",
+  "打开对话查看完整回复",
+  DESKTOP_PET_DONE_PREVIEW_FALLBACK
+]);
 let startupRestoreState = createStartupRestoreState();
 
 // Keep dev Electron runs on the same data root as packaged builds.
-app.setName("ZenMind");
+app.setName(ZENMIND_PRODUCT_NAME);
 app.setPath("userData", path.join(app.getPath("appData"), "zenmind-desktop"));
+if (process.platform === "win32") {
+  app.setAppUserModelId(ZENMIND_APP_ID);
+}
 
 let desktopPetSettings = readDesktopPetStoredState(app, process.platform);
 let desktopPetLocalStatus: DesktopPetLocalStatus = createDefaultDesktopPetLocalStatus(desktopPetSettings);
@@ -231,7 +247,9 @@ let agentPlatformPetStatusClient: AgentPlatformPetStatusClient | null = null;
 let agentPlatformPetStreamClient: AgentPlatformPetStreamClient | null = null;
 const desktopPetPreviewProjector = new DesktopPetPreviewProjector();
 let desktopPetPreviewRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-let desktopPetWindowBoundsUpdateInProgress = false;
+let dismissedDesktopPetDonePreview: { chatId: string; runId: string } | null = null;
+let desktopPetPendingProgrammaticBoundsSignature: string | null = null;
+let desktopPetProgrammaticBoundsGuardTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopPetMouseInteractive = true;
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -284,6 +302,61 @@ function clearDesktopPetPreviewRefreshTimer() {
   }
 }
 
+function rememberDismissedDesktopPetDonePreview() {
+  const panel = desktopPetPreviewProjector.getPanel();
+  const chatId = panel?.chatId || desktopPetAgentStatus?.chatId || "";
+  if (panel?.status !== "done" || !chatId) {
+    return;
+  }
+  dismissedDesktopPetDonePreview = {
+    chatId,
+    runId: panel.runId
+  };
+}
+
+function clearDismissedDesktopPetDonePreview(chatId?: string | null, runId?: string | null) {
+  if (!dismissedDesktopPetDonePreview) {
+    return;
+  }
+  if (
+    !chatId ||
+    dismissedDesktopPetDonePreview.chatId === chatId ||
+    (runId && dismissedDesktopPetDonePreview.runId === runId)
+  ) {
+    dismissedDesktopPetDonePreview = null;
+  }
+}
+
+function isDismissedDesktopPetDoneChat(chatId: string | null | undefined) {
+  return Boolean(chatId && dismissedDesktopPetDonePreview?.chatId === chatId);
+}
+
+function isDismissedDesktopPetDoneEvent(event: ReturnType<typeof normalizeDesktopPetAgentEvent>) {
+  if (!event || (event.type !== "run.complete" && event.type !== "done")) {
+    return false;
+  }
+  if (!dismissedDesktopPetDonePreview || dismissedDesktopPetDonePreview.chatId !== event.chatId) {
+    return false;
+  }
+  return !event.runId || dismissedDesktopPetDonePreview.runId === event.runId;
+}
+
+function getDesktopPetAgentStatusForState() {
+  if (
+    !desktopPetAgentStatus ||
+    desktopPetAgentStatus.presence !== "away" ||
+    !isDismissedDesktopPetDoneChat(desktopPetAgentStatus.chatId)
+  ) {
+    return desktopPetAgentStatus;
+  }
+  return {
+    ...desktopPetAgentStatus,
+    presence: "available" as const,
+    latestPreview: "",
+    unreadCount: 0
+  };
+}
+
 function getDesktopPetWindowMode(): DesktopPetWindowMode {
   const panel = desktopPetPreviewProjector.getPanel();
   if (!panel?.visible) {
@@ -328,6 +401,9 @@ function ensureAgentPlatformPetStatusClient() {
     issueAccessToken: issueAgentAccessToken,
     onStatus: (status) => {
       desktopPetAgentStatus = status;
+      if (refreshCompletedDesktopPetPreviewFromAgentStatus(status)) {
+        return;
+      }
       refreshDesktopPetState();
     },
     onAgents: (agents) => {
@@ -345,6 +421,7 @@ function ensureAgentPlatformPetStatusClient() {
     },
     onRunStarted: ({ runId, chatId }) => {
       // AgentPlatformPetStatusClient already filters this callback to the bound agent.
+      clearDismissedDesktopPetDonePreview(chatId, runId);
       ensureAgentPlatformPetStreamClient()?.attach(runId, chatId);
     },
     onRunFinished: ({ runId, chatId, message }) => {
@@ -430,7 +507,7 @@ function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
     supported: isDesktopPetSupportedPlatform(process.platform),
     visible,
     localStatus: desktopPetLocalStatus,
-    agentStatus: desktopPetAgentStatus,
+    agentStatus: getDesktopPetAgentStatusForState(),
     agentOptions: desktopPetAgentOptions,
     previewPanel: desktopPetPreviewProjector.getPanel()
   });
@@ -460,6 +537,7 @@ function scheduleDesktopPetIdleReset(timeoutMs = 4200, clearPreview = false) {
   clearDesktopPetIdleResetTimer();
   desktopPetIdleResetTimer = setTimeout(() => {
     if (clearPreview) {
+      rememberDismissedDesktopPetDonePreview();
       desktopPetPreviewProjector.clear();
     }
     refreshDesktopPetState({
@@ -491,6 +569,26 @@ function getDesktopPetBounds() {
   );
 }
 
+function getDesktopPetBoundsSignature(bounds: Pick<Rectangle, "x" | "y" | "width" | "height">) {
+  return `${bounds.x}:${bounds.y}:${bounds.width}:${bounds.height}`;
+}
+
+function clearDesktopPetProgrammaticBoundsGuard() {
+  if (desktopPetProgrammaticBoundsGuardTimer) {
+    clearTimeout(desktopPetProgrammaticBoundsGuardTimer);
+    desktopPetProgrammaticBoundsGuardTimer = null;
+  }
+}
+
+function armDesktopPetProgrammaticBoundsGuard(signature: string) {
+  desktopPetPendingProgrammaticBoundsSignature = signature;
+  clearDesktopPetProgrammaticBoundsGuard();
+  desktopPetProgrammaticBoundsGuardTimer = setTimeout(() => {
+    desktopPetPendingProgrammaticBoundsSignature = null;
+    desktopPetProgrammaticBoundsGuardTimer = null;
+  }, 180);
+}
+
 function applyDesktopPetWindowBounds() {
   if (!isDesktopPetSupportedPlatform(process.platform) || !desktopPetWindow || desktopPetWindow.isDestroyed()) {
     return;
@@ -506,23 +604,30 @@ function applyDesktopPetWindowBounds() {
     currentBounds.width === nextBounds.width &&
     currentBounds.height === nextBounds.height
   ) {
+    desktopPetPendingProgrammaticBoundsSignature = null;
+    clearDesktopPetProgrammaticBoundsGuard();
     return;
   }
-  desktopPetWindowBoundsUpdateInProgress = true;
+  armDesktopPetProgrammaticBoundsGuard(getDesktopPetBoundsSignature(nextBounds));
   desktopPetWindow.setBounds(nextBounds, false);
-  setTimeout(() => {
-    desktopPetWindowBoundsUpdateInProgress = false;
-  }, 0);
 }
 
 function persistDesktopPetPosition() {
   if (!desktopPetWindow || desktopPetWindow.isDestroyed()) {
     return;
   }
-  if (desktopPetDragState || desktopPetWindowBoundsUpdateInProgress) {
+  if (desktopPetDragState) {
     return;
   }
   const bounds = desktopPetWindow.getBounds();
+  const boundsSignature = getDesktopPetBoundsSignature(bounds);
+  if (desktopPetPendingProgrammaticBoundsSignature) {
+    if (boundsSignature === desktopPetPendingProgrammaticBoundsSignature) {
+      desktopPetPendingProgrammaticBoundsSignature = null;
+      clearDesktopPetProgrammaticBoundsGuard();
+    }
+    return;
+  }
   const logicalPosition = getDesktopPetLogicalPositionFromBounds(bounds, getDesktopPetWindowMode());
   const currentPosition = desktopPetSettings.position;
   if (currentPosition && currentPosition.x === logicalPosition.x && currentPosition.y === logicalPosition.y) {
@@ -970,7 +1075,7 @@ function getDesktopPetStatusPatchFromPreview(panel: ReturnType<DesktopPetPreview
   if (panel.status === "done") {
     return {
       status: "done" as const,
-      hint: "已完成",
+      hint: panel.summary,
       chatId: panel.chatId,
       unreadCount: 0
     };
@@ -999,6 +1104,53 @@ function getDesktopPetStatusPatchFromPreview(panel: ReturnType<DesktopPetPreview
   };
 }
 
+function normalizeDesktopPetReplyPreview(value: unknown) {
+  return typeof value === "string" ? value.replace(/\s+/gu, " ").trim() : "";
+}
+
+function getUsableDesktopPetReplyPreview(value: unknown) {
+  const preview = normalizeDesktopPetReplyPreview(value);
+  return preview && !DESKTOP_PET_GENERIC_DONE_PREVIEWS.has(preview) ? preview : "";
+}
+
+function refreshCompletedDesktopPetPreviewFromAgentStatus(status: DesktopPetBoundAgentStatus | null) {
+  if (!status || status.stale || status.presence !== "away") {
+    return false;
+  }
+  if (isDismissedDesktopPetDoneChat(status.chatId)) {
+    return false;
+  }
+  const replyPreview = getUsableDesktopPetReplyPreview(status.latestPreview);
+  if (!replyPreview) {
+    return false;
+  }
+  const panel = desktopPetPreviewProjector.getPanel();
+  if (!panel || panel.status !== "done") {
+    return false;
+  }
+  if (panel.chatId && status.chatId && panel.chatId !== status.chatId) {
+    return false;
+  }
+  if (
+    normalizeDesktopPetReplyPreview(panel.title) === replyPreview &&
+    normalizeDesktopPetReplyPreview(panel.summary) === replyPreview
+  ) {
+    return false;
+  }
+
+  ingestDesktopPetAgentEvent({
+    runId: panel.runId,
+    chatId: panel.chatId ?? status.chatId,
+    type: "run.complete",
+    createdAt: new Date().toISOString(),
+    message: replyPreview
+  }, {
+    source: "agent-platform-status",
+    transportMode: "snapshot"
+  });
+  return true;
+}
+
 function refreshDesktopPetPreviewThrottled() {
   if (desktopPetPreviewRefreshTimer) {
     return;
@@ -1014,7 +1166,14 @@ function ingestDesktopPetAgentEvent(event: unknown, meta: { source?: string; tra
   if (!isDesktopPetSupportedPlatform(process.platform)) {
     return;
   }
-  const result = desktopPetPreviewProjector.ingest(event, meta);
+  const normalizedEvent = normalizeDesktopPetAgentEvent(event);
+  if (normalizedEvent?.type === "request.query" || normalizedEvent?.type === "run.start") {
+    clearDismissedDesktopPetDonePreview(normalizedEvent.chatId, normalizedEvent.runId);
+  }
+  if (isDismissedDesktopPetDoneEvent(normalizedEvent)) {
+    return;
+  }
+  const result = desktopPetPreviewProjector.ingest(normalizedEvent ?? event, meta);
   if (!result.changed) {
     return;
   }
@@ -1033,6 +1192,23 @@ function ingestDesktopPetAgentEvent(event: unknown, meta: { source?: string; tra
   clearDesktopPetPreviewRefreshTimer();
   const patch = getDesktopPetStatusPatchFromPreview(result.panel);
   refreshDesktopPetState(patch ?? {});
+}
+
+function dismissDesktopPetPreview() {
+  if (!isDesktopPetSupportedPlatform(process.platform)) {
+    return { ok: false };
+  }
+  clearDesktopPetIdleResetTimer();
+  clearDesktopPetPreviewRefreshTimer();
+  rememberDismissedDesktopPetDonePreview();
+  desktopPetPreviewProjector.clear();
+  refreshDesktopPetState({
+    status: "idle",
+    hint: "",
+    unreadCount: 0,
+    chatId: null
+  });
+  return { ok: true };
 }
 
 function handleDesktopPetAssistantEvent(event: AssistantEvent) {
@@ -2199,6 +2375,7 @@ function configureMediaPermissions() {
 }
 
 function showMainWindow(targetPath?: string) {
+  ensureDarwinDockIdentity();
   const targetWindow = getMainWindowForActivation();
   if (!targetWindow || targetWindow.isDestroyed()) {
     return;
@@ -2215,6 +2392,24 @@ function showMainWindow(targetPath?: string) {
   if (targetPath) {
     navigateMainWindow(targetPath);
   }
+}
+
+function ensureDarwinDockIdentity() {
+  if (process.platform !== "darwin") {
+    return;
+  }
+
+  app.setActivationPolicy("regular");
+  const dock = app.dock;
+  if (!dock) {
+    return;
+  }
+
+  void dock.show().catch((error) => {
+    safeConsoleError("failed to show macOS dock icon", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  });
 }
 
 function notifyServicesChanged() {
@@ -3485,6 +3680,12 @@ function registerIpcHandlers() {
     refreshDesktopPetState();
     return { ok: true };
   });
+  ipcMain.handle("desktopPet.dismissPreview", async (event) => {
+    if (!desktopPetWindow || desktopPetWindow.isDestroyed() || event.sender !== desktopPetWindow.webContents) {
+      return { ok: false };
+    }
+    return dismissDesktopPetPreview();
+  });
   ipcMain.handle("desktopPet.setMouseInteractive", async (event, interactive: boolean) => {
     if (!desktopPetWindow || desktopPetWindow.isDestroyed() || event.sender !== desktopPetWindow.webContents) {
       return { ok: false };
@@ -3504,6 +3705,7 @@ if (gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    ensureDarwinDockIdentity();
     ensureDataRoot(app);
     loadBuiltinServices(app);
     loadInstalledPlugins(app);
@@ -3564,16 +3766,22 @@ app.on("before-quit", (event) => {
   }
   event.preventDefault();
   isHandlingQuit = true;
+  const shutdownStartedAt = Date.now();
   const processCleanupSnapshot = captureManagedProcessCleanupSnapshot(app);
-  stopRunningServices(app)
+  stopRunningServicesForShutdown(app)
     .catch((error) => {
       console.error("failed while shutting down desktop services", error);
     })
-    .then(() => forceCleanupManagedProcesses(app, processCleanupSnapshot))
+    .then(async () => {
+      const cleanupStartedAt = Date.now();
+      await forceCleanupManagedProcesses(app, processCleanupSnapshot);
+      console.log(`[main] desktop service force cleanup finished in ${Date.now() - cleanupStartedAt}ms`);
+    })
     .catch((error) => {
       console.error("failed while force-cleaning desktop service processes", error);
     })
     .finally(() => {
+      console.log(`[main] app shutdown cleanup finished in ${Date.now() - shutdownStartedAt}ms`);
       app.quit();
     });
 });

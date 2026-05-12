@@ -15,7 +15,7 @@ type SidebarNavItem = {
 
 const staticNavItems: SidebarNavItem[] = [
   { to: "/control-center", label: "控制中心", icon: "control" },
-  { to: "/market", label: "插件市场", icon: "market" },
+  { to: "/market", label: "功能市场", icon: "market" },
   { to: "/help", label: "帮助", icon: "help" }
 ];
 

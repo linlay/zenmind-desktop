@@ -23,8 +23,8 @@ export {
 } from "../shared/desktop-pet";
 
 export const DESKTOP_PET_WINDOW_SIZE = {
-  width: 202,
-  height: 227
+  width: 176,
+  height: 198
 } as const;
 
 export type DesktopPetWindowMode = "base" | "bubble" | "preview-collapsed" | "preview-expanded";
@@ -32,16 +32,16 @@ export type DesktopPetWindowMode = "base" | "bubble" | "preview-collapsed" | "pr
 export const DESKTOP_PET_WINDOW_SIZES: Record<DesktopPetWindowMode, { width: number; height: number }> = {
   base: DESKTOP_PET_WINDOW_SIZE,
   bubble: {
-    width: 202,
-    height: 260
+    width: 224,
+    height: 228
   },
   "preview-collapsed": {
     width: 380,
-    height: 300
+    height: 276
   },
   "preview-expanded": {
     width: 420,
-    height: 440
+    height: 412
   }
 } as const;
 
@@ -94,7 +94,8 @@ const DEFAULT_OFFSET = {
   y: 78
 } as const;
 const DESKTOP_PET_MESSAGE_PREVIEW_MAX_LENGTH = 30;
-const DESKTOP_PET_STATUS_HINTS = new Set(["思考中", "已完成", "出错了", "目标智能体未在线"]);
+const DESKTOP_PET_DONE_FALLBACK_HINT = "暂无回复预览";
+const DESKTOP_PET_STATUS_HINTS = new Set(["思考中", "已完成", "回复已生成", "出错了", "目标智能体未在线", "打开对话查看完整回复", DESKTOP_PET_DONE_FALLBACK_HINT]);
 
 function getDesktopPetRoot(app: App) {
   return path.join(app.getPath("userData"), DESKTOP_PET_DIRECTORY);
@@ -146,9 +147,14 @@ function sanitizeDesktopPetMessagePreview(value: unknown) {
     return "";
   }
   if (normalized.length > DESKTOP_PET_MESSAGE_PREVIEW_MAX_LENGTH) {
-    return `${normalized.slice(0, Math.max(0, DESKTOP_PET_MESSAGE_PREVIEW_MAX_LENGTH - 1)).trimEnd()}…`;
+    return `${normalized.slice(0, Math.max(0, DESKTOP_PET_MESSAGE_PREVIEW_MAX_LENGTH - 3)).trimEnd()}...`;
   }
   return normalized;
+}
+
+function isGenericDesktopPetDoneHint(value: unknown) {
+  const normalized = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+  return !normalized || DESKTOP_PET_STATUS_HINTS.has(normalized);
 }
 
 function sanitizeDesktopPetStoredState(value: unknown, supported: boolean): DesktopPetStoredState {
@@ -260,7 +266,7 @@ function getAgentStatusHint(agentStatus: DesktopPetBoundAgentStatus | null) {
     return "思考中";
   }
   if (agentStatus.presence === "away") {
-    return sanitizeDesktopPetMessagePreview(agentStatus.latestPreview) || "已完成";
+    return sanitizeDesktopPetMessagePreview(agentStatus.latestPreview) || DESKTOP_PET_DONE_FALLBACK_HINT;
   }
   return "";
 }
@@ -271,7 +277,7 @@ function normalizeLocalDesktopPetStatus(
   if (localStatus.status === "done") {
     return {
       status: "done",
-      hint: localStatus.hint.trim() || "已完成",
+      hint: localStatus.hint.trim() || DESKTOP_PET_DONE_FALLBACK_HINT,
       messagePreview: "",
       unreadCount: sanitizeDesktopPetUnreadCount(localStatus.unreadCount),
       chatId: localStatus.chatId
@@ -308,6 +314,25 @@ function resolveMergedDesktopPetStatus(
   localStatus: DesktopPetLocalStatus,
   agentStatus: DesktopPetBoundAgentStatus | null
 ): Pick<DesktopPetState, "status" | "hint" | "messagePreview" | "unreadCount" | "chatId"> {
+  if (
+    localStatus.status === "done" &&
+    agentStatus &&
+    !agentStatus.stale &&
+    agentStatus.presence === "away" &&
+    (!localStatus.chatId || !agentStatus.chatId || localStatus.chatId === agentStatus.chatId)
+  ) {
+    const agentReplyPreview = sanitizeDesktopPetMessagePreview(agentStatus.latestPreview);
+    if (agentReplyPreview && isGenericDesktopPetDoneHint(localStatus.hint)) {
+      return {
+        status: "done",
+        hint: agentReplyPreview,
+        messagePreview: "",
+        unreadCount: sanitizeDesktopPetUnreadCount(localStatus.unreadCount),
+        chatId: agentStatus.chatId || localStatus.chatId
+      };
+    }
+  }
+
   if (localStatus.status !== "idle") {
     return normalizeLocalDesktopPetStatus(localStatus);
   }

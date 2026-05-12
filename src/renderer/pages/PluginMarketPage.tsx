@@ -309,7 +309,7 @@ export function PluginMarketPage() {
     );
   }
 
-  const currentTitle = activeTab === "plugins" ? "插件市场" : "技能市场";
+  const currentTitle = activeTab === "plugins" ? "功能市场" : "技能市场";
   const currentSubtitle = activeTab === "plugins"
     ? "从云端安装插件，或继续导入本地插件包。"
     : "支持本地导入或从云端下载技能包。";

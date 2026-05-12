@@ -75,7 +75,7 @@ test("desktop pet clamps to the full display area", () => {
 
   assert.deepEqual(bounds, {
     x: 0,
-    y: 673,
+    y: 702,
     width: DESKTOP_PET_WINDOW_SIZE.width,
     height: DESKTOP_PET_WINDOW_SIZE.height
   });
@@ -104,7 +104,7 @@ test("desktop pet exposes anchored preview window sizes", () => {
   const logical = desktopPetInternals.getDesktopPetLogicalPositionFromBounds(expanded, "preview-expanded");
 
   assert.equal(DESKTOP_PET_WINDOW_SIZES["preview-collapsed"].width, 380);
-  assert.equal(DESKTOP_PET_WINDOW_SIZES["preview-expanded"].height, 440);
+  assert.equal(DESKTOP_PET_WINDOW_SIZES["preview-expanded"].height, 412);
   assert.deepEqual(logical, { x: base.x, y: base.y });
   assert.equal(expanded.x + expanded.width, base.x + DESKTOP_PET_WINDOW_SIZE.width);
   assert.equal(expanded.y + expanded.height, base.y + DESKTOP_PET_WINDOW_SIZE.height);
@@ -121,11 +121,12 @@ test("desktop pet bubble window grows upward from the sprite footprint", () => {
   const bubble = desktopPetInternals.getAnchoredDesktopPetBounds({ x: 1100, y: 610 }, display, "bubble");
   const logical = desktopPetInternals.getDesktopPetLogicalPositionFromBounds(bubble, "bubble");
 
-  assert.equal(DESKTOP_PET_WINDOW_SIZE.width, 202);
-  assert.equal(DESKTOP_PET_WINDOW_SIZE.height, 227);
-  assert.equal(desktopPetInternals.DESKTOP_PET_WINDOW_SIZES.bubble.height, 260);
+  assert.equal(DESKTOP_PET_WINDOW_SIZE.width, 176);
+  assert.equal(DESKTOP_PET_WINDOW_SIZE.height, 198);
+  assert.equal(desktopPetInternals.DESKTOP_PET_WINDOW_SIZES.bubble.width, 224);
+  assert.equal(desktopPetInternals.DESKTOP_PET_WINDOW_SIZES.bubble.height, 228);
   assert.deepEqual(logical, { x: base.x, y: base.y });
-  assert.equal(bubble.x, base.x);
+  assert.equal(bubble.x + desktopPetInternals.DESKTOP_PET_WINDOW_SIZES.bubble.width, base.x + DESKTOP_PET_WINDOW_SIZE.width);
   assert.equal(bubble.y + bubble.height, base.y + DESKTOP_PET_WINDOW_SIZE.height);
 });
 
@@ -360,6 +361,40 @@ test("desktop pet done status can show a task completion reminder", () => {
   assert.equal(state.chatId, "quick-chat");
 });
 
+test("desktop pet done status can be refreshed by the agent reply preview", () => {
+  const state = createDesktopPetState({
+    enabled: true,
+    lastVisible: true,
+    unreadCount: 0,
+    boundAgentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY
+  }, {
+    supported: true,
+    visible: true,
+    localStatus: {
+      status: "done",
+      hint: "暂无回复预览",
+      unreadCount: 0,
+      chatId: "agent-chat"
+    },
+    agentStatus: {
+      agentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+      displayName: "小宅",
+      role: "平台总管",
+      presence: "away",
+      unreadCount: 0,
+      latestPreview: "模型回复内容预览会直接显示在气泡里。",
+      chatId: "agent-chat",
+      hasPendingAwaiting: false,
+      stale: false,
+      updatedAt: "2026-05-07T00:00:00.000Z"
+    }
+  });
+
+  assert.equal(state.status, "done");
+  assert.equal(state.hint, "模型回复内容预览会直接显示在气泡里。");
+  assert.equal(state.chatId, "agent-chat");
+});
+
 test("desktop pet done bound agent status can preview the latest reply", () => {
   const state = createDesktopPetState({
     enabled: true,
@@ -526,7 +561,7 @@ test("desktop pet truncates unread long previews for message reactions", () => {
   });
 
   assert.equal(state.status, "idle");
-  assert.equal(state.messagePreview, "这是一段很长很长的回复内容，不应该塞进桌面宠物的气泡里展示…");
+  assert.equal(state.messagePreview, "这是一段很长很长的回复内容，不应该塞进桌面宠物的气泡里...");
   assert.equal(state.messagePreview.length, 30);
   assert.equal(state.unreadCount, 1);
 });
@@ -846,7 +881,7 @@ test("agent-platform run finished push exposes a short done status", () => {
 
   assert.equal(next?.presence, "away");
   assert.equal(state.status, "done");
-  assert.equal(state.hint, "已完成");
+  assert.equal(state.hint, "暂无回复预览");
   assert.equal(state.unreadCount, 0);
 });
 
@@ -905,7 +940,57 @@ test("agent-platform run finished push can match current chat without agent key"
 
   assert.equal(next?.presence, "away");
   assert.equal(next?.chatId, "chat-running");
-  assert.equal(next?.latestPreview, "已完成");
+  assert.equal(next?.latestPreview, "暂无回复预览");
+});
+
+test("agent-platform chat updated push refreshes reply preview after generic finish", () => {
+  const running = applyAgentPlatformPetPush(null, DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY, {
+    frame: "push",
+    type: "run.started",
+    data: {
+      agentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+      chatId: "chat-running"
+    }
+  });
+  const finished = applyAgentPlatformPetPush(running, DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY, {
+    frame: "push",
+    type: "run.finished",
+    data: {
+      chatId: "chat-running"
+    }
+  });
+  const next = applyAgentPlatformPetPush(finished, DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY, {
+    frame: "push",
+    type: "chat.updated",
+    data: {
+      chat: {
+        chatId: "chat-running",
+        lastRunContent: "你指的重写是指：告诉我哪里不对，我再改。"
+      }
+    }
+  });
+  const state = createDesktopPetState({
+    enabled: true,
+    lastVisible: true,
+    unreadCount: 0,
+    boundAgentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY
+  }, {
+    supported: true,
+    visible: true,
+    localStatus: {
+      ...createDefaultDesktopPetLocalStatus(),
+      status: "done",
+      hint: "暂无回复预览",
+      chatId: "chat-running"
+    },
+    agentStatus: next
+  });
+
+  assert.equal(finished?.latestPreview, "暂无回复预览");
+  assert.equal(next?.presence, "away");
+  assert.equal(next?.latestPreview, "你指的重写是指：告诉我哪里不对，我再改。");
+  assert.equal(state.status, "done");
+  assert.equal(state.hint, "你指的重写是指：告诉我哪里不对，我再改。");
 });
 
 test("agent-platform status client attaches only bound agent runs", () => {
@@ -976,6 +1061,47 @@ test("agent-platform status client attaches only bound agent runs", () => {
   assert.equal(statusUpdates.at(-1)?.presence, "away");
 });
 
+test("agent-platform status client accepts chat updated content for the current chat", () => {
+  const statusUpdates = [];
+  const client = new AgentPlatformPetStatusClient({
+    app: {},
+    getBoundAgentKey: () => DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+    getServiceState: async () => ({ status: "stopped", healthMeta: { webUrl: "" } }),
+    issueAccessToken: async () => ({ ok: true, token: "token" }),
+    onStatus: (status) => statusUpdates.push(status)
+  });
+
+  client.handleWebSocketMessage(JSON.stringify({
+    frame: "push",
+    type: "run.started",
+    data: {
+      runId: "run_bound",
+      chatId: "chat_bound",
+      agentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY
+    }
+  }));
+  client.handleWebSocketMessage(JSON.stringify({
+    frame: "push",
+    type: "run.finished",
+    data: {
+      runId: "run_bound",
+      chatId: "chat_bound"
+    }
+  }));
+  client.handleWebSocketMessage(JSON.stringify({
+    frame: "push",
+    type: "chat.updated",
+    data: {
+      chatId: "chat_bound",
+      lastRunContent: "真正的模型回复内容"
+    }
+  }));
+  client.stop();
+
+  assert.equal(statusUpdates.at(-1)?.presence, "away");
+  assert.equal(statusUpdates.at(-1)?.latestPreview, "真正的模型回复内容");
+});
+
 test("desktop pet preview can be completed by agent-platform run finished fallback", () => {
   const projector = new DesktopPetPreviewProjector();
   projector.ingest({
@@ -993,9 +1119,111 @@ test("desktop pet preview can be completed by agent-platform run finished fallba
 
   const panel = projector.getPanel();
   assert.equal(panel.status, "done");
-  assert.equal(panel.title, "已完成");
+  assert.equal(panel.title, "现在是 09:24。");
   assert.equal(panel.summary, "现在是 09:24。");
-  assert.equal(panel.items.some((item) => item.title === "已完成"), true);
+  assert.equal(panel.items.some((item) => item.title === "现在是 09:24。"), true);
+});
+
+test("desktop pet preview keeps the latest body when completion is generic", () => {
+  const projector = new DesktopPetPreviewProjector();
+  projector.ingest({
+    runId: "run_body",
+    chatId: "chat_body",
+    type: "run.start",
+    message: "帮我总结一下"
+  });
+  projector.ingest({
+    runId: "run_body",
+    chatId: "chat_body",
+    type: "content.delta",
+    text: "正文内容会显示在折叠预览里。"
+  });
+  projector.ingest({
+    runId: "run_body",
+    chatId: "chat_body",
+    type: "run.complete",
+    message: "已完成"
+  });
+
+  const panel = projector.getPanel();
+  assert.equal(panel.status, "done");
+  assert.equal(panel.title, "正文内容会显示在折叠预览里。");
+  assert.equal(panel.summary, "正文内容会显示在折叠预览里。");
+});
+
+test("desktop pet preview accumulates streamed reply chunks for completion preview", () => {
+  const projector = new DesktopPetPreviewProjector();
+  projector.ingest({
+    runId: "run_chunks",
+    chatId: "chat_chunks",
+    type: "run.start",
+    message: "帮我写一句话"
+  });
+  projector.ingest({
+    runId: "run_chunks",
+    chatId: "chat_chunks",
+    type: "content.delta",
+    text: "第一段"
+  });
+  projector.ingest({
+    runId: "run_chunks",
+    chatId: "chat_chunks",
+    type: "content.delta",
+    text: "第二段"
+  });
+  projector.ingest({
+    runId: "run_chunks",
+    chatId: "chat_chunks",
+    type: "run.complete",
+    message: "生成完成。"
+  });
+
+  const panel = projector.getPanel();
+  assert.equal(panel.status, "done");
+  assert.equal(panel.title, "第一段第二段");
+  assert.equal(panel.summary, "第一段第二段");
+});
+
+test("desktop pet preview truncates model reply content to thirty characters", () => {
+  const projector = new DesktopPetPreviewProjector();
+  projector.ingest({
+    runId: "run_long_reply",
+    chatId: "chat_long_reply",
+    type: "run.start",
+    message: "帮我写一段话"
+  });
+  projector.ingest({
+    runId: "run_long_reply",
+    chatId: "chat_long_reply",
+    type: "run.complete",
+    message: "这是一段超过三十个字的模型回复内容，用来验证气泡只展示预览内容。"
+  });
+
+  const panel = projector.getPanel();
+  assert.equal(panel.status, "done");
+  assert.equal(panel.title, "这是一段超过三十个字的模型回复内容，用来验证气泡只展示...");
+  assert.equal(panel.summary, "这是一段超过三十个字的模型回复内容，用来验证气泡只展示...");
+});
+
+test("desktop pet preview does not reuse the user request as a generic completion preview", () => {
+  const projector = new DesktopPetPreviewProjector();
+  projector.ingest({
+    runId: "run_no_body",
+    chatId: "chat_no_body",
+    type: "run.start",
+    message: "帮我写一份总结"
+  });
+  projector.ingest({
+    runId: "run_no_body",
+    chatId: "chat_no_body",
+    type: "run.complete",
+    message: "生成完成。"
+  });
+
+  const panel = projector.getPanel();
+  assert.equal(panel.status, "done");
+  assert.equal(panel.title, "暂无回复预览");
+  assert.equal(panel.summary, "暂无回复预览");
 });
 
 test("desktop pet preview projects tool, artifact, and terminal events", () => {
@@ -1043,10 +1271,10 @@ test("desktop pet preview projects tool, artifact, and terminal events", () => {
   const panel = projector.getPanel();
 
   assert.equal(panel.status, "done");
-  assert.equal(panel.title, "已完成");
+  assert.equal(panel.title, "report.md");
   assert.equal(panel.chatId, "chat_preview");
   assert.equal(panel.artifactCount, 1);
-  assert.equal(terminal.holdMs, 4200);
+  assert.equal(terminal.holdMs, 12000);
   assert.equal(panel.items.some((item) => item.kind === "tool"), true);
   assert.equal(panel.items.some((item) => item.kind === "artifact"), true);
 });
@@ -1322,7 +1550,7 @@ test("agent-platform read push does not clear a finished bound agent reminder", 
 
   assert.equal(read?.presence, "away");
   assert.equal(state.status, "done");
-  assert.equal(state.hint, "已完成");
+  assert.equal(state.hint, "暂无回复预览");
 });
 
 test("agent-platform read push replays a recent completion after snapshot refresh", () => {

@@ -7,7 +7,7 @@ const staticNavItems = [
 ];
 
 const tailNavItems = [
-  { to: "/market", label: "插件市场" },
+  { to: "/market", label: "功能市场" },
   { to: "/help", label: "帮助" }
 ];
 

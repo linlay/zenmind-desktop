@@ -215,7 +215,6 @@ export function SettingsPage({
   }, [desktopPetState?.boundAgentKey]);
 
   const currentDesktopPetBoundAgentKey = desktopPetState?.boundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
-  const desktopPetBoundAgentKeyDirty = desktopPetBoundAgentKey.trim() !== currentDesktopPetBoundAgentKey;
   const desktopPetAgentOptions = desktopPetState?.agentOptions ?? [];
   const desktopPetEnabled = Boolean(desktopPetState?.enabled);
   const desktopPetAppearanceOptions = desktopPetState?.appearanceOptions?.length
@@ -416,22 +415,24 @@ export function SettingsPage({
     }
   }
 
-  async function handleSaveDesktopPetBoundAgentKey(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const nextBoundAgentKey = desktopPetBoundAgentKey.trim();
-    if (!isMac || !desktopPetState || !nextBoundAgentKey || nextBoundAgentKey === desktopPetState.boundAgentKey) {
+  async function handleSelectDesktopPetBoundAgentKey(nextBoundAgentKey: string) {
+    const normalizedBoundAgentKey = nextBoundAgentKey.trim();
+    const previousBoundAgentKey = desktopPetState?.boundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
+    if (!isMac || !desktopPetState || !normalizedBoundAgentKey || normalizedBoundAgentKey === desktopPetState.boundAgentKey) {
       return;
     }
 
     setDesktopPetBoundAgentPending(true);
     try {
       const nextState = await window.electronAPI.desktopPet.saveSettings({
-        boundAgentKey: nextBoundAgentKey
+        boundAgentKey: normalizedBoundAgentKey
       });
+      const nextAgent = nextState.agentOptions.find((agent) => agent.agentKey === nextState.boundAgentKey);
       setDesktopPetState(nextState);
       setDesktopPetBoundAgentKey(nextState.boundAgentKey);
-      setFeedback(`桌面宠物已绑定到 ${nextState.boundAgentKey}。`);
+      setFeedback(`桌面宠物已绑定到 ${nextAgent?.displayName ?? nextState.boundAgentKey}。`);
     } catch (reason) {
+      setDesktopPetBoundAgentKey(previousBoundAgentKey);
       setFeedback(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setDesktopPetBoundAgentPending(false);
@@ -567,59 +568,44 @@ export function SettingsPage({
                 })}
               </div>
             </div>
-            <form className="desktop-pet-agent-form" onSubmit={(event) => void handleSaveDesktopPetBoundAgentKey(event)}>
+            <div className="desktop-pet-agent-form">
               <label className="desktop-pet-agent-field">
                 <span>选择智能体</span>
-                <select
-                  value={desktopPetAgentOptions.some((agent) => agent.agentKey === desktopPetBoundAgentKey) ? desktopPetBoundAgentKey : ""}
-                  onChange={(event) => {
-                    if (event.target.value) {
-                      setDesktopPetBoundAgentKey(event.target.value);
-                    }
-                  }}
-                  disabled={!desktopPetEnabled || desktopPetAgentOptions.length === 0}
-                >
-                  <option value="">
-                    {!desktopPetEnabled
-                      ? "开启后读取智能体列表"
-                      : desktopPetAgentOptions.length === 0
-                        ? "正在读取智能体列表..."
-                        : "请选择智能体"}
-                  </option>
-                  {desktopPetAgentOptions.map((agent) => (
-                    <option value={agent.agentKey} key={agent.agentKey}>
-                      {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}（{agent.agentKey}）
+                <span className="desktop-pet-agent-select-wrap">
+                  <select
+                    value={desktopPetAgentOptions.some((agent) => agent.agentKey === desktopPetBoundAgentKey) ? desktopPetBoundAgentKey : ""}
+                    onChange={(event) => {
+                      const nextBoundAgentKey = event.target.value;
+                      setDesktopPetBoundAgentKey(nextBoundAgentKey);
+                      void handleSelectDesktopPetBoundAgentKey(nextBoundAgentKey);
+                    }}
+                    disabled={!desktopPetEnabled || desktopPetAgentOptions.length === 0 || desktopPetBoundAgentPending}
+                  >
+                    <option value="">
+                      {!desktopPetEnabled
+                        ? "开启后读取智能体列表"
+                        : desktopPetAgentOptions.length === 0
+                          ? "正在读取智能体列表..."
+                          : "请选择智能体"}
                     </option>
-                  ))}
-                </select>
-                <span className="desktop-pet-agent-note">按名称选择，不需要记 agentKey。</span>
-              </label>
-              <label className="desktop-pet-agent-field">
-                <span>agentKey（高级）</span>
-                <input
-                  value={desktopPetBoundAgentKey}
-                  onChange={(event) => setDesktopPetBoundAgentKey(event.target.value)}
-                  placeholder={DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY}
-                  spellCheck={false}
-                />
+                    {desktopPetAgentOptions.map((agent) => (
+                      <option value={agent.agentKey} key={agent.agentKey}>
+                        {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </span>
                 <span className="desktop-pet-agent-note">
                   {desktopPetBoundAgentPending
-                    ? "保存中..."
+                    ? "绑定中..."
                     : `当前绑定：${
                         currentDesktopPetAgentOption?.displayName
-                          ? `${currentDesktopPetAgentOption.displayName}（${currentDesktopPetBoundAgentKey}）`
+                          ? `${currentDesktopPetAgentOption.displayName}${currentDesktopPetAgentOption.role ? ` · ${currentDesktopPetAgentOption.role}` : ""}`
                           : currentDesktopPetBoundAgentKey
                       }`}
                 </span>
               </label>
-              <button
-                type="submit"
-                className="text-button desktop-pet-agent-save"
-                disabled={desktopPetBoundAgentPending || !desktopPetBoundAgentKey.trim() || !desktopPetBoundAgentKeyDirty}
-              >
-                保存绑定
-              </button>
-            </form>
+            </div>
           </div>
           <button
             type="button"

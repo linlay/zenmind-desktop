@@ -127,6 +127,26 @@ test("desktop shell starts window drag from non-interactive mac regions", () => 
   assert.match(mainProcess, /ipcMain\.handle\("windowDrag\.begin"/);
 });
 
+test("main process keeps app identity visible in platform program bars", () => {
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+
+  assert.match(mainProcess, /const ZENMIND_APP_ID = "cc\.zenmind\.desktop";/);
+  assert.match(mainProcess, /const ZENMIND_PRODUCT_NAME = "ZenMind";/);
+  assert.match(mainProcess, /app\.setName\(ZENMIND_PRODUCT_NAME\);/);
+  assert.match(
+    mainProcess,
+    /if \(process\.platform === "win32"\)\s*\{[\s\S]*?app\.setAppUserModelId\(ZENMIND_APP_ID\);[\s\S]*?\}/
+  );
+  assert.match(mainProcess, /function ensureDarwinDockIdentity\(\)/);
+  assert.match(
+    mainProcess,
+    /if \(process\.platform !== "darwin"\)\s*\{[\s\S]*?return;[\s\S]*?\}/
+  );
+  assert.match(mainProcess, /app\.setActivationPolicy\("regular"\);/);
+  assert.match(mainProcess, /dock\.show\(\)\.catch/);
+  assert.match(mainProcess, /ensureDarwinDockIdentity\(\);[\s\S]*?const targetWindow = getMainWindowForActivation\(\);/);
+});
+
 test("external webview tabs use repeatable pointer reordering", () => {
   const externalWebviewPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "ExternalWebviewPage.tsx"),
@@ -287,12 +307,20 @@ test("plugin page provides iframe-aware assistant context instead of guessing em
     path.join(projectRoot, "src", "renderer", "pages", "PluginPage.tsx"),
     "utf8"
   );
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
 
   assert.match(pluginPage, /registerAssistantPageContextProvider/);
   assert.match(pluginPage, /tryReadPluginIframePageContext/);
   assert.match(pluginPage, /buildPluginIframeFallbackContext/);
   assert.match(pluginPage, /无法直接读取这个 iframe 内部的列表、卡片或正文文本/);
   assert.match(pluginPage, /不要猜测网站、应用名称或列表项/);
+  assert.match(pluginPage, /const iframeRenderKey = useMemo/);
+  assert.match(pluginPage, /setIframeLoaded\(false\)/);
+  assert.match(pluginPage, /onLoad=\{\(\) => \{/);
+  assert.match(pluginPage, /正在等待页面样式与资源加载完成/);
+  assert.doesNotMatch(pluginPage, /iframeInstanceKey/);
+  assert.match(globalStyles, /\.pan-frame\.is-loading\s*\{/);
+  assert.match(globalStyles, /\.embedded-plugin-loading\s*\{/);
 });
 
 test("native assistant page context captures shell sidebar, left region, and modal content separately", () => {
@@ -444,11 +472,14 @@ test("desktop pet base mode stays sprite-sized while bubble and preview modes ex
   assert.match(mainProcess, /return shouldShowBubble \? "bubble" : "base";/);
   assert.doesNotMatch(mainProcess, /shouldHideDesktopPetForMainWindow/);
   assert.doesNotMatch(mainProcess, /syncDesktopPetWindowVisibility/);
-  assert.match(petGeometry, /width:\s*202,/);
-  assert.match(petGeometry, /height:\s*227/);
-  assert.match(petGeometry, /bubble:\s*\{\s*width:\s*202,\s*height:\s*260/s);
-  assert.match(globalStyles, /\.desktop-pet-hitbox\s*\{[\s\S]{0,220}width:\s*200px;[\s\S]{0,120}min-height:\s*156px;/);
-  assert.match(globalStyles, /\.desktop-pet-image\s*\{[\s\S]{0,120}width:\s*124px;/);
+  assert.match(petGeometry, /width:\s*176,/);
+  assert.match(petGeometry, /height:\s*198/);
+  assert.match(petGeometry, /bubble:\s*\{\s*width:\s*224,\s*height:\s*228/s);
+  assert.match(globalStyles, /\.desktop-pet-hitbox\s*\{[\s\S]{0,220}width:\s*174px;[\s\S]{0,120}min-height:\s*134px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-bubble\s+\.desktop-pet-hitbox\s*\{[\s\S]{0,80}width:\s*220px;/);
+  assert.match(globalStyles, /\.desktop-pet-speech\s*\{[\s\S]{0,80}width:\s*min\(216px,\s*calc\(100% - 4px\)\);/);
+  assert.match(globalStyles, /\.desktop-pet-speech\s*\{[\s\S]{0,520}box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.desktop-pet-image\s*\{[\s\S]{0,120}width:\s*96px;/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root:not\(\.has-bubble\):not\(\.has-preview\)\s+\.desktop-pet-image[\s\S]{0,120}width:\s*100%/);
 });
 
@@ -492,6 +523,13 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /displayStatus === "idle" && !isDragging && !hasMessageReaction/);
   assert.match(desktopPet, /isHovering \|\| isKeyboardFocused/);
   assert.match(desktopPet, /getDesktopPetStatusAssetPath\(appearanceId, visualStatus\)/);
+  assert.match(desktopPet, /DESKTOP_PET_INLINE_PREVIEW_MAX_LENGTH = 30/);
+  assert.match(desktopPet, /formatInlinePetPreview\(bubbleText\)/);
+  assert.match(desktopPet, /const statusBubbleText = petState\.hint\.trim\(\) \|\| formatPetHint\(displayStatus\);/);
+  assert.match(desktopPet, /const previewSummary = previewPanel && previewPanel\.expanded/);
+  assert.match(desktopPet, /const showItemDetail = shouldShowSecondaryPreview\(itemTitle, itemDetailPreview\);/);
+  assert.match(desktopPet, /handlePreviewClick[\s\S]{0,180}previewPanel\.status === "done"[\s\S]{0,120}desktopPet\.dismissPreview/);
+  assert.match(desktopPet, /handlePreviewClick[\s\S]{0,360}desktopPet\.setPreviewExpanded\(!previewPanel\.expanded\)/);
   assert.match(desktopPet, /messagePreview \|\| "有新消息"/);
   assert.match(desktopPet, /const previewPanel = petState\.previewPanel\?\.visible \? petState\.previewPanel : null/);
   assert.match(desktopPet, /const showPreviewPanel = !isDragging && Boolean\(previewPanel\)/);
@@ -528,7 +566,9 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(mainProcess, /function setDesktopPetWindowMouseInteractive\(interactive: boolean\)/);
   assert.match(mainProcess, /setIgnoreMouseEvents\(!interactive, \{ forward: true \}\)/);
   assert.match(mainProcess, /desktopPet\.setMouseInteractive/);
+  assert.match(mainProcess, /desktopPet\.dismissPreview/);
   assert.match(mainProcess, /desktopPet\.danceRequested/);
+  assert.match(preload, /dismissPreview: \(\) => ipcRenderer\.invoke\("desktopPet\.dismissPreview"\)/);
   assert.match(preload, /setMouseInteractive: \(interactive\) => ipcRenderer\.invoke\("desktopPet\.setMouseInteractive", interactive\)/);
   assert.match(preload, /onDanceRequested/);
   assert.match(preload, /desktopPet\.danceRequested/);
