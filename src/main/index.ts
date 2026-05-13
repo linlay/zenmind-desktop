@@ -73,11 +73,6 @@ import {
   removeCustomSidebarItem
 } from "./custom-sidebar-store";
 import {
-  deleteAssistantChat,
-  getAssistantChat,
-  listAssistantChats
-} from "./assistant/chat-store";
-import {
   getAgentPlatformMinimaxSettingsPublic,
   loadAgentPlatformMinimaxSettings
 } from "./assistant/agent-platform-config";
@@ -86,20 +81,7 @@ import {
   readAssistantSettings,
   saveAssistantSettings
 } from "./assistant/settings-store";
-import {
-  clearAssistantMemoryItems,
-  deleteAssistantMemoryItem,
-  getAssistantMemoryDirectory,
-  getAssistantMemorySettings,
-  getAssistantMemorySummary,
-  getAssistantMemoryStats,
-  getAssistantMemoryStorageFromRoot,
-  listAssistantMemoryItems,
-  saveAssistantMemorySettings
-} from "./assistant/memory-store";
-import { AssistantRuntime } from "./assistant/runtime";
-import { BrowserUseController, type BrowserSurface } from "./assistant/browser-use";
-import { SystemChromeController } from "./assistant/system-chrome";
+import { AgentPlatformAssistantBridge } from "./assistant/agent-platform-bridge";
 import {
   cancelAssistantAttachmentTask,
   createAssistantAttachmentFromImageBuffer,
@@ -111,7 +93,6 @@ import { getService } from "./service-registry";
 import type {
   AssistantEvent,
   AssistantAttachmentTaskProgress,
-  AssistantMemorySettingsInput,
   AssistantSettingsInput,
   AssistantStartRunRequest,
   AssistantSubmitAwaitingRequest,
@@ -215,6 +196,16 @@ const DESKTOP_PET_GENERIC_DONE_PREVIEWS = new Set([
   "打开对话查看完整回复",
   DESKTOP_PET_DONE_PREVIEW_FALLBACK
 ]);
+
+type BrowserSurface = {
+  id: string;
+  label: string;
+  url: string;
+  active?: boolean;
+  title?: string;
+  currentUrl?: string;
+  webContentsId?: number;
+};
 let startupRestoreState = createStartupRestoreState();
 
 // Keep dev Electron runs on the same data root as packaged builds.
@@ -3151,59 +3142,11 @@ async function renderAssistantPdf(html: string) {
 }
 
 function registerIpcHandlers() {
-  const systemChromeController = new SystemChromeController(app);
-  const browserUseController = new BrowserUseController({
-    resolveWebContents: (webContentsId) => systemChromeController.resolveWebContents(webContentsId)
-  });
-  const assistantBrowserUse = {
-    listSurfaces: async () => [
-      ...listBrowserSurfaces(),
-      ...await systemChromeController.listSurfaces()
-    ],
-    activateSurface: async (target: string) => {
-      const embeddedResult = await activateBrowserSurface(target);
-      if (embeddedResult.ok) {
-        return embeddedResult;
-      }
-      return systemChromeController.activateSurface(target);
-    },
-    observePage: (webContentsId: number) => browserUseController.observePage(webContentsId),
-    snapshotPage: (webContentsId: number) => browserUseController.snapshotPage(webContentsId),
-    click: (webContentsId: number, input: { elementRef?: string; target?: string }) =>
-      browserUseController.click(webContentsId, input),
-    navigateUrl: (webContentsId: number, input: { url: string; label?: string }) =>
-      browserUseController.navigateUrl(webContentsId, input),
-    fillFields: (webContentsId: number, fields: Parameters<BrowserUseController["fillFields"]>[1]) =>
-      browserUseController.fillFields(webContentsId, fields),
-    autofillForm: (webContentsId: number, input?: Parameters<BrowserUseController["autofillForm"]>[1]) =>
-      browserUseController.autofillForm(webContentsId, input),
-    waitForPageSettle: (webContentsId: number, timeoutMs?: number) =>
-      browserUseController.waitForPageSettle(webContentsId, timeoutMs),
-    openUrl: (input: { url: string; label?: string }) => systemChromeController.openUrl(input),
-    selectOption: (webContentsId: number, input: Parameters<BrowserUseController["selectOption"]>[1]) =>
-      browserUseController.selectOption(webContentsId, input),
-    setChecked: (webContentsId: number, input: Parameters<BrowserUseController["setChecked"]>[1]) =>
-      browserUseController.setChecked(webContentsId, input),
-    submit: (webContentsId: number, input?: Parameters<BrowserUseController["submit"]>[1]) =>
-      browserUseController.submit(webContentsId, input),
-    clickElementByText: (webContentsId: number, target: string) =>
-      browserUseController.clickElementByText(webContentsId, target),
-    fillBestInput: (webContentsId: number, value: string) =>
-      browserUseController.fillBestInput(webContentsId, value),
-    fillBestInputAndSubmit: (webContentsId: number, value: string) =>
-      browserUseController.fillBestInputAndSubmit(webContentsId, value),
-    readPageContext: (webContentsId: number) => browserUseController.readPageContext(webContentsId),
-    captureScreenshot: (webContentsId: number) => browserUseController.captureScreenshot(webContentsId),
-    readAccessibilitySnapshot: (webContentsId: number) => browserUseController.readAccessibilitySnapshot(webContentsId),
-    createRuntimeSnapshot: (webContentsId: number) => browserUseController.createRuntimeSnapshot(webContentsId),
-    waitForCondition: (webContentsId: number, condition?: Parameters<BrowserUseController["waitForCondition"]>[1]) =>
-      browserUseController.waitForCondition(webContentsId, condition),
-    extractPage: (webContentsId: number, extraction: Parameters<BrowserUseController["extractPage"]>[1]) =>
-      browserUseController.extractPage(webContentsId, extraction),
-    sendCdpCommand: (webContentsId: number, input: { method: string; params?: Record<string, unknown> }) =>
-      browserUseController.sendCdpCommand(webContentsId, input)
-  };
-  const assistantRuntime = new AssistantRuntime(app, (event) => {
+  const assistantBridge = new AgentPlatformAssistantBridge({
+    app,
+    getServiceState,
+    issueAccessToken: issueAgentAccessToken,
+    onEvent: (event) => {
     for (const targetWindow of [mainWindow, quickAssistantWindow]) {
       if (!targetWindow || targetWindow.isDestroyed()) {
         continue;
@@ -3211,53 +3154,6 @@ function registerIpcHandlers() {
       targetWindow.webContents.send("assistant.event", event);
     }
     handleDesktopPetAssistantEvent(event);
-  }, assistantBrowserUse, {
-    openExternalUrl: async (url) => {
-      await shell.openExternal(url);
-    },
-    renderPdf: renderAssistantPdf,
-    services: {
-      list: async () => listServices(app),
-      control: async (serviceId, operation) => {
-        if (operation === "stop") {
-          return stopService(app, serviceId);
-        }
-        if (operation === "restart") {
-          return restartService(app, serviceId);
-        }
-        return handleServiceStart(serviceId);
-      }
-    },
-    resolveContainerHub: async () => {
-      const state = await getServiceState(app, "agent-container-hub").catch((error) => {
-        return {
-          status: "error",
-          message: error instanceof Error ? error.message : String(error),
-          healthMeta: {
-            webUrl: "",
-            port: null
-          }
-        };
-      });
-      if (state.status !== "running") {
-        return {
-          baseURL: "",
-          unavailableReason: state.message || "Container Hub 未运行，请先在控制中心启动容器仓库服务。"
-        };
-      }
-      const verification = await verifyServiceState(app, "agent-container-hub", "running").catch(() => null);
-      if (verification && !verification.verified) {
-        return {
-          baseURL: "",
-          unavailableReason: `Container Hub 未通过运行复查：${verification.issues.join("；") || "状态未验证"}`
-        };
-      }
-      const baseURL = state.healthMeta.webUrl || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "");
-      return {
-        baseURL,
-        defaultEnvironmentName: "shell",
-        timeoutMs: 30000
-      };
     }
   });
 
@@ -3265,42 +3161,25 @@ function registerIpcHandlers() {
   ipcMain.handle("assistant.saveSettings", async (_event, input: AssistantSettingsInput) =>
     saveAssistantSettings(app, input)
   );
-  ipcMain.handle("assistant.getMemorySettings", async () => getAssistantMemorySettings(app));
-  ipcMain.handle("assistant.saveMemorySettings", async (_event, input: AssistantMemorySettingsInput) =>
-    saveAssistantMemorySettings(app, input)
+  ipcMain.handle("assistant.getMemorySettings", async () => assistantBridge.getMemorySettings());
+  ipcMain.handle("assistant.saveMemorySettings", async (_event, input) =>
+    assistantBridge.saveMemorySettings(input)
   );
-  ipcMain.handle("assistant.getMemorySummary", async () => getAssistantMemorySummary(app));
+  ipcMain.handle("assistant.getMemorySummary", async () => assistantBridge.getMemorySummary());
   ipcMain.handle("assistant.openMemoryDirectory", async () => {
-    const directoryPath = getAssistantMemoryDirectory(app);
-    fs.mkdirSync(directoryPath, { recursive: true });
-    // macOS and Windows both use Electron's shell helper, but keep the platform
-    // branch explicit because packaged path/open behavior is platform-sensitive.
-    let error = "";
-    if (process.platform === "darwin") {
-      error = await shell.openPath(directoryPath);
-    } else if (process.platform === "win32") {
-      error = await shell.openPath(directoryPath);
-    } else {
-      error = await shell.openPath(directoryPath);
-    }
     return {
-      ok: !error,
-      message: error ? `打开记忆目录失败：${error}` : "已打开助手记忆目录。",
-      path: directoryPath
+      ok: false,
+      message: "记忆现在由 agent-platform 管理，Desktop 不再维护本地记忆目录。",
+      path: ""
     };
   });
-  ipcMain.handle("assistant.listMemoryItems", async () => ({
-    items: listAssistantMemoryItems(app),
-    settings: getAssistantMemorySettings(app),
-    stats: getAssistantMemoryStats(app),
-    storage: getAssistantMemoryStorageFromRoot(app.getPath("userData"))
-  }));
+  ipcMain.handle("assistant.listMemoryItems", async () => assistantBridge.listMemoryItems());
   ipcMain.handle("assistant.deleteMemoryItem", async (_event, memoryId: string) =>
-    deleteAssistantMemoryItem(app, memoryId)
+    assistantBridge.deleteMemoryItem(memoryId)
   );
-  ipcMain.handle("assistant.clearMemoryItems", async () => clearAssistantMemoryItems(app));
-  ipcMain.handle("assistant.listChats", async () => listAssistantChats(app));
-  ipcMain.handle("assistant.getChat", async (_event, chatId: string) => getAssistantChat(app, chatId));
+  ipcMain.handle("assistant.clearMemoryItems", async () => assistantBridge.clearMemoryItems());
+  ipcMain.handle("assistant.listChats", async () => assistantBridge.listChats());
+  ipcMain.handle("assistant.getChat", async (_event, chatId: string) => assistantBridge.getChat(chatId));
   ipcMain.handle("assistant.pickAttachments", async (_event, chatId?: string | null) =>
     pickAssistantAttachments(chatId, mainWindow)
   );
@@ -3315,25 +3194,19 @@ function registerIpcHandlers() {
   ipcMain.handle("assistant.captureScreenshot", async (_event, chatId?: string | null) =>
     captureAssistantScreenshot(chatId, "sidebar")
   );
-  ipcMain.handle("assistant.deleteChat", async (_event, chatId: string) => {
-    deleteAssistantChat(app, chatId);
-    return {
-      ok: true,
-      message: "已删除对话。"
-    };
-  });
+  ipcMain.handle("assistant.deleteChat", async (_event, chatId: string) => assistantBridge.deleteChat(chatId));
   ipcMain.handle("assistant.startRun", async (_event, request: AssistantStartRunRequest) =>
-    assistantRuntime.startRun(request)
+    assistantBridge.startRun(request)
   );
-  ipcMain.handle("assistant.stopRun", async (_event, runId: string) => assistantRuntime.stopRun(runId));
+  ipcMain.handle("assistant.stopRun", async (_event, runId: string) => assistantBridge.stopRun(runId));
   ipcMain.handle("assistant.correctVoiceText", async (_event, request: AssistantVoiceCorrectionRequest) =>
-    assistantRuntime.correctVoiceText(request)
+    assistantBridge.correctVoiceText(request)
   );
   ipcMain.handle("assistant.transcribeVoiceAudio", async (_event, request: AssistantVoiceTranscriptionRequest) =>
-    assistantRuntime.transcribeVoiceAudio(request)
+    assistantBridge.transcribeVoiceAudio(request)
   );
   ipcMain.handle("assistant.submitAwaiting", async (_event, request: AssistantSubmitAwaitingRequest) =>
-    assistantRuntime.submitAwaiting(request)
+    assistantBridge.submitAwaiting(request)
   );
   ipcMain.handle("assistant.openAttachment", async (_event, chatId: string, attachmentId: string) => {
     try {

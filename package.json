@@ -22,7 +22,6 @@
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@napi-rs/canvas": "^0.1.100",
-    "@page-agent/core": "^1.8.1",
     "docx": "^9.6.1",
     "exceljs": "^4.4.0",
     "fast-xml-parser": "^5.7.2",
