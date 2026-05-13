@@ -97,11 +97,25 @@ function readDesktopPackageJson(rootDir = projectRoot) {
   return JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf8"));
 }
 
+function readDesktopVersion(rootDir = projectRoot) {
+  const versionFile = path.join(rootDir, "VERSION");
+  if (!fs.existsSync(versionFile)) {
+    return readDesktopPackageJson(rootDir).version;
+  }
+
+  const version = fs.readFileSync(versionFile, "utf8").trim();
+  if (!version) {
+    throw new Error(`empty VERSION file: ${versionFile}`);
+  }
+
+  return version.replace(/^v/iu, "");
+}
+
 function writeStagePackageJson(rootDir, target) {
   const desktopPackage = readDesktopPackageJson(rootDir);
   const stagePackage = {
     name: desktopPackage.name,
-    version: desktopPackage.version,
+    version: readDesktopVersion(rootDir),
     description: desktopPackage.description,
     main: "dist-electron/main/index.js",
     productName: desktopPackage.build?.productName,

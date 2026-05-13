@@ -1,11 +1,16 @@
 node_modules/
 .pnpm-store/
+package-lock.json
+.claude/
 dist/
 dist-renderer/
 dist-electron/
 out/
 release/
 
+build/app/
+build/bundle/
+build/local-builtin-source/
 build/resources/services/
 build-all.sh
 
