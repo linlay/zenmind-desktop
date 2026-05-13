@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import http from "node:http";
+import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 import { execFile, spawn, spawnSync } from "node:child_process";
@@ -6,6 +8,7 @@ import type { App } from "electron";
 import type {
   ServiceCommandResult,
   ServiceConfigReadResult,
+  ServiceDesiredStatus,
   ServiceId,
   ServiceImportResult,
   ServiceLogReadOptions,
@@ -13,6 +16,7 @@ import type {
   ServiceLogTarget,
   ServiceLogsMeta,
   ServiceState,
+  ServiceVerification,
   StartupRestoreMode,
   StartupRestoreServicePhase
 } from "../shared/contracts";
@@ -53,10 +57,6 @@ type ManagedServiceStopState = {
   managedMainPid: number | null;
   port: number;
   managedPortPids: number[];
-  relayPidFilePath: string;
-  managedRelayPid: number | null;
-  relayPort: number;
-  managedRelayPortPids: number[];
 };
 
 type PowerShellCapturePayload = ExecResult & {
@@ -200,6 +200,8 @@ const INITIALIZATION_STATE_FILE = "init-state.json";
 const LAST_RUNNING_SERVICES_FILE = "last-running-services.json";
 const DEFAULT_STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const RESTORE_PRIORITY = ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"] as const;
+const SERVICE_COMMAND_TIMEOUT_MS = 60_000;
+const SHUTDOWN_SERVICE_STOP_TIMEOUT_MS = 2_500;
 
 function buildServiceEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -267,6 +269,25 @@ function resolveCommandBin(command: string) {
   }
 
   return "";
+}
+
+function resolveCloudflaredBin() {
+  const explicit = process.env.CLOUDFLARED_BIN?.trim();
+  if (explicit && fs.existsSync(explicit)) {
+    return explicit;
+  }
+  const fromPath = resolveCommandBin("cloudflared");
+  if (fromPath) {
+    return fromPath;
+  }
+  const candidates = process.platform === "win32"
+    ? [path.join(process.env.ProgramFiles ?? "", "cloudflared", "cloudflared.exe")]
+    : [
+      "/opt/homebrew/bin/cloudflared",
+      "/opt/homebrew/opt/cloudflared/bin/cloudflared",
+      "/usr/local/bin/cloudflared"
+    ];
+  return candidates.find((candidate) => candidate && fs.existsSync(candidate)) ?? "";
 }
 
 function isCommandBasenameMatch(command: string, expected: string) {
@@ -350,6 +371,13 @@ function needsBundledAssetRefresh(app: App, service: ServiceDefinition) {
   }
 
   const installDir = getInstallDir(app, service);
+  let assetPath: string;
+  try {
+    assetPath = ensureBundleAssetHealthy(app, service);
+  } catch {
+    return false;
+  }
+
   if (!fs.existsSync(installDir)) {
     return true;
   }
@@ -358,7 +386,6 @@ function needsBundledAssetRefresh(app: App, service: ServiceDefinition) {
     if (serviceInstallNeedsRefresh(service, installDir)) {
       return true;
     }
-    const assetPath = ensureBundleAssetHealthy(app, service);
     return isAssetNewerThanInstall(assetPath, installDir);
   } catch {
     return false;
@@ -394,7 +421,7 @@ function getDefaultStartupServiceIds() {
 function getServiceIdsToRestore(app: App) {
   return orderServiceIdsForRestore([
     ...getDefaultStartupServiceIds(),
-    ...readLastRunningServices(app)
+    ...readLastRunningServices(app).filter((serviceId) => serviceId !== "agent-container-hub")
   ]);
 }
 
@@ -503,6 +530,18 @@ function ensureBundleAssetHealthy(app: App, service: ServiceDefinition) {
   return ensureArchiveHealthy(service, getAssetPath(app, service), "桌面端内置资源");
 }
 
+function getOptionalBundleAssetPath(app: App, service: ServiceDefinition) {
+  try {
+    return ensureBundleAssetHealthy(app, service);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[service-manager] builtin asset unavailable for ${service.id}; using installed service when possible: ${message}`
+    );
+    return null;
+  }
+}
+
 function formatEnvValue(value: string) {
   if (value === "") {
     return "";
@@ -566,23 +605,64 @@ function writeEnvFileUpdates(filePath: string, updates: Map<string, string>) {
   fs.writeFileSync(filePath, upsertEnvFileContent(current, updates), "utf8");
 }
 
+const MAX_TCP_PORT = 65535;
+const CORE_SERVICE_IDS = new Set<ServiceId>([
+  "agent-container-hub",
+  "agent-platform",
+  "agent-webclient",
+  "zenmind-app-server"
+]);
+const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL", "WS_BASE_URL", "VOICE_BASE_URL"] as const;
+const DESKTOP_MANAGED_PLATFORM_URL_PORTS = new Set([
+  "7078",
+  "11949",
+  "18081",
+  "7200",
+  "7000",
+  "11953",
+  "117078"
+]);
+const DESKTOP_MANAGED_CONTAINER_HUB_URL_PORTS = new Set(["7079", "11960", "117079"]);
+const LOCAL_SERVICE_HOSTS = new Set(["127.0.0.1", "localhost", "0.0.0.0", "::1"]);
+const CONTAINER_HUB_SERVICE_HOSTS = new Set([...LOCAL_SERVICE_HOSTS, "host.docker.internal"]);
+
+function parsePortValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const pieces = trimmed.split(":");
+  const portText = pieces[pieces.length - 1] ?? "";
+  const port = Number.parseInt(portText, 10);
+  return Number.isInteger(port) && port > 0 && port <= MAX_TCP_PORT ? port : null;
+}
+
+function getServicePortEnvKeys(service: ServiceDefinition) {
+  const keys = service.web.portEnvKey ? [service.web.portEnvKey] : [];
+  if (service.id === "agent-platform" && !keys.includes("SERVER_PORT")) {
+    keys.push("SERVER_PORT");
+  }
+  return keys;
+}
+
 function parsePort(service: ServiceDefinition, env: Map<string, string>) {
-  if (!service.web.portEnvKey) {
-    return service.web.defaultPort;
-  }
-  const value = env.get(service.web.portEnvKey);
-  if (!value) {
+  const portEnvKeys = getServicePortEnvKeys(service);
+  if (portEnvKeys.length === 0) {
     return service.web.defaultPort;
   }
 
-  if (service.id === "agent-container-hub") {
-    const pieces = value.split(":");
-    const port = Number.parseInt(pieces[pieces.length - 1] ?? "", 10);
-    return Number.isFinite(port) ? port : service.web.defaultPort;
+  for (const key of portEnvKeys) {
+    const value = env.get(key);
+    if (!value) {
+      continue;
+    }
+    const port = parsePortValue(value);
+    if (port) {
+      return port;
+    }
   }
 
-  const port = Number.parseInt(value, 10);
-  return Number.isFinite(port) ? port : service.web.defaultPort;
+  return service.web.defaultPort;
 }
 
 function getWebUrl(service: ServiceDefinition, env: Map<string, string>) {
@@ -592,6 +672,57 @@ function getWebUrl(service: ServiceDefinition, env: Map<string, string>) {
   }
   const routePath = service.web.routePath;
   return routePath ? `http://127.0.0.1:${port}${routePath}` : `http://127.0.0.1:${port}`;
+}
+
+function normalizeUrlHostname(hostname: string) {
+  return hostname.trim().toLowerCase().replace(/^\[/u, "").replace(/\]$/u, "");
+}
+
+function readHttpUrlHostPort(value: string) {
+  const raw = value.trim();
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    return {
+      hostname: normalizeUrlHostname(parsed.hostname),
+      port: parsed.port
+    };
+  } catch {
+    // Keep going: URL rejects invalid TCP ports such as 117078, but those
+    // are precisely the broken persisted defaults we need to migrate.
+  }
+
+  const match = raw.match(/^https?:\/\/(\[[^\]]+\]|[^/:?#]+)(?::([0-9]+))?(?:[/?#]|$)/iu);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    hostname: normalizeUrlHostname(match[1] ?? ""),
+    port: match[2] ?? ""
+  };
+}
+
+function isDesktopManagedHttpUrl(
+  value: string,
+  managedPorts: Set<string>,
+  managedHosts: Set<string>,
+  allowMissingPort = false
+) {
+  const parsed = readHttpUrlHostPort(value);
+  if (!parsed || !managedHosts.has(parsed.hostname)) {
+    return false;
+  }
+  if (!parsed.port) {
+    return allowMissingPort;
+  }
+  return managedPorts.has(parsed.port);
 }
 
 function resolveRuntimePath(installDir: string, relativePath: string) {
@@ -992,51 +1123,6 @@ function removePidFile(pidFilePath: string) {
   }
 }
 
-function parseRelayPort(env: Map<string, string>) {
-  const value = env.get("LOCAL_CLI_ACP_RELAY_PORT") ?? DEFAULT_LOCAL_CLI_ACP_RELAY_PORT;
-  const port = Number.parseInt(value, 10);
-  return Number.isFinite(port) ? port : Number.parseInt(DEFAULT_LOCAL_CLI_ACP_RELAY_PORT, 10);
-}
-
-function cleanupAgentPlatformRelayBeforeStart(installDir: string, env: Map<string, string>) {
-  const relayPidFilePath = path.join(installDir, "run", "local-cli-acp-relay.pid");
-  const relayPort = parseRelayPort(env);
-  const relayPids = new Set<number>();
-  const pidFromFile = readPid(relayPidFilePath);
-
-  if (pidFromFile && pidMatchesInstallDir(pidFromFile, installDir)) {
-    relayPids.add(pidFromFile);
-  }
-
-  for (const pid of listListeningPids(relayPort)) {
-    if (pidMatchesInstallDir(pid, installDir)) {
-      relayPids.add(pid);
-    }
-  }
-
-  for (const pid of relayPids) {
-    if (IS_WINDOWS) {
-      terminateProcessTree(pid);
-    } else {
-      terminateProcess(pid);
-    }
-  }
-
-  removePidFile(relayPidFilePath);
-}
-
-export function cleanupAgentPlatformRelayForApp(app: App) {
-  const service = getService("agent-platform");
-  const installDir = getInstallDir(app, service);
-  if (!fs.existsSync(installDir)) {
-    return;
-  }
-
-  const envPath = path.join(installDir, ".env");
-  const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
-  cleanupAgentPlatformRelayBeforeStart(installDir, env);
-}
-
 function addManagedRootPid(
   roots: Map<number, ManagedRootPid>,
   serviceId: ServiceId,
@@ -1080,16 +1166,6 @@ function collectManagedRootPids(app: App) {
     const port = parsePort(service, env);
     if (port > 0) {
       for (const pid of listListeningPids(port)) {
-        addManagedRootPid(roots, service.id, pid, installDir);
-      }
-    }
-
-    if (service.id === "agent-platform") {
-      const relayPidFilePath = path.join(installDir, "run", "local-cli-acp-relay.pid");
-      addManagedRootPid(roots, service.id, readPid(relayPidFilePath), installDir, relayPidFilePath);
-
-      const relayPort = parseRelayPort(env);
-      for (const pid of listListeningPids(relayPort)) {
         addManagedRootPid(roots, service.id, pid, installDir);
       }
     }
@@ -1158,15 +1234,6 @@ export async function forceCleanupManagedProcesses(app: App, snapshot: ManagedPr
   }
 }
 
-function isAgentPlatformRelayStartupConflict(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes("local-cli-acp-relay is already running with pid") ||
-    message.includes("local relay failed to start") ||
-    message.includes("EADDRINUSE")
-  );
-}
-
 function collectManagedServiceStopState(
   service: ServiceDefinition,
   installDir: string,
@@ -1184,30 +1251,11 @@ function collectManagedServiceStopState(
       ? [...new Set(listListeningPids(port).filter((pid) => pidMatchesInstallDir(pid, installDir)))]
       : [];
 
-  const relayPidFilePath =
-    service.id === "agent-platform"
-      ? path.join(installDir, "run", "local-cli-acp-relay.pid")
-      : "";
-  const relayPid = relayPidFilePath ? readPid(relayPidFilePath) : null;
-  const managedRelayPid =
-    relayPid && isProcessRunning(relayPid) && pidMatchesInstallDir(relayPid, installDir)
-      ? relayPid
-      : null;
-  const relayPort = service.id === "agent-platform" ? parseRelayPort(env) : 0;
-  const managedRelayPortPids =
-    relayPort > 0
-      ? [...new Set(listListeningPids(relayPort).filter((pid) => pidMatchesInstallDir(pid, installDir)))]
-      : [];
-
   return {
     mainPidFilePath,
     managedMainPid,
     port,
-    managedPortPids,
-    relayPidFilePath,
-    managedRelayPid,
-    relayPort,
-    managedRelayPortPids
+    managedPortPids
   };
 }
 
@@ -1226,19 +1274,6 @@ function buildManagedServiceStopIssues(
   }
   if (state.port > 0 && state.managedPortPids.length > 0) {
     issues.push(`port ${state.port} still occupied by managed process after ${phase}`);
-  }
-
-  if (service.id === "agent-platform") {
-    if (phase === "stop" && state.managedRelayPid) {
-      issues.push(`stop script returned but relay process still alive (pid=${state.managedRelayPid})`);
-    }
-    if (phase === "cleanup" && state.managedRelayPid) {
-      issues.push(`relay process still alive after cleanup (pid=${state.managedRelayPid})`);
-    }
-    if (state.relayPort > 0 && state.managedRelayPortPids.length > 0) {
-      const suffix = phase === "cleanup" ? "cleanup" : "stop";
-      issues.push(`relay port ${state.relayPort} still occupied by managed process after ${suffix}`);
-    }
   }
 
   return issues;
@@ -1264,9 +1299,7 @@ function forceStopServiceInstallDir(
   const state = collectState(service, installDir, env);
   const pidsToTerminate = [
     state.managedMainPid,
-    ...state.managedPortPids,
-    state.managedRelayPid,
-    ...state.managedRelayPortPids
+    ...state.managedPortPids
   ].filter((pid): pid is number => typeof pid === "number" && Number.isFinite(pid) && pid > 0);
   let allTerminated = true;
 
@@ -1277,9 +1310,6 @@ function forceStopServiceInstallDir(
 
   if (state.mainPidFilePath) {
     removePidFileImpl(state.mainPidFilePath);
-  }
-  if (state.relayPidFilePath) {
-    removePidFileImpl(state.relayPidFilePath);
   }
 
   return allTerminated;
@@ -1481,17 +1511,28 @@ function formatExecErrorMessage(errorMessage: string, result: ExecResult) {
   return details || errorMessage;
 }
 
-function runPowerShellScript(scriptPath: string, args: string[], cwd: string) {
+type RunExecFileOptions = {
+  timeoutMs?: number;
+};
+
+function getCommandTimeoutMs(timeoutMs: number | undefined) {
+  return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? Math.floor(timeoutMs)
+    : SERVICE_COMMAND_TIMEOUT_MS;
+}
+
+function runPowerShellScript(scriptPath: string, args: string[], cwd: string, options: RunExecFileOptions = {}) {
   const wrapperScriptPath = path.join(
     os.tmpdir(),
     `zenmind-powershell-wrapper-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`
   );
   fs.writeFileSync(wrapperScriptPath, buildPowerShellWrapperScript(scriptPath, args), "utf8");
+  const timeoutMs = getCommandTimeoutMs(options.timeoutMs);
   return new Promise<ExecResult>((resolve, reject) => {
     execFile(
       windowsPowerShellPath(),
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", wrapperScriptPath],
-      { cwd, env: buildServiceEnv(), timeout: 60_000 },
+      { cwd, env: buildServiceEnv(), timeout: timeoutMs },
       (error, stdout, stderr) => {
         try {
           fs.rmSync(wrapperScriptPath, { force: true });
@@ -1530,10 +1571,11 @@ function resolveExecCommand(command: string, args: string[], cwd: string) {
   return { command, args, powershellScript: false };
 }
 
-function runExecFile(command: string, args: string[], cwd: string) {
+function runExecFile(command: string, args: string[], cwd: string, options: RunExecFileOptions = {}) {
   const resolved = resolveExecCommand(command, args, cwd);
+  const timeoutMs = getCommandTimeoutMs(options.timeoutMs);
   if (resolved.powershellScript) {
-    return runPowerShellScript(resolved.command, resolved.args, cwd);
+    return runPowerShellScript(resolved.command, resolved.args, cwd, { timeoutMs });
   }
 
   return new Promise<ExecResult>((resolve, reject) => {
@@ -1549,10 +1591,13 @@ function runExecFile(command: string, args: string[], cwd: string) {
     });
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
+    let didTimeout = false;
 
     const killTimer = setTimeout(() => {
+      didTimeout = true;
       child.kill("SIGKILL");
-    }, 60_000);
+    }, timeoutMs);
+    killTimer.unref?.();
 
     child.stdout?.on("data", (chunk: Buffer) => {
       stdoutChunks.push(chunk);
@@ -1568,6 +1613,10 @@ function runExecFile(command: string, args: string[], cwd: string) {
       clearTimeout(killTimer);
       const stdout = Buffer.concat(stdoutChunks).toString("utf8");
       const stderr = Buffer.concat(stderrChunks).toString("utf8");
+      if (didTimeout) {
+        reject(new Error(`Command timed out after ${timeoutMs}ms: ${resolved.command} ${resolved.args.join(" ")}\n${stderr || stdout}`.trim()));
+        return;
+      }
       if (code !== 0) {
         const status = signal ? `signal ${signal}` : `code ${code ?? -1}`;
         reject(new Error(`Command failed: ${resolved.command} ${resolved.args.join(" ")} exited with ${status}\n${stderr || stdout}`.trim()));
@@ -1670,6 +1719,10 @@ async function ensureInitializationRequirements(app: App, service: ServiceDefini
     ensureLocalAuthPublicKey(app, installDir);
   }
 
+  if (service.id === LOCAL_CLI_ACP_RELAY_PLUGIN_ID) {
+    await ensureLocalCliAcpRelayDesktopConfig(app, installDir);
+  }
+
   if (service.id === "pan-webclient") {
     ensureLocalAuthPublicKey(app, installDir);
   }
@@ -1724,6 +1777,7 @@ export async function installBuiltinService(
     options.force ||
     !fs.existsSync(finalInstallDir) ||
     !isInstallHealthy(service, finalInstallDir) ||
+    serviceInstallNeedsRefresh(service, finalInstallDir) ||
     isAssetNewerThanInstall(assetPath, finalInstallDir);
 
   const preservedEnvPath = path.join(finalInstallDir, ".env");
@@ -1738,7 +1792,7 @@ export async function installBuiltinService(
   await reconcileBuiltinSiblingInstallDirs(app, service, finalInstallDir);
 
   if (!needsExtract) {
-    const initialization = await initializeService(app, serviceId);
+    const initialization = await initializeServiceInternal(app, serviceId, { skipInstallRefresh: true });
     if (!initialization.ok) {
       throw new Error(initialization.message);
     }
@@ -1764,7 +1818,7 @@ export async function installBuiltinService(
         writeAgentPlatformLegacyEnvBackupIfNeeded(finalInstallDir, preservedEnv.backupContent);
       }
     }
-    const initialization = await initializeService(app, serviceId);
+    const initialization = await initializeServiceInternal(app, serviceId, { skipInstallRefresh: true });
     if (!initialization.ok) {
       throw new Error(initialization.message);
     }
@@ -1775,6 +1829,14 @@ export async function installBuiltinService(
 }
 
 export async function initializeService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
+  return initializeServiceInternal(app, serviceId);
+}
+
+async function initializeServiceInternal(
+  app: App,
+  serviceId: ServiceId,
+  options: { skipInstallRefresh?: boolean } = {}
+): Promise<ServiceCommandResult> {
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
   const currentState = await getServiceState(app, serviceId);
@@ -1792,6 +1854,26 @@ export async function initializeService(app: App, serviceId: ServiceId): Promise
       ok: false,
       message: currentState.message,
       service: currentState
+    };
+  }
+
+  if (!options.skipInstallRefresh && service.kind === "builtin" && serviceInstallNeedsRefresh(service, installDir)) {
+    try {
+      await installBuiltinService(app, service.id, { force: true });
+    } catch (error) {
+      const nextState = await getServiceState(app, serviceId);
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        service: nextState
+      };
+    }
+
+    const nextState = await getServiceState(app, serviceId);
+    return {
+      ok: true,
+      message: `${service.name} 已重新安装并初始化。`,
+      service: nextState
     };
   }
 
@@ -1965,12 +2047,301 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   };
 }
 
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function getServiceVerificationDelayMs() {
+  const raw = Number.parseInt(process.env.ZENMIND_SERVICE_VERIFY_DELAY_MS ?? "", 10);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 1500;
+}
+
+function normalizeProbeUrl(baseURL: string, pathname?: string) {
+  const parsed = new URL(baseURL);
+  if (pathname) {
+    parsed.pathname = pathname;
+    parsed.search = "";
+    parsed.hash = "";
+  }
+  return parsed.toString();
+}
+
+type HttpProbeResult = {
+  target: string;
+  ok: boolean;
+  statusCode?: number;
+  contentType?: string;
+  message?: string;
+  bodyPreview?: string;
+};
+
+function probeHttpUrl(target: string, timeoutMs = 1200): Promise<HttpProbeResult> {
+  return new Promise((resolve) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(target);
+    } catch {
+      resolve({ target, ok: false, message: "URL 无效" });
+      return;
+    }
+
+    const client = parsed.protocol === "https:" ? https : http;
+    const request = client.request(parsed, {
+      method: "GET",
+      timeout: timeoutMs
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer) => {
+        if (Buffer.concat(chunks).byteLength < 4096) {
+          chunks.push(chunk);
+        }
+      });
+      response.on("end", () => {
+        const statusCode = response.statusCode ?? 0;
+        const contentType = String(response.headers["content-type"] ?? "");
+        const bodyPreview = Buffer.concat(chunks).toString("utf8").slice(0, 1000);
+        resolve({
+          target,
+          ok: statusCode >= 200 && statusCode < 400,
+          statusCode,
+          contentType,
+          bodyPreview,
+          message: statusCode >= 200 && statusCode < 400 ? undefined : `HTTP ${statusCode || "无响应"}`
+        });
+      });
+    });
+
+    request.on("timeout", () => {
+      request.destroy(new Error("HTTP probe timeout"));
+    });
+    request.on("error", (error) => {
+      resolve({
+        target,
+        ok: false,
+        message: error.message
+      });
+    });
+    request.end();
+  });
+}
+
+function buildVerificationResult(
+  service: ServiceDefinition,
+  state: ServiceState,
+  desired: ServiceDesiredStatus,
+  probes: HttpProbeResult[] = []
+): ServiceVerification {
+  const installDir = getInstallDirFromState(state);
+  const pid = state.healthMeta.pid;
+  const pidAlive = desired === "running" ? isProcessRunning(pid) : !pid || !isProcessRunning(pid);
+  const port = state.healthMeta.port ?? 0;
+  const listeningPids = port > 0 ? listListeningPids(port) : [];
+  const managedPortPid = listeningPids.find((candidatePid) => (
+    installDir ? pidMatchesInstallDir(candidatePid, installDir) : true
+  )) ?? null;
+  const portListening = port > 0 ? Boolean(managedPortPid) : desired === "running";
+  const httpProbe = probes.find((probe) => probe.target === state.healthMeta.webUrl);
+  const runtimeInfoProbe = probes.find((probe) => probe.target.includes("/api/runtime-info"));
+  const issues: string[] = [];
+
+  if (desired === "running") {
+    if (state.status !== "running") {
+      issues.push(`复查后服务状态仍为 ${state.status}`);
+    }
+    if (pid && !isProcessRunning(pid)) {
+      issues.push(`PID ${pid} 已不存在`);
+    }
+    if (!pid) {
+      issues.push("没有读取到有效 PID");
+    }
+    if (service.id === "agent-container-hub") {
+      if (port > 0 && !managedPortPid) {
+        issues.push(`端口 ${port} 无受管进程监听`);
+      }
+      if (httpProbe && !httpProbe.ok) {
+        issues.push(`${httpProbe.target} 探测失败：${httpProbe.message || "HTTP 不可用"}`);
+      }
+      if (runtimeInfoProbe) {
+        const looksJson = /application\/json/iu.test(runtimeInfoProbe.contentType || "")
+          || /^\s*[{[]/u.test(runtimeInfoProbe.bodyPreview || "");
+        if (!runtimeInfoProbe.ok || !looksJson) {
+          issues.push(runtimeInfoProbe.ok
+            ? `HTTP ${runtimeInfoProbe.statusCode} 但 /api/runtime-info 返回的不是 JSON`
+            : `/api/runtime-info 探测失败：${runtimeInfoProbe.message || "HTTP 不可用"}`);
+        }
+      } else {
+        issues.push("缺少 /api/runtime-info 验证结果");
+      }
+    }
+  } else {
+    if (state.status === "running") {
+      issues.push("复查后服务仍处于 running");
+    }
+    if (pid && isProcessRunning(pid)) {
+      issues.push(`PID ${pid} 仍在运行`);
+    }
+    if (port > 0 && managedPortPid) {
+      issues.push(`端口 ${port} 仍被受管进程 PID ${managedPortPid} 监听`);
+    }
+  }
+
+  const baseVerified = desired === "running"
+    ? state.status === "running" && pidAlive
+    : state.status !== "running" && pidAlive && !managedPortPid;
+  const strictVerified = service.id === "agent-container-hub" && desired === "running"
+    ? baseVerified && portListening && probes.every((probe) => probe.ok) && Boolean(runtimeInfoProbe)
+    : baseVerified;
+
+  return {
+    verified: strictVerified && issues.length === 0,
+    desired,
+    actualStatus: state.status,
+    pidAlive,
+    portListening,
+    managedPortPid,
+    httpOk: httpProbe ? httpProbe.ok : null,
+    runtimeInfoOk: runtimeInfoProbe ? runtimeInfoProbe.ok && (
+      /application\/json/iu.test(runtimeInfoProbe.contentType || "") ||
+      /^\s*[{[]/u.test(runtimeInfoProbe.bodyPreview || "")
+    ) : null,
+    checkedAt: new Date().toISOString(),
+    issues,
+    probes: probes.map((probe) => ({
+      target: probe.target,
+      ok: probe.ok,
+      statusCode: probe.statusCode,
+      contentType: probe.contentType,
+      message: probe.message
+    }))
+  };
+}
+
+function getInstallDirFromState(state: ServiceState) {
+  return state.installDir || "";
+}
+
+async function collectServiceVerification(
+  app: App,
+  serviceId: ServiceId,
+  desired: ServiceDesiredStatus
+): Promise<{ state: ServiceState; verification: ServiceVerification }> {
+  const service = getService(serviceId);
+  const state = await getServiceState(app, serviceId);
+  const probes: HttpProbeResult[] = [];
+
+  if (desired === "running" && state.status === "running" && state.healthMeta.webUrl) {
+    const webUrl = state.healthMeta.webUrl;
+    probes.push(await probeHttpUrl(webUrl));
+    if (service.id === "agent-container-hub") {
+      probes.push(await probeHttpUrl(normalizeProbeUrl(webUrl, "/api/runtime-info")));
+    }
+  }
+
+  return {
+    state,
+    verification: buildVerificationResult(service, state, desired, probes)
+  };
+}
+
+export async function verifyServiceState(
+  app: App,
+  serviceId: ServiceId,
+  desired: ServiceDesiredStatus
+): Promise<ServiceVerification> {
+  const first = await collectServiceVerification(app, serviceId, desired);
+  if (!first.verification.verified || getServiceVerificationDelayMs() <= 0) {
+    return first.verification;
+  }
+
+  await delay(getServiceVerificationDelayMs());
+  const second = await collectServiceVerification(app, serviceId, desired);
+  return second.verification;
+}
+
+function serviceVerificationFailureMessage(actionMessage: string, verification: ServiceVerification) {
+  const issues = verification.issues.length > 0 ? verification.issues.join("；") : `状态为 ${verification.actualStatus}`;
+  return `${actionMessage}，但复查失败：${issues}`;
+}
+
+async function attachServiceVerification(
+  app: App,
+  serviceId: ServiceId,
+  result: ServiceCommandResult,
+  desired: ServiceDesiredStatus,
+  actionMessage: string
+): Promise<ServiceCommandResult> {
+  const verification = await verifyServiceState(app, serviceId, desired);
+  const service = await getServiceState(app, serviceId);
+  if (!verification.verified) {
+    return {
+      ...result,
+      ok: false,
+      message: serviceVerificationFailureMessage(actionMessage, verification),
+      service,
+      verification
+    };
+  }
+  return {
+    ...result,
+    ok: true,
+    service,
+    verification
+  };
+}
+
+async function isAgentWebclientRunning(app: App) {
+  try {
+    const webclientState = await getServiceState(app, "agent-webclient");
+    return webclientState.status === "running";
+  } catch {
+    return false;
+  }
+}
+
+function didAgentPlatformRuntimeChange(previousPlatformState: ServiceState, nextPlatformState: ServiceState) {
+  if (previousPlatformState.status !== "running") {
+    return true;
+  }
+  return previousPlatformState.healthMeta.pid !== nextPlatformState.healthMeta.pid;
+}
+
+async function restartAgentWebclientAfterPlatformStart(app: App, platformResult: ServiceCommandResult) {
+  const webclientResult = await restartService(app, "agent-webclient");
+  if (!webclientResult.ok || webclientResult.service.status !== "running") {
+    return {
+      ...platformResult,
+      ok: false,
+      message: `${platformResult.message} 但智能助理刷新失败：${webclientResult.message}`
+    };
+  }
+  return platformResult;
+}
+
 const DEFAULT_LOCAL_CLI_ACP_RELAY_PORT = "3220";
-const LOCAL_CLI_ACP_RELAY_ENABLED_KEY = "LOCAL_CLI_ACP_RELAY_ENABLED";
-const LOCAL_CLI_ACP_RELAY_USER_ENABLED_KEY = "LOCAL_CLI_ACP_RELAY_USER_ENABLED";
+const LOCAL_CLI_ACP_RELAY_PLUGIN_ID = "local-cli-acp-relay";
 const DEFAULT_CLAUDE_CODE_ACP_ARGS = "-y @zed-industries/claude-code-acp";
+const DEFAULT_LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS = "60000";
+const DEFAULT_LOCAL_CLI_ACP_RUN_TIMEOUT_MS = "600000";
 const DEFAULT_PROVIDER_APIKEY_KEY_PART = "0.1.0";
+const AGENT_BASH_SHELL_EXECUTABLE_KEY = "AGENT_BASH_SHELL_EXECUTABLE";
+const AGENT_BASH_SHELL_ARGS_KEY = "AGENT_BASH_SHELL_ARGS";
+const WINDOWS_AGENT_BASH_SHELL_EXECUTABLE = "powershell.exe";
+const WINDOWS_AGENT_BASH_SHELL_ARGS = "-NoProfile,-ExecutionPolicy,Bypass,-Command,{{command}}";
 const AGENT_PLATFORM_LEGACY_ENV_BACKUP_FILE = ".env.legacy-backup";
+const AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS = [
+  "LOCAL_CLI_ACP_RELAY_ENABLED",
+  "LOCAL_CLI_ACP_RELAY_USER_ENABLED",
+  "LOCAL_CLI_ACP_RELAY_PORT",
+  "LOCAL_CLI_ACP_RELAY_AUTH_TOKEN",
+  "LOCAL_CLI_ACP_DEFAULT_CWD",
+  "LOCAL_CLI_ACP_ALLOWED_CWD_ROOTS",
+  "LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS",
+  "LOCAL_CLI_ACP_RUN_TIMEOUT_MS",
+  "CLAUDE_CODE_ACP_COMMAND",
+  "CLAUDE_CODE_ACP_ARGS"
+] as const;
 const AGENT_PLATFORM_DEPRECATED_ENV_KEYS = [
   "GATEWAY_USER_ID",
   "GATEWAY_TICKET",
@@ -2044,7 +2415,55 @@ const AGENT_PLATFORM_ENV_KEY_RENAMES = new Map<string, string>([
 
 
 function agentWebclientInstallNeedsRefresh(installDir: string) {
-  const serverPath = path.join(installDir, "backend", "server.js");
+  const manifestPath = path.join(installDir, "manifest.json");
+  const programCommonShPath = path.join(installDir, "scripts", "program-common.sh");
+  const programCommonPs1Path = path.join(installDir, "scripts", "program-common.ps1");
+  let backendEntry = "backend/server.cjs";
+  try {
+    if (fs.existsSync(manifestPath)) {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+        backend?: { entry?: unknown } | null;
+        runtime?: { requiredPaths?: unknown } | null;
+      };
+      if (typeof manifest.backend?.entry === "string" && manifest.backend.entry.trim()) {
+        backendEntry = manifest.backend.entry.trim();
+      }
+      const requiredPaths = Array.isArray(manifest.runtime?.requiredPaths)
+        ? manifest.runtime.requiredPaths.filter((entry): entry is string => typeof entry === "string")
+        : [];
+      if (
+        backendEntry === "backend/server.js" ||
+        requiredPaths.includes("backend/package.json") ||
+        requiredPaths.includes("backend/node_modules")
+      ) {
+        return true;
+      }
+    }
+
+    const staleUnixLauncherMarkers = ["BACKEND_PACKAGE_FILE", "BACKEND_NODE_MODULES_DIR", "backend/package.json", "backend/node_modules"];
+    if (fs.existsSync(programCommonShPath)) {
+      const programCommon = fs.readFileSync(programCommonShPath, "utf8");
+      const hasInvalidAbsoluteBackendEntry = /BACKEND_ENTRY=["']\/backend\/server\.cjs["']/u.test(programCommon);
+      if (hasInvalidAbsoluteBackendEntry || staleUnixLauncherMarkers.some((marker) => programCommon.includes(marker))) {
+        return true;
+      }
+    }
+
+    const staleWindowsLauncherMarkers = ["BackendPackageFile", "BackendModulesDir", "backend\\package.json", "backend\\node_modules"];
+    if (fs.existsSync(programCommonPs1Path)) {
+      const programCommon = fs.readFileSync(programCommonPs1Path, "utf8");
+      const hasInvalidAbsoluteBackendEntry = /\$Script:BackendEntry\s*=\s*["']\\?backend\\server\.cjs["']/u.test(programCommon);
+      if (hasInvalidAbsoluteBackendEntry || staleWindowsLauncherMarkers.some((marker) => programCommon.includes(marker))) {
+        return true;
+      }
+    }
+  } catch {
+    return true;
+  }
+
+  const serverPath = fs.existsSync(path.join(installDir, backendEntry))
+    ? path.join(installDir, backendEntry)
+    : path.join(installDir, "backend", "server.js");
   if (!fs.existsSync(serverPath)) {
     return false;
   }
@@ -2052,10 +2471,10 @@ function agentWebclientInstallNeedsRefresh(installDir: string) {
   try {
     const serverContent = fs.readFileSync(serverPath, "utf8");
     return (
-      serverContent.includes("const httpProxy = require('http-proxy');") ||
-      !serverContent.includes("const https = require('https');") ||
-      !serverContent.includes("(secure ? https : http).request") ||
+      serverContent.includes("(secure ? https : http).request") ||
+      serverContent.includes("function buildUpgradeRequest(") ||
       !serverContent.includes("function createWebSocketProxy(") ||
+      !serverContent.includes("proxy.upgrade(req, socket, head)") ||
       !serverContent.includes("server.on('upgrade'")
     );
   } catch {
@@ -2362,45 +2781,26 @@ function resolveAcpCommandForDesktop(env: Map<string, string>) {
   return null;
 }
 
-function isTruthyEnvValue(value: string) {
-  switch (value.trim().toLowerCase()) {
-    case "1":
-    case "true":
-    case "yes":
-    case "on":
-      return true;
-    default:
-      return false;
-  }
-}
-
-function usesDefaultDesktopAcpConfig(env: Map<string, string>) {
-  const relayPort = (env.get("LOCAL_CLI_ACP_RELAY_PORT") ?? DEFAULT_LOCAL_CLI_ACP_RELAY_PORT).trim();
-  const currentAcpCommand = (env.get("CLAUDE_CODE_ACP_COMMAND") ?? "").trim();
-  const currentAcpArgs = (env.get("CLAUDE_CODE_ACP_ARGS") ?? "").trim();
-  const usesDefaultAcpCommand =
-    !currentAcpCommand
-    || isCommandBasenameMatch(currentAcpCommand, "npx")
-    || isCommandBasenameMatch(currentAcpCommand, "claude-code-acp");
-  const usesDefaultAcpArgs = !currentAcpArgs || currentAcpArgs === DEFAULT_CLAUDE_CODE_ACP_ARGS;
-  return relayPort === DEFAULT_LOCAL_CLI_ACP_RELAY_PORT && usesDefaultAcpCommand && usesDefaultAcpArgs;
-}
-
-function shouldDisableAgentPlatformRelayByDefault(env: Map<string, string>) {
-  const currentRelayEnabled = (env.get(LOCAL_CLI_ACP_RELAY_ENABLED_KEY) ?? "").trim();
-  if (!currentRelayEnabled) {
-    return true;
-  }
-  if (!isTruthyEnvValue(currentRelayEnabled)) {
+function applyAgentPlatformWindowsHostShellDefaults(
+  env: Map<string, string>,
+  updates: Map<string, string>,
+  isWindows = IS_WINDOWS
+) {
+  if (!isWindows) {
     return false;
   }
-  const userEnabled = isTruthyEnvValue(env.get(LOCAL_CLI_ACP_RELAY_USER_ENABLED_KEY) ?? "");
-  if (userEnabled) {
+  const hasExplicitShell =
+    Boolean(env.get(AGENT_BASH_SHELL_EXECUTABLE_KEY)?.trim()) ||
+    Boolean(env.get(AGENT_BASH_SHELL_ARGS_KEY)?.trim()) ||
+    updates.has(AGENT_BASH_SHELL_EXECUTABLE_KEY) ||
+    updates.has(AGENT_BASH_SHELL_ARGS_KEY);
+  if (hasExplicitShell) {
     return false;
   }
-  return usesDefaultDesktopAcpConfig(env);
+  updates.set(AGENT_BASH_SHELL_EXECUTABLE_KEY, WINDOWS_AGENT_BASH_SHELL_EXECUTABLE);
+  updates.set(AGENT_BASH_SHELL_ARGS_KEY, WINDOWS_AGENT_BASH_SHELL_ARGS);
+  return true;
 }
-
 function shellQuoteEnvValue(value: string) {
   return `'${value.replace(/'/gu, "'\\''")}'`;
 }
@@ -2548,17 +2948,188 @@ function normalizeAgentPlatformEnvContentForRuntime(content: string) {
 
   normalizeShellSourcedAgentPlatformEnvValues(env, migrated);
   migrateAgentPlatformLegacyChatEnv(env, migrated);
+  syncAgentPlatformDesktopPortEnv(env, migrated);
 
   return upsertEnvFileContent(removeEnvKeysFromContent(content, AGENT_PLATFORM_DEPRECATED_ENV_KEYS), migrated);
 }
 
 function normalizeAgentPlatformEnvContentForSave(content: string) {
-  const env = parseEnvFileContent(normalizeAgentPlatformEnvContentForRuntime(content));
-  const relayEnabled = isTruthyEnvValue(env.get(LOCAL_CLI_ACP_RELAY_ENABLED_KEY) ?? "");
-  return upsertEnvFileContent(
+  return removeEnvKeysFromContent(
     normalizeAgentPlatformEnvContentForRuntime(content),
-    new Map([[LOCAL_CLI_ACP_RELAY_USER_ENABLED_KEY, relayEnabled ? "true" : "false"]])
+    AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS
   );
+}
+
+async function normalizeCoreServiceEnvContentForSave(
+  app: App,
+  service: ServiceDefinition,
+  key: string,
+  content: string
+) {
+  if (key !== "env" || !CORE_SERVICE_IDS.has(service.id)) {
+    return content;
+  }
+
+  const normalizedContent =
+    service.id === "agent-platform" ? normalizeAgentPlatformEnvContentForSave(content) : content;
+  const env = parseEnvFileContent(normalizedContent);
+  const updates = new Map<string, string>();
+
+  syncCoreServiceDefaultPortEnv(service, env, updates);
+
+  if (service.id === "agent-platform") {
+    syncAgentPlatformDesktopPortEnv(env, updates);
+    await syncAgentPlatformContainerHubUrl(app, env, updates);
+  }
+
+  if (service.id === "agent-webclient") {
+    await syncAgentWebclientPlatformUrls(app, env, updates);
+  }
+
+  return updates.size > 0 ? upsertEnvFileContent(normalizedContent, updates) : normalizedContent;
+}
+
+function resolveLocalCliAcpRelayDefaultCwd(app?: App | null) {
+  return resolveDesktopDir(app);
+}
+
+function canOverrideLocalCliAcpRelayValue(currentValue: string, defaultValue: string) {
+  const normalized = currentValue.trim();
+  if (!normalized) {
+    return true;
+  }
+  return normalized === defaultValue;
+}
+
+function readInstalledServiceEnv(app: App, serviceId: ServiceId) {
+  try {
+    const service = getService(serviceId);
+    const installDir = getInstallDir(app, service);
+    const envPath = path.join(installDir, ".env");
+    const content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+    return {
+      installDir,
+      envPath,
+      content,
+      env: parseEnvFileContent(content)
+    };
+  } catch {
+    return null;
+  }
+}
+
+function migrateLegacyAgentPlatformRelayEnv(
+  app: App,
+  env: Map<string, string>,
+  updates: Map<string, string>
+) {
+  const platformEnvInfo = readInstalledServiceEnv(app, "agent-platform");
+  if (!platformEnvInfo || !platformEnvInfo.content.trim()) {
+    return;
+  }
+
+  const migrationRules = [
+    {
+      legacyKey: "LOCAL_CLI_ACP_RELAY_PORT",
+      pluginKey: "PORT",
+      defaultValue: DEFAULT_LOCAL_CLI_ACP_RELAY_PORT
+    },
+    {
+      legacyKey: "LOCAL_CLI_ACP_RELAY_AUTH_TOKEN",
+      pluginKey: "AUTH_TOKEN",
+      defaultValue: ""
+    },
+    {
+      legacyKey: "LOCAL_CLI_ACP_DEFAULT_CWD",
+      pluginKey: "DEFAULT_CWD",
+      defaultValue: "~/Desktop"
+    },
+    {
+      legacyKey: "LOCAL_CLI_ACP_ALLOWED_CWD_ROOTS",
+      pluginKey: "ALLOWED_CWD_ROOTS",
+      defaultValue: "~/Desktop"
+    },
+    {
+      legacyKey: "LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS",
+      pluginKey: "HANDSHAKE_TIMEOUT_MS",
+      defaultValue: DEFAULT_LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS
+    },
+    {
+      legacyKey: "LOCAL_CLI_ACP_RUN_TIMEOUT_MS",
+      pluginKey: "RUN_TIMEOUT_MS",
+      defaultValue: DEFAULT_LOCAL_CLI_ACP_RUN_TIMEOUT_MS
+    },
+    {
+      legacyKey: "CLAUDE_CODE_ACP_COMMAND",
+      pluginKey: "CLAUDE_CODE_ACP_COMMAND",
+      defaultValue: ""
+    },
+    {
+      legacyKey: "CLAUDE_CODE_ACP_ARGS",
+      pluginKey: "CLAUDE_CODE_ACP_ARGS",
+      defaultValue: ""
+    }
+  ] as const;
+
+  for (const rule of migrationRules) {
+    const currentValue = updates.get(rule.pluginKey) ?? env.get(rule.pluginKey) ?? "";
+    if (!canOverrideLocalCliAcpRelayValue(currentValue, rule.defaultValue)) {
+      continue;
+    }
+
+    const legacyValue = platformEnvInfo.env.get(rule.legacyKey)?.trim() ?? "";
+    if (!legacyValue) {
+      continue;
+    }
+    updates.set(rule.pluginKey, legacyValue);
+  }
+
+  const cleanedContent = removeEnvKeysFromContent(platformEnvInfo.content, AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS);
+  if (cleanedContent !== platformEnvInfo.content) {
+    fs.writeFileSync(platformEnvInfo.envPath, cleanedContent, "utf8");
+  }
+}
+
+async function ensureLocalCliAcpRelayDesktopConfig(app: App, installDir: string) {
+  const envPath = path.join(installDir, ".env");
+  const env = readEnvFile(envPath);
+  const updates = new Map<string, string>();
+
+  migrateLegacyAgentPlatformRelayEnv(app, env, updates);
+
+  if (!env.get("PORT")?.trim()) {
+    updates.set("PORT", DEFAULT_LOCAL_CLI_ACP_RELAY_PORT);
+  }
+  if (!env.get("DEFAULT_CWD")?.trim()) {
+    updates.set("DEFAULT_CWD", resolveLocalCliAcpRelayDefaultCwd(app));
+  }
+  if (!env.get("ALLOWED_CWD_ROOTS")?.trim()) {
+    updates.set("ALLOWED_CWD_ROOTS", resolveLocalCliAcpRelayDefaultCwd(app));
+  }
+  if (!env.get("HANDSHAKE_TIMEOUT_MS")?.trim()) {
+    updates.set("HANDSHAKE_TIMEOUT_MS", DEFAULT_LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS);
+  }
+  if (!env.get("RUN_TIMEOUT_MS")?.trim()) {
+    updates.set("RUN_TIMEOUT_MS", DEFAULT_LOCAL_CLI_ACP_RUN_TIMEOUT_MS);
+  }
+  if (!env.get("NODE_BIN")?.trim()) {
+    updates.set("NODE_BIN", resolveNodeBin());
+  }
+
+  const effectiveEnv = new Map(env);
+  for (const [key, value] of updates) {
+    effectiveEnv.set(key, value);
+  }
+  const resolvedAcpCommand = resolveAcpCommandForDesktop(effectiveEnv);
+  if (resolvedAcpCommand) {
+    updates.set("CLAUDE_CODE_ACP_COMMAND", resolvedAcpCommand.command);
+    updates.set("CLAUDE_CODE_ACP_ARGS", resolvedAcpCommand.args);
+  }
+
+  if (updates.size > 0) {
+    normalizeShellSourcedAgentPlatformEnvUpdates(updates);
+    writeEnvFileUpdates(envPath, updates);
+  }
 }
 
 async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<string, string>, updates: Map<string, string>) {
@@ -2594,6 +3165,227 @@ async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<s
   }
 }
 
+function getEnvValueWithUpdates(env: Map<string, string>, updates: Map<string, string>, key: string) {
+  return updates.get(key) ?? env.get(key) ?? "";
+}
+
+function resolveEnvBindingValue(service: ServiceDefinition, bindingKey: string) {
+  const binding = service.desktop.envBindings.find((item) => {
+    const key = service.id === "agent-platform"
+      ? (AGENT_PLATFORM_ENV_KEY_RENAMES.get(item.key) ?? item.key)
+      : item.key;
+    return key === bindingKey && item.value !== undefined;
+  });
+  if (!binding?.value) {
+    return String(service.web.defaultPort);
+  }
+  return binding.value.replace("{{serviceDefaultPort}}", String(service.web.defaultPort));
+}
+
+function canApplyDefaultEnvBinding(service: ServiceDefinition, bindingKey: string, currentValue: string) {
+  const binding = service.desktop.envBindings.find((item) => {
+    const key = service.id === "agent-platform"
+      ? (AGENT_PLATFORM_ENV_KEY_RENAMES.get(item.key) ?? item.key)
+      : item.key;
+    return key === bindingKey && item.value !== undefined;
+  });
+  if (!binding) {
+    return false;
+  }
+  if (!binding.onlyIfDefault) {
+    return true;
+  }
+  return new Set(binding.defaults ?? [""]).has(currentValue);
+}
+
+function syncCoreServiceDefaultPortEnv(service: ServiceDefinition, env: Map<string, string>, updates: Map<string, string>) {
+  if (!CORE_SERVICE_IDS.has(service.id)) {
+    return;
+  }
+
+  for (const key of getServicePortEnvKeys(service)) {
+    const currentValue = getEnvValueWithUpdates(env, updates, key);
+    if (!canApplyDefaultEnvBinding(service, key, currentValue)) {
+      continue;
+    }
+    updates.set(key, resolveEnvBindingValue(service, key));
+  }
+}
+
+function syncAgentPlatformDesktopPortEnv(env: Map<string, string>, updates: Map<string, string>) {
+  const updatedServerPort = parsePortValue(updates.get("SERVER_PORT") ?? "");
+  if (updatedServerPort) {
+    updates.set("HOST_PORT", String(updatedServerPort));
+    return;
+  }
+
+  const updatedHostPort = parsePortValue(updates.get("HOST_PORT") ?? "");
+  if (updatedHostPort) {
+    updates.set("SERVER_PORT", String(updatedHostPort));
+    return;
+  }
+
+  const hostPort = parsePortValue(getEnvValueWithUpdates(env, updates, "HOST_PORT"));
+  if (hostPort) {
+    updates.set("SERVER_PORT", String(hostPort));
+    return;
+  }
+
+  const serverPort = parsePortValue(getEnvValueWithUpdates(env, updates, "SERVER_PORT"));
+  if (serverPort) {
+    updates.set("HOST_PORT", String(serverPort));
+  }
+}
+
+function isDesktopManagedContainerHubUrl(value: string) {
+  return isDesktopManagedHttpUrl(
+    value,
+    DESKTOP_MANAGED_CONTAINER_HUB_URL_PORTS,
+    CONTAINER_HUB_SERVICE_HOSTS,
+    true
+  );
+}
+
+function addManagedUrlPort(ports: Set<string>, port: number | null | undefined) {
+  if (port && port > 0 && port <= MAX_TCP_PORT) {
+    ports.add(String(port));
+  }
+}
+
+function isDesktopManagedPlatformUrl(
+  value: string,
+  currentPlatformPort: number | null,
+  additionalManagedPorts: Array<number | null | undefined> = []
+) {
+  const managedPorts = new Set(DESKTOP_MANAGED_PLATFORM_URL_PORTS);
+  addManagedUrlPort(managedPorts, currentPlatformPort);
+  for (const port of additionalManagedPorts) {
+    addManagedUrlPort(managedPorts, port);
+  }
+  return isDesktopManagedHttpUrl(value, managedPorts, LOCAL_SERVICE_HOSTS);
+}
+
+async function getServicePortForEnvSync(app: App, serviceId: ServiceId) {
+  try {
+    const state = await getServiceState(app, serviceId);
+    return state.healthMeta.port ?? getService(serviceId).web.defaultPort;
+  } catch {
+    try {
+      return getService(serviceId).web.defaultPort;
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function syncAgentPlatformContainerHubUrl(app: App, env: Map<string, string>, updates: Map<string, string>) {
+  const hubPort = await getServicePortForEnvSync(app, "agent-container-hub");
+  if (!hubPort) {
+    return;
+  }
+
+  const currentValue = getEnvValueWithUpdates(env, updates, "CONTAINER_HUB_BASE_URL");
+  if (currentValue && !isDesktopManagedContainerHubUrl(currentValue)) {
+    return;
+  }
+
+  updates.set("CONTAINER_HUB_BASE_URL", `http://127.0.0.1:${hubPort}`);
+}
+
+function syncAgentWebclientPlatformUrlsToPort(
+  env: Map<string, string>,
+  updates: Map<string, string>,
+  platformPort: number | null,
+  additionalManagedPorts: Array<number | null | undefined> = []
+) {
+  if (!platformPort) {
+    return;
+  }
+
+  const platformUrl = `http://127.0.0.1:${platformPort}`;
+  for (const key of AGENT_WEBCLIENT_PLATFORM_URL_KEYS) {
+    const currentValue = getEnvValueWithUpdates(env, updates, key);
+    if (currentValue && !isDesktopManagedPlatformUrl(currentValue, platformPort, additionalManagedPorts)) {
+      continue;
+    }
+    updates.set(key, platformUrl);
+  }
+}
+
+async function syncAgentWebclientPlatformUrls(app: App, env: Map<string, string>, updates: Map<string, string>) {
+  const platformPort = await getServicePortForEnvSync(app, "agent-platform");
+  syncAgentWebclientPlatformUrlsToPort(env, updates, platformPort);
+}
+
+function readInstalledServicePortForSync(app: App, service: ServiceDefinition) {
+  const installDir = getInstallDir(app, service);
+  if (!fs.existsSync(installDir)) {
+    return null;
+  }
+  const envPath = path.join(installDir, ".env");
+  const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
+  return parsePort(service, env);
+}
+
+async function syncAgentWebclientEnvAfterAgentPlatformSave(app: App, previousPlatformPort: number | null) {
+  const webclientEnvInfo = readInstalledServiceEnv(app, "agent-webclient");
+  if (!webclientEnvInfo || !fs.existsSync(webclientEnvInfo.envPath)) {
+    return;
+  }
+
+  const platformPort = await getServicePortForEnvSync(app, "agent-platform");
+  const updates = new Map<string, string>();
+  syncAgentWebclientPlatformUrlsToPort(webclientEnvInfo.env, updates, platformPort, [previousPlatformPort]);
+  if (updates.size === 0) {
+    return;
+  }
+
+  fs.writeFileSync(webclientEnvInfo.envPath, upsertEnvFileContent(webclientEnvInfo.content, updates), "utf8");
+}
+
+async function syncCoreServiceDependentEnvAfterSave(
+  app: App,
+  service: ServiceDefinition,
+  key: string,
+  previousServicePort: number | null
+) {
+  if (key !== "env" || service.id !== "agent-platform") {
+    return;
+  }
+
+  await syncAgentWebclientEnvAfterAgentPlatformSave(app, previousServicePort);
+}
+
+async function ensureAgentPlatformContainerHubDependency(app: App, installDir: string) {
+  let hubService: ServiceDefinition;
+  try {
+    hubService = getService("agent-container-hub");
+  } catch {
+    return;
+  }
+
+  const env = readEnvFile(path.join(installDir, ".env"));
+  const baseURL = env.get("CONTAINER_HUB_BASE_URL")?.trim() ?? "";
+  if (!isDesktopManagedContainerHubUrl(baseURL)) {
+    return;
+  }
+
+  const hubState = await getServiceState(app, hubService.id);
+  if (hubState.status === "running") {
+    return;
+  }
+  if (hubState.status === "not-installed") {
+    return;
+  }
+
+  // Container Hub powers optional sandbox/runtime metadata. agent-platform can
+  // start without it and falls back internally, so the Desktop default startup
+  // must not install or start it as a hard dependency.
+  console.warn(
+    `[service-manager] Container Hub is not running (${hubState.status}); starting agent-platform without it.`
+  );
+}
+
 async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefinition, installDir: string) {
   const envPath = path.join(installDir, ".env");
   const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
@@ -2606,18 +3398,19 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   const updates = new Map<string, string>();
 
   await applyEnvBindings(app, service, env, updates);
+  syncAgentPlatformDesktopPortEnv(env, updates);
+  await syncAgentPlatformContainerHubUrl(app, env, updates);
 
   updates.set("NODE_BIN", resolveNodeBin());
   if (!env.get("PROVIDER_APIKEY_KEY_PART")?.trim()) {
     updates.set("PROVIDER_APIKEY_KEY_PART", DEFAULT_PROVIDER_APIKEY_KEY_PART);
   }
-  if (shouldDisableAgentPlatformRelayByDefault(env)) {
-    updates.set(LOCAL_CLI_ACP_RELAY_ENABLED_KEY, "false");
-  }
-  const resolvedAcpCommand = resolveAcpCommandForDesktop(env);
-  if (resolvedAcpCommand) {
-    updates.set("CLAUDE_CODE_ACP_COMMAND", resolvedAcpCommand.command);
-    updates.set("CLAUDE_CODE_ACP_ARGS", resolvedAcpCommand.args);
+  applyAgentPlatformWindowsHostShellDefaults(env, updates);
+  if (!env.get("CLOUDFLARED_BIN")?.trim()) {
+    const cloudflaredBin = resolveCloudflaredBin();
+    if (cloudflaredBin) {
+      updates.set("CLOUDFLARED_BIN", cloudflaredBin);
+    }
   }
 
   const migratedRuntimeRoot = resolveLegacyAgentPlatformRuntimeRootMigration(app, env);
@@ -2650,8 +3443,13 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   const installDir = getInstallDir(app, service);
   if (service.id === "agent-platform") {
     await ensureAgentPlatformDesktopConfig(app, service, installDir);
+    await ensureAgentPlatformContainerHubDependency(app, installDir);
     ensureLocalAuthPublicKey(app, installDir);
     return;
+  }
+
+  if (service.id === LOCAL_CLI_ACP_RELAY_PLUGIN_ID) {
+    await ensureLocalCliAcpRelayDesktopConfig(app, installDir);
   }
 
   const envPath = path.join(installDir, ".env");
@@ -2663,9 +3461,10 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 
   // Service-specific logic that cannot be expressed via envBindings.
   if (service.id === "agent-webclient") {
-    const assetPath = ensureBundleAssetHealthy(app, service);
+    await syncAgentWebclientPlatformUrls(app, env, updates);
+    const assetPath = getOptionalBundleAssetPath(app, service);
     const forceRefresh = agentWebclientInstallNeedsRefresh(installDir);
-    if (forceRefresh || isAssetNewerThanInstall(assetPath, installDir)) {
+    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, installDir))) {
       await installBuiltinService(app, service.id, {
         force: forceRefresh
       });
@@ -2674,9 +3473,9 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   }
 
   if (service.id === "zenmind-app-server") {
-    const assetPath = ensureBundleAssetHealthy(app, service);
+    const assetPath = getOptionalBundleAssetPath(app, service);
     const forceRefresh = zenmindAppServerInstallNeedsRefresh(installDir);
-    if (forceRefresh || isAssetNewerThanInstall(assetPath, installDir)) {
+    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, installDir))) {
       await installBuiltinService(app, service.id, {
         force: forceRefresh
       });
@@ -2693,6 +3492,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 
 type RunServiceCommandOptions = {
   refreshBuiltinAsset?: boolean;
+  timeoutMs?: number;
 };
 
 async function runServiceCommand(
@@ -2705,8 +3505,13 @@ async function runServiceCommand(
   const installDir = getInstallDir(app, service);
   const shouldRefreshBuiltinAsset = options.refreshBuiltinAsset !== false;
   if (service.kind === "builtin" && shouldRefreshBuiltinAsset) {
-    const assetPath = ensureBundleAssetHealthy(app, service);
-    if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir) || isAssetNewerThanInstall(assetPath, installDir)) {
+    const assetPath = getOptionalBundleAssetPath(app, service);
+    if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
+      if (!assetPath) {
+        throw new Error(`${service.name} 未安装或安装已损坏。`);
+      }
+      await installBuiltinService(app, service.id);
+    } else if (assetPath && isAssetNewerThanInstall(assetPath, installDir)) {
       await installBuiltinService(app, service.id);
     }
   } else if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
@@ -2720,12 +3525,15 @@ async function runServiceCommand(
     if (!shouldRefreshBuiltinAsset) {
       throw new Error(`${service.name} 未安装或安装已损坏。`);
     }
+    ensureBundleAssetHealthy(app, service);
     await installBuiltinService(app, service.id);
   }
   if (command.length === 0) {
     throw new Error(`${service.name} 缺少可执行脚本定义。`);
   }
-  await runExecFile(command[0], command.slice(1), installDir);
+  await runExecFile(command[0], command.slice(1), installDir, {
+    timeoutMs: options.timeoutMs
+  });
   return {
     ok: true,
     message: successMessage,
@@ -2738,6 +3546,9 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
   const shouldRefreshFromBundledAsset = service.kind === "builtin" && needsBundledAssetRefresh(app, service);
+  const shouldRestartWebclientAfterPlatformStart = service.id === "agent-platform"
+    ? await isAgentWebclientRunning(app)
+    : false;
 
   if (shouldRefreshFromBundledAsset) {
     if (current.status === "running") {
@@ -2791,23 +3602,7 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
     };
   } else {
     await ensurePreStartRequirements(app, service);
-    if (service.id === "agent-platform") {
-      const env = readEnvFile(path.join(installDir, ".env"));
-      cleanupAgentPlatformRelayBeforeStart(installDir, env);
-    }
-
-    try {
-      result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
-    } catch (error) {
-      if (service.id !== "agent-platform" || !isAgentPlatformRelayStartupConflict(error)) {
-        throw error;
-      }
-
-      const env = readEnvFile(path.join(installDir, ".env"));
-      cleanupAgentPlatformRelayBeforeStart(installDir, env);
-      result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
-    }
-
+    result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
     startedThisSession.add(serviceId);
   }
 
@@ -2827,7 +3622,16 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
     }
   }
 
-  return result;
+  const verifiedResult = await attachServiceVerification(app, serviceId, result, "running", `${service.name} 启动命令已执行`);
+  if (
+    service.id === "agent-platform" &&
+    shouldRestartWebclientAfterPlatformStart &&
+    verifiedResult.ok &&
+    didAgentPlatformRuntimeChange(current, verifiedResult.service)
+  ) {
+    return restartAgentWebclientAfterPlatformStart(app, verifiedResult);
+  }
+  return verifiedResult;
 }
 
 export async function stopService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
@@ -2873,7 +3677,7 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
     }
   }
 
-  return result;
+  return attachServiceVerification(app, serviceId, result, "stopped", `${service.name} 停止命令已执行`);
 }
 
 async function runServiceRestart(
@@ -2953,20 +3757,27 @@ export async function writeServiceConfig(
   if (!configFile) {
     throw new Error(`unknown config key: ${key}`);
   }
+  const previousServicePort =
+    key === "env" && service.id === "agent-platform"
+      ? readInstalledServicePortForSync(app, service)
+      : null;
 
   const installDir = await ensureMutableInstallDir(app, service);
 
   const filePath = path.join(installDir, configFile.relativePath);
   ensureDir(path.dirname(filePath));
-  const normalizedContent =
-    service.id === "agent-platform" && key === "env"
-      ? normalizeAgentPlatformEnvContentForSave(content)
-      : content;
+  const normalizedContent = await normalizeCoreServiceEnvContentForSave(app, service, key, content);
   fs.writeFileSync(filePath, normalizedContent, "utf8");
+  await syncCoreServiceDependentEnvAfterSave(app, service, key, previousServicePort);
+
+  const message =
+    key === "env" && CORE_SERVICE_IDS.has(service.id)
+      ? `${service.name} 配置已保存。端口修改需重启服务后生效。`
+      : `${service.name} 配置已保存。`;
 
   return {
     ok: true,
-    message: `${service.name} 配置已保存。`,
+    message,
     service: await getServiceState(app, serviceId)
   };
 }
@@ -3157,6 +3968,107 @@ export async function stopRunningServices(app: App) {
   }
 }
 
+type ShutdownServiceStopResult = {
+  ok: boolean;
+  serviceId: ServiceId;
+  serviceName: string;
+  elapsedMs: number;
+  message: string;
+};
+
+function getShutdownStopCommandTimeoutMs(timeoutMs: number | undefined) {
+  return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? Math.floor(timeoutMs)
+    : SHUTDOWN_SERVICE_STOP_TIMEOUT_MS;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function stopServiceForShutdown(
+  app: App,
+  serviceState: ServiceState,
+  timeoutMs: number
+): Promise<ShutdownServiceStopResult> {
+  const service = getService(serviceState.id);
+  const startedAt = Date.now();
+
+  try {
+    await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`, {
+      refreshBuiltinAsset: false,
+      timeoutMs
+    });
+    startedThisSession.delete(service.id);
+    const elapsedMs = Date.now() - startedAt;
+    console.log(`[service-manager] shutdown stop succeeded for ${service.id} in ${elapsedMs}ms`);
+    return {
+      ok: true,
+      serviceId: service.id,
+      serviceName: service.name,
+      elapsedMs,
+      message: ""
+    };
+  } catch (error) {
+    const elapsedMs = Date.now() - startedAt;
+    const message = getErrorMessage(error);
+    console.warn(`[service-manager] shutdown stop failed for ${service.id} after ${elapsedMs}ms: ${message}`);
+    return {
+      ok: false,
+      serviceId: service.id,
+      serviceName: service.name,
+      elapsedMs,
+      message
+    };
+  }
+}
+
+export async function stopRunningServicesForShutdown(
+  app: App,
+  options: { stopCommandTimeoutMs?: number } = {}
+) {
+  const startedAt = Date.now();
+  const timeoutMs = getShutdownStopCommandTimeoutMs(options.stopCommandTimeoutMs);
+  const services = await listServices(app);
+  const runningServices = services.filter((service) => service.status === "running");
+  writeLastRunningServices(
+    app,
+    runningServices.map((service) => service.id)
+  );
+
+  if (runningServices.length === 0) {
+    console.log("[service-manager] shutdown stop skipped: no running services");
+    return {
+      ok: true,
+      timeoutMs,
+      elapsedMs: Date.now() - startedAt,
+      runningServiceIds: [] as ServiceId[],
+      stopped: [] as ShutdownServiceStopResult[],
+      failures: [] as ShutdownServiceStopResult[]
+    };
+  }
+
+  const results = await Promise.all(
+    runningServices.map((service) => stopServiceForShutdown(app, service, timeoutMs))
+  );
+  const stopped = results.filter((result) => result.ok);
+  const failures = results.filter((result) => !result.ok);
+  const elapsedMs = Date.now() - startedAt;
+
+  console.log(
+    `[service-manager] shutdown stop summary: services=${runningServices.length} stopped=${stopped.length} failed=${failures.length} elapsedMs=${elapsedMs} timeoutMs=${timeoutMs}`
+  );
+
+  return {
+    ok: failures.length === 0,
+    timeoutMs,
+    elapsedMs,
+    runningServiceIds: runningServices.map((service) => service.id),
+    stopped,
+    failures
+  };
+}
+
 export async function restoreRunningServices(
   app: App,
   options: {
@@ -3345,8 +4257,7 @@ export const __testInternals = {
   resolveAcpCommandForDesktop,
   normalizeAgentPlatformEnvContentForRuntime,
   normalizeAgentPlatformEnvContentForSave,
-  shouldDisableAgentPlatformRelayByDefault,
-  cleanupAgentPlatformRelayBeforeStart,
+  applyAgentPlatformWindowsHostShellDefaults,
   parseProcessTreeRowsFromPs,
   parseProcessTreeRowsFromPowerShell,
   buildProcessTreePids,
@@ -3362,6 +4273,9 @@ export const __testInternals = {
   decodePowerShellCapturePayload,
   runExecFile,
   runServiceRestart,
+  probeHttpUrl,
+  verifyServiceState,
+  buildVerificationResult,
   getInitializationStatePath,
   readInitializationState,
   getLastRunningServicesStatePath,

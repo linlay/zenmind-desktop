@@ -1,4 +1,5 @@
 node_modules/
+.pnpm-store/
 dist/
 dist-renderer/
 dist-electron/
@@ -33,5 +34,3 @@ playwright-report/
 
 *.pid
 *.pid.lock
-
-package-lock.json

@@ -6,7 +6,7 @@ function isZipArchive(archivePath: string) {
 
 function isTarArchive(archivePath: string) {
   const normalized = archivePath.toLowerCase();
-  return normalized.endsWith(".tar.gz") || normalized.endsWith(".tgz");
+  return normalized.endsWith(".tar.gz") || normalized.endsWith(".tgz") || normalized.endsWith(".skill");
 }
 
 function ensureSupportedArchive(archivePath: string) {

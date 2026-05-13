@@ -1,5 +1,11 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ServiceConfigReadResult, ServiceId, ServiceLogTarget, ServiceState } from "@shared/contracts";
+import type {
+  ServiceConfigFile,
+  ServiceConfigReadResult,
+  ServiceId,
+  ServiceLogTarget,
+  ServiceState
+} from "@shared/contracts";
 import { useServices } from "../services/ServicesContext";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName } from "../service-display";
@@ -32,6 +38,7 @@ const QUICK_START_ORDER = [
   "agent-platform",
   "agent-webclient"
 ] as const;
+const FEEDBACK_AUTO_CLOSE_MS = 3200;
 
 function statusClass(status: ServiceState["status"]) {
   switch (status) {
@@ -70,6 +77,8 @@ function statusDotClass(status: ServiceState["status"]) {
 
 type ActionScope = "lifecycle" | "detail";
 type ConfigMeta = Pick<ServiceConfigReadResult, "path" | "exists" | "source">;
+type ConfigCache = Record<ServiceId, Record<string, string>>;
+type ConfigMetaCache = Record<ServiceId, Record<string, ConfigMeta>>;
 type ServiceGroupKey = "core" | "market";
 type CoreModuleEntry = (typeof CORE_MODULES)[number] & {
   service: ServiceState | null;
@@ -121,6 +130,38 @@ function getErrorLogDisplay(service: ServiceState) {
     return "无独立错误日志，stderr 已并入日志文件";
   }
   return "未声明";
+}
+
+function getConfigSourceLabel(configFile: ServiceConfigFile, meta?: ConfigMeta) {
+  if (meta?.source === "file") {
+    return "已创建";
+  }
+  if (meta?.source === "template") {
+    return "来自模板";
+  }
+  if (meta?.source === "missing") {
+    return "未创建";
+  }
+  if (configFile.exists) {
+    return "已创建";
+  }
+  return "未读取";
+}
+
+function getConfigSourceClass(configFile: ServiceConfigFile, meta?: ConfigMeta) {
+  if (meta?.source === "file") {
+    return "is-file";
+  }
+  if (meta?.source === "template") {
+    return "is-template";
+  }
+  if (meta?.source === "missing") {
+    return "is-missing";
+  }
+  if (configFile.exists) {
+    return "is-file";
+  }
+  return "is-pending";
 }
 
 function createEmptyLogViewerState(): LogViewerState {
@@ -453,8 +494,9 @@ export function ControlCenterPage() {
   const [feedback, setFeedback] = useState("");
   const [isBatchStarting, setIsBatchStarting] = useState(false);
   const [expandedGroup, setExpandedGroup] = useState<ServiceGroupKey | null>(null);
-  const [configCache, setConfigCache] = useState<Record<string, string>>({});
-  const [configMeta, setConfigMeta] = useState<Record<string, ConfigMeta>>({});
+  const [configCache, setConfigCache] = useState<ConfigCache>({});
+  const [configMeta, setConfigMeta] = useState<ConfigMetaCache>({});
+  const [activeConfigKeyByService, setActiveConfigKeyByService] = useState<Record<ServiceId, string>>({});
   const [logViewer, setLogViewer] = useState<LogViewerState>(() => createEmptyLogViewerState());
 
   const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services]);
@@ -506,60 +548,25 @@ export function ControlCenterPage() {
   }, [startupFailure]);
 
   useEffect(() => {
+    if (!feedback) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setFeedback((current) => (current === feedback ? "" : current));
+    }, FEEDBACK_AUTO_CLOSE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [feedback]);
+
+  useEffect(() => {
     if (!selectedServiceIdFromNavigation) {
       return;
     }
     setSelectedServiceId(selectedServiceIdFromNavigation);
   }, [selectedServiceIdFromNavigation]);
-
-  useEffect(() => {
-    const installedServiceIds = new Set(services.filter((service) => service.installed).map((service) => service.id));
-    if (installedServiceIds.size === 0) {
-      return;
-    }
-
-    const missingServices = services.filter((service) => installedServiceIds.has(service.id) && !(service.id in configMeta));
-    if (missingServices.length === 0) {
-      return;
-    }
-
-    void Promise.all(
-      missingServices.map(async (service) => {
-        try {
-          const result = await readConfig(service.id, "env");
-          setConfigCache((current) => {
-            if (service.id in current) {
-              return current;
-            }
-            return { ...current, [service.id]: result.content };
-          });
-          setConfigMeta((current) => {
-            if (service.id in current) {
-              return current;
-            }
-            return {
-              ...current,
-              [service.id]: {
-                path: result.path,
-                exists: result.exists,
-                source: result.source
-              }
-            };
-          });
-        } catch {
-          setConfigCache((current) => ({ ...current, [service.id]: current[service.id] ?? "" }));
-          setConfigMeta((current) => ({
-            ...current,
-            [service.id]: {
-              path: "",
-              exists: false,
-              source: "missing"
-            }
-          }));
-        }
-      })
-    );
-  }, [configMeta, readConfig, services]);
 
   const serviceCounts = {
     total: services.length,
@@ -570,9 +577,84 @@ export function ControlCenterPage() {
     marketServices.find((service) => service.id === selectedServiceId) ?? null;
   const activeDetailService = selectedMarketService ?? selectedCoreModule?.service ?? null;
   const activeCoreModule = selectedMarketService ? null : selectedCoreModule;
-  const selectedConfigMeta = activeDetailService ? configMeta[activeDetailService.id] : undefined;
+  const selectedConfigKey = activeDetailService ? activeConfigKeyByService[activeDetailService.id] : undefined;
+  const selectedConfigFile =
+    activeDetailService?.configFiles.find((configFile) => configFile.key === selectedConfigKey) ??
+    activeDetailService?.configFiles[0] ??
+    null;
+  const serviceConfigCache = activeDetailService ? configCache[activeDetailService.id] ?? {} : {};
+  const serviceConfigMeta = activeDetailService ? configMeta[activeDetailService.id] ?? {} : {};
+  const selectedConfigMeta = selectedConfigFile ? serviceConfigMeta[selectedConfigFile.key] : undefined;
+  const selectedConfigContent = selectedConfigFile ? serviceConfigCache[selectedConfigFile.key] ?? "" : "";
+  const selectedConfigPathLabel =
+    selectedConfigMeta?.path ||
+    (selectedConfigFile ? `将自动创建 ${selectedConfigFile.relativePath}` : "未声明配置文件");
+  const activeDetailServiceId = activeDetailService?.id ?? "";
+  const selectedConfigKeyForRead = selectedConfigFile?.key ?? "";
+  const selectedConfigMetaLoaded = Boolean(
+    activeDetailService && selectedConfigFile && configMeta[activeDetailService.id]?.[selectedConfigFile.key]
+  );
   const errorLogDisplay = activeDetailService ? getErrorLogDisplay(activeDetailService) : "未声明";
   const detailEndpoint = activeDetailService?.healthMeta.webUrl ?? "";
+
+  useEffect(() => {
+    if (!activeDetailServiceId || !selectedConfigKeyForRead || selectedConfigMetaLoaded) {
+      return;
+    }
+
+    let cancelled = false;
+    void readConfig(activeDetailServiceId, selectedConfigKeyForRead)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setConfigCache((current) => ({
+          ...current,
+          [activeDetailServiceId]: {
+            ...(current[activeDetailServiceId] ?? {}),
+            [selectedConfigKeyForRead]: result.content
+          }
+        }));
+        setConfigMeta((current) => ({
+          ...current,
+          [activeDetailServiceId]: {
+            ...(current[activeDetailServiceId] ?? {}),
+            [selectedConfigKeyForRead]: {
+              path: result.path,
+              exists: result.exists,
+              source: result.source
+            }
+          }
+        }));
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setConfigCache((current) => ({
+          ...current,
+          [activeDetailServiceId]: {
+            ...(current[activeDetailServiceId] ?? {}),
+            [selectedConfigKeyForRead]: current[activeDetailServiceId]?.[selectedConfigKeyForRead] ?? ""
+          }
+        }));
+        setConfigMeta((current) => ({
+          ...current,
+          [activeDetailServiceId]: {
+            ...(current[activeDetailServiceId] ?? {}),
+            [selectedConfigKeyForRead]: {
+              path: "",
+              exists: false,
+              source: "missing"
+            }
+          }
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDetailServiceId, readConfig, selectedConfigKeyForRead, selectedConfigMetaLoaded]);
 
   function closeLogViewer() {
     logRequestIdRef.current += 1;
@@ -925,8 +1007,22 @@ export function ControlCenterPage() {
           </div>
       </div>
 
-      {feedback ? <div className="feedback-banner">{feedback}</div> : null}
-      {error ? <div className="feedback-banner warning-banner">{error}</div> : null}
+      {feedback || error ? (
+        <div className="control-center-feedback-anchor">
+          <div className="control-center-feedback-layer" aria-live="polite">
+            {feedback ? (
+              <div className="feedback-banner control-center-feedback-toast" role="status">
+                {feedback}
+              </div>
+            ) : null}
+            {error ? (
+              <div className="feedback-banner warning-banner control-center-feedback-toast" role="alert">
+                {error}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       {loading ? <div className="loading-box">正在读取服务状态…</div> : null}
 
       <div className="control-center-shell">
@@ -942,7 +1038,7 @@ export function ControlCenterPage() {
               },
               {
                 key: "market" as const,
-                title: "插件市场",
+                title: "功能市场",
                 subtitle: `${marketServices.length} 个插件`,
                 services: marketServices,
                 empty: "暂无已导入插件"
@@ -1228,41 +1324,84 @@ export function ControlCenterPage() {
 
             <div className="config-panel">
               <div className="config-head">
-                <h3>原文配置</h3>
-                <span>{selectedConfigMeta?.path || "将自动创建 .env"}</span>
+                <h3>配置文件</h3>
+                <span>{selectedConfigPathLabel}</span>
               </div>
-              <textarea
-                className="config-editor"
-                value={configCache[activeDetailService.id] ?? ""}
-                onChange={(event) =>
-                  setConfigCache((current) => ({ ...current, [activeDetailService.id]: event.target.value }))
-                }
-                spellCheck={false}
-              />
-              <div className="config-footer">
-                <button
-                  type="button"
-                  className="action-button primary"
-                  onClick={() =>
-                    runAction(
-                      activeDetailService.id,
-                      "detail",
-                      () => writeConfig(activeDetailService.id, "env", configCache[activeDetailService.id] ?? ""),
-                      {
-                        invalidateConfig: true
+              {activeDetailService.configFiles.length > 0 && selectedConfigFile ? (
+                <>
+                  {activeDetailService.configFiles.length > 1 ? (
+                    <div className="config-file-tabs" role="tablist" aria-label="配置文件">
+                      {activeDetailService.configFiles.map((configFile) => {
+                        const fileMeta = serviceConfigMeta[configFile.key];
+                        const isActive = configFile.key === selectedConfigFile.key;
+                        return (
+                          <button
+                            key={configFile.key}
+                            type="button"
+                            role="tab"
+                            aria-selected={isActive}
+                            className={`config-file-tab${isActive ? " is-active" : ""}`}
+                            onClick={() =>
+                              setActiveConfigKeyByService((current) => ({
+                                ...current,
+                                [activeDetailService.id]: configFile.key
+                              }))
+                            }
+                          >
+                            <span>{configFile.label || configFile.relativePath}</span>
+                            <span className={`config-file-source ${getConfigSourceClass(configFile, fileMeta)}`}>
+                              {getConfigSourceLabel(configFile, fileMeta)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  <textarea
+                    className="config-editor"
+                    value={selectedConfigContent}
+                    onChange={(event) =>
+                      setConfigCache((current) => ({
+                        ...current,
+                        [activeDetailService.id]: {
+                          ...(current[activeDetailService.id] ?? {}),
+                          [selectedConfigFile.key]: event.target.value
+                        }
+                      }))
+                    }
+                    spellCheck={false}
+                  />
+                  <div className="config-footer">
+                    <button
+                      type="button"
+                      className="action-button primary"
+                      onClick={() =>
+                        runAction(
+                          activeDetailService.id,
+                          "detail",
+                          () => writeConfig(activeDetailService.id, selectedConfigFile.key, selectedConfigContent),
+                          {
+                            invalidateConfig: true
+                          }
+                        )
                       }
-                    )
-                  }
-                  disabled={activeId === activeDetailService.id}
-                >
-                  {activeDetailService.kind === "builtin" && activeDetailService.status === "not-installed"
-                    ? "保存配置并安装"
-                    : "保存配置"}
-                </button>
-              </div>
-              {selectedConfigMeta?.source === "template" ? (
-                <p className="service-message">当前内容来自模板，保存或初始化后才会写入目标文件。</p>
-              ) : null}
+                      disabled={activeId === activeDetailService.id}
+                    >
+                      {activeDetailService.kind === "builtin" && activeDetailService.status === "not-installed"
+                        ? "保存配置并安装"
+                        : "保存配置"}
+                    </button>
+                  </div>
+                  {selectedConfigMeta?.source === "template" ? (
+                    <p className="service-message">当前内容来自模板，保存或初始化后才会写入目标文件。</p>
+                  ) : null}
+                  {selectedConfigMeta?.source === "missing" ? (
+                    <p className="service-message">当前文件尚未创建，保存后会写入目标路径。</p>
+                  ) : null}
+                </>
+              ) : (
+                <p className="service-message">该服务未声明可编辑配置文件。</p>
+              )}
             </div>
           </article>
         ) : activeCoreModule ? (

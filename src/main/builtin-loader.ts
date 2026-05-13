@@ -2,8 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import type { Manifest } from "../shared/contracts";
-import { readManifestFromArchive } from "./manifest-utils";
+import { readManifestFile, readManifestFromArchive } from "./manifest-utils";
 import { clearServices, registerService } from "./service-registry";
+import { getServicesRoot } from "./user-paths";
 
 const manifestCache = new Map<string, { key: string; manifest: Manifest }>();
 
@@ -78,6 +79,65 @@ function isPlatformMatch(manifestOs: string) {
   return manifestOs.trim().toLowerCase() === getCurrentManifestOs();
 }
 
+function listInstalledBuiltinManifestPaths(app: App) {
+  const servicesRoot = getServicesRoot(app);
+  if (!fs.existsSync(servicesRoot)) {
+    return [];
+  }
+
+  const manifestPaths: string[] = [];
+  for (const serviceEntry of fs.readdirSync(servicesRoot, { withFileTypes: true })) {
+    if (!serviceEntry.isDirectory()) {
+      continue;
+    }
+    const serviceRoot = path.join(servicesRoot, serviceEntry.name);
+    for (const versionEntry of fs.readdirSync(serviceRoot, { withFileTypes: true })) {
+      if (!versionEntry.isDirectory()) {
+        continue;
+      }
+      const manifestPath = path.join(serviceRoot, versionEntry.name, "manifest.json");
+      if (fs.existsSync(manifestPath)) {
+        manifestPaths.push(manifestPath);
+      }
+    }
+  }
+
+  return manifestPaths.sort((left, right) => left.localeCompare(right));
+}
+
+function loadInstalledBuiltinServices(app: App) {
+  const latestByServiceId = new Map<string, { manifestPath: string; manifest: Manifest }>();
+
+  for (const manifestPath of listInstalledBuiltinManifestPaths(app)) {
+    try {
+      const manifest = readManifestFile(manifestPath);
+      if (manifest.kind !== "builtin") {
+        continue;
+      }
+      if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
+        continue;
+      }
+      const current = latestByServiceId.get(manifest.id);
+      if (!current || manifest.version.localeCompare(current.manifest.version) > 0) {
+        latestByServiceId.set(manifest.id, { manifestPath, manifest });
+      }
+    } catch (error) {
+      console.warn(`[builtin-loader] failed to read installed builtin manifest ${manifestPath}`, error);
+    }
+  }
+
+  const loaded = [];
+  for (const { manifestPath, manifest } of latestByServiceId.values()) {
+    try {
+      loaded.push(registerService(manifest, { defaultKind: "builtin" }));
+    } catch (error) {
+      console.warn(`[builtin-loader] failed to register installed builtin manifest ${manifestPath}`, error);
+    }
+  }
+
+  return loaded.sort((left, right) => left.id.localeCompare(right.id));
+}
+
 export function loadBuiltinServices(app: App) {
   clearServices("builtin");
 
@@ -99,5 +159,9 @@ export function loadBuiltinServices(app: App) {
     }
   }
 
-  return loaded;
+  if (loaded.length > 0) {
+    return loaded;
+  }
+
+  return loadInstalledBuiltinServices(app);
 }

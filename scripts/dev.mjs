@@ -122,7 +122,14 @@ process.on("SIGTERM", () => shutdown(0));
 
 const syncOs = isWindows ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
 const syncArch = detectSyncArch();
-await runAndWait(nodeBin, ["./scripts/sync-builtin-assets.mjs", `--os=${syncOs}`, `--arch=${syncArch}`]);
+try {
+  await runAndWait(nodeBin, ["./scripts/sync-builtin-assets.mjs", `--os=${syncOs}`, `--arch=${syncArch}`]);
+} catch (error) {
+  console.warn(
+    `[dev] builtin asset sync failed; continuing with installed local services when available.\n` +
+      `${error instanceof Error ? error.message : String(error)}`
+  );
+}
 await runAndWait(npmCmd, ["run", "build:main"]);
 
 track(run(npmCmd, ["exec", "vite", "--", "--host", "127.0.0.1"]));

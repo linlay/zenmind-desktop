@@ -386,20 +386,134 @@ function validateAgentPlatformBundleArchive(service, archivePath) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
         `Detected legacy desktop env binding ${legacyEnvBinding} in manifest.json.\n` +
-        `This usually means a pre-runtime or stale agent-platform bundle was selected instead of the clean Desktop release bundle.`
+      `This usually means a pre-runtime or stale agent-platform bundle was selected instead of the clean Desktop release bundle.`
+    );
+  }
+
+  const entries = listArchiveEntries(archivePath);
+  if ([...entries].some((entry) => entry.includes("local-cli-acp-relay"))) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Detected legacy relay residue inside the agent-platform bundle.\n` +
+        `Please rebuild the clean Desktop release bundle where local-cli-acp-relay ships as a separate plugin.`
     );
   }
 
   const programCommonPath = `${service.bundleTopLevelDir}/scripts/program-common.sh`;
   const programCommon = readArchiveEntryText(archivePath, programCommonPath);
+  const envExamplePath = `${service.bundleTopLevelDir}/.env.example`;
+  const envExample = readArchiveEntryText(archivePath, envExamplePath);
   if (
-    programCommon &&
-    programCommon.includes('LOCAL_CLI_ACP_RELAY_ENABLED="${LOCAL_CLI_ACP_RELAY_ENABLED:-true}"')
+    (programCommon && /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_/u.test(programCommon)) ||
+    (envExample && /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_/u.test(envExample))
   ) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected a legacy agent-platform relay default that enables LOCAL_CLI_ACP_RELAY on fresh installs.\n` +
-        `Please rebuild or reselect the clean Desktop release bundle where the relay default is false.`
+        `Detected legacy relay residue in the bundled startup/config files.\n` +
+        `Please rebuild or reselect the clean Desktop release bundle where relay settings live in the standalone plugin.`
+    );
+  }
+}
+
+function validateAgentWebclientBundleArchive(service, archivePath) {
+  const manifest = readManifestFromArchive(archivePath);
+  const isWindowsArchive = archivePath.endsWith(".zip");
+  const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
+    ? manifest.desktop.envBindings
+      .map((binding) => (binding && typeof binding.key === "string" ? binding.key.trim() : ""))
+      .filter(Boolean)
+    : [];
+  for (const requiredKey of ["BASE_URL", "WS_BASE_URL"]) {
+    if (!envBindingKeys.includes(requiredKey)) {
+      throw new Error(
+        `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+          `Missing desktop env binding ${requiredKey} in manifest.json.\n` +
+        `Please rebuild the Desktop-ready agent-webclient bundle.`
+      );
+    }
+  }
+
+  if (manifest?.backend?.entry !== "backend/server.cjs") {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Expected backend.entry to be backend/server.cjs, got ${JSON.stringify(manifest?.backend?.entry)}.\n` +
+        `Please rebuild the Desktop-ready agent-webclient bundle.`
+    );
+  }
+
+  const entries = listArchiveEntries(archivePath);
+  const programCommonPath = isWindowsArchive
+    ? `${service.bundleTopLevelDir}/scripts/program-common.ps1`
+    : `${service.bundleTopLevelDir}/scripts/program-common.sh`;
+  const programCommon = readArchiveEntryText(archivePath, programCommonPath);
+  if (!programCommon) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Missing ${programCommonPath} in the Desktop-ready agent-webclient bundle.`
+    );
+  }
+
+  const staleRuntimeMarkers = isWindowsArchive
+    ? ["BackendPackageFile", "BackendModulesDir", "backend\\package.json", "backend\\node_modules"]
+    : ["BACKEND_PACKAGE_FILE", "BACKEND_NODE_MODULES_DIR", "backend/package.json", "backend/node_modules"];
+  const staleRuntimeMarker = staleRuntimeMarkers.find((marker) => programCommon.includes(marker));
+  if (staleRuntimeMarker) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Detected stale launcher runtime check ${JSON.stringify(staleRuntimeMarker)} in ${programCommonPath}.\n` +
+        `The Desktop-ready agent-webclient bundle is self-contained in backend/server.cjs and must not require backend/package.json or backend/node_modules.`
+    );
+  }
+  const hasBundleRelativeBackendEntry = isWindowsArchive
+    ? /\$Script:BackendEntry\s*=\s*Join-Path\s+\(Join-Path\s+\$Script:BundleRoot\s+['"]backend['"]\)\s+['"]server\.cjs['"]/u.test(programCommon)
+    : /BACKEND_ENTRY=["']\$\{?BUNDLE_ROOT\}?\/backend\/server\.cjs["']/u.test(programCommon);
+  if (!hasBundleRelativeBackendEntry) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Expected ${programCommonPath} to launch $BUNDLE_ROOT/backend/server.cjs instead of an absolute or legacy backend path.\n` +
+        `Please rebuild the Desktop-ready agent-webclient bundle.`
+    );
+  }
+
+  const forbiddenEntries = [
+    `${service.bundleTopLevelDir}/backend/package.json`,
+    `${service.bundleTopLevelDir}/backend/package-lock.json`,
+    `${service.bundleTopLevelDir}/README.txt`
+  ];
+  const forbiddenPrefixes = [
+    `${service.bundleTopLevelDir}/backend/node_modules/`
+  ];
+  const forbiddenEntry = forbiddenEntries.find((entry) => entries.has(entry));
+  if (forbiddenEntry) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Unexpected legacy runtime file ${forbiddenEntry} in bundled backend.\n` +
+        `Please rebuild the Desktop-ready agent-webclient bundle.`
+    );
+  }
+  const forbiddenPrefix = forbiddenPrefixes.find((prefix) => [...entries].some((entry) => entry.startsWith(prefix)));
+  if (forbiddenPrefix) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Unexpected legacy runtime directory ${forbiddenPrefix} in bundled backend.\n` +
+        `Please rebuild the Desktop-ready agent-webclient bundle.`
+    );
+  }
+
+  const serverPath = `${service.bundleTopLevelDir}/${manifest.backend.entry}`;
+  const serverContent = readArchiveEntryText(archivePath, serverPath);
+  if (
+    !serverContent ||
+    serverContent.includes("(secure ? https : http).request") ||
+    serverContent.includes("function buildUpgradeRequest(") ||
+    !serverContent.includes("function createWebSocketProxy(") ||
+    !serverContent.includes("proxy.upgrade(req, socket, head)") ||
+    !serverContent.includes("server.on('upgrade'")
+  ) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Detected a stale agent-webclient websocket proxy in bundled backend entry ${manifest.backend.entry}.\n` +
+        `Please rebuild the bundle with the http-proxy-middleware WebSocket upgrade proxy.`
     );
   }
 }
@@ -450,6 +564,25 @@ function validateZenmindAppServerBundleArchive(service, archivePath) {
   }
 }
 
+function validateBundleContents(service, archivePath, entries) {
+  const readmeEntry = `${service.bundleTopLevelDir}/README.txt`;
+  if (entries.has(readmeEntry)) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Unexpected non-runtime file ${readmeEntry} in final bundle.\n` +
+        `Please regenerate the upstream release bundle.`
+    );
+  }
+
+  if (service.id === "agent-platform" && entries.has(`${service.bundleTopLevelDir}/local-cli-acp-relay/README.md`)) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Unexpected non-runtime file local-cli-acp-relay/README.md in final bundle.\n` +
+        `Please regenerate the upstream release bundle.`
+    );
+  }
+}
+
 export function validateBundleArchive(service, archivePath) {
   const serviceRoot = path.join(WORKSPACE_ROOT, service.id);
   if (!fs.existsSync(archivePath)) {
@@ -471,8 +604,13 @@ export function validateBundleArchive(service, archivePath) {
     );
   }
 
+  validateBundleContents(service, archivePath, entries);
+
   if (service.id === "agent-platform") {
     validateAgentPlatformBundleArchive(service, archivePath);
+  }
+  if (service.id === "agent-webclient") {
+    validateAgentWebclientBundleArchive(service, archivePath);
   }
   if (service.id === "zenmind-app-server") {
     validateZenmindAppServerBundleArchive(service, archivePath);

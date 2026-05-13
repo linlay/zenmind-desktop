@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -10,6 +11,7 @@ const require = createRequire(import.meta.url);
 const childProcess = require("node:child_process");
   const {
     __testInternals,
+    forceCleanupManagedProcesses,
     getServiceState,
     getInstallDir,
     initializeService,
@@ -18,15 +20,42 @@ const childProcess = require("node:child_process");
     readServiceConfig,
     runStartupPreparation,
     restoreRunningServices,
-    startService
+    startService,
+    stopService,
+    stopRunningServicesForShutdown,
+    writeServiceConfig
 } = require("../dist-electron/main/service-manager.js");
 const { loadBuiltinServices } = require("../dist-electron/main/builtin-loader.js");
 const {
   __testInternals: registryInternals,
   getBuiltinService,
+  getService,
   registerPlugin
 } = require("../dist-electron/main/service-registry.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
+
+function getAvailableLocalPort(host = "127.0.0.1") {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, host, () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : null;
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        if (!port) {
+          reject(new Error("Failed to allocate a local test port."));
+          return;
+        }
+        resolve(port);
+      });
+    });
+  });
+}
 
 function currentManifestOs() {
   switch (process.platform) {
@@ -289,7 +318,7 @@ function createStartupCoreAssetsFixture(options = {}) {
     },
     {
       id: "agent-webclient",
-      name: "小宅助理",
+      name: "智能助理",
       frontend: { mode: "standalone", entry: "/" },
       web: { routePath: "/", portEnvKey: "PORT", defaultPort: portBase },
       envExample: `PORT=${portBase}\n`,
@@ -313,13 +342,14 @@ function createStartupCoreAssetsFixture(options = {}) {
 
     if (service.id === "agent-webclient") {
       fs.writeFileSync(
-        path.join(bundleRoot, "backend", "server.js"),
+        path.join(bundleRoot, "backend", "server.cjs"),
         [
           "const http = require('http');",
-          "const https = require('https');",
+          "const { createProxyMiddleware } = require('http-proxy-middleware');",
           "const server = http.createServer();",
           "function createWebSocketProxy() {",
-          "  return (secure ? https : http).request;",
+          "  const proxy = createProxyMiddleware({ target: 'http://127.0.0.1:11949', ws: true });",
+          "  return { ws(req, socket, head) { proxy.upgrade(req, socket, head); } };",
           "}",
           "server.on('upgrade', () => {});",
           "module.exports = { createWebSocketProxy };"
@@ -414,6 +444,11 @@ function createStartupCoreAssetsFixture(options = {}) {
             'FRONTEND_DIST_DIR="${FRONTEND_DIST_DIR:-./frontend/dist}"',
             'nohup "$BACKEND_BIN" >/dev/null 2>&1 &'
           ].join("\n") + "\n"
+        : service.id === "agent-webclient"
+          ? [
+              "#!/usr/bin/env bash",
+              'BACKEND_ENTRY="$BUNDLE_ROOT/backend/server.cjs"'
+            ].join("\n") + "\n"
         : "#!/usr/bin/env bash\n";
       fs.writeFileSync(path.join(bundleRoot, "scripts", programCommonName), programCommonContent, "utf8");
       fs.chmodSync(path.join(bundleRoot, startFileName), 0o755);
@@ -431,6 +466,13 @@ function createStartupCoreAssetsFixture(options = {}) {
         version: "v1.0.0",
         description: "fixture",
         frontend: service.frontend,
+        ...(service.id === "agent-webclient"
+          ? {
+              backend: {
+                entry: "backend/server.cjs"
+              }
+            }
+          : {}),
         scripts: {
           start: startFileName,
           stop: stopFileName
@@ -453,7 +495,7 @@ function createStartupCoreAssetsFixture(options = {}) {
             ".env.example",
             "manifest.json",
             ...(service.id === "agent-platform" ? ["configs", "runtime"] : []),
-            ...(service.id === "agent-webclient" ? [path.join("backend", "server.js"), path.join("frontend", "dist", "index.html")] : []),
+            ...(service.id === "agent-webclient" ? [path.join("backend", "server.cjs"), path.join("frontend", "dist", "index.html")] : []),
             ...(service.id === "zenmind-app-server" ? [path.join("frontend", "dist", "index.html")] : [])
           ]
         },
@@ -532,6 +574,63 @@ async function waitForPidExit(pid) {
   return false;
 }
 
+function markInstallInitialized(installDir, version = "v1.0.0") {
+  const initStatePath = __testInternals.getInitializationStatePath(installDir);
+  fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
+  fs.writeFileSync(
+    initStatePath,
+    `${JSON.stringify({
+      version,
+      status: "succeeded",
+      updatedAt: new Date().toISOString()
+    }, null, 2)}\n`,
+    "utf8"
+  );
+}
+
+function writeExecutableFile(filePath, content) {
+  fs.writeFileSync(filePath, content, "utf8");
+  fs.chmodSync(filePath, 0o755);
+}
+
+function prepareRunningPluginFixture(userDataRoot, options = {}) {
+  const pluginId = options.id ?? "test-plugin";
+  const installDir = path.join(userDataRoot, "plugins", pluginId);
+  writePluginInstallRoot(installDir, {
+    id: pluginId,
+    name: options.name ?? pluginId,
+    port: options.port ?? 0,
+    deployScriptContent: false
+  });
+  fs.copyFileSync(path.join(installDir, ".env.example"), path.join(installDir, ".env"));
+  markInstallInitialized(installDir);
+
+  if (options.stopScriptContent) {
+    writeExecutableFile(path.join(installDir, "stop.sh"), options.stopScriptContent);
+  }
+
+  const workerPath = path.join(installDir, `${pluginId}-worker.mjs`);
+  fs.writeFileSync(workerPath, "setInterval(() => {}, 1000);\n", "utf8");
+  const startResult = spawnSync(
+    "sh",
+    ["-c", 'nohup "$1" "$2" >/dev/null 2>&1 & echo $!', "zenmind-fixture", process.execPath, workerPath],
+    {
+      cwd: installDir,
+      encoding: "utf8"
+    }
+  );
+  assert.equal(startResult.status, 0, startResult.stderr || startResult.stdout);
+  const pid = Number.parseInt(startResult.stdout.trim(), 10);
+  assert.ok(Number.isFinite(pid) && pid > 0, `expected fixture pid, got ${startResult.stdout}`);
+  fs.writeFileSync(path.join(installDir, "run", "test-plugin.pid"), `${pid}\n`, "utf8");
+
+  return {
+    child: { pid },
+    installDir,
+    pluginId
+  };
+}
+
 function createApp(userDataRoot, options = {}) {
   const {
     isPackaged = false,
@@ -582,6 +681,8 @@ function loadBuiltinsForTest(userDataRoot, assetsRoot, appOptions = {}) {
 
 function writeContainerHubBundleRoot(bundleRoot, options = {}) {
   const startScriptContent = options.startScriptContent ?? "#!/usr/bin/env bash\necho start\n";
+  const bindAddr = options.bindAddr ?? "127.0.0.1:11960";
+  const defaultPort = Number(String(bindAddr).match(/:(\d+)$/u)?.[1] || 11960);
 
   fs.mkdirSync(path.join(bundleRoot, "backend"), { recursive: true });
   fs.mkdirSync(path.join(bundleRoot, "configs", "environments"), { recursive: true });
@@ -593,7 +694,7 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
   fs.writeFileSync(path.join(bundleRoot, "start.sh"), startScriptContent, "utf8");
   fs.writeFileSync(path.join(bundleRoot, "stop.sh"), "#!/usr/bin/env bash\necho stop\n", "utf8");
   fs.writeFileSync(path.join(bundleRoot, "scripts", "program-common.sh"), "#!/usr/bin/env bash\n", "utf8");
-  fs.writeFileSync(path.join(bundleRoot, ".env.example"), "BIND_ADDR=127.0.0.1:11960\n", "utf8");
+  fs.writeFileSync(path.join(bundleRoot, ".env.example"), `BIND_ADDR=${bindAddr}\n`, "utf8");
   fs.writeFileSync(
     path.join(bundleRoot, "manifest.json"),
     `${JSON.stringify(
@@ -648,7 +749,7 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
         web: {
           routePath: "/",
           portEnvKey: "BIND_ADDR",
-          defaultPort: 11960
+          defaultPort
         },
         desktop: {
           assetFileName: "agent-container-hub-v0.1.0-darwin-arm64.tar.gz",
@@ -684,6 +785,22 @@ function createContainerHubBundleFixture(tempRoot, options = {}) {
     assetsRoot,
     userDataRoot,
     installDir,
+    tarBundleRoot
+  };
+}
+
+function addContainerHubAssetToFixture(fixture, options = {}) {
+  const tarFixtureRoot = path.join(fixture.tempRoot, "agent-container-hub-asset-root");
+  const tarBundleRoot = path.join(tarFixtureRoot, "agent-container-hub");
+  const serviceAssetDir = path.join(fixture.assetsRoot, "agent-container-hub");
+  const tarPath = path.join(serviceAssetDir, "agent-container-hub-v0.1.0-darwin-arm64.tar.gz");
+
+  writeContainerHubBundleRoot(tarBundleRoot, options);
+  fs.mkdirSync(serviceAssetDir, { recursive: true });
+  execFileSync("tar", ["-czf", tarPath, "-C", tarFixtureRoot, "agent-container-hub"]);
+
+  return {
+    tarPath,
     tarBundleRoot
   };
 }
@@ -822,16 +939,58 @@ test("upsertEnvFileContent replaces duplicated keys without leaving stale values
   assert.equal(next, "AGENTS_DIR=/tmp/new-agents\nOTHER_KEY=demo\n");
 });
 
-test("normalizeAgentPlatformEnvContentForSave records whether ACP relay was manually enabled", () => {
-  const enabledContent = __testInternals.normalizeAgentPlatformEnvContentForSave(
-    "HOST_PORT=11949\nLOCAL_CLI_ACP_RELAY_ENABLED=true\n"
-  );
-  const disabledContent = __testInternals.normalizeAgentPlatformEnvContentForSave(
-    "HOST_PORT=11949\nLOCAL_CLI_ACP_RELAY_ENABLED=false\n"
+test("normalizeAgentPlatformEnvContentForSave strips legacy relay settings", () => {
+  const next = __testInternals.normalizeAgentPlatformEnvContentForSave(
+    [
+      "HOST_PORT=11949",
+      "LOCAL_CLI_ACP_RELAY_ENABLED=true",
+      "LOCAL_CLI_ACP_RELAY_PORT=4555",
+      "CLAUDE_CODE_ACP_COMMAND=/custom/bin/claude-code-acp",
+      "CLAUDE_CODE_ACP_ARGS=--stdio"
+    ].join("\n")
   );
 
-  assert.match(enabledContent, /^LOCAL_CLI_ACP_RELAY_USER_ENABLED=true$/m);
-  assert.match(disabledContent, /^LOCAL_CLI_ACP_RELAY_USER_ENABLED=false$/m);
+  assert.match(next, /^HOST_PORT=11949$/m);
+  assert.doesNotMatch(next, /^LOCAL_CLI_ACP_RELAY_ENABLED=/m);
+  assert.doesNotMatch(next, /^LOCAL_CLI_ACP_RELAY_PORT=/m);
+  assert.doesNotMatch(next, /^CLAUDE_CODE_ACP_COMMAND=/m);
+  assert.doesNotMatch(next, /^CLAUDE_CODE_ACP_ARGS=/m);
+});
+
+test("applyAgentPlatformWindowsHostShellDefaults injects PowerShell defaults on Windows", () => {
+  const updates = new Map();
+  const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(
+    new Map([["HOST_PORT", "11949"]]),
+    updates,
+    true
+  );
+
+  assert.equal(changed, true);
+  assert.equal(updates.get("AGENT_BASH_SHELL_EXECUTABLE"), "powershell.exe");
+  assert.equal(updates.get("AGENT_BASH_SHELL_ARGS"), "-NoProfile,-ExecutionPolicy,Bypass,-Command,{{command}}");
+});
+
+test("applyAgentPlatformWindowsHostShellDefaults preserves explicit host shell settings", () => {
+  const updates = new Map();
+  const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(
+    new Map([
+      ["AGENT_BASH_SHELL_EXECUTABLE", "cmd.exe"],
+      ["AGENT_BASH_SHELL_ARGS", "/d,/s,/c,{{command}}"]
+    ]),
+    updates,
+    true
+  );
+
+  assert.equal(changed, false);
+  assert.equal(updates.size, 0);
+});
+
+test("applyAgentPlatformWindowsHostShellDefaults skips non-Windows platforms", () => {
+  const updates = new Map();
+  const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(new Map(), updates, false);
+
+  assert.equal(changed, false);
+  assert.equal(updates.size, 0);
 });
 
 test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys and migrates supported replacements", () => {
@@ -901,20 +1060,81 @@ test("service install dir follows userData/services/<id>/<version>", () => {
   restore();
 });
 
-test("parsePort understands bind addr for container hub and server port for agent platform", () => {
+test("parsePort reads Desktop core service ports from their config keys", () => {
   const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-service-port-"));
   const { restore } = loadBuiltinsForTest(userDataRoot);
+  const authService = registerPlugin({
+    id: "zenmind-app-server",
+    name: "认证服务",
+    kind: "builtin",
+    version: "v0.1.0",
+    description: "fixture",
+    frontend: {
+      mode: "standalone"
+    },
+    scripts: {
+      start: "start.sh",
+      stop: "stop.sh"
+    },
+    runtime: {},
+    web: {
+      routePath: "/admin/",
+      portEnvKey: "SERVER_PORT",
+      defaultPort: 18080
+    }
+  });
+  const webclientPort = __testInternals.parsePort(
+    getBuiltinService("agent-webclient"),
+    new Map([["PORT", "7080"]])
+  );
+  const webclientBadPort = __testInternals.parsePort(
+    getBuiltinService("agent-webclient"),
+    new Map([["PORT", "117080"]])
+  );
+  const authPort = __testInternals.parsePort(
+    authService,
+    new Map([["SERVER_PORT", "7076"]])
+  );
+  const authBadPort = __testInternals.parsePort(
+    authService,
+    new Map([["SERVER_PORT", "117076"]])
+  );
   const hubPort = __testInternals.parsePort(
     getBuiltinService("agent-container-hub"),
-    new Map([["BIND_ADDR", "127.0.0.1:11960"]])
+    new Map([["BIND_ADDR", "127.0.0.1:7079"]])
+  );
+  const hubBadPort = __testInternals.parsePort(
+    getBuiltinService("agent-container-hub"),
+    new Map([["BIND_ADDR", "127.0.0.1:117079"]])
   );
   const platformPort = __testInternals.parsePort(
     getBuiltinService("agent-platform"),
+    new Map([
+      ["HOST_PORT", "7078"],
+      ["SERVER_PORT", "18081"]
+    ])
+  );
+  const platformFallbackPort = __testInternals.parsePort(
+    getBuiltinService("agent-platform"),
     new Map([["SERVER_PORT", "8123"]])
   );
+  const platformBadPort = __testInternals.parsePort(
+    getBuiltinService("agent-platform"),
+    new Map([
+      ["HOST_PORT", "117078"],
+      ["SERVER_PORT", "117078"]
+    ])
+  );
 
-  assert.equal(hubPort, 11960);
-  assert.equal(platformPort, 8123);
+  assert.equal(webclientPort, 7080);
+  assert.equal(webclientBadPort, 7080);
+  assert.equal(authPort, 7076);
+  assert.equal(authBadPort, 7076);
+  assert.equal(hubPort, 7079);
+  assert.equal(hubBadPort, 7079);
+  assert.equal(platformPort, 7078);
+  assert.equal(platformFallbackPort, 8123);
+  assert.equal(platformBadPort, 7078);
   restore();
 });
 
@@ -933,80 +1153,6 @@ test("fixShellScriptPermissions marks shell scripts executable", () => {
 
   assert.equal(fs.statSync(shellPath).mode & 0o777, 0o755);
   assert.equal(fs.statSync(textPath).mode & 0o777, 0o644);
-});
-
-test("cleanupAgentPlatformRelayBeforeStart stops managed relay leftovers and clears pid file", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-relay-cleanup-"));
-  const installDir = path.join(tempRoot, "agent-platform");
-  const relayDir = path.join(installDir, "local-cli-acp-relay");
-  const runDir = path.join(installDir, "run");
-  const relayScriptPath = path.join(relayDir, "relay-fixture.mjs");
-  const relayPidFilePath = path.join(runDir, "local-cli-acp-relay.pid");
-
-  fs.mkdirSync(relayDir, { recursive: true });
-  fs.mkdirSync(runDir, { recursive: true });
-  fs.writeFileSync(relayScriptPath, "setInterval(() => {}, 1000);\n", "utf8");
-
-  const relayProcess = spawn(process.execPath, [relayScriptPath], {
-    stdio: "ignore"
-  });
-
-  assert.ok(relayProcess.pid, "expected relay fixture to expose a pid");
-  fs.writeFileSync(relayPidFilePath, `${relayProcess.pid}\n`, "utf8");
-
-  __testInternals.cleanupAgentPlatformRelayBeforeStart(installDir, new Map([
-    ["LOCAL_CLI_ACP_RELAY_PORT", "3220"]
-  ]));
-
-  await new Promise((resolve) => setTimeout(resolve, 200));
-
-  assert.equal(fs.existsSync(relayPidFilePath), false);
-  assert.equal(spawnSync("kill", ["-0", String(relayProcess.pid)]).status, 1);
-
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-});
-
-test("cleanupAgentPlatformRelayBeforeStart stops managed relay leftovers that only occupy the relay port", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-relay-port-cleanup-"));
-  const installDir = path.join(tempRoot, "agent-platform");
-  const relayDir = path.join(installDir, "local-cli-acp-relay");
-  const relayScriptPath = path.join(relayDir, "relay-port-fixture.mjs");
-  const relayPort = 33220 + Math.floor(Math.random() * 1000);
-
-  fs.mkdirSync(relayDir, { recursive: true });
-  fs.writeFileSync(
-    relayScriptPath,
-    `import http from "node:http";
-const server = http.createServer((_req, res) => res.end("ok"));
-server.listen(${relayPort}, "127.0.0.1");
-setInterval(() => {}, 1000);
-`,
-    "utf8"
-  );
-
-  const relayProcess = spawn(process.execPath, [relayScriptPath], {
-    stdio: "ignore"
-  });
-
-  assert.ok(relayProcess.pid, "expected relay fixture to expose a pid");
-
-  const deadline = Date.now() + 5000;
-  while (Date.now() < deadline) {
-    if (spawnSync("lsof", ["-nP", `-iTCP:${relayPort}`, "-sTCP:LISTEN"]).status === 0) {
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-
-  __testInternals.cleanupAgentPlatformRelayBeforeStart(installDir, new Map([
-    ["LOCAL_CLI_ACP_RELAY_PORT", String(relayPort)]
-  ]));
-
-  await new Promise((resolve) => setTimeout(resolve, 200));
-
-  assert.equal(spawnSync("kill", ["-0", String(relayProcess.pid)]).status, 1);
-
-  fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
 test("buildProcessTreePids returns descendants before the root process", () => {
@@ -1082,47 +1228,6 @@ test("collectManagedRootPids only includes pid-file processes from the service i
   }
 });
 
-test("collectManagedRootPids includes agent-platform relay pid files", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-managed-relay-root-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const installDir = path.join(userDataRoot, "plugins", "agent-platform");
-  const app = createApp(userDataRoot);
-  const relayDir = path.join(installDir, "local-cli-acp-relay");
-  const relayPath = path.join(relayDir, "relay-fixture.mjs");
-  let child = null;
-
-  registryInternals.clearServices();
-  writePluginInstallRoot(installDir, {
-    id: "agent-platform",
-    port: 0,
-    deployScriptContent: false
-  });
-  fs.mkdirSync(relayDir, { recursive: true });
-  fs.writeFileSync(relayPath, "setInterval(() => {}, 1000);\n", "utf8");
-
-  try {
-    child = spawn(process.execPath, [relayPath], {
-      cwd: installDir,
-      stdio: "ignore"
-    });
-    assert.ok(child.pid, "expected relay fixture process to expose a pid");
-    fs.writeFileSync(path.join(installDir, "run", "local-cli-acp-relay.pid"), `${child.pid}\n`, "utf8");
-
-    const roots = __testInternals.collectManagedRootPids(app);
-    assert.equal(roots.some((root) => root.pid === child.pid && root.serviceId === "agent-platform"), true);
-  } finally {
-    if (child?.pid) {
-      try {
-        process.kill(child.pid, "SIGTERM");
-      } catch {
-        // Process may already be gone when the test finishes.
-      }
-    }
-    registryInternals.clearServices();
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
 test("mergeCleanupTargets preserves pre-quit process tree snapshots", () => {
   const merged = __testInternals.mergeCleanupTargets(
     [
@@ -1156,10 +1261,6 @@ function createManagedStopState(overrides = {}) {
     managedMainPid: null,
     port: 0,
     managedPortPids: [],
-    relayPidFilePath: "",
-    managedRelayPid: null,
-    relayPort: 0,
-    managedRelayPortPids: [],
     ...overrides
   };
 }
@@ -1222,7 +1323,7 @@ test("ensureManagedServiceStoppedForPlatform fails on Windows when managed port 
   });
 });
 
-test("forceStopServiceInstallDir cleans both main and relay managed processes for agent-platform on Windows", () => {
+test("forceStopServiceInstallDir cleans managed processes for agent-platform on Windows", () => {
   const terminatedPids = [];
   const removedPidFiles = [];
 
@@ -1237,11 +1338,7 @@ test("forceStopServiceInstallDir cleans both main and relay managed processes fo
           mainPidFilePath: "/tmp/agent-platform.pid",
           managedMainPid: 101,
           port: 11949,
-          managedPortPids: [102],
-          relayPidFilePath: "/tmp/local-cli-acp-relay.pid",
-          managedRelayPid: 201,
-          relayPort: 3220,
-          managedRelayPortPids: [202]
+          managedPortPids: [102]
         }),
       terminateProcessTreeImpl: (pid) => {
         terminatedPids.push(pid);
@@ -1254,8 +1351,8 @@ test("forceStopServiceInstallDir cleans both main and relay managed processes fo
   );
 
   assert.equal(terminated, true);
-  assert.deepEqual(terminatedPids, [101, 102, 201, 202]);
-  assert.deepEqual(removedPidFiles, ["/tmp/agent-platform.pid", "/tmp/local-cli-acp-relay.pid"]);
+  assert.deepEqual(terminatedPids, [101, 102]);
+  assert.deepEqual(removedPidFiles, ["/tmp/agent-platform.pid"]);
 });
 
 test("runServiceRestart does not start the service when stop fails", async () => {
@@ -1785,7 +1882,8 @@ test("installBuiltinService prepares agent platform desktop config during first 
     const preferredRuntimeRoot = path.join(homeRoot, ".zenmind");
     assert.match(envContent, /^AUTH_ENABLED=true$/m);
     assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
-    assert.match(envContent, /^SERVER_PORT=11949$/m);
+    assert.match(envContent, /^HOST_PORT=7078$/m);
+    assert.match(envContent, /^SERVER_PORT=7078$/m);
     assert.match(
       envContent,
       new RegExp(`REGISTRIES_DIR=${path.join(preferredRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
@@ -1852,6 +1950,148 @@ test("readServiceConfig returns template content without creating target file", 
 
   registryInternals.clearServices();
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("writeServiceConfig keeps agent platform host and server ports aligned", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-platform-config-save-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+  const platformService = getBuiltinService("agent-platform");
+  const installDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+
+  try {
+    await installBuiltinService(app, "agent-platform");
+    const result = await writeServiceConfig(
+      app,
+      "agent-platform",
+      "env",
+      "HOST_PORT=7901\nSERVER_PORT=18081\nAUTH_ENABLED=true\n"
+    );
+    const envContent = fs.readFileSync(path.join(installDir, ".env"), "utf8");
+
+    assert.equal(result.service.healthMeta.port, 7901);
+    assert.equal(result.service.healthMeta.webUrl, "http://127.0.0.1:7901");
+    assert.match(envContent, /^HOST_PORT=7901$/m);
+    assert.match(envContent, /^SERVER_PORT=7901$/m);
+  } finally {
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("writeServiceConfig syncs agent webclient upstream urls after agent platform host port save", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-platform-webclient-sync-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+  const webclientService = getBuiltinService("agent-webclient");
+  const webclientInstallDir = path.join(userDataRoot, "services", webclientService.id, webclientService.version);
+  const webclientEnvPath = path.join(webclientInstallDir, ".env");
+
+  try {
+    await installBuiltinService(app, "agent-platform");
+    await installBuiltinService(app, "agent-webclient");
+    await writeServiceConfig(
+      app,
+      "agent-webclient",
+      "env",
+      [
+        "PORT=7080",
+        "BASE_URL=http://127.0.0.1:7078",
+        "WS_BASE_URL=http://127.0.0.1:7078",
+        "VOICE_BASE_URL=http://127.0.0.1:7078"
+      ].join("\n") + "\n"
+    );
+
+    await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=7901\nSERVER_PORT=7901\n");
+    let envContent = fs.readFileSync(webclientEnvPath, "utf8");
+    assert.match(envContent, /^BASE_URL=http:\/\/127\.0\.0\.1:7901$/m);
+    assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7901$/m);
+    assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7901$/m);
+
+    await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=7903\nSERVER_PORT=7903\n");
+    envContent = fs.readFileSync(webclientEnvPath, "utf8");
+    assert.match(envContent, /^BASE_URL=http:\/\/127\.0\.0\.1:7903$/m);
+    assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7903$/m);
+    assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7903$/m);
+
+    await writeServiceConfig(
+      app,
+      "agent-webclient",
+      "env",
+      [
+        "PORT=7080",
+        "BASE_URL=https://platform.example.test",
+        "WS_BASE_URL=http://127.0.0.1:7903",
+        "VOICE_BASE_URL=http://127.0.0.1:9999"
+      ].join("\n") + "\n"
+    );
+    await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=7904\nSERVER_PORT=7904\n");
+    envContent = fs.readFileSync(webclientEnvPath, "utf8");
+    assert.match(envContent, /^BASE_URL=https:\/\/platform\.example\.test$/m);
+    assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7904$/m);
+    assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:9999$/m);
+  } finally {
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("writeServiceConfig migrates known bad core env ports without overriding custom values", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-core-config-save-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+  const platformService = getBuiltinService("agent-platform");
+  const webclientService = getBuiltinService("agent-webclient");
+  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+  const webclientInstallDir = path.join(userDataRoot, "services", webclientService.id, webclientService.version);
+
+  try {
+    await installBuiltinService(app, "agent-platform");
+    await writeServiceConfig(
+      app,
+      "agent-platform",
+      "env",
+      [
+        "HOST_PORT=117078",
+        "SERVER_PORT=117078",
+        "CONTAINER_HUB_BASE_URL=http://127.0.0.1:117079",
+        "AUTH_ENABLED=false"
+      ].join("\n") + "\n"
+    );
+    let envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+    assert.match(envContent, /^HOST_PORT=7078$/m);
+    assert.match(envContent, /^SERVER_PORT=7078$/m);
+    assert.match(envContent, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:7079$/m);
+    assert.match(envContent, /^AUTH_ENABLED=false$/m);
+
+    await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=7901\nSERVER_PORT=18081\n");
+    envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+    assert.match(envContent, /^HOST_PORT=7901$/m);
+    assert.match(envContent, /^SERVER_PORT=7901$/m);
+
+    await installBuiltinService(app, "agent-webclient");
+    const result = await writeServiceConfig(
+      app,
+      "agent-webclient",
+      "env",
+      [
+        "PORT=7902",
+        "BASE_URL=https://platform.example.test",
+        "WS_BASE_URL=http://127.0.0.1:117078",
+        "VOICE_BASE_URL=http://localhost:11949"
+      ].join("\n") + "\n"
+    );
+    envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
+    assert.equal(result.service.healthMeta.port, 7902);
+    assert.match(result.message, /重启服务后生效/u);
+    assert.match(envContent, /^PORT=7902$/m);
+    assert.match(envContent, /^BASE_URL=https:\/\/platform\.example\.test$/m);
+    assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7901$/m);
+    assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7901$/m);
+  } finally {
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("startService treats a matching port listener as already running and restores the pid file", async () => {
@@ -1962,10 +2202,12 @@ test("startService rejects services that still require initialization", async ()
 
 test("startService returns a port conflict error for agent-container-hub when an external process occupies the port", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-hub-port-conflict-"));
-  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot);
+  const port = await getAvailableLocalPort();
+  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot, {
+    bindAddr: `127.0.0.1:${port}`
+  });
   const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
   const service = getBuiltinService("agent-container-hub");
-  const port = 19600 + Math.floor(Math.random() * 1000);
   const listenerScriptPath = path.join(tempRoot, "external-listener.mjs");
   const previousSpawnSync = childProcess.spawnSync;
   let child = null;
@@ -2033,6 +2275,160 @@ setInterval(() => {}, 1000);
   }
 });
 
+test("startService verifies command success and reports delayed container hub crash", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-hub-start-verify-"));
+  const port = await getAvailableLocalPort();
+  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot, {
+    bindAddr: `127.0.0.1:${port}`,
+    startScriptContent: [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "mkdir -p run",
+      "printf '%s\\n' 999999 > run/agent-container-hub.pid",
+      "printf start-ok > run/agent-container-hub.log",
+      "exit 0"
+    ].join("\n")
+  });
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const service = getBuiltinService("agent-container-hub");
+  const previousSpawnSync = childProcess.spawnSync;
+
+  try {
+    await installBuiltinService(app, service.id);
+    const initStatePath = __testInternals.getInitializationStatePath(installDir);
+    fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
+    fs.writeFileSync(
+      initStatePath,
+      `${JSON.stringify({
+        version: service.version,
+        status: "succeeded",
+        updatedAt: new Date().toISOString()
+      }, null, 2)}\n`,
+      "utf8"
+    );
+
+    childProcess.spawnSync = (command, args = [], options = {}) => {
+      if (isCommandLookup(command, args, "docker")) {
+        return createSpawnSyncResult(0);
+      }
+      if (isCommandLookup(command, args, "podman")) {
+        return createSpawnSyncResult(1);
+      }
+      if (command === "docker" && args[0] === "info") {
+        return createSpawnSyncResult(0);
+      }
+      return previousSpawnSync(command, args, options);
+    };
+
+    const result = await startService(app, service.id);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.service.status, "stopped");
+    assert.equal(result.verification.verified, false);
+    assert.equal(result.verification.desired, "running");
+    assert.equal(result.verification.actualStatus, "stopped");
+    assert.ok(result.verification.issues.some((issue) => /复查|stopped|PID|端口|runtime-info/u.test(issue)));
+    assert.match(result.message, /启动命令已执行|启动命令执行过/);
+    assert.match(result.message, /复查失败|未确认启动/);
+  } finally {
+    childProcess.spawnSync = previousSpawnSync;
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("startService verifies running container hub with port and runtime-info probe", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("This fixture uses a POSIX shell daemon; Windows service verification is covered by process and port parser tests.");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-hub-start-ok-"));
+  const port = await getAvailableLocalPort();
+  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot, {
+    bindAddr: `127.0.0.1:${port}`,
+    startScriptContent: [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "mkdir -p run",
+      "cat > run/container-hub-fixture.js <<'NODE'",
+      "const http = require('node:http');",
+      `const port = ${port};`,
+      "const server = http.createServer((req, res) => {",
+      "  if (req.url === '/api/runtime-info') {",
+      "    res.writeHead(200, { 'content-type': 'application/json' });",
+      "    res.end(JSON.stringify({ engine: 'docker', ok: true }));",
+      "    return;",
+      "  }",
+      "  res.writeHead(200, { 'content-type': 'text/html' });",
+      "  res.end('<!doctype html><title>Container Hub</title>');",
+      "});",
+      "server.listen(port, '127.0.0.1');",
+      "process.on('SIGTERM', () => server.close(() => process.exit(0)));",
+      "NODE",
+      "node \"$PWD/run/container-hub-fixture.js\" > run/agent-container-hub.log 2> run/agent-container-hub.stderr.log &",
+      "printf '%s\\n' \"$!\" > run/agent-container-hub.pid",
+      "for attempt in $(seq 1 50); do",
+      `  node -e "require('node:http').get('http://127.0.0.1:${port}/api/runtime-info', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))" && exit 0`,
+      "  sleep 0.05",
+      "done",
+      "exit 1"
+    ].join("\n")
+  });
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const service = getBuiltinService("agent-container-hub");
+  const previousSpawnSync = childProcess.spawnSync;
+
+  try {
+    await installBuiltinService(app, service.id);
+    const initStatePath = __testInternals.getInitializationStatePath(installDir);
+    fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
+    fs.writeFileSync(
+      initStatePath,
+      `${JSON.stringify({
+        version: service.version,
+        status: "succeeded",
+        updatedAt: new Date().toISOString()
+      }, null, 2)}\n`,
+      "utf8"
+    );
+
+    childProcess.spawnSync = (command, args = [], options = {}) => {
+      if (isCommandLookup(command, args, "docker")) {
+        return createSpawnSyncResult(0);
+      }
+      if (isCommandLookup(command, args, "podman")) {
+        return createSpawnSyncResult(1);
+      }
+      if (command === "docker" && args[0] === "info") {
+        return createSpawnSyncResult(0);
+      }
+      return previousSpawnSync(command, args, options);
+    };
+
+    const result = await startService(app, service.id);
+
+    assert.equal(result.ok, true, JSON.stringify(result, null, 2));
+    assert.equal(result.service.status, "running");
+    assert.equal(result.service.healthMeta.port, port);
+    assert.equal(result.verification.verified, true);
+    assert.equal(result.verification.portListening, true);
+    assert.equal(result.verification.httpOk, true);
+    assert.equal(result.verification.runtimeInfoOk, true);
+  } finally {
+    childProcess.spawnSync = previousSpawnSync;
+    const pidPath = path.join(installDir, "run", "agent-container-hub.pid");
+    const pid = Number(fs.existsSync(pidPath) ? fs.readFileSync(pidPath, "utf8").trim() : 0);
+    if (pid > 0) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {}
+    }
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("ensurePreStartRequirements injects container hub url, desktop runtime paths, and manifest auth defaults for agent platform", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-prestart-"));
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -2046,8 +2442,6 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   const hubInstallDir = path.join(userDataRoot, "services", hubService.id, hubService.version);
   const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
   const desktopRuntimeRoot = path.join(homeRoot, "zenmind");
-  const codeAssistantDir = path.join(desktopRuntimeRoot, "agents", "codeAssistant");
-  const codeAssistantConfigPath = path.join(codeAssistantDir, "agent.yml");
 
   fs.mkdirSync(hubInstallDir, { recursive: true });
   fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
@@ -2056,13 +2450,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   fs.writeFileSync(path.join(hubInstallDir, ".env"), "BIND_ADDR=0.0.0.0:12960\n", "utf8");
   fs.writeFileSync(
     path.join(platformInstallDir, ".env"),
-    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nCHAT_RESOURCE_TICKET_ENABLED=true\nCHAT_IMAGE_TOKEN_SECRET=replace-with-your-chat-image-token-secret\nLOCAL_CLI_ACP_RELAY_PORT=3210\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n",
-    "utf8"
-  );
-  fs.mkdirSync(codeAssistantDir, { recursive: true });
-  fs.writeFileSync(
-    codeAssistantConfigPath,
-    "name: codeAssistant\ncolor: \"#10B981\"\nmode: PROXY\nproxyConfig:\n  baseUrl: http://127.0.0.1:3210\n  token: \"demo-token\"\n  timeoutMs: 300000\n",
+    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nCHAT_RESOURCE_TICKET_ENABLED=true\nCHAT_IMAGE_TOKEN_SECRET=replace-with-your-chat-image-token-secret\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n",
     "utf8"
   );
 
@@ -2080,12 +2468,12 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
 
   const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
   assert.match(envContent, /CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960/);
-  assert.match(envContent, /SERVER_PORT=11949/);
+  assert.match(envContent, /^HOST_PORT=7078$/m);
+  assert.match(envContent, /^SERVER_PORT=7078$/m);
   assert.match(envContent, /^AGENT_WS_ENABLED=true$/m);
   assert.match(envContent, /^AUTH_ENABLED=true$/m);
   assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
   assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
-  assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_ENABLED=false$/m);
   assert.doesNotMatch(envContent, /^GATEWAY_WS_URL=/m);
   assert.doesNotMatch(envContent, /^GATEWAY_USER_ID=/m);
   assert.doesNotMatch(envContent, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
@@ -2104,32 +2492,8 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
     envContent,
     new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
-  const locator = process.platform === "win32" ? "where" : "which";
-  const acpResult = spawnSync(locator, ["claude-code-acp"], { encoding: "utf8", timeout: 1500 });
-  if (acpResult.status === 0 && !acpResult.error) {
-    const resolvedAcp = acpResult.stdout.split(/\r?\n/u).map((entry) => entry.trim()).find(Boolean);
-    if (resolvedAcp) {
-      const expectedAcpLiteral = resolvedAcp.includes(" ") ? `"${resolvedAcp}"` : resolvedAcp;
-      assert.match(
-        envContent,
-        new RegExp(`CLAUDE_CODE_ACP_COMMAND=${expectedAcpLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-      );
-      assert.match(envContent, /^CLAUDE_CODE_ACP_ARGS=""$/m);
-    }
-  } else {
-    const npxResult = spawnSync(locator, ["npx"], { encoding: "utf8", timeout: 1500 });
-    if (npxResult.status === 0 && !npxResult.error) {
-      const resolvedNpx = npxResult.stdout.split(/\r?\n/u).map((entry) => entry.trim()).find(Boolean);
-      if (resolvedNpx) {
-        const expectedNpxLiteral = resolvedNpx.includes(" ") ? `"${resolvedNpx}"` : resolvedNpx;
-        assert.match(
-          envContent,
-          new RegExp(`CLAUDE_CODE_ACP_COMMAND=${expectedNpxLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-        );
-        assert.match(envContent, /^CLAUDE_CODE_ACP_ARGS='-y @zed-industries\/claude-code-acp'$/m);
-      }
-    }
-  }
+  assert.doesNotMatch(envContent, /^CLAUDE_CODE_ACP_COMMAND=/m);
+  assert.doesNotMatch(envContent, /^CLAUDE_CODE_ACP_ARGS=/m);
   assert.match(
     envContent,
     new RegExp(`REGISTRIES_DIR=${path.join(desktopRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
@@ -2138,15 +2502,55 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
     envContent,
     new RegExp(`AGENTS_DIR=${path.join(desktopRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
-  const agentConfigContent = fs.readFileSync(codeAssistantConfigPath, "utf8");
-  assert.match(agentConfigContent, /baseUrl: http:\/\/127\.0\.0\.1:3210/);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements preserves custom relay port and custom codeAssistant proxy baseUrl", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-custom-prestart-"));
+test("startService starts agent-platform when desktop-managed container hub is unavailable", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  addContainerHubAssetToFixture(fixture);
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const previousSpawnSync = childProcess.spawnSync;
+
+  try {
+    await installBuiltinService(app, "agent-container-hub");
+    await installBuiltinService(app, "agent-platform");
+
+    const platformService = getBuiltinService("agent-platform");
+    const platformInstallDir = getInstallDir(app, platformService);
+    fs.appendFileSync(
+      path.join(platformInstallDir, ".env"),
+      "CONTAINER_HUB_BASE_URL=http://127.0.0.1:11960\n",
+      "utf8"
+    );
+
+    childProcess.spawnSync = (command, args = [], options = {}) => {
+      if (isCommandLookup(command, args, "docker") || isCommandLookup(command, args, "podman")) {
+        return createSpawnSyncResult(1);
+      }
+      if ((command === "docker" || command === "podman") && args[0] === "info") {
+        return createSpawnSyncResult(1);
+      }
+      return spawnSync(command, args, options);
+    };
+
+    const result = await startService(app, "agent-platform");
+
+    assert.equal(result.ok, true, result.message);
+    assert.equal(result.service.status, "running");
+    assert.equal(fs.existsSync(path.join(platformInstallDir, "run", "started.txt")), true);
+  } finally {
+    childProcess.spawnSync = previousSpawnSync;
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("initializeService migrates legacy relay settings into the local-cli-acp-relay plugin", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-local-cli-acp-relay-migrate-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
@@ -2155,30 +2559,53 @@ test("ensurePreStartRequirements preserves custom relay port and custom codeAssi
   });
   const platformService = getBuiltinService("agent-platform");
   const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
-  const desktopRuntimeRoot = path.join(homeRoot, "zenmind");
-  const customAgentsDir = path.join(tempRoot, "custom-agents");
-  const codeAssistantDir = path.join(customAgentsDir, "codeAssistant");
-  const codeAssistantConfigPath = path.join(codeAssistantDir, "agent.yml");
+  const relayInstallDir = path.join(userDataRoot, "plugins", "local-cli-acp-relay");
 
   fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
-  fs.mkdirSync(path.join(desktopRuntimeRoot, "registries"), { recursive: true });
-  fs.mkdirSync(path.join(desktopRuntimeRoot, "agents"), { recursive: true });
-  fs.mkdirSync(codeAssistantDir, { recursive: true });
   fs.writeFileSync(
     path.join(platformInstallDir, ".env"),
-    `HOST_PORT=11949\nLOCAL_CLI_ACP_RELAY_ENABLED=true\nLOCAL_CLI_ACP_RELAY_PORT=4555\nAGENTS_DIR=${customAgentsDir}\nCLAUDE_CODE_ACP_COMMAND=/custom/bin/claude-code-acp\nCLAUDE_CODE_ACP_ARGS=--stdio\n`,
+    [
+      "HOST_PORT=11949",
+      "LOCAL_CLI_ACP_RELAY_ENABLED=true",
+      "LOCAL_CLI_ACP_RELAY_PORT=4555",
+      "LOCAL_CLI_ACP_RELAY_AUTH_TOKEN=demo-token",
+      "LOCAL_CLI_ACP_DEFAULT_CWD=/tmp/workspace",
+      "LOCAL_CLI_ACP_ALLOWED_CWD_ROOTS=/tmp/workspace:/tmp/shared",
+      "LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS=30000",
+      "LOCAL_CLI_ACP_RUN_TIMEOUT_MS=900000",
+      "CLAUDE_CODE_ACP_COMMAND=/custom/bin/claude-code-acp",
+      "CLAUDE_CODE_ACP_ARGS=--stdio"
+    ].join("\n"),
     "utf8"
   );
+
+  writePluginInstallRoot(relayInstallDir, {
+    id: "local-cli-acp-relay",
+    name: "Local CLI ACP Relay",
+    port: 3220,
+    deployScriptContent: false
+  });
   fs.writeFileSync(
-    codeAssistantConfigPath,
-    "name: codeAssistant\nmode: PROXY\nproxyConfig:\n  baseUrl: http://127.0.0.1:4555\n  token: \"demo-token\"\n",
+    path.join(relayInstallDir, ".env.example"),
+    [
+      "PORT=3220",
+      "AUTH_TOKEN=",
+      "NODE_BIN=",
+      "CLAUDE_CODE_ACP_COMMAND=",
+      "CLAUDE_CODE_ACP_ARGS=",
+      "DEFAULT_CWD=~/Desktop",
+      "ALLOWED_CWD_ROOTS=~/Desktop",
+      "HANDSHAKE_TIMEOUT_MS=60000",
+      "RUN_TIMEOUT_MS=600000"
+    ].join("\n") + "\n",
     "utf8"
   );
 
   const previousHome = process.env.HOME;
   process.env.HOME = homeRoot;
   try {
-    await __testInternals.ensurePreStartRequirements(app, platformService);
+    const result = await initializeService(app, "local-cli-acp-relay");
+    assert.equal(result.ok, true, result.message);
   } finally {
     if (previousHome === undefined) {
       delete process.env.HOME;
@@ -2187,16 +2614,21 @@ test("ensurePreStartRequirements preserves custom relay port and custom codeAssi
     }
   }
 
-  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
-  assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_ENABLED=true$/m);
-  assert.match(envContent, /LOCAL_CLI_ACP_RELAY_PORT=4555/);
-  assert.match(envContent, /AGENTS_DIR=/);
-  assert.doesNotMatch(envContent, /REGISTRIES_DIR=/);
-  assert.match(envContent, /CLAUDE_CODE_ACP_COMMAND=\/custom\/bin\/claude-code-acp/);
-  assert.match(envContent, /CLAUDE_CODE_ACP_ARGS=--stdio/);
-  const agentConfigContent = fs.readFileSync(codeAssistantConfigPath, "utf8");
-  assert.match(agentConfigContent, /baseUrl: http:\/\/127\.0\.0\.1:4555/);
-  assert.doesNotMatch(agentConfigContent, /3220/);
+  const relayEnvContent = fs.readFileSync(path.join(relayInstallDir, ".env"), "utf8");
+  assert.match(relayEnvContent, /^PORT=4555$/m);
+  assert.match(relayEnvContent, /^AUTH_TOKEN=demo-token$/m);
+  assert.match(relayEnvContent, /^DEFAULT_CWD=\/tmp\/workspace$/m);
+  assert.match(relayEnvContent, /^ALLOWED_CWD_ROOTS=\/tmp\/workspace:\/tmp\/shared$/m);
+  assert.match(relayEnvContent, /^HANDSHAKE_TIMEOUT_MS=30000$/m);
+  assert.match(relayEnvContent, /^RUN_TIMEOUT_MS=900000$/m);
+  assert.match(relayEnvContent, /^CLAUDE_CODE_ACP_COMMAND=\/custom\/bin\/claude-code-acp$/m);
+  assert.match(relayEnvContent, /^CLAUDE_CODE_ACP_ARGS=--stdio$/m);
+  assert.match(relayEnvContent, /^NODE_BIN=/m);
+
+  const platformEnvContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+  assert.doesNotMatch(platformEnvContent, /^LOCAL_CLI_ACP_RELAY_/m);
+  assert.doesNotMatch(platformEnvContent, /^CLAUDE_CODE_ACP_COMMAND=/m);
+  assert.doesNotMatch(platformEnvContent, /^CLAUDE_CODE_ACP_ARGS=/m);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -2242,34 +2674,42 @@ test("ensurePreStartRequirements preserves a custom provider api key env part", 
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements migrates stale default ACP relay settings back to disabled", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-acp-migrate-"));
+test("ensurePreStartRequirements fills default desktop ACP command for the local-cli-acp-relay plugin", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-local-cli-acp-relay-defaults-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
     homePath: homeRoot,
     desktopPath: path.join(homeRoot, "Desktop")
   });
-  const platformService = getBuiltinService("agent-platform");
-  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+  const relayInstallDir = path.join(userDataRoot, "plugins", "local-cli-acp-relay");
 
-  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  writePluginInstallRoot(relayInstallDir, {
+    id: "local-cli-acp-relay",
+    name: "Local CLI ACP Relay",
+    port: 3220,
+    deployScriptContent: false
+  });
   fs.writeFileSync(
-    path.join(platformInstallDir, ".env"),
+    path.join(relayInstallDir, ".env"),
     [
-      "HOST_PORT=11949",
-      "LOCAL_CLI_ACP_RELAY_ENABLED=true",
-      "LOCAL_CLI_ACP_RELAY_PORT=3220",
-      "CLAUDE_CODE_ACP_COMMAND=/Users/example/.nvm/versions/node/v22.22.1/bin/npx",
-      `CLAUDE_CODE_ACP_ARGS=${JSON.stringify("-y @zed-industries/claude-code-acp")}`
-    ].join("\n"),
+      "PORT=3220",
+      "AUTH_TOKEN=",
+      "NODE_BIN=",
+      "CLAUDE_CODE_ACP_COMMAND=",
+      "CLAUDE_CODE_ACP_ARGS=",
+      "DEFAULT_CWD=",
+      "ALLOWED_CWD_ROOTS=",
+      "HANDSHAKE_TIMEOUT_MS=",
+      "RUN_TIMEOUT_MS="
+    ].join("\n") + "\n",
     "utf8"
   );
 
   const previousHome = process.env.HOME;
   process.env.HOME = homeRoot;
   try {
-    await __testInternals.ensurePreStartRequirements(app, platformService);
+    await __testInternals.ensurePreStartRequirements(app, getService("local-cli-acp-relay"));
   } finally {
     if (previousHome === undefined) {
       delete process.env.HOME;
@@ -2278,54 +2718,42 @@ test("ensurePreStartRequirements migrates stale default ACP relay settings back 
     }
   }
 
-  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
-  assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_ENABLED=false$/m);
-  assert.doesNotMatch(envContent, /^LOCAL_CLI_ACP_RELAY_USER_ENABLED=true$/m);
-
-  restore();
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-});
-
-test("ensurePreStartRequirements preserves manually enabled ACP relay when the user marker is present", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-acp-user-enabled-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
-    homePath: homeRoot,
-    desktopPath: path.join(homeRoot, "Desktop")
-  });
-  const platformService = getBuiltinService("agent-platform");
-  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
-
-  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
-  fs.writeFileSync(
-    path.join(platformInstallDir, ".env"),
-    [
-      "HOST_PORT=11949",
-      "LOCAL_CLI_ACP_RELAY_ENABLED=true",
-      "LOCAL_CLI_ACP_RELAY_USER_ENABLED=true",
-      "LOCAL_CLI_ACP_RELAY_PORT=3220",
-      "CLAUDE_CODE_ACP_COMMAND=/Users/example/.nvm/versions/node/v22.22.1/bin/npx",
-      `CLAUDE_CODE_ACP_ARGS=${JSON.stringify("-y @zed-industries/claude-code-acp")}`
-    ].join("\n"),
-    "utf8"
+  const relayEnvContent = fs.readFileSync(path.join(relayInstallDir, ".env"), "utf8");
+  const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
+  assert.match(
+    relayEnvContent,
+    new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
-
-  const previousHome = process.env.HOME;
-  process.env.HOME = homeRoot;
-  try {
-    await __testInternals.ensurePreStartRequirements(app, platformService);
-  } finally {
-    if (previousHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = previousHome;
+  const locator = process.platform === "win32" ? "where" : "which";
+  const acpResult = spawnSync(locator, ["claude-code-acp"], { encoding: "utf8", timeout: 1500 });
+  if (acpResult.status === 0 && !acpResult.error) {
+    const resolvedAcp = acpResult.stdout.split(/\r?\n/u).map((entry) => entry.trim()).find(Boolean);
+    if (resolvedAcp) {
+      const expectedAcpLiteral = resolvedAcp.includes(" ") ? `"${resolvedAcp}"` : resolvedAcp;
+      assert.match(
+        relayEnvContent,
+        new RegExp(`CLAUDE_CODE_ACP_COMMAND=${expectedAcpLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+      );
+      assert.match(relayEnvContent, /^CLAUDE_CODE_ACP_ARGS=""$/m);
+    }
+  } else {
+    const npxResult = spawnSync(locator, ["npx"], { encoding: "utf8", timeout: 1500 });
+    if (npxResult.status === 0 && !npxResult.error) {
+      const resolvedNpx = npxResult.stdout.split(/\r?\n/u).map((entry) => entry.trim()).find(Boolean);
+      if (resolvedNpx) {
+        const expectedNpxLiteral = resolvedNpx.includes(" ") ? `"${resolvedNpx}"` : resolvedNpx;
+        assert.match(
+          relayEnvContent,
+          new RegExp(`CLAUDE_CODE_ACP_COMMAND=${expectedNpxLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+        );
+        assert.match(relayEnvContent, /^CLAUDE_CODE_ACP_ARGS='-y @zed-industries\/claude-code-acp'$/m);
+      }
     }
   }
-
-  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
-  assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_ENABLED=true$/m);
-  assert.match(envContent, /^LOCAL_CLI_ACP_RELAY_USER_ENABLED=true$/m);
+  assert.match(relayEnvContent, /^DEFAULT_CWD=.*Desktop$/m);
+  assert.match(relayEnvContent, /^ALLOWED_CWD_ROOTS=.*Desktop$/m);
+  assert.match(relayEnvContent, /^HANDSHAKE_TIMEOUT_MS=60000$/m);
+  assert.match(relayEnvContent, /^RUN_TIMEOUT_MS=600000$/m);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -2342,21 +2770,13 @@ test("ensurePreStartRequirements migrates legacy RUNTIME_DIR to supported runtim
   const platformService = getBuiltinService("agent-platform");
   const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
   const legacyRuntimeRoot = path.join(tempRoot, "legacy-runtime");
-  const codeAssistantDir = path.join(legacyRuntimeRoot, "agents", "codeAssistant");
-  const codeAssistantConfigPath = path.join(codeAssistantDir, "agent.yml");
 
   fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
   fs.mkdirSync(path.join(homeRoot, "zenmind", "registries"), { recursive: true });
   fs.mkdirSync(path.join(homeRoot, "zenmind", "agents"), { recursive: true });
-  fs.mkdirSync(codeAssistantDir, { recursive: true });
   fs.writeFileSync(
     path.join(platformInstallDir, ".env"),
-    `HOST_PORT=11949\nRUNTIME_DIR=${legacyRuntimeRoot}\nLOCAL_CLI_ACP_RELAY_PORT=3220\n`,
-    "utf8"
-  );
-  fs.writeFileSync(
-    codeAssistantConfigPath,
-    "name: codeAssistant\nmode: PROXY\nproxyConfig:\n  baseUrl: http://127.0.0.1:3220\n  token: \"demo-token\"\n",
+    `HOST_PORT=11949\nRUNTIME_DIR=${legacyRuntimeRoot}\n`,
     "utf8"
   );
 
@@ -2382,7 +2802,6 @@ test("ensurePreStartRequirements migrates legacy RUNTIME_DIR to supported runtim
     envContent,
     new RegExp(`AGENTS_DIR=${path.join(legacyRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
-  assert.match(envContent, /LOCAL_CLI_ACP_RELAY_PORT=3220/);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -2430,8 +2849,7 @@ test("ensurePreStartRequirements migrates stale legacy desktop runtime paths to 
       `CHATS_DIR=${legacyRuntimeRoot}/chats`,
       `MEMORY_DIR=${legacyRuntimeRoot}/memory`,
       `PAN_DIR=${legacyRuntimeRoot}/pan`,
-      `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`,
-      "LOCAL_CLI_ACP_RELAY_PORT=3220"
+      `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`
     ].join("\n"),
     "utf8"
   );
@@ -2502,8 +2920,7 @@ test("ensurePreStartRequirements uses the resolved desktop path when the runtime
       `CHATS_DIR=${legacyRuntimeRoot}/chats`,
       `MEMORY_DIR=${legacyRuntimeRoot}/memory`,
       `PAN_DIR=${legacyRuntimeRoot}/pan`,
-      `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`,
-      "LOCAL_CLI_ACP_RELAY_PORT=3220"
+      `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`
     ].join("\n"),
     "utf8"
   );
@@ -2574,8 +2991,7 @@ test("ensurePreStartRequirements also detects a hidden .zenmind runtime root on 
       `CHATS_DIR=${legacyRuntimeRoot}/chats`,
       `MEMORY_DIR=${legacyRuntimeRoot}/memory`,
       `PAN_DIR=${legacyRuntimeRoot}/pan`,
-      `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`,
-      "LOCAL_CLI_ACP_RELAY_PORT=3220"
+      `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`
     ].join("\n"),
     "utf8"
   );
@@ -2620,12 +3036,21 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   await installBuiltinService(app, webclientService.id);
   fs.writeFileSync(
     path.join(webclientInstallDir, ".env"),
-    "BASE_URL=http://localhost:11949\n",
+    "BASE_URL=http://localhost:11949\nWS_BASE_URL=http://localhost:11949\nVOICE_BASE_URL=http://127.0.0.1:117078\n",
     "utf8"
   );
   fs.writeFileSync(
-    path.join(webclientInstallDir, "backend", "server.js"),
-    "const { createProxyMiddleware } = require('http-proxy-middleware');\n",
+    path.join(webclientInstallDir, "backend", "server.cjs"),
+    [
+      "const http = require('http');",
+      "const https = require('https');",
+      "const server = http.createServer();",
+      "function createWebSocketProxy() {",
+      "  return (secure ? https : http).request;",
+      "}",
+      "server.on('upgrade', () => {});",
+      "module.exports = { createWebSocketProxy };"
+    ].join("\n") + "\n",
     "utf8"
   );
 
@@ -2634,22 +3059,127 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   await __testInternals.ensurePreStartRequirements(app, webclientService);
 
   const envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
-  const serverContent = fs.readFileSync(path.join(webclientInstallDir, "backend", "server.js"), "utf8");
+  const serverContent = fs.readFileSync(path.join(webclientInstallDir, "backend", "server.cjs"), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(webclientInstallDir, "manifest.json"), "utf8"));
   assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
-  assert.match(envContent, /PORT=11948/);
+  assert.match(envContent, /WS_BASE_URL=http:\/\/127\.0\.0\.1:12949/);
+  assert.match(envContent, /VOICE_BASE_URL=http:\/\/127\.0\.0\.1:12949/);
+  assert.match(envContent, /PORT=7080/);
   const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
   assert.match(
     envContent,
     new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
   );
   assert.match(serverContent, /function createWebSocketProxy\(/);
+  assert.match(serverContent, /proxy\.upgrade\(req, socket, head\)/);
+  assert.doesNotMatch(serverContent, /function buildUpgradeRequest\(/);
+  assert.doesNotMatch(serverContent, /\(secure \? https : http\)\.request/);
   assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(webclientInstallDir), false);
+  assert.equal(manifest.backend.entry, "backend/server.cjs");
   assert.equal(manifest.frontend.embedPath, "/appagent");
   assert.equal(manifest.frontend.embedParams?.desktopApp, "1");
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("agentWebclientInstallNeedsRefresh catches server.cjs installs with stale dependency checks", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-webclient-stale-launcher-"));
+  const installDir = path.join(tempRoot, "agent-webclient");
+
+  fs.mkdirSync(path.join(installDir, "backend"), { recursive: true });
+  fs.mkdirSync(path.join(installDir, "scripts"), { recursive: true });
+  fs.writeFileSync(
+    path.join(installDir, "manifest.json"),
+    JSON.stringify({
+      backend: {
+        entry: "backend/server.cjs"
+      },
+      runtime: {
+        requiredPaths: [
+          "backend/server.cjs",
+          "start.sh",
+          "stop.sh",
+          "deploy.sh",
+          "scripts/program-common.sh",
+          ".env.example",
+          "manifest.json",
+          "frontend/dist/index.html"
+        ]
+      }
+    }, null, 2),
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(installDir, "backend", "server.cjs"),
+    [
+      "const http = require('http');",
+      "const server = http.createServer();",
+      "function createWebSocketProxy() {",
+      "  return { upgrade(req, socket, head) { proxy.upgrade(req, socket, head); } };",
+      "}",
+      "const proxy = createWebSocketProxy();",
+      "server.on('upgrade', (req, socket, head) => proxy.upgrade(req, socket, head));"
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(installDir, "scripts", "program-common.sh"),
+    [
+      "#!/usr/bin/env bash",
+      "BACKEND_ENTRY=\"$BUNDLE_ROOT/backend/server.cjs\"",
+      "BACKEND_PACKAGE_FILE=\"$BUNDLE_ROOT/backend/package.json\"",
+      "BACKEND_NODE_MODULES_DIR=\"$BUNDLE_ROOT/backend/node_modules\""
+    ].join("\n") + "\n",
+    "utf8"
+  );
+
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), true);
+
+  fs.writeFileSync(
+    path.join(installDir, "scripts", "program-common.sh"),
+    "#!/usr/bin/env bash\nBACKEND_ENTRY=\"$BUNDLE_ROOT/backend/server.cjs\"\n",
+    "utf8"
+  );
+
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), false);
+
+  fs.writeFileSync(
+    path.join(installDir, "scripts", "program-common.sh"),
+    "#!/usr/bin/env bash\nBACKEND_ENTRY=\"/backend/server.cjs\"\n",
+    "utf8"
+  );
+
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), true);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("initializeService refreshes stale agent-webclient launcher before deploy", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const service = getBuiltinService("agent-webclient");
+  const installDir = path.join(userDataRoot, "services", service.id, service.version);
+  const programCommonPath = path.join(installDir, "scripts", "program-common.sh");
+
+  await installBuiltinService(app, service.id);
+  fs.writeFileSync(
+    programCommonPath,
+    "#!/usr/bin/env bash\nBACKEND_ENTRY=\"/backend/server.cjs\"\n",
+    "utf8"
+  );
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), true);
+
+  const result = await initializeService(app, service.id);
+  assert.equal(result.ok, true);
+
+  const programCommon = fs.readFileSync(programCommonPath, "utf8");
+  assert.match(programCommon, /BACKEND_ENTRY="\$BUNDLE_ROOT\/backend\/server\.cjs"/);
+  assert.doesNotMatch(programCommon, /BACKEND_ENTRY="\/backend\/server\.cjs"/);
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), false);
+
+  restore();
+  fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
 });
 
 test("ensurePreStartRequirements refreshes stale zenmind-app-server install when admin frontend paths drift", async () => {
@@ -2723,6 +3253,13 @@ test("startService refreshes a stale running zenmind-app-server install before r
 
   try {
     await installBuiltinService(app, service.id);
+    const servicePort = await getAvailableLocalPort();
+    const envPath = path.join(installDir, ".env");
+    fs.writeFileSync(
+      envPath,
+      fs.readFileSync(envPath, "utf8").replace(/^SERVER_PORT=.*$/m, `SERVER_PORT=${servicePort}`),
+      "utf8"
+    );
     const firstStart = await startService(app, service.id);
     assert.equal(firstStart.ok, true);
     assert.equal(firstStart.service.status, "running");
@@ -2753,7 +3290,7 @@ test("startService refreshes a stale running zenmind-app-server install before r
     );
     fs.writeFileSync(
       path.join(installDir, ".env"),
-      `SERVER_PORT=${service.web.defaultPort}\n`,
+      `SERVER_PORT=${servicePort}\n`,
       "utf8"
     );
     fs.writeFileSync(
@@ -2775,6 +3312,72 @@ test("startService refreshes a stale running zenmind-app-server install before r
     assert.equal(manifest.web.routePath, "/admin/");
     assert.match(indexContent, /\/admin\/assets\//);
     assert.match(envContent, /FRONTEND_DIST_DIR=\.\/frontend\/dist/);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("startService restarts a running agent-webclient after agent-platform is manually restarted", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+
+  try {
+    const firstPlatformStart = await startService(app, "agent-platform");
+    assert.equal(firstPlatformStart.ok, true, firstPlatformStart.message);
+
+    const firstWebclientStart = await startService(app, "agent-webclient");
+    assert.equal(firstWebclientStart.ok, true, firstWebclientStart.message);
+    const firstWebclientPid = firstWebclientStart.service.healthMeta.pid;
+    assert.ok(firstWebclientPid, "expected agent-webclient to have a pid after first start");
+
+    const platformStop = await stopService(app, "agent-platform");
+    assert.equal(platformStop.ok, true, platformStop.message);
+
+    const secondPlatformStart = await startService(app, "agent-platform");
+    assert.equal(secondPlatformStart.ok, true, secondPlatformStart.message);
+
+    const webclientState = await getServiceState(app, "agent-webclient");
+    assert.equal(webclientState.status, "running");
+    assert.ok(webclientState.healthMeta.pid, "expected agent-webclient to have a pid after platform restart");
+    assert.notEqual(webclientState.healthMeta.pid, firstWebclientPid);
+    assert.equal(await waitForPidExit(firstWebclientPid), true);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("startService restarts a running agent-webclient when agent-platform is refreshed while running", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const platformArchiveDir = path.join(fixture.assetsRoot, "agent-platform");
+  const platformArchivePath = path.join(platformArchiveDir, fs.readdirSync(platformArchiveDir)[0]);
+
+  try {
+    const firstPlatformStart = await startService(app, "agent-platform");
+    assert.equal(firstPlatformStart.ok, true, firstPlatformStart.message);
+
+    const firstWebclientStart = await startService(app, "agent-webclient");
+    assert.equal(firstWebclientStart.ok, true, firstWebclientStart.message);
+    const firstWebclientPid = firstWebclientStart.service.healthMeta.pid;
+    assert.ok(firstWebclientPid, "expected agent-webclient to have a pid after first start");
+
+    const future = new Date(Date.now() + 10_000);
+    fs.utimesSync(platformArchivePath, future, future);
+
+    const secondPlatformStart = await startService(app, "agent-platform");
+    assert.equal(secondPlatformStart.ok, true, secondPlatformStart.message);
+
+    const webclientState = await getServiceState(app, "agent-webclient");
+    assert.equal(webclientState.status, "running");
+    assert.ok(webclientState.healthMeta.pid, "expected agent-webclient to have a pid after platform refresh");
+    assert.notEqual(webclientState.healthMeta.pid, firstWebclientPid);
+    assert.equal(await waitForPidExit(firstWebclientPid), true);
   } finally {
     await stopStartupCoreProcesses(app);
     restore();
@@ -2971,6 +3574,44 @@ test("restoreRunningServices skips services that still need foreground install o
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("restoreRunningServices keeps default startup services running when optional container hub is unavailable", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  addContainerHubAssetToFixture(fixture);
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const previousSpawnSync = childProcess.spawnSync;
+
+  try {
+    await installBuiltinService(app, "agent-container-hub");
+    __testInternals.writeLastRunningServices(app, ["agent-container-hub"]);
+
+    childProcess.spawnSync = (command, args = [], options = {}) => {
+      if (isCommandLookup(command, args, "docker") || isCommandLookup(command, args, "podman")) {
+        return createSpawnSyncResult(1);
+      }
+      if ((command === "docker" || command === "podman") && args[0] === "info") {
+        return createSpawnSyncResult(1);
+      }
+      return spawnSync(command, args, options);
+    };
+
+    const result = await restoreRunningServices(app);
+
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.restored, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+      const service = getBuiltinService(serviceId);
+      const installDir = getInstallDir(app, service);
+      assert.equal(fs.existsSync(path.join(installDir, "run", "started.txt")), true);
+    }
+  } finally {
+    childProcess.spawnSync = previousSpawnSync;
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("restoreRunningServices auto-installs and starts builtin services that are not installed yet", async () => {
   const fixture = createBuiltinRestoreFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
@@ -2991,9 +3632,12 @@ test("restoreRunningServices auto-installs and starts builtin services that are 
 
     assert.deepEqual(startupEvents, [
       "start:custom-builtin",
-      "progress:custom-builtin:succeeded"
+      "progress:custom-builtin:failed"
     ]);
-    assert.deepEqual(result.failures, []);
+    assert.equal(result.restored.length, 0);
+    assert.equal(result.failures.length, 1);
+    assert.match(result.failures[0], /custom-builtin/);
+    assert.match(result.failures[0], /复查失败|未确认启动/);
     assert.equal(
       fs.existsSync(path.join(userDataRoot, "services", "custom-builtin", "v1.0.0", "run", "started.txt")),
       true
@@ -3135,4 +3779,178 @@ test("runExecFile resolves when a daemon child keeps stdout open", async () => {
     // Process may already be gone on a slow host.
   }
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("stopRunningServicesForShutdown returns quickly when a stop script times out and force cleanup releases the process", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("This fixture uses POSIX shell scripts; Windows cleanup is covered by the process-tree unit tests.");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-shutdown-timeout-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  let fixture = null;
+
+  registryInternals.clearServices();
+
+  try {
+    fixture = prepareRunningPluginFixture(userDataRoot, {
+      id: "shutdown-slow-plugin",
+      stopScriptContent: [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "sleep 1",
+        'if [ -f "run/test-plugin.pid" ]; then',
+        '  kill "$(cat "run/test-plugin.pid")" >/dev/null 2>&1 || true',
+        '  rm -f "run/test-plugin.pid"',
+        "fi"
+      ].join("\n")
+    });
+
+    const snapshot = __testInternals.captureManagedProcessCleanupSnapshot(app);
+    const startedAt = Date.now();
+    const result = await stopRunningServicesForShutdown(app, { stopCommandTimeoutMs: 75 });
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(result.ok, false);
+    assert.equal(result.failures.length, 1);
+    assert.match(result.failures[0].message, /timed out/u);
+    assert.ok(elapsedMs < 800, `expected shutdown stop to return quickly, took ${elapsedMs}ms`);
+    assert.equal(isPidRunning(fixture.child.pid), true);
+
+    await forceCleanupManagedProcesses(app, snapshot);
+    assert.equal(await waitForPidExit(fixture.child.pid), true);
+  } finally {
+    if (fixture?.child?.pid && isPidRunning(fixture.child.pid)) {
+      try {
+        process.kill(fixture.child.pid, "SIGKILL");
+      } catch {
+        // Process may already be gone after cleanup.
+      }
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("stopRunningServicesForShutdown stops running services concurrently", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("This fixture uses POSIX shell scripts; Windows cleanup is covered by the process-tree unit tests.");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-shutdown-concurrent-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const sharedDir = path.join(tempRoot, "shutdown-stop-barrier");
+  const app = createApp(userDataRoot);
+  const fixtures = [];
+
+  registryInternals.clearServices();
+
+  const createBarrierStopScript = (self, peer) => [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    `shared_dir=${JSON.stringify(sharedDir)}`,
+    'mkdir -p "$shared_dir"',
+    `touch "$shared_dir/${self}.started"`,
+    "deadline=$((SECONDS + 2))",
+    `while [ ! -f "$shared_dir/${peer}.started" ]; do`,
+    "  if [ \"$SECONDS\" -ge \"$deadline\" ]; then",
+    "    echo peer stop script did not start >&2",
+    "    exit 7",
+    "  fi",
+    "  sleep 0.05",
+    "done",
+    'if [ -f "run/test-plugin.pid" ]; then',
+    '  kill "$(cat "run/test-plugin.pid")" >/dev/null 2>&1 || true',
+    '  rm -f "run/test-plugin.pid"',
+    "fi"
+  ].join("\n");
+
+  try {
+    fixtures.push(prepareRunningPluginFixture(userDataRoot, {
+      id: "shutdown-peer-a",
+      stopScriptContent: createBarrierStopScript("a", "b")
+    }));
+    fixtures.push(prepareRunningPluginFixture(userDataRoot, {
+      id: "shutdown-peer-b",
+      stopScriptContent: createBarrierStopScript("b", "a")
+    }));
+
+    const startedAt = Date.now();
+    const result = await stopRunningServicesForShutdown(app, { stopCommandTimeoutMs: 3000 });
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(result.ok, true);
+    assert.equal(result.stopped.length, 2);
+    assert.deepEqual(result.runningServiceIds.sort(), ["shutdown-peer-a", "shutdown-peer-b"]);
+    assert.ok(elapsedMs < 1500, `expected concurrent stop to finish before the barrier timeout, took ${elapsedMs}ms`);
+    assert.equal(await waitForPidExit(fixtures[0].child.pid), true);
+    assert.equal(await waitForPidExit(fixtures[1].child.pid), true);
+  } finally {
+    for (const fixture of fixtures) {
+      if (fixture.child?.pid && isPidRunning(fixture.child.pid)) {
+        try {
+          process.kill(fixture.child.pid, "SIGKILL");
+        } catch {
+          // Process may already be gone after the stop script.
+        }
+      }
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("stopService keeps the normal command timeout outside the shutdown path", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("This fixture uses POSIX shell scripts; Windows service stopping is covered by platform-specific tests.");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-stop-normal-timeout-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  const previousVerifyDelay = process.env.ZENMIND_SERVICE_VERIFY_DELAY_MS;
+  let fixture = null;
+
+  registryInternals.clearServices();
+  process.env.ZENMIND_SERVICE_VERIFY_DELAY_MS = "0";
+
+  try {
+    fixture = prepareRunningPluginFixture(userDataRoot, {
+      id: "normal-stop-plugin",
+      stopScriptContent: [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "sleep 0.15",
+        'if [ -f "run/test-plugin.pid" ]; then',
+        '  kill "$(cat "run/test-plugin.pid")" >/dev/null 2>&1 || true',
+        '  rm -f "run/test-plugin.pid"',
+        "fi"
+      ].join("\n")
+    });
+
+    const result = await stopService(app, "normal-stop-plugin");
+
+    assert.equal(result.ok, true, result.message);
+    assert.equal(result.service.status, "stopped");
+    assert.equal(await waitForPidExit(fixture.child.pid), true);
+  } finally {
+    if (previousVerifyDelay === undefined) {
+      delete process.env.ZENMIND_SERVICE_VERIFY_DELAY_MS;
+    } else {
+      process.env.ZENMIND_SERVICE_VERIFY_DELAY_MS = previousVerifyDelay;
+    }
+    if (fixture?.child?.pid && isPidRunning(fixture.child.pid)) {
+      try {
+        process.kill(fixture.child.pid, "SIGKILL");
+      } catch {
+        // Process may already be gone after the stop script.
+      }
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });

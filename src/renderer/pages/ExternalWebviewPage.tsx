@@ -1,15 +1,44 @@
 import { createElement, useEffect, useRef, useState } from "react";
+import type {
+  DragEvent as ReactDragEvent,
+  FormEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  WheelEvent as ReactWheelEvent
+} from "react";
+import { createPortal } from "react-dom";
+import type { AssistantPageContext } from "../../shared/contracts";
+import {
+  createExternalWebviewBookmarkId,
+  getAnchoredBookmarkMenuCoordinates,
+  getFallbackBookmarkTitle,
+  getItemsHiddenByVisibleIds,
+  getUrlDisplayLabel,
+  MAX_EXTERNAL_WEBVIEW_BOOKMARKS,
+  moveItemByIdToIndex,
+  normalizeBookmarkUrl,
+  normalizeFaviconUrl,
+  normalizeStoredBookmarks,
+  pickFirstSafeFaviconUrl,
+  reorderItemsById,
+  shouldOpenBookmarkInNewTab
+} from "../../shared/external-webview-bookmarks";
+import type { ExternalWebviewBookmark } from "../../shared/external-webview-bookmarks";
+import { registerAssistantPageContextProvider } from "../services/assistantPageContext";
 
 type ExternalWebviewPageProps = {
   title: string;
   url: string;
   active?: boolean;
+  surfaceId?: string;
+  surfaceLabel?: string;
 };
 
 type ExternalWebviewTabState = {
   id: string;
   title: string;
   currentUrl: string;
+  faviconUrl?: string;
   guestId: number | null;
   canGoBack: boolean;
   isLoading: boolean;
@@ -22,21 +51,40 @@ type ExternalWebviewBrowserState = {
 
 type ExternalWebviewTabPatch = Partial<Pick<
   ExternalWebviewTabState,
-  "title" | "currentUrl" | "guestId" | "canGoBack" | "isLoading"
+  "title" | "currentUrl" | "faviconUrl" | "guestId" | "canGoBack" | "isLoading"
 >>;
 
-const NEW_TAB_URL = "about:blank";
-const NEW_TAB_TITLE = "新标签页";
-const BOOKMARK_BAR_ITEMS = [
-  { label: "手机新标签页", tone: "blue" },
-  { label: "云台", tone: "cyan" },
-  { label: "Server Integration", tone: "purple" },
-  { label: "腾讯云", tone: "red" },
-  { label: "Google Service", tone: "yellow" },
-  { label: "jialin Notebook", tone: "black" },
-  { label: "Tencent Cloud", tone: "blue" },
-  { label: "Claude Code 源码", tone: "cyan" }
-] as const;
+type BookmarkMenuState =
+  | { kind: "context"; bookmarkId: string; x: number; y: number }
+  | { kind: "overflow"; x: number; y: number };
+
+type BookmarkEditorState = {
+  bookmarkId: string;
+  value: string;
+};
+
+const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
+  const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+  const readMetaDescription = () => {
+    const meta = document.querySelector('meta[name="description"], meta[property="og:description"]');
+    return normalize(meta?.getAttribute("content") || "");
+  };
+  return {
+    url: String(location.href || ""),
+    title: normalize(document.title || ""),
+    selectedText: normalize(getSelection()?.toString() || "").slice(0, 8000),
+    metaDescription: readMetaDescription(),
+    headings: Array.from(document.querySelectorAll("h1, h2, h3"))
+      .map((node) => normalize(node.textContent || ""))
+      .filter(Boolean)
+      .slice(0, 24),
+    bodyText: normalize(document.body?.innerText || "").slice(0, 40000)
+  };
+})()`;
+
+const BOOKMARKS_STORAGE_KEY = "zenmind-desktop.external-webview.bookmarks";
+const BOOKMARK_MENU_WIDTH = 306;
+const BOOKMARK_MENU_MAX_HEIGHT = 340;
 
 type ExternalWebviewPaneProps = {
   tab: ExternalWebviewTabState;
@@ -45,15 +93,7 @@ type ExternalWebviewPaneProps = {
   onWebviewRefChange: (tabId: string, webview: Electron.WebviewTag | null) => void;
 };
 
-function isNewTabUrl(url: string) {
-  return url === "" || url === NEW_TAB_URL;
-}
-
 function getFallbackTabTitle(defaultTitle: string, url: string) {
-  if (isNewTabUrl(url)) {
-    return NEW_TAB_TITLE;
-  }
-
   const trimmedTitle = defaultTitle.trim();
   if (trimmedTitle) {
     return trimmedTitle;
@@ -84,13 +124,23 @@ function normalizeEditableUrl(rawValue: string) {
   }
 }
 
-function getTabDisplayTitle(tab: ExternalWebviewTabState) {
-  return isNewTabUrl(tab.currentUrl) ? NEW_TAB_TITLE : tab.title;
+function getTabMonogram(title: string, url: string) {
+  const source = title.trim() || getUrlDisplayLabel(url);
+  const match = source.match(/[A-Za-z0-9\u4e00-\u9fa5]/u);
+  return match ? match[0].toUpperCase() : "·";
 }
 
 function readEventString(event: Event, key: string) {
   const candidate = (event as Record<string, unknown>)[key];
   return typeof candidate === "string" ? candidate : "";
+}
+
+function readStoredBookmarks() {
+  try {
+    return normalizeStoredBookmarks(JSON.parse(window.localStorage.getItem(BOOKMARKS_STORAGE_KEY) ?? "[]"));
+  } catch {
+    return [];
+  }
 }
 
 function ArrowLeftIcon() {
@@ -110,34 +160,20 @@ function RefreshIcon() {
   );
 }
 
-function GoogleIcon() {
+function SearchIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="#4285f4"
-        d="M23.5 12.3c0-.8-.1-1.5-.2-2.2H12v4.2h6.5c-.3 1.4-1.1 2.6-2.3 3.4v2.8h3.7c2.2-2 3.6-4.9 3.6-8.2Z"
-      />
-      <path
-        fill="#34a853"
-        d="M12 24c3.1 0 5.8-1 7.7-2.8l-3.7-2.8c-1 .7-2.4 1.1-4 1.1-3 0-5.6-2-6.5-4.8H1.8v2.9C3.7 21.4 7.6 24 12 24Z"
-      />
-      <path
-        fill="#fbbc05"
-        d="M5.5 14.7a7.2 7.2 0 0 1 0-4.7V7.1H1.8A12 12 0 0 0 1.8 17.6l3.7-2.9Z"
-      />
-      <path
-        fill="#ea4335"
-        d="M12 4.5c1.7 0 3.2.6 4.4 1.7l3.3-3.3A11.2 11.2 0 0 0 12 0C7.6 0 3.7 2.6 1.8 6.4L5.5 9.3C6.4 6.5 9 4.5 12 4.5Z"
-      />
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="8.5" cy="8.5" r="4.75" />
+      <path d="m12 12 4.25 4.25" />
     </svg>
   );
 }
 
-function ChromeTabIcon() {
+function StarIcon() {
   return (
-    <span className="external-webview-tab-chrome-mark" aria-hidden="true">
-      <span className="external-webview-tab-chrome-center" />
-    </span>
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="m10 2.75 2.23 4.52 4.99.72-3.61 3.52.85 4.97L10 14.14 5.54 16.48l.85-4.97L2.78 7.99l4.99-.72L10 2.75Z" />
+    </svg>
   );
 }
 
@@ -149,38 +185,77 @@ function PlusIcon() {
   );
 }
 
-function ChevronDownIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="m5.5 7.5 4.5 4.5 4.5-4.5" />
-    </svg>
-  );
-}
-
-function ExtensionsIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M7.5 3.5h5v3h1.4a2.1 2.1 0 0 1 0 4.2h-1.4v5.8h-5v-2a2 2 0 1 0-4 0v2h-1v-5.8h1.4a2.1 2.1 0 1 0 0-4.2H2.5v-3h5Z" />
-    </svg>
-  );
-}
-
-function MoreIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <circle cx="10" cy="4.5" r="1.25" />
-      <circle cx="10" cy="10" r="1.25" />
-      <circle cx="10" cy="15.5" r="1.25" />
-    </svg>
-  );
-}
-
 function CloseIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
       <path d="m5.5 5.5 9 9m0-9-9 9" />
     </svg>
   );
+}
+
+function BookmarkOverflowIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="m7.25 5.5 4.5 4.5-4.5 4.5" />
+      <path d="m11.25 5.5 4.5 4.5-4.5 4.5" />
+    </svg>
+  );
+}
+
+type SiteIconProps = {
+  title: string;
+  url: string;
+  faviconUrl?: string;
+  className: string;
+};
+
+function SiteIcon({ title, url, faviconUrl, className }: SiteIconProps) {
+  const normalizedFaviconUrl = normalizeFaviconUrl(faviconUrl, url);
+  const [failedFaviconUrl, setFailedFaviconUrl] = useState<string | null>(null);
+  const shouldShowFavicon = normalizedFaviconUrl && failedFaviconUrl !== normalizedFaviconUrl;
+
+  useEffect(() => {
+    setFailedFaviconUrl(null);
+  }, [normalizedFaviconUrl]);
+
+  if (shouldShowFavicon) {
+    return (
+      <span className={`${className} has-image`} aria-hidden="true">
+        <img
+          src={normalizedFaviconUrl}
+          alt=""
+          draggable={false}
+          onError={() => setFailedFaviconUrl(normalizedFaviconUrl)}
+        />
+      </span>
+    );
+  }
+
+  return (
+    <span className={className} aria-hidden="true">
+      {getTabMonogram(title, url)}
+    </span>
+  );
+}
+
+function getBookmarkMenuCoordinates(
+  anchor: { left: number; top: number; right: number; bottom: number },
+  options: { menuWidth?: number; menuMaxHeight?: number } = {}
+) {
+  const viewportWidth = window.innerWidth || BOOKMARK_MENU_WIDTH;
+  const viewportHeight = window.innerHeight || BOOKMARK_MENU_MAX_HEIGHT;
+  return getAnchoredBookmarkMenuCoordinates(
+    anchor,
+    { width: viewportWidth, height: viewportHeight },
+    {
+      menuWidth: options.menuWidth ?? BOOKMARK_MENU_WIDTH,
+      menuMaxHeight: options.menuMaxHeight ?? BOOKMARK_MENU_MAX_HEIGHT
+    }
+  );
+}
+
+function areStringArraysEqual(first: string[], second: string[]) {
+  return first.length === second.length && first.every((item, index) => item === second[index]);
 }
 
 function ExternalWebviewPane({
@@ -261,6 +336,13 @@ function ExternalWebviewPane({
       const nextTitle = readEventString(event, "title");
       syncFromWebview(nextTitle ? { title: nextTitle } : {});
     };
+    const handlePageFaviconUpdated = (event: Event) => {
+      const favicons = (event as Event & { favicons?: unknown }).favicons;
+      const nextFaviconUrl = pickFirstSafeFaviconUrl(favicons, webview.getURL() || tab.currentUrl);
+      if (nextFaviconUrl) {
+        syncFromWebview({ faviconUrl: nextFaviconUrl });
+      }
+    };
 
     webview.addEventListener("dom-ready", handleDomReady);
     webview.addEventListener("did-start-loading", handleDidStartLoading);
@@ -268,6 +350,7 @@ function ExternalWebviewPane({
     webview.addEventListener("did-navigate", handleDidNavigate);
     webview.addEventListener("did-navigate-in-page", handleDidNavigateInPage);
     webview.addEventListener("page-title-updated", handlePageTitleUpdated);
+    webview.addEventListener("page-favicon-updated", handlePageFaviconUpdated);
     syncFromWebview();
 
     return () => {
@@ -277,6 +360,7 @@ function ExternalWebviewPane({
       webview.removeEventListener("did-navigate", handleDidNavigate);
       webview.removeEventListener("did-navigate-in-page", handleDidNavigateInPage);
       webview.removeEventListener("page-title-updated", handlePageTitleUpdated);
+      webview.removeEventListener("page-favicon-updated", handlePageFaviconUpdated);
     };
   }, [onTabStateChange, tab.id]);
 
@@ -301,10 +385,9 @@ function ExternalWebviewPane({
   );
 }
 
-export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageProps) {
+export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabel }: ExternalWebviewPageProps) {
   const tabSequenceRef = useRef(0);
   const webviewRefs = useRef(new Map<string, Electron.WebviewTag>());
-  const addressInputRef = useRef<HTMLInputElement | null>(null);
   const surfaceKeyRef = useRef(`${title}\u0000${url}`);
   const activeRef = useRef(active !== false);
   const surfaceVisibilityProps = active === undefined
@@ -316,14 +399,14 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
 
   const createTab = (initialUrl: string, preferredTitle: string) => {
     tabSequenceRef.current += 1;
-    const resolvedUrl = initialUrl.trim() || NEW_TAB_URL;
     return {
       id: `external-tab-${tabSequenceRef.current}`,
-      title: getFallbackTabTitle(preferredTitle, resolvedUrl),
-      currentUrl: resolvedUrl,
+      title: getFallbackTabTitle(preferredTitle, initialUrl),
+      currentUrl: initialUrl,
+      faviconUrl: undefined,
       guestId: null,
       canGoBack: false,
-      isLoading: !isNewTabUrl(resolvedUrl)
+      isLoading: true
     } satisfies ExternalWebviewTabState;
   };
 
@@ -336,13 +419,49 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
   };
 
   const [browserState, setBrowserState] = useState<ExternalWebviewBrowserState>(() => createInitialBrowserState());
-  const [addressInputValue, setAddressInputValue] = useState(() => isNewTabUrl(url) ? "" : url);
-  const [addressInputFocused, setAddressInputFocused] = useState(false);
+  const [addressInputValue, setAddressInputValue] = useState(() => url);
+  const [bookmarks, setBookmarks] = useState<ExternalWebviewBookmark[]>(() => readStoredBookmarks());
+  const [bookmarkMenu, setBookmarkMenu] = useState<BookmarkMenuState | null>(null);
+  const [bookmarkEditor, setBookmarkEditor] = useState<BookmarkEditorState | null>(null);
+  const [bookmarksOverflowing, setBookmarksOverflowing] = useState(false);
+  const [visibleBookmarkIds, setVisibleBookmarkIds] = useState<string[]>([]);
+  const [tabsOverflowing, setTabsOverflowing] = useState(false);
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
+  const [tabDragOffsetX, setTabDragOffsetX] = useState(0);
+  const [draggingBookmarkId, setDraggingBookmarkId] = useState<string | null>(null);
+  const [bookmarkDragOffsetX, setBookmarkDragOffsetX] = useState(0);
   const browserStateRef = useRef(browserState);
+  const bookmarksRef = useRef(bookmarks);
+  const tabsStripRef = useRef<HTMLDivElement | null>(null);
+  const bookmarksListRef = useRef<HTMLDivElement | null>(null);
+  const bookmarkMenuRef = useRef<HTMLDivElement | null>(null);
+  const bookmarkEditorRef = useRef<HTMLFormElement | null>(null);
+  const tabPointerDragRef = useRef<{
+    id: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+  } | null>(null);
+  const tabPointerCleanupRef = useRef<(() => void) | null>(null);
+  const bookmarkPointerDragRef = useRef<{
+    id: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+  } | null>(null);
+  const bookmarkPointerCleanupRef = useRef<(() => void) | null>(null);
+  const suppressTabClickRef = useRef(false);
+  const suppressBookmarkClickRef = useRef(false);
 
   useEffect(() => {
     browserStateRef.current = browserState;
   }, [browserState]);
+
+  useEffect(() => {
+    bookmarksRef.current = bookmarks;
+  }, [bookmarks]);
 
   useEffect(() => {
     activeRef.current = active !== false;
@@ -356,15 +475,28 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
     surfaceKeyRef.current = nextSurfaceKey;
     webviewRefs.current.clear();
     setBrowserState(createInitialBrowserState());
-    setAddressInputValue(isNewTabUrl(url) ? "" : url);
+    setAddressInputValue(url);
   }, [title, url]);
 
-  const openTab = (nextUrl = NEW_TAB_URL, preferredTitle = NEW_TAB_TITLE) => {
+  const openTab = (
+    nextUrl: string,
+    preferredTitle = "",
+    options: { afterTabId?: string | null } = {}
+  ) => {
     const nextTab = createTab(nextUrl, preferredTitle);
-    setBrowserState((currentState) => ({
-      tabs: [...currentState.tabs, nextTab],
-      activeTabId: nextTab.id
-    }));
+    setBrowserState((currentState) => {
+      const anchorTabId = options.afterTabId ?? currentState.activeTabId;
+      const anchorIndex = currentState.tabs.findIndex((tab) => tab.id === anchorTabId);
+      const insertionIndex = anchorIndex === -1 ? currentState.tabs.length : anchorIndex + 1;
+      return {
+        tabs: [
+          ...currentState.tabs.slice(0, insertionIndex),
+          nextTab,
+          ...currentState.tabs.slice(insertionIndex)
+        ],
+        activeTabId: nextTab.id
+      };
+    });
   };
 
   const setActiveTab = (tabId: string) => {
@@ -377,6 +509,148 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
         activeTabId: tabId
       };
     });
+  };
+
+  const clearTabPointerListeners = () => {
+    tabPointerCleanupRef.current?.();
+    tabPointerCleanupRef.current = null;
+  };
+
+  const finishTabPointerDrag = () => {
+    const pointerDragState = tabPointerDragRef.current;
+    if (pointerDragState?.dragging) {
+      suppressTabClickRef.current = true;
+      window.setTimeout(() => {
+        suppressTabClickRef.current = false;
+      }, 0);
+    }
+    clearTabPointerListeners();
+    tabPointerDragRef.current = null;
+    setDraggingTabId(null);
+    setTabDragOffsetX(0);
+  };
+
+  const updateTabPointerDrag = (clientX: number, clientY: number) => {
+    const pointerDragState = tabPointerDragRef.current;
+    const tabsStrip = tabsStripRef.current;
+    if (!pointerDragState || !tabsStrip) {
+      return false;
+    }
+
+    const movedDistance = Math.abs(clientX - pointerDragState.startX) +
+      Math.abs(clientY - pointerDragState.startY);
+    if (!pointerDragState.dragging && movedDistance < 6) {
+      return false;
+    }
+
+    pointerDragState.dragging = true;
+    setDraggingTabId(pointerDragState.id);
+
+    const tabElements = Array.from(
+      tabsStrip.querySelectorAll<HTMLElement>("[data-tab-id]")
+    ).filter((tabElement) => tabElement.dataset.tabId !== pointerDragState.id);
+    const currentTabOrder = browserStateRef.current.tabs;
+    let insertionIndex = currentTabOrder.length;
+    for (const tabElement of tabElements) {
+      const tabRect = tabElement.getBoundingClientRect();
+      const targetTabId = tabElement.dataset.tabId;
+      if (!tabRect) {
+        continue;
+      }
+
+      if (clientX < tabRect.left + tabRect.width / 2) {
+        const targetIndex = currentTabOrder.findIndex((tab) => tab.id === targetTabId);
+        insertionIndex = targetIndex === -1 ? insertionIndex : targetIndex;
+        break;
+      }
+    }
+
+    const currentState = browserStateRef.current;
+    const nextTabs = moveItemByIdToIndex(
+      currentState.tabs,
+      pointerDragState.id,
+      insertionIndex
+    );
+    if (nextTabs !== currentState.tabs) {
+      const nextState = {
+        ...currentState,
+        tabs: nextTabs
+      };
+      browserStateRef.current = nextState;
+      setBrowserState(nextState);
+      pointerDragState.startX = clientX;
+      pointerDragState.startY = clientY;
+      setTabDragOffsetX(0);
+    } else {
+      setTabDragOffsetX(clientX - pointerDragState.startX);
+    }
+
+    return true;
+  };
+
+  const handleTabPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (updateTabPointerDrag(event.clientX, event.clientY)) {
+      event.preventDefault();
+    }
+  };
+
+  const handleTabPointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    tabId: string
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    clearTabPointerListeners();
+    tabPointerDragRef.current = {
+      id: tabId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false
+    };
+
+    const document = event.currentTarget.ownerDocument;
+    const handleDocumentPointerMove = (pointerEvent: PointerEvent) => {
+      const pointerDragState = tabPointerDragRef.current;
+      if (!pointerDragState || pointerEvent.pointerId !== pointerDragState.pointerId) {
+        return;
+      }
+
+      if (updateTabPointerDrag(pointerEvent.clientX, pointerEvent.clientY)) {
+        pointerEvent.preventDefault();
+      }
+    };
+    const handleDocumentPointerEnd = (pointerEvent: PointerEvent) => {
+      const pointerDragState = tabPointerDragRef.current;
+      if (!pointerDragState || pointerEvent.pointerId !== pointerDragState.pointerId) {
+        return;
+      }
+
+      finishTabPointerDrag();
+    };
+
+    document.addEventListener("pointermove", handleDocumentPointerMove, { passive: false });
+    document.addEventListener("pointerup", handleDocumentPointerEnd);
+    document.addEventListener("pointercancel", handleDocumentPointerEnd);
+    tabPointerCleanupRef.current = () => {
+      document.removeEventListener("pointermove", handleDocumentPointerMove);
+      document.removeEventListener("pointerup", handleDocumentPointerEnd);
+      document.removeEventListener("pointercancel", handleDocumentPointerEnd);
+    };
+  };
+
+  useEffect(() => () => {
+    clearTabPointerListeners();
+  }, []);
+
+  const handleTabStripWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!tabsOverflowing || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) {
+      return;
+    }
+
+    event.currentTarget.scrollLeft += event.deltaY;
   };
 
   const closeTab = (tabId: string) => {
@@ -418,6 +692,7 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
         const sameTab =
           nextTab.title === tab.title &&
           nextTab.currentUrl === tab.currentUrl &&
+          nextTab.faviconUrl === tab.faviconUrl &&
           nextTab.guestId === tab.guestId &&
           nextTab.canGoBack === tab.canGoBack &&
           nextTab.isLoading === tab.isLoading;
@@ -456,27 +731,229 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
         }
       }
 
-      openTab(nextUrl);
+      openTab(nextUrl, "", { afterTabId: sourceTab?.id });
     });
   }, []);
 
   const activeTab = browserState.tabs.find((tab) => tab.id === browserState.activeTabId) ?? browserState.tabs[0];
 
   useEffect(() => {
-    const nextUrl = activeTab?.currentUrl ?? url;
-    setAddressInputValue(isNewTabUrl(nextUrl) ? "" : nextUrl);
+    if (active === false || !activeTab) {
+      return undefined;
+    }
+
+    return registerAssistantPageContextProvider(async () => {
+      const currentState = browserStateRef.current;
+      const currentActiveTab = currentState.tabs.find((tab) => tab.id === currentState.activeTabId) ?? currentState.tabs[0];
+      if (!currentActiveTab || !activeRef.current) {
+        return null;
+      }
+
+      const activeWebview = webviewRefs.current.get(currentActiveTab.id);
+      if (!activeWebview) {
+        return {
+          url: currentActiveTab.currentUrl,
+          title: currentActiveTab.title,
+          selectedText: "",
+          metaDescription: "",
+          headings: [],
+          bodyText: ""
+        } satisfies AssistantPageContext;
+      }
+
+      try {
+        const webContentsId = activeWebview.getWebContentsId();
+        const pageContext = await activeWebview.executeJavaScript(WEBVIEW_PAGE_CONTEXT_SCRIPT, true);
+        return {
+          url: typeof pageContext?.url === "string" ? pageContext.url : currentActiveTab.currentUrl,
+          title: typeof pageContext?.title === "string" && pageContext.title
+            ? pageContext.title
+            : currentActiveTab.title,
+          selectedText: typeof pageContext?.selectedText === "string" ? pageContext.selectedText : "",
+          metaDescription: typeof pageContext?.metaDescription === "string" ? pageContext.metaDescription : "",
+          headings: Array.isArray(pageContext?.headings)
+            ? pageContext.headings.filter((item: unknown): item is string => typeof item === "string")
+            : [],
+          bodyText: typeof pageContext?.bodyText === "string" ? pageContext.bodyText : "",
+          browserTarget: Number.isFinite(webContentsId)
+            ? {
+                kind: "webview",
+                webContentsId,
+                surfaceId,
+                surfaceLabel: surfaceLabel ?? title,
+                currentUrl: currentActiveTab.currentUrl
+              }
+            : undefined
+        } satisfies AssistantPageContext;
+      } catch {
+        return {
+          url: currentActiveTab.currentUrl,
+          title: currentActiveTab.title,
+          selectedText: "",
+          metaDescription: "",
+          headings: [],
+          bodyText: ""
+        } satisfies AssistantPageContext;
+      }
+    });
+  }, [active, activeTab?.id, surfaceId, surfaceLabel, title]);
+
+  useEffect(() => {
+    setAddressInputValue(activeTab?.currentUrl ?? url);
   }, [activeTab?.id, activeTab?.currentUrl, url]);
 
   useEffect(() => {
-    if (active === false || !activeTab || !isNewTabUrl(activeTab.currentUrl)) {
+    const tabsStrip = tabsStripRef.current;
+    if (!tabsStrip) {
+      setTabsOverflowing(false);
+      return undefined;
+    }
+
+    const measureOverflow = () => {
+      setTabsOverflowing(tabsStrip.scrollWidth > tabsStrip.clientWidth + 2);
+    };
+
+    measureOverflow();
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measureOverflow);
+    resizeObserver?.observe(tabsStrip);
+    window.addEventListener("resize", measureOverflow);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureOverflow);
+    };
+  }, [browserState.tabs.length]);
+
+  useEffect(() => {
+    const tabsStrip = tabsStripRef.current;
+    const activeTabId = activeTab?.id;
+    if (!tabsStrip || !activeTabId) {
       return;
     }
 
-    const animationFrame = window.requestAnimationFrame(() => {
-      addressInputRef.current?.focus();
+    const activeTabElement = tabsStrip.querySelector<HTMLElement>(`[data-tab-id="${activeTabId}"]`);
+    activeTabElement?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeTab?.id, browserState.tabs.length]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(bookmarks));
+    } catch {
+      // Keep bookmark changes in memory when localStorage is not available.
+    }
+  }, [bookmarks]);
+
+  useEffect(() => {
+    const bookmarksList = bookmarksListRef.current;
+    if (!bookmarksList) {
+      setBookmarksOverflowing(false);
+      setVisibleBookmarkIds([]);
+      return undefined;
+    }
+
+    const measureOverflow = () => {
+      const listRect = bookmarksList.getBoundingClientRect();
+      const nextVisibleBookmarkIds = Array.from(
+        bookmarksList.querySelectorAll<HTMLButtonElement>("[data-bookmark-id]")
+      ).flatMap((button) => {
+        const bookmarkId = button.dataset.bookmarkId;
+        if (!bookmarkId) {
+          return [];
+        }
+
+        const itemRect = button.getBoundingClientRect();
+        return itemRect.left >= listRect.left - 1 && itemRect.right <= listRect.right + 1
+          ? [bookmarkId]
+          : [];
+      });
+
+      setVisibleBookmarkIds((currentVisibleIds) => areStringArraysEqual(currentVisibleIds, nextVisibleBookmarkIds)
+        ? currentVisibleIds
+        : nextVisibleBookmarkIds);
+      setBookmarksOverflowing(bookmarksList.scrollWidth > bookmarksList.clientWidth + 2);
+    };
+
+    measureOverflow();
+    const animationFrame = window.requestAnimationFrame(measureOverflow);
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measureOverflow);
+    resizeObserver?.observe(bookmarksList);
+    window.addEventListener("resize", measureOverflow);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureOverflow);
+    };
+  }, [bookmarks]);
+
+  useEffect(() => {
+    if (bookmarks.length === 0) {
+      return;
+    }
+
+    setBookmarks((currentBookmarks) => {
+      let changed = false;
+      const nextBookmarks = currentBookmarks.map((bookmark) => {
+        const matchingTab = browserState.tabs.find((tab) => normalizeBookmarkUrl(tab.currentUrl) === bookmark.url);
+        if (!matchingTab) {
+          return bookmark;
+        }
+
+        const nextFaviconUrl = normalizeFaviconUrl(matchingTab.faviconUrl, bookmark.url) ?? bookmark.faviconUrl;
+        const nextTitle = bookmark.customTitle
+          ? bookmark.title
+          : getFallbackBookmarkTitle(matchingTab.title, bookmark.url);
+        if (nextFaviconUrl === bookmark.faviconUrl && nextTitle === bookmark.title) {
+          return bookmark;
+        }
+
+        changed = true;
+        return {
+          ...bookmark,
+          title: nextTitle,
+          ...(nextFaviconUrl ? { faviconUrl: nextFaviconUrl } : {})
+        };
+      });
+
+      return changed ? nextBookmarks : currentBookmarks;
     });
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, [active, activeTab?.id, activeTab?.currentUrl]);
+  }, [bookmarks.length, browserState.tabs]);
+
+  useEffect(() => {
+    if (!bookmarkMenu && !bookmarkEditor) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setBookmarkMenu(null);
+        setBookmarkEditor(null);
+      }
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Node ? event.target : null;
+      if (
+        target &&
+        (bookmarkMenuRef.current?.contains(target) || bookmarkEditorRef.current?.contains(target))
+      ) {
+        return;
+      }
+
+      setBookmarkMenu(null);
+      setBookmarkEditor(null);
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [bookmarkEditor, bookmarkMenu]);
+
+  useEffect(() => {
+    if (bookmarkMenu?.kind === "context" && !bookmarks.some((bookmark) => bookmark.id === bookmarkMenu.bookmarkId)) {
+      setBookmarkMenu(null);
+    }
+  }, [bookmarkMenu, bookmarks]);
 
   const handleGoBack = () => {
     if (!activeTab?.canGoBack) {
@@ -519,14 +996,9 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
       return;
     }
 
-    if (!addressInputValue.trim()) {
-      setAddressInputValue(isNewTabUrl(activeTab.currentUrl) ? "" : activeTab.currentUrl);
-      return;
-    }
-
     const normalizedUrl = normalizeEditableUrl(addressInputValue);
     if (!normalizedUrl) {
-      setAddressInputValue(isNewTabUrl(activeTab.currentUrl) ? "" : activeTab.currentUrl);
+      setAddressInputValue(activeTab.currentUrl);
       return;
     }
 
@@ -539,24 +1011,478 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
     void activeWebview.loadURL(normalizedUrl).then(() => {
       setAddressInputValue(normalizedUrl);
     }).catch(() => {
-      setAddressInputValue(isNewTabUrl(activeTab.currentUrl) ? "" : activeTab.currentUrl);
+      setAddressInputValue(activeTab.currentUrl);
     });
   };
 
+  const activeBookmarkUrl = activeTab ? normalizeBookmarkUrl(activeTab.currentUrl) : null;
+  const activeBookmark = activeBookmarkUrl
+    ? bookmarks.find((bookmark) => bookmark.url === activeBookmarkUrl) ?? null
+    : null;
+
+  const getRendererPlatform = () => window.navigator.platform || window.navigator.userAgent;
+
+  const openBookmarkInNewTab = (bookmark: ExternalWebviewBookmark) => {
+    openTab(bookmark.url, bookmark.title);
+  };
+
+  const handleToggleBookmark = () => {
+    if (!activeTab || !activeBookmarkUrl) {
+      return;
+    }
+
+    setBookmarks((currentBookmarks) => {
+      const existing = currentBookmarks.find((bookmark) => bookmark.url === activeBookmarkUrl);
+      if (existing) {
+        return currentBookmarks.filter((bookmark) => bookmark.url !== activeBookmarkUrl);
+      }
+
+      const nextBookmark: ExternalWebviewBookmark = {
+        id: createExternalWebviewBookmarkId(),
+        title: getFallbackBookmarkTitle(activeTab.title, activeBookmarkUrl),
+        url: activeBookmarkUrl,
+        ...(normalizeFaviconUrl(activeTab.faviconUrl, activeBookmarkUrl)
+          ? { faviconUrl: normalizeFaviconUrl(activeTab.faviconUrl, activeBookmarkUrl) ?? undefined }
+          : {}),
+        createdAt: Date.now()
+      };
+      return [nextBookmark, ...currentBookmarks].slice(0, MAX_EXTERNAL_WEBVIEW_BOOKMARKS);
+    });
+  };
+
+  const handleOpenBookmark = (bookmark: ExternalWebviewBookmark, options: { newTab?: boolean } = {}) => {
+    setBookmarkMenu(null);
+    if (options.newTab) {
+      openBookmarkInNewTab(bookmark);
+      return;
+    }
+
+    if (!activeTab) {
+      openBookmarkInNewTab(bookmark);
+      return;
+    }
+
+    const activeWebview = webviewRefs.current.get(activeTab.id);
+    if (!activeWebview) {
+      openBookmarkInNewTab(bookmark);
+      return;
+    }
+
+    void activeWebview.loadURL(bookmark.url).catch(() => {
+      openBookmarkInNewTab(bookmark);
+    });
+  };
+
+  const handleBookmarkClick = (event: ReactMouseEvent<HTMLButtonElement>, bookmark: ExternalWebviewBookmark) => {
+    if (suppressBookmarkClickRef.current) {
+      event.preventDefault();
+      return;
+    }
+
+    const newTab = shouldOpenBookmarkInNewTab(event, getRendererPlatform());
+    handleOpenBookmark(bookmark, { newTab });
+  };
+
+  const handleBookmarkAuxClick = (event: ReactMouseEvent<HTMLButtonElement>, bookmark: ExternalWebviewBookmark) => {
+    if (!shouldOpenBookmarkInNewTab(event, getRendererPlatform())) {
+      return;
+    }
+
+    event.preventDefault();
+    handleOpenBookmark(bookmark, { newTab: true });
+  };
+
+  const moveBookmarkBeforeOrAfterTarget = (movedBookmarkId: string, targetBookmarkId: string) => {
+    setBookmarks((currentBookmarks) => reorderItemsById(currentBookmarks, movedBookmarkId, targetBookmarkId));
+  };
+
+  const handleBookmarkDragStart = (event: ReactDragEvent<HTMLButtonElement>, bookmarkId: string) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", bookmarkId);
+    setDraggingBookmarkId(bookmarkId);
+    setBookmarkMenu(null);
+  };
+
+  const handleBookmarkDragOver = (event: ReactDragEvent<HTMLButtonElement>, targetBookmarkId: string) => {
+    const movedBookmarkId = draggingBookmarkId || event.dataTransfer.getData("text/plain");
+    if (!movedBookmarkId || movedBookmarkId === targetBookmarkId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  };
+
+  const handleBookmarkDrop = (event: ReactDragEvent<HTMLButtonElement>, targetBookmarkId: string) => {
+    const movedBookmarkId = draggingBookmarkId || event.dataTransfer.getData("text/plain");
+    if (movedBookmarkId && movedBookmarkId !== targetBookmarkId) {
+      event.preventDefault();
+      moveBookmarkBeforeOrAfterTarget(movedBookmarkId, targetBookmarkId);
+    }
+    setDraggingBookmarkId(null);
+  };
+
+  const clearBookmarkPointerListeners = () => {
+    bookmarkPointerCleanupRef.current?.();
+    bookmarkPointerCleanupRef.current = null;
+  };
+
+  const finishBookmarkPointerDrag = () => {
+    const pointerDragState = bookmarkPointerDragRef.current;
+    if (pointerDragState?.dragging) {
+      suppressBookmarkClickRef.current = true;
+      window.setTimeout(() => {
+        suppressBookmarkClickRef.current = false;
+      }, 0);
+    }
+    clearBookmarkPointerListeners();
+    bookmarkPointerDragRef.current = null;
+    setDraggingBookmarkId(null);
+    setBookmarkDragOffsetX(0);
+  };
+
+  const updateBookmarkPointerDrag = (clientX: number, clientY: number) => {
+    const pointerDragState = bookmarkPointerDragRef.current;
+    const bookmarksList = bookmarksListRef.current;
+    if (!pointerDragState || !bookmarksList) {
+      return false;
+    }
+
+    const movedDistance = Math.abs(clientX - pointerDragState.startX) +
+      Math.abs(clientY - pointerDragState.startY);
+    if (!pointerDragState.dragging && movedDistance < 6) {
+      return false;
+    }
+
+    pointerDragState.dragging = true;
+    setDraggingBookmarkId(pointerDragState.id);
+
+    const bookmarkButtons = Array.from(
+      bookmarksList.querySelectorAll<HTMLButtonElement>("[data-bookmark-id]")
+    ).filter((button) => button.dataset.bookmarkId !== pointerDragState.id);
+    const currentBookmarks = bookmarksRef.current;
+    let insertionIndex = currentBookmarks.length;
+    for (const button of bookmarkButtons) {
+      const buttonRect = button.getBoundingClientRect();
+      const targetBookmarkId = button.dataset.bookmarkId;
+
+      if (clientX < buttonRect.left + buttonRect.width / 2) {
+        const targetIndex = currentBookmarks.findIndex((bookmark) => bookmark.id === targetBookmarkId);
+        insertionIndex = targetIndex === -1 ? insertionIndex : targetIndex;
+        break;
+      }
+    }
+
+    const nextBookmarks = moveItemByIdToIndex(
+      currentBookmarks,
+      pointerDragState.id,
+      insertionIndex
+    );
+    if (nextBookmarks !== currentBookmarks) {
+      bookmarksRef.current = nextBookmarks;
+      setBookmarks(nextBookmarks);
+      pointerDragState.startX = clientX;
+      pointerDragState.startY = clientY;
+      setBookmarkDragOffsetX(0);
+    } else {
+      setBookmarkDragOffsetX(clientX - pointerDragState.startX);
+    }
+
+    return true;
+  };
+
+  const handleBookmarkPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (updateBookmarkPointerDrag(event.clientX, event.clientY)) {
+      event.preventDefault();
+    }
+  };
+
+  const handleBookmarkPointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    bookmarkId: string
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    clearBookmarkPointerListeners();
+    setBookmarkMenu(null);
+    bookmarkPointerDragRef.current = {
+      id: bookmarkId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false
+    };
+
+    const document = event.currentTarget.ownerDocument;
+    const handleDocumentPointerMove = (pointerEvent: PointerEvent) => {
+      const pointerDragState = bookmarkPointerDragRef.current;
+      if (!pointerDragState || pointerEvent.pointerId !== pointerDragState.pointerId) {
+        return;
+      }
+
+      if (updateBookmarkPointerDrag(pointerEvent.clientX, pointerEvent.clientY)) {
+        pointerEvent.preventDefault();
+      }
+    };
+    const handleDocumentPointerEnd = (pointerEvent: PointerEvent) => {
+      const pointerDragState = bookmarkPointerDragRef.current;
+      if (!pointerDragState || pointerEvent.pointerId !== pointerDragState.pointerId) {
+        return;
+      }
+
+      finishBookmarkPointerDrag();
+    };
+
+    document.addEventListener("pointermove", handleDocumentPointerMove, { passive: false });
+    document.addEventListener("pointerup", handleDocumentPointerEnd);
+    document.addEventListener("pointercancel", handleDocumentPointerEnd);
+    bookmarkPointerCleanupRef.current = () => {
+      document.removeEventListener("pointermove", handleDocumentPointerMove);
+      document.removeEventListener("pointerup", handleDocumentPointerEnd);
+      document.removeEventListener("pointercancel", handleDocumentPointerEnd);
+    };
+  };
+
+  useEffect(() => () => {
+    clearBookmarkPointerListeners();
+  }, []);
+
+  const handleBookmarkContextMenu = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    bookmark: ExternalWebviewBookmark
+  ) => {
+    event.preventDefault();
+    const coordinates = getBookmarkMenuCoordinates(
+      event.currentTarget.getBoundingClientRect(),
+      { menuWidth: 220 }
+    );
+    setBookmarkEditor(null);
+    setBookmarkMenu({
+      kind: "context",
+      bookmarkId: bookmark.id,
+      ...coordinates
+    });
+  };
+
+  const handleOpenOverflowMenu = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const coordinates = getBookmarkMenuCoordinates({
+      left: rect.right - BOOKMARK_MENU_WIDTH,
+      right: rect.right,
+      top: rect.top,
+      bottom: rect.bottom
+    });
+    setBookmarkEditor(null);
+    setBookmarkMenu({
+      kind: "overflow",
+      ...coordinates
+    });
+  };
+
+  const handleStartRenameBookmark = (bookmark: ExternalWebviewBookmark) => {
+    setBookmarkMenu(null);
+    setBookmarkEditor({
+      bookmarkId: bookmark.id,
+      value: bookmark.title
+    });
+  };
+
+  const handleDeleteBookmark = (bookmark: ExternalWebviewBookmark) => {
+    setBookmarkMenu(null);
+    setBookmarks((currentBookmarks) => currentBookmarks.filter((item) => item.id !== bookmark.id));
+  };
+
+  const handleSaveBookmarkRename = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!bookmarkEditor) {
+      return;
+    }
+
+    setBookmarks((currentBookmarks) => currentBookmarks.map((bookmark) => {
+      if (bookmark.id !== bookmarkEditor.bookmarkId) {
+        return bookmark;
+      }
+
+      return {
+        ...bookmark,
+        title: getFallbackBookmarkTitle(bookmarkEditor.value, bookmark.url),
+        customTitle: true
+      };
+    }));
+    setBookmarkEditor(null);
+  };
+
+  const contextMenuBookmark = bookmarkMenu?.kind === "context"
+    ? bookmarks.find((bookmark) => bookmark.id === bookmarkMenu.bookmarkId) ?? null
+    : null;
+  const editingBookmark = bookmarkEditor
+    ? bookmarks.find((bookmark) => bookmark.id === bookmarkEditor.bookmarkId) ?? null
+    : null;
+  const overflowBookmarks = bookmarksOverflowing ? getItemsHiddenByVisibleIds(bookmarks, visibleBookmarkIds) : [];
+  const showBookmarkOverflow = overflowBookmarks.length > 0;
+  const bookmarkMenuNode = bookmarkMenu ? (
+    <div
+      ref={bookmarkMenuRef}
+      className={`external-webview-bookmark-menu is-${bookmarkMenu.kind}`}
+      style={{ left: bookmarkMenu.x, top: bookmarkMenu.y }}
+      role="menu"
+      aria-label={bookmarkMenu.kind === "overflow" ? "更多收藏" : "收藏操作"}
+    >
+      {bookmarkMenu.kind === "overflow" ? (
+        overflowBookmarks.map((bookmark) => (
+          <div className="external-webview-bookmark-menu-row" key={bookmark.id} role="none">
+            <button
+              type="button"
+              className={`external-webview-bookmark-menu-item is-bookmark${
+                draggingBookmarkId === bookmark.id ? " is-dragging" : ""
+              }`}
+              draggable
+              onClick={() => handleOpenBookmark(bookmark)}
+              onContextMenu={(event) => handleBookmarkContextMenu(event, bookmark)}
+              onDragStart={(event) => handleBookmarkDragStart(event, bookmark.id)}
+              onDragOver={(event) => handleBookmarkDragOver(event, bookmark.id)}
+              onDrop={(event) => handleBookmarkDrop(event, bookmark.id)}
+              onDragEnd={() => setDraggingBookmarkId(null)}
+              role="menuitem"
+            >
+              <SiteIcon
+                className="external-webview-bookmark-menu-icon"
+                title={bookmark.title}
+                url={bookmark.url}
+                faviconUrl={bookmark.faviconUrl}
+              />
+              <span>{bookmark.title}</span>
+            </button>
+            <button
+              type="button"
+              className="external-webview-bookmark-menu-action"
+              onClick={() => handleOpenBookmark(bookmark, { newTab: true })}
+              role="menuitem"
+              aria-label={`在新标签页打开 ${bookmark.title}`}
+            >
+              新
+            </button>
+            <button
+              type="button"
+              className="external-webview-bookmark-menu-action"
+              onClick={() => handleStartRenameBookmark(bookmark)}
+              role="menuitem"
+              aria-label={`重命名 ${bookmark.title}`}
+            >
+              改
+            </button>
+            <button
+              type="button"
+              className="external-webview-bookmark-menu-action is-danger"
+              onClick={() => handleDeleteBookmark(bookmark)}
+              role="menuitem"
+              aria-label={`删除 ${bookmark.title}`}
+            >
+              删
+            </button>
+          </div>
+        ))
+      ) : contextMenuBookmark ? (
+        <>
+          <button
+            type="button"
+            className="external-webview-bookmark-menu-item"
+            onClick={() => handleOpenBookmark(contextMenuBookmark)}
+            role="menuitem"
+          >
+            打开
+          </button>
+          <button
+            type="button"
+            className="external-webview-bookmark-menu-item"
+            onClick={() => handleOpenBookmark(contextMenuBookmark, { newTab: true })}
+            role="menuitem"
+          >
+            在新标签页打开
+          </button>
+          <span className="external-webview-bookmark-menu-separator" role="separator" />
+          <button
+            type="button"
+            className="external-webview-bookmark-menu-item"
+            onClick={() => handleStartRenameBookmark(contextMenuBookmark)}
+            role="menuitem"
+          >
+            重命名
+          </button>
+          <button
+            type="button"
+            className="external-webview-bookmark-menu-item is-danger"
+            onClick={() => handleDeleteBookmark(contextMenuBookmark)}
+            role="menuitem"
+          >
+            删除
+          </button>
+        </>
+      ) : null}
+    </div>
+  ) : null;
+  const bookmarkEditorNode = bookmarkEditor && editingBookmark ? (
+    <div className="external-webview-bookmark-editor-backdrop" role="presentation">
+      <form
+        ref={bookmarkEditorRef}
+        className="external-webview-bookmark-editor"
+        onSubmit={handleSaveBookmarkRename}
+        role="dialog"
+        aria-modal="true"
+        aria-label="重命名收藏"
+      >
+        <label htmlFor="external-webview-bookmark-editor-input">名称</label>
+        <input
+          id="external-webview-bookmark-editor-input"
+          value={bookmarkEditor.value}
+          autoFocus
+          onChange={(event) => setBookmarkEditor({
+            bookmarkId: bookmarkEditor.bookmarkId,
+            value: event.target.value
+          })}
+        />
+        <p>{getUrlDisplayLabel(editingBookmark.url)}</p>
+        <div className="external-webview-bookmark-editor-actions">
+          <button type="button" onClick={() => setBookmarkEditor(null)}>
+            取消
+          </button>
+          <button type="submit">
+            保存
+          </button>
+        </div>
+      </form>
+    </div>
+  ) : null;
+
   return (
+    <>
     <section className="pan-page external-webview-page" {...surfaceVisibilityProps}>
       <div className="pan-drag-region" aria-hidden="true" />
       <div className="external-webview-browser-chrome">
         <div className="external-webview-tabbar">
-          <div className="external-webview-tab-strip" role="tablist" aria-label="嵌入网页标签页">
+          <div
+            className={`external-webview-tab-strip${tabsOverflowing ? " is-overflowing" : ""}`}
+            ref={tabsStripRef}
+            role="tablist"
+            aria-label="嵌入网页标签页"
+            onWheel={handleTabStripWheel}
+            onPointerMove={handleTabPointerMove}
+            onPointerUp={finishTabPointerDrag}
+            onPointerCancel={finishTabPointerDrag}
+          >
             {browserState.tabs.map((tab) => {
               const isActive = tab.id === browserState.activeTabId;
               const canClose = browserState.tabs.length > 1;
-              const tabTitle = getTabDisplayTitle(tab);
               return (
                 <div
                   key={tab.id}
-                  className={`external-webview-tab${isActive ? " is-active" : ""}`}
+                  className={`external-webview-tab${isActive ? " is-active" : ""}${
+                    draggingTabId === tab.id ? " is-dragging" : ""
+                  }`}
+                  data-tab-id={tab.id}
+                  style={draggingTabId === tab.id ? { transform: `translateX(${tabDragOffsetX}px)` } : undefined}
                   role="presentation"
                 >
                   <button
@@ -564,15 +1490,28 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
                     role="tab"
                     aria-selected={isActive}
                     className="external-webview-tab-trigger"
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={(event) => {
+                      if (suppressTabClickRef.current) {
+                        event.preventDefault();
+                        return;
+                      }
+                      setActiveTab(tab.id);
+                    }}
+                    onPointerDown={(event) => handleTabPointerDown(event, tab.id)}
                   >
-                    <span
-                      className={`external-webview-tab-favicon${tab.isLoading ? " is-loading" : ""}`}
-                      aria-hidden="true"
-                    >
-                      {tab.isLoading ? <span className="external-webview-tab-favicon-spinner" /> : <ChromeTabIcon />}
-                    </span>
-                    <span className="external-webview-tab-title">{tabTitle}</span>
+                    {tab.isLoading ? (
+                      <span className="external-webview-tab-favicon is-loading" aria-hidden="true">
+                        <span className="external-webview-tab-favicon-spinner" />
+                      </span>
+                    ) : (
+                      <SiteIcon
+                        className="external-webview-tab-favicon"
+                        title={tab.title}
+                        url={tab.currentUrl}
+                        faviconUrl={tab.faviconUrl}
+                      />
+                    )}
+                    <span className="external-webview-tab-title">{tab.title}</span>
                   </button>
                   {canClose ? (
                     <button
@@ -582,7 +1521,7 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
                         event.stopPropagation();
                         closeTab(tab.id);
                       }}
-                      aria-label={`关闭 ${tabTitle}`}
+                      aria-label={`关闭 ${tab.title}`}
                     >
                       <CloseIcon />
                     </button>
@@ -594,34 +1533,25 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
           <button
             type="button"
             className="external-webview-tab-add"
-            onClick={() => openTab()}
+            onClick={() => openTab(url, title)}
             aria-label="新建标签页"
             title="新建标签页"
           >
             <PlusIcon />
           </button>
-          <button
-            type="button"
-            className="external-webview-tab-search"
-            aria-label="搜索标签页"
-            title="搜索标签页"
-          >
-            <ChevronDownIcon />
-          </button>
         </div>
         <div className="external-webview-toolbar">
           <div className="external-webview-toolbar-actions">
-            {activeTab?.canGoBack ? (
-              <button
-                type="button"
-                className="external-webview-toolbar-button"
-                onClick={handleGoBack}
-                aria-label="后退"
-                title="后退"
-              >
-                <ArrowLeftIcon />
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="external-webview-toolbar-button"
+              onClick={handleGoBack}
+              disabled={!activeTab?.canGoBack}
+              aria-label="后退"
+              title="后退"
+            >
+              <ArrowLeftIcon />
+            </button>
             <button
               type="button"
               className="external-webview-toolbar-button"
@@ -632,18 +1562,11 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
               <RefreshIcon />
             </button>
           </div>
-          <div
-            className={[
-              "external-webview-toolbar-location",
-              addressInputFocused ? "is-focused" : "",
-              activeTab && isNewTabUrl(activeTab.currentUrl) ? "is-new-tab" : ""
-            ].filter(Boolean).join(" ")}
-          >
+          <div className="external-webview-toolbar-location">
             <span className="external-webview-toolbar-location-icon" aria-hidden="true">
-              <GoogleIcon />
+              <SearchIcon />
             </span>
             <input
-              ref={addressInputRef}
               type="text"
               className="external-webview-toolbar-location-input"
               value={addressInputValue}
@@ -651,12 +1574,7 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
                 setAddressInputValue(event.target.value);
               }}
               onBlur={() => {
-                setAddressInputFocused(false);
-                const nextUrl = activeTab?.currentUrl ?? url;
-                setAddressInputValue(isNewTabUrl(nextUrl) ? "" : nextUrl);
-              }}
-              onFocus={() => {
-                setAddressInputFocused(true);
+                setAddressInputValue(activeTab?.currentUrl ?? url);
               }}
               onKeyDown={(event) => {
                 if (event.key !== "Enter") {
@@ -668,32 +1586,73 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="none"
-              placeholder="搜索 Google 或输入网址"
+              placeholder="搜索或输入网址"
               aria-label="网页地址"
             />
           </div>
-          <div className="external-webview-toolbar-right">
-            <button type="button" className="external-webview-toolbar-button" aria-label="扩展程序" title="扩展程序">
-              <ExtensionsIcon />
-            </button>
-            <span className="external-webview-toolbar-divider" aria-hidden="true" />
-            <button type="button" className="external-webview-profile-button" aria-label="个人资料" title="个人资料">
-              n
-            </button>
-            <button type="button" className="external-webview-toolbar-button" aria-label="更多" title="更多">
-              <MoreIcon />
-            </button>
+          <button
+            type="button"
+            className={`external-webview-bookmark-toggle${activeBookmark ? " is-active" : ""}`}
+            onClick={handleToggleBookmark}
+            disabled={!activeBookmarkUrl}
+            aria-label={activeBookmark ? "取消收藏当前页" : "收藏当前页"}
+            title={activeBookmark ? "取消收藏当前页" : "收藏当前页"}
+          >
+            <StarIcon />
+          </button>
+        </div>
+        <div className="external-webview-bookmarks-bar" aria-label="收藏栏">
+          <div
+            className="external-webview-bookmarks-list"
+            ref={bookmarksListRef}
+            onPointerMove={handleBookmarkPointerMove}
+            onPointerUp={finishBookmarkPointerDrag}
+            onPointerCancel={finishBookmarkPointerDrag}
+          >
+              {bookmarks.length === 0 ? (
+                <span className="external-webview-bookmark-empty">收藏会显示在这里</span>
+              ) : (
+                bookmarks.map((bookmark) => (
+                  <button
+                    type="button"
+                    className={`external-webview-bookmark-item${
+                      draggingBookmarkId === bookmark.id ? " is-dragging" : ""
+                    }`}
+                    key={bookmark.id}
+                    data-bookmark-id={bookmark.id}
+                    style={draggingBookmarkId === bookmark.id
+                      ? { transform: `translateX(${bookmarkDragOffsetX}px)` }
+                      : undefined}
+                    onClick={(event) => handleBookmarkClick(event, bookmark)}
+                    onAuxClick={(event) => handleBookmarkAuxClick(event, bookmark)}
+                    onContextMenu={(event) => handleBookmarkContextMenu(event, bookmark)}
+                    onPointerDown={(event) => handleBookmarkPointerDown(event, bookmark.id)}
+                    title={bookmark.url}
+                  >
+                    <SiteIcon
+                      className="external-webview-bookmark-icon"
+                      title={bookmark.title}
+                      url={bookmark.url}
+                      faviconUrl={bookmark.faviconUrl}
+                    />
+                    <span className="external-webview-bookmark-label">{bookmark.title}</span>
+                  </button>
+                ))
+              )}
           </div>
+            {showBookmarkOverflow ? (
+              <button
+                type="button"
+                className="external-webview-bookmark-overflow"
+                onClick={handleOpenOverflowMenu}
+                aria-label="显示更多收藏"
+                title="显示更多收藏"
+              >
+                <BookmarkOverflowIcon />
+              </button>
+            ) : null}
         </div>
-        <div className="external-webview-bookmarks-bar" aria-hidden="true">
-          {BOOKMARK_BAR_ITEMS.map((item) => (
-            <span className="external-webview-bookmark-item" key={item.label}>
-              <span className={`external-webview-bookmark-icon is-${item.tone}`} />
-              <span className="external-webview-bookmark-label">{item.label}</span>
-            </span>
-          ))}
         </div>
-      </div>
       <div className="pan-frame-shell external-webview-frame-shell">
         {browserState.tabs.map((tab) => (
           <ExternalWebviewPane
@@ -712,5 +1671,8 @@ export function ExternalWebviewPage({ title, url, active }: ExternalWebviewPageP
         ))}
       </div>
     </section>
+    {bookmarkMenuNode ? createPortal(bookmarkMenuNode, document.body) : null}
+    {bookmarkEditorNode ? createPortal(bookmarkEditorNode, document.body) : null}
+    </>
   );
 }

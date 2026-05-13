@@ -1,9 +1,51 @@
-import { useDeferredValue, useMemo, useState } from "react";
-import type { ServiceState } from "@shared/contracts";
+import { useEffect, useMemo, useState } from "react";
+import type {
+  DesktopApi,
+  MarketItem,
+  MarketInstallState,
+  MarketListResult,
+  ServiceState
+} from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
 import { getServiceDisplayName } from "../service-display";
 import "./PluginMarketPage.css";
+
+type MarketTab = "plugins" | "skills";
+type SkillScope = "全部" | "云端" | "本地";
+type MarketApi = DesktopApi["market"];
+type PluginApi = DesktopApi["plugins"];
+
+const MARKET_API_UNAVAILABLE_MESSAGE = "市场功能已更新，请刷新窗口或重启 Desktop 后再试。";
+const PLUGIN_API_UNAVAILABLE_MESSAGE = "插件导入功能已更新，请刷新窗口或重启 Desktop 后再试。";
+
+function getMarketApi(): Partial<MarketApi> | null {
+  return ((window.electronAPI as Partial<DesktopApi> | undefined)?.market ?? null) as Partial<MarketApi> | null;
+}
+
+function getPluginApi(): Partial<PluginApi> | null {
+  return ((window.electronAPI as Partial<DesktopApi> | undefined)?.plugins ?? null) as Partial<PluginApi> | null;
+}
+
+function getMarketMethod<K extends keyof MarketApi>(method: K): MarketApi[K] | null {
+  const api = getMarketApi();
+  const command = api?.[method];
+  return typeof command === "function" ? command as MarketApi[K] : null;
+}
+
+function getPluginMethod<K extends keyof PluginApi>(method: K): PluginApi[K] | null {
+  const api = getPluginApi();
+  const command = api?.[method];
+  return typeof command === "function" ? command as PluginApi[K] : null;
+}
+
+function createMissingMarketApiError(method: keyof MarketApi) {
+  return new Error(`${MARKET_API_UNAVAILABLE_MESSAGE}（缺少 market.${method}）`);
+}
+
+function createMissingPluginApiError(method: keyof PluginApi) {
+  return new Error(`${PLUGIN_API_UNAVAILABLE_MESSAGE}（缺少 plugins.${method}）`);
+}
 
 function getPluginStatusClass(status: ServiceState["status"]) {
   switch (status) {
@@ -22,142 +64,455 @@ function getPluginStatusClass(status: ServiceState["status"]) {
   }
 }
 
-function canOpenPlugin(service: ServiceState) {
-  return service.frontendMode !== "none" && service.status === "running";
+function canOpenPlugin(service: ServiceState | null) {
+  return Boolean(service && service.frontendMode !== "none" && service.status === "running");
+}
+
+function marketStateLabel(state: MarketInstallState) {
+  switch (state) {
+    case "installed":
+      return "已安装";
+    case "update-available":
+      return "可更新";
+    case "local-imported":
+      return "本地已导入";
+    case "incompatible":
+      return "不兼容";
+    case "installing":
+      return "安装中";
+    case "failed":
+      return "失败";
+    case "not-installed":
+    default:
+      return "未安装";
+  }
+}
+
+function matchesQuery(item: MarketItem, query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  return `${item.name} ${item.description} ${item.version} ${item.tags.join(" ")} ${marketStateLabel(item.state)}`
+    .toLowerCase()
+    .includes(normalized);
+}
+
+function skillSourceMatches(item: MarketItem, scope: SkillScope) {
+  if (scope === "云端") {
+    return item.source === "cloud";
+  }
+  if (scope === "本地") {
+    return item.source === "local";
+  }
+  return true;
+}
+
+function createEmptyMarketResult(): MarketListResult {
+  return {
+    ok: true,
+    sourceUrl: "",
+    offline: false,
+    message: "",
+    items: []
+  };
 }
 
 export function PluginMarketPage() {
   const navigate = useNavigate();
-  const { services, installPlugin } = useServices();
+  const { services, refresh: refreshServices } = useServices();
+  const [activeTab, setActiveTab] = useState<MarketTab>("plugins");
   const [pluginQuery, setPluginQuery] = useState("");
-  const deferredPluginQuery = useDeferredValue(pluginQuery);
-  const [feedback, setFeedback] = useState("");
-  const [isImporting, setIsImporting] = useState(false);
+  const [skillQuery, setSkillQuery] = useState("");
+  const [skillScope, setSkillScope] = useState<SkillScope>("全部");
+  const [marketResult, setMarketResult] = useState<MarketListResult>(createEmptyMarketResult);
+  const [isLoadingMarket, setIsLoadingMarket] = useState(true);
+  const [busyItemId, setBusyItemId] = useState("");
+  const [isImportingPlugin, setIsImportingPlugin] = useState(false);
+  const [isImportingSkill, setIsImportingSkill] = useState(false);
 
-  const marketServices = useMemo(
-    () => services.filter((service) => service.kind === "plugin"),
-    [services]
-  );
+  const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services]);
 
-  const filteredPlugins = useMemo(() => {
-    const normalized = deferredPluginQuery.trim().toLowerCase();
-    if (!normalized) {
-      return marketServices;
-    }
-
-    return marketServices.filter((service) =>
-      `${getServiceDisplayName(service.id, service.name)} ${service.description} ${service.version} ${service.statusLabel}`
-        .toLowerCase()
-        .includes(normalized)
-    );
-  }, [deferredPluginQuery, marketServices]);
-
-  async function handleImportPlugin() {
-    setIsImporting(true);
+  async function loadMarket(force = false) {
+    setIsLoadingMarket(true);
     try {
-      const result = await installPlugin();
-      setFeedback(result.message);
+      const commandName = force ? "refresh" : "list";
+      const command = getMarketMethod(commandName);
+      if (!command) {
+        throw createMissingMarketApiError(commandName);
+      }
+      const next = await command();
+      setMarketResult(next);
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      console.warn("[market-page] failed to load market data", reason);
     } finally {
-      setIsImporting(false);
+      setIsLoadingMarket(false);
     }
   }
 
-  function handleOpenPlugin(service: ServiceState) {
+  useEffect(() => {
+    void loadMarket(false);
+  }, []);
+
+  const pluginItems = useMemo(
+    () => marketResult.items.filter((item) => item.type === "plugin" && matchesQuery(item, pluginQuery)),
+    [marketResult.items, pluginQuery]
+  );
+
+  const skillItems = useMemo(
+    () => marketResult.items.filter((item) =>
+      item.type === "skill" && matchesQuery(item, skillQuery) && skillSourceMatches(item, skillScope)
+    ),
+    [marketResult.items, skillQuery, skillScope]
+  );
+
+  async function refreshEverything() {
+    await refreshServices();
+    await loadMarket(false);
+  }
+
+  async function handleImportPlugin() {
+    setIsImportingPlugin(true);
+    try {
+      const install = getPluginMethod("install");
+      if (!install) {
+        throw createMissingPluginApiError("install");
+      }
+      await install();
+      await refreshEverything();
+    } catch (reason) {
+      console.warn("[market-page] failed to import plugin", reason);
+    } finally {
+      setIsImportingPlugin(false);
+    }
+  }
+
+  async function handleImportSkill() {
+    setIsImportingSkill(true);
+    try {
+      const importSkill = getMarketMethod("importSkill");
+      if (!importSkill) {
+        throw createMissingMarketApiError("importSkill");
+      }
+      await importSkill();
+      await refreshEverything();
+    } catch (reason) {
+      console.warn("[market-page] failed to import skill", reason);
+    } finally {
+      setIsImportingSkill(false);
+    }
+  }
+
+  async function handleInstallItem(item: MarketItem) {
+    setBusyItemId(item.id);
+    try {
+      const commandName = item.state === "update-available" ? "update" : "install";
+      const action = getMarketMethod(commandName);
+      if (!action) {
+        throw createMissingMarketApiError(commandName);
+      }
+      await action(item.id);
+      await refreshEverything();
+    } catch (reason) {
+      console.warn(`[market-page] failed to ${item.state === "update-available" ? "update" : "install"} ${item.id}`, reason);
+    } finally {
+      setBusyItemId("");
+    }
+  }
+
+  async function handleUninstallItem(item: MarketItem) {
+    setBusyItemId(item.id);
+    try {
+      const uninstall = getMarketMethod("uninstall");
+      if (!uninstall) {
+        throw createMissingMarketApiError("uninstall");
+      }
+      await uninstall(item.id);
+      await refreshEverything();
+    } catch (reason) {
+      console.warn(`[market-page] failed to uninstall ${item.id}`, reason);
+    } finally {
+      setBusyItemId("");
+    }
+  }
+
+  function handleOpenPlugin(item: MarketItem) {
+    const service = serviceById.get(item.id) ?? null;
     if (canOpenPlugin(service)) {
-      navigate(`/plugin/${service.id}`);
+      navigate(`/plugin/${item.id}`);
       return;
     }
-
     navigate("/control-center", {
       state: {
-        selectedServiceId: service.id
+        selectedServiceId: item.id
       }
     });
   }
 
+  function renderPluginAction(item: MarketItem) {
+    const service = serviceById.get(item.id) ?? null;
+    const busy = busyItemId === item.id;
+    if (item.state === "not-installed" || item.state === "update-available") {
+      return (
+        <button
+          type="button"
+          className="market-item-action"
+          disabled={busy || item.state === "incompatible"}
+          onClick={(event) => {
+            event.stopPropagation();
+            void handleInstallItem(item);
+          }}
+        >
+          {busy ? "安装中" : item.state === "update-available" ? "更新" : "安装"}
+        </button>
+      );
+    }
+    return (
+      <button
+        type="button"
+        className="market-item-action"
+        onClick={(event) => {
+          event.stopPropagation();
+          handleOpenPlugin(item);
+        }}
+      >
+        {canOpenPlugin(service) ? "打开" : "管理"}
+      </button>
+    );
+  }
+
+  function renderSkillAction(item: MarketItem) {
+    const busy = busyItemId === item.id;
+    if (item.state === "not-installed" || item.state === "update-available") {
+      return (
+        <button
+          type="button"
+          className="market-skill-action"
+          disabled={busy || item.state === "incompatible"}
+          onClick={() => void handleInstallItem(item)}
+          aria-label={`${item.state === "update-available" ? "更新" : "安装"} ${item.name}`}
+        >
+          {busy ? "..." : item.state === "update-available" ? "更新" : "+"}
+        </button>
+      );
+    }
+    return (
+      <button
+        type="button"
+        className="market-skill-action"
+        disabled={busy}
+        onClick={() => void handleUninstallItem(item)}
+        aria-label={`卸载 ${item.name}`}
+      >
+        {busy ? "..." : "✓"}
+      </button>
+    );
+  }
+
+  const currentTitle = activeTab === "plugins" ? "功能市场" : "技能市场";
+  const currentSubtitle = activeTab === "plugins"
+    ? "从云端安装插件，或继续导入本地插件包。"
+    : "支持本地导入或从云端下载技能包。";
+
   return (
     <section className="market-page">
       <div className="market-shell">
-        <header className="market-header">
-          <div className="market-header-copy">
-            <h1>插件市场</h1>
-            <p>{marketServices.length} 个插件</p>
-          </div>
-
-          <div className="market-header-actions">
-            <button type="button" className="market-action" onClick={() => navigate("/control-center")}>
-              管理插件
+        <div className="market-topbar">
+          <div className="market-tabs" role="tablist" aria-label="市场页签">
+            <button
+              type="button"
+              className={activeTab === "plugins" ? "market-tab is-active" : "market-tab"}
+              onClick={() => {
+                setActiveTab("plugins");
+              }}
+            >
+              插件
             </button>
             <button
               type="button"
-              className="market-action market-action-primary"
-              onClick={() => void handleImportPlugin()}
-              disabled={isImporting}
+              className={activeTab === "skills" ? "market-tab is-active" : "market-tab"}
+              onClick={() => {
+                setActiveTab("skills");
+              }}
             >
-              {isImporting ? "导入中..." : "导入插件"}
+              技能
             </button>
           </div>
-        </header>
 
-        {feedback ? <div className="market-feedback">{feedback}</div> : null}
-
-        <div className="market-search-row">
-          <label className="market-search">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="11" cy="11" r="6.5" />
-              <path d="M16 16l4 4" />
-            </svg>
-            <input
-              value={pluginQuery}
-              onChange={(event) => setPluginQuery(event.target.value)}
-              placeholder="搜索插件"
-            />
-          </label>
+          <div className="market-toolbar">
+            <button type="button" className="market-toolbar-btn" onClick={() => void loadMarket(true)}>
+              {isLoadingMarket ? "刷新中" : "刷新市场"}
+            </button>
+            {activeTab === "plugins" ? (
+              <button
+                type="button"
+                className="market-toolbar-btn market-toolbar-btn-primary"
+                onClick={() => void handleImportPlugin()}
+                disabled={isImportingPlugin}
+              >
+                {isImportingPlugin ? "导入中" : "导入插件"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="market-toolbar-btn market-toolbar-btn-primary"
+                onClick={() => void handleImportSkill()}
+                disabled={isImportingSkill}
+              >
+                {isImportingSkill ? "导入中" : "本地导入"}
+              </button>
+            )}
+          </div>
         </div>
 
-        {filteredPlugins.length > 0 ? (
-          <div className="market-plugin-grid">
-            {filteredPlugins.map((plugin) => (
-              <button
-                key={plugin.id}
-                type="button"
-                className="market-plugin-card"
-                onClick={() => handleOpenPlugin(plugin)}
-              >
-                <div className="market-plugin-card-head">
-                  <h2>{getServiceDisplayName(plugin.id, plugin.name)}</h2>
-                  <span className="market-plugin-version">
-                    <span>{plugin.version}</span>
-                    <span
-                      className={`market-plugin-status-dot ${getPluginStatusClass(plugin.status)}`}
-                      aria-hidden="true"
-                    />
-                  </span>
+        <div className="market-body">
+          <header className="market-hero">
+            <h1>{currentTitle}</h1>
+            <p>{currentSubtitle}</p>
+          </header>
+
+          {activeTab === "plugins" ? (
+            <div className="market-content">
+              <div className="market-filter-bar market-filter-bar-single">
+                <label className="market-search">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="11" cy="11" r="6.5" />
+                    <path d="M16 16l4 4" />
+                  </svg>
+                  <input
+                    value={pluginQuery}
+                    onChange={(event) => setPluginQuery(event.target.value)}
+                    placeholder="搜索插件"
+                  />
+                </label>
+              </div>
+
+              {pluginItems.length > 0 ? (
+                <div className="market-plugin-panel">
+                  {pluginItems.map((plugin) => {
+                    const service = serviceById.get(plugin.id) ?? null;
+                    return (
+                      <article
+                        key={`${plugin.type}:${plugin.id}`}
+                        className="market-plugin-feature"
+                        onClick={() => handleOpenPlugin(plugin)}
+                      >
+                        <div className="market-plugin-feature-head">
+                          <h2>{getServiceDisplayName(plugin.id, plugin.name)}</h2>
+                          <span className="market-plugin-version">
+                            {plugin.installedVersion ?? plugin.version}
+                            <span
+                              className={`market-plugin-status-dot ${service ? getPluginStatusClass(service.status) : "is-idle"}`}
+                              aria-hidden="true"
+                            />
+                          </span>
+                        </div>
+                        <p>{plugin.description}</p>
+                        <div className="market-plugin-meta">
+                          <span>{marketStateLabel(plugin.state)}</span>
+                          {renderPluginAction(plugin)}
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
-                <p className="market-plugin-description">{plugin.description}</p>
-                <div className="market-plugin-meta">
-                  <span>{plugin.statusLabel}</span>
-                  <span>{canOpenPlugin(plugin) ? "点击打开" : "点击查看详情"}</span>
+              ) : (
+                <section className="market-empty-state">
+                  <h2>{isLoadingMarket ? "正在加载市场" : "暂无插件"}</h2>
+                  <p>可以刷新云端市场，或从本地导入插件包。</p>
+                </section>
+              )}
+            </div>
+          ) : (
+            <div className="market-content">
+              <div className="market-filter-bar">
+                <label className="market-search">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="11" cy="11" r="6.5" />
+                    <path d="M16 16l4 4" />
+                  </svg>
+                  <input
+                    value={skillQuery}
+                    onChange={(event) => setSkillQuery(event.target.value)}
+                    placeholder="搜索技能"
+                  />
+                </label>
+
+                <label className="market-select">
+                  <select value={skillScope} onChange={(event) => setSkillScope(event.target.value as SkillScope)}>
+                    <option value="全部">全部</option>
+                    <option value="云端">云端</option>
+                    <option value="本地">本地</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="market-skill-actions">
+                <section className="market-skill-action-card">
+                  <div>
+                    <p className="eyebrow">本地上传</p>
+                    <h2>从本地导入技能</h2>
+                    <p>支持 `.zip`、`.tar.gz`、`.skill` 和 `SKILL.md` 文件。</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="market-toolbar-btn market-toolbar-btn-primary"
+                    onClick={() => void handleImportSkill()}
+                    disabled={isImportingSkill}
+                  >
+                    {isImportingSkill ? "导入中" : "选择文件"}
+                  </button>
+                </section>
+
+                <section className="market-skill-action-card">
+                  <div>
+                    <p className="eyebrow">云端下载</p>
+                    <h2>从云端技能库下载</h2>
+                    <p>{marketResult.sourceUrl || "http://47.100.131.144:9001/marketplace/index.json"}</p>
+                  </div>
+                  <button type="button" className="market-toolbar-btn" onClick={() => setSkillScope("云端")}>
+                    浏览云端
+                  </button>
+                </section>
+              </div>
+
+              {skillItems.length > 0 ? (
+                <div className="market-skill-groups">
+                  <section className="market-group">
+                    <div className="market-group-head">
+                      <h2>{skillScope === "全部" ? "技能" : `${skillScope}技能`}</h2>
+                    </div>
+
+                    <div className="market-skill-grid">
+                      {skillItems.map((skill) => (
+                        <article key={`${skill.type}:${skill.id}`} className="market-skill-card">
+                          <div className="market-skill-icon" aria-hidden="true">
+                            {skill.name.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="market-skill-copy">
+                            <div className="market-skill-title-row">
+                              <h3>{skill.name}</h3>
+                              <span className={skill.source === "local" ? "market-badge market-badge-local" : "market-badge"}>
+                                {marketStateLabel(skill.state)}
+                              </span>
+                            </div>
+                            <p>{skill.description || skill.tags.join(" / ") || skill.version}</p>
+                          </div>
+                          {renderSkillAction(skill)}
+                        </article>
+                      ))}
+                    </div>
+                  </section>
                 </div>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <section className="market-empty-state">
-            <h2>暂无插件</h2>
-            <p>当前还没有已导入插件，可以先从本地导入插件包。</p>
-            <button
-              type="button"
-              className="market-action market-action-primary"
-              onClick={() => void handleImportPlugin()}
-              disabled={isImporting}
-            >
-              {isImporting ? "导入中..." : "导入插件"}
-            </button>
-          </section>
-        )}
+              ) : (
+                <section className="market-empty-state">
+                  <h2>{isLoadingMarket ? "正在加载技能" : "暂无技能"}</h2>
+                  <p>可以刷新云端市场，或从本地导入 Skill 包。</p>
+                </section>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );

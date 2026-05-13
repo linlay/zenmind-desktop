@@ -35,3 +35,21 @@ test("issueAgentAccessToken signs a desktop-app jwt using the shared rsa key", a
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
+
+test("issueAgentAccessToken produces a fresh token for repeated refreshes", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-auth-"));
+  const app = createAppStub(tempRoot);
+
+  try {
+    const first = await issueAgentAccessToken(app, "unauthorized");
+    const second = await issueAgentAccessToken(app, "unauthorized");
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    assert.notEqual(second.token, first.token);
+    const [, firstPayloadPart] = first.token.split(".");
+    const [, secondPayloadPart] = second.token.split(".");
+    assert.notEqual(decodeJson(secondPayloadPart).jti, decodeJson(firstPayloadPart).jti);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});

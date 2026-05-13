@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   builtinServices,
   discoverBuiltinServices,
@@ -15,6 +16,7 @@ import {
 } from "../scripts/lib/builtin-assets.mjs";
 
 const BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
+const desktopProjectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let hasSyncedActualAssets = false;
 
 function createTarBundle(service, files) {
@@ -130,7 +132,12 @@ function ensureSyncedAssets() {
     return;
   }
 
-  const manifest = withEnv(BUILTIN_ASSETS_SOURCE_ENV, null, () => syncBuiltinAssets(process.cwd()));
+  const manifest = withEnv(BUILTIN_ASSETS_SOURCE_ENV, null, () =>
+    syncBuiltinAssets(process.cwd(), {
+      os: currentManifestOs(),
+      arch: currentManifestArch()
+    })
+  );
   assert.ok(manifest.length > 0, "expected at least one builtin asset to sync for tests");
   hasSyncedActualAssets = true;
 }
@@ -180,6 +187,17 @@ function currentManifestOs() {
   }
 }
 
+function currentManifestArch() {
+  switch (process.arch) {
+    case "x64":
+      return "amd64";
+    case "arm64":
+      return "arm64";
+    default:
+      return process.arch;
+  }
+}
+
 test("agent-webclient release asset remains available for manual install", () => {
   const { service, assetPath } = getWorkspaceAsset("agent-webclient", currentManifestOs());
   validateBundleArchive(service, assetPath);
@@ -194,9 +212,26 @@ test("agent-webclient release asset remains available for manual install", () =>
     assert.ok(entries.has("agent-webclient/stop.sh"));
     assert.ok(entries.has("agent-webclient/deploy.sh"));
   }
-  assert.ok(entries.has("agent-webclient/backend/server.js"));
+  assert.ok(entries.has("agent-webclient/backend/server.cjs"));
   assert.ok(entries.has("agent-webclient/manifest.json"));
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
+  const programCommonName = assetPath.endsWith(".zip") ? "program-common.ps1" : "program-common.sh";
+  const programCommon = readArchiveEntryText(assetPath, `agent-webclient/scripts/${programCommonName}`);
+  assert.ok(programCommon, `expected agent-webclient ${programCommonName} to be readable`);
+  assert.doesNotMatch(programCommon, /BACKEND_PACKAGE_FILE|BACKEND_NODE_MODULES_DIR|BackendPackageFile|BackendModulesDir/);
+  assert.doesNotMatch(programCommon, /backend[\\/]package\.json|backend[\\/]node_modules/);
+  if (assetPath.endsWith(".zip")) {
+    assert.match(programCommon, /\$Script:BackendEntry\s*=\s*Join-Path\s+\(Join-Path\s+\$Script:BundleRoot\s+['"]backend['"]\)\s+['"]server\.cjs['"]/);
+  } else {
+    assert.match(programCommon, /BACKEND_ENTRY=["']\$\{?BUNDLE_ROOT\}?\/backend\/server\.cjs["']/);
+  }
+  assert.equal(entries.has("agent-webclient/README.txt"), false);
+  assert.equal(entries.has("agent-webclient/backend/package.json"), false);
+  assert.equal(entries.has("agent-webclient/backend/package-lock.json"), false);
+  assert.equal(
+    [...entries].some((entry) => entry.startsWith("agent-webclient/backend/node_modules/")),
+    false
+  );
 });
 
 test("synced builtin assets include agent-webclient so assistant entry is available in desktop", () => {
@@ -208,8 +243,155 @@ test("synced builtin assets include agent-webclient so assistant entry is availa
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
 
   const manifest = readManifestFromArchive(assetPath);
+  assert.equal(manifest?.backend?.entry, "backend/server.cjs");
   assert.equal(manifest?.frontend?.embedPath, "/appagent");
   assert.equal(manifest?.frontend?.embedParams?.desktopApp, "1");
+  const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
+    ? manifest.desktop.envBindings.map((binding) => binding?.key)
+    : [];
+  assert.ok(envBindingKeys.includes("BASE_URL"));
+  assert.ok(envBindingKeys.includes("WS_BASE_URL"));
+});
+
+test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with stale launcher checks", () => {
+  const discoveredService = builtinServices.find((item) => item.id === "agent-webclient");
+  assert.ok(discoveredService);
+  const requiredBundleEntries = [
+    "backend/server.cjs",
+    "start.sh",
+    "stop.sh",
+    "deploy.sh",
+    "scripts/program-common.sh",
+    ".env.example",
+    "manifest.json",
+    "frontend/dist/index.html"
+  ];
+  const service = {
+    ...discoveredService,
+    requiredBundleEntries
+  };
+
+  const fixture = createTarBundle(service, {
+    "backend/server.cjs": [
+      "const http = require('http');",
+      "const server = http.createServer();",
+      "function createWebSocketProxy() {",
+      "  return { upgrade(req, socket, head) { proxy.upgrade(req, socket, head); } };",
+      "}",
+      "const proxy = createWebSocketProxy();",
+      "server.on('upgrade', (req, socket, head) => proxy.upgrade(req, socket, head));"
+    ].join("\n") + "\n",
+    "frontend/dist/index.html": "<!doctype html><html></html>\n",
+    "start.sh": "#!/usr/bin/env bash\nexit 0\n",
+    "stop.sh": "#!/usr/bin/env bash\nexit 0\n",
+    "deploy.sh": "#!/usr/bin/env bash\nexit 0\n",
+    "scripts/program-common.sh": [
+      "#!/usr/bin/env bash",
+      "BACKEND_ENTRY=\"$BUNDLE_ROOT/backend/server.cjs\"",
+      "BACKEND_PACKAGE_FILE=\"$BUNDLE_ROOT/backend/package.json\"",
+      "BACKEND_NODE_MODULES_DIR=\"$BUNDLE_ROOT/backend/node_modules\""
+    ].join("\n") + "\n",
+    ".env.example": "PORT=11948\n",
+    "manifest.json": JSON.stringify({
+      id: "agent-webclient",
+      kind: "builtin",
+      version: "v0.1.0",
+      backend: {
+        entry: "backend/server.cjs"
+      },
+      runtime: {
+        requiredPaths: requiredBundleEntries
+      },
+      desktop: {
+        bundleTopLevelDir: service.bundleTopLevelDir,
+        envBindings: [
+          {
+            key: "BASE_URL",
+            value: "http://127.0.0.1:11949"
+          },
+          {
+            key: "WS_BASE_URL",
+            value: "http://127.0.0.1:11949"
+          }
+        ]
+      }
+    })
+  });
+
+  assert.throws(
+    () => validateBundleArchive(service, fixture.tarPath),
+    /stale launcher runtime check/
+  );
+
+  fs.rmSync(fixture.root, { recursive: true, force: true });
+});
+
+test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with absolute backend entry", () => {
+  const discoveredService = builtinServices.find((item) => item.id === "agent-webclient");
+  assert.ok(discoveredService);
+  const requiredBundleEntries = [
+    "backend/server.cjs",
+    "start.sh",
+    "stop.sh",
+    "deploy.sh",
+    "scripts/program-common.sh",
+    ".env.example",
+    "manifest.json",
+    "frontend/dist/index.html"
+  ];
+  const service = {
+    ...discoveredService,
+    requiredBundleEntries
+  };
+
+  const fixture = createTarBundle(service, {
+    "backend/server.cjs": [
+      "const http = require('http');",
+      "const server = http.createServer();",
+      "function createWebSocketProxy() {",
+      "  return { upgrade(req, socket, head) { proxy.upgrade(req, socket, head); } };",
+      "}",
+      "const proxy = createWebSocketProxy();",
+      "server.on('upgrade', (req, socket, head) => proxy.upgrade(req, socket, head));"
+    ].join("\n") + "\n",
+    "frontend/dist/index.html": "<!doctype html><html></html>\n",
+    "start.sh": "#!/usr/bin/env bash\nexit 0\n",
+    "stop.sh": "#!/usr/bin/env bash\nexit 0\n",
+    "deploy.sh": "#!/usr/bin/env bash\nexit 0\n",
+    "scripts/program-common.sh": "#!/usr/bin/env bash\nBACKEND_ENTRY=\"/backend/server.cjs\"\n",
+    ".env.example": "PORT=11948\n",
+    "manifest.json": JSON.stringify({
+      id: "agent-webclient",
+      kind: "builtin",
+      version: "v0.1.0",
+      backend: {
+        entry: "backend/server.cjs"
+      },
+      runtime: {
+        requiredPaths: requiredBundleEntries
+      },
+      desktop: {
+        bundleTopLevelDir: service.bundleTopLevelDir,
+        envBindings: [
+          {
+            key: "BASE_URL",
+            value: "http://127.0.0.1:11949"
+          },
+          {
+            key: "WS_BASE_URL",
+            value: "http://127.0.0.1:11949"
+          }
+        ]
+      }
+    })
+  });
+
+  assert.throws(
+    () => validateBundleArchive(service, fixture.tarPath),
+    /Expected agent-webclient\/scripts\/program-common\.sh to launch \$BUNDLE_ROOT\/backend\/server\.cjs/
+  );
+
+  fs.rmSync(fixture.root, { recursive: true, force: true });
 });
 
 test("actual synced agent-platform asset includes required entries", () => {
@@ -228,16 +410,18 @@ test("actual synced agent-platform asset includes required entries", () => {
   }
 });
 
-test("actual synced agent-platform asset keeps relay disabled by default for fresh Desktop installs", () => {
+test("actual synced agent-platform asset no longer bundles the local relay", () => {
   const { assetPath } = getSyncedAsset("agent-platform");
   const manifest = readManifestFromArchive(assetPath);
   const programCommon = readArchiveEntryText(assetPath, "agent-platform/scripts/program-common.sh");
+  const envExample = readArchiveEntryText(assetPath, "agent-platform/.env.example");
+  const entries = listArchiveEntries(assetPath);
 
   assert.ok(programCommon, "expected bundled agent-platform program-common.sh to be readable");
-  assert.match(
-    programCommon,
-    /LOCAL_CLI_ACP_RELAY_ENABLED="\$\{LOCAL_CLI_ACP_RELAY_ENABLED:-false\}"/
-  );
+  assert.ok(envExample, "expected bundled agent-platform .env.example to be readable");
+  assert.equal([...entries].some((entry) => entry.includes("local-cli-acp-relay")), false);
+  assert.doesNotMatch(programCommon, /LOCAL_CLI_ACP_RELAY_/);
+  assert.doesNotMatch(envExample, /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_/);
   assert.ok(
     Array.isArray(manifest?.desktop?.envBindings),
     "expected bundled agent-platform manifest to declare desktop env bindings"
@@ -272,7 +456,7 @@ test("validateBundleArchive fails when required entries are missing", () => {
   fs.rmSync(fixture.root, { recursive: true, force: true });
 });
 
-test("validateBundleArchive rejects legacy agent-platform bundles that enable relay by default", () => {
+test("validateBundleArchive rejects legacy agent-platform bundles that still embed relay assets", () => {
   const service = builtinServices.find((item) => item.id === "agent-platform");
   assert.ok(service);
 
@@ -282,7 +466,7 @@ test("validateBundleArchive rejects legacy agent-platform bundles that enable re
     "start.sh": "#!/usr/bin/env bash\nexit 0\n",
     "stop.sh": "#!/usr/bin/env bash\nexit 0\n",
     "deploy.sh": "#!/usr/bin/env bash\nexit 0\n",
-    "scripts/program-common.sh": 'LOCAL_CLI_ACP_RELAY_ENABLED="${LOCAL_CLI_ACP_RELAY_ENABLED:-true}"\n',
+    "scripts/program-common.sh": 'echo legacy relay bundle\n',
     ".env.example": "# LOCAL_CLI_ACP_RELAY_ENABLED=true\n",
     "configs/container-hub.example.yml": "containerHub: {}\n",
     "runtime/registries/providers/.keep": "\n",
@@ -307,7 +491,7 @@ test("validateBundleArchive rejects legacy agent-platform bundles that enable re
 
   assert.throws(
     () => validateBundleArchive(service, fixture.tarPath),
-    /legacy agent-platform relay default|legacy desktop env binding/
+    /legacy desktop env binding|legacy relay residue/
   );
 
   fs.rmSync(fixture.root, { recursive: true, force: true });
@@ -359,7 +543,7 @@ test("validateBundleArchive accepts zip bundles", () => {
 });
 
 test("ZENMIND_BUILTIN_ASSETS_SOURCE overrides workspace fallback and syncs builtin assets", () => {
-  const workspaceRoot = path.resolve(process.cwd(), "..");
+  const workspaceRoot = path.resolve(desktopProjectRoot, "..");
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-source-"));
   const serviceId = `builtin-env-priority-${Date.now()}`;
   const version = "v9.9.9";

@@ -43,7 +43,9 @@ test("createDesktopAccessToken produces RS256 jwt for desktop-app subject", () =
 
   assert.equal(decodeJson(headerPart).alg, "RS256");
   assert.equal(decodeJson(payloadPart).sub, "desktop-app");
-  assert.equal(decodeJson(payloadPart).exp, 1_700_000_000 + 300);
+  assert.equal(decodeJson(payloadPart).iat, 1_700_000_000);
+  assert.equal(decodeJson(payloadPart).exp, 1_700_000_000 + 86_400);
+  assert.match(decodeJson(payloadPart).jti, /^[0-9a-f-]{36}$/);
 
   const verifier = createVerify("RSA-SHA256");
   verifier.update(`${headerPart}.${payloadPart}`);

@@ -1,0 +1,389 @@
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { pathToFileURL } from "node:url";
+
+const projectRoot = process.cwd();
+const isWindows = process.platform === "win32";
+const npmCmd = isWindows ? "npm.cmd" : "npm";
+const bundleRoot = path.join(projectRoot, "build", "bundle", "dist-electron");
+const rendererRoot = path.join(projectRoot, "dist-renderer");
+const stageRoot = path.join(projectRoot, "build", "app");
+
+function parseArgs(argv) {
+  const target = {
+    os: process.platform,
+    arch: process.arch
+  };
+  const args = argv.slice(2);
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    const [key, inlineValue] = arg.split("=");
+    const nextValue = inlineValue ?? args[index + 1];
+    if (key === "--os") {
+      target.os = normalizeTargetOs(nextValue);
+      if (inlineValue === undefined) {
+        index += 1;
+      }
+      continue;
+    }
+    if (key === "--arch") {
+      target.arch = normalizeTargetArch(nextValue);
+      if (inlineValue === undefined) {
+        index += 1;
+      }
+    }
+  }
+
+  return target;
+}
+
+function normalizeTargetOs(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    throw new Error("missing target os");
+  }
+  switch (normalized) {
+    case "darwin":
+    case "linux":
+    case "win32":
+      return normalized;
+    case "windows":
+      return "win32";
+    default:
+      throw new Error(`unsupported target os: ${value}`);
+  }
+}
+
+function normalizeTargetArch(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    throw new Error("missing target arch");
+  }
+  switch (normalized) {
+    case "x64":
+    case "arm64":
+      return normalized;
+    case "amd64":
+      return "x64";
+    default:
+      throw new Error(`unsupported target arch: ${value}`);
+  }
+}
+
+function currentTarget() {
+  return {
+    os: normalizeTargetOs(process.platform),
+    arch: normalizeTargetArch(process.arch)
+  };
+}
+
+function ensureBuildArtifact(dirPath, label) {
+  if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) {
+    throw new Error(`missing ${label}: ${dirPath}`);
+  }
+}
+
+function copyDir(sourceDir, targetDir) {
+  fs.cpSync(sourceDir, targetDir, {
+    recursive: true,
+    force: true
+  });
+}
+
+function readDesktopPackageJson(rootDir = projectRoot) {
+  return JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf8"));
+}
+
+function writeStagePackageJson(rootDir, target) {
+  const desktopPackage = readDesktopPackageJson(rootDir);
+  const stagePackage = {
+    name: desktopPackage.name,
+    version: desktopPackage.version,
+    description: desktopPackage.description,
+    main: "dist-electron/main/index.js",
+    productName: desktopPackage.build?.productName,
+    author: desktopPackage.author,
+    dependencies: {
+      "@ffmpeg-installer/ffmpeg": desktopPackage.dependencies?.["@ffmpeg-installer/ffmpeg"],
+      "@napi-rs/canvas": desktopPackage.dependencies?.["@napi-rs/canvas"]
+    },
+    zenmindBuildTarget: {
+      os: target.os,
+      arch: target.arch
+    }
+  };
+
+  fs.writeFileSync(
+    path.join(stageRoot, "package.json"),
+    `${JSON.stringify(stagePackage, null, 2)}\n`,
+    "utf8"
+  );
+}
+
+function run(cmd, args, options = {}) {
+  return spawn(cmd, args, {
+    cwd: stageRoot,
+    stdio: "inherit",
+    env: process.env,
+    shell: isWindows,
+    ...options
+  });
+}
+
+function runAndWait(cmd, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = run(cmd, args, options);
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) {
+        resolve(undefined);
+        return;
+      }
+      reject(new Error(`${cmd} ${args.join(" ")} exited with code ${code ?? -1}`));
+    });
+  });
+}
+
+function expectedCanvasRuntimePackage(target) {
+  const key = `${target.os}/${target.arch}`;
+  switch (key) {
+    case "darwin/arm64":
+      return "@napi-rs/canvas-darwin-arm64";
+    case "darwin/x64":
+      return "@napi-rs/canvas-darwin-x64";
+    case "linux/arm64":
+      return "@napi-rs/canvas-linux-arm64-gnu";
+    case "linux/x64":
+      return "@napi-rs/canvas-linux-x64-gnu";
+    case "win32/arm64":
+      return "@napi-rs/canvas-win32-arm64-msvc";
+    case "win32/x64":
+      return "@napi-rs/canvas-win32-x64-msvc";
+    default:
+      return "";
+  }
+}
+
+function expectedFfmpegRuntimePackage(target) {
+  const key = `${target.os}/${target.arch}`;
+  switch (key) {
+    case "darwin/arm64":
+      return "@ffmpeg-installer/darwin-arm64";
+    case "darwin/x64":
+      return "@ffmpeg-installer/darwin-x64";
+    case "linux/arm64":
+      return "@ffmpeg-installer/linux-arm64";
+    case "linux/x64":
+      return "@ffmpeg-installer/linux-x64";
+    case "win32/x64":
+      return "@ffmpeg-installer/win32-x64";
+    default:
+      return "";
+  }
+}
+
+function expectedFfmpegBinaryName(target) {
+  if (target.os === "win32") {
+    return "ffmpeg.exe";
+  }
+  return "ffmpeg";
+}
+
+function directPackageDir(rootDir, packageName) {
+  const segments = packageName.split("/");
+  for (const nodeModulesRoot of nodeModulesRoots(rootDir)) {
+    const directPath = path.join(nodeModulesRoot, ...segments);
+    if (fs.existsSync(directPath)) {
+      return fs.realpathSync(directPath);
+    }
+  }
+  return "";
+}
+
+function pnpmPackageDir(rootDir, packageName) {
+  const encodedPackageName = packageName.replace(/\//g, "+");
+  const segments = packageName.split("/");
+
+  for (const nodeModulesRoot of nodeModulesRoots(rootDir)) {
+    const pnpmRoot = path.join(nodeModulesRoot, ".pnpm");
+    if (!fs.existsSync(pnpmRoot) || !fs.statSync(pnpmRoot).isDirectory()) {
+      continue;
+    }
+
+    const match = fs
+      .readdirSync(pnpmRoot)
+      .find((entry) => entry.startsWith(`${encodedPackageName}@`));
+    if (!match) {
+      continue;
+    }
+
+    const packageDir = path.join(pnpmRoot, match, "node_modules", ...segments);
+    if (fs.existsSync(packageDir)) {
+      return fs.realpathSync(packageDir);
+    }
+  }
+  return "";
+}
+
+function findInstalledPackageDir(rootDir, packageName) {
+  return directPackageDir(rootDir, packageName) || pnpmPackageDir(rootDir, packageName);
+}
+
+function nodeModulesRoots(rootDir) {
+  const roots = [];
+  let currentDir = path.resolve(rootDir);
+
+  while (true) {
+    const nodeModulesRoot = path.join(currentDir, "node_modules");
+    if (fs.existsSync(nodeModulesRoot) && fs.statSync(nodeModulesRoot).isDirectory()) {
+      roots.push(nodeModulesRoot);
+    }
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      break;
+    }
+    currentDir = parentDir;
+  }
+
+  return roots;
+}
+
+function copyRuntimePackage(packageName) {
+  const packageDir = findInstalledPackageDir(projectRoot, packageName);
+  if (!packageDir) {
+    throw new Error(`missing installed runtime dependency ${packageName}`);
+  }
+
+  const segments = packageName.split("/");
+  const targetDir = path.join(stageRoot, "node_modules", ...segments);
+  fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+  copyDir(packageDir, targetDir);
+}
+
+function copyRuntimeDependencies(target) {
+  copyRuntimePackage("@napi-rs/canvas");
+  const expectedPackage = expectedCanvasRuntimePackage(target);
+  if (expectedPackage) {
+    copyRuntimePackage(expectedPackage);
+  }
+  copyRuntimePackage("@ffmpeg-installer/ffmpeg");
+  const expectedFfmpegPackage = expectedFfmpegRuntimePackage(target);
+  if (expectedFfmpegPackage) {
+    copyRuntimePackage(expectedFfmpegPackage);
+  }
+  verifyCanvasRuntime(target);
+  verifyFfmpegRuntime(target);
+}
+
+function verifyCanvasRuntime(target) {
+  const napiRoot = path.join(stageRoot, "node_modules", "@napi-rs");
+  const expectedPackage = expectedCanvasRuntimePackage(target);
+  const installed = fs.existsSync(napiRoot)
+    ? fs.readdirSync(napiRoot).filter((entry) => entry.startsWith("canvas-"))
+    : [];
+
+  if (expectedPackage) {
+    const expectedDir = expectedPackage.replace("@napi-rs/", "");
+    if (!installed.includes(expectedDir)) {
+      throw new Error(`missing staged runtime dependency ${expectedPackage}`);
+    }
+  }
+
+  if (target.os === "win32") {
+    const disallowed = installed.filter((entry) => entry.startsWith("canvas-linux-"));
+    if (disallowed.length > 0) {
+      throw new Error(
+        `unexpected linux canvas runtime packages in win32 stage: ${disallowed.join(", ")}`
+      );
+    }
+  }
+}
+
+function verifyFfmpegRuntime(target) {
+  const expectedPackage = expectedFfmpegRuntimePackage(target);
+  if (!expectedPackage) {
+    return;
+  }
+
+  const packageDir = path.join(stageRoot, "node_modules", ...expectedPackage.split("/"));
+  const binaryPath = path.join(packageDir, expectedFfmpegBinaryName(target));
+  if (!fs.existsSync(binaryPath) || !fs.statSync(binaryPath).isFile()) {
+    throw new Error(`missing staged ffmpeg runtime binary ${binaryPath}`);
+  }
+
+  if (target.os === "win32") {
+    const installerRoot = path.join(stageRoot, "node_modules", "@ffmpeg-installer");
+    const installed = fs.existsSync(installerRoot)
+      ? fs.readdirSync(installerRoot).filter((entry) => entry !== "ffmpeg")
+      : [];
+    const disallowed = installed.filter((entry) => entry.startsWith("linux-") || entry.startsWith("darwin-"));
+    if (disallowed.length > 0) {
+      throw new Error(
+        `unexpected non-windows ffmpeg runtime packages in win32 stage: ${disallowed.join(", ")}`
+      );
+    }
+  }
+}
+
+function hasInstalledRuntimeDependencies(target) {
+  const requiredPackages = ["@napi-rs/canvas", "@ffmpeg-installer/ffmpeg"];
+  const expectedPackage = expectedCanvasRuntimePackage(target);
+  if (expectedPackage) {
+    requiredPackages.push(expectedPackage);
+  }
+  const expectedFfmpegPackage = expectedFfmpegRuntimePackage(target);
+  if (expectedFfmpegPackage) {
+    requiredPackages.push(expectedFfmpegPackage);
+  }
+  return requiredPackages.every((packageName) => Boolean(findInstalledPackageDir(projectRoot, packageName)));
+}
+
+async function installRuntimeDependencies(target) {
+  if (hasInstalledRuntimeDependencies(target)) {
+    copyRuntimeDependencies(target);
+    return;
+  }
+
+  await runAndWait(npmCmd, [
+    "install",
+    "--omit=dev",
+    "--include=optional",
+    "--ignore-scripts",
+    "--no-package-lock",
+    "--no-fund",
+    "--no-audit",
+    `--os=${target.os}`,
+    `--cpu=${target.arch}`
+  ]);
+  verifyCanvasRuntime(target);
+  verifyFfmpegRuntime(target);
+}
+
+export async function stageApp(rootDir = projectRoot, target = parseArgs(process.argv)) {
+  ensureBuildArtifact(bundleRoot, "bundled dist-electron output");
+  ensureBuildArtifact(rendererRoot, "dist-renderer output");
+
+  fs.rmSync(stageRoot, { recursive: true, force: true });
+  fs.mkdirSync(stageRoot, { recursive: true });
+
+  copyDir(rendererRoot, path.join(stageRoot, "dist-renderer"));
+  copyDir(bundleRoot, path.join(stageRoot, "dist-electron"));
+  writeStagePackageJson(rootDir, target);
+  await installRuntimeDependencies(target);
+
+  return stageRoot;
+}
+
+async function main() {
+  const target = parseArgs(process.argv);
+  const outputDir = await stageApp(projectRoot, target);
+  console.log(`staged app into ${path.relative(projectRoot, outputDir)} for ${target.os}/${target.arch}`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}

@@ -21,7 +21,7 @@ export const CUSTOM_SIDEBAR_ICONS = [
   },
   {
     id: "desktop-05",
-    label: "插件市场",
+    label: "功能市场",
     svg: "<svg viewBox=\"0 0 256 256\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 120 128 h 40\" stroke=\"#CBD5E1\" stroke-width=\"8\" stroke-linecap=\"round\" stroke-dasharray=\"8 8\"></path><rect x=\"48\" y=\"80\" width=\"96\" height=\"96\" rx=\"24\" fill=\"#8B5CF6\"></rect><path d=\"M 80 128 h 32 m -16 -16 v 32\" stroke=\"#FFFFFF\" stroke-width=\"8\" stroke-linecap=\"round\"></path><rect x=\"160\" y=\"80\" width=\"48\" height=\"48\" rx=\"16\" fill=\"#F472B6\"></rect><circle cx=\"184\" cy=\"104\" r=\"8\" fill=\"#FFFFFF\"></circle><rect x=\"160\" y=\"144\" width=\"48\" height=\"48\" rx=\"16\" fill=\"#FBBF24\"></rect><rect x=\"172\" y=\"164\" width=\"24\" height=\"8\" rx=\"4\" fill=\"#FFFFFF\"></rect></svg>"
   },
   {

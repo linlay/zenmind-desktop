@@ -13,7 +13,14 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    strictPort: true
+    strictPort: true,
+    watch: {
+      ignored: [
+        "**/dist/**",
+        "**/dist-electron/**",
+        "**/dist-renderer/**"
+      ]
+    }
   },
   build: {
     outDir: "dist-renderer",

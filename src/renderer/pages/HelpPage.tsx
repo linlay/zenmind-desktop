@@ -469,7 +469,7 @@ function getHelpCategories(isWindows: boolean): HelpCategory[] {
               </li>
               <li>
                 <Link className="help-inline-link" to="/market">
-                  <strong>插件市场</strong>
+                  <strong>功能市场</strong>
                 </Link>
                 ：浏览和安装插件（即将推出）
               </li>
