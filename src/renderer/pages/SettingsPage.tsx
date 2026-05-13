@@ -150,6 +150,7 @@ export function SettingsPage({
   const [desktopPetBoundAgentKey, setDesktopPetBoundAgentKey] = useState(DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY);
   const [desktopPetBoundAgentPending, setDesktopPetBoundAgentPending] = useState(false);
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
+  const desktopPetSupported = isMac || isWindows;
 
   useEffect(() => {
     let cancelled = false;
@@ -179,7 +180,7 @@ export function SettingsPage({
   }, []);
 
   useEffect(() => {
-    if (!isMac) {
+    if (!desktopPetSupported) {
       return;
     }
 
@@ -206,7 +207,7 @@ export function SettingsPage({
       cancelled = true;
       dispose();
     };
-  }, [isMac]);
+  }, [desktopPetSupported]);
 
   useEffect(() => {
     if (desktopPetState?.boundAgentKey) {
@@ -393,7 +394,7 @@ export function SettingsPage({
   }
 
   async function handleSelectDesktopPetAppearance(appearanceId: string) {
-    if (!isMac || !desktopPetState || appearanceId === currentDesktopPetAppearanceId) {
+    if (!desktopPetSupported || !desktopPetState || appearanceId === currentDesktopPetAppearanceId) {
       return;
     }
     const selectedAppearance = desktopPetAppearanceOptions.find((appearance) => appearance.id === appearanceId);
@@ -418,7 +419,7 @@ export function SettingsPage({
   async function handleSelectDesktopPetBoundAgentKey(nextBoundAgentKey: string) {
     const normalizedBoundAgentKey = nextBoundAgentKey.trim();
     const previousBoundAgentKey = desktopPetState?.boundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
-    if (!isMac || !desktopPetState || !normalizedBoundAgentKey || normalizedBoundAgentKey === desktopPetState.boundAgentKey) {
+    if (!desktopPetSupported || !desktopPetState || !normalizedBoundAgentKey || normalizedBoundAgentKey === desktopPetState.boundAgentKey) {
       return;
     }
 
@@ -526,7 +527,7 @@ export function SettingsPage({
         </div>
       ) : null}
 
-      {isMac ? (
+      {desktopPetSupported ? (
         <div className="data-root-card settings-switch-card desktop-pet-settings-card">
           <div>
             <p className="eyebrow">DESKTOP PET</p>

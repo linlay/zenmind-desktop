@@ -38,6 +38,7 @@ const QUICK_START_ORDER = [
   "agent-platform",
   "agent-webclient"
 ] as const;
+const FEEDBACK_AUTO_CLOSE_MS = 3200;
 
 function statusClass(status: ServiceState["status"]) {
   switch (status) {
@@ -547,6 +548,20 @@ export function ControlCenterPage() {
   }, [startupFailure]);
 
   useEffect(() => {
+    if (!feedback) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setFeedback((current) => (current === feedback ? "" : current));
+    }, FEEDBACK_AUTO_CLOSE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [feedback]);
+
+  useEffect(() => {
     if (!selectedServiceIdFromNavigation) {
       return;
     }
@@ -992,8 +1007,22 @@ export function ControlCenterPage() {
           </div>
       </div>
 
-      {feedback ? <div className="feedback-banner">{feedback}</div> : null}
-      {error ? <div className="feedback-banner warning-banner">{error}</div> : null}
+      {feedback || error ? (
+        <div className="control-center-feedback-anchor">
+          <div className="control-center-feedback-layer" aria-live="polite">
+            {feedback ? (
+              <div className="feedback-banner control-center-feedback-toast" role="status">
+                {feedback}
+              </div>
+            ) : null}
+            {error ? (
+              <div className="feedback-banner warning-banner control-center-feedback-toast" role="alert">
+                {error}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       {loading ? <div className="loading-box">正在读取服务状态…</div> : null}
 
       <div className="control-center-shell">

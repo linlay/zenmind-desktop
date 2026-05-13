@@ -59,9 +59,9 @@ function waitFor(predicate, timeoutMs = 800) {
   });
 }
 
-test("desktop pet is only supported on macOS", () => {
+test("desktop pet is supported on macOS and Windows", () => {
   assert.equal(isDesktopPetSupportedPlatform("darwin"), true);
-  assert.equal(isDesktopPetSupportedPlatform("win32"), false);
+  assert.equal(isDesktopPetSupportedPlatform("win32"), true);
   assert.equal(isDesktopPetSupportedPlatform("linux"), false);
 });
 
@@ -177,6 +177,35 @@ test("desktop pet generated resources cover all visual states", () => {
   }
 });
 
+test("desktop pet persists state on Windows", (t) => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-pet-windows-"));
+  t.after(() => {
+    fs.rmSync(userData, { recursive: true, force: true });
+  });
+  const app = {
+    getPath(name) {
+      assert.equal(name, "userData");
+      return userData;
+    }
+  };
+
+  const state = writeDesktopPetStoredState(app, {
+    enabled: true,
+    lastVisible: true,
+    unreadCount: 7,
+    boundAgentKey: "custom-agent",
+    appearanceId: "dario"
+  }, "win32");
+  const restored = readDesktopPetStoredState(app, "win32");
+
+  assert.equal(state.enabled, true);
+  assert.equal(restored.enabled, true);
+  assert.equal(restored.unreadCount, 7);
+  assert.equal(restored.boundAgentKey, "custom-agent");
+  assert.equal(restored.appearanceId, "dario");
+  assert.equal(fs.existsSync(path.join(userData, desktopPetInternals.DESKTOP_PET_DIRECTORY)), true);
+});
+
 test("desktop pet ignores state files on unsupported platforms", (t) => {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-pet-unsupported-"));
   t.after(() => {
@@ -189,14 +218,14 @@ test("desktop pet ignores state files on unsupported platforms", (t) => {
     }
   };
 
-  const readState = readDesktopPetStoredState(app, "win32");
+  const readState = readDesktopPetStoredState(app, "linux");
   const writtenState = writeDesktopPetStoredState(app, {
     enabled: true,
     lastVisible: true,
     unreadCount: 7,
     boundAgentKey: "custom-agent",
     appearanceId: "dario"
-  }, "win32");
+  }, "linux");
 
   assert.equal(readState.enabled, false);
   assert.equal(writtenState.enabled, false);

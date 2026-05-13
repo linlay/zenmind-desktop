@@ -41,6 +41,26 @@ test("buildPluginEmbeddedUrl carries desktop auth context for agent-webclient", 
   );
 });
 
+test("buildPluginEmbeddedUrl resolves relative agent-webclient URLs from the service base", () => {
+  assert.equal(
+    buildPluginEmbeddedUrl("agent-webclient", "/agent/", {
+      baseUrl: "http://127.0.0.1:18082"
+    }),
+    "http://127.0.0.1:18082/appagent?desktopApp=1"
+  );
+});
+
+test("buildPluginEmbeddedUrl accepts localhost URLs without a protocol", () => {
+  assert.equal(
+    buildPluginEmbeddedUrl("agent-webclient", "127.0.0.1:18082/agent/"),
+    "http://127.0.0.1:18082/appagent?desktopApp=1"
+  );
+});
+
+test("buildPluginEmbeddedUrl returns empty string for invalid URLs", () => {
+  assert.equal(buildPluginEmbeddedUrl("agent-webclient", "http://[bad"), "");
+});
+
 test("getPluginAuthBridgeProtocol returns per-service request and response types", () => {
   assert.deepEqual(getPluginAuthBridgeProtocol("pan-webclient"), {
     requestType: "zenmind:pan-app-auth:request",

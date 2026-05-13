@@ -605,23 +605,64 @@ function writeEnvFileUpdates(filePath: string, updates: Map<string, string>) {
   fs.writeFileSync(filePath, upsertEnvFileContent(current, updates), "utf8");
 }
 
+const MAX_TCP_PORT = 65535;
+const CORE_SERVICE_IDS = new Set<ServiceId>([
+  "agent-container-hub",
+  "agent-platform",
+  "agent-webclient",
+  "zenmind-app-server"
+]);
+const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL", "WS_BASE_URL", "VOICE_BASE_URL"] as const;
+const DESKTOP_MANAGED_PLATFORM_URL_PORTS = new Set([
+  "7078",
+  "11949",
+  "18081",
+  "7200",
+  "7000",
+  "11953",
+  "117078"
+]);
+const DESKTOP_MANAGED_CONTAINER_HUB_URL_PORTS = new Set(["7079", "11960", "117079"]);
+const LOCAL_SERVICE_HOSTS = new Set(["127.0.0.1", "localhost", "0.0.0.0", "::1"]);
+const CONTAINER_HUB_SERVICE_HOSTS = new Set([...LOCAL_SERVICE_HOSTS, "host.docker.internal"]);
+
+function parsePortValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const pieces = trimmed.split(":");
+  const portText = pieces[pieces.length - 1] ?? "";
+  const port = Number.parseInt(portText, 10);
+  return Number.isInteger(port) && port > 0 && port <= MAX_TCP_PORT ? port : null;
+}
+
+function getServicePortEnvKeys(service: ServiceDefinition) {
+  const keys = service.web.portEnvKey ? [service.web.portEnvKey] : [];
+  if (service.id === "agent-platform" && !keys.includes("SERVER_PORT")) {
+    keys.push("SERVER_PORT");
+  }
+  return keys;
+}
+
 function parsePort(service: ServiceDefinition, env: Map<string, string>) {
-  if (!service.web.portEnvKey) {
-    return service.web.defaultPort;
-  }
-  const value = env.get(service.web.portEnvKey);
-  if (!value) {
+  const portEnvKeys = getServicePortEnvKeys(service);
+  if (portEnvKeys.length === 0) {
     return service.web.defaultPort;
   }
 
-  if (service.id === "agent-container-hub") {
-    const pieces = value.split(":");
-    const port = Number.parseInt(pieces[pieces.length - 1] ?? "", 10);
-    return Number.isFinite(port) ? port : service.web.defaultPort;
+  for (const key of portEnvKeys) {
+    const value = env.get(key);
+    if (!value) {
+      continue;
+    }
+    const port = parsePortValue(value);
+    if (port) {
+      return port;
+    }
   }
 
-  const port = Number.parseInt(value, 10);
-  return Number.isFinite(port) ? port : service.web.defaultPort;
+  return service.web.defaultPort;
 }
 
 function getWebUrl(service: ServiceDefinition, env: Map<string, string>) {
@@ -631,6 +672,57 @@ function getWebUrl(service: ServiceDefinition, env: Map<string, string>) {
   }
   const routePath = service.web.routePath;
   return routePath ? `http://127.0.0.1:${port}${routePath}` : `http://127.0.0.1:${port}`;
+}
+
+function normalizeUrlHostname(hostname: string) {
+  return hostname.trim().toLowerCase().replace(/^\[/u, "").replace(/\]$/u, "");
+}
+
+function readHttpUrlHostPort(value: string) {
+  const raw = value.trim();
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    return {
+      hostname: normalizeUrlHostname(parsed.hostname),
+      port: parsed.port
+    };
+  } catch {
+    // Keep going: URL rejects invalid TCP ports such as 117078, but those
+    // are precisely the broken persisted defaults we need to migrate.
+  }
+
+  const match = raw.match(/^https?:\/\/(\[[^\]]+\]|[^/:?#]+)(?::([0-9]+))?(?:[/?#]|$)/iu);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    hostname: normalizeUrlHostname(match[1] ?? ""),
+    port: match[2] ?? ""
+  };
+}
+
+function isDesktopManagedHttpUrl(
+  value: string,
+  managedPorts: Set<string>,
+  managedHosts: Set<string>,
+  allowMissingPort = false
+) {
+  const parsed = readHttpUrlHostPort(value);
+  if (!parsed || !managedHosts.has(parsed.hostname)) {
+    return false;
+  }
+  if (!parsed.port) {
+    return allowMissingPort;
+  }
+  return managedPorts.has(parsed.port);
 }
 
 function resolveRuntimePath(installDir: string, relativePath: string) {
@@ -2856,6 +2948,7 @@ function normalizeAgentPlatformEnvContentForRuntime(content: string) {
 
   normalizeShellSourcedAgentPlatformEnvValues(env, migrated);
   migrateAgentPlatformLegacyChatEnv(env, migrated);
+  syncAgentPlatformDesktopPortEnv(env, migrated);
 
   return upsertEnvFileContent(removeEnvKeysFromContent(content, AGENT_PLATFORM_DEPRECATED_ENV_KEYS), migrated);
 }
@@ -2865,6 +2958,35 @@ function normalizeAgentPlatformEnvContentForSave(content: string) {
     normalizeAgentPlatformEnvContentForRuntime(content),
     AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS
   );
+}
+
+async function normalizeCoreServiceEnvContentForSave(
+  app: App,
+  service: ServiceDefinition,
+  key: string,
+  content: string
+) {
+  if (key !== "env" || !CORE_SERVICE_IDS.has(service.id)) {
+    return content;
+  }
+
+  const normalizedContent =
+    service.id === "agent-platform" ? normalizeAgentPlatformEnvContentForSave(content) : content;
+  const env = parseEnvFileContent(normalizedContent);
+  const updates = new Map<string, string>();
+
+  syncCoreServiceDefaultPortEnv(service, env, updates);
+
+  if (service.id === "agent-platform") {
+    syncAgentPlatformDesktopPortEnv(env, updates);
+    await syncAgentPlatformContainerHubUrl(app, env, updates);
+  }
+
+  if (service.id === "agent-webclient") {
+    await syncAgentWebclientPlatformUrls(app, env, updates);
+  }
+
+  return updates.size > 0 ? upsertEnvFileContent(normalizedContent, updates) : normalizedContent;
 }
 
 function resolveLocalCliAcpRelayDefaultCwd(app?: App | null) {
@@ -3043,21 +3165,195 @@ async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<s
   }
 }
 
+function getEnvValueWithUpdates(env: Map<string, string>, updates: Map<string, string>, key: string) {
+  return updates.get(key) ?? env.get(key) ?? "";
+}
+
+function resolveEnvBindingValue(service: ServiceDefinition, bindingKey: string) {
+  const binding = service.desktop.envBindings.find((item) => {
+    const key = service.id === "agent-platform"
+      ? (AGENT_PLATFORM_ENV_KEY_RENAMES.get(item.key) ?? item.key)
+      : item.key;
+    return key === bindingKey && item.value !== undefined;
+  });
+  if (!binding?.value) {
+    return String(service.web.defaultPort);
+  }
+  return binding.value.replace("{{serviceDefaultPort}}", String(service.web.defaultPort));
+}
+
+function canApplyDefaultEnvBinding(service: ServiceDefinition, bindingKey: string, currentValue: string) {
+  const binding = service.desktop.envBindings.find((item) => {
+    const key = service.id === "agent-platform"
+      ? (AGENT_PLATFORM_ENV_KEY_RENAMES.get(item.key) ?? item.key)
+      : item.key;
+    return key === bindingKey && item.value !== undefined;
+  });
+  if (!binding) {
+    return false;
+  }
+  if (!binding.onlyIfDefault) {
+    return true;
+  }
+  return new Set(binding.defaults ?? [""]).has(currentValue);
+}
+
+function syncCoreServiceDefaultPortEnv(service: ServiceDefinition, env: Map<string, string>, updates: Map<string, string>) {
+  if (!CORE_SERVICE_IDS.has(service.id)) {
+    return;
+  }
+
+  for (const key of getServicePortEnvKeys(service)) {
+    const currentValue = getEnvValueWithUpdates(env, updates, key);
+    if (!canApplyDefaultEnvBinding(service, key, currentValue)) {
+      continue;
+    }
+    updates.set(key, resolveEnvBindingValue(service, key));
+  }
+}
+
+function syncAgentPlatformDesktopPortEnv(env: Map<string, string>, updates: Map<string, string>) {
+  const updatedServerPort = parsePortValue(updates.get("SERVER_PORT") ?? "");
+  if (updatedServerPort) {
+    updates.set("HOST_PORT", String(updatedServerPort));
+    return;
+  }
+
+  const updatedHostPort = parsePortValue(updates.get("HOST_PORT") ?? "");
+  if (updatedHostPort) {
+    updates.set("SERVER_PORT", String(updatedHostPort));
+    return;
+  }
+
+  const hostPort = parsePortValue(getEnvValueWithUpdates(env, updates, "HOST_PORT"));
+  if (hostPort) {
+    updates.set("SERVER_PORT", String(hostPort));
+    return;
+  }
+
+  const serverPort = parsePortValue(getEnvValueWithUpdates(env, updates, "SERVER_PORT"));
+  if (serverPort) {
+    updates.set("HOST_PORT", String(serverPort));
+  }
+}
+
 function isDesktopManagedContainerHubUrl(value: string) {
-  const raw = value.trim();
-  if (!raw) {
-    return false;
+  return isDesktopManagedHttpUrl(
+    value,
+    DESKTOP_MANAGED_CONTAINER_HUB_URL_PORTS,
+    CONTAINER_HUB_SERVICE_HOSTS,
+    true
+  );
+}
+
+function addManagedUrlPort(ports: Set<string>, port: number | null | undefined) {
+  if (port && port > 0 && port <= MAX_TCP_PORT) {
+    ports.add(String(port));
   }
+}
+
+function isDesktopManagedPlatformUrl(
+  value: string,
+  currentPlatformPort: number | null,
+  additionalManagedPorts: Array<number | null | undefined> = []
+) {
+  const managedPorts = new Set(DESKTOP_MANAGED_PLATFORM_URL_PORTS);
+  addManagedUrlPort(managedPorts, currentPlatformPort);
+  for (const port of additionalManagedPorts) {
+    addManagedUrlPort(managedPorts, port);
+  }
+  return isDesktopManagedHttpUrl(value, managedPorts, LOCAL_SERVICE_HOSTS);
+}
+
+async function getServicePortForEnvSync(app: App, serviceId: ServiceId) {
   try {
-    const parsed = new URL(raw);
-    const hostname = parsed.hostname.toLowerCase();
-    return (
-      (hostname === "127.0.0.1" || hostname === "localhost" || hostname === "host.docker.internal") &&
-      (parsed.port === "" || parsed.port === "11960")
-    );
+    const state = await getServiceState(app, serviceId);
+    return state.healthMeta.port ?? getService(serviceId).web.defaultPort;
   } catch {
-    return false;
+    try {
+      return getService(serviceId).web.defaultPort;
+    } catch {
+      return null;
+    }
   }
+}
+
+async function syncAgentPlatformContainerHubUrl(app: App, env: Map<string, string>, updates: Map<string, string>) {
+  const hubPort = await getServicePortForEnvSync(app, "agent-container-hub");
+  if (!hubPort) {
+    return;
+  }
+
+  const currentValue = getEnvValueWithUpdates(env, updates, "CONTAINER_HUB_BASE_URL");
+  if (currentValue && !isDesktopManagedContainerHubUrl(currentValue)) {
+    return;
+  }
+
+  updates.set("CONTAINER_HUB_BASE_URL", `http://127.0.0.1:${hubPort}`);
+}
+
+function syncAgentWebclientPlatformUrlsToPort(
+  env: Map<string, string>,
+  updates: Map<string, string>,
+  platformPort: number | null,
+  additionalManagedPorts: Array<number | null | undefined> = []
+) {
+  if (!platformPort) {
+    return;
+  }
+
+  const platformUrl = `http://127.0.0.1:${platformPort}`;
+  for (const key of AGENT_WEBCLIENT_PLATFORM_URL_KEYS) {
+    const currentValue = getEnvValueWithUpdates(env, updates, key);
+    if (currentValue && !isDesktopManagedPlatformUrl(currentValue, platformPort, additionalManagedPorts)) {
+      continue;
+    }
+    updates.set(key, platformUrl);
+  }
+}
+
+async function syncAgentWebclientPlatformUrls(app: App, env: Map<string, string>, updates: Map<string, string>) {
+  const platformPort = await getServicePortForEnvSync(app, "agent-platform");
+  syncAgentWebclientPlatformUrlsToPort(env, updates, platformPort);
+}
+
+function readInstalledServicePortForSync(app: App, service: ServiceDefinition) {
+  const installDir = getInstallDir(app, service);
+  if (!fs.existsSync(installDir)) {
+    return null;
+  }
+  const envPath = path.join(installDir, ".env");
+  const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
+  return parsePort(service, env);
+}
+
+async function syncAgentWebclientEnvAfterAgentPlatformSave(app: App, previousPlatformPort: number | null) {
+  const webclientEnvInfo = readInstalledServiceEnv(app, "agent-webclient");
+  if (!webclientEnvInfo || !fs.existsSync(webclientEnvInfo.envPath)) {
+    return;
+  }
+
+  const platformPort = await getServicePortForEnvSync(app, "agent-platform");
+  const updates = new Map<string, string>();
+  syncAgentWebclientPlatformUrlsToPort(webclientEnvInfo.env, updates, platformPort, [previousPlatformPort]);
+  if (updates.size === 0) {
+    return;
+  }
+
+  fs.writeFileSync(webclientEnvInfo.envPath, upsertEnvFileContent(webclientEnvInfo.content, updates), "utf8");
+}
+
+async function syncCoreServiceDependentEnvAfterSave(
+  app: App,
+  service: ServiceDefinition,
+  key: string,
+  previousServicePort: number | null
+) {
+  if (key !== "env" || service.id !== "agent-platform") {
+    return;
+  }
+
+  await syncAgentWebclientEnvAfterAgentPlatformSave(app, previousServicePort);
 }
 
 async function ensureAgentPlatformContainerHubDependency(app: App, installDir: string) {
@@ -3102,6 +3398,8 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   const updates = new Map<string, string>();
 
   await applyEnvBindings(app, service, env, updates);
+  syncAgentPlatformDesktopPortEnv(env, updates);
+  await syncAgentPlatformContainerHubUrl(app, env, updates);
 
   updates.set("NODE_BIN", resolveNodeBin());
   if (!env.get("PROVIDER_APIKEY_KEY_PART")?.trim()) {
@@ -3163,6 +3461,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 
   // Service-specific logic that cannot be expressed via envBindings.
   if (service.id === "agent-webclient") {
+    await syncAgentWebclientPlatformUrls(app, env, updates);
     const assetPath = getOptionalBundleAssetPath(app, service);
     const forceRefresh = agentWebclientInstallNeedsRefresh(installDir);
     if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, installDir))) {
@@ -3458,20 +3757,27 @@ export async function writeServiceConfig(
   if (!configFile) {
     throw new Error(`unknown config key: ${key}`);
   }
+  const previousServicePort =
+    key === "env" && service.id === "agent-platform"
+      ? readInstalledServicePortForSync(app, service)
+      : null;
 
   const installDir = await ensureMutableInstallDir(app, service);
 
   const filePath = path.join(installDir, configFile.relativePath);
   ensureDir(path.dirname(filePath));
-  const normalizedContent =
-    service.id === "agent-platform" && key === "env"
-      ? normalizeAgentPlatformEnvContentForSave(content)
-      : content;
+  const normalizedContent = await normalizeCoreServiceEnvContentForSave(app, service, key, content);
   fs.writeFileSync(filePath, normalizedContent, "utf8");
+  await syncCoreServiceDependentEnvAfterSave(app, service, key, previousServicePort);
+
+  const message =
+    key === "env" && CORE_SERVICE_IDS.has(service.id)
+      ? `${service.name} 配置已保存。端口修改需重启服务后生效。`
+      : `${service.name} 配置已保存。`;
 
   return {
     ok: true,
-    message: `${service.name} 配置已保存。`,
+    message,
     service: await getServiceState(app, serviceId)
   };
 }

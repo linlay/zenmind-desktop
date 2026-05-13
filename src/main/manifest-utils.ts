@@ -91,6 +91,210 @@ function asNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+type CorePortEnvBinding = {
+  key: string;
+  value: string;
+  defaults: string[];
+};
+
+type CoreServicePortOverride = {
+  portEnvKey: string;
+  defaultPort: number;
+  portBindings: CorePortEnvBinding[];
+  urlBindingDefaults?: Record<string, string[]>;
+};
+
+const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = {
+  "agent-container-hub": {
+    portEnvKey: "BIND_ADDR",
+    defaultPort: 7079,
+    portBindings: [
+      {
+        key: "BIND_ADDR",
+        value: "127.0.0.1:{{serviceDefaultPort}}",
+        defaults: ["", "127.0.0.1:11960", "localhost:11960", "127.0.0.1:117079", "localhost:117079"]
+      }
+    ]
+  },
+  "agent-platform": {
+    portEnvKey: "HOST_PORT",
+    defaultPort: 7078,
+    portBindings: [
+      {
+        key: "HOST_PORT",
+        value: "{{serviceDefaultPort}}",
+        defaults: ["", "11949", "18081", "7200", "117078"]
+      },
+      {
+        key: "SERVER_PORT",
+        value: "{{serviceDefaultPort}}",
+        defaults: ["", "11949", "18081", "7200", "117078"]
+      }
+    ],
+    urlBindingDefaults: {
+      CONTAINER_HUB_BASE_URL: [
+        "",
+        "http://127.0.0.1:7079",
+        "http://localhost:7079",
+        "http://127.0.0.1:11960",
+        "http://localhost:11960",
+        "http://host.docker.internal:11960",
+        "http://127.0.0.1:117079",
+        "http://localhost:117079",
+        "http://host.docker.internal:117079"
+      ]
+    }
+  },
+  "agent-webclient": {
+    portEnvKey: "PORT",
+    defaultPort: 7080,
+    portBindings: [
+      {
+        key: "PORT",
+        value: "{{serviceDefaultPort}}",
+        defaults: ["", "11948", "18082", "117080"]
+      }
+    ],
+    urlBindingDefaults: {
+      BASE_URL: [
+        "",
+        "http://127.0.0.1:7078",
+        "http://localhost:7078",
+        "http://127.0.0.1:11949",
+        "http://localhost:11949",
+        "http://127.0.0.1:18081",
+        "http://localhost:18081",
+        "http://127.0.0.1:117078",
+        "http://localhost:117078",
+        "http://127.0.0.1:7200",
+        "http://localhost:7200",
+        "http://127.0.0.1:7000",
+        "http://localhost:7000"
+      ],
+      WS_BASE_URL: [
+        "",
+        "http://127.0.0.1:7078",
+        "http://localhost:7078",
+        "http://127.0.0.1:11949",
+        "http://localhost:11949",
+        "http://127.0.0.1:18081",
+        "http://localhost:18081",
+        "http://127.0.0.1:117078",
+        "http://localhost:117078",
+        "http://127.0.0.1:7200",
+        "http://localhost:7200",
+        "http://127.0.0.1:7000",
+        "http://localhost:7000"
+      ],
+      VOICE_BASE_URL: [
+        "",
+        "http://127.0.0.1:7078",
+        "http://localhost:7078",
+        "http://127.0.0.1:11949",
+        "http://localhost:11949",
+        "http://127.0.0.1:18081",
+        "http://localhost:18081",
+        "http://127.0.0.1:117078",
+        "http://localhost:117078",
+        "http://127.0.0.1:11953",
+        "http://localhost:11953"
+      ]
+    }
+  },
+  "zenmind-app-server": {
+    portEnvKey: "SERVER_PORT",
+    defaultPort: 7076,
+    portBindings: [
+      {
+        key: "SERVER_PORT",
+        value: "{{serviceDefaultPort}}",
+        defaults: ["", "11950", "18080", "9000", "117076"]
+      }
+    ]
+  }
+};
+
+function getCoreServicePortOverrides(): Record<string, CoreServicePortOverride> {
+  // The defaults are currently shared, but builtin service manifests are platform-specific.
+  if (process.platform === "win32") {
+    return sharedCoreServicePortOverrides;
+  }
+
+  if (process.platform === "darwin") {
+    return sharedCoreServicePortOverrides;
+  }
+
+  return sharedCoreServicePortOverrides;
+}
+
+function getCoreServicePortOverride(serviceId: string) {
+  return getCoreServicePortOverrides()[serviceId];
+}
+
+function mergeStringList(left: readonly string[] = [], right: readonly string[] = []) {
+  return [...new Set([...left, ...right])];
+}
+
+function applyCoreServiceWebOverride(serviceId: string, web: ManifestWeb) {
+  const override = getCoreServicePortOverride(serviceId);
+  if (!override) {
+    return web;
+  }
+
+  return {
+    ...web,
+    portEnvKey: override.portEnvKey,
+    defaultPort: override.defaultPort
+  } satisfies ManifestWeb;
+}
+
+function applyCoreServiceEnvBindingOverrides(serviceId: string, envBindings: ManifestEnvBinding[]) {
+  const override = getCoreServicePortOverride(serviceId);
+  if (!override) {
+    return envBindings;
+  }
+
+  const portBindingsByKey = new Map(override.portBindings.map((binding) => [binding.key, binding]));
+  const seenPortBindings = new Set<string>();
+  const nextBindings = envBindings.map((binding) => {
+    const portBinding = portBindingsByKey.get(binding.key);
+    if (portBinding) {
+      seenPortBindings.add(binding.key);
+      return {
+        ...binding,
+        value: portBinding.value,
+        onlyIfDefault: true,
+        defaults: mergeStringList(binding.defaults, portBinding.defaults)
+      } satisfies ManifestEnvBinding;
+    }
+
+    const urlDefaults = override.urlBindingDefaults?.[binding.key];
+    if (urlDefaults) {
+      return {
+        ...binding,
+        onlyIfDefault: true,
+        defaults: mergeStringList(binding.defaults, urlDefaults)
+      } satisfies ManifestEnvBinding;
+    }
+
+    return binding;
+  });
+
+  for (const binding of override.portBindings) {
+    if (seenPortBindings.has(binding.key)) {
+      continue;
+    }
+    nextBindings.push({
+      key: binding.key,
+      value: binding.value,
+      onlyIfDefault: true,
+      defaults: binding.defaults
+    });
+  }
+
+  return nextBindings;
+}
+
 function isFrontendMode(value: unknown): value is FrontendMode {
   return value === "none" || value === "embedded" || value === "standalone";
 }
@@ -167,6 +371,37 @@ function resolveConfigFiles(raw: Record<string, unknown>) {
       required: config.required !== false
     } satisfies ManifestConfigFile;
   });
+}
+
+const agentPlatformDesktopConfigFiles: ManifestConfigFile[] = [
+  {
+    key: "prompts",
+    label: "configs/prompts.yml",
+    relativePath: "configs/prompts.yml",
+    templateRelativePath: "configs/prompts.example.yml",
+    required: false
+  },
+  {
+    key: "channels",
+    label: "configs/channels.yml",
+    relativePath: "configs/channels.yml",
+    required: false
+  }
+];
+
+function resolveServiceConfigFiles(raw: Record<string, unknown>, serviceId: string) {
+  const configFiles = resolveConfigFiles(raw);
+  if (serviceId !== "agent-platform") {
+    return configFiles;
+  }
+
+  const existingKeys = new Set(configFiles.map((configFile) => configFile.key));
+  const existingPaths = new Set(configFiles.map((configFile) => configFile.relativePath));
+  const missingConfigFiles = agentPlatformDesktopConfigFiles.filter(
+    (configFile) => !existingKeys.has(configFile.key) && !existingPaths.has(configFile.relativePath)
+  );
+
+  return missingConfigFiles.length > 0 ? [...configFiles, ...missingConfigFiles] : configFiles;
 }
 
 function resolveRuntime(raw: Record<string, unknown>) {
@@ -318,6 +553,8 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
   const runtime = resolveRuntime(raw);
   const frontend = resolveFrontend(raw);
   const desktop = resolveDesktop(raw, options, id);
+  const web = applyCoreServiceWebOverride(id, resolveWeb(raw));
+  const envBindings = applyCoreServiceEnvBindingOverrides(id, desktop.envBindings);
 
   return {
     id,
@@ -337,11 +574,14 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
     api: resolveApi(raw),
     backend: resolveBackend(raw),
     scripts,
-    configFiles: resolveConfigFiles(raw),
+    configFiles: resolveServiceConfigFiles(raw, id),
     runtime,
-    web: resolveWeb(raw),
+    web,
     prerequisites: asStringArray(raw.prerequisites),
-    desktop,
+    desktop: {
+      ...desktop,
+      envBindings
+    },
     assetFileName: desktop.assetFileName ?? "",
     bundleTopLevelDir: desktop.bundleTopLevelDir,
     startCommand: resolveCommand(scripts.start) ?? [],

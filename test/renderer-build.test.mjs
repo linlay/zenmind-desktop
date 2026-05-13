@@ -315,12 +315,30 @@ test("plugin page provides iframe-aware assistant context instead of guessing em
   assert.match(pluginPage, /无法直接读取这个 iframe 内部的列表、卡片或正文文本/);
   assert.match(pluginPage, /不要猜测网站、应用名称或列表项/);
   assert.match(pluginPage, /const iframeRenderKey = useMemo/);
-  assert.match(pluginPage, /setIframeLoaded\(false\)/);
-  assert.match(pluginPage, /onLoad=\{\(\) => \{/);
-  assert.match(pluginPage, /正在等待页面样式与资源加载完成/);
   assert.doesNotMatch(pluginPage, /iframeInstanceKey/);
-  assert.match(globalStyles, /\.pan-frame\.is-loading\s*\{/);
-  assert.match(globalStyles, /\.embedded-plugin-loading\s*\{/);
+  assert.doesNotMatch(pluginPage, /iframeLoaded/);
+  assert.doesNotMatch(pluginPage, /正在等待页面样式与资源加载完成/);
+  assert.match(pluginPage, /frameLoadedChromeErrorPage/);
+  assert.match(pluginPage, /chrome-error:\/\//);
+  assert.match(pluginPage, /setIframeRetryNonce/);
+  assert.match(pluginPage, /refreshServices/);
+  assert.match(pluginPage, /embedded-plugin-error/);
+  assert.match(globalStyles, /\.embedded-plugin-error\s*\{/);
+});
+
+test("assistant entrypoints restore core services before opening embedded webclient", () => {
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+
+  assert.match(mainProcess, /async function ensureAssistantTargetServicesRunning/);
+  assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
+  assert.match(mainProcess, /await runServiceMutation\(\(\) => ensureAssistantTargetServicesRunning\(source\)\)/);
+  assert.match(mainProcess, /async function showAssistantTargetWindow/);
+  assert.match(mainProcess, /async function openAssistantFromDesktopPet/);
+  assert.match(mainProcess, /await showAssistantTargetWindow\("desktop-pet"\)/);
+  assert.match(mainProcess, /async function openAssistantWorker/);
+  assert.match(mainProcess, /await showAssistantTargetWindow\("assistant-worker"\)/);
+  assert.match(mainProcess, /void showAssistantTargetWindow\("tray-click"\)/);
+  assert.doesNotMatch(mainProcess, /tray\.on\("click", \(\) => showMainWindow\(ASSISTANT_TARGET_PATH\)\)/);
 });
 
 test("native assistant page context captures shell sidebar, left region, and modal content separately", () => {
@@ -441,6 +459,9 @@ test("desktop pet appearance picker confirms persistence before success feedback
     "utf8"
   );
 
+  assert.match(settingsPage, /const desktopPetSupported = isMac \|\| isWindows;/);
+  assert.match(settingsPage, /if \(!desktopPetSupported\) \{[\s\S]{0,120}return;/);
+  assert.match(settingsPage, /\{desktopPetSupported \? \(/);
   assert.match(settingsPage, /nextState\.appearanceId === appearanceId/);
   assert.match(settingsPage, /桌面宠物形象切换未生效/);
   assert.match(settingsPage, /disabled=\{Boolean\(desktopPetAppearancePending\) && !selected\}/);
@@ -489,6 +510,14 @@ test("desktop pet button suppresses native focus rings in the transparent window
   assert.match(globalStyles, /\.desktop-pet-button\s*\{[\s\S]{0,420}appearance:\s*none;/);
   assert.match(globalStyles, /\.desktop-pet-button\s*\{[\s\S]{0,520}-webkit-tap-highlight-color:\s*transparent;/);
   assert.match(globalStyles, /\.desktop-pet-button:focus,\s*\.desktop-pet-button:focus-visible\s*\{[\s\S]{0,120}outline:\s*none;/);
+});
+
+test("control center config editor suppresses native focus rings", () => {
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+
+  assert.match(globalStyles, /\.config-editor:focus,\s*\.config-editor:focus-visible\s*\{[\s\S]{0,120}outline:\s*none;/);
+  assert.match(globalStyles, /\.config-editor:focus,\s*\.config-editor:focus-visible\s*\{[\s\S]{0,160}border-color:\s*var\(--line\);/);
+  assert.match(globalStyles, /\.config-editor:focus,\s*\.config-editor:focus-visible\s*\{[\s\S]{0,180}box-shadow:\s*none;/);
 });
 
 test("desktop pet visual states stay local to renderer priority", () => {
@@ -565,6 +594,10 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(mainProcess, /getDesktopPetContextMenuItems\(desktopPetSettings\.appearanceId\)/);
   assert.match(mainProcess, /function setDesktopPetWindowMouseInteractive\(interactive: boolean\)/);
   assert.match(mainProcess, /setIgnoreMouseEvents\(!interactive, \{ forward: true \}\)/);
+  assert.match(mainProcess, /process\.platform === "win32"[\s\S]{0,220}setIgnoreMouseEvents\(false\)/);
+  assert.match(mainProcess, /const isWindows = process\.platform === "win32";/);
+  assert.match(mainProcess, /\.\.\.\(isWindows \? \{ thickFrame: false \} : \{\}\)/);
+  assert.match(mainProcess, /if \(isMac\) \{[\s\S]{0,180}setVisibleOnAllWorkspaces\(true, \{ visibleOnFullScreen: true \}\);[\s\S]{0,80}\} else if \(isWindows\) \{[\s\S]{0,80}setAlwaysOnTop\(true\);/);
   assert.match(mainProcess, /desktopPet\.setMouseInteractive/);
   assert.match(mainProcess, /desktopPet\.dismissPreview/);
   assert.match(mainProcess, /desktopPet\.danceRequested/);

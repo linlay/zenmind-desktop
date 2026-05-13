@@ -87,7 +87,7 @@ function tryReadPluginIframePageContext(
 export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: PluginPageProps) {
   const { pluginId: routePluginId } = useParams<{ pluginId: string }>();
   const pluginId = pluginIdProp ?? routePluginId ?? "";
-  const { services } = useServices();
+  const { services, refresh: refreshServices } = useServices();
   const service = services.find((s) => s.id === pluginId);
   const agentPlatformService = service?.id === "agent-webclient"
     ? services.find((s) => s.id === "agent-platform")
@@ -95,7 +95,8 @@ export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: Plugin
   const serviceDisplayName = service ? getServiceDisplayName(service.id, service.name) : "";
   const [bridgeError, setBridgeError] = useState("");
   const [bridgeReady, setBridgeReady] = useState(false);
-  const [iframeLoaded, setIframeLoaded] = useState(false);
+  const [iframeRetryNonce, setIframeRetryNonce] = useState(0);
+  const [iframeLoadError, setIframeLoadError] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const surfaceVisibilityProps = active === undefined
     ? {}
@@ -117,17 +118,27 @@ export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: Plugin
   const embeddedUrl = useMemo(() => {
     return buildPluginEmbeddedUrl(service?.id, webUrl, {
       hostTheme,
-      desktopAuthContext: service?.id === "agent-webclient" ? iframeReloadKey : undefined
+      desktopAuthContext: service?.id === "agent-webclient" ? iframeReloadKey : undefined,
+      baseUrl: service?.healthMeta.port ? `http://127.0.0.1:${service.healthMeta.port}` : undefined
     });
-  }, [hostTheme, iframeReloadKey, service?.id, webUrl]);
-  const iframeRenderKey = useMemo(
+  }, [hostTheme, iframeReloadKey, service?.healthMeta.port, service?.id, webUrl]);
+  const iframeBaseKey = useMemo(
     () => [service?.id ?? "service", iframeReloadKey, embeddedUrl].join(":"),
     [embeddedUrl, iframeReloadKey, service?.id]
+  );
+  const iframeRenderKey = useMemo(
+    () => [iframeBaseKey, iframeRetryNonce].join(":"),
+    [iframeBaseKey, iframeRetryNonce]
   );
 
   useEffect(() => {
     setBridgeError("");
   }, [service?.id, embeddedUrl]);
+
+  useEffect(() => {
+    setIframeRetryNonce(0);
+    setIframeLoadError(false);
+  }, [iframeBaseKey, service?.status]);
 
   useEffect(() => {
     setBridgeReady(false);
@@ -260,9 +271,30 @@ export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: Plugin
     };
   }, [bridgeProtocol, embeddedUrl]);
 
-  useEffect(() => {
-    setIframeLoaded(false);
-  }, [bridgeReady, iframeRenderKey, service?.status]);
+  function frameLoadedChromeErrorPage() {
+    try {
+      return iframeRef.current?.contentWindow?.location.href.startsWith("chrome-error://") ?? false;
+    } catch {
+      return false;
+    }
+  }
+
+  function handleIframeLoad() {
+    if (!frameLoadedChromeErrorPage()) {
+      setIframeLoadError(false);
+      return;
+    }
+
+    setIframeLoadError(true);
+    void refreshServices();
+    if (iframeRetryNonce >= 2 || service?.status !== "running") {
+      return;
+    }
+
+    window.setTimeout(() => {
+      setIframeRetryNonce((current) => (current === iframeRetryNonce ? current + 1 : current));
+    }, 450);
+  }
 
   useEffect(() => {
     if (active === false || service?.status !== "running") {
@@ -309,7 +341,7 @@ export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: Plugin
     );
   }
 
-  if (service.frontendMode === "none" || !webUrl) {
+  if (service.frontendMode === "none" || !webUrl || !embeddedUrl) {
     return (
       <section className="empty-state" {...surfaceVisibilityProps}>
         <h1>{serviceDisplayName}</h1>
@@ -337,25 +369,23 @@ export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: Plugin
   return (
     <section className="pan-page pan-page-embedded" {...surfaceVisibilityProps}>
       <div className="pan-drag-region" aria-hidden="true" />
-      <div className={`pan-frame-shell${bridgeReady && !iframeLoaded ? " is-loading" : ""}`} aria-busy={bridgeReady && !iframeLoaded}>
+      <div className="pan-frame-shell">
         {bridgeReady ? (
           <>
-            {!iframeLoaded ? (
-              <div className="embedded-plugin-loading" role="status" aria-live="polite">
+            {iframeLoadError ? (
+              <section className="empty-state embedded-plugin-error" aria-live="polite">
                 <p className="eyebrow">PLUGIN</p>
                 <h1>{serviceDisplayName}</h1>
-                <p>正在等待页面样式与资源加载完成…</p>
-              </div>
+                <p>智能助理服务正在恢复，页面会自动重新加载。</p>
+              </section>
             ) : null}
             <iframe
               key={iframeRenderKey}
               ref={iframeRef}
               src={embeddedUrl}
               title={serviceDisplayName}
-              className={`pan-frame${iframeLoaded ? " is-ready" : " is-loading"}`}
-              onLoad={() => {
-                setIframeLoaded(true);
-              }}
+              className="pan-frame"
+              onLoad={handleIframeLoad}
             />
           </>
         ) : (

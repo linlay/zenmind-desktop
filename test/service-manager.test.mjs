@@ -22,7 +22,8 @@ const childProcess = require("node:child_process");
     restoreRunningServices,
     startService,
     stopService,
-    stopRunningServicesForShutdown
+    stopRunningServicesForShutdown,
+    writeServiceConfig
 } = require("../dist-electron/main/service-manager.js");
 const { loadBuiltinServices } = require("../dist-electron/main/builtin-loader.js");
 const {
@@ -1059,20 +1060,81 @@ test("service install dir follows userData/services/<id>/<version>", () => {
   restore();
 });
 
-test("parsePort understands bind addr for container hub and server port for agent platform", () => {
+test("parsePort reads Desktop core service ports from their config keys", () => {
   const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-service-port-"));
   const { restore } = loadBuiltinsForTest(userDataRoot);
+  const authService = registerPlugin({
+    id: "zenmind-app-server",
+    name: "认证服务",
+    kind: "builtin",
+    version: "v0.1.0",
+    description: "fixture",
+    frontend: {
+      mode: "standalone"
+    },
+    scripts: {
+      start: "start.sh",
+      stop: "stop.sh"
+    },
+    runtime: {},
+    web: {
+      routePath: "/admin/",
+      portEnvKey: "SERVER_PORT",
+      defaultPort: 18080
+    }
+  });
+  const webclientPort = __testInternals.parsePort(
+    getBuiltinService("agent-webclient"),
+    new Map([["PORT", "7080"]])
+  );
+  const webclientBadPort = __testInternals.parsePort(
+    getBuiltinService("agent-webclient"),
+    new Map([["PORT", "117080"]])
+  );
+  const authPort = __testInternals.parsePort(
+    authService,
+    new Map([["SERVER_PORT", "7076"]])
+  );
+  const authBadPort = __testInternals.parsePort(
+    authService,
+    new Map([["SERVER_PORT", "117076"]])
+  );
   const hubPort = __testInternals.parsePort(
     getBuiltinService("agent-container-hub"),
-    new Map([["BIND_ADDR", "127.0.0.1:11960"]])
+    new Map([["BIND_ADDR", "127.0.0.1:7079"]])
+  );
+  const hubBadPort = __testInternals.parsePort(
+    getBuiltinService("agent-container-hub"),
+    new Map([["BIND_ADDR", "127.0.0.1:117079"]])
   );
   const platformPort = __testInternals.parsePort(
     getBuiltinService("agent-platform"),
+    new Map([
+      ["HOST_PORT", "7078"],
+      ["SERVER_PORT", "18081"]
+    ])
+  );
+  const platformFallbackPort = __testInternals.parsePort(
+    getBuiltinService("agent-platform"),
     new Map([["SERVER_PORT", "8123"]])
   );
+  const platformBadPort = __testInternals.parsePort(
+    getBuiltinService("agent-platform"),
+    new Map([
+      ["HOST_PORT", "117078"],
+      ["SERVER_PORT", "117078"]
+    ])
+  );
 
-  assert.equal(hubPort, 11960);
-  assert.equal(platformPort, 8123);
+  assert.equal(webclientPort, 7080);
+  assert.equal(webclientBadPort, 7080);
+  assert.equal(authPort, 7076);
+  assert.equal(authBadPort, 7076);
+  assert.equal(hubPort, 7079);
+  assert.equal(hubBadPort, 7079);
+  assert.equal(platformPort, 7078);
+  assert.equal(platformFallbackPort, 8123);
+  assert.equal(platformBadPort, 7078);
   restore();
 });
 
@@ -1820,7 +1882,8 @@ test("installBuiltinService prepares agent platform desktop config during first 
     const preferredRuntimeRoot = path.join(homeRoot, ".zenmind");
     assert.match(envContent, /^AUTH_ENABLED=true$/m);
     assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
-    assert.match(envContent, /^SERVER_PORT=11949$/m);
+    assert.match(envContent, /^HOST_PORT=7078$/m);
+    assert.match(envContent, /^SERVER_PORT=7078$/m);
     assert.match(
       envContent,
       new RegExp(`REGISTRIES_DIR=${path.join(preferredRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
@@ -1887,6 +1950,148 @@ test("readServiceConfig returns template content without creating target file", 
 
   registryInternals.clearServices();
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("writeServiceConfig keeps agent platform host and server ports aligned", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-platform-config-save-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+  const platformService = getBuiltinService("agent-platform");
+  const installDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+
+  try {
+    await installBuiltinService(app, "agent-platform");
+    const result = await writeServiceConfig(
+      app,
+      "agent-platform",
+      "env",
+      "HOST_PORT=7901\nSERVER_PORT=18081\nAUTH_ENABLED=true\n"
+    );
+    const envContent = fs.readFileSync(path.join(installDir, ".env"), "utf8");
+
+    assert.equal(result.service.healthMeta.port, 7901);
+    assert.equal(result.service.healthMeta.webUrl, "http://127.0.0.1:7901");
+    assert.match(envContent, /^HOST_PORT=7901$/m);
+    assert.match(envContent, /^SERVER_PORT=7901$/m);
+  } finally {
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("writeServiceConfig syncs agent webclient upstream urls after agent platform host port save", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-platform-webclient-sync-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+  const webclientService = getBuiltinService("agent-webclient");
+  const webclientInstallDir = path.join(userDataRoot, "services", webclientService.id, webclientService.version);
+  const webclientEnvPath = path.join(webclientInstallDir, ".env");
+
+  try {
+    await installBuiltinService(app, "agent-platform");
+    await installBuiltinService(app, "agent-webclient");
+    await writeServiceConfig(
+      app,
+      "agent-webclient",
+      "env",
+      [
+        "PORT=7080",
+        "BASE_URL=http://127.0.0.1:7078",
+        "WS_BASE_URL=http://127.0.0.1:7078",
+        "VOICE_BASE_URL=http://127.0.0.1:7078"
+      ].join("\n") + "\n"
+    );
+
+    await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=7901\nSERVER_PORT=7901\n");
+    let envContent = fs.readFileSync(webclientEnvPath, "utf8");
+    assert.match(envContent, /^BASE_URL=http:\/\/127\.0\.0\.1:7901$/m);
+    assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7901$/m);
+    assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7901$/m);
+
+    await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=7903\nSERVER_PORT=7903\n");
+    envContent = fs.readFileSync(webclientEnvPath, "utf8");
+    assert.match(envContent, /^BASE_URL=http:\/\/127\.0\.0\.1:7903$/m);
+    assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7903$/m);
+    assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7903$/m);
+
+    await writeServiceConfig(
+      app,
+      "agent-webclient",
+      "env",
+      [
+        "PORT=7080",
+        "BASE_URL=https://platform.example.test",
+        "WS_BASE_URL=http://127.0.0.1:7903",
+        "VOICE_BASE_URL=http://127.0.0.1:9999"
+      ].join("\n") + "\n"
+    );
+    await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=7904\nSERVER_PORT=7904\n");
+    envContent = fs.readFileSync(webclientEnvPath, "utf8");
+    assert.match(envContent, /^BASE_URL=https:\/\/platform\.example\.test$/m);
+    assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7904$/m);
+    assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:9999$/m);
+  } finally {
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("writeServiceConfig migrates known bad core env ports without overriding custom values", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-core-config-save-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+  const platformService = getBuiltinService("agent-platform");
+  const webclientService = getBuiltinService("agent-webclient");
+  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
+  const webclientInstallDir = path.join(userDataRoot, "services", webclientService.id, webclientService.version);
+
+  try {
+    await installBuiltinService(app, "agent-platform");
+    await writeServiceConfig(
+      app,
+      "agent-platform",
+      "env",
+      [
+        "HOST_PORT=117078",
+        "SERVER_PORT=117078",
+        "CONTAINER_HUB_BASE_URL=http://127.0.0.1:117079",
+        "AUTH_ENABLED=false"
+      ].join("\n") + "\n"
+    );
+    let envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+    assert.match(envContent, /^HOST_PORT=7078$/m);
+    assert.match(envContent, /^SERVER_PORT=7078$/m);
+    assert.match(envContent, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:7079$/m);
+    assert.match(envContent, /^AUTH_ENABLED=false$/m);
+
+    await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=7901\nSERVER_PORT=18081\n");
+    envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+    assert.match(envContent, /^HOST_PORT=7901$/m);
+    assert.match(envContent, /^SERVER_PORT=7901$/m);
+
+    await installBuiltinService(app, "agent-webclient");
+    const result = await writeServiceConfig(
+      app,
+      "agent-webclient",
+      "env",
+      [
+        "PORT=7902",
+        "BASE_URL=https://platform.example.test",
+        "WS_BASE_URL=http://127.0.0.1:117078",
+        "VOICE_BASE_URL=http://localhost:11949"
+      ].join("\n") + "\n"
+    );
+    envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
+    assert.equal(result.service.healthMeta.port, 7902);
+    assert.match(result.message, /重启服务后生效/u);
+    assert.match(envContent, /^PORT=7902$/m);
+    assert.match(envContent, /^BASE_URL=https:\/\/platform\.example\.test$/m);
+    assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7901$/m);
+    assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7901$/m);
+  } finally {
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("startService treats a matching port listener as already running and restores the pid file", async () => {
@@ -2263,7 +2468,8 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
 
   const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
   assert.match(envContent, /CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960/);
-  assert.match(envContent, /SERVER_PORT=11949/);
+  assert.match(envContent, /^HOST_PORT=7078$/m);
+  assert.match(envContent, /^SERVER_PORT=7078$/m);
   assert.match(envContent, /^AGENT_WS_ENABLED=true$/m);
   assert.match(envContent, /^AUTH_ENABLED=true$/m);
   assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
@@ -2830,7 +3036,7 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   await installBuiltinService(app, webclientService.id);
   fs.writeFileSync(
     path.join(webclientInstallDir, ".env"),
-    "BASE_URL=http://localhost:11949\nWS_BASE_URL=http://localhost:11949\n",
+    "BASE_URL=http://localhost:11949\nWS_BASE_URL=http://localhost:11949\nVOICE_BASE_URL=http://127.0.0.1:117078\n",
     "utf8"
   );
   fs.writeFileSync(
@@ -2857,7 +3063,8 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   const manifest = JSON.parse(fs.readFileSync(path.join(webclientInstallDir, "manifest.json"), "utf8"));
   assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
   assert.match(envContent, /WS_BASE_URL=http:\/\/127\.0\.0\.1:12949/);
-  assert.match(envContent, /PORT=11948/);
+  assert.match(envContent, /VOICE_BASE_URL=http:\/\/127\.0\.0\.1:12949/);
+  assert.match(envContent, /PORT=7080/);
   const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
   assert.match(
     envContent,
@@ -3046,6 +3253,13 @@ test("startService refreshes a stale running zenmind-app-server install before r
 
   try {
     await installBuiltinService(app, service.id);
+    const servicePort = await getAvailableLocalPort();
+    const envPath = path.join(installDir, ".env");
+    fs.writeFileSync(
+      envPath,
+      fs.readFileSync(envPath, "utf8").replace(/^SERVER_PORT=.*$/m, `SERVER_PORT=${servicePort}`),
+      "utf8"
+    );
     const firstStart = await startService(app, service.id);
     assert.equal(firstStart.ok, true);
     assert.equal(firstStart.service.status, "running");
@@ -3076,7 +3290,7 @@ test("startService refreshes a stale running zenmind-app-server install before r
     );
     fs.writeFileSync(
       path.join(installDir, ".env"),
-      `SERVER_PORT=${service.web.defaultPort}\n`,
+      `SERVER_PORT=${servicePort}\n`,
       "utf8"
     );
     fs.writeFileSync(

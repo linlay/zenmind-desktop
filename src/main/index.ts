@@ -769,9 +769,14 @@ function setDesktopPetWindowMouseInteractive(interactive: boolean) {
   desktopPetMouseInteractive = interactive;
   if (process.platform === "darwin") {
     desktopPetWindow.setIgnoreMouseEvents(!interactive, { forward: true });
-  } else {
-    desktopPetWindow.setIgnoreMouseEvents(false);
+    return { ok: true };
   }
+  if (process.platform === "win32") {
+    // Windows cannot forward mousemove events while ignored, so keep the pet window interactive there.
+    desktopPetWindow.setIgnoreMouseEvents(false);
+    return { ok: true };
+  }
+  desktopPetWindow.setIgnoreMouseEvents(false);
   return { ok: true };
 }
 
@@ -867,6 +872,51 @@ function scheduleAgentWebclientOpenRequest(
   }, AGENT_WEBCLIENT_OPEN_RETRY_MS);
 }
 
+async function ensureAssistantTargetServicesRunning(source: string) {
+  const failures: string[] = [];
+
+  for (const serviceId of STARTUP_RESTORE_SERVICE_ORDER) {
+    try {
+      const current = await getServiceState(app, serviceId);
+      if (current.status === "running") {
+        continue;
+      }
+
+      const result = await startService(app, serviceId);
+      if (!result.ok || result.service.status !== "running") {
+        failures.push(`${result.service.name}: ${result.message}`);
+      }
+    } catch (error) {
+      failures.push(`${serviceId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    console.warn(`[assistant-entry] failed to prepare assistant services from ${source}`, failures);
+  }
+
+  return failures;
+}
+
+async function showAssistantTargetWindow(source: string) {
+  const failures = await runServiceMutation(() => ensureAssistantTargetServicesRunning(source));
+  if (failures.length > 0) {
+    showMainWindow("/control-center");
+    return {
+      ok: false,
+      message: `智能助理服务恢复失败：${failures.join("；")}`,
+      window: mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+    };
+  }
+
+  showMainWindow(ASSISTANT_TARGET_PATH);
+  return {
+    ok: true,
+    message: "智能助理已打开。",
+    window: mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  };
+}
+
 async function markAgentPlatformChatReadFromDesktopPet(chatId: string) {
   const normalizedChatId = chatId.trim();
   if (!normalizedChatId) {
@@ -922,14 +972,14 @@ async function markAgentPlatformChatReadFromDesktopPet(chatId: string) {
   }
 }
 
-function openAssistantFromDesktopPet() {
+async function openAssistantFromDesktopPet() {
   const targetChatId = desktopPetState.chatId ??
     (desktopPetLocalStatus.status !== "idle" ? desktopPetLocalStatus.chatId : null);
   const agentKey = desktopPetAgentStatus?.agentKey ||
     desktopPetState.boundAgentKey ||
     desktopPetSettings.boundAgentKey;
-  showMainWindow(ASSISTANT_TARGET_PATH);
-  const targetWindow = mainWindow;
+  const openResult = await showAssistantTargetWindow("desktop-pet");
+  const targetWindow = openResult.window;
   if (targetWindow && !targetWindow.isDestroyed()) {
     scheduleAgentWebclientOpenRequest(targetWindow, {
       chatId: targetChatId ?? "",
@@ -940,7 +990,10 @@ function openAssistantFromDesktopPet() {
   if (targetChatId && desktopPetState.unreadCount > 0) {
     void markAgentPlatformChatReadFromDesktopPet(targetChatId);
   }
-  return { ok: true };
+  return {
+    ok: openResult.ok,
+    message: openResult.message
+  };
 }
 
 function requestDesktopPetDance() {
@@ -973,6 +1026,8 @@ function createDesktopPetWindow() {
   if (desktopPetWindow && !desktopPetWindow.isDestroyed()) {
     return desktopPetWindow;
   }
+  const isMac = process.platform === "darwin";
+  const isWindows = process.platform === "win32";
 
   desktopPetWindow = new BrowserWindow({
     ...getDesktopPetBounds(),
@@ -987,6 +1042,7 @@ function createDesktopPetWindow() {
     hasShadow: false,
     title: "ZenMind Desktop Xianzun",
     backgroundColor: "#00000000",
+    ...(isWindows ? { thickFrame: false } : {}),
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true,
@@ -996,8 +1052,12 @@ function createDesktopPetWindow() {
     }
   });
 
-  desktopPetWindow.setAlwaysOnTop(true, "floating");
-  desktopPetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  if (isMac) {
+    desktopPetWindow.setAlwaysOnTop(true, "floating");
+    desktopPetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  } else if (isWindows) {
+    desktopPetWindow.setAlwaysOnTop(true);
+  }
   setDesktopPetWindowMouseInteractive(false);
   desktopPetWindow.on("move", persistDesktopPetPosition);
   desktopPetWindow.on("show", () => {
@@ -2743,11 +2803,10 @@ async function activateBrowserSurface(target: string) {
   };
 }
 
-function openAssistantWorker(request: AssistantWorkerOpenRequest) {
-  showMainWindow(ASSISTANT_TARGET_PATH);
-
-  const targetWindow = mainWindow;
-  if (!targetWindow || targetWindow.isDestroyed()) {
+async function openAssistantWorker(request: AssistantWorkerOpenRequest) {
+  const openResult = await showAssistantTargetWindow("assistant-worker");
+  const targetWindow = openResult.window;
+  if (!openResult.ok || !targetWindow || targetWindow.isDestroyed()) {
     return;
   }
 
@@ -2791,16 +2850,19 @@ function buildTrayMenu() {
   return Menu.buildFromTemplate([
     {
       label: "和 ZenMind 聊天",
-      click: () =>
-        openAssistantWorker({
+      click: () => {
+        void openAssistantWorker({
           displayName: "ZenMind",
           role: "确认对话示例",
           focusComposerOnComplete: true
-        })
+        });
+      }
     },
     {
       label: "打开 ZenMind",
-      click: () => showMainWindow(ASSISTANT_TARGET_PATH)
+      click: () => {
+        void showAssistantTargetWindow("tray-menu");
+      }
     },
     {
       label: "设置",
@@ -2839,7 +2901,9 @@ function createAppTray() {
   if (process.platform !== "darwin") {
     tray.setContextMenu(buildTrayMenu());
   }
-  tray.on("click", () => showMainWindow(ASSISTANT_TARGET_PATH));
+  tray.on("click", () => {
+    void showAssistantTargetWindow("tray-click");
+  });
   tray.on("right-click", () => tray?.popUpContextMenu(buildTrayMenu()));
 
   return tray;
@@ -3335,7 +3399,7 @@ function registerIpcHandlers() {
     if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
       quickAssistantWindow.hide();
     }
-    openAssistantWorker({
+    await openAssistantWorker({
       chatId: chatId ?? undefined,
       displayName: "ZenMind",
       role: "快速助手",

@@ -178,7 +178,7 @@ function sanitizeDesktopPetStoredState(value: unknown, supported: boolean): Desk
 }
 
 export function isDesktopPetSupportedPlatform(platform: Platform) {
-  return platform === "darwin";
+  return platform === "darwin" || platform === "win32";
 }
 
 export function readDesktopPetStoredState(app: App, platform: Platform = process.platform) {
