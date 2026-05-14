@@ -153,6 +153,55 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /这个设置不影响桌面宠物绑定/);
 });
 
+test("desktop action bridge exposes localhost api and renderer action providers", () => {
+  const actionCatalog = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
+  const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+  const registry = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "services", "desktopActionRegistry.ts"),
+    "utf8"
+  );
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const settingsPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "SettingsPage.tsx"),
+    "utf8"
+  );
+  const marketPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "PluginMarketPage.tsx"),
+    "utf8"
+  );
+
+  assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_HOST\s*=\s*"127\.0\.0\.1"/);
+  assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_PORT\s*=\s*11788/);
+  assert.match(actionCatalog, /desktop\.controlCenter\.listServices/);
+  assert.match(actionCatalog, /desktop\.market\.applySettingsPatch/);
+  assert.match(actionCatalog, /desktop\.automations\.listSchedules/);
+  assert.match(actionCatalog, /desktop\.memory\.disableAutoLearn/);
+  assert.match(bridge, /GET" && url\.pathname === "\/health"/);
+  assert.match(bridge, /GET" && url\.pathname === "\/actions"/);
+  assert.match(bridge, /POST" && url\.pathname === "\/actions\/call"/);
+  assert.match(bridge, /Content-Type must be application\/json/);
+  assert.match(bridge, /isLocalhostRequest/);
+  assert.match(bridge, /confirmMutatingAction/);
+  assert.match(mainProcess, /startDesktopActionBridge\(\{/);
+  assert.match(mainProcess, /desktopActions\.respond/);
+  assert.match(mainProcess, /desktopActions\.call/);
+  assert.match(preload, /desktopActions:\s*\{/);
+  assert.match(preload, /ipcRenderer\.invoke\("desktopActions\.respond"/);
+  assert.match(preload, /ipcRenderer\.on\("desktopActions\.call"/);
+  assert.match(contracts, /DesktopActionRendererRequest/);
+  assert.match(contracts, /DesktopActionCallListener/);
+  assert.match(registry, /registerDesktopActionProvider/);
+  assert.match(registry, /page_action_unavailable/);
+  assert.match(appShell, /startDesktopActionRendererBridge\(\)/);
+  assert.match(settingsPage, /registerDesktopActionProvider/);
+  assert.match(settingsPage, /desktopHelperAgentKey/);
+  assert.match(marketPage, /registerDesktopActionProvider/);
+  assert.match(marketPage, /skillsApiBaseUrl/);
+});
+
 test("built index uses relative asset paths", () => {
   const builtIndex = fs.readFileSync(path.join(projectRoot, "dist-renderer", "index.html"), "utf8");
 

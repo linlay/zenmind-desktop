@@ -101,6 +101,8 @@ import type {
   AssistantSubmitAwaitingRequest,
   AssistantVoiceCorrectionRequest,
   AssistantVoiceTranscriptionRequest,
+  DesktopActionRendererRequest,
+  DesktopActionRendererResponse,
   DesktopPetAgentOption,
   DesktopPetSettingsInput,
   AssistantPastedImageInput,
@@ -128,6 +130,7 @@ import {
 } from "./user-paths";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { safeConsoleError } from "./safe-console";
+import { startDesktopActionBridge } from "./desktop-action-bridge";
 import { AgentPlatformPetStatusClient } from "./agent-platform-pet-status";
 import { AgentPlatformPetStreamClient } from "./agent-platform-pet-stream";
 import {
@@ -179,6 +182,10 @@ let mainWindowDragState: {
   startedAt: number;
 } | null = null;
 let mainWindowSidebarTranslucencyEnabled = false;
+const desktopActionRendererRequests = new Map<string, {
+  resolve: (response: DesktopActionRendererResponse) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}>();
 const quickAssistantState = createQuickAssistantWindowState();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const AGENT_WEBCLIENT_APP_PATHNAME = "/";
@@ -186,6 +193,7 @@ const LOG_VIEWER_ROUTE = "/log-viewer";
 const AGENT_WEBCLIENT_OPEN_RETRY_COUNT = 24;
 const AGENT_WEBCLIENT_OPEN_RETRY_MS = 180;
 const MAIN_WINDOW_DRAG_FORCE_END_MS = 8_000;
+const DESKTOP_ACTION_RENDERER_TIMEOUT_MS = 8_000;
 const DESKTOP_PET_DRAG_FORCE_END_MS = 4_000;
 const QUICK_ASSISTANT_DISMISS_URL = "zenmind://quick-assistant-dismiss";
 const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -2736,6 +2744,41 @@ async function runServiceMutation<T>(task: () => Promise<T>) {
   }
 }
 
+async function callDesktopActionRenderer(
+  request: DesktopActionRendererRequest
+): Promise<DesktopActionRendererResponse> {
+  const targetWindow = mainWindow;
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return {
+      requestId: request.requestId,
+      action: request.action,
+      ok: false,
+      error: {
+        code: "renderer_unavailable",
+        message: "Desktop 主窗口不可用。"
+      }
+    };
+  }
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      desktopActionRendererRequests.delete(request.requestId);
+      resolve({
+        requestId: request.requestId,
+        action: request.action,
+        ok: false,
+        error: {
+          code: "renderer_timeout",
+          message: "当前页面未及时响应 Desktop 动作请求。"
+        }
+      });
+    }, DESKTOP_ACTION_RENDERER_TIMEOUT_MS);
+
+    desktopActionRendererRequests.set(request.requestId, { resolve, timeout });
+    targetWindow.webContents.send("desktopActions.call", request);
+  });
+}
+
 function navigateMainWindow(targetPath: string) {
   const targetWindow = getMainWindowForActivation();
   if (!targetWindow || targetWindow.isDestroyed()) {
@@ -3322,6 +3365,15 @@ function registerIpcHandlers() {
     }
   });
 
+  startDesktopActionBridge({
+    app,
+    assistantBridge,
+    getMainWindow: () => mainWindow,
+    navigate: showMainWindow,
+    openLogViewer: openLogViewerWindow,
+    callRendererAction: callDesktopActionRenderer
+  });
+
   ipcMain.handle("assistant.getSettings", async () => getAgentPlatformMinimaxSettingsPublic(app) ?? getAssistantSettings(app));
   ipcMain.handle("assistant.saveSettings", async (_event, input: AssistantSettingsInput) =>
     saveAssistantSettings(app, input)
@@ -3381,6 +3433,20 @@ function registerIpcHandlers() {
   ipcMain.handle("assistant.submitAwaiting", async (_event, request: AssistantSubmitAwaitingRequest) =>
     assistantBridge.submitAwaiting(request)
   );
+  ipcMain.handle("desktopActions.respond", async (_event, response: DesktopActionRendererResponse) => {
+    const requestId = typeof response?.requestId === "string" ? response.requestId : "";
+    if (!requestId) {
+      return { ok: false };
+    }
+    const pending = desktopActionRendererRequests.get(requestId);
+    if (!pending) {
+      return { ok: false };
+    }
+    desktopActionRendererRequests.delete(requestId);
+    clearTimeout(pending.timeout);
+    pending.resolve(response);
+    return { ok: true };
+  });
   ipcMain.handle("assistant.openAttachment", async (_event, chatId: string, attachmentId: string) => {
     try {
       const attachmentPath = resolveAssistantAttachmentPath(app, chatId, attachmentId);

@@ -500,6 +500,33 @@ export interface AssistantPageContext {
   };
 }
 
+export interface DesktopActionRendererRequest {
+  requestId: string;
+  action: string;
+  args: Record<string, unknown>;
+  source?: {
+    runId?: string;
+    chatId?: string;
+    agentKey?: string;
+  };
+}
+
+export interface DesktopActionRendererResponse {
+  requestId: string;
+  ok: boolean;
+  action: string;
+  result?: unknown;
+  preview?: unknown;
+  requiresConfirmation?: boolean;
+  error?: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+}
+
+export type DesktopActionCallListener = (request: DesktopActionRendererRequest) => void;
+
 export interface AssistantChatMessage {
   id: string;
   role: AssistantMessageRole;
@@ -1224,6 +1251,10 @@ export interface DesktopApi {
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
     setSidebarTranslucency: (enabled: boolean) => Promise<SidebarTranslucencyResult>;
+  };
+  desktopActions: {
+    respond: (response: DesktopActionRendererResponse) => Promise<{ ok: boolean }>;
+    onCall: (listener: DesktopActionCallListener) => () => void;
   };
   windowDrag: {
     begin: (point: { x: number; y: number }) => Promise<{ ok: boolean }>;

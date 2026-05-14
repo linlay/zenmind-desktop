@@ -13,6 +13,7 @@ import type {
   DesktopPetState
 } from "../../shared/contracts";
 import { DEFAULT_DESKTOP_HELPER_AGENT_KEY } from "../../shared/assistant-settings";
+import { registerDesktopActionProvider } from "../services/desktopActionRegistry";
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
@@ -257,6 +258,113 @@ export function SettingsPage({
   const currentDesktopPetAgentOption = desktopPetAgentOptions.find(
     (agent) => agent.agentKey === currentDesktopPetBoundAgentKey
   );
+
+  useEffect(() => {
+    return registerDesktopActionProvider(async (request) => {
+      const patch = request.args?.patch && typeof request.args.patch === "object" && !Array.isArray(request.args.patch)
+        ? request.args.patch as Record<string, unknown>
+        : {};
+      const requestedHelperAgentKey = typeof request.args?.desktopHelperAgentKey === "string"
+        ? request.args.desktopHelperAgentKey.trim()
+        : typeof patch.desktopHelperAgentKey === "string"
+          ? patch.desktopHelperAgentKey.trim()
+          : desktopHelperAgentKey.trim();
+      const nextHelperAgent = assistantAgentOptions.find((agent) => agent.agentKey === requestedHelperAgentKey);
+      const helperValidation = {
+        field: "desktopHelperAgentKey",
+        value: requestedHelperAgentKey,
+        valid: Boolean(requestedHelperAgentKey && nextHelperAgent),
+        message: nextHelperAgent
+          ? "侧边栏默认助手配置可用。"
+          : "请选择当前智能体列表中存在的侧边栏默认助手。"
+      };
+
+      switch (request.action) {
+        case "desktop.page.getFormState":
+          return {
+            ok: true,
+            result: {
+              page: "settings",
+              fields: {
+                desktopHelperAgentKey: {
+                  value: desktopHelperAgentKey,
+                  saved: assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY,
+                  valid: Boolean(assistantAgentOptions.find((agent) => agent.agentKey === desktopHelperAgentKey))
+                },
+                desktopPetBoundAgentKey: {
+                  value: currentDesktopPetBoundAgentKey,
+                  saved: currentDesktopPetBoundAgentKey
+                },
+                memory: {
+                  enabled: memorySettings?.enabled ?? null,
+                  autoLearn: memorySettings?.autoLearn ?? null
+                }
+              },
+              options: {
+                assistantAgents: assistantAgentOptions.map((agent) => ({
+                  agentKey: agent.agentKey,
+                  displayName: agent.displayName,
+                  role: agent.role
+                }))
+              }
+            }
+          };
+        case "desktop.page.validateForm":
+          return {
+            ok: true,
+            result: {
+              valid: helperValidation.valid,
+              issues: helperValidation.valid ? [] : [helperValidation],
+              fields: { desktopHelperAgentKey: helperValidation }
+            }
+          };
+        case "desktop.page.previewPatch":
+          return {
+            ok: true,
+            preview: {
+              page: "settings",
+              changes: [{
+                field: "desktopHelperAgentKey",
+                from: desktopHelperAgentKey,
+                to: requestedHelperAgentKey,
+                displayName: nextHelperAgent?.displayName ?? requestedHelperAgentKey,
+                valid: helperValidation.valid
+              }]
+            }
+          };
+        case "desktop.page.applyPatch":
+          if (!helperValidation.valid) {
+            return {
+              ok: false,
+              error: {
+                code: "invalid_form_patch",
+                message: helperValidation.message,
+                details: helperValidation
+              }
+            };
+          }
+          await handleSelectDesktopHelperAgentKey(requestedHelperAgentKey);
+          return {
+            ok: true,
+            result: {
+              applied: true,
+              field: "desktopHelperAgentKey",
+              value: requestedHelperAgentKey,
+              displayName: nextHelperAgent?.displayName ?? requestedHelperAgentKey
+            }
+          };
+        default:
+          return null;
+      }
+    });
+  }, [
+    assistantAgentOptions,
+    assistantSettings?.desktopHelperAgentKey,
+    currentDesktopPetBoundAgentKey,
+    desktopHelperAgentKey,
+    memorySettings?.autoLearn,
+    memorySettings?.enabled
+  ]);
 
   async function refreshMemoryItems() {
     const [summary, memoryList] = await Promise.all([

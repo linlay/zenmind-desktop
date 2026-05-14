@@ -9,6 +9,7 @@ import type {
 } from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
+import { registerDesktopActionProvider } from "../services/desktopActionRegistry";
 import { getServiceDisplayName } from "../service-display";
 import "./PluginMarketPage.css";
 
@@ -197,6 +198,88 @@ export function PluginMarketPage() {
     void loadSettings();
     void loadMarket(false);
   }, []);
+
+  useEffect(() => {
+    return registerDesktopActionProvider(async (request) => {
+      const nextUrl = typeof request.args?.skillsApiBaseUrl === "string"
+        ? request.args.skillsApiBaseUrl.trim()
+        : typeof (request.args?.patch as { skillsApiBaseUrl?: unknown } | undefined)?.skillsApiBaseUrl === "string"
+          ? String((request.args?.patch as { skillsApiBaseUrl?: unknown }).skillsApiBaseUrl).trim()
+          : skillsApiDraft.trim();
+      const validation = {
+        field: "skillsApiBaseUrl",
+        value: nextUrl,
+        valid: isValidSkillsApiBaseUrl(nextUrl),
+        message: isValidSkillsApiBaseUrl(nextUrl)
+          ? "技能市场地址格式正确。"
+          : "技能市场地址请输入 http/https 服务根地址，或以 /api/v1 结尾。"
+      };
+
+      switch (request.action) {
+        case "desktop.page.getFormState":
+          return {
+            ok: true,
+            result: {
+              page: "market",
+              activeTab,
+              fields: {
+                skillsApiBaseUrl: {
+                  draft: skillsApiDraft,
+                  saved: marketSettings.skillsApiBaseUrl,
+                  valid: isValidSkillsApiBaseUrl(skillsApiDraft)
+                }
+              }
+            }
+          };
+        case "desktop.page.validateForm":
+          return {
+            ok: true,
+            result: {
+              valid: validation.valid,
+              issues: validation.valid ? [] : [validation],
+              fields: { skillsApiBaseUrl: validation }
+            }
+          };
+        case "desktop.page.previewPatch":
+          return {
+            ok: true,
+            preview: {
+              page: "market",
+              changes: [{
+                field: "skillsApiBaseUrl",
+                from: skillsApiDraft,
+                to: nextUrl,
+                valid: validation.valid
+              }]
+            }
+          };
+        case "desktop.page.applyPatch":
+          if (!validation.valid) {
+            return {
+              ok: false,
+              error: {
+                code: "invalid_form_patch",
+                message: validation.message,
+                details: validation
+              }
+            };
+          }
+          setActiveTab("skills");
+          setSkillsApiDraft(nextUrl);
+          setMarketFeedback("已填入技能市场地址，保存前请确认。");
+          return {
+            ok: true,
+            result: {
+              applied: true,
+              field: "skillsApiBaseUrl",
+              value: nextUrl
+            }
+          };
+        default:
+          return null;
+      }
+    });
+  }, [activeTab, marketSettings.skillsApiBaseUrl, skillsApiDraft]);
 
   const pluginItems = useMemo(
     () => marketResult.items.filter((item) => item.type === "plugin" && matchesQuery(item, pluginQuery)),

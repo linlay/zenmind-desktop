@@ -14,6 +14,7 @@ import { PluginPage } from "./pages/PluginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ServicesProvider, useServices } from "./services/ServicesContext";
+import { startDesktopActionRendererBridge } from "./services/desktopActionRegistry";
 import type { AssistantWorkerOpenRequest, CustomSidebarItem, ServiceId, ServiceState, StartupRestoreState } from "../shared/contracts";
 import {
   resolveStartupRootPath,
@@ -235,6 +236,10 @@ function AppShell() {
     }
     setAssistantDockOpen(true);
   }
+
+  useEffect(() => {
+    startDesktopActionRendererBridge();
+  }, []);
 
   useEffect(() => {
     return window.electronAPI.onNavigate((targetPath) => {

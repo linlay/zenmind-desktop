@@ -1,0 +1,612 @@
+import http from "node:http";
+import { randomUUID } from "node:crypto";
+import type { AddressInfo } from "node:net";
+import type { App, BrowserWindow } from "electron";
+import { dialog } from "electron";
+import type {
+  AssistantMemorySettings,
+  DesktopActionRendererRequest,
+  DesktopActionRendererResponse,
+  ServiceId,
+  ServiceLogTarget,
+  ServiceOpenLogViewerRequest
+} from "../shared/contracts";
+import {
+  DESKTOP_ACTION_BRIDGE_HOST,
+  DESKTOP_ACTION_BRIDGE_PORT,
+  DESKTOP_ACTION_DEFINITIONS,
+  getDesktopActionDefinition,
+  isDesktopActionMutating,
+  type DesktopActionCallRequest,
+  type DesktopActionCallResponse,
+  type DesktopActionError
+} from "../shared/desktop-actions";
+import { issueAgentAccessToken } from "./agent-auth";
+import type { AgentPlatformAssistantBridge } from "./assistant/agent-platform-bridge";
+import {
+  getServiceLogsMeta,
+  getServiceState,
+  initializeService,
+  installBuiltinService,
+  listServices,
+  readServiceLog,
+  restartService,
+  startService,
+  stopService
+} from "./service-manager";
+import {
+  getMarketSettings,
+  installMarketItem,
+  listMarketItems,
+  refreshMarketCatalog,
+  saveMarketSettings,
+  uninstallMarketItem,
+  updateMarketItem
+} from "./marketplace";
+
+type DesktopActionBridgeOptions = {
+  app: App;
+  assistantBridge: AgentPlatformAssistantBridge;
+  getMainWindow: () => BrowserWindow | null;
+  navigate: (targetPath: string) => void;
+  openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
+  callRendererAction: (request: DesktopActionRendererRequest) => Promise<DesktopActionRendererResponse>;
+};
+
+type PlatformResponse<T> = {
+  code?: number;
+  msg?: string;
+  data?: T;
+};
+
+const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
+const MAX_BODY_BYTES = 256 * 1024;
+let activeServer: http.Server | null = null;
+
+function actionError(code: string, message: string, details?: unknown): DesktopActionError {
+  return {
+    code,
+    message,
+    ...(details === undefined ? {} : { details })
+  };
+}
+
+function ok(action: string, result?: unknown): DesktopActionCallResponse {
+  return { ok: true, action, result };
+}
+
+function preview(action: string, value: unknown): DesktopActionCallResponse {
+  return { ok: true, action, preview: value };
+}
+
+function fail(action: string, code: string, message: string, details?: unknown): DesktopActionCallResponse {
+  return { ok: false, action, error: actionError(code, message, details) };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function readString(args: Record<string, unknown>, key: string) {
+  return typeof args[key] === "string" ? args[key].trim() : "";
+}
+
+function readServiceId(args: Record<string, unknown>) {
+  const serviceId = readString(args, "serviceId");
+  if (!serviceId) {
+    throw new Error("serviceId is required");
+  }
+  return serviceId as ServiceId;
+}
+
+function readItemId(args: Record<string, unknown>) {
+  const itemId = readString(args, "itemId");
+  if (!itemId) {
+    throw new Error("itemId is required");
+  }
+  return itemId;
+}
+
+function readScheduleId(args: Record<string, unknown>) {
+  const id = readString(args, "id") || readString(args, "scheduleId");
+  if (!id) {
+    throw new Error("schedule id is required");
+  }
+  return id;
+}
+
+function readAgentKey(args: Record<string, unknown>) {
+  const key = readString(args, "key") || readString(args, "agentKey");
+  if (!key) {
+    throw new Error("agent key is required");
+  }
+  return key;
+}
+
+function validateMarketSettings(input: Record<string, unknown>) {
+  try {
+    const settings = saveMarketSettingsPreview(input);
+    return {
+      valid: true,
+      issues: [],
+      normalized: settings
+    };
+  } catch (error) {
+    return {
+      valid: false,
+      issues: [{
+        field: "skillsApiBaseUrl",
+        message: error instanceof Error ? error.message : String(error)
+      }]
+    };
+  }
+}
+
+function saveMarketSettingsPreview(input: Record<string, unknown>) {
+  const rawUrl = typeof input.skillsApiBaseUrl === "string" ? input.skillsApiBaseUrl.trim() : "";
+  if (!rawUrl) {
+    throw new Error("skillsApiBaseUrl is required");
+  }
+  const parsed = new URL(rawUrl);
+  const pathname = parsed.pathname.replace(/\/+$/u, "") || "/";
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("技能市场地址仅支持 http 或 https。");
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error("技能市场地址不应包含查询参数或锚点。");
+  }
+  if (pathname !== "/" && pathname !== "/api/v1") {
+    throw new Error("技能市场地址请输入服务根地址，或以 /api/v1 结尾。");
+  }
+  return {
+    skillsApiBaseUrl: pathname === "/" ? parsed.origin : `${parsed.origin}/api/v1`
+  };
+}
+
+function validateAgentConfig(args: Record<string, unknown>) {
+  const definition = asRecord(args.definition);
+  const key = readString(args, "key") || (typeof definition.key === "string" ? definition.key.trim() : "");
+  const issues = [];
+  if (!key) {
+    issues.push({ field: "key", message: "agent key is required" });
+  }
+  if (key.includes("/") || key.includes("\\") || key.includes("..")) {
+    issues.push({ field: "key", message: "agent key must not contain path separators or traversal" });
+  }
+  if (definition.key && definition.key !== key) {
+    issues.push({ field: "definition.key", message: "definition.key must match key" });
+  }
+  if (!definition.name) {
+    issues.push({ field: "definition.name", message: "agent name is recommended" });
+  }
+  return {
+    valid: issues.length === 0,
+    issues,
+    key,
+    definition
+  };
+}
+
+function validateSchedule(args: Record<string, unknown>) {
+  const issues = [];
+  if (!readString(args, "name") && !readString(args, "id")) {
+    issues.push({ field: "name", message: "schedule name is required for create, id is required for update" });
+  }
+  if (!readString(args, "cron")) {
+    issues.push({ field: "cron", message: "cron is required" });
+  }
+  const query = asRecord(args.query);
+  if (!readString(query, "message")) {
+    issues.push({ field: "query.message", message: "query.message is required" });
+  }
+  return {
+    valid: issues.length === 0,
+    issues
+  };
+}
+
+async function readBody(req: http.IncomingMessage) {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.length;
+    if (total > MAX_BODY_BYTES) {
+      throw new Error("request body too large");
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function writeJSON(res: http.ServerResponse, status: number, payload: unknown) {
+  res.writeHead(status, {
+    "Content-Type": JSON_CONTENT_TYPE,
+    "Cache-Control": "no-store"
+  });
+  res.end(`${JSON.stringify(payload)}\n`);
+}
+
+function unwrapPlatformResponse<T>(payload: unknown): T {
+  if (payload && typeof payload === "object" && "code" in payload && "data" in payload) {
+    const response = payload as PlatformResponse<T>;
+    if (response.code !== 0) {
+      throw new Error(response.msg || `agent-platform returned code ${response.code}`);
+    }
+    return response.data as T;
+  }
+  return payload as T;
+}
+
+async function callAgentPlatform<T>(
+  app: App,
+  pathOrUrl: string,
+  options: { method?: string; body?: unknown } = {}
+): Promise<T> {
+  const state = await getServiceState(app, "agent-platform");
+  const baseUrl = state.status === "running"
+    ? state.healthMeta.webUrl.trim() || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "")
+    : "";
+  if (!baseUrl) {
+    throw new Error("agent-platform is not running");
+  }
+  const token = await issueAgentAccessToken(app, "missing");
+  if (!token.ok) {
+    throw new Error(token.message || "agent-platform token unavailable");
+  }
+  const response = await fetch(new URL(pathOrUrl, baseUrl).toString(), {
+    method: options.method ?? "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token.token}`,
+      ...(options.body === undefined ? {} : { "Content-Type": "application/json" })
+    },
+    ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) })
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return unwrapPlatformResponse<T>(await response.json());
+}
+
+async function confirmMutatingAction(action: string, args: Record<string, unknown>, owner: BrowserWindow | null) {
+  const summary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
+    ? args.confirmationSummary.trim()
+    : `允许智能体执行 ${action}？`;
+  const dialogOptions = {
+    type: "question" as const,
+    buttons: ["执行", "取消"],
+    defaultId: 1,
+    cancelId: 1,
+    title: "确认 Desktop 动作",
+    message: summary,
+    detail: "该动作由本地 Desktop Action Bridge 发起。请确认目标和影响后再执行。"
+  };
+  const result = owner && !owner.isDestroyed()
+    ? await dialog.showMessageBox(owner, dialogOptions)
+    : await dialog.showMessageBox(dialogOptions);
+  return result.response === 0;
+}
+
+async function callRendererPageAction(
+  options: DesktopActionBridgeOptions,
+  request: DesktopActionCallRequest,
+  args: Record<string, unknown>
+) {
+  const response = await options.callRendererAction({
+    requestId: request.requestId || randomUUID(),
+    action: request.action,
+    args,
+    source: request.source
+  });
+  return {
+    ok: response.ok,
+    action: request.action,
+    ...(response.result === undefined ? {} : { result: response.result }),
+    ...(response.preview === undefined ? {} : { preview: response.preview }),
+    ...(response.requiresConfirmation === undefined ? {} : { requiresConfirmation: response.requiresConfirmation }),
+    ...(response.error === undefined ? {} : { error: response.error })
+  } satisfies DesktopActionCallResponse;
+}
+
+async function executeAction(
+  options: DesktopActionBridgeOptions,
+  request: DesktopActionCallRequest
+): Promise<DesktopActionCallResponse> {
+  const action = request.action;
+  const args = asRecord(request.args);
+
+  switch (action) {
+    case "desktop.page.getContext":
+    case "desktop.page.getFormState":
+    case "desktop.page.validateForm":
+    case "desktop.page.previewPatch":
+    case "desktop.page.applyPatch":
+      return callRendererPageAction(options, request, args);
+    case "desktop.navigate.toRoute": {
+      const route = readString(args, "route") || readString(args, "path");
+      if (!route.startsWith("/")) {
+        return fail(action, "invalid_args", "route must start with /");
+      }
+      options.navigate(route);
+      return ok(action, { route });
+    }
+    case "desktop.controlCenter.listServices":
+      return ok(action, await listServices(options.app));
+    case "desktop.controlCenter.getServiceStatus":
+    case "desktop.controlCenter.getServiceDetail":
+      return ok(action, await getServiceState(options.app, readServiceId(args)));
+    case "desktop.controlCenter.getServiceLogsMeta":
+      return ok(action, await getServiceLogsMeta(options.app, readServiceId(args)));
+    case "desktop.controlCenter.readServiceLog": {
+      const target = readString(args, "target") === "error" ? "error" : "main";
+      return ok(action, await readServiceLog(options.app, readServiceId(args), target as ServiceLogTarget, {
+        limitBytes: typeof args.limitBytes === "number" ? args.limitBytes : undefined,
+        beforeOffset: typeof args.beforeOffset === "number" ? args.beforeOffset : undefined
+      }));
+    }
+    case "desktop.controlCenter.openLogViewer":
+      return ok(action, await options.openLogViewer({
+        serviceId: readServiceId(args),
+        target: readString(args, "target") === "error" ? "error" : "main",
+        title: readString(args, "title") || "日志文件"
+      }));
+    case "desktop.controlCenter.installService": {
+      await installBuiltinService(options.app, readServiceId(args));
+      return ok(action, await getServiceState(options.app, readServiceId(args)));
+    }
+    case "desktop.controlCenter.initializeService":
+      return ok(action, await initializeService(options.app, readServiceId(args)));
+    case "desktop.controlCenter.startService":
+      return ok(action, await startService(options.app, readServiceId(args)));
+    case "desktop.controlCenter.stopService":
+      return ok(action, await stopService(options.app, readServiceId(args)));
+    case "desktop.controlCenter.restartService":
+      return ok(action, await restartService(options.app, readServiceId(args)));
+    case "desktop.market.getSettings":
+      return ok(action, getMarketSettings(options.app));
+    case "desktop.market.validateSettings":
+      return ok(action, validateMarketSettings(args));
+    case "desktop.market.previewSettingsPatch": {
+      const patch = asRecord(args.patch);
+      return preview(action, {
+        changes: [{
+          field: "skillsApiBaseUrl",
+          from: getMarketSettings(options.app).skillsApiBaseUrl,
+          to: saveMarketSettingsPreview(patch)
+        }]
+      });
+    }
+    case "desktop.market.applySettingsPatch":
+      return ok(action, saveMarketSettings(options.app, saveMarketSettingsPreview(asRecord(args.patch))));
+    case "desktop.market.listItems":
+      return ok(action, await listMarketItems(options.app));
+    case "desktop.market.refresh":
+      return ok(action, await refreshMarketCatalog(options.app));
+    case "desktop.market.getItemDetail": {
+      const itemId = readItemId(args);
+      const market = await listMarketItems(options.app);
+      const item = market.items.find((candidate) => candidate.id === itemId);
+      return item ? ok(action, item) : fail(action, "not_found", `market item not found: ${itemId}`);
+    }
+    case "desktop.market.installItem":
+      return ok(action, await installMarketItem(options.app, readItemId(args)));
+    case "desktop.market.updateItem":
+      return ok(action, await updateMarketItem(options.app, readItemId(args)));
+    case "desktop.market.uninstallItem":
+      return ok(action, await uninstallMarketItem(options.app, readItemId(args)));
+    case "desktop.market.importSkill":
+      return fail(action, "interactive_file_picker_required", "本地导入需要用户在 Desktop 文件选择器中操作，暂不通过 HTTP bridge 执行。");
+    case "desktop.help.getCurrentTopic":
+    case "desktop.help.explainCurrentPage": {
+      const response = await callRendererPageAction(options, { ...request, action: "desktop.page.getContext" }, args);
+      return { ...response, action };
+    }
+    case "desktop.help.searchTopics":
+      return ok(action, {
+        query: readString(args, "query"),
+        topics: [
+          { id: "control-center", title: "控制中心", route: "/control-center" },
+          { id: "market", title: "功能市场", route: "/market" },
+          { id: "agents", title: "智能体管理", route: "/agents" },
+          { id: "schedules", title: "自动化", route: "/schedules" },
+          { id: "memory", title: "记忆管理", route: "/memory" },
+          { id: "settings", title: "设置", route: "/settings" },
+          { id: "help", title: "帮助", route: "/help" }
+        ]
+      });
+    case "desktop.help.openTopic":
+    case "desktop.help.navigateToRelatedPage": {
+      const topic = readString(args, "topic") || readString(args, "id");
+      const route = topic === "control-center" ? "/control-center"
+        : topic === "market" ? "/market"
+          : topic === "agents" ? "/agents"
+            : topic === "schedules" ? "/schedules"
+              : topic === "memory" ? "/memory"
+                : topic === "settings" ? "/settings"
+                  : "/help";
+      options.navigate(route);
+      return ok(action, { route });
+    }
+    case "desktop.help.suggestNextAction":
+      return ok(action, { suggestions: ["查看当前页面上下文", "检查设置项", "打开相关页面"] });
+    case "desktop.agents.listAgents":
+      return ok(action, await options.assistantBridge.listAgents());
+    case "desktop.agents.getAgentDetail":
+      return ok(action, await callAgentPlatform(options.app, `/api/agent?agentKey=${encodeURIComponent(readAgentKey(args))}`));
+    case "desktop.agents.validateAgentConfig":
+      return ok(action, validateAgentConfig(args));
+    case "desktop.agents.previewAgentConfigPatch":
+      return preview(action, { key: readAgentKey(args), patch: asRecord(args.patch), warning: "预览仅展示请求 patch，不在 Desktop 端合并任意字段。" });
+    case "desktop.agents.applyAgentConfigPatch":
+      return fail(action, "unsupported_action", "请使用 desktop.agents.updateAgent 提交完整 definition。");
+    case "desktop.agents.createAgentDraft":
+      return preview(action, {
+        key: readString(args, "key"),
+        definition: asRecord(args.definition),
+        soulPrompt: typeof args.soulPrompt === "string" ? args.soulPrompt : "",
+        agentsPrompt: typeof args.agentsPrompt === "string" ? args.agentsPrompt : ""
+      });
+    case "desktop.agents.createAgent":
+      return ok(action, await callAgentPlatform(options.app, "/api/agent-create", { method: "POST", body: args }));
+    case "desktop.agents.updateAgent":
+      return ok(action, await callAgentPlatform(options.app, "/api/agent-update", { method: "POST", body: args }));
+    case "desktop.agents.cloneAgent":
+    case "desktop.agents.disableAgent":
+    case "desktop.agents.reloadAgents":
+      return fail(action, "unsupported_action", `${action} is reserved but not implemented in Desktop v1.`);
+    case "desktop.automations.listSchedules":
+      return ok(action, await callAgentPlatform(options.app, "/api/schedules", { method: "POST", body: {} }));
+    case "desktop.automations.getScheduleDetail":
+      return ok(action, await callAgentPlatform(options.app, "/api/schedule", { method: "POST", body: { id: readScheduleId(args) } }));
+    case "desktop.automations.validateSchedule":
+      return ok(action, validateSchedule(args));
+    case "desktop.automations.previewSchedule":
+      return preview(action, { schedule: args, validation: validateSchedule(args) });
+    case "desktop.automations.createSchedule":
+      return ok(action, await callAgentPlatform(options.app, "/api/schedule-create", { method: "POST", body: args }));
+    case "desktop.automations.updateSchedule":
+      return ok(action, await callAgentPlatform(options.app, "/api/schedule-update", { method: "POST", body: args }));
+    case "desktop.automations.pauseSchedule":
+    case "desktop.automations.resumeSchedule":
+      return ok(action, await callAgentPlatform(options.app, "/api/schedule-toggle", {
+        method: "POST",
+        body: { id: readScheduleId(args), enabled: action === "desktop.automations.resumeSchedule" }
+      }));
+    case "desktop.automations.deleteSchedule":
+      return ok(action, await callAgentPlatform(options.app, "/api/schedule-delete", { method: "POST", body: { id: readScheduleId(args) } }));
+    case "desktop.automations.explainNextRun": {
+      const detail = await callAgentPlatform<Record<string, unknown>>(options.app, "/api/schedule", { method: "POST", body: { id: readScheduleId(args) } });
+      return ok(action, { id: readScheduleId(args), nextFireTime: detail.nextFireTime ?? null, detail });
+    }
+    case "desktop.memory.getSettings":
+      return ok(action, await options.assistantBridge.getMemorySettings());
+    case "desktop.memory.getSummary":
+      return ok(action, await options.assistantBridge.getMemorySummary());
+    case "desktop.memory.listRecentItems": {
+      const list = await options.assistantBridge.listMemoryItems();
+      const limit = typeof args.limit === "number" ? Math.max(1, Math.min(50, Math.round(args.limit))) : 10;
+      return ok(action, { ...list, items: list.items.slice(0, limit) });
+    }
+    case "desktop.memory.searchItems": {
+      const query = readString(args, "query").toLowerCase();
+      const list = await options.assistantBridge.listMemoryItems();
+      return ok(action, {
+        ...list,
+        items: query
+          ? list.items.filter((item) => `${item.title} ${item.summary} ${item.tags.join(" ")}`.toLowerCase().includes(query))
+          : list.items
+      });
+    }
+    case "desktop.memory.previewItem": {
+      const id = readString(args, "id") || readString(args, "memoryId");
+      const list = await options.assistantBridge.listMemoryItems();
+      const item = list.items.find((candidate) => candidate.id === id);
+      return item ? ok(action, item) : fail(action, "not_found", `memory item not found: ${id}`);
+    }
+    case "desktop.memory.enableAutoLearn":
+    case "desktop.memory.disableAutoLearn": {
+      const current = await options.assistantBridge.getMemorySettings();
+      const next: AssistantMemorySettings = {
+        ...current,
+        autoLearn: action === "desktop.memory.enableAutoLearn"
+      };
+      return ok(action, await options.assistantBridge.saveMemorySettings(next));
+    }
+    default:
+      return fail(action, "unknown_action", `unknown action: ${action}`);
+  }
+}
+
+async function handleActionCall(
+  options: DesktopActionBridgeOptions,
+  request: DesktopActionCallRequest
+): Promise<DesktopActionCallResponse> {
+  const action = typeof request.action === "string" ? request.action.trim() : "";
+  if (!action || !getDesktopActionDefinition(action)) {
+    return fail(action || "unknown", "unknown_action", `unknown action: ${action || "(empty)"}`);
+  }
+  const normalizedRequest = { ...request, action };
+  const args = asRecord(request.args);
+  if (isDesktopActionMutating(action)) {
+    const confirmed = await confirmMutatingAction(action, args, options.getMainWindow());
+    if (!confirmed) {
+      return {
+        ok: false,
+        action,
+        requiresConfirmation: true,
+        error: actionError("user_cancelled", "用户取消了 Desktop 动作。")
+      };
+    }
+  }
+  try {
+    return await executeAction(options, normalizedRequest);
+  } catch (error) {
+    return fail(action, "action_failed", error instanceof Error ? error.message : String(error));
+  }
+}
+
+function isLocalhostRequest(req: http.IncomingMessage) {
+  return req.socket.remoteAddress === DESKTOP_ACTION_BRIDGE_HOST ||
+    req.socket.remoteAddress === "::ffff:127.0.0.1";
+}
+
+function hasJsonContentType(req: http.IncomingMessage) {
+  const contentType = String(req.headers["content-type"] || "").toLowerCase();
+  return contentType.split(";")[0].trim() === "application/json";
+}
+
+export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
+  if (activeServer) {
+    return activeServer;
+  }
+
+  const server = http.createServer(async (req, res) => {
+    if (!isLocalhostRequest(req)) {
+      writeJSON(res, 403, fail("unknown", "forbidden", "Desktop Action Bridge only accepts localhost requests."));
+      return;
+    }
+
+    const url = new URL(req.url || "/", `http://${DESKTOP_ACTION_BRIDGE_HOST}:${DESKTOP_ACTION_BRIDGE_PORT}`);
+    if (req.method === "GET" && url.pathname === "/health") {
+      writeJSON(res, 200, { ok: true, host: DESKTOP_ACTION_BRIDGE_HOST, port: (server.address() as AddressInfo | null)?.port ?? DESKTOP_ACTION_BRIDGE_PORT });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/actions") {
+      writeJSON(res, 200, { ok: true, actions: DESKTOP_ACTION_DEFINITIONS });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/actions/call") {
+      if (!hasJsonContentType(req)) {
+        writeJSON(res, 415, fail("unknown", "unsupported_media_type", "Content-Type must be application/json."));
+        return;
+      }
+      try {
+        const body = await readBody(req);
+        const parsed = JSON.parse(body) as DesktopActionCallRequest;
+        const response = await handleActionCall(options, parsed);
+        writeJSON(res, response.ok ? 200 : 400, response);
+      } catch (error) {
+        writeJSON(res, 400, fail("unknown", "invalid_request", error instanceof Error ? error.message : String(error)));
+      }
+      return;
+    }
+
+    writeJSON(res, 404, fail("unknown", "not_found", "Desktop Action Bridge route not found."));
+  });
+
+  server.listen(DESKTOP_ACTION_BRIDGE_PORT, DESKTOP_ACTION_BRIDGE_HOST, () => {
+    console.log(`[desktop-action-bridge] listening on ${DESKTOP_ACTION_BRIDGE_HOST}:${DESKTOP_ACTION_BRIDGE_PORT}`);
+  });
+  server.on("error", (error) => {
+    console.warn(`[desktop-action-bridge] failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
+  activeServer = server;
+  return server;
+}
+
+export function stopDesktopActionBridge() {
+  const server = activeServer;
+  activeServer = null;
+  server?.close();
+}

@@ -10,6 +10,8 @@ import type {
   AssistantStartRunRequest,
   AssistantVoiceCorrectionRequest,
   AssistantVoiceTranscriptionRequest,
+  DesktopActionCallListener,
+  DesktopActionRendererResponse,
   DesktopPetDanceRequestedListener,
   AssistantWorkerOpenListener,
   AssistantWorkerOpenRequest,
@@ -156,6 +158,22 @@ const api: DesktopApi = {
     getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
     getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
     setSidebarTranslucency: (enabled) => ipcRenderer.invoke("settings.setSidebarTranslucency", enabled)
+  },
+  desktopActions: {
+    respond: (response: DesktopActionRendererResponse) => ipcRenderer.invoke("desktopActions.respond", response),
+    onCall: (listener: DesktopActionCallListener) => {
+      const handleDesktopActionCall = (
+        _event: Electron.IpcRendererEvent,
+        request: Parameters<DesktopActionCallListener>[0]
+      ) => {
+        listener(request);
+      };
+
+      ipcRenderer.on("desktopActions.call", handleDesktopActionCall);
+      return () => {
+        ipcRenderer.off("desktopActions.call", handleDesktopActionCall);
+      };
+    }
   },
   windowDrag: {
     begin: (point) => ipcRenderer.invoke("windowDrag.begin", point),
