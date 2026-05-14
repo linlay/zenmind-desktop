@@ -29,8 +29,10 @@ import {
   getAssistantEventAwaitingPayload,
   getLatestPendingAwaitingPayload,
   getLatestRunningRunId,
+  getVisibleAssistantMessages,
   isStructuredAssistantEvent,
   isTerminalAssistantEvent,
+  mergeOptimisticRunMessages,
   shouldEnsureAssistantMessageForEvent
 } from "../services/assistantEventState";
 import { getAssistantPageContext } from "../services/assistantPageContext";
@@ -1821,10 +1823,16 @@ export function AssistantDock({
     setActiveChatId(result.chatId);
     const userMessage = createOptimisticMessage("user", content, result.runId, attachmentsForRun);
     const assistantMessage = createOptimisticMessage("assistant", "", result.runId);
-    runMessageIdsRef.current.set(result.runId, assistantMessage.id);
     setRunningRunId(result.runId);
     setMessages((current) => {
-      return [...(shouldResetMessages ? [] : current), userMessage, assistantMessage];
+      const baseMessages = shouldResetMessages ? [] : current;
+      return mergeOptimisticRunMessages(
+        baseMessages,
+        result.runId,
+        userMessage,
+        assistantMessage,
+        runMessageIdsRef.current
+      );
     });
     updateDraft("");
     if (shouldClearComposerAttachments) {
@@ -2728,31 +2736,34 @@ export function AssistantDock({
   }
 
   function renderMessages() {
-    if (messages.length === 0) {
+    if (visibleMessages.length === 0) {
       return null;
     }
 
     return (
       <div className="assistant-dock-messages">
-        {messages.map((message, index) => (
-          <div className={`assistant-message is-${message.role}`} key={message.id}>
-            <span>{message.role === "user" ? "你" : "ZenMind"}</span>
-            {message.role === "assistant" ? renderRunTimeline(message.runId) : null}
-            <div className="assistant-message-body">
-              {message.role === "assistant" ? (
-                <AssistantMarkdownContent
-                  className="assistant-message-markdown"
-                  content={message.content || "正在思考..."}
-                />
-              ) : (
-                <p className="assistant-message-text">{message.content}</p>
-              )}
-              {message.role === "assistant" ? renderMemoryReferences(message.runId) : null}
-              {renderMessageAttachments(message)}
-              {renderMessageActions(message, index)}
+        {visibleMessages.map((message, index) => {
+          const sourceIndex = messages.findIndex((candidate) => candidate.id === message.id);
+          return (
+            <div className={`assistant-message is-${message.role}`} key={message.id}>
+              <span>{message.role === "user" ? "你" : "ZenMind"}</span>
+              {message.role === "assistant" ? renderRunTimeline(message.runId) : null}
+              <div className="assistant-message-body">
+                {message.role === "assistant" ? (
+                  <AssistantMarkdownContent
+                    className="assistant-message-markdown"
+                    content={message.content || "正在思考..."}
+                  />
+                ) : (
+                  <p className="assistant-message-text">{message.content}</p>
+                )}
+                {message.role === "assistant" ? renderMemoryReferences(message.runId) : null}
+                {renderMessageAttachments(message)}
+                {renderMessageActions(message, sourceIndex >= 0 ? sourceIndex : index)}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
     );
@@ -3013,7 +3024,7 @@ export function AssistantDock({
         {renderFeedback()}
         {renderOperatorModeBanner()}
         <div className="assistant-dock-full-body">
-          {messages.length === 0 ? renderEmptyState() : renderMessages()}
+          {visibleMessages.length === 0 ? renderEmptyState() : renderMessages()}
         </div>
         {renderArtifactDock("full")}
         {renderComposer("full")}
@@ -3061,7 +3072,7 @@ export function AssistantDock({
         {renderFeedback()}
         {renderOperatorModeBanner()}
         <div className="assistant-dock-compact-body">
-          {messages.length === 0 ? renderEmptyState() : renderMessages()}
+          {visibleMessages.length === 0 ? renderEmptyState() : renderMessages()}
         </div>
         {renderArtifactDock("compact")}
         {renderComposer("compact")}
@@ -3070,6 +3081,7 @@ export function AssistantDock({
   }
 
   const operatorModeInfo = getOperatorModeInfo(runEvents, nowMs);
+  const visibleMessages = getVisibleAssistantMessages(messages, runningRunId);
   const shouldHideForNativeDialog = isMac && nativeDialogVisible && !attachmentPickerVisible;
   const shouldSuspendCompactDismissLayer = shouldHideForNativeDialog || (isMac && attachmentPickerVisible);
   const shouldRenderCompactDismissLayer = open && mode === "compact" && !shouldSuspendCompactDismissLayer;

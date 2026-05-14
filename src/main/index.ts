@@ -174,6 +174,7 @@ let mainWindowDragState: {
   moved: boolean;
   startedAt: number;
 } | null = null;
+let mainWindowSidebarTranslucencyEnabled = false;
 const quickAssistantState = createQuickAssistantWindowState();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const AGENT_WEBCLIENT_APP_PATHNAME = "/appagent";
@@ -1970,8 +1971,8 @@ function registerQuickAssistantShortcut() {
 }
 
 function setSidebarTranslucency(enabled: boolean) {
-  const effective = process.platform === "darwin";
-  if (!effective) {
+  if (process.platform !== "darwin") {
+    mainWindowSidebarTranslucencyEnabled = false;
     return {
       ok: true,
       enabled: false,
@@ -1980,10 +1981,8 @@ function setSidebarTranslucency(enabled: boolean) {
     };
   }
 
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setVibrancy(enabled ? "under-window" : null);
-    mainWindow.setBackgroundColor(enabled ? "#00000000" : "#FFFFFF");
-  }
+  mainWindowSidebarTranslucencyEnabled = enabled;
+  applyMainWindowAppearance(mainWindow);
 
   return {
     ok: true,
@@ -1991,6 +1990,28 @@ function setSidebarTranslucency(enabled: boolean) {
     effective: true,
     message: enabled ? "已开启半透明侧边栏。" : "已关闭半透明侧边栏。"
   };
+}
+
+function applyMainWindowAppearance(targetWindow: BrowserWindow | null) {
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  if (process.platform === "darwin") {
+    const useSidebarTranslucency =
+      mainWindowSidebarTranslucencyEnabled && !targetWindow.isFullScreen();
+    // Native macOS fullscreen can expose transparent window regions as desktop background.
+    targetWindow.setVibrancy(useSidebarTranslucency ? "under-window" : null);
+    targetWindow.setBackgroundColor(useSidebarTranslucency ? "#00000000" : "#FFFFFF");
+    return;
+  }
+
+  if (process.platform === "win32") {
+    targetWindow.setBackgroundColor("#FFFFFF");
+    return;
+  }
+
+  targetWindow.setBackgroundColor("#FFFFFF");
 }
 
 async function collectWebviewLoadDiagnostics(contents: Electron.WebContents, validatedUrl: string) {
@@ -2222,7 +2243,7 @@ function createWindow() {
     minWidth: 1180,
     minHeight: 760,
     show: false,
-    backgroundColor: process.platform === "darwin" ? "#00000000" : "#FFFFFF",
+    backgroundColor: "#FFFFFF",
     ...(process.platform === "darwin"
       ? {
           titleBarStyle: "hidden" as const,
@@ -2237,6 +2258,8 @@ function createWindow() {
       webviewTag: true
     }
   });
+
+  applyMainWindowAppearance(mainWindow);
 
   mainWindow.once("ready-to-show", () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -2270,6 +2293,15 @@ function createWindow() {
       return;
     }
     hideQuickAssistantAfterOutsideFocus();
+  });
+
+  mainWindow.on("enter-full-screen", () => {
+    endMainWindowDrag();
+    applyMainWindowAppearance(mainWindow);
+  });
+
+  mainWindow.on("leave-full-screen", () => {
+    applyMainWindowAppearance(mainWindow);
   });
 
   mainWindow.webContents.on("did-attach-webview", (_event, contents) => {
