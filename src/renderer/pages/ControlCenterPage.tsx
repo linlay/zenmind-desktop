@@ -139,6 +139,43 @@ function getConfigSourceClass(configFile: ServiceConfigFile, meta?: ConfigMeta) 
   return "is-pending";
 }
 
+function StartServiceIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M8 5.5v13l10-6.5-10-6.5Z" />
+    </svg>
+  );
+}
+
+function StopServiceIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M7.5 7.5h9v9h-9z" />
+    </svg>
+  );
+}
+
+function RestartServiceIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M20 12a8 8 0 0 1-13.6 5.7" />
+      <path d="M4 12A8 8 0 0 1 17.6 6.3" />
+      <path d="M17 3.5v4h4" />
+      <path d="M7 20.5v-4H3" />
+    </svg>
+  );
+}
+
+function OpenFrontendIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M8 6H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
+      <path d="M14 4h6v6" />
+      <path d="m11 13 8.5-8.5" />
+    </svg>
+  );
+}
+
 export function ControlCenterPage() {
   const {
     services,
@@ -675,8 +712,51 @@ export function ControlCenterPage() {
         {activeDetailService ? (
           <article className="service-card control-center-detail">
             <div className="service-card-head">
-              <div>
+              <div className="service-card-title-row">
                 <h2>{getServiceDisplayName(activeDetailService.id, activeDetailService.name)}</h2>
+                <div className="service-title-actions" aria-label="服务快捷操作">
+                  <button
+                    type="button"
+                    className="service-title-action-button is-primary"
+                    onClick={() => runAction(activeDetailService.id, "lifecycle", () => start(activeDetailService.id))}
+                    disabled={activeId === activeDetailService.id}
+                    aria-label="启动"
+                    title="启动"
+                  >
+                    <StartServiceIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className="service-title-action-button"
+                    onClick={() => runAction(activeDetailService.id, "lifecycle", () => stop(activeDetailService.id))}
+                    disabled={activeId === activeDetailService.id}
+                    aria-label="停止"
+                    title="停止"
+                  >
+                    <StopServiceIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className="service-title-action-button"
+                    onClick={() => runAction(activeDetailService.id, "lifecycle", () => restart(activeDetailService.id))}
+                    disabled={activeId === activeDetailService.id}
+                    aria-label="重启"
+                    title="重启"
+                  >
+                    <RestartServiceIcon />
+                  </button>
+                  {activeDetailService.frontendMode !== "none" && activeDetailService.status === "running" ? (
+                    <button
+                      type="button"
+                      className="service-title-action-button is-primary"
+                      onClick={() => navigate(`/plugin/${activeDetailService.id}`)}
+                      aria-label="打开前端"
+                      title="打开前端"
+                    >
+                      <OpenFrontendIcon />
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <div className="service-card-badges">
                 <span className="status-pill muted">{activeDetailService.version}</span>
@@ -790,39 +870,6 @@ export function ControlCenterPage() {
                   disabled={activeId === activeDetailService.id}
                 >
                   重新安装
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => runAction(activeDetailService.id, "lifecycle", () => start(activeDetailService.id))}
-                className="action-button primary"
-                disabled={activeId === activeDetailService.id}
-              >
-                启动
-              </button>
-              <button
-                type="button"
-                onClick={() => runAction(activeDetailService.id, "lifecycle", () => stop(activeDetailService.id))}
-                className="action-button"
-                disabled={activeId === activeDetailService.id}
-              >
-                停止
-              </button>
-              <button
-                type="button"
-                onClick={() => runAction(activeDetailService.id, "lifecycle", () => restart(activeDetailService.id))}
-                className="action-button"
-                disabled={activeId === activeDetailService.id}
-              >
-                重启
-              </button>
-              {activeDetailService.frontendMode !== "none" && activeDetailService.status === "running" ? (
-                <button
-                  type="button"
-                  onClick={() => navigate(`/plugin/${activeDetailService.id}`)}
-                  className="action-button primary"
-                >
-                  打开前端
                 </button>
               ) : null}
               {activeDetailService.kind === "plugin" ? (

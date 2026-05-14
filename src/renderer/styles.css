@@ -7440,8 +7440,16 @@ body.quick-assistant-body,
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  align-items: flex-start;
+  align-items: center;
   margin-bottom: 10px;
+}
+
+.service-card-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
 }
 
 .service-card-badges {
@@ -7455,6 +7463,85 @@ body.quick-assistant-body,
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+}
+
+.service-title-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.service-title-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease-in-out,
+    border-color 0.2s ease-in-out,
+    color 0.2s ease-in-out;
+}
+
+.service-title-action-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.service-title-action-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.service-title-action-button.is-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: white;
+}
+
+.service-title-action-button.is-primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  color: white;
+}
+
+.service-title-action-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+:root[data-theme="dark"] .service-title-action-button {
+  border-color: var(--line);
+  background: var(--surface-soft);
+}
+
+:root[data-theme="dark"] .service-title-action-button:hover:not(:disabled) {
+  border-color: rgba(158, 197, 255, 0.52);
+  color: #dcecff;
+  background: rgba(89, 151, 255, 0.14);
+}
+
+:root[data-theme="dark"] .service-title-action-button.is-primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: white;
+}
+
+:root[data-theme="dark"] .service-title-action-button.is-primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  color: white;
 }
 
 .service-description,
