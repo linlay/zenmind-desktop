@@ -525,6 +525,8 @@ function createStartupCoreAssetsFixture(options = {}) {
     }
   }
 
+  addContainerHubAssetToFixture({ tempRoot, assetsRoot });
+
   return {
     tempRoot,
     assetsRoot
@@ -694,6 +696,7 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
   const startScriptContent = options.startScriptContent ?? "#!/usr/bin/env bash\necho start\n";
   const bindAddr = options.bindAddr ?? "127.0.0.1:11960";
   const defaultPort = Number(String(bindAddr).match(/:(\d+)$/u)?.[1] || 11960);
+  const assetFileName = options.assetFileName ?? "agent-container-hub-v0.1.0-darwin-arm64.tar.gz";
 
   fs.mkdirSync(path.join(bundleRoot, "backend"), { recursive: true });
   fs.mkdirSync(path.join(bundleRoot, "configs", "environments"), { recursive: true });
@@ -763,7 +766,7 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
           defaultPort
         },
         desktop: {
-          assetFileName: "agent-container-hub-v0.1.0-darwin-arm64.tar.gz",
+          assetFileName,
           bundleTopLevelDir: "agent-container-hub"
         }
       },
@@ -786,11 +789,28 @@ function createContainerHubBundleFixture(tempRoot, options = {}) {
   const tarFixtureRoot = path.join(tempRoot, "bundle-root");
   const tarBundleRoot = path.join(tarFixtureRoot, "agent-container-hub");
   const serviceAssetDir = path.join(assetsRoot, "agent-container-hub");
-  const tarPath = path.join(serviceAssetDir, "agent-container-hub-v0.1.0-darwin-arm64.tar.gz");
+  const archiveFileName = process.platform === "win32"
+    ? "agent-container-hub-v0.1.0-windows-amd64.zip"
+    : "agent-container-hub-v0.1.0-darwin-arm64.tar.gz";
+  const tarPath = path.join(serviceAssetDir, archiveFileName);
 
-  writeContainerHubBundleRoot(tarBundleRoot, options);
+  writeContainerHubBundleRoot(tarBundleRoot, { ...options, assetFileName: archiveFileName });
   fs.mkdirSync(serviceAssetDir, { recursive: true });
-  execFileSync("tar", ["-czf", tarPath, "-C", tarFixtureRoot, "agent-container-hub"]);
+  if (process.platform === "win32") {
+    execFileSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `Compress-Archive -Path 'agent-container-hub' -DestinationPath '${tarPath.replace(/'/g, "''")}' -Force`
+      ],
+      { cwd: tarFixtureRoot }
+    );
+  } else {
+    execFileSync("tar", ["-czf", tarPath, "-C", tarFixtureRoot, "agent-container-hub"]);
+  }
 
   return {
     assetsRoot,
@@ -804,11 +824,28 @@ function addContainerHubAssetToFixture(fixture, options = {}) {
   const tarFixtureRoot = path.join(fixture.tempRoot, "agent-container-hub-asset-root");
   const tarBundleRoot = path.join(tarFixtureRoot, "agent-container-hub");
   const serviceAssetDir = path.join(fixture.assetsRoot, "agent-container-hub");
-  const tarPath = path.join(serviceAssetDir, "agent-container-hub-v0.1.0-darwin-arm64.tar.gz");
+  const archiveFileName = process.platform === "win32"
+    ? "agent-container-hub-v0.1.0-windows-amd64.zip"
+    : "agent-container-hub-v0.1.0-darwin-arm64.tar.gz";
+  const tarPath = path.join(serviceAssetDir, archiveFileName);
 
-  writeContainerHubBundleRoot(tarBundleRoot, options);
+  writeContainerHubBundleRoot(tarBundleRoot, { ...options, assetFileName: archiveFileName });
   fs.mkdirSync(serviceAssetDir, { recursive: true });
-  execFileSync("tar", ["-czf", tarPath, "-C", tarFixtureRoot, "agent-container-hub"]);
+  if (process.platform === "win32") {
+    execFileSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `Compress-Archive -Path 'agent-container-hub' -DestinationPath '${tarPath.replace(/'/g, "''")}' -Force`
+      ],
+      { cwd: tarFixtureRoot }
+    );
+  } else {
+    execFileSync("tar", ["-czf", tarPath, "-C", tarFixtureRoot, "agent-container-hub"]);
+  }
 
   return {
     tarPath,
@@ -3886,10 +3923,19 @@ test("runStartupPreparation bootstraps packaged first launch with the three core
 
   try {
     const result = await runStartupPreparation(app);
+    const hubService = getBuiltinService("agent-container-hub");
+    const hubInstallDir = getInstallDir(app, hubService);
+    const hubState = await getServiceState(app, "agent-container-hub");
+    const hubEnv = fs.readFileSync(path.join(hubInstallDir, ".env"), "utf8");
+
     assert.equal(result.mode, "bootstrap");
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
-    assert.equal(fs.existsSync(path.join(userDataRoot, "services", "agent-container-hub")), false);
+    assert.equal(fs.existsSync(hubInstallDir), true);
+    assert.equal(__testInternals.readInitializationState(hubInstallDir)?.status, "succeeded");
+    assert.match(hubEnv, /^BIND_ADDR=127\.0\.0\.1:7079$/mu);
+    assert.notEqual(hubState.status, "running");
+    assert.equal(fs.existsSync(path.join(hubInstallDir, "run", "started.txt")), false);
   } finally {
     await stopStartupCoreProcesses(app);
     restore();
@@ -3903,7 +3949,7 @@ test("runStartupPreparation does not reinstall healthy packaged core services", 
   const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
 
   try {
-    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
       await installBuiltinService(app, serviceId);
     }
 
@@ -3914,6 +3960,39 @@ test("runStartupPreparation does not reinstall healthy packaged core services", 
     assert.equal(result.mode, "restore");
     assert.deepEqual(result.failures, []);
     assert.equal(fs.existsSync(markerPath), true);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runStartupPreparation installs missing container hub without starting it when core services are healthy", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+
+  try {
+    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+      await installBuiltinService(app, serviceId);
+    }
+
+    const markerPath = path.join(userDataRoot, "services", "agent-platform", "v1.0.0", "marker.txt");
+    fs.writeFileSync(markerPath, "keep", "utf8");
+
+    const result = await runStartupPreparation(app);
+    const hubService = getBuiltinService("agent-container-hub");
+    const hubInstallDir = getInstallDir(app, hubService);
+    const hubState = await getServiceState(app, "agent-container-hub");
+
+    assert.equal(result.mode, "bootstrap");
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.equal(fs.existsSync(markerPath), true);
+    assert.equal(fs.existsSync(hubInstallDir), true);
+    assert.equal(__testInternals.readInitializationState(hubInstallDir)?.status, "succeeded");
+    assert.notEqual(hubState.status, "running");
+    assert.equal(fs.existsSync(path.join(hubInstallDir, "run", "started.txt")), false);
   } finally {
     await stopStartupCoreProcesses(app);
     restore();

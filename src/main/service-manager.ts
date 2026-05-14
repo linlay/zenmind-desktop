@@ -203,6 +203,7 @@ type StartupPreparationResult = {
 const INITIALIZATION_STATE_DIRNAME = ".zenmind-desktop";
 const INITIALIZATION_STATE_FILE = "init-state.json";
 const LAST_RUNNING_SERVICES_FILE = "last-running-services.json";
+const INSTALL_ONLY_STARTUP_SERVICE_IDS = ["agent-container-hub"] as const;
 const DEFAULT_STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const RESTORE_PRIORITY = ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const SERVICE_COMMAND_TIMEOUT_MS = 60_000;
@@ -1749,6 +1750,16 @@ async function ensureInitializationRequirements(app: App, service: ServiceDefini
 
   if (service.id === "pan-webclient") {
     ensureLocalAuthPublicKey(app, installDir);
+  }
+
+  if (CORE_SERVICE_IDS.has(service.id)) {
+    const envPath = path.join(installDir, ".env");
+    const env = readEnvFile(envPath);
+    const updates = new Map<string, string>();
+    syncCoreServiceDefaultPortEnv(service, env, updates);
+    if (updates.size > 0) {
+      writeEnvFileUpdates(envPath, updates);
+    }
   }
 }
 
@@ -4390,7 +4401,7 @@ async function shouldRunBuiltinBootstrap(app: App) {
     return false;
   }
 
-  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
+  for (const serviceId of [...INSTALL_ONLY_STARTUP_SERVICE_IDS, ...DEFAULT_STARTUP_SERVICE_IDS]) {
     const current = await getServiceState(app, serviceId);
     if (
       current.status === "not-installed" ||
@@ -4407,6 +4418,48 @@ async function shouldRunBuiltinBootstrap(app: App) {
   }
 
   return false;
+}
+
+async function prepareBuiltinServiceForStartup(
+  app: App,
+  serviceId: ServiceId,
+  options: {
+    onProgress?: (serviceId: ServiceId, phase: StartupPreparationProgressPhase, message: string) => void;
+  } = {}
+) {
+  const service = getService(serviceId);
+  let current = await getServiceState(app, serviceId);
+  const bundledAssetNeedsRefresh = service.kind === "builtin" && needsBundledAssetRefresh(app, service);
+
+  if (
+    current.status === "not-installed" ||
+    current.status === "error" ||
+    bundledAssetNeedsRefresh
+  ) {
+    options.onProgress?.(serviceId, "installing", `${current.name} 安装中...`);
+    if (bundledAssetNeedsRefresh && current.status === "running") {
+      await stopService(app, serviceId);
+    }
+    await installBuiltinService(app, serviceId);
+    current = await getServiceState(app, serviceId);
+  } else if (current.status === "initialization-required") {
+    options.onProgress?.(serviceId, "initializing", `${current.name} 初始化中...`);
+    const initialization = await initializeService(app, serviceId);
+    if (!initialization.ok) {
+      return {
+        ok: false,
+        message: initialization.message,
+        service: initialization.service
+      };
+    }
+    current = initialization.service;
+  }
+
+  return {
+    ok: true,
+    message: `${current.name} 已准备就绪。`,
+    service: current
+  };
 }
 
 export async function runStartupPreparation(
@@ -4434,34 +4487,36 @@ export async function runStartupPreparation(
   const started: ServiceId[] = [];
   const failures: string[] = [];
 
+  for (const serviceId of INSTALL_ONLY_STARTUP_SERVICE_IDS) {
+    try {
+      const result = await prepareBuiltinServiceForStartup(app, serviceId, {
+        onProgress: options.onProgress
+      });
+      if (!result.ok) {
+        failures.push(`${serviceId}: ${result.message}`);
+        options.onProgress?.(serviceId, "failed", result.message);
+        continue;
+      }
+      options.onProgress?.(serviceId, "succeeded", result.message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push(`${serviceId}: ${message}`);
+      options.onProgress?.(serviceId, "failed", message);
+    }
+  }
+
   for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
     try {
-      const service = getService(serviceId);
-      let current = await getServiceState(app, serviceId);
-      const bundledAssetNeedsRefresh = service.kind === "builtin" && needsBundledAssetRefresh(app, service);
-
-      if (
-        current.status === "not-installed" ||
-        current.status === "error" ||
-        bundledAssetNeedsRefresh
-      ) {
-        options.onProgress?.(serviceId, "installing", `${current.name} 安装中...`);
-        if (bundledAssetNeedsRefresh && current.status === "running") {
-          await stopService(app, serviceId);
-        }
-        await installBuiltinService(app, serviceId);
-        current = await getServiceState(app, serviceId);
-      } else if (current.status === "initialization-required") {
-        options.onProgress?.(serviceId, "initializing", `${current.name} 初始化中...`);
-        const initialization = await initializeService(app, serviceId);
-        if (!initialization.ok) {
-          failures.push(`${serviceId}: ${initialization.message}`);
-          options.onProgress?.(serviceId, "failed", initialization.message);
-          continue;
-        }
-        current = initialization.service;
+      const preparation = await prepareBuiltinServiceForStartup(app, serviceId, {
+        onProgress: options.onProgress
+      });
+      if (!preparation.ok) {
+        failures.push(`${serviceId}: ${preparation.message}`);
+        options.onProgress?.(serviceId, "failed", preparation.message);
+        continue;
       }
 
+      const current = preparation.service;
       options.onStarting?.(serviceId);
       options.onProgress?.(serviceId, "starting", `${current.name} 启动中...`);
       const startedAt = Date.now();
