@@ -613,6 +613,36 @@ test("ZENMIND_BUILTIN_ASSETS_SOURCE overrides workspace fallback and syncs built
   }
 });
 
+test("syncBuiltinAssets fails with an actionable error when required Desktop core assets are missing", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-missing-core-"));
+  const sourceRoot = path.join(tempRoot, "source");
+  const projectRoot = path.join(tempRoot, "project");
+  const platform = {
+    os: currentManifestOs(),
+    arch: `missing-core-${Date.now()}`
+  };
+
+  for (const serviceId of ["zenmind-app-server", "agent-platform"]) {
+    writeBuiltinTarArchive({
+      archivePath: path.join(sourceRoot, serviceId, `${serviceId}-v1.0.0-${platform.os}-${platform.arch}.tar.gz`),
+      id: serviceId,
+      version: "v1.0.0",
+      os: platform.os,
+      arch: platform.arch,
+      assetFileName: `${serviceId}-v1.0.0-${platform.os}-${platform.arch}.tar.gz`
+    });
+  }
+
+  try {
+    assert.throws(
+      () => withEnv(BUILTIN_ASSETS_SOURCE_ENV, sourceRoot, () => syncBuiltinAssets(projectRoot, platform)),
+      /missing required Desktop builtin service assets[\s\S]*agent-webclient[\s\S]*ZENMIND_BUILTIN_ASSETS_SOURCE/u
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("discoverBuiltinServices keeps only the newest version per service and platform", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-latest-"));
   const sourceRoot = path.join(tempRoot, "source");

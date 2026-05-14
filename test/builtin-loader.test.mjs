@@ -311,6 +311,92 @@ test("loadBuiltinServices falls back to installed builtin manifests when synced 
   }
 });
 
+test("loadBuiltinServices merges installed builtin manifests for services missing from synced assets", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-loader-partial-installed-"));
+  const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+  const assetsRoot = path.join(tempRoot, "assets");
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const archiveExtension = process.platform === "win32" ? ".zip" : ".tar.gz";
+  const matchedOs = getCurrentManifestOs();
+  const platformAssetDir = path.join(assetsRoot, "agent-platform");
+  const platformArchiveName = `agent-platform-v1.0.0${archiveExtension}`;
+  const webclientManifestPath = path.join(userDataRoot, "services", "agent-webclient", "v1.0.0", "manifest.json");
+
+  fs.mkdirSync(platformAssetDir, { recursive: true });
+  writeServiceArchive(path.join(platformAssetDir, platformArchiveName), {
+    id: "agent-platform",
+    name: "智能体平台",
+    kind: "builtin",
+    version: "v1.0.0",
+    description: "synced asset",
+    platform: {
+      os: matchedOs,
+      arch: "test"
+    },
+    frontend: {
+      mode: "none"
+    },
+    scripts: {
+      start: process.platform === "win32" ? "start.ps1" : "start.sh",
+      stop: process.platform === "win32" ? "stop.ps1" : "stop.sh"
+    },
+    runtime: {
+      requiredPaths: ["manifest.json"]
+    }
+  });
+
+  fs.mkdirSync(path.dirname(webclientManifestPath), { recursive: true });
+  fs.writeFileSync(
+    webclientManifestPath,
+    `${JSON.stringify({
+      id: "agent-webclient",
+      name: "智能助理",
+      kind: "builtin",
+      version: "v1.0.0",
+      description: "installed fallback",
+      platform: {
+        os: matchedOs,
+        arch: "test"
+      },
+      frontend: {
+        mode: "service",
+        embedPath: "/appagent"
+      },
+      scripts: {
+        start: process.platform === "win32" ? "start.ps1" : "start.sh",
+        stop: process.platform === "win32" ? "stop.ps1" : "stop.sh"
+      },
+      runtime: {
+        requiredPaths: ["manifest.json"]
+      }
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = assetsRoot;
+  registryInternals.clearServices();
+
+  try {
+    const loaded = loadBuiltinServices(createApp(userDataRoot));
+    const platformService = getBuiltinService("agent-platform");
+    const webclientService = getBuiltinService("agent-webclient");
+
+    assert.deepEqual(loaded.map((service) => service.id), ["agent-platform", "agent-webclient"]);
+    assert.equal(platformService.description, "synced asset");
+    assert.equal(platformService.assetFileName, platformArchiveName);
+    assert.equal(webclientService.description, "installed fallback");
+    assert.equal(webclientService.assetFileName, "");
+  } finally {
+    registryInternals.clearServices();
+    if (previousAssetsRoot) {
+      process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
+    } else {
+      delete process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("listArchiveEntries preserves UTF-8 zip entry names on Windows", { skip: process.platform !== "win32" }, () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-archive-utils-utf8-"));
   const archivePath = path.join(tempRoot, "utf8-service.zip");

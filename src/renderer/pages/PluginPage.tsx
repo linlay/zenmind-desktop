@@ -317,6 +317,18 @@ export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: Plugin
   }, [active, embeddedUrl, service?.status, serviceDisplayName, webUrl]);
 
   if (!service) {
+    if (pluginId === "agent-webclient") {
+      return (
+        <section className="empty-state" {...surfaceVisibilityProps}>
+          <h1>智能助理服务未注册</h1>
+          <p>未找到 agent-webclient 内置服务。请确认 Desktop 已同步完整内置资源，或在控制中心安装 agent-webclient 发布包。</p>
+          <Link className="primary-link" to="/control-center">
+            前往控制中心
+          </Link>
+        </section>
+      );
+    }
+
     return (
       <section className="empty-state" {...surfaceVisibilityProps}>
         <h1>服务未注册</h1>

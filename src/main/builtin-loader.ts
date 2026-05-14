@@ -105,13 +105,16 @@ function listInstalledBuiltinManifestPaths(app: App) {
   return manifestPaths.sort((left, right) => left.localeCompare(right));
 }
 
-function loadInstalledBuiltinServices(app: App) {
+function loadInstalledBuiltinServices(app: App, ignoredServiceIds: Set<string> = new Set()) {
   const latestByServiceId = new Map<string, { manifestPath: string; manifest: Manifest }>();
 
   for (const manifestPath of listInstalledBuiltinManifestPaths(app)) {
     try {
       const manifest = readManifestFile(manifestPath);
       if (manifest.kind !== "builtin") {
+        continue;
+      }
+      if (ignoredServiceIds.has(manifest.id)) {
         continue;
       }
       if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
@@ -143,6 +146,7 @@ export function loadBuiltinServices(app: App) {
 
   const builtinAssetsRoot = getBuiltinAssetsRoot(app);
   const loaded = [];
+  const loadedServiceIds = new Set<string>();
   for (const tarPath of listBuiltinArchivePaths(builtinAssetsRoot)) {
     const manifest = readCachedManifest(tarPath);
     if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
@@ -156,12 +160,10 @@ export function loadBuiltinServices(app: App) {
     });
     if (definition.kind === "builtin") {
       loaded.push(definition);
+      loadedServiceIds.add(definition.id);
     }
   }
 
-  if (loaded.length > 0) {
-    return loaded;
-  }
-
-  return loadInstalledBuiltinServices(app);
+  loaded.push(...loadInstalledBuiltinServices(app, loadedServiceIds));
+  return loaded.sort((left, right) => left.id.localeCompare(right.id));
 }

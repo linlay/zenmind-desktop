@@ -6,6 +6,11 @@ import { execFileSync } from "node:child_process";
 // monorepo 根目录：zenmind-desktop 的上一级
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 const BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
+const REQUIRED_DESKTOP_CORE_SERVICE_IDS = [
+  "zenmind-app-server",
+  "agent-platform",
+  "agent-webclient"
+];
 
 function isArchiveFileName(fileName) {
   return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
@@ -265,6 +270,39 @@ function listReleaseArchives() {
   return [...archivesByBuildKey.values()]
     .map((entry) => entry.archivePath)
     .sort((left, right) => left.localeCompare(right));
+}
+
+function isDesktopTargetOs(osName) {
+  return osName === "windows" || osName === "darwin" || osName === "linux";
+}
+
+function shouldRequireDesktopCoreServices({ os } = {}) {
+  return !os || isDesktopTargetOs(os);
+}
+
+function formatPlatformLabel({ os, arch } = {}) {
+  if (!os && !arch) {
+    return "all platforms";
+  }
+  return `${os ?? "*"} / ${arch ?? "*"}`;
+}
+
+export function assertRequiredDesktopCoreServices(services, platform = {}) {
+  if (!shouldRequireDesktopCoreServices(platform)) {
+    return;
+  }
+
+  const serviceIds = new Set(services.map((service) => service.id));
+  const missingServiceIds = REQUIRED_DESKTOP_CORE_SERVICE_IDS.filter((serviceId) => !serviceIds.has(serviceId));
+  if (missingServiceIds.length === 0) {
+    return;
+  }
+
+  throw new Error(
+    `missing required Desktop builtin service assets for ${formatPlatformLabel(platform)}: ${missingServiceIds.join(", ")}\n` +
+      `Desktop startup requires ${REQUIRED_DESKTOP_CORE_SERVICE_IDS.join(", ")}.\n` +
+      `Regenerate or provide the missing upstream release bundle, or set ${BUILTIN_ASSETS_SOURCE_ENV} to a directory containing the complete Desktop builtin assets.`
+  );
 }
 
 export function discoverBuiltinServices({ os, arch } = {}) {
@@ -619,7 +657,10 @@ export function validateBundleArchive(service, archivePath) {
 
 export function syncBuiltinAssets(projectRoot = process.cwd(), { os, arch } = {}) {
   const outputRoot = path.join(projectRoot, "build", "resources", "services");
-  const services = discoverBuiltinServices({ os, arch });
+  const platform = { os, arch };
+  const services = discoverBuiltinServices(platform);
+
+  assertRequiredDesktopCoreServices(services, platform);
 
   fs.rmSync(outputRoot, { recursive: true, force: true });
   fs.mkdirSync(outputRoot, { recursive: true });

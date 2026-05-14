@@ -125,10 +125,11 @@ const syncArch = detectSyncArch();
 try {
   await runAndWait(nodeBin, ["./scripts/sync-builtin-assets.mjs", `--os=${syncOs}`, `--arch=${syncArch}`]);
 } catch (error) {
-  console.warn(
-    `[dev] builtin asset sync failed; continuing with installed local services when available.\n` +
+  console.error(
+    `[dev] builtin asset sync failed; dev startup requires a complete core builtin asset set.\n` +
       `${error instanceof Error ? error.message : String(error)}`
   );
+  shutdown(1);
 }
 await runAndWait(npmCmd, ["run", "build:main"]);
 
