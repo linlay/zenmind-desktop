@@ -2313,14 +2313,7 @@ export function AssistantDock({
     );
   }
 
-  function renderChatbar() {
-    const activeChat = activeChatId
-      ? chats.find((chat) => chat.id === activeChatId) ?? null
-      : null;
-    const firstUserMessage = messages.find((message) => message.role === "user");
-    const activeChatTitle = activeChat
-      ? getChatDisplayTitle(activeChat)
-      : normalizeChatText(firstUserMessage?.content ?? "") || "当前对话";
+  function renderDockToolbar() {
     const query = normalizeChatText(chatHistoryQuery).toLocaleLowerCase();
     const matchesQuery = (chat: AssistantChatSummary) => {
       if (!query) {
@@ -2371,7 +2364,16 @@ export function AssistantDock({
     };
 
     return (
-      <div className="assistant-dock-chatbar" ref={chatHistoryRef}>
+      <div className="assistant-dock-toolbar" ref={chatHistoryRef}>
+        <button
+          type="button"
+          className="assistant-dock-icon-button assistant-dock-toolbar-close"
+          onClick={onClose}
+          aria-label="关闭助手"
+          title="关闭助手"
+        >
+          <CloseIcon />
+        </button>
         <label className="assistant-dock-agent-select-wrap">
           <span className="assistant-dock-agent-select-label">智能体</span>
           <select
@@ -2399,7 +2401,7 @@ export function AssistantDock({
         </label>
         <button
           type="button"
-          className={!activeChatId ? "assistant-dock-chat-pill is-active" : "assistant-dock-chat-pill"}
+          className={!activeChatId ? "assistant-dock-chat-pill assistant-dock-new-chat-pill is-active" : "assistant-dock-chat-pill assistant-dock-new-chat-pill"}
           onClick={startNewChat}
           disabled={Boolean(runningRunId)}
         >
@@ -2418,18 +2420,18 @@ export function AssistantDock({
           aria-haspopup="dialog"
           aria-expanded={chatHistoryOpen}
         >
-          {activeChatId ? (
-            <>
-              <span>{activeChatTitle}</span>
-              <ChevronDownIcon />
-            </>
-          ) : (
-            <>
-              <HistoryIcon />
-              <span>历史记录</span>
-              <span className="assistant-dock-history-count">{chats.length}</span>
-            </>
-          )}
+          <HistoryIcon />
+          <span>历史记录</span>
+          <span className="assistant-dock-history-count">{chats.length}</span>
+        </button>
+        <button
+          type="button"
+          className="assistant-dock-icon-button assistant-dock-toolbar-mode"
+          onClick={() => onModeChange(mode === "full" ? "compact" : "full")}
+          aria-label={mode === "full" ? "恢复悬浮状态" : "嵌入到右侧"}
+          title={mode === "full" ? "恢复悬浮状态" : "嵌入到右侧"}
+        >
+          {mode === "full" ? <CompactIcon /> : <ExpandIcon />}
         </button>
         {chatHistoryOpen ? (
           <div className="assistant-history-popover" role="dialog" aria-label="历史记录">
@@ -3065,29 +3067,7 @@ export function AssistantDock({
   function renderFullMode() {
     return (
       <>
-        <div className="assistant-dock-full-topbar">
-          <button
-            type="button"
-            className="assistant-dock-icon-button"
-            onClick={onClose}
-            aria-label="关闭助手"
-            title="关闭助手"
-          >
-            <CloseIcon />
-          </button>
-          <div className="assistant-dock-top-actions">
-            <button
-              type="button"
-              className="assistant-dock-icon-button"
-              onClick={() => onModeChange("compact")}
-              aria-label="恢复悬浮状态"
-              title="恢复悬浮状态"
-            >
-              <CompactIcon />
-            </button>
-          </div>
-        </div>
-        {renderChatbar()}
+        {renderDockToolbar()}
         {renderConfigEmpty()}
         {renderFeedback()}
         {renderOperatorModeBanner()}
@@ -3103,39 +3083,7 @@ export function AssistantDock({
   function renderCompactMode() {
     return (
       <>
-        <div className="assistant-dock-compact-topbar">
-          <button
-            type="button"
-            className="assistant-dock-icon-button"
-            onClick={onClose}
-            aria-label="关闭助手"
-            title="关闭助手"
-          >
-            <CloseIcon />
-          </button>
-          <div className="assistant-dock-top-actions">
-            <button
-              type="button"
-              className="assistant-dock-icon-button"
-              onClick={startNewChat}
-              disabled={Boolean(runningRunId)}
-              aria-label="新对话"
-              title="新对话"
-            >
-              <NewChatIcon />
-            </button>
-            <button
-              type="button"
-              className="assistant-dock-icon-button"
-              onClick={() => onModeChange("full")}
-              aria-label="嵌入到右侧"
-              title="嵌入到右侧"
-            >
-              <ExpandIcon />
-            </button>
-          </div>
-        </div>
-        {renderChatbar()}
+        {renderDockToolbar()}
         {renderConfigEmpty()}
         {renderFeedback()}
         {renderOperatorModeBanner()}

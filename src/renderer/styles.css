@@ -2116,7 +2116,7 @@ body.quick-assistant-body,
 }
 
 .assistant-dock-icon-button,
-.assistant-dock-chatbar button,
+.assistant-dock-toolbar button,
 .assistant-dock-config-empty button {
   display: inline-flex;
   align-items: center;
@@ -2154,38 +2154,48 @@ body.quick-assistant-body,
 }
 
 .assistant-dock-icon-button:hover:not(:disabled),
-.assistant-dock-chatbar button:hover,
+.assistant-dock-toolbar button:hover,
 .assistant-dock-config-empty button:hover {
   border-color: rgba(38, 99, 235, 0.26);
   background: var(--accent-soft);
 }
 
-.assistant-dock-chatbar {
+.assistant-dock-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
   width: min(100% - 36px, 760px);
-  margin: 0 auto 8px;
+  margin: 16px auto 8px;
   min-width: 0;
   position: relative;
   z-index: 28;
   flex-wrap: nowrap;
 }
 
+.assistant-dock-toolbar .assistant-dock-icon-button {
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
 .assistant-dock-agent-select-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  flex: 0 1 210px;
-  min-width: 116px;
-  max-width: 240px;
-  min-height: 32px;
-  padding: 0 10px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  gap: 8px;
+  flex: 1 1 148px;
+  min-width: 118px;
+  max-width: 210px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.82);
   color: var(--ink-soft);
-  box-shadow: none;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
 }
 
 .assistant-dock-agent-select-label {
@@ -2198,13 +2208,16 @@ body.quick-assistant-body,
 .assistant-dock-agent-select {
   flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
   border: 0;
   outline: none;
   background: transparent;
   color: var(--ink);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .assistant-dock-agent-select:disabled {
@@ -2225,21 +2238,21 @@ body.quick-assistant-body,
   display: none;
 }
 
-.assistant-dock-chatbar .assistant-dock-chat-pill {
+.assistant-dock-toolbar .assistant-dock-chat-pill {
   flex: 0 0 auto;
   max-width: 210px;
   min-width: 0;
-  min-height: 32px;
-  padding: 0 11px;
+  min-height: 40px;
+  padding: 0 16px;
   box-shadow: none;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.assistant-dock-chatbar .assistant-dock-current-chat {
+.assistant-dock-toolbar .assistant-dock-current-chat {
   flex: 0 1 auto;
   justify-content: space-between;
   gap: 8px;
@@ -2268,25 +2281,33 @@ body.quick-assistant-body,
   stroke-width: 2;
 }
 
-.assistant-dock-chatbar .assistant-dock-chat-pill.is-active {
+.assistant-dock-toolbar .assistant-dock-chat-pill.is-active,
+.assistant-dock-toolbar .assistant-dock-new-chat-pill {
   border-color: rgba(38, 99, 235, 0.28);
   color: var(--accent);
   background: rgba(239, 246, 255, 0.92);
 }
 
-.assistant-dock-chatbar .assistant-dock-history-toggle {
-  flex: 0 0 auto;
+.assistant-dock-toolbar .assistant-dock-history-toggle {
+  flex: 1 1 132px;
   gap: 7px;
-  min-width: 0;
-  min-height: 32px;
-  padding: 0 10px;
+  min-width: 116px;
+  max-width: 188px;
+  min-height: 40px;
+  padding: 0 12px;
   box-shadow: none;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--ink-soft);
 }
 
-.assistant-dock-chatbar .assistant-dock-history-toggle.assistant-dock-current-chat {
+.assistant-dock-toolbar .assistant-dock-history-toggle span:not(.assistant-dock-history-count) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.assistant-dock-toolbar .assistant-dock-history-toggle.assistant-dock-current-chat {
   flex: 0 1 auto;
   justify-content: space-between;
   gap: 8px;
@@ -2295,7 +2316,7 @@ body.quick-assistant-body,
   padding-right: 10px;
 }
 
-.assistant-dock-chatbar .assistant-dock-history-toggle.is-open {
+.assistant-dock-toolbar .assistant-dock-history-toggle.is-open {
   border-color: rgba(38, 99, 235, 0.3);
   color: var(--accent);
   background: rgba(239, 246, 255, 0.94);
@@ -2394,7 +2415,7 @@ body.quick-assistant-body,
   box-shadow: inset 3px 0 0 rgba(38, 99, 235, 0.5);
 }
 
-.assistant-dock-chatbar .assistant-history-row-main {
+.assistant-dock-toolbar .assistant-history-row-main {
   flex: 1;
   display: flex;
   align-items: center;
@@ -2411,7 +2432,7 @@ body.quick-assistant-body,
   text-align: left;
 }
 
-.assistant-dock-chatbar .assistant-history-row-main:hover:not(:disabled) {
+.assistant-dock-toolbar .assistant-history-row-main:hover:not(:disabled) {
   border-color: transparent;
   background: transparent;
 }
@@ -2458,7 +2479,7 @@ body.quick-assistant-body,
   font-weight: 600;
 }
 
-.assistant-dock-chatbar .assistant-history-row-delete {
+.assistant-dock-toolbar .assistant-history-row-delete {
   flex: 0 0 auto;
   width: 40px;
   min-width: 40px;
@@ -2481,7 +2502,7 @@ body.quick-assistant-body,
   pointer-events: auto;
 }
 
-.assistant-dock-chatbar .assistant-history-row-delete:hover:not(:disabled) {
+.assistant-dock-toolbar .assistant-history-row-delete:hover:not(:disabled) {
   background: rgba(245, 63, 63, 0.1);
   color: var(--danger);
 }
@@ -2511,7 +2532,7 @@ body.quick-assistant-body,
 }
 
 .assistant-dock-icon-button:disabled,
-.assistant-dock-chatbar button:disabled,
+.assistant-dock-toolbar button:disabled,
 .assistant-dock-tool-button:disabled,
 .assistant-dock-send-button:disabled,
 .assistant-dock-composer textarea:disabled {
@@ -4505,7 +4526,7 @@ body.quick-assistant-body,
 :root[data-theme="dark"] .assistant-dock-fab,
 :root[data-theme="dark"] .assistant-dock-composer-shell,
 :root[data-theme="dark"] .assistant-dock-icon-button,
-:root[data-theme="dark"] .assistant-dock-chatbar button {
+:root[data-theme="dark"] .assistant-dock-toolbar button {
   background: rgba(35, 37, 40, 0.94);
 }
 
@@ -4693,11 +4714,11 @@ body.quick-assistant-body,
   background: rgba(71, 75, 82, 0.86);
 }
 
-:root[data-theme="dark"] .assistant-dock-chatbar .assistant-dock-chat-pill.is-active {
+:root[data-theme="dark"] .assistant-dock-toolbar .assistant-dock-chat-pill.is-active {
   background: rgba(37, 99, 235, 0.18);
 }
 
-:root[data-theme="dark"] .assistant-dock-chatbar .assistant-dock-history-toggle.is-open {
+:root[data-theme="dark"] .assistant-dock-toolbar .assistant-dock-history-toggle.is-open {
   background: rgba(37, 99, 235, 0.18);
 }
 
