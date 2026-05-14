@@ -202,6 +202,7 @@ export function ControlCenterPage() {
   const [isBatchStarting, setIsBatchStarting] = useState(false);
   const [expandedGroup, setExpandedGroup] = useState<ServiceGroupKey | null>(null);
   const [configCache, setConfigCache] = useState<ConfigCache>({});
+  const [configOriginalCache, setConfigOriginalCache] = useState<ConfigCache>({});
   const [configMeta, setConfigMeta] = useState<ConfigMetaCache>({});
   const [activeConfigKeyByService, setActiveConfigKeyByService] = useState<Record<ServiceId, string>>({});
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
@@ -305,18 +306,14 @@ export function ControlCenterPage() {
     activeDetailService?.configFiles[0] ??
     null;
   const serviceConfigCache = activeDetailService ? configCache[activeDetailService.id] ?? {} : {};
+  const serviceConfigOriginalCache = activeDetailService ? configOriginalCache[activeDetailService.id] ?? {} : {};
   const serviceConfigMeta = activeDetailService ? configMeta[activeDetailService.id] ?? {} : {};
   const selectedConfigMeta = selectedConfigFile ? serviceConfigMeta[selectedConfigFile.key] : undefined;
   const selectedConfigContent = selectedConfigFile ? serviceConfigCache[selectedConfigFile.key] ?? "" : "";
-  const selectedConfigSourceClass = selectedConfigFile
-    ? getConfigSourceClass(selectedConfigFile, selectedConfigMeta)
-    : "is-pending";
-  const selectedConfigSourceLabel = selectedConfigFile
-    ? getConfigSourceLabel(selectedConfigFile, selectedConfigMeta)
-    : "未读取";
-  const selectedConfigPathLabel =
-    selectedConfigMeta?.path ||
-    (selectedConfigFile ? `将自动创建 ${selectedConfigFile.relativePath}` : "未声明配置文件");
+  const selectedConfigOriginalContent = selectedConfigFile
+    ? serviceConfigOriginalCache[selectedConfigFile.key] ?? ""
+    : "";
+  const selectedConfigDirty = selectedConfigFile ? selectedConfigContent !== selectedConfigOriginalContent : false;
   const activeDetailServiceId = activeDetailService?.id ?? "";
   const selectedConfigKeyForRead = selectedConfigFile?.key ?? "";
   const selectedConfigMetaLoaded = Boolean(
@@ -343,6 +340,13 @@ export function ControlCenterPage() {
             [selectedConfigKeyForRead]: result.content
           }
         }));
+        setConfigOriginalCache((current) => ({
+          ...current,
+          [activeDetailServiceId]: {
+            ...(current[activeDetailServiceId] ?? {}),
+            [selectedConfigKeyForRead]: result.content
+          }
+        }));
         setConfigMeta((current) => ({
           ...current,
           [activeDetailServiceId]: {
@@ -360,6 +364,13 @@ export function ControlCenterPage() {
           return;
         }
         setConfigCache((current) => ({
+          ...current,
+          [activeDetailServiceId]: {
+            ...(current[activeDetailServiceId] ?? {}),
+            [selectedConfigKeyForRead]: current[activeDetailServiceId]?.[selectedConfigKeyForRead] ?? ""
+          }
+        }));
+        setConfigOriginalCache((current) => ({
           ...current,
           [activeDetailServiceId]: {
             ...(current[activeDetailServiceId] ?? {}),
@@ -394,6 +405,11 @@ export function ControlCenterPage() {
 
   function invalidateConfig(serviceId: ServiceId) {
     setConfigCache((current) => {
+      const next = { ...current };
+      delete next[serviceId];
+      return next;
+    });
+    setConfigOriginalCache((current) => {
       const next = { ...current };
       delete next[serviceId];
       return next;
@@ -927,17 +943,44 @@ export function ControlCenterPage() {
                         );
                       })}
                     </select>
+                    <button
+                      type="button"
+                      className="action-button primary"
+                      onClick={() =>
+                        runAction(
+                          activeDetailService.id,
+                          "detail",
+                          async () => {
+                            const result = await writeConfig(
+                              activeDetailService.id,
+                              selectedConfigFile.key,
+                              selectedConfigContent
+                            );
+                            if (result.ok) {
+                              setConfigOriginalCache((current) => ({
+                                ...current,
+                                [activeDetailService.id]: {
+                                  ...(current[activeDetailService.id] ?? {}),
+                                  [selectedConfigFile.key]: selectedConfigContent
+                                }
+                              }));
+                            }
+                            return result;
+                          },
+                          {
+                            invalidateConfig: true
+                          }
+                        )
+                      }
+                      disabled={activeId === activeDetailService.id || !selectedConfigDirty}
+                    >
+                      保存
+                    </button>
                   </div>
                 ) : null}
               </div>
               {activeDetailService.configFiles.length > 0 && selectedConfigFile ? (
                 <>
-                  <div className="config-current-file">
-                    <span className="config-current-file-path">{selectedConfigPathLabel}</span>
-                    <span className={`config-file-source ${selectedConfigSourceClass}`}>
-                      {selectedConfigSourceLabel}
-                    </span>
-                  </div>
                   <textarea
                     className="config-editor"
                     value={selectedConfigContent}
@@ -952,27 +995,6 @@ export function ControlCenterPage() {
                     }
                     spellCheck={false}
                   />
-                  <div className="config-footer">
-                    <button
-                      type="button"
-                      className="action-button primary"
-                      onClick={() =>
-                        runAction(
-                          activeDetailService.id,
-                          "detail",
-                          () => writeConfig(activeDetailService.id, selectedConfigFile.key, selectedConfigContent),
-                          {
-                            invalidateConfig: true
-                          }
-                        )
-                      }
-                      disabled={activeId === activeDetailService.id}
-                    >
-                      {activeDetailService.kind === "builtin" && activeDetailService.status === "not-installed"
-                        ? "保存配置并安装"
-                        : "保存配置"}
-                    </button>
-                  </div>
                   {selectedConfigMeta?.source === "template" ? (
                     <p className="service-message">当前内容来自模板，保存或初始化后才会写入目标文件。</p>
                   ) : null}

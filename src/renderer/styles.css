@@ -6053,6 +6053,12 @@ body.quick-assistant-body,
   margin: 0 auto;
 }
 
+.control-center-page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
 .control-center-hero {
   position: relative;
   align-items: stretch;
@@ -7057,15 +7063,18 @@ body.quick-assistant-body,
 
 .control-center-shell {
   display: grid;
-  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(270px, 306px) minmax(0, 1fr);
   gap: 20px;
   align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 
 .service-sider,
 .control-center-detail,
 .control-center-empty {
   align-self: stretch;
+  min-height: 0;
   max-height: none;
 }
 
@@ -7387,6 +7396,10 @@ body.quick-assistant-body,
 }
 
 .control-center-detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
   overflow: visible;
 }
 
@@ -7890,6 +7903,10 @@ body.quick-assistant-body,
 /* ── Config Panel ── */
 
 .config-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
   padding: 14px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.22);
@@ -7902,7 +7919,6 @@ body.quick-assistant-body,
 }
 
 .config-head,
-.config-footer,
 .inline-actions {
   display: flex;
   justify-content: space-between;
@@ -7925,11 +7941,14 @@ body.quick-assistant-body,
 .config-select-wrap {
   display: flex;
   align-items: center;
-  min-width: min(340px, 100%);
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .config-file-select {
-  width: 100%;
+  width: min(420px, 100%);
   min-height: 32px;
   padding: 0 32px 0 10px;
   border: 1px solid var(--line);
@@ -7948,23 +7967,6 @@ body.quick-assistant-body,
 .config-file-select:focus {
   outline: none;
   box-shadow: 0 0 0 2px rgba(38, 99, 235, 0.12);
-}
-
-.config-current-file {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  min-width: 0;
-}
-
-.config-current-file-path {
-  min-width: 0;
-  color: var(--ink-muted);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .config-file-source {
@@ -8014,14 +8016,15 @@ body.quick-assistant-body,
 
 .config-editor {
   width: 100%;
-  min-height: 360px;
+  flex: 1;
+  min-height: 0;
   margin: 10px 0;
   padding: 10px 12px;
   border-radius: 4px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink);
-  resize: vertical;
+  resize: none;
   font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
   font-size: 12px;
 }
@@ -9348,7 +9351,6 @@ code {
   .settings-theme-actions,
   .custom-sidebar-form,
   .config-head,
-  .config-footer,
   .inline-actions,
   .service-card-head,
   .service-nav-card-head,
@@ -9408,16 +9410,11 @@ code {
 
   .config-select-wrap {
     width: 100%;
+    justify-content: flex-start;
   }
 
-  .config-current-file {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .config-current-file-path {
-    white-space: normal;
-    word-break: break-word;
+  .config-file-select {
+    width: 100%;
   }
 
   .service-detail-dialog {

@@ -136,6 +136,8 @@ const api: DesktopApi = {
     uninstall: (serviceId: ServiceId) => ipcRenderer.invoke("plugins.uninstall", serviceId)
   },
   market: {
+    getSettings: () => ipcRenderer.invoke("market.getSettings"),
+    saveSettings: (input) => ipcRenderer.invoke("market.saveSettings", input),
     list: () => ipcRenderer.invoke("market.list"),
     refresh: () => ipcRenderer.invoke("market.refresh"),
     install: (itemId: string) => ipcRenderer.invoke("market.install", itemId),

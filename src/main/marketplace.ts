@@ -9,7 +9,9 @@ import type {
   MarketInstallState,
   MarketItem,
   MarketItemType,
-  MarketListResult
+  MarketListResult,
+  MarketSettings,
+  MarketSettingsInput
 } from "../shared/contracts";
 import { readManifestFromArchive } from "./manifest-utils";
 import { getDataRoot } from "./user-paths";
@@ -23,6 +25,8 @@ import {
 } from "./skill-installer";
 
 export const DEFAULT_MARKETPLACE_CATALOG_URL = "http://47.100.131.144:9001/marketplace/index.json";
+export const DEFAULT_SKILLS_API_BASE_URL = "http://127.0.0.1:8080";
+const SKILLS_API_PAGE_LIMIT = 100;
 
 type Catalog = {
   schemaVersion: number;
@@ -44,6 +48,14 @@ type InstalledRecord = {
 type MarketplaceOptions = {
   catalogUrl?: string;
   catalog?: Catalog;
+  skillsApiBaseUrl?: string;
+};
+
+type SkillsApiPage = {
+  items: unknown[];
+  page: number;
+  limit: number;
+  total: number;
 };
 
 function marketplaceRoot(app: App) {
@@ -63,6 +75,10 @@ function catalogCachePath(app: App) {
 
 function installedRecordsPath(app: App) {
   return path.join(ensureMarketplaceRoot(app), "marketplace-installed.json");
+}
+
+function marketplaceSettingsPath(app: App) {
+  return path.join(ensureMarketplaceRoot(app), "settings.json");
 }
 
 function downloadsRoot(app: App) {
@@ -162,6 +178,49 @@ function writeJsonFile(filePath: string, value: unknown) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function normalizeSkillsApiBaseUrl(value: unknown) {
+  const input = asString(value).trim() || DEFAULT_SKILLS_API_BASE_URL;
+  let parsed: URL;
+  try {
+    parsed = new URL(input);
+  } catch {
+    throw new Error("技能市场地址必须是有效的 http 或 https URL。");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("技能市场地址仅支持 http 或 https。");
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error("技能市场地址不应包含查询参数或锚点。");
+  }
+  const pathname = parsed.pathname.replace(/\/+$/u, "") || "/";
+  if (pathname === "/") {
+    return parsed.origin;
+  }
+  if (pathname === "/api/v1") {
+    return `${parsed.origin}/api/v1`;
+  }
+  throw new Error("技能市场地址请输入服务根地址，或以 /api/v1 结尾。");
+}
+
+export function getMarketSettings(app: App): MarketSettings {
+  const saved = readJsonFile<Partial<MarketSettings>>(marketplaceSettingsPath(app), {});
+  try {
+    return {
+      skillsApiBaseUrl: normalizeSkillsApiBaseUrl(saved.skillsApiBaseUrl)
+    };
+  } catch {
+    return { skillsApiBaseUrl: DEFAULT_SKILLS_API_BASE_URL };
+  }
+}
+
+export function saveMarketSettings(app: App, input: MarketSettingsInput): MarketSettings {
+  const settings = {
+    skillsApiBaseUrl: normalizeSkillsApiBaseUrl(input.skillsApiBaseUrl)
+  };
+  writeJsonFile(marketplaceSettingsPath(app), settings);
+  return settings;
+}
+
 function readInstalledRecords(app: App) {
   const parsed = readJsonFile<{ records?: InstalledRecord[] } | InstalledRecord[]>(installedRecordsPath(app), []);
   const records = Array.isArray(parsed) ? parsed : Array.isArray(parsed.records) ? parsed.records : [];
@@ -183,10 +242,10 @@ function removeInstalledRecord(app: App, itemId: string) {
   writeInstalledRecords(app, records);
 }
 
-async function fetchJson(url: string) {
+async function fetchJson(url: string, label = "market request") {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`market catalog request failed: ${response.status}`);
+    throw new Error(`${label} failed: ${response.status}`);
   }
   return response.json() as Promise<unknown>;
 }
@@ -197,7 +256,7 @@ async function loadCatalog(app: App, options: MarketplaceOptions = {}) {
   }
   const catalogUrl = options.catalogUrl ?? DEFAULT_MARKETPLACE_CATALOG_URL;
   try {
-    const catalog = normalizeCatalog(await fetchJson(catalogUrl));
+    const catalog = normalizeCatalog(await fetchJson(catalogUrl, "market catalog request"));
     writeJsonFile(catalogCachePath(app), catalog);
     return { catalog, offline: false, message: "市场已刷新。" };
   } catch (error) {
@@ -215,6 +274,125 @@ async function loadCatalog(app: App, options: MarketplaceOptions = {}) {
       message: `市场暂不可用：${error instanceof Error ? error.message : String(error)}`
     };
   }
+}
+
+function skillsApiPrefix(baseUrl: string) {
+  return baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
+}
+
+function skillsApiListUrl(baseUrl: string, page: number, limit: number) {
+  const url = new URL(`${skillsApiPrefix(baseUrl)}/skills`);
+  url.searchParams.set("page", String(page));
+  url.searchParams.set("limit", String(limit));
+  return url.toString();
+}
+
+function skillsApiDownloadUrl(baseUrl: string, skillName: string, version: string) {
+  const url = new URL(`${skillsApiPrefix(baseUrl)}/skills/${encodeURIComponent(skillName)}/download`);
+  if (version) {
+    url.searchParams.set("version", version);
+  }
+  return url.toString();
+}
+
+async function fetchSkillsApiPage(baseUrl: string, page: number): Promise<SkillsApiPage> {
+  const raw = asObject(await fetchJson(skillsApiListUrl(baseUrl, page, SKILLS_API_PAGE_LIMIT), "skills api request"));
+  if (raw.success === false) {
+    const error = asObject(raw.error);
+    throw new Error(asString(error.message) || asString(error.code) || "skills api request failed");
+  }
+  const pagination = asObject(raw.pagination);
+  const items = Array.isArray(raw.data) ? raw.data : [];
+  return {
+    items,
+    page: asNumber(pagination.page) || page,
+    limit: asNumber(pagination.limit) || SKILLS_API_PAGE_LIMIT,
+    total: asNumber(pagination.total) || items.length
+  };
+}
+
+async function fetchAllSkillsApiItems(baseUrl: string) {
+  const items: unknown[] = [];
+  let page = 1;
+  for (let guard = 0; guard < 100; guard += 1) {
+    const result = await fetchSkillsApiPage(baseUrl, page);
+    items.push(...result.items);
+    if (items.length >= result.total || result.items.length === 0 || result.items.length < result.limit) {
+      break;
+    }
+    page = result.page + 1;
+  }
+  return items;
+}
+
+function skillsApiItemToCatalogItem(baseUrl: string, value: unknown): MarketCatalogItem | null {
+  const raw = asObject(value);
+  const id = asString(raw.name).trim();
+  if (!id) {
+    return null;
+  }
+  const version = asString(raw.latest_version).trim();
+  return {
+    id,
+    type: "skill",
+    name: asString(raw.display_name).trim() || id,
+    version: version || "0.0.0",
+    description: asString(raw.description),
+    tags: asStringArray(raw.tags),
+    assets: {
+      universal: {
+        url: skillsApiDownloadUrl(baseUrl, id, version),
+        sha256: "",
+        sizeBytes: 0,
+        archiveType: "tar.gz"
+      }
+    }
+  };
+}
+
+async function loadSkillsCatalog(app: App, options: MarketplaceOptions = {}) {
+  const baseUrl = options.skillsApiBaseUrl
+    ? normalizeSkillsApiBaseUrl(options.skillsApiBaseUrl)
+    : getMarketSettings(app).skillsApiBaseUrl;
+  try {
+    const items = (await fetchAllSkillsApiItems(baseUrl))
+      .map((item) => skillsApiItemToCatalogItem(baseUrl, item))
+      .filter((item): item is MarketCatalogItem => Boolean(item));
+    return {
+      catalog: { schemaVersion: 1, items },
+      offline: false,
+      message: "技能市场已刷新。",
+      sourceUrl: baseUrl
+    };
+  } catch (error) {
+    return {
+      catalog: { schemaVersion: 1, items: [] },
+      offline: true,
+      message: `技能市场暂不可用：${error instanceof Error ? error.message : String(error)}`,
+      sourceUrl: baseUrl
+    };
+  }
+}
+
+async function loadMarketplaceCatalog(app: App, options: MarketplaceOptions = {}) {
+  const catalogUrl = options.catalogUrl ?? DEFAULT_MARKETPLACE_CATALOG_URL;
+  const pluginResult = await loadCatalog(app, options);
+  const skillsResult = await loadSkillsCatalog(app, options);
+  const catalog: Catalog = {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    items: [
+      ...pluginResult.catalog.items.filter((item) => item.type === "plugin"),
+      ...skillsResult.catalog.items
+    ]
+  };
+  const messages = [pluginResult.message, skillsResult.message].filter(Boolean);
+  return {
+    catalog,
+    offline: pluginResult.offline || skillsResult.offline,
+    message: messages.join(" "),
+    sourceUrl: skillsResult.sourceUrl || catalogUrl
+  };
 }
 
 function compareVersions(left: string, right: string) {

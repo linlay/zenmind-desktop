@@ -749,6 +749,14 @@ export interface MarketCommandResult {
   installPath?: string;
 }
 
+export interface MarketSettings {
+  skillsApiBaseUrl: string;
+}
+
+export interface MarketSettingsInput {
+  skillsApiBaseUrl: string;
+}
+
 export interface AssistantPastedImageInput {
   name?: string;
   mimeType: string;
@@ -1194,6 +1202,8 @@ export interface DesktopApi {
     uninstall: (serviceId: ServiceId) => Promise<PluginInstallResult>;
   };
   market: {
+    getSettings: () => Promise<MarketSettings>;
+    saveSettings: (input: MarketSettingsInput) => Promise<MarketSettings>;
     list: () => Promise<MarketListResult>;
     refresh: () => Promise<MarketListResult>;
     install: (itemId: string) => Promise<MarketCommandResult>;
