@@ -471,6 +471,16 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
     }
   }
 
+  const envExamplePath = `${service.bundleTopLevelDir}/.env.example`;
+  const envExample = readArchiveEntryText(archivePath, envExamplePath);
+  if (!/\bDESKTOP_APP\s*=/u.test(envExample)) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Missing DESKTOP_APP in ${envExamplePath}.\n` +
+        `Please rebuild the Desktop-ready agent-webclient bundle.`
+    );
+  }
+
   if (manifest?.backend?.entry !== "backend/server.cjs") {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +

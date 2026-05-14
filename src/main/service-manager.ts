@@ -619,6 +619,7 @@ const CORE_SERVICE_IDS = new Set<ServiceId>([
 ]);
 const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL", "WS_BASE_URL", "VOICE_BASE_URL"] as const;
 const AGENT_WEBCLIENT_DESKTOP_ONLY_ENV_KEYS = ["NODE_BIN", "NODE_ENV", "DEV_SERVER_ALLOWED_HOSTS"] as const;
+const AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES = new Map([["DESKTOP_APP", "true"]]);
 const DESKTOP_MANAGED_PLATFORM_URL_PORTS = new Set([
   "7078",
   "11949",
@@ -2956,7 +2957,10 @@ function removeEnvKeysFromContent(content: string, keys: readonly string[]) {
 }
 
 function normalizeAgentWebclientEnvContentForDesktop(content: string) {
-  return removeEnvKeysFromContent(content, AGENT_WEBCLIENT_DESKTOP_ONLY_ENV_KEYS);
+  return upsertEnvFileContent(
+    removeEnvKeysFromContent(content, AGENT_WEBCLIENT_DESKTOP_ONLY_ENV_KEYS),
+    AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES
+  );
 }
 
 function normalizeAgentPlatformEnvContentForRuntime(content: string) {
@@ -3371,14 +3375,16 @@ async function syncAgentWebclientEnvAfterAgentPlatformSave(app: App, previousPla
     return;
   }
 
+  const normalizedContent = normalizeAgentWebclientEnvContentForDesktop(webclientEnvInfo.content);
+  const normalizedEnv = parseEnvFileContent(normalizedContent);
   const platformPort = await getServicePortForEnvSync(app, "agent-platform");
   const updates = new Map<string, string>();
-  syncAgentWebclientPlatformUrlsToPort(webclientEnvInfo.env, updates, platformPort, [previousPlatformPort]);
-  if (updates.size === 0) {
+  syncAgentWebclientPlatformUrlsToPort(normalizedEnv, updates, platformPort, [previousPlatformPort]);
+  if (updates.size === 0 && normalizedContent === webclientEnvInfo.content) {
     return;
   }
 
-  fs.writeFileSync(webclientEnvInfo.envPath, upsertEnvFileContent(webclientEnvInfo.content, updates), "utf8");
+  fs.writeFileSync(webclientEnvInfo.envPath, upsertEnvFileContent(normalizedContent, updates), "utf8");
 }
 
 async function syncCoreServiceDependentEnvAfterSave(
@@ -4507,6 +4513,7 @@ export const __testInternals = {
   resolveAcpCommandForDesktop,
   normalizeAgentPlatformEnvContentForRuntime,
   normalizeAgentPlatformEnvContentForSave,
+  normalizeAgentWebclientEnvContentForDesktop,
   applyAgentPlatformWindowsHostShellDefaults,
   parseProcessTreeRowsFromPs,
   parseProcessTreeRowsFromPowerShell,

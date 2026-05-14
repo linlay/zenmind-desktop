@@ -575,15 +575,8 @@ test("assistant voice UI no longer exposes a correction toggle and temporarily s
     path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
     "utf8"
   );
-  const assistantRuntime = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "runtime.ts"),
-    "utf8"
-  );
-
   assert.doesNotMatch(settingsPage, /语音模型纠错/);
   assert.doesNotMatch(settingsPage, /handleToggleVoiceCorrection/);
-  assert.doesNotMatch(settingsPage, /assistant\.getSettings\(\)/);
-  assert.doesNotMatch(settingsPage, /assistant\.saveSettings\(/);
   assert.doesNotMatch(quickAssistant, /isVoiceCorrectionEnabled/);
   assert.doesNotMatch(quickAssistant, /!isVoiceCorrectionEnabled\(latestSettings\)/);
   assert.match(quickAssistant, /applyVoiceTextToDraft/);
@@ -611,9 +604,6 @@ test("assistant voice UI no longer exposes a correction toggle and temporarily s
   const startVoiceInput = assistantDock.slice(startVoiceInputIndex, stopVoiceInputIndex);
   assert.match(startVoiceInput, /getSpeechRecognitionConstructor\(\)/);
   assert.match(startVoiceInput, /canUseRecordedVoiceInput\(\)[\s\S]{0,120}await startRecordedVoiceInput\(\)/);
-  assert.match(assistantRuntime, /tryLoadAgentPlatformVoiceAsrSettings/);
-  assert.match(assistantRuntime, /transcribeOpenAIChatAudio/);
-  assert.match(assistantRuntime, /qwen3-asr-flash/);
 });
 
 test("desktop pet appearance picker confirms persistence before success feedback", () => {

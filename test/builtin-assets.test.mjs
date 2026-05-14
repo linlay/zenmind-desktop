@@ -241,11 +241,13 @@ test("synced builtin assets include agent-webclient so assistant entry is availa
   const entries = listArchiveEntries(assetPath);
   assert.ok(entries.has("agent-webclient/manifest.json"));
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
+  const envExample = readArchiveEntryText(assetPath, "agent-webclient/.env.example");
+  assert.match(envExample, /\bDESKTOP_APP\s*=/);
 
   const manifest = readManifestFromArchive(assetPath);
   assert.equal(manifest?.backend?.entry, "backend/server.cjs");
-  assert.equal(manifest?.frontend?.embedPath, "/appagent");
-  assert.equal(manifest?.frontend?.embedParams?.desktopApp, "1");
+  assert.equal(manifest?.frontend?.embedPath, "/");
+  assert.equal(manifest?.frontend?.embedParams?.desktopApp, undefined);
   const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
     ? manifest.desktop.envBindings.map((binding) => binding?.key)
     : [];
@@ -291,7 +293,7 @@ test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with s
       "BACKEND_PACKAGE_FILE=\"$BUNDLE_ROOT/backend/package.json\"",
       "BACKEND_NODE_MODULES_DIR=\"$BUNDLE_ROOT/backend/node_modules\""
     ].join("\n") + "\n",
-    ".env.example": "PORT=11948\n",
+    ".env.example": "PORT=11948\n# DESKTOP_APP=true\n",
     "manifest.json": JSON.stringify({
       id: "agent-webclient",
       kind: "builtin",
@@ -359,7 +361,7 @@ test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with a
     "stop.sh": "#!/usr/bin/env bash\nexit 0\n",
     "deploy.sh": "#!/usr/bin/env bash\nexit 0\n",
     "scripts/program-common.sh": "#!/usr/bin/env bash\nBACKEND_ENTRY=\"/backend/server.cjs\"\n",
-    ".env.example": "PORT=11948\n",
+    ".env.example": "PORT=11948\n# DESKTOP_APP=true\n",
     "manifest.json": JSON.stringify({
       id: "agent-webclient",
       kind: "builtin",

@@ -15,19 +15,19 @@ test("buildPluginEmbeddedUrl appends desktopApp=1 for pan-webclient", () => {
   );
 });
 
-test("buildPluginEmbeddedUrl rewrites agent-webclient to /appagent with desktopApp=1", () => {
+test("buildPluginEmbeddedUrl rewrites agent-webclient to /appagent without desktopApp query", () => {
   assert.equal(
     buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/"),
-    "http://127.0.0.1:9090/appagent?desktopApp=1"
+    "http://127.0.0.1:9090/appagent"
   );
 });
 
-test("buildPluginEmbeddedUrl keeps hostTheme for agent-webclient with desktopApp=1", () => {
+test("buildPluginEmbeddedUrl keeps hostTheme for agent-webclient without desktopApp query", () => {
   assert.equal(
     buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {
       hostTheme: "dark"
     }),
-    "http://127.0.0.1:9090/appagent?desktopApp=1&hostTheme=dark"
+    "http://127.0.0.1:9090/appagent?hostTheme=dark"
   );
 });
 
@@ -37,7 +37,7 @@ test("buildPluginEmbeddedUrl carries desktop auth context for agent-webclient", 
       hostTheme: "dark",
       desktopAuthContext: "webclient:101:platform:202"
     }),
-    "http://127.0.0.1:9090/appagent?desktopApp=1&hostTheme=dark&desktopAuthContext=webclient%3A101%3Aplatform%3A202"
+    "http://127.0.0.1:9090/appagent?hostTheme=dark&desktopAuthContext=webclient%3A101%3Aplatform%3A202"
   );
 });
 
@@ -49,7 +49,7 @@ test("buildPluginEmbeddedUrl opens agent-webclient desktop sections with auth co
         desktopAuthContext: "webclient:101:platform:202",
         embedPath
       }),
-      `http://127.0.0.1:9090${embedPath}?desktopApp=1&hostTheme=dark&desktopAuthContext=webclient%3A101%3Aplatform%3A202`
+      `http://127.0.0.1:9090${embedPath}?hostTheme=dark&desktopAuthContext=webclient%3A101%3Aplatform%3A202`
     );
   }
 });
@@ -59,7 +59,7 @@ test("buildPluginEmbeddedUrl normalizes agent-webclient desktop section paths", 
     buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {
       embedPath: "agents"
     }),
-    "http://127.0.0.1:9090/agents?desktopApp=1"
+    "http://127.0.0.1:9090/agents"
   );
 });
 
@@ -68,14 +68,14 @@ test("buildPluginEmbeddedUrl resolves relative agent-webclient URLs from the ser
     buildPluginEmbeddedUrl("agent-webclient", "/agent/", {
       baseUrl: "http://127.0.0.1:18082"
     }),
-    "http://127.0.0.1:18082/appagent?desktopApp=1"
+    "http://127.0.0.1:18082/appagent"
   );
 });
 
 test("buildPluginEmbeddedUrl accepts localhost URLs without a protocol", () => {
   assert.equal(
     buildPluginEmbeddedUrl("agent-webclient", "127.0.0.1:18082/agent/"),
-    "http://127.0.0.1:18082/appagent?desktopApp=1"
+    "http://127.0.0.1:18082/appagent"
   );
 });
 

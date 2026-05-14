@@ -968,6 +968,26 @@ test("normalizeAgentPlatformEnvContentForSave strips legacy relay settings", () 
   assert.doesNotMatch(next, /^CLAUDE_CODE_ACP_ARGS=/m);
 });
 
+test("normalizeAgentWebclientEnvContentForDesktop writes desktop mode and strips runtime-only keys", () => {
+  const next = __testInternals.normalizeAgentWebclientEnvContentForDesktop(
+    [
+      "PORT=11948",
+      "DESKTOP_APP=false",
+      "NODE_BIN=/tmp/node",
+      "NODE_ENV=production",
+      "DEV_SERVER_ALLOWED_HOSTS=all",
+      "BASE_URL=http://127.0.0.1:11949"
+    ].join("\n")
+  );
+
+  assert.match(next, /^PORT=11948$/m);
+  assert.match(next, /^DESKTOP_APP=true$/m);
+  assert.match(next, /^BASE_URL=http:\/\/127\.0\.0\.1:11949$/m);
+  assert.doesNotMatch(next, /^NODE_BIN=/m);
+  assert.doesNotMatch(next, /^NODE_ENV=/m);
+  assert.doesNotMatch(next, /^DEV_SERVER_ALLOWED_HOSTS=/m);
+});
+
 test("applyAgentPlatformWindowsHostShellDefaults injects PowerShell defaults on Windows", () => {
   const updates = new Map();
   const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(
@@ -1063,10 +1083,11 @@ test("normalizeAgentPlatformEnvContentForRuntime migrates real legacy image toke
 test("service install dir follows userData/services/<id>/<version>", () => {
   const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-service-dir-"));
   const { app, restore } = loadBuiltinsForTest(userDataRoot);
-  const installDir = getInstallDir(app, getBuiltinService("agent-platform"));
+  const service = getBuiltinService("agent-platform");
+  const installDir = getInstallDir(app, service);
   assert.equal(
     installDir,
-    path.join(userDataRoot, "services", "agent-platform", "v0.1.0")
+    path.join(userDataRoot, "services", service.id, service.version)
   );
   restore();
 });
@@ -2626,7 +2647,8 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
     /^CHAT_RESOURCE_TICKET_ENABLED=true$/m
   );
 
-  const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
+  const resolvedNodeBin = __testInternals.resolveNodeBin();
+  const expectedNodeBinLiteral = resolvedNodeBin.includes(" ") ? `"${resolvedNodeBin}"` : resolvedNodeBin;
   assert.match(
     envContent,
     new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
@@ -2858,7 +2880,8 @@ test("ensurePreStartRequirements fills default desktop ACP command for the local
   }
 
   const relayEnvContent = fs.readFileSync(path.join(relayInstallDir, ".env"), "utf8");
-  const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
+  const resolvedNodeBin = __testInternals.resolveNodeBin();
+  const expectedNodeBinLiteral = resolvedNodeBin.includes(" ") ? `"${resolvedNodeBin}"` : resolvedNodeBin;
   assert.match(
     relayEnvContent,
     new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
@@ -3214,14 +3237,15 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   assert.doesNotMatch(envContent, /^NODE_BIN=/m);
   assert.doesNotMatch(envContent, /^NODE_ENV=/m);
   assert.doesNotMatch(envContent, /^DEV_SERVER_ALLOWED_HOSTS=/m);
+  assert.match(envContent, /^DESKTOP_APP=true$/m);
   assert.match(serverContent, /function createWebSocketProxy\(/);
   assert.match(serverContent, /proxy\.upgrade\(req, socket, head\)/);
   assert.doesNotMatch(serverContent, /function buildUpgradeRequest\(/);
   assert.doesNotMatch(serverContent, /\(secure \? https : http\)\.request/);
   assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(webclientInstallDir), false);
   assert.equal(manifest.backend.entry, "backend/server.cjs");
-  assert.equal(manifest.frontend.embedPath, "/appagent");
-  assert.equal(manifest.frontend.embedParams?.desktopApp, "1");
+  assert.equal(manifest.frontend.embedPath, "/");
+  assert.equal(manifest.frontend.embedParams?.desktopApp, undefined);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
