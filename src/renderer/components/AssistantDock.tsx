@@ -51,10 +51,12 @@ type AssistantDockProps = {
   isWindows: boolean;
   nativeDialogVisible?: boolean;
   showLauncher?: boolean;
+  preferredAgentKey?: string | null;
   onOpen: () => void;
   onClose: () => void;
   onModeChange: (mode: AssistantDockMode) => void;
   requestedChatId?: string | null;
+  onRunningRunIdChange?: (runId: string | null) => void;
   onOpenSettings: () => void;
 };
 
@@ -969,10 +971,12 @@ export function AssistantDock({
   isWindows,
   nativeDialogVisible = false,
   showLauncher = true,
+  preferredAgentKey = null,
   onOpen,
   onClose,
   onModeChange,
   requestedChatId,
+  onRunningRunIdChange,
   onOpenSettings
 }: AssistantDockProps) {
   const [settings, setSettings] = useState<AssistantSettingsPublic | null>(null);
@@ -1035,7 +1039,17 @@ export function AssistantDock({
 
   useEffect(() => {
     runningRunIdRef.current = runningRunId;
+    onRunningRunIdChange?.(runningRunId);
   }, [runningRunId]);
+
+  useEffect(() => {
+    if (runningRunId || !preferredAgentKey || agentOptions.length === 0) {
+      return;
+    }
+    if (agentOptions.some((agent) => agent.agentKey === preferredAgentKey)) {
+      setSelectedAgentKey(preferredAgentKey);
+    }
+  }, [agentOptions, preferredAgentKey, runningRunId]);
 
   useEffect(() => {
     draftRef.current = draft;
@@ -1064,7 +1078,9 @@ export function AssistantDock({
           return;
         }
         const nextAgents = Array.isArray(agents) ? agents : [];
-        const configuredHelperAgentKey = nextSettings.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
+        const configuredHelperAgentKey = preferredAgentKey ||
+          nextSettings.desktopHelperAgentKey ||
+          DEFAULT_DESKTOP_HELPER_AGENT_KEY;
         setSettings(nextSettings);
         setAgentOptions(nextAgents);
         setSelectedAgentKey((current) => {
@@ -1093,7 +1109,7 @@ export function AssistantDock({
     return () => {
       canceled = true;
     };
-  }, [open]);
+  }, [open, preferredAgentKey]);
 
   useEffect(() => {
     if (!attachmentMenuOpen) {

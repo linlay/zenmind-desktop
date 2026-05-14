@@ -261,7 +261,8 @@ export function loadAgentPlatformMinimaxSettings(app: App): AssistantSettingsPri
     model: modelId,
     apiKey: resolveProviderAPIKey(provider.key || "minimax", provider.apiKey, location.env),
     voiceCorrectionEnabled: localSettings.voiceCorrectionEnabled,
-    desktopHelperAgentKey: localSettings.desktopHelperAgentKey
+    desktopHelperAgentKey: localSettings.desktopHelperAgentKey,
+    desktopCopilotPages: localSettings.desktopCopilotPages
   };
 }
 
@@ -312,7 +313,8 @@ export function loadAgentPlatformProviderSettings(
     model: modelId,
     apiKey,
     voiceCorrectionEnabled: localSettings.voiceCorrectionEnabled,
-    desktopHelperAgentKey: localSettings.desktopHelperAgentKey
+    desktopHelperAgentKey: localSettings.desktopHelperAgentKey,
+    desktopCopilotPages: localSettings.desktopCopilotPages
   };
 }
 

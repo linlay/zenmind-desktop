@@ -54,6 +54,7 @@ type AppSidebarProps = {
   currentPath: string;
   pendingPath?: string | null;
   assistantDockOpen?: boolean;
+  assistantLauncherVisible?: boolean;
   customSidebarItems: CustomSidebarItem[];
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
@@ -66,6 +67,7 @@ export function AppSidebar({
   currentPath,
   pendingPath,
   assistantDockOpen = false,
+  assistantLauncherVisible = true,
   customSidebarItems,
   onOpenAssistantDock,
   onCloseAssistantDock,
@@ -188,25 +190,27 @@ export function AppSidebar({
             <span className="sidebar-link-label">设置</span>
             <span className="sidebar-link-label-collapsed" aria-hidden="true">设置</span>
           </NavLink>
-          <button
-            type="button"
-            className={[
-              "sidebar-link",
-              "sidebar-link-utility",
-              "sidebar-assistant-launcher",
-              assistantDockOpen ? "sidebar-link-active" : ""
-            ].filter(Boolean).join(" ")}
-            onClick={handleAssistantDockClick}
-            aria-label="打开 ZenMind 助手"
-            aria-pressed={assistantDockOpen}
-            title="助手"
-          >
-            <span className="sidebar-link-icon">
-              <SidebarIllustration kind="assistant" />
-            </span>
-            <span className="sidebar-link-label">助手</span>
-            <span className="sidebar-link-label-collapsed" aria-hidden="true">助手</span>
-          </button>
+          {assistantLauncherVisible ? (
+            <button
+              type="button"
+              className={[
+                "sidebar-link",
+                "sidebar-link-utility",
+                "sidebar-assistant-launcher",
+                assistantDockOpen ? "sidebar-link-active" : ""
+              ].filter(Boolean).join(" ")}
+              onClick={handleAssistantDockClick}
+              aria-label="打开 ZenMind 助手"
+              aria-pressed={assistantDockOpen}
+              title="助手"
+            >
+              <span className="sidebar-link-icon">
+                <SidebarIllustration kind="assistant" />
+              </span>
+              <span className="sidebar-link-label">助手</span>
+              <span className="sidebar-link-label-collapsed" aria-hidden="true">助手</span>
+            </button>
+          ) : null}
         </div>
       </div>
     </aside>

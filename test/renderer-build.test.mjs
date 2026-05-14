@@ -99,7 +99,9 @@ test("assistant dock exposes agent selection and sends agentKey to platform runs
   assert.match(contracts, /listAgents:\s*\(\) => Promise<DesktopPetAgentOption\[\]>/);
   assert.match(contracts, /agentKey\?: string;/);
   assert.match(contracts, /desktopHelperAgentKey:\s*string;/);
+  assert.match(contracts, /desktopCopilotPages:\s*DesktopCopilotPagePreferences;/);
   assert.match(contracts, /desktopHelperAgentKey\?:\s*string;/);
+  assert.match(contracts, /desktopCopilotPages\?:\s*DesktopCopilotPagePreferencesInput/);
   assert.match(mainProcess, /ipcMain\.handle\("assistant\.listAgents"/);
   assert.match(mainProcess, /return \[\];/);
   assert.match(assistantDock, /window\.electronAPI\.assistant\.listAgents\(\)/);
@@ -146,11 +148,47 @@ test("settings page configures desktop helper default agent separately from desk
   );
 
   assert.match(sharedSettings, /DEFAULT_DESKTOP_HELPER_AGENT_KEY\s*=\s*"desktopAssistant"/);
+  assert.match(sharedSettings, /DESKTOP_COPILOT_PAGE_KEYS/);
+  assert.match(sharedSettings, /controlCenter/);
+  assert.match(sharedSettings, /schedules/);
   assert.match(settingsStore, /desktopHelperAgentKey:\s*settings\.desktopHelperAgentKey/);
+  assert.match(settingsStore, /desktopCopilotPages:\s*settings\.desktopCopilotPages/);
   assert.match(settingsPage, /DESKTOP ASSISTANT/);
+  assert.match(settingsPage, /页面 Copilot/);
+  assert.match(settingsPage, /DESKTOP_COPILOT_PAGE_KEYS\.map/);
+  assert.match(settingsPage, /handleToggleCopilotPage/);
+  assert.match(settingsPage, /handleSelectCopilotAgent/);
   assert.match(settingsPage, /handleSelectDesktopHelperAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*desktopHelperAgentKey: normalizedAgentKey\s*\}\)/);
+  assert.match(settingsPage, /desktopCopilotPages: nextPages/);
   assert.match(settingsPage, /这个设置不影响桌面宠物绑定/);
+});
+
+test("page-level copilot controls sidebar visibility and assistant agent following", () => {
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const sidebarSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "components", "AppSidebar.tsx"),
+    "utf8"
+  );
+  const assistantDock = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
+    "utf8"
+  );
+  const resolver = fs.readFileSync(path.join(projectRoot, "src", "shared", "page-copilot.ts"), "utf8");
+
+  assert.match(resolver, /resolveDesktopCopilotPageKey/);
+  assert.match(resolver, /"\/control-center"[\s\S]*?"controlCenter"/);
+  assert.match(resolver, /"\/memory"[\s\S]*?"memory"/);
+  assert.match(appShell, /resolveDesktopCopilotPreference/);
+  assert.match(appShell, /assistantLauncherVisible = currentCopilotPreference\?\.enabled !== false/);
+  assert.match(appShell, /currentCopilotPreference\?\.enabled === false && assistantDockOpen && !assistantRunningRunId/);
+  assert.match(appShell, /assistantLauncherVisible=\{assistantLauncherVisible\}/);
+  assert.match(appShell, /preferredAgentKey=\{preferredAssistantAgentKey\}/);
+  assert.match(appShell, /onRunningRunIdChange=\{setAssistantRunningRunId\}/);
+  assert.match(sidebarSource, /assistantLauncherVisible/);
+  assert.match(sidebarSource, /assistantLauncherVisible \? \(/);
+  assert.match(assistantDock, /preferredAgentKey/);
+  assert.match(assistantDock, /setSelectedAgentKey\(preferredAgentKey\)/);
 });
 
 test("desktop action bridge exposes localhost api and renderer action providers", () => {

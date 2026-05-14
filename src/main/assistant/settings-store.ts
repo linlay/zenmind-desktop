@@ -2,7 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import type { AssistantSettingsInput, AssistantSettingsPublic } from "../../shared/contracts";
-import { DEFAULT_DESKTOP_HELPER_AGENT_KEY } from "../../shared/assistant-settings";
+import {
+  DEFAULT_DESKTOP_HELPER_AGENT_KEY,
+  type DesktopCopilotPagePreferences
+} from "../../shared/assistant-settings";
+import { sanitizeDesktopCopilotPagePreferences } from "../../shared/page-copilot";
 
 const SETTINGS_FILE = "settings.json";
 const DEFAULT_VOICE_CORRECTION_ENABLED = true;
@@ -13,6 +17,7 @@ export type AssistantSettingsPrivate = {
   apiKey: string;
   voiceCorrectionEnabled: boolean;
   desktopHelperAgentKey: string;
+  desktopCopilotPages: DesktopCopilotPagePreferences;
 };
 
 function getAssistantRoot(app: App) {
@@ -34,6 +39,7 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
   const desktopHelperAgentKey = typeof candidate.desktopHelperAgentKey === "string" && candidate.desktopHelperAgentKey.trim()
     ? candidate.desktopHelperAgentKey.trim()
     : DEFAULT_DESKTOP_HELPER_AGENT_KEY;
+  const desktopCopilotPages = sanitizeDesktopCopilotPagePreferences(candidate.desktopCopilotPages);
   return {
     baseURL: "",
     model: "",
@@ -41,14 +47,16 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
     voiceCorrectionEnabled: typeof candidate.voiceCorrectionEnabled === "boolean"
       ? candidate.voiceCorrectionEnabled
       : DEFAULT_VOICE_CORRECTION_ENABLED,
-    desktopHelperAgentKey
+    desktopHelperAgentKey,
+    desktopCopilotPages
   };
 }
 
 function toStoredAssistantSettings(settings: AssistantSettingsPrivate) {
   return {
     voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
-    desktopHelperAgentKey: settings.desktopHelperAgentKey
+    desktopHelperAgentKey: settings.desktopHelperAgentKey,
+    desktopCopilotPages: settings.desktopCopilotPages
   };
 }
 
@@ -58,6 +66,26 @@ function needsSanitizedWrite(value: unknown) {
   }
   const candidate = value as Record<string, unknown>;
   return "apiKey" in candidate || "baseURL" in candidate || "model" in candidate || "clearApiKey" in candidate;
+}
+
+function mergeDesktopCopilotPagePreferences(
+  current: DesktopCopilotPagePreferences,
+  patch: AssistantSettingsInput["desktopCopilotPages"]
+) {
+  if (!patch) {
+    return current;
+  }
+  const merged: Record<string, unknown> = { ...current };
+  for (const [pageKey, value] of Object.entries(patch)) {
+    const currentPreference = current[pageKey as keyof DesktopCopilotPagePreferences];
+    merged[pageKey] = value && typeof value === "object" && !Array.isArray(value)
+      ? {
+          ...currentPreference,
+          ...value
+        }
+      : value;
+  }
+  return sanitizeDesktopCopilotPagePreferences(merged);
 }
 
 export function toPublicAssistantSettings(
@@ -73,6 +101,7 @@ export function toPublicAssistantSettings(
     apiKeyConfigured,
     voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
     desktopHelperAgentKey: settings.desktopHelperAgentKey,
+    desktopCopilotPages: settings.desktopCopilotPages,
     source,
     ...(sourceLabel ? { sourceLabel } : {})
   };
@@ -116,7 +145,8 @@ export function saveAssistantSettingsToRoot(
       : current.voiceCorrectionEnabled,
     desktopHelperAgentKey: typeof input.desktopHelperAgentKey === "string" && input.desktopHelperAgentKey.trim()
       ? input.desktopHelperAgentKey.trim()
-      : current.desktopHelperAgentKey
+      : current.desktopHelperAgentKey,
+    desktopCopilotPages: mergeDesktopCopilotPagePreferences(current.desktopCopilotPages, input.desktopCopilotPages)
   };
 
   fs.writeFileSync(getSettingsPath(rootDir), `${JSON.stringify(toStoredAssistantSettings(next), null, 2)}\n`, "utf8");

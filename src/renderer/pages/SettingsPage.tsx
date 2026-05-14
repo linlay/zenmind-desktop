@@ -12,7 +12,15 @@ import type {
   DesktopPetAgentOption,
   DesktopPetState
 } from "../../shared/contracts";
-import { DEFAULT_DESKTOP_HELPER_AGENT_KEY } from "../../shared/assistant-settings";
+import {
+  DEFAULT_DESKTOP_HELPER_AGENT_KEY,
+  DESKTOP_COPILOT_PAGE_KEYS,
+  DESKTOP_COPILOT_PAGE_LABELS,
+  createDefaultDesktopCopilotPagePreferences,
+  type DesktopCopilotPageKey,
+  type DesktopCopilotPagePreferences
+} from "../../shared/assistant-settings";
+import { sanitizeDesktopCopilotPagePreferences } from "../../shared/page-copilot";
 import { registerDesktopActionProvider } from "../services/desktopActionRegistry";
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
@@ -30,6 +38,7 @@ type SettingsPageProps = {
   customSidebarItems: CustomSidebarItem[];
   onCustomSidebarItemsChange: (items: CustomSidebarItem[]) => void;
   onRefreshCustomSidebarItems: () => Promise<CustomSidebarItemsResult>;
+  onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
 };
 
 type WindowsDataRootCardProps = {
@@ -135,7 +144,8 @@ export function SettingsPage({
   onToggleSidebarTranslucency,
   customSidebarItems,
   onCustomSidebarItemsChange,
-  onRefreshCustomSidebarItems
+  onRefreshCustomSidebarItems,
+  onAssistantSettingsChange
 }: SettingsPageProps) {
   const [feedback, setFeedback] = useState("");
   const [customSidebarLabel, setCustomSidebarLabel] = useState("");
@@ -152,7 +162,11 @@ export function SettingsPage({
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [assistantAgentOptions, setAssistantAgentOptions] = useState<DesktopPetAgentOption[]>([]);
   const [desktopHelperAgentKey, setDesktopHelperAgentKey] = useState(DEFAULT_DESKTOP_HELPER_AGENT_KEY);
+  const [desktopCopilotPages, setDesktopCopilotPages] = useState<DesktopCopilotPagePreferences>(
+    createDefaultDesktopCopilotPagePreferences
+  );
   const [desktopHelperAgentPending, setDesktopHelperAgentPending] = useState(false);
+  const [desktopCopilotPagePending, setDesktopCopilotPagePending] = useState("");
   const [desktopPetState, setDesktopPetState] = useState<DesktopPetState | null>(null);
   const [desktopPetPending, setDesktopPetPending] = useState(false);
   const [desktopPetBoundAgentKey, setDesktopPetBoundAgentKey] = useState(DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY);
@@ -199,6 +213,7 @@ export function SettingsPage({
         }
         setAssistantSettings(settings);
         setDesktopHelperAgentKey(settings.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY);
+        setDesktopCopilotPages(settings.desktopCopilotPages || createDefaultDesktopCopilotPagePreferences());
         setAssistantAgentOptions(Array.isArray(agents) ? agents : []);
       })
       .catch((reason) => {
@@ -259,16 +274,104 @@ export function SettingsPage({
     (agent) => agent.agentKey === currentDesktopPetBoundAgentKey
   );
 
+  function isKnownAssistantAgent(agentKey: string) {
+    return assistantAgentOptions.some((agent) => agent.agentKey === agentKey);
+  }
+
+  function getAgentLabel(agentKey: string) {
+    return assistantAgentOptions.find((agent) => agent.agentKey === agentKey)?.displayName || agentKey;
+  }
+
+  function readCopilotPatch(args: Record<string, unknown>) {
+    const patch = args.patch && typeof args.patch === "object" && !Array.isArray(args.patch)
+      ? args.patch as Record<string, unknown>
+      : args;
+    return patch.desktopCopilotPages && typeof patch.desktopCopilotPages === "object" && !Array.isArray(patch.desktopCopilotPages)
+      ? patch.desktopCopilotPages
+      : patch;
+  }
+
+  function validateCopilotPages(preferences: DesktopCopilotPagePreferences) {
+    const issues = DESKTOP_COPILOT_PAGE_KEYS.flatMap((pageKey) => {
+      const preference = preferences[pageKey];
+      if (!preference.enabled || isKnownAssistantAgent(preference.agentKey)) {
+        return [];
+      }
+      return [{
+        field: `desktopCopilotPages.${pageKey}.agentKey`,
+        pageKey,
+        message: `${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 的 Copilot 智能体不可用。`
+      }];
+    });
+    return {
+      valid: issues.length === 0,
+      issues
+    };
+  }
+
+  async function saveDesktopCopilotPages(
+    nextPages: DesktopCopilotPagePreferences,
+    pendingKey: DesktopCopilotPageKey | "all"
+  ) {
+    const previousPages = desktopCopilotPages;
+    setDesktopCopilotPages(nextPages);
+    setDesktopCopilotPagePending(pendingKey);
+    try {
+      const nextSettings = await window.electronAPI.assistant.saveSettings({
+        desktopCopilotPages: nextPages
+      });
+      setAssistantSettings(nextSettings);
+      setDesktopCopilotPages(nextSettings.desktopCopilotPages);
+      onAssistantSettingsChange?.(nextSettings);
+      setFeedback("页面 Copilot 配置已保存。");
+      return nextSettings;
+    } catch (reason) {
+      setDesktopCopilotPages(previousPages);
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      throw reason;
+    } finally {
+      setDesktopCopilotPagePending("");
+    }
+  }
+
+  async function handleToggleCopilotPage(pageKey: DesktopCopilotPageKey) {
+    await saveDesktopCopilotPages({
+      ...desktopCopilotPages,
+      [pageKey]: {
+        ...desktopCopilotPages[pageKey],
+        enabled: !desktopCopilotPages[pageKey].enabled
+      }
+    }, pageKey).catch(() => undefined);
+  }
+
+  async function handleSelectCopilotAgent(pageKey: DesktopCopilotPageKey, nextAgentKey: string) {
+    const normalizedAgentKey = nextAgentKey.trim() || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
+    await saveDesktopCopilotPages({
+      ...desktopCopilotPages,
+      [pageKey]: {
+        ...desktopCopilotPages[pageKey],
+        agentKey: normalizedAgentKey
+      }
+    }, pageKey).catch(() => undefined);
+  }
+
   useEffect(() => {
     return registerDesktopActionProvider(async (request) => {
+      const args = request.args ?? {};
       const patch = request.args?.patch && typeof request.args.patch === "object" && !Array.isArray(request.args.patch)
         ? request.args.patch as Record<string, unknown>
         : {};
+      const nextCopilotPages = sanitizeDesktopCopilotPagePreferences({
+        ...desktopCopilotPages,
+        ...readCopilotPatch(args)
+      });
+      const copilotValidation = validateCopilotPages(nextCopilotPages);
       const requestedHelperAgentKey = typeof request.args?.desktopHelperAgentKey === "string"
         ? request.args.desktopHelperAgentKey.trim()
         : typeof patch.desktopHelperAgentKey === "string"
           ? patch.desktopHelperAgentKey.trim()
           : desktopHelperAgentKey.trim();
+      const helperTouched = typeof request.args?.desktopHelperAgentKey === "string" || typeof patch.desktopHelperAgentKey === "string";
       const nextHelperAgent = assistantAgentOptions.find((agent) => agent.agentKey === requestedHelperAgentKey);
       const helperValidation = {
         field: "desktopHelperAgentKey",
@@ -291,6 +394,7 @@ export function SettingsPage({
                   saved: assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY,
                   valid: Boolean(assistantAgentOptions.find((agent) => agent.agentKey === desktopHelperAgentKey))
                 },
+                desktopCopilotPages,
                 desktopPetBoundAgentKey: {
                   value: currentDesktopPetBoundAgentKey,
                   saved: currentDesktopPetBoundAgentKey
@@ -313,9 +417,15 @@ export function SettingsPage({
           return {
             ok: true,
             result: {
-              valid: helperValidation.valid,
-              issues: helperValidation.valid ? [] : [helperValidation],
-              fields: { desktopHelperAgentKey: helperValidation }
+              valid: helperValidation.valid && copilotValidation.valid,
+              issues: [
+                ...(helperValidation.valid ? [] : [helperValidation]),
+                ...copilotValidation.issues
+              ],
+              fields: {
+                desktopHelperAgentKey: helperValidation,
+                desktopCopilotPages: copilotValidation
+              }
             }
           };
         case "desktop.page.previewPatch":
@@ -329,28 +439,37 @@ export function SettingsPage({
                 to: requestedHelperAgentKey,
                 displayName: nextHelperAgent?.displayName ?? requestedHelperAgentKey,
                 valid: helperValidation.valid
+              }, {
+                field: "desktopCopilotPages",
+                from: desktopCopilotPages,
+                to: nextCopilotPages,
+                valid: copilotValidation.valid
               }]
             }
           };
         case "desktop.page.applyPatch":
-          if (!helperValidation.valid) {
+          if ((helperTouched && !helperValidation.valid) || !copilotValidation.valid) {
             return {
               ok: false,
               error: {
                 code: "invalid_form_patch",
-                message: helperValidation.message,
-                details: helperValidation
+                message: helperTouched && !helperValidation.valid ? helperValidation.message : "页面 Copilot 配置不可用。",
+                details: { helperValidation, copilotValidation }
               }
             };
           }
-          await handleSelectDesktopHelperAgentKey(requestedHelperAgentKey);
+          if (helperTouched) {
+            await handleSelectDesktopHelperAgentKey(requestedHelperAgentKey);
+          }
+          if ("desktopCopilotPages" in args || Object.keys(readCopilotPatch(args)).some((key) => DESKTOP_COPILOT_PAGE_KEYS.includes(key as DesktopCopilotPageKey))) {
+            await saveDesktopCopilotPages(nextCopilotPages, "all");
+          }
           return {
             ok: true,
             result: {
               applied: true,
-              field: "desktopHelperAgentKey",
-              value: requestedHelperAgentKey,
-              displayName: nextHelperAgent?.displayName ?? requestedHelperAgentKey
+              desktopHelperAgentKey: requestedHelperAgentKey,
+              desktopCopilotPages: nextCopilotPages
             }
           };
         default:
@@ -362,6 +481,7 @@ export function SettingsPage({
     assistantSettings?.desktopHelperAgentKey,
     currentDesktopPetBoundAgentKey,
     desktopHelperAgentKey,
+    desktopCopilotPages,
     memorySettings?.autoLearn,
     memorySettings?.enabled
   ]);
@@ -596,6 +716,7 @@ export function SettingsPage({
       const nextAgent = assistantAgentOptions.find((agent) => agent.agentKey === nextSettings.desktopHelperAgentKey);
       setAssistantSettings(nextSettings);
       setDesktopHelperAgentKey(nextSettings.desktopHelperAgentKey);
+      onAssistantSettingsChange?.(nextSettings);
       setFeedback(`侧边栏助手默认智能体已切换为 ${nextAgent?.displayName ?? nextSettings.desktopHelperAgentKey}。`);
     } catch (reason) {
       setDesktopHelperAgentKey(previousAgentKey);
@@ -695,13 +816,14 @@ export function SettingsPage({
       <div className="data-root-card settings-switch-card desktop-helper-settings-card">
         <div>
           <p className="eyebrow">DESKTOP ASSISTANT</p>
-          <h2>侧边栏助手</h2>
+          <h2>页面 Copilot</h2>
           <p className="page-copy">
-            选择打开侧边栏助手时默认使用的智能体。这个设置不影响桌面宠物绑定。
+            为每个一级页签配置是否显示 Copilot，以及默认使用哪个智能体。这个设置不影响桌面宠物绑定。
+            全局默认只作为旧配置兼容保留。
           </p>
           <div className="desktop-pet-agent-form">
             <label className="desktop-pet-agent-field">
-              <span>默认智能体</span>
+              <span>兼容默认智能体</span>
               <span className="desktop-pet-agent-select-wrap">
                 <select
                   value={assistantAgentOptions.some((agent) => agent.agentKey === desktopHelperAgentKey) ? desktopHelperAgentKey : ""}
@@ -728,6 +850,59 @@ export function SettingsPage({
                     }`}
               </span>
             </label>
+          </div>
+          <div className="desktop-copilot-page-list page-copilot-matrix" aria-label="页面 Copilot 配置">
+            {DESKTOP_COPILOT_PAGE_KEYS.map((pageKey) => {
+              const preference = desktopCopilotPages[pageKey] ?? {
+                enabled: true,
+                agentKey: DEFAULT_DESKTOP_HELPER_AGENT_KEY
+              };
+              const pending = desktopCopilotPagePending === pageKey || desktopCopilotPagePending === "all";
+              const currentAgentAvailable = isKnownAssistantAgent(preference.agentKey);
+              return (
+                <div className="desktop-copilot-page-row page-copilot-row" key={pageKey}>
+                  <div className="page-copilot-row-main">
+                    <strong>{DESKTOP_COPILOT_PAGE_LABELS[pageKey]}</strong>
+                    <span>{preference.enabled ? `使用 ${getAgentLabel(preference.agentKey)}` : "不显示 Copilot"}</span>
+                    {!currentAgentAvailable && preference.enabled ? (
+                      <em>当前智能体不可用，请重新选择。</em>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className={preference.enabled ? "settings-switch is-on" : "settings-switch"}
+                    role="switch"
+                    aria-checked={preference.enabled}
+                    aria-label={`${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 页面助手`}
+                    disabled={pending}
+                    onClick={() => void handleToggleCopilotPage(pageKey)}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                  <label className="desktop-pet-agent-field">
+                    <span className="desktop-pet-agent-select-wrap">
+                      <select
+                        value={currentAgentAvailable ? preference.agentKey : ""}
+                        onChange={(event) => void handleSelectCopilotAgent(pageKey, event.target.value)}
+                        disabled={!preference.enabled || assistantAgentOptions.length === 0 || pending}
+                        aria-label={`${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} Copilot 智能体`}
+                      >
+                        <option value="">
+                          {assistantAgentOptions.length === 0
+                            ? "正在读取智能体列表..."
+                            : currentAgentAvailable ? "请选择智能体" : `不可用：${preference.agentKey}`}
+                        </option>
+                        {assistantAgentOptions.map((agent) => (
+                          <option value={agent.agentKey} key={agent.agentKey}>
+                            {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </span>
+                  </label>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

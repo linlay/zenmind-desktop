@@ -15,7 +15,9 @@ import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ServicesProvider, useServices } from "./services/ServicesContext";
 import { startDesktopActionRendererBridge } from "./services/desktopActionRegistry";
-import type { AssistantWorkerOpenRequest, CustomSidebarItem, ServiceId, ServiceState, StartupRestoreState } from "../shared/contracts";
+import type { AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, ServiceId, ServiceState, StartupRestoreState } from "../shared/contracts";
+import { DEFAULT_DESKTOP_HELPER_AGENT_KEY } from "../shared/assistant-settings";
+import { resolveDesktopCopilotPreference } from "../shared/page-copilot";
 import {
   resolveStartupRootPath,
   shouldAutoOpenAssistant,
@@ -164,6 +166,8 @@ function AppShell() {
   });
   const [assistantDockOpen, setAssistantDockOpen] = useState(false);
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
+  const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
+  const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [assistantDockMode, setAssistantDockMode] = useState<AssistantDockMode>(() => {
     if (typeof window === "undefined") {
@@ -210,6 +214,11 @@ function AppShell() {
     startupServices.every((service) => service?.status === "running");
   const resolvedStartupRestoreState = startupRestoreState ?? createFallbackStartupRestoreState();
   const showStartupCard = !startupCardDismissed && shouldShowStartupProgressCard(startupRestoreState, startupAllReady);
+  const currentCopilotPreference = resolveDesktopCopilotPreference(assistantSettings?.desktopCopilotPages, location.pathname);
+  const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
+  const preferredAssistantAgentKey = currentCopilotPreference?.enabled
+    ? currentCopilotPreference.agentKey
+    : assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
 
   async function refreshCustomSidebarItems() {
     const result = await window.electronAPI.customSidebar.list();
@@ -240,6 +249,27 @@ function AppShell() {
   useEffect(() => {
     startDesktopActionRendererBridge();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.assistant.getSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setAssistantSettings(settings);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (currentCopilotPreference?.enabled === false && assistantDockOpen && !assistantRunningRunId) {
+      setAssistantDockOpen(false);
+    }
+  }, [assistantDockOpen, assistantRunningRunId, currentCopilotPreference?.enabled]);
 
   useEffect(() => {
     return window.electronAPI.onNavigate((targetPath) => {
@@ -614,6 +644,7 @@ function AppShell() {
           currentPath={location.pathname}
           pendingPath={pendingSidebarNavigationPath}
           assistantDockOpen={assistantDockOpen}
+          assistantLauncherVisible={assistantLauncherVisible}
           customSidebarItems={customSidebarItems}
           onOpenAssistantDock={() => openAssistantDock("full")}
           onCloseAssistantDock={() => setAssistantDockOpen(false)}
@@ -667,6 +698,7 @@ function AppShell() {
                   customSidebarItems={customSidebarItems}
                   onCustomSidebarItemsChange={updateCustomSidebarItems}
                   onRefreshCustomSidebarItems={refreshCustomSidebarItems}
+                  onAssistantSettingsChange={setAssistantSettings}
                 />
               }
             />
@@ -703,12 +735,14 @@ function AppShell() {
         isWindows={isWindows}
         nativeDialogVisible={nativeDialogVisible}
         showLauncher={false}
+        preferredAgentKey={preferredAssistantAgentKey}
         onOpen={() => openAssistantDock("full")}
         onClose={() => {
           setAssistantDockOpen(false);
         }}
         onModeChange={setAssistantDockMode}
         requestedChatId={assistantDockOpenRequest?.chatId ?? null}
+        onRunningRunIdChange={setAssistantRunningRunId}
         onOpenSettings={() => {
           setAssistantDockOpen(false);
           navigate("/settings");

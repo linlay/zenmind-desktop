@@ -1,3 +1,8 @@
+import type {
+  DesktopCopilotPagePreferences,
+  DesktopCopilotPagePreferencesInput
+} from "./assistant-settings";
+
 export type ServiceId = string;
 export type ServiceKind = "builtin" | "plugin";
 export type FrontendMode = "none" | "embedded" | "standalone";
@@ -558,6 +563,7 @@ export interface AssistantSettingsPublic {
   apiKeyConfigured: boolean;
   voiceCorrectionEnabled: boolean;
   desktopHelperAgentKey: string;
+  desktopCopilotPages: DesktopCopilotPagePreferences;
   source?: "desktop" | "agent-platform";
   sourceLabel?: string;
 }
@@ -565,6 +571,7 @@ export interface AssistantSettingsPublic {
 export interface AssistantSettingsInput {
   voiceCorrectionEnabled?: boolean;
   desktopHelperAgentKey?: string;
+  desktopCopilotPages?: DesktopCopilotPagePreferencesInput;
 }
 
 export type AssistantMemoryKind = "fact" | "observation";

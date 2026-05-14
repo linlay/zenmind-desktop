@@ -6572,9 +6572,74 @@ body.quick-assistant-body,
   line-height: 1.4;
 }
 
+.desktop-copilot-page-list {
+  display: grid;
+  gap: 10px;
+  width: min(100%, 680px);
+  margin-top: 18px;
+}
+
+.desktop-copilot-page-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) auto minmax(220px, 280px);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+:root[data-theme="dark"] .desktop-copilot-page-row {
+  background: var(--surface-soft);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.page-copilot-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.page-copilot-row-main strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.page-copilot-row-main span,
+.page-copilot-row-main em {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.desktop-copilot-page-row .settings-switch {
+  flex: 0 0 auto;
+}
+
+.desktop-copilot-page-row .desktop-pet-agent-field {
+  margin: 0;
+}
+
 @media (max-width: 860px) {
   .desktop-pet-settings-card {
     flex-direction: column;
+  }
+
+  .desktop-copilot-page-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop-copilot-page-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .desktop-copilot-page-row .desktop-pet-agent-field {
+    grid-column: 1 / -1;
   }
 
   .desktop-pet-agent-form {
