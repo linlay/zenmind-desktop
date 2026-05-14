@@ -25,6 +25,12 @@ const assistantNavItem: SidebarNavItem = {
   icon: "assistant"
 };
 
+const agentWebclientNavItems: SidebarNavItem[] = [
+  { to: "/agents", label: "智能体管理", icon: "service" },
+  { to: "/schedules", label: "自动化", icon: "service" },
+  { to: "/memory", label: "记忆管理", icon: "service" }
+];
+
 type AppSidebarProps = {
   isCollapsed: boolean;
   currentPath: string;
@@ -72,6 +78,7 @@ export function AppSidebar({
 
   const navItems = [
     assistantNavItem,
+    ...agentWebclientNavItems,
     staticNavItems[0],
     ...serviceNavItems,
     ...experimentalItems,

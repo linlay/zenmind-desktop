@@ -41,6 +41,28 @@ test("buildPluginEmbeddedUrl carries desktop auth context for agent-webclient", 
   );
 });
 
+test("buildPluginEmbeddedUrl opens agent-webclient desktop sections with auth context", () => {
+  for (const embedPath of ["/agents", "/schedules", "/memory"]) {
+    assert.equal(
+      buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {
+        hostTheme: "dark",
+        desktopAuthContext: "webclient:101:platform:202",
+        embedPath
+      }),
+      `http://127.0.0.1:9090${embedPath}?desktopApp=1&hostTheme=dark&desktopAuthContext=webclient%3A101%3Aplatform%3A202`
+    );
+  }
+});
+
+test("buildPluginEmbeddedUrl normalizes agent-webclient desktop section paths", () => {
+  assert.equal(
+    buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {
+      embedPath: "agents"
+    }),
+    "http://127.0.0.1:9090/agents?desktopApp=1"
+  );
+});
+
 test("buildPluginEmbeddedUrl resolves relative agent-webclient URLs from the service base", () => {
   assert.equal(
     buildPluginEmbeddedUrl("agent-webclient", "/agent/", {

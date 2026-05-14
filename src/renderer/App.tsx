@@ -44,6 +44,11 @@ const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
+const AGENT_WEBCLIENT_ROUTE_ITEMS = [
+  { routePath: "/agents", embedPath: "/agents", label: "智能体管理" },
+  { routePath: "/schedules", embedPath: "/schedules", label: "自动化" },
+  { routePath: "/memory", embedPath: "/memory", label: "记忆管理" }
+] as const;
 
 const WINDOW_DRAG_EXCLUDED_SELECTOR = [
   "button",
@@ -191,7 +196,10 @@ function AppShell() {
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [startupCardDismissed, setStartupCardDismissed] = useState(false);
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
-  const activePluginId = resolvePluginRouteId(location.pathname);
+  const activeAgentWebclientRoute = resolveAgentWebclientRoute(location.pathname);
+  const activePluginId = activeAgentWebclientRoute
+    ? "agent-webclient"
+    : resolvePluginRouteId(location.pathname);
   const activeCustomSidebarItemId = resolveCustomSidebarRouteId(location.pathname);
   const [mountedPluginIds, setMountedPluginIds] = useState<string[]>(() =>
     activePluginId ? [activePluginId] : []
@@ -200,11 +208,12 @@ function AppShell() {
     activeCustomSidebarItemId ? [activeCustomSidebarItemId] : []
   );
   const usesEmbeddedSurface =
+    Boolean(activeAgentWebclientRoute) ||
     location.pathname.startsWith("/plugin/") ||
     location.pathname.startsWith("/external/") ||
     location.pathname === BUILTIN_BROWSER_ROUTE ||
     location.pathname.startsWith("/custom-sidebar/");
-  const usesPluginSurface = location.pathname.startsWith("/plugin/");
+  const usesPluginSurface = Boolean(activeAgentWebclientRoute) || location.pathname.startsWith("/plugin/");
   const isMarketRoute = location.pathname === "/market";
   const isMac = desktopPlatform === "darwin";
   const isWindows = desktopPlatform === "win32";
@@ -789,6 +798,7 @@ function AppShell() {
           <div className="app-main-drag-region" aria-hidden="true" />
           <PluginSurfaceHost
             activePluginId={activePluginId}
+            activeAgentWebclientRoute={activeAgentWebclientRoute}
             hostTheme={themeMode}
             mountedPluginIds={mountedPluginIds}
           />
@@ -828,15 +838,9 @@ function AppShell() {
               path="/assistant"
               element={<Navigate to={ASSISTANT_TARGET_PATH} replace />}
             />
-            <Route
-              path="/agents"
-              element={
-                <PlaceholderPage
-                  title="智能体"
-                  description="智能体工作台建设中，敬请期待。"
-                />
-              }
-            />
+            <Route path="/agents" element={null} />
+            <Route path="/schedules" element={null} />
+            <Route path="/memory" element={null} />
             <Route path="/external/:itemId" element={<ExternalItemRoute itemMap={experimentalItemMap} />} />
             <Route
               path={BUILTIN_BROWSER_ROUTE}
@@ -1092,16 +1096,22 @@ function resolvePluginRouteId(pathname: string) {
   return matchPath("/plugin/:pluginId", pathname)?.params.pluginId ?? null;
 }
 
+function resolveAgentWebclientRoute(pathname: string) {
+  return AGENT_WEBCLIENT_ROUTE_ITEMS.find((item) => item.routePath === pathname) ?? null;
+}
+
 function resolveCustomSidebarRouteId(pathname: string) {
   return matchPath("/custom-sidebar/:itemId", pathname)?.params.itemId ?? null;
 }
 
 function PluginSurfaceHost({
   activePluginId,
+  activeAgentWebclientRoute,
   hostTheme,
   mountedPluginIds
 }: {
   activePluginId: string | null;
+  activeAgentWebclientRoute: (typeof AGENT_WEBCLIENT_ROUTE_ITEMS)[number] | null;
   hostTheme: ThemeMode;
   mountedPluginIds: string[];
 }) {
@@ -1116,8 +1126,10 @@ function PluginSurfaceHost({
         <PluginPage
           key={pluginId}
           active={activePluginId === pluginId}
+          embedPath={pluginId === "agent-webclient" ? activeAgentWebclientRoute?.embedPath : undefined}
           hostTheme={hostTheme}
           pluginId={pluginId}
+          surfaceLabel={pluginId === "agent-webclient" ? activeAgentWebclientRoute?.label : undefined}
         />
       ))}
     </>

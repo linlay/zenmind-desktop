@@ -27,6 +27,7 @@ type BuildPluginEmbeddedUrlOptions = {
   hostTheme?: "light" | "dark";
   desktopAuthContext?: string;
   baseUrl?: string;
+  embedPath?: string;
 };
 
 function getRuntimeUrlBase() {
@@ -102,7 +103,8 @@ export function buildPluginEmbeddedUrl(
   }
 
   if (serviceId === "agent-webclient") {
-    url.pathname = "/appagent";
+    const embedPath = options.embedPath?.trim() || "/appagent";
+    url.pathname = embedPath.startsWith("/") ? embedPath : `/${embedPath}`;
     url.searchParams.set("desktopApp", "1");
     if (options.hostTheme) {
       url.searchParams.set("hostTheme", options.hostTheme);

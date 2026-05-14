@@ -13,6 +13,8 @@ type PluginPageProps = {
   hostTheme: "light" | "dark";
   pluginId?: string;
   active?: boolean;
+  embedPath?: string;
+  surfaceLabel?: string;
 };
 
 const AGENT_APP_CLIPBOARD_REQUEST_TYPE = "zenmind:agent-app-clipboard:request";
@@ -84,7 +86,13 @@ function tryReadPluginIframePageContext(
   }
 }
 
-export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: PluginPageProps) {
+export function PluginPage({
+  hostTheme,
+  pluginId: pluginIdProp,
+  active,
+  embedPath,
+  surfaceLabel
+}: PluginPageProps) {
   const { pluginId: routePluginId } = useParams<{ pluginId: string }>();
   const pluginId = pluginIdProp ?? routePluginId ?? "";
   const { services, refresh: refreshServices } = useServices();
@@ -92,7 +100,7 @@ export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: Plugin
   const agentPlatformService = service?.id === "agent-webclient"
     ? services.find((s) => s.id === "agent-platform")
     : null;
-  const serviceDisplayName = service ? getServiceDisplayName(service.id, service.name) : "";
+  const serviceDisplayName = surfaceLabel || (service ? getServiceDisplayName(service.id, service.name) : "");
   const [bridgeError, setBridgeError] = useState("");
   const [bridgeReady, setBridgeReady] = useState(false);
   const [iframeRetryNonce, setIframeRetryNonce] = useState(0);
@@ -119,9 +127,10 @@ export function PluginPage({ hostTheme, pluginId: pluginIdProp, active }: Plugin
     return buildPluginEmbeddedUrl(service?.id, webUrl, {
       hostTheme,
       desktopAuthContext: service?.id === "agent-webclient" ? iframeReloadKey : undefined,
+      embedPath: service?.id === "agent-webclient" ? embedPath : undefined,
       baseUrl: service?.healthMeta.port ? `http://127.0.0.1:${service.healthMeta.port}` : undefined
     });
-  }, [hostTheme, iframeReloadKey, service?.healthMeta.port, service?.id, webUrl]);
+  }, [embedPath, hostTheme, iframeReloadKey, service?.healthMeta.port, service?.id, webUrl]);
   const iframeBaseKey = useMemo(
     () => [service?.id ?? "service", iframeReloadKey, embeddedUrl].join(":"),
     [embeddedUrl, iframeReloadKey, service?.id]

@@ -47,6 +47,44 @@ test("assistant launcher sits beside settings in the sidebar footer", () => {
   assert.match(globalStyles, /\.sidebar-footer-actions\s*\{[\s\S]*?display:\s*flex;/);
 });
 
+test("agent webclient desktop sections are exposed as top-level sidebar tabs", () => {
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const sidebarSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "components", "AppSidebar.tsx"),
+    "utf8"
+  );
+  const pluginPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "PluginPage.tsx"),
+    "utf8"
+  );
+
+  assert.match(sidebarSource, /agentWebclientNavItems/);
+  assert.match(sidebarSource, /to:\s*"\/agents"[\s\S]*?label:\s*"智能体管理"/);
+  assert.match(sidebarSource, /to:\s*"\/schedules"[\s\S]*?label:\s*"自动化"/);
+  assert.match(sidebarSource, /to:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
+  assert.match(
+    sidebarSource,
+    /const navItems = \[[\s\S]*?assistantNavItem,[\s\S]*?\.\.\.agentWebclientNavItems,[\s\S]*?staticNavItems\[0\]/
+  );
+
+  assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_ITEMS/);
+  assert.match(appShell, /routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?label:\s*"智能体管理"/);
+  assert.match(appShell, /routePath:\s*"\/schedules"[\s\S]*?embedPath:\s*"\/schedules"[\s\S]*?label:\s*"自动化"/);
+  assert.match(appShell, /routePath:\s*"\/memory"[\s\S]*?embedPath:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
+  assert.match(appShell, /const activeAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname\)/);
+  assert.match(appShell, /activeAgentWebclientRoute[\s\S]*?\? "agent-webclient"[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
+  assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeAgentWebclientRoute\)/);
+  assert.match(appShell, /const usesPluginSurface = Boolean\(activeAgentWebclientRoute\) \|\| location\.pathname\.startsWith\("\/plugin\/"\)/);
+  assert.match(appShell, /<Route path="\/agents" element=\{null\} \/>/);
+  assert.match(appShell, /<Route path="\/schedules" element=\{null\} \/>/);
+  assert.match(appShell, /<Route path="\/memory" element=\{null\} \/>/);
+  assert.doesNotMatch(appShell, /path="\/agents"[\s\S]{0,180}<PlaceholderPage/);
+
+  assert.match(pluginPage, /embedPath\?: string;/);
+  assert.match(pluginPage, /surfaceLabel\?: string;/);
+  assert.match(pluginPage, /embedPath: service\?\.id === "agent-webclient" \? embedPath : undefined/);
+});
+
 test("assistant dock exposes agent selection and sends agentKey to platform runs", () => {
   const assistantDock = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
