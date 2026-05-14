@@ -103,7 +103,7 @@ export function buildPluginEmbeddedUrl(
   }
 
   if (serviceId === "agent-webclient") {
-    const embedPath = options.embedPath?.trim() || "/appagent";
+    const embedPath = options.embedPath?.trim() || "/";
     url.pathname = embedPath.startsWith("/") ? embedPath : `/${embedPath}`;
     if (options.hostTheme) {
       url.searchParams.set("hostTheme", options.hostTheme);

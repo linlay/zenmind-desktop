@@ -181,7 +181,7 @@ let mainWindowDragState: {
 let mainWindowSidebarTranslucencyEnabled = false;
 const quickAssistantState = createQuickAssistantWindowState();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
-const AGENT_WEBCLIENT_APP_PATHNAME = "/appagent";
+const AGENT_WEBCLIENT_APP_PATHNAME = "/";
 const LOG_VIEWER_ROUTE = "/log-viewer";
 const AGENT_WEBCLIENT_OPEN_RETRY_COUNT = 24;
 const AGENT_WEBCLIENT_OPEN_RETRY_MS = 180;
