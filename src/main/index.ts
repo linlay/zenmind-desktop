@@ -3208,6 +3208,14 @@ function registerIpcHandlers() {
     assistantBridge.saveMemorySettings(input)
   );
   ipcMain.handle("assistant.getMemorySummary", async () => assistantBridge.getMemorySummary());
+  ipcMain.handle("assistant.listAgents", async () => {
+    try {
+      return await assistantBridge.listAgents();
+    } catch (error) {
+      console.warn("[assistant] failed to list agent-platform agents", error);
+      return [];
+    }
+  });
   ipcMain.handle("assistant.openMemoryDirectory", async () => {
     return {
       ok: false,

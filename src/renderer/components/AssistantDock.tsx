@@ -11,9 +11,11 @@ import type {
   AssistantRunEventStatus,
   AssistantRunAction,
   AssistantSettingsPublic,
-  AssistantVoiceCorrectionLocale
+  AssistantVoiceCorrectionLocale,
+  DesktopPetAgentOption
 } from "../../shared/contracts";
 import { ZENMIND_ASSISTANT_WONDERS } from "../../shared/assistant-capabilities";
+import { DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY } from "../../shared/desktop-pet";
 import { AssistantAwaitingDialog } from "./AssistantAwaitingDialog";
 import { AssistantMarkdownContent } from "./AssistantMarkdownContent";
 import { AttachmentImagePreview } from "./AttachmentImagePreview";
@@ -959,6 +961,9 @@ export function AssistantDock({
   onOpenSettings
 }: AssistantDockProps) {
   const [settings, setSettings] = useState<AssistantSettingsPublic | null>(null);
+  const [agentOptions, setAgentOptions] = useState<DesktopPetAgentOption[]>([]);
+  const [selectedAgentKey, setSelectedAgentKey] = useState("");
+  const [agentOptionsLoading, setAgentOptionsLoading] = useState(false);
   const [chats, setChats] = useState<AssistantChatSummary[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AssistantChatMessage[]>([]);
@@ -1027,6 +1032,46 @@ export function AssistantDock({
       setChatHistoryQuery("");
       closeAttachmentMenu();
     }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    let canceled = false;
+    setAgentOptionsLoading(true);
+    window.electronAPI.assistant.listAgents()
+      .then((agents) => {
+        if (canceled) {
+          return;
+        }
+        const nextAgents = Array.isArray(agents) ? agents : [];
+        setAgentOptions(nextAgents);
+        setSelectedAgentKey((current) => {
+          if (current && nextAgents.some((agent) => agent.agentKey === current)) {
+            return current;
+          }
+          return nextAgents.find((agent) => agent.agentKey === DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY)?.agentKey ||
+            nextAgents[0]?.agentKey ||
+            "";
+        });
+      })
+      .catch((reason) => {
+        if (canceled) {
+          return;
+        }
+        console.warn("[assistant-dock] failed to load agent options", reason);
+        setAgentOptions([]);
+        setSelectedAgentKey("");
+      })
+      .finally(() => {
+        if (!canceled) {
+          setAgentOptionsLoading(false);
+        }
+      });
+    return () => {
+      canceled = true;
+    };
   }, [open]);
 
   useEffect(() => {
@@ -1792,6 +1837,7 @@ export function AssistantDock({
     try {
       result = await window.electronAPI.assistant.startRun({
         chatId: activeChatId,
+        agentKey: selectedAgentKey,
         message: content,
         action,
         permissionMode: permissionModeForRun,
@@ -2268,9 +2314,6 @@ export function AssistantDock({
   }
 
   function renderChatbar() {
-    if (chats.length === 0 && !activeChatId) {
-      return null;
-    }
     const activeChat = activeChatId
       ? chats.find((chat) => chat.id === activeChatId) ?? null
       : null;
@@ -2329,6 +2372,31 @@ export function AssistantDock({
 
     return (
       <div className="assistant-dock-chatbar" ref={chatHistoryRef}>
+        <label className="assistant-dock-agent-select-wrap">
+          <span className="assistant-dock-agent-select-label">智能体</span>
+          <select
+            className="assistant-dock-agent-select"
+            value={selectedAgentKey}
+            onChange={(event) => setSelectedAgentKey(event.target.value)}
+            disabled={Boolean(runningRunId || agentOptionsLoading || agentOptions.length === 0)}
+            aria-label="选择智能体"
+            title={
+              selectedAgentKey
+                ? agentOptions.find((agent) => agent.agentKey === selectedAgentKey)?.displayName || selectedAgentKey
+                : "选择智能体"
+            }
+          >
+            {agentOptions.length === 0 ? (
+              <option value="">{agentOptionsLoading ? "加载中..." : "暂无智能体"}</option>
+            ) : (
+              agentOptions.map((agent) => (
+                <option value={agent.agentKey} key={agent.agentKey}>
+                  {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
         <button
           type="button"
           className={!activeChatId ? "assistant-dock-chat-pill is-active" : "assistant-dock-chat-pill"}

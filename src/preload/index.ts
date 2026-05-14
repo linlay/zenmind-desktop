@@ -41,6 +41,7 @@ const api: DesktopApi = {
     saveMemorySettings: (input: AssistantMemorySettingsInput) =>
       ipcRenderer.invoke("assistant.saveMemorySettings", input),
     getMemorySummary: () => ipcRenderer.invoke("assistant.getMemorySummary"),
+    listAgents: () => ipcRenderer.invoke("assistant.listAgents"),
     openMemoryDirectory: () => ipcRenderer.invoke("assistant.openMemoryDirectory"),
     listMemoryItems: () => ipcRenderer.invoke("assistant.listMemoryItems"),
     deleteMemoryItem: (memoryId: string) => ipcRenderer.invoke("assistant.deleteMemoryItem", memoryId),

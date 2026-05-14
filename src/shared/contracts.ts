@@ -751,6 +751,7 @@ export interface AssistantPastedImageInput {
 
 export interface AssistantStartRunRequest {
   chatId?: string | null;
+  agentKey?: string;
   message: string;
   action?: AssistantRunAction;
   permissionMode?: AssistantPermissionMode;
@@ -1125,6 +1126,7 @@ export interface DesktopApi {
     getMemorySettings: () => Promise<AssistantMemorySettings>;
     saveMemorySettings: (input: AssistantMemorySettingsInput) => Promise<AssistantMemorySettings>;
     getMemorySummary: () => Promise<AssistantMemorySummary>;
+    listAgents: () => Promise<DesktopPetAgentOption[]>;
     openMemoryDirectory: () => Promise<{ ok: boolean; message: string; path?: string }>;
     listMemoryItems: () => Promise<{
       items: AssistantMemoryItem[];

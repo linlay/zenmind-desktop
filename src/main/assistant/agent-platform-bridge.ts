@@ -25,9 +25,11 @@ import type {
   AssistantVoiceCorrectionResult,
   AssistantVoiceTranscriptionRequest,
   AssistantVoiceTranscriptionResult,
+  DesktopPetAgentOption,
   ServiceId,
   ServiceState
 } from "../../shared/contracts";
+import { toDesktopPetAgentOptions } from "../agent-platform-pet-status";
 import { DesktopPetSseParser } from "../desktop-pet-preview";
 import { resolveAssistantAttachmentPath } from "./attachment-store";
 
@@ -109,6 +111,16 @@ type PlatformMemoryRecordsResponse = {
 
 type PlatformMemoryHistoryResponse = {
   events?: Array<Record<string, unknown>>;
+};
+
+type PlatformAgentSummary = {
+  key?: string;
+  name?: string;
+  displayName?: string;
+  role?: string;
+  stats?: {
+    unreadCount?: number;
+  };
 };
 
 function nowIso() {
@@ -431,6 +443,11 @@ export class AgentPlatformAssistantBridge {
     return { ok: true, message: "已提交给 agent-platform。" };
   }
 
+  async listAgents(): Promise<DesktopPetAgentOption[]> {
+    const data = await this.getJson<PlatformAgentSummary[]>("/api/agents");
+    return toDesktopPetAgentOptions(Array.isArray(data) ? data : []);
+  }
+
   async listChats(): Promise<AssistantChatSummary[]> {
     const data = await this.getJson<PlatformChatSummary[]>("/api/chats");
     return Array.isArray(data) ? data.map(mapChatSummary) : [];
@@ -569,6 +586,7 @@ export class AgentPlatformAssistantBridge {
         body: JSON.stringify({
           runId: run.runId,
           chatId: run.chatId,
+          agentKey: request.agentKey?.trim() || undefined,
           message: request.message.trim(),
           references,
           params: {

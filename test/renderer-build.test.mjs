@@ -50,6 +50,33 @@ test("assistant launcher sits beside settings in the sidebar footer", () => {
   );
 });
 
+test("assistant dock exposes agent selection and sends agentKey to platform runs", () => {
+  const assistantDock = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
+    "utf8"
+  );
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+
+  assert.match(preload, /listAgents:\s*\(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
+  assert.match(contracts, /listAgents:\s*\(\) => Promise<DesktopPetAgentOption\[\]>/);
+  assert.match(contracts, /agentKey\?: string;/);
+  assert.match(mainProcess, /ipcMain\.handle\("assistant\.listAgents"/);
+  assert.match(mainProcess, /return \[\];/);
+  assert.match(assistantDock, /window\.electronAPI\.assistant\.listAgents\(\)/);
+  assert.match(assistantDock, /DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY/);
+  assert.match(assistantDock, /className="assistant-dock-agent-select"/);
+  assert.match(assistantDock, /agentKey: selectedAgentKey/);
+  assert.match(
+    globalStyles,
+    /\.assistant-dock-chatbar\s*\{[\s\S]*?flex-wrap:\s*nowrap;/
+  );
+  assert.match(globalStyles, /\.assistant-dock-agent-select-wrap\s*\{/);
+  assert.match(globalStyles, /\.assistant-dock-agent-select\s*\{/);
+});
+
 test("built index uses relative asset paths", () => {
   const builtIndex = fs.readFileSync(path.join(projectRoot, "dist-renderer", "index.html"), "utf8");
 

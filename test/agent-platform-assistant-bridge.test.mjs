@@ -74,6 +74,7 @@ test("agent platform assistant bridge forwards startRun to /api/query with beare
     if (String(url).endsWith("/api/query")) {
       const body = JSON.parse(String(init.body));
       assert.equal(body.message, "hello platform");
+      assert.equal(body.agentKey, "codeAssistant");
       assert.equal(body.stream, true);
       assert.equal(body.params.desktop.source, "sidebar");
       return sseResponse([
@@ -86,7 +87,7 @@ test("agent platform assistant bridge forwards startRun to /api/query with beare
   };
 
   try {
-    const result = await bridge.startRun({ message: "hello platform", source: "sidebar" });
+    const result = await bridge.startRun({ message: "hello platform", source: "sidebar", agentKey: "codeAssistant" });
     assert.equal(result.ok, true);
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(requests.length, 1);
@@ -95,6 +96,41 @@ test("agent platform assistant bridge forwards startRun to /api/query with beare
     assert.equal(events[1].delta, "hi");
     assert.equal(events[1].runId, result.runId);
     assert.equal(events[1].chatId, result.chatId);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge lists and normalizes agents from /api/agents", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const { bridge } = makeBridge();
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init });
+    assert.equal(init.headers.Authorization, "Bearer desktop-token");
+    return new Response(JSON.stringify({
+      code: 0,
+      msg: "success",
+      data: [
+        { key: "codeAssistant", name: "代码助手", role: "CLI 代码助手", stats: { unreadCount: 3 } },
+        { key: "zenmi", name: "小宅", role: "平台总管", stats: { unreadCount: 1 } },
+        { name: "缺少 key" }
+      ]
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  try {
+    const agents = await bridge.listAgents();
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/agents");
+    assert.deepEqual(agents, [
+      { agentKey: "zenmi", displayName: "小宅", role: "平台总管", unreadCount: 1 },
+      { agentKey: "codeAssistant", displayName: "代码助手", role: "CLI 代码助手", unreadCount: 3 }
+    ]);
   } finally {
     globalThis.fetch = originalFetch;
   }
