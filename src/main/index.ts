@@ -188,7 +188,7 @@ const desktopActionRendererRequests = new Map<string, {
 }>();
 const quickAssistantState = createQuickAssistantWindowState();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
-const AGENT_WEBCLIENT_APP_PATHNAME = "/";
+const AGENT_WEBCLIENT_APP_PATHNAMES = new Set(["/", "/copilot"]);
 const LOG_VIEWER_ROUTE = "/log-viewer";
 const AGENT_WEBCLIENT_OPEN_RETRY_COUNT = 24;
 const AGENT_WEBCLIENT_OPEN_RETRY_MS = 180;
@@ -797,7 +797,7 @@ function collectWebFrames(frame: WebFrameMain, frames: WebFrameMain[] = []) {
 
 function isAgentWebclientAppFrame(frame: WebFrameMain) {
   try {
-    return new URL(frame.url).pathname === AGENT_WEBCLIENT_APP_PATHNAME;
+    return AGENT_WEBCLIENT_APP_PATHNAMES.has(new URL(frame.url).pathname);
   } catch {
     return false;
   }
@@ -988,6 +988,11 @@ async function openAssistantFromDesktopPet() {
   const openResult = await showAssistantTargetWindow("desktop-pet");
   const targetWindow = openResult.window;
   if (targetWindow && !targetWindow.isDestroyed()) {
+    targetWindow.webContents.send("app.openAssistantWorker", {
+      chatId: targetChatId ?? undefined,
+      agentKey,
+      focusComposerOnComplete: desktopPetState.status !== "running"
+    } satisfies AssistantWorkerOpenRequest);
     scheduleAgentWebclientOpenRequest(targetWindow, {
       chatId: targetChatId ?? "",
       agentKey,
@@ -3004,6 +3009,11 @@ async function openAssistantWorker(request: AssistantWorkerOpenRequest) {
   const sendOpenAssistantWorker = () => {
     if (!targetWindow.isDestroyed()) {
       targetWindow.webContents.send("app.openAssistantWorker", request);
+      scheduleAgentWebclientOpenRequest(targetWindow, {
+        chatId: request.chatId ?? "",
+        agentKey: request.agentKey ?? request.workerKey ?? "",
+        focusComposerOnComplete: request.focusComposerOnComplete !== false
+      });
     }
   };
 

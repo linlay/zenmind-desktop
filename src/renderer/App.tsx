@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
-import { AssistantDock, type AssistantDockMode } from "./components/AssistantDock";
 import { AppSidebar } from "./components/AppSidebar";
 import { DesktopPet } from "./components/DesktopPet";
 import { QuickAssistant } from "./components/QuickAssistant";
@@ -16,7 +15,6 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { ServicesProvider, useServices } from "./services/ServicesContext";
 import { startDesktopActionRendererBridge } from "./services/desktopActionRegistry";
 import type { AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, ServiceId, ServiceState, StartupRestoreState } from "../shared/contracts";
-import { DEFAULT_DESKTOP_HELPER_AGENT_KEY } from "../shared/assistant-settings";
 import { resolveDesktopCopilotPreference } from "../shared/page-copilot";
 import {
   resolveStartupRootPath,
@@ -37,8 +35,8 @@ type ThemeMode = "light" | "dark";
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
 const SIDEBAR_TRANSLUCENCY_STORAGE_KEY = "zenmind-desktop.sidebar-translucency";
-const ASSISTANT_DOCK_MODE_STORAGE_KEY = "zenmind-desktop.assistant-dock-mode";
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
+const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
@@ -66,6 +64,7 @@ const WINDOW_DRAG_EXCLUDED_SELECTOR = [
   ".assistant-dock-root",
   ".assistant-dock-fab",
   ".assistant-dock-outside-dismiss",
+  ".agent-webclient-copilot-dock",
   ".external-webview-browser-chrome",
   ".external-webview-bookmark-menu",
   ".external-webview-bookmark-editor-backdrop",
@@ -169,16 +168,6 @@ function AppShell() {
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
-  const [assistantDockMode, setAssistantDockMode] = useState<AssistantDockMode>(() => {
-    if (typeof window === "undefined") {
-      return "full";
-    }
-    try {
-      return window.localStorage.getItem(ASSISTANT_DOCK_MODE_STORAGE_KEY) === "compact" ? "compact" : "full";
-    } catch {
-      return "full";
-    }
-  });
   const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
   const [customSidebarItemsLoaded, setCustomSidebarItemsLoaded] = useState(false);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
@@ -216,10 +205,6 @@ function AppShell() {
   const showStartupCard = !startupCardDismissed && shouldShowStartupProgressCard(startupRestoreState, startupAllReady);
   const currentCopilotPreference = resolveDesktopCopilotPreference(assistantSettings?.desktopCopilotPages, location.pathname);
   const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
-  const preferredAssistantAgentKey = currentCopilotPreference?.enabled
-    ? currentCopilotPreference.agentKey
-    : assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
-
   async function refreshCustomSidebarItems() {
     const result = await window.electronAPI.customSidebar.list();
     if (result.ok) {
@@ -239,10 +224,7 @@ function AppShell() {
     return nextState;
   }
 
-  function openAssistantDock(mode?: AssistantDockMode) {
-    if (mode) {
-      setAssistantDockMode(mode);
-    }
+  function openAssistantDock() {
     setAssistantDockOpen(true);
   }
 
@@ -280,7 +262,7 @@ function AppShell() {
   useEffect(() => {
     return window.electronAPI.onOpenAssistantWorker((request) => {
       setAssistantDockOpenRequest(request);
-      openAssistantDock("full");
+      openAssistantDock();
     });
   }, []);
 
@@ -445,14 +427,6 @@ function AppShell() {
       document.body.classList.remove("embedded-surface-body");
     };
   }, [usesEmbeddedSurface]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(ASSISTANT_DOCK_MODE_STORAGE_KEY, assistantDockMode);
-    } catch {
-      // Ignore persistence failures and keep the current session state.
-    }
-  }, [assistantDockMode]);
 
   useEffect(() => {
     try {
@@ -623,7 +597,7 @@ function AppShell() {
         usesPluginSurface ? "has-plugin-surface" : "",
         isMarketRoute ? "has-market-controls" : "",
         assistantDockOpen ? "has-assistant-dock" : "",
-        assistantDockOpen ? `has-assistant-dock-${assistantDockMode}` : "",
+        assistantDockOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
         isMac && sidebarTranslucencyEnabled ? "is-mac-translucent-sidebar" : "",
@@ -646,7 +620,7 @@ function AppShell() {
           assistantDockOpen={assistantDockOpen}
           assistantLauncherVisible={assistantLauncherVisible}
           customSidebarItems={customSidebarItems}
-          onOpenAssistantDock={() => openAssistantDock("full")}
+          onOpenAssistantDock={() => openAssistantDock()}
           onCloseAssistantDock={() => setAssistantDockOpen(false)}
           onRequestNavigate={requestSidebarNavigation}
           onNavigateItem={undefined}
@@ -728,25 +702,16 @@ function AppShell() {
           </Routes>
         </main>
       </div>
-      <AssistantDock
+      <AgentWebclientCopilotDock
         open={assistantDockOpen}
-        mode={assistantDockMode}
-        isMac={isMac}
-        isWindows={isWindows}
+        hostTheme={themeMode}
         nativeDialogVisible={nativeDialogVisible}
-        showLauncher={false}
-        preferredAgentKey={preferredAssistantAgentKey}
-        onOpen={() => openAssistantDock("full")}
+        openRequest={assistantDockOpenRequest}
         onClose={() => {
           setAssistantDockOpen(false);
+          setAssistantDockOpenRequest(null);
         }}
-        onModeChange={setAssistantDockMode}
-        requestedChatId={assistantDockOpenRequest?.chatId ?? null}
         onRunningRunIdChange={setAssistantRunningRunId}
-        onOpenSettings={() => {
-          setAssistantDockOpen(false);
-          navigate("/settings");
-        }}
       />
       {showStartupCard ? (
         <StartupLoadingScreen
@@ -923,6 +888,58 @@ function StartupLoadingScreen({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function AgentWebclientCopilotDock({
+  open,
+  hostTheme,
+  nativeDialogVisible,
+  openRequest,
+  onClose,
+  onRunningRunIdChange
+}: {
+  open: boolean;
+  hostTheme: ThemeMode;
+  nativeDialogVisible: boolean;
+  openRequest: AssistantWorkerOpenRequest | null;
+  onClose: () => void;
+  onRunningRunIdChange: (runId: string | null) => void;
+}) {
+  useEffect(() => {
+    if (!open) {
+      onRunningRunIdChange(null);
+    }
+  }, [onRunningRunIdChange, open]);
+
+  return (
+    <aside
+      className={[
+        "agent-webclient-copilot-dock",
+        open ? "is-open" : "",
+        nativeDialogVisible ? "is-native-dialog-open" : ""
+      ].filter(Boolean).join(" ")}
+      aria-hidden={!open}
+      data-open-chat-id={openRequest?.chatId ?? ""}
+      data-open-agent-key={openRequest?.agentKey ?? openRequest?.workerKey ?? ""}
+    >
+      <PluginPage
+        active={open}
+        embedPath={AGENT_WEBCLIENT_COPILOT_PATH}
+        hostTheme={hostTheme}
+        pluginId="agent-webclient"
+        surfaceLabel="助手"
+      />
+      <button
+        type="button"
+        className="agent-webclient-copilot-close"
+        onClick={onClose}
+        aria-label="关闭助手"
+        title="关闭"
+      >
+        <span aria-hidden="true" />
+      </button>
+    </aside>
   );
 }
 

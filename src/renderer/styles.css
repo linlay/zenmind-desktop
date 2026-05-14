@@ -29,7 +29,7 @@
   --info: #722ED1;
   --panel-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --panel-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.12);
-  --assistant-dock-embedded-width: clamp(368px, 28vw, 440px);
+  --assistant-dock-embedded-width: 360px;
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
 }
@@ -1959,6 +1959,95 @@ body.quick-assistant-body,
 }
 
 /* ── Assistant Dock ── */
+
+.agent-webclient-copilot-dock {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 35;
+  width: var(--assistant-dock-embedded-width);
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid rgba(148, 163, 184, 0.14);
+  background: #fff;
+  box-shadow: -14px 0 42px rgba(15, 23, 42, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(18px);
+  visibility: hidden;
+  transition:
+    transform 0.2s ease,
+    opacity 0.16s ease,
+    visibility 0.16s ease;
+}
+
+.agent-webclient-copilot-dock.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+  visibility: visible;
+}
+
+.agent-webclient-copilot-dock.is-native-dialog-open {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(18px);
+  visibility: hidden;
+  transition: none;
+}
+
+.agent-webclient-copilot-dock .pan-page {
+  height: 100%;
+  margin: 0;
+}
+
+.agent-webclient-copilot-dock .pan-frame {
+  min-height: 0;
+}
+
+.agent-webclient-copilot-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 36;
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--ink-soft);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.agent-webclient-copilot-close span,
+.agent-webclient-copilot-close span::before {
+  display: block;
+  width: 13px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+}
+
+.agent-webclient-copilot-close span {
+  transform: rotate(45deg);
+}
+
+.agent-webclient-copilot-close span::before {
+  transform: rotate(90deg);
+}
+
+.agent-webclient-copilot-close:hover {
+  color: var(--accent);
+  border-color: rgba(38, 99, 235, 0.28);
+}
 
 .assistant-dock-fab {
   position: absolute;
@@ -4573,6 +4662,16 @@ body.quick-assistant-body,
 :root[data-theme="dark"] .assistant-dock-root.is-full {
   background: rgba(35, 37, 40, 0.98);
   box-shadow: -14px 0 42px rgba(0, 0, 0, 0.24);
+}
+
+:root[data-theme="dark"] .agent-webclient-copilot-dock {
+  background: rgba(35, 37, 40, 0.98);
+  box-shadow: -14px 0 42px rgba(0, 0, 0, 0.24);
+}
+
+:root[data-theme="dark"] .agent-webclient-copilot-close {
+  background: rgba(35, 37, 40, 0.86);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 :root[data-theme="dark"] .assistant-dock-root.is-compact {
@@ -9625,6 +9724,17 @@ code {
 
   .app-shell.has-assistant-dock-full .app-content {
     margin-right: 0;
+  }
+
+  .agent-webclient-copilot-dock {
+    top: 8px;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    width: auto;
+    border-radius: 18px;
+    border-top: 1px solid rgba(148, 163, 184, 0.28);
+    border-left-width: 1px;
   }
 
   .assistant-dock-fab {

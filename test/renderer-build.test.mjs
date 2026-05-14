@@ -31,19 +31,16 @@ test("assistant launcher sits beside settings in the sidebar footer", () => {
     path.join(projectRoot, "src", "renderer", "components", "AppSidebar.tsx"),
     "utf8"
   );
-  const assistantDock = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
-    "utf8"
-  );
   const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
 
-  assert.match(appShell, /onOpenAssistantDock=\{\(\) => openAssistantDock\("full"\)\}/);
-  assert.match(appShell, /showLauncher=\{false\}/);
+  assert.match(appShell, /function AgentWebclientCopilotDock/);
+  assert.match(appShell, /onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}/);
+  assert.match(appShell, /embedPath=\{AGENT_WEBCLIENT_COPILOT_PATH\}/);
   assert.match(sidebarSource, /sidebar-footer-actions/);
   assert.match(sidebarSource, /sidebar-assistant-launcher/);
   assert.match(sidebarSource, /aria-label="打开 ZenMind 助手"/);
-  assert.match(assistantDock, /showLauncher = true/);
-  assert.match(assistantDock, /showLauncher && !open/);
+  assert.match(globalStyles, /--assistant-dock-embedded-width:\s*360px;/);
+  assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{/);
   assert.match(globalStyles, /\.sidebar-footer-actions\s*\{[\s\S]*?display:\s*flex;/);
 });
 
@@ -183,8 +180,9 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /assistantLauncherVisible = currentCopilotPreference\?\.enabled !== false/);
   assert.match(appShell, /currentCopilotPreference\?\.enabled === false && assistantDockOpen && !assistantRunningRunId/);
   assert.match(appShell, /assistantLauncherVisible=\{assistantLauncherVisible\}/);
-  assert.match(appShell, /preferredAgentKey=\{preferredAssistantAgentKey\}/);
   assert.match(appShell, /onRunningRunIdChange=\{setAssistantRunningRunId\}/);
+  assert.match(appShell, /<AgentWebclientCopilotDock/);
+  assert.match(appShell, /data-open-agent-key=\{openRequest\?\.agentKey \?\? openRequest\?\.workerKey \?\? ""\}/);
   assert.match(sidebarSource, /assistantLauncherVisible/);
   assert.match(sidebarSource, /assistantLauncherVisible \? \(/);
   assert.match(assistantDock, /preferredAgentKey/);
@@ -548,10 +546,13 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
   assert.match(mainProcess, /await runServiceMutation\(\(\) => ensureAssistantTargetServicesRunning\(source\)\)/);
   assert.match(mainProcess, /async function showAssistantTargetWindow/);
+  assert.match(mainProcess, /AGENT_WEBCLIENT_APP_PATHNAMES = new Set\(\["\/", "\/copilot"\]\)/);
   assert.match(mainProcess, /async function openAssistantFromDesktopPet/);
   assert.match(mainProcess, /await showAssistantTargetWindow\("desktop-pet"\)/);
+  assert.match(mainProcess, /targetWindow\.webContents\.send\("app\.openAssistantWorker"/);
   assert.match(mainProcess, /async function openAssistantWorker/);
   assert.match(mainProcess, /await showAssistantTargetWindow\("assistant-worker"\)/);
+  assert.match(mainProcess, /scheduleAgentWebclientOpenRequest\(targetWindow/);
   assert.match(mainProcess, /void showAssistantTargetWindow\("tray-click"\)/);
   assert.doesNotMatch(mainProcess, /tray\.on\("click", \(\) => showMainWindow\(ASSISTANT_TARGET_PATH\)\)/);
 });
@@ -609,11 +610,15 @@ test("service logs open in a separate floating log viewer window", () => {
   assert.doesNotMatch(logViewerPage, /event\.key === "Escape"/);
 });
 
-test("assistant dock opens in right-side embedded mode by default", () => {
+test("assistant dock opens the agent webclient copilot in right-side embedded mode", () => {
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
 
-  assert.match(appShell, /openAssistantDock\("full"\);/);
-  assert.doesNotMatch(appShell, /onOpen=\{\(\) => openAssistantDock\("compact"\)\}/);
+  assert.match(appShell, /const AGENT_WEBCLIENT_COPILOT_PATH = "\/copilot"/);
+  assert.match(appShell, /assistantDockOpen \? "has-assistant-dock-full" : ""/);
+  assert.match(appShell, /window\.electronAPI\.onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\(\)/);
+  assert.match(appShell, /<AgentWebclientCopilotDock/);
+  assert.doesNotMatch(appShell, /<AssistantDock/);
+  assert.doesNotMatch(appShell, /openAssistantDock\("compact"\)/);
   assert.doesNotMatch(appShell, /onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\("compact"\)/);
 });
 

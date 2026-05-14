@@ -42,7 +42,7 @@ test("buildPluginEmbeddedUrl carries desktop auth context for agent-webclient", 
 });
 
 test("buildPluginEmbeddedUrl opens agent-webclient desktop sections with auth context", () => {
-  for (const embedPath of ["/agents", "/schedules", "/memory"]) {
+  for (const embedPath of ["/agents", "/schedules", "/memory", "/copilot"]) {
     assert.equal(
       buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {
         hostTheme: "dark",
