@@ -260,7 +260,8 @@ export function loadAgentPlatformMinimaxSettings(app: App): AssistantSettingsPri
     baseURL: endpointToBaseURL(provider.baseUrl, endpointPath),
     model: modelId,
     apiKey: resolveProviderAPIKey(provider.key || "minimax", provider.apiKey, location.env),
-    voiceCorrectionEnabled: localSettings.voiceCorrectionEnabled
+    voiceCorrectionEnabled: localSettings.voiceCorrectionEnabled,
+    desktopHelperAgentKey: localSettings.desktopHelperAgentKey
   };
 }
 
@@ -310,7 +311,8 @@ export function loadAgentPlatformProviderSettings(
     baseURL: endpointToBaseURL(provider.baseUrl, endpointPath),
     model: modelId,
     apiKey,
-    voiceCorrectionEnabled: localSettings.voiceCorrectionEnabled
+    voiceCorrectionEnabled: localSettings.voiceCorrectionEnabled,
+    desktopHelperAgentKey: localSettings.desktopHelperAgentKey
   };
 }
 

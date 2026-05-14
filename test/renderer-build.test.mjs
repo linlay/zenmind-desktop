@@ -60,9 +60,14 @@ test("assistant dock exposes agent selection and sends agentKey to platform runs
   assert.match(preload, /listAgents:\s*\(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
   assert.match(contracts, /listAgents:\s*\(\) => Promise<DesktopPetAgentOption\[\]>/);
   assert.match(contracts, /agentKey\?: string;/);
+  assert.match(contracts, /desktopHelperAgentKey:\s*string;/);
+  assert.match(contracts, /desktopHelperAgentKey\?:\s*string;/);
   assert.match(mainProcess, /ipcMain\.handle\("assistant\.listAgents"/);
   assert.match(mainProcess, /return \[\];/);
   assert.match(assistantDock, /window\.electronAPI\.assistant\.listAgents\(\)/);
+  assert.match(assistantDock, /window\.electronAPI\.assistant\.getSettings\(\)/);
+  assert.match(assistantDock, /DEFAULT_DESKTOP_HELPER_AGENT_KEY/);
+  assert.match(assistantDock, /configuredHelperAgentKey/);
   assert.match(assistantDock, /DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY/);
   assert.match(assistantDock, /function renderDockToolbar\(\)/);
   assert.match(
@@ -86,6 +91,28 @@ test("assistant dock exposes agent selection and sends agentKey to platform runs
   assert.match(globalStyles, /\.assistant-dock-history-count\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?font-size:\s*10px;/);
   assert.match(globalStyles, /\.assistant-dock-agent-select-wrap\s*\{/);
   assert.match(globalStyles, /\.assistant-dock-agent-select\s*\{/);
+});
+
+test("settings page configures desktop helper default agent separately from desktop pet", () => {
+  const settingsPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "SettingsPage.tsx"),
+    "utf8"
+  );
+  const sharedSettings = fs.readFileSync(
+    path.join(projectRoot, "src", "shared", "assistant-settings.ts"),
+    "utf8"
+  );
+  const settingsStore = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "assistant", "settings-store.ts"),
+    "utf8"
+  );
+
+  assert.match(sharedSettings, /DEFAULT_DESKTOP_HELPER_AGENT_KEY\s*=\s*"desktopAssistant"/);
+  assert.match(settingsStore, /desktopHelperAgentKey:\s*settings\.desktopHelperAgentKey/);
+  assert.match(settingsPage, /DESKTOP ASSISTANT/);
+  assert.match(settingsPage, /handleSelectDesktopHelperAgentKey/);
+  assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*desktopHelperAgentKey: normalizedAgentKey\s*\}\)/);
+  assert.match(settingsPage, /这个设置不影响桌面宠物绑定/);
 });
 
 test("built index uses relative asset paths", () => {

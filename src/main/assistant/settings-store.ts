@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import type { AssistantSettingsInput, AssistantSettingsPublic } from "../../shared/contracts";
+import { DEFAULT_DESKTOP_HELPER_AGENT_KEY } from "../../shared/assistant-settings";
 
 const SETTINGS_FILE = "settings.json";
 const DEFAULT_VOICE_CORRECTION_ENABLED = true;
@@ -11,6 +12,7 @@ export type AssistantSettingsPrivate = {
   model: string;
   apiKey: string;
   voiceCorrectionEnabled: boolean;
+  desktopHelperAgentKey: string;
 };
 
 function getAssistantRoot(app: App) {
@@ -29,19 +31,24 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
   const candidate = typeof value === "object" && value !== null
     ? value as Partial<AssistantSettingsPrivate>
     : {};
+  const desktopHelperAgentKey = typeof candidate.desktopHelperAgentKey === "string" && candidate.desktopHelperAgentKey.trim()
+    ? candidate.desktopHelperAgentKey.trim()
+    : DEFAULT_DESKTOP_HELPER_AGENT_KEY;
   return {
     baseURL: "",
     model: "",
     apiKey: "",
     voiceCorrectionEnabled: typeof candidate.voiceCorrectionEnabled === "boolean"
       ? candidate.voiceCorrectionEnabled
-      : DEFAULT_VOICE_CORRECTION_ENABLED
+      : DEFAULT_VOICE_CORRECTION_ENABLED,
+    desktopHelperAgentKey
   };
 }
 
 function toStoredAssistantSettings(settings: AssistantSettingsPrivate) {
   return {
-    voiceCorrectionEnabled: settings.voiceCorrectionEnabled
+    voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
+    desktopHelperAgentKey: settings.desktopHelperAgentKey
   };
 }
 
@@ -65,6 +72,7 @@ export function toPublicAssistantSettings(
     configured: Boolean(settings.baseURL.trim() && settings.model.trim() && apiKeyConfigured),
     apiKeyConfigured,
     voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
+    desktopHelperAgentKey: settings.desktopHelperAgentKey,
     source,
     ...(sourceLabel ? { sourceLabel } : {})
   };
@@ -105,7 +113,10 @@ export function saveAssistantSettingsToRoot(
     apiKey: "",
     voiceCorrectionEnabled: typeof input.voiceCorrectionEnabled === "boolean"
       ? input.voiceCorrectionEnabled
-      : current.voiceCorrectionEnabled
+      : current.voiceCorrectionEnabled,
+    desktopHelperAgentKey: typeof input.desktopHelperAgentKey === "string" && input.desktopHelperAgentKey.trim()
+      ? input.desktopHelperAgentKey.trim()
+      : current.desktopHelperAgentKey
   };
 
   fs.writeFileSync(getSettingsPath(rootDir), `${JSON.stringify(toStoredAssistantSettings(next), null, 2)}\n`, "utf8");

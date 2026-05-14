@@ -6,10 +6,13 @@ import type {
   AssistantMemorySummary,
   AssistantMemoryStorage,
   AssistantMemoryStats,
+  AssistantSettingsPublic,
   CustomSidebarItem,
   CustomSidebarItemsResult,
+  DesktopPetAgentOption,
   DesktopPetState
 } from "../../shared/contracts";
+import { DEFAULT_DESKTOP_HELPER_AGENT_KEY } from "../../shared/assistant-settings";
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
@@ -145,6 +148,10 @@ export function SettingsPage({
   const [memoryRecentAudit, setMemoryRecentAudit] = useState<AssistantMemorySummary["recentAudit"]>(null);
   const [memoryItems, setMemoryItems] = useState<AssistantMemoryItem[]>([]);
   const [memoryPending, setMemoryPending] = useState("");
+  const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
+  const [assistantAgentOptions, setAssistantAgentOptions] = useState<DesktopPetAgentOption[]>([]);
+  const [desktopHelperAgentKey, setDesktopHelperAgentKey] = useState(DEFAULT_DESKTOP_HELPER_AGENT_KEY);
+  const [desktopHelperAgentPending, setDesktopHelperAgentPending] = useState(false);
   const [desktopPetState, setDesktopPetState] = useState<DesktopPetState | null>(null);
   const [desktopPetPending, setDesktopPetPending] = useState(false);
   const [desktopPetBoundAgentKey, setDesktopPetBoundAgentKey] = useState(DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY);
@@ -167,6 +174,31 @@ export function SettingsPage({
         setMemoryStorage(summary.storage);
         setMemoryRecentAudit(summary.recentAudit ?? null);
         setMemoryItems(memoryList.items);
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setFeedback(reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      window.electronAPI.assistant.getSettings(),
+      window.electronAPI.assistant.listAgents()
+    ])
+      .then(([settings, agents]) => {
+        if (cancelled) {
+          return;
+        }
+        setAssistantSettings(settings);
+        setDesktopHelperAgentKey(settings.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY);
+        setAssistantAgentOptions(Array.isArray(agents) ? agents : []);
       })
       .catch((reason) => {
         if (!cancelled) {
@@ -440,6 +472,31 @@ export function SettingsPage({
     }
   }
 
+  async function handleSelectDesktopHelperAgentKey(nextAgentKey: string) {
+    const normalizedAgentKey = nextAgentKey.trim();
+    const previousAgentKey = desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
+    if (!normalizedAgentKey || normalizedAgentKey === previousAgentKey) {
+      return;
+    }
+
+    setDesktopHelperAgentKey(normalizedAgentKey);
+    setDesktopHelperAgentPending(true);
+    try {
+      const nextSettings = await window.electronAPI.assistant.saveSettings({
+        desktopHelperAgentKey: normalizedAgentKey
+      });
+      const nextAgent = assistantAgentOptions.find((agent) => agent.agentKey === nextSettings.desktopHelperAgentKey);
+      setAssistantSettings(nextSettings);
+      setDesktopHelperAgentKey(nextSettings.desktopHelperAgentKey);
+      setFeedback(`侧边栏助手默认智能体已切换为 ${nextAgent?.displayName ?? nextSettings.desktopHelperAgentKey}。`);
+    } catch (reason) {
+      setDesktopHelperAgentKey(previousAgentKey);
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setDesktopHelperAgentPending(false);
+    }
+  }
+
   return (
     <section className="settings-page">
       <div className="page-head">
@@ -526,6 +583,46 @@ export function SettingsPage({
           </button>
         </div>
       ) : null}
+
+      <div className="data-root-card settings-switch-card desktop-helper-settings-card">
+        <div>
+          <p className="eyebrow">DESKTOP ASSISTANT</p>
+          <h2>侧边栏助手</h2>
+          <p className="page-copy">
+            选择打开侧边栏助手时默认使用的智能体。这个设置不影响桌面宠物绑定。
+          </p>
+          <div className="desktop-pet-agent-form">
+            <label className="desktop-pet-agent-field">
+              <span>默认智能体</span>
+              <span className="desktop-pet-agent-select-wrap">
+                <select
+                  value={assistantAgentOptions.some((agent) => agent.agentKey === desktopHelperAgentKey) ? desktopHelperAgentKey : ""}
+                  onChange={(event) => void handleSelectDesktopHelperAgentKey(event.target.value)}
+                  disabled={assistantAgentOptions.length === 0 || desktopHelperAgentPending}
+                >
+                  <option value="">
+                    {assistantAgentOptions.length === 0 ? "正在读取智能体列表..." : "请选择智能体"}
+                  </option>
+                  {assistantAgentOptions.map((agent) => (
+                    <option value={agent.agentKey} key={agent.agentKey}>
+                      {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </span>
+              <span className="desktop-pet-agent-note">
+                {desktopHelperAgentPending
+                  ? "保存中..."
+                  : `当前默认：${
+                      assistantAgentOptions.find((agent) => agent.agentKey === (assistantSettings?.desktopHelperAgentKey || desktopHelperAgentKey))?.displayName ||
+                      assistantSettings?.desktopHelperAgentKey ||
+                      desktopHelperAgentKey
+                    }`}
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
 
       {desktopPetSupported ? (
         <div className="data-root-card settings-switch-card desktop-pet-settings-card">

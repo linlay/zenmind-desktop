@@ -18,6 +18,7 @@ import type {
 } from "../../shared/contracts";
 import { ZENMIND_ASSISTANT_WONDERS } from "../../shared/assistant-capabilities";
 import { DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY } from "../../shared/desktop-pet";
+import { DEFAULT_DESKTOP_HELPER_AGENT_KEY } from "../../shared/assistant-settings";
 import { AssistantAwaitingDialog } from "./AssistantAwaitingDialog";
 import { AssistantMarkdownContent } from "./AssistantMarkdownContent";
 import { AttachmentImagePreview } from "./AttachmentImagePreview";
@@ -1054,18 +1055,24 @@ export function AssistantDock({
     }
     let canceled = false;
     setAgentOptionsLoading(true);
-    window.electronAPI.assistant.listAgents()
-      .then((agents) => {
+    Promise.all([
+      window.electronAPI.assistant.listAgents(),
+      window.electronAPI.assistant.getSettings()
+    ])
+      .then(([agents, nextSettings]) => {
         if (canceled) {
           return;
         }
         const nextAgents = Array.isArray(agents) ? agents : [];
+        const configuredHelperAgentKey = nextSettings.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
+        setSettings(nextSettings);
         setAgentOptions(nextAgents);
         setSelectedAgentKey((current) => {
           if (current && nextAgents.some((agent) => agent.agentKey === current)) {
             return current;
           }
-          return nextAgents.find((agent) => agent.agentKey === DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY)?.agentKey ||
+          return nextAgents.find((agent) => agent.agentKey === configuredHelperAgentKey)?.agentKey ||
+            nextAgents.find((agent) => agent.agentKey === DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY)?.agentKey ||
             nextAgents[0]?.agentKey ||
             "";
         });

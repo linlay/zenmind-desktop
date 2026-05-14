@@ -530,12 +530,14 @@ export interface AssistantSettingsPublic {
   configured: boolean;
   apiKeyConfigured: boolean;
   voiceCorrectionEnabled: boolean;
+  desktopHelperAgentKey: string;
   source?: "desktop" | "agent-platform";
   sourceLabel?: string;
 }
 
 export interface AssistantSettingsInput {
   voiceCorrectionEnabled?: boolean;
+  desktopHelperAgentKey?: string;
 }
 
 export type AssistantMemoryKind = "fact" | "observation";
