@@ -12,7 +12,9 @@ import type {
   AssistantRunAction,
   AssistantSettingsPublic,
   AssistantVoiceCorrectionLocale,
-  DesktopPetAgentOption
+  DesktopPetAgentOption,
+  ServiceState,
+  StartupRestoreState
 } from "../../shared/contracts";
 import { ZENMIND_ASSISTANT_WONDERS } from "../../shared/assistant-capabilities";
 import { DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY } from "../../shared/desktop-pet";
@@ -59,6 +61,7 @@ type VoiceState = "idle" | "recording" | "correcting";
 
 const VOICE_TRANSCRIPTION_LOCALE: AssistantVoiceCorrectionLocale = "zh-CN-mixed-en";
 const FULL_ACCESS_DURATION_MS = 10 * 60 * 1000;
+const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 const VOICE_AUDIO_MIME_TYPES = [
   "audio/webm;codecs=opus",
   "audio/webm",
@@ -1212,19 +1215,68 @@ export function AssistantDock({
     return () => window.removeEventListener("resize", handleWindowResize);
   }, [open]);
 
-  async function refreshSettingsAndChats() {
-    const [nextSettings, nextChats] = await Promise.all([
-      window.electronAPI.assistant.getSettings(),
-      window.electronAPI.assistant.listChats()
+  function isAgentPlatformRestoring(services: ServiceState[], startupState: StartupRestoreState) {
+    const platformService = services.find((service) => service.id === AGENT_PLATFORM_SERVICE_ID);
+    const startupRestoreSettled = startupState.phase === "succeeded" || startupState.phase === "failed";
+    return !startupRestoreSettled && platformService?.status !== "running";
+  }
+
+  async function shouldDeferChatRefreshForStartupRestore() {
+    const [services, startupState] = await Promise.all([
+      window.electronAPI.services.list(),
+      window.electronAPI.services.getStartupRestoreState()
     ]);
+    return isAgentPlatformRestoring(services, startupState);
+  }
+
+  async function refreshSettingsAndChats(options: { deferWhileStartupRestores?: boolean } = {}) {
+    const nextSettings = await window.electronAPI.assistant.getSettings();
     setSettings(nextSettings);
+
+    if (options.deferWhileStartupRestores && await shouldDeferChatRefreshForStartupRestore()) {
+      return false;
+    }
+
+    const nextChats = await window.electronAPI.assistant.listChats();
     setChats(nextChats);
+    setFeedback((current) => current === "服务已安装，可手动启动。" ? "" : current);
+    return true;
   }
 
   useEffect(() => {
-    void refreshSettingsAndChats().catch((reason) => {
+    void refreshSettingsAndChats({ deferWhileStartupRestores: true }).catch((reason) => {
       setFeedback(reason instanceof Error ? reason.message : String(reason));
     });
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let refreshInFlight: Promise<void> | null = null;
+
+    const refreshWhenPlatformReady = () => {
+      if (refreshInFlight) {
+        return;
+      }
+      refreshInFlight = (async () => {
+        try {
+          await refreshSettingsAndChats({ deferWhileStartupRestores: true });
+        } catch (reason) {
+          if (!disposed) {
+            setFeedback(reason instanceof Error ? reason.message : String(reason));
+          }
+        } finally {
+          refreshInFlight = null;
+        }
+      })();
+    };
+
+    const removeServicesChangedListener = window.electronAPI.onServicesChanged(refreshWhenPlatformReady);
+    const removeStartupRestoreStateListener = window.electronAPI.onStartupRestoreState(refreshWhenPlatformReady);
+    return () => {
+      disposed = true;
+      removeServicesChangedListener();
+      removeStartupRestoreStateListener();
+    };
   }, []);
 
   useEffect(() => {
@@ -1238,7 +1290,7 @@ export function AssistantDock({
     if (!open) {
       return;
     }
-    void refreshSettingsAndChats().catch((reason) => {
+    void refreshSettingsAndChats({ deferWhileStartupRestores: true }).catch((reason) => {
       setFeedback(reason instanceof Error ? reason.message : String(reason));
     });
   }, [open]);
