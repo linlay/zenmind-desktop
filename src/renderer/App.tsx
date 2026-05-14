@@ -35,11 +35,8 @@ const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
 const SIDEBAR_TRANSLUCENCY_STORAGE_KEY = "zenmind-desktop.sidebar-translucency";
 const ASSISTANT_DOCK_MODE_STORAGE_KEY = "zenmind-desktop.assistant-dock-mode";
-const DEFAULT_SIDEBAR_WIDTH = 196;
-const MIN_SIDEBAR_WIDTH = 176;
-const MAX_SIDEBAR_WIDTH = 340;
-const COLLAPSED_SIDEBAR_WIDTH = 64;
-const COLLAPSE_THRESHOLD = 118;
+const EXPANDED_SIDEBAR_WIDTH = 160;
+const COLLAPSED_SIDEBAR_WIDTH = 96;
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -86,7 +83,6 @@ export const EXTERNAL_EXPERIMENTAL_ITEMS = [] as const;
 
 type SidebarState = {
   collapsed: boolean;
-  width: number;
 };
 
 function inferDesktopPlatform() {
@@ -123,12 +119,7 @@ function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
-  const appShellRef = useRef<HTMLDivElement | null>(null);
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
-  const sidebarResizePointerIdRef = useRef<number | null>(null);
-  const sidebarResizeCleanupRef = useRef<(() => void) | null>(null);
-  const sidebarDragMovedRef = useRef(false);
-  const sidebarDragStartRef = useRef(0);
   const windowDragPointerIdRef = useRef<number | null>(null);
   const windowDragCleanupRef = useRef<(() => void) | null>(null);
   const startupNavigationDoneRef = useRef(false);
@@ -147,23 +138,19 @@ function AppShell() {
   });
   const [sidebarState, setSidebarState] = useState<SidebarState>(() => {
     if (typeof window === "undefined") {
-      return { collapsed: false, width: DEFAULT_SIDEBAR_WIDTH };
+      return { collapsed: false };
     }
     try {
       const savedValue = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
       if (!savedValue) {
-        return { collapsed: false, width: DEFAULT_SIDEBAR_WIDTH };
+        return { collapsed: false };
       }
       const parsed = JSON.parse(savedValue) as Partial<SidebarState>;
-      const width = typeof parsed.width === "number"
-        ? Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed.width))
-        : DEFAULT_SIDEBAR_WIDTH;
       return {
-        collapsed: typeof parsed.collapsed === "boolean" ? parsed.collapsed : false,
-        width
+        collapsed: typeof parsed.collapsed === "boolean" ? parsed.collapsed : false
       };
     } catch {
-      return { collapsed: false, width: DEFAULT_SIDEBAR_WIDTH };
+      return { collapsed: false };
     }
   });
   const [sidebarTranslucencyEnabled, setSidebarTranslucencyEnabled] = useState(() => {
@@ -189,7 +176,6 @@ function AppShell() {
       return "full";
     }
   });
-  const [isSidebarDragging, setIsSidebarDragging] = useState(false);
   const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
   const [customSidebarItemsLoaded, setCustomSidebarItemsLoaded] = useState(false);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
@@ -443,25 +429,10 @@ function AppShell() {
     }
   }, [sidebarState]);
 
-  useEffect(() => {
-    if (!isSidebarDragging) {
-      document.body.style.removeProperty("cursor");
-      document.body.style.removeProperty("user-select");
-      return;
-    }
-    document.body.style.cursor = "ew-resize";
-    document.body.style.userSelect = "none";
-    return () => {
-      document.body.style.removeProperty("cursor");
-      document.body.style.removeProperty("user-select");
-    };
-  }, [isSidebarDragging]);
-
   useEffect(() => () => {
     if (sidebarNavigationUnlockTimerRef.current !== null) {
       window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
     }
-    sidebarResizeCleanupRef.current?.();
     windowDragCleanupRef.current?.();
     void window.electronAPI.windowDrag.end().catch(() => undefined);
   }, []);
@@ -521,121 +492,6 @@ function AppShell() {
     setThemeMode((current) => (current === "light" ? "dark" : "light"));
   }
 
-  function updateSidebarWidth(nextWidth: number) {
-    setSidebarState((current) => ({
-      collapsed: nextWidth <= COLLAPSE_THRESHOLD,
-      width: current.collapsed && nextWidth > COLLAPSE_THRESHOLD
-        ? Math.max(MIN_SIDEBAR_WIDTH, nextWidth)
-        : nextWidth > COLLAPSE_THRESHOLD
-          ? nextWidth
-          : current.width
-    }));
-  }
-
-  function resolveSidebarWidth(clientX: number) {
-    const shellLeft = appShellRef.current?.getBoundingClientRect().left ?? 0;
-    const rawWidth = clientX - shellLeft;
-    return Math.min(MAX_SIDEBAR_WIDTH, Math.max(COLLAPSED_SIDEBAR_WIDTH, rawWidth));
-  }
-
-  function commitSidebarWidth(rawWidth: number) {
-    if (rawWidth <= COLLAPSE_THRESHOLD) {
-      setSidebarState((current) => ({
-        collapsed: true,
-        width: current.width
-      }));
-      return;
-    }
-    setSidebarState({
-      collapsed: false,
-      width: Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, rawWidth))
-    });
-  }
-
-  function startSidebarResize(startClientX: number, pointerId: number, handle: HTMLButtonElement) {
-    if (window.innerWidth <= 1080) {
-      return;
-    }
-
-    sidebarResizeCleanupRef.current?.();
-    sidebarDragMovedRef.current = false;
-    sidebarDragStartRef.current = startClientX;
-    sidebarResizePointerIdRef.current = pointerId;
-    setIsSidebarDragging(true);
-    updateSidebarWidth(resolveSidebarWidth(startClientX));
-
-    try {
-      handle.setPointerCapture(pointerId);
-    } catch {
-      // Some platforms may reject pointer capture for transient pointer state changes.
-    }
-
-    const handlePointerMove = (event: PointerEvent) => {
-      if (event.pointerId !== sidebarResizePointerIdRef.current) {
-        return;
-      }
-      if (Math.abs(event.clientX - sidebarDragStartRef.current) > 3) {
-        sidebarDragMovedRef.current = true;
-      }
-      updateSidebarWidth(resolveSidebarWidth(event.clientX));
-    };
-
-    const finishResize = (clientX?: number) => {
-      const finalWidth = resolveSidebarWidth(clientX ?? sidebarDragStartRef.current);
-      commitSidebarWidth(finalWidth);
-      setIsSidebarDragging(false);
-      sidebarResizePointerIdRef.current = null;
-      sidebarResizeCleanupRef.current = null;
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerCancel);
-      window.removeEventListener("blur", handleWindowBlur);
-      handle.removeEventListener("lostpointercapture", handleLostPointerCapture);
-      try {
-        if (handle.hasPointerCapture(pointerId)) {
-          handle.releasePointerCapture(pointerId);
-        }
-      } catch {
-        // Ignore if capture is already gone.
-      }
-    };
-
-    const handlePointerUp = (event: PointerEvent) => {
-      if (event.pointerId !== sidebarResizePointerIdRef.current) {
-        return;
-      }
-      finishResize(event.clientX);
-    };
-
-    const handlePointerCancel = (event: PointerEvent) => {
-      if (event.pointerId !== sidebarResizePointerIdRef.current) {
-        return;
-      }
-      finishResize(event.clientX);
-    };
-
-    const handleLostPointerCapture = () => {
-      if (sidebarResizePointerIdRef.current !== pointerId) {
-        return;
-      }
-      finishResize();
-    };
-
-    const handleWindowBlur = () => {
-      if (sidebarResizePointerIdRef.current !== pointerId) {
-        return;
-      }
-      finishResize();
-    };
-
-    sidebarResizeCleanupRef.current = () => finishResize();
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerCancel);
-    window.addEventListener("blur", handleWindowBlur);
-    handle.addEventListener("lostpointercapture", handleLostPointerCapture);
-  }
-
   function finishDesktopWindowDrag(pointerId: number | null, target?: HTMLElement) {
     if (pointerId !== null && windowDragPointerIdRef.current !== pointerId) {
       return;
@@ -656,7 +512,7 @@ function AppShell() {
   }
 
   function handleDesktopWindowPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!isMac || !event.isPrimary || event.button !== 0 || isSidebarDragging) {
+    if (!isMac || !event.isPrimary || event.button !== 0) {
       return;
     }
     if (!shouldStartDesktopWindowDrag(event.target)) {
@@ -704,11 +560,7 @@ function AppShell() {
   }
 
   function toggleSidebarCollapsed() {
-    setSidebarState((current) =>
-      current.collapsed
-        ? { collapsed: false, width: current.width }
-        : { collapsed: true, width: current.width }
-    );
+    setSidebarState((current) => ({ collapsed: !current.collapsed }));
   }
 
   function requestSidebarNavigation(targetPath: string) {
@@ -729,7 +581,7 @@ function AppShell() {
 
   const sidebarWidth = sidebarState.collapsed
     ? COLLAPSED_SIDEBAR_WIDTH
-    : sidebarState.width;
+    : EXPANDED_SIDEBAR_WIDTH;
   const experimentalItemMap = new Map(EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => [item.id, item]));
   const customSidebarItemMap = new Map(customSidebarItems.map((item) => [item.id, item]));
 
@@ -746,7 +598,6 @@ function AppShell() {
         isWindows ? "is-windows-platform" : "",
         isMac && sidebarTranslucencyEnabled ? "is-mac-translucent-sidebar" : ""
       ].filter(Boolean).join(" ")}
-      ref={appShellRef}
       onPointerDownCapture={handleDesktopWindowPointerDown}
       style={{ "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
     >
@@ -754,8 +605,7 @@ function AppShell() {
       <div
         className={[
           "app-sidebar-shell",
-          sidebarState.collapsed ? "is-collapsed" : "",
-          isSidebarDragging ? "is-resizing" : ""
+          sidebarState.collapsed ? "is-collapsed" : ""
         ].filter(Boolean).join(" ")}
         style={{ "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
@@ -774,21 +624,8 @@ function AppShell() {
         <button
           type="button"
           className="app-sidebar-resizer"
-          aria-label={sidebarState.collapsed ? "展开侧边栏" : "调整或收起侧边栏"}
-          onClick={() => {
-            if (sidebarDragMovedRef.current) {
-              sidebarDragMovedRef.current = false;
-              return;
-            }
-            toggleSidebarCollapsed();
-          }}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            if (!event.isPrimary || event.button !== 0) {
-              return;
-            }
-            startSidebarResize(event.clientX, event.pointerId, event.currentTarget);
-          }}
+          aria-label={sidebarState.collapsed ? "展开侧边栏" : "收起侧边栏"}
+          onClick={toggleSidebarCollapsed}
         >
           <span className="app-sidebar-resizer-grip" aria-hidden="true" />
         </button>

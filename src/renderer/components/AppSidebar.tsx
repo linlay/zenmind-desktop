@@ -31,6 +31,24 @@ const agentWebclientNavItems: SidebarNavItem[] = [
   { to: "/memory", label: "记忆管理", icon: "service" }
 ];
 
+function getCollapsedSidebarLabel(label: string) {
+  const Segmenter = typeof Intl === "undefined"
+    ? undefined
+    : (Intl as unknown as {
+        Segmenter?: new (
+          locale: string,
+          options: { granularity: "grapheme" }
+        ) => { segment(input: string): Iterable<{ segment: string }> };
+      }).Segmenter;
+
+  if (Segmenter) {
+    const segments = new Segmenter("zh-CN", { granularity: "grapheme" }).segment(label);
+    return Array.from(segments, ({ segment }) => segment).slice(0, 5).join("");
+  }
+
+  return Array.from(label).slice(0, 5).join("");
+}
+
 type AppSidebarProps = {
   isCollapsed: boolean;
   currentPath: string;
@@ -129,6 +147,8 @@ export function AppSidebar({
             key={item.to}
             to={item.to}
             onClick={(event) => handleItemClick(event, item.to)}
+            aria-label={item.label}
+            title={item.label}
             className={({ isActive }) =>
               [
                 "sidebar-link",
@@ -140,6 +160,9 @@ export function AppSidebar({
               {item.iconId ? <CustomSidebarIcon iconId={item.iconId} /> : <SidebarIllustration kind={item.icon} />}
             </span>
             <span className="sidebar-link-label">{item.label}</span>
+            <span className="sidebar-link-label-collapsed" aria-hidden="true">
+              {getCollapsedSidebarLabel(item.label)}
+            </span>
           </NavLink>
         ))}
       </nav>
@@ -149,6 +172,8 @@ export function AppSidebar({
           <NavLink
             to="/settings"
             onClick={(event) => handleItemClick(event, "/settings")}
+            aria-label="设置"
+            title="设置"
             className={({ isActive }) =>
               [
                 "sidebar-link",
@@ -161,6 +186,7 @@ export function AppSidebar({
               <SidebarIllustration kind="settings" />
             </span>
             <span className="sidebar-link-label">设置</span>
+            <span className="sidebar-link-label-collapsed" aria-hidden="true">设置</span>
           </NavLink>
           <button
             type="button"
@@ -173,11 +199,13 @@ export function AppSidebar({
             onClick={handleAssistantDockClick}
             aria-label="打开 ZenMind 助手"
             aria-pressed={assistantDockOpen}
+            title="助手"
           >
             <span className="sidebar-link-icon">
               <SidebarIllustration kind="assistant" />
             </span>
             <span className="sidebar-link-label">助手</span>
+            <span className="sidebar-link-label-collapsed" aria-hidden="true">助手</span>
           </button>
         </div>
       </div>

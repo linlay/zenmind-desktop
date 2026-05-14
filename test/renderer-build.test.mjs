@@ -209,7 +209,7 @@ test("plugin embedded route keeps a mac window drag lane clear of iframe control
   assert.match(appShell, /has-plugin-surface/);
   assert.match(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.has-plugin-surface\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*block;[\s\S]*?left:\s*calc\(var\(--app-sidebar-width,\s*196px\)\s*\+\s*280px\);[\s\S]*?right:\s*184px;[\s\S]*?height:\s*34px;/
+    /\.app-shell\.is-mac-platform\.has-plugin-surface\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*block;[\s\S]*?left:\s*calc\(var\(--app-sidebar-width,\s*160px\)\s*\+\s*280px\);[\s\S]*?right:\s*184px;[\s\S]*?height:\s*34px;/
   );
   assert.match(
     globalStyles,
