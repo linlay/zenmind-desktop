@@ -12,9 +12,9 @@ import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName } from "../service-
 
 const CORE_MODULES = [
   {
-    id: "agent-container-hub",
-    name: "容器仓库",
-    description: "宿主机容器服务，负责为后续智能体运行时提供沙箱能力。"
+    id: "zenmind-app-server",
+    name: "认证服务",
+    description: "认证与管理服务，提供 OAuth2/OIDC、管理后台、App 访问令牌和设备管理。"
   },
   {
     id: "agent-platform",
@@ -27,9 +27,9 @@ const CORE_MODULES = [
     description: "独立进程模式的 AGENT Web 客户端，负责静态资源托管并代理 API 请求。"
   },
   {
-    id: "zenmind-app-server",
-    name: "认证服务",
-    description: "认证与管理服务，提供 OAuth2/OIDC、管理后台、App 访问令牌和设备管理。"
+    id: "agent-container-hub",
+    name: "容器仓库",
+    description: "宿主机容器服务，负责为后续智能体运行时提供沙箱能力。"
   }
 ] as const;
 
@@ -513,12 +513,12 @@ export function ControlCenterPage() {
         <div className="control-center-hero-panel">
             <div className="summary-strip control-center-summary-strip">
               <div>
-                <span className="summary-kicker">服务总数</span>
-                <strong>{serviceCounts.total}</strong>
-              </div>
-              <div>
                 <span className="summary-kicker">运行实例</span>
                 <strong>{serviceCounts.running}</strong>
+              </div>
+              <div>
+                <span className="summary-kicker">服务总数</span>
+                <strong>{serviceCounts.total}</strong>
               </div>
             </div>
           </div>
@@ -632,7 +632,16 @@ export function ControlCenterPage() {
                               aria-pressed={isSelected}
                             >
                               <div className="service-nav-card-head">
-                                <h3>{cardName}</h3>
+                                <div className="service-nav-title-row">
+                                  <h3>{cardName}</h3>
+                                  <span
+                                    className="service-nav-info"
+                                    title={cardDescription}
+                                    aria-label={`${cardName}说明：${cardDescription}`}
+                                  >
+                                    !
+                                  </span>
+                                </div>
                                 {service ? (
                                   <span
                                     className="service-nav-version-status"
@@ -649,7 +658,6 @@ export function ControlCenterPage() {
                                   />
                                 )}
                               </div>
-                              <p>{cardDescription}</p>
                             </button>
                           );
                         })
