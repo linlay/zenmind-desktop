@@ -127,6 +127,20 @@ test("desktop shell starts window drag from non-interactive mac regions", () => 
   assert.match(mainProcess, /ipcMain\.handle\("windowDrag\.begin"/);
 });
 
+test("mac fullscreen forces the main window to an opaque background", () => {
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+
+  assert.match(mainProcess, /let mainWindowSidebarTranslucencyEnabled = false;/);
+  assert.match(mainProcess, /function applyMainWindowAppearance\(targetWindow: BrowserWindow \| null\)/);
+  assert.match(
+    mainProcess,
+    /if \(process\.platform === "darwin"\)\s*\{[\s\S]*?mainWindowSidebarTranslucencyEnabled && !targetWindow\.isFullScreen\(\);[\s\S]*?targetWindow\.setVibrancy\(useSidebarTranslucency \? "under-window" : null\);[\s\S]*?targetWindow\.setBackgroundColor\(useSidebarTranslucency \? "#00000000" : "#FFFFFF"\);/
+  );
+  assert.match(mainProcess, /if \(process\.platform === "win32"\)\s*\{[\s\S]*?targetWindow\.setBackgroundColor\("#FFFFFF"\);[\s\S]*?return;[\s\S]*?\}/);
+  assert.match(mainProcess, /mainWindow\.on\("enter-full-screen", \(\) => \{[\s\S]*?applyMainWindowAppearance\(mainWindow\);[\s\S]*?\}\);/);
+  assert.match(mainProcess, /mainWindow\.on\("leave-full-screen", \(\) => \{[\s\S]*?applyMainWindowAppearance\(mainWindow\);[\s\S]*?\}\);/);
+});
+
 test("main process keeps app identity visible in platform program bars", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
 
@@ -238,14 +252,19 @@ test("sidebar and quick assistant share ZenMind identity and active-chat event r
 
   assert.match(assistantEventState, /function getLatestPendingAwaitingPayload/);
   assert.match(assistantEventState, /function attachRunningAssistantPlaceholder/);
+  assert.match(assistantEventState, /function mergeOptimisticRunMessages/);
+  assert.match(assistantEventState, /function getVisibleAssistantMessages/);
   assert.match(assistantEventState, /function shouldEnsureAssistantMessageForEvent/);
   assert.match(assistantEventState, /ASSISTANT_RUN_EVENT_TYPES/);
   assert.match(assistantEventState, /function reduceAssistantTimelineEvent/);
   assert.doesNotMatch(assistantEventState, /tool\.verify|tool\.route|voice\.transcribed|voice\.corrected|voice\.needs_review|intent\.classified/);
   assert.match(assistantArtifacts, /function getArtifactAttachmentsFromEvent/);
   assert.match(assistantDock, /attachRunningAssistantPlaceholder/);
+  assert.match(assistantDock, /mergeOptimisticRunMessages/);
   assert.match(assistantDock, /event\.chatId === activeChatIdRef\.current/);
   assert.match(quickAssistant, /isStructuredAssistantEvent/);
+  assert.match(quickAssistant, /mergeOptimisticRunMessages/);
+  assert.match(quickAssistant, /getVisibleAssistantMessages/);
   assert.match(quickAssistant, /quickAssistant\.openMainAssistant\(event\.chatId\)/);
   assert.doesNotMatch(assistantDock, /requestedChatId === activeChatIdRef\.current/);
 });

@@ -13,8 +13,10 @@ import {
 } from "../services/assistantArtifacts";
 import {
   ensureAssistantMessageForRun as ensureRemoteAssistantMessageForRun,
+  getVisibleAssistantMessages,
   isStructuredAssistantEvent,
   isTerminalAssistantEvent,
+  mergeOptimisticRunMessages,
   shouldEnsureAssistantMessageForEvent
 } from "../services/assistantEventState";
 
@@ -300,6 +302,7 @@ export function QuickAssistant() {
   const voiceBaseDraftRef = useRef("");
   const voiceOperationIdRef = useRef(0);
   const visibleAttachments = attachments.filter((attachment) => !attachment.hidden);
+  const visibleMessages = getVisibleAssistantMessages(messages, runningRunId);
   const isSmallTrayMode = !isExpanded && visibleAttachments.length === 0 && !voiceExpandedComposer;
   const quickAssistantDisplayMode = isExpanded
     ? "expanded"
@@ -1049,9 +1052,10 @@ export function QuickAssistant() {
 	    setActiveChatId(result.chatId);
     const userMessage = createLocalMessage("user", content, result.runId, attachments);
     const assistantMessage = createLocalMessage("assistant", "", result.runId);
-    runMessageIdsRef.current.set(result.runId, assistantMessage.id);
     setRunningRunId(result.runId);
-    setMessages((current) => [...current, userMessage, assistantMessage]);
+    setMessages((current) =>
+      mergeOptimisticRunMessages(current, result.runId, userMessage, assistantMessage, runMessageIdsRef.current)
+    );
     setAttachments([]);
     setDraft("");
     setVoiceExpandedComposer(false);
@@ -1253,14 +1257,14 @@ export function QuickAssistant() {
       ) : null}
       {isExpanded ? (
         <main className="quick-assistant-content">
-          {messages.length === 0 ? (
+          {visibleMessages.length === 0 ? (
             <div className="quick-empty">
               <ZenMindMarkIcon />
               <span>你可以直接问 ZenMind。</span>
             </div>
           ) : (
             <div className="quick-message-list">
-              {messages.map((message) => (
+              {visibleMessages.map((message) => (
                 <article key={message.id} className={`quick-message is-${message.role}`}>
                   {message.role === "assistant" ? <ZenMindMarkIcon /> : null}
                   {message.role === "assistant" ? (
