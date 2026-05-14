@@ -26,9 +26,9 @@ const assistantNavItem: SidebarNavItem = {
 };
 
 const agentWebclientNavItems: SidebarNavItem[] = [
-  { to: "/agents", label: "智能体管理", icon: "service" },
-  { to: "/schedules", label: "自动化", icon: "service" },
-  { to: "/memory", label: "记忆管理", icon: "service" }
+  { to: "/agents", label: "智能体管理", icon: "assistant" },
+  { to: "/schedules", label: "自动化", icon: "assistant" },
+  { to: "/memory", label: "记忆管理", icon: "assistant" }
 ];
 
 function getCollapsedSidebarLabel(label: string) {

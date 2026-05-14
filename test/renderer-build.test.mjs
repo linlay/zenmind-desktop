@@ -226,7 +226,7 @@ test("desktop shell starts window drag from non-interactive mac regions", () => 
   assert.match(appShell, /WINDOW_DRAG_EXCLUDED_SELECTOR/);
   assert.match(appShell, /"iframe"/);
   assert.match(appShell, /"webview"/);
-  assert.match(appShell, /"\.app-sidebar-resizer"/);
+  assert.match(appShell, /"\.app-sidebar-collapse-button"/);
   assert.match(appShell, /onPointerDownCapture=\{handleDesktopWindowPointerDown\}/);
   assert.match(appShell, /window\.electronAPI\.windowDrag\.begin/);
   assert.match(preload, /windowDrag:\s*\{[\s\S]*?ipcRenderer\.invoke\("windowDrag\.begin"/);

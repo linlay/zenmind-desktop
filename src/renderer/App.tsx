@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
 import { AssistantDock, type AssistantDockMode } from "./components/AssistantDock";
 import { AppSidebar } from "./components/AppSidebar";
@@ -35,8 +35,6 @@ const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
 const SIDEBAR_TRANSLUCENCY_STORAGE_KEY = "zenmind-desktop.sidebar-translucency";
 const ASSISTANT_DOCK_MODE_STORAGE_KEY = "zenmind-desktop.assistant-dock-mode";
-const EXPANDED_SIDEBAR_WIDTH = 160;
-const COLLAPSED_SIDEBAR_WIDTH = 96;
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -61,7 +59,7 @@ const WINDOW_DRAG_EXCLUDED_SELECTOR = [
   "[role='menuitem']",
   "[role='separator']",
   "[contenteditable='true']",
-  ".app-sidebar-resizer",
+  ".app-sidebar-collapse-button",
   ".assistant-dock-root",
   ".assistant-dock-fab",
   ".assistant-dock-outside-dismiss",
@@ -579,9 +577,6 @@ function AppShell() {
     return true;
   }
 
-  const sidebarWidth = sidebarState.collapsed
-    ? COLLAPSED_SIDEBAR_WIDTH
-    : EXPANDED_SIDEBAR_WIDTH;
   const experimentalItemMap = new Map(EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => [item.id, item]));
   const customSidebarItemMap = new Map(customSidebarItems.map((item) => [item.id, item]));
 
@@ -596,10 +591,10 @@ function AppShell() {
         assistantDockOpen ? `has-assistant-dock-${assistantDockMode}` : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
-        isMac && sidebarTranslucencyEnabled ? "is-mac-translucent-sidebar" : ""
+        isMac && sidebarTranslucencyEnabled ? "is-mac-translucent-sidebar" : "",
+        sidebarState.collapsed ? "is-sidebar-collapsed" : "is-sidebar-expanded"
       ].filter(Boolean).join(" ")}
       onPointerDownCapture={handleDesktopWindowPointerDown}
-      style={{ "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
     >
       <div className="app-window-drag-region" aria-hidden="true" />
       <div
@@ -607,7 +602,6 @@ function AppShell() {
           "app-sidebar-shell",
           sidebarState.collapsed ? "is-collapsed" : ""
         ].filter(Boolean).join(" ")}
-        style={{ "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
         <div className="app-sidebar-drag-region" aria-hidden="true" />
         <AppSidebar
@@ -623,11 +617,11 @@ function AppShell() {
         />
         <button
           type="button"
-          className="app-sidebar-resizer"
+          className="app-sidebar-collapse-button"
           aria-label={sidebarState.collapsed ? "展开侧边栏" : "收起侧边栏"}
           onClick={toggleSidebarCollapsed}
         >
-          <span className="app-sidebar-resizer-grip" aria-hidden="true" />
+          <span className="app-sidebar-collapse-button-icon" aria-hidden="true" />
         </button>
       </div>
       <div className="app-content">

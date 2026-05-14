@@ -1801,6 +1801,7 @@ body.quick-assistant-body,
 /* ── App Shell ── */
 
 .app-shell {
+  --app-sidebar-width: 160px;
   position: relative;
   height: 100%;
   min-height: 0;
@@ -1815,6 +1816,14 @@ body.quick-assistant-body,
   box-shadow: none;
   backdrop-filter: blur(32px) saturate(155%);
   -webkit-backdrop-filter: blur(32px) saturate(155%);
+}
+
+.app-shell.is-sidebar-expanded {
+  --app-sidebar-width: 160px;
+}
+
+.app-shell.is-sidebar-collapsed {
+  --app-sidebar-width: 66px;
 }
 
 .app-shell.has-embedded-surface {
@@ -5023,9 +5032,9 @@ body.quick-assistant-body,
 .sidebar-link {
   display: flex;
   align-items: center;
-  gap: 14px;
-  min-height: 48px;
-  padding: 0 14px;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 4px;
   border: 1px solid transparent;
   border-radius: 8px;
   appearance: none;
@@ -5071,8 +5080,8 @@ body.quick-assistant-body,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   flex: none;
 }
 
@@ -5098,7 +5107,7 @@ body.quick-assistant-body,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 19px;
+  font-size: 13px;
   line-height: 1.2;
   font-weight: 500;
 }
@@ -5130,7 +5139,7 @@ body.quick-assistant-body,
 }
 
 .sidebar-link-utility {
-  min-height: 48px;
+  min-height: 36px;
 }
 
 :root[data-theme="dark"] .sidebar-link {
@@ -5145,7 +5154,7 @@ body.quick-assistant-body,
 .app-sidebar:not(.is-collapsed) .sidebar-link-utility {
   margin-left: 4px;
   margin-right: 4px;
-  padding: 0 10px;
+  padding: 0 4px;
   border-radius: 8px;
 }
 
@@ -5153,13 +5162,13 @@ body.quick-assistant-body,
   justify-content: flex-start;
   margin-left: 4px;
   margin-right: 4px;
-  padding: 0 10px;
+  padding: 0 4px;
 }
 
 /* ── Sidebar Collapsed ── */
 
 .app-sidebar.is-collapsed {
-  padding: 56px 0 8px;
+  padding: 40px 0 8px;
 }
 
 .app-sidebar.is-collapsed .app-sidebar-top {
@@ -5189,25 +5198,25 @@ body.quick-assistant-body,
 
 .app-sidebar.is-collapsed .sidebar-nav {
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   margin: 0;
-  padding: 0;
+  padding: 0 4px;
 }
 
 .app-sidebar.is-collapsed .sidebar-link {
-  width: 88px;
-  min-height: 74px;
+  width: 56px;
+  min-height: 56px;
   padding: 0;
   flex-direction: column;
   justify-content: center;
   margin: 0 auto;
-  gap: 6px;
+  gap: 4px;
   border-radius: 8px;
 }
 
 .app-sidebar.is-collapsed .sidebar-link-icon {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
 }
 
 .app-sidebar.is-collapsed .sidebar-link-label {
@@ -5224,12 +5233,12 @@ body.quick-assistant-body,
 
 .app-sidebar.is-collapsed .sidebar-link-label-collapsed {
   display: block;
-  width: 72px;
+  width: 58px;
   overflow: hidden;
   color: currentColor;
-  font-size: 13px;
+  font-size: 10px;
   line-height: 1.2;
-  font-weight: 600;
+  font-weight: 500;
   text-align: center;
   text-overflow: clip;
   white-space: nowrap;
@@ -5245,12 +5254,12 @@ body.quick-assistant-body,
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 .app-sidebar.is-collapsed .sidebar-link-utility {
-  width: 88px;
-  min-height: 74px;
+  width: 56px;
+  min-height: 56px;
   padding: 0;
   justify-content: center;
   margin: 0 auto;
@@ -5406,64 +5415,82 @@ body.quick-assistant-body,
   display: none;
 }
 
-/* ── Sidebar Resizer ── */
+/* ── Sidebar Collapse Button ── */
 
-.app-sidebar-resizer {
+.app-sidebar-collapse-button {
   position: absolute;
-  top: 50%;
-  right: -4px;
-  width: 10px;
-  height: 240px;
+  top: 10px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border: 0;
-  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.42);
+  color: var(--ink-muted);
   cursor: pointer;
   z-index: 20;
   touch-action: manipulation;
-  transform: translateY(-50%);
+  transition:
+    background-color 0.2s ease-in-out,
+    border-color 0.2s ease-in-out,
+    color 0.2s ease-in-out;
 }
 
-.app-sidebar-resizer::before {
+.app-sidebar-collapse-button:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+.app-sidebar-shell.is-collapsed .app-sidebar-collapse-button {
+  right: 50%;
+  transform: translateX(50%);
+}
+
+.app-sidebar-collapse-button-icon {
+  position: relative;
+  width: 12px;
+  height: 12px;
+}
+
+.app-sidebar-collapse-button-icon::before,
+.app-sidebar-collapse-button-icon::after {
   content: "";
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 4px;
-  width: 1px;
-  background: transparent;
-}
-
-.app-sidebar-resizer:hover::before {
-  background: var(--accent);
-}
-
-:root[data-theme="dark"] .app-sidebar-resizer::before {
-  background: transparent;
-}
-
-:root[data-theme="dark"] .app-sidebar-resizer:hover::before {
-  background: var(--accent);
-}
-
-.app-sidebar-resizer-grip {
-  position: absolute;
   top: 50%;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+}
+
+.app-sidebar-collapse-button-icon::before {
   left: 2px;
-  width: 4px;
-  height: 44px;
-  border-radius: 999px;
-  transform: translateY(-50%);
-  background: var(--line-strong);
-  opacity: 0;
-  transition: opacity 0.2s ease-in-out, background-color 0.2s ease-in-out;
+  transform: translateY(-50%) rotate(-45deg);
 }
 
-.app-sidebar-resizer:hover .app-sidebar-resizer-grip {
-  opacity: 1;
+.app-sidebar-collapse-button-icon::after {
+  right: 2px;
+  transform: translateY(-50%) rotate(-45deg);
 }
 
-:root[data-theme="dark"] .app-sidebar-resizer-grip {
-  background: rgba(255, 255, 255, 0.1);
+.app-sidebar-shell.is-collapsed .app-sidebar-collapse-button-icon::before,
+.app-sidebar-shell.is-collapsed .app-sidebar-collapse-button-icon::after {
+  transform: translateY(-50%) rotate(135deg);
+}
+
+:root[data-theme="dark"] .app-sidebar-collapse-button {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink-muted);
+}
+
+:root[data-theme="dark"] .app-sidebar-collapse-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 /* ── 窗口拖拽区域（macOS hiddenInset 标题栏） ── */
@@ -9352,7 +9379,7 @@ code {
     border-bottom: 1px solid var(--line);
   }
 
-  .app-sidebar-resizer {
+  .app-sidebar-collapse-button {
     display: none;
   }
 
