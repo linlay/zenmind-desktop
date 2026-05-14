@@ -70,15 +70,20 @@ test("assistant dock exposes agent selection and sends agentKey to platform runs
     /assistant-dock-toolbar[\s\S]*?assistant-dock-toolbar-close[\s\S]*?assistant-dock-agent-select-wrap[\s\S]*?assistant-dock-new-chat-pill[\s\S]*?assistant-dock-history-toggle[\s\S]*?assistant-dock-toolbar-mode/
   );
   assert.doesNotMatch(assistantDock, /assistant-dock-compact-topbar[\s\S]*?onClick=\{startNewChat\}/);
+  assert.match(assistantDock, /className="assistant-dock-agent-select-wrap"[\s\S]*?<AgentSelectIcon \/>/);
+  assert.match(assistantDock, /assistant-dock-new-chat-pill[\s\S]*?<NewChatIcon \/>/);
+  assert.match(assistantDock, /assistant-dock-history-toggle[\s\S]*?<HistoryIcon \/>[\s\S]*?assistant-dock-history-count/);
+  assert.doesNotMatch(assistantDock, /<span>历史记录<\/span>/);
   assert.match(assistantDock, /className="assistant-dock-agent-select"/);
   assert.match(assistantDock, /agentKey: selectedAgentKey/);
   assert.match(
     globalStyles,
     /\.assistant-dock-toolbar\s*\{[\s\S]*?flex-wrap:\s*nowrap;/
   );
-  assert.match(globalStyles, /\.assistant-dock-toolbar \.assistant-dock-icon-button\s*\{[\s\S]*?flex:\s*0 0 48px;[\s\S]*?width:\s*48px;[\s\S]*?height:\s*48px;/);
-  assert.match(globalStyles, /\.assistant-dock-agent-select-wrap\s*\{[\s\S]*?flex:\s*1 1 148px;[\s\S]*?overflow:\s*hidden;/);
-  assert.match(globalStyles, /\.assistant-dock-toolbar \.assistant-dock-history-toggle\s*\{[\s\S]*?flex:\s*1 1 132px;/);
+  assert.match(globalStyles, /\.assistant-dock-toolbar \.assistant-dock-icon-button,[\s\S]*?\.assistant-dock-agent-select-wrap\s*\{[\s\S]*?flex:\s*0 0 36px;[\s\S]*?width:\s*36px;[\s\S]*?height:\s*36px;/);
+  assert.match(globalStyles, /\.assistant-dock-agent-select-wrap\s*\{[\s\S]*?max-width:\s*36px;[\s\S]*?overflow:\s*hidden;/);
+  assert.match(globalStyles, /\.assistant-dock-toolbar \.assistant-dock-history-toggle\s*\{[\s\S]*?max-width:\s*36px;[\s\S]*?font-size:\s*0;/);
+  assert.match(globalStyles, /\.assistant-dock-history-count\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?font-size:\s*10px;/);
   assert.match(globalStyles, /\.assistant-dock-agent-select-wrap\s*\{/);
   assert.match(globalStyles, /\.assistant-dock-agent-select\s*\{/);
 });

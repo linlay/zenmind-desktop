@@ -839,6 +839,17 @@ function NewChatIcon() {
   );
 }
 
+function AgentSelectIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+      <path d="M12 4a4 4 0 0 1 4 4v1h1.5A2.5 2.5 0 0 1 20 11.5v4A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-4A2.5 2.5 0 0 1 6.5 9H8V8a4 4 0 0 1 4-4Z" />
+      <path d="M9 13h.01" />
+      <path d="M15 13h.01" />
+      <path d="M10 16h4" />
+    </svg>
+  );
+}
+
 function HistoryIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
@@ -2314,6 +2325,9 @@ export function AssistantDock({
   }
 
   function renderDockToolbar() {
+    const activeChat = activeChatId
+      ? chats.find((chat) => chat.id === activeChatId) ?? null
+      : null;
     const query = normalizeChatText(chatHistoryQuery).toLocaleLowerCase();
     const matchesQuery = (chat: AssistantChatSummary) => {
       if (!query) {
@@ -2325,6 +2339,14 @@ export function AssistantDock({
     const visibleCurrentChat = activeChat && matchesQuery(activeChat) ? activeChat : null;
     const visibleHistoryChats = visibleChats.filter((chat) => chat.id !== activeChatId);
     const hasVisibleChats = Boolean(visibleCurrentChat || visibleHistoryChats.length > 0);
+    const selectedAgent = selectedAgentKey
+      ? agentOptions.find((agent) => agent.agentKey === selectedAgentKey) ?? null
+      : null;
+    const selectedAgentTitle = selectedAgent
+      ? `${selectedAgent.displayName}${selectedAgent.role ? ` · ${selectedAgent.role}` : ""}`
+      : agentOptionsLoading
+        ? "正在加载智能体"
+        : "选择智能体";
 
     const renderHistoryRow = (chat: AssistantChatSummary, isActive: boolean) => {
       const title = getChatDisplayTitle(chat, "未命名对话");
@@ -2374,19 +2396,20 @@ export function AssistantDock({
         >
           <CloseIcon />
         </button>
-        <label className="assistant-dock-agent-select-wrap">
-          <span className="assistant-dock-agent-select-label">智能体</span>
+        <label
+          className="assistant-dock-agent-select-wrap"
+          aria-label={selectedAgentTitle}
+          title={selectedAgentTitle}
+        >
+          <AgentSelectIcon />
+          <span className="assistant-dock-agent-select-label">{selectedAgentTitle}</span>
           <select
             className="assistant-dock-agent-select"
             value={selectedAgentKey}
             onChange={(event) => setSelectedAgentKey(event.target.value)}
             disabled={Boolean(runningRunId || agentOptionsLoading || agentOptions.length === 0)}
             aria-label="选择智能体"
-            title={
-              selectedAgentKey
-                ? agentOptions.find((agent) => agent.agentKey === selectedAgentKey)?.displayName || selectedAgentKey
-                : "选择智能体"
-            }
+            title={selectedAgentTitle}
           >
             {agentOptions.length === 0 ? (
               <option value="">{agentOptionsLoading ? "加载中..." : "暂无智能体"}</option>
@@ -2404,24 +2427,26 @@ export function AssistantDock({
           className={!activeChatId ? "assistant-dock-chat-pill assistant-dock-new-chat-pill is-active" : "assistant-dock-chat-pill assistant-dock-new-chat-pill"}
           onClick={startNewChat}
           disabled={Boolean(runningRunId)}
+          aria-label="新对话"
+          title="新对话"
         >
-          新对话
+          <NewChatIcon />
         </button>
         <button
           type="button"
           className={[
             "assistant-dock-chat-pill",
             "assistant-dock-history-toggle",
-            activeChatId ? "assistant-dock-current-chat" : "",
             chatHistoryOpen ? "is-open" : ""
           ].filter(Boolean).join(" ")}
           onClick={() => setChatHistoryOpen((current) => !current)}
           disabled={Boolean(runningRunId || chats.length === 0)}
           aria-haspopup="dialog"
           aria-expanded={chatHistoryOpen}
+          aria-label={`历史记录：${chats.length} 条`}
+          title="历史记录"
         >
           <HistoryIcon />
-          <span>历史记录</span>
           <span className="assistant-dock-history-count">{chats.length}</span>
         </button>
         <button
