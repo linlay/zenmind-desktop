@@ -237,8 +237,8 @@ function upsertInstalledRecord(app: App, record: InstalledRecord) {
   writeInstalledRecords(app, records);
 }
 
-function removeInstalledRecord(app: App, itemId: string) {
-  const records = readInstalledRecords(app).filter((item) => item.id !== itemId);
+function removeInstalledRecord(app: App, itemId: string, type?: MarketItemType) {
+  const records = readInstalledRecords(app).filter((item) => !(item.id === itemId && (!type || item.type === type)));
   writeInstalledRecords(app, records);
 }
 
@@ -487,11 +487,10 @@ function listLocalPlugins(app: App): MarketItem[] {
 }
 
 export async function refreshMarketCatalog(app: App, options: MarketplaceOptions = {}): Promise<MarketListResult> {
-  const catalogUrl = options.catalogUrl ?? DEFAULT_MARKETPLACE_CATALOG_URL;
-  const { catalog, offline, message } = await loadCatalog(app, options);
+  const { catalog, offline, message, sourceUrl } = await loadMarketplaceCatalog(app, options);
   return {
     ok: true,
-    sourceUrl: catalogUrl,
+    sourceUrl,
     offline,
     message,
     items: mergeMarketItems(app, catalog)
@@ -564,7 +563,7 @@ function findCatalogItem(catalog: Catalog, itemId: string) {
 }
 
 export async function installMarketItem(app: App, itemId: string, options: MarketplaceOptions = {}): Promise<MarketCommandResult> {
-  const { catalog } = await loadCatalog(app, options);
+  const { catalog } = await loadMarketplaceCatalog(app, options);
   const item = findCatalogItem(catalog, itemId);
   const selected = selectAsset(item);
   if (!selected) {
@@ -576,7 +575,14 @@ export async function installMarketItem(app: App, itemId: string, options: Marke
       const result = await installSkillFromPath(app, archivePath, {
         source: "cloud",
         expectedId: item.id,
-        expectedVersion: item.version
+        expectedVersion: item.version,
+        metadata: {
+          id: item.id,
+          name: item.name,
+          version: item.version,
+          description: item.description,
+          tags: item.tags
+        }
       });
       upsertInstalledRecord(app, {
         id: item.id,
@@ -645,7 +651,7 @@ export async function importSkillFromPath(app: App, sourcePath: string): Promise
 export async function uninstallMarketItem(app: App, itemId: string, options: MarketplaceOptions = {}): Promise<MarketCommandResult> {
   const records = readInstalledRecords(app);
   const record = records.find((entry) => entry.id === itemId);
-  const { catalog } = await loadCatalog(app, options);
+  const { catalog } = await loadMarketplaceCatalog(app, options);
   const catalogItem = catalog.items.find((entry) => entry.id === itemId);
   const type = record?.type ?? catalogItem?.type ?? "skill";
   let result: MarketCommandResult;
@@ -663,13 +669,14 @@ export async function uninstallMarketItem(app: App, itemId: string, options: Mar
     result = await uninstallSkill(app, itemId);
   }
   if (result.ok) {
-    removeInstalledRecord(app, itemId);
+    removeInstalledRecord(app, itemId, type);
   }
   return result;
 }
 
 export const __testInternals = {
   normalizeCatalog,
+  normalizeSkillsApiBaseUrl,
   selectAsset,
   readInstalledRecords
 };

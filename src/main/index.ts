@@ -52,10 +52,12 @@ import {
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
+  getMarketSettings,
   importSkillFromPath,
   installMarketItem,
   listMarketItems,
   refreshMarketCatalog,
+  saveMarketSettings,
   uninstallMarketItem,
   updateMarketItem
 } from "./marketplace";
@@ -3631,6 +3633,8 @@ function registerIpcHandlers() {
   ipcMain.handle("plugins.uninstall", async (_event, serviceId: ServiceId) => {
     return runServiceMutation(() => handlePluginUninstall(app, serviceId, mainWindow));
   });
+  ipcMain.handle("market.getSettings", async () => getMarketSettings(app));
+  ipcMain.handle("market.saveSettings", async (_event, input) => saveMarketSettings(app, input));
   ipcMain.handle("market.list", async () => listMarketItems(app));
   ipcMain.handle("market.refresh", async () => refreshMarketCatalog(app));
   ipcMain.handle("market.install", async (_event, itemId: string) => runServiceMutation(async () => {

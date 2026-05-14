@@ -19,6 +19,7 @@ type SkillInstallOptions = {
   source?: "cloud" | "local";
   expectedId?: string;
   expectedVersion?: string;
+  metadata?: Partial<SkillMetadata>;
 };
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -184,6 +185,40 @@ function getSingleTopLevelDir(root: string) {
   return path.join(root, entries[0].name);
 }
 
+function getPreparedSkillDir(root: string, fallbackId: string) {
+  if (fs.existsSync(path.join(root, "SKILL.md"))) {
+    const preparedDir = path.join(root, fallbackId);
+    fs.mkdirSync(preparedDir, { recursive: true });
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (entry.name === fallbackId || entry.name.startsWith("__MACOSX")) {
+        continue;
+      }
+      fs.renameSync(path.join(root, entry.name), path.join(preparedDir, entry.name));
+    }
+    return preparedDir;
+  }
+  return getSingleTopLevelDir(root);
+}
+
+function writeSkillMetadataIfMissing(skillDir: string, fallback: Partial<SkillMetadata>) {
+  const skillJsonPath = path.join(skillDir, "skill.json");
+  if (fs.existsSync(skillJsonPath)) {
+    return;
+  }
+  const fallbackId = slugify(fallback.id || path.basename(skillDir));
+  fs.writeFileSync(
+    skillJsonPath,
+    `${JSON.stringify({
+      id: fallbackId,
+      name: fallback.name || fallbackId,
+      version: fallback.version || "0.0.0",
+      description: fallback.description || "",
+      tags: fallback.tags || []
+    }, null, 2)}\n`,
+    "utf8"
+  );
+}
+
 function preserveBackup(targetDir: string) {
   if (!fs.existsSync(targetDir)) {
     return "";
@@ -245,10 +280,17 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
     } else {
       ensureSafeArchiveEntries(sourcePath);
       extractArchiveToDir(sourcePath, tempRoot);
-      preparedDir = getSingleTopLevelDir(tempRoot);
+      preparedDir = getPreparedSkillDir(tempRoot, slugify(options.metadata?.id || options.expectedId || path.basename(sourcePath)));
       if (!fs.existsSync(path.join(preparedDir, "SKILL.md"))) {
         throw new Error("Skill 包缺少 SKILL.md");
       }
+      writeSkillMetadataIfMissing(preparedDir, {
+        id: options.metadata?.id ?? options.expectedId,
+        name: options.metadata?.name,
+        version: options.metadata?.version ?? options.expectedVersion,
+        description: options.metadata?.description,
+        tags: options.metadata?.tags
+      });
     }
 
     const metadata = readSkillMetadata(preparedDir);

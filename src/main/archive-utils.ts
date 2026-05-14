@@ -18,9 +18,6 @@ function ensureSupportedArchive(archivePath: string) {
   }
 
   if (isTarArchive(archivePath)) {
-    if (process.platform === "win32") {
-      throw new Error(`tar.gz archives are not supported on Windows: ${archivePath}`);
-    }
     return "tar" as const;
   }
 
@@ -32,6 +29,16 @@ function quotePowerShell(value: string) {
 }
 
 const SYNC_TIMEOUT_MS = 300_000;
+
+function tarCommand() {
+  if (process.platform === "win32") {
+    return "tar.exe";
+  }
+  if (process.platform === "darwin") {
+    return "tar";
+  }
+  return "tar";
+}
 
 function runPowerShell(script: string) {
   return execFileSync(
@@ -79,7 +86,7 @@ try {
     );
   }
 
-  const output = execFileSync("tar", ["-tzf", archivePath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS });
+  const output = execFileSync(tarCommand(), ["-tzf", archivePath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS });
 
   return new Set(
     output
@@ -101,7 +108,7 @@ if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Recurse -For
     return;
   }
 
-  execFileSync("tar", ["-xzf", archivePath, "-C", targetDir], { timeout: SYNC_TIMEOUT_MS });
+  execFileSync(tarCommand(), ["-xzf", archivePath, "-C", targetDir], { timeout: SYNC_TIMEOUT_MS });
 }
 
 export function readFileFromArchive(archivePath: string, entryPath: string) {
@@ -135,5 +142,5 @@ try {
 `);
   }
 
-  return execFileSync("tar", ["-xzf", archivePath, "-O", entryPath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS });
+  return execFileSync(tarCommand(), ["-xzf", archivePath, "-O", entryPath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS });
 }

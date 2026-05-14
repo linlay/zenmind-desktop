@@ -4,6 +4,7 @@ import type {
   MarketItem,
   MarketInstallState,
   MarketListResult,
+  MarketSettings,
   ServiceState
 } from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
@@ -18,6 +19,7 @@ type PluginApi = DesktopApi["plugins"];
 
 const MARKET_API_UNAVAILABLE_MESSAGE = "市场功能已更新，请刷新窗口或重启 Desktop 后再试。";
 const PLUGIN_API_UNAVAILABLE_MESSAGE = "插件导入功能已更新，请刷新窗口或重启 Desktop 后再试。";
+const DEFAULT_SKILLS_API_BASE_URL = "http://127.0.0.1:8080";
 
 function getMarketApi(): Partial<MarketApi> | null {
   return ((window.electronAPI as Partial<DesktopApi> | undefined)?.market ?? null) as Partial<MarketApi> | null;
@@ -118,6 +120,25 @@ function createEmptyMarketResult(): MarketListResult {
   };
 }
 
+function normalizeError(reason: unknown) {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
+function isValidSkillsApiBaseUrl(value: string) {
+  try {
+    const parsed = new URL(value.trim());
+    const pathname = parsed.pathname.replace(/\/+$/u, "") || "/";
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      !parsed.search &&
+      !parsed.hash &&
+      (pathname === "/" || pathname === "/api/v1")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function PluginMarketPage() {
   const navigate = useNavigate();
   const { services, refresh: refreshServices } = useServices();
@@ -130,6 +151,12 @@ export function PluginMarketPage() {
   const [busyItemId, setBusyItemId] = useState("");
   const [isImportingPlugin, setIsImportingPlugin] = useState(false);
   const [isImportingSkill, setIsImportingSkill] = useState(false);
+  const [marketSettings, setMarketSettings] = useState<MarketSettings>({
+    skillsApiBaseUrl: DEFAULT_SKILLS_API_BASE_URL
+  });
+  const [skillsApiDraft, setSkillsApiDraft] = useState(DEFAULT_SKILLS_API_BASE_URL);
+  const [isSavingSkillsApi, setIsSavingSkillsApi] = useState(false);
+  const [marketFeedback, setMarketFeedback] = useState("");
 
   const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services]);
 
@@ -143,14 +170,31 @@ export function PluginMarketPage() {
       }
       const next = await command();
       setMarketResult(next);
+      setMarketFeedback(next.offline ? next.message : "");
     } catch (reason) {
       console.warn("[market-page] failed to load market data", reason);
+      setMarketFeedback(normalizeError(reason));
     } finally {
       setIsLoadingMarket(false);
     }
   }
 
   useEffect(() => {
+    async function loadSettings() {
+      try {
+        const getSettings = getMarketMethod("getSettings");
+        if (!getSettings) {
+          throw createMissingMarketApiError("getSettings");
+        }
+        const next = await getSettings();
+        setMarketSettings(next);
+        setSkillsApiDraft(next.skillsApiBaseUrl);
+      } catch (reason) {
+        console.warn("[market-page] failed to load market settings", reason);
+        setMarketFeedback(normalizeError(reason));
+      }
+    }
+    void loadSettings();
     void loadMarket(false);
   }, []);
 
@@ -200,6 +244,31 @@ export function PluginMarketPage() {
       console.warn("[market-page] failed to import skill", reason);
     } finally {
       setIsImportingSkill(false);
+    }
+  }
+
+  async function handleSaveSkillsApiBaseUrl() {
+    const nextUrl = skillsApiDraft.trim();
+    if (!isValidSkillsApiBaseUrl(nextUrl)) {
+      setMarketFeedback("技能市场地址请输入 http/https 服务根地址，或以 /api/v1 结尾。");
+      return;
+    }
+    setIsSavingSkillsApi(true);
+    try {
+      const saveSettings = getMarketMethod("saveSettings");
+      if (!saveSettings) {
+        throw createMissingMarketApiError("saveSettings");
+      }
+      const next = await saveSettings({ skillsApiBaseUrl: nextUrl });
+      setMarketSettings(next);
+      setSkillsApiDraft(next.skillsApiBaseUrl);
+      setMarketFeedback("技能市场地址已保存。");
+      await loadMarket(true);
+    } catch (reason) {
+      console.warn("[market-page] failed to save market settings", reason);
+      setMarketFeedback(normalizeError(reason));
+    } finally {
+      setIsSavingSkillsApi(false);
     }
   }
 
@@ -340,6 +409,16 @@ export function PluginMarketPage() {
           </div>
 
           <div className="market-toolbar">
+            {activeTab === "skills" ? (
+              <label className="market-api-config">
+                <span>技能 API</span>
+                <input
+                  value={skillsApiDraft}
+                  onChange={(event) => setSkillsApiDraft(event.target.value)}
+                  placeholder={DEFAULT_SKILLS_API_BASE_URL}
+                />
+              </label>
+            ) : null}
             <button type="button" className="market-toolbar-btn" onClick={() => void loadMarket(true)}>
               {isLoadingMarket ? "刷新中" : "刷新市场"}
             </button>
@@ -353,14 +432,24 @@ export function PluginMarketPage() {
                 {isImportingPlugin ? "导入中" : "导入插件"}
               </button>
             ) : (
-              <button
-                type="button"
-                className="market-toolbar-btn market-toolbar-btn-primary"
-                onClick={() => void handleImportSkill()}
-                disabled={isImportingSkill}
-              >
-                {isImportingSkill ? "导入中" : "本地导入"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="market-toolbar-btn"
+                  onClick={() => void handleSaveSkillsApiBaseUrl()}
+                  disabled={isSavingSkillsApi || skillsApiDraft.trim() === marketSettings.skillsApiBaseUrl}
+                >
+                  {isSavingSkillsApi ? "保存中" : "保存地址"}
+                </button>
+                <button
+                  type="button"
+                  className="market-toolbar-btn market-toolbar-btn-primary"
+                  onClick={() => void handleImportSkill()}
+                  disabled={isImportingSkill}
+                >
+                  {isImportingSkill ? "导入中" : "本地导入"}
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -425,6 +514,11 @@ export function PluginMarketPage() {
             </div>
           ) : (
             <div className="market-content">
+              {marketFeedback ? (
+                <div className={marketResult.offline ? "market-status is-warning" : "market-status"}>
+                  {marketFeedback}
+                </div>
+              ) : null}
               <div className="market-filter-bar">
                 <label className="market-search">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -468,7 +562,7 @@ export function PluginMarketPage() {
                   <div>
                     <p className="eyebrow">云端下载</p>
                     <h2>从云端技能库下载</h2>
-                    <p>{marketResult.sourceUrl || "http://47.100.131.144:9001/marketplace/index.json"}</p>
+                    <p>{marketResult.sourceUrl || marketSettings.skillsApiBaseUrl}</p>
                   </div>
                   <button type="button" className="market-toolbar-btn" onClick={() => setSkillScope("云端")}>
                     浏览云端

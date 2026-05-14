@@ -29,7 +29,7 @@ function createApp(root) {
 function createSkillArchive(root, options = {}) {
   const skillId = options.id ?? "demo-skill";
   const fixtureRoot = path.join(root, `fixture-${skillId}`);
-  const skillRoot = path.join(fixtureRoot, skillId);
+  const skillRoot = options.rootLevel ? fixtureRoot : path.join(fixtureRoot, skillId);
   const archivePath = path.join(root, `${skillId}.tar.gz`);
   fs.mkdirSync(skillRoot, { recursive: true });
   if (options.withSkillMd !== false) {
@@ -48,7 +48,7 @@ function createSkillArchive(root, options = {}) {
       "utf8"
     );
   }
-  execFileSync("tar", ["-czf", archivePath, "-C", fixtureRoot, skillId]);
+  execFileSync("tar", ["-czf", archivePath, "-C", fixtureRoot, ...(options.rootLevel ? ["SKILL.md"] : [skillId])]);
   return archivePath;
 }
 
@@ -85,6 +85,34 @@ test("installSkillFromPath imports an archive with SKILL.md and skill.json metad
   assert.equal(installed?.name, "Archive Skill");
   assert.equal(installed?.version, "1.0.0");
   assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "archive-skill"), "SKILL.md")), true);
+});
+
+test("installSkillFromPath imports a root-level SKILL.md archive with provided metadata", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-skill-root-"));
+  const app = createApp(root);
+  const archivePath = createSkillArchive(root, { id: "root-skill", rootLevel: true, skillJson: false });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const result = await installSkillFromPath(app, archivePath, {
+    expectedId: "root-skill",
+    expectedVersion: "2.0.0",
+    metadata: {
+      id: "root-skill",
+      name: "Root Skill",
+      version: "2.0.0",
+      description: "Root-level archive skill",
+      tags: ["root"]
+    }
+  });
+  const installDir = getSkillInstallDir(app, "root-skill");
+  const metadata = JSON.parse(fs.readFileSync(path.join(installDir, "skill.json"), "utf8"));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.itemId, "root-skill");
+  assert.equal(metadata.name, "Root Skill");
+  assert.equal(metadata.version, "2.0.0");
+  assert.deepEqual(metadata.tags, ["root"]);
+  assert.equal(fs.existsSync(path.join(installDir, "SKILL.md")), true);
 });
 
 test("installSkillFromPath rejects skill archives that do not contain SKILL.md", async (t) => {

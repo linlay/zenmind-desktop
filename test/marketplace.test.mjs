@@ -11,9 +11,12 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   DEFAULT_MARKETPLACE_CATALOG_URL,
+  DEFAULT_SKILLS_API_BASE_URL,
+  getMarketSettings,
   installMarketItem,
   listMarketItems,
   refreshMarketCatalog,
+  saveMarketSettings,
   uninstallMarketItem
 } = require("../dist-electron/main/marketplace.js");
 const { getPluginInstallDir } = require("../dist-electron/main/plugin-loader.js");
@@ -90,10 +93,33 @@ function writeSkillArchive(root, options = {}) {
   return archivePath;
 }
 
+function writeRootSkillArchive(root, options = {}) {
+  const skillId = options.id ?? "root-skill";
+  const fixtureRoot = path.join(root, `fixture-${skillId}`);
+  const archivePath = path.join(root, `${skillId}.tar.gz`);
+  fs.mkdirSync(fixtureRoot, { recursive: true });
+  fs.writeFileSync(path.join(fixtureRoot, "SKILL.md"), `# ${skillId}\n\nRoot skill.\n`, "utf8");
+  execFileSync("tar", ["-czf", archivePath, "-C", fixtureRoot, "SKILL.md"]);
+  return archivePath;
+}
+
+function skillsEnvelope(items, pagination = {}) {
+  return JSON.stringify({
+    success: true,
+    data: items,
+    pagination: {
+      page: pagination.page ?? 1,
+      limit: pagination.limit ?? items.length,
+      total: pagination.total ?? items.length
+    }
+  });
+}
+
 async function withFixtureServer(files, fn) {
   const server = http.createServer((req, res) => {
-    const requestPath = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
-    const file = files.get(requestPath);
+    const requestUrl = new URL(req.url ?? "/", "http://127.0.0.1");
+    const requestPath = requestUrl.pathname;
+    const file = files.get(`${requestPath}${requestUrl.search}`) ?? files.get(requestPath);
     if (!file) {
       res.statusCode = 404;
       res.end("not found");
@@ -117,48 +143,88 @@ async function withFixtureServer(files, fn) {
 
 test("DEFAULT_MARKETPLACE_CATALOG_URL points at the RustFS marketplace catalog", () => {
   assert.equal(DEFAULT_MARKETPLACE_CATALOG_URL, "http://47.100.131.144:9001/marketplace/index.json");
+  assert.equal(DEFAULT_SKILLS_API_BASE_URL, "http://127.0.0.1:8080");
 });
 
-test("refreshMarketCatalog reads a remote catalog and listMarketItems returns install states", async (t) => {
+test("refreshMarketCatalog combines catalog plugins with Skills API skills", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-list-"));
   const app = createApp(root);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  await withFixtureServer(new Map(), async (baseUrl) => {
+  await withFixtureServer(new Map([[
+    "/api/v1/skills?page=1&limit=100",
+    skillsEnvelope([
+      {
+        id: 1,
+        name: "remote-skill",
+        display_name: "Remote Skill",
+        description: "Remote skill",
+        latest_version: "1.0.0",
+        tags: ["remote"],
+        status: "active"
+      }
+    ])
+  ]]), async (skillsBaseUrl) => {
     const catalog = JSON.stringify({
       schemaVersion: 1,
       items: [
         {
-          id: "remote-skill",
+          id: "old-catalog-skill",
           type: "skill",
-          name: "Remote Skill",
+          name: "Old Catalog Skill",
           version: "1.0.0",
-          description: "Remote skill",
-          tags: ["remote"],
-          assets: {
-            universal: {
-              url: `${baseUrl}/remote-skill.tar.gz`,
-              sha256: "0".repeat(64),
-              sizeBytes: 1,
-              archiveType: "tar.gz"
-            }
-          }
+          description: "Should be ignored",
+          tags: [],
+          assets: {}
+        },
+        {
+          id: "remote-plugin",
+          type: "plugin",
+          name: "Remote Plugin",
+          version: "1.0.0",
+          description: "Remote plugin",
+          tags: [],
+          assets: {}
         }
       ]
     });
     const files = new Map([["/marketplace/index.json", catalog]]);
     await withFixtureServer(files, async (catalogBaseUrl) => {
       const catalogUrl = `${catalogBaseUrl}/marketplace/index.json`;
-      const refreshed = await refreshMarketCatalog(app, { catalogUrl });
-      const listed = await listMarketItems(app, { catalogUrl });
+      const refreshed = await refreshMarketCatalog(app, { catalogUrl, skillsApiBaseUrl: skillsBaseUrl });
+      const listed = await listMarketItems(app, { catalogUrl, skillsApiBaseUrl: skillsBaseUrl });
 
       assert.equal(refreshed.ok, true);
       assert.equal(listed.ok, true);
-      assert.equal(listed.items.length, 1);
-      assert.equal(listed.items[0].id, "remote-skill");
-      assert.equal(listed.items[0].type, "skill");
-      assert.equal(listed.items[0].state, "not-installed");
+      assert.equal(listed.items.some((item) => item.id === "old-catalog-skill"), false);
+      assert.equal(listed.items.find((item) => item.id === "remote-skill")?.type, "skill");
+      assert.equal(listed.items.find((item) => item.id === "remote-skill")?.state, "not-installed");
+      assert.equal(listed.items.find((item) => item.id === "remote-plugin")?.type, "plugin");
     });
+  });
+});
+
+test("listMarketItems reads all Skills API pages", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-pages-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/api/v1/skills?page=1&limit=100", skillsEnvelope([
+      { name: "first-skill", display_name: "First Skill", description: "First", latest_version: "1.0.0" }
+    ], { page: 1, limit: 1, total: 2 })],
+    ["/api/v1/skills?page=2&limit=100", skillsEnvelope([
+      { name: "second-skill", display_name: "Second Skill", description: "Second", latest_version: "1.0.0" }
+    ], { page: 2, limit: 1, total: 2 })]
+  ]), async (skillsBaseUrl) => {
+    const result = await listMarketItems(app, {
+      catalog: { schemaVersion: 1, items: [] },
+      skillsApiBaseUrl: skillsBaseUrl
+    });
+
+    assert.equal(result.items.filter((item) => item.type === "skill").length, 2);
+    assert.ok(result.items.some((item) => item.id === "first-skill"));
+    assert.ok(result.items.some((item) => item.id === "second-skill"));
   });
 });
 
@@ -170,11 +236,11 @@ test("listMarketItems falls back to cached catalog when the remote catalog is un
     schemaVersion: 1,
     items: [
       {
-        id: "cached-skill",
-        type: "skill",
-        name: "Cached Skill",
+        id: "cached-plugin",
+        type: "plugin",
+        name: "Cached Plugin",
         version: "1.0.0",
-        description: "Cached skill",
+        description: "Cached plugin",
         tags: [],
         assets: {}
       }
@@ -182,51 +248,90 @@ test("listMarketItems falls back to cached catalog when the remote catalog is un
   });
 
   await withFixtureServer(new Map([["/marketplace/index.json", catalog]]), async (baseUrl) => {
-    await refreshMarketCatalog(app, { catalogUrl: `${baseUrl}/marketplace/index.json` });
+    await refreshMarketCatalog(app, {
+      catalogUrl: `${baseUrl}/marketplace/index.json`,
+      skillsApiBaseUrl: "http://127.0.0.1:1"
+    });
   });
 
-  const result = await listMarketItems(app, { catalogUrl: "http://127.0.0.1:1/missing.json" });
+  const result = await listMarketItems(app, {
+    catalogUrl: "http://127.0.0.1:1/missing.json",
+    skillsApiBaseUrl: "http://127.0.0.1:1"
+  });
   assert.equal(result.ok, true);
   assert.equal(result.offline, true);
-  assert.equal(result.items[0].id, "cached-skill");
+  assert.equal(result.items[0].id, "cached-plugin");
 });
 
-test("installMarketItem downloads and installs cloud skills", async (t) => {
+test("installMarketItem downloads and installs Skills API cloud skills", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-skill-install-"));
   const app = createApp(root);
-  const archivePath = writeSkillArchive(root, { id: "cloud-skill" });
+  const archivePath = writeRootSkillArchive(root, { id: "cloud-skill" });
   const archiveBytes = fs.readFileSync(archivePath);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  await withFixtureServer(new Map([["/cloud-skill.tar.gz", archiveBytes]]), async (baseUrl) => {
-    const catalog = {
-      schemaVersion: 1,
-      items: [
-        {
-          id: "cloud-skill",
-          type: "skill",
-          name: "Cloud Skill",
-          version: "1.0.0",
-          description: "Cloud skill",
-          tags: ["cloud"],
-          assets: {
-            universal: {
-              url: `${baseUrl}/cloud-skill.tar.gz`,
-              sha256: sha256(archivePath),
-              sizeBytes: archiveBytes.length,
-              archiveType: "tar.gz"
-            }
+  await withFixtureServer(new Map([
+    ["/api/v1/skills?page=1&limit=100", skillsEnvelope([
+      {
+        name: "cloud-skill",
+        display_name: "Cloud Skill",
+        description: "Cloud skill",
+        latest_version: "1.0.0",
+        tags: ["cloud"]
+      }
+    ])],
+    ["/api/v1/skills/cloud-skill/download?version=1.0.0", archiveBytes]
+  ]), async (skillsBaseUrl) => {
+    const result = await installMarketItem(app, "cloud-skill", {
+      catalog: {
+        schemaVersion: 1,
+        items: [
+          {
+            id: "catalog-plugin",
+            type: "plugin",
+            name: "Catalog Plugin",
+            version: "1.0.0",
+            description: "Catalog plugin",
+            tags: [],
+            assets: {}
           }
-        }
-      ]
-    };
-    const result = await installMarketItem(app, "cloud-skill", { catalog });
+        ]
+      },
+      skillsApiBaseUrl: skillsBaseUrl
+    });
 
     assert.equal(result.ok, true);
     assert.equal(result.type, "skill");
     assert.equal(result.state, "installed");
     assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "cloud-skill"), "SKILL.md")), true);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(getSkillInstallDir(app, "cloud-skill"), "skill.json"), "utf8")).name, "Cloud Skill");
     assert.equal(fs.existsSync(path.join(root, "home", ".codex", "skills")), false);
+  });
+});
+
+test("saved skillsApiBaseUrl is used by list and install", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-settings-"));
+  const app = createApp(root);
+  const archivePath = writeRootSkillArchive(root, { id: "saved-skill" });
+  const archiveBytes = fs.readFileSync(archivePath);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/api/v1/skills?page=1&limit=100", skillsEnvelope([
+      { name: "saved-skill", display_name: "Saved Skill", description: "Saved", latest_version: "1.0.0" }
+    ])],
+    ["/api/v1/skills/saved-skill/download?version=1.0.0", archiveBytes]
+  ]), async (skillsBaseUrl) => {
+    const settings = saveMarketSettings(app, { skillsApiBaseUrl: `${skillsBaseUrl}/api/v1` });
+    assert.equal(settings.skillsApiBaseUrl, `${skillsBaseUrl}/api/v1`);
+    assert.equal(getMarketSettings(app).skillsApiBaseUrl, `${skillsBaseUrl}/api/v1`);
+
+    const listed = await listMarketItems(app, { catalog: { schemaVersion: 1, items: [] } });
+    assert.equal(listed.items.find((item) => item.id === "saved-skill")?.name, "Saved Skill");
+
+    const result = await installMarketItem(app, "saved-skill", { catalog: { schemaVersion: 1, items: [] } });
+    assert.equal(result.ok, true);
+    assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "saved-skill"), "SKILL.md")), true);
   });
 });
 
@@ -265,7 +370,7 @@ test("installMarketItem downloads plugin archives but rejects builtin manifests"
     };
 
     await assert.rejects(
-      () => installMarketItem(app, "cloud-builtin", { catalog }),
+      () => installMarketItem(app, "cloud-builtin", { catalog, skillsApiBaseUrl: "http://127.0.0.1:1" }),
       /云端插件包必须声明 kind=plugin/
     );
     assert.equal(fs.existsSync(getPluginInstallDir(app, "cloud-builtin")), false);
@@ -275,38 +380,23 @@ test("installMarketItem downloads plugin archives but rejects builtin manifests"
 test("uninstallMarketItem removes skill installs and marketplace records", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-uninstall-"));
   const app = createApp(root);
-  const archivePath = writeSkillArchive(root, { id: "remove-skill" });
+  const archivePath = writeRootSkillArchive(root, { id: "remove-skill" });
   const archiveBytes = fs.readFileSync(archivePath);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  await withFixtureServer(new Map([["/remove-skill.tar.gz", archiveBytes]]), async (baseUrl) => {
-    const catalog = {
-      schemaVersion: 1,
-      items: [
-        {
-          id: "remove-skill",
-          type: "skill",
-          name: "Remove Skill",
-          version: "1.0.0",
-          description: "Remove skill",
-          tags: [],
-          assets: {
-            universal: {
-              url: `${baseUrl}/remove-skill.tar.gz`,
-              sha256: sha256(archivePath),
-              sizeBytes: archiveBytes.length,
-              archiveType: "tar.gz"
-            }
-          }
-        }
-      ]
-    };
-    await installMarketItem(app, "remove-skill", { catalog });
-    const result = await uninstallMarketItem(app, "remove-skill", { catalog });
+  await withFixtureServer(new Map([
+    ["/api/v1/skills?page=1&limit=100", skillsEnvelope([
+      { name: "remove-skill", display_name: "Remove Skill", description: "Remove skill", latest_version: "1.0.0" }
+    ])],
+    ["/api/v1/skills/remove-skill/download?version=1.0.0", archiveBytes]
+  ]), async (skillsBaseUrl) => {
+    const options = { catalog: { schemaVersion: 1, items: [] }, skillsApiBaseUrl: skillsBaseUrl };
+    await installMarketItem(app, "remove-skill", options);
+    const result = await uninstallMarketItem(app, "remove-skill", options);
 
     assert.equal(result.ok, true);
     assert.equal(fs.existsSync(getSkillInstallDir(app, "remove-skill")), false);
-    const listed = await listMarketItems(app, { catalog });
+    const listed = await listMarketItems(app, options);
     assert.equal(listed.items.find((item) => item.id === "remove-skill")?.state, "not-installed");
   });
 });
