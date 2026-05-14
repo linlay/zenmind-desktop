@@ -101,6 +101,12 @@ export interface ServiceLogStreamOptions {
   pollIntervalMs?: number;
 }
 
+export interface ServiceOpenLogViewerRequest {
+  serviceId: ServiceId;
+  target: ServiceLogTarget;
+  title: string;
+}
+
 export interface ServiceLogReadResult {
   ok: boolean;
   path: string;
@@ -1180,6 +1186,8 @@ export interface DesktopApi {
       options: ServiceLogStreamOptions | undefined,
       listener: ServiceLogStreamListener
     ) => () => void;
+    openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
+    closeLogViewer: () => Promise<{ ok: boolean }>;
   };
   plugins: {
     install: () => Promise<PluginInstallResult>;

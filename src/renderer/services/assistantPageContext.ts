@@ -21,14 +21,11 @@ const LEFT_REGION_SELECTOR_CANDIDATES = [
   ".app-main aside"
 ];
 const MODAL_SELECTOR_CANDIDATES = [
-  ".log-viewer-modal",
   '.app-main [role="dialog"]',
   '[role="dialog"]'
 ];
 const MAIN_CONTENT_EXCLUDED_SELECTOR = [
   APP_CONTEXT_EXCLUDED_SELECTOR,
-  ".log-viewer-backdrop",
-  ".log-viewer-modal",
   '[role="dialog"]',
   ".service-sider",
   ".help-sidebar",

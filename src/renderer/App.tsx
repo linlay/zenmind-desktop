@@ -8,6 +8,7 @@ import { QuickAssistant } from "./components/QuickAssistant";
 import { ControlCenterPage } from "./pages/ControlCenterPage";
 import { ExternalWebviewPage } from "./pages/ExternalWebviewPage";
 import { HelpPage } from "./pages/HelpPage";
+import { LogViewerPage } from "./pages/LogViewerPage";
 import { PluginMarketPage } from "./pages/PluginMarketPage";
 import { PluginPage } from "./pages/PluginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
@@ -1071,6 +1072,13 @@ export function App() {
   }
   if (location.pathname === DESKTOP_PET_ROUTE) {
     return <DesktopPet />;
+  }
+  if (location.pathname === "/log-viewer") {
+    return (
+      <ServicesProvider>
+        <LogViewerPage />
+      </ServicesProvider>
+    );
   }
 
   return (

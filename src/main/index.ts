@@ -105,6 +105,7 @@ import type {
   AssistantWorkerOpenRequest,
   ServiceId,
   ServiceLogReadOptions,
+  ServiceOpenLogViewerRequest,
   ServiceLogStreamOptions,
   ServiceLogTarget,
   StartupRestoreMode,
@@ -161,6 +162,7 @@ let mainWindow: BrowserWindow | null = null;
 let desktopPetWindow: BrowserWindow | null = null;
 let quickAssistantWindow: BrowserWindow | null = null;
 let quickAssistantDismissWindow: BrowserWindow | null = null;
+let logViewerWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isHandlingQuit = false;
 let pendingMainWindowCloseCancel: (() => void) | null = null;
@@ -178,6 +180,7 @@ let mainWindowSidebarTranslucencyEnabled = false;
 const quickAssistantState = createQuickAssistantWindowState();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const AGENT_WEBCLIENT_APP_PATHNAME = "/appagent";
+const LOG_VIEWER_ROUTE = "/log-viewer";
 const AGENT_WEBCLIENT_OPEN_RETRY_COUNT = 24;
 const AGENT_WEBCLIENT_OPEN_RETRY_MS = 180;
 const MAIN_WINDOW_DRAG_FORCE_END_MS = 8_000;
@@ -1467,6 +1470,124 @@ function createQuickAssistantWindow() {
   });
 
   return quickAssistantWindow;
+}
+
+function buildLogViewerRoute(request: ServiceOpenLogViewerRequest) {
+  const params = new URLSearchParams({
+    serviceId: request.serviceId,
+    target: request.target,
+    title: request.title
+  });
+  return `${LOG_VIEWER_ROUTE}?${params.toString()}`;
+}
+
+function createLogViewerWindow() {
+  if (logViewerWindow && !logViewerWindow.isDestroyed()) {
+    return logViewerWindow;
+  }
+
+  const commonWindowOptions = {
+    width: 1040,
+    height: 760,
+    minWidth: 760,
+    minHeight: 520,
+    show: false,
+    frame: false,
+    resizable: true,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    title: "ZenMind Logs",
+    backgroundColor: "#F6F8FC",
+    webPreferences: {
+      preload: path.join(__dirname, "..", "preload", "index.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      devTools: false,
+      sandbox: false
+    }
+  };
+
+  if (process.platform === "darwin") {
+    logViewerWindow = new BrowserWindow({
+      ...commonWindowOptions,
+      skipTaskbar: true,
+      transparent: false,
+      titleBarStyle: "hidden" as const
+    });
+    logViewerWindow.setAlwaysOnTop(true, "floating");
+    logViewerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  } else if (process.platform === "win32") {
+    logViewerWindow = new BrowserWindow({
+      ...commonWindowOptions,
+      skipTaskbar: false,
+      transparent: false
+    });
+    logViewerWindow.setAlwaysOnTop(true, "pop-up-menu");
+  } else {
+    logViewerWindow = new BrowserWindow({
+      ...commonWindowOptions,
+      skipTaskbar: false,
+      transparent: false
+    });
+    logViewerWindow.setAlwaysOnTop(true);
+  }
+
+  logViewerWindow.once("ready-to-show", () => {
+    if (!logViewerWindow || logViewerWindow.isDestroyed()) {
+      return;
+    }
+    logViewerWindow.show();
+    logViewerWindow.focus();
+  });
+
+  logViewerWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
+    safeConsoleError("log viewer renderer failed to load", {
+      errorCode,
+      errorDescription,
+      validatedUrl
+    });
+  });
+
+  logViewerWindow.webContents.on("render-process-gone", (_event, details) => {
+    safeConsoleError("log viewer render process exited unexpectedly", details);
+  });
+
+  logViewerWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
+    safeConsoleError("log viewer preload failed", {
+      preloadPath,
+      error: error?.stack || String(error)
+    });
+  });
+
+  logViewerWindow.on("closed", () => {
+    logViewerWindow = null;
+  });
+
+  return logViewerWindow;
+}
+
+async function openLogViewerWindow(request: ServiceOpenLogViewerRequest) {
+  const targetWindow = createLogViewerWindow();
+  const routePath = buildLogViewerRoute(request);
+  await loadRendererRoute(targetWindow, routePath);
+  if (targetWindow.isDestroyed()) {
+    return { ok: false };
+  }
+  if (!targetWindow.isVisible()) {
+    targetWindow.show();
+  }
+  targetWindow.focus();
+  targetWindow.moveTop();
+  return { ok: true };
+}
+
+function closeLogViewerWindow() {
+  if (logViewerWindow && !logViewerWindow.isDestroyed()) {
+    logViewerWindow.close();
+  }
+  return { ok: true };
 }
 
 function hideQuickAssistantForNativeDialog() {
@@ -3432,6 +3553,20 @@ function registerIpcHandlers() {
   ipcMain.handle("services.getLogsMeta", async (_event, serviceId: ServiceId) => {
     return getServiceLogsMeta(app, serviceId);
   });
+  ipcMain.handle("services.openLogViewer", async (_event, request: ServiceOpenLogViewerRequest) => {
+    const serviceId = typeof request.serviceId === "string" ? request.serviceId.trim() : "";
+    const target: ServiceLogTarget = request.target === "error" ? "error" : "main";
+    const title = typeof request.title === "string" && request.title.trim() ? request.title.trim() : "日志文件";
+    if (!serviceId) {
+      throw new Error("缺少日志服务标识。");
+    }
+    return openLogViewerWindow({
+      serviceId,
+      target,
+      title
+    });
+  });
+  ipcMain.handle("services.closeLogViewer", async () => closeLogViewerWindow());
   ipcMain.handle(
     "services.readLog",
     async (_event, serviceId: ServiceId, target: ServiceLogTarget, options?: ServiceLogReadOptions) => {

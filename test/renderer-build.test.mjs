@@ -398,11 +398,46 @@ test("native assistant page context captures shell sidebar, left region, and mod
   assert.match(pageContextService, /modalText/);
   assert.match(pageContextService, /\.service-sider/);
   assert.match(pageContextService, /\.help-sidebar/);
-  assert.match(pageContextService, /\.log-viewer-modal/);
+  assert.doesNotMatch(pageContextService, /\.log-viewer-modal/);
+  assert.doesNotMatch(pageContextService, /\.log-viewer-backdrop/);
   assert.match(pageContextService, /\[hidden\]/);
   assert.match(pageContextService, /\[aria-hidden="true"\]/);
   assert.match(pageContextService, /iframe/);
   assert.match(pageContextService, /webview/);
+});
+
+test("service logs open in a separate floating log viewer window", () => {
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const controlCenter = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "ControlCenterPage.tsx"),
+    "utf8"
+  );
+  const logViewerPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "LogViewerPage.tsx"),
+    "utf8"
+  );
+
+  assert.match(mainProcess, /let logViewerWindow: BrowserWindow \| null = null/);
+  assert.match(mainProcess, /function createLogViewerWindow\(\)/);
+  assert.match(mainProcess, /services\.openLogViewer/);
+  assert.match(mainProcess, /loadRendererRoute\(targetWindow, routePath\)/);
+  assert.match(mainProcess, /process\.platform === "darwin"[\s\S]{0,500}setAlwaysOnTop\(true, "floating"\)/);
+  assert.match(mainProcess, /process\.platform === "win32"[\s\S]{0,500}setAlwaysOnTop\(true, "pop-up-menu"\)/);
+  assert.match(preload, /openLogViewer/);
+  assert.match(preload, /closeLogViewer/);
+  assert.match(contracts, /ServiceOpenLogViewerRequest/);
+  assert.match(appShell, /location\.pathname === "\/log-viewer"/);
+  assert.match(controlCenter, /window\.electronAPI\.services\.openLogViewer/);
+  assert.doesNotMatch(controlCenter, /LogViewerModal/);
+  assert.doesNotMatch(controlCenter, /log-viewer-backdrop/);
+  assert.match(logViewerPage, /isMacFindShortcut/);
+  assert.match(logViewerPage, /isWindowsFindShortcut/);
+  assert.match(logViewerPage, /setSearchVisible\(true\)/);
+  assert.match(logViewerPage, /closeLogViewer/);
+  assert.doesNotMatch(logViewerPage, /event\.key === "Escape"/);
 });
 
 test("assistant dock opens in right-side embedded mode by default", () => {

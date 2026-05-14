@@ -19,6 +19,7 @@ import type {
   NativeDialogVisibilityListener,
   ServicesChangedListener,
   ServiceId,
+  ServiceOpenLogViewerRequest,
   ServiceLogReadOptions,
   ServiceLogStreamEvent,
   ServiceLogStreamListener,
@@ -126,7 +127,9 @@ const api: DesktopApi = {
         ipcRenderer.off("services.logStream", handleLogStream);
         void ipcRenderer.invoke("services.watchLog.stop", subscriptionId);
       };
-    }
+    },
+    openLogViewer: (request: ServiceOpenLogViewerRequest) => ipcRenderer.invoke("services.openLogViewer", request),
+    closeLogViewer: () => ipcRenderer.invoke("services.closeLogViewer")
   },
   plugins: {
     install: () => ipcRenderer.invoke("plugins.install"),
