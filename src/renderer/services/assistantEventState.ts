@@ -219,3 +219,44 @@ export function attachRunningAssistantPlaceholder(
   runMessageIds.set(runId, placeholder.id);
   return [...messagesForChat, placeholder];
 }
+
+export function mergeOptimisticRunMessages(
+  current: AssistantChatMessage[],
+  runId: string,
+  userMessage: AssistantChatMessage,
+  assistantMessage: AssistantChatMessage,
+  runMessageIds: Map<string, string>
+) {
+  const existingAssistantMessage = current.find(
+    (message) => message.role === "assistant" && message.runId === runId
+  );
+  const nextAssistantMessage = existingAssistantMessage ?? assistantMessage;
+  runMessageIds.set(runId, nextAssistantMessage.id);
+  return [
+    ...current.filter((message) => message.runId !== runId),
+    userMessage,
+    nextAssistantMessage
+  ];
+}
+
+export function getVisibleAssistantMessages(
+  messages: AssistantChatMessage[],
+  runningRunId: string | null
+) {
+  const lastAssistantMessageIndexByRun = new Map<string, number>();
+  messages.forEach((message, index) => {
+    if (message.role === "assistant" && message.runId) {
+      lastAssistantMessageIndexByRun.set(message.runId, index);
+    }
+  });
+
+  return messages.filter((message, index) => {
+    if (message.role !== "assistant" || !message.runId) {
+      return true;
+    }
+    if (lastAssistantMessageIndexByRun.get(message.runId) !== index) {
+      return false;
+    }
+    return message.content.trim().length > 0 || message.runId === runningRunId;
+  });
+}
