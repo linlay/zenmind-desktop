@@ -2208,10 +2208,13 @@ test("writeServiceConfig migrates known bad core env ports without overriding cu
       "agent-webclient",
       "env",
       [
+        "NODE_ENV=development",
         "PORT=7902",
+        "DEV_SERVER_ALLOWED_HOSTS=all",
         "BASE_URL=https://platform.example.test",
         "WS_BASE_URL=http://127.0.0.1:117078",
-        "VOICE_BASE_URL=http://localhost:11949"
+        "VOICE_BASE_URL=http://localhost:11949",
+        "NODE_BIN=/tmp/stale-node"
       ].join("\n") + "\n"
     );
     envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
@@ -2221,6 +2224,9 @@ test("writeServiceConfig migrates known bad core env ports without overriding cu
     assert.match(envContent, /^BASE_URL=https:\/\/platform\.example\.test$/m);
     assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7901$/m);
     assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7901$/m);
+    assert.doesNotMatch(envContent, /^NODE_BIN=/m);
+    assert.doesNotMatch(envContent, /^NODE_ENV=/m);
+    assert.doesNotMatch(envContent, /^DEV_SERVER_ALLOWED_HOSTS=/m);
   } finally {
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -3169,7 +3175,14 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   await installBuiltinService(app, webclientService.id);
   fs.writeFileSync(
     path.join(webclientInstallDir, ".env"),
-    "BASE_URL=http://localhost:11949\nWS_BASE_URL=http://localhost:11949\nVOICE_BASE_URL=http://127.0.0.1:117078\n",
+    [
+      "NODE_ENV=development",
+      "DEV_SERVER_ALLOWED_HOSTS=all",
+      "BASE_URL=http://localhost:11949",
+      "WS_BASE_URL=http://localhost:11949",
+      "VOICE_BASE_URL=http://127.0.0.1:117078",
+      "NODE_BIN=/tmp/stale-node"
+    ].join("\n") + "\n",
     "utf8"
   );
   fs.writeFileSync(
@@ -3198,11 +3211,9 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   assert.match(envContent, /WS_BASE_URL=http:\/\/127\.0\.0\.1:12949/);
   assert.match(envContent, /VOICE_BASE_URL=http:\/\/127\.0\.0\.1:12949/);
   assert.match(envContent, /PORT=7080/);
-  const expectedNodeBinLiteral = process.execPath.includes(" ") ? `"${process.execPath}"` : process.execPath;
-  assert.match(
-    envContent,
-    new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  );
+  assert.doesNotMatch(envContent, /^NODE_BIN=/m);
+  assert.doesNotMatch(envContent, /^NODE_ENV=/m);
+  assert.doesNotMatch(envContent, /^DEV_SERVER_ALLOWED_HOSTS=/m);
   assert.match(serverContent, /function createWebSocketProxy\(/);
   assert.match(serverContent, /proxy\.upgrade\(req, socket, head\)/);
   assert.doesNotMatch(serverContent, /function buildUpgradeRequest\(/);
@@ -3214,6 +3225,69 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("startService injects agent-webclient NODE_BIN without persisting it to env", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const webclientService = getBuiltinService("agent-webclient");
+  const webclientInstallDir = path.join(userDataRoot, "services", webclientService.id, webclientService.version);
+  const startFileName = process.platform === "win32" ? "start.ps1" : "start.sh";
+  const expectedNodeBin = __testInternals.resolveNodeBin();
+  const expectedNodeBinLiteral = expectedNodeBin.includes(" ") ? `"${expectedNodeBin}"` : expectedNodeBin;
+
+  try {
+    await installBuiltinService(app, "agent-platform");
+    await installBuiltinService(app, "agent-webclient");
+
+    if (process.platform === "win32") {
+      fs.writeFileSync(
+        path.join(webclientInstallDir, startFileName),
+        [
+          "$runDir = Join-Path $PSScriptRoot 'run'",
+          "New-Item -ItemType Directory -Path $runDir -Force | Out-Null",
+          "if (-not $env:NODE_BIN) { throw 'missing NODE_BIN' }",
+          "$env:NODE_BIN | Set-Content -LiteralPath (Join-Path $runDir 'node-bin.txt')",
+          "$proc = Start-Process -FilePath $env:NODE_BIN -ArgumentList '-e','setInterval(() => {}, 1000)' -WindowStyle Hidden -PassThru",
+          "$proc.Id | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'run/agent-webclient.pid')",
+          "Set-Content -LiteralPath (Join-Path $runDir 'started.txt') -Value 'started'"
+        ].join("\r\n"),
+        "utf8"
+      );
+    } else {
+      fs.writeFileSync(
+        path.join(webclientInstallDir, startFileName),
+        [
+          "#!/usr/bin/env bash",
+          "set -euo pipefail",
+          "mkdir -p run",
+          ': "${NODE_BIN:?missing NODE_BIN}"',
+          'printf "%s" "$NODE_BIN" > run/node-bin.txt',
+          '"$NODE_BIN" -e "setInterval(() => {}, 1000)" >/dev/null 2>&1 &',
+          "echo $! > run/agent-webclient.pid",
+          "printf started > run/started.txt"
+        ].join("\n") + "\n",
+        "utf8"
+      );
+      fs.chmodSync(path.join(webclientInstallDir, startFileName), 0o755);
+    }
+
+    const platformResult = await startService(app, "agent-platform");
+    assert.equal(platformResult.ok, true, platformResult.message);
+
+    const webclientResult = await startService(app, "agent-webclient");
+    assert.equal(webclientResult.ok, true, webclientResult.message);
+    assert.equal(fs.readFileSync(path.join(webclientInstallDir, "run", "node-bin.txt"), "utf8"), expectedNodeBin);
+
+    const envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
+    assert.doesNotMatch(envContent, new RegExp(`^NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "m"));
+    assert.doesNotMatch(envContent, /^NODE_BIN=/m);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("agentWebclientInstallNeedsRefresh catches server.cjs installs with stale dependency checks", () => {

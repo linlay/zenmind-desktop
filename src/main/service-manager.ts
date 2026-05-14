@@ -618,6 +618,7 @@ const CORE_SERVICE_IDS = new Set<ServiceId>([
   "zenmind-app-server"
 ]);
 const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL", "WS_BASE_URL", "VOICE_BASE_URL"] as const;
+const AGENT_WEBCLIENT_DESKTOP_ONLY_ENV_KEYS = ["NODE_BIN", "NODE_ENV", "DEV_SERVER_ALLOWED_HOSTS"] as const;
 const DESKTOP_MANAGED_PLATFORM_URL_PORTS = new Set([
   "7078",
   "11949",
@@ -1518,12 +1519,20 @@ function formatExecErrorMessage(errorMessage: string, result: ExecResult) {
 
 type RunExecFileOptions = {
   timeoutMs?: number;
+  env?: NodeJS.ProcessEnv;
 };
 
 function getCommandTimeoutMs(timeoutMs: number | undefined) {
   return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
     ? Math.floor(timeoutMs)
     : SERVICE_COMMAND_TIMEOUT_MS;
+}
+
+function buildServiceCommandEnv(overrides?: NodeJS.ProcessEnv) {
+  return {
+    ...buildServiceEnv(),
+    ...(overrides ?? {})
+  };
 }
 
 function runPowerShellScript(scriptPath: string, args: string[], cwd: string, options: RunExecFileOptions = {}) {
@@ -1537,7 +1546,7 @@ function runPowerShellScript(scriptPath: string, args: string[], cwd: string, op
     execFile(
       windowsPowerShellPath(),
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", wrapperScriptPath],
-      { cwd, env: buildServiceEnv(), timeout: timeoutMs },
+      { cwd, env: buildServiceCommandEnv(options.env), timeout: timeoutMs },
       (error, stdout, stderr) => {
         try {
           fs.rmSync(wrapperScriptPath, { force: true });
@@ -1580,7 +1589,7 @@ function runExecFile(command: string, args: string[], cwd: string, options: RunE
   const resolved = resolveExecCommand(command, args, cwd);
   const timeoutMs = getCommandTimeoutMs(options.timeoutMs);
   if (resolved.powershellScript) {
-    return runPowerShellScript(resolved.command, resolved.args, cwd, { timeoutMs });
+    return runPowerShellScript(resolved.command, resolved.args, cwd, { timeoutMs, env: options.env });
   }
 
   return new Promise<ExecResult>((resolve, reject) => {
@@ -1591,7 +1600,7 @@ function runExecFile(command: string, args: string[], cwd: string, options: RunE
 
     const child = spawn(resolved.command, resolved.args, {
       cwd,
-      env: buildServiceEnv(),
+      env: buildServiceCommandEnv(options.env),
       stdio: ["ignore", "pipe", "pipe"]
     });
     const stdoutChunks: Buffer[] = [];
@@ -1726,6 +1735,15 @@ async function ensureInitializationRequirements(app: App, service: ServiceDefini
 
   if (service.id === LOCAL_CLI_ACP_RELAY_PLUGIN_ID) {
     await ensureLocalCliAcpRelayDesktopConfig(app, installDir);
+  }
+
+  if (service.id === "agent-webclient") {
+    const envPath = path.join(installDir, ".env");
+    const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+    const normalizedContent = normalizeAgentWebclientEnvContentForDesktop(currentContent);
+    if (normalizedContent !== currentContent) {
+      fs.writeFileSync(envPath, normalizedContent, "utf8");
+    }
   }
 
   if (service.id === "pan-webclient") {
@@ -2893,6 +2911,13 @@ function writeAgentPlatformLegacyEnvBackupIfNeeded(installDir: string, originalC
 }
 
 function normalizePreservedBuiltinEnvForInstall(service: ServiceDefinition, content: string) {
+  if (service.id === "agent-webclient") {
+    return {
+      content: normalizeAgentWebclientEnvContentForDesktop(content),
+      backupContent: ""
+    };
+  }
+
   if (service.id !== "agent-platform") {
     return {
       content,
@@ -2928,6 +2953,10 @@ function removeEnvKeysFromContent(content: string, keys: readonly string[]) {
     return "";
   }
   return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
+}
+
+function normalizeAgentWebclientEnvContentForDesktop(content: string) {
+  return removeEnvKeysFromContent(content, AGENT_WEBCLIENT_DESKTOP_ONLY_ENV_KEYS);
 }
 
 function normalizeAgentPlatformEnvContentForRuntime(content: string) {
@@ -2976,7 +3005,11 @@ async function normalizeCoreServiceEnvContentForSave(
   }
 
   const normalizedContent =
-    service.id === "agent-platform" ? normalizeAgentPlatformEnvContentForSave(content) : content;
+    service.id === "agent-platform"
+      ? normalizeAgentPlatformEnvContentForSave(content)
+      : service.id === "agent-webclient"
+        ? normalizeAgentWebclientEnvContentForDesktop(content)
+        : content;
   const env = parseEnvFileContent(normalizedContent);
   const updates = new Map<string, string>();
 
@@ -3458,6 +3491,13 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   }
 
   const envPath = path.join(installDir, ".env");
+  if (service.id === "agent-webclient") {
+    const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+    const normalizedContent = normalizeAgentWebclientEnvContentForDesktop(currentContent);
+    if (normalizedContent !== currentContent) {
+      fs.writeFileSync(envPath, normalizedContent, "utf8");
+    }
+  }
   const env = readEnvFile(envPath);
   const updates = new Map<string, string>();
 
@@ -3466,6 +3506,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 
   // Service-specific logic that cannot be expressed via envBindings.
   if (service.id === "agent-webclient") {
+    updates.delete("NODE_BIN");
     await syncAgentWebclientPlatformUrls(app, env, updates);
     const assetPath = getOptionalBundleAssetPath(app, service);
     const forceRefresh = agentWebclientInstallNeedsRefresh(installDir);
@@ -3474,7 +3515,6 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
         force: forceRefresh
       });
     }
-    updates.set("NODE_BIN", resolveNodeBin());
   }
 
   if (service.id === "zenmind-app-server") {
@@ -3498,7 +3538,29 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 type RunServiceCommandOptions = {
   refreshBuiltinAsset?: boolean;
   timeoutMs?: number;
+  env?: NodeJS.ProcessEnv;
 };
+
+function resolveAgentWebclientStartEnv() {
+  const nodeBin = resolveNodeBin();
+  if (IS_WINDOWS) {
+    return { NODE_BIN: nodeBin };
+  }
+
+  if (process.platform === "darwin") {
+    return { NODE_BIN: nodeBin };
+  }
+
+  return { NODE_BIN: nodeBin };
+}
+
+function getStartCommandEnvOverrides(service: ServiceDefinition) {
+  if (service.id !== "agent-webclient") {
+    return undefined;
+  }
+
+  return resolveAgentWebclientStartEnv();
+}
 
 async function runServiceCommand(
   app: App,
@@ -3537,7 +3599,8 @@ async function runServiceCommand(
     throw new Error(`${service.name} 缺少可执行脚本定义。`);
   }
   await runExecFile(command[0], command.slice(1), installDir, {
-    timeoutMs: options.timeoutMs
+    timeoutMs: options.timeoutMs,
+    env: options.env
   });
   return {
     ok: true,
@@ -3607,7 +3670,9 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
     };
   } else {
     await ensurePreStartRequirements(app, service);
-    result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`);
+    result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`, {
+      env: getStartCommandEnvOverrides(service)
+    });
     startedThisSession.add(serviceId);
   }
 
