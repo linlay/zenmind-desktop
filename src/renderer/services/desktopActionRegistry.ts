@@ -8,7 +8,13 @@ export type DesktopActionProvider = (
   request: DesktopActionRendererRequest
 ) => Promise<Omit<DesktopActionRendererResponse, "requestId" | "action"> | null>;
 
-let activeProvider: DesktopActionProvider | null = null;
+export type DesktopActionProviderScope = "global" | "page" | "embeddedWeb";
+
+const providers: Record<DesktopActionProviderScope, DesktopActionProvider[]> = {
+  global: [],
+  page: [],
+  embeddedWeb: []
+};
 let bridgeStarted = false;
 
 function actionError(code: string, message: string, details?: unknown) {
@@ -29,13 +35,46 @@ async function handleDefaultAction(request: DesktopActionRendererRequest) {
       result: await getAssistantPageContext()
     };
   }
+  if (request.action.startsWith("desktop.embeddedWeb.")) {
+    return actionError("embedded_web_action_unavailable", "当前没有可执行的内嵌网站 Desktop action。");
+  }
+  if (request.action.startsWith("desktop.settings.")) {
+    return actionError("settings_action_unavailable", "当前没有可执行的 Desktop 设置 action。");
+  }
   return actionError("page_action_unavailable", "当前页面没有注册可执行的 Desktop action。");
+}
+
+function getProviderScopesForAction(action: string): DesktopActionProviderScope[] {
+  if (action.startsWith("desktop.settings.")) {
+    return ["global"];
+  }
+  if (action.startsWith("desktop.embeddedWeb.")) {
+    return ["embeddedWeb", "global"];
+  }
+  if (action.startsWith("desktop.page.")) {
+    return ["page"];
+  }
+  return ["page", "global"];
+}
+
+async function callScopedProviders(request: DesktopActionRendererRequest) {
+  const scopes = getProviderScopesForAction(request.action);
+  for (const scope of scopes) {
+    const scopedProviders = providers[scope];
+    for (let index = scopedProviders.length - 1; index >= 0; index -= 1) {
+      const response = await scopedProviders[index](request);
+      if (response) {
+        return response;
+      }
+    }
+  }
+  return null;
 }
 
 async function handleDesktopActionCall(request: DesktopActionRendererRequest) {
   let response: Omit<DesktopActionRendererResponse, "requestId" | "action">;
   try {
-    const provided = activeProvider ? await activeProvider(request) : null;
+    const provided = await callScopedProviders(request);
     response = provided ?? await handleDefaultAction(request);
   } catch (error) {
     response = actionError(
@@ -51,13 +90,21 @@ async function handleDesktopActionCall(request: DesktopActionRendererRequest) {
   });
 }
 
-export function registerDesktopActionProvider(provider: DesktopActionProvider) {
-  activeProvider = provider;
+export function registerDesktopActionProviderForScope(
+  scope: DesktopActionProviderScope,
+  provider: DesktopActionProvider
+) {
+  providers[scope].push(provider);
   return () => {
-    if (activeProvider === provider) {
-      activeProvider = null;
+    const index = providers[scope].indexOf(provider);
+    if (index !== -1) {
+      providers[scope].splice(index, 1);
     }
   };
+}
+
+export function registerDesktopActionProvider(provider: DesktopActionProvider) {
+  return registerDesktopActionProviderForScope("page", provider);
 }
 
 export function startDesktopActionRendererBridge() {

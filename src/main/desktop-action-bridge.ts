@@ -4,7 +4,6 @@ import type { AddressInfo } from "node:net";
 import type { App, BrowserWindow } from "electron";
 import { dialog } from "electron";
 import type {
-  AssistantMemorySettings,
   DesktopActionRendererRequest,
   DesktopActionRendererResponse,
   ServiceId,
@@ -322,6 +321,20 @@ async function executeAction(
     case "desktop.page.validateForm":
     case "desktop.page.previewPatch":
     case "desktop.page.applyPatch":
+    case "desktop.settings.getState":
+    case "desktop.settings.validatePatch":
+    case "desktop.settings.previewPatch":
+    case "desktop.settings.applyPatch":
+    case "desktop.embeddedWeb.listSurfaces":
+    case "desktop.embeddedWeb.getActiveSurface":
+    case "desktop.embeddedWeb.activateSurface":
+    case "desktop.embeddedWeb.getPageContext":
+    case "desktop.embeddedWeb.navigate":
+    case "desktop.embeddedWeb.reload":
+    case "desktop.embeddedWeb.goBack":
+    case "desktop.embeddedWeb.openTab":
+    case "desktop.embeddedWeb.closeTab":
+    case "desktop.embeddedWeb.switchTab":
       return callRendererPageAction(options, request, args);
     case "desktop.navigate.toRoute": {
       const route = readString(args, "route") || readString(args, "path");
@@ -478,40 +491,6 @@ async function executeAction(
     case "desktop.automations.explainNextRun": {
       const detail = await callAgentPlatform<Record<string, unknown>>(options.app, "/api/schedule", { method: "POST", body: { id: readScheduleId(args) } });
       return ok(action, { id: readScheduleId(args), nextFireTime: detail.nextFireTime ?? null, detail });
-    }
-    case "desktop.memory.getSettings":
-      return ok(action, await options.assistantBridge.getMemorySettings());
-    case "desktop.memory.getSummary":
-      return ok(action, await options.assistantBridge.getMemorySummary());
-    case "desktop.memory.listRecentItems": {
-      const list = await options.assistantBridge.listMemoryItems();
-      const limit = typeof args.limit === "number" ? Math.max(1, Math.min(50, Math.round(args.limit))) : 10;
-      return ok(action, { ...list, items: list.items.slice(0, limit) });
-    }
-    case "desktop.memory.searchItems": {
-      const query = readString(args, "query").toLowerCase();
-      const list = await options.assistantBridge.listMemoryItems();
-      return ok(action, {
-        ...list,
-        items: query
-          ? list.items.filter((item) => `${item.title} ${item.summary} ${item.tags.join(" ")}`.toLowerCase().includes(query))
-          : list.items
-      });
-    }
-    case "desktop.memory.previewItem": {
-      const id = readString(args, "id") || readString(args, "memoryId");
-      const list = await options.assistantBridge.listMemoryItems();
-      const item = list.items.find((candidate) => candidate.id === id);
-      return item ? ok(action, item) : fail(action, "not_found", `memory item not found: ${id}`);
-    }
-    case "desktop.memory.enableAutoLearn":
-    case "desktop.memory.disableAutoLearn": {
-      const current = await options.assistantBridge.getMemorySettings();
-      const next: AssistantMemorySettings = {
-        ...current,
-        autoLearn: action === "desktop.memory.enableAutoLearn"
-      };
-      return ok(action, await options.assistantBridge.saveMemorySettings(next));
     }
     default:
       return fail(action, "unknown_action", `unknown action: ${action}`);

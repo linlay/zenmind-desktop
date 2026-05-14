@@ -38,7 +38,8 @@ test("assistant launcher sits beside settings in the sidebar footer", () => {
   assert.match(appShell, /embedPath=\{AGENT_WEBCLIENT_COPILOT_PATH\}/);
   assert.match(sidebarSource, /sidebar-footer-actions/);
   assert.match(sidebarSource, /sidebar-assistant-launcher/);
-  assert.match(sidebarSource, /aria-label="打开 ZenMind 助手"/);
+  assert.match(sidebarSource, /"打开 ZenMind 助手"/);
+  assert.match(sidebarSource, /"当前页面不可开启 ZenMind 助手"/);
   assert.match(globalStyles, /--assistant-dock-embedded-width:\s*360px;/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{/);
   assert.match(globalStyles, /\.sidebar-footer-actions\s*\{[\s\S]*?display:\s*flex;/);
@@ -171,6 +172,7 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
     path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
     "utf8"
   );
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
   const resolver = fs.readFileSync(path.join(projectRoot, "src", "shared", "page-copilot.ts"), "utf8");
 
   assert.match(resolver, /resolveDesktopCopilotPageKey/);
@@ -179,12 +181,25 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /resolveDesktopCopilotPreference/);
   assert.match(appShell, /assistantLauncherVisible = currentCopilotPreference\?\.enabled !== false/);
   assert.match(appShell, /currentCopilotPreference\?\.enabled === false && assistantDockOpen && !assistantRunningRunId/);
+  assert.match(appShell, /isAgentWebclientMainRoute = location\.pathname === ASSISTANT_TARGET_PATH/);
+  assert.match(appShell, /assistantCopilotOpen = assistantDockOpen && !isAgentWebclientMainRoute/);
+  assert.match(appShell, /isAgentWebclientMainRoute && assistantDockOpen/);
+  assert.match(appShell, /assistantLauncherDisabled=\{isAgentWebclientMainRoute\}/);
+  assert.match(appShell, /open=\{assistantCopilotOpen\}/);
   assert.match(appShell, /assistantLauncherVisible=\{assistantLauncherVisible\}/);
   assert.match(appShell, /onRunningRunIdChange=\{setAssistantRunningRunId\}/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
   assert.match(appShell, /data-open-agent-key=\{openRequest\?\.agentKey \?\? openRequest\?\.workerKey \?\? ""\}/);
   assert.match(sidebarSource, /assistantLauncherVisible/);
+  assert.match(sidebarSource, /assistantLauncherDisabled/);
   assert.match(sidebarSource, /assistantLauncherVisible \? \(/);
+  assert.match(sidebarSource, /sidebar-assistant-switch/);
+  assert.match(sidebarSource, /assistantDockOpen \? "is-switch-on" : ""/);
+  assert.doesNotMatch(sidebarSource, /assistantDockOpen \? "sidebar-link-active" : ""/);
+  assert.match(sidebarSource, /disabled=\{assistantLauncherDisabled\}/);
+  assert.match(globalStyles, /\.sidebar-assistant-switch\s*\{/);
+  assert.match(globalStyles, /\.sidebar-assistant-launcher\.is-disabled/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-assistant-switch/);
   assert.match(assistantDock, /preferredAgentKey/);
   assert.match(assistantDock, /setSelectedAgentKey\(preferredAgentKey\)/);
 });
@@ -204,6 +219,10 @@ test("desktop action bridge exposes localhost api and renderer action providers"
     path.join(projectRoot, "src", "renderer", "pages", "SettingsPage.tsx"),
     "utf8"
   );
+  const externalWebviewPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "ExternalWebviewPage.tsx"),
+    "utf8"
+  );
   const marketPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "PluginMarketPage.tsx"),
     "utf8"
@@ -212,9 +231,12 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_HOST\s*=\s*"127\.0\.0\.1"/);
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_PORT\s*=\s*11788/);
   assert.match(actionCatalog, /desktop\.controlCenter\.listServices/);
+  assert.match(actionCatalog, /desktop\.settings\.applyPatch/);
+  assert.match(actionCatalog, /desktop\.embeddedWeb\.getActiveSurface/);
+  assert.match(actionCatalog, /desktop\.embeddedWeb\.openTab/);
   assert.match(actionCatalog, /desktop\.market\.applySettingsPatch/);
   assert.match(actionCatalog, /desktop\.automations\.listSchedules/);
-  assert.match(actionCatalog, /desktop\.memory\.disableAutoLearn/);
+  assert.doesNotMatch(actionCatalog, /desktop\.memory\./);
   assert.match(bridge, /GET" && url\.pathname === "\/health"/);
   assert.match(bridge, /GET" && url\.pathname === "\/actions"/);
   assert.match(bridge, /POST" && url\.pathname === "\/actions\/call"/);
@@ -229,11 +251,22 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(preload, /ipcRenderer\.on\("desktopActions\.call"/);
   assert.match(contracts, /DesktopActionRendererRequest/);
   assert.match(contracts, /DesktopActionCallListener/);
+  assert.match(registry, /DesktopActionProviderScope = "global" \| "page" \| "embeddedWeb"/);
+  assert.match(registry, /registerDesktopActionProviderForScope/);
+  assert.match(registry, /embedded_web_action_unavailable/);
   assert.match(registry, /registerDesktopActionProvider/);
   assert.match(registry, /page_action_unavailable/);
   assert.match(appShell, /startDesktopActionRendererBridge\(\)/);
+  assert.match(appShell, /registerDesktopActionProviderForScope\("global"/);
+  assert.match(appShell, /desktop\.settings\.getState/);
+  assert.match(appShell, /desktop\.embeddedWeb\.listSurfaces/);
   assert.match(settingsPage, /registerDesktopActionProvider/);
   assert.match(settingsPage, /desktopHelperAgentKey/);
+  assert.match(externalWebviewPage, /registerDesktopActionProviderForScope\("embeddedWeb"/);
+  assert.match(externalWebviewPage, /desktop\.embeddedWeb\.getPageContext/);
+  assert.match(externalWebviewPage, /desktop\.embeddedWeb\.navigate/);
+  assert.match(externalWebviewPage, /desktop\.embeddedWeb\.closeTab/);
+  assert.doesNotMatch(externalWebviewPage, /querySelector\(request/);
   assert.match(marketPage, /registerDesktopActionProvider/);
   assert.match(marketPage, /skillsApiBaseUrl/);
 });
@@ -614,7 +647,7 @@ test("assistant dock opens the agent webclient copilot in right-side embedded mo
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
 
   assert.match(appShell, /const AGENT_WEBCLIENT_COPILOT_PATH = "\/copilot"/);
-  assert.match(appShell, /assistantDockOpen \? "has-assistant-dock-full" : ""/);
+  assert.match(appShell, /assistantCopilotOpen \? "has-assistant-dock-full" : ""/);
   assert.match(appShell, /window\.electronAPI\.onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\(\)/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
   assert.doesNotMatch(appShell, /<AssistantDock/);

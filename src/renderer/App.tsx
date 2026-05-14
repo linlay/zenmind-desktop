@@ -13,9 +13,20 @@ import { PluginPage } from "./pages/PluginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ServicesProvider, useServices } from "./services/ServicesContext";
-import { startDesktopActionRendererBridge } from "./services/desktopActionRegistry";
+import {
+  registerDesktopActionProviderForScope,
+  startDesktopActionRendererBridge
+} from "./services/desktopActionRegistry";
 import type { AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, ServiceId, ServiceState, StartupRestoreState } from "../shared/contracts";
-import { resolveDesktopCopilotPreference } from "../shared/page-copilot";
+import {
+  DEFAULT_DESKTOP_HELPER_AGENT_KEY,
+  DESKTOP_COPILOT_PAGE_KEYS,
+  DESKTOP_COPILOT_PAGE_LABELS
+} from "../shared/assistant-settings";
+import {
+  resolveDesktopCopilotPreference,
+  sanitizeDesktopCopilotPagePreferences
+} from "../shared/page-copilot";
 import {
   resolveStartupRootPath,
   shouldAutoOpenAssistant,
@@ -78,6 +89,16 @@ function shouldStartDesktopWindowDrag(target: EventTarget | null) {
   return !target.closest(WINDOW_DRAG_EXCLUDED_SELECTOR);
 }
 const STARTUP_STATUS_REFRESH_MS = 1500;
+
+function asRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function readSettingsPatch(args: Record<string, unknown>) {
+  return asRecord(args.patch);
+}
 
 export const EXTERNAL_EXPERIMENTAL_ITEMS = [] as const;
 
@@ -205,6 +226,8 @@ function AppShell() {
   const showStartupCard = !startupCardDismissed && shouldShowStartupProgressCard(startupRestoreState, startupAllReady);
   const currentCopilotPreference = resolveDesktopCopilotPreference(assistantSettings?.desktopCopilotPages, location.pathname);
   const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
+  const isAgentWebclientMainRoute = location.pathname === ASSISTANT_TARGET_PATH;
+  const assistantCopilotOpen = assistantDockOpen && !isAgentWebclientMainRoute;
   async function refreshCustomSidebarItems() {
     const result = await window.electronAPI.customSidebar.list();
     if (result.ok) {
@@ -225,6 +248,9 @@ function AppShell() {
   }
 
   function openAssistantDock() {
+    if (isAgentWebclientMainRoute) {
+      return;
+    }
     setAssistantDockOpen(true);
   }
 
@@ -252,6 +278,13 @@ function AppShell() {
       setAssistantDockOpen(false);
     }
   }, [assistantDockOpen, assistantRunningRunId, currentCopilotPreference?.enabled]);
+
+  useEffect(() => {
+    if (isAgentWebclientMainRoute && assistantDockOpen) {
+      setAssistantDockOpen(false);
+      setAssistantDockOpenRequest(null);
+    }
+  }, [assistantDockOpen, isAgentWebclientMainRoute]);
 
   useEffect(() => {
     return window.electronAPI.onNavigate((targetPath) => {
@@ -589,6 +622,276 @@ function AppShell() {
   const experimentalItemMap = new Map(EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => [item.id, item]));
   const customSidebarItemMap = new Map(customSidebarItems.map((item) => [item.id, item]));
 
+  useEffect(() => {
+    function normalizeSurfaceTarget(value: unknown) {
+      return String(value ?? "").trim().toLowerCase();
+    }
+
+    function getSurfaceTarget(args: Record<string, unknown>) {
+      return normalizeSurfaceTarget(args.target || args.surfaceId || args.id || args.label || args.url || args.hostname);
+    }
+
+    function createSurfaceList() {
+      return [
+        {
+          id: BUILTIN_BROWSER_SURFACE_ID,
+          label: BUILTIN_BROWSER_SURFACE_LABEL,
+          url: BUILTIN_BROWSER_DEFAULT_URL,
+          route: BUILTIN_BROWSER_ROUTE,
+          active: location.pathname === BUILTIN_BROWSER_ROUTE
+        },
+        ...customSidebarItems.map((item) => ({
+          id: item.id,
+          label: item.label,
+          url: item.url,
+          route: `/custom-sidebar/${item.id}`,
+          active: activeCustomSidebarItemId === item.id
+        }))
+      ];
+    }
+
+    function surfaceMatchesTarget(
+      surface: ReturnType<typeof createSurfaceList>[number],
+      target: string
+    ) {
+      if (!target) {
+        return false;
+      }
+      const candidates = [
+        surface.id,
+        surface.label,
+        surface.url,
+        surface.route
+      ];
+      try {
+        candidates.push(new URL(surface.url).hostname);
+      } catch {
+        // Ignore malformed stored URLs; custom sidebar storage sanitizes these.
+      }
+      return candidates.some((candidate) => {
+        const normalizedCandidate = normalizeSurfaceTarget(candidate);
+        return normalizedCandidate === target ||
+          normalizedCandidate.includes(target) ||
+          target.includes(normalizedCandidate);
+      });
+    }
+
+    async function readSettingsState() {
+      const [nextAssistantSettings, assistantAgents, desktopPetState] = await Promise.all([
+        window.electronAPI.assistant.getSettings(),
+        window.electronAPI.assistant.listAgents(),
+        window.electronAPI.desktopPet.getState()
+      ]);
+      setAssistantSettings(nextAssistantSettings);
+      return {
+        themeMode,
+        sidebarTranslucencyEnabled,
+        assistantSettings: nextAssistantSettings,
+        assistantAgents,
+        desktopPet: desktopPetState
+      };
+    }
+
+    async function validateSettingsPatch(patch: Record<string, unknown>) {
+      const state = await readSettingsState();
+      const issues: Array<{ field: string; message: string; value?: unknown }> = [];
+      const desktopPetPatch = asRecord(patch.desktopPet);
+
+      if ("themeMode" in patch && patch.themeMode !== "light" && patch.themeMode !== "dark") {
+        issues.push({ field: "themeMode", value: patch.themeMode, message: "themeMode must be light or dark." });
+      }
+      if ("sidebarTranslucencyEnabled" in patch && typeof patch.sidebarTranslucencyEnabled !== "boolean") {
+        issues.push({
+          field: "sidebarTranslucencyEnabled",
+          value: patch.sidebarTranslucencyEnabled,
+          message: "sidebarTranslucencyEnabled must be boolean."
+        });
+      }
+      if ("enabled" in desktopPetPatch && typeof desktopPetPatch.enabled !== "boolean") {
+        issues.push({ field: "desktopPet.enabled", value: desktopPetPatch.enabled, message: "desktopPet.enabled must be boolean." });
+      }
+      if ("appearanceId" in desktopPetPatch) {
+        const appearanceId = typeof desktopPetPatch.appearanceId === "string" ? desktopPetPatch.appearanceId.trim() : "";
+        if (!state.desktopPet.appearanceOptions.some((appearance) => appearance.id === appearanceId)) {
+          issues.push({ field: "desktopPet.appearanceId", value: desktopPetPatch.appearanceId, message: "请选择可用的桌面宠物形象。" });
+        }
+      }
+      if ("boundAgentKey" in desktopPetPatch) {
+        const boundAgentKey = typeof desktopPetPatch.boundAgentKey === "string" ? desktopPetPatch.boundAgentKey.trim() : "";
+        if (!state.desktopPet.agentOptions.some((agent) => agent.agentKey === boundAgentKey)) {
+          issues.push({ field: "desktopPet.boundAgentKey", value: desktopPetPatch.boundAgentKey, message: "请选择可用的桌面宠物绑定智能体。" });
+        }
+      }
+      if ("desktopHelperAgentKey" in patch) {
+        const agentKey = typeof patch.desktopHelperAgentKey === "string" ? patch.desktopHelperAgentKey.trim() : "";
+        if (!state.assistantAgents.some((agent) => agent.agentKey === agentKey)) {
+          issues.push({ field: "desktopHelperAgentKey", value: patch.desktopHelperAgentKey, message: "请选择可用的侧边栏默认智能体。" });
+        }
+      }
+      if ("desktopCopilotPages" in patch) {
+        const nextPages = sanitizeDesktopCopilotPagePreferences({
+          ...state.assistantSettings.desktopCopilotPages,
+          ...asRecord(patch.desktopCopilotPages)
+        });
+        for (const pageKey of DESKTOP_COPILOT_PAGE_KEYS) {
+          const preference = nextPages[pageKey];
+          if (preference.enabled && !state.assistantAgents.some((agent) => agent.agentKey === preference.agentKey)) {
+            issues.push({
+              field: `desktopCopilotPages.${pageKey}.agentKey`,
+              value: preference.agentKey,
+              message: `${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 的 Copilot 智能体不可用。`
+            });
+          }
+        }
+      }
+
+      return {
+        valid: issues.length === 0,
+        issues,
+        state
+      };
+    }
+
+    function createSettingsPreview(patch: Record<string, unknown>, state: Awaited<ReturnType<typeof readSettingsState>>) {
+      const desktopPetPatch = asRecord(patch.desktopPet);
+      const changes = [];
+      if ("themeMode" in patch) {
+        changes.push({ field: "themeMode", from: state.themeMode, to: patch.themeMode });
+      }
+      if ("sidebarTranslucencyEnabled" in patch) {
+        changes.push({
+          field: "sidebarTranslucencyEnabled",
+          from: state.sidebarTranslucencyEnabled,
+          to: patch.sidebarTranslucencyEnabled
+        });
+      }
+      if ("enabled" in desktopPetPatch) {
+        changes.push({ field: "desktopPet.enabled", from: state.desktopPet.enabled, to: desktopPetPatch.enabled });
+      }
+      if ("appearanceId" in desktopPetPatch) {
+        changes.push({ field: "desktopPet.appearanceId", from: state.desktopPet.appearanceId, to: desktopPetPatch.appearanceId });
+      }
+      if ("boundAgentKey" in desktopPetPatch) {
+        changes.push({ field: "desktopPet.boundAgentKey", from: state.desktopPet.boundAgentKey, to: desktopPetPatch.boundAgentKey });
+      }
+      if ("desktopHelperAgentKey" in patch) {
+        changes.push({
+          field: "desktopHelperAgentKey",
+          from: state.assistantSettings.desktopHelperAgentKey,
+          to: patch.desktopHelperAgentKey
+        });
+      }
+      if ("desktopCopilotPages" in patch) {
+        changes.push({
+          field: "desktopCopilotPages",
+          from: state.assistantSettings.desktopCopilotPages,
+          to: sanitizeDesktopCopilotPagePreferences({
+            ...state.assistantSettings.desktopCopilotPages,
+            ...asRecord(patch.desktopCopilotPages)
+          })
+        });
+      }
+      return { changes };
+    }
+
+    return registerDesktopActionProviderForScope("global", async (request) => {
+      const args = request.args ?? {};
+      const patch = readSettingsPatch(args);
+
+      switch (request.action) {
+        case "desktop.settings.getState":
+          return { ok: true, result: await readSettingsState() };
+        case "desktop.settings.validatePatch": {
+          const validation = await validateSettingsPatch(patch);
+          return { ok: true, result: { valid: validation.valid, issues: validation.issues } };
+        }
+        case "desktop.settings.previewPatch": {
+          const validation = await validateSettingsPatch(patch);
+          return {
+            ok: true,
+            preview: {
+              valid: validation.valid,
+              issues: validation.issues,
+              ...createSettingsPreview(patch, validation.state)
+            }
+          };
+        }
+        case "desktop.settings.applyPatch": {
+          const validation = await validateSettingsPatch(patch);
+          if (!validation.valid) {
+            return {
+              ok: false,
+              error: {
+                code: "invalid_settings_patch",
+                message: "Desktop 设置 patch 校验失败。",
+                details: validation.issues
+              }
+            };
+          }
+
+          const desktopPetPatch = asRecord(patch.desktopPet);
+          if (patch.themeMode === "light" || patch.themeMode === "dark") {
+            setThemeMode(patch.themeMode);
+          }
+          if (typeof patch.sidebarTranslucencyEnabled === "boolean") {
+            setSidebarTranslucencyEnabled(patch.sidebarTranslucencyEnabled);
+          }
+          if (Object.keys(desktopPetPatch).length > 0) {
+            await window.electronAPI.desktopPet.saveSettings({
+              ...(typeof desktopPetPatch.enabled === "boolean" ? { enabled: desktopPetPatch.enabled } : {}),
+              ...(typeof desktopPetPatch.appearanceId === "string" ? { appearanceId: desktopPetPatch.appearanceId } : {}),
+              ...(typeof desktopPetPatch.boundAgentKey === "string" ? { boundAgentKey: desktopPetPatch.boundAgentKey } : {})
+            });
+          }
+          if ("desktopHelperAgentKey" in patch || "desktopCopilotPages" in patch) {
+            const nextSettings = await window.electronAPI.assistant.saveSettings({
+              ...(typeof patch.desktopHelperAgentKey === "string"
+                ? { desktopHelperAgentKey: patch.desktopHelperAgentKey.trim() || DEFAULT_DESKTOP_HELPER_AGENT_KEY }
+                : {}),
+              ...("desktopCopilotPages" in patch
+                ? {
+                    desktopCopilotPages: sanitizeDesktopCopilotPagePreferences({
+                      ...validation.state.assistantSettings.desktopCopilotPages,
+                      ...asRecord(patch.desktopCopilotPages)
+                    })
+                  }
+                : {})
+            });
+            setAssistantSettings(nextSettings);
+          }
+          return { ok: true, result: { applied: true, state: await readSettingsState() } };
+        }
+        case "desktop.embeddedWeb.listSurfaces":
+          return { ok: true, result: { surfaces: createSurfaceList() } };
+        case "desktop.embeddedWeb.activateSurface": {
+          const target = getSurfaceTarget(args);
+          const surface = createSurfaceList().find((candidate) => surfaceMatchesTarget(candidate, target));
+          if (!surface) {
+            return {
+              ok: false,
+              error: {
+                code: "surface_not_found",
+                message: "没有找到匹配的内嵌网站。",
+                details: { target, surfaces: createSurfaceList() }
+              }
+            };
+          }
+          navigate(surface.route);
+          return { ok: true, result: { surface: { ...surface, active: true } } };
+        }
+        default:
+          return null;
+      }
+    });
+  }, [
+    activeCustomSidebarItemId,
+    customSidebarItems,
+    location.pathname,
+    navigate,
+    sidebarTranslucencyEnabled,
+    themeMode
+  ]);
+
   return (
     <div
       className={[
@@ -596,8 +899,8 @@ function AppShell() {
         usesEmbeddedSurface ? "has-embedded-surface" : "",
         usesPluginSurface ? "has-plugin-surface" : "",
         isMarketRoute ? "has-market-controls" : "",
-        assistantDockOpen ? "has-assistant-dock" : "",
-        assistantDockOpen ? "has-assistant-dock-full" : "",
+        assistantCopilotOpen ? "has-assistant-dock" : "",
+        assistantCopilotOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
         isMac && sidebarTranslucencyEnabled ? "is-mac-translucent-sidebar" : "",
@@ -617,7 +920,8 @@ function AppShell() {
           isCollapsed={sidebarState.collapsed}
           currentPath={location.pathname}
           pendingPath={pendingSidebarNavigationPath}
-          assistantDockOpen={assistantDockOpen}
+          assistantDockOpen={assistantCopilotOpen}
+          assistantLauncherDisabled={isAgentWebclientMainRoute}
           assistantLauncherVisible={assistantLauncherVisible}
           customSidebarItems={customSidebarItems}
           onOpenAssistantDock={() => openAssistantDock()}
@@ -703,7 +1007,7 @@ function AppShell() {
         </main>
       </div>
       <AgentWebclientCopilotDock
-        open={assistantDockOpen}
+        open={assistantCopilotOpen}
         hostTheme={themeMode}
         nativeDialogVisible={nativeDialogVisible}
         openRequest={assistantDockOpenRequest}

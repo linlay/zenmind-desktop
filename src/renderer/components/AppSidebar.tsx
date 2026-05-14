@@ -54,6 +54,7 @@ type AppSidebarProps = {
   currentPath: string;
   pendingPath?: string | null;
   assistantDockOpen?: boolean;
+  assistantLauncherDisabled?: boolean;
   assistantLauncherVisible?: boolean;
   customSidebarItems: CustomSidebarItem[];
   onOpenAssistantDock?: () => void;
@@ -67,6 +68,7 @@ export function AppSidebar({
   currentPath,
   pendingPath,
   assistantDockOpen = false,
+  assistantLauncherDisabled = false,
   assistantLauncherVisible = true,
   customSidebarItems,
   onOpenAssistantDock,
@@ -125,6 +127,9 @@ export function AppSidebar({
   }
 
   function handleAssistantDockClick() {
+    if (assistantLauncherDisabled) {
+      return;
+    }
     onOpenAssistantDock?.();
     onNavigateItem?.();
   }
@@ -197,17 +202,22 @@ export function AppSidebar({
                 "sidebar-link",
                 "sidebar-link-utility",
                 "sidebar-assistant-launcher",
-                assistantDockOpen ? "sidebar-link-active" : ""
+                assistantDockOpen ? "is-switch-on" : "",
+                assistantLauncherDisabled ? "is-disabled" : ""
               ].filter(Boolean).join(" ")}
               onClick={handleAssistantDockClick}
-              aria-label="打开 ZenMind 助手"
-              aria-pressed={assistantDockOpen}
+              aria-label={assistantLauncherDisabled ? "当前页面不可开启 ZenMind 助手" : "打开 ZenMind 助手"}
+              aria-disabled={assistantLauncherDisabled}
+              disabled={assistantLauncherDisabled}
               title="助手"
             >
               <span className="sidebar-link-icon">
                 <SidebarIllustration kind="assistant" />
               </span>
               <span className="sidebar-link-label">助手</span>
+              <span className="sidebar-assistant-switch" aria-hidden="true">
+                <span className="sidebar-assistant-switch-thumb" />
+              </span>
               <span className="sidebar-link-label-collapsed" aria-hidden="true">助手</span>
             </button>
           ) : null}

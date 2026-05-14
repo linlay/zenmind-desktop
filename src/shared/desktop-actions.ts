@@ -19,6 +19,22 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.page.applyPatch", kind: "apply", category: "page", description: "Apply a patch to the active page form." },
   { name: "desktop.navigate.toRoute", kind: "execute", category: "navigation", description: "Navigate the Desktop shell to a route." },
 
+  { name: "desktop.settings.getState", kind: "read", category: "settings", description: "Read Desktop settings state." },
+  { name: "desktop.settings.validatePatch", kind: "validate", category: "settings", description: "Validate a Desktop settings patch." },
+  { name: "desktop.settings.previewPatch", kind: "preview", category: "settings", description: "Preview Desktop settings changes." },
+  { name: "desktop.settings.applyPatch", kind: "apply", category: "settings", description: "Apply Desktop settings changes." },
+
+  { name: "desktop.embeddedWeb.listSurfaces", kind: "read", category: "embeddedWeb", description: "List embedded web surfaces." },
+  { name: "desktop.embeddedWeb.getActiveSurface", kind: "read", category: "embeddedWeb", description: "Read the active embedded web surface." },
+  { name: "desktop.embeddedWeb.activateSurface", kind: "execute", category: "embeddedWeb", description: "Activate an embedded web surface." },
+  { name: "desktop.embeddedWeb.getPageContext", kind: "read", category: "embeddedWeb", description: "Read active embedded web page context." },
+  { name: "desktop.embeddedWeb.navigate", kind: "execute", category: "embeddedWeb", description: "Navigate the active embedded web tab." },
+  { name: "desktop.embeddedWeb.reload", kind: "execute", category: "embeddedWeb", description: "Reload the active embedded web tab." },
+  { name: "desktop.embeddedWeb.goBack", kind: "execute", category: "embeddedWeb", description: "Go back in the active embedded web tab." },
+  { name: "desktop.embeddedWeb.openTab", kind: "execute", category: "embeddedWeb", description: "Open an embedded web tab." },
+  { name: "desktop.embeddedWeb.closeTab", kind: "execute", category: "embeddedWeb", description: "Close an embedded web tab." },
+  { name: "desktop.embeddedWeb.switchTab", kind: "execute", category: "embeddedWeb", description: "Switch the active embedded web tab." },
+
   { name: "desktop.controlCenter.listServices", kind: "read", category: "controlCenter", description: "List Desktop services." },
   { name: "desktop.controlCenter.getServiceStatus", kind: "read", category: "controlCenter", description: "Read one service status." },
   { name: "desktop.controlCenter.getServiceDetail", kind: "read", category: "controlCenter", description: "Read one service detail." },
@@ -71,15 +87,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.automations.pauseSchedule", kind: "execute", category: "automations", description: "Pause a schedule." },
   { name: "desktop.automations.resumeSchedule", kind: "execute", category: "automations", description: "Resume a schedule." },
   { name: "desktop.automations.deleteSchedule", kind: "execute", category: "automations", description: "Delete a schedule." },
-  { name: "desktop.automations.explainNextRun", kind: "read", category: "automations", description: "Explain the next schedule run." },
-
-  { name: "desktop.memory.getSettings", kind: "read", category: "memory", description: "Read memory settings." },
-  { name: "desktop.memory.getSummary", kind: "read", category: "memory", description: "Read memory summary." },
-  { name: "desktop.memory.listRecentItems", kind: "read", category: "memory", description: "List recent memory items." },
-  { name: "desktop.memory.searchItems", kind: "read", category: "memory", description: "Search memory items." },
-  { name: "desktop.memory.previewItem", kind: "read", category: "memory", description: "Preview one memory item." },
-  { name: "desktop.memory.enableAutoLearn", kind: "apply", category: "memory", description: "Enable memory auto learn." },
-  { name: "desktop.memory.disableAutoLearn", kind: "apply", category: "memory", description: "Disable memory auto learn." }
+  { name: "desktop.automations.explainNextRun", kind: "read", category: "automations", description: "Explain the next schedule run." }
 ] as const satisfies readonly DesktopActionDefinition[];
 
 export type DesktopActionName = typeof DESKTOP_ACTION_DEFINITIONS[number]["name"];

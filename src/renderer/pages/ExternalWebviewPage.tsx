@@ -25,6 +25,7 @@ import {
 } from "../../shared/external-webview-bookmarks";
 import type { ExternalWebviewBookmark } from "../../shared/external-webview-bookmarks";
 import { registerAssistantPageContextProvider } from "../services/assistantPageContext";
+import { registerDesktopActionProviderForScope } from "../services/desktopActionRegistry";
 
 type ExternalWebviewPageProps = {
   title: string;
@@ -113,11 +114,15 @@ function normalizeEditableUrl(rawValue: string) {
     return null;
   }
 
+  const normalizeParsedUrl = (parsedUrl: URL) => {
+    return ["http:", "https:"].includes(parsedUrl.protocol) ? parsedUrl.toString() : null;
+  };
+
   try {
-    return new URL(trimmedValue).toString();
+    return normalizeParsedUrl(new URL(trimmedValue));
   } catch {
     try {
-      return new URL(`https://${trimmedValue}`).toString();
+      return normalizeParsedUrl(new URL(`https://${trimmedValue}`));
     } catch {
       return null;
     }
@@ -497,6 +502,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
         activeTabId: nextTab.id
       };
     });
+    return nextTab;
   };
 
   const setActiveTab = (tabId: string) => {
@@ -737,66 +743,243 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
 
   const activeTab = browserState.tabs.find((tab) => tab.id === browserState.activeTabId) ?? browserState.tabs[0];
 
+  const getActiveWebviewState = () => {
+    const currentState = browserStateRef.current;
+    const currentActiveTab = currentState.tabs.find((tab) => tab.id === currentState.activeTabId) ?? currentState.tabs[0];
+    return {
+      currentState,
+      currentActiveTab,
+      activeWebview: currentActiveTab ? webviewRefs.current.get(currentActiveTab.id) ?? null : null
+    };
+  };
+
+  const serializeTab = (tab: ExternalWebviewTabState) => ({
+    id: tab.id,
+    title: tab.title,
+    currentUrl: tab.currentUrl,
+    faviconUrl: tab.faviconUrl,
+    guestId: tab.guestId,
+    canGoBack: tab.canGoBack,
+    isLoading: tab.isLoading
+  });
+
+  const getEmbeddedWebSurfaceState = () => {
+    const { currentState, currentActiveTab, activeWebview } = getActiveWebviewState();
+    let webContentsId = currentActiveTab?.guestId ?? null;
+    if (activeWebview) {
+      try {
+        webContentsId = activeWebview.getWebContentsId();
+      } catch {
+        // Keep the last synced guest id if Electron has not attached yet.
+      }
+    }
+    const activeTabSnapshot = currentActiveTab ? serializeTab({
+      ...currentActiveTab,
+      guestId: webContentsId
+    }) : null;
+    return {
+      surface: {
+        id: surfaceId,
+        label: surfaceLabel ?? title,
+        url,
+        active: activeRef.current,
+        currentUrl: activeTabSnapshot?.currentUrl ?? url,
+        title: activeTabSnapshot?.title ?? title,
+        webContentsId
+      },
+      tabs: currentState.tabs.map((tab) => serializeTab(tab)),
+      activeTab: activeTabSnapshot
+    };
+  };
+
+  const readActivePageContext = async () => {
+    const { currentActiveTab, activeWebview } = getActiveWebviewState();
+    if (!currentActiveTab || !activeRef.current) {
+      return null;
+    }
+
+    if (!activeWebview) {
+      return {
+        url: currentActiveTab.currentUrl,
+        title: currentActiveTab.title,
+        selectedText: "",
+        metaDescription: "",
+        headings: [],
+        bodyText: ""
+      } satisfies AssistantPageContext;
+    }
+
+    try {
+      const webContentsId = activeWebview.getWebContentsId();
+      const pageContext = await activeWebview.executeJavaScript(WEBVIEW_PAGE_CONTEXT_SCRIPT, true);
+      return {
+        url: typeof pageContext?.url === "string" ? pageContext.url : currentActiveTab.currentUrl,
+        title: typeof pageContext?.title === "string" && pageContext.title
+          ? pageContext.title
+          : currentActiveTab.title,
+        selectedText: typeof pageContext?.selectedText === "string" ? pageContext.selectedText : "",
+        metaDescription: typeof pageContext?.metaDescription === "string" ? pageContext.metaDescription : "",
+        headings: Array.isArray(pageContext?.headings)
+          ? pageContext.headings.filter((item: unknown): item is string => typeof item === "string")
+          : [],
+        bodyText: typeof pageContext?.bodyText === "string" ? pageContext.bodyText : "",
+        browserTarget: Number.isFinite(webContentsId)
+          ? {
+              kind: "webview",
+              webContentsId,
+              surfaceId,
+              surfaceLabel: surfaceLabel ?? title,
+              currentUrl: currentActiveTab.currentUrl
+            }
+          : undefined
+      } satisfies AssistantPageContext;
+    } catch {
+      return {
+        url: currentActiveTab.currentUrl,
+        title: currentActiveTab.title,
+        selectedText: "",
+        metaDescription: "",
+        headings: [],
+        bodyText: ""
+      } satisfies AssistantPageContext;
+    }
+  };
+
   useEffect(() => {
     if (active === false || !activeTab) {
       return undefined;
     }
 
     return registerAssistantPageContextProvider(async () => {
-      const currentState = browserStateRef.current;
-      const currentActiveTab = currentState.tabs.find((tab) => tab.id === currentState.activeTabId) ?? currentState.tabs[0];
-      if (!currentActiveTab || !activeRef.current) {
-        return null;
-      }
-
-      const activeWebview = webviewRefs.current.get(currentActiveTab.id);
-      if (!activeWebview) {
-        return {
-          url: currentActiveTab.currentUrl,
-          title: currentActiveTab.title,
-          selectedText: "",
-          metaDescription: "",
-          headings: [],
-          bodyText: ""
-        } satisfies AssistantPageContext;
-      }
-
-      try {
-        const webContentsId = activeWebview.getWebContentsId();
-        const pageContext = await activeWebview.executeJavaScript(WEBVIEW_PAGE_CONTEXT_SCRIPT, true);
-        return {
-          url: typeof pageContext?.url === "string" ? pageContext.url : currentActiveTab.currentUrl,
-          title: typeof pageContext?.title === "string" && pageContext.title
-            ? pageContext.title
-            : currentActiveTab.title,
-          selectedText: typeof pageContext?.selectedText === "string" ? pageContext.selectedText : "",
-          metaDescription: typeof pageContext?.metaDescription === "string" ? pageContext.metaDescription : "",
-          headings: Array.isArray(pageContext?.headings)
-            ? pageContext.headings.filter((item: unknown): item is string => typeof item === "string")
-            : [],
-          bodyText: typeof pageContext?.bodyText === "string" ? pageContext.bodyText : "",
-          browserTarget: Number.isFinite(webContentsId)
-            ? {
-                kind: "webview",
-                webContentsId,
-                surfaceId,
-                surfaceLabel: surfaceLabel ?? title,
-                currentUrl: currentActiveTab.currentUrl
-              }
-            : undefined
-        } satisfies AssistantPageContext;
-      } catch {
-        return {
-          url: currentActiveTab.currentUrl,
-          title: currentActiveTab.title,
-          selectedText: "",
-          metaDescription: "",
-          headings: [],
-          bodyText: ""
-        } satisfies AssistantPageContext;
-      }
+      return readActivePageContext();
     });
   }, [active, activeTab?.id, surfaceId, surfaceLabel, title]);
+
+  useEffect(() => {
+    if (active === false) {
+      return undefined;
+    }
+
+    function readActionUrl(args: Record<string, unknown>) {
+      const rawUrl = typeof args.url === "string"
+        ? args.url
+        : typeof args.href === "string"
+          ? args.href
+          : "";
+      return normalizeEditableUrl(rawUrl);
+    }
+
+    function readTargetTabId(args: Record<string, unknown>) {
+      return typeof args.tabId === "string" && args.tabId.trim()
+        ? args.tabId.trim()
+        : browserStateRef.current.activeTabId;
+    }
+
+    function embeddedError(code: string, message: string, details?: unknown) {
+      return {
+        ok: false,
+        error: {
+          code,
+          message,
+          ...(details === undefined ? {} : { details })
+        }
+      };
+    }
+
+    return registerDesktopActionProviderForScope("embeddedWeb", async (request) => {
+      if (!activeRef.current) {
+        return null;
+      }
+      const args = request.args ?? {};
+
+      switch (request.action) {
+        case "desktop.embeddedWeb.getActiveSurface":
+          return { ok: true, result: getEmbeddedWebSurfaceState() };
+        case "desktop.embeddedWeb.getPageContext":
+          return { ok: true, result: await readActivePageContext() };
+        case "desktop.embeddedWeb.navigate": {
+          const nextUrl = readActionUrl(args);
+          if (!nextUrl) {
+            return embeddedError("invalid_url", "内嵌网站地址必须是 http 或 https URL。", args);
+          }
+          const tabId = readTargetTabId(args);
+          const targetWebview = webviewRefs.current.get(tabId);
+          if (!targetWebview) {
+            return embeddedError("tab_unavailable", "目标内嵌网站标签页不可用。", { tabId });
+          }
+          await targetWebview.loadURL(nextUrl);
+          setAddressInputValue(nextUrl);
+          return { ok: true, result: { ...getEmbeddedWebSurfaceState(), navigatedUrl: nextUrl } };
+        }
+        case "desktop.embeddedWeb.reload": {
+          const tabId = readTargetTabId(args);
+          const targetWebview = webviewRefs.current.get(tabId);
+          if (!targetWebview) {
+            return embeddedError("tab_unavailable", "目标内嵌网站标签页不可用。", { tabId });
+          }
+          targetWebview.reload();
+          return { ok: true, result: getEmbeddedWebSurfaceState() };
+        }
+        case "desktop.embeddedWeb.goBack": {
+          const tabId = readTargetTabId(args);
+          const targetWebview = webviewRefs.current.get(tabId);
+          if (!targetWebview) {
+            return embeddedError("tab_unavailable", "目标内嵌网站标签页不可用。", { tabId });
+          }
+          if (!targetWebview.canGoBack()) {
+            return embeddedError("cannot_go_back", "当前内嵌网站标签页没有可后退的历史记录。", { tabId });
+          }
+          targetWebview.goBack();
+          return { ok: true, result: getEmbeddedWebSurfaceState() };
+        }
+        case "desktop.embeddedWeb.openTab": {
+          const nextUrl = readActionUrl(args);
+          if (!nextUrl) {
+            return embeddedError("invalid_url", "内嵌网站地址必须是 http 或 https URL。", args);
+          }
+          const preferredTitle = typeof args.title === "string" ? args.title : "";
+          const nextTab = openTab(nextUrl, preferredTitle);
+          return { ok: true, result: { ...getEmbeddedWebSurfaceState(), openedTab: serializeTab(nextTab) } };
+        }
+        case "desktop.embeddedWeb.closeTab": {
+          const tabId = readTargetTabId(args);
+          const currentState = browserStateRef.current;
+          if (currentState.tabs.length <= 1) {
+            return embeddedError("last_tab", "不能关闭最后一个内嵌网站标签页。", { tabId });
+          }
+          if (!currentState.tabs.some((tab) => tab.id === tabId)) {
+            return embeddedError("tab_not_found", "未找到目标内嵌网站标签页。", { tabId });
+          }
+          setBrowserState((state) => {
+            const targetIndex = state.tabs.findIndex((tab) => tab.id === tabId);
+            if (targetIndex === -1 || state.tabs.length <= 1) {
+              return state;
+            }
+            const nextTabs = state.tabs.filter((tab) => tab.id !== tabId);
+            const nextActiveTabId = state.activeTabId === tabId
+              ? nextTabs[Math.max(0, targetIndex - 1)]?.id ?? nextTabs[0].id
+              : state.activeTabId;
+            webviewRefs.current.delete(tabId);
+            return {
+              tabs: nextTabs,
+              activeTabId: nextActiveTabId
+            };
+          });
+          return { ok: true, result: { closedTabId: tabId } };
+        }
+        case "desktop.embeddedWeb.switchTab": {
+          const tabId = readTargetTabId(args);
+          if (!browserStateRef.current.tabs.some((tab) => tab.id === tabId)) {
+            return embeddedError("tab_not_found", "未找到目标内嵌网站标签页。", { tabId });
+          }
+          setActiveTab(tabId);
+          return { ok: true, result: { ...getEmbeddedWebSurfaceState(), activeTabId: tabId } };
+        }
+        default:
+          return null;
+      }
+    });
+  }, [active, activeTab?.id, surfaceId, surfaceLabel, title, url]);
 
   useEffect(() => {
     setAddressInputValue(activeTab?.currentUrl ?? url);
