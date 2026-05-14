@@ -204,6 +204,7 @@ export function ControlCenterPage() {
   const [configCache, setConfigCache] = useState<ConfigCache>({});
   const [configMeta, setConfigMeta] = useState<ConfigMetaCache>({});
   const [activeConfigKeyByService, setActiveConfigKeyByService] = useState<Record<ServiceId, string>>({});
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
 
   const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services]);
   const coreModules = useMemo<CoreModuleEntry[]>(
@@ -268,6 +269,21 @@ export function ControlCenterPage() {
   }, [feedback]);
 
   useEffect(() => {
+    if (!detailDialogOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDetailDialogOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [detailDialogOpen]);
+
+  useEffect(() => {
     if (!selectedServiceIdFromNavigation) {
       return;
     }
@@ -292,6 +308,12 @@ export function ControlCenterPage() {
   const serviceConfigMeta = activeDetailService ? configMeta[activeDetailService.id] ?? {} : {};
   const selectedConfigMeta = selectedConfigFile ? serviceConfigMeta[selectedConfigFile.key] : undefined;
   const selectedConfigContent = selectedConfigFile ? serviceConfigCache[selectedConfigFile.key] ?? "" : "";
+  const selectedConfigSourceClass = selectedConfigFile
+    ? getConfigSourceClass(selectedConfigFile, selectedConfigMeta)
+    : "is-pending";
+  const selectedConfigSourceLabel = selectedConfigFile
+    ? getConfigSourceLabel(selectedConfigFile, selectedConfigMeta)
+    : "未读取";
   const selectedConfigPathLabel =
     selectedConfigMeta?.path ||
     (selectedConfigFile ? `将自动创建 ${selectedConfigFile.relativePath}` : "未声明配置文件");
@@ -756,6 +778,83 @@ export function ControlCenterPage() {
                       <OpenFrontendIcon />
                     </button>
                   ) : null}
+                  <button
+                    type="button"
+                    className="service-title-text-button"
+                    onClick={() => setDetailDialogOpen(true)}
+                  >
+                    详情
+                  </button>
+                  {activeDetailService.kind === "builtin" && activeDetailService.status === "not-installed" ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runAction(
+                          activeDetailService.id,
+                          "lifecycle",
+                          () => installBuiltinFromBundle(activeDetailService.id),
+                          {
+                            invalidateConfig: true
+                          }
+                        )
+                      }
+                      className="service-title-text-button is-primary"
+                      disabled={activeId === activeDetailService.id}
+                    >
+                      安装
+                    </button>
+                  ) : null}
+                  {shouldShowInitializeAction(activeDetailService) ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runAction(activeDetailService.id, "lifecycle", () => initialize(activeDetailService.id), {
+                          invalidateConfig: true
+                        })
+                      }
+                      className="service-title-text-button is-primary"
+                      disabled={activeId === activeDetailService.id}
+                    >
+                      {activeDetailService.status === "initialization-required" ? "初始化" : "重新初始化"}
+                    </button>
+                  ) : null}
+                  {activeDetailService.kind === "builtin" &&
+                  (activeDetailService.status === "not-installed" ||
+                    activeDetailService.status === "stopped" ||
+                    activeDetailService.status === "error") ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runAction(activeDetailService.id, "lifecycle", () => installBuiltin(activeDetailService.id), {
+                          invalidateConfig: true
+                        })
+                      }
+                      className="service-title-text-button"
+                      disabled={activeId === activeDetailService.id}
+                    >
+                      重新安装
+                    </button>
+                  ) : null}
+                  {activeDetailService.kind === "plugin" ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runAction(
+                          activeDetailService.id,
+                          "lifecycle",
+                          async () => {
+                            const r = await uninstallPlugin(activeDetailService.id);
+                            return { ok: r.ok, message: r.message };
+                          },
+                          { invalidateConfig: true }
+                        )
+                      }
+                      className="service-title-text-button"
+                      disabled={activeId === activeDetailService.id}
+                    >
+                      卸载插件
+                    </button>
+                  ) : null}
                 </div>
               </div>
               <div className="service-card-badges">
@@ -768,167 +867,77 @@ export function ControlCenterPage() {
 
             {detailEndpoint ? (
               <div className="service-inline-meta">
-                <span className="service-inline-meta-label">访问入口</span>
+                <span className="service-inline-meta-label">访问地址</span>
                 <div className="service-inline-meta-main">
-                  <span
+                  <a
+                    href={detailEndpoint}
                     className="service-inline-meta-value truncated-hover-value"
                     data-full-value={detailEndpoint}
+                    onClick={(event) => {
+                      if (activeDetailService.frontendMode === "none") {
+                        return;
+                      }
+                      event.preventDefault();
+                      navigate(`/plugin/${activeDetailService.id}`);
+                    }}
                   >
                     <span className="truncated-hover-text">{detailEndpoint}</span>
-                  </span>
-                  {activeDetailService.frontendMode !== "none" && activeDetailService.status === "running" ? (
+                  </a>
+                  {activeDetailService.healthMeta.logFilePath ? (
                     <button
                       type="button"
                       className="text-button control-center-link-action service-inline-meta-open"
-                      onClick={() => navigate(`/plugin/${activeDetailService.id}`)}
+                      onClick={() =>
+                        void openLogViewer(
+                          activeDetailService,
+                          "main",
+                          `${getServiceDisplayName(activeDetailService.id, activeDetailService.name)} · 日志文件`
+                        )
+                      }
                     >
-                      查看
+                      查看日志
                     </button>
                   ) : null}
                 </div>
               </div>
             ) : null}
 
-            <dl className="meta-grid">
-              {metaItems.map((item) => (
-                <div
-                  key={item.key}
-                  className={`meta-grid-item${item.actionLabel && item.onAction ? " has-action" : ""}`}
-                >
-                  <div className="meta-grid-head">
-                    <dt>{item.label}</dt>
-                    {item.actionLabel && item.onAction ? (
-                      <button
-                        type="button"
-                        className="text-button control-center-link-action meta-grid-action"
-                        onClick={item.onAction}
-                        disabled={item.disabled}
-                      >
-                        {item.actionLabel}
-                      </button>
-                    ) : null}
-                  </div>
-                  <dd
-                    className="truncated-hover-value"
-                    data-full-value={item.title || item.value}
-                  >
-                    <span className="truncated-hover-text">{item.value}</span>
-                  </dd>
-                </div>
-              ))}
-            </dl>
-
-            {activeDetailService.healthMeta.prerequisites.length > 0 ? (
-              <div className="prereq-box">
-                {activeDetailService.healthMeta.prerequisites.map((item) => (
-                  <span key={item}>{item}</span>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="action-row">
-              {activeDetailService.kind === "builtin" && activeDetailService.status === "not-installed" ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    runAction(activeDetailService.id, "lifecycle", () => installBuiltinFromBundle(activeDetailService.id), {
-                      invalidateConfig: true
-                    })
-                  }
-                  className="action-button primary"
-                  disabled={activeId === activeDetailService.id}
-                >
-                  安装
-                </button>
-              ) : null}
-              {shouldShowInitializeAction(activeDetailService) ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    runAction(activeDetailService.id, "lifecycle", () => initialize(activeDetailService.id), {
-                      invalidateConfig: true
-                    })
-                  }
-                  className="action-button primary"
-                  disabled={activeId === activeDetailService.id}
-                >
-                  {activeDetailService.status === "initialization-required" ? "初始化" : "重新初始化"}
-                </button>
-              ) : null}
-              {activeDetailService.kind === "builtin" &&
-              (activeDetailService.status === "not-installed" ||
-                activeDetailService.status === "stopped" ||
-                activeDetailService.status === "error") ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    runAction(activeDetailService.id, "lifecycle", () => installBuiltin(activeDetailService.id), {
-                      invalidateConfig: true
-                    })
-                  }
-                  className="action-button ghost"
-                  disabled={activeId === activeDetailService.id}
-                >
-                  重新安装
-                </button>
-              ) : null}
-              {activeDetailService.kind === "plugin" ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    runAction(
-                      activeDetailService.id,
-                      "lifecycle",
-                      async () => {
-                        const r = await uninstallPlugin(activeDetailService.id);
-                        return { ok: r.ok, message: r.message };
-                      },
-                      { invalidateConfig: true }
-                    )
-                  }
-                  className="action-button ghost"
-                  disabled={activeId === activeDetailService.id}
-                >
-                  卸载插件
-                </button>
-              ) : null}
-            </div>
-
             <div className="config-panel">
               <div className="config-head">
                 <h3>配置文件</h3>
-                <span>{selectedConfigPathLabel}</span>
+                {selectedConfigFile ? (
+                  <div className="config-select-wrap">
+                    <select
+                      className="config-file-select"
+                      value={selectedConfigFile.key}
+                      onChange={(event) =>
+                        setActiveConfigKeyByService((current) => ({
+                          ...current,
+                          [activeDetailService.id]: event.target.value
+                        }))
+                      }
+                      aria-label="选择配置文件"
+                    >
+                      {activeDetailService.configFiles.map((configFile) => {
+                        const fileMeta = serviceConfigMeta[configFile.key];
+                        return (
+                          <option key={configFile.key} value={configFile.key}>
+                            {configFile.label || configFile.relativePath} · {getConfigSourceLabel(configFile, fileMeta)}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                ) : null}
               </div>
               {activeDetailService.configFiles.length > 0 && selectedConfigFile ? (
                 <>
-                  {activeDetailService.configFiles.length > 1 ? (
-                    <div className="config-file-tabs" role="tablist" aria-label="配置文件">
-                      {activeDetailService.configFiles.map((configFile) => {
-                        const fileMeta = serviceConfigMeta[configFile.key];
-                        const isActive = configFile.key === selectedConfigFile.key;
-                        return (
-                          <button
-                            key={configFile.key}
-                            type="button"
-                            role="tab"
-                            aria-selected={isActive}
-                            className={`config-file-tab${isActive ? " is-active" : ""}`}
-                            onClick={() =>
-                              setActiveConfigKeyByService((current) => ({
-                                ...current,
-                                [activeDetailService.id]: configFile.key
-                              }))
-                            }
-                          >
-                            <span>{configFile.label || configFile.relativePath}</span>
-                            <span className={`config-file-source ${getConfigSourceClass(configFile, fileMeta)}`}>
-                              {getConfigSourceLabel(configFile, fileMeta)}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : null}
+                  <div className="config-current-file">
+                    <span className="config-current-file-path">{selectedConfigPathLabel}</span>
+                    <span className={`config-file-source ${selectedConfigSourceClass}`}>
+                      {selectedConfigSourceLabel}
+                    </span>
+                  </div>
                   <textarea
                     className="config-editor"
                     value={selectedConfigContent}
@@ -975,6 +984,67 @@ export function ControlCenterPage() {
                 <p className="service-message">该服务未声明可编辑配置文件。</p>
               )}
             </div>
+
+            {detailDialogOpen ? (
+              <div className="service-detail-dialog-backdrop" onClick={() => setDetailDialogOpen(false)}>
+                <section
+                  className="service-detail-dialog"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={`${getServiceDisplayName(activeDetailService.id, activeDetailService.name)} 详情`}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="service-detail-dialog-head">
+                    <div>
+                      <p className="service-kicker">服务详情</p>
+                      <h3>{getServiceDisplayName(activeDetailService.id, activeDetailService.name)}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      className="service-detail-dialog-close"
+                      onClick={() => setDetailDialogOpen(false)}
+                      aria-label="关闭详情"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <dl className="service-detail-list">
+                    {metaItems.map((item) => (
+                      <div key={item.key} className="service-detail-list-item">
+                        <dt>{item.label}</dt>
+                        <dd>
+                          <span>{item.value}</span>
+                          {item.actionLabel && item.onAction ? (
+                            <button
+                              type="button"
+                              className="text-button control-center-link-action"
+                              onClick={item.onAction}
+                              disabled={item.disabled}
+                            >
+                              {item.actionLabel}
+                            </button>
+                          ) : null}
+                        </dd>
+                      </div>
+                    ))}
+                    <div className="service-detail-list-item">
+                      <dt>前置条件</dt>
+                      <dd>
+                        {activeDetailService.healthMeta.prerequisites.length > 0 ? (
+                          <div className="service-detail-prereqs">
+                            {activeDetailService.healthMeta.prerequisites.map((item) => (
+                              <span key={item}>{item}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span>无</span>
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+              </div>
+            ) : null}
           </article>
         ) : activeCoreModule ? (
           <article className="service-card control-center-detail">
