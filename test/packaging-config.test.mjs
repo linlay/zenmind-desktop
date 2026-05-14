@@ -23,9 +23,9 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
   const pluginsResource = extraResources.find((entry) => entry.from === "build/resources/plugins");
   const voiceAsrResource = extraResources.find((entry) => entry.from === "build/resources/voice-asr");
 
-  assert.equal(packageJson.dependencies?.["@ffmpeg-installer/ffmpeg"], "^1.1.0");
-  assert.ok(packageJson.build?.asarUnpack?.includes("node_modules/@ffmpeg-installer/*/ffmpeg"));
-  assert.ok(packageJson.build?.asarUnpack?.includes("node_modules/@ffmpeg-installer/*/ffmpeg.exe"));
+  assert.equal(packageJson.dependencies?.["@ffmpeg-installer/ffmpeg"], undefined);
+  assert.ok(!packageJson.build?.asarUnpack?.includes("node_modules/@ffmpeg-installer/*/ffmpeg"));
+  assert.ok(!packageJson.build?.asarUnpack?.includes("node_modules/@ffmpeg-installer/*/ffmpeg.exe"));
   assert.deepEqual(uninstallResource, {
     from: "scripts",
     to: ".",
@@ -104,7 +104,7 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   assert.match(buildMainBundleScript, /"main\/attachment-worker"/);
   assert.match(buildMainBundleScript, /"main",\s*"assistant",\s*"attachment-worker\.ts"/);
   assert.match(stageAppScript, /"@napi-rs\/canvas": desktopPackage\.dependencies/);
-  assert.match(stageAppScript, /"@ffmpeg-installer\/ffmpeg": desktopPackage\.dependencies/);
+  assert.doesNotMatch(stageAppScript, /"@ffmpeg-installer\/ffmpeg": desktopPackage\.dependencies/);
   assert.match(stageAppScript, /--os=\$\{target\.os\}/);
   assert.match(stageAppScript, /--cpu=\$\{target\.arch\}/);
   assert.match(stageAppScript, /"--omit=dev"/);
@@ -112,11 +112,11 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   assert.match(stageAppScript, /"--ignore-scripts"/);
   assert.match(stageAppScript, /"--no-package-lock"/);
   assert.match(stageAppScript, /@napi-rs\/canvas-win32-x64-msvc/);
-  assert.match(stageAppScript, /@ffmpeg-installer\/darwin-arm64/);
-  assert.match(stageAppScript, /@ffmpeg-installer\/win32-x64/);
-  assert.match(stageAppScript, /ffmpeg\.exe/);
+  assert.doesNotMatch(stageAppScript, /@ffmpeg-installer\/darwin-arm64/);
+  assert.doesNotMatch(stageAppScript, /@ffmpeg-installer\/win32-x64/);
+  assert.doesNotMatch(stageAppScript, /ffmpeg\.exe/);
   assert.match(stageAppScript, /unexpected linux canvas runtime packages in win32 stage/);
-  assert.match(stageAppScript, /unexpected non-windows ffmpeg runtime packages in win32 stage/);
+  assert.doesNotMatch(stageAppScript, /unexpected non-windows ffmpeg runtime packages in win32 stage/);
   assert.doesNotMatch(stageAppScript, /exceljs|docx|pptxgenjs|pdfjs-dist|zod/);
   assert.doesNotMatch(
     distWinScript,

@@ -34,6 +34,7 @@ import {
   forceCleanupManagedProcesses,
   getServiceLogsMeta,
   readServiceLog,
+  watchServiceLog,
   getServiceState,
   initializeService,
   importServiceFile,
@@ -104,6 +105,7 @@ import type {
   AssistantWorkerOpenRequest,
   ServiceId,
   ServiceLogReadOptions,
+  ServiceLogStreamOptions,
   ServiceLogTarget,
   StartupRestoreMode,
   StartupRestoreServiceState,
@@ -3141,6 +3143,14 @@ async function renderAssistantPdf(html: string) {
   }
 }
 
+const logStreamSubscriptions = new Map<
+  string,
+  {
+    webContentsId: number;
+    cleanup: () => void;
+  }
+>();
+
 function registerIpcHandlers() {
   const assistantBridge = new AgentPlatformAssistantBridge({
     app,
@@ -3388,6 +3398,48 @@ function registerIpcHandlers() {
       return readServiceLog(app, serviceId, target, options);
     }
   );
+  ipcMain.handle(
+    "services.watchLog.start",
+    async (
+      event,
+      subscriptionId: string,
+      serviceId: ServiceId,
+      target: ServiceLogTarget,
+      options?: ServiceLogStreamOptions
+    ) => {
+      logStreamSubscriptions.get(subscriptionId)?.cleanup();
+      const ownerContents = event.sender;
+      const cleanup = watchServiceLog(app, subscriptionId, serviceId, target, options, (payload) => {
+        if (ownerContents.isDestroyed()) {
+          logStreamSubscriptions.get(subscriptionId)?.cleanup();
+          logStreamSubscriptions.delete(subscriptionId);
+          return;
+        }
+        ownerContents.send("services.logStream", payload);
+      });
+
+      logStreamSubscriptions.set(subscriptionId, {
+        webContentsId: ownerContents.id,
+        cleanup
+      });
+      ownerContents.once("destroyed", () => {
+        const current = logStreamSubscriptions.get(subscriptionId);
+        if (current?.webContentsId === ownerContents.id) {
+          current.cleanup();
+          logStreamSubscriptions.delete(subscriptionId);
+        }
+      });
+      return { ok: true };
+    }
+  );
+  ipcMain.handle("services.watchLog.stop", async (event, subscriptionId: string) => {
+    const current = logStreamSubscriptions.get(subscriptionId);
+    if (current && current.webContentsId === event.sender.id) {
+      current.cleanup();
+      logStreamSubscriptions.delete(subscriptionId);
+    }
+    return { ok: true };
+  });
   ipcMain.handle("plugins.install", async () => runServiceMutation(async () => {
     const result = await showArchiveDialog(
       process.platform === "win32" ? "选择插件包 (.zip)" : "选择插件包 (.tar.gz)"

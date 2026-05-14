@@ -96,6 +96,11 @@ export interface ServiceLogReadOptions {
   limitBytes?: number;
 }
 
+export interface ServiceLogStreamOptions {
+  fromOffset?: number;
+  pollIntervalMs?: number;
+}
+
 export interface ServiceLogReadResult {
   ok: boolean;
   path: string;
@@ -108,6 +113,25 @@ export interface ServiceLogReadResult {
   resetRequired: boolean;
   totalBytes: number;
 }
+
+export type ServiceLogStreamEventType = "append" | "reset" | "error";
+
+export interface ServiceLogStreamEvent {
+  subscriptionId: string;
+  serviceId: ServiceId;
+  target: ServiceLogTarget;
+  type: ServiceLogStreamEventType;
+  path: string;
+  exists: boolean;
+  content: string;
+  startOffset: number;
+  endOffset: number;
+  hasPrevious: boolean;
+  totalBytes: number;
+  message?: string;
+}
+
+export type ServiceLogStreamListener = (event: ServiceLogStreamEvent) => void;
 
 export interface ServiceImportResult {
   ok: boolean;
@@ -1148,6 +1172,12 @@ export interface DesktopApi {
       target: ServiceLogTarget,
       options?: ServiceLogReadOptions
     ) => Promise<ServiceLogReadResult>;
+    watchLog: (
+      serviceId: ServiceId,
+      target: ServiceLogTarget,
+      options: ServiceLogStreamOptions | undefined,
+      listener: ServiceLogStreamListener
+    ) => () => void;
   };
   plugins: {
     install: () => Promise<PluginInstallResult>;

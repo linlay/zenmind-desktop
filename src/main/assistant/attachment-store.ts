@@ -9,7 +9,6 @@ import type {
   AssistantAttachmentPickResult,
   AssistantPastedImageInput
 } from "../../shared/contracts";
-import { ensureAssistantChat, getAssistantChatDir } from "./chat-store";
 import {
   createImageDocumentMetadata,
   extractDocumentTextFromFile,
@@ -86,6 +85,34 @@ function createAttachmentId() {
 
 function createAttachmentTaskId() {
   return `attachment_task_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
+}
+
+function createAttachmentChatId() {
+  return `chat_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
+}
+
+function normalizeAttachmentChatId(chatId?: string | null) {
+  const trimmed = chatId?.trim();
+  return trimmed || createAttachmentChatId();
+}
+
+function getAssistantRoot(app: Pick<App, "getPath">) {
+  return path.join(app.getPath("userData"), "assistant");
+}
+
+function getAttachmentChatDir(app: Pick<App, "getPath">, chatId: string) {
+  return path.join(getAssistantRoot(app), "chats", chatId);
+}
+
+function ensureAttachmentChatDir(app: Pick<App, "getPath">, chatId?: string | null) {
+  const normalizedChatId = normalizeAttachmentChatId(chatId);
+  const chatDir = getAttachmentChatDir(app, normalizedChatId);
+  fs.mkdirSync(path.join(chatDir, "attachments"), { recursive: true });
+  fs.mkdirSync(path.join(chatDir, "workspace"), { recursive: true });
+  return {
+    id: normalizedChatId,
+    dir: chatDir
+  };
 }
 
 function formatAttachmentSizeLimit(sizeBytes: number) {
@@ -324,7 +351,7 @@ export function hydrateAssistantAttachmentsForChat(
     return attachments ?? [];
   }
 
-  const attachmentsDir = path.join(getAssistantChatDir(app, chatId), "attachments");
+  const attachmentsDir = path.join(getAttachmentChatDir(app, chatId), "attachments");
   return attachments.map((attachment) => {
     if (attachment.dataUrl) {
       return attachment;
@@ -416,7 +443,7 @@ export async function refreshAssistantAttachmentsForRun(
     };
   }
 
-  const attachmentsDir = path.join(getAssistantChatDir(app, chatId), "attachments");
+  const attachmentsDir = path.join(getAttachmentChatDir(app, chatId), "attachments");
   const refreshed: AssistantAttachment[] = [];
   let changed = false;
   for (const attachment of attachments) {
@@ -490,7 +517,7 @@ function assistantRoot(app: App) {
 }
 
 function chatWorkspaceRoot(app: App, chatId: string) {
-  return path.resolve(path.join(getAssistantChatDir(app, chatId), "workspace"));
+  return path.resolve(path.join(getAttachmentChatDir(app, chatId), "workspace"));
 }
 
 function resolveArtifactSourcePath(app: App, chatId: string, inputPath: string) {
@@ -517,7 +544,7 @@ function resolveArtifactSourcePath(app: App, chatId: string, inputPath: string) 
 }
 
 export function resolveAssistantAttachmentPath(app: App, chatId: string, attachmentId: string) {
-  const attachmentsDir = path.join(getAssistantChatDir(app, chatId), "attachments");
+  const attachmentsDir = path.join(getAttachmentChatDir(app, chatId), "attachments");
   const metadata = readAttachmentMetadata(attachmentsDir, path.basename(attachmentId));
   if (!metadata?.storedName) {
     throw new Error("没有找到该附件的本地文件。");
@@ -682,8 +709,8 @@ export async function createAssistantAttachmentsFromFilesInProcess(
     };
   }
 
-  const chat = ensureAssistantChat(app as App, chatId, "新的对话");
-  const chatDir = getAssistantChatDir(app as App, chat.summary.id);
+  const chat = ensureAttachmentChatDir(app as App, chatId);
+  const chatDir = getAttachmentChatDir(app as App, chat.id);
   const attachmentsDir = path.join(chatDir, "attachments");
   fs.mkdirSync(attachmentsDir, { recursive: true });
 
@@ -701,7 +728,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
   }
   let processedBytes = 0;
   emitAttachmentProgress(options, {
-    chatId: chat.summary.id,
+    chatId: chat.id,
     phase: "scanning",
     processedFiles: 0,
     totalFiles: filePaths.length,
@@ -733,7 +760,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
         }
       });
       emitAttachmentProgress(options, {
-        chatId: chat.summary.id,
+        chatId: chat.id,
         phase: "error",
         processedFiles: index + 1,
         totalFiles: filePaths.length,
@@ -760,7 +787,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
         }
       });
       emitAttachmentProgress(options, {
-        chatId: chat.summary.id,
+        chatId: chat.id,
         phase: "error",
         processedFiles: index + 1,
         totalFiles: filePaths.length,
@@ -789,7 +816,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
       });
       processedBytes += stat.size;
       emitAttachmentProgress(options, {
-        chatId: chat.summary.id,
+        chatId: chat.id,
         phase: "error",
         processedFiles: index + 1,
         totalFiles: filePaths.length,
@@ -803,7 +830,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
     const storedName = `${id}_${name}`;
     const storedPath = path.join(attachmentsDir, storedName);
     emitAttachmentProgress(options, {
-      chatId: chat.summary.id,
+      chatId: chat.id,
       phase: "copying",
       processedFiles: index,
       totalFiles: filePaths.length,
@@ -819,7 +846,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
       ? createImageDataUrl(storedBuffer, mimeType)
       : { dataUrl: "", error: "" };
     emitAttachmentProgress(options, {
-      chatId: chat.summary.id,
+      chatId: chat.id,
       phase: "extracting",
       processedFiles: index,
       totalFiles: filePaths.length,
@@ -853,7 +880,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
 	    if (extracted.errorCode === "scanned_pdf_no_text") {
 	      try {
           emitAttachmentProgress(options, {
-            chatId: chat.summary.id,
+            chatId: chat.id,
             phase: "rendering",
             processedFiles: index,
             totalFiles: filePaths.length,
@@ -909,7 +936,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
 	    writeAttachmentMetadata(attachmentsDir, attachment, storedName, hash);
     processedBytes += stat.size;
     emitAttachmentProgress(options, {
-      chatId: chat.summary.id,
+      chatId: chat.id,
       phase: "extracting",
       processedFiles: index + 1,
       totalFiles: filePaths.length,
@@ -933,7 +960,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
     unreadableCount > 0 ? `${unreadableCount} 个无可读文本或暂不支持解析` : ""
   ].filter(Boolean).join("，") + "。";
   emitAttachmentProgress(options, {
-    chatId: chat.summary.id,
+    chatId: chat.id,
     phase: "complete",
     processedFiles: filePaths.length,
     totalFiles: filePaths.length,
@@ -944,7 +971,7 @@ export async function createAssistantAttachmentsFromFilesInProcess(
   });
 	  return {
 	    ok: attachments.length > 0,
-	    chatId: chat.summary.id,
+	    chatId: chat.id,
 	    message,
     attachments,
     ...(options.taskId ? { taskId: options.taskId } : {})
@@ -957,8 +984,8 @@ export function createAssistantArtifactAttachmentsFromFiles(
   inputs: AssistantArtifactPublishInput[],
   options: { fallbackArtifactId?: string } = {}
 ): AssistantArtifactPublishResult {
-  const chat = ensureAssistantChat(app, chatId, "新的对话");
-  const chatDir = getAssistantChatDir(app, chat.summary.id);
+  const chat = ensureAttachmentChatDir(app, chatId);
+  const chatDir = getAttachmentChatDir(app, chat.id);
   const attachmentsDir = path.join(chatDir, "attachments");
   fs.mkdirSync(attachmentsDir, { recursive: true });
 
@@ -969,7 +996,7 @@ export function createAssistantArtifactAttachmentsFromFiles(
     const id = createAttachmentId();
     const artifactId = input.artifactId || (inputs.length === 1 ? options.fallbackArtifactId : "") || `artifact_${Date.now().toString(36)}_${index}`;
     try {
-      const sourcePath = resolveArtifactSourcePath(app, chat.summary.id, input.path);
+      const sourcePath = resolveArtifactSourcePath(app, chat.id, input.path);
       const stat = fs.statSync(sourcePath);
       if (!stat.isFile()) {
         errors.push(`${input.path} 不是文件。`);
@@ -987,7 +1014,7 @@ export function createAssistantArtifactAttachmentsFromFiles(
       fs.copyFileSync(sourcePath, storedPath);
       const storedBuffer = fs.readFileSync(storedPath);
       const hash = createHash("sha256").update(storedBuffer).digest("hex");
-      const url = createAssistantAttachmentUrl(chat.summary.id, id);
+      const url = createAssistantAttachmentUrl(chat.id, id);
       const attachment: AssistantAttachment = {
         id,
         name,
@@ -1021,7 +1048,7 @@ export function createAssistantArtifactAttachmentsFromFiles(
   const names = artifacts.map((artifact) => artifact.name).join("、");
   return {
     ok: attachments.length > 0,
-    chatId: chat.summary.id,
+    chatId: chat.id,
     message: attachments.length > 0
       ? `已发布 ${attachments.length} 个产物${names ? `：${names}` : ""}。`
       : errors[0] || "没有发布任何产物。",
@@ -1070,8 +1097,8 @@ export function createAssistantAttachmentFromImageBuffer(
     oversizedVisionMessage?: string;
   }
 ): AssistantAttachmentPickResult {
-  const chat = ensureAssistantChat(app, chatId, "新的对话");
-  const chatDir = getAssistantChatDir(app, chat.summary.id);
+  const chat = ensureAttachmentChatDir(app, chatId);
+  const chatDir = getAttachmentChatDir(app, chat.id);
   const attachmentsDir = path.join(chatDir, "attachments");
   fs.mkdirSync(attachmentsDir, { recursive: true });
 
@@ -1083,7 +1110,7 @@ export function createAssistantAttachmentFromImageBuffer(
   if (!isSupportedImage(mimeType, name)) {
     return {
       ok: false,
-      chatId: chat.summary.id,
+      chatId: chat.id,
       message: input.unsupportedMessage || "不是当前支持的图片格式。",
       attachments: []
     };
@@ -1092,7 +1119,7 @@ export function createAssistantAttachmentFromImageBuffer(
   if (buffer.length > MAX_ATTACHMENT_FILE_BYTES) {
     return {
       ok: false,
-      chatId: chat.summary.id,
+      chatId: chat.id,
       message: "图片超过 32MB，未保存。",
       attachments: []
     };
@@ -1122,7 +1149,7 @@ export function createAssistantAttachmentFromImageBuffer(
 
   return {
     ok: true,
-    chatId: chat.summary.id,
+    chatId: chat.id,
     message: imageContext.dataUrl
       ? input.readableMessage || "已添加 1 张图片，图片已进入视觉上下文。"
       : input.oversizedVisionMessage || "图片已保存，但过大，未发送给模型视觉接口。",

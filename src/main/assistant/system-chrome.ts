@@ -4,7 +4,42 @@ import net from "node:net";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { App } from "electron";
-import type { BrowserSurface, BrowserToolResult, DebuggerLike, WebContentsLike } from "./browser-use";
+
+type BrowserSurface = {
+  id: string;
+  label: string;
+  url: string;
+  active: boolean;
+  currentUrl?: string;
+  title?: string;
+  webContentsId?: number;
+};
+
+type BrowserToolResult = {
+  ok: boolean;
+  action: string;
+  target: string;
+  url?: string;
+  title?: string;
+  error?: string;
+  message?: string;
+  data?: Record<string, unknown>;
+};
+
+type DebuggerLike = {
+  isAttached: () => boolean;
+  attach: () => void;
+  detach: () => void;
+  sendCommand: (method: string, commandParams?: Record<string, unknown>) => Promise<unknown>;
+};
+
+type WebContentsLike = {
+  readonly debugger: DebuggerLike;
+  isDestroyed: () => boolean;
+  focus: () => void;
+  getURL: () => string;
+  getTitle: () => string;
+};
 
 type CdpTargetDescriptor = {
   id?: string;

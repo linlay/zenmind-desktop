@@ -8001,6 +8001,10 @@ body.quick-assistant-body,
   font-size: 12px;
 }
 
+.log-viewer-tip.is-live {
+  color: var(--success);
+}
+
 .log-viewer-tip-row {
   display: flex;
   justify-content: space-between;

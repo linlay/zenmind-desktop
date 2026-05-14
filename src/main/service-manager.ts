@@ -13,6 +13,8 @@ import type {
   ServiceImportResult,
   ServiceLogReadOptions,
   ServiceLogReadResult,
+  ServiceLogStreamEvent,
+  ServiceLogStreamOptions,
   ServiceLogTarget,
   ServiceLogsMeta,
   ServiceState,
@@ -31,11 +33,14 @@ import { getDataRoot, getServicesRoot } from "./user-paths";
 
 const startedThisSession = new Set<ServiceId>();
 const LOG_READ_WINDOW_BYTES = 256 * 1024;
+const LOG_STREAM_POLL_INTERVAL_MS = 1000;
 
 type ExecResult = {
   stdout: string;
   stderr: string;
 };
+
+type ServiceLogStreamCallback = (event: ServiceLogStreamEvent) => void;
 
 type ProcessTreeRow = {
   pid: number;
@@ -3935,6 +3940,186 @@ export async function readServiceLog(
   }
 }
 
+function readLogRange(filePath: string, startOffset: number, endOffset: number) {
+  const bytesToRead = Math.max(0, endOffset - startOffset);
+  if (bytesToRead === 0) {
+    return "";
+  }
+
+  const descriptor = fs.openSync(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(bytesToRead);
+    const bytesRead = fs.readSync(descriptor, buffer, 0, bytesToRead, startOffset);
+    return buffer.subarray(0, bytesRead).toString("utf8");
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function normalizeLogStreamPollInterval(options: ServiceLogStreamOptions) {
+  if (typeof options.pollIntervalMs !== "number" || !Number.isFinite(options.pollIntervalMs)) {
+    return LOG_STREAM_POLL_INTERVAL_MS;
+  }
+  return Math.max(250, Math.floor(options.pollIntervalMs));
+}
+
+function normalizeLogStreamOffset(options: ServiceLogStreamOptions) {
+  if (typeof options.fromOffset !== "number" || !Number.isFinite(options.fromOffset)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(options.fromOffset));
+}
+
+export function watchServiceLog(
+  app: App,
+  subscriptionId: string,
+  serviceId: ServiceId,
+  target: ServiceLogTarget,
+  options: ServiceLogStreamOptions = {},
+  onEvent: ServiceLogStreamCallback
+) {
+  let currentPath = "";
+  let currentOffset = normalizeLogStreamOffset(options);
+  let currentExists = false;
+  let polling = false;
+  let stopped = false;
+
+  async function sendReset(message: string) {
+    const result = await readServiceLog(app, serviceId, target);
+    currentPath = result.path;
+    currentOffset = result.endOffset;
+    currentExists = result.exists;
+    onEvent({
+      subscriptionId,
+      serviceId,
+      target,
+      type: "reset",
+      path: result.path,
+      exists: result.exists,
+      content: result.content,
+      startOffset: result.startOffset,
+      endOffset: result.endOffset,
+      hasPrevious: result.hasPrevious,
+      totalBytes: result.totalBytes,
+      message
+    });
+  }
+
+  async function poll() {
+    if (polling || stopped) {
+      return;
+    }
+
+    polling = true;
+    try {
+      const state = await getServiceState(app, serviceId);
+      const filePath = target === "error" ? state.healthMeta.errorLogFilePath : state.healthMeta.logFilePath;
+
+      if (!filePath) {
+        if (currentPath || currentExists) {
+          currentPath = "";
+          currentOffset = 0;
+          currentExists = false;
+          onEvent({
+            subscriptionId,
+            serviceId,
+            target,
+            type: "reset",
+            path: "",
+            exists: false,
+            content: "",
+            startOffset: 0,
+            endOffset: 0,
+            hasPrevious: false,
+            totalBytes: 0,
+            message: "日志路径已清空。"
+          });
+        }
+        return;
+      }
+
+      if (currentPath && filePath !== currentPath) {
+        await sendReset("日志路径已变化，已刷新到最新内容。");
+        return;
+      }
+
+      currentPath = filePath;
+
+      if (!fs.existsSync(filePath)) {
+        currentExists = false;
+        return;
+      }
+
+      const stat = fs.statSync(filePath);
+      const totalBytes = stat.size;
+      if (totalBytes < currentOffset) {
+        await sendReset("日志已轮转，已刷新到最新内容。");
+        return;
+      }
+
+      currentExists = true;
+      if (totalBytes <= currentOffset) {
+        currentOffset = totalBytes;
+        return;
+      }
+
+      const deltaBytes = totalBytes - currentOffset;
+      if (deltaBytes > LOG_READ_WINDOW_BYTES) {
+        await sendReset("日志增长较快，已刷新到最新内容。");
+        return;
+      }
+
+      const startOffset = currentOffset;
+      const content = readLogRange(filePath, startOffset, totalBytes);
+      currentOffset = totalBytes;
+      if (content.length === 0) {
+        return;
+      }
+
+      onEvent({
+        subscriptionId,
+        serviceId,
+        target,
+        type: "append",
+        path: filePath,
+        exists: true,
+        content,
+        startOffset,
+        endOffset: totalBytes,
+        hasPrevious: startOffset > 0,
+        totalBytes
+      });
+    } catch (reason) {
+      onEvent({
+        subscriptionId,
+        serviceId,
+        target,
+        type: "error",
+        path: currentPath,
+        exists: currentExists,
+        content: "",
+        startOffset: currentOffset,
+        endOffset: currentOffset,
+        hasPrevious: currentOffset > 0,
+        totalBytes: currentOffset,
+        message: reason instanceof Error ? reason.message : String(reason)
+      });
+    } finally {
+      polling = false;
+    }
+  }
+
+  const timer = setInterval(() => {
+    void poll();
+  }, normalizeLogStreamPollInterval(options));
+  void poll();
+
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
 export async function stopStartedServices(app: App) {
   for (const serviceId of [...startedThisSession]) {
     try {
@@ -4278,6 +4463,7 @@ export const __testInternals = {
   buildVerificationResult,
   getInitializationStatePath,
   readInitializationState,
+  readLogRange,
   getLastRunningServicesStatePath,
   getDefaultStartupServiceIds,
   getServiceIdsToRestore,
@@ -4286,5 +4472,6 @@ export const __testInternals = {
   shouldEnableBuiltinBootstrap,
   shouldRunBuiltinBootstrap,
   readLastRunningServices,
+  watchServiceLog,
   writeLastRunningServices
 };

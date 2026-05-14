@@ -574,6 +574,17 @@ async function waitForPidExit(pid) {
   return false;
 }
 
+async function waitForLogStreamEvent(events, predicate) {
+  for (let i = 0; i < 30; i += 1) {
+    const event = events.find(predicate);
+    if (event) {
+      return event;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return null;
+}
+
 function markInstallInitialized(installDir, version = "v1.0.0") {
   const initStatePath = __testInternals.getInitializationStatePath(installDir);
   fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
@@ -1681,6 +1692,128 @@ test("readServiceLog aligns non-zero chunk starts to the next full log line", as
   assert.equal(result.endOffset, Buffer.byteLength(logContent));
   assert.equal(result.content, secondLine);
   assert.equal(result.hasPrevious, true);
+
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("watchServiceLog streams appended content from the requested offset", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-watch-log-append-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+  const logPath = path.join(installDir, "run", "test-plugin.log");
+  const initialContent = "ready\n";
+  const events = [];
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    deployScriptContent: false
+  });
+  fs.writeFileSync(logPath, initialContent, "utf8");
+
+  const stopWatch = __testInternals.watchServiceLog(
+    app,
+    "sub-append",
+    "test-plugin",
+    "main",
+    {
+      fromOffset: Buffer.byteLength(initialContent),
+      pollIntervalMs: 250
+    },
+    (event) => events.push(event)
+  );
+  fs.appendFileSync(logPath, "next\n", "utf8");
+
+  const event = await waitForLogStreamEvent(events, (item) => item.type === "append");
+  stopWatch();
+
+  assert.ok(event);
+  assert.equal(event.subscriptionId, "sub-append");
+  assert.equal(event.content, "next\n");
+  assert.equal(event.startOffset, Buffer.byteLength(initialContent));
+  assert.equal(event.endOffset, Buffer.byteLength(`${initialContent}next\n`));
+  assert.equal(event.totalBytes, Buffer.byteLength(`${initialContent}next\n`));
+
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("watchServiceLog streams content when a missing log file is created", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-watch-log-create-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+  const logPath = path.join(installDir, "run", "test-plugin.log");
+  const events = [];
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    deployScriptContent: false
+  });
+
+  const stopWatch = __testInternals.watchServiceLog(
+    app,
+    "sub-create",
+    "test-plugin",
+    "main",
+    {
+      fromOffset: 0,
+      pollIntervalMs: 250
+    },
+    (event) => events.push(event)
+  );
+  fs.writeFileSync(logPath, "created\n", "utf8");
+
+  const event = await waitForLogStreamEvent(events, (item) => item.type === "append");
+  stopWatch();
+
+  assert.ok(event);
+  assert.equal(event.content, "created\n");
+  assert.equal(event.startOffset, 0);
+  assert.equal(event.endOffset, Buffer.byteLength("created\n"));
+
+  registryInternals.clearServices();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("watchServiceLog sends reset when a log file is truncated", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-watch-log-reset-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "test-plugin");
+  const app = createApp(userDataRoot);
+  const logPath = path.join(installDir, "run", "test-plugin.log");
+  const initialContent = "older\ncontent\n";
+  const resetContent = "new\n";
+  const events = [];
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    deployScriptContent: false
+  });
+  fs.writeFileSync(logPath, initialContent, "utf8");
+
+  const stopWatch = __testInternals.watchServiceLog(
+    app,
+    "sub-reset",
+    "test-plugin",
+    "main",
+    {
+      fromOffset: Buffer.byteLength(initialContent),
+      pollIntervalMs: 250
+    },
+    (event) => events.push(event)
+  );
+  fs.writeFileSync(logPath, resetContent, "utf8");
+
+  const event = await waitForLogStreamEvent(events, (item) => item.type === "reset");
+  stopWatch();
+
+  assert.ok(event);
+  assert.equal(event.content, resetContent);
+  assert.equal(event.startOffset, 0);
+  assert.equal(event.endOffset, Buffer.byteLength(resetContent));
+  assert.match(event.message, /轮转/);
 
   registryInternals.clearServices();
   fs.rmSync(tempRoot, { recursive: true, force: true });

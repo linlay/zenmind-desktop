@@ -121,7 +121,6 @@ function writeStagePackageJson(rootDir, target) {
     productName: desktopPackage.build?.productName,
     author: desktopPackage.author,
     dependencies: {
-      "@ffmpeg-installer/ffmpeg": desktopPackage.dependencies?.["@ffmpeg-installer/ffmpeg"],
       "@napi-rs/canvas": desktopPackage.dependencies?.["@napi-rs/canvas"]
     },
     zenmindBuildTarget: {
@@ -179,31 +178,6 @@ function expectedCanvasRuntimePackage(target) {
     default:
       return "";
   }
-}
-
-function expectedFfmpegRuntimePackage(target) {
-  const key = `${target.os}/${target.arch}`;
-  switch (key) {
-    case "darwin/arm64":
-      return "@ffmpeg-installer/darwin-arm64";
-    case "darwin/x64":
-      return "@ffmpeg-installer/darwin-x64";
-    case "linux/arm64":
-      return "@ffmpeg-installer/linux-arm64";
-    case "linux/x64":
-      return "@ffmpeg-installer/linux-x64";
-    case "win32/x64":
-      return "@ffmpeg-installer/win32-x64";
-    default:
-      return "";
-  }
-}
-
-function expectedFfmpegBinaryName(target) {
-  if (target.os === "win32") {
-    return "ffmpeg.exe";
-  }
-  return "ffmpeg";
 }
 
 function directPackageDir(rootDir, packageName) {
@@ -284,13 +258,7 @@ function copyRuntimeDependencies(target) {
   if (expectedPackage) {
     copyRuntimePackage(expectedPackage);
   }
-  copyRuntimePackage("@ffmpeg-installer/ffmpeg");
-  const expectedFfmpegPackage = expectedFfmpegRuntimePackage(target);
-  if (expectedFfmpegPackage) {
-    copyRuntimePackage(expectedFfmpegPackage);
-  }
   verifyCanvasRuntime(target);
-  verifyFfmpegRuntime(target);
 }
 
 function verifyCanvasRuntime(target) {
@@ -317,41 +285,11 @@ function verifyCanvasRuntime(target) {
   }
 }
 
-function verifyFfmpegRuntime(target) {
-  const expectedPackage = expectedFfmpegRuntimePackage(target);
-  if (!expectedPackage) {
-    return;
-  }
-
-  const packageDir = path.join(stageRoot, "node_modules", ...expectedPackage.split("/"));
-  const binaryPath = path.join(packageDir, expectedFfmpegBinaryName(target));
-  if (!fs.existsSync(binaryPath) || !fs.statSync(binaryPath).isFile()) {
-    throw new Error(`missing staged ffmpeg runtime binary ${binaryPath}`);
-  }
-
-  if (target.os === "win32") {
-    const installerRoot = path.join(stageRoot, "node_modules", "@ffmpeg-installer");
-    const installed = fs.existsSync(installerRoot)
-      ? fs.readdirSync(installerRoot).filter((entry) => entry !== "ffmpeg")
-      : [];
-    const disallowed = installed.filter((entry) => entry.startsWith("linux-") || entry.startsWith("darwin-"));
-    if (disallowed.length > 0) {
-      throw new Error(
-        `unexpected non-windows ffmpeg runtime packages in win32 stage: ${disallowed.join(", ")}`
-      );
-    }
-  }
-}
-
 function hasInstalledRuntimeDependencies(target) {
-  const requiredPackages = ["@napi-rs/canvas", "@ffmpeg-installer/ffmpeg"];
+  const requiredPackages = ["@napi-rs/canvas"];
   const expectedPackage = expectedCanvasRuntimePackage(target);
   if (expectedPackage) {
     requiredPackages.push(expectedPackage);
-  }
-  const expectedFfmpegPackage = expectedFfmpegRuntimePackage(target);
-  if (expectedFfmpegPackage) {
-    requiredPackages.push(expectedFfmpegPackage);
   }
   return requiredPackages.every((packageName) => Boolean(findInstalledPackageDir(projectRoot, packageName)));
 }

@@ -3,6 +3,7 @@ import type {
   ServiceConfigFile,
   ServiceConfigReadResult,
   ServiceId,
+  ServiceLogStreamEvent,
   ServiceLogTarget,
   ServiceState
 } from "@shared/contracts";
@@ -116,6 +117,7 @@ type LogViewerState = {
   query: string;
   error: string;
   notice: string;
+  streaming: boolean;
 };
 
 function shouldShowInitializeAction(service: ServiceState) {
@@ -179,7 +181,8 @@ function createEmptyLogViewerState(): LogViewerState {
     totalBytes: 0,
     query: "",
     error: "",
-    notice: ""
+    notice: "",
+    streaming: false
   };
 }
 
@@ -271,6 +274,7 @@ function LogViewerModal({ state, onClose, onQueryChange, onLoadPrevious }: LogVi
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLPreElement | null>(null);
   const pendingMatchStartRef = useRef<number | null | undefined>(undefined);
+  const shouldFollowTailRef = useRef(true);
   const deferredQuery = useDeferredValue(state.query);
   const joinedContent = useMemo(() => state.pages.map((page) => page.content).join(""), [state.pages]);
   const matches = useMemo(() => findLogMatches(joinedContent, deferredQuery), [joinedContent, deferredQuery]);
@@ -321,6 +325,24 @@ function LogViewerModal({ state, onClose, onQueryChange, onLoadPrevious }: LogVi
       });
     }
   }, [activeMatchIndex, state.open]);
+
+  useEffect(() => {
+    if (!state.open) {
+      shouldFollowTailRef.current = true;
+      return;
+    }
+
+    if (!shouldFollowTailRef.current) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const scrollContainer = bodyRef.current;
+      if (scrollContainer) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      }
+    });
+  }, [joinedContent.length, state.open]);
 
   if (!state.open) {
     return null;
@@ -378,6 +400,17 @@ function LogViewerModal({ state, onClose, onQueryChange, onLoadPrevious }: LogVi
     }
   }
 
+  function handleBodyScroll() {
+    const scrollContainer = bodyRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    const distanceFromBottom =
+      scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
+    shouldFollowTailRef.current = distanceFromBottom < 48;
+  }
+
   return (
     <div
       className="log-viewer-backdrop"
@@ -428,12 +461,13 @@ function LogViewerModal({ state, onClose, onQueryChange, onLoadPrevious }: LogVi
 
         <div className="log-viewer-tip-row">
           <div className="log-viewer-tip">检索范围：已加载内容</div>
+          {state.streaming ? <div className="log-viewer-tip is-live">实时输出中</div> : null}
           {isPartialLoad ? <div className="log-viewer-tip">当前仍有更早日志未加载。</div> : null}
         </div>
         {state.notice ? <div className="feedback-banner">{state.notice}</div> : null}
         {state.error ? <div className="feedback-banner warning-banner">{state.error}</div> : null}
 
-        <div ref={bodyRef} className="log-viewer-body">
+        <div ref={bodyRef} className="log-viewer-body" onScroll={handleBodyScroll}>
           {state.loadingInitial ? <div className="loading-box">正在读取日志…</div> : null}
           {!state.loadingInitial && state.exists && (state.hasPrevious || state.loadingPrevious) ? (
             <div className="log-viewer-pagination">
@@ -481,6 +515,7 @@ export function ControlCenterPage() {
     readConfig,
     writeConfig,
     readLog,
+    watchLog,
     refresh,
     installPlugin,
     uninstallPlugin
@@ -488,6 +523,7 @@ export function ControlCenterPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const logRequestIdRef = useRef(0);
+  const logWatchCleanupRef = useRef<(() => void) | null>(null);
   const [activeId, setActiveId] = useState<ServiceId | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<ServiceId | null>(null);
   const [pendingAction, setPendingAction] = useState<{ serviceId: ServiceId; scope: ActionScope } | null>(null);
@@ -658,12 +694,123 @@ export function ControlCenterPage() {
 
   function closeLogViewer() {
     logRequestIdRef.current += 1;
+    logWatchCleanupRef.current?.();
+    logWatchCleanupRef.current = null;
     setLogViewer(createEmptyLogViewerState());
+  }
+
+  function applyLogStreamEvent(event: ServiceLogStreamEvent) {
+    setLogViewer((current) => {
+      if (
+        !current.open ||
+        current.serviceId !== event.serviceId ||
+        current.target !== event.target
+      ) {
+        return current;
+      }
+
+      if (event.type === "error") {
+        return {
+          ...current,
+          streaming: false,
+          error: event.message || "日志实时输出中断。"
+        };
+      }
+
+      if (event.type === "reset") {
+        return {
+          ...current,
+          loadingInitial: false,
+          loadingPrevious: false,
+          path: event.path,
+          exists: event.exists,
+          pages: buildLogPages(event),
+          hasPrevious: event.hasPrevious,
+          totalBytes: event.totalBytes,
+          streaming: true,
+          error: "",
+          notice: event.message || "日志已刷新到最新内容。"
+        };
+      }
+
+      if (!event.exists || event.content.length === 0) {
+        return {
+          ...current,
+          streaming: true,
+          error: ""
+        };
+      }
+
+      const nextPage: LogPage = {
+        startOffset: event.startOffset,
+        endOffset: event.endOffset,
+        content: event.content
+      };
+      const pages = [...current.pages];
+      const lastPage = pages[pages.length - 1];
+      if (lastPage && lastPage.endOffset === event.startOffset) {
+        pages[pages.length - 1] = {
+          ...lastPage,
+          endOffset: event.endOffset,
+          content: `${lastPage.content}${event.content}`
+        };
+      } else {
+        pages.push(nextPage);
+      }
+
+      return {
+        ...current,
+        path: event.path,
+        exists: true,
+        pages,
+        hasPrevious: pages[0]?.startOffset ? pages[0].startOffset > 0 : event.hasPrevious,
+        totalBytes: event.totalBytes,
+        streaming: true,
+        error: "",
+        notice: current.notice === "日志已轮转，已刷新到最新内容。" ? "" : current.notice
+      };
+    });
+  }
+
+  function startLogStream(
+    serviceId: ServiceId,
+    target: ServiceLogTarget,
+    fromOffset: number,
+    sessionToken: number
+  ) {
+    logWatchCleanupRef.current?.();
+    logWatchCleanupRef.current = watchLog(
+      serviceId,
+      target,
+      { fromOffset },
+      (event) => {
+        if (logRequestIdRef.current !== sessionToken) {
+          return;
+        }
+        applyLogStreamEvent(event);
+      }
+    );
+    setLogViewer((current) => {
+      if (
+        !current.open ||
+        current.serviceId !== serviceId ||
+        current.target !== target ||
+        logRequestIdRef.current !== sessionToken
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        streaming: true
+      };
+    });
   }
 
   async function openLogViewer(service: ServiceState, target: ServiceLogTarget, title: string) {
     const sessionToken = logRequestIdRef.current + 1;
     logRequestIdRef.current = sessionToken;
+    logWatchCleanupRef.current?.();
+    logWatchCleanupRef.current = null;
 
     setLogViewer({
       ...createEmptyLogViewerState(),
@@ -693,6 +840,7 @@ export function ControlCenterPage() {
         hasPrevious: result.hasPrevious,
         totalBytes: result.totalBytes
       });
+      startLogStream(service.id, target, result.endOffset, sessionToken);
     } catch (reason) {
       if (logRequestIdRef.current !== sessionToken) {
         return;
@@ -815,6 +963,13 @@ export function ControlCenterPage() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [logViewer.open]);
+
+  useEffect(() => {
+    return () => {
+      logWatchCleanupRef.current?.();
+      logWatchCleanupRef.current = null;
+    };
+  }, []);
 
   function invalidateConfig(serviceId: ServiceId) {
     setConfigCache((current) => {

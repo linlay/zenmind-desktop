@@ -20,6 +20,9 @@ import type {
   ServicesChangedListener,
   ServiceId,
   ServiceLogReadOptions,
+  ServiceLogStreamEvent,
+  ServiceLogStreamListener,
+  ServiceLogStreamOptions,
   ServiceLogTarget,
   StartupRestoreState,
   StartupRestoreStateListener,
@@ -101,7 +104,28 @@ const api: DesktopApi = {
       ipcRenderer.invoke("services.importFile", serviceId, targetKey),
     getLogsMeta: (serviceId: ServiceId) => ipcRenderer.invoke("services.getLogsMeta", serviceId),
     readLog: (serviceId: ServiceId, target: ServiceLogTarget, options?: ServiceLogReadOptions) =>
-      ipcRenderer.invoke("services.readLog", serviceId, target, options)
+      ipcRenderer.invoke("services.readLog", serviceId, target, options),
+    watchLog: (
+      serviceId: ServiceId,
+      target: ServiceLogTarget,
+      options: ServiceLogStreamOptions | undefined,
+      listener: ServiceLogStreamListener
+    ) => {
+      const subscriptionId = `log-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const handleLogStream = (_event: Electron.IpcRendererEvent, payload: ServiceLogStreamEvent) => {
+        if (payload.subscriptionId === subscriptionId) {
+          listener(payload);
+        }
+      };
+
+      ipcRenderer.on("services.logStream", handleLogStream);
+      void ipcRenderer.invoke("services.watchLog.start", subscriptionId, serviceId, target, options);
+
+      return () => {
+        ipcRenderer.off("services.logStream", handleLogStream);
+        void ipcRenderer.invoke("services.watchLog.stop", subscriptionId);
+      };
+    }
   },
   plugins: {
     install: () => ipcRenderer.invoke("plugins.install"),
