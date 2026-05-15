@@ -130,7 +130,11 @@ export function AppSidebar({
     if (assistantLauncherDisabled) {
       return;
     }
-    onOpenAssistantDock?.();
+    if (assistantDockOpen) {
+      onCloseAssistantDock?.();
+    } else {
+      onOpenAssistantDock?.();
+    }
     onNavigateItem?.();
   }
 
@@ -185,7 +189,7 @@ export function AppSidebar({
               [
                 "sidebar-link",
                 "sidebar-link-utility",
-                !assistantDockOpen && (isActive || pendingPath === "/settings") ? "sidebar-link-active" : ""
+                (isActive || pendingPath === "/settings") ? "sidebar-link-active" : ""
               ].filter(Boolean).join(" ")
             }
           >
@@ -202,22 +206,24 @@ export function AppSidebar({
                 "sidebar-link",
                 "sidebar-link-utility",
                 "sidebar-assistant-launcher",
-                assistantDockOpen ? "is-switch-on" : "",
                 assistantLauncherDisabled ? "is-disabled" : ""
               ].filter(Boolean).join(" ")}
               onClick={handleAssistantDockClick}
-              aria-label={assistantLauncherDisabled ? "当前页面不可开启 ZenMind 助手" : "打开 ZenMind 助手"}
+              aria-label={
+                assistantLauncherDisabled
+                  ? "当前页面不可开启 ZenMind 助手"
+                  : assistantDockOpen
+                    ? "关闭 ZenMind 助手"
+                    : "打开 ZenMind 助手"
+              }
               aria-disabled={assistantLauncherDisabled}
               disabled={assistantLauncherDisabled}
               title="助手"
             >
               <span className="sidebar-link-icon">
-                <SidebarIllustration kind="sidebar-assistant" />
+                <SidebarIllustration kind={assistantDockOpen ? "sidebar-assistant-open" : "sidebar-assistant-closed"} />
               </span>
               <span className="sidebar-link-label">助手</span>
-              <span className="sidebar-assistant-switch" aria-hidden="true">
-                <span className="sidebar-assistant-switch-thumb" />
-              </span>
               <span className="sidebar-link-label-collapsed" aria-hidden="true">助手</span>
             </button>
           ) : null}

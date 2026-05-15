@@ -2072,7 +2072,7 @@ body.quick-web-copilot-body,
 .assistant-memory-reference-title em {
   color: var(--ink-muted);
   font-style: normal;
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .assistant-memory-reference p {
@@ -3278,38 +3278,6 @@ body.quick-web-copilot-body,
   flex: 1;
 }
 
-.sidebar-assistant-switch {
-  position: relative;
-  display: inline-flex;
-  width: 24px;
-  height: 14px;
-  flex: none;
-  align-items: center;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.38);
-  transition:
-    background-color 0.18s ease,
-    opacity 0.18s ease;
-}
-
-.sidebar-assistant-switch-thumb {
-  width: 10px;
-  height: 10px;
-  margin-left: 2px;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
-  transition: transform 0.18s ease;
-}
-
-.sidebar-assistant-launcher.is-switch-on .sidebar-assistant-switch {
-  background: #22c55e;
-}
-
-.sidebar-assistant-launcher.is-switch-on .sidebar-assistant-switch-thumb {
-  transform: translateX(10px);
-}
-
 .sidebar-assistant-launcher.is-disabled,
 .sidebar-assistant-launcher:disabled {
   cursor: not-allowed;
@@ -3330,11 +3298,6 @@ body.quick-web-copilot-body,
 .sidebar-assistant-launcher:disabled .sidebar-link-icon svg,
 .sidebar-assistant-launcher:disabled .sidebar-link-icon img {
   filter: grayscale(1) saturate(0) opacity(0.38);
-}
-
-.sidebar-assistant-launcher.is-disabled .sidebar-assistant-switch,
-.sidebar-assistant-launcher:disabled .sidebar-assistant-switch {
-  opacity: 0.48;
 }
 
 :root[data-theme="dark"] .sidebar-link {
@@ -3472,20 +3435,6 @@ body.quick-web-copilot-body,
 
 .app-sidebar.is-collapsed .sidebar-assistant-launcher {
   gap: 3px;
-}
-
-.app-sidebar.is-collapsed .sidebar-assistant-switch {
-  width: 22px;
-  height: 12px;
-}
-
-.app-sidebar.is-collapsed .sidebar-assistant-switch-thumb {
-  width: 8px;
-  height: 8px;
-}
-
-.app-sidebar.is-collapsed .sidebar-assistant-launcher.is-switch-on .sidebar-assistant-switch-thumb {
-  transform: translateX(10px);
 }
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar-toggle {

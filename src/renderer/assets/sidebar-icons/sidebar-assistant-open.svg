@@ -5,5 +5,5 @@
   <rect x="48" y="112" width="56" height="16" rx="8" fill="#F1F5F9"/>
   <rect x="48" y="144" width="88" height="16" rx="8" fill="#F1F5F9"/>
   <circle cx="196" cy="128" r="20" fill="#FFFFFF"/>
-  <path d="M196 116q0 12-12 12 12 0 12 12 0-12 12-12-12 0-12-12z" fill="#8B5CF6"/>
+  <text x="196" y="134" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="16" fill="#8B5CF6" text-anchor="middle">AI</text>
 </svg>

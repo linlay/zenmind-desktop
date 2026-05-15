@@ -11,7 +11,8 @@ import memoryIcon from "../assets/sidebar-icons/memory.svg";
 import scheduleIcon from "../assets/sidebar-icons/schedule.svg";
 import serviceIcon from "../assets/sidebar-icons/service.svg";
 import settingsIcon from "../assets/sidebar-icons/settings.svg";
-import sidebarAssistantIcon from "../assets/sidebar-icons/sidebar-assistant.svg";
+import sidebarAssistantClosedIcon from "../assets/sidebar-icons/sidebar-assistant-closed.svg";
+import sidebarAssistantOpenIcon from "../assets/sidebar-icons/sidebar-assistant-open.svg";
 import websiteIcon from "../assets/sidebar-icons/website.svg";
 
 type BrandMarkProps = {
@@ -31,7 +32,8 @@ export type SidebarIllustrationKind =
   | "custom"
   | "memory"
   | "schedule"
-  | "sidebar-assistant"
+  | "sidebar-assistant-closed"
+  | "sidebar-assistant-open"
   | "website";
 
 type SidebarIllustrationProps = {
@@ -54,7 +56,8 @@ const sidebarIllustrationSources: Record<SidebarIllustrationKind, string> = {
   schedule: scheduleIcon,
   service: serviceIcon,
   settings: settingsIcon,
-  "sidebar-assistant": sidebarAssistantIcon,
+  "sidebar-assistant-closed": sidebarAssistantClosedIcon,
+  "sidebar-assistant-open": sidebarAssistantOpenIcon,
   website: websiteIcon
 };
 

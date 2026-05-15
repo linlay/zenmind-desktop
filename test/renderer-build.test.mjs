@@ -41,6 +41,7 @@ test("assistant launcher sits beside settings in the sidebar footer", () => {
   assert.match(sidebarSource, /sidebar-footer-actions/);
   assert.match(sidebarSource, /sidebar-assistant-launcher/);
   assert.match(sidebarSource, /"打开 ZenMind 助手"/);
+  assert.match(sidebarSource, /"关闭 ZenMind 助手"/);
   assert.match(sidebarSource, /"当前页面不可开启 ZenMind 助手"/);
   assert.match(globalStyles, /--assistant-dock-embedded-width:\s*360px;/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{/);
@@ -154,13 +155,16 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(sidebarSource, /assistantLauncherVisible/);
   assert.match(sidebarSource, /assistantLauncherDisabled/);
   assert.match(sidebarSource, /assistantLauncherVisible \? \(/);
-  assert.match(sidebarSource, /sidebar-assistant-switch/);
-  assert.match(sidebarSource, /assistantDockOpen \? "is-switch-on" : ""/);
+  assert.match(sidebarSource, /assistantDockOpen \? "sidebar-assistant-open" : "sidebar-assistant-closed"/);
+  assert.match(sidebarSource, /if \(assistantDockOpen\) \{\s*onCloseAssistantDock\?\.\(\);\s*\} else \{\s*onOpenAssistantDock\?\.\(\);/);
   assert.doesNotMatch(sidebarSource, /assistantDockOpen \? "sidebar-link-active" : ""/);
+  assert.doesNotMatch(sidebarSource, /!assistantDockOpen && \(isActive \|\| pendingPath === "\/settings"\)/);
+  assert.doesNotMatch(sidebarSource, /assistantDockOpen \? "is-open" : ""/);
+  assert.doesNotMatch(sidebarSource, /sidebar-assistant-switch/);
   assert.match(sidebarSource, /disabled=\{assistantLauncherDisabled\}/);
-  assert.match(globalStyles, /\.sidebar-assistant-switch\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-assistant-launcher\.is-open/);
   assert.match(globalStyles, /\.sidebar-assistant-launcher\.is-disabled/);
-  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-assistant-switch/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-assistant-switch/);
 });
 
 test("desktop action bridge exposes localhost api and renderer action providers", () => {
