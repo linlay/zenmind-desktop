@@ -20,6 +20,7 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
   const packageJson = loadPackageJson();
   const extraResources = packageJson.build?.extraResources ?? [];
   const uninstallResource = extraResources.find((entry) => entry.from === "scripts");
+  const trayIconResource = extraResources.find((entry) => entry.from === "public/tray-icon.png");
   const pluginsResource = extraResources.find((entry) => entry.from === "build/resources/plugins");
   const voiceAsrResource = extraResources.find((entry) => entry.from === "build/resources/voice-asr");
 
@@ -30,6 +31,10 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
     from: "scripts",
     to: ".",
     filter: ["uninstall.sh"]
+  });
+  assert.deepEqual(trayIconResource, {
+    from: "public/tray-icon.png",
+    to: "tray-icon.png"
   });
   assert.equal(pluginsResource, undefined);
   assert.equal(packageJson.build?.directories?.app, "build/app");

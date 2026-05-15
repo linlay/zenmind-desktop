@@ -8,5 +8,6 @@ export const APP_ICON_ASSET_FILENAMES = {
 export const APP_ICON_ASSET_DIRECTORIES = {
   buildIcons: "build/icons",
   public: "public",
-  distRenderer: "dist-renderer"
+  distRenderer: "dist-renderer",
+  packagedResources: "."
 } as const;

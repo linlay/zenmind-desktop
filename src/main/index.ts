@@ -3031,6 +3031,11 @@ function createTrayIcon() {
         );
   const iconPaths = [
     path.join(
+      process.resourcesPath,
+      APP_ICON_ASSET_DIRECTORIES.packagedResources,
+      APP_ICON_ASSET_FILENAMES.trayIcon
+    ),
+    path.join(
       __dirname,
       "..",
       "..",

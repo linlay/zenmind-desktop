@@ -1,15 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="white hollow cloud tray icon">
   <defs>
-    <path
-      id="hex-cloud-white"
-      d="M 350 200
-         A 90 90 0 0 1 275 330
-         A 90 90 0 0 1 125 330
-         A 90 90 0 0 1 50 200
-         A 90 90 0 0 1 125 70
-         A 90 90 0 0 1 275 70
-         A 90 90 0 0 1 350 200 Z"
-    />
     <mask id="mask-white-hollow">
       <rect width="400" height="400" fill="white" />
       <g fill="black" transform="translate(0, -20)">
@@ -20,7 +10,15 @@
       </g>
     </mask>
   </defs>
-  <g mask="url(#mask-white-hollow)">
-    <use href="#hex-cloud-white" fill="#FFFFFF" transform="rotate(15, 200, 200)" />
-  </g>
+  <path
+    d="M 350 200
+       A 90 90 0 0 1 275 330
+       A 90 90 0 0 1 125 330
+       A 90 90 0 0 1 50 200
+       A 90 90 0 0 1 125 70
+       A 90 90 0 0 1 275 70
+       A 90 90 0 0 1 350 200 Z"
+    fill="#FFFFFF"
+    mask="url(#mask-white-hollow)"
+  />
 </svg>

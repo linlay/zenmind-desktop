@@ -108,6 +108,14 @@ npm run dist:mac
 
 使用 `electron-builder` 输出 DMG 安装包，目标 arm64 架构，使用 ad-hoc 签名。
 
+也可以使用 Makefile 入口：
+
+```bash
+make release
+```
+
+在 macOS 上，`make release` 会重新生成图标并执行 macOS arm64 DMG 打包。
+
 ### Windows 打包
 ```bash
 npm run dist:win
@@ -150,6 +158,7 @@ npm run sync:assets
 npm run dev
 npm run build
 npm test
+make release
 npm run dist:mac
 npm run dist:win
 npm run dist:win-docker

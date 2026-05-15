@@ -69,6 +69,10 @@
         "to": "services"
       },
       {
+        "from": "public/tray-icon.png",
+        "to": "tray-icon.png"
+      },
+      {
         "from": "scripts",
         "to": ".",
         "filter": [
