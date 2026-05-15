@@ -30,6 +30,11 @@ import { ensureKeyPairForPan } from "./pan-auth";
 import { readEnvFile, parseEnvFileContent } from "./env-file";
 import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
 import { getDataRoot, getServicesRoot } from "./user-paths";
+import {
+  EMBEDDED_CDP_GATEWAY_HOST,
+  EMBEDDED_CDP_GATEWAY_PORT,
+  EMBEDDED_CDP_GATEWAY_URL
+} from "../shared/embedded-cdp";
 
 const startedThisSession = new Set<ServiceId>();
 const LOG_READ_WINDOW_BYTES = 256 * 1024;
@@ -2979,6 +2984,7 @@ function normalizeAgentPlatformEnvContentForRuntime(content: string) {
   normalizeShellSourcedAgentPlatformEnvValues(env, migrated);
   migrateAgentPlatformLegacyChatEnv(env, migrated);
   syncAgentPlatformDesktopPortEnv(env, migrated);
+  syncAgentPlatformEmbeddedCdpEnv(migrated);
 
   return upsertEnvFileContent(removeEnvKeysFromContent(content, AGENT_PLATFORM_DEPRECATED_ENV_KEYS), migrated);
 }
@@ -3013,6 +3019,7 @@ async function normalizeCoreServiceEnvContentForSave(
 
   if (service.id === "agent-platform") {
     syncAgentPlatformDesktopPortEnv(env, updates);
+    syncAgentPlatformEmbeddedCdpEnv(updates);
     await syncAgentPlatformContainerHubUrl(app, env, updates);
   }
 
@@ -3267,6 +3274,12 @@ function syncAgentPlatformDesktopPortEnv(env: Map<string, string>, updates: Map<
   }
 }
 
+function syncAgentPlatformEmbeddedCdpEnv(updates: Map<string, string>) {
+  updates.set("CDP_HOST", EMBEDDED_CDP_GATEWAY_HOST);
+  updates.set("CDP_PORT", String(EMBEDDED_CDP_GATEWAY_PORT));
+  updates.set("ZENMIND_DESKTOP_CDP_GATEWAY_URL", EMBEDDED_CDP_GATEWAY_URL);
+}
+
 function isDesktopManagedContainerHubUrl(value: string) {
   return isDesktopManagedHttpUrl(
     value,
@@ -3431,6 +3444,7 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
 
   await applyEnvBindings(app, service, env, updates);
   syncAgentPlatformDesktopPortEnv(env, updates);
+  syncAgentPlatformEmbeddedCdpEnv(updates);
   await syncAgentPlatformContainerHubUrl(app, env, updates);
 
   if (!env.get("PROVIDER_APIKEY_KEY_PART")?.trim()) {

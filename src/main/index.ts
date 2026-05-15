@@ -71,6 +71,11 @@ import {
 import { resolveWebviewOpenDisposition } from "./webview-open-tab";
 import { revealPathInFileManager } from "./reveal-path";
 import {
+  EmbeddedCdpGateway,
+  type EmbeddedCdpFrameTarget,
+  type EmbeddedCdpSurface
+} from "./embedded-cdp-gateway";
+import {
   addCustomSidebarItem,
   exportCustomSidebarItems,
   importCustomSidebarItems,
@@ -120,6 +125,7 @@ import type {
   ServiceRevealPathOptions,
   ServiceLogStreamOptions,
   ServiceLogTarget,
+  ServiceState,
   StartupRestoreMode,
   StartupRestoreServiceState,
   StartupRestoreState
@@ -216,12 +222,16 @@ type BrowserSurface = {
   id: string;
   label: string;
   url: string;
+  kind?: "webview" | "iframe";
   active?: boolean;
   title?: string;
   currentUrl?: string;
   webContentsId?: number;
+  agentKey?: string;
+  frameMatchUrl?: string;
 };
 let startupRestoreState = createStartupRestoreState();
+let embeddedCdpGateway: EmbeddedCdpGateway | null = null;
 
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName(ZENMIND_PRODUCT_NAME);
@@ -2231,7 +2241,11 @@ function applyMainWindowAppearance(targetWindow: BrowserWindow | null) {
     const useSidebarTranslucency =
       mainWindowSidebarTranslucencyEnabled && !targetWindow.isFullScreen();
     // Native macOS fullscreen can expose transparent window regions as desktop background.
-    targetWindow.setVibrancy(useSidebarTranslucency ? "under-window" : null);
+    if (useSidebarTranslucency) {
+      targetWindow.setVibrancy("sidebar");
+    } else {
+      targetWindow.setVibrancy(null);
+    }
     targetWindow.setBackgroundColor(useSidebarTranslucency ? "#00000000" : "#FFFFFF");
     return;
   }
@@ -2406,7 +2420,9 @@ function createWindow() {
     ...(process.platform === "darwin"
       ? {
           titleBarStyle: "hidden" as const,
-          transparent: true
+          transparent: true,
+          vibrancy: "sidebar" as const,
+          visualEffectState: "active" as const
         }
       : {}),
     webPreferences: {
@@ -2927,6 +2943,119 @@ function listBrowserSurfaces(): BrowserSurface[] {
   ];
 }
 
+async function listEmbeddedCdpSurfaces(): Promise<EmbeddedCdpSurface[]> {
+  const webviewSurfaces = listBrowserSurfaces().map((surface) => ({
+    ...surface,
+    kind: "webview" as const,
+    agentKey: surface.agentKey || ""
+  }));
+
+  let serviceSurfaces: EmbeddedCdpSurface[] = [];
+  try {
+    const services = await listServices(app);
+    const surfaces = await Promise.all(services.map(async (service): Promise<EmbeddedCdpSurface | null> => {
+      const surface = createEmbeddedCdpFrameSurface(service);
+      if (!surface) {
+        return null;
+      }
+      return {
+        ...surface,
+        active: Boolean(resolveEmbeddedCdpFrameTarget(surface))
+      };
+    }));
+    serviceSurfaces = surfaces.filter((surface): surface is EmbeddedCdpSurface => surface !== null);
+  } catch (error) {
+    console.warn("[embedded-cdp] failed to list iframe targets", error);
+  }
+
+  return [...webviewSurfaces, ...serviceSurfaces];
+}
+
+function createEmbeddedCdpFrameSurface(service: ServiceState): EmbeddedCdpSurface | null {
+  const webUrl = service.status === "running" ? service.healthMeta.webUrl.trim() : "";
+  if (service.frontendMode === "none" || !webUrl || !parseSafeFrameMatchUrl(webUrl)) {
+    return null;
+  }
+  return {
+    id: service.id,
+    label: service.name || service.id,
+    url: webUrl,
+    kind: "iframe",
+    active: false,
+    title: service.name || service.id,
+    frameMatchUrl: webUrl
+  };
+}
+
+function resolveEmbeddedCdpWebContents(surface: EmbeddedCdpSurface): WebContents | null {
+  if (surface.kind === "iframe") {
+    return null;
+  }
+  if (surface.webContentsId) {
+    const contents = webContents.fromId(surface.webContentsId);
+    if (contents && !contents.isDestroyed() && contents.getType() === "webview") {
+      return contents;
+    }
+  }
+  return findWebContentsForSurfaceUrl(surface.currentUrl || surface.url);
+}
+
+function resolveEmbeddedCdpFrameTarget(surface: EmbeddedCdpSurface): EmbeddedCdpFrameTarget | null {
+  const frameMatchUrl = surface.frameMatchUrl || surface.currentUrl || surface.url;
+  const targetUrl = parseSafeFrameMatchUrl(frameMatchUrl);
+  if (!targetUrl) {
+    return null;
+  }
+
+  for (const targetWindow of [mainWindow, quickAssistantWindow]) {
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      continue;
+    }
+    const frame = findMatchingWebFrame(collectWebFrames(targetWindow.webContents.mainFrame), targetUrl);
+    if (frame) {
+      return {
+        frame,
+        ownerContents: targetWindow.webContents
+      };
+    }
+  }
+  return null;
+}
+
+async function activateEmbeddedCdpSurface(surface: EmbeddedCdpSurface) {
+  if (surface.kind === "iframe") {
+    const targetPath = surface.id === "agent-webclient" ? ASSISTANT_TARGET_PATH : `/plugin/${surface.id}`;
+    showMainWindow(targetPath);
+    await delay(450);
+    return;
+  }
+
+  if (surface.id === BUILTIN_BROWSER_SURFACE_ID) {
+    await openBrowserUrl({ url: surface.currentUrl || surface.url, label: surface.label });
+    return;
+  }
+  await activateBrowserSurface(surface.id || surface.url);
+}
+
+async function openEmbeddedCdpUrl(url: string) {
+  await openBrowserUrl({ url });
+}
+
+function startEmbeddedCdpGateway() {
+  if (embeddedCdpGateway) {
+    return;
+  }
+  embeddedCdpGateway = new EmbeddedCdpGateway({
+    getSurfaces: listEmbeddedCdpSurfaces,
+    resolveWebContents: resolveEmbeddedCdpWebContents,
+    resolveFrameTarget: resolveEmbeddedCdpFrameTarget,
+    activateSurface: activateEmbeddedCdpSurface,
+    openUrl: openEmbeddedCdpUrl,
+    version: `ZenMind/${app.getVersion()} Electron/${process.versions.electron}`
+  });
+  embeddedCdpGateway.start();
+}
+
 async function openBrowserUrl(input: { url: string; label?: string }) {
   const targetUrl = input.url || BUILTIN_BROWSER_DEFAULT_URL;
   navigateMainWindow(BUILTIN_BROWSER_ROUTE);
@@ -3420,6 +3549,7 @@ function registerIpcHandlers() {
     }
   });
 
+  startEmbeddedCdpGateway();
   startDesktopActionBridge({
     app,
     assistantBridge,
@@ -4038,6 +4168,8 @@ app.on("before-quit", (event) => {
 
 app.on("will-quit", () => {
   clearDesktopPetIdleResetTimer();
+  embeddedCdpGateway?.stop();
+  embeddedCdpGateway = null;
   stopAgentPlatformPetStatusClient();
   if (isQuickAssistantSupportedPlatform(process.platform)) {
     globalShortcut.unregister(QUICK_ASSISTANT_SHORTCUT);

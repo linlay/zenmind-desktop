@@ -1087,6 +1087,20 @@ test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys and
   assert.doesNotMatch(next, /^GATEWAY_WS_URL=/m);
 });
 
+test("normalizeAgentPlatformEnvContentForRuntime injects the Desktop embedded CDP gateway", () => {
+  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
+    [
+      "HOST_PORT=11949",
+      "CDP_HOST=localhost",
+      "CDP_PORT=9222"
+    ].join("\n")
+  );
+
+  assert.match(next, /^CDP_HOST=127\.0\.0\.1$/m);
+  assert.match(next, /^CDP_PORT=11789$/m);
+  assert.match(next, /^ZENMIND_DESKTOP_CDP_GATEWAY_URL=http:\/\/127\.0\.0\.1:11789$/m);
+});
+
 test("normalizeAgentPlatformEnvContentForRuntime removes legacy chat ticket gates and ignores placeholder image secrets", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
