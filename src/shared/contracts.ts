@@ -322,6 +322,7 @@ export interface CustomSidebarItem {
   label: string;
   url: string;
   iconId: string;
+  agentKey?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -329,6 +330,13 @@ export interface CustomSidebarItem {
 export interface CustomSidebarItemInput {
   label?: string;
   url: string;
+  agentKey?: string;
+}
+
+export interface CustomSidebarUpdateInput {
+  label?: string;
+  url?: string;
+  agentKey?: string;
 }
 
 export interface CustomSidebarItemsResult {
@@ -505,13 +513,40 @@ export interface AssistantPageContext {
   shellSidebarText?: string;
   leftRegionText?: string;
   modalText?: string;
-  browserTarget?: {
-    kind: "webview";
-    webContentsId: number;
-    surfaceId?: string;
-    surfaceLabel?: string;
-    currentUrl?: string;
-    browserSkill?: string;
+  browserTarget?: (
+    {
+      kind: "webview";
+      webContentsId: number;
+      surfaceId?: string;
+      surfaceLabel?: string;
+      currentUrl?: string;
+      browserSkill?: string;
+    } |
+    {
+      kind: "iframe";
+      frameMatchUrl: string;
+      surfaceId?: string;
+      surfaceLabel?: string;
+      currentUrl?: string;
+      browserSkill?: string;
+    }
+  );
+}
+
+export interface EmbeddedWebExecuteInFrameRequest {
+  frameMatchUrl: string;
+  script: string;
+  timeoutMs?: number;
+}
+
+export interface EmbeddedWebExecuteInFrameResult {
+  ok: boolean;
+  frameUrl?: string;
+  result?: unknown;
+  error?: {
+    code: string;
+    message: string;
+    details?: unknown;
   };
 }
 
@@ -1291,9 +1326,8 @@ export interface DesktopApi {
     respond: (response: DesktopActionRendererResponse) => Promise<{ ok: boolean }>;
     onCall: (listener: DesktopActionCallListener) => () => void;
   };
-  windowDrag: {
-    begin: (point: { x: number; y: number }) => Promise<{ ok: boolean }>;
-    end: () => Promise<{ ok: boolean; moved: boolean }>;
+  embeddedWeb: {
+    executeInFrame: (request: EmbeddedWebExecuteInFrameRequest) => Promise<EmbeddedWebExecuteInFrameResult>;
   };
   desktopPet: {
     getSettings: () => Promise<DesktopPetSettings>;
@@ -1318,6 +1352,7 @@ export interface DesktopApi {
   customSidebar: {
     list: () => Promise<CustomSidebarItemsResult>;
     add: (input: CustomSidebarItemInput) => Promise<CustomSidebarItemResult>;
+    update: (id: string, input: CustomSidebarUpdateInput) => Promise<CustomSidebarItemResult>;
     remove: (id: string) => Promise<CustomSidebarDeleteResult>;
     import: () => Promise<CustomSidebarTransferResult>;
     export: () => Promise<CustomSidebarTransferResult>;

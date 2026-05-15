@@ -12,6 +12,7 @@ const {
   importCustomSidebarItems,
   listCustomSidebarItems,
   removeCustomSidebarItem,
+  updateCustomSidebarItem,
   __testInternals
 } = require("../dist-electron/main/custom-sidebar-store.js");
 
@@ -48,6 +49,41 @@ test("custom sidebar items persist locally with normalized URLs", (t) => {
   const loaded = listCustomSidebarItems(app);
   assert.equal(loaded.ok, true);
   assert.deepEqual(loaded.items, added.items);
+});
+
+test("custom sidebar items can store and update associated agent keys", (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-custom-sidebar-agent-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const added = addCustomSidebarItem(app, {
+    label: "Docs",
+    url: "docs.example.com",
+    agentKey: " agent-docs "
+  });
+
+  assert.equal(added.ok, true);
+  assert.equal(added.item?.agentKey, "agent-docs");
+
+  const updated = updateCustomSidebarItem(app, added.item.id, {
+    agentKey: "agent-research"
+  });
+
+  assert.equal(updated.ok, true);
+  assert.equal(updated.item?.agentKey, "agent-research");
+  assert.equal(listCustomSidebarItems(app).items[0].agentKey, "agent-research");
+
+  const cleared = updateCustomSidebarItem(app, added.item.id, {
+    agentKey: ""
+  });
+
+  assert.equal(cleared.ok, true);
+  assert.ok(cleared.item);
+  assert.equal("agentKey" in cleared.item, false);
 });
 
 test("custom sidebar rejects duplicates and deletes only custom items", (t) => {
@@ -128,7 +164,8 @@ test("custom sidebar export and import preserve items across machines", (t) => {
 
   addCustomSidebarItem(sourceApp, {
     label: "百度",
-    url: "www.baidu.com"
+    url: "www.baidu.com",
+    agentKey: "agent-baidu"
   });
   addCustomSidebarItem(sourceApp, {
     label: "GitHub",
@@ -144,6 +181,7 @@ test("custom sidebar export and import preserve items across machines", (t) => {
     imported.items.map((item) => item.url),
     ["https://www.baidu.com/", "https://github.com/"]
   );
+  assert.equal(imported.items[0].agentKey, "agent-baidu");
 });
 
 test("custom sidebar import merges new items and skips existing URLs", (t) => {
@@ -164,7 +202,7 @@ test("custom sidebar import merges new items and skips existing URLs", (t) => {
     JSON.stringify({
       items: [
         { id: "a", label: "百度", url: "https://www.baidu.com/" },
-        { id: "b", label: "GitHub", url: "github.com" }
+        { id: "b", label: "GitHub", url: "github.com", agentKey: 123 }
       ]
     })
   );
@@ -175,4 +213,5 @@ test("custom sidebar import merges new items and skips existing URLs", (t) => {
     imported.items.map((item) => item.url),
     ["https://www.baidu.com/", "https://github.com/"]
   );
+  assert.equal(imported.items[1].agentKey, undefined);
 });

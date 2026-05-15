@@ -3637,22 +3637,27 @@ body.quick-web-copilot-body,
 
 /* ── Sidebar Collapse Button ── */
 
+.sidebar-collapse-control {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 4px 0;
+  border-top: 1px solid var(--line);
+}
+
 .app-sidebar-collapse-button {
-  position: absolute;
-  top: 10px;
-  right: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 100%;
+  min-height: 48px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.42);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.08);
   color: var(--ink-muted);
   cursor: pointer;
-  z-index: 20;
   touch-action: manipulation;
   transition:
     background-color 0.2s ease-in-out,
@@ -3662,19 +3667,24 @@ body.quick-web-copilot-body,
 
 .app-sidebar-collapse-button:hover {
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.72);
-  border-color: rgba(148, 163, 184, 0.28);
+  background: rgba(148, 163, 184, 0.16);
+  border-color: rgba(148, 163, 184, 0.18);
 }
 
-.app-sidebar-shell.is-collapsed .app-sidebar-collapse-button {
-  right: 50%;
-  transform: translateX(50%);
+.app-sidebar.is-collapsed .sidebar-collapse-control {
+  align-items: center;
+  padding: 8px 0 0;
+}
+
+.app-sidebar.is-collapsed .app-sidebar-collapse-button {
+  width: 48px;
+  min-height: 44px;
 }
 
 .app-sidebar-collapse-button-icon {
   position: relative;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
 }
 
 .app-sidebar-collapse-button-icon::before,
@@ -3682,10 +3692,10 @@ body.quick-web-copilot-body,
   content: "";
   position: absolute;
   top: 50%;
-  width: 7px;
-  height: 7px;
-  border-top: 2px solid currentColor;
-  border-left: 2px solid currentColor;
+  width: 8px;
+  height: 8px;
+  border-top: 2.25px solid currentColor;
+  border-left: 2.25px solid currentColor;
 }
 
 .app-sidebar-collapse-button-icon::before {
@@ -3698,19 +3708,23 @@ body.quick-web-copilot-body,
   transform: translateY(-50%) rotate(-45deg);
 }
 
-.app-sidebar-shell.is-collapsed .app-sidebar-collapse-button-icon::before,
-.app-sidebar-shell.is-collapsed .app-sidebar-collapse-button-icon::after {
+.app-sidebar.is-collapsed .app-sidebar-collapse-button-icon::before,
+.app-sidebar.is-collapsed .app-sidebar-collapse-button-icon::after {
   transform: translateY(-50%) rotate(135deg);
 }
 
+:root[data-theme="dark"] .sidebar-collapse-control {
+  border-top-color: var(--line);
+}
+
 :root[data-theme="dark"] .app-sidebar-collapse-button {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--ink-muted);
 }
 
 :root[data-theme="dark"] .app-sidebar-collapse-button:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 /* ── 窗口拖拽区域（macOS hiddenInset 标题栏） ── */
@@ -5455,6 +5469,7 @@ body.quick-web-copilot-body,
 .custom-sidebar-row-main {
   display: flex;
   align-items: center;
+  flex: 1;
   gap: 10px;
   min-width: 0;
 }
@@ -5476,21 +5491,22 @@ body.quick-web-copilot-body,
 }
 
 .custom-sidebar-row-copy {
+  flex: 1;
   min-width: 0;
 }
 
-.custom-sidebar-row-copy strong,
-.custom-sidebar-row-copy span {
+.custom-sidebar-row-copy > strong,
+.custom-sidebar-row-copy > span {
   display: block;
 }
 
-.custom-sidebar-row-copy strong {
+.custom-sidebar-row-copy > strong {
   color: var(--ink);
   font-size: 14px;
   line-height: 1.4;
 }
 
-.custom-sidebar-row-copy span {
+.custom-sidebar-row-copy > span {
   margin-top: 2px;
   color: var(--ink-muted);
   font-size: 12px;
@@ -5498,6 +5514,50 @@ body.quick-web-copilot-body,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.custom-sidebar-row-agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 6px;
+}
+
+.custom-sidebar-row-agent-label {
+  flex: none;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.custom-sidebar-agent-select {
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  font-size: 12px;
+  outline: none;
+}
+
+:root[data-theme="dark"] .custom-sidebar-agent-select {
+  background: var(--surface-soft);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.custom-sidebar-agent-select:focus {
+  border-color: rgba(38, 99, 235, 0.46);
+  box-shadow: 0 0 0 3px rgba(38, 99, 235, 0.12);
+}
+
+.custom-sidebar-agent-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .text-button,
@@ -7945,6 +8005,7 @@ code {
     border-bottom: 1px solid var(--line);
   }
 
+  .sidebar-collapse-control,
   .app-sidebar-collapse-button {
     display: none;
   }

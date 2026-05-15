@@ -165,6 +165,7 @@ export function SettingsPage({
   const [customSidebarUrl, setCustomSidebarUrl] = useState("");
   const [customSidebarPending, setCustomSidebarPending] = useState(false);
   const [customSidebarTransferPending, setCustomSidebarTransferPending] = useState("");
+  const [customSidebarAgentPendingId, setCustomSidebarAgentPendingId] = useState("");
   const [deletingCustomSidebarId, setDeletingCustomSidebarId] = useState("");
   const [memorySettings, setMemorySettings] = useState<AssistantMemorySettings | null>(null);
   const [memoryStats, setMemoryStats] = useState<AssistantMemoryStats | null>(null);
@@ -613,6 +614,19 @@ export function SettingsPage({
       setFeedback(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setDeletingCustomSidebarId("");
+    }
+  }
+
+  async function handleUpdateCustomSidebarAgent(itemId: string, agentKey: string) {
+    setCustomSidebarAgentPendingId(itemId);
+    try {
+      const result = await window.electronAPI.customSidebar.update(itemId, { agentKey });
+      setFeedback(result.message);
+      onCustomSidebarItemsChange(result.items);
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setCustomSidebarAgentPendingId("");
     }
   }
 
@@ -1333,27 +1347,52 @@ export function SettingsPage({
             <div className="custom-sidebar-empty">还没有添加内嵌网站，添加后会显示在系统入口下方。</div>
           ) : (
             <div className="custom-sidebar-list">
-              {customSidebarItems.map((item) => (
-                <div className="custom-sidebar-row" key={item.id}>
-                  <div className="custom-sidebar-row-main">
-                    <span className="custom-sidebar-row-icon" aria-hidden="true">
-                      <CustomSidebarIcon iconId={item.iconId} />
-                    </span>
-                    <div className="custom-sidebar-row-copy">
-                      <strong>{item.label}</strong>
-                      <span>{item.url}</span>
+              {customSidebarItems.map((item) => {
+                const itemAgentKey = item.agentKey || "";
+                const itemAgentKnown = !itemAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === itemAgentKey);
+                const itemAgentPending = customSidebarAgentPendingId === item.id;
+                return (
+                  <div className="custom-sidebar-row" key={item.id}>
+                    <div className="custom-sidebar-row-main">
+                      <span className="custom-sidebar-row-icon" aria-hidden="true">
+                        <CustomSidebarIcon iconId={item.iconId} />
+                      </span>
+                      <div className="custom-sidebar-row-copy">
+                        <strong>{item.label}</strong>
+                        <span>{item.url}</span>
+                        <div className="custom-sidebar-row-agent">
+                          <span className="custom-sidebar-row-agent-label">智能体增强</span>
+                          <select
+                            className="custom-sidebar-agent-select"
+                            value={itemAgentKey}
+                            onChange={(event) => void handleUpdateCustomSidebarAgent(item.id, event.target.value)}
+                            disabled={assistantAgentOptions.length === 0 || itemAgentPending}
+                            aria-label={`${item.label} 关联智能体`}
+                          >
+                            <option value="">默认助手</option>
+                            {itemAgentKey && !itemAgentKnown ? (
+                              <option value={itemAgentKey}>不可用：{itemAgentKey}</option>
+                            ) : null}
+                            {assistantAgentOptions.map((agent) => (
+                              <option value={agent.agentKey} key={agent.agentKey}>
+                                {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      className="danger-text-button"
+                      onClick={() => void handleDeleteCustomSidebarItem(item)}
+                      disabled={deletingCustomSidebarId === item.id}
+                    >
+                      {deletingCustomSidebarId === item.id ? "删除中..." : "删除"}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="danger-text-button"
-                    onClick={() => void handleDeleteCustomSidebarItem(item)}
-                    disabled={deletingCustomSidebarId === item.id}
-                  >
-                    {deletingCustomSidebarId === item.id ? "删除中..." : "删除"}
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

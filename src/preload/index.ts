@@ -179,9 +179,8 @@ const api: DesktopApi = {
       };
     }
   },
-  windowDrag: {
-    begin: (point) => ipcRenderer.invoke("windowDrag.begin", point),
-    end: () => ipcRenderer.invoke("windowDrag.end")
+  embeddedWeb: {
+    executeInFrame: (request) => ipcRenderer.invoke("embeddedWeb.executeInFrame", request)
   },
   desktopPet: {
     getSettings: () => ipcRenderer.invoke("desktopPet.getSettings"),
@@ -227,6 +226,7 @@ const api: DesktopApi = {
   customSidebar: {
     list: () => ipcRenderer.invoke("customSidebar.list"),
     add: (input) => ipcRenderer.invoke("customSidebar.add", input),
+    update: (id, input) => ipcRenderer.invoke("customSidebar.update", id, input),
     remove: (id: string) => ipcRenderer.invoke("customSidebar.remove", id),
     import: () => ipcRenderer.invoke("customSidebar.import"),
     export: () => ipcRenderer.invoke("customSidebar.export")

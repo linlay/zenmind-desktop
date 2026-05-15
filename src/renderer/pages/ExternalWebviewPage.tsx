@@ -24,6 +24,14 @@ import {
   shouldOpenBookmarkInNewTab
 } from "../../shared/external-webview-bookmarks";
 import type { ExternalWebviewBookmark } from "../../shared/external-webview-bookmarks";
+import {
+  EXTRACT_STRUCTURED_SCRIPT,
+  READ_PAGE_DATA_SCRIPT,
+  buildInteractElementScript,
+  type EmbeddedWebInteractAction,
+  type EmbeddedWebReadInclude,
+  type EmbeddedWebStructuredTarget
+} from "../../shared/embedded-web-scripts";
 import { registerAssistantPageContextProvider } from "../services/assistantPageContext";
 import { registerDesktopActionProviderForScope } from "../services/desktopActionRegistry";
 
@@ -83,6 +91,10 @@ const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
   };
 })()`;
 
+const EMBEDDED_WEB_SCRIPT_MAX_BYTES = 256 * 1024;
+const EMBEDDED_WEB_READ_INCLUDES = new Set<EmbeddedWebReadInclude>(["forms", "links", "images"]);
+const EMBEDDED_WEB_STRUCTURED_TARGETS = new Set<EmbeddedWebStructuredTarget>(["tables", "lists", "forms", "links"]);
+const EMBEDDED_WEB_INTERACT_ACTIONS = new Set<EmbeddedWebInteractAction>(["click", "fill", "scroll", "focus", "select"]);
 const BOOKMARKS_STORAGE_KEY = "zenmind-desktop.external-webview.bookmarks";
 const BOOKMARK_MENU_WIDTH = 306;
 const BOOKMARK_MENU_MAX_HEIGHT = 340;
@@ -127,6 +139,51 @@ function normalizeEditableUrl(rawValue: string) {
       return null;
     }
   }
+}
+
+function getUtf8ByteLength(value: string) {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function readAllowedValues<T extends string>(
+  value: unknown,
+  allowedValues: Set<T>
+) {
+  const rawValues = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
+  return rawValues
+    .map((item) => String(item).trim())
+    .filter((item): item is T => allowedValues.has(item as T));
+}
+
+function filterReadPageDataResult(result: unknown, includes: EmbeddedWebReadInclude[]) {
+  if (!result || typeof result !== "object" || includes.length === 0) {
+    return result;
+  }
+  const filtered = { ...(result as Record<string, unknown>) };
+  if (!includes.includes("forms")) {
+    delete filtered.forms;
+    delete filtered.fields;
+  }
+  if (!includes.includes("links")) {
+    delete filtered.links;
+  }
+  if (!includes.includes("images")) {
+    delete filtered.images;
+  }
+  return filtered;
+}
+
+function filterStructuredResult(result: unknown, targets: EmbeddedWebStructuredTarget[]) {
+  if (!result || typeof result !== "object" || targets.length === 0) {
+    return result;
+  }
+  const filtered = { ...(result as Record<string, unknown>) };
+  for (const key of ["tables", "lists", "forms", "links"] satisfies EmbeddedWebStructuredTarget[]) {
+    if (!targets.includes(key)) {
+      delete filtered[key];
+    }
+  }
+  return filtered;
 }
 
 function getTabMonogram(title: string, url: string) {
@@ -875,6 +932,11 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
         : browserStateRef.current.activeTabId;
     }
 
+    function requestTargetsDifferentSurface(args: Record<string, unknown>) {
+      const targetSurfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
+      return Boolean(targetSurfaceId && surfaceId && targetSurfaceId !== surfaceId);
+    }
+
     function embeddedError(code: string, message: string, details?: unknown) {
       return {
         ok: false,
@@ -886,17 +948,80 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       };
     }
 
+    async function executeActiveWebviewScript(args: Record<string, unknown>, script: string) {
+      if (getUtf8ByteLength(script) > EMBEDDED_WEB_SCRIPT_MAX_BYTES) {
+        return embeddedError("script_too_large", "脚本超过内嵌网站执行大小限制。");
+      }
+
+      const tabId = readTargetTabId(args);
+      const targetWebview = webviewRefs.current.get(tabId);
+      if (!targetWebview) {
+        return embeddedError("tab_unavailable", "目标内嵌网站标签页不可用。", { tabId });
+      }
+
+      const result = await targetWebview.executeJavaScript(script, true);
+      return { ok: true, result };
+    }
+
     return registerDesktopActionProviderForScope("embeddedWeb", async (request) => {
       if (!activeRef.current) {
         return null;
       }
       const args = request.args ?? {};
+      if (requestTargetsDifferentSurface(args)) {
+        return null;
+      }
 
       switch (request.action) {
         case "desktop.embeddedWeb.getActiveSurface":
           return { ok: true, result: getEmbeddedWebSurfaceState() };
         case "desktop.embeddedWeb.getPageContext":
           return { ok: true, result: await readActivePageContext() };
+        case "desktop.embeddedWeb.readPageData": {
+          const response = await executeActiveWebviewScript(args, READ_PAGE_DATA_SCRIPT);
+          if (!response.ok) {
+            return response;
+          }
+          return {
+            ok: true,
+            result: filterReadPageDataResult(
+              response.result,
+              readAllowedValues(args.include, EMBEDDED_WEB_READ_INCLUDES)
+            )
+          };
+        }
+        case "desktop.embeddedWeb.extractStructured": {
+          const response = await executeActiveWebviewScript(args, EXTRACT_STRUCTURED_SCRIPT);
+          if (!response.ok) {
+            return response;
+          }
+          return {
+            ok: true,
+            result: filterStructuredResult(
+              response.result,
+              readAllowedValues(args.targets, EMBEDDED_WEB_STRUCTURED_TARGETS)
+            )
+          };
+        }
+        case "desktop.embeddedWeb.interactElement": {
+          const selector = typeof args.selector === "string" ? args.selector.trim() : "";
+          const action = typeof args.action === "string" ? args.action.trim() : "";
+          if (!selector || !EMBEDDED_WEB_INTERACT_ACTIONS.has(action as EmbeddedWebInteractAction)) {
+            return embeddedError("invalid_args", "selector 和有效的 action 是必填项。", args);
+          }
+          return executeActiveWebviewScript(args, buildInteractElementScript({
+            selector,
+            action: action as EmbeddedWebInteractAction,
+            value: typeof args.value === "string" ? args.value : args.value == null ? undefined : String(args.value)
+          }));
+        }
+        case "desktop.embeddedWeb.executeScript": {
+          const script = typeof args.script === "string" ? args.script : "";
+          if (!script.trim()) {
+            return embeddedError("invalid_script", "script 是必填项。");
+          }
+          return executeActiveWebviewScript(args, script);
+        }
         case "desktop.embeddedWeb.navigate": {
           const nextUrl = readActionUrl(args);
           if (!nextUrl) {

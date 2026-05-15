@@ -49,6 +49,29 @@ test("assistant launcher sits beside settings in the sidebar footer", () => {
   assert.match(globalStyles, /\.sidebar-footer-actions\s*\{[\s\S]*?display:\s*flex;/);
 });
 
+test("sidebar collapse toggle sits in the sidebar footer", () => {
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const sidebarSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "components", "AppSidebar.tsx"),
+    "utf8"
+  );
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const collapseButtonRule = globalStyles.match(/^\.app-sidebar-collapse-button\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body;
+
+  assert.match(appShell, /onToggleCollapsed=\{toggleSidebarCollapsed\}/);
+  assert.doesNotMatch(appShell, /className="app-sidebar-collapse-button"/);
+  assert.match(sidebarSource, /onToggleCollapsed\?:\s*\(\)\s*=>\s*void;/);
+  assert.match(sidebarSource, /sidebar-collapse-control[\s\S]*?className="app-sidebar-collapse-button"/);
+  assert.match(sidebarSource, /aria-label=\{isCollapsed \? "展开侧边栏" : "收起侧边栏"\}/);
+  assert.match(sidebarSource, /onClick=\{onToggleCollapsed\}/);
+  assert.match(globalStyles, /\.sidebar-collapse-control\s*\{[\s\S]*?border-top:\s*1px solid var\(--line\);/);
+  assert.ok(collapseButtonRule, "missing .app-sidebar-collapse-button rule");
+  assert.match(collapseButtonRule, /width:\s*100%;/);
+  assert.match(collapseButtonRule, /min-height:\s*48px;/);
+  assert.doesNotMatch(collapseButtonRule, /position:\s*absolute;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.app-sidebar-collapse-button\s*\{[\s\S]*?min-height:\s*44px;/);
+});
+
 test("agent webclient desktop sections are exposed as top-level sidebar tabs", () => {
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
   const sidebarSource = fs.readFileSync(
@@ -116,6 +139,9 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /半透明度/);
   assert.match(settingsPage, /导航页签排序/);
   assert.match(settingsPage, /内嵌网站/);
+  assert.match(settingsPage, /智能体增强/);
+  assert.match(settingsPage, /handleUpdateCustomSidebarAgent/);
+  assert.match(settingsPage, /window\.electronAPI\.customSidebar\.update/);
   assert.doesNotMatch(settingsPage, /自定义侧边栏/);
   assert.doesNotMatch(settingsPage, /添加到侧边栏/);
   assert.doesNotMatch(settingsPage, /已添加的入口/);
@@ -192,7 +218,10 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /assistantLauncherVisible=\{assistantLauncherVisible\}/);
   assert.match(appShell, /onRunningRunIdChange=\{setAssistantRunningRunId\}/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
-  assert.match(appShell, /data-open-agent-key=\{openRequest\?\.agentKey \?\? openRequest\?\.workerKey \?\? ""\}/);
+  assert.match(appShell, /customSidebarAgentKey = activeCustomSidebarItemId/);
+  assert.match(appShell, /resolvedCopilotAgentKey = customSidebarAgentKey \|\| currentCopilotPreference\?\.agentKey \|\| ""/);
+  assert.match(appShell, /resolvedAgentKey=\{resolvedCopilotAgentKey\}/);
+  assert.match(appShell, /data-open-agent-key=\{openRequest\?\.agentKey \?\? openRequest\?\.workerKey \?\? resolvedAgentKey\}/);
   assert.match(sidebarSource, /assistantLauncherVisible/);
   assert.match(sidebarSource, /assistantLauncherDisabled/);
   assert.match(sidebarSource, /assistantLauncherVisible \? \(/);
@@ -210,6 +239,23 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(globalStyles, /\.sidebar-assistant-launcher\.is-assistant-open \.sidebar-link-icon/);
   assert.match(globalStyles, /\.sidebar-assistant-launcher\.is-disabled/);
   assert.doesNotMatch(globalStyles, /\.sidebar-assistant-switch/);
+});
+
+test("custom sidebar agent association is exposed across desktop api layers", () => {
+  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+  const store = fs.readFileSync(path.join(projectRoot, "src", "main", "custom-sidebar-store.ts"), "utf8");
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+
+  assert.match(contracts, /agentKey\?: string/);
+  assert.match(contracts, /interface CustomSidebarUpdateInput/);
+  assert.match(contracts, /update: \(id: string, input: CustomSidebarUpdateInput\) => Promise<CustomSidebarItemResult>/);
+  assert.match(store, /export function updateCustomSidebarItem/);
+  assert.match(store, /delete updated\.agentKey/);
+  assert.match(mainProcess, /ipcMain\.handle\("customSidebar\.update"/);
+  assert.match(preload, /update: \(id, input\) => ipcRenderer\.invoke\("customSidebar\.update", id, input\)/);
+  assert.match(appShell, /resolvedCopilotAgentKey/);
 });
 
 test("desktop action bridge exposes localhost api and renderer action providers", () => {
@@ -343,23 +389,22 @@ test("plugin embedded route keeps a mac window drag lane clear of iframe control
   );
 });
 
-test("desktop shell starts window drag from non-interactive mac regions", () => {
+test("window drag uses css-only app-region approach", () => {
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
 
-  assert.match(appShell, /WINDOW_DRAG_EXCLUDED_SELECTOR/);
-  assert.match(appShell, /"iframe"/);
-  assert.match(appShell, /"webview"/);
-  assert.match(appShell, /"\.app-sidebar-collapse-button"/);
-  assert.match(appShell, /onPointerDownCapture=\{handleDesktopWindowPointerDown\}/);
-  assert.match(appShell, /window\.electronAPI\.windowDrag\.begin/);
-  assert.match(preload, /windowDrag:\s*\{[\s\S]*?ipcRenderer\.invoke\("windowDrag\.begin"/);
-  assert.match(contracts, /windowDrag:\s*\{[\s\S]*?begin:\s*\(point:\s*\{\s*x:\s*number;\s*y:\s*number\s*\}/);
-  assert.match(mainProcess, /MAIN_WINDOW_DRAG_FORCE_END_MS/);
-  assert.match(mainProcess, /process\.platform !== "darwin"[\s\S]*?return \{ ok: false \};/);
-  assert.match(mainProcess, /ipcMain\.handle\("windowDrag\.begin"/);
+  assert.match(globalStyles, /\.app-window-drag-region\s*\{[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;/);
+  assert.match(globalStyles, /\.app-sidebar-drag-region,[\s\S]*?\.app-main-drag-region\s*\{[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;/);
+  assert.match(globalStyles, /\.app-main-drag-region\s*\{\s*height:\s*20px;\s*\}/);
+  assert.doesNotMatch(appShell, /WINDOW_DRAG_EXCLUDED_SELECTOR/);
+  assert.doesNotMatch(appShell, /onPointerDownCapture=\{handleDesktopWindowPointerDown\}/);
+  assert.doesNotMatch(appShell, /window\.electronAPI\.windowDrag\.begin/);
+  assert.doesNotMatch(contracts, /windowDrag:\s*\{/);
+  assert.doesNotMatch(preload, /windowDrag:\s*\{/);
+  assert.doesNotMatch(mainProcess, /ipcMain\.handle\("windowDrag\.begin"/);
 });
 
 test("mac fullscreen forces the main window to an opaque background", () => {
@@ -491,10 +536,18 @@ test("plugin page provides iframe-aware assistant context instead of guessing em
   const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
 
   assert.match(pluginPage, /registerAssistantPageContextProvider/);
+  assert.match(pluginPage, /registerDesktopActionProviderForScope\("embeddedWeb"/);
+  assert.match(pluginPage, /skipContextRegistration\?: boolean/);
+  assert.match(pluginPage, /service\?\.status !== "running" \|\| skipContextRegistration/);
+  assert.match(pluginPage, /!embeddedUrl \|\| skipContextRegistration/);
   assert.match(pluginPage, /tryReadPluginIframePageContext/);
   assert.match(pluginPage, /buildPluginIframeFallbackContext/);
-  assert.match(pluginPage, /无法直接读取这个 iframe 内部的列表、卡片或正文文本/);
-  assert.match(pluginPage, /不要猜测网站、应用名称或列表项/);
+  assert.match(pluginPage, /window\.electronAPI\.embeddedWeb\.executeInFrame/);
+  assert.match(pluginPage, /kind:\s*"iframe"/);
+  assert.match(pluginPage, /frameMatchUrl/);
+  assert.match(pluginPage, /READ_PAGE_DATA_SCRIPT/);
+  assert.match(pluginPage, /EXTRACT_STRUCTURED_SCRIPT/);
+  assert.match(pluginPage, /buildInteractElementScript/);
   assert.match(pluginPage, /const iframeRenderKey = useMemo/);
   assert.doesNotMatch(pluginPage, /iframeInstanceKey/);
   assert.doesNotMatch(pluginPage, /iframeLoaded/);
@@ -620,11 +673,16 @@ test("service log viewer keeps find controls inside the log area", () => {
 
 test("assistant dock opens the agent webclient copilot in right-side embedded mode", () => {
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const dockComponent = appShell.slice(
+    appShell.indexOf("function AgentWebclientCopilotDock"),
+    appShell.indexOf("function readStoredThemeMode")
+  );
 
   assert.match(appShell, /const AGENT_WEBCLIENT_COPILOT_PATH = "\/copilot"/);
   assert.match(appShell, /assistantCopilotOpen \? "has-assistant-dock-full" : ""/);
   assert.match(appShell, /window\.electronAPI\.onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\(\)/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
+  assert.match(dockComponent, /skipContextRegistration/);
   assert.doesNotMatch(appShell, /<AssistantDock/);
   assert.doesNotMatch(appShell, /openAssistantDock\("compact"\)/);
   assert.doesNotMatch(appShell, /onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\("compact"\)/);

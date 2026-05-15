@@ -8,6 +8,15 @@ import {
 } from "../../shared/auth-bridge";
 import { getServiceDisplayName } from "../service-display";
 import type { AssistantPageContext } from "../../shared/contracts";
+import {
+  EXTRACT_STRUCTURED_SCRIPT,
+  READ_PAGE_DATA_SCRIPT,
+  buildInteractElementScript,
+  type EmbeddedWebInteractAction,
+  type EmbeddedWebReadInclude,
+  type EmbeddedWebStructuredTarget
+} from "../../shared/embedded-web-scripts";
+import { registerDesktopActionProviderForScope } from "../services/desktopActionRegistry";
 
 type PluginPageProps = {
   hostTheme: "light" | "dark";
@@ -15,21 +24,74 @@ type PluginPageProps = {
   active?: boolean;
   embedPath?: string;
   surfaceLabel?: string;
+  skipContextRegistration?: boolean;
 };
 
 const AGENT_APP_CLIPBOARD_REQUEST_TYPE = "zenmind:agent-app-clipboard:request";
 const AGENT_APP_CLIPBOARD_RESPONSE_TYPE = "zenmind:agent-app-clipboard:response";
 const MAX_PLUGIN_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_PLUGIN_PAGE_CONTEXT_BODY_TEXT = 40000;
+const EMBEDDED_WEB_SCRIPT_MAX_BYTES = 256 * 1024;
+const EMBEDDED_WEB_READ_INCLUDES = new Set<EmbeddedWebReadInclude>(["forms", "links", "images"]);
+const EMBEDDED_WEB_STRUCTURED_TARGETS = new Set<EmbeddedWebStructuredTarget>(["tables", "lists", "forms", "links"]);
+const EMBEDDED_WEB_INTERACT_ACTIONS = new Set<EmbeddedWebInteractAction>(["click", "fill", "scroll", "focus", "select"]);
 
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/gu, " ").trim();
 }
 
+function getUtf8ByteLength(value: string) {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function readAllowedValues<T extends string>(
+  value: unknown,
+  allowedValues: Set<T>
+) {
+  const rawValues = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
+  return rawValues
+    .map((item) => String(item).trim())
+    .filter((item): item is T => allowedValues.has(item as T));
+}
+
+function filterReadPageDataResult(result: unknown, includes: EmbeddedWebReadInclude[]) {
+  if (!result || typeof result !== "object" || includes.length === 0) {
+    return result;
+  }
+  const filtered = { ...(result as Record<string, unknown>) };
+  if (!includes.includes("forms")) {
+    delete filtered.forms;
+    delete filtered.fields;
+  }
+  if (!includes.includes("links")) {
+    delete filtered.links;
+  }
+  if (!includes.includes("images")) {
+    delete filtered.images;
+  }
+  return filtered;
+}
+
+function filterStructuredResult(result: unknown, targets: EmbeddedWebStructuredTarget[]) {
+  if (!result || typeof result !== "object" || targets.length === 0) {
+    return result;
+  }
+  const filtered = { ...(result as Record<string, unknown>) };
+  const keys: EmbeddedWebStructuredTarget[] = ["tables", "lists", "forms", "links"];
+  for (const key of keys) {
+    if (!targets.includes(key)) {
+      delete filtered[key];
+    }
+  }
+  return filtered;
+}
+
 function buildPluginIframeFallbackContext(
   serviceDisplayName: string,
   embeddedUrl: string,
-  webUrl: string
+  webUrl: string,
+  surfaceId: string,
+  surfaceLabel: string
 ): AssistantPageContext {
   const normalizedName = normalizeWhitespace(serviceDisplayName || "内嵌应用");
   const fallbackUrl = embeddedUrl || webUrl || window.location.href;
@@ -41,9 +103,17 @@ function buildPluginIframeFallbackContext(
     headings: [],
     bodyText: [
       `当前左侧区域是内嵌应用「${normalizedName || "内嵌应用"}」。`,
-      "宿主当前无法直接读取这个 iframe 内部的列表、卡片或正文文本。",
-      "如果用户追问左侧区域里具体有什么，请明确说明当前看不到其内部细节，不要猜测网站、应用名称或列表项。"
-    ].join(" ")
+      "可通过 desktop.embeddedWeb.* 工具实时读取或操作这个 iframe 页面。"
+    ].join(" "),
+    browserTarget: fallbackUrl
+      ? {
+          kind: "iframe",
+          frameMatchUrl: fallbackUrl,
+          surfaceId,
+          surfaceLabel,
+          currentUrl: fallbackUrl
+        }
+      : undefined
   };
 }
 
@@ -51,7 +121,9 @@ function tryReadPluginIframePageContext(
   iframe: HTMLIFrameElement | null,
   serviceDisplayName: string,
   embeddedUrl: string,
-  webUrl: string
+  webUrl: string,
+  surfaceId: string,
+  surfaceLabel: string
 ): AssistantPageContext | null {
   const frameWindow = iframe?.contentWindow;
   if (!frameWindow) {
@@ -79,7 +151,14 @@ function tryReadPluginIframePageContext(
       selectedText,
       metaDescription,
       headings,
-      bodyText
+      bodyText,
+      browserTarget: {
+        kind: "iframe",
+        frameMatchUrl: embeddedUrl || frameLocation.href || webUrl,
+        surfaceId,
+        surfaceLabel,
+        currentUrl: frameLocation.href || embeddedUrl || webUrl
+      }
     };
   } catch {
     return null;
@@ -91,7 +170,8 @@ export function PluginPage({
   pluginId: pluginIdProp,
   active,
   embedPath,
-  surfaceLabel
+  surfaceLabel,
+  skipContextRegistration
 }: PluginPageProps) {
   const { pluginId: routePluginId } = useParams<{ pluginId: string }>();
   const pluginId = pluginIdProp ?? routePluginId ?? "";
@@ -306,7 +386,7 @@ export function PluginPage({
   }
 
   useEffect(() => {
-    if (active === false || service?.status !== "running") {
+    if (active === false || service?.status !== "running" || skipContextRegistration) {
       return undefined;
     }
 
@@ -315,15 +395,149 @@ export function PluginPage({
         iframeRef.current,
         serviceDisplayName,
         embeddedUrl,
-        webUrl
+        webUrl,
+        pluginId,
+        serviceDisplayName
       );
       if (iframeContext) {
         return iframeContext;
       }
 
-      return buildPluginIframeFallbackContext(serviceDisplayName, embeddedUrl, webUrl);
+      return buildPluginIframeFallbackContext(serviceDisplayName, embeddedUrl, webUrl, pluginId, serviceDisplayName);
     });
-  }, [active, embeddedUrl, service?.status, serviceDisplayName, webUrl]);
+  }, [active, embeddedUrl, pluginId, service?.status, serviceDisplayName, skipContextRegistration, webUrl]);
+
+  useEffect(() => {
+    if (active === false || service?.status !== "running" || !embeddedUrl || skipContextRegistration) {
+      return undefined;
+    }
+
+    function embeddedError(code: string, message: string, details?: unknown) {
+      return {
+        ok: false,
+        error: {
+          code,
+          message,
+          ...(details === undefined ? {} : { details })
+        }
+      };
+    }
+
+    function requestTargetsDifferentSurface(args: Record<string, unknown>) {
+      const targetSurfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
+      return Boolean(targetSurfaceId && targetSurfaceId !== pluginId);
+    }
+
+    async function readPluginPageContext() {
+      return tryReadPluginIframePageContext(
+        iframeRef.current,
+        serviceDisplayName,
+        embeddedUrl,
+        webUrl,
+        pluginId,
+        serviceDisplayName
+      ) ?? buildPluginIframeFallbackContext(serviceDisplayName, embeddedUrl, webUrl, pluginId, serviceDisplayName);
+    }
+
+    async function executeFrameScript(args: Record<string, unknown>, script: string) {
+      if (getUtf8ByteLength(script) > EMBEDDED_WEB_SCRIPT_MAX_BYTES) {
+        return embeddedError("script_too_large", "脚本超过内嵌网页执行大小限制。");
+      }
+      const result = await window.electronAPI.embeddedWeb.executeInFrame({
+        frameMatchUrl: embeddedUrl,
+        script
+      });
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: result.error ?? {
+            code: "iframe_execution_failed",
+            message: "主进程未能执行 iframe 脚本。"
+          }
+        };
+      }
+      return { ok: true, result: result.result };
+    }
+
+    return registerDesktopActionProviderForScope("embeddedWeb", async (request) => {
+      if (active === false || service?.status !== "running") {
+        return null;
+      }
+      const args = request.args ?? {};
+      if (requestTargetsDifferentSurface(args)) {
+        return null;
+      }
+
+      switch (request.action) {
+        case "desktop.embeddedWeb.getActiveSurface":
+          return {
+            ok: true,
+            result: {
+              surface: {
+                id: pluginId,
+                label: serviceDisplayName,
+                url: embeddedUrl,
+                active: active !== false,
+                currentUrl: embeddedUrl,
+                title: serviceDisplayName,
+                frameMatchUrl: embeddedUrl
+              },
+              tabs: [],
+              activeTab: null
+            }
+          };
+        case "desktop.embeddedWeb.getPageContext":
+          return { ok: true, result: await readPluginPageContext() };
+        case "desktop.embeddedWeb.readPageData": {
+          const response = await executeFrameScript(args, READ_PAGE_DATA_SCRIPT);
+          if (!response.ok) {
+            return response;
+          }
+          return {
+            ok: true,
+            result: filterReadPageDataResult(
+              response.result,
+              readAllowedValues(args.include, EMBEDDED_WEB_READ_INCLUDES)
+            )
+          };
+        }
+        case "desktop.embeddedWeb.extractStructured": {
+          const response = await executeFrameScript(args, EXTRACT_STRUCTURED_SCRIPT);
+          if (!response.ok) {
+            return response;
+          }
+          return {
+            ok: true,
+            result: filterStructuredResult(
+              response.result,
+              readAllowedValues(args.targets, EMBEDDED_WEB_STRUCTURED_TARGETS)
+            )
+          };
+        }
+        case "desktop.embeddedWeb.interactElement": {
+          const selector = typeof args.selector === "string" ? args.selector.trim() : "";
+          const action = typeof args.action === "string" ? args.action.trim() : "";
+          if (!selector || !EMBEDDED_WEB_INTERACT_ACTIONS.has(action as EmbeddedWebInteractAction)) {
+            return embeddedError("invalid_args", "selector 和有效的 action 是必填项。", args);
+          }
+          return executeFrameScript(args, buildInteractElementScript({
+            selector,
+            action: action as EmbeddedWebInteractAction,
+            value: typeof args.value === "string" ? args.value : args.value == null ? undefined : String(args.value)
+          }));
+        }
+        case "desktop.embeddedWeb.executeScript": {
+          const script = typeof args.script === "string" ? args.script : "";
+          if (!script.trim()) {
+            return embeddedError("invalid_script", "script 是必填项。");
+          }
+          return executeFrameScript(args, script);
+        }
+        default:
+          return null;
+      }
+    });
+  }, [active, embeddedUrl, pluginId, service?.status, serviceDisplayName, skipContextRegistration, webUrl]);
 
   if (!service) {
     if (pluginId === "agent-webclient") {

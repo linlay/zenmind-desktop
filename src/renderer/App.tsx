@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
 import { AppSidebar } from "./components/AppSidebar";
 import { DesktopPet } from "./components/DesktopPet";
@@ -68,34 +67,6 @@ const AGENT_WEBCLIENT_ROUTE_ITEMS = [
   { routePath: "/memory", embedPath: "/memory", label: "记忆管理" }
 ] as const;
 
-const WINDOW_DRAG_EXCLUDED_SELECTOR = [
-  "button",
-  "a",
-  "input",
-  "textarea",
-  "select",
-  "iframe",
-  "webview",
-  "[role='button']",
-  "[role='tab']",
-  "[role='textbox']",
-  "[role='menuitem']",
-  "[role='separator']",
-  "[contenteditable='true']",
-  ".app-sidebar-collapse-button",
-  ".agent-webclient-copilot-dock",
-  ".external-webview-browser-chrome",
-  ".external-webview-bookmark-menu",
-  ".external-webview-bookmark-editor-backdrop",
-  ".startup-loading-screen"
-].join(",");
-
-function shouldStartDesktopWindowDrag(target: EventTarget | null) {
-  if (!(target instanceof Element)) {
-    return true;
-  }
-  return !target.closest(WINDOW_DRAG_EXCLUDED_SELECTOR);
-}
 const STARTUP_STATUS_REFRESH_MS = 1500;
 
 function asRecord(value: unknown) {
@@ -149,8 +120,6 @@ function AppShell() {
   const navigate = useNavigate();
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
-  const windowDragPointerIdRef = useRef<number | null>(null);
-  const windowDragCleanupRef = useRef<(() => void) | null>(null);
   const startupNavigationDoneRef = useRef(false);
   const refreshServicesRef = useRef(refreshServices);
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
@@ -254,7 +223,12 @@ function AppShell() {
     startupServices.every((service) => service?.status === "running");
   const resolvedStartupRestoreState = startupRestoreState ?? createFallbackStartupRestoreState();
   const showStartupCard = !startupCardDismissed && shouldShowStartupProgressCard(startupRestoreState, startupAllReady);
+  const customSidebarItemMap = useMemo(() => new Map(customSidebarItems.map((item) => [item.id, item])), [customSidebarItems]);
   const currentCopilotPreference = resolveDesktopCopilotPreference(assistantSettings?.desktopCopilotPages, location.pathname);
+  const customSidebarAgentKey = activeCustomSidebarItemId
+    ? customSidebarItemMap.get(activeCustomSidebarItemId)?.agentKey || ""
+    : "";
+  const resolvedCopilotAgentKey = customSidebarAgentKey || currentCopilotPreference?.agentKey || "";
   const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
   const isAgentWebclientMainRoute = location.pathname === ASSISTANT_TARGET_PATH;
   const assistantCopilotOpen = assistantDockOpen && !isAgentWebclientMainRoute;
@@ -546,8 +520,6 @@ function AppShell() {
     if (sidebarNavigationUnlockTimerRef.current !== null) {
       window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
     }
-    windowDragCleanupRef.current?.();
-    void window.electronAPI.windowDrag.end().catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -605,73 +577,6 @@ function AppShell() {
     setThemeMode((current) => (current === "light" ? "dark" : "light"));
   }
 
-  function finishDesktopWindowDrag(pointerId: number | null, target?: HTMLElement) {
-    if (pointerId !== null && windowDragPointerIdRef.current !== pointerId) {
-      return;
-    }
-    windowDragCleanupRef.current?.();
-    windowDragCleanupRef.current = null;
-    windowDragPointerIdRef.current = null;
-    if (target && pointerId !== null) {
-      try {
-        if (target.hasPointerCapture(pointerId)) {
-          target.releasePointerCapture(pointerId);
-        }
-      } catch {
-        // Pointer capture may already be gone after a native window move.
-      }
-    }
-    void window.electronAPI.windowDrag.end().catch(() => undefined);
-  }
-
-  function handleDesktopWindowPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!isMac || !event.isPrimary || event.button !== 0) {
-      return;
-    }
-    if (!shouldStartDesktopWindowDrag(event.target)) {
-      return;
-    }
-
-    event.preventDefault();
-    const target = event.currentTarget;
-    windowDragCleanupRef.current?.();
-    windowDragPointerIdRef.current = event.pointerId;
-    try {
-      target.setPointerCapture(event.pointerId);
-    } catch {
-      // Some platforms reject pointer capture while focus moves between frames.
-    }
-
-    const pointerId = event.pointerId;
-    const handlePointerUp = (pointerEvent: PointerEvent) => {
-      finishDesktopWindowDrag(pointerEvent.pointerId, target);
-    };
-    const handlePointerCancel = (pointerEvent: PointerEvent) => {
-      finishDesktopWindowDrag(pointerEvent.pointerId, target);
-    };
-    const handleLostPointerCapture = () => {
-      finishDesktopWindowDrag(pointerId, target);
-    };
-    const handleWindowBlur = () => {
-      finishDesktopWindowDrag(pointerId, target);
-    };
-
-    windowDragCleanupRef.current = () => {
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerCancel);
-      window.removeEventListener("blur", handleWindowBlur);
-      target.removeEventListener("lostpointercapture", handleLostPointerCapture);
-    };
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerCancel);
-    window.addEventListener("blur", handleWindowBlur);
-    target.addEventListener("lostpointercapture", handleLostPointerCapture);
-
-    void window.electronAPI.windowDrag.begin({ x: event.screenX, y: event.screenY }).catch(() => {
-      finishDesktopWindowDrag(pointerId, target);
-    });
-  }
-
   function toggleSidebarCollapsed() {
     setSidebarState((current) => ({ collapsed: !current.collapsed }));
   }
@@ -693,7 +598,6 @@ function AppShell() {
   }
 
   const experimentalItemMap = new Map(EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => [item.id, item]));
-  const customSidebarItemMap = new Map(customSidebarItems.map((item) => [item.id, item]));
 
   useEffect(() => {
     function normalizeSurfaceTarget(value: unknown) {
@@ -705,6 +609,18 @@ function AppShell() {
     }
 
     function createSurfaceList() {
+      const pluginSurfaces = services
+        .filter((service) => service.status === "running" && service.frontendMode !== "none" && service.healthMeta.webUrl)
+        .map((service) => ({
+          id: service.id,
+          label: getServiceDisplayName(service.id, service.name),
+          url: service.healthMeta.webUrl,
+          route: service.id === "agent-webclient"
+            ? activeAgentWebclientRoute?.routePath ?? ASSISTANT_TARGET_PATH
+            : `/plugin/${service.id}`,
+          active: activePluginId === service.id
+        }));
+
       return [
         {
           id: BUILTIN_BROWSER_SURFACE_ID,
@@ -719,7 +635,8 @@ function AppShell() {
           url: item.url,
           route: `/custom-sidebar/${item.id}`,
           active: activeCustomSidebarItemId === item.id
-        }))
+        })),
+        ...pluginSurfaces
       ];
     }
 
@@ -958,9 +875,12 @@ function AppShell() {
     });
   }, [
     activeCustomSidebarItemId,
+    activeAgentWebclientRoute,
+    activePluginId,
     customSidebarItems,
     location.pathname,
     navigate,
+    services,
     sidebarTranslucencyEnabled,
     themeMode
   ]);
@@ -980,7 +900,6 @@ function AppShell() {
         isMac && sidebarTranslucencyEnabled ? "is-mac-translucent-sidebar" : "",
         sidebarState.collapsed ? "is-sidebar-collapsed" : "is-sidebar-expanded"
       ].filter(Boolean).join(" ")}
-      onPointerDownCapture={handleDesktopWindowPointerDown}
     >
       <div className="app-window-drag-region" aria-hidden="true" />
       <div
@@ -1003,15 +922,8 @@ function AppShell() {
           onCloseAssistantDock={() => setAssistantDockOpen(false)}
           onRequestNavigate={requestSidebarNavigation}
           onNavigateItem={undefined}
+          onToggleCollapsed={toggleSidebarCollapsed}
         />
-        <button
-          type="button"
-          className="app-sidebar-collapse-button"
-          aria-label={sidebarState.collapsed ? "展开侧边栏" : "收起侧边栏"}
-          onClick={toggleSidebarCollapsed}
-        >
-          <span className="app-sidebar-collapse-button-icon" aria-hidden="true" />
-        </button>
       </div>
       <div className="app-content">
         <main className="app-main">
@@ -1091,6 +1003,7 @@ function AppShell() {
         hostTheme={themeMode}
         nativeDialogVisible={nativeDialogVisible}
         openRequest={assistantDockOpenRequest}
+        resolvedAgentKey={resolvedCopilotAgentKey}
         onClose={() => {
           setAssistantDockOpen(false);
           setAssistantDockOpenRequest(null);
@@ -1280,6 +1193,7 @@ function AgentWebclientCopilotDock({
   hostTheme,
   nativeDialogVisible,
   openRequest,
+  resolvedAgentKey,
   onClose,
   onRunningRunIdChange
 }: {
@@ -1287,6 +1201,7 @@ function AgentWebclientCopilotDock({
   hostTheme: ThemeMode;
   nativeDialogVisible: boolean;
   openRequest: AssistantWorkerOpenRequest | null;
+  resolvedAgentKey: string;
   onClose: () => void;
   onRunningRunIdChange: (runId: string | null) => void;
 }) {
@@ -1305,7 +1220,7 @@ function AgentWebclientCopilotDock({
       ].filter(Boolean).join(" ")}
       aria-hidden={!open}
       data-open-chat-id={openRequest?.chatId ?? ""}
-      data-open-agent-key={openRequest?.agentKey ?? openRequest?.workerKey ?? ""}
+      data-open-agent-key={openRequest?.agentKey ?? openRequest?.workerKey ?? resolvedAgentKey}
     >
       <PluginPage
         active={open}
@@ -1313,6 +1228,7 @@ function AgentWebclientCopilotDock({
         hostTheme={hostTheme}
         pluginId="agent-webclient"
         surfaceLabel="助手"
+        skipContextRegistration
       />
       <button
         type="button"

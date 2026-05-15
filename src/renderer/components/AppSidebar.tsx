@@ -76,6 +76,7 @@ type AppSidebarProps = {
   onCloseAssistantDock?: () => void;
   onRequestNavigate?: (targetPath: string) => boolean;
   onNavigateItem?: () => void;
+  onToggleCollapsed?: () => void;
 };
 
 export function AppSidebar({
@@ -90,7 +91,8 @@ export function AppSidebar({
   onOpenAssistantDock,
   onCloseAssistantDock,
   onRequestNavigate,
-  onNavigateItem
+  onNavigateItem,
+  onToggleCollapsed
 }: AppSidebarProps) {
   const { services } = useServices();
   const serviceNavItems: SidebarNavItem[] = services
@@ -262,6 +264,17 @@ export function AppSidebar({
               <span className="sidebar-link-label">侧边助手</span>
             </button>
           ) : null}
+        </div>
+        <div className="sidebar-collapse-control">
+          <button
+            type="button"
+            className="app-sidebar-collapse-button"
+            aria-label={isCollapsed ? "展开侧边栏" : "收起侧边栏"}
+            title={isCollapsed ? "展开侧边栏" : "收起侧边栏"}
+            onClick={onToggleCollapsed}
+          >
+            <span className="app-sidebar-collapse-button-icon" aria-hidden="true" />
+          </button>
         </div>
       </div>
     </aside>

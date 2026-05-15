@@ -336,6 +336,10 @@ async function executeAction(
     case "desktop.embeddedWeb.openTab":
     case "desktop.embeddedWeb.closeTab":
     case "desktop.embeddedWeb.switchTab":
+    case "desktop.embeddedWeb.readPageData":
+    case "desktop.embeddedWeb.extractStructured":
+    case "desktop.embeddedWeb.interactElement":
+    case "desktop.embeddedWeb.executeScript":
       return callRendererPageAction(options, request, args);
     case "desktop.navigate.toRoute": {
       const route = readString(args, "route") || readString(args, "path");
@@ -511,14 +515,18 @@ async function handleActionCall(
   const normalizedRequest = { ...request, action };
   const args = asRecord(request.args);
   if (isDesktopActionMutating(action)) {
-    const confirmed = await confirmMutatingAction(action, args, options.getMainWindow());
-    if (!confirmed) {
-      return {
-        ok: false,
-        action,
-        requiresConfirmation: true,
-        error: actionError("user_cancelled", "用户取消了 Desktop 动作。")
-      };
+    const skipConfirmation = request.permissionMode === "full_access" ||
+      readString(args, "permissionMode") === "full_access";
+    if (!skipConfirmation) {
+      const confirmed = await confirmMutatingAction(action, args, options.getMainWindow());
+      if (!confirmed) {
+        return {
+          ok: false,
+          action,
+          requiresConfirmation: true,
+          error: actionError("user_cancelled", "用户取消了 Desktop 动作。")
+        };
+      }
     }
   }
   try {

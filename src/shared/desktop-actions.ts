@@ -34,6 +34,10 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.embeddedWeb.openTab", kind: "execute", category: "embeddedWeb", description: "Open an embedded web tab." },
   { name: "desktop.embeddedWeb.closeTab", kind: "execute", category: "embeddedWeb", description: "Close an embedded web tab." },
   { name: "desktop.embeddedWeb.switchTab", kind: "execute", category: "embeddedWeb", description: "Switch the active embedded web tab." },
+  { name: "desktop.embeddedWeb.readPageData", kind: "read", category: "embeddedWeb", description: "Read live DOM data from an embedded web surface." },
+  { name: "desktop.embeddedWeb.extractStructured", kind: "read", category: "embeddedWeb", description: "Extract live structured data from an embedded web surface." },
+  { name: "desktop.embeddedWeb.interactElement", kind: "execute", category: "embeddedWeb", description: "Interact with a DOM element in an embedded web surface." },
+  { name: "desktop.embeddedWeb.executeScript", kind: "execute", category: "embeddedWeb", description: "Execute JavaScript in an embedded web surface." },
 
   { name: "desktop.controlCenter.listServices", kind: "read", category: "controlCenter", description: "List Desktop services." },
   { name: "desktop.controlCenter.getServiceStatus", kind: "read", category: "controlCenter", description: "Read one service status." },
@@ -119,6 +123,7 @@ export interface DesktopActionCallRequest {
   action: string;
   args?: Record<string, unknown>;
   source?: DesktopActionSource;
+  permissionMode?: "default" | "full_access";
 }
 
 export interface DesktopActionError {

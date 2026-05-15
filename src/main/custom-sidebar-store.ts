@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
-import type { CustomSidebarItem, CustomSidebarItemInput } from "../shared/contracts";
+import type { CustomSidebarItem, CustomSidebarItemInput, CustomSidebarUpdateInput } from "../shared/contracts";
 import { CUSTOM_SIDEBAR_ICON_IDS } from "../shared/custom-sidebar-icons";
 
 const CUSTOM_SIDEBAR_FILE = "custom-sidebar-items.json";
@@ -63,6 +63,14 @@ function normalizeLabel(inputLabel: string | undefined, url: string) {
   }
 }
 
+function normalizeAgentKey(inputAgentKey: unknown) {
+  if (typeof inputAgentKey !== "string") {
+    return undefined;
+  }
+  const normalized = inputAgentKey.trim();
+  return normalized || undefined;
+}
+
 function isKnownIconId(iconId: unknown): iconId is string {
   return typeof iconId === "string" && (CUSTOM_SIDEBAR_ICON_IDS as readonly string[]).includes(iconId);
 }
@@ -87,11 +95,13 @@ function normalizeItem(item: Partial<CustomSidebarItem>, usedIconIds: Set<string
       return null;
     }
     usedIconIds.add(iconId);
+    const agentKey = normalizeAgentKey(item.agentKey);
     return {
       id: item.id.trim() || createItemId(),
       label: normalizeLabel(item.label, url),
       url,
       iconId,
+      ...(agentKey ? { agentKey } : {}),
       createdAt: typeof item.createdAt === "number" ? item.createdAt : now,
       updatedAt: typeof item.updatedAt === "number" ? item.updatedAt : now
     };
@@ -202,11 +212,13 @@ export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
     }
 
     const now = Date.now();
+    const agentKey = normalizeAgentKey(input.agentKey);
     const item: CustomSidebarItem = {
       id: createItemId(),
       label: normalizeLabel(input.label, url),
       url,
       iconId,
+      ...(agentKey ? { agentKey } : {}),
       createdAt: now,
       updatedAt: now
     };
@@ -222,6 +234,71 @@ export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
     return {
       ok: false,
       item: null,
+      items,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+export function updateCustomSidebarItem(app: App, id: string, input: CustomSidebarUpdateInput) {
+  const items = readItems(app);
+  const normalizedId = id.trim();
+  const targetIndex = items.findIndex((item) => item.id === normalizedId);
+  if (targetIndex === -1) {
+    return {
+      ok: false,
+      item: null,
+      items,
+      message: "未找到这个内嵌网站。"
+    };
+  }
+
+  const target = items[targetIndex];
+  const updated: CustomSidebarItem = {
+    ...target,
+    updatedAt: Date.now()
+  };
+
+  try {
+    if (typeof input.url === "string") {
+      const nextUrl = normalizeUrl(input.url);
+      const duplicate = items.find((item) => item.id !== normalizedId && item.url === nextUrl);
+      if (duplicate) {
+        return {
+          ok: false,
+          item: target,
+          items,
+          message: "这个网站已经是内嵌网站了。"
+        };
+      }
+      updated.url = nextUrl;
+    }
+
+    if (typeof input.label === "string" || typeof input.url === "string") {
+      updated.label = normalizeLabel(input.label ?? target.label, updated.url);
+    }
+
+    if (typeof input.agentKey === "string") {
+      const agentKey = normalizeAgentKey(input.agentKey);
+      if (agentKey) {
+        updated.agentKey = agentKey;
+      } else {
+        delete updated.agentKey;
+      }
+    }
+
+    items[targetIndex] = updated;
+    writeItems(app, items);
+    return {
+      ok: true,
+      item: updated,
+      items,
+      message: `已更新「${updated.label}」。`
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      item: target,
       items,
       message: error instanceof Error ? error.message : String(error)
     };
@@ -309,6 +386,7 @@ export const __testInternals = {
   getCustomSidebarPath,
   normalizeUrl,
   normalizeLabel,
+  normalizeAgentKey,
   pickNextIconId,
   parseItemsFileContent
 };

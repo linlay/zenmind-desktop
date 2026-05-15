@@ -75,7 +75,8 @@ import {
   exportCustomSidebarItems,
   importCustomSidebarItems,
   listCustomSidebarItems,
-  removeCustomSidebarItem
+  removeCustomSidebarItem,
+  updateCustomSidebarItem
 } from "./custom-sidebar-store";
 import {
   getAgentPlatformMinimaxSettingsPublic,
@@ -107,8 +108,12 @@ import type {
   DesktopActionRendererResponse,
   DesktopPetAgentOption,
   DesktopPetSettingsInput,
+  EmbeddedWebExecuteInFrameRequest,
+  EmbeddedWebExecuteInFrameResult,
   AssistantPastedImageInput,
   AssistantWorkerOpenRequest,
+  CustomSidebarItemInput,
+  CustomSidebarUpdateInput,
   ServiceId,
   ServiceLogReadOptions,
   ServiceOpenLogViewerRequest,
@@ -175,13 +180,6 @@ let pendingMainWindowCloseCancel: (() => void) | null = null;
 let serviceMutationQueue = Promise.resolve();
 let nativeDialogVisibilityDepth = 0;
 let quickAssistantVisibleBeforeNativeDialog = false;
-let mainWindowDragTimer: ReturnType<typeof setInterval> | null = null;
-let mainWindowDragState: {
-  startPoint: { x: number; y: number };
-  lastPoint: { x: number; y: number };
-  moved: boolean;
-  startedAt: number;
-} | null = null;
 let mainWindowSidebarTranslucencyEnabled = false;
 const desktopActionRendererRequests = new Map<string, {
   resolve: (response: DesktopActionRendererResponse) => void;
@@ -192,8 +190,9 @@ const AGENT_WEBCLIENT_APP_PATHNAMES = new Set(["/", "/copilot"]);
 const LOG_VIEWER_ROUTE = "/log-viewer";
 const AGENT_WEBCLIENT_OPEN_RETRY_COUNT = 24;
 const AGENT_WEBCLIENT_OPEN_RETRY_MS = 180;
-const MAIN_WINDOW_DRAG_FORCE_END_MS = 8_000;
 const DESKTOP_ACTION_RENDERER_TIMEOUT_MS = 8_000;
+const EMBEDDED_WEB_FRAME_SCRIPT_TIMEOUT_MS = 15_000;
+const EMBEDDED_WEB_FRAME_SCRIPT_MAX_BYTES = 256 * 1024;
 const DESKTOP_PET_DRAG_FORCE_END_MS = 4_000;
 const QUICK_ASSISTANT_DISMISS_URL = "zenmind://quick-assistant-dismiss";
 const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -793,6 +792,137 @@ function collectWebFrames(frame: WebFrameMain, frames: WebFrameMain[] = []) {
     collectWebFrames(childFrame, frames);
   }
   return frames;
+}
+
+function embeddedWebFrameError(
+  code: string,
+  message: string,
+  details?: unknown
+): EmbeddedWebExecuteInFrameResult {
+  return {
+    ok: false,
+    error: {
+      code,
+      message,
+      ...(details === undefined ? {} : { details })
+    }
+  };
+}
+
+function isLoopbackHostname(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return normalized === "localhost" ||
+    normalized === "::1" ||
+    normalized === "[::1]" ||
+    /^127(?:\.\d{1,3}){3}$/u.test(normalized);
+}
+
+function parseSafeFrameMatchUrl(frameMatchUrl: string) {
+  try {
+    const parsed = new URL(frameMatchUrl);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return null;
+    }
+    return isLoopbackHostname(parsed.hostname) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isTrustedDesktopRendererSender(contents: WebContents) {
+  return [mainWindow, quickAssistantWindow].some((targetWindow) =>
+    targetWindow && !targetWindow.isDestroyed() && targetWindow.webContents.id === contents.id
+  );
+}
+
+function parseFrameUrl(frame: WebFrameMain) {
+  try {
+    return new URL(frame.url);
+  } catch {
+    return null;
+  }
+}
+
+function findMatchingWebFrame(frames: WebFrameMain[], targetUrl: URL) {
+  const originMatches = frames.filter((frame) => parseFrameUrl(frame)?.origin === targetUrl.origin);
+  return originMatches.find((frame) => parseFrameUrl(frame)?.href === targetUrl.href) ??
+    originMatches.find((frame) => {
+      const frameUrl = parseFrameUrl(frame);
+      return Boolean(frameUrl && targetUrl.pathname !== "/" && frameUrl.pathname === targetUrl.pathname);
+    }) ??
+    originMatches[0] ??
+    null;
+}
+
+async function executeWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(`Script execution timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+async function executeEmbeddedWebFrameScript(
+  sender: WebContents,
+  input: EmbeddedWebExecuteInFrameRequest
+): Promise<EmbeddedWebExecuteInFrameResult> {
+  if (!isTrustedDesktopRendererSender(sender)) {
+    return embeddedWebFrameError("forbidden", "Only Desktop renderer windows can execute embedded frame scripts.");
+  }
+
+  const frameMatchUrl = typeof input?.frameMatchUrl === "string" ? input.frameMatchUrl.trim() : "";
+  const targetUrl = parseSafeFrameMatchUrl(frameMatchUrl);
+  if (!targetUrl) {
+    return embeddedWebFrameError("invalid_frame_match_url", "frameMatchUrl must be an http(s) localhost or loopback URL.", {
+      frameMatchUrl
+    });
+  }
+
+  const script = typeof input?.script === "string" ? input.script : "";
+  if (!script.trim()) {
+    return embeddedWebFrameError("invalid_script", "script is required.");
+  }
+  if (Buffer.byteLength(script, "utf8") > EMBEDDED_WEB_FRAME_SCRIPT_MAX_BYTES) {
+    return embeddedWebFrameError("script_too_large", "script exceeds the embedded frame size limit.");
+  }
+
+  const frames = collectWebFrames(sender.mainFrame);
+  const frame = findMatchingWebFrame(frames, targetUrl);
+  if (!frame) {
+    return embeddedWebFrameError("frame_not_found", "No embedded frame matched the requested localhost origin.", {
+      frameMatchUrl,
+      origin: targetUrl.origin,
+      frames: frames.map((candidate) => candidate.url).filter(Boolean)
+    });
+  }
+
+  const timeoutMs = typeof input.timeoutMs === "number" && Number.isFinite(input.timeoutMs)
+    ? Math.min(Math.max(Math.round(input.timeoutMs), 1_000), EMBEDDED_WEB_FRAME_SCRIPT_TIMEOUT_MS)
+    : EMBEDDED_WEB_FRAME_SCRIPT_TIMEOUT_MS;
+  try {
+    const result = await executeWithTimeout(frame.executeJavaScript(script), timeoutMs);
+    return {
+      ok: true,
+      frameUrl: frame.url,
+      result
+    };
+  } catch (error) {
+    return embeddedWebFrameError(
+      "script_execution_failed",
+      error instanceof Error ? error.message : String(error),
+      { frameUrl: frame.url }
+    );
+  }
 }
 
 function isAgentWebclientAppFrame(frame: WebFrameMain) {
@@ -2287,77 +2417,6 @@ function normalizeMainWindowBeforeShow(targetWindow: BrowserWindow) {
   }
 }
 
-function clearMainWindowDragTimer() {
-  if (mainWindowDragTimer) {
-    clearInterval(mainWindowDragTimer);
-    mainWindowDragTimer = null;
-  }
-}
-
-function beginMainWindowDrag(point: { x?: unknown; y?: unknown }) {
-  if (process.platform !== "darwin" || !mainWindow || mainWindow.isDestroyed()) {
-    return { ok: false };
-  }
-  if (mainWindow.isFullScreen()) {
-    return { ok: false };
-  }
-
-  const startX = Number(point.x);
-  const startY = Number(point.y);
-  const fallbackPoint = screen.getCursorScreenPoint();
-  const startPoint = {
-    x: Number.isFinite(startX) ? startX : fallbackPoint.x,
-    y: Number.isFinite(startY) ? startY : fallbackPoint.y
-  };
-
-  clearMainWindowDragTimer();
-  mainWindowDragState = {
-    startPoint,
-    lastPoint: startPoint,
-    moved: false,
-    startedAt: Date.now()
-  };
-
-  mainWindowDragTimer = setInterval(() => {
-    if (!mainWindowDragState || !mainWindow || mainWindow.isDestroyed()) {
-      clearMainWindowDragTimer();
-      return;
-    }
-    if (mainWindow.isFullScreen() || Date.now() - mainWindowDragState.startedAt > MAIN_WINDOW_DRAG_FORCE_END_MS) {
-      endMainWindowDrag();
-      return;
-    }
-
-    const cursorPoint = screen.getCursorScreenPoint();
-    const totalDeltaX = cursorPoint.x - mainWindowDragState.startPoint.x;
-    const totalDeltaY = cursorPoint.y - mainWindowDragState.startPoint.y;
-    if (!mainWindowDragState.moved && Math.hypot(totalDeltaX, totalDeltaY) < 4) {
-      return;
-    }
-
-    const deltaX = cursorPoint.x - mainWindowDragState.lastPoint.x;
-    const deltaY = cursorPoint.y - mainWindowDragState.lastPoint.y;
-    mainWindowDragState.moved = true;
-    mainWindowDragState.lastPoint = cursorPoint;
-    if (deltaX !== 0 || deltaY !== 0) {
-      const bounds = mainWindow.getBounds();
-      mainWindow.setPosition(bounds.x + Math.round(deltaX), bounds.y + Math.round(deltaY), false);
-    }
-  }, 16);
-
-  return { ok: true };
-}
-
-function endMainWindowDrag() {
-  const moved = Boolean(mainWindowDragState?.moved);
-  mainWindowDragState = null;
-  clearMainWindowDragTimer();
-  return {
-    ok: true,
-    moved
-  };
-}
-
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -2418,7 +2477,6 @@ function createWindow() {
   });
 
   mainWindow.on("enter-full-screen", () => {
-    endMainWindowDrag();
     applyMainWindowAppearance(mainWindow);
   });
 
@@ -2515,7 +2573,6 @@ function createWindow() {
   });
 
   mainWindow.on("close", (event) => {
-    endMainWindowDrag();
     if (isHandlingQuit) {
       return;
     }
@@ -2528,7 +2585,6 @@ function createWindow() {
   });
 
   mainWindow.on("closed", () => {
-    endMainWindowDrag();
     cancelPendingMainWindowClose();
     mainWindow = null;
   });
@@ -3757,6 +3813,9 @@ function registerIpcHandlers() {
   ipcMain.handle("agentAuth.issueAccessToken", async (_event, reason: "missing" | "unauthorized") => {
     return issueAgentAccessToken(app, reason);
   });
+  ipcMain.handle("embeddedWeb.executeInFrame", async (event, request: EmbeddedWebExecuteInFrameRequest) => {
+    return executeEmbeddedWebFrameScript(event.sender, request);
+  });
   ipcMain.handle("clipboard.writeText", async (_event, text: string) => {
     try {
       clipboard.writeText(String(text ?? ""));
@@ -3769,8 +3828,11 @@ function registerIpcHandlers() {
     }
   });
   ipcMain.handle("customSidebar.list", async () => listCustomSidebarItems(app));
-  ipcMain.handle("customSidebar.add", async (_event, input: { label?: string; url: string }) => {
+  ipcMain.handle("customSidebar.add", async (_event, input: CustomSidebarItemInput) => {
     return addCustomSidebarItem(app, input);
+  });
+  ipcMain.handle("customSidebar.update", async (_event, id: string, input: CustomSidebarUpdateInput) => {
+    return updateCustomSidebarItem(app, id, input);
   });
   ipcMain.handle("customSidebar.remove", async (_event, id: string) => {
     return removeCustomSidebarItem(app, id);
@@ -3823,18 +3885,6 @@ function registerIpcHandlers() {
       path: filePath,
       message: "已导出内嵌网站配置。"
     };
-  });
-  ipcMain.handle("windowDrag.begin", async (event, point: { x?: unknown; y?: unknown }) => {
-    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
-      return { ok: false };
-    }
-    return beginMainWindowDrag(point);
-  });
-  ipcMain.handle("windowDrag.end", async (event) => {
-    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
-      return { ok: false, moved: false };
-    }
-    return endMainWindowDrag();
   });
   ipcMain.handle("desktopPet.getSettings", async () => toDesktopPetSettings(desktopPetSettings));
   ipcMain.handle("desktopPet.getState", async () => {
