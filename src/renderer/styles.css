@@ -3230,6 +3230,11 @@ body.quick-web-copilot-body,
   filter: none;
 }
 
+.sidebar-assistant-launcher.is-assistant-open .sidebar-link-icon svg,
+.sidebar-assistant-launcher.is-assistant-open .sidebar-link-icon img {
+  filter: none;
+}
+
 .sidebar-link-label {
   min-width: 0;
   overflow: hidden;

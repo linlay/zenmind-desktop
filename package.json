@@ -5,6 +5,7 @@
   "description": "ZenMind 应用壳",
   "main": "dist-electron/main/index.js",
   "scripts": {
+    "icons": "node ./scripts/generate-app-icons.mjs",
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
     "build:main:types": "tsc -p tsconfig.main.json",
     "build:main:bundle": "node ./scripts/build-main-bundle.mjs",

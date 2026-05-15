@@ -1,4 +1,5 @@
 import { CUSTOM_SIDEBAR_ICONS } from "../../shared/custom-sidebar-icons";
+import { APP_ICON_ASSET_FILENAMES } from "../../shared/app-icon-assets";
 import agentIcon from "../assets/sidebar-icons/agent.svg";
 import assistantIcon from "../assets/sidebar-icons/assistant.svg";
 import autumnIcon from "../assets/sidebar-icons/autumn.svg";
@@ -76,7 +77,7 @@ function getCustomSidebarIconDataUri(iconId: string) {
 export function BrandMark({ className }: BrandMarkProps) {
   return (
     <img
-      src="./brand-icon.png"
+      src={`./${APP_ICON_ASSET_FILENAMES.brandIcon}`}
       alt="品牌标识"
       className={className}
       style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: 8 }}

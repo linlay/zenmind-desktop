@@ -17,11 +17,11 @@
     </linearGradient>
     <mask id="mask-color-hollow">
       <rect width="400" height="400" fill="white" />
-      <g fill="black">
-        <path d="M 120 135 Q 200 96 280 135 Q 200 129 120 135 Z" />
-        <path d="M 60 180 Q 200 108 340 180 Q 200 167 60 180 Z" />
-        <polygon points="235.5,190 274.5,190 164.5,290 125.5,290" />
-        <rect x="115" y="290" width="170" height="21" />
+      <g fill="black" transform="translate(0, -20)">
+        <path d="M 120 135 Q 200 92 280 135 Q 200 132 120 135 Z" />
+        <path d="M 60 180 Q 200 102 340 180 Q 200 173 60 180 Z" />
+        <polygon points="231.5,190 278.5,190 168.5,290 121.5,290" />
+        <rect x="115" y="290" width="170" height="25" />
       </g>
     </mask>
   </defs>

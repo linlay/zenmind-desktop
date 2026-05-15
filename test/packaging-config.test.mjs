@@ -36,9 +36,12 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
   assert.deepEqual(packageJson.build?.electronLanguages, ["zh-CN", "en-US"]);
   assert.match(packageJson.scripts?.["build:main"] ?? "", /build:main:types/);
   assert.match(packageJson.scripts?.["build:main"] ?? "", /build:main:bundle/);
+  assert.equal(packageJson.scripts?.["icons"], "node ./scripts/generate-app-icons.mjs");
   assert.equal(packageJson.scripts?.["stage:app"], "node ./scripts/stage-app.mjs");
   assert.match(packageJson.scripts?.["dist:mac"] ?? "", /stage:app -- --os=darwin --arch=arm64/);
   assert.match(packageJson.scripts?.["dist:win"] ?? "", /stage:app -- --os=win32 --arch=x64/);
+  assert.doesNotMatch(packageJson.scripts?.["dist:mac"] ?? "", /run icons/);
+  assert.doesNotMatch(packageJson.scripts?.["dist:win"] ?? "", /run icons/);
   assert.equal(voiceAsrResource, undefined);
   assert.equal(packageJson.scripts?.["sync:plugins"], undefined);
   assert.equal(packageJson.scripts?.["prepare:voice-asr"], undefined);

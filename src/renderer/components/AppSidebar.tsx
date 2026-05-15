@@ -206,6 +206,7 @@ export function AppSidebar({
                 "sidebar-link",
                 "sidebar-link-utility",
                 "sidebar-assistant-launcher",
+                assistantDockOpen ? "is-assistant-open" : "",
                 assistantLauncherDisabled ? "is-disabled" : ""
               ].filter(Boolean).join(" ")}
               onClick={handleAssistantDockClick}
@@ -223,8 +224,7 @@ export function AppSidebar({
               <span className="sidebar-link-icon">
                 <SidebarIllustration kind={assistantDockOpen ? "sidebar-assistant-open" : "sidebar-assistant-closed"} />
               </span>
-              <span className="sidebar-link-label">助手</span>
-              <span className="sidebar-link-label-collapsed" aria-hidden="true">助手</span>
+              <span className="sidebar-link-label">侧边助手</span>
             </button>
           ) : null}
         </div>

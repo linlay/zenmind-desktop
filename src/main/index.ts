@@ -126,6 +126,7 @@ import {
   isBuiltinBrowserSurfaceTarget,
   resolveBuiltinBrowserUrl
 } from "../shared/browser-surfaces";
+import { APP_ICON_ASSET_DIRECTORIES, APP_ICON_ASSET_FILENAMES } from "../shared/app-icon-assets";
 import {
   ensureDataRoot,
   getDataRoot,
@@ -3014,13 +3015,31 @@ async function openAssistantWorker(request: AssistantWorkerOpenRequest) {
 function createTrayIcon() {
   const platformIconPath =
     process.platform === "win32"
-      ? path.join(__dirname, "..", "..", "build", "icons", "icon.ico")
-      : path.join(__dirname, "..", "..", "build", "icons", "icon-16.png");
+      ? path.join(
+          __dirname,
+          "..",
+          "..",
+          ...APP_ICON_ASSET_DIRECTORIES.buildIcons.split("/"),
+          APP_ICON_ASSET_FILENAMES.windowsAppIcon
+        )
+      : path.join(
+          __dirname,
+          "..",
+          "..",
+          ...APP_ICON_ASSET_DIRECTORIES.buildIcons.split("/"),
+          APP_ICON_ASSET_FILENAMES.fallbackSmallIcon
+        );
   const iconPaths = [
-    path.join(__dirname, "..", "..", "dist-renderer", "tray-icon.png"),
-    path.join(__dirname, "..", "..", "public", "tray-icon.png"),
+    path.join(
+      __dirname,
+      "..",
+      "..",
+      APP_ICON_ASSET_DIRECTORIES.distRenderer,
+      APP_ICON_ASSET_FILENAMES.trayIcon
+    ),
+    path.join(__dirname, "..", "..", APP_ICON_ASSET_DIRECTORIES.public, APP_ICON_ASSET_FILENAMES.trayIcon),
     platformIconPath,
-    path.join(__dirname, "..", "..", "public", "brand-icon.png")
+    path.join(__dirname, "..", "..", APP_ICON_ASSET_DIRECTORIES.public, APP_ICON_ASSET_FILENAMES.brandIcon)
   ];
   const icon =
     iconPaths

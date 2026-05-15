@@ -159,10 +159,14 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(sidebarSource, /if \(assistantDockOpen\) \{\s*onCloseAssistantDock\?\.\(\);\s*\} else \{\s*onOpenAssistantDock\?\.\(\);/);
   assert.doesNotMatch(sidebarSource, /assistantDockOpen \? "sidebar-link-active" : ""/);
   assert.doesNotMatch(sidebarSource, /!assistantDockOpen && \(isActive \|\| pendingPath === "\/settings"\)/);
+  assert.match(sidebarSource, /assistantDockOpen \? "is-assistant-open" : ""/);
+  assert.match(sidebarSource, />侧边助手</);
+  assert.doesNotMatch(sidebarSource, /sidebar-link-label-collapsed" aria-hidden="true">助手/);
   assert.doesNotMatch(sidebarSource, /assistantDockOpen \? "is-open" : ""/);
   assert.doesNotMatch(sidebarSource, /sidebar-assistant-switch/);
   assert.match(sidebarSource, /disabled=\{assistantLauncherDisabled\}/);
   assert.doesNotMatch(globalStyles, /\.sidebar-assistant-launcher\.is-open/);
+  assert.match(globalStyles, /\.sidebar-assistant-launcher\.is-assistant-open \.sidebar-link-icon/);
   assert.match(globalStyles, /\.sidebar-assistant-launcher\.is-disabled/);
   assert.doesNotMatch(globalStyles, /\.sidebar-assistant-switch/);
 });
