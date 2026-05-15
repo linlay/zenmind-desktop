@@ -71,7 +71,7 @@ test("custom sidebar rejects duplicates and deletes only custom items", (t) => {
     url: "www.baidu.com"
   });
   assert.equal(duplicate.ok, false);
-  assert.match(duplicate.message, /已经在侧边栏/);
+  assert.match(duplicate.message, /已经是内嵌网站/);
   assert.equal(duplicate.items.length, 1);
 
   const removed = removeCustomSidebarItem(app, added.item.id);

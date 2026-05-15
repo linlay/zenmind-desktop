@@ -3,7 +3,6 @@ export type SidebarNavOrderItemKey =
   | "agents"
   | "schedules"
   | "memory"
-  | "controlCenter"
   | "market"
   | "help"
   | `service:${string}`
@@ -26,7 +25,6 @@ export const STATIC_SIDEBAR_NAV_ORDER_ITEMS: SidebarNavOrderItem[] = [
   { key: "agents", label: "智能体" },
   { key: "schedules", label: "自动化" },
   { key: "memory", label: "记忆管理" },
-  { key: "controlCenter", label: "控制中心" },
   { key: "market", label: "功能市场" },
   { key: "help", label: "帮助" }
 ];
@@ -54,7 +52,6 @@ export function createDefaultSidebarNavOrderItems({
     staticItems.get("agents")!,
     staticItems.get("schedules")!,
     staticItems.get("memory")!,
-    staticItems.get("controlCenter")!,
     ...serviceItems,
     ...experimentalItems,
     ...customItems,

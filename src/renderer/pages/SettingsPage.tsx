@@ -889,10 +889,10 @@ export function SettingsPage({
             {isWindows ? (
               <>
                 调整界面风格，管理左侧固定入口，并查看数据存储目录（包含 <code>services</code>、<code>plugins</code> 等）。
-                安装版默认使用安装目录下的 <code>data</code> 文件夹，自定义入口仅保存在本地。
+                安装版默认使用安装目录下的 <code>data</code> 文件夹，内嵌网站仅保存在本地。
               </>
             ) : (
-              <>调整界面风格，并管理左侧固定入口。自定义入口仅保存在本地。</>
+              <>调整界面风格，并管理左侧固定入口。内嵌网站仅保存在本地。</>
             )}
           </p>
         </div>
@@ -1273,9 +1273,9 @@ export function SettingsPage({
       <div className="data-root-card custom-sidebar-card">
         <div className="custom-sidebar-copy">
           <p className="eyebrow">SIDEBAR</p>
-          <h2>自定义侧边栏</h2>
+          <h2>内嵌网站</h2>
           <p className="page-copy">
-            将常用网页固定至左侧便捷访问。自定义入口仅保存在本地，支持导入导出，系统入口不可修改。
+            将常用网页作为内嵌网站固定至导航栏便捷访问。内嵌网站仅保存在本地，支持导入导出，系统入口不可修改。
           </p>
         </div>
         <div className="custom-sidebar-panel">
@@ -1300,13 +1300,13 @@ export function SettingsPage({
             </label>
             <div className="custom-sidebar-submit-wrap">
               <button type="submit" className="text-button custom-sidebar-submit" disabled={customSidebarPending}>
-                {customSidebarPending ? "添加中..." : "添加到侧边栏"}
+                {customSidebarPending ? "添加中..." : "添加内嵌网站"}
               </button>
             </div>
           </form>
 
           <div className="custom-sidebar-list-head">
-            <strong>已添加的入口</strong>
+            <strong>已添加的内嵌网站</strong>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button
                 type="button"
@@ -1330,7 +1330,7 @@ export function SettingsPage({
             </div>
           </div>
           {customSidebarItems.length === 0 ? (
-            <div className="custom-sidebar-empty">还没有添加自定义入口，添加后会显示在系统入口下方。</div>
+            <div className="custom-sidebar-empty">还没有添加内嵌网站，添加后会显示在系统入口下方。</div>
           ) : (
             <div className="custom-sidebar-list">
               {customSidebarItems.map((item) => (

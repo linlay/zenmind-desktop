@@ -2940,7 +2940,7 @@ async function activateBrowserSurface(target: string) {
       action: "activate_surface",
       target,
       error: "surface_not_found",
-      message: `没有找到匹配的侧边栏入口：${target}`,
+      message: `没有找到匹配的内嵌网站：${target}`,
       data: {
         surfaces
       }
@@ -3769,7 +3769,7 @@ function registerIpcHandlers() {
   });
   ipcMain.handle("customSidebar.import", async () => {
     const result = await showFileDialog({
-      title: "导入侧边栏配置",
+      title: "导入内嵌网站配置",
       properties: ["openFile"],
       filters: [{ name: "JSON", extensions: ["json"] }]
     });
@@ -3779,7 +3779,7 @@ function registerIpcHandlers() {
         ok: false,
         items: listCustomSidebarItems(app).items,
         path: "",
-        message: "已取消导入侧边栏配置。"
+        message: "已取消导入内嵌网站配置。"
       };
     }
 
@@ -3793,7 +3793,7 @@ function registerIpcHandlers() {
   });
   ipcMain.handle("customSidebar.export", async () => {
     const saveResult = await showSaveDialog({
-      title: "导出侧边栏配置",
+      title: "导出内嵌网站配置",
       defaultPath: path.join(getDataRoot(app), "custom-sidebar-items.json"),
       filters: [{ name: "JSON", extensions: ["json"] }]
     });
@@ -3803,7 +3803,7 @@ function registerIpcHandlers() {
         ok: false,
         items: listCustomSidebarItems(app).items,
         path: "",
-        message: "已取消导出侧边栏配置。"
+        message: "已取消导出内嵌网站配置。"
       };
     }
 
@@ -3813,7 +3813,7 @@ function registerIpcHandlers() {
       ok: true,
       items: listCustomSidebarItems(app).items,
       path: filePath,
-      message: "已导出侧边栏配置。"
+      message: "已导出内嵌网站配置。"
     };
   });
   ipcMain.handle("windowDrag.begin", async (event, point: { x?: unknown; y?: unknown }) => {

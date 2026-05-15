@@ -3,6 +3,5 @@
   <rect x="48" y="80" width="128" height="16" rx="8" fill="#F1F5F9"/>
   <rect x="48" y="112" width="96" height="16" rx="8" fill="#F1F5F9"/>
   <rect x="48" y="144" width="144" height="16" rx="8" fill="#F1F5F9"/>
-  <circle cx="212" cy="128" r="16" fill="#F1F5F9"/>
-  <text x="212" y="132.5" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="12" fill="#94A3B8" text-anchor="middle">AI</text>
+  <text x="212" y="136" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="24" fill="#E2E8F0" text-anchor="middle">AI</text>
 </svg>

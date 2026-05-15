@@ -163,7 +163,7 @@ export function listCustomSidebarItems(app: App) {
   return {
     ok: true,
     items: readItems(app),
-    message: "已读取自定义侧边栏。"
+    message: "已读取内嵌网站。"
   };
 }
 
@@ -174,7 +174,7 @@ export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
       ok: false,
       item: null,
       items,
-      message: `最多可添加 ${MAX_CUSTOM_SIDEBAR_ITEMS} 个自定义侧边栏入口。`
+      message: `最多可添加 ${MAX_CUSTOM_SIDEBAR_ITEMS} 个内嵌网站。`
     };
   }
 
@@ -186,7 +186,7 @@ export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
         ok: false,
         item: existing,
         items,
-        message: "这个网站已经在侧边栏里了。"
+        message: "这个网站已经是内嵌网站了。"
       };
     }
 
@@ -197,7 +197,7 @@ export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
         ok: false,
         item: null,
         items,
-        message: "图标库已用完，请先删除一个自定义侧边栏入口。"
+        message: "图标库已用完，请先删除一个内嵌网站。"
       };
     }
 
@@ -236,7 +236,7 @@ export function removeCustomSidebarItem(app: App, id: string) {
     return {
       ok: false,
       items,
-      message: "未找到这个自定义侧边栏入口。"
+      message: "未找到这个内嵌网站。"
     };
   }
 
@@ -258,7 +258,7 @@ export function importCustomSidebarItems(app: App, fileContent: string) {
       return {
         ok: false,
         items: currentItems,
-        message: "导入文件中没有可用的侧边栏入口。"
+        message: "导入文件中没有可用的内嵌网站。"
       };
     }
 
@@ -282,7 +282,7 @@ export function importCustomSidebarItems(app: App, fileContent: string) {
     return {
       ok: true,
       items: nextItems,
-      message: `已导入 ${addedCount} 个侧边栏入口。`
+      message: `已导入 ${addedCount} 个内嵌网站。`
     };
   } catch (error) {
     return {

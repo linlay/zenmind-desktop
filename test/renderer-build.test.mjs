@@ -113,6 +113,11 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /导航栏/);
   assert.match(settingsPage, /半透明度/);
   assert.match(settingsPage, /导航页签排序/);
+  assert.match(settingsPage, /内嵌网站/);
+  assert.doesNotMatch(settingsPage, /自定义侧边栏/);
+  assert.doesNotMatch(settingsPage, /添加到侧边栏/);
+  assert.doesNotMatch(settingsPage, /已添加的入口/);
+  assert.doesNotMatch(settingsPage, /自定义入口/);
   assert.match(settingsPage, /DESKTOP ASSISTANT/);
   assert.match(settingsPage, /快捷助手/);
   assert.match(settingsPage, /SIDE ASSISTANT/);

@@ -1560,7 +1560,7 @@ function ExternalItemRoute({
     return (
       <PlaceholderPage
         title="入口不存在"
-        description="该侧边栏入口不存在或已被删除，请在设置中检查。"
+        description="该内嵌网站不存在或已被删除，请在设置中检查。"
       />
     );
   }
@@ -1581,7 +1581,7 @@ function CustomSidebarRouteFallback({
   return (
     <PlaceholderPage
       title="入口不存在"
-      description="该侧边栏入口不存在或已被删除，请在设置中检查。"
+      description="该内嵌网站不存在或已被删除，请在设置中检查。"
     />
   );
 }

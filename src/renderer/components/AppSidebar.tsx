@@ -22,10 +22,15 @@ type SidebarNavItem = {
 };
 
 const staticNavItems: SidebarNavItem[] = [
-  { orderKey: "controlCenter", to: "/control-center", label: "控制中心", icon: "control" },
   { orderKey: "market", to: "/market", label: "功能市场", icon: "market" },
   { orderKey: "help", to: "/help", label: "帮助", icon: "help" }
 ];
+
+const controlCenterUtilityItem = {
+  to: "/control-center",
+  label: "控制中心",
+  icon: "control" satisfies SidebarIllustrationKind
+};
 
 const assistantNavItem: SidebarNavItem = {
   orderKey: "assistant",
@@ -115,11 +120,10 @@ export function AppSidebar({
   const navItems = sortSidebarNavItems([
     assistantNavItem,
     ...agentWebclientNavItems,
-    staticNavItems[0],
     ...serviceNavItems,
     ...experimentalItems,
     ...customItems,
-    ...staticNavItems.slice(1)
+    ...staticNavItems
   ], sidebarNavOrder);
 
   function handleItemClick(event: MouseEvent<HTMLAnchorElement>, targetPath: string) {
@@ -195,6 +199,24 @@ export function AppSidebar({
       <div className="sidebar-footer">
         <div className="sidebar-footer-actions">
           <NavLink
+            to={controlCenterUtilityItem.to}
+            onClick={(event) => handleItemClick(event, controlCenterUtilityItem.to)}
+            aria-label={controlCenterUtilityItem.label}
+            title={controlCenterUtilityItem.label}
+            className={({ isActive }) =>
+              [
+                "sidebar-link",
+                "sidebar-link-utility",
+                (isActive || pendingPath === controlCenterUtilityItem.to) ? "sidebar-link-active" : ""
+              ].filter(Boolean).join(" ")
+            }
+          >
+            <span className="sidebar-link-icon">
+              <SidebarIllustration kind={controlCenterUtilityItem.icon} />
+            </span>
+            <span className="sidebar-link-label">{controlCenterUtilityItem.label}</span>
+          </NavLink>
+          <NavLink
             to="/settings"
             onClick={(event) => handleItemClick(event, "/settings")}
             aria-label="设置"
@@ -211,7 +233,6 @@ export function AppSidebar({
               <SidebarIllustration kind="settings" />
             </span>
             <span className="sidebar-link-label">设置</span>
-            <span className="sidebar-link-label-collapsed" aria-hidden="true">设置</span>
           </NavLink>
           {assistantLauncherVisible ? (
             <button
