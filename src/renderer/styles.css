@@ -30,6 +30,7 @@
   --panel-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --panel-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.12);
   --assistant-dock-embedded-width: 360px;
+  --sidebar-translucency-opacity: 0.72;
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
 }
@@ -3034,9 +3035,42 @@ body.quick-web-copilot-body,
     10px 0 28px rgba(0, 0, 0, 0.12);
 }
 
+.app-shell.has-translucent-sidebar .app-sidebar {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, var(--sidebar-translucency-opacity)) 0%,
+      rgba(252, 253, 255, calc(var(--sidebar-translucency-opacity) - 0.08)) 42%,
+      rgba(246, 248, 251, calc(var(--sidebar-translucency-opacity) - 0.12)) 100%
+    );
+  border-right: 1px solid rgba(83, 96, 112, 0.13);
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.32),
+    10px 0 28px rgba(60, 60, 67, 0.08);
+}
+
+:root[data-theme="dark"] .app-shell.has-translucent-sidebar .app-sidebar {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(57, 58, 62, var(--sidebar-translucency-opacity)) 0%,
+      rgba(46, 48, 52, calc(var(--sidebar-translucency-opacity) - 0.06)) 40%,
+      rgba(37, 39, 43, calc(var(--sidebar-translucency-opacity) - 0.1)) 100%
+    );
+  border-right-color: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.04),
+    10px 0 30px rgba(0, 0, 0, 0.24);
+}
+
 .app-shell.is-mac-translucent-sidebar .app-sidebar {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(252, 253, 255, 0.62) 42%, rgba(246, 248, 251, 0.58) 100%);
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, var(--sidebar-translucency-opacity)) 0%,
+      rgba(252, 253, 255, calc(var(--sidebar-translucency-opacity) - 0.08)) 42%,
+      rgba(246, 248, 251, calc(var(--sidebar-translucency-opacity) - 0.12)) 100%
+    );
   border-right: 1px solid rgba(83, 96, 112, 0.13);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.32),
@@ -3047,7 +3081,12 @@ body.quick-web-copilot-body,
 
 :root[data-theme="dark"] .app-shell.is-mac-translucent-sidebar .app-sidebar {
   background:
-    linear-gradient(180deg, rgba(57, 58, 62, 0.78) 0%, rgba(46, 48, 52, 0.72) 40%, rgba(37, 39, 43, 0.68) 100%);
+    linear-gradient(
+      180deg,
+      rgba(57, 58, 62, var(--sidebar-translucency-opacity)) 0%,
+      rgba(46, 48, 52, calc(var(--sidebar-translucency-opacity) - 0.06)) 40%,
+      rgba(37, 39, 43, calc(var(--sidebar-translucency-opacity) - 0.1)) 100%
+    );
   border-right-color: rgba(255, 255, 255, 0.08);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.04),
@@ -4519,6 +4558,99 @@ body.quick-web-copilot-body,
   margin: 0;
 }
 
+.navigation-settings-card {
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.navigation-settings-copy {
+  flex: 1;
+  min-width: 240px;
+}
+
+.navigation-settings-panel {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 560px);
+}
+
+.navigation-translucency-row,
+.navigation-opacity-control,
+.navigation-order-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.navigation-translucency-row {
+  justify-content: space-between;
+}
+
+.navigation-translucency-row > div,
+.navigation-opacity-control {
+  min-width: 0;
+}
+
+.navigation-translucency-row strong,
+.navigation-opacity-control span,
+.navigation-order-row span {
+  display: block;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.navigation-translucency-row span {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.navigation-opacity-control input {
+  flex: 1;
+  min-width: 120px;
+  accent-color: var(--accent);
+}
+
+.navigation-opacity-control strong {
+  min-width: 42px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  text-align: right;
+}
+
+.navigation-order-section {
+  display: grid;
+  gap: 10px;
+}
+
+.navigation-order-list {
+  display: grid;
+  gap: 8px;
+}
+
+.navigation-order-row {
+  justify-content: space-between;
+}
+
+.navigation-order-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.navigation-order-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
 .settings-switch {
   position: relative;
   flex: none;
@@ -4823,6 +4955,28 @@ body.quick-web-copilot-body,
 }
 
 @media (max-width: 860px) {
+  .navigation-settings-card {
+    flex-direction: column;
+  }
+
+  .navigation-settings-panel {
+    width: 100%;
+  }
+
+  .navigation-opacity-control,
+  .navigation-order-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .navigation-order-actions {
+    width: 100%;
+  }
+
+  .navigation-order-actions .text-button {
+    flex: 1;
+  }
+
   .desktop-pet-settings-card {
     flex-direction: column;
   }

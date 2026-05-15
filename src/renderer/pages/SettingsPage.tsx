@@ -29,6 +29,7 @@ import {
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_APPEARANCE_OPTIONS
 } from "../../shared/desktop-pet";
+import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../sidebarNavOrder";
 
 type SettingsPageProps = {
   themeMode: "light" | "dark";
@@ -36,7 +37,12 @@ type SettingsPageProps = {
   isMac: boolean;
   isWindows: boolean;
   sidebarTranslucencyEnabled: boolean;
+  sidebarTranslucencyOpacity: number;
   onToggleSidebarTranslucency: () => void;
+  onSidebarTranslucencyOpacityChange: (opacity: number) => void;
+  sidebarNavOrder: SidebarNavOrderItemKey[];
+  availableSidebarNavOrderItems: SidebarNavOrderItem[];
+  onSidebarNavOrderChange: (order: SidebarNavOrderItemKey[]) => void;
   customSidebarItems: CustomSidebarItem[];
   onCustomSidebarItemsChange: (items: CustomSidebarItem[]) => void;
   onRefreshCustomSidebarItems: () => Promise<CustomSidebarItemsResult>;
@@ -143,7 +149,12 @@ export function SettingsPage({
   isMac,
   isWindows,
   sidebarTranslucencyEnabled,
+  sidebarTranslucencyOpacity,
   onToggleSidebarTranslucency,
+  onSidebarTranslucencyOpacityChange,
+  sidebarNavOrder,
+  availableSidebarNavOrderItems,
+  onSidebarNavOrderChange,
   customSidebarItems,
   onCustomSidebarItemsChange,
   onRefreshCustomSidebarItems,
@@ -308,7 +319,7 @@ export function SettingsPage({
       return [{
         field: `desktopCopilotPages.${pageKey}.agentKey`,
         pageKey,
-        message: `${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 的 Copilot 智能体不可用。`
+        message: `${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 的侧边助手智能体不可用。`
       }];
     });
     return {
@@ -331,7 +342,7 @@ export function SettingsPage({
       setAssistantSettings(nextSettings);
       setDesktopCopilotPages(nextSettings.desktopCopilotPages);
       onAssistantSettingsChange?.(nextSettings);
-      setFeedback("页面 Copilot 配置已保存。");
+      setFeedback("侧边助手配置已保存。");
       return nextSettings;
     } catch (reason) {
       setDesktopCopilotPages(previousPages);
@@ -508,7 +519,7 @@ export function SettingsPage({
                   ? helperValidation.message
                   : quickAssistantAgentTouched && !quickAssistantValidation.valid
                     ? quickAssistantValidation.message
-                    : "页面 Copilot 配置不可用。",
+                    : "侧边助手配置不可用。",
                 details: { helperValidation, quickAssistantValidation, copilotValidation }
               }
             };
@@ -789,7 +800,7 @@ export function SettingsPage({
       setAssistantSettings(nextSettings);
       setDesktopHelperAgentKey(nextSettings.desktopHelperAgentKey);
       onAssistantSettingsChange?.(nextSettings);
-      setFeedback(`侧边栏助手默认智能体已切换为 ${nextAgent?.displayName ?? nextSettings.desktopHelperAgentKey}。`);
+      setFeedback(`侧边助手默认智能体已切换为 ${nextAgent?.displayName ?? nextSettings.desktopHelperAgentKey}。`);
     } catch (reason) {
       setDesktopHelperAgentKey(previousAgentKey);
       setFeedback(reason instanceof Error ? reason.message : String(reason));
@@ -846,6 +857,27 @@ export function SettingsPage({
       setQuickAssistantAgentPending(false);
     }
   }
+
+  function moveSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey, direction: -1 | 1) {
+    const currentIndex = sidebarNavOrder.indexOf(itemKey);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= sidebarNavOrder.length) {
+      return;
+    }
+    const nextOrder = [...sidebarNavOrder];
+    const [movedItem] = nextOrder.splice(currentIndex, 1);
+    nextOrder.splice(nextIndex, 0, movedItem);
+    onSidebarNavOrderChange(nextOrder);
+    setFeedback("导航页签排序已更新。");
+  }
+
+  function resetSidebarNavOrder() {
+    const nextOrder = availableSidebarNavOrderItems.map((item) => item.key);
+    onSidebarNavOrderChange(nextOrder);
+    setFeedback("导航页签排序已恢复默认。");
+  }
+
+  const sidebarNavOrderLabels = new Map(availableSidebarNavOrderItems.map((item) => [item.key, item.label]));
 
   return (
     <section className="settings-page">
@@ -918,29 +950,87 @@ export function SettingsPage({
         </div>
       </div>
 
-      {isMac ? (
-        <div className="data-root-card settings-switch-card">
-          <h2>半透明侧边栏</h2>
-          <button
-            type="button"
-            className={sidebarTranslucencyEnabled ? "settings-switch is-on" : "settings-switch"}
-            role="switch"
-            aria-checked={sidebarTranslucencyEnabled}
-            aria-label="半透明侧边栏"
-            onClick={onToggleSidebarTranslucency}
-          >
-            <span aria-hidden="true" />
-          </button>
+      <div className="data-root-card navigation-settings-card">
+        <div className="navigation-settings-copy">
+          <p className="eyebrow">NAVIGATION</p>
+          <h2>导航栏</h2>
+          <p className="page-copy">
+            调整左侧导航栏的半透明度，并设置主导航页签 item 的显示顺序。
+            {isMac ? " macOS 会同时启用原生半透明窗口效果。" : " 当前平台会应用 CSS 半透明效果。"}
+          </p>
         </div>
-      ) : null}
+        <div className="navigation-settings-panel">
+          <div className="navigation-translucency-row">
+            <div>
+              <strong>半透明效果</strong>
+              <span>{sidebarTranslucencyEnabled ? `已开启 / ${sidebarTranslucencyOpacity}%` : "已关闭"}</span>
+            </div>
+            <button
+              type="button"
+              className={sidebarTranslucencyEnabled ? "settings-switch is-on" : "settings-switch"}
+              role="switch"
+              aria-checked={sidebarTranslucencyEnabled}
+              aria-label="导航栏半透明效果"
+              onClick={onToggleSidebarTranslucency}
+            >
+              <span aria-hidden="true" />
+            </button>
+          </div>
+          <label className="navigation-opacity-control">
+            <span>半透明度</span>
+            <input
+              type="range"
+              min="45"
+              max="95"
+              step="1"
+              value={sidebarTranslucencyOpacity}
+              disabled={!sidebarTranslucencyEnabled}
+              onChange={(event) => onSidebarTranslucencyOpacityChange(Number(event.target.value))}
+            />
+            <strong>{sidebarTranslucencyOpacity}%</strong>
+          </label>
+          <div className="navigation-order-section">
+            <div className="custom-sidebar-list-head">
+              <strong>导航页签排序</strong>
+              <button type="button" className="text-button" onClick={resetSidebarNavOrder}>
+                恢复默认
+              </button>
+            </div>
+            <div className="navigation-order-list">
+              {sidebarNavOrder.map((itemKey, index) => (
+                <div className="navigation-order-row" key={itemKey}>
+                  <span>{sidebarNavOrderLabels.get(itemKey) ?? itemKey}</span>
+                  <div className="navigation-order-actions">
+                    <button
+                      type="button"
+                      className="text-button"
+                      disabled={index === 0}
+                      onClick={() => moveSidebarNavOrderItem(itemKey, -1)}
+                    >
+                      上移
+                    </button>
+                    <button
+                      type="button"
+                      className="text-button"
+                      disabled={index === sidebarNavOrder.length - 1}
+                      onClick={() => moveSidebarNavOrderItem(itemKey, 1)}
+                    >
+                      下移
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="data-root-card settings-switch-card desktop-helper-settings-card">
         <div>
           <p className="eyebrow">DESKTOP ASSISTANT</p>
-          <h2>页面 Copilot</h2>
+          <h2>快捷助手</h2>
           <p className="page-copy">
-            为每个一级页签配置是否显示 Copilot，以及默认使用哪个智能体。这个设置不影响桌面宠物绑定。
-            全局默认只作为旧配置兼容保留。
+            单独配置 Option+Space 唤起的快捷助手，和侧边助手、宠物助手相互独立。
           </p>
           <div className="quick-assistant-settings-panel" aria-label="快捷助手配置">
             <div className="page-copilot-row-main">
@@ -988,6 +1078,17 @@ export function SettingsPage({
               </span>
             </label>
           </div>
+        </div>
+      </div>
+
+      <div className="data-root-card settings-switch-card desktop-helper-settings-card">
+        <div>
+          <p className="eyebrow">SIDE ASSISTANT</p>
+          <h2>侧边助手</h2>
+          <p className="page-copy">
+            为每个一级页签配置是否显示侧边助手，以及默认使用哪个智能体。这个设置不影响宠物助手绑定。
+            全局默认只作为旧配置兼容保留。
+          </p>
           <div className="desktop-pet-agent-form">
             <label className="desktop-pet-agent-field">
               <span>兼容默认智能体</span>
@@ -1018,7 +1119,7 @@ export function SettingsPage({
               </span>
             </label>
           </div>
-          <div className="desktop-copilot-page-list page-copilot-matrix" aria-label="页面 Copilot 配置">
+          <div className="desktop-copilot-page-list page-copilot-matrix" aria-label="侧边助手配置">
             {DESKTOP_COPILOT_PAGE_KEYS.map((pageKey) => {
               const preference = desktopCopilotPages[pageKey] ?? {
                 enabled: true,
@@ -1030,7 +1131,7 @@ export function SettingsPage({
                 <div className="desktop-copilot-page-row page-copilot-row" key={pageKey}>
                   <div className="page-copilot-row-main">
                     <strong>{DESKTOP_COPILOT_PAGE_LABELS[pageKey]}</strong>
-                    <span>{preference.enabled ? `使用 ${getAgentLabel(preference.agentKey)}` : "不显示 Copilot"}</span>
+                    <span>{preference.enabled ? `使用 ${getAgentLabel(preference.agentKey)}` : "不显示侧边助手"}</span>
                     {!currentAgentAvailable && preference.enabled ? (
                       <em>当前智能体不可用，请重新选择。</em>
                     ) : null}
@@ -1052,7 +1153,7 @@ export function SettingsPage({
                         value={currentAgentAvailable ? preference.agentKey : ""}
                         onChange={(event) => void handleSelectCopilotAgent(pageKey, event.target.value)}
                         disabled={!preference.enabled || assistantAgentOptions.length === 0 || pending}
-                        aria-label={`${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} Copilot 智能体`}
+                        aria-label={`${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 侧边助手智能体`}
                       >
                         <option value="">
                           {assistantAgentOptions.length === 0
@@ -1078,9 +1179,9 @@ export function SettingsPage({
         <div className="data-root-card settings-switch-card desktop-pet-settings-card">
           <div>
             <p className="eyebrow">DESKTOP PET</p>
-            <h2>选择宠物</h2>
+            <h2>宠物助手</h2>
             <p className="page-copy">
-              宠物只服务侧边栏助手，会在等待回答、完成或出错时做轻提醒。右键宠物可直接关闭。
+              宠物只服务侧边助手，会在等待回答、完成或出错时做轻提醒。右键宠物可直接关闭。
             </p>
             <p className="settings-inline-note">
               当前状态：{desktopPetState?.enabled ? "已开启" : "已关闭"}
@@ -1265,7 +1366,7 @@ export function SettingsPage({
           <p className="eyebrow">MEMORY</p>
           <h2>助手记忆</h2>
           <p className="page-copy">
-            侧边栏助手会在本机静默学习长期偏好和可复用结论，并在后续回答中按需引用。
+            侧边助手会在本机静默学习长期偏好和可复用结论，并在后续回答中按需引用。
           </p>
           <div className="assistant-memory-stats" aria-label="记忆统计">
             <div>

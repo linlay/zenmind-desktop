@@ -5,8 +5,16 @@ import { EXTERNAL_EXPERIMENTAL_ITEMS } from "../App";
 import { BrandMark, CustomSidebarIcon, SidebarIllustration, type SidebarIllustrationKind } from "./BrandMark";
 import type { CustomSidebarItem } from "../../shared/contracts";
 import { getServiceDisplayName, shouldShowServiceNavigationTab } from "../service-display";
+import {
+  createCustomSidebarNavOrderKey,
+  createExperimentalSidebarNavOrderKey,
+  createServiceSidebarNavOrderKey,
+  sortSidebarNavItems,
+  type SidebarNavOrderItemKey
+} from "../sidebarNavOrder";
 
 type SidebarNavItem = {
+  orderKey: SidebarNavOrderItemKey;
   to: string;
   label: string;
   icon: SidebarIllustrationKind;
@@ -14,21 +22,22 @@ type SidebarNavItem = {
 };
 
 const staticNavItems: SidebarNavItem[] = [
-  { to: "/control-center", label: "控制中心", icon: "control" },
-  { to: "/market", label: "功能市场", icon: "market" },
-  { to: "/help", label: "帮助", icon: "help" }
+  { orderKey: "controlCenter", to: "/control-center", label: "控制中心", icon: "control" },
+  { orderKey: "market", to: "/market", label: "功能市场", icon: "market" },
+  { orderKey: "help", to: "/help", label: "帮助", icon: "help" }
 ];
 
 const assistantNavItem: SidebarNavItem = {
+  orderKey: "assistant",
   to: "/plugin/agent-webclient",
   label: "智能助理",
   icon: "assistant"
 };
 
 const agentWebclientNavItems: SidebarNavItem[] = [
-  { to: "/agents", label: "智能体", icon: "agent" },
-  { to: "/schedules", label: "自动化", icon: "schedule" },
-  { to: "/memory", label: "记忆管理", icon: "memory" }
+  { orderKey: "agents", to: "/agents", label: "智能体", icon: "agent" },
+  { orderKey: "schedules", to: "/schedules", label: "自动化", icon: "schedule" },
+  { orderKey: "memory", to: "/memory", label: "记忆管理", icon: "memory" }
 ];
 
 function getCollapsedSidebarLabel(label: string) {
@@ -56,6 +65,7 @@ type AppSidebarProps = {
   assistantDockOpen?: boolean;
   assistantLauncherDisabled?: boolean;
   assistantLauncherVisible?: boolean;
+  sidebarNavOrder: SidebarNavOrderItemKey[];
   customSidebarItems: CustomSidebarItem[];
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
@@ -70,6 +80,7 @@ export function AppSidebar({
   assistantDockOpen = false,
   assistantLauncherDisabled = false,
   assistantLauncherVisible = true,
+  sidebarNavOrder,
   customSidebarItems,
   onOpenAssistantDock,
   onCloseAssistantDock,
@@ -80,25 +91,28 @@ export function AppSidebar({
   const serviceNavItems: SidebarNavItem[] = services
     .filter(shouldShowServiceNavigationTab)
     .map((service) => ({
+      orderKey: createServiceSidebarNavOrderKey(service.id),
       to: `/plugin/${service.id}`,
       label: getServiceDisplayName(service.id, service.name),
       icon: "service"
     }));
 
   const experimentalItems: SidebarNavItem[] = EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => ({
+    orderKey: createExperimentalSidebarNavOrderKey(item.id),
     to: `/external/${item.id}`,
     label: item.label,
     icon: item.icon
   }));
 
   const customItems: SidebarNavItem[] = customSidebarItems.map((item) => ({
+    orderKey: createCustomSidebarNavOrderKey(item.id),
     to: `/custom-sidebar/${item.id}`,
     label: item.label,
     icon: "website",
     iconId: item.iconId
   }));
 
-  const navItems = [
+  const navItems = sortSidebarNavItems([
     assistantNavItem,
     ...agentWebclientNavItems,
     staticNavItems[0],
@@ -106,7 +120,7 @@ export function AppSidebar({
     ...experimentalItems,
     ...customItems,
     ...staticNavItems.slice(1)
-  ];
+  ], sidebarNavOrder);
 
   function handleItemClick(event: MouseEvent<HTMLAnchorElement>, targetPath: string) {
     if (targetPath === "/settings") {

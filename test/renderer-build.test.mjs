@@ -64,10 +64,8 @@ test("agent webclient desktop sections are exposed as top-level sidebar tabs", (
   assert.match(sidebarSource, /to:\s*"\/agents"[\s\S]*?label:\s*"智能体"/);
   assert.match(sidebarSource, /to:\s*"\/schedules"[\s\S]*?label:\s*"自动化"/);
   assert.match(sidebarSource, /to:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
-  assert.match(
-    sidebarSource,
-    /const navItems = \[[\s\S]*?assistantNavItem,[\s\S]*?\.\.\.agentWebclientNavItems,[\s\S]*?staticNavItems\[0\]/
-  );
+  assert.match(sidebarSource, /sortSidebarNavItems\(\[/);
+  assert.match(sidebarSource, /assistantNavItem,[\s\S]*?\.\.\.agentWebclientNavItems,[\s\S]*?staticNavItems\[0\]/);
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_ITEMS/);
   assert.match(appShell, /routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?label:\s*"智能体"/);
@@ -111,21 +109,57 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsStore, /quickAssistantEnabled:\s*settings\.quickAssistantEnabled/);
   assert.match(settingsStore, /quickAssistantAgentKey:\s*settings\.quickAssistantAgentKey/);
   assert.match(settingsStore, /desktopCopilotPages:\s*settings\.desktopCopilotPages/);
+  assert.match(settingsPage, /NAVIGATION/);
+  assert.match(settingsPage, /导航栏/);
+  assert.match(settingsPage, /半透明度/);
+  assert.match(settingsPage, /导航页签排序/);
   assert.match(settingsPage, /DESKTOP ASSISTANT/);
   assert.match(settingsPage, /快捷助手/);
+  assert.match(settingsPage, /SIDE ASSISTANT/);
+  assert.match(settingsPage, /侧边助手/);
+  assert.match(settingsPage, /宠物助手/);
   assert.match(settingsPage, /quickAssistantEnabled/);
   assert.match(settingsPage, /quickAssistantAgentKey/);
   assert.match(settingsPage, /handleToggleQuickAssistantEnabled/);
   assert.match(settingsPage, /handleSelectQuickAssistantAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*quickAssistantAgentKey: normalizedAgentKey\s*\}\)/);
-  assert.match(settingsPage, /页面 Copilot/);
+  assert.doesNotMatch(settingsPage, /页面 Copilot/);
+  assert.doesNotMatch(settingsPage, />选择宠物</);
+  assert.doesNotMatch(settingsPage, /半透明侧边栏/);
   assert.match(settingsPage, /DESKTOP_COPILOT_PAGE_KEYS\.map/);
   assert.match(settingsPage, /handleToggleCopilotPage/);
   assert.match(settingsPage, /handleSelectCopilotAgent/);
   assert.match(settingsPage, /handleSelectDesktopHelperAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*desktopHelperAgentKey: normalizedAgentKey\s*\}\)/);
   assert.match(settingsPage, /desktopCopilotPages: nextPages/);
-  assert.match(settingsPage, /这个设置不影响桌面宠物绑定/);
+  assert.match(settingsPage, /这个设置不影响宠物助手绑定/);
+  assert.match(settingsPage, /aria-label="快捷助手配置"/);
+  assert.match(settingsPage, /aria-label="侧边助手配置"/);
+});
+
+test("sidebar navigation order helper normalizes and sorts available items", () => {
+  const orderHelper = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "sidebarNavOrder.ts"),
+    "utf8"
+  );
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const sidebarSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "components", "AppSidebar.tsx"),
+    "utf8"
+  );
+
+  assert.match(orderHelper, /export type SidebarNavOrderItemKey/);
+  assert.match(orderHelper, /STATIC_SIDEBAR_NAV_ORDER_ITEMS/);
+  assert.match(orderHelper, /createDefaultSidebarNavOrderItems/);
+  assert.match(orderHelper, /normalizeSidebarNavOrder/);
+  assert.match(orderHelper, /!availableKeys\.has/);
+  assert.match(orderHelper, /normalized\.includes/);
+  assert.match(orderHelper, /sortSidebarNavItems/);
+  assert.match(appShell, /SIDEBAR_NAV_ORDER_STORAGE_KEY/);
+  assert.match(appShell, /availableSidebarNavOrderItems/);
+  assert.match(appShell, /normalizeSidebarNavOrder\(sidebarNavOrder, availableSidebarNavOrderItems\)/);
+  assert.match(sidebarSource, /sidebarNavOrder:\s*SidebarNavOrderItemKey\[\]/);
+  assert.match(sidebarSource, /sortSidebarNavItems\(/);
 });
 
 test("page-level copilot controls sidebar visibility and assistant agent following", () => {

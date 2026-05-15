@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
 import { AppSidebar } from "./components/AppSidebar";
@@ -39,13 +39,24 @@ import {
   BUILTIN_BROWSER_SURFACE_LABEL
 } from "../shared/browser-surfaces";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
-import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName } from "./service-display";
+import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName, shouldShowServiceNavigationTab } from "./service-display";
+import {
+  createCustomSidebarNavOrderKey,
+  createDefaultSidebarNavOrderItems,
+  createExperimentalSidebarNavOrderKey,
+  createServiceSidebarNavOrderKey,
+  normalizeSidebarNavOrder,
+  type SidebarNavOrderItem,
+  type SidebarNavOrderItemKey
+} from "./sidebarNavOrder";
 
 type ThemeMode = "light" | "dark";
 
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
 const SIDEBAR_TRANSLUCENCY_STORAGE_KEY = "zenmind-desktop.sidebar-translucency";
+const SIDEBAR_TRANSLUCENCY_OPACITY_STORAGE_KEY = "zenmind-desktop.sidebar-translucency-opacity";
+const SIDEBAR_NAV_ORDER_STORAGE_KEY = "zenmind-desktop.sidebar-nav-order";
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
@@ -181,6 +192,28 @@ function AppShell() {
       return false;
     }
   });
+  const [sidebarTranslucencyOpacity, setSidebarTranslucencyOpacity] = useState(() => {
+    if (typeof window === "undefined") {
+      return 72;
+    }
+    try {
+      const savedValue = Number(window.localStorage.getItem(SIDEBAR_TRANSLUCENCY_OPACITY_STORAGE_KEY));
+      return Number.isFinite(savedValue) ? Math.min(95, Math.max(45, savedValue)) : 72;
+    } catch {
+      return 72;
+    }
+  });
+  const [sidebarNavOrder, setSidebarNavOrder] = useState<SidebarNavOrderItemKey[]>(() => {
+    if (typeof window === "undefined") {
+      return [];
+    }
+    try {
+      const savedValue = window.localStorage.getItem(SIDEBAR_NAV_ORDER_STORAGE_KEY);
+      return savedValue ? JSON.parse(savedValue) as SidebarNavOrderItemKey[] : [];
+    } catch {
+      return [];
+    }
+  });
   const [assistantDockOpen, setAssistantDockOpen] = useState(false);
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
@@ -225,6 +258,32 @@ function AppShell() {
   const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
   const isAgentWebclientMainRoute = location.pathname === ASSISTANT_TARGET_PATH;
   const assistantCopilotOpen = assistantDockOpen && !isAgentWebclientMainRoute;
+  const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
+    const serviceItems = services
+      .filter(shouldShowServiceNavigationTab)
+      .map((service) => ({
+        key: createServiceSidebarNavOrderKey(service.id),
+        label: getServiceDisplayName(service.id, service.name)
+      }));
+    const experimentalItems = EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => ({
+      key: createExperimentalSidebarNavOrderKey(item.id),
+      label: item.label
+    }));
+    const customItems = customSidebarItems.map((item) => ({
+      key: createCustomSidebarNavOrderKey(item.id),
+      label: item.label
+    }));
+    return createDefaultSidebarNavOrderItems({
+      serviceItems,
+      experimentalItems,
+      customItems
+    });
+  }, [customSidebarItems, services]);
+  const normalizedSidebarNavOrder = useMemo(
+    () => normalizeSidebarNavOrder(sidebarNavOrder, availableSidebarNavOrderItems),
+    [availableSidebarNavOrderItems, sidebarNavOrder]
+  );
+
   async function refreshCustomSidebarItems() {
     const result = await window.electronAPI.customSidebar.list();
     if (result.ok) {
@@ -434,22 +493,39 @@ function AppShell() {
   useEffect(() => {
     const shouldApply = isMac && sidebarTranslucencyEnabled;
     document.body.classList.toggle("mac-translucent-sidebar-body", shouldApply);
-    if (isMac) {
-      try {
-        window.localStorage.setItem(
-          SIDEBAR_TRANSLUCENCY_STORAGE_KEY,
-          sidebarTranslucencyEnabled ? "true" : "false"
-        );
-      } catch {
-        // Ignore persistence failures and keep the in-memory translucency switch usable.
-      }
+    document.documentElement.style.setProperty(
+      "--sidebar-translucency-opacity",
+      (sidebarTranslucencyOpacity / 100).toFixed(2)
+    );
+    try {
+      window.localStorage.setItem(
+        SIDEBAR_TRANSLUCENCY_STORAGE_KEY,
+        sidebarTranslucencyEnabled ? "true" : "false"
+      );
+      window.localStorage.setItem(
+        SIDEBAR_TRANSLUCENCY_OPACITY_STORAGE_KEY,
+        String(sidebarTranslucencyOpacity)
+      );
+    } catch {
+      // Ignore persistence failures and keep the in-memory navigation settings usable.
     }
     window.electronAPI.settings.setSidebarTranslucency(shouldApply).catch(() => undefined);
 
     return () => {
       document.body.classList.remove("mac-translucent-sidebar-body");
     };
-  }, [isMac, sidebarTranslucencyEnabled]);
+  }, [isMac, sidebarTranslucencyEnabled, sidebarTranslucencyOpacity]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SIDEBAR_NAV_ORDER_STORAGE_KEY,
+        JSON.stringify(normalizedSidebarNavOrder)
+      );
+    } catch {
+      // Ignore persistence failures and keep the in-memory navigation order usable.
+    }
+  }, [normalizedSidebarNavOrder]);
 
   useEffect(() => {
     document.body.classList.toggle("embedded-surface-body", usesEmbeddedSurface);
@@ -736,7 +812,7 @@ function AppShell() {
             issues.push({
               field: `desktopCopilotPages.${pageKey}.agentKey`,
               value: preference.agentKey,
-              message: `${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 的 Copilot 智能体不可用。`
+              message: `${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 的侧边助手智能体不可用。`
             });
           }
         }
@@ -900,6 +976,7 @@ function AppShell() {
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
+        sidebarTranslucencyEnabled ? "has-translucent-sidebar" : "",
         isMac && sidebarTranslucencyEnabled ? "is-mac-translucent-sidebar" : "",
         sidebarState.collapsed ? "is-sidebar-collapsed" : "is-sidebar-expanded"
       ].filter(Boolean).join(" ")}
@@ -920,6 +997,7 @@ function AppShell() {
           assistantDockOpen={assistantCopilotOpen}
           assistantLauncherDisabled={isAgentWebclientMainRoute}
           assistantLauncherVisible={assistantLauncherVisible}
+          sidebarNavOrder={normalizedSidebarNavOrder}
           customSidebarItems={customSidebarItems}
           onOpenAssistantDock={() => openAssistantDock()}
           onCloseAssistantDock={() => setAssistantDockOpen(false)}
@@ -968,8 +1046,13 @@ function AppShell() {
                   onToggleTheme={toggleTheme}
                   isMac={isMac}
                   isWindows={isWindows}
-                  sidebarTranslucencyEnabled={isMac && sidebarTranslucencyEnabled}
+                  sidebarTranslucencyEnabled={sidebarTranslucencyEnabled}
+                  sidebarTranslucencyOpacity={sidebarTranslucencyOpacity}
                   onToggleSidebarTranslucency={() => setSidebarTranslucencyEnabled((current) => !current)}
+                  onSidebarTranslucencyOpacityChange={setSidebarTranslucencyOpacity}
+                  sidebarNavOrder={normalizedSidebarNavOrder}
+                  availableSidebarNavOrderItems={availableSidebarNavOrderItems}
+                  onSidebarNavOrderChange={setSidebarNavOrder}
                   customSidebarItems={customSidebarItems}
                   onCustomSidebarItemsChange={updateCustomSidebarItems}
                   onRefreshCustomSidebarItems={refreshCustomSidebarItems}
