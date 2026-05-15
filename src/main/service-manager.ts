@@ -277,25 +277,6 @@ function resolveCommandBin(command: string) {
   return "";
 }
 
-function resolveCloudflaredBin() {
-  const explicit = process.env.CLOUDFLARED_BIN?.trim();
-  if (explicit && fs.existsSync(explicit)) {
-    return explicit;
-  }
-  const fromPath = resolveCommandBin("cloudflared");
-  if (fromPath) {
-    return fromPath;
-  }
-  const candidates = process.platform === "win32"
-    ? [path.join(process.env.ProgramFiles ?? "", "cloudflared", "cloudflared.exe")]
-    : [
-      "/opt/homebrew/bin/cloudflared",
-      "/opt/homebrew/opt/cloudflared/bin/cloudflared",
-      "/usr/local/bin/cloudflared"
-    ];
-  return candidates.find((candidate) => candidate && fs.existsSync(candidate)) ?? "";
-}
-
 function isCommandBasenameMatch(command: string, expected: string) {
   return path.basename(command).toLowerCase() === expected.toLowerCase();
 }
@@ -3165,10 +3146,6 @@ async function ensureLocalCliAcpRelayDesktopConfig(app: App, installDir: string)
   if (!env.get("RUN_TIMEOUT_MS")?.trim()) {
     updates.set("RUN_TIMEOUT_MS", DEFAULT_LOCAL_CLI_ACP_RUN_TIMEOUT_MS);
   }
-  if (!env.get("NODE_BIN")?.trim()) {
-    updates.set("NODE_BIN", resolveNodeBin());
-  }
-
   const effectiveEnv = new Map(env);
   for (const [key, value] of updates) {
     effectiveEnv.set(key, value);
@@ -3456,17 +3433,10 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   syncAgentPlatformDesktopPortEnv(env, updates);
   await syncAgentPlatformContainerHubUrl(app, env, updates);
 
-  updates.set("NODE_BIN", resolveNodeBin());
   if (!env.get("PROVIDER_APIKEY_KEY_PART")?.trim()) {
     updates.set("PROVIDER_APIKEY_KEY_PART", DEFAULT_PROVIDER_APIKEY_KEY_PART);
   }
   applyAgentPlatformWindowsHostShellDefaults(env, updates);
-  if (!env.get("CLOUDFLARED_BIN")?.trim()) {
-    const cloudflaredBin = resolveCloudflaredBin();
-    if (cloudflaredBin) {
-      updates.set("CLOUDFLARED_BIN", cloudflaredBin);
-    }
-  }
 
   const migratedRuntimeRoot = resolveLegacyAgentPlatformRuntimeRootMigration(app, env);
   if (migratedRuntimeRoot) {
@@ -3558,7 +3528,13 @@ type RunServiceCommandOptions = {
   env?: NodeJS.ProcessEnv;
 };
 
-function resolveAgentWebclientStartEnv() {
+const NODE_BIN_START_ENV_SERVICE_IDS = new Set<ServiceId>([
+  "agent-platform",
+  "agent-webclient",
+  LOCAL_CLI_ACP_RELAY_PLUGIN_ID
+]);
+
+function resolveNodeBinStartEnv() {
   const nodeBin = resolveNodeBin();
   if (IS_WINDOWS) {
     return { NODE_BIN: nodeBin };
@@ -3572,11 +3548,11 @@ function resolveAgentWebclientStartEnv() {
 }
 
 function getStartCommandEnvOverrides(service: ServiceDefinition) {
-  if (service.id !== "agent-webclient") {
+  if (!NODE_BIN_START_ENV_SERVICE_IDS.has(service.id)) {
     return undefined;
   }
 
-  return resolveAgentWebclientStartEnv();
+  return resolveNodeBinStartEnv();
 }
 
 async function runServiceCommand(

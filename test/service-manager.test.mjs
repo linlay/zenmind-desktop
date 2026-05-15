@@ -2684,12 +2684,8 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
     /^CHAT_RESOURCE_TICKET_ENABLED=true$/m
   );
 
-  const resolvedNodeBin = __testInternals.resolveNodeBin();
-  const expectedNodeBinLiteral = resolvedNodeBin.includes(" ") ? `"${resolvedNodeBin}"` : resolvedNodeBin;
-  assert.match(
-    envContent,
-    new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  );
+  assert.doesNotMatch(envContent, /^NODE_BIN=/m);
+  assert.doesNotMatch(envContent, /^CLOUDFLARED_BIN=/m);
   assert.doesNotMatch(envContent, /^CLAUDE_CODE_ACP_COMMAND=/m);
   assert.doesNotMatch(envContent, /^CLAUDE_CODE_ACP_ARGS=/m);
   assert.match(
@@ -2821,7 +2817,7 @@ test("initializeService migrates legacy relay settings into the local-cli-acp-re
   assert.match(relayEnvContent, /^RUN_TIMEOUT_MS=900000$/m);
   assert.match(relayEnvContent, /^CLAUDE_CODE_ACP_COMMAND=\/custom\/bin\/claude-code-acp$/m);
   assert.match(relayEnvContent, /^CLAUDE_CODE_ACP_ARGS=--stdio$/m);
-  assert.match(relayEnvContent, /^NODE_BIN=/m);
+  assert.match(relayEnvContent, /^NODE_BIN=$/m);
 
   const platformEnvContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
   assert.doesNotMatch(platformEnvContent, /^LOCAL_CLI_ACP_RELAY_/m);
@@ -2917,12 +2913,7 @@ test("ensurePreStartRequirements fills default desktop ACP command for the local
   }
 
   const relayEnvContent = fs.readFileSync(path.join(relayInstallDir, ".env"), "utf8");
-  const resolvedNodeBin = __testInternals.resolveNodeBin();
-  const expectedNodeBinLiteral = resolvedNodeBin.includes(" ") ? `"${resolvedNodeBin}"` : resolvedNodeBin;
-  assert.match(
-    relayEnvContent,
-    new RegExp(`NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  );
+  assert.match(relayEnvContent, /^NODE_BIN=$/m);
   const locator = process.platform === "win32" ? "where" : "which";
   const acpResult = spawnSync(locator, ["claude-code-acp"], { encoding: "utf8", timeout: 1500 });
   if (acpResult.status === 0 && !acpResult.error) {
@@ -3288,11 +3279,13 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("startService injects agent-webclient NODE_BIN without persisting it to env", async () => {
+test("startService injects core service NODE_BIN without persisting it to env", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const platformService = getBuiltinService("agent-platform");
   const webclientService = getBuiltinService("agent-webclient");
+  const platformInstallDir = path.join(userDataRoot, "services", platformService.id, platformService.version);
   const webclientInstallDir = path.join(userDataRoot, "services", webclientService.id, webclientService.version);
   const startFileName = process.platform === "win32" ? "start.ps1" : "start.sh";
   const expectedNodeBin = __testInternals.resolveNodeBin();
@@ -3303,6 +3296,19 @@ test("startService injects agent-webclient NODE_BIN without persisting it to env
     await installBuiltinService(app, "agent-webclient");
 
     if (process.platform === "win32") {
+      fs.writeFileSync(
+        path.join(platformInstallDir, startFileName),
+        [
+          "$runDir = Join-Path $PSScriptRoot 'run'",
+          "New-Item -ItemType Directory -Path $runDir -Force | Out-Null",
+          "if (-not $env:NODE_BIN) { throw 'missing NODE_BIN' }",
+          "$env:NODE_BIN | Set-Content -LiteralPath (Join-Path $runDir 'node-bin.txt')",
+          "$proc = Start-Process -FilePath $env:NODE_BIN -ArgumentList '-e','setInterval(() => {}, 1000)' -WindowStyle Hidden -PassThru",
+          "$proc.Id | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'run/agent-platform.pid')",
+          "Set-Content -LiteralPath (Join-Path $runDir 'started.txt') -Value 'started'"
+        ].join("\r\n"),
+        "utf8"
+      );
       fs.writeFileSync(
         path.join(webclientInstallDir, startFileName),
         [
@@ -3317,6 +3323,21 @@ test("startService injects agent-webclient NODE_BIN without persisting it to env
         "utf8"
       );
     } else {
+      fs.writeFileSync(
+        path.join(platformInstallDir, startFileName),
+        [
+          "#!/usr/bin/env bash",
+          "set -euo pipefail",
+          "mkdir -p run",
+          ': "${NODE_BIN:?missing NODE_BIN}"',
+          'printf "%s" "$NODE_BIN" > run/node-bin.txt',
+          '"$NODE_BIN" -e "setInterval(() => {}, 1000)" >/dev/null 2>&1 &',
+          "echo $! > run/agent-platform.pid",
+          "printf started > run/started.txt"
+        ].join("\n") + "\n",
+        "utf8"
+      );
+      fs.chmodSync(path.join(platformInstallDir, startFileName), 0o755);
       fs.writeFileSync(
         path.join(webclientInstallDir, startFileName),
         [
@@ -3336,10 +3357,19 @@ test("startService injects agent-webclient NODE_BIN without persisting it to env
 
     const platformResult = await startService(app, "agent-platform");
     assert.equal(platformResult.ok, true, platformResult.message);
+    assert.equal(fs.readFileSync(path.join(platformInstallDir, "run", "node-bin.txt"), "utf8"), expectedNodeBin);
 
     const webclientResult = await startService(app, "agent-webclient");
     assert.equal(webclientResult.ok, true, webclientResult.message);
     assert.equal(fs.readFileSync(path.join(webclientInstallDir, "run", "node-bin.txt"), "utf8"), expectedNodeBin);
+
+    const platformEnvContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+    assert.doesNotMatch(
+      platformEnvContent,
+      new RegExp(`^NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "m")
+    );
+    assert.doesNotMatch(platformEnvContent, /^NODE_BIN=/m);
+    assert.doesNotMatch(platformEnvContent, /^CLOUDFLARED_BIN=/m);
 
     const envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
     assert.doesNotMatch(envContent, new RegExp(`^NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "m"));
@@ -3348,6 +3378,90 @@ test("startService injects agent-webclient NODE_BIN without persisting it to env
     await stopStartupCoreProcesses(app);
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("startService injects local-cli-acp-relay NODE_BIN without persisting it to env", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-relay-node-bin-start-env-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = path.join(userDataRoot, "plugins", "local-cli-acp-relay");
+  const app = createApp(userDataRoot);
+  const expectedNodeBin = __testInternals.resolveNodeBin();
+  const expectedNodeBinLiteral = expectedNodeBin.includes(" ") ? `"${expectedNodeBin}"` : expectedNodeBin;
+
+  registryInternals.clearServices();
+  try {
+    writePluginInstallRoot(installDir, {
+      id: "local-cli-acp-relay",
+      name: "Local CLI ACP Relay",
+      port: 3220,
+      deployScriptContent: false
+    });
+    fs.writeFileSync(
+      path.join(installDir, ".env.example"),
+      [
+        "PORT=3220",
+        "AUTH_TOKEN=",
+        "NODE_BIN=",
+        "CLAUDE_CODE_ACP_COMMAND=",
+        "CLAUDE_CODE_ACP_ARGS=",
+        "DEFAULT_CWD=~/Desktop",
+        "ALLOWED_CWD_ROOTS=~/Desktop",
+        "HANDSHAKE_TIMEOUT_MS=60000",
+        "RUN_TIMEOUT_MS=600000"
+      ].join("\n") + "\n",
+      "utf8"
+    );
+    fs.writeFileSync(
+      path.join(installDir, "start.sh"),
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "mkdir -p run",
+        ': "${NODE_BIN:?missing NODE_BIN}"',
+        'printf "%s" "$NODE_BIN" > run/node-bin.txt',
+        '"$NODE_BIN" -e "setInterval(() => {}, 1000)" >/dev/null 2>&1 &',
+        "echo $! > run/test-plugin.pid",
+        "printf started > run/started.txt"
+      ].join("\n") + "\n",
+      "utf8"
+    );
+    fs.writeFileSync(
+      path.join(installDir, "stop.sh"),
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        'if [ -f "run/test-plugin.pid" ]; then',
+        '  kill "$(cat "run/test-plugin.pid")" >/dev/null 2>&1 || true',
+        '  rm -f "run/test-plugin.pid"',
+        "fi"
+      ].join("\n") + "\n",
+      "utf8"
+    );
+    fs.chmodSync(path.join(installDir, "start.sh"), 0o755);
+    fs.chmodSync(path.join(installDir, "stop.sh"), 0o755);
+
+    const initResult = await initializeService(app, "local-cli-acp-relay");
+    assert.equal(initResult.ok, true, initResult.message);
+
+    const startResult = await startService(app, "local-cli-acp-relay");
+    assert.equal(startResult.ok, true, startResult.message);
+    assert.equal(fs.readFileSync(path.join(installDir, "run", "node-bin.txt"), "utf8"), expectedNodeBin);
+
+    const envContent = fs.readFileSync(path.join(installDir, ".env"), "utf8");
+    assert.doesNotMatch(
+      envContent,
+      new RegExp(`^NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "m")
+    );
+    assert.match(envContent, /^NODE_BIN=$/m);
+  } finally {
+    try {
+      await stopService(app, "local-cli-acp-relay");
+    } catch {
+      // Ignore cleanup failures for synthetic fixtures.
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
