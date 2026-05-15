@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 
 const {
   getQuickAssistantBounds,
+  getQuickAssistantWebCopilotBounds,
   isQuickAssistantMediaPermissionAllowed,
   isQuickAssistantSupportedPlatform,
   QUICK_ASSISTANT_ATTACHMENT_SIZE,
   QUICK_ASSISTANT_COMPACT_SIZE,
   QUICK_ASSISTANT_COMPACT_MENU_SIZE,
   QUICK_ASSISTANT_SHORTCUT,
+  QUICK_ASSISTANT_WEB_COPILOT_SIZE,
   createQuickAssistantWindowState
 } = await import("../dist-electron/main/quick-assistant.js");
 
@@ -25,6 +27,22 @@ test("quick assistant uses option-space", () => {
 test("quick assistant compact window matches the slim reference capsule", () => {
   assert.equal(QUICK_ASSISTANT_COMPACT_SIZE.width, 430);
   assert.equal(QUICK_ASSISTANT_COMPACT_SIZE.height, 76);
+});
+
+test("quick assistant web copilot window uses the larger floating surface", () => {
+  assert.equal(QUICK_ASSISTANT_WEB_COPILOT_SIZE.width, 430);
+  assert.equal(QUICK_ASSISTANT_WEB_COPILOT_SIZE.height, 640);
+
+  const bounds = getQuickAssistantWebCopilotBounds({
+    workArea: { x: 0, y: 25, width: 1440, height: 875 }
+  });
+
+  assert.deepEqual(bounds, {
+    x: 505,
+    y: 143,
+    width: QUICK_ASSISTANT_WEB_COPILOT_SIZE.width,
+    height: QUICK_ASSISTANT_WEB_COPILOT_SIZE.height
+  });
 });
 
 test("quick assistant attachment mode keeps file previews inside the compact popup", () => {

@@ -27,6 +27,11 @@ export const QUICK_ASSISTANT_EXPANDED_SIZE = {
   height: 600
 } as const;
 
+export const QUICK_ASSISTANT_WEB_COPILOT_SIZE = {
+  width: 430,
+  height: 640
+} as const;
+
 export type QuickAssistantDisplayMode = "compact" | "attachment" | "compactMenu" | "menu" | "expanded";
 
 type Platform = NodeJS.Platform | string;
@@ -98,6 +103,22 @@ export function getQuickAssistantBounds({
   return {
     x: Math.round(workArea.x + (workArea.width - width) / 2),
     y,
+    width,
+    height
+  };
+}
+
+export function getQuickAssistantWebCopilotBounds({
+  workArea
+}: {
+  workArea: WorkArea;
+}) {
+  const margin = 12;
+  const width = Math.min(QUICK_ASSISTANT_WEB_COPILOT_SIZE.width, Math.max(360, workArea.width - margin * 2));
+  const height = Math.min(QUICK_ASSISTANT_WEB_COPILOT_SIZE.height, Math.max(320, workArea.height - margin * 2));
+  return {
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
+    y: Math.round(workArea.y + (workArea.height - height) / 2),
     width,
     height
   };

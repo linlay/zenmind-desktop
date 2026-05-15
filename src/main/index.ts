@@ -155,6 +155,7 @@ import { DesktopPetPreviewProjector, normalizeDesktopPetAgentEvent } from "./des
 import {
   createQuickAssistantWindowState,
   getQuickAssistantBounds,
+  getQuickAssistantWebCopilotBounds,
   isQuickAssistantMediaPermissionAllowed,
   isQuickAssistantSupportedPlatform,
   QUICK_ASSISTANT_COMPACT_REQUEST_CHANNEL,
@@ -1428,8 +1429,7 @@ function createQuickAssistantWindow() {
   }
 
   quickAssistantWindow = new BrowserWindow({
-    ...getQuickAssistantBounds({
-      expanded: false,
+    ...getQuickAssistantWebCopilotBounds({
       workArea: getQuickAssistantWorkArea()
     }),
     show: false,
@@ -1648,11 +1648,24 @@ function showQuickAssistantWindow() {
   if (!targetWindow || targetWindow.isDestroyed()) {
     return;
   }
-  requestQuickAssistantCompactMode(targetWindow);
+  quickAssistantState.resetInteractionState();
+  targetWindow.setBounds(getQuickAssistantWebCopilotBounds({
+    workArea: getQuickAssistantWorkArea()
+  }), true);
   showQuickAssistantDismissWindow();
   targetWindow.show();
   targetWindow.moveTop();
   targetWindow.focus();
+  void runServiceMutation(() => ensureAssistantTargetServicesRunning("quick-assistant"))
+    .then((failures) => {
+      if (failures.length > 0) {
+        showMainWindow("/control-center");
+      }
+    })
+    .catch((error) => {
+      console.warn("[quick-assistant] failed to prepare web copilot services", error);
+      showMainWindow("/control-center");
+    });
 }
 
 function toggleQuickAssistantWindow() {
@@ -2635,10 +2648,12 @@ function ensureDarwinDockIdentity() {
 
 function notifyServicesChanged() {
   scheduleAgentPlatformPetStatusRefresh(1000);
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
+  for (const targetWindow of [mainWindow, quickAssistantWindow]) {
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      continue;
+    }
+    targetWindow.webContents.send("services.changed");
   }
-  mainWindow.webContents.send("services.changed");
 }
 
 function createStartupRestoreState(
@@ -3534,6 +3549,13 @@ function registerIpcHandlers() {
       quickAssistantWindow.hide();
     }
     showMainWindow("/settings");
+    return { ok: true };
+  });
+  ipcMain.handle("quickAssistant.openControlCenter", async () => {
+    if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
+      quickAssistantWindow.hide();
+    }
+    showMainWindow("/control-center");
     return { ok: true };
   });
 

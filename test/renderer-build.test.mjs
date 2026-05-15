@@ -557,6 +557,30 @@ test("assistant dock opens the agent webclient copilot in right-side embedded mo
   assert.doesNotMatch(appShell, /onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\("compact"\)/);
 });
 
+test("option-space quick assistant route opens the agent webclient copilot surface", () => {
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const quickAssistantWindow = fs.readFileSync(path.join(projectRoot, "src", "main", "quick-assistant.ts"), "utf8");
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+
+  assert.match(appShell, /function QuickAssistantWebCopilot/);
+  assert.match(appShell, /location\.pathname === "\/quick-assistant"[\s\S]{0,180}<QuickAssistantWebCopilot \/>/);
+  assert.match(appShell, /embedPath=\{AGENT_WEBCLIENT_COPILOT_PATH\}/);
+  assert.match(appShell, /pluginId="agent-webclient"/);
+  assert.match(appShell, /quickAssistant\.openControlCenter/);
+  assert.match(globalStyles, /\.quick-web-copilot\s*,/);
+  assert.match(globalStyles, /\.quick-web-copilot-status/);
+  assert.match(mainProcess, /getQuickAssistantWebCopilotBounds/);
+  assert.match(mainProcess, /ensureAssistantTargetServicesRunning\("quick-assistant"\)/);
+  assert.match(mainProcess, /for \(const targetWindow of \[mainWindow, quickAssistantWindow\]\)/);
+  assert.doesNotMatch(mainProcess, /function showQuickAssistantWindow\(\)[\s\S]{0,500}requestQuickAssistantCompactMode/);
+  assert.match(quickAssistantWindow, /QUICK_ASSISTANT_WEB_COPILOT_SIZE/);
+  assert.match(preload, /openControlCenter/);
+  assert.match(contracts, /openControlCenter/);
+});
+
 test("quick assistant popup keeps ask and voice recovery controls visible", () => {
   const quickAssistant = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "components", "QuickAssistant.tsx"),

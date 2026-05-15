@@ -236,7 +236,8 @@ const api: DesktopApi = {
     cancelAttachmentTask: (taskId: string) => ipcRenderer.invoke("quickAssistant.cancelAttachmentTask", taskId),
     hide: () => ipcRenderer.invoke("quickAssistant.hide"),
     openMainAssistant: (chatId?: string | null) => ipcRenderer.invoke("quickAssistant.openMainAssistant", chatId),
-    openSettings: () => ipcRenderer.invoke("quickAssistant.openSettings")
+    openSettings: () => ipcRenderer.invoke("quickAssistant.openSettings"),
+    openControlCenter: () => ipcRenderer.invoke("quickAssistant.openControlCenter")
   },
   customSidebar: {
     list: () => ipcRenderer.invoke("customSidebar.list"),

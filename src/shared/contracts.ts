@@ -1294,6 +1294,7 @@ export interface DesktopApi {
     hide: () => Promise<{ ok: boolean }>;
     openMainAssistant: (chatId?: string | null) => Promise<{ ok: boolean }>;
     openSettings: () => Promise<{ ok: boolean }>;
+    openControlCenter: () => Promise<{ ok: boolean }>;
   };
   customSidebar: {
     list: () => Promise<CustomSidebarItemsResult>;
