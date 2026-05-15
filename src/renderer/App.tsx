@@ -53,8 +53,6 @@ type ThemeMode = "light" | "dark";
 
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
-const SIDEBAR_TRANSLUCENCY_STORAGE_KEY = "zenmind-desktop.sidebar-translucency";
-const SIDEBAR_TRANSLUCENCY_OPACITY_STORAGE_KEY = "zenmind-desktop.sidebar-translucency-opacity";
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = "zenmind-desktop.sidebar-nav-order";
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
@@ -149,27 +147,6 @@ function AppShell() {
       };
     } catch {
       return { collapsed: false };
-    }
-  });
-  const [sidebarTranslucencyEnabled, setSidebarTranslucencyEnabled] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-    try {
-      return window.localStorage.getItem(SIDEBAR_TRANSLUCENCY_STORAGE_KEY) === "true";
-    } catch {
-      return false;
-    }
-  });
-  const [sidebarTranslucencyOpacity, setSidebarTranslucencyOpacity] = useState(() => {
-    if (typeof window === "undefined") {
-      return 72;
-    }
-    try {
-      const savedValue = Number(window.localStorage.getItem(SIDEBAR_TRANSLUCENCY_OPACITY_STORAGE_KEY));
-      return Number.isFinite(savedValue) ? Math.min(95, Math.max(45, savedValue)) : 72;
-    } catch {
-      return 72;
     }
   });
   const [sidebarNavOrder, setSidebarNavOrder] = useState<SidebarNavOrderItemKey[]>(() => {
@@ -465,30 +442,13 @@ function AppShell() {
   }, [themeMode]);
 
   useEffect(() => {
-    const shouldApply = isMac && sidebarTranslucencyEnabled;
+    const shouldApply = isMac;
     document.body.classList.toggle("mac-translucent-sidebar-body", shouldApply);
-    document.documentElement.style.setProperty(
-      "--sidebar-translucency-opacity",
-      (sidebarTranslucencyOpacity / 100).toFixed(2)
-    );
-    try {
-      window.localStorage.setItem(
-        SIDEBAR_TRANSLUCENCY_STORAGE_KEY,
-        sidebarTranslucencyEnabled ? "true" : "false"
-      );
-      window.localStorage.setItem(
-        SIDEBAR_TRANSLUCENCY_OPACITY_STORAGE_KEY,
-        String(sidebarTranslucencyOpacity)
-      );
-    } catch {
-      // Ignore persistence failures and keep the in-memory navigation settings usable.
-    }
-    window.electronAPI.settings.setSidebarTranslucency(shouldApply).catch(() => undefined);
 
     return () => {
       document.body.classList.remove("mac-translucent-sidebar-body");
     };
-  }, [isMac, sidebarTranslucencyEnabled, sidebarTranslucencyOpacity]);
+  }, [isMac]);
 
   useEffect(() => {
     try {
@@ -675,7 +635,7 @@ function AppShell() {
       setAssistantSettings(nextAssistantSettings);
       return {
         themeMode,
-        sidebarTranslucencyEnabled,
+        sidebarTranslucencyEnabled: true,
         assistantSettings: nextAssistantSettings,
         assistantAgents,
         desktopPet: desktopPetState
@@ -689,13 +649,6 @@ function AppShell() {
 
       if ("themeMode" in patch && patch.themeMode !== "light" && patch.themeMode !== "dark") {
         issues.push({ field: "themeMode", value: patch.themeMode, message: "themeMode must be light or dark." });
-      }
-      if ("sidebarTranslucencyEnabled" in patch && typeof patch.sidebarTranslucencyEnabled !== "boolean") {
-        issues.push({
-          field: "sidebarTranslucencyEnabled",
-          value: patch.sidebarTranslucencyEnabled,
-          message: "sidebarTranslucencyEnabled must be boolean."
-        });
       }
       if ("enabled" in desktopPetPatch && typeof desktopPetPatch.enabled !== "boolean") {
         issues.push({ field: "desktopPet.enabled", value: desktopPetPatch.enabled, message: "desktopPet.enabled must be boolean." });
@@ -747,13 +700,6 @@ function AppShell() {
       const changes = [];
       if ("themeMode" in patch) {
         changes.push({ field: "themeMode", from: state.themeMode, to: patch.themeMode });
-      }
-      if ("sidebarTranslucencyEnabled" in patch) {
-        changes.push({
-          field: "sidebarTranslucencyEnabled",
-          from: state.sidebarTranslucencyEnabled,
-          to: patch.sidebarTranslucencyEnabled
-        });
       }
       if ("enabled" in desktopPetPatch) {
         changes.push({ field: "desktopPet.enabled", from: state.desktopPet.enabled, to: desktopPetPatch.enabled });
@@ -823,9 +769,6 @@ function AppShell() {
           if (patch.themeMode === "light" || patch.themeMode === "dark") {
             setThemeMode(patch.themeMode);
           }
-          if (typeof patch.sidebarTranslucencyEnabled === "boolean") {
-            setSidebarTranslucencyEnabled(patch.sidebarTranslucencyEnabled);
-          }
           if (Object.keys(desktopPetPatch).length > 0) {
             await window.electronAPI.desktopPet.saveSettings({
               ...(typeof desktopPetPatch.enabled === "boolean" ? { enabled: desktopPetPatch.enabled } : {}),
@@ -881,7 +824,6 @@ function AppShell() {
     location.pathname,
     navigate,
     services,
-    sidebarTranslucencyEnabled,
     themeMode
   ]);
 
@@ -896,8 +838,8 @@ function AppShell() {
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
-        sidebarTranslucencyEnabled ? "has-translucent-sidebar" : "",
-        isMac && sidebarTranslucencyEnabled ? "is-mac-translucent-sidebar" : "",
+        "has-translucent-sidebar",
+        isMac ? "is-mac-translucent-sidebar" : "",
         sidebarState.collapsed ? "is-sidebar-collapsed" : "is-sidebar-expanded"
       ].filter(Boolean).join(" ")}
     >
@@ -958,10 +900,6 @@ function AppShell() {
                   onToggleTheme={toggleTheme}
                   isMac={isMac}
                   isWindows={isWindows}
-                  sidebarTranslucencyEnabled={sidebarTranslucencyEnabled}
-                  sidebarTranslucencyOpacity={sidebarTranslucencyOpacity}
-                  onToggleSidebarTranslucency={() => setSidebarTranslucencyEnabled((current) => !current)}
-                  onSidebarTranslucencyOpacityChange={setSidebarTranslucencyOpacity}
                   sidebarNavOrder={normalizedSidebarNavOrder}
                   availableSidebarNavOrderItems={availableSidebarNavOrderItems}
                   onSidebarNavOrderChange={setSidebarNavOrder}

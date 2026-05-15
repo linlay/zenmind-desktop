@@ -136,7 +136,9 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsStore, /desktopCopilotPages:\s*settings\.desktopCopilotPages/);
   assert.match(settingsPage, /NAVIGATION/);
   assert.match(settingsPage, /导航栏/);
-  assert.match(settingsPage, /半透明度/);
+  assert.doesNotMatch(settingsPage, /半透明度/);
+  assert.doesNotMatch(settingsPage, /导航栏半透明效果/);
+  assert.doesNotMatch(settingsPage, /type="range"/);
   assert.match(settingsPage, /导航页签排序/);
   assert.match(settingsPage, /内嵌网站/);
   assert.match(settingsPage, /智能体增强/);
@@ -168,6 +170,44 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /这个设置不影响宠物助手绑定/);
   assert.match(settingsPage, /aria-label="快捷助手配置"/);
   assert.match(settingsPage, /aria-label="侧边助手配置"/);
+});
+
+test("sidebar translucency is fixed and not user configurable", () => {
+  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const settingsPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "SettingsPage.tsx"),
+    "utf8"
+  );
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+
+  assert.match(appShell, /"has-translucent-sidebar"/);
+  assert.match(appShell, /isMac \? "is-mac-translucent-sidebar" : ""/);
+  assert.match(appShell, /sidebarTranslucencyEnabled:\s*true/);
+  assert.doesNotMatch(appShell, /SIDEBAR_TRANSLUCENCY_STORAGE_KEY/);
+  assert.doesNotMatch(appShell, /SIDEBAR_TRANSLUCENCY_OPACITY_STORAGE_KEY/);
+  assert.doesNotMatch(appShell, /setSidebarTranslucency/);
+  assert.doesNotMatch(appShell, /setSidebarTranslucencyEnabled/);
+  assert.doesNotMatch(appShell, /setSidebarTranslucencyOpacity/);
+
+  assert.doesNotMatch(settingsPage, /sidebarTranslucencyEnabled/);
+  assert.doesNotMatch(settingsPage, /sidebarTranslucencyOpacity/);
+  assert.doesNotMatch(settingsPage, /navigation-translucency-row/);
+  assert.doesNotMatch(settingsPage, /navigation-opacity-control/);
+
+  assert.doesNotMatch(globalStyles, /--sidebar-translucency-opacity/);
+  assert.match(globalStyles, /rgba\(255,\s*255,\s*255,\s*0\.72\)\s*0%/);
+  assert.match(globalStyles, /rgba\(252,\s*253,\s*255,\s*0\.64\)\s*42%/);
+  assert.match(globalStyles, /rgba\(246,\s*248,\s*251,\s*0\.6\)\s*100%/);
+  assert.match(globalStyles, /rgba\(57,\s*58,\s*62,\s*0\.72\)\s*0%/);
+  assert.match(globalStyles, /rgba\(46,\s*48,\s*52,\s*0\.66\)\s*40%/);
+  assert.match(globalStyles, /rgba\(37,\s*39,\s*43,\s*0\.62\)\s*100%/);
+
+  assert.doesNotMatch(preload, /setSidebarTranslucency/);
+  assert.doesNotMatch(contracts, /setSidebarTranslucency/);
+  assert.doesNotMatch(mainProcess, /settings\.setSidebarTranslucency/);
 });
 
 test("sidebar navigation order helper normalizes and sorts available items", () => {
@@ -410,7 +450,7 @@ test("window drag uses css-only app-region approach", () => {
 test("mac fullscreen forces the main window to an opaque background", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
 
-  assert.match(mainProcess, /let mainWindowSidebarTranslucencyEnabled = false;/);
+  assert.match(mainProcess, /let mainWindowSidebarTranslucencyEnabled = true;/);
   assert.match(mainProcess, /function applyMainWindowAppearance\(targetWindow: BrowserWindow \| null\)/);
   assert.match(
     mainProcess,

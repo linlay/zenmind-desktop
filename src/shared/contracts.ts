@@ -365,13 +365,6 @@ export interface CustomSidebarTransferResult {
   message: string;
 }
 
-export interface SidebarTranslucencyResult {
-  ok: boolean;
-  enabled: boolean;
-  effective: boolean;
-  message: string;
-}
-
 export type DesktopPetStatus = "idle" | "running" | "awaiting" | "done" | "error";
 export type DesktopPetAgentPresence = "available" | "busy" | "away" | "offline";
 
@@ -1320,7 +1313,6 @@ export interface DesktopApi {
   settings: {
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
-    setSidebarTranslucency: (enabled: boolean) => Promise<SidebarTranslucencyResult>;
   };
   desktopActions: {
     respond: (response: DesktopActionRendererResponse) => Promise<{ ok: boolean }>;

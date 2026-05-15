@@ -160,8 +160,7 @@ const api: DesktopApi = {
   },
   settings: {
     getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
-    getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
-    setSidebarTranslucency: (enabled) => ipcRenderer.invoke("settings.setSidebarTranslucency", enabled)
+    getPlatform: () => ipcRenderer.invoke("settings.getPlatform")
   },
   desktopActions: {
     respond: (response: DesktopActionRendererResponse) => ipcRenderer.invoke("desktopActions.respond", response),

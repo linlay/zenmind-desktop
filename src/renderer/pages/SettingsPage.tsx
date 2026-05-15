@@ -36,10 +36,6 @@ type SettingsPageProps = {
   onToggleTheme: () => void;
   isMac: boolean;
   isWindows: boolean;
-  sidebarTranslucencyEnabled: boolean;
-  sidebarTranslucencyOpacity: number;
-  onToggleSidebarTranslucency: () => void;
-  onSidebarTranslucencyOpacityChange: (opacity: number) => void;
   sidebarNavOrder: SidebarNavOrderItemKey[];
   availableSidebarNavOrderItems: SidebarNavOrderItem[];
   onSidebarNavOrderChange: (order: SidebarNavOrderItemKey[]) => void;
@@ -148,10 +144,6 @@ export function SettingsPage({
   onToggleTheme,
   isMac,
   isWindows,
-  sidebarTranslucencyEnabled,
-  sidebarTranslucencyOpacity,
-  onToggleSidebarTranslucency,
-  onSidebarTranslucencyOpacityChange,
   sidebarNavOrder,
   availableSidebarNavOrderItems,
   onSidebarNavOrderChange,
@@ -969,40 +961,11 @@ export function SettingsPage({
           <p className="eyebrow">NAVIGATION</p>
           <h2>导航栏</h2>
           <p className="page-copy">
-            调整左侧导航栏的半透明度，并设置主导航页签 item 的显示顺序。
-            {isMac ? " macOS 会同时启用原生半透明窗口效果。" : " 当前平台会应用 CSS 半透明效果。"}
+            设置主导航页签 item 的显示顺序。
+            {isMac ? " macOS 会自动使用原生半透明窗口效果。" : " 当前平台会自动应用 CSS 半透明效果。"}
           </p>
         </div>
         <div className="navigation-settings-panel">
-          <div className="navigation-translucency-row">
-            <div>
-              <strong>半透明效果</strong>
-              <span>{sidebarTranslucencyEnabled ? `已开启 / ${sidebarTranslucencyOpacity}%` : "已关闭"}</span>
-            </div>
-            <button
-              type="button"
-              className={sidebarTranslucencyEnabled ? "settings-switch is-on" : "settings-switch"}
-              role="switch"
-              aria-checked={sidebarTranslucencyEnabled}
-              aria-label="导航栏半透明效果"
-              onClick={onToggleSidebarTranslucency}
-            >
-              <span aria-hidden="true" />
-            </button>
-          </div>
-          <label className="navigation-opacity-control">
-            <span>半透明度</span>
-            <input
-              type="range"
-              min="45"
-              max="95"
-              step="1"
-              value={sidebarTranslucencyOpacity}
-              disabled={!sidebarTranslucencyEnabled}
-              onChange={(event) => onSidebarTranslucencyOpacityChange(Number(event.target.value))}
-            />
-            <strong>{sidebarTranslucencyOpacity}%</strong>
-          </label>
           <div className="navigation-order-section">
             <div className="custom-sidebar-list-head">
               <strong>导航页签排序</strong>

@@ -180,7 +180,7 @@ let pendingMainWindowCloseCancel: (() => void) | null = null;
 let serviceMutationQueue = Promise.resolve();
 let nativeDialogVisibilityDepth = 0;
 let quickAssistantVisibleBeforeNativeDialog = false;
-let mainWindowSidebarTranslucencyEnabled = false;
+let mainWindowSidebarTranslucencyEnabled = true;
 const desktopActionRendererRequests = new Map<string, {
   resolve: (response: DesktopActionRendererResponse) => void;
   timeout: ReturnType<typeof setTimeout>;
@@ -2222,28 +2222,6 @@ function registerQuickAssistantShortcut() {
   }
 }
 
-function setSidebarTranslucency(enabled: boolean) {
-  if (process.platform !== "darwin") {
-    mainWindowSidebarTranslucencyEnabled = false;
-    return {
-      ok: true,
-      enabled: false,
-      effective: false,
-      message: "半透明侧边栏仅在 macOS 生效。"
-    };
-  }
-
-  mainWindowSidebarTranslucencyEnabled = enabled;
-  applyMainWindowAppearance(mainWindow);
-
-  return {
-    ok: true,
-    enabled,
-    effective: true,
-    message: enabled ? "已开启半透明侧边栏。" : "已关闭半透明侧边栏。"
-  };
-}
-
 function applyMainWindowAppearance(targetWindow: BrowserWindow | null) {
   if (!targetWindow || targetWindow.isDestroyed()) {
     return;
@@ -3969,9 +3947,6 @@ function registerIpcHandlers() {
   });
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
   ipcMain.handle("settings.getPlatform", async () => process.platform);
-  ipcMain.handle("settings.setSidebarTranslucency", async (_event, enabled: boolean) =>
-    setSidebarTranslucency(enabled)
-  );
 }
 
 if (gotSingleInstanceLock) {
