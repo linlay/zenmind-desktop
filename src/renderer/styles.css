@@ -6,6 +6,7 @@
   color-scheme: light;
   --window-radius: 18px;
   --mac-traffic-light-safe-area: 88px;
+  --bg-base: #FFFFFF;
   --bg-canvas:
     radial-gradient(circle at 8% 0%, rgba(122, 201, 255, 0.48), transparent 28%),
     radial-gradient(circle at 92% 100%, rgba(150, 210, 255, 0.42), transparent 32%),
@@ -36,6 +37,7 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --bg-base: #181818;
   --bg-canvas: linear-gradient(180deg, #2c2d30 0%, #26272a 100%);
   --surface: rgba(42, 43, 47, 0.9);
   --surface-strong: rgba(48, 50, 54, 0.96);
@@ -3869,6 +3871,10 @@ body.quick-web-copilot-body,
   -webkit-app-region: no-drag;
 }
 
+.app-shell.has-standard-base-surface .app-main {
+  background: var(--bg-base);
+}
+
 .app-main::-webkit-scrollbar {
   width: 0;
   height: 0;
@@ -4308,6 +4314,7 @@ body.quick-web-copilot-body,
   min-height: calc(100vh - 140px);
   width: min(100%, 1500px);
   margin: 0 auto;
+  background: var(--bg-base);
 }
 
 .control-center-page {

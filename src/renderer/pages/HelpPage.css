@@ -5,7 +5,7 @@
   height: 100%;
   min-height: calc(100vh - 40px);
   margin: -20px -22px -28px;
-  background: var(--surface);
+  background: var(--bg-base);
   padding: 28px 24px 28px 20px;
 }
 

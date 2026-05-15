@@ -1,5 +1,6 @@
 .market-page {
   min-height: calc(100vh - 64px);
+  background: var(--bg-base);
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }

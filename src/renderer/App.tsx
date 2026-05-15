@@ -190,6 +190,11 @@ function AppShell() {
     location.pathname.startsWith("/custom-sidebar/");
   const usesPluginSurface = Boolean(activeAgentWebclientRoute) || location.pathname.startsWith("/plugin/");
   const isMarketRoute = location.pathname === "/market";
+  const usesStandardBaseSurface =
+    location.pathname === "/control-center" ||
+    location.pathname === "/market" ||
+    location.pathname === "/help" ||
+    location.pathname === "/settings";
   const isMac = desktopPlatform === "darwin";
   const isWindows = desktopPlatform === "win32";
   const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
@@ -835,6 +840,7 @@ function AppShell() {
         usesEmbeddedSurface ? "has-embedded-surface" : "",
         usesPluginSurface ? "has-plugin-surface" : "",
         isMarketRoute ? "has-market-controls" : "",
+        usesStandardBaseSurface ? "has-standard-base-surface" : "",
         assistantCopilotOpen ? "has-assistant-dock" : "",
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
