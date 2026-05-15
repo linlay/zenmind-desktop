@@ -68,6 +68,7 @@ import {
   showPortConflictDialog
 } from "./port-conflict";
 import { resolveWebviewOpenDisposition } from "./webview-open-tab";
+import { revealPathInFileManager } from "./reveal-path";
 import {
   addCustomSidebarItem,
   exportCustomSidebarItems,
@@ -110,6 +111,7 @@ import type {
   ServiceId,
   ServiceLogReadOptions,
   ServiceOpenLogViewerRequest,
+  ServiceRevealPathOptions,
   ServiceLogStreamOptions,
   ServiceLogTarget,
   StartupRestoreMode,
@@ -3664,6 +3666,13 @@ function registerIpcHandlers() {
       serviceId,
       target,
       title
+    });
+  });
+  ipcMain.handle("services.revealPath", async (_event, targetPath: string, options?: ServiceRevealPathOptions) => {
+    return revealPathInFileManager(targetPath, options, {
+      showItemInFolder: (pathToReveal) => shell.showItemInFolder(pathToReveal),
+      openPath: (pathToOpen) => shell.openPath(pathToOpen),
+      platform: process.platform
     });
   });
   ipcMain.handle("services.closeLogViewer", async () => closeLogViewerWindow());

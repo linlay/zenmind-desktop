@@ -88,9 +88,11 @@ type MetaItem = {
   label: string;
   value: string;
   title?: string;
-  actionLabel?: string;
-  disabled?: boolean;
-  onAction?: () => void;
+  actions?: Array<{
+    label: string;
+    disabled?: boolean;
+    onAction: () => void;
+  }>;
 };
 
 function shouldShowInitializeAction(service: ServiceState) {
@@ -137,6 +139,35 @@ function getConfigSourceClass(configFile: ServiceConfigFile, meta?: ConfigMeta) 
     return "is-file";
   }
   return "is-pending";
+}
+
+function getParentDirectory(filePath: string) {
+  const normalizedPath = filePath.trim();
+  if (!normalizedPath) {
+    return "";
+  }
+
+  const lastSeparatorIndex = Math.max(normalizedPath.lastIndexOf("/"), normalizedPath.lastIndexOf("\\"));
+  if (lastSeparatorIndex < 0) {
+    return "";
+  }
+  if (lastSeparatorIndex === 0) {
+    return normalizedPath.slice(0, 1);
+  }
+  if (lastSeparatorIndex === 2 && normalizedPath[1] === ":") {
+    return normalizedPath.slice(0, 3);
+  }
+  return normalizedPath.slice(0, lastSeparatorIndex);
+}
+
+function getConfigDirectoryPaths(configFiles: ServiceConfigFile[]) {
+  return [
+    ...new Set(
+      configFiles
+        .map((configFile) => getParentDirectory(configFile.absolutePath))
+        .filter((directoryPath) => directoryPath.length > 0)
+    )
+  ];
 }
 
 function StartServiceIcon() {
@@ -321,6 +352,7 @@ export function ControlCenterPage() {
   );
   const errorLogDisplay = activeDetailService ? getErrorLogDisplay(activeDetailService) : "未声明";
   const detailEndpoint = activeDetailService?.healthMeta.webUrl ?? "";
+  const configDirectoryPaths = activeDetailService ? getConfigDirectoryPaths(activeDetailService.configFiles) : [];
 
   useEffect(() => {
     if (!activeDetailServiceId || !selectedConfigKeyForRead || selectedConfigMetaLoaded) {
@@ -401,6 +433,15 @@ export function ControlCenterPage() {
       target,
       title
     });
+  }
+
+  async function revealServicePath(targetPath: string, targetType: "file" | "directory") {
+    try {
+      const result = await window.electronAPI.services.revealPath(targetPath, { targetType });
+      setFeedback(result.message);
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    }
   }
 
   function invalidateConfig(serviceId: ServiceId) {
@@ -538,21 +579,50 @@ export function ControlCenterPage() {
           key: "installDir",
           label: "安装目录",
           value: activeDetailService.installDir || "未声明",
-          title: activeDetailService.installDir || "未声明"
+          title: activeDetailService.installDir || "未声明",
+          actions: activeDetailService.installDir
+            ? [
+                {
+                  label: "打开",
+                  onAction: () => void revealServicePath(activeDetailService.installDir, "directory")
+                }
+              ]
+            : undefined
+        },
+        {
+          key: "configDirs",
+          label: "配置目录",
+          value: configDirectoryPaths.length > 0 ? configDirectoryPaths.join("\n") : "未声明",
+          title: configDirectoryPaths.length > 0 ? configDirectoryPaths.join("\n") : "未声明",
+          actions:
+            configDirectoryPaths.length > 0
+              ? configDirectoryPaths.map((directoryPath, index) => ({
+                  label: configDirectoryPaths.length === 1 ? "打开" : `打开 ${index + 1}`,
+                  onAction: () => void revealServicePath(directoryPath, "directory")
+                }))
+              : undefined
         },
         {
           key: "logFile",
           label: "日志文件",
           value: activeDetailService.healthMeta.logFilePath || "未声明",
           title: activeDetailService.healthMeta.logFilePath || "未声明",
-          actionLabel: activeDetailService.healthMeta.logFilePath ? "查看日志" : undefined,
-          onAction: activeDetailService.healthMeta.logFilePath
-            ? () =>
-                void openLogViewer(
-                  activeDetailService,
-                  "main",
-                  `${getServiceDisplayName(activeDetailService.id, activeDetailService.name)} · 日志文件`
-                )
+          actions: activeDetailService.healthMeta.logFilePath
+            ? [
+                {
+                  label: "查看日志",
+                  onAction: () =>
+                    void openLogViewer(
+                      activeDetailService,
+                      "main",
+                      `${getServiceDisplayName(activeDetailService.id, activeDetailService.name)} · 日志文件`
+                    )
+                },
+                {
+                  label: "显示",
+                  onAction: () => void revealServicePath(activeDetailService.healthMeta.logFilePath, "file")
+                }
+              ]
             : undefined
         },
         {
@@ -560,21 +630,37 @@ export function ControlCenterPage() {
           label: "错误日志",
           value: errorLogDisplay,
           title: errorLogDisplay,
-          actionLabel: activeDetailService.healthMeta.errorLogFilePath ? "查看日志" : undefined,
-          onAction: activeDetailService.healthMeta.errorLogFilePath
-            ? () =>
-                void openLogViewer(
-                  activeDetailService,
-                  "error",
-                  `${getServiceDisplayName(activeDetailService.id, activeDetailService.name)} · 错误日志`
-                )
+          actions: activeDetailService.healthMeta.errorLogFilePath
+            ? [
+                {
+                  label: "查看日志",
+                  onAction: () =>
+                    void openLogViewer(
+                      activeDetailService,
+                      "error",
+                      `${getServiceDisplayName(activeDetailService.id, activeDetailService.name)} · 错误日志`
+                    )
+                },
+                {
+                  label: "显示",
+                  onAction: () => void revealServicePath(activeDetailService.healthMeta.errorLogFilePath, "file")
+                }
+              ]
             : undefined
         },
         {
           key: "pidFile",
           label: "PID 文件",
           value: activeDetailService.healthMeta.pidFilePath || "未声明",
-          title: activeDetailService.healthMeta.pidFilePath || "未声明"
+          title: activeDetailService.healthMeta.pidFilePath || "未声明",
+          actions: activeDetailService.healthMeta.pidFilePath
+            ? [
+                {
+                  label: "显示",
+                  onAction: () => void revealServicePath(activeDetailService.healthMeta.pidFilePath, "file")
+                }
+              ]
+            : undefined
         }
       ]
     : [];
@@ -1035,20 +1121,55 @@ export function ControlCenterPage() {
                       <div key={item.key} className="service-detail-list-item">
                         <dt>{item.label}</dt>
                         <dd>
-                          <span>{item.value}</span>
-                          {item.actionLabel && item.onAction ? (
+                          <span className="service-detail-path-value">{item.value}</span>
+                          {item.actions?.map((action) => (
                             <button
+                              key={action.label}
                               type="button"
                               className="text-button control-center-link-action"
-                              onClick={item.onAction}
-                              disabled={item.disabled}
+                              onClick={action.onAction}
+                              disabled={action.disabled}
                             >
-                              {item.actionLabel}
+                              {action.label}
                             </button>
-                          ) : null}
+                          ))}
                         </dd>
                       </div>
                     ))}
+                    <div className="service-detail-list-item">
+                      <dt>配置文件</dt>
+                      <dd>
+                        {activeDetailService.configFiles.length > 0 ? (
+                          <div className="service-detail-config-files">
+                            {activeDetailService.configFiles.map((configFile) => {
+                              const fileMeta = serviceConfigMeta[configFile.key];
+                              return (
+                                <div key={configFile.key} className="service-detail-config-file">
+                                  <div className="service-detail-config-file-main">
+                                    <strong>{configFile.label || configFile.relativePath}</strong>
+                                    <span>{configFile.absolutePath}</span>
+                                  </div>
+                                  <span
+                                    className={`config-file-source ${getConfigSourceClass(configFile, fileMeta)}`}
+                                  >
+                                    {getConfigSourceLabel(configFile, fileMeta)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="text-button control-center-link-action"
+                                    onClick={() => void revealServicePath(configFile.absolutePath, "file")}
+                                  >
+                                    显示
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span>未声明</span>
+                        )}
+                      </dd>
+                    </div>
                     <div className="service-detail-list-item">
                       <dt>前置条件</dt>
                       <dd>

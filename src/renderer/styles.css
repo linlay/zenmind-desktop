@@ -7470,6 +7470,43 @@ body.quick-web-copilot-body,
   word-break: break-word;
 }
 
+.service-detail-path-value {
+  white-space: pre-line;
+}
+
+.service-detail-config-files {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.service-detail-config-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.service-detail-config-file-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.service-detail-config-file-main strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.service-detail-config-file-main span {
+  color: var(--ink-muted);
+  font-size: 12px;
+  word-break: break-all;
+}
+
 .service-detail-prereqs {
   display: flex;
   flex-wrap: wrap;
@@ -8753,6 +8790,10 @@ code {
   .service-detail-list-item {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .service-detail-config-file {
+    grid-template-columns: 1fr;
   }
 
   .control-center-hero-panel {

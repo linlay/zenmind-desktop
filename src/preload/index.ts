@@ -21,6 +21,7 @@ import type {
   NativeDialogVisibilityListener,
   ServicesChangedListener,
   ServiceId,
+  ServiceRevealPathOptions,
   ServiceOpenLogViewerRequest,
   ServiceLogReadOptions,
   ServiceLogStreamEvent,
@@ -131,6 +132,8 @@ const api: DesktopApi = {
       };
     },
     openLogViewer: (request: ServiceOpenLogViewerRequest) => ipcRenderer.invoke("services.openLogViewer", request),
+    revealPath: (targetPath: string, options?: ServiceRevealPathOptions) =>
+      ipcRenderer.invoke("services.revealPath", targetPath, options),
     closeLogViewer: () => ipcRenderer.invoke("services.closeLogViewer")
   },
   plugins: {

@@ -112,6 +112,16 @@ export interface ServiceOpenLogViewerRequest {
   title: string;
 }
 
+export interface ServiceRevealPathOptions {
+  targetType?: "file" | "directory";
+}
+
+export interface ServiceRevealPathResult {
+  ok: boolean;
+  message: string;
+  path: string;
+}
+
 export interface ServiceLogReadResult {
   ok: boolean;
   path: string;
@@ -1231,6 +1241,7 @@ export interface DesktopApi {
       listener: ServiceLogStreamListener
     ) => () => void;
     openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
+    revealPath: (targetPath: string, options?: ServiceRevealPathOptions) => Promise<ServiceRevealPathResult>;
     closeLogViewer: () => Promise<{ ok: boolean }>;
   };
   plugins: {
