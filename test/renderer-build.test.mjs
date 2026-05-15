@@ -32,7 +32,9 @@ test("assistant launcher sits beside settings in the sidebar footer", () => {
     "utf8"
   );
   const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const nativeAssistantDockPath = path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx");
 
+  assert.equal(fs.existsSync(nativeAssistantDockPath), false);
   assert.match(appShell, /function AgentWebclientCopilotDock/);
   assert.match(appShell, /onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}/);
   assert.match(appShell, /embedPath=\{AGENT_WEBCLIENT_COPILOT_PATH\}/);
@@ -42,6 +44,7 @@ test("assistant launcher sits beside settings in the sidebar footer", () => {
   assert.match(sidebarSource, /"当前页面不可开启 ZenMind 助手"/);
   assert.match(globalStyles, /--assistant-dock-embedded-width:\s*360px;/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.assistant-dock-/);
   assert.match(globalStyles, /\.sidebar-footer-actions\s*\{[\s\S]*?display:\s*flex;/);
 });
 
@@ -83,54 +86,6 @@ test("agent webclient desktop sections are exposed as top-level sidebar tabs", (
   assert.match(pluginPage, /embedPath: service\?\.id === "agent-webclient" \? embedPath : undefined/);
 });
 
-test("assistant dock exposes agent selection and sends agentKey to platform runs", () => {
-  const assistantDock = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
-    "utf8"
-  );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
-  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
-
-  assert.match(preload, /listAgents:\s*\(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
-  assert.match(contracts, /listAgents:\s*\(\) => Promise<DesktopPetAgentOption\[\]>/);
-  assert.match(contracts, /agentKey\?: string;/);
-  assert.match(contracts, /desktopHelperAgentKey:\s*string;/);
-  assert.match(contracts, /desktopCopilotPages:\s*DesktopCopilotPagePreferences;/);
-  assert.match(contracts, /desktopHelperAgentKey\?:\s*string;/);
-  assert.match(contracts, /desktopCopilotPages\?:\s*DesktopCopilotPagePreferencesInput/);
-  assert.match(mainProcess, /ipcMain\.handle\("assistant\.listAgents"/);
-  assert.match(mainProcess, /return \[\];/);
-  assert.match(assistantDock, /window\.electronAPI\.assistant\.listAgents\(\)/);
-  assert.match(assistantDock, /window\.electronAPI\.assistant\.getSettings\(\)/);
-  assert.match(assistantDock, /DEFAULT_DESKTOP_HELPER_AGENT_KEY/);
-  assert.match(assistantDock, /configuredHelperAgentKey/);
-  assert.match(assistantDock, /DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY/);
-  assert.match(assistantDock, /function renderDockToolbar\(\)/);
-  assert.match(
-    assistantDock,
-    /assistant-dock-toolbar[\s\S]*?assistant-dock-toolbar-close[\s\S]*?assistant-dock-agent-select-wrap[\s\S]*?assistant-dock-new-chat-pill[\s\S]*?assistant-dock-history-toggle[\s\S]*?assistant-dock-toolbar-mode/
-  );
-  assert.doesNotMatch(assistantDock, /assistant-dock-compact-topbar[\s\S]*?onClick=\{startNewChat\}/);
-  assert.match(assistantDock, /className="assistant-dock-agent-select-wrap"[\s\S]*?<AgentSelectIcon \/>/);
-  assert.match(assistantDock, /assistant-dock-new-chat-pill[\s\S]*?<NewChatIcon \/>/);
-  assert.match(assistantDock, /assistant-dock-history-toggle[\s\S]*?<HistoryIcon \/>[\s\S]*?assistant-dock-history-count/);
-  assert.doesNotMatch(assistantDock, /<span>历史记录<\/span>/);
-  assert.match(assistantDock, /className="assistant-dock-agent-select"/);
-  assert.match(assistantDock, /agentKey: selectedAgentKey/);
-  assert.match(
-    globalStyles,
-    /\.assistant-dock-toolbar\s*\{[\s\S]*?flex-wrap:\s*nowrap;/
-  );
-  assert.match(globalStyles, /\.assistant-dock-toolbar \.assistant-dock-icon-button,[\s\S]*?\.assistant-dock-agent-select-wrap\s*\{[\s\S]*?flex:\s*0 0 36px;[\s\S]*?width:\s*36px;[\s\S]*?height:\s*36px;/);
-  assert.match(globalStyles, /\.assistant-dock-agent-select-wrap\s*\{[\s\S]*?max-width:\s*36px;[\s\S]*?overflow:\s*hidden;/);
-  assert.match(globalStyles, /\.assistant-dock-toolbar \.assistant-dock-history-toggle\s*\{[\s\S]*?max-width:\s*36px;[\s\S]*?font-size:\s*0;/);
-  assert.match(globalStyles, /\.assistant-dock-history-count\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?font-size:\s*10px;/);
-  assert.match(globalStyles, /\.assistant-dock-agent-select-wrap\s*\{/);
-  assert.match(globalStyles, /\.assistant-dock-agent-select\s*\{/);
-});
-
 test("settings page configures desktop helper default agent separately from desktop pet", () => {
   const settingsPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "SettingsPage.tsx"),
@@ -168,10 +123,6 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
     path.join(projectRoot, "src", "renderer", "components", "AppSidebar.tsx"),
     "utf8"
   );
-  const assistantDock = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
-    "utf8"
-  );
   const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
   const resolver = fs.readFileSync(path.join(projectRoot, "src", "shared", "page-copilot.ts"), "utf8");
 
@@ -200,8 +151,6 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(globalStyles, /\.sidebar-assistant-switch\s*\{/);
   assert.match(globalStyles, /\.sidebar-assistant-launcher\.is-disabled/);
   assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-assistant-switch/);
-  assert.match(assistantDock, /preferredAgentKey/);
-  assert.match(assistantDock, /setSelectedAgentKey\(preferredAgentKey\)/);
 });
 
 test("desktop action bridge exposes localhost api and renderer action providers", () => {
@@ -419,36 +368,20 @@ test("external webview bookmarks use document-level pointer reordering", () => {
 });
 
 test("assistant artifact outputs render in a ZenMind-style dock above the composer", () => {
-  const assistantDock = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
-    "utf8"
-  );
   const quickAssistant = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "components", "QuickAssistant.tsx"),
     "utf8"
   );
   const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
 
-  assert.match(assistantDock, /renderArtifactDock/);
-  assert.match(assistantDock, /assistant-artifact-dock/);
-  assert.match(assistantDock, /assistant-artifact-list/);
-  assert.match(assistantDock, /assistant-artifact-item/);
-  assert.match(assistantDock, /assistant-artifact-collapse/);
   assert.match(quickAssistant, /quick-artifact-dock/);
-  assert.doesNotMatch(assistantDock, /assistant-message-artifact-card/);
   assert.doesNotMatch(quickAssistant, /quick-message-artifact-card/);
-  assert.match(globalStyles, /\.assistant-artifact-dock/);
-  assert.match(globalStyles, /\.assistant-artifact-card-file-shell/);
   assert.match(globalStyles, /\.quick-artifact-dock/);
 });
 
 test("sidebar and quick assistant share ZenMind identity and active-chat event recovery", () => {
   const assistantCapabilities = fs.readFileSync(
     path.join(projectRoot, "src", "shared", "assistant-capabilities.ts"),
-    "utf8"
-  );
-  const assistantDock = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
     "utf8"
   );
   const quickAssistant = fs.readFileSync(
@@ -471,10 +404,8 @@ test("sidebar and quick assistant share ZenMind identity and active-chat event r
   assert.match(quickAssistant, /function ZenMindMarkIcon/);
   assert.match(quickAssistant, /placeholder="问问 ZenMind"/);
   assert.match(quickAssistant, /你可以直接问 ZenMind/);
-  assert.match(assistantDock, /aria-label="ZenMind"/);
   assert.match(mainProcess, /displayName:\s*"ZenMind"/);
   assert.doesNotMatch(assistantCapabilities, /Zman|小宅|desktop-xiaozhai/);
-  assert.doesNotMatch(assistantDock, /Zman|desktop-xiaozhai|ZenMind助手/);
   assert.doesNotMatch(quickAssistant, /Zman|ZmanMarkIcon|desktop-xiaozhai|ZenMind助手/);
 
   assert.match(assistantEventState, /function getLatestPendingAwaitingPayload/);
@@ -486,39 +417,14 @@ test("sidebar and quick assistant share ZenMind identity and active-chat event r
   assert.match(assistantEventState, /function reduceAssistantTimelineEvent/);
   assert.doesNotMatch(assistantEventState, /tool\.verify|tool\.route|voice\.transcribed|voice\.corrected|voice\.needs_review|intent\.classified/);
   assert.match(assistantArtifacts, /function getArtifactAttachmentsFromEvent/);
-  assert.match(assistantDock, /attachRunningAssistantPlaceholder/);
-  assert.match(assistantDock, /mergeOptimisticRunMessages/);
-  assert.match(assistantDock, /event\.chatId === activeChatIdRef\.current/);
   assert.match(quickAssistant, /isStructuredAssistantEvent/);
   assert.match(quickAssistant, /mergeOptimisticRunMessages/);
   assert.match(quickAssistant, /getVisibleAssistantMessages/);
   assert.match(quickAssistant, /quickAssistant\.openMainAssistant\(event\.chatId\)/);
-  assert.doesNotMatch(assistantDock, /requestedChatId === activeChatIdRef\.current/);
 });
 
-test("assistant chat history uses a searchable popover list", () => {
-  const assistantDock = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
-    "utf8"
-  );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
-
-  assert.match(assistantDock, /assistant-history-popover/);
-  assert.match(assistantDock, /placeholder="搜索历史记录"/);
-  assert.match(assistantDock, /assistant-history-row-main/);
-  assert.match(assistantDock, /handleDeleteChat\(chat\.id\)/);
-  assert.match(globalStyles, /\.assistant-history-popover/);
-  assert.match(globalStyles, /\.assistant-history-avatar/);
-  assert.match(globalStyles, /\.assistant-history-row-delete/);
-  assert.doesNotMatch(assistantDock, /assistant-dock-chat-delete/);
-});
-
-test("assistant compact dock yields to native dialogs and closes from outside clicks", () => {
+test("web copilot dock yields to native dialogs while quick assistant keeps outside-dismiss handling", () => {
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
-  const assistantDock = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
-    "utf8"
-  );
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
@@ -539,13 +445,9 @@ test("assistant compact dock yields to native dialogs and closes from outside cl
   assert.doesNotMatch(quickAssistantBlurHandler, /mouseInside/);
   assert.match(preload, /onNativeDialogVisibility/);
   assert.match(appShell, /nativeDialogVisible/);
-  assert.match(assistantDock, /nativeDialogVisible/);
-  assert.match(assistantDock, /attachmentPickerVisible/);
-  assert.match(assistantDock, /nativeDialogVisible && !attachmentPickerVisible/);
-  assert.match(assistantDock, /assistant-dock-outside-dismiss/);
-  assert.match(assistantDock, /shouldRenderCompactDismissLayer/);
-  assert.match(globalStyles, /\.assistant-dock-root\.is-open\.is-native-dialog-open/);
-  assert.match(globalStyles, /\.assistant-dock-outside-dismiss/);
+  assert.match(appShell, /<AgentWebclientCopilotDock/);
+  assert.match(appShell, /nativeDialogVisible=\{nativeDialogVisible\}/);
+  assert.match(globalStyles, /\.agent-webclient-copilot-dock\.is-native-dialog-open/);
 });
 
 test("plugin page provides iframe-aware assistant context instead of guessing embedded content", () => {
@@ -696,10 +598,6 @@ test("assistant voice UI no longer exposes a correction toggle and temporarily s
     path.join(projectRoot, "src", "renderer", "components", "QuickAssistant.tsx"),
     "utf8"
   );
-  const assistantDock = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
-    "utf8"
-  );
   assert.doesNotMatch(settingsPage, /语音模型纠错/);
   assert.doesNotMatch(settingsPage, /handleToggleVoiceCorrection/);
   assert.doesNotMatch(quickAssistant, /isVoiceCorrectionEnabled/);
@@ -716,19 +614,6 @@ test("assistant voice UI no longer exposes a correction toggle and temporarily s
   const formatAttachmentSizeIndex = quickAssistant.indexOf("function formatAttachmentSize", toggleVoiceIndex);
   const toggleVoice = quickAssistant.slice(toggleVoiceIndex, formatAttachmentSizeIndex);
   assert.match(toggleVoice, /canUseVoiceRecorder\(\)[\s\S]{0,120}await startVoiceRecorderInput\(\)/);
-  assert.doesNotMatch(assistantDock, /isVoiceCorrectionEnabled/);
-  assert.doesNotMatch(assistantDock, /!isVoiceCorrectionEnabled\(latestSettings\)/);
-  assert.doesNotMatch(assistantDock, /correctVoiceText/);
-  assert.match(assistantDock, /applyVoiceTranscript/);
-  assert.match(assistantDock, /Voice correction is temporarily paused/);
-  assert.match(assistantDock, /canUseRecordedVoiceInput\(\) \|\| Boolean\(getSpeechRecognitionConstructor\(\)\)/);
-  assert.match(assistantDock, /voiceRecognitionFallbackToRecorderRef\.current = shouldFallbackToRecorder/);
-
-  const startVoiceInputIndex = assistantDock.indexOf("async function startVoiceInput()");
-  const stopVoiceInputIndex = assistantDock.indexOf("function stopVoiceInput()", startVoiceInputIndex);
-  const startVoiceInput = assistantDock.slice(startVoiceInputIndex, stopVoiceInputIndex);
-  assert.match(startVoiceInput, /getSpeechRecognitionConstructor\(\)/);
-  assert.match(startVoiceInput, /canUseRecordedVoiceInput\(\)[\s\S]{0,120}await startRecordedVoiceInput\(\)/);
 });
 
 test("desktop pet appearance picker confirms persistence before success feedback", () => {
@@ -899,10 +784,6 @@ test("quick assistant attachment entry stays compact and independent from the ma
     path.join(projectRoot, "src", "renderer", "components", "QuickAssistant.tsx"),
     "utf8"
   );
-  const assistantDock = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx"),
-    "utf8"
-  );
   const attachmentImagePreview = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "components", "AttachmentImagePreview.tsx"),
     "utf8"
@@ -921,7 +802,6 @@ test("quick assistant attachment entry stays compact and independent from the ma
   assert.match(quickAssistant, /quickAssistant\.captureScreenshot/);
   assert.match(quickAssistant, /onAttachmentProgress/);
   assert.match(quickAssistant, /quickAssistant\.cancelAttachmentTask/);
-  assert.match(assistantDock, /assistant\.cancelAttachmentTask/);
   assert.match(mainProcess, /assistant\.attachmentProgress/);
   assert.match(mainProcess, /cancelAssistantAttachmentTask/);
   assert.match(quickAssistant, /hiddenArtifactIds/);
@@ -930,11 +810,6 @@ test("quick assistant attachment entry stays compact and independent from the ma
   assert.match(quickAssistant, /function removeAttachment/);
   assert.match(quickAssistant, /quick-attachment-remove/);
   assert.match(quickAssistant, /quick-artifact-remove/);
-  assert.match(assistantDock, /hiddenArtifactIds/);
-  assert.match(assistantDock, /assistant-artifact-remove/);
-  assert.match(assistantDock, /previewImageAttachment/);
-  assert.match(assistantDock, /assistant-dock-attachment-preview-button/);
-  assert.match(assistantDock, /AttachmentImagePreview/);
   assert.doesNotMatch(quickAssistant, /quick-mode-pill/);
   assert.match(quickAssistant, /chooseAttachmentFiles/);
   assert.match(quickAssistant, /const showSendAction = hasDraft \|\| attachments\.some/);
@@ -976,8 +851,6 @@ test("quick assistant attachment entry stays compact and independent from the ma
   assert.match(globalStyles, /\.attachment-action-menu-root::before/);
   assert.match(globalStyles, /bottom:\s*calc\(100% \+ 4px\)/);
   assert.match(globalStyles, /\.quick-artifact-remove/);
-  assert.match(globalStyles, /\.assistant-artifact-remove/);
-  assert.match(globalStyles, /\.assistant-dock-attachment-preview-button/);
   assert.match(globalStyles, /\.attachment-image-preview-backdrop/);
   assert.match(globalStyles, /z-index:\s*2147483000/);
   assert.match(globalStyles, /\.attachment-image-preview-toolbar/);

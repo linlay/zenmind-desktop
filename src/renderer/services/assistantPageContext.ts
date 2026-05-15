@@ -5,8 +5,7 @@ export type AssistantPageContextProvider = () => Promise<AssistantPageContext | 
 let activeProvider: AssistantPageContextProvider | null = null;
 const MAX_HEADING_COUNT = 24;
 const APP_CONTEXT_EXCLUDED_SELECTOR = [
-  ".assistant-dock-root",
-  ".assistant-dock-fab",
+  ".agent-webclient-copilot-dock",
   "script",
   "style",
   "iframe",
