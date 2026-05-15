@@ -28,7 +28,7 @@ export const QUICK_ASSISTANT_EXPANDED_SIZE = {
 } as const;
 
 export const QUICK_ASSISTANT_WEB_COPILOT_SIZE = {
-  width: 480,
+  width: 360,
   height: 600
 } as const;
 
@@ -114,7 +114,7 @@ export function getQuickAssistantWebCopilotBounds({
   workArea: WorkArea;
 }) {
   const margin = 12;
-  const width = Math.min(QUICK_ASSISTANT_WEB_COPILOT_SIZE.width, Math.max(360, workArea.width - margin * 2));
+  const width = Math.min(QUICK_ASSISTANT_WEB_COPILOT_SIZE.width, Math.max(280, workArea.width - margin * 2));
   const height = Math.min(QUICK_ASSISTANT_WEB_COPILOT_SIZE.height, Math.max(320, workArea.height - margin * 2));
   return {
     x: Math.round(workArea.x + (workArea.width - width) / 2),

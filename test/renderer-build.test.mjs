@@ -574,6 +574,10 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
   const quickAssistantWindow = fs.readFileSync(path.join(projectRoot, "src", "main", "quick-assistant.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+  const quickWebCopilotStyles = globalStyles.slice(
+    globalStyles.indexOf(".quick-web-copilot,"),
+    globalStyles.indexOf(".quick-web-copilot .pan-page")
+  );
 
   assert.match(appShell, /function QuickAssistantWebCopilot/);
   assert.match(appShell, /location\.pathname === "\/quick-assistant"[\s\S]{0,180}<QuickAssistantWebCopilot \/>/);
@@ -584,6 +588,8 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
   assert.match(appShell, /quickAssistant\.openControlCenter/);
   assert.match(globalStyles, /\.quick-web-copilot\s*,/);
   assert.match(globalStyles, /\.quick-web-copilot-status/);
+  assert.match(quickWebCopilotStyles, /border-radius:\s*10px;/);
+  assert.doesNotMatch(quickWebCopilotStyles, /border-radius:\s*24px;/);
   assert.match(mainProcess, /getQuickAssistantWebCopilotBounds/);
   assert.match(mainProcess, /readAssistantSettings\(app\)/);
   assert.match(mainProcess, /!quickSettings\.quickAssistantEnabled/);

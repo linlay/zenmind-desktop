@@ -30,7 +30,7 @@ test("quick assistant compact window matches the slim reference capsule", () => 
 });
 
 test("quick assistant web copilot window uses the larger floating surface", () => {
-  assert.equal(QUICK_ASSISTANT_WEB_COPILOT_SIZE.width, 480);
+  assert.equal(QUICK_ASSISTANT_WEB_COPILOT_SIZE.width, 360);
   assert.equal(QUICK_ASSISTANT_WEB_COPILOT_SIZE.height, 600);
 
   const bounds = getQuickAssistantWebCopilotBounds({
@@ -38,7 +38,7 @@ test("quick assistant web copilot window uses the larger floating surface", () =
   });
 
   assert.deepEqual(bounds, {
-    x: 480,
+    x: 540,
     y: 163,
     width: QUICK_ASSISTANT_WEB_COPILOT_SIZE.width,
     height: QUICK_ASSISTANT_WEB_COPILOT_SIZE.height
