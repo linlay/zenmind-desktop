@@ -6682,7 +6682,7 @@ body.quick-web-copilot-body,
   min-height: 100vh;
   height: 100vh;
   overflow: hidden;
-  padding: 0;
+  padding: 18px 0;
   background: linear-gradient(180deg, rgba(246, 248, 252, 0.98) 0%, rgba(239, 244, 251, 0.98) 100%);
 }
 
@@ -6691,6 +6691,7 @@ body.quick-web-copilot-body,
 }
 
 .log-viewer-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -6700,8 +6701,7 @@ body.quick-web-copilot-body,
   overflow: hidden;
 }
 
-.log-viewer-head,
-.log-viewer-toolbar {
+.log-viewer-head {
   display: flex;
   justify-content: space-between;
   gap: 16px;
@@ -6733,62 +6733,16 @@ body.quick-web-copilot-body,
   word-break: break-word;
 }
 
-.log-viewer-close {
-  flex-shrink: 0;
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
-.log-viewer-toolbar {
-  padding-top: 14px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--line);
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
-.log-viewer-search {
+.log-viewer-tip-status,
+.log-viewer-tip-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-width: 0;
-  flex: 1;
-}
-
-.log-viewer-search span {
-  font-size: 12px;
-  color: var(--ink-muted);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.log-viewer-search input {
-  width: 100%;
-  min-width: 0;
-  min-height: 36px;
-  padding: 0 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--ink);
-}
-
-:root[data-theme="dark"] .log-viewer-search input {
-  background: #0F1012;
-}
-
-.log-viewer-match-nav {
-  display: inline-flex;
-  align-items: center;
   gap: 8px;
-  flex-shrink: 0;
+  min-width: 0;
 }
 
-.log-viewer-match-nav span {
-  min-width: 72px;
-  color: var(--ink-muted);
-  font-size: 12px;
-  text-align: right;
+.log-viewer-tip-status {
+  flex-wrap: wrap;
 }
 
 .log-viewer-tip {
@@ -6802,17 +6756,183 @@ body.quick-web-copilot-body,
 
 .log-viewer-tip-row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 10px 20px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
-.log-viewer-body {
+.log-viewer-find-trigger,
+.log-viewer-follow-toggle {
+  flex: none;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.log-viewer-find-trigger:hover:not(:disabled),
+.log-viewer-find-trigger.is-active,
+.log-viewer-follow-toggle:hover:not(:disabled),
+.log-viewer-follow-toggle.is-active {
+  border-color: rgba(0, 180, 42, 0.24);
+  background: rgba(0, 180, 42, 0.1);
+  color: var(--success);
+}
+
+.log-viewer-find-trigger:disabled,
+.log-viewer-follow-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.log-viewer-body-shell {
+  position: relative;
   flex: 1;
   min-height: 0;
+}
+
+.log-viewer-find-panel {
+  position: absolute;
+  left: 20px;
+  top: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: min(520px, calc(50% - 20px));
+  max-width: calc(50% - 20px);
+  min-height: 36px;
+  padding: 5px 6px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(14px);
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+:root[data-theme="dark"] .log-viewer-find-panel {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(24, 26, 31, 0.94);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
+}
+
+.log-viewer-find-input {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-width: 0;
+}
+
+.log-viewer-find-input span {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.log-viewer-find-input input {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(241, 245, 249, 0.92);
+  color: var(--ink);
+  font-size: 12px;
+  outline: none;
+}
+
+.log-viewer-find-input input:focus {
+  box-shadow: inset 0 0 0 1px rgba(38, 99, 235, 0.28);
+}
+
+:root[data-theme="dark"] .log-viewer-find-input input {
+  background: rgba(15, 16, 18, 0.92);
+}
+
+.log-viewer-find-count {
+  min-width: 54px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.log-viewer-find-nav,
+.log-viewer-find-close {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.log-viewer-find-nav:hover:not(:disabled),
+.log-viewer-find-close:hover {
+  border-color: rgba(38, 99, 235, 0.16);
+  background: rgba(38, 99, 235, 0.08);
+  color: var(--accent);
+}
+
+.log-viewer-find-nav:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.log-viewer-body {
+  height: 100%;
   padding: 16px 20px 20px;
   overflow: auto;
+}
+
+.log-viewer-scroll-jump {
+  position: absolute;
+  right: 22px;
+  z-index: 3;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgba(38, 99, 235, 0.2);
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  box-shadow: 0 10px 26px rgba(38, 99, 235, 0.24);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.log-viewer-scroll-top {
+  top: 118px;
+}
+
+.log-viewer-scroll-bottom {
+  bottom: 72px;
+}
+
+.log-viewer-scroll-jump:hover {
+  background: var(--accent-strong);
 }
 
 .log-viewer-pagination {
@@ -6869,20 +6989,6 @@ body.quick-web-copilot-body,
   outline: 1px solid rgba(38, 99, 235, 0.3);
 }
 
-.log-viewer-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 12px 20px 16px;
-  border-top: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.62);
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
-:root[data-theme="dark"] .log-viewer-footer {
-  background: rgba(22, 24, 28, 0.9);
-}
 
 /* ── Plugin / Pan Page ── */
 
@@ -7974,15 +8080,45 @@ code {
   }
 
   .log-viewer-head,
-  .log-viewer-toolbar,
-  .log-viewer-match-nav,
-  .log-viewer-tip-row {
+  .log-viewer-tip-actions {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .log-viewer-match-nav span {
-    text-align: left;
+  .log-viewer-find-panel {
+    left: 16px;
+    width: min(420px, calc(50% - 16px));
+    max-width: calc(50% - 16px);
+    flex-wrap: wrap;
+  }
+
+  .log-viewer-find-input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .log-viewer-find-input input {
+    width: 100%;
+  }
+
+  .log-viewer-scroll-jump {
+    right: 16px;
+  }
+
+  .log-viewer-scroll-top {
+    top: 132px;
+  }
+
+  .log-viewer-scroll-bottom {
+    bottom: 84px;
+  }
+
+  @media (max-width: 640px) {
+    .log-viewer-find-panel {
+      right: 16px;
+      width: auto;
+      max-width: none;
+    }
   }
 
   .app-main {
