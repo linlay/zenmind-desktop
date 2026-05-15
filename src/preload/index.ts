@@ -220,26 +220,7 @@ const api: DesktopApi = {
     }
   },
   quickAssistant: {
-    setExpanded: (expanded: boolean) => ipcRenderer.invoke("quickAssistant.setExpanded", expanded),
-    setDisplayMode: (mode: "compact" | "attachment" | "compactMenu" | "menu" | "expanded") =>
-      ipcRenderer.invoke("quickAssistant.setDisplayMode", mode),
-    setInteractionState: (state) => ipcRenderer.invoke("quickAssistant.setInteractionState", state),
-    onCompactModeRequested: (listener) => {
-      const handleCompactModeRequested = () => {
-        listener();
-      };
-
-      ipcRenderer.on("quickAssistant.compactModeRequested", handleCompactModeRequested);
-      return () => {
-        ipcRenderer.off("quickAssistant.compactModeRequested", handleCompactModeRequested);
-      };
-    },
-    pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("quickAssistant.pickAttachments", chatId),
-    captureScreenshot: (chatId?: string | null) => ipcRenderer.invoke("quickAssistant.captureScreenshot", chatId),
-    cancelAttachmentTask: (taskId: string) => ipcRenderer.invoke("quickAssistant.cancelAttachmentTask", taskId),
     hide: () => ipcRenderer.invoke("quickAssistant.hide"),
-    openMainAssistant: (chatId?: string | null) => ipcRenderer.invoke("quickAssistant.openMainAssistant", chatId),
-    openSettings: () => ipcRenderer.invoke("quickAssistant.openSettings"),
     openControlCenter: () => ipcRenderer.invoke("quickAssistant.openControlCenter")
   },
   customSidebar: {

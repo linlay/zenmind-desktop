@@ -1299,16 +1299,7 @@ export interface DesktopApi {
     onDanceRequested: (listener: DesktopPetDanceRequestedListener) => () => void;
   };
   quickAssistant: {
-    setExpanded: (expanded: boolean) => Promise<{ ok: boolean }>;
-    setDisplayMode: (mode: "compact" | "attachment" | "compactMenu" | "menu" | "expanded") => Promise<{ ok: boolean }>;
-    setInteractionState: (state: { busy?: boolean; mouseInside?: boolean }) => Promise<{ ok: boolean }>;
-    onCompactModeRequested: (listener: () => void) => () => void;
-    pickAttachments: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
-    captureScreenshot: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
-    cancelAttachmentTask: (taskId: string) => Promise<AssistantAttachmentCancelResult>;
     hide: () => Promise<{ ok: boolean }>;
-    openMainAssistant: (chatId?: string | null) => Promise<{ ok: boolean }>;
-    openSettings: () => Promise<{ ok: boolean }>;
     openControlCenter: () => Promise<{ ok: boolean }>;
   };
   customSidebar: {

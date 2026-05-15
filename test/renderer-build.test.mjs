@@ -377,25 +377,9 @@ test("external webview bookmarks use document-level pointer reordering", () => {
   assert.match(externalWebviewPage, /onPointerDown=\{\(event\) => handleBookmarkPointerDown\(event, bookmark\.id\)\}/);
 });
 
-test("assistant artifact outputs render in a ZenMind-style dock above the composer", () => {
-  const quickAssistant = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "QuickAssistant.tsx"),
-    "utf8"
-  );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
-
-  assert.match(quickAssistant, /quick-artifact-dock/);
-  assert.doesNotMatch(quickAssistant, /quick-message-artifact-card/);
-  assert.match(globalStyles, /\.quick-artifact-dock/);
-});
-
-test("sidebar and quick assistant share ZenMind identity and active-chat event recovery", () => {
+test("assistant capability identity and active-chat event recovery stay intact", () => {
   const assistantCapabilities = fs.readFileSync(
     path.join(projectRoot, "src", "shared", "assistant-capabilities.ts"),
-    "utf8"
-  );
-  const quickAssistant = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "QuickAssistant.tsx"),
     "utf8"
   );
   const assistantEventState = fs.readFileSync(
@@ -406,17 +390,11 @@ test("sidebar and quick assistant share ZenMind identity and active-chat event r
     path.join(projectRoot, "src", "renderer", "services", "assistantArtifacts.ts"),
     "utf8"
   );
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
 
   assert.match(assistantCapabilities, /ZENMIND_ASSISTANT_AGENT_KEY = "zenmind"/);
   assert.match(assistantCapabilities, /ZENMIND_ASSISTANT_NAME = "ZenMind"/);
   assert.match(assistantCapabilities, /侧边栏和快速助手中作为同一个本地单智能体/);
-  assert.match(quickAssistant, /function ZenMindMarkIcon/);
-  assert.match(quickAssistant, /placeholder="问问 ZenMind"/);
-  assert.match(quickAssistant, /你可以直接问 ZenMind/);
-  assert.match(mainProcess, /displayName:\s*"ZenMind"/);
   assert.doesNotMatch(assistantCapabilities, /Zman|小宅|desktop-xiaozhai/);
-  assert.doesNotMatch(quickAssistant, /Zman|ZmanMarkIcon|desktop-xiaozhai|ZenMind助手/);
 
   assert.match(assistantEventState, /function getLatestPendingAwaitingPayload/);
   assert.match(assistantEventState, /function attachRunningAssistantPlaceholder/);
@@ -427,10 +405,6 @@ test("sidebar and quick assistant share ZenMind identity and active-chat event r
   assert.match(assistantEventState, /function reduceAssistantTimelineEvent/);
   assert.doesNotMatch(assistantEventState, /tool\.verify|tool\.route|voice\.transcribed|voice\.corrected|voice\.needs_review|intent\.classified/);
   assert.match(assistantArtifacts, /function getArtifactAttachmentsFromEvent/);
-  assert.match(quickAssistant, /isStructuredAssistantEvent/);
-  assert.match(quickAssistant, /mergeOptimisticRunMessages/);
-  assert.match(quickAssistant, /getVisibleAssistantMessages/);
-  assert.match(quickAssistant, /quickAssistant\.openMainAssistant\(event\.chatId\)/);
 });
 
 test("web copilot dock yields to native dialogs while quick assistant keeps outside-dismiss handling", () => {
@@ -568,6 +542,7 @@ test("assistant dock opens the agent webclient copilot in right-side embedded mo
 });
 
 test("option-space quick assistant route opens the agent webclient copilot surface", () => {
+  const nativeQuickAssistantPath = path.join(projectRoot, "src", "renderer", "components", "QuickAssistant.tsx");
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
   const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
@@ -578,7 +553,16 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
     globalStyles.indexOf(".quick-web-copilot,"),
     globalStyles.indexOf(".quick-web-copilot .pan-page")
   );
+  const preloadQuickAssistantApi = preload.slice(
+    preload.indexOf("quickAssistant: {"),
+    preload.indexOf("customSidebar:", preload.indexOf("quickAssistant: {"))
+  );
+  const contractQuickAssistantApi = contracts.slice(
+    contracts.indexOf("quickAssistant: {"),
+    contracts.indexOf("customSidebar:", contracts.indexOf("quickAssistant: {"))
+  );
 
+  assert.equal(fs.existsSync(nativeQuickAssistantPath), false);
   assert.match(appShell, /function QuickAssistantWebCopilot/);
   assert.match(appShell, /location\.pathname === "\/quick-assistant"[\s\S]{0,180}<QuickAssistantWebCopilot \/>/);
   assert.match(appShell, /embedPath=\{AGENT_WEBCLIENT_COPILOT_PATH\}/);
@@ -596,69 +580,17 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
   assert.match(mainProcess, /ensureAssistantTargetServicesRunning\("quick-assistant"\)/);
   assert.match(mainProcess, /agentKey:\s*quickSettings\.quickAssistantAgentKey/);
   assert.match(mainProcess, /for \(const targetWindow of \[mainWindow, quickAssistantWindow\]\)/);
-  assert.doesNotMatch(mainProcess, /function showQuickAssistantWindow\(\)[\s\S]{0,500}requestQuickAssistantCompactMode/);
+  assert.doesNotMatch(mainProcess, /createQuickAssistantWindowState|getQuickAssistantBounds|QUICK_ASSISTANT_COMPACT_REQUEST_CHANNEL|QuickAssistantDisplayMode|requestQuickAssistantCompactMode|applyQuickAssistantBounds/);
+  assert.doesNotMatch(mainProcess, /quickAssistant\.(setExpanded|setDisplayMode|setInteractionState|pickAttachments|captureScreenshot|cancelAttachmentTask|openMainAssistant|openSettings)/);
   assert.match(quickAssistantWindow, /QUICK_ASSISTANT_WEB_COPILOT_SIZE/);
-  assert.match(preload, /openControlCenter/);
-  assert.match(contracts, /openControlCenter/);
-});
-
-test("quick assistant popup keeps ask and voice recovery controls visible", () => {
-  const quickAssistant = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "QuickAssistant.tsx"),
-    "utf8"
-  );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
-  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
-  const quickAssistantWindow = fs.readFileSync(path.join(projectRoot, "src", "main", "quick-assistant.ts"), "utf8");
-
-  assert.match(quickAssistant, /function handleStopRun/);
-  assert.match(quickAssistant, /voiceOperationIdRef/);
-  assert.match(quickAssistant, /withVoiceTimeout/);
-  assert.match(quickAssistant, /const hasDraft = draft\.trim\(\)\.length > 0/);
-  assert.match(quickAssistant, /const singleLineComposer = !voiceExpandedComposer && !currentComposerHasStatus/);
-  assert.match(quickAssistant, /const maxHeight = hasDraft && \(isExpanded \|\| voiceExpandedComposer\) \? 160 : singleLineComposer \? 42 : 46/);
-  assert.ok(
-    quickAssistant.indexOf("const attachmentMenuDisabled =") <
-      quickAssistant.indexOf("}, [attachmentMenuDisabled]);")
-  );
-  assert.match(quickAssistant, /aria-live="polite"/);
-  assert.match(quickAssistant, /<StopIcon \/>/);
-  assert.doesNotMatch(quickAssistant, /voiceState === "transcribing"[\s\S]{0,260}new MediaRecorder/);
-  assert.match(globalStyles, /\.quick-composer-status/);
-  assert.match(globalStyles, /\.quick-assistant\.is-compact\s+\.quick-send-button/);
-  assert.match(quickAssistantWindow, /QUICK_ASSISTANT_COMPACT_MENU_SIZE/);
-  assert.match(quickAssistantWindow, /QUICK_ASSISTANT_MENU_SIZE/);
-  assert.match(quickAssistantWindow, /QuickAssistantDisplayMode = "compact" \| "attachment" \| "compactMenu" \| "menu" \| "expanded"/);
-  assert.match(preload, /"compact" \| "attachment" \| "compactMenu" \| "menu" \| "expanded"/);
-  assert.match(mainProcess, /devTools:\s*false/);
-});
-
-test("assistant voice UI no longer exposes a correction toggle and temporarily skips correction requests", () => {
-  const settingsPage = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "SettingsPage.tsx"),
-    "utf8"
-  );
-  const quickAssistant = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "QuickAssistant.tsx"),
-    "utf8"
-  );
-  assert.doesNotMatch(settingsPage, /语音模型纠错/);
-  assert.doesNotMatch(settingsPage, /handleToggleVoiceCorrection/);
-  assert.doesNotMatch(quickAssistant, /isVoiceCorrectionEnabled/);
-  assert.doesNotMatch(quickAssistant, /!isVoiceCorrectionEnabled\(latestSettings\)/);
-  assert.match(quickAssistant, /applyVoiceTextToDraft/);
-  assert.doesNotMatch(quickAssistant, /correctVoiceText/);
-  assert.match(quickAssistant, /Voice correction is temporarily paused/);
-  assert.match(quickAssistant, /getSpeechRecognitionConstructor\(\)/);
-  assert.match(quickAssistant, /当前环境无法访问前端语音识别/);
-  assert.match(quickAssistant, /voiceBaseDraftRef/);
-  assert.match(quickAssistant, /canUseVoiceRecorder\(\) \|\| Boolean\(getSpeechRecognitionConstructor\(\)\)/);
-  assert.match(quickAssistant, /voiceRecognitionFallbackToRecorderRef\.current = shouldFallbackToRecorder/);
-  const toggleVoiceIndex = quickAssistant.indexOf("async function toggleVoice()");
-  const formatAttachmentSizeIndex = quickAssistant.indexOf("function formatAttachmentSize", toggleVoiceIndex);
-  const toggleVoice = quickAssistant.slice(toggleVoiceIndex, formatAttachmentSizeIndex);
-  assert.match(toggleVoice, /canUseVoiceRecorder\(\)[\s\S]{0,120}await startVoiceRecorderInput\(\)/);
+  assert.doesNotMatch(quickAssistantWindow, /QUICK_ASSISTANT_COMPACT|QuickAssistantDisplayMode|createQuickAssistantWindowState|getQuickAssistantBounds/);
+  assert.match(preloadQuickAssistantApi, /hide/);
+  assert.match(preloadQuickAssistantApi, /openControlCenter/);
+  assert.doesNotMatch(preloadQuickAssistantApi, /setExpanded|setDisplayMode|setInteractionState|onCompactModeRequested|pickAttachments|captureScreenshot|cancelAttachmentTask|openMainAssistant|openSettings/);
+  assert.match(contractQuickAssistantApi, /hide/);
+  assert.match(contractQuickAssistantApi, /openControlCenter/);
+  assert.doesNotMatch(contractQuickAssistantApi, /setExpanded|setDisplayMode|setInteractionState|onCompactModeRequested|pickAttachments|captureScreenshot|cancelAttachmentTask|openMainAssistant|openSettings/);
+  assert.doesNotMatch(globalStyles, /\.quick-(?!(?:web|assistant-settings))|quick-message|quick-artifact|quick-composer|quick-attachment|attachment-action-menu/u);
 });
 
 test("desktop pet appearance picker confirms persistence before success feedback", () => {
@@ -822,86 +754,4 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /awaiting:\s*"thinking"/);
   assert.match(petAssetScript, /running:\s*"thinking"/);
   assert.match(petAssetScript, /function drawHoverArm/);
-});
-
-test("quick assistant attachment entry stays compact and independent from the main assistant", () => {
-  const quickAssistant = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "QuickAssistant.tsx"),
-    "utf8"
-  );
-  const attachmentImagePreview = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "components", "AttachmentImagePreview.tsx"),
-    "utf8"
-  );
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
-  const appendAttachmentResult = quickAssistant.slice(
-    quickAssistant.indexOf("async function appendAttachmentResult"),
-    quickAssistant.indexOf("async function chooseAttachmentFiles")
-  );
-
-  assert.match(quickAssistant, /quickAssistantDisplayMode/);
-  assert.match(quickAssistant, /attachmentMenuOpen \? "is-menu-open" : ""/);
-  assert.match(quickAssistant, /quickAssistant\.setDisplayMode/);
-  assert.match(quickAssistant, /quickAssistant\.pickAttachments/);
-  assert.match(quickAssistant, /quickAssistant\.captureScreenshot/);
-  assert.match(quickAssistant, /onAttachmentProgress/);
-  assert.match(quickAssistant, /quickAssistant\.cancelAttachmentTask/);
-  assert.match(mainProcess, /assistant\.attachmentProgress/);
-  assert.match(mainProcess, /cancelAssistantAttachmentTask/);
-  assert.match(quickAssistant, /hiddenArtifactIds/);
-  assert.match(quickAssistant, /visibleAttachments/);
-  assert.match(quickAssistant, /quick-attachment-preview-card/);
-  assert.match(quickAssistant, /function removeAttachment/);
-  assert.match(quickAssistant, /quick-attachment-remove/);
-  assert.match(quickAssistant, /quick-artifact-remove/);
-  assert.doesNotMatch(quickAssistant, /quick-mode-pill/);
-  assert.match(quickAssistant, /chooseAttachmentFiles/);
-  assert.match(quickAssistant, /const showSendAction = hasDraft \|\| attachments\.some/);
-  assert.match(quickAssistant, /quick-primary-action/);
-  assert.match(quickAssistant, /quick-expand-button/);
-  assert.match(quickAssistant, /const composerStatus = isExpanded \?/);
-  assert.match(quickAssistant, /const isSmallTrayMode = !isExpanded && visibleAttachments\.length === 0 && !voiceExpandedComposer/);
-  assert.match(quickAssistant, /const showScreenshotMenuItem = !isSmallTrayMode/);
-  assert.match(quickAssistant, /attachmentMenuOpen[\s\S]{0,80}\? isSmallTrayMode[\s\S]{0,80}\? "compactMenu"/);
-  assert.match(quickAssistant, /attachmentMenuOpen/);
-  assert.match(quickAssistant, /attachmentMenuCloseTimerRef/);
-  assert.match(quickAssistant, /attachmentMenuOpenTimerRef/);
-  assert.match(quickAssistant, /setAttachmentMenuOpen\(true\);[\s\S]{0,40}, 420\);/);
-  assert.match(quickAssistant, /setAttachmentMenuPinned\(true\)/);
-  assert.doesNotMatch(quickAssistant, /function toggleAttachmentMenu\(\)[\s\S]{0,180}handleChooseAttachmentFromMenu/);
-  assert.match(quickAssistant, /attachment-action-menu/);
-  assert.doesNotMatch(quickAssistant, /window\.electronAPI\.assistant\.pickAttachments\(activeChatId\)/);
-  assert.match(quickAssistant, /captureScreenshotQuestion/);
-  assert.match(quickAssistant, /\{showScreenshotMenuItem \? \(/);
-  assert.match(quickAssistant, /quick-attachment-preview-image-button/);
-  assert.match(quickAssistant, /openMainAssistant\(activeChatId\)/);
-  assert.doesNotMatch(quickAssistant, /AttachmentImagePreview/);
-  assert.doesNotMatch(quickAssistant, /setPreviewImageAttachment/);
-  assert.doesNotMatch(quickAssistant, /quick-screenshot-button/);
-  assert.match(mainProcess, /captureWindowSelectionFallback/);
-  assert.match(mainProcess, /const cropped = await captureScreenshotImage\(display, selection, source\)/);
-  assert.match(mainProcess, /id=\\"shade\\"/);
-  assert.match(attachmentImagePreview, /createPortal/);
-  assert.match(attachmentImagePreview, /attachment-image-preview-toolbar/);
-  assert.match(attachmentImagePreview, /attachment-image-preview-filmstrip/);
-  assert.doesNotMatch(appendAttachmentResult, /setIsExpanded\(true\)/);
-  assert.match(globalStyles, /grid-template-columns:\s*42px minmax\(0, 1fr\) 42px 46px/);
-  assert.match(globalStyles, /\.quick-assistant\.is-compact\.has-attachments/);
-  assert.match(globalStyles, /\.quick-assistant\.is-compact\.is-menu-open/);
-  assert.match(globalStyles, /\.quick-assistant\.is-compact\.has-attachments\.is-menu-open/);
-  assert.match(globalStyles, /\.quick-attachment-preview-card/);
-  assert.match(globalStyles, /\.quick-attachment-remove/);
-  assert.match(globalStyles, /\.attachment-action-menu/);
-  assert.match(globalStyles, /\.attachment-action-menu-root::before/);
-  assert.match(globalStyles, /bottom:\s*calc\(100% \+ 4px\)/);
-  assert.match(globalStyles, /\.quick-artifact-remove/);
-  assert.match(globalStyles, /\.attachment-image-preview-backdrop/);
-  assert.match(globalStyles, /z-index:\s*2147483000/);
-  assert.match(globalStyles, /\.attachment-image-preview-toolbar/);
-  assert.match(globalStyles, /\.attachment-image-preview-filmstrip/);
-  assert.doesNotMatch(globalStyles, /\.quick-mode-pill/);
-  assert.match(globalStyles, /font-size:\s*18px/);
-  assert.doesNotMatch(globalStyles, /\.quick-screenshot-entry/);
-  assert.match(globalStyles, /\.quick-composer\.has-status/);
 });

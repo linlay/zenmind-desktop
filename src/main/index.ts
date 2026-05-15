@@ -155,15 +155,11 @@ import {
 } from "./desktop-pet";
 import { DesktopPetPreviewProjector, normalizeDesktopPetAgentEvent } from "./desktop-pet-preview";
 import {
-  createQuickAssistantWindowState,
-  getQuickAssistantBounds,
   getQuickAssistantWebCopilotBounds,
   isQuickAssistantMediaPermissionAllowed,
   isQuickAssistantSupportedPlatform,
-  QUICK_ASSISTANT_COMPACT_REQUEST_CHANNEL,
   QUICK_ASSISTANT_ROUTE,
-  QUICK_ASSISTANT_SHORTCUT,
-  type QuickAssistantDisplayMode
+  QUICK_ASSISTANT_SHORTCUT
 } from "./quick-assistant";
 
 let mainWindow: BrowserWindow | null = null;
@@ -189,7 +185,6 @@ const desktopActionRendererRequests = new Map<string, {
   resolve: (response: DesktopActionRendererResponse) => void;
   timeout: ReturnType<typeof setTimeout>;
 }>();
-const quickAssistantState = createQuickAssistantWindowState();
 const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
 const AGENT_WEBCLIENT_APP_PATHNAMES = new Set(["/", "/copilot"]);
 const LOG_VIEWER_ROUTE = "/log-viewer";
@@ -1301,33 +1296,6 @@ function getQuickAssistantWorkArea() {
   return screen.getDisplayNearestPoint(cursorPoint).workArea;
 }
 
-function applyQuickAssistantBounds(mode: QuickAssistantDisplayMode = quickAssistantState.getDisplayMode()) {
-  if (!quickAssistantWindow || quickAssistantWindow.isDestroyed()) {
-    return;
-  }
-  quickAssistantWindow.setBounds(getQuickAssistantBounds({
-    mode,
-    workArea: getQuickAssistantWorkArea()
-  }), true);
-}
-
-function requestQuickAssistantCompactMode(targetWindow: BrowserWindow) {
-  const snapshot = quickAssistantState.prepareCompactShow();
-  applyQuickAssistantBounds(snapshot.displayMode);
-  const sendCompactRequest = () => {
-    if (targetWindow.isDestroyed()) {
-      return;
-    }
-    targetWindow.webContents.send(QUICK_ASSISTANT_COMPACT_REQUEST_CHANNEL);
-  };
-
-  if (targetWindow.webContents.isLoadingMainFrame()) {
-    targetWindow.webContents.once("did-finish-load", sendCompactRequest);
-    return;
-  }
-  sendCompactRequest();
-}
-
 function getQuickAssistantDismissHtml() {
   return [
     "<!doctype html>",
@@ -1463,12 +1431,10 @@ function createQuickAssistantWindow() {
 
   quickAssistantWindow.on("blur", () => {
     setTimeout(() => {
-      const interactionState = quickAssistantState.getInteractionState();
       if (
         !quickAssistantWindow ||
         quickAssistantWindow.isDestroyed() ||
-        quickAssistantWindow.isFocused() ||
-        interactionState.busy
+        quickAssistantWindow.isFocused()
       ) {
         return;
       }
@@ -1479,7 +1445,6 @@ function createQuickAssistantWindow() {
   quickAssistantWindow.on("closed", () => {
     quickAssistantWindow = null;
     hideQuickAssistantDismissWindow();
-    quickAssistantState.prepareCompactShow();
   });
 
   loadRendererRoute(quickAssistantWindow, QUICK_ASSISTANT_ROUTE).catch((error) => {
@@ -1636,9 +1601,6 @@ function hideQuickAssistantAfterOutsideFocus() {
   if (!quickAssistantWindow || quickAssistantWindow.isDestroyed() || !quickAssistantWindow.isVisible()) {
     return;
   }
-  if (quickAssistantState.getInteractionState().busy) {
-    return;
-  }
   quickAssistantWindow.hide();
 }
 
@@ -1654,7 +1616,6 @@ function showQuickAssistantWindow() {
   if (!targetWindow || targetWindow.isDestroyed()) {
     return;
   }
-  quickAssistantState.resetInteractionState();
   targetWindow.setBounds(getQuickAssistantWebCopilotBounds({
     workArea: getQuickAssistantWorkArea()
   }), true);
@@ -2071,7 +2032,6 @@ async function captureAssistantScreenshot(
   const shouldRestoreQuickAssistant = source === "quick-assistant" &&
     Boolean(quickAssistantWindow && !quickAssistantWindow.isDestroyed() && quickAssistantWindow.isVisible());
   if (source === "quick-assistant") {
-    quickAssistantState.setInteractionState({ busy: true, mouseInside: true });
     hideQuickAssistantDismissWindow();
     if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
       quickAssistantWindow.hide();
@@ -2111,7 +2071,6 @@ async function captureAssistantScreenshot(
     };
   } finally {
     if (source === "quick-assistant") {
-      quickAssistantState.setInteractionState({ busy: false, mouseInside: false });
       if (shouldRestoreQuickAssistant && quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
         showQuickAssistantDismissWindow();
         quickAssistantWindow.show();
@@ -3511,56 +3470,10 @@ function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle("quickAssistant.setExpanded", async (_event, expanded: boolean) => {
-    if (isQuickAssistantSupportedPlatform(process.platform)) {
-      quickAssistantState.setExpanded(Boolean(expanded));
-      applyQuickAssistantBounds();
-    }
-    return { ok: true };
-  });
-  ipcMain.handle("quickAssistant.setDisplayMode", async (_event, mode: QuickAssistantDisplayMode) => {
-    if (isQuickAssistantSupportedPlatform(process.platform)) {
-      quickAssistantState.setDisplayMode(mode);
-      applyQuickAssistantBounds();
-    }
-    return { ok: true };
-  });
-  ipcMain.handle("quickAssistant.pickAttachments", async (_event, chatId?: string | null) =>
-    pickAssistantAttachments(chatId, null)
-  );
-  ipcMain.handle("quickAssistant.cancelAttachmentTask", async (_event, taskId: string) =>
-    cancelAssistantAttachmentTask(taskId)
-  );
-  ipcMain.handle("quickAssistant.captureScreenshot", async (_event, chatId?: string | null) =>
-    captureAssistantScreenshot(chatId, "quick-assistant")
-  );
-  ipcMain.handle("quickAssistant.setInteractionState", async (_event, state: { busy?: boolean; mouseInside?: boolean }) => {
-    quickAssistantState.setInteractionState(state);
-    return { ok: true };
-  });
   ipcMain.handle("quickAssistant.hide", async () => {
     if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
       quickAssistantWindow.hide();
     }
-    return { ok: true };
-  });
-  ipcMain.handle("quickAssistant.openMainAssistant", async (_event, chatId?: string | null) => {
-    if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
-      quickAssistantWindow.hide();
-    }
-    await openAssistantWorker({
-      chatId: chatId ?? undefined,
-      displayName: "ZenMind",
-      role: "快速助手",
-      focusComposerOnComplete: true
-    });
-    return { ok: true };
-  });
-  ipcMain.handle("quickAssistant.openSettings", async () => {
-    if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
-      quickAssistantWindow.hide();
-    }
-    showMainWindow("/settings");
     return { ok: true };
   });
   ipcMain.handle("quickAssistant.openControlCenter", async () => {

@@ -1266,9 +1266,9 @@ function QuickAssistantWebCopilot() {
   const failedService = startupServices.find((service) => service && service.status !== "running");
 
   useEffect(() => {
-    document.body.classList.add("quick-assistant-body", "quick-web-copilot-body");
+    document.body.classList.add("quick-web-copilot-body");
     return () => {
-      document.body.classList.remove("quick-assistant-body", "quick-web-copilot-body");
+      document.body.classList.remove("quick-web-copilot-body");
     };
   }, []);
 
