@@ -26,9 +26,9 @@ const assistantNavItem: SidebarNavItem = {
 };
 
 const agentWebclientNavItems: SidebarNavItem[] = [
-  { to: "/agents", label: "智能体管理", icon: "assistant" },
-  { to: "/schedules", label: "自动化", icon: "assistant" },
-  { to: "/memory", label: "记忆管理", icon: "assistant" }
+  { to: "/agents", label: "智能体", icon: "agent" },
+  { to: "/schedules", label: "自动化", icon: "schedule" },
+  { to: "/memory", label: "记忆管理", icon: "memory" }
 ];
 
 function getCollapsedSidebarLabel(label: string) {
@@ -94,7 +94,7 @@ export function AppSidebar({
   const customItems: SidebarNavItem[] = customSidebarItems.map((item) => ({
     to: `/custom-sidebar/${item.id}`,
     label: item.label,
-    icon: "custom",
+    icon: "website",
     iconId: item.iconId
   }));
 
@@ -212,7 +212,7 @@ export function AppSidebar({
               title="助手"
             >
               <span className="sidebar-link-icon">
-                <SidebarIllustration kind="assistant" />
+                <SidebarIllustration kind="sidebar-assistant" />
               </span>
               <span className="sidebar-link-label">助手</span>
               <span className="sidebar-assistant-switch" aria-hidden="true">

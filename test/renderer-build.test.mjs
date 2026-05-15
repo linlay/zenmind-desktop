@@ -60,7 +60,7 @@ test("agent webclient desktop sections are exposed as top-level sidebar tabs", (
   );
 
   assert.match(sidebarSource, /agentWebclientNavItems/);
-  assert.match(sidebarSource, /to:\s*"\/agents"[\s\S]*?label:\s*"智能体管理"/);
+  assert.match(sidebarSource, /to:\s*"\/agents"[\s\S]*?label:\s*"智能体"/);
   assert.match(sidebarSource, /to:\s*"\/schedules"[\s\S]*?label:\s*"自动化"/);
   assert.match(sidebarSource, /to:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
   assert.match(
@@ -69,7 +69,7 @@ test("agent webclient desktop sections are exposed as top-level sidebar tabs", (
   );
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_ITEMS/);
-  assert.match(appShell, /routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?label:\s*"智能体管理"/);
+  assert.match(appShell, /routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?label:\s*"智能体"/);
   assert.match(appShell, /routePath:\s*"\/schedules"[\s\S]*?embedPath:\s*"\/schedules"[\s\S]*?label:\s*"自动化"/);
   assert.match(appShell, /routePath:\s*"\/memory"[\s\S]*?embedPath:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
   assert.match(appShell, /const activeAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname\)/);

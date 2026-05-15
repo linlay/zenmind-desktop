@@ -25,7 +25,7 @@ export const DESKTOP_COPILOT_PAGE_LABELS: Record<DesktopCopilotPageKey, string> 
   controlCenter: "控制中心",
   market: "功能市场",
   help: "帮助",
-  agents: "智能体管理",
+  agents: "智能体",
   schedules: "自动化",
   memory: "记忆管理"
 };

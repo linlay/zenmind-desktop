@@ -421,7 +421,7 @@ async function executeAction(
         topics: [
           { id: "control-center", title: "控制中心", route: "/control-center" },
           { id: "market", title: "功能市场", route: "/market" },
-          { id: "agents", title: "智能体管理", route: "/agents" },
+          { id: "agents", title: "智能体", route: "/agents" },
           { id: "schedules", title: "自动化", route: "/schedules" },
           { id: "memory", title: "记忆管理", route: "/memory" },
           { id: "settings", title: "设置", route: "/settings" },

@@ -52,7 +52,7 @@ const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
 const AGENT_WEBCLIENT_ROUTE_ITEMS = [
-  { routePath: "/agents", embedPath: "/agents", label: "智能体管理" },
+  { routePath: "/agents", embedPath: "/agents", label: "智能体" },
   { routePath: "/schedules", embedPath: "/schedules", label: "自动化" },
   { routePath: "/memory", embedPath: "/memory", label: "记忆管理" }
 ] as const;

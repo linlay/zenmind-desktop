@@ -1,0 +1,11 @@
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <g fill="#818CF8">
+    <circle cx="128" cy="128" r="80"/>
+    <rect x="104" y="24" width="48" height="208" rx="16"/>
+    <rect x="24" y="104" width="208" height="48" rx="16"/>
+    <rect x="104" y="24" width="48" height="208" rx="16" transform="rotate(45 128 128)"/>
+    <rect x="104" y="24" width="48" height="208" rx="16" transform="rotate(-45 128 128)"/>
+  </g>
+  <circle cx="128" cy="128" r="56" fill="#4F46E5"/>
+  <circle cx="128" cy="128" r="24" fill="#FFFFFF"/>
+</svg>

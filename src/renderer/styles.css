@@ -4325,7 +4325,9 @@ body.quick-web-copilot-body,
 }
 
 .sidebar-assistant-launcher.is-disabled .sidebar-link-icon svg,
-.sidebar-assistant-launcher:disabled .sidebar-link-icon svg {
+.sidebar-assistant-launcher.is-disabled .sidebar-link-icon img,
+.sidebar-assistant-launcher:disabled .sidebar-link-icon svg,
+.sidebar-assistant-launcher:disabled .sidebar-link-icon img {
   filter: grayscale(1) saturate(0) opacity(0.38);
 }
 
