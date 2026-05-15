@@ -19,6 +19,7 @@ import {
 import type { AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, ServiceId, ServiceState, StartupRestoreState } from "../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
+  DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
   DESKTOP_COPILOT_PAGE_KEYS,
   DESKTOP_COPILOT_PAGE_LABELS
 } from "../shared/assistant-settings";
@@ -1257,6 +1258,7 @@ function readStoredThemeMode() {
 function QuickAssistantWebCopilot() {
   const { services, loading, error, refresh } = useServices();
   const [hostTheme, setHostTheme] = useState<ThemeMode>(() => readStoredThemeMode());
+  const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
     services.find((service) => service.id === serviceId) ?? null
   );
@@ -1275,6 +1277,26 @@ function QuickAssistantWebCopilot() {
     setHostTheme(nextTheme);
     document.documentElement.dataset.theme = nextTheme;
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.assistant.getSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setAssistantSettings(settings);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAssistantSettings(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const quickAssistantAgentKey = assistantSettings?.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
 
   if (!allReady) {
     return (
@@ -1308,6 +1330,7 @@ function QuickAssistantWebCopilot() {
         pluginId="agent-webclient"
         surfaceLabel="助手"
       />
+      <span className="quick-web-copilot-agent-marker" data-open-agent-key={quickAssistantAgentKey} aria-hidden="true" />
     </main>
   );
 }

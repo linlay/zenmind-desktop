@@ -14,6 +14,8 @@ import type {
 } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
+  DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
+  DEFAULT_QUICK_ASSISTANT_ENABLED,
   DESKTOP_COPILOT_PAGE_KEYS,
   DESKTOP_COPILOT_PAGE_LABELS,
   createDefaultDesktopCopilotPagePreferences,
@@ -162,10 +164,14 @@ export function SettingsPage({
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [assistantAgentOptions, setAssistantAgentOptions] = useState<DesktopPetAgentOption[]>([]);
   const [desktopHelperAgentKey, setDesktopHelperAgentKey] = useState(DEFAULT_DESKTOP_HELPER_AGENT_KEY);
+  const [quickAssistantEnabled, setQuickAssistantEnabled] = useState(DEFAULT_QUICK_ASSISTANT_ENABLED);
+  const [quickAssistantAgentKey, setQuickAssistantAgentKey] = useState(DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
   const [desktopCopilotPages, setDesktopCopilotPages] = useState<DesktopCopilotPagePreferences>(
     createDefaultDesktopCopilotPagePreferences
   );
   const [desktopHelperAgentPending, setDesktopHelperAgentPending] = useState(false);
+  const [quickAssistantPending, setQuickAssistantPending] = useState(false);
+  const [quickAssistantAgentPending, setQuickAssistantAgentPending] = useState(false);
   const [desktopCopilotPagePending, setDesktopCopilotPagePending] = useState("");
   const [desktopPetState, setDesktopPetState] = useState<DesktopPetState | null>(null);
   const [desktopPetPending, setDesktopPetPending] = useState(false);
@@ -213,6 +219,8 @@ export function SettingsPage({
         }
         setAssistantSettings(settings);
         setDesktopHelperAgentKey(settings.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY);
+        setQuickAssistantEnabled(settings.quickAssistantEnabled);
+        setQuickAssistantAgentKey(settings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
         setDesktopCopilotPages(settings.desktopCopilotPages || createDefaultDesktopCopilotPagePreferences());
         setAssistantAgentOptions(Array.isArray(agents) ? agents : []);
       })
@@ -373,6 +381,19 @@ export function SettingsPage({
           : desktopHelperAgentKey.trim();
       const helperTouched = typeof request.args?.desktopHelperAgentKey === "string" || typeof patch.desktopHelperAgentKey === "string";
       const nextHelperAgent = assistantAgentOptions.find((agent) => agent.agentKey === requestedHelperAgentKey);
+      const requestedQuickAssistantAgentKey = typeof request.args?.quickAssistantAgentKey === "string"
+        ? request.args.quickAssistantAgentKey.trim()
+        : typeof patch.quickAssistantAgentKey === "string"
+          ? patch.quickAssistantAgentKey.trim()
+          : quickAssistantAgentKey.trim();
+      const quickAssistantAgentTouched = typeof request.args?.quickAssistantAgentKey === "string" || typeof patch.quickAssistantAgentKey === "string";
+      const quickAssistantEnabledTouched = typeof request.args?.quickAssistantEnabled === "boolean" || typeof patch.quickAssistantEnabled === "boolean";
+      const requestedQuickAssistantEnabled = typeof request.args?.quickAssistantEnabled === "boolean"
+        ? request.args.quickAssistantEnabled
+        : typeof patch.quickAssistantEnabled === "boolean"
+          ? patch.quickAssistantEnabled
+          : quickAssistantEnabled;
+      const nextQuickAssistantAgent = assistantAgentOptions.find((agent) => agent.agentKey === requestedQuickAssistantAgentKey);
       const helperValidation = {
         field: "desktopHelperAgentKey",
         value: requestedHelperAgentKey,
@@ -380,6 +401,14 @@ export function SettingsPage({
         message: nextHelperAgent
           ? "侧边栏默认助手配置可用。"
           : "请选择当前智能体列表中存在的侧边栏默认助手。"
+      };
+      const quickAssistantValidation = {
+        field: "quickAssistantAgentKey",
+        value: requestedQuickAssistantAgentKey,
+        valid: Boolean(requestedQuickAssistantAgentKey && nextQuickAssistantAgent),
+        message: nextQuickAssistantAgent
+          ? "快捷助手默认智能体配置可用。"
+          : "请选择当前智能体列表中存在的快捷助手默认智能体。"
       };
 
       switch (request.action) {
@@ -393,6 +422,15 @@ export function SettingsPage({
                   value: desktopHelperAgentKey,
                   saved: assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY,
                   valid: Boolean(assistantAgentOptions.find((agent) => agent.agentKey === desktopHelperAgentKey))
+                },
+                quickAssistantEnabled: {
+                  value: quickAssistantEnabled,
+                  saved: assistantSettings?.quickAssistantEnabled ?? DEFAULT_QUICK_ASSISTANT_ENABLED
+                },
+                quickAssistantAgentKey: {
+                  value: quickAssistantAgentKey,
+                  saved: assistantSettings?.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
+                  valid: Boolean(assistantAgentOptions.find((agent) => agent.agentKey === quickAssistantAgentKey))
                 },
                 desktopCopilotPages,
                 desktopPetBoundAgentKey: {
@@ -417,13 +455,15 @@ export function SettingsPage({
           return {
             ok: true,
             result: {
-              valid: helperValidation.valid && copilotValidation.valid,
+              valid: helperValidation.valid && quickAssistantValidation.valid && copilotValidation.valid,
               issues: [
                 ...(helperValidation.valid ? [] : [helperValidation]),
+                ...(quickAssistantValidation.valid ? [] : [quickAssistantValidation]),
                 ...copilotValidation.issues
               ],
               fields: {
                 desktopHelperAgentKey: helperValidation,
+                quickAssistantAgentKey: quickAssistantValidation,
                 desktopCopilotPages: copilotValidation
               }
             }
@@ -440,6 +480,17 @@ export function SettingsPage({
                 displayName: nextHelperAgent?.displayName ?? requestedHelperAgentKey,
                 valid: helperValidation.valid
               }, {
+                field: "quickAssistantEnabled",
+                from: quickAssistantEnabled,
+                to: requestedQuickAssistantEnabled,
+                valid: true
+              }, {
+                field: "quickAssistantAgentKey",
+                from: quickAssistantAgentKey,
+                to: requestedQuickAssistantAgentKey,
+                displayName: nextQuickAssistantAgent?.displayName ?? requestedQuickAssistantAgentKey,
+                valid: quickAssistantValidation.valid
+              }, {
                 field: "desktopCopilotPages",
                 from: desktopCopilotPages,
                 to: nextCopilotPages,
@@ -448,18 +499,33 @@ export function SettingsPage({
             }
           };
         case "desktop.page.applyPatch":
-          if ((helperTouched && !helperValidation.valid) || !copilotValidation.valid) {
+          if ((helperTouched && !helperValidation.valid) || (quickAssistantAgentTouched && !quickAssistantValidation.valid) || !copilotValidation.valid) {
             return {
               ok: false,
               error: {
                 code: "invalid_form_patch",
-                message: helperTouched && !helperValidation.valid ? helperValidation.message : "页面 Copilot 配置不可用。",
-                details: { helperValidation, copilotValidation }
+                message: helperTouched && !helperValidation.valid
+                  ? helperValidation.message
+                  : quickAssistantAgentTouched && !quickAssistantValidation.valid
+                    ? quickAssistantValidation.message
+                    : "页面 Copilot 配置不可用。",
+                details: { helperValidation, quickAssistantValidation, copilotValidation }
               }
             };
           }
           if (helperTouched) {
             await handleSelectDesktopHelperAgentKey(requestedHelperAgentKey);
+          }
+          if (quickAssistantEnabledTouched) {
+            const nextSettings = await window.electronAPI.assistant.saveSettings({
+              quickAssistantEnabled: requestedQuickAssistantEnabled
+            });
+            setAssistantSettings(nextSettings);
+            setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
+            onAssistantSettingsChange?.(nextSettings);
+          }
+          if (quickAssistantAgentTouched) {
+            await handleSelectQuickAssistantAgentKey(requestedQuickAssistantAgentKey);
           }
           if ("desktopCopilotPages" in args || Object.keys(readCopilotPatch(args)).some((key) => DESKTOP_COPILOT_PAGE_KEYS.includes(key as DesktopCopilotPageKey))) {
             await saveDesktopCopilotPages(nextCopilotPages, "all");
@@ -469,6 +535,8 @@ export function SettingsPage({
             result: {
               applied: true,
               desktopHelperAgentKey: requestedHelperAgentKey,
+              quickAssistantEnabled: requestedQuickAssistantEnabled,
+              quickAssistantAgentKey: requestedQuickAssistantAgentKey,
               desktopCopilotPages: nextCopilotPages
             }
           };
@@ -479,9 +547,13 @@ export function SettingsPage({
   }, [
     assistantAgentOptions,
     assistantSettings?.desktopHelperAgentKey,
+    assistantSettings?.quickAssistantAgentKey,
+    assistantSettings?.quickAssistantEnabled,
     currentDesktopPetBoundAgentKey,
     desktopHelperAgentKey,
     desktopCopilotPages,
+    quickAssistantAgentKey,
+    quickAssistantEnabled,
     memorySettings?.autoLearn,
     memorySettings?.enabled
   ]);
@@ -726,6 +798,55 @@ export function SettingsPage({
     }
   }
 
+  async function handleToggleQuickAssistantEnabled() {
+    const previousEnabled = quickAssistantEnabled;
+    const nextEnabled = !quickAssistantEnabled;
+    setQuickAssistantEnabled(nextEnabled);
+    setQuickAssistantPending(true);
+    try {
+      const nextSettings = await window.electronAPI.assistant.saveSettings({
+        quickAssistantEnabled: nextEnabled
+      });
+      setAssistantSettings(nextSettings);
+      setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
+      setQuickAssistantAgentKey(nextSettings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
+      onAssistantSettingsChange?.(nextSettings);
+      setFeedback(nextSettings.quickAssistantEnabled ? "快捷助手已开启。" : "快捷助手已关闭。");
+    } catch (reason) {
+      setQuickAssistantEnabled(previousEnabled);
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setQuickAssistantPending(false);
+    }
+  }
+
+  async function handleSelectQuickAssistantAgentKey(nextAgentKey: string) {
+    const normalizedAgentKey = nextAgentKey.trim();
+    const previousAgentKey = quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
+    if (!normalizedAgentKey || normalizedAgentKey === previousAgentKey) {
+      return;
+    }
+
+    setQuickAssistantAgentKey(normalizedAgentKey);
+    setQuickAssistantAgentPending(true);
+    try {
+      const nextSettings = await window.electronAPI.assistant.saveSettings({
+        quickAssistantAgentKey: normalizedAgentKey
+      });
+      const nextAgent = assistantAgentOptions.find((agent) => agent.agentKey === nextSettings.quickAssistantAgentKey);
+      setAssistantSettings(nextSettings);
+      setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
+      setQuickAssistantAgentKey(nextSettings.quickAssistantAgentKey);
+      onAssistantSettingsChange?.(nextSettings);
+      setFeedback(`快捷助手默认智能体已切换为 ${nextAgent?.displayName ?? nextSettings.quickAssistantAgentKey}。`);
+    } catch (reason) {
+      setQuickAssistantAgentKey(previousAgentKey);
+      setFeedback(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setQuickAssistantAgentPending(false);
+    }
+  }
+
   return (
     <section className="settings-page">
       <div className="page-head">
@@ -821,6 +942,52 @@ export function SettingsPage({
             为每个一级页签配置是否显示 Copilot，以及默认使用哪个智能体。这个设置不影响桌面宠物绑定。
             全局默认只作为旧配置兼容保留。
           </p>
+          <div className="quick-assistant-settings-panel" aria-label="快捷助手配置">
+            <div className="page-copilot-row-main">
+              <strong>快捷助手</strong>
+              <span>
+                {quickAssistantEnabled
+                  ? `Option+Space 已开启，默认使用 ${getAgentLabel(quickAssistantAgentKey)}`
+                  : "Option+Space 已关闭"}
+              </span>
+              {quickAssistantEnabled && !isKnownAssistantAgent(quickAssistantAgentKey) ? (
+                <em>当前默认智能体不可用，请重新选择。</em>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className={quickAssistantEnabled ? "settings-switch is-on" : "settings-switch"}
+              role="switch"
+              aria-checked={quickAssistantEnabled}
+              aria-label="快捷助手"
+              disabled={quickAssistantPending}
+              onClick={() => void handleToggleQuickAssistantEnabled()}
+            >
+              <span aria-hidden="true" />
+            </button>
+            <label className="desktop-pet-agent-field">
+              <span>默认智能体</span>
+              <span className="desktop-pet-agent-select-wrap">
+                <select
+                  value={isKnownAssistantAgent(quickAssistantAgentKey) ? quickAssistantAgentKey : ""}
+                  onChange={(event) => void handleSelectQuickAssistantAgentKey(event.target.value)}
+                  disabled={!quickAssistantEnabled || assistantAgentOptions.length === 0 || quickAssistantAgentPending}
+                  aria-label="快捷助手默认智能体"
+                >
+                  <option value="">
+                    {assistantAgentOptions.length === 0
+                      ? "正在读取智能体列表..."
+                      : isKnownAssistantAgent(quickAssistantAgentKey) ? "请选择智能体" : `不可用：${quickAssistantAgentKey}`}
+                  </option>
+                  {assistantAgentOptions.map((agent) => (
+                    <option value={agent.agentKey} key={agent.agentKey}>
+                      {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            </label>
+          </div>
           <div className="desktop-pet-agent-form">
             <label className="desktop-pet-agent-field">
               <span>兼容默认智能体</span>

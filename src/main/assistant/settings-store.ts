@@ -4,6 +4,8 @@ import type { App } from "electron";
 import type { AssistantSettingsInput, AssistantSettingsPublic } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
+  DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
+  DEFAULT_QUICK_ASSISTANT_ENABLED,
   type DesktopCopilotPagePreferences
 } from "../../shared/assistant-settings";
 import { sanitizeDesktopCopilotPagePreferences } from "../../shared/page-copilot";
@@ -17,6 +19,8 @@ export type AssistantSettingsPrivate = {
   apiKey: string;
   voiceCorrectionEnabled: boolean;
   desktopHelperAgentKey: string;
+  quickAssistantEnabled: boolean;
+  quickAssistantAgentKey: string;
   desktopCopilotPages: DesktopCopilotPagePreferences;
 };
 
@@ -39,6 +43,9 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
   const desktopHelperAgentKey = typeof candidate.desktopHelperAgentKey === "string" && candidate.desktopHelperAgentKey.trim()
     ? candidate.desktopHelperAgentKey.trim()
     : DEFAULT_DESKTOP_HELPER_AGENT_KEY;
+  const quickAssistantAgentKey = typeof candidate.quickAssistantAgentKey === "string" && candidate.quickAssistantAgentKey.trim()
+    ? candidate.quickAssistantAgentKey.trim()
+    : DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
   const desktopCopilotPages = sanitizeDesktopCopilotPagePreferences(candidate.desktopCopilotPages);
   return {
     baseURL: "",
@@ -48,6 +55,10 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
       ? candidate.voiceCorrectionEnabled
       : DEFAULT_VOICE_CORRECTION_ENABLED,
     desktopHelperAgentKey,
+    quickAssistantEnabled: typeof candidate.quickAssistantEnabled === "boolean"
+      ? candidate.quickAssistantEnabled
+      : DEFAULT_QUICK_ASSISTANT_ENABLED,
+    quickAssistantAgentKey,
     desktopCopilotPages
   };
 }
@@ -56,6 +67,8 @@ function toStoredAssistantSettings(settings: AssistantSettingsPrivate) {
   return {
     voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
     desktopHelperAgentKey: settings.desktopHelperAgentKey,
+    quickAssistantEnabled: settings.quickAssistantEnabled,
+    quickAssistantAgentKey: settings.quickAssistantAgentKey,
     desktopCopilotPages: settings.desktopCopilotPages
   };
 }
@@ -101,6 +114,8 @@ export function toPublicAssistantSettings(
     apiKeyConfigured,
     voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
     desktopHelperAgentKey: settings.desktopHelperAgentKey,
+    quickAssistantEnabled: settings.quickAssistantEnabled,
+    quickAssistantAgentKey: settings.quickAssistantAgentKey,
     desktopCopilotPages: settings.desktopCopilotPages,
     source,
     ...(sourceLabel ? { sourceLabel } : {})
@@ -146,6 +161,12 @@ export function saveAssistantSettingsToRoot(
     desktopHelperAgentKey: typeof input.desktopHelperAgentKey === "string" && input.desktopHelperAgentKey.trim()
       ? input.desktopHelperAgentKey.trim()
       : current.desktopHelperAgentKey,
+    quickAssistantEnabled: typeof input.quickAssistantEnabled === "boolean"
+      ? input.quickAssistantEnabled
+      : current.quickAssistantEnabled,
+    quickAssistantAgentKey: typeof input.quickAssistantAgentKey === "string" && input.quickAssistantAgentKey.trim()
+      ? input.quickAssistantAgentKey.trim()
+      : current.quickAssistantAgentKey,
     desktopCopilotPages: mergeDesktopCopilotPagePreferences(current.desktopCopilotPages, input.desktopCopilotPages)
   };
 

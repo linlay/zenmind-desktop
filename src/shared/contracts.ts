@@ -573,6 +573,8 @@ export interface AssistantSettingsPublic {
   apiKeyConfigured: boolean;
   voiceCorrectionEnabled: boolean;
   desktopHelperAgentKey: string;
+  quickAssistantEnabled: boolean;
+  quickAssistantAgentKey: string;
   desktopCopilotPages: DesktopCopilotPagePreferences;
   source?: "desktop" | "agent-platform";
   sourceLabel?: string;
@@ -581,6 +583,8 @@ export interface AssistantSettingsPublic {
 export interface AssistantSettingsInput {
   voiceCorrectionEnabled?: boolean;
   desktopHelperAgentKey?: string;
+  quickAssistantEnabled?: boolean;
+  quickAssistantAgentKey?: string;
   desktopCopilotPages?: DesktopCopilotPagePreferencesInput;
 }
 

@@ -1646,6 +1646,10 @@ function showQuickAssistantWindow() {
   if (!isQuickAssistantSupportedPlatform(process.platform)) {
     return;
   }
+  const quickSettings = readAssistantSettings(app);
+  if (!quickSettings.quickAssistantEnabled) {
+    return;
+  }
   const targetWindow = createQuickAssistantWindow();
   if (!targetWindow || targetWindow.isDestroyed()) {
     return;
@@ -1662,7 +1666,13 @@ function showQuickAssistantWindow() {
     .then((failures) => {
       if (failures.length > 0) {
         showMainWindow("/control-center");
+        return;
       }
+      scheduleAgentWebclientOpenRequest(targetWindow, {
+        chatId: "",
+        agentKey: quickSettings.quickAssistantAgentKey,
+        focusComposerOnComplete: true
+      });
     })
     .catch((error) => {
       console.warn("[quick-assistant] failed to prepare web copilot services", error);

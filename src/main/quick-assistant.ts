@@ -28,8 +28,8 @@ export const QUICK_ASSISTANT_EXPANDED_SIZE = {
 } as const;
 
 export const QUICK_ASSISTANT_WEB_COPILOT_SIZE = {
-  width: 430,
-  height: 640
+  width: 480,
+  height: 600
 } as const;
 
 export type QuickAssistantDisplayMode = "compact" | "attachment" | "compactMenu" | "menu" | "expanded";

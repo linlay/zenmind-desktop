@@ -1,4 +1,6 @@
 export const DEFAULT_DESKTOP_HELPER_AGENT_KEY = "desktopAssistant";
+export const DEFAULT_QUICK_ASSISTANT_ENABLED = true;
+export const DEFAULT_QUICK_ASSISTANT_AGENT_KEY = DEFAULT_DESKTOP_HELPER_AGENT_KEY;
 
 export const DESKTOP_COPILOT_PAGE_KEYS = [
   "controlCenter",

@@ -17,6 +17,8 @@ test("assistant settings backfills default desktop copilot pages", () => {
   const root = makeTempRoot();
   const settings = readAssistantSettingsFromRoot(root);
 
+  assert.equal(settings.quickAssistantEnabled, true);
+  assert.equal(settings.quickAssistantAgentKey, "desktopAssistant");
   assert.equal(settings.desktopCopilotPages.controlCenter.enabled, true);
   assert.equal(settings.desktopCopilotPages.controlCenter.agentKey, "desktopAssistant");
   assert.equal(settings.desktopCopilotPages.market.agentKey, "desktopAssistant");
@@ -24,6 +26,30 @@ test("assistant settings backfills default desktop copilot pages", () => {
   assert.equal(settings.desktopCopilotPages.agents.agentKey, "desktopAssistant");
   assert.equal(settings.desktopCopilotPages.schedules.agentKey, "desktopAssistant");
   assert.equal(settings.desktopCopilotPages.memory.agentKey, "desktopAssistant");
+});
+
+test("assistant settings saves quick assistant preferences", () => {
+  const root = makeTempRoot();
+  const saved = saveAssistantSettingsToRoot(root, {
+    quickAssistantEnabled: false,
+    quickAssistantAgentKey: "quickAgent"
+  });
+
+  assert.equal(saved.quickAssistantEnabled, false);
+  assert.equal(saved.quickAssistantAgentKey, "quickAgent");
+
+  const restored = readAssistantSettingsFromRoot(root);
+  assert.equal(restored.quickAssistantEnabled, false);
+  assert.equal(restored.quickAssistantAgentKey, "quickAgent");
+});
+
+test("assistant settings falls back empty quick assistant agent keys", () => {
+  const root = makeTempRoot();
+  const saved = saveAssistantSettingsToRoot(root, {
+    quickAssistantAgentKey: ""
+  });
+
+  assert.equal(saved.quickAssistantAgentKey, "desktopAssistant");
 });
 
 test("assistant settings saves one desktop copilot page without losing sibling fields", () => {

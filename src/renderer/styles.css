@@ -725,6 +725,10 @@ body.quick-web-copilot-body,
   min-height: 0;
 }
 
+.quick-web-copilot-agent-marker {
+  display: none;
+}
+
 .quick-web-copilot-status {
   display: flex;
   align-items: center;
@@ -5794,6 +5798,25 @@ body.quick-web-copilot-body,
   margin-top: 18px;
 }
 
+.quick-assistant-settings-panel {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) auto minmax(220px, 280px);
+  align-items: center;
+  gap: 12px;
+  width: min(100%, 680px);
+  min-width: 0;
+  margin-top: 18px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(232, 240, 255, 0.72);
+}
+
+:root[data-theme="dark"] .quick-assistant-settings-panel {
+  background: rgba(79, 136, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
 .desktop-copilot-page-row {
   display: grid;
   grid-template-columns: minmax(170px, 1fr) auto minmax(220px, 280px);
@@ -5832,10 +5855,12 @@ body.quick-web-copilot-body,
   line-height: 1.35;
 }
 
+.quick-assistant-settings-panel .settings-switch,
 .desktop-copilot-page-row .settings-switch {
   flex: 0 0 auto;
 }
 
+.quick-assistant-settings-panel .desktop-pet-agent-field,
 .desktop-copilot-page-row .desktop-pet-agent-field {
   margin: 0;
 }
@@ -5849,10 +5874,12 @@ body.quick-web-copilot-body,
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .quick-assistant-settings-panel,
   .desktop-copilot-page-row {
     grid-template-columns: 1fr auto;
   }
 
+  .quick-assistant-settings-panel .desktop-pet-agent-field,
   .desktop-copilot-page-row .desktop-pet-agent-field {
     grid-column: 1 / -1;
   }
