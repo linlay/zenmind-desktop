@@ -3041,7 +3041,7 @@ body.quick-web-copilot-body,
 }
 
 :root[data-theme="dark"] .app-shell.has-translucent-sidebar .app-sidebar {
-  background: rgba(6, 10, 18, 0.56);
+  background: rgba(0, 0, 0, 0.62);
   border-right-color: rgba(255, 255, 255, 0.06);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.025),
@@ -3059,13 +3059,13 @@ body.quick-web-copilot-body,
 }
 
 :root[data-theme="dark"] .app-shell.is-mac-translucent-sidebar .app-sidebar {
-  background: rgba(6, 10, 18, 0.56);
+  background: rgba(0, 0, 0, 0.62);
   border-right-color: rgba(255, 255, 255, 0.06);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.025),
     10px 0 30px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(24px) saturate(112%) brightness(0.58);
-  -webkit-backdrop-filter: blur(24px) saturate(112%) brightness(0.58);
+  backdrop-filter: blur(24px) saturate(112%) brightness(0.52);
+  -webkit-backdrop-filter: blur(24px) saturate(112%) brightness(0.52);
 }
 
 .app-sidebar::after {

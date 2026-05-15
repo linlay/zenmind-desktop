@@ -1313,6 +1313,7 @@ export interface DesktopApi {
   settings: {
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
+    setNativeThemeSource: (themeMode: "light" | "dark") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
   };
   desktopActions: {
     respond: (response: DesktopActionRendererResponse) => Promise<{ ok: boolean }>;

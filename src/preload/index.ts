@@ -160,7 +160,8 @@ const api: DesktopApi = {
   },
   settings: {
     getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
-    getPlatform: () => ipcRenderer.invoke("settings.getPlatform")
+    getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
+    setNativeThemeSource: (themeMode) => ipcRenderer.invoke("settings.setNativeThemeSource", themeMode)
   },
   desktopActions: {
     respond: (response: DesktopActionRendererResponse) => ipcRenderer.invoke("desktopActions.respond", response),

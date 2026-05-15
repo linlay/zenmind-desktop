@@ -9,6 +9,7 @@ import {
   globalShortcut,
   ipcMain,
   Menu,
+  nativeTheme,
   nativeImage,
   screen,
   shell,
@@ -2258,6 +2259,14 @@ function applyMainWindowAppearance(targetWindow: BrowserWindow | null) {
   targetWindow.setBackgroundColor("#FFFFFF");
 }
 
+function setNativeThemeSource(themeMode: string) {
+  nativeTheme.themeSource = themeMode === "dark" ? "dark" : "light";
+  return {
+    ok: true,
+    themeSource: nativeTheme.themeSource
+  };
+}
+
 async function collectWebviewLoadDiagnostics(contents: Electron.WebContents, validatedUrl: string) {
   const sessionRef = contents.session;
   let resolvedProxy = "unknown";
@@ -4077,6 +4086,9 @@ function registerIpcHandlers() {
   });
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
   ipcMain.handle("settings.getPlatform", async () => process.platform);
+  ipcMain.handle("settings.setNativeThemeSource", async (_event, themeMode: string) =>
+    setNativeThemeSource(themeMode)
+  );
 }
 
 if (gotSingleInstanceLock) {

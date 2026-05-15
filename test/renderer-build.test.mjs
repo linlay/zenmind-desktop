@@ -186,6 +186,7 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(appShell, /"has-translucent-sidebar"/);
   assert.match(appShell, /isMac \? "is-mac-translucent-sidebar" : ""/);
   assert.match(appShell, /sidebarTranslucencyEnabled:\s*true/);
+  assert.match(appShell, /window\.electronAPI\.settings\.setNativeThemeSource\(themeMode\)/);
   assert.doesNotMatch(appShell, /SIDEBAR_TRANSLUCENCY_STORAGE_KEY/);
   assert.doesNotMatch(appShell, /SIDEBAR_TRANSLUCENCY_OPACITY_STORAGE_KEY/);
   assert.doesNotMatch(appShell, /setSidebarTranslucency/);
@@ -210,16 +211,21 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(globalStyles, /\.app-shell\.is-mac-translucent-sidebar::before\s*\{[\s\S]*?left:\s*var\(--app-sidebar-width,\s*160px\);/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar-shell::before\s*\{[\s\S]*?(?:radial-gradient|linear-gradient)/);
   assert.match(lightSidebarRule, /background:\s*rgba\(232,\s*244,\s*255,\s*0\.26\);/);
-  assert.match(darkSidebarRule, /background:\s*rgba\(6,\s*10,\s*18,\s*0\.56\);/);
+  assert.match(darkSidebarRule, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.62\);/);
   assert.match(macSidebarRule, /background:\s*rgba\(232,\s*244,\s*255,\s*0\.26\);/);
-  assert.match(macDarkSidebarRule, /background:\s*rgba\(6,\s*10,\s*18,\s*0\.56\);/);
-  assert.match(macDarkSidebarRule, /brightness\(0\.58\)/);
+  assert.match(macDarkSidebarRule, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.62\);/);
+  assert.match(macDarkSidebarRule, /brightness\(0\.52\)/);
   assert.doesNotMatch(lightSidebarRule, /linear-gradient|radial-gradient/);
   assert.doesNotMatch(darkSidebarRule, /linear-gradient|radial-gradient/);
   assert.doesNotMatch(macSidebarRule, /linear-gradient|radial-gradient/);
   assert.doesNotMatch(macDarkSidebarRule, /linear-gradient|radial-gradient/);
 
   assert.doesNotMatch(preload, /setSidebarTranslucency/);
+  assert.match(preload, /setNativeThemeSource:\s*\(themeMode\) => ipcRenderer\.invoke\("settings\.setNativeThemeSource", themeMode\)/);
+  assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark"\)/);
+  assert.match(mainProcess, /nativeTheme/);
+  assert.match(mainProcess, /nativeTheme\.themeSource = themeMode === "dark" \? "dark" : "light"/);
+  assert.match(mainProcess, /ipcMain\.handle\("settings\.setNativeThemeSource"/);
   assert.doesNotMatch(contracts, /setSidebarTranslucency/);
   assert.doesNotMatch(mainProcess, /settings\.setSidebarTranslucency/);
 });

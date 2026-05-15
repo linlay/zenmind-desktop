@@ -434,6 +434,7 @@ function AppShell() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
+    window.electronAPI.settings.setNativeThemeSource(themeMode).catch(() => undefined);
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
     } catch {
