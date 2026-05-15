@@ -65,7 +65,9 @@ test("agent webclient desktop sections are exposed as top-level sidebar tabs", (
   assert.match(sidebarSource, /to:\s*"\/schedules"[\s\S]*?label:\s*"自动化"/);
   assert.match(sidebarSource, /to:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
   assert.match(sidebarSource, /sortSidebarNavItems\(\[/);
-  assert.match(sidebarSource, /assistantNavItem,[\s\S]*?\.\.\.agentWebclientNavItems,[\s\S]*?staticNavItems\[0\]/);
+  assert.match(sidebarSource, /assistantNavItem,[\s\S]*?\.\.\.agentWebclientNavItems,[\s\S]*?\.\.\.staticNavItems/);
+  assert.match(sidebarSource, /controlCenterUtilityItem/);
+  assert.match(sidebarSource, /to:\s*"\/control-center"[\s\S]*?label:\s*"控制中心"/);
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_ITEMS/);
   assert.match(appShell, /routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?label:\s*"智能体"/);

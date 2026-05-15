@@ -3430,6 +3430,11 @@ body.quick-web-copilot-body,
   height: 32px;
 }
 
+.app-sidebar.is-collapsed .sidebar-link-utility .sidebar-link-icon {
+  width: 24px;
+  height: 24px;
+}
+
 .app-sidebar.is-collapsed .sidebar-link-label {
   position: absolute;
   width: 1px;
@@ -3469,8 +3474,8 @@ body.quick-web-copilot-body,
 }
 
 .app-sidebar.is-collapsed .sidebar-link-utility {
-  width: 56px;
-  min-height: 56px;
+  width: 48px;
+  min-height: 32px;
   padding: 0;
   justify-content: center;
   margin: 0 auto;
