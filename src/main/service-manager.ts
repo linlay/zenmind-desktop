@@ -4377,7 +4377,32 @@ async function shouldRunBuiltinBootstrap(app: App) {
     return false;
   }
 
-  for (const serviceId of [...INSTALL_ONLY_STARTUP_SERVICE_IDS, ...DEFAULT_STARTUP_SERVICE_IDS]) {
+  for (const serviceId of INSTALL_ONLY_STARTUP_SERVICE_IDS) {
+    const current = await getServiceState(app, serviceId);
+    if (current.status === "not-installed" || current.status === "initialization-required") {
+      return true;
+    }
+
+    const service = getService(serviceId);
+    if (service.kind === "builtin" && needsBundledAssetRefresh(app, service)) {
+      return true;
+    }
+
+    if (current.status === "error") {
+      const installDir = getInstallDir(app, service);
+      const initializationState = fs.existsSync(installDir) ? readInitializationState(installDir) : null;
+      if (
+        !fs.existsSync(installDir) ||
+        !isInstallHealthy(service, installDir) ||
+        initializationState?.status !== "succeeded" ||
+        initializationState.version !== service.version
+      ) {
+        return true;
+      }
+    }
+  }
+
+  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
     const current = await getServiceState(app, serviceId);
     if (
       current.status === "not-installed" ||

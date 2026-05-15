@@ -34,6 +34,7 @@ import {
   stopService
 } from "./service-manager";
 import {
+  buildSandboxImage,
   getMarketSettings,
   installMarketItem,
   listMarketItems,
@@ -410,6 +411,8 @@ async function executeAction(
       return ok(action, await uninstallMarketItem(options.app, readItemId(args)));
     case "desktop.market.importSkill":
       return fail(action, "interactive_file_picker_required", "本地导入需要用户在 Desktop 文件选择器中操作，暂不通过 HTTP bridge 执行。");
+    case "desktop.market.buildSandboxImage":
+      return ok(action, await buildSandboxImage(options.app, readItemId(args)));
     case "desktop.help.getCurrentTopic":
     case "desktop.help.explainCurrentPage": {
       const response = await callRendererPageAction(options, { ...request, action: "desktop.page.getContext" }, args);

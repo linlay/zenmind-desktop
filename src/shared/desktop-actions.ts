@@ -58,6 +58,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.market.updateItem", kind: "execute", category: "market", description: "Update a market item." },
   { name: "desktop.market.uninstallItem", kind: "execute", category: "market", description: "Uninstall a market item." },
   { name: "desktop.market.importSkill", kind: "execute", category: "market", description: "Open local skill import flow." },
+  { name: "desktop.market.buildSandboxImage", kind: "execute", category: "market", description: "Build a Container Hub sandbox environment image." },
 
   { name: "desktop.help.getCurrentTopic", kind: "read", category: "help", description: "Read current help topic." },
   { name: "desktop.help.searchTopics", kind: "read", category: "help", description: "Search help topics." },

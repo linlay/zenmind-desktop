@@ -13,10 +13,13 @@ import type {
   MarketSettings,
   MarketSettingsInput
 } from "../shared/contracts";
+import { ContainerHubClient, type ContainerHubConfig, type ContainerHubEnvironment } from "./assistant/container-hub";
 import { readManifestFromArchive } from "./manifest-utils";
 import { getDataRoot } from "./user-paths";
 import { getAllServices } from "./service-registry";
+import { getServiceState } from "./service-manager";
 import { getPluginInstallDir, installPluginFromArchive, uninstallPlugin } from "./plugin-loader";
+import { readEnvFile } from "./env-file";
 import {
   getSkillInstallDir,
   installSkillFromPath,
@@ -26,6 +29,7 @@ import {
 
 export const DEFAULT_MARKETPLACE_CATALOG_URL = "http://47.100.131.144:9001/marketplace/index.json";
 export const DEFAULT_SKILLS_API_BASE_URL = "http://127.0.0.1:8080";
+const CONTAINER_HUB_SERVICE_ID = "agent-container-hub";
 const SKILLS_API_PAGE_LIMIT = 100;
 
 type Catalog = {
@@ -49,6 +53,8 @@ type MarketplaceOptions = {
   catalogUrl?: string;
   catalog?: Catalog;
   skillsApiBaseUrl?: string;
+  containerHubBaseUrl?: string;
+  containerHubAuthToken?: string;
 };
 
 type SkillsApiPage = {
@@ -104,7 +110,7 @@ function asNumber(value: unknown) {
 }
 
 function isMarketItemType(value: unknown): value is MarketItemType {
-  return value === "plugin" || value === "skill";
+  return value === "plugin" || value === "skill" || value === "sandbox-image";
 }
 
 function normalizeAsset(value: unknown): MarketAsset | null {
@@ -200,6 +206,26 @@ function normalizeSkillsApiBaseUrl(value: unknown) {
     return `${parsed.origin}/api/v1`;
   }
   throw new Error("技能市场地址请输入服务根地址，或以 /api/v1 结尾。");
+}
+
+function normalizeContainerHubBaseUrl(value: unknown) {
+  const input = asString(value).trim().replace(/\/+$/u, "");
+  if (!input) {
+    return "";
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(input);
+  } catch {
+    throw new Error("Container Hub 地址必须是有效的 http 或 https URL。");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Container Hub 地址仅支持 http 或 https。");
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error("Container Hub 地址不应包含查询参数或锚点。");
+  }
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/u, "")}`;
 }
 
 export function getMarketSettings(app: App): MarketSettings {
@@ -374,10 +400,102 @@ async function loadSkillsCatalog(app: App, options: MarketplaceOptions = {}) {
   }
 }
 
+async function resolveContainerHubConfig(app: App, options: MarketplaceOptions = {}): Promise<ContainerHubConfig | null> {
+  if (options.containerHubBaseUrl !== undefined) {
+    return {
+      baseURL: normalizeContainerHubBaseUrl(options.containerHubBaseUrl),
+      authToken: asString(options.containerHubAuthToken).trim() || undefined
+    };
+  }
+
+  try {
+    const state = await getServiceState(app, CONTAINER_HUB_SERVICE_ID);
+    if (state.status !== "running" || !state.healthMeta.webUrl) {
+      return null;
+    }
+    const env = readEnvFile(path.join(state.installDir, ".env"));
+    return {
+      baseURL: normalizeContainerHubBaseUrl(state.healthMeta.webUrl),
+      authToken: env.get("AUTH_TOKEN")?.trim() || undefined
+    };
+  } catch {
+    return null;
+  }
+}
+
+function sandboxBuildState(environment: ContainerHubEnvironment): MarketInstallState {
+  if (environment.lastBuild?.status === "building" || environment.lastBuild?.status === "smoke_checking") {
+    return "installing";
+  }
+  if (environment.lastBuild?.status === "failed") {
+    return "failed";
+  }
+  return environment.available ? "installed" : "not-installed";
+}
+
+function sandboxEnvironmentToMarketItem(environment: ContainerHubEnvironment): MarketItem {
+  const state = sandboxBuildState(environment);
+  const imageRef = environment.imageRef || [environment.imageRepository, environment.imageTag].filter(Boolean).join(":");
+  const tags = [
+    environment.enabled ? "已启用" : "已停用",
+    environment.availableBuildTargets.length > 0 ? `${environment.availableBuildTargets.length} 个构建目标` : null,
+    environment.lastBuild?.target ? `目标 ${environment.lastBuild.target}` : null
+  ].filter((tag): tag is string => Boolean(tag));
+
+  return {
+    id: environment.name,
+    type: "sandbox-image",
+    name: environment.name,
+    version: environment.imageTag || "latest",
+    description: environment.description,
+    tags,
+    state,
+    source: "local",
+    installedVersion: environment.available ? environment.imageTag || "latest" : undefined,
+    serviceId: CONTAINER_HUB_SERVICE_ID,
+    environmentName: environment.name,
+    imageRef,
+    buildStatus: environment.lastBuild?.status,
+    buildJobId: environment.lastBuild?.id,
+    buildTargetCount: environment.availableBuildTargets.length,
+    message: state === "failed"
+      ? environment.lastBuild?.status || "构建失败"
+      : state === "installing" ? "镜像构建中" : undefined
+  };
+}
+
+async function loadSandboxImageItems(app: App, options: MarketplaceOptions = {}) {
+  const config = await resolveContainerHubConfig(app, options);
+  if (!config?.baseURL) {
+    return {
+      items: [] as MarketItem[],
+      offline: true,
+      message: "沙箱镜像市场需要先启动 Container Hub。"
+    };
+  }
+
+  try {
+    const client = new ContainerHubClient(config);
+    const environments = await client.listEnvironments();
+    return {
+      items: environments.map(sandboxEnvironmentToMarketItem),
+      offline: false,
+      message: ""
+    };
+  } catch (error) {
+    return {
+      items: [] as MarketItem[],
+      offline: true,
+      message: `沙箱镜像市场暂不可用：${error instanceof Error ? error.message : String(error)}`
+    };
+  }
+}
+
 async function loadMarketplaceCatalog(app: App, options: MarketplaceOptions = {}) {
   const catalogUrl = options.catalogUrl ?? DEFAULT_MARKETPLACE_CATALOG_URL;
   const pluginResult = await loadCatalog(app, options);
   const skillsResult = await loadSkillsCatalog(app, options);
+  const sandboxResult = await loadSandboxImageItems(app, options);
   const catalog: Catalog = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
@@ -389,9 +507,12 @@ async function loadMarketplaceCatalog(app: App, options: MarketplaceOptions = {}
   const messages = [pluginResult.message, skillsResult.message].filter(Boolean);
   return {
     catalog,
+    sandboxItems: sandboxResult.items,
     offline: pluginResult.offline || skillsResult.offline,
     message: messages.join(" "),
-    sourceUrl: skillsResult.sourceUrl || catalogUrl
+    sourceUrl: skillsResult.sourceUrl || catalogUrl,
+    sandboxOffline: sandboxResult.offline,
+    sandboxMessage: sandboxResult.message
   };
 }
 
@@ -487,13 +608,16 @@ function listLocalPlugins(app: App): MarketItem[] {
 }
 
 export async function refreshMarketCatalog(app: App, options: MarketplaceOptions = {}): Promise<MarketListResult> {
-  const { catalog, offline, message, sourceUrl } = await loadMarketplaceCatalog(app, options);
+  const { catalog, sandboxItems, offline, message, sourceUrl, sandboxMessage, sandboxOffline } =
+    await loadMarketplaceCatalog(app, options);
   return {
     ok: true,
     sourceUrl,
     offline,
     message,
-    items: mergeMarketItems(app, catalog)
+    items: [...mergeMarketItems(app, catalog), ...sandboxItems],
+    sandboxMessage,
+    sandboxOffline
   };
 }
 
@@ -632,6 +756,32 @@ export async function installMarketItem(app: App, itemId: string, options: Marke
 
 export async function updateMarketItem(app: App, itemId: string, options: MarketplaceOptions = {}) {
   return installMarketItem(app, itemId, options);
+}
+
+export async function buildSandboxImage(app: App, itemId: string, options: MarketplaceOptions = {}): Promise<MarketCommandResult> {
+  const environmentName = itemId.trim();
+  if (!environmentName) {
+    throw new Error("缺少沙箱环境名称。");
+  }
+  const config = await resolveContainerHubConfig(app, options);
+  if (!config?.baseURL) {
+    throw new Error("沙箱镜像构建需要先启动 Container Hub。");
+  }
+  const client = new ContainerHubClient(config);
+  const job = await client.startBuildJob(environmentName);
+  return {
+    ok: true,
+    itemId: environmentName,
+    type: "sandbox-image",
+    state: "installing",
+    message: job.id ? `已开始构建 ${environmentName}。` : `已提交 ${environmentName} 构建。`,
+    serviceId: CONTAINER_HUB_SERVICE_ID,
+    environmentName,
+    imageRef: job.imageRef,
+    buildJobId: job.id,
+    buildStatus: job.status,
+    buildTarget: job.target
+  };
 }
 
 export async function importSkillFromPath(app: App, sourcePath: string): Promise<MarketCommandResult> {

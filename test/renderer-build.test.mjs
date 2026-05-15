@@ -578,6 +578,46 @@ test("service logs open in a separate floating log viewer window", () => {
   assert.doesNotMatch(logViewerPage, /event\.key === "Escape"/);
 });
 
+test("service log viewer lets users pause tail following and jump back to the latest log", () => {
+  const logViewerPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "LogViewerPage.tsx"),
+    "utf8"
+  );
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+
+  assert.match(logViewerPage, /取消自动滚动/);
+  assert.match(logViewerPage, /开启自动滚动/);
+  assert.match(logViewerPage, /滚动到顶部/);
+  assert.match(logViewerPage, /滚动到底部/);
+  assert.match(logViewerPage, /handleScrollToTop/);
+  assert.match(logViewerPage, /handleScrollToBottom/);
+  assert.match(logViewerPage, /scrollJumpTarget/);
+  assert.match(logViewerPage, /setTailFollowEnabled\(false\)/);
+  assert.match(globalStyles, /\.log-viewer-scroll-top\s*\{/);
+  assert.match(globalStyles, /\.log-viewer-scroll-bottom\s*\{/);
+});
+
+test("service log viewer keeps find controls inside the log area", () => {
+  const logViewerPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "LogViewerPage.tsx"),
+    "utf8"
+  );
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+
+  assert.match(logViewerPage, /aria-label="查找日志"/);
+  assert.match(logViewerPage, /handleOpenSearch/);
+  assert.match(logViewerPage, /handleCloseSearch/);
+  assert.match(logViewerPage, /aria-label="关闭日志查找"/);
+  assert.match(logViewerPage, /selectRelativeMatch\(-1\)/);
+  assert.match(logViewerPage, /selectRelativeMatch\(1\)/);
+  assert.match(logViewerPage, /renderLogContent\(\s*joinedContent,\s*matches,\s*activeMatchIndex,\s*\)/);
+  assert.doesNotMatch(logViewerPage, /className="log-viewer-toolbar"/);
+  assert.match(globalStyles, /\.log-viewer-body-shell\s*\{/);
+  assert.match(globalStyles, /\.log-viewer-find-panel\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?left:\s*20px;[\s\S]*?top:\s*12px;[\s\S]*?width:\s*min\(520px,\s*calc\(50%\s*-\s*20px\)\);/);
+  assert.match(globalStyles, /\.log-viewer-find-close\s*\{/);
+  assert.match(globalStyles, /\.log-match\.is-active\s*\{/);
+});
+
 test("assistant dock opens the agent webclient copilot in right-side embedded mode", () => {
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
 

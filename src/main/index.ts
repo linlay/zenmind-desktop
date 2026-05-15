@@ -52,6 +52,7 @@ import {
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
+  buildSandboxImage,
   getMarketSettings,
   importSkillFromPath,
   installMarketItem,
@@ -3707,6 +3708,8 @@ function registerIpcHandlers() {
   }));
   ipcMain.handle("market.uninstall", async (_event, itemId: string) =>
     runServiceMutation(() => uninstallMarketItem(app, itemId)));
+  ipcMain.handle("market.buildSandboxImage", async (_event, itemId: string) =>
+    runServiceMutation(() => buildSandboxImage(app, itemId)));
   ipcMain.handle("market.importSkill", async () => runServiceMutation(async () => {
     const result = await showFileDialog({
       title: "选择 Skill 包或 SKILL.md",

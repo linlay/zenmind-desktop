@@ -737,7 +737,7 @@ export interface AssistantAttachmentCancelResult {
   message: string;
 }
 
-export type MarketItemType = "plugin" | "skill";
+export type MarketItemType = "plugin" | "skill" | "sandbox-image";
 export type MarketInstallState =
   | "not-installed"
   | "installed"
@@ -779,6 +779,11 @@ export interface MarketItem {
   installPath?: string;
   serviceId?: string;
   message?: string;
+  environmentName?: string;
+  imageRef?: string;
+  buildStatus?: string;
+  buildJobId?: string;
+  buildTargetCount?: number;
 }
 
 export interface MarketListResult {
@@ -787,6 +792,8 @@ export interface MarketListResult {
   offline: boolean;
   message: string;
   items: MarketItem[];
+  sandboxMessage?: string;
+  sandboxOffline?: boolean;
 }
 
 export interface MarketCommandResult {
@@ -797,6 +804,11 @@ export interface MarketCommandResult {
   message: string;
   serviceId?: string;
   installPath?: string;
+  environmentName?: string;
+  imageRef?: string;
+  buildJobId?: string;
+  buildStatus?: string;
+  buildTarget?: string;
 }
 
 export interface MarketSettings {
@@ -1261,6 +1273,7 @@ export interface DesktopApi {
     update: (itemId: string) => Promise<MarketCommandResult>;
     uninstall: (itemId: string) => Promise<MarketCommandResult>;
     importSkill: () => Promise<MarketCommandResult>;
+    buildSandboxImage: (itemId: string) => Promise<MarketCommandResult>;
   };
   panAuth: {
     importPrivateKey: () => Promise<PanAuthImportResult>;

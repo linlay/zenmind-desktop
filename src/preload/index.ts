@@ -148,7 +148,8 @@ const api: DesktopApi = {
     install: (itemId: string) => ipcRenderer.invoke("market.install", itemId),
     update: (itemId: string) => ipcRenderer.invoke("market.update", itemId),
     uninstall: (itemId: string) => ipcRenderer.invoke("market.uninstall", itemId),
-    importSkill: () => ipcRenderer.invoke("market.importSkill")
+    importSkill: () => ipcRenderer.invoke("market.importSkill"),
+    buildSandboxImage: (itemId: string) => ipcRenderer.invoke("market.buildSandboxImage", itemId)
   },
   panAuth: {
     importPrivateKey: () => ipcRenderer.invoke("panAuth.importPrivateKey"),

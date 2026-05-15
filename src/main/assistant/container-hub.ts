@@ -31,6 +31,26 @@ export type ContainerHubMount = {
   read_only?: boolean;
 };
 
+export type ContainerHubBuildJob = {
+  id: string;
+  environmentName: string;
+  imageRef: string;
+  target: string;
+  status: string;
+};
+
+export type ContainerHubEnvironment = {
+  name: string;
+  description: string;
+  imageRepository: string;
+  imageTag: string;
+  imageRef: string;
+  available: boolean;
+  enabled: boolean;
+  availableBuildTargets: string[];
+  lastBuild?: ContainerHubBuildJob;
+};
+
 export class ContainerHubClient {
   private readonly baseURL: string;
   private readonly authToken: string;
@@ -47,6 +67,31 @@ export class ContainerHubClient {
     return {
       ok: true,
       engine: typeof result.engine === "string" ? result.engine : ""
+    };
+  }
+
+  async listEnvironments(): Promise<ContainerHubEnvironment[]> {
+    const result = await this.requestJSONValue("GET", "/api/environments");
+    if (!Array.isArray(result)) {
+      return [];
+    }
+    return result
+      .map(normalizeEnvironment)
+      .filter((environment): environment is ContainerHubEnvironment => Boolean(environment));
+  }
+
+  async startBuildJob(environmentName: string, target = ""): Promise<ContainerHubBuildJob> {
+    const result = await this.requestJSON(
+      "POST",
+      `/api/environments/${encodeURIComponent(environmentName)}/build-jobs`,
+      target ? { target } : {}
+    );
+    return normalizeBuildJob(result) ?? {
+      id: "",
+      environmentName,
+      imageRef: "",
+      target,
+      status: ""
     };
   }
 
@@ -112,8 +157,16 @@ export class ContainerHubClient {
   }
 
   private async requestJSON(method: string, apiPath: string, body?: unknown) {
+    const value = await this.requestJSONValue(method, apiPath, body);
+    return asRecord(value);
+  }
+
+  private async requestJSONValue(method: string, apiPath: string, body?: unknown) {
     const response = await this.requestRaw(method, apiPath, body);
-    return parseJSONRecord(response.body);
+    if (!response.body.trim()) {
+      return {};
+    }
+    return JSON.parse(response.body) as unknown;
   }
 
   private async requestRaw(method: string, apiPath: string, body?: unknown) {
@@ -167,9 +220,52 @@ function parseJSONRecord(text: string): Record<string, unknown> {
     return {};
   }
   const parsed = JSON.parse(text) as unknown;
-  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-    ? parsed as Record<string, unknown>
+  return asRecord(parsed);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
     : {};
+}
+
+function stringArrayValue(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function normalizeBuildJob(value: unknown): ContainerHubBuildJob | undefined {
+  const raw = asRecord(value);
+  const id = stringValue(raw.id);
+  const environmentName = stringValue(raw.environment_name);
+  if (!id && !environmentName) {
+    return undefined;
+  }
+  return {
+    id,
+    environmentName,
+    imageRef: stringValue(raw.image_ref),
+    target: stringValue(raw.target),
+    status: stringValue(raw.status)
+  };
+}
+
+function normalizeEnvironment(value: unknown): ContainerHubEnvironment | undefined {
+  const raw = asRecord(value);
+  const name = stringValue(raw.name);
+  if (!name) {
+    return undefined;
+  }
+  return {
+    name,
+    description: stringValue(raw.description),
+    imageRepository: stringValue(raw.image_repository),
+    imageTag: stringValue(raw.image_tag),
+    imageRef: stringValue(raw.image_ref),
+    available: Boolean(raw.available),
+    enabled: Boolean(raw.enabled),
+    availableBuildTargets: stringArrayValue(raw.available_build_targets),
+    lastBuild: normalizeBuildJob(raw.last_build)
+  };
 }
 
 function stringValue(value: unknown) {

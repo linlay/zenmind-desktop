@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
+  buildSandboxImage,
   DEFAULT_MARKETPLACE_CATALOG_URL,
   DEFAULT_SKILLS_API_BASE_URL,
   getMarketSettings,
@@ -125,6 +126,10 @@ async function withFixtureServer(files, fn) {
       res.end("not found");
       return;
     }
+    if (typeof file === "function") {
+      file(req, res, requestUrl);
+      return;
+    }
     if (typeof file === "string") {
       res.setHeader("content-type", "application/json");
       res.end(file);
@@ -225,6 +230,84 @@ test("listMarketItems reads all Skills API pages", async (t) => {
     assert.equal(result.items.filter((item) => item.type === "skill").length, 2);
     assert.ok(result.items.some((item) => item.id === "first-skill"));
     assert.ok(result.items.some((item) => item.id === "second-skill"));
+  });
+});
+
+test("listMarketItems maps Container Hub environments into sandbox image market items", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/api/v1/skills?page=1&limit=100", skillsEnvelope([])],
+    ["/api/environments", JSON.stringify([
+      {
+        name: "daily-office",
+        description: "Office automation sandbox",
+        image_repository: "registry.example.com/agent-container-hub/daily-office",
+        image_tag: "2026.05",
+        image_ref: "registry.example.com/agent-container-hub/daily-office:2026.05",
+        available: true,
+        enabled: true,
+        available_build_targets: ["image", "smoke"],
+        last_build: {
+          id: "build-1",
+          environment_name: "daily-office",
+          image_ref: "registry.example.com/agent-container-hub/daily-office:2026.05",
+          target: "image",
+          status: "succeeded"
+        }
+      }
+    ])]
+  ]), async (baseUrl) => {
+    const result = await listMarketItems(app, {
+      catalog: { schemaVersion: 1, items: [] },
+      skillsApiBaseUrl: baseUrl,
+      containerHubBaseUrl: baseUrl
+    });
+    const image = result.items.find((item) => item.type === "sandbox-image" && item.id === "daily-office");
+
+    assert.equal(result.sandboxOffline, false);
+    assert.equal(image?.name, "daily-office");
+    assert.equal(image?.state, "installed");
+    assert.equal(image?.imageRef, "registry.example.com/agent-container-hub/daily-office:2026.05");
+    assert.equal(image?.buildStatus, "succeeded");
+    assert.equal(image?.buildTargetCount, 2);
+  });
+});
+
+test("buildSandboxImage starts a Container Hub environment build job", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-build-"));
+  const app = createApp(root);
+  let capturedBody = "";
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/api/environments/daily-office/build-jobs", (req, res) => {
+      assert.equal(req.method, "POST");
+      req.on("data", (chunk) => {
+        capturedBody += chunk;
+      });
+      req.on("end", () => {
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({
+          id: "build-2",
+          environment_name: "daily-office",
+          image_ref: "registry.example.com/agent-container-hub/daily-office:2026.05",
+          status: "building"
+        }));
+      });
+    }]
+  ]), async (baseUrl) => {
+    const result = await buildSandboxImage(app, "daily-office", { containerHubBaseUrl: baseUrl });
+
+    assert.equal(capturedBody, "{}");
+    assert.equal(result.ok, true);
+    assert.equal(result.type, "sandbox-image");
+    assert.equal(result.state, "installing");
+    assert.equal(result.buildJobId, "build-2");
+    assert.equal(result.buildStatus, "building");
+    assert.equal(result.imageRef, "registry.example.com/agent-container-hub/daily-office:2026.05");
   });
 });
 
