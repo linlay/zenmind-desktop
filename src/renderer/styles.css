@@ -1013,7 +1013,7 @@ body.quick-web-copilot-body,
 }
 
 .app-shell.is-mac-translucent-sidebar::before {
-  left: var(--app-sidebar-width, 160px);
+  left: 0;
 }
 
 .app-shell.is-mac-translucent-sidebar.has-embedded-surface::before {
@@ -2993,17 +2993,33 @@ body.quick-web-copilot-body,
   transition: width 0.2s ease-in-out, min-width 0.2s ease-in-out;
 }
 
+.app-sidebar-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.44), transparent 30%),
+    radial-gradient(circle at 78% 84%, rgba(130, 194, 248, 0.34), transparent 36%),
+    linear-gradient(180deg, rgba(242, 248, 255, 0.38) 0%, rgba(222, 238, 252, 0.28) 100%);
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .app-sidebar-shell::before {
+  background:
+    radial-gradient(circle at 18% 10%, rgba(255, 255, 255, 0.08), transparent 28%),
+    radial-gradient(circle at 76% 88%, rgba(79, 136, 255, 0.13), transparent 34%),
+    linear-gradient(180deg, rgba(70, 75, 84, 0.32) 0%, rgba(32, 35, 40, 0.26) 100%);
+}
+
 .app-shell.is-mac-translucent-sidebar .app-sidebar-shell {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
 }
 
-.app-sidebar-shell::before {
-  display: none;
-}
-
 .app-sidebar {
   position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -3038,9 +3054,9 @@ body.quick-web-copilot-body,
   background:
     linear-gradient(
       180deg,
-      rgba(255, 255, 255, 0.72) 0%,
-      rgba(252, 253, 255, 0.64) 42%,
-      rgba(246, 248, 251, 0.6) 100%
+      rgba(255, 255, 255, 0.52) 0%,
+      rgba(252, 253, 255, 0.44) 42%,
+      rgba(246, 248, 251, 0.38) 100%
     );
   border-right: 1px solid rgba(83, 96, 112, 0.13);
   box-shadow:
@@ -3052,9 +3068,9 @@ body.quick-web-copilot-body,
   background:
     linear-gradient(
       180deg,
-      rgba(57, 58, 62, 0.72) 0%,
-      rgba(46, 48, 52, 0.66) 40%,
-      rgba(37, 39, 43, 0.62) 100%
+      rgba(57, 58, 62, 0.5) 0%,
+      rgba(46, 48, 52, 0.44) 40%,
+      rgba(37, 39, 43, 0.38) 100%
     );
   border-right-color: rgba(255, 255, 255, 0.08);
   box-shadow:
@@ -3066,9 +3082,9 @@ body.quick-web-copilot-body,
   background:
     linear-gradient(
       180deg,
-      rgba(255, 255, 255, 0.72) 0%,
-      rgba(252, 253, 255, 0.64) 42%,
-      rgba(246, 248, 251, 0.6) 100%
+      rgba(255, 255, 255, 0.52) 0%,
+      rgba(252, 253, 255, 0.44) 42%,
+      rgba(246, 248, 251, 0.38) 100%
     );
   border-right: 1px solid rgba(83, 96, 112, 0.13);
   box-shadow:
@@ -3082,9 +3098,9 @@ body.quick-web-copilot-body,
   background:
     linear-gradient(
       180deg,
-      rgba(57, 58, 62, 0.72) 0%,
-      rgba(46, 48, 52, 0.66) 40%,
-      rgba(37, 39, 43, 0.62) 100%
+      rgba(57, 58, 62, 0.5) 0%,
+      rgba(46, 48, 52, 0.44) 40%,
+      rgba(37, 39, 43, 0.38) 100%
     );
   border-right-color: rgba(255, 255, 255, 0.08);
   box-shadow:
@@ -3280,7 +3296,7 @@ body.quick-web-copilot-body,
   white-space: nowrap;
   font-size: 13px;
   line-height: 1.2;
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .sidebar-link-label-collapsed {
@@ -3453,7 +3469,7 @@ body.quick-web-copilot-body,
   color: currentColor;
   font-size: 10px;
   line-height: 1.2;
-  font-weight: 500;
+  font-weight: 400;
   text-align: center;
   text-overflow: clip;
   white-space: nowrap;
@@ -3827,6 +3843,7 @@ body.quick-web-copilot-body,
   padding: 6px 12px;
   border-radius: 4px;
   color: var(--ink-soft);
+  font-weight: 400;
   transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
 }
 

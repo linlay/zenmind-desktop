@@ -198,12 +198,16 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.doesNotMatch(settingsPage, /navigation-opacity-control/);
 
   assert.doesNotMatch(globalStyles, /--sidebar-translucency-opacity/);
-  assert.match(globalStyles, /rgba\(255,\s*255,\s*255,\s*0\.72\)\s*0%/);
-  assert.match(globalStyles, /rgba\(252,\s*253,\s*255,\s*0\.64\)\s*42%/);
-  assert.match(globalStyles, /rgba\(246,\s*248,\s*251,\s*0\.6\)\s*100%/);
-  assert.match(globalStyles, /rgba\(57,\s*58,\s*62,\s*0\.72\)\s*0%/);
-  assert.match(globalStyles, /rgba\(46,\s*48,\s*52,\s*0\.66\)\s*40%/);
-  assert.match(globalStyles, /rgba\(37,\s*39,\s*43,\s*0\.62\)\s*100%/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-translucent-sidebar::before\s*\{[\s\S]*?left:\s*0;/);
+  assert.match(globalStyles, /\.app-sidebar-shell::before\s*\{[\s\S]*?radial-gradient/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\]\s+\.app-sidebar-shell::before\s*\{[\s\S]*?radial-gradient/);
+  assert.doesNotMatch(globalStyles, /\.app-sidebar-shell::before\s*\{\s*display:\s*none;/);
+  assert.match(globalStyles, /rgba\(255,\s*255,\s*255,\s*0\.52\)\s*0%/);
+  assert.match(globalStyles, /rgba\(252,\s*253,\s*255,\s*0\.44\)\s*42%/);
+  assert.match(globalStyles, /rgba\(246,\s*248,\s*251,\s*0\.38\)\s*100%/);
+  assert.match(globalStyles, /rgba\(57,\s*58,\s*62,\s*0\.5\)\s*0%/);
+  assert.match(globalStyles, /rgba\(46,\s*48,\s*52,\s*0\.44\)\s*40%/);
+  assert.match(globalStyles, /rgba\(37,\s*39,\s*43,\s*0\.38\)\s*100%/);
 
   assert.doesNotMatch(preload, /setSidebarTranslucency/);
   assert.doesNotMatch(contracts, /setSidebarTranslucency/);
