@@ -535,6 +535,21 @@ export interface AssistantPageContext {
   );
 }
 
+export type DesktopPageKind = "native" | "webview" | "iframe";
+
+export interface DesktopPageContextSnapshot {
+  route: string;
+  pageKey: string;
+  pageKind: DesktopPageKind;
+  surfaceId?: string;
+  surfaceLabel?: string;
+  webContentsId?: number;
+  frameMatchUrl?: string;
+  snapshotVersion: number;
+  snapshotAt: string;
+  pageContext: AssistantPageContext | null;
+}
+
 export interface EmbeddedWebExecuteInFrameRequest {
   frameMatchUrl: string;
   script: string;

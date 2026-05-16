@@ -7,6 +7,7 @@ import type {
   WheelEvent as ReactWheelEvent
 } from "react";
 import { createPortal } from "react-dom";
+import { useLocation } from "react-router-dom";
 import type { AssistantPageContext } from "../../shared/contracts";
 import {
   createExternalWebviewBookmarkId,
@@ -27,13 +28,19 @@ import type { ExternalWebviewBookmark } from "../../shared/external-webview-book
 import {
   EXTRACT_STRUCTURED_SCRIPT,
   READ_PAGE_DATA_SCRIPT,
+  buildFillFormScript,
   buildInteractElementScript,
+  buildSubmitFormScript,
   type EmbeddedWebInteractAction,
   type EmbeddedWebReadInclude,
   type EmbeddedWebStructuredTarget
 } from "../../shared/embedded-web-scripts";
 import { registerAssistantPageContextProvider } from "../services/assistantPageContext";
-import { registerDesktopActionProviderForScope } from "../services/desktopActionRegistry";
+import { publishCurrentPageContextSnapshot } from "../services/currentPageContext";
+import {
+  registerCurrentPageExecutor,
+  registerDesktopActionProviderForScope
+} from "../services/desktopActionRegistry";
 
 type ExternalWebviewPageProps = {
   title: string;
@@ -448,6 +455,8 @@ function ExternalWebviewPane({
 }
 
 export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabel }: ExternalWebviewPageProps) {
+  const location = useLocation();
+  const currentRoute = `${location.pathname}${location.search}`;
   const tabSequenceRef = useRef(0);
   const webviewRefs = useRef(new Map<string, Electron.WebviewTag>());
   const surfaceKeyRef = useRef(`${title}\u0000${url}`);
@@ -820,6 +829,38 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     isLoading: tab.isLoading
   });
 
+  function embeddedError(code: string, message: string, details?: unknown) {
+    return {
+      ok: false,
+      error: {
+        code,
+        message,
+        ...(details === undefined ? {} : { details })
+      }
+    };
+  }
+
+  function readTargetTabId(args: Record<string, unknown>) {
+    return typeof args.tabId === "string" && args.tabId.trim()
+      ? args.tabId.trim()
+      : browserStateRef.current.activeTabId;
+  }
+
+  async function executeActiveWebviewScript(args: Record<string, unknown>, script: string) {
+    if (getUtf8ByteLength(script) > EMBEDDED_WEB_SCRIPT_MAX_BYTES) {
+      return embeddedError("script_too_large", "脚本超过内嵌网站执行大小限制。");
+    }
+
+    const tabId = readTargetTabId(args);
+    const targetWebview = webviewRefs.current.get(tabId);
+    if (!targetWebview) {
+      return embeddedError("tab_unavailable", "目标内嵌网站标签页不可用。", { tabId });
+    }
+
+    const result = await targetWebview.executeJavaScript(script, true);
+    return { ok: true, result };
+  }
+
   const getEmbeddedWebSurfaceState = () => {
     const { currentState, currentActiveTab, activeWebview } = getActiveWebviewState();
     let webContentsId = currentActiveTab?.guestId ?? null;
@@ -902,6 +943,189 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     }
   };
 
+  const createCurrentPageDescriptor = () => {
+    const { currentActiveTab, activeWebview } = getActiveWebviewState();
+    let webContentsId = currentActiveTab?.guestId ?? undefined;
+    if (activeWebview) {
+      try {
+        const nextWebContentsId = activeWebview.getWebContentsId();
+        if (Number.isFinite(nextWebContentsId)) {
+          webContentsId = nextWebContentsId;
+        }
+      } catch {
+        // Keep the last synced guest id if Electron has not attached yet.
+      }
+    }
+    return {
+      route: currentRoute,
+      pageKey: `webview:${currentRoute}:${surfaceId || url}:${currentActiveTab?.id ?? "default"}`,
+      pageKind: "webview" as const,
+      ...(surfaceId ? { surfaceId } : {}),
+      ...(surfaceLabel || title ? { surfaceLabel: surfaceLabel ?? title } : {}),
+      ...(typeof webContentsId === "number" ? { webContentsId } : {})
+    };
+  };
+
+  function attachDescriptorMetadata(
+    payload: Record<string, unknown>
+  ) {
+    const descriptor = createCurrentPageDescriptor();
+    return {
+      route: descriptor.route,
+      pageKey: descriptor.pageKey,
+      pageKind: descriptor.pageKind,
+      ...(descriptor.surfaceId ? { surfaceId: descriptor.surfaceId } : {}),
+      ...(descriptor.surfaceLabel ? { surfaceLabel: descriptor.surfaceLabel } : {}),
+      ...(typeof descriptor.webContentsId === "number" ? { webContentsId: descriptor.webContentsId } : {}),
+      ...payload
+    };
+  }
+
+  function readFormFields(args: Record<string, unknown>) {
+    if (!Array.isArray(args.fields)) {
+      return [];
+    }
+    return args.fields
+      .map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+          return null;
+        }
+        const node = item as Record<string, unknown>;
+        const selector = typeof node.selector === "string" ? node.selector.trim() : "";
+        if (!selector) {
+          return null;
+        }
+        const action = typeof node.action === "string" ? node.action.trim() : "";
+        return {
+          selector,
+          ...(typeof node.value === "string" ? { value: node.value } : node.value == null ? {} : { value: String(node.value) }),
+          ...(action === "fill" || action === "select" || action === "click" ? { action } : {})
+        };
+      })
+      .filter((item): item is { selector: string; value?: string; action?: "fill" | "select" | "click" } => Boolean(item));
+  }
+
+  async function executeCurrentPageRead(args: Record<string, unknown>) {
+    const response = await executeActiveWebviewScript(args, READ_PAGE_DATA_SCRIPT);
+    if (!response.ok) {
+      return response;
+    }
+    return {
+      ok: true,
+      result: attachDescriptorMetadata({
+        realtime: true,
+        readAt: new Date().toISOString(),
+        pageContext: await readActivePageContext(),
+        data: filterReadPageDataResult(
+          response.result,
+          readAllowedValues(args.include, EMBEDDED_WEB_READ_INCLUDES)
+        )
+      })
+    };
+  }
+
+  async function executeCurrentPageStructuredRead(args: Record<string, unknown>) {
+    const response = await executeActiveWebviewScript(args, EXTRACT_STRUCTURED_SCRIPT);
+    if (!response.ok) {
+      return response;
+    }
+    return {
+      ok: true,
+      result: attachDescriptorMetadata({
+        realtime: true,
+        readAt: new Date().toISOString(),
+        data: filterStructuredResult(
+          response.result,
+          readAllowedValues(args.targets, EMBEDDED_WEB_STRUCTURED_TARGETS)
+        )
+      })
+    };
+  }
+
+  async function executeCurrentPageInteract(args: Record<string, unknown>) {
+    const selector = typeof args.selector === "string" ? args.selector.trim() : "";
+    const action = typeof args.action === "string" ? args.action.trim() : "";
+    if (!selector || !EMBEDDED_WEB_INTERACT_ACTIONS.has(action as EmbeddedWebInteractAction)) {
+      return embeddedError("invalid_args", "selector 和有效的 action 是必填项。", args);
+    }
+    const response = await executeActiveWebviewScript(args, buildInteractElementScript({
+      selector,
+      action: action as EmbeddedWebInteractAction,
+      value: typeof args.value === "string" ? args.value : args.value == null ? undefined : String(args.value)
+    }));
+    if (!response.ok) {
+      return response;
+    }
+    return {
+      ok: true,
+      result: attachDescriptorMetadata({
+        interacted: true,
+        action,
+        outcome: response.result
+      })
+    };
+  }
+
+  async function executeCurrentPageFillForm(args: Record<string, unknown>) {
+    const fields = readFormFields(args);
+    if (fields.length === 0) {
+      return embeddedError("invalid_args", "fields 是必填项，且每个字段都需要 selector。", args);
+    }
+    const response = await executeActiveWebviewScript(args, buildFillFormScript({
+      formSelector: typeof args.formSelector === "string" ? args.formSelector.trim() : undefined,
+      fields
+    }));
+    if (!response.ok) {
+      return response;
+    }
+    return {
+      ok: true,
+      result: attachDescriptorMetadata({
+        filled: true,
+        outcome: response.result
+      })
+    };
+  }
+
+  async function executeCurrentPageSubmitForm(args: Record<string, unknown>) {
+    const response = await executeActiveWebviewScript(args, buildSubmitFormScript({
+      formSelector: typeof args.formSelector === "string" ? args.formSelector.trim() : undefined,
+      submitSelector: typeof args.submitSelector === "string" ? args.submitSelector.trim() : undefined
+    }));
+    if (!response.ok) {
+      return response;
+    }
+    return {
+      ok: true,
+      result: attachDescriptorMetadata({
+        submitted: true,
+        outcome: response.result
+      })
+    };
+  }
+
+  useEffect(() => {
+    if (active === false || !activeTab) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const pageContext = await readActivePageContext();
+      if (cancelled) {
+        return;
+      }
+      publishCurrentPageContextSnapshot({
+        ...createCurrentPageDescriptor(),
+        pageContext
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [active, activeTab?.id, currentRoute, surfaceId, surfaceLabel, title, url]);
+
   useEffect(() => {
     if (active === false || !activeTab) {
       return undefined;
@@ -911,6 +1135,21 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       return readActivePageContext();
     });
   }, [active, activeTab?.id, surfaceId, surfaceLabel, title]);
+
+  useEffect(() => {
+    if (active === false || !activeTab) {
+      return undefined;
+    }
+
+    return registerCurrentPageExecutor({
+      getDescriptor: createCurrentPageDescriptor,
+      readCurrent: async (request) => executeCurrentPageRead(request.args ?? {}),
+      extractStructured: async (request) => executeCurrentPageStructuredRead(request.args ?? {}),
+      interact: async (request) => executeCurrentPageInteract(request.args ?? {}),
+      fillForm: async (request) => executeCurrentPageFillForm(request.args ?? {}),
+      submitForm: async (request) => executeCurrentPageSubmitForm(request.args ?? {})
+    });
+  }, [active, activeTab?.id, currentRoute, surfaceId, surfaceLabel, title, url]);
 
   useEffect(() => {
     if (active === false) {
@@ -926,41 +1165,9 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       return normalizeEditableUrl(rawUrl);
     }
 
-    function readTargetTabId(args: Record<string, unknown>) {
-      return typeof args.tabId === "string" && args.tabId.trim()
-        ? args.tabId.trim()
-        : browserStateRef.current.activeTabId;
-    }
-
     function requestTargetsDifferentSurface(args: Record<string, unknown>) {
       const targetSurfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
       return Boolean(targetSurfaceId && surfaceId && targetSurfaceId !== surfaceId);
-    }
-
-    function embeddedError(code: string, message: string, details?: unknown) {
-      return {
-        ok: false,
-        error: {
-          code,
-          message,
-          ...(details === undefined ? {} : { details })
-        }
-      };
-    }
-
-    async function executeActiveWebviewScript(args: Record<string, unknown>, script: string) {
-      if (getUtf8ByteLength(script) > EMBEDDED_WEB_SCRIPT_MAX_BYTES) {
-        return embeddedError("script_too_large", "脚本超过内嵌网站执行大小限制。");
-      }
-
-      const tabId = readTargetTabId(args);
-      const targetWebview = webviewRefs.current.get(tabId);
-      if (!targetWebview) {
-        return embeddedError("tab_unavailable", "目标内嵌网站标签页不可用。", { tabId });
-      }
-
-      const result = await targetWebview.executeJavaScript(script, true);
-      return { ok: true, result };
     }
 
     return registerDesktopActionProviderForScope("embeddedWeb", async (request) => {
@@ -978,42 +1185,25 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
         case "desktop.embeddedWeb.getPageContext":
           return { ok: true, result: await readActivePageContext() };
         case "desktop.embeddedWeb.readPageData": {
-          const response = await executeActiveWebviewScript(args, READ_PAGE_DATA_SCRIPT);
+          const response = await executeCurrentPageRead(args);
           if (!response.ok) {
             return response;
           }
-          return {
-            ok: true,
-            result: filterReadPageDataResult(
-              response.result,
-              readAllowedValues(args.include, EMBEDDED_WEB_READ_INCLUDES)
-            )
-          };
+          return { ok: true, result: response.result.data };
         }
         case "desktop.embeddedWeb.extractStructured": {
-          const response = await executeActiveWebviewScript(args, EXTRACT_STRUCTURED_SCRIPT);
+          const response = await executeCurrentPageStructuredRead(args);
           if (!response.ok) {
             return response;
           }
-          return {
-            ok: true,
-            result: filterStructuredResult(
-              response.result,
-              readAllowedValues(args.targets, EMBEDDED_WEB_STRUCTURED_TARGETS)
-            )
-          };
+          return { ok: true, result: response.result.data };
         }
         case "desktop.embeddedWeb.interactElement": {
-          const selector = typeof args.selector === "string" ? args.selector.trim() : "";
-          const action = typeof args.action === "string" ? args.action.trim() : "";
-          if (!selector || !EMBEDDED_WEB_INTERACT_ACTIONS.has(action as EmbeddedWebInteractAction)) {
-            return embeddedError("invalid_args", "selector 和有效的 action 是必填项。", args);
+          const response = await executeCurrentPageInteract(args);
+          if (!response.ok) {
+            return response;
           }
-          return executeActiveWebviewScript(args, buildInteractElementScript({
-            selector,
-            action: action as EmbeddedWebInteractAction,
-            value: typeof args.value === "string" ? args.value : args.value == null ? undefined : String(args.value)
-          }));
+          return { ok: true, result: response.result.outcome };
         }
         case "desktop.embeddedWeb.executeScript": {
           const script = typeof args.script === "string" ? args.script : "";

@@ -41,8 +41,12 @@ test("main content scroll container is not a window drag region", () => {
 });
 
 test("main content keeps a dedicated titlebar drag strip", () => {
-  const dragRegionRule = readRule(".app-main-drag-region");
+  const styles = fs.readFileSync(stylesPath, "utf8");
+  const dragRegionRule = styles.match(
+    /\.app-main-drag-region\s*\{[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;[\s\S]*?\}/
+  )?.[0];
 
+  assert.ok(dragRegionRule, "missing draggable .app-main-drag-region rule");
   assert.match(dragRegionRule, /app-region:\s*drag;/);
   assert.match(dragRegionRule, /-webkit-app-region:\s*drag;/);
 });
@@ -61,7 +65,7 @@ test("settings mode close button is excluded from the window drag region", () =>
 });
 
 test("mac sidebar drag strip leaves the traffic-light controls clickable", () => {
-  const dragRegionRule = readRule(".app-shell.is-mac-platform .app-sidebar-drag-region");
+  const dragRegionRule = readRule(".app-shell.is-mac-platform .sidebar-chrome-drag-region");
 
   assert.match(dragRegionRule, /left:\s*var\(--mac-traffic-light-safe-area\);/);
 });
