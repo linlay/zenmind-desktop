@@ -116,7 +116,7 @@ function getHelpCategories(isWindows: boolean): HelpCategory[] {
             </ul>
             <p>
               该目录按 <code>programs</code>、<code>config</code>、<code>data</code>、<code>state</code>、<code>logs</code>、
-              <code>cache</code>、<code>secrets</code> 和 <code>profiles</code> 分层。已有旧数据时，应用会继续使用旧布局运行。
+              <code>cache</code>、<code>secrets</code> 和 <code>profiles</code> 分层。
             </p>
           </>
         ),

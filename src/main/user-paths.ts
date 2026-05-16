@@ -4,9 +4,7 @@ import path from "node:path";
 import type { App } from "electron";
 import type { ServiceId, ServiceKind } from "../shared/contracts";
 
-export type DesktopDataLayoutMode = "layered" | "legacy";
-
-const LAYERED_DESKTOP_DIRS = [
+const DESKTOP_DIRS = [
   "programs",
   "config",
   "data",
@@ -16,123 +14,22 @@ const LAYERED_DESKTOP_DIRS = [
   "secrets",
   "profiles"
 ] as const;
-const LEGACY_MANAGED_DATA_DIRS = ["services", "plugins", "credentials"] as const;
-const LEGACY_DATA_MARKERS = [
-  "services",
-  "plugins",
-  "credentials",
-  "assistant",
-  "settings",
-  "desktop-pet",
-  "marketplace",
-  ".zenmind-desktop"
-] as const;
 
-type DefaultDesktopRootOptions = {
+type DesktopRootOptions = {
   platform?: NodeJS.Platform;
   homePath: string;
-};
-
-type LegacyDesktopRootOptions = {
-  platform?: NodeJS.Platform;
-  isPackaged?: boolean;
-  appDataPath?: string;
-  userDataPath?: string;
-  execPath?: string;
-};
-
-type DesktopLayoutResolutionOptions = DefaultDesktopRootOptions & LegacyDesktopRootOptions;
-
-export type DesktopDataLayout = {
-  mode: DesktopDataLayoutMode;
-  root: string;
-  defaultRoot: string;
-  legacyRoot: string;
 };
 
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
   return platform === "win32" ? path.win32 : path;
 }
 
-function resolveDefaultDesktopRoot({
+function resolveDesktopRootFromHome({
   platform = process.platform,
   homePath
-}: DefaultDesktopRootOptions) {
+}: DesktopRootOptions) {
   const pathApi = pathApiForPlatform(platform);
-  return pathApi.join(homePath, ".zenmind", ".desktop");
-}
-
-function resolveLegacyDesktopRoot({
-  platform = process.platform,
-  isPackaged = false,
-  appDataPath,
-  userDataPath,
-  execPath = process.execPath
-}: LegacyDesktopRootOptions) {
-  const pathApi = pathApiForPlatform(platform);
-  if (platform === "win32" && isPackaged) {
-    return pathApi.join(pathApi.dirname(execPath), "data");
-  }
-  if (appDataPath) {
-    return pathApi.join(appDataPath, "zenmind-desktop");
-  }
-  if (userDataPath) {
-    return pathApi.resolve(userDataPath);
-  }
-  return pathApi.join(os.homedir(), ".zenmind-desktop");
-}
-
-function directoryHasAnyMarker(root: string, markers: readonly string[]) {
-  return markers.some((marker) => fs.existsSync(path.join(root, marker)));
-}
-
-function isExistingLayeredRoot(root: string) {
-  return fs.existsSync(root);
-}
-
-function isExistingLegacyRoot(root: string) {
-  return directoryHasAnyMarker(root, LEGACY_DATA_MARKERS);
-}
-
-function resolveDesktopDataLayoutFromPaths(options: DesktopLayoutResolutionOptions): DesktopDataLayout {
-  const pathApi = pathApiForPlatform(options.platform);
-  const defaultRoot = pathApi.resolve(resolveDefaultDesktopRoot(options));
-  const legacyRoot = pathApi.resolve(resolveLegacyDesktopRoot(options));
-  const legacyUserDataRoot = options.userDataPath ? pathApi.resolve(options.userDataPath) : "";
-
-  if (isExistingLayeredRoot(defaultRoot)) {
-    return {
-      mode: "layered",
-      root: defaultRoot,
-      defaultRoot,
-      legacyRoot
-    };
-  }
-
-  if (isExistingLegacyRoot(legacyRoot)) {
-    return {
-      mode: "legacy",
-      root: legacyRoot,
-      defaultRoot,
-      legacyRoot
-    };
-  }
-
-  if (legacyUserDataRoot && legacyUserDataRoot !== legacyRoot && isExistingLegacyRoot(legacyUserDataRoot)) {
-    return {
-      mode: "legacy",
-      root: legacyUserDataRoot,
-      defaultRoot,
-      legacyRoot: legacyUserDataRoot
-    };
-  }
-
-  return {
-    mode: "layered",
-    root: defaultRoot,
-    defaultRoot,
-    legacyRoot
-  };
+  return pathApi.resolve(pathApi.join(homePath, ".zenmind", ".desktop"));
 }
 
 function tryGetAppPath(app: Pick<App, "getPath">, name: Parameters<App["getPath"]>[0]) {
@@ -148,36 +45,10 @@ function getHomePath(app: Pick<App, "getPath">) {
   return tryGetAppPath(app, "home") || process.env.HOME || os.homedir();
 }
 
-function getAppDataPath(app: Pick<App, "getPath">) {
-  const appData = tryGetAppPath(app, "appData");
-  if (appData) {
-    return appData;
-  }
-
-  const userData = tryGetAppPath(app, "userData");
-  if (userData) {
-    return path.dirname(userData);
-  }
-
-  if (process.platform === "win32") {
-    return process.env.APPDATA || path.join(getHomePath(app), "AppData", "Roaming");
-  }
-
-  if (process.platform === "darwin") {
-    return path.join(getHomePath(app), "Library", "Application Support");
-  }
-
-  return path.join(getHomePath(app), ".config");
-}
-
-function resolveDesktopDataLayout(app: Pick<App, "getPath" | "isPackaged">): DesktopDataLayout {
-  return resolveDesktopDataLayoutFromPaths({
+function getDesktopRootPath(app: Pick<App, "getPath">) {
+  return resolveDesktopRootFromHome({
     platform: process.platform,
-    homePath: getHomePath(app),
-    appDataPath: getAppDataPath(app),
-    userDataPath: tryGetAppPath(app, "userData"),
-    isPackaged: app.isPackaged,
-    execPath: process.execPath
+    homePath: getHomePath(app)
   });
 }
 
@@ -185,16 +56,9 @@ function ensureDirectory(targetPath: string) {
   fs.mkdirSync(targetPath, { recursive: true });
 }
 
-function ensureLegacyDataDirs(dataRoot: string) {
+function ensureDesktopDirs(dataRoot: string) {
   ensureDirectory(dataRoot);
-  for (const dirName of LEGACY_MANAGED_DATA_DIRS) {
-    ensureDirectory(path.join(dataRoot, dirName));
-  }
-}
-
-function ensureLayeredDataDirs(dataRoot: string) {
-  ensureDirectory(dataRoot);
-  for (const dirName of LAYERED_DESKTOP_DIRS) {
+  for (const dirName of DESKTOP_DIRS) {
     ensureDirectory(path.join(dataRoot, dirName));
   }
   ensureDirectory(path.join(dataRoot, "programs", "services"));
@@ -212,176 +76,123 @@ function ensureLayeredDataDirs(dataRoot: string) {
   ensureDirectory(path.join(dataRoot, "profiles", "electron"));
 }
 
-function ensureActiveDataDirs(layout: DesktopDataLayout) {
-  if (layout.mode === "layered") {
-    ensureLayeredDataDirs(layout.root);
-    return;
-  }
-  ensureLegacyDataDirs(layout.root);
-}
-
-function getLayeredOrLegacyPath(
-  app: App,
-  layered: (root: string) => string,
-  legacy: (root: string) => string
-) {
-  const layout = resolveDesktopDataLayout(app);
-  return layout.mode === "layered" ? layered(layout.root) : legacy(layout.root);
-}
-
 function kindDirectoryName(kind: ServiceKind) {
   return kind === "plugin" ? "plugins" : "services";
 }
 
-export function getDesktopDataLayout(app: App) {
-  return resolveDesktopDataLayout(app);
-}
-
-export function getDesktopDataLayoutMode(app: App) {
-  return resolveDesktopDataLayout(app).mode;
-}
-
-export function usesLayeredDesktopDataLayout(app: App) {
-  return resolveDesktopDataLayout(app).mode === "layered";
-}
-
 export function getDataRoot(app: App) {
-  const layout = resolveDesktopDataLayout(app);
-  ensureDirectory(layout.root);
-  return layout.root;
+  const dataRoot = getDesktopRootPath(app);
+  ensureDirectory(dataRoot);
+  return dataRoot;
 }
 
 export const getDesktopRoot = getDataRoot;
 
 export function ensureDataRoot(app: App) {
-  const layout = resolveDesktopDataLayout(app);
-  ensureActiveDataDirs(layout);
-  return layout.root;
+  const dataRoot = getDesktopRootPath(app);
+  ensureDesktopDirs(dataRoot);
+  return dataRoot;
 }
 
 export function getProgramsRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "programs"), (root) => root);
+  return path.join(getDataRoot(app), "programs");
 }
 
 export function getServicesRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "programs", "services"), (root) => path.join(root, "services"));
+  return path.join(getDataRoot(app), "programs", "services");
 }
 
 export function getPluginsRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "programs", "plugins"), (root) => path.join(root, "plugins"));
+  return path.join(getDataRoot(app), "programs", "plugins");
 }
 
 export function getConfigRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "config"), (root) => root);
+  return path.join(getDataRoot(app), "config");
 }
 
 export function getDesktopConfigRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "config", "desktop"), (root) => path.join(root, "settings"));
+  return path.join(getDataRoot(app), "config", "desktop");
 }
 
 export function getDesktopPetSettingsPath(app: App) {
-  return getLayeredOrLegacyPath(
-    app,
-    (root) => path.join(root, "config", "desktop", "desktop-pet.json"),
-    (root) => path.join(root, "desktop-pet", "state.json")
-  );
+  return path.join(getDesktopConfigRoot(app), "desktop-pet.json");
 }
 
 export function getAssistantSettingsRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "config", "desktop"), (root) => path.join(root, "assistant"));
+  return getDesktopConfigRoot(app);
 }
 
-export function getServiceConfigRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin", legacyInstallDir = "") {
-  return getLayeredOrLegacyPath(
-    app,
-    (root) => path.join(root, "config", kindDirectoryName(kind), serviceId),
-    (root) => legacyInstallDir || path.join(root, kindDirectoryName(kind), serviceId)
-  );
+export function getServiceConfigRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin") {
+  return path.join(getDataRoot(app), "config", kindDirectoryName(kind), serviceId);
 }
 
 export function getRuntimeDataRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "data"), (root) => root);
+  return path.join(getDataRoot(app), "data");
 }
 
-export function getServiceDataRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin", legacyInstallDir = "") {
-  return getLayeredOrLegacyPath(
-    app,
-    (root) => path.join(root, "data", kindDirectoryName(kind), serviceId),
-    () => legacyInstallDir
-  );
+export function getServiceDataRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin") {
+  return path.join(getDataRoot(app), "data", kindDirectoryName(kind), serviceId);
 }
 
 export function getAssistantDataRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "data", "assistant"), (root) => path.join(root, "assistant"));
+  return path.join(getDataRoot(app), "data", "assistant");
 }
 
 export function getStateRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "state"), (root) => path.join(root, ".zenmind-desktop"));
+  return path.join(getDataRoot(app), "state");
 }
 
 export function getDesktopStateRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "state", "desktop"), (root) => path.join(root, ".zenmind-desktop"));
+  return path.join(getDataRoot(app), "state", "desktop");
 }
 
-export function getServiceStateRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin", legacyInstallDir = "") {
-  return getLayeredOrLegacyPath(
-    app,
-    (root) => path.join(root, "state", kindDirectoryName(kind), serviceId),
-    () => legacyInstallDir ? path.join(legacyInstallDir, ".zenmind-desktop") : ""
-  );
+export function getServiceStateRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin") {
+  return path.join(getDataRoot(app), "state", kindDirectoryName(kind), serviceId);
 }
 
 export function getLogsRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "logs"), (root) => root);
+  return path.join(getDataRoot(app), "logs");
 }
 
-export function getServiceLogsRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin", legacyInstallDir = "") {
-  return getLayeredOrLegacyPath(
-    app,
-    (root) => path.join(root, "logs", kindDirectoryName(kind), serviceId),
-    () => legacyInstallDir ? path.join(legacyInstallDir, "run") : ""
-  );
+export function getServiceLogsRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin") {
+  return path.join(getDataRoot(app), "logs", kindDirectoryName(kind), serviceId);
 }
 
 export function getCacheRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "cache"), (root) => root);
+  return path.join(getDataRoot(app), "cache");
 }
 
 export function getMarketplaceCacheRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "cache", "marketplace"), (root) => path.join(root, "marketplace"));
+  return path.join(getDataRoot(app), "cache", "marketplace");
 }
 
 export function getMarketplaceConfigRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "config", "marketplace"), (root) => path.join(root, "marketplace"));
+  return path.join(getDataRoot(app), "config", "marketplace");
 }
 
 export function getMarketplaceStateRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "state", "marketplace"), (root) => path.join(root, "marketplace"));
+  return path.join(getDataRoot(app), "state", "marketplace");
 }
 
 export function getSecretsRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "secrets"), (root) => path.join(root, "credentials"));
+  return path.join(getDataRoot(app), "secrets");
 }
 
 export const getCredentialsRoot = getSecretsRoot;
 
 export function getProfilesRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "profiles"), (root) => root);
+  return path.join(getDataRoot(app), "profiles");
 }
 
 export function getElectronUserDataRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "profiles", "electron"), (root) => root);
+  return path.join(getProfilesRoot(app), "electron");
 }
 
 export function getControlledChromeProfileRoot(app: App) {
-  return getLayeredOrLegacyPath(app, (root) => path.join(root, "profiles", "controlled-system-chrome"), (root) => path.join(root, "controlled-system-chrome"));
+  return path.join(getProfilesRoot(app), "controlled-system-chrome");
 }
 
 export const __testInternals = {
-  LEGACY_DATA_MARKERS,
-  LEGACY_MANAGED_DATA_DIRS,
-  LAYERED_DESKTOP_DIRS,
-  resolveDefaultDesktopRoot,
-  resolveLegacyDesktopRoot,
-  resolveDesktopDataLayoutFromPaths
+  DESKTOP_DIRS,
+  resolveDesktopRootFromHome
 };

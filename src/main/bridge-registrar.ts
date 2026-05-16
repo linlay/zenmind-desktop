@@ -53,8 +53,8 @@ interface GatewayInfo {
   baseUrl: string;
 }
 
-function getBridgeHttpAddr(app: App, service: ServiceDefinition, bridgeInstallDir: string): string {
-  const envPath = path.join(getServiceConfigRoot(app, service.id, service.kind, bridgeInstallDir), ".env");
+function getBridgeHttpAddr(app: App, service: ServiceDefinition, _bridgeInstallDir: string): string {
+  const envPath = path.join(getServiceConfigRoot(app, service.id, service.kind), ".env");
   const env = readEnvFile(envPath);
   return env.get("BRIDGE_HTTP_ADDR") ?? BRIDGE_HTTP_ADDR_DEFAULT;
 }
@@ -119,7 +119,7 @@ function isBridgeService(service: ServiceDefinition): boolean {
 function getAgentPlatformInstallDir(app: App): string | null {
   try {
     const agentPlatform = getService(AGENT_PLATFORM_ID);
-    return getServiceConfigRoot(app, agentPlatform.id, agentPlatform.kind, getInstallDir(app, agentPlatform));
+    return getServiceConfigRoot(app, agentPlatform.id, agentPlatform.kind);
   } catch {
     return null;
   }

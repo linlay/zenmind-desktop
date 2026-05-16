@@ -69,7 +69,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 项目支持两种服务来源：
 - **内置服务（builtin）**：随应用打包分发，当前包含 `agent-container-hub`、`agent-platform`、`agent-webclient` 和 `zenmind-app-server`。
-- **插件（plugin）**：运行时通过 `.tar.gz` 包导入。新安装默认存储在 `~/.zenmind/.desktop/programs/plugins/<plugin-id>/<version>/`，配置保存在 `~/.zenmind/.desktop/config/plugins/<plugin-id>/`；已有旧数据时继续兼容旧布局。插件包必须包含 `manifest.json` 清单文件。
+- **插件（plugin）**：运行时通过 `.tar.gz` 包导入。程序存储在 `~/.zenmind/.desktop/programs/plugins/<plugin-id>/<version>/`，配置保存在 `~/.zenmind/.desktop/config/plugins/<plugin-id>/`。插件包必须包含 `manifest.json` 清单文件。
 - Desktop 不再随安装包内置任何插件，插件统一通过导入归档包接入。
 
 前端按三种模式区分：
@@ -238,8 +238,8 @@ my-plugin/
 - 内置服务资源依赖外部打包产物，资源包内容缺失会直接导致安装或测试失败。
 - `agent-container-hub` 依赖本机可用的 Docker 或 Podman。
 - `pan-webclient` 仍通过插件系统导入；Desktop 不再打包任何内置插件，缺失插件时优先检查导入产物。
-- 新安装的 Desktop 数据根目录为 `~/.zenmind/.desktop`，按 `programs/`、`config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；旧数据存在时继续使用 legacy 布局，不自动迁移。
-- RSA 密钥对由 Desktop 统一管理，新布局下存储在 `secrets/` 下，旧布局继续读取原 `credentials/`，同时用于 pan-webclient 和 agent-platform 的认证。
+- Desktop 数据根目录为 `~/.zenmind/.desktop`，按 `programs/`、`config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层。
+- RSA 密钥对由 Desktop 统一管理，存储在 `secrets/` 下，同时用于 pan-webclient 和 agent-platform 的认证。
 
 
 ## 11. AI 行为红线

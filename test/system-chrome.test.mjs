@@ -9,9 +9,9 @@ const require = createRequire(import.meta.url);
 const { SystemChromeController, __testInternals } = require("../dist-electron/main/assistant/system-chrome.js");
 
 test("system Chrome discovers existing controlled CDP port after Electron restart", () => {
-  const userDataDir = "/Users/jialin/Library/Application Support/zenmind-desktop/controlled-system-chrome";
+  const userDataDir = "/Users/jialin/.zenmind/.desktop/profiles/controlled-system-chrome";
   const processTable = [
-    "123 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --remote-debugging-port=58987 --user-data-dir=/Users/jialin/Library/Application Support/zenmind-desktop/controlled-system-chrome --no-first-run --no-default-browser-check about:blank",
+    "123 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --remote-debugging-port=58987 --user-data-dir=/Users/jialin/.zenmind/.desktop/profiles/controlled-system-chrome --no-first-run --no-default-browser-check about:blank",
     "456 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --remote-debugging-port=60000 --user-data-dir=/Users/jialin/Library/Application Support/Other App/controlled-system-chrome"
   ].join("\n");
 
@@ -22,9 +22,9 @@ test("system Chrome discovers existing controlled CDP port after Electron restar
 });
 
 test("system Chrome process parsing handles quoted Windows user data paths", () => {
-  const userDataDir = "C:\\Users\\Jialin\\AppData\\Roaming\\zenmind-desktop\\controlled-system-chrome";
+  const userDataDir = "C:\\Users\\Jialin\\.zenmind\\.desktop\\profiles\\controlled-system-chrome";
   const processTable = [
-    '"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=61234 --user-data-dir="C:\\Users\\Jialin\\AppData\\Roaming\\zenmind-desktop\\controlled-system-chrome" --no-first-run'
+    '"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=61234 --user-data-dir="C:\\Users\\Jialin\\.zenmind\\.desktop\\profiles\\controlled-system-chrome" --no-first-run'
   ].join("\n");
 
   assert.equal(
@@ -37,7 +37,7 @@ test("system Chrome waits for target execution context after creating a tab", as
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-system-chrome-ready-"));
   const homePath = path.join(root, "home");
   const appDataPath = path.join(root, "app-data");
-  const userDataPath = path.join(appDataPath, "zenmind-desktop");
+  const userDataPath = path.join(homePath, ".zenmind", ".desktop", "profiles", "electron");
   const userDataDir = path.join(homePath, ".zenmind", ".desktop", "profiles", "controlled-system-chrome");
   fs.mkdirSync(userDataDir, { recursive: true });
   fs.writeFileSync(path.join(userDataDir, "DevToolsActivePort"), "61234\n/devtools/browser/test\n", "utf8");

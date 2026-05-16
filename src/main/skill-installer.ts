@@ -123,7 +123,7 @@ function resolveDesktopRuntimeRoot(app: App) {
 export function getSkillsMarketDir(app: App) {
   try {
     const service = getService("agent-platform");
-    const envPath = path.join(getServiceConfigRoot(app, service.id, service.kind, getInstallDir(app, service)), ".env");
+    const envPath = path.join(getServiceConfigRoot(app, service.id, service.kind), ".env");
     if (fs.existsSync(envPath)) {
       const configured = parseEnvFile(fs.readFileSync(envPath, "utf8")).get("SKILLS_MARKET_DIR")?.trim();
       if (configured) {

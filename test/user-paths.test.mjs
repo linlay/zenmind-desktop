@@ -12,7 +12,6 @@ const {
   getCredentialsRoot,
   getDataRoot,
   getDesktopConfigRoot,
-  getDesktopDataLayoutMode,
   getElectronUserDataRoot,
   getPluginsRoot,
   getServicesRoot,
@@ -25,7 +24,7 @@ const {
 function createApp(root, { isPackaged = false, platformRoot = root } = {}) {
   const homePath = path.join(platformRoot, "home");
   const appDataPath = path.join(platformRoot, "app-data");
-  const userDataRoot = path.join(appDataPath, "zenmind-desktop");
+  const userDataRoot = path.join(homePath, ".zenmind", ".desktop", "profiles", "electron");
   return {
     isPackaged,
     getPath(name) {
@@ -52,7 +51,6 @@ test("new installs use the layered desktop root under home", (t) => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  assert.equal(getDesktopDataLayoutMode(app), "layered");
   assert.equal(getDataRoot(app), path.resolve(expectedRoot));
   assert.equal(fs.existsSync(expectedRoot), true);
   assert.equal(getElectronUserDataRoot(app), path.join(expectedRoot, "profiles", "electron"));
@@ -70,7 +68,7 @@ test("ensureDataRoot creates layered subdirectories under the current data root"
   const dataRoot = ensureDataRoot(app);
 
   assert.equal(dataRoot, path.resolve(expectedRoot));
-  for (const dirName of __testInternals.LAYERED_DESKTOP_DIRS) {
+  for (const dirName of __testInternals.DESKTOP_DIRS) {
     assert.equal(fs.existsSync(path.join(dataRoot, dirName)), true);
   }
   assert.equal(fs.existsSync(path.join(dataRoot, "programs", "services")), true);
@@ -79,63 +77,26 @@ test("ensureDataRoot creates layered subdirectories under the current data root"
   assert.equal(fs.existsSync(path.join(dataRoot, "state", "desktop")), true);
 });
 
-test("packaged Windows legacy root still resolves to the installation data folder", () => {
-  const dataRoot = __testInternals.resolveLegacyDesktopRoot({
-    platform: "win32",
-    isPackaged: true,
-    homePath: String.raw`C:\Users\alice`,
-    userDataPath: String.raw`C:\Users\alice\AppData\Roaming\zenmind-desktop`,
-    execPath: String.raw`D:\ZenMind\ZenMind.exe`
-  });
-
-  assert.equal(dataRoot, String.raw`D:\ZenMind\data`);
-});
-
 test("Windows new installs resolve to the layered desktop root under the user profile", () => {
-  const layout = __testInternals.resolveDesktopDataLayoutFromPaths({
+  const root = __testInternals.resolveDesktopRootFromHome({
     platform: "win32",
-    homePath: String.raw`C:\Users\alice`,
-    appDataPath: String.raw`C:\Users\alice\AppData\Roaming`,
-    userDataPath: String.raw`C:\Users\alice\AppData\Roaming\zenmind-desktop`,
-    execPath: String.raw`D:\ZenMind\ZenMind.exe`,
-    isPackaged: true
+    homePath: String.raw`C:\Users\alice`
   });
 
-  assert.equal(layout.mode, "layered");
-  assert.equal(layout.root, String.raw`C:\Users\alice\.zenmind\.desktop`);
+  assert.equal(root, String.raw`C:\Users\alice\.zenmind\.desktop`);
 });
 
-test("legacy data markers keep existing Application Support layout active", (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-paths-legacy-"));
-  const app = createApp(tempRoot);
-  const legacyRoot = path.join(tempRoot, "app-data", "zenmind-desktop");
-  fs.mkdirSync(path.join(legacyRoot, "services"), { recursive: true });
-
-  t.after(() => {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  });
-
-  assert.equal(getDesktopDataLayoutMode(app), "legacy");
-  assert.equal(getDataRoot(app), legacyRoot);
-  assert.equal(getServicesRoot(app), path.join(legacyRoot, "services"));
-  assert.equal(getPluginsRoot(app), path.join(legacyRoot, "plugins"));
-  assert.equal(getCredentialsRoot(app), path.join(legacyRoot, "credentials"));
-});
-
-test("layered root wins when both new and legacy data exist", (t) => {
+test("appData contents do not change the desktop root", (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-paths-helpers-"));
   const app = createApp(tempRoot);
   const expectedRoot = path.join(tempRoot, "home", ".zenmind", ".desktop");
-  const legacyRoot = path.join(tempRoot, "app-data", "zenmind-desktop");
-  fs.mkdirSync(expectedRoot, { recursive: true });
-  fs.mkdirSync(path.join(legacyRoot, "services"), { recursive: true });
+  fs.mkdirSync(path.join(tempRoot, "app-data", "unrelated-app"), { recursive: true });
 
   t.after(() => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  assert.equal(getDesktopDataLayoutMode(app), "layered");
-  assert.equal(getDataRoot(app), expectedRoot);
+  assert.equal(getDataRoot(app), path.resolve(expectedRoot));
 });
 
 test("managed directory helpers join from the layered desktop root", (t) => {

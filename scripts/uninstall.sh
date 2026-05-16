@@ -5,7 +5,6 @@ set -euo pipefail
 APP_NAME="ZenMind"
 APP_PATH="/Applications/${APP_NAME}.app"
 DATA_PATH="${HOME}/.zenmind/.desktop"
-LEGACY_DATA_PATH="${HOME}/Library/Application Support/zenmind-desktop"
 
 show_dialog() {
   local message="$1"
@@ -33,7 +32,7 @@ prompt_for_data_cleanup() {
   osascript <<'APPLESCRIPT'
 button returned of (display dialog "Do you also want to delete ZenMind app data?
 
-This removes ~/.zenmind/.desktop, including settings, service config, plugins, credentials, logs, caches, and browser profiles. Legacy data under ~/Library/Application Support/zenmind-desktop will also be removed if present." buttons {"Keep Data", "Delete Data"} default button "Keep Data" with icon caution)
+This removes ~/.zenmind/.desktop, including settings, service config, plugins, credentials, logs, caches, and browser profiles." buttons {"Keep Data", "Delete Data"} default button "Keep Data" with icon caution)
 APPLESCRIPT
 }
 
@@ -46,12 +45,10 @@ fi
 remove_application_bundle
 
 if [ "$(prompt_for_data_cleanup)" = "Delete Data" ]; then
-  rm -rf "$DATA_PATH" "$LEGACY_DATA_PATH"
+  rm -rf "$DATA_PATH"
   printf '%s\n' "Removed app data: $DATA_PATH"
-  printf '%s\n' "Removed legacy app data if present: $LEGACY_DATA_PATH"
 else
   printf '%s\n' "Kept app data: $DATA_PATH"
-  printf '%s\n' "Kept legacy app data if present: $LEGACY_DATA_PATH"
 fi
 
 printf '%s\n' "ZenMind uninstall finished."

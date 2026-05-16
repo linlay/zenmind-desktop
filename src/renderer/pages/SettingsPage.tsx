@@ -129,7 +129,7 @@ function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
         <p className="eyebrow">DATA ROOT</p>
         <h2>数据目录</h2>
         <p className="page-copy">
-          新安装默认使用 <code>~/.zenmind/.desktop</code> 分层保存程序、配置、数据、状态、日志、缓存、密钥和浏览器 profile；已有旧数据时会继续显示当前兼容目录。
+          使用 <code>~/.zenmind/.desktop</code> 分层保存程序、配置、数据、状态、日志、缓存、密钥和浏览器 profile。
         </p>
       </div>
       <div className="data-root-actions">

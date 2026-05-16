@@ -35,8 +35,7 @@ import {
   getServiceDataRoot,
   getServiceLogsRoot,
   getServicesRoot,
-  getServiceStateRoot,
-  usesLayeredDesktopDataLayout
+  getServiceStateRoot
 } from "./user-paths";
 import {
   EMBEDDED_CDP_GATEWAY_HOST,
@@ -304,7 +303,6 @@ export function getInstallDir(app: App, service: ServiceDefinition) {
 }
 
 type ServiceLayout = {
-  mode: "layered" | "legacy";
   programDir: string;
   configDir: string;
   dataDir: string;
@@ -315,13 +313,11 @@ type ServiceLayout = {
 
 function getServiceLayout(app: App, service: ServiceDefinition): ServiceLayout {
   const programDir = getInstallDir(app, service);
-  const mode = usesLayeredDesktopDataLayout(app) ? "layered" : "legacy";
-  const configDir = getServiceConfigRoot(app, service.id, service.kind, programDir);
-  const dataDir = getServiceDataRoot(app, service.id, service.kind, programDir) || programDir;
-  const stateDir = getServiceStateRoot(app, service.id, service.kind, programDir) || path.join(programDir, INITIALIZATION_STATE_DIRNAME);
-  const logDir = getServiceLogsRoot(app, service.id, service.kind, programDir) || path.join(programDir, "run");
+  const configDir = getServiceConfigRoot(app, service.id, service.kind);
+  const dataDir = getServiceDataRoot(app, service.id, service.kind);
+  const stateDir = getServiceStateRoot(app, service.id, service.kind);
+  const logDir = getServiceLogsRoot(app, service.id, service.kind);
   return {
-    mode,
     programDir,
     configDir,
     dataDir,
@@ -346,9 +342,6 @@ function resolveConfigTemplatePath(layout: ServiceLayout, relativePath: string) 
 function resolveServiceRuntimePath(layout: ServiceLayout, relativePath: string) {
   if (!relativePath) {
     return "";
-  }
-  if (layout.mode === "legacy") {
-    return path.join(layout.programDir, relativePath);
   }
   const baseName = path.basename(relativePath);
   if (/\.pid$/iu.test(baseName) || /(^|[\\/])pid([\\/]|$)/iu.test(relativePath)) {
@@ -398,7 +391,7 @@ function fileExists(targetPath: string) {
 }
 
 function syncCanonicalConfigToProgramMirror(service: ServiceDefinition, layout: ServiceLayout) {
-  if (layout.mode !== "layered" || !fs.existsSync(layout.configDir)) {
+  if (!fs.existsSync(layout.configDir) || !fs.existsSync(layout.programDir)) {
     return;
   }
 
@@ -455,10 +448,10 @@ function readInitializationState(layoutOrInstallDir: ServiceLayout | string): In
   }
 }
 
-function isAssetNewerThanInstall(assetPath: string, installDir: string) {
+function isAssetNewerThanInstall(assetPath: string, layoutOrInstallDir: ServiceLayout | string) {
   try {
     const assetMtime = fs.statSync(assetPath).mtimeMs;
-    const initStatePath = getInitializationStatePath(installDir);
+    const initStatePath = getInitializationStatePath(layoutOrInstallDir);
     if (!fs.existsSync(initStatePath)) {
       return true;
     }
@@ -474,6 +467,7 @@ function needsBundledAssetRefresh(app: App, service: ServiceDefinition) {
   }
 
   const installDir = getInstallDir(app, service);
+  const layout = getServiceLayout(app, service);
   let assetPath: string;
   try {
     assetPath = ensureBundleAssetHealthy(app, service);
@@ -489,7 +483,7 @@ function needsBundledAssetRefresh(app: App, service: ServiceDefinition) {
     if (serviceInstallNeedsRefresh(service, installDir)) {
       return true;
     }
-    return isAssetNewerThanInstall(assetPath, installDir);
+    return isAssetNewerThanInstall(assetPath, layout);
   } catch {
     return false;
   }
@@ -1965,7 +1959,7 @@ export async function installBuiltinService(
     !fs.existsSync(finalInstallDir) ||
     !isInstallHealthy(service, finalInstallDir) ||
     serviceInstallNeedsRefresh(service, finalInstallDir) ||
-    isAssetNewerThanInstall(assetPath, finalInstallDir);
+    isAssetNewerThanInstall(assetPath, layout);
 
   const preservedEnvPath = layout.envPath;
   const hasCurrentEnv = fileExists(preservedEnvPath);
@@ -1999,9 +1993,7 @@ export async function installBuiltinService(
     const extractedRoot = path.join(tempRoot, entries[0]);
     fs.rmSync(finalInstallDir, { recursive: true, force: true });
     fs.cpSync(extractedRoot, finalInstallDir, { recursive: true });
-    if (layout.mode === "layered") {
-      patchProgramCommonForLayeredLayout(finalInstallDir);
-    }
+    patchProgramCommonForLayeredLayout(finalInstallDir);
     if (preservedEnv.content) {
       ensureDir(path.dirname(layout.envPath));
       fs.writeFileSync(layout.envPath, preservedEnv.content, "utf8");
@@ -2072,9 +2064,7 @@ async function initializeServiceInternal(
   try {
     ensureDefaultConfig(service, layout);
     fixShellScriptPermissions(installDir);
-    if (layout.mode === "layered") {
-      patchProgramCommonForLayeredLayout(layout.programDir);
-    }
+    patchProgramCommonForLayeredLayout(layout.programDir);
     await ensureInitializationRequirements(app, service, layout);
     prepareServiceExecutionLayout(service, layout);
     if (service.deployCommand) {
@@ -3674,9 +3664,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   const installDir = getInstallDir(app, service);
   const layout = getServiceLayout(app, service);
   prepareServiceExecutionLayout(service, layout);
-  if (layout.mode === "layered") {
-    patchProgramCommonForLayeredLayout(layout.programDir);
-  }
+  patchProgramCommonForLayeredLayout(layout.programDir);
 
   if (service.id === "agent-platform") {
     await ensureAgentPlatformDesktopConfig(app, service, layout);
@@ -3710,7 +3698,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     await syncAgentWebclientPlatformUrls(app, env, updates);
     const assetPath = getOptionalBundleAssetPath(app, service);
     const forceRefresh = agentWebclientInstallNeedsRefresh(installDir);
-    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, installDir))) {
+    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, layout))) {
       await installBuiltinService(app, service.id, {
         force: forceRefresh
       });
@@ -3720,7 +3708,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   if (service.id === "zenmind-app-server") {
     const assetPath = getOptionalBundleAssetPath(app, service);
     const forceRefresh = zenmindAppServerInstallNeedsRefresh(installDir);
-    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, installDir))) {
+    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, layout))) {
       await installBuiltinService(app, service.id, {
         force: forceRefresh
       });
@@ -3789,7 +3777,7 @@ async function runServiceCommand(
         throw new Error(`${service.name} 未安装或安装已损坏。`);
       }
       await installBuiltinService(app, service.id);
-    } else if (assetPath && isAssetNewerThanInstall(assetPath, installDir)) {
+    } else if (assetPath && isAssetNewerThanInstall(assetPath, getServiceLayout(app, service))) {
       await installBuiltinService(app, service.id);
     }
   } else if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {

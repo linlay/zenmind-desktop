@@ -63,7 +63,7 @@ function createPathApp(userData) {
   const tempRoot = userData;
   const homePath = path.join(tempRoot, "home");
   const appDataPath = path.join(tempRoot, "app-data");
-  const userDataPath = path.join(appDataPath, "zenmind-desktop");
+  const userDataPath = path.join(homePath, ".zenmind", ".desktop", "profiles", "electron");
   return {
     getPath(name) {
       switch (name) {

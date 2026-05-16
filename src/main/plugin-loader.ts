@@ -5,7 +5,7 @@ import { normalizeManifest, readManifestFile } from "./manifest-utils";
 import { clearServices, getService, registerService, unregisterService } from "./service-registry";
 import { fixShellScriptPermissions } from "./service-manager";
 import { extractArchiveToDir } from "./archive-utils";
-import { getPluginsRoot, getServiceConfigRoot, getServiceStateRoot, usesLayeredDesktopDataLayout } from "./user-paths";
+import { getPluginsRoot, getServiceConfigRoot, getServiceStateRoot } from "./user-paths";
 
 function readManifest(pluginDir: string) {
   const manifestPath = path.join(pluginDir, "manifest.json");
@@ -50,12 +50,10 @@ export function loadInstalledPlugins(app: App) {
       continue;
     }
     const pluginRoot = path.join(root, entry.name);
-    const candidateDirs = usesLayeredDesktopDataLayout(app)
-      ? fs.readdirSync(pluginRoot, { withFileTypes: true })
-          .filter((versionEntry) => versionEntry.isDirectory())
-          .map((versionEntry) => path.join(pluginRoot, versionEntry.name))
-          .sort((left, right) => left.localeCompare(right))
-      : [pluginRoot];
+    const candidateDirs = fs.readdirSync(pluginRoot, { withFileTypes: true })
+      .filter((versionEntry) => versionEntry.isDirectory())
+      .map((versionEntry) => path.join(pluginRoot, versionEntry.name))
+      .sort((left, right) => left.localeCompare(right));
     for (const candidateDir of candidateDirs) {
       const manifest = readManifest(candidateDir);
       if (manifest?.kind === "plugin") {
@@ -77,10 +75,6 @@ function getLatestPluginVersionDir(pluginRoot: string) {
 
 export function getPluginInstallDir(app: App, pluginId: string, version?: string) {
   const root = getPluginsRoot(app);
-  if (!usesLayeredDesktopDataLayout(app)) {
-    return path.join(root, pluginId);
-  }
-
   const pluginRoot = path.join(root, pluginId);
   const resolvedVersion = version?.trim() || (() => {
     try {
@@ -124,8 +118,8 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
     const definition = normalizeManifest(manifest, { defaultKind: "plugin" });
 
     const targetDir = getPluginInstallDir(app, manifest.id, definition.version);
-    const configDir = getServiceConfigRoot(app, manifest.id, "plugin", targetDir);
-    const stateDir = getServiceStateRoot(app, manifest.id, "plugin", targetDir);
+    const configDir = getServiceConfigRoot(app, manifest.id, "plugin");
+    const stateDir = getServiceStateRoot(app, manifest.id, "plugin");
     const preservedConfigFiles = preserveExistingConfigFiles(
       configDir,
       definition.configFiles.map((configFile) => configFile.relativePath)
