@@ -1,13 +1,12 @@
-import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import type { ServiceId } from "../shared/contracts";
 import type { ServiceDefinition } from "./manifest-utils";
 import { getService } from "./service-registry";
-import { getInstallDir } from "./service-manager";
+import { getInstallDir, getServiceState } from "./service-manager";
 import { readEnvFile } from "./env-file";
-import { upsertChannel, removeChannel, type ChannelEntry } from "./agent-platform-channels";
 import { getServiceConfigRoot } from "./user-paths";
+import { issueAgentAccessToken } from "./agent-auth";
 
 const AGENT_PLATFORM_ID = "agent-platform";
 const BRIDGE_HTTP_ADDR_DEFAULT = ":11970";
@@ -116,12 +115,47 @@ function isBridgeService(service: ServiceDefinition): boolean {
   return service.kind === "plugin" && service.desktop?.bridge?.category === "bridge";
 }
 
-function getAgentPlatformInstallDir(app: App): string | null {
-  try {
-    const agentPlatform = getService(AGENT_PLATFORM_ID);
-    return getServiceConfigRoot(app, agentPlatform.id, agentPlatform.kind);
-  } catch {
-    return null;
+type PlatformGatewayRegistration = {
+  id: string;
+  channel: string;
+  url: string;
+  baseUrl?: string;
+  token?: string;
+};
+
+async function getAgentPlatformBaseUrl(app: App) {
+  const state = await getServiceState(app, AGENT_PLATFORM_ID);
+  if (state.status !== "running") {
+    throw new Error("agent-platform is not running");
+  }
+  const baseUrl = state.healthMeta.webUrl.trim() || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "");
+  if (!baseUrl) {
+    throw new Error("agent-platform base URL is unavailable");
+  }
+  return baseUrl;
+}
+
+async function callAgentPlatformAdmin(
+  app: App,
+  pathOrUrl: string,
+  options: { method?: string; body?: unknown } = {}
+) {
+  const baseUrl = await getAgentPlatformBaseUrl(app);
+  const token = await issueAgentAccessToken(app, "missing");
+  if (!token.ok) {
+    throw new Error(token.message || "agent-platform token unavailable");
+  }
+  const response = await fetch(new URL(pathOrUrl, baseUrl).toString(), {
+    method: options.method ?? "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token.token}`,
+      ...(options.body === undefined ? {} : { "Content-Type": "application/json" })
+    },
+    ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) })
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
   }
 }
 
@@ -155,31 +189,18 @@ export async function registerBridge(app: App, serviceId: ServiceId): Promise<{ 
     return { ok: false, message: `Failed to fetch gateway info: ${message}` };
   }
 
-  const agentPlatformInstallDir = getAgentPlatformInstallDir(app);
-  if (!agentPlatformInstallDir) {
-    const errorMsg = "agent-platform not found, cannot update channels.yml";
-    updateBridgeRegistrationState(serviceId, {
-      registered: false,
-      channelId: bridge.channelId,
-      channelName: bridge.channelName,
-      lastError: errorMsg
-    });
-    return { ok: false, message: errorMsg };
-  }
-
-  const channelEntry: ChannelEntry = {
-    name: bridge.channelName,
-    type: "bridge",
-    "default-agent": "",
-    agents: "*",
-    gateway: {
-      url: gatewayInfo.url,
-      "jwt-token": gatewayInfo.token
-    }
-  };
-
   try {
-    upsertChannel(agentPlatformInstallDir, bridge.channelId, channelEntry);
+    const registration: PlatformGatewayRegistration = {
+      id: bridge.channelId,
+      channel: bridge.channelId,
+      url: gatewayInfo.url,
+      baseUrl: gatewayInfo.baseUrl,
+      token: gatewayInfo.token
+    };
+    await callAgentPlatformAdmin(app, "/api/admin/gateways", {
+      method: "POST",
+      body: registration
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     updateBridgeRegistrationState(serviceId, {
@@ -188,7 +209,7 @@ export async function registerBridge(app: App, serviceId: ServiceId): Promise<{ 
       channelName: bridge.channelName,
       lastError: message
     });
-    return { ok: false, message: `Failed to update channels.yml: ${message}` };
+    return { ok: false, message: `Failed to register gateway with agent-platform: ${message}` };
   }
 
   updateBridgeRegistrationState(serviceId, {
@@ -217,21 +238,19 @@ export async function unregisterBridge(app: App, serviceId: ServiceId): Promise<
   }
 
   const bridge = service.desktop!.bridge!;
-  const agentPlatformInstallDir = getAgentPlatformInstallDir(app);
-
-  if (agentPlatformInstallDir) {
-    try {
-      removeChannel(agentPlatformInstallDir, bridge.channelId);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      updateBridgeRegistrationState(serviceId, {
-        registered: false,
-        channelId: bridge.channelId,
-        channelName: bridge.channelName,
-        lastError: message
-      });
-      return { ok: false, message: `Failed to update channels.yml: ${message}` };
-    }
+  try {
+    await callAgentPlatformAdmin(app, `/api/admin/gateways/${encodeURIComponent(bridge.channelId)}`, {
+      method: "DELETE"
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    updateBridgeRegistrationState(serviceId, {
+      registered: false,
+      channelId: bridge.channelId,
+      channelName: bridge.channelName,
+      lastError: message
+    });
+    return { ok: false, message: `Failed to unregister gateway from agent-platform: ${message}` };
   }
 
   updateBridgeRegistrationState(serviceId, {

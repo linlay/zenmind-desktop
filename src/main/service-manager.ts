@@ -362,11 +362,11 @@ function getInitializationStatePath(layoutOrInstallDir: ServiceLayout | string) 
 
 function buildServiceLayoutEnv(layout: ServiceLayout): NodeJS.ProcessEnv {
   return {
-    ZENMIND_SERVICE_PROGRAM_DIR: layout.programDir,
+    SERVICE_PROGRAM_DIR: layout.programDir,
     SERVICE_CONFIG_DIR: layout.configDir,
-    ZENMIND_SERVICE_DATA_DIR: layout.dataDir,
-    ZENMIND_SERVICE_STATE_DIR: layout.stateDir,
-    ZENMIND_SERVICE_LOG_DIR: layout.logDir
+    SERVICE_DATA_DIR: layout.dataDir,
+    SERVICE_STATE_DIR: layout.stateDir,
+    SERVICE_LOG_DIR: layout.logDir
   };
 }
 
@@ -564,10 +564,14 @@ function patchShellProgramCommonForLayeredLayout(programDir: string) {
     .replace(/CONFIG_DIR="\$BUNDLE_ROOT\/configs"/gu, 'CONFIG_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs"')
     .replace(/CONFIG_ENV_DIR="\$\{ZENMIND_SERVICE_CONFIG_DIR:-\$BUNDLE_ROOT\}\/configs\/environments"/gu, 'CONFIG_ENV_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs/environments"')
     .replace(/CONFIG_ENV_DIR="\$BUNDLE_ROOT\/configs\/environments"/gu, 'CONFIG_ENV_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs/environments"')
-    .replace(/DATA_DIR="\$BUNDLE_ROOT\/data"/gu, 'DATA_DIR="${ZENMIND_SERVICE_DATA_DIR:-$BUNDLE_ROOT/data}"')
-    .replace(/RUN_DIR="\$BUNDLE_ROOT\/run"/gu, 'RUN_DIR="${ZENMIND_SERVICE_STATE_DIR:-$BUNDLE_ROOT/run}"')
-    .replace(/LOG_FILE="\$RUN_DIR\//gu, 'LOG_FILE="${ZENMIND_SERVICE_LOG_DIR:-$RUN_DIR}/')
-    .replace(/ERROR_LOG_FILE="\$RUN_DIR\//gu, 'ERROR_LOG_FILE="${ZENMIND_SERVICE_LOG_DIR:-$RUN_DIR}/');
+    .replace(/DATA_DIR="\$\{ZENMIND_SERVICE_DATA_DIR:-\$BUNDLE_ROOT\/data\}"/gu, 'DATA_DIR="${SERVICE_DATA_DIR:-$BUNDLE_ROOT/data}"')
+    .replace(/DATA_DIR="\$BUNDLE_ROOT\/data"/gu, 'DATA_DIR="${SERVICE_DATA_DIR:-$BUNDLE_ROOT/data}"')
+    .replace(/RUN_DIR="\$\{ZENMIND_SERVICE_STATE_DIR:-\$BUNDLE_ROOT\/run\}"/gu, 'RUN_DIR="${SERVICE_STATE_DIR:-$BUNDLE_ROOT/run}"')
+    .replace(/RUN_DIR="\$BUNDLE_ROOT\/run"/gu, 'RUN_DIR="${SERVICE_STATE_DIR:-$BUNDLE_ROOT/run}"')
+    .replace(/LOG_FILE="\$\{ZENMIND_SERVICE_LOG_DIR:-\$RUN_DIR\}\//gu, 'LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
+    .replace(/LOG_FILE="\$RUN_DIR\//gu, 'LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
+    .replace(/ERROR_LOG_FILE="\$\{ZENMIND_SERVICE_LOG_DIR:-\$RUN_DIR\}\//gu, 'ERROR_LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
+    .replace(/ERROR_LOG_FILE="\$RUN_DIR\//gu, 'ERROR_LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/');
 
   if (content !== original) {
     fs.writeFileSync(scriptPath, content, "utf8");
@@ -587,10 +591,14 @@ function patchPowerShellProgramCommonForLayeredLayout(programDir: string) {
     .replace(/\$Script:EnvFile\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]\.env['"]/gu, '$Script:EnvFile = Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) ".env"')
     .replace(/\$Script:ConfigDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]configs['"]/gu, '$Script:ConfigDir = Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) "configs"')
     .replace(/\$Script:ConfigEnvDir\s*=\s*Join-Path\s+\(Join-Path\s+\$Script:BundleRoot\s+['"]configs['"]\)\s+['"]environments['"]/gu, '$Script:ConfigEnvDir = Join-Path (Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) "configs") "environments"')
-    .replace(/\$Script:DataDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]data['"]/gu, '$Script:DataDir = if ($env:ZENMIND_SERVICE_DATA_DIR) { $env:ZENMIND_SERVICE_DATA_DIR } else { Join-Path $Script:BundleRoot "data" }')
-    .replace(/\$Script:RunDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]run['"]/gu, '$Script:RunDir = if ($env:ZENMIND_SERVICE_STATE_DIR) { $env:ZENMIND_SERVICE_STATE_DIR } else { Join-Path $Script:BundleRoot "run" }')
-    .replace(/\$Script:LogFile\s*=\s*Join-Path\s+\$Script:RunDir\s+([^;\r\n]+)/gu, '$Script:LogFile = Join-Path $(if ($env:ZENMIND_SERVICE_LOG_DIR) { $env:ZENMIND_SERVICE_LOG_DIR } else { $Script:RunDir }) $1')
-    .replace(/\$Script:ErrorLogFile\s*=\s*Join-Path\s+\$Script:RunDir\s+([^;\r\n]+)/gu, '$Script:ErrorLogFile = Join-Path $(if ($env:ZENMIND_SERVICE_LOG_DIR) { $env:ZENMIND_SERVICE_LOG_DIR } else { $Script:RunDir }) $1');
+    .replace(/\$Script:DataDir\s*=\s*if\s*\(\$env:ZENMIND_SERVICE_DATA_DIR\)\s*\{\s*\$env:ZENMIND_SERVICE_DATA_DIR\s*\}\s*else\s*\{\s*Join-Path\s+\$Script:BundleRoot\s+['"]data['"]\s*\}/gu, '$Script:DataDir = if ($env:SERVICE_DATA_DIR) { $env:SERVICE_DATA_DIR } else { Join-Path $Script:BundleRoot "data" }')
+    .replace(/\$Script:DataDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]data['"]/gu, '$Script:DataDir = if ($env:SERVICE_DATA_DIR) { $env:SERVICE_DATA_DIR } else { Join-Path $Script:BundleRoot "data" }')
+    .replace(/\$Script:RunDir\s*=\s*if\s*\(\$env:ZENMIND_SERVICE_STATE_DIR\)\s*\{\s*\$env:ZENMIND_SERVICE_STATE_DIR\s*\}\s*else\s*\{\s*Join-Path\s+\$Script:BundleRoot\s+['"]run['"]\s*\}/gu, '$Script:RunDir = if ($env:SERVICE_STATE_DIR) { $env:SERVICE_STATE_DIR } else { Join-Path $Script:BundleRoot "run" }')
+    .replace(/\$Script:RunDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]run['"]/gu, '$Script:RunDir = if ($env:SERVICE_STATE_DIR) { $env:SERVICE_STATE_DIR } else { Join-Path $Script:BundleRoot "run" }')
+    .replace(/\$Script:LogFile\s*=\s*Join-Path\s+\$\(if\s*\(\$env:ZENMIND_SERVICE_LOG_DIR\)\s*\{\s*\$env:ZENMIND_SERVICE_LOG_DIR\s*\}\s*else\s*\{\s*\$Script:RunDir\s*\}\)\s+([^;\r\n]+)/gu, '$Script:LogFile = Join-Path $(if ($env:SERVICE_LOG_DIR) { $env:SERVICE_LOG_DIR } else { $Script:RunDir }) $1')
+    .replace(/\$Script:LogFile\s*=\s*Join-Path\s+\$Script:RunDir\s+([^;\r\n]+)/gu, '$Script:LogFile = Join-Path $(if ($env:SERVICE_LOG_DIR) { $env:SERVICE_LOG_DIR } else { $Script:RunDir }) $1')
+    .replace(/\$Script:ErrorLogFile\s*=\s*Join-Path\s+\$\(if\s*\(\$env:ZENMIND_SERVICE_LOG_DIR\)\s*\{\s*\$env:ZENMIND_SERVICE_LOG_DIR\s*\}\s*else\s*\{\s*\$Script:RunDir\s*\}\)\s+([^;\r\n]+)/gu, '$Script:ErrorLogFile = Join-Path $(if ($env:SERVICE_LOG_DIR) { $env:SERVICE_LOG_DIR } else { $Script:RunDir }) $1')
+    .replace(/\$Script:ErrorLogFile\s*=\s*Join-Path\s+\$Script:RunDir\s+([^;\r\n]+)/gu, '$Script:ErrorLogFile = Join-Path $(if ($env:SERVICE_LOG_DIR) { $env:SERVICE_LOG_DIR } else { $Script:RunDir }) $1');
 
   if (content !== original) {
     fs.writeFileSync(scriptPath, content, "utf8");
@@ -1890,40 +1898,17 @@ function ensureAgentContainerHubDesktopConfig(layout: ServiceLayout) {
 }
 
 async function ensureInitializationRequirements(app: App, service: ServiceDefinition, layout: ServiceLayout) {
-  if (service.id === "agent-platform") {
-    await ensureAgentPlatformDesktopConfig(app, service, layout);
-    ensureLocalAuthPublicKey(app, layout);
-  }
-
-  if (service.id === "agent-container-hub") {
-    ensureAgentContainerHubDesktopConfig(layout);
-  }
-
   if (service.id === LOCAL_CLI_ACP_RELAY_PLUGIN_ID) {
     await ensureLocalCliAcpRelayDesktopConfig(app, layout);
   }
 
-  if (service.id === "agent-webclient") {
-    const envPath = layout.envPath;
-    const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
-    const normalizedContent = normalizeAgentWebclientEnvContentForDesktop(currentContent);
-    if (normalizedContent !== currentContent) {
-      fs.writeFileSync(envPath, normalizedContent, "utf8");
-    }
-  }
-
-  if (service.id === "pan-webclient") {
-    ensureLocalAuthPublicKey(app, layout);
-  }
-
-  if (CORE_SERVICE_IDS.has(service.id)) {
-    const envPath = layout.envPath;
-    const env = readEnvFile(envPath);
-    const updates = new Map<string, string>();
-    syncCoreServiceDefaultPortEnv(service, env, updates);
-    if (updates.size > 0) {
-      writeEnvFileUpdates(envPath, updates);
-    }
+  const envPath = layout.envPath;
+  const env = readEnvFile(envPath);
+  const updates = new Map<string, string>();
+  await applyEnvBindings(app, service, env, updates);
+  syncCoreServiceDefaultPortEnv(service, env, updates);
+  if (updates.size > 0) {
+    writeEnvFileUpdates(envPath, updates);
   }
 }
 
@@ -2081,16 +2066,15 @@ async function initializeServiceInternal(
   }
 
   try {
-    ensureDefaultConfig(service, layout);
     fixShellScriptPermissions(installDir);
     patchProgramCommonForLayeredLayout(layout.programDir);
-    await ensureInitializationRequirements(app, service, layout);
     prepareServiceExecutionLayout(service, layout);
     if (service.deployCommand) {
       await runExecFile(service.deployCommand[0], service.deployCommand.slice(1), installDir, {
         env: buildServiceLayoutEnv(layout)
       });
     }
+    await ensureInitializationRequirements(app, service, layout);
     writeInitializationState(layout, {
       version: service.version,
       status: "succeeded",
@@ -2269,7 +2253,7 @@ function delay(ms: number) {
 }
 
 function getServiceVerificationDelayMs() {
-  const raw = Number.parseInt(process.env.ZENMIND_SERVICE_VERIFY_DELAY_MS ?? "", 10);
+  const raw = Number.parseInt(process.env.SERVICE_VERIFY_DELAY_MS ?? "", 10);
   return Number.isFinite(raw) && raw >= 0 ? raw : 1500;
 }
 
@@ -3126,24 +3110,9 @@ function writeAgentPlatformLegacyEnvBackupIfNeeded(installDir: string, originalC
 }
 
 function normalizePreservedBuiltinEnvForInstall(service: ServiceDefinition, content: string) {
-  if (service.id === "agent-webclient") {
-    return {
-      content: normalizeAgentWebclientEnvContentForDesktop(content),
-      backupContent: ""
-    };
-  }
-
-  if (service.id !== "agent-platform") {
-    return {
-      content,
-      backupContent: ""
-    };
-  }
-
-  const normalized = normalizeAgentPlatformEnvContentForRuntime(content);
   return {
-    content: normalized,
-    backupContent: normalized !== content ? content : ""
+    content,
+    backupContent: ""
   };
 }
 
@@ -3280,28 +3249,12 @@ async function normalizeCoreServiceEnvContentForSave(
     return content;
   }
 
-  const normalizedContent =
-    service.id === "agent-platform"
-      ? normalizeAgentPlatformEnvContentForSave(content)
-      : service.id === "agent-webclient"
-        ? normalizeAgentWebclientEnvContentForDesktop(content)
-        : content;
-  const env = parseEnvFileContent(normalizedContent);
+  const env = parseEnvFileContent(content);
   const updates = new Map<string, string>();
 
+  await applyEnvBindings(app, service, env, updates);
   syncCoreServiceDefaultPortEnv(service, env, updates);
-
-  if (service.id === "agent-platform") {
-    syncAgentPlatformDesktopPortEnv(env, updates);
-    syncAgentPlatformEmbeddedCdpEnv(updates);
-    await syncAgentPlatformContainerHubUrl(app, env, updates);
-  }
-
-  if (service.id === "agent-webclient") {
-    await syncAgentWebclientPlatformUrls(app, env, updates);
-  }
-
-  return updates.size > 0 ? upsertEnvFileContent(normalizedContent, updates) : normalizedContent;
+  return updates.size > 0 ? upsertEnvFileContent(content, updates) : content;
 }
 
 function resolveLocalCliAcpRelayDefaultCwd(app?: App | null) {
@@ -3446,20 +3399,7 @@ async function ensureLocalCliAcpRelayDesktopConfig(app: App, layout: ServiceLayo
 
 async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<string, string>, updates: Map<string, string>) {
   for (const binding of service.desktop.envBindings) {
-    const bindingKey = service.id === "agent-platform"
-      ? (AGENT_PLATFORM_ENV_KEY_RENAMES.get(binding.key) ?? binding.key)
-      : binding.key;
-    if (service.id === "agent-platform" && AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS.includes(bindingKey as typeof AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS[number])) {
-      continue;
-    }
-    if (
-      service.id === "agent-platform" &&
-      bindingKey === "AUTH_LOCAL_PUBLIC_KEY_FILE" &&
-      binding.value !== undefined &&
-      isManagedAgentPlatformAuthLocalPublicKeyPath(binding.value)
-    ) {
-      continue;
-    }
+    const bindingKey = binding.key;
     const currentValue = env.get(bindingKey) ?? "";
 
     if (binding.onlyIfDefault) {
@@ -3494,10 +3434,7 @@ function getEnvValueWithUpdates(env: Map<string, string>, updates: Map<string, s
 
 function resolveEnvBindingValue(service: ServiceDefinition, bindingKey: string) {
   const binding = service.desktop.envBindings.find((item) => {
-    const key = service.id === "agent-platform"
-      ? (AGENT_PLATFORM_ENV_KEY_RENAMES.get(item.key) ?? item.key)
-      : item.key;
-    return key === bindingKey && item.value !== undefined;
+    return item.key === bindingKey && item.value !== undefined;
   });
   if (!binding?.value) {
     return String(service.web.defaultPort);
@@ -3507,10 +3444,7 @@ function resolveEnvBindingValue(service: ServiceDefinition, bindingKey: string) 
 
 function canApplyDefaultEnvBinding(service: ServiceDefinition, bindingKey: string, currentValue: string) {
   const binding = service.desktop.envBindings.find((item) => {
-    const key = service.id === "agent-platform"
-      ? (AGENT_PLATFORM_ENV_KEY_RENAMES.get(item.key) ?? item.key)
-      : item.key;
-    return key === bindingKey && item.value !== undefined;
+    return item.key === bindingKey && item.value !== undefined;
   });
   if (!binding) {
     return false;
@@ -3772,34 +3706,14 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   patchProgramCommonForLayeredLayout(layout.programDir);
 
   if (service.id === "agent-platform") {
-    await ensureAgentPlatformDesktopConfig(app, service, layout);
     await ensureAgentPlatformContainerHubDependency(app, layout);
-    ensureLocalAuthPublicKey(app, layout);
-    prepareServiceExecutionLayout(service, layout);
-    return;
   }
 
   if (service.id === LOCAL_CLI_ACP_RELAY_PLUGIN_ID) {
     await ensureLocalCliAcpRelayDesktopConfig(app, layout);
   }
 
-  const envPath = layout.envPath;
   if (service.id === "agent-webclient") {
-    const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
-    const normalizedContent = normalizeAgentWebclientEnvContentForDesktop(currentContent);
-    if (normalizedContent !== currentContent) {
-      fs.writeFileSync(envPath, normalizedContent, "utf8");
-    }
-  }
-  const env = readEnvFile(envPath);
-  const updates = new Map<string, string>();
-
-  // Apply manifest-declared envBindings generically.
-  await applyEnvBindings(app, service, env, updates);
-
-  if (service.id === "agent-webclient") {
-    updates.delete("NODE_BIN");
-    await syncAgentWebclientPlatformUrls(app, env, updates);
     const assetPath = getOptionalBundleAssetPath(app, service);
     const forceRefresh = agentWebclientInstallNeedsRefresh(installDir);
     if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, layout))) {
@@ -3817,14 +3731,13 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
         force: forceRefresh
       });
     }
-    if (!env.get("FRONTEND_DIST_DIR")?.trim()) {
-      updates.set("FRONTEND_DIST_DIR", "./frontend/dist");
-    }
-    const currentAuthDbPath = env.get("AUTH_DB_PATH")?.trim() ?? "";
-    if (!currentAuthDbPath || currentAuthDbPath === "./data/auth.db") {
-      updates.set("AUTH_DB_PATH", path.join(layout.dataDir, "auth.db"));
-    }
   }
+
+  const envPath = layout.envPath;
+  const env = readEnvFile(envPath);
+  const updates = new Map<string, string>();
+  await applyEnvBindings(app, service, env, updates);
+  syncCoreServiceDefaultPortEnv(service, env, updates);
 
   if (updates.size > 0) {
     writeEnvFileUpdates(envPath, updates);

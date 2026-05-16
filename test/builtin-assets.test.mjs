@@ -18,6 +18,11 @@ import {
 const BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
 const desktopProjectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let hasSyncedActualAssets = false;
+const requiredDesktopCoreServiceIds = [
+  "zenmind-app-server",
+  "agent-platform",
+  "agent-webclient"
+];
 
 function createTarBundle(service, files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-asset-"));
@@ -132,6 +137,11 @@ function ensureSyncedAssets() {
     return;
   }
 
+  if (hasCompleteSyncedAssetsForCurrentPlatform()) {
+    hasSyncedActualAssets = true;
+    return;
+  }
+
   const manifest = withEnv(BUILTIN_ASSETS_SOURCE_ENV, null, () =>
     syncBuiltinAssets(process.cwd(), {
       os: currentManifestOs(),
@@ -140,6 +150,26 @@ function ensureSyncedAssets() {
   );
   assert.ok(manifest.length > 0, "expected at least one builtin asset to sync for tests");
   hasSyncedActualAssets = true;
+}
+
+function hasCompleteSyncedAssetsForCurrentPlatform() {
+  const osName = currentManifestOs();
+  const archName = currentManifestArch();
+  return requiredDesktopCoreServiceIds.every((serviceId) => {
+    const serviceDir = path.join(process.cwd(), "build", "resources", "services", serviceId);
+    if (!fs.existsSync(serviceDir)) {
+      return false;
+    }
+    return fs.readdirSync(serviceDir).some((assetFileName) => {
+      if (!assetFileName.endsWith(".zip") && !assetFileName.endsWith(".tar.gz")) {
+        return false;
+      }
+      const manifest = readManifestFromArchive(path.join(serviceDir, assetFileName));
+      return manifest?.id === serviceId &&
+        manifest.platform?.os === osName &&
+        manifest.platform?.arch === archName;
+    });
+  });
 }
 
 function getSyncedAsset(serviceId) {
@@ -152,22 +182,70 @@ function getSyncedAsset(serviceId) {
 
   assert.ok(assetFileName, `missing synced archive for ${serviceId}`);
 
-  const service = builtinServices.find(
-    (item) => item.id === serviceId && item.assetFileName === assetFileName
-  );
-  assert.ok(service, `missing builtin service metadata for ${serviceId}/${assetFileName}`);
+  const assetPath = path.join(serviceDir, assetFileName);
+  const service = createServiceMetadataFromArchive(assetPath);
 
   return {
     service,
-    assetPath: path.join(serviceDir, assetFileName)
+    assetPath
   };
+}
+
+function createServiceMetadataFromArchive(assetPath) {
+  const manifest = readManifestFromArchive(assetPath);
+  assert.equal(manifest?.kind, "builtin", `expected builtin manifest in ${assetPath}`);
+  const requiredBundleEntries = Array.isArray(manifest.runtime?.requiredPaths)
+    ? manifest.runtime.requiredPaths.filter((entry) => typeof entry === "string" && entry.trim())
+    : [];
+  assert.ok(requiredBundleEntries.length > 0, `missing runtime.requiredPaths in ${assetPath}`);
+  return {
+    id: manifest.id,
+    sourceDir: path.dirname(assetPath),
+    assetFileName: path.basename(assetPath),
+    bundleTopLevelDir: manifest.desktop?.bundleTopLevelDir ?? manifest.id,
+    version: manifest.version,
+    platform: {
+      os: manifest.platform?.os ?? "",
+      arch: manifest.platform?.arch ?? ""
+    },
+    requiredBundleEntries
+  };
+}
+
+function findSyncedAssetForPlatform(serviceId, osName) {
+  ensureSyncedAssets();
+
+  const serviceDir = path.join(process.cwd(), "build", "resources", "services", serviceId);
+  if (!fs.existsSync(serviceDir)) {
+    return null;
+  }
+
+  for (const assetFileName of fs.readdirSync(serviceDir)) {
+    if (!assetFileName.endsWith(".zip") && !assetFileName.endsWith(".tar.gz")) {
+      continue;
+    }
+    const assetPath = path.join(serviceDir, assetFileName);
+    const manifest = readManifestFromArchive(assetPath);
+    if (manifest?.id === serviceId && (!osName || manifest.platform?.os === osName)) {
+      return {
+        service: createServiceMetadataFromArchive(assetPath),
+        assetPath
+      };
+    }
+  }
+
+  return null;
 }
 
 function getWorkspaceAsset(serviceId, osName) {
   const service = builtinServices.find(
     (item) => item.id === serviceId && item.assetFileName.includes(`-${osName}-`)
   );
-  assert.ok(service, `missing builtin service metadata for ${serviceId}/${osName}`);
+  if (!service || !fs.existsSync(path.join(service.sourceDir, service.assetFileName))) {
+    const syncedAsset = findSyncedAssetForPlatform(serviceId, osName);
+    assert.ok(syncedAsset, `missing builtin service metadata for ${serviceId}/${osName}`);
+    return syncedAsset;
+  }
   return {
     service,
     assetPath: path.join(service.sourceDir, service.assetFileName)
@@ -264,17 +342,27 @@ test("synced builtin service launchers derive .env from SERVICE_CONFIG_DIR", () 
     const programCommonName = assetPath.endsWith(".zip") ? "program-common.ps1" : "program-common.sh";
     const programCommon = readArchiveEntryText(assetPath, `${serviceId}/${scriptDir}/${programCommonName}`);
     assert.ok(programCommon, `expected ${serviceId} ${programCommonName} to be readable`);
-    assert.doesNotMatch(programCommon, /ZENMIND_SERVICE_CONFIG_DIR|ZENMIND_SERVICE_ENV_FILE/);
+    assert.doesNotMatch(programCommon, /ZENMIND_SERVICE_/);
 
     if (assetPath.endsWith(".zip")) {
       assert.match(programCommon, /\$env:SERVICE_CONFIG_DIR/u, `${serviceId} should read SERVICE_CONFIG_DIR`);
       assert.match(programCommon, /Join-Path\s+\$\(if\s+\(\$env:SERVICE_CONFIG_DIR\)/u);
+      assert.match(programCommon, /\$env:SERVICE_STATE_DIR/u, `${serviceId} should read SERVICE_STATE_DIR`);
+      assert.match(programCommon, /\$env:SERVICE_LOG_DIR/u, `${serviceId} should read SERVICE_LOG_DIR`);
+      if (serviceId !== "agent-webclient") {
+        assert.match(programCommon, /\$env:SERVICE_DATA_DIR/u, `${serviceId} should read SERVICE_DATA_DIR`);
+      }
     } else {
       assert.match(
         programCommon,
         /ENV_FILE="\$\{SERVICE_CONFIG_DIR:-\$BUNDLE_ROOT\}\/\.env"/u,
         `${serviceId} should derive .env from SERVICE_CONFIG_DIR`
       );
+      assert.match(programCommon, /RUN_DIR="\$\{SERVICE_STATE_DIR:-\$BUNDLE_ROOT\/run\}"/u);
+      assert.match(programCommon, /LOG_DIR="\$\{SERVICE_LOG_DIR:-\$RUN_DIR\}"/u);
+      if (serviceId !== "agent-webclient") {
+        assert.match(programCommon, /SERVICE_DATA_DIR/u, `${serviceId} should read SERVICE_DATA_DIR`);
+      }
     }
 
     if (serviceId === "agent-platform" && !assetPath.endsWith(".zip")) {
@@ -287,8 +375,7 @@ test("synced builtin service launchers derive .env from SERVICE_CONFIG_DIR", () 
 });
 
 test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with stale launcher checks", () => {
-  const discoveredService = builtinServices.find((item) => item.id === "agent-webclient");
-  assert.ok(discoveredService);
+  const { service: discoveredService } = getWorkspaceAsset("agent-webclient", currentManifestOs());
   const requiredBundleEntries = [
     "backend/server.cjs",
     "start.sh",
@@ -360,8 +447,7 @@ test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with s
 });
 
 test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with absolute backend entry", () => {
-  const discoveredService = builtinServices.find((item) => item.id === "agent-webclient");
-  assert.ok(discoveredService);
+  const { service: discoveredService } = getWorkspaceAsset("agent-webclient", currentManifestOs());
   const requiredBundleEntries = [
     "backend/server.cjs",
     "start.sh",

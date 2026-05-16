@@ -128,6 +128,13 @@ function writeBuiltinBundleRoot(bundleRoot, options = {}) {
   const version = options.version ?? "v1.0.0";
   const startScriptContent = options.startScriptContent ?? "#!/usr/bin/env bash\necho start\n";
   const stopScriptContent = options.stopScriptContent ?? "#!/usr/bin/env bash\necho stop\n";
+  const deployScriptContent = options.deployScriptContent ?? [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    'config_dir="${SERVICE_CONFIG_DIR:-$PWD}"',
+    'mkdir -p "$config_dir"',
+    'if [ ! -f "$config_dir/.env" ]; then cp .env.example "$config_dir/.env"; fi'
+  ].join("\n") + "\n";
 
   fs.mkdirSync(path.join(bundleRoot, "run"), { recursive: true });
   fs.writeFileSync(path.join(bundleRoot, ".env.example"), "PORT=9300\n", "utf8");
@@ -144,6 +151,7 @@ function writeBuiltinBundleRoot(bundleRoot, options = {}) {
           mode: "none"
         },
         scripts: {
+          deploy: "deploy.sh",
           start: "start.sh",
           stop: "stop.sh"
         },
@@ -159,7 +167,7 @@ function writeBuiltinBundleRoot(bundleRoot, options = {}) {
         runtime: {
           pidRelativePath: `run/${serviceId}.pid`,
           logRelativePath: `run/${serviceId}.log`,
-          requiredPaths: ["manifest.json", "start.sh", "stop.sh", ".env.example", "run"]
+          requiredPaths: ["manifest.json", "deploy.sh", "start.sh", "stop.sh", ".env.example", "run"]
         },
         web: {
           routePath: "",
@@ -172,8 +180,10 @@ function writeBuiltinBundleRoot(bundleRoot, options = {}) {
     )}\n`,
     "utf8"
   );
+  fs.writeFileSync(path.join(bundleRoot, "deploy.sh"), deployScriptContent, "utf8");
   fs.writeFileSync(path.join(bundleRoot, "start.sh"), startScriptContent, "utf8");
   fs.writeFileSync(path.join(bundleRoot, "stop.sh"), stopScriptContent, "utf8");
+  fs.chmodSync(path.join(bundleRoot, "deploy.sh"), 0o755);
 }
 
 function createBuiltinArchiveFixture(tempRoot, options = {}) {
@@ -388,7 +398,7 @@ test("uninstallPlugin stops a running plugin before deleting its install dir", a
   fs.writeFileSync(
     stopScriptPath,
     `#!/usr/bin/env bash
-rm -f "$ZENMIND_SERVICE_STATE_DIR/pid/test-plugin.pid"
+rm -f "$SERVICE_STATE_DIR/pid/test-plugin.pid"
 printf stopped > ${JSON.stringify(stopMarkerPath)}
 `,
     "utf8"
