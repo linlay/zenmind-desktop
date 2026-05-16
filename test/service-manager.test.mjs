@@ -2213,8 +2213,7 @@ test("installBuiltinService prepares agent platform desktop config during first 
       "bash.yml",
       "file-tools.yml",
       "cors.yml",
-      "prompts.yml",
-      "channels.yml"
+      "prompts.yml"
     ]) {
       assert.equal(
         fs.existsSync(path.join(configDir, "configs", fileName)),
@@ -2222,6 +2221,7 @@ test("installBuiltinService prepares agent platform desktop config during first 
         `expected canonical config ${fileName} to be initialized`
       );
     }
+    assert.equal(fs.readFileSync(path.join(configDir, "configs", "channels.yml"), "utf8"), "");
     assert.equal(fs.existsSync(path.join(installDir, ".env")), false);
     assert.equal(fs.existsSync(path.join(installDir, "configs", "local-public-key.pem")), false);
     assert.equal(fs.existsSync(path.join(installDir, ".zenmind-desktop-generated-config")), false);

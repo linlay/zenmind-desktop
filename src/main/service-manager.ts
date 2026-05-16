@@ -1846,6 +1846,11 @@ function ensureDefaultConfig(service: ServiceDefinition, layout: ServiceLayout) 
     if (fs.existsSync(targetPath)) {
       continue;
     }
+    if (service.id === "agent-platform" && configFile.relativePath === "configs/channels.yml") {
+      ensureDir(path.dirname(targetPath));
+      fs.writeFileSync(targetPath, "", "utf8");
+      continue;
+    }
     if (!configFile.templateRelativePath) {
       continue;
     }
