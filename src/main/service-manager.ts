@@ -363,11 +363,10 @@ function getInitializationStatePath(layoutOrInstallDir: ServiceLayout | string) 
 function buildServiceLayoutEnv(layout: ServiceLayout): NodeJS.ProcessEnv {
   return {
     ZENMIND_SERVICE_PROGRAM_DIR: layout.programDir,
-    ZENMIND_SERVICE_CONFIG_DIR: layout.configDir,
+    SERVICE_CONFIG_DIR: layout.configDir,
     ZENMIND_SERVICE_DATA_DIR: layout.dataDir,
     ZENMIND_SERVICE_STATE_DIR: layout.stateDir,
-    ZENMIND_SERVICE_LOG_DIR: layout.logDir,
-    ZENMIND_SERVICE_ENV_FILE: layout.envPath
+    ZENMIND_SERVICE_LOG_DIR: layout.logDir
   };
 }
 
@@ -390,36 +389,12 @@ function fileExists(targetPath: string) {
   return fs.existsSync(targetPath);
 }
 
-function syncCanonicalConfigToProgramMirror(service: ServiceDefinition, layout: ServiceLayout) {
-  if (!fs.existsSync(layout.configDir) || !fs.existsSync(layout.programDir)) {
-    return;
-  }
-
-  for (const configFile of service.configFiles) {
-    const sourcePath = resolveConfigPath(layout, configFile.relativePath);
-    if (!fs.existsSync(sourcePath)) {
-      continue;
-    }
-    const mirrorPath = resolveProgramPath(layout, configFile.relativePath);
-    ensureDir(path.dirname(mirrorPath));
-    fs.copyFileSync(sourcePath, mirrorPath);
-  }
-
-  const markerPath = path.join(layout.programDir, ".zenmind-desktop-generated-config");
-  fs.writeFileSync(
-    markerPath,
-    "Generated from ~/.zenmind/.desktop/config before service execution. Do not edit this copy.\n",
-    "utf8"
-  );
-}
-
-function prepareServiceExecutionLayout(service: ServiceDefinition, layout: ServiceLayout) {
+function prepareServiceExecutionLayout(_service: ServiceDefinition, layout: ServiceLayout) {
   ensureDir(layout.configDir);
   ensureDir(layout.dataDir);
   ensureDir(layout.stateDir);
   ensureDir(path.join(layout.stateDir, "pid"));
   ensureDir(layout.logDir);
-  syncCanonicalConfigToProgramMirror(service, layout);
 }
 
 function readInitializationState(layoutOrInstallDir: ServiceLayout | string): InitializationState | null {
@@ -583,7 +558,12 @@ function patchShellProgramCommonForLayeredLayout(programDir: string) {
   let content = fs.readFileSync(scriptPath, "utf8");
   const original = content;
   content = content
-    .replace(/ENV_FILE="\$BUNDLE_ROOT\/\.env"/gu, 'ENV_FILE="${ZENMIND_SERVICE_ENV_FILE:-$BUNDLE_ROOT/.env}"')
+    .replace(/ENV_FILE="\$\{ZENMIND_SERVICE_ENV_FILE:-\$BUNDLE_ROOT\/\.env\}"/gu, 'ENV_FILE="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/.env"')
+    .replace(/ENV_FILE="\$BUNDLE_ROOT\/\.env"/gu, 'ENV_FILE="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/.env"')
+    .replace(/CONFIG_DIR="\$\{ZENMIND_SERVICE_CONFIG_DIR:-\$BUNDLE_ROOT\}\/configs"/gu, 'CONFIG_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs"')
+    .replace(/CONFIG_DIR="\$BUNDLE_ROOT\/configs"/gu, 'CONFIG_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs"')
+    .replace(/CONFIG_ENV_DIR="\$\{ZENMIND_SERVICE_CONFIG_DIR:-\$BUNDLE_ROOT\}\/configs\/environments"/gu, 'CONFIG_ENV_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs/environments"')
+    .replace(/CONFIG_ENV_DIR="\$BUNDLE_ROOT\/configs\/environments"/gu, 'CONFIG_ENV_DIR="${SERVICE_CONFIG_DIR:-$BUNDLE_ROOT}/configs/environments"')
     .replace(/DATA_DIR="\$BUNDLE_ROOT\/data"/gu, 'DATA_DIR="${ZENMIND_SERVICE_DATA_DIR:-$BUNDLE_ROOT/data}"')
     .replace(/RUN_DIR="\$BUNDLE_ROOT\/run"/gu, 'RUN_DIR="${ZENMIND_SERVICE_STATE_DIR:-$BUNDLE_ROOT/run}"')
     .replace(/LOG_FILE="\$RUN_DIR\//gu, 'LOG_FILE="${ZENMIND_SERVICE_LOG_DIR:-$RUN_DIR}/')
@@ -603,7 +583,10 @@ function patchPowerShellProgramCommonForLayeredLayout(programDir: string) {
   let content = fs.readFileSync(scriptPath, "utf8");
   const original = content;
   content = content
-    .replace(/\$Script:EnvFile\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]\.env['"]/gu, '$Script:EnvFile = if ($env:ZENMIND_SERVICE_ENV_FILE) { $env:ZENMIND_SERVICE_ENV_FILE } else { Join-Path $Script:BundleRoot ".env" }')
+    .replace(/\$Script:EnvFile\s*=\s*if\s*\(\$env:ZENMIND_SERVICE_ENV_FILE\)\s*\{\s*\$env:ZENMIND_SERVICE_ENV_FILE\s*\}\s*else\s*\{\s*Join-Path\s+\$Script:BundleRoot\s+["']\.env["']\s*\}/gu, '$Script:EnvFile = Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) ".env"')
+    .replace(/\$Script:EnvFile\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]\.env['"]/gu, '$Script:EnvFile = Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) ".env"')
+    .replace(/\$Script:ConfigDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]configs['"]/gu, '$Script:ConfigDir = Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) "configs"')
+    .replace(/\$Script:ConfigEnvDir\s*=\s*Join-Path\s+\(Join-Path\s+\$Script:BundleRoot\s+['"]configs['"]\)\s+['"]environments['"]/gu, '$Script:ConfigEnvDir = Join-Path (Join-Path $(if ($env:SERVICE_CONFIG_DIR) { $env:SERVICE_CONFIG_DIR } else { $Script:BundleRoot }) "configs") "environments"')
     .replace(/\$Script:DataDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]data['"]/gu, '$Script:DataDir = if ($env:ZENMIND_SERVICE_DATA_DIR) { $env:ZENMIND_SERVICE_DATA_DIR } else { Join-Path $Script:BundleRoot "data" }')
     .replace(/\$Script:RunDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]run['"]/gu, '$Script:RunDir = if ($env:ZENMIND_SERVICE_STATE_DIR) { $env:ZENMIND_SERVICE_STATE_DIR } else { Join-Path $Script:BundleRoot "run" }')
     .replace(/\$Script:LogFile\s*=\s*Join-Path\s+\$Script:RunDir\s+([^;\r\n]+)/gu, '$Script:LogFile = Join-Path $(if ($env:ZENMIND_SERVICE_LOG_DIR) { $env:ZENMIND_SERVICE_LOG_DIR } else { $Script:RunDir }) $1')
@@ -1874,10 +1857,41 @@ function ensureDefaultConfig(service: ServiceDefinition, layout: ServiceLayout) 
   }
 }
 
+function copyDirectoryEntriesIfMissing(sourceDir: string, targetDir: string) {
+  if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
+    return;
+  }
+
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const targetPath = path.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDirectoryEntriesIfMissing(sourcePath, targetPath);
+      continue;
+    }
+    if (!entry.isFile() || fs.existsSync(targetPath)) {
+      continue;
+    }
+    ensureDir(path.dirname(targetPath));
+    fs.copyFileSync(sourcePath, targetPath);
+  }
+}
+
+function ensureAgentContainerHubDesktopConfig(layout: ServiceLayout) {
+  copyDirectoryEntriesIfMissing(
+    resolveConfigTemplatePath(layout, path.join("configs", "environments")),
+    resolveConfigPath(layout, path.join("configs", "environments"))
+  );
+}
+
 async function ensureInitializationRequirements(app: App, service: ServiceDefinition, layout: ServiceLayout) {
   if (service.id === "agent-platform") {
     await ensureAgentPlatformDesktopConfig(app, service, layout);
     ensureLocalAuthPublicKey(app, layout);
+  }
+
+  if (service.id === "agent-container-hub") {
+    ensureAgentContainerHubDesktopConfig(layout);
   }
 
   if (service.id === LOCAL_CLI_ACP_RELAY_PLUGIN_ID) {
@@ -3778,7 +3792,6 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   // Apply manifest-declared envBindings generically.
   await applyEnvBindings(app, service, env, updates);
 
-  // Service-specific logic that cannot be expressed via envBindings.
   if (service.id === "agent-webclient") {
     updates.delete("NODE_BIN");
     await syncAgentWebclientPlatformUrls(app, env, updates);

@@ -375,6 +375,34 @@ function resolveConfigFiles(raw: Record<string, unknown>) {
 
 const agentPlatformDesktopConfigFiles: ManifestConfigFile[] = [
   {
+    key: "container-hub",
+    label: "configs/container-hub.yml",
+    relativePath: "configs/container-hub.yml",
+    templateRelativePath: "configs/container-hub.example.yml",
+    required: false
+  },
+  {
+    key: "bash",
+    label: "configs/bash.yml",
+    relativePath: "configs/bash.yml",
+    templateRelativePath: "configs/bash.example.yml",
+    required: false
+  },
+  {
+    key: "file-tools",
+    label: "configs/file-tools.yml",
+    relativePath: "configs/file-tools.yml",
+    templateRelativePath: "configs/file-tools.example.yml",
+    required: false
+  },
+  {
+    key: "cors",
+    label: "configs/cors.yml",
+    relativePath: "configs/cors.yml",
+    templateRelativePath: "configs/cors.example.yml",
+    required: false
+  },
+  {
     key: "prompts",
     label: "configs/prompts.yml",
     relativePath: "configs/prompts.yml",
@@ -385,6 +413,7 @@ const agentPlatformDesktopConfigFiles: ManifestConfigFile[] = [
     key: "channels",
     label: "configs/channels.yml",
     relativePath: "configs/channels.yml",
+    templateRelativePath: "configs/channels.example.yml",
     required: false
   }
 ];

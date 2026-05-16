@@ -255,6 +255,37 @@ test("synced builtin assets include agent-webclient so assistant entry is availa
   assert.ok(envBindingKeys.includes("WS_BASE_URL"));
 });
 
+test("synced builtin service launchers derive .env from SERVICE_CONFIG_DIR", () => {
+  for (const serviceId of ["agent-platform", "agent-container-hub", "agent-webclient", "zenmind-app-server"]) {
+    const { service, assetPath } = getSyncedAsset(serviceId);
+    validateBundleArchive(service, assetPath);
+
+    const scriptDir = serviceId === "zenmind-app-server" ? "scripts" : "scripts";
+    const programCommonName = assetPath.endsWith(".zip") ? "program-common.ps1" : "program-common.sh";
+    const programCommon = readArchiveEntryText(assetPath, `${serviceId}/${scriptDir}/${programCommonName}`);
+    assert.ok(programCommon, `expected ${serviceId} ${programCommonName} to be readable`);
+    assert.doesNotMatch(programCommon, /ZENMIND_SERVICE_CONFIG_DIR|ZENMIND_SERVICE_ENV_FILE/);
+
+    if (assetPath.endsWith(".zip")) {
+      assert.match(programCommon, /\$env:SERVICE_CONFIG_DIR/u, `${serviceId} should read SERVICE_CONFIG_DIR`);
+      assert.match(programCommon, /Join-Path\s+\$\(if\s+\(\$env:SERVICE_CONFIG_DIR\)/u);
+    } else {
+      assert.match(
+        programCommon,
+        /ENV_FILE="\$\{SERVICE_CONFIG_DIR:-\$BUNDLE_ROOT\}\/\.env"/u,
+        `${serviceId} should derive .env from SERVICE_CONFIG_DIR`
+      );
+    }
+
+    if (serviceId === "agent-platform" && !assetPath.endsWith(".zip")) {
+      assert.match(programCommon, /CONFIG_DIR="\$\{SERVICE_CONFIG_DIR:-\$BUNDLE_ROOT\}\/configs"/u);
+    }
+    if (serviceId === "agent-container-hub" && !assetPath.endsWith(".zip")) {
+      assert.match(programCommon, /CONFIG_ENV_DIR="\$\{SERVICE_CONFIG_DIR:-\$BUNDLE_ROOT\}\/configs\/environments"/u);
+    }
+  }
+});
+
 test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with stale launcher checks", () => {
   const discoveredService = builtinServices.find((item) => item.id === "agent-webclient");
   assert.ok(discoveredService);

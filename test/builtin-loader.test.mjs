@@ -312,7 +312,7 @@ test("loadBuiltinServices falls back to installed builtin manifests when synced 
     assert.ok(service.configFiles.some((configFile) =>
       configFile.key === "channels" &&
       configFile.relativePath === "configs/channels.yml" &&
-      configFile.templateRelativePath === undefined &&
+      configFile.templateRelativePath === "configs/channels.example.yml" &&
       configFile.required === false
     ));
   } finally {

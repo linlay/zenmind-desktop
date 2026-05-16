@@ -2208,6 +2208,23 @@ test("installBuiltinService prepares agent platform desktop config during first 
     assert.match(envContent, /^SKILLS_MARKET_DIR=~\/\.zenmind\/skills-market$/m);
     assert.match(envContent, /^PAN_DIR=~\/\.zenmind\/pan$/m);
     assert.equal(fs.existsSync(path.join(configDir, "configs", "local-public-key.pem")), true);
+    for (const fileName of [
+      "container-hub.yml",
+      "bash.yml",
+      "file-tools.yml",
+      "cors.yml",
+      "prompts.yml",
+      "channels.yml"
+    ]) {
+      assert.equal(
+        fs.existsSync(path.join(configDir, "configs", fileName)),
+        true,
+        `expected canonical config ${fileName} to be initialized`
+      );
+    }
+    assert.equal(fs.existsSync(path.join(installDir, ".env")), false);
+    assert.equal(fs.existsSync(path.join(installDir, "configs", "local-public-key.pem")), false);
+    assert.equal(fs.existsSync(path.join(installDir, ".zenmind-desktop-generated-config")), false);
   } finally {
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -2323,8 +2340,6 @@ test("writeServiceConfig migrates known bad core env ports without overriding cu
   const { app, restore } = loadBuiltinsForTest(userDataRoot);
   const platformService = getBuiltinService("agent-platform");
   const webclientService = getBuiltinService("agent-webclient");
-	  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-	  const webclientInstallDir = getTestServiceProgramDir(userDataRoot, webclientService.id, webclientService.version);
   const platformPidPath = getTestPidPath(userDataRoot, platformService.id, "agent-platform.pid");
   const webclientPidPath = getTestPidPath(userDataRoot, webclientService.id, "agent-webclient.pid");
 
@@ -2341,14 +2356,14 @@ test("writeServiceConfig migrates known bad core env ports without overriding cu
         "AUTH_ENABLED=false"
       ].join("\n") + "\n"
     );
-    let envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+    let envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
     assert.match(envContent, /^HOST_PORT=7078$/m);
     assert.match(envContent, /^SERVER_PORT=7078$/m);
     assert.match(envContent, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:7079$/m);
     assert.match(envContent, /^AUTH_ENABLED=false$/m);
 
     await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=7901\nSERVER_PORT=18081\n");
-    envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+    envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
     assert.match(envContent, /^HOST_PORT=7901$/m);
     assert.match(envContent, /^SERVER_PORT=7901$/m);
 
@@ -2367,7 +2382,7 @@ test("writeServiceConfig migrates known bad core env ports without overriding cu
         "NODE_BIN=/tmp/stale-node"
       ].join("\n") + "\n"
     );
-    envContent = fs.readFileSync(path.join(webclientInstallDir, ".env"), "utf8");
+    envContent = fs.readFileSync(getTestEnvPath(userDataRoot, webclientService.id), "utf8");
     assert.equal(result.service.healthMeta.port, 7902);
     assert.match(result.message, /重启服务后生效/u);
     assert.match(envContent, /^PORT=7902$/m);
@@ -3156,8 +3171,9 @@ test("ensurePreStartRequirements migrates stale legacy desktop runtime paths to 
   fs.writeFileSync(path.join(secondaryRuntimeRoot, "agents", "secondaryAgent", "agent.yml"), "name: secondary\n", "utf8");
   fs.writeFileSync(path.join(secondaryRuntimeRoot, "registries", "providers", "secondary.yml"), "key: secondary\n", "utf8");
 
-  fs.writeFileSync(
-    path.join(platformInstallDir, ".env"),
+  writeTestEnv(
+    userDataRoot,
+    platformService.id,
     [
       "HOST_PORT=11949",
       `REGISTRIES_DIR=${legacyRuntimeRoot}/registries`,
@@ -3171,7 +3187,6 @@ test("ensurePreStartRequirements migrates stale legacy desktop runtime paths to 
       `PAN_DIR=${legacyRuntimeRoot}/pan`,
       `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`
     ].join("\n"),
-    "utf8"
   );
 
   const previousHome = process.env.HOME;
@@ -3186,7 +3201,7 @@ test("ensurePreStartRequirements migrates stale legacy desktop runtime paths to 
     }
   }
 
-  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+  const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
   assert.match(envContent, /^AGENTS_DIR=~\/\.zenmind\/agents$/m);
   assert.match(envContent, /^REGISTRIES_DIR=~\/\.zenmind\/registries$/m);
   assert.doesNotMatch(
@@ -3221,8 +3236,9 @@ test("ensurePreStartRequirements uses the resolved desktop path when the runtime
   fs.writeFileSync(path.join(desktopRuntimeRoot, "agents", "desktopAgent", "agent.yml"), "name: desktop\n", "utf8");
   fs.writeFileSync(path.join(desktopRuntimeRoot, "registries", "providers", "desktop.yml"), "key: desktop\n", "utf8");
 
-  fs.writeFileSync(
-    path.join(platformInstallDir, ".env"),
+  writeTestEnv(
+    userDataRoot,
+    platformService.id,
     [
       "HOST_PORT=11949",
       `REGISTRIES_DIR=${legacyRuntimeRoot}/registries`,
@@ -3236,7 +3252,6 @@ test("ensurePreStartRequirements uses the resolved desktop path when the runtime
       `PAN_DIR=${legacyRuntimeRoot}/pan`,
       `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`
     ].join("\n"),
-    "utf8"
   );
 
   const previousHome = process.env.HOME;
@@ -3251,7 +3266,7 @@ test("ensurePreStartRequirements uses the resolved desktop path when the runtime
     }
   }
 
-  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+  const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
   assert.match(
     envContent,
     new RegExp(`AGENTS_DIR=${path.join(desktopRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
@@ -3292,8 +3307,9 @@ test("ensurePreStartRequirements also detects a hidden .zenmind runtime root on 
   fs.writeFileSync(path.join(desktopRuntimeRoot, "agents", "desktopAgent", "agent.yml"), "name: desktop\n", "utf8");
   fs.writeFileSync(path.join(desktopRuntimeRoot, "registries", "providers", "desktop.yml"), "key: desktop\n", "utf8");
 
-  fs.writeFileSync(
-    path.join(platformInstallDir, ".env"),
+  writeTestEnv(
+    userDataRoot,
+    platformService.id,
     [
       "HOST_PORT=11949",
       `REGISTRIES_DIR=${legacyRuntimeRoot}/registries`,
@@ -3307,7 +3323,6 @@ test("ensurePreStartRequirements also detects a hidden .zenmind runtime root on 
       `PAN_DIR=${legacyRuntimeRoot}/pan`,
       `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`
     ].join("\n"),
-    "utf8"
   );
 
   const previousHome = process.env.HOME;
@@ -3322,7 +3337,7 @@ test("ensurePreStartRequirements also detects a hidden .zenmind runtime root on 
     }
   }
 
-  const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
+  const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
   assert.match(
     envContent,
     new RegExp(`AGENTS_DIR=${path.join(desktopRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
@@ -3731,7 +3746,7 @@ test("ensurePreStartRequirements refreshes stale zenmind-app-server install when
     "utf8"
   );
   fs.writeFileSync(
-    path.join(installDir, ".env"),
+    getTestEnvPath(userDataRoot, service.id),
     `SERVER_PORT=${service.web.defaultPort}\n`,
     "utf8"
   );
@@ -3747,7 +3762,7 @@ test("ensurePreStartRequirements refreshes stale zenmind-app-server install when
 
   const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
   const indexContent = fs.readFileSync(path.join(installDir, "frontend", "dist", "index.html"), "utf8");
-  const envContent = fs.readFileSync(path.join(installDir, ".env"), "utf8");
+  const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8");
   const programCommon = fs.readFileSync(path.join(installDir, "scripts", "program-common.sh"), "utf8");
   assert.equal(manifest.frontend.entry, "/admin/");
   assert.equal(manifest.web.routePath, "/admin/");
@@ -3771,7 +3786,7 @@ test("startService refreshes a stale running zenmind-app-server install before r
   try {
     await installBuiltinService(app, service.id);
     const servicePort = await getAvailableLocalPort();
-    const envPath = path.join(installDir, ".env");
+    const envPath = getTestEnvPath(userDataRoot, service.id);
     fs.writeFileSync(
       envPath,
       fs.readFileSync(envPath, "utf8").replace(/^SERVER_PORT=.*$/m, `SERVER_PORT=${servicePort}`),
@@ -3806,7 +3821,7 @@ test("startService refreshes a stale running zenmind-app-server install before r
       "utf8"
     );
     fs.writeFileSync(
-      path.join(installDir, ".env"),
+      getTestEnvPath(userDataRoot, service.id),
       `SERVER_PORT=${servicePort}\n`,
       "utf8"
     );
@@ -3824,7 +3839,7 @@ test("startService refreshes a stale running zenmind-app-server install before r
 
     const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
     const indexContent = fs.readFileSync(path.join(installDir, "frontend", "dist", "index.html"), "utf8");
-    const envContent = fs.readFileSync(path.join(installDir, ".env"), "utf8");
+    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8");
     assert.equal(manifest.frontend.entry, "/admin/");
     assert.equal(manifest.web.routePath, "/admin/");
     assert.match(indexContent, /\/admin\/assets\//);
