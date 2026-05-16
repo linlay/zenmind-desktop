@@ -13,6 +13,11 @@ export type DesktopActionDefinition = {
 
 export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.page.getContext", kind: "read", category: "page", description: "Read the current visible Desktop page context." },
+  { name: "desktop.page.readCurrent", kind: "read", category: "page", description: "Read the current live Desktop page state." },
+  { name: "desktop.page.extractStructured", kind: "read", category: "page", description: "Extract structured data from the current Desktop page." },
+  { name: "desktop.page.interact", kind: "execute", category: "page", description: "Interact with the current Desktop page." },
+  { name: "desktop.page.fillForm", kind: "execute", category: "page", description: "Fill the current Desktop page form without submitting it." },
+  { name: "desktop.page.submitForm", kind: "execute", category: "page", description: "Submit the current Desktop page form." },
   { name: "desktop.page.getFormState", kind: "read", category: "page", description: "Read the active page form state." },
   { name: "desktop.page.validateForm", kind: "validate", category: "page", description: "Validate the active page form." },
   { name: "desktop.page.previewPatch", kind: "preview", category: "page", description: "Preview a patch for the active page form." },

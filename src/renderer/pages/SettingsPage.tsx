@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useLocation } from "react-router-dom";
 import { CustomSidebarIcon } from "../components/BrandMark";
 import type {
   AssistantMemoryItem,
@@ -23,6 +24,8 @@ import {
   type DesktopCopilotPagePreferences
 } from "../../shared/assistant-settings";
 import { sanitizeDesktopCopilotPagePreferences } from "../../shared/page-copilot";
+import { getAssistantPageContext } from "../services/assistantPageContext";
+import { publishCurrentPageContextSnapshot } from "../services/currentPageContext";
 import { registerDesktopActionProvider } from "../services/desktopActionRegistry";
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
@@ -54,6 +57,59 @@ type WindowsDataRootCardProps = {
 };
 
 const WIDE_SETTINGS_SECTIONS = new Set<SettingsSectionId>(["navigation", "embeddedWebsites", "memory"]);
+const SETTINGS_ACTION_PATCH_FIELDS = [
+  "desktopHelperAgentKey",
+  "quickAssistantEnabled",
+  "quickAssistantAgentKey",
+  "desktopCopilotPages"
+] as const;
+
+function asRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function buildSettingsActionPatch(
+  args: Record<string, unknown>
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  const patchRecord = asRecord(args.patch);
+  const fields = args.fields;
+  const fieldRecord = Array.isArray(fields)
+    ? fields.reduce<Record<string, unknown>>((accumulator, item) => {
+        const node = asRecord(item);
+        const fieldName = typeof node.name === "string"
+          ? node.name.trim()
+          : typeof node.field === "string"
+            ? node.field.trim()
+            : typeof node.key === "string"
+              ? node.key.trim()
+              : "";
+        if (!fieldName) {
+          return accumulator;
+        }
+        accumulator[fieldName] = node.value;
+        return accumulator;
+      }, {})
+    : asRecord(fields);
+
+  for (const fieldName of SETTINGS_ACTION_PATCH_FIELDS) {
+    if (fieldName in patchRecord) {
+      patch[fieldName] = patchRecord[fieldName];
+      continue;
+    }
+    if (fieldName in fieldRecord) {
+      patch[fieldName] = fieldRecord[fieldName];
+      continue;
+    }
+    if (fieldName in args) {
+      patch[fieldName] = args[fieldName];
+    }
+  }
+
+  return patch;
+}
 
 function formatMemoryTime(value: string | null | undefined) {
   if (!value) {
@@ -161,6 +217,8 @@ export function SettingsPage({
   onRefreshCustomSidebarItems,
   onAssistantSettingsChange
 }: SettingsPageProps) {
+  const location = useLocation();
+  const currentRoute = `${location.pathname}${location.search}`;
   const [feedback, setFeedback] = useState("");
   const [customSidebarLabel, setCustomSidebarLabel] = useState("");
   const [customSidebarUrl, setCustomSidebarUrl] = useState("");
@@ -330,6 +388,45 @@ export function SettingsPage({
     };
   }
 
+  function buildSettingsFormStateResult() {
+    return {
+      page: "settings",
+      route: currentRoute,
+      fields: {
+        desktopHelperAgentKey: {
+          value: desktopHelperAgentKey,
+          saved: assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY,
+          valid: Boolean(assistantAgentOptions.find((agent) => agent.agentKey === desktopHelperAgentKey))
+        },
+        quickAssistantEnabled: {
+          value: quickAssistantEnabled,
+          saved: assistantSettings?.quickAssistantEnabled ?? DEFAULT_QUICK_ASSISTANT_ENABLED
+        },
+        quickAssistantAgentKey: {
+          value: quickAssistantAgentKey,
+          saved: assistantSettings?.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
+          valid: Boolean(assistantAgentOptions.find((agent) => agent.agentKey === quickAssistantAgentKey))
+        },
+        desktopCopilotPages,
+        desktopPetBoundAgentKey: {
+          value: currentDesktopPetBoundAgentKey,
+          saved: currentDesktopPetBoundAgentKey
+        },
+        memory: {
+          enabled: memorySettings?.enabled ?? null,
+          autoLearn: memorySettings?.autoLearn ?? null
+        }
+      },
+      options: {
+        assistantAgents: assistantAgentOptions.map((agent) => ({
+          agentKey: agent.agentKey,
+          displayName: agent.displayName,
+          role: agent.role
+        }))
+      }
+    };
+  }
+
   async function saveDesktopCopilotPages(
     nextPages: DesktopCopilotPagePreferences,
     pendingKey: DesktopCopilotPageKey | "all"
@@ -377,8 +474,30 @@ export function SettingsPage({
   }
 
   useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const pageContext = await getAssistantPageContext();
+      if (cancelled) {
+        return;
+      }
+      publishCurrentPageContextSnapshot({
+        route: currentRoute,
+        pageKey: `native:${currentRoute}`,
+        pageKind: "native",
+        pageContext
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentRoute]);
+
+  useEffect(() => {
     return registerDesktopActionProvider(async (request) => {
       const args = request.args ?? {};
+      const actionPatch = buildSettingsActionPatch(args);
+      const actionPatchHasKeys = Object.keys(actionPatch).length > 0;
       const patch = request.args?.patch && typeof request.args.patch === "object" && !Array.isArray(request.args.patch)
         ? request.args.patch as Record<string, unknown>
         : {};
@@ -423,46 +542,223 @@ export function SettingsPage({
           ? "快捷助手默认智能体配置可用。"
           : "请选择当前智能体列表中存在的快捷助手默认智能体。"
       };
+      const actionPatchHelperAgentKey = typeof actionPatch.desktopHelperAgentKey === "string"
+        ? actionPatch.desktopHelperAgentKey.trim()
+        : desktopHelperAgentKey.trim();
+      const actionPatchQuickAssistantEnabled = typeof actionPatch.quickAssistantEnabled === "boolean"
+        ? actionPatch.quickAssistantEnabled
+        : quickAssistantEnabled;
+      const actionPatchQuickAssistantAgentKey = typeof actionPatch.quickAssistantAgentKey === "string"
+        ? actionPatch.quickAssistantAgentKey.trim()
+        : quickAssistantAgentKey.trim();
+      const actionPatchCopilotPages = sanitizeDesktopCopilotPagePreferences({
+        ...desktopCopilotPages,
+        ...readCopilotPatch(actionPatch)
+      });
+      const actionPatchHelperTouched = typeof actionPatch.desktopHelperAgentKey === "string";
+      const actionPatchQuickAssistantEnabledTouched = typeof actionPatch.quickAssistantEnabled === "boolean";
+      const actionPatchQuickAssistantAgentTouched = typeof actionPatch.quickAssistantAgentKey === "string";
+      const actionPatchCopilotTouched =
+        "desktopCopilotPages" in actionPatch ||
+        Object.keys(readCopilotPatch(actionPatch)).some((key) =>
+          DESKTOP_COPILOT_PAGE_KEYS.includes(key as DesktopCopilotPageKey)
+        );
+      const actionPatchHelperAgent = assistantAgentOptions.find((agent) => agent.agentKey === actionPatchHelperAgentKey);
+      const actionPatchQuickAssistantAgent = assistantAgentOptions.find((agent) => agent.agentKey === actionPatchQuickAssistantAgentKey);
+      const actionPatchHelperValidation = {
+        field: "desktopHelperAgentKey",
+        value: actionPatchHelperAgentKey,
+        valid: Boolean(actionPatchHelperAgentKey && actionPatchHelperAgent),
+        message: actionPatchHelperAgent
+          ? "侧边栏默认助手配置可用。"
+          : "请选择当前智能体列表中存在的侧边栏默认助手。"
+      };
+      const actionPatchQuickAssistantValidation = {
+        field: "quickAssistantAgentKey",
+        value: actionPatchQuickAssistantAgentKey,
+        valid: Boolean(actionPatchQuickAssistantAgentKey && actionPatchQuickAssistantAgent),
+        message: actionPatchQuickAssistantAgent
+          ? "快捷助手默认智能体配置可用。"
+          : "请选择当前智能体列表中存在的快捷助手默认智能体。"
+      };
+      const actionPatchCopilotValidation = validateCopilotPages(actionPatchCopilotPages);
 
       switch (request.action) {
-        case "desktop.page.getFormState":
+        case "desktop.page.readCurrent":
           return {
             ok: true,
             result: {
-              page: "settings",
-              fields: {
-                desktopHelperAgentKey: {
-                  value: desktopHelperAgentKey,
-                  saved: assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY,
-                  valid: Boolean(assistantAgentOptions.find((agent) => agent.agentKey === desktopHelperAgentKey))
-                },
-                quickAssistantEnabled: {
-                  value: quickAssistantEnabled,
-                  saved: assistantSettings?.quickAssistantEnabled ?? DEFAULT_QUICK_ASSISTANT_ENABLED
-                },
-                quickAssistantAgentKey: {
-                  value: quickAssistantAgentKey,
-                  saved: assistantSettings?.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
-                  valid: Boolean(assistantAgentOptions.find((agent) => agent.agentKey === quickAssistantAgentKey))
-                },
-                desktopCopilotPages,
-                desktopPetBoundAgentKey: {
-                  value: currentDesktopPetBoundAgentKey,
-                  saved: currentDesktopPetBoundAgentKey
-                },
-                memory: {
-                  enabled: memorySettings?.enabled ?? null,
-                  autoLearn: memorySettings?.autoLearn ?? null
+              ...buildSettingsFormStateResult(),
+              realtime: true,
+              readAt: new Date().toISOString()
+            }
+          };
+        case "desktop.page.extractStructured":
+          return {
+            ok: true,
+            result: {
+              ...buildSettingsFormStateResult(),
+              structured: true,
+              readAt: new Date().toISOString()
+            }
+          };
+        case "desktop.page.fillForm":
+          if (!actionPatchHasKeys) {
+            return {
+              ok: false,
+              error: {
+                code: "missing_form_patch",
+                message: "fillForm 需要提供要填写的字段。"
+              }
+            };
+          }
+          if (
+            (actionPatchHelperTouched && !actionPatchHelperValidation.valid) ||
+            (actionPatchQuickAssistantAgentTouched && !actionPatchQuickAssistantValidation.valid) ||
+            (actionPatchCopilotTouched && !actionPatchCopilotValidation.valid)
+          ) {
+            return {
+              ok: false,
+              error: {
+                code: "invalid_form_patch",
+                message: actionPatchHelperTouched && !actionPatchHelperValidation.valid
+                  ? actionPatchHelperValidation.message
+                  : actionPatchQuickAssistantAgentTouched && !actionPatchQuickAssistantValidation.valid
+                    ? actionPatchQuickAssistantValidation.message
+                    : "侧边助手配置不可用。",
+                details: {
+                  helperValidation: actionPatchHelperValidation,
+                  quickAssistantValidation: actionPatchQuickAssistantValidation,
+                  copilotValidation: actionPatchCopilotValidation
                 }
-              },
-              options: {
-                assistantAgents: assistantAgentOptions.map((agent) => ({
-                  agentKey: agent.agentKey,
-                  displayName: agent.displayName,
-                  role: agent.role
-                }))
+              }
+            };
+          }
+          if (actionPatchHelperTouched) {
+            setDesktopHelperAgentKey(actionPatchHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY);
+          }
+          if (actionPatchQuickAssistantEnabledTouched) {
+            setQuickAssistantEnabled(actionPatchQuickAssistantEnabled);
+          }
+          if (actionPatchQuickAssistantAgentTouched) {
+            setQuickAssistantAgentKey(actionPatchQuickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
+          }
+          if (actionPatchCopilotTouched) {
+            setDesktopCopilotPages(actionPatchCopilotPages);
+          }
+          return {
+            ok: true,
+            result: {
+              filled: true,
+              formState: {
+                ...buildSettingsFormStateResult(),
+                readAt: new Date().toISOString()
               }
             }
+          };
+        case "desktop.page.submitForm": {
+          const submitPatch = actionPatchHasKeys
+            ? actionPatch
+            : {
+                desktopHelperAgentKey,
+                quickAssistantEnabled,
+                quickAssistantAgentKey,
+                desktopCopilotPages
+              };
+          const submitPatchHelperTouched = typeof submitPatch.desktopHelperAgentKey === "string";
+          const submitPatchQuickAssistantEnabledTouched = typeof submitPatch.quickAssistantEnabled === "boolean";
+          const submitPatchQuickAssistantAgentTouched = typeof submitPatch.quickAssistantAgentKey === "string";
+          const submitPatchHelperAgentKey = typeof submitPatch.desktopHelperAgentKey === "string"
+            ? submitPatch.desktopHelperAgentKey.trim()
+            : desktopHelperAgentKey.trim();
+          const submitPatchQuickAssistantEnabled = typeof submitPatch.quickAssistantEnabled === "boolean"
+            ? submitPatch.quickAssistantEnabled
+            : quickAssistantEnabled;
+          const submitPatchQuickAssistantAgentKey = typeof submitPatch.quickAssistantAgentKey === "string"
+            ? submitPatch.quickAssistantAgentKey.trim()
+            : quickAssistantAgentKey.trim();
+          const submitPatchCopilotPages = sanitizeDesktopCopilotPagePreferences({
+            ...desktopCopilotPages,
+            ...readCopilotPatch(submitPatch)
+          });
+          const submitPatchCopilotTouched =
+            "desktopCopilotPages" in submitPatch ||
+            Object.keys(readCopilotPatch(submitPatch)).some((key) =>
+              DESKTOP_COPILOT_PAGE_KEYS.includes(key as DesktopCopilotPageKey)
+            );
+          const submitPatchHelperAgent = assistantAgentOptions.find((agent) => agent.agentKey === submitPatchHelperAgentKey);
+          const submitPatchQuickAssistantAgent = assistantAgentOptions.find((agent) => agent.agentKey === submitPatchQuickAssistantAgentKey);
+          const submitPatchHelperValidation = {
+            field: "desktopHelperAgentKey",
+            value: submitPatchHelperAgentKey,
+            valid: Boolean(submitPatchHelperAgentKey && submitPatchHelperAgent),
+            message: submitPatchHelperAgent
+              ? "侧边栏默认助手配置可用。"
+              : "请选择当前智能体列表中存在的侧边栏默认助手。"
+          };
+          const submitPatchQuickAssistantValidation = {
+            field: "quickAssistantAgentKey",
+            value: submitPatchQuickAssistantAgentKey,
+            valid: Boolean(submitPatchQuickAssistantAgentKey && submitPatchQuickAssistantAgent),
+            message: submitPatchQuickAssistantAgent
+              ? "快捷助手默认智能体配置可用。"
+              : "请选择当前智能体列表中存在的快捷助手默认智能体。"
+          };
+          const submitPatchCopilotValidation = validateCopilotPages(submitPatchCopilotPages);
+          if (
+            (submitPatchHelperTouched && !submitPatchHelperValidation.valid) ||
+            (submitPatchQuickAssistantAgentTouched && !submitPatchQuickAssistantValidation.valid) ||
+            (submitPatchCopilotTouched && !submitPatchCopilotValidation.valid)
+          ) {
+            return {
+              ok: false,
+              error: {
+                code: "invalid_form_patch",
+                message: submitPatchHelperTouched && !submitPatchHelperValidation.valid
+                  ? submitPatchHelperValidation.message
+                  : submitPatchQuickAssistantAgentTouched && !submitPatchQuickAssistantValidation.valid
+                    ? submitPatchQuickAssistantValidation.message
+                    : "侧边助手配置不可用。",
+                details: {
+                  helperValidation: submitPatchHelperValidation,
+                  quickAssistantValidation: submitPatchQuickAssistantValidation,
+                  copilotValidation: submitPatchCopilotValidation
+                }
+              }
+            };
+          }
+          if (submitPatchHelperTouched) {
+            await handleSelectDesktopHelperAgentKey(submitPatchHelperAgentKey);
+          }
+          if (submitPatchQuickAssistantEnabledTouched) {
+            const nextSettings = await window.electronAPI.assistant.saveSettings({
+              quickAssistantEnabled: submitPatchQuickAssistantEnabled
+            });
+            setAssistantSettings(nextSettings);
+            setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
+            onAssistantSettingsChange?.(nextSettings);
+          }
+          if (submitPatchQuickAssistantAgentTouched) {
+            await handleSelectQuickAssistantAgentKey(submitPatchQuickAssistantAgentKey);
+          }
+          if (submitPatchCopilotTouched) {
+            await saveDesktopCopilotPages(submitPatchCopilotPages, "all");
+          }
+          return {
+            ok: true,
+            result: {
+              submitted: true,
+              formState: {
+                ...buildSettingsFormStateResult(),
+                readAt: new Date().toISOString()
+              }
+            }
+          };
+        }
+        case "desktop.page.getFormState":
+          return {
+            ok: true,
+            result: buildSettingsFormStateResult()
           };
         case "desktop.page.validateForm":
           return {

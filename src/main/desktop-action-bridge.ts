@@ -318,6 +318,11 @@ async function executeAction(
 
   switch (action) {
     case "desktop.page.getContext":
+    case "desktop.page.readCurrent":
+    case "desktop.page.extractStructured":
+    case "desktop.page.interact":
+    case "desktop.page.fillForm":
+    case "desktop.page.submitForm":
     case "desktop.page.getFormState":
     case "desktop.page.validateForm":
     case "desktop.page.previewPatch":

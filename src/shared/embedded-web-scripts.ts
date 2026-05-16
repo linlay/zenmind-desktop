@@ -8,6 +8,22 @@ export type EmbeddedWebInteractArgs = {
   value?: string;
 };
 
+export type EmbeddedWebFormFieldInput = {
+  selector: string;
+  value?: string;
+  action?: "fill" | "select" | "click";
+};
+
+export type EmbeddedWebFillFormArgs = {
+  formSelector?: string;
+  fields: EmbeddedWebFormFieldInput[];
+};
+
+export type EmbeddedWebSubmitFormArgs = {
+  formSelector?: string;
+  submitSelector?: string;
+};
+
 export const READ_PAGE_DATA_SCRIPT = `(() => {
   const MAX_BODY_TEXT = 40000;
   const MAX_SELECTED_TEXT = 8000;
@@ -329,6 +345,174 @@ export function buildInteractElementScript(args: EmbeddedWebInteractArgs): strin
         error: error instanceof Error ? error.message : String(error),
         selector: args.selector,
         element: describe(element)
+      };
+    }
+  })()`;
+}
+
+export function buildFillFormScript(args: EmbeddedWebFillFormArgs): string {
+  return `(() => {
+    const args = ${JSON.stringify({
+      formSelector: args.formSelector ?? "",
+      fields: args.fields
+    })};
+    const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+    const describe = (element) => ({
+      tag: element.tagName.toLowerCase(),
+      id: element.id || "",
+      name: element.getAttribute("name") || "",
+      type: element.getAttribute("type") || "",
+      text: normalize(element.innerText || element.textContent || element.getAttribute("aria-label") || "").slice(0, 500),
+      value: "value" in element && !(element instanceof HTMLInputElement && element.type === "password") ? String(element.value || "") : ""
+    });
+    const dispatchValueEvents = (element) => {
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const filled = [];
+    if (args.formSelector) {
+      const form = document.querySelector(args.formSelector);
+      if (!form) {
+        return { ok: false, error: "form_not_found", formSelector: args.formSelector };
+      }
+      if (!(form instanceof HTMLFormElement)) {
+        return { ok: false, error: "target_is_not_form", formSelector: args.formSelector };
+      }
+    }
+    for (const fieldInput of Array.isArray(args.fields) ? args.fields : []) {
+      const selector = String(fieldInput?.selector || "").trim();
+      const action = String(fieldInput?.action || "").trim() || "fill";
+      if (!selector) {
+        return { ok: false, error: "field_selector_required", field: fieldInput };
+      }
+      const element = document.querySelector(selector);
+      if (!element) {
+        return { ok: false, error: "element_not_found", selector };
+      }
+      if (!(element instanceof HTMLElement)) {
+        return { ok: false, error: "target_is_not_html_element", selector };
+      }
+      try {
+        element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+        element.focus();
+        if (action === "click") {
+          element.click();
+        } else if (action === "select") {
+          if (element instanceof HTMLSelectElement) {
+            element.value = String(fieldInput?.value ?? "");
+            dispatchValueEvents(element);
+          } else if ("value" in element) {
+            element.value = String(fieldInput?.value ?? "");
+            dispatchValueEvents(element);
+          } else {
+            return { ok: false, error: "element_is_not_selectable", selector, element: describe(element) };
+          }
+        } else {
+          if (!("value" in element)) {
+            return { ok: false, error: "element_has_no_value", selector, element: describe(element) };
+          }
+          element.value = String(fieldInput?.value ?? "");
+          dispatchValueEvents(element);
+        }
+        filled.push({
+          selector,
+          action,
+          element: describe(element)
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          selector,
+          element: describe(element)
+        };
+      }
+    }
+    return {
+      ok: true,
+      formSelector: args.formSelector || "",
+      filled
+    };
+  })()`;
+}
+
+export function buildSubmitFormScript(args: EmbeddedWebSubmitFormArgs): string {
+  return `(() => {
+    const args = ${JSON.stringify({
+      formSelector: args.formSelector ?? "",
+      submitSelector: args.submitSelector ?? ""
+    })};
+    const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
+    const describe = (element) => ({
+      tag: element.tagName.toLowerCase(),
+      id: element.id || "",
+      name: element.getAttribute("name") || "",
+      type: element.getAttribute("type") || "",
+      text: normalize(element.innerText || element.textContent || element.getAttribute("aria-label") || "").slice(0, 500)
+    });
+    const findForm = () => {
+      if (args.formSelector) {
+        return document.querySelector(args.formSelector);
+      }
+      const selector = args.submitSelector;
+      if (selector) {
+        const submitter = document.querySelector(selector);
+        if (submitter instanceof HTMLElement) {
+          return submitter.closest("form");
+        }
+      }
+      return document.querySelector("form");
+    };
+    const submitter = args.submitSelector ? document.querySelector(args.submitSelector) : null;
+    if (submitter) {
+      if (!(submitter instanceof HTMLElement)) {
+        return { ok: false, error: "submit_target_is_not_html_element", submitSelector: args.submitSelector };
+      }
+      try {
+        submitter.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+        submitter.focus();
+        submitter.click();
+        return {
+          ok: true,
+          action: "click_submitter",
+          submitSelector: args.submitSelector,
+          submitter: describe(submitter)
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          submitSelector: args.submitSelector,
+          submitter: describe(submitter)
+        };
+      }
+    }
+    const form = findForm();
+    if (!(form instanceof HTMLFormElement)) {
+      return { ok: false, error: "form_not_found", formSelector: args.formSelector || "", submitSelector: args.submitSelector || "" };
+    }
+    try {
+      form.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+      if (typeof form.requestSubmit === "function") {
+        form.requestSubmit();
+      } else {
+        const submitEvent = new Event("submit", { bubbles: true, cancelable: true });
+        const cancelled = !form.dispatchEvent(submitEvent);
+        if (!cancelled) {
+          form.submit();
+        }
+      }
+      return {
+        ok: true,
+        action: "submit_form",
+        formSelector: args.formSelector || "",
+        form: describe(form)
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+        formSelector: args.formSelector || ""
       };
     }
   })()`;

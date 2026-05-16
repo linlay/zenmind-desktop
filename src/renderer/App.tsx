@@ -11,6 +11,8 @@ import { PluginPage } from "./pages/PluginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ServicesProvider, useServices } from "./services/ServicesContext";
+import { getAssistantPageContext } from "./services/assistantPageContext";
+import { publishCurrentPageContextSnapshot } from "./services/currentPageContext";
 import {
   registerDesktopActionProviderForScope,
   startDesktopActionRendererBridge
@@ -606,6 +608,30 @@ function AppShell() {
       lastNonSettingsRouteRef.current = currentRoute;
     }
   }, [currentRoute, isSettingsRoute]);
+
+  useEffect(() => {
+    if (!usesStandardBaseSurface || isSettingsRoute) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const pageContext = await getAssistantPageContext();
+      if (cancelled) {
+        return;
+      }
+      publishCurrentPageContextSnapshot({
+        route: currentRoute,
+        pageKey: `native:${currentRoute}`,
+        pageKind: "native",
+        pageContext
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentRoute, isSettingsRoute, usesStandardBaseSurface]);
 
   useEffect(() => {
     if (!isSettingsRoute || !activeSettingsSectionId) {
