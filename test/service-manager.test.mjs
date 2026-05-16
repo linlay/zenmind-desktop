@@ -647,15 +647,22 @@ function prepareRunningPluginFixture(userDataRoot, options = {}) {
 function createApp(userDataRoot, options = {}) {
   const {
     isPackaged = false,
-    homePath = process.env.HOME ?? os.homedir(),
+    layout = "legacy",
+    homePath = path.join(userDataRoot, "home"),
+    appDataPath = path.join(userDataRoot, "app-data"),
     desktopPath = path.join(homePath, "Desktop")
   } = options;
+  if (layout === "legacy") {
+    fs.mkdirSync(path.join(userDataRoot, "services"), { recursive: true });
+  }
   return {
     isPackaged,
     getPath(name) {
       switch (name) {
         case "userData":
           return userDataRoot;
+        case "appData":
+          return appDataPath;
         case "home":
           return homePath;
         case "desktop":
@@ -1131,7 +1138,7 @@ test("normalizeAgentPlatformEnvContentForRuntime migrates real legacy image toke
   assert.doesNotMatch(next, /^CHAT_IMAGE_TOKEN_TTL_SECONDS=/m);
 });
 
-test("service install dir follows userData/services/<id>/<version>", () => {
+test("legacy service install dir follows userData/services/<id>/<version>", () => {
   const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-service-dir-"));
   const { app, restore } = loadBuiltinsForTest(userDataRoot);
   const service = getBuiltinService("agent-platform");
@@ -2086,7 +2093,7 @@ test("installBuiltinService prepares agent platform desktop config during first 
     const envContent = fs.readFileSync(path.join(installDir, ".env"), "utf8");
     const preferredRuntimeRoot = path.join(homeRoot, ".zenmind");
     assert.match(envContent, /^AUTH_ENABLED=true$/m);
-    assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
+    assert.match(envContent, new RegExp(`^AUTH_LOCAL_PUBLIC_KEY_FILE=${path.join(installDir, "configs", "local-public-key.pem").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
     assert.match(envContent, /^HOST_PORT=7078$/m);
     assert.match(envContent, /^SERVER_PORT=7078$/m);
     assert.match(
@@ -2683,7 +2690,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   assert.match(envContent, /^SERVER_PORT=7078$/m);
   assert.match(envContent, /^AGENT_WS_ENABLED=true$/m);
   assert.match(envContent, /^AUTH_ENABLED=true$/m);
-  assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
+  assert.match(envContent, new RegExp(`^AUTH_LOCAL_PUBLIC_KEY_FILE=${path.join(platformInstallDir, "configs", "local-public-key.pem").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
   assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
   assert.doesNotMatch(envContent, /^GATEWAY_WS_URL=/m);
   assert.doesNotMatch(envContent, /^GATEWAY_USER_ID=/m);

@@ -20,13 +20,32 @@ const {
 } = require("../dist-electron/main/service-registry.js");
 
 function createApp(userDataRoot) {
+  const tempRoot = path.dirname(userDataRoot);
+  const homePath = path.join(tempRoot, "home");
+  const appDataPath = path.join(tempRoot, "app-data");
   return {
     isPackaged: false,
     getPath(name) {
-      assert.equal(name, "userData");
-      return userDataRoot;
+      switch (name) {
+        case "home":
+          return homePath;
+        case "appData":
+          return appDataPath;
+        case "userData":
+          return userDataRoot;
+        default:
+          assert.fail(`unexpected app.getPath(${name})`);
+      }
     }
   };
+}
+
+function getLayeredDesktopRoot(userDataRoot) {
+  return path.join(path.dirname(userDataRoot), "home", ".zenmind", ".desktop");
+}
+
+function getLayeredPluginConfigDir(userDataRoot, pluginId) {
+  return path.join(getLayeredDesktopRoot(userDataRoot), "config", "plugins", pluginId);
 }
 
 function writePluginBundleRoot(bundleRoot, options = {}) {
@@ -218,7 +237,7 @@ test("installPluginFromArchive installs builtin bundles via the services path an
   assert.equal(result.serviceId, "builtin-service");
   assert.equal(definition.kind, "builtin");
   assert.equal(definition.desktop.assetFileName, path.basename(archivePath));
-  assert.equal(installDir, path.join(userDataRoot, "services", "builtin-service", "v1.0.0"));
+  assert.equal(installDir, path.join(getLayeredDesktopRoot(userDataRoot), "programs", "services", "builtin-service", "v1.0.0"));
   assert.equal(state.installDir, installDir);
   assert.equal(state.installed, true);
   assert.equal(state.status, "stopped");
@@ -246,8 +265,10 @@ test("installPluginFromArchive preserves config and clears previous initializati
 
   await installPluginFromArchive(app, firstArchive);
   const installDir = getPluginInstallDir(app, "test-plugin");
-  const initStatePath = serviceManagerInternals.getInitializationStatePath(installDir);
-  fs.writeFileSync(path.join(installDir, ".env"), "PORT=9500\n", "utf8");
+  const configDir = getLayeredPluginConfigDir(userDataRoot, "test-plugin");
+  const initStatePath = path.join(getLayeredDesktopRoot(userDataRoot), "state", "plugins", "test-plugin", "init-state.json");
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(path.join(configDir, ".env"), "PORT=9500\n", "utf8");
   fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
   fs.writeFileSync(
     initStatePath,
@@ -257,7 +278,7 @@ test("installPluginFromArchive preserves config and clears previous initializati
 
   await installPluginFromArchive(app, secondArchive);
 
-  assert.equal(fs.readFileSync(path.join(installDir, ".env"), "utf8"), "PORT=9500\n");
+  assert.equal(fs.readFileSync(path.join(configDir, ".env"), "utf8"), "PORT=9500\n");
   assert.equal(fs.existsSync(initStatePath), false);
   assert.equal((await getServiceState(app, "test-plugin")).status, "initialization-required");
 });
@@ -265,7 +286,7 @@ test("installPluginFromArchive preserves config and clears previous initializati
 test("loadInstalledPlugins ignores builtin bundles accidentally left in the plugins directory", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-load-ignore-builtin-"));
   const userDataRoot = path.join(tempRoot, "user-data");
-  const pluginDir = path.join(userDataRoot, "plugins", "builtin-service");
+  const pluginDir = path.join(getLayeredDesktopRoot(userDataRoot), "programs", "plugins", "builtin-service", "v1.0.0");
   const app = createApp(userDataRoot);
 
   registryInternals.clearServices();
@@ -351,23 +372,28 @@ test("uninstallPlugin stops a running plugin before deleting its install dir", a
   });
 
   const installDir = getPluginInstallDir(app, "test-plugin");
+  const configDir = getLayeredPluginConfigDir(userDataRoot, "test-plugin");
+  const stateDir = path.join(getLayeredDesktopRoot(userDataRoot), "state", "plugins", "test-plugin");
   const stopScriptPath = path.join(installDir, "stop.sh");
-  fs.mkdirSync(path.join(installDir, "run"), { recursive: true });
+  fs.mkdirSync(path.join(stateDir, "pid"), { recursive: true });
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.mkdirSync(installDir, { recursive: true });
   fs.writeFileSync(path.join(installDir, "manifest.json"), "{\"id\":\"test-plugin\"}\n", "utf8");
-  fs.writeFileSync(path.join(installDir, ".env"), "PORT=9300\n", "utf8");
+  fs.writeFileSync(path.join(configDir, ".env"), "PORT=9300\n", "utf8");
   fs.writeFileSync(path.join(installDir, "start.sh"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
   fs.writeFileSync(
     stopScriptPath,
     `#!/usr/bin/env bash
-rm -f run/test-plugin.pid
+rm -f "$ZENMIND_SERVICE_STATE_DIR/pid/test-plugin.pid"
 printf stopped > ${JSON.stringify(stopMarkerPath)}
 `,
     "utf8"
   );
-  fs.writeFileSync(path.join(installDir, "run", "test-plugin.pid"), `${process.pid}\n`, "utf8");
-  fs.mkdirSync(path.dirname(serviceManagerInternals.getInitializationStatePath(installDir)), { recursive: true });
+  fs.writeFileSync(path.join(stateDir, "pid", "test-plugin.pid"), `${process.pid}\n`, "utf8");
+  const initStatePath = path.join(stateDir, "init-state.json");
+  fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
   fs.writeFileSync(
-    serviceManagerInternals.getInitializationStatePath(installDir),
+    initStatePath,
     `${JSON.stringify({ version: "v1.0.0", status: "succeeded", updatedAt: "2026-04-14T00:00:00.000Z" })}\n`,
     "utf8"
   );

@@ -59,6 +59,27 @@ function waitFor(predicate, timeoutMs = 800) {
   });
 }
 
+function createPathApp(userData) {
+  const tempRoot = userData;
+  const homePath = path.join(tempRoot, "home");
+  const appDataPath = path.join(tempRoot, "app-data");
+  const userDataPath = path.join(appDataPath, "zenmind-desktop");
+  return {
+    getPath(name) {
+      switch (name) {
+        case "home":
+          return homePath;
+        case "appData":
+          return appDataPath;
+        case "userData":
+          return userDataPath;
+        default:
+          assert.fail(`unexpected app.getPath(${name})`);
+      }
+    }
+  };
+}
+
 test("desktop pet is supported on macOS and Windows", () => {
   assert.equal(isDesktopPetSupportedPlatform("darwin"), true);
   assert.equal(isDesktopPetSupportedPlatform("win32"), true);
@@ -182,12 +203,7 @@ test("desktop pet persists state on Windows", (t) => {
   t.after(() => {
     fs.rmSync(userData, { recursive: true, force: true });
   });
-  const app = {
-    getPath(name) {
-      assert.equal(name, "userData");
-      return userData;
-    }
-  };
+  const app = createPathApp(userData);
 
   const state = writeDesktopPetStoredState(app, {
     enabled: true,
@@ -203,7 +219,7 @@ test("desktop pet persists state on Windows", (t) => {
   assert.equal(restored.unreadCount, 7);
   assert.equal(restored.boundAgentKey, "custom-agent");
   assert.equal(restored.appearanceId, "dario");
-  assert.equal(fs.existsSync(path.join(userData, desktopPetInternals.DESKTOP_PET_DIRECTORY)), true);
+  assert.equal(fs.existsSync(desktopPetInternals.getDesktopPetRoot(app)), true);
 });
 
 test("desktop pet ignores state files on unsupported platforms", (t) => {
@@ -211,12 +227,7 @@ test("desktop pet ignores state files on unsupported platforms", (t) => {
   t.after(() => {
     fs.rmSync(userData, { recursive: true, force: true });
   });
-  const app = {
-    getPath(name) {
-      assert.equal(name, "userData");
-      return userData;
-    }
-  };
+  const app = createPathApp(userData);
 
   const readState = readDesktopPetStoredState(app, "linux");
   const writtenState = writeDesktopPetStoredState(app, {
@@ -230,7 +241,7 @@ test("desktop pet ignores state files on unsupported platforms", (t) => {
   assert.equal(readState.enabled, false);
   assert.equal(writtenState.enabled, false);
   assert.equal(writtenState.appearanceId, "dario");
-  assert.equal(fs.existsSync(path.join(userData, desktopPetInternals.DESKTOP_PET_DIRECTORY)), false);
+  assert.equal(fs.existsSync(path.join(desktopPetInternals.getDesktopPetRoot(app), "desktop-pet.json")), false);
 });
 
 test("desktop pet recovers from a corrupt state file", (t) => {
@@ -238,15 +249,10 @@ test("desktop pet recovers from a corrupt state file", (t) => {
   t.after(() => {
     fs.rmSync(userData, { recursive: true, force: true });
   });
-  const app = {
-    getPath(name) {
-      assert.equal(name, "userData");
-      return userData;
-    }
-  };
-  const petRoot = path.join(userData, desktopPetInternals.DESKTOP_PET_DIRECTORY);
+  const app = createPathApp(userData);
+  const petRoot = desktopPetInternals.getDesktopPetRoot(app);
   fs.mkdirSync(petRoot, { recursive: true });
-  fs.writeFileSync(path.join(petRoot, desktopPetInternals.DESKTOP_PET_SETTINGS_FILE), "{not valid json", "utf8");
+  fs.writeFileSync(path.join(petRoot, "desktop-pet.json"), "{not valid json", "utf8");
 
   const state = readDesktopPetStoredState(app, "darwin");
 
@@ -260,12 +266,7 @@ test("desktop pet persists selected appearance", (t) => {
   t.after(() => {
     fs.rmSync(userData, { recursive: true, force: true });
   });
-  const app = {
-    getPath(name) {
-      assert.equal(name, "userData");
-      return userData;
-    }
-  };
+  const app = createPathApp(userData);
 
   const state = writeDesktopPetStoredState(app, {
     enabled: true,

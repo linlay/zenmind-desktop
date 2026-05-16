@@ -129,7 +129,7 @@ function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
         <p className="eyebrow">DATA ROOT</p>
         <h2>数据目录</h2>
         <p className="page-copy">
-          Windows 安装版会自动跟随安装目录，默认使用只读方式显示数据目录。
+          新安装默认使用 <code>~/.zenmind/.desktop</code> 分层保存程序、配置、数据、状态、日志、缓存、密钥和浏览器 profile；已有旧数据时会继续显示当前兼容目录。
         </p>
       </div>
       <div className="data-root-actions">
@@ -894,8 +894,8 @@ export function SettingsPage({
           <p className="page-copy">
             {isWindows ? (
               <>
-                调整界面风格，管理左侧固定入口，并查看数据存储目录（包含 <code>services</code>、<code>plugins</code> 等）。
-                安装版默认使用安装目录下的 <code>data</code> 文件夹，内嵌网站仅保存在本地。
+                调整界面风格，管理左侧固定入口，并查看 Desktop 数据目录。新安装默认使用 <code>%USERPROFILE%\.zenmind\.desktop</code>，
+                内嵌网站仅保存在本地。
               </>
             ) : (
               <>调整界面风格，并管理左侧固定入口。内嵌网站仅保存在本地。</>

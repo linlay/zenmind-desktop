@@ -35,7 +35,10 @@ test("system Chrome process parsing handles quoted Windows user data paths", () 
 
 test("system Chrome waits for target execution context after creating a tab", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-system-chrome-ready-"));
-  const userDataDir = path.join(root, "controlled-system-chrome");
+  const homePath = path.join(root, "home");
+  const appDataPath = path.join(root, "app-data");
+  const userDataPath = path.join(appDataPath, "zenmind-desktop");
+  const userDataDir = path.join(homePath, ".zenmind", ".desktop", "profiles", "controlled-system-chrome");
   fs.mkdirSync(userDataDir, { recursive: true });
   fs.writeFileSync(path.join(userDataDir, "DevToolsActivePort"), "61234\n/devtools/browser/test\n", "utf8");
 
@@ -125,8 +128,9 @@ test("system Chrome waits for target execution context after creating a tab", as
   const controller = new SystemChromeController({
     isPackaged: false,
     getPath(name) {
-      if (name === "userData") return root;
-      if (name === "home") return os.homedir();
+      if (name === "userData") return userDataPath;
+      if (name === "appData") return appDataPath;
+      if (name === "home") return homePath;
       if (name === "desktop") return path.join(root, "Desktop");
       return root;
     }

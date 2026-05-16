@@ -3,6 +3,7 @@ import path from "node:path";
 import type { App } from "electron";
 import type { CustomSidebarItem, CustomSidebarItemInput, CustomSidebarUpdateInput } from "../shared/contracts";
 import { CUSTOM_SIDEBAR_ICON_IDS } from "../shared/custom-sidebar-icons";
+import { getDesktopConfigRoot } from "./user-paths";
 
 const CUSTOM_SIDEBAR_FILE = "custom-sidebar-items.json";
 const MAX_CUSTOM_SIDEBAR_ITEMS = CUSTOM_SIDEBAR_ICON_IDS.length;
@@ -12,7 +13,7 @@ type StoredCustomSidebarItems = {
 };
 
 function getCustomSidebarPath(app: App) {
-  return path.join(app.getPath("userData"), "settings", CUSTOM_SIDEBAR_FILE);
+  return path.join(getDesktopConfigRoot(app), CUSTOM_SIDEBAR_FILE);
 }
 
 function createItemId() {

@@ -4,6 +4,7 @@ import net from "node:net";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { App } from "electron";
+import { getControlledChromeProfileRoot } from "../user-paths";
 
 type BrowserSurface = {
   id: string;
@@ -170,7 +171,7 @@ function normalizeChromeUrlTarget(rawTarget: string) {
 }
 
 function getControlledChromeUserDataDir(app: App) {
-  return path.join(app.getPath("userData"), "controlled-system-chrome");
+  return getControlledChromeProfileRoot(app);
 }
 
 function normalizeProcessPathForCompare(value: string, platform = process.platform) {

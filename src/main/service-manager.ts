@@ -29,7 +29,15 @@ import { getPluginInstallDir } from "./plugin-loader";
 import { ensureKeyPairForPan } from "./pan-auth";
 import { readEnvFile, parseEnvFileContent } from "./env-file";
 import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
-import { getDataRoot, getServicesRoot } from "./user-paths";
+import {
+  getDesktopStateRoot,
+  getServiceConfigRoot,
+  getServiceDataRoot,
+  getServiceLogsRoot,
+  getServicesRoot,
+  getServiceStateRoot,
+  usesLayeredDesktopDataLayout
+} from "./user-paths";
 import {
   EMBEDDED_CDP_GATEWAY_HOST,
   EMBEDDED_CDP_GATEWAY_PORT,
@@ -295,6 +303,81 @@ export function getInstallDir(app: App, service: ServiceDefinition) {
   return path.join(getServicesRoot(app), service.id, service.version);
 }
 
+type ServiceLayout = {
+  mode: "layered" | "legacy";
+  programDir: string;
+  configDir: string;
+  dataDir: string;
+  stateDir: string;
+  logDir: string;
+  envPath: string;
+};
+
+function getServiceLayout(app: App, service: ServiceDefinition): ServiceLayout {
+  const programDir = getInstallDir(app, service);
+  const mode = usesLayeredDesktopDataLayout(app) ? "layered" : "legacy";
+  const configDir = getServiceConfigRoot(app, service.id, service.kind, programDir);
+  const dataDir = getServiceDataRoot(app, service.id, service.kind, programDir) || programDir;
+  const stateDir = getServiceStateRoot(app, service.id, service.kind, programDir) || path.join(programDir, INITIALIZATION_STATE_DIRNAME);
+  const logDir = getServiceLogsRoot(app, service.id, service.kind, programDir) || path.join(programDir, "run");
+  return {
+    mode,
+    programDir,
+    configDir,
+    dataDir,
+    stateDir,
+    logDir,
+    envPath: path.join(configDir, ".env")
+  };
+}
+
+function resolveConfigPath(layout: ServiceLayout, relativePath: string) {
+  return path.join(layout.configDir, relativePath);
+}
+
+function resolveProgramPath(layout: ServiceLayout, relativePath: string) {
+  return path.join(layout.programDir, relativePath);
+}
+
+function resolveConfigTemplatePath(layout: ServiceLayout, relativePath: string) {
+  return resolveProgramPath(layout, relativePath);
+}
+
+function resolveServiceRuntimePath(layout: ServiceLayout, relativePath: string) {
+  if (!relativePath) {
+    return "";
+  }
+  if (layout.mode === "legacy") {
+    return path.join(layout.programDir, relativePath);
+  }
+  const baseName = path.basename(relativePath);
+  if (/\.pid$/iu.test(baseName) || /(^|[\\/])pid([\\/]|$)/iu.test(relativePath)) {
+    return path.join(layout.stateDir, "pid", baseName);
+  }
+  if (/\.log$/iu.test(baseName)) {
+    return path.join(layout.logDir, baseName);
+  }
+  return path.join(layout.stateDir, relativePath);
+}
+
+function getInitializationStatePath(layoutOrInstallDir: ServiceLayout | string) {
+  if (typeof layoutOrInstallDir === "string") {
+    return path.join(layoutOrInstallDir, INITIALIZATION_STATE_DIRNAME, INITIALIZATION_STATE_FILE);
+  }
+  return path.join(layoutOrInstallDir.stateDir, INITIALIZATION_STATE_FILE);
+}
+
+function buildServiceLayoutEnv(layout: ServiceLayout): NodeJS.ProcessEnv {
+  return {
+    ZENMIND_SERVICE_PROGRAM_DIR: layout.programDir,
+    ZENMIND_SERVICE_CONFIG_DIR: layout.configDir,
+    ZENMIND_SERVICE_DATA_DIR: layout.dataDir,
+    ZENMIND_SERVICE_STATE_DIR: layout.stateDir,
+    ZENMIND_SERVICE_LOG_DIR: layout.logDir,
+    ZENMIND_SERVICE_ENV_FILE: layout.envPath
+  };
+}
+
 function getBuiltinServiceVersionRoot(app: App, serviceId: ServiceId) {
   return path.join(getServicesRoot(app), serviceId);
 }
@@ -314,12 +397,40 @@ function fileExists(targetPath: string) {
   return fs.existsSync(targetPath);
 }
 
-function getInitializationStatePath(installDir: string) {
-  return path.join(installDir, INITIALIZATION_STATE_DIRNAME, INITIALIZATION_STATE_FILE);
+function syncCanonicalConfigToProgramMirror(service: ServiceDefinition, layout: ServiceLayout) {
+  if (layout.mode !== "layered" || !fs.existsSync(layout.configDir)) {
+    return;
+  }
+
+  for (const configFile of service.configFiles) {
+    const sourcePath = resolveConfigPath(layout, configFile.relativePath);
+    if (!fs.existsSync(sourcePath)) {
+      continue;
+    }
+    const mirrorPath = resolveProgramPath(layout, configFile.relativePath);
+    ensureDir(path.dirname(mirrorPath));
+    fs.copyFileSync(sourcePath, mirrorPath);
+  }
+
+  const markerPath = path.join(layout.programDir, ".zenmind-desktop-generated-config");
+  fs.writeFileSync(
+    markerPath,
+    "Generated from ~/.zenmind/.desktop/config before service execution. Do not edit this copy.\n",
+    "utf8"
+  );
 }
 
-function readInitializationState(installDir: string): InitializationState | null {
-  const filePath = getInitializationStatePath(installDir);
+function prepareServiceExecutionLayout(service: ServiceDefinition, layout: ServiceLayout) {
+  ensureDir(layout.configDir);
+  ensureDir(layout.dataDir);
+  ensureDir(layout.stateDir);
+  ensureDir(path.join(layout.stateDir, "pid"));
+  ensureDir(layout.logDir);
+  syncCanonicalConfigToProgramMirror(service, layout);
+}
+
+function readInitializationState(layoutOrInstallDir: ServiceLayout | string): InitializationState | null {
+  const filePath = getInitializationStatePath(layoutOrInstallDir);
   if (!fs.existsSync(filePath)) {
     return null;
   }
@@ -384,14 +495,14 @@ function needsBundledAssetRefresh(app: App, service: ServiceDefinition) {
   }
 }
 
-function writeInitializationState(installDir: string, state: InitializationState) {
-  const filePath = getInitializationStatePath(installDir);
+function writeInitializationState(layoutOrInstallDir: ServiceLayout | string, state: InitializationState) {
+  const filePath = getInitializationStatePath(layoutOrInstallDir);
   ensureDir(path.dirname(filePath));
   fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
 
 function getLastRunningServicesStatePath(app: App) {
-  return path.join(getDataRoot(app), INITIALIZATION_STATE_DIRNAME, LAST_RUNNING_SERVICES_FILE);
+  return path.join(getDesktopStateRoot(app), LAST_RUNNING_SERVICES_FILE);
 }
 
 function orderServiceIdsForRestore(serviceIds: ServiceId[]) {
@@ -467,6 +578,51 @@ export function fixShellScriptPermissions(rootDir: string) {
       }
     }
   }
+}
+
+function patchShellProgramCommonForLayeredLayout(programDir: string) {
+  const scriptPath = path.join(programDir, "scripts", "program-common.sh");
+  if (!fs.existsSync(scriptPath)) {
+    return;
+  }
+
+  let content = fs.readFileSync(scriptPath, "utf8");
+  const original = content;
+  content = content
+    .replace(/ENV_FILE="\$BUNDLE_ROOT\/\.env"/gu, 'ENV_FILE="${ZENMIND_SERVICE_ENV_FILE:-$BUNDLE_ROOT/.env}"')
+    .replace(/DATA_DIR="\$BUNDLE_ROOT\/data"/gu, 'DATA_DIR="${ZENMIND_SERVICE_DATA_DIR:-$BUNDLE_ROOT/data}"')
+    .replace(/RUN_DIR="\$BUNDLE_ROOT\/run"/gu, 'RUN_DIR="${ZENMIND_SERVICE_STATE_DIR:-$BUNDLE_ROOT/run}"')
+    .replace(/LOG_FILE="\$RUN_DIR\//gu, 'LOG_FILE="${ZENMIND_SERVICE_LOG_DIR:-$RUN_DIR}/')
+    .replace(/ERROR_LOG_FILE="\$RUN_DIR\//gu, 'ERROR_LOG_FILE="${ZENMIND_SERVICE_LOG_DIR:-$RUN_DIR}/');
+
+  if (content !== original) {
+    fs.writeFileSync(scriptPath, content, "utf8");
+  }
+}
+
+function patchPowerShellProgramCommonForLayeredLayout(programDir: string) {
+  const scriptPath = path.join(programDir, "scripts", "program-common.ps1");
+  if (!fs.existsSync(scriptPath)) {
+    return;
+  }
+
+  let content = fs.readFileSync(scriptPath, "utf8");
+  const original = content;
+  content = content
+    .replace(/\$Script:EnvFile\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]\.env['"]/gu, '$Script:EnvFile = if ($env:ZENMIND_SERVICE_ENV_FILE) { $env:ZENMIND_SERVICE_ENV_FILE } else { Join-Path $Script:BundleRoot ".env" }')
+    .replace(/\$Script:DataDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]data['"]/gu, '$Script:DataDir = if ($env:ZENMIND_SERVICE_DATA_DIR) { $env:ZENMIND_SERVICE_DATA_DIR } else { Join-Path $Script:BundleRoot "data" }')
+    .replace(/\$Script:RunDir\s*=\s*Join-Path\s+\$Script:BundleRoot\s+['"]run['"]/gu, '$Script:RunDir = if ($env:ZENMIND_SERVICE_STATE_DIR) { $env:ZENMIND_SERVICE_STATE_DIR } else { Join-Path $Script:BundleRoot "run" }')
+    .replace(/\$Script:LogFile\s*=\s*Join-Path\s+\$Script:RunDir\s+([^;\r\n]+)/gu, '$Script:LogFile = Join-Path $(if ($env:ZENMIND_SERVICE_LOG_DIR) { $env:ZENMIND_SERVICE_LOG_DIR } else { $Script:RunDir }) $1')
+    .replace(/\$Script:ErrorLogFile\s*=\s*Join-Path\s+\$Script:RunDir\s+([^;\r\n]+)/gu, '$Script:ErrorLogFile = Join-Path $(if ($env:ZENMIND_SERVICE_LOG_DIR) { $env:ZENMIND_SERVICE_LOG_DIR } else { $Script:RunDir }) $1');
+
+  if (content !== original) {
+    fs.writeFileSync(scriptPath, content, "utf8");
+  }
+}
+
+function patchProgramCommonForLayeredLayout(programDir: string) {
+  patchShellProgramCommonForLayeredLayout(programDir);
+  patchPowerShellProgramCommonForLayeredLayout(programDir);
 }
 
 function listMissingRuntimeFiles(service: ServiceDefinition, installDir: string) {
@@ -719,8 +875,14 @@ function isDesktopManagedHttpUrl(
   return managedPorts.has(parsed.port);
 }
 
-function resolveRuntimePath(installDir: string, relativePath: string) {
-  return relativePath ? path.join(installDir, relativePath) : "";
+function resolveRuntimePath(layoutOrInstallDir: ServiceLayout | string, relativePath: string) {
+  if (!relativePath) {
+    return "";
+  }
+  if (typeof layoutOrInstallDir === "string") {
+    return path.join(layoutOrInstallDir, relativePath);
+  }
+  return resolveServiceRuntimePath(layoutOrInstallDir, relativePath);
 }
 
 function readPid(pidFilePath: string) {
@@ -1148,14 +1310,15 @@ function collectManagedRootPids(app: App) {
 
   for (const service of getAllServices()) {
     const installDir = getInstallDir(app, service);
+    const layout = getServiceLayout(app, service);
     if (!fs.existsSync(installDir)) {
       continue;
     }
 
-    const pidFilePath = resolveRuntimePath(installDir, service.runtime.pidRelativePath);
+    const pidFilePath = resolveRuntimePath(layout, service.runtime.pidRelativePath);
     addManagedRootPid(roots, service.id, readPid(pidFilePath), installDir, pidFilePath);
 
-    const envPath = path.join(installDir, ".env");
+    const envPath = layout.envPath;
     const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
     const port = parsePort(service, env);
     if (port > 0) {
@@ -1230,10 +1393,11 @@ export async function forceCleanupManagedProcesses(app: App, snapshot: ManagedPr
 
 function collectManagedServiceStopState(
   service: ServiceDefinition,
-  installDir: string,
+  layoutOrInstallDir: ServiceLayout | string,
   env: Map<string, string>
 ): ManagedServiceStopState {
-  const mainPidFilePath = resolveRuntimePath(installDir, service.runtime.pidRelativePath);
+  const installDir = typeof layoutOrInstallDir === "string" ? layoutOrInstallDir : layoutOrInstallDir.programDir;
+  const mainPidFilePath = resolveRuntimePath(layoutOrInstallDir, service.runtime.pidRelativePath);
   const mainPid = readPid(mainPidFilePath);
   const managedMainPid =
     mainPid && isProcessRunning(mainPid) && pidMatchesInstallDir(mainPid, installDir)
@@ -1311,7 +1475,7 @@ function forceStopServiceInstallDir(
 
 function ensureManagedServiceStoppedForPlatform(
   service: ServiceDefinition,
-  installDir: string,
+  layoutOrInstallDir: ServiceLayout | string,
   env: Map<string, string>,
   options: {
     isWindows?: boolean;
@@ -1330,7 +1494,8 @@ function ensureManagedServiceStoppedForPlatform(
 
   const collectState = options.collectState ?? collectManagedServiceStopState;
   const forceStop = options.forceStop ?? forceStopServiceInstallDir;
-  const afterStopState = collectState(service, installDir, env);
+  const installDir = typeof layoutOrInstallDir === "string" ? layoutOrInstallDir : layoutOrInstallDir.programDir;
+  const afterStopState = collectState(service, layoutOrInstallDir, env);
   const stopIssues = buildManagedServiceStopIssues(service, afterStopState, "stop");
   if (stopIssues.length === 0) {
     return {
@@ -1341,7 +1506,7 @@ function ensureManagedServiceStoppedForPlatform(
   }
 
   forceStop(service, installDir, env);
-  const afterCleanupState = collectState(service, installDir, env);
+  const afterCleanupState = collectState(service, layoutOrInstallDir, env);
   const cleanupIssues = buildManagedServiceStopIssues(service, afterCleanupState, "cleanup");
   if (cleanupIssues.length === 0) {
     return {
@@ -1677,15 +1842,15 @@ function containerEngineAvailable() {
   return "";
 }
 
-function collectPrerequisites(service: ServiceDefinition, installDir: string) {
+function collectPrerequisites(service: ServiceDefinition, layout: ServiceLayout) {
   const prerequisites: string[] = [];
-  const envPath = path.join(installDir, ".env");
+  const envPath = layout.envPath;
   if (!fs.existsSync(envPath)) {
     prerequisites.push("缺少 .env 配置文件");
   }
 
   for (const target of service.importTargets) {
-    const targetPath = path.join(installDir, target.relativePath);
+    const targetPath = resolveConfigPath(layout, target.relativePath);
     if (target.required && !fs.existsSync(targetPath)) {
       prerequisites.push(`缺少 ${target.label}`);
     }
@@ -1698,16 +1863,16 @@ function collectPrerequisites(service: ServiceDefinition, installDir: string) {
   return prerequisites;
 }
 
-function ensureDefaultConfig(service: ServiceDefinition, installDir: string) {
+function ensureDefaultConfig(service: ServiceDefinition, layout: ServiceLayout) {
   for (const configFile of service.configFiles) {
-    const targetPath = path.join(installDir, configFile.relativePath);
+    const targetPath = resolveConfigPath(layout, configFile.relativePath);
     if (fs.existsSync(targetPath)) {
       continue;
     }
     if (!configFile.templateRelativePath) {
       continue;
     }
-    const templatePath = path.join(installDir, configFile.templateRelativePath);
+    const templatePath = resolveConfigTemplatePath(layout, configFile.templateRelativePath);
     if (fs.existsSync(templatePath)) {
       ensureDir(path.dirname(targetPath));
       fs.copyFileSync(templatePath, targetPath);
@@ -1715,18 +1880,18 @@ function ensureDefaultConfig(service: ServiceDefinition, installDir: string) {
   }
 }
 
-async function ensureInitializationRequirements(app: App, service: ServiceDefinition, installDir: string) {
+async function ensureInitializationRequirements(app: App, service: ServiceDefinition, layout: ServiceLayout) {
   if (service.id === "agent-platform") {
-    await ensureAgentPlatformDesktopConfig(app, service, installDir);
-    ensureLocalAuthPublicKey(app, installDir);
+    await ensureAgentPlatformDesktopConfig(app, service, layout);
+    ensureLocalAuthPublicKey(app, layout);
   }
 
   if (service.id === LOCAL_CLI_ACP_RELAY_PLUGIN_ID) {
-    await ensureLocalCliAcpRelayDesktopConfig(app, installDir);
+    await ensureLocalCliAcpRelayDesktopConfig(app, layout);
   }
 
   if (service.id === "agent-webclient") {
-    const envPath = path.join(installDir, ".env");
+    const envPath = layout.envPath;
     const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
     const normalizedContent = normalizeAgentWebclientEnvContentForDesktop(currentContent);
     if (normalizedContent !== currentContent) {
@@ -1735,11 +1900,11 @@ async function ensureInitializationRequirements(app: App, service: ServiceDefini
   }
 
   if (service.id === "pan-webclient") {
-    ensureLocalAuthPublicKey(app, installDir);
+    ensureLocalAuthPublicKey(app, layout);
   }
 
   if (CORE_SERVICE_IDS.has(service.id)) {
-    const envPath = path.join(installDir, ".env");
+    const envPath = layout.envPath;
     const env = readEnvFile(envPath);
     const updates = new Map<string, string>();
     syncCoreServiceDefaultPortEnv(service, env, updates);
@@ -1749,8 +1914,8 @@ async function ensureInitializationRequirements(app: App, service: ServiceDefini
   }
 }
 
-function ensureLocalAuthPublicKey(app: App, installDir: string) {
-  const publicKeyPath = path.join(installDir, "configs", "local-public-key.pem");
+function ensureLocalAuthPublicKey(app: App, layout: ServiceLayout) {
+  const publicKeyPath = resolveConfigPath(layout, path.join("configs", "local-public-key.pem"));
   if (fs.existsSync(publicKeyPath)) {
     return;
   }
@@ -1793,6 +1958,7 @@ export async function installBuiltinService(
     : ensureBundleAssetHealthy(app, service);
 
   const finalInstallDir = getInstallDir(app, service);
+  const layout = getServiceLayout(app, service);
   const siblingInstallDirs = listBuiltinSiblingInstallDirs(app, service, finalInstallDir);
   const needsExtract =
     options.force ||
@@ -1801,7 +1967,7 @@ export async function installBuiltinService(
     serviceInstallNeedsRefresh(service, finalInstallDir) ||
     isAssetNewerThanInstall(assetPath, finalInstallDir);
 
-  const preservedEnvPath = path.join(finalInstallDir, ".env");
+  const preservedEnvPath = layout.envPath;
   const hasCurrentEnv = fileExists(preservedEnvPath);
   const preservedEnvRaw = hasCurrentEnv
     ? fs.readFileSync(preservedEnvPath, "utf8")
@@ -1833,10 +1999,14 @@ export async function installBuiltinService(
     const extractedRoot = path.join(tempRoot, entries[0]);
     fs.rmSync(finalInstallDir, { recursive: true, force: true });
     fs.cpSync(extractedRoot, finalInstallDir, { recursive: true });
+    if (layout.mode === "layered") {
+      patchProgramCommonForLayeredLayout(finalInstallDir);
+    }
     if (preservedEnv.content) {
-      fs.writeFileSync(path.join(finalInstallDir, ".env"), preservedEnv.content, "utf8");
+      ensureDir(path.dirname(layout.envPath));
+      fs.writeFileSync(layout.envPath, preservedEnv.content, "utf8");
       if (preservedEnv.backupContent) {
-        writeAgentPlatformLegacyEnvBackupIfNeeded(finalInstallDir, preservedEnv.backupContent);
+        writeAgentPlatformLegacyEnvBackupIfNeeded(layout.configDir, preservedEnv.backupContent);
       }
     }
     const initialization = await initializeServiceInternal(app, serviceId, { skipInstallRefresh: true });
@@ -1860,6 +2030,7 @@ async function initializeServiceInternal(
 ): Promise<ServiceCommandResult> {
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
+  const layout = getServiceLayout(app, service);
   const currentState = await getServiceState(app, serviceId);
 
   if (!currentState.installed) {
@@ -1899,19 +2070,25 @@ async function initializeServiceInternal(
   }
 
   try {
-    ensureDefaultConfig(service, installDir);
+    ensureDefaultConfig(service, layout);
     fixShellScriptPermissions(installDir);
-    await ensureInitializationRequirements(app, service, installDir);
-    if (service.deployCommand) {
-      await runExecFile(service.deployCommand[0], service.deployCommand.slice(1), installDir);
+    if (layout.mode === "layered") {
+      patchProgramCommonForLayeredLayout(layout.programDir);
     }
-    writeInitializationState(installDir, {
+    await ensureInitializationRequirements(app, service, layout);
+    prepareServiceExecutionLayout(service, layout);
+    if (service.deployCommand) {
+      await runExecFile(service.deployCommand[0], service.deployCommand.slice(1), installDir, {
+        env: buildServiceLayoutEnv(layout)
+      });
+    }
+    writeInitializationState(layout, {
       version: service.version,
       status: "succeeded",
       updatedAt: new Date().toISOString()
     });
   } catch (error) {
-    writeInitializationState(installDir, {
+    writeInitializationState(layout, {
       version: service.version,
       status: "failed",
       updatedAt: new Date().toISOString(),
@@ -1940,12 +2117,13 @@ export async function listServices(app: App) {
 export async function getServiceState(app: App, serviceId: ServiceId): Promise<ServiceState> {
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
+  const layout = getServiceLayout(app, service);
   const installed = fs.existsSync(installDir);
-  const pidFilePath = resolveRuntimePath(installDir, service.runtime.pidRelativePath);
-  const logFilePath = resolveRuntimePath(installDir, service.runtime.logRelativePath);
-  const errorLogFilePath = resolveRuntimePath(installDir, service.runtime.errorLogRelativePath);
+  const pidFilePath = resolveRuntimePath(layout, service.runtime.pidRelativePath);
+  const logFilePath = resolveRuntimePath(layout, service.runtime.logRelativePath);
+  const errorLogFilePath = resolveRuntimePath(layout, service.runtime.errorLogRelativePath);
   const configFiles = service.configFiles.map((configFile) => {
-    const absolutePath = path.join(installDir, configFile.relativePath);
+    const absolutePath = resolveConfigPath(layout, configFile.relativePath);
     return {
       key: configFile.key,
       label: configFile.label,
@@ -1956,18 +2134,18 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     };
   });
 
-  const env = installed ? readEnvFile(path.join(installDir, ".env")) : new Map<string, string>();
+  const env = installed ? readEnvFile(layout.envPath) : new Map<string, string>();
   const port = parsePort(service, env);
   const webUrl = installed ? getWebUrl(service, env) : getWebUrl(service, new Map<string, string>());
   const pidFromFile = installed ? readPid(pidFilePath) : null;
   const missingRuntimeFiles = installed ? listMissingRuntimeFiles(service, installDir) : [];
   const initializationState =
-    installed && missingRuntimeFiles.length === 0 ? readInitializationState(installDir) : null;
+    installed && missingRuntimeFiles.length === 0 ? readInitializationState(layout) : null;
   const initializationSucceeded =
     initializationState?.status === "succeeded" && initializationState.version === service.version;
   const prerequisites =
     installed && missingRuntimeFiles.length === 0 && initializationSucceeded
-      ? collectPrerequisites(service, installDir)
+      ? collectPrerequisites(service, layout)
       : [];
   let pid = pidFromFile;
   let running = installed && missingRuntimeFiles.length === 0 && isProcessRunning(pid);
@@ -2050,6 +2228,13 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     version: service.version,
     description: service.description,
     installDir,
+    paths: {
+      programDir: layout.programDir,
+      configDir: layout.configDir,
+      dataDir: layout.dataDir,
+      stateDir: layout.stateDir,
+      logDir: layout.logDir
+    },
     installed,
     status,
     statusLabel,
@@ -3046,7 +3231,8 @@ function readInstalledServiceEnv(app: App, serviceId: ServiceId) {
   try {
     const service = getService(serviceId);
     const installDir = getInstallDir(app, service);
-    const envPath = path.join(installDir, ".env");
+    const layout = getServiceLayout(app, service);
+    const envPath = layout.envPath;
     const content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
     return {
       installDir,
@@ -3131,8 +3317,8 @@ function migrateLegacyAgentPlatformRelayEnv(
   }
 }
 
-async function ensureLocalCliAcpRelayDesktopConfig(app: App, installDir: string) {
-  const envPath = path.join(installDir, ".env");
+async function ensureLocalCliAcpRelayDesktopConfig(app: App, layout: ServiceLayout) {
+  const envPath = layout.envPath;
   const env = readEnvFile(envPath);
   const updates = new Map<string, string>();
 
@@ -3365,7 +3551,7 @@ function readInstalledServicePortForSync(app: App, service: ServiceDefinition) {
   if (!fs.existsSync(installDir)) {
     return null;
   }
-  const envPath = path.join(installDir, ".env");
+  const envPath = getServiceLayout(app, service).envPath;
   const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
   return parsePort(service, env);
 }
@@ -3401,7 +3587,7 @@ async function syncCoreServiceDependentEnvAfterSave(
   await syncAgentWebclientEnvAfterAgentPlatformSave(app, previousServicePort);
 }
 
-async function ensureAgentPlatformContainerHubDependency(app: App, installDir: string) {
+async function ensureAgentPlatformContainerHubDependency(app: App, layout: ServiceLayout) {
   let hubService: ServiceDefinition;
   try {
     hubService = getService("agent-container-hub");
@@ -3409,7 +3595,7 @@ async function ensureAgentPlatformContainerHubDependency(app: App, installDir: s
     return;
   }
 
-  const env = readEnvFile(path.join(installDir, ".env"));
+  const env = readEnvFile(layout.envPath);
   const baseURL = env.get("CONTAINER_HUB_BASE_URL")?.trim() ?? "";
   if (!isDesktopManagedContainerHubUrl(baseURL)) {
     return;
@@ -3431,12 +3617,13 @@ async function ensureAgentPlatformContainerHubDependency(app: App, installDir: s
   );
 }
 
-async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefinition, installDir: string) {
-  const envPath = path.join(installDir, ".env");
+async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefinition, layout: ServiceLayout) {
+  const envPath = layout.envPath;
   const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
   const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(currentContent);
   if (normalizedContent !== currentContent) {
-    writeAgentPlatformLegacyEnvBackupIfNeeded(installDir, currentContent);
+    writeAgentPlatformLegacyEnvBackupIfNeeded(layout.configDir, currentContent);
+    ensureDir(path.dirname(envPath));
     fs.writeFileSync(envPath, normalizedContent, "utf8");
   }
   const env = parseEnvFileContent(normalizedContent);
@@ -3449,6 +3636,11 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
 
   if (!env.get("PROVIDER_APIKEY_KEY_PART")?.trim()) {
     updates.set("PROVIDER_APIKEY_KEY_PART", DEFAULT_PROVIDER_APIKEY_KEY_PART);
+  }
+  const authLocalPublicKeyPath = resolveConfigPath(layout, path.join("configs", "local-public-key.pem"));
+  const currentAuthLocalPublicKeyPath = env.get("AUTH_LOCAL_PUBLIC_KEY_FILE")?.trim() ?? "";
+  if (!currentAuthLocalPublicKeyPath || currentAuthLocalPublicKeyPath === "configs/local-public-key.pem") {
+    updates.set("AUTH_LOCAL_PUBLIC_KEY_FILE", authLocalPublicKeyPath);
   }
   applyAgentPlatformWindowsHostShellDefaults(env, updates);
 
@@ -3480,18 +3672,25 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
 
 async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {
   const installDir = getInstallDir(app, service);
+  const layout = getServiceLayout(app, service);
+  prepareServiceExecutionLayout(service, layout);
+  if (layout.mode === "layered") {
+    patchProgramCommonForLayeredLayout(layout.programDir);
+  }
+
   if (service.id === "agent-platform") {
-    await ensureAgentPlatformDesktopConfig(app, service, installDir);
-    await ensureAgentPlatformContainerHubDependency(app, installDir);
-    ensureLocalAuthPublicKey(app, installDir);
+    await ensureAgentPlatformDesktopConfig(app, service, layout);
+    await ensureAgentPlatformContainerHubDependency(app, layout);
+    ensureLocalAuthPublicKey(app, layout);
+    prepareServiceExecutionLayout(service, layout);
     return;
   }
 
   if (service.id === LOCAL_CLI_ACP_RELAY_PLUGIN_ID) {
-    await ensureLocalCliAcpRelayDesktopConfig(app, installDir);
+    await ensureLocalCliAcpRelayDesktopConfig(app, layout);
   }
 
-  const envPath = path.join(installDir, ".env");
+  const envPath = layout.envPath;
   if (service.id === "agent-webclient") {
     const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
     const normalizedContent = normalizeAgentWebclientEnvContentForDesktop(currentContent);
@@ -3529,10 +3728,15 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     if (!env.get("FRONTEND_DIST_DIR")?.trim()) {
       updates.set("FRONTEND_DIST_DIR", "./frontend/dist");
     }
+    const currentAuthDbPath = env.get("AUTH_DB_PATH")?.trim() ?? "";
+    if (!currentAuthDbPath || currentAuthDbPath === "./data/auth.db") {
+      updates.set("AUTH_DB_PATH", path.join(layout.dataDir, "auth.db"));
+    }
   }
 
   if (updates.size > 0) {
     writeEnvFileUpdates(envPath, updates);
+    prepareServiceExecutionLayout(service, layout);
   }
 }
 
@@ -3605,9 +3809,14 @@ async function runServiceCommand(
   if (command.length === 0) {
     throw new Error(`${service.name} 缺少可执行脚本定义。`);
   }
+  const layout = getServiceLayout(app, service);
+  prepareServiceExecutionLayout(service, layout);
   await runExecFile(command[0], command.slice(1), installDir, {
     timeoutMs: options.timeoutMs,
-    env: options.env
+    env: {
+      ...buildServiceLayoutEnv(layout),
+      ...(options.env ?? {})
+    }
   });
   return {
     ok: true,
@@ -3635,7 +3844,7 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
   const refreshedState = shouldRefreshFromBundledAsset
     ? await getServiceState(app, serviceId)
     : current;
-  const initializationState = refreshedState.installed ? readInitializationState(installDir) : null;
+  const initializationState = refreshedState.installed ? readInitializationState(getServiceLayout(app, service)) : null;
 
   if (refreshedState.status === "initialization-required") {
     return {
@@ -3733,9 +3942,10 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
     refreshBuiltinAsset: false
   });
   const installDir = getInstallDir(app, service);
-  const envPath = path.join(installDir, ".env");
+  const layout = getServiceLayout(app, service);
+  const envPath = layout.envPath;
   const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
-  const stopVerification = ensureManagedServiceStoppedForPlatform(service, installDir, env);
+  const stopVerification = ensureManagedServiceStoppedForPlatform(service, layout, env);
   if (!stopVerification.ok) {
     throw new Error(stopVerification.message);
   }
@@ -3780,17 +3990,18 @@ export async function readServiceConfig(app: App, serviceId: ServiceId, key: str
   }
 
   const installDir = getInstallDir(app, service);
+  const layout = getServiceLayout(app, service);
+  const filePath = resolveConfigPath(layout, configFile.relativePath);
   if (!fs.existsSync(installDir)) {
     return {
       ok: true,
-      path: path.join(installDir, configFile.relativePath),
+      path: filePath,
       content: "",
       exists: false,
       source: "missing"
     };
   }
 
-  const filePath = path.join(installDir, configFile.relativePath);
   if (fs.existsSync(filePath)) {
     return {
       ok: true,
@@ -3802,7 +4013,7 @@ export async function readServiceConfig(app: App, serviceId: ServiceId, key: str
   }
 
   if (configFile.templateRelativePath) {
-    const templatePath = path.join(installDir, configFile.templateRelativePath);
+    const templatePath = resolveConfigTemplatePath(layout, configFile.templateRelativePath);
     if (fs.existsSync(templatePath)) {
       return {
         ok: true,
@@ -3840,11 +4051,13 @@ export async function writeServiceConfig(
       : null;
 
   const installDir = await ensureMutableInstallDir(app, service);
+  const layout = getServiceLayout(app, service);
 
-  const filePath = path.join(installDir, configFile.relativePath);
+  const filePath = resolveConfigPath(layout, configFile.relativePath);
   ensureDir(path.dirname(filePath));
   const normalizedContent = await normalizeCoreServiceEnvContentForSave(app, service, key, content);
   fs.writeFileSync(filePath, normalizedContent, "utf8");
+  prepareServiceExecutionLayout(service, layout);
   await syncCoreServiceDependentEnvAfterSave(app, service, key, previousServicePort);
 
   const message =
@@ -3872,10 +4085,12 @@ export async function importServiceFile(
   }
 
   const installDir = await ensureMutableInstallDir(app, service);
+  const layout = getServiceLayout(app, service);
 
-  const targetPath = path.join(installDir, target.relativePath);
+  const targetPath = resolveConfigPath(layout, target.relativePath);
   ensureDir(path.dirname(targetPath));
   fs.copyFileSync(sourcePath, targetPath);
+  prepareServiceExecutionLayout(service, layout);
 
   return {
     ok: true,
@@ -4404,7 +4619,7 @@ async function shouldRunBuiltinBootstrap(app: App) {
 
     if (current.status === "error") {
       const installDir = getInstallDir(app, service);
-      const initializationState = fs.existsSync(installDir) ? readInitializationState(installDir) : null;
+      const initializationState = fs.existsSync(installDir) ? readInitializationState(getServiceLayout(app, service)) : null;
       if (
         !fs.existsSync(installDir) ||
         !isInstallHealthy(service, installDir) ||

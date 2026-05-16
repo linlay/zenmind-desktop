@@ -58,7 +58,7 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
   assert.equal(packageJson.build?.nsis?.include, "build/installer.nsh");
 });
 
-test("custom uninstall assets exist with silent legacy cleanup and no data prompt", () => {
+test("custom uninstall assets default to keeping data and delete layered plus legacy data on request", () => {
   const installerScript = fs.readFileSync(installerIncludePath, "utf8");
   const uninstallScript = fs.readFileSync(uninstallScriptPath, "utf8");
   const distWinScript = fs.readFileSync(distWinScriptPath, "utf8");
@@ -66,15 +66,16 @@ test("custom uninstall assets exist with silent legacy cleanup and no data promp
 
   assert.ok(tempOutPathMatch, "custom uninstall should switch CWD to $TEMP before reading shell vars");
   assert.match(installerScript, /SetShellVarContext current/);
-  assert.match(
-    installerScript,
-    /IfFileExists "\$APPDATA\\zenmind-desktop\\user-paths\.json" removeLegacyData doneLegacyDataCleanup/
-  );
+  assert.match(installerScript, /MessageBox MB_YESNO\|MB_ICONQUESTION/);
+  assert.match(installerScript, /\/SD IDNO/);
+  assert.match(installerScript, /RMDir \/r "\$PROFILE\\.zenmind\\.desktop"/);
   assert.match(installerScript, /RMDir \/r "\$APPDATA\\zenmind-desktop"/);
-  assert.doesNotMatch(installerScript, /MessageBox/);
+  assert.match(installerScript, /Delete "\$APPDATA\\zenmind-desktop\\user-paths\.json"/);
   assert.match(uninstallScript, /APP_NAME="ZenMind"/);
   assert.match(uninstallScript, /APP_PATH="\/Applications\/\$\{APP_NAME\}\.app"/);
-  assert.match(uninstallScript, /Library\/Application Support\/zenmind-desktop/);
+  assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.zenmind\/\.desktop"/);
+  assert.match(uninstallScript, /LEGACY_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/zenmind-desktop"/);
+  assert.match(uninstallScript, /default button "Keep Data"/);
   assert.match(distWinScript, /electronuserland\/builder:wine/);
 });
 

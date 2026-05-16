@@ -16,6 +16,7 @@ import {
   normalizeDesktopPetAppearanceId,
   normalizeDesktopPetBoundAgentKey
 } from "../shared/desktop-pet";
+import { getDesktopPetSettingsPath as resolveDesktopPetSettingsPath } from "./user-paths";
 export {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
@@ -87,8 +88,6 @@ export type DesktopPetContextMenuItem = {
   label: string;
 };
 
-const DESKTOP_PET_DIRECTORY = "desktop-pet";
-const DESKTOP_PET_SETTINGS_FILE = "state.json";
 const DEFAULT_OFFSET = {
   x: 20,
   y: 78
@@ -98,11 +97,11 @@ const DESKTOP_PET_DONE_FALLBACK_HINT = "暂无回复预览";
 const DESKTOP_PET_STATUS_HINTS = new Set(["思考中", "已完成", "回复已生成", "出错了", "目标智能体未在线", "打开对话查看完整回复", DESKTOP_PET_DONE_FALLBACK_HINT]);
 
 function getDesktopPetRoot(app: App) {
-  return path.join(app.getPath("userData"), DESKTOP_PET_DIRECTORY);
+  return path.dirname(getDesktopPetSettingsPath(app));
 }
 
 function getDesktopPetSettingsPath(app: App) {
-  return path.join(getDesktopPetRoot(app), DESKTOP_PET_SETTINGS_FILE);
+  return resolveDesktopPetSettingsPath(app);
 }
 
 function ensureDesktopPetRoot(app: App) {
@@ -460,8 +459,6 @@ export const __testInternals = {
   DEFAULT_OFFSET,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_WINDOW_SIZES,
-  DESKTOP_PET_DIRECTORY,
-  DESKTOP_PET_SETTINGS_FILE,
   sanitizeDesktopPetStoredState,
   sanitizeDesktopPetAppearanceId,
   sanitizeDesktopPetMessagePreview,

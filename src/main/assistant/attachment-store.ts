@@ -14,6 +14,7 @@ import {
   extractDocumentTextFromFile,
   renderPdfPagesForVision
 } from "./document-extract";
+import { getAssistantDataRoot } from "../user-paths";
 
 const MAX_ATTACHMENT_FILE_BYTES = 32 * 1024 * 1024;
 const MAX_ATTACHMENT_BATCH_BYTES = 64 * 1024 * 1024;
@@ -31,6 +32,10 @@ type AttachmentWorkerMessage =
   | { type: "progress"; progress: AssistantAttachmentTaskProgress }
   | { type: "result"; result: AssistantAttachmentPickResult }
   | { type: "error"; message: string };
+
+type AssistantPathApp = Pick<App, "getPath"> & Partial<Pick<App, "isPackaged">> & {
+  assistantDataRoot?: string;
+};
 
 type ActiveAttachmentTask = {
   worker: Worker;
@@ -96,15 +101,18 @@ function normalizeAttachmentChatId(chatId?: string | null) {
   return trimmed || createAttachmentChatId();
 }
 
-function getAssistantRoot(app: Pick<App, "getPath">) {
-  return path.join(app.getPath("userData"), "assistant");
+function getAssistantRoot(app: AssistantPathApp) {
+  if (app.assistantDataRoot) {
+    return app.assistantDataRoot;
+  }
+  return getAssistantDataRoot(app as App);
 }
 
-function getAttachmentChatDir(app: Pick<App, "getPath">, chatId: string) {
+function getAttachmentChatDir(app: AssistantPathApp, chatId: string) {
   return path.join(getAssistantRoot(app), "chats", chatId);
 }
 
-function ensureAttachmentChatDir(app: Pick<App, "getPath">, chatId?: string | null) {
+function ensureAttachmentChatDir(app: AssistantPathApp, chatId?: string | null) {
   const normalizedChatId = normalizeAttachmentChatId(chatId);
   const chatDir = getAttachmentChatDir(app, normalizedChatId);
   fs.mkdirSync(path.join(chatDir, "attachments"), { recursive: true });
@@ -513,7 +521,7 @@ function isInsideOrSame(parent: string, candidate: string) {
 }
 
 function assistantRoot(app: App) {
-  return path.resolve(path.join(app.getPath("userData"), "assistant"));
+  return path.resolve(getAssistantDataRoot(app));
 }
 
 function chatWorkspaceRoot(app: App, chatId: string) {
@@ -620,7 +628,7 @@ async function createAssistantAttachmentsFromFilesInWorker(
   return new Promise<AssistantAttachmentPickResult>((resolve, reject) => {
     const worker = new Worker(workerPath, {
       workerData: {
-        userDataPath: app.getPath("userData"),
+        assistantDataRoot: getAssistantDataRoot(app),
         chatId,
         filePaths,
         taskId: options.taskId
@@ -694,7 +702,7 @@ export function cancelAssistantAttachmentTask(taskId: string) {
 }
 
 export async function createAssistantAttachmentsFromFilesInProcess(
-  app: Pick<App, "getPath">,
+  app: AssistantPathApp,
   chatId: string | null | undefined,
   filePaths: string[],
   options: AttachmentTaskOptions = {}

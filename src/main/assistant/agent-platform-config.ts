@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import type { App } from "electron";
 import yaml from "js-yaml";
 import type { AssistantSettingsPublic } from "../../shared/contracts";
-import { getServicesRoot } from "../user-paths";
+import { getServiceConfigRoot, getServicesRoot } from "../user-paths";
 import type { AssistantSettingsPrivate } from "./settings-store";
 import { readAssistantSettings, toPublicAssistantSettings } from "./settings-store";
 
@@ -119,6 +119,7 @@ function listInstalledAgentPlatformEnvPaths(app: App) {
 function readAgentPlatformEnv(app: App) {
   const desktopPath = getPathOrFallback(app, "desktop", path.join(getPathOrFallback(app, "home", process.env.HOME || ""), "Desktop"));
   const envPaths = [
+    path.join(getServiceConfigRoot(app, "agent-platform", "builtin"), ".env"),
     ...listInstalledAgentPlatformEnvPaths(app),
     path.join(desktopPath, "agent-platform", ".env")
   ];

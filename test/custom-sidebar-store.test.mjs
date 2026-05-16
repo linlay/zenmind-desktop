@@ -17,10 +17,21 @@ const {
 } = require("../dist-electron/main/custom-sidebar-store.js");
 
 function createApp(userDataRoot) {
+  const tempRoot = path.dirname(userDataRoot);
+  const homePath = path.join(tempRoot, "home");
+  const appDataPath = path.join(tempRoot, "app-data");
   return {
     getPath(name) {
-      assert.equal(name, "userData");
-      return userDataRoot;
+      switch (name) {
+        case "home":
+          return homePath;
+        case "appData":
+          return appDataPath;
+        case "userData":
+          return userDataRoot;
+        default:
+          assert.fail(`unexpected app.getPath(${name})`);
+      }
     }
   };
 }

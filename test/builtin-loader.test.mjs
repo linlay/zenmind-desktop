@@ -15,13 +15,32 @@ const {
 } = require("../dist-electron/main/service-registry.js");
 
 function createApp(userDataRoot) {
+  const tempRoot = path.dirname(userDataRoot);
+  const homePath = path.join(tempRoot, "home");
+  const appDataPath = path.join(tempRoot, "app-data");
   return {
     isPackaged: false,
     getPath(name) {
-      assert.equal(name, "userData");
-      return userDataRoot;
+      switch (name) {
+        case "home":
+          return homePath;
+        case "appData":
+          return appDataPath;
+        case "userData":
+          return userDataRoot;
+        default:
+          assert.fail(`unexpected app.getPath(${name})`);
+      }
     }
   };
+}
+
+function getLayeredDesktopRoot(userDataRoot) {
+  return path.join(path.dirname(userDataRoot), "home", ".zenmind", ".desktop");
+}
+
+function getLayeredBuiltinInstallDir(userDataRoot, serviceId, version) {
+  return path.join(getLayeredDesktopRoot(userDataRoot), "programs", "services", serviceId, version);
 }
 
 function quotePowerShell(value) {
@@ -238,7 +257,7 @@ test("loadBuiltinServices falls back to installed builtin manifests when synced 
   const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
   const assetsRoot = path.join(tempRoot, "empty-assets");
   const userDataRoot = path.join(tempRoot, "user-data");
-  const manifestPath = path.join(userDataRoot, "services", "agent-platform", "v1.0.0", "manifest.json");
+  const manifestPath = path.join(getLayeredBuiltinInstallDir(userDataRoot, "agent-platform", "v1.0.0"), "manifest.json");
   const matchedOs = getCurrentManifestOs();
 
   fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
@@ -320,7 +339,7 @@ test("loadBuiltinServices merges installed builtin manifests for services missin
   const matchedOs = getCurrentManifestOs();
   const platformAssetDir = path.join(assetsRoot, "agent-platform");
   const platformArchiveName = `agent-platform-v1.0.0${archiveExtension}`;
-  const webclientManifestPath = path.join(userDataRoot, "services", "agent-webclient", "v1.0.0", "manifest.json");
+  const webclientManifestPath = path.join(getLayeredBuiltinInstallDir(userDataRoot, "agent-webclient", "v1.0.0"), "manifest.json");
 
   fs.mkdirSync(platformAssetDir, { recursive: true });
   writeServiceArchive(path.join(platformAssetDir, platformArchiveName), {

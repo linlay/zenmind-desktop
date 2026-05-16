@@ -15,7 +15,11 @@ import type {
 } from "../shared/contracts";
 import { ContainerHubClient, type ContainerHubConfig, type ContainerHubEnvironment } from "./assistant/container-hub";
 import { readManifestFromArchive } from "./manifest-utils";
-import { getDataRoot } from "./user-paths";
+import {
+  getMarketplaceCacheRoot,
+  getMarketplaceConfigRoot,
+  getMarketplaceStateRoot
+} from "./user-paths";
 import { getAllServices } from "./service-registry";
 import { getServiceState } from "./service-manager";
 import { getPluginInstallDir, installPluginFromArchive, uninstallPlugin } from "./plugin-loader";
@@ -64,31 +68,31 @@ type SkillsApiPage = {
   total: number;
 };
 
-function marketplaceRoot(app: App) {
-  return path.join(getDataRoot(app), "marketplace");
-}
-
-function ensureMarketplaceRoot(app: App) {
-  const root = marketplaceRoot(app);
-  fs.mkdirSync(path.join(root, "downloads"), { recursive: true });
-  fs.mkdirSync(path.join(root, "backups"), { recursive: true });
-  return root;
+function ensureMarketplaceRoots(app: App) {
+  const cacheRoot = getMarketplaceCacheRoot(app);
+  const configRoot = getMarketplaceConfigRoot(app);
+  const stateRoot = getMarketplaceStateRoot(app);
+  fs.mkdirSync(path.join(cacheRoot, "downloads"), { recursive: true });
+  fs.mkdirSync(path.join(cacheRoot, "backups"), { recursive: true });
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.mkdirSync(stateRoot, { recursive: true });
+  return { cacheRoot, configRoot, stateRoot };
 }
 
 function catalogCachePath(app: App) {
-  return path.join(ensureMarketplaceRoot(app), "catalog-cache.json");
+  return path.join(ensureMarketplaceRoots(app).cacheRoot, "catalog-cache.json");
 }
 
 function installedRecordsPath(app: App) {
-  return path.join(ensureMarketplaceRoot(app), "marketplace-installed.json");
+  return path.join(ensureMarketplaceRoots(app).stateRoot, "marketplace-installed.json");
 }
 
 function marketplaceSettingsPath(app: App) {
-  return path.join(ensureMarketplaceRoot(app), "settings.json");
+  return path.join(ensureMarketplaceRoots(app).configRoot, "settings.json");
 }
 
 function downloadsRoot(app: App) {
-  return path.join(ensureMarketplaceRoot(app), "downloads");
+  return path.join(ensureMarketplaceRoots(app).cacheRoot, "downloads");
 }
 
 function asObject(value: unknown): Record<string, unknown> {

@@ -6,6 +6,7 @@ import type { MarketCommandResult, MarketItem } from "../shared/contracts";
 import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
 import { getService } from "./service-registry";
 import { getInstallDir, getServiceState } from "./service-manager";
+import { getServiceConfigRoot } from "./user-paths";
 
 type SkillMetadata = {
   id: string;
@@ -122,7 +123,7 @@ function resolveDesktopRuntimeRoot(app: App) {
 export function getSkillsMarketDir(app: App) {
   try {
     const service = getService("agent-platform");
-    const envPath = path.join(getInstallDir(app, service), ".env");
+    const envPath = path.join(getServiceConfigRoot(app, service.id, service.kind, getInstallDir(app, service)), ".env");
     if (fs.existsSync(envPath)) {
       const configured = parseEnvFile(fs.readFileSync(envPath, "utf8")).get("SKILLS_MARKET_DIR")?.trim();
       if (configured) {

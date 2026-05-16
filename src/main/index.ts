@@ -143,6 +143,7 @@ import { APP_ICON_ASSET_DIRECTORIES, APP_ICON_ASSET_FILENAMES } from "../shared/
 import {
   ensureDataRoot,
   getDataRoot,
+  getElectronUserDataRoot
 } from "./user-paths";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { safeConsoleError } from "./safe-console";
@@ -236,7 +237,9 @@ let embeddedCdpGateway: EmbeddedCdpGateway | null = null;
 
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName(ZENMIND_PRODUCT_NAME);
-app.setPath("userData", path.join(app.getPath("appData"), "zenmind-desktop"));
+const electronUserDataRoot = getElectronUserDataRoot(app);
+fs.mkdirSync(electronUserDataRoot, { recursive: true });
+app.setPath("userData", electronUserDataRoot);
 if (process.platform === "win32") {
   app.setAppUserModelId(ZENMIND_APP_ID);
 }

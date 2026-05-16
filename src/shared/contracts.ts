@@ -35,6 +35,14 @@ export interface ServiceHealthMeta {
   prerequisites: string[];
 }
 
+export interface ServicePaths {
+  programDir: string;
+  configDir: string;
+  dataDir: string;
+  stateDir: string;
+  logDir: string;
+}
+
 export interface ServiceState {
   id: ServiceId;
   name: string;
@@ -42,6 +50,7 @@ export interface ServiceState {
   version: string;
   description: string;
   installDir: string;
+  paths: ServicePaths;
   installed: boolean;
   status: ServiceStatus;
   statusLabel: string;

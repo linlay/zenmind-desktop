@@ -3,7 +3,7 @@ import type { AssistantAttachmentTaskProgress } from "../../shared/contracts";
 import { createAssistantAttachmentsFromFilesInProcess } from "./attachment-store";
 
 type AttachmentWorkerData = {
-  userDataPath: string;
+  assistantDataRoot: string;
   chatId?: string | null;
   filePaths: string[];
   taskId: string;
@@ -21,11 +21,12 @@ function postProgress(progress: AssistantAttachmentTaskProgress) {
 async function run() {
   try {
     const app = {
+      assistantDataRoot: data.assistantDataRoot,
       getPath(name: string) {
         if (name !== "userData") {
           throw new Error(`附件 worker 不支持读取 ${name} 路径。`);
         }
-        return data.userDataPath;
+        return data.assistantDataRoot;
       }
     };
     const result = await createAssistantAttachmentsFromFilesInProcess(app, data.chatId, data.filePaths, {

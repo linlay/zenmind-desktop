@@ -105,18 +105,18 @@ function getHelpCategories(isWindows: boolean): HelpCategory[] {
         question: "数据目录在哪里？",
         answer: (
           <>
-            <p>应用运行数据存储在桌面端的数据目录中：</p>
+            <p>新安装的应用运行数据存储在桌面端分层数据目录中：</p>
             <ul>
               <li>
-                <strong>macOS</strong>：<code>~/Library/Application Support/zenmind-desktop/</code>
+                <strong>macOS</strong>：<code>~/.zenmind/.desktop/</code>
               </li>
               <li>
-                <strong>Windows</strong>：<code>&lt;安装目录&gt;\data\</code>，例如 <code>D:\ZenMind\data\</code>
+                <strong>Windows</strong>：<code>%USERPROFILE%\.zenmind\.desktop\</code>
               </li>
             </ul>
             <p>
-              该目录包含已安装服务的运行文件、插件目录 (<code>plugins/</code>)、
-              密钥文件 (<code>credentials/</code>) 以及各服务的配置和日志。
+              该目录按 <code>programs</code>、<code>config</code>、<code>data</code>、<code>state</code>、<code>logs</code>、
+              <code>cache</code>、<code>secrets</code> 和 <code>profiles</code> 分层。已有旧数据时，应用会继续使用旧布局运行。
             </p>
           </>
         ),
@@ -202,7 +202,7 @@ function getHelpCategories(isWindows: boolean): HelpCategory[] {
         answer: (
           <>
             <p>
-              每个服务的安装目录下都有一份 <code>.env.example</code> 配置模板。如果你需要重置配置：
+              每个服务的程序目录下都有一份 <code>.env.example</code> 配置模板，真实配置保存在 Desktop 数据目录的 <code>config</code> 分层中。如果你需要重置配置：
             </p>
             <ol>
               <li>
@@ -347,7 +347,7 @@ function getHelpCategories(isWindows: boolean): HelpCategory[] {
               <Link className="help-inline-link" to="/control-center">
                 控制中心
               </Link>
-              详情卡片中查看。通常位于服务安装目录下：
+              详情卡片中查看。新布局下通常位于 Desktop 数据目录的 <code>logs/services</code> 分层中：
             </p>
             <ul>
               <li>
@@ -379,7 +379,7 @@ function getHelpCategories(isWindows: boolean): HelpCategory[] {
                 <strong>EADDRINUSE</strong>：端口已被占用，参考上方的端口排查方法
               </li>
               <li>
-                <strong>EACCES</strong>：权限不足，检查安装目录和脚本的执行权限
+                <strong>EACCES</strong>：权限不足，检查 Desktop 数据目录和脚本的执行权限
               </li>
               <li>
                 <strong>ENOENT</strong>：文件不存在，确认服务已正确安装且资源文件完整

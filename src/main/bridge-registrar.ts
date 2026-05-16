@@ -7,6 +7,7 @@ import { getService } from "./service-registry";
 import { getInstallDir } from "./service-manager";
 import { readEnvFile } from "./env-file";
 import { upsertChannel, removeChannel, type ChannelEntry } from "./agent-platform-channels";
+import { getServiceConfigRoot } from "./user-paths";
 
 const AGENT_PLATFORM_ID = "agent-platform";
 const BRIDGE_HTTP_ADDR_DEFAULT = ":11970";
@@ -52,8 +53,8 @@ interface GatewayInfo {
   baseUrl: string;
 }
 
-function getBridgeHttpAddr(bridgeInstallDir: string): string {
-  const envPath = path.join(bridgeInstallDir, ".env");
+function getBridgeHttpAddr(app: App, service: ServiceDefinition, bridgeInstallDir: string): string {
+  const envPath = path.join(getServiceConfigRoot(app, service.id, service.kind, bridgeInstallDir), ".env");
   const env = readEnvFile(envPath);
   return env.get("BRIDGE_HTTP_ADDR") ?? BRIDGE_HTTP_ADDR_DEFAULT;
 }
@@ -118,7 +119,7 @@ function isBridgeService(service: ServiceDefinition): boolean {
 function getAgentPlatformInstallDir(app: App): string | null {
   try {
     const agentPlatform = getService(AGENT_PLATFORM_ID);
-    return getInstallDir(app, agentPlatform);
+    return getServiceConfigRoot(app, agentPlatform.id, agentPlatform.kind, getInstallDir(app, agentPlatform));
   } catch {
     return null;
   }
@@ -138,7 +139,7 @@ export async function registerBridge(app: App, serviceId: ServiceId): Promise<{ 
 
   const bridge = service.desktop!.bridge!;
   const installDir = getInstallDir(app, service);
-  const bridgeAddr = getBridgeHttpAddr(installDir);
+  const bridgeAddr = getBridgeHttpAddr(app, service, installDir);
 
   let gatewayInfo: GatewayInfo;
   try {

@@ -5,7 +5,7 @@ import { normalizeManifest, readManifestFile } from "./manifest-utils";
 import { clearServices, getService, registerService, unregisterService } from "./service-registry";
 import { fixShellScriptPermissions } from "./service-manager";
 import { extractArchiveToDir } from "./archive-utils";
-import { getPluginsRoot } from "./user-paths";
+import { getPluginsRoot, getServiceConfigRoot, getServiceStateRoot, usesLayeredDesktopDataLayout } from "./user-paths";
 
 function readManifest(pluginDir: string) {
   const manifestPath = path.join(pluginDir, "manifest.json");
@@ -49,15 +49,47 @@ export function loadInstalledPlugins(app: App) {
     if (!entry.isDirectory()) {
       continue;
     }
-    const manifest = readManifest(path.join(root, entry.name));
-    if (manifest?.kind === "plugin") {
-      registerService(manifest, { defaultKind: "plugin" });
+    const pluginRoot = path.join(root, entry.name);
+    const candidateDirs = usesLayeredDesktopDataLayout(app)
+      ? fs.readdirSync(pluginRoot, { withFileTypes: true })
+          .filter((versionEntry) => versionEntry.isDirectory())
+          .map((versionEntry) => path.join(pluginRoot, versionEntry.name))
+          .sort((left, right) => left.localeCompare(right))
+      : [pluginRoot];
+    for (const candidateDir of candidateDirs) {
+      const manifest = readManifest(candidateDir);
+      if (manifest?.kind === "plugin") {
+        registerService(manifest, { defaultKind: "plugin" });
+      }
     }
   }
 }
 
-export function getPluginInstallDir(app: App, pluginId: string) {
-  return path.join(getPluginsRoot(app), pluginId);
+function getLatestPluginVersionDir(pluginRoot: string) {
+  if (!fs.existsSync(pluginRoot)) {
+    return "";
+  }
+  return fs.readdirSync(pluginRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => right.localeCompare(left))[0] ?? "";
+}
+
+export function getPluginInstallDir(app: App, pluginId: string, version?: string) {
+  const root = getPluginsRoot(app);
+  if (!usesLayeredDesktopDataLayout(app)) {
+    return path.join(root, pluginId);
+  }
+
+  const pluginRoot = path.join(root, pluginId);
+  const resolvedVersion = version?.trim() || (() => {
+    try {
+      return getService(pluginId).version;
+    } catch {
+      return getLatestPluginVersionDir(pluginRoot);
+    }
+  })();
+  return resolvedVersion ? path.join(pluginRoot, resolvedVersion) : pluginRoot;
 }
 
 export async function installPluginFromArchive(app: App, archivePath: string) {
@@ -91,14 +123,18 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
     }
     const definition = normalizeManifest(manifest, { defaultKind: "plugin" });
 
-    const targetDir = path.join(root, manifest.id);
+    const targetDir = getPluginInstallDir(app, manifest.id, definition.version);
+    const configDir = getServiceConfigRoot(app, manifest.id, "plugin", targetDir);
+    const stateDir = getServiceStateRoot(app, manifest.id, "plugin", targetDir);
     const preservedConfigFiles = preserveExistingConfigFiles(
-      targetDir,
+      configDir,
       definition.configFiles.map((configFile) => configFile.relativePath)
     );
     fs.rmSync(targetDir, { recursive: true, force: true });
+    fs.rmSync(stateDir, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(targetDir), { recursive: true });
     fs.cpSync(extractedDir, targetDir, { recursive: true });
-    restorePreservedConfigFiles(targetDir, preservedConfigFiles);
+    restorePreservedConfigFiles(configDir, preservedConfigFiles);
     fs.rmSync(path.join(targetDir, ".zenmind-desktop"), { recursive: true, force: true });
     fixShellScriptPermissions(targetDir);
     registerService(manifest, { defaultKind: "plugin" });
@@ -119,7 +155,7 @@ export async function uninstallPlugin(app: App, serviceId: string) {
   if (currentState.status === "running") {
     await stopService(app, serviceId);
   }
-  const dir = getPluginInstallDir(app, serviceId);
+  const dir = getPluginInstallDir(app, serviceId, def.version);
   fs.rmSync(dir, { recursive: true, force: true });
   unregisterService(serviceId);
   return { ok: true, message: `插件 ${def.name} 已卸载。` };

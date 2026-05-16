@@ -5,7 +5,7 @@
 
 当前 Desktop 已统一切换到 `manifest.json` 驱动架构：
 - 内置服务从 `.tar.gz` 资源包里的 `manifest.json` 自动发现。
-- 插件从数据目录 `plugins/*/manifest.json` 自动扫描注册。Windows 安装版的数据目录默认为 `<安装目录>\data\`，macOS 和开发模式继续使用 Electron `userData`。
+- 插件从 Desktop 数据目录自动扫描注册。新安装默认使用 `~/.zenmind/.desktop/programs/plugins/<plugin-id>/<version>/`，已有旧数据时继续兼容旧布局。
 - Desktop 不再随安装包内置任何插件，插件统一通过导入 archive 的方式接入。
 - 插件导入后需要在控制中心执行一次初始化；Desktop 会补齐模板配置并执行 `scripts.deploy`。
 - Desktop 不再在 `service-registry.ts` 中硬编码任何内置服务结构。
@@ -81,15 +81,16 @@ DevTools 可用于查看控制台日志、网络请求、DOM 结构以及页面�
 - 需要认证的插件（`agent-webclient`、`pan-webclient`）通过 `auth-bridge.ts` 构建带参数的嵌入 URL，并通过 postMessage Token Bridge 获取 JWT。
 
 ### 服务配置文件
-- 服务安装后会写入数据目录下的 `services/<service-id>/<version>/`。
-- Windows 安装版的数据目录位于 `<安装目录>\data\`；macOS 和开发模式继续使用 Electron `userData`。
+- 新安装的 Desktop 数据根目录为 `~/.zenmind/.desktop`，按 `programs/`、`config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层。
+- 如果旧的 Desktop 数据目录已存在，应用会继续使用旧布局运行，不会自动迁移或移动用户数据。
+- 服务程序安装到 `programs/services/<service-id>/<version>/`，服务配置保存到 `config/services/<service-id>/`，运行数据保存到 `data/services/<service-id>/`。
 - 每个内置服务会在安装时自动完成初始化；缺失的 `.env` 会从 `.env.example` 复制生成，随后由桌面端进行读写。
-- 插件目录位于数据目录 `plugins/<service-id>/`，插件清单文件固定为 `manifest.json`。
+- 插件程序安装到 `programs/plugins/<plugin-id>/<version>/`，插件配置保存到 `config/plugins/<plugin-id>/`。
 - 插件导入只负责解包和注册；点击控制中心中的“初始化”后，Desktop 才会补齐缺失配置、修复脚本权限并执行 `scripts.deploy`。
 
 ### 敏感信息管理
 - 真实密钥、证书和本地环境差异配置不提交到仓库。
-- RSA 密钥对由 Desktop 统一管理，存储在数据目录 `credentials/` 下。
+- RSA 密钥对由 Desktop 统一管理，新布局下存储在 `secrets/` 下；旧布局继续读取原 `credentials/`。
 - `.env.local`、编辑器配置和构建产物应由 `.gitignore` 管理。
 - 示例配置应保留在随服务分发的模板文件中，不要把真实值写入文档。
 
@@ -138,8 +139,8 @@ npm run dist:win-docker
 如果机器上已经残留旧的 per-user/per-machine 双安装记录，建议先手动清理旧版本，再验证新包的安装和卸载。
 
 ### 卸载
-- macOS：运行 `/Applications/ZenMind.app/Contents/Resources/uninstall.sh`。脚本会先检查应用是否仍在运行，随后删除 `/Applications/ZenMind.app`，并弹出对话框询问是否清理 `~/Library/Application Support/zenmind-desktop/` 下的数据。
-- Windows：通过控制面板或开始菜单中的卸载入口执行 NSIS 卸载器。卸载会直接删除安装目录，数据目录会随 `<安装目录>\data\` 一并移除；旧版本遗留的 `%APPDATA%\zenmind-desktop\user-paths.json` 会被静默清理。
+- macOS：运行 `/Applications/ZenMind.app/Contents/Resources/uninstall.sh`。脚本会先检查应用是否仍在运行，随后删除 `/Applications/ZenMind.app`，并弹窗询问是否清理 `~/.zenmind/.desktop`；默认保留数据。选择 Delete Data 时也会兼容清理旧的 `~/Library/Application Support/zenmind-desktop/`。
+- Windows：通过控制面板或开始菜单中的卸载入口执行 NSIS 卸载器。卸载会删除安装目录，并询问是否清理 `%USERPROFILE%\.zenmind\.desktop`；默认保留数据。选择 Delete Data 时也会兼容清理旧的 `%APPDATA%\zenmind-desktop`。
 
 ### 打包资源约定
 - `package.json` 中的 `build.files` 会打入桌面应用运行所需代码。
@@ -167,7 +168,7 @@ npm run dist:win-docker
 ### 日志与运行状态
 - 桌面端通过主进程统一管理服务运行状态。
 - 每个服务都会维护 PID 文件和日志文件路径，并在控制中心中展示。
-- 服务实际安装目录位于数据目录 `services/<service-id>/<version>/` 下；Windows 安装版默认是 `<安装目录>\data\services\...`。
+- 服务实际程序目录位于 Desktop 数据根的 `programs/services/<service-id>/<version>/` 下；配置、状态和日志分别位于 `config/services/`、`state/services/`、`logs/services/`。
 
 ### 常见排查
 - 启动失败时，先检查控制中心展示的状态文案、日志文件路径和 PID 文件路径。

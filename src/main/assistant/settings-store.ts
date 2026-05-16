@@ -9,6 +9,7 @@ import {
   type DesktopCopilotPagePreferences
 } from "../../shared/assistant-settings";
 import { sanitizeDesktopCopilotPagePreferences } from "../../shared/page-copilot";
+import { getAssistantSettingsRoot } from "../user-paths";
 
 const SETTINGS_FILE = "settings.json";
 const DEFAULT_VOICE_CORRECTION_ENABLED = true;
@@ -25,7 +26,7 @@ export type AssistantSettingsPrivate = {
 };
 
 function getAssistantRoot(app: App) {
-  return path.join(app.getPath("userData"), "assistant");
+  return getAssistantSettingsRoot(app);
 }
 
 function getSettingsPath(rootDir: string) {
