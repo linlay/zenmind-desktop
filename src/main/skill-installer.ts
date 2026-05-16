@@ -79,6 +79,17 @@ function resolveHomeDir(app: App) {
   return process.env.HOME || os.homedir();
 }
 
+function expandHomeShortcut(value: string, homeDir: string) {
+  const trimmed = value.trim();
+  if (trimmed === "~") {
+    return homeDir;
+  }
+  if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
+    return path.join(homeDir, trimmed.slice(2));
+  }
+  return trimmed;
+}
+
 function resolveDesktopDir(app: App, homeDir = resolveHomeDir(app)) {
   try {
     const desktopPath = app.getPath("desktop")?.trim();
@@ -127,7 +138,7 @@ export function getSkillsMarketDir(app: App) {
     if (fs.existsSync(envPath)) {
       const configured = parseEnvFile(fs.readFileSync(envPath, "utf8")).get("SKILLS_MARKET_DIR")?.trim();
       if (configured) {
-        return configured;
+        return expandHomeShortcut(configured, resolveHomeDir(app));
       }
     }
   } catch {

@@ -2191,53 +2191,22 @@ test("installBuiltinService prepares agent platform desktop config during first 
 
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
     const configDir = getTestConfigDir(userDataRoot, platformService.id);
-    const preferredRuntimeRoot = path.join(homeRoot, ".zenmind");
     assert.match(envContent, /^AUTH_ENABLED=true$/m);
     assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
     assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
     assert.match(envContent, /^HOST_PORT=7078$/m);
     assert.match(envContent, /^SERVER_PORT=7078$/m);
-    assert.match(
-      envContent,
-      new RegExp(`REGISTRIES_DIR=${path.join(preferredRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-    );
+    assert.match(envContent, /^REGISTRIES_DIR=~\/\.zenmind\/registries$/m);
     assert.match(envContent, /^TOOLS_DIR=~\/\.zenmind\/tools$/m);
-    assert.match(
-      envContent,
-      new RegExp(`OWNER_DIR=${path.join(preferredRuntimeRoot, "owner").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-    );
-    assert.match(
-      envContent,
-      new RegExp(`AGENTS_DIR=${path.join(preferredRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-    );
-    assert.match(
-      envContent,
-      new RegExp(`TEAMS_DIR=${path.join(preferredRuntimeRoot, "teams").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-    );
-    assert.match(
-      envContent,
-      new RegExp(`ROOT_DIR=${path.join(preferredRuntimeRoot, "root").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-    );
-    assert.match(
-      envContent,
-      new RegExp(`SCHEDULES_DIR=${path.join(preferredRuntimeRoot, "schedules").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-    );
-    assert.match(
-      envContent,
-      new RegExp(`CHATS_DIR=${path.join(preferredRuntimeRoot, "chats").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-    );
-    assert.match(
-      envContent,
-      new RegExp(`MEMORY_DIR=${path.join(preferredRuntimeRoot, "memory").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-    );
-    assert.match(
-      envContent,
-      new RegExp(`SKILLS_MARKET_DIR=${path.join(preferredRuntimeRoot, "skills-market").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-    );
-    assert.match(
-      envContent,
-      new RegExp(`PAN_DIR=${path.join(preferredRuntimeRoot, "pan").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-    );
+    assert.match(envContent, /^OWNER_DIR=~\/\.zenmind\/owner$/m);
+    assert.match(envContent, /^AGENTS_DIR=~\/\.zenmind\/agents$/m);
+    assert.match(envContent, /^TEAMS_DIR=~\/\.zenmind\/teams$/m);
+    assert.match(envContent, /^ROOT_DIR=~\/\.zenmind\/root$/m);
+    assert.match(envContent, /^SCHEDULES_DIR=~\/\.zenmind\/schedules$/m);
+    assert.match(envContent, /^CHATS_DIR=~\/\.zenmind\/chats$/m);
+    assert.match(envContent, /^MEMORY_DIR=~\/\.zenmind\/memory$/m);
+    assert.match(envContent, /^SKILLS_MARKET_DIR=~\/\.zenmind\/skills-market$/m);
+    assert.match(envContent, /^PAN_DIR=~\/\.zenmind\/pan$/m);
     assert.equal(fs.existsSync(path.join(configDir, "configs", "local-public-key.pem")), true);
   } finally {
     restore();
@@ -3218,14 +3187,8 @@ test("ensurePreStartRequirements migrates stale legacy desktop runtime paths to 
   }
 
   const envContent = fs.readFileSync(path.join(platformInstallDir, ".env"), "utf8");
-  assert.match(
-    envContent,
-    new RegExp(`AGENTS_DIR=${path.join(preferredRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  );
-  assert.match(
-    envContent,
-    new RegExp(`REGISTRIES_DIR=${path.join(preferredRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  );
+  assert.match(envContent, /^AGENTS_DIR=~\/\.zenmind\/agents$/m);
+  assert.match(envContent, /^REGISTRIES_DIR=~\/\.zenmind\/registries$/m);
   assert.doesNotMatch(
     envContent,
     new RegExp(`AGENTS_DIR=${path.join(legacyRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)

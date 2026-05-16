@@ -81,6 +81,17 @@ function getPathOrFallback(app: App, name: "desktop" | "home", fallback: string)
   }
 }
 
+function expandHomeShortcut(value: string, homeDir: string) {
+  const trimmed = value.trim();
+  if (trimmed === "~") {
+    return homeDir;
+  }
+  if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
+    return path.join(homeDir, trimmed.slice(2));
+  }
+  return trimmed;
+}
+
 const PROVIDER_API_KEY_ENV_PART = "PROVIDER_APIKEY_KEY_PART";
 const PROVIDER_API_KEY_CODE_PART = "zenmind-provider";
 const DEFAULT_PROVIDER_API_KEY_ENV_PART = "0.1.0";
@@ -193,16 +204,18 @@ function resolveProviderConfigLocation(app: App, providerKey = "minimax"): Provi
   const candidates: Array<{ providerPath: string; modelDirs: string[] }> = [];
   const envRegistriesDir = process.env.REGISTRIES_DIR || process.env.AGENT_PLATFORM_REGISTRIES_DIR;
   if (envRegistriesDir) {
+    const registriesDir = expandHomeShortcut(envRegistriesDir, homePath);
     candidates.push({
-      providerPath: path.join(envRegistriesDir, "providers", `${providerKey}.yml`),
-      modelDirs: [path.join(envRegistriesDir, "models")]
+      providerPath: path.join(registriesDir, "providers", `${providerKey}.yml`),
+      modelDirs: [path.join(registriesDir, "models")]
     });
   }
   const configuredRegistriesDir = env.get("REGISTRIES_DIR");
   if (configuredRegistriesDir) {
+    const registriesDir = expandHomeShortcut(configuredRegistriesDir, homePath);
     candidates.push({
-      providerPath: path.join(configuredRegistriesDir, "providers", `${providerKey}.yml`),
-      modelDirs: [path.join(configuredRegistriesDir, "models")]
+      providerPath: path.join(registriesDir, "providers", `${providerKey}.yml`),
+      modelDirs: [path.join(registriesDir, "models")]
     });
   }
 

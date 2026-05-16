@@ -2812,16 +2812,20 @@ function normalizeConfigPath(value: string, homeDir = resolveHomeDir()) {
   return path.normalize(expandHomeShortcut(value, homeDir)).replace(/\\/gu, "/");
 }
 
-function formatDesktopAgentPlatformRuntimePath(app: App, value: string, key: string) {
-  if (key !== "TOOLS_DIR" || process.platform === "win32") {
+function formatDesktopAgentPlatformRuntimePath(app: App, value: string) {
+  if (process.platform === "win32") {
     return value;
   }
 
   const homeDir = resolveHomeDir(app);
   const normalizedHomeDir = normalizeConfigPath(homeDir, homeDir);
   const normalizedValue = normalizeConfigPath(value, homeDir);
-  if (normalizedValue === `${normalizedHomeDir}/.zenmind/tools`) {
-    return "~/.zenmind/tools";
+  const normalizedZenmindRoot = `${normalizedHomeDir}/.zenmind`;
+  if (normalizedValue === normalizedZenmindRoot) {
+    return "~/.zenmind";
+  }
+  if (normalizedValue.startsWith(`${normalizedZenmindRoot}/`)) {
+    return `~/.zenmind/${normalizedValue.slice(normalizedZenmindRoot.length + 1)}`;
   }
   return value;
 }
@@ -3720,7 +3724,7 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   if (migratedRuntimeRoot) {
     const homeDir = resolveHomeDir(app);
     for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
-      updates.set(key, formatDesktopAgentPlatformRuntimePath(app, path.join(migratedRuntimeRoot, relativePath), key));
+      updates.set(key, formatDesktopAgentPlatformRuntimePath(app, path.join(migratedRuntimeRoot, relativePath)));
     }
     console.warn(
       `[service-manager] Migrated agent-platform runtime paths from legacy desktop default ${path.join(homeDir, "zenmind")} to ${migratedRuntimeRoot}`
@@ -3731,7 +3735,7 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   if (!hasConfiguredAgentPlatformRuntimePath(env)) {
     for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
       if (!env.get(key)) {
-        updates.set(key, formatDesktopAgentPlatformRuntimePath(app, path.join(desktopRuntimeRoot, relativePath), key));
+        updates.set(key, formatDesktopAgentPlatformRuntimePath(app, path.join(desktopRuntimeRoot, relativePath)));
       }
     }
   }

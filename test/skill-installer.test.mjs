@@ -13,6 +13,10 @@ const {
   listInstalledSkills,
   uninstallSkill
 } = require("../dist-electron/main/skill-installer.js");
+const {
+  registerService,
+  __testInternals: registryInternals
+} = require("../dist-electron/main/service-registry.js");
 
 function createApp(root) {
   return {
@@ -69,6 +73,33 @@ test("installSkillFromPath imports a single SKILL.md into the Desktop skills-mar
   assert.equal(result.installPath, installDir);
   assert.equal(fs.readFileSync(path.join(installDir, "SKILL.md"), "utf8"), "# Browser Helper\n\nUse browser helpers.\n");
   assert.equal(fs.existsSync(path.join(root, "home", ".codex", "skills")), false);
+});
+
+test("getSkillInstallDir expands a configured home-relative skills market path", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-skill-market-home-"));
+  const app = createApp(root);
+  const configRoot = path.join(root, "user-data", "config", "services", "agent-platform");
+  t.after(() => {
+    registryInternals.clearServices();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  registerService({
+    id: "agent-platform",
+    kind: "builtin",
+    version: "1.0.0",
+    scripts: {
+      start: "./start.sh",
+      stop: "./stop.sh"
+    }
+  });
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(path.join(configRoot, ".env"), "SKILLS_MARKET_DIR=~/.zenmind/skills-market\n", "utf8");
+
+  assert.equal(
+    getSkillInstallDir(app, "demo-skill"),
+    path.join(root, "home", ".zenmind", "skills-market", "demo-skill")
+  );
 });
 
 test("installSkillFromPath imports an archive with SKILL.md and skill.json metadata", async (t) => {
