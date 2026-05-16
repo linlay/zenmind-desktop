@@ -2193,13 +2193,15 @@ test("installBuiltinService prepares agent platform desktop config during first 
     const configDir = getTestConfigDir(userDataRoot, platformService.id);
     const preferredRuntimeRoot = path.join(homeRoot, ".zenmind");
     assert.match(envContent, /^AUTH_ENABLED=true$/m);
-    assert.match(envContent, new RegExp(`^AUTH_LOCAL_PUBLIC_KEY_FILE=${path.join(configDir, "configs", "local-public-key.pem").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+    assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
+    assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
     assert.match(envContent, /^HOST_PORT=7078$/m);
     assert.match(envContent, /^SERVER_PORT=7078$/m);
     assert.match(
       envContent,
       new RegExp(`REGISTRIES_DIR=${path.join(preferredRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
     );
+    assert.match(envContent, /^TOOLS_DIR=~\/\.zenmind\/tools$/m);
     assert.match(
       envContent,
       new RegExp(`OWNER_DIR=${path.join(preferredRuntimeRoot, "owner").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
@@ -2747,7 +2749,7 @@ test("startService verifies running container hub with port and runtime-info pro
   }
 });
 
-test("ensurePreStartRequirements injects container hub url, desktop runtime paths, and manifest auth defaults for agent platform", async () => {
+test("ensurePreStartRequirements injects container hub url and desktop runtime paths for agent platform", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-prestart-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
@@ -2769,7 +2771,7 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   writeTestEnv(
     userDataRoot,
     platformService.id,
-    "HOST_PORT=11949\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nCHAT_RESOURCE_TICKET_ENABLED=true\nCHAT_IMAGE_TOKEN_SECRET=replace-with-your-chat-image-token-secret\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n",
+    `HOST_PORT=11949\nAGENT_WS_ENABLED=true\nAUTH_LOCAL_PUBLIC_KEY_FILE=${path.join(getTestConfigDir(userDataRoot, platformService.id), "configs", "local-public-key.pem")}\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nCHAT_RESOURCE_TICKET_ENABLED=true\nCHAT_IMAGE_TOKEN_SECRET=replace-with-your-chat-image-token-secret\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n`,
   );
 
   const previousHome = process.env.HOME;
@@ -2788,10 +2790,14 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
   assert.match(envContent, /CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960/);
   assert.match(envContent, /^HOST_PORT=7078$/m);
   assert.match(envContent, /^SERVER_PORT=7078$/m);
-  assert.match(envContent, /^AGENT_WS_ENABLED=true$/m);
+  assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
   assert.match(envContent, /^AUTH_ENABLED=true$/m);
-  assert.match(envContent, new RegExp(`^AUTH_LOCAL_PUBLIC_KEY_FILE=${path.join(getTestConfigDir(userDataRoot, platformService.id), "configs", "local-public-key.pem").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+  assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
   assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
+  assert.match(
+    envContent,
+    new RegExp(`TOOLS_DIR=${path.join(desktopRuntimeRoot, "tools").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
+  );
   assert.doesNotMatch(envContent, /^GATEWAY_WS_URL=/m);
   assert.doesNotMatch(envContent, /^GATEWAY_USER_ID=/m);
   assert.doesNotMatch(envContent, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
@@ -2820,6 +2826,39 @@ test("ensurePreStartRequirements injects container hub url, desktop runtime path
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("ensurePreStartRequirements preserves custom agent platform auth public key path", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-custom-auth-key-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
+  const customPublicKeyPath = path.join(tempRoot, "custom", "public-key.pem");
+
+  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  writeTestEnv(
+    userDataRoot,
+    platformService.id,
+    `HOST_PORT=11949\nAUTH_LOCAL_PUBLIC_KEY_FILE=${customPublicKeyPath}\n`,
+  );
+
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+
+    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
+    assert.match(
+      envContent,
+      new RegExp(`^AUTH_LOCAL_PUBLIC_KEY_FILE=${customPublicKeyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
+    );
+  } finally {
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("startService starts agent-platform when desktop-managed container hub is unavailable", async () => {

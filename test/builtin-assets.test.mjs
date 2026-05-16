@@ -429,9 +429,11 @@ test("actual synced agent-platform asset no longer bundles the local relay", () 
     "expected bundled agent-platform manifest to declare desktop env bindings"
   );
   const disallowedLegacyEnvBindings = new Set([
+    "AGENT_WS_ENABLED",
     "AGENT_CONTAINER_HUB_BASE_URL",
     "AGENT_AUTH_ENABLED",
-    "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE"
+    "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE",
+    "AUTH_LOCAL_PUBLIC_KEY_FILE"
   ]);
   assert.ok(
     manifest.desktop.envBindings.every(

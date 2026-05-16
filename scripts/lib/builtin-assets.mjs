@@ -410,9 +410,11 @@ export function findMissingBundleEntries(service, entries) {
 function validateAgentPlatformBundleArchive(service, archivePath) {
   const manifest = readManifestFromArchive(archivePath);
   const disallowedLegacyEnvBindings = new Set([
+    "AGENT_WS_ENABLED",
     "AGENT_CONTAINER_HUB_BASE_URL",
     "AGENT_AUTH_ENABLED",
-    "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE"
+    "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE",
+    "AUTH_LOCAL_PUBLIC_KEY_FILE"
   ]);
   const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
     ? manifest.desktop.envBindings

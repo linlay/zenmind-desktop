@@ -2538,6 +2538,9 @@ const AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS = [
   "CLAUDE_CODE_ACP_COMMAND",
   "CLAUDE_CODE_ACP_ARGS"
 ] as const;
+const AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS = [
+  "AGENT_WS_ENABLED"
+] as const;
 const AGENT_PLATFORM_DEPRECATED_ENV_KEYS = [
   "GATEWAY_USER_ID",
   "GATEWAY_TICKET",
@@ -2608,6 +2611,8 @@ const AGENT_PLATFORM_ENV_KEY_RENAMES = new Map<string, string>([
   ["AGENT_SKILLS_EXTERNAL_DIR", "SKILLS_MARKET_DIR"],
   ["AGENT_SCHEDULE_EXTERNAL_DIR", "SCHEDULES_DIR"]
 ]);
+
+const AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE = path.join("configs", "local-public-key.pem").replace(/\\/gu, "/");
 
 
 function agentWebclientInstallNeedsRefresh(installDir: string) {
@@ -2805,6 +2810,20 @@ function expandHomeShortcut(value: string, homeDir = resolveHomeDir()) {
 
 function normalizeConfigPath(value: string, homeDir = resolveHomeDir()) {
   return path.normalize(expandHomeShortcut(value, homeDir)).replace(/\\/gu, "/");
+}
+
+function formatDesktopAgentPlatformRuntimePath(app: App, value: string, key: string) {
+  if (key !== "TOOLS_DIR" || process.platform === "win32") {
+    return value;
+  }
+
+  const homeDir = resolveHomeDir(app);
+  const normalizedHomeDir = normalizeConfigPath(homeDir, homeDir);
+  const normalizedValue = normalizeConfigPath(value, homeDir);
+  if (normalizedValue === `${normalizedHomeDir}/.zenmind/tools`) {
+    return "~/.zenmind/tools";
+  }
+  return value;
 }
 
 function countMatchingFiles(rootDir: string, maxDepth: number, predicate: (filePath: string) => boolean, depth = 0): number {
@@ -3128,6 +3147,60 @@ function removeEnvKeysFromContent(content: string, keys: readonly string[]) {
   return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
 }
 
+function isManagedAgentPlatformAuthLocalPublicKeyPath(value: string, layout?: ServiceLayout) {
+  const unquoted = value.trim().replace(/^['"]|['"]$/gu, "");
+  const normalized = normalizeConfigPath(unquoted);
+  if (
+    normalized === AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE ||
+    normalized === "local-public-key.pem"
+  ) {
+    return true;
+  }
+
+  if (!layout) {
+    return false;
+  }
+
+  const managedPath = normalizeConfigPath(resolveConfigPath(layout, AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE));
+  return normalized === managedPath;
+}
+
+function removeManagedAgentPlatformAuthLocalPublicKey(content: string, layout?: ServiceLayout) {
+  const nextLines = content
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        return true;
+      }
+
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex <= 0) {
+        return true;
+      }
+
+      const key = trimmed.slice(0, separatorIndex).trim();
+      if (key !== "AUTH_LOCAL_PUBLIC_KEY_FILE") {
+        return true;
+      }
+
+      const value = trimmed.slice(separatorIndex + 1).trim();
+      return !isManagedAgentPlatformAuthLocalPublicKeyPath(value, layout);
+    });
+
+  if (nextLines.length === 0) {
+    return "";
+  }
+  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
+}
+
+function removeDesktopManagedAgentPlatformEnvContent(content: string, layout?: ServiceLayout) {
+  return removeManagedAgentPlatformAuthLocalPublicKey(
+    removeEnvKeysFromContent(content, AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS),
+    layout
+  );
+}
+
 function normalizeAgentWebclientEnvContentForDesktop(content: string) {
   return upsertEnvFileContent(
     removeEnvKeysFromContent(content, AGENT_WEBCLIENT_DESKTOP_ONLY_ENV_KEYS),
@@ -3135,7 +3208,7 @@ function normalizeAgentWebclientEnvContentForDesktop(content: string) {
   );
 }
 
-function normalizeAgentPlatformEnvContentForRuntime(content: string) {
+function normalizeAgentPlatformEnvContentForRuntime(content: string, layout?: ServiceLayout) {
   const env = parseEnvFileContent(content);
   const migrated = new Map<string, string>();
 
@@ -3161,7 +3234,10 @@ function normalizeAgentPlatformEnvContentForRuntime(content: string) {
   syncAgentPlatformDesktopPortEnv(env, migrated);
   syncAgentPlatformEmbeddedCdpEnv(migrated);
 
-  return upsertEnvFileContent(removeEnvKeysFromContent(content, AGENT_PLATFORM_DEPRECATED_ENV_KEYS), migrated);
+  return removeDesktopManagedAgentPlatformEnvContent(
+    upsertEnvFileContent(removeEnvKeysFromContent(content, AGENT_PLATFORM_DEPRECATED_ENV_KEYS), migrated),
+    layout
+  );
 }
 
 function normalizeAgentPlatformEnvContentForSave(content: string) {
@@ -3350,6 +3426,17 @@ async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<s
     const bindingKey = service.id === "agent-platform"
       ? (AGENT_PLATFORM_ENV_KEY_RENAMES.get(binding.key) ?? binding.key)
       : binding.key;
+    if (service.id === "agent-platform" && AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS.includes(bindingKey as typeof AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS[number])) {
+      continue;
+    }
+    if (
+      service.id === "agent-platform" &&
+      bindingKey === "AUTH_LOCAL_PUBLIC_KEY_FILE" &&
+      binding.value !== undefined &&
+      isManagedAgentPlatformAuthLocalPublicKeyPath(binding.value)
+    ) {
+      continue;
+    }
     const currentValue = env.get(bindingKey) ?? "";
 
     if (binding.onlyIfDefault) {
@@ -3610,7 +3697,7 @@ async function ensureAgentPlatformContainerHubDependency(app: App, layout: Servi
 async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefinition, layout: ServiceLayout) {
   const envPath = layout.envPath;
   const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
-  const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(currentContent);
+  const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(currentContent, layout);
   if (normalizedContent !== currentContent) {
     writeAgentPlatformLegacyEnvBackupIfNeeded(layout.configDir, currentContent);
     ensureDir(path.dirname(envPath));
@@ -3627,18 +3714,13 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   if (!env.get("PROVIDER_APIKEY_KEY_PART")?.trim()) {
     updates.set("PROVIDER_APIKEY_KEY_PART", DEFAULT_PROVIDER_APIKEY_KEY_PART);
   }
-  const authLocalPublicKeyPath = resolveConfigPath(layout, path.join("configs", "local-public-key.pem"));
-  const currentAuthLocalPublicKeyPath = env.get("AUTH_LOCAL_PUBLIC_KEY_FILE")?.trim() ?? "";
-  if (!currentAuthLocalPublicKeyPath || currentAuthLocalPublicKeyPath === "configs/local-public-key.pem") {
-    updates.set("AUTH_LOCAL_PUBLIC_KEY_FILE", authLocalPublicKeyPath);
-  }
   applyAgentPlatformWindowsHostShellDefaults(env, updates);
 
   const migratedRuntimeRoot = resolveLegacyAgentPlatformRuntimeRootMigration(app, env);
   if (migratedRuntimeRoot) {
     const homeDir = resolveHomeDir(app);
     for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
-      updates.set(key, path.join(migratedRuntimeRoot, relativePath));
+      updates.set(key, formatDesktopAgentPlatformRuntimePath(app, path.join(migratedRuntimeRoot, relativePath), key));
     }
     console.warn(
       `[service-manager] Migrated agent-platform runtime paths from legacy desktop default ${path.join(homeDir, "zenmind")} to ${migratedRuntimeRoot}`
@@ -3649,7 +3731,7 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   if (!hasConfiguredAgentPlatformRuntimePath(env)) {
     for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
       if (!env.get(key)) {
-        updates.set(key, path.join(desktopRuntimeRoot, relativePath));
+        updates.set(key, formatDesktopAgentPlatformRuntimePath(app, path.join(desktopRuntimeRoot, relativePath), key));
       }
     }
   }
