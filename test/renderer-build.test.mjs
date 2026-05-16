@@ -49,7 +49,23 @@ test("assistant launcher sits beside settings in the sidebar footer", () => {
   assert.match(globalStyles, /\.sidebar-footer-actions\s*\{[\s\S]*?display:\s*flex;/);
 });
 
-test("sidebar collapse toggle sits in the sidebar footer", () => {
+test("embedded surfaces use theme-backed host colors instead of hard-coded light fallbacks", () => {
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+
+  assert.match(globalStyles, /--embedded-surface-shell-bg:\s*#fff;/);
+  assert.match(globalStyles, /--embedded-surface-dock-bg:\s*#fff;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\][\s\S]*?--embedded-surface-shell-bg:\s*#1f2329;/);
+  assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
+  assert.match(globalStyles, /\.app-shell\.has-embedded-surface \.app-content,\s*[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
+  assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{[\s\S]*?background:\s*var\(--embedded-surface-dock-bg\);/);
+  assert.match(globalStyles, /\.pan-frame\s*\{[\s\S]*?background:\s*var\(--embedded-surface-frame-bg\);/);
+  assert.match(globalStyles, /\.embedded-plugin-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-loading-bg\);/);
+  assert.match(globalStyles, /--browser-frame-bg:\s*#ffffff;/);
+  assert.match(globalStyles, /\.external-webview-panel\s*\{[\s\S]*?background:\s*var\(--browser-frame-bg\);/);
+  assert.match(globalStyles, /\.external-webview-frame\s*\{[\s\S]*?background:\s*var\(--browser-frame-bg\);/);
+});
+
+test("sidebar collapse toggle moves into the top chrome with expanded and collapsed variants", () => {
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "components", "AppSidebar.tsx"),
@@ -59,17 +75,26 @@ test("sidebar collapse toggle sits in the sidebar footer", () => {
   const collapseButtonRule = globalStyles.match(/^\.app-sidebar-collapse-button\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body;
 
   assert.match(appShell, /onToggleCollapsed=\{toggleSidebarCollapsed\}/);
+  assert.match(appShell, /isMac=\{isMac\}/);
+  assert.match(appShell, /isWindows=\{isWindows\}/);
   assert.doesNotMatch(appShell, /className="app-sidebar-collapse-button"/);
+  assert.doesNotMatch(appShell, /app-sidebar-drag-region/);
   assert.match(sidebarSource, /onToggleCollapsed\?:\s*\(\)\s*=>\s*void;/);
-  assert.match(sidebarSource, /sidebar-collapse-control[\s\S]*?className="app-sidebar-collapse-button"/);
-  assert.match(sidebarSource, /aria-label=\{isCollapsed \? "展开侧边栏" : "收起侧边栏"\}/);
-  assert.match(sidebarSource, /onClick=\{onToggleCollapsed\}/);
-  assert.match(globalStyles, /\.sidebar-collapse-control\s*\{[\s\S]*?border-top:\s*1px solid var\(--line\);/);
+  assert.match(sidebarSource, /type SidebarCollapseToggleVariant = "compact" \| "nav";/);
+  assert.match(sidebarSource, /className=\{\[\s*"app-sidebar-collapse-button",[\s\S]*?"is-compact" : "is-nav"/);
+  assert.match(sidebarSource, /aria-expanded=\{!isCollapsed\}/);
+  assert.match(sidebarSource, /<div className="sidebar-chrome">/);
+  assert.match(sidebarSource, /<div className="sidebar-chrome-drag-region" aria-hidden="true" \/>/);
+  assert.match(sidebarSource, /className=\{chromeToolbarClassName\}/);
+  assert.match(sidebarSource, /<div className="sidebar-collapsed-toggle-slot">/);
+  assert.doesNotMatch(sidebarSource, /sidebar-collapse-control/);
   assert.ok(collapseButtonRule, "missing .app-sidebar-collapse-button rule");
-  assert.match(collapseButtonRule, /width:\s*100%;/);
-  assert.match(collapseButtonRule, /min-height:\s*48px;/);
-  assert.doesNotMatch(collapseButtonRule, /position:\s*absolute;/);
-  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.app-sidebar-collapse-button\s*\{[\s\S]*?min-height:\s*44px;/);
+  assert.match(collapseButtonRule, /appearance:\s*none;/);
+  assert.match(globalStyles, /\.sidebar-chrome-toolbar\.is-mac\s*\{[\s\S]*?padding-left:\s*var\(--mac-traffic-light-safe-area\);/);
+  assert.match(globalStyles, /\.sidebar-chrome-toolbar\.is-windows,[\s\S]*?justify-content:\s*center;/);
+  assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-compact\s*\{[\s\S]*?width:\s*24px;/);
+  assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-nav\s*\{[\s\S]*?width:\s*var\(--sidebar-collapse-toggle-nav-width, 48px\);/);
+  assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-expanded-state \.app-sidebar-collapse-button-icon\s*\{[\s\S]*?rotate\(180deg\)/);
 });
 
 test("agent webclient desktop sections are exposed as top-level sidebar tabs", () => {
@@ -87,7 +112,7 @@ test("agent webclient desktop sections are exposed as top-level sidebar tabs", (
   assert.match(sidebarSource, /to:\s*"\/agents"[\s\S]*?label:\s*"智能体"/);
   assert.match(sidebarSource, /to:\s*"\/schedules"[\s\S]*?label:\s*"自动化"/);
   assert.match(sidebarSource, /to:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
-  assert.match(sidebarSource, /sortSidebarNavItems\(\[/);
+  assert.match(sidebarSource, /sortSidebarNavItems\(\s*\[/);
   assert.match(sidebarSource, /assistantNavItem,[\s\S]*?\.\.\.agentWebclientNavItems,[\s\S]*?\.\.\.staticNavItems/);
   assert.match(sidebarSource, /controlCenterUtilityItem/);
   assert.match(sidebarSource, /to:\s*"\/control-center"[\s\S]*?label:\s*"控制中心"/);
@@ -349,7 +374,10 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(sidebarSource, /assistantLauncherVisible/);
   assert.match(sidebarSource, /assistantLauncherDisabled/);
   assert.match(sidebarSource, /assistantLauncherVisible \? \(/);
-  assert.match(sidebarSource, /assistantDockOpen \? "sidebar-assistant-open" : "sidebar-assistant-closed"/);
+  assert.match(
+    sidebarSource,
+    /assistantDockOpen[\s\S]*?\? "sidebar-assistant-open"[\s\S]*?: "sidebar-assistant-closed"/
+  );
   assert.match(sidebarSource, /if \(assistantDockOpen\) \{\s*onCloseAssistantDock\?\.\(\);\s*\} else \{\s*onOpenAssistantDock\?\.\(\);/);
   assert.doesNotMatch(sidebarSource, /assistantDockOpen \? "sidebar-link-active" : ""/);
   assert.doesNotMatch(sidebarSource, /!assistantDockOpen && \(isActive \|\| pendingPath === "\/settings"\)/);
@@ -516,13 +544,30 @@ test("plugin embedded route keeps a mac window drag lane clear of iframe control
 test("window drag uses css-only app-region approach", () => {
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
   const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const sidebarSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "components", "AppSidebar.tsx"),
+    "utf8"
+  );
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
 
-  assert.match(globalStyles, /\.app-window-drag-region\s*\{[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;/);
-  assert.match(globalStyles, /\.app-sidebar-drag-region,[\s\S]*?\.app-main-drag-region\s*\{[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;/);
+  assert.match(
+    globalStyles,
+    /\.app-window-drag-region\s*\{[\s\S]*?left:\s*var\(--app-sidebar-width,\s*160px\);[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;/
+  );
+  assert.match(
+    globalStyles,
+    /\.sidebar-chrome-drag-region\s*\{[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;/
+  );
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\s+\.sidebar-chrome-drag-region\s*\{[\s\S]*?left:\s*var\(--mac-traffic-light-safe-area\);/
+  );
   assert.match(globalStyles, /\.app-main-drag-region\s*\{\s*height:\s*20px;\s*\}/);
+  assert.doesNotMatch(globalStyles, /\.app-sidebar-drag-region/);
+  assert.match(sidebarSource, /sidebar-chrome-drag-region/);
+  assert.doesNotMatch(appShell, /app-sidebar-drag-region/);
   assert.doesNotMatch(appShell, /WINDOW_DRAG_EXCLUDED_SELECTOR/);
   assert.doesNotMatch(appShell, /onPointerDownCapture=\{handleDesktopWindowPointerDown\}/);
   assert.doesNotMatch(appShell, /window\.electronAPI\.windowDrag\.begin/);

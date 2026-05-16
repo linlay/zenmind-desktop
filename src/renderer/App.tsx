@@ -968,9 +968,10 @@ function AppShell() {
           sidebarState.collapsed ? "is-collapsed" : ""
         ].filter(Boolean).join(" ")}
       >
-        <div className="app-sidebar-drag-region" aria-hidden="true" />
         <AppSidebar
           isCollapsed={sidebarState.collapsed}
+          isMac={isMac}
+          isWindows={isWindows}
           currentPathname={location.pathname}
           pendingPath={pendingSidebarNavigationPath}
           assistantDockOpen={assistantCopilotOpen}

@@ -666,7 +666,7 @@ export function ControlCenterPage() {
     : [];
 
   return (
-    <section className="control-center-page">
+    <section className="control-center-page workspace-wide">
       <div className="page-head control-center-hero">
         <div className="control-center-hero-copy">
           <h1>控制中心</h1>

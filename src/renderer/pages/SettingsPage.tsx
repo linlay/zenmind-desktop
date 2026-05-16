@@ -53,6 +53,8 @@ type WindowsDataRootCardProps = {
   onError: (message: string) => void;
 };
 
+const WIDE_SETTINGS_SECTIONS = new Set<SettingsSectionId>(["navigation", "embeddedWebsites", "memory"]);
+
 function formatMemoryTime(value: string | null | undefined) {
   if (!value) {
     return "暂无";
@@ -892,6 +894,7 @@ export function SettingsPage({
 
   const sidebarNavOrderLabels = new Map(availableSidebarNavOrderItems.map((item) => [item.key, item.label]));
   const activeSectionDefinition = sectionDefinitions.find((definition) => definition.id === activeSection) ?? null;
+  const activeSectionWidthClass = WIDE_SETTINGS_SECTIONS.has(activeSection) ? "workspace-wide" : "workspace-measure";
 
   function renderActiveSection() {
     switch (activeSection) {
@@ -1509,8 +1512,8 @@ export function SettingsPage({
   }
 
   return (
-    <section className="settings-page" data-settings-section={activeSection}>
-      <div className="settings-mode-toolbar">
+    <section className="settings-page workspace-wide" data-settings-section={activeSection}>
+      <div className={`settings-mode-toolbar ${activeSectionWidthClass}`}>
         <button
           type="button"
           className="settings-mode-close-button"
@@ -1521,7 +1524,7 @@ export function SettingsPage({
           <span aria-hidden="true" />
         </button>
       </div>
-      <div className="page-head">
+      <div className={`page-head ${activeSectionWidthClass}`}>
         <div>
           <p className="eyebrow">SETTINGS</p>
           <h1>{activeSectionDefinition?.label ?? "设置"}</h1>
@@ -1529,8 +1532,10 @@ export function SettingsPage({
         </div>
       </div>
 
-      {feedback ? <div className="feedback-banner">{feedback}</div> : null}
-      {renderActiveSection()}
+      {feedback ? <div className={`feedback-banner ${activeSectionWidthClass}`}>{feedback}</div> : null}
+      <div className={activeSectionWidthClass}>
+        {renderActiveSection()}
+      </div>
     </section>
   );
 }

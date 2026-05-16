@@ -22,7 +22,7 @@ export function MarketPageFrame({
 }: MarketPageFrameProps) {
   return (
     <section className="market-page">
-      <div className="market-shell">
+      <div className="market-shell workspace-wide">
         <div className="market-topbar">
           <div className="market-tabs" role="tablist" aria-label="市场页签">
             {tabs.map((tab) => (
