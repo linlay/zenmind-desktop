@@ -29,11 +29,15 @@ import {
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_APPEARANCE_OPTIONS
 } from "../../shared/desktop-pet";
+import type { SettingsSectionDefinition, SettingsSectionId } from "../settingsSections";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../sidebarNavOrder";
 
 type SettingsPageProps = {
+  activeSection: SettingsSectionId;
+  sectionDefinitions: SettingsSectionDefinition[];
   themeMode: "light" | "dark";
   onToggleTheme: () => void;
+  onExitSettingsMode: () => void;
   isMac: boolean;
   isWindows: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
@@ -140,8 +144,11 @@ function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
 }
 
 export function SettingsPage({
+  activeSection,
+  sectionDefinitions,
   themeMode,
   onToggleTheme,
+  onExitSettingsMode,
   isMac,
   isWindows,
   sidebarNavOrder,
@@ -884,623 +891,646 @@ export function SettingsPage({
   }
 
   const sidebarNavOrderLabels = new Map(availableSidebarNavOrderItems.map((item) => [item.key, item.label]));
+  const activeSectionDefinition = sectionDefinitions.find((definition) => definition.id === activeSection) ?? null;
 
-  return (
-    <section className="settings-page">
-      <div className="page-head">
-        <div>
-          <p className="eyebrow">SETTINGS</p>
-          <h1>设置</h1>
-          <p className="page-copy">
-            {isWindows ? (
-              <>
-                调整界面风格，管理左侧固定入口，并查看 Desktop 数据目录。新安装默认使用 <code>%USERPROFILE%\.zenmind\.desktop</code>，
-                内嵌网站仅保存在本地。
-              </>
-            ) : (
-              <>调整界面风格，并管理左侧固定入口。内嵌网站仅保存在本地。</>
-            )}
-          </p>
-        </div>
-      </div>
-
-      {feedback ? <div className="feedback-banner">{feedback}</div> : null}
-
-      <div className="data-root-card settings-theme-card">
-        <div>
-          <p className="eyebrow">APPEARANCE</p>
-          <h2>主题模式</h2>
-          <p className="page-copy">
-            选择你更习惯的界面风格。当前正在使用
-            <strong>{themeMode === "light" ? "浅色" : "深色"}</strong>
-            主题。
-          </p>
-        </div>
-        <div className="settings-theme-actions">
-          <button
-            type="button"
-            className={themeMode === "light" ? "settings-theme-option is-active" : "settings-theme-option"}
-            onClick={() => {
-              if (themeMode !== "light") {
-                onToggleTheme();
-              }
-            }}
-          >
-            <span className="settings-theme-preview settings-theme-preview-light" aria-hidden="true">
-              <span />
-              <span />
-            </span>
-            <span className="settings-theme-copy">
-              <strong>浅色</strong>
-              <span>适合白天和明亮环境</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            className={themeMode === "dark" ? "settings-theme-option is-active" : "settings-theme-option"}
-            onClick={() => {
-              if (themeMode !== "dark") {
-                onToggleTheme();
-              }
-            }}
-          >
-            <span className="settings-theme-preview settings-theme-preview-dark" aria-hidden="true">
-              <span />
-              <span />
-            </span>
-            <span className="settings-theme-copy">
-              <strong>深色</strong>
-              <span>适合夜间和长时间专注</span>
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <div className="data-root-card navigation-settings-card">
-        <div className="navigation-settings-copy">
-          <p className="eyebrow">NAVIGATION</p>
-          <h2>导航栏</h2>
-          <p className="page-copy">
-            设置主导航页签 item 的显示顺序。
-            {isMac ? " macOS 会自动使用原生半透明窗口效果。" : " 当前平台会自动应用 CSS 半透明效果。"}
-          </p>
-        </div>
-        <div className="navigation-settings-panel">
-          <div className="navigation-order-section">
-            <div className="custom-sidebar-list-head">
-              <strong>导航页签排序</strong>
-              <button type="button" className="text-button" onClick={resetSidebarNavOrder}>
-                恢复默认
+  function renderActiveSection() {
+    switch (activeSection) {
+      case "appearance":
+        return (
+          <div className="data-root-card settings-theme-card">
+            <div>
+              <p className="eyebrow">APPEARANCE</p>
+              <h2>主题模式</h2>
+              <p className="page-copy">
+                选择你更习惯的界面风格。当前正在使用
+                <strong>{themeMode === "light" ? "浅色" : "深色"}</strong>
+                主题。
+              </p>
+            </div>
+            <div className="settings-theme-actions">
+              <button
+                type="button"
+                className={themeMode === "light" ? "settings-theme-option is-active" : "settings-theme-option"}
+                onClick={() => {
+                  if (themeMode !== "light") {
+                    onToggleTheme();
+                  }
+                }}
+              >
+                <span className="settings-theme-preview settings-theme-preview-light" aria-hidden="true">
+                  <span />
+                  <span />
+                </span>
+                <span className="settings-theme-copy">
+                  <strong>浅色</strong>
+                  <span>适合白天和明亮环境</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className={themeMode === "dark" ? "settings-theme-option is-active" : "settings-theme-option"}
+                onClick={() => {
+                  if (themeMode !== "dark") {
+                    onToggleTheme();
+                  }
+                }}
+              >
+                <span className="settings-theme-preview settings-theme-preview-dark" aria-hidden="true">
+                  <span />
+                  <span />
+                </span>
+                <span className="settings-theme-copy">
+                  <strong>深色</strong>
+                  <span>适合夜间和长时间专注</span>
+                </span>
               </button>
             </div>
-            <div className="navigation-order-list">
-              {sidebarNavOrder.map((itemKey, index) => (
-                <div className="navigation-order-row" key={itemKey}>
-                  <span>{sidebarNavOrderLabels.get(itemKey) ?? itemKey}</span>
-                  <div className="navigation-order-actions">
-                    <button
-                      type="button"
-                      className="text-button"
-                      disabled={index === 0}
-                      onClick={() => moveSidebarNavOrderItem(itemKey, -1)}
-                    >
-                      上移
-                    </button>
-                    <button
-                      type="button"
-                      className="text-button"
-                      disabled={index === sidebarNavOrder.length - 1}
-                      onClick={() => moveSidebarNavOrderItem(itemKey, 1)}
-                    >
-                      下移
-                    </button>
-                  </div>
-                </div>
-              ))}
+          </div>
+        );
+      case "navigation":
+        return (
+          <div className="data-root-card navigation-settings-card">
+            <div className="navigation-settings-copy">
+              <p className="eyebrow">NAVIGATION</p>
+              <h2>导航栏</h2>
+              <p className="page-copy">
+                设置主导航页签 item 的显示顺序。
+                {isMac ? " macOS 会自动使用原生半透明窗口效果。" : " 当前平台会自动应用 CSS 半透明效果。"}
+              </p>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="data-root-card settings-switch-card desktop-helper-settings-card">
-        <div>
-          <p className="eyebrow">DESKTOP ASSISTANT</p>
-          <h2>快捷助手</h2>
-          <p className="page-copy">
-            单独配置 Option+Space 唤起的快捷助手，和侧边助手、宠物助手相互独立。
-          </p>
-          <div className="quick-assistant-settings-panel" aria-label="快捷助手配置">
-            <div className="page-copilot-row-main">
-              <strong>快捷助手</strong>
-              <span>
-                {quickAssistantEnabled
-                  ? `Option+Space 已开启，默认使用 ${getAgentLabel(quickAssistantAgentKey)}`
-                  : "Option+Space 已关闭"}
-              </span>
-              {quickAssistantEnabled && !isKnownAssistantAgent(quickAssistantAgentKey) ? (
-                <em>当前默认智能体不可用，请重新选择。</em>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className={quickAssistantEnabled ? "settings-switch is-on" : "settings-switch"}
-              role="switch"
-              aria-checked={quickAssistantEnabled}
-              aria-label="快捷助手"
-              disabled={quickAssistantPending}
-              onClick={() => void handleToggleQuickAssistantEnabled()}
-            >
-              <span aria-hidden="true" />
-            </button>
-            <label className="desktop-pet-agent-field">
-              <span>默认智能体</span>
-              <span className="desktop-pet-agent-select-wrap">
-                <select
-                  value={isKnownAssistantAgent(quickAssistantAgentKey) ? quickAssistantAgentKey : ""}
-                  onChange={(event) => void handleSelectQuickAssistantAgentKey(event.target.value)}
-                  disabled={!quickAssistantEnabled || assistantAgentOptions.length === 0 || quickAssistantAgentPending}
-                  aria-label="快捷助手默认智能体"
-                >
-                  <option value="">
-                    {assistantAgentOptions.length === 0
-                      ? "正在读取智能体列表..."
-                      : isKnownAssistantAgent(quickAssistantAgentKey) ? "请选择智能体" : `不可用：${quickAssistantAgentKey}`}
-                  </option>
-                  {assistantAgentOptions.map((agent) => (
-                    <option value={agent.agentKey} key={agent.agentKey}>
-                      {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </span>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <div className="data-root-card settings-switch-card desktop-helper-settings-card">
-        <div>
-          <p className="eyebrow">SIDE ASSISTANT</p>
-          <h2>侧边助手</h2>
-          <p className="page-copy">
-            为每个一级页签配置是否显示侧边助手，以及默认使用哪个智能体。这个设置不影响宠物助手绑定。
-            全局默认只作为旧配置兼容保留。
-          </p>
-          <div className="desktop-pet-agent-form">
-            <label className="desktop-pet-agent-field">
-              <span>兼容默认智能体</span>
-              <span className="desktop-pet-agent-select-wrap">
-                <select
-                  value={assistantAgentOptions.some((agent) => agent.agentKey === desktopHelperAgentKey) ? desktopHelperAgentKey : ""}
-                  onChange={(event) => void handleSelectDesktopHelperAgentKey(event.target.value)}
-                  disabled={assistantAgentOptions.length === 0 || desktopHelperAgentPending}
-                >
-                  <option value="">
-                    {assistantAgentOptions.length === 0 ? "正在读取智能体列表..." : "请选择智能体"}
-                  </option>
-                  {assistantAgentOptions.map((agent) => (
-                    <option value={agent.agentKey} key={agent.agentKey}>
-                      {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </span>
-              <span className="desktop-pet-agent-note">
-                {desktopHelperAgentPending
-                  ? "保存中..."
-                  : `当前默认：${
-                      assistantAgentOptions.find((agent) => agent.agentKey === (assistantSettings?.desktopHelperAgentKey || desktopHelperAgentKey))?.displayName ||
-                      assistantSettings?.desktopHelperAgentKey ||
-                      desktopHelperAgentKey
-                    }`}
-              </span>
-            </label>
-          </div>
-          <div className="desktop-copilot-page-list page-copilot-matrix" aria-label="侧边助手配置">
-            {DESKTOP_COPILOT_PAGE_KEYS.map((pageKey) => {
-              const preference = desktopCopilotPages[pageKey] ?? {
-                enabled: true,
-                agentKey: DEFAULT_DESKTOP_HELPER_AGENT_KEY
-              };
-              const pending = desktopCopilotPagePending === pageKey || desktopCopilotPagePending === "all";
-              const currentAgentAvailable = isKnownAssistantAgent(preference.agentKey);
-              return (
-                <div className="desktop-copilot-page-row page-copilot-row" key={pageKey}>
-                  <div className="page-copilot-row-main">
-                    <strong>{DESKTOP_COPILOT_PAGE_LABELS[pageKey]}</strong>
-                    <span>{preference.enabled ? `使用 ${getAgentLabel(preference.agentKey)}` : "不显示侧边助手"}</span>
-                    {!currentAgentAvailable && preference.enabled ? (
-                      <em>当前智能体不可用，请重新选择。</em>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    className={preference.enabled ? "settings-switch is-on" : "settings-switch"}
-                    role="switch"
-                    aria-checked={preference.enabled}
-                    aria-label={`${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 页面助手`}
-                    disabled={pending}
-                    onClick={() => void handleToggleCopilotPage(pageKey)}
-                  >
-                    <span aria-hidden="true" />
+            <div className="navigation-settings-panel">
+              <div className="navigation-order-section">
+                <div className="custom-sidebar-list-head">
+                  <strong>导航页签排序</strong>
+                  <button type="button" className="text-button" onClick={resetSidebarNavOrder}>
+                    恢复默认
                   </button>
-                  <label className="desktop-pet-agent-field">
-                    <span className="desktop-pet-agent-select-wrap">
-                      <select
-                        value={currentAgentAvailable ? preference.agentKey : ""}
-                        onChange={(event) => void handleSelectCopilotAgent(pageKey, event.target.value)}
-                        disabled={!preference.enabled || assistantAgentOptions.length === 0 || pending}
-                        aria-label={`${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 侧边助手智能体`}
-                      >
-                        <option value="">
-                          {assistantAgentOptions.length === 0
-                            ? "正在读取智能体列表..."
-                            : currentAgentAvailable ? "请选择智能体" : `不可用：${preference.agentKey}`}
-                        </option>
-                        {assistantAgentOptions.map((agent) => (
-                          <option value={agent.agentKey} key={agent.agentKey}>
-                            {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </span>
-                  </label>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {desktopPetSupported ? (
-        <div className="data-root-card settings-switch-card desktop-pet-settings-card">
-          <div>
-            <p className="eyebrow">DESKTOP PET</p>
-            <h2>宠物助手</h2>
-            <p className="page-copy">
-              宠物只服务侧边助手，会在等待回答、完成或出错时做轻提醒。右键宠物可直接关闭。
-            </p>
-            <p className="settings-inline-note">
-              当前状态：{desktopPetState?.enabled ? "已开启" : "已关闭"}
-              {desktopPetState?.enabled && desktopPetState.visible ? " / 已显示" : ""}
-            </p>
-            <div className="desktop-pet-appearance-section" aria-label="宠物形象">
-              <div className="desktop-pet-appearance-heading">
-                <span>宠物形象</span>
-                <small>当前：{desktopPetAppearanceOptions.find((appearance) => appearance.id === currentDesktopPetAppearanceId)?.displayName ?? "小宅"}</small>
+                <div className="navigation-order-list">
+                  {sidebarNavOrder.map((itemKey, index) => (
+                    <div className="navigation-order-row" key={itemKey}>
+                      <span>{sidebarNavOrderLabels.get(itemKey) ?? itemKey}</span>
+                      <div className="navigation-order-actions">
+                        <button
+                          type="button"
+                          className="text-button"
+                          disabled={index === 0}
+                          onClick={() => moveSidebarNavOrderItem(itemKey, -1)}
+                        >
+                          上移
+                        </button>
+                        <button
+                          type="button"
+                          className="text-button"
+                          disabled={index === sidebarNavOrder.length - 1}
+                          onClick={() => moveSidebarNavOrderItem(itemKey, 1)}
+                        >
+                          下移
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="desktop-pet-appearance-grid">
-                {desktopPetAppearanceOptions.map((appearance) => {
-                  const selected = appearance.id === currentDesktopPetAppearanceId;
-                  const pending = desktopPetAppearancePending === appearance.id;
-                  return (
-                    <button
-                      type="button"
-                      className={selected ? "desktop-pet-appearance-card is-selected" : "desktop-pet-appearance-card"}
-                      key={appearance.id}
-                      aria-pressed={selected}
-                      disabled={Boolean(desktopPetAppearancePending) && !selected}
-                      onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
+            </div>
+          </div>
+        );
+      case "quickAssistant":
+        return (
+          <div className="data-root-card settings-switch-card desktop-helper-settings-card">
+            <div>
+              <p className="eyebrow">DESKTOP ASSISTANT</p>
+              <h2>快捷助手</h2>
+              <p className="page-copy">
+                单独配置 Option+Space 唤起的快捷助手，和侧边助手、宠物助手相互独立。
+              </p>
+              <div className="quick-assistant-settings-panel" aria-label="快捷助手配置">
+                <div className="page-copilot-row-main">
+                  <strong>快捷助手</strong>
+                  <span>
+                    {quickAssistantEnabled
+                      ? `Option+Space 已开启，默认使用 ${getAgentLabel(quickAssistantAgentKey)}`
+                      : "Option+Space 已关闭"}
+                  </span>
+                  {quickAssistantEnabled && !isKnownAssistantAgent(quickAssistantAgentKey) ? (
+                    <em>当前默认智能体不可用，请重新选择。</em>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className={quickAssistantEnabled ? "settings-switch is-on" : "settings-switch"}
+                  role="switch"
+                  aria-checked={quickAssistantEnabled}
+                  aria-label="快捷助手"
+                  disabled={quickAssistantPending}
+                  onClick={() => void handleToggleQuickAssistantEnabled()}
+                >
+                  <span aria-hidden="true" />
+                </button>
+                <label className="desktop-pet-agent-field">
+                  <span>默认智能体</span>
+                  <span className="desktop-pet-agent-select-wrap">
+                    <select
+                      value={isKnownAssistantAgent(quickAssistantAgentKey) ? quickAssistantAgentKey : ""}
+                      onChange={(event) => void handleSelectQuickAssistantAgentKey(event.target.value)}
+                      disabled={!quickAssistantEnabled || assistantAgentOptions.length === 0 || quickAssistantAgentPending}
+                      aria-label="快捷助手默认智能体"
                     >
-                      <span className="desktop-pet-appearance-preview" aria-hidden="true">
-                        <img src={appearance.previewAssetPath} alt="" />
-                      </span>
-                      <span className="desktop-pet-appearance-copy">
-                        <strong>{appearance.displayName}</strong>
-                        <small>{pending ? "切换中..." : appearance.description}</small>
-                      </span>
-                    </button>
-                  );
-                })}
+                      <option value="">
+                        {assistantAgentOptions.length === 0
+                          ? "正在读取智能体列表..."
+                          : isKnownAssistantAgent(quickAssistantAgentKey) ? "请选择智能体" : `不可用：${quickAssistantAgentKey}`}
+                      </option>
+                      {assistantAgentOptions.map((agent) => (
+                        <option value={agent.agentKey} key={agent.agentKey}>
+                          {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                </label>
               </div>
             </div>
-            <div className="desktop-pet-agent-form">
-              <label className="desktop-pet-agent-field">
-                <span>选择智能体</span>
-                <span className="desktop-pet-agent-select-wrap">
-                  <select
-                    value={desktopPetAgentOptions.some((agent) => agent.agentKey === desktopPetBoundAgentKey) ? desktopPetBoundAgentKey : ""}
-                    onChange={(event) => {
-                      const nextBoundAgentKey = event.target.value;
-                      setDesktopPetBoundAgentKey(nextBoundAgentKey);
-                      void handleSelectDesktopPetBoundAgentKey(nextBoundAgentKey);
-                    }}
-                    disabled={!desktopPetEnabled || desktopPetAgentOptions.length === 0 || desktopPetBoundAgentPending}
-                  >
-                    <option value="">
-                      {!desktopPetEnabled
-                        ? "开启后读取智能体列表"
-                        : desktopPetAgentOptions.length === 0
-                          ? "正在读取智能体列表..."
-                          : "请选择智能体"}
-                    </option>
-                    {desktopPetAgentOptions.map((agent) => (
-                      <option value={agent.agentKey} key={agent.agentKey}>
-                        {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+          </div>
+        );
+      case "sideAssistant":
+        return (
+          <div className="data-root-card settings-switch-card desktop-helper-settings-card">
+            <div>
+              <p className="eyebrow">SIDE ASSISTANT</p>
+              <h2>侧边助手</h2>
+              <p className="page-copy">
+                为每个一级页签配置是否显示侧边助手，以及默认使用哪个智能体。这个设置不影响宠物助手绑定。
+                全局默认只作为旧配置兼容保留。
+              </p>
+              <div className="desktop-pet-agent-form">
+                <label className="desktop-pet-agent-field">
+                  <span>兼容默认智能体</span>
+                  <span className="desktop-pet-agent-select-wrap">
+                    <select
+                      value={assistantAgentOptions.some((agent) => agent.agentKey === desktopHelperAgentKey) ? desktopHelperAgentKey : ""}
+                      onChange={(event) => void handleSelectDesktopHelperAgentKey(event.target.value)}
+                      disabled={assistantAgentOptions.length === 0 || desktopHelperAgentPending}
+                    >
+                      <option value="">
+                        {assistantAgentOptions.length === 0 ? "正在读取智能体列表..." : "请选择智能体"}
                       </option>
-                    ))}
-                  </select>
-                </span>
-                <span className="desktop-pet-agent-note">
-                  {desktopPetBoundAgentPending
-                    ? "绑定中..."
-                    : `当前绑定：${
-                        currentDesktopPetAgentOption?.displayName
-                          ? `${currentDesktopPetAgentOption.displayName}${currentDesktopPetAgentOption.role ? ` · ${currentDesktopPetAgentOption.role}` : ""}`
-                          : currentDesktopPetBoundAgentKey
-                      }`}
-                </span>
-              </label>
-            </div>
-          </div>
-          <button
-            type="button"
-            className={desktopPetState?.enabled ? "settings-switch is-on" : "settings-switch"}
-            role="switch"
-            aria-checked={Boolean(desktopPetState?.enabled)}
-            aria-label="桌面宠物"
-            disabled={desktopPetPending}
-            onClick={() => void handleToggleDesktopPet()}
-          >
-            <span aria-hidden="true" />
-          </button>
-        </div>
-      ) : null}
-
-      <div className="data-root-card custom-sidebar-card">
-        <div className="custom-sidebar-copy">
-          <p className="eyebrow">SIDEBAR</p>
-          <h2>内嵌网站</h2>
-          <p className="page-copy">
-            将常用网页作为内嵌网站固定至导航栏便捷访问。内嵌网站仅保存在本地，支持导入导出，系统入口不可修改。
-          </p>
-        </div>
-        <div className="custom-sidebar-panel">
-          <form className="custom-sidebar-form" onSubmit={(event) => void handleAddCustomSidebarItem(event)}>
-            <label>
-              <span>显示名称</span>
-              <input
-                value={customSidebarLabel}
-                onChange={(event) => setCustomSidebarLabel(event.target.value)}
-                placeholder="例如：官网、知识库"
-                maxLength={24}
-              />
-            </label>
-            <label>
-              <span>网页地址</span>
-              <input
-                value={customSidebarUrl}
-                onChange={(event) => setCustomSidebarUrl(event.target.value)}
-                placeholder="支持输入完整链接或域名，例如 jira.example.com"
-                required
-              />
-            </label>
-            <div className="custom-sidebar-submit-wrap">
-              <button type="submit" className="text-button custom-sidebar-submit" disabled={customSidebarPending}>
-                {customSidebarPending ? "添加中..." : "添加内嵌网站"}
-              </button>
-            </div>
-          </form>
-
-          <div className="custom-sidebar-list-head">
-            <strong>已添加的内嵌网站</strong>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => void handleImportCustomSidebarItems()}
-                disabled={customSidebarTransferPending !== ""}
-              >
-                {customSidebarTransferPending === "import" ? "导入中..." : "导入"}
-              </button>
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => void handleExportCustomSidebarItems()}
-                disabled={customSidebarTransferPending !== ""}
-              >
-                {customSidebarTransferPending === "export" ? "导出中..." : "导出"}
-              </button>
-              <button type="button" className="text-button" onClick={() => void handleReloadCustomSidebarItems()}>
-                刷新
-              </button>
-            </div>
-          </div>
-          {customSidebarItems.length === 0 ? (
-            <div className="custom-sidebar-empty">还没有添加内嵌网站，添加后会显示在系统入口下方。</div>
-          ) : (
-            <div className="custom-sidebar-list">
-              {customSidebarItems.map((item) => {
-                const itemAgentKey = item.agentKey || "";
-                const itemAgentKnown = !itemAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === itemAgentKey);
-                const itemAgentPending = customSidebarAgentPendingId === item.id;
-                return (
-                  <div className="custom-sidebar-row" key={item.id}>
-                    <div className="custom-sidebar-row-main">
-                      <span className="custom-sidebar-row-icon" aria-hidden="true">
-                        <CustomSidebarIcon iconId={item.iconId} />
-                      </span>
-                      <div className="custom-sidebar-row-copy">
-                        <strong>{item.label}</strong>
-                        <span>{item.url}</span>
-                        <div className="custom-sidebar-row-agent">
-                          <span className="custom-sidebar-row-agent-label">智能体增强</span>
+                      {assistantAgentOptions.map((agent) => (
+                        <option value={agent.agentKey} key={agent.agentKey}>
+                          {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                  <span className="desktop-pet-agent-note">
+                    {desktopHelperAgentPending
+                      ? "保存中..."
+                      : `当前默认：${
+                          assistantAgentOptions.find((agent) => agent.agentKey === (assistantSettings?.desktopHelperAgentKey || desktopHelperAgentKey))?.displayName ||
+                          assistantSettings?.desktopHelperAgentKey ||
+                          desktopHelperAgentKey
+                        }`}
+                  </span>
+                </label>
+              </div>
+              <div className="desktop-copilot-page-list page-copilot-matrix" aria-label="侧边助手配置">
+                {DESKTOP_COPILOT_PAGE_KEYS.map((pageKey) => {
+                  const preference = desktopCopilotPages[pageKey] ?? {
+                    enabled: true,
+                    agentKey: DEFAULT_DESKTOP_HELPER_AGENT_KEY
+                  };
+                  const pending = desktopCopilotPagePending === pageKey || desktopCopilotPagePending === "all";
+                  const currentAgentAvailable = isKnownAssistantAgent(preference.agentKey);
+                  return (
+                    <div className="desktop-copilot-page-row page-copilot-row" key={pageKey}>
+                      <div className="page-copilot-row-main">
+                        <strong>{DESKTOP_COPILOT_PAGE_LABELS[pageKey]}</strong>
+                        <span>{preference.enabled ? `使用 ${getAgentLabel(preference.agentKey)}` : "不显示侧边助手"}</span>
+                        {!currentAgentAvailable && preference.enabled ? (
+                          <em>当前智能体不可用，请重新选择。</em>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className={preference.enabled ? "settings-switch is-on" : "settings-switch"}
+                        role="switch"
+                        aria-checked={preference.enabled}
+                        aria-label={`${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 页面助手`}
+                        disabled={pending}
+                        onClick={() => void handleToggleCopilotPage(pageKey)}
+                      >
+                        <span aria-hidden="true" />
+                      </button>
+                      <label className="desktop-pet-agent-field">
+                        <span className="desktop-pet-agent-select-wrap">
                           <select
-                            className="custom-sidebar-agent-select"
-                            value={itemAgentKey}
-                            onChange={(event) => void handleUpdateCustomSidebarAgent(item.id, event.target.value)}
-                            disabled={assistantAgentOptions.length === 0 || itemAgentPending}
-                            aria-label={`${item.label} 关联智能体`}
+                            value={currentAgentAvailable ? preference.agentKey : ""}
+                            onChange={(event) => void handleSelectCopilotAgent(pageKey, event.target.value)}
+                            disabled={!preference.enabled || assistantAgentOptions.length === 0 || pending}
+                            aria-label={`${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 侧边助手智能体`}
                           >
-                            <option value="">默认助手</option>
-                            {itemAgentKey && !itemAgentKnown ? (
-                              <option value={itemAgentKey}>不可用：{itemAgentKey}</option>
-                            ) : null}
+                            <option value="">
+                              {assistantAgentOptions.length === 0
+                                ? "正在读取智能体列表..."
+                                : currentAgentAvailable ? "请选择智能体" : `不可用：${preference.agentKey}`}
+                            </option>
                             {assistantAgentOptions.map((agent) => (
                               <option value={agent.agentKey} key={agent.agentKey}>
                                 {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
                               </option>
                             ))}
                           </select>
-                        </div>
-                      </div>
+                        </span>
+                      </label>
                     </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      case "desktopPet":
+        return desktopPetSupported ? (
+          <div className="data-root-card settings-switch-card desktop-pet-settings-card">
+            <div>
+              <p className="eyebrow">DESKTOP PET</p>
+              <h2>宠物助手</h2>
+              <p className="page-copy">
+                宠物只服务侧边助手，会在等待回答、完成或出错时做轻提醒。右键宠物可直接关闭。
+              </p>
+              <p className="settings-inline-note">
+                当前状态：{desktopPetState?.enabled ? "已开启" : "已关闭"}
+                {desktopPetState?.enabled && desktopPetState.visible ? " / 已显示" : ""}
+              </p>
+              <div className="desktop-pet-appearance-section" aria-label="宠物形象">
+                <div className="desktop-pet-appearance-heading">
+                  <span>宠物形象</span>
+                  <small>当前：{desktopPetAppearanceOptions.find((appearance) => appearance.id === currentDesktopPetAppearanceId)?.displayName ?? "小宅"}</small>
+                </div>
+                <div className="desktop-pet-appearance-grid">
+                  {desktopPetAppearanceOptions.map((appearance) => {
+                    const selected = appearance.id === currentDesktopPetAppearanceId;
+                    const pending = desktopPetAppearancePending === appearance.id;
+                    return (
+                      <button
+                        type="button"
+                        className={selected ? "desktop-pet-appearance-card is-selected" : "desktop-pet-appearance-card"}
+                        key={appearance.id}
+                        aria-pressed={selected}
+                        disabled={Boolean(desktopPetAppearancePending) && !selected}
+                        onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
+                      >
+                        <span className="desktop-pet-appearance-preview" aria-hidden="true">
+                          <img src={appearance.previewAssetPath} alt="" />
+                        </span>
+                        <span className="desktop-pet-appearance-copy">
+                          <strong>{appearance.displayName}</strong>
+                          <small>{pending ? "切换中..." : appearance.description}</small>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="desktop-pet-agent-form">
+                <label className="desktop-pet-agent-field">
+                  <span>选择智能体</span>
+                  <span className="desktop-pet-agent-select-wrap">
+                    <select
+                      value={desktopPetAgentOptions.some((agent) => agent.agentKey === desktopPetBoundAgentKey) ? desktopPetBoundAgentKey : ""}
+                      onChange={(event) => {
+                        const nextBoundAgentKey = event.target.value;
+                        setDesktopPetBoundAgentKey(nextBoundAgentKey);
+                        void handleSelectDesktopPetBoundAgentKey(nextBoundAgentKey);
+                      }}
+                      disabled={!desktopPetEnabled || desktopPetAgentOptions.length === 0 || desktopPetBoundAgentPending}
+                    >
+                      <option value="">
+                        {!desktopPetEnabled
+                          ? "开启后读取智能体列表"
+                          : desktopPetAgentOptions.length === 0
+                            ? "正在读取智能体列表..."
+                            : "请选择智能体"}
+                      </option>
+                      {desktopPetAgentOptions.map((agent) => (
+                        <option value={agent.agentKey} key={agent.agentKey}>
+                          {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                  <span className="desktop-pet-agent-note">
+                    {desktopPetBoundAgentPending
+                      ? "绑定中..."
+                      : `当前绑定：${
+                          currentDesktopPetAgentOption?.displayName
+                            ? `${currentDesktopPetAgentOption.displayName}${currentDesktopPetAgentOption.role ? ` · ${currentDesktopPetAgentOption.role}` : ""}`
+                            : currentDesktopPetBoundAgentKey
+                        }`}
+                  </span>
+                </label>
+              </div>
+            </div>
+            <button
+              type="button"
+              className={desktopPetState?.enabled ? "settings-switch is-on" : "settings-switch"}
+              role="switch"
+              aria-checked={Boolean(desktopPetState?.enabled)}
+              aria-label="桌面宠物"
+              disabled={desktopPetPending}
+              onClick={() => void handleToggleDesktopPet()}
+            >
+              <span aria-hidden="true" />
+            </button>
+          </div>
+        ) : null;
+      case "embeddedWebsites":
+        return (
+          <div className="data-root-card custom-sidebar-card">
+            <div className="custom-sidebar-copy">
+              <p className="eyebrow">SIDEBAR</p>
+              <h2>内嵌网站</h2>
+              <p className="page-copy">
+                将常用网页作为内嵌网站固定至导航栏便捷访问。内嵌网站仅保存在本地，支持导入导出，系统入口不可修改。
+              </p>
+            </div>
+            <div className="custom-sidebar-panel">
+              <form className="custom-sidebar-form" onSubmit={(event) => void handleAddCustomSidebarItem(event)}>
+                <label>
+                  <span>显示名称</span>
+                  <input
+                    value={customSidebarLabel}
+                    onChange={(event) => setCustomSidebarLabel(event.target.value)}
+                    placeholder="例如：官网、知识库"
+                    maxLength={24}
+                  />
+                </label>
+                <label>
+                  <span>网页地址</span>
+                  <input
+                    value={customSidebarUrl}
+                    onChange={(event) => setCustomSidebarUrl(event.target.value)}
+                    placeholder="支持输入完整链接或域名，例如 jira.example.com"
+                    required
+                  />
+                </label>
+                <div className="custom-sidebar-submit-wrap">
+                  <button type="submit" className="text-button custom-sidebar-submit" disabled={customSidebarPending}>
+                    {customSidebarPending ? "添加中..." : "添加内嵌网站"}
+                  </button>
+                </div>
+              </form>
+
+              <div className="custom-sidebar-list-head">
+                <strong>已添加的内嵌网站</strong>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => void handleImportCustomSidebarItems()}
+                    disabled={customSidebarTransferPending !== ""}
+                  >
+                    {customSidebarTransferPending === "import" ? "导入中..." : "导入"}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => void handleExportCustomSidebarItems()}
+                    disabled={customSidebarTransferPending !== ""}
+                  >
+                    {customSidebarTransferPending === "export" ? "导出中..." : "导出"}
+                  </button>
+                  <button type="button" className="text-button" onClick={() => void handleReloadCustomSidebarItems()}>
+                    刷新
+                  </button>
+                </div>
+              </div>
+              {customSidebarItems.length === 0 ? (
+                <div className="custom-sidebar-empty">还没有添加内嵌网站，添加后会显示在系统入口下方。</div>
+              ) : (
+                <div className="custom-sidebar-list">
+                  {customSidebarItems.map((item) => {
+                    const itemAgentKey = item.agentKey || "";
+                    const itemAgentKnown = !itemAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === itemAgentKey);
+                    const itemAgentPending = customSidebarAgentPendingId === item.id;
+                    return (
+                      <div className="custom-sidebar-row" key={item.id}>
+                        <div className="custom-sidebar-row-main">
+                          <span className="custom-sidebar-row-icon" aria-hidden="true">
+                            <CustomSidebarIcon iconId={item.iconId} />
+                          </span>
+                          <div className="custom-sidebar-row-copy">
+                            <strong>{item.label}</strong>
+                            <span>{item.url}</span>
+                            <div className="custom-sidebar-row-agent">
+                              <span className="custom-sidebar-row-agent-label">智能体增强</span>
+                              <select
+                                className="custom-sidebar-agent-select"
+                                value={itemAgentKey}
+                                onChange={(event) => void handleUpdateCustomSidebarAgent(item.id, event.target.value)}
+                                disabled={assistantAgentOptions.length === 0 || itemAgentPending}
+                                aria-label={`${item.label} 关联智能体`}
+                              >
+                                <option value="">默认助手</option>
+                                {itemAgentKey && !itemAgentKnown ? (
+                                  <option value={itemAgentKey}>不可用：{itemAgentKey}</option>
+                                ) : null}
+                                {assistantAgentOptions.map((agent) => (
+                                  <option value={agent.agentKey} key={agent.agentKey}>
+                                    {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="danger-text-button"
+                          onClick={() => void handleDeleteCustomSidebarItem(item)}
+                          disabled={deletingCustomSidebarId === item.id}
+                        >
+                          {deletingCustomSidebarId === item.id ? "删除中..." : "删除"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      case "dataRoot":
+        return isWindows ? <WindowsDataRootCard onError={setFeedback} /> : null;
+      case "memory":
+        return (
+          <div className="data-root-card assistant-memory-card">
+            <div className="custom-sidebar-copy assistant-memory-copy">
+              <p className="eyebrow">MEMORY</p>
+              <h2>助手记忆</h2>
+              <p className="page-copy">
+                侧边助手会在本机静默学习长期偏好和可复用结论，并在后续回答中按需引用。
+              </p>
+              <div className="assistant-memory-stats" aria-label="记忆统计">
+                <div>
+                  <strong>{memoryTotal}</strong>
+                  <span>全部</span>
+                </div>
+                <div>
+                  <strong>{memoryFactCount}</strong>
+                  <span>稳定</span>
+                </div>
+                <div>
+                  <strong>{memoryObservationCount}</strong>
+                  <span>观察</span>
+                </div>
+              </div>
+              <div className="assistant-memory-timeline" aria-label="记忆时间">
+                <span>学习 {formatMemoryTime(memoryStats?.lastLearnedAt)}</span>
+                <span>引用 {formatMemoryTime(memoryStats?.lastReferencedAt)}</span>
+              </div>
+              <p className="assistant-memory-audit">最近记录：{formatMemoryAuditSummary(memoryRecentAudit)}</p>
+            </div>
+            <div className="assistant-memory-panel">
+              <div className="assistant-memory-switches">
+                <div className="assistant-memory-switch-row">
+                  <span className="assistant-memory-switch-copy">
+                    <span>记忆召回</span>
+                    <small>{memoryRecallLabel}</small>
+                  </span>
+                  <button
+                    type="button"
+                    className={memorySettings?.enabled ? "settings-switch is-on" : "settings-switch"}
+                    role="switch"
+                    aria-checked={Boolean(memorySettings?.enabled)}
+                    aria-label="记忆召回"
+                    disabled={!memorySettings || memoryPending === "settings"}
+                    onClick={() => void handleToggleMemoryEnabled()}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="assistant-memory-switch-row">
+                  <span className="assistant-memory-switch-copy">
+                    <span>自动学习</span>
+                    <small>{memoryAutoLearnLabel}</small>
+                  </span>
+                  <button
+                    type="button"
+                    className={memorySettings?.autoLearn ? "settings-switch is-on" : "settings-switch"}
+                    role="switch"
+                    aria-checked={Boolean(memorySettings?.autoLearn)}
+                    aria-label="自动学习"
+                    disabled={!memorySettings || memoryPending === "settings"}
+                    onClick={() => void handleToggleMemoryAutoLearn()}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+              <div className="custom-sidebar-list-head assistant-memory-section-head">
+                <strong>最近记忆</strong>
+                <span>{memoryItems.length > 0 ? `最近 ${recentMemoryItems.length} / ${memoryItems.length}` : "暂无"}</span>
+              </div>
+              {recentMemoryItems.length > 0 ? (
+                <div className="assistant-memory-list">
+                  {recentMemoryItems.map((item) => (
+                    <div className="assistant-memory-row" key={item.id}>
+                      <div className="assistant-memory-row-main">
+                        <div className="assistant-memory-row-title">
+                          <strong>{item.title}</strong>
+                          <span>{item.category} / {formatMemoryStatus(item.status)}</span>
+                        </div>
+                        <p>{formatMemoryPreview(item.summary, 64)}</p>
+                      </div>
+                      <time dateTime={item.updatedAt}>{formatMemoryTime(item.updatedAt)}</time>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="settings-inline-note">最近记忆会在这里显示。</p>
+              )}
+              <div className="assistant-memory-storage-card">
+                <div className="assistant-memory-storage-header">
+                  <div>
+                    <strong>本地存储</strong>
+                    <span>路径和审计日志默认收起，需要时再查看。</span>
+                  </div>
+                  <span className="assistant-memory-storage-actions">
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => void handleOpenMemoryDirectory()}
+                      disabled={memoryPending === "open"}
+                    >
+                      {memoryPending === "open" ? "打开中..." : "打开目录"}
+                    </button>
                     <button
                       type="button"
                       className="danger-text-button"
-                      onClick={() => void handleDeleteCustomSidebarItem(item)}
-                      disabled={deletingCustomSidebarId === item.id}
+                      onClick={() => void handleClearMemoryItems()}
+                      disabled={memoryTotal === 0 || memoryPending === "clear"}
                     >
-                      {deletingCustomSidebarId === item.id ? "删除中..." : "删除"}
+                      {memoryPending === "clear" ? "清空中..." : "清空"}
                     </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {isWindows ? <WindowsDataRootCard onError={setFeedback} /> : null}
-
-      <div className="data-root-card assistant-memory-card">
-        <div className="custom-sidebar-copy assistant-memory-copy">
-          <p className="eyebrow">MEMORY</p>
-          <h2>助手记忆</h2>
-          <p className="page-copy">
-            侧边助手会在本机静默学习长期偏好和可复用结论，并在后续回答中按需引用。
-          </p>
-          <div className="assistant-memory-stats" aria-label="记忆统计">
-            <div>
-              <strong>{memoryTotal}</strong>
-              <span>全部</span>
-            </div>
-            <div>
-              <strong>{memoryFactCount}</strong>
-              <span>稳定</span>
-            </div>
-            <div>
-              <strong>{memoryObservationCount}</strong>
-              <span>观察</span>
-            </div>
-          </div>
-          <div className="assistant-memory-timeline" aria-label="记忆时间">
-            <span>学习 {formatMemoryTime(memoryStats?.lastLearnedAt)}</span>
-            <span>引用 {formatMemoryTime(memoryStats?.lastReferencedAt)}</span>
-          </div>
-          <p className="assistant-memory-audit">最近记录：{formatMemoryAuditSummary(memoryRecentAudit)}</p>
-        </div>
-        <div className="assistant-memory-panel">
-          <div className="assistant-memory-switches">
-            <div className="assistant-memory-switch-row">
-              <span className="assistant-memory-switch-copy">
-                <span>记忆召回</span>
-                <small>{memoryRecallLabel}</small>
-              </span>
-              <button
-                type="button"
-                className={memorySettings?.enabled ? "settings-switch is-on" : "settings-switch"}
-                role="switch"
-                aria-checked={Boolean(memorySettings?.enabled)}
-                aria-label="记忆召回"
-                disabled={!memorySettings || memoryPending === "settings"}
-                onClick={() => void handleToggleMemoryEnabled()}
-              >
-                <span aria-hidden="true" />
-              </button>
-            </div>
-            <div className="assistant-memory-switch-row">
-              <span className="assistant-memory-switch-copy">
-                <span>自动学习</span>
-                <small>{memoryAutoLearnLabel}</small>
-              </span>
-              <button
-                type="button"
-                className={memorySettings?.autoLearn ? "settings-switch is-on" : "settings-switch"}
-                role="switch"
-                aria-checked={Boolean(memorySettings?.autoLearn)}
-                aria-label="自动学习"
-                disabled={!memorySettings || memoryPending === "settings"}
-                onClick={() => void handleToggleMemoryAutoLearn()}
-              >
-                <span aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-          <div className="custom-sidebar-list-head assistant-memory-section-head">
-            <strong>最近记忆</strong>
-            <span>{memoryItems.length > 0 ? `最近 ${recentMemoryItems.length} / ${memoryItems.length}` : "暂无"}</span>
-          </div>
-          {recentMemoryItems.length > 0 ? (
-            <div className="assistant-memory-list">
-              {recentMemoryItems.map((item) => (
-                <div className="assistant-memory-row" key={item.id}>
-                  <div className="assistant-memory-row-main">
-                    <div className="assistant-memory-row-title">
-                      <strong>{item.title}</strong>
-                      <span>{item.category} / {formatMemoryStatus(item.status)}</span>
+                  </span>
+                </div>
+                <details className="assistant-memory-storage-details">
+                  <summary>
+                    <span>查看本地文件路径</span>
+                    <span className="assistant-memory-storage-caret" aria-hidden="true" />
+                  </summary>
+                  <div className="assistant-memory-storage">
+                    <div>
+                      <span>记忆目录</span>
+                      <code>{memoryStorage?.directoryPath ?? "正在读取..."}</code>
                     </div>
-                    <p>{formatMemoryPreview(item.summary, 64)}</p>
+                    <div>
+                      <span>结构化记忆</span>
+                      <code>{memoryStorage?.recordsPath ?? "正在读取..."}</code>
+                    </div>
+                    <div>
+                      <span>静态长期记忆</span>
+                      <code>{memoryStorage?.staticPath ?? "正在读取..."}</code>
+                    </div>
+                    <div>
+                      <span>审计日志</span>
+                      <code>{memoryStorage?.auditPath ?? "正在读取..."}</code>
+                    </div>
                   </div>
-                  <time dateTime={item.updatedAt}>{formatMemoryTime(item.updatedAt)}</time>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="settings-inline-note">最近记忆会在这里显示。</p>
-          )}
-          <div className="assistant-memory-storage-card">
-            <div className="assistant-memory-storage-header">
-              <div>
-                <strong>本地存储</strong>
-                <span>路径和审计日志默认收起，需要时再查看。</span>
+                </details>
               </div>
-              <span className="assistant-memory-storage-actions">
-                <button
-                  type="button"
-                  className="text-button"
-                  onClick={() => void handleOpenMemoryDirectory()}
-                  disabled={memoryPending === "open"}
-                >
-                  {memoryPending === "open" ? "打开中..." : "打开目录"}
-                </button>
-                <button
-                  type="button"
-                  className="danger-text-button"
-                  onClick={() => void handleClearMemoryItems()}
-                  disabled={memoryTotal === 0 || memoryPending === "clear"}
-                >
-                  {memoryPending === "clear" ? "清空中..." : "清空"}
-                </button>
-              </span>
             </div>
-            <details className="assistant-memory-storage-details">
-              <summary>
-                <span>查看本地文件路径</span>
-                <span className="assistant-memory-storage-caret" aria-hidden="true" />
-              </summary>
-              <div className="assistant-memory-storage">
-                <div>
-                  <span>记忆目录</span>
-                  <code>{memoryStorage?.directoryPath ?? "正在读取..."}</code>
-                </div>
-                <div>
-                  <span>结构化记忆</span>
-                  <code>{memoryStorage?.recordsPath ?? "正在读取..."}</code>
-                </div>
-                <div>
-                  <span>静态长期记忆</span>
-                  <code>{memoryStorage?.staticPath ?? "正在读取..."}</code>
-                </div>
-                <div>
-                  <span>审计日志</span>
-                  <code>{memoryStorage?.auditPath ?? "正在读取..."}</code>
-                </div>
-              </div>
-            </details>
           </div>
+        );
+      default:
+        return null;
+    }
+  }
+
+  return (
+    <section className="settings-page" data-settings-section={activeSection}>
+      <div className="settings-mode-toolbar">
+        <button
+          type="button"
+          className="settings-mode-close-button"
+          onClick={onExitSettingsMode}
+          aria-label="退出设置模式"
+          title="返回上一页"
+        >
+          <span aria-hidden="true" />
+        </button>
+      </div>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">SETTINGS</p>
+          <h1>{activeSectionDefinition?.label ?? "设置"}</h1>
+          <p className="page-copy">{activeSectionDefinition?.description ?? "管理当前设置模块。"}</p>
         </div>
       </div>
+
+      {feedback ? <div className="feedback-banner">{feedback}</div> : null}
+      {renderActiveSection()}
     </section>
   );
 }

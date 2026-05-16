@@ -40,6 +40,14 @@ import {
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName, shouldShowServiceNavigationTab } from "./service-display";
 import {
+  buildSettingsSectionPath,
+  createSettingsSectionDefinitions,
+  getVisibleSettingsSections,
+  normalizeSettingsSectionId,
+  readSettingsSectionId,
+  type SettingsSectionId
+} from "./settingsSections";
+import {
   createCustomSidebarNavOrderKey,
   createDefaultSidebarNavOrderItems,
   createExperimentalSidebarNavOrderKey,
@@ -119,6 +127,7 @@ function AppShell() {
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
   const startupNavigationDoneRef = useRef(false);
+  const lastNonSettingsRouteRef = useRef("/control-center");
   const refreshServicesRef = useRef(refreshServices);
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -197,6 +206,25 @@ function AppShell() {
     location.pathname === "/settings";
   const isMac = desktopPlatform === "darwin";
   const isWindows = desktopPlatform === "win32";
+  const isSettingsRoute = location.pathname === "/settings";
+  const currentRoute = `${location.pathname}${location.search}`;
+  const settingsSectionDefinitions = useMemo(
+    () =>
+      createSettingsSectionDefinitions({
+        isWindows,
+        desktopPetSupported: isMac || isWindows
+      }),
+    [isMac, isWindows]
+  );
+  const visibleSettingsSections = useMemo(
+    () => getVisibleSettingsSections(settingsSectionDefinitions),
+    [settingsSectionDefinitions]
+  );
+  const defaultSettingsSectionId = visibleSettingsSections[0]?.id ?? "appearance";
+  const activeSettingsSectionId = useMemo(
+    () => normalizeSettingsSectionId(readSettingsSectionId(location.search), settingsSectionDefinitions),
+    [location.search, settingsSectionDefinitions]
+  );
   const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
     services.find((service) => service.id === serviceId) ?? null
   );
@@ -548,7 +576,7 @@ function AppShell() {
   }
 
   function requestSidebarNavigation(targetPath: string) {
-    if (targetPath === location.pathname) {
+    if (targetPath === currentRoute) {
       return false;
     }
 
@@ -564,6 +592,88 @@ function AppShell() {
   }
 
   const experimentalItemMap = new Map(EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => [item.id, item]));
+  const pendingSettingsSectionId = useMemo(() => {
+    if (!pendingSidebarNavigationPath?.startsWith("/settings")) {
+      return null;
+    }
+
+    const targetSearch = new URL(pendingSidebarNavigationPath, "https://desktop.local").search;
+    return normalizeSettingsSectionId(readSettingsSectionId(targetSearch), settingsSectionDefinitions);
+  }, [pendingSidebarNavigationPath, settingsSectionDefinitions]);
+
+  useEffect(() => {
+    if (!isSettingsRoute) {
+      lastNonSettingsRouteRef.current = currentRoute;
+    }
+  }, [currentRoute, isSettingsRoute]);
+
+  useEffect(() => {
+    if (!isSettingsRoute || !activeSettingsSectionId) {
+      return;
+    }
+
+    const normalizedSettingsPath = buildSettingsSectionPath(activeSettingsSectionId);
+    if (currentRoute !== normalizedSettingsPath) {
+      navigate(normalizedSettingsPath, { replace: true });
+    }
+  }, [activeSettingsSectionId, currentRoute, isSettingsRoute, navigate]);
+
+  function handleSelectSettingsSection(sectionId: SettingsSectionId) {
+    const targetPath = buildSettingsSectionPath(sectionId);
+    if (!requestSidebarNavigation(targetPath)) {
+      return;
+    }
+    navigate(targetPath, { replace: true });
+  }
+
+  function isAvailableLastRoute(targetPath: string) {
+    if (!targetPath) {
+      return false;
+    }
+
+    const { pathname } = new URL(targetPath, "https://desktop.local");
+
+    if (pathname === "/settings") {
+      return false;
+    }
+
+    if (
+      pathname === "/control-center" ||
+      pathname === "/market" ||
+      pathname === "/help" ||
+      pathname === BUILTIN_BROWSER_ROUTE
+    ) {
+      return true;
+    }
+
+    if (AGENT_WEBCLIENT_ROUTE_ITEMS.some((item) => item.routePath === pathname)) {
+      return true;
+    }
+
+    const pluginId = resolvePluginRouteId(pathname);
+    if (pluginId) {
+      return pluginId === "agent-webclient" || services.some((service) =>
+        service.id === pluginId && shouldShowServiceNavigationTab(service)
+      );
+    }
+
+    const customSidebarItemId = resolveCustomSidebarRouteId(pathname);
+    if (customSidebarItemId) {
+      return customSidebarItemMap.has(customSidebarItemId);
+    }
+
+    const externalItemId = matchPath("/external/:itemId", pathname)?.params.itemId;
+    if (externalItemId) {
+      return experimentalItemMap.has(externalItemId);
+    }
+
+    return false;
+  }
+
+  function exitSettingsMode() {
+    const previousRoute = lastNonSettingsRouteRef.current;
+    navigate(isAvailableLastRoute(previousRoute) ? previousRoute : "/control-center", { replace: true });
+  }
 
   useEffect(() => {
     function normalizeSurfaceTarget(value: unknown) {
@@ -845,6 +955,7 @@ function AppShell() {
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
+        isSettingsRoute ? "is-settings-route" : "",
         "has-translucent-sidebar",
         isMac ? "is-mac-translucent-sidebar" : "",
         sidebarState.collapsed ? "is-sidebar-collapsed" : "is-sidebar-expanded"
@@ -860,16 +971,21 @@ function AppShell() {
         <div className="app-sidebar-drag-region" aria-hidden="true" />
         <AppSidebar
           isCollapsed={sidebarState.collapsed}
-          currentPath={location.pathname}
+          currentPathname={location.pathname}
           pendingPath={pendingSidebarNavigationPath}
           assistantDockOpen={assistantCopilotOpen}
           assistantLauncherDisabled={isAgentWebclientMainRoute}
           assistantLauncherVisible={assistantLauncherVisible}
+          isSettingsMode={isSettingsRoute}
+          settingsSections={visibleSettingsSections}
+          activeSettingsSectionId={activeSettingsSectionId}
+          pendingSettingsSectionId={pendingSettingsSectionId}
           sidebarNavOrder={normalizedSidebarNavOrder}
           customSidebarItems={customSidebarItems}
           onOpenAssistantDock={() => openAssistantDock()}
           onCloseAssistantDock={() => setAssistantDockOpen(false)}
           onRequestNavigate={requestSidebarNavigation}
+          onSelectSettingsSection={handleSelectSettingsSection}
           onNavigateItem={undefined}
           onToggleCollapsed={toggleSidebarCollapsed}
         />
@@ -903,8 +1019,11 @@ function AppShell() {
               path="/settings"
               element={
                 <SettingsPage
+                  activeSection={activeSettingsSectionId ?? defaultSettingsSectionId}
+                  sectionDefinitions={visibleSettingsSections}
                   themeMode={themeMode}
                   onToggleTheme={toggleTheme}
+                  onExitSettingsMode={exitSettingsMode}
                   isMac={isMac}
                   isWindows={isWindows}
                   sidebarNavOrder={normalizedSidebarNavOrder}
