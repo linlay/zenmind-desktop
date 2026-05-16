@@ -1,22 +1,17 @@
 import type { App } from "electron";
 import type { AgentAuthIssueResult, AgentAuthRefreshReason } from "../shared/contracts";
-import {
-  createDesktopAccessToken,
-  ensureKeyPairForPan,
-  readPanPrivateKey
-} from "./pan-auth";
+import { issueAppServerAccessToken } from "./app-server-auth";
 
 export async function issueAgentAccessToken(
   app: App,
   _reason: AgentAuthRefreshReason
 ): Promise<AgentAuthIssueResult> {
   try {
-    ensureKeyPairForPan(app);
-    const token = createDesktopAccessToken(readPanPrivateKey(app));
+    const token = await issueAppServerAccessToken(app);
     return {
       ok: true,
       token,
-      message: "已签发 Desktop AGENT access token。"
+      message: "已由 zenmind-app-server 签发 Desktop AGENT access token。"
     };
   } catch (reason) {
     return {

@@ -26,7 +26,7 @@ import type { ServiceDefinition } from "./manifest-utils";
 import { getBuiltinAssetsRoot } from "./builtin-loader";
 import { getAllServices, getService } from "./service-registry";
 import { getPluginInstallDir } from "./plugin-loader";
-import { ensureKeyPairForPan } from "./pan-auth";
+import { ensureAppServerJwk } from "./app-server-auth";
 import { readEnvFile, parseEnvFileContent } from "./env-file";
 import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
 import {
@@ -1912,17 +1912,6 @@ async function ensureInitializationRequirements(app: App, service: ServiceDefini
   }
 }
 
-function ensureLocalAuthPublicKey(app: App, layout: ServiceLayout) {
-  const publicKeyPath = resolveConfigPath(layout, path.join("configs", "local-public-key.pem"));
-  if (fs.existsSync(publicKeyPath)) {
-    return;
-  }
-
-  const { publicKeyPem } = ensureKeyPairForPan(app);
-  ensureDir(path.dirname(publicKeyPath));
-  fs.writeFileSync(publicKeyPath, publicKeyPem, "utf8");
-}
-
 async function ensureMutableInstallDir(app: App, service: ServiceDefinition) {
   const installDir = getInstallDir(app, service);
   if (fs.existsSync(installDir)) {
@@ -3651,6 +3640,42 @@ async function ensureAgentPlatformContainerHubDependency(app: App, layout: Servi
   );
 }
 
+async function ensureAgentPlatformAppServerPublicKey(app: App, layout: ServiceLayout) {
+  const envPath = layout.envPath;
+  const env = readEnvFile(envPath);
+  const publicKeyEnvValue = env.get("AUTH_LOCAL_PUBLIC_KEY_FILE")?.trim() ?? "";
+  const usesCustomPublicKey = publicKeyEnvValue
+    ? !isManagedAgentPlatformAuthLocalPublicKeyPath(publicKeyEnvValue, layout)
+    : false;
+  const updates = new Map<string, string>();
+
+  if (env.get("AUTH_ENABLED")?.trim() !== "true") {
+    updates.set("AUTH_ENABLED", "true");
+  }
+
+  if (usesCustomPublicKey) {
+    if (updates.size > 0) {
+      writeEnvFileUpdates(envPath, updates);
+    }
+    return;
+  }
+
+  const appServerService = getService("zenmind-app-server");
+  await ensureMutableInstallDir(app, appServerService);
+  const { publicKeyPem } = await ensureAppServerJwk(app);
+  const targetPath = resolveConfigPath(layout, AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE);
+
+  ensureDir(path.dirname(targetPath));
+  const currentPublicKey = fs.existsSync(targetPath) ? fs.readFileSync(targetPath, "utf8") : "";
+  if (currentPublicKey !== publicKeyPem) {
+    fs.writeFileSync(targetPath, publicKeyPem, "utf8");
+  }
+
+  if (updates.size > 0) {
+    writeEnvFileUpdates(envPath, updates);
+  }
+}
+
 async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefinition, layout: ServiceLayout) {
   const envPath = layout.envPath;
   const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
@@ -3742,6 +3767,14 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   if (updates.size > 0) {
     writeEnvFileUpdates(envPath, updates);
     prepareServiceExecutionLayout(service, layout);
+  }
+
+  if (service.id === "zenmind-app-server") {
+    await ensureAppServerJwk(app);
+  }
+
+  if (service.id === "agent-platform") {
+    await ensureAgentPlatformAppServerPublicKey(app, layout);
   }
 }
 

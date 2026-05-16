@@ -104,8 +104,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `builtin-loader` 负责从内置 tar.gz 资源包提取 `manifest.json` 并注册 builtin 服务。
 - `service-registry` 维护统一的动态服务注册表，通过 `getAllServices()` 统一返回。
 - `env-file` 提供 `.env` 文件的解析和读取工具函数。
-- `pan-auth` 负责 Desktop App 私钥导入、RSA 密钥对管理和 JWT 签发。
-- `agent-auth` 负责签发 Desktop AGENT access token，复用 `pan-auth` 的密钥对。
+- `pan-auth` 负责 pan-webclient 使用的 Desktop App 私钥导入、RSA 密钥对管理和 JWT 签发。
+- `app-server-auth` 负责调用 `zenmind-app-server` 的本地脚本导出 JWK public key 并签发 agent-platform access token。
+- `agent-auth` 负责 Desktop AGENT access token 桥接，token 由 `zenmind-app-server` 颁发。
 - `auth-bridge`（shared）定义特定插件的 postMessage 认证桥接协议，当前覆盖 `agent-webclient` 和 `pan-webclient`。
 - 渲染层 iframe 直接访问各服务自身监听端口，不再经过桌面端中转。需要认证的插件通过 postMessage Token Bridge 获取 Desktop 签发的 JWT。
 
@@ -119,7 +120,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   - `plugin-loader.ts`：插件扫描、安装（从 tar.gz）、卸载。
   - `plugin-uninstall.ts`：插件卸载确认对话框与流程编排。
   - `pan-auth.ts`：Pan 网盘私钥导入、RSA 密钥对生成与 JWT 签发。
-  - `agent-auth.ts`：Desktop AGENT access token 签发，复用 pan-auth 密钥对。
+  - `app-server-auth.ts`：调用 zenmind-app-server 脚本导出 JWK public key、签发 app access token。
+  - `agent-auth.ts`：Desktop AGENT access token 桥接，委托 zenmind-app-server 签发。
   - `env-file.ts`：`.env` 文件解析与读取。
 - `src/preload`：桌面 API 暴露层，包含 `services`、`plugins`、`panAuth`、`agentAuth` 四个命名空间。
 - `src/renderer`
@@ -181,7 +183,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `panAuth.getStatus`：读取私钥配置状态。
 
 ### agentAuth 命名空间
-- `agentAuth.issueAccessToken`：签发 Desktop AGENT access token，接受 `reason` 参数（`"missing"` 或 `"unauthorized"`）。自动确保 RSA 密钥对存在后签发 JWT。
+- `agentAuth.issueAccessToken`：请求 `zenmind-app-server` 签发 Desktop AGENT access token，接受 `reason` 参数（`"missing"` 或 `"unauthorized"`）。
 
 ## 7. 插件系统
 ### 插件包结构
@@ -239,7 +241,7 @@ my-plugin/
 - `agent-container-hub` 依赖本机可用的 Docker 或 Podman。
 - `pan-webclient` 仍通过插件系统导入；Desktop 不再打包任何内置插件，缺失插件时优先检查导入产物。
 - Desktop 配置与运行数据根目录为 `~/.zenmind/.desktop`，按 `config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；可替换程序产物位于 macOS `~/Library/Application Support/ZenMind` 或 Windows `%APPDATA%\ZenMind`。
-- RSA 密钥对由 Desktop 统一管理，存储在 `secrets/` 下，同时用于 pan-webclient 和 agent-platform 的认证。
+- pan-webclient 的 RSA 私钥由 Desktop 管理并存储在 `secrets/` 下；agent-platform 只信任 `zenmind-app-server` 的 JWK public key，access token 也由 app-server 颁发。
 
 
 ## 11. AI 行为红线

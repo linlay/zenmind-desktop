@@ -114,7 +114,7 @@ function createCurrentPlatformAssetsFixture() {
   fs.mkdirSync(containerHubAssetDir, { recursive: true });
   execFileSync("tar", ["-czf", containerHubArchivePath, "-C", tempRoot, "agent-container-hub"]);
 
-  for (const serviceId of ["agent-platform", "agent-webclient"]) {
+  for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
     const archivePath = findCurrentPlatformReleaseArchive(serviceId);
     assert.ok(archivePath, `missing ${currentManifestOs()} release archive for ${serviceId}`);
 
@@ -400,6 +400,49 @@ function createStartupCoreAssetsFixture(options = {}) {
         ].join("\n") + "\n",
         "utf8"
       );
+      if (isWindows) {
+        fs.writeFileSync(
+          path.join(bundleRoot, "scripts", "setup-public-key.ps1"),
+          [
+            "param([string]$mode, [string]$db, [string]$out, [string]$publicOut)",
+            "New-Item -ItemType Directory -Path (Split-Path -Parent $publicOut) -Force | Out-Null",
+            "Set-Content -LiteralPath $publicOut -Value 'APP_SERVER_PUBLIC_KEY'"
+          ].join("\r\n"),
+          "utf8"
+        );
+        fs.writeFileSync(
+          path.join(bundleRoot, "scripts", "issue-bridge-access-token.ps1"),
+          "Write-Output 'fixture-token'\r\n",
+          "utf8"
+        );
+      } else {
+        fs.writeFileSync(
+          path.join(bundleRoot, "scripts", "setup-public-key.sh"),
+          [
+            "#!/usr/bin/env bash",
+            "set -euo pipefail",
+            "public_out=''",
+            "while [ $# -gt 0 ]; do",
+            "  case \"$1\" in",
+            "    --public-out) public_out=\"$2\"; shift 2 ;;",
+            "    *) shift ;;",
+            "  esac",
+            "done",
+            "mkdir -p \"$(dirname \"$public_out\")\"",
+            "printf 'APP_SERVER_PUBLIC_KEY\\n' > \"$public_out\""
+          ].join("\n") + "\n",
+          "utf8"
+        );
+        fs.writeFileSync(
+          path.join(bundleRoot, "scripts", "issue-bridge-access-token.sh"),
+          [
+            "#!/usr/bin/env bash",
+            "set -euo pipefail",
+            "printf '%s\\n' 'fixture-token'"
+          ].join("\n") + "\n",
+          "utf8"
+        );
+      }
     }
 
     const pidRelativePath = path.join("run", `${service.id}.pid`);
@@ -491,6 +534,10 @@ function createStartupCoreAssetsFixture(options = {}) {
       fs.chmodSync(path.join(bundleRoot, startFileName), 0o755);
       fs.chmodSync(path.join(bundleRoot, stopFileName), 0o755);
       fs.chmodSync(path.join(bundleRoot, "scripts", programCommonName), 0o755);
+      if (service.id === "zenmind-app-server") {
+        fs.chmodSync(path.join(bundleRoot, "scripts", "setup-public-key.sh"), 0o755);
+        fs.chmodSync(path.join(bundleRoot, "scripts", "issue-bridge-access-token.sh"), 0o755);
+      }
     }
 
     fs.writeFileSync(path.join(bundleRoot, ".env.example"), service.envExample, "utf8");
@@ -533,7 +580,11 @@ function createStartupCoreAssetsFixture(options = {}) {
             "manifest.json",
             ...(service.id === "agent-platform" ? ["configs", "runtime"] : []),
             ...(service.id === "agent-webclient" ? [path.join("backend", "server.cjs"), path.join("frontend", "dist", "index.html")] : []),
-            ...(service.id === "zenmind-app-server" ? [path.join("frontend", "dist", "index.html")] : [])
+            ...(service.id === "zenmind-app-server" ? [
+              path.join("frontend", "dist", "index.html"),
+              path.join("scripts", isWindows ? "setup-public-key.ps1" : "setup-public-key.sh"),
+              path.join("scripts", isWindows ? "issue-bridge-access-token.ps1" : "issue-bridge-access-token.sh")
+            ] : [])
           ]
         },
         web: service.web,
@@ -2863,6 +2914,36 @@ test("ensurePreStartRequirements preserves custom agent platform auth public key
   } finally {
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("ensurePreStartRequirements syncs agent-platform public key from zenmind-app-server", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const homeRoot = path.join(fixture.tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformConfigDir = getTestConfigDir(userDataRoot, platformService.id);
+  const platformPublicKeyPath = path.join(platformConfigDir, "configs", "local-public-key.pem");
+  const appServerPublicKeyPath = path.join(getTestDataDir(userDataRoot, "zenmind-app-server"), "keys", "publicKey.pem");
+
+  try {
+    await installBuiltinService(app, "zenmind-app-server");
+    await installBuiltinService(app, "agent-platform");
+    fs.mkdirSync(path.dirname(platformPublicKeyPath), { recursive: true });
+    fs.writeFileSync(platformPublicKeyPath, "STALE_PUBLIC_KEY\n", "utf8");
+
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+
+    assert.equal(fs.readFileSync(appServerPublicKeyPath, "utf8"), "APP_SERVER_PUBLIC_KEY\n");
+    assert.equal(fs.readFileSync(platformPublicKeyPath, "utf8"), "APP_SERVER_PUBLIC_KEY\n");
+    assert.match(fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8"), /^AUTH_ENABLED=true$/m);
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   }
 });
 
