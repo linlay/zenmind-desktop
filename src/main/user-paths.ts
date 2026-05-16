@@ -5,7 +5,6 @@ import type { App } from "electron";
 import type { ServiceId, ServiceKind } from "../shared/contracts";
 
 const DESKTOP_DIRS = [
-  "programs",
   "config",
   "data",
   "state",
@@ -20,6 +19,11 @@ type DesktopRootOptions = {
   homePath: string;
 };
 
+type ApplicationSupportRootOptions = {
+  platform?: NodeJS.Platform;
+  appDataPath: string;
+};
+
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
   return platform === "win32" ? path.win32 : path;
 }
@@ -30,6 +34,20 @@ function resolveDesktopRootFromHome({
 }: DesktopRootOptions) {
   const pathApi = pathApiForPlatform(platform);
   return pathApi.resolve(pathApi.join(homePath, ".zenmind", ".desktop"));
+}
+
+function resolveApplicationSupportRoot({
+  platform = process.platform,
+  appDataPath
+}: ApplicationSupportRootOptions) {
+  const pathApi = pathApiForPlatform(platform);
+  if (platform === "win32") {
+    return pathApi.resolve(pathApi.join(appDataPath, "ZenMind"));
+  }
+  if (platform === "darwin") {
+    return pathApi.resolve(pathApi.join(appDataPath, "ZenMind"));
+  }
+  return pathApi.resolve(pathApi.join(appDataPath, "ZenMind"));
 }
 
 function tryGetAppPath(app: Pick<App, "getPath">, name: Parameters<App["getPath"]>[0]) {
@@ -43,6 +61,21 @@ function tryGetAppPath(app: Pick<App, "getPath">, name: Parameters<App["getPath"
 
 function getHomePath(app: Pick<App, "getPath">) {
   return tryGetAppPath(app, "home") || process.env.HOME || os.homedir();
+}
+
+function getAppDataPath(app: Pick<App, "getPath">) {
+  const appDataPath = tryGetAppPath(app, "appData");
+  if (appDataPath) {
+    return appDataPath;
+  }
+  const homePath = getHomePath(app);
+  if (process.platform === "win32") {
+    return path.join(homePath, "AppData", "Roaming");
+  }
+  if (process.platform === "darwin") {
+    return path.join(homePath, "Library", "Application Support");
+  }
+  return path.join(homePath, ".config");
 }
 
 function getDesktopRootPath(app: Pick<App, "getPath">) {
@@ -61,8 +94,6 @@ function ensureDesktopDirs(dataRoot: string) {
   for (const dirName of DESKTOP_DIRS) {
     ensureDirectory(path.join(dataRoot, dirName));
   }
-  ensureDirectory(path.join(dataRoot, "programs", "services"));
-  ensureDirectory(path.join(dataRoot, "programs", "plugins"));
   ensureDirectory(path.join(dataRoot, "config", "desktop"));
   ensureDirectory(path.join(dataRoot, "config", "services"));
   ensureDirectory(path.join(dataRoot, "config", "plugins"));
@@ -95,15 +126,17 @@ export function ensureDataRoot(app: App) {
 }
 
 export function getProgramsRoot(app: App) {
-  return path.join(getDataRoot(app), "programs");
+  const programsRoot = getApplicationSupportRoot(app);
+  ensureDirectory(programsRoot);
+  return programsRoot;
 }
 
 export function getServicesRoot(app: App) {
-  return path.join(getDataRoot(app), "programs", "services");
+  return path.join(getProgramsRoot(app), "services");
 }
 
 export function getPluginsRoot(app: App) {
-  return path.join(getDataRoot(app), "programs", "plugins");
+  return path.join(getProgramsRoot(app), "plugins");
 }
 
 export function getConfigRoot(app: App) {
@@ -134,8 +167,18 @@ export function getServiceDataRoot(app: App, serviceId: ServiceId, kind: Service
   return path.join(getDataRoot(app), "data", kindDirectoryName(kind), serviceId);
 }
 
-export function getAssistantDataRoot(app: App) {
-  return path.join(getDataRoot(app), "data", "assistant");
+export function getApplicationSupportRoot(app: App) {
+  const applicationSupportRoot = resolveApplicationSupportRoot({
+    platform: process.platform,
+    appDataPath: getAppDataPath(app)
+  });
+  ensureDirectory(applicationSupportRoot);
+  return applicationSupportRoot;
+}
+
+export function getAssistantTempRoot(app: App) {
+  const tempRoot = tryGetAppPath(app, "temp") || os.tmpdir();
+  return path.join(tempRoot, "zenmind-desktop", "assistant");
 }
 
 export function getStateRoot(app: App) {
@@ -194,5 +237,6 @@ export function getControlledChromeProfileRoot(app: App) {
 
 export const __testInternals = {
   DESKTOP_DIRS,
-  resolveDesktopRootFromHome
+  resolveDesktopRootFromHome,
+  resolveApplicationSupportRoot
 };

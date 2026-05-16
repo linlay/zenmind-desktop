@@ -115,8 +115,8 @@ function getHelpCategories(isWindows: boolean): HelpCategory[] {
               </li>
             </ul>
             <p>
-              该目录按 <code>programs</code>、<code>config</code>、<code>data</code>、<code>state</code>、<code>logs</code>、
-              <code>cache</code>、<code>secrets</code> 和 <code>profiles</code> 分层。
+              该目录按 <code>config</code>、<code>data</code>、<code>state</code>、<code>logs</code>、
+              <code>cache</code>、<code>secrets</code> 和 <code>profiles</code> 分层；服务和插件程序位于系统 Application Support 的 ZenMind 目录。
             </p>
           </>
         ),

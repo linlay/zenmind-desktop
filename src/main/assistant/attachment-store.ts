@@ -14,7 +14,7 @@ import {
   extractDocumentTextFromFile,
   renderPdfPagesForVision
 } from "./document-extract";
-import { getAssistantDataRoot } from "../user-paths";
+import { getAssistantTempRoot } from "../user-paths";
 
 const MAX_ATTACHMENT_FILE_BYTES = 32 * 1024 * 1024;
 const MAX_ATTACHMENT_BATCH_BYTES = 64 * 1024 * 1024;
@@ -34,7 +34,7 @@ type AttachmentWorkerMessage =
   | { type: "error"; message: string };
 
 type AssistantPathApp = Pick<App, "getPath"> & Partial<Pick<App, "isPackaged">> & {
-  assistantDataRoot?: string;
+  assistantTempRoot?: string;
 };
 
 type ActiveAttachmentTask = {
@@ -102,10 +102,10 @@ function normalizeAttachmentChatId(chatId?: string | null) {
 }
 
 function getAssistantRoot(app: AssistantPathApp) {
-  if (app.assistantDataRoot) {
-    return app.assistantDataRoot;
+  if (app.assistantTempRoot) {
+    return app.assistantTempRoot;
   }
-  return getAssistantDataRoot(app as App);
+  return getAssistantTempRoot(app as App);
 }
 
 function getAttachmentChatDir(app: AssistantPathApp, chatId: string) {
@@ -116,7 +116,6 @@ function ensureAttachmentChatDir(app: AssistantPathApp, chatId?: string | null) 
   const normalizedChatId = normalizeAttachmentChatId(chatId);
   const chatDir = getAttachmentChatDir(app, normalizedChatId);
   fs.mkdirSync(path.join(chatDir, "attachments"), { recursive: true });
-  fs.mkdirSync(path.join(chatDir, "workspace"), { recursive: true });
   return {
     id: normalizedChatId,
     dir: chatDir
@@ -520,28 +519,19 @@ function isInsideOrSame(parent: string, candidate: string) {
   return Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
-function assistantRoot(app: App) {
-  return path.resolve(getAssistantDataRoot(app));
-}
-
-function chatWorkspaceRoot(app: App, chatId: string) {
-  return path.resolve(path.join(getAttachmentChatDir(app, chatId), "workspace"));
-}
-
-function resolveArtifactSourcePath(app: App, chatId: string, inputPath: string) {
+function resolveArtifactSourcePath(app: App, _chatId: string, inputPath: string) {
   const trimmed = inputPath.trim();
   if (!trimmed) {
     throw new Error("产物路径不能为空。");
   }
 
   const workspaceMatch = /^[/\\]workspace(?:[/\\](.*))?$/iu.exec(trimmed);
-  const workspace = chatWorkspaceRoot(app, chatId);
+  if (workspaceMatch) {
+    throw new Error("Desktop 不再解析本地 /workspace 路径；请通过 agent-platform 工作区发布。");
+  }
   const desktop = path.resolve(app.getPath("desktop"));
-  const assistant = assistantRoot(app);
-  const allowedRoots = [desktop, assistant, workspace];
-  const candidate = workspaceMatch
-    ? path.join(workspace, workspaceMatch[1] ?? "")
-    : path.isAbsolute(trimmed)
+  const allowedRoots = [desktop];
+  const candidate = path.isAbsolute(trimmed)
       ? trimmed
       : path.join(desktop, trimmed);
   const resolved = path.resolve(candidate);
@@ -628,7 +618,7 @@ async function createAssistantAttachmentsFromFilesInWorker(
   return new Promise<AssistantAttachmentPickResult>((resolve, reject) => {
     const worker = new Worker(workerPath, {
       workerData: {
-        assistantDataRoot: getAssistantDataRoot(app),
+        assistantTempRoot: getAssistantTempRoot(app),
         chatId,
         filePaths,
         taskId: options.taskId

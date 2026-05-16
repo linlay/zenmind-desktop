@@ -35,12 +35,8 @@ function createApp(userDataRoot) {
   };
 }
 
-function getLayeredDesktopRoot(userDataRoot) {
-  return path.join(path.dirname(userDataRoot), "home", ".zenmind", ".desktop");
-}
-
 function getLayeredBuiltinInstallDir(userDataRoot, serviceId, version) {
-  return path.join(getLayeredDesktopRoot(userDataRoot), "programs", "services", serviceId, version);
+  return path.join(path.dirname(userDataRoot), "app-data", "ZenMind", "services", serviceId, version);
 }
 
 function quotePowerShell(value) {

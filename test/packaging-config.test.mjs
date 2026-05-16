@@ -58,7 +58,7 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
   assert.equal(packageJson.build?.nsis?.include, "build/installer.nsh");
 });
 
-test("custom uninstall assets default to keeping data and delete only the desktop data root on request", () => {
+test("custom uninstall assets default to keeping data and delete desktop plus program data on request", () => {
   const installerScript = fs.readFileSync(installerIncludePath, "utf8");
   const uninstallScript = fs.readFileSync(uninstallScriptPath, "utf8");
   const distWinScript = fs.readFileSync(distWinScriptPath, "utf8");
@@ -69,10 +69,12 @@ test("custom uninstall assets default to keeping data and delete only the deskto
   assert.match(installerScript, /MessageBox MB_YESNO\|MB_ICONQUESTION/);
   assert.match(installerScript, /\/SD IDNO/);
   assert.match(installerScript, /RMDir \/r "\$PROFILE\\.zenmind\\.desktop"/);
+  assert.match(installerScript, /RMDir \/r "\$APPDATA\\ZenMind"/);
   assert.doesNotMatch(installerScript, /\$APPDATA\\zenmind-desktop/);
   assert.match(uninstallScript, /APP_NAME="ZenMind"/);
   assert.match(uninstallScript, /APP_PATH="\/Applications\/\$\{APP_NAME\}\.app"/);
   assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.zenmind\/\.desktop"/);
+  assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/ZenMind"/);
   assert.doesNotMatch(uninstallScript, /Library\/Application Support\/zenmind-desktop/);
   assert.match(uninstallScript, /default button "Keep Data"/);
   assert.match(distWinScript, /electronuserland\/builder:wine/);

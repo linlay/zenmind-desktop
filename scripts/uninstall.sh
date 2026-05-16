@@ -5,6 +5,7 @@ set -euo pipefail
 APP_NAME="ZenMind"
 APP_PATH="/Applications/${APP_NAME}.app"
 DATA_PATH="${HOME}/.zenmind/.desktop"
+PROGRAM_DATA_PATH="${HOME}/Library/Application Support/ZenMind"
 
 show_dialog() {
   local message="$1"
@@ -32,7 +33,7 @@ prompt_for_data_cleanup() {
   osascript <<'APPLESCRIPT'
 button returned of (display dialog "Do you also want to delete ZenMind app data?
 
-This removes ~/.zenmind/.desktop, including settings, service config, plugins, credentials, logs, caches, and browser profiles." buttons {"Keep Data", "Delete Data"} default button "Keep Data" with icon caution)
+This removes ~/.zenmind/.desktop and ~/Library/Application Support/ZenMind, including settings, service config, service/plugin program files, credentials, logs, caches, and browser profiles." buttons {"Keep Data", "Delete Data"} default button "Keep Data" with icon caution)
 APPLESCRIPT
 }
 
@@ -46,9 +47,12 @@ remove_application_bundle
 
 if [ "$(prompt_for_data_cleanup)" = "Delete Data" ]; then
   rm -rf "$DATA_PATH"
+  rm -rf "$PROGRAM_DATA_PATH"
   printf '%s\n' "Removed app data: $DATA_PATH"
+  printf '%s\n' "Removed program data: $PROGRAM_DATA_PATH"
 else
   printf '%s\n' "Kept app data: $DATA_PATH"
+  printf '%s\n' "Kept program data: $PROGRAM_DATA_PATH"
 fi
 
 printf '%s\n' "ZenMind uninstall finished."

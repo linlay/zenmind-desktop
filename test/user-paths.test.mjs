@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const {
   __testInternals,
   ensureDataRoot,
+  getApplicationSupportRoot,
   getCredentialsRoot,
   getDataRoot,
   getDesktopConfigRoot,
@@ -35,6 +36,8 @@ function createApp(root, { isPackaged = false, platformRoot = root } = {}) {
           return appDataPath;
         case "userData":
           return userDataRoot;
+        case "temp":
+          return path.join(platformRoot, "tmp");
         default:
           assert.fail(`unexpected app.getPath(${name})`);
       }
@@ -71,7 +74,8 @@ test("ensureDataRoot creates layered subdirectories under the current data root"
   for (const dirName of __testInternals.DESKTOP_DIRS) {
     assert.equal(fs.existsSync(path.join(dataRoot, dirName)), true);
   }
-  assert.equal(fs.existsSync(path.join(dataRoot, "programs", "services")), true);
+  assert.equal(fs.existsSync(path.join(dataRoot, "programs")), false);
+  assert.equal(fs.existsSync(path.join(dataRoot, "data", "assistant")), false);
   assert.equal(fs.existsSync(path.join(dataRoot, "config", "services")), true);
   assert.equal(fs.existsSync(path.join(dataRoot, "data", "services")), true);
   assert.equal(fs.existsSync(path.join(dataRoot, "state", "desktop")), true);
@@ -84,6 +88,24 @@ test("Windows new installs resolve to the layered desktop root under the user pr
   });
 
   assert.equal(root, String.raw`C:\Users\alice\.zenmind\.desktop`);
+});
+
+test("macOS program root resolves under Application Support/ZenMind", () => {
+  const root = __testInternals.resolveApplicationSupportRoot({
+    platform: "darwin",
+    appDataPath: "/Users/alice/Library/Application Support"
+  });
+
+  assert.equal(root, "/Users/alice/Library/Application Support/ZenMind");
+});
+
+test("Windows program root resolves under APPDATA\\ZenMind", () => {
+  const root = __testInternals.resolveApplicationSupportRoot({
+    platform: "win32",
+    appDataPath: String.raw`C:\Users\alice\AppData\Roaming`
+  });
+
+  assert.equal(root, String.raw`C:\Users\alice\AppData\Roaming\ZenMind`);
 });
 
 test("appData contents do not change the desktop root", (t) => {
@@ -99,17 +121,19 @@ test("appData contents do not change the desktop root", (t) => {
   assert.equal(getDataRoot(app), path.resolve(expectedRoot));
 });
 
-test("managed directory helpers join from the layered desktop root", (t) => {
+test("managed directory helpers split programs from desktop configuration", (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-paths-layered-"));
   const app = createApp(tempRoot);
   const expectedRoot = path.join(tempRoot, "home", ".zenmind", ".desktop");
+  const expectedProgramsRoot = path.join(tempRoot, "app-data", "ZenMind");
 
   t.after(() => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  assert.equal(getServicesRoot(app), path.join(expectedRoot, "programs", "services"));
-  assert.equal(getPluginsRoot(app), path.join(expectedRoot, "programs", "plugins"));
+  assert.equal(getApplicationSupportRoot(app), expectedProgramsRoot);
+  assert.equal(getServicesRoot(app), path.join(expectedProgramsRoot, "services"));
+  assert.equal(getPluginsRoot(app), path.join(expectedProgramsRoot, "plugins"));
   assert.equal(getDesktopConfigRoot(app), path.join(expectedRoot, "config", "desktop"));
   assert.equal(getCredentialsRoot(app), path.join(expectedRoot, "secrets"));
   assert.equal(getServiceConfigRoot(app, "agent-platform"), path.join(expectedRoot, "config", "services", "agent-platform"));

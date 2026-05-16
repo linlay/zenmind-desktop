@@ -1,7 +1,4 @@
-import fs from "node:fs";
-import path from "node:path";
 import type { App } from "electron";
-import { getAssistantDataRoot } from "../user-paths";
 
 export type ContainerHubConfig = {
   baseURL: string;
@@ -205,10 +202,8 @@ export class ContainerHubClient {
   }
 }
 
-export function getAssistantWorkspacePath(app: App, chatId: string) {
-  const workspace = path.join(getAssistantDataRoot(app), "chats", chatId, "workspace");
-  fs.mkdirSync(workspace, { recursive: true });
-  return workspace;
+export function getAssistantWorkspacePath(_app: App, _chatId: string) {
+  return "/workspace";
 }
 
 export function buildContainerHubRunSessionId(runId: string) {

@@ -608,7 +608,7 @@ function getTestHomeRoot(userDataRoot) {
 }
 
 function getTestProgramsRoot(userDataRoot) {
-  return path.join(getTestDesktopRoot(userDataRoot), "programs");
+  return path.join(userDataRoot, "app-data", "ZenMind");
 }
 
 function getTestServiceProgramDir(userDataRoot, serviceId, version) {
@@ -1215,7 +1215,7 @@ test("normalizeAgentPlatformEnvContentForRuntime migrates real legacy image toke
   assert.doesNotMatch(next, /^CHAT_IMAGE_TOKEN_TTL_SECONDS=/m);
 });
 
-test("service install dir follows programs/services/<id>/<version>", () => {
+test("service install dir follows Application Support services/<id>/<version>", () => {
   const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-service-dir-"));
   const { app, restore } = loadBuiltinsForTest(userDataRoot);
   const service = getBuiltinService("agent-platform");

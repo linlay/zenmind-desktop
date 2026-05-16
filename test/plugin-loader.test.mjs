@@ -44,6 +44,10 @@ function getLayeredDesktopRoot(userDataRoot) {
   return path.join(path.dirname(userDataRoot), "home", ".zenmind", ".desktop");
 }
 
+function getApplicationSupportRoot(userDataRoot) {
+  return path.join(path.dirname(userDataRoot), "app-data", "ZenMind");
+}
+
 function getLayeredPluginConfigDir(userDataRoot, pluginId) {
   return path.join(getLayeredDesktopRoot(userDataRoot), "config", "plugins", pluginId);
 }
@@ -237,7 +241,7 @@ test("installPluginFromArchive installs builtin bundles via the services path an
   assert.equal(result.serviceId, "builtin-service");
   assert.equal(definition.kind, "builtin");
   assert.equal(definition.desktop.assetFileName, path.basename(archivePath));
-  assert.equal(installDir, path.join(getLayeredDesktopRoot(userDataRoot), "programs", "services", "builtin-service", "v1.0.0"));
+  assert.equal(installDir, path.join(getApplicationSupportRoot(userDataRoot), "services", "builtin-service", "v1.0.0"));
   assert.equal(state.installDir, installDir);
   assert.equal(state.installed, true);
   assert.equal(state.status, "stopped");
@@ -286,7 +290,7 @@ test("installPluginFromArchive preserves config and clears previous initializati
 test("loadInstalledPlugins ignores builtin bundles accidentally left in the plugins directory", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-load-ignore-builtin-"));
   const userDataRoot = path.join(tempRoot, "user-data");
-  const pluginDir = path.join(getLayeredDesktopRoot(userDataRoot), "programs", "plugins", "builtin-service", "v1.0.0");
+  const pluginDir = path.join(getApplicationSupportRoot(userDataRoot), "plugins", "builtin-service", "v1.0.0");
   const app = createApp(userDataRoot);
 
   registryInternals.clearServices();

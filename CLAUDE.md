@@ -69,7 +69,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 项目支持两种服务来源：
 - **内置服务（builtin）**：随应用打包分发，当前包含 `agent-container-hub`、`agent-platform`、`agent-webclient` 和 `zenmind-app-server`。
-- **插件（plugin）**：运行时通过 `.tar.gz` 包导入。程序存储在 `~/.zenmind/.desktop/programs/plugins/<plugin-id>/<version>/`，配置保存在 `~/.zenmind/.desktop/config/plugins/<plugin-id>/`。插件包必须包含 `manifest.json` 清单文件。
+- **插件（plugin）**：运行时通过 `.tar.gz` 包导入。程序存储在 macOS `~/Library/Application Support/ZenMind/plugins/<plugin-id>/<version>/` 或 Windows `%APPDATA%\ZenMind\plugins\<plugin-id>\<version>\`，配置保存在 `~/.zenmind/.desktop/config/plugins/<plugin-id>/`。插件包必须包含 `manifest.json` 清单文件。
 - Desktop 不再随安装包内置任何插件，插件统一通过导入归档包接入。
 
 前端按三种模式区分：
@@ -196,11 +196,11 @@ my-plugin/
 
 ### 插件生命周期
 1. 用户在控制中心点击"导入插件"，选择 `.tar.gz` 包。
-2. 主进程解压到 Desktop 数据根的 `programs/plugins/{id}/{version}/`，读取 `manifest.json` 并注册。
+2. 主进程解压到平台程序数据目录的 `ZenMind/plugins/{id}/{version}/`，读取 `manifest.json` 并注册。
 3. 控制中心左侧边栏立即出现新服务卡片，状态为"待初始化"。
 4. 用户完成必要的配置编辑后，点击"初始化"；Desktop 会补齐模板配置、修复脚本权限，并执行 `scripts.deploy`。
 5. 初始化成功后，插件进入可启动状态；启动后，`frontendMode !== "none"` 的插件会在详情区显示"打开前端"按钮；`frontendMode === "standalone"` 时会出现在顶部导航栏。
-6. 下次启动 Electron 时，`loadInstalledPlugins` 自动扫描 `programs/plugins/` 并重新注册；未初始化的插件仍会保持"待初始化"。
+6. 下次启动 Electron 时，`loadInstalledPlugins` 自动扫描 Application Support 下的 `ZenMind/plugins/` 并重新注册；未初始化的插件仍会保持"待初始化"。
 7. 卸载时弹出确认对话框，确认后停止运行中的服务、删除插件目录并从注册表移除。
 
 ### 认证桥接
@@ -238,7 +238,7 @@ my-plugin/
 - 内置服务资源依赖外部打包产物，资源包内容缺失会直接导致安装或测试失败。
 - `agent-container-hub` 依赖本机可用的 Docker 或 Podman。
 - `pan-webclient` 仍通过插件系统导入；Desktop 不再打包任何内置插件，缺失插件时优先检查导入产物。
-- Desktop 数据根目录为 `~/.zenmind/.desktop`，按 `programs/`、`config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层。
+- Desktop 配置与运行数据根目录为 `~/.zenmind/.desktop`，按 `config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；可替换程序产物位于 macOS `~/Library/Application Support/ZenMind` 或 Windows `%APPDATA%\ZenMind`。
 - RSA 密钥对由 Desktop 统一管理，存储在 `secrets/` 下，同时用于 pan-webclient 和 agent-platform 的认证。
 
 
