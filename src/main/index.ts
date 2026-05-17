@@ -2738,6 +2738,11 @@ function beginStartupRestoreSession(mode: StartupRestoreMode) {
 
 function updateStartupRestoreService(serviceId: ServiceId, phase: StartupRestoreServiceState["phase"], message = "") {
   const currentState = cloneStartupRestoreState(startupRestoreState);
+  if (!currentState.serviceOrder.includes(serviceId)) {
+    console.warn(`[startup] Ignoring non-core startup progress for ${serviceId}: ${phase}${message ? ` - ${message}` : ""}`);
+    return;
+  }
+
   const nextServices = currentState.services.map((service) =>
     service.serviceId === serviceId
       ? {

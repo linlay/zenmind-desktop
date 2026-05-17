@@ -660,7 +660,7 @@ function createStartupCoreAssetsFixture(options = {}) {
     }
   }
 
-  addContainerHubAssetToFixture({ tempRoot, assetsRoot });
+  addContainerHubAssetToFixture({ tempRoot, assetsRoot }, options.containerHubOptions);
 
   return {
     tempRoot,
@@ -903,6 +903,8 @@ function loadBuiltinsForTest(userDataRoot, assetsRoot, appOptions = {}) {
 
 function writeContainerHubBundleRoot(bundleRoot, options = {}) {
   const startScriptContent = options.startScriptContent ?? "#!/usr/bin/env bash\necho start\n";
+  const deployScriptContent = options.deployScriptContent ??
+    "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p run\nprintf '%s\\n' 'agent-container-hub' >> run/deploy.log\n";
   const bindAddr = options.bindAddr ?? "127.0.0.1:11960";
   const defaultPort = Number(String(bindAddr).match(/:(\d+)$/u)?.[1] || 11960);
   const assetFileName = options.assetFileName ?? "agent-container-hub-v0.1.0-darwin-arm64.tar.gz";
@@ -913,11 +915,7 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
   fs.mkdirSync(path.join(bundleRoot, "data", "builds"), { recursive: true });
   fs.mkdirSync(path.join(bundleRoot, "scripts"), { recursive: true });
   fs.writeFileSync(path.join(bundleRoot, "backend", "agent-container-hub"), "binary", "utf8");
-  fs.writeFileSync(
-    path.join(bundleRoot, "deploy.sh"),
-    "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p run\nprintf '%s\\n' 'agent-container-hub' >> run/deploy.log\n",
-    "utf8"
-  );
+  fs.writeFileSync(path.join(bundleRoot, "deploy.sh"), deployScriptContent, "utf8");
   fs.writeFileSync(path.join(bundleRoot, "start.sh"), startScriptContent, "utf8");
   fs.writeFileSync(path.join(bundleRoot, "stop.sh"), "#!/usr/bin/env bash\necho stop\n", "utf8");
   fs.writeFileSync(path.join(bundleRoot, "scripts", "program-common.sh"), "#!/usr/bin/env bash\n", "utf8");
@@ -4567,6 +4565,35 @@ test("runStartupPreparation installs missing container hub without starting it w
     assert.equal(readInitializationStatePath(getTestInitializationStatePath(userDataRoot, hubService.id))?.status, "succeeded");
     assert.notEqual(hubState.status, "running");
     assert.equal(fs.existsSync(path.join(hubInstallDir, "run", "started.txt")), false);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runStartupPreparation does not block core services when optional container hub initialization fails", async () => {
+  const fixture = createStartupCoreAssetsFixture({
+    containerHubOptions: {
+      deployScriptContent: "#!/usr/bin/env bash\nset -euo pipefail\necho container hub deploy failed >&2\nexit 1\n"
+    }
+  });
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+
+  try {
+    const result = await runStartupPreparation(app);
+    const hubState = await getServiceState(app, "agent-container-hub");
+
+    assert.equal(result.mode, "bootstrap");
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.equal(hubState.status, "error");
+    assert.match(hubState.message, /container hub deploy failed/u);
+    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+      const state = await getServiceState(app, serviceId);
+      assert.equal(state.status, "running", `${serviceId} should run when container hub init fails`);
+    }
   } finally {
     await stopStartupCoreProcesses(app);
     restore();

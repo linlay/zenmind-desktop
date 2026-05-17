@@ -571,7 +571,21 @@ function patchShellProgramCommonForLayeredLayout(programDir: string) {
     .replace(/LOG_FILE="\$\{ZENMIND_SERVICE_LOG_DIR:-\$RUN_DIR\}\//gu, 'LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
     .replace(/LOG_FILE="\$RUN_DIR\//gu, 'LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
     .replace(/ERROR_LOG_FILE="\$\{ZENMIND_SERVICE_LOG_DIR:-\$RUN_DIR\}\//gu, 'ERROR_LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
-    .replace(/ERROR_LOG_FILE="\$RUN_DIR\//gu, 'ERROR_LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/');
+    .replace(/ERROR_LOG_FILE="\$RUN_DIR\//gu, 'ERROR_LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
+    .replace(
+      /cp -R -n "\$source_env_dir"\/\. "\$CONFIG_ENV_DIR"\/\n/gu,
+      [
+        'local entry',
+        '    for entry in "$source_env_dir"/*; do',
+        '      [[ -e "$entry" ]] || continue',
+        '      local target="$CONFIG_ENV_DIR/$(basename "$entry")"',
+        '      if [[ ! -e "$target" ]]; then',
+        '        cp -R "$entry" "$target"',
+        '      fi',
+        '    done',
+        ''
+      ].join("\n")
+    );
 
   if (content !== original) {
     fs.writeFileSync(scriptPath, content, "utf8");
@@ -4948,14 +4962,14 @@ export async function runStartupPreparation(
         onProgress: options.onProgress
       });
       if (!result.ok) {
-        failures.push(`${serviceId}: ${result.message}`);
+        console.warn(`[service-manager] optional startup service ${serviceId} is unavailable: ${result.message}`);
         options.onProgress?.(serviceId, "failed", result.message);
         continue;
       }
       options.onProgress?.(serviceId, "succeeded", result.message);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      failures.push(`${serviceId}: ${message}`);
+      console.warn(`[service-manager] optional startup service ${serviceId} failed preparation: ${message}`);
       options.onProgress?.(serviceId, "failed", message);
     }
   }
