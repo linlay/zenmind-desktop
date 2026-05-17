@@ -395,6 +395,9 @@ function prepareServiceExecutionLayout(_service: ServiceDefinition, layout: Serv
   ensureDir(layout.stateDir);
   ensureDir(path.join(layout.stateDir, "pid"));
   ensureDir(layout.logDir);
+  if (_service.id === "agent-platform") {
+    migrateAgentPlatformLegacyRuntimeFiles(layout);
+  }
 }
 
 function readInitializationState(layoutOrInstallDir: ServiceLayout | string): InitializationState | null {
@@ -605,9 +608,105 @@ function patchPowerShellProgramCommonForLayeredLayout(programDir: string) {
   }
 }
 
+function patchAgentPlatformRuntimeNames(programDir: string) {
+  const shellPath = path.join(programDir, "scripts", "program-common.sh");
+  if (fs.existsSync(shellPath)) {
+    let content = fs.readFileSync(shellPath, "utf8");
+    const original = content;
+    content = content
+      .replace(/LOG_FILE="\$LOG_DIR\/\$APP_NAME\.log"/gu, 'LOG_FILE="$LOG_DIR/agent-platform.log"')
+      .replace(/PID_FILE="\$RUN_DIR\/\$APP_NAME\.pid"/gu, 'PID_FILE="$RUN_DIR/pid/agent-platform.pid"');
+    if (!content.includes('mkdir -p "$(dirname "$PID_FILE")"')) {
+      content = content.replace(
+        /program_clear_stale_pid_file "\$PID_FILE" "\$APP_NAME"/gu,
+        'mkdir -p "$(dirname "$PID_FILE")"\n  program_clear_stale_pid_file "$PID_FILE" "$APP_NAME"'
+      );
+    }
+    if (content !== original) {
+      fs.writeFileSync(shellPath, content, "utf8");
+    }
+  }
+
+  const powerShellPath = path.join(programDir, "scripts", "program-common.ps1");
+  if (fs.existsSync(powerShellPath)) {
+    let content = fs.readFileSync(powerShellPath, "utf8");
+    const original = content;
+    content = content
+      .replace(
+        /\$Script:LogFile\s*=\s*Join-Path\s+\$Script:LogDir\s+["']\$Script:AppName\.log["']/gu,
+        '$Script:LogFile = Join-Path $Script:LogDir "agent-platform.log"'
+      )
+      .replace(
+        /\$Script:PidFile\s*=\s*Join-Path\s+\$Script:RunDir\s+["']\$Script:AppName\.pid["']/gu,
+        '$Script:PidFile = Join-Path (Join-Path $Script:RunDir "pid") "agent-platform.pid"'
+      );
+    if (!content.includes('Split-Path -Parent $Script:PidFile')) {
+      content = content.replace(
+        /Clear-StalePidFile\s+-PidFile\s+\$Script:PidFile\s+-ProcessName\s+\$Script:AppName/gu,
+        'New-Item -ItemType Directory -Path (Split-Path -Parent $Script:PidFile) -Force | Out-Null\r\n  Clear-StalePidFile -PidFile $Script:PidFile -ProcessName $Script:AppName'
+      );
+    }
+    if (content !== original) {
+      fs.writeFileSync(powerShellPath, content, "utf8");
+    }
+  }
+
+  const manifestPath = path.join(programDir, "manifest.json");
+  if (fs.existsSync(manifestPath)) {
+    try {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+        runtime?: { pidRelativePath?: string; logRelativePath?: string };
+      };
+      manifest.runtime = {
+        ...(manifest.runtime ?? {}),
+        pidRelativePath: "run/agent-platform.pid",
+        logRelativePath: "run/agent-platform.log"
+      };
+      fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    } catch {
+      // Leave invalid manifests to the normal health checks.
+    }
+  }
+}
+
 function patchProgramCommonForLayeredLayout(programDir: string) {
   patchShellProgramCommonForLayeredLayout(programDir);
   patchPowerShellProgramCommonForLayeredLayout(programDir);
+  const manifestPath = path.join(programDir, "manifest.json");
+  if (!fs.existsSync(manifestPath)) {
+    return;
+  }
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as { id?: string };
+    if (manifest.id === "agent-platform") {
+      patchAgentPlatformRuntimeNames(programDir);
+    }
+  } catch {
+    // Invalid manifests are reported by the install health checks.
+  }
+}
+
+function migrateAgentPlatformLegacyRuntimeFiles(layout: ServiceLayout) {
+  const legacyPidPath = path.join(layout.stateDir, "agent-platform-runner.pid");
+  const canonicalPidPath = path.join(layout.stateDir, "pid", "agent-platform.pid");
+  if (fs.existsSync(legacyPidPath)) {
+    const legacyPid = readPid(legacyPidPath);
+    ensureDir(path.dirname(canonicalPidPath));
+    if (legacyPid && !fs.existsSync(canonicalPidPath)) {
+      fs.writeFileSync(canonicalPidPath, `${legacyPid}\n`, "utf8");
+    }
+    fs.rmSync(legacyPidPath, { force: true });
+  }
+
+  const legacyLogPath = path.join(layout.logDir, "agent-platform-runner.log");
+  const canonicalLogPath = path.join(layout.logDir, "agent-platform.log");
+  if (fs.existsSync(legacyLogPath) && !fs.existsSync(canonicalLogPath)) {
+    try {
+      fs.renameSync(legacyLogPath, canonicalLogPath);
+    } catch {
+      // Logs are best-effort; the next start will create the canonical log path.
+    }
+  }
 }
 
 function listMissingRuntimeFiles(service: ServiceDefinition, installDir: string) {
@@ -746,7 +845,6 @@ const CORE_SERVICE_IDS = new Set<ServiceId>([
   "zenmind-app-server"
 ]);
 const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL", "WS_BASE_URL", "VOICE_BASE_URL"] as const;
-const AGENT_WEBCLIENT_DESKTOP_ONLY_ENV_KEYS = ["NODE_BIN", "NODE_ENV", "DEV_SERVER_ALLOWED_HOSTS"] as const;
 const AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES = new Map([["DESKTOP_APP", "true"]]);
 const DESKTOP_MANAGED_PLATFORM_URL_PORTS = new Set([
   "7078",
@@ -773,11 +871,7 @@ function parsePortValue(value: string) {
 }
 
 function getServicePortEnvKeys(service: ServiceDefinition) {
-  const keys = service.web.portEnvKey ? [service.web.portEnvKey] : [];
-  if (service.id === "agent-platform" && !keys.includes("SERVER_PORT")) {
-    keys.push("SERVER_PORT");
-  }
-  return keys;
+  return service.web.portEnvKey ? [service.web.portEnvKey] : [];
 }
 
 function parsePort(service: ServiceDefinition, env: Map<string, string>) {
@@ -1902,6 +1996,11 @@ async function ensureInitializationRequirements(app: App, service: ServiceDefini
     await ensureLocalCliAcpRelayDesktopConfig(app, layout);
   }
 
+  if (CORE_SERVICE_IDS.has(service.id)) {
+    await syncCoreServiceDesktopInitializationConfig(app, service, layout);
+    return;
+  }
+
   const envPath = layout.envPath;
   const env = readEnvFile(envPath);
   const updates = new Map<string, string>();
@@ -2739,7 +2838,59 @@ function zenmindAppServerInstallNeedsRefresh(installDir: string) {
   }
 }
 
+function agentPlatformInstallNeedsRefresh(installDir: string) {
+  const manifestPath = path.join(installDir, "manifest.json");
+  const programCommonShPath = path.join(installDir, "scripts", "program-common.sh");
+  const programCommonPs1Path = path.join(installDir, "scripts", "program-common.ps1");
+
+  try {
+    if (fs.existsSync(manifestPath)) {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+        runtime?: { pidRelativePath?: unknown; logRelativePath?: unknown } | null;
+      };
+      if (
+        manifest.runtime?.pidRelativePath !== "run/agent-platform.pid" ||
+        manifest.runtime?.logRelativePath !== "run/agent-platform.log"
+      ) {
+        return true;
+      }
+    }
+
+    if (fs.existsSync(programCommonShPath)) {
+      const programCommon = fs.readFileSync(programCommonShPath, "utf8");
+      const declaresPidFile = /(^|\n)\s*PID_FILE=/u.test(programCommon);
+      if (
+        programCommon.includes('PID_FILE="$RUN_DIR/$APP_NAME.pid"') ||
+        programCommon.includes('LOG_FILE="$LOG_DIR/$APP_NAME.log"') ||
+        (declaresPidFile && !programCommon.includes('PID_FILE="$RUN_DIR/pid/agent-platform.pid"'))
+      ) {
+        return true;
+      }
+    }
+
+    if (fs.existsSync(programCommonPs1Path)) {
+      const programCommon = fs.readFileSync(programCommonPs1Path, "utf8");
+      const declaresPidFile = /(^|\r?\n)\s*\$Script:PidFile\s*=/u.test(programCommon);
+      if (
+        programCommon.includes('$Script:PidFile = Join-Path $Script:RunDir "$Script:AppName.pid"') ||
+        programCommon.includes('$Script:LogFile = Join-Path $Script:LogDir "$Script:AppName.log"') ||
+        (declaresPidFile && !programCommon.includes('$Script:PidFile = Join-Path (Join-Path $Script:RunDir "pid") "agent-platform.pid"'))
+      ) {
+        return true;
+      }
+    }
+  } catch {
+    return true;
+  }
+
+  return false;
+}
+
 function serviceInstallNeedsRefresh(service: ServiceDefinition, installDir: string) {
+  if (service.id === "agent-platform") {
+    return agentPlatformInstallNeedsRefresh(installDir);
+  }
+
   if (service.id === "agent-webclient") {
     return agentWebclientInstallNeedsRefresh(installDir);
   }
@@ -2764,6 +2915,9 @@ const agentPlatformDesktopRuntimePaths = [
   ["PAN_DIR", "pan"],
   ["SKILLS_MARKET_DIR", "skills-market"]
 ] as const;
+
+const agentPlatformDesktopInitializationRuntimePaths = agentPlatformDesktopRuntimePaths
+  .filter(([key]) => key !== "TOOLS_DIR");
 
 function resolveHomeDir(app?: App | null) {
   try {
@@ -2820,6 +2974,17 @@ function formatDesktopAgentPlatformRuntimePath(app: App, value: string) {
     return `~/.zenmind/${normalizedValue.slice(normalizedZenmindRoot.length + 1)}`;
   }
   return value;
+}
+
+function resolveAgentPlatformInitializationRuntimeRoot(app: App) {
+  const homeDir = resolveHomeDir(app);
+  if (IS_WINDOWS) {
+    return path.join(homeDir, ".zenmind");
+  }
+  if (process.platform === "darwin") {
+    return path.join(homeDir, ".zenmind");
+  }
+  return path.join(homeDir, ".zenmind");
 }
 
 function countMatchingFiles(rootDir: string, maxDepth: number, predicate: (filePath: string) => boolean, depth = 0): number {
@@ -3183,10 +3348,7 @@ function removeDesktopManagedAgentPlatformEnvContent(content: string, layout?: S
 }
 
 function normalizeAgentWebclientEnvContentForDesktop(content: string) {
-  return upsertEnvFileContent(
-    removeEnvKeysFromContent(content, AGENT_WEBCLIENT_DESKTOP_ONLY_ENV_KEYS),
-    AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES
-  );
+  return upsertEnvFileContent(content, AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES);
 }
 
 function normalizeAgentPlatformEnvContentForRuntime(content: string, layout?: ServiceLayout) {
@@ -3212,7 +3374,6 @@ function normalizeAgentPlatformEnvContentForRuntime(content: string, layout?: Se
 
   normalizeShellSourcedAgentPlatformEnvValues(env, migrated);
   migrateAgentPlatformLegacyChatEnv(env, migrated);
-  syncAgentPlatformDesktopPortEnv(env, migrated);
   syncAgentPlatformEmbeddedCdpEnv(migrated);
 
   return removeDesktopManagedAgentPlatformEnvContent(
@@ -3226,24 +3387,6 @@ function normalizeAgentPlatformEnvContentForSave(content: string) {
     normalizeAgentPlatformEnvContentForRuntime(content),
     AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS
   );
-}
-
-async function normalizeCoreServiceEnvContentForSave(
-  app: App,
-  service: ServiceDefinition,
-  key: string,
-  content: string
-) {
-  if (key !== "env" || !CORE_SERVICE_IDS.has(service.id)) {
-    return content;
-  }
-
-  const env = parseEnvFileContent(content);
-  const updates = new Map<string, string>();
-
-  await applyEnvBindings(app, service, env, updates);
-  syncCoreServiceDefaultPortEnv(service, env, updates);
-  return updates.size > 0 ? upsertEnvFileContent(content, updates) : content;
 }
 
 function resolveLocalCliAcpRelayDefaultCwd(app?: App | null) {
@@ -3444,42 +3587,22 @@ function canApplyDefaultEnvBinding(service: ServiceDefinition, bindingKey: strin
   return new Set(binding.defaults ?? [""]).has(currentValue);
 }
 
-function syncCoreServiceDefaultPortEnv(service: ServiceDefinition, env: Map<string, string>, updates: Map<string, string>) {
+function syncCoreServiceDefaultPortEnv(
+  service: ServiceDefinition,
+  env: Map<string, string>,
+  updates: Map<string, string>,
+  options: { force?: boolean } = {}
+) {
   if (!CORE_SERVICE_IDS.has(service.id)) {
     return;
   }
 
   for (const key of getServicePortEnvKeys(service)) {
     const currentValue = getEnvValueWithUpdates(env, updates, key);
-    if (!canApplyDefaultEnvBinding(service, key, currentValue)) {
+    if (!options.force && !canApplyDefaultEnvBinding(service, key, currentValue)) {
       continue;
     }
     updates.set(key, resolveEnvBindingValue(service, key));
-  }
-}
-
-function syncAgentPlatformDesktopPortEnv(env: Map<string, string>, updates: Map<string, string>) {
-  const updatedServerPort = parsePortValue(updates.get("SERVER_PORT") ?? "");
-  if (updatedServerPort) {
-    updates.set("HOST_PORT", String(updatedServerPort));
-    return;
-  }
-
-  const updatedHostPort = parsePortValue(updates.get("HOST_PORT") ?? "");
-  if (updatedHostPort) {
-    updates.set("SERVER_PORT", String(updatedHostPort));
-    return;
-  }
-
-  const hostPort = parsePortValue(getEnvValueWithUpdates(env, updates, "HOST_PORT"));
-  if (hostPort) {
-    updates.set("SERVER_PORT", String(hostPort));
-    return;
-  }
-
-  const serverPort = parsePortValue(getEnvValueWithUpdates(env, updates, "SERVER_PORT"));
-  if (serverPort) {
-    updates.set("HOST_PORT", String(serverPort));
   }
 }
 
@@ -3530,14 +3653,19 @@ async function getServicePortForEnvSync(app: App, serviceId: ServiceId) {
   }
 }
 
-async function syncAgentPlatformContainerHubUrl(app: App, env: Map<string, string>, updates: Map<string, string>) {
+async function syncAgentPlatformContainerHubUrl(
+  app: App,
+  env: Map<string, string>,
+  updates: Map<string, string>,
+  options: { force?: boolean } = {}
+) {
   const hubPort = await getServicePortForEnvSync(app, "agent-container-hub");
   if (!hubPort) {
     return;
   }
 
   const currentValue = getEnvValueWithUpdates(env, updates, "CONTAINER_HUB_BASE_URL");
-  if (currentValue && !isDesktopManagedContainerHubUrl(currentValue)) {
+  if (!options.force && currentValue && !isDesktopManagedContainerHubUrl(currentValue)) {
     return;
   }
 
@@ -3548,7 +3676,8 @@ function syncAgentWebclientPlatformUrlsToPort(
   env: Map<string, string>,
   updates: Map<string, string>,
   platformPort: number | null,
-  additionalManagedPorts: Array<number | null | undefined> = []
+  additionalManagedPorts: Array<number | null | undefined> = [],
+  options: { force?: boolean } = {}
 ) {
   if (!platformPort) {
     return;
@@ -3557,57 +3686,95 @@ function syncAgentWebclientPlatformUrlsToPort(
   const platformUrl = `http://127.0.0.1:${platformPort}`;
   for (const key of AGENT_WEBCLIENT_PLATFORM_URL_KEYS) {
     const currentValue = getEnvValueWithUpdates(env, updates, key);
-    if (currentValue && !isDesktopManagedPlatformUrl(currentValue, platformPort, additionalManagedPorts)) {
+    if (!options.force && currentValue && !isDesktopManagedPlatformUrl(currentValue, platformPort, additionalManagedPorts)) {
       continue;
     }
     updates.set(key, platformUrl);
   }
 }
 
-async function syncAgentWebclientPlatformUrls(app: App, env: Map<string, string>, updates: Map<string, string>) {
-  const platformPort = await getServicePortForEnvSync(app, "agent-platform");
-  syncAgentWebclientPlatformUrlsToPort(env, updates, platformPort);
-}
-
-function readInstalledServicePortForSync(app: App, service: ServiceDefinition) {
-  const installDir = getInstallDir(app, service);
-  if (!fs.existsSync(installDir)) {
-    return null;
-  }
-  const envPath = getServiceLayout(app, service).envPath;
-  const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
-  return parsePort(service, env);
-}
-
-async function syncAgentWebclientEnvAfterAgentPlatformSave(app: App, previousPlatformPort: number | null) {
-  const webclientEnvInfo = readInstalledServiceEnv(app, "agent-webclient");
-  if (!webclientEnvInfo || !fs.existsSync(webclientEnvInfo.envPath)) {
-    return;
-  }
-
-  const normalizedContent = normalizeAgentWebclientEnvContentForDesktop(webclientEnvInfo.content);
-  const normalizedEnv = parseEnvFileContent(normalizedContent);
-  const platformPort = await getServicePortForEnvSync(app, "agent-platform");
-  const updates = new Map<string, string>();
-  syncAgentWebclientPlatformUrlsToPort(normalizedEnv, updates, platformPort, [previousPlatformPort]);
-  if (updates.size === 0 && normalizedContent === webclientEnvInfo.content) {
-    return;
-  }
-
-  fs.writeFileSync(webclientEnvInfo.envPath, upsertEnvFileContent(normalizedContent, updates), "utf8");
-}
-
-async function syncCoreServiceDependentEnvAfterSave(
+async function syncAgentWebclientPlatformUrls(
   app: App,
-  service: ServiceDefinition,
-  key: string,
-  previousServicePort: number | null
+  env: Map<string, string>,
+  updates: Map<string, string>,
+  options: { force?: boolean } = {}
 ) {
-  if (key !== "env" || service.id !== "agent-platform") {
-    return;
+  const platformPort = await getServicePortForEnvSync(app, "agent-platform");
+  syncAgentWebclientPlatformUrlsToPort(env, updates, platformPort, [], options);
+}
+
+async function syncCoreServiceDesktopInitializationConfig(app: App, service: ServiceDefinition, layout: ServiceLayout) {
+  if (service.id === "agent-container-hub") {
+    ensureAgentContainerHubDesktopConfig(layout);
   }
 
-  await syncAgentWebclientEnvAfterAgentPlatformSave(app, previousServicePort);
+  const envPath = layout.envPath;
+  let content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+  if (service.id === "agent-platform") {
+    const normalizedContent = removeEnvKeysFromContent(content, ["SERVER_PORT"]);
+    if (normalizedContent !== content) {
+      ensureDir(path.dirname(envPath));
+      fs.writeFileSync(envPath, normalizedContent, "utf8");
+      content = normalizedContent;
+    }
+  }
+  if (service.id === "agent-webclient") {
+    const normalizedContent = normalizeAgentWebclientEnvContentForDesktop(content);
+    if (normalizedContent !== content) {
+      ensureDir(path.dirname(envPath));
+      fs.writeFileSync(envPath, normalizedContent, "utf8");
+      content = normalizedContent;
+    }
+  }
+
+  const env = parseEnvFileContent(content);
+  const updates = new Map<string, string>();
+  await applyEnvBindings(app, service, env, updates);
+  if (service.id === "agent-platform") {
+    updates.delete("SERVER_PORT");
+  }
+  syncCoreServiceDefaultPortEnv(service, env, updates, { force: true });
+
+  if (service.id === "zenmind-app-server") {
+    updates.set("AUTH_DB_PATH", path.join(layout.dataDir, "auth.db"));
+  }
+
+  if (service.id === "agent-platform") {
+    if (getEnvValueWithUpdates(env, updates, "AUTH_ENABLED") !== "true") {
+      updates.set("AUTH_ENABLED", "true");
+    }
+    updates.set("PROVIDER_APIKEY_KEY_PART", DEFAULT_PROVIDER_APIKEY_KEY_PART);
+    await syncAgentPlatformContainerHubUrl(app, env, updates, { force: true });
+    const runtimeRoot = resolveAgentPlatformInitializationRuntimeRoot(app);
+    for (const [key, relativePath] of agentPlatformDesktopInitializationRuntimePaths) {
+      updates.set(key, formatDesktopAgentPlatformRuntimePath(app, path.join(runtimeRoot, relativePath)));
+    }
+  }
+
+  if (service.id === "agent-webclient") {
+    await syncAgentWebclientPlatformUrls(app, env, updates, { force: true });
+  }
+
+  if (updates.size > 0) {
+    writeEnvFileUpdates(envPath, updates);
+  }
+
+  if (service.id === "zenmind-app-server") {
+    await ensureAppServerJwk(app);
+  }
+
+  if (service.id === "agent-platform") {
+    await ensureAgentPlatformAppServerPublicKey(app, layout);
+  }
+}
+
+function shouldReinitializeMissingCoreServiceConfig(service: ServiceDefinition, state: ServiceState) {
+  return (
+    service.kind === "builtin" &&
+    CORE_SERVICE_IDS.has(service.id) &&
+    state.status === "config-required" &&
+    state.configFiles.some((configFile) => configFile.required && !configFile.exists)
+  );
 }
 
 async function ensureAgentPlatformContainerHubDependency(app: App, layout: ServiceLayout) {
@@ -3689,7 +3856,6 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   const updates = new Map<string, string>();
 
   await applyEnvBindings(app, service, env, updates);
-  syncAgentPlatformDesktopPortEnv(env, updates);
   syncAgentPlatformEmbeddedCdpEnv(updates);
   await syncAgentPlatformContainerHubUrl(app, env, updates);
 
@@ -3758,17 +3924,6 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     }
   }
 
-  const envPath = layout.envPath;
-  const env = readEnvFile(envPath);
-  const updates = new Map<string, string>();
-  await applyEnvBindings(app, service, env, updates);
-  syncCoreServiceDefaultPortEnv(service, env, updates);
-
-  if (updates.size > 0) {
-    writeEnvFileUpdates(envPath, updates);
-    prepareServiceExecutionLayout(service, layout);
-  }
-
   if (service.id === "zenmind-app-server") {
     await ensureAppServerJwk(app);
   }
@@ -3803,12 +3958,25 @@ function resolveNodeBinStartEnv() {
   return { NODE_BIN: nodeBin };
 }
 
-function getStartCommandEnvOverrides(service: ServiceDefinition) {
+function getAgentPlatformStartPortEnv(app: App) {
+  const envInfo = readInstalledServiceEnv(app, "agent-platform");
+  const hostPort = envInfo?.env.get("HOST_PORT")?.trim() || String(getService("agent-platform").web.defaultPort);
+  return {
+    // Desktop runs agent-platform directly on the host. There is no container or make-run
+    // port mapping here, so the backend's internal listen port must match HOST_PORT.
+    SERVER_PORT: hostPort
+  };
+}
+
+function getStartCommandEnvOverrides(app: App, service: ServiceDefinition) {
   if (!NODE_BIN_START_ENV_SERVICE_IDS.has(service.id)) {
     return undefined;
   }
 
-  return resolveNodeBinStartEnv();
+  return {
+    ...resolveNodeBinStartEnv(),
+    ...(service.id === "agent-platform" ? getAgentPlatformStartPortEnv(app) : {})
+  };
 }
 
 async function runServiceCommand(
@@ -3883,24 +4051,36 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
     ? await getServiceState(app, serviceId)
     : current;
   const initializationState = refreshedState.installed ? readInitializationState(getServiceLayout(app, service)) : null;
+  let preparedState = refreshedState;
 
-  if (refreshedState.status === "initialization-required") {
+  if (shouldReinitializeMissingCoreServiceConfig(service, preparedState)) {
+    const initialization = await initializeServiceInternal(app, serviceId, { skipInstallRefresh: true });
+    if (!initialization.ok) {
+      return initialization;
+    }
+    preparedState = initialization.service;
+  }
+
+  if (preparedState.status === "initialization-required") {
     return {
       ok: false,
-      message: refreshedState.message,
-      service: refreshedState
+      message: preparedState.message,
+      service: preparedState
     };
   }
 
   if (initializationState?.status === "failed" && initializationState.version === service.version) {
     return {
       ok: false,
-      message: refreshedState.message,
-      service: refreshedState
+      message: preparedState.message,
+      service: preparedState
     };
   }
 
-  if ((!refreshedState.installed || refreshedState.status === "error") && refreshedState.kind === "builtin") {
+  if (
+    preparedState.kind === "builtin" &&
+    (!preparedState.installed || (preparedState.status === "error" && !isInstallHealthy(service, installDir)))
+  ) {
     await installBuiltinService(app, serviceId);
   }
   const nextState = await getServiceState(app, serviceId);
@@ -3924,10 +4104,30 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
     };
   } else {
     await ensurePreStartRequirements(app, service);
-    result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`, {
-      env: getStartCommandEnvOverrides(service)
-    });
-    startedThisSession.add(serviceId);
+    const preStartState = await getServiceState(app, serviceId);
+    if (
+      preStartState.status === "config-required" ||
+      preStartState.status === "dependency-missing" ||
+      preStartState.status === "error"
+    ) {
+      return {
+        ok: false,
+        message: preStartState.message,
+        service: preStartState
+      };
+    }
+    if (preStartState.status === "running") {
+      result = {
+        ok: true,
+        message: `${preStartState.name} 已在运行。`,
+        service: preStartState
+      };
+    } else {
+      result = await runServiceCommand(app, service, service.startCommand, `${service.name} 已启动。`, {
+        env: getStartCommandEnvOverrides(app, service)
+      });
+      startedThisSession.add(serviceId);
+    }
   }
 
   // Bridge registration hook（无论是否已在运行都走一遍，幂等）
@@ -4083,20 +4283,13 @@ export async function writeServiceConfig(
   if (!configFile) {
     throw new Error(`unknown config key: ${key}`);
   }
-  const previousServicePort =
-    key === "env" && service.id === "agent-platform"
-      ? readInstalledServicePortForSync(app, service)
-      : null;
-
   const installDir = await ensureMutableInstallDir(app, service);
   const layout = getServiceLayout(app, service);
 
   const filePath = resolveConfigPath(layout, configFile.relativePath);
   ensureDir(path.dirname(filePath));
-  const normalizedContent = await normalizeCoreServiceEnvContentForSave(app, service, key, content);
-  fs.writeFileSync(filePath, normalizedContent, "utf8");
+  fs.writeFileSync(filePath, content, "utf8");
   prepareServiceExecutionLayout(service, layout);
-  await syncCoreServiceDependentEnvAfterSave(app, service, key, previousServicePort);
 
   const message =
     key === "env" && CORE_SERVICE_IDS.has(service.id)
@@ -4635,8 +4828,8 @@ export async function restoreRunningServices(
   };
 }
 
-function shouldEnableBuiltinBootstrap(app: App) {
-  return app.isPackaged || process.env.ZENMIND_DESKTOP_AUTO_PROVISION_BUILTINS === "1";
+function shouldEnableBuiltinBootstrap(_app: App) {
+  return true;
 }
 
 async function shouldRunBuiltinBootstrap(app: App) {
@@ -4646,7 +4839,11 @@ async function shouldRunBuiltinBootstrap(app: App) {
 
   for (const serviceId of INSTALL_ONLY_STARTUP_SERVICE_IDS) {
     const current = await getServiceState(app, serviceId);
-    if (current.status === "not-installed" || current.status === "initialization-required") {
+    if (
+      current.status === "not-installed" ||
+      current.status === "initialization-required" ||
+      shouldReinitializeMissingCoreServiceConfig(getService(serviceId), current)
+    ) {
       return true;
     }
 
@@ -4674,7 +4871,8 @@ async function shouldRunBuiltinBootstrap(app: App) {
     if (
       current.status === "not-installed" ||
       current.status === "initialization-required" ||
-      current.status === "error"
+      current.status === "error" ||
+      shouldReinitializeMissingCoreServiceConfig(getService(serviceId), current)
     ) {
       return true;
     }
@@ -4710,7 +4908,7 @@ async function prepareBuiltinServiceForStartup(
     }
     await installBuiltinService(app, serviceId);
     current = await getServiceState(app, serviceId);
-  } else if (current.status === "initialization-required") {
+  } else if (current.status === "initialization-required" || shouldReinitializeMissingCoreServiceConfig(service, current)) {
     options.onProgress?.(serviceId, "initializing", `${current.name} 初始化中...`);
     const initialization = await initializeService(app, serviceId);
     if (!initialization.ok) {
@@ -4830,9 +5028,11 @@ export const __testInternals = {
   ensureBundleAssetHealthy,
   upsertEnvFileContent,
   ensurePreStartRequirements,
+  agentPlatformInstallNeedsRefresh,
   agentWebclientInstallNeedsRefresh,
   zenmindAppServerInstallNeedsRefresh,
   resolveNodeBin,
+  getStartCommandEnvOverrides,
   resolveAcpCommandForDesktop,
   normalizeAgentPlatformEnvContentForRuntime,
   normalizeAgentPlatformEnvContentForSave,

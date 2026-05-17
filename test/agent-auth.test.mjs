@@ -33,7 +33,7 @@ function decodeJson(part) {
   return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
 }
 
-function registerAppServerFixture(root) {
+function registerAppServerFixture(root, options = {}) {
   const service = registerPlugin({
     id: "zenmind-app-server",
     name: "认证服务",
@@ -86,13 +86,32 @@ function registerAppServerFixture(root) {
     ].join("\n") + "\n",
     "utf8"
   );
+  const issueScriptLines = [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail"
+  ];
+  if (options.lockedIssueAttempts) {
+    const markerPath = path.join(root, "issue-attempts.txt");
+    issueScriptLines.push(
+      `marker=${JSON.stringify(markerPath)}`,
+      "attempt=0",
+      "if [ -f \"$marker\" ]; then",
+      "  attempt=$(cat \"$marker\")",
+      "fi",
+      "attempt=$((attempt + 1))",
+      "printf '%s' \"$attempt\" > \"$marker\"",
+      `if [ "$attempt" -le ${options.lockedIssueAttempts} ]; then`,
+      "  printf '%s\\n' 'Error: stepping, database is locked (5)' >&2",
+      "  exit 1",
+      "fi"
+    );
+  }
+  issueScriptLines.push(
+    "printf '%s\\n' 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImZpeHR1cmUiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwOi8vaXNzdWVyLnRlc3QiLCJzdWIiOiJhcHAiLCJzY29wZSI6ImFwcCIsImRldmljZV9pZCI6ImRldmljZS0xIn0.signature'"
+  );
   fs.writeFileSync(
     path.join(programDir, "scripts", "issue-bridge-access-token.sh"),
-    [
-      "#!/usr/bin/env bash",
-      "set -euo pipefail",
-      "printf '%s\\n' 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImZpeHR1cmUiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwOi8vaXNzdWVyLnRlc3QiLCJzdWIiOiJhcHAiLCJzY29wZSI6ImFwcCIsImRldmljZV9pZCI6ImRldmljZS0xIn0.signature'"
-    ].join("\n") + "\n",
+    issueScriptLines.join("\n") + "\n",
     "utf8"
   );
   fs.chmodSync(path.join(programDir, "scripts", "setup-public-key.sh"), 0o755);
@@ -121,6 +140,22 @@ test("issueAgentAccessToken uses zenmind-app-server to issue an app token", asyn
       ),
       "APP_SERVER_PUBLIC_KEY\n"
     );
+  } finally {
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("issueAgentAccessToken retries transient sqlite busy errors from app-server scripts", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-auth-"));
+  const app = createAppStub(tempRoot);
+  registerAppServerFixture(tempRoot, { lockedIssueAttempts: 2 });
+
+  try {
+    const result = await issueAgentAccessToken(app, "missing");
+    assert.equal(result.ok, true);
+    assert.match(result.token, /^.+\..+\..+$/);
+    assert.equal(fs.readFileSync(path.join(tempRoot, "issue-attempts.txt"), "utf8"), "3");
   } finally {
     registryInternals.clearServices();
     fs.rmSync(tempRoot, { recursive: true, force: true });

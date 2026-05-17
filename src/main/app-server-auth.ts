@@ -15,6 +15,7 @@ import {
 const APP_SERVER_SERVICE_ID = "zenmind-app-server";
 const DESKTOP_DEVICE_NAME = "ZenMind Desktop";
 const APP_SERVER_AUTH_SCRIPT_TIMEOUT_MS = 30_000;
+const APP_SERVER_AUTH_SCRIPT_RETRY_DELAYS_MS = [150, 350, 700, 1_200];
 
 type AppServerAuthLayout = {
   programDir: string;
@@ -29,6 +30,12 @@ type ExecResult = {
   stdout: string;
   stderr: string;
 };
+
+function delay(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 function ensureDir(targetPath: string) {
   fs.mkdirSync(targetPath, { recursive: true });
@@ -139,6 +146,33 @@ function runAppServerScript(
   });
 }
 
+function isSqliteBusyError(reason: unknown) {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  return /database is locked|SQLITE_BUSY|sqlite_busy|locking protocol|Error:\s*stepping,\s*database is locked|\(5\)/iu.test(message);
+}
+
+async function runAppServerAuthScript(
+  layout: AppServerAuthLayout,
+  scriptPath: string,
+  args: string[],
+  env: NodeJS.ProcessEnv
+): Promise<ExecResult> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= APP_SERVER_AUTH_SCRIPT_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await runAppServerScript(layout, scriptPath, args, env);
+    } catch (reason) {
+      lastError = reason;
+      if (!isSqliteBusyError(reason) || attempt >= APP_SERVER_AUTH_SCRIPT_RETRY_DELAYS_MS.length) {
+        throw reason;
+      }
+      await delay(APP_SERVER_AUTH_SCRIPT_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+
+  throw lastError;
+}
+
 function buildSetupPublicKeyArgs(settings: ReturnType<typeof readAppServerAuthSettings>, keyDir: string, publicKeyPath: string) {
   if (process.platform === "win32") {
     return [
@@ -217,7 +251,7 @@ export async function ensureAppServerJwk(app: App) {
   ensureDir(keyDir);
 
   const scriptPath = resolveAppServerScript(layout, "setup-public-key");
-  await runAppServerScript(layout, scriptPath, buildSetupPublicKeyArgs(settings, keyDir, publicKeyPath), {
+  await runAppServerAuthScript(layout, scriptPath, buildSetupPublicKeyArgs(settings, keyDir, publicKeyPath), {
     AUTH_DB_PATH: settings.dbPath
   });
 
@@ -237,7 +271,7 @@ export async function issueAppServerAccessToken(app: App) {
   await ensureAppServerJwk(app);
 
   const scriptPath = resolveAppServerScript(layout, "issue-bridge-access-token");
-  const result = await runAppServerScript(layout, scriptPath, buildIssueAccessTokenArgs(settings), {
+  const result = await runAppServerAuthScript(layout, scriptPath, buildIssueAccessTokenArgs(settings), {
     AUTH_DB_PATH: settings.dbPath,
     AUTH_ISSUER: settings.issuer,
     AUTH_APP_USERNAME: settings.username
@@ -254,5 +288,6 @@ export const __testInternals = {
   getAppServerLayout,
   readAppServerAuthSettings,
   resolveAppServerScript,
-  runAppServerScript
+  runAppServerScript,
+  runAppServerAuthScript
 };

@@ -124,11 +124,6 @@ const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = 
         key: "HOST_PORT",
         value: "{{serviceDefaultPort}}",
         defaults: ["", "11949", "18081", "7200", "117078"]
-      },
-      {
-        key: "SERVER_PORT",
-        value: "{{serviceDefaultPort}}",
-        defaults: ["", "11949", "18081", "7200", "117078"]
       }
     ],
     urlBindingDefaults: {
@@ -448,6 +443,18 @@ function resolveRuntime(raw: Record<string, unknown>) {
   };
 }
 
+function applyCoreServiceRuntimeOverride(serviceId: string, runtime: ReturnType<typeof resolveRuntime>) {
+  if (serviceId !== "agent-platform") {
+    return runtime;
+  }
+
+  return {
+    ...runtime,
+    pidRelativePath: "run/agent-platform.pid",
+    logRelativePath: "run/agent-platform.log"
+  };
+}
+
 function resolveApi(raw: Record<string, unknown>) {
   if (raw.api === undefined) {
     return undefined;
@@ -579,7 +586,7 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
   }
 
   const scripts = resolveScripts(raw);
-  const runtime = resolveRuntime(raw);
+  const runtime = applyCoreServiceRuntimeOverride(id, resolveRuntime(raw));
   const frontend = resolveFrontend(raw);
   const desktop = resolveDesktop(raw, options, id);
   const web = applyCoreServiceWebOverride(id, resolveWeb(raw));
