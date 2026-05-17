@@ -410,7 +410,6 @@ export function findMissingBundleEntries(service, entries) {
 function validateAgentPlatformBundleArchive(service, archivePath) {
   const manifest = readManifestFromArchive(archivePath);
   const disallowedLegacyEnvBindings = new Set([
-    "HOST_PORT",
     "AGENT_WS_ENABLED",
     "AGENT_CONTAINER_HUB_BASE_URL",
     "AGENT_AUTH_ENABLED",
@@ -446,12 +445,12 @@ function validateAgentPlatformBundleArchive(service, archivePath) {
   const envExample = readArchiveEntryText(archivePath, envExamplePath);
   if (
     (programCommon && /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_/u.test(programCommon)) ||
-    (envExample && /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_|(^|\n)\s*HOST_PORT\s*=/u.test(envExample))
+    (envExample && /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_/u.test(envExample))
   ) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected legacy relay or HOST_PORT residue in the bundled startup/config files.\n` +
-        `Please rebuild or reselect the clean Desktop release bundle where relay settings live in the standalone plugin and SERVER_PORT is the public port key.`
+        `Detected legacy relay residue in the bundled startup/config files.\n` +
+        `Please rebuild or reselect the clean Desktop release bundle where relay settings live in the standalone plugin.`
     );
   }
 }

@@ -541,14 +541,12 @@ test("actual synced agent-platform asset no longer bundles the local relay", () 
   assert.equal([...entries].some((entry) => entry.includes("local-cli-acp-relay")), false);
   assert.doesNotMatch(programCommon, /LOCAL_CLI_ACP_RELAY_/);
   assert.doesNotMatch(envExample, /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_/);
-  assert.doesNotMatch(envExample, /^HOST_PORT=/m);
-  assert.match(envExample, /^SERVER_PORT=/m);
+  assert.match(envExample, /^HOST_PORT=/m);
   assert.ok(
     Array.isArray(manifest?.desktop?.envBindings),
     "expected bundled agent-platform manifest to declare desktop env bindings"
   );
   const disallowedLegacyEnvBindings = new Set([
-    "HOST_PORT",
     "AGENT_WS_ENABLED",
     "AGENT_CONTAINER_HUB_BASE_URL",
     "AGENT_AUTH_ENABLED",
