@@ -112,6 +112,7 @@ import type {
   AssistantVoiceTranscriptionRequest,
   DesktopActionRendererRequest,
   DesktopActionRendererResponse,
+  DesktopPageContextSnapshot,
   DesktopPetAgentOption,
   DesktopPetSettingsInput,
   EmbeddedWebExecuteInFrameRequest,
@@ -147,7 +148,8 @@ import {
 } from "./user-paths";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { safeConsoleError } from "./safe-console";
-import { startDesktopActionBridge } from "./desktop-action-bridge";
+import { handleDesktopActionRequest, startDesktopActionBridge } from "./desktop-action-bridge";
+import { DESKTOP_ACTION_DEFINITIONS } from "../shared/desktop-actions";
 import { AgentPlatformPetStatusClient } from "./agent-platform-pet-status";
 import { AgentPlatformPetStreamClient } from "./agent-platform-pet-stream";
 import {
@@ -234,6 +236,7 @@ type BrowserSurface = {
 };
 let startupRestoreState = createStartupRestoreState();
 let embeddedCdpGateway: EmbeddedCdpGateway | null = null;
+let currentPageSnapshot: DesktopPageContextSnapshot | null = null;
 
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName(ZENMIND_PRODUCT_NAME);
@@ -3562,13 +3565,17 @@ function registerIpcHandlers() {
   });
 
   startEmbeddedCdpGateway();
-  startDesktopActionBridge({
+  const desktopActionOptions = {
     app,
     assistantBridge,
     getMainWindow: () => mainWindow,
+    getCurrentPageSnapshot: () => currentPageSnapshot,
     navigate: showMainWindow,
     openLogViewer: openLogViewerWindow,
     callRendererAction: callDesktopActionRenderer
+  };
+  startDesktopActionBridge({
+    ...desktopActionOptions
   });
 
   ipcMain.handle("assistant.getSettings", async () => getAgentPlatformMinimaxSettingsPublic(app) ?? getAssistantSettings(app));
@@ -3644,6 +3651,18 @@ function registerIpcHandlers() {
     pending.resolve(response);
     return { ok: true };
   });
+  ipcMain.handle("desktopActions.list", async () => ({
+    ok: true,
+    actions: DESKTOP_ACTION_DEFINITIONS
+  }));
+  ipcMain.handle("desktopActions.call", async (_event, request) =>
+    handleDesktopActionRequest(desktopActionOptions, request)
+  );
+  ipcMain.handle("currentPage.publishSnapshot", async (_event, snapshot: DesktopPageContextSnapshot) => {
+    currentPageSnapshot = snapshot;
+    return { ok: true };
+  });
+  ipcMain.handle("currentPage.getSnapshot", async () => currentPageSnapshot);
   ipcMain.handle("assistant.openAttachment", async (_event, chatId: string, attachmentId: string) => {
     try {
       const attachmentPath = resolveAssistantAttachmentPath(app, chatId, attachmentId);

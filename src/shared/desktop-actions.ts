@@ -129,6 +129,8 @@ export interface DesktopActionCallRequest {
   args?: Record<string, unknown>;
   source?: DesktopActionSource;
   permissionMode?: "default" | "full_access";
+  expectedPageKey?: string;
+  expectedSnapshotVersion?: number;
 }
 
 export interface DesktopActionError {

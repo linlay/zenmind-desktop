@@ -65,6 +65,7 @@ export function publishCurrentPageContextSnapshot(
     return currentSnapshot;
   }
   currentSnapshot = buildCurrentPageContextSnapshot(input);
+  void window.electronAPI.currentPage.publishSnapshot(currentSnapshot).catch(() => undefined);
   notifyListeners();
   return currentSnapshot;
 }

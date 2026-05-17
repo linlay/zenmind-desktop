@@ -33,6 +33,7 @@ import type {
   WebviewOpenTabListener,
   WebviewOpenTabRequest
 } from "../shared/contracts";
+import type { DesktopActionCallRequest } from "../shared/desktop-actions";
 
 const api: DesktopApi = {
   clipboard: {
@@ -165,6 +166,8 @@ const api: DesktopApi = {
   },
   desktopActions: {
     respond: (response: DesktopActionRendererResponse) => ipcRenderer.invoke("desktopActions.respond", response),
+    list: () => ipcRenderer.invoke("desktopActions.list"),
+    call: (request: DesktopActionCallRequest) => ipcRenderer.invoke("desktopActions.call", request),
     onCall: (listener: DesktopActionCallListener) => {
       const handleDesktopActionCall = (
         _event: Electron.IpcRendererEvent,
@@ -178,6 +181,10 @@ const api: DesktopApi = {
         ipcRenderer.off("desktopActions.call", handleDesktopActionCall);
       };
     }
+  },
+  currentPage: {
+    publishSnapshot: (snapshot) => ipcRenderer.invoke("currentPage.publishSnapshot", snapshot),
+    getSnapshot: () => ipcRenderer.invoke("currentPage.getSnapshot")
   },
   embeddedWeb: {
     executeInFrame: (request) => ipcRenderer.invoke("embeddedWeb.executeInFrame", request)

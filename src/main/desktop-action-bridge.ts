@@ -6,6 +6,7 @@ import { dialog } from "electron";
 import type {
   DesktopActionRendererRequest,
   DesktopActionRendererResponse,
+  DesktopPageContextSnapshot,
   ServiceId,
   ServiceLogTarget,
   ServiceOpenLogViewerRequest
@@ -43,11 +44,13 @@ import {
   uninstallMarketItem,
   updateMarketItem
 } from "./marketplace";
+import { executeCurrentPageCdpAction } from "./current-page-cdp-executor";
 
 type DesktopActionBridgeOptions = {
   app: App;
   assistantBridge: AgentPlatformAssistantBridge;
   getMainWindow: () => BrowserWindow | null;
+  getCurrentPageSnapshot: () => DesktopPageContextSnapshot | null;
   navigate: (targetPath: string) => void;
   openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
   callRendererAction: (request: DesktopActionRendererRequest) => Promise<DesktopActionRendererResponse>;
@@ -318,11 +321,24 @@ async function executeAction(
 
   switch (action) {
     case "desktop.page.getContext":
+      if (options.getCurrentPageSnapshot()) {
+        return ok(action, {
+          source: "desktop",
+          ...options.getCurrentPageSnapshot()
+        });
+      }
+      return callRendererPageAction(options, request, args);
     case "desktop.page.readCurrent":
     case "desktop.page.extractStructured":
     case "desktop.page.interact":
     case "desktop.page.fillForm":
-    case "desktop.page.submitForm":
+    case "desktop.page.submitForm": {
+      const cdpResponse = await executeCurrentPageCdpAction(options.getCurrentPageSnapshot(), request);
+      if (cdpResponse) {
+        return cdpResponse;
+      }
+      return callRendererPageAction(options, request, args);
+    }
     case "desktop.page.getFormState":
     case "desktop.page.validateForm":
     case "desktop.page.previewPatch":
@@ -519,6 +535,29 @@ async function handleActionCall(
   }
   const normalizedRequest = { ...request, action };
   const args = asRecord(request.args);
+  if (action.startsWith("desktop.page.")) {
+    const snapshot = options.getCurrentPageSnapshot();
+    if (
+      request.expectedPageKey &&
+      snapshot?.pageKey &&
+      request.expectedPageKey !== snapshot.pageKey
+    ) {
+      return fail(action, "stale_page_target", "当前页面已切换，请刷新调试目标后重试。", {
+        expectedPageKey: request.expectedPageKey,
+        currentPageKey: snapshot.pageKey
+      });
+    }
+    if (
+      typeof request.expectedSnapshotVersion === "number" &&
+      typeof snapshot?.snapshotVersion === "number" &&
+      request.expectedSnapshotVersion !== snapshot.snapshotVersion
+    ) {
+      return fail(action, "stale_page_target", "当前页面快照版本已变化，请刷新调试目标后重试。", {
+        expectedSnapshotVersion: request.expectedSnapshotVersion,
+        currentSnapshotVersion: snapshot.snapshotVersion
+      });
+    }
+  }
   if (isDesktopActionMutating(action)) {
     const skipConfirmation = request.permissionMode === "full_access" ||
       readString(args, "permissionMode") === "full_access";
@@ -539,6 +578,13 @@ async function handleActionCall(
   } catch (error) {
     return fail(action, "action_failed", error instanceof Error ? error.message : String(error));
   }
+}
+
+export async function handleDesktopActionRequest(
+  options: DesktopActionBridgeOptions,
+  request: DesktopActionCallRequest
+) {
+  return handleActionCall(options, request);
 }
 
 function isLocalhostRequest(req: http.IncomingMessage) {

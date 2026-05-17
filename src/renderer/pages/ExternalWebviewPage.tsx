@@ -36,7 +36,11 @@ import {
   type EmbeddedWebStructuredTarget
 } from "../../shared/embedded-web-scripts";
 import { registerAssistantPageContextProvider } from "../services/assistantPageContext";
-import { publishCurrentPageContextSnapshot } from "../services/currentPageContext";
+import {
+  getCurrentPageContextSnapshot,
+  publishCurrentPageContextSnapshot,
+  subscribeCurrentPageContext
+} from "../services/currentPageContext";
 import {
   registerCurrentPageExecutor,
   registerDesktopActionProviderForScope
@@ -191,6 +195,27 @@ function filterStructuredResult(result: unknown, targets: EmbeddedWebStructuredT
     }
   }
   return filtered;
+}
+
+function defaultDesktopPageDebugArgs(action: string) {
+  switch (action) {
+    case "desktop.page.readCurrent":
+      return { include: ["forms", "links", "images"] };
+    case "desktop.page.extractStructured":
+      return { targets: ["tables", "lists", "forms", "links"] };
+    case "desktop.page.interact":
+      return { selector: "", action: "click", value: "" };
+    case "desktop.page.fillForm":
+      return { formSelector: "", fields: [{ selector: "", value: "", action: "fill" }] };
+    case "desktop.page.submitForm":
+      return { formSelector: "", submitSelector: "" };
+    default:
+      return {};
+  }
+}
+
+function formatDebugJson(value: unknown) {
+  return JSON.stringify(value, null, 2);
 }
 
 function getTabMonogram(title: string, url: string) {
@@ -494,6 +519,13 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
   const [bookmarks, setBookmarks] = useState<ExternalWebviewBookmark[]>(() => readStoredBookmarks());
   const [bookmarkMenu, setBookmarkMenu] = useState<BookmarkMenuState | null>(null);
   const [bookmarkEditor, setBookmarkEditor] = useState<BookmarkEditorState | null>(null);
+  const [debugSidebarOpen, setDebugSidebarOpen] = useState(false);
+  const [debugActions, setDebugActions] = useState<string[]>([]);
+  const [debugAction, setDebugAction] = useState("desktop.page.readCurrent");
+  const [debugArgsJson, setDebugArgsJson] = useState(formatDebugJson(defaultDesktopPageDebugArgs("desktop.page.readCurrent")));
+  const [debugResultJson, setDebugResultJson] = useState("");
+  const [debugPending, setDebugPending] = useState(false);
+  const [debugSnapshot, setDebugSnapshot] = useState(getCurrentPageContextSnapshot());
   const [bookmarksOverflowing, setBookmarksOverflowing] = useState(false);
   const [visibleBookmarkIds, setVisibleBookmarkIds] = useState<string[]>([]);
   const [tabsOverflowing, setTabsOverflowing] = useState(false);
@@ -808,6 +840,73 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
   }, []);
 
   const activeTab = browserState.tabs.find((tab) => tab.id === browserState.activeTabId) ?? browserState.tabs[0];
+
+  useEffect(() => {
+    return subscribeCurrentPageContext((snapshot) => {
+      setDebugSnapshot(snapshot);
+    });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.electronAPI.desktopActions.list().then((response) => {
+      if (cancelled || !response.ok) {
+        return;
+      }
+      const pageActions = response.actions
+        .map((action) => action.name)
+        .filter((name) => name.startsWith("desktop.page."));
+      setDebugActions(pageActions);
+      if (pageActions.length > 0 && !pageActions.includes(debugAction)) {
+        const nextAction = pageActions.includes("desktop.page.readCurrent") ? "desktop.page.readCurrent" : pageActions[0];
+        setDebugAction(nextAction);
+        setDebugArgsJson(formatDebugJson(defaultDesktopPageDebugArgs(nextAction)));
+      }
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [debugAction]);
+
+  function handleSelectDebugAction(nextAction: string) {
+    setDebugAction(nextAction);
+    setDebugArgsJson(formatDebugJson(defaultDesktopPageDebugArgs(nextAction)));
+  }
+
+  async function executeDebugAction() {
+    setDebugPending(true);
+    const startedAt = performance.now();
+    try {
+      const args = debugArgsJson.trim() ? JSON.parse(debugArgsJson) as Record<string, unknown> : {};
+      const response = await window.electronAPI.desktopActions.call({
+        action: debugAction,
+        args,
+        source: {
+          agentKey: "manual_debug"
+        },
+        permissionMode: "full_access",
+        expectedPageKey: debugSnapshot?.pageKey,
+        expectedSnapshotVersion: debugSnapshot?.snapshotVersion
+      });
+      setDebugResultJson(formatDebugJson({
+        elapsedMs: Math.round(performance.now() - startedAt),
+        request: {
+          action: debugAction,
+          args,
+          expectedPageKey: debugSnapshot?.pageKey,
+          expectedSnapshotVersion: debugSnapshot?.snapshotVersion
+        },
+        response
+      }));
+    } catch (error) {
+      setDebugResultJson(formatDebugJson({
+        elapsedMs: Math.round(performance.now() - startedAt),
+        error: error instanceof Error ? error.message : String(error)
+      }));
+    } finally {
+      setDebugPending(false);
+    }
+  }
 
   const getActiveWebviewState = () => {
     const currentState = browserStateRef.current;
@@ -1953,6 +2052,66 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       </form>
     </div>
   ) : null;
+  const debugSidebarNode = debugSidebarOpen ? (
+    <aside className="external-webview-debug-sidebar" aria-label="Desktop page 调试">
+      <div className="external-webview-debug-header">
+        <div>
+          <strong>desktop.page</strong>
+          <span>{debugSnapshot?.pageKind ?? "unknown"} · {debugSnapshot?.snapshotVersion ?? 0}</span>
+        </div>
+        <button
+          type="button"
+          className="external-webview-debug-icon-button"
+          onClick={() => setDebugSidebarOpen(false)}
+          aria-label="关闭调试侧边栏"
+          title="关闭"
+        >
+          <CloseIcon />
+        </button>
+      </div>
+      <dl className="external-webview-debug-target">
+        <div>
+          <dt>pageKey</dt>
+          <dd>{debugSnapshot?.pageKey ?? "未同步"}</dd>
+        </div>
+        <div>
+          <dt>surface</dt>
+          <dd>{debugSnapshot?.surfaceId ?? "默认"} {debugSnapshot?.webContentsId ? `#${debugSnapshot.webContentsId}` : ""}</dd>
+        </div>
+      </dl>
+      <label className="external-webview-debug-field">
+        <span>动作</span>
+        <select value={debugAction} onChange={(event) => handleSelectDebugAction(event.target.value)}>
+          {(debugActions.length > 0 ? debugActions : ["desktop.page.readCurrent"]).map((action) => (
+            <option key={action} value={action}>{action}</option>
+          ))}
+        </select>
+      </label>
+      <label className="external-webview-debug-field">
+        <span>参数 JSON</span>
+        <textarea value={debugArgsJson} onChange={(event) => setDebugArgsJson(event.target.value)} spellCheck={false} />
+      </label>
+      <div className="external-webview-debug-actions">
+        <button type="button" onClick={() => void executeDebugAction()} disabled={debugPending}>
+          {debugPending ? "执行中" : "执行"}
+        </button>
+        <button type="button" onClick={() => setDebugResultJson("")} disabled={!debugResultJson}>
+          清空
+        </button>
+        <button
+          type="button"
+          onClick={() => void window.electronAPI.clipboard.writeText(debugResultJson)}
+          disabled={!debugResultJson}
+        >
+          复制
+        </button>
+      </div>
+      <label className="external-webview-debug-field is-result">
+        <span>结果</span>
+        <textarea value={debugResultJson} readOnly spellCheck={false} placeholder="执行结果会显示在这里" />
+      </label>
+    </aside>
+  ) : null;
 
   return (
     <>
@@ -2098,6 +2257,15 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
           >
             <StarIcon />
           </button>
+          <button
+            type="button"
+            className={`external-webview-debug-toggle${debugSidebarOpen ? " is-active" : ""}`}
+            onClick={() => setDebugSidebarOpen((value) => !value)}
+            aria-label="打开 desktop.page 调试"
+            title="desktop.page 调试"
+          >
+            pg
+          </button>
         </div>
         <div className="external-webview-bookmarks-bar" aria-label="收藏栏">
           <div
@@ -2168,6 +2336,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
           />
         ))}
       </div>
+      {debugSidebarNode}
     </section>
     {bookmarkMenuNode ? createPortal(bookmarkMenuNode, document.body) : null}
     {bookmarkEditorNode ? createPortal(bookmarkEditorNode, document.body) : null}

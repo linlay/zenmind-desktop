@@ -2,6 +2,11 @@ import type {
   DesktopCopilotPagePreferences,
   DesktopCopilotPagePreferencesInput
 } from "./assistant-settings";
+import type {
+  DesktopActionCallRequest,
+  DesktopActionCallResponse,
+  DesktopActionDefinition
+} from "./desktop-actions";
 
 export type ServiceId = string;
 export type ServiceKind = "builtin" | "plugin";
@@ -1341,7 +1346,13 @@ export interface DesktopApi {
   };
   desktopActions: {
     respond: (response: DesktopActionRendererResponse) => Promise<{ ok: boolean }>;
+    list: () => Promise<{ ok: boolean; actions: DesktopActionDefinition[] }>;
+    call: (request: DesktopActionCallRequest) => Promise<DesktopActionCallResponse>;
     onCall: (listener: DesktopActionCallListener) => () => void;
+  };
+  currentPage: {
+    publishSnapshot: (snapshot: DesktopPageContextSnapshot) => Promise<{ ok: boolean }>;
+    getSnapshot: () => Promise<DesktopPageContextSnapshot | null>;
   };
   embeddedWeb: {
     executeInFrame: (request: EmbeddedWebExecuteInFrameRequest) => Promise<EmbeddedWebExecuteInFrameResult>;
