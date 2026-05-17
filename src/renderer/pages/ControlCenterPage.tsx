@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type {
   ServiceConfigFile,
   ServiceConfigReadResult,
@@ -172,25 +173,35 @@ function getConfigDirectoryPaths(configFiles: ServiceConfigFile[]) {
   ];
 }
 
+function getPidDisplay(service: ServiceState) {
+  if (service.healthMeta.pid) {
+    return String(service.healthMeta.pid);
+  }
+  if (service.healthMeta.pidFilePath) {
+    return `PID 文件：${service.healthMeta.pidFilePath}`;
+  }
+  return "未声明";
+}
+
 function StartServiceIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M8.5 5.75v12.5l10-6.25-10-6.25Z" />
+    <svg className="service-action-icon service-action-icon-start" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M7.25 4.75v14.5L18.75 12 7.25 4.75Z" />
     </svg>
   );
 }
 
 function StopServiceIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M7.5 7.5h9v9h-9z" />
+    <svg className="service-action-icon service-action-icon-stop" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M6.75 6.75h10.5v10.5H6.75z" />
     </svg>
   );
 }
 
 function ReinstallServiceIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <svg className="service-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M6 8.5 12 5l6 3.5-6 3.5-6-3.5Z" />
       <path d="M6 8.5v7L12 19l6-3.5v-7" />
       <path d="M12 12v7" />
@@ -202,7 +213,7 @@ function ReinstallServiceIcon() {
 
 function RestartServiceIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <svg className="service-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M20 12a8 8 0 0 1-13.6 5.7" />
       <path d="M4 12A8 8 0 0 1 17.6 6.3" />
       <path d="M17 3.5v4h4" />
@@ -213,7 +224,7 @@ function RestartServiceIcon() {
 
 function InstallServiceIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <svg className="service-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M12 4v9" />
       <path d="m8.5 9.5 3.5 3.5 3.5-3.5" />
       <path d="M5.5 15.5v2.25A2.25 2.25 0 0 0 7.75 20h8.5a2.25 2.25 0 0 0 2.25-2.25V15.5" />
@@ -223,7 +234,7 @@ function InstallServiceIcon() {
 
 function UninstallServiceIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <svg className="service-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M9 5h6" />
       <path d="M5.5 8h13" />
       <path d="M8 8l.6 10.2A2 2 0 0 0 10.6 20h2.8a2 2 0 0 0 2-1.8L16 8" />
@@ -235,7 +246,7 @@ function UninstallServiceIcon() {
 
 function OpenFrontendIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <svg className="service-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M8 6H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
       <path d="M14 4h6v6" />
       <path d="m11 13 8.5-8.5" />
@@ -243,43 +254,12 @@ function OpenFrontendIcon() {
   );
 }
 
-function ServiceDetailIcon() {
+function ServiceHelpIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M12 11.5v5" />
-      <path d="M12 7.5h.01" />
+      <path d="M12 17.25h.01" />
+      <path d="M9.6 9.25A2.65 2.65 0 0 1 12.15 7c1.55 0 2.75.98 2.75 2.35 0 1.05-.58 1.7-1.72 2.42-.88.55-1.2.98-1.2 1.88v.35" />
       <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
-    </svg>
-  );
-}
-
-function LogFileIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M7 4.5h7l3 3V19a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 6 19V6A1.5 1.5 0 0 1 7.5 4.5Z" />
-      <path d="M14 4.5V8h3.5" />
-      <path d="M9 12h6" />
-      <path d="M9 15h6" />
-      <path d="M9 18h3" />
-    </svg>
-  );
-}
-
-function RevealPathIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M4 12s3-5.5 8-5.5S20 12 20 12s-3 5.5-8 5.5S4 12 4 12Z" />
-      <path d="M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
-    </svg>
-  );
-}
-
-function OpenPathIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M4.5 7.5h6l1.6 2h7.4v8A2.5 2.5 0 0 1 17 20H7a2.5 2.5 0 0 1-2.5-2.5v-10Z" />
-      <path d="M15 5h4v4" />
-      <path d="m13.5 10.5 5-5" />
     </svg>
   );
 }
@@ -320,7 +300,7 @@ export function ControlCenterPage() {
   const [pendingAction, setPendingAction] = useState<{ serviceId: ServiceId; scope: ActionScope } | null>(null);
   const [feedback, setFeedback] = useState("");
   const [isBatchStarting, setIsBatchStarting] = useState(false);
-  const [expandedGroup, setExpandedGroup] = useState<ServiceGroupKey | null>(null);
+  const [expandedGroup, setExpandedGroup] = useState<ServiceGroupKey | null>("market");
   const [configCache, setConfigCache] = useState<ConfigCache>({});
   const [configOriginalCache, setConfigOriginalCache] = useState<ConfigCache>({});
   const [configMeta, setConfigMeta] = useState<ConfigMetaCache>({});
@@ -442,6 +422,29 @@ export function ControlCenterPage() {
   const errorLogDisplay = activeDetailService ? getErrorLogDisplay(activeDetailService) : "未声明";
   const detailEndpoint = activeDetailService?.healthMeta.webUrl ?? "";
   const configDirectoryPaths = activeDetailService ? getConfigDirectoryPaths(activeDetailService.configFiles) : [];
+  const activeDetailName = activeDetailService
+    ? getServiceDisplayName(activeDetailService.id, activeDetailService.name)
+    : "";
+  const activeDetailDescription = activeDetailService
+    ? activeCoreModule?.description || activeDetailService.description || "基础设施服务"
+    : "";
+
+  function selectService(cardId: ServiceId) {
+    setSelectedServiceId(cardId);
+  }
+
+  function openServiceHelp(cardId: ServiceId) {
+    setSelectedServiceId(cardId);
+    setDetailDialogOpen(true);
+  }
+
+  function handleServiceCardKeyDown(event: ReactKeyboardEvent<HTMLDivElement>, cardId: ServiceId) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    selectService(cardId);
+  }
 
   useEffect(() => {
     if (!activeDetailServiceId || !selectedConfigKeyForRead || selectedConfigMetaLoaded) {
@@ -665,6 +668,12 @@ export function ControlCenterPage() {
   const metaItems: MetaItem[] = activeDetailService
     ? [
         {
+          key: "description",
+          label: "描述",
+          value: activeDetailDescription || "未声明",
+          title: activeDetailDescription || "未声明"
+        },
+        {
           key: "installDir",
           label: "安装目录",
           value: activeDetailService.installDir || "未声明",
@@ -693,7 +702,7 @@ export function ControlCenterPage() {
         },
         {
           key: "logFile",
-          label: "日志文件",
+          label: "主日志路径",
           value: activeDetailService.healthMeta.logFilePath || "未声明",
           title: activeDetailService.healthMeta.logFilePath || "未声明",
           actions: activeDetailService.healthMeta.logFilePath
@@ -716,7 +725,7 @@ export function ControlCenterPage() {
         },
         {
           key: "errorLog",
-          label: "错误日志",
+          label: "错误日志路径",
           value: errorLogDisplay,
           title: errorLogDisplay,
           actions: activeDetailService.healthMeta.errorLogFilePath
@@ -739,9 +748,9 @@ export function ControlCenterPage() {
         },
         {
           key: "pidFile",
-          label: "PID 文件",
-          value: activeDetailService.healthMeta.pidFilePath || "未声明",
-          title: activeDetailService.healthMeta.pidFilePath || "未声明",
+          label: "进程 ID (PID)",
+          value: getPidDisplay(activeDetailService),
+          title: getPidDisplay(activeDetailService),
           actions: activeDetailService.healthMeta.pidFilePath
             ? [
                 {
@@ -753,22 +762,14 @@ export function ControlCenterPage() {
         }
       ]
     : [];
-  const activeDetailName = activeDetailService
-    ? getServiceDisplayName(activeDetailService.id, activeDetailService.name)
-    : "";
-  const activeDetailDescription = activeDetailService
-    ? activeCoreModule?.description || activeDetailService.description || "基础设施服务"
-    : "";
   const activeDetailStatusText = activeDetailService?.statusLabel || "待接入";
   const activeDetailStatusDetail =
-    activeDetailService && activeDetailService.message && activeDetailService.message !== activeDetailService.statusLabel
+    activeDetailService &&
+    activeDetailService.status !== "running" &&
+    activeDetailService.message &&
+    activeDetailService.message !== activeDetailService.statusLabel
       ? activeDetailService.message
       : "";
-  const activeDetailPidDisplay = activeDetailService?.healthMeta.pidFilePath
-    ? activeDetailService.healthMeta.pidFilePath
-    : activeDetailService?.healthMeta.pid
-      ? String(activeDetailService.healthMeta.pid)
-      : "未声明";
   const registeredStatusLabel = serviceCounts.total > 0 ? "活跃" : "空";
   const runningStatusLabel = serviceCounts.running > 0 ? "运行中" : "待命";
 
@@ -817,17 +818,6 @@ export function ControlCenterPage() {
 
       <div className="control-center-shell">
         <aside className="service-sider service-catalog" aria-label="服务目录">
-          <div className="service-catalog-head">
-            <h2>服务目录</h2>
-            <button
-              type="button"
-              className="service-catalog-quick-start"
-              onClick={() => void handleQuickStart()}
-              disabled={isBatchStarting}
-            >
-              {isBatchStarting ? "启动中..." : "一键启动"}
-            </button>
-          </div>
           <div className="service-accordion">
             {[
               {
@@ -864,6 +854,26 @@ export function ControlCenterPage() {
                         <span>{group.subtitle}</span>
                       </div>
                     </button>
+                    {group.key === "core" ? (
+                      <button
+                        type="button"
+                        className="service-catalog-quick-start"
+                        onClick={() => void handleQuickStart()}
+                        disabled={isBatchStarting}
+                      >
+                        {isBatchStarting ? "启动中..." : "一键启动"}
+                      </button>
+                    ) : null}
+                    {group.key === "market" ? (
+                      <button
+                        type="button"
+                        className="service-catalog-import"
+                        onClick={() => void handleInstallPlugin()}
+                      >
+                        <span aria-hidden="true">+</span>
+                        导入插件
+                      </button>
+                    ) : null}
                   </div>
 
                   {isOpen ? (
@@ -876,7 +886,6 @@ export function ControlCenterPage() {
                             "service" in item && service
                               ? getServiceDisplayName(service.id, item.name)
                               : item.name;
-                          const cardDescription = "service" in item ? item.description : item.description;
                           const isSelected = selectedServiceId === cardId;
                           const isPendingLifecycle =
                             Boolean(service) &&
@@ -890,16 +899,33 @@ export function ControlCenterPage() {
                               : "idle";
 
                           return (
-                            <button
+                            <div
                               key={cardId}
-                              type="button"
-                              className={`service-nav-card${isSelected ? " is-active" : ""}`}
-                              onClick={() => setSelectedServiceId(cardId)}
+                              role="button"
+                              tabIndex={0}
+                              className={`service-nav-card is-compact-service${isSelected ? " is-active" : ""}`}
+                              onClick={() => selectService(cardId)}
+                              onKeyDown={(event) => handleServiceCardKeyDown(event, cardId)}
                               aria-pressed={isSelected}
                             >
                               <div className="service-nav-card-head">
                                 <div className="service-nav-title-row">
                                   <h3>{cardName}</h3>
+                                  {service ? (
+                                    <button
+                                      type="button"
+                                      className="service-nav-help-button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        openServiceHelp(cardId);
+                                      }}
+                                      onKeyDown={(event) => event.stopPropagation()}
+                                      aria-label={`查看${cardName}说明`}
+                                      title="查看说明"
+                                    >
+                                      <ServiceHelpIcon />
+                                    </button>
+                                  ) : null}
                                 </div>
                                 {service ? (
                                   <span
@@ -907,9 +933,7 @@ export function ControlCenterPage() {
                                     title={isPendingLifecycle ? "处理中" : `${service.version} · ${statusLabel}`}
                                   >
                                     <span className={`status-dot ${statusClassName}`} aria-hidden="true" />
-                                    <span className="service-nav-status-label">
-                                      {isPendingLifecycle ? "处理中" : statusLabel}
-                                    </span>
+                                    <span className="service-nav-version-inline">{service.version}</span>
                                   </span>
                                 ) : (
                                   <span className="service-nav-version-status" title={statusLabel}>
@@ -918,9 +942,7 @@ export function ControlCenterPage() {
                                   </span>
                                 )}
                               </div>
-                              <p className="service-nav-description">{cardDescription}</p>
-                              {service ? <span className="service-nav-version">{service.version}</span> : null}
-                            </button>
+                            </div>
                           );
                         })
                       ) : (
@@ -931,16 +953,6 @@ export function ControlCenterPage() {
                 </section>
               );
             })}
-          </div>
-          <div className="service-catalog-foot">
-            <button
-              type="button"
-              className="service-catalog-import"
-              onClick={() => void handleInstallPlugin()}
-            >
-              <span aria-hidden="true">+</span>
-              导入插件
-            </button>
           </div>
         </aside>
 
@@ -955,7 +967,6 @@ export function ControlCenterPage() {
                   <div className="service-hero-copy">
                     <div className="service-hero-title-line">
                       <h2>{activeDetailName}</h2>
-                      <span className="service-latest-badge">LATEST</span>
                     </div>
                     <p>{activeDetailDescription}</p>
                   </div>
@@ -1080,15 +1091,6 @@ export function ControlCenterPage() {
                       <UninstallServiceIcon />
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    className="service-title-text-button service-action-button"
-                    onClick={() => setDetailDialogOpen(true)}
-                    aria-label="详情"
-                    title="详情"
-                  >
-                    <ServiceDetailIcon />
-                  </button>
                 </div>
               </div>
 
@@ -1103,98 +1105,7 @@ export function ControlCenterPage() {
                     {activeDetailStatusText}
                   </strong>
                 </div>
-                <div className="service-detail-metadata-item">
-                  <span>进程 ID (PID)</span>
-                  <strong className="service-detail-path-value">{activeDetailPidDisplay}</strong>
-                </div>
-                <div className="service-detail-metadata-item is-wide">
-                  <span>安装目录</span>
-                  <div className="service-detail-path-row">
-                    <code>{activeDetailService.installDir || "未声明"}</code>
-                    {activeDetailService.installDir ? (
-                      <button
-                        type="button"
-                        className="text-button control-center-link-action icon-link-action"
-                        onClick={() => void revealServicePath(activeDetailService.installDir, "directory")}
-                        aria-label="打开安装目录"
-                        title="打开"
-                      >
-                        <OpenPathIcon />
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="service-detail-metadata-item">
-                  <span>主日志路径</span>
-                  <div className="service-metadata-action-row">
-                    <strong className="service-detail-path-value">
-                      {activeDetailService.healthMeta.logFilePath || "未声明"}
-                    </strong>
-                    {activeDetailService.healthMeta.logFilePath ? (
-                      <>
-                        <button
-                          type="button"
-                          className="text-button control-center-link-action icon-link-action"
-                          onClick={() =>
-                            void openLogViewer(
-                              activeDetailService,
-                              "main",
-                              `${activeDetailName} · 日志文件`
-                            )
-                          }
-                          aria-label="查看主日志"
-                          title="查看日志"
-                        >
-                          <LogFileIcon />
-                        </button>
-                        <button
-                          type="button"
-                          className="text-button control-center-link-action icon-link-action"
-                          onClick={() => void revealServicePath(activeDetailService.healthMeta.logFilePath, "file")}
-                          aria-label="显示主日志文件"
-                          title="显示"
-                        >
-                          <RevealPathIcon />
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="service-detail-metadata-item">
-                  <span>错误日志路径</span>
-                  <div className="service-metadata-action-row">
-                    <strong className="service-detail-path-value is-danger">{errorLogDisplay}</strong>
-                    {activeDetailService.healthMeta.errorLogFilePath ? (
-                      <>
-                        <button
-                          type="button"
-                          className="text-button control-center-link-action icon-link-action"
-                          onClick={() =>
-                            void openLogViewer(
-                              activeDetailService,
-                              "error",
-                              `${activeDetailName} · 错误日志`
-                            )
-                          }
-                          aria-label="查看错误日志"
-                          title="查看日志"
-                        >
-                          <LogFileIcon />
-                        </button>
-                        <button
-                          type="button"
-                          className="text-button control-center-link-action icon-link-action"
-                          onClick={() => void revealServicePath(activeDetailService.healthMeta.errorLogFilePath, "file")}
-                          aria-label="显示错误日志文件"
-                          title="显示"
-                        >
-                          <RevealPathIcon />
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="service-detail-metadata-item">
+                <div className="service-detail-metadata-item is-endpoint">
                   <span>内部访问地址</span>
                   {detailEndpoint ? (
                     <a
@@ -1218,7 +1129,6 @@ export function ControlCenterPage() {
               </div>
               {activeDetailStatusDetail ? (
                 <div className={`service-status-message ${statusClass(activeDetailService.status)}`}>
-                  <span>状态说明</span>
                   <p>{activeDetailStatusDetail}</p>
                 </div>
               ) : null}
@@ -1231,16 +1141,14 @@ export function ControlCenterPage() {
                     <ConfigTerminalIcon />
                   </span>
                   <div>
-                    <h3>原始配置 (YAML)</h3>
+                    <h3>配置</h3>
                     {selectedConfigFile ? (
                       <span>{selectedConfigFile.label || selectedConfigFile.relativePath}</span>
                     ) : null}
                   </div>
-                </div>
-                {selectedConfigFile ? (
-                  <div className="config-select-wrap">
+                  {selectedConfigFile ? (
                     <select
-                      className="config-file-select"
+                      className="config-file-select config-title-file-select"
                       value={selectedConfigFile.key}
                       onChange={(event) =>
                         setActiveConfigKeyByService((current) => ({
@@ -1259,9 +1167,12 @@ export function ControlCenterPage() {
                         );
                       })}
                     </select>
+                  ) : null}
+                </div>
+                {selectedConfigFile ? (
+                  <div className="config-select-wrap">
                     <span className={`config-status${selectedConfigDirty ? " is-dirty" : ""}`}>
                       <span className="config-status-dot" aria-hidden="true" />
-                      {selectedConfigDirty ? "有未保存修改" : "已同步"}
                     </span>
                     <button
                       type="button"
@@ -1294,7 +1205,7 @@ export function ControlCenterPage() {
                       }
                       disabled={activeId === activeDetailService.id || !selectedConfigDirty}
                     >
-                      保存修改
+                      保存
                     </button>
                   </div>
                 ) : null}
