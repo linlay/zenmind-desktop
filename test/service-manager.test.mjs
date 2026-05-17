@@ -342,7 +342,22 @@ function createStartupCoreAssetsFixture(options = {}) {
       web: { routePath: "", portEnvKey: "HOST_PORT", defaultPort: portBase + 1 },
       envExample: [
         `HOST_PORT=${portBase + 1}`,
-        "CONTAINER_HUB_BASE_URL=https://bundle-hub.example.test"
+        "CONTAINER_HUB_BASE_URL=https://bundle-hub.example.test",
+        "",
+        "# Runtime directories",
+        "# REGISTRIES_DIR=./runtime/registries",
+        "# OWNER_DIR=./runtime/owner",
+        "# AGENTS_DIR=./runtime/agents",
+        "# TEAMS_DIR=./runtime/teams",
+        "# ROOT_DIR=./runtime/root",
+        "# SCHEDULES_DIR=./runtime/schedules",
+        "# CHATS_DIR=./runtime/chats",
+        "# MEMORY_DIR=./runtime/memory",
+        "# SKILLS_MARKET_DIR=./runtime/skills-market",
+        "# PAN_DIR=./runtime/pan",
+        "",
+        "# Provider apiKey AES(...)",
+        "# PROVIDER_APIKEY_KEY_PART="
       ].join("\n") + "\n",
       extraPaths: [["configs"], ["runtime"], ["scripts"]]
     },
@@ -353,6 +368,7 @@ function createStartupCoreAssetsFixture(options = {}) {
       web: { routePath: "/", portEnvKey: "PORT", defaultPort: portBase },
       envExample: [
         `PORT=${portBase}`,
+        "# DESKTOP_APP=true",
         "BASE_URL=https://bundle-platform.example.test",
         "WS_BASE_URL=https://bundle-platform.example.test",
         "VOICE_BASE_URL=https://bundle-platform.example.test"
@@ -1214,7 +1230,7 @@ test("normalizeAgentWebclientEnvContentForDesktop writes desktop mode without st
   const next = __testInternals.normalizeAgentWebclientEnvContentForDesktop(
     [
       "PORT=11948",
-      "DESKTOP_APP=false",
+      "# DESKTOP_APP=true",
       "NODE_BIN=/tmp/node",
       "NODE_ENV=production",
       "DEV_SERVER_ALLOWED_HOSTS=all",
@@ -1224,10 +1240,58 @@ test("normalizeAgentWebclientEnvContentForDesktop writes desktop mode without st
 
   assert.match(next, /^PORT=11948$/m);
   assert.match(next, /^DESKTOP_APP=true$/m);
+  assert.doesNotMatch(next, /^# DESKTOP_APP=true$/m);
+  assert.equal([...next.matchAll(/^DESKTOP_APP=/gm)].length, 1);
+  assert.ok(next.indexOf("DESKTOP_APP=true") < next.indexOf("NODE_BIN=/tmp/node"));
   assert.match(next, /^BASE_URL=http:\/\/127\.0\.0\.1:11949$/m);
   assert.match(next, /^NODE_BIN=\/tmp\/node$/m);
   assert.match(next, /^NODE_ENV=production$/m);
   assert.match(next, /^DEV_SERVER_ALLOWED_HOSTS=all$/m);
+});
+
+test("normalizeAgentContainerHubEnvContentForDesktop removes stale relative desktop-managed paths", () => {
+  const next = __testInternals.normalizeAgentContainerHubEnvContentForDesktop(
+    [
+      "BIND_ADDR=127.0.0.1:11960",
+      "STATE_DB_PATH=./data/hub.db",
+      "CONFIG_ROOT=./configs",
+      "ROOTFS_ROOT=./data/rootfs",
+      "BUILD_ROOT=./data/builds",
+      "SESSION_MOUNT_TEMPLATE_ROOT=./zenmind-env",
+      "ENGINE=auto",
+      "DISPLAY_TIMEZONE=Asia/Shanghai"
+    ].join("\n") + "\n"
+  );
+
+  assert.match(next, /^BIND_ADDR=127\.0\.0\.1:11960$/m);
+  assert.match(next, /^ENGINE=auto$/m);
+  assert.match(next, /^DISPLAY_TIMEZONE=Asia\/Shanghai$/m);
+  assert.doesNotMatch(next, /^STATE_DB_PATH=/m);
+  assert.doesNotMatch(next, /^CONFIG_ROOT=/m);
+  assert.doesNotMatch(next, /^ROOTFS_ROOT=/m);
+  assert.doesNotMatch(next, /^BUILD_ROOT=/m);
+  assert.doesNotMatch(next, /^SESSION_MOUNT_TEMPLATE_ROOT=/m);
+});
+
+test("normalizeAgentContainerHubEnvContentForDesktop preserves custom absolute desktop-managed paths", () => {
+  const next = __testInternals.normalizeAgentContainerHubEnvContentForDesktop(
+    [
+      "BIND_ADDR=127.0.0.1:11960",
+      "STATE_DB_PATH=/var/lib/agent-container-hub/hub.db",
+      "CONFIG_ROOT=\"/etc/agent-container-hub/configs\"",
+      "ROOTFS_ROOT='/var/lib/agent-container-hub/rootfs'",
+      "BUILD_ROOT=/var/lib/agent-container-hub/builds",
+      "SESSION_MOUNT_TEMPLATE_ROOT=C:\\\\agent-container-hub\\\\templates",
+      "ENGINE=podman"
+    ].join("\n") + "\n"
+  );
+
+  assert.match(next, /^STATE_DB_PATH=\/var\/lib\/agent-container-hub\/hub\.db$/m);
+  assert.match(next, /^CONFIG_ROOT="\/etc\/agent-container-hub\/configs"$/m);
+  assert.match(next, /^ROOTFS_ROOT='\/var\/lib\/agent-container-hub\/rootfs'$/m);
+  assert.match(next, /^BUILD_ROOT=\/var\/lib\/agent-container-hub\/builds$/m);
+  assert.match(next, /^SESSION_MOUNT_TEMPLATE_ROOT=C:\\\\agent-container-hub\\\\templates$/m);
+  assert.match(next, /^ENGINE=podman$/m);
 });
 
 test("applyAgentPlatformWindowsHostShellDefaults injects PowerShell defaults on Windows", () => {
@@ -1720,6 +1784,70 @@ test("installBuiltinService repairs damaged install and preserves env", async ()
   assert.equal(__testInternals.isInstallHealthy(service, installDir), true);
   assert.notEqual((await getServiceState(app, service.id)).status, "initialization-required");
   assert.equal(readInitializationStatePath(getTestInitializationStatePath(userDataRoot, service.id))?.status, "succeeded");
+
+  restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("installBuiltinService removes stale container hub relative path env during initialization", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-hub-env-normalize-"));
+  const envContent = [
+    "BIND_ADDR=127.0.0.1:12000",
+    "STATE_DB_PATH=./data/hub.db",
+    "CONFIG_ROOT=./configs",
+    "ROOTFS_ROOT=./data/rootfs",
+    "BUILD_ROOT=./data/builds",
+    "SESSION_MOUNT_TEMPLATE_ROOT=./zenmind-env",
+    "ENGINE=auto"
+  ].join("\n") + "\n";
+  const { assetsRoot, userDataRoot } = createContainerHubBundleFixture(tempRoot);
+
+  writeTestEnv(userDataRoot, "agent-container-hub", envContent);
+
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const service = getBuiltinService("agent-container-hub");
+
+  await installBuiltinService(app, service.id);
+
+  const nextEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-container-hub"), "utf8");
+  assert.match(nextEnv, /^BIND_ADDR=127\.0\.0\.1:7079$/m);
+  assert.match(nextEnv, /^ENGINE=auto$/m);
+  assert.doesNotMatch(nextEnv, /^STATE_DB_PATH=/m);
+  assert.doesNotMatch(nextEnv, /^CONFIG_ROOT=/m);
+  assert.doesNotMatch(nextEnv, /^ROOTFS_ROOT=/m);
+  assert.doesNotMatch(nextEnv, /^BUILD_ROOT=/m);
+  assert.doesNotMatch(nextEnv, /^SESSION_MOUNT_TEMPLATE_ROOT=/m);
+
+  restore();
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("installBuiltinService preserves custom absolute container hub path env", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-hub-env-absolute-"));
+  const envContent = [
+    "BIND_ADDR=127.0.0.1:12000",
+    "STATE_DB_PATH=/var/lib/agent-container-hub/hub.db",
+    "CONFIG_ROOT=/etc/agent-container-hub/configs",
+    "ROOTFS_ROOT=/var/lib/agent-container-hub/rootfs",
+    "BUILD_ROOT=/var/lib/agent-container-hub/builds",
+    "ENGINE=podman"
+  ].join("\n") + "\n";
+  const { assetsRoot, userDataRoot } = createContainerHubBundleFixture(tempRoot);
+
+  writeTestEnv(userDataRoot, "agent-container-hub", envContent);
+
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const service = getBuiltinService("agent-container-hub");
+
+  await installBuiltinService(app, service.id);
+
+  const nextEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-container-hub"), "utf8");
+  assert.match(nextEnv, /^BIND_ADDR=127\.0\.0\.1:7079$/m);
+  assert.match(nextEnv, /^STATE_DB_PATH=\/var\/lib\/agent-container-hub\/hub\.db$/m);
+  assert.match(nextEnv, /^CONFIG_ROOT=\/etc\/agent-container-hub\/configs$/m);
+  assert.match(nextEnv, /^ROOTFS_ROOT=\/var\/lib\/agent-container-hub\/rootfs$/m);
+  assert.match(nextEnv, /^BUILD_ROOT=\/var\/lib\/agent-container-hub\/builds$/m);
+  assert.match(nextEnv, /^ENGINE=podman$/m);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -2326,6 +2454,7 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
     assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
     assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
     assert.match(envContent, /^HOST_PORT=7078$/m);
+    assert.doesNotMatch(envContent, /^SERVER_PORT=7078$/m);
     assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
     assert.match(envContent, /^REGISTRIES_DIR=~\/\.zenmind\/registries$/m);
     assert.doesNotMatch(envContent, /^TOOLS_DIR=/m);
@@ -2338,6 +2467,11 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
     assert.match(envContent, /^MEMORY_DIR=~\/\.zenmind\/memory$/m);
     assert.match(envContent, /^SKILLS_MARKET_DIR=~\/\.zenmind\/skills-market$/m);
     assert.match(envContent, /^PAN_DIR=~\/\.zenmind\/pan$/m);
+    assert.doesNotMatch(envContent, /^# PROVIDER_APIKEY_KEY_PART=/m);
+    assert.doesNotMatch(envContent, /^# REGISTRIES_DIR=/m);
+    assert.ok(envContent.indexOf("# Runtime directories") < envContent.indexOf("REGISTRIES_DIR=~/.zenmind/registries"));
+    assert.ok(envContent.indexOf("PAN_DIR=~/.zenmind/pan") < envContent.indexOf("# Provider apiKey AES(...)"));
+    assert.ok(envContent.indexOf("# Provider apiKey AES(...)") < envContent.indexOf("PROVIDER_APIKEY_KEY_PART=0.1.0"));
     assert.equal(fs.existsSync(path.join(configDir, "configs", "local-public-key.pem")), true);
     for (const fileName of [
       "container-hub.yml",
@@ -2438,6 +2572,10 @@ test("initializeService recreates Desktop defaults for core services after confi
       appServerPublicKey
     );
     assert.match(webclientEnv, /^PORT=7080$/m);
+    assert.match(webclientEnv, /^DESKTOP_APP=true$/m);
+    assert.doesNotMatch(webclientEnv, /^# DESKTOP_APP=true$/m);
+    assert.equal([...webclientEnv.matchAll(/^DESKTOP_APP=/gm)].length, 1);
+    assert.ok(webclientEnv.indexOf("DESKTOP_APP=true") < webclientEnv.indexOf("BASE_URL=http://127.0.0.1:7078"));
     assert.match(webclientEnv, /^BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
     assert.match(webclientEnv, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
     assert.match(webclientEnv, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);

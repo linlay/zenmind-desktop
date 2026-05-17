@@ -320,7 +320,8 @@ test("synced builtin assets include agent-webclient so assistant entry is availa
   assert.ok(entries.has("agent-webclient/manifest.json"));
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
   const envExample = readArchiveEntryText(assetPath, "agent-webclient/.env.example");
-  assert.match(envExample, /\bDESKTOP_APP\s*=/);
+  assert.match(envExample, /^# DESKTOP_APP=true$/m);
+  assert.doesNotMatch(envExample, /^DESKTOP_APP=/m);
 
   const manifest = readManifestFromArchive(assetPath);
   assert.equal(manifest?.backend?.entry, "backend/server.cjs");

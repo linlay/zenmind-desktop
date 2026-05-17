@@ -761,7 +761,11 @@ function formatEnvValue(value: string) {
   return value;
 }
 
-function upsertEnvFileContent(content: string, updates: Map<string, string>) {
+function upsertEnvFileContent(
+  content: string,
+  updates: Map<string, string>,
+  options: { uncommentExisting?: boolean } = {}
+) {
   const lines = content.split(/\r?\n/u);
   if (lines.length > 0 && lines[lines.length - 1] === "") {
     lines.pop();
@@ -777,6 +781,19 @@ function upsertEnvFileContent(content: string, updates: Map<string, string>) {
 
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) {
+      if (options.uncommentExisting && trimmed.startsWith("#")) {
+        const uncommented = trimmed.slice(1).trimStart();
+        const uncommentedSeparatorIndex = uncommented.indexOf("=");
+        if (uncommentedSeparatorIndex > 0) {
+          const key = uncommented.slice(0, uncommentedSeparatorIndex).trim();
+          if (!applied.has(key) && pending.has(key)) {
+            const value = pending.get(key) ?? "";
+            pending.delete(key);
+            applied.add(key);
+            return [`${key}=${formatEnvValue(value)}`];
+          }
+        }
+      }
       return [line];
     }
 
@@ -805,10 +822,14 @@ function upsertEnvFileContent(content: string, updates: Map<string, string>) {
   return `${nextLines.join("\n")}\n`;
 }
 
-function writeEnvFileUpdates(filePath: string, updates: Map<string, string>) {
+function writeEnvFileUpdates(
+  filePath: string,
+  updates: Map<string, string>,
+  options: { uncommentExisting?: boolean } = {}
+) {
   const current = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
   ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, upsertEnvFileContent(current, updates), "utf8");
+  fs.writeFileSync(filePath, upsertEnvFileContent(current, updates, options), "utf8");
 }
 
 const MAX_TCP_PORT = 65535;
@@ -3210,10 +3231,58 @@ function writeAgentPlatformLegacyEnvBackupIfNeeded(installDir: string, originalC
 }
 
 function normalizePreservedBuiltinEnvForInstall(service: ServiceDefinition, content: string) {
+  if (service.id === "agent-container-hub") {
+    return {
+      content: normalizeAgentContainerHubEnvContentForDesktop(content),
+      backupContent: ""
+    };
+  }
+
   return {
     content,
     backupContent: ""
   };
+}
+
+const AGENT_CONTAINER_HUB_DESKTOP_MANAGED_PATH_KEYS = [
+  "STATE_DB_PATH",
+  "CONFIG_ROOT",
+  "ROOTFS_ROOT",
+  "BUILD_ROOT",
+  "SESSION_MOUNT_TEMPLATE_ROOT"
+] as const;
+
+function isAbsoluteServiceEnvPath(value: string) {
+  return path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value);
+}
+
+function normalizeAgentContainerHubEnvContentForDesktop(content: string) {
+  const nextLines = content
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        return true;
+      }
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex <= 0) {
+        return true;
+      }
+      const key = trimmed.slice(0, separatorIndex).trim();
+      if (!AGENT_CONTAINER_HUB_DESKTOP_MANAGED_PATH_KEYS.includes(
+        key as (typeof AGENT_CONTAINER_HUB_DESKTOP_MANAGED_PATH_KEYS)[number]
+      )) {
+        return true;
+      }
+
+      const value = trimmed.slice(separatorIndex + 1).trim().replace(/^['"]|['"]$/gu, "");
+      return isAbsoluteServiceEnvPath(value);
+    });
+
+  if (nextLines.length === 0) {
+    return "";
+  }
+  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
 }
 
 function removeEnvKeysFromContent(content: string, keys: readonly string[]) {
@@ -3294,7 +3363,7 @@ function removeDesktopManagedAgentPlatformEnvContent(content: string, layout?: S
 }
 
 function normalizeAgentWebclientEnvContentForDesktop(content: string) {
-  return upsertEnvFileContent(content, AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES);
+  return upsertEnvFileContent(content, AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES, { uncommentExisting: true });
 }
 
 function normalizeAgentPlatformEnvContentForRuntime(content: string, layout?: ServiceLayout) {
@@ -3656,6 +3725,14 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
 
   const envPath = layout.envPath;
   let content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+  if (service.id === "agent-container-hub") {
+    const normalizedContent = normalizeAgentContainerHubEnvContentForDesktop(content);
+    if (normalizedContent !== content) {
+      ensureDir(path.dirname(envPath));
+      fs.writeFileSync(envPath, normalizedContent, "utf8");
+      content = normalizedContent;
+    }
+  }
   if (service.id === "agent-webclient") {
     const normalizedContent = normalizeAgentWebclientEnvContentForDesktop(content);
     if (normalizedContent !== content) {
@@ -3691,7 +3768,9 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
   }
 
   if (updates.size > 0) {
-    writeEnvFileUpdates(envPath, updates);
+    writeEnvFileUpdates(envPath, updates, {
+      uncommentExisting: service.id === "agent-platform"
+    });
   }
 
   if (service.id === "zenmind-app-server") {
@@ -4946,6 +5025,7 @@ export const __testInternals = {
   resolveAcpCommandForDesktop,
   normalizeAgentPlatformEnvContentForRuntime,
   normalizeAgentPlatformEnvContentForSave,
+  normalizeAgentContainerHubEnvContentForDesktop,
   normalizeAgentWebclientEnvContentForDesktop,
   applyAgentPlatformWindowsHostShellDefaults,
   parseProcessTreeRowsFromPs,
