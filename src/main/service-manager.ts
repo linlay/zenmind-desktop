@@ -395,9 +395,6 @@ function prepareServiceExecutionLayout(_service: ServiceDefinition, layout: Serv
   ensureDir(layout.stateDir);
   ensureDir(path.join(layout.stateDir, "pid"));
   ensureDir(layout.logDir);
-  if (_service.id === "agent-platform") {
-    migrateAgentPlatformLegacyRuntimeFiles(layout);
-  }
 }
 
 function readInitializationState(layoutOrInstallDir: ServiceLayout | string): InitializationState | null {
@@ -683,29 +680,6 @@ function patchProgramCommonForLayeredLayout(programDir: string) {
     }
   } catch {
     // Invalid manifests are reported by the install health checks.
-  }
-}
-
-function migrateAgentPlatformLegacyRuntimeFiles(layout: ServiceLayout) {
-  const legacyPidPath = path.join(layout.stateDir, "agent-platform-runner.pid");
-  const canonicalPidPath = path.join(layout.stateDir, "pid", "agent-platform.pid");
-  if (fs.existsSync(legacyPidPath)) {
-    const legacyPid = readPid(legacyPidPath);
-    ensureDir(path.dirname(canonicalPidPath));
-    if (legacyPid && !fs.existsSync(canonicalPidPath)) {
-      fs.writeFileSync(canonicalPidPath, `${legacyPid}\n`, "utf8");
-    }
-    fs.rmSync(legacyPidPath, { force: true });
-  }
-
-  const legacyLogPath = path.join(layout.logDir, "agent-platform-runner.log");
-  const canonicalLogPath = path.join(layout.logDir, "agent-platform.log");
-  if (fs.existsSync(legacyLogPath) && !fs.existsSync(canonicalLogPath)) {
-    try {
-      fs.renameSync(legacyLogPath, canonicalLogPath);
-    } catch {
-      // Logs are best-effort; the next start will create the canonical log path.
-    }
   }
 }
 
@@ -2578,34 +2552,6 @@ async function attachServiceVerification(
   };
 }
 
-async function isAgentWebclientRunning(app: App) {
-  try {
-    const webclientState = await getServiceState(app, "agent-webclient");
-    return webclientState.status === "running";
-  } catch {
-    return false;
-  }
-}
-
-function didAgentPlatformRuntimeChange(previousPlatformState: ServiceState, nextPlatformState: ServiceState) {
-  if (previousPlatformState.status !== "running") {
-    return true;
-  }
-  return previousPlatformState.healthMeta.pid !== nextPlatformState.healthMeta.pid;
-}
-
-async function restartAgentWebclientAfterPlatformStart(app: App, platformResult: ServiceCommandResult) {
-  const webclientResult = await restartService(app, "agent-webclient");
-  if (!webclientResult.ok || webclientResult.service.status !== "running") {
-    return {
-      ...platformResult,
-      ok: false,
-      message: `${platformResult.message} 但智能助理刷新失败：${webclientResult.message}`
-    };
-  }
-  return platformResult;
-}
-
 const DEFAULT_LOCAL_CLI_ACP_RELAY_PORT = "3220";
 const LOCAL_CLI_ACP_RELAY_PLUGIN_ID = "local-cli-acp-relay";
 const DEFAULT_CLAUDE_CODE_ACP_ARGS = "-y @zed-industries/claude-code-acp";
@@ -3710,14 +3656,6 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
 
   const envPath = layout.envPath;
   let content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
-  if (service.id === "agent-platform") {
-    const normalizedContent = removeEnvKeysFromContent(content, ["SERVER_PORT"]);
-    if (normalizedContent !== content) {
-      ensureDir(path.dirname(envPath));
-      fs.writeFileSync(envPath, normalizedContent, "utf8");
-      content = normalizedContent;
-    }
-  }
   if (service.id === "agent-webclient") {
     const normalizedContent = normalizeAgentWebclientEnvContentForDesktop(content);
     if (normalizedContent !== content) {
@@ -3730,9 +3668,6 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
   const env = parseEnvFileContent(content);
   const updates = new Map<string, string>();
   await applyEnvBindings(app, service, env, updates);
-  if (service.id === "agent-platform") {
-    updates.delete("SERVER_PORT");
-  }
   syncCoreServiceDefaultPortEnv(service, env, updates, { force: true });
 
   if (service.id === "zenmind-app-server") {
@@ -3940,7 +3875,6 @@ type RunServiceCommandOptions = {
 };
 
 const NODE_BIN_START_ENV_SERVICE_IDS = new Set<ServiceId>([
-  "agent-platform",
   "agent-webclient",
   LOCAL_CLI_ACP_RELAY_PLUGIN_ID
 ]);
@@ -3958,25 +3892,12 @@ function resolveNodeBinStartEnv() {
   return { NODE_BIN: nodeBin };
 }
 
-function getAgentPlatformStartPortEnv(app: App) {
-  const envInfo = readInstalledServiceEnv(app, "agent-platform");
-  const hostPort = envInfo?.env.get("HOST_PORT")?.trim() || String(getService("agent-platform").web.defaultPort);
-  return {
-    // Desktop runs agent-platform directly on the host. There is no container or make-run
-    // port mapping here, so the backend's internal listen port must match HOST_PORT.
-    SERVER_PORT: hostPort
-  };
-}
-
-function getStartCommandEnvOverrides(app: App, service: ServiceDefinition) {
+function getStartCommandEnvOverrides(_app: App, service: ServiceDefinition) {
   if (!NODE_BIN_START_ENV_SERVICE_IDS.has(service.id)) {
     return undefined;
   }
 
-  return {
-    ...resolveNodeBinStartEnv(),
-    ...(service.id === "agent-platform" ? getAgentPlatformStartPortEnv(app) : {})
-  };
+  return resolveNodeBinStartEnv();
 }
 
 async function runServiceCommand(
@@ -4036,9 +3957,6 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
   const shouldRefreshFromBundledAsset = service.kind === "builtin" && needsBundledAssetRefresh(app, service);
-  const shouldRestartWebclientAfterPlatformStart = service.id === "agent-platform"
-    ? await isAgentWebclientRunning(app)
-    : false;
 
   if (shouldRefreshFromBundledAsset) {
     if (current.status === "running") {
@@ -4147,14 +4065,6 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
   }
 
   const verifiedResult = await attachServiceVerification(app, serviceId, result, "running", `${service.name} 启动命令已执行`);
-  if (
-    service.id === "agent-platform" &&
-    shouldRestartWebclientAfterPlatformStart &&
-    verifiedResult.ok &&
-    didAgentPlatformRuntimeChange(current, verifiedResult.service)
-  ) {
-    return restartAgentWebclientAfterPlatformStart(app, verifiedResult);
-  }
   return verifiedResult;
 }
 

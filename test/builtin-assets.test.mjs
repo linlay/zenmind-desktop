@@ -521,11 +521,11 @@ test("actual synced agent-platform asset includes required entries", () => {
   if (assetPath.endsWith(".zip")) {
     assert.ok(entries.has("agent-platform/start.ps1"));
     assert.ok(entries.has("agent-platform/stop.ps1"));
-    assert.ok(entries.has("agent-platform/backend/agent-platform-runner.exe"));
+    assert.ok(entries.has("agent-platform/backend/agent-platform.exe"));
   } else {
     assert.ok(entries.has("agent-platform/start.sh"));
     assert.ok(entries.has("agent-platform/stop.sh"));
-    assert.ok(entries.has("agent-platform/backend/agent-platform-runner"));
+    assert.ok(entries.has("agent-platform/backend/agent-platform"));
   }
 });
 
@@ -541,11 +541,14 @@ test("actual synced agent-platform asset no longer bundles the local relay", () 
   assert.equal([...entries].some((entry) => entry.includes("local-cli-acp-relay")), false);
   assert.doesNotMatch(programCommon, /LOCAL_CLI_ACP_RELAY_/);
   assert.doesNotMatch(envExample, /LOCAL_CLI_ACP_RELAY_|CLAUDE_CODE_ACP_/);
+  assert.doesNotMatch(envExample, /^HOST_PORT=/m);
+  assert.match(envExample, /^SERVER_PORT=/m);
   assert.ok(
     Array.isArray(manifest?.desktop?.envBindings),
     "expected bundled agent-platform manifest to declare desktop env bindings"
   );
   const disallowedLegacyEnvBindings = new Set([
+    "HOST_PORT",
     "AGENT_WS_ENABLED",
     "AGENT_CONTAINER_HUB_BASE_URL",
     "AGENT_AUTH_ENABLED",
@@ -582,7 +585,7 @@ test("validateBundleArchive rejects legacy agent-platform bundles that still emb
   assert.ok(service);
 
   const fixture = createTarBundle(service, {
-    "backend/agent-platform-runner": "binary\n",
+    "backend/agent-platform": "binary\n",
     "local-cli-acp-relay/relay.mjs": "console.log('relay');\n",
     "start.sh": "#!/usr/bin/env bash\nexit 0\n",
     "stop.sh": "#!/usr/bin/env bash\nexit 0\n",

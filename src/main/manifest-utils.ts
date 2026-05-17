@@ -117,11 +117,11 @@ const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = 
     ]
   },
   "agent-platform": {
-    portEnvKey: "HOST_PORT",
+    portEnvKey: "SERVER_PORT",
     defaultPort: 7078,
     portBindings: [
       {
-        key: "HOST_PORT",
+        key: "SERVER_PORT",
         value: "{{serviceDefaultPort}}",
         defaults: ["", "11949", "18081", "7200", "117078"]
       }
