@@ -25,6 +25,48 @@ test("sidebar does not expose the built-in Chrome surface", () => {
   assert.doesNotMatch(sidebarSource, /BUILTIN_BROWSER_ROUTE/);
 });
 
+test("control center keeps service operations in the prototype dashboard layout", () => {
+  const controlCenter = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "ControlCenterPage.tsx"),
+    "utf8"
+  );
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+
+  assert.match(controlCenter, /control-center-dashboard-metrics/);
+  assert.match(controlCenter, /service-catalog/);
+  assert.match(controlCenter, /control-center-service-hero/);
+  assert.match(controlCenter, /service-detail-metadata/);
+  assert.match(controlCenter, /config-status-dot/);
+  assert.match(controlCenter, /function ConfigTerminalIcon\(\)/);
+  assert.match(controlCenter, /<ConfigTerminalIcon \/>/);
+  assert.doesNotMatch(controlCenter, /config-terminal-icon" aria-hidden="true">&gt;_/);
+  assert.match(controlCenter, /管理并监控您的基础设施服务集群。/);
+  assert.match(controlCenter, /已注册服务/);
+  assert.match(controlCenter, /运行中实例/);
+  assert.match(controlCenter, /handleQuickStart/);
+  assert.match(controlCenter, /handleInstallPlugin/);
+  assert.match(controlCenter, /installBuiltinFromBundle/);
+  assert.match(controlCenter, /initialize\(activeDetailService\.id\)/);
+  assert.match(controlCenter, /installBuiltin\(activeDetailService\.id\)/);
+  assert.match(controlCenter, /uninstallPlugin\(activeDetailService\.id\)/);
+  assert.match(controlCenter, /openLogViewer/);
+  assert.match(controlCenter, /writeConfig/);
+  assert.match(globalStyles, /\.control-center-dashboard-metrics\s*\{/);
+  assert.match(globalStyles, /\.service-catalog\s*\{/);
+  assert.match(globalStyles, /\.control-center-service-hero\s*\{/);
+  assert.match(globalStyles, /\.service-detail-metadata\s*\{/);
+  assert.match(globalStyles, /\.config-status-dot\s*\{/);
+  assert.match(globalStyles, /\.config-terminal-icon svg\s*\{/);
+  assert.match(globalStyles, /\.service-action-button,[\s\S]*?\.service-title-text-button\.service-action-button\s*\{[\s\S]*?border:\s*0;/);
+  assert.match(globalStyles, /\.control-center-link-action\.icon-link-action\s*\{[\s\S]*?border:\s*0;/);
+  assert.match(globalStyles, /\.config-save-button\s*\{[\s\S]*?border:\s*0;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-action-button,[\s\S]*?:root\[data-theme="dark"\] \.service-title-text-button\.service-action-button\s*\{/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-hero-icon\s*\{/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.control-center-page \.config-file-select\s*\{/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.control-center-page \.config-editor\s*\{/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-status-message\.danger\s*\{/);
+});
+
 test("assistant launcher sits beside settings in the sidebar footer", () => {
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
   const sidebarSource = fs.readFileSync(
