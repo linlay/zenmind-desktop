@@ -463,7 +463,12 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /customSidebarAgentKey = activeCustomSidebarItemId/);
   assert.match(appShell, /resolvedCopilotAgentKey = customSidebarAgentKey \|\| currentCopilotPreference\?\.agentKey \|\| ""/);
   assert.match(appShell, /resolvedAgentKey=\{resolvedCopilotAgentKey\}/);
-  assert.match(appShell, /data-open-agent-key=\{openRequest\?\.agentKey \?\? openRequest\?\.workerKey \?\? resolvedAgentKey\}/);
+  assert.match(appShell, /assistantDockOpenRequestPathRef = useRef<string \| null>\(null\)/);
+  assert.match(appShell, /assistantDockOpenRequestPathRef\.current !== location\.pathname[\s\S]*?setAssistantDockOpenRequest\(null\)/);
+  assert.match(appShell, /assistantDockOpenRequestPathRef\.current = location\.pathname[\s\S]*?setAssistantDockOpenRequest\(request\)/);
+  assert.match(appShell, /const targetAgentKey = openRequest\?\.agentKey \?\? openRequest\?\.workerKey \?\? resolvedAgentKey/);
+  assert.match(appShell, /data-open-agent-key=\{targetAgentKey\}/);
+  assert.match(appShell, /key=\{`agent-webclient-copilot:\$\{targetAgentKey\}`\}/);
   assert.match(sidebarSource, /assistantLauncherVisible/);
   assert.match(sidebarSource, /assistantLauncherDisabled/);
   assert.match(sidebarSource, /assistantLauncherVisible \? \(/);

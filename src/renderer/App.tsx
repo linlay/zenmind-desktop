@@ -128,6 +128,7 @@ function AppShell() {
   const navigate = useNavigate();
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
+  const assistantDockOpenRequestPathRef = useRef<string | null>(null);
   const startupNavigationDoneRef = useRef(false);
   const lastNonSettingsRouteRef = useRef("/control-center");
   const refreshServicesRef = useRef(refreshServices);
@@ -325,8 +326,24 @@ function AppShell() {
     if (isAgentWebclientMainRoute && assistantDockOpen) {
       setAssistantDockOpen(false);
       setAssistantDockOpenRequest(null);
+      assistantDockOpenRequestPathRef.current = null;
     }
   }, [assistantDockOpen, isAgentWebclientMainRoute]);
+
+  useEffect(() => {
+    if (!assistantDockOpenRequest) {
+      assistantDockOpenRequestPathRef.current = null;
+      return;
+    }
+
+    if (
+      assistantDockOpenRequestPathRef.current &&
+      assistantDockOpenRequestPathRef.current !== location.pathname
+    ) {
+      setAssistantDockOpenRequest(null);
+      assistantDockOpenRequestPathRef.current = null;
+    }
+  }, [assistantDockOpenRequest, location.pathname]);
 
   useEffect(() => {
     return window.electronAPI.onNavigate((targetPath) => {
@@ -336,10 +353,11 @@ function AppShell() {
 
   useEffect(() => {
     return window.electronAPI.onOpenAssistantWorker((request) => {
+      assistantDockOpenRequestPathRef.current = location.pathname;
       setAssistantDockOpenRequest(request);
       openAssistantDock();
     });
-  }, []);
+  }, [location.pathname]);
 
   useEffect(() => {
     return window.electronAPI.onNativeDialogVisibility((state) => {
@@ -1296,6 +1314,8 @@ function AgentWebclientCopilotDock({
   onClose: () => void;
   onRunningRunIdChange: (runId: string | null) => void;
 }) {
+  const targetAgentKey = openRequest?.agentKey ?? openRequest?.workerKey ?? resolvedAgentKey;
+
   useEffect(() => {
     if (!open) {
       onRunningRunIdChange(null);
@@ -1311,9 +1331,10 @@ function AgentWebclientCopilotDock({
       ].filter(Boolean).join(" ")}
       aria-hidden={!open}
       data-open-chat-id={openRequest?.chatId ?? ""}
-      data-open-agent-key={openRequest?.agentKey ?? openRequest?.workerKey ?? resolvedAgentKey}
+      data-open-agent-key={targetAgentKey}
     >
       <PluginPage
+        key={`agent-webclient-copilot:${targetAgentKey}`}
         active={open}
         embedPath={AGENT_WEBCLIENT_COPILOT_PATH}
         hostTheme={hostTheme}
