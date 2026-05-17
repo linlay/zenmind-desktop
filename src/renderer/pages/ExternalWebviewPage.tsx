@@ -106,6 +106,7 @@ const EMBEDDED_WEB_SCRIPT_MAX_BYTES = 256 * 1024;
 const EMBEDDED_WEB_READ_INCLUDES = new Set<EmbeddedWebReadInclude>(["forms", "links", "images"]);
 const EMBEDDED_WEB_STRUCTURED_TARGETS = new Set<EmbeddedWebStructuredTarget>(["tables", "lists", "forms", "links"]);
 const EMBEDDED_WEB_INTERACT_ACTIONS = new Set<EmbeddedWebInteractAction>(["click", "fill", "scroll", "focus", "select"]);
+const READ_PAGE_DATA_SUMMARY_KEYS = ["url", "title", "selectedText", "metaDescription", "headings", "bodyText"];
 const BOOKMARKS_STORAGE_KEY = "zenmind-desktop.external-webview.bookmarks";
 const BOOKMARK_MENU_WIDTH = 306;
 const BOOKMARK_MENU_MAX_HEIGHT = 340;
@@ -167,21 +168,30 @@ function readAllowedValues<T extends string>(
 }
 
 function filterReadPageDataResult(result: unknown, includes: EmbeddedWebReadInclude[]) {
-  if (!result || typeof result !== "object" || includes.length === 0) {
+  if (!result || typeof result !== "object") {
     return result;
   }
-  const filtered = { ...(result as Record<string, unknown>) };
-  if (!includes.includes("forms")) {
-    delete filtered.forms;
-    delete filtered.fields;
-  }
-  if (!includes.includes("links")) {
-    delete filtered.links;
-  }
-  if (!includes.includes("images")) {
-    delete filtered.images;
+  const source = result as Record<string, unknown>;
+  const keys = [
+    ...READ_PAGE_DATA_SUMMARY_KEYS,
+    ...includes,
+    ...(includes.includes("forms") ? ["fields"] : [])
+  ];
+  const filtered: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      filtered[key] = source[key];
+    }
   }
   return filtered;
+}
+
+function readActionSelector(args: Record<string, unknown>) {
+  const selector = typeof args.selector === "string" ? args.selector.trim() : "";
+  if (selector) {
+    return selector;
+  }
+  return typeof args.elementSelector === "string" ? args.elementSelector.trim() : "";
 }
 
 function filterStructuredResult(result: unknown, targets: EmbeddedWebStructuredTarget[]) {
@@ -1142,7 +1152,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
   }
 
   async function executeCurrentPageInteract(args: Record<string, unknown>) {
-    const selector = typeof args.selector === "string" ? args.selector.trim() : "";
+    const selector = readActionSelector(args);
     const action = typeof args.action === "string" ? args.action.trim() : "";
     if (!selector || !EMBEDDED_WEB_INTERACT_ACTIONS.has(action as EmbeddedWebInteractAction)) {
       return embeddedError("invalid_args", "selector 和有效的 action 是必填项。", args);

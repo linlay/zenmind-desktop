@@ -22,6 +22,7 @@ const CDP_PROTOCOL_VERSION = "1.3";
 const READ_INCLUDES = new Set<EmbeddedWebReadInclude>(["forms", "links", "images"]);
 const STRUCTURED_TARGETS = new Set<EmbeddedWebStructuredTarget>(["tables", "lists", "forms", "links"]);
 const INTERACT_ACTIONS = new Set<EmbeddedWebInteractAction>(["click", "fill", "scroll", "focus", "select"]);
+const READ_SUMMARY_KEYS = ["url", "title", "selectedText", "metaDescription", "headings", "bodyText"];
 
 function fail(action: string, code: string, message: string, details?: unknown): DesktopActionCallResponse {
   return {
@@ -60,16 +61,22 @@ function filterRecord(result: unknown, keysToKeep: string[]) {
   if (!result || typeof result !== "object" || keysToKeep.length === 0) {
     return result;
   }
-  const filtered = { ...(result as Record<string, unknown>) };
-  for (const key of Object.keys(filtered)) {
-    if (
-      ["forms", "fields", "links", "images", "tables", "lists"].includes(key) &&
-      !keysToKeep.includes(key)
-    ) {
-      delete filtered[key];
+  const resultRecord = result as Record<string, unknown>;
+  const filtered: Record<string, unknown> = {};
+  for (const key of keysToKeep) {
+    if (Object.prototype.hasOwnProperty.call(resultRecord, key)) {
+      filtered[key] = resultRecord[key];
     }
   }
   return filtered;
+}
+
+function readActionSelector(args: Record<string, unknown>) {
+  const selector = typeof args.selector === "string" ? args.selector.trim() : "";
+  if (selector) {
+    return selector;
+  }
+  return typeof args.elementSelector === "string" ? args.elementSelector.trim() : "";
 }
 
 function readFields(value: unknown): EmbeddedWebFormFieldInput[] {
@@ -184,7 +191,7 @@ export async function executeCurrentPageCdpAction(
     if (action === "desktop.page.readCurrent") {
       const data = await evaluate(snapshot, trace, READ_PAGE_DATA_SCRIPT);
       const include = readAllowedValues(args.include, READ_INCLUDES);
-      const keys = include.length > 0 ? ["url", "title", "selectedText", "metaDescription", "headings", "bodyText", ...include, ...(include.includes("forms") ? ["fields"] : [])] : [];
+      const keys = [...READ_SUMMARY_KEYS, ...include, ...(include.includes("forms") ? ["fields"] : [])];
       return {
         ok: true,
         action,
@@ -212,7 +219,7 @@ export async function executeCurrentPageCdpAction(
       };
     }
     if (action === "desktop.page.interact") {
-      const selector = typeof args.selector === "string" ? args.selector.trim() : "";
+      const selector = readActionSelector(args);
       const interactAction = typeof args.action === "string" ? args.action.trim() : "";
       if (!selector || !INTERACT_ACTIONS.has(interactAction as EmbeddedWebInteractAction)) {
         return fail(action, "invalid_args", "selector 和有效的 action 是必填项。", args);
@@ -281,3 +288,9 @@ export async function executeCurrentPageCdpAction(
     });
   }
 }
+
+export const __testInternals = {
+  filterRecord,
+  readActionSelector,
+  READ_SUMMARY_KEYS
+};

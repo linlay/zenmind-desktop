@@ -25,13 +25,14 @@ export type EmbeddedWebSubmitFormArgs = {
 };
 
 export const READ_PAGE_DATA_SCRIPT = `(() => {
-  const MAX_BODY_TEXT = 40000;
-  const MAX_SELECTED_TEXT = 8000;
+  const MAX_BODY_TEXT = 12000;
+  const MAX_SELECTED_TEXT = 4000;
   const MAX_HEADING_COUNT = 32;
   const MAX_FORM_COUNT = 20;
   const MAX_FIELD_COUNT = 80;
   const MAX_LINK_COUNT = 120;
   const MAX_IMAGE_COUNT = 80;
+  const MAX_FIELD_VALUE = 1000;
   const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
   const truncate = (value, maxLength) => normalize(value).slice(0, maxLength);
   const escapeCss = (value) => {
@@ -112,6 +113,8 @@ export const READ_PAGE_DATA_SCRIPT = `(() => {
     const select = field instanceof HTMLSelectElement ? field : null;
     const type = input ? (input.type || "text") : select ? "select" : textarea ? "textarea" : field.tagName.toLowerCase();
     const rawValue = input || textarea || select ? String((field).value || "") : "";
+    const visible = isVisible(field);
+    const shouldReadValue = type !== "password" && type !== "hidden" && visible;
     return {
       selector: selectorFor(field),
       tag: field.tagName.toLowerCase(),
@@ -120,11 +123,11 @@ export const READ_PAGE_DATA_SCRIPT = `(() => {
       name: field.getAttribute("name") || "",
       label: labelFor(field),
       placeholder: field.getAttribute("placeholder") || "",
-      value: type === "password" ? "" : rawValue,
+      value: shouldReadValue ? truncate(rawValue, MAX_FIELD_VALUE) : "",
       checked: input && ["checkbox", "radio"].includes(type) ? input.checked : undefined,
       required: Boolean((field).required),
       disabled: Boolean((field).disabled),
-      visible: isVisible(field),
+      visible,
       options: select
         ? Array.from(select.options).slice(0, 60).map((option) => ({
             text: normalize(option.textContent || ""),
@@ -140,7 +143,7 @@ export const READ_PAGE_DATA_SCRIPT = `(() => {
     name: form.getAttribute("name") || "",
     action: form.action || "",
     method: form.method || "",
-    text: truncate(form.innerText || form.textContent || "", 2000),
+    text: truncate(form.innerText || form.textContent || "", 1000),
     fields: Array.from(form.querySelectorAll("input, textarea, select, button"))
       .slice(0, MAX_FIELD_COUNT)
       .map(readField)
@@ -153,7 +156,7 @@ export const READ_PAGE_DATA_SCRIPT = `(() => {
     .filter(Boolean);
   const links = Array.from(document.querySelectorAll("a[href]")).slice(0, MAX_LINK_COUNT).map((link) => ({
     selector: selectorFor(link),
-    text: truncate(link.innerText || link.textContent || link.getAttribute("aria-label") || "", 500),
+    text: truncate(link.innerText || link.textContent || link.getAttribute("aria-label") || "", 300),
     href: link.href,
     title: link.getAttribute("title") || "",
     visible: isVisible(link)
