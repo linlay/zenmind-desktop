@@ -101,7 +101,6 @@ type CoreServicePortOverride = {
   portEnvKey: string;
   defaultPort: number;
   portBindings: CorePortEnvBinding[];
-  stalePortBindingKeys?: string[];
   urlBindingDefaults?: Record<string, string[]>;
 };
 
@@ -118,12 +117,11 @@ const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = 
     ]
   },
   "agent-platform": {
-    portEnvKey: "HOST_PORT",
+    portEnvKey: "SERVER_PORT",
     defaultPort: 7078,
-    stalePortBindingKeys: ["SERVER_PORT"],
     portBindings: [
       {
-        key: "HOST_PORT",
+        key: "SERVER_PORT",
         value: "{{serviceDefaultPort}}",
         defaults: ["", "11949", "18081", "7200", "117078"]
       }
@@ -252,34 +250,29 @@ function applyCoreServiceEnvBindingOverrides(serviceId: string, envBindings: Man
   }
 
   const portBindingsByKey = new Map(override.portBindings.map((binding) => [binding.key, binding]));
-  const stalePortBindingKeys = new Set(override.stalePortBindingKeys ?? []);
   const seenPortBindings = new Set<string>();
-  const nextBindings = envBindings.flatMap((binding) => {
-    if (stalePortBindingKeys.has(binding.key)) {
-      return [];
-    }
-
+  const nextBindings = envBindings.map((binding) => {
     const portBinding = portBindingsByKey.get(binding.key);
     if (portBinding) {
       seenPortBindings.add(binding.key);
-      return [{
+      return {
         ...binding,
         value: portBinding.value,
         onlyIfDefault: true,
         defaults: mergeStringList(binding.defaults, portBinding.defaults)
-      } satisfies ManifestEnvBinding];
+      } satisfies ManifestEnvBinding;
     }
 
     const urlDefaults = override.urlBindingDefaults?.[binding.key];
     if (urlDefaults) {
-      return [{
+      return {
         ...binding,
         onlyIfDefault: true,
         defaults: mergeStringList(binding.defaults, urlDefaults)
-      } satisfies ManifestEnvBinding];
+      } satisfies ManifestEnvBinding;
     }
 
-    return [binding];
+    return binding;
   });
 
   for (const binding of override.portBindings) {

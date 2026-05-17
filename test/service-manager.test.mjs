@@ -339,9 +339,9 @@ function createStartupCoreAssetsFixture(options = {}) {
       id: "agent-platform",
       name: "智能体平台",
       frontend: { mode: "none" },
-      web: { routePath: "", portEnvKey: "HOST_PORT", defaultPort: portBase + 1 },
+      web: { routePath: "", portEnvKey: "SERVER_PORT", defaultPort: portBase + 1 },
       envExample: [
-        `HOST_PORT=${portBase + 1}`,
+        `SERVER_PORT=${portBase + 1}`,
         "CONTAINER_HUB_BASE_URL=https://bundle-hub.example.test",
         "",
         "# Runtime directories",
@@ -1211,7 +1211,7 @@ test("upsertEnvFileContent replaces duplicated keys without leaving stale values
 test("normalizeAgentPlatformEnvContentForSave strips legacy relay settings", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForSave(
     [
-      "HOST_PORT=11949",
+      "SERVER_PORT=11949",
       "LOCAL_CLI_ACP_RELAY_ENABLED=true",
       "LOCAL_CLI_ACP_RELAY_PORT=4555",
       "CLAUDE_CODE_ACP_COMMAND=/custom/bin/claude-code-acp",
@@ -1219,7 +1219,7 @@ test("normalizeAgentPlatformEnvContentForSave strips legacy relay settings", () 
     ].join("\n")
   );
 
-  assert.match(next, /^HOST_PORT=11949$/m);
+  assert.match(next, /^SERVER_PORT=11949$/m);
   assert.doesNotMatch(next, /^LOCAL_CLI_ACP_RELAY_ENABLED=/m);
   assert.doesNotMatch(next, /^LOCAL_CLI_ACP_RELAY_PORT=/m);
   assert.doesNotMatch(next, /^CLAUDE_CODE_ACP_COMMAND=/m);
@@ -1297,7 +1297,7 @@ test("normalizeAgentContainerHubEnvContentForDesktop preserves custom absolute d
 test("applyAgentPlatformWindowsHostShellDefaults injects PowerShell defaults on Windows", () => {
   const updates = new Map();
   const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(
-    new Map([["HOST_PORT", "11949"]]),
+    new Map([["SERVER_PORT", "11949"]]),
     updates,
     true
   );
@@ -1339,7 +1339,7 @@ test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys and
       "RUNTIME_DIR=/tmp/legacy-runtime",
       "GATEWAY_WS_URL=ws://127.0.0.1:17999/gw",
       "CLAUDE_CODE_ACP_ARGS=-y @zed-industries/claude-code-acp",
-      "HOST_PORT=11949"
+      "SERVER_PORT=11949"
     ].join("\n")
   );
 
@@ -1359,7 +1359,7 @@ test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys and
 test("normalizeAgentPlatformEnvContentForRuntime injects the Desktop embedded CDP gateway", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
-      "HOST_PORT=11949",
+      "SERVER_PORT=11949",
       "CDP_HOST=localhost",
       "CDP_PORT=9222"
     ].join("\n")
@@ -1373,13 +1373,13 @@ test("normalizeAgentPlatformEnvContentForRuntime injects the Desktop embedded CD
 test("normalizeAgentPlatformEnvContentForRuntime removes legacy chat ticket gates and ignores placeholder image secrets", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
-      "HOST_PORT=11949",
+      "SERVER_PORT=11949",
       "CHAT_RESOURCE_TICKET_ENABLED=true",
       "CHAT_IMAGE_TOKEN_SECRET=replace-with-your-chat-image-token-secret"
     ].join("\n")
   );
 
-  assert.match(next, /^HOST_PORT=11949$/m);
+  assert.match(next, /^SERVER_PORT=11949$/m);
   assert.doesNotMatch(next, /^CHAT_RESOURCE_TICKET_ENABLED=/m);
   assert.doesNotMatch(next, /^CHAT_IMAGE_TOKEN_SECRET=/m);
   assert.doesNotMatch(next, /^CHAT_RESOURCE_TICKET_SECRET=/m);
@@ -1388,7 +1388,7 @@ test("normalizeAgentPlatformEnvContentForRuntime removes legacy chat ticket gate
 test("normalizeAgentPlatformEnvContentForRuntime migrates real legacy image token secrets to resource ticket config", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
-      "HOST_PORT=11949",
+      "SERVER_PORT=11949",
       "CHAT_IMAGE_TOKEN_SECRET=my-secret",
       "CHAT_IMAGE_TOKEN_TTL_SECONDS=300"
     ].join("\n")
@@ -1461,7 +1461,7 @@ test("parsePort reads Desktop core service ports from their config keys", () => 
   );
   const platformPort = __testInternals.parsePort(
     getBuiltinService("agent-platform"),
-    new Map([["HOST_PORT", "8123"]])
+    new Map([["SERVER_PORT", "8123"]])
   );
   const platformFallbackPort = __testInternals.parsePort(
     getBuiltinService("agent-platform"),
@@ -1469,7 +1469,7 @@ test("parsePort reads Desktop core service ports from their config keys", () => 
   );
   const platformBadPort = __testInternals.parsePort(
     getBuiltinService("agent-platform"),
-    new Map([["HOST_PORT", "117078"]])
+    new Map([["SERVER_PORT", "117078"]])
   );
 
   assert.equal(webclientPort, 7080);
@@ -1491,10 +1491,10 @@ test("agent-platform start env does not inject NODE_BIN or port overrides", asyn
   const service = getBuiltinService("agent-platform");
 
   try {
-    writeTestEnv(userDataRoot, service.id, "HOST_PORT=7078\n# SERVER_PORT=8080\n");
+    writeTestEnv(userDataRoot, service.id, "SERVER_PORT=7078\n");
     const overrides = __testInternals.getStartCommandEnvOverrides(app, service);
     assert.equal(overrides, undefined);
-    assert.equal(fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8"), "HOST_PORT=7078\n# SERVER_PORT=8080\n");
+    assert.equal(fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8"), "SERVER_PORT=7078\n");
   } finally {
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -1889,7 +1889,7 @@ test("installBuiltinService preserves agent-platform env content from current an
     const service = getBuiltinService("agent-platform");
     const installDir = getInstallDir(app, service);
     const legacyEnv = [
-      "HOST_PORT=11949",
+      "SERVER_PORT=11949",
       "CHAT_RESOURCE_TICKET_ENABLED=true",
       "CHAT_IMAGE_TOKEN_SECRET=my-secret",
       "CHAT_IMAGE_TOKEN_TTL_SECONDS=300"
@@ -2453,8 +2453,7 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
     assert.match(envContent, /^AUTH_ENABLED=true$/m);
     assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
     assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
-    assert.match(envContent, /^HOST_PORT=7078$/m);
-    assert.doesNotMatch(envContent, /^SERVER_PORT=7078$/m);
+    assert.match(envContent, /^SERVER_PORT=7078$/m);
     assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
     assert.match(envContent, /^REGISTRIES_DIR=~\/\.zenmind\/registries$/m);
     assert.doesNotMatch(envContent, /^TOOLS_DIR=/m);
@@ -2560,7 +2559,7 @@ test("initializeService recreates Desktop defaults for core services after confi
       appServerEnv,
       new RegExp(`^AUTH_DB_PATH=${path.join(getTestDataDir(userDataRoot, "zenmind-app-server"), "auth.db").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
     );
-    assert.match(platformEnv, /^HOST_PORT=7078$/m);
+    assert.match(platformEnv, /^SERVER_PORT=7078$/m);
     assert.match(platformEnv, /^AUTH_ENABLED=true$/m);
     assert.match(platformEnv, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
     assert.match(platformEnv, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:7079$/m);
@@ -2626,13 +2625,13 @@ test("writeServiceConfig saves agent-platform env without extra port migration",
       app,
       "agent-platform",
       "env",
-      "HOST_PORT=7901\nAUTH_ENABLED=true\n"
+      "SERVER_PORT=7901\nAUTH_ENABLED=true\n"
     );
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
 
     assert.equal(result.service.healthMeta.port, 7901);
     assert.equal(result.service.healthMeta.webUrl, "http://127.0.0.1:7901");
-    assert.equal(envContent, "HOST_PORT=7901\nAUTH_ENABLED=true\n");
+    assert.equal(envContent, "SERVER_PORT=7901\nAUTH_ENABLED=true\n");
   } finally {
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -2661,13 +2660,13 @@ test("writeServiceConfig does not sync agent webclient upstream urls after agent
       ].join("\n") + "\n"
     );
 
-    await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=7901\n");
+    await writeServiceConfig(app, "agent-platform", "env", "SERVER_PORT=7901\n");
     let envContent = fs.readFileSync(webclientEnvPath, "utf8");
     assert.match(envContent, /^BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
     assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
     assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
 
-    await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=7903\n");
+    await writeServiceConfig(app, "agent-platform", "env", "SERVER_PORT=7903\n");
     envContent = fs.readFileSync(webclientEnvPath, "utf8");
     assert.match(envContent, /^BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
     assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
@@ -2684,7 +2683,7 @@ test("writeServiceConfig does not sync agent webclient upstream urls after agent
         "VOICE_BASE_URL=http://127.0.0.1:9999"
       ].join("\n") + "\n"
     );
-    await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=7904\n");
+    await writeServiceConfig(app, "agent-platform", "env", "SERVER_PORT=7904\n");
     envContent = fs.readFileSync(webclientEnvPath, "utf8");
     assert.match(envContent, /^BASE_URL=https:\/\/platform\.example\.test$/m);
     assert.match(envContent, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7903$/m);
@@ -2709,19 +2708,19 @@ test("writeServiceConfig saves core env content without automatic port migration
       "agent-platform",
       "env",
       [
-        "HOST_PORT=117078",
+        "SERVER_PORT=117078",
         "CONTAINER_HUB_BASE_URL=http://127.0.0.1:117079",
         "AUTH_ENABLED=false"
       ].join("\n") + "\n"
     );
     let envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-    assert.match(envContent, /^HOST_PORT=117078$/m);
+    assert.match(envContent, /^SERVER_PORT=117078$/m);
     assert.match(envContent, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:117079$/m);
     assert.match(envContent, /^AUTH_ENABLED=false$/m);
 
-    await writeServiceConfig(app, "agent-platform", "env", "HOST_PORT=18081\n");
+    await writeServiceConfig(app, "agent-platform", "env", "SERVER_PORT=18081\n");
     envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-    assert.match(envContent, /^HOST_PORT=18081$/m);
+    assert.match(envContent, /^SERVER_PORT=18081$/m);
 
     await installBuiltinService(app, "agent-webclient");
     const result = await writeServiceConfig(
@@ -3118,7 +3117,7 @@ test("ensurePreStartRequirements does not rewrite agent platform desktop env bin
   writeTestEnv(
     userDataRoot,
     platformService.id,
-    `HOST_PORT=11949\nAGENT_WS_ENABLED=true\nAUTH_LOCAL_PUBLIC_KEY_FILE=${path.join(getTestConfigDir(userDataRoot, platformService.id), "configs", "local-public-key.pem")}\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nCHAT_RESOURCE_TICKET_ENABLED=true\nCHAT_IMAGE_TOKEN_SECRET=replace-with-your-chat-image-token-secret\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n`,
+    `SERVER_PORT=11949\nAGENT_WS_ENABLED=true\nAUTH_LOCAL_PUBLIC_KEY_FILE=${path.join(getTestConfigDir(userDataRoot, platformService.id), "configs", "local-public-key.pem")}\nAGENT_CONTAINER_HUB_BASE_URL=http://host.docker.internal:11960\nAGENT_AUTH_ENABLED=false\nCHAT_RESOURCE_TICKET_ENABLED=true\nCHAT_IMAGE_TOKEN_SECRET=replace-with-your-chat-image-token-secret\nGATEWAY_WS_URL=ws://10.0.0.1:8080/ws/agent\nGATEWAY_USER_ID=demo\n`,
   );
 
   const previousHome = process.env.HOME;
@@ -3135,7 +3134,7 @@ test("ensurePreStartRequirements does not rewrite agent platform desktop env bin
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
   assert.doesNotMatch(envContent, /^CONTAINER_HUB_BASE_URL=/m);
-  assert.match(envContent, /^HOST_PORT=11949$/m);
+  assert.match(envContent, /^SERVER_PORT=11949$/m);
   assert.match(envContent, /^AGENT_WS_ENABLED=true$/m);
   assert.match(envContent, /^AUTH_ENABLED=true$/m);
   assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
@@ -3174,7 +3173,7 @@ test("ensurePreStartRequirements preserves custom agent platform auth public key
   writeTestEnv(
     userDataRoot,
     platformService.id,
-    `HOST_PORT=11949\nAUTH_LOCAL_PUBLIC_KEY_FILE=${customPublicKeyPath}\n`,
+    `SERVER_PORT=11949\nAUTH_LOCAL_PUBLIC_KEY_FILE=${customPublicKeyPath}\n`,
   );
 
   try {
@@ -3280,7 +3279,7 @@ test("initializeService migrates legacy relay settings into the local-cli-acp-re
     userDataRoot,
     platformService.id,
     [
-      "HOST_PORT=11949",
+      "SERVER_PORT=11949",
       "LOCAL_CLI_ACP_RELAY_ENABLED=true",
       "LOCAL_CLI_ACP_RELAY_PORT=4555",
       "LOCAL_CLI_ACP_RELAY_AUTH_TOKEN=demo-token",
@@ -3363,7 +3362,7 @@ test("ensurePreStartRequirements preserves a custom provider api key env part", 
     userDataRoot,
     platformService.id,
     [
-      "HOST_PORT=11949",
+      "SERVER_PORT=11949",
       "PROVIDER_APIKEY_KEY_PART=custom-key-part"
     ].join("\n"),
   );
@@ -3487,7 +3486,7 @@ test("ensurePreStartRequirements leaves agent-platform runtime path migration to
   writeTestEnv(
     userDataRoot,
     platformService.id,
-    `HOST_PORT=11949\nRUNTIME_DIR=${legacyRuntimeRoot}\n`,
+    `SERVER_PORT=11949\nRUNTIME_DIR=${legacyRuntimeRoot}\n`,
   );
 
   const previousHome = process.env.HOME;
@@ -3544,7 +3543,7 @@ test("ensurePreStartRequirements leaves stale legacy desktop runtime paths uncha
     userDataRoot,
     platformService.id,
     [
-      "HOST_PORT=11949",
+      "SERVER_PORT=11949",
       `REGISTRIES_DIR=${legacyRuntimeRoot}/registries`,
       `OWNER_DIR=${legacyRuntimeRoot}/owner`,
       `AGENTS_DIR=${legacyRuntimeRoot}/agents`,
@@ -3609,7 +3608,7 @@ test("ensurePreStartRequirements does not rewrite runtime paths to the resolved 
     userDataRoot,
     platformService.id,
     [
-      "HOST_PORT=11949",
+      "SERVER_PORT=11949",
       `REGISTRIES_DIR=${legacyRuntimeRoot}/registries`,
       `OWNER_DIR=${legacyRuntimeRoot}/owner`,
       `AGENTS_DIR=${legacyRuntimeRoot}/agents`,
@@ -3680,7 +3679,7 @@ test("ensurePreStartRequirements does not rewrite runtime paths to a hidden desk
     userDataRoot,
     platformService.id,
     [
-      "HOST_PORT=11949",
+      "SERVER_PORT=11949",
       `REGISTRIES_DIR=${legacyRuntimeRoot}/registries`,
       `OWNER_DIR=${legacyRuntimeRoot}/owner`,
       `AGENTS_DIR=${legacyRuntimeRoot}/agents`,
@@ -3734,7 +3733,7 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   const webclientInstallDir = getTestServiceProgramDir(userDataRoot, webclientService.id, webclientService.version);
 
   fs.mkdirSync(path.join(platformInstallDir, "run"), { recursive: true });
-  writeTestEnv(userDataRoot, platformService.id, "HOST_PORT=12949\n");
+  writeTestEnv(userDataRoot, platformService.id, "SERVER_PORT=12949\n");
   await installBuiltinService(app, webclientService.id);
   writeTestEnv(
     userDataRoot,
