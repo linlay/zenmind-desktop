@@ -117,7 +117,18 @@
 }
 
 .settings-section-body {
+  position: relative;
   width: 100%;
+}
+
+.settings-section-feedback {
+  position: relative;
+  z-index: 10;
+  height: 0;
+}
+
+.settings-section-read-error {
+  margin: 0 0 18px;
 }
 
 @media (max-width: 1080px) {
