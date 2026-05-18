@@ -45,12 +45,12 @@ test("startup gate keeps waiting while services are still loading or starting", 
   ], false), null);
 });
 
-test("startup gate shows the bootstrap progress card until the bootstrap flow is truly done", () => {
+test("startup gate shows the bootstrap progress card only while bootstrap needs attention", () => {
   assert.equal(shouldShowStartupProgressCard(null, false), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "restore", phase: "running" }, false), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "running" }, false), true);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "failed" }, false), true);
-  assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "succeeded" }, false), true);
+  assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "succeeded" }, false), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "succeeded" }, true), false);
 });
 

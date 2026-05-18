@@ -7297,6 +7297,7 @@ body.quick-web-copilot-body,
 }
 
 .service-nav-help-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -7343,6 +7344,43 @@ body.quick-web-copilot-body,
 .service-nav-card.is-active .service-nav-help-button:focus-visible {
   background: rgba(255, 255, 255, 0.14);
   color: #ffffff;
+}
+
+.service-nav-help-button[data-tooltip]::after,
+.service-action-button[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: max-content;
+  max-width: 180px;
+  padding: 4px 7px;
+  border: 1px solid var(--control-center-border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.98);
+  color: var(--control-center-text);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 0.08s ease-in-out,
+    transform 0.08s ease-in-out;
+  pointer-events: none;
+}
+
+.service-nav-help-button[data-tooltip]:hover::after,
+.service-nav-help-button[data-tooltip]:focus-visible::after,
+.service-action-button[data-tooltip]:hover:not(:disabled)::after,
+.service-action-button[data-tooltip]:focus-visible:not(:disabled)::after {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 0.12s;
 }
 
 .service-nav-help-tip {
@@ -7625,6 +7663,7 @@ body.quick-web-copilot-body,
 
 .service-action-button,
 .service-title-text-button.service-action-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -7680,6 +7719,14 @@ body.quick-web-copilot-body,
   background: rgba(255, 255, 255, 0.045);
   color: #b8c3d2;
   box-shadow: none;
+}
+
+:root[data-theme="dark"] .service-nav-help-button[data-tooltip]::after,
+:root[data-theme="dark"] .service-action-button[data-tooltip]::after {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(24, 26, 31, 0.98);
+  color: #eef4ff;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
 }
 
 :root[data-theme="dark"] .service-action-button:hover:not(:disabled) {

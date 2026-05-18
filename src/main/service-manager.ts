@@ -218,6 +218,8 @@ const LAST_RUNNING_SERVICES_FILE = "last-running-services.json";
 const INSTALL_ONLY_STARTUP_SERVICE_IDS = ["agent-container-hub"] as const;
 const DEFAULT_STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const RESTORE_PRIORITY = ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"] as const;
+const INSTALL_ONLY_STARTUP_SERVICE_ID_SET = new Set<ServiceId>(INSTALL_ONLY_STARTUP_SERVICE_IDS);
+const DEFAULT_STARTUP_SERVICE_ID_SET = new Set<ServiceId>(DEFAULT_STARTUP_SERVICE_IDS);
 const SERVICE_COMMAND_TIMEOUT_MS = 60_000;
 const SHUTDOWN_SERVICE_STOP_TIMEOUT_MS = 2_500;
 
@@ -493,8 +495,18 @@ function getDefaultStartupServiceIds() {
 function getServiceIdsToRestore(app: App) {
   return orderServiceIdsForRestore([
     ...getDefaultStartupServiceIds(),
-    ...readLastRunningServices(app).filter((serviceId) => serviceId !== "agent-container-hub")
+    ...readLastRunningServices(app)
   ]);
+}
+
+function getOptionalServiceIdsToRestore(app: App) {
+  return orderServiceIdsForRestore(
+    readLastRunningServices(app).filter((serviceId) => !DEFAULT_STARTUP_SERVICE_ID_SET.has(serviceId))
+  );
+}
+
+function isNonBlockingRestoreFailure(serviceId: ServiceId) {
+  return INSTALL_ONLY_STARTUP_SERVICE_ID_SET.has(serviceId);
 }
 
 function readLastRunningServices(app: App): ServiceId[] {
@@ -855,6 +867,7 @@ const CORE_SERVICE_IDS = new Set<ServiceId>([
   "agent-webclient",
   "zenmind-app-server"
 ]);
+const PROCESS_EXEC_PATH_PLACEHOLDER = "{{processExecPath}}";
 const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL", "WS_BASE_URL", "VOICE_BASE_URL"] as const;
 const AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES = new Map([["DESKTOP_APP", "true"]]);
 const DESKTOP_MANAGED_PLATFORM_URL_PORTS = new Set([
@@ -3349,6 +3362,30 @@ function removeEnvKeysFromContent(content: string, keys: readonly string[]) {
   return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
 }
 
+function removeAgentWebclientManagedNodeBinPlaceholder(content: string) {
+  const nextLines = content
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        return true;
+      }
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex <= 0) {
+        return true;
+      }
+
+      const key = trimmed.slice(0, separatorIndex).trim();
+      const value = trimmed.slice(separatorIndex + 1).trim().replace(/^['"]|['"]$/gu, "");
+      return key !== "NODE_BIN" || value !== PROCESS_EXEC_PATH_PLACEHOLDER;
+    });
+
+  if (nextLines.length === 0) {
+    return "";
+  }
+  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
+}
+
 function isManagedAgentPlatformAuthLocalPublicKeyPath(value: string, layout?: ServiceLayout) {
   const unquoted = value.trim().replace(/^['"]|['"]$/gu, "");
   const normalized = normalizeConfigPath(unquoted);
@@ -3404,7 +3441,11 @@ function removeDesktopManagedAgentPlatformEnvContent(content: string, layout?: S
 }
 
 function normalizeAgentWebclientEnvContentForDesktop(content: string) {
-  return upsertEnvFileContent(content, AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES, { uncommentExisting: true });
+  return upsertEnvFileContent(
+    removeAgentWebclientManagedNodeBinPlaceholder(content),
+    AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES,
+    { uncommentExisting: true }
+  );
 }
 
 function normalizeAgentPlatformEnvContentForRuntime(content: string, layout?: ServiceLayout) {
@@ -3610,6 +3651,13 @@ async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<s
     }
 
     if (binding.value !== undefined) {
+      if (
+        bindingKey === "NODE_BIN" &&
+        binding.value.trim() === PROCESS_EXEC_PATH_PLACEHOLDER &&
+        NODE_BIN_START_ENV_SERVICE_IDS.has(service.id)
+      ) {
+        continue;
+      }
       const resolved = binding.value.replace("{{serviceDefaultPort}}", String(service.web.defaultPort));
       updates.set(bindingKey, resolved);
     }
@@ -4840,14 +4888,20 @@ export async function restoreRunningServices(
         options.onProgress?.(serviceId, "succeeded", result.message);
       } else {
         console.warn(`[service-manager] failed to restore ${serviceId} after ${elapsedMs}ms: ${result.message}`);
-        failures.push(`${serviceId}: ${result.message}`);
         options.onProgress?.(serviceId, "failed", result.message);
+        if (isNonBlockingRestoreFailure(serviceId)) {
+          continue;
+        }
+        failures.push(`${serviceId}: ${result.message}`);
         break;
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      failures.push(`${serviceId}: ${message}`);
       options.onProgress?.(serviceId, "failed", message);
+      if (isNonBlockingRestoreFailure(serviceId)) {
+        continue;
+      }
+      failures.push(`${serviceId}: ${message}`);
       break;
     }
   }
@@ -5038,6 +5092,56 @@ export async function runStartupPreparation(
     }
   }
 
+  for (const serviceId of getOptionalServiceIdsToRestore(app)) {
+    try {
+      getService(serviceId);
+    } catch {
+      continue;
+    }
+
+    try {
+      const current = await getServiceState(app, serviceId);
+      if (
+        (current.kind === "plugin" && current.status === "not-installed") ||
+        current.status === "initialization-required"
+      ) {
+        options.onProgress?.(serviceId, "skipped", current.message);
+        continue;
+      }
+
+      options.onStarting?.(serviceId);
+      options.onProgress?.(serviceId, "starting", `${current.name} 启动中...`);
+      const startedAt = Date.now();
+      const result = await startService(app, serviceId);
+      const elapsedMs = Date.now() - startedAt;
+      if (result.ok && result.service.status === "running") {
+        console.info(`[service-manager] restored optional startup service ${serviceId} in ${elapsedMs}ms`);
+        started.push(serviceId);
+        options.onProgress?.(serviceId, "succeeded", result.message);
+        continue;
+      }
+
+      const failureMessage = result.ok
+        ? `${result.service.name} 启动后未进入运行中状态。`
+        : result.message;
+      console.warn(`[service-manager] failed to restore optional startup service ${serviceId} after ${elapsedMs}ms: ${failureMessage}`);
+      options.onProgress?.(serviceId, "failed", failureMessage);
+      if (isNonBlockingRestoreFailure(serviceId)) {
+        continue;
+      }
+      failures.push(`${serviceId}: ${failureMessage}`);
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      options.onProgress?.(serviceId, "failed", message);
+      if (isNonBlockingRestoreFailure(serviceId)) {
+        continue;
+      }
+      failures.push(`${serviceId}: ${message}`);
+      break;
+    }
+  }
+
   return {
     mode: "bootstrap",
     started,
@@ -5093,6 +5197,7 @@ export const __testInternals = {
   getLastRunningServicesStatePath,
   getDefaultStartupServiceIds,
   getServiceIdsToRestore,
+  getOptionalServiceIdsToRestore,
   orderServiceIdsForRestore,
   needsBundledAssetRefresh,
   shouldEnableBuiltinBootstrap,

@@ -932,26 +932,6 @@ export function ControlCenterPage() {
       return;
     }
 
-    {
-      feedback || error ? (
-        <PageFeedbackStack
-          items={[
-            ...(feedback ? [{
-              id: "control-center-feedback",
-              tone: "success" as const,
-              message: feedback
-            }] : []),
-            ...(error ? [{
-              id: "control-center-error",
-              tone: "error" as const,
-              message: error
-            }] : [])
-          ]}
-        />
-      ) : null
-    }
-    { loading ? <div className="loading-box">正在读取服务状态…</div> : null }
-
     const startedNames: string[] = [];
     const skippedNames: string[] = [];
     const failedMessages: string[] = [];
@@ -1185,29 +1165,28 @@ export function ControlCenterPage() {
       </div>
 
       {feedback || error ? (
-        <div className="control-center-feedback-anchor">
-          <div
-            className="control-center-feedback-layer"
-            aria-live="polite"
-          >
-            {feedback ? (
-              <div
-                className="feedback-banner control-center-feedback-toast"
-                role="status"
-              >
-                {feedback}
-              </div>
-            ) : null}
-            {error ? (
-              <div
-                className="feedback-banner warning-banner control-center-feedback-toast"
-                role="alert"
-              >
-                {error}
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <PageFeedbackStack
+          items={[
+            ...(feedback
+              ? [
+                {
+                  id: "control-center-feedback",
+                  tone: "success" as const,
+                  message: feedback,
+                },
+              ]
+              : []),
+            ...(error
+              ? [
+                {
+                  id: "control-center-error",
+                  tone: "error" as const,
+                  message: error,
+                },
+              ]
+              : []),
+          ]}
+        />
       ) : null}
       {loading ? (
         <div className="loading-box">正在读取服务状态…</div>
@@ -1402,7 +1381,7 @@ export function ControlCenterPage() {
                                         aria-expanded={
                                           isHelpTipOpen
                                         }
-                                        title="查看说明"
+                                        data-tooltip="查看说明"
                                       >
                                         <ServiceHelpIcon />
                                       </button>
@@ -1513,7 +1492,7 @@ export function ControlCenterPage() {
                         activeDetailService.id
                       }
                       aria-label="重新安装"
-                      title="重新安装"
+                      data-tooltip="重新安装"
                     >
                       <ReinstallServiceIcon />
                     </button>
@@ -1535,7 +1514,7 @@ export function ControlCenterPage() {
                       activeId === activeDetailService.id
                     }
                     aria-label="启动服务"
-                    title="启动服务"
+                    data-tooltip="启动服务"
                   >
                     <StartServiceIcon />
                   </button>
@@ -1556,7 +1535,7 @@ export function ControlCenterPage() {
                       activeId === activeDetailService.id
                     }
                     aria-label="停止"
-                    title="停止"
+                    data-tooltip="停止"
                   >
                     <StopServiceIcon />
                   </button>
@@ -1577,7 +1556,7 @@ export function ControlCenterPage() {
                       activeId === activeDetailService.id
                     }
                     aria-label="重启"
-                    title="重启"
+                    data-tooltip="重启"
                   >
                     <RestartServiceIcon />
                   </button>
@@ -1593,7 +1572,7 @@ export function ControlCenterPage() {
                         )
                       }
                       aria-label="打开前端"
-                      title="打开前端"
+                      data-tooltip="打开前端"
                     >
                       <OpenFrontendIcon />
                     </button>
@@ -1622,7 +1601,7 @@ export function ControlCenterPage() {
                         activeDetailService.id
                       }
                       aria-label="安装"
-                      title="安装"
+                      data-tooltip="安装"
                     >
                       <InstallServiceIcon />
                     </button>
@@ -1656,7 +1635,7 @@ export function ControlCenterPage() {
                           ? "初始化"
                           : "重新初始化"
                       }
-                      title={
+                      data-tooltip={
                         activeDetailService.status ===
                           "initialization-required"
                           ? "初始化"
@@ -1692,7 +1671,7 @@ export function ControlCenterPage() {
                         activeDetailService.id
                       }
                       aria-label="卸载插件"
-                      title="卸载插件"
+                      data-tooltip="卸载插件"
                     >
                       <UninstallServiceIcon />
                     </button>

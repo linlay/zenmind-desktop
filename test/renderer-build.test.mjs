@@ -184,8 +184,23 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /\.service-nav-help-tip\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?z-index:\s*120;[\s\S]*?max-width:\s*260px;[\s\S]*?border:\s*1px solid var\(--control-center-border\);[\s\S]*?background:\s*var\(--control-center-card\);[\s\S]*?font-size:\s*12px;/);
   assert.match(globalStyles, /\.service-nav-help-tip\s*\{[\s\S]*?transform:\s*translateY\(-50%\);/);
   assert.match(globalStyles, /\.service-nav-help-tip::before\s*\{[\s\S]*?top:\s*50%;[\s\S]*?left:\s*-5px;[\s\S]*?transform:\s*translateY\(-50%\) rotate\(45deg\);/);
-  assert.doesNotMatch(globalStyles, /\.service-nav-help-tip\s*\{[\s\S]*?background:\s*rgba\(255,\s*255,\s*255,\s*0\.98\);/);
-  assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.service-nav-help-tip\s*\{[\s\S]*?background:\s*#20242b;/);
+  const serviceNavHelpTipRule = globalStyles.match(/\.service-nav-help-tip\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body;
+  const darkServiceNavHelpTipRule = globalStyles.match(/:root\[data-theme="dark"\] \.service-nav-help-tip\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body;
+  assert.ok(serviceNavHelpTipRule);
+  assert.ok(darkServiceNavHelpTipRule);
+  assert.doesNotMatch(serviceNavHelpTipRule, /background:\s*rgba\(255,\s*255,\s*255,\s*0\.98\);/);
+  assert.doesNotMatch(darkServiceNavHelpTipRule, /background:\s*#20242b;/);
+  assert.match(controlCenter, /data-tooltip="查看说明"/);
+  assert.match(controlCenter, /data-tooltip="打开前端"/);
+  assert.match(
+    controlCenter,
+    /data-tooltip=\{\s*activeDetailService\.status ===\s*"initialization-required"\s*\?\s*"初始化"\s*:\s*"重新初始化"\s*\}/
+  );
+  assert.doesNotMatch(
+    controlCenter,
+    /title="(?:查看说明|重新安装|启动服务|停止|重启|打开前端|安装|卸载插件)"/
+  );
+  assert.doesNotMatch(controlCenter, /title=\{activeDetailService\.status === "initialization-required"/);
   assert.match(globalStyles, /\.service-nav-version-inline\s*\{/);
   assert.match(globalStyles, /\.service-action-button,[\s\S]*?\.service-title-text-button\.service-action-button\s*\{[\s\S]*?border:\s*0;/);
   assert.match(globalStyles, /\.service-action-button,[\s\S]*?\.service-title-text-button\.service-action-button\s*\{[\s\S]*?flex:\s*0 0 36px;[\s\S]*?height:\s*36px;[\s\S]*?max-width:\s*36px;/);
@@ -193,6 +208,11 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(controlCenter, /<circle cx="12" cy="6\.75" r="2\.15" \/>/);
   assert.match(controlCenter, /<path d="M10\.55 10\.05h2\.9v9\.2h-2\.9z" \/>/);
   assert.match(globalStyles, /\.service-action-button \.service-action-icon-info\s*\{[\s\S]*?fill:\s*currentColor;[\s\S]*?stroke:\s*none;[\s\S]*?transform:\s*translateY\(0\.5px\);/);
+  assert.match(globalStyles, /\.service-action-button\[data-tooltip\]::after\s*\{[\s\S]*?opacity:\s*0;/);
+  assert.match(
+    globalStyles,
+    /\.service-action-button\[data-tooltip\]:hover:not\(:disabled\)::after,[\s\S]*?transition-delay:\s*0\.12s;/
+  );
   const unifiedServiceActionToneRule = globalStyles.match(
     /\.service-action-button\.is-primary,[\s\S]*?\.service-title-text-button\.service-action-button\.is-warning\s*\{(?<body>[\s\S]*?)^\}/m
   )?.groups?.body;

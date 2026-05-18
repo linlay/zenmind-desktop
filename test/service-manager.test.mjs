@@ -4308,6 +4308,103 @@ test("startup restore always includes default quick-start services", () => {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("startup restore includes optional services that were running at shutdown", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-optional-startup-services-"));
+  const app = createApp(tempRoot);
+
+  __testInternals.writeLastRunningServices(app, [
+    "agent-container-hub",
+    "custom-plugin"
+  ]);
+
+  assert.deepEqual(__testInternals.getServiceIdsToRestore(app), [
+    "agent-container-hub",
+    "zenmind-app-server",
+    "agent-platform",
+    "agent-webclient",
+    "custom-plugin"
+  ]);
+  assert.deepEqual(__testInternals.getOptionalServiceIdsToRestore(app), [
+    "agent-container-hub",
+    "custom-plugin"
+  ]);
+
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("restoreRunningServices keeps going after optional container hub restore failure", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-optional-restore-failure-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  const hubFolder = getTestPluginProgramDir(userDataRoot, "agent-container-hub");
+  const pluginFolder = getTestPluginProgramDir(userDataRoot, "restored-plugin");
+  const startupEvents = [];
+
+  registryInternals.clearServices();
+  try {
+    writePluginInstallRoot(hubFolder, {
+      id: "agent-container-hub",
+      name: "Container Hub",
+      port: 0,
+      deployScriptContent: false
+    });
+    writeTestEnv(userDataRoot, "agent-container-hub", "PORT=0\n", "plugins");
+    markInitializationState(getTestInitializationStatePath(userDataRoot, "agent-container-hub", "plugins"));
+    writeExecutableFile(path.join(hubFolder, "start.sh"), "#!/usr/bin/env bash\nexit 1\n");
+
+    writePluginInstallRoot(pluginFolder, {
+      id: "restored-plugin",
+      name: "Restored Plugin",
+      port: 0,
+      deployScriptContent: false
+    });
+    writeTestEnv(userDataRoot, "restored-plugin", "PORT=0\n", "plugins");
+    markInitializationState(getTestInitializationStatePath(userDataRoot, "restored-plugin", "plugins"));
+    writeExecutableFile(
+      path.join(pluginFolder, "start.sh"),
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}/pid"',
+        'mkdir -p "$pid_dir"',
+        'node -e "setInterval(() => {}, 1000)" >/dev/null 2>&1 &',
+        'echo $! > "$pid_dir/test-plugin.pid"'
+      ].join("\n")
+    );
+
+    __testInternals.writeLastRunningServices(app, ["agent-container-hub", "restored-plugin"]);
+
+    const result = await restoreRunningServices(app, {
+      onStarting: (serviceId) => {
+        startupEvents.push(`start:${serviceId}`);
+      },
+      onProgress: (serviceId, phase) => {
+        startupEvents.push(`progress:${serviceId}:${phase}`);
+      }
+    });
+
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.restored, ["restored-plugin"]);
+    assert.deepEqual(startupEvents, [
+      "start:agent-container-hub",
+      "progress:agent-container-hub:failed",
+      "start:restored-plugin",
+      "progress:restored-plugin:succeeded"
+    ]);
+  } finally {
+    const pluginState = await getServiceState(app, "restored-plugin").catch(() => null);
+    if (pluginState?.healthMeta?.pid && isPidRunning(pluginState.healthMeta.pid)) {
+      try {
+        process.kill(pluginState.healthMeta.pid, "SIGKILL");
+      } catch {
+        // Process may already be gone after test cleanup.
+      }
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("restoreRunningServices stops after the first startup failure", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-restore-stop-on-failure-"));
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -4423,6 +4520,7 @@ test("restoreRunningServices keeps default startup services running when optiona
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
   const previousSpawnSync = childProcess.spawnSync;
+  const startupEvents = [];
 
   try {
     await installBuiltinService(app, "agent-container-hub");
@@ -4438,10 +4536,21 @@ test("restoreRunningServices keeps default startup services running when optiona
       return spawnSync(command, args, options);
     };
 
-    const result = await restoreRunningServices(app);
+    const result = await restoreRunningServices(app, {
+      onStarting: (serviceId) => {
+        startupEvents.push(`start:${serviceId}`);
+      },
+      onProgress: (serviceId, phase) => {
+        startupEvents.push(`progress:${serviceId}:${phase}`);
+      }
+    });
 
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.restored, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.deepEqual(startupEvents.slice(0, 2), [
+      "start:agent-container-hub",
+      "progress:agent-container-hub:failed"
+    ]);
     for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
       const service = getBuiltinService(serviceId);
       const installDir = getInstallDir(app, service);

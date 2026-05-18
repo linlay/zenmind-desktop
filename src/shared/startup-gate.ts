@@ -28,7 +28,7 @@ export function getStartupBlockingService(startupServices: Array<ServiceState | 
 
 export function shouldShowStartupProgressCard(
   startupRestoreState: StartupRestoreState | null,
-  startupAllReady: boolean
+  _startupAllReady: boolean
 ) {
   if (!startupRestoreState || startupRestoreState.mode !== "bootstrap") {
     return false;
@@ -37,8 +37,7 @@ export function shouldShowStartupProgressCard(
   return (
     startupRestoreState.phase === "idle" ||
     startupRestoreState.phase === "running" ||
-    startupRestoreState.phase === "failed" ||
-    (startupRestoreState.phase === "succeeded" && !startupAllReady)
+    startupRestoreState.phase === "failed"
   );
 }
 

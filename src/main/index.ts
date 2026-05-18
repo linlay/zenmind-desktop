@@ -148,6 +148,12 @@ import {
   getDataRoot,
   getElectronUserDataRoot
 } from "./user-paths";
+import {
+  homeZenmindEnvExists,
+  importEnvZipToZenmind,
+  resolveHomeZenmindRoot,
+  shouldRequireMacEnvZipImport
+} from "./env-bootstrap";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { safeConsoleError } from "./safe-console";
 import { handleDesktopActionRequest, startDesktopActionBridge } from "./desktop-action-bridge";
@@ -253,6 +259,11 @@ function getServiceWebviewPreloadUrl() {
 
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName(ZENMIND_PRODUCT_NAME);
+const homeZenmindRootAtProcessStart = resolveHomeZenmindRoot(app, process.platform);
+const requireEnvZipImportAtStartup = shouldRequireMacEnvZipImport({
+  platform: process.platform,
+  homeZenmindEnvExistedAtStartup: homeZenmindEnvExists(app, process.platform)
+});
 const electronUserDataRoot = getElectronUserDataRoot(app);
 fs.mkdirSync(electronUserDataRoot, { recursive: true });
 app.setPath("userData", electronUserDataRoot);
@@ -3459,6 +3470,73 @@ async function showSaveDialog(
   }
 }
 
+async function ensureMacFirstInstallEnvZipImported() {
+  if (!requireEnvZipImportAtStartup) {
+    return true;
+  }
+
+  while (true) {
+    const choice = await dialog.showMessageBox({
+      type: "warning",
+      title: "首次安装需要导入 env.zip",
+      message: "检测到 ~/.zenmind 环境未初始化，请先导入 env.zip。",
+      detail: `目标目录：${homeZenmindRootAtProcessStart}\n导入时只补齐缺失文件，不覆盖已有内容。`,
+      buttons: ["选择 env.zip", "退出 ZenMind"],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true
+    });
+
+    if (choice.response !== 0) {
+      return false;
+    }
+
+    const result = await showFileDialog({
+      title: "选择 env.zip",
+      properties: ["openFile"],
+      filters: [{ name: "env.zip", extensions: ["zip"] }]
+    }, null);
+
+    if (result.canceled || result.filePaths.length === 0) {
+      const retryChoice = await dialog.showMessageBox({
+        type: "warning",
+        title: "未导入 env.zip",
+        message: "首次安装必须导入 env.zip 后才能继续。",
+        buttons: ["重新选择", "退出 ZenMind"],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true
+      });
+      if (retryChoice.response === 0) {
+        continue;
+      }
+      return false;
+    }
+
+    try {
+      const importResult = await importEnvZipToZenmind(app, result.filePaths[0], process.platform);
+      console.info(
+        `[main] imported env.zip into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
+      );
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const retryChoice = await dialog.showMessageBox({
+        type: "error",
+        title: "env.zip 导入失败",
+        message,
+        buttons: ["重新选择", "退出 ZenMind"],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true
+      });
+      if (retryChoice.response !== 0) {
+        return false;
+      }
+    }
+  }
+}
+
 async function pickAssistantAttachments(chatId: string | null | undefined, ownerWindow: BrowserWindow | null) {
   const result = await showFileDialog({
     title: "选择要给 ZenMind 读取的附件",
@@ -4205,6 +4283,10 @@ if (gotSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     ensureDarwinDockIdentity();
+    if (!(await ensureMacFirstInstallEnvZipImported())) {
+      app.quit();
+      return;
+    }
     ensureDataRoot(app);
     loadBuiltinServices(app);
     loadInstalledPlugins(app);
