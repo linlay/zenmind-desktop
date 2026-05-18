@@ -73,6 +73,121 @@ const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
   };
 })()`;
 
+function buildAgentWebclientAccessTokenInjectionScript(token: string | null, desktopAuthContext: string) {
+  return `(() => {
+    const token = ${JSON.stringify(token ?? "")};
+    const desktopAuthContext = ${JSON.stringify(desktopAuthContext)};
+    const accessTokenStorageKey = "agent-webclient.appAccessToken";
+    const authContextStorageKey = "agent-webclient.appAuthContext";
+    const bridgeFlag = "__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__";
+    const fallbackFlag = "__ZENMIND_AGENT_WEBCLIENT_AUTH_FALLBACK__";
+    const fallbackTokenKey = "__ZENMIND_AGENT_WEBCLIENT_FALLBACK_TOKEN__";
+    let tokenBefore = "";
+    try {
+      tokenBefore = window.sessionStorage.getItem(accessTokenStorageKey) || "";
+    } catch {
+      tokenBefore = "";
+    }
+
+    function writeToken(nextToken) {
+      const normalizedToken = typeof nextToken === "string" ? nextToken.trim() : "";
+      try {
+        if (desktopAuthContext) {
+          window.sessionStorage.setItem(authContextStorageKey, desktopAuthContext);
+        }
+        if (normalizedToken) {
+          window.sessionStorage.setItem(accessTokenStorageKey, normalizedToken);
+        } else {
+          window.sessionStorage.removeItem(accessTokenStorageKey);
+        }
+      } catch {
+        // Ignore restricted guest storage.
+      }
+      window.__AGENT_APP_ACCESS_TOKEN = normalizedToken || undefined;
+      window[fallbackTokenKey] = normalizedToken;
+      return normalizedToken;
+    }
+
+    function markBridgeAvailable() {
+      try {
+        Object.defineProperty(window, bridgeFlag, {
+          configurable: true,
+          enumerable: false,
+          value: true,
+          writable: false
+        });
+      } catch {
+        window[bridgeFlag] = true;
+      }
+    }
+
+    function isAuthRequest(value) {
+      return Boolean(
+        value &&
+        typeof value === "object" &&
+        value.type === "zenmind:agent-app-auth:request" &&
+        value.requestId &&
+        (value.action === "getAccessToken" || value.action === "refreshAccessToken")
+      );
+    }
+
+    function respondToAuthRequest(value) {
+      if (!isAuthRequest(value)) {
+        return false;
+      }
+      window.dispatchEvent(new MessageEvent("message", {
+        data: {
+          type: "zenmind:agent-app-auth:response",
+          requestId: String(value.requestId),
+          token: window[fallbackTokenKey] || null
+        },
+        origin: location.origin,
+        source: window
+      }));
+      return true;
+    }
+
+    markBridgeAvailable();
+    const normalizedToken = writeToken(token);
+    if (!window[fallbackFlag]) {
+      const originalPostMessage = window.postMessage.bind(window);
+      try {
+        Object.defineProperty(window, fallbackFlag, {
+          configurable: true,
+          enumerable: false,
+          value: true,
+          writable: false
+        });
+      } catch {
+        window[fallbackFlag] = true;
+      }
+      try {
+        window.postMessage = function zenmindAgentWebclientPostMessage(value, targetOrigin, transfer) {
+          if (respondToAuthRequest(value)) {
+            return;
+          }
+          if (transfer === undefined) {
+            originalPostMessage(value, targetOrigin);
+            return;
+          }
+          originalPostMessage(value, targetOrigin, transfer);
+        };
+      } catch {
+        // Ignore non-writable postMessage environments.
+      }
+      window.addEventListener("message", (event) => {
+        respondToAuthRequest(event.data);
+      });
+    }
+
+    return {
+      bridge: Boolean(window[bridgeFlag]),
+      tokenBeforeLength: tokenBefore.length,
+      tokenAfterLength: normalizedToken.length
+    };
+  })()`;
+}
+
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/gu, " ").trim();
 }
@@ -281,6 +396,7 @@ export function PluginPage({
   const [webviewCurrentUrl, setWebviewCurrentUrl] = useState("");
   const [serviceWebviewPreloadPath, setServiceWebviewPreloadPath] = useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
+  const agentWebclientTokenReloadTimerRef = useRef<number | null>(null);
   const surfaceVisibilityProps = active === undefined
     ? {}
     : {
@@ -542,18 +658,60 @@ export function PluginPage({
     }
   }
 
+  async function injectAgentWebclientAccessToken(token: string | null) {
+    if (service?.id !== "agent-webclient") {
+      return false;
+    }
+    const targetWebview = webviewRef.current;
+    if (!targetWebview) {
+      return false;
+    }
+
+    const desktopAuthContext = webviewReloadKey;
+    try {
+      const result = await targetWebview.executeJavaScript(
+        buildAgentWebclientAccessTokenInjectionScript(token, desktopAuthContext),
+        true
+      ) as { tokenBeforeLength?: number; tokenAfterLength?: number } | null;
+      return Boolean(
+        token &&
+          desktopAuthContext &&
+          result &&
+          (result.tokenBeforeLength ?? 0) === 0 &&
+          (result.tokenAfterLength ?? 0) > 0
+      );
+    } catch (reason) {
+      console.warn(
+        "[agent-webclient] failed to inject access token fallback",
+        reason instanceof Error ? reason.message : String(reason)
+      );
+      return false;
+    }
+  }
+
   function seedAgentWebclientAccessToken() {
     if (service?.id !== "agent-webclient" || !bridgeProtocol) {
       return;
     }
     void window.electronAPI.agentAuth
       .issueAccessToken("missing")
-      .then((result) => {
+      .then(async (result) => {
+        const token = result.ok ? result.token : null;
+        const shouldReloadAfterInjection = await injectAgentWebclientAccessToken(token);
         sendBridgeMessageToWebview({
           type: bridgeProtocol.responseType,
           requestId: `agent_webclient_seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          token: result.ok ? result.token : null
+          token
         });
+        if (shouldReloadAfterInjection) {
+          if (agentWebclientTokenReloadTimerRef.current !== null) {
+            window.clearTimeout(agentWebclientTokenReloadTimerRef.current);
+          }
+          agentWebclientTokenReloadTimerRef.current = window.setTimeout(() => {
+            agentWebclientTokenReloadTimerRef.current = null;
+            webviewRef.current?.reload();
+          }, 50);
+        }
         if (!result.ok) {
           setBridgeError(result.message);
         }
@@ -561,6 +719,13 @@ export function PluginPage({
       .catch((reason) => {
         setBridgeError(reason instanceof Error ? reason.message : String(reason));
       });
+  }
+
+  function scheduleAgentWebclientAccessTokenSeeds() {
+    const delays = [0, 150, 500, 1000, 2000];
+    return delays.map((delay) => window.setTimeout(() => {
+      seedAgentWebclientAccessToken();
+    }, delay));
   }
 
   function handleWebviewBridgeMessage(event: Event) {
@@ -650,12 +815,20 @@ export function PluginPage({
   }
 
   useEffect(() => {
+    if (!bridgeReady || !serviceWebviewPreloadPath) {
+      return undefined;
+    }
+
     const targetWebview = webviewRef.current;
     if (!targetWebview) {
       return undefined;
     }
 
     const handleDomReady = () => {
+      syncWebviewState();
+      seedAgentWebclientAccessToken();
+    };
+    const handleDidFinishLoad = () => {
       syncWebviewState();
       seedAgentWebclientAccessToken();
     };
@@ -672,25 +845,48 @@ export function PluginPage({
     const handleDidFailLoad = () => syncWebviewState();
 
     targetWebview.addEventListener("dom-ready", handleDomReady);
+    targetWebview.addEventListener("did-finish-load", handleDidFinishLoad);
     targetWebview.addEventListener("did-navigate", handleDidNavigate);
     targetWebview.addEventListener("did-navigate-in-page", handleDidNavigateInPage);
     targetWebview.addEventListener("did-fail-load", handleDidFailLoad);
     targetWebview.addEventListener("ipc-message", handleWebviewBridgeMessage);
     syncWebviewState();
-    seedAgentWebclientAccessToken();
+    const seedTimers = scheduleAgentWebclientAccessTokenSeeds();
 
     return () => {
+      seedTimers.forEach((timer) => window.clearTimeout(timer));
       targetWebview.removeEventListener("dom-ready", handleDomReady);
+      targetWebview.removeEventListener("did-finish-load", handleDidFinishLoad);
       targetWebview.removeEventListener("did-navigate", handleDidNavigate);
       targetWebview.removeEventListener("did-navigate-in-page", handleDidNavigateInPage);
       targetWebview.removeEventListener("did-fail-load", handleDidFailLoad);
       targetWebview.removeEventListener("ipc-message", handleWebviewBridgeMessage);
     };
-  }, [bridgeProtocol, service?.id, service?.status, webviewRenderKey, webviewRetryNonce]);
+  }, [
+    bridgeProtocol,
+    bridgeReady,
+    service?.id,
+    service?.status,
+    serviceWebviewPreloadPath,
+    webviewRenderKey,
+    webviewRetryNonce
+  ]);
 
   useEffect(() => {
+    if (active === false || !bridgeReady || !serviceWebviewPreloadPath) {
+      return;
+    }
     seedAgentWebclientAccessToken();
-  }, [embeddedUrl, service?.id, webviewRenderKey]);
+  }, [active, bridgeReady, embeddedUrl, service?.id, serviceWebviewPreloadPath, webviewRenderKey]);
+
+  useEffect(() => {
+    return () => {
+      if (agentWebclientTokenReloadTimerRef.current !== null) {
+        window.clearTimeout(agentWebclientTokenReloadTimerRef.current);
+        agentWebclientTokenReloadTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (service?.id !== "agent-webclient" || active === false || !embeddedUrl) {

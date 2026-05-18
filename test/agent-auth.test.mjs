@@ -106,6 +106,17 @@ function registerAppServerFixture(root, options = {}) {
       "fi"
     );
   }
+  if (options.issueCounterPath) {
+    issueScriptLines.push(
+      `counter=${JSON.stringify(options.issueCounterPath)}`,
+      "count=0",
+      "if [ -f \"$counter\" ]; then",
+      "  count=$(cat \"$counter\")",
+      "fi",
+      "count=$((count + 1))",
+      "printf '%s' \"$count\" > \"$counter\""
+    );
+  }
   issueScriptLines.push(
     "printf '%s\\n' 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImZpeHR1cmUiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwOi8vaXNzdWVyLnRlc3QiLCJzdWIiOiJhcHAiLCJzY29wZSI6ImFwcCIsImRldmljZV9pZCI6ImRldmljZS0xIn0.signature'"
   );
@@ -140,6 +151,36 @@ test("issueAgentAccessToken uses zenmind-app-server to issue an app token", asyn
       ),
       "APP_SERVER_PUBLIC_KEY\n"
     );
+  } finally {
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("issueAgentAccessToken deduplicates concurrent app-server token requests", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-auth-"));
+  const app = createAppStub(tempRoot);
+  const counterPath = path.join(tempRoot, "issue-count.txt");
+  registerAppServerFixture(tempRoot, { issueCounterPath: counterPath });
+
+  try {
+    const results = await Promise.all([
+      issueAgentAccessToken(app, "missing"),
+      issueAgentAccessToken(app, "missing"),
+      issueAgentAccessToken(app, "missing"),
+      issueAgentAccessToken(app, "missing")
+    ]);
+
+    assert.equal(results.every((result) => result.ok), true);
+    assert.equal(fs.readFileSync(counterPath, "utf8"), "1");
+
+    const cached = await issueAgentAccessToken(app, "missing");
+    assert.equal(cached.ok, true);
+    assert.equal(fs.readFileSync(counterPath, "utf8"), "1");
+
+    const refreshed = await issueAgentAccessToken(app, "unauthorized");
+    assert.equal(refreshed.ok, true);
+    assert.equal(fs.readFileSync(counterPath, "utf8"), "2");
   } finally {
     registryInternals.clearServices();
     fs.rmSync(tempRoot, { recursive: true, force: true });

@@ -982,6 +982,14 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /embedded-plugin-error/);
   assert.match(pluginPage, /buildAgentWebclientDesktopContext\(getCurrentPageContextSnapshot\(\)\)/);
   assert.match(pluginPage, /seedAgentWebclientAccessToken/);
+  assert.match(pluginPage, /buildAgentWebclientAccessTokenInjectionScript/);
+  assert.match(pluginPage, /if \(!bridgeReady \|\| !serviceWebviewPreloadPath\) \{[\s\S]{0,80}return undefined;/);
+  assert.match(pluginPage, /bridgeReady,[\s\S]{0,120}serviceWebviewPreloadPath,[\s\S]{0,120}webviewRenderKey/);
+  assert.match(pluginPage, /if \(active === false \|\| !bridgeReady \|\| !serviceWebviewPreloadPath\) \{[\s\S]{0,80}return;[\s\S]{0,120}seedAgentWebclientAccessToken\(\)/);
+  assert.match(pluginPage, /\[active, bridgeReady, embeddedUrl, service\?\.id, serviceWebviewPreloadPath, webviewRenderKey\]/);
+  assert.match(pluginPage, /__ZENMIND_AGENT_WEBCLIENT_AUTH_FALLBACK__/);
+  assert.match(pluginPage, /agentWebclientTokenReloadTimerRef/);
+  assert.match(pluginPage, /webviewRef\.current\?\.reload\(\)/);
   assert.match(pluginPage, /issueAccessToken\("missing"\)/);
   assert.match(pluginPage, /agent_webclient_seed_/);
   assert.match(pluginPage, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);

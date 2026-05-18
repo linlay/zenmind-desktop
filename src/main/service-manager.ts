@@ -2826,12 +2826,14 @@ function zenmindAppServerInstallNeedsRefresh(installDir: string) {
 
 function agentPlatformInstallNeedsRefresh(installDir: string) {
   const manifestPath = path.join(installDir, "manifest.json");
+  const desktopExamplePath = path.join(installDir, "configs", "desktop.example.yml");
   const programCommonShPath = path.join(installDir, "scripts", "program-common.sh");
   const programCommonPs1Path = path.join(installDir, "scripts", "program-common.ps1");
 
   try {
     if (fs.existsSync(manifestPath)) {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+        configFiles?: Array<{ key?: unknown; relativePath?: unknown; templateRelativePath?: unknown }> | null;
         runtime?: { pidRelativePath?: unknown; logRelativePath?: unknown } | null;
       };
       if (
@@ -2840,6 +2842,26 @@ function agentPlatformInstallNeedsRefresh(installDir: string) {
       ) {
         return true;
       }
+      const hasDesktopBridgeConfig = Array.isArray(manifest.configFiles) &&
+        manifest.configFiles.some((entry) =>
+          entry?.key === "desktop" &&
+          entry.relativePath === "configs/desktop.yml" &&
+          entry.templateRelativePath === "configs/desktop.example.yml"
+        );
+      if (!hasDesktopBridgeConfig) {
+        return true;
+      }
+    }
+
+    if (!fs.existsSync(desktopExamplePath)) {
+      return true;
+    }
+    const desktopExample = fs.readFileSync(desktopExamplePath, "utf8");
+    if (
+      !/path:\s*\/actions\/call/u.test(desktopExample) ||
+      !/path:\s*\/cdp\/call/u.test(desktopExample)
+    ) {
+      return true;
     }
 
     if (fs.existsSync(programCommonShPath)) {
