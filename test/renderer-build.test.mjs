@@ -228,7 +228,7 @@ test("agent webclient desktop sections are exposed as top-level sidebar tabs", (
   assert.match(pluginPage, /embedPath: service\?\.id === "agent-webclient" \? embedPath : undefined/);
 });
 
-test("settings route switches the sidebar into section mode with shared iconized definitions", () => {
+test("settings route keeps the global sidebar and renders page-internal split sections", () => {
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "components", "AppSidebar.tsx"),
@@ -239,7 +239,7 @@ test("settings route switches the sidebar into section mode with shared iconized
     "utf8"
   );
   const settingsSections = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "settingsSections.ts"),
+    path.join(projectRoot, "src", "renderer", "settingsPageSections.ts"),
     "utf8"
   );
   const brandMark = fs.readFileSync(
@@ -248,48 +248,50 @@ test("settings route switches the sidebar into section mode with shared iconized
   );
 
   assert.match(appShell, /<Route\s+path="\/settings"/);
-  assert.match(appShell, /const lastNonSettingsRouteRef = useRef\("\/control-center"\)/);
-  assert.match(appShell, /createSettingsSectionDefinitions/);
-  assert.match(appShell, /buildSettingsSectionPath/);
-  assert.match(appShell, /navigate\(normalizedSettingsPath, \{ replace: true \}\)/);
-  assert.match(appShell, /onSelectSettingsSection=\{handleSelectSettingsSection\}/);
+  assert.doesNotMatch(appShell, /lastNonSettingsRouteRef/);
+  assert.doesNotMatch(appShell, /buildSettingsSectionPath/);
+  assert.doesNotMatch(appShell, /navigate\(normalizedSettingsPath, \{ replace: true \}\)/);
+  assert.doesNotMatch(appShell, /onSelectSettingsSection=\{handleSelectSettingsSection\}/);
 
   assert.match(settingsSections, /type SettingsSectionId/);
-  assert.match(settingsSections, /id:\s*"appearance"[\s\S]*?label:\s*"外观"[\s\S]*?icon:\s*"appearance"/);
-  assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"导航栏"[\s\S]*?icon:\s*"navigation"/);
-  assert.match(settingsSections, /id:\s*"quickAssistant"[\s\S]*?label:\s*"快捷助手"[\s\S]*?icon:\s*"assistant"/);
-  assert.match(settingsSections, /id:\s*"sideAssistant"[\s\S]*?label:\s*"侧边助手"[\s\S]*?icon:\s*"sidebar-assistant-closed"/);
-  assert.match(settingsSections, /id:\s*"desktopPet"[\s\S]*?label:\s*"宠物助手"[\s\S]*?icon:\s*"pet"/);
-  assert.match(settingsSections, /id:\s*"embeddedWebsites"[\s\S]*?label:\s*"内嵌网站"[\s\S]*?icon:\s*"website"/);
-  assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"数据目录"[\s\S]*?icon:\s*"folder"/);
-  assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"助手记忆"[\s\S]*?icon:\s*"memory"/);
+  assert.match(settingsSections, /id:\s*"appearance"[\s\S]*?label:\s*"外观"[\s\S]*?layout:\s*"measure"/);
+  assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"导航栏"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsSections, /id:\s*"quickAssistant"[\s\S]*?label:\s*"快捷助手"[\s\S]*?layout:\s*"measure"/);
+  assert.match(settingsSections, /id:\s*"sideAssistant"[\s\S]*?label:\s*"侧边助手"[\s\S]*?layout:\s*"measure"/);
+  assert.match(settingsSections, /id:\s*"desktopPet"[\s\S]*?label:\s*"宠物助手"/);
+  assert.match(settingsSections, /id:\s*"embeddedWebsites"[\s\S]*?label:\s*"内嵌网站"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"数据目录"/);
+  assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"助手记忆"[\s\S]*?layout:\s*"wide"/);
+  assert.doesNotMatch(settingsSections, /icon:/);
 
-  assert.match(sidebarSource, /isSettingsMode\?: boolean;/);
-  assert.match(sidebarSource, /settingsSections\?: SettingsSectionDefinition\[\];/);
-  assert.match(sidebarSource, /pendingSettingsSectionId\?: SettingsSectionId \| null;/);
-  assert.match(sidebarSource, /sidebar-settings-nav/);
-  assert.match(sidebarSource, /data-settings-section=\{section\.id\}/);
-  assert.doesNotMatch(sidebarSource, /settings-mode-close-button/);
+  assert.doesNotMatch(sidebarSource, /isSettingsMode\?: boolean;/);
+  assert.doesNotMatch(sidebarSource, /settingsSections\?: SettingsSectionDefinition\[\];/);
+  assert.doesNotMatch(sidebarSource, /pendingSettingsSectionId\?: SettingsSectionId \| null;/);
+  assert.doesNotMatch(sidebarSource, /sidebar-settings-nav/);
+  assert.doesNotMatch(sidebarSource, /sidebar-link-settings/);
   assert.match(sidebarSource, /to="\/settings"/);
   assert.match(sidebarSource, /controlCenterUtilityItem/);
   assert.match(sidebarSource, /sidebar-assistant-launcher/);
   assert.match(sidebarSource, /app-sidebar-collapse-button/);
 
-  assert.match(settingsPage, /className="settings-mode-close-button"/);
-  assert.match(settingsPage, /aria-label="退出设置模式"/);
+  assert.match(settingsPage, /createSettingsSectionDefinitions/);
   assert.match(settingsPage, /switch \(activeSection\)/);
   assert.match(settingsPage, /case "appearance"/);
   assert.match(settingsPage, /case "memory"/);
-  assert.doesNotMatch(settingsPage, /还原到侧边栏关闭按钮/);
+  assert.match(settingsPage, /split-workspace-layout/);
+  assert.match(settingsPage, /settings-directory-nav/);
+  assert.match(settingsPage, /contentRef\.current\?\.scrollTo/);
+  assert.doesNotMatch(settingsPage, /settings-mode-close-button/);
+  assert.doesNotMatch(settingsPage, /onExitSettingsMode/);
 
-  assert.match(brandMark, /appearanceIcon/);
-  assert.match(brandMark, /folderIcon/);
-  assert.match(brandMark, /navigationIcon/);
-  assert.match(brandMark, /petIcon/);
-  assert.match(brandMark, /"appearance"/);
-  assert.match(brandMark, /"navigation"/);
-  assert.match(brandMark, /"pet"/);
-  assert.match(brandMark, /"folder"/);
+  assert.doesNotMatch(brandMark, /appearanceIcon/);
+  assert.doesNotMatch(brandMark, /folderIcon/);
+  assert.doesNotMatch(brandMark, /navigationIcon/);
+  assert.doesNotMatch(brandMark, /petIcon/);
+  assert.doesNotMatch(brandMark, /"appearance"/);
+  assert.doesNotMatch(brandMark, /"navigation"/);
+  assert.doesNotMatch(brandMark, /"pet"/);
+  assert.doesNotMatch(brandMark, /"folder"/);
 });
 
 test("settings page configures desktop helper default agent separately from desktop pet", () => {

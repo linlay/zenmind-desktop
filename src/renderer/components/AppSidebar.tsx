@@ -12,10 +12,6 @@ import {
   getServiceDisplayName,
   shouldShowServiceNavigationTab,
 } from "../service-display";
-import type {
-  SettingsSectionDefinition,
-  SettingsSectionId,
-} from "../settingsSections";
 import {
   createCustomSidebarNavOrderKey,
   createExperimentalSidebarNavOrderKey,
@@ -131,16 +127,11 @@ type AppSidebarProps = {
   assistantDockOpen?: boolean;
   assistantLauncherDisabled?: boolean;
   assistantLauncherVisible?: boolean;
-  isSettingsMode?: boolean;
-  settingsSections?: SettingsSectionDefinition[];
-  activeSettingsSectionId?: SettingsSectionId | null;
-  pendingSettingsSectionId?: SettingsSectionId | null;
   sidebarNavOrder: SidebarNavOrderItemKey[];
   customSidebarItems: CustomSidebarItem[];
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
   onRequestNavigate?: (targetPath: string) => boolean;
-  onSelectSettingsSection?: (sectionId: SettingsSectionId) => void;
   onNavigateItem?: () => void;
   onToggleCollapsed?: () => void;
 };
@@ -154,16 +145,11 @@ export function AppSidebar({
   assistantDockOpen = false,
   assistantLauncherDisabled = false,
   assistantLauncherVisible = true,
-  isSettingsMode = false,
-  settingsSections = [],
-  activeSettingsSectionId = null,
-  pendingSettingsSectionId = null,
   sidebarNavOrder,
   customSidebarItems,
   onOpenAssistantDock,
   onCloseAssistantDock,
   onRequestNavigate,
-  onSelectSettingsSection,
   onNavigateItem,
   onToggleCollapsed,
 }: AppSidebarProps) {
@@ -230,15 +216,6 @@ export function AppSidebar({
 
     onNavigateItem?.();
   }
-
-  function handleSettingsSectionClick(sectionId: SettingsSectionId) {
-    if (sectionId === activeSettingsSectionId) {
-      return;
-    }
-    onSelectSettingsSection?.(sectionId);
-    onNavigateItem?.();
-  }
-
   function handleAssistantDockClick() {
     if (assistantLauncherDisabled) {
       return;
@@ -275,80 +252,41 @@ export function AppSidebar({
         )}
       </div>
 
-      <nav
-        className={
-          isSettingsMode ? "sidebar-nav sidebar-settings-nav" : "sidebar-nav"
-        }
-        aria-label={isSettingsMode ? "设置模块导航" : "Primary Navigation"}
-      >
-        {isSettingsMode
-          ? settingsSections.map((section) => {
-              const active =
-                section.id === activeSettingsSectionId ||
-                section.id === pendingSettingsSectionId;
-              return (
-                <button
-                  type="button"
-                  key={section.id}
-                  data-settings-section={section.id}
-                  aria-label={section.label}
-                  title={section.label}
-                  className={[
-                    "sidebar-link",
-                    "sidebar-link-settings",
-                    active ? "sidebar-link-active" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  onClick={() => handleSettingsSectionClick(section.id)}
-                >
-                  <span className="sidebar-link-icon">
-                    <SidebarIllustration kind={section.icon} />
-                  </span>
-                  <span className="sidebar-link-label">{section.label}</span>
-                  <span
-                    className="sidebar-link-label-collapsed"
-                    aria-hidden="true"
-                  >
-                    {getCollapsedSidebarLabel(section.label)}
-                  </span>
-                </button>
-              );
-            })
-          : navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                onClick={(event) => handleItemClick(event, item.to)}
-                aria-label={item.label}
-                title={item.label}
-                className={({ isActive }) =>
-                  [
-                    "sidebar-link",
-                    isActive || pendingPath === item.to
-                      ? "sidebar-link-active"
-                      : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")
-                }
-              >
-                <span className="sidebar-link-icon">
-                  {item.iconId ? (
-                    <CustomSidebarIcon iconId={item.iconId} />
-                  ) : (
-                    <SidebarIllustration kind={item.icon} />
-                  )}
-                </span>
-                <span className="sidebar-link-label">{item.label}</span>
-                <span
-                  className="sidebar-link-label-collapsed"
-                  aria-hidden="true"
-                >
-                  {getCollapsedSidebarLabel(item.label)}
-                </span>
-              </NavLink>
-            ))}
+      <nav className="sidebar-nav" aria-label="Primary Navigation">
+        {navItems.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            onClick={(event) => handleItemClick(event, item.to)}
+            aria-label={item.label}
+            title={item.label}
+            className={({ isActive }) =>
+              [
+                "sidebar-link",
+                isActive || pendingPath === item.to
+                  ? "sidebar-link-active"
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")
+            }
+          >
+            <span className="sidebar-link-icon">
+              {item.iconId ? (
+                <CustomSidebarIcon iconId={item.iconId} />
+              ) : (
+                <SidebarIllustration kind={item.icon} />
+              )}
+            </span>
+            <span className="sidebar-link-label">{item.label}</span>
+            <span
+              className="sidebar-link-label-collapsed"
+              aria-hidden="true"
+            >
+              {getCollapsedSidebarLabel(item.label)}
+            </span>
+          </NavLink>
+        ))}
       </nav>
 
       <div className="sidebar-footer">

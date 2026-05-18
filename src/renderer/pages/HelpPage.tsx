@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import "./SplitWorkspaceLayout.css";
 import "./HelpPage.css";
 
 /* ================================================================
@@ -527,11 +528,11 @@ export function HelpPage({ isWindows }: HelpPageProps) {
   }, []);
 
   return (
-    <section className="help-page">
+    <section className="help-page split-workspace-page">
       {/* 主体双栏 */}
-      <div className="help-layout">
+      <div className="help-layout split-workspace-layout">
         {/* 左侧导航 */}
-        <aside className="help-sidebar">
+        <aside className="help-sidebar split-workspace-sidebar-card">
           <h2 className="help-sidebar-title">支持中心</h2>
           <nav className="help-nav">
             {helpCategories.map((cat) => (
@@ -547,7 +548,7 @@ export function HelpPage({ isWindows }: HelpPageProps) {
         </aside>
 
         {/* 右侧内容 */}
-        <div className="help-main" ref={contentRef}>
+        <div className="help-main split-workspace-main-card" ref={contentRef}>
           <div className="help-hero">
             <h1 className="help-hero-title">我们能为您提供什么帮助？</h1>
             <p className="help-hero-desc">

@@ -1,6 +1,8 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useLocation } from "react-router-dom";
 import { CustomSidebarIcon } from "../components/BrandMark";
+import "./SplitWorkspaceLayout.css";
+import "./SettingsPage.css";
 import type {
   AssistantMemoryItem,
   AssistantMemorySettings,
@@ -32,15 +34,17 @@ import {
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_APPEARANCE_OPTIONS
 } from "../../shared/desktop-pet";
-import type { SettingsSectionDefinition, SettingsSectionId } from "../settingsSections";
+import {
+  createSettingsSectionDefinitions,
+  getDefaultSettingsSectionId,
+  getVisibleSettingsSections,
+  type SettingsSectionId
+} from "../settingsPageSections";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../sidebarNavOrder";
 
 type SettingsPageProps = {
-  activeSection: SettingsSectionId;
-  sectionDefinitions: SettingsSectionDefinition[];
   themeMode: "light" | "dark";
   onToggleTheme: () => void;
-  onExitSettingsMode: () => void;
   isMac: boolean;
   isWindows: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
@@ -56,7 +60,6 @@ type WindowsDataRootCardProps = {
   onError: (message: string) => void;
 };
 
-const WIDE_SETTINGS_SECTIONS = new Set<SettingsSectionId>(["navigation", "embeddedWebsites", "memory"]);
 const SETTINGS_ACTION_PATCH_FIELDS = [
   "desktopHelperAgentKey",
   "quickAssistantEnabled",
@@ -191,7 +194,7 @@ function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
         <p className="eyebrow">DATA ROOT</p>
         <h2>数据目录</h2>
         <p className="page-copy">
-          使用 <code>~/.zenmind/.desktop</code> 分层保存配置、数据、状态、日志、缓存、密钥和浏览器 profile；程序产物保存在 Application Support 的 ZenMind 目录。
+          Windows 端会将配置、数据、状态、日志、缓存、密钥和浏览器 profile 按分层目录保存在本机数据目录中；相关程序产物则保存在 ZenMind 的应用目录中。
         </p>
       </div>
       <div className="data-root-actions">
@@ -202,11 +205,8 @@ function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
 }
 
 export function SettingsPage({
-  activeSection,
-  sectionDefinitions,
   themeMode,
   onToggleTheme,
-  onExitSettingsMode,
   isMac,
   isWindows,
   sidebarNavOrder,
@@ -250,6 +250,39 @@ export function SettingsPage({
   const [desktopPetBoundAgentPending, setDesktopPetBoundAgentPending] = useState(false);
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
   const desktopPetSupported = isMac || isWindows;
+  const contentRef = useRef<HTMLDivElement>(null);
+  const sectionDefinitions = useMemo(
+    () =>
+      createSettingsSectionDefinitions({
+        isWindows,
+        desktopPetSupported
+      }),
+    [desktopPetSupported, isWindows]
+  );
+  const visibleSections = useMemo(
+    () => getVisibleSettingsSections(sectionDefinitions),
+    [sectionDefinitions]
+  );
+  const [activeSection, setActiveSection] = useState<SettingsSectionId | null>(() =>
+    getDefaultSettingsSectionId(
+      createSettingsSectionDefinitions({
+        isWindows,
+        desktopPetSupported
+      })
+    )
+  );
+
+  useEffect(() => {
+    const fallbackSectionId = getDefaultSettingsSectionId(sectionDefinitions);
+    if (!fallbackSectionId) {
+      return;
+    }
+    setActiveSection((currentSectionId) =>
+      visibleSections.some((definition) => definition.id === currentSectionId)
+        ? currentSectionId
+        : fallbackSectionId
+    );
+  }, [sectionDefinitions, visibleSections]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1189,8 +1222,10 @@ export function SettingsPage({
   }
 
   const sidebarNavOrderLabels = new Map(availableSidebarNavOrderItems.map((item) => [item.key, item.label]));
-  const activeSectionDefinition = sectionDefinitions.find((definition) => definition.id === activeSection) ?? null;
-  const activeSectionWidthClass = WIDE_SETTINGS_SECTIONS.has(activeSection) ? "workspace-wide" : "workspace-measure";
+  const activeSectionDefinition = activeSection
+    ? visibleSections.find((definition) => definition.id === activeSection) ?? null
+    : null;
+  const activeSectionWidthClass = activeSectionDefinition?.layout === "wide" ? "workspace-wide" : "workspace-measure";
 
   function renderActiveSection() {
     switch (activeSection) {
@@ -1808,29 +1843,52 @@ export function SettingsPage({
   }
 
   return (
-    <section className="settings-page workspace-wide" data-settings-section={activeSection}>
-      <div className={`settings-mode-toolbar ${activeSectionWidthClass}`}>
-        <button
-          type="button"
-          className="settings-mode-close-button"
-          onClick={onExitSettingsMode}
-          aria-label="退出设置模式"
-          title="返回上一页"
-        >
-          <span aria-hidden="true" />
-        </button>
-      </div>
-      <div className={`page-head ${activeSectionWidthClass}`}>
-        <div>
-          <p className="eyebrow">SETTINGS</p>
-          <h1>{activeSectionDefinition?.label ?? "设置"}</h1>
-          <p className="page-copy">{activeSectionDefinition?.description ?? "管理当前设置模块。"}</p>
-        </div>
-      </div>
+    <section
+      className="settings-page split-workspace-page"
+      data-settings-section={activeSectionDefinition?.id ?? ""}
+    >
+      <div className="settings-layout split-workspace-layout">
+        <aside className="settings-sidebar-card split-workspace-sidebar-card">
+          <div>
+            <h2 className="settings-sidebar-title">设置</h2>
+            <p className="settings-sidebar-desc">按模块管理桌面工作台、助手能力和本地数据行为。</p>
+          </div>
+          <nav className="settings-directory-nav" aria-label="设置目录">
+            {visibleSections.map((section) => {
+              const isActive = section.id === activeSectionDefinition?.id;
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  className={isActive ? "settings-directory-btn is-active" : "settings-directory-btn"}
+                  onClick={() => {
+                    if (section.id === activeSectionDefinition?.id) {
+                      return;
+                    }
+                    setActiveSection(section.id);
+                    contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                >
+                  <span className="settings-directory-btn-label">{section.label}</span>
+                  <span className="settings-directory-btn-desc">{section.description}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
 
-      {feedback ? <div className={`feedback-banner ${activeSectionWidthClass}`}>{feedback}</div> : null}
-      <div className={activeSectionWidthClass}>
-        {renderActiveSection()}
+        <div className="settings-main-card split-workspace-main-card" ref={contentRef}>
+          <div className={`settings-content-shell ${activeSectionWidthClass}`}>
+            <div className="settings-page-head">
+              <p className="eyebrow">SETTINGS</p>
+              <h1>{activeSectionDefinition?.label ?? "设置"}</h1>
+              <p className="page-copy">{activeSectionDefinition?.description ?? "管理当前设置模块。"}</p>
+            </div>
+
+            {feedback ? <div className="feedback-banner">{feedback}</div> : null}
+            <div className="settings-section-body">{renderActiveSection()}</div>
+          </div>
+        </div>
       </div>
     </section>
   );

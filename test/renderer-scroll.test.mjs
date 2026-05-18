@@ -51,17 +51,11 @@ test("main content keeps a dedicated titlebar drag strip", () => {
   assert.match(dragRegionRule, /-webkit-app-region:\s*drag;/);
 });
 
-test("settings mode close button is excluded from the window drag region", () => {
-  const closeButtonRule = readRule(".settings-mode-close-button");
-  const closeButtonIconRule = readRule(".settings-mode-close-button span");
-  const settingsDragRegionRule = readRule(".app-shell.is-settings-route .app-window-drag-region");
+test("settings page no longer reserves a dedicated drag-region override", () => {
+  const styles = fs.readFileSync(stylesPath, "utf8");
 
-  assert.match(closeButtonRule, /app-region:\s*no-drag;/);
-  assert.match(closeButtonRule, /-webkit-app-region:\s*no-drag;/);
-  assert.match(closeButtonIconRule, /pointer-events:\s*none;/);
-  assert.match(closeButtonIconRule, /app-region:\s*no-drag;/);
-  assert.match(closeButtonIconRule, /-webkit-app-region:\s*no-drag;/);
-  assert.match(settingsDragRegionRule, /left:\s*calc\(var\(--app-sidebar-width,\s*160px\)\s*\+\s*96px\);/);
+  assert.doesNotMatch(styles, /\.settings-mode-close-button\s*\{/);
+  assert.doesNotMatch(styles, /\.app-shell\.is-settings-route\s+\.app-window-drag-region\s*\{/);
 });
 
 test("mac sidebar drag strip leaves the traffic-light controls clickable", () => {
