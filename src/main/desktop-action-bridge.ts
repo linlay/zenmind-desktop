@@ -19,8 +19,10 @@ import {
   isDesktopActionMutating,
   type DesktopActionCallRequest,
   type DesktopActionCallResponse,
-  type DesktopActionError
+  type DesktopActionError,
+  type DesktopActionSource
 } from "../shared/desktop-actions";
+import type { EmbeddedCdpCommandRequest } from "./embedded-cdp-gateway";
 import { issueAgentAccessToken } from "./agent-auth";
 import type { AgentPlatformAssistantBridge } from "./assistant/agent-platform-bridge";
 import {
@@ -54,12 +56,32 @@ type DesktopActionBridgeOptions = {
   navigate: (targetPath: string) => void;
   openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
   callRendererAction: (request: DesktopActionRendererRequest) => Promise<DesktopActionRendererResponse>;
+  executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{ targetId: string; surfaceId: string; result: unknown }>;
 };
 
 type PlatformResponse<T> = {
   code?: number;
   msg?: string;
   data?: T;
+};
+
+type DesktopCdpCallRequest = {
+  requestId?: string;
+  method?: string;
+  params?: Record<string, unknown>;
+  targetId?: string;
+  sessionId?: string;
+  surfaceId?: string;
+  source?: DesktopActionSource;
+};
+
+type DesktopCdpCallResponse = {
+  ok: boolean;
+  method: string;
+  result?: unknown;
+  targetId?: string;
+  surfaceId?: string;
+  error?: DesktopActionError;
 };
 
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
@@ -84,6 +106,10 @@ function preview(action: string, value: unknown): DesktopActionCallResponse {
 
 function fail(action: string, code: string, message: string, details?: unknown): DesktopActionCallResponse {
   return { ok: false, action, error: actionError(code, message, details) };
+}
+
+function cdpFail(method: string, code: string, message: string, details?: unknown): DesktopCdpCallResponse {
+  return { ok: false, method, error: actionError(code, message, details) };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -587,6 +613,33 @@ export async function handleDesktopActionRequest(
   return handleActionCall(options, request);
 }
 
+export async function handleDesktopCdpRequest(
+  options: DesktopActionBridgeOptions,
+  request: DesktopCdpCallRequest
+): Promise<DesktopCdpCallResponse> {
+  const method = typeof request.method === "string" ? request.method.trim() : "";
+  if (!method) {
+    return cdpFail("unknown", "invalid_args", "method is required");
+  }
+  try {
+    const response = await options.executeCdpCommand({
+      method,
+      params: asRecord(request.params),
+      targetId: typeof request.targetId === "string" ? request.targetId.trim() : "",
+      surfaceId: typeof request.surfaceId === "string" ? request.surfaceId.trim() : ""
+    });
+    return {
+      ok: true,
+      method,
+      result: response.result,
+      targetId: response.targetId,
+      surfaceId: response.surfaceId
+    };
+  } catch (error) {
+    return cdpFail(method, "cdp_failed", error instanceof Error ? error.message : String(error));
+  }
+}
+
 function isLocalhostRequest(req: http.IncomingMessage) {
   return req.socket.remoteAddress === DESKTOP_ACTION_BRIDGE_HOST ||
     req.socket.remoteAddress === "::ffff:127.0.0.1";
@@ -629,6 +682,21 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
         writeJSON(res, response.ok ? 200 : 400, response);
       } catch (error) {
         writeJSON(res, 400, fail("unknown", "invalid_request", error instanceof Error ? error.message : String(error)));
+      }
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/cdp/call") {
+      if (!hasJsonContentType(req)) {
+        writeJSON(res, 415, cdpFail("unknown", "unsupported_media_type", "Content-Type must be application/json."));
+        return;
+      }
+      try {
+        const body = await readBody(req);
+        const parsed = JSON.parse(body) as DesktopCdpCallRequest;
+        const response = await handleDesktopCdpRequest(options, parsed);
+        writeJSON(res, response.ok ? 200 : 400, response);
+      } catch (error) {
+        writeJSON(res, 400, cdpFail("unknown", "invalid_request", error instanceof Error ? error.message : String(error)));
       }
       return;
     }

@@ -542,14 +542,15 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_PORT\s*=\s*11788/);
   assert.match(actionCatalog, /desktop\.controlCenter\.listServices/);
   assert.match(actionCatalog, /desktop\.settings\.applyPatch/);
-  assert.match(actionCatalog, /desktop\.embeddedWeb\.getActiveSurface/);
-  assert.match(actionCatalog, /desktop\.embeddedWeb\.openTab/);
+  assert.doesNotMatch(actionCatalog, /desktop\.page\./);
+  assert.doesNotMatch(actionCatalog, /desktop\.embeddedWeb\./);
   assert.match(actionCatalog, /desktop\.market\.applySettingsPatch/);
   assert.match(actionCatalog, /desktop\.automations\.listSchedules/);
   assert.doesNotMatch(actionCatalog, /desktop\.memory\./);
   assert.match(bridge, /GET" && url\.pathname === "\/health"/);
   assert.match(bridge, /GET" && url\.pathname === "\/actions"/);
   assert.match(bridge, /POST" && url\.pathname === "\/actions\/call"/);
+  assert.match(bridge, /POST" && url\.pathname === "\/cdp\/call"/);
   assert.match(bridge, /Content-Type must be application\/json/);
   assert.match(bridge, /isLocalhostRequest/);
   assert.match(bridge, /confirmMutatingAction/);

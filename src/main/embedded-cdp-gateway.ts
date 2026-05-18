@@ -61,6 +61,13 @@ type CdpConnectionSession = {
   messageListener: (event: unknown, method: string, params?: unknown) => void;
 };
 
+export type EmbeddedCdpCommandRequest = {
+  method: string;
+  params?: Record<string, unknown>;
+  targetId?: string;
+  surfaceId?: string;
+};
+
 const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const DEFAULT_PROTOCOL_VERSION = "1.3";
 const DEFAULT_CDP_TIMEOUT_MS = 15_000;
@@ -401,6 +408,28 @@ export class EmbeddedCdpGateway {
       .map((surface) => targetDescriptor(surface, stableTargetId(surface), origins));
   }
 
+  async executeCommand(request: EmbeddedCdpCommandRequest) {
+    const method = typeof request.method === "string" ? request.method.trim() : "";
+    if (!method) {
+      throw new Error("method is required");
+    }
+    const surface = await this.resolveCommandSurface(request);
+    if (!surface) {
+      throw new Error("Target not found.");
+    }
+    const targetId = stableTargetId(surface);
+    const params = request.params ?? {};
+    const kind = normalizeTargetKind(surface.kind);
+    const result = kind === "iframe"
+      ? await this.handleFrameCommand(surface, method, params)
+      : await this.handleWebContentsCommandOnce(surface, method, params);
+    return {
+      targetId,
+      surfaceId: surface.id,
+      result
+    };
+  }
+
   private async handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     if (!isLoopbackAddress(req.socket.remoteAddress)) {
       responseJSON(res, 403, { error: "Embedded CDP Gateway only accepts localhost requests." });
@@ -537,6 +566,37 @@ export class EmbeddedCdpGateway {
     }
     const session = this.ensureDebuggerSession(connection, targetId, contents);
     return session.debuggerRef.sendCommand(method, params);
+  }
+
+  private async handleWebContentsCommandOnce(
+    surface: EmbeddedCdpSurface,
+    method: string,
+    params: Record<string, unknown>
+  ) {
+    const contents = await this.ensureWebContents(surface);
+    if (!contents || contents.isDestroyed()) {
+      throw new Error("Embedded webContents target is unavailable.");
+    }
+    if (method === "Page.bringToFront") {
+      await this.options.activateSurface?.(surface);
+      return {};
+    }
+    const debuggerRef = contents.debugger;
+    const ownsAttach = !debuggerRef.isAttached();
+    if (ownsAttach) {
+      debuggerRef.attach(DEFAULT_PROTOCOL_VERSION);
+    }
+    try {
+      return await debuggerRef.sendCommand(method, params);
+    } finally {
+      if (ownsAttach && debuggerRef.isAttached()) {
+        try {
+          debuggerRef.detach();
+        } catch {
+          // Ignore detach failures while the target is closing.
+        }
+      }
+    }
   }
 
   private async handleFrameCommand(surface: EmbeddedCdpSurface, method: string, params: Record<string, unknown>) {
@@ -720,6 +780,19 @@ export class EmbeddedCdpGateway {
   private async resolveSurface(targetId: string) {
     const surfaces = await this.options.getSurfaces();
     return surfaces.find((surface) => stableTargetId(surface) === targetId || surface.id === targetId) ?? null;
+  }
+
+  private async resolveCommandSurface(request: EmbeddedCdpCommandRequest) {
+    const surfaces = await this.options.getSurfaces();
+    const targetId = typeof request.targetId === "string" ? request.targetId.trim() : "";
+    if (targetId) {
+      return surfaces.find((surface) => stableTargetId(surface) === targetId || surface.id === targetId) ?? null;
+    }
+    const surfaceId = typeof request.surfaceId === "string" ? request.surfaceId.trim() : "";
+    if (surfaceId) {
+      return surfaces.find((surface) => surface.id === surfaceId) ?? null;
+    }
+    return surfaces.find((surface) => surface.active) ?? null;
   }
 
   private async refreshSurface(surface: EmbeddedCdpSurface) {

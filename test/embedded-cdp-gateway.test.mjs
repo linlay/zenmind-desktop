@@ -196,3 +196,37 @@ test("EmbeddedCdpGateway relays standard CDP commands to webContents.debugger", 
 
   assert.equal(fakeDebugger.detached, true);
 });
+
+test("EmbeddedCdpGateway executes direct CDP calls by active surface", async () => {
+  const fakeDebugger = new FakeDebugger();
+  const fakeContents = createFakeWebContents(fakeDebugger);
+  const surface = {
+    id: "surface-active",
+    label: "Active Surface",
+    url: "https://example.test/app",
+    kind: "webview",
+    active: true,
+    title: "Active Surface",
+    webContentsId: fakeContents.id
+  };
+  const { gateway } = await createStartedGateway({
+    getSurfaces: () => [surface],
+    resolveWebContents: () => fakeContents
+  });
+
+  try {
+    const response = await gateway.executeCommand({
+      method: "Runtime.evaluate",
+      params: { expression: "6 * 7" }
+    });
+    assert.equal(response.surfaceId, "surface-active");
+    assert.deepEqual(response.result, {
+      method: "Runtime.evaluate",
+      params: { expression: "6 * 7" }
+    });
+    assert.equal(fakeDebugger.attachVersion, "1.3");
+    assert.equal(fakeDebugger.detached, true);
+  } finally {
+    await gateway.stop();
+  }
+});

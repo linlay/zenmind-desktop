@@ -73,6 +73,7 @@ import { resolveWebviewOpenDisposition } from "./webview-open-tab";
 import { revealPathInFileManager } from "./reveal-path";
 import {
   EmbeddedCdpGateway,
+  type EmbeddedCdpCommandRequest,
   type EmbeddedCdpFrameTarget,
   type EmbeddedCdpSurface
 } from "./embedded-cdp-gateway";
@@ -3063,7 +3064,7 @@ async function openEmbeddedCdpUrl(url: string) {
 
 function startEmbeddedCdpGateway() {
   if (embeddedCdpGateway) {
-    return;
+    return embeddedCdpGateway;
   }
   embeddedCdpGateway = new EmbeddedCdpGateway({
     getSurfaces: listEmbeddedCdpSurfaces,
@@ -3074,6 +3075,7 @@ function startEmbeddedCdpGateway() {
     version: `ZenMind/${app.getVersion()} Electron/${process.versions.electron}`
   });
   embeddedCdpGateway.start();
+  return embeddedCdpGateway;
 }
 
 async function openBrowserUrl(input: { url: string; label?: string }) {
@@ -3577,7 +3579,14 @@ function registerIpcHandlers() {
     getCurrentPageSnapshot: () => currentPageSnapshot,
     navigate: showMainWindow,
     openLogViewer: openLogViewerWindow,
-    callRendererAction: callDesktopActionRenderer
+    callRendererAction: callDesktopActionRenderer,
+    executeCdpCommand: async (request: EmbeddedCdpCommandRequest) => {
+      const gateway = embeddedCdpGateway ?? startEmbeddedCdpGateway();
+      if (!gateway) {
+        throw new Error("Desktop CDP gateway is not available.");
+      }
+      return gateway.executeCommand(request);
+    }
   };
   startDesktopActionBridge({
     ...desktopActionOptions

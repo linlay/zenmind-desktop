@@ -12,37 +12,12 @@ export type DesktopActionDefinition = {
 };
 
 export const DESKTOP_ACTION_DEFINITIONS = [
-  { name: "desktop.page.getContext", kind: "read", category: "page", description: "Read the current visible Desktop page context." },
-  { name: "desktop.page.readCurrent", kind: "read", category: "page", description: "Read the current live Desktop page state." },
-  { name: "desktop.page.extractStructured", kind: "read", category: "page", description: "Extract structured data from the current Desktop page." },
-  { name: "desktop.page.interact", kind: "execute", category: "page", description: "Interact with the current Desktop page." },
-  { name: "desktop.page.fillForm", kind: "execute", category: "page", description: "Fill the current Desktop page form without submitting it." },
-  { name: "desktop.page.submitForm", kind: "execute", category: "page", description: "Submit the current Desktop page form." },
-  { name: "desktop.page.getFormState", kind: "read", category: "page", description: "Read the active page form state." },
-  { name: "desktop.page.validateForm", kind: "validate", category: "page", description: "Validate the active page form." },
-  { name: "desktop.page.previewPatch", kind: "preview", category: "page", description: "Preview a patch for the active page form." },
-  { name: "desktop.page.applyPatch", kind: "apply", category: "page", description: "Apply a patch to the active page form." },
   { name: "desktop.navigate.toRoute", kind: "execute", category: "navigation", description: "Navigate the Desktop shell to a route." },
 
   { name: "desktop.settings.getState", kind: "read", category: "settings", description: "Read Desktop settings state." },
   { name: "desktop.settings.validatePatch", kind: "validate", category: "settings", description: "Validate a Desktop settings patch." },
   { name: "desktop.settings.previewPatch", kind: "preview", category: "settings", description: "Preview Desktop settings changes." },
   { name: "desktop.settings.applyPatch", kind: "apply", category: "settings", description: "Apply Desktop settings changes." },
-
-  { name: "desktop.embeddedWeb.listSurfaces", kind: "read", category: "embeddedWeb", description: "List embedded web surfaces." },
-  { name: "desktop.embeddedWeb.getActiveSurface", kind: "read", category: "embeddedWeb", description: "Read the active embedded web surface." },
-  { name: "desktop.embeddedWeb.activateSurface", kind: "execute", category: "embeddedWeb", description: "Activate an embedded web surface." },
-  { name: "desktop.embeddedWeb.getPageContext", kind: "read", category: "embeddedWeb", description: "Read active embedded web page context." },
-  { name: "desktop.embeddedWeb.navigate", kind: "execute", category: "embeddedWeb", description: "Navigate the active embedded web tab." },
-  { name: "desktop.embeddedWeb.reload", kind: "execute", category: "embeddedWeb", description: "Reload the active embedded web tab." },
-  { name: "desktop.embeddedWeb.goBack", kind: "execute", category: "embeddedWeb", description: "Go back in the active embedded web tab." },
-  { name: "desktop.embeddedWeb.openTab", kind: "execute", category: "embeddedWeb", description: "Open an embedded web tab." },
-  { name: "desktop.embeddedWeb.closeTab", kind: "execute", category: "embeddedWeb", description: "Close an embedded web tab." },
-  { name: "desktop.embeddedWeb.switchTab", kind: "execute", category: "embeddedWeb", description: "Switch the active embedded web tab." },
-  { name: "desktop.embeddedWeb.readPageData", kind: "read", category: "embeddedWeb", description: "Read live DOM data from an embedded web surface." },
-  { name: "desktop.embeddedWeb.extractStructured", kind: "read", category: "embeddedWeb", description: "Extract live structured data from an embedded web surface." },
-  { name: "desktop.embeddedWeb.interactElement", kind: "execute", category: "embeddedWeb", description: "Interact with a DOM element in an embedded web surface." },
-  { name: "desktop.embeddedWeb.executeScript", kind: "execute", category: "embeddedWeb", description: "Execute JavaScript in an embedded web surface." },
 
   { name: "desktop.controlCenter.listServices", kind: "read", category: "controlCenter", description: "List Desktop services." },
   { name: "desktop.controlCenter.getServiceStatus", kind: "read", category: "controlCenter", description: "Read one service status." },
