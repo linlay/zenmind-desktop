@@ -1084,17 +1084,7 @@ body.quick-web-copilot-body,
   display: none;
 }
 
-.app-shell.is-mac-platform.has-plugin-surface .app-window-drag-region {
-  display: block;
-  left: calc(var(--app-sidebar-width, 160px) + 280px);
-  right: 184px;
-  height: 34px;
-  z-index: 12;
-}
-
-.app-shell.is-mac-platform.has-plugin-surface.has-assistant-dock-full .app-window-drag-region {
-  right: calc(var(--assistant-dock-embedded-width) + 184px);
-}
+/* Embedded H5 surfaces keep the top drag lane disabled on every platform. */
 
 .app-sidebar-toggle,
 .app-sidebar-backdrop {

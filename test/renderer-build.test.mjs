@@ -630,19 +630,20 @@ test("market route disables the global drag overlay above toolbar controls", () 
   assert.match(marketStyles, /-webkit-app-region:\s*no-drag;/);
 });
 
-test("plugin embedded route keeps a mac window drag lane clear of iframe controls", () => {
+test("embedded H5 routes do not restore a mac window drag lane over page controls", () => {
   const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
   const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
 
   assert.match(appShell, /usesPluginSurface/);
   assert.match(appShell, /has-plugin-surface/);
-  assert.match(
+  assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*none;/);
+  assert.doesNotMatch(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.has-plugin-surface\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*block;[\s\S]*?left:\s*calc\(var\(--app-sidebar-width,\s*160px\)\s*\+\s*280px\);[\s\S]*?right:\s*184px;[\s\S]*?height:\s*34px;/
+    /\.app-shell\.is-mac-platform\.has-plugin-surface\s+\.app-window-drag-region\s*\{/
   );
-  assert.match(
+  assert.doesNotMatch(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.has-plugin-surface\.has-assistant-dock-full\s+\.app-window-drag-region\s*\{[\s\S]*?right:\s*calc\(var\(--assistant-dock-embedded-width\)\s*\+\s*184px\);/
+    /\.app-shell\.is-mac-platform\.has-plugin-surface\.has-assistant-dock-full\s+\.app-window-drag-region\s*\{/
   );
 });
 
