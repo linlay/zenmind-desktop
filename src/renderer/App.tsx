@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
 import { AppSidebar } from "./components/AppSidebar";
 import { DesktopPet } from "./components/DesktopPet";
@@ -40,6 +40,15 @@ import {
   BUILTIN_BROWSER_SURFACE_LABEL
 } from "../shared/browser-surfaces";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
+import {
+  SIDEBAR_COLLAPSED_WIDTH,
+  SIDEBAR_EXPANDED_MAX_WIDTH,
+  normalizeSidebarLayoutState,
+  resolveRenderedSidebarWidth,
+  resolveSidebarLayoutStateFromDrag,
+  toggleSidebarLayoutState,
+  type SidebarLayoutState
+} from "../shared/sidebar-layout";
 import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName, shouldShowServiceNavigationTab } from "./service-display";
 import {
   createCustomSidebarNavOrderKey,
@@ -81,8 +90,9 @@ function readSettingsPatch(args: Record<string, unknown>) {
 
 export const EXTERNAL_EXPERIMENTAL_ITEMS = [] as const;
 
-type SidebarState = {
-  collapsed: boolean;
+type SidebarResizeDragState = {
+  initialState: SidebarLayoutState;
+  startClientX: number;
 };
 
 function inferDesktopPlatform() {
@@ -120,6 +130,7 @@ function AppShell() {
   const navigate = useNavigate();
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
+  const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
   const startupNavigationDoneRef = useRef(false);
   const refreshServicesRef = useRef(refreshServices);
@@ -135,21 +146,18 @@ function AppShell() {
       return "light";
     }
   });
-  const [sidebarState, setSidebarState] = useState<SidebarState>(() => {
+  const [sidebarState, setSidebarState] = useState<SidebarLayoutState>(() => {
     if (typeof window === "undefined") {
-      return { collapsed: false };
+      return normalizeSidebarLayoutState(null);
     }
     try {
       const savedValue = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
       if (!savedValue) {
-        return { collapsed: false };
+        return normalizeSidebarLayoutState(null);
       }
-      const parsed = JSON.parse(savedValue) as Partial<SidebarState>;
-      return {
-        collapsed: typeof parsed.collapsed === "boolean" ? parsed.collapsed : false
-      };
+      return normalizeSidebarLayoutState(JSON.parse(savedValue));
     } catch {
-      return { collapsed: false };
+      return normalizeSidebarLayoutState(null);
     }
   });
   const [sidebarNavOrder, setSidebarNavOrder] = useState<SidebarNavOrderItemKey[]>(() => {
@@ -171,6 +179,7 @@ function AppShell() {
   const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
   const [customSidebarItemsLoaded, setCustomSidebarItemsLoaded] = useState(false);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
+  const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [startupCardDismissed, setStartupCardDismissed] = useState(false);
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
@@ -219,6 +228,8 @@ function AppShell() {
   const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
   const isAgentWebclientMainRoute = location.pathname === ASSISTANT_TARGET_PATH;
   const assistantCopilotOpen = assistantDockOpen && !isAgentWebclientMainRoute;
+  const sidebarCollapsed = sidebarState.mode === "collapsed";
+  const renderedSidebarWidth = resolveRenderedSidebarWidth(sidebarState);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
     const serviceItems = services
       .filter(shouldShowServiceNavigationTab)
@@ -508,7 +519,50 @@ function AppShell() {
     if (sidebarNavigationUnlockTimerRef.current !== null) {
       window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
     }
+    sidebarResizeStateRef.current = null;
   }, []);
+
+  useEffect(() => {
+    if (!isSidebarResizing) {
+      return;
+    }
+
+    const finishSidebarResize = () => {
+      sidebarResizeStateRef.current = null;
+      setIsSidebarResizing(false);
+    };
+
+    const handleWindowPointerMove = (event: PointerEvent) => {
+      const dragState = sidebarResizeStateRef.current;
+      if (!dragState) {
+        return;
+      }
+
+      const nextState = resolveSidebarLayoutStateFromDrag({
+        initialState: dragState.initialState,
+        deltaX: event.clientX - dragState.startClientX
+      });
+
+      setSidebarState((current) =>
+        current.mode === nextState.mode &&
+        current.expandedWidth === nextState.expandedWidth
+          ? current
+          : nextState
+      );
+    };
+
+    window.addEventListener("pointermove", handleWindowPointerMove);
+    window.addEventListener("pointerup", finishSidebarResize);
+    window.addEventListener("pointercancel", finishSidebarResize);
+    window.addEventListener("blur", finishSidebarResize);
+
+    return () => {
+      window.removeEventListener("pointermove", handleWindowPointerMove);
+      window.removeEventListener("pointerup", finishSidebarResize);
+      window.removeEventListener("pointercancel", finishSidebarResize);
+      window.removeEventListener("blur", finishSidebarResize);
+    };
+  }, [isSidebarResizing]);
 
   useEffect(() => {
     if (!pendingSidebarNavigationPath) {
@@ -566,7 +620,20 @@ function AppShell() {
   }
 
   function toggleSidebarCollapsed() {
-    setSidebarState((current) => ({ collapsed: !current.collapsed }));
+    setSidebarState((current) => toggleSidebarLayoutState(current));
+  }
+
+  function handleSidebarResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || isSidebarResizing) {
+      return;
+    }
+
+    event.preventDefault();
+    sidebarResizeStateRef.current = {
+      initialState: sidebarState,
+      startClientX: event.clientX
+    };
+    setIsSidebarResizing(true);
   }
 
   function requestSidebarNavigation(targetPath: string) {
@@ -879,8 +946,13 @@ function AppShell() {
     themeMode
   ]);
 
+  const appShellStyle = {
+    "--app-sidebar-width": `${renderedSidebarWidth}px`
+  } as CSSProperties;
+
   return (
     <div
+      style={appShellStyle}
       className={[
         "app-shell",
         usesEmbeddedSurface ? "has-embedded-surface" : "",
@@ -891,20 +963,15 @@ function AppShell() {
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
+        isSidebarResizing ? "is-sidebar-resizing" : "",
         "has-translucent-sidebar",
-        isMac ? "is-mac-translucent-sidebar" : "",
-        sidebarState.collapsed ? "is-sidebar-collapsed" : "is-sidebar-expanded"
+        isMac ? "is-mac-translucent-sidebar" : ""
       ].filter(Boolean).join(" ")}
     >
       <div className="app-window-drag-region" aria-hidden="true" />
-      <div
-        className={[
-          "app-sidebar-shell",
-          sidebarState.collapsed ? "is-collapsed" : ""
-        ].filter(Boolean).join(" ")}
-      >
+      <div className="app-sidebar-shell">
         <AppSidebar
-          isCollapsed={sidebarState.collapsed}
+          isCollapsed={sidebarCollapsed}
           isMac={isMac}
           isWindows={isWindows}
           currentPathname={location.pathname}
@@ -920,6 +987,21 @@ function AppShell() {
           onNavigateItem={undefined}
           onToggleCollapsed={toggleSidebarCollapsed}
         />
+      </div>
+      <div
+        className={[
+          "app-sidebar-resizer",
+          isSidebarResizing ? "is-active" : ""
+        ].filter(Boolean).join(" ")}
+        role="separator"
+        aria-label="调整侧边栏宽度"
+        aria-orientation="vertical"
+        aria-valuemin={SIDEBAR_COLLAPSED_WIDTH}
+        aria-valuemax={SIDEBAR_EXPANDED_MAX_WIDTH}
+        aria-valuenow={renderedSidebarWidth}
+        onPointerDown={handleSidebarResizerPointerDown}
+      >
+        <span className="app-sidebar-resizer-line" aria-hidden="true" />
       </div>
       <div className="app-content">
         <main className="app-main">
@@ -990,6 +1072,9 @@ function AppShell() {
           </Routes>
         </main>
       </div>
+      {isSidebarResizing ? (
+        <div className="app-sidebar-resize-overlay" aria-hidden="true" />
+      ) : null}
       <AgentWebclientCopilotDock
         open={assistantCopilotOpen}
         hostTheme={themeMode}

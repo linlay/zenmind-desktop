@@ -104,35 +104,13 @@ function SidebarCollapseToggleIcon({ isCollapsed }: { isCollapsed: boolean }) {
   return (
     <svg
       className="app-sidebar-collapse-button-icon app-sidebar-collapse-button-icon-panel"
-      viewBox="0 0 16 16"
+      viewBox="0 -960 960 960"
       aria-hidden="true"
       focusable="false"
     >
-      <rect
-        x="1.75"
-        y="1.75"
-        width="12.5"
-        height="12.5"
-        rx="1.75"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <rect
-        x="3"
-        y="3"
-        width="2.75"
-        height="10"
-        rx="0.75"
-        fill="currentColor"
-        opacity="0.16"
-      />
       <path
-        d="M6.5 3V13"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
+        d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm120-80v-560H200v560h120Zm80 0h360v-560H400v560Zm-80 0H200h120Z"
+        fill="currentColor"
       />
     </svg>
   );

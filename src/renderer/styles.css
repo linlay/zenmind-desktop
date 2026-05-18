@@ -988,14 +988,6 @@ body.quick-web-copilot-body,
   -webkit-backdrop-filter: blur(32px) saturate(155%);
 }
 
-.app-shell.is-sidebar-expanded {
-  --app-sidebar-width: 160px;
-}
-
-.app-shell.is-sidebar-collapsed {
-  --app-sidebar-width: 66px;
-}
-
 .app-shell.has-embedded-surface {
   border-radius: 0;
   background: var(--embedded-surface-shell-bg);
@@ -1047,6 +1039,11 @@ body.quick-web-copilot-body,
 .app-shell > * {
   position: relative;
   z-index: 1;
+}
+
+.app-shell.is-sidebar-resizing {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .app-shell button,
@@ -3010,9 +3007,78 @@ body.quick-web-copilot-body,
   transition: width 0.2s ease-in-out, min-width 0.2s ease-in-out;
 }
 
+.app-shell.is-sidebar-resizing .app-sidebar-shell {
+  transition: none;
+}
+
 .app-shell.is-mac-translucent-sidebar .app-sidebar-shell {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
+}
+
+.app-sidebar-resizer {
+  --sidebar-resizer-hitbox: 12px;
+  position: relative;
+  align-self: stretch;
+  flex: 0 0 var(--sidebar-resizer-hitbox);
+  width: var(--sidebar-resizer-hitbox);
+  margin-left: calc(var(--sidebar-resizer-hitbox) / -2);
+  margin-right: calc(var(--sidebar-resizer-hitbox) / -2);
+  z-index: 6;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.app-sidebar-resizer-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(83, 96, 112, 0.13);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+  pointer-events: none;
+  transition:
+    width 0.18s ease-in-out,
+    background-color 0.18s ease-in-out,
+    box-shadow 0.18s ease-in-out;
+}
+
+.app-sidebar-resizer:hover .app-sidebar-resizer-line,
+.app-sidebar-resizer.is-active .app-sidebar-resizer-line {
+  width: 3px;
+  background: rgba(38, 99, 235, 0.3);
+  box-shadow:
+    0 0 0 1px rgba(38, 99, 235, 0.08),
+    0 0 14px rgba(38, 99, 235, 0.12);
+}
+
+.app-sidebar-resize-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  cursor: col-resize;
+  background: transparent;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+:root[data-theme="dark"] .app-sidebar-resizer-line {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme="dark"] .app-sidebar-resizer:hover .app-sidebar-resizer-line,
+:root[data-theme="dark"] .app-sidebar-resizer.is-active .app-sidebar-resizer-line {
+  background: rgba(79, 136, 255, 0.4);
+  box-shadow:
+    0 0 0 1px rgba(79, 136, 255, 0.08),
+    0 0 16px rgba(79, 136, 255, 0.16);
 }
 
 .app-sidebar {
@@ -3086,14 +3152,6 @@ body.quick-web-copilot-body,
     10px 0 30px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(24px) saturate(112%) brightness(0.52);
   -webkit-backdrop-filter: blur(24px) saturate(112%) brightness(0.52);
-}
-
-.app-sidebar::after {
-  display: none;
-}
-
-.app-sidebar-shell::after {
-  display: none;
 }
 
 /* ── Sidebar Chrome ── */
@@ -3546,10 +3604,6 @@ body.quick-web-copilot-body,
   transform: translateX(0);
   opacity: 1;
   pointer-events: auto;
-}
-
-.app-shell.is-mac-overlay-sidebar .app-sidebar-shell::after {
-  display: none;
 }
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar {
@@ -9377,6 +9431,11 @@ code {
 
   .sidebar-chrome,
   .app-sidebar-collapse-button {
+    display: none;
+  }
+
+  .app-sidebar-resizer,
+  .app-sidebar-resize-overlay {
     display: none;
   }
 
