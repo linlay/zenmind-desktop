@@ -4372,13 +4372,13 @@ body.quick-web-copilot-body,
   font-size: 14px;
 }
 
-.control-center-feedback-anchor {
+.page-feedback-anchor {
   position: relative;
   z-index: 20;
   height: 0;
 }
 
-.control-center-feedback-layer {
+.page-feedback-layer {
   position: absolute;
   top: 0;
   right: 0;
@@ -4390,15 +4390,39 @@ body.quick-web-copilot-body,
   transform: translateY(calc(-100% - 12px));
 }
 
-.control-center-feedback-toast {
+.page-feedback-toast {
   width: 100%;
   margin: 0;
   padding: 12px 16px;
   border: 1px solid rgba(38, 99, 235, 0.12);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   background: rgba(235, 242, 255, 0.96);
   box-shadow: 0 18px 42px rgba(31, 82, 152, 0.16);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
+  pointer-events: auto;
+}
+
+.page-feedback-message {
+  flex: 1 1 auto;
+}
+
+.page-feedback-dismiss {
+  flex: none;
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.page-feedback-dismiss:hover {
+  opacity: 0.84;
 }
 
 :root[data-theme="dark"] .feedback-banner {
@@ -4406,7 +4430,7 @@ body.quick-web-copilot-body,
   border-color: rgba(79, 136, 255, 0.2);
 }
 
-:root[data-theme="dark"] .control-center-feedback-toast {
+:root[data-theme="dark"] .page-feedback-toast {
   background: rgba(37, 48, 72, 0.96);
   border-color: rgba(79, 136, 255, 0.22);
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);

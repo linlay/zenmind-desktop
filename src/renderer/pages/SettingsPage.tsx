@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useLocation } from "react-router-dom";
 import { CustomSidebarIcon } from "../components/BrandMark";
+import { PageFeedbackStack } from "../components/PageFeedbackStack";
 import "./SplitWorkspaceLayout.css";
 import "./SettingsPage.css";
 import type {
@@ -57,8 +58,13 @@ type SettingsPageProps = {
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
 };
 
-type WindowsDataRootCardProps = {
-  onError: (message: string) => void;
+type NoticeTone = "success" | "error";
+
+type SettingsNotice = {
+  id: number;
+  sectionId: SettingsSectionId;
+  tone: NoticeTone;
+  message: string;
 };
 
 type SidebarNavPointerDragState = {
@@ -68,6 +74,7 @@ type SidebarNavPointerDragState = {
   startY: number;
   dragging: boolean;
 };
+type SectionReadErrorMap = Partial<Record<SettingsSectionId, string>>;
 
 const SETTINGS_ACTION_PATCH_FIELDS = [
   "desktopHelperAgentKey",
@@ -75,6 +82,12 @@ const SETTINGS_ACTION_PATCH_FIELDS = [
   "quickAssistantAgentKey",
   "desktopCopilotPages"
 ] as const;
+const SETTINGS_NOTICE_AUTO_CLOSE_MS = 3200;
+const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
+  "quickAssistant",
+  "sideAssistant",
+  "embeddedWebsites"
+];
 
 function asRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -223,9 +236,10 @@ function moveSidebarNavOrderItemToIndex(
   return nextOrder;
 }
 
-function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
+function WindowsDataRootCard() {
   const [dataRoot, setDataRoot] = useState("");
   const [dataRootLoading, setDataRootLoading] = useState(true);
+  const [dataRootError, setDataRootError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -235,11 +249,12 @@ function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
       .then((root) => {
         if (!cancelled) {
           setDataRoot(root);
+          setDataRootError("");
         }
       })
       .catch((reason) => {
         if (!cancelled) {
-          onError(reason instanceof Error ? reason.message : String(reason));
+          setDataRootError(reason instanceof Error ? reason.message : String(reason));
         }
       })
       .finally(() => {
@@ -251,7 +266,7 @@ function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
     return () => {
       cancelled = true;
     };
-  }, [onError]);
+  }, []);
 
   return (
     <div className="data-root-card">
@@ -262,6 +277,11 @@ function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
           Windows 端会将配置、数据、状态、日志、缓存、密钥和浏览器 profile 按分层目录保存在本机数据目录中；相关程序产物则保存在 ZenMind 的应用目录中。
         </p>
       </div>
+      {dataRootError ? (
+        <div className="feedback-banner warning-banner settings-section-read-error" role="alert">
+          {dataRootError}
+        </div>
+      ) : null}
       <div className="data-root-actions">
         <div className="data-root-path">{dataRootLoading ? "正在读取..." : dataRoot || "未配置"}</div>
       </div>
@@ -284,7 +304,9 @@ export function SettingsPage({
 }: SettingsPageProps) {
   const location = useLocation();
   const currentRoute = `${location.pathname}${location.search}`;
-  const [feedback, setFeedback] = useState("");
+  const noticeIdRef = useRef(0);
+  const [notice, setNotice] = useState<SettingsNotice | null>(null);
+  const [sectionReadErrors, setSectionReadErrors] = useState<SectionReadErrorMap>({});
   const [customSidebarLabel, setCustomSidebarLabel] = useState("");
   const [customSidebarUrl, setCustomSidebarUrl] = useState("");
   const [customSidebarPending, setCustomSidebarPending] = useState(false);
@@ -343,6 +365,44 @@ export function SettingsPage({
     )
   );
 
+  function setReadErrorSections(sectionIds: SettingsSectionId[], message: string) {
+    setSectionReadErrors((current) => {
+      const next = { ...current };
+      for (const sectionId of sectionIds) {
+        if (message) {
+          next[sectionId] = message;
+        } else {
+          delete next[sectionId];
+        }
+      }
+      return next;
+    });
+  }
+
+  function showSectionNotice(sectionId: SettingsSectionId, message: string, tone: NoticeTone) {
+    noticeIdRef.current += 1;
+    setNotice({
+      id: noticeIdRef.current,
+      sectionId,
+      tone,
+      message
+    });
+  }
+
+  function dismissSectionNotice(noticeId: number) {
+    setNotice((current) => (current?.id === noticeId ? null : current));
+  }
+
+  function showSectionResultNotice(
+    sectionId: SettingsSectionId,
+    result: {
+      ok: boolean;
+      message: string;
+    }
+  ) {
+    showSectionNotice(sectionId, result.message, result.ok ? "success" : "error");
+  }
+
   useEffect(() => {
     sidebarNavOrderRef.current = sidebarNavOrder;
   }, [sidebarNavOrder]);
@@ -360,6 +420,24 @@ export function SettingsPage({
   }, [sectionDefinitions, visibleSections]);
 
   useEffect(() => {
+    setNotice((current) => (current?.tone === "success" ? null : current));
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (!notice || notice.tone !== "success") {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setNotice((current) => (current?.id === notice.id ? null : current));
+    }, SETTINGS_NOTICE_AUTO_CLOSE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [notice]);
+
+  useEffect(() => {
     let cancelled = false;
     Promise.all([
       window.electronAPI.assistant.getMemorySummary(),
@@ -374,10 +452,11 @@ export function SettingsPage({
         setMemoryStorage(summary.storage);
         setMemoryRecentAudit(summary.recentAudit ?? null);
         setMemoryItems(memoryList.items);
+        setReadErrorSections(["memory"], "");
       })
       .catch((reason) => {
         if (!cancelled) {
-          setFeedback(reason instanceof Error ? reason.message : String(reason));
+          setReadErrorSections(["memory"], reason instanceof Error ? reason.message : String(reason));
         }
       });
 
@@ -402,10 +481,14 @@ export function SettingsPage({
         setQuickAssistantAgentKey(settings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
         setDesktopCopilotPages(settings.desktopCopilotPages || createDefaultDesktopCopilotPagePreferences());
         setAssistantAgentOptions(Array.isArray(agents) ? agents : []);
+        setReadErrorSections(ASSISTANT_SETTINGS_SECTION_IDS, "");
       })
       .catch((reason) => {
         if (!cancelled) {
-          setFeedback(reason instanceof Error ? reason.message : String(reason));
+          setReadErrorSections(
+            ASSISTANT_SETTINGS_SECTION_IDS,
+            reason instanceof Error ? reason.message : String(reason)
+          );
         }
       });
 
@@ -424,17 +507,19 @@ export function SettingsPage({
       .then((state) => {
         if (!cancelled) {
           setDesktopPetState(state);
+          setReadErrorSections(["desktopPet"], "");
         }
       })
       .catch((reason) => {
         if (!cancelled) {
-          setFeedback(reason instanceof Error ? reason.message : String(reason));
+          setReadErrorSections(["desktopPet"], reason instanceof Error ? reason.message : String(reason));
         }
       });
 
     const dispose = window.electronAPI.desktopPet.onStateChanged((state) => {
       if (!cancelled) {
         setDesktopPetState(state);
+        setReadErrorSections(["desktopPet"], "");
       }
     });
 
@@ -549,11 +634,12 @@ export function SettingsPage({
       setAssistantSettings(nextSettings);
       setDesktopCopilotPages(nextSettings.desktopCopilotPages);
       onAssistantSettingsChange?.(nextSettings);
-      setFeedback("侧边助手配置已保存。");
+      setReadErrorSections(["sideAssistant"], "");
+      showSectionNotice("sideAssistant", "侧边助手配置已保存。", "success");
       return nextSettings;
     } catch (reason) {
       setDesktopCopilotPages(previousPages);
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("sideAssistant", reason instanceof Error ? reason.message : String(reason), "error");
       throw reason;
     } finally {
       setDesktopCopilotPagePending("");
@@ -837,6 +923,12 @@ export function SettingsPage({
             setAssistantSettings(nextSettings);
             setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
             onAssistantSettingsChange?.(nextSettings);
+            setReadErrorSections(["quickAssistant"], "");
+            showSectionNotice(
+              "quickAssistant",
+              nextSettings.quickAssistantEnabled ? "快捷助手已开启。" : "快捷助手已关闭。",
+              "success"
+            );
           }
           if (submitPatchQuickAssistantAgentTouched) {
             await handleSelectQuickAssistantAgentKey(submitPatchQuickAssistantAgentKey);
@@ -932,6 +1024,12 @@ export function SettingsPage({
             setAssistantSettings(nextSettings);
             setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
             onAssistantSettingsChange?.(nextSettings);
+            setReadErrorSections(["quickAssistant"], "");
+            showSectionNotice(
+              "quickAssistant",
+              nextSettings.quickAssistantEnabled ? "快捷助手已开启。" : "快捷助手已关闭。",
+              "success"
+            );
           }
           if (quickAssistantAgentTouched) {
             await handleSelectQuickAssistantAgentKey(requestedQuickAssistantAgentKey);
@@ -977,6 +1075,7 @@ export function SettingsPage({
     setMemoryStorage(summary.storage);
     setMemoryRecentAudit(summary.recentAudit ?? null);
     setMemoryItems(memoryList.items);
+    setReadErrorSections(["memory"], "");
     return summary;
   }
 
@@ -988,14 +1087,14 @@ export function SettingsPage({
         label: customSidebarLabel,
         url: customSidebarUrl
       });
-      setFeedback(result.message);
+      showSectionResultNotice("embeddedWebsites", result);
       onCustomSidebarItemsChange(result.items);
       if (result.ok) {
         setCustomSidebarLabel("");
         setCustomSidebarUrl("");
       }
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setCustomSidebarPending(false);
     }
@@ -1005,10 +1104,10 @@ export function SettingsPage({
     setDeletingCustomSidebarId(item.id);
     try {
       const result = await window.electronAPI.customSidebar.remove(item.id);
-      setFeedback(result.message);
+      showSectionResultNotice("embeddedWebsites", result);
       onCustomSidebarItemsChange(result.items);
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDeletingCustomSidebarId("");
     }
@@ -1018,10 +1117,10 @@ export function SettingsPage({
     setCustomSidebarAgentPendingId(itemId);
     try {
       const result = await window.electronAPI.customSidebar.update(itemId, { agentKey });
-      setFeedback(result.message);
+      showSectionResultNotice("embeddedWebsites", result);
       onCustomSidebarItemsChange(result.items);
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setCustomSidebarAgentPendingId("");
     }
@@ -1030,9 +1129,9 @@ export function SettingsPage({
   async function handleReloadCustomSidebarItems() {
     try {
       const result = await onRefreshCustomSidebarItems();
-      setFeedback(result.message);
+      showSectionResultNotice("embeddedWebsites", result);
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
     }
   }
 
@@ -1040,10 +1139,10 @@ export function SettingsPage({
     setCustomSidebarTransferPending("import");
     try {
       const result = await window.electronAPI.customSidebar.import();
-      setFeedback(result.message);
+      showSectionResultNotice("embeddedWebsites", result);
       onCustomSidebarItemsChange(result.items);
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setCustomSidebarTransferPending("");
     }
@@ -1053,10 +1152,14 @@ export function SettingsPage({
     setCustomSidebarTransferPending("export");
     try {
       const result = await window.electronAPI.customSidebar.export();
-      setFeedback(result.path ? `${result.message} ${result.path}` : result.message);
+      showSectionNotice(
+        "embeddedWebsites",
+        result.path ? `${result.message} ${result.path}` : result.message,
+        result.ok ? "success" : "error"
+      );
       onCustomSidebarItemsChange(result.items);
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setCustomSidebarTransferPending("");
     }
@@ -1073,9 +1176,9 @@ export function SettingsPage({
         enabled: !memorySettings.enabled
       });
       await refreshMemoryItems();
-      setFeedback(nextSettings.enabled ? "助手记忆已开启。" : "助手记忆已关闭。");
+      showSectionNotice("memory", nextSettings.enabled ? "助手记忆已开启。" : "助手记忆已关闭。", "success");
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("memory", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setMemoryPending("");
     }
@@ -1092,9 +1195,9 @@ export function SettingsPage({
         autoLearn: !memorySettings.autoLearn
       });
       await refreshMemoryItems();
-      setFeedback(nextSettings.autoLearn ? "自动学习已开启。" : "自动学习已关闭。");
+      showSectionNotice("memory", nextSettings.autoLearn ? "自动学习已开启。" : "自动学习已关闭。", "success");
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("memory", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setMemoryPending("");
     }
@@ -1104,10 +1207,10 @@ export function SettingsPage({
     setMemoryPending("clear");
     try {
       const result = await window.electronAPI.assistant.clearMemoryItems();
-      setFeedback(result.message);
+      showSectionResultNotice("memory", result);
       await refreshMemoryItems();
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("memory", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setMemoryPending("");
     }
@@ -1117,9 +1220,9 @@ export function SettingsPage({
     setMemoryPending("open");
     try {
       const result = await window.electronAPI.assistant.openMemoryDirectory();
-      setFeedback(result.message);
+      showSectionResultNotice("memory", result);
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("memory", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setMemoryPending("");
     }
@@ -1139,9 +1242,10 @@ export function SettingsPage({
         enabled: !desktopPetState?.enabled
       });
       setDesktopPetState(nextState);
-      setFeedback(nextState.enabled ? "桌面宠物已开启。" : "桌面宠物已关闭。");
+      setReadErrorSections(["desktopPet"], "");
+      showSectionNotice("desktopPet", nextState.enabled ? "桌面宠物已开启。" : "桌面宠物已关闭。", "success");
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopPetPending(false);
     }
@@ -1158,13 +1262,18 @@ export function SettingsPage({
         appearanceId
       });
       setDesktopPetState(nextState);
+      setReadErrorSections(["desktopPet"], "");
       if (nextState.appearanceId === appearanceId) {
-        setFeedback(`桌面宠物形象已切换为 ${selectedAppearance?.displayName ?? appearanceId}。`);
+        showSectionNotice(
+          "desktopPet",
+          `桌面宠物形象已切换为 ${selectedAppearance?.displayName ?? appearanceId}。`,
+          "success"
+        );
       } else {
-        setFeedback("桌面宠物形象切换未生效，请重启应用后再试。");
+        showSectionNotice("desktopPet", "桌面宠物形象切换未生效，请重启应用后再试。", "error");
       }
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopPetAppearancePending("");
     }
@@ -1185,10 +1294,11 @@ export function SettingsPage({
       const nextAgent = nextState.agentOptions.find((agent) => agent.agentKey === nextState.boundAgentKey);
       setDesktopPetState(nextState);
       setDesktopPetBoundAgentKey(nextState.boundAgentKey);
-      setFeedback(`桌面宠物已绑定到 ${nextAgent?.displayName ?? nextState.boundAgentKey}。`);
+      setReadErrorSections(["desktopPet"], "");
+      showSectionNotice("desktopPet", `桌面宠物已绑定到 ${nextAgent?.displayName ?? nextState.boundAgentKey}。`, "success");
     } catch (reason) {
       setDesktopPetBoundAgentKey(previousBoundAgentKey);
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopPetBoundAgentPending(false);
     }
@@ -1211,10 +1321,15 @@ export function SettingsPage({
       setAssistantSettings(nextSettings);
       setDesktopHelperAgentKey(nextSettings.desktopHelperAgentKey);
       onAssistantSettingsChange?.(nextSettings);
-      setFeedback(`侧边助手默认智能体已切换为 ${nextAgent?.displayName ?? nextSettings.desktopHelperAgentKey}。`);
+      setReadErrorSections(["sideAssistant"], "");
+      showSectionNotice(
+        "sideAssistant",
+        `侧边助手默认智能体已切换为 ${nextAgent?.displayName ?? nextSettings.desktopHelperAgentKey}。`,
+        "success"
+      );
     } catch (reason) {
       setDesktopHelperAgentKey(previousAgentKey);
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("sideAssistant", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopHelperAgentPending(false);
     }
@@ -1233,10 +1348,15 @@ export function SettingsPage({
       setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
       setQuickAssistantAgentKey(nextSettings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
       onAssistantSettingsChange?.(nextSettings);
-      setFeedback(nextSettings.quickAssistantEnabled ? "快捷助手已开启。" : "快捷助手已关闭。");
+      setReadErrorSections(["quickAssistant"], "");
+      showSectionNotice(
+        "quickAssistant",
+        nextSettings.quickAssistantEnabled ? "快捷助手已开启。" : "快捷助手已关闭。",
+        "success"
+      );
     } catch (reason) {
       setQuickAssistantEnabled(previousEnabled);
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("quickAssistant", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setQuickAssistantPending(false);
     }
@@ -1260,10 +1380,15 @@ export function SettingsPage({
       setQuickAssistantEnabled(nextSettings.quickAssistantEnabled);
       setQuickAssistantAgentKey(nextSettings.quickAssistantAgentKey);
       onAssistantSettingsChange?.(nextSettings);
-      setFeedback(`快捷助手默认智能体已切换为 ${nextAgent?.displayName ?? nextSettings.quickAssistantAgentKey}。`);
+      setReadErrorSections(["quickAssistant"], "");
+      showSectionNotice(
+        "quickAssistant",
+        `快捷助手默认智能体已切换为 ${nextAgent?.displayName ?? nextSettings.quickAssistantAgentKey}。`,
+        "success"
+      );
     } catch (reason) {
       setQuickAssistantAgentKey(previousAgentKey);
-      setFeedback(reason instanceof Error ? reason.message : String(reason));
+      showSectionNotice("quickAssistant", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setQuickAssistantAgentPending(false);
     }
@@ -1402,14 +1527,14 @@ export function SettingsPage({
     nextOrder.splice(nextIndex, 0, movedItem);
     sidebarNavOrderRef.current = nextOrder;
     onSidebarNavOrderChange(nextOrder);
-    setFeedback("导航页签排序已更新。");
+    showSectionNotice("navigation", "导航页签排序已更新。", "success");
   }
 
   function resetSidebarNavOrder() {
     const nextOrder = availableSidebarNavOrderItems.map((item) => item.key);
     sidebarNavOrderRef.current = nextOrder;
     onSidebarNavOrderChange(nextOrder);
-    setFeedback("导航页签排序已恢复默认。");
+    showSectionNotice("navigation", "导航页签排序已恢复默认。", "success");
   }
 
   const sidebarNavOrderLabels = new Map(availableSidebarNavOrderItems.map((item) => [item.key, item.label]));
@@ -1417,6 +1542,8 @@ export function SettingsPage({
     ? visibleSections.find((definition) => definition.id === activeSection) ?? null
     : null;
   const activeSectionWidthClass = activeSectionDefinition?.layout === "wide" ? "workspace-wide" : "workspace-measure";
+  const activeSectionReadError = activeSection ? sectionReadErrors[activeSection] ?? "" : "";
+  const activeSectionNotice = notice && notice.sectionId === activeSection ? notice : null;
 
   function renderActiveSection() {
     switch (activeSection) {
@@ -1925,7 +2052,7 @@ export function SettingsPage({
           </div>
         );
       case "dataRoot":
-        return isWindows ? <WindowsDataRootCard onError={setFeedback} /> : null;
+        return isWindows ? <WindowsDataRootCard /> : null;
       case "memory":
         return (
           <div className="data-root-card assistant-memory-card">
@@ -2115,8 +2242,29 @@ export function SettingsPage({
               <p className="page-copy">{activeSectionDefinition?.description ?? "管理当前设置模块。"}</p>
             </div>
 
-            {feedback ? <div className="feedback-banner">{feedback}</div> : null}
-            <div className="settings-section-body">{renderActiveSection()}</div>
+            <div className="settings-section-body">
+              {activeSectionNotice ? (
+                <div className="settings-section-feedback">
+                  <PageFeedbackStack
+                    items={[{
+                      id: activeSectionNotice.id,
+                      tone: activeSectionNotice.tone,
+                      message: activeSectionNotice.message,
+                      onDismiss:
+                        activeSectionNotice.tone === "error"
+                          ? () => dismissSectionNotice(activeSectionNotice.id)
+                          : undefined
+                    }]}
+                  />
+                </div>
+              ) : null}
+              {activeSectionReadError ? (
+                <div className="feedback-banner warning-banner settings-section-read-error" role="alert">
+                  {activeSectionReadError}
+                </div>
+              ) : null}
+              {renderActiveSection()}
+            </div>
           </div>
         </div>
       </div>

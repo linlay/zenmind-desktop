@@ -80,8 +80,18 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(controlCenter, /service-action-icon-stop/);
   assert.match(controlCenter, /openLogViewer/);
   assert.match(controlCenter, /writeConfig/);
+  assert.match(controlCenter, /PageFeedbackStack/);
+  assert.match(controlCenter, /\{feedback \|\| error \? \(\s*<PageFeedbackStack/);
+  assert.doesNotMatch(controlCenter, /control-center-feedback-anchor/);
   assert.match(globalStyles, /\.control-center-dashboard-metrics\s*\{/);
   assert.match(globalStyles, /\.service-catalog\s*\{/);
+  assert.match(globalStyles, /\.page-feedback-anchor\s*\{/);
+  assert.match(globalStyles, /\.page-feedback-layer\s*\{/);
+  assert.match(globalStyles, /\.page-feedback-toast\s*\{/);
+  assert.match(globalStyles, /\.page-feedback-dismiss\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.control-center-feedback-anchor\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.control-center-feedback-layer\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.control-center-feedback-toast\s*\{/);
   assert.doesNotMatch(globalStyles, /\.service-catalog-head\s*\{/);
   assert.doesNotMatch(globalStyles, /\.service-catalog-foot\s*\{/);
   assert.match(globalStyles, /\.service-group-head\s*\{[\s\S]*?justify-content:\s*space-between;/);
@@ -314,6 +324,53 @@ test("settings route keeps the global sidebar and renders page-internal split se
   assert.doesNotMatch(brandMark, /"navigation"/);
   assert.doesNotMatch(brandMark, /"pet"/);
   assert.doesNotMatch(brandMark, /"folder"/);
+});
+
+test("settings page scopes notices to the active section and keeps load failures in-section", () => {
+  const settingsPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "SettingsPage.tsx"),
+    "utf8"
+  );
+  const settingsPageCss = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "SettingsPage.css"),
+    "utf8"
+  );
+  const feedbackStack = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "components", "PageFeedbackStack.tsx"),
+    "utf8"
+  );
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+
+  assert.match(feedbackStack, /export function PageFeedbackStack/);
+  assert.match(feedbackStack, /page-feedback-anchor/);
+  assert.match(feedbackStack, /page-feedback-dismiss/);
+
+  assert.match(settingsPage, /type NoticeTone = "success" \| "error";/);
+  assert.match(settingsPage, /type SettingsNotice = \{/);
+  assert.match(settingsPage, /sectionId: SettingsSectionId;/);
+  assert.doesNotMatch(settingsPage, /const \[feedback, setFeedback\] = useState/);
+  assert.match(settingsPage, /const \[notice, setNotice\] = useState<SettingsNotice \| null>\(null\)/);
+  assert.match(settingsPage, /const \[sectionReadErrors, setSectionReadErrors\] = useState<SectionReadErrorMap>\(\{\}\)/);
+  assert.match(settingsPage, /function showSectionNotice\(sectionId: SettingsSectionId, message: string, tone: NoticeTone\)/);
+  assert.match(settingsPage, /SETTINGS_NOTICE_AUTO_CLOSE_MS = 3200/);
+  assert.match(settingsPage, /setNotice\(\(current\) => \(current\?\.tone === "success" \? null : current\)\)/);
+  assert.match(settingsPage, /setNotice\(\(current\) => \(current\?\.id === notice\.id \? null : current\)\)/);
+  assert.match(settingsPage, /const activeSectionNotice = notice && notice\.sectionId === activeSection \? notice : null;/);
+  assert.match(settingsPage, /const activeSectionReadError = activeSection \? sectionReadErrors\[activeSection\] \?\? "" : "";/);
+  assert.match(settingsPage, /settings-section-feedback/);
+  assert.match(settingsPage, /<PageFeedbackStack/);
+  assert.match(settingsPage, /showSectionNotice\("desktopPet", nextState\.enabled \? "桌面宠物已开启。" : "桌面宠物已关闭。", "success"\)/);
+  assert.match(settingsPage, /showSectionNotice\("navigation", "导航页签排序已更新。", "success"\)/);
+  assert.match(settingsPage, /showSectionNotice\("quickAssistant", reason instanceof Error \? reason\.message : String\(reason\), "error"\)/);
+  assert.match(settingsPage, /feedback-banner warning-banner settings-section-read-error/);
+  assert.doesNotMatch(settingsPage, /\{feedback \? <div className="feedback-banner">\{feedback\}<\/div> : null\}/);
+
+  assert.match(settingsPageCss, /\.settings-section-feedback\s*\{/);
+  assert.match(settingsPageCss, /\.settings-section-read-error\s*\{/);
+  assert.match(globalStyles, /\.page-feedback-anchor\s*\{/);
+  assert.match(globalStyles, /\.page-feedback-layer\s*\{/);
+  assert.match(globalStyles, /\.page-feedback-toast\s*\{/);
+  assert.match(globalStyles, /\.page-feedback-dismiss\s*\{/);
 });
 
 test("settings page configures desktop helper default agent separately from desktop pet", () => {

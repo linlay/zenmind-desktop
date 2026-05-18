@@ -10,6 +10,7 @@ import type {
 import { useServices } from "../services/ServicesContext";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName } from "../service-display";
+import { PageFeedbackStack } from "../components/PageFeedbackStack";
 
 const CORE_MODULES = [
   {
@@ -799,20 +800,20 @@ export function ControlCenterPage() {
       </div>
 
       {feedback || error ? (
-        <div className="control-center-feedback-anchor">
-          <div className="control-center-feedback-layer" aria-live="polite">
-            {feedback ? (
-              <div className="feedback-banner control-center-feedback-toast" role="status">
-                {feedback}
-              </div>
-            ) : null}
-            {error ? (
-              <div className="feedback-banner warning-banner control-center-feedback-toast" role="alert">
-                {error}
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <PageFeedbackStack
+          items={[
+            ...(feedback ? [{
+              id: "control-center-feedback",
+              tone: "success" as const,
+              message: feedback
+            }] : []),
+            ...(error ? [{
+              id: "control-center-error",
+              tone: "error" as const,
+              message: error
+            }] : [])
+          ]}
+        />
       ) : null}
       {loading ? <div className="loading-box">正在读取服务状态…</div> : null}
 
