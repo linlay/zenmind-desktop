@@ -266,6 +266,38 @@ function currentManifestOs() {
 }
 
 function currentManifestArch() {
+  if (process.platform === "darwin") {
+    try {
+      const translated = execFileSync("sysctl", ["-in", "sysctl.proc_translated"], { encoding: "utf8" }).trim();
+      if (translated === "1") {
+        return "arm64";
+      }
+    } catch {
+      // Continue with host-architecture probes.
+    }
+
+    try {
+      const arm64Capable = execFileSync("sysctl", ["-in", "hw.optional.arm64"], { encoding: "utf8" }).trim();
+      if (arm64Capable === "1") {
+        return "arm64";
+      }
+    } catch {
+      // Continue with uname fallback.
+    }
+
+    try {
+      const machine = execFileSync("uname", ["-m"], { encoding: "utf8" }).trim();
+      if (machine === "arm64" || machine === "aarch64") {
+        return "arm64";
+      }
+      if (machine === "x86_64" || machine === "amd64") {
+        return "amd64";
+      }
+    } catch {
+      // Fall back to the Node architecture below.
+    }
+  }
+
   switch (process.arch) {
     case "x64":
       return "amd64";
@@ -274,6 +306,14 @@ function currentManifestArch() {
     default:
       return process.arch;
   }
+}
+
+function findBuiltinServiceForCurrentPlatform(serviceId) {
+  const service = builtinServices.find(
+    (item) => item.id === serviceId && item.platform?.os === currentManifestOs()
+  ) ?? builtinServices.find((item) => item.id === serviceId);
+  assert.ok(service, `missing builtin service metadata for ${serviceId}`);
+  return service;
 }
 
 test("agent-webclient release asset remains available for manual install", () => {
@@ -528,6 +568,16 @@ test("actual synced agent-platform asset includes required entries", () => {
     assert.ok(entries.has("agent-platform/stop.sh"));
     assert.ok(entries.has("agent-platform/backend/agent-platform"));
   }
+  assert.ok(entries.has("agent-platform/configs/desktop.example.yml"));
+  const manifest = readManifestFromArchive(assetPath);
+  assert.ok(
+    manifest.configFiles?.some?.((entry) =>
+      entry?.key === "desktop" &&
+      entry.relativePath === "configs/desktop.yml" &&
+      entry.templateRelativePath === "configs/desktop.example.yml"
+    ),
+    "expected agent-platform manifest to expose desktop bridge config"
+  );
 });
 
 test("actual synced agent-platform asset no longer bundles the local relay", () => {
@@ -564,8 +614,7 @@ test("actual synced agent-platform asset no longer bundles the local relay", () 
 });
 
 test("validateBundleArchive fails when required entries are missing", () => {
-  const service = builtinServices.find((item) => item.id === "agent-platform");
-  assert.ok(service);
+  const service = findBuiltinServiceForCurrentPlatform("agent-platform");
 
   const fixture = createTarBundle(service, {
     ".env.example": "SERVER_PORT=11949\n",
@@ -581,8 +630,7 @@ test("validateBundleArchive fails when required entries are missing", () => {
 });
 
 test("validateBundleArchive rejects legacy agent-platform bundles that still embed relay assets", () => {
-  const service = builtinServices.find((item) => item.id === "agent-platform");
-  assert.ok(service);
+  const service = findBuiltinServiceForCurrentPlatform("agent-platform");
 
   const fixture = createTarBundle(service, {
     "backend/agent-platform": "binary\n",

@@ -2472,6 +2472,7 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
     assert.equal(fs.existsSync(path.join(configDir, "configs", "local-public-key.pem")), true);
     for (const fileName of [
       "container-hub.yml",
+      "desktop.yml",
       "bash.yml",
       "file-tools.yml",
       "cors.yml",
@@ -2510,6 +2511,8 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
       }
     }
     assert.equal(__testInternals.agentPlatformInstallNeedsRefresh(installDir), false);
+    fs.rmSync(path.join(installDir, "configs", "desktop.example.yml"), { force: true });
+    assert.equal(__testInternals.agentPlatformInstallNeedsRefresh(installDir), true);
   } finally {
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
