@@ -235,3 +235,48 @@ test("EmbeddedCdpGateway executes direct CDP calls by active surface", async () 
     await gateway.stop();
   }
 });
+
+test("EmbeddedCdpGateway handles Target.getTargets with Desktop navigation metadata", async () => {
+  const fakeDebugger = new FakeDebugger();
+  const fakeContents = createFakeWebContents(fakeDebugger);
+  const surfaces = [
+    {
+      id: "agent-webclient",
+      label: "智能助理",
+      url: "http://127.0.0.1:7080/agents",
+      kind: "webview",
+      active: true,
+      title: "AGENT Webclient",
+      webContentsId: fakeContents.id,
+      navigationRoute: "/agents",
+      navigationLabel: "智能体"
+    },
+    {
+      id: "auth-service",
+      label: "认证服务",
+      url: "http://127.0.0.1:7080/auth",
+      kind: "webview",
+      active: false,
+      title: "Auth"
+    }
+  ];
+  const { gateway } = await createStartedGateway({
+    getSurfaces: () => surfaces,
+    resolveWebContents: () => fakeContents
+  });
+
+  try {
+    const response = await gateway.executeCommand({ method: "Target.getTargets" });
+    assert.equal(response.surfaceId, "agent-webclient");
+    assert.deepEqual(fakeDebugger.sent, []);
+    assert.equal(response.result.targetInfos.length, 2);
+    assert.equal(response.result.targetInfos[0].title, "AGENT Webclient");
+    assert.equal(response.result.targetInfos[0].url, "http://127.0.0.1:7080/agents");
+    assert.equal(response.result.targetInfos[0].navigationRoute, "/agents");
+    assert.equal(response.result.targetInfos[0].navigationLabel, "智能体");
+    assert.equal(Object.hasOwn(response.result.targetInfos[0], "surfaceLabel"), false);
+    assert.equal(Object.hasOwn(response.result.targetInfos[0], "zenmind"), false);
+  } finally {
+    await gateway.stop();
+  }
+});
