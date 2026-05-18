@@ -109,13 +109,13 @@ my-plugin/
 - 同样在控制中心显示服务卡片。
 - 服务运行后，详情区域出现“打开前端”按钮。
 - 不会出现在顶部导航栏。
-- 前端由服务自身进程直接提供，Desktop iframe 直接访问 `web.routePath`。
+- 前端由服务自身进程直接提供，Desktop webview 直接访问 `web.routePath`。
 
 ### 独立前端 (`frontend.mode: "standalone"`)
 - 同样在控制中心显示服务卡片。
 - 服务运行后，详情区域出现“打开前端”按钮。
 - 顶部导航栏自动添加入口。
-- 前端由服务自身进程直接提供，Desktop iframe 直接访问 `healthMeta.webUrl`。
+- 前端由服务自身进程直接提供，Desktop webview 直接访问 `healthMeta.webUrl`。
 
 ## 安装方式
 

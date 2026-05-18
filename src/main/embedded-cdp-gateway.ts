@@ -20,6 +20,9 @@ export type EmbeddedCdpSurface = {
   webContentsId?: number;
   agentKey?: string;
   frameMatchUrl?: string;
+  navigationRoute?: string;
+  navigationLabel?: string;
+  embedPath?: string;
 };
 
 export type EmbeddedCdpFrameTarget = {
@@ -140,17 +143,10 @@ function targetDescriptor(
     url,
     webSocketDebuggerUrl: `${origins.wsOrigin}/devtools/page/${encodedTargetId}`,
     surfaceId: surface.id,
-    surfaceLabel: surface.label,
+    navigationRoute: surface.navigationRoute || "",
+    navigationLabel: surface.navigationLabel || "",
     agentKey: surface.agentKey || "",
-    webContentsId: surface.webContentsId ?? null,
-    zenmind: {
-      kind: normalizeTargetKind(surface.kind),
-      surfaceId: surface.id,
-      surfaceLabel: surface.label,
-      agentKey: surface.agentKey || "",
-      webContentsId: surface.webContentsId ?? null,
-      active: Boolean(surface.active)
-    }
+    webContentsId: surface.webContentsId ?? null
   };
 }
 

@@ -527,6 +527,9 @@ export interface AssistantPageContext {
       surfaceId?: string;
       surfaceLabel?: string;
       currentUrl?: string;
+      navigationRoute?: string;
+      navigationLabel?: string;
+      embedPath?: string;
       browserSkill?: string;
     } |
     {
@@ -535,6 +538,9 @@ export interface AssistantPageContext {
       surfaceId?: string;
       surfaceLabel?: string;
       currentUrl?: string;
+      navigationRoute?: string;
+      navigationLabel?: string;
+      embedPath?: string;
       browserSkill?: string;
     }
   );
@@ -549,6 +555,9 @@ export interface DesktopPageContextSnapshot {
   permissionMode?: AssistantPermissionMode;
   surfaceId?: string;
   surfaceLabel?: string;
+  navigationRoute?: string;
+  navigationLabel?: string;
+  embedPath?: string;
   webContentsId?: number;
   frameMatchUrl?: string;
   snapshotVersion: number;

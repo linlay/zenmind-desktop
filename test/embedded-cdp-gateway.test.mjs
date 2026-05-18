@@ -98,7 +98,7 @@ function closeWebSocket(socket) {
   });
 }
 
-test("EmbeddedCdpGateway lists only registered embedded targets with surface metadata", async () => {
+test("EmbeddedCdpGateway lists only registered embedded targets with navigation metadata", async () => {
   const surfaces = [
     {
       id: "surface-a",
@@ -108,7 +108,9 @@ test("EmbeddedCdpGateway lists only registered embedded targets with surface met
       active: true,
       title: "Alpha App",
       webContentsId: 101,
-      agentKey: "agent-alpha"
+      agentKey: "agent-alpha",
+      navigationRoute: "/agents",
+      navigationLabel: "智能体"
     },
     {
       id: "surface-b",
@@ -133,7 +135,10 @@ test("EmbeddedCdpGateway lists only registered embedded targets with surface met
     assert.deepEqual(targets.map((target) => target.surfaceId), ["surface-a", "surface-b"]);
     assert.deepEqual(targets.map((target) => target.agentKey), ["agent-alpha", "agent-beta"]);
     assert.equal(targets[0].webContentsId, 101);
-    assert.equal(targets[0].zenmind.kind, "webview");
+    assert.equal(targets[0].navigationRoute, "/agents");
+    assert.equal(targets[0].navigationLabel, "智能体");
+    assert.equal(Object.hasOwn(targets[0], "surfaceLabel"), false);
+    assert.equal(Object.hasOwn(targets[0], "zenmind"), false);
     assert.match(targets[0].webSocketDebuggerUrl, /^ws:\/\/127\.0\.0\.1:\d+\/devtools\/page\/zenmind-/u);
   } finally {
     await gateway.stop();

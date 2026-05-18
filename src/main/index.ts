@@ -197,7 +197,7 @@ const desktopActionRendererRequests = new Map<string, {
   resolve: (response: DesktopActionRendererResponse) => void;
   timeout: ReturnType<typeof setTimeout>;
 }>();
-const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
+const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
 const AGENT_WEBCLIENT_APP_PATHNAMES = new Set(["/", "/copilot"]);
 const LOG_VIEWER_ROUTE = "/log-viewer";
 const AGENT_WEBCLIENT_OPEN_RETRY_COUNT = 24;
@@ -235,6 +235,9 @@ type BrowserSurface = {
   webContentsId?: number;
   agentKey?: string;
   frameMatchUrl?: string;
+  navigationRoute?: string;
+  navigationLabel?: string;
+  embedPath?: string;
 };
 let startupRestoreState = createStartupRestoreState();
 let embeddedCdpGateway: EmbeddedCdpGateway | null = null;
@@ -3032,15 +3035,35 @@ function createEmbeddedCdpServiceSurface(service: ServiceState): EmbeddedCdpSurf
     return null;
   }
   const contents = findWebContentsForSurfaceUrl(webUrl);
+  const snapshotBrowserTarget = currentPageSnapshot?.pageContext?.browserTarget;
+  const snapshotMatchesService = currentPageSnapshot?.pageKind === "webview" && (
+    currentPageSnapshot.surfaceId === service.id ||
+    snapshotBrowserTarget?.surfaceId === service.id ||
+    (typeof contents?.id === "number" && currentPageSnapshot.webContentsId === contents.id) ||
+    (typeof contents?.id === "number" && snapshotBrowserTarget?.kind === "webview" && snapshotBrowserTarget.webContentsId === contents.id)
+  );
+  const navigationRoute = snapshotMatchesService
+    ? currentPageSnapshot?.navigationRoute || snapshotBrowserTarget?.navigationRoute || currentPageSnapshot?.route
+    : "";
+  const navigationLabel = snapshotMatchesService
+    ? currentPageSnapshot?.navigationLabel || snapshotBrowserTarget?.navigationLabel || currentPageSnapshot?.surfaceLabel
+    : "";
+  const snapshotCurrentUrl = snapshotMatchesService && snapshotBrowserTarget?.kind === "webview"
+    ? snapshotBrowserTarget.currentUrl
+    : "";
+  const documentTitle = snapshotMatchesService ? currentPageSnapshot?.pageContext?.title : "";
   return {
     id: service.id,
     label: service.name || service.id,
     url: webUrl,
     kind: "webview",
     active: Boolean(contents),
-    currentUrl: contents?.getURL(),
-    title: service.name || service.id,
-    webContentsId: contents?.id
+    currentUrl: snapshotCurrentUrl || contents?.getURL(),
+    title: documentTitle || service.name || service.id,
+    webContentsId: contents?.id,
+    ...(navigationRoute ? { navigationRoute } : {}),
+    ...(navigationLabel ? { navigationLabel } : {}),
+    ...(snapshotMatchesService && currentPageSnapshot?.embedPath ? { embedPath: currentPageSnapshot.embedPath } : {})
   };
 }
 
@@ -3081,7 +3104,7 @@ function resolveEmbeddedCdpFrameTarget(surface: EmbeddedCdpSurface): EmbeddedCdp
 
 async function activateEmbeddedCdpSurface(surface: EmbeddedCdpSurface) {
   if (surface.kind === "iframe") {
-    const targetPath = surface.id === "agent-webclient" ? ASSISTANT_TARGET_PATH : `/plugin/${surface.id}`;
+    const targetPath = surface.id === "agent-webclient" ? ASSISTANT_TARGET_PATH : `/service/${surface.id}`;
     showMainWindow(targetPath);
     await delay(450);
     return;
@@ -3094,7 +3117,7 @@ async function activateEmbeddedCdpSurface(surface: EmbeddedCdpSurface) {
   try {
     const services = await listServices(app);
     if (services.some((service) => service.id === surface.id)) {
-      const targetPath = surface.id === "agent-webclient" ? ASSISTANT_TARGET_PATH : `/plugin/${surface.id}`;
+      const targetPath = surface.id === "agent-webclient" ? ASSISTANT_TARGET_PATH : `/service/${surface.id}`;
       showMainWindow(targetPath);
       await delay(450);
       return;

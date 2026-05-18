@@ -287,6 +287,9 @@ function buildPluginWebviewFallbackContext(
   webUrl: string,
   surfaceId: string,
   surfaceLabel: string,
+  navigationRoute?: string,
+  navigationLabel?: string,
+  embedPath?: string,
   webContentsId?: number
 ): AssistantPageContext {
   const normalizedName = normalizeWhitespace(serviceDisplayName || "内嵌应用");
@@ -307,6 +310,9 @@ function buildPluginWebviewFallbackContext(
           webContentsId,
           surfaceId,
           surfaceLabel,
+          ...(navigationRoute ? { navigationRoute } : {}),
+          ...(navigationLabel ? { navigationLabel } : {}),
+          ...(embedPath ? { embedPath } : {}),
           currentUrl: fallbackUrl
         }
       : undefined
@@ -334,6 +340,9 @@ async function tryReadPluginWebviewPageContext(
   webUrl: string,
   surfaceId: string,
   surfaceLabel: string,
+  navigationRoute: string,
+  navigationLabel: string,
+  embedPath: string | undefined,
   currentUrl: string
 ): Promise<AssistantPageContext | null> {
   if (!webview) {
@@ -362,6 +371,9 @@ async function tryReadPluginWebviewPageContext(
             webContentsId,
             surfaceId,
             surfaceLabel,
+            ...(navigationRoute ? { navigationRoute } : {}),
+            ...(navigationLabel ? { navigationLabel } : {}),
+            ...(embedPath ? { embedPath } : {}),
             currentUrl: nextUrl
           }
         : undefined
@@ -389,6 +401,8 @@ export function PluginPage({
     ? services.find((s) => s.id === "agent-platform")
     : null;
   const serviceDisplayName = surfaceLabel || (service ? getServiceDisplayName(service.id, service.name) : "");
+  const navigationRoute = location.pathname;
+  const navigationLabel = surfaceLabel || "";
   const [bridgeError, setBridgeError] = useState("");
   const [bridgeReady, setBridgeReady] = useState(false);
   const [webviewRetryNonce, setWebviewRetryNonce] = useState(0);
@@ -462,8 +476,21 @@ export function PluginPage({
       webUrl,
       pluginId,
       serviceDisplayName,
+      navigationRoute,
+      navigationLabel,
+      embedPath,
       readCurrentWebviewUrl()
-    ) ?? buildPluginWebviewFallbackContext(serviceDisplayName, embeddedUrl, webUrl, pluginId, serviceDisplayName, webContentsId);
+    ) ?? buildPluginWebviewFallbackContext(
+      serviceDisplayName,
+      embeddedUrl,
+      webUrl,
+      pluginId,
+      serviceDisplayName,
+      navigationRoute,
+      navigationLabel,
+      embedPath,
+      webContentsId
+    );
   }
 
   async function executeWebviewScript(args: Record<string, unknown>, script: string) {
@@ -497,6 +524,9 @@ export function PluginPage({
       pageKind: "webview" as const,
       ...(pluginId ? { surfaceId: pluginId } : {}),
       ...(serviceDisplayName ? { surfaceLabel: serviceDisplayName } : {}),
+      ...(navigationRoute ? { navigationRoute } : {}),
+      ...(navigationLabel ? { navigationLabel } : {}),
+      ...(embedPath ? { embedPath } : {}),
       ...(typeof webContentsId === "number" ? { webContentsId } : {})
     };
   };
@@ -509,6 +539,9 @@ export function PluginPage({
       pageKind: descriptor.pageKind,
       ...(descriptor.surfaceId ? { surfaceId: descriptor.surfaceId } : {}),
       ...(descriptor.surfaceLabel ? { surfaceLabel: descriptor.surfaceLabel } : {}),
+      ...(descriptor.navigationRoute ? { navigationRoute: descriptor.navigationRoute } : {}),
+      ...(descriptor.navigationLabel ? { navigationLabel: descriptor.navigationLabel } : {}),
+      ...(descriptor.embedPath ? { embedPath: descriptor.embedPath } : {}),
       ...(typeof descriptor.webContentsId === "number" ? { webContentsId: descriptor.webContentsId } : {}),
       ...payload
     };

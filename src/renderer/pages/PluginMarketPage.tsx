@@ -502,7 +502,7 @@ export function PluginMarketPage() {
   function handleOpenPlugin(item: MarketItem) {
     const service = serviceById.get(item.id) ?? null;
     if (canOpenPlugin(service)) {
-      navigate(`/plugin/${item.id}`);
+      navigate(`/service/${item.id}`);
       return;
     }
     navigate("/control-center", {

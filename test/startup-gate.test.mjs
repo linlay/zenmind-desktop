@@ -57,8 +57,8 @@ test("startup gate shows the bootstrap progress card until the bootstrap flow is
 test("startup gate routes root traffic to control center during bootstrap and agent webclient otherwise", () => {
   assert.equal(resolveStartupRootPath(null, false), null);
   assert.equal(resolveStartupRootPath({ mode: "bootstrap", phase: "running" }, false), "/control-center");
-  assert.equal(resolveStartupRootPath({ mode: "bootstrap", phase: "succeeded" }, true), "/plugin/agent-webclient");
-  assert.equal(resolveStartupRootPath({ mode: "restore", phase: "running" }, false), "/plugin/agent-webclient");
+  assert.equal(resolveStartupRootPath({ mode: "bootstrap", phase: "succeeded" }, true), "/service/agent-webclient");
+  assert.equal(resolveStartupRootPath({ mode: "restore", phase: "running" }, false), "/service/agent-webclient");
 });
 
 test("startup gate only auto-opens the assistant after bootstrap succeeds", () => {

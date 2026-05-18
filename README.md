@@ -17,7 +17,7 @@
 - `zenmind-app-server`：认证与管理服务，提供 OAuth2/OIDC、管理后台和 App 访问令牌。
 - `pan-webclient`：网盘服务，通过插件系统导入。
 
-桌面端不再启动统一静态资源服务。各服务在自己的端口上直接提供前端，渲染层 iframe 直接访问对应 `healthMeta.webUrl`。需要认证的插件（`agent-webclient`、`pan-webclient`）通过 postMessage Token Bridge 获取 Desktop 签发的 JWT。
+桌面端不再启动统一静态资源服务。各服务在自己的端口上直接提供前端，渲染层 webview 直接访问对应 `healthMeta.webUrl`。需要认证的服务或插件（如 `agent-webclient`、`pan-webclient`）通过 postMessage Token Bridge 获取 Desktop 签发的 JWT。
 
 ## 2. 快速开始
 ### 前置要求
@@ -77,8 +77,8 @@ DevTools 可用于查看控制台日志、网络请求、DOM 结构以及页面�
 - `frontendMode: "none"`：无前端，仅在控制中心管理。
 - `frontendMode: "embedded"`：前端由服务自身进程托管，可在详情页打开，但不会出现在顶部导航。
 - `frontendMode: "standalone"`：前端由服务自身端口直接提供，详情页可打开，运行中会出现在顶部导航。
-- iframe 直接访问服务状态里的 `healthMeta.webUrl`，例如 `http://127.0.0.1:11950/admin/`。
-- 需要认证的插件（`agent-webclient`、`pan-webclient`）通过 `auth-bridge.ts` 构建带参数的嵌入 URL，并通过 postMessage Token Bridge 获取 JWT。
+- webview 直接访问服务状态里的 `healthMeta.webUrl`，例如 `http://127.0.0.1:11950/admin/`。
+- 需要认证的服务或插件（如 `agent-webclient`、`pan-webclient`）通过 `auth-bridge.ts` 构建带参数的嵌入 URL，并通过 postMessage Token Bridge 获取 JWT。
 
 ### 服务配置文件
 - 新安装的 Desktop 配置与运行数据根目录为 `~/.zenmind/.desktop`，按 `config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；这里不存放可替换程序产物。

@@ -41,7 +41,7 @@ const controlCenterUtilityItem = {
 
 const assistantNavItem: SidebarNavItem = {
   orderKey: "assistant",
-  to: "/plugin/agent-webclient",
+  to: "/service/agent-webclient",
   label: "智能助理",
   icon: "assistant",
 };
@@ -183,7 +183,7 @@ export function AppSidebar({
     .filter(shouldShowServiceNavigationTab)
     .map((service) => ({
       orderKey: createServiceSidebarNavOrderKey(service.id),
-      to: `/plugin/${service.id}`,
+      to: `/service/${service.id}`,
       label: getServiceDisplayName(service.id, service.name),
       icon: "service",
     }));

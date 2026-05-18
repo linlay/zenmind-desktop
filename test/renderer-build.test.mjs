@@ -342,7 +342,7 @@ test("agent webclient desktop sections are exposed as top-level sidebar tabs", (
   assert.match(appShell, /const activeAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname\)/);
   assert.match(appShell, /activeAgentWebclientRoute[\s\S]*?\? "agent-webclient"[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
   assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeAgentWebclientRoute\)/);
-  assert.match(appShell, /const usesPluginSurface = Boolean\(activeAgentWebclientRoute\) \|\| location\.pathname\.startsWith\("\/plugin\/"\)/);
+  assert.match(appShell, /const usesPluginSurface =[\s\S]*?Boolean\(activeAgentWebclientRoute\)[\s\S]*?location\.pathname\.startsWith\("\/service\/"\)[\s\S]*?location\.pathname\.startsWith\("\/plugin\/"\)/);
   assert.match(appShell, /<Route path="\/agents" element=\{null\} \/>/);
   assert.match(appShell, /<Route path="\/schedules" element=\{null\} \/>/);
   assert.match(appShell, /<Route path="\/memory" element=\{null\} \/>/);
