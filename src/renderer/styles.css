@@ -3668,16 +3668,18 @@ body.quick-web-copilot-body,
 }
 
 .app-sidebar-collapse-button-icon {
-  position: relative;
   display: block;
-  width: 8px;
-  height: 12px;
-  transform: rotate(0deg);
-  transition: transform 0.18s ease-in-out;
+  flex: none;
 }
 
-.app-sidebar-collapse-button-icon::before,
-.app-sidebar-collapse-button-icon::after {
+.app-sidebar-collapse-button-icon-chevron {
+  position: relative;
+  width: 8px;
+  height: 12px;
+}
+
+.app-sidebar-collapse-button-icon-chevron::before,
+.app-sidebar-collapse-button-icon-chevron::after {
   content: "";
   position: absolute;
   width: 8px;
@@ -3687,20 +3689,21 @@ body.quick-web-copilot-body,
   background: currentColor;
 }
 
-.app-sidebar-collapse-button-icon::before {
+.app-sidebar-collapse-button-icon-chevron::before {
   top: 6px;
   transform: rotate(45deg);
   transform-origin: 100% 50%;
 }
 
-.app-sidebar-collapse-button-icon::after {
+.app-sidebar-collapse-button-icon-chevron::after {
   bottom: 6px;
   transform: rotate(-45deg);
   transform-origin: 100% 50%;
 }
 
-.app-sidebar-collapse-button.is-expanded-state .app-sidebar-collapse-button-icon {
-  transform: rotate(180deg);
+.app-sidebar-collapse-button-icon-panel {
+  width: 16px;
+  height: 16px;
 }
 
 :root[data-theme="dark"] .app-sidebar-collapse-button {

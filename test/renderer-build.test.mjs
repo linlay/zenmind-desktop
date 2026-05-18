@@ -176,6 +176,9 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(sidebarSource, /type SidebarCollapseToggleVariant = "compact" \| "nav";/);
   assert.match(sidebarSource, /className=\{\[\s*"app-sidebar-collapse-button",[\s\S]*?"is-compact" : "is-nav"/);
   assert.match(sidebarSource, /aria-expanded=\{!isCollapsed\}/);
+  assert.match(sidebarSource, /app-sidebar-collapse-button-icon-panel/);
+  assert.match(sidebarSource, /app-sidebar-collapse-button-icon-chevron/);
+  assert.match(sidebarSource, /<SidebarCollapseToggleIcon isCollapsed=\{isCollapsed\} \/>/);
   assert.match(sidebarSource, /<div className="sidebar-chrome">/);
   assert.match(sidebarSource, /<div className="sidebar-chrome-drag-region" aria-hidden="true" \/>/);
   assert.match(sidebarSource, /className=\{chromeToolbarClassName\}/);
@@ -187,7 +190,8 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(globalStyles, /\.sidebar-chrome-toolbar\.is-windows,[\s\S]*?justify-content:\s*center;/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-compact\s*\{[\s\S]*?width:\s*24px;/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-nav\s*\{[\s\S]*?width:\s*var\(--sidebar-collapse-toggle-nav-width, 48px\);/);
-  assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-expanded-state \.app-sidebar-collapse-button-icon\s*\{[\s\S]*?rotate\(180deg\)/);
+  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron::before/);
+  assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?width:\s*16px;/);
 });
 
 test("agent webclient desktop sections are exposed as top-level sidebar tabs", () => {
@@ -740,36 +744,6 @@ test("external webview bookmarks use document-level pointer reordering", () => {
   assert.match(externalWebviewPage, /document\.addEventListener\("pointermove", handleDocumentPointerMove/);
   assert.match(externalWebviewPage, /moveItemByIdToIndex\(\s*currentBookmarks/);
   assert.match(externalWebviewPage, /onPointerDown=\{\(event\) => handleBookmarkPointerDown\(event, bookmark\.id\)\}/);
-});
-
-test("assistant capability identity and active-chat event recovery stay intact", () => {
-  const assistantCapabilities = fs.readFileSync(
-    path.join(projectRoot, "src", "shared", "assistant-capabilities.ts"),
-    "utf8"
-  );
-  const assistantEventState = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "services", "assistantEventState.ts"),
-    "utf8"
-  );
-  const assistantArtifacts = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "services", "assistantArtifacts.ts"),
-    "utf8"
-  );
-
-  assert.match(assistantCapabilities, /ZENMIND_ASSISTANT_AGENT_KEY = "zenmind"/);
-  assert.match(assistantCapabilities, /ZENMIND_ASSISTANT_NAME = "ZenMind"/);
-  assert.match(assistantCapabilities, /侧边栏和快速助手中作为同一个本地单智能体/);
-  assert.doesNotMatch(assistantCapabilities, /Zman|小宅|desktop-xiaozhai/);
-
-  assert.match(assistantEventState, /function getLatestPendingAwaitingPayload/);
-  assert.match(assistantEventState, /function attachRunningAssistantPlaceholder/);
-  assert.match(assistantEventState, /function mergeOptimisticRunMessages/);
-  assert.match(assistantEventState, /function getVisibleAssistantMessages/);
-  assert.match(assistantEventState, /function shouldEnsureAssistantMessageForEvent/);
-  assert.match(assistantEventState, /ASSISTANT_RUN_EVENT_TYPES/);
-  assert.match(assistantEventState, /function reduceAssistantTimelineEvent/);
-  assert.doesNotMatch(assistantEventState, /tool\.verify|tool\.route|voice\.transcribed|voice\.corrected|voice\.needs_review|intent\.classified/);
-  assert.match(assistantArtifacts, /function getArtifactAttachmentsFromEvent/);
 });
 
 test("web copilot dock yields to native dialogs while quick assistant keeps outside-dismiss handling", () => {

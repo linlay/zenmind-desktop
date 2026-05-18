@@ -231,10 +231,6 @@ export function getElectronUserDataRoot(app: App) {
   return path.join(getProfilesRoot(app), "electron");
 }
 
-export function getControlledChromeProfileRoot(app: App) {
-  return path.join(getProfilesRoot(app), "controlled-system-chrome");
-}
-
 export const __testInternals = {
   DESKTOP_DIRS,
   resolveDesktopRootFromHome,

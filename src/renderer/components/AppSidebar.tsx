@@ -91,6 +91,53 @@ type SidebarCollapseToggleProps = {
   onToggleCollapsed?: () => void;
 };
 
+function SidebarCollapseToggleIcon({ isCollapsed }: { isCollapsed: boolean }) {
+  if (isCollapsed) {
+    return (
+      <span
+        className="app-sidebar-collapse-button-icon app-sidebar-collapse-button-icon-chevron"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  return (
+    <svg
+      className="app-sidebar-collapse-button-icon app-sidebar-collapse-button-icon-panel"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect
+        x="1.75"
+        y="1.75"
+        width="12.5"
+        height="12.5"
+        rx="1.75"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <rect
+        x="3"
+        y="3"
+        width="2.75"
+        height="10"
+        rx="0.75"
+        fill="currentColor"
+        opacity="0.16"
+      />
+      <path
+        d="M6.5 3V13"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function SidebarCollapseToggle({
   isCollapsed,
   variant,
@@ -113,7 +160,7 @@ function SidebarCollapseToggle({
       aria-expanded={!isCollapsed}
       onClick={onToggleCollapsed}
     >
-      <span className="app-sidebar-collapse-button-icon" aria-hidden="true" />
+      <SidebarCollapseToggleIcon isCollapsed={isCollapsed} />
     </button>
   );
 }
