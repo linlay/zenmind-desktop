@@ -1321,6 +1321,7 @@ export interface DesktopApi {
   plugins: {
     install: () => Promise<PluginInstallResult>;
     uninstall: (serviceId: ServiceId) => Promise<PluginInstallResult>;
+    getServiceWebviewPreloadPath: () => Promise<string>;
   };
   market: {
     getSettings: () => Promise<MarketSettings>;

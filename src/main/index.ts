@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   app,
   BrowserWindow,
@@ -238,6 +239,14 @@ type BrowserSurface = {
 let startupRestoreState = createStartupRestoreState();
 let embeddedCdpGateway: EmbeddedCdpGateway | null = null;
 let currentPageSnapshot: DesktopPageContextSnapshot | null = null;
+
+function getServiceWebviewPreloadPath() {
+  return path.join(__dirname, "..", "preload", "service-webview.js");
+}
+
+function getServiceWebviewPreloadUrl() {
+  return pathToFileURL(getServiceWebviewPreloadPath()).toString();
+}
 
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName(ZENMIND_PRODUCT_NAME);
@@ -2479,6 +2488,34 @@ function createWindow() {
     });
   });
 
+  mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
+    const servicePreloadPath = getServiceWebviewPreloadPath();
+    const servicePreloadUrl = getServiceWebviewPreloadUrl();
+    const requestedPreload = String(webPreferences.preload || params.preload || "");
+    const usesServicePreload = requestedPreload === servicePreloadPath || requestedPreload === servicePreloadUrl;
+
+    if (requestedPreload && !usesServicePreload) {
+      event.preventDefault();
+      safeConsoleError("blocked unexpected webview preload", {
+        preload: requestedPreload,
+        src: params.src
+      });
+      return;
+    }
+
+    if (usesServicePreload && !parseSafeFrameMatchUrl(String(params.src || ""))) {
+      event.preventDefault();
+      safeConsoleError("blocked service webview with unsafe url", {
+        src: params.src
+      });
+      return;
+    }
+
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = false;
+  });
+
   mainWindow.on("focus", () => {
     if (nativeDialogVisibilityDepth > 0) {
       return;
@@ -2975,36 +3012,38 @@ async function listEmbeddedCdpSurfaces(): Promise<EmbeddedCdpSurface[]> {
   try {
     const services = await listServices(app);
     const surfaces = await Promise.all(services.map(async (service): Promise<EmbeddedCdpSurface | null> => {
-      const surface = createEmbeddedCdpFrameSurface(service);
+      const surface = createEmbeddedCdpServiceSurface(service);
       if (!surface) {
         return null;
       }
       return {
         ...surface,
-        active: Boolean(resolveEmbeddedCdpFrameTarget(surface))
+        active: Boolean(resolveEmbeddedCdpWebContents(surface))
       };
     }));
     serviceSurfaces = surfaces.filter((surface): surface is EmbeddedCdpSurface => surface !== null);
   } catch (error) {
-    console.warn("[embedded-cdp] failed to list iframe targets", error);
+    console.warn("[embedded-cdp] failed to list service webview targets", error);
   }
 
   return [...webviewSurfaces, ...serviceSurfaces];
 }
 
-function createEmbeddedCdpFrameSurface(service: ServiceState): EmbeddedCdpSurface | null {
+function createEmbeddedCdpServiceSurface(service: ServiceState): EmbeddedCdpSurface | null {
   const webUrl = service.status === "running" ? service.healthMeta.webUrl.trim() : "";
   if (service.frontendMode === "none" || !webUrl || !parseSafeFrameMatchUrl(webUrl)) {
     return null;
   }
+  const contents = findWebContentsForSurfaceUrl(webUrl);
   return {
     id: service.id,
     label: service.name || service.id,
     url: webUrl,
-    kind: "iframe",
-    active: false,
+    kind: "webview",
+    active: Boolean(contents),
+    currentUrl: contents?.getURL(),
     title: service.name || service.id,
-    frameMatchUrl: webUrl
+    webContentsId: contents?.id
   };
 }
 
@@ -3054,6 +3093,17 @@ async function activateEmbeddedCdpSurface(surface: EmbeddedCdpSurface) {
   if (surface.id === BUILTIN_BROWSER_SURFACE_ID) {
     await openBrowserUrl({ url: surface.currentUrl || surface.url, label: surface.label });
     return;
+  }
+  try {
+    const services = await listServices(app);
+    if (services.some((service) => service.id === surface.id)) {
+      const targetPath = surface.id === "agent-webclient" ? ASSISTANT_TARGET_PATH : `/plugin/${surface.id}`;
+      showMainWindow(targetPath);
+      await delay(450);
+      return;
+    }
+  } catch {
+    // Fall through to custom sidebar activation if service state is unavailable.
   }
   await activateBrowserSurface(surface.id || surface.url);
 }
@@ -3897,6 +3947,7 @@ function registerIpcHandlers() {
   ipcMain.handle("plugins.uninstall", async (_event, serviceId: ServiceId) => {
     return runServiceMutation(() => handlePluginUninstall(app, serviceId, mainWindow));
   });
+  ipcMain.handle("plugins.getServiceWebviewPreloadPath", async () => getServiceWebviewPreloadPath());
   ipcMain.handle("market.getSettings", async () => getMarketSettings(app));
   ipcMain.handle("market.saveSettings", async (_event, input) => saveMarketSettings(app, input));
   ipcMain.handle("market.list", async () => listMarketItems(app));

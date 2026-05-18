@@ -139,7 +139,8 @@ const api: DesktopApi = {
   },
   plugins: {
     install: () => ipcRenderer.invoke("plugins.install"),
-    uninstall: (serviceId: ServiceId) => ipcRenderer.invoke("plugins.uninstall", serviceId)
+    uninstall: (serviceId: ServiceId) => ipcRenderer.invoke("plugins.uninstall", serviceId),
+    getServiceWebviewPreloadPath: () => ipcRenderer.invoke("plugins.getServiceWebviewPreloadPath")
   },
   market: {
     getSettings: () => ipcRenderer.invoke("market.getSettings"),
