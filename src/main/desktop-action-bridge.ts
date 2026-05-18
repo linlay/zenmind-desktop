@@ -46,7 +46,12 @@ import {
   uninstallMarketItem,
   updateMarketItem
 } from "./marketplace";
-import { executeCurrentPageCdpAction } from "./current-page-cdp-executor";
+import {
+  executeCurrentPageCdpAction,
+  inspectCurrentPageCdpElement,
+  readCurrentPageCdpLocation,
+  type CurrentPageCdpElementSnapshot
+} from "./current-page-cdp-executor";
 
 type DesktopActionBridgeOptions = {
   app: App;
@@ -86,7 +91,56 @@ type DesktopCdpCallResponse = {
 
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 const MAX_BODY_BYTES = 256 * 1024;
+const PAGE_CONTROL_GRANT_TTL_MS = 10 * 60 * 1000;
+const PAGE_CONTROL_LOW_RISK_INTERACTIONS = new Set(["fill", "scroll", "focus", "select"]);
+const PAGE_CONTROL_HIGH_RISK_PATTERN =
+  /(提交|删除|移除|清空|支付|付款|购买|下单|订单|确认订单|退款|转账|授权|确认授权|同意授权|安装|卸载|启动|停止|重启|发布|发送|保存|登录|注册|submit|delete|remove|clear|pay|payment|purchase|buy|checkout|order|refund|transfer|authorize|approve|install|uninstall|start|stop|restart|deploy|publish|send|save|login|sign\s*in|sign\s*up)/iu;
 let activeServer: http.Server | null = null;
+
+type PageControlGrantScope = {
+  chatId: string;
+  agentKey: string;
+  webContentsId: number;
+  origin: string;
+  surfaceLabel?: string;
+  pageTitle?: string;
+};
+
+type PageControlConfirmationDecision = "grant" | "once" | "cancel";
+
+class PageControlGrantStore {
+  private readonly grants = new Map<string, number>();
+
+  has(scope: PageControlGrantScope, now = Date.now()) {
+    this.prune(now);
+    const expiresAt = this.grants.get(this.key(scope));
+    return typeof expiresAt === "number" && expiresAt > now;
+  }
+
+  grant(scope: PageControlGrantScope, now = Date.now()) {
+    this.prune(now);
+    this.grants.set(this.key(scope), now + PAGE_CONTROL_GRANT_TTL_MS);
+  }
+
+  private key(scope: PageControlGrantScope) {
+    return [
+      scope.chatId,
+      scope.agentKey,
+      scope.webContentsId,
+      scope.origin
+    ].join("\u0000");
+  }
+
+  private prune(now = Date.now()) {
+    for (const [key, expiresAt] of this.grants) {
+      if (expiresAt <= now) {
+        this.grants.delete(key);
+      }
+    }
+  }
+}
+
+const pageControlGrantStore = new PageControlGrantStore();
 
 function actionError(code: string, message: string, details?: unknown): DesktopActionError {
   return {
@@ -315,6 +369,215 @@ async function confirmMutatingAction(action: string, args: Record<string, unknow
     ? await dialog.showMessageBox(owner, dialogOptions)
     : await dialog.showMessageBox(dialogOptions);
   return result.response === 0;
+}
+
+async function confirmPageControlAction(
+  scope: PageControlGrantScope,
+  args: Record<string, unknown>,
+  owner: BrowserWindow | null
+): Promise<PageControlConfirmationDecision> {
+  const summary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
+    ? args.confirmationSummary.trim()
+    : `允许小宅助理操作 ${scope.origin} 页面？`;
+  const targetLabel = [scope.surfaceLabel, scope.pageTitle].filter(Boolean).join(" · ") || scope.origin;
+  const dialogOptions = {
+    type: "question" as const,
+    buttons: ["允许本次页面操作", "仅执行这一步", "取消"],
+    defaultId: 1,
+    cancelId: 2,
+    title: "允许页面操作",
+    message: summary,
+    detail: [
+      `目标：${targetLabel}`,
+      "允许后，当前聊天和智能体可在 10 分钟内继续填写、滚动、聚焦、选择和低风险点击这个 webview 页面。",
+      "提交、删除、支付、安装、服务启停等高风险动作仍会单独确认。"
+    ].join("\n")
+  };
+  const result = owner && !owner.isDestroyed()
+    ? await dialog.showMessageBox(owner, dialogOptions)
+    : await dialog.showMessageBox(dialogOptions);
+  if (result.response === 0) {
+    return "grant";
+  }
+  if (result.response === 1) {
+    return "once";
+  }
+  return "cancel";
+}
+
+function normalizePermissionMode(value: unknown) {
+  return value === "full_access" || value === "page_control" || value === "default"
+    ? value
+    : "";
+}
+
+function readRequestPermissionMode(request: DesktopActionCallRequest, args: Record<string, unknown>) {
+  return normalizePermissionMode(request.permissionMode) || normalizePermissionMode(args.permissionMode) || "default";
+}
+
+function readSnapshotUrl(snapshot: DesktopPageContextSnapshot) {
+  const browserTarget = snapshot.pageContext?.browserTarget;
+  if (browserTarget?.kind === "webview" && browserTarget.currentUrl) {
+    return browserTarget.currentUrl;
+  }
+  return snapshot.pageContext?.url || "";
+}
+
+function readUrlOrigin(rawUrl: string) {
+  try {
+    const origin = new URL(rawUrl).origin;
+    return origin && origin !== "null" ? origin : "";
+  } catch {
+    return "";
+  }
+}
+
+async function resolvePageControlGrantScope(
+  snapshot: DesktopPageContextSnapshot | null,
+  request: DesktopActionCallRequest
+): Promise<PageControlGrantScope | null> {
+  if (!snapshot || snapshot.pageKind !== "webview" || typeof snapshot.webContentsId !== "number") {
+    return null;
+  }
+  const chatId = request.source?.chatId?.trim() || "";
+  const agentKey = request.source?.agentKey?.trim() || "";
+  if (!chatId || !agentKey) {
+    return null;
+  }
+  const liveUrl = await readCurrentPageCdpLocation(snapshot).catch(() => "");
+  const origin = readUrlOrigin(liveUrl || readSnapshotUrl(snapshot));
+  if (!origin) {
+    return null;
+  }
+  return {
+    chatId,
+    agentKey,
+    webContentsId: snapshot.webContentsId,
+    origin,
+    ...(snapshot.surfaceLabel ? { surfaceLabel: snapshot.surfaceLabel } : {}),
+    ...(snapshot.pageContext?.title ? { pageTitle: snapshot.pageContext.title } : {})
+  };
+}
+
+function collectStringValues(value: unknown, output: string[]) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed) {
+      output.push(trimmed);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectStringValues(item, output);
+    }
+    return;
+  }
+  if (!value || typeof value !== "object") {
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of ["selector", "elementSelector", "label", "text", "title", "name", "id", "className", "value", "href", "confirmationSummary"]) {
+    collectStringValues(record[key], output);
+  }
+}
+
+function collectElementRiskText(element: CurrentPageCdpElementSnapshot | null) {
+  if (!element) {
+    return "";
+  }
+  return [
+    element.text,
+    element.ariaLabel,
+    element.title,
+    element.value,
+    element.role,
+    element.type,
+    element.name,
+    element.id,
+    element.className,
+    element.href
+  ].filter(Boolean).join(" ");
+}
+
+function isHighRiskPageActionText(text: string) {
+  return PAGE_CONTROL_HIGH_RISK_PATTERN.test(text.replace(/\s+/gu, " ").trim());
+}
+
+async function isLowRiskPageControlAction(
+  action: string,
+  args: Record<string, unknown>,
+  snapshot: DesktopPageContextSnapshot | null
+) {
+  if (!snapshot || snapshot.pageKind !== "webview") {
+    return false;
+  }
+  if (action === "desktop.page.fillForm") {
+    return true;
+  }
+  if (action !== "desktop.page.interact") {
+    return false;
+  }
+  const interaction = readString(args, "action").toLowerCase();
+  if (PAGE_CONTROL_LOW_RISK_INTERACTIONS.has(interaction)) {
+    return true;
+  }
+  if (interaction !== "click") {
+    return false;
+  }
+  const riskValues: string[] = [];
+  collectStringValues(args, riskValues);
+  const element = await inspectCurrentPageCdpElement(snapshot, args).catch(() => null);
+  const riskText = [...riskValues, collectElementRiskText(element)].filter(Boolean).join(" ");
+  if (!riskText.trim()) {
+    return false;
+  }
+  return !isHighRiskPageActionText(riskText);
+}
+
+async function confirmDesktopActionIfNeeded(
+  options: DesktopActionBridgeOptions,
+  request: DesktopActionCallRequest,
+  args: Record<string, unknown>
+): Promise<DesktopActionCallResponse | null> {
+  const action = request.action;
+  const permissionMode = readRequestPermissionMode(request, args);
+  if (permissionMode === "full_access") {
+    return null;
+  }
+  const snapshot = options.getCurrentPageSnapshot();
+  if (permissionMode === "page_control" && await isLowRiskPageControlAction(action, args, snapshot)) {
+    const scope = await resolvePageControlGrantScope(snapshot, request);
+    if (scope && pageControlGrantStore.has(scope)) {
+      return null;
+    }
+    if (scope) {
+      const decision = await confirmPageControlAction(scope, args, options.getMainWindow());
+      if (decision === "grant") {
+        pageControlGrantStore.grant(scope);
+        return null;
+      }
+      if (decision === "once") {
+        return null;
+      }
+      return {
+        ok: false,
+        action,
+        requiresConfirmation: true,
+        error: actionError("user_cancelled", "用户取消了页面操作授权。")
+      };
+    }
+  }
+  const confirmed = await confirmMutatingAction(action, args, options.getMainWindow());
+  if (confirmed) {
+    return null;
+  }
+  return {
+    ok: false,
+    action,
+    requiresConfirmation: true,
+    error: actionError("user_cancelled", "用户取消了 Desktop 动作。")
+  };
 }
 
 async function callRendererPageAction(
@@ -585,18 +848,9 @@ async function handleActionCall(
     }
   }
   if (isDesktopActionMutating(action)) {
-    const skipConfirmation = request.permissionMode === "full_access" ||
-      readString(args, "permissionMode") === "full_access";
-    if (!skipConfirmation) {
-      const confirmed = await confirmMutatingAction(action, args, options.getMainWindow());
-      if (!confirmed) {
-        return {
-          ok: false,
-          action,
-          requiresConfirmation: true,
-          error: actionError("user_cancelled", "用户取消了 Desktop 动作。")
-        };
-      }
+    const confirmationResponse = await confirmDesktopActionIfNeeded(options, normalizedRequest, args);
+    if (confirmationResponse) {
+      return confirmationResponse;
     }
   }
   try {

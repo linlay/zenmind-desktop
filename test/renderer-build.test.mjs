@@ -279,7 +279,7 @@ test("settings route keeps the global sidebar and renders page-internal split se
   assert.match(settingsSections, /id:\s*"appearance"[\s\S]*?label:\s*"外观"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"导航栏"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"quickAssistant"[\s\S]*?label:\s*"快捷助手"[\s\S]*?layout:\s*"measure"/);
-  assert.match(settingsSections, /id:\s*"sideAssistant"[\s\S]*?label:\s*"侧边助手"[\s\S]*?layout:\s*"measure"/);
+  assert.doesNotMatch(settingsSections, /id:\s*"sideAssistant"/);
   assert.match(settingsSections, /id:\s*"desktopPet"[\s\S]*?label:\s*"宠物助手"/);
   assert.match(settingsSections, /id:\s*"embeddedWebsites"[\s\S]*?label:\s*"内嵌网站"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"数据目录"/);
@@ -329,6 +329,7 @@ test("settings page configures desktop helper default agent separately from desk
     path.join(projectRoot, "src", "main", "assistant", "settings-store.ts"),
     "utf8"
   );
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
 
   assert.match(sharedSettings, /DEFAULT_DESKTOP_HELPER_AGENT_KEY\s*=\s*"desktopAssistant"/);
   assert.match(sharedSettings, /DEFAULT_QUICK_ASSISTANT_ENABLED\s*=\s*true/);
@@ -340,12 +341,21 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsStore, /quickAssistantEnabled:\s*settings\.quickAssistantEnabled/);
   assert.match(settingsStore, /quickAssistantAgentKey:\s*settings\.quickAssistantAgentKey/);
   assert.match(settingsStore, /desktopCopilotPages:\s*settings\.desktopCopilotPages/);
-  assert.match(settingsPage, /NAVIGATION/);
+  assert.doesNotMatch(settingsPage, /<p className="eyebrow">NAVIGATION<\/p>/);
   assert.match(settingsPage, /导航栏/);
   assert.doesNotMatch(settingsPage, /半透明度/);
   assert.doesNotMatch(settingsPage, /导航栏半透明效果/);
   assert.doesNotMatch(settingsPage, /type="range"/);
   assert.match(settingsPage, /导航页签排序/);
+  assert.match(settingsPage, /带侧边助手/);
+  assert.match(settingsPage, /不带侧边助手/);
+  assert.match(settingsPage, /getCopilotPageKeyForSidebarNavOrderItem/);
+  assert.match(settingsPage, /handleSelectNavigationCopilotAgent/);
+  assert.match(settingsPage, /navigationOrderListRef/);
+  assert.match(settingsPage, /handleSidebarNavPointerDown/);
+  assert.match(settingsPage, /data-sidebar-nav-order-key/);
+  assert.match(settingsPage, /document\.addEventListener\("pointermove"/);
+  assert.match(settingsPage, /navigation-order-drag-handle/);
   assert.match(settingsPage, /内嵌网站/);
   assert.match(settingsPage, /智能体增强/);
   assert.match(settingsPage, /handleUpdateCustomSidebarAgent/);
@@ -356,8 +366,9 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /自定义入口/);
   assert.match(settingsPage, /DESKTOP ASSISTANT/);
   assert.match(settingsPage, /快捷助手/);
-  assert.match(settingsPage, /SIDE ASSISTANT/);
-  assert.match(settingsPage, /侧边助手/);
+  assert.doesNotMatch(settingsPage, /case "sideAssistant"/);
+  assert.doesNotMatch(settingsPage, /SIDE ASSISTANT/);
+  assert.match(settingsPage, /侧边助手默认智能体/);
   assert.match(settingsPage, /宠物助手/);
   assert.match(settingsPage, /quickAssistantEnabled/);
   assert.match(settingsPage, /quickAssistantAgentKey/);
@@ -367,15 +378,17 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /页面 Copilot/);
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
-  assert.match(settingsPage, /DESKTOP_COPILOT_PAGE_KEYS\.map/);
-  assert.match(settingsPage, /handleToggleCopilotPage/);
-  assert.match(settingsPage, /handleSelectCopilotAgent/);
+  assert.match(settingsPage, /handleSelectNavigationCopilotAgent\("controlCenter"/);
+  assert.match(settingsPage, /navigation-order-fixed-label/);
+  assert.match(settingsPage, /\{sidebarNavOrder\.map[\s\S]*?<span className="navigation-order-title">控制中心<\/span>/);
   assert.match(settingsPage, /handleSelectDesktopHelperAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*desktopHelperAgentKey: normalizedAgentKey\s*\}\)/);
   assert.match(settingsPage, /desktopCopilotPages: nextPages/);
-  assert.match(settingsPage, /这个设置不影响宠物助手绑定/);
+  assert.match(settingsPage, /下方每个导航页签可单独选择是否显示侧边助手/);
   assert.match(settingsPage, /aria-label="快捷助手配置"/);
-  assert.match(settingsPage, /aria-label="侧边助手配置"/);
+  assert.match(settingsPage, /aria-label="侧边助手默认智能体"/);
+  assert.match(globalStyles, /grid-template-columns:\s*minmax\(140px,\s*1fr\)\s*minmax\(220px,\s*300px\)\s*124px/);
+  assert.match(globalStyles, /\.navigation-order-actions \.text-button\s*\{[\s\S]*?white-space:\s*nowrap/);
 });
 
 test("sidebar translucency is fixed and not user configurable", () => {
@@ -558,6 +571,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
 
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_HOST\s*=\s*"127\.0\.0\.1"/);
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_PORT\s*=\s*11788/);
+  assert.match(actionCatalog, /page_control/);
   assert.match(actionCatalog, /desktop\.controlCenter\.listServices/);
   assert.match(actionCatalog, /desktop\.settings\.applyPatch/);
   assert.doesNotMatch(actionCatalog, /desktop\.page\./);
@@ -572,6 +586,8 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /Content-Type must be application\/json/);
   assert.match(bridge, /isLocalhostRequest/);
   assert.match(bridge, /confirmMutatingAction/);
+  assert.match(bridge, /PageControlGrantStore/);
+  assert.match(bridge, /允许本次页面操作/);
   assert.match(mainProcess, /startDesktopActionBridge\(\{/);
   assert.match(mainProcess, /desktopActions\.respond/);
   assert.match(mainProcess, /desktopActions\.call/);

@@ -507,7 +507,7 @@ export type WebviewOpenTabListener = (request: WebviewOpenTabRequest) => void;
 export type AssistantMessageRole = "user" | "assistant";
 
 export type AssistantRunAction = "chat" | "summarize_page" | "explain_selection" | "extract_todos";
-export type AssistantPermissionMode = "default" | "full_access";
+export type AssistantPermissionMode = "default" | "page_control" | "full_access";
 export type AssistantRunSource = "sidebar" | "quick-assistant";
 
 export interface AssistantPageContext {
@@ -546,6 +546,7 @@ export interface DesktopPageContextSnapshot {
   route: string;
   pageKey: string;
   pageKind: DesktopPageKind;
+  permissionMode?: AssistantPermissionMode;
   surfaceId?: string;
   surfaceLabel?: string;
   webContentsId?: number;

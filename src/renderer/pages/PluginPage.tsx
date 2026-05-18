@@ -7,7 +7,7 @@ import {
   getPluginAuthBridgeProtocol,
 } from "../../shared/auth-bridge";
 import { getServiceDisplayName } from "../service-display";
-import type { AssistantPageContext } from "../../shared/contracts";
+import type { AssistantPageContext, DesktopPageContextSnapshot } from "../../shared/contracts";
 import {
   EXTRACT_STRUCTURED_SCRIPT,
   READ_PAGE_DATA_SCRIPT,
@@ -105,6 +105,16 @@ function filterStructuredResult(result: unknown, targets: EmbeddedWebStructuredT
     }
   }
   return filtered;
+}
+
+function buildAgentWebclientDesktopContext(snapshot: DesktopPageContextSnapshot | null) {
+  if (!snapshot) {
+    return null;
+  }
+  return {
+    ...snapshot,
+    ...(snapshot.pageKind === "webview" ? { permissionMode: "page_control" as const } : {})
+  };
 }
 
 function readFormFields(args: Record<string, unknown>) {
@@ -631,7 +641,7 @@ export function PluginPage({
       iframeRef.current?.contentWindow?.postMessage(
         {
           type: DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
-          desktop: getCurrentPageContextSnapshot()
+          desktop: buildAgentWebclientDesktopContext(getCurrentPageContextSnapshot())
         },
         targetOrigin
       );

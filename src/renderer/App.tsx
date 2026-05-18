@@ -1159,20 +1159,29 @@ function StartupLoadingScreen({
   const activeAction = startupRestoreState.services.find((service) =>
     service.phase === "installing" || service.phase === "initializing" || service.phase === "starting"
   );
+  const activeService = activeAction
+    ? startupServices[startupRestoreState.serviceOrder.indexOf(activeAction.serviceId)] ?? null
+    : null;
+  const activeServiceName = activeAction
+    ? activeService
+      ? getServiceDisplayName(activeService.id, activeService.name)
+      : getStartupServiceFallbackName(activeAction.serviceId)
+    : "";
+  const title = hasFailure ? "服务未就绪" : timedOut ? "启动较慢" : "正在启动";
+  const statusText = hasFailure
+    ? "有核心服务需要处理"
+    : timedOut
+      ? "核心服务仍在响应中"
+      : activeAction
+        ? `${activeServiceName} ${activeAction.message || "启动中..."}`
+        : "正在准备核心服务";
 
   return (
     <div className="startup-loading-screen">
       <div className="startup-loading-card">
         <div className="startup-loading-mark" aria-hidden="true">Z</div>
-        <p className="eyebrow">STARTING UP</p>
-        <h1>{hasFailure ? "部分核心服务未就绪" : timedOut ? "准备较慢" : "正在准备 ZenMind"}</h1>
-        <p className="page-copy">
-          {hasFailure
-            ? "后台准备没有全部完成。你可以继续查看系统，或前往控制中心修复失败的服务。"
-            : timedOut
-              ? "后台准备时间比预期更长。你可以继续等待，或进入控制中心排查。"
-              : activeAction?.message || "正在后台准备核心服务，完成后将自动进入助理。"}
-        </p>
+        <h1>{title}</h1>
+        <p className="startup-loading-status">{statusText}</p>
 
         <div className="startup-loading-progress" aria-hidden="true">
           <span
@@ -1183,7 +1192,7 @@ function StartupLoadingScreen({
 
         <div className="startup-loading-summary">
           <strong>{readyCount}/{totalCount}</strong>
-          <span>核心服务已就绪</span>
+          <span>已就绪</span>
         </div>
 
         <div className="startup-loading-list">

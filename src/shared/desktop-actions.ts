@@ -103,7 +103,7 @@ export interface DesktopActionCallRequest {
   action: string;
   args?: Record<string, unknown>;
   source?: DesktopActionSource;
-  permissionMode?: "default" | "full_access";
+  permissionMode?: "default" | "page_control" | "full_access";
   expectedPageKey?: string;
   expectedSnapshotVersion?: number;
 }

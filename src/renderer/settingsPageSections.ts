@@ -2,7 +2,6 @@ export type SettingsSectionId =
   | "appearance"
   | "navigation"
   | "quickAssistant"
-  | "sideAssistant"
   | "desktopPet"
   | "embeddedWebsites"
   | "dataRoot"
@@ -36,7 +35,7 @@ export function createSettingsSectionDefinitions({
     {
       id: "navigation",
       label: "导航栏",
-      description: "管理左侧主导航页签的显示顺序。",
+      description: "管理左侧主导航页签的显示顺序和侧边助手显示规则。",
       layout: "wide",
       visible: true
     },
@@ -44,13 +43,6 @@ export function createSettingsSectionDefinitions({
       id: "quickAssistant",
       label: "快捷助手",
       description: "配置 Option+Space 唤起的快捷助手默认行为。",
-      layout: "measure",
-      visible: true
-    },
-    {
-      id: "sideAssistant",
-      label: "侧边助手",
-      description: "配置各一级页面是否显示侧边助手以及默认智能体。",
       layout: "measure",
       visible: true
     },

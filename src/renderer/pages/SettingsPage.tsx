@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useLocation } from "react-router-dom";
 import { CustomSidebarIcon } from "../components/BrandMark";
 import "./SplitWorkspaceLayout.css";
@@ -60,6 +61,14 @@ type WindowsDataRootCardProps = {
   onError: (message: string) => void;
 };
 
+type SidebarNavPointerDragState = {
+  key: SidebarNavOrderItemKey;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  dragging: boolean;
+};
+
 const SETTINGS_ACTION_PATCH_FIELDS = [
   "desktopHelperAgentKey",
   "quickAssistantEnabled",
@@ -114,6 +123,36 @@ function buildSettingsActionPatch(
   return patch;
 }
 
+function getCopilotPageKeyForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey): DesktopCopilotPageKey | null {
+  switch (itemKey) {
+    case "agents":
+      return "agents";
+    case "schedules":
+      return "schedules";
+    case "memory":
+      return "memory";
+    case "market":
+      return "market";
+    case "help":
+      return "help";
+    default:
+      return null;
+  }
+}
+
+function getFixedAssistantLabelForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey): string | null {
+  if (itemKey.startsWith("custom:")) {
+    return "内嵌网站中配置";
+  }
+  if (itemKey.startsWith("service:")) {
+    return "服务页默认显示";
+  }
+  if (itemKey.startsWith("experimental:")) {
+    return "外部页默认显示";
+  }
+  return null;
+}
+
 function formatMemoryTime(value: string | null | undefined) {
   if (!value) {
     return "暂无";
@@ -156,6 +195,32 @@ function formatMemoryAuditSummary(summary: AssistantMemorySummary["recentAudit"]
     return "暂无操作";
   }
   return [summary.operation, summary.status, summary.reason].filter(Boolean).join(" / ");
+}
+
+function moveSidebarNavOrderItemToIndex(
+  order: SidebarNavOrderItemKey[],
+  movedKey: SidebarNavOrderItemKey,
+  targetIndex: number
+) {
+  const movedIndex = order.indexOf(movedKey);
+  if (movedIndex === -1) {
+    return order;
+  }
+
+  const boundedTargetIndex = Math.max(0, Math.min(targetIndex, order.length));
+  const insertionIndex = movedIndex < boundedTargetIndex ? boundedTargetIndex - 1 : boundedTargetIndex;
+  if (insertionIndex === movedIndex) {
+    return order;
+  }
+
+  const nextOrder = [...order];
+  const [movedItem] = nextOrder.splice(movedIndex, 1);
+  if (!movedItem) {
+    return order;
+  }
+
+  nextOrder.splice(insertionIndex, 0, movedItem);
+  return nextOrder;
 }
 
 function WindowsDataRootCard({ onError }: WindowsDataRootCardProps) {
@@ -249,8 +314,14 @@ export function SettingsPage({
   const [desktopPetBoundAgentKey, setDesktopPetBoundAgentKey] = useState(DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY);
   const [desktopPetBoundAgentPending, setDesktopPetBoundAgentPending] = useState(false);
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
+  const [draggingSidebarNavKey, setDraggingSidebarNavKey] = useState<SidebarNavOrderItemKey | null>(null);
+  const [sidebarNavDragOffsetY, setSidebarNavDragOffsetY] = useState(0);
   const desktopPetSupported = isMac || isWindows;
   const contentRef = useRef<HTMLDivElement>(null);
+  const navigationOrderListRef = useRef<HTMLDivElement>(null);
+  const sidebarNavOrderRef = useRef(sidebarNavOrder);
+  const sidebarNavPointerDragRef = useRef<SidebarNavPointerDragState | null>(null);
+  const sidebarNavPointerCleanupRef = useRef<(() => void) | null>(null);
   const sectionDefinitions = useMemo(
     () =>
       createSettingsSectionDefinitions({
@@ -271,6 +342,10 @@ export function SettingsPage({
       })
     )
   );
+
+  useEffect(() => {
+    sidebarNavOrderRef.current = sidebarNavOrder;
+  }, [sidebarNavOrder]);
 
   useEffect(() => {
     const fallbackSectionId = getDefaultSettingsSectionId(sectionDefinitions);
@@ -485,23 +560,15 @@ export function SettingsPage({
     }
   }
 
-  async function handleToggleCopilotPage(pageKey: DesktopCopilotPageKey) {
+  async function handleSelectNavigationCopilotAgent(pageKey: DesktopCopilotPageKey, nextAgentKey: string) {
+    const normalizedAgentKey = nextAgentKey.trim();
+    const currentPreference = desktopCopilotPages[pageKey] ?? createDefaultDesktopCopilotPagePreferences()[pageKey];
     await saveDesktopCopilotPages({
       ...desktopCopilotPages,
       [pageKey]: {
-        ...desktopCopilotPages[pageKey],
-        enabled: !desktopCopilotPages[pageKey].enabled
-      }
-    }, pageKey).catch(() => undefined);
-  }
-
-  async function handleSelectCopilotAgent(pageKey: DesktopCopilotPageKey, nextAgentKey: string) {
-    const normalizedAgentKey = nextAgentKey.trim() || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
-    await saveDesktopCopilotPages({
-      ...desktopCopilotPages,
-      [pageKey]: {
-        ...desktopCopilotPages[pageKey],
-        agentKey: normalizedAgentKey
+        ...currentPreference,
+        enabled: Boolean(normalizedAgentKey),
+        agentKey: normalizedAgentKey || currentPreference.agentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY
       }
     }, pageKey).catch(() => undefined);
   }
@@ -1202,6 +1269,128 @@ export function SettingsPage({
     }
   }
 
+  function clearSidebarNavPointerListeners() {
+    sidebarNavPointerCleanupRef.current?.();
+    sidebarNavPointerCleanupRef.current = null;
+  }
+
+  function finishSidebarNavPointerDrag() {
+    const pointerDragState = sidebarNavPointerDragRef.current;
+    if (pointerDragState?.dragging) {
+      setFeedback("导航页签排序已更新。");
+    }
+    clearSidebarNavPointerListeners();
+    sidebarNavPointerDragRef.current = null;
+    setDraggingSidebarNavKey(null);
+    setSidebarNavDragOffsetY(0);
+  }
+
+  function updateSidebarNavPointerDrag(clientX: number, clientY: number) {
+    const pointerDragState = sidebarNavPointerDragRef.current;
+    const navigationOrderList = navigationOrderListRef.current;
+    if (!pointerDragState || !navigationOrderList) {
+      return false;
+    }
+
+    const movedDistance = Math.abs(clientX - pointerDragState.startX) +
+      Math.abs(clientY - pointerDragState.startY);
+    if (!pointerDragState.dragging && movedDistance < 6) {
+      return false;
+    }
+
+    pointerDragState.dragging = true;
+    setDraggingSidebarNavKey(pointerDragState.key);
+
+    const rowElements = Array.from(
+      navigationOrderList.querySelectorAll<HTMLElement>("[data-sidebar-nav-order-key]")
+    ).filter((rowElement) => rowElement.dataset.sidebarNavOrderKey !== pointerDragState.key);
+    const currentOrder = sidebarNavOrderRef.current;
+    let insertionIndex = currentOrder.length;
+    for (const rowElement of rowElements) {
+      const rowRect = rowElement.getBoundingClientRect();
+      const targetKey = rowElement.dataset.sidebarNavOrderKey as SidebarNavOrderItemKey | undefined;
+      if (clientY < rowRect.top + rowRect.height / 2) {
+        const targetIndex = targetKey ? currentOrder.indexOf(targetKey) : -1;
+        insertionIndex = targetIndex === -1 ? insertionIndex : targetIndex;
+        break;
+      }
+    }
+
+    const nextOrder = moveSidebarNavOrderItemToIndex(
+      currentOrder,
+      pointerDragState.key,
+      insertionIndex
+    );
+    if (nextOrder !== currentOrder) {
+      sidebarNavOrderRef.current = nextOrder;
+      onSidebarNavOrderChange(nextOrder);
+      pointerDragState.startX = clientX;
+      pointerDragState.startY = clientY;
+      setSidebarNavDragOffsetY(0);
+    } else {
+      setSidebarNavDragOffsetY(clientY - pointerDragState.startY);
+    }
+
+    return true;
+  }
+
+  function handleSidebarNavPointerDown(
+    event: ReactPointerEvent<HTMLDivElement>,
+    itemKey: SidebarNavOrderItemKey
+  ) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const target = event.target;
+    if (target instanceof HTMLElement && target.closest("button, select, input, textarea, a")) {
+      return;
+    }
+
+    event.preventDefault();
+    clearSidebarNavPointerListeners();
+    sidebarNavPointerDragRef.current = {
+      key: itemKey,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragging: false
+    };
+
+    const document = event.currentTarget.ownerDocument;
+    const handleDocumentPointerMove = (pointerEvent: PointerEvent) => {
+      const pointerDragState = sidebarNavPointerDragRef.current;
+      if (!pointerDragState || pointerEvent.pointerId !== pointerDragState.pointerId) {
+        return;
+      }
+
+      if (updateSidebarNavPointerDrag(pointerEvent.clientX, pointerEvent.clientY)) {
+        pointerEvent.preventDefault();
+      }
+    };
+    const handleDocumentPointerEnd = (pointerEvent: PointerEvent) => {
+      const pointerDragState = sidebarNavPointerDragRef.current;
+      if (!pointerDragState || pointerEvent.pointerId !== pointerDragState.pointerId) {
+        return;
+      }
+
+      finishSidebarNavPointerDrag();
+    };
+
+    document.addEventListener("pointermove", handleDocumentPointerMove, { passive: false });
+    document.addEventListener("pointerup", handleDocumentPointerEnd);
+    document.addEventListener("pointercancel", handleDocumentPointerEnd);
+    sidebarNavPointerCleanupRef.current = () => {
+      document.removeEventListener("pointermove", handleDocumentPointerMove);
+      document.removeEventListener("pointerup", handleDocumentPointerEnd);
+      document.removeEventListener("pointercancel", handleDocumentPointerEnd);
+    };
+  }
+
+  useEffect(() => () => {
+    clearSidebarNavPointerListeners();
+  }, []);
+
   function moveSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey, direction: -1 | 1) {
     const currentIndex = sidebarNavOrder.indexOf(itemKey);
     const nextIndex = currentIndex + direction;
@@ -1211,12 +1400,14 @@ export function SettingsPage({
     const nextOrder = [...sidebarNavOrder];
     const [movedItem] = nextOrder.splice(currentIndex, 1);
     nextOrder.splice(nextIndex, 0, movedItem);
+    sidebarNavOrderRef.current = nextOrder;
     onSidebarNavOrderChange(nextOrder);
     setFeedback("导航页签排序已更新。");
   }
 
   function resetSidebarNavOrder() {
     const nextOrder = availableSidebarNavOrderItems.map((item) => item.key);
+    sidebarNavOrderRef.current = nextOrder;
     onSidebarNavOrderChange(nextOrder);
     setFeedback("导航页签排序已恢复默认。");
   }
@@ -1281,18 +1472,52 @@ export function SettingsPage({
             </div>
           </div>
         );
-      case "navigation":
+      case "navigation": {
+        const defaultCopilotPages = createDefaultDesktopCopilotPagePreferences();
+        const controlCenterPreference = desktopCopilotPages.controlCenter ?? defaultCopilotPages.controlCenter;
+        const controlCenterPending = desktopCopilotPagePending === "controlCenter" || desktopCopilotPagePending === "all";
+        const controlCenterAgentKey = controlCenterPreference.enabled ? controlCenterPreference.agentKey : "";
+        const controlCenterAgentAvailable = Boolean(
+          controlCenterAgentKey && assistantAgentOptions.some((agent) => agent.agentKey === controlCenterAgentKey)
+        );
+        const showUnavailableControlCenterAgent = Boolean(controlCenterAgentKey && !controlCenterAgentAvailable);
         return (
-          <div className="data-root-card navigation-settings-card">
-            <div className="navigation-settings-copy">
-              <p className="eyebrow">NAVIGATION</p>
-              <h2>导航栏</h2>
-              <p className="page-copy">
-                设置主导航页签 item 的显示顺序。
-                {isMac ? " macOS 会自动使用原生半透明窗口效果。" : " 当前平台会自动应用 CSS 半透明效果。"}
-              </p>
-            </div>
+          <div className="data-root-card navigation-settings-card" aria-label="导航栏配置">
             <div className="navigation-settings-panel">
+              <div className="navigation-assistant-default" aria-label="侧边助手默认智能体">
+                <div className="page-copilot-row-main">
+                  <strong>侧边助手默认智能体</strong>
+                  <span>保留旧配置兼容；下方每个导航页签可单独选择是否显示侧边助手。</span>
+                </div>
+                <label className="desktop-pet-agent-field navigation-assistant-default-field">
+                  <span className="desktop-pet-agent-select-wrap">
+                    <select
+                      value={assistantAgentOptions.some((agent) => agent.agentKey === desktopHelperAgentKey) ? desktopHelperAgentKey : ""}
+                      onChange={(event) => void handleSelectDesktopHelperAgentKey(event.target.value)}
+                      disabled={assistantAgentOptions.length === 0 || desktopHelperAgentPending}
+                      aria-label="侧边助手默认智能体"
+                    >
+                      <option value="">
+                        {assistantAgentOptions.length === 0 ? "正在读取智能体列表..." : "请选择智能体"}
+                      </option>
+                      {assistantAgentOptions.map((agent) => (
+                        <option value={agent.agentKey} key={agent.agentKey}>
+                          {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                  <span className="desktop-pet-agent-note">
+                    {desktopHelperAgentPending
+                      ? "保存中..."
+                      : `当前默认：${
+                          assistantAgentOptions.find((agent) => agent.agentKey === (assistantSettings?.desktopHelperAgentKey || desktopHelperAgentKey))?.displayName ||
+                          assistantSettings?.desktopHelperAgentKey ||
+                          desktopHelperAgentKey
+                        }`}
+                  </span>
+                </label>
+              </div>
               <div className="navigation-order-section">
                 <div className="custom-sidebar-list-head">
                   <strong>导航页签排序</strong>
@@ -1300,35 +1525,136 @@ export function SettingsPage({
                     恢复默认
                   </button>
                 </div>
-                <div className="navigation-order-list">
-                  {sidebarNavOrder.map((itemKey, index) => (
-                    <div className="navigation-order-row" key={itemKey}>
-                      <span>{sidebarNavOrderLabels.get(itemKey) ?? itemKey}</span>
-                      <div className="navigation-order-actions">
-                        <button
-                          type="button"
-                          className="text-button"
-                          disabled={index === 0}
-                          onClick={() => moveSidebarNavOrderItem(itemKey, -1)}
+                <div className="navigation-order-grid-head" aria-hidden="true">
+                  <span>页面</span>
+                  <span>带侧边助手</span>
+                  <span>排序</span>
+                </div>
+                <div className="navigation-order-list" ref={navigationOrderListRef} role="list" aria-label="导航页签排序">
+                  {sidebarNavOrder.map((itemKey, index) => {
+                    const itemLabel = sidebarNavOrderLabels.get(itemKey) ?? itemKey;
+                    const copilotPageKey = getCopilotPageKeyForSidebarNavOrderItem(itemKey);
+                    const copilotPreference = copilotPageKey
+                      ? desktopCopilotPages[copilotPageKey] ?? createDefaultDesktopCopilotPagePreferences()[copilotPageKey]
+                      : null;
+                    const copilotPending = Boolean(
+                      copilotPageKey &&
+                      (desktopCopilotPagePending === copilotPageKey || desktopCopilotPagePending === "all")
+                    );
+                    const selectedCopilotAgentKey = copilotPreference?.enabled ? copilotPreference.agentKey : "";
+                    const fixedAssistantLabel = copilotPageKey
+                      ? null
+                      : getFixedAssistantLabelForSidebarNavOrderItem(itemKey);
+                    const assistantSelectValue = fixedAssistantLabel ? "__fixed__" : selectedCopilotAgentKey;
+                    const selectedAgentAvailable = Boolean(
+                      selectedCopilotAgentKey && assistantAgentOptions.some((agent) => agent.agentKey === selectedCopilotAgentKey)
+                    );
+                    const showUnavailableAgentOption = Boolean(
+                      selectedCopilotAgentKey && !selectedAgentAvailable
+                    );
+                    const isDragging = draggingSidebarNavKey === itemKey;
+                    return (
+                      <div
+                        className={isDragging ? "navigation-order-row is-dragging" : "navigation-order-row"}
+                        data-sidebar-nav-order-key={itemKey}
+                        key={itemKey}
+                        role="listitem"
+                        aria-grabbed={isDragging}
+                        style={isDragging ? { transform: `translateY(${sidebarNavDragOffsetY}px)` } : undefined}
+                      >
+                        <div
+                          className="navigation-order-title-cell"
+                          title="拖动排序"
+                          onPointerDown={(event) => handleSidebarNavPointerDown(event, itemKey)}
                         >
-                          上移
-                        </button>
-                        <button
-                          type="button"
-                          className="text-button"
-                          disabled={index === sidebarNavOrder.length - 1}
-                          onClick={() => moveSidebarNavOrderItem(itemKey, 1)}
-                        >
-                          下移
-                        </button>
+                          <span className="navigation-order-drag-handle" aria-hidden="true" />
+                          <span className="navigation-order-title">{itemLabel}</span>
+                        </div>
+                        <label className="navigation-order-assistant-field">
+                          <span className="desktop-pet-agent-select-wrap">
+                            <select
+                              value={assistantSelectValue}
+                              onChange={(event) => {
+                                if (copilotPageKey) {
+                                  void handleSelectNavigationCopilotAgent(copilotPageKey, event.target.value);
+                                }
+                              }}
+                              disabled={!copilotPageKey || assistantAgentOptions.length === 0 || copilotPending}
+                              aria-label={`${itemLabel} 侧边助手`}
+                            >
+                              <option value="">不带侧边助手</option>
+                              {fixedAssistantLabel ? (
+                                <option value="__fixed__">{fixedAssistantLabel}</option>
+                              ) : null}
+                              {showUnavailableAgentOption ? (
+                                <option value={selectedCopilotAgentKey}>
+                                  {assistantAgentOptions.length === 0 ? "正在读取智能体列表..." : `不可用：${selectedCopilotAgentKey}`}
+                                </option>
+                              ) : null}
+                              {assistantAgentOptions.map((agent) => (
+                                <option value={agent.agentKey} key={agent.agentKey}>
+                                  {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          </span>
+                        </label>
+                        <div className="navigation-order-actions">
+                          <button
+                            type="button"
+                            className="text-button"
+                            disabled={index === 0}
+                            onClick={() => moveSidebarNavOrderItem(itemKey, -1)}
+                          >
+                            上移
+                          </button>
+                          <button
+                            type="button"
+                            className="text-button"
+                            disabled={index === sidebarNavOrder.length - 1}
+                            onClick={() => moveSidebarNavOrderItem(itemKey, 1)}
+                          >
+                            下移
+                          </button>
+                        </div>
                       </div>
+                    );
+                  })}
+                  <div className="navigation-order-row navigation-order-row-fixed" role="listitem">
+                    <div className="navigation-order-title-cell navigation-order-title-cell-fixed" title="固定入口">
+                      <span className="navigation-order-fixed-dot" aria-hidden="true" />
+                      <span className="navigation-order-title">控制中心</span>
                     </div>
-                  ))}
+                    <label className="navigation-order-assistant-field">
+                      <span className="desktop-pet-agent-select-wrap">
+                        <select
+                          value={controlCenterAgentKey}
+                          onChange={(event) => void handleSelectNavigationCopilotAgent("controlCenter", event.target.value)}
+                          disabled={assistantAgentOptions.length === 0 || controlCenterPending}
+                          aria-label="控制中心 侧边助手"
+                        >
+                          <option value="">不带侧边助手</option>
+                          {showUnavailableControlCenterAgent ? (
+                            <option value={controlCenterAgentKey}>
+                              {assistantAgentOptions.length === 0 ? "正在读取智能体列表..." : `不可用：${controlCenterAgentKey}`}
+                            </option>
+                          ) : null}
+                          {assistantAgentOptions.map((agent) => (
+                            <option value={agent.agentKey} key={agent.agentKey}>
+                              {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </span>
+                    </label>
+                    <div className="navigation-order-fixed-label">固定</div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         );
+      }
       case "quickAssistant":
         return (
           <div className="data-root-card settings-switch-card desktop-helper-settings-card">
@@ -1383,102 +1709,6 @@ export function SettingsPage({
                     </select>
                   </span>
                 </label>
-              </div>
-            </div>
-          </div>
-        );
-      case "sideAssistant":
-        return (
-          <div className="data-root-card settings-switch-card desktop-helper-settings-card">
-            <div>
-              <p className="eyebrow">SIDE ASSISTANT</p>
-              <h2>侧边助手</h2>
-              <p className="page-copy">
-                为每个一级页签配置是否显示侧边助手，以及默认使用哪个智能体。这个设置不影响宠物助手绑定。
-                全局默认只作为旧配置兼容保留。
-              </p>
-              <div className="desktop-pet-agent-form">
-                <label className="desktop-pet-agent-field">
-                  <span>兼容默认智能体</span>
-                  <span className="desktop-pet-agent-select-wrap">
-                    <select
-                      value={assistantAgentOptions.some((agent) => agent.agentKey === desktopHelperAgentKey) ? desktopHelperAgentKey : ""}
-                      onChange={(event) => void handleSelectDesktopHelperAgentKey(event.target.value)}
-                      disabled={assistantAgentOptions.length === 0 || desktopHelperAgentPending}
-                    >
-                      <option value="">
-                        {assistantAgentOptions.length === 0 ? "正在读取智能体列表..." : "请选择智能体"}
-                      </option>
-                      {assistantAgentOptions.map((agent) => (
-                        <option value={agent.agentKey} key={agent.agentKey}>
-                          {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
-                  <span className="desktop-pet-agent-note">
-                    {desktopHelperAgentPending
-                      ? "保存中..."
-                      : `当前默认：${
-                          assistantAgentOptions.find((agent) => agent.agentKey === (assistantSettings?.desktopHelperAgentKey || desktopHelperAgentKey))?.displayName ||
-                          assistantSettings?.desktopHelperAgentKey ||
-                          desktopHelperAgentKey
-                        }`}
-                  </span>
-                </label>
-              </div>
-              <div className="desktop-copilot-page-list page-copilot-matrix" aria-label="侧边助手配置">
-                {DESKTOP_COPILOT_PAGE_KEYS.map((pageKey) => {
-                  const preference = desktopCopilotPages[pageKey] ?? {
-                    enabled: true,
-                    agentKey: DEFAULT_DESKTOP_HELPER_AGENT_KEY
-                  };
-                  const pending = desktopCopilotPagePending === pageKey || desktopCopilotPagePending === "all";
-                  const currentAgentAvailable = isKnownAssistantAgent(preference.agentKey);
-                  return (
-                    <div className="desktop-copilot-page-row page-copilot-row" key={pageKey}>
-                      <div className="page-copilot-row-main">
-                        <strong>{DESKTOP_COPILOT_PAGE_LABELS[pageKey]}</strong>
-                        <span>{preference.enabled ? `使用 ${getAgentLabel(preference.agentKey)}` : "不显示侧边助手"}</span>
-                        {!currentAgentAvailable && preference.enabled ? (
-                          <em>当前智能体不可用，请重新选择。</em>
-                        ) : null}
-                      </div>
-                      <button
-                        type="button"
-                        className={preference.enabled ? "settings-switch is-on" : "settings-switch"}
-                        role="switch"
-                        aria-checked={preference.enabled}
-                        aria-label={`${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 页面助手`}
-                        disabled={pending}
-                        onClick={() => void handleToggleCopilotPage(pageKey)}
-                      >
-                        <span aria-hidden="true" />
-                      </button>
-                      <label className="desktop-pet-agent-field">
-                        <span className="desktop-pet-agent-select-wrap">
-                          <select
-                            value={currentAgentAvailable ? preference.agentKey : ""}
-                            onChange={(event) => void handleSelectCopilotAgent(pageKey, event.target.value)}
-                            disabled={!preference.enabled || assistantAgentOptions.length === 0 || pending}
-                            aria-label={`${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 侧边助手智能体`}
-                          >
-                            <option value="">
-                              {assistantAgentOptions.length === 0
-                                ? "正在读取智能体列表..."
-                                : currentAgentAvailable ? "请选择智能体" : `不可用：${preference.agentKey}`}
-                            </option>
-                            {assistantAgentOptions.map((agent) => (
-                              <option value={agent.agentKey} key={agent.agentKey}>
-                                {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                              </option>
-                            ))}
-                          </select>
-                        </span>
-                      </label>
-                    </div>
-                  );
-                })}
               </div>
             </div>
           </div>

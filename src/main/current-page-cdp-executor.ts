@@ -18,6 +18,21 @@ type CdpTraceEntry = {
   params?: Record<string, unknown>;
 };
 
+export type CurrentPageCdpElementSnapshot = {
+  selector: string;
+  tagName: string;
+  text: string;
+  ariaLabel: string;
+  title: string;
+  value: string;
+  role: string;
+  type: string;
+  name: string;
+  id: string;
+  className: string;
+  href: string;
+};
+
 const CDP_PROTOCOL_VERSION = "1.3";
 const READ_INCLUDES = new Set<EmbeddedWebReadInclude>(["forms", "links", "images"]);
 const STRUCTURED_TARGETS = new Set<EmbeddedWebStructuredTarget>(["tables", "lists", "forms", "links"]);
@@ -167,6 +182,76 @@ function pageContextFromReadData(data: unknown) {
     metaDescription: typeof node.metaDescription === "string" ? node.metaDescription : "",
     headings: Array.isArray(node.headings) ? node.headings.filter((item): item is string => typeof item === "string") : [],
     bodyText: typeof node.bodyText === "string" ? node.bodyText : ""
+  };
+}
+
+function readStringRecordValue(value: unknown, key: string) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "";
+  }
+  const item = (value as Record<string, unknown>)[key];
+  return typeof item === "string" ? item : "";
+}
+
+export async function readCurrentPageCdpLocation(snapshot: DesktopPageContextSnapshot) {
+  const trace: CdpTraceEntry[] = [];
+  const value = await evaluate(snapshot, trace, "window.location.href");
+  return typeof value === "string" ? value : "";
+}
+
+export async function inspectCurrentPageCdpElement(
+  snapshot: DesktopPageContextSnapshot,
+  args: Record<string, unknown>
+): Promise<CurrentPageCdpElementSnapshot | null> {
+  const selector = readActionSelector(args);
+  if (!selector) {
+    return null;
+  }
+  const trace: CdpTraceEntry[] = [];
+  const data = await evaluate(snapshot, trace, `(() => {
+    const selector = ${JSON.stringify(selector)};
+    let element = null;
+    try {
+      element = document.querySelector(selector);
+    } catch {
+      return null;
+    }
+    if (!element) {
+      return null;
+    }
+    const readAttribute = (name) => element.getAttribute(name) || "";
+    const normalize = (value) => String(value || "").replace(/\\s+/gu, " ").trim();
+    return {
+      selector,
+      tagName: normalize(element.tagName).toLowerCase(),
+      text: normalize(element.innerText || element.textContent || ""),
+      ariaLabel: normalize(readAttribute("aria-label")),
+      title: normalize(readAttribute("title")),
+      value: normalize(element.value || readAttribute("value")),
+      role: normalize(readAttribute("role")),
+      type: normalize(readAttribute("type")).toLowerCase(),
+      name: normalize(readAttribute("name")),
+      id: normalize(element.id || readAttribute("id")),
+      className: normalize(typeof element.className === "string" ? element.className : ""),
+      href: normalize(element.href || readAttribute("href"))
+    };
+  })()`);
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return null;
+  }
+  return {
+    selector,
+    tagName: readStringRecordValue(data, "tagName"),
+    text: readStringRecordValue(data, "text"),
+    ariaLabel: readStringRecordValue(data, "ariaLabel"),
+    title: readStringRecordValue(data, "title"),
+    value: readStringRecordValue(data, "value"),
+    role: readStringRecordValue(data, "role"),
+    type: readStringRecordValue(data, "type"),
+    name: readStringRecordValue(data, "name"),
+    id: readStringRecordValue(data, "id"),
+    className: readStringRecordValue(data, "className"),
+    href: readStringRecordValue(data, "href")
   };
 }
 

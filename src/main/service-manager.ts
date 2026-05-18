@@ -572,6 +572,8 @@ function patchShellProgramCommonForLayeredLayout(programDir: string) {
     .replace(/LOG_FILE="\$RUN_DIR\//gu, 'LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
     .replace(/ERROR_LOG_FILE="\$\{ZENMIND_SERVICE_LOG_DIR:-\$RUN_DIR\}\//gu, 'ERROR_LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
     .replace(/ERROR_LOG_FILE="\$RUN_DIR\//gu, 'ERROR_LOG_FILE="${SERVICE_LOG_DIR:-$RUN_DIR}/')
+    .replace(/nohup "\$BACKEND_BIN" >>"\$LOG_FILE" 2>&1 &/gu, 'nohup "$BACKEND_BIN" </dev/null >>"$LOG_FILE" 2>&1 &')
+    .replace(/nohup "\$NODE_CMD" "\$BACKEND_ENTRY" >>"\$LOG_FILE" 2>&1 &/gu, 'nohup "$NODE_CMD" "$BACKEND_ENTRY" </dev/null >>"$LOG_FILE" 2>&1 &')
     .replace(
       /cp -R -n "\$source_env_dir"\/\. "\$CONFIG_ENV_DIR"\/\n/gu,
       [
@@ -2166,6 +2168,9 @@ async function initializeServiceInternal(
     fixShellScriptPermissions(installDir);
     patchProgramCommonForLayeredLayout(layout.programDir);
     prepareServiceExecutionLayout(service, layout);
+    if (service.id === "agent-container-hub") {
+      ensureAgentContainerHubDesktopConfig(layout);
+    }
     if (service.deployCommand) {
       await runExecFile(service.deployCommand[0], service.deployCommand.slice(1), installDir, {
         env: buildServiceLayoutEnv(layout)

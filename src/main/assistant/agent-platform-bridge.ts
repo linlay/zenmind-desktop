@@ -352,6 +352,10 @@ function createUnsupportedVoiceCorrectionResult(rawText: string): AssistantVoice
   };
 }
 
+function normalizeAssistantPermissionMode(value: unknown): AssistantStartRunRequest["permissionMode"] {
+  return value === "full_access" || value === "page_control" ? value : "default";
+}
+
 export class AgentPlatformAssistantBridge {
   private readonly activeRuns = new Map<string, AbortController>();
 
@@ -391,7 +395,7 @@ export class AgentPlatformAssistantBridge {
       runId,
       chatId,
       message: "已交给 agent-platform 处理。",
-      permissionMode: request.permissionMode === "full_access" ? "full_access" : "default",
+      permissionMode: normalizeAssistantPermissionMode(request.permissionMode),
       fullAccessExpiresAt: null,
       fullAccessRemainingMs: 0
     };
@@ -593,7 +597,7 @@ export class AgentPlatformAssistantBridge {
             desktop: {
               source: request.source || "sidebar",
               action: request.action || "chat",
-              permissionMode: request.permissionMode || "default",
+              permissionMode: normalizeAssistantPermissionMode(request.permissionMode),
               historyBeforeMessageId: request.historyBeforeMessageId || "",
               pageContext: request.pageContext ?? null
             }
