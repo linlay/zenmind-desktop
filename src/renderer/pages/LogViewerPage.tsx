@@ -169,6 +169,69 @@ function isWindowsFindShortcut(event: KeyboardEvent) {
 	);
 }
 
+function ArrowUpwardIcon() {
+	return (
+		<svg
+			width="22"
+			height="22"
+			viewBox="0 0 24 24"
+			fill="none"
+			xmlns="http://www.w3.org/2000/svg"
+			aria-hidden="true"
+			focusable="false"
+		>
+			<path
+				d="M12 19V5M5.5 11.5 12 5l6.5 6.5"
+				stroke="currentColor"
+				strokeWidth="2.6"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+		</svg>
+	);
+}
+
+function ArrowDownwardIcon() {
+	return (
+		<svg
+			width="22"
+			height="22"
+			viewBox="0 0 24 24"
+			fill="none"
+			xmlns="http://www.w3.org/2000/svg"
+			aria-hidden="true"
+			focusable="false"
+		>
+			<path
+				d="M12 5v14m6.5-6.5L12 19l-6.5-6.5"
+				stroke="currentColor"
+				strokeWidth="2.6"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+		</svg>
+	);
+}
+
+function RotateAutoIcon() {
+	return (
+		<svg
+			width="20"
+			height="20"
+			viewBox="0 -960 960 960"
+			fill="currentColor"
+			xmlns="http://www.w3.org/2000/svg"
+			aria-hidden="true"
+			focusable="false"
+		>
+			<path
+				transform="translate(57.6 -57.6) scale(0.88)"
+				d="M312-320h64l32-92h146l32 92h62L512-680h-64L312-320Zm114-144 52-150h4l52 150H426Zm54 384q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480h80q0 66 25 124.5t68.5 102q43.5 43.5 102 69T480-159q134 0 227-93t93-227q0-134-93-227t-227-93q-89 0-161.5 43.5T204-640h116v80H80v-240h80v80q55-73 138-116.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"
+			/>
+		</svg>
+	);
+}
+
 export function LogViewerPage() {
 	const [searchParams] = useSearchParams();
 	const { readLog, watchLog } = useServices();
@@ -756,6 +819,7 @@ export function LogViewerPage() {
 
 	return (
 		<main className="log-viewer-page">
+			<div className="log-viewer-window-drag-zone" aria-hidden="true" />
 			<section
 				className="log-viewer-panel"
 				aria-labelledby="log-viewer-title"
@@ -768,7 +832,10 @@ export function LogViewerPage() {
 
 				<div className="log-viewer-tip-row">
 					{state.streaming ? (
-						<div className="log-viewer-tip is-live">实时输出中</div>
+						<div className="log-viewer-tip is-live">
+							<span className="log-viewer-live-dot" aria-hidden="true" />
+							<span>实时输出中</span>
+						</div>
 					) : null}
 
 					<button
@@ -776,8 +843,10 @@ export function LogViewerPage() {
 						className={`log-viewer-follow-toggle${tailFollowEnabled ? " is-active" : ""}`}
 						onClick={toggleTailFollow}
 						disabled={state.loadingInitial}
+						aria-label={tailFollowEnabled ? "取消自动滚动" : "开启自动滚动"}
+						title={tailFollowEnabled ? "取消自动滚动" : "开启自动滚动"}
 					>
-						{tailFollowEnabled ? "取消自动滚动" : "开启自动滚动"}
+						<RotateAutoIcon />
 					</button>
 				</div>
 				{state.notice ? (
@@ -934,8 +1003,10 @@ export function LogViewerPage() {
 						type="button"
 						className="log-viewer-scroll-jump log-viewer-scroll-top"
 						onClick={handleScrollToTop}
+						aria-label="滚动到顶部"
+						title="滚动到顶部"
 					>
-						滚动到顶部
+						<ArrowUpwardIcon />
 					</button>
 				) : null}
 				{scrollJumpTarget === "bottom" ? (
@@ -943,8 +1014,10 @@ export function LogViewerPage() {
 						type="button"
 						className="log-viewer-scroll-jump log-viewer-scroll-bottom"
 						onClick={handleScrollToBottom}
+						aria-label="滚动到底部"
+						title="滚动到底部"
 					>
-						滚动到底部
+						<ArrowDownwardIcon />
 					</button>
 				) : null}
 			</section>

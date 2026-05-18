@@ -120,8 +120,15 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(controlCenter, /\{feedback \|\| error \? \(\s*<PageFeedbackStack/);
   assert.doesNotMatch(controlCenter, /control-center-feedback-anchor/);
   assert.match(globalStyles, /\.control-center-dashboard-metrics\s*\{/);
+  assert.match(globalStyles, /:root\s*\{[\s\S]*?--desktop-ui-bg:\s*#ffffff;[\s\S]*?--desktop-ui-card:\s*#ffffff;[\s\S]*?--desktop-ui-primary:\s*#0052d9;[\s\S]*?--desktop-ui-code-bg:\s*#0d1117;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\]\s*\{[\s\S]*?--desktop-ui-bg:\s*#181818;[\s\S]*?--desktop-ui-card:\s*#181818;[\s\S]*?--desktop-ui-primary:\s*#5790ff;[\s\S]*?--desktop-ui-code-bg:\s*#090c11;/);
   assert.match(globalStyles, /\.control-center-page\s*\{[\s\S]*?position:\s*relative;/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.control-center-page\s*\{[\s\S]*?--control-center-bg:\s*#181818;[\s\S]*?--control-center-card:\s*#181818;[\s\S]*?--control-center-card-soft:\s*#181818;/);
+  assert.match(globalStyles, /\.control-center-page\s*\{[\s\S]*?--control-center-bg:\s*var\(--desktop-ui-bg\);[\s\S]*?--control-center-blue:\s*var\(--desktop-ui-primary\);[\s\S]*?--control-center-code:\s*var\(--desktop-ui-code-bg\);/);
+  assert.match(globalStyles, /\.control-center-page\s*\{[\s\S]*?--control-center-card-radius:\s*8px;[\s\S]*?--control-center-control-radius:\s*6px;/);
+  assert.match(globalStyles, /\.control-center-metric-card\s*\{[\s\S]*?border-radius:\s*var\(--control-center-card-radius\);/);
+  assert.match(globalStyles, /\.service-sider\.service-catalog\s*\{[\s\S]*?border-radius:\s*var\(--control-center-card-radius\);/);
+  assert.match(globalStyles, /\.control-center-service-hero\s*\{[\s\S]*?border-radius:\s*var\(--control-center-card-radius\);/);
+  assert.match(globalStyles, /\.config-panel\s*\{[\s\S]*?border-radius:\s*var\(--control-center-card-radius\);/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.control-center-metric-card\s*\{[\s\S]*?background:\s*var\(--control-center-card\);/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-sider\.service-catalog\s*\{[\s\S]*?background:\s*var\(--control-center-card\);/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.control-center-service-hero\s*\{[\s\S]*?background:\s*var\(--control-center-card\);/);
@@ -200,6 +207,18 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.control-center-page \.config-file-select-panel\s*\{/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.control-center-page \.config-editor\s*\{/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-status-message\.danger\s*\{/);
+});
+
+test("desktop custom theme tokens are shared by control center and log viewer", () => {
+  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+
+  assert.match(globalStyles, /:root\s*\{[\s\S]*?--desktop-ui-bg:\s*#ffffff;[\s\S]*?--desktop-ui-card:\s*#ffffff;[\s\S]*?--desktop-ui-primary:\s*#0052d9;[\s\S]*?--desktop-ui-code-bg:\s*#0d1117;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\]\s*\{[\s\S]*?--desktop-ui-bg:\s*#181818;[\s\S]*?--desktop-ui-card:\s*#181818;[\s\S]*?--desktop-ui-primary:\s*#5790ff;[\s\S]*?--desktop-ui-code-bg:\s*#090c11;/);
+  assert.match(globalStyles, /\.control-center-page\s*\{[\s\S]*?--control-center-bg:\s*var\(--desktop-ui-bg\);[\s\S]*?--control-center-blue:\s*var\(--desktop-ui-primary\);[\s\S]*?--control-center-code:\s*var\(--desktop-ui-code-bg\);/);
+  assert.match(globalStyles, /\.log-viewer-page\s*\{[\s\S]*?background:\s*var\(--desktop-ui-bg\);[\s\S]*?color:\s*var\(--desktop-ui-text\);/);
+  assert.match(globalStyles, /\.log-viewer-body\s*\{[\s\S]*?background:\s*var\(--desktop-ui-code-bg\);/);
+  assert.match(globalStyles, /\.log-viewer-content\s*\{[\s\S]*?color:\s*var\(--desktop-ui-code-text\);/);
+  assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.control-center-page\s*\{[\s\S]*?--control-center-bg:/);
 });
 
 test("assistant launcher sits beside settings in the sidebar footer", () => {
@@ -1032,8 +1051,10 @@ test("service logs open in a separate floating log viewer window", () => {
   assert.match(mainProcess, /function createLogViewerWindow\(\)/);
   assert.match(mainProcess, /services\.openLogViewer/);
   assert.match(mainProcess, /loadRendererRoute\(targetWindow, routePath\)/);
-  assert.match(mainProcess, /process\.platform === "darwin"[\s\S]{0,500}setAlwaysOnTop\(true, "floating"\)/);
-  assert.match(mainProcess, /process\.platform === "win32"[\s\S]{0,500}setAlwaysOnTop\(true, "pop-up-menu"\)/);
+  assert.match(mainProcess, /width:\s*1240,[\s\S]*?height:\s*860,[\s\S]*?minWidth:\s*760,[\s\S]*?minHeight:\s*520,/);
+  assert.match(mainProcess, /ownerWindow \? \{ parent: ownerWindow, modal: false \} : \{\}/);
+  assert.doesNotMatch(mainProcess, /logViewerWindow\.setAlwaysOnTop/);
+  assert.doesNotMatch(mainProcess, /logViewerWindow\.setVisibleOnAllWorkspaces/);
   assert.match(preload, /openLogViewer/);
   assert.match(preload, /closeLogViewer/);
   assert.match(contracts, /ServiceOpenLogViewerRequest/);
@@ -1055,16 +1076,43 @@ test("service log viewer lets users pause tail following and jump back to the la
   );
   const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
 
-  assert.match(logViewerPage, /取消自动滚动/);
-  assert.match(logViewerPage, /开启自动滚动/);
-  assert.match(logViewerPage, /滚动到顶部/);
-  assert.match(logViewerPage, /滚动到底部/);
+  assert.doesNotMatch(logViewerPage, /function AutoScrollIcon/);
+  assert.doesNotMatch(logViewerPage, /function WbAutoIcon/);
+  assert.match(logViewerPage, /function RotateAutoIcon/);
+  assert.match(logViewerPage, /viewBox="0 -960 960 960"/);
+  assert.match(logViewerPage, /M312-320h64l32-92h146l32 92h62L512-680h-64L312-320/);
+  assert.match(logViewerPage, /<RotateAutoIcon \/>/);
+  assert.match(logViewerPage, /function ArrowUpwardIcon/);
+  assert.match(logViewerPage, /function ArrowDownwardIcon/);
+  assert.match(logViewerPage, /aria-label=\{tailFollowEnabled \? "取消自动滚动" : "开启自动滚动"\}/);
+  assert.match(logViewerPage, /className="log-viewer-live-dot"/);
+  assert.match(logViewerPage, /aria-hidden="true"/);
+  assert.match(logViewerPage, /aria-label="滚动到顶部"/);
+  assert.match(logViewerPage, /aria-label="滚动到底部"/);
   assert.match(logViewerPage, /handleScrollToTop/);
   assert.match(logViewerPage, /handleScrollToBottom/);
   assert.match(logViewerPage, /scrollJumpTarget/);
   assert.match(logViewerPage, /setTailFollowEnabled\(false\)/);
+  assert.doesNotMatch(logViewerPage, /log-viewer-drag-region/);
+  assert.match(logViewerPage, /log-viewer-window-drag-zone/);
+  assert.match(globalStyles, /\.log-viewer-window-drag-zone\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*0;[\s\S]*?app-region:\s*drag;/);
+  assert.doesNotMatch(globalStyles, /\.log-viewer-drag-region\s*\{/);
+  assert.match(globalStyles, /\.log-viewer-head\s*\{[\s\S]*?app-region:\s*no-drag;/);
+  assert.match(globalStyles, /\.log-viewer-page\s*\{[\s\S]*?background:\s*var\(--desktop-ui-bg\);[\s\S]*?color:\s*var\(--desktop-ui-text\);/);
+  assert.match(globalStyles, /\.log-viewer-head\s*\{[\s\S]*?border-bottom:\s*1px solid var\(--desktop-ui-border\);[\s\S]*?background:\s*var\(--desktop-ui-card\);/);
+  assert.match(globalStyles, /\.log-viewer-tip-row\s*\{[\s\S]*?border-bottom:\s*1px solid var\(--desktop-ui-border-soft\);[\s\S]*?background:\s*var\(--desktop-ui-card\);/);
+  assert.match(globalStyles, /\.log-viewer-live-dot\s*\{[\s\S]*?animation:\s*log-viewer-live-dot-breathe\s*1\.6s\s*ease-in-out\s*infinite;/);
+  assert.match(globalStyles, /@keyframes\s+log-viewer-live-dot-breathe\s*\{/);
+  assert.match(globalStyles, /\.log-viewer-follow-toggle\s*\{[\s\S]*?width:\s*34px;[\s\S]*?height:\s*30px;/);
+  assert.match(globalStyles, /\.log-viewer-follow-toggle svg\s*\{[\s\S]*?width:\s*20px;[\s\S]*?height:\s*20px;/);
+  assert.match(globalStyles, /\.log-viewer-follow-toggle\.is-active\s*\{[\s\S]*?border-color:\s*rgba\(var\(--desktop-ui-success-rgb\),\s*0\.36\);[\s\S]*?background:\s*rgba\(var\(--desktop-ui-success-rgb\),\s*0\.12\);[\s\S]*?color:\s*var\(--desktop-ui-success\);/);
   assert.match(globalStyles, /\.log-viewer-scroll-top\s*\{/);
   assert.match(globalStyles, /\.log-viewer-scroll-bottom\s*\{/);
+  assert.match(globalStyles, /\.log-viewer-body\s*\{[\s\S]*?padding:\s*8px\s*8px\s*12px;/);
+  assert.match(globalStyles, /\.log-viewer-body\s*\{[\s\S]*?background:\s*var\(--desktop-ui-code-bg\);/);
+  assert.match(globalStyles, /\.log-viewer-content\s*\{[\s\S]*?padding:\s*8px\s*10px;/);
+  assert.match(globalStyles, /\.log-viewer-content\s*\{[\s\S]*?color:\s*var\(--desktop-ui-code-text\);/);
+  assert.match(globalStyles, /\.log-viewer-content\s*\{[\s\S]*?white-space:\s*pre-wrap;[\s\S]*?overflow-wrap:\s*anywhere;/);
 });
 
 test("service log viewer keeps find controls inside the log area", () => {

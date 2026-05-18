@@ -1618,9 +1618,10 @@ function createLogViewerWindow() {
     return logViewerWindow;
   }
 
+  const ownerWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
   const commonWindowOptions = {
-    width: 1040,
-    height: 760,
+    width: 1240,
+    height: 860,
     minWidth: 760,
     minHeight: 520,
     show: false,
@@ -1629,7 +1630,7 @@ function createLogViewerWindow() {
     maximizable: false,
     minimizable: false,
     fullscreenable: false,
-    alwaysOnTop: true,
+    ...(ownerWindow ? { parent: ownerWindow, modal: false } : {}),
     title: "ZenMind Logs",
     backgroundColor: "#F6F8FC",
     webPreferences: {
@@ -1648,22 +1649,18 @@ function createLogViewerWindow() {
       transparent: false,
       titleBarStyle: "hidden" as const
     });
-    logViewerWindow.setAlwaysOnTop(true, "floating");
-    logViewerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   } else if (process.platform === "win32") {
     logViewerWindow = new BrowserWindow({
       ...commonWindowOptions,
       skipTaskbar: false,
       transparent: false
     });
-    logViewerWindow.setAlwaysOnTop(true, "pop-up-menu");
   } else {
     logViewerWindow = new BrowserWindow({
       ...commonWindowOptions,
       skipTaskbar: false,
       transparent: false
     });
-    logViewerWindow.setAlwaysOnTop(true);
   }
 
   logViewerWindow.once("ready-to-show", () => {
