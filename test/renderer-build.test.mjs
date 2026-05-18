@@ -560,15 +560,20 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.doesNotMatch(globalStyles, /--sidebar-translucency-opacity/);
   assert.match(globalStyles, /\.app-shell\.is-mac-translucent-sidebar::before\s*\{[\s\S]*?left:\s*var\(--app-sidebar-width,\s*160px\);/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar-shell::before\s*\{[\s\S]*?(?:radial-gradient|linear-gradient)/);
-  assert.match(lightSidebarRule, /background:\s*rgba\(232,\s*244,\s*255,\s*0\.26\);/);
-  assert.match(darkSidebarRule, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.62\);/);
-  assert.match(macSidebarRule, /background:\s*rgba\(232,\s*244,\s*255,\s*0\.26\);/);
-  assert.match(macDarkSidebarRule, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.62\);/);
-  assert.match(macDarkSidebarRule, /brightness\(0\.52\)/);
-  assert.doesNotMatch(lightSidebarRule, /linear-gradient|radial-gradient/);
-  assert.doesNotMatch(darkSidebarRule, /linear-gradient|radial-gradient/);
-  assert.doesNotMatch(macSidebarRule, /linear-gradient|radial-gradient/);
-  assert.doesNotMatch(macDarkSidebarRule, /linear-gradient|radial-gradient/);
+  assert.match(lightSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.08\)\s*0%/);
+  assert.match(lightSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.05\)\s*46%/);
+  assert.match(lightSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.03\)\s*100%/);
+  assert.match(darkSidebarRule, /rgba\(57,\s*58,\s*62,\s*0\.5\)\s*0%/);
+  assert.match(darkSidebarRule, /rgba\(46,\s*48,\s*52,\s*0\.44\)\s*40%/);
+  assert.match(darkSidebarRule, /rgba\(37,\s*39,\s*43,\s*0\.38\)\s*100%/);
+  assert.match(macSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.08\)\s*0%/);
+  assert.match(macSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.05\)\s*46%/);
+  assert.match(macSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.03\)\s*100%/);
+  assert.match(macSidebarRule, /blur\(12px\)\s*saturate\(112%\)\s*brightness\(1\.01\)/);
+  assert.match(macDarkSidebarRule, /rgba\(57,\s*58,\s*62,\s*0\.5\)\s*0%/);
+  assert.match(macDarkSidebarRule, /rgba\(46,\s*48,\s*52,\s*0\.44\)\s*40%/);
+  assert.match(macDarkSidebarRule, /rgba\(37,\s*39,\s*43,\s*0\.38\)\s*100%/);
+  assert.match(macDarkSidebarRule, /brightness\(0\.76\)/);
 
   assert.doesNotMatch(preload, /setSidebarTranslucency/);
   assert.match(preload, /setNativeThemeSource:\s*\(themeMode\) => ipcRenderer\.invoke\("settings\.setNativeThemeSource", themeMode\)/);
@@ -851,12 +856,12 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
 
   assert.match(mainProcess, /let mainWindowSidebarTranslucencyEnabled = true;/);
-  assert.match(mainProcess, /vibrancy:\s*"sidebar"\s+as const/);
+  assert.match(mainProcess, /vibrancy:\s*"under-window"\s+as const/);
   assert.match(mainProcess, /visualEffectState:\s*"active"\s+as const/);
   assert.match(mainProcess, /function applyMainWindowAppearance\(targetWindow: BrowserWindow \| null\)/);
   assert.match(
     mainProcess,
-    /if \(process\.platform === "darwin"\)\s*\{[\s\S]*?mainWindowSidebarTranslucencyEnabled && !targetWindow\.isFullScreen\(\);[\s\S]*?targetWindow\.setVibrancy\("sidebar"\);[\s\S]*?targetWindow\.setVibrancy\(null\);[\s\S]*?targetWindow\.setBackgroundColor\(useSidebarTranslucency \? "#00000000" : "#FFFFFF"\);/
+    /if \(process\.platform === "darwin"\)\s*\{[\s\S]*?mainWindowSidebarTranslucencyEnabled && !targetWindow\.isFullScreen\(\);[\s\S]*?targetWindow\.setVibrancy\("under-window"\);[\s\S]*?targetWindow\.setVibrancy\(null\);[\s\S]*?targetWindow\.setBackgroundColor\(useSidebarTranslucency \? "#00000000" : "#FFFFFF"\);/
   );
   assert.match(mainProcess, /if \(process\.platform === "win32"\)\s*\{[\s\S]*?targetWindow\.setBackgroundColor\("#FFFFFF"\);[\s\S]*?return;[\s\S]*?\}/);
   assert.match(mainProcess, /mainWindow\.on\("enter-full-screen", \(\) => \{[\s\S]*?applyMainWindowAppearance\(mainWindow\);[\s\S]*?\}\);/);

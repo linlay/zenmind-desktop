@@ -2250,7 +2250,7 @@ function applyMainWindowAppearance(targetWindow: BrowserWindow | null) {
       mainWindowSidebarTranslucencyEnabled && !targetWindow.isFullScreen();
     // Native macOS fullscreen can expose transparent window regions as desktop background.
     if (useSidebarTranslucency) {
-      targetWindow.setVibrancy("sidebar");
+      targetWindow.setVibrancy("under-window");
     } else {
       targetWindow.setVibrancy(null);
     }
@@ -2437,7 +2437,7 @@ function createWindow() {
       ? {
           titleBarStyle: "hidden" as const,
           transparent: true,
-          vibrancy: "sidebar" as const,
+          vibrancy: "under-window" as const,
           visualEffectState: "active" as const
         }
       : {}),

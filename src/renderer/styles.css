@@ -3118,8 +3118,13 @@ body.quick-web-copilot-body,
 }
 
 .app-shell.has-translucent-sidebar .app-sidebar {
-  /* Sidebar glass tint: Electron vibrancy supplies the blur; this keeps it lightly blue. */
-  background: rgba(232, 244, 255, 0.26);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.08) 0%,
+      rgba(255, 255, 255, 0.05) 46%,
+      rgba(255, 255, 255, 0.03) 100%
+    );
   border-right: 1px solid rgba(83, 96, 112, 0.13);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.32),
@@ -3127,31 +3132,49 @@ body.quick-web-copilot-body,
 }
 
 :root[data-theme="dark"] .app-shell.has-translucent-sidebar .app-sidebar {
-  background: rgba(0, 0, 0, 0.62);
-  border-right-color: rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(57, 58, 62, 0.5) 0%,
+      rgba(46, 48, 52, 0.44) 40%,
+      rgba(37, 39, 43, 0.38) 100%
+    );
+  border-right-color: rgba(255, 255, 255, 0.08);
   box-shadow:
-    inset -1px 0 0 rgba(255, 255, 255, 0.025),
-    10px 0 30px rgba(0, 0, 0, 0.28);
+    inset -1px 0 0 rgba(255, 255, 255, 0.04),
+    10px 0 30px rgba(0, 0, 0, 0.24);
 }
 
 .app-shell.is-mac-translucent-sidebar .app-sidebar {
-  background: rgba(232, 244, 255, 0.26);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.08) 0%,
+      rgba(255, 255, 255, 0.05) 46%,
+      rgba(255, 255, 255, 0.03) 100%
+    );
   border-right: 1px solid rgba(83, 96, 112, 0.13);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.32),
     10px 0 28px rgba(60, 60, 67, 0.08);
-  backdrop-filter: blur(24px) saturate(128%) brightness(1.1);
-  -webkit-backdrop-filter: blur(24px) saturate(128%) brightness(1.1);
+  backdrop-filter: blur(12px) saturate(112%) brightness(1.01);
+  -webkit-backdrop-filter: blur(12px) saturate(112%) brightness(1.01);
 }
 
 :root[data-theme="dark"] .app-shell.is-mac-translucent-sidebar .app-sidebar {
-  background: rgba(0, 0, 0, 0.62);
-  border-right-color: rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(57, 58, 62, 0.5) 0%,
+      rgba(46, 48, 52, 0.44) 40%,
+      rgba(37, 39, 43, 0.38) 100%
+    );
+  border-right-color: rgba(255, 255, 255, 0.08);
   box-shadow:
-    inset -1px 0 0 rgba(255, 255, 255, 0.025),
-    10px 0 30px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(24px) saturate(112%) brightness(0.52);
-  -webkit-backdrop-filter: blur(24px) saturate(112%) brightness(0.52);
+    inset -1px 0 0 rgba(255, 255, 255, 0.04),
+    10px 0 30px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(24px) saturate(118%) brightness(0.76);
+  -webkit-backdrop-filter: blur(24px) saturate(118%) brightness(0.76);
 }
 
 /* ── Sidebar Chrome ── */
