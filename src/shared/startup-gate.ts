@@ -57,5 +57,5 @@ export function resolveStartupRootPath(startupRestoreState: StartupRestoreState 
     return "/control-center";
   }
 
-  return "/plugin/agent-webclient";
+  return "/service/agent-webclient";
 }

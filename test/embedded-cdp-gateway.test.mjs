@@ -98,7 +98,7 @@ function closeWebSocket(socket) {
   });
 }
 
-test("EmbeddedCdpGateway lists only registered embedded targets with surface metadata", async () => {
+test("EmbeddedCdpGateway lists only registered embedded targets with navigation metadata", async () => {
   const surfaces = [
     {
       id: "surface-a",
@@ -108,7 +108,9 @@ test("EmbeddedCdpGateway lists only registered embedded targets with surface met
       active: true,
       title: "Alpha App",
       webContentsId: 101,
-      agentKey: "agent-alpha"
+      agentKey: "agent-alpha",
+      navigationRoute: "/agents",
+      navigationLabel: "智能体"
     },
     {
       id: "surface-b",
@@ -133,7 +135,10 @@ test("EmbeddedCdpGateway lists only registered embedded targets with surface met
     assert.deepEqual(targets.map((target) => target.surfaceId), ["surface-a", "surface-b"]);
     assert.deepEqual(targets.map((target) => target.agentKey), ["agent-alpha", "agent-beta"]);
     assert.equal(targets[0].webContentsId, 101);
-    assert.equal(targets[0].zenmind.kind, "webview");
+    assert.equal(targets[0].navigationRoute, "/agents");
+    assert.equal(targets[0].navigationLabel, "智能体");
+    assert.equal(Object.hasOwn(targets[0], "surfaceLabel"), false);
+    assert.equal(Object.hasOwn(targets[0], "zenmind"), false);
     assert.match(targets[0].webSocketDebuggerUrl, /^ws:\/\/127\.0\.0\.1:\d+\/devtools\/page\/zenmind-/u);
   } finally {
     await gateway.stop();
@@ -226,6 +231,51 @@ test("EmbeddedCdpGateway executes direct CDP calls by active surface", async () 
     });
     assert.equal(fakeDebugger.attachVersion, "1.3");
     assert.equal(fakeDebugger.detached, true);
+  } finally {
+    await gateway.stop();
+  }
+});
+
+test("EmbeddedCdpGateway handles Target.getTargets with Desktop navigation metadata", async () => {
+  const fakeDebugger = new FakeDebugger();
+  const fakeContents = createFakeWebContents(fakeDebugger);
+  const surfaces = [
+    {
+      id: "agent-webclient",
+      label: "智能助理",
+      url: "http://127.0.0.1:7080/agents",
+      kind: "webview",
+      active: true,
+      title: "AGENT Webclient",
+      webContentsId: fakeContents.id,
+      navigationRoute: "/agents",
+      navigationLabel: "智能体"
+    },
+    {
+      id: "auth-service",
+      label: "认证服务",
+      url: "http://127.0.0.1:7080/auth",
+      kind: "webview",
+      active: false,
+      title: "Auth"
+    }
+  ];
+  const { gateway } = await createStartedGateway({
+    getSurfaces: () => surfaces,
+    resolveWebContents: () => fakeContents
+  });
+
+  try {
+    const response = await gateway.executeCommand({ method: "Target.getTargets" });
+    assert.equal(response.surfaceId, "agent-webclient");
+    assert.deepEqual(fakeDebugger.sent, []);
+    assert.equal(response.result.targetInfos.length, 2);
+    assert.equal(response.result.targetInfos[0].title, "AGENT Webclient");
+    assert.equal(response.result.targetInfos[0].url, "http://127.0.0.1:7080/agents");
+    assert.equal(response.result.targetInfos[0].navigationRoute, "/agents");
+    assert.equal(response.result.targetInfos[0].navigationLabel, "智能体");
+    assert.equal(Object.hasOwn(response.result.targetInfos[0], "surfaceLabel"), false);
+    assert.equal(Object.hasOwn(response.result.targetInfos[0], "zenmind"), false);
   } finally {
     await gateway.stop();
   }

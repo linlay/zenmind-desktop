@@ -20,7 +20,7 @@ export function Header({ themeMode, onToggleTheme }: HeaderProps) {
   const { services } = useServices();
   const serviceNavItems = services
     .filter(shouldShowServiceNavigationTab)
-    .map((s) => ({ to: `/plugin/${s.id}`, label: getServiceDisplayName(s.id, s.name) }));
+    .map((s) => ({ to: `/service/${s.id}`, label: getServiceDisplayName(s.id, s.name) }));
 
   const navItems = [...staticNavItems, ...serviceNavItems, ...tailNavItems];
 

@@ -20,6 +20,9 @@ export type EmbeddedCdpSurface = {
   webContentsId?: number;
   agentKey?: string;
   frameMatchUrl?: string;
+  navigationRoute?: string;
+  navigationLabel?: string;
+  embedPath?: string;
 };
 
 export type EmbeddedCdpFrameTarget = {
@@ -140,17 +143,28 @@ function targetDescriptor(
     url,
     webSocketDebuggerUrl: `${origins.wsOrigin}/devtools/page/${encodedTargetId}`,
     surfaceId: surface.id,
-    surfaceLabel: surface.label,
+    navigationRoute: surface.navigationRoute || "",
+    navigationLabel: surface.navigationLabel || "",
     agentKey: surface.agentKey || "",
-    webContentsId: surface.webContentsId ?? null,
-    zenmind: {
-      kind: normalizeTargetKind(surface.kind),
-      surfaceId: surface.id,
-      surfaceLabel: surface.label,
-      agentKey: surface.agentKey || "",
-      webContentsId: surface.webContentsId ?? null,
-      active: Boolean(surface.active)
-    }
+    webContentsId: surface.webContentsId ?? null
+  };
+}
+
+function targetInfoDescriptor(surface: EmbeddedCdpSurface, targetId: string) {
+  const url = surface.currentUrl || surface.url || "about:blank";
+  const title = surface.title || surface.label || url;
+  return {
+    attached: false,
+    canAccessOpener: false,
+    targetId,
+    title,
+    type: normalizeTargetKind(surface.kind),
+    url,
+    surfaceId: surface.id,
+    navigationRoute: surface.navigationRoute || "",
+    navigationLabel: surface.navigationLabel || "",
+    agentKey: surface.agentKey || "",
+    webContentsId: surface.webContentsId ?? null
   };
 }
 
@@ -419,6 +433,18 @@ export class EmbeddedCdpGateway {
     }
     const targetId = stableTargetId(surface);
     const params = request.params ?? {};
+    if (method === "Target.getTargets") {
+      const surfaces = await this.options.getSurfaces();
+      return {
+        targetId,
+        surfaceId: surface.id,
+        result: {
+          targetInfos: surfaces
+            .filter((candidate) => candidate.id && candidate.url)
+            .map((candidate) => targetInfoDescriptor(candidate, stableTargetId(candidate)))
+        }
+      };
+    }
     const kind = normalizeTargetKind(surface.kind);
     const result = kind === "iframe"
       ? await this.handleFrameCommand(surface, method, params)

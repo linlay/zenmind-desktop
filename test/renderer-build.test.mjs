@@ -342,7 +342,7 @@ test("agent webclient desktop sections are exposed as top-level sidebar tabs", (
   assert.match(appShell, /const activeAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname\)/);
   assert.match(appShell, /activeAgentWebclientRoute[\s\S]*?\? "agent-webclient"[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
   assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeAgentWebclientRoute\)/);
-  assert.match(appShell, /const usesPluginSurface = Boolean\(activeAgentWebclientRoute\) \|\| location\.pathname\.startsWith\("\/plugin\/"\)/);
+  assert.match(appShell, /const usesPluginSurface =[\s\S]*?Boolean\(activeAgentWebclientRoute\)[\s\S]*?location\.pathname\.startsWith\("\/service\/"\)[\s\S]*?location\.pathname\.startsWith\("\/plugin\/"\)/);
   assert.match(appShell, /<Route path="\/agents" element=\{null\} \/>/);
   assert.match(appShell, /<Route path="\/schedules" element=\{null\} \/>/);
   assert.match(appShell, /<Route path="\/memory" element=\{null\} \/>/);
@@ -964,36 +964,78 @@ test("web copilot dock yields to native dialogs while quick assistant keeps outs
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\.is-native-dialog-open/);
 });
 
-test("plugin page provides iframe-aware assistant context instead of guessing embedded content", () => {
+test("plugin page provides webview-backed assistant context instead of guessing embedded content", () => {
   const pluginPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "PluginPage.tsx"),
     "utf8"
   );
   const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const serviceWebviewPreload = fs.readFileSync(
+    path.join(projectRoot, "src", "preload", "service-webview.ts"),
+    "utf8"
+  );
 
   assert.match(pluginPage, /registerAssistantPageContextProvider/);
+  assert.doesNotMatch(pluginPage, /<<<<<<<|=======|>>>>>>>/);
   assert.match(pluginPage, /registerDesktopActionProviderForScope\("embeddedWeb"/);
   assert.match(pluginPage, /skipContextRegistration\?: boolean/);
   assert.match(pluginPage, /service\?\.status !== "running" \|\| skipContextRegistration/);
   assert.match(pluginPage, /!embeddedUrl \|\| skipContextRegistration/);
-  assert.match(pluginPage, /tryReadPluginIframePageContext/);
-  assert.match(pluginPage, /buildPluginIframeFallbackContext/);
-  assert.match(pluginPage, /window\.electronAPI\.embeddedWeb\.executeInFrame/);
-  assert.match(pluginPage, /kind:\s*"iframe"/);
-  assert.match(pluginPage, /frameMatchUrl/);
+  assert.match(pluginPage, /tryReadPluginWebviewPageContext/);
+  assert.match(pluginPage, /buildPluginWebviewFallbackContext/);
+  assert.match(pluginPage, /webview\.executeJavaScript/);
+  assert.match(pluginPage, /kind:\s*"webview"/);
+  assert.match(pluginPage, /webContentsId/);
+  assert.doesNotMatch(pluginPage, /window\.electronAPI\.embeddedWeb\.executeInFrame/);
+  assert.doesNotMatch(pluginPage, /frameMatchUrl/);
   assert.match(pluginPage, /READ_PAGE_DATA_SCRIPT/);
   assert.match(pluginPage, /EXTRACT_STRUCTURED_SCRIPT/);
   assert.match(pluginPage, /buildInteractElementScript/);
-  assert.match(pluginPage, /const iframeRenderKey = useMemo/);
-  assert.doesNotMatch(pluginPage, /iframeInstanceKey/);
-  assert.doesNotMatch(pluginPage, /iframeLoaded/);
+  assert.match(pluginPage, /const webviewRenderKey = useMemo/);
+  assert.doesNotMatch(pluginPage, /iframe/);
   assert.doesNotMatch(pluginPage, /正在等待页面样式与资源加载完成/);
-  assert.match(pluginPage, /frameLoadedChromeErrorPage/);
+  assert.match(pluginPage, /webviewLoadedChromeErrorPage/);
   assert.match(pluginPage, /chrome-error:\/\//);
-  assert.match(pluginPage, /setIframeRetryNonce/);
+  assert.match(pluginPage, /setWebviewRetryNonce/);
   assert.match(pluginPage, /refreshServices/);
   assert.match(pluginPage, /embedded-plugin-error/);
+  assert.match(pluginPage, /buildAgentWebclientDesktopContext\(getCurrentPageContextSnapshot\(\)\)/);
+  assert.match(pluginPage, /seedAgentWebclientAccessToken/);
+  assert.match(pluginPage, /buildAgentWebclientAccessTokenInjectionScript/);
+  assert.match(pluginPage, /if \(!bridgeReady \|\| !serviceWebviewPreloadPath\) \{[\s\S]{0,80}return undefined;/);
+  assert.match(pluginPage, /bridgeReady,[\s\S]{0,120}serviceWebviewPreloadPath,[\s\S]{0,120}webviewRenderKey/);
+  assert.match(pluginPage, /if \(active === false \|\| !bridgeReady \|\| !serviceWebviewPreloadPath\) \{[\s\S]{0,80}return;[\s\S]{0,120}seedAgentWebclientAccessToken\(\)/);
+  assert.match(pluginPage, /\[active, bridgeReady, embeddedUrl, service\?\.id, serviceWebviewPreloadPath, webviewRenderKey\]/);
+  assert.match(pluginPage, /__ZENMIND_AGENT_WEBCLIENT_AUTH_FALLBACK__/);
+  assert.match(pluginPage, /agentWebclientTokenReloadTimerRef/);
+  assert.match(pluginPage, /webviewRef\.current\?\.reload\(\)/);
+  assert.match(pluginPage, /issueAccessToken\("missing"\)/);
+  assert.match(pluginPage, /agent_webclient_seed_/);
+  assert.match(pluginPage, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);
+  assert.match(serviceWebviewPreload, /sendToHost/);
+  assert.match(serviceWebviewPreload, /window\.postMessage/);
+  assert.match(serviceWebviewPreload, /window\.parent\.postMessage/);
+  assert.match(serviceWebviewPreload, /MessageEvent\("message"/);
+  assert.match(serviceWebviewPreload, /__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__/);
+  assert.match(serviceWebviewPreload, /agent-webclient\.appAccessToken/);
+  assert.match(serviceWebviewPreload, /agent-webclient\.appAuthContext/);
+  assert.match(serviceWebviewPreload, /window\.__AGENT_APP_ACCESS_TOKEN/);
+  assert.match(serviceWebviewPreload, /sendBridgeDebug/);
+  assert.match(serviceWebviewPreload, /preload-installed/);
+  assert.match(serviceWebviewPreload, /auth-response-seeded/);
+  assert.match(serviceWebviewPreload, /AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
+  assert.match(serviceWebviewPreload, /DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE/);
   assert.match(globalStyles, /\.embedded-plugin-error\s*\{/);
+});
+
+test("embedded cdp exposes service frontends as webview surfaces", () => {
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+
+  assert.match(mainProcess, /createEmbeddedCdpServiceSurface/);
+  assert.match(mainProcess, /kind:\s*"webview"/);
+  assert.match(mainProcess, /webContentsId:\s*contents\?\.id/);
+  assert.match(mainProcess, /resolveEmbeddedCdpWebContents\(surface\)/);
+  assert.doesNotMatch(mainProcess, /failed to list iframe targets/);
 });
 
 test("assistant entrypoints restore core services before opening embedded webclient", () => {

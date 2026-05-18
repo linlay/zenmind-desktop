@@ -65,7 +65,7 @@ type ThemeMode = "light" | "dark";
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = "zenmind-desktop.sidebar-nav-order";
-const ASSISTANT_TARGET_PATH = "/plugin/agent-webclient";
+const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -196,11 +196,15 @@ function AppShell() {
   );
   const usesEmbeddedSurface =
     Boolean(activeAgentWebclientRoute) ||
+    location.pathname.startsWith("/service/") ||
     location.pathname.startsWith("/plugin/") ||
     location.pathname.startsWith("/external/") ||
     location.pathname === BUILTIN_BROWSER_ROUTE ||
     location.pathname.startsWith("/custom-sidebar/");
-  const usesPluginSurface = Boolean(activeAgentWebclientRoute) || location.pathname.startsWith("/plugin/");
+  const usesPluginSurface =
+    Boolean(activeAgentWebclientRoute) ||
+    location.pathname.startsWith("/service/") ||
+    location.pathname.startsWith("/plugin/");
   const isMarketRoute = location.pathname === "/market";
   const usesStandardBaseSurface =
     location.pathname === "/control-center" ||
@@ -688,7 +692,7 @@ function AppShell() {
     }
 
     function createSurfaceList() {
-      const pluginSurfaces = services
+      const serviceSurfaces = services
         .filter((service) => service.status === "running" && service.frontendMode !== "none" && service.healthMeta.webUrl)
         .map((service) => ({
           id: service.id,
@@ -696,7 +700,7 @@ function AppShell() {
           url: service.healthMeta.webUrl,
           route: service.id === "agent-webclient"
             ? activeAgentWebclientRoute?.routePath ?? ASSISTANT_TARGET_PATH
-            : `/plugin/${service.id}`,
+            : `/service/${service.id}`,
           active: activePluginId === service.id
         }));
 
@@ -715,7 +719,7 @@ function AppShell() {
           route: `/custom-sidebar/${item.id}`,
           active: activeCustomSidebarItemId === item.id
         })),
-        ...pluginSurfaces
+        ...serviceSurfaces
       ];
     }
 
@@ -1066,6 +1070,7 @@ function AppShell() {
               }
             />
             <Route path="/custom-sidebar/:itemId" element={<CustomSidebarRouteFallback itemMap={customSidebarItemMap} />} />
+            <Route path="/service/:serviceId" element={null} />
             <Route path="/plugin/:pluginId" element={null} />
             <Route path="/market" element={<PluginMarketPage />} />
             <Route path="/help" element={<HelpPage isWindows={isWindows} />} />
@@ -1464,7 +1469,9 @@ export function App() {
 }
 
 function resolvePluginRouteId(pathname: string) {
-  return matchPath("/plugin/:pluginId", pathname)?.params.pluginId ?? null;
+  return matchPath("/service/:serviceId", pathname)?.params.serviceId ??
+    matchPath("/plugin/:pluginId", pathname)?.params.pluginId ??
+    null;
 }
 
 function resolveAgentWebclientRoute(pathname: string) {

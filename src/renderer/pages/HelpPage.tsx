@@ -285,7 +285,7 @@ function getHelpCategories(isWindows: boolean): HelpCategory[] {
               </li>
               <li>
                 <strong><code>embedded</code></strong>
-                ：内嵌前端，可在详情页通过 iframe 打开，不会出现在顶部导航栏
+                ：内嵌前端，可在详情页通过 webview 打开，不会出现在顶部导航栏
               </li>
               <li>
                 <strong><code>standalone</code></strong>
@@ -300,11 +300,11 @@ function getHelpCategories(isWindows: boolean): HelpCategory[] {
         answer: (
           <>
             <p>
-              需要认证的插件可通过 postMessage Token Bridge 与 Desktop 通信，获取 JWT 令牌：
+              需要认证的服务或插件可通过 postMessage Token Bridge 与 Desktop 通信，获取 JWT 令牌：
             </p>
             <ol>
               <li>
-                插件 iframe 发送消息：
+                服务 webview 发送消息：
                 <pre>
                   <code>{`{
   type: "REQUEST_TYPE",

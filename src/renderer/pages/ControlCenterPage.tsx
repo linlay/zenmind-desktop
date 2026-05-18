@@ -1589,7 +1589,7 @@ export function ControlCenterPage() {
                       className="service-title-text-button service-action-button is-primary"
                       onClick={() =>
                         navigate(
-                          `/plugin/${activeDetailService.id}`,
+                          `/service/${activeDetailService.id}`,
                         )
                       }
                       aria-label="打开前端"
@@ -1787,7 +1787,7 @@ export function ControlCenterPage() {
                         }
                         event.preventDefault();
                         navigate(
-                          `/plugin/${activeDetailService.id}`,
+                          `/service/${activeDetailService.id}`,
                         );
                       }}
                     >

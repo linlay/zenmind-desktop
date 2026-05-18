@@ -107,8 +107,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `pan-auth` 负责 pan-webclient 使用的 Desktop App 私钥导入、RSA 密钥对管理和 JWT 签发。
 - `app-server-auth` 负责调用 `zenmind-app-server` 的本地脚本导出 JWK public key 并签发 agent-platform access token。
 - `agent-auth` 负责 Desktop AGENT access token 桥接，token 由 `zenmind-app-server` 颁发。
-- `auth-bridge`（shared）定义特定插件的 postMessage 认证桥接协议，当前覆盖 `agent-webclient` 和 `pan-webclient`。
-- 渲染层 iframe 直接访问各服务自身监听端口，不再经过桌面端中转。需要认证的插件通过 postMessage Token Bridge 获取 Desktop 签发的 JWT。
+- `auth-bridge`（shared）定义特定服务或插件的 postMessage 认证桥接协议，当前覆盖 `agent-webclient` 和 `pan-webclient`。
+- 渲染层 webview 直接访问各服务自身监听端口，不再经过桌面端中转。需要认证的服务或插件通过 postMessage Token Bridge 获取 Desktop 签发的 JWT。
 
 ## 4. 目录结构
 - `src/main`
@@ -126,7 +126,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `src/preload`：桌面 API 暴露层，包含 `services`、`plugins`、`panAuth`、`agentAuth` 四个命名空间。
 - `src/renderer`
   - `pages/ControlCenterPage.tsx`：服务控制中心。
-  - `pages/PluginPage.tsx`：通用服务前端页面，通过 iframe 加载服务 web 入口，支持 postMessage Token Bridge 认证。
+  - `pages/PluginPage.tsx`：通用服务前端页面，通过 webview 加载服务 web 入口，支持 postMessage Token Bridge 认证。
   - `pages/PlaceholderPage.tsx`：占位页面，用于智能助理、智能体、插件市场、帮助等预留入口。
   - `components/Header.tsx`：顶部导航栏，动态展示运行中且 `frontendMode === "standalone"` 的服务入口。
   - `services/ServicesContext.tsx`：React Context，封装所有服务和插件操作。
@@ -206,10 +206,10 @@ my-plugin/
 7. 卸载时弹出确认对话框，确认后停止运行中的服务、删除插件目录并从注册表移除。
 
 ### 认证桥接
-需要认证的插件（如 `agent-webclient`、`pan-webclient`）通过 postMessage Token Bridge 与 Desktop 通信：
-1. 插件 iframe 发送 `{ type: requestType, requestId, action: "getAccessToken" | "refreshAccessToken", reason? }` 消息。
+需要认证的服务或插件（如 `agent-webclient`、`pan-webclient`）通过 postMessage Token Bridge 与 Desktop 通信：
+1. 服务 webview 发送 `{ type: requestType, requestId, action: "getAccessToken" | "refreshAccessToken", reason? }` 消息。
 2. `PluginPage` 监听消息，调用 `agentAuth.issueAccessToken` 签发 JWT。
-3. 将 `{ type: responseType, requestId, token }` 回传给 iframe。
+3. 将 `{ type: responseType, requestId, token }` 回传给 webview。
 
 ## 8. 开发要点
 - 开发模式依赖 `scripts/dev.mjs` 串起资源同步、主进程编译、Vite 启动和 Electron 启动。
@@ -222,7 +222,7 @@ my-plugin/
 - 桌面端退出时会在 `before-quit` 中停止本次会话启动过的服务。
 - preload 脚本在 Electron 窗口创建时加载，修改后必须重启整个 Electron 进程才能生效，仅刷新页面无效。
 - 顶部导航栏由 `Header.tsx` 动态生成，固定项为"控制中心"（前）和"插件市场"、"帮助"（后），运行中且 `frontendMode === "standalone"` 的服务会自动插入中间。
-- 有前端的服务 iframe 会直接指向服务自身的 `healthMeta.webUrl`。特定插件（`agent-webclient`、`pan-webclient`）会通过 `auth-bridge.ts` 构建带参数的嵌入 URL。
+- 有前端的服务 webview 会直接指向服务自身的 `healthMeta.webUrl`。特定服务或插件（如 `agent-webclient`、`pan-webclient`）会通过 `auth-bridge.ts` 构建带参数的嵌入 URL。
 - `ManifestCommand` 支持 `string` 和 `string[]` 两种写法。`.ps1` 脚本会自动通过 `powershell`（Windows）或 `pwsh`（其他平台）执行。
 
 ## 9. 打包约定

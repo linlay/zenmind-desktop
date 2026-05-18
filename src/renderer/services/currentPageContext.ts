@@ -11,6 +11,9 @@ export type CurrentPageContextSnapshotInput = {
   pageContext: AssistantPageContext | null;
   surfaceId?: string;
   surfaceLabel?: string;
+  navigationRoute?: string;
+  navigationLabel?: string;
+  embedPath?: string;
   webContentsId?: number;
   frameMatchUrl?: string;
 };
@@ -48,6 +51,9 @@ export function buildCurrentPageContextSnapshot(
     pageKind: input.pageKind,
     ...(normalizeOptionalString(input.surfaceId) ? { surfaceId: normalizeOptionalString(input.surfaceId) } : {}),
     ...(normalizeOptionalString(input.surfaceLabel) ? { surfaceLabel: normalizeOptionalString(input.surfaceLabel) } : {}),
+    ...(normalizeOptionalString(input.navigationRoute) ? { navigationRoute: normalizeOptionalString(input.navigationRoute) } : {}),
+    ...(normalizeOptionalString(input.navigationLabel) ? { navigationLabel: normalizeOptionalString(input.navigationLabel) } : {}),
+    ...(normalizeOptionalString(input.embedPath) ? { embedPath: normalizeOptionalString(input.embedPath) } : {}),
     ...(normalizeOptionalNumber(input.webContentsId) !== undefined
       ? { webContentsId: normalizeOptionalNumber(input.webContentsId) }
       : {}),
