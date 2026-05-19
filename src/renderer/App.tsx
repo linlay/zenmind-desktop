@@ -33,6 +33,7 @@ import {
   shouldAutoOpenAssistant,
   shouldShowStartupProgressCard
 } from "../shared/startup-gate";
+import { formatStartupStatusText } from "../shared/startup-status";
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
   BUILTIN_BROWSER_ROUTE,
@@ -1178,7 +1179,7 @@ function StartupLoadingScreen({
     : timedOut
       ? "核心服务仍在响应中"
       : activeAction
-        ? `${activeServiceName} ${activeAction.message || "启动中..."}`
+        ? formatStartupStatusText(activeServiceName, activeAction.message)
         : "正在准备核心服务";
 
   return (
