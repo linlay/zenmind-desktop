@@ -97,3 +97,28 @@ test("importEnvZipToZenmind strips env wrapper and only copies missing files", a
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("importEnvZipToZenmind strips timestamped zenmind-env wrapper", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-timestamp-"));
+  const app = createApp(root);
+  const homeZenmindRoot = path.join(root, "home", ".zenmind");
+  const zipPath = path.join(root, "env.zip");
+  const providerPath = path.join(homeZenmindRoot, "registries", "providers", "demo.yml");
+  const panPath = path.join(homeZenmindRoot, "pan", ".gitkeep");
+
+  try {
+    await writeZip(zipPath, {
+      "zenmind-env-20260516-220857/registries/providers/demo.yml": "name: provider\n",
+      "zenmind-env-20260516-220857/pan/.gitkeep": ""
+    });
+
+    const result = await importEnvZipToZenmind(app, zipPath, "darwin");
+
+    assert.equal(result.targetRoot, homeZenmindRoot);
+    assert.equal(fs.readFileSync(providerPath, "utf8"), "name: provider\n");
+    assert.equal(fs.existsSync(panPath), true);
+    assert.equal(fs.existsSync(path.join(homeZenmindRoot, "zenmind-env-20260516-220857")), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

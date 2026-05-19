@@ -33,6 +33,8 @@ const {
   registerPlugin
 } = require("../dist-electron/main/service-registry.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
+const TEST_APP_SERVER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
+const TEST_APP_SERVER_CUSTOM_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1uf";
 
 function getAvailableLocalPort(host = "127.0.0.1") {
   return new Promise((resolve, reject) => {
@@ -332,7 +334,12 @@ function createStartupCoreAssetsFixture(options = {}) {
       name: "认证服务",
       frontend: { mode: "standalone", entry: "/admin/" },
       web: { routePath: "/admin/", portEnvKey: "SERVER_PORT", defaultPort: portBase + 2 },
-      envExample: `SERVER_PORT=${portBase + 2}\nFRONTEND_DIST_DIR=./frontend/dist\n`,
+      envExample: [
+        `SERVER_PORT=${portBase + 2}`,
+        "FRONTEND_DIST_DIR=./frontend/dist",
+        `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_APP_SERVER_BCRYPT}'`,
+        `AUTH_APP_MASTER_PASSWORD_BCRYPT='${TEST_APP_SERVER_BCRYPT}'`
+      ].join("\n") + "\n",
       extraPaths: [["frontend", "dist"], ["scripts"]]
     },
     {
@@ -467,6 +474,19 @@ function createStartupCoreAssetsFixture(options = {}) {
           "utf8"
         );
       }
+    }
+    if (service.id === "agent-platform") {
+      fs.writeFileSync(
+        path.join(bundleRoot, "configs", "desktop.example.yml"),
+        [
+          "bridges:",
+          "  - name: desktop-actions",
+          "    path: /actions/call",
+          "  - name: embedded-cdp",
+          "    path: /cdp/call"
+        ].join("\n") + "\n",
+        "utf8"
+      );
     }
 
     const pidRelativePath = path.join("run", `${service.id}.pid`);
@@ -614,7 +634,16 @@ function createStartupCoreAssetsFixture(options = {}) {
             relativePath: ".env",
             templateRelativePath: ".env.example",
             required: true
-          }
+          },
+          ...(service.id === "agent-platform"
+            ? [{
+                key: "desktop",
+                label: "desktop.yml",
+                relativePath: "configs/desktop.yml",
+                templateRelativePath: "configs/desktop.example.yml",
+                required: true
+              }]
+            : [])
         ],
         runtime: {
           pidRelativePath,
@@ -799,6 +828,15 @@ function writeTestEnv(userDataRoot, serviceId, content, kind = "services") {
   fs.mkdirSync(path.dirname(envPath), { recursive: true });
   fs.writeFileSync(envPath, content, "utf8");
   return envPath;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function assertAppServerDefaultBcryptEnv(content) {
+  assert.match(content, new RegExp(`^AUTH_ADMIN_PASSWORD_BCRYPT='${escapeRegExp(TEST_APP_SERVER_BCRYPT)}'$`, "m"));
+  assert.match(content, new RegExp(`^AUTH_APP_MASTER_PASSWORD_BCRYPT='${escapeRegExp(TEST_APP_SERVER_BCRYPT)}'$`, "m"));
 }
 
 function writeExecutableFile(filePath, content) {
@@ -2560,6 +2598,7 @@ test("initializeService recreates Desktop defaults for core services after confi
       appServerEnv,
       new RegExp(`^AUTH_DB_PATH=${path.join(getTestDataDir(userDataRoot, "zenmind-app-server"), "auth.db").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
     );
+    assertAppServerDefaultBcryptEnv(appServerEnv);
     assert.match(platformEnv, /^SERVER_PORT=7078$/m);
     assert.match(platformEnv, /^AUTH_ENABLED=true$/m);
     assert.match(platformEnv, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
@@ -2587,6 +2626,99 @@ test("initializeService recreates Desktop defaults for core services after confi
         `${serviceId} should run deploy during initialization`
       );
     }
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("initializeService repairs partial zenmind-app-server env with bcrypt defaults", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
+
+  try {
+    await installBuiltinService(app, "zenmind-app-server");
+    writeTestEnv(
+      userDataRoot,
+      "zenmind-app-server",
+      [
+        "SERVER_PORT=18080",
+        "AUTH_DB_PATH=./data/auth.db",
+        ""
+      ].join("\n")
+    );
+
+    const result = await initializeService(app, "zenmind-app-server");
+    assert.equal(result.ok, true);
+
+    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "zenmind-app-server"), "utf8");
+    assert.match(envContent, /^SERVER_PORT=7076$/m);
+    assert.match(
+      envContent,
+      new RegExp(`^AUTH_DB_PATH=${escapeRegExp(path.join(getTestDataDir(userDataRoot, "zenmind-app-server"), "auth.db"))}$`, "m")
+    );
+    assertAppServerDefaultBcryptEnv(envContent);
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("ensurePreStartRequirements replaces unsafe zenmind-app-server bcrypt values", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
+  const service = getBuiltinService("zenmind-app-server");
+
+  try {
+    await installBuiltinService(app, service.id);
+    writeTestEnv(
+      userDataRoot,
+      service.id,
+      [
+        "SERVER_PORT=18080",
+        `AUTH_ADMIN_PASSWORD_BCRYPT=${TEST_APP_SERVER_BCRYPT}`,
+        "AUTH_APP_MASTER_PASSWORD_BCRYPT=not-a-bcrypt-hash",
+        ""
+      ].join("\n")
+    );
+
+    await __testInternals.ensurePreStartRequirements(app, service);
+
+    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8");
+    assertAppServerDefaultBcryptEnv(envContent);
+    assert.doesNotMatch(envContent, new RegExp(`^AUTH_ADMIN_PASSWORD_BCRYPT=${escapeRegExp(TEST_APP_SERVER_BCRYPT)}$`, "m"));
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("initializeService preserves custom valid zenmind-app-server bcrypt values", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
+
+  try {
+    await installBuiltinService(app, "zenmind-app-server");
+    writeTestEnv(
+      userDataRoot,
+      "zenmind-app-server",
+      [
+        "SERVER_PORT=18080",
+        `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_APP_SERVER_CUSTOM_BCRYPT}'`,
+        `AUTH_APP_MASTER_PASSWORD_BCRYPT='${TEST_APP_SERVER_CUSTOM_BCRYPT}'`,
+        ""
+      ].join("\n")
+    );
+
+    const result = await initializeService(app, "zenmind-app-server");
+    assert.equal(result.ok, true);
+
+    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, "zenmind-app-server"), "utf8");
+    assert.match(envContent, new RegExp(`^AUTH_ADMIN_PASSWORD_BCRYPT='${escapeRegExp(TEST_APP_SERVER_CUSTOM_BCRYPT)}'$`, "m"));
+    assert.match(envContent, new RegExp(`^AUTH_APP_MASTER_PASSWORD_BCRYPT='${escapeRegExp(TEST_APP_SERVER_CUSTOM_BCRYPT)}'$`, "m"));
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -4627,6 +4759,41 @@ test("runStartupPreparation bootstraps packaged first launch with the three core
   }
 });
 
+test("runStartupPreparation repairs partial app-server env preserved before packaged bootstrap", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+
+  try {
+    writeTestEnv(
+      userDataRoot,
+      "zenmind-app-server",
+      [
+        "SERVER_PORT=18080",
+        "AUTH_DB_PATH=./data/auth.db",
+        ""
+      ].join("\n")
+    );
+
+    const result = await runStartupPreparation(app);
+    const appServerEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "zenmind-app-server"), "utf8");
+
+    assert.equal(result.mode, "bootstrap");
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.match(appServerEnv, /^SERVER_PORT=7076$/m);
+    assert.match(
+      appServerEnv,
+      new RegExp(`^AUTH_DB_PATH=${escapeRegExp(path.join(getTestDataDir(userDataRoot, "zenmind-app-server"), "auth.db"))}$`, "m")
+    );
+    assertAppServerDefaultBcryptEnv(appServerEnv);
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runStartupPreparation does not reinstall healthy packaged core services", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
@@ -4637,7 +4804,7 @@ test("runStartupPreparation does not reinstall healthy packaged core services", 
       await installBuiltinService(app, serviceId);
     }
 
-	    const markerPath = path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "marker.txt");
+    const markerPath = path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "marker.txt");
     fs.writeFileSync(markerPath, "keep", "utf8");
 
     const result = await runStartupPreparation(app);

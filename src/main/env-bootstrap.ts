@@ -23,6 +23,14 @@ const ENV_ARCHIVE_WRAPPER_DIRS = new Set([".zenmind", "zenmind", "zenmind-env", 
 const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-market"] as const;
 const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-bootstrap.json");
 
+function isEnvArchiveWrapperDir(dirName: string) {
+  const normalizedDirName = dirName.trim().toLowerCase();
+  return (
+    ENV_ARCHIVE_WRAPPER_DIRS.has(normalizedDirName) ||
+    /^zenmind-env[-_].+/u.test(normalizedDirName)
+  );
+}
+
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
   return platform === "win32" ? path.win32 : path;
 }
@@ -107,7 +115,7 @@ function countWrapperSegments(fileNames: string[]) {
     const firstSegment = segments[0]?.[0] ?? "";
     if (
       !firstSegment ||
-      !ENV_ARCHIVE_WRAPPER_DIRS.has(firstSegment) ||
+      !isEnvArchiveWrapperDir(firstSegment) ||
       !segments.every((entrySegmentsValue) =>
         entrySegmentsValue[0] === firstSegment && entrySegmentsValue.length > 1
       )
