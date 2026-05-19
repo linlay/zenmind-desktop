@@ -312,7 +312,6 @@ async function installRuntimeDependencies(target) {
     `--cpu=${target.arch}`
   ]);
   verifyCanvasRuntime(target);
-  verifyFfmpegRuntime(target);
 }
 
 export async function stageApp(rootDir = projectRoot, target = parseArgs(process.argv)) {
