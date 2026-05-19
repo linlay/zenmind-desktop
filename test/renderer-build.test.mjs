@@ -1227,6 +1227,10 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
     globalStyles.indexOf(".quick-web-copilot,"),
     globalStyles.indexOf(".quick-web-copilot .pan-page")
   );
+  const quickAssistantWindowCreation = mainProcess.slice(
+    mainProcess.indexOf("function createQuickAssistantWindow()"),
+    mainProcess.indexOf("function buildLogViewerRoute")
+  );
   const preloadQuickAssistantApi = preload.slice(
     preload.indexOf("quickAssistant: {"),
     preload.indexOf("customSidebar:", preload.indexOf("quickAssistant: {"))
@@ -1254,6 +1258,7 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
   assert.match(mainProcess, /ensureAssistantTargetServicesRunning\("quick-assistant"\)/);
   assert.match(mainProcess, /agentKey:\s*quickSettings\.quickAssistantAgentKey/);
   assert.match(mainProcess, /for \(const targetWindow of \[mainWindow, quickAssistantWindow\]\)/);
+  assert.match(quickAssistantWindowCreation, /webviewTag:\s*true/);
   assert.doesNotMatch(mainProcess, /createQuickAssistantWindowState|getQuickAssistantBounds|QUICK_ASSISTANT_COMPACT_REQUEST_CHANNEL|QuickAssistantDisplayMode|requestQuickAssistantCompactMode|applyQuickAssistantBounds/);
   assert.doesNotMatch(mainProcess, /quickAssistant\.(setExpanded|setDisplayMode|setInteractionState|pickAttachments|captureScreenshot|cancelAttachmentTask|openMainAssistant|openSettings)/);
   assert.match(quickAssistantWindow, /QUICK_ASSISTANT_WEB_COPILOT_SIZE/);

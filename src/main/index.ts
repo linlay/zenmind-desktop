@@ -1592,7 +1592,8 @@ function createQuickAssistantWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       devTools: false,
-      sandbox: false
+      sandbox: false,
+      webviewTag: true
     }
   });
 
