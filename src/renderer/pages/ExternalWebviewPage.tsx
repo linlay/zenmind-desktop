@@ -895,16 +895,14 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
           agentKey: "manual_debug"
         },
         permissionMode: "full_access",
-        expectedPageKey: debugSnapshot?.pageKey,
-        expectedSnapshotVersion: debugSnapshot?.snapshotVersion
+        expectedPageKey: debugSnapshot?.pageKey
       });
       setDebugResultJson(formatDebugJson({
         elapsedMs: Math.round(performance.now() - startedAt),
         request: {
           action: debugAction,
           args,
-          expectedPageKey: debugSnapshot?.pageKey,
-          expectedSnapshotVersion: debugSnapshot?.snapshotVersion
+          expectedPageKey: debugSnapshot?.pageKey
         },
         response
       }));
@@ -1017,7 +1015,6 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     }
 
     try {
-      const webContentsId = activeWebview.getWebContentsId();
       const pageContext = await activeWebview.executeJavaScript(WEBVIEW_PAGE_CONTEXT_SCRIPT, true);
       return {
         url: typeof pageContext?.url === "string" ? pageContext.url : currentActiveTab.currentUrl,
@@ -1030,15 +1027,13 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
           ? pageContext.headings.filter((item: unknown): item is string => typeof item === "string")
           : [],
         bodyText: typeof pageContext?.bodyText === "string" ? pageContext.bodyText : "",
-        browserTarget: Number.isFinite(webContentsId)
-          ? {
-              kind: "webview",
-              webContentsId,
-              surfaceId,
-              surfaceLabel: surfaceLabel ?? title,
-              currentUrl: currentActiveTab.currentUrl
-            }
-          : undefined
+        browserTarget: {
+          kind: "webview",
+          surfaceId,
+          surfaceLabel: surfaceLabel ?? title,
+          surfaceRoute: currentRoute,
+          currentUrl: currentActiveTab.currentUrl
+        }
       } satisfies AssistantPageContext;
     } catch {
       return {
@@ -1071,6 +1066,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       pageKind: "webview" as const,
       ...(surfaceId ? { surfaceId } : {}),
       ...(surfaceLabel || title ? { surfaceLabel: surfaceLabel ?? title } : {}),
+      ...(currentRoute ? { surfaceRoute: currentRoute } : {}),
       ...(typeof webContentsId === "number" ? { webContentsId } : {})
     };
   };
@@ -1080,12 +1076,11 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
   ) {
     const descriptor = createCurrentPageDescriptor();
     return {
-      route: descriptor.route,
       pageKey: descriptor.pageKey,
       pageKind: descriptor.pageKind,
       ...(descriptor.surfaceId ? { surfaceId: descriptor.surfaceId } : {}),
       ...(descriptor.surfaceLabel ? { surfaceLabel: descriptor.surfaceLabel } : {}),
-      ...(typeof descriptor.webContentsId === "number" ? { webContentsId: descriptor.webContentsId } : {}),
+      ...(descriptor.surfaceRoute ? { surfaceRoute: descriptor.surfaceRoute } : {}),
       ...payload
     };
   }
@@ -2067,7 +2062,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       <div className="external-webview-debug-header">
         <div>
           <strong>desktop.page</strong>
-          <span>{debugSnapshot?.pageKind ?? "unknown"} · {debugSnapshot?.snapshotVersion ?? 0}</span>
+          <span>{debugSnapshot?.pageKind ?? "unknown"}</span>
         </div>
         <button
           type="button"
@@ -2086,7 +2081,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
         </div>
         <div>
           <dt>surface</dt>
-          <dd>{debugSnapshot?.surfaceId ?? "默认"} {debugSnapshot?.webContentsId ? `#${debugSnapshot.webContentsId}` : ""}</dd>
+          <dd>{debugSnapshot?.surfaceId ?? "默认"} {debugSnapshot?.surfaceLabel ?? ""}</dd>
         </div>
       </dl>
       <label className="external-webview-debug-field">

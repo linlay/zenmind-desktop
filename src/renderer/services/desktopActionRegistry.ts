@@ -21,8 +21,8 @@ export type CurrentPageDescriptor = {
   pageKind: DesktopPageKind;
   surfaceId?: string;
   surfaceLabel?: string;
+  surfaceRoute?: string;
   webContentsId?: number;
-  frameMatchUrl?: string;
 };
 
 export type CurrentPageExecutor = {
@@ -136,8 +136,6 @@ async function getCachedPageSnapshot(): Promise<DesktopPageContextSnapshot> {
   }
   return {
     ...getFallbackDescriptor(),
-    snapshotVersion: 0,
-    snapshotAt: new Date().toISOString(),
     pageContext: await getAssistantPageContext()
   };
 }
@@ -149,10 +147,8 @@ function buildPageContextResult(snapshot: DesktopPageContextSnapshot) {
     pageKind: snapshot.pageKind,
     ...(snapshot.surfaceId ? { surfaceId: snapshot.surfaceId } : {}),
     ...(snapshot.surfaceLabel ? { surfaceLabel: snapshot.surfaceLabel } : {}),
-    ...(typeof snapshot.webContentsId === "number" ? { webContentsId: snapshot.webContentsId } : {}),
-    ...(snapshot.frameMatchUrl ? { frameMatchUrl: snapshot.frameMatchUrl } : {}),
-    snapshotVersion: snapshot.snapshotVersion,
-    snapshotAt: snapshot.snapshotAt,
+    ...(snapshot.surfaceRoute ? { surfaceRoute: snapshot.surfaceRoute } : {}),
+    ...(snapshot.embedPath ? { embedPath: snapshot.embedPath } : {}),
     pageContext: snapshot.pageContext
   };
 }
@@ -167,8 +163,7 @@ function buildRealtimePageResult(
     pageKind: descriptor.pageKind,
     ...(descriptor.surfaceId ? { surfaceId: descriptor.surfaceId } : {}),
     ...(descriptor.surfaceLabel ? { surfaceLabel: descriptor.surfaceLabel } : {}),
-    ...(typeof descriptor.webContentsId === "number" ? { webContentsId: descriptor.webContentsId } : {}),
-    ...(descriptor.frameMatchUrl ? { frameMatchUrl: descriptor.frameMatchUrl } : {}),
+    ...(descriptor.surfaceRoute ? { surfaceRoute: descriptor.surfaceRoute } : {}),
     realtime: true,
     readAt: new Date().toISOString(),
     pageContext

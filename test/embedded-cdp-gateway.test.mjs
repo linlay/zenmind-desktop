@@ -109,8 +109,7 @@ test("EmbeddedCdpGateway lists only registered embedded targets with navigation 
       title: "Alpha App",
       webContentsId: 101,
       agentKey: "agent-alpha",
-      navigationRoute: "/agents",
-      navigationLabel: "智能体"
+      surfaceRoute: "/agents"
     },
     {
       id: "surface-b",
@@ -134,9 +133,10 @@ test("EmbeddedCdpGateway lists only registered embedded targets with navigation 
     assert.equal(targets.length, 2);
     assert.deepEqual(targets.map((target) => target.surfaceId), ["surface-a", "surface-b"]);
     assert.deepEqual(targets.map((target) => target.agentKey), ["agent-alpha", "agent-beta"]);
-    assert.equal(targets[0].webContentsId, 101);
-    assert.equal(targets[0].navigationRoute, "/agents");
-    assert.equal(targets[0].navigationLabel, "智能体");
+    assert.equal(Object.hasOwn(targets[0], "webContentsId"), false);
+    assert.equal(targets[0].surfaceRoute, "/agents");
+    assert.equal(Object.hasOwn(targets[0], "navigationRoute"), false);
+    assert.equal(Object.hasOwn(targets[0], "navigationLabel"), false);
     assert.equal(Object.hasOwn(targets[0], "surfaceLabel"), false);
     assert.equal(Object.hasOwn(targets[0], "zenmind"), false);
     assert.match(targets[0].webSocketDebuggerUrl, /^ws:\/\/127\.0\.0\.1:\d+\/devtools\/page\/zenmind-/u);
@@ -248,8 +248,7 @@ test("EmbeddedCdpGateway handles Target.getTargets with Desktop navigation metad
       active: true,
       title: "AGENT Webclient",
       webContentsId: fakeContents.id,
-      navigationRoute: "/agents",
-      navigationLabel: "智能体"
+      surfaceRoute: "/agents"
     },
     {
       id: "auth-service",
@@ -272,8 +271,9 @@ test("EmbeddedCdpGateway handles Target.getTargets with Desktop navigation metad
     assert.equal(response.result.targetInfos.length, 2);
     assert.equal(response.result.targetInfos[0].title, "AGENT Webclient");
     assert.equal(response.result.targetInfos[0].url, "http://127.0.0.1:7080/agents");
-    assert.equal(response.result.targetInfos[0].navigationRoute, "/agents");
-    assert.equal(response.result.targetInfos[0].navigationLabel, "智能体");
+    assert.equal(response.result.targetInfos[0].surfaceRoute, "/agents");
+    assert.equal(Object.hasOwn(response.result.targetInfos[0], "navigationRoute"), false);
+    assert.equal(Object.hasOwn(response.result.targetInfos[0], "navigationLabel"), false);
     assert.equal(Object.hasOwn(response.result.targetInfos[0], "surfaceLabel"), false);
     assert.equal(Object.hasOwn(response.result.targetInfos[0], "zenmind"), false);
   } finally {

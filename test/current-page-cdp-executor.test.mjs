@@ -76,8 +76,6 @@ function snapshot() {
     pageKey: "webview:test",
     pageKind: "webview",
     webContentsId: 42,
-    snapshotVersion: 1,
-    snapshotAt: "2026-05-17T00:00:00.000Z",
     pageContext: {
       url: "https://example.test/",
       title: "Example",

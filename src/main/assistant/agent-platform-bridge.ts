@@ -595,10 +595,8 @@ export class AgentPlatformAssistantBridge {
           references,
           params: {
             desktop: {
-              source: request.source || "sidebar",
+              source: request.source || "copilot",
               action: request.action || "chat",
-              permissionMode: normalizeAssistantPermissionMode(request.permissionMode),
-              historyBeforeMessageId: request.historyBeforeMessageId || "",
               pageContext: request.pageContext ?? null
             }
           },

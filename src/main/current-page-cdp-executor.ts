@@ -54,13 +54,12 @@ function fail(action: string, code: string, message: string, details?: unknown):
 function descriptorResult(snapshot: DesktopPageContextSnapshot, payload: Record<string, unknown>) {
   return {
     source: "desktop",
-    route: snapshot.route,
     pageKey: snapshot.pageKey,
     pageKind: snapshot.pageKind,
     ...(snapshot.surfaceId ? { surfaceId: snapshot.surfaceId } : {}),
     ...(snapshot.surfaceLabel ? { surfaceLabel: snapshot.surfaceLabel } : {}),
-    ...(typeof snapshot.webContentsId === "number" ? { webContentsId: snapshot.webContentsId } : {}),
-    ...(snapshot.frameMatchUrl ? { frameMatchUrl: snapshot.frameMatchUrl } : {}),
+    ...(snapshot.surfaceRoute ? { surfaceRoute: snapshot.surfaceRoute } : {}),
+    ...(snapshot.embedPath ? { embedPath: snapshot.embedPath } : {}),
     ...payload
   };
 }
@@ -127,9 +126,6 @@ async function withDebugger<T>(
   trace: CdpTraceEntry[],
   callback: (sendCommand: (method: string, params?: Record<string, unknown>) => Promise<unknown>) => Promise<T>
 ) {
-  if (snapshot.pageKind === "iframe") {
-    throw new Error("execution_context_not_ready: iframe CDP execution context resolution is not available yet.");
-  }
   if (typeof snapshot.webContentsId !== "number") {
     throw new Error("webContentsId is required for webview CDP execution.");
   }
@@ -267,12 +263,6 @@ export async function executeCurrentPageCdpAction(
   const args = request.args ?? {};
   const trace: CdpTraceEntry[] = [];
   try {
-    if (snapshot.pageKind === "iframe") {
-      return fail(action, "execution_context_not_ready", "当前 iframe 暂未建立可用的 CDP execution context。", {
-        pageKey: snapshot.pageKey,
-        frameMatchUrl: snapshot.frameMatchUrl
-      });
-    }
     if (action === "desktop.page.readCurrent") {
       const data = await evaluate(snapshot, trace, READ_PAGE_DATA_SCRIPT);
       const include = readAllowedValues(args.include, READ_INCLUDES);

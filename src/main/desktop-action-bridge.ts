@@ -836,16 +836,6 @@ async function handleActionCall(
         currentPageKey: snapshot.pageKey
       });
     }
-    if (
-      typeof request.expectedSnapshotVersion === "number" &&
-      typeof snapshot?.snapshotVersion === "number" &&
-      request.expectedSnapshotVersion !== snapshot.snapshotVersion
-    ) {
-      return fail(action, "stale_page_target", "当前页面快照版本已变化，请刷新调试目标后重试。", {
-        expectedSnapshotVersion: request.expectedSnapshotVersion,
-        currentSnapshotVersion: snapshot.snapshotVersion
-      });
-    }
   }
   if (isDesktopActionMutating(action)) {
     const confirmationResponse = await confirmDesktopActionIfNeeded(options, normalizedRequest, args);

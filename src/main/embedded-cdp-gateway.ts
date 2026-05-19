@@ -1,33 +1,24 @@
 import crypto from "node:crypto";
 import http from "node:http";
 import type { AddressInfo, Socket } from "node:net";
-import type { WebContents, WebFrameMain } from "electron";
+import type { WebContents } from "electron";
 import {
   EMBEDDED_CDP_GATEWAY_HOST,
   EMBEDDED_CDP_GATEWAY_PORT
 } from "../shared/embedded-cdp";
 
-type EmbeddedCdpTargetKind = "webview" | "iframe";
-
 export type EmbeddedCdpSurface = {
   id: string;
   label: string;
   url: string;
-  kind?: EmbeddedCdpTargetKind;
+  kind?: "webview";
   active?: boolean;
   currentUrl?: string;
   title?: string;
   webContentsId?: number;
   agentKey?: string;
-  frameMatchUrl?: string;
-  navigationRoute?: string;
-  navigationLabel?: string;
+  surfaceRoute?: string;
   embedPath?: string;
-};
-
-export type EmbeddedCdpFrameTarget = {
-  frame: WebFrameMain;
-  ownerContents: WebContents;
 };
 
 type EmbeddedCdpGatewayOptions = {
@@ -35,7 +26,6 @@ type EmbeddedCdpGatewayOptions = {
   port?: number;
   getSurfaces: () => EmbeddedCdpSurface[] | Promise<EmbeddedCdpSurface[]>;
   resolveWebContents: (surface: EmbeddedCdpSurface) => WebContents | null | Promise<WebContents | null>;
-  resolveFrameTarget?: (surface: EmbeddedCdpSurface) => EmbeddedCdpFrameTarget | null | Promise<EmbeddedCdpFrameTarget | null>;
   activateSurface?: (surface: EmbeddedCdpSurface) => Promise<void>;
   openUrl?: (url: string) => Promise<void>;
   version?: string;
@@ -76,12 +66,8 @@ const DEFAULT_PROTOCOL_VERSION = "1.3";
 const DEFAULT_CDP_TIMEOUT_MS = 15_000;
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 
-function normalizeTargetKind(kind: EmbeddedCdpSurface["kind"]): EmbeddedCdpTargetKind {
-  return kind === "iframe" ? "iframe" : "webview";
-}
-
 function stableTargetId(surface: EmbeddedCdpSurface) {
-  const source = `${normalizeTargetKind(surface.kind)}:${surface.id || surface.url || surface.label}`;
+  const source = `webview:${surface.id || surface.url || surface.label}`;
   return `zenmind-${crypto.createHash("sha1").update(source).digest("hex").slice(0, 16)}`;
 }
 
@@ -143,10 +129,8 @@ function targetDescriptor(
     url,
     webSocketDebuggerUrl: `${origins.wsOrigin}/devtools/page/${encodedTargetId}`,
     surfaceId: surface.id,
-    navigationRoute: surface.navigationRoute || "",
-    navigationLabel: surface.navigationLabel || "",
-    agentKey: surface.agentKey || "",
-    webContentsId: surface.webContentsId ?? null
+    surfaceRoute: surface.surfaceRoute || "",
+    agentKey: surface.agentKey || ""
   };
 }
 
@@ -158,51 +142,12 @@ function targetInfoDescriptor(surface: EmbeddedCdpSurface, targetId: string) {
     canAccessOpener: false,
     targetId,
     title,
-    type: normalizeTargetKind(surface.kind),
+    type: "webview",
     url,
     surfaceId: surface.id,
-    navigationRoute: surface.navigationRoute || "",
-    navigationLabel: surface.navigationLabel || "",
-    agentKey: surface.agentKey || "",
-    webContentsId: surface.webContentsId ?? null
+    surfaceRoute: surface.surfaceRoute || "",
+    agentKey: surface.agentKey || ""
   };
-}
-
-function remoteObject(value: unknown) {
-  if (value === null) {
-    return { type: "object", subtype: "null", value: null };
-  }
-  if (Array.isArray(value)) {
-    return { type: "object", subtype: "array", value };
-  }
-  const valueType = typeof value;
-  if (valueType === "undefined") {
-    return { type: "undefined" };
-  }
-  if (valueType === "number") {
-    return { type: "number", value };
-  }
-  if (valueType === "boolean") {
-    return { type: "boolean", value };
-  }
-  if (valueType === "string") {
-    return { type: "string", value };
-  }
-  if (valueType === "bigint") {
-    return { type: "bigint", unserializableValue: String(value) };
-  }
-  if (valueType === "function") {
-    return { type: "function", description: String(value) };
-  }
-  return { type: "object", value };
-}
-
-function evaluateParams(params: Record<string, unknown> | undefined) {
-  const expression = typeof params?.expression === "string" ? params.expression : "";
-  if (!expression.trim()) {
-    throw new Error("Runtime.evaluate requires params.expression.");
-  }
-  return expression;
 }
 
 function ensureHttpUrl(value: unknown) {
@@ -445,10 +390,7 @@ export class EmbeddedCdpGateway {
         }
       };
     }
-    const kind = normalizeTargetKind(surface.kind);
-    const result = kind === "iframe"
-      ? await this.handleFrameCommand(surface, method, params)
-      : await this.handleWebContentsCommandOnce(surface, method, params);
+    const result = await this.handleWebContentsCommandOnce(surface, method, params);
     return {
       targetId,
       surfaceId: surface.id,
@@ -561,10 +503,7 @@ export class EmbeddedCdpGateway {
         connection.sendJSON(cdpError(id, -32000, "Target not found."));
         return;
       }
-      const kind = normalizeTargetKind(surface.kind);
-      const result = kind === "iframe"
-        ? await this.handleFrameCommand(surface, method, command.params ?? {})
-        : await this.handleWebContentsCommand(connection, targetId, surface, method, command.params ?? {});
+      const result = await this.handleWebContentsCommand(connection, targetId, surface, method, command.params ?? {});
       connection.sendJSON({ id, result });
     } catch (error) {
       connection.sendJSON(cdpError(
@@ -623,116 +562,6 @@ export class EmbeddedCdpGateway {
         }
       }
     }
-  }
-
-  private async handleFrameCommand(surface: EmbeddedCdpSurface, method: string, params: Record<string, unknown>) {
-    const target = await this.ensureFrameTarget(surface);
-    if (!target) {
-      throw new Error("Embedded iframe target is unavailable.");
-    }
-    switch (method) {
-      case "Runtime.evaluate": {
-        const value = await target.frame.executeJavaScript(evaluateParams(params));
-        return { result: remoteObject(value) };
-      }
-      case "Page.enable":
-      case "Runtime.enable":
-      case "DOM.enable":
-      case "Network.enable":
-        return {};
-      case "Page.bringToFront":
-        await this.options.activateSurface?.(surface);
-        return {};
-      case "Page.reload":
-        await target.frame.executeJavaScript("location.reload(); true;");
-        return {};
-      case "Page.navigate": {
-        const nextUrl = ensureHttpUrl(params.url);
-        if (!nextUrl) {
-          throw new Error("Page.navigate requires an http(s) url.");
-        }
-        await target.frame.executeJavaScript(`location.href = ${JSON.stringify(nextUrl)}; true;`);
-        return { frameId: surface.id, loaderId: "" };
-      }
-      case "Page.captureScreenshot": {
-        const image = await target.ownerContents.capturePage();
-        return { data: image.toPNG().toString("base64") };
-      }
-      case "DOM.getDocument":
-        return {
-          root: {
-            nodeId: 1,
-            backendNodeId: 1,
-            nodeType: 9,
-            nodeName: "#document",
-            localName: "",
-            nodeValue: "",
-            documentURL: target.frame.url
-          }
-        };
-      case "Input.dispatchMouseEvent": {
-        const type = typeof params.type === "string" ? params.type : "";
-        const x = Number(params.x);
-        const y = Number(params.y);
-        if (!Number.isFinite(x) || !Number.isFinite(y)) {
-          throw new Error("Input.dispatchMouseEvent requires numeric x and y.");
-        }
-        if (type === "mousePressed" || type === "mouseReleased" || type === "mouseMoved") {
-          await target.frame.executeJavaScript([
-            "(() => {",
-            `  const x = ${JSON.stringify(x)};`,
-            `  const y = ${JSON.stringify(y)};`,
-            `  const el = document.elementFromPoint(${JSON.stringify(x)}, ${JSON.stringify(y)});`,
-            "  if (!el) return false;",
-            `  const type = ${JSON.stringify(type === "mousePressed" ? "mousedown" : type === "mouseReleased" ? "mouseup" : "mousemove")};`,
-            "  el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y }));",
-            "  if (type === 'mouseup') el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y }));",
-            "  return true;",
-            "})();"
-          ].join("\n"));
-        }
-        return {};
-      }
-      case "Input.insertText": {
-        const text = typeof params.text === "string" ? params.text : "";
-        await target.frame.executeJavaScript([
-          "(() => {",
-          `  const text = ${JSON.stringify(text)};`,
-          "  const el = document.activeElement;",
-          "  if (!el) return false;",
-          "  if ('value' in el) {",
-          "    const start = typeof el.selectionStart === 'number' ? el.selectionStart : String(el.value || '').length;",
-          "    const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;",
-          "    el.value = String(el.value || '').slice(0, start) + text + String(el.value || '').slice(end);",
-          "    el.dispatchEvent(new Event('input', { bubbles: true }));",
-          "    return true;",
-          "  }",
-          "  document.execCommand('insertText', false, text);",
-          "  return true;",
-          "})();"
-        ].join("\n"));
-        return {};
-      }
-      default:
-        throw new Error(`CDP method is not supported for iframe targets: ${method}`);
-    }
-  }
-
-  private async ensureFrameTarget(surface: EmbeddedCdpSurface) {
-    let target = await this.options.resolveFrameTarget?.(surface);
-    if (target) {
-      return target;
-    }
-    await this.options.activateSurface?.(surface);
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < DEFAULT_CDP_TIMEOUT_MS) {
-      target = await this.options.resolveFrameTarget?.(surface);
-      if (target) {
-        return target;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 150));
-    }
-    return null;
   }
 
   private async ensureWebContents(surface: EmbeddedCdpSurface) {
@@ -830,6 +659,5 @@ export class EmbeddedCdpGateway {
 export const __testInternals = {
   createServerFrame,
   stableTargetId,
-  targetDescriptor,
-  remoteObject
+  targetDescriptor
 };

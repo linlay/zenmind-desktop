@@ -105,7 +105,6 @@ export interface DesktopActionCallRequest {
   source?: DesktopActionSource;
   permissionMode?: "default" | "page_control" | "full_access";
   expectedPageKey?: string;
-  expectedSnapshotVersion?: number;
 }
 
 export interface DesktopActionError {

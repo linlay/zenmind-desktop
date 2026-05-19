@@ -75,7 +75,6 @@ import { revealPathInFileManager } from "./reveal-path";
 import {
   EmbeddedCdpGateway,
   type EmbeddedCdpCommandRequest,
-  type EmbeddedCdpFrameTarget,
   type EmbeddedCdpSurface
 } from "./embedded-cdp-gateway";
 import {
@@ -117,8 +116,6 @@ import type {
   DesktopPageContextSnapshot,
   DesktopPetAgentOption,
   DesktopPetSettingsInput,
-  EmbeddedWebExecuteInFrameRequest,
-  EmbeddedWebExecuteInFrameResult,
   AssistantPastedImageInput,
   AssistantWorkerOpenRequest,
   CustomSidebarItemInput,
@@ -209,8 +206,6 @@ const LOG_VIEWER_ROUTE = "/log-viewer";
 const AGENT_WEBCLIENT_OPEN_RETRY_COUNT = 24;
 const AGENT_WEBCLIENT_OPEN_RETRY_MS = 180;
 const DESKTOP_ACTION_RENDERER_TIMEOUT_MS = 8_000;
-const EMBEDDED_WEB_FRAME_SCRIPT_TIMEOUT_MS = 15_000;
-const EMBEDDED_WEB_FRAME_SCRIPT_MAX_BYTES = 256 * 1024;
 const DESKTOP_PET_DRAG_FORCE_END_MS = 4_000;
 const QUICK_ASSISTANT_DISMISS_URL = "zenmind://quick-assistant-dismiss";
 const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -234,15 +229,13 @@ type BrowserSurface = {
   id: string;
   label: string;
   url: string;
-  kind?: "webview" | "iframe";
+  kind?: "webview";
   active?: boolean;
   title?: string;
   currentUrl?: string;
   webContentsId?: number;
   agentKey?: string;
-  frameMatchUrl?: string;
-  navigationRoute?: string;
-  navigationLabel?: string;
+  surfaceRoute?: string;
   embedPath?: string;
 };
 let startupRestoreState = createStartupRestoreState();
@@ -835,21 +828,6 @@ function collectWebFrames(frame: WebFrameMain, frames: WebFrameMain[] = []) {
   return frames;
 }
 
-function embeddedWebFrameError(
-  code: string,
-  message: string,
-  details?: unknown
-): EmbeddedWebExecuteInFrameResult {
-  return {
-    ok: false,
-    error: {
-      code,
-      message,
-      ...(details === undefined ? {} : { details })
-    }
-  };
-}
-
 function isLoopbackHostname(hostname: string) {
   const normalized = hostname.toLowerCase();
   return normalized === "localhost" ||
@@ -858,111 +836,15 @@ function isLoopbackHostname(hostname: string) {
     /^127(?:\.\d{1,3}){3}$/u.test(normalized);
 }
 
-function parseSafeFrameMatchUrl(frameMatchUrl: string) {
+function parseSafeLoopbackWebUrl(value: string) {
   try {
-    const parsed = new URL(frameMatchUrl);
+    const parsed = new URL(value);
     if (!["http:", "https:"].includes(parsed.protocol)) {
       return null;
     }
     return isLoopbackHostname(parsed.hostname) ? parsed : null;
   } catch {
     return null;
-  }
-}
-
-function isTrustedDesktopRendererSender(contents: WebContents) {
-  return [mainWindow, quickAssistantWindow].some((targetWindow) =>
-    targetWindow && !targetWindow.isDestroyed() && targetWindow.webContents.id === contents.id
-  );
-}
-
-function parseFrameUrl(frame: WebFrameMain) {
-  try {
-    return new URL(frame.url);
-  } catch {
-    return null;
-  }
-}
-
-function findMatchingWebFrame(frames: WebFrameMain[], targetUrl: URL) {
-  const originMatches = frames.filter((frame) => parseFrameUrl(frame)?.origin === targetUrl.origin);
-  return originMatches.find((frame) => parseFrameUrl(frame)?.href === targetUrl.href) ??
-    originMatches.find((frame) => {
-      const frameUrl = parseFrameUrl(frame);
-      return Boolean(frameUrl && targetUrl.pathname !== "/" && frameUrl.pathname === targetUrl.pathname);
-    }) ??
-    originMatches[0] ??
-    null;
-}
-
-async function executeWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => {
-          reject(new Error(`Script execution timed out after ${timeoutMs}ms`));
-        }, timeoutMs);
-      })
-    ]);
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-  }
-}
-
-async function executeEmbeddedWebFrameScript(
-  sender: WebContents,
-  input: EmbeddedWebExecuteInFrameRequest
-): Promise<EmbeddedWebExecuteInFrameResult> {
-  if (!isTrustedDesktopRendererSender(sender)) {
-    return embeddedWebFrameError("forbidden", "Only Desktop renderer windows can execute embedded frame scripts.");
-  }
-
-  const frameMatchUrl = typeof input?.frameMatchUrl === "string" ? input.frameMatchUrl.trim() : "";
-  const targetUrl = parseSafeFrameMatchUrl(frameMatchUrl);
-  if (!targetUrl) {
-    return embeddedWebFrameError("invalid_frame_match_url", "frameMatchUrl must be an http(s) localhost or loopback URL.", {
-      frameMatchUrl
-    });
-  }
-
-  const script = typeof input?.script === "string" ? input.script : "";
-  if (!script.trim()) {
-    return embeddedWebFrameError("invalid_script", "script is required.");
-  }
-  if (Buffer.byteLength(script, "utf8") > EMBEDDED_WEB_FRAME_SCRIPT_MAX_BYTES) {
-    return embeddedWebFrameError("script_too_large", "script exceeds the embedded frame size limit.");
-  }
-
-  const frames = collectWebFrames(sender.mainFrame);
-  const frame = findMatchingWebFrame(frames, targetUrl);
-  if (!frame) {
-    return embeddedWebFrameError("frame_not_found", "No embedded frame matched the requested localhost origin.", {
-      frameMatchUrl,
-      origin: targetUrl.origin,
-      frames: frames.map((candidate) => candidate.url).filter(Boolean)
-    });
-  }
-
-  const timeoutMs = typeof input.timeoutMs === "number" && Number.isFinite(input.timeoutMs)
-    ? Math.min(Math.max(Math.round(input.timeoutMs), 1_000), EMBEDDED_WEB_FRAME_SCRIPT_TIMEOUT_MS)
-    : EMBEDDED_WEB_FRAME_SCRIPT_TIMEOUT_MS;
-  try {
-    const result = await executeWithTimeout(frame.executeJavaScript(script), timeoutMs);
-    return {
-      ok: true,
-      frameUrl: frame.url,
-      result
-    };
-  } catch (error) {
-    return embeddedWebFrameError(
-      "script_execution_failed",
-      error instanceof Error ? error.message : String(error),
-      { frameUrl: frame.url }
-    );
   }
 }
 
@@ -2515,7 +2397,7 @@ function createWindow() {
       return;
     }
 
-    if (usesServicePreload && !parseSafeFrameMatchUrl(String(params.src || ""))) {
+    if (usesServicePreload && !parseSafeLoopbackWebUrl(String(params.src || ""))) {
       event.preventDefault();
       safeConsoleError("blocked service webview with unsafe url", {
         src: params.src
@@ -3043,7 +2925,7 @@ async function listEmbeddedCdpSurfaces(): Promise<EmbeddedCdpSurface[]> {
 
 function createEmbeddedCdpServiceSurface(service: ServiceState): EmbeddedCdpSurface | null {
   const webUrl = service.status === "running" ? service.healthMeta.webUrl.trim() : "";
-  if (service.frontendMode === "none" || !webUrl || !parseSafeFrameMatchUrl(webUrl)) {
+  if (service.frontendMode === "none" || !webUrl || !parseSafeLoopbackWebUrl(webUrl)) {
     return null;
   }
   const contents = findWebContentsForSurfaceUrl(webUrl);
@@ -3051,14 +2933,10 @@ function createEmbeddedCdpServiceSurface(service: ServiceState): EmbeddedCdpSurf
   const snapshotMatchesService = currentPageSnapshot?.pageKind === "webview" && (
     currentPageSnapshot.surfaceId === service.id ||
     snapshotBrowserTarget?.surfaceId === service.id ||
-    (typeof contents?.id === "number" && currentPageSnapshot.webContentsId === contents.id) ||
-    (typeof contents?.id === "number" && snapshotBrowserTarget?.kind === "webview" && snapshotBrowserTarget.webContentsId === contents.id)
+    (typeof contents?.id === "number" && currentPageSnapshot.webContentsId === contents.id)
   );
-  const navigationRoute = snapshotMatchesService
-    ? currentPageSnapshot?.navigationRoute || snapshotBrowserTarget?.navigationRoute || currentPageSnapshot?.route
-    : "";
-  const navigationLabel = snapshotMatchesService
-    ? currentPageSnapshot?.navigationLabel || snapshotBrowserTarget?.navigationLabel || currentPageSnapshot?.surfaceLabel
+  const surfaceRoute = snapshotMatchesService
+    ? currentPageSnapshot?.surfaceRoute || snapshotBrowserTarget?.surfaceRoute || currentPageSnapshot?.route
     : "";
   const snapshotCurrentUrl = snapshotMatchesService && snapshotBrowserTarget?.kind === "webview"
     ? snapshotBrowserTarget.currentUrl
@@ -3073,16 +2951,12 @@ function createEmbeddedCdpServiceSurface(service: ServiceState): EmbeddedCdpSurf
     currentUrl: snapshotCurrentUrl || contents?.getURL(),
     title: documentTitle || service.name || service.id,
     webContentsId: contents?.id,
-    ...(navigationRoute ? { navigationRoute } : {}),
-    ...(navigationLabel ? { navigationLabel } : {}),
+    ...(surfaceRoute ? { surfaceRoute } : {}),
     ...(snapshotMatchesService && currentPageSnapshot?.embedPath ? { embedPath: currentPageSnapshot.embedPath } : {})
   };
 }
 
 function resolveEmbeddedCdpWebContents(surface: EmbeddedCdpSurface): WebContents | null {
-  if (surface.kind === "iframe") {
-    return null;
-  }
   if (surface.webContentsId) {
     const contents = webContents.fromId(surface.webContentsId);
     if (contents && !contents.isDestroyed() && contents.getType() === "webview") {
@@ -3092,36 +2966,7 @@ function resolveEmbeddedCdpWebContents(surface: EmbeddedCdpSurface): WebContents
   return findWebContentsForSurfaceUrl(surface.currentUrl || surface.url);
 }
 
-function resolveEmbeddedCdpFrameTarget(surface: EmbeddedCdpSurface): EmbeddedCdpFrameTarget | null {
-  const frameMatchUrl = surface.frameMatchUrl || surface.currentUrl || surface.url;
-  const targetUrl = parseSafeFrameMatchUrl(frameMatchUrl);
-  if (!targetUrl) {
-    return null;
-  }
-
-  for (const targetWindow of [mainWindow, quickAssistantWindow]) {
-    if (!targetWindow || targetWindow.isDestroyed()) {
-      continue;
-    }
-    const frame = findMatchingWebFrame(collectWebFrames(targetWindow.webContents.mainFrame), targetUrl);
-    if (frame) {
-      return {
-        frame,
-        ownerContents: targetWindow.webContents
-      };
-    }
-  }
-  return null;
-}
-
 async function activateEmbeddedCdpSurface(surface: EmbeddedCdpSurface) {
-  if (surface.kind === "iframe") {
-    const targetPath = surface.id === "agent-webclient" ? ASSISTANT_TARGET_PATH : `/service/${surface.id}`;
-    showMainWindow(targetPath);
-    await delay(450);
-    return;
-  }
-
   if (surface.id === BUILTIN_BROWSER_SURFACE_ID) {
     await openBrowserUrl({ url: surface.currentUrl || surface.url, label: surface.label });
     return;
@@ -3151,7 +2996,6 @@ function startEmbeddedCdpGateway() {
   embeddedCdpGateway = new EmbeddedCdpGateway({
     getSurfaces: listEmbeddedCdpSurfaces,
     resolveWebContents: resolveEmbeddedCdpWebContents,
-    resolveFrameTarget: resolveEmbeddedCdpFrameTarget,
     activateSurface: activateEmbeddedCdpSurface,
     openUrl: openEmbeddedCdpUrl,
     version: `ZenMind/${app.getVersion()} Electron/${process.versions.electron}`
@@ -4115,9 +3959,6 @@ function registerIpcHandlers() {
   ipcMain.handle("panAuth.getStatus", async () => getPanAuthStatus(app));
   ipcMain.handle("agentAuth.issueAccessToken", async (_event, reason: "missing" | "unauthorized") => {
     return issueAgentAccessToken(app, reason);
-  });
-  ipcMain.handle("embeddedWeb.executeInFrame", async (event, request: EmbeddedWebExecuteInFrameRequest) => {
-    return executeEmbeddedWebFrameScript(event.sender, request);
   });
   ipcMain.handle("clipboard.writeText", async (_event, text: string) => {
     try {

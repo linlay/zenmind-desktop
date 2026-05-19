@@ -187,9 +187,6 @@ const api: DesktopApi = {
     publishSnapshot: (snapshot) => ipcRenderer.invoke("currentPage.publishSnapshot", snapshot),
     getSnapshot: () => ipcRenderer.invoke("currentPage.getSnapshot")
   },
-  embeddedWeb: {
-    executeInFrame: (request) => ipcRenderer.invoke("embeddedWeb.executeInFrame", request)
-  },
   desktopPet: {
     getSettings: () => ipcRenderer.invoke("desktopPet.getSettings"),
     getState: () => ipcRenderer.invoke("desktopPet.getState"),

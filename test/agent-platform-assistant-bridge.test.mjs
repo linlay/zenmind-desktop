@@ -76,7 +76,9 @@ test("agent platform assistant bridge forwards startRun to /api/query with beare
       assert.equal(body.message, "hello platform");
       assert.equal(body.agentKey, "codeAssistant");
       assert.equal(body.stream, true);
-      assert.equal(body.params.desktop.source, "sidebar");
+      assert.equal(body.params.desktop.source, "copilot");
+      assert.equal(Object.hasOwn(body.params.desktop, "permissionMode"), false);
+      assert.equal(Object.hasOwn(body.params.desktop, "historyBeforeMessageId"), false);
       return sseResponse([
         { seq: 1, type: "run.start", runId: body.runId, chatId: body.chatId, timestamp: 1 },
         { seq: 2, type: "content.delta", runId: body.runId, chatId: body.chatId, delta: "hi", timestamp: 2 },
@@ -87,7 +89,7 @@ test("agent platform assistant bridge forwards startRun to /api/query with beare
   };
 
   try {
-    const result = await bridge.startRun({ message: "hello platform", source: "sidebar", agentKey: "codeAssistant" });
+    const result = await bridge.startRun({ message: "hello platform", agentKey: "codeAssistant" });
     assert.equal(result.ok, true);
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(requests.length, 1);

@@ -251,10 +251,7 @@ function buildAgentWebclientDesktopContext(snapshot: DesktopPageContextSnapshot 
   if (!snapshot) {
     return null;
   }
-  return {
-    ...snapshot,
-    ...(snapshot.pageKind === "webview" ? { permissionMode: "page_control" as const } : {})
-  };
+  return snapshot;
 }
 
 function readFormFields(args: Record<string, unknown>) {
@@ -287,10 +284,8 @@ function buildPluginWebviewFallbackContext(
   webUrl: string,
   surfaceId: string,
   surfaceLabel: string,
-  navigationRoute?: string,
-  navigationLabel?: string,
-  embedPath?: string,
-  webContentsId?: number
+  surfaceRoute?: string,
+  embedPath?: string
 ): AssistantPageContext {
   const normalizedName = normalizeWhitespace(serviceDisplayName || "内嵌应用");
   const fallbackUrl = embeddedUrl || webUrl || window.location.href;
@@ -304,14 +299,12 @@ function buildPluginWebviewFallbackContext(
       `当前左侧区域是内嵌应用「${normalizedName || "内嵌应用"}」。`,
       "需要实时读取或操作时，优先使用 desktop.page.readCurrent、desktop.page.extractStructured、desktop.page.interact、desktop.page.fillForm、desktop.page.submitForm。"
     ].join(" "),
-    browserTarget: fallbackUrl && typeof webContentsId === "number"
+    browserTarget: fallbackUrl
       ? {
           kind: "webview",
-          webContentsId,
           surfaceId,
           surfaceLabel,
-          ...(navigationRoute ? { navigationRoute } : {}),
-          ...(navigationLabel ? { navigationLabel } : {}),
+          ...(surfaceRoute ? { surfaceRoute } : {}),
           ...(embedPath ? { embedPath } : {}),
           currentUrl: fallbackUrl
         }
@@ -340,8 +333,7 @@ async function tryReadPluginWebviewPageContext(
   webUrl: string,
   surfaceId: string,
   surfaceLabel: string,
-  navigationRoute: string,
-  navigationLabel: string,
+  surfaceRoute: string,
   embedPath: string | undefined,
   currentUrl: string
 ): Promise<AssistantPageContext | null> {
@@ -351,7 +343,6 @@ async function tryReadPluginWebviewPageContext(
 
   try {
     const pageContext = await webview.executeJavaScript(WEBVIEW_PAGE_CONTEXT_SCRIPT, true);
-    const webContentsId = readWebviewContentsId(webview);
     const nextUrl = typeof pageContext?.url === "string" && pageContext.url ? pageContext.url : currentUrl || embeddedUrl || webUrl;
 
     return {
@@ -365,18 +356,14 @@ async function tryReadPluginWebviewPageContext(
         ? pageContext.headings.filter((item: unknown): item is string => typeof item === "string")
         : [],
       bodyText: typeof pageContext?.bodyText === "string" ? pageContext.bodyText : "",
-      browserTarget: typeof webContentsId === "number"
-        ? {
-            kind: "webview",
-            webContentsId,
-            surfaceId,
-            surfaceLabel,
-            ...(navigationRoute ? { navigationRoute } : {}),
-            ...(navigationLabel ? { navigationLabel } : {}),
-            ...(embedPath ? { embedPath } : {}),
-            currentUrl: nextUrl
-          }
-        : undefined
+      browserTarget: {
+        kind: "webview",
+        surfaceId,
+        surfaceLabel,
+        ...(surfaceRoute ? { surfaceRoute } : {}),
+        ...(embedPath ? { embedPath } : {}),
+        currentUrl: nextUrl
+      }
     };
   } catch {
     return null;
@@ -401,8 +388,7 @@ export function PluginPage({
     ? services.find((s) => s.id === "agent-platform")
     : null;
   const serviceDisplayName = surfaceLabel || (service ? getServiceDisplayName(service.id, service.name) : "");
-  const navigationRoute = location.pathname;
-  const navigationLabel = surfaceLabel || "";
+  const surfaceRoute = location.pathname;
   const [bridgeError, setBridgeError] = useState("");
   const [bridgeReady, setBridgeReady] = useState(false);
   const [webviewRetryNonce, setWebviewRetryNonce] = useState(0);
@@ -468,7 +454,6 @@ export function PluginPage({
   }
 
   async function readPluginPageContext() {
-    const webContentsId = readWebviewContentsId(webviewRef.current);
     return await tryReadPluginWebviewPageContext(
       webviewRef.current,
       serviceDisplayName,
@@ -476,8 +461,7 @@ export function PluginPage({
       webUrl,
       pluginId,
       serviceDisplayName,
-      navigationRoute,
-      navigationLabel,
+      surfaceRoute,
       embedPath,
       readCurrentWebviewUrl()
     ) ?? buildPluginWebviewFallbackContext(
@@ -486,10 +470,8 @@ export function PluginPage({
       webUrl,
       pluginId,
       serviceDisplayName,
-      navigationRoute,
-      navigationLabel,
-      embedPath,
-      webContentsId
+      surfaceRoute,
+      embedPath
     );
   }
 
@@ -524,8 +506,7 @@ export function PluginPage({
       pageKind: "webview" as const,
       ...(pluginId ? { surfaceId: pluginId } : {}),
       ...(serviceDisplayName ? { surfaceLabel: serviceDisplayName } : {}),
-      ...(navigationRoute ? { navigationRoute } : {}),
-      ...(navigationLabel ? { navigationLabel } : {}),
+      ...(surfaceRoute ? { surfaceRoute } : {}),
       ...(embedPath ? { embedPath } : {}),
       ...(typeof webContentsId === "number" ? { webContentsId } : {})
     };
@@ -534,15 +515,12 @@ export function PluginPage({
   function attachDescriptorMetadata(payload: Record<string, unknown>) {
     const descriptor = createCurrentPageDescriptor();
     return {
-      route: descriptor.route,
       pageKey: descriptor.pageKey,
       pageKind: descriptor.pageKind,
       ...(descriptor.surfaceId ? { surfaceId: descriptor.surfaceId } : {}),
       ...(descriptor.surfaceLabel ? { surfaceLabel: descriptor.surfaceLabel } : {}),
-      ...(descriptor.navigationRoute ? { navigationRoute: descriptor.navigationRoute } : {}),
-      ...(descriptor.navigationLabel ? { navigationLabel: descriptor.navigationLabel } : {}),
+      ...(descriptor.surfaceRoute ? { surfaceRoute: descriptor.surfaceRoute } : {}),
       ...(descriptor.embedPath ? { embedPath: descriptor.embedPath } : {}),
-      ...(typeof descriptor.webContentsId === "number" ? { webContentsId: descriptor.webContentsId } : {}),
       ...payload
     };
   }
@@ -1039,8 +1017,7 @@ export function PluginPage({
                 url: embeddedUrl,
                 active: active !== false,
                 currentUrl: webviewCurrentUrl || embeddedUrl,
-                title: serviceDisplayName,
-                webContentsId: readWebviewContentsId(webviewRef.current)
+                title: serviceDisplayName
               },
               tabs: [],
               activeTab: null

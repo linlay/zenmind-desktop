@@ -508,7 +508,7 @@ export type AssistantMessageRole = "user" | "assistant";
 
 export type AssistantRunAction = "chat" | "summarize_page" | "explain_selection" | "extract_todos";
 export type AssistantPermissionMode = "default" | "page_control" | "full_access";
-export type AssistantRunSource = "sidebar" | "quick-assistant";
+export type AssistantRunSource = "sidebar" | "quick-assistant" | "copilot";
 
 export interface AssistantPageContext {
   url: string;
@@ -520,66 +520,30 @@ export interface AssistantPageContext {
   shellSidebarText?: string;
   leftRegionText?: string;
   modalText?: string;
-  browserTarget?: (
-    {
-      kind: "webview";
-      webContentsId: number;
-      surfaceId?: string;
-      surfaceLabel?: string;
-      currentUrl?: string;
-      navigationRoute?: string;
-      navigationLabel?: string;
-      embedPath?: string;
-      browserSkill?: string;
-    } |
-    {
-      kind: "iframe";
-      frameMatchUrl: string;
-      surfaceId?: string;
-      surfaceLabel?: string;
-      currentUrl?: string;
-      navigationRoute?: string;
-      navigationLabel?: string;
-      embedPath?: string;
-      browserSkill?: string;
-    }
-  );
+  browserTarget?: {
+    kind: "webview";
+    webContentsId?: number;
+    surfaceId?: string;
+    surfaceLabel?: string;
+    currentUrl?: string;
+    surfaceRoute?: string;
+    embedPath?: string;
+    browserSkill?: string;
+  };
 }
 
-export type DesktopPageKind = "native" | "webview" | "iframe";
+export type DesktopPageKind = "native" | "webview";
 
 export interface DesktopPageContextSnapshot {
   route: string;
   pageKey: string;
   pageKind: DesktopPageKind;
-  permissionMode?: AssistantPermissionMode;
   surfaceId?: string;
   surfaceLabel?: string;
-  navigationRoute?: string;
-  navigationLabel?: string;
+  surfaceRoute?: string;
   embedPath?: string;
   webContentsId?: number;
-  frameMatchUrl?: string;
-  snapshotVersion: number;
-  snapshotAt: string;
   pageContext: AssistantPageContext | null;
-}
-
-export interface EmbeddedWebExecuteInFrameRequest {
-  frameMatchUrl: string;
-  script: string;
-  timeoutMs?: number;
-}
-
-export interface EmbeddedWebExecuteInFrameResult {
-  ok: boolean;
-  frameUrl?: string;
-  result?: unknown;
-  error?: {
-    code: string;
-    message: string;
-    details?: unknown;
-  };
 }
 
 export interface DesktopActionRendererRequest {
@@ -901,7 +865,6 @@ export interface AssistantStartRunRequest {
   source?: AssistantRunSource;
   pageContext?: AssistantPageContext | null;
   attachments?: AssistantAttachment[];
-  historyBeforeMessageId?: string;
 }
 
 export interface AssistantStartRunResult {
@@ -1364,9 +1327,6 @@ export interface DesktopApi {
   currentPage: {
     publishSnapshot: (snapshot: DesktopPageContextSnapshot) => Promise<{ ok: boolean }>;
     getSnapshot: () => Promise<DesktopPageContextSnapshot | null>;
-  };
-  embeddedWeb: {
-    executeInFrame: (request: EmbeddedWebExecuteInFrameRequest) => Promise<EmbeddedWebExecuteInFrameResult>;
   };
   desktopPet: {
     getSettings: () => Promise<DesktopPetSettings>;

@@ -11,11 +11,9 @@ export type CurrentPageContextSnapshotInput = {
   pageContext: AssistantPageContext | null;
   surfaceId?: string;
   surfaceLabel?: string;
-  navigationRoute?: string;
-  navigationLabel?: string;
+  surfaceRoute?: string;
   embedPath?: string;
   webContentsId?: number;
-  frameMatchUrl?: string;
 };
 
 export type CurrentPageContextListener = (
@@ -23,7 +21,6 @@ export type CurrentPageContextListener = (
 ) => void;
 
 let currentSnapshot: DesktopPageContextSnapshot | null = null;
-let snapshotVersion = 0;
 const listeners = new Set<CurrentPageContextListener>();
 
 function normalizeOptionalString(value: string | undefined) {
@@ -44,22 +41,17 @@ function notifyListeners() {
 export function buildCurrentPageContextSnapshot(
   input: CurrentPageContextSnapshotInput
 ): DesktopPageContextSnapshot {
-  snapshotVersion += 1;
   return {
     route: input.route,
     pageKey: input.pageKey,
     pageKind: input.pageKind,
     ...(normalizeOptionalString(input.surfaceId) ? { surfaceId: normalizeOptionalString(input.surfaceId) } : {}),
     ...(normalizeOptionalString(input.surfaceLabel) ? { surfaceLabel: normalizeOptionalString(input.surfaceLabel) } : {}),
-    ...(normalizeOptionalString(input.navigationRoute) ? { navigationRoute: normalizeOptionalString(input.navigationRoute) } : {}),
-    ...(normalizeOptionalString(input.navigationLabel) ? { navigationLabel: normalizeOptionalString(input.navigationLabel) } : {}),
+    ...(normalizeOptionalString(input.surfaceRoute) ? { surfaceRoute: normalizeOptionalString(input.surfaceRoute) } : {}),
     ...(normalizeOptionalString(input.embedPath) ? { embedPath: normalizeOptionalString(input.embedPath) } : {}),
     ...(normalizeOptionalNumber(input.webContentsId) !== undefined
       ? { webContentsId: normalizeOptionalNumber(input.webContentsId) }
       : {}),
-    ...(normalizeOptionalString(input.frameMatchUrl) ? { frameMatchUrl: normalizeOptionalString(input.frameMatchUrl) } : {}),
-    snapshotVersion,
-    snapshotAt: new Date().toISOString(),
     pageContext: input.pageContext
   };
 }
