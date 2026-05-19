@@ -112,7 +112,7 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   assert.match(stageAppScript, /"dist-renderer"/);
   assert.match(stageAppScript, /main:\s*"dist-electron\/main\/index\.js"/);
   assert.match(buildMainBundleScript, /"main\/attachment-worker"/);
-  assert.match(buildMainBundleScript, /"main",\s*"assistant",\s*"attachment-worker\.ts"/);
+  assert.match(buildMainBundleScript, /"main",\s*"copilot",\s*"attachments",\s*"attachment-worker\.ts"/);
   assert.match(stageAppScript, /"@napi-rs\/canvas": desktopPackage\.dependencies/);
   assert.doesNotMatch(stageAppScript, /"@ffmpeg-installer\/ffmpeg": desktopPackage\.dependencies/);
   assert.match(stageAppScript, /--os=\$\{target\.os\}/);

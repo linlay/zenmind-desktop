@@ -13,15 +13,15 @@ import type {
   MarketSettings,
   MarketSettingsInput
 } from "../shared/contracts";
-import { ContainerHubClient, type ContainerHubConfig, type ContainerHubEnvironment } from "./assistant/container-hub";
+import { ContainerHubClient, type ContainerHubConfig, type ContainerHubEnvironment } from "./copilot/core/container-hub";
 import { readManifestFromArchive } from "./manifest-utils";
 import {
   getMarketplaceCacheRoot,
   getMarketplaceConfigRoot,
   getMarketplaceStateRoot
 } from "./user-paths";
-import { getAllServices } from "./service-registry";
-import { getServiceState } from "./service-manager";
+import { getAllServices } from "./services/service-registry";
+import { getServiceState } from "./services/manager";
 import { getPluginInstallDir, installPluginFromArchive, uninstallPlugin } from "./plugin-loader";
 import { readEnvFile } from "./env-file";
 import {

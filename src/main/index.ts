@@ -50,7 +50,7 @@ import {
   stopRunningServicesForShutdown,
   verifyServiceState,
   writeServiceConfig
-} from "./service-manager";
+} from "./services/manager";
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
@@ -69,7 +69,7 @@ import {
   isPortConflictError,
   killProcessByPid,
   showPortConflictDialog
-} from "./port-conflict";
+} from "./services/port-conflict";
 import { resolveWebviewOpenDisposition } from "./webview-open-tab";
 import { revealPathInFileManager } from "./reveal-path";
 import {
@@ -84,25 +84,25 @@ import {
   listCustomSidebarItems,
   removeCustomSidebarItem,
   updateCustomSidebarItem
-} from "./custom-sidebar-store";
+} from "./navigation/custom-sidebar-store";
 import {
   getAgentPlatformMinimaxSettingsPublic,
   loadAgentPlatformMinimaxSettings
-} from "./assistant/agent-platform-config";
+} from "./copilot/core/agent-platform-config";
 import {
   getAssistantSettings,
   readAssistantSettings,
   saveAssistantSettings
-} from "./assistant/settings-store";
-import { AgentPlatformAssistantBridge } from "./assistant/agent-platform-bridge";
+} from "./copilot/core/settings-store";
+import { AgentPlatformAssistantBridge } from "./copilot/core/agent-platform-bridge";
 import {
   cancelAssistantAttachmentTask,
   createAssistantAttachmentFromImageBuffer,
   createAssistantAttachmentFromPastedImage,
   createAssistantAttachmentsFromFiles,
   resolveAssistantAttachmentPath
-} from "./assistant/attachment-store";
-import { getService } from "./service-registry";
+} from "./copilot/attachments/attachment-store";
+import { getService } from "./services/service-registry";
 import type {
   AssistantEvent,
   AssistantAttachmentTaskProgress,
@@ -155,8 +155,8 @@ import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { safeConsoleError } from "./safe-console";
 import { handleDesktopActionRequest, startDesktopActionBridge } from "./desktop-action-bridge";
 import { DESKTOP_ACTION_DEFINITIONS } from "../shared/desktop-actions";
-import { AgentPlatformPetStatusClient } from "./agent-platform-pet-status";
-import { AgentPlatformPetStreamClient } from "./agent-platform-pet-stream";
+import { AgentPlatformPetStatusClient } from "./copilot/pet-copilot/pet-status-client";
+import { AgentPlatformPetStreamClient } from "./copilot/pet-copilot/pet-stream-client";
 import {
   clampDesktopPetPosition,
   createDesktopPetState,
@@ -174,27 +174,26 @@ import {
   sanitizeDesktopPetAppearanceId,
   sanitizeDesktopPetBoundAgentKey,
   toDesktopPetSettings
-} from "./desktop-pet";
-import { DesktopPetPreviewProjector, normalizeDesktopPetAgentEvent } from "./desktop-pet-preview";
+} from "./copilot/pet-copilot/desktop-pet";
+import { DesktopPetPreviewProjector, normalizeDesktopPetAgentEvent } from "./copilot/pet-copilot/desktop-pet-preview";
 import {
-  getQuickAssistantWebCopilotBounds,
   isQuickAssistantMediaPermissionAllowed,
-  isQuickAssistantSupportedPlatform,
-  QUICK_ASSISTANT_ROUTE,
-  QUICK_ASSISTANT_SHORTCUT
-} from "./quick-assistant";
+} from "./copilot/quick-copilot/quick-copilot";
+import { QuickCopilotWindowController } from "./copilot/quick-copilot/window";
+import { registerQuickCopilotIpcHandlers } from "./copilot/quick-copilot/ipc";
+import {
+  registerQuickCopilotShortcut,
+  unregisterQuickCopilotShortcut
+} from "./copilot/quick-copilot/shortcut";
 
 let mainWindow: BrowserWindow | null = null;
 let desktopPetWindow: BrowserWindow | null = null;
-let quickAssistantWindow: BrowserWindow | null = null;
-let quickAssistantDismissWindow: BrowserWindow | null = null;
 let logViewerWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isHandlingQuit = false;
 let pendingMainWindowCloseCancel: (() => void) | null = null;
 let serviceMutationQueue = Promise.resolve();
 let nativeDialogVisibilityDepth = 0;
-let quickAssistantVisibleBeforeNativeDialog = false;
 let mainWindowSidebarTranslucencyEnabled = true;
 const desktopActionRendererRequests = new Map<string, {
   resolve: (response: DesktopActionRendererResponse) => void;
@@ -207,7 +206,6 @@ const AGENT_WEBCLIENT_OPEN_RETRY_COUNT = 24;
 const AGENT_WEBCLIENT_OPEN_RETRY_MS = 180;
 const DESKTOP_ACTION_RENDERER_TIMEOUT_MS = 8_000;
 const DESKTOP_PET_DRAG_FORCE_END_MS = 4_000;
-const QUICK_ASSISTANT_DISMISS_URL = "zenmind://quick-assistant-dismiss";
 const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
 const MAC_FULLSCREEN_CLOSE_FALLBACK_MS = 2200;
@@ -327,6 +325,16 @@ function loadRendererRoute(targetWindow: BrowserWindow, routePath: string) {
   }
   return targetWindow.loadFile(rendererEntry, { hash: routePath });
 }
+
+const quickCopilotWindowController = new QuickCopilotWindowController({
+  app,
+  platform: () => process.platform,
+  preloadPath: path.join(__dirname, "..", "preload", "index.js"),
+  loadRendererRoute,
+  prepareServices: () => runServiceMutation(() => ensureAssistantTargetServicesRunning("quick-assistant")),
+  showControlCenter: () => showMainWindow("/control-center"),
+  openAgent: scheduleAgentWebclientOpenRequest
+});
 
 function clearDesktopPetIdleResetTimer() {
   if (desktopPetIdleResetTimer) {
@@ -1346,168 +1354,12 @@ function handleDesktopPetAssistantEvent(event: AssistantEvent) {
   });
 }
 
-function getQuickAssistantWorkArea() {
-  const cursorPoint = screen.getCursorScreenPoint();
-  return screen.getDisplayNearestPoint(cursorPoint).workArea;
-}
-
-function getQuickAssistantDismissHtml() {
-  return [
-    "<!doctype html>",
-    "<html>",
-    "<head>",
-    "<meta charset=\"utf-8\">",
-    "<style>",
-    "html,body,#hit{width:100%;height:100%;margin:0;background:transparent;}",
-    "</style>",
-    "</head>",
-    "<body>",
-    "<div id=\"hit\" aria-hidden=\"true\"></div>",
-    "<script>",
-    "const dismiss=()=>{",
-    "  if(window.electronAPI?.quickAssistant?.hide){",
-    "    void window.electronAPI.quickAssistant.hide();",
-    "    return;",
-    "  }",
-    `  window.location.href=${JSON.stringify(QUICK_ASSISTANT_DISMISS_URL)};`,
-    "};",
-    "[\"pointerdown\",\"mousedown\",\"click\",\"touchstart\"].forEach((eventName)=>{",
-    "  document.addEventListener(eventName,dismiss,{capture:true});",
-    "});",
-    "</script>",
-    "</body>",
-    "</html>"
-  ].join("");
-}
-
-function createQuickAssistantDismissWindow() {
-  if (!isQuickAssistantSupportedPlatform(process.platform)) {
-    return null;
-  }
-  if (quickAssistantDismissWindow && !quickAssistantDismissWindow.isDestroyed()) {
-    return quickAssistantDismissWindow;
-  }
-
-  quickAssistantDismissWindow = new BrowserWindow({
-    ...getQuickAssistantWorkArea(),
-    show: false,
-    frame: false,
-    transparent: true,
-    focusable: false,
-    resizable: false,
-    maximizable: false,
-    minimizable: false,
-    fullscreenable: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    backgroundColor: "#00000000",
-    title: "ZenMind Quick Assistant Dismiss Layer",
-    webPreferences: {
-      preload: path.join(__dirname, "..", "preload", "index.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      devTools: false,
-      sandbox: false
-    }
-  });
-
-  quickAssistantDismissWindow.setAlwaysOnTop(true, "floating");
-  quickAssistantDismissWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  quickAssistantDismissWindow.webContents.on("will-navigate", (event, url) => {
-    if (!url.startsWith(QUICK_ASSISTANT_DISMISS_URL)) {
-      return;
-    }
-    event.preventDefault();
-    hideQuickAssistantAfterOutsideFocus();
-  });
-  quickAssistantDismissWindow.on("closed", () => {
-    quickAssistantDismissWindow = null;
-  });
-  void quickAssistantDismissWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(getQuickAssistantDismissHtml())}`);
-
-  return quickAssistantDismissWindow;
-}
-
 function showQuickAssistantDismissWindow() {
-  const dismissWindow = createQuickAssistantDismissWindow();
-  if (!dismissWindow || dismissWindow.isDestroyed()) {
-    return;
-  }
-  dismissWindow.setBounds(getQuickAssistantWorkArea(), true);
-  dismissWindow.showInactive();
+  quickCopilotWindowController.showDismissWindow();
 }
 
 function hideQuickAssistantDismissWindow() {
-  if (!quickAssistantDismissWindow || quickAssistantDismissWindow.isDestroyed() || !quickAssistantDismissWindow.isVisible()) {
-    return;
-  }
-  quickAssistantDismissWindow.hide();
-}
-
-function createQuickAssistantWindow() {
-  if (!isQuickAssistantSupportedPlatform(process.platform)) {
-    return null;
-  }
-  if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
-    return quickAssistantWindow;
-  }
-
-  quickAssistantWindow = new BrowserWindow({
-    ...getQuickAssistantWebCopilotBounds({
-      workArea: getQuickAssistantWorkArea()
-    }),
-    show: false,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    maximizable: false,
-    minimizable: false,
-    fullscreenable: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    backgroundColor: "#00000000",
-    title: "ZenMind Quick Assistant",
-    webPreferences: {
-      preload: path.join(__dirname, "..", "preload", "index.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      devTools: false,
-      sandbox: false,
-      webviewTag: true
-    }
-  });
-
-  quickAssistantWindow.setAlwaysOnTop(true, "floating");
-  quickAssistantWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  quickAssistantWindow.on("hide", () => {
-    hideQuickAssistantDismissWindow();
-  });
-
-  quickAssistantWindow.on("blur", () => {
-    setTimeout(() => {
-      if (
-        !quickAssistantWindow ||
-        quickAssistantWindow.isDestroyed() ||
-        quickAssistantWindow.isFocused()
-      ) {
-        return;
-      }
-      quickAssistantWindow.hide();
-    }, 120);
-  });
-
-  quickAssistantWindow.on("closed", () => {
-    quickAssistantWindow = null;
-    hideQuickAssistantDismissWindow();
-  });
-
-  loadRendererRoute(quickAssistantWindow, QUICK_ASSISTANT_ROUTE).catch((error) => {
-    console.error("failed to load quick assistant renderer", error);
-  });
-
-  return quickAssistantWindow;
+  quickCopilotWindowController.hideDismissWindow();
 }
 
 function buildLogViewerRoute(request: ServiceOpenLogViewerRequest) {
@@ -1626,83 +1478,19 @@ function closeLogViewerWindow() {
 }
 
 function hideQuickAssistantForNativeDialog() {
-  quickAssistantVisibleBeforeNativeDialog = Boolean(
-    quickAssistantWindow &&
-      !quickAssistantWindow.isDestroyed() &&
-      quickAssistantWindow.isVisible()
-  );
-  if (!quickAssistantVisibleBeforeNativeDialog || !quickAssistantWindow || quickAssistantWindow.isDestroyed()) {
-    return;
-  }
-  quickAssistantWindow.hide();
+  quickCopilotWindowController.hideForNativeDialog();
 }
 
 function restoreQuickAssistantAfterNativeDialog() {
-  if (!quickAssistantVisibleBeforeNativeDialog) {
-    return;
-  }
-  quickAssistantVisibleBeforeNativeDialog = false;
-  if (!quickAssistantWindow || quickAssistantWindow.isDestroyed()) {
-    return;
-  }
-  showQuickAssistantDismissWindow();
-  quickAssistantWindow.show();
-  quickAssistantWindow.focus();
-}
-
-function hideQuickAssistantAfterOutsideFocus() {
-  if (!quickAssistantWindow || quickAssistantWindow.isDestroyed() || !quickAssistantWindow.isVisible()) {
-    return;
-  }
-  quickAssistantWindow.hide();
+  quickCopilotWindowController.restoreAfterNativeDialog();
 }
 
 function showQuickAssistantWindow() {
-  if (!isQuickAssistantSupportedPlatform(process.platform)) {
-    return;
-  }
-  const quickSettings = readAssistantSettings(app);
-  if (!quickSettings.quickAssistantEnabled) {
-    return;
-  }
-  const targetWindow = createQuickAssistantWindow();
-  if (!targetWindow || targetWindow.isDestroyed()) {
-    return;
-  }
-  targetWindow.setBounds(getQuickAssistantWebCopilotBounds({
-    workArea: getQuickAssistantWorkArea()
-  }), true);
-  showQuickAssistantDismissWindow();
-  targetWindow.show();
-  targetWindow.moveTop();
-  targetWindow.focus();
-  void runServiceMutation(() => ensureAssistantTargetServicesRunning("quick-assistant"))
-    .then((failures) => {
-      if (failures.length > 0) {
-        showMainWindow("/control-center");
-        return;
-      }
-      scheduleAgentWebclientOpenRequest(targetWindow, {
-        chatId: "",
-        agentKey: quickSettings.quickAssistantAgentKey,
-        focusComposerOnComplete: true
-      });
-    })
-    .catch((error) => {
-      console.warn("[quick-assistant] failed to prepare web copilot services", error);
-      showMainWindow("/control-center");
-    });
+  quickCopilotWindowController.showWindow();
 }
 
 function toggleQuickAssistantWindow() {
-  if (!isQuickAssistantSupportedPlatform(process.platform)) {
-    return;
-  }
-  if (quickAssistantWindow && !quickAssistantWindow.isDestroyed() && quickAssistantWindow.isVisible()) {
-    quickAssistantWindow.hide();
-    return;
-  }
-  showQuickAssistantWindow();
+  quickCopilotWindowController.toggleWindow();
 }
 
 type ScreenshotCaptureSource = "sidebar" | "quick-assistant";
@@ -1973,7 +1761,7 @@ function getScreenshotWindowFallbackTargets(source: ScreenshotCaptureSource) {
 
   if (source === "quick-assistant") {
     addTarget(mainWindow);
-    addTarget(quickAssistantWindow);
+    addTarget(quickCopilotWindowController.getWindow());
     return targets;
   }
 
@@ -2082,6 +1870,7 @@ async function captureAssistantScreenshot(
     };
   }
 
+  const quickAssistantWindow = quickCopilotWindowController.getWindow();
   const shouldRestoreQuickAssistant = source === "quick-assistant" &&
     Boolean(quickAssistantWindow && !quickAssistantWindow.isDestroyed() && quickAssistantWindow.isVisible());
   if (source === "quick-assistant") {
@@ -2134,13 +1923,11 @@ async function captureAssistantScreenshot(
 }
 
 function registerQuickAssistantShortcut() {
-  if (!isQuickAssistantSupportedPlatform(process.platform)) {
-    return;
-  }
-  const registered = globalShortcut.register(QUICK_ASSISTANT_SHORTCUT, toggleQuickAssistantWindow);
-  if (!registered) {
-    console.warn(`failed to register quick assistant shortcut: ${QUICK_ASSISTANT_SHORTCUT}`);
-  }
+  registerQuickCopilotShortcut({
+    platform: process.platform,
+    globalShortcut,
+    controller: quickCopilotWindowController
+  });
 }
 
 function applyMainWindowAppearance(targetWindow: BrowserWindow | null) {
@@ -2414,7 +2201,7 @@ function createWindow() {
     if (nativeDialogVisibilityDepth > 0) {
       return;
     }
-    hideQuickAssistantAfterOutsideFocus();
+    quickCopilotWindowController.hideAfterOutsideFocus();
   });
 
   mainWindow.on("enter-full-screen", () => {
@@ -2544,6 +2331,7 @@ function configureMediaPermissions() {
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
     const mediaDetails = details as MediaAccessPermissionRequest;
     const mainContentsId = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : null;
+    const quickAssistantWindow = quickCopilotWindowController.getWindow();
     const quickContentsId = quickAssistantWindow && !quickAssistantWindow.isDestroyed()
       ? quickAssistantWindow.webContents.id
       : null;
@@ -2618,7 +2406,7 @@ function ensureDarwinDockIdentity() {
 
 function notifyServicesChanged() {
   scheduleAgentPlatformPetStatusRefresh(1000);
-  for (const targetWindow of [mainWindow, quickAssistantWindow]) {
+  for (const targetWindow of [mainWindow, quickCopilotWindowController.getWindow()]) {
     if (!targetWindow || targetWindow.isDestroyed()) {
       continue;
     }
@@ -3238,7 +3026,7 @@ function emitNativeDialogVisibility(open: boolean) {
     platform: process.platform
   };
 
-  for (const targetWindow of [mainWindow, quickAssistantWindow]) {
+  for (const targetWindow of [mainWindow, quickCopilotWindowController.getWindow()]) {
     if (!targetWindow || targetWindow.isDestroyed()) {
       continue;
     }
@@ -3247,7 +3035,7 @@ function emitNativeDialogVisibility(open: boolean) {
 }
 
 function emitAssistantAttachmentProgress(progress: AssistantAttachmentTaskProgress) {
-  for (const targetWindow of [mainWindow, quickAssistantWindow]) {
+  for (const targetWindow of [mainWindow, quickCopilotWindowController.getWindow()]) {
     if (!targetWindow || targetWindow.isDestroyed()) {
       continue;
     }
@@ -3554,7 +3342,7 @@ function registerIpcHandlers() {
     getServiceState,
     issueAccessToken: issueAgentAccessToken,
     onEvent: (event) => {
-    for (const targetWindow of [mainWindow, quickAssistantWindow]) {
+    for (const targetWindow of [mainWindow, quickCopilotWindowController.getWindow()]) {
       if (!targetWindow || targetWindow.isDestroyed()) {
         continue;
       }
@@ -3697,19 +3485,7 @@ function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle("quickAssistant.hide", async () => {
-    if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
-      quickAssistantWindow.hide();
-    }
-    return { ok: true };
-  });
-  ipcMain.handle("quickAssistant.openControlCenter", async () => {
-    if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
-      quickAssistantWindow.hide();
-    }
-    showMainWindow("/control-center");
-    return { ok: true };
-  });
+  registerQuickCopilotIpcHandlers(ipcMain, quickCopilotWindowController);
 
   ipcMain.handle("services.list", async () => listServices(app));
   ipcMain.handle("services.getStartupRestoreState", async () => cloneStartupRestoreState(startupRestoreState));
@@ -4214,9 +3990,10 @@ app.on("will-quit", () => {
   embeddedCdpGateway?.stop();
   embeddedCdpGateway = null;
   stopAgentPlatformPetStatusClient();
-  if (isQuickAssistantSupportedPlatform(process.platform)) {
-    globalShortcut.unregister(QUICK_ASSISTANT_SHORTCUT);
-  }
+  unregisterQuickCopilotShortcut({
+    platform: process.platform,
+    globalShortcut
+  });
 });
 
 app.on("window-all-closed", () => {

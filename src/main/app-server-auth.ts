@@ -3,7 +3,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import type { App } from "electron";
 import { parseEnvFileContent } from "./env-file";
-import { getService } from "./service-registry";
+import { getService } from "./services/service-registry";
 import {
   getServiceConfigRoot,
   getServiceDataRoot,

@@ -24,7 +24,7 @@ import {
 } from "../shared/desktop-actions";
 import type { EmbeddedCdpCommandRequest } from "./embedded-cdp-gateway";
 import { issueAgentAccessToken } from "./agent-auth";
-import type { AgentPlatformAssistantBridge } from "./assistant/agent-platform-bridge";
+import type { AgentPlatformAssistantBridge } from "./copilot/core/agent-platform-bridge";
 import {
   getServiceLogsMeta,
   getServiceState,
@@ -35,7 +35,7 @@ import {
   restartService,
   startService,
   stopService
-} from "./service-manager";
+} from "./services/manager";
 import {
   buildSandboxImage,
   getMarketSettings,

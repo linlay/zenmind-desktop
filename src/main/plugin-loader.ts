@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import { normalizeManifest, readManifestFile } from "./manifest-utils";
-import { clearServices, getService, registerService, unregisterService } from "./service-registry";
-import { fixShellScriptPermissions } from "./service-manager";
+import { clearServices, getService, registerService, unregisterService } from "./services/service-registry";
+import { fixShellScriptPermissions } from "./services/manager";
 import { extractArchiveToDir } from "./archive-utils";
 import { getPluginsRoot, getServiceConfigRoot, getServiceStateRoot } from "./user-paths";
 
@@ -111,7 +111,7 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
           bundleTopLevelDir: manifest.desktop?.bundleTopLevelDir ?? entries[0]
         }
       });
-      const { installBuiltinService } = await import("./service-manager");
+      const { installBuiltinService } = await import("./services/manager");
       await installBuiltinService(app, manifest.id, { force: true, archivePath });
       return { ok: true, message: `内置服务 ${manifest.name} 已安装。`, serviceId: manifest.id };
     }
@@ -144,7 +144,7 @@ export async function uninstallPlugin(app: App, serviceId: string) {
   if (def.kind !== "plugin") {
     return { ok: false, message: "内置服务不可卸载。" };
   }
-  const { getServiceState, stopService } = await import("./service-manager");
+  const { getServiceState, stopService } = await import("./services/manager");
   const currentState = await getServiceState(app, serviceId);
   if (currentState.status === "running") {
     await stopService(app, serviceId);

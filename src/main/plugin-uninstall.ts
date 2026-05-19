@@ -1,7 +1,7 @@
 import type { App, BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from "electron";
 import type { PluginInstallResult, ServiceId } from "../shared/contracts";
 import { uninstallPlugin } from "./plugin-loader";
-import { getService } from "./service-registry";
+import { getService } from "./services/service-registry";
 
 type ShowMessageBox = typeof import("electron").dialog.showMessageBox;
 

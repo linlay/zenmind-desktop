@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate, useParams } from "react-router-dom";
-import { AppSidebar } from "./components/AppSidebar";
-import { DesktopPet } from "./components/DesktopPet";
-import { ControlCenterPage } from "./pages/ControlCenterPage";
-import { ExternalWebviewPage } from "./pages/ExternalWebviewPage";
+import { AppSidebar } from "./app-shell/navigation/AppSidebar";
+import { DesktopPet } from "./copilot/pet-copilot/DesktopPet";
+import { ControlCenterPage } from "./pages/control-center/ControlCenterPage";
+import { ExternalWebviewPage } from "./pages/external-webview/ExternalWebviewPage";
 import { HelpPage } from "./pages/HelpPage";
 import { LogViewerPage } from "./pages/LogViewerPage";
 import { PluginMarketPage } from "./pages/PluginMarketPage";
-import { PluginPage } from "./pages/PluginPage";
+import { PluginPage } from "./pages/plugin/PluginPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
-import { SettingsPage } from "./pages/SettingsPage";
+import { SettingsPage } from "./pages/settings/SettingsPage";
 import { ServicesProvider, useServices } from "./services/ServicesContext";
-import { getAssistantPageContext } from "./services/assistantPageContext";
+import { getAssistantPageContext } from "./copilot/page-context/assistantPageContext";
 import { publishCurrentPageContextSnapshot } from "./services/currentPageContext";
 import {
   registerDesktopActionProviderForScope,
@@ -20,7 +20,6 @@ import {
 import type { AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, ServiceId, ServiceState, StartupRestoreState } from "../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
-  DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
   DESKTOP_COPILOT_PAGE_KEYS,
   DESKTOP_COPILOT_PAGE_LABELS
 } from "../shared/assistant-settings";
@@ -59,7 +58,8 @@ import {
   normalizeSidebarNavOrder,
   type SidebarNavOrderItem,
   type SidebarNavOrderItemKey
-} from "./sidebarNavOrder";
+} from "./app-shell/navigation/sidebarNavOrder";
+import { QuickCopilotRoute } from "./copilot/quick-copilot/QuickCopilotRoute";
 
 type ThemeMode = "light" | "dark";
 
@@ -1338,97 +1338,6 @@ function AgentWebclientCopilotDock({
   );
 }
 
-function readStoredThemeMode() {
-  if (typeof window === "undefined") {
-    return "light";
-  }
-  try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "light";
-  } catch {
-    return "light";
-  }
-}
-
-function QuickAssistantWebCopilot() {
-  const { services, loading, error, refresh } = useServices();
-  const [hostTheme, setHostTheme] = useState<ThemeMode>(() => readStoredThemeMode());
-  const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
-  const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
-    services.find((service) => service.id === serviceId) ?? null
-  );
-  const allReady = !loading && startupServices.every((service) => service?.status === "running");
-  const failedService = startupServices.find((service) => service && service.status !== "running");
-
-  useEffect(() => {
-    document.body.classList.add("quick-web-copilot-body");
-    return () => {
-      document.body.classList.remove("quick-web-copilot-body");
-    };
-  }, []);
-
-  useEffect(() => {
-    const nextTheme = readStoredThemeMode();
-    setHostTheme(nextTheme);
-    document.documentElement.dataset.theme = nextTheme;
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    window.electronAPI.assistant.getSettings()
-      .then((settings) => {
-        if (!cancelled) {
-          setAssistantSettings(settings);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAssistantSettings(null);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const quickAssistantAgentKey = assistantSettings?.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
-
-  if (!allReady) {
-    return (
-      <main className="quick-web-copilot-status" aria-live="polite">
-        <div className="quick-web-copilot-status-panel">
-          <strong>{error || failedService ? "智能助理暂未就绪" : "正在启动智能助理"}</strong>
-          <span>
-            {error ||
-              failedService?.message ||
-              "ZenMind 正在恢复认证、智能体平台和 Web Copilot 服务。"}
-          </span>
-          <div className="quick-web-copilot-status-actions">
-            <button type="button" onClick={() => void refresh()}>
-              重新检查
-            </button>
-            <button type="button" onClick={() => void window.electronAPI.quickAssistant.openControlCenter()}>
-              控制中心
-            </button>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  return (
-    <main className="quick-web-copilot">
-      <PluginPage
-        active
-        embedPath={AGENT_WEBCLIENT_COPILOT_PATH}
-        hostTheme={hostTheme}
-        pluginId="agent-webclient"
-        surfaceLabel="助手"
-      />
-      <span className="quick-web-copilot-agent-marker" data-open-agent-key={quickAssistantAgentKey} aria-hidden="true" />
-    </main>
-  );
-}
-
 function getStartupServiceFallbackName(serviceId: ServiceId) {
   switch (serviceId) {
     case "zenmind-app-server":
@@ -1447,7 +1356,7 @@ export function App() {
   if (location.pathname === "/quick-assistant") {
     return (
       <ServicesProvider>
-        <QuickAssistantWebCopilot />
+        <QuickCopilotRoute />
       </ServicesProvider>
     );
   }

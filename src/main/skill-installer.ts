@@ -4,8 +4,8 @@ import path from "node:path";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../shared/contracts";
 import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
-import { getService } from "./service-registry";
-import { getInstallDir, getServiceState } from "./service-manager";
+import { getService } from "./services/service-registry";
+import { getInstallDir, getServiceState } from "./services/manager";
 import { getServiceConfigRoot } from "./user-paths";
 
 type SkillMetadata = {

@@ -3,7 +3,7 @@ import path from "node:path";
 import type { App } from "electron";
 import type { Manifest } from "../shared/contracts";
 import { readManifestFile, readManifestFromArchive } from "./manifest-utils";
-import { clearServices, registerService } from "./service-registry";
+import { clearServices, registerService } from "./services/service-registry";
 import { getServicesRoot } from "./user-paths";
 
 const manifestCache = new Map<string, { key: string; manifest: Manifest }>();
