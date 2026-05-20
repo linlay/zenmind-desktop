@@ -194,6 +194,21 @@ function buildAgentWebclientAccessTokenInjectionScript(token: string | null, des
   })()`;
 }
 
+function buildAgentWebclientSelectWorkerScript(agentKey: string, focusComposerOnComplete: boolean) {
+  return [
+    "(() => {",
+    "  try {",
+    "    window.dispatchEvent(new CustomEvent('agent:select-worker', {",
+    `      detail: ${JSON.stringify({ agentKey, focusComposerOnComplete })}`,
+    "    }));",
+    "  } catch (error) {",
+    "    console.warn('[agent-webclient] failed to select route worker', error);",
+    "  }",
+    "  return true;",
+    "})()"
+  ].join("\n");
+}
+
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/gu, " ").trim();
 }
@@ -357,6 +372,16 @@ export function PluginPage({
     () => [webviewBaseKey, webviewRetryNonce].join(":"),
     [webviewBaseKey, webviewRetryNonce]
   );
+  const agentWebclientRouteAgentKey = useMemo(() => {
+    if (service?.id !== "agent-webclient") {
+      return "";
+    }
+    try {
+      return new URLSearchParams(location.search).get("agentKey")?.trim() ?? "";
+    } catch {
+      return "";
+    }
+  }, [location.search, service?.id]);
 
   function embeddedError(code: string, message: string, details?: unknown) {
     return {
@@ -627,6 +652,29 @@ export function PluginPage({
     }
   }
 
+  async function dispatchAgentWebclientRouteAgentSelection() {
+    if (service?.id !== "agent-webclient" || active === false || !agentWebclientRouteAgentKey) {
+      return false;
+    }
+    const targetWebview = webviewRef.current;
+    if (!targetWebview) {
+      return false;
+    }
+    try {
+      await targetWebview.executeJavaScript(
+        buildAgentWebclientSelectWorkerScript(agentWebclientRouteAgentKey, true),
+        true
+      );
+      return true;
+    } catch (reason) {
+      console.warn(
+        "[agent-webclient] failed to dispatch route agent selection",
+        reason instanceof Error ? reason.message : String(reason)
+      );
+      return false;
+    }
+  }
+
   function seedAgentWebclientAccessToken() {
     if (service?.id !== "agent-webclient" || !bridgeProtocol) {
       return;
@@ -765,20 +813,24 @@ export function PluginPage({
     const handleDomReady = () => {
       syncWebviewState();
       seedAgentWebclientAccessToken();
+      void dispatchAgentWebclientRouteAgentSelection();
     };
     const handleDidFinishLoad = () => {
       syncWebviewState();
       seedAgentWebclientAccessToken();
+      void dispatchAgentWebclientRouteAgentSelection();
     };
     const handleDidNavigate = (event: Event) => {
       const nextUrl = readEventString(event, "url");
       setWebviewCurrentUrl(nextUrl || readCurrentWebviewUrl());
       seedAgentWebclientAccessToken();
+      void dispatchAgentWebclientRouteAgentSelection();
     };
     const handleDidNavigateInPage = (event: Event) => {
       const nextUrl = readEventString(event, "url");
       setWebviewCurrentUrl(nextUrl || readCurrentWebviewUrl());
       seedAgentWebclientAccessToken();
+      void dispatchAgentWebclientRouteAgentSelection();
     };
     const handleDidFailLoad = () => syncWebviewState();
 
@@ -803,6 +855,8 @@ export function PluginPage({
   }, [
     bridgeProtocol,
     bridgeReady,
+    agentWebclientRouteAgentKey,
+    active,
     service?.id,
     service?.status,
     serviceWebviewPreloadPath,
@@ -816,6 +870,13 @@ export function PluginPage({
     }
     seedAgentWebclientAccessToken();
   }, [active, bridgeReady, embeddedUrl, service?.id, serviceWebviewPreloadPath, webviewRenderKey]);
+
+  useEffect(() => {
+    if (active === false || !agentWebclientRouteAgentKey) {
+      return;
+    }
+    void dispatchAgentWebclientRouteAgentSelection();
+  }, [active, agentWebclientRouteAgentKey, service?.id, webviewRenderKey]);
 
   useEffect(() => {
     return () => {

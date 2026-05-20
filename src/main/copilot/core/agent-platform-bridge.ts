@@ -14,6 +14,8 @@ import type {
   AssistantMemoryStats,
   AssistantMemoryStorage,
   AssistantMemorySummary,
+  AssistantNavAgentItem,
+  AssistantNavAgentItemsResult,
   AssistantRunEvent,
   AssistantRunEventType,
   AssistantStartRunRequest,
@@ -62,9 +64,17 @@ type PlatformUploadTicket = {
 type PlatformChatSummary = {
   chatId?: string;
   chatName?: string;
+  agentKey?: string;
+  workerKey?: string;
   createdAt?: number;
   updatedAt?: number;
   lastRunContent?: string;
+  read?: boolean | { isRead?: boolean };
+  isRead?: boolean;
+  awaiting?: unknown;
+  hasPendingAwaiting?: boolean;
+  awaitingCount?: number;
+  status?: string;
 };
 
 type PlatformRunSummary = {
@@ -285,6 +295,59 @@ function mapChatSummary(summary: PlatformChatSummary): AssistantChatSummary {
   };
 }
 
+function readChatAgentKey(summary: PlatformChatSummary) {
+  return readString(summary.agentKey) || readString(summary.workerKey);
+}
+
+function readChatIsRead(summary: PlatformChatSummary) {
+  if (typeof summary.isRead === "boolean") {
+    return summary.isRead;
+  }
+  if (typeof summary.read === "boolean") {
+    return summary.read;
+  }
+  if (typeof summary.read === "object" && summary.read !== null && typeof summary.read.isRead === "boolean") {
+    return summary.read.isRead;
+  }
+  return true;
+}
+
+function chatHasPendingAwaiting(summary: PlatformChatSummary) {
+  if (summary.hasPendingAwaiting) {
+    return true;
+  }
+  if (readNumber(summary.awaitingCount) > 0) {
+    return true;
+  }
+  if (summary.awaiting && typeof summary.awaiting === "object") {
+    return true;
+  }
+  return readString(summary.status).toLowerCase() === "awaiting";
+}
+
+function compareChatUpdatedAt(left: PlatformChatSummary, right: PlatformChatSummary) {
+  return readNumber(right.updatedAt || right.createdAt) - readNumber(left.updatedAt || left.createdAt);
+}
+
+function createNavigationAgentItem(agent: DesktopPetAgentOption, chats: PlatformChatSummary[]): AssistantNavAgentItem {
+  const sortedChats = [...chats].sort(compareChatUpdatedAt);
+  const latestChat = sortedChats[0] ?? null;
+  const latestPreview = latestChat
+    ? (readString(latestChat.lastRunContent) || readString(latestChat.chatName)).replace(/\s+/gu, " ").trim()
+    : "";
+  const unreadFromChats = sortedChats.filter((chat) => !readChatIsRead(chat)).length;
+  return {
+    agentKey: agent.agentKey,
+    displayName: agent.displayName,
+    role: agent.role,
+    unreadCount: Math.max(0, agent.unreadCount, unreadFromChats),
+    hasPendingAwaiting: sortedChats.some(chatHasPendingAwaiting),
+    latestChatId: latestChat ? readString(latestChat.chatId) || null : null,
+    latestPreview: latestPreview.slice(0, 120),
+    updatedAt: latestChat ? timestampToIso(latestChat.updatedAt || latestChat.createdAt) : nowIso()
+  };
+}
+
 function mapRunMessages(run: PlatformRunSummary): AssistantChatMessage[] {
   const runId = readString(run.runId) || createRunId();
   const createdAt = timestampToIso(run.startedAt);
@@ -450,6 +513,30 @@ export class AgentPlatformAssistantBridge {
   async listAgents(): Promise<DesktopPetAgentOption[]> {
     const data = await this.getJson<PlatformAgentSummary[]>("/api/agents");
     return toDesktopPetAgentOptions(Array.isArray(data) ? data : []);
+  }
+
+  async listNavigationAgents(): Promise<AssistantNavAgentItemsResult> {
+    const agentsData = await this.getJson<PlatformAgentSummary[]>("/api/agents");
+    const agents = toDesktopPetAgentOptions(Array.isArray(agentsData) ? agentsData : []);
+    const chatsData = await this.getJson<PlatformChatSummary[]>("/api/chats").catch(() => []);
+    const chats = Array.isArray(chatsData) ? chatsData : [];
+    const chatsByAgentKey = new Map<string, PlatformChatSummary[]>();
+    for (const chat of chats) {
+      const agentKey = readChatAgentKey(chat);
+      if (!agentKey) {
+        continue;
+      }
+      const group = chatsByAgentKey.get(agentKey) ?? [];
+      group.push(chat);
+      chatsByAgentKey.set(agentKey, group);
+    }
+
+    return {
+      ok: true,
+      items: agents.map((agent) => createNavigationAgentItem(agent, chatsByAgentKey.get(agent.agentKey) ?? [])),
+      message: "已读取智能助手导航状态。",
+      updatedAt: nowIso()
+    };
   }
 
   async listChats(): Promise<AssistantChatSummary[]> {

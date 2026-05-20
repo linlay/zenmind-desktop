@@ -16,7 +16,7 @@ import {
   registerDesktopActionProviderForScope,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, ServiceId, StartupRestoreState } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, ServiceId, StartupRestoreState } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DESKTOP_COPILOT_PAGE_KEYS,
@@ -61,6 +61,7 @@ type ThemeMode = "light" | "dark";
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = "zenmind-desktop.sidebar-nav-order";
+const CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY = "zenmind-desktop.custom-sidebar-group-order";
 const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -81,6 +82,44 @@ function asRecord(value: unknown) {
 
 function readSettingsPatch(args: Record<string, unknown>) {
   return asRecord(args.patch);
+}
+
+function readStoredSidebarNavOrder(storageKey: string): SidebarNavOrderItemKey[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const savedValue = window.localStorage.getItem(storageKey);
+    const parsed = savedValue ? JSON.parse(savedValue) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is SidebarNavOrderItemKey => typeof value === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function readInitialCustomSidebarGroupOrder(): SidebarNavOrderItemKey[] {
+  const savedGroupOrder = readStoredSidebarNavOrder(CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY);
+  if (savedGroupOrder.length > 0) {
+    return savedGroupOrder;
+  }
+  return readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY).filter((key) => key.startsWith("custom:"));
+}
+
+function normalizeCustomSidebarGroupOrder(
+  candidate: SidebarNavOrderItemKey[],
+  customItems: CustomSidebarItem[]
+) {
+  const availableKeys = new Set(customItems.map((item) => createCustomSidebarNavOrderKey(item.id)));
+  const normalized = candidate.filter((key) => key.startsWith("custom:") && availableKeys.has(key));
+  for (const item of customItems) {
+    const key = createCustomSidebarNavOrderKey(item.id);
+    if (!normalized.includes(key)) {
+      normalized.push(key);
+    }
+  }
+  return normalized;
 }
 
 export const EXTERNAL_EXPERIMENTAL_ITEMS = [] as const;
@@ -155,21 +194,15 @@ export function AppShell() {
       return normalizeSidebarLayoutState(null);
     }
   });
-  const [sidebarNavOrder, setSidebarNavOrder] = useState<SidebarNavOrderItemKey[]>(() => {
-    if (typeof window === "undefined") {
-      return [];
-    }
-    try {
-      const savedValue = window.localStorage.getItem(SIDEBAR_NAV_ORDER_STORAGE_KEY);
-      return savedValue ? JSON.parse(savedValue) as SidebarNavOrderItemKey[] : [];
-    } catch {
-      return [];
-    }
-  });
+  const [sidebarNavOrder, setSidebarNavOrder] = useState<SidebarNavOrderItemKey[]>(() =>
+    readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY)
+  );
+  const [customSidebarGroupOrder, setCustomSidebarGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialCustomSidebarGroupOrder);
   const [assistantDockOpen, setAssistantDockOpen] = useState(false);
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
+  const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
   const [customSidebarItemsLoaded, setCustomSidebarItemsLoaded] = useState(false);
@@ -240,19 +273,19 @@ export function AppShell() {
       key: createExperimentalSidebarNavOrderKey(item.id),
       label: item.label
     }));
-    const customItems = customSidebarItems.map((item) => ({
-      key: createCustomSidebarNavOrderKey(item.id),
-      label: item.label
-    }));
     return createDefaultSidebarNavOrderItems({
       serviceItems,
       experimentalItems,
-      customItems
+      customItems: []
     });
-  }, [customSidebarItems, services]);
+  }, [services]);
   const normalizedSidebarNavOrder = useMemo(
     () => normalizeSidebarNavOrder(sidebarNavOrder, availableSidebarNavOrderItems),
     [availableSidebarNavOrderItems, sidebarNavOrder]
+  );
+  const normalizedCustomSidebarGroupOrder = useMemo(
+    () => normalizeCustomSidebarGroupOrder(customSidebarGroupOrder, customSidebarItems),
+    [customSidebarGroupOrder, customSidebarItems]
   );
 
   async function refreshCustomSidebarItems() {
@@ -266,7 +299,35 @@ export function AppShell() {
   function updateCustomSidebarItems(items: CustomSidebarItem[]) {
     setCustomSidebarItems(items);
     setCustomSidebarItemsLoaded(true);
+    setCustomSidebarGroupOrder((currentOrder) => normalizeCustomSidebarGroupOrder(currentOrder, items));
   }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshAssistantNavAgents() {
+      try {
+        const result = await window.electronAPI.assistant.listNavigationAgents();
+        if (!cancelled) {
+          setAssistantNavAgents(result.ok ? result.items : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setAssistantNavAgents([]);
+        }
+      }
+    }
+
+    void refreshAssistantNavAgents();
+    const interval = window.setInterval(() => {
+      void refreshAssistantNavAgents();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
 
   async function refreshStartupRestoreState() {
     const nextState = await window.electronAPI.services.getStartupRestoreState();
@@ -498,6 +559,17 @@ export function AppShell() {
       // Ignore persistence failures and keep the in-memory navigation order usable.
     }
   }, [normalizedSidebarNavOrder]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY,
+        JSON.stringify(normalizedCustomSidebarGroupOrder)
+      );
+    } catch {
+      // Ignore persistence failures and keep the in-memory website order usable.
+    }
+  }, [normalizedCustomSidebarGroupOrder]);
 
   useEffect(() => {
     document.body.classList.toggle("embedded-surface-body", usesEmbeddedSurface);
@@ -974,12 +1046,15 @@ export function AppShell() {
           isMac={isMac}
           isWindows={isWindows}
           currentPathname={location.pathname}
+          currentRoute={currentRoute}
           pendingPath={pendingSidebarNavigationPath}
           assistantDockOpen={assistantCopilotOpen}
           assistantLauncherDisabled={isAgentWebclientMainRoute}
           assistantLauncherVisible={assistantLauncherVisible}
           sidebarNavOrder={normalizedSidebarNavOrder}
+          customSidebarNavOrder={normalizedCustomSidebarGroupOrder}
           customSidebarItems={customSidebarItems}
+          assistantNavAgents={assistantNavAgents}
           onOpenAssistantDock={() => openAssistantDock()}
           onCloseAssistantDock={() => setAssistantDockOpen(false)}
           onRequestNavigate={requestSidebarNavigation}

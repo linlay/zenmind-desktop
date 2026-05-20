@@ -380,7 +380,7 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?width:\s*16px;/);
 });
 
-test("agent webclient desktop sections are exposed as top-level sidebar tabs", () => {
+test("sidebar renders assistant and website groups above the fixed tool matrix", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
@@ -391,16 +391,23 @@ test("agent webclient desktop sections are exposed as top-level sidebar tabs", (
     "utf8"
   );
 
-  assert.match(sidebarSource, /agentWebclientNavItems/);
-  assert.match(sidebarSource, /to:\s*"\/agents"[\s\S]*?label:\s*"智能体"/);
-  assert.match(sidebarSource, /to:\s*"\/schedules"[\s\S]*?label:\s*"自动化"/);
-  assert.match(sidebarSource, /to:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
+  assert.match(sidebarSource, /assistantGroupNavItem[\s\S]*?orderKey:\s*"group:assistants"[\s\S]*?label:\s*"智能助手"/);
+  assert.match(sidebarSource, /websitesGroupNavItem[\s\S]*?orderKey:\s*"group:websites"[\s\S]*?label:\s*"内嵌网站"/);
+  assert.match(sidebarSource, /SIDEBAR_GROUP_STATE_STORAGE_KEY/);
+  assert.match(sidebarSource, /assistantHomeNavItem[\s\S]*?to:\s*"\/service\/agent-webclient"[\s\S]*?label:\s*"智能助手首页"/);
+  assert.match(sidebarSource, /createAgentRoute\(agent\.agentKey\)/);
+  assert.match(sidebarSource, /renderStatusBadges/);
+  assert.match(sidebarSource, /summarizeAgentStatus\(assistantNavAgents\)/);
+  assert.match(sidebarSource, /fixedToolRows[\s\S]*?to:\s*"\/agents"[\s\S]*?label:\s*"智能体"[\s\S]*?to:\s*"\/schedules"[\s\S]*?label:\s*"自动化"[\s\S]*?to:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
+  assert.match(sidebarSource, /fixedToolRows[\s\S]*?to:\s*"\/control-center"[\s\S]*?label:\s*"控制中心"[\s\S]*?to:\s*"\/settings"[\s\S]*?label:\s*"设置"[\s\S]*?to:\s*"\/help"[\s\S]*?label:\s*"帮助"/);
+  assert.match(sidebarSource, /sidebar-footer-divider/);
+  assert.match(sidebarSource, /sidebar-tool-assistant/);
   assert.match(sidebarSource, /sortSidebarNavItems\(\s*\[/);
-  assert.match(sidebarSource, /assistantNavItem,[\s\S]*?\.\.\.agentWebclientNavItems,[\s\S]*?\.\.\.staticNavItems/);
-  assert.match(sidebarSource, /controlCenterUtilityItem/);
-  assert.match(sidebarSource, /to:\s*"\/control-center"[\s\S]*?label:\s*"控制中心"/);
+  assert.match(sidebarSource, /assistantGroupNavItem,[\s\S]*?websitesGroupNavItem,[\s\S]*?\.\.\.serviceNavItems[\s\S]*?\.\.\.staticNavItems/);
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_ITEMS/);
+  assert.match(appShell, /assistantNavAgents/);
+  assert.match(appShell, /listNavigationAgents/);
   assert.match(appShell, /routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?label:\s*"智能体"/);
   assert.match(appShell, /routePath:\s*"\/schedules"[\s\S]*?embedPath:\s*"\/schedules"[\s\S]*?label:\s*"自动化"/);
   assert.match(appShell, /routePath:\s*"\/memory"[\s\S]*?embedPath:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
@@ -416,6 +423,8 @@ test("agent webclient desktop sections are exposed as top-level sidebar tabs", (
   assert.match(pluginPage, /embedPath\?: string;/);
   assert.match(pluginPage, /surfaceLabel\?: string;/);
   assert.match(pluginPage, /embedPath: service\?\.id === "agent-webclient" \? embedPath : undefined/);
+  assert.match(pluginPage, /agentWebclientRouteAgentKey/);
+  assert.match(pluginPage, /agent:select-worker/);
 });
 
 test("settings route keeps the global sidebar and renders page-internal split sections", () => {
@@ -459,8 +468,8 @@ test("settings route keeps the global sidebar and renders page-internal split se
   assert.doesNotMatch(sidebarSource, /pendingSettingsSectionId\?: SettingsSectionId \| null;/);
   assert.doesNotMatch(sidebarSource, /sidebar-settings-nav/);
   assert.doesNotMatch(sidebarSource, /sidebar-link-settings/);
-  assert.match(sidebarSource, /to="\/settings"/);
-  assert.match(sidebarSource, /controlCenterUtilityItem/);
+  assert.match(sidebarSource, /to:\s*"\/settings"[\s\S]*?label:\s*"设置"/);
+  assert.match(sidebarSource, /fixedToolRows/);
   assert.match(sidebarSource, /sidebar-assistant-launcher/);
   assert.match(sidebarSource, /app-sidebar-collapse-button/);
 
@@ -561,7 +570,8 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /半透明度/);
   assert.doesNotMatch(settingsPage, /导航栏半透明效果/);
   assert.doesNotMatch(settingsPage, /type="range"/);
-  assert.match(settingsPage, /导航页签排序/);
+  assert.match(settingsPage, /可排序主项/);
+  assert.match(settingsPage, /固定工具区/);
   assert.match(settingsPage, /带侧边助手/);
   assert.match(settingsPage, /不带侧边助手/);
   assert.match(settingsPage, /getCopilotPageKeyForSidebarNavOrderItem/);
@@ -593,13 +603,16 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /页面 Copilot/);
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
-  assert.match(settingsPage, /handleSelectNavigationCopilotAgent\("controlCenter"/);
+  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?label:\s*"智能体"[\s\S]*?label:\s*"自动化"[\s\S]*?label:\s*"记忆管理"/);
+  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?label:\s*"控制中心"[\s\S]*?label:\s*"设置"[\s\S]*?label:\s*"帮助"/);
+  assert.match(settingsPage, /copilotPageKey:\s*"controlCenter"/);
   assert.match(settingsPage, /navigation-order-fixed-label/);
-  assert.match(settingsPage, /\{sidebarNavOrder\.map[\s\S]*?<span className="navigation-order-title">控制中心<\/span>/);
+  assert.match(settingsPage, /\{sidebarNavOrder\.map/);
+  assert.match(settingsPage, /\{fixedNavigationTools\.map\(\(tool\) => renderFixedNavigationToolRow\(tool\)\)\}/);
   assert.match(settingsPage, /handleSelectDesktopHelperAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*desktopHelperAgentKey: normalizedAgentKey\s*\}\)/);
   assert.match(settingsPage, /desktopCopilotPages: nextPages/);
-  assert.match(settingsPage, /下方每个导航页签可单独选择是否显示侧边助手/);
+  assert.match(settingsPage, /下方每个固定工具入口可单独选择是否显示侧边助手/);
   assert.match(settingsPage, /aria-label="快捷助手配置"/);
   assert.match(settingsPage, /aria-label="侧边助手默认智能体"/);
   assert.match(globalStyles, /grid-template-columns:\s*minmax\(140px,\s*1fr\)\s*minmax\(220px,\s*300px\)\s*124px/);
@@ -681,15 +694,25 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   );
 
   assert.match(orderHelper, /export type SidebarNavOrderItemKey/);
+  assert.match(orderHelper, /"group:assistants"/);
+  assert.match(orderHelper, /"group:websites"/);
   assert.match(orderHelper, /STATIC_SIDEBAR_NAV_ORDER_ITEMS/);
   assert.match(orderHelper, /createDefaultSidebarNavOrderItems/);
+  assert.doesNotMatch(orderHelper, /staticItems\.get\("agents"\)/);
+  assert.doesNotMatch(orderHelper, /staticItems\.get\("help"\)/);
+  assert.doesNotMatch(orderHelper, /\.\.\.customItems/);
   assert.match(orderHelper, /normalizeSidebarNavOrder/);
   assert.match(orderHelper, /!availableKeys\.has/);
   assert.match(orderHelper, /normalized\.includes/);
   assert.match(orderHelper, /sortSidebarNavItems/);
   assert.match(appShell, /SIDEBAR_NAV_ORDER_STORAGE_KEY/);
+  assert.match(appShell, /CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY/);
+  assert.match(appShell, /readInitialCustomSidebarGroupOrder/);
+  assert.match(appShell, /readStoredSidebarNavOrder\(SIDEBAR_NAV_ORDER_STORAGE_KEY\)\.filter\(\(key\) => key\.startsWith\("custom:"\)\)/);
+  assert.match(appShell, /normalizeCustomSidebarGroupOrder/);
   assert.match(appShell, /availableSidebarNavOrderItems/);
   assert.match(appShell, /normalizeSidebarNavOrder\(sidebarNavOrder, availableSidebarNavOrderItems\)/);
+  assert.match(appShell, /customSidebarNavOrder=\{normalizedCustomSidebarGroupOrder\}/);
   assert.match(sidebarSource, /sidebarNavOrder:\s*SidebarNavOrderItemKey\[\]/);
   assert.match(sidebarSource, /sortSidebarNavItems\(/);
 });
@@ -763,6 +786,30 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
   assert.match(mainProcess, /ipcMain\.handle\("customSidebar\.update"/);
   assert.match(preload, /update: \(id, input\) => ipcRenderer\.invoke\("customSidebar\.update", id, input\)/);
   assert.match(appShell, /resolvedCopilotAgentKey/);
+});
+
+test("assistant navigation agents are exposed through dedicated ipc without changing pet agents", () => {
+  const contracts = readSharedContractsSource();
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "core", "agent-platform-bridge.ts"), "utf8");
+  const appShell = readAppShellSource();
+
+  assert.match(contracts, /interface AssistantNavAgentItem/);
+  assert.match(contracts, /hasPendingAwaiting:\s*boolean/);
+  assert.match(contracts, /interface AssistantNavAgentItemsResult/);
+  assert.match(contracts, /listAgents: \(\) => Promise<DesktopPetAgentOption\[\]>/);
+  assert.match(contracts, /listNavigationAgents: \(\) => Promise<AssistantNavAgentItemsResult>/);
+  assert.match(preload, /listAgents: \(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
+  assert.match(preload, /listNavigationAgents: \(\) => ipcRenderer\.invoke\("assistant\.listNavigationAgents"\)/);
+  assert.match(mainProcess, /ipcMain\.handle\("assistant\.listAgents"/);
+  assert.match(mainProcess, /ipcMain\.handle\("assistant\.listNavigationAgents"/);
+  assert.match(mainProcess, /ok:\s*false,[\s\S]*?items:\s*\[\]/);
+  assert.match(bridge, /async listAgents\(\): Promise<DesktopPetAgentOption\[\]>/);
+  assert.match(bridge, /async listNavigationAgents\(\): Promise<AssistantNavAgentItemsResult>/);
+  assert.match(bridge, /chatHasPendingAwaiting/);
+  assert.match(bridge, /createNavigationAgentItem/);
+  assert.match(appShell, /setAssistantNavAgents\(result\.ok \? result\.items : \[\]\)/);
 });
 
 test("desktop action bridge exposes localhost api and renderer action providers", () => {

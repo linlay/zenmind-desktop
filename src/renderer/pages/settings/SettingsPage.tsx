@@ -138,22 +138,17 @@ function buildSettingsActionPatch(
 
 function getCopilotPageKeyForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey): DesktopCopilotPageKey | null {
   switch (itemKey) {
-    case "agents":
-      return "agents";
-    case "schedules":
-      return "schedules";
-    case "memory":
-      return "memory";
     case "market":
       return "market";
-    case "help":
-      return "help";
     default:
       return null;
   }
 }
 
 function getFixedAssistantLabelForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey): string | null {
+  if (itemKey === "group:assistants" || itemKey === "group:websites") {
+    return "分组入口";
+  }
   if (itemKey.startsWith("custom:")) {
     return "内嵌网站中配置";
   }
@@ -165,6 +160,28 @@ function getFixedAssistantLabelForSidebarNavOrderItem(itemKey: SidebarNavOrderIt
   }
   return null;
 }
+
+type FixedNavigationToolConfig = {
+  id: string;
+  label: string;
+  copilotPageKey: DesktopCopilotPageKey | null;
+  fixedAssistantLabel?: string;
+};
+
+const fixedNavigationToolRows: FixedNavigationToolConfig[][] = [
+  [
+    { id: "agents", label: "智能体", copilotPageKey: "agents" },
+    { id: "schedules", label: "自动化", copilotPageKey: "schedules" },
+    { id: "memory", label: "记忆管理", copilotPageKey: "memory" }
+  ],
+  [
+    { id: "controlCenter", label: "控制中心", copilotPageKey: "controlCenter" },
+    { id: "settings", label: "设置", copilotPageKey: null, fixedAssistantLabel: "默认助手" },
+    { id: "help", label: "帮助", copilotPageKey: "help" }
+  ]
+];
+
+const fixedNavigationTools = fixedNavigationToolRows.flat();
 
 function formatMemoryTime(value: string | null | undefined) {
   if (!value) {
@@ -1601,20 +1618,67 @@ export function SettingsPage({
         );
       case "navigation": {
         const defaultCopilotPages = createDefaultDesktopCopilotPagePreferences();
-        const controlCenterPreference = desktopCopilotPages.controlCenter ?? defaultCopilotPages.controlCenter;
-        const controlCenterPending = desktopCopilotPagePending === "controlCenter" || desktopCopilotPagePending === "all";
-        const controlCenterAgentKey = controlCenterPreference.enabled ? controlCenterPreference.agentKey : "";
-        const controlCenterAgentAvailable = Boolean(
-          controlCenterAgentKey && assistantAgentOptions.some((agent) => agent.agentKey === controlCenterAgentKey)
-        );
-        const showUnavailableControlCenterAgent = Boolean(controlCenterAgentKey && !controlCenterAgentAvailable);
+        function renderFixedNavigationToolRow(tool: FixedNavigationToolConfig) {
+          const copilotPageKey = tool.copilotPageKey;
+          const copilotPreference = copilotPageKey
+            ? desktopCopilotPages[copilotPageKey] ?? defaultCopilotPages[copilotPageKey]
+            : null;
+          const copilotPending = Boolean(
+            copilotPageKey &&
+            (desktopCopilotPagePending === copilotPageKey || desktopCopilotPagePending === "all")
+          );
+          const selectedCopilotAgentKey = copilotPreference?.enabled ? copilotPreference.agentKey : "";
+          const selectedAgentAvailable = Boolean(
+            selectedCopilotAgentKey && assistantAgentOptions.some((agent) => agent.agentKey === selectedCopilotAgentKey)
+          );
+          const showUnavailableAgentOption = Boolean(selectedCopilotAgentKey && !selectedAgentAvailable);
+          const assistantSelectValue = tool.fixedAssistantLabel ? "__fixed__" : selectedCopilotAgentKey;
+          return (
+            <div className="navigation-order-row navigation-order-row-fixed" role="listitem" key={tool.id}>
+              <div className="navigation-order-title-cell navigation-order-title-cell-fixed" title="固定入口">
+                <span className="navigation-order-fixed-dot" aria-hidden="true" />
+                <span className="navigation-order-title">{tool.label}</span>
+              </div>
+              <label className="navigation-order-assistant-field">
+                <span className="desktop-pet-agent-select-wrap">
+                  <select
+                    value={assistantSelectValue}
+                    onChange={(event) => {
+                      if (copilotPageKey) {
+                        void handleSelectNavigationCopilotAgent(copilotPageKey, event.target.value);
+                      }
+                    }}
+                    disabled={!copilotPageKey || assistantAgentOptions.length === 0 || copilotPending}
+                    aria-label={`${tool.label} 侧边助手`}
+                  >
+                    <option value="">不带侧边助手</option>
+                    {tool.fixedAssistantLabel ? (
+                      <option value="__fixed__">{tool.fixedAssistantLabel}</option>
+                    ) : null}
+                    {showUnavailableAgentOption ? (
+                      <option value={selectedCopilotAgentKey}>
+                        {assistantAgentOptions.length === 0 ? "正在读取智能体列表..." : `不可用：${selectedCopilotAgentKey}`}
+                      </option>
+                    ) : null}
+                    {assistantAgentOptions.map((agent) => (
+                      <option value={agent.agentKey} key={agent.agentKey}>
+                        {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+              </label>
+              <div className="navigation-order-fixed-label">固定</div>
+            </div>
+          );
+        }
         return (
           <div className="data-root-card navigation-settings-card" aria-label="导航栏配置">
             <div className="navigation-settings-panel">
               <div className="navigation-assistant-default" aria-label="侧边助手默认智能体">
                 <div className="page-copilot-row-main">
                   <strong>侧边助手默认智能体</strong>
-                  <span>保留旧配置兼容；下方每个导航页签可单独选择是否显示侧边助手。</span>
+                  <span>保留旧配置兼容；下方每个固定工具入口可单独选择是否显示侧边助手。</span>
                 </div>
                 <label className="desktop-pet-agent-field navigation-assistant-default-field">
                   <span className="desktop-pet-agent-select-wrap">
@@ -1647,7 +1711,7 @@ export function SettingsPage({
               </div>
               <div className="navigation-order-section">
                 <div className="custom-sidebar-list-head">
-                  <strong>导航页签排序</strong>
+                  <strong>可排序主项</strong>
                   <button type="button" className="text-button" onClick={resetSidebarNavOrder}>
                     恢复默认
                   </button>
@@ -1747,35 +1811,13 @@ export function SettingsPage({
                       </div>
                     );
                   })}
-                  <div className="navigation-order-row navigation-order-row-fixed" role="listitem">
-                    <div className="navigation-order-title-cell navigation-order-title-cell-fixed" title="固定入口">
-                      <span className="navigation-order-fixed-dot" aria-hidden="true" />
-                      <span className="navigation-order-title">控制中心</span>
-                    </div>
-                    <label className="navigation-order-assistant-field">
-                      <span className="desktop-pet-agent-select-wrap">
-                        <select
-                          value={controlCenterAgentKey}
-                          onChange={(event) => void handleSelectNavigationCopilotAgent("controlCenter", event.target.value)}
-                          disabled={assistantAgentOptions.length === 0 || controlCenterPending}
-                          aria-label="控制中心 侧边助手"
-                        >
-                          <option value="">不带侧边助手</option>
-                          {showUnavailableControlCenterAgent ? (
-                            <option value={controlCenterAgentKey}>
-                              {assistantAgentOptions.length === 0 ? "正在读取智能体列表..." : `不可用：${controlCenterAgentKey}`}
-                            </option>
-                          ) : null}
-                          {assistantAgentOptions.map((agent) => (
-                            <option value={agent.agentKey} key={agent.agentKey}>
-                              {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </span>
-                    </label>
-                    <div className="navigation-order-fixed-label">固定</div>
-                  </div>
+                </div>
+                <div className="custom-sidebar-list-head navigation-fixed-tools-head">
+                  <strong>固定工具区</strong>
+                  <span>固定为两行三列，不参与排序。</span>
+                </div>
+                <div className="navigation-order-list navigation-fixed-tool-list" role="list" aria-label="固定工具区">
+                  {fixedNavigationTools.map((tool) => renderFixedNavigationToolRow(tool))}
                 </div>
               </div>
             </div>

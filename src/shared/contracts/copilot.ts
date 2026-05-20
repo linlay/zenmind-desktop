@@ -106,6 +106,24 @@ export interface AssistantChatSummary {
   messageCount: number;
 }
 
+export interface AssistantNavAgentItem {
+  agentKey: string;
+  displayName: string;
+  role: string;
+  unreadCount: number;
+  hasPendingAwaiting: boolean;
+  latestChatId: string | null;
+  latestPreview: string;
+  updatedAt: string;
+}
+
+export interface AssistantNavAgentItemsResult {
+  ok: boolean;
+  items: AssistantNavAgentItem[];
+  message: string;
+  updatedAt: string;
+}
+
 export interface AssistantChatDetail {
   summary: AssistantChatSummary;
   messages: AssistantChatMessage[];

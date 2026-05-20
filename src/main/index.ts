@@ -101,6 +101,7 @@ import { getService } from "./services/service-registry";
 import type {
   AssistantEvent,
   AssistantAttachmentTaskProgress,
+  AssistantNavAgentItemsResult,
   AssistantSettingsInput,
   AssistantStartRunRequest,
   AssistantSubmitAwaitingRequest,
@@ -2706,6 +2707,19 @@ function registerIpcHandlers() {
     } catch (error) {
       console.warn("[assistant] failed to list agent-platform agents", error);
       return [];
+    }
+  });
+  ipcMain.handle("assistant.listNavigationAgents", async (): Promise<AssistantNavAgentItemsResult> => {
+    try {
+      return await assistantBridge.listNavigationAgents();
+    } catch (error) {
+      console.warn("[assistant] failed to list navigation agents", error);
+      return {
+        ok: false,
+        items: [],
+        message: error instanceof Error ? error.message : "agent-platform 暂不可用。",
+        updatedAt: new Date().toISOString()
+      };
     }
   });
   ipcMain.handle("assistant.openMemoryDirectory", async () => {

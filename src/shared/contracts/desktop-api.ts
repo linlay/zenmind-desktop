@@ -6,7 +6,7 @@ import type { CustomSidebarDeleteResult, CustomSidebarItemInput, CustomSidebarIt
 import type { DesktopPetAgentOption, DesktopPetDanceRequestedListener, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetState, DesktopPetStateListener } from "./pet-copilot";
 import type { MarketCommandResult, MarketListResult, MarketSettings, MarketSettingsInput } from "./marketplace";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
-import type { AssistantChatDetail, AssistantChatSummary, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
+import type { AssistantChatDetail, AssistantChatSummary, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavAgentItemsResult, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 
 export interface PanAuthStatus {
   configured: boolean;
@@ -41,6 +41,7 @@ export interface DesktopApi {
     saveMemorySettings: (input: AssistantMemorySettingsInput) => Promise<AssistantMemorySettings>;
     getMemorySummary: () => Promise<AssistantMemorySummary>;
     listAgents: () => Promise<DesktopPetAgentOption[]>;
+    listNavigationAgents: () => Promise<AssistantNavAgentItemsResult>;
     openMemoryDirectory: () => Promise<{ ok: boolean; message: string; path?: string }>;
     listMemoryItems: () => Promise<{
       items: AssistantMemoryItem[];

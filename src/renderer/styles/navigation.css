@@ -443,6 +443,153 @@
   padding: 0 4px;
 }
 
+.sidebar-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-group-trigger {
+  width: auto;
+  position: relative;
+}
+
+.sidebar-group-trigger .sidebar-link-label {
+  flex: 1;
+}
+
+.sidebar-group-chevron {
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  opacity: 0.55;
+  transform: rotate(-45deg);
+  transition: transform 0.16s ease-in-out;
+}
+
+.sidebar-nav-group.is-expanded .sidebar-group-chevron {
+  transform: rotate(45deg);
+}
+
+.sidebar-group-children {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 4px 2px 12px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.sidebar-child-link {
+  min-height: 30px;
+  margin-left: 0;
+  margin-right: 0;
+  padding: 0 4px;
+}
+
+.sidebar-child-link .sidebar-link-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.sidebar-child-link .sidebar-link-label {
+  font-size: 12px;
+}
+
+.sidebar-status-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  margin-left: auto;
+}
+
+.sidebar-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.sidebar-status-badge.is-pending {
+  color: #8a3d00;
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.sidebar-status-badge.is-unread {
+  color: #ffffff;
+  background: #1677ff;
+}
+
+.sidebar-footer {
+  border-top: 0;
+}
+
+.sidebar-footer-divider {
+  height: 1px;
+  margin: 0 4px 6px;
+  background: var(--line);
+}
+
+.sidebar-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.sidebar-tool-grid .sidebar-tool-link {
+  min-width: 0;
+  min-height: 48px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  margin: 0;
+  padding: 4px 2px;
+  text-align: center;
+}
+
+.sidebar-tool-grid .sidebar-tool-link .sidebar-link-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.sidebar-tool-grid .sidebar-tool-link .sidebar-link-label {
+  width: 100%;
+  font-size: 11px;
+  line-height: 1.15;
+  text-align: center;
+  white-space: normal;
+}
+
+.app-sidebar:not(.is-collapsed) .sidebar-tool-grid .sidebar-tool-link {
+  justify-content: center;
+  margin: 0;
+  padding: 4px 2px;
+}
+
+.sidebar-tool-assistant {
+  justify-content: center;
+  margin-top: 4px;
+}
+
+:root[data-theme="dark"] .sidebar-group-children {
+  border-left-color: rgba(203, 213, 225, 0.16);
+}
+
+:root[data-theme="dark"] .sidebar-status-badge.is-pending {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.24);
+}
+
 /* ── Sidebar Collapsed ── */
 
 .app-sidebar.is-collapsed {
@@ -530,6 +677,75 @@
 
 .app-sidebar.is-collapsed .sidebar-assistant-launcher {
   gap: 3px;
+}
+
+.app-sidebar.is-collapsed .sidebar-nav-group {
+  align-items: center;
+  width: 100%;
+}
+
+.app-sidebar.is-collapsed .sidebar-group-trigger {
+  width: 56px;
+  min-height: 56px;
+  padding: 0;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0 auto;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.app-sidebar.is-collapsed .sidebar-group-trigger .sidebar-link-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.app-sidebar.is-collapsed .sidebar-group-children,
+.app-sidebar.is-collapsed .sidebar-group-chevron {
+  display: none;
+}
+
+.app-sidebar.is-collapsed .sidebar-group-trigger .sidebar-status-badges {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  margin-left: 0;
+}
+
+.app-sidebar.is-collapsed .sidebar-status-badge {
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  font-size: 9px;
+}
+
+.app-sidebar.is-collapsed .sidebar-footer-divider {
+  margin: 0 8px 6px;
+}
+
+.app-sidebar.is-collapsed .sidebar-tool-grid {
+  grid-template-columns: 1fr;
+  gap: 4px;
+  padding: 0;
+}
+
+.app-sidebar.is-collapsed .sidebar-tool-grid .sidebar-tool-link {
+  width: 48px;
+  min-height: 32px;
+  flex-direction: row;
+  padding: 0;
+  margin: 0 auto;
+  gap: 0;
+}
+
+.app-sidebar.is-collapsed .sidebar-tool-grid .sidebar-tool-link .sidebar-link-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.app-sidebar.is-collapsed .sidebar-tool-grid .sidebar-link-label-collapsed,
+.app-sidebar.is-collapsed .sidebar-tool-assistant .sidebar-link-label-collapsed {
+  display: none;
 }
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar-toggle {
