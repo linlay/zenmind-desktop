@@ -194,13 +194,23 @@ function buildAgentWebclientAccessTokenInjectionScript(token: string | null, des
   })()`;
 }
 
-function buildAgentWebclientSelectWorkerScript(agentKey: string, focusComposerOnComplete: boolean) {
+function buildAgentWebclientSelectWorkerScript(
+  agentKey: string,
+  focusComposerOnComplete: boolean,
+  options: { chatId?: string; newChat?: boolean } = {}
+) {
   return [
     "(() => {",
     "  try {",
     "    window.dispatchEvent(new CustomEvent('agent:select-worker', {",
     `      detail: ${JSON.stringify({ agentKey, focusComposerOnComplete })}`,
     "    }));",
+    options.chatId ? [
+      "    window.dispatchEvent(new CustomEvent('agent:load-chat', {",
+      `      detail: ${JSON.stringify({ chatId: options.chatId, focusComposerOnComplete })}`,
+      "    }));"
+    ].join("\n") : "",
+    options.newChat ? "    window.dispatchEvent(new CustomEvent('agent:start-new-conversation'));" : "",
     "  } catch (error) {",
     "    console.warn('[agent-webclient] failed to select route worker', error);",
     "  }",
@@ -380,6 +390,26 @@ export function PluginPage({
       return new URLSearchParams(location.search).get("agentKey")?.trim() ?? "";
     } catch {
       return "";
+    }
+  }, [location.search, service?.id]);
+  const agentWebclientRouteChatId = useMemo(() => {
+    if (service?.id !== "agent-webclient") {
+      return "";
+    }
+    try {
+      return new URLSearchParams(location.search).get("chatId")?.trim() ?? "";
+    } catch {
+      return "";
+    }
+  }, [location.search, service?.id]);
+  const agentWebclientRouteNewChat = useMemo(() => {
+    if (service?.id !== "agent-webclient") {
+      return false;
+    }
+    try {
+      return new URLSearchParams(location.search).get("newChat") === "1";
+    } catch {
+      return false;
     }
   }, [location.search, service?.id]);
 
@@ -662,7 +692,10 @@ export function PluginPage({
     }
     try {
       await targetWebview.executeJavaScript(
-        buildAgentWebclientSelectWorkerScript(agentWebclientRouteAgentKey, true),
+        buildAgentWebclientSelectWorkerScript(agentWebclientRouteAgentKey, true, {
+          chatId: agentWebclientRouteChatId,
+          newChat: agentWebclientRouteNewChat
+        }),
         true
       );
       return true;
@@ -856,6 +889,8 @@ export function PluginPage({
     bridgeProtocol,
     bridgeReady,
     agentWebclientRouteAgentKey,
+    agentWebclientRouteChatId,
+    agentWebclientRouteNewChat,
     active,
     service?.id,
     service?.status,
@@ -876,7 +911,7 @@ export function PluginPage({
       return;
     }
     void dispatchAgentWebclientRouteAgentSelection();
-  }, [active, agentWebclientRouteAgentKey, service?.id, webviewRenderKey]);
+  }, [active, agentWebclientRouteAgentKey, agentWebclientRouteChatId, agentWebclientRouteNewChat, service?.id, webviewRenderKey]);
 
   useEffect(() => {
     return () => {

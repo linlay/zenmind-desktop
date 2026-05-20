@@ -34,6 +34,7 @@ import type {
 import { toDesktopPetAgentOptions } from "../pet-copilot/pet-status-client";
 import { DesktopPetSseParser } from "../pet-copilot/desktop-pet-preview";
 import { resolveAssistantAttachmentPath } from "../attachments/attachment-store";
+import { readAssistantNavigationAgentsFromPlatform } from "./assistant-navigation-status-client";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const DONE_SENTINEL = "[DONE]";
@@ -49,6 +50,10 @@ type ApiResponse<T> = {
   msg: string;
   data: T;
 };
+
+type AgentPlatformChatExportResult =
+  | { ok: true; message: string; filename: string; bytes: Buffer }
+  | { ok: false; message: string; filename: string; bytes?: never };
 
 type PlatformUploadTicket = {
   id?: string;
@@ -128,9 +133,12 @@ type PlatformAgentSummary = {
   name?: string;
   displayName?: string;
   role?: string;
+  icon?: unknown;
   stats?: {
     unreadCount?: number;
+    totalCount?: number;
   };
+  chats?: unknown;
 };
 
 function nowIso() {
@@ -206,6 +214,24 @@ async function readErrorText(response: Response) {
   } catch {
     return `HTTP ${response.status}`;
   }
+}
+
+function filenameFromContentDisposition(value: string | null) {
+  const header = String(value || "");
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim());
+    } catch {
+      return utf8Match[1].trim();
+    }
+  }
+  const quotedMatch = /filename="([^"]+)"/i.exec(header);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1].trim();
+  }
+  const plainMatch = /filename=([^;]+)/i.exec(header);
+  return plainMatch?.[1]?.trim() || "";
 }
 
 function unwrapApiResponse<T>(payload: unknown): T {
@@ -341,10 +367,13 @@ function createNavigationAgentItem(agent: DesktopPetAgentOption, chats: Platform
     displayName: agent.displayName,
     role: agent.role,
     unreadCount: Math.max(0, agent.unreadCount, unreadFromChats),
+    unreadChatCount: Math.max(0, agent.unreadCount, unreadFromChats),
+    chatCount: sortedChats.length,
     hasPendingAwaiting: sortedChats.some(chatHasPendingAwaiting),
     latestChatId: latestChat ? readString(latestChat.chatId) || null : null,
     latestPreview: latestPreview.slice(0, 120),
-    updatedAt: latestChat ? timestampToIso(latestChat.updatedAt || latestChat.createdAt) : nowIso()
+    updatedAt: latestChat ? timestampToIso(latestChat.updatedAt || latestChat.createdAt) : nowIso(),
+    recentChats: []
   };
 }
 
@@ -516,24 +545,18 @@ export class AgentPlatformAssistantBridge {
   }
 
   async listNavigationAgents(): Promise<AssistantNavAgentItemsResult> {
-    const agentsData = await this.getJson<PlatformAgentSummary[]>("/api/agents");
-    const agents = toDesktopPetAgentOptions(Array.isArray(agentsData) ? agentsData : []);
-    const chatsData = await this.getJson<PlatformChatSummary[]>("/api/chats").catch(() => []);
-    const chats = Array.isArray(chatsData) ? chatsData : [];
-    const chatsByAgentKey = new Map<string, PlatformChatSummary[]>();
-    for (const chat of chats) {
-      const agentKey = readChatAgentKey(chat);
-      if (!agentKey) {
-        continue;
-      }
-      const group = chatsByAgentKey.get(agentKey) ?? [];
-      group.push(chat);
-      chatsByAgentKey.set(agentKey, group);
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return {
+        ok: false,
+        items: [],
+        message: availability.message,
+        updatedAt: nowIso()
+      };
     }
-
     return {
       ok: true,
-      items: agents.map((agent) => createNavigationAgentItem(agent, chatsByAgentKey.get(agent.agentKey) ?? [])),
+      items: await readAssistantNavigationAgentsFromPlatform(availability.baseUrl, availability.token),
       message: "已读取智能助手导航状态。",
       updatedAt: nowIso()
     };
@@ -589,6 +612,99 @@ export class AgentPlatformAssistantBridge {
       return { ok: false, message: await readErrorText(response) };
     }
     return { ok: true, message: "已删除对话。" };
+  }
+
+  async markAgentChatsRead(agentKey: string) {
+    const trimmedAgentKey = agentKey.trim();
+    if (!trimmedAgentKey) {
+      return { ok: false, message: "缺少 agentKey。" };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, message: availability.message };
+    }
+    const response = await this.platformFetch(availability.baseUrl, "/api/read", {
+      method: "POST",
+      headers: this.jsonHeaders(availability.token),
+      body: JSON.stringify({ agentKey: trimmedAgentKey })
+    });
+    if (!response.ok) {
+      return { ok: false, message: await readErrorText(response) };
+    }
+    return { ok: true, message: "已将智能体会话全部标记为已读。" };
+  }
+
+  async renameChat(chatId: string, chatName: string) {
+    const trimmedChatId = chatId.trim();
+    const trimmedChatName = chatName.trim();
+    if (!trimmedChatId || !trimmedChatName) {
+      return { ok: false, message: "缺少会话 ID 或名称。" };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, message: availability.message };
+    }
+    const response = await this.platformFetch(
+      availability.baseUrl,
+      `/api/chat/rename?chatId=${encodeURIComponent(trimmedChatId)}`,
+      {
+        method: "POST",
+        headers: this.jsonHeaders(availability.token),
+        body: JSON.stringify({ chatName: trimmedChatName })
+      }
+    );
+    if (!response.ok) {
+      return { ok: false, message: await readErrorText(response) };
+    }
+    return { ok: true, message: "已重命名会话。" };
+  }
+
+  async archiveChat(chatId: string) {
+    const trimmedChatId = chatId.trim();
+    if (!trimmedChatId) {
+      return { ok: false, message: "缺少会话 ID。" };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, message: availability.message };
+    }
+    const response = await this.platformFetch(availability.baseUrl, "/api/chat/archive", {
+      method: "POST",
+      headers: this.jsonHeaders(availability.token),
+      body: JSON.stringify({ chatIds: [trimmedChatId] })
+    });
+    if (!response.ok) {
+      return { ok: false, message: await readErrorText(response) };
+    }
+    return { ok: true, message: "已归档会话。" };
+  }
+
+  async downloadChatExport(chatId: string): Promise<AgentPlatformChatExportResult> {
+    const trimmedChatId = chatId.trim();
+    if (!trimmedChatId) {
+      return { ok: false, message: "缺少会话 ID。", filename: "" };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, message: availability.message, filename: "" };
+    }
+    const response = await this.platformFetch(
+      availability.baseUrl,
+      `/api/chat-export?chatId=${encodeURIComponent(trimmedChatId)}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/octet-stream, application/json",
+          Authorization: `Bearer ${availability.token}`
+        }
+      }
+    );
+    if (!response.ok) {
+      return { ok: false, message: await readErrorText(response), filename: "" };
+    }
+    const filename = filenameFromContentDisposition(response.headers.get("content-disposition")) || `${trimmedChatId}.json`;
+    const bytes = Buffer.from(await response.arrayBuffer());
+    return { ok: true, message: "已下载会话导出。", filename, bytes };
   }
 
   async getMemorySettings(): Promise<AssistantMemorySettings> {

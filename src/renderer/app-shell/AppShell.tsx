@@ -308,13 +308,15 @@ export function AppShell() {
     }
 
     void refreshAssistantNavAgents();
-    const interval = window.setInterval(() => {
-      void refreshAssistantNavAgents();
-    }, 15000);
+    const unsubscribe = window.electronAPI.assistant.onNavigationAgentsChanged((result) => {
+      if (!cancelled) {
+        setAssistantNavAgents(result.ok ? result.items : []);
+      }
+    });
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      unsubscribe();
     };
   }, []);
 

@@ -91,6 +91,7 @@ import {
   saveAssistantSettings
 } from "./copilot/core/settings-store";
 import { AgentPlatformAssistantBridge } from "./copilot/core/agent-platform-bridge";
+import { AssistantNavigationStatusClient } from "./copilot/core/assistant-navigation-status-client";
 import {
   cancelAssistantAttachmentTask,
   createAssistantAttachmentFromPastedImage,
@@ -101,6 +102,7 @@ import { getService } from "./services/service-registry";
 import type {
   AssistantEvent,
   AssistantAttachmentTaskProgress,
+  AssistantNavActionResult,
   AssistantNavAgentItemsResult,
   AssistantSettingsInput,
   AssistantStartRunRequest,
@@ -279,6 +281,7 @@ let desktopPetDragState: {
 } | null = null;
 let agentPlatformPetStatusClient: AgentPlatformPetStatusClient | null = null;
 let agentPlatformPetStreamClient: AgentPlatformPetStreamClient | null = null;
+let assistantNavigationStatusClient: AssistantNavigationStatusClient | null = null;
 const desktopPetPreviewProjector = new DesktopPetPreviewProjector();
 let desktopPetPreviewRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let dismissedDesktopPetDonePreview: { chatId: string; runId: string } | null = null;
@@ -1919,12 +1922,58 @@ function ensureDarwinDockIdentity() {
 
 function notifyServicesChanged() {
   scheduleAgentPlatformPetStatusRefresh(1000);
+  assistantNavigationStatusClient?.scheduleRefresh(1000);
   for (const targetWindow of [mainWindow, quickCopilotWindowController.getWindow()]) {
     if (!targetWindow || targetWindow.isDestroyed()) {
       continue;
     }
     targetWindow.webContents.send("services.changed");
   }
+}
+
+function emitAssistantNavigationAgentsChanged(result: AssistantNavAgentItemsResult) {
+  for (const targetWindow of [mainWindow, quickCopilotWindowController.getWindow()]) {
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      continue;
+    }
+    targetWindow.webContents.send("assistant.navigationAgentsChanged", result);
+  }
+}
+
+function sanitizeDownloadFilename(filename: string, fallback: string) {
+  const normalized = filename.trim() || fallback;
+  return normalized.replace(/[<>:"/\\|?*\u0000-\u001F]/gu, "_").slice(0, 180) || fallback;
+}
+
+function getAssistantExportDefaultPath(filename: string) {
+  const safeFilename = sanitizeDownloadFilename(filename, "chat-export.json");
+  if (process.platform === "win32") {
+    return path.join(app.getPath("desktop"), safeFilename);
+  }
+  if (process.platform === "darwin") {
+    return path.join(app.getPath("desktop"), safeFilename);
+  }
+  return path.join(app.getPath("home"), safeFilename);
+}
+
+async function saveAssistantChatExport(
+  assistantBridge: AgentPlatformAssistantBridge,
+  chatId: string
+): Promise<AssistantNavActionResult> {
+  const result = await assistantBridge.downloadChatExport(chatId);
+  if (!result.ok) {
+    return { ok: false, message: result.message };
+  }
+  const saveResult = await showSaveDialog({
+    title: process.platform === "win32" ? "保存会话导出" : "保存会话导出",
+    defaultPath: getAssistantExportDefaultPath(result.filename),
+    buttonLabel: process.platform === "win32" ? "保存" : "保存"
+  });
+  if (saveResult.canceled || !saveResult.filePath) {
+    return { ok: false, message: "已取消导出。" };
+  }
+  await fs.promises.writeFile(saveResult.filePath, result.bytes);
+  return { ok: true, message: "已导出会话。", filePath: saveResult.filePath };
 }
 
 function createStartupRestoreState(
@@ -2670,6 +2719,16 @@ function registerIpcHandlers() {
     handleDesktopPetAssistantEvent(event);
     }
   });
+  assistantNavigationStatusClient = new AssistantNavigationStatusClient({
+    app,
+    getServiceState,
+    issueAccessToken: issueAgentAccessToken,
+    onSnapshot: emitAssistantNavigationAgentsChanged,
+    onDebug: (message) => {
+      console.warn(`[assistant-navigation] status unavailable: ${message}`);
+    }
+  });
+  assistantNavigationStatusClient.start();
 
   startEmbeddedCdpGateway();
   const desktopActionOptions = {
@@ -2711,7 +2770,11 @@ function registerIpcHandlers() {
   });
   ipcMain.handle("assistant.listNavigationAgents", async (): Promise<AssistantNavAgentItemsResult> => {
     try {
-      return await assistantBridge.listNavigationAgents();
+      const cached = assistantNavigationStatusClient?.getSnapshot();
+      if (cached?.ok) {
+        return cached;
+      }
+      return await (assistantNavigationStatusClient?.refreshNow() ?? assistantBridge.listNavigationAgents());
     } catch (error) {
       console.warn("[assistant] failed to list navigation agents", error);
       return {
@@ -2751,6 +2814,30 @@ function registerIpcHandlers() {
     captureAssistantScreenshot(chatId, "sidebar")
   );
   ipcMain.handle("assistant.deleteChat", async (_event, chatId: string) => assistantBridge.deleteChat(chatId));
+  ipcMain.handle("assistant.markAgentChatsRead", async (_event, agentKey: string) => {
+    const result = await assistantBridge.markAgentChatsRead(agentKey);
+    if (result.ok) {
+      assistantNavigationStatusClient?.scheduleRefresh(0);
+    }
+    return result;
+  });
+  ipcMain.handle("assistant.renameChat", async (_event, chatId: string, chatName: string) => {
+    const result = await assistantBridge.renameChat(chatId, chatName);
+    if (result.ok) {
+      assistantNavigationStatusClient?.scheduleRefresh(0);
+    }
+    return result;
+  });
+  ipcMain.handle("assistant.archiveChat", async (_event, chatId: string) => {
+    const result = await assistantBridge.archiveChat(chatId);
+    if (result.ok) {
+      assistantNavigationStatusClient?.scheduleRefresh(0);
+    }
+    return result;
+  });
+  ipcMain.handle("assistant.exportChat", async (_event, chatId: string) =>
+    saveAssistantChatExport(assistantBridge, chatId)
+  );
   ipcMain.handle("assistant.startRun", async (_event, request: AssistantStartRunRequest) =>
     assistantBridge.startRun(request)
   );
@@ -3321,6 +3408,8 @@ app.on("will-quit", () => {
   clearDesktopPetIdleResetTimer();
   embeddedCdpGateway?.stop();
   embeddedCdpGateway = null;
+  assistantNavigationStatusClient?.stop();
+  assistantNavigationStatusClient = null;
   stopAgentPlatformPetStatusClient();
   unregisterQuickCopilotShortcut({
     platform: process.platform,

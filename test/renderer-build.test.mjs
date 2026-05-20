@@ -400,8 +400,20 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.doesNotMatch(sidebarSource, /assistantHomeNavItem/);
   assert.doesNotMatch(sidebarSource, /智能助理首页|智能助手首页/);
   assert.match(sidebarSource, /createAgentRoute\(agent\.agentKey\)/);
+  assert.match(sidebarSource, /createAgentChatRoute\(chat\.agentKey/);
+  assert.match(sidebarSource, /createAgentNewChatRoute\(agent\.agentKey\)/);
   assert.match(sidebarSource, /renderStatusBadges/);
   assert.match(sidebarSource, /summarizeAgentStatus\(assistantNavAgents\)/);
+  assert.match(sidebarSource, /assistant-worker-collapse worker-collapse/);
+  assert.match(sidebarSource, /ant-collapse-item/);
+  assert.match(sidebarSource, /ant-collapse-header-text/);
+  assert.match(sidebarSource, /title="全部已读"/);
+  assert.match(sidebarSource, /title="新建对话"/);
+  assert.match(sidebarSource, /查看更多（共/);
+  assert.match(sidebarSource, /等待审批/);
+  assert.match(sidebarSource, /exportChat/);
+  assert.match(sidebarSource, /renameChat/);
+  assert.match(sidebarSource, /archiveChat/);
   assert.match(sidebarSource, /fixedToolRows[\s\S]*?to:\s*"\/agents"[\s\S]*?label:\s*"智能体"[\s\S]*?to:\s*"\/schedules"[\s\S]*?label:\s*"自动化"[\s\S]*?to:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
   assert.match(sidebarSource, /fixedToolRows[\s\S]*?to:\s*"\/control-center"[\s\S]*?label:\s*"控制中心"[\s\S]*?to:\s*"\/market"[\s\S]*?label:\s*"功能市场"[\s\S]*?to:\s*"\/settings"[\s\S]*?label:\s*"设置"[\s\S]*?to:\s*"\/help"[\s\S]*?label:\s*"帮助"/);
   assert.match(sidebarSource, /sidebar-footer-divider/);
@@ -821,20 +833,28 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   const appShell = readAppShellSource();
 
   assert.match(contracts, /interface AssistantNavAgentItem/);
+  assert.match(contracts, /icon\?: AssistantNavAgentIcon/);
+  assert.match(contracts, /recentChats: AssistantNavChatItem\[\]/);
   assert.match(contracts, /hasPendingAwaiting:\s*boolean/);
   assert.match(contracts, /interface AssistantNavAgentItemsResult/);
+  assert.match(contracts, /AssistantNavigationAgentsChangedListener/);
   assert.match(contracts, /listAgents: \(\) => Promise<DesktopPetAgentOption\[\]>/);
   assert.match(contracts, /listNavigationAgents: \(\) => Promise<AssistantNavAgentItemsResult>/);
+  assert.match(contracts, /markAgentChatsRead: \(agentKey: string\) => Promise<AssistantNavActionResult>/);
   assert.match(preload, /listAgents: \(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
   assert.match(preload, /listNavigationAgents: \(\) => ipcRenderer\.invoke\("assistant\.listNavigationAgents"\)/);
+  assert.match(preload, /onNavigationAgentsChanged/);
   assert.match(mainProcess, /ipcMain\.handle\("assistant\.listAgents"/);
   assert.match(mainProcess, /ipcMain\.handle\("assistant\.listNavigationAgents"/);
+  assert.match(mainProcess, /AssistantNavigationStatusClient/);
+  assert.match(mainProcess, /assistant\.navigationAgentsChanged/);
   assert.match(mainProcess, /ok:\s*false,[\s\S]*?items:\s*\[\]/);
   assert.match(bridge, /async listAgents\(\): Promise<DesktopPetAgentOption\[\]>/);
   assert.match(bridge, /async listNavigationAgents\(\): Promise<AssistantNavAgentItemsResult>/);
-  assert.match(bridge, /chatHasPendingAwaiting/);
-  assert.match(bridge, /createNavigationAgentItem/);
+  assert.match(bridge, /readAssistantNavigationAgentsFromPlatform/);
   assert.match(appShell, /setAssistantNavAgents\(result\.ok \? result\.items : \[\]\)/);
+  assert.match(appShell, /onNavigationAgentsChanged/);
+  assert.doesNotMatch(appShell, /setInterval\([\s\S]*?listNavigationAgents/);
 });
 
 test("desktop action bridge exposes localhost api and renderer action providers", () => {

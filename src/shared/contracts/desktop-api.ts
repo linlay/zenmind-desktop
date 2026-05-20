@@ -6,7 +6,7 @@ import type { CustomSidebarDeleteResult, CustomSidebarItemInput, CustomSidebarIt
 import type { DesktopPetAgentOption, DesktopPetDanceRequestedListener, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetState, DesktopPetStateListener } from "./pet-copilot";
 import type { MarketCommandResult, MarketListResult, MarketSettings, MarketSettingsInput } from "./marketplace";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
-import type { AssistantChatDetail, AssistantChatSummary, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavAgentItemsResult, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
+import type { AssistantChatDetail, AssistantChatSummary, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 
 export interface PanAuthStatus {
   configured: boolean;
@@ -67,6 +67,11 @@ export interface DesktopApi {
     submitAwaiting: (request: AssistantSubmitAwaitingRequest) => Promise<AssistantSubmitAwaitingResult>;
     openAttachment: (chatId: string, attachmentId: string) => Promise<{ ok: boolean; message: string; path?: string }>;
     deleteChat: (chatId: string) => Promise<{ ok: boolean; message: string }>;
+    markAgentChatsRead: (agentKey: string) => Promise<AssistantNavActionResult>;
+    renameChat: (chatId: string, chatName: string) => Promise<AssistantNavActionResult>;
+    archiveChat: (chatId: string) => Promise<AssistantNavActionResult>;
+    exportChat: (chatId: string) => Promise<AssistantNavActionResult>;
+    onNavigationAgentsChanged: (listener: AssistantNavigationAgentsChangedListener) => () => void;
     onAssistantEvent: (listener: AssistantEventListener) => () => void;
     onAttachmentProgress: (listener: AssistantAttachmentProgressListener) => () => void;
   };

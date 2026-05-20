@@ -12,6 +12,8 @@ export interface AssistantWorkerOpenRequest {
 
 export type AssistantWorkerOpenListener = (request: AssistantWorkerOpenRequest) => void;
 
+export type AssistantNavigationAgentsChangedListener = (result: AssistantNavAgentItemsResult) => void;
+
 export interface WebviewOpenTabRequest {
   sourceGuestId: number;
   url: string;
@@ -106,15 +108,35 @@ export interface AssistantChatSummary {
   messageCount: number;
 }
 
+export type AssistantNavAgentIcon = string | {
+  color?: string;
+  name?: string;
+};
+
+export interface AssistantNavChatItem {
+  chatId: string;
+  chatName: string;
+  agentKey: string;
+  updatedAt: string;
+  lastRunId: string;
+  lastRunContent: string;
+  isRead: boolean;
+  hasPendingAwaiting: boolean;
+}
+
 export interface AssistantNavAgentItem {
   agentKey: string;
   displayName: string;
   role: string;
+  icon?: AssistantNavAgentIcon;
   unreadCount: number;
+  unreadChatCount: number;
+  chatCount: number;
   hasPendingAwaiting: boolean;
   latestChatId: string | null;
   latestPreview: string;
   updatedAt: string;
+  recentChats: AssistantNavChatItem[];
 }
 
 export interface AssistantNavAgentItemsResult {
@@ -122,6 +144,12 @@ export interface AssistantNavAgentItemsResult {
   items: AssistantNavAgentItem[];
   message: string;
   updatedAt: string;
+}
+
+export interface AssistantNavActionResult {
+  ok: boolean;
+  message: string;
+  filePath?: string;
 }
 
 export interface AssistantChatDetail {

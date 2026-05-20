@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   AssistantEvent,
   AssistantEventListener,
+  AssistantNavigationAgentsChangedListener,
   AssistantAttachmentProgressListener,
   AssistantMemorySettingsInput,
   AssistantPastedImageInput,
@@ -69,6 +70,23 @@ const api: DesktopApi = {
     openAttachment: (chatId: string, attachmentId: string) =>
       ipcRenderer.invoke("assistant.openAttachment", chatId, attachmentId),
     deleteChat: (chatId: string) => ipcRenderer.invoke("assistant.deleteChat", chatId),
+    markAgentChatsRead: (agentKey: string) => ipcRenderer.invoke("assistant.markAgentChatsRead", agentKey),
+    renameChat: (chatId: string, chatName: string) => ipcRenderer.invoke("assistant.renameChat", chatId, chatName),
+    archiveChat: (chatId: string) => ipcRenderer.invoke("assistant.archiveChat", chatId),
+    exportChat: (chatId: string) => ipcRenderer.invoke("assistant.exportChat", chatId),
+    onNavigationAgentsChanged: (listener: AssistantNavigationAgentsChangedListener) => {
+      const handleNavigationAgentsChanged = (
+        _event: Electron.IpcRendererEvent,
+        payload: Parameters<AssistantNavigationAgentsChangedListener>[0]
+      ) => {
+        listener(payload);
+      };
+
+      ipcRenderer.on("assistant.navigationAgentsChanged", handleNavigationAgentsChanged);
+      return () => {
+        ipcRenderer.off("assistant.navigationAgentsChanged", handleNavigationAgentsChanged);
+      };
+    },
     onAssistantEvent: (listener: AssistantEventListener) => {
       const handleAssistantEvent = (_event: Electron.IpcRendererEvent, payload: AssistantEvent) => {
         listener(payload);
