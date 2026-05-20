@@ -1,1 +1,11 @@
-@import "../styles.css";
+@import "./theme.css";
+@import "./base.css";
+@import "./pet-copilot.css";
+@import "./quick-copilot.css";
+@import "./app-shell.css";
+@import "./sidebar-copilot.css";
+@import "./navigation.css";
+@import "./control-center.css";
+@import "./log-viewer.css";
+@import "./external-webview.css";
+@import "./base-tail.css";

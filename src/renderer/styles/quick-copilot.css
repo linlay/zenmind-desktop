@@ -1,1 +1,251 @@
-@import "../styles.css";
+/* ── Quick Assistant ── */
+
+body.quick-web-copilot-body,
+:root[data-theme="dark"] body.quick-web-copilot-body {
+  background: transparent;
+}
+
+.quick-web-copilot,
+.quick-web-copilot-status {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--embedded-surface-quick-border);
+  border-radius: 10px;
+  background: var(--embedded-surface-quick-bg);
+  box-shadow: var(--embedded-surface-quick-shadow);
+  -webkit-app-region: no-drag;
+}
+
+.quick-web-copilot .pan-page {
+  height: 100%;
+  margin: 0;
+}
+
+.quick-web-copilot .pan-frame {
+  min-height: 0;
+}
+
+.quick-web-copilot-agent-marker {
+  display: none;
+}
+
+.quick-web-copilot-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+}
+
+.quick-web-copilot-status-panel {
+  display: flex;
+  width: 100%;
+  max-width: 330px;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--ink);
+  text-align: center;
+}
+
+.quick-web-copilot-status-panel strong {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.quick-web-copilot-status-panel span {
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.quick-web-copilot-status-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.quick-web-copilot-status-actions button {
+  min-width: 86px;
+  height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.quick-web-copilot-status-actions button:first-child {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+}
+
+:root[data-theme="dark"] .quick-web-copilot-status-actions button {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+:root[data-theme="dark"] .quick-web-copilot-status-actions button:first-child {
+  background: var(--accent);
+}
+
+.attachment-image-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: grid;
+  grid-template-rows: 92px minmax(0, 1fr) 92px;
+  min-width: 0;
+  min-height: 0;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(0, 0, 0, 0.86);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.attachment-image-preview-topbar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 18px 78px 0;
+  pointer-events: none;
+}
+
+.attachment-image-preview-toolbar {
+  display: inline-flex;
+  height: 44px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(255, 255, 255, 0.88);
+  pointer-events: auto;
+}
+
+.attachment-image-preview-toolbar button,
+.attachment-image-preview-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.attachment-image-preview-toolbar button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+.attachment-image-preview-toolbar button:hover:not(:disabled),
+.attachment-image-preview-toolbar button:focus-visible,
+.attachment-image-preview-close:hover,
+.attachment-image-preview-close:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  outline: none;
+}
+
+.attachment-image-preview-toolbar button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.attachment-image-preview-toolbar svg,
+.attachment-image-preview-close svg {
+  width: 25px;
+  height: 25px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.1;
+}
+
+.attachment-image-preview-toolbar-divider {
+  width: 1px;
+  height: 24px;
+  margin: 0 3px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.attachment-image-preview-close {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.78);
+  pointer-events: auto;
+}
+
+.attachment-image-preview-close svg {
+  width: 34px;
+  height: 34px;
+  stroke-width: 1.8;
+}
+
+.attachment-image-preview-stage {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 0 7vw;
+}
+
+.attachment-image-preview-stage img {
+  display: block;
+  max-width: min(78vw, 1280px);
+  max-height: calc(100vh - 212px);
+  object-fit: contain;
+  transform-origin: center center;
+  transition: transform 0.18s ease;
+  user-select: none;
+}
+
+.attachment-image-preview-filmstrip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 32px 22px;
+}
+
+.attachment-image-preview-filmstrip button {
+  display: inline-flex;
+  width: 92px;
+  height: 66px;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.32);
+  cursor: default;
+}
+
+.attachment-image-preview-filmstrip button.is-active {
+  border-color: #fff;
+}
+
+.attachment-image-preview-filmstrip img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  object-fit: contain;
+  background: #fff;
+}

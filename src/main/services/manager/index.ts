@@ -25,27 +25,38 @@ import type {
 import type { ServiceDefinition } from "../../manifest-utils";
 import { getBuiltinAssetsRoot } from "../../builtin-loader";
 import { getAllServices, getService } from "../service-registry";
-import { getPluginInstallDir } from "../../plugin-loader";
 import { ensureAppServerJwk } from "../../app-server-auth";
 import { readEnvFile, parseEnvFileContent } from "../../env-file";
 import { extractArchiveToDir, listArchiveEntries } from "../../archive-utils";
+import { getDesktopStateRoot } from "../../user-paths";
 import {
-  getDesktopStateRoot,
-  getServiceConfigRoot,
-  getServiceDataRoot,
-  getServiceLogsRoot,
-  getServicesRoot,
-  getServiceStateRoot
-} from "../../user-paths";
+  buildServiceLayoutEnv,
+  getBuiltinServiceVersionRoot,
+  getInitializationStatePath,
+  getInstallDir,
+  getServiceLayout,
+  resolveConfigPath,
+  resolveConfigTemplatePath,
+  resolveProgramPath,
+  resolveServiceRuntimePath,
+  type ServiceLayout
+} from "./layout";
+import {
+  LOG_READ_WINDOW_BYTES,
+  readLogRange,
+  readServiceLogFile,
+  normalizeLogStreamOffset,
+  normalizeLogStreamPollInterval
+} from "./logs";
 import {
   EMBEDDED_CDP_GATEWAY_HOST,
   EMBEDDED_CDP_GATEWAY_PORT,
   EMBEDDED_CDP_GATEWAY_URL
 } from "../../../shared/embedded-cdp";
 
+export { getInstallDir } from "./layout";
+
 const startedThisSession = new Set<ServiceId>();
-const LOG_READ_WINDOW_BYTES = 256 * 1024;
-const LOG_STREAM_POLL_INTERVAL_MS = 1000;
 
 type ExecResult = {
   stdout: string;
@@ -212,8 +223,6 @@ type StartupPreparationResult = {
   failures: string[];
 };
 
-const INITIALIZATION_STATE_DIRNAME = ".zenmind-desktop";
-const INITIALIZATION_STATE_FILE = "init-state.json";
 const LAST_RUNNING_SERVICES_FILE = "last-running-services.json";
 const INSTALL_ONLY_STARTUP_SERVICE_IDS = ["agent-container-hub"] as const;
 const DEFAULT_STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -296,85 +305,6 @@ function isCommandBasenameMatch(command: string, expected: string) {
 }
 
 const bundleValidationCache = new Map<string, { key: string; missingEntries: string[] }>();
-
-export function getInstallDir(app: App, service: ServiceDefinition) {
-  if (service.kind === "plugin") {
-    return getPluginInstallDir(app, service.id);
-  }
-  return path.join(getServicesRoot(app), service.id, service.version);
-}
-
-type ServiceLayout = {
-  programDir: string;
-  configDir: string;
-  dataDir: string;
-  stateDir: string;
-  logDir: string;
-  envPath: string;
-};
-
-function getServiceLayout(app: App, service: ServiceDefinition): ServiceLayout {
-  const programDir = getInstallDir(app, service);
-  const configDir = getServiceConfigRoot(app, service.id, service.kind);
-  const dataDir = getServiceDataRoot(app, service.id, service.kind);
-  const stateDir = getServiceStateRoot(app, service.id, service.kind);
-  const logDir = getServiceLogsRoot(app, service.id, service.kind);
-  return {
-    programDir,
-    configDir,
-    dataDir,
-    stateDir,
-    logDir,
-    envPath: path.join(configDir, ".env")
-  };
-}
-
-function resolveConfigPath(layout: ServiceLayout, relativePath: string) {
-  return path.join(layout.configDir, relativePath);
-}
-
-function resolveProgramPath(layout: ServiceLayout, relativePath: string) {
-  return path.join(layout.programDir, relativePath);
-}
-
-function resolveConfigTemplatePath(layout: ServiceLayout, relativePath: string) {
-  return resolveProgramPath(layout, relativePath);
-}
-
-function resolveServiceRuntimePath(layout: ServiceLayout, relativePath: string) {
-  if (!relativePath) {
-    return "";
-  }
-  const baseName = path.basename(relativePath);
-  if (/\.pid$/iu.test(baseName) || /(^|[\\/])pid([\\/]|$)/iu.test(relativePath)) {
-    return path.join(layout.stateDir, "pid", baseName);
-  }
-  if (/\.log$/iu.test(baseName)) {
-    return path.join(layout.logDir, baseName);
-  }
-  return path.join(layout.stateDir, relativePath);
-}
-
-function getInitializationStatePath(layoutOrInstallDir: ServiceLayout | string) {
-  if (typeof layoutOrInstallDir === "string") {
-    return path.join(layoutOrInstallDir, INITIALIZATION_STATE_DIRNAME, INITIALIZATION_STATE_FILE);
-  }
-  return path.join(layoutOrInstallDir.stateDir, INITIALIZATION_STATE_FILE);
-}
-
-function buildServiceLayoutEnv(layout: ServiceLayout): NodeJS.ProcessEnv {
-  return {
-    SERVICE_PROGRAM_DIR: layout.programDir,
-    SERVICE_CONFIG_DIR: layout.configDir,
-    SERVICE_DATA_DIR: layout.dataDir,
-    SERVICE_STATE_DIR: layout.stateDir,
-    SERVICE_LOG_DIR: layout.logDir
-  };
-}
-
-function getBuiltinServiceVersionRoot(app: App, serviceId: ServiceId) {
-  return path.join(getServicesRoot(app), serviceId);
-}
 
 function getAssetPath(app: App, service: ServiceDefinition) {
   if (!service.desktop.assetFileName) {
@@ -4519,144 +4449,7 @@ export async function readServiceLog(
 ): Promise<ServiceLogReadResult> {
   const state = await getServiceState(app, serviceId);
   const filePath = target === "error" ? state.healthMeta.errorLogFilePath : state.healthMeta.logFilePath;
-
-  if (!filePath) {
-    return {
-      ok: true,
-      path: "",
-      exists: false,
-      content: "",
-      truncated: false,
-      startOffset: 0,
-      endOffset: 0,
-      hasPrevious: false,
-      resetRequired: false,
-      totalBytes: 0
-    };
-  }
-
-  try {
-    const stat = fs.statSync(filePath);
-    const totalBytes = stat.size;
-    const requestedLimitBytes =
-      typeof options.limitBytes === "number" && Number.isFinite(options.limitBytes)
-        ? Math.floor(options.limitBytes)
-        : LOG_READ_WINDOW_BYTES;
-    const limitBytes = Math.min(
-      LOG_READ_WINDOW_BYTES,
-      Math.max(1, requestedLimitBytes)
-    );
-    const requestedBeforeOffset =
-      typeof options.beforeOffset === "number" && Number.isFinite(options.beforeOffset)
-        ? Math.max(0, Math.floor(options.beforeOffset))
-        : undefined;
-    const resetRequired = requestedBeforeOffset !== undefined && requestedBeforeOffset > totalBytes;
-    const requestedEndOffset =
-      requestedBeforeOffset === undefined || resetRequired ? totalBytes : Math.min(requestedBeforeOffset, totalBytes);
-    const requestedStartOffset = Math.max(0, requestedEndOffset - limitBytes);
-    const bytesToRead = requestedEndOffset - requestedStartOffset;
-
-    if (bytesToRead === 0) {
-      return {
-        ok: true,
-        path: filePath,
-        exists: true,
-        content: "",
-        truncated: requestedStartOffset > 0,
-        startOffset: requestedStartOffset,
-        endOffset: requestedEndOffset,
-        hasPrevious: requestedStartOffset > 0,
-        resetRequired,
-        totalBytes
-      };
-    }
-
-    const descriptor = fs.openSync(filePath, "r");
-    try {
-      const buffer = Buffer.alloc(bytesToRead);
-      const bytesRead = fs.readSync(descriptor, buffer, 0, bytesToRead, requestedStartOffset);
-      const actualEndOffset = requestedStartOffset + bytesRead;
-      let alignedStartOffset = requestedStartOffset;
-      let contentStartIndex = 0;
-      let startsOnLineBoundary = requestedStartOffset === 0;
-
-      if (!startsOnLineBoundary && requestedStartOffset > 0) {
-        const previousByte = Buffer.alloc(1);
-        const previousByteCount = fs.readSync(descriptor, previousByte, 0, 1, requestedStartOffset - 1);
-        startsOnLineBoundary = previousByteCount === 1 && previousByte[0] === 0x0a;
-      }
-
-      if (!startsOnLineBoundary && requestedStartOffset > 0 && bytesRead > 0) {
-        const newlineIndex = buffer.indexOf(0x0a, 0);
-        if (newlineIndex !== -1 && newlineIndex + 1 < bytesRead) {
-          contentStartIndex = newlineIndex + 1;
-          alignedStartOffset += contentStartIndex;
-        }
-      }
-
-      const hasPrevious = alignedStartOffset > 0;
-      return {
-        ok: true,
-        path: filePath,
-        exists: true,
-        content: buffer.toString("utf8", contentStartIndex, bytesRead),
-        truncated: hasPrevious,
-        startOffset: alignedStartOffset,
-        endOffset: actualEndOffset,
-        hasPrevious,
-        resetRequired,
-        totalBytes
-      };
-    } finally {
-      fs.closeSync(descriptor);
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return {
-        ok: true,
-        path: filePath,
-        exists: false,
-        content: "",
-        truncated: false,
-        startOffset: 0,
-        endOffset: 0,
-        hasPrevious: false,
-        resetRequired: false,
-        totalBytes: 0
-      };
-    }
-    throw error;
-  }
-}
-
-function readLogRange(filePath: string, startOffset: number, endOffset: number) {
-  const bytesToRead = Math.max(0, endOffset - startOffset);
-  if (bytesToRead === 0) {
-    return "";
-  }
-
-  const descriptor = fs.openSync(filePath, "r");
-  try {
-    const buffer = Buffer.alloc(bytesToRead);
-    const bytesRead = fs.readSync(descriptor, buffer, 0, bytesToRead, startOffset);
-    return buffer.subarray(0, bytesRead).toString("utf8");
-  } finally {
-    fs.closeSync(descriptor);
-  }
-}
-
-function normalizeLogStreamPollInterval(options: ServiceLogStreamOptions) {
-  if (typeof options.pollIntervalMs !== "number" || !Number.isFinite(options.pollIntervalMs)) {
-    return LOG_STREAM_POLL_INTERVAL_MS;
-  }
-  return Math.max(250, Math.floor(options.pollIntervalMs));
-}
-
-function normalizeLogStreamOffset(options: ServiceLogStreamOptions) {
-  if (typeof options.fromOffset !== "number" || !Number.isFinite(options.fromOffset)) {
-    return 0;
-  }
-  return Math.max(0, Math.floor(options.fromOffset));
+  return readServiceLogFile(filePath, options);
 }
 
 export function watchServiceLog(

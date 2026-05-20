@@ -5,8 +5,24 @@ import path from "node:path";
 
 const stylesPath = path.resolve(import.meta.dirname, "../src/renderer/styles.css");
 
+function readCssWithImports(filePath, visited = new Set()) {
+  const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(import.meta.dirname, "..", filePath);
+  if (visited.has(absolutePath)) {
+    return "";
+  }
+  visited.add(absolutePath);
+  const content = fs.readFileSync(absolutePath, "utf8");
+  return content.replace(/@import\s+["']([^"']+)["'];/g, (_match, importPath) =>
+    readCssWithImports(path.resolve(path.dirname(absolutePath), importPath), visited)
+  );
+}
+
+function readStyles() {
+  return readCssWithImports(stylesPath);
+}
+
 function readRules(selector) {
-  const styles = fs.readFileSync(stylesPath, "utf8");
+  const styles = readStyles();
   const rules = styles.matchAll(/(?<selectors>[^{}]+)\{(?<body>[^}]+)\}/g);
   const matches = [];
 
@@ -31,7 +47,7 @@ function readRule(selector) {
 }
 
 test("main content scroll container is not a window drag region", () => {
-  const styles = fs.readFileSync(stylesPath, "utf8");
+  const styles = readStyles();
   const match = styles.match(/^\.app-main\s*\{(?<body>[\s\S]*?)^\}/m);
   const appMainRule = match?.groups?.body;
 
@@ -41,7 +57,7 @@ test("main content scroll container is not a window drag region", () => {
 });
 
 test("main content keeps a dedicated titlebar drag strip", () => {
-  const styles = fs.readFileSync(stylesPath, "utf8");
+  const styles = readStyles();
   const dragRegionRule = styles.match(
     /\.app-main-drag-region\s*\{[\s\S]*?app-region:\s*drag;[\s\S]*?-webkit-app-region:\s*drag;[\s\S]*?\}/
   )?.[0];
@@ -52,7 +68,7 @@ test("main content keeps a dedicated titlebar drag strip", () => {
 });
 
 test("settings page no longer reserves a dedicated drag-region override", () => {
-  const styles = fs.readFileSync(stylesPath, "utf8");
+  const styles = readStyles();
 
   assert.doesNotMatch(styles, /\.settings-mode-close-button\s*\{/);
   assert.doesNotMatch(styles, /\.app-shell\.is-settings-route\s+\.app-window-drag-region\s*\{/);

@@ -1,0 +1,54 @@
+/* ── Reset ── */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  color: var(--ink);
+  background: #fff;
+  padding: 0;
+  position: relative;
+}
+
+body.embedded-surface-body {
+  padding: 0;
+  background: var(--embedded-surface-body-bg);
+}
+
+body.mac-translucent-sidebar-body,
+body.embedded-surface-body.mac-translucent-sidebar-body {
+  background: transparent;
+}
+
+body.embedded-surface-body::before {
+  display: none;
+}
+
+:root[data-theme="dark"] body {
+  background: var(--bg-canvas);
+}
+
+:root[data-theme="dark"] body.mac-translucent-sidebar-body {
+  background: transparent;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}

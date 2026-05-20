@@ -1,0 +1,116 @@
+/* ══════════════════════════════════════════════
+   ZenMind Desktop — Feishu / Lark Design System
+   ══════════════════════════════════════════════ */
+
+:root {
+  color-scheme: light;
+  --window-radius: 18px;
+  --mac-traffic-light-safe-area: 88px;
+  --bg-base: #FFFFFF;
+  --bg-canvas:
+    radial-gradient(circle at 8% 0%, rgba(122, 201, 255, 0.48), transparent 28%),
+    radial-gradient(circle at 92% 100%, rgba(150, 210, 255, 0.42), transparent 32%),
+    linear-gradient(180deg, #4A9EDB 0%, #6CB1E4 26%, #A9D0F2 58%, #B6D8F4 100%);
+  --surface: rgba(255, 255, 255, 0.18);
+  --surface-strong: rgba(255, 255, 255, 0.74);
+  --surface-soft: rgba(255, 255, 255, 0.28);
+  --surface-sidebar: rgba(247, 250, 252, 0.78);
+  --ink: #1D2129;
+  --ink-soft: #4E5969;
+  --ink-muted: #86909C;
+  --line: rgba(148, 163, 184, 0.18);
+  --line-strong: rgba(148, 163, 184, 0.28);
+  --accent: #2663EB;
+  --accent-strong: #1D4ED8;
+  --accent-soft: #E8F0FF;
+  --accent-glow: rgba(38, 99, 235, 0.12);
+  --success: #00B42A;
+  --warning: #FF7D00;
+  --danger: #F53F3F;
+  --info: #722ED1;
+  --panel-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --panel-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --desktop-ui-bg: #ffffff;
+  --desktop-ui-card: #ffffff;
+  --desktop-ui-card-soft: #f4f7ff;
+  --desktop-ui-border: #e2e6ef;
+  --desktop-ui-border-soft: #edf0f6;
+  --desktop-ui-text: #181818;
+  --desktop-ui-muted: #4b5b76;
+  --desktop-ui-primary: #0052d9;
+  --desktop-ui-primary-strong: #0048c8;
+  --desktop-ui-primary-rgb: 0, 82, 217;
+  --desktop-ui-success: #00b42a;
+  --desktop-ui-success-rgb: 0, 180, 42;
+  --desktop-ui-code-bg: #0d1117;
+  --desktop-ui-code-line: #161b22;
+  --desktop-ui-code-border: #30363d;
+  --desktop-ui-code-text: #d5dce7;
+  --workspace-wide-max: 1680px;
+  --workspace-measure-max: 1280px;
+  --assistant-dock-embedded-width: 360px;
+  /* Keep embedded surfaces on a solid host-backed layer to avoid theme flashes during route swaps. */
+  --embedded-surface-body-bg: #fff;
+  --embedded-surface-shell-bg: #fff;
+  --embedded-surface-page-bg: #fff;
+  --embedded-surface-frame-bg: #fff;
+  --embedded-surface-loading-bg: rgba(255, 255, 255, 0.96);
+  --embedded-surface-dock-bg: #fff;
+  --embedded-surface-dock-shadow: -14px 0 42px rgba(15, 23, 42, 0.08);
+  --embedded-surface-quick-bg: #fff;
+  --embedded-surface-quick-border: rgba(148, 163, 184, 0.24);
+  --embedded-surface-quick-shadow: 0 18px 50px rgba(15, 23, 42, 0.16);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-base: #181818;
+  --bg-canvas: linear-gradient(180deg, #2c2d30 0%, #26272a 100%);
+  --surface: rgba(42, 43, 47, 0.9);
+  --surface-strong: rgba(48, 50, 54, 0.96);
+  --surface-soft: rgba(54, 56, 61, 0.9);
+  --surface-sidebar: rgba(35, 37, 40, 0.92);
+  --ink: #F2F3F5;
+  --ink-soft: #C8CDD5;
+  --ink-muted: #959BA6;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  --accent: #4F88FF;
+  --accent-strong: #75A5FF;
+  --accent-soft: rgba(79, 136, 255, 0.16);
+  --accent-glow: rgba(79, 136, 255, 0.2);
+  --success: #27C346;
+  --warning: #FF9A2E;
+  --danger: #F76560;
+  --info: #A55EEA;
+  --panel-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  --panel-shadow-hover: 0 12px 30px rgba(0, 0, 0, 0.24);
+  --desktop-ui-bg: #181818;
+  --desktop-ui-card: #181818;
+  --desktop-ui-card-soft: #181818;
+  --desktop-ui-border: rgba(148, 163, 184, 0.18);
+  --desktop-ui-border-soft: rgba(148, 163, 184, 0.12);
+  --desktop-ui-text: #f5f7fb;
+  --desktop-ui-muted: #a9b4c4;
+  --desktop-ui-primary: #5790ff;
+  --desktop-ui-primary-strong: #7dabff;
+  --desktop-ui-primary-rgb: 87, 144, 255;
+  --desktop-ui-success: #27c346;
+  --desktop-ui-success-rgb: 39, 195, 70;
+  --desktop-ui-code-bg: #090c11;
+  --desktop-ui-code-line: #111720;
+  --desktop-ui-code-border: #2a3444;
+  --desktop-ui-code-text: #d7dde8;
+  --embedded-surface-body-bg: #1f2329;
+  --embedded-surface-shell-bg: #1f2329;
+  --embedded-surface-page-bg: rgba(35, 37, 40, 0.96);
+  --embedded-surface-frame-bg: #1f2329;
+  --embedded-surface-loading-bg: rgba(35, 37, 40, 0.96);
+  --embedded-surface-dock-bg: rgba(35, 37, 40, 0.98);
+  --embedded-surface-dock-shadow: -14px 0 42px rgba(0, 0, 0, 0.24);
+  --embedded-surface-quick-bg: #232528;
+  --embedded-surface-quick-border: rgba(255, 255, 255, 0.12);
+  --embedded-surface-quick-shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
+}

@@ -5,26 +5,18 @@ import {
   app,
   BrowserWindow,
   clipboard,
-  desktopCapturer,
-  dialog,
   globalShortcut,
   ipcMain,
   Menu,
   nativeTheme,
-  nativeImage,
   screen,
   shell,
   session,
   systemPreferences,
-  Tray,
   webContents,
   type MediaAccessPermissionRequest,
   type MenuItemConstructorOptions,
-  type OpenDialogOptions,
-  type Display,
-  type NativeImage,
   type Rectangle,
-  type SaveDialogOptions,
   type WebContents,
   type WebFrameMain
 } from "electron";
@@ -72,6 +64,10 @@ import {
 } from "./services/port-conflict";
 import { resolveWebviewOpenDisposition } from "./webview-open-tab";
 import { revealPathInFileManager } from "./reveal-path";
+import { buildApplicationMenu as installApplicationMenu } from "./app-shell/app-menu";
+import { LogViewerWindowController } from "./app-shell/log-viewer-window";
+import { NativeDialogVisibilityController } from "./app-shell/native-dialogs";
+import { AppTrayController } from "./app-shell/tray";
 import {
   EmbeddedCdpGateway,
   type EmbeddedCdpCommandRequest,
@@ -97,7 +93,6 @@ import {
 import { AgentPlatformAssistantBridge } from "./copilot/core/agent-platform-bridge";
 import {
   cancelAssistantAttachmentTask,
-  createAssistantAttachmentFromImageBuffer,
   createAssistantAttachmentFromPastedImage,
   createAssistantAttachmentsFromFiles,
   resolveAssistantAttachmentPath
@@ -139,7 +134,6 @@ import {
   isBuiltinBrowserSurfaceTarget,
   resolveBuiltinBrowserUrl
 } from "../shared/browser-surfaces";
-import { APP_ICON_ASSET_DIRECTORIES, APP_ICON_ASSET_FILENAMES } from "../shared/app-icon-assets";
 import {
   ensureDataRoot,
   getDataRoot,
@@ -185,15 +179,16 @@ import {
   registerQuickCopilotShortcut,
   unregisterQuickCopilotShortcut
 } from "./copilot/quick-copilot/shortcut";
+import {
+  captureAssistantScreenshot as captureCopilotScreenshot,
+  type ScreenshotCaptureSource
+} from "./copilot/sidebar-copilot/screenshot";
 
 let mainWindow: BrowserWindow | null = null;
 let desktopPetWindow: BrowserWindow | null = null;
-let logViewerWindow: BrowserWindow | null = null;
-let tray: Tray | null = null;
 let isHandlingQuit = false;
 let pendingMainWindowCloseCancel: (() => void) | null = null;
 let serviceMutationQueue = Promise.resolve();
-let nativeDialogVisibilityDepth = 0;
 let mainWindowSidebarTranslucencyEnabled = true;
 const desktopActionRendererRequests = new Map<string, {
   resolve: (response: DesktopActionRendererResponse) => void;
@@ -334,6 +329,44 @@ const quickCopilotWindowController = new QuickCopilotWindowController({
   prepareServices: () => runServiceMutation(() => ensureAssistantTargetServicesRunning("quick-assistant")),
   showControlCenter: () => showMainWindow("/control-center"),
   openAgent: scheduleAgentWebclientOpenRequest
+});
+
+const logViewerWindowController = new LogViewerWindowController({
+  preloadPath: path.join(__dirname, "..", "preload", "index.js"),
+  routePath: LOG_VIEWER_ROUTE,
+  platform: process.platform,
+  getOwnerWindow: () => mainWindow && !mainWindow.isDestroyed() ? mainWindow : null,
+  loadRendererRoute,
+  onRendererError: safeConsoleError
+});
+
+const nativeDialogController = new NativeDialogVisibilityController({
+  platform: process.platform,
+  getTargetWindows: () => [mainWindow, quickCopilotWindowController.getWindow()],
+  hideQuickCopilot: hideQuickAssistantForNativeDialog,
+  restoreQuickCopilot: restoreQuickAssistantAfterNativeDialog
+});
+
+const appTrayController = new AppTrayController({
+  platform: process.platform,
+  mainDir: __dirname,
+  resourcesPath: process.resourcesPath,
+  getDesktopPetEnabled: () => desktopPetSettings.enabled,
+  isDesktopPetSupported: () => isDesktopPetSupportedPlatform(process.platform),
+  openAssistantChat: () => {
+    void openAssistantWorker({
+      displayName: "ZenMind",
+      role: "确认对话示例",
+      focusComposerOnComplete: true
+    });
+  },
+  openAssistantTarget: (source) => {
+    void showAssistantTargetWindow(source);
+  },
+  openSettings: () => showMainWindow("/settings"),
+  showDesktopPet: () => showDesktopPetWindow(),
+  hideDesktopPet: () => hideDesktopPetWindow(true),
+  quit: () => app.quit()
 });
 
 function clearDesktopPetIdleResetTimer() {
@@ -575,9 +608,7 @@ function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
     }
     targetWindow.webContents.send("desktopPet.state", desktopPetState);
   }
-  if (tray && process.platform !== "darwin") {
-    tray.setContextMenu(buildTrayMenu());
-  }
+  appTrayController.refreshContextMenu();
   return desktopPetState;
 }
 
@@ -1362,119 +1393,12 @@ function hideQuickAssistantDismissWindow() {
   quickCopilotWindowController.hideDismissWindow();
 }
 
-function buildLogViewerRoute(request: ServiceOpenLogViewerRequest) {
-  const params = new URLSearchParams({
-    serviceId: request.serviceId,
-    target: request.target,
-    title: request.title
-  });
-  return `${LOG_VIEWER_ROUTE}?${params.toString()}`;
-}
-
-function createLogViewerWindow() {
-  if (logViewerWindow && !logViewerWindow.isDestroyed()) {
-    return logViewerWindow;
-  }
-
-  const ownerWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-  const commonWindowOptions = {
-    width: 1240,
-    height: 860,
-    minWidth: 760,
-    minHeight: 520,
-    show: false,
-    frame: false,
-    resizable: true,
-    maximizable: false,
-    minimizable: false,
-    fullscreenable: false,
-    ...(ownerWindow ? { parent: ownerWindow, modal: false } : {}),
-    title: "ZenMind Logs",
-    backgroundColor: "#F6F8FC",
-    webPreferences: {
-      preload: path.join(__dirname, "..", "preload", "index.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      devTools: false,
-      sandbox: false
-    }
-  };
-
-  if (process.platform === "darwin") {
-    logViewerWindow = new BrowserWindow({
-      ...commonWindowOptions,
-      skipTaskbar: true,
-      transparent: false,
-      titleBarStyle: "hidden" as const
-    });
-  } else if (process.platform === "win32") {
-    logViewerWindow = new BrowserWindow({
-      ...commonWindowOptions,
-      skipTaskbar: false,
-      transparent: false
-    });
-  } else {
-    logViewerWindow = new BrowserWindow({
-      ...commonWindowOptions,
-      skipTaskbar: false,
-      transparent: false
-    });
-  }
-
-  logViewerWindow.once("ready-to-show", () => {
-    if (!logViewerWindow || logViewerWindow.isDestroyed()) {
-      return;
-    }
-    logViewerWindow.show();
-    logViewerWindow.focus();
-  });
-
-  logViewerWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
-    safeConsoleError("log viewer renderer failed to load", {
-      errorCode,
-      errorDescription,
-      validatedUrl
-    });
-  });
-
-  logViewerWindow.webContents.on("render-process-gone", (_event, details) => {
-    safeConsoleError("log viewer render process exited unexpectedly", details);
-  });
-
-  logViewerWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
-    safeConsoleError("log viewer preload failed", {
-      preloadPath,
-      error: error?.stack || String(error)
-    });
-  });
-
-  logViewerWindow.on("closed", () => {
-    logViewerWindow = null;
-  });
-
-  return logViewerWindow;
-}
-
 async function openLogViewerWindow(request: ServiceOpenLogViewerRequest) {
-  const targetWindow = createLogViewerWindow();
-  const routePath = buildLogViewerRoute(request);
-  await loadRendererRoute(targetWindow, routePath);
-  if (targetWindow.isDestroyed()) {
-    return { ok: false };
-  }
-  if (!targetWindow.isVisible()) {
-    targetWindow.show();
-  }
-  targetWindow.focus();
-  targetWindow.moveTop();
-  return { ok: true };
+  return logViewerWindowController.open(request);
 }
 
 function closeLogViewerWindow() {
-  if (logViewerWindow && !logViewerWindow.isDestroyed()) {
-    logViewerWindow.close();
-  }
-  return { ok: true };
+  return logViewerWindowController.close();
 }
 
 function hideQuickAssistantForNativeDialog() {
@@ -1493,433 +1417,21 @@ function toggleQuickAssistantWindow() {
   quickCopilotWindowController.toggleWindow();
 }
 
-type ScreenshotCaptureSource = "sidebar" | "quick-assistant";
-
-type ScreenshotSelectionRect = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
-function createScreenshotSelectionHtml(selectionId: string) {
-  const doneUrl = `zenmind://screenshot-selection/${selectionId}`;
-  return [
-    "<!doctype html>",
-    "<html>",
-    "<head>",
-    "<meta charset=\"utf-8\">",
-    "<style>",
-    "html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent;}",
-    "body{cursor:crosshair;user-select:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}",
-    "#shade{position:fixed;inset:-2px;background:rgba(15,23,42,.24);pointer-events:none;}",
-    "#box{position:fixed;display:none;border:2px solid rgba(59,130,246,.98);background:rgba(59,130,246,.16);box-shadow:0 0 0 9999px rgba(15,23,42,.38),0 12px 30px rgba(15,23,42,.22);}",
-    "#hint{position:fixed;left:50%;top:28px;transform:translateX(-50%);padding:9px 14px;border-radius:999px;background:rgba(17,24,39,.82);color:#fff;font-size:13px;font-weight:650;letter-spacing:.01em;box-shadow:0 10px 30px rgba(15,23,42,.24);}",
-    "</style>",
-    "</head>",
-    "<body>",
-    "<div id=\"shade\" aria-hidden=\"true\"></div>",
-    "<div id=\"box\" aria-hidden=\"true\"></div>",
-    "<div id=\"hint\">拖拽选择截屏范围，Esc 取消</div>",
-    "<script>",
-    `const doneUrl=${JSON.stringify(doneUrl)};`,
-    "const box=document.getElementById('box');",
-    "const hint=document.getElementById('hint');",
-    "const minSize=8;",
-    "let dragging=false;",
-    "let startX=0;",
-    "let startY=0;",
-    "let currentRect=null;",
-    "function clamp(value,min,max){return Math.max(min,Math.min(value,max));}",
-    "function finish(action,rect){const params=new URLSearchParams({action});if(rect){params.set('rect',JSON.stringify(rect));}window.location.href=doneUrl+'?'+params.toString();}",
-    "function updateBox(clientX,clientY){const endX=clamp(clientX,0,window.innerWidth);const endY=clamp(clientY,0,window.innerHeight);const x=Math.min(startX,endX);const y=Math.min(startY,endY);const width=Math.abs(endX-startX);const height=Math.abs(endY-startY);currentRect={x,y,width,height};box.style.display='block';box.style.left=x+'px';box.style.top=y+'px';box.style.width=width+'px';box.style.height=height+'px';}",
-    "window.addEventListener('pointerdown',(event)=>{if(event.button!==0){return;}dragging=true;startX=clamp(event.clientX,0,window.innerWidth);startY=clamp(event.clientY,0,window.innerHeight);currentRect={x:startX,y:startY,width:0,height:0};hint.textContent='松开鼠标完成截屏，Esc 取消';box.style.display='block';updateBox(event.clientX,event.clientY);try{document.body.setPointerCapture(event.pointerId);}catch{}});",
-    "window.addEventListener('pointermove',(event)=>{if(!dragging){return;}updateBox(event.clientX,event.clientY);});",
-    "window.addEventListener('pointerup',(event)=>{if(!dragging){return;}dragging=false;try{document.body.releasePointerCapture(event.pointerId);}catch{}updateBox(event.clientX,event.clientY);if(!currentRect||currentRect.width<minSize||currentRect.height<minSize){box.style.display='none';hint.textContent='范围太小，请拖拽选择更大的区域，Esc 取消';return;}finish('select',currentRect);});",
-    "window.addEventListener('keydown',(event)=>{if(event.key==='Escape'){finish('cancel');}});",
-    "</script>",
-    "</body>",
-    "</html>"
-  ].join("");
-}
-
-function parseScreenshotSelectionUrl(value: string, selectionId: string) {
-  try {
-    const url = new URL(value);
-    if (
-      url.protocol !== "zenmind:" ||
-      url.hostname !== "screenshot-selection" ||
-      url.pathname !== `/${selectionId}`
-    ) {
-      return undefined;
-    }
-    if (url.searchParams.get("action") === "cancel") {
-      return null;
-    }
-    const rawRect = url.searchParams.get("rect");
-    if (!rawRect) {
-      return null;
-    }
-    const rect = JSON.parse(rawRect) as Partial<ScreenshotSelectionRect>;
-    if (
-      typeof rect.x !== "number" ||
-      typeof rect.y !== "number" ||
-      typeof rect.width !== "number" ||
-      typeof rect.height !== "number" ||
-      rect.width < 1 ||
-      rect.height < 1
-    ) {
-      return null;
-    }
-    return {
-      x: rect.x,
-      y: rect.y,
-      width: rect.width,
-      height: rect.height
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function selectScreenshotRegion(display: Display) {
-  return new Promise<ScreenshotSelectionRect | null>((resolve) => {
-    const selectionId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    const overlayWindow = new BrowserWindow({
-      ...display.bounds,
-      show: false,
-      frame: false,
-      transparent: true,
-      resizable: false,
-      maximizable: false,
-      minimizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      hasShadow: false,
-      ...(process.platform === "darwin" ? { roundedCorners: false } : {}),
-      backgroundColor: "#00000000",
-      title: "ZenMind Screenshot Selection",
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true
-      }
-    });
-    let settled = false;
-    const settle = (rect: ScreenshotSelectionRect | null) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      overlayWindow.webContents.off("will-navigate", handleNavigate);
-      if (!overlayWindow.isDestroyed()) {
-        overlayWindow.close();
-      }
-      resolve(rect);
-    };
-    const handleNavigate = (event: Electron.Event, url: string) => {
-      const selection = parseScreenshotSelectionUrl(url, selectionId);
-      if (selection === undefined) {
-        return;
-      }
-      event.preventDefault();
-      settle(selection);
-    };
-
-    if (process.platform === "darwin") {
-      overlayWindow.setAlwaysOnTop(true, "screen-saver");
-      overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    } else if (process.platform === "win32") {
-      overlayWindow.setAlwaysOnTop(true, "screen-saver");
-    } else {
-      overlayWindow.setAlwaysOnTop(true);
-    }
-
-    overlayWindow.webContents.on("will-navigate", handleNavigate);
-    overlayWindow.on("closed", () => settle(null));
-    overlayWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(createScreenshotSelectionHtml(selectionId))}`)
-      .then(() => {
-        if (overlayWindow.isDestroyed()) {
-          return;
-        }
-        overlayWindow.show();
-        overlayWindow.moveTop();
-        overlayWindow.focus();
-      })
-      .catch(() => settle(null));
-  });
-}
-
-function getScreenshotPermissionMessage() {
-  if (process.platform === "darwin") {
-    const status = systemPreferences.getMediaAccessStatus("screen");
-    if (status === "denied" || status === "restricted") {
-      return "ZenMind 没有屏幕录制权限。请在系统设置 > 隐私与安全性 > 屏幕录制中允许 ZenMind 后重试。";
-    }
-    return "";
-  }
-  if (process.platform === "win32") {
-    return "";
-  }
-  return "当前平台暂不支持截屏提问。";
-}
-
-function getDisplayThumbnailSize(display: Display) {
-  const scaleFactor = Number.isFinite(display.scaleFactor) && display.scaleFactor > 0
-    ? display.scaleFactor
-    : 1;
-  if (process.platform === "darwin") {
-    return {
-      width: Math.max(1, Math.round(display.size.width * scaleFactor)),
-      height: Math.max(1, Math.round(display.size.height * scaleFactor))
-    };
-  }
-  if (process.platform === "win32") {
-    return {
-      width: Math.max(1, Math.round(display.size.width * scaleFactor)),
-      height: Math.max(1, Math.round(display.size.height * scaleFactor))
-    };
-  }
-  return {
-    width: Math.max(1, Math.round(display.size.width * scaleFactor)),
-    height: Math.max(1, Math.round(display.size.height * scaleFactor))
-  };
-}
-
-function chooseDisplaySource(
-  sources: Electron.DesktopCapturerSource[],
-  display: Display,
-  thumbnailSize: { width: number; height: number }
-) {
-  const displayId = String(display.id);
-  return sources.find((source) => source.display_id === displayId) ??
-    sources.find((source) => {
-      const size = source.thumbnail.getSize();
-      return Math.abs(size.width - thumbnailSize.width) <= 2 &&
-        Math.abs(size.height - thumbnailSize.height) <= 2;
-    }) ??
-    sources[0] ??
-    null;
-}
-
-async function captureDisplayImage(display: Display) {
-  const thumbnailSize = getDisplayThumbnailSize(display);
-  const sources = await desktopCapturer.getSources({
-    types: ["screen"],
-    thumbnailSize,
-    fetchWindowIcons: false
-  });
-  const source = chooseDisplaySource(sources, display, thumbnailSize);
-  if (!source || source.thumbnail.isEmpty()) {
-    throw new Error("没有获取到可用的屏幕截图，请检查系统截屏权限后重试。");
-  }
-  return source.thumbnail;
-}
-
-function intersectRect(a: Rectangle, b: Rectangle): Rectangle | null {
-  const left = Math.max(a.x, b.x);
-  const top = Math.max(a.y, b.y);
-  const right = Math.min(a.x + a.width, b.x + b.width);
-  const bottom = Math.min(a.y + a.height, b.y + b.height);
-  const width = right - left;
-  const height = bottom - top;
-  if (width < 1 || height < 1) {
-    return null;
-  }
-  return {
-    x: left,
-    y: top,
-    width,
-    height
-  };
-}
-
-function getScreenshotSelectionGlobalRect(
-  displayBounds: Rectangle,
-  selection: ScreenshotSelectionRect
-): Rectangle {
-  return {
-    x: displayBounds.x + selection.x,
-    y: displayBounds.y + selection.y,
-    width: selection.width,
-    height: selection.height
-  };
-}
-
-function getScreenshotWindowFallbackTargets(source: ScreenshotCaptureSource) {
-  const targets: BrowserWindow[] = [];
-  const addTarget = (targetWindow: BrowserWindow | null) => {
-    if (
-      targetWindow &&
-      !targetWindow.isDestroyed() &&
-      targetWindow.isVisible() &&
-      !targets.includes(targetWindow)
-    ) {
-      targets.push(targetWindow);
-    }
-  };
-
-  if (source === "quick-assistant") {
-    addTarget(mainWindow);
-    addTarget(quickCopilotWindowController.getWindow());
-    return targets;
-  }
-
-  addTarget(mainWindow);
-  return targets;
-}
-
-async function captureWindowSelectionFallback(
-  displayBounds: Rectangle,
-  selection: ScreenshotSelectionRect,
-  source: ScreenshotCaptureSource
-) {
-  const selectionBounds = getScreenshotSelectionGlobalRect(displayBounds, selection);
-  for (const targetWindow of getScreenshotWindowFallbackTargets(source)) {
-    const contentBounds = targetWindow.getContentBounds();
-    const intersection = intersectRect(selectionBounds, contentBounds);
-    if (!intersection) {
-      continue;
-    }
-    const captured = await targetWindow.webContents.capturePage({
-      x: clampInteger(intersection.x - contentBounds.x, 0, Math.max(0, contentBounds.width - 1)),
-      y: clampInteger(intersection.y - contentBounds.y, 0, Math.max(0, contentBounds.height - 1)),
-      width: clampInteger(intersection.width, 1, contentBounds.width),
-      height: clampInteger(intersection.height, 1, contentBounds.height)
-    });
-    if (!captured.isEmpty()) {
-      return captured;
-    }
-  }
-  return null;
-}
-
-function clampInteger(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(Math.round(value), max));
-}
-
-function cropScreenshotImage(
-  image: NativeImage,
-  displayBounds: Rectangle,
-  selection: ScreenshotSelectionRect
-) {
-  const imageSize = image.getSize();
-  const ratioX = imageSize.width / Math.max(1, displayBounds.width);
-  const ratioY = imageSize.height / Math.max(1, displayBounds.height);
-  const x = clampInteger(selection.x * ratioX, 0, Math.max(0, imageSize.width - 1));
-  const y = clampInteger(selection.y * ratioY, 0, Math.max(0, imageSize.height - 1));
-  const width = clampInteger(selection.width * ratioX, 1, Math.max(1, imageSize.width - x));
-  const height = clampInteger(selection.height * ratioY, 1, Math.max(1, imageSize.height - y));
-  return image.crop({ x, y, width, height });
-}
-
-async function captureScreenshotImage(
-  display: Display,
-  selection: ScreenshotSelectionRect,
-  source: ScreenshotCaptureSource
-) {
-  let screenCaptureFailure: Error | null = null;
-  try {
-    const image = await captureDisplayImage(display);
-    const cropped = cropScreenshotImage(image, display.bounds, selection);
-    if (cropped.isEmpty()) {
-      throw new Error("截屏区域为空，请重新选择更大的范围。");
-    }
-    return cropped;
-  } catch (error) {
-    screenCaptureFailure = error instanceof Error ? error : new Error(String(error));
-  }
-
-  const fallback = await captureWindowSelectionFallback(display.bounds, selection, source);
-  if (fallback && !fallback.isEmpty()) {
-    return fallback;
-  }
-
-  if (process.platform === "darwin" && screenCaptureFailure.message.includes("没有获取到可用的屏幕截图")) {
-    throw new Error(
-      "没有获取到系统屏幕截图源，也无法从当前 ZenMind 窗口截取该区域。请确认选择范围在 ZenMind 窗口内，或在系统设置 > 隐私与安全性 > 屏幕录制中允许 ZenMind。"
-    );
-  }
-
-  if (process.platform === "win32" && screenCaptureFailure.message.includes("没有获取到可用的屏幕截图")) {
-    throw new Error("没有获取到系统屏幕截图源，也无法从当前 ZenMind 窗口截取该区域，请重新选择窗口内区域后重试。");
-  }
-
-  throw screenCaptureFailure;
-}
-
-function createScreenshotAttachmentName() {
-  const timestamp = new Date()
-    .toISOString()
-    .replace(/\.\d{3}Z$/u, "")
-    .replace(/[-:T]/gu, "");
-  return `screenshot-${timestamp}.png`;
-}
-
 async function captureAssistantScreenshot(
   chatId: string | null | undefined,
   source: ScreenshotCaptureSource
 ) {
-  const permissionMessage = getScreenshotPermissionMessage();
-  if (permissionMessage) {
-    return {
-      ok: false,
-      chatId: chatId ?? "",
-      message: permissionMessage,
-      attachments: []
-    };
-  }
-
-  const quickAssistantWindow = quickCopilotWindowController.getWindow();
-  const shouldRestoreQuickAssistant = source === "quick-assistant" &&
-    Boolean(quickAssistantWindow && !quickAssistantWindow.isDestroyed() && quickAssistantWindow.isVisible());
-  if (source === "quick-assistant") {
-    hideQuickAssistantDismissWindow();
-    if (quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
-      quickAssistantWindow.hide();
-    }
-    await delay(140);
-  }
-
-  try {
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-    const selection = await selectScreenshotRegion(display);
-    if (!selection) {
-      return {
-        ok: false,
-        chatId: chatId ?? "",
-        message: "已取消截屏。",
-        attachments: []
-      };
-    }
-
-    await delay(80);
-    const cropped = await captureScreenshotImage(display, selection, source);
-    return createAssistantAttachmentFromImageBuffer(app, chatId, {
-      name: createScreenshotAttachmentName(),
-      mimeType: "image/png",
-      buffer: cropped.toPNG(),
-      fallbackBaseName: "screenshot",
-      unsupportedMessage: "截屏图片格式暂不支持。",
-      readableMessage: "已截取 1 张屏幕图片，图片已进入视觉上下文。",
-      oversizedVisionMessage: "截屏已保存，但过大，未发送给模型视觉接口。"
-    });
-  } catch (error) {
-    return {
-      ok: false,
-      chatId: chatId ?? "",
-      message: error instanceof Error ? error.message : String(error),
-      attachments: []
-    };
-  } finally {
-    if (source === "quick-assistant") {
-      if (shouldRestoreQuickAssistant && quickAssistantWindow && !quickAssistantWindow.isDestroyed()) {
-        showQuickAssistantDismissWindow();
-        quickAssistantWindow.show();
-        quickAssistantWindow.focus();
-      }
-    }
-  }
+  return captureCopilotScreenshot({
+    app,
+    chatId,
+    source,
+    platform: process.platform,
+    getMainWindow: () => mainWindow,
+    getQuickCopilotWindow: () => quickCopilotWindowController.getWindow(),
+    hideQuickCopilotDismissWindow: hideQuickAssistantDismissWindow,
+    showQuickCopilotDismissWindow: showQuickAssistantDismissWindow,
+    delay
+  });
 }
 
 function registerQuickAssistantShortcut() {
@@ -2198,7 +1710,7 @@ function createWindow() {
   });
 
   mainWindow.on("focus", () => {
-    if (nativeDialogVisibilityDepth > 0) {
+    if (nativeDialogController.isOpen()) {
       return;
     }
     quickCopilotWindowController.hideAfterOutsideFocus();
@@ -2912,126 +2424,22 @@ async function openAssistantWorker(request: AssistantWorkerOpenRequest) {
   setTimeout(sendOpenAssistantWorker, 100);
 }
 
-function createTrayIcon() {
-  const platformIconPath =
-    process.platform === "win32"
-      ? path.join(
-          __dirname,
-          "..",
-          "..",
-          ...APP_ICON_ASSET_DIRECTORIES.buildIcons.split("/"),
-          APP_ICON_ASSET_FILENAMES.windowsAppIcon
-        )
-      : path.join(
-          __dirname,
-          "..",
-          "..",
-          ...APP_ICON_ASSET_DIRECTORIES.buildIcons.split("/"),
-          APP_ICON_ASSET_FILENAMES.fallbackSmallIcon
-        );
-  const iconPaths = [
-    path.join(
-      process.resourcesPath,
-      APP_ICON_ASSET_DIRECTORIES.packagedResources,
-      APP_ICON_ASSET_FILENAMES.trayIcon
-    ),
-    path.join(
-      __dirname,
-      "..",
-      "..",
-      APP_ICON_ASSET_DIRECTORIES.distRenderer,
-      APP_ICON_ASSET_FILENAMES.trayIcon
-    ),
-    path.join(__dirname, "..", "..", APP_ICON_ASSET_DIRECTORIES.public, APP_ICON_ASSET_FILENAMES.trayIcon),
-    platformIconPath,
-    path.join(__dirname, "..", "..", APP_ICON_ASSET_DIRECTORIES.public, APP_ICON_ASSET_FILENAMES.brandIcon)
-  ];
-  const icon =
-    iconPaths
-      .map((iconPath) => nativeImage.createFromPath(iconPath))
-      .find((candidate) => !candidate.isEmpty()) ?? nativeImage.createEmpty();
-  const resizedIcon = icon.resize({ width: 20, height: 20 });
-  if (process.platform === "darwin") {
-    resizedIcon.setTemplateImage(true);
-  }
-  return resizedIcon;
-}
-
-function buildTrayMenu() {
-  return Menu.buildFromTemplate([
-    {
-      label: "和 ZenMind 聊天",
-      click: () => {
-        void openAssistantWorker({
-          displayName: "ZenMind",
-          role: "确认对话示例",
-          focusComposerOnComplete: true
-        });
-      }
-    },
-    {
-      label: "打开 ZenMind",
-      click: () => {
-        void showAssistantTargetWindow("tray-menu");
-      }
-    },
-    {
-      label: "设置",
-      click: () => showMainWindow("/settings")
-    },
-    ...(isDesktopPetSupportedPlatform(process.platform)
-      ? [
-          { type: "separator" as const },
-          {
-            label: desktopPetSettings.enabled ? "关闭桌面宠物" : "显示桌面宠物",
-            click: () => {
-              if (desktopPetSettings.enabled) {
-                hideDesktopPetWindow(true);
-                return;
-              }
-              showDesktopPetWindow();
-            }
-          }
-        ]
-      : []),
-    { type: "separator" },
-    {
-      label: "退出",
-      click: () => app.quit()
-    }
-  ]);
-}
-
 function createAppTray() {
-  if (tray) {
-    return tray;
-  }
-
-  tray = new Tray(createTrayIcon());
-  tray.setToolTip("ZenMind");
-  if (process.platform !== "darwin") {
-    tray.setContextMenu(buildTrayMenu());
-  }
-  tray.on("click", () => {
-    void showAssistantTargetWindow("tray-click");
-  });
-  tray.on("right-click", () => tray?.popUpContextMenu(buildTrayMenu()));
-
-  return tray;
+  return appTrayController.create();
 }
 
-function emitNativeDialogVisibility(open: boolean) {
-  const payload = {
-    open,
-    platform: process.platform
-  };
+async function showFileDialog(
+  options: Parameters<NativeDialogVisibilityController["showFileDialog"]>[0],
+  ownerWindow: BrowserWindow | null = mainWindow
+) {
+  return nativeDialogController.showFileDialog(options, ownerWindow);
+}
 
-  for (const targetWindow of [mainWindow, quickCopilotWindowController.getWindow()]) {
-    if (!targetWindow || targetWindow.isDestroyed()) {
-      continue;
-    }
-    targetWindow.webContents.send("app.nativeDialogVisibility", payload);
-  }
+async function showSaveDialog(
+  options: Parameters<NativeDialogVisibilityController["showSaveDialog"]>[0],
+  ownerWindow: BrowserWindow | null = mainWindow
+) {
+  return nativeDialogController.showSaveDialog(options, ownerWindow);
 }
 
 function emitAssistantAttachmentProgress(progress: AssistantAttachmentTaskProgress) {
@@ -3043,64 +2451,12 @@ function emitAssistantAttachmentProgress(progress: AssistantAttachmentTaskProgre
   }
 }
 
-function beginNativeDialogVisibility() {
-  if (process.platform !== "darwin") {
-    return () => undefined;
-  }
-
-  nativeDialogVisibilityDepth += 1;
-  if (nativeDialogVisibilityDepth === 1) {
-    hideQuickAssistantForNativeDialog();
-    emitNativeDialogVisibility(true);
-  }
-
-  return () => {
-    nativeDialogVisibilityDepth = Math.max(0, nativeDialogVisibilityDepth - 1);
-    if (nativeDialogVisibilityDepth === 0) {
-      emitNativeDialogVisibility(false);
-      restoreQuickAssistantAfterNativeDialog();
-    }
-  };
-}
-
-function waitForNativeDialogLayout() {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, 16);
+function buildApplicationMenu() {
+  installApplicationMenu({
+    appName: app.name,
+    platform: process.platform,
+    openSettings: () => navigateMainWindow("/settings")
   });
-}
-
-async function showFileDialog(options: OpenDialogOptions, ownerWindow: BrowserWindow | null = mainWindow) {
-  const endNativeDialogVisibility = beginNativeDialogVisibility();
-  try {
-    if (process.platform === "darwin") {
-      // macOS sheets can appear below transparent-window renderer overlays; let the UI hide them first.
-      await waitForNativeDialogLayout();
-    }
-    if (ownerWindow) {
-      return await dialog.showOpenDialog(ownerWindow, options);
-    }
-    return await dialog.showOpenDialog(options);
-  } finally {
-    endNativeDialogVisibility();
-  }
-}
-
-async function showSaveDialog(
-  options: SaveDialogOptions,
-  ownerWindow: BrowserWindow | null = mainWindow
-) {
-  const endNativeDialogVisibility = beginNativeDialogVisibility();
-  try {
-    if (process.platform === "darwin") {
-      await waitForNativeDialogLayout();
-    }
-    if (ownerWindow) {
-      return await dialog.showSaveDialog(ownerWindow, options);
-    }
-    return await dialog.showSaveDialog(options);
-  } finally {
-    endNativeDialogVisibility();
-  }
 }
 
 async function ensureMacFirstInstallEnvZipImported() {
@@ -3109,7 +2465,7 @@ async function ensureMacFirstInstallEnvZipImported() {
   }
 
   while (true) {
-    const choice = await dialog.showMessageBox({
+    const choice = await nativeDialogController.showMessageBox({
       type: "warning",
       title: "首次安装需要导入 env.zip",
       message: "检测到 ~/.zenmind 环境未初始化，请先导入 env.zip。",
@@ -3131,7 +2487,7 @@ async function ensureMacFirstInstallEnvZipImported() {
     }, null);
 
     if (result.canceled || result.filePaths.length === 0) {
-      const retryChoice = await dialog.showMessageBox({
+      const retryChoice = await nativeDialogController.showMessageBox({
         type: "warning",
         title: "未导入 env.zip",
         message: "首次安装必须导入 env.zip 后才能继续。",
@@ -3154,7 +2510,7 @@ async function ensureMacFirstInstallEnvZipImported() {
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const retryChoice = await dialog.showMessageBox({
+      const retryChoice = await nativeDialogController.showMessageBox({
         type: "error",
         title: "env.zip 导入失败",
         message,
@@ -3222,44 +2578,6 @@ function showArchiveDialog(title: string) {
     properties: ["openFile"],
     filters: [{ name: "Archive", extensions: isWindows ? ["zip"] : ["gz", "tgz"] }]
   });
-}
-
-function buildApplicationMenu() {
-  const isMac = process.platform === "darwin";
-  const settingsItem: MenuItemConstructorOptions = {
-    label: isMac ? "设置..." : "设置",
-    accelerator: "CmdOrCtrl+,",
-    click: () => navigateMainWindow("/settings")
-  };
-
-  const template: MenuItemConstructorOptions[] = [
-    isMac
-      ? {
-          label: app.name,
-          submenu: [
-            { role: "about" },
-            { type: "separator" },
-            settingsItem,
-            { type: "separator" },
-            { role: "services" },
-            { type: "separator" },
-            { role: "hide" },
-            { role: "hideOthers" },
-            { role: "unhide" },
-            { type: "separator" },
-            { role: "quit" }
-          ]
-        }
-      : {
-          label: "File",
-          submenu: [settingsItem, { type: "separator" }, { role: "quit" }]
-        },
-    { role: "editMenu" },
-    { role: "viewMenu" },
-    { role: "windowMenu" }
-  ];
-
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 async function handleServiceStart(serviceId: ServiceId) {
@@ -3951,7 +3269,7 @@ if (gotSingleInstanceLock) {
         console.error("failed to prepare startup services", error);
       });
     app.on("activate", () => {
-      if (nativeDialogVisibilityDepth > 0) {
+      if (nativeDialogController.isOpen()) {
         return;
       }
       showMainWindow();

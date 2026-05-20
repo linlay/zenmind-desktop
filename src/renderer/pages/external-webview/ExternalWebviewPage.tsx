@@ -45,6 +45,18 @@ import {
   registerCurrentPageExecutor,
   registerDesktopActionProviderForScope
 } from "../../services/desktopActionRegistry";
+import {
+  EMBEDDED_WEB_INTERACT_ACTIONS,
+  EMBEDDED_WEB_READ_INCLUDES,
+  EMBEDDED_WEB_SCRIPT_MAX_BYTES,
+  EMBEDDED_WEB_STRUCTURED_TARGETS,
+  filterReadPageDataResult,
+  filterStructuredResult,
+  getUtf8ByteLength,
+  readActionSelector,
+  readAllowedValues,
+  readFormFields
+} from "../../copilot/page-context/embeddedWebActions";
 
 type ExternalWebviewPageProps = {
   title: string;
@@ -102,11 +114,6 @@ const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
   };
 })()`;
 
-const EMBEDDED_WEB_SCRIPT_MAX_BYTES = 256 * 1024;
-const EMBEDDED_WEB_READ_INCLUDES = new Set<EmbeddedWebReadInclude>(["forms", "links", "images"]);
-const EMBEDDED_WEB_STRUCTURED_TARGETS = new Set<EmbeddedWebStructuredTarget>(["tables", "lists", "forms", "links"]);
-const EMBEDDED_WEB_INTERACT_ACTIONS = new Set<EmbeddedWebInteractAction>(["click", "fill", "scroll", "focus", "select"]);
-const READ_PAGE_DATA_SUMMARY_KEYS = ["url", "title", "selectedText", "metaDescription", "headings", "bodyText"];
 const BOOKMARKS_STORAGE_KEY = "zenmind-desktop.external-webview.bookmarks";
 const BOOKMARK_MENU_WIDTH = 306;
 const BOOKMARK_MENU_MAX_HEIGHT = 340;
@@ -151,60 +158,6 @@ function normalizeEditableUrl(rawValue: string) {
       return null;
     }
   }
-}
-
-function getUtf8ByteLength(value: string) {
-  return new TextEncoder().encode(value).byteLength;
-}
-
-function readAllowedValues<T extends string>(
-  value: unknown,
-  allowedValues: Set<T>
-) {
-  const rawValues = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
-  return rawValues
-    .map((item) => String(item).trim())
-    .filter((item): item is T => allowedValues.has(item as T));
-}
-
-function filterReadPageDataResult(result: unknown, includes: EmbeddedWebReadInclude[]) {
-  if (!result || typeof result !== "object") {
-    return result;
-  }
-  const source = result as Record<string, unknown>;
-  const keys = [
-    ...READ_PAGE_DATA_SUMMARY_KEYS,
-    ...includes,
-    ...(includes.includes("forms") ? ["fields"] : [])
-  ];
-  const filtered: Record<string, unknown> = {};
-  for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(source, key)) {
-      filtered[key] = source[key];
-    }
-  }
-  return filtered;
-}
-
-function readActionSelector(args: Record<string, unknown>) {
-  const selector = typeof args.selector === "string" ? args.selector.trim() : "";
-  if (selector) {
-    return selector;
-  }
-  return typeof args.elementSelector === "string" ? args.elementSelector.trim() : "";
-}
-
-function filterStructuredResult(result: unknown, targets: EmbeddedWebStructuredTarget[]) {
-  if (!result || typeof result !== "object" || targets.length === 0) {
-    return result;
-  }
-  const filtered = { ...(result as Record<string, unknown>) };
-  for (const key of ["tables", "lists", "forms", "links"] satisfies EmbeddedWebStructuredTarget[]) {
-    if (!targets.includes(key)) {
-      delete filtered[key];
-    }
-  }
-  return filtered;
 }
 
 function defaultDesktopPageDebugArgs(action: string) {
@@ -1083,30 +1036,6 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       ...(descriptor.surfaceRoute ? { surfaceRoute: descriptor.surfaceRoute } : {}),
       ...payload
     };
-  }
-
-  function readFormFields(args: Record<string, unknown>) {
-    if (!Array.isArray(args.fields)) {
-      return [];
-    }
-    return args.fields
-      .map((item) => {
-        if (!item || typeof item !== "object" || Array.isArray(item)) {
-          return null;
-        }
-        const node = item as Record<string, unknown>;
-        const selector = typeof node.selector === "string" ? node.selector.trim() : "";
-        if (!selector) {
-          return null;
-        }
-        const action = typeof node.action === "string" ? node.action.trim() : "";
-        return {
-          selector,
-          ...(typeof node.value === "string" ? { value: node.value } : node.value == null ? {} : { value: String(node.value) }),
-          ...(action === "fill" || action === "select" || action === "click" ? { action } : {})
-        };
-      })
-      .filter((item): item is { selector: string; value?: string; action?: "fill" | "select" | "click" } => Boolean(item));
   }
 
   async function executeCurrentPageRead(args: Record<string, unknown>) {

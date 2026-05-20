@@ -5,6 +5,51 @@ import path from "node:path";
 
 const projectRoot = process.cwd();
 
+function readSourceFile(...segments) {
+  return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
+}
+
+function readCssWithImports(filePath, visited = new Set()) {
+  const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
+  if (visited.has(absolutePath)) {
+    return "";
+  }
+  visited.add(absolutePath);
+  const content = fs.readFileSync(absolutePath, "utf8");
+  return content.replace(/@import\s+["']([^"']+)["'];/g, (_match, importPath) =>
+    readCssWithImports(path.resolve(path.dirname(absolutePath), importPath), visited)
+  );
+}
+
+function readRendererStyles() {
+  return readCssWithImports(path.join(projectRoot, "src", "renderer", "styles.css"));
+}
+
+function readAppShellSource() {
+  return [
+    readSourceFile("src", "renderer", "App.tsx"),
+    readSourceFile("src", "renderer", "app-shell", "AppShell.tsx"),
+    readSourceFile("src", "renderer", "app-shell", "startup", "StartupGate.tsx"),
+    readSourceFile("src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx"),
+    readSourceFile("src", "renderer", "copilot", "sidebar-copilot", "AgentWebclientCopilotDock.tsx")
+  ].join("\n");
+}
+
+function readSharedContractsSource() {
+  return [
+    readSourceFile("src", "shared", "contracts.ts"),
+    readSourceFile("src", "shared", "contracts", "services.ts"),
+    readSourceFile("src", "shared", "contracts", "manifest.ts"),
+    readSourceFile("src", "shared", "contracts", "startup.ts"),
+    readSourceFile("src", "shared", "contracts", "navigation.ts"),
+    readSourceFile("src", "shared", "contracts", "pet-copilot.ts"),
+    readSourceFile("src", "shared", "contracts", "copilot.ts"),
+    readSourceFile("src", "shared", "contracts", "attachments.ts"),
+    readSourceFile("src", "shared", "contracts", "marketplace.ts"),
+    readSourceFile("src", "shared", "contracts", "desktop-api.ts")
+  ].join("\n");
+}
+
 test("renderer entry uses HashRouter for Electron routing", () => {
   const rendererEntry = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "main.tsx"),
@@ -30,7 +75,7 @@ test("control center keeps service operations in the prototype dashboard layout"
     path.join(projectRoot, "src", "renderer", "pages", "control-center", "ControlCenterPage.tsx"),
     "utf8"
   );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
 
   assert.match(controlCenter, /control-center-dashboard-metrics/);
   assert.match(controlCenter, /service-catalog/);
@@ -230,7 +275,7 @@ test("control center keeps service operations in the prototype dashboard layout"
 });
 
 test("desktop custom theme tokens are shared by control center and log viewer", () => {
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
 
   assert.match(globalStyles, /:root\s*\{[\s\S]*?--desktop-ui-bg:\s*#ffffff;[\s\S]*?--desktop-ui-card:\s*#ffffff;[\s\S]*?--desktop-ui-primary:\s*#0052d9;[\s\S]*?--desktop-ui-code-bg:\s*#0d1117;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\]\s*\{[\s\S]*?--desktop-ui-bg:\s*#181818;[\s\S]*?--desktop-ui-card:\s*#181818;[\s\S]*?--desktop-ui-primary:\s*#5790ff;[\s\S]*?--desktop-ui-code-bg:\s*#090c11;/);
@@ -242,12 +287,12 @@ test("desktop custom theme tokens are shared by control center and log viewer", 
 });
 
 test("assistant launcher sits beside settings in the sidebar footer", () => {
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
   );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
   const nativeAssistantDockPath = path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx");
 
   assert.equal(fs.existsSync(nativeAssistantDockPath), false);
@@ -266,7 +311,7 @@ test("assistant launcher sits beside settings in the sidebar footer", () => {
 });
 
 test("embedded surfaces use theme-backed host colors instead of hard-coded light fallbacks", () => {
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
 
   assert.match(globalStyles, /--embedded-surface-shell-bg:\s*#fff;/);
   assert.match(globalStyles, /--embedded-surface-dock-bg:\s*#fff;/);
@@ -282,12 +327,12 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
 });
 
 test("sidebar collapse toggle moves into the top chrome with expanded and collapsed variants", () => {
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
   );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
   const collapseButtonRule = globalStyles.match(/^\.app-sidebar-collapse-button\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body;
 
   assert.match(appShell, /onToggleCollapsed=\{toggleSidebarCollapsed\}/);
@@ -336,7 +381,7 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
 });
 
 test("agent webclient desktop sections are exposed as top-level sidebar tabs", () => {
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
@@ -374,7 +419,7 @@ test("agent webclient desktop sections are exposed as top-level sidebar tabs", (
 });
 
 test("settings route keeps the global sidebar and renders page-internal split sections", () => {
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
@@ -452,7 +497,7 @@ test("settings page scopes notices to the active section and keeps load failures
     path.join(projectRoot, "src", "renderer", "components", "PageFeedbackStack.tsx"),
     "utf8"
   );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
 
   assert.match(feedbackStack, /export function PageFeedbackStack/);
   assert.match(feedbackStack, /page-feedback-anchor/);
@@ -499,7 +544,7 @@ test("settings page configures desktop helper default agent separately from desk
     path.join(projectRoot, "src", "main", "copilot", "core", "settings-store.ts"),
     "utf8"
   );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
 
   assert.match(sharedSettings, /DEFAULT_DESKTOP_HELPER_AGENT_KEY\s*=\s*"desktopAssistant"/);
   assert.match(sharedSettings, /DEFAULT_QUICK_ASSISTANT_ENABLED\s*=\s*true/);
@@ -562,15 +607,15 @@ test("settings page configures desktop helper default agent separately from desk
 });
 
 test("sidebar translucency is fixed and not user configurable", () => {
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const appShell = readAppShellSource();
   const settingsPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.tsx"),
     "utf8"
   );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
-  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+  const contracts = readSharedContractsSource();
 
   assert.match(appShell, /"has-translucent-sidebar"/);
   assert.match(appShell, /isMac \? "is-mac-translucent-sidebar" : ""/);
@@ -629,7 +674,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "sidebarNavOrder.ts"),
     "utf8"
   );
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
@@ -650,12 +695,12 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
 });
 
 test("page-level copilot controls sidebar visibility and assistant agent following", () => {
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
   );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
   const resolver = fs.readFileSync(path.join(projectRoot, "src", "shared", "page-copilot.ts"), "utf8");
 
   assert.match(resolver, /resolveDesktopCopilotPageKey/);
@@ -704,11 +749,11 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
 });
 
 test("custom sidebar agent association is exposed across desktop api layers", () => {
-  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+  const contracts = readSharedContractsSource();
   const store = fs.readFileSync(path.join(projectRoot, "src", "main", "navigation", "custom-sidebar-store.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const appShell = readAppShellSource();
 
   assert.match(contracts, /agentKey\?: string/);
   assert.match(contracts, /interface CustomSidebarUpdateInput/);
@@ -725,12 +770,12 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+  const contracts = readSharedContractsSource();
   const registry = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "services", "desktopActionRegistry.ts"),
     "utf8"
   );
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const appShell = readAppShellSource();
   const settingsPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.tsx"),
     "utf8"
@@ -827,8 +872,8 @@ test("plugin market guards stale preload market api before skill import", () => 
 });
 
 test("market route disables the global drag overlay above toolbar controls", () => {
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const appShell = readAppShellSource();
+  const globalStyles = readRendererStyles();
   const marketStyles = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "PluginMarketPage.css"),
     "utf8"
@@ -840,8 +885,8 @@ test("market route disables the global drag overlay above toolbar controls", () 
 });
 
 test("embedded H5 routes do not restore a mac window drag lane over page controls", () => {
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const appShell = readAppShellSource();
+  const globalStyles = readRendererStyles();
 
   assert.match(appShell, /usesPluginSurface/);
   assert.match(appShell, /has-plugin-surface/);
@@ -857,15 +902,15 @@ test("embedded H5 routes do not restore a mac window drag lane over page control
 });
 
 test("window drag uses css-only app-region approach", () => {
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const appShell = readAppShellSource();
+  const globalStyles = readRendererStyles();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
   );
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
-  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+  const contracts = readSharedContractsSource();
 
   assert.match(
     globalStyles,
@@ -958,9 +1003,13 @@ test("external webview bookmarks use document-level pointer reordering", () => {
 });
 
 test("web copilot dock yields to native dialogs while quick assistant keeps outside-dismiss handling", () => {
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const appShell = readAppShellSource();
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const nativeDialogs = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "app-shell", "native-dialogs.ts"),
+    "utf8"
+  );
   const quickCopilotWindowController = fs.readFileSync(
     path.join(projectRoot, "src", "main", "copilot", "quick-copilot", "window.ts"),
     "utf8"
@@ -969,18 +1018,18 @@ test("web copilot dock yields to native dialogs while quick assistant keeps outs
     path.join(projectRoot, "src", "main", "copilot", "quick-copilot", "dismiss-layer.ts"),
     "utf8"
   );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
   const quickAssistantBlurHandler = quickCopilotWindowController.slice(
     quickCopilotWindowController.indexOf('this.quickWindow.on("blur"'),
     quickCopilotWindowController.indexOf('this.quickWindow.on("closed"')
   );
 
-  assert.match(mainProcess, /app\.nativeDialogVisibility/);
-  assert.match(mainProcess, /process\.platform === "darwin"/);
+  assert.match(nativeDialogs, /app\.nativeDialogVisibility/);
+  assert.match(nativeDialogs, /platform === "darwin"/);
   assert.match(mainProcess, /hideQuickAssistantForNativeDialog/);
   assert.match(mainProcess, /restoreQuickAssistantAfterNativeDialog/);
   assert.match(mainProcess, /quickCopilotWindowController\.hideAfterOutsideFocus\(\)/);
-  assert.match(mainProcess, /app\.on\("activate"[\s\S]{0,120}nativeDialogVisibilityDepth > 0[\s\S]{0,80}return;/);
+  assert.match(mainProcess, /app\.on\("activate"[\s\S]{0,120}nativeDialogController\.isOpen\(\)[\s\S]{0,80}return;/);
   assert.match(quickCopilotWindowController, /dismissWindow/);
   assert.match(quickCopilotDismissLayer, /QUICK_COPILOT_DISMISS_URL/);
   assert.match(mainProcess, /showQuickAssistantDismissWindow/);
@@ -997,7 +1046,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
     path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
     "utf8"
   );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
   const serviceWebviewPreload = fs.readFileSync(
     path.join(projectRoot, "src", "preload", "service-webview.ts"),
     "utf8"
@@ -1068,6 +1117,10 @@ test("embedded cdp exposes service frontends as webview surfaces", () => {
 
 test("assistant entrypoints restore core services before opening embedded webclient", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const trayController = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "app-shell", "tray.ts"),
+    "utf8"
+  );
 
   assert.match(mainProcess, /async function ensureAssistantTargetServicesRunning/);
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
@@ -1080,8 +1133,8 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.match(mainProcess, /async function openAssistantWorker/);
   assert.match(mainProcess, /await showAssistantTargetWindow\("assistant-worker"\)/);
   assert.match(mainProcess, /scheduleAgentWebclientOpenRequest\(targetWindow/);
-  assert.match(mainProcess, /void showAssistantTargetWindow\("tray-click"\)/);
-  assert.doesNotMatch(mainProcess, /tray\.on\("click", \(\) => showMainWindow\(ASSISTANT_TARGET_PATH\)\)/);
+  assert.match(trayController, /openAssistantTarget\("tray-click"\)/);
+  assert.doesNotMatch(trayController, /tray\.on\("click", \(\) => showMainWindow\(ASSISTANT_TARGET_PATH\)\)/);
 });
 
 test("native assistant page context captures shell sidebar, left region, and modal content separately", () => {
@@ -1105,9 +1158,13 @@ test("native assistant page context captures shell sidebar, left region, and mod
 
 test("service logs open in a separate floating log viewer window", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const logViewerWindow = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "app-shell", "log-viewer-window.ts"),
+    "utf8"
+  );
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const contracts = readSharedContractsSource();
+  const appShell = readAppShellSource();
   const controlCenter = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "control-center", "ControlCenterPage.tsx"),
     "utf8"
@@ -1117,14 +1174,16 @@ test("service logs open in a separate floating log viewer window", () => {
     "utf8"
   );
 
-  assert.match(mainProcess, /let logViewerWindow: BrowserWindow \| null = null/);
-  assert.match(mainProcess, /function createLogViewerWindow\(\)/);
+  assert.match(mainProcess, /LogViewerWindowController/);
+  assert.match(mainProcess, /openLogViewerWindow\(request: ServiceOpenLogViewerRequest\)/);
+  assert.match(logViewerWindow, /private window: BrowserWindow \| null = null/);
+  assert.match(logViewerWindow, /private createWindow\(\)/);
   assert.match(mainProcess, /services\.openLogViewer/);
-  assert.match(mainProcess, /loadRendererRoute\(targetWindow, routePath\)/);
-  assert.match(mainProcess, /width:\s*1240,[\s\S]*?height:\s*860,[\s\S]*?minWidth:\s*760,[\s\S]*?minHeight:\s*520,/);
-  assert.match(mainProcess, /ownerWindow \? \{ parent: ownerWindow, modal: false \} : \{\}/);
-  assert.doesNotMatch(mainProcess, /logViewerWindow\.setAlwaysOnTop/);
-  assert.doesNotMatch(mainProcess, /logViewerWindow\.setVisibleOnAllWorkspaces/);
+  assert.match(logViewerWindow, /loadRendererRoute\(targetWindow, routePath\)/);
+  assert.match(logViewerWindow, /width:\s*1240,[\s\S]*?height:\s*860,[\s\S]*?minWidth:\s*760,[\s\S]*?minHeight:\s*520,/);
+  assert.match(logViewerWindow, /ownerWindow \? \{ parent: ownerWindow, modal: false \} : \{\}/);
+  assert.doesNotMatch(logViewerWindow, /setAlwaysOnTop/);
+  assert.doesNotMatch(logViewerWindow, /setVisibleOnAllWorkspaces/);
   assert.match(preload, /openLogViewer/);
   assert.match(preload, /closeLogViewer/);
   assert.match(contracts, /ServiceOpenLogViewerRequest/);
@@ -1144,7 +1203,7 @@ test("service log viewer lets users pause tail following and jump back to the la
     path.join(projectRoot, "src", "renderer", "pages", "LogViewerPage.tsx"),
     "utf8"
   );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
 
   assert.doesNotMatch(logViewerPage, /function AutoScrollIcon/);
   assert.doesNotMatch(logViewerPage, /function WbAutoIcon/);
@@ -1190,7 +1249,7 @@ test("service log viewer keeps find controls inside the log area", () => {
     path.join(projectRoot, "src", "renderer", "pages", "LogViewerPage.tsx"),
     "utf8"
   );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
 
   assert.match(logViewerPage, /aria-label="查找日志"/);
   assert.match(logViewerPage, /handleOpenSearch/);
@@ -1207,10 +1266,10 @@ test("service log viewer keeps find controls inside the log area", () => {
 });
 
 test("assistant dock opens the agent webclient copilot in right-side embedded mode", () => {
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
-  const dockComponent = appShell.slice(
-    appShell.indexOf("function AgentWebclientCopilotDock"),
-    appShell.indexOf("function getStartupServiceFallbackName")
+  const appShell = readAppShellSource();
+  const dockComponent = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "copilot", "sidebar-copilot", "AgentWebclientCopilotDock.tsx"),
+    "utf8"
   );
 
   assert.match(appShell, /const AGENT_WEBCLIENT_COPILOT_PATH = "\/copilot"/);
@@ -1225,12 +1284,12 @@ test("assistant dock opens the agent webclient copilot in right-side embedded mo
 
 test("option-space quick assistant route opens the agent webclient copilot surface", () => {
   const nativeQuickAssistantPath = path.join(projectRoot, "src", "renderer", "components", "QuickAssistant.tsx");
-  const appShell = fs.readFileSync(path.join(projectRoot, "src", "renderer", "App.tsx"), "utf8");
+  const appShell = readAppShellSource();
   const quickCopilotRoute = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "quick-copilot", "QuickCopilotRoute.tsx"),
     "utf8"
   );
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const quickCopilotWindowController = fs.readFileSync(
     path.join(projectRoot, "src", "main", "copilot", "quick-copilot", "window.ts"),
@@ -1238,7 +1297,7 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
   );
   const quickAssistantWindow = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "quick-copilot", "quick-copilot.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+  const contracts = readSharedContractsSource();
   const quickWebCopilotStyles = globalStyles.slice(
     globalStyles.indexOf(".quick-web-copilot,"),
     globalStyles.indexOf(".quick-web-copilot .pan-page")
@@ -1324,7 +1383,7 @@ test("desktop pet drag ends on lost pointer signals", () => {
 test("desktop pet base mode stays sprite-sized while bubble and preview modes expand separately", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const petGeometry = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "pet-copilot", "desktop-pet.ts"), "utf8");
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
 
   assert.match(mainProcess, /return shouldShowBubble \? "bubble" : "base";/);
   assert.doesNotMatch(mainProcess, /shouldHideDesktopPetForMainWindow/);
@@ -1341,7 +1400,7 @@ test("desktop pet base mode stays sprite-sized while bubble and preview modes ex
 });
 
 test("desktop pet button suppresses native focus rings in the transparent window", () => {
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
 
   assert.match(globalStyles, /\.desktop-pet-button\s*\{[\s\S]{0,420}appearance:\s*none;/);
   assert.match(globalStyles, /\.desktop-pet-button\s*\{[\s\S]{0,520}-webkit-tap-highlight-color:\s*transparent;/);
@@ -1349,7 +1408,7 @@ test("desktop pet button suppresses native focus rings in the transparent window
 });
 
 test("control center config editor suppresses native focus rings", () => {
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
 
   assert.match(globalStyles, /\.config-editor:focus,\s*\.config-editor:focus-visible\s*\{[\s\S]{0,120}outline:\s*none;/);
   assert.match(globalStyles, /\.config-editor:focus,\s*\.config-editor:focus-visible\s*\{[\s\S]{0,160}border-color:\s*var\(--line\);/);
@@ -1362,10 +1421,10 @@ test("desktop pet visual states stay local to renderer priority", () => {
     "utf8"
   );
   const sharedDesktopPet = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-pet.ts"), "utf8");
-  const globalStyles = fs.readFileSync(path.join(projectRoot, "src", "renderer", "styles.css"), "utf8");
+  const globalStyles = readRendererStyles();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const contracts = fs.readFileSync(path.join(projectRoot, "src", "shared", "contracts.ts"), "utf8");
+  const contracts = readSharedContractsSource();
   const petAssetScript = fs.readFileSync(
     path.join(projectRoot, "scripts", "generate-desktop-pet-assets.mjs"),
     "utf8"
