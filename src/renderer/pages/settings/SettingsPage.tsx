@@ -1622,11 +1622,6 @@ export function SettingsPage({
         return (
           <div className="data-root-card settings-switch-card desktop-helper-settings-card">
             <div>
-              <p className="eyebrow">DESKTOP ASSISTANT</p>
-              <h2>快捷助手</h2>
-              <p className="page-copy">
-                单独配置 Option+Space 唤起的快捷助手，和侧边助手、宠物助手相互独立。
-              </p>
               <div className="quick-assistant-settings-panel" aria-label="快捷助手配置">
                 <div className="page-copilot-row-main">
                   <strong>快捷助手</strong>
@@ -1680,11 +1675,6 @@ export function SettingsPage({
         return desktopPetSupported ? (
           <div className="data-root-card settings-switch-card desktop-pet-settings-card">
             <div>
-              <p className="eyebrow">DESKTOP PET</p>
-              <h2>宠物助手</h2>
-              <p className="page-copy">
-                宠物只服务侧边助手，会在等待回答、完成或出错时做轻提醒。右键宠物可直接关闭。
-              </p>
               <p className="settings-inline-note">
                 当前状态：{desktopPetState?.enabled ? "已开启" : "已关闭"}
                 {desktopPetState?.enabled && desktopPetState.visible ? " / 已显示" : ""}
@@ -1774,13 +1764,6 @@ export function SettingsPage({
       case "embeddedWebsites":
         return (
           <div className="data-root-card custom-sidebar-card">
-            <div className="custom-sidebar-copy">
-              <p className="eyebrow">SIDEBAR</p>
-              <h2>内嵌网站</h2>
-              <p className="page-copy">
-                将常用网页作为内嵌网站固定至导航栏便捷访问。内嵌网站仅保存在本地，支持导入导出，系统入口不可修改。
-              </p>
-            </div>
             <div className="custom-sidebar-panel">
               <form className="custom-sidebar-form" onSubmit={(event) => void handleAddCustomSidebarItem(event)}>
                 <label>
@@ -2044,7 +2027,6 @@ export function SettingsPage({
         <aside className="settings-sidebar-card split-workspace-sidebar-card">
           <div>
             <h2 className="settings-sidebar-title">设置</h2>
-            <p className="settings-sidebar-desc">按模块管理桌面工作台、助手能力和本地数据行为。</p>
           </div>
           <nav className="settings-directory-nav" aria-label="设置目录">
             {visibleSections.map((section) => {

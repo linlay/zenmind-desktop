@@ -1118,14 +1118,10 @@
   box-shadow: none;
 }
 
-.custom-sidebar-copy {
-  min-width: 280px;
-}
-
 .custom-sidebar-panel {
   display: grid;
   gap: 14px;
-  width: min(100%, 520px);
+  width: 100%;
 }
 
 .custom-sidebar-form {
