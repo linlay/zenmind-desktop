@@ -14,6 +14,7 @@ import type {
   DesktopActionCallListener,
   DesktopActionRendererResponse,
   DesktopPetDanceRequestedListener,
+  DesktopSsoStatusListener,
   AssistantWorkerOpenListener,
   AssistantWorkerOpenRequest,
   DesktopPetStateListener,
@@ -178,6 +179,24 @@ const api: DesktopApi = {
   },
   agentAuth: {
     issueAccessToken: (reason) => ipcRenderer.invoke("agentAuth.issueAccessToken", reason)
+  },
+  sso: {
+    getStatus: () => ipcRenderer.invoke("sso.getStatus"),
+    startLogin: () => ipcRenderer.invoke("sso.startLogin"),
+    logout: () => ipcRenderer.invoke("sso.logout"),
+    onStatusChanged: (listener: DesktopSsoStatusListener) => {
+      const handleSsoStatusChanged = (
+        _event: Electron.IpcRendererEvent,
+        status: Parameters<DesktopSsoStatusListener>[0]
+      ) => {
+        listener(status);
+      };
+
+      ipcRenderer.on("sso.statusChanged", handleSsoStatusChanged);
+      return () => {
+        ipcRenderer.off("sso.statusChanged", handleSsoStatusChanged);
+      };
+    }
   },
   settings: {
     getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),

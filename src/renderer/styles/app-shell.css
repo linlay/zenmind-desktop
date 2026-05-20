@@ -111,6 +111,117 @@
   display: none;
 }
 
+.app-sso-status {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - var(--app-sidebar-width, 160px) - 32px));
+  padding: 6px 8px 6px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.app-shell.has-embedded-surface .app-sso-status {
+  top: 8px;
+  right: 12px;
+  max-width: min(360px, calc(100vw - var(--app-sidebar-width, 160px) - 24px));
+  background: rgba(248, 250, 252, 0.94);
+}
+
+.app-sso-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+
+.app-sso-status.is-authenticated .app-sso-status-dot {
+  background: #10b981;
+}
+
+.app-sso-status.is-pending .app-sso-status-dot {
+  background: #f59e0b;
+}
+
+.app-sso-status.is-error .app-sso-status-dot {
+  background: #ef4444;
+}
+
+.app-sso-status-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.app-sso-status-title,
+.app-sso-status-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sso-status-title {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 650;
+  color: #111827;
+}
+
+.app-sso-status-message {
+  font-size: 11px;
+  line-height: 14px;
+  color: #64748b;
+}
+
+.app-sso-status-action {
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border: 1px solid rgba(37, 99, 235, 0.36);
+  border-radius: 7px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.app-sso-status-action:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.app-sso-status-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+:root[data-theme="dark"] .app-sso-status {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.88);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+}
+
+:root[data-theme="dark"] .app-sso-status-title {
+  color: #f8fafc;
+}
+
+:root[data-theme="dark"] .app-sso-status-message {
+  color: #94a3b8;
+}
+
 /* Embedded H5 surfaces keep the top drag lane disabled on every platform. */
 
 .app-sidebar-toggle,

@@ -928,9 +928,40 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(bridge, /async listAgents\(\): Promise<DesktopPetAgentOption\[\]>/);
   assert.match(bridge, /async listNavigationAgents\(\): Promise<AssistantNavAgentItemsResult>/);
   assert.match(bridge, /readAssistantNavigationAgentsFromPlatform/);
-  assert.match(appShell, /setAssistantNavAgents\(result\.ok \? result\.items : \[\]\)/);
+  assert.match(bridge, /chatHasPendingAwaiting/);
+  assert.match(bridge, /createNavigationAgentItem/);
   assert.match(appShell, /onNavigationAgentsChanged/);
+  assert.match(appShell, /setAssistantNavAgents\(result\.items\)/);
   assert.doesNotMatch(appShell, /setInterval\([\s\S]*?listNavigationAgents/);
+});
+
+test("assistant navigation agents use cached or default XiaoZhai while platform warms up", () => {
+  const appShell = readAppShellSource();
+
+  assert.match(appShell, /ASSISTANT_NAV_AGENTS_CACHE_KEY\s*=\s*"zenmind-desktop\.assistant-nav-agents-cache"/);
+  assert.match(appShell, /DEFAULT_ASSISTANT_NAV_AGENT[\s\S]*?agentKey:\s*"zenmi"[\s\S]*?displayName:\s*"小宅"[\s\S]*?role:\s*"平台总管"/);
+  assert.match(appShell, /function readInitialAssistantNavAgents\(\): AssistantNavAgentItem\[\]/);
+  assert.match(appShell, /useState<AssistantNavAgentItem\[\]>\(readInitialAssistantNavAgents\)/);
+  assert.match(appShell, /writeAssistantNavAgentsCache\(result\.items\)/);
+  assert.match(appShell, /clearAssistantNavAgentsCache\(\)/);
+  assert.doesNotMatch(appShell, /setAssistantNavAgents\(result\.ok \? result\.items : \[\]\)/);
+  assert.doesNotMatch(appShell, /catch\s*\{[\s\S]{0,220}?setAssistantNavAgents\(\[\]\)/);
+});
+
+test("assistant navigation agents refresh immediately after startup services become ready", () => {
+  const appShell = readAppShellSource();
+
+  assert.match(appShell, /function refreshAssistantNavAgents\(\)/);
+  assert.match(
+    appShell,
+    /function refreshAssistantNavAgentsAfterStartupReady\(nextState: StartupRestoreState\)[\s\S]*?nextState\.phase === "succeeded"[\s\S]*?refreshAssistantNavAgents\(\)/
+  );
+  assert.match(
+    appShell,
+    /onStartupRestoreState\(\(nextState\) =>[\s\S]*?refreshAssistantNavAgentsAfterStartupReady\(nextState\)/
+  );
+  assert.match(appShell, /const agentPlatformRunning =[\s\S]*?service\.id === "agent-platform"[\s\S]*?service\.status === "running"/);
+  assert.match(appShell, /if \(agentPlatformRunning\) \{[\s\S]*?refreshAssistantNavAgents\(\)/);
 });
 
 test("desktop action bridge exposes localhost api and renderer action providers", () => {
@@ -1683,4 +1714,13 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /awaiting:\s*"thinking"/);
   assert.match(petAssetScript, /running:\s*"thinking"/);
   assert.match(petAssetScript, /function drawHoverArm/);
+});
+
+test("desktop sso opens IAM login automatically and keeps pending login recoverable", () => {
+  const appShell = readAppShellSource();
+
+  assert.match(appShell, /desktopSsoAutoLoginAttemptedRef/);
+  assert.match(appShell, /status\.authenticated === false[\s\S]{0,160}status\.pending === false[\s\S]{0,160}void handleDesktopSsoLogin\(\)/);
+  assert.match(appShell, /desktopSsoStatus\?\.pending[\s\S]{0,120}\? "重新打开"/);
+  assert.doesNotMatch(appShell, /disabled=\{desktopSsoBusy \|\| desktopSsoStatus\?\.pending === true\}/);
 });

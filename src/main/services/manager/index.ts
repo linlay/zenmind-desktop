@@ -4,6 +4,7 @@ import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 import { execFile, spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import type { App } from "electron";
 import type {
   ServiceCommandResult,
@@ -201,6 +202,7 @@ type InitializationState = {
   status: "succeeded" | "failed";
   updatedAt: string;
   lastError?: string;
+  assetSignature?: string;
 };
 
 type LastRunningServicesState = {
@@ -341,6 +343,9 @@ function readInitializationState(layoutOrInstallDir: ServiceLayout | string): In
     const status = parsed.status === "succeeded" || parsed.status === "failed" ? parsed.status : null;
     const updatedAt = typeof parsed.updatedAt === "string" ? parsed.updatedAt : "";
     const lastError = typeof parsed.lastError === "string" && parsed.lastError.trim() ? parsed.lastError : undefined;
+    const assetSignature = typeof parsed.assetSignature === "string" && parsed.assetSignature.trim()
+      ? parsed.assetSignature
+      : undefined;
     if (!version || !status || !updatedAt) {
       return null;
     }
@@ -348,6 +353,7 @@ function readInitializationState(layoutOrInstallDir: ServiceLayout | string): In
       version,
       status,
       updatedAt,
+      ...(assetSignature ? { assetSignature } : {}),
       ...(lastError ? { lastError } : {})
     };
   } catch {
@@ -355,13 +361,33 @@ function readInitializationState(layoutOrInstallDir: ServiceLayout | string): In
   }
 }
 
+function computeAssetSignature(assetPath: string) {
+  const stat = fs.statSync(assetPath);
+  const hash = createHash("sha256")
+    .update(fs.readFileSync(assetPath))
+    .digest("hex");
+  return `${stat.size}:${hash}`;
+}
+
+function readBuiltinAssetSignature(app: App, service: ServiceDefinition) {
+  if (service.kind !== "builtin") {
+    return undefined;
+  }
+  const assetPath = getOptionalBundleAssetPath(app, service);
+  return assetPath ? computeAssetSignature(assetPath) : undefined;
+}
+
 function isAssetNewerThanInstall(assetPath: string, layoutOrInstallDir: ServiceLayout | string) {
   try {
-    const assetMtime = fs.statSync(assetPath).mtimeMs;
     const initStatePath = getInitializationStatePath(layoutOrInstallDir);
     if (!fs.existsSync(initStatePath)) {
       return true;
     }
+    const initializationState = readInitializationState(layoutOrInstallDir);
+    if (initializationState?.assetSignature) {
+      return initializationState.assetSignature !== computeAssetSignature(assetPath);
+    }
+    const assetMtime = fs.statSync(assetPath).mtimeMs;
     return assetMtime > fs.statSync(initStatePath).mtimeMs;
   } catch {
     return true;
@@ -2203,10 +2229,12 @@ async function initializeServiceInternal(
       });
     }
     await ensureInitializationRequirements(app, service, layout);
+    const assetSignature = readBuiltinAssetSignature(app, service);
     writeInitializationState(layout, {
       version: service.version,
       status: "succeeded",
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      ...(assetSignature ? { assetSignature } : {})
     });
   } catch (error) {
     writeInitializationState(layout, {
@@ -4065,6 +4093,10 @@ type RunServiceCommandOptions = {
   env?: NodeJS.ProcessEnv;
 };
 
+type StartServiceOptions = {
+  skipPreStartRequirements?: boolean;
+};
+
 const NODE_BIN_START_ENV_SERVICE_IDS = new Set<ServiceId>([
   "agent-webclient",
   LOCAL_CLI_ACP_RELAY_PLUGIN_ID
@@ -4143,7 +4175,11 @@ async function runServiceCommand(
   } satisfies ServiceCommandResult;
 }
 
-export async function startService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
+async function startServiceInternal(
+  app: App,
+  serviceId: ServiceId,
+  options: StartServiceOptions = {}
+): Promise<ServiceCommandResult> {
   const current = await getServiceState(app, serviceId);
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
@@ -4212,7 +4248,9 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
       service: nextState
     };
   } else {
-    await ensurePreStartRequirements(app, service);
+    if (!options.skipPreStartRequirements) {
+      await ensurePreStartRequirements(app, service);
+    }
     const preStartState = await getServiceState(app, serviceId);
     if (
       preStartState.status === "config-required" ||
@@ -4257,6 +4295,10 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
 
   const verifiedResult = await attachServiceVerification(app, serviceId, result, "running", `${service.name} 启动命令已执行`);
   return verifiedResult;
+}
+
+export async function startService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
+  return startServiceInternal(app, serviceId);
 }
 
 export async function stopService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
@@ -4798,6 +4840,247 @@ export async function restoreRunningServices(
   };
 }
 
+type StartupRestoreOptions = {
+  onStarting?: (serviceId: ServiceId) => void;
+  onProgress?: (serviceId: ServiceId, phase: StartupPreparationProgressPhase, message: string) => void;
+};
+
+type StartupServiceResult = {
+  serviceId: ServiceId;
+  ok: boolean;
+  message: string;
+  running: boolean;
+};
+
+async function prepareDefaultStartupServiceForParallelRestore(
+  app: App,
+  serviceId: ServiceId,
+  options: StartupRestoreOptions
+): Promise<StartupServiceResult> {
+  try {
+    const current = await getServiceState(app, serviceId);
+    if (current.status === "running") {
+      return {
+        serviceId,
+        ok: true,
+        message: `${current.name} 已在运行。`,
+        running: true
+      };
+    }
+
+    if (
+      current.status === "not-installed" ||
+      current.status === "initialization-required"
+    ) {
+      options.onProgress?.(serviceId, "skipped", current.message);
+      return {
+        serviceId,
+        ok: false,
+        message: current.message,
+        running: false
+      };
+    }
+
+    await ensurePreStartRequirements(app, getService(serviceId));
+    const prepared = await getServiceState(app, serviceId);
+    if (
+      prepared.status === "config-required" ||
+      prepared.status === "dependency-missing" ||
+      prepared.status === "error"
+    ) {
+      options.onProgress?.(serviceId, "failed", prepared.message);
+      return {
+        serviceId,
+        ok: false,
+        message: prepared.message,
+        running: false
+      };
+    }
+
+    return {
+      serviceId,
+      ok: true,
+      message: `${prepared.name} 已准备就绪。`,
+      running: false
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    options.onProgress?.(serviceId, "failed", message);
+    return {
+      serviceId,
+      ok: false,
+      message,
+      running: false
+    };
+  }
+}
+
+async function startDefaultStartupServiceForParallelRestore(
+  app: App,
+  serviceId: ServiceId,
+  options: StartupRestoreOptions
+): Promise<StartupServiceResult> {
+  try {
+    const current = await getServiceState(app, serviceId);
+    options.onStarting?.(serviceId);
+
+    if (current.status === "running") {
+      const message = `${current.name} 已在运行。`;
+      console.info(`[service-manager] reused running startup service ${serviceId}`);
+      options.onProgress?.(serviceId, "succeeded", message);
+      return {
+        serviceId,
+        ok: true,
+        message,
+        running: true
+      };
+    }
+
+    options.onProgress?.(serviceId, "starting", `${current.name} 启动中...`);
+    const startedAt = Date.now();
+    const result = await startServiceInternal(app, serviceId, { skipPreStartRequirements: true });
+    const elapsedMs = Date.now() - startedAt;
+    if (result.ok && result.service.status === "running") {
+      console.info(`[service-manager] restored ${serviceId} in ${elapsedMs}ms`);
+      options.onProgress?.(serviceId, "succeeded", result.message);
+      return {
+        serviceId,
+        ok: true,
+        message: result.message,
+        running: true
+      };
+    }
+
+    const failureMessage = result.ok
+      ? `${result.service.name} 启动后未进入运行中状态。`
+      : result.message;
+    console.warn(`[service-manager] failed to restore ${serviceId} after ${elapsedMs}ms: ${failureMessage}`);
+    options.onProgress?.(serviceId, "failed", failureMessage);
+    return {
+      serviceId,
+      ok: false,
+      message: failureMessage,
+      running: false
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    options.onProgress?.(serviceId, "failed", message);
+    return {
+      serviceId,
+      ok: false,
+      message,
+      running: false
+    };
+  }
+}
+
+async function restoreDefaultStartupServicesInParallel(
+  app: App,
+  options: StartupRestoreOptions = {}
+) {
+  const started: ServiceId[] = [];
+  const failures: string[] = [];
+  const preflightResults: StartupServiceResult[] = [];
+
+  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
+    preflightResults.push(await prepareDefaultStartupServiceForParallelRestore(app, serviceId, options));
+  }
+
+  const preflightFailures = new Set<ServiceId>();
+  for (const result of preflightResults) {
+    if (!result.ok) {
+      preflightFailures.add(result.serviceId);
+      failures.push(`${result.serviceId}: ${result.message}`);
+    }
+  }
+
+  const servicesToStart = DEFAULT_STARTUP_SERVICE_IDS.filter((serviceId) => !preflightFailures.has(serviceId));
+  const startResults = await Promise.all(
+    servicesToStart.map((serviceId) => startDefaultStartupServiceForParallelRestore(app, serviceId, options))
+  );
+  const startResultById = new Map(startResults.map((result) => [result.serviceId, result]));
+
+  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
+    const result = startResultById.get(serviceId);
+    if (!result) {
+      continue;
+    }
+    if (result.ok && result.running) {
+      started.push(serviceId);
+    } else {
+      failures.push(`${serviceId}: ${result.message}`);
+    }
+  }
+
+  return {
+    started,
+    failures
+  };
+}
+
+async function restoreOptionalStartupServices(
+  app: App,
+  options: StartupRestoreOptions = {}
+) {
+  const started: ServiceId[] = [];
+  const failures: string[] = [];
+
+  for (const serviceId of getOptionalServiceIdsToRestore(app)) {
+    try {
+      getService(serviceId);
+    } catch {
+      continue;
+    }
+
+    try {
+      const current = await getServiceState(app, serviceId);
+      if (
+        (current.kind === "plugin" && current.status === "not-installed") ||
+        current.status === "initialization-required"
+      ) {
+        options.onProgress?.(serviceId, "skipped", current.message);
+        continue;
+      }
+
+      options.onStarting?.(serviceId);
+      options.onProgress?.(serviceId, "starting", `${current.name} 启动中...`);
+      const startedAt = Date.now();
+      const result = await startService(app, serviceId);
+      const elapsedMs = Date.now() - startedAt;
+      if (result.ok && result.service.status === "running") {
+        console.info(`[service-manager] restored optional startup service ${serviceId} in ${elapsedMs}ms`);
+        started.push(serviceId);
+        options.onProgress?.(serviceId, "succeeded", result.message);
+        continue;
+      }
+
+      const failureMessage = result.ok
+        ? `${result.service.name} 启动后未进入运行中状态。`
+        : result.message;
+      console.warn(`[service-manager] failed to restore optional startup service ${serviceId} after ${elapsedMs}ms: ${failureMessage}`);
+      options.onProgress?.(serviceId, "failed", failureMessage);
+      if (isNonBlockingRestoreFailure(serviceId)) {
+        continue;
+      }
+      failures.push(`${serviceId}: ${failureMessage}`);
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      options.onProgress?.(serviceId, "failed", message);
+      if (isNonBlockingRestoreFailure(serviceId)) {
+        continue;
+      }
+      failures.push(`${serviceId}: ${message}`);
+      break;
+    }
+  }
+
+  return {
+    started,
+    failures
+  };
+}
+
 function shouldEnableBuiltinBootstrap(_app: App) {
   return true;
 }
@@ -4908,14 +5191,18 @@ export async function runStartupPreparation(
 ): Promise<StartupPreparationResult> {
   if (!(await shouldRunBuiltinBootstrap(app))) {
     options.onModeResolved?.("restore");
-    const restoreResult = await restoreRunningServices(app, {
+    const defaultRestoreResult = await restoreDefaultStartupServicesInParallel(app, {
+      onStarting: options.onStarting,
+      onProgress: options.onProgress
+    });
+    const optionalRestoreResult = await restoreOptionalStartupServices(app, {
       onStarting: options.onStarting,
       onProgress: options.onProgress
     });
     return {
       mode: "restore",
-      started: restoreResult.restored,
-      failures: restoreResult.failures
+      started: [...defaultRestoreResult.started, ...optionalRestoreResult.started],
+      failures: [...defaultRestoreResult.failures, ...optionalRestoreResult.failures]
     };
   }
 
@@ -4978,55 +5265,12 @@ export async function runStartupPreparation(
     }
   }
 
-  for (const serviceId of getOptionalServiceIdsToRestore(app)) {
-    try {
-      getService(serviceId);
-    } catch {
-      continue;
-    }
-
-    try {
-      const current = await getServiceState(app, serviceId);
-      if (
-        (current.kind === "plugin" && current.status === "not-installed") ||
-        current.status === "initialization-required"
-      ) {
-        options.onProgress?.(serviceId, "skipped", current.message);
-        continue;
-      }
-
-      options.onStarting?.(serviceId);
-      options.onProgress?.(serviceId, "starting", `${current.name} 启动中...`);
-      const startedAt = Date.now();
-      const result = await startService(app, serviceId);
-      const elapsedMs = Date.now() - startedAt;
-      if (result.ok && result.service.status === "running") {
-        console.info(`[service-manager] restored optional startup service ${serviceId} in ${elapsedMs}ms`);
-        started.push(serviceId);
-        options.onProgress?.(serviceId, "succeeded", result.message);
-        continue;
-      }
-
-      const failureMessage = result.ok
-        ? `${result.service.name} 启动后未进入运行中状态。`
-        : result.message;
-      console.warn(`[service-manager] failed to restore optional startup service ${serviceId} after ${elapsedMs}ms: ${failureMessage}`);
-      options.onProgress?.(serviceId, "failed", failureMessage);
-      if (isNonBlockingRestoreFailure(serviceId)) {
-        continue;
-      }
-      failures.push(`${serviceId}: ${failureMessage}`);
-      break;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      options.onProgress?.(serviceId, "failed", message);
-      if (isNonBlockingRestoreFailure(serviceId)) {
-        continue;
-      }
-      failures.push(`${serviceId}: ${message}`);
-      break;
-    }
-  }
+  const optionalRestoreResult = await restoreOptionalStartupServices(app, {
+    onStarting: options.onStarting,
+    onProgress: options.onProgress
+  });
+  started.push(...optionalRestoreResult.started);
+  failures.push(...optionalRestoreResult.failures);
 
   return {
     mode: "bootstrap",

@@ -22,6 +22,12 @@ import {
 } from "electron";
 import { issueAgentAccessToken } from "./agent-auth";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
+import {
+  getDesktopSsoStatus,
+  logoutDesktopSso,
+  startDesktopSsoLogin
+} from "./oidc-sso";
+import { openUrlInChrome } from "./sso-chrome";
 import { loadBuiltinServices } from "./builtin-loader";
 import {
   captureManagedProcessCleanupSnapshot,
@@ -2365,6 +2371,39 @@ function startEmbeddedCdpGateway() {
   return embeddedCdpGateway;
 }
 
+function broadcastDesktopSsoStatus(status: ReturnType<typeof getDesktopSsoStatus>) {
+  mainWindow?.webContents.send("sso.statusChanged", status);
+  if (status.authenticated) {
+    focusMainWindowAfterDesktopSso();
+  }
+}
+
+function focusMainWindowAfterDesktopSso() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  if (process.platform === "darwin") {
+    app.focus({ steal: true });
+    mainWindow.focus();
+    return;
+  }
+  if (process.platform === "win32") {
+    mainWindow.setAlwaysOnTop(true);
+    mainWindow.focus();
+    mainWindow.setAlwaysOnTop(false);
+    return;
+  }
+  mainWindow.focus();
+}
+
+function getDesktopSsoChromeProfileDir() {
+  return path.join(app.getPath("userData"), "chrome-sso-profile");
+}
+
 async function openBrowserUrl(input: { url: string; label?: string }) {
   const targetUrl = input.url || BUILTIN_BROWSER_DEFAULT_URL;
   navigateMainWindow(BUILTIN_BROWSER_ROUTE);
@@ -3167,6 +3206,29 @@ function registerIpcHandlers() {
   ipcMain.handle("panAuth.getStatus", async () => getPanAuthStatus(app));
   ipcMain.handle("agentAuth.issueAccessToken", async (_event, reason: "missing" | "unauthorized") => {
     return issueAgentAccessToken(app, reason);
+  });
+  ipcMain.handle("sso.getStatus", async () => getDesktopSsoStatus(app));
+  ipcMain.handle("sso.startLogin", async () => {
+    const result = await startDesktopSsoLogin(app, {
+      onStatusChanged: broadcastDesktopSsoStatus
+    });
+    if (result.ok && result.authorizeUrl) {
+      await openUrlInChrome(result.authorizeUrl, {
+        userDataDir: getDesktopSsoChromeProfileDir()
+      });
+    }
+    return result;
+  });
+  ipcMain.handle("sso.logout", async () => {
+    const result = await logoutDesktopSso(app, {
+      onStatusChanged: broadcastDesktopSsoStatus
+    });
+    if (result.ok && result.logoutUrl) {
+      await openUrlInChrome(result.logoutUrl, {
+        userDataDir: getDesktopSsoChromeProfileDir()
+      });
+    }
+    return result;
   });
   ipcMain.handle("clipboard.writeText", async (_event, text: string) => {
     try {
