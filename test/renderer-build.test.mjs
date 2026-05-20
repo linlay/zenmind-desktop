@@ -409,7 +409,9 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /createAgentEmbedPath/);
   assert.match(sidebarSource, /\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
   assert.match(sidebarSource, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
-  assert.match(sidebarSource, /params\.set\("chatId"/);
+  assert.match(sidebarSource, /params\.set\("chatId", chatId\.trim\(\)\)/);
+  assert.doesNotMatch(sidebarSource, /if \(chatId\.trim\(\)\)/);
+  assert.match(sidebarSource, /function handleItemClick[\s\S]*?if \(onRequestNavigate\) \{[\s\S]*?event\.preventDefault\(\);[\s\S]*?if \(!onRequestNavigate\(targetPath\)\)/);
   assert.doesNotMatch(sidebarSource, /newChat=1/);
   assert.doesNotMatch(sidebarSource, /nonce=/);
   assert.doesNotMatch(sidebarSource, /AssistantHistoryState/);
@@ -478,6 +480,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /activeAgentWebclientRoute[\s\S]*?\? "agent-webclient"[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
   assert.match(appShell, /embedPath=\{pluginId === "agent-webclient" \? activeAgentWebclientRoute\?\.embedPath : undefined\}/);
   assert.match(appShell, /if \(currentRoute !== pendingSidebarNavigationPath\)/);
+  assert.match(appShell, /function requestSidebarNavigation\(targetPath: string\)[\s\S]*?navigate\(targetPath\);[\s\S]*?return true;/);
   assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeAgentWebclientRoute\)/);
   assert.match(appShell, /const usesPluginSurface =[\s\S]*?Boolean\(activeAgentWebclientRoute\)[\s\S]*?location\.pathname\.startsWith\("\/service\/"\)[\s\S]*?location\.pathname\.startsWith\("\/plugin\/"\)/);
   assert.match(appShell, /<Route path="\/agents" element=\{null\} \/>/);
@@ -491,6 +494,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(pluginPage, /effectiveEmbedPath/);
   assert.match(pluginPage, /get\("embedPath"\)/);
   assert.match(pluginPage, /embedPath: effectiveEmbedPath/);
+  assert.match(pluginPage, /service\?\.id !== "agent-webclient"[\s\S]*?webview\.loadURL\(embeddedUrl\)/);
   assert.match(pluginPage, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.doesNotMatch(pluginPage, /buildAgentWebclientSelectWorkerScript/);
   assert.doesNotMatch(pluginPage, /agentWebclientRouteAgentKey/);

@@ -711,6 +711,7 @@ export function AppShell() {
       setPendingSidebarNavigationPath(null);
       sidebarNavigationUnlockTimerRef.current = null;
     }, SIDEBAR_NAVIGATION_LOCK_MS);
+    navigate(targetPath);
     return true;
   }
 

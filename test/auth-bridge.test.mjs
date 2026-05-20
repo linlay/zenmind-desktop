@@ -59,6 +59,14 @@ test("buildPluginEmbeddedUrl opens agent-webclient single agent route with chat 
     buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {
       hostTheme: "dark",
       desktopAuthContext: "webclient:101:platform:202",
+      embedPath: "/agent/zenmi?chatId="
+    }),
+    "http://127.0.0.1:9090/agent/zenmi?chatId=&theme=dark&desktopAuthContext=webclient%3A101%3Aplatform%3A202"
+  );
+  assert.equal(
+    buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {
+      hostTheme: "dark",
+      desktopAuthContext: "webclient:101:platform:202",
       embedPath: "/agent/zenmi?chatId=chat_1"
     }),
     "http://127.0.0.1:9090/agent/zenmi?chatId=chat_1&theme=dark&desktopAuthContext=webclient%3A101%3Aplatform%3A202"

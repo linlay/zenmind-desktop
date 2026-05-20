@@ -210,11 +210,8 @@ function readAgentRouteInfo(route: string) {
 function createAgentEmbedPath(agentKey: string, chatId = "") {
   const path = `/agent/${encodeURIComponent(agentKey)}`;
   const params = new URLSearchParams();
-  if (chatId.trim()) {
-    params.set("chatId", chatId.trim());
-  }
-  const query = params.toString();
-  return query ? `${path}?${query}` : path;
+  params.set("chatId", chatId.trim());
+  return `${path}?${params.toString()}`;
 }
 
 function createAgentWebclientRoute(embedPath: string) {
@@ -529,8 +526,12 @@ export function AppSidebar({
       return;
     }
 
-    if (onRequestNavigate && !onRequestNavigate(targetPath)) {
+    if (onRequestNavigate) {
       event.preventDefault();
+      if (!onRequestNavigate(targetPath)) {
+        return;
+      }
+      onNavigateItem?.();
       return;
     }
 

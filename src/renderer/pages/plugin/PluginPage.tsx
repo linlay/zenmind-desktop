@@ -572,6 +572,21 @@ export function PluginPage({
   }, [embeddedUrl]);
 
   useEffect(() => {
+    if (service?.id !== "agent-webclient" || active === false || !embeddedUrl) {
+      return;
+    }
+
+    const webview = webviewRef.current;
+    if (!webview || webview.getURL() === embeddedUrl) {
+      return;
+    }
+
+    webview.loadURL(embeddedUrl).catch((error) => {
+      console.warn("[plugin-page] failed to navigate agent webclient webview", error);
+    });
+  }, [active, embeddedUrl, service?.id, webviewRenderKey]);
+
+  useEffect(() => {
     setWebviewRetryNonce(0);
     setWebviewLoadError(false);
   }, [service?.status, webviewBaseKey]);
