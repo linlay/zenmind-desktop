@@ -16,7 +16,7 @@ import {
   registerDesktopActionProviderForScope,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, ServiceId, StartupRestoreState } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, DesktopSsoStatus, ServiceId, StartupRestoreState } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DESKTOP_COPILOT_PAGE_KEYS,
@@ -60,6 +60,7 @@ const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = "zenmind-desktop.sidebar-nav-order";
 const CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY = "zenmind-desktop.custom-sidebar-group-order";
+const ASSISTANT_NAV_AGENTS_CACHE_KEY = "zenmind-desktop.assistant-nav-agents-cache";
 const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -71,6 +72,17 @@ const AGENT_WEBCLIENT_ROUTE_ITEMS = [
 ] as const;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
+let desktopSsoAutoLoginStartedForRenderer = false;
+const DEFAULT_ASSISTANT_NAV_AGENT: AssistantNavAgentItem = {
+  agentKey: "zenmi",
+  displayName: "小宅",
+  role: "平台总管",
+  unreadCount: 0,
+  hasPendingAwaiting: false,
+  latestChatId: null,
+  latestPreview: "",
+  updatedAt: ""
+};
 
 function asRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -80,6 +92,90 @@ function asRecord(value: unknown) {
 
 function readSettingsPatch(args: Record<string, unknown>) {
   return asRecord(args.patch);
+}
+
+function createUnavailableDesktopSsoStatus(): DesktopSsoStatus {
+  return {
+    authenticated: false,
+    pending: false,
+    user: null,
+    message: "当前运行实例尚未加载单点登录，请重启 Desktop。",
+    error: "Desktop SSO preload API unavailable.",
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function getDesktopSsoApi() {
+  return window.electronAPI.sso?.getStatus ? window.electronAPI.sso : null;
+}
+
+function normalizeCachedAssistantNavAgentItem(value: unknown): AssistantNavAgentItem | null {
+  const record = asRecord(value);
+  const agentKey = typeof record.agentKey === "string" ? record.agentKey.trim() : "";
+  const displayName = typeof record.displayName === "string" ? record.displayName.trim() : "";
+  if (!agentKey || !displayName) {
+    return null;
+  }
+  const unreadCount = typeof record.unreadCount === "number" && Number.isFinite(record.unreadCount)
+    ? Math.max(0, Math.floor(record.unreadCount))
+    : 0;
+  const latestChatId = typeof record.latestChatId === "string" && record.latestChatId.trim()
+    ? record.latestChatId.trim()
+    : null;
+  return {
+    agentKey,
+    displayName,
+    role: typeof record.role === "string" ? record.role.trim() : "",
+    unreadCount,
+    hasPendingAwaiting: record.hasPendingAwaiting === true,
+    latestChatId,
+    latestPreview: typeof record.latestPreview === "string" ? record.latestPreview.trim() : "",
+    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : ""
+  };
+}
+
+function createDefaultAssistantNavAgents() {
+  return [{ ...DEFAULT_ASSISTANT_NAV_AGENT }];
+}
+
+function readInitialAssistantNavAgents(): AssistantNavAgentItem[] {
+  if (typeof window === "undefined") {
+    return createDefaultAssistantNavAgents();
+  }
+  try {
+    const savedValue = window.localStorage.getItem(ASSISTANT_NAV_AGENTS_CACHE_KEY);
+    const parsed = savedValue ? JSON.parse(savedValue) : [];
+    const cachedItems = Array.isArray(parsed)
+      ? parsed
+        .map(normalizeCachedAssistantNavAgentItem)
+        .filter((item): item is AssistantNavAgentItem => Boolean(item))
+      : [];
+    return cachedItems.length > 0 ? cachedItems : createDefaultAssistantNavAgents();
+  } catch {
+    return createDefaultAssistantNavAgents();
+  }
+}
+
+function writeAssistantNavAgentsCache(items: AssistantNavAgentItem[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(ASSISTANT_NAV_AGENTS_CACHE_KEY, JSON.stringify(items));
+  } catch {
+    // Ignore localStorage failures in restricted renderer contexts.
+  }
+}
+
+function clearAssistantNavAgentsCache() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.removeItem(ASSISTANT_NAV_AGENTS_CACHE_KEY);
+  } catch {
+    // Ignore localStorage failures in restricted renderer contexts.
+  }
 }
 
 function readStoredSidebarNavOrder(storageKey: string): SidebarNavOrderItemKey[] {
@@ -166,6 +262,7 @@ export function AppShell() {
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
   const startupNavigationDoneRef = useRef(false);
   const refreshServicesRef = useRef(refreshServices);
+  const assistantNavAgentsRefreshIdRef = useRef(0);
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") {
@@ -200,8 +297,11 @@ export function AppShell() {
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
-  const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
+  const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>(readInitialAssistantNavAgents);
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
+  const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
+  const [desktopSsoBusy, setDesktopSsoBusy] = useState(false);
+  const desktopSsoAutoLoginAttemptedRef = useRef(desktopSsoAutoLoginStartedForRenderer);
   const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
   const [customSidebarItemsLoaded, setCustomSidebarItemsLoaded] = useState(false);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
@@ -248,6 +348,10 @@ export function AppShell() {
   const startupAllReady =
     !servicesLoading &&
     startupServices.every((service) => service?.status === "running");
+  const agentPlatformRunning = services.some((service) =>
+    service.id === "agent-platform" &&
+    service.status === "running"
+  );
   const resolvedStartupRestoreState = startupRestoreState ?? createFallbackStartupRestoreState();
   const showStartupCard = !startupCardDismissed && shouldShowStartupProgressCard(startupRestoreState, startupAllReady);
   const customSidebarItemMap = useMemo(() => new Map(customSidebarItems.map((item) => [item.id, item])), [customSidebarItems]);
@@ -291,34 +395,61 @@ export function AppShell() {
     setCustomSidebarGroupOrder((currentOrder) => normalizeCustomSidebarGroupOrder(currentOrder, items));
   }
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refreshAssistantNavAgents() {
-      try {
-        const result = await window.electronAPI.assistant.listNavigationAgents();
-        if (!cancelled) {
-          setAssistantNavAgents(result.ok ? result.items : []);
+  async function refreshAssistantNavAgents() {
+    const refreshId = assistantNavAgentsRefreshIdRef.current + 1;
+    assistantNavAgentsRefreshIdRef.current = refreshId;
+    try {
+      const result = await window.electronAPI.assistant.listNavigationAgents();
+      if (assistantNavAgentsRefreshIdRef.current === refreshId) {
+        if (!result.ok) {
+          return;
         }
-      } catch {
-        if (!cancelled) {
-          setAssistantNavAgents([]);
+        setAssistantNavAgents(result.items);
+        if (result.items.length > 0) {
+          writeAssistantNavAgentsCache(result.items);
+        } else {
+          clearAssistantNavAgentsCache();
         }
       }
+    } catch {
+      // Keep cached/default agents visible while agent-platform is still warming up.
     }
+  }
 
+  function refreshAssistantNavAgentsAfterStartupReady(nextState: StartupRestoreState) {
+    if (nextState.phase === "succeeded") {
+      void refreshAssistantNavAgents();
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     void refreshAssistantNavAgents();
     const unsubscribe = window.electronAPI.assistant.onNavigationAgentsChanged((result) => {
-      if (!cancelled) {
-        setAssistantNavAgents(result.ok ? result.items : []);
+      if (cancelled || !result.ok) {
+        return;
+      }
+      assistantNavAgentsRefreshIdRef.current += 1;
+      setAssistantNavAgents(result.items);
+      if (result.items.length > 0) {
+        writeAssistantNavAgentsCache(result.items);
+      } else {
+        clearAssistantNavAgentsCache();
       }
     });
 
     return () => {
       cancelled = true;
+      assistantNavAgentsRefreshIdRef.current += 1;
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (agentPlatformRunning) {
+      void refreshAssistantNavAgents();
+    }
+  }, [agentPlatformRunning]);
 
   async function refreshStartupRestoreState() {
     const nextState = await window.electronAPI.services.getStartupRestoreState();
@@ -331,6 +462,38 @@ export function AppShell() {
       return;
     }
     setAssistantDockOpen(true);
+  }
+
+  async function handleDesktopSsoLogin() {
+    desktopSsoAutoLoginAttemptedRef.current = true;
+    desktopSsoAutoLoginStartedForRenderer = true;
+    const ssoApi = getDesktopSsoApi();
+    if (!ssoApi) {
+      setDesktopSsoStatus(createUnavailableDesktopSsoStatus());
+      return;
+    }
+    setDesktopSsoBusy(true);
+    try {
+      const result = await ssoApi.startLogin();
+      setDesktopSsoStatus(result.status);
+    } finally {
+      setDesktopSsoBusy(false);
+    }
+  }
+
+  async function handleDesktopSsoLogout() {
+    const ssoApi = getDesktopSsoApi();
+    if (!ssoApi) {
+      setDesktopSsoStatus(createUnavailableDesktopSsoStatus());
+      return;
+    }
+    setDesktopSsoBusy(true);
+    try {
+      const result = await ssoApi.logout();
+      setDesktopSsoStatus(result.status);
+    } finally {
+      setDesktopSsoBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -399,6 +562,41 @@ export function AppShell() {
     return window.electronAPI.onNativeDialogVisibility((state) => {
       setNativeDialogVisible(state.platform === "darwin" && state.open);
     });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const ssoApi = getDesktopSsoApi();
+    if (!ssoApi) {
+      setDesktopSsoStatus(createUnavailableDesktopSsoStatus());
+      return () => {
+        cancelled = true;
+      };
+    }
+    ssoApi
+      .getStatus()
+      .then((status) => {
+        if (!cancelled) {
+          setDesktopSsoStatus(status);
+          if (
+            status.authenticated === false &&
+            status.pending === false &&
+            !status.error &&
+            !desktopSsoAutoLoginAttemptedRef.current
+          ) {
+            void handleDesktopSsoLogin();
+          }
+        }
+      })
+      .catch(() => undefined);
+    const dispose = ssoApi.onStatusChanged((status) => {
+      setDesktopSsoStatus(status);
+    });
+
+    return () => {
+      cancelled = true;
+      dispose();
+    };
   }, []);
 
   useEffect(() => {
@@ -482,6 +680,7 @@ export function AppShell() {
           return;
         }
         setStartupRestoreState(nextState);
+        refreshAssistantNavAgentsAfterStartupReady(nextState);
       })
       .catch(() => undefined);
 
@@ -490,6 +689,7 @@ export function AppShell() {
         return;
       }
       setStartupRestoreState(nextState);
+      refreshAssistantNavAgentsAfterStartupReady(nextState);
     });
 
     return () => {
@@ -1009,6 +1209,23 @@ export function AppShell() {
     themeMode
   ]);
 
+  const desktopSsoUserLabel = desktopSsoStatus?.authenticated
+    ? desktopSsoStatus.user?.name || desktopSsoStatus.user?.email || desktopSsoStatus.user?.sub || "已登录"
+    : desktopSsoStatus?.pending
+      ? "登录中"
+      : "未登录";
+  const desktopSsoMessage = desktopSsoStatus?.message || "Desktop 单点登录";
+  const desktopSsoActionLabel = desktopSsoStatus?.authenticated
+    ? "退出"
+    : desktopSsoStatus?.pending
+      ? "重新打开"
+      : "单点登录";
+  const desktopSsoClassName = [
+    "app-sso-status",
+    desktopSsoStatus?.authenticated ? "is-authenticated" : "",
+    desktopSsoStatus?.pending ? "is-pending" : "",
+    desktopSsoStatus?.error ? "is-error" : ""
+  ].filter(Boolean).join(" ");
   const appShellStyle = {
     "--app-sidebar-width": `${renderedSidebarWidth}px`
   } as CSSProperties;
@@ -1032,6 +1249,25 @@ export function AppShell() {
       ].filter(Boolean).join(" ")}
     >
       <div className="app-window-drag-region" aria-hidden="true" />
+      <div className={desktopSsoClassName} aria-live="polite">
+        <span className="app-sso-status-dot" aria-hidden="true" />
+        <span className="app-sso-status-copy">
+          <span className="app-sso-status-title">{desktopSsoUserLabel}</span>
+          <span className="app-sso-status-message">{desktopSsoMessage}</span>
+        </span>
+        <button
+          type="button"
+          className="app-sso-status-action"
+          onClick={() => {
+            void (desktopSsoStatus?.authenticated
+              ? handleDesktopSsoLogout()
+              : handleDesktopSsoLogin());
+          }}
+          disabled={desktopSsoBusy}
+        >
+          {desktopSsoBusy ? "处理中" : desktopSsoActionLabel}
+        </button>
+      </div>
       <div className="app-sidebar-shell">
         <AppSidebar
           isCollapsed={sidebarCollapsed}

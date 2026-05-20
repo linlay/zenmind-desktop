@@ -28,6 +28,39 @@ export interface AgentAuthIssueResult {
   message: string;
 }
 
+export interface DesktopSsoClaims {
+  sub: string;
+  name?: string;
+  email?: string;
+  issuer: string;
+  audience: string;
+}
+
+export interface DesktopSsoStatus {
+  authenticated: boolean;
+  pending: boolean;
+  user: DesktopSsoClaims | null;
+  message: string;
+  error?: string;
+  updatedAt: string;
+}
+
+export interface DesktopSsoStartResult {
+  ok: boolean;
+  authorizeUrl?: string;
+  status: DesktopSsoStatus;
+  message: string;
+}
+
+export interface DesktopSsoLogoutResult {
+  ok: boolean;
+  logoutUrl?: string;
+  status: DesktopSsoStatus;
+  message: string;
+}
+
+export type DesktopSsoStatusListener = (status: DesktopSsoStatus) => void;
+
 export type NativeDialogVisibilityListener = (state: { open: boolean }) => void;
 
 export interface DesktopApi {
@@ -126,6 +159,12 @@ export interface DesktopApi {
   };
   agentAuth: {
     issueAccessToken: (reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
+  };
+  sso: {
+    getStatus: () => Promise<DesktopSsoStatus>;
+    startLogin: () => Promise<DesktopSsoStartResult>;
+    logout: () => Promise<DesktopSsoLogoutResult>;
+    onStatusChanged: (listener: DesktopSsoStatusListener) => () => void;
   };
   settings: {
     getDataRoot: () => Promise<string>;

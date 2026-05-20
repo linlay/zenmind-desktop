@@ -496,11 +496,19 @@ function createStartupCoreAssetsFixture(options = {}) {
     const programCommonName = isWindows ? "program-common.ps1" : "program-common.sh";
 
     if (isWindows) {
+      const windowsStartPrelude = options.recordStartTime
+        ? [
+            `$timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()`,
+            `$timestamp | Set-Content -LiteralPath (Join-Path $runDir 'start-time.txt')`,
+            options.startDelayMs ? `Start-Sleep -Milliseconds ${options.startDelayMs}` : ""
+          ].filter(Boolean).join("\r\n")
+        : "";
       fs.writeFileSync(
         path.join(bundleRoot, startFileName),
         [
           "$runDir = Join-Path $PSScriptRoot 'run'",
           "New-Item -ItemType Directory -Path $runDir -Force | Out-Null",
+          windowsStartPrelude,
           options.failOnStartServiceId === service.id
             ? "throw 'fixture start failure'"
             : [
@@ -537,12 +545,19 @@ function createStartupCoreAssetsFixture(options = {}) {
       );
       fs.writeFileSync(path.join(bundleRoot, "scripts", programCommonName), "# fixture\r\n", "utf8");
     } else {
+      const unixStartPrelude = options.recordStartTime
+        ? [
+            `node -e "require('fs').writeFileSync('run/start-time.txt', String(Date.now()))"`,
+            options.startDelayMs ? `sleep ${options.startDelayMs / 1000}` : ""
+          ].filter(Boolean).join("\n")
+        : "";
       fs.writeFileSync(
         path.join(bundleRoot, startFileName),
         [
           "#!/usr/bin/env bash",
           "set -euo pipefail",
           "mkdir -p run",
+          unixStartPrelude,
           'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}/pid"',
           'if [ -z "${SERVICE_STATE_DIR:-}" ]; then pid_dir="$PWD/run"; fi',
           'mkdir -p "$pid_dir"',
@@ -4794,7 +4809,7 @@ test("runStartupPreparation repairs partial app-server env preserved before pack
   }
 });
 
-test("runStartupPreparation does not reinstall healthy packaged core services", async () => {
+test("runStartupPreparation does not reinstall healthy packaged core services when synced asset mtimes are newer", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
@@ -4807,11 +4822,133 @@ test("runStartupPreparation does not reinstall healthy packaged core services", 
     const markerPath = path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "marker.txt");
     fs.writeFileSync(markerPath, "keep", "utf8");
 
+    const future = new Date(Date.now() + 10_000);
+    for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
+      const assetDir = path.join(fixture.assetsRoot, serviceId);
+      for (const entry of fs.readdirSync(assetDir)) {
+        fs.utimesSync(path.join(assetDir, entry), future, future);
+      }
+    }
+
     const result = await runStartupPreparation(app);
     assert.equal(result.mode, "restore");
     assert.deepEqual(result.failures, []);
     assert.equal(fs.existsSync(markerPath), true);
   } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runStartupPreparation restores healthy packaged core services in parallel", async () => {
+  const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 500 });
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
+
+  process.env.SERVICE_VERIFY_DELAY_MS = "0";
+
+  try {
+    for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
+      await installBuiltinService(app, serviceId);
+    }
+
+    const result = await runStartupPreparation(app);
+    const startTimes = ["zenmind-app-server", "agent-platform", "agent-webclient"].map((serviceId) => {
+      const filePath = path.join(getTestServiceProgramDir(userDataRoot, serviceId, "v1.0.0"), "run", "start-time.txt");
+      assert.equal(fs.existsSync(filePath), true, `${serviceId} should record a start timestamp`);
+      return Number.parseInt(fs.readFileSync(filePath, "utf8").trim(), 10);
+    });
+    const spreadMs = Math.max(...startTimes) - Math.min(...startTimes);
+
+    assert.equal(result.mode, "restore");
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.ok(spreadMs < 500, `expected parallel startup timestamps, got spread ${spreadMs}ms`);
+  } finally {
+    if (previousVerifyDelay === undefined) {
+      delete process.env.SERVICE_VERIFY_DELAY_MS;
+    } else {
+      process.env.SERVICE_VERIFY_DELAY_MS = previousVerifyDelay;
+    }
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runStartupPreparation reuses a running app-server during restore", async () => {
+  const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 100 });
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
+
+  process.env.SERVICE_VERIFY_DELAY_MS = "0";
+
+  try {
+    for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
+      await installBuiltinService(app, serviceId);
+    }
+
+    const firstStart = await startService(app, "zenmind-app-server");
+    const startTimePath = path.join(
+      getTestServiceProgramDir(userDataRoot, "zenmind-app-server", "v1.0.0"),
+      "run",
+      "start-time.txt"
+    );
+    const firstStartTime = fs.readFileSync(startTimePath, "utf8");
+
+    const result = await runStartupPreparation(app);
+    const appServerState = await getServiceState(app, "zenmind-app-server");
+
+    assert.equal(firstStart.ok, true, firstStart.message);
+    assert.equal(result.mode, "restore");
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.equal(appServerState.status, "running");
+    assert.equal(appServerState.healthMeta.pid, firstStart.service.healthMeta.pid);
+    assert.equal(fs.readFileSync(startTimePath, "utf8"), firstStartTime);
+  } finally {
+    if (previousVerifyDelay === undefined) {
+      delete process.env.SERVICE_VERIFY_DELAY_MS;
+    } else {
+      process.env.SERVICE_VERIFY_DELAY_MS = previousVerifyDelay;
+    }
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runStartupPreparation collects parallel restore failures without cancelling sibling services", async () => {
+  const fixture = createStartupCoreAssetsFixture({ failOnStartServiceId: "agent-platform" });
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
+
+  process.env.SERVICE_VERIFY_DELAY_MS = "0";
+
+  try {
+    for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
+      await installBuiltinService(app, serviceId);
+    }
+
+    const result = await runStartupPreparation(app);
+
+    assert.equal(result.mode, "restore");
+    assert.equal(result.failures.length, 1);
+    assert.match(result.failures[0], /agent-platform/u);
+    assert.deepEqual(result.started, ["zenmind-app-server", "agent-webclient"]);
+    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "zenmind-app-server", "v1.0.0"), "run", "started.txt")), true);
+    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "run", "started.txt")), false);
+    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-webclient", "v1.0.0"), "run", "started.txt")), true);
+  } finally {
+    if (previousVerifyDelay === undefined) {
+      delete process.env.SERVICE_VERIFY_DELAY_MS;
+    } else {
+      process.env.SERVICE_VERIFY_DELAY_MS = previousVerifyDelay;
+    }
     await stopStartupCoreProcesses(app);
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
