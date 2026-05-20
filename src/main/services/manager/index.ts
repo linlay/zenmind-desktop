@@ -4,6 +4,7 @@ import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 import { execFile, spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import type { App } from "electron";
 import type {
   ServiceCommandResult,
@@ -201,6 +202,7 @@ type InitializationState = {
   status: "succeeded" | "failed";
   updatedAt: string;
   lastError?: string;
+  assetSignature?: string;
 };
 
 type LastRunningServicesState = {
@@ -341,6 +343,9 @@ function readInitializationState(layoutOrInstallDir: ServiceLayout | string): In
     const status = parsed.status === "succeeded" || parsed.status === "failed" ? parsed.status : null;
     const updatedAt = typeof parsed.updatedAt === "string" ? parsed.updatedAt : "";
     const lastError = typeof parsed.lastError === "string" && parsed.lastError.trim() ? parsed.lastError : undefined;
+    const assetSignature = typeof parsed.assetSignature === "string" && parsed.assetSignature.trim()
+      ? parsed.assetSignature
+      : undefined;
     if (!version || !status || !updatedAt) {
       return null;
     }
@@ -348,11 +353,28 @@ function readInitializationState(layoutOrInstallDir: ServiceLayout | string): In
       version,
       status,
       updatedAt,
+      ...(assetSignature ? { assetSignature } : {}),
       ...(lastError ? { lastError } : {})
     };
   } catch {
     return null;
   }
+}
+
+function computeAssetSignature(assetPath: string) {
+  const stat = fs.statSync(assetPath);
+  const hash = createHash("sha256")
+    .update(fs.readFileSync(assetPath))
+    .digest("hex");
+  return `${stat.size}:${hash}`;
+}
+
+function readBuiltinAssetSignature(app: App, service: ServiceDefinition) {
+  if (service.kind !== "builtin") {
+    return undefined;
+  }
+  const assetPath = getOptionalBundleAssetPath(app, service);
+  return assetPath ? computeAssetSignature(assetPath) : undefined;
 }
 
 function isAssetNewerThanInstall(assetPath: string, layoutOrInstallDir: ServiceLayout | string) {
@@ -362,8 +384,8 @@ function isAssetNewerThanInstall(assetPath: string, layoutOrInstallDir: ServiceL
       return true;
     }
     const initializationState = readInitializationState(layoutOrInstallDir);
-    if (initializationState?.status === "succeeded") {
-      return false;
+    if (initializationState?.assetSignature) {
+      return initializationState.assetSignature !== computeAssetSignature(assetPath);
     }
     const assetMtime = fs.statSync(assetPath).mtimeMs;
     return assetMtime > fs.statSync(initStatePath).mtimeMs;
@@ -2207,10 +2229,12 @@ async function initializeServiceInternal(
       });
     }
     await ensureInitializationRequirements(app, service, layout);
+    const assetSignature = readBuiltinAssetSignature(app, service);
     writeInitializationState(layout, {
       version: service.version,
       status: "succeeded",
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      ...(assetSignature ? { assetSignature } : {})
     });
   } catch (error) {
     writeInitializationState(layout, {
