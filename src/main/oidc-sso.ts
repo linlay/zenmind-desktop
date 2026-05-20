@@ -69,7 +69,7 @@ export const DEFAULT_OIDC_CONFIG: OidcConfig = {
   authorizeUrl: "https://eiam.qiuer.net/auth/oauth2/authorize",
   tokenUrl: "https://eiam.qiuer.net/auth/oauth2/token",
   clientId: "MTdjNzdjZTU3ZTExNDUzMWJmMjk4OTQ4MzdkNzY1YmU",
-  clientSecret: "3CH2p8r3NMURy+5E8BYZTK/AYIWCh+Rr",
+  clientSecret: "3CH2p8r3NMURy+5E8BYZTK/AYlWCh+Rr",
   redirectUri: `http://${CALLBACK_HOST}:${CALLBACK_PORT}${CALLBACK_PATH}`,
   wellKnownUrl: "https://eiam.qiuer.net/auth/oidc/CA68B05042044F44AD4D2B5F672A53AE/.well-known/openid-configuration",
   logoutUrl: "https://eiam.qiuer.net/auth/ssoLogout",
