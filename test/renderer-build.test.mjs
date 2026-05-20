@@ -406,17 +406,20 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /createAgentRoute\(agent\.agentKey\)/);
   assert.match(sidebarSource, /createAgentChatRoute\(chat\.agentKey/);
   assert.match(sidebarSource, /createAgentNewChatRoute\(agent\.agentKey\)/);
-  assert.match(sidebarSource, /createAgentEmbedPath/);
+  assert.doesNotMatch(sidebarSource, /createAgentEmbedPath/);
+  assert.doesNotMatch(sidebarSource, /createAgentWebclientRoute/);
   assert.match(sidebarSource, /\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
-  assert.match(sidebarSource, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
   assert.match(sidebarSource, /params\.set\("chatId", chatId\.trim\(\)\)/);
   assert.doesNotMatch(sidebarSource, /if \(chatId\.trim\(\)\)/);
+  assert.doesNotMatch(sidebarSource, /\/service\/agent-webclient\?embedPath=/);
   assert.match(sidebarSource, /function handleItemClick[\s\S]*?if \(onRequestNavigate\) \{[\s\S]*?event\.preventDefault\(\);[\s\S]*?if \(!onRequestNavigate\(targetPath\)\)/);
   assert.doesNotMatch(sidebarSource, /newChat=1/);
   assert.doesNotMatch(sidebarSource, /nonce=/);
   assert.doesNotMatch(sidebarSource, /AssistantHistoryState/);
   assert.doesNotMatch(sidebarSource, /assistantHistory/);
   assert.doesNotMatch(sidebarSource, /renderAssistantHistory/);
+  assert.match(sidebarSource, /<div className="status-line">暂无会话<\/div>/);
+  assert.doesNotMatch(sidebarSource, /暂无相关会话/);
   assert.match(sidebarSource, /renderStatusBadges/);
   assert.match(sidebarSource, /summarizeAgentStatus\(assistantNavAgents\)/);
   assert.match(sidebarSource, /assistant-worker-collapse worker-collapse/);
@@ -460,6 +463,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(globalStyles, /\.assistant-worker-header\s*\{[\s\S]*?padding:\s*6px 2px;/);
   assert.match(globalStyles, /\.assistant-worker-collapse-item\.ant-collapse-item-active \.assistant-worker-header\s*\{[\s\S]*?padding:\s*6px 10px;/);
   assert.match(globalStyles, /\.ant-collapse-item-active \.worker-panel-icon\s*\{[\s\S]*?transform:\s*scale\(0\.8\);/);
+  assert.match(globalStyles, /\.worker-chat-preview-list \.status-line\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?color:\s*var\(--ink-muted\);/);
   assert.match(agentIconSource, /BUILTIN_ICON_CONFIGS/);
   assert.match(agentIconSource, /ledger/);
   assert.match(agentIconSource, /isImageIcon/);
@@ -476,6 +480,9 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /const activeAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search\)/);
   assert.match(appShell, /function readAgentWebclientRouteEmbedPath\(search: string\)/);
   assert.match(appShell, /new URLSearchParams\(search\)\.get\("embedPath"\)/);
+  assert.match(appShell, /function resolveSingleAgentWebclientRoute\(pathname: string, search: string\)/);
+  assert.match(appShell, /matchPath\("\/agent\/:agentKey", pathname\)/);
+  assert.match(appShell, /embedPath:\s*`\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
   assert.match(appShell, /embedPath\.startsWith\("\/agent\/"\) \? "智能助理" : "智能体"/);
   assert.match(appShell, /activeAgentWebclientRoute[\s\S]*?\? "agent-webclient"[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
   assert.match(appShell, /embedPath=\{pluginId === "agent-webclient" \? activeAgentWebclientRoute\?\.embedPath : undefined\}/);
@@ -486,6 +493,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /<Route path="\/agents" element=\{null\} \/>/);
   assert.match(appShell, /<Route path="\/schedules" element=\{null\} \/>/);
   assert.match(appShell, /<Route path="\/memory" element=\{null\} \/>/);
+  assert.match(appShell, /<Route path="\/agent\/:agentKey" element=\{null\} \/>/);
   assert.doesNotMatch(appShell, /path="\/agents"[\s\S]{0,180}<PlaceholderPage/);
 
   assert.match(pluginPage, /embedPath\?: string;/);
@@ -494,7 +502,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(pluginPage, /effectiveEmbedPath/);
   assert.match(pluginPage, /get\("embedPath"\)/);
   assert.match(pluginPage, /embedPath: effectiveEmbedPath/);
-  assert.match(pluginPage, /service\?\.id !== "agent-webclient"[\s\S]*?webview\.loadURL\(embeddedUrl\)/);
+  assert.doesNotMatch(pluginPage, /webview\.loadURL\(embeddedUrl\)/);
   assert.match(pluginPage, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.doesNotMatch(pluginPage, /buildAgentWebclientSelectWorkerScript/);
   assert.doesNotMatch(pluginPage, /agentWebclientRouteAgentKey/);
@@ -1268,7 +1276,7 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.match(mainProcess, /async function showAssistantTargetWindow/);
   assert.match(mainProcess, /function createAgentWebclientRoute/);
   assert.match(mainProcess, /\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
-  assert.match(mainProcess, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
+  assert.doesNotMatch(mainProcess, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
   assert.match(mainProcess, /openAgent: scheduleQuickAgentOpenRequest/);
   assert.match(mainProcess, /async function openAssistantFromDesktopPet/);
   assert.match(mainProcess, /showAssistantTargetWindow\(\s*"desktop-pet",[\s\S]*?createAgentWebclientRoute/);

@@ -900,14 +900,13 @@ function createAgentWebclientRoute(request: {
     return ASSISTANT_TARGET_PATH;
   }
 
-  const embedPathParams = new URLSearchParams();
+  const params = new URLSearchParams();
   const chatId = request.chatId?.trim() ?? "";
   if (chatId) {
-    embedPathParams.set("chatId", chatId);
+    params.set("chatId", chatId);
   }
-  const embedPathQuery = embedPathParams.toString();
-  const embedPath = `/agent/${encodeURIComponent(agentKey)}${embedPathQuery ? `?${embedPathQuery}` : ""}`;
-  return `${ASSISTANT_TARGET_PATH}?embedPath=${encodeURIComponent(embedPath)}`;
+  const query = params.toString();
+  return `/agent/${encodeURIComponent(agentKey)}${query ? `?${query}` : ""}`;
 }
 
 function isQuickAgentWebclientFrame(frame: WebFrameMain) {

@@ -916,6 +916,15 @@
   display: none;
 }
 
+.worker-chat-preview-list .status-line {
+  border: 0;
+  background: transparent;
+  padding: 8px 9px 9px 18px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--ink-muted);
+}
+
 .assistant-worker-more {
   width: 100%;
   border: 0;

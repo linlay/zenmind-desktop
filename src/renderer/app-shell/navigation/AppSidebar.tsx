@@ -207,23 +207,14 @@ function readAgentRouteInfo(route: string) {
   }
 }
 
-function createAgentEmbedPath(agentKey: string, chatId = "") {
-  const path = `/agent/${encodeURIComponent(agentKey)}`;
-  const params = new URLSearchParams();
-  params.set("chatId", chatId.trim());
-  return `${path}?${params.toString()}`;
-}
-
-function createAgentWebclientRoute(embedPath: string) {
-  return `/service/agent-webclient?embedPath=${encodeURIComponent(embedPath)}`;
-}
-
 function createAgentRoute(agentKey: string) {
-  return createAgentWebclientRoute(createAgentEmbedPath(agentKey));
+  return `/agent/${encodeURIComponent(agentKey)}`;
 }
 
 function createAgentChatRoute(agentKey: string, chatId: string) {
-  return createAgentWebclientRoute(createAgentEmbedPath(agentKey, chatId));
+  const params = new URLSearchParams();
+  params.set("chatId", chatId.trim());
+  return `${createAgentRoute(agentKey)}?${params.toString()}`;
 }
 
 function createAgentNewChatRoute(agentKey: string) {
@@ -851,7 +842,7 @@ export function AppSidebar({
               {recentChats.length > 0 ? (
                 recentChats.map((chat) => renderAssistantChatRow(chat, activeChatId))
               ) : (
-                <div className="status-line">暂无相关会话</div>
+                <div className="status-line">暂无会话</div>
               )}
               {Math.max(agent.chatCount, recentChats.length) > 5 ? (
                 <button

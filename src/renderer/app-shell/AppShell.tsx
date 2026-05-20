@@ -1120,6 +1120,7 @@ export function AppShell() {
             <Route path="/agents" element={null} />
             <Route path="/schedules" element={null} />
             <Route path="/memory" element={null} />
+            <Route path="/agent/:agentKey" element={null} />
             <Route path="/external/:itemId" element={<ExternalItemRoute itemMap={experimentalItemMap} />} />
             <Route
               path={BUILTIN_BROWSER_ROUTE}
@@ -1201,6 +1202,11 @@ function resolveAgentWebclientRoute(pathname: string, search = "") {
     return staticRoute;
   }
 
+  const agentRoute = resolveSingleAgentWebclientRoute(pathname, search);
+  if (agentRoute) {
+    return agentRoute;
+  }
+
   if (pathname !== ASSISTANT_TARGET_PATH) {
     return null;
   }
@@ -1223,6 +1229,26 @@ function readAgentWebclientRouteEmbedPath(search: string) {
   } catch {
     return "";
   }
+}
+
+function resolveSingleAgentWebclientRoute(pathname: string, search: string) {
+  const match = matchPath("/agent/:agentKey", pathname);
+  const agentKey = match?.params.agentKey?.trim() ?? "";
+  if (!agentKey) {
+    return null;
+  }
+
+  const params = new URLSearchParams(search);
+  const embedParams = new URLSearchParams();
+  if (params.has("chatId")) {
+    embedParams.set("chatId", params.get("chatId")?.trim() ?? "");
+  }
+  const embedQuery = embedParams.toString();
+  return {
+    routePath: `${pathname}${search}`,
+    embedPath: `/agent/${encodeURIComponent(agentKey)}${embedQuery ? `?${embedQuery}` : ""}`,
+    label: "智能助理"
+  };
 }
 
 function resolveCustomSidebarRouteId(pathname: string) {
