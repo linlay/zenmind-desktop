@@ -134,12 +134,14 @@ function targetDescriptor(
   };
 }
 
-function targetInfoDescriptor(surface: EmbeddedCdpSurface, targetId: string) {
+function targetInfoDescriptor(surface: EmbeddedCdpSurface, targetId: string, current: boolean) {
   const url = surface.currentUrl || surface.url || "about:blank";
   const title = surface.title || surface.label || url;
   return {
     attached: false,
     canAccessOpener: false,
+    active: Boolean(surface.active),
+    current,
     targetId,
     title,
     type: "webview",
@@ -372,24 +374,45 @@ export class EmbeddedCdpGateway {
     if (!method) {
       throw new Error("method is required");
     }
-    const surface = await this.resolveCommandSurface(request);
-    if (!surface) {
-      throw new Error("Target not found.");
-    }
-    const targetId = stableTargetId(surface);
     const params = request.params ?? {};
-    if (method === "Target.getTargets") {
-      const surfaces = await this.options.getSurfaces();
+    if (method === "Target.getTargets" || method === "Target.getCurrentTarget") {
+      const surfaces = await this.listValidSurfaces();
+      const surface = this.resolveCurrentSurface(surfaces);
+      if (!surface) {
+        throw new Error("Target not found.");
+      }
+      const targetId = stableTargetId(surface);
+      const targetInfo = targetInfoDescriptor(surface, targetId, true);
+      if (method === "Target.getCurrentTarget") {
+        return {
+          targetId,
+          surfaceId: surface.id,
+          result: {
+            targetInfo,
+            currentTargetId: targetId,
+            currentSurfaceId: surface.id
+          }
+        };
+      }
       return {
         targetId,
         surfaceId: surface.id,
         result: {
           targetInfos: surfaces
-            .filter((candidate) => candidate.id && candidate.url)
-            .map((candidate) => targetInfoDescriptor(candidate, stableTargetId(candidate)))
+            .map((candidate) => {
+              const candidateTargetId = stableTargetId(candidate);
+              return targetInfoDescriptor(candidate, candidateTargetId, candidateTargetId === targetId);
+            }),
+          currentTargetId: targetId,
+          currentSurfaceId: surface.id
         }
       };
     }
+    const surface = await this.resolveCommandSurface(request);
+    if (!surface) {
+      throw new Error("Target not found.");
+    }
+    const targetId = stableTargetId(surface);
     const result = await this.handleWebContentsCommandOnce(surface, method, params);
     return {
       targetId,
@@ -637,8 +660,17 @@ export class EmbeddedCdpGateway {
     return surfaces.find((surface) => stableTargetId(surface) === targetId || surface.id === targetId) ?? null;
   }
 
-  private async resolveCommandSurface(request: EmbeddedCdpCommandRequest) {
+  private async listValidSurfaces() {
     const surfaces = await this.options.getSurfaces();
+    return surfaces.filter((surface) => surface.id && surface.url);
+  }
+
+  private resolveCurrentSurface(surfaces: EmbeddedCdpSurface[]) {
+    return surfaces.find((surface) => surface.active) ?? surfaces[0] ?? null;
+  }
+
+  private async resolveCommandSurface(request: EmbeddedCdpCommandRequest) {
+    const surfaces = await this.listValidSurfaces();
     const targetId = typeof request.targetId === "string" ? request.targetId.trim() : "";
     if (targetId) {
       return surfaces.find((surface) => stableTargetId(surface) === targetId || surface.id === targetId) ?? null;
@@ -647,7 +679,7 @@ export class EmbeddedCdpGateway {
     if (surfaceId) {
       return surfaces.find((surface) => surface.id === surfaceId) ?? null;
     }
-    return surfaces.find((surface) => surface.active) ?? null;
+    return this.resolveCurrentSurface(surfaces);
   }
 
   private async refreshSurface(surface: EmbeddedCdpSurface) {

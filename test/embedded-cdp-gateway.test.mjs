@@ -268,14 +268,169 @@ test("EmbeddedCdpGateway handles Target.getTargets with Desktop navigation metad
     const response = await gateway.executeCommand({ method: "Target.getTargets" });
     assert.equal(response.surfaceId, "agent-webclient");
     assert.deepEqual(fakeDebugger.sent, []);
+    assert.equal(response.result.currentSurfaceId, "agent-webclient");
+    assert.equal(response.result.currentTargetId, response.targetId);
     assert.equal(response.result.targetInfos.length, 2);
     assert.equal(response.result.targetInfos[0].title, "AGENT Webclient");
     assert.equal(response.result.targetInfos[0].url, "http://127.0.0.1:7080/agents");
     assert.equal(response.result.targetInfos[0].surfaceRoute, "/agents");
+    assert.equal(response.result.targetInfos[0].active, true);
+    assert.equal(response.result.targetInfos[0].current, true);
+    assert.equal(response.result.targetInfos[1].active, false);
+    assert.equal(response.result.targetInfos[1].current, false);
     assert.equal(Object.hasOwn(response.result.targetInfos[0], "navigationRoute"), false);
     assert.equal(Object.hasOwn(response.result.targetInfos[0], "navigationLabel"), false);
     assert.equal(Object.hasOwn(response.result.targetInfos[0], "surfaceLabel"), false);
     assert.equal(Object.hasOwn(response.result.targetInfos[0], "zenmind"), false);
+  } finally {
+    await gateway.stop();
+  }
+});
+
+test("EmbeddedCdpGateway handles Target.getCurrentTarget for active Desktop surface", async () => {
+  const fakeDebugger = new FakeDebugger();
+  const fakeContents = createFakeWebContents(fakeDebugger);
+  const surfaces = [
+    {
+      id: "chrome",
+      label: "Chrome",
+      url: "https://www.google.com/",
+      kind: "webview",
+      active: false,
+      title: "Chrome",
+      webContentsId: 101
+    },
+    {
+      id: "agent-webclient",
+      label: "智能助理",
+      url: "http://127.0.0.1:7080/schedules",
+      kind: "webview",
+      active: true,
+      title: "自动化",
+      webContentsId: fakeContents.id,
+      surfaceRoute: "/schedules"
+    },
+    {
+      id: "zenmind-app-server",
+      label: "认证服务",
+      url: "http://127.0.0.1:7080/copilot",
+      kind: "webview",
+      active: false,
+      title: "认证服务",
+      webContentsId: 103
+    }
+  ];
+  const { gateway } = await createStartedGateway({
+    getSurfaces: () => surfaces,
+    resolveWebContents: () => fakeContents
+  });
+
+  try {
+    const response = await gateway.executeCommand({ method: "Target.getCurrentTarget" });
+    assert.equal(response.surfaceId, "agent-webclient");
+    assert.equal(response.result.currentSurfaceId, "agent-webclient");
+    assert.equal(response.result.currentTargetId, response.targetId);
+    assert.equal(response.result.targetInfo.surfaceId, "agent-webclient");
+    assert.equal(response.result.targetInfo.surfaceRoute, "/schedules");
+    assert.equal(response.result.targetInfo.title, "自动化");
+    assert.equal(response.result.targetInfo.active, true);
+    assert.equal(response.result.targetInfo.current, true);
+    assert.deepEqual(fakeDebugger.sent, []);
+  } finally {
+    await gateway.stop();
+  }
+});
+
+test("EmbeddedCdpGateway marks only the resolved current target in Target.getTargets", async () => {
+  const fakeDebugger = new FakeDebugger();
+  const surfaces = [
+    {
+      id: "chrome",
+      label: "Chrome",
+      url: "https://www.google.com/",
+      kind: "webview",
+      active: false,
+      title: "Chrome",
+      webContentsId: 201
+    },
+    {
+      id: "custom-mpdweoey-944t5x",
+      label: "百度",
+      url: "https://www.baidu.com/",
+      kind: "webview",
+      active: true,
+      title: "百度一下，你就知道",
+      webContentsId: 202
+    },
+    {
+      id: "agent-webclient",
+      label: "智能助理",
+      url: "http://127.0.0.1:7080/copilot",
+      kind: "webview",
+      active: false,
+      title: "智能助理",
+      webContentsId: 203
+    }
+  ];
+  const { gateway } = await createStartedGateway({
+    getSurfaces: () => surfaces,
+    resolveWebContents: () => null
+  });
+
+  try {
+    const response = await gateway.executeCommand({ method: "Target.getTargets" });
+    const currentTargets = response.result.targetInfos.filter((target) => target.current);
+    assert.equal(response.surfaceId, "custom-mpdweoey-944t5x");
+    assert.equal(response.result.currentSurfaceId, "custom-mpdweoey-944t5x");
+    assert.equal(currentTargets.length, 1);
+    assert.equal(currentTargets[0].surfaceId, "custom-mpdweoey-944t5x");
+    assert.deepEqual(
+      response.result.targetInfos.map((target) => [target.surfaceId, target.active, target.current]),
+      [
+        ["chrome", false, false],
+        ["custom-mpdweoey-944t5x", true, true],
+        ["agent-webclient", false, false]
+      ]
+    );
+    assert.deepEqual(fakeDebugger.sent, []);
+  } finally {
+    await gateway.stop();
+  }
+});
+
+test("EmbeddedCdpGateway falls back to the first valid target when no surface is active", async () => {
+  const fakeDebugger = new FakeDebugger();
+  const surfaces = [
+    {
+      id: "chrome",
+      label: "Chrome",
+      url: "https://www.google.com/",
+      kind: "webview",
+      active: false,
+      title: "Chrome"
+    },
+    {
+      id: "agent-webclient",
+      label: "智能助理",
+      url: "http://127.0.0.1:7080/copilot",
+      kind: "webview",
+      active: false,
+      title: "智能助理"
+    }
+  ];
+  const { gateway } = await createStartedGateway({
+    getSurfaces: () => surfaces,
+    resolveWebContents: () => null
+  });
+
+  try {
+    const response = await gateway.executeCommand({ method: "Target.getCurrentTarget" });
+    assert.equal(response.surfaceId, "chrome");
+    assert.equal(response.result.currentSurfaceId, "chrome");
+    assert.equal(response.result.targetInfo.surfaceId, "chrome");
+    assert.equal(response.result.targetInfo.active, false);
+    assert.equal(response.result.targetInfo.current, true);
+    assert.deepEqual(fakeDebugger.sent, []);
   } finally {
     await gateway.stop();
   }

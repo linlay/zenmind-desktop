@@ -1279,7 +1279,8 @@ test("embedded cdp exposes service frontends as webview surfaces", () => {
   assert.match(mainProcess, /createEmbeddedCdpServiceSurface/);
   assert.match(mainProcess, /kind:\s*"webview"/);
   assert.match(mainProcess, /webContentsId:\s*contents\?\.id/);
-  assert.match(mainProcess, /resolveEmbeddedCdpWebContents\(surface\)/);
+  assert.match(mainProcess, /active:\s*snapshotMatchesService/);
+  assert.match(mainProcess, /currentPageSnapshotMatchesSurface/);
   assert.doesNotMatch(mainProcess, /failed to list iframe targets/);
 });
 

@@ -2219,12 +2219,21 @@ function findWebContentsForSurfaceUrl(surfaceUrl: string) {
   }) ?? null;
 }
 
+function currentPageSnapshotMatchesSurface(surfaceId: string, contents?: WebContents | null) {
+  const snapshotBrowserTarget = currentPageSnapshot?.pageContext?.browserTarget;
+  return currentPageSnapshot?.pageKind === "webview" && (
+    currentPageSnapshot.surfaceId === surfaceId ||
+    snapshotBrowserTarget?.surfaceId === surfaceId ||
+    (typeof contents?.id === "number" && currentPageSnapshot.webContentsId === contents.id)
+  );
+}
+
 function builtinBrowserSurface(contents: WebContents | null, url = BUILTIN_BROWSER_DEFAULT_URL): BrowserSurface {
   return {
     id: BUILTIN_BROWSER_SURFACE_ID,
     label: BUILTIN_BROWSER_SURFACE_LABEL,
     url,
-    active: Boolean(contents),
+    active: currentPageSnapshotMatchesSurface(BUILTIN_BROWSER_SURFACE_ID, contents),
     currentUrl: contents?.getURL(),
     title: contents?.getTitle(),
     webContentsId: contents?.id
@@ -2241,7 +2250,7 @@ function listBrowserSurfaces(): BrowserSurface[] {
         id: item.id,
         label: item.label,
         url: item.url,
-        active: Boolean(contents),
+        active: currentPageSnapshotMatchesSurface(item.id, contents),
         currentUrl: contents?.getURL(),
         title: contents?.getTitle(),
         webContentsId: contents?.id
@@ -2265,10 +2274,7 @@ async function listEmbeddedCdpSurfaces(): Promise<EmbeddedCdpSurface[]> {
       if (!surface) {
         return null;
       }
-      return {
-        ...surface,
-        active: Boolean(resolveEmbeddedCdpWebContents(surface))
-      };
+      return surface;
     }));
     serviceSurfaces = surfaces.filter((surface): surface is EmbeddedCdpSurface => surface !== null);
   } catch (error) {
@@ -2302,7 +2308,7 @@ function createEmbeddedCdpServiceSurface(service: ServiceState): EmbeddedCdpSurf
     label: service.name || service.id,
     url: webUrl,
     kind: "webview",
-    active: Boolean(contents),
+    active: snapshotMatchesService,
     currentUrl: snapshotCurrentUrl || contents?.getURL(),
     title: documentTitle || service.name || service.id,
     webContentsId: contents?.id,
