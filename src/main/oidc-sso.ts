@@ -32,7 +32,7 @@ type TokenExchangeRequest = {
   url: string;
   method: "POST";
   headers: Record<string, string>;
-  body: string;
+  body?: string;
 };
 
 type FetchResponseLike = {
@@ -187,6 +187,17 @@ function readFetchErrorStatus(response: FetchResponseLike) {
   return [status, statusText].filter(Boolean).join(" ") || "request failed";
 }
 
+async function readFetchErrorBody(response: FetchResponseLike) {
+  if (typeof response.text !== "function") {
+    return "";
+  }
+  try {
+    return (await response.text()).trim().slice(0, 300);
+  } catch {
+    return "";
+  }
+}
+
 function decodeJsonPart(part: string) {
   return JSON.parse(Buffer.from(part, "base64url").toString("utf8")) as Record<string, unknown>;
 }
@@ -321,21 +332,17 @@ export function isDesktopSsoAuthorizeUrl(value: string, config: OidcConfig = DEF
 
 function buildTokenExchangeRequest(code: string, config: OidcConfig = DEFAULT_OIDC_CONFIG): TokenExchangeRequest {
   const tokenUrl = new URL(config.tokenUrl);
-  const body = new URLSearchParams(tokenUrl.search);
-  body.set("client_id", config.clientId);
-  body.set("client_secret", config.clientSecret);
-  body.set("redirect_uri", config.redirectUri);
-  body.set("grant_type", "authorization_code");
-  body.set("code", code);
-  tokenUrl.search = "";
+  tokenUrl.searchParams.set("client_id", config.clientId);
+  tokenUrl.searchParams.set("client_secret", config.clientSecret);
+  tokenUrl.searchParams.set("redirect_uri", config.redirectUri);
+  tokenUrl.searchParams.set("grant_type", "authorization_code");
+  tokenUrl.searchParams.set("code", code);
   return {
     url: tokenUrl.toString(),
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
       "Accept": "application/json"
-    },
-    body: body.toString()
+    }
   };
 }
 
@@ -362,7 +369,8 @@ function normalizeCallbackRequest(
 async function fetchJson(fetchImpl: FetchLike, url: string, init?: Parameters<FetchLike>[1]) {
   const response = await fetchImpl(url, init);
   if (!response.ok) {
-    throw new Error(`OIDC request failed: ${readFetchErrorStatus(response)}`);
+    const detail = await readFetchErrorBody(response);
+    throw new Error(`OIDC request failed: ${readFetchErrorStatus(response)}${detail ? ` - ${detail}` : ""}`);
   }
   return response.json();
 }

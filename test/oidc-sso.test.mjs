@@ -49,17 +49,19 @@ test("getIdentityProviderCookieHosts targets the IAM host used by Chrome login",
   assert.deepEqual(getIdentityProviderCookieHosts(), ["eiam.qiuer.net"]);
 });
 
-test("buildTokenExchangeRequest posts code and secret from the main-process config", () => {
+test("buildTokenExchangeRequest posts the document-style token URL from the main-process config", () => {
   const request = buildTokenExchangeRequest("callback-code");
-  const body = new URLSearchParams(request.body);
+  const url = new URL(request.url);
 
-  assert.equal(request.url, "https://eiam.qiuer.net/auth/oauth2/token");
+  assert.equal(url.origin + url.pathname, "https://eiam.qiuer.net/auth/oauth2/token");
   assert.equal(request.method, "POST");
-  assert.equal(body.get("client_id"), DEFAULT_OIDC_CONFIG.clientId);
-  assert.equal(body.get("client_secret"), DEFAULT_OIDC_CONFIG.clientSecret);
-  assert.equal(body.get("redirect_uri"), DEFAULT_OIDC_CONFIG.redirectUri);
-  assert.equal(body.get("grant_type"), "authorization_code");
-  assert.equal(body.get("code"), "callback-code");
+  assert.equal(url.searchParams.get("client_id"), DEFAULT_OIDC_CONFIG.clientId);
+  assert.equal(url.searchParams.get("client_secret"), DEFAULT_OIDC_CONFIG.clientSecret);
+  assert.equal(url.searchParams.get("redirect_uri"), DEFAULT_OIDC_CONFIG.redirectUri);
+  assert.equal(url.searchParams.get("grant_type"), "authorization_code");
+  assert.equal(url.searchParams.get("code"), "callback-code");
+  assert.equal(request.body, undefined);
+  assert.equal("Content-Type" in request.headers, false);
 });
 
 test("normalizeCallbackRequest rejects missing, mismatched, and reused authorization codes", () => {
