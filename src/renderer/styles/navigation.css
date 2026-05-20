@@ -448,7 +448,7 @@
 .sidebar-group-heading {
   display: flex;
   align-items: center;
-  width: auto;
+  width: calc(100% - 8px);
   min-height: 28px;
   gap: 8px;
   margin: 8px 4px 2px;
@@ -468,7 +468,8 @@
 .sidebar-group-heading-main {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
@@ -1023,7 +1024,7 @@
 }
 
 .sidebar-tool-menu-trigger {
-  width: auto;
+  width: calc(100% - 8px);
 }
 
 .sidebar-tool-menu-trigger .sidebar-link-label {

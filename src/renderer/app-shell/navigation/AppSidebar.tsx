@@ -221,6 +221,13 @@ function createAgentNewChatRoute(agentKey: string) {
   return createAgentRoute(agentKey);
 }
 
+function createAgentHistoryRoute(agentKey: string) {
+  const params = new URLSearchParams();
+  params.set("history", "1");
+  params.set("historyRequest", String(Date.now()));
+  return `${createAgentRoute(agentKey)}?${params.toString()}`;
+}
+
 function summarizeAgentStatus(items: AssistantNavAgentItem[]): SidebarStatusSummary {
   return {
     unreadCount: items.reduce((total, item) => total + Math.max(0, item.unreadCount), 0),
@@ -636,7 +643,9 @@ export function AppSidebar({
   }
 
   function isAssistantGroupActive() {
-    return currentPathname === "/service/agent-webclient" || Boolean(pendingPath?.startsWith("/service/agent-webclient"));
+    return currentPathname === "/service/agent-webclient" ||
+      currentPathname.startsWith("/agent/") ||
+      Boolean(pendingPath?.startsWith("/service/agent-webclient") || pendingPath?.startsWith("/agent/"));
   }
 
   function isWebsiteGroupActive() {
@@ -764,9 +773,10 @@ export function AppSidebar({
   function renderAssistantAgent(agent: AssistantNavAgentItem) {
     const expanded = expandedAssistantAgentKey === agent.agentKey;
     const selected = currentAgentKey === agent.agentKey || pendingAgentKey === agent.agentKey;
-    const recentChats = agent.recentChats ?? [];
+    const recentChats = (agent.recentChats ?? []).slice(0, 5);
+    const chatCount = Math.max(0, agent.chatCount, recentChats.length);
     const unreadCount = Math.max(0, agent.unreadCount || agent.unreadChatCount || 0);
-    const latestPreview = agent.latestPreview || "暂无会话";
+    const latestPreview = agent.latestPreview || (chatCount > 0 ? "" : "暂无会话");
     const activeChatId = currentChatId || agent.latestChatId || "";
     return (
       <div
@@ -841,19 +851,19 @@ export function AppSidebar({
               <div className="worker-chat-divider" />
               {recentChats.length > 0 ? (
                 recentChats.map((chat) => renderAssistantChatRow(chat, activeChatId))
-              ) : (
+              ) : chatCount === 0 ? (
                 <div className="status-line">暂无会话</div>
-              )}
-              {Math.max(agent.chatCount, recentChats.length) > 5 ? (
+              ) : null}
+              {chatCount > recentChats.length ? (
                 <button
                   type="button"
                   className="worker-chat-more assistant-worker-more"
                   onClick={(event) => {
                     event.stopPropagation();
-                    requestNavigate(createAgentRoute(agent.agentKey));
+                    requestNavigate(createAgentHistoryRoute(agent.agentKey));
                   }}
                 >
-                  查看更多（共 {Math.max(agent.chatCount, recentChats.length)} 条{unreadCount > 0 ? `，未读 ${unreadCount} 条` : ""}）
+                  查看更多（共 {chatCount} 条{unreadCount > 0 ? `，未读 ${unreadCount} 条` : ""}）
                 </button>
               ) : null}
             </div>
@@ -899,10 +909,13 @@ export function AppSidebar({
           aria-label={args.label}
           title={args.label}
         >
+          {!isCollapsed ? <span className="sidebar-group-divider" aria-hidden="true" /> : null}
           <span className="sidebar-group-heading-main">
-            <span className="sidebar-link-icon">
-              <SidebarIllustration kind={args.icon} />
-            </span>
+            {isCollapsed ? (
+              <span className="sidebar-link-icon">
+                <SidebarIllustration kind={args.icon} />
+              </span>
+            ) : null}
             <span className="sidebar-link-label">{args.label}</span>
             {args.status ? renderStatusBadges(args.status, "sidebar-group-status") : null}
           </span>
@@ -1098,17 +1111,17 @@ export function AppSidebar({
                 .join(" ")}
               ref={toolMenuTriggerRef}
               onClick={handleToolMenuTriggerClick}
-              aria-label="打开固定工具区"
+              aria-label="打开设置"
               aria-haspopup="menu"
               aria-expanded={toolMenuOpen}
-              title="工具"
+              title="设置"
             >
               <span className="sidebar-link-icon">
                 <SidebarIllustration kind="control" />
               </span>
-              <span className="sidebar-link-label">工具</span>
+              <span className="sidebar-link-label">设置</span>
               <span className="sidebar-link-label-collapsed" aria-hidden="true">
-                {getCollapsedSidebarLabel("工具")}
+                {getCollapsedSidebarLabel("设置")}
               </span>
             </button>
           </div>

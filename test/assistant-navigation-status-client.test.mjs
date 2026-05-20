@@ -100,6 +100,54 @@ test("assistant navigation snapshot flattens chats from agents only", () => {
   assert.equal(items[0].recentChats[0].agentKey, "zenmi");
 });
 
+test("assistant navigation snapshot reads compatible agent chat fields", () => {
+  const items = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "alpha",
+      name: "Alpha",
+      stats: { totalCount: 6, unreadCount: 0 },
+      recentChats: Array.from({ length: 6 }, (_value, index) => ({
+        chatId: `recent-${index}`,
+        chatName: `Recent ${index}`,
+        updatedAt: 1000 + index
+      }))
+    },
+    {
+      key: "beta",
+      name: "Beta",
+      stats: { totalCount: 7, unreadCount: 0 },
+      relatedChats: [
+        {
+          id: "related-1",
+          title: "Related title",
+          lastMessage: "Related preview",
+          updatedAt: 2000
+        }
+      ]
+    }
+  ]);
+
+  const alpha = items.find((item) => item.agentKey === "alpha");
+  const beta = items.find((item) => item.agentKey === "beta");
+
+  assert.ok(alpha);
+  assert.equal(alpha.chatCount, 6);
+  assert.equal(alpha.recentChats.length, 5);
+  assert.deepEqual(alpha.recentChats.map((chat) => chat.chatId), [
+    "recent-5",
+    "recent-4",
+    "recent-3",
+    "recent-2",
+    "recent-1"
+  ]);
+
+  assert.ok(beta);
+  assert.equal(beta.chatCount, 7);
+  assert.equal(beta.recentChats[0].chatId, "related-1");
+  assert.equal(beta.recentChats[0].chatName, "Related title");
+  assert.equal(beta.latestPreview, "Related preview");
+});
+
 test("assistant navigation push reducer handles read, unread and read_all", () => {
   const baseItems = buildAssistantNavigationAgentsFromPlatformAgents([
     {

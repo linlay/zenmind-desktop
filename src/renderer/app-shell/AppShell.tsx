@@ -1240,8 +1240,10 @@ function resolveSingleAgentWebclientRoute(pathname: string, search: string) {
 
   const params = new URLSearchParams(search);
   const embedParams = new URLSearchParams();
-  if (params.has("chatId")) {
-    embedParams.set("chatId", params.get("chatId")?.trim() ?? "");
+  for (const key of ["chatId", "history", "historyRequest"]) {
+    if (params.has(key)) {
+      embedParams.set(key, params.get(key)?.trim() ?? "");
+    }
   }
   const embedQuery = embedParams.toString();
   return {

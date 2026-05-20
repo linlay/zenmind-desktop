@@ -16,14 +16,20 @@ type AgentPlatformApiResponse<T> = {
 };
 
 type PlatformChatSummary = {
+  id?: unknown;
   chatId?: unknown;
   chatName?: unknown;
+  name?: unknown;
+  title?: unknown;
   agentKey?: unknown;
   firstAgentKey?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
   lastRunId?: unknown;
   lastRunContent?: unknown;
+  lastMessage?: unknown;
+  preview?: unknown;
+  message?: unknown;
   read?: unknown;
   isRead?: unknown;
   awaiting?: unknown;
@@ -43,6 +49,10 @@ type PlatformAgentSummary = {
     unreadCount?: unknown;
   };
   chats?: unknown;
+  recentChats?: unknown;
+  relatedChats?: unknown;
+  chatList?: unknown;
+  conversations?: unknown;
 };
 
 type NavigationPushFrame = {
@@ -257,12 +267,12 @@ function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem
 }
 
 function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): AssistantNavChatItem | null {
-  const chatId = toText(chat.chatId);
+  const chatId = toText(chat.chatId) || toText(chat.id);
   if (!chatId) {
     return null;
   }
-  const lastRunContent = toText(chat.lastRunContent);
-  const chatName = toText(chat.chatName) || lastRunContent || "新的对话";
+  const lastRunContent = toText(chat.lastRunContent) || toText(chat.lastMessage) || toText(chat.preview) || toText(chat.message);
+  const chatName = toText(chat.chatName) || toText(chat.name) || toText(chat.title) || lastRunContent || "新的对话";
   return {
     chatId,
     chatName,
@@ -275,12 +285,28 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
   };
 }
 
+function readAgentRawChatLists(agent: PlatformAgentSummary): unknown[][] {
+  return [
+    agent.chats,
+    agent.recentChats,
+    agent.relatedChats,
+    agent.chatList,
+    agent.conversations
+  ].filter((candidate): candidate is unknown[] => Array.isArray(candidate));
+}
+
 function readAgentChats(agent: PlatformAgentSummary, agentKey: string): AssistantNavChatItem[] {
-  const rawChats = Array.isArray(agent.chats) ? agent.chats : [];
-  return rawChats
-    .map((chat) => mapNavigationChat(chat as PlatformChatSummary, agentKey))
-    .filter((chat): chat is AssistantNavChatItem => Boolean(chat))
-    .sort(compareNavChats);
+  const chatsById = new Map<string, AssistantNavChatItem>();
+  for (const rawChats of readAgentRawChatLists(agent)) {
+    for (const rawChat of rawChats) {
+      const chat = mapNavigationChat(rawChat as PlatformChatSummary, agentKey);
+      if (!chat || chatsById.has(chat.chatId)) {
+        continue;
+      }
+      chatsById.set(chat.chatId, chat);
+    }
+  }
+  return [...chatsById.values()].sort(compareNavChats);
 }
 
 function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit: number): AssistantNavAgentItem | null {
