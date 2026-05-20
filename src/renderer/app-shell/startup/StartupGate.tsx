@@ -62,7 +62,6 @@ export function StartupLoadingScreen({
   return (
     <div className="startup-loading-screen">
       <div className="startup-loading-card">
-        <div className="startup-loading-mark" aria-hidden="true">Z</div>
         <h1>{title}</h1>
         <p className="startup-loading-status">{statusText}</p>
 
