@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { FormEvent } from "react";
 import { useLocation } from "react-router-dom";
 import { CustomSidebarIcon } from "../../components/BrandMark";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
@@ -67,13 +67,6 @@ type SettingsNotice = {
   message: string;
 };
 
-type SidebarNavPointerDragState = {
-  key: SidebarNavOrderItemKey;
-  pointerId: number;
-  startX: number;
-  startY: number;
-  dragging: boolean;
-};
 type SectionReadErrorMap = Partial<Record<SettingsSectionId, string>>;
 
 const SETTINGS_ACTION_PATCH_FIELDS = [
@@ -137,15 +130,14 @@ function buildSettingsActionPatch(
 }
 
 function getCopilotPageKeyForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey): DesktopCopilotPageKey | null {
-  switch (itemKey) {
-    case "market":
-      return "market";
-    default:
-      return null;
-  }
+  void itemKey;
+  return null;
 }
 
 function getFixedAssistantLabelForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey): string | null {
+  if (itemKey === "kanban") {
+    return "预留入口";
+  }
   if (itemKey === "group:assistants" || itemKey === "group:websites") {
     return "分组入口";
   }
@@ -176,7 +168,10 @@ const fixedNavigationToolRows: FixedNavigationToolConfig[][] = [
   ],
   [
     { id: "controlCenter", label: "控制中心", copilotPageKey: "controlCenter" },
+    { id: "market", label: "功能市场", copilotPageKey: "market" },
     { id: "settings", label: "设置", copilotPageKey: null, fixedAssistantLabel: "默认助手" },
+  ],
+  [
     { id: "help", label: "帮助", copilotPageKey: "help" }
   ]
 ];
@@ -225,32 +220,6 @@ function formatMemoryAuditSummary(summary: AssistantMemorySummary["recentAudit"]
     return "暂无操作";
   }
   return [summary.operation, summary.status, summary.reason].filter(Boolean).join(" / ");
-}
-
-function moveSidebarNavOrderItemToIndex(
-  order: SidebarNavOrderItemKey[],
-  movedKey: SidebarNavOrderItemKey,
-  targetIndex: number
-) {
-  const movedIndex = order.indexOf(movedKey);
-  if (movedIndex === -1) {
-    return order;
-  }
-
-  const boundedTargetIndex = Math.max(0, Math.min(targetIndex, order.length));
-  const insertionIndex = movedIndex < boundedTargetIndex ? boundedTargetIndex - 1 : boundedTargetIndex;
-  if (insertionIndex === movedIndex) {
-    return order;
-  }
-
-  const nextOrder = [...order];
-  const [movedItem] = nextOrder.splice(movedIndex, 1);
-  if (!movedItem) {
-    return order;
-  }
-
-  nextOrder.splice(insertionIndex, 0, movedItem);
-  return nextOrder;
 }
 
 function WindowsDataRootCard() {
@@ -353,14 +322,8 @@ export function SettingsPage({
   const [desktopPetBoundAgentKey, setDesktopPetBoundAgentKey] = useState(DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY);
   const [desktopPetBoundAgentPending, setDesktopPetBoundAgentPending] = useState(false);
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
-  const [draggingSidebarNavKey, setDraggingSidebarNavKey] = useState<SidebarNavOrderItemKey | null>(null);
-  const [sidebarNavDragOffsetY, setSidebarNavDragOffsetY] = useState(0);
   const desktopPetSupported = isMac || isWindows;
   const contentRef = useRef<HTMLDivElement>(null);
-  const navigationOrderListRef = useRef<HTMLDivElement>(null);
-  const sidebarNavOrderRef = useRef(sidebarNavOrder);
-  const sidebarNavPointerDragRef = useRef<SidebarNavPointerDragState | null>(null);
-  const sidebarNavPointerCleanupRef = useRef<(() => void) | null>(null);
   const sectionDefinitions = useMemo(
     () =>
       createSettingsSectionDefinitions({
@@ -419,10 +382,6 @@ export function SettingsPage({
   ) {
     showSectionNotice(sectionId, result.message, result.ok ? "success" : "error");
   }
-
-  useEffect(() => {
-    sidebarNavOrderRef.current = sidebarNavOrder;
-  }, [sidebarNavOrder]);
 
   useEffect(() => {
     const fallbackSectionId = getDefaultSettingsSectionId(sectionDefinitions);
@@ -1411,149 +1370,6 @@ export function SettingsPage({
     }
   }
 
-  function clearSidebarNavPointerListeners() {
-    sidebarNavPointerCleanupRef.current?.();
-    sidebarNavPointerCleanupRef.current = null;
-  }
-
-  function finishSidebarNavPointerDrag() {
-    const pointerDragState = sidebarNavPointerDragRef.current;
-    if (pointerDragState?.dragging) {
-      setFeedback("导航页签排序已更新。");
-    }
-    clearSidebarNavPointerListeners();
-    sidebarNavPointerDragRef.current = null;
-    setDraggingSidebarNavKey(null);
-    setSidebarNavDragOffsetY(0);
-  }
-
-  function updateSidebarNavPointerDrag(clientX: number, clientY: number) {
-    const pointerDragState = sidebarNavPointerDragRef.current;
-    const navigationOrderList = navigationOrderListRef.current;
-    if (!pointerDragState || !navigationOrderList) {
-      return false;
-    }
-
-    const movedDistance = Math.abs(clientX - pointerDragState.startX) +
-      Math.abs(clientY - pointerDragState.startY);
-    if (!pointerDragState.dragging && movedDistance < 6) {
-      return false;
-    }
-
-    pointerDragState.dragging = true;
-    setDraggingSidebarNavKey(pointerDragState.key);
-
-    const rowElements = Array.from(
-      navigationOrderList.querySelectorAll<HTMLElement>("[data-sidebar-nav-order-key]")
-    ).filter((rowElement) => rowElement.dataset.sidebarNavOrderKey !== pointerDragState.key);
-    const currentOrder = sidebarNavOrderRef.current;
-    let insertionIndex = currentOrder.length;
-    for (const rowElement of rowElements) {
-      const rowRect = rowElement.getBoundingClientRect();
-      const targetKey = rowElement.dataset.sidebarNavOrderKey as SidebarNavOrderItemKey | undefined;
-      if (clientY < rowRect.top + rowRect.height / 2) {
-        const targetIndex = targetKey ? currentOrder.indexOf(targetKey) : -1;
-        insertionIndex = targetIndex === -1 ? insertionIndex : targetIndex;
-        break;
-      }
-    }
-
-    const nextOrder = moveSidebarNavOrderItemToIndex(
-      currentOrder,
-      pointerDragState.key,
-      insertionIndex
-    );
-    if (nextOrder !== currentOrder) {
-      sidebarNavOrderRef.current = nextOrder;
-      onSidebarNavOrderChange(nextOrder);
-      pointerDragState.startX = clientX;
-      pointerDragState.startY = clientY;
-      setSidebarNavDragOffsetY(0);
-    } else {
-      setSidebarNavDragOffsetY(clientY - pointerDragState.startY);
-    }
-
-    return true;
-  }
-
-  function handleSidebarNavPointerDown(
-    event: ReactPointerEvent<HTMLDivElement>,
-    itemKey: SidebarNavOrderItemKey
-  ) {
-    if (event.button !== 0) {
-      return;
-    }
-
-    const target = event.target;
-    if (target instanceof HTMLElement && target.closest("button, select, input, textarea, a")) {
-      return;
-    }
-
-    event.preventDefault();
-    clearSidebarNavPointerListeners();
-    sidebarNavPointerDragRef.current = {
-      key: itemKey,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      dragging: false
-    };
-
-    const document = event.currentTarget.ownerDocument;
-    const handleDocumentPointerMove = (pointerEvent: PointerEvent) => {
-      const pointerDragState = sidebarNavPointerDragRef.current;
-      if (!pointerDragState || pointerEvent.pointerId !== pointerDragState.pointerId) {
-        return;
-      }
-
-      if (updateSidebarNavPointerDrag(pointerEvent.clientX, pointerEvent.clientY)) {
-        pointerEvent.preventDefault();
-      }
-    };
-    const handleDocumentPointerEnd = (pointerEvent: PointerEvent) => {
-      const pointerDragState = sidebarNavPointerDragRef.current;
-      if (!pointerDragState || pointerEvent.pointerId !== pointerDragState.pointerId) {
-        return;
-      }
-
-      finishSidebarNavPointerDrag();
-    };
-
-    document.addEventListener("pointermove", handleDocumentPointerMove, { passive: false });
-    document.addEventListener("pointerup", handleDocumentPointerEnd);
-    document.addEventListener("pointercancel", handleDocumentPointerEnd);
-    sidebarNavPointerCleanupRef.current = () => {
-      document.removeEventListener("pointermove", handleDocumentPointerMove);
-      document.removeEventListener("pointerup", handleDocumentPointerEnd);
-      document.removeEventListener("pointercancel", handleDocumentPointerEnd);
-    };
-  }
-
-  useEffect(() => () => {
-    clearSidebarNavPointerListeners();
-  }, []);
-
-  function moveSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey, direction: -1 | 1) {
-    const currentIndex = sidebarNavOrder.indexOf(itemKey);
-    const nextIndex = currentIndex + direction;
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= sidebarNavOrder.length) {
-      return;
-    }
-    const nextOrder = [...sidebarNavOrder];
-    const [movedItem] = nextOrder.splice(currentIndex, 1);
-    nextOrder.splice(nextIndex, 0, movedItem);
-    sidebarNavOrderRef.current = nextOrder;
-    onSidebarNavOrderChange(nextOrder);
-    showSectionNotice("navigation", "导航页签排序已更新。", "success");
-  }
-
-  function resetSidebarNavOrder() {
-    const nextOrder = availableSidebarNavOrderItems.map((item) => item.key);
-    sidebarNavOrderRef.current = nextOrder;
-    onSidebarNavOrderChange(nextOrder);
-    showSectionNotice("navigation", "导航页签排序已恢复默认。", "success");
-  }
-
   const sidebarNavOrderLabels = new Map(availableSidebarNavOrderItems.map((item) => [item.key, item.label]));
   const activeSectionDefinition = activeSection
     ? visibleSections.find((definition) => definition.id === activeSection) ?? null
@@ -1711,17 +1527,15 @@ export function SettingsPage({
               </div>
               <div className="navigation-order-section">
                 <div className="custom-sidebar-list-head">
-                  <strong>可排序主项</strong>
-                  <button type="button" className="text-button" onClick={resetSidebarNavOrder}>
-                    恢复默认
-                  </button>
+                  <strong>固定主导航</strong>
+                  <span>顺序固定为任务看板、智能助理、内嵌网站。</span>
                 </div>
                 <div className="navigation-order-grid-head" aria-hidden="true">
                   <span>页面</span>
                   <span>带侧边助手</span>
-                  <span>排序</span>
+                  <span>状态</span>
                 </div>
-                <div className="navigation-order-list" ref={navigationOrderListRef} role="list" aria-label="导航页签排序">
+                <div className="navigation-order-list" role="list" aria-label="固定主导航顺序">
                   {sidebarNavOrder.map((itemKey, index) => {
                     const itemLabel = sidebarNavOrderLabels.get(itemKey) ?? itemKey;
                     const copilotPageKey = getCopilotPageKeyForSidebarNavOrderItem(itemKey);
@@ -1743,22 +1557,17 @@ export function SettingsPage({
                     const showUnavailableAgentOption = Boolean(
                       selectedCopilotAgentKey && !selectedAgentAvailable
                     );
-                    const isDragging = draggingSidebarNavKey === itemKey;
                     return (
                       <div
-                        className={isDragging ? "navigation-order-row is-dragging" : "navigation-order-row"}
+                        className="navigation-order-row"
                         data-sidebar-nav-order-key={itemKey}
                         key={itemKey}
                         role="listitem"
-                        aria-grabbed={isDragging}
-                        style={isDragging ? { transform: `translateY(${sidebarNavDragOffsetY}px)` } : undefined}
                       >
                         <div
                           className="navigation-order-title-cell"
-                          title="拖动排序"
-                          onPointerDown={(event) => handleSidebarNavPointerDown(event, itemKey)}
+                          title={`第 ${index + 1} 项`}
                         >
-                          <span className="navigation-order-drag-handle" aria-hidden="true" />
                           <span className="navigation-order-title">{itemLabel}</span>
                         </div>
                         <label className="navigation-order-assistant-field">
@@ -1791,22 +1600,7 @@ export function SettingsPage({
                           </span>
                         </label>
                         <div className="navigation-order-actions">
-                          <button
-                            type="button"
-                            className="text-button"
-                            disabled={index === 0}
-                            onClick={() => moveSidebarNavOrderItem(itemKey, -1)}
-                          >
-                            上移
-                          </button>
-                          <button
-                            type="button"
-                            className="text-button"
-                            disabled={index === sidebarNavOrder.length - 1}
-                            onClick={() => moveSidebarNavOrderItem(itemKey, 1)}
-                          >
-                            下移
-                          </button>
+                          <span className="navigation-order-fixed-label">第 {index + 1} 项</span>
                         </div>
                       </div>
                     );
@@ -1814,7 +1608,7 @@ export function SettingsPage({
                 </div>
                 <div className="custom-sidebar-list-head navigation-fixed-tools-head">
                   <strong>固定工具区</strong>
-                  <span>固定为两行三列，不参与排序。</span>
+                  <span>固定为弹出菜单，不参与排序。</span>
                 </div>
                 <div className="navigation-order-list navigation-fixed-tool-list" role="list" aria-label="固定工具区">
                   {fixedNavigationTools.map((tool) => renderFixedNavigationToolRow(tool))}

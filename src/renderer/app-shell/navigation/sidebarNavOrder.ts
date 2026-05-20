@@ -1,4 +1,5 @@
 export type SidebarNavOrderItemKey =
+  | "kanban"
   | "group:assistants"
   | "group:websites"
   | "assistant"
@@ -23,9 +24,9 @@ type SidebarNavOrderInput = {
 };
 
 export const STATIC_SIDEBAR_NAV_ORDER_ITEMS: SidebarNavOrderItem[] = [
-  { key: "group:assistants", label: "智能助手" },
+  { key: "kanban", label: "任务看板" },
+  { key: "group:assistants", label: "智能助理" },
   { key: "group:websites", label: "内嵌网站" },
-  { key: "market", label: "功能市场" }
 ];
 
 export function createServiceSidebarNavOrderKey(serviceId: string): SidebarNavOrderItemKey {
@@ -41,16 +42,14 @@ export function createCustomSidebarNavOrderKey(itemId: string): SidebarNavOrderI
 }
 
 export function createDefaultSidebarNavOrderItems({
-  serviceItems,
-  experimentalItems
+  serviceItems: _serviceItems,
+  experimentalItems: _experimentalItems
 }: SidebarNavOrderInput): SidebarNavOrderItem[] {
   const staticItems = new Map(STATIC_SIDEBAR_NAV_ORDER_ITEMS.map((item) => [item.key, item]));
   return [
+    staticItems.get("kanban")!,
     staticItems.get("group:assistants")!,
-    staticItems.get("group:websites")!,
-    ...serviceItems,
-    ...experimentalItems,
-    staticItems.get("market")!
+    staticItems.get("group:websites")!
   ];
 }
 
@@ -58,27 +57,8 @@ export function normalizeSidebarNavOrder(
   candidate: unknown,
   availableItems: SidebarNavOrderItem[]
 ): SidebarNavOrderItemKey[] {
-  const availableKeys = new Set(availableItems.map((item) => item.key));
-  const normalized: SidebarNavOrderItemKey[] = [];
-  if (Array.isArray(candidate)) {
-    for (const value of candidate) {
-      if (typeof value !== "string" || !availableKeys.has(value as SidebarNavOrderItemKey)) {
-        continue;
-      }
-      const key = value as SidebarNavOrderItemKey;
-      if (!normalized.includes(key)) {
-        normalized.push(key);
-      }
-    }
-  }
-
-  for (const item of availableItems) {
-    if (!normalized.includes(item.key)) {
-      normalized.push(item.key);
-    }
-  }
-
-  return normalized;
+  void candidate;
+  return availableItems.map((item) => item.key);
 }
 
 export function sortSidebarNavItems<T extends { orderKey: SidebarNavOrderItemKey }>(

@@ -45,12 +45,10 @@ import {
   toggleSidebarLayoutState,
   type SidebarLayoutState
 } from "../../shared/sidebar-layout";
-import { getServiceDisplayName, shouldShowServiceNavigationTab } from "../service-display";
+import { getServiceDisplayName } from "../service-display";
 import {
   createCustomSidebarNavOrderKey,
   createDefaultSidebarNavOrderItems,
-  createExperimentalSidebarNavOrderKey,
-  createServiceSidebarNavOrderKey,
   normalizeSidebarNavOrder,
   type SidebarNavOrderItem,
   type SidebarNavOrderItemKey
@@ -235,6 +233,7 @@ export function AppShell() {
     location.pathname.startsWith("/plugin/");
   const isMarketRoute = location.pathname === "/market";
   const usesStandardBaseSurface =
+    location.pathname === "/kanban" ||
     location.pathname === "/control-center" ||
     location.pathname === "/market" ||
     location.pathname === "/help" ||
@@ -263,22 +262,12 @@ export function AppShell() {
   const sidebarCollapsed = sidebarState.mode === "collapsed";
   const renderedSidebarWidth = resolveRenderedSidebarWidth(sidebarState);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
-    const serviceItems = services
-      .filter(shouldShowServiceNavigationTab)
-      .map((service) => ({
-        key: createServiceSidebarNavOrderKey(service.id),
-        label: getServiceDisplayName(service.id, service.name)
-      }));
-    const experimentalItems = EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => ({
-      key: createExperimentalSidebarNavOrderKey(item.id),
-      label: item.label
-    }));
     return createDefaultSidebarNavOrderItems({
-      serviceItems,
-      experimentalItems,
+      serviceItems: [],
+      experimentalItems: [],
       customItems: []
     });
-  }, [services]);
+  }, []);
   const normalizedSidebarNavOrder = useMemo(
     () => normalizeSidebarNavOrder(sidebarNavOrder, availableSidebarNavOrderItems),
     [availableSidebarNavOrderItems, sidebarNavOrder]
@@ -1101,6 +1090,7 @@ export function AppShell() {
                 />
               }
             />
+            <Route path="/kanban" element={<KanbanPlaceholderPage />} />
             <Route path="/control-center" element={<ControlCenterPage />} />
             <Route
               path="/settings"
@@ -1208,4 +1198,14 @@ function resolveAgentWebclientRoute(pathname: string) {
 
 function resolveCustomSidebarRouteId(pathname: string) {
   return matchPath("/custom-sidebar/:itemId", pathname)?.params.itemId ?? null;
+}
+
+function KanbanPlaceholderPage() {
+  return (
+    <section className="empty-state kanban-placeholder-page">
+      <p className="eyebrow">KANBAN</p>
+      <h1>任务看板</h1>
+      <p>任务看板入口已预留，后续会在这里集中展示任务、进度和待处理事项。</p>
+    </section>
+  );
 }

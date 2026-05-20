@@ -286,7 +286,7 @@ test("desktop custom theme tokens are shared by control center and log viewer", 
   assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.control-center-page\s*\{[\s\S]*?--control-center-bg:/);
 });
 
-test("assistant launcher sits beside settings in the sidebar footer", () => {
+test("assistant launcher sits beside the sidebar collapse button", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
@@ -299,15 +299,15 @@ test("assistant launcher sits beside settings in the sidebar footer", () => {
   assert.match(appShell, /function AgentWebclientCopilotDock/);
   assert.match(appShell, /onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}/);
   assert.match(appShell, /embedPath=\{AGENT_WEBCLIENT_COPILOT_PATH\}/);
-  assert.match(sidebarSource, /sidebar-footer-actions/);
-  assert.match(sidebarSource, /sidebar-assistant-launcher/);
+  assert.match(sidebarSource, /sidebar-top-actions/);
+  assert.match(sidebarSource, /sidebar-assistant-top-button/);
   assert.match(sidebarSource, /"打开 ZenMind 助手"/);
   assert.match(sidebarSource, /"关闭 ZenMind 助手"/);
   assert.match(sidebarSource, /"当前页面不可开启 ZenMind 助手"/);
   assert.match(globalStyles, /--assistant-dock-embedded-width:\s*360px;/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{/);
   assert.doesNotMatch(globalStyles, /\.assistant-dock-/);
-  assert.match(globalStyles, /\.sidebar-footer-actions\s*\{[\s\S]*?display:\s*flex;/);
+  assert.match(globalStyles, /\.sidebar-top-actions\s*\{[\s\S]*?display:\s*inline-flex;/);
 });
 
 test("embedded surfaces use theme-backed host colors instead of hard-coded light fallbacks", () => {
@@ -360,7 +360,8 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(sidebarSource, /<div className="sidebar-chrome">/);
   assert.match(sidebarSource, /<div className="sidebar-chrome-drag-region" aria-hidden="true" \/>/);
   assert.match(sidebarSource, /className=\{chromeToolbarClassName\}/);
-  assert.match(sidebarSource, /<div className="sidebar-collapsed-toggle-slot">/);
+  assert.match(sidebarSource, /<div className="sidebar-top-actions">/);
+  assert.doesNotMatch(sidebarSource, /sidebar-collapsed-toggle-slot/);
   assert.doesNotMatch(sidebarSource, /sidebar-collapse-control/);
   assert.ok(collapseButtonRule, "missing .app-sidebar-collapse-button rule");
   assert.match(collapseButtonRule, /appearance:\s*none;/);
@@ -380,7 +381,7 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?width:\s*16px;/);
 });
 
-test("sidebar renders assistant and website groups above the fixed tool matrix", () => {
+test("sidebar renders task board and section groups above the fixed tool menu", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
@@ -390,22 +391,38 @@ test("sidebar renders assistant and website groups above the fixed tool matrix",
     path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
     "utf8"
   );
+  const globalStyles = readRendererStyles();
 
-  assert.match(sidebarSource, /assistantGroupNavItem[\s\S]*?orderKey:\s*"group:assistants"[\s\S]*?label:\s*"智能助手"/);
+  assert.match(sidebarSource, /taskBoardNavItem[\s\S]*?orderKey:\s*"kanban"[\s\S]*?to:\s*"\/kanban"[\s\S]*?label:\s*"任务看板"/);
+  assert.match(sidebarSource, /assistantGroupNavItem[\s\S]*?orderKey:\s*"group:assistants"[\s\S]*?label:\s*"智能助理"/);
   assert.match(sidebarSource, /websitesGroupNavItem[\s\S]*?orderKey:\s*"group:websites"[\s\S]*?label:\s*"内嵌网站"/);
   assert.match(sidebarSource, /SIDEBAR_GROUP_STATE_STORAGE_KEY/);
-  assert.match(sidebarSource, /assistantHomeNavItem[\s\S]*?to:\s*"\/service\/agent-webclient"[\s\S]*?label:\s*"智能助手首页"/);
+  assert.doesNotMatch(sidebarSource, /assistantHomeNavItem/);
+  assert.doesNotMatch(sidebarSource, /智能助理首页|智能助手首页/);
   assert.match(sidebarSource, /createAgentRoute\(agent\.agentKey\)/);
   assert.match(sidebarSource, /renderStatusBadges/);
   assert.match(sidebarSource, /summarizeAgentStatus\(assistantNavAgents\)/);
   assert.match(sidebarSource, /fixedToolRows[\s\S]*?to:\s*"\/agents"[\s\S]*?label:\s*"智能体"[\s\S]*?to:\s*"\/schedules"[\s\S]*?label:\s*"自动化"[\s\S]*?to:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
-  assert.match(sidebarSource, /fixedToolRows[\s\S]*?to:\s*"\/control-center"[\s\S]*?label:\s*"控制中心"[\s\S]*?to:\s*"\/settings"[\s\S]*?label:\s*"设置"[\s\S]*?to:\s*"\/help"[\s\S]*?label:\s*"帮助"/);
+  assert.match(sidebarSource, /fixedToolRows[\s\S]*?to:\s*"\/control-center"[\s\S]*?label:\s*"控制中心"[\s\S]*?to:\s*"\/market"[\s\S]*?label:\s*"功能市场"[\s\S]*?to:\s*"\/settings"[\s\S]*?label:\s*"设置"[\s\S]*?to:\s*"\/help"[\s\S]*?label:\s*"帮助"/);
   assert.match(sidebarSource, /sidebar-footer-divider/);
-  assert.match(sidebarSource, /sidebar-tool-assistant/);
-  assert.match(sidebarSource, /sortSidebarNavItems\(\s*\[/);
-  assert.match(sidebarSource, /assistantGroupNavItem,[\s\S]*?websitesGroupNavItem,[\s\S]*?\.\.\.serviceNavItems[\s\S]*?\.\.\.staticNavItems/);
+  assert.match(sidebarSource, /createPortal/);
+  assert.match(sidebarSource, /sidebar-tool-menu-trigger/);
+  assert.match(sidebarSource, /sidebar-tool-menu-item/);
+  assert.match(sidebarSource, /sidebar-assistant-top-button/);
+  assert.match(sidebarSource, /sidebar-group-heading/);
+  assert.doesNotMatch(sidebarSource, /sidebar-tool-grid/);
+  assert.doesNotMatch(sidebarSource, /sidebar-assistant-launcher/);
+  assert.doesNotMatch(sidebarSource, /sortSidebarNavItems\(/);
+  assert.match(sidebarSource, /taskBoardNavItem,[\s\S]*?assistantGroupNavItem,[\s\S]*?websitesGroupNavItem/);
+  assert.match(globalStyles, /\.sidebar-tool-menu\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(globalStyles, /\.sidebar-group-heading\s*\{/);
+  assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
+  assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?margin:\s*0 4px 4px;[\s\S]*?border-left:\s*0;/);
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_ITEMS/);
+  assert.match(appShell, /<Route path="\/kanban" element=\{<KanbanPlaceholderPage \/>/);
+  assert.match(appShell, /function KanbanPlaceholderPage\(\)/);
+  assert.match(appShell, />任务看板</);
   assert.match(appShell, /assistantNavAgents/);
   assert.match(appShell, /listNavigationAgents/);
   assert.match(appShell, /routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?label:\s*"智能体"/);
@@ -470,7 +487,7 @@ test("settings route keeps the global sidebar and renders page-internal split se
   assert.doesNotMatch(sidebarSource, /sidebar-link-settings/);
   assert.match(sidebarSource, /to:\s*"\/settings"[\s\S]*?label:\s*"设置"/);
   assert.match(sidebarSource, /fixedToolRows/);
-  assert.match(sidebarSource, /sidebar-assistant-launcher/);
+  assert.match(sidebarSource, /sidebar-assistant-top-button/);
   assert.match(sidebarSource, /app-sidebar-collapse-button/);
 
   assert.match(settingsPage, /createSettingsSectionDefinitions/);
@@ -527,7 +544,7 @@ test("settings page scopes notices to the active section and keeps load failures
   assert.match(settingsPage, /settings-section-feedback/);
   assert.match(settingsPage, /<PageFeedbackStack/);
   assert.match(settingsPage, /showSectionNotice\("desktopPet", nextState\.enabled \? "桌面宠物已开启。" : "桌面宠物已关闭。", "success"\)/);
-  assert.match(settingsPage, /showSectionNotice\("navigation", "导航页签排序已更新。", "success"\)/);
+  assert.doesNotMatch(settingsPage, /导航页签排序已更新/);
   assert.match(settingsPage, /showSectionNotice\("quickAssistant", reason instanceof Error \? reason\.message : String\(reason\), "error"\)/);
   assert.match(settingsPage, /feedback-banner warning-banner settings-section-read-error/);
   assert.doesNotMatch(settingsPage, /\{feedback \? <div className="feedback-banner">\{feedback\}<\/div> : null\}/);
@@ -570,17 +587,17 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /半透明度/);
   assert.doesNotMatch(settingsPage, /导航栏半透明效果/);
   assert.doesNotMatch(settingsPage, /type="range"/);
-  assert.match(settingsPage, /可排序主项/);
+  assert.match(settingsPage, /固定主导航/);
   assert.match(settingsPage, /固定工具区/);
   assert.match(settingsPage, /带侧边助手/);
   assert.match(settingsPage, /不带侧边助手/);
   assert.match(settingsPage, /getCopilotPageKeyForSidebarNavOrderItem/);
   assert.match(settingsPage, /handleSelectNavigationCopilotAgent/);
-  assert.match(settingsPage, /navigationOrderListRef/);
-  assert.match(settingsPage, /handleSidebarNavPointerDown/);
+  assert.match(settingsPage, /aria-label="固定主导航顺序"/);
   assert.match(settingsPage, /data-sidebar-nav-order-key/);
-  assert.match(settingsPage, /document\.addEventListener\("pointermove"/);
-  assert.match(settingsPage, /navigation-order-drag-handle/);
+  assert.doesNotMatch(settingsPage, /handleSidebarNavPointerDown/);
+  assert.doesNotMatch(settingsPage, /document\.addEventListener\("pointermove"/);
+  assert.doesNotMatch(settingsPage, /navigation-order-drag-handle/);
   assert.match(settingsPage, /内嵌网站/);
   assert.match(settingsPage, /智能体增强/);
   assert.match(settingsPage, /handleUpdateCustomSidebarAgent/);
@@ -604,8 +621,9 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
   assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?label:\s*"智能体"[\s\S]*?label:\s*"自动化"[\s\S]*?label:\s*"记忆管理"/);
-  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?label:\s*"控制中心"[\s\S]*?label:\s*"设置"[\s\S]*?label:\s*"帮助"/);
+  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?label:\s*"控制中心"[\s\S]*?label:\s*"功能市场"[\s\S]*?label:\s*"设置"[\s\S]*?label:\s*"帮助"/);
   assert.match(settingsPage, /copilotPageKey:\s*"controlCenter"/);
+  assert.match(settingsPage, /copilotPageKey:\s*"market"/);
   assert.match(settingsPage, /navigation-order-fixed-label/);
   assert.match(settingsPage, /\{sidebarNavOrder\.map/);
   assert.match(settingsPage, /\{fixedNavigationTools\.map\(\(tool\) => renderFixedNavigationToolRow\(tool\)\)\}/);
@@ -613,10 +631,13 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*desktopHelperAgentKey: normalizedAgentKey\s*\}\)/);
   assert.match(settingsPage, /desktopCopilotPages: nextPages/);
   assert.match(settingsPage, /下方每个固定工具入口可单独选择是否显示侧边助手/);
+  assert.match(settingsPage, /顺序固定为任务看板、智能助理、内嵌网站/);
+  assert.match(settingsPage, /固定为弹出菜单，不参与排序/);
   assert.match(settingsPage, /aria-label="快捷助手配置"/);
   assert.match(settingsPage, /aria-label="侧边助手默认智能体"/);
   assert.match(globalStyles, /grid-template-columns:\s*minmax\(140px,\s*1fr\)\s*minmax\(220px,\s*300px\)\s*124px/);
-  assert.match(globalStyles, /\.navigation-order-actions \.text-button\s*\{[\s\S]*?white-space:\s*nowrap/);
+  assert.doesNotMatch(settingsPage, /onClick=\{resetSidebarNavOrder\}/);
+  assert.doesNotMatch(settingsPage, /moveSidebarNavOrderItem/);
 });
 
 test("sidebar translucency is fixed and not user configurable", () => {
@@ -694,16 +715,20 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   );
 
   assert.match(orderHelper, /export type SidebarNavOrderItemKey/);
+  assert.match(orderHelper, /"kanban"/);
   assert.match(orderHelper, /"group:assistants"/);
   assert.match(orderHelper, /"group:websites"/);
   assert.match(orderHelper, /STATIC_SIDEBAR_NAV_ORDER_ITEMS/);
   assert.match(orderHelper, /createDefaultSidebarNavOrderItems/);
+  assert.match(orderHelper, /staticItems\.get\("kanban"\)/);
+  assert.doesNotMatch(orderHelper, /staticItems\.get\("market"\)/);
   assert.doesNotMatch(orderHelper, /staticItems\.get\("agents"\)/);
   assert.doesNotMatch(orderHelper, /staticItems\.get\("help"\)/);
   assert.doesNotMatch(orderHelper, /\.\.\.customItems/);
+  assert.doesNotMatch(orderHelper, /\.\.\.serviceItems/);
+  assert.doesNotMatch(orderHelper, /\.\.\.experimentalItems/);
   assert.match(orderHelper, /normalizeSidebarNavOrder/);
-  assert.match(orderHelper, /!availableKeys\.has/);
-  assert.match(orderHelper, /normalized\.includes/);
+  assert.match(orderHelper, /return availableItems\.map\(\(item\) => item\.key\)/);
   assert.match(orderHelper, /sortSidebarNavItems/);
   assert.match(appShell, /SIDEBAR_NAV_ORDER_STORAGE_KEY/);
   assert.match(appShell, /CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY/);
@@ -714,7 +739,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /normalizeSidebarNavOrder\(sidebarNavOrder, availableSidebarNavOrderItems\)/);
   assert.match(appShell, /customSidebarNavOrder=\{normalizedCustomSidebarGroupOrder\}/);
   assert.match(sidebarSource, /sidebarNavOrder:\s*SidebarNavOrderItemKey\[\]/);
-  assert.match(sidebarSource, /sortSidebarNavItems\(/);
+  assert.doesNotMatch(sidebarSource, /sortSidebarNavItems\(/);
 });
 
 test("page-level copilot controls sidebar visibility and assistant agent following", () => {
@@ -760,14 +785,14 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.doesNotMatch(sidebarSource, /assistantDockOpen \? "sidebar-link-active" : ""/);
   assert.doesNotMatch(sidebarSource, /!assistantDockOpen && \(isActive \|\| pendingPath === "\/settings"\)/);
   assert.match(sidebarSource, /assistantDockOpen \? "is-assistant-open" : ""/);
-  assert.match(sidebarSource, />侧边助手</);
+  assert.match(sidebarSource, /title="侧边助手"/);
   assert.doesNotMatch(sidebarSource, /sidebar-link-label-collapsed" aria-hidden="true">助手/);
   assert.doesNotMatch(sidebarSource, /assistantDockOpen \? "is-open" : ""/);
   assert.doesNotMatch(sidebarSource, /sidebar-assistant-switch/);
   assert.match(sidebarSource, /disabled=\{assistantLauncherDisabled\}/);
   assert.doesNotMatch(globalStyles, /\.sidebar-assistant-launcher\.is-open/);
-  assert.match(globalStyles, /\.sidebar-assistant-launcher\.is-assistant-open \.sidebar-link-icon/);
-  assert.match(globalStyles, /\.sidebar-assistant-launcher\.is-disabled/);
+  assert.match(globalStyles, /\.sidebar-assistant-top-button:not\(\.is-assistant-open\)/);
+  assert.match(globalStyles, /\.sidebar-assistant-top-button\.is-disabled/);
   assert.doesNotMatch(globalStyles, /\.sidebar-assistant-switch/);
 });
 

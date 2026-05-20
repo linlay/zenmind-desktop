@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
-import { useServices } from "../../services/ServicesContext";
-import { EXTERNAL_EXPERIMENTAL_ITEMS } from "../../App";
 import {
   CustomSidebarIcon,
   SidebarIllustration,
@@ -9,14 +8,7 @@ import {
 } from "../../components/BrandMark";
 import type { AssistantNavAgentItem, CustomSidebarItem } from "../../../shared/contracts";
 import {
-  getServiceDisplayName,
-  shouldShowServiceNavigationTab,
-} from "../../service-display";
-import {
   createCustomSidebarNavOrderKey,
-  createExperimentalSidebarNavOrderKey,
-  createServiceSidebarNavOrderKey,
-  sortSidebarNavItems,
   type SidebarNavOrderItemKey,
 } from "./sidebarNavOrder";
 
@@ -45,6 +37,11 @@ type SidebarStatusSummary = {
   pendingCount: number;
 };
 
+type ToolMenuPosition = {
+  top: number;
+  left: number;
+};
+
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = "zenmind-desktop.sidebar-groups";
 
 const defaultSidebarGroupState: SidebarGroupState = {
@@ -52,10 +49,17 @@ const defaultSidebarGroupState: SidebarGroupState = {
   websites: true,
 };
 
+const taskBoardNavItem: SidebarPrimaryEntry = {
+  orderKey: "kanban",
+  to: "/kanban",
+  label: "任务看板",
+  icon: "futures",
+};
+
 const assistantGroupNavItem: SidebarPrimaryEntry = {
   orderKey: "group:assistants",
   to: "",
-  label: "智能助手",
+  label: "智能助理",
   icon: "assistant",
   entryType: "assistants",
 };
@@ -66,17 +70,6 @@ const websitesGroupNavItem: SidebarPrimaryEntry = {
   label: "内嵌网站",
   icon: "website",
   entryType: "websites",
-};
-
-const staticNavItems: SidebarNavItem[] = [
-  { orderKey: "market", to: "/market", label: "功能市场", icon: "market" },
-];
-
-const assistantHomeNavItem: SidebarNavItem = {
-  orderKey: "assistant",
-  to: "/service/agent-webclient",
-  label: "智能助手首页",
-  icon: "assistant",
 };
 
 const fixedToolRows: SidebarToolItem[][] = [
@@ -92,7 +85,10 @@ const fixedToolRows: SidebarToolItem[][] = [
   ],
   [
     { orderKey: "control-center", to: "/control-center", label: "控制中心", icon: "control" },
+    { orderKey: "market", to: "/market", label: "功能市场", icon: "market" },
     { orderKey: "settings", to: "/settings", label: "设置", icon: "settings" },
+  ],
+  [
     { orderKey: "help", to: "/help", label: "帮助", icon: "help" },
   ],
 ];
@@ -290,36 +286,16 @@ export function AppSidebar({
   onNavigateItem,
   onToggleCollapsed,
 }: AppSidebarProps) {
-  const { services } = useServices();
   const [sidebarGroupState, setSidebarGroupState] = useState<SidebarGroupState>(readInitialSidebarGroupState);
+  const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const [toolMenuPosition, setToolMenuPosition] = useState<ToolMenuPosition | null>(null);
+  const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const toolMenuPanelRef = useRef<HTMLDivElement | null>(null);
   const currentAgentKey = getRouteAgentKey(currentRoute);
   const pendingAgentKey = pendingPath ? getRouteAgentKey(pendingPath) : "";
   const assistantStatusSummary = useMemo(
     () => summarizeAgentStatus(assistantNavAgents),
     [assistantNavAgents],
-  );
-  const serviceNavItems: SidebarNavItem[] = useMemo(
-    () =>
-      services
-        .filter(shouldShowServiceNavigationTab)
-        .map((service) => ({
-          orderKey: createServiceSidebarNavOrderKey(service.id),
-          to: `/service/${service.id}`,
-          label: getServiceDisplayName(service.id, service.name),
-          icon: "service",
-        })),
-    [services],
-  );
-
-  const experimentalItems: SidebarNavItem[] = useMemo(
-    () =>
-      EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => ({
-        orderKey: createExperimentalSidebarNavOrderKey(item.id),
-        to: `/external/${item.id}`,
-        label: item.label,
-        icon: item.icon,
-      })),
-    [],
   );
 
   const customItems: SidebarNavItem[] = useMemo(() => {
@@ -342,29 +318,22 @@ export function AppSidebar({
   }, [customSidebarItems, customSidebarNavOrder]);
 
   const assistantChildItems: Array<SidebarNavItem & { status?: SidebarStatusSummary }> = useMemo(
-    () => [
-      assistantHomeNavItem,
-      ...assistantNavAgents.map((agent) => ({
+    () =>
+      assistantNavAgents.map((agent) => ({
         orderKey: "assistant" as const,
         to: createAgentRoute(agent.agentKey),
         label: agent.displayName,
         icon: "agent" as const,
         status: createAgentStatusSummary(agent),
       })),
-    ],
     [assistantNavAgents],
   );
 
-  const navItems = sortSidebarNavItems(
-    [
-      assistantGroupNavItem,
-      websitesGroupNavItem,
-      ...serviceNavItems,
-      ...experimentalItems,
-      ...staticNavItems,
-    ],
-    sidebarNavOrder,
-  );
+  const navItems = [
+    taskBoardNavItem,
+    assistantGroupNavItem,
+    websitesGroupNavItem,
+  ];
   const chromeToolbarClassName = [
     "sidebar-chrome-toolbar",
     isMac ? "is-mac" : isWindows ? "is-windows" : "is-default",
@@ -380,6 +349,67 @@ export function AppSidebar({
       // Ignore localStorage failures in restricted renderer contexts.
     }
   }, [sidebarGroupState]);
+
+  useEffect(() => {
+    if (!toolMenuOpen) {
+      return undefined;
+    }
+
+    function updateToolMenuPosition() {
+      const triggerRect = toolMenuTriggerRef.current?.getBoundingClientRect();
+      if (!triggerRect) {
+        return;
+      }
+      const panelWidth = toolMenuPanelRef.current?.offsetWidth ?? 228;
+      const panelHeight = toolMenuPanelRef.current?.offsetHeight ?? 174;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const gap = 8;
+      const left = isCollapsed
+        ? Math.min(viewportWidth - panelWidth - gap, triggerRect.right + gap)
+        : Math.min(viewportWidth - panelWidth - gap, triggerRect.left);
+      const top = isCollapsed
+        ? Math.min(viewportHeight - panelHeight - gap, triggerRect.top)
+        : triggerRect.top - panelHeight - gap;
+      setToolMenuPosition({
+        left: Math.max(gap, left),
+        top: Math.max(gap, top),
+      });
+    }
+
+    function handleDocumentPointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (toolMenuTriggerRef.current?.contains(target) || toolMenuPanelRef.current?.contains(target)) {
+        return;
+      }
+      setToolMenuOpen(false);
+    }
+
+    function handleDocumentKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setToolMenuOpen(false);
+        toolMenuTriggerRef.current?.focus();
+      }
+    }
+
+    updateToolMenuPosition();
+    const frame = window.requestAnimationFrame(updateToolMenuPosition);
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    window.addEventListener("resize", updateToolMenuPosition);
+    window.addEventListener("scroll", updateToolMenuPosition, true);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("pointerdown", handleDocumentPointerDown);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+      window.removeEventListener("resize", updateToolMenuPosition);
+      window.removeEventListener("scroll", updateToolMenuPosition, true);
+    };
+  }, [isCollapsed, toolMenuOpen]);
 
   function handleItemClick(
     event: MouseEvent<HTMLAnchorElement>,
@@ -403,6 +433,14 @@ export function AppSidebar({
     onNavigateItem?.();
   }
 
+  function handleToolItemClick(
+    event: MouseEvent<HTMLAnchorElement>,
+    targetPath: string,
+  ) {
+    handleItemClick(event, targetPath);
+    setToolMenuOpen(false);
+  }
+
   function handleAssistantDockClick() {
     if (assistantLauncherDisabled) {
       return;
@@ -413,6 +451,10 @@ export function AppSidebar({
       onOpenAssistantDock?.();
     }
     onNavigateItem?.();
+  }
+
+  function handleToolMenuTriggerClick() {
+    setToolMenuOpen((current) => !current);
   }
 
   function toggleSidebarGroup(groupId: SidebarGroupId) {
@@ -529,6 +571,16 @@ export function AppSidebar({
     children: Array<SidebarNavItem & { status?: SidebarStatusSummary }>;
   }) {
     const expanded = sidebarGroupState[args.groupId];
+    const groupTriggerClassName = isCollapsed
+      ? [
+          "sidebar-link",
+          "sidebar-group-trigger",
+          args.active ? "sidebar-link-active" : "",
+        ].filter(Boolean).join(" ")
+      : [
+          "sidebar-group-heading",
+          args.active ? "is-active" : "",
+        ].filter(Boolean).join(" ");
     return (
       <div
         key={args.groupId}
@@ -540,21 +592,20 @@ export function AppSidebar({
       >
         <button
           type="button"
-          className={[
-            "sidebar-link",
-            "sidebar-group-trigger",
-            args.active ? "sidebar-link-active" : "",
-          ].filter(Boolean).join(" ")}
+          className={groupTriggerClassName}
           onClick={() => toggleSidebarGroup(args.groupId)}
           aria-expanded={!isCollapsed && expanded}
           aria-label={args.label}
           title={args.label}
         >
-          <span className="sidebar-link-icon">
-            <SidebarIllustration kind={args.icon} />
+          <span className="sidebar-group-heading-main">
+            <span className="sidebar-link-icon">
+              <SidebarIllustration kind={args.icon} />
+            </span>
+            <span className="sidebar-link-label">{args.label}</span>
+            {args.status ? renderStatusBadges(args.status, "sidebar-group-status") : null}
           </span>
-          <span className="sidebar-link-label">{args.label}</span>
-          {args.status ? renderStatusBadges(args.status, "sidebar-group-status") : null}
+          {!isCollapsed ? <span className="sidebar-group-divider" aria-hidden="true" /> : null}
           <span className="sidebar-group-chevron" aria-hidden="true" />
         </button>
         {!isCollapsed && expanded ? (
@@ -594,10 +645,11 @@ export function AppSidebar({
       <NavLink
         key={item.to}
         to={item.to}
-        onClick={(event) => handleItemClick(event, item.to)}
+        onClick={(event) => handleToolItemClick(event, item.to)}
         aria-label={item.label}
         title={item.label}
-        className={() => getSidebarLinkClassName(item.to, "sidebar-tool-link")}
+        role="menuitem"
+        className={() => getSidebarLinkClassName(item.to, "sidebar-tool-menu-item")}
       >
         <span className="sidebar-link-icon">
           <SidebarIllustration kind={item.icon} />
@@ -610,28 +662,80 @@ export function AppSidebar({
     );
   }
 
+  function renderToolMenu() {
+    if (!toolMenuOpen || typeof document === "undefined") {
+      return null;
+    }
+
+    return createPortal(
+      <div
+        ref={toolMenuPanelRef}
+        className={[
+          "sidebar-tool-menu",
+          isCollapsed ? "is-from-collapsed-sidebar" : "is-from-expanded-sidebar",
+        ].filter(Boolean).join(" ")}
+        style={{
+          left: `${toolMenuPosition?.left ?? -9999}px`,
+          top: `${toolMenuPosition?.top ?? -9999}px`,
+        }}
+        role="menu"
+        aria-label="固定工具区"
+      >
+        {fixedToolItems.map((item) => renderToolLink(item))}
+      </div>,
+      document.body,
+    );
+  }
+
   return (
     <aside className={isCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
       <div className="sidebar-chrome">
         <div className="sidebar-chrome-drag-region" aria-hidden="true" />
         <div className={chromeToolbarClassName}>
-        </div>
-        {isCollapsed ? (
-          <div className="sidebar-collapsed-toggle-slot">
+          <div className="sidebar-top-actions">
             <SidebarCollapseToggle
+              className="sidebar-collapsed-toggle-button"
               isCollapsed={isCollapsed}
-              variant="nav"
+              variant="compact"
               onToggleCollapsed={onToggleCollapsed}
             />
+            {assistantLauncherVisible ? (
+              <button
+                type="button"
+                className={[
+                  "app-sidebar-collapse-button",
+                  "sidebar-assistant-top-button",
+                  "is-compact",
+                  assistantDockOpen ? "is-assistant-open" : "",
+                  assistantLauncherDisabled ? "is-disabled" : "",
+                  isCollapsed ? "is-collapsed-state" : "is-expanded-state",
+                ].filter(Boolean).join(" ")}
+                onClick={handleAssistantDockClick}
+                aria-label={
+                  assistantLauncherDisabled
+                    ? "当前页面不可开启 ZenMind 助手"
+                    : assistantDockOpen
+                      ? "关闭 ZenMind 助手"
+                      : "打开 ZenMind 助手"
+                }
+                aria-disabled={assistantLauncherDisabled}
+                aria-pressed={assistantDockOpen}
+                disabled={assistantLauncherDisabled}
+                title="侧边助手"
+              >
+                <span className="app-sidebar-collapse-button-icon sidebar-assistant-top-button-icon">
+                  <SidebarIllustration
+                    kind={
+                      assistantDockOpen
+                        ? "sidebar-assistant-open"
+                        : "sidebar-assistant-closed"
+                    }
+                  />
+                </span>
+              </button>
+            ) : null}
           </div>
-        ) : (
-          <SidebarCollapseToggle
-            className="sidebar-collapsed-toggle-button"
-            isCollapsed={isCollapsed}
-            variant="compact"
-            onToggleCollapsed={onToggleCollapsed}
-          />
-        )}
+        </div>
       </div>
 
       <nav className="sidebar-nav" aria-label="Primary Navigation">
@@ -641,49 +745,35 @@ export function AppSidebar({
       <div className="sidebar-footer">
         <div className="sidebar-footer-divider" aria-hidden="true" />
         <div className="sidebar-footer-actions">
-          <div className="sidebar-tool-grid" aria-label="固定工具区">
-            {fixedToolItems.map((item) => renderToolLink(item))}
-          </div>
-          {assistantLauncherVisible ? (
+          <div className="sidebar-tool-menu-anchor">
             <button
               type="button"
               className={[
                 "sidebar-link",
                 "sidebar-link-utility",
-                "sidebar-tool-assistant",
-                "sidebar-assistant-launcher",
-                assistantDockOpen ? "is-assistant-open" : "",
-                assistantLauncherDisabled ? "is-disabled" : "",
+                "sidebar-tool-menu-trigger",
+                fixedToolItems.some((item) => isRouteActive(item.to)) ? "sidebar-link-active" : "",
+                toolMenuOpen ? "is-open" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
-              onClick={handleAssistantDockClick}
-              aria-label={
-                assistantLauncherDisabled
-                  ? "当前页面不可开启 ZenMind 助手"
-                  : assistantDockOpen
-                    ? "关闭 ZenMind 助手"
-                    : "打开 ZenMind 助手"
-              }
-              aria-disabled={assistantLauncherDisabled}
-              disabled={assistantLauncherDisabled}
-              title="助手"
+              ref={toolMenuTriggerRef}
+              onClick={handleToolMenuTriggerClick}
+              aria-label="打开固定工具区"
+              aria-haspopup="menu"
+              aria-expanded={toolMenuOpen}
+              title="工具"
             >
               <span className="sidebar-link-icon">
-                <SidebarIllustration
-                  kind={
-                    assistantDockOpen
-                      ? "sidebar-assistant-open"
-                      : "sidebar-assistant-closed"
-                  }
-                />
+                <SidebarIllustration kind="control" />
               </span>
-              <span className="sidebar-link-label">侧边助手</span>
+              <span className="sidebar-link-label">工具</span>
               <span className="sidebar-link-label-collapsed" aria-hidden="true">
-                {getCollapsedSidebarLabel("侧边助手")}
+                {getCollapsedSidebarLabel("工具")}
               </span>
             </button>
-          ) : null}
+          </div>
+          {renderToolMenu()}
         </div>
       </div>
     </aside>
