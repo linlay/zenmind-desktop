@@ -392,6 +392,10 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
     "utf8"
   );
   const globalStyles = readRendererStyles();
+  const agentIconSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AgentIcon.tsx"),
+    "utf8"
+  );
 
   assert.match(sidebarSource, /taskBoardNavItem[\s\S]*?orderKey:\s*"kanban"[\s\S]*?to:\s*"\/kanban"[\s\S]*?label:\s*"任务看板"/);
   assert.match(sidebarSource, /assistantGroupNavItem[\s\S]*?orderKey:\s*"group:assistants"[\s\S]*?label:\s*"智能助理"/);
@@ -407,6 +411,15 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /assistant-worker-collapse worker-collapse/);
   assert.match(sidebarSource, /ant-collapse-item/);
   assert.match(sidebarSource, /ant-collapse-header-text/);
+  assert.match(sidebarSource, /<AgentIcon icon=\{agent\.icon\} className="worker-panel-icon" size=\{32\} type="agent" \/>/);
+  assert.doesNotMatch(sidebarSource, /renderAssistantAgentIcon/);
+  assert.doesNotMatch(sidebarSource, /SidebarIllustration kind="agent"/);
+  assert.match(sidebarSource, /worker-panel-header-body/);
+  assert.match(sidebarSource, /worker-panel-role/);
+  assert.match(sidebarSource, /worker-panel-preview/);
+  assert.match(sidebarSource, /worker-chat-item-head/);
+  assert.match(sidebarSource, /worker-chat-name/);
+  assert.match(sidebarSource, /worker-panel-time-label/);
   assert.match(sidebarSource, /title="全部已读"/);
   assert.match(sidebarSource, /title="新建对话"/);
   assert.match(sidebarSource, /查看更多（共/);
@@ -430,6 +443,15 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(globalStyles, /\.sidebar-group-heading\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?margin:\s*0 4px 4px;[\s\S]*?border-left:\s*0;/);
+  assert.match(globalStyles, /\.worker-panel-role\s*\{[\s\S]*?font-size:\s*11px;/);
+  assert.match(globalStyles, /\.worker-panel-preview\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?height:\s*20px;/);
+  assert.match(globalStyles, /\.worker-chat-name\s*\{[\s\S]*?font-size:\s*12px;/);
+  assert.match(globalStyles, /\.assistant-worker-header\s*\{[\s\S]*?padding:\s*6px 2px;/);
+  assert.match(globalStyles, /\.assistant-worker-collapse-item\.ant-collapse-item-active \.assistant-worker-header\s*\{[\s\S]*?padding:\s*6px 10px;/);
+  assert.match(globalStyles, /\.ant-collapse-item-active \.worker-panel-icon\s*\{[\s\S]*?transform:\s*scale\(0\.8\);/);
+  assert.match(agentIconSource, /BUILTIN_ICON_CONFIGS/);
+  assert.match(agentIconSource, /ledger/);
+  assert.match(agentIconSource, /isImageIcon/);
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_ITEMS/);
   assert.match(appShell, /<Route path="\/kanban" element=\{<KanbanPlaceholderPage \/>/);

@@ -11,6 +11,7 @@ import {
   createCustomSidebarNavOrderKey,
   type SidebarNavOrderItemKey,
 } from "./sidebarNavOrder";
+import { AgentIcon } from "./AgentIcon";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -165,6 +166,18 @@ function getRouteAgentKey(route: string) {
   }
   try {
     return new URLSearchParams(route.slice(queryIndex + 1)).get("agentKey")?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function getRouteChatId(route: string) {
+  const queryIndex = route.indexOf("?");
+  if (queryIndex < 0) {
+    return "";
+  }
+  try {
+    return new URLSearchParams(route.slice(queryIndex + 1)).get("chatId")?.trim() ?? "";
   } catch {
     return "";
   }
@@ -329,6 +342,7 @@ export function AppSidebar({
   const toolMenuPanelRef = useRef<HTMLDivElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
   const currentAgentKey = getRouteAgentKey(currentRoute);
+  const currentChatId = getRouteChatId(currentRoute);
   const pendingAgentKey = pendingPath ? getRouteAgentKey(pendingPath) : "";
   const assistantStatusSummary = useMemo(
     () => summarizeAgentStatus(assistantNavAgents),
@@ -682,27 +696,9 @@ export function AppSidebar({
     );
   }
 
-  function renderAssistantAgentIcon(agent: AssistantNavAgentItem, extraClassName = "") {
-    if (typeof agent.icon === "object" && agent.icon?.color) {
-      return (
-        <span
-          className={["assistant-worker-avatar", extraClassName].filter(Boolean).join(" ")}
-          style={{ backgroundColor: agent.icon.color }}
-          aria-hidden="true"
-        >
-          {(agent.icon.name || agent.displayName || agent.agentKey).slice(0, 1).toUpperCase()}
-        </span>
-      );
-    }
-    return (
-      <span className={["assistant-worker-avatar", extraClassName].filter(Boolean).join(" ")} aria-hidden="true">
-        <SidebarIllustration kind="agent" />
-      </span>
-    );
-  }
-
   function renderAssistantChatRow(chat: AssistantNavChatItem, activeChatId: string) {
     const isActive = activeChatId === chat.chatId;
+    const action = !chat.isRead ? "unread" : "time";
     return (
       <button
         type="button"
@@ -715,23 +711,26 @@ export function AppSidebar({
         ].filter(Boolean).join(" ")}
         onClick={() => handleAssistantOpenChat(chat)}
       >
-        <span className="assistant-worker-chat-title">
-          {chat.lastRunContent || chat.chatName || "暂无预览"}
-        </span>
-        {chat.hasPendingAwaiting ? (
-          <span className="chat-awaiting-status">等待审批</span>
-        ) : null}
-        <span className="assistant-worker-chat-meta">
-          {!chat.isRead ? <span className="assistant-worker-unread-dot" aria-label="未读" /> : null}
-          <span className="assistant-worker-time">{formatAssistantChatTime(chat.updatedAt)}</span>
+        <span className="worker-chat-item-head">
+          <span className="worker-chat-name">
+            {chat.lastRunContent || chat.chatName || "暂无预览"}
+          </span>
+          {chat.hasPendingAwaiting ? (
+            <span className="chat-awaiting-status">等待审批</span>
+          ) : null}
+          <span className="assistant-worker-chat-action" data-action={action}>
+            <span className="assistant-worker-unread-dot chat-unread-dot is-unread" aria-label="未读" />
+            <span className="worker-panel-time-label">{formatAssistantChatTime(chat.updatedAt)}</span>
+            <span className="worker-chat-loading assistant-material-icon is-loading" aria-hidden="true" />
+          </span>
           <button
             type="button"
-            className="assistant-worker-chat-menu-button"
+            className="assistant-worker-chat-menu-button chat-actions-trigger"
             aria-label="会话更多操作"
             title="更多"
             onClick={(event) => handleAssistantOpenChatMenu(event, chat)}
           >
-            ⋮
+            <span className="assistant-material-icon is-more" aria-hidden="true" />
           </button>
         </span>
       </button>
@@ -743,6 +742,8 @@ export function AppSidebar({
     const selected = currentAgentKey === agent.agentKey || pendingAgentKey === agent.agentKey;
     const recentChats = agent.recentChats ?? [];
     const unreadCount = Math.max(0, agent.unreadCount || agent.unreadChatCount || 0);
+    const latestPreview = agent.latestPreview || "暂无会话";
+    const activeChatId = currentChatId || agent.latestChatId || "";
     return (
       <div
         key={agent.agentKey}
@@ -769,43 +770,43 @@ export function AppSidebar({
           }}
         >
           <span className="ant-collapse-header-text assistant-worker-header-text">
-            <span className="worker-panel-header">
-              {renderAssistantAgentIcon(agent, "worker-panel-icon")}
-              <span className="assistant-worker-main">
+            <span className={["worker-panel-header", selected ? "is-active" : "", recentChats.length > 0 ? "" : "is-empty"].filter(Boolean).join(" ")}>
+              <AgentIcon icon={agent.icon} className="worker-panel-icon" size={32} type="agent" />
+              <span className="assistant-worker-main worker-panel-main">
                 <span className="worker-panel-header-body">
                   <span className="assistant-worker-name">{agent.displayName}</span>
                   <span className="worker-panel-role">{agent.role || "--"}</span>
+                  {unreadCount > 0 ? (
+                    <span className="assistant-worker-badge">{formatUnreadCount(unreadCount)}</span>
+                  ) : null}
+                  <span className="assistant-worker-actions">
+                    {unreadCount > 0 ? (
+                      <button
+                        type="button"
+                        className="worker-panel-new assistant-worker-icon-button"
+                        aria-label={`全部已读 ${agent.displayName}`}
+                        title="全部已读"
+                        onClick={(event) => void handleAssistantMarkAllRead(event, agent)}
+                      >
+                        <span className="assistant-material-icon is-done-all" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="worker-panel-new assistant-worker-icon-button"
+                      aria-label={`新建对话 ${agent.displayName}`}
+                      title="新建对话"
+                      onClick={(event) => handleAssistantNewChat(event, agent)}
+                    >
+                      <span className="assistant-material-icon is-add" aria-hidden="true" />
+                    </button>
+                  </span>
                 </span>
                 <span className="worker-panel-preview">
-                  <span className="assistant-worker-preview">{agent.latestPreview || "暂无会话"}</span>
+                  <span className="assistant-worker-preview">{latestPreview}</span>
                   {agent.hasPendingAwaiting ? <span className="chat-awaiting-status">等待审批</span> : null}
                   <span className="worker-panel-time-label">{formatAssistantChatTime(agent.updatedAt)}</span>
                 </span>
-              </span>
-              {unreadCount > 0 && !expanded ? (
-                <span className="sidebar-status-badge is-unread">{formatUnreadCount(unreadCount)}</span>
-              ) : null}
-              <span className="assistant-worker-actions">
-                {unreadCount > 0 ? (
-                  <button
-                    type="button"
-                    className="worker-panel-new assistant-worker-icon-button"
-                    aria-label={`全部已读 ${agent.displayName}`}
-                    title="全部已读"
-                    onClick={(event) => void handleAssistantMarkAllRead(event, agent)}
-                  >
-                    ✓✓
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="worker-panel-new assistant-worker-icon-button"
-                  aria-label={`新建对话 ${agent.displayName}`}
-                  title="新建对话"
-                  onClick={(event) => handleAssistantNewChat(event, agent)}
-                >
-                  ＋
-                </button>
               </span>
             </span>
           </span>
@@ -815,7 +816,7 @@ export function AppSidebar({
             <div className="ant-collapse-content-box worker-chat-preview-list">
               <div className="worker-chat-divider" />
               {recentChats.length > 0 ? (
-                recentChats.map((chat) => renderAssistantChatRow(chat, agent.latestChatId || ""))
+                recentChats.map((chat) => renderAssistantChatRow(chat, activeChatId))
               ) : (
                 <div className="status-line">暂无相关会话</div>
               )}
