@@ -54,6 +54,17 @@ test("buildPluginEmbeddedUrl opens agent-webclient desktop sections with auth co
   }
 });
 
+test("buildPluginEmbeddedUrl opens agent-webclient single agent route with chat and route theme", () => {
+  assert.equal(
+    buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {
+      hostTheme: "dark",
+      desktopAuthContext: "webclient:101:platform:202",
+      embedPath: "/agent/zenmi?chatId=chat_1"
+    }),
+    "http://127.0.0.1:9090/agent/zenmi?chatId=chat_1&theme=dark&desktopAuthContext=webclient%3A101%3Aplatform%3A202"
+  );
+});
+
 test("buildPluginEmbeddedUrl normalizes agent-webclient desktop section paths", () => {
   assert.equal(
     buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {

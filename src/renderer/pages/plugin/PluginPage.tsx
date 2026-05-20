@@ -194,31 +194,6 @@ function buildAgentWebclientAccessTokenInjectionScript(token: string | null, des
   })()`;
 }
 
-function buildAgentWebclientSelectWorkerScript(
-  agentKey: string,
-  focusComposerOnComplete: boolean,
-  options: { chatId?: string; newChat?: boolean } = {}
-) {
-  return [
-    "(() => {",
-    "  try {",
-    "    window.dispatchEvent(new CustomEvent('agent:select-worker', {",
-    `      detail: ${JSON.stringify({ agentKey, focusComposerOnComplete })}`,
-    "    }));",
-    options.chatId ? [
-      "    window.dispatchEvent(new CustomEvent('agent:load-chat', {",
-      `      detail: ${JSON.stringify({ chatId: options.chatId, focusComposerOnComplete })}`,
-      "    }));"
-    ].join("\n") : "",
-    options.newChat ? "    window.dispatchEvent(new CustomEvent('agent:start-new-conversation'));" : "",
-    "  } catch (error) {",
-    "    console.warn('[agent-webclient] failed to select route worker', error);",
-    "  }",
-    "  return true;",
-    "})()"
-  ].join("\n");
-}
-
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/gu, " ").trim();
 }
@@ -366,14 +341,27 @@ export function PluginPage({
     service?.id === "agent-webclient" ? agentPlatformService?.status ?? "" : "",
     service?.id === "agent-webclient" ? agentPlatformService?.healthMeta.pid ?? "" : ""
   ].join(":");
+  const routeEmbedPath = useMemo(() => {
+    if (service?.id !== "agent-webclient") {
+      return "";
+    }
+    try {
+      return new URLSearchParams(location.search).get("embedPath")?.trim() ?? "";
+    } catch {
+      return "";
+    }
+  }, [location.search, service?.id]);
+  const effectiveEmbedPath = service?.id === "agent-webclient"
+    ? (embedPath || routeEmbedPath || undefined)
+    : undefined;
   const embeddedUrl = useMemo(() => {
     return buildPluginEmbeddedUrl(service?.id, webUrl, {
       hostTheme,
       desktopAuthContext: service?.id === "agent-webclient" ? webviewReloadKey : undefined,
-      embedPath: service?.id === "agent-webclient" ? embedPath : undefined,
+      embedPath: effectiveEmbedPath,
       baseUrl: service?.healthMeta.port ? `http://127.0.0.1:${service.healthMeta.port}` : undefined
     });
-  }, [embedPath, hostTheme, service?.healthMeta.port, service?.id, webUrl, webviewReloadKey]);
+  }, [effectiveEmbedPath, hostTheme, service?.healthMeta.port, service?.id, webUrl, webviewReloadKey]);
   const webviewBaseKey = useMemo(
     () => [service?.id ?? "service", webviewReloadKey, embeddedUrl].join(":"),
     [embeddedUrl, service?.id, webviewReloadKey]
@@ -382,37 +370,6 @@ export function PluginPage({
     () => [webviewBaseKey, webviewRetryNonce].join(":"),
     [webviewBaseKey, webviewRetryNonce]
   );
-  const agentWebclientRouteAgentKey = useMemo(() => {
-    if (service?.id !== "agent-webclient") {
-      return "";
-    }
-    try {
-      return new URLSearchParams(location.search).get("agentKey")?.trim() ?? "";
-    } catch {
-      return "";
-    }
-  }, [location.search, service?.id]);
-  const agentWebclientRouteChatId = useMemo(() => {
-    if (service?.id !== "agent-webclient") {
-      return "";
-    }
-    try {
-      return new URLSearchParams(location.search).get("chatId")?.trim() ?? "";
-    } catch {
-      return "";
-    }
-  }, [location.search, service?.id]);
-  const agentWebclientRouteNewChat = useMemo(() => {
-    if (service?.id !== "agent-webclient") {
-      return false;
-    }
-    try {
-      return new URLSearchParams(location.search).get("newChat") === "1";
-    } catch {
-      return false;
-    }
-  }, [location.search, service?.id]);
-
   function embeddedError(code: string, message: string, details?: unknown) {
     return {
       ok: false,
@@ -444,7 +401,7 @@ export function PluginPage({
       pluginId,
       serviceDisplayName,
       surfaceRoute,
-      embedPath,
+      effectiveEmbedPath,
       readCurrentWebviewUrl()
     ) ?? buildPluginWebviewFallbackContext(
       serviceDisplayName,
@@ -453,7 +410,7 @@ export function PluginPage({
       pluginId,
       serviceDisplayName,
       surfaceRoute,
-      embedPath
+      effectiveEmbedPath
     );
   }
 
@@ -489,7 +446,7 @@ export function PluginPage({
       ...(pluginId ? { surfaceId: pluginId } : {}),
       ...(serviceDisplayName ? { surfaceLabel: serviceDisplayName } : {}),
       ...(surfaceRoute ? { surfaceRoute } : {}),
-      ...(embedPath ? { embedPath } : {}),
+      ...(effectiveEmbedPath ? { embedPath: effectiveEmbedPath } : {}),
       ...(typeof webContentsId === "number" ? { webContentsId } : {})
     };
   };
@@ -682,32 +639,6 @@ export function PluginPage({
     }
   }
 
-  async function dispatchAgentWebclientRouteAgentSelection() {
-    if (service?.id !== "agent-webclient" || active === false || !agentWebclientRouteAgentKey) {
-      return false;
-    }
-    const targetWebview = webviewRef.current;
-    if (!targetWebview) {
-      return false;
-    }
-    try {
-      await targetWebview.executeJavaScript(
-        buildAgentWebclientSelectWorkerScript(agentWebclientRouteAgentKey, true, {
-          chatId: agentWebclientRouteChatId,
-          newChat: agentWebclientRouteNewChat
-        }),
-        true
-      );
-      return true;
-    } catch (reason) {
-      console.warn(
-        "[agent-webclient] failed to dispatch route agent selection",
-        reason instanceof Error ? reason.message : String(reason)
-      );
-      return false;
-    }
-  }
-
   function seedAgentWebclientAccessToken() {
     if (service?.id !== "agent-webclient" || !bridgeProtocol) {
       return;
@@ -846,24 +777,20 @@ export function PluginPage({
     const handleDomReady = () => {
       syncWebviewState();
       seedAgentWebclientAccessToken();
-      void dispatchAgentWebclientRouteAgentSelection();
     };
     const handleDidFinishLoad = () => {
       syncWebviewState();
       seedAgentWebclientAccessToken();
-      void dispatchAgentWebclientRouteAgentSelection();
     };
     const handleDidNavigate = (event: Event) => {
       const nextUrl = readEventString(event, "url");
       setWebviewCurrentUrl(nextUrl || readCurrentWebviewUrl());
       seedAgentWebclientAccessToken();
-      void dispatchAgentWebclientRouteAgentSelection();
     };
     const handleDidNavigateInPage = (event: Event) => {
       const nextUrl = readEventString(event, "url");
       setWebviewCurrentUrl(nextUrl || readCurrentWebviewUrl());
       seedAgentWebclientAccessToken();
-      void dispatchAgentWebclientRouteAgentSelection();
     };
     const handleDidFailLoad = () => syncWebviewState();
 
@@ -888,9 +815,6 @@ export function PluginPage({
   }, [
     bridgeProtocol,
     bridgeReady,
-    agentWebclientRouteAgentKey,
-    agentWebclientRouteChatId,
-    agentWebclientRouteNewChat,
     active,
     service?.id,
     service?.status,
@@ -905,13 +829,6 @@ export function PluginPage({
     }
     seedAgentWebclientAccessToken();
   }, [active, bridgeReady, embeddedUrl, service?.id, serviceWebviewPreloadPath, webviewRenderKey]);
-
-  useEffect(() => {
-    if (active === false || !agentWebclientRouteAgentKey) {
-      return;
-    }
-    void dispatchAgentWebclientRouteAgentSelection();
-  }, [active, agentWebclientRouteAgentKey, agentWebclientRouteChatId, agentWebclientRouteNewChat, service?.id, webviewRenderKey]);
 
   useEffect(() => {
     return () => {

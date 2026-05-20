@@ -49,11 +49,6 @@ type AssistantChatMenuState = {
   y: number;
 };
 
-type AssistantHistoryState = {
-  agent: AssistantNavAgentItem;
-  search: string;
-};
-
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = "zenmind-desktop.sidebar-groups";
 
 const defaultSidebarGroupState: SidebarGroupState = {
@@ -159,53 +154,89 @@ function getRoutePathname(route: string) {
   return route.split("?")[0] || "/";
 }
 
-function getRouteAgentKey(route: string) {
+function getRouteEmbedPath(route: string) {
   const queryIndex = route.indexOf("?");
   if (queryIndex < 0) {
     return "";
   }
   try {
-    return new URLSearchParams(route.slice(queryIndex + 1)).get("agentKey")?.trim() ?? "";
+    return new URLSearchParams(route.slice(queryIndex + 1)).get("embedPath")?.trim() ?? "";
   } catch {
     return "";
   }
 }
 
-function getRouteChatId(route: string) {
-  const queryIndex = route.indexOf("?");
-  if (queryIndex < 0) {
-    return "";
+function readAgentInfoFromWebclientPath(pathWithQuery: string) {
+  const normalized = pathWithQuery.trim();
+  if (!normalized) {
+    return { agentKey: "", chatId: "" };
   }
   try {
-    return new URLSearchParams(route.slice(queryIndex + 1)).get("chatId")?.trim() ?? "";
+    const url = new URL(normalized, "http://agent-webclient.local");
+    const match = /^\/agent\/([^/?#]+)/u.exec(url.pathname);
+    return {
+      agentKey: match?.[1] ? decodeURIComponent(match[1]) : "",
+      chatId: url.searchParams.get("chatId")?.trim() ?? "",
+    };
   } catch {
-    return "";
+    return { agentKey: "", chatId: "" };
   }
+}
+
+function readAgentRouteInfo(route: string) {
+  const embeddedInfo = readAgentInfoFromWebclientPath(getRouteEmbedPath(route));
+  if (embeddedInfo.agentKey || embeddedInfo.chatId) {
+    return embeddedInfo;
+  }
+  const directInfo = readAgentInfoFromWebclientPath(route);
+  if (directInfo.agentKey || directInfo.chatId) {
+    return directInfo;
+  }
+  const queryIndex = route.indexOf("?");
+  if (queryIndex < 0) {
+    return { agentKey: "", chatId: "" };
+  }
+  try {
+    const searchParams = new URLSearchParams(route.slice(queryIndex + 1));
+    return {
+      agentKey: searchParams.get("agentKey")?.trim() ?? "",
+      chatId: searchParams.get("chatId")?.trim() ?? "",
+    };
+  } catch {
+    return { agentKey: "", chatId: "" };
+  }
+}
+
+function createAgentEmbedPath(agentKey: string, chatId = "") {
+  const path = `/agent/${encodeURIComponent(agentKey)}`;
+  const params = new URLSearchParams();
+  if (chatId.trim()) {
+    params.set("chatId", chatId.trim());
+  }
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+function createAgentWebclientRoute(embedPath: string) {
+  return `/service/agent-webclient?embedPath=${encodeURIComponent(embedPath)}`;
 }
 
 function createAgentRoute(agentKey: string) {
-  return `/service/agent-webclient?agentKey=${encodeURIComponent(agentKey)}`;
+  return createAgentWebclientRoute(createAgentEmbedPath(agentKey));
 }
 
 function createAgentChatRoute(agentKey: string, chatId: string) {
-  return `/service/agent-webclient?agentKey=${encodeURIComponent(agentKey)}&chatId=${encodeURIComponent(chatId)}`;
+  return createAgentWebclientRoute(createAgentEmbedPath(agentKey, chatId));
 }
 
 function createAgentNewChatRoute(agentKey: string) {
-  return `/service/agent-webclient?agentKey=${encodeURIComponent(agentKey)}&newChat=1&nonce=${Date.now().toString(36)}`;
+  return createAgentRoute(agentKey);
 }
 
 function summarizeAgentStatus(items: AssistantNavAgentItem[]): SidebarStatusSummary {
   return {
     unreadCount: items.reduce((total, item) => total + Math.max(0, item.unreadCount), 0),
     pendingCount: items.filter((item) => item.hasPendingAwaiting).length,
-  };
-}
-
-function createAgentStatusSummary(item: AssistantNavAgentItem): SidebarStatusSummary {
-  return {
-    unreadCount: Math.max(0, item.unreadCount),
-    pendingCount: item.hasPendingAwaiting ? 1 : 0,
   };
 }
 
@@ -337,13 +368,14 @@ export function AppSidebar({
   const [toolMenuPosition, setToolMenuPosition] = useState<ToolMenuPosition | null>(null);
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] = useState("");
   const [assistantChatMenu, setAssistantChatMenu] = useState<AssistantChatMenuState | null>(null);
-  const [assistantHistory, setAssistantHistory] = useState<AssistantHistoryState | null>(null);
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const toolMenuPanelRef = useRef<HTMLDivElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
-  const currentAgentKey = getRouteAgentKey(currentRoute);
-  const currentChatId = getRouteChatId(currentRoute);
-  const pendingAgentKey = pendingPath ? getRouteAgentKey(pendingPath) : "";
+  const currentRouteAgentInfo = readAgentRouteInfo(currentRoute);
+  const pendingRouteAgentInfo = pendingPath ? readAgentRouteInfo(pendingPath) : { agentKey: "", chatId: "" };
+  const currentAgentKey = currentRouteAgentInfo.agentKey;
+  const currentChatId = currentRouteAgentInfo.chatId;
+  const pendingAgentKey = pendingRouteAgentInfo.agentKey;
   const assistantStatusSummary = useMemo(
     () => summarizeAgentStatus(assistantNavAgents),
     [assistantNavAgents],
@@ -606,7 +638,7 @@ export function AppSidebar({
     if (targetPathname !== "/service/agent-webclient") {
       return targetPathname === currentPathname || pendingPath === targetPath;
     }
-    const targetAgentKey = getRouteAgentKey(targetPath);
+    const targetAgentKey = readAgentRouteInfo(targetPath).agentKey;
     const activeAgentKey = pendingPath === targetPath ? pendingAgentKey : currentAgentKey;
     return targetAgentKey === activeAgentKey;
   }
@@ -826,7 +858,7 @@ export function AppSidebar({
                   className="worker-chat-more assistant-worker-more"
                   onClick={(event) => {
                     event.stopPropagation();
-                    setAssistantHistory({ agent, search: "" });
+                    requestNavigate(createAgentRoute(agent.agentKey));
                   }}
                 >
                   查看更多（共 {Math.max(agent.chatCount, recentChats.length)} 条{unreadCount > 0 ? `，未读 ${unreadCount} 条` : ""}）
@@ -1002,48 +1034,6 @@ export function AppSidebar({
     );
   }
 
-  function renderAssistantHistory() {
-    if (!assistantHistory || typeof document === "undefined") {
-      return null;
-    }
-    const agent = assistantHistory.agent;
-    const search = assistantHistory.search.trim().toLowerCase();
-    const rows = (agent.recentChats ?? []).filter((chat) => {
-      if (!search) {
-        return true;
-      }
-      return [chat.chatName, chat.lastRunContent, chat.chatId].join(" ").toLowerCase().includes(search);
-    });
-    return createPortal(
-      <div className="assistant-history-overlay" role="presentation" onMouseDown={() => setAssistantHistory(null)}>
-        <section
-          className="assistant-history-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${agent.displayName} 会话历史`}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          <header className="assistant-history-header">
-            <strong>智能体历史 · {agent.displayName}</strong>
-            <span>共 {agent.chatCount} 条会话</span>
-            <button type="button" aria-label="关闭历史" onClick={() => setAssistantHistory(null)}>×</button>
-          </header>
-          <input
-            value={assistantHistory.search}
-            placeholder="搜索会话..."
-            onChange={(event) => setAssistantHistory({ agent, search: event.target.value })}
-          />
-          <div className="assistant-history-list">
-            {rows.length > 0 ? rows.map((chat) => renderAssistantChatRow(chat, agent.latestChatId || "")) : (
-              <div className="status-line">暂无会话</div>
-            )}
-          </div>
-        </section>
-      </div>,
-      document.body,
-    );
-  }
-
   return (
     <aside className={isCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
       <div className="sidebar-chrome">
@@ -1132,7 +1122,6 @@ export function AppSidebar({
           </div>
           {renderToolMenu()}
           {renderAssistantChatMenu()}
-          {renderAssistantHistory()}
         </div>
       </div>
     </aside>

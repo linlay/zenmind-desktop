@@ -406,6 +406,15 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /createAgentRoute\(agent\.agentKey\)/);
   assert.match(sidebarSource, /createAgentChatRoute\(chat\.agentKey/);
   assert.match(sidebarSource, /createAgentNewChatRoute\(agent\.agentKey\)/);
+  assert.match(sidebarSource, /createAgentEmbedPath/);
+  assert.match(sidebarSource, /\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
+  assert.match(sidebarSource, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
+  assert.match(sidebarSource, /params\.set\("chatId"/);
+  assert.doesNotMatch(sidebarSource, /newChat=1/);
+  assert.doesNotMatch(sidebarSource, /nonce=/);
+  assert.doesNotMatch(sidebarSource, /AssistantHistoryState/);
+  assert.doesNotMatch(sidebarSource, /assistantHistory/);
+  assert.doesNotMatch(sidebarSource, /renderAssistantHistory/);
   assert.match(sidebarSource, /renderStatusBadges/);
   assert.match(sidebarSource, /summarizeAgentStatus\(assistantNavAgents\)/);
   assert.match(sidebarSource, /assistant-worker-collapse worker-collapse/);
@@ -462,8 +471,13 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?label:\s*"智能体"/);
   assert.match(appShell, /routePath:\s*"\/schedules"[\s\S]*?embedPath:\s*"\/schedules"[\s\S]*?label:\s*"自动化"/);
   assert.match(appShell, /routePath:\s*"\/memory"[\s\S]*?embedPath:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
-  assert.match(appShell, /const activeAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname\)/);
+  assert.match(appShell, /const activeAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search\)/);
+  assert.match(appShell, /function readAgentWebclientRouteEmbedPath\(search: string\)/);
+  assert.match(appShell, /new URLSearchParams\(search\)\.get\("embedPath"\)/);
+  assert.match(appShell, /embedPath\.startsWith\("\/agent\/"\) \? "智能助理" : "智能体"/);
   assert.match(appShell, /activeAgentWebclientRoute[\s\S]*?\? "agent-webclient"[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
+  assert.match(appShell, /embedPath=\{pluginId === "agent-webclient" \? activeAgentWebclientRoute\?\.embedPath : undefined\}/);
+  assert.match(appShell, /if \(currentRoute !== pendingSidebarNavigationPath\)/);
   assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeAgentWebclientRoute\)/);
   assert.match(appShell, /const usesPluginSurface =[\s\S]*?Boolean\(activeAgentWebclientRoute\)[\s\S]*?location\.pathname\.startsWith\("\/service\/"\)[\s\S]*?location\.pathname\.startsWith\("\/plugin\/"\)/);
   assert.match(appShell, /<Route path="\/agents" element=\{null\} \/>/);
@@ -473,9 +487,17 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
 
   assert.match(pluginPage, /embedPath\?: string;/);
   assert.match(pluginPage, /surfaceLabel\?: string;/);
-  assert.match(pluginPage, /embedPath: service\?\.id === "agent-webclient" \? embedPath : undefined/);
-  assert.match(pluginPage, /agentWebclientRouteAgentKey/);
-  assert.match(pluginPage, /agent:select-worker/);
+  assert.match(pluginPage, /routeEmbedPath/);
+  assert.match(pluginPage, /effectiveEmbedPath/);
+  assert.match(pluginPage, /get\("embedPath"\)/);
+  assert.match(pluginPage, /embedPath: effectiveEmbedPath/);
+  assert.match(pluginPage, /buildAgentWebclientAccessTokenInjectionScript/);
+  assert.doesNotMatch(pluginPage, /buildAgentWebclientSelectWorkerScript/);
+  assert.doesNotMatch(pluginPage, /agentWebclientRouteAgentKey/);
+  assert.doesNotMatch(pluginPage, /agentWebclientRouteNewChat/);
+  assert.doesNotMatch(pluginPage, /agent:select-worker/);
+  assert.doesNotMatch(pluginPage, /agent:load-chat/);
+  assert.doesNotMatch(pluginPage, /agent:start-new-conversation/);
 });
 
 test("settings route keeps the global sidebar and renders page-internal split sections", () => {
@@ -1240,13 +1262,18 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
   assert.match(mainProcess, /await runServiceMutation\(\(\) => ensureAssistantTargetServicesRunning\(source\)\)/);
   assert.match(mainProcess, /async function showAssistantTargetWindow/);
-  assert.match(mainProcess, /AGENT_WEBCLIENT_APP_PATHNAMES = new Set\(\["\/", "\/copilot"\]\)/);
+  assert.match(mainProcess, /function createAgentWebclientRoute/);
+  assert.match(mainProcess, /\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
+  assert.match(mainProcess, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
+  assert.match(mainProcess, /openAgent: scheduleQuickAgentOpenRequest/);
   assert.match(mainProcess, /async function openAssistantFromDesktopPet/);
-  assert.match(mainProcess, /await showAssistantTargetWindow\("desktop-pet"\)/);
+  assert.match(mainProcess, /showAssistantTargetWindow\(\s*"desktop-pet",[\s\S]*?createAgentWebclientRoute/);
   assert.match(mainProcess, /targetWindow\.webContents\.send\("app\.openAssistantWorker"/);
   assert.match(mainProcess, /async function openAssistantWorker/);
-  assert.match(mainProcess, /await showAssistantTargetWindow\("assistant-worker"\)/);
-  assert.match(mainProcess, /scheduleAgentWebclientOpenRequest\(targetWindow/);
+  assert.match(mainProcess, /showAssistantTargetWindow\(\s*"assistant-worker",[\s\S]*?createAgentWebclientRoute/);
+  assert.doesNotMatch(mainProcess, /AGENT_WEBCLIENT_APP_PATHNAMES/);
+  assert.doesNotMatch(mainProcess, /scheduleAgentWebclientOpenRequest/);
+  assert.doesNotMatch(mainProcess, /agent:load-chat/);
   assert.match(trayController, /openAssistantTarget\("tray-click"\)/);
   assert.doesNotMatch(trayController, /tray\.on\("click", \(\) => showMainWindow\(ASSISTANT_TARGET_PATH\)\)/);
 });

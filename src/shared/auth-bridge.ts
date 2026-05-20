@@ -104,9 +104,11 @@ export function buildPluginEmbeddedUrl(
 
   if (serviceId === "agent-webclient") {
     const embedPath = options.embedPath?.trim() || "/";
-    url.pathname = embedPath.startsWith("/") ? embedPath : `/${embedPath}`;
+    const embeddedUrl = new URL(embedPath.startsWith("/") ? embedPath : `/${embedPath}`, "http://agent-webclient.local");
+    url.pathname = embeddedUrl.pathname;
+    url.search = embeddedUrl.search;
     if (options.hostTheme) {
-      url.searchParams.set("hostTheme", options.hostTheme);
+      url.searchParams.set(url.pathname.startsWith("/agent/") ? "theme" : "hostTheme", options.hostTheme);
     }
     if (options.desktopAuthContext?.trim()) {
       url.searchParams.set("desktopAuthContext", options.desktopAuthContext.trim());

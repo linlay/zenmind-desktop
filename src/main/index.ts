@@ -198,10 +198,10 @@ const desktopActionRendererRequests = new Map<string, {
   timeout: ReturnType<typeof setTimeout>;
 }>();
 const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
-const AGENT_WEBCLIENT_APP_PATHNAMES = new Set(["/", "/copilot"]);
 const LOG_VIEWER_ROUTE = "/log-viewer";
-const AGENT_WEBCLIENT_OPEN_RETRY_COUNT = 24;
-const AGENT_WEBCLIENT_OPEN_RETRY_MS = 180;
+const QUICK_AGENT_WEBCLIENT_PATHNAMES = new Set(["/copilot"]);
+const QUICK_AGENT_OPEN_RETRY_COUNT = 24;
+const QUICK_AGENT_OPEN_RETRY_MS = 180;
 const DESKTOP_ACTION_RENDERER_TIMEOUT_MS = 8_000;
 const DESKTOP_PET_DRAG_FORCE_END_MS = 4_000;
 const STARTUP_RESTORE_SERVICE_ORDER = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -332,7 +332,7 @@ const quickCopilotWindowController = new QuickCopilotWindowController({
   loadRendererRoute,
   prepareServices: () => runServiceMutation(() => ensureAssistantTargetServicesRunning("quick-assistant")),
   showControlCenter: () => showMainWindow("/control-center"),
-  openAgent: scheduleAgentWebclientOpenRequest
+  openAgent: scheduleQuickAgentOpenRequest
 });
 
 const logViewerWindowController = new LogViewerWindowController({
@@ -891,67 +891,72 @@ function parseSafeLoopbackWebUrl(value: string) {
   }
 }
 
-function isAgentWebclientAppFrame(frame: WebFrameMain) {
+function createAgentWebclientRoute(request: {
+  agentKey?: string | null;
+  chatId?: string | null;
+}) {
+  const agentKey = request.agentKey?.trim() ?? "";
+  if (!agentKey) {
+    return ASSISTANT_TARGET_PATH;
+  }
+
+  const embedPathParams = new URLSearchParams();
+  const chatId = request.chatId?.trim() ?? "";
+  if (chatId) {
+    embedPathParams.set("chatId", chatId);
+  }
+  const embedPathQuery = embedPathParams.toString();
+  const embedPath = `/agent/${encodeURIComponent(agentKey)}${embedPathQuery ? `?${embedPathQuery}` : ""}`;
+  return `${ASSISTANT_TARGET_PATH}?embedPath=${encodeURIComponent(embedPath)}`;
+}
+
+function isQuickAgentWebclientFrame(frame: WebFrameMain) {
   try {
-    return AGENT_WEBCLIENT_APP_PATHNAMES.has(new URL(frame.url).pathname);
+    return QUICK_AGENT_WEBCLIENT_PATHNAMES.has(new URL(frame.url).pathname);
   } catch {
     return false;
   }
 }
 
-function createAgentWebclientOpenScript(request: {
-  chatId: string;
+function createQuickAgentOpenScript(request: {
   agentKey: string;
   focusComposerOnComplete: boolean;
 }) {
-  const chatId = request.chatId.trim();
   const agentKey = request.agentKey.trim();
-  if (chatId) {
-    return [
-      "window.dispatchEvent(new CustomEvent('agent:load-chat', {",
-      `  detail: ${JSON.stringify({
-        chatId,
-        focusComposerOnComplete: request.focusComposerOnComplete
-      })}`,
-      "}));",
-      "true;"
-    ].join("\n");
+  if (!agentKey) {
+    return "true;";
   }
-  if (agentKey) {
-    return [
-      "window.dispatchEvent(new CustomEvent('agent:select-worker', {",
-      `  detail: ${JSON.stringify({
-        agentKey,
-        focusComposerOnComplete: request.focusComposerOnComplete
-      })}`,
-      "}));",
-      "true;"
-    ].join("\n");
-  }
-  return "true;";
+  return [
+    "window.dispatchEvent(new CustomEvent('agent:select-worker', {",
+    `  detail: ${JSON.stringify({
+      agentKey,
+      focusComposerOnComplete: request.focusComposerOnComplete
+    })}`,
+    "}));",
+    "true;"
+  ].join("\n");
 }
 
-function dispatchAgentWebclientOpenRequest(
+function dispatchQuickAgentOpenRequest(
   targetWindow: BrowserWindow,
   request: {
-    chatId: string;
     agentKey: string;
     focusComposerOnComplete: boolean;
   }
 ) {
-  const script = createAgentWebclientOpenScript(request);
-  const frames = collectWebFrames(targetWindow.webContents.mainFrame).filter(isAgentWebclientAppFrame);
+  const script = createQuickAgentOpenScript(request);
+  const frames = collectWebFrames(targetWindow.webContents.mainFrame).filter(isQuickAgentWebclientFrame);
   let dispatched = false;
   for (const frame of frames) {
     dispatched = true;
     frame.executeJavaScript(script).catch((error) => {
-      console.warn("[desktop-pet] failed to open agent webclient chat", error);
+      console.warn("[quick-assistant] failed to open agent webclient copilot", error);
     });
   }
   return dispatched;
 }
 
-function scheduleAgentWebclientOpenRequest(
+function scheduleQuickAgentOpenRequest(
   targetWindow: BrowserWindow,
   request: {
     chatId: string;
@@ -963,16 +968,16 @@ function scheduleAgentWebclientOpenRequest(
   if (targetWindow.isDestroyed()) {
     return;
   }
-  if (dispatchAgentWebclientOpenRequest(targetWindow, request)) {
+  if (dispatchQuickAgentOpenRequest(targetWindow, request)) {
     return;
   }
-  if (attempt >= AGENT_WEBCLIENT_OPEN_RETRY_COUNT) {
-    console.warn("[desktop-pet] agent webclient frame was not ready for desktop pet open request");
+  if (attempt >= QUICK_AGENT_OPEN_RETRY_COUNT) {
+    console.warn("[quick-assistant] agent webclient copilot frame was not ready");
     return;
   }
   setTimeout(() => {
-    scheduleAgentWebclientOpenRequest(targetWindow, request, attempt + 1);
-  }, AGENT_WEBCLIENT_OPEN_RETRY_MS);
+    scheduleQuickAgentOpenRequest(targetWindow, request, attempt + 1);
+  }, QUICK_AGENT_OPEN_RETRY_MS);
 }
 
 async function ensureAssistantTargetServicesRunning(source: string) {
@@ -1001,7 +1006,7 @@ async function ensureAssistantTargetServicesRunning(source: string) {
   return failures;
 }
 
-async function showAssistantTargetWindow(source: string) {
+async function showAssistantTargetWindow(source: string, targetPath = ASSISTANT_TARGET_PATH) {
   const failures = await runServiceMutation(() => ensureAssistantTargetServicesRunning(source));
   if (failures.length > 0) {
     showMainWindow("/control-center");
@@ -1012,7 +1017,7 @@ async function showAssistantTargetWindow(source: string) {
     };
   }
 
-  showMainWindow(ASSISTANT_TARGET_PATH);
+  showMainWindow(targetPath);
   return {
     ok: true,
     message: "智能助理已打开。",
@@ -1081,7 +1086,13 @@ async function openAssistantFromDesktopPet() {
   const agentKey = desktopPetAgentStatus?.agentKey ||
     desktopPetState.boundAgentKey ||
     desktopPetSettings.boundAgentKey;
-  const openResult = await showAssistantTargetWindow("desktop-pet");
+  const openResult = await showAssistantTargetWindow(
+    "desktop-pet",
+    createAgentWebclientRoute({
+      agentKey,
+      chatId: targetChatId
+    })
+  );
   const targetWindow = openResult.window;
   if (targetWindow && !targetWindow.isDestroyed()) {
     targetWindow.webContents.send("app.openAssistantWorker", {
@@ -1089,11 +1100,6 @@ async function openAssistantFromDesktopPet() {
       agentKey,
       focusComposerOnComplete: desktopPetState.status !== "running"
     } satisfies AssistantWorkerOpenRequest);
-    scheduleAgentWebclientOpenRequest(targetWindow, {
-      chatId: targetChatId ?? "",
-      agentKey,
-      focusComposerOnComplete: desktopPetState.status !== "running"
-    });
   }
   if (targetChatId && desktopPetState.unreadCount > 0) {
     void markAgentPlatformChatReadFromDesktopPet(targetChatId);
@@ -2449,7 +2455,14 @@ async function activateBrowserSurface(target: string) {
 }
 
 async function openAssistantWorker(request: AssistantWorkerOpenRequest) {
-  const openResult = await showAssistantTargetWindow("assistant-worker");
+  const targetAgentKey = request.agentKey ?? request.workerKey ?? "";
+  const openResult = await showAssistantTargetWindow(
+    "assistant-worker",
+    createAgentWebclientRoute({
+      agentKey: targetAgentKey,
+      chatId: request.chatId
+    })
+  );
   const targetWindow = openResult.window;
   if (!openResult.ok || !targetWindow || targetWindow.isDestroyed()) {
     return;
@@ -2458,11 +2471,6 @@ async function openAssistantWorker(request: AssistantWorkerOpenRequest) {
   const sendOpenAssistantWorker = () => {
     if (!targetWindow.isDestroyed()) {
       targetWindow.webContents.send("app.openAssistantWorker", request);
-      scheduleAgentWebclientOpenRequest(targetWindow, {
-        chatId: request.chatId ?? "",
-        agentKey: request.agentKey ?? request.workerKey ?? "",
-        focusComposerOnComplete: request.focusComposerOnComplete !== false
-      });
     }
   };
 

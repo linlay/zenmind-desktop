@@ -967,68 +967,6 @@
   background: rgba(22, 119, 255, 0.1);
 }
 
-.assistant-history-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 85;
-  display: grid;
-  place-items: center;
-  background: rgba(15, 23, 42, 0.18);
-}
-
-.assistant-history-modal {
-  width: min(760px, calc(100vw - 32px));
-  max-height: min(620px, calc(100vh - 48px));
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
-}
-
-.assistant-history-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.assistant-history-header strong {
-  flex: 1;
-  min-width: 0;
-}
-
-.assistant-history-header span {
-  color: var(--ink-soft);
-  font-size: 12px;
-}
-
-.assistant-history-header button {
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.assistant-history-modal input {
-  min-height: 34px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0 10px;
-  background: var(--surface);
-  color: var(--ink);
-}
-
-.assistant-history-list {
-  min-height: 0;
-  overflow: auto;
-  border-top: 1px solid var(--line);
-  padding-top: 6px;
-}
-
 .sidebar-status-badges {
   display: inline-flex;
   align-items: center;

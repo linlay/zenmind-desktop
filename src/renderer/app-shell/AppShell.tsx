@@ -209,7 +209,7 @@ export function AppShell() {
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [startupCardDismissed, setStartupCardDismissed] = useState(false);
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
-  const activeAgentWebclientRoute = resolveAgentWebclientRoute(location.pathname);
+  const activeAgentWebclientRoute = resolveAgentWebclientRoute(location.pathname, location.search);
   const activePluginId = activeAgentWebclientRoute
     ? "agent-webclient"
     : resolvePluginRouteId(location.pathname);
@@ -631,7 +631,7 @@ export function AppShell() {
       return;
     }
 
-    if (location.pathname !== pendingSidebarNavigationPath) {
+    if (currentRoute !== pendingSidebarNavigationPath) {
       return;
     }
 
@@ -642,7 +642,7 @@ export function AppShell() {
       setPendingSidebarNavigationPath(null);
       sidebarNavigationUnlockTimerRef.current = null;
     }, 220);
-  }, [location.pathname, pendingSidebarNavigationPath]);
+  }, [currentRoute, pendingSidebarNavigationPath]);
 
   useEffect(() => {
     if (!activePluginId) {
@@ -1194,8 +1194,34 @@ function resolvePluginRouteId(pathname: string) {
     null;
 }
 
-function resolveAgentWebclientRoute(pathname: string) {
-  return AGENT_WEBCLIENT_ROUTE_ITEMS.find((item) => item.routePath === pathname) ?? null;
+function resolveAgentWebclientRoute(pathname: string, search = "") {
+  const staticRoute = AGENT_WEBCLIENT_ROUTE_ITEMS.find((item) => item.routePath === pathname);
+  if (staticRoute) {
+    return staticRoute;
+  }
+
+  if (pathname !== ASSISTANT_TARGET_PATH) {
+    return null;
+  }
+
+  const embedPath = readAgentWebclientRouteEmbedPath(search);
+  if (!embedPath) {
+    return null;
+  }
+
+  return {
+    routePath: `${ASSISTANT_TARGET_PATH}${search}`,
+    embedPath,
+    label: embedPath.startsWith("/agent/") ? "智能助理" : "智能体"
+  };
+}
+
+function readAgentWebclientRouteEmbedPath(search: string) {
+  try {
+    return new URLSearchParams(search).get("embedPath")?.trim() ?? "";
+  } catch {
+    return "";
+  }
 }
 
 function resolveCustomSidebarRouteId(pathname: string) {
