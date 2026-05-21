@@ -23,6 +23,13 @@ export const DESKTOP_PET_APPEARANCE_OPTIONS = [
     description: "焦虑又机灵的宠物，适合董事会混乱能量。",
     assetBasePath: "./desktop-pet/mini-sama",
     previewAssetPath: "./desktop-pet/mini-sama/pet-idle.png"
+  },
+  {
+    id: "xiao",
+    displayName: "小肖",
+    description: "黑发西装形象，带着花束和金色奖杯。",
+    assetBasePath: "./desktop-pet/xiao",
+    previewAssetPath: "./desktop-pet/xiao/pet-idle.png"
   }
 ] as const;
 

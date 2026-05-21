@@ -34,6 +34,14 @@ const communityAppearances = [
   }
 ];
 
+const scriptedAppearances = [
+  {
+    id: "xiao",
+    displayName: "小肖",
+    notes: "A chibi built-in pet inspired by the provided references: swept black hair, dark suit, bouquet, and a gold award."
+  }
+];
+
 const legacyCommunityAppearanceAliases = {
   sprout: "dario",
   starlight: "mini-sama"
@@ -606,6 +614,84 @@ function renderCommunityPetVariant(image, variant) {
   return canvas.toBuffer("image/png");
 }
 
+function chromaKeySourceImage(image) {
+  const sourceCanvas = createCanvas(image.width, image.height);
+  const sourceContext = sourceCanvas.getContext("2d");
+  sourceContext.drawImage(image, 0, 0);
+  const imageData = sourceContext.getImageData(0, 0, image.width, image.height);
+  const pixels = imageData.data;
+  let minX = image.width;
+  let minY = image.height;
+  let maxX = 0;
+  let maxY = 0;
+
+  for (let index = 0; index < pixels.length; index += 4) {
+    const red = pixels[index];
+    const green = pixels[index + 1];
+    const blue = pixels[index + 2];
+    const keyLike = green > 150 && green > red * 1.45 && green > blue * 1.45;
+    if (keyLike) {
+      pixels[index + 3] = 0;
+      continue;
+    }
+    if (green > red && green > blue) {
+      pixels[index + 1] = Math.min(green, Math.round(Math.max(red, blue) * 1.16));
+    }
+    const pixelIndex = index / 4;
+    const x = pixelIndex % image.width;
+    const y = Math.floor(pixelIndex / image.width);
+    if (pixels[index + 3] > 10) {
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+
+  sourceContext.putImageData(imageData, 0, 0);
+  const padding = 18;
+  const cropX = Math.max(0, minX - padding);
+  const cropY = Math.max(0, minY - padding);
+  const cropWidth = Math.min(image.width - cropX, maxX - minX + padding * 2);
+  const cropHeight = Math.min(image.height - cropY, maxY - minY + padding * 2);
+  const subjectCanvas = createCanvas(cropWidth, cropHeight);
+  const subjectContext = subjectCanvas.getContext("2d");
+  subjectContext.drawImage(sourceCanvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+  return subjectCanvas;
+}
+
+function drawXiaoSourceVariant(subjectCanvas) {
+  const canvas = createCanvas(size.width, size.height);
+  const ctx = canvas.getContext("2d");
+  const targetScale = Math.min((size.width * 0.8) / subjectCanvas.width, (size.height * 0.9) / subjectCanvas.height);
+  const targetWidth = Math.round(subjectCanvas.width * targetScale);
+  const targetHeight = Math.round(subjectCanvas.height * targetScale);
+  const targetX = Math.round(size.width / 2);
+  const targetY = Math.round(size.height - targetHeight / 2 - 12);
+
+  ctx.save();
+  ctx.translate(targetX, targetY);
+  ctx.drawImage(subjectCanvas, -targetWidth / 2, -targetHeight / 2, targetWidth, targetHeight);
+  ctx.restore();
+  return canvas.toBuffer("image/png");
+}
+
+async function renderScriptedAppearance(appearance) {
+  if (appearance.id !== "xiao") {
+    throw new Error(`No scripted pet renderer configured for ${appearance.displayName}`);
+  }
+  const sourcePath = path.join(sourceAssetDirectory, appearance.id, "source-chroma.png");
+  const sourceImage = await loadImage(sourcePath);
+  const subjectCanvas = chromaKeySourceImage(sourceImage);
+  const buffers = new Map();
+  const imageBuffer = drawXiaoSourceVariant(subjectCanvas);
+  // 小肖必须始终使用用户确认的同一张 Q 版肖战源图，状态变化只交给渲染层 CSS 动效处理。
+  for (const variant of classicVisualVariants) {
+    buffers.set(variant, imageBuffer);
+  }
+  return buffers;
+}
+
 async function renderCommunityAppearance(appearance) {
   const spritesheetPath = path.join(sourceAssetDirectory, appearance.id, "spritesheet.webp");
   const image = await loadImage(spritesheetPath);
@@ -641,6 +727,11 @@ for (const variant of classicVisualVariants) {
   defaultBuffers.set(variant, buffer);
 }
 await writeVariantFiles(outputDirectory, defaultBuffers);
+
+for (const appearance of scriptedAppearances) {
+  const buffers = await renderScriptedAppearance(appearance);
+  await writeVariantFiles(path.join(outputDirectory, appearance.id), buffers);
+}
 
 const communityBuffersById = new Map();
 for (const appearance of communityAppearances) {
