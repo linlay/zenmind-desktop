@@ -57,7 +57,10 @@ import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader"
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
   buildSandboxImage,
+  deleteSandboxImage,
+  exportSandboxImageToPath,
   getMarketSettings,
+  importSandboxImageFromPath,
   importSkillFromPath,
   installMarketItem,
   listMarketItems,
@@ -143,6 +146,7 @@ import type {
   ServiceLogStreamOptions,
   ServiceLogTarget,
   ServiceState,
+  SandboxImageImportProgressEvent,
   StartupRestoreMode,
   StartupRestoreServiceState,
   StartupRestoreState,
@@ -1984,6 +1988,14 @@ function getAssistantExportDefaultPath(filename: string) {
   return path.join(app.getPath("home"), safeFilename);
 }
 
+function getSandboxImageExportDefaultPath(imageRef: string) {
+  const safeFilename = sanitizeDownloadFilename(`${imageRef || "sandbox-image"}.tar`, "sandbox-image.tar");
+  if (process.platform === "win32" || process.platform === "darwin") {
+    return path.join(app.getPath("desktop"), safeFilename);
+  }
+  return path.join(app.getPath("home"), safeFilename);
+}
+
 async function saveAssistantChatExport(
   assistantBridge: AgentPlatformAssistantBridge,
   chatId: string
@@ -3512,6 +3524,59 @@ function registerIpcHandlers() {
     runServiceMutation(() => uninstallMarketItem(app, itemId)));
   ipcMain.handle("market.buildSandboxImage", async (_event, itemId: string) =>
     runServiceMutation(() => buildSandboxImage(app, itemId)));
+  ipcMain.handle("market.deleteSandboxImage", async (_event, itemId: string) =>
+    runServiceMutation(() => deleteSandboxImage(app, itemId)));
+  ipcMain.handle("market.exportSandboxImage", async (_event, itemId: string) => runServiceMutation(async () => {
+    const imageRef = String(itemId ?? "").trim();
+    const saveResult = await showSaveDialog({
+      title: "导出沙箱镜像",
+      defaultPath: getSandboxImageExportDefaultPath(imageRef),
+      filters: [{ name: "Docker / Podman 镜像归档", extensions: ["tar"] }]
+    });
+    if (saveResult.canceled || !saveResult.filePath) {
+      return {
+        ok: false,
+        itemId: imageRef,
+        type: "sandbox-image",
+        state: "failed",
+        message: "已取消导出。",
+        imageRef
+      };
+    }
+    return exportSandboxImageToPath(app, imageRef, saveResult.filePath);
+  }));
+  ipcMain.handle("market.importSandboxImage", async (event) => runServiceMutation(async () => {
+    const taskId = `sandbox-import-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const emitImportProgress = (progress: SandboxImageImportProgressEvent) => {
+      event.sender.send("market.sandboxImageImportProgress", {
+        taskId,
+        ...progress
+      });
+    };
+    const result = await showFileDialog({
+      title: "选择沙箱镜像压缩包",
+      properties: ["openFile"],
+      filters: [
+        {
+          name: "镜像压缩包",
+          extensions: process.platform === "win32" ? ["tar", "gz", "tgz", "zip"] : ["tar", "gz", "tgz"]
+        }
+      ]
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return {
+        ok: false,
+        itemId: "",
+        type: "sandbox-image",
+        state: "failed",
+        message: "已取消导入。"
+      };
+    }
+    return importSandboxImageFromPath(app, result.filePaths[0], {
+      taskId,
+      onProgress: emitImportProgress
+    });
+  }));
   ipcMain.handle("market.importSkill", async () => runServiceMutation(async () => {
     const result = await showFileDialog({
       title: "选择 Skill 包或 SKILL.md",

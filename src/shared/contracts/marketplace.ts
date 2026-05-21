@@ -42,6 +42,10 @@ export interface MarketItem {
   message?: string;
   environmentName?: string;
   imageRef?: string;
+  imageId?: string;
+  imageSize?: string;
+  imageCreatedAt?: string;
+  containerEngine?: string;
   buildStatus?: string;
   buildJobId?: string;
   buildTargetCount?: number;
@@ -70,6 +74,28 @@ export interface MarketCommandResult {
   buildJobId?: string;
   buildStatus?: string;
   buildTarget?: string;
+  filePath?: string;
+}
+
+export type SandboxImageImportProgressStage =
+  | "checking-engine"
+  | "extracting"
+  | "archive-ready"
+  | "loading"
+  | "output"
+  | "done"
+  | "failed";
+
+export interface SandboxImageImportProgressEvent {
+  taskId?: string;
+  stage: SandboxImageImportProgressStage;
+  message: string;
+  engine?: string;
+  archivePath?: string;
+  imageRef?: string;
+  stream?: "stdout" | "stderr";
+  done?: boolean;
+  ok?: boolean;
 }
 
 export interface MarketSettings {

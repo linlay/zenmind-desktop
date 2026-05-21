@@ -13,7 +13,10 @@ const {
   buildSandboxImage,
   DEFAULT_MARKETPLACE_CATALOG_URL,
   DEFAULT_SKILLS_API_BASE_URL,
+  deleteSandboxImage,
+  exportSandboxImageToPath,
   getMarketSettings,
+  importSandboxImageFromPath,
   installMarketItem,
   listMarketItems,
   refreshMarketCatalog,
@@ -102,6 +105,24 @@ function writeRootSkillArchive(root, options = {}) {
   fs.writeFileSync(path.join(fixtureRoot, "SKILL.md"), `# ${skillId}\n\nRoot skill.\n`, "utf8");
   execFileSync("tar", ["-czf", archivePath, "-C", fixtureRoot, "SKILL.md"]);
   return archivePath;
+}
+
+function writeFakeContainerEngine(binDir, name, script) {
+  fs.mkdirSync(binDir, { recursive: true });
+  const enginePath = path.join(binDir, name);
+  fs.writeFileSync(enginePath, script, "utf8");
+  fs.chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
+async function withPathPrefix(prefix, fn) {
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${prefix}${path.delimiter}${previousPath ?? ""}`;
+  try {
+    return await fn();
+  } finally {
+    process.env.PATH = previousPath;
+  }
 }
 
 function skillsEnvelope(items, pagination = {}) {
@@ -276,6 +297,95 @@ test("listMarketItems maps Container Hub environments into sandbox image market 
   });
 });
 
+test("listMarketItems lists local sandbox images from the container engine", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-images-"));
+  const app = createApp(root);
+  const binDir = path.join(root, "bin");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
+set -eu
+if [ "$1" = "info" ]; then
+  exit 0
+fi
+if [ "$1" = "image" ] && [ "$2" = "ls" ]; then
+  printf 'sha256:abc123\\tagent-container-hub\\tv0.2.0-linux-arm64\\t512MB\\t2026-05-01 12:00:00 +0800 CST\\n'
+  exit 0
+fi
+echo "unexpected docker command: $*" >&2
+exit 2
+`);
+
+  await withPathPrefix(binDir, async () => {
+    await withFixtureServer(new Map([
+      ["/api/v1/skills?page=1&limit=100", skillsEnvelope([])]
+    ]), async (skillsBaseUrl) => {
+      const result = await listMarketItems(app, {
+        catalog: { schemaVersion: 1, items: [] },
+        skillsApiBaseUrl: skillsBaseUrl
+      });
+      const image = result.items.find((item) =>
+        item.type === "sandbox-image" && item.id === "agent-container-hub:v0.2.0-linux-arm64"
+      );
+
+      assert.equal(result.sandboxOffline, false);
+      assert.equal(image?.name, "agent-container-hub");
+      assert.equal(image?.version, "v0.2.0-linux-arm64");
+      assert.equal(image?.state, "installed");
+      assert.equal(image?.source, "local");
+      assert.equal(image?.imageRef, "agent-container-hub:v0.2.0-linux-arm64");
+      assert.equal(image?.imageId, "sha256:abc123");
+      assert.equal(image?.containerEngine, "docker");
+    });
+  });
+});
+
+test("listMarketItems falls back to podman when docker is unreachable", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-podman-"));
+  const app = createApp(root);
+  const binDir = path.join(root, "bin");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
+set -eu
+if [ "$1" = "info" ]; then
+  exit 1
+fi
+echo "unexpected docker command: $*" >&2
+exit 2
+`);
+  writeFakeContainerEngine(binDir, "podman", `#!/bin/sh
+set -eu
+if [ "$1" = "info" ]; then
+  exit 0
+fi
+if [ "$1" = "image" ] && [ "$2" = "ls" ]; then
+  printf 'sha256:pod123\\tdaily-office\\t2026.05\\t1.2GB\\t2026-05-02 12:00:00 +0800 CST\\n'
+  exit 0
+fi
+echo "unexpected podman command: $*" >&2
+exit 2
+`);
+
+  await withPathPrefix(binDir, async () => {
+    await withFixtureServer(new Map([
+      ["/api/v1/skills?page=1&limit=100", skillsEnvelope([])]
+    ]), async (skillsBaseUrl) => {
+      const result = await listMarketItems(app, {
+        catalog: { schemaVersion: 1, items: [] },
+        skillsApiBaseUrl: skillsBaseUrl
+      });
+      const image = result.items.find((item) =>
+        item.type === "sandbox-image" && item.id === "daily-office:2026.05"
+      );
+
+      assert.equal(result.sandboxOffline, false);
+      assert.equal(image?.containerEngine, "podman");
+      assert.equal(image?.imageRef, "daily-office:2026.05");
+    });
+  });
+});
+
 test("buildSandboxImage starts a Container Hub environment build job", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-build-"));
   const app = createApp(root);
@@ -308,6 +418,222 @@ test("buildSandboxImage starts a Container Hub environment build job", async (t)
     assert.equal(result.buildJobId, "build-2");
     assert.equal(result.buildStatus, "building");
     assert.equal(result.imageRef, "registry.example.com/agent-container-hub/daily-office:2026.05");
+  });
+});
+
+test("importSandboxImageFromPath loads a local image archive with the container engine", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-import-"));
+  const app = createApp(root);
+  const binDir = path.join(root, "bin");
+  const archivePath = path.join(root, "agent-container-hub-image-v0.2.0-linux-arm64.tar.gz");
+  const logPath = path.join(root, "engine.log");
+  const directArchiveRoot = path.join(root, "direct-archive");
+  fs.mkdirSync(directArchiveRoot, { recursive: true });
+  fs.writeFileSync(path.join(directArchiveRoot, "manifest.json"), "[]\n", "utf8");
+  execFileSync("tar", ["-czf", archivePath, "-C", directArchiveRoot, "manifest.json"]);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "${logPath}"
+if [ "$1" = "info" ]; then
+  exit 0
+fi
+if [ "$1" = "image" ] && [ "$2" = "load" ]; then
+  printf 'Loaded image: agent-container-hub:v0.2.0-linux-arm64\\n'
+  exit 0
+fi
+echo "unexpected docker command: $*" >&2
+exit 2
+`);
+
+  await withPathPrefix(binDir, async () => {
+    const result = await importSandboxImageFromPath(app, archivePath);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.type, "sandbox-image");
+    assert.equal(result.state, "installed");
+    assert.equal(result.itemId, "agent-container-hub:v0.2.0-linux-arm64");
+    assert.equal(result.imageRef, "agent-container-hub:v0.2.0-linux-arm64");
+    assert.match(fs.readFileSync(logPath, "utf8"), new RegExp(`image load -i ${archivePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  });
+});
+
+test("importSandboxImageFromPath streams progress while the container engine is still loading", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-import-progress-"));
+  const app = createApp(root);
+  const binDir = path.join(root, "bin");
+  const archivePath = path.join(root, "agent-container-hub-image-v0.4.0-linux-arm64.tar.gz");
+  const directArchiveRoot = path.join(root, "direct-archive");
+  fs.mkdirSync(directArchiveRoot, { recursive: true });
+  fs.writeFileSync(path.join(directArchiveRoot, "manifest.json"), "[]\n", "utf8");
+  execFileSync("tar", ["-czf", archivePath, "-C", directArchiveRoot, "manifest.json"]);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
+set -eu
+if [ "$1" = "info" ]; then
+  exit 0
+fi
+if [ "$1" = "image" ] && [ "$2" = "load" ]; then
+  printf 'Loading layer 1/2\\n' >&2
+  sleep 0.1
+  printf 'Loaded image: agent-container-hub:v0.4.0-linux-arm64\\n'
+  exit 0
+fi
+echo "unexpected docker command: $*" >&2
+exit 2
+`);
+
+  await withPathPrefix(binDir, async () => {
+    const progressEvents = [];
+    let importCompleted = false;
+    let resolveEngineOutput;
+    const engineOutputSeen = new Promise((resolve) => {
+      resolveEngineOutput = resolve;
+    });
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("timed out waiting for streaming sandbox image import progress")), 1_000);
+    });
+
+    const importPromise = importSandboxImageFromPath(app, archivePath, {
+      onProgress(event) {
+        progressEvents.push(event);
+        if (event.stage === "output" && /Loading layer 1\/2/.test(event.message)) {
+          resolveEngineOutput();
+        }
+      }
+    }).finally(() => {
+      importCompleted = true;
+    });
+
+    await Promise.race([engineOutputSeen, timeout]);
+    assert.equal(importCompleted, false);
+
+    const result = await importPromise;
+    assert.equal(result.ok, true);
+    assert.equal(result.imageRef, "agent-container-hub:v0.4.0-linux-arm64");
+    assert.deepEqual(
+      progressEvents.map((event) => event.stage),
+      ["checking-engine", "archive-ready", "loading", "output", "output", "done"]
+    );
+  });
+});
+
+test("importSandboxImageFromPath extracts an image bundle before loading its image archive", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-bundle-import-"));
+  const app = createApp(root);
+  const binDir = path.join(root, "bin");
+  const bundleFixtureRoot = path.join(root, "fixture");
+  const bundleRoot = path.join(bundleFixtureRoot, "agent-container-hub");
+  const bundlePath = path.join(root, "agent-container-hub-image-v0.3.0-linux-arm64.tar.gz");
+  const logPath = path.join(root, "engine.log");
+  fs.mkdirSync(path.join(bundleRoot, "images"), { recursive: true });
+  fs.writeFileSync(
+    path.join(bundleRoot, "images", "agent-container-hub-image-v0.3.0-linux-arm64.tar.gz"),
+    "fake bundled image archive",
+    "utf8"
+  );
+  execFileSync("tar", ["-czf", bundlePath, "-C", bundleFixtureRoot, "agent-container-hub"]);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "${logPath}"
+if [ "$1" = "info" ]; then
+  exit 0
+fi
+if [ "$1" = "image" ] && [ "$2" = "load" ]; then
+  printf 'Loaded image: agent-container-hub:v0.3.0-linux-arm64\\n'
+  exit 0
+fi
+echo "unexpected docker command: $*" >&2
+exit 2
+`);
+
+  await withPathPrefix(binDir, async () => {
+    const result = await importSandboxImageFromPath(app, bundlePath);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.imageRef, "agent-container-hub:v0.3.0-linux-arm64");
+    const log = fs.readFileSync(logPath, "utf8");
+    assert.match(log, /image load -i .*agent-container-hub\/images\/agent-container-hub-image-v0\.3\.0-linux-arm64\.tar\.gz/);
+    assert.doesNotMatch(log, new RegExp(bundlePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  });
+});
+
+test("deleteSandboxImage removes a local image with the container engine", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-delete-"));
+  const app = createApp(root);
+  const binDir = path.join(root, "bin");
+  const logPath = path.join(root, "engine.log");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "${logPath}"
+if [ "$1" = "info" ]; then
+  exit 0
+fi
+if [ "$1" = "image" ] && [ "$2" = "rm" ]; then
+  printf 'Untagged: agent-container-hub:v0.2.0-linux-arm64\\n'
+  exit 0
+fi
+echo "unexpected docker command: $*" >&2
+exit 2
+`);
+
+  await withPathPrefix(binDir, async () => {
+    const result = await deleteSandboxImage(app, "agent-container-hub:v0.2.0-linux-arm64");
+
+    assert.equal(result.ok, true);
+    assert.equal(result.type, "sandbox-image");
+    assert.equal(result.state, "not-installed");
+    assert.equal(result.itemId, "agent-container-hub:v0.2.0-linux-arm64");
+    assert.equal(result.imageRef, "agent-container-hub:v0.2.0-linux-arm64");
+    assert.match(fs.readFileSync(logPath, "utf8"), /image rm agent-container-hub:v0\.2\.0-linux-arm64/);
+  });
+});
+
+test("exportSandboxImageToPath saves a local image archive with the container engine", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-export-"));
+  const app = createApp(root);
+  const binDir = path.join(root, "bin");
+  const exportPath = path.join(root, "agent-container-hub-v0.2.0-linux-arm64.tar");
+  const logPath = path.join(root, "engine.log");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "${logPath}"
+if [ "$1" = "info" ]; then
+  exit 0
+fi
+if [ "$1" = "image" ] && [ "$2" = "save" ]; then
+  printf 'fake image archive' > "$4"
+  exit 0
+fi
+echo "unexpected docker command: $*" >&2
+exit 2
+`);
+
+  await withPathPrefix(binDir, async () => {
+    const result = await exportSandboxImageToPath(
+      app,
+      "agent-container-hub:v0.2.0-linux-arm64",
+      exportPath
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.type, "sandbox-image");
+    assert.equal(result.state, "installed");
+    assert.equal(result.itemId, "agent-container-hub:v0.2.0-linux-arm64");
+    assert.equal(result.imageRef, "agent-container-hub:v0.2.0-linux-arm64");
+    assert.equal(fs.readFileSync(exportPath, "utf8"), "fake image archive");
+    assert.match(
+      fs.readFileSync(logPath, "utf8"),
+      new RegExp(`image save -o ${exportPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} agent-container-hub:v0\\.2\\.0-linux-arm64`)
+    );
   });
 });
 

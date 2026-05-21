@@ -1029,10 +1029,11 @@ test("desktop action bridge exposes localhost api and renderer action providers"
     path.join(projectRoot, "src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx"),
     "utf8"
   );
-  const marketPage = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "FunctionalMarketPage.tsx"),
-    "utf8"
-  );
+  const marketPage = [
+    readSourceFile("src", "renderer", "pages", "functional-market", "index.tsx"),
+    readSourceFile("src", "renderer", "pages", "functional-market", "SkillMarket.tsx"),
+    readSourceFile("src", "renderer", "pages", "functional-market", "marketPageApi.ts")
+  ].join("\n");
 
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_HOST\s*=\s*"127\.0\.0\.1"/);
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_PORT\s*=\s*11788/);
@@ -1090,14 +1091,14 @@ test("built index uses relative asset paths", () => {
 });
 
 test("plugin market guards stale preload market api before skill import", () => {
-  const marketPage = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "FunctionalMarketPage.tsx"),
-    "utf8"
-  );
-  const marketStyles = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "FunctionalMarketPage.css"),
-    "utf8"
-  );
+  const marketPage = [
+    readSourceFile("src", "renderer", "pages", "functional-market", "SkillMarket.tsx"),
+    readSourceFile("src", "renderer", "pages", "functional-market", "marketPageApi.ts")
+  ].join("\n");
+  const marketStyles = [
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    readSourceFile("src", "renderer", "pages", "functional-market", "SkillMarket.css")
+  ].join("\n");
 
   assert.match(marketPage, /function getMarketApi\(/);
   assert.match(marketPage, /function getPluginApi\(/);
@@ -1107,7 +1108,7 @@ test("plugin market guards stale preload market api before skill import", () => 
   assert.match(marketPage, /getMarketMethod\("saveSettings"\)/);
   assert.match(marketPage, /market-api-config/);
   assert.match(marketPage, /保存地址/);
-  assert.match(marketPage, /console\.warn\("\[market-page\] failed to load market data"/);
+  assert.match(marketPage, /console\.warn\("\[skill-market\] failed to load market data"/);
   assert.doesNotMatch(marketPage, /window\.electronAPI\.market\.importSkill\(\)/);
   assert.doesNotMatch(marketPage, /installPlugin\(\)/);
   assert.doesNotMatch(marketPage, /market-feedback/);
@@ -1116,13 +1117,115 @@ test("plugin market guards stale preload market api before skill import", () => 
   assert.match(marketStyles, /\.market-status/);
 });
 
+test("sandbox image market is a local image management surface", () => {
+  const sandboxMarket = readSourceFile(
+    "src",
+    "renderer",
+    "pages",
+    "functional-market",
+    "SandboxImageMarket.tsx"
+  );
+  const marketModel = readSourceFile("src", "renderer", "pages", "functional-market", "marketPageModel.ts");
+
+  assert.match(marketModel, /管理本机 Docker \/ Podman 中已有的沙箱镜像包/);
+  assert.match(sandboxMarket, /PageFeedbackStack/);
+  assert.match(sandboxMarket, /sandboxImageDescription/);
+  assert.match(sandboxMarket, /description === LOCAL_SANDBOX_IMAGE_DESCRIPTION \? "" : description/);
+  assert.match(sandboxMarket, /getMarketMethod\("importSandboxImage"\)/);
+  assert.match(sandboxMarket, /SandboxImageImportProgressEvent/);
+  assert.match(sandboxMarket, /importProgressEvents/);
+  assert.match(sandboxMarket, /getMarketMethod\("onSandboxImageImportProgress"\)/);
+  assert.match(sandboxMarket, /market-import-progress-panel/);
+  assert.match(sandboxMarket, /market-import-progress-log/);
+  assert.match(sandboxMarket, /getMarketMethod\("exportSandboxImage"\)/);
+  assert.match(sandboxMarket, /getMarketMethod\("deleteSandboxImage"\)/);
+  assert.match(sandboxMarket, /market-image-detail-dialog/);
+  assert.match(sandboxMarket, /market-image-action-button/);
+  assert.match(sandboxMarket, /sandbox-image-panel/);
+  assert.doesNotMatch(sandboxMarket, /market-provider-dot/);
+  assert.match(sandboxMarket, /不能撤销/);
+  assert.match(sandboxMarket, /Docker \/ Podman/);
+  assert.match(readSourceFile("src", "renderer", "pages", "functional-market", "marketDisplay.tsx"), /market-sandbox-image-symbol/);
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(260px,\s*1fr\)\)/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.sandbox-image-card\s*\{[\s\S]*?background:\s*var\(--market-control-card\);[\s\S]*?box-shadow:\s*0 2px 6px rgba\(15,\s*23,\s*42,\s*0\.08\);/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /:root\[data-theme="dark"\]\s+\.sandbox-image-card\s*\{[\s\S]*?background:\s*var\(--market-control-card\);[\s\S]*?box-shadow:\s*none;/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.sandbox-image-card\s+\.market-card-icon,[\s\S]*?\.market-image-detail-title\s+\.market-card-icon\s*\{[\s\S]*?background:\s*#e9eefc;[\s\S]*?color:\s*var\(--market-control-blue\);/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /:root\[data-theme="dark"\]\s+\.sandbox-image-card\s+\.market-card-icon,[\s\S]*?:root\[data-theme="dark"\]\s+\.market-image-detail-title\s+\.market-card-icon\s*\{[\s\S]*?background:\s*rgba\(87,\s*144,\s*255,\s*0\.15\);[\s\S]*?color:\s*#7facff;/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.market-topbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto\s*minmax\(0,\s*1fr\)/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.market-tabs\s*\{[\s\S]*?grid-column:\s*2[\s\S]*?justify-self:\s*center[\s\S]*?width:\s*min\(520px,\s*100%\)/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.market-tab\s*\{[\s\S]*?min-height:\s*42px[\s\S]*?font-size:\s*14px[\s\S]*?font-weight:\s*800/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /:root\[data-theme="dark"\]\s+\.market-tabs\s*\{[\s\S]*?background:\s*rgba\(255,\s*255,\s*255,\s*0\.045\)[\s\S]*?box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.04\)/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /:root\[data-theme="dark"\]\s+\.market-tab\.is-active\s*\{[\s\S]*?background:\s*rgba\(87,\s*144,\s*255,\s*0\.18\)[\s\S]*?inset 0 0 0 1px rgba\(158,\s*197,\s*255,\s*0\.24\)/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.market-empty-state\s*\{[\s\S]*?align-self:\s*center;/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.market-import-progress-panel\s*\{[\s\S]*?background:\s*var\(--market-control-card\);[\s\S]*?border:\s*1px solid var\(--market-control-border\);/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.market-import-progress-log\s*\{[\s\S]*?font-family:\s*ui-monospace/
+  );
+  assert.match(sandboxMarket, /查看/);
+  assert.match(sandboxMarket, /导出/);
+  assert.match(sandboxMarket, /删除/);
+  assert.doesNotMatch(sandboxMarket, /getMarketMethod\("buildSandboxImage"\)/);
+  assert.doesNotMatch(sandboxMarket, /构建中|重新构建|onBuildSandboxImage/);
+});
+
+test("sandbox image import progress is exposed across desktop api layers", () => {
+  const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
+  const marketContracts = readSourceFile("src", "shared", "contracts", "marketplace.ts");
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const main = readSourceFile("src", "main", "index.ts");
+
+  assert.match(marketContracts, /export interface SandboxImageImportProgressEvent/);
+  assert.match(desktopApi, /SandboxImageImportProgressListener/);
+  assert.match(desktopApi, /onSandboxImageImportProgress:\s*\(listener:\s*SandboxImageImportProgressListener\)\s*=>\s*\(\)\s*=>\s*void/);
+  assert.match(preload, /onSandboxImageImportProgress:\s*\(listener:\s*SandboxImageImportProgressListener\)\s*=>/);
+  assert.match(preload, /ipcRenderer\.on\("market\.sandboxImageImportProgress"/);
+  assert.match(preload, /ipcRenderer\.off\("market\.sandboxImageImportProgress"/);
+  assert.match(main, /event\.sender\.send\("market\.sandboxImageImportProgress"/);
+  assert.match(main, /const taskId\s*=\s*`sandbox-import-/);
+  assert.match(main, /event\.sender\.send\("market\.sandboxImageImportProgress",\s*\{[\s\S]*?taskId,[\s\S]*?\.\.\.progress/);
+});
+
 test("market route disables the global drag overlay above toolbar controls", () => {
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
-  const marketStyles = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "FunctionalMarketPage.css"),
-    "utf8"
-  );
+  const marketStyles = readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css");
 
   assert.match(appShell, /has-market-controls/);
   assert.match(globalStyles, /\.app-shell\.has-market-controls\s+\.app-window-drag-region/);

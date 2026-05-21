@@ -38,6 +38,8 @@ import {
 } from "./services/manager";
 import {
   buildSandboxImage,
+  deleteSandboxImage,
+  exportSandboxImageToPath,
   getMarketSettings,
   installMarketItem,
   listMarketItems,
@@ -725,6 +727,17 @@ async function executeAction(
       return ok(action, await uninstallMarketItem(options.app, readItemId(args)));
     case "desktop.market.importSkill":
       return fail(action, "interactive_file_picker_required", "本地导入需要用户在 Desktop 文件选择器中操作，暂不通过 HTTP bridge 执行。");
+    case "desktop.market.importSandboxImage":
+      return fail(action, "interactive_file_picker_required", "沙箱镜像导入需要用户在 Desktop 文件选择器中操作，暂不通过 HTTP bridge 执行。");
+    case "desktop.market.exportSandboxImage": {
+      const targetPath = readString(args, "targetPath");
+      if (!targetPath) {
+        return fail(action, "target_path_required", "沙箱镜像导出需要提供 targetPath。");
+      }
+      return ok(action, await exportSandboxImageToPath(options.app, readItemId(args), targetPath));
+    }
+    case "desktop.market.deleteSandboxImage":
+      return ok(action, await deleteSandboxImage(options.app, readItemId(args)));
     case "desktop.market.buildSandboxImage":
       return ok(action, await buildSandboxImage(options.app, readItemId(args)));
     case "desktop.help.getCurrentTopic":

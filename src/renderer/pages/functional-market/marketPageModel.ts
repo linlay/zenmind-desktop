@@ -39,7 +39,7 @@ export const MARKET_TAB_DEFINITIONS: MarketTabDefinition[] = [
     id: "sandboxImages",
     label: "沙箱镜像",
     title: "沙箱镜像市场",
-    subtitle: "从 Container Hub 的 environment 构建可复用的沙箱镜像。"
+    subtitle: "管理本机 Docker / Podman 中已有的沙箱镜像包。"
   }
 ];
 

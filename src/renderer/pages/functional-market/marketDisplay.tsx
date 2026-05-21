@@ -41,7 +41,7 @@ export function canOpenPlugin(service: ServiceState | null) {
 
 export function marketSourceLabel(item: MarketItem) {
   if (item.type === "sandbox-image") {
-    return "Container Hub";
+    return item.containerEngine ? item.containerEngine : "本机镜像";
   }
   return item.source === "local" ? "本地导入" : "云端市场";
 }
@@ -62,11 +62,11 @@ export function marketItemStateLabel(item: MarketItem) {
     case "installed":
       return "可用";
     case "installing":
-      return "构建中";
+      return "处理中";
     case "failed":
-      return "构建失败";
+      return "操作失败";
     case "not-installed":
-      return "待构建";
+      return "未导入";
     default:
       return marketStateLabel(item.state);
   }
@@ -117,26 +117,27 @@ export function skillDetailChips(item: MarketItem) {
 export function sandboxDetailChips(item: MarketItem) {
   return [
     item.imageRef,
-    item.buildTargetCount ? `${item.buildTargetCount} 个构建目标` : null,
+    item.containerEngine ? `引擎 ${item.containerEngine}` : null,
+    item.imageSize ? `大小 ${item.imageSize}` : null,
     ...item.tags
   ].filter((chip): chip is string => Boolean(chip)).slice(0, 3);
 }
 
 export function sandboxMetricLabel(item: MarketItem) {
-  if (item.buildStatus) {
-    return item.buildStatus;
+  if (item.imageSize) {
+    return item.imageSize;
   }
-  return item.imageRef ? "镜像环境" : "environment";
+  if (item.containerEngine) {
+    return item.containerEngine;
+  }
+  return item.imageRef ? "本机镜像" : "镜像包";
 }
 
 export function MarketCardGlyph({ kind }: { kind: "plugin" | "skill" | "sandbox" }) {
   if (kind === "sandbox") {
     return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 3l7 4v8l-7 4-7-4V7z" />
-        <path d="M12 11l7-4" />
-        <path d="M12 11v8" />
-        <path d="M12 11L5 7" />
+      <svg className="market-sandbox-image-symbol" viewBox="0 -960 960 960" aria-hidden="true">
+        <path d="M40-120v-80h42l35-525q2-32 25-53.5t55-21.5h245q32 0 55 21.5t25 53.5l36 525h162v-246q-52-14-86-56t-34-98q0-34 13-63.5t36-51.5q-5-11-7-22t-2-23q0-50 35-85t85-35q50 0 85 35t35 85q0 12-2 23t-7 22q23 22 36 51.5t13 63.5q0 56-34 98t-86 56v246h120v80H40Zm123-80h314l-35-520h-32v360h30v80H200v-80h30v-360h-32l-35 520Zm127-160h60v-360h-60v360Zm470-160q33 0 56.5-23.5T840-600q0-28-13-43t-27-29v-88q0-17-11.5-28.5T760-800q-17 0-28.5 11.5T720-760v88q-14 14-27 29t-13 43q0 33 23.5 56.5T760-520Zm0-80Z" />
       </svg>
     );
   }

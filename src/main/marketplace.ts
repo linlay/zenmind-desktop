@@ -18,7 +18,13 @@ import {
   listPluginMarketItems,
   uninstallPluginMarketItem
 } from "./marketplace/plugin-market";
-import { buildSandboxImage, listSandboxImageMarketItems } from "./marketplace/sandbox-image-market";
+import {
+  buildSandboxImage,
+  deleteSandboxImage,
+  exportSandboxImageToPath,
+  importSandboxImageFromPath,
+  listSandboxImageMarketItems
+} from "./marketplace/sandbox-image-market";
 import {
   importSkillMarketItemFromPath,
   installSkillMarketItem,
@@ -138,7 +144,7 @@ export async function uninstallMarketItem(
   return result;
 }
 
-export { buildSandboxImage };
+export { buildSandboxImage, deleteSandboxImage, exportSandboxImageToPath, importSandboxImageFromPath };
 
 export const __testInternals = {
   normalizeCatalog,

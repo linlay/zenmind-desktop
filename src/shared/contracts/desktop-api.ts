@@ -4,7 +4,7 @@ import type { PluginInstallResult } from "./manifest";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { CustomSidebarDeleteResult, CustomSidebarItemInput, CustomSidebarItemResult, CustomSidebarItemsResult, CustomSidebarTransferResult, CustomSidebarUpdateInput } from "./navigation";
 import type { DesktopPetAgentOption, DesktopPetDanceRequestedListener, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetState, DesktopPetStateListener } from "./pet-copilot";
-import type { MarketCommandResult, MarketListResult, MarketSettings, MarketSettingsInput } from "./marketplace";
+import type { MarketCommandResult, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { TaskBoardDeleteResult, TaskBoardIssueInput, TaskBoardIssueMoveInput, TaskBoardIssueResult, TaskBoardIssueUpdateInput, TaskBoardListResult } from "./task-board";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
 import type { AssistantChatDetail, AssistantChatSummary, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
@@ -68,6 +68,7 @@ export interface DesktopSsoLogoutResult {
 export type DesktopSsoStatusListener = (status: DesktopSsoStatus) => void;
 
 export type NativeDialogVisibilityListener = (state: { open: boolean }) => void;
+export type SandboxImageImportProgressListener = (event: SandboxImageImportProgressEvent) => void;
 
 export interface DesktopApi {
   clipboard: {
@@ -164,6 +165,10 @@ export interface DesktopApi {
     update: (itemId: string) => Promise<MarketCommandResult>;
     uninstall: (itemId: string) => Promise<MarketCommandResult>;
     importSkill: () => Promise<MarketCommandResult>;
+    importSandboxImage: () => Promise<MarketCommandResult>;
+    onSandboxImageImportProgress: (listener: SandboxImageImportProgressListener) => () => void;
+    exportSandboxImage: (itemId: string) => Promise<MarketCommandResult>;
+    deleteSandboxImage: (itemId: string) => Promise<MarketCommandResult>;
     buildSandboxImage: (itemId: string) => Promise<MarketCommandResult>;
   };
   panAuth: {

@@ -21,6 +21,7 @@ import type {
   DesktopApi,
   NavigateListener,
   NativeDialogVisibilityListener,
+  SandboxImageImportProgressListener,
   ServicesChangedListener,
   ServiceId,
   ServiceRevealPathOptions,
@@ -182,6 +183,22 @@ const api: DesktopApi = {
     update: (itemId: string) => ipcRenderer.invoke("market.update", itemId),
     uninstall: (itemId: string) => ipcRenderer.invoke("market.uninstall", itemId),
     importSkill: () => ipcRenderer.invoke("market.importSkill"),
+    importSandboxImage: () => ipcRenderer.invoke("market.importSandboxImage"),
+    onSandboxImageImportProgress: (listener: SandboxImageImportProgressListener) => {
+      const handleSandboxImageImportProgress = (
+        _event: Electron.IpcRendererEvent,
+        payload: Parameters<SandboxImageImportProgressListener>[0]
+      ) => {
+        listener(payload);
+      };
+
+      ipcRenderer.on("market.sandboxImageImportProgress", handleSandboxImageImportProgress);
+      return () => {
+        ipcRenderer.off("market.sandboxImageImportProgress", handleSandboxImageImportProgress);
+      };
+    },
+    exportSandboxImage: (itemId: string) => ipcRenderer.invoke("market.exportSandboxImage", itemId),
+    deleteSandboxImage: (itemId: string) => ipcRenderer.invoke("market.deleteSandboxImage", itemId),
     buildSandboxImage: (itemId: string) => ipcRenderer.invoke("market.buildSandboxImage", itemId)
   },
   panAuth: {
