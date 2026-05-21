@@ -64,17 +64,38 @@ test("buildAuthorizeUrl creates an authorization-code URL with state and fixed l
   assert.equal(url.searchParams.get("prompt"), "login");
 });
 
-test("getDesktopSsoStatus keeps the proven default OIDC flow when the home config file is missing", (t) => {
+test("getDesktopSsoStatus hides Desktop SSO when the home config file is missing", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-default-config-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const status = getDesktopSsoStatus(createTestApp(path.join(root, "home")));
 
-  assert.equal(status.configured, true);
+  assert.equal(status.configured, false);
   assert.equal(status.authenticated, false);
   assert.equal(status.pending, false);
   assert.equal(status.user, null);
   assert.equal(status.error, undefined);
+});
+
+test("loadDesktopSsoConfig requires enabled true before exposing the login entry", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-disabled-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+
+  for (const content of [
+    JSON.stringify({ enabled: false, identityProviderHost: "eiam.gtjaqh.net" }),
+    JSON.stringify({ identityProviderHost: "eiam.gtjaqh.net" }),
+    "eiam.gtjaqh.net"
+  ]) {
+    fs.writeFileSync(path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME), content, "utf8");
+
+    const result = loadDesktopSsoConfig(createTestApp(homePath));
+
+    assert.equal(result.configured, false);
+    assert.equal(result.message, "未配置 Desktop 单点登录。");
+  }
 });
 
 test("loadDesktopSsoConfig does not rewrite copied OIDC endpoints from a bare IAM host", (t) => {

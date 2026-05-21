@@ -32,6 +32,9 @@ import type {
   ServiceLogTarget,
   StartupRestoreState,
   StartupRestoreStateListener,
+  TaskBoardIssueInput,
+  TaskBoardIssueMoveInput,
+  TaskBoardIssueUpdateInput,
   WebviewOpenTabListener,
   WebviewOpenTabRequest
 } from "../shared/contracts";
@@ -40,6 +43,14 @@ import type { DesktopActionCallRequest } from "../shared/desktop-actions";
 const api: DesktopApi = {
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text)
+  },
+  taskBoard: {
+    listIssues: () => ipcRenderer.invoke("taskBoard.listIssues"),
+    createIssue: (input: TaskBoardIssueInput) => ipcRenderer.invoke("taskBoard.createIssue", input),
+    updateIssue: (id: string, input: TaskBoardIssueUpdateInput) =>
+      ipcRenderer.invoke("taskBoard.updateIssue", id, input),
+    deleteIssue: (id: string) => ipcRenderer.invoke("taskBoard.deleteIssue", id),
+    moveIssue: (input: TaskBoardIssueMoveInput) => ipcRenderer.invoke("taskBoard.moveIssue", input)
   },
   assistant: {
     getSettings: () => ipcRenderer.invoke("assistant.getSettings"),

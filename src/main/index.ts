@@ -92,6 +92,14 @@ import {
   updateCustomSidebarItem
 } from "./navigation/custom-sidebar-store";
 import {
+  createTaskBoardIssue,
+  deleteTaskBoardIssue,
+  listTaskBoardIssues,
+  moveTaskBoardIssue,
+  updateTaskBoardIssue,
+  updateTaskBoardIssueByRunId
+} from "./task-board-store";
+import {
   getAgentPlatformMinimaxSettingsPublic,
   loadAgentPlatformMinimaxSettings
 } from "./copilot/core/agent-platform-config";
@@ -137,7 +145,11 @@ import type {
   ServiceState,
   StartupRestoreMode,
   StartupRestoreServiceState,
-  StartupRestoreState
+  StartupRestoreState,
+  TaskBoardIssueInput,
+  TaskBoardIssueMoveInput,
+  TaskBoardIssueUpdateInput,
+  TaskBoardStatus
 } from "../shared/contracts";
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
@@ -3058,19 +3070,57 @@ const logStreamSubscriptions = new Map<
   }
 >();
 
+function resolveTaskBoardStatusFromAssistantEvent(event: AssistantEvent): TaskBoardStatus | null {
+  if (event.type === "done" || event.type === "run.complete") {
+    return "done";
+  }
+  if (
+    event.type === "error" ||
+    event.type === "stopped" ||
+    event.type === "run.error" ||
+    event.type === "run.stopped" ||
+    event.type === "run.interrupt" ||
+    event.type === "run.expired" ||
+    event.status === "error" ||
+    event.status === "cancelled" ||
+    event.status === "timeout" ||
+    event.status === "stopped"
+  ) {
+    return "todo";
+  }
+  return null;
+}
+
+function syncTaskBoardIssueFromAssistantEvent(event: AssistantEvent) {
+  const status = resolveTaskBoardStatusFromAssistantEvent(event);
+  if (!status || !event.runId) {
+    return;
+  }
+
+  const result = updateTaskBoardIssueByRunId(app, event.runId, {
+    status,
+    chatId: event.chatId,
+    runId: null
+  });
+  if (!result.ok && result.message !== "任务运行不存在。") {
+    console.warn(`[task-board] failed to sync assistant run ${event.runId}: ${result.message}`);
+  }
+}
+
 function registerIpcHandlers() {
   const assistantBridge = new AgentPlatformAssistantBridge({
     app,
     getServiceState,
     issueAccessToken: issueAgentAccessToken,
     onEvent: (event) => {
-    for (const targetWindow of [mainWindow, quickCopilotWindowController.getWindow()]) {
-      if (!targetWindow || targetWindow.isDestroyed()) {
-        continue;
+      syncTaskBoardIssueFromAssistantEvent(event);
+      for (const targetWindow of [mainWindow, quickCopilotWindowController.getWindow()]) {
+        if (!targetWindow || targetWindow.isDestroyed()) {
+          continue;
+        }
+        targetWindow.webContents.send("assistant.event", event);
       }
-      targetWindow.webContents.send("assistant.event", event);
-    }
-    handleDesktopPetAssistantEvent(event);
+      handleDesktopPetAssistantEvent(event);
     }
   });
   assistantNavigationStatusClient = new AssistantNavigationStatusClient({
@@ -3575,6 +3625,19 @@ function registerIpcHandlers() {
       };
     }
   });
+  ipcMain.handle("taskBoard.listIssues", async () => listTaskBoardIssues(app));
+  ipcMain.handle("taskBoard.createIssue", async (_event, input: TaskBoardIssueInput) =>
+    createTaskBoardIssue(app, input)
+  );
+  ipcMain.handle("taskBoard.updateIssue", async (_event, issueId: string, input: TaskBoardIssueUpdateInput) =>
+    updateTaskBoardIssue(app, issueId, input)
+  );
+  ipcMain.handle("taskBoard.deleteIssue", async (_event, issueId: string) =>
+    deleteTaskBoardIssue(app, issueId)
+  );
+  ipcMain.handle("taskBoard.moveIssue", async (_event, input: TaskBoardIssueMoveInput) =>
+    moveTaskBoardIssue(app, input)
+  );
   ipcMain.handle("customSidebar.list", async () => listCustomSidebarItems(app));
   ipcMain.handle("customSidebar.add", async (_event, input: CustomSidebarItemInput) => {
     return addCustomSidebarItem(app, input);
