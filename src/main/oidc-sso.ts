@@ -241,13 +241,13 @@ function getRecordString(record: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
-function isConfigExplicitlyDisabled(record: Record<string, unknown>) {
+function isConfigEnabled(record: Record<string, unknown>) {
   const value = record.enabled;
-  if (value === false) {
+  if (value === true) {
     return true;
   }
   if (typeof value === "string") {
-    return /^(?:false|0|off|no)$/iu.test(value.trim());
+    return /^(?:true|1|on|yes)$/iu.test(value.trim());
   }
   return false;
 }
@@ -325,14 +325,14 @@ export function loadDesktopSsoConfig(app: Pick<App, "getPath">, platform: NodeJS
   const configPath = resolveDesktopSsoConfigPath(app, platform);
   if (!fs.existsSync(configPath)) {
     return {
-      configured: true,
+      configured: false,
       configPath,
-      config: { ...DEFAULT_OIDC_CONFIG }
+      message: "未配置 Desktop 单点登录。"
     };
   }
   try {
     const record = parseDesktopSsoConfigContent(fs.readFileSync(configPath, "utf8"));
-    if (isConfigExplicitlyDisabled(record)) {
+    if (!isConfigEnabled(record)) {
       return {
         configured: false,
         configPath,

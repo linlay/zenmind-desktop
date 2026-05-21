@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
 import { CustomSidebarRouteFallback, CustomSidebarSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
@@ -9,6 +9,7 @@ import { ExternalWebviewPage } from "../pages/external-webview/ExternalWebviewPa
 import { HelpPage } from "../pages/HelpPage";
 import { FunctionalMarketPage } from "../pages/functional-market";
 import { SettingsPage } from "../pages/settings/SettingsPage";
+import { TaskBoardPage } from "../pages/task-board/TaskBoardPage";
 import { useServices } from "../services/ServicesContext";
 import { getAssistantPageContext } from "../copilot/page-context/assistantPageContext";
 import { publishCurrentPageContextSnapshot } from "../services/currentPageContext";
@@ -107,6 +108,28 @@ function createUnavailableDesktopSsoStatus(): DesktopSsoStatus {
 
 function getDesktopSsoApi() {
   return window.electronAPI.sso?.getStatus ? window.electronAPI.sso : null;
+}
+
+type DesktopSsoDismissEvent = ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement>;
+
+function isDesktopSsoDismissZone(event: DesktopSsoDismissEvent) {
+  const target = event.target;
+  if (target instanceof Element) {
+    if (target.closest(".app-sso-status-action")) {
+      return false;
+    }
+    if (target.closest(".app-sso-status-close")) {
+      return true;
+    }
+  }
+  const rect = event.currentTarget.getBoundingClientRect();
+  return event.clientX >= rect.right - 64;
+}
+
+function dismissDesktopSsoEvent(event: DesktopSsoDismissEvent, dismiss: () => void) {
+  event.preventDefault();
+  event.stopPropagation();
+  dismiss();
 }
 
 function normalizeCachedAssistantNavAgentItem(value: unknown): AssistantNavAgentItem | null {
@@ -301,6 +324,7 @@ export function AppShell() {
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [desktopSsoBusy, setDesktopSsoBusy] = useState(false);
+  const [desktopSsoDismissed, setDesktopSsoDismissed] = useState(false);
   const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
   const [customSidebarItemsLoaded, setCustomSidebarItemsLoaded] = useState(false);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
@@ -1216,6 +1240,7 @@ export function AppShell() {
     desktopSsoStatus?.pending ? "is-pending" : "",
     desktopSsoStatus?.error ? "is-error" : ""
   ].filter(Boolean).join(" ");
+  const shouldRenderDesktopSso = desktopSsoStatus?.configured === true && !desktopSsoDismissed;
   const appShellStyle = {
     "--app-sidebar-width": `${renderedSidebarWidth}px`
   } as CSSProperties;
@@ -1230,6 +1255,7 @@ export function AppShell() {
         usesPluginSurface ? "has-plugin-surface" : "",
         isMarketRoute ? "has-market-controls" : "",
         usesStandardBaseSurface ? "has-standard-base-surface" : "",
+        shouldRenderDesktopSso ? "has-desktop-sso-status" : "",
         assistantCopilotOpen ? "has-assistant-dock" : "",
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
@@ -1240,25 +1266,59 @@ export function AppShell() {
       ].filter(Boolean).join(" ")}
     >
       <div className="app-window-drag-region" aria-hidden="true" />
-      <div className={desktopSsoClassName} aria-live="polite">
-        <span className="app-sso-status-dot" aria-hidden="true" />
-        <span className="app-sso-status-copy">
-          <span className="app-sso-status-title">{desktopSsoUserLabel}</span>
-          <span className="app-sso-status-message">{desktopSsoMessage}</span>
-        </span>
-        <button
-          type="button"
-          className="app-sso-status-action"
-          onClick={() => {
-            void (desktopSsoStatus?.authenticated
-              ? handleDesktopSsoLogout()
-              : handleDesktopSsoLogin());
+      {shouldRenderDesktopSso && (
+        <div
+          className={desktopSsoClassName}
+          aria-live="polite"
+          onPointerDownCapture={(event) => {
+            if (isDesktopSsoDismissZone(event)) {
+              dismissDesktopSsoEvent(event, () => setDesktopSsoDismissed(true));
+            }
           }}
-          disabled={desktopSsoBusy}
+          onMouseDownCapture={(event) => {
+            if (isDesktopSsoDismissZone(event)) {
+              dismissDesktopSsoEvent(event, () => setDesktopSsoDismissed(true));
+            }
+          }}
         >
-          {desktopSsoBusy ? "处理中" : desktopSsoActionLabel}
-        </button>
-      </div>
+          <span className="app-sso-status-dot" aria-hidden="true" />
+          <span className="app-sso-status-copy">
+            <span className="app-sso-status-title">{desktopSsoUserLabel}</span>
+            <span className="app-sso-status-message">{desktopSsoMessage}</span>
+          </span>
+          <button
+            type="button"
+            className="app-sso-status-action"
+            onClick={() => {
+              void (desktopSsoStatus?.authenticated
+                ? handleDesktopSsoLogout()
+                : handleDesktopSsoLogin());
+            }}
+            disabled={desktopSsoBusy}
+          >
+            {desktopSsoBusy ? "处理中" : desktopSsoActionLabel}
+          </button>
+          <button
+            type="button"
+            className="app-sso-status-close"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setDesktopSsoDismissed(true);
+            }}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setDesktopSsoDismissed(true);
+            }}
+            onClick={() => setDesktopSsoDismissed(true)}
+            aria-label="关闭登录状态"
+            title="关闭"
+          >
+            <span aria-hidden="true" />
+          </button>
+        </div>
+      )}
       <div className="app-sidebar-shell">
         <AppSidebar
           isCollapsed={sidebarCollapsed}
@@ -1320,7 +1380,7 @@ export function AppShell() {
                 />
               }
             />
-            <Route path="/kanban" element={<KanbanPlaceholderPage />} />
+            <Route path="/kanban" element={<TaskBoardPage />} />
             <Route path="/control-center" element={<ControlCenterPage />} />
             <Route
               path="/settings"
@@ -1482,14 +1542,4 @@ function resolveSingleAgentWebclientRoute(pathname: string, search: string) {
 
 function resolveCustomSidebarRouteId(pathname: string) {
   return matchPath("/custom-sidebar/:itemId", pathname)?.params.itemId ?? null;
-}
-
-function KanbanPlaceholderPage() {
-  return (
-    <section className="empty-state kanban-placeholder-page">
-      <p className="eyebrow">KANBAN</p>
-      <h1>任务看板</h1>
-      <p>任务看板入口已预留，后续会在这里集中展示任务、进度和待处理事项。</p>
-    </section>
-  );
 }

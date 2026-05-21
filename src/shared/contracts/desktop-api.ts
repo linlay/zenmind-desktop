@@ -5,6 +5,7 @@ import type { NavigateListener, ServicesChangedListener, StartupRestoreState, St
 import type { CustomSidebarDeleteResult, CustomSidebarItemInput, CustomSidebarItemResult, CustomSidebarItemsResult, CustomSidebarTransferResult, CustomSidebarUpdateInput } from "./navigation";
 import type { DesktopPetAgentOption, DesktopPetDanceRequestedListener, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetState, DesktopPetStateListener } from "./pet-copilot";
 import type { MarketCommandResult, MarketListResult, MarketSettings, MarketSettingsInput } from "./marketplace";
+import type { TaskBoardDeleteResult, TaskBoardIssueInput, TaskBoardIssueMoveInput, TaskBoardIssueResult, TaskBoardIssueUpdateInput, TaskBoardListResult } from "./task-board";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
 import type { AssistantChatDetail, AssistantChatSummary, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 
@@ -71,6 +72,13 @@ export type NativeDialogVisibilityListener = (state: { open: boolean }) => void;
 export interface DesktopApi {
   clipboard: {
     writeText: (text: string) => Promise<{ ok: boolean; message?: string }>;
+  };
+  taskBoard: {
+    listIssues: () => Promise<TaskBoardListResult>;
+    createIssue: (input: TaskBoardIssueInput) => Promise<TaskBoardIssueResult>;
+    updateIssue: (id: string, input: TaskBoardIssueUpdateInput) => Promise<TaskBoardIssueResult>;
+    deleteIssue: (id: string) => Promise<TaskBoardDeleteResult>;
+    moveIssue: (input: TaskBoardIssueMoveInput) => Promise<TaskBoardIssueResult>;
   };
   assistant: {
     getSettings: () => Promise<AssistantSettingsPublic>;

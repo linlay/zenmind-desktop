@@ -46,6 +46,7 @@ function readSharedContractsSource() {
     readSourceFile("src", "shared", "contracts", "copilot.ts"),
     readSourceFile("src", "shared", "contracts", "attachments.ts"),
     readSourceFile("src", "shared", "contracts", "marketplace.ts"),
+    readSourceFile("src", "shared", "contracts", "task-board.ts"),
     readSourceFile("src", "shared", "contracts", "desktop-api.ts")
   ].join("\n");
 }
@@ -481,9 +482,9 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(agentIconSource, /isImageIcon/);
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_ITEMS/);
-  assert.match(appShell, /<Route path="\/kanban" element=\{<KanbanPlaceholderPage \/>/);
-  assert.match(appShell, /function KanbanPlaceholderPage\(\)/);
-  assert.match(appShell, />任务看板</);
+  assert.match(appShell, /<Route path="\/kanban" element=\{<TaskBoardPage \/>/);
+  assert.doesNotMatch(appShell, /KanbanPlaceholderPage/);
+  assert.match(sidebarSource, /label:\s*"任务看板"/);
   assert.match(appShell, /assistantNavAgents/);
   assert.match(appShell, /listNavigationAgents/);
   assert.match(appShell, /routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?label:\s*"智能体"/);
@@ -882,6 +883,51 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(globalStyles, /\.sidebar-assistant-top-button:not\(\.is-assistant-open\)/);
   assert.match(globalStyles, /\.sidebar-assistant-top-button\.is-disabled/);
   assert.doesNotMatch(globalStyles, /\.sidebar-assistant-switch/);
+});
+
+test("task board route exposes native desktop api and page styles", () => {
+  const contracts = readSharedContractsSource();
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const appShell = readAppShellSource();
+  const globalStyles = readRendererStyles();
+  const taskBoardPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "task-board", "TaskBoardPage.tsx"),
+    "utf8"
+  );
+
+  assert.match(contracts, /interface TaskBoardIssue/);
+  assert.match(contracts, /taskBoard:\s*\{/);
+  assert.match(contracts, /createIssue: \(input: TaskBoardIssueInput\) => Promise<TaskBoardIssueResult>/);
+  assert.match(preload, /taskBoard:\s*\{/);
+  assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.listIssues"\)/);
+  assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.moveIssue", input\)/);
+  assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.listIssues"/);
+  assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.moveIssue"/);
+  assert.match(mainProcess, /syncTaskBoardIssueFromAssistantEvent/);
+  assert.match(mainProcess, /updateTaskBoardIssueByRunId\(app, event\.runId/);
+  assert.match(appShell, /import \{ TaskBoardPage \} from "\.\.\/pages\/task-board\/TaskBoardPage"/);
+  assert.match(taskBoardPage, /function readTaskBoardApi/);
+  assert.match(taskBoardPage, /taskBoardApi\.listIssues\(\)/);
+  assert.match(taskBoardPage, /taskBoardApi\.createIssue/);
+  assert.match(taskBoardPage, /window\.electronAPI\.assistant\.startRun/);
+  assert.match(taskBoardPage, /不要直接修改任务看板文件或任务状态/);
+  assert.match(taskBoardPage, /window\.electronAPI\.assistant\.onAssistantEvent/);
+  assert.match(taskBoardPage, /setAgentPickerIssue/);
+  assert.match(taskBoardPage, /<DragOverlay[\s\S]*?dropAnimation=\{null\}/);
+  assert.match(taskBoardPage, /taskBoardApi\.updateIssue\(issue\.id,[\s\S]*?status:\s*"in_progress"/);
+  assert.match(taskBoardPage, /resolveAssistantTaskStatus/);
+  assert.match(taskBoardPage, /status:\s*"done"[\s\S]*?runId:\s*null/);
+  assert.match(taskBoardPage, /function isIssueDragLocked\(issue: TaskBoardIssue \| null \| undefined\)/);
+  assert.match(taskBoardPage, /return Boolean\(issue\?\.runId\);/);
+  assert.match(taskBoardPage, /useSortable\(\{\s*id:\s*issue\.id,[\s\S]*?disabled:\s*dragLocked/);
+  assert.match(taskBoardPage, /is-drag-locked/);
+  assert.match(globalStyles, /\.task-board-page\s*\{/);
+  assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
+  assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
+  assert.match(globalStyles, /\.task-board-column\s*\{/);
+  assert.match(globalStyles, /\.task-board-card\s*\{/);
+  assert.match(globalStyles, /\.task-board-card\.is-drag-locked\s*\{/);
 });
 
 test("custom sidebar agent association is exposed across desktop api layers", () => {
@@ -1719,17 +1765,40 @@ test("desktop pet visual states stay local to renderer priority", () => {
 test("desktop sso waits for a user click and keeps pending login recoverable", () => {
   const appShell = readAppShellSource();
   const contracts = readSharedContractsSource();
+  const globalStyles = readRendererStyles();
 
   assert.match(contracts, /browserOrigin\?: string;/);
   assert.match(contracts, /browserUrl\?: string;/);
   assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
   assert.doesNotMatch(appShell, /void handleDesktopSsoLogin\(\);/);
-  assert.doesNotMatch(appShell, /const shouldRenderDesktopSso/);
-  assert.doesNotMatch(appShell, /\{shouldRenderDesktopSso && \(/);
+  assert.match(appShell, /const shouldRenderDesktopSso = desktopSsoStatus\?\.configured === true && !desktopSsoDismissed;/);
+  assert.match(appShell, /\{shouldRenderDesktopSso && \(/);
+  assert.match(appShell, /const \[desktopSsoDismissed, setDesktopSsoDismissed\] = useState\(false\);/);
+  assert.match(appShell, /setDesktopSsoDismissed\(true\)/);
+  assert.match(appShell, /shouldRenderDesktopSso \? "has-desktop-sso-status" : ""/);
+  assert.match(appShell, /function isDesktopSsoDismissZone\(event: DesktopSsoDismissEvent\)/);
+  assert.match(appShell, /event\.clientX >= rect\.right - 64/);
+  assert.match(appShell, /onPointerDownCapture=\{\(event\) => \{[\s\S]{0,220}isDesktopSsoDismissZone\(event\)[\s\S]{0,220}dismissDesktopSsoEvent/);
+  assert.match(appShell, /className="app-sso-status-close"[\s\S]*?onPointerDown=\{\(event\) => \{[\s\S]{0,180}setDesktopSsoDismissed\(true\);[\s\S]{0,80}\}\}/);
+  assert.match(appShell, /className="app-sso-status-close"[\s\S]*?onMouseDown=\{\(event\) => \{[\s\S]{0,180}setDesktopSsoDismissed\(true\);[\s\S]{0,80}\}\}/);
+  assert.match(appShell, /className="app-sso-status-close"/);
+  assert.match(appShell, /aria-label="关闭登录状态"/);
+  assert.match(globalStyles, /\.app-sso-status-close\s*\{/);
+  assert.match(globalStyles, /\.app-sso-status-close\s*\{[\s\S]{0,180}width:\s*44px;/);
+  assert.match(globalStyles, /\.app-sso-status-close\s*\{[\s\S]{0,220}height:\s*32px;/);
+  assert.match(globalStyles, /\.app-sso-status-close span,[\s\S]{0,80}\.app-sso-status-close span::before\s*\{[\s\S]{0,180}pointer-events:\s*none;/);
+  assert.match(globalStyles, /\.app-sso-status-close span::before/);
+  assert.match(globalStyles, /\.app-sso-status\s*\{[\s\S]{0,260}z-index:\s*40;/);
+  assert.match(globalStyles, /\.app-shell\.has-desktop-sso-status\s+\.app-window-drag-region\s*\{[\s\S]*?right:\s*max\(0px,\s*min\(500px,\s*calc\(100vw - var\(--app-sidebar-width,\s*160px\) - 72px\)\)\);/);
+  assert.match(globalStyles, /\.app-sso-status\s*\{[\s\S]{0,80}top:\s*76px;/);
+  assert.match(globalStyles, /\.app-shell\.has-standard-base-surface\s+\.app-sso-status\s*\{[\s\S]*?right:\s*176px;/);
+  assert.match(globalStyles, /\.app-sso-status,[\s\S]{0,80}\.app-sso-status \*\s*\{[\s\S]{0,180}-webkit-app-region:\s*no-drag;/);
+  assert.match(globalStyles, /\.app-sso-status-action,[\s\S]{0,80}\.app-sso-status-close\s*\{[\s\S]{0,180}pointer-events:\s*auto;/);
+  assert.match(globalStyles, /\.app-sso-status-action,[\s\S]{0,80}\.app-sso-status-close\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(appShell, /desktopSsoStatus\?\.authenticated[\s\S]{0,120}\? "退出登录"/);
   assert.match(appShell, /desktopSsoStatus\?\.pending[\s\S]{0,120}\? "重新打开"/);
   assert.match(appShell, /: "登录";/);
-  assert.match(appShell, /<div className=\{desktopSsoClassName\} aria-live="polite">/);
+  assert.match(appShell, /<div[\s\S]{0,120}className=\{desktopSsoClassName\}[\s\S]{0,120}aria-live="polite"[\s\S]{0,320}onPointerDownCapture/);
   assert.doesNotMatch(appShell, /disabled=\{desktopSsoBusy \|\| desktopSsoStatus\?\.pending === true\}/);
 });
 

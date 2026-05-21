@@ -21,6 +21,9 @@
     "test": "npm run build && node --test ./test/*.test.mjs"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@napi-rs/canvas": "^0.1.100",
     "exceljs": "^4.4.0",
     "fast-xml-parser": "^5.7.2",
