@@ -39,24 +39,6 @@
   -webkit-app-region: no-drag;
 }
 
-.task-board-workspace-mark {
-  width: 20px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--task-board-border);
-  border-radius: 5px;
-  background: var(--task-board-card);
-  color: var(--task-board-muted);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.task-board-breadcrumb-separator {
-  color: var(--task-board-muted);
-}
-
 .task-board-toolbar {
   min-height: 48px;
   flex: 0 0 auto;

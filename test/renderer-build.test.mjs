@@ -918,6 +918,9 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /taskBoardApi\.updateIssue\(issue\.id,[\s\S]*?status:\s*"in_progress"/);
   assert.match(taskBoardPage, /resolveAssistantTaskStatus/);
   assert.match(taskBoardPage, /status:\s*"done"[\s\S]*?runId:\s*null/);
+  assert.match(taskBoardPage, /<header className="task-board-breadcrumb">\s*<strong>Issues<\/strong>\s*<\/header>/);
+  assert.doesNotMatch(taskBoardPage, /task-board-workspace-mark/);
+  assert.doesNotMatch(taskBoardPage, /task-board-breadcrumb-separator/);
   assert.match(taskBoardPage, /function isIssueDragLocked\(issue: TaskBoardIssue \| null \| undefined\)/);
   assert.match(taskBoardPage, /return Boolean\(issue\?\.runId\);/);
   assert.match(taskBoardPage, /useSortable\(\{\s*id:\s*issue\.id,[\s\S]*?disabled:\s*dragLocked/);

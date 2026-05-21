@@ -519,9 +519,6 @@ export function TaskBoardPage() {
   return (
     <section className="task-board-page" aria-label="任务看板">
       <header className="task-board-breadcrumb">
-        <span className="task-board-workspace-mark" aria-hidden="true">Z</span>
-        <span>ZenMind Desktop</span>
-        <span className="task-board-breadcrumb-separator" aria-hidden="true">/</span>
         <strong>Issues</strong>
       </header>
 
