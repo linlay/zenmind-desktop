@@ -1088,7 +1088,7 @@ export function AppSidebar({
                 </span>
               ) : null}
               <span className="sidebar-link-label">{args.label}</span>
-              {args.status
+              {args.status && !expanded
                 ? renderStatusBadges(args.status, "sidebar-group-status")
                 : null}
             </span>
