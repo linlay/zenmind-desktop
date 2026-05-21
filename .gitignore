@@ -39,3 +39,5 @@ playwright-report/
 
 *.pid
 *.pid.lock
+
+.antigravitycli/

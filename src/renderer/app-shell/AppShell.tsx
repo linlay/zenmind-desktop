@@ -7,7 +7,7 @@ import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebcl
 import { ControlCenterPage } from "../pages/control-center/ControlCenterPage";
 import { ExternalWebviewPage } from "../pages/external-webview/ExternalWebviewPage";
 import { HelpPage } from "../pages/HelpPage";
-import { PluginMarketPage } from "../pages/PluginMarketPage";
+import { FunctionalMarketPage } from "../pages/functional-market";
 import { SettingsPage } from "../pages/settings/SettingsPage";
 import { useServices } from "../services/ServicesContext";
 import { getAssistantPageContext } from "../copilot/page-context/assistantPageContext";
@@ -1372,7 +1372,7 @@ export function AppShell() {
             <Route path="/custom-sidebar/:itemId" element={<CustomSidebarRouteFallback itemMap={customSidebarItemMap} />} />
             <Route path="/service/:serviceId" element={null} />
             <Route path="/plugin/:pluginId" element={null} />
-            <Route path="/market" element={<PluginMarketPage />} />
+            <Route path="/market" element={<FunctionalMarketPage />} />
             <Route path="/help" element={<HelpPage isWindows={isWindows} />} />
           </Routes>
         </main>

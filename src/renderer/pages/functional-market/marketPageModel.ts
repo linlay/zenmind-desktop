@@ -14,6 +14,11 @@ export interface MarketTabDefinition {
   subtitle: string;
 }
 
+export interface MarketViewProps {
+  activeTab: MarketTab;
+  onTabChange: (tab: MarketTab) => void;
+}
+
 export const DEFAULT_MARKET_TAB: MarketTab = "plugins";
 export const DEFAULT_SKILLS_API_BASE_URL = "http://127.0.0.1:8080";
 

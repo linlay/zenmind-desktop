@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { MarketTab, MarketTabDefinition } from "./marketPageModel";
+import "./MarketPageFrame.css";
 
 interface MarketPageFrameProps {
   activeTab: MarketTab;

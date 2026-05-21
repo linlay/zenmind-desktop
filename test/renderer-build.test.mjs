@@ -984,7 +984,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
     "utf8"
   );
   const marketPage = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "PluginMarketPage.tsx"),
+    path.join(projectRoot, "src", "renderer", "pages", "FunctionalMarketPage.tsx"),
     "utf8"
   );
 
@@ -1045,11 +1045,11 @@ test("built index uses relative asset paths", () => {
 
 test("plugin market guards stale preload market api before skill import", () => {
   const marketPage = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "PluginMarketPage.tsx"),
+    path.join(projectRoot, "src", "renderer", "pages", "FunctionalMarketPage.tsx"),
     "utf8"
   );
   const marketStyles = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "PluginMarketPage.css"),
+    path.join(projectRoot, "src", "renderer", "pages", "FunctionalMarketPage.css"),
     "utf8"
   );
 
@@ -1074,7 +1074,7 @@ test("market route disables the global drag overlay above toolbar controls", () 
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
   const marketStyles = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "PluginMarketPage.css"),
+    path.join(projectRoot, "src", "renderer", "pages", "FunctionalMarketPage.css"),
     "utf8"
   );
 
