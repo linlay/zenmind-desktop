@@ -54,11 +54,11 @@ test("startup gate shows the bootstrap progress card only while bootstrap needs 
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "succeeded" }, true), false);
 });
 
-test("startup gate routes root traffic to control center during bootstrap and agent webclient otherwise", () => {
+test("startup gate routes root traffic to control center during bootstrap and task board otherwise", () => {
   assert.equal(resolveStartupRootPath(null, false), null);
   assert.equal(resolveStartupRootPath({ mode: "bootstrap", phase: "running" }, false), "/control-center");
-  assert.equal(resolveStartupRootPath({ mode: "bootstrap", phase: "succeeded" }, true), "/service/agent-webclient");
-  assert.equal(resolveStartupRootPath({ mode: "restore", phase: "running" }, false), "/service/agent-webclient");
+  assert.equal(resolveStartupRootPath({ mode: "bootstrap", phase: "succeeded" }, true), "/kanban");
+  assert.equal(resolveStartupRootPath({ mode: "restore", phase: "running" }, false), "/kanban");
 });
 
 test("startup gate only auto-opens the assistant after bootstrap succeeds", () => {

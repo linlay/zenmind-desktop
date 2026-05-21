@@ -629,7 +629,7 @@ export function AppShell() {
 
     startupNavigationDoneRef.current = true;
     setStartupTimedOut(false);
-    navigate(ASSISTANT_TARGET_PATH, { replace: true });
+    navigate("/kanban", { replace: true });
   }, [navigate, startupAllReady, startupRestoreState]);
 
   useEffect(() => {

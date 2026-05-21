@@ -56,5 +56,5 @@ export function resolveStartupRootPath(startupRestoreState: StartupRestoreState 
     return "/control-center";
   }
 
-  return "/service/agent-webclient";
+  return "/kanban";
 }
