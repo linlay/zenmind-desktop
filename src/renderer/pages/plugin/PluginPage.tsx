@@ -10,13 +10,17 @@ import {
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
+  DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
-  type ServiceWebviewBridgeMessage
+  type ServiceWebviewBridgeMessage,
 } from "../../../shared/service-webview-bridge";
 import { getServiceDisplayName } from "../../service-display";
-import type { AssistantPageContext, DesktopPageContextSnapshot } from "../../../shared/contracts";
+import type {
+  AssistantPageContext,
+  DesktopPageContextSnapshot,
+} from "../../../shared/contracts";
 import {
   EXTRACT_STRUCTURED_SCRIPT,
   READ_PAGE_DATA_SCRIPT,
@@ -24,17 +28,15 @@ import {
   buildInteractElementScript,
   buildSubmitFormScript,
   type EmbeddedWebInteractAction,
-  type EmbeddedWebReadInclude,
-  type EmbeddedWebStructuredTarget
 } from "../../../shared/embedded-web-scripts";
 import {
   getCurrentPageContextSnapshot,
   publishCurrentPageContextSnapshot,
-  subscribeCurrentPageContext
+  subscribeCurrentPageContext,
 } from "../../services/currentPageContext";
 import {
   registerCurrentPageExecutor,
-  registerDesktopActionProviderForScope
+  registerDesktopActionProviderForScope,
 } from "../../services/desktopActionRegistry";
 import {
   EMBEDDED_WEB_INTERACT_ACTIONS,
@@ -46,7 +48,7 @@ import {
   getUtf8ByteLength,
   readActionSelector,
   readAllowedValues,
-  readFormFields
+  readFormFields,
 } from "../../copilot/page-context/embeddedWebActions";
 
 type PluginPageProps = {
@@ -79,7 +81,10 @@ const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
   };
 })()`;
 
-function buildAgentWebclientAccessTokenInjectionScript(token: string | null, desktopAuthContext: string) {
+function buildAgentWebclientAccessTokenInjectionScript(
+  token: string | null,
+  desktopAuthContext: string,
+) {
   return `(() => {
     const token = ${JSON.stringify(token ?? "")};
     const desktopAuthContext = ${JSON.stringify(desktopAuthContext)};
@@ -198,7 +203,9 @@ function normalizeWhitespace(value: string) {
   return value.replace(/\s+/gu, " ").trim();
 }
 
-function buildAgentWebclientDesktopContext(snapshot: DesktopPageContextSnapshot | null) {
+function buildAgentWebclientDesktopContext(
+  snapshot: DesktopPageContextSnapshot | null,
+) {
   if (!snapshot) {
     return null;
   }
@@ -212,7 +219,7 @@ function buildPluginWebviewFallbackContext(
   surfaceId: string,
   surfaceLabel: string,
   surfaceRoute?: string,
-  embedPath?: string
+  embedPath?: string,
 ): AssistantPageContext {
   const normalizedName = normalizeWhitespace(serviceDisplayName || "内嵌应用");
   const fallbackUrl = embeddedUrl || webUrl || window.location.href;
@@ -224,7 +231,7 @@ function buildPluginWebviewFallbackContext(
     headings: [],
     bodyText: [
       `当前左侧区域是内嵌应用「${normalizedName || "内嵌应用"}」。`,
-      "需要实时读取或操作时，优先使用 desktop.page.readCurrent、desktop.page.extractStructured、desktop.page.interact、desktop.page.fillForm、desktop.page.submitForm。"
+      "需要实时读取或操作时，优先使用 desktop.page.readCurrent、desktop.page.extractStructured、desktop.page.interact、desktop.page.fillForm、desktop.page.submitForm。",
     ].join(" "),
     browserTarget: fallbackUrl
       ? {
@@ -233,9 +240,9 @@ function buildPluginWebviewFallbackContext(
           surfaceLabel,
           ...(surfaceRoute ? { surfaceRoute } : {}),
           ...(embedPath ? { embedPath } : {}),
-          currentUrl: fallbackUrl
+          currentUrl: fallbackUrl,
         }
-      : undefined
+      : undefined,
   };
 }
 
@@ -253,6 +260,73 @@ function readWebviewContentsId(webview: Electron.WebviewTag | null) {
   }
 }
 
+function parseHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildPluginWebviewSrcUrl(embeddedUrl: string) {
+  const parsed = parseHttpUrl(embeddedUrl);
+  return parsed ? `${parsed.origin}/` : embeddedUrl;
+}
+
+function samePluginWebviewOrigin(left: string, right: string) {
+  const leftUrl = parseHttpUrl(left);
+  const rightUrl = parseHttpUrl(right);
+  return Boolean(leftUrl && rightUrl && leftUrl.origin === rightUrl.origin);
+}
+
+function hasPluginRoute(url: URL) {
+  return Boolean(url.pathname !== "/" || url.search || url.hash);
+}
+
+function resolvePluginCurrentUrl(
+  actualUrl: string,
+  embeddedUrl: string,
+  webviewSrcUrl: string,
+) {
+  const actual = parseHttpUrl(actualUrl);
+  const embedded = parseHttpUrl(embeddedUrl);
+  const src = parseHttpUrl(webviewSrcUrl);
+  if (!actual) {
+    return embeddedUrl;
+  }
+  if (
+    embedded &&
+    src &&
+    actual.origin === src.origin &&
+    !hasPluginRoute(actual) &&
+    hasPluginRoute(embedded)
+  ) {
+    return embedded.toString();
+  }
+  return actual.toString();
+}
+
+function buildPluginRouteChangedMessage(
+  targetUrl: string,
+  reason: "initial" | "navigation" | "route-sync",
+): ServiceWebviewBridgeMessage | null {
+  const parsed = parseHttpUrl(targetUrl);
+  if (!parsed) {
+    return null;
+  }
+  return {
+    type: DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
+    requestId: `plugin_route_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    reason,
+    url: parsed.toString(),
+    origin: parsed.origin,
+    pathname: parsed.pathname,
+    search: parsed.search,
+    hash: parsed.hash,
+  };
+}
+
 async function tryReadPluginWebviewPageContext(
   webview: Electron.WebviewTag | null,
   serviceDisplayName: string,
@@ -262,35 +336,51 @@ async function tryReadPluginWebviewPageContext(
   surfaceLabel: string,
   surfaceRoute: string,
   embedPath: string | undefined,
-  currentUrl: string
+  currentUrl: string,
 ): Promise<AssistantPageContext | null> {
   if (!webview) {
     return null;
   }
 
   try {
-    const pageContext = await webview.executeJavaScript(WEBVIEW_PAGE_CONTEXT_SCRIPT, true);
-    const nextUrl = typeof pageContext?.url === "string" && pageContext.url ? pageContext.url : currentUrl || embeddedUrl || webUrl;
+    const pageContext = await webview.executeJavaScript(
+      WEBVIEW_PAGE_CONTEXT_SCRIPT,
+      true,
+    );
+    const nextUrl =
+      typeof pageContext?.url === "string" && pageContext.url
+        ? pageContext.url
+        : currentUrl || embeddedUrl || webUrl;
 
     return {
       url: nextUrl,
-      title: typeof pageContext?.title === "string" && pageContext.title
-        ? pageContext.title
-        : serviceDisplayName || "内嵌应用",
-      selectedText: typeof pageContext?.selectedText === "string" ? pageContext.selectedText : "",
-      metaDescription: typeof pageContext?.metaDescription === "string" ? pageContext.metaDescription : "",
+      title:
+        typeof pageContext?.title === "string" && pageContext.title
+          ? pageContext.title
+          : serviceDisplayName || "内嵌应用",
+      selectedText:
+        typeof pageContext?.selectedText === "string"
+          ? pageContext.selectedText
+          : "",
+      metaDescription:
+        typeof pageContext?.metaDescription === "string"
+          ? pageContext.metaDescription
+          : "",
       headings: Array.isArray(pageContext?.headings)
-        ? pageContext.headings.filter((item: unknown): item is string => typeof item === "string")
+        ? pageContext.headings.filter(
+            (item: unknown): item is string => typeof item === "string",
+          )
         : [],
-      bodyText: typeof pageContext?.bodyText === "string" ? pageContext.bodyText : "",
+      bodyText:
+        typeof pageContext?.bodyText === "string" ? pageContext.bodyText : "",
       browserTarget: {
         kind: "webview",
         surfaceId,
         surfaceLabel,
         ...(surfaceRoute ? { surfaceRoute } : {}),
         ...(embedPath ? { embedPath } : {}),
-        currentUrl: nextUrl
-      }
+        currentUrl: nextUrl,
+      },
     };
   } catch {
     return null;
@@ -303,7 +393,7 @@ export function PluginPage({
   active,
   embedPath,
   surfaceLabel,
-  skipContextRegistration
+  skipContextRegistration,
 }: PluginPageProps) {
   const location = useLocation();
   const currentRoute = `${location.pathname}${location.search}`;
@@ -311,25 +401,30 @@ export function PluginPage({
   const pluginId = pluginIdProp ?? routePluginId ?? "";
   const { services, refresh: refreshServices } = useServices();
   const service = services.find((s) => s.id === pluginId);
-  const agentPlatformService = service?.id === "agent-webclient"
-    ? services.find((s) => s.id === "agent-platform")
-    : null;
-  const serviceDisplayName = surfaceLabel || (service ? getServiceDisplayName(service.id, service.name) : "");
+  const agentPlatformService =
+    service?.id === "agent-webclient"
+      ? services.find((s) => s.id === "agent-platform")
+      : null;
+  const serviceDisplayName =
+    surfaceLabel ||
+    (service ? getServiceDisplayName(service.id, service.name) : "");
   const surfaceRoute = location.pathname;
   const [bridgeError, setBridgeError] = useState("");
   const [bridgeReady, setBridgeReady] = useState(false);
   const [webviewRetryNonce, setWebviewRetryNonce] = useState(0);
   const [webviewLoadError, setWebviewLoadError] = useState(false);
   const [webviewCurrentUrl, setWebviewCurrentUrl] = useState("");
-  const [serviceWebviewPreloadPath, setServiceWebviewPreloadPath] = useState("");
+  const [serviceWebviewPreloadPath, setServiceWebviewPreloadPath] =
+    useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const agentWebclientTokenReloadTimerRef = useRef<number | null>(null);
-  const surfaceVisibilityProps = active === undefined
-    ? {}
-    : {
-        hidden: !active,
-        "aria-hidden": !active
-      };
+  const surfaceVisibilityProps =
+    active === undefined
+      ? {}
+      : {
+          hidden: !active,
+          "aria-hidden": !active,
+        };
 
   const webUrl = service?.healthMeta.webUrl ?? "";
   const bridgeProtocol = useMemo(
@@ -338,37 +433,58 @@ export function PluginPage({
   );
   const webviewReloadKey = [
     service?.healthMeta.pid ?? "",
-    service?.id === "agent-webclient" ? agentPlatformService?.status ?? "" : "",
-    service?.id === "agent-webclient" ? agentPlatformService?.healthMeta.pid ?? "" : ""
+    service?.id === "agent-webclient"
+      ? (agentPlatformService?.status ?? "")
+      : "",
+    service?.id === "agent-webclient"
+      ? (agentPlatformService?.healthMeta.pid ?? "")
+      : "",
   ].join(":");
   const routeEmbedPath = useMemo(() => {
     if (service?.id !== "agent-webclient") {
       return "";
     }
     try {
-      return new URLSearchParams(location.search).get("embedPath")?.trim() ?? "";
+      return (
+        new URLSearchParams(location.search).get("embedPath")?.trim() ?? ""
+      );
     } catch {
       return "";
     }
   }, [location.search, service?.id]);
-  const effectiveEmbedPath = service?.id === "agent-webclient"
-    ? (embedPath || routeEmbedPath || undefined)
-    : undefined;
+  const effectiveEmbedPath =
+    service?.id === "agent-webclient"
+      ? embedPath || routeEmbedPath || undefined
+      : undefined;
   const embeddedUrl = useMemo(() => {
     return buildPluginEmbeddedUrl(service?.id, webUrl, {
       hostTheme,
-      desktopAuthContext: service?.id === "agent-webclient" ? webviewReloadKey : undefined,
+      desktopAuthContext:
+        service?.id === "agent-webclient" ? webviewReloadKey : undefined,
       embedPath: effectiveEmbedPath,
-      baseUrl: service?.healthMeta.port ? `http://127.0.0.1:${service.healthMeta.port}` : undefined
+      baseUrl: service?.healthMeta.port
+        ? `http://127.0.0.1:${service.healthMeta.port}`
+        : undefined,
     });
-  }, [effectiveEmbedPath, hostTheme, service?.healthMeta.port, service?.id, webUrl, webviewReloadKey]);
+  }, [
+    effectiveEmbedPath,
+    hostTheme,
+    service?.healthMeta.port,
+    service?.id,
+    webUrl,
+    webviewReloadKey,
+  ]);
+  const webviewSrcUrl = useMemo(
+    () => buildPluginWebviewSrcUrl(embeddedUrl),
+    [embeddedUrl],
+  );
   const webviewBaseKey = useMemo(
-    () => [service?.id ?? "service", webviewReloadKey, embeddedUrl].join(":"),
-    [embeddedUrl, service?.id, webviewReloadKey]
+    () => [service?.id ?? "service", webviewReloadKey, webviewSrcUrl].join(":"),
+    [service?.id, webviewReloadKey, webviewSrcUrl],
   );
   const webviewRenderKey = useMemo(
     () => [webviewBaseKey, webviewRetryNonce].join(":"),
-    [webviewBaseKey, webviewRetryNonce]
+    [webviewBaseKey, webviewRetryNonce],
   );
   function embeddedError(code: string, message: string, details?: unknown) {
     return {
@@ -376,8 +492,8 @@ export function PluginPage({
       error: {
         code,
         message,
-        ...(details === undefined ? {} : { details })
-      }
+        ...(details === undefined ? {} : { details }),
+      },
     };
   }
 
@@ -385,7 +501,7 @@ export function PluginPage({
     try {
       const webviewUrl = webviewRef.current?.getURL();
       return typeof webviewUrl === "string" && webviewUrl.trim()
-        ? webviewUrl.trim()
+        ? resolvePluginCurrentUrl(webviewUrl.trim(), embeddedUrl, webviewSrcUrl)
         : embeddedUrl;
     } catch {
       return embeddedUrl;
@@ -393,30 +509,39 @@ export function PluginPage({
   }
 
   async function readPluginPageContext() {
-    return await tryReadPluginWebviewPageContext(
-      webviewRef.current,
-      serviceDisplayName,
-      embeddedUrl,
-      webUrl,
-      pluginId,
-      serviceDisplayName,
-      surfaceRoute,
-      effectiveEmbedPath,
-      readCurrentWebviewUrl()
-    ) ?? buildPluginWebviewFallbackContext(
-      serviceDisplayName,
-      embeddedUrl,
-      webUrl,
-      pluginId,
-      serviceDisplayName,
-      surfaceRoute,
-      effectiveEmbedPath
+    return (
+      (await tryReadPluginWebviewPageContext(
+        webviewRef.current,
+        serviceDisplayName,
+        embeddedUrl,
+        webUrl,
+        pluginId,
+        serviceDisplayName,
+        surfaceRoute,
+        effectiveEmbedPath,
+        readCurrentWebviewUrl(),
+      )) ??
+      buildPluginWebviewFallbackContext(
+        serviceDisplayName,
+        embeddedUrl,
+        webUrl,
+        pluginId,
+        serviceDisplayName,
+        surfaceRoute,
+        effectiveEmbedPath,
+      )
     );
   }
 
-  async function executeWebviewScript(args: Record<string, unknown>, script: string) {
+  async function executeWebviewScript(
+    args: Record<string, unknown>,
+    script: string,
+  ) {
     if (getUtf8ByteLength(script) > EMBEDDED_WEB_SCRIPT_MAX_BYTES) {
-      return embeddedError("script_too_large", "脚本超过内嵌网页执行大小限制。");
+      return embeddedError(
+        "script_too_large",
+        "脚本超过内嵌网页执行大小限制。",
+      );
     }
     const targetWebview = webviewRef.current;
     if (!targetWebview) {
@@ -430,14 +555,15 @@ export function PluginPage({
         ok: false,
         error: {
           code: "webview_execution_failed",
-          message: error instanceof Error ? error.message : String(error)
-        }
+          message: error instanceof Error ? error.message : String(error),
+        },
       };
     }
   }
 
   const createCurrentPageDescriptor = () => {
-    const currentUrl = webviewCurrentUrl || readCurrentWebviewUrl() || embeddedUrl || webUrl;
+    const currentUrl =
+      webviewCurrentUrl || readCurrentWebviewUrl() || embeddedUrl || webUrl;
     const webContentsId = readWebviewContentsId(webviewRef.current);
     return {
       route: currentRoute,
@@ -447,7 +573,7 @@ export function PluginPage({
       ...(serviceDisplayName ? { surfaceLabel: serviceDisplayName } : {}),
       ...(surfaceRoute ? { surfaceRoute } : {}),
       ...(effectiveEmbedPath ? { embedPath: effectiveEmbedPath } : {}),
-      ...(typeof webContentsId === "number" ? { webContentsId } : {})
+      ...(typeof webContentsId === "number" ? { webContentsId } : {}),
     };
   };
 
@@ -457,10 +583,14 @@ export function PluginPage({
       pageKey: descriptor.pageKey,
       pageKind: descriptor.pageKind,
       ...(descriptor.surfaceId ? { surfaceId: descriptor.surfaceId } : {}),
-      ...(descriptor.surfaceLabel ? { surfaceLabel: descriptor.surfaceLabel } : {}),
-      ...(descriptor.surfaceRoute ? { surfaceRoute: descriptor.surfaceRoute } : {}),
+      ...(descriptor.surfaceLabel
+        ? { surfaceLabel: descriptor.surfaceLabel }
+        : {}),
+      ...(descriptor.surfaceRoute
+        ? { surfaceRoute: descriptor.surfaceRoute }
+        : {}),
       ...(descriptor.embedPath ? { embedPath: descriptor.embedPath } : {}),
-      ...payload
+      ...payload,
     };
   }
 
@@ -477,14 +607,19 @@ export function PluginPage({
         pageContext: await readPluginPageContext(),
         data: filterReadPageDataResult(
           response.result,
-          readAllowedValues(args.include, EMBEDDED_WEB_READ_INCLUDES)
-        )
-      })
+          readAllowedValues(args.include, EMBEDDED_WEB_READ_INCLUDES),
+        ),
+      }),
     };
   }
 
-  async function executeCurrentPageStructuredRead(args: Record<string, unknown>) {
-    const response = await executeWebviewScript(args, EXTRACT_STRUCTURED_SCRIPT);
+  async function executeCurrentPageStructuredRead(
+    args: Record<string, unknown>,
+  ) {
+    const response = await executeWebviewScript(
+      args,
+      EXTRACT_STRUCTURED_SCRIPT,
+    );
     if (!response.ok) {
       return response;
     }
@@ -495,23 +630,38 @@ export function PluginPage({
         readAt: new Date().toISOString(),
         data: filterStructuredResult(
           response.result,
-          readAllowedValues(args.targets, EMBEDDED_WEB_STRUCTURED_TARGETS)
-        )
-      })
+          readAllowedValues(args.targets, EMBEDDED_WEB_STRUCTURED_TARGETS),
+        ),
+      }),
     };
   }
 
   async function executeCurrentPageInteract(args: Record<string, unknown>) {
     const selector = readActionSelector(args);
     const action = typeof args.action === "string" ? args.action.trim() : "";
-    if (!selector || !EMBEDDED_WEB_INTERACT_ACTIONS.has(action as EmbeddedWebInteractAction)) {
-      return embeddedError("invalid_args", "selector 和有效的 action 是必填项。", args);
+    if (
+      !selector ||
+      !EMBEDDED_WEB_INTERACT_ACTIONS.has(action as EmbeddedWebInteractAction)
+    ) {
+      return embeddedError(
+        "invalid_args",
+        "selector 和有效的 action 是必填项。",
+        args,
+      );
     }
-    const response = await executeWebviewScript(args, buildInteractElementScript({
-      selector,
-      action: action as EmbeddedWebInteractAction,
-      value: typeof args.value === "string" ? args.value : args.value == null ? undefined : String(args.value)
-    }));
+    const response = await executeWebviewScript(
+      args,
+      buildInteractElementScript({
+        selector,
+        action: action as EmbeddedWebInteractAction,
+        value:
+          typeof args.value === "string"
+            ? args.value
+            : args.value == null
+              ? undefined
+              : String(args.value),
+      }),
+    );
     if (!response.ok) {
       return response;
     }
@@ -520,20 +670,30 @@ export function PluginPage({
       result: attachDescriptorMetadata({
         interacted: true,
         action,
-        outcome: response.result
-      })
+        outcome: response.result,
+      }),
     };
   }
 
   async function executeCurrentPageFillForm(args: Record<string, unknown>) {
     const fields = readFormFields(args);
     if (fields.length === 0) {
-      return embeddedError("invalid_args", "fields 是必填项，且每个字段都需要 selector。", args);
+      return embeddedError(
+        "invalid_args",
+        "fields 是必填项，且每个字段都需要 selector。",
+        args,
+      );
     }
-    const response = await executeWebviewScript(args, buildFillFormScript({
-      formSelector: typeof args.formSelector === "string" ? args.formSelector.trim() : undefined,
-      fields
-    }));
+    const response = await executeWebviewScript(
+      args,
+      buildFillFormScript({
+        formSelector:
+          typeof args.formSelector === "string"
+            ? args.formSelector.trim()
+            : undefined,
+        fields,
+      }),
+    );
     if (!response.ok) {
       return response;
     }
@@ -541,16 +701,25 @@ export function PluginPage({
       ok: true,
       result: attachDescriptorMetadata({
         filled: true,
-        outcome: response.result
-      })
+        outcome: response.result,
+      }),
     };
   }
 
   async function executeCurrentPageSubmitForm(args: Record<string, unknown>) {
-    const response = await executeWebviewScript(args, buildSubmitFormScript({
-      formSelector: typeof args.formSelector === "string" ? args.formSelector.trim() : undefined,
-      submitSelector: typeof args.submitSelector === "string" ? args.submitSelector.trim() : undefined
-    }));
+    const response = await executeWebviewScript(
+      args,
+      buildSubmitFormScript({
+        formSelector:
+          typeof args.formSelector === "string"
+            ? args.formSelector.trim()
+            : undefined,
+        submitSelector:
+          typeof args.submitSelector === "string"
+            ? args.submitSelector.trim()
+            : undefined,
+      }),
+    );
     if (!response.ok) {
       return response;
     }
@@ -558,8 +727,8 @@ export function PluginPage({
       ok: true,
       result: attachDescriptorMetadata({
         submitted: true,
-        outcome: response.result
-      })
+        outcome: response.result,
+      }),
     };
   }
 
@@ -592,7 +761,10 @@ export function PluginPage({
         if (cancelled) {
           return;
         }
-        setBridgeError(reason instanceof Error ? reason.message : String(reason));
+
+        setBridgeError(
+          reason instanceof Error ? reason.message : String(reason),
+        );
       });
     return () => {
       cancelled = true;
@@ -602,10 +774,26 @@ export function PluginPage({
 
   function sendBridgeMessageToWebview(payload: Record<string, unknown>) {
     try {
-      webviewRef.current?.send(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL, payload);
+      webviewRef.current?.executeJavaScript(
+        `
+        window.dispatchEvent(new CustomEvent('${SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL}', { detail: ${JSON.stringify(payload)} }))
+        `,
+        true,
+      );
     } catch {
       // Ignore bridge delivery while the guest webContents is being recreated.
     }
+  }
+
+  function sendPluginRouteToWebview(
+    targetUrl: string,
+    reason: "initial" | "navigation" | "route-sync",
+  ) {
+    const payload = buildPluginRouteChangedMessage(targetUrl, reason);
+    if (!payload) {
+      return;
+    }
+    sendBridgeMessageToWebview(payload);
   }
 
   async function injectAgentWebclientAccessToken(token: string | null) {
@@ -619,21 +807,24 @@ export function PluginPage({
 
     const desktopAuthContext = webviewReloadKey;
     try {
-      const result = await targetWebview.executeJavaScript(
-        buildAgentWebclientAccessTokenInjectionScript(token, desktopAuthContext),
-        true
-      ) as { tokenBeforeLength?: number; tokenAfterLength?: number } | null;
+      const result = (await targetWebview.executeJavaScript(
+        buildAgentWebclientAccessTokenInjectionScript(
+          token,
+          desktopAuthContext,
+        ),
+        true,
+      )) as { tokenBeforeLength?: number; tokenAfterLength?: number } | null;
       return Boolean(
         token &&
-          desktopAuthContext &&
-          result &&
-          (result.tokenBeforeLength ?? 0) === 0 &&
-          (result.tokenAfterLength ?? 0) > 0
+        desktopAuthContext &&
+        result &&
+        (result.tokenBeforeLength ?? 0) === 0 &&
+        (result.tokenAfterLength ?? 0) > 0,
       );
     } catch (reason) {
       console.warn(
         "[agent-webclient] failed to inject access token fallback",
-        reason instanceof Error ? reason.message : String(reason)
+        reason instanceof Error ? reason.message : String(reason),
       );
       return false;
     }
@@ -647,11 +838,12 @@ export function PluginPage({
       .issueAccessToken("missing")
       .then(async (result) => {
         const token = result.ok ? result.token : null;
-        const shouldReloadAfterInjection = await injectAgentWebclientAccessToken(token);
+        const shouldReloadAfterInjection =
+          await injectAgentWebclientAccessToken(token);
         sendBridgeMessageToWebview({
           type: bridgeProtocol.responseType,
           requestId: `agent_webclient_seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          token
+          token,
         });
         if (shouldReloadAfterInjection) {
           if (agentWebclientTokenReloadTimerRef.current !== null) {
@@ -667,15 +859,19 @@ export function PluginPage({
         }
       })
       .catch((reason) => {
-        setBridgeError(reason instanceof Error ? reason.message : String(reason));
+        setBridgeError(
+          reason instanceof Error ? reason.message : String(reason),
+        );
       });
   }
 
   function scheduleAgentWebclientAccessTokenSeeds() {
     const delays = [0, 150, 500, 1000, 2000];
-    return delays.map((delay) => window.setTimeout(() => {
-      seedAgentWebclientAccessToken();
-    }, delay));
+    return delays.map((delay) =>
+      window.setTimeout(() => {
+        seedAgentWebclientAccessToken();
+      }, delay),
+    );
   }
 
   function handleWebviewBridgeMessage(event: Event) {
@@ -683,35 +879,47 @@ export function PluginPage({
     if (channel !== SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL) {
       return;
     }
-    const [payload] = ((event as Event & { args?: unknown[] }).args ?? []) as [ServiceWebviewBridgeMessage?];
+    const [payload] = ((event as Event & { args?: unknown[] }).args ?? []) as [
+      ServiceWebviewBridgeMessage?,
+    ];
     if (!payload || !payload.type || !payload.requestId) {
       return;
     }
 
     if (payload.type === SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE) {
-      console.info("[service-webview]", service?.id || "plugin", payload.stage || "", payload.message || "");
+      console.info(
+        "[service-webview]",
+        service?.id || "plugin",
+        payload.stage || "",
+        payload.message || "",
+      );
       return;
     }
 
     if (
       bridgeProtocol &&
       payload.type === bridgeProtocol.requestType &&
-      (payload.action === "getAccessToken" || payload.action === "refreshAccessToken")
+      (payload.action === "getAccessToken" ||
+        payload.action === "refreshAccessToken")
     ) {
       void window.electronAPI.agentAuth
-        .issueAccessToken(payload.reason === "unauthorized" ? "unauthorized" : "missing")
+        .issueAccessToken(
+          payload.reason === "unauthorized" ? "unauthorized" : "missing",
+        )
         .then((result) => {
           sendBridgeMessageToWebview({
             type: bridgeProtocol.responseType,
             requestId: payload.requestId,
-            token: result.ok ? result.token : null
+            token: result.ok ? result.token : null,
           });
           if (!result.ok) {
             setBridgeError(result.message);
           }
         })
         .catch((reason) => {
-          setBridgeError(reason instanceof Error ? reason.message : String(reason));
+          setBridgeError(
+            reason instanceof Error ? reason.message : String(reason),
+          );
         });
       return;
     }
@@ -724,7 +932,7 @@ export function PluginPage({
             type: AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
             requestId: payload.requestId,
             ok: result.ok,
-            message: result.message ?? ""
+            message: result.message ?? "",
           });
         })
         .catch((reason) => {
@@ -732,7 +940,7 @@ export function PluginPage({
             type: AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
             requestId: payload.requestId,
             ok: false,
-            message: reason instanceof Error ? reason.message : String(reason)
+            message: reason instanceof Error ? reason.message : String(reason),
           });
         });
     }
@@ -740,7 +948,9 @@ export function PluginPage({
 
   function webviewLoadedChromeErrorPage() {
     try {
-      return webviewRef.current?.getURL().startsWith("chrome-error://") ?? false;
+      return (
+        webviewRef.current?.getURL().startsWith("chrome-error://") ?? false
+      );
     } catch {
       return false;
     }
@@ -760,7 +970,9 @@ export function PluginPage({
     }
 
     window.setTimeout(() => {
-      setWebviewRetryNonce((current) => (current === webviewRetryNonce ? current + 1 : current));
+      setWebviewRetryNonce((current) =>
+        current === webviewRetryNonce ? current + 1 : current,
+      );
     }, 450);
   }
 
@@ -776,20 +988,42 @@ export function PluginPage({
 
     const handleDomReady = () => {
       syncWebviewState();
+      sendPluginRouteToWebview(embeddedUrl, "initial");
       seedAgentWebclientAccessToken();
     };
     const handleDidFinishLoad = () => {
       syncWebviewState();
+      sendPluginRouteToWebview(embeddedUrl, "route-sync");
       seedAgentWebclientAccessToken();
     };
     const handleDidNavigate = (event: Event) => {
       const nextUrl = readEventString(event, "url");
-      setWebviewCurrentUrl(nextUrl || readCurrentWebviewUrl());
+      setWebviewCurrentUrl(
+        nextUrl
+          ? resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
+          : readCurrentWebviewUrl(),
+      );
+      if (nextUrl && samePluginWebviewOrigin(nextUrl, webviewSrcUrl)) {
+        sendPluginRouteToWebview(
+          resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl),
+          "navigation",
+        );
+      }
       seedAgentWebclientAccessToken();
     };
     const handleDidNavigateInPage = (event: Event) => {
       const nextUrl = readEventString(event, "url");
-      setWebviewCurrentUrl(nextUrl || readCurrentWebviewUrl());
+      setWebviewCurrentUrl(
+        nextUrl
+          ? resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
+          : readCurrentWebviewUrl(),
+      );
+      if (nextUrl && samePluginWebviewOrigin(nextUrl, webviewSrcUrl)) {
+        sendPluginRouteToWebview(
+          resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl),
+          "navigation",
+        );
+      }
       seedAgentWebclientAccessToken();
     };
     const handleDidFailLoad = () => syncWebviewState();
@@ -797,10 +1031,14 @@ export function PluginPage({
     targetWebview.addEventListener("dom-ready", handleDomReady);
     targetWebview.addEventListener("did-finish-load", handleDidFinishLoad);
     targetWebview.addEventListener("did-navigate", handleDidNavigate);
-    targetWebview.addEventListener("did-navigate-in-page", handleDidNavigateInPage);
+    targetWebview.addEventListener(
+      "did-navigate-in-page",
+      handleDidNavigateInPage,
+    );
     targetWebview.addEventListener("did-fail-load", handleDidFailLoad);
     targetWebview.addEventListener("ipc-message", handleWebviewBridgeMessage);
     syncWebviewState();
+    sendPluginRouteToWebview(embeddedUrl, "route-sync");
     const seedTimers = scheduleAgentWebclientAccessTokenSeeds();
 
     return () => {
@@ -808,9 +1046,15 @@ export function PluginPage({
       targetWebview.removeEventListener("dom-ready", handleDomReady);
       targetWebview.removeEventListener("did-finish-load", handleDidFinishLoad);
       targetWebview.removeEventListener("did-navigate", handleDidNavigate);
-      targetWebview.removeEventListener("did-navigate-in-page", handleDidNavigateInPage);
+      targetWebview.removeEventListener(
+        "did-navigate-in-page",
+        handleDidNavigateInPage,
+      );
       targetWebview.removeEventListener("did-fail-load", handleDidFailLoad);
-      targetWebview.removeEventListener("ipc-message", handleWebviewBridgeMessage);
+      targetWebview.removeEventListener(
+        "ipc-message",
+        handleWebviewBridgeMessage,
+      );
     };
   }, [
     bridgeProtocol,
@@ -819,8 +1063,10 @@ export function PluginPage({
     service?.id,
     service?.status,
     serviceWebviewPreloadPath,
+    embeddedUrl,
+    webviewSrcUrl,
     webviewRenderKey,
-    webviewRetryNonce
+    webviewRetryNonce,
   ]);
 
   useEffect(() => {
@@ -828,7 +1074,14 @@ export function PluginPage({
       return;
     }
     seedAgentWebclientAccessToken();
-  }, [active, bridgeReady, embeddedUrl, service?.id, serviceWebviewPreloadPath, webviewRenderKey]);
+  }, [
+    active,
+    bridgeReady,
+    embeddedUrl,
+    service?.id,
+    serviceWebviewPreloadPath,
+    webviewRenderKey,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -847,7 +1100,9 @@ export function PluginPage({
     const postDesktopContextChanged = () => {
       sendBridgeMessageToWebview({
         type: DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
-        desktop: buildAgentWebclientDesktopContext(getCurrentPageContextSnapshot())
+        desktop: buildAgentWebclientDesktopContext(
+          getCurrentPageContextSnapshot(),
+        ),
       });
     };
 
@@ -861,7 +1116,11 @@ export function PluginPage({
   }, [active, embeddedUrl, service?.id, webviewRenderKey]);
 
   useEffect(() => {
-    if (active === false || service?.status !== "running" || skipContextRegistration) {
+    if (
+      active === false ||
+      service?.status !== "running" ||
+      skipContextRegistration
+    ) {
       return undefined;
     }
 
@@ -873,7 +1132,7 @@ export function PluginPage({
       }
       publishCurrentPageContextSnapshot({
         ...createCurrentPageDescriptor(),
-        pageContext
+        pageContext,
       });
     })();
 
@@ -889,31 +1148,52 @@ export function PluginPage({
     serviceDisplayName,
     skipContextRegistration,
     webviewCurrentUrl,
-    webUrl
+    webUrl,
   ]);
 
   useEffect(() => {
-    if (active === false || service?.status !== "running" || skipContextRegistration) {
+    if (
+      active === false ||
+      service?.status !== "running" ||
+      skipContextRegistration
+    ) {
       return undefined;
     }
 
     return registerAssistantPageContextProvider(async () => {
       return readPluginPageContext();
     });
-  }, [active, embeddedUrl, pluginId, service?.status, serviceDisplayName, skipContextRegistration, webUrl]);
+  }, [
+    active,
+    embeddedUrl,
+    pluginId,
+    service?.status,
+    serviceDisplayName,
+    skipContextRegistration,
+    webUrl,
+  ]);
 
   useEffect(() => {
-    if (active === false || service?.status !== "running" || skipContextRegistration) {
+    if (
+      active === false ||
+      service?.status !== "running" ||
+      skipContextRegistration
+    ) {
       return undefined;
     }
 
     return registerCurrentPageExecutor({
       getDescriptor: createCurrentPageDescriptor,
-      readCurrent: async (request) => executeCurrentPageRead(request.args ?? {}),
-      extractStructured: async (request) => executeCurrentPageStructuredRead(request.args ?? {}),
-      interact: async (request) => executeCurrentPageInteract(request.args ?? {}),
-      fillForm: async (request) => executeCurrentPageFillForm(request.args ?? {}),
-      submitForm: async (request) => executeCurrentPageSubmitForm(request.args ?? {})
+      readCurrent: async (request) =>
+        executeCurrentPageRead(request.args ?? {}),
+      extractStructured: async (request) =>
+        executeCurrentPageStructuredRead(request.args ?? {}),
+      interact: async (request) =>
+        executeCurrentPageInteract(request.args ?? {}),
+      fillForm: async (request) =>
+        executeCurrentPageFillForm(request.args ?? {}),
+      submitForm: async (request) =>
+        executeCurrentPageSubmitForm(request.args ?? {}),
     });
   }, [
     active,
@@ -924,87 +1204,108 @@ export function PluginPage({
     serviceDisplayName,
     skipContextRegistration,
     webviewCurrentUrl,
-    webUrl
+    webUrl,
   ]);
 
   useEffect(() => {
-    if (active === false || service?.status !== "running" || !embeddedUrl || skipContextRegistration) {
+    if (
+      active === false ||
+      service?.status !== "running" ||
+      !embeddedUrl ||
+      skipContextRegistration
+    ) {
       return undefined;
     }
 
     function requestTargetsDifferentSurface(args: Record<string, unknown>) {
-      const targetSurfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
+      const targetSurfaceId =
+        typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
       return Boolean(targetSurfaceId && targetSurfaceId !== pluginId);
     }
 
-    return registerDesktopActionProviderForScope("embeddedWeb", async (request) => {
-      if (active === false || service?.status !== "running") {
-        return null;
-      }
-      const args = request.args ?? {};
-      if (requestTargetsDifferentSurface(args)) {
-        return null;
-      }
-
-      switch (request.action) {
-        case "desktop.embeddedWeb.getActiveSurface":
-          return {
-            ok: true,
-            result: {
-              surface: {
-                id: pluginId,
-                label: serviceDisplayName,
-                url: embeddedUrl,
-                active: active !== false,
-                currentUrl: webviewCurrentUrl || embeddedUrl,
-                title: serviceDisplayName
-              },
-              tabs: [],
-              activeTab: null
-            }
-          };
-        case "desktop.embeddedWeb.getPageContext":
-          return { ok: true, result: await readPluginPageContext() };
-        case "desktop.embeddedWeb.readPageData": {
-          const response = await executeCurrentPageRead(args);
-          if (!response.ok) {
-            return response;
-          }
-          return { ok: true, result: response.result.data };
-        }
-        case "desktop.embeddedWeb.extractStructured": {
-          const response = await executeCurrentPageStructuredRead(args);
-          if (!response.ok) {
-            return response;
-          }
-          return { ok: true, result: response.result.data };
-        }
-        case "desktop.embeddedWeb.interactElement": {
-          const response = await executeCurrentPageInteract(args);
-          if (!response.ok) {
-            return response;
-          }
-          return { ok: true, result: response.result.outcome };
-        }
-        case "desktop.embeddedWeb.executeScript": {
-          const script = typeof args.script === "string" ? args.script : "";
-          if (!script.trim()) {
-            return embeddedError("invalid_script", "script 是必填项。");
-          }
-          return executeWebviewScript(args, script);
-        }
-        default:
+    return registerDesktopActionProviderForScope(
+      "embeddedWeb",
+      async (request) => {
+        if (active === false || service?.status !== "running") {
           return null;
-      }
-    });
-  }, [active, embeddedUrl, pluginId, service?.status, serviceDisplayName, skipContextRegistration, webviewCurrentUrl, webUrl]);
+        }
+        const args = request.args ?? {};
+        if (requestTargetsDifferentSurface(args)) {
+          return null;
+        }
+
+        switch (request.action) {
+          case "desktop.embeddedWeb.getActiveSurface":
+            return {
+              ok: true,
+              result: {
+                surface: {
+                  id: pluginId,
+                  label: serviceDisplayName,
+                  url: embeddedUrl,
+                  active: active !== false,
+                  currentUrl: webviewCurrentUrl || embeddedUrl,
+                  title: serviceDisplayName,
+                },
+                tabs: [],
+                activeTab: null,
+              },
+            };
+          case "desktop.embeddedWeb.getPageContext":
+            return { ok: true, result: await readPluginPageContext() };
+          case "desktop.embeddedWeb.readPageData": {
+            const response = await executeCurrentPageRead(args);
+            if (!response.ok) {
+              return response;
+            }
+            return { ok: true, result: response.result.data };
+          }
+          case "desktop.embeddedWeb.extractStructured": {
+            const response = await executeCurrentPageStructuredRead(args);
+            if (!response.ok) {
+              return response;
+            }
+            return { ok: true, result: response.result.data };
+          }
+          case "desktop.embeddedWeb.interactElement": {
+            const response = await executeCurrentPageInteract(args);
+            if (!response.ok) {
+              return response;
+            }
+            return { ok: true, result: response.result.outcome };
+          }
+          case "desktop.embeddedWeb.executeScript": {
+            const script = typeof args.script === "string" ? args.script : "";
+            if (!script.trim()) {
+              return embeddedError("invalid_script", "script 是必填项。");
+            }
+            return executeWebviewScript(args, script);
+          }
+          default:
+            return null;
+        }
+      },
+    );
+  }, [
+    active,
+    embeddedUrl,
+    pluginId,
+    service?.status,
+    serviceDisplayName,
+    skipContextRegistration,
+    webviewCurrentUrl,
+    webUrl,
+  ]);
 
   if (!service) {
     if (pluginId === "agent-webclient") {
       return (
         <section className="empty-state" {...surfaceVisibilityProps}>
           <h1>智能助理服务未注册</h1>
-          <p>未找到 agent-webclient 内置服务。请确认 Desktop 已同步完整内置资源，或在控制中心安装 agent-webclient 发布包。</p>
+          <p>
+            未找到 agent-webclient 内置服务。请确认 Desktop
+            已同步完整内置资源，或在控制中心安装 agent-webclient 发布包。
+          </p>
           <Link className="primary-link" to="/control-center">
             前往控制中心
           </Link>
@@ -1060,7 +1361,6 @@ export function PluginPage({
       </section>
     );
   }
-
   return (
     <section className="pan-page pan-page-embedded" {...surfaceVisibilityProps}>
       <div className="pan-drag-region" aria-hidden="true" />
@@ -1068,7 +1368,10 @@ export function PluginPage({
         {bridgeReady && serviceWebviewPreloadPath ? (
           <>
             {webviewLoadError ? (
-              <section className="empty-state embedded-plugin-error" aria-live="polite">
+              <section
+                className="empty-state embedded-plugin-error"
+                aria-live="polite"
+              >
                 <p className="eyebrow">PLUGIN</p>
                 <h1>{serviceDisplayName}</h1>
                 <p>智能助理服务正在恢复，页面会自动重新加载。</p>
@@ -1077,15 +1380,15 @@ export function PluginPage({
             {createElement("webview", {
               key: webviewRenderKey,
               ref: (node: Electron.WebviewTag | null) => {
-                webviewRef.current = node;
+                !webviewRef.current && (webviewRef.current = node);
               },
-              src: embeddedUrl,
+              src: webviewSrcUrl,
               title: serviceDisplayName,
               className: "pan-frame",
               preload: serviceWebviewPreloadPath,
               partition: `persist:zenmind-service-${pluginId || "plugin"}`,
               allowpopups: "true",
-              style: { width: "100%", height: "100%", border: "none" }
+              style: { width: "100%", height: "100%", border: "none" },
             })}
           </>
         ) : (
