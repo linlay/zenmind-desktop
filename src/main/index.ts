@@ -14,20 +14,24 @@ import {
   session,
   systemPreferences,
   webContents,
+  type CookiesSetDetails,
   type MediaAccessPermissionRequest,
   type MenuItemConstructorOptions,
   type Rectangle,
+  type Session,
   type WebContents,
   type WebFrameMain
 } from "electron";
 import { issueAgentAccessToken } from "./agent-auth";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import {
+  failDesktopSsoFlow,
+  getDesktopSsoCookieMirrorOrigins,
   getDesktopSsoStatus,
+  getDesktopSsoProxyBrowserCookieDetails,
   logoutDesktopSso,
   startDesktopSsoLogin
 } from "./oidc-sso";
-import { openUrlInChrome } from "./sso-chrome";
 import { loadBuiltinServices } from "./builtin-loader";
 import {
   captureManagedProcessCleanupSnapshot,
@@ -215,6 +219,7 @@ const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
 const MAC_FULLSCREEN_CLOSE_FALLBACK_MS = 2200;
 const ZENMIND_APP_ID = "cc.zenmind.desktop";
 const ZENMIND_PRODUCT_NAME = "ZenMind";
+const DESKTOP_SSO_WEBVIEW_PARTITION = "persist:zenmind-desktop-sso";
 const DESKTOP_PET_DONE_PREVIEW_FALLBACK = "暂无回复预览";
 const DESKTOP_PET_GENERIC_DONE_PREVIEWS = new Set([
   "思考中",
@@ -2400,18 +2405,235 @@ function focusMainWindowAfterDesktopSso() {
   mainWindow.focus();
 }
 
-function getDesktopSsoChromeProfileDir() {
-  return path.join(app.getPath("userData"), "chrome-sso-profile");
+function getDesktopSsoBrowserUserAgent() {
+  const chromeVersion = process.versions.chrome || "120.0.0.0";
+  if (process.platform === "win32") {
+    return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Electron/${process.versions.electron} Safari/537.36`
+      .replace(/\sElectron\/[^\s]+/u, "");
+  }
+  if (process.platform === "darwin") {
+    return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Electron/${process.versions.electron} Safari/537.36`
+      .replace(/\sElectron\/[^\s]+/u, "");
+  }
+  return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Electron/${process.versions.electron} Safari/537.36`
+    .replace(/\sElectron\/[^\s]+/u, "");
 }
 
-async function openBrowserUrl(input: { url: string; label?: string }) {
+function splitDesktopSsoSetCookieHeader(header: string) {
+  return header
+    .split(/,(?=\s*[^;,\s]+=)/u)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function getDesktopSsoSetCookieHeaders(headers: Headers) {
+  const headersWithSetCookie = headers as Headers & { getSetCookie?: () => string[] };
+  if (typeof headersWithSetCookie.getSetCookie === "function") {
+    return headersWithSetCookie.getSetCookie();
+  }
+  const setCookieHeader = headers.get("set-cookie");
+  return setCookieHeader ? splitDesktopSsoSetCookieHeader(setCookieHeader) : [];
+}
+
+function getDesktopSsoDefaultCookiePath(url: URL) {
+  const pathname = url.pathname || "/";
+  if (pathname === "/" || !pathname.startsWith("/")) {
+    return "/";
+  }
+  const lastSlashIndex = pathname.lastIndexOf("/");
+  return lastSlashIndex <= 0 ? "/" : pathname.slice(0, lastSlashIndex);
+}
+
+function toDesktopSsoSameSite(value: string): CookiesSetDetails["sameSite"] {
+  const normalizedValue = value.trim().toLowerCase();
+  if (normalizedValue === "none") {
+    return "no_restriction";
+  }
+  if (normalizedValue === "strict") {
+    return "strict";
+  }
+  if (normalizedValue === "lax") {
+    return "lax";
+  }
+  return "unspecified";
+}
+
+function rewriteDesktopSsoUrlOrigin(value: string, browserOrigin?: string) {
+  if (!browserOrigin) {
+    return value;
+  }
+  const url = new URL(value);
+  const originUrl = new URL(browserOrigin);
+  if (!["http:", "https:"].includes(originUrl.protocol)) {
+    return value;
+  }
+  url.protocol = originUrl.protocol;
+  url.host = originUrl.host;
+  return url.toString();
+}
+
+function parseDesktopSsoSetCookieHeader(header: string, responseUrl: string): CookiesSetDetails | null {
+  const responseUrlObject = new URL(responseUrl);
+  const [nameValuePair, ...attributes] = header.split(";");
+  const separatorIndex = nameValuePair.indexOf("=");
+  if (separatorIndex <= 0) {
+    return null;
+  }
+
+  const name = nameValuePair.slice(0, separatorIndex).trim();
+  if (!name) {
+    return null;
+  }
+
+  const details: CookiesSetDetails = {
+    url: responseUrlObject.origin,
+    name,
+    value: nameValuePair.slice(separatorIndex + 1).trim(),
+    path: getDesktopSsoDefaultCookiePath(responseUrlObject)
+  };
+
+  for (const rawAttribute of attributes) {
+    const attribute = rawAttribute.trim();
+    if (!attribute) {
+      continue;
+    }
+
+    const attributeSeparatorIndex = attribute.indexOf("=");
+    const attributeName = (attributeSeparatorIndex >= 0
+      ? attribute.slice(0, attributeSeparatorIndex)
+      : attribute).trim().toLowerCase();
+    const attributeValue = attributeSeparatorIndex >= 0
+      ? attribute.slice(attributeSeparatorIndex + 1).trim()
+      : "";
+
+    if (attributeName === "domain" && attributeValue) {
+      details.domain = attributeValue;
+    } else if (attributeName === "path" && attributeValue) {
+      details.path = attributeValue;
+    } else if (attributeName === "secure") {
+      details.secure = true;
+    } else if (attributeName === "httponly") {
+      details.httpOnly = true;
+    } else if (attributeName === "samesite" && attributeValue) {
+      details.sameSite = toDesktopSsoSameSite(attributeValue);
+    } else if (attributeName === "expires" && attributeValue) {
+      const expiresAt = Date.parse(attributeValue);
+      if (Number.isFinite(expiresAt)) {
+        details.expirationDate = Math.floor(expiresAt / 1000);
+      }
+    } else if (attributeName === "max-age" && attributeValue) {
+      const maxAgeSeconds = Number.parseInt(attributeValue, 10);
+      if (Number.isFinite(maxAgeSeconds)) {
+        details.expirationDate = Math.floor(Date.now() / 1000) + maxAgeSeconds;
+      }
+    }
+  }
+
+  return details;
+}
+
+async function applyDesktopSsoSetCookieHeaders(
+  ssoSession: Session,
+  responseUrl: string,
+  setCookieHeaders: string[]
+) {
+  await Promise.all(setCookieHeaders.map(async (header) => {
+    const cookieDetails = parseDesktopSsoSetCookieHeader(header, responseUrl);
+    if (!cookieDetails) {
+      return;
+    }
+    await ssoSession.cookies.set(cookieDetails);
+  }));
+}
+
+async function buildDesktopSsoCookieHeader(ssoSession: Session, targetUrl: string) {
+  const cookies = await ssoSession.cookies.get({ url: targetUrl });
+  return cookies
+    .map((cookie) => `${cookie.name}=${cookie.value}`)
+    .join("; ");
+}
+
+async function mirrorDesktopSsoSetCookieHeaders(
+  ssoSession: Session,
+  responseUrl: string,
+  browserOrigin: string | undefined,
+  setCookieHeaders: string[]
+) {
+  await applyDesktopSsoSetCookieHeaders(ssoSession, responseUrl, setCookieHeaders);
+  const mirroredResponseUrl = rewriteDesktopSsoUrlOrigin(responseUrl, browserOrigin);
+  if (mirroredResponseUrl !== responseUrl) {
+    await applyDesktopSsoSetCookieHeaders(ssoSession, mirroredResponseUrl, setCookieHeaders);
+  }
+}
+
+async function resolveDesktopSsoNavigationUrl(
+  ssoSession: Session,
+  targetUrl: string,
+  browserOrigin?: string
+) {
+  try {
+    const requestUrl = new URL(targetUrl);
+    const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, targetUrl);
+    const headers: Record<string, string> = {
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "User-Agent": getDesktopSsoBrowserUserAgent()
+    };
+    if (cookieHeader) {
+      headers.Cookie = cookieHeader;
+    }
+
+    const response = await fetch(targetUrl, {
+      redirect: "manual",
+      headers
+    });
+    await mirrorDesktopSsoSetCookieHeaders(
+      ssoSession,
+      response.url || targetUrl,
+      browserOrigin,
+      getDesktopSsoSetCookieHeaders(response.headers)
+    );
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (location) {
+        const resolvedLocation = new URL(location, requestUrl).toString();
+        return rewriteDesktopSsoUrlOrigin(resolvedLocation, browserOrigin);
+      }
+    }
+  } catch (error) {
+    safeConsoleError("failed to resolve desktop sso navigation url", {
+      url: targetUrl,
+      error
+    });
+  }
+  return rewriteDesktopSsoUrlOrigin(targetUrl, browserOrigin);
+}
+
+async function openBrowserUrl(input: {
+  url: string;
+  label?: string;
+  requireOperableTarget?: boolean;
+  partition?: string;
+  userAgent?: string;
+}) {
   const targetUrl = input.url || BUILTIN_BROWSER_DEFAULT_URL;
   navigateMainWindow(BUILTIN_BROWSER_ROUTE);
   await delay(450);
   mainWindow?.webContents.send("webview.openTab", {
     sourceGuestId: -1,
-    url: targetUrl
+    url: targetUrl,
+    partition: input.partition,
+    userAgent: input.userAgent
   });
+  if (input.requireOperableTarget === false) {
+    return {
+      ok: true,
+      action: "open_url",
+      target: targetUrl,
+      url: targetUrl,
+      message: `已将「${input.label || targetUrl}」发送到内置浏览器。`
+    };
+  }
   for (let attempt = 0; attempt < 32; attempt += 1) {
     await delay(250);
     const contents = findWebContentsForSurfaceUrl(targetUrl);
@@ -2438,6 +2660,86 @@ async function openBrowserUrl(input: { url: string; label?: string }) {
     error: "browser_webview_not_ready",
     message: `已尝试打开「${input.label || targetUrl}」，但没有拿到可操作的网页目标。`
   };
+}
+
+async function openDesktopSsoBrowserUrl(input: {
+  url: string;
+  label?: string;
+  browserOrigin?: string;
+  resolveRedirect?: boolean;
+}) {
+  const ssoSession = session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+  await ssoSession.setProxy({ proxyRules: "direct://" });
+  return openBrowserUrl({
+    ...input,
+    url: input.resolveRedirect === false
+      ? rewriteDesktopSsoUrlOrigin(input.url, input.browserOrigin)
+      : await resolveDesktopSsoNavigationUrl(ssoSession, input.url, input.browserOrigin),
+    requireOperableTarget: false,
+    partition: DESKTOP_SSO_WEBVIEW_PARTITION,
+    userAgent: getDesktopSsoBrowserUserAgent()
+  });
+}
+
+async function syncDesktopSsoBrowserCookies() {
+  const cookieDetails = getDesktopSsoProxyBrowserCookieDetails();
+  const mirrorOrigins = getDesktopSsoCookieMirrorOrigins(app);
+  const ssoSession = session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+  const targetSessions = [
+    session.defaultSession,
+    ssoSession
+  ];
+  await Promise.all(cookieDetails.flatMap((details) =>
+    targetSessions.map(async (targetSession) => {
+      await targetSession.cookies.set(details);
+    })
+  ));
+  await Promise.all(mirrorOrigins.map(async (origin) => {
+    const cookies = await ssoSession.cookies.get({ url: origin });
+    await Promise.all(cookies.map(async (cookie) => {
+      await session.defaultSession.cookies.set({
+        url: origin,
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain || undefined,
+        path: cookie.path || "/",
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        expirationDate: cookie.expirationDate,
+        sameSite: cookie.sameSite
+      });
+    }));
+  }));
+}
+
+async function clearDesktopSsoBrowserCookies() {
+  const cookieDetails = getDesktopSsoProxyBrowserCookieDetails();
+  const mirrorOrigins = getDesktopSsoCookieMirrorOrigins(app);
+  const targetSessions = [
+    session.defaultSession,
+    session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
+  ];
+  await Promise.all(cookieDetails.flatMap((details) =>
+    targetSessions.map(async (targetSession) => {
+      try {
+        await targetSession.cookies.remove(details.url, details.name);
+      } catch {
+        // Cookie removal is best effort; local Desktop auth state is already cleared.
+      }
+    })
+  ));
+  await Promise.all(targetSessions.flatMap((targetSession) =>
+    mirrorOrigins.map(async (origin) => {
+      const cookies = await targetSession.cookies.get({ url: origin });
+      await Promise.all(cookies.map(async (cookie) => {
+        try {
+          await targetSession.cookies.remove(origin, cookie.name);
+        } catch {
+          // Cookie removal is best effort; local Desktop auth state is already cleared.
+        }
+      }));
+    })
+  ));
 }
 
 async function activateBrowserSurface(target: string) {
@@ -3210,12 +3512,30 @@ function registerIpcHandlers() {
   ipcMain.handle("sso.getStatus", async () => getDesktopSsoStatus(app));
   ipcMain.handle("sso.startLogin", async () => {
     const result = await startDesktopSsoLogin(app, {
+      onBeforeStatusChanged: async (status) => {
+        if (status.authenticated) {
+          await syncDesktopSsoBrowserCookies();
+        }
+      },
       onStatusChanged: broadcastDesktopSsoStatus
     });
     if (result.ok && result.authorizeUrl) {
-      await openUrlInChrome(result.authorizeUrl, {
-        userDataDir: getDesktopSsoChromeProfileDir()
+      const browserOpenResult = await openDesktopSsoBrowserUrl({
+        url: result.browserUrl || result.authorizeUrl,
+        label: "IAM 登录",
+        browserOrigin: result.browserUrl ? undefined : result.browserOrigin,
+        resolveRedirect: Boolean(result.browserUrl)
       });
+      if (!browserOpenResult.ok) {
+        const status = failDesktopSsoFlow(browserOpenResult.message);
+        broadcastDesktopSsoStatus(status);
+        return {
+          ...result,
+          ok: false,
+          status,
+          message: browserOpenResult.message
+        };
+      }
     }
     return result;
   });
@@ -3223,10 +3543,24 @@ function registerIpcHandlers() {
     const result = await logoutDesktopSso(app, {
       onStatusChanged: broadcastDesktopSsoStatus
     });
+    await clearDesktopSsoBrowserCookies();
     if (result.ok && result.logoutUrl) {
-      await openUrlInChrome(result.logoutUrl, {
-        userDataDir: getDesktopSsoChromeProfileDir()
+      const browserOpenResult = await openDesktopSsoBrowserUrl({
+        url: result.browserUrl || result.logoutUrl,
+        label: "IAM 登出",
+        browserOrigin: result.browserUrl ? undefined : result.browserOrigin,
+        resolveRedirect: false
       });
+      if (!browserOpenResult.ok) {
+        const status = failDesktopSsoFlow(browserOpenResult.message);
+        broadcastDesktopSsoStatus(status);
+        return {
+          ...result,
+          ok: false,
+          status,
+          message: browserOpenResult.message
+        };
+      }
     }
     return result;
   });

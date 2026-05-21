@@ -71,6 +71,8 @@ type ExternalWebviewTabState = {
   title: string;
   currentUrl: string;
   faviconUrl?: string;
+  partition?: string;
+  userAgent?: string;
   guestId: number | null;
   canGoBack: boolean;
   isLoading: boolean;
@@ -157,6 +159,26 @@ function normalizeEditableUrl(rawValue: string) {
     } catch {
       return null;
     }
+  }
+}
+
+function shouldRefreshWebviewAfterDesktopSso(value: string) {
+  try {
+    const parsedUrl = new URL(value);
+    const hostname = parsedUrl.hostname.toLowerCase();
+    if (!["eiam.qiuer.net", "eiam.gtjaqh.net"].includes(hostname)) {
+      return false;
+    }
+    if (parsedUrl.pathname === "/auth/oauth2/authorize") {
+      return true;
+    }
+    const hash = parsedUrl.hash.toLowerCase();
+    if (!hash.startsWith("#/login") && !hash.startsWith("#/prevent")) {
+      return false;
+    }
+    return parsedUrl.hash.includes("service=");
+  } catch {
+    return false;
   }
 }
 
@@ -436,6 +458,8 @@ function ExternalWebviewPane({
         title: tab.title,
         className: "pan-frame external-webview-frame",
         allowpopups: "true",
+        partition: tab.partition,
+        useragent: tab.userAgent,
         style: { width: "100%", height: "100%", border: "none" }
       })}
     </div>
@@ -456,13 +480,19 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
         "aria-hidden": !active
       };
 
-  const createTab = (initialUrl: string, preferredTitle: string) => {
+  const createTab = (
+    initialUrl: string,
+    preferredTitle: string,
+    options: { partition?: string; userAgent?: string } = {}
+  ) => {
     tabSequenceRef.current += 1;
     return {
       id: `external-tab-${tabSequenceRef.current}`,
       title: getFallbackTabTitle(preferredTitle, initialUrl),
       currentUrl: initialUrl,
       faviconUrl: undefined,
+      partition: options.partition,
+      userAgent: options.userAgent,
       guestId: null,
       canGoBack: false,
       isLoading: true
@@ -547,9 +577,12 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
   const openTab = (
     nextUrl: string,
     preferredTitle = "",
-    options: { afterTabId?: string | null } = {}
+    options: { afterTabId?: string | null; partition?: string; userAgent?: string } = {}
   ) => {
-    const nextTab = createTab(nextUrl, preferredTitle);
+    const nextTab = createTab(nextUrl, preferredTitle, {
+      partition: options.partition,
+      userAgent: options.userAgent
+    });
     setBrowserState((currentState) => {
       const anchorTabId = options.afterTabId ?? currentState.activeTabId;
       const anchorIndex = currentState.tabs.findIndex((tab) => tab.id === anchorTabId);
@@ -783,9 +816,22 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
   };
 
   useEffect(() => {
-    return window.electronAPI.onWebviewOpenTab(({ sourceGuestId, url: nextUrl }) => {
+    return window.electronAPI.onWebviewOpenTab(({ sourceGuestId, url: nextUrl, partition, userAgent }) => {
       const currentState = browserStateRef.current;
       const sourceTab = currentState.tabs.find((tab) => tab.guestId === sourceGuestId);
+      const isHostOpenRequest = sourceGuestId < 0;
+      if (isHostOpenRequest) {
+        if (!activeRef.current) {
+          return;
+        }
+
+        openTab(nextUrl, "", {
+          partition,
+          userAgent
+        });
+        return;
+      }
+
       if (!sourceTab) {
         if (!activeRef.current) {
           return;
@@ -799,6 +845,32 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       }
 
       openTab(nextUrl, "", { afterTabId: sourceTab?.id });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!window.electronAPI.sso?.onStatusChanged) {
+      return undefined;
+    }
+    return window.electronAPI.sso.onStatusChanged((status) => {
+      if (!status.authenticated) {
+        return;
+      }
+      for (const tab of browserStateRef.current.tabs) {
+        const currentUrl = tab.currentUrl;
+        if (!shouldRefreshWebviewAfterDesktopSso(currentUrl)) {
+          continue;
+        }
+        const webview = webviewRefs.current.get(tab.id);
+        if (!webview) {
+          continue;
+        }
+        try {
+          webview.reload();
+        } catch {
+          // Ignore transient guest-content errors while the active webview updates.
+        }
+      }
     });
   }, []);
 

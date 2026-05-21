@@ -1716,11 +1716,44 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /function drawHoverArm/);
 });
 
-test("desktop sso opens IAM login automatically and keeps pending login recoverable", () => {
+test("desktop sso waits for a user click and keeps pending login recoverable", () => {
   const appShell = readAppShellSource();
+  const contracts = readSharedContractsSource();
 
-  assert.match(appShell, /desktopSsoAutoLoginAttemptedRef/);
-  assert.match(appShell, /status\.authenticated === false[\s\S]{0,160}status\.pending === false[\s\S]{0,160}void handleDesktopSsoLogin\(\)/);
+  assert.match(contracts, /browserOrigin\?: string;/);
+  assert.match(contracts, /browserUrl\?: string;/);
+  assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
+  assert.doesNotMatch(appShell, /void handleDesktopSsoLogin\(\);/);
+  assert.doesNotMatch(appShell, /const shouldRenderDesktopSso/);
+  assert.doesNotMatch(appShell, /\{shouldRenderDesktopSso && \(/);
+  assert.match(appShell, /desktopSsoStatus\?\.authenticated[\s\S]{0,120}\? "退出登录"/);
   assert.match(appShell, /desktopSsoStatus\?\.pending[\s\S]{0,120}\? "重新打开"/);
+  assert.match(appShell, /: "登录";/);
+  assert.match(appShell, /<div className=\{desktopSsoClassName\} aria-live="polite">/);
   assert.doesNotMatch(appShell, /disabled=\{desktopSsoBusy \|\| desktopSsoStatus\?\.pending === true\}/);
+});
+
+test("embedded browser accepts host-opened tabs after multiple tabs exist", () => {
+  const externalWebviewPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx"),
+    "utf8"
+  );
+  const copilotContracts = fs.readFileSync(
+    path.join(projectRoot, "src", "shared", "contracts", "copilot.ts"),
+    "utf8"
+  );
+
+  assert.match(copilotContracts, /partition\?: string;/);
+  assert.match(copilotContracts, /userAgent\?: string;/);
+  assert.match(externalWebviewPage, /partition\?: string;/);
+  assert.match(externalWebviewPage, /userAgent\?: string;/);
+  assert.match(externalWebviewPage, /partition: tab\.partition,/);
+  assert.match(externalWebviewPage, /useragent: tab\.userAgent,/);
+  assert.match(externalWebviewPage, /function shouldRefreshWebviewAfterDesktopSso\(value: string\)/u);
+  assert.match(externalWebviewPage, /window\.electronAPI\.sso\.onStatusChanged/u);
+  assert.match(externalWebviewPage, /if \(!status\.authenticated\) \{/u);
+  assert.match(externalWebviewPage, /shouldRefreshWebviewAfterDesktopSso\(currentUrl\)/u);
+  assert.match(externalWebviewPage, /webview\.reload\(\)/u);
+  assert.match(externalWebviewPage, /const isHostOpenRequest = sourceGuestId < 0;/);
+  assert.match(externalWebviewPage, /if \(isHostOpenRequest\) \{[\s\S]{0,220}if \(!activeRef\.current\) \{[\s\S]{0,80}return;[\s\S]{0,180}openTab\(nextUrl, "", \{[\s\S]{0,160}partition,[\s\S]{0,80}userAgent/);
 });

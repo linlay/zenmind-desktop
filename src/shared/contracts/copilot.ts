@@ -17,6 +17,8 @@ export type AssistantNavigationAgentsChangedListener = (result: AssistantNavAgen
 export interface WebviewOpenTabRequest {
   sourceGuestId: number;
   url: string;
+  partition?: string;
+  userAgent?: string;
 }
 
 export type WebviewOpenTabListener = (request: WebviewOpenTabRequest) => void;

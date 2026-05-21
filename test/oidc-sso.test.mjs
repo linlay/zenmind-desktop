@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { createSign, generateKeyPairSync } from "node:crypto";
@@ -13,8 +14,15 @@ const {
 
 const {
   DEFAULT_OIDC_CONFIG,
+  DESKTOP_SSO_CONFIG_FILE_NAME,
   buildAuthorizeUrl,
+  buildDesktopSsoProxyUrl,
+  buildDesktopSsoBrowserCookieDetails,
+  rewriteDesktopSsoProxyLocation,
+  rewriteDesktopSsoProxySetCookieHeader,
   getIdentityProviderCookieHosts,
+  loadDesktopSsoConfig,
+  resolveDesktopSsoConfigPath,
   buildTokenExchangeRequest,
   normalizeCallbackRequest,
   validateIdToken
@@ -34,6 +42,17 @@ function createSignedJwt({ privateKey, kid, claims }) {
   return `${headerPart}.${payloadPart}.${signaturePart}`;
 }
 
+function createTestApp(homePath) {
+  return {
+    getPath(name) {
+      if (name === "home") {
+        return homePath;
+      }
+      throw new Error(`unexpected app path ${name}`);
+    }
+  };
+}
+
 test("buildAuthorizeUrl creates an authorization-code URL with state and fixed localhost redirect", () => {
   const url = new URL(buildAuthorizeUrl("state-123"));
 
@@ -45,8 +64,148 @@ test("buildAuthorizeUrl creates an authorization-code URL with state and fixed l
   assert.equal(url.searchParams.get("prompt"), "login");
 });
 
+test("getDesktopSsoStatus keeps the proven default OIDC flow when the home config file is missing", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-default-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const status = getDesktopSsoStatus(createTestApp(path.join(root, "home")));
+
+  assert.equal(status.configured, true);
+  assert.equal(status.authenticated, false);
+  assert.equal(status.pending, false);
+  assert.equal(status.user, null);
+  assert.equal(status.error, undefined);
+});
+
+test("loadDesktopSsoConfig does not rewrite copied OIDC endpoints from a bare IAM host", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({ enabled: true, identityProviderHost: "eiam.gtjaqh.net" }),
+    "utf8"
+  );
+
+  const result = loadDesktopSsoConfig(createTestApp(homePath));
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.equal(result.config.authorizeUrl, DEFAULT_OIDC_CONFIG.authorizeUrl);
+  assert.equal(result.config.tokenUrl, DEFAULT_OIDC_CONFIG.tokenUrl);
+  assert.equal(result.config.wellKnownUrl, DEFAULT_OIDC_CONFIG.wellKnownUrl);
+  assert.equal(result.config.logoutUrl, DEFAULT_OIDC_CONFIG.logoutUrl);
+  assert.equal(result.config.redirectUri, DEFAULT_OIDC_CONFIG.redirectUri);
+  assert.equal(result.config.clientId, DEFAULT_OIDC_CONFIG.clientId);
+  assert.equal(result.config.browserOrigin, "https://eiam.gtjaqh.net");
+});
+
+test("loadDesktopSsoConfig honors explicit copied IAM OIDC URLs", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-explicit-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      issuer: "https://iam.example.com/auth/oidc/app-id",
+      authorizeUrl: "https://iam.example.com/auth/oauth2/authorize",
+      tokenUrl: "https://iam.example.com/auth/oauth2/token",
+      wellKnownUrl: "https://iam.example.com/auth/oidc/app-id/.well-known/openid-configuration",
+      logoutUrl: "https://iam.example.com/auth/ssoLogout"
+    }),
+    "utf8"
+  );
+
+  const result = loadDesktopSsoConfig(createTestApp(homePath));
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.equal(result.config.authorizeUrl, "https://iam.example.com/auth/oauth2/authorize");
+  assert.equal(result.config.tokenUrl, "https://iam.example.com/auth/oauth2/token");
+  assert.equal(result.config.wellKnownUrl, "https://iam.example.com/auth/oidc/app-id/.well-known/openid-configuration");
+  assert.equal(result.config.logoutUrl, "https://iam.example.com/auth/ssoLogout");
+  assert.equal(result.config.clientId, DEFAULT_OIDC_CONFIG.clientId);
+  assert.equal(result.config.browserOrigin, undefined);
+});
+
+test("resolveDesktopSsoConfigPath uses platform-specific home paths", () => {
+  assert.equal(
+    resolveDesktopSsoConfigPath(createTestApp("/Users/tester"), "darwin"),
+    "/Users/tester/.zenmind/desktop-sso.json"
+  );
+  assert.equal(
+    resolveDesktopSsoConfigPath(createTestApp("C:\\Users\\tester"), "win32"),
+    "C:\\Users\\tester\\.zenmind\\desktop-sso.json"
+  );
+});
+
 test("getIdentityProviderCookieHosts targets the IAM host used by Chrome login", () => {
   assert.deepEqual(getIdentityProviderCookieHosts(), ["eiam.qiuer.net"]);
+});
+
+test("buildDesktopSsoProxyUrl keeps the browser on the localhost callback origin", () => {
+  assert.equal(
+    buildDesktopSsoProxyUrl("https://eiam.qiuer.net/auth/oauth2/authorize?client_id=desktop#frag"),
+    "http://localhost:8080/auth/oauth2/authorize?client_id=desktop#frag"
+  );
+});
+
+test("rewriteDesktopSsoProxyLocation maps IAM redirects back through the localhost proxy", () => {
+  const upstreamRequestUrl = new URL("https://eiam.qiuer.net/auth/oauth2/authorize?client_id=desktop");
+
+  assert.equal(
+    rewriteDesktopSsoProxyLocation("https://eiam.qiuer.net/#/login?service=svc", upstreamRequestUrl),
+    "http://localhost:8080/#/login?service=svc"
+  );
+  assert.equal(
+    rewriteDesktopSsoProxyLocation("/auth/sso/redirect/abc?next=1", upstreamRequestUrl),
+    "http://localhost:8080/auth/sso/redirect/abc?next=1"
+  );
+  assert.equal(
+    rewriteDesktopSsoProxyLocation("http://localhost:8080/api/auth/oidc/callback?code=abc", upstreamRequestUrl),
+    "http://localhost:8080/api/auth/oidc/callback?code=abc"
+  );
+});
+
+test("rewriteDesktopSsoProxySetCookieHeader makes IAM cookies usable on localhost", () => {
+  assert.equal(
+    rewriteDesktopSsoProxySetCookieHeader("iauth=abc; Path=/; Domain=eiam.qiuer.net; Secure; HttpOnly; SameSite=None"),
+    "iauth=abc; Path=/; HttpOnly; SameSite=Lax"
+  );
+});
+
+test("buildDesktopSsoBrowserCookieDetails mirrors proxy cookies to business-visible IAM origins", () => {
+  assert.deepEqual(
+    buildDesktopSsoBrowserCookieDetails(
+      new Map([["iauth", "abc"]]),
+      { ...DEFAULT_OIDC_CONFIG, browserOrigin: "https://eiam.gtjaqh.net" }
+    ),
+    [
+      {
+        url: "https://eiam.qiuer.net",
+        name: "iauth",
+        value: "abc",
+        path: "/",
+        secure: true,
+        httpOnly: true,
+        sameSite: "lax"
+      },
+      {
+        url: "https://eiam.gtjaqh.net",
+        name: "iauth",
+        value: "abc",
+        path: "/",
+        secure: true,
+        httpOnly: true,
+        sameSite: "lax"
+      }
+    ]
+  );
 });
 
 test("buildTokenExchangeRequest posts the document-style token URL from the main-process config", () => {

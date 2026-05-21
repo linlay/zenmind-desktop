@@ -37,6 +37,7 @@ export interface DesktopSsoClaims {
 }
 
 export interface DesktopSsoStatus {
+  configured: boolean;
   authenticated: boolean;
   pending: boolean;
   user: DesktopSsoClaims | null;
@@ -48,6 +49,8 @@ export interface DesktopSsoStatus {
 export interface DesktopSsoStartResult {
   ok: boolean;
   authorizeUrl?: string;
+  browserUrl?: string;
+  browserOrigin?: string;
   status: DesktopSsoStatus;
   message: string;
 }
@@ -55,6 +58,8 @@ export interface DesktopSsoStartResult {
 export interface DesktopSsoLogoutResult {
   ok: boolean;
   logoutUrl?: string;
+  browserUrl?: string;
+  browserOrigin?: string;
   status: DesktopSsoStatus;
   message: string;
 }

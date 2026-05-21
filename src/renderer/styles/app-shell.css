@@ -138,6 +138,12 @@
   background: rgba(248, 250, 252, 0.94);
 }
 
+.app-shell.has-builtin-browser-surface .app-sso-status {
+  top: 106px;
+  right: 16px;
+  max-width: min(330px, calc(100vw - var(--app-sidebar-width, 160px) - 32px));
+}
+
 .app-sso-status-dot {
   width: 8px;
   height: 8px;

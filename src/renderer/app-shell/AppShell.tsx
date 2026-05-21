@@ -72,7 +72,6 @@ const AGENT_WEBCLIENT_ROUTE_ITEMS = [
 ] as const;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
-let desktopSsoAutoLoginStartedForRenderer = false;
 const DEFAULT_ASSISTANT_NAV_AGENT: AssistantNavAgentItem = {
   agentKey: "zenmi",
   displayName: "小宅",
@@ -96,6 +95,7 @@ function readSettingsPatch(args: Record<string, unknown>) {
 
 function createUnavailableDesktopSsoStatus(): DesktopSsoStatus {
   return {
+    configured: true,
     authenticated: false,
     pending: false,
     user: null,
@@ -301,7 +301,6 @@ export function AppShell() {
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [desktopSsoBusy, setDesktopSsoBusy] = useState(false);
-  const desktopSsoAutoLoginAttemptedRef = useRef(desktopSsoAutoLoginStartedForRenderer);
   const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
   const [customSidebarItemsLoaded, setCustomSidebarItemsLoaded] = useState(false);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
@@ -327,6 +326,7 @@ export function AppShell() {
     location.pathname.startsWith("/external/") ||
     location.pathname === BUILTIN_BROWSER_ROUTE ||
     location.pathname.startsWith("/custom-sidebar/");
+  const usesBuiltinBrowserSurface = location.pathname === BUILTIN_BROWSER_ROUTE;
   const usesPluginSurface =
     Boolean(activeAgentWebclientRoute) ||
     location.pathname.startsWith("/service/") ||
@@ -465,8 +465,6 @@ export function AppShell() {
   }
 
   async function handleDesktopSsoLogin() {
-    desktopSsoAutoLoginAttemptedRef.current = true;
-    desktopSsoAutoLoginStartedForRenderer = true;
     const ssoApi = getDesktopSsoApi();
     if (!ssoApi) {
       setDesktopSsoStatus(createUnavailableDesktopSsoStatus());
@@ -578,14 +576,6 @@ export function AppShell() {
       .then((status) => {
         if (!cancelled) {
           setDesktopSsoStatus(status);
-          if (
-            status.authenticated === false &&
-            status.pending === false &&
-            !status.error &&
-            !desktopSsoAutoLoginAttemptedRef.current
-          ) {
-            void handleDesktopSsoLogin();
-          }
         }
       })
       .catch(() => undefined);
@@ -1216,10 +1206,10 @@ export function AppShell() {
       : "未登录";
   const desktopSsoMessage = desktopSsoStatus?.message || "Desktop 单点登录";
   const desktopSsoActionLabel = desktopSsoStatus?.authenticated
-    ? "退出"
+    ? "退出登录"
     : desktopSsoStatus?.pending
       ? "重新打开"
-      : "单点登录";
+      : "登录";
   const desktopSsoClassName = [
     "app-sso-status",
     desktopSsoStatus?.authenticated ? "is-authenticated" : "",
@@ -1236,6 +1226,7 @@ export function AppShell() {
       className={[
         "app-shell",
         usesEmbeddedSurface ? "has-embedded-surface" : "",
+        usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
         usesPluginSurface ? "has-plugin-surface" : "",
         isMarketRoute ? "has-market-controls" : "",
         usesStandardBaseSurface ? "has-standard-base-surface" : "",
