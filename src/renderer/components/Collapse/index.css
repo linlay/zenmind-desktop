@@ -1,0 +1,52 @@
+
+.Collapse {
+  --collapse-duration: 260ms;
+  --collapse-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  width: 100%;
+}
+
+.Collapse-header {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.Collapse-header:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.Collapse-content {
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    height var(--collapse-duration) var(--collapse-easing),
+    opacity 180ms ease,
+    transform var(--collapse-duration) var(--collapse-easing);
+  will-change: height, opacity, transform;
+}
+
+.Collapse.is-expanded .Collapse-content {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.Collapse-contentInner {
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .Collapse-content {
+    transform: none;
+    transition-duration: 1ms;
+  }
+}

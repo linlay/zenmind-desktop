@@ -6,12 +6,17 @@ import {
   SidebarIllustration,
   type SidebarIllustrationKind,
 } from "../../components/BrandMark";
-import type { AssistantNavAgentItem, AssistantNavChatItem, CustomSidebarItem } from "../../../shared/contracts";
+import type {
+  AssistantNavAgentItem,
+  AssistantNavChatItem,
+  CustomSidebarItem,
+} from "../../../shared/contracts";
 import {
   createCustomSidebarNavOrderKey,
   type SidebarNavOrderItemKey,
 } from "./sidebarNavOrder";
 import { AgentIcon } from "./AgentIcon";
+import { Collapse } from "../../components/Collapse";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -91,13 +96,16 @@ const fixedToolRows: SidebarToolItem[][] = [
     { orderKey: "memory", to: "/memory", label: "记忆管理", icon: "memory" },
   ],
   [
-    { orderKey: "control-center", to: "/control-center", label: "控制中心", icon: "control" },
+    {
+      orderKey: "control-center",
+      to: "/control-center",
+      label: "控制中心",
+      icon: "control",
+    },
     { orderKey: "market", to: "/market", label: "功能市场", icon: "market" },
     { orderKey: "settings", to: "/settings", label: "设置", icon: "settings" },
   ],
-  [
-    { orderKey: "help", to: "/help", label: "帮助", icon: "help" },
-  ],
+  [{ orderKey: "help", to: "/help", label: "帮助", icon: "help" }],
 ];
 
 const fixedToolItems = fixedToolRows.flat();
@@ -133,8 +141,14 @@ function normalizeSidebarGroupState(candidate: unknown): SidebarGroupState {
   }
   const record = candidate as Partial<Record<SidebarGroupId, unknown>>;
   return {
-    assistants: typeof record.assistants === "boolean" ? record.assistants : defaultSidebarGroupState.assistants,
-    websites: typeof record.websites === "boolean" ? record.websites : defaultSidebarGroupState.websites,
+    assistants:
+      typeof record.assistants === "boolean"
+        ? record.assistants
+        : defaultSidebarGroupState.assistants,
+    websites:
+      typeof record.websites === "boolean"
+        ? record.websites
+        : defaultSidebarGroupState.websites,
   };
 }
 
@@ -143,8 +157,12 @@ function readInitialSidebarGroupState() {
     return defaultSidebarGroupState;
   }
   try {
-    const savedValue = window.localStorage.getItem(SIDEBAR_GROUP_STATE_STORAGE_KEY);
-    return savedValue ? normalizeSidebarGroupState(JSON.parse(savedValue)) : defaultSidebarGroupState;
+    const savedValue = window.localStorage.getItem(
+      SIDEBAR_GROUP_STATE_STORAGE_KEY,
+    );
+    return savedValue
+      ? normalizeSidebarGroupState(JSON.parse(savedValue))
+      : defaultSidebarGroupState;
   } catch {
     return defaultSidebarGroupState;
   }
@@ -160,7 +178,11 @@ function getRouteEmbedPath(route: string) {
     return "";
   }
   try {
-    return new URLSearchParams(route.slice(queryIndex + 1)).get("embedPath")?.trim() ?? "";
+    return (
+      new URLSearchParams(route.slice(queryIndex + 1))
+        .get("embedPath")
+        ?.trim() ?? ""
+    );
   } catch {
     return "";
   }
@@ -221,6 +243,13 @@ function createAgentNewChatRoute(agentKey: string) {
   return createAgentRoute(agentKey);
 }
 
+function createAgentDefaultRoute(agent: AssistantNavAgentItem) {
+  const firstChatId = agent.recentChats[0]?.chatId || agent.latestChatId || "";
+  return firstChatId
+    ? createAgentChatRoute(agent.agentKey, firstChatId)
+    : createAgentRoute(agent.agentKey);
+}
+
 function createAgentHistoryRoute(agentKey: string) {
   const params = new URLSearchParams();
   params.set("history", "1");
@@ -228,9 +257,14 @@ function createAgentHistoryRoute(agentKey: string) {
   return `${createAgentRoute(agentKey)}?${params.toString()}`;
 }
 
-function summarizeAgentStatus(items: AssistantNavAgentItem[]): SidebarStatusSummary {
+function summarizeAgentStatus(
+  items: AssistantNavAgentItem[],
+): SidebarStatusSummary {
   return {
-    unreadCount: items.reduce((total, item) => total + Math.max(0, item.unreadCount), 0),
+    unreadCount: items.reduce(
+      (total, item) => total + Math.max(0, item.unreadCount),
+      0,
+    ),
     pendingCount: items.filter((item) => item.hasPendingAwaiting).length,
   };
 }
@@ -242,18 +276,49 @@ function formatUnreadCount(value: number) {
   return value > 99 ? "99+" : String(value);
 }
 
-function formatAssistantChatTime(value: string) {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
+function toLocalDateKey(date: Date): string {
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+function formatLocalTime(date: Date): string {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+function formatMonthDay(date: Date): string {
+  return `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+function formatYearMonth(date: Date): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
+}
+function formatAssistantChatTime(updatedAt: string) {
+  if (!updatedAt) {
     return "";
   }
-  const formatter = new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return formatter.format(new Date(timestamp));
+
+  const updatedDate = new Date(updatedAt);
+  if (Number.isNaN(updatedDate.getTime())) {
+    return "--";
+  }
+
+  const nowDate: Date = new Date();
+  const now = nowDate instanceof Date ? nowDate : new Date(nowDate);
+  if (Number.isNaN(now.getTime())) {
+    return formatYearMonth(updatedDate);
+  }
+
+  // 今天：显示 HH:mm
+  if (toLocalDateKey(updatedDate) === toLocalDateKey(now)) {
+    return formatLocalTime(updatedDate);
+  }
+
+  // 今年但不是今天：显示 MM-dd
+  if (updatedDate.getFullYear() === now.getFullYear()) {
+    return formatMonthDay(updatedDate);
+  }
+
+  // 跨年：显示 YYYY-MM
+  return formatYearMonth(updatedDate);
 }
 
 type SidebarCollapseToggleVariant = "compact" | "nav";
@@ -358,16 +423,24 @@ export function AppSidebar({
   onNavigateItem,
   onToggleCollapsed,
 }: AppSidebarProps) {
-  const [sidebarGroupState, setSidebarGroupState] = useState<SidebarGroupState>(readInitialSidebarGroupState);
+  const [sidebarGroupState, setSidebarGroupState] = useState<SidebarGroupState>(
+    readInitialSidebarGroupState,
+  );
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
-  const [toolMenuPosition, setToolMenuPosition] = useState<ToolMenuPosition | null>(null);
-  const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] = useState("");
-  const [assistantChatMenu, setAssistantChatMenu] = useState<AssistantChatMenuState | null>(null);
+  const [toolMenuPosition, setToolMenuPosition] =
+    useState<ToolMenuPosition | null>(null);
+  const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
+    useState("");
+  const [assistantChatMenu, setAssistantChatMenu] =
+    useState<AssistantChatMenuState | null>(null);
+  const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const toolMenuPanelRef = useRef<HTMLDivElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
   const currentRouteAgentInfo = readAgentRouteInfo(currentRoute);
-  const pendingRouteAgentInfo = pendingPath ? readAgentRouteInfo(pendingPath) : { agentKey: "", chatId: "" };
+  const pendingRouteAgentInfo = pendingPath
+    ? readAgentRouteInfo(pendingPath)
+    : { agentKey: "", chatId: "" };
   const currentAgentKey = currentRouteAgentInfo.agentKey;
   const currentChatId = currentRouteAgentInfo.chatId;
   const pendingAgentKey = pendingRouteAgentInfo.agentKey;
@@ -389,8 +462,10 @@ export function AppSidebar({
         iconId: item.iconId,
       }))
       .sort((left, right) => {
-        const leftIndex = orderIndex.get(left.orderKey) ?? Number.MAX_SAFE_INTEGER;
-        const rightIndex = orderIndex.get(right.orderKey) ?? Number.MAX_SAFE_INTEGER;
+        const leftIndex =
+          orderIndex.get(left.orderKey) ?? Number.MAX_SAFE_INTEGER;
+        const rightIndex =
+          orderIndex.get(right.orderKey) ?? Number.MAX_SAFE_INTEGER;
         return leftIndex - rightIndex;
       });
   }, [customSidebarItems, customSidebarNavOrder]);
@@ -448,7 +523,10 @@ export function AppSidebar({
       if (!(target instanceof Node)) {
         return;
       }
-      if (toolMenuTriggerRef.current?.contains(target) || toolMenuPanelRef.current?.contains(target)) {
+      if (
+        toolMenuTriggerRef.current?.contains(target) ||
+        toolMenuPanelRef.current?.contains(target)
+      ) {
         return;
       }
       setToolMenuOpen(false);
@@ -483,7 +561,10 @@ export function AppSidebar({
     }
     function handleDocumentPointerDown(event: PointerEvent) {
       const target = event.target;
-      if (target instanceof Node && assistantChatMenuRef.current?.contains(target)) {
+      if (
+        target instanceof Node &&
+        assistantChatMenuRef.current?.contains(target)
+      ) {
         return;
       }
       setAssistantChatMenu(null);
@@ -502,12 +583,24 @@ export function AppSidebar({
   }, [assistantChatMenu]);
 
   useEffect(() => {
-    if (!expandedAssistantAgentKey && assistantNavAgents.length > 0) {
-      const matched = assistantNavAgents.find((agent) => agent.agentKey === currentAgentKey);
-      if (matched) {
-        setExpandedAssistantAgentKey(matched.agentKey);
-      }
+    const matched = assistantNavAgents.find(
+      (agent) => agent.agentKey === currentAgentKey,
+    );
+    if (!matched) {
+      lastAutoExpandedAssistantAgentKeyRef.current = "";
+      return;
     }
+    if (expandedAssistantAgentKey) {
+      if (expandedAssistantAgentKey === matched.agentKey) {
+        lastAutoExpandedAssistantAgentKeyRef.current = matched.agentKey;
+      }
+      return;
+    }
+    if (lastAutoExpandedAssistantAgentKeyRef.current === matched.agentKey) {
+      return;
+    }
+    lastAutoExpandedAssistantAgentKeyRef.current = matched.agentKey;
+    setExpandedAssistantAgentKey(matched.agentKey);
   }, [assistantNavAgents, currentAgentKey, expandedAssistantAgentKey]);
 
   function handleItemClick(
@@ -519,7 +612,10 @@ export function AppSidebar({
       onCloseAssistantDock?.();
     }
 
-    if (targetPath === currentRoute || (!targetPath.includes("?") && targetPathname === currentPathname)) {
+    if (
+      targetPath === currentRoute ||
+      (!targetPath.includes("?") && targetPathname === currentPathname)
+    ) {
       event.preventDefault();
       return;
     }
@@ -555,28 +651,38 @@ export function AppSidebar({
   }
 
   function handleAssistantAgentHeaderClick(agent: AssistantNavAgentItem) {
-    setExpandedAssistantAgentKey((current) => current === agent.agentKey ? "" : agent.agentKey);
-    requestNavigate(createAgentRoute(agent.agentKey));
+    requestNavigate(createAgentDefaultRoute(agent));
   }
 
-  function handleAssistantNewChat(event: MouseEvent<HTMLElement>, agent: AssistantNavAgentItem) {
+  function handleAssistantNewChat(
+    event: MouseEvent<HTMLElement>,
+    agent: AssistantNavAgentItem,
+  ) {
     event.preventDefault();
     event.stopPropagation();
     setExpandedAssistantAgentKey(agent.agentKey);
     requestNavigate(createAgentNewChatRoute(agent.agentKey));
   }
 
-  async function handleAssistantMarkAllRead(event: MouseEvent<HTMLElement>, agent: AssistantNavAgentItem) {
+  async function handleAssistantMarkAllRead(
+    event: MouseEvent<HTMLElement>,
+    agent: AssistantNavAgentItem,
+  ) {
     event.preventDefault();
     event.stopPropagation();
     await window.electronAPI.assistant.markAgentChatsRead(agent.agentKey);
   }
 
   function handleAssistantOpenChat(chat: AssistantNavChatItem) {
-    requestNavigate(createAgentChatRoute(chat.agentKey || currentAgentKey, chat.chatId));
+    requestNavigate(
+      createAgentChatRoute(chat.agentKey || currentAgentKey, chat.chatId),
+    );
   }
 
-  function handleAssistantOpenChatMenu(event: MouseEvent<HTMLButtonElement>, chat: AssistantNavChatItem) {
+  function handleAssistantOpenChatMenu(
+    event: MouseEvent<HTMLButtonElement>,
+    chat: AssistantNavChatItem,
+  ) {
     event.preventDefault();
     event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -638,18 +744,27 @@ export function AppSidebar({
       return targetPathname === currentPathname || pendingPath === targetPath;
     }
     const targetAgentKey = readAgentRouteInfo(targetPath).agentKey;
-    const activeAgentKey = pendingPath === targetPath ? pendingAgentKey : currentAgentKey;
+    const activeAgentKey =
+      pendingPath === targetPath ? pendingAgentKey : currentAgentKey;
     return targetAgentKey === activeAgentKey;
   }
 
   function isAssistantGroupActive() {
-    return currentPathname === "/service/agent-webclient" ||
+    return (
+      currentPathname === "/service/agent-webclient" ||
       currentPathname.startsWith("/agent/") ||
-      Boolean(pendingPath?.startsWith("/service/agent-webclient") || pendingPath?.startsWith("/agent/"));
+      Boolean(
+        pendingPath?.startsWith("/service/agent-webclient") ||
+        pendingPath?.startsWith("/agent/"),
+      )
+    );
   }
 
   function isWebsiteGroupActive() {
-    return currentPathname.startsWith("/custom-sidebar/") || Boolean(pendingPath?.startsWith("/custom-sidebar/"));
+    return (
+      currentPathname.startsWith("/custom-sidebar/") ||
+      Boolean(pendingPath?.startsWith("/custom-sidebar/"))
+    );
   }
 
   function renderStatusBadges(summary: SidebarStatusSummary, className = "") {
@@ -658,7 +773,12 @@ export function AppSidebar({
       return null;
     }
     return (
-      <span className={["sidebar-status-badges", className].filter(Boolean).join(" ")} aria-hidden="true">
+      <span
+        className={["sidebar-status-badges", className]
+          .filter(Boolean)
+          .join(" ")}
+        aria-hidden="true"
+      >
         {summary.pendingCount > 0 ? (
           <span className="sidebar-status-badge is-pending">
             待{summary.pendingCount > 1 ? summary.pendingCount : ""}
@@ -706,7 +826,9 @@ export function AppSidebar({
     );
   }
 
-  function renderSidebarChildLink(item: SidebarNavItem & { status?: SidebarStatusSummary }) {
+  function renderSidebarChildLink(
+    item: SidebarNavItem & { status?: SidebarStatusSummary },
+  ) {
     return (
       <NavLink
         key={item.to}
@@ -724,12 +846,17 @@ export function AppSidebar({
           )}
         </span>
         <span className="sidebar-link-label">{item.label}</span>
-        {item.status ? renderStatusBadges(item.status, "sidebar-child-status") : null}
+        {item.status
+          ? renderStatusBadges(item.status, "sidebar-child-status")
+          : null}
       </NavLink>
     );
   }
 
-  function renderAssistantChatRow(chat: AssistantNavChatItem, activeChatId: string) {
+  function renderAssistantChatRow(
+    chat: AssistantNavChatItem,
+    activeChatId: string,
+  ) {
     const isActive = activeChatId === chat.chatId;
     const action = !chat.isRead ? "unread" : "time";
     return (
@@ -741,7 +868,9 @@ export function AppSidebar({
           "worker-chat-item",
           isActive ? "is-active" : "",
           !chat.isRead ? "is-unread" : "",
-        ].filter(Boolean).join(" ")}
+        ]
+          .filter(Boolean)
+          .join(" ")}
         onClick={() => handleAssistantOpenChat(chat)}
       >
         <span className="worker-chat-item-head">
@@ -752,9 +881,17 @@ export function AppSidebar({
             <span className="chat-awaiting-status">等待审批</span>
           ) : null}
           <span className="assistant-worker-chat-action" data-action={action}>
-            <span className="assistant-worker-unread-dot chat-unread-dot is-unread" aria-label="未读" />
-            <span className="worker-panel-time-label">{formatAssistantChatTime(chat.updatedAt)}</span>
-            <span className="worker-chat-loading assistant-material-icon is-loading" aria-hidden="true" />
+            <span
+              className="assistant-worker-unread-dot chat-unread-dot is-unread"
+              aria-label="未读"
+            />
+            <span className="worker-panel-time-label">
+              {formatAssistantChatTime(chat.updatedAt)}
+            </span>
+            <span
+              className="worker-chat-loading assistant-material-icon is-loading"
+              aria-hidden="true"
+            />
           </span>
           <button
             type="button"
@@ -763,7 +900,10 @@ export function AppSidebar({
             title="更多"
             onClick={(event) => handleAssistantOpenChatMenu(event, chat)}
           >
-            <span className="assistant-material-icon is-more" aria-hidden="true" />
+            <span
+              className="assistant-material-icon is-more"
+              aria-hidden="true"
+            />
           </button>
         </span>
       </button>
@@ -772,104 +912,135 @@ export function AppSidebar({
 
   function renderAssistantAgent(agent: AssistantNavAgentItem) {
     const expanded = expandedAssistantAgentKey === agent.agentKey;
-    const selected = currentAgentKey === agent.agentKey || pendingAgentKey === agent.agentKey;
+    const selected =
+      currentAgentKey === agent.agentKey || pendingAgentKey === agent.agentKey;
     const recentChats = (agent.recentChats ?? []).slice(0, 5);
     const chatCount = Math.max(0, agent.chatCount, recentChats.length);
-    const unreadCount = Math.max(0, agent.unreadCount || agent.unreadChatCount || 0);
-    const latestPreview = agent.latestPreview || (chatCount > 0 ? "" : "暂无会话");
-    const activeChatId = currentChatId || agent.latestChatId || "";
+    const unreadCount = Math.max(
+      0,
+      agent.unreadCount || agent.unreadChatCount || 0,
+    );
+    const latestPreview =
+      agent.latestPreview || (chatCount > 0 ? "" : "暂无会话");
+    const activeChatId = currentChatId || "";
     return (
-      <div
+      <Collapse
         key={agent.agentKey}
-        className={[
-          "assistant-worker-collapse-item",
-          "worker-collapse-item",
-          "ant-collapse-item",
-          expanded ? "ant-collapse-item-active" : "",
-          selected ? "is-selected" : "",
-        ].filter(Boolean).join(" ")}
-      >
-        <div
-          className="ant-collapse-header assistant-worker-header"
-          role="tab"
-          aria-expanded={expanded}
-          aria-disabled="false"
-          tabIndex={0}
-          onClick={() => handleAssistantAgentHeaderClick(agent)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              handleAssistantAgentHeaderClick(agent);
-            }
-          }}
-        >
-          <span className="ant-collapse-header-text assistant-worker-header-text">
-            <span className={["worker-panel-header", selected ? "is-active" : "", recentChats.length > 0 ? "" : "is-empty"].filter(Boolean).join(" ")}>
-              <AgentIcon icon={agent.icon} className="worker-panel-icon" size={32} type="agent" />
-              <span className="assistant-worker-main worker-panel-main">
-                <span className="worker-panel-header-body">
-                  <span className="assistant-worker-name">{agent.displayName}</span>
-                  <span className="worker-panel-role">{agent.role || "--"}</span>
-                  {unreadCount > 0 ? (
-                    <span className="assistant-worker-badge">{formatUnreadCount(unreadCount)}</span>
-                  ) : null}
-                  <span className="assistant-worker-actions">
+        className="assistant-worker-collapse-item"
+        expanded={expanded}
+        onExpand={(val) =>
+          setExpandedAssistantAgentKey(val ? agent.agentKey : "")
+        }
+        header={
+          <div
+            className="assistant-worker-header"
+            onClick={() => handleAssistantAgentHeaderClick(agent)}
+          >
+            <span className="assistant-worker-header-text">
+              <span
+                className={[
+                  "worker-panel-header",
+                  selected ? "is-active" : "",
+                  recentChats.length > 0 ? "" : "is-empty",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                <AgentIcon
+                  icon={agent.icon}
+                  className="worker-panel-icon"
+                  size={32}
+                  type="agent"
+                />
+                <span className="assistant-worker-main worker-panel-main">
+                  <span className="worker-panel-header-body">
+                    <span className="assistant-worker-name">
+                      <span>{agent.displayName}</span>
+                      <span className="worker-panel-role">
+                        {agent.role || "--"}
+                      </span>
+                    </span>
                     {unreadCount > 0 ? (
+                      <span className="assistant-worker-badge">
+                        {formatUnreadCount(unreadCount)}
+                      </span>
+                    ) : null}
+                    <span className="assistant-worker-actions">
+                      {unreadCount > 0 ? (
+                        <button
+                          type="button"
+                          className="worker-panel-new assistant-worker-icon-button"
+                          aria-label={`全部已读 ${agent.displayName}`}
+                          title="全部已读"
+                          onClick={(event) =>
+                            void handleAssistantMarkAllRead(event, agent)
+                          }
+                        >
+                          <span
+                            className="assistant-material-icon is-done-all"
+                            aria-hidden="true"
+                          />
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="worker-panel-new assistant-worker-icon-button"
-                        aria-label={`全部已读 ${agent.displayName}`}
-                        title="全部已读"
-                        onClick={(event) => void handleAssistantMarkAllRead(event, agent)}
+                        aria-label={`新建对话 ${agent.displayName}`}
+                        title="新建对话"
+                        onClick={(event) =>
+                          handleAssistantNewChat(event, agent)
+                        }
                       >
-                        <span className="assistant-material-icon is-done-all" aria-hidden="true" />
+                        <span
+                          className="assistant-material-icon is-add"
+                          aria-hidden="true"
+                        />
                       </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="worker-panel-new assistant-worker-icon-button"
-                      aria-label={`新建对话 ${agent.displayName}`}
-                      title="新建对话"
-                      onClick={(event) => handleAssistantNewChat(event, agent)}
-                    >
-                      <span className="assistant-material-icon is-add" aria-hidden="true" />
-                    </button>
+                    </span>
                   </span>
-                </span>
-                <span className="worker-panel-preview">
-                  <span className="assistant-worker-preview">{latestPreview}</span>
-                  {agent.hasPendingAwaiting ? <span className="chat-awaiting-status">等待审批</span> : null}
-                  <span className="worker-panel-time-label">{formatAssistantChatTime(agent.updatedAt)}</span>
+                  <span className="worker-panel-preview">
+                    <span className="assistant-worker-preview">
+                      {latestPreview}
+                    </span>
+                    {agent.hasPendingAwaiting ? (
+                      <span className="chat-awaiting-status">等待审批</span>
+                    ) : null}
+                    <span className="worker-panel-time-label">
+                      {formatAssistantChatTime(
+                        agent.recentChats?.[0]?.updatedAt,
+                      )}
+                    </span>
+                  </span>
                 </span>
               </span>
             </span>
-          </span>
-        </div>
-        {expanded ? (
-          <div className="ant-collapse-content assistant-worker-content">
-            <div className="ant-collapse-content-box worker-chat-preview-list">
-              <div className="worker-chat-divider" />
-              {recentChats.length > 0 ? (
-                recentChats.map((chat) => renderAssistantChatRow(chat, activeChatId))
-              ) : chatCount === 0 ? (
-                <div className="status-line">暂无会话</div>
-              ) : null}
-              {chatCount > recentChats.length ? (
-                <button
-                  type="button"
-                  className="worker-chat-more assistant-worker-more"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    requestNavigate(createAgentHistoryRoute(agent.agentKey));
-                  }}
-                >
-                  查看更多（共 {chatCount} 条{unreadCount > 0 ? `，未读 ${unreadCount} 条` : ""}）
-                </button>
-              ) : null}
-            </div>
           </div>
-        ) : null}
-      </div>
+        }
+      >
+        <div className="worker-chat-preview-list">
+          <div className="worker-chat-divider"></div>
+          {recentChats.length > 0 ? (
+            recentChats.map((chat) =>
+              renderAssistantChatRow(chat, activeChatId),
+            )
+          ) : chatCount === 0 ? (
+            <div className="status-line">暂无会话</div>
+          ) : null}
+          {chatCount > recentChats.length ? (
+            <button
+              type="button"
+              className="worker-chat-more assistant-worker-more"
+              onClick={(event) => {
+                event.stopPropagation();
+                requestNavigate(createAgentHistoryRoute(agent.agentKey));
+              }}
+            >
+              查看更多（共 {chatCount} 条
+              {unreadCount > 0 ? `，未读 ${unreadCount} 条` : ""}）
+            </button>
+          ) : null}
+        </div>
+      </Collapse>
     );
   }
 
@@ -887,55 +1058,61 @@ export function AppSidebar({
           "sidebar-link",
           "sidebar-group-trigger",
           args.active ? "sidebar-link-active" : "",
-        ].filter(Boolean).join(" ")
-      : [
-          "sidebar-group-heading",
-          args.active ? "is-active" : "",
-        ].filter(Boolean).join(" ");
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : ["sidebar-group-heading", args.active ? "is-active" : ""]
+          .filter(Boolean)
+          .join(" ");
     return (
-      <div
+      <Collapse
         key={args.groupId}
-        className={[
-          "sidebar-nav-group",
-          expanded ? "is-expanded" : "is-collapsed",
-          args.active ? "is-active" : "",
-        ].filter(Boolean).join(" ")}
+        expanded={expanded}
+        onExpand={() => toggleSidebarGroup(args.groupId)}
+        className={["sidebar-nav-group", args.active ? "is-active" : ""]
+          .filter(Boolean)
+          .join(" ")}
+        header={
+          <button
+            type="button"
+            className={groupTriggerClassName}
+            aria-expanded={!isCollapsed && expanded}
+            aria-label={args.label}
+            title={args.label}
+          >
+            <FolderIcon expanded={expanded} width={24} />
+            <span className="sidebar-group-heading-main">
+              {isCollapsed ? (
+                <span className="sidebar-link-icon">
+                  <SidebarIllustration kind={args.icon} />
+                </span>
+              ) : null}
+              <span className="sidebar-link-label">{args.label}</span>
+              {args.status
+                ? renderStatusBadges(args.status, "sidebar-group-status")
+                : null}
+            </span>
+          </button>
+        }
       >
-        <button
-          type="button"
-          className={groupTriggerClassName}
-          onClick={() => toggleSidebarGroup(args.groupId)}
-          aria-expanded={!isCollapsed && expanded}
+        <div
+          className="sidebar-group-children"
+          role="group"
           aria-label={args.label}
-          title={args.label}
         >
-          {!isCollapsed ? <span className="sidebar-group-divider" aria-hidden="true" /> : null}
-          <span className="sidebar-group-heading-main">
-            {isCollapsed ? (
-              <span className="sidebar-link-icon">
-                <SidebarIllustration kind={args.icon} />
-              </span>
-            ) : null}
-            <span className="sidebar-link-label">{args.label}</span>
-            {args.status ? renderStatusBadges(args.status, "sidebar-group-status") : null}
-          </span>
-          {!isCollapsed ? <span className="sidebar-group-divider" aria-hidden="true" /> : null}
-          <span className="sidebar-group-chevron" aria-hidden="true" />
-        </button>
-        {!isCollapsed && expanded ? (
-          <div className="sidebar-group-children" role="group" aria-label={args.label}>
-            {args.groupId === "assistants"
-              ? (
-                  <div className="assistant-worker-collapse worker-collapse">
-                    {assistantNavAgents.length > 0
-                      ? assistantNavAgents.map((agent) => renderAssistantAgent(agent))
-                      : <div className="status-line">暂无智能体</div>}
-                  </div>
-                )
-              : args.children.map((item) => renderSidebarChildLink(item))}
-          </div>
-        ) : null}
-      </div>
+          {args.groupId === "assistants" ? (
+            <div className="assistant-worker-collapse worker-collapse">
+              {assistantNavAgents.length > 0 ? (
+                assistantNavAgents.map((agent) => renderAssistantAgent(agent))
+              ) : (
+                <div className="status-line">暂无智能体</div>
+              )}
+            </div>
+          ) : (
+            args.children.map((item) => renderSidebarChildLink(item))
+          )}
+        </div>
+      </Collapse>
     );
   }
 
@@ -971,7 +1148,9 @@ export function AppSidebar({
         aria-label={item.label}
         title={item.label}
         role="menuitem"
-        className={() => getSidebarLinkClassName(item.to, "sidebar-tool-menu-item")}
+        className={() =>
+          getSidebarLinkClassName(item.to, "sidebar-tool-menu-item")
+        }
       >
         <span className="sidebar-link-icon">
           <SidebarIllustration kind={item.icon} />
@@ -994,8 +1173,12 @@ export function AppSidebar({
         ref={toolMenuPanelRef}
         className={[
           "sidebar-tool-menu",
-          isCollapsed ? "is-from-collapsed-sidebar" : "is-from-expanded-sidebar",
-        ].filter(Boolean).join(" ")}
+          isCollapsed
+            ? "is-from-collapsed-sidebar"
+            : "is-from-expanded-sidebar",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         style={{
           left: `${toolMenuPosition?.left ?? -9999}px`,
           top: `${toolMenuPosition?.top ?? -9999}px`,
@@ -1022,15 +1205,27 @@ export function AppSidebar({
         role="menu"
         aria-label="会话操作"
       >
-        <button type="button" role="menuitem" onClick={() => void handleAssistantExportChat(chat)}>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => void handleAssistantExportChat(chat)}
+        >
           <span aria-hidden="true">↓</span>
           <span>导出</span>
         </button>
-        <button type="button" role="menuitem" onClick={() => void handleAssistantRenameChat(chat)}>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => void handleAssistantRenameChat(chat)}
+        >
           <span aria-hidden="true">✎</span>
           <span>重命名</span>
         </button>
-        <button type="button" role="menuitem" onClick={() => void handleAssistantArchiveChat(chat)}>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => void handleAssistantArchiveChat(chat)}
+        >
           <span aria-hidden="true">□</span>
           <span>归档</span>
         </button>
@@ -1061,7 +1256,9 @@ export function AppSidebar({
                   assistantDockOpen ? "is-assistant-open" : "",
                   assistantLauncherDisabled ? "is-disabled" : "",
                   isCollapsed ? "is-collapsed-state" : "is-expanded-state",
-                ].filter(Boolean).join(" ")}
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 onClick={handleAssistantDockClick}
                 aria-label={
                   assistantLauncherDisabled
@@ -1104,7 +1301,9 @@ export function AppSidebar({
                 "sidebar-link",
                 "sidebar-link-utility",
                 "sidebar-tool-menu-trigger",
-                fixedToolItems.some((item) => isRouteActive(item.to)) ? "sidebar-link-active" : "",
+                fixedToolItems.some((item) => isRouteActive(item.to))
+                  ? "sidebar-link-active"
+                  : "",
                 toolMenuOpen ? "is-open" : "",
               ]
                 .filter(Boolean)
@@ -1132,3 +1331,32 @@ export function AppSidebar({
     </aside>
   );
 }
+
+const FolderIcon: React.FC<
+  React.SVGProps<SVGSVGElement> & { expanded?: boolean }
+> = (props) => {
+  const { expanded, ...restProps } = props;
+  return expanded ? (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      height="24px"
+      viewBox="0 -960 960 960"
+      width="24px"
+      fill="currentColor"
+      {...restProps}
+    >
+      <path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640H447l-80-80H160v480l96-320h684L837-217q-8 26-29.5 41.5T760-160H160Zm84-80h516l72-240H316l-72 240Zm0 0 72-240-72 240Zm-84-400v-80 80Z" />
+    </svg>
+  ) : (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      height="24px"
+      viewBox="0 -960 960 960"
+      width="24px"
+      fill="currentColor"
+      {...restProps}
+    >
+      <path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z" />
+    </svg>
+  );
+};

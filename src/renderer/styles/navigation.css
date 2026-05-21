@@ -126,12 +126,10 @@
 
 .app-shell.has-translucent-sidebar .app-sidebar {
   background:
-    linear-gradient(
-      180deg,
+    linear-gradient(180deg,
       rgba(255, 255, 255, 0.08) 0%,
       rgba(255, 255, 255, 0.05) 46%,
-      rgba(255, 255, 255, 0.03) 100%
-    );
+      rgba(255, 255, 255, 0.03) 100%);
   border-right: 1px solid rgba(83, 96, 112, 0.13);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.32),
@@ -140,12 +138,10 @@
 
 :root[data-theme="dark"] .app-shell.has-translucent-sidebar .app-sidebar {
   background:
-    linear-gradient(
-      180deg,
+    linear-gradient(180deg,
       rgba(57, 58, 62, 0.5) 0%,
       rgba(46, 48, 52, 0.44) 40%,
-      rgba(37, 39, 43, 0.38) 100%
-    );
+      rgba(37, 39, 43, 0.38) 100%);
   border-right-color: rgba(255, 255, 255, 0.08);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.04),
@@ -154,12 +150,10 @@
 
 .app-shell.is-mac-translucent-sidebar .app-sidebar {
   background:
-    linear-gradient(
-      180deg,
+    linear-gradient(180deg,
       rgba(255, 255, 255, 0.08) 0%,
       rgba(255, 255, 255, 0.05) 46%,
-      rgba(255, 255, 255, 0.03) 100%
-    );
+      rgba(255, 255, 255, 0.03) 100%);
   border-right: 1px solid rgba(83, 96, 112, 0.13);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.32),
@@ -170,12 +164,10 @@
 
 :root[data-theme="dark"] .app-shell.is-mac-translucent-sidebar .app-sidebar {
   background:
-    linear-gradient(
-      180deg,
+    linear-gradient(180deg,
       rgba(57, 58, 62, 0.5) 0%,
       rgba(46, 48, 52, 0.44) 40%,
-      rgba(37, 39, 43, 0.38) 100%
-    );
+      rgba(37, 39, 43, 0.38) 100%);
   border-right-color: rgba(255, 255, 255, 0.08);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.04),
@@ -304,7 +296,7 @@
   border-radius: 8px;
   appearance: none;
   background: transparent;
-  color: #2f3542;
+  color: var(--ink);
   cursor: pointer;
   text-align: left;
   transition:
@@ -448,29 +440,32 @@
 .sidebar-group-heading {
   display: flex;
   align-items: center;
-  width: calc(100% - 8px);
-  min-height: 28px;
+  width: 100%;
+  min-height: 36px;
   gap: 8px;
-  margin: 8px 4px 2px;
-  padding: 0 4px;
+  padding: 0 8px;
   border: 0;
+  border-radius: 8px;
   appearance: none;
   background: transparent;
-  color: rgba(71, 85, 105, 0.78);
+  color: var(--ink);
   cursor: pointer;
   text-align: left;
 }
 
 .sidebar-group-heading:hover {
-  color: #1f2937;
+  background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
+}
+
+.sidebar-group-heading>svg {
+  color: var(--ink-muted);
 }
 
 .sidebar-group-heading-main {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
   flex: 0 0 auto;
-  min-width: 0;
 }
 
 .sidebar-group-heading .sidebar-link-icon {
@@ -478,31 +473,11 @@
   height: 18px;
 }
 
-.sidebar-group-heading .sidebar-link-label {
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .sidebar-group-divider {
   flex: 1;
   height: 1px;
   min-width: 12px;
   background: rgba(148, 163, 184, 0.28);
-}
-
-.sidebar-group-chevron {
-  width: 7px;
-  height: 7px;
-  margin-right: 4px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  opacity: 0.55;
-  transform: rotate(-45deg);
-  transition: transform 0.16s ease-in-out;
-}
-
-.sidebar-nav-group.is-expanded .sidebar-group-chevron {
-  transform: rotate(45deg);
 }
 
 .sidebar-group-children {
@@ -544,28 +519,21 @@
   color: var(--ink-soft);
 }
 
-.assistant-worker-collapse-item:hover:not(.ant-collapse-item-active) {
+.assistant-worker-collapse-item:hover:not(.is-expanded) {
   background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
 }
 
-.assistant-worker-collapse-item.ant-collapse-item-active {
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  box-shadow: var(--shadow-soft);
-}
-
-.assistant-worker-collapse-item.is-selected {
-  color: var(--ink);
+.assistant-worker-collapse-item.is-expanded {
+  background: var(--surface);
+  box-shadow: var(--panel-shadow);
 }
 
 .assistant-worker-header {
-  padding: 6px 2px;
+  padding: 6px 10px;
   cursor: pointer;
   app-region: no-drag;
   -webkit-app-region: no-drag;
-}
-
-.assistant-worker-collapse-item.ant-collapse-item-active .assistant-worker-header {
-  padding: 6px 10px;
+  width: 100%;
 }
 
 .assistant-worker-header-text {
@@ -620,32 +588,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  line-height: 1.35;
-  font-weight: 500;
+  font-size: 14px;
   color: var(--ink);
 }
 
 .worker-panel-role {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   margin-left: 8px;
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: 12px;
   color: var(--ink-muted);
 }
 
 .worker-panel-icon {
-  flex: 0 0 32px;
+  flex: 0 1 32px;
   width: 32px;
   height: 32px;
   transition: transform 0.2s ease-in-out;
 }
 
-.ant-collapse-item-active .worker-panel-icon {
+.assistant-worker-collapse-item.is-expanded .worker-panel-icon {
   transform: scale(0.8);
 }
 
@@ -677,27 +637,27 @@
   gap: 4px;
 }
 
-.assistant-worker-collapse-item.ant-collapse-item-active .assistant-worker-actions {
+.assistant-worker-collapse-item.is-expanded .assistant-worker-actions {
   display: inline-flex;
 }
 
-.assistant-worker-collapse-item.ant-collapse-item-active .worker-panel-preview {
+.assistant-worker-collapse-item.is-expanded .worker-panel-preview {
   height: 0;
 }
 
-.assistant-worker-collapse-item.ant-collapse-item-active .assistant-worker-badge {
+.assistant-worker-collapse-item.is-expanded .assistant-worker-badge {
   display: none;
 }
 
 .assistant-worker-badge {
   flex: 0 0 auto;
+  transform: scale(0.8);
   min-width: 18px;
   height: 18px;
-  padding: 0 6px;
   border-radius: 10px;
   background: #1677ff;
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 18px;
   text-align: center;
 }
@@ -712,7 +672,7 @@
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: var(--ink-soft);
+  color: var(--ink-muted);
   cursor: pointer;
 }
 
@@ -729,7 +689,7 @@
   position: absolute;
   content: "";
   inset: 8px 3px auto;
-  height: 1.6px;
+  height: 2px;
   border-radius: 2px;
   background: currentColor;
 }
@@ -787,10 +747,6 @@
 .assistant-worker-icon-button:hover {
   background: rgba(22, 119, 255, 0.12);
   color: #1677ff;
-}
-
-.assistant-worker-content {
-  border-top: 1px solid rgba(148, 163, 184, 0.16);
 }
 
 .assistant-worker-chat-item {
@@ -865,8 +821,8 @@
 }
 
 .assistant-worker-unread-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   background: #1677ff;
 }
@@ -897,9 +853,9 @@
 .assistant-worker-chat-menu-button {
   display: none;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   flex: 0 0 auto;
-  width: 20px;
+  width: 48px;
   height: 20px;
   padding: 0;
   border: 0;
@@ -915,6 +871,12 @@
 
 .assistant-worker-chat-item:hover .assistant-worker-chat-action {
   display: none;
+}
+
+.worker-chat-divider {
+  height: 1px;
+  background-color: var(--line);
+  margin: 0 20px;
 }
 
 .worker-chat-preview-list .status-line {
@@ -953,10 +915,11 @@
   padding: 6px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px);
+  /* Safari 必备 */
+  background: transparent;
+  backdrop-filter: blur(10px);
 }
 
 .assistant-chat-actions-menu button {
@@ -989,13 +952,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
+  min-width: 18px;
+  height: 18px;
   border-radius: 999px;
-  font-size: 10px;
-  line-height: 1;
-  font-weight: 700;
+  font-size: 12px;
+  transform: scale(.8);
 }
 
 .sidebar-status-badge.is-pending {
@@ -1081,7 +1042,7 @@
   color: var(--ink);
 }
 
-:root[data-theme="dark"] .assistant-worker-collapse-item.ant-collapse-item-active,
+:root[data-theme="dark"] .assistant-worker-collapse-item.is-expanded,
 :root[data-theme="dark"] .assistant-chat-actions-menu {
   background: rgba(31, 35, 42, 0.94);
   border-color: rgba(255, 255, 255, 0.08);
@@ -1215,8 +1176,7 @@
   height: 32px;
 }
 
-.app-sidebar.is-collapsed .sidebar-group-children,
-.app-sidebar.is-collapsed .sidebar-group-chevron {
+.app-sidebar.is-collapsed .sidebar-group-children {
   display: none;
 }
 
@@ -1547,7 +1507,9 @@
   user-select: none;
 }
 
-.app-main-drag-region { height: 20px; }
+.app-main-drag-region {
+  height: 20px;
+}
 
 .app-shell.has-embedded-surface .app-main-drag-region {
   display: none;
@@ -1903,7 +1865,9 @@
 }
 
 @keyframes startup-loading-pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scale(1);
   }
 
