@@ -17,6 +17,7 @@ import {
 } from "./sidebarNavOrder";
 import { AgentIcon } from "./AgentIcon";
 import { Collapse } from "../../components/Collapse";
+import { Tooltip } from "../../components/Tooltip";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -967,35 +968,37 @@ export function AppSidebar({
                     ) : null}
                     <span className="assistant-worker-actions">
                       {unreadCount > 0 ? (
+                        <Tooltip content="全部已读">
+                          <button
+                            type="button"
+                            className="assistant-worker-icon-button"
+                            aria-label={`全部已读 ${agent.displayName}`}
+                            onClick={(event) =>
+                              void handleAssistantMarkAllRead(event, agent)
+                            }
+                          >
+                            <span
+                              className="assistant-material-icon is-done-all"
+                              aria-hidden="true"
+                            />
+                          </button>
+                        </Tooltip>
+                      ) : null}
+                      <Tooltip content="新建对话">
                         <button
                           type="button"
-                          className="worker-panel-new assistant-worker-icon-button"
-                          aria-label={`全部已读 ${agent.displayName}`}
-                          title="全部已读"
+                          className="assistant-worker-icon-button"
+                          aria-label={`新建对话 ${agent.displayName}`}
                           onClick={(event) =>
-                            void handleAssistantMarkAllRead(event, agent)
+                            handleAssistantNewChat(event, agent)
                           }
                         >
                           <span
-                            className="assistant-material-icon is-done-all"
+                            className="assistant-material-icon is-add"
                             aria-hidden="true"
                           />
                         </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="worker-panel-new assistant-worker-icon-button"
-                        aria-label={`新建对话 ${agent.displayName}`}
-                        title="新建对话"
-                        onClick={(event) =>
-                          handleAssistantNewChat(event, agent)
-                        }
-                      >
-                        <span
-                          className="assistant-material-icon is-add"
-                          aria-hidden="true"
-                        />
-                      </button>
+                      </Tooltip>
                     </span>
                   </span>
                   <span className="worker-panel-preview">

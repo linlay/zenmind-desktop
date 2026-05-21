@@ -1,0 +1,12 @@
+.Tooltip {
+  position: fixed;
+  z-index: 10000;
+  max-width: min(240px, calc(100vw - 16px));
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--ink);
+  box-shadow: var(--panel-shadow);
+  font-size: 12px;
+  background: var(--desktop-ui-card-soft);
+  backdrop-filter: blur(10px);
+}

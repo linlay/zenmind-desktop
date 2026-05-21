@@ -1,0 +1,6 @@
+.flex {
+  display: flex;
+  &:empty {
+    display: none;
+  }
+}
