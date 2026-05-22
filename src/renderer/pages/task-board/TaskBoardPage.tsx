@@ -700,10 +700,6 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
   return (
     <section className="task-board-page" aria-label="任务看板">
-      <header className="task-board-breadcrumb">
-        <strong>Issues</strong>
-      </header>
-
       <div className="task-board-toolbar">
         <div className="task-board-toolbar-left">
           <button type="button" className="task-board-tool is-active">
