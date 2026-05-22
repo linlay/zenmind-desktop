@@ -1402,13 +1402,24 @@ test("plugin page provides webview-backed assistant context instead of guessing 
     path.join(projectRoot, "src", "preload", "service-webview.ts"),
     "utf8"
   );
+  const mainProcess = readSourceFile("src", "main", "index.ts");
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const contracts = readSharedContractsSource();
+  const sendBridgeMessageBlock = pluginPage.slice(
+    pluginPage.indexOf("function sendBridgeMessageToWebview"),
+    pluginPage.indexOf("function dispatchPluginRouteEventToWebview")
+  );
+  const sendPluginRouteBlock = pluginPage.slice(
+    pluginPage.indexOf("function dispatchPluginRouteEventToWebview"),
+    pluginPage.indexOf("async function injectAgentWebclientAccessToken")
+  );
 
   assert.match(pluginPage, /registerAssistantPageContextProvider/);
   assert.doesNotMatch(pluginPage, /<<<<<<<|=======|>>>>>>>/);
-  assert.match(pluginPage, /registerDesktopActionProviderForScope\("embeddedWeb"/);
+  assert.match(pluginPage, /registerDesktopActionProviderForScope\(\s*"embeddedWeb"/);
   assert.match(pluginPage, /skipContextRegistration\?: boolean/);
-  assert.match(pluginPage, /service\?\.status !== "running" \|\| skipContextRegistration/);
-  assert.match(pluginPage, /!embeddedUrl \|\| skipContextRegistration/);
+  assert.match(pluginPage, /service\?\.status !== "running"[\s\S]{0,80}\|\|\s*skipContextRegistration/);
+  assert.match(pluginPage, /!embeddedUrl[\s\S]{0,80}\|\|\s*skipContextRegistration/);
   assert.match(pluginPage, /tryReadPluginWebviewPageContext/);
   assert.match(pluginPage, /buildPluginWebviewFallbackContext/);
   assert.match(pluginPage, /webview\.executeJavaScript/);
@@ -1427,13 +1438,20 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /setWebviewRetryNonce/);
   assert.match(pluginPage, /refreshServices/);
   assert.match(pluginPage, /embedded-plugin-error/);
-  assert.match(pluginPage, /buildAgentWebclientDesktopContext\(getCurrentPageContextSnapshot\(\)\)/);
+  assert.match(pluginPage, /buildAgentWebclientDesktopContext\(\s*getCurrentPageContextSnapshot\(\),?\s*\)/);
   assert.match(pluginPage, /seedAgentWebclientAccessToken/);
   assert.match(pluginPage, /buildAgentWebclientAccessTokenInjectionScript/);
-  assert.match(pluginPage, /if \(!bridgeReady \|\| !serviceWebviewPreloadPath\) \{[\s\S]{0,80}return undefined;/);
-  assert.match(pluginPage, /bridgeReady,[\s\S]{0,120}serviceWebviewPreloadPath,[\s\S]{0,120}webviewRenderKey/);
-  assert.match(pluginPage, /if \(active === false \|\| !bridgeReady \|\| !serviceWebviewPreloadPath\) \{[\s\S]{0,80}return;[\s\S]{0,120}seedAgentWebclientAccessToken\(\)/);
-  assert.match(pluginPage, /\[active, bridgeReady, embeddedUrl, service\?\.id, serviceWebviewPreloadPath, webviewRenderKey\]/);
+  assert.match(pluginPage, /getServiceWebviewPreloadUrl\(\)/);
+  assert.match(pluginPage, /if \(!bridgeReady \|\| !serviceWebviewPreloadUrl\) \{[\s\S]{0,80}return undefined;/);
+  assert.match(pluginPage, /bridgeReady,[\s\S]{0,120}serviceWebviewPreloadUrl,[\s\S]{0,120}webviewRenderKey/);
+  assert.match(pluginPage, /if \(active === false \|\| !bridgeReady \|\| !serviceWebviewPreloadUrl\) \{[\s\S]{0,80}return;[\s\S]{0,120}seedAgentWebclientAccessToken\(\)/);
+  assert.match(pluginPage, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*service\?\.id,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*\]/);
+  assert.match(pluginPage, /webviewRef\.current = node/);
+  assert.doesNotMatch(pluginPage, /!webviewRef\.current && \(webviewRef\.current = node\)/);
+  assert.match(sendBridgeMessageBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,\s*payload\)/);
+  assert.doesNotMatch(sendBridgeMessageBlock, /executeJavaScript/);
+  assert.match(sendPluginRouteBlock, /executeJavaScript/);
+  assert.match(sendPluginRouteBlock, /CustomEvent\('\$\{SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL\}'/);
   assert.match(pluginPage, /__ZENMIND_AGENT_WEBCLIENT_AUTH_FALLBACK__/);
   assert.match(pluginPage, /agentWebclientTokenReloadTimerRef/);
   assert.match(pluginPage, /webviewRef\.current\?\.reload\(\)/);
@@ -1453,6 +1471,11 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewPreload, /auth-response-seeded/);
   assert.match(serviceWebviewPreload, /AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
   assert.match(serviceWebviewPreload, /DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE/);
+  assert.match(mainProcess, /getServiceWebviewPreloadUrl\(\)[\s\S]{0,120}pathToFileURL\(getServiceWebviewPreloadPath\(\)\)\.toString\(\)/);
+  assert.match(mainProcess, /webPreferences\.preload = servicePreloadPath/);
+  assert.match(mainProcess, /ipcMain\.handle\("plugins\.getServiceWebviewPreloadUrl", async \(\) => getServiceWebviewPreloadUrl\(\)\)/);
+  assert.match(preload, /getServiceWebviewPreloadUrl:\s*\(\) => ipcRenderer\.invoke\("plugins\.getServiceWebviewPreloadUrl"\)/);
+  assert.match(contracts, /getServiceWebviewPreloadUrl:\s*\(\) => Promise<string>/);
   assert.match(globalStyles, /\.embedded-plugin-error\s*\{/);
 });
 

@@ -414,7 +414,7 @@ export function PluginPage({
   const [webviewRetryNonce, setWebviewRetryNonce] = useState(0);
   const [webviewLoadError, setWebviewLoadError] = useState(false);
   const [webviewCurrentUrl, setWebviewCurrentUrl] = useState("");
-  const [serviceWebviewPreloadPath, setServiceWebviewPreloadPath] =
+  const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] =
     useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const agentWebclientTokenReloadTimerRef = useRef<number | null>(null);
@@ -749,12 +749,12 @@ export function PluginPage({
     let cancelled = false;
     setBridgeReady(false);
     void window.electronAPI.plugins
-      .getServiceWebviewPreloadPath()
-      .then((preloadPath) => {
+      .getServiceWebviewPreloadUrl()
+      .then((preloadUrl) => {
         if (cancelled) {
           return;
         }
-        setServiceWebviewPreloadPath(preloadPath);
+        setServiceWebviewPreloadUrl(preloadUrl);
         setBridgeReady(true);
       })
       .catch((reason) => {
@@ -773,6 +773,14 @@ export function PluginPage({
   }, []);
 
   function sendBridgeMessageToWebview(payload: Record<string, unknown>) {
+    try {
+      webviewRef.current?.send(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL, payload);
+    } catch {
+      // Ignore bridge delivery while the guest webContents is being recreated.
+    }
+  }
+
+  function dispatchPluginRouteEventToWebview(payload: Record<string, unknown>) {
     try {
       webviewRef.current?.executeJavaScript(
         `
@@ -793,7 +801,7 @@ export function PluginPage({
     if (!payload) {
       return;
     }
-    sendBridgeMessageToWebview(payload);
+    dispatchPluginRouteEventToWebview(payload);
   }
 
   async function injectAgentWebclientAccessToken(token: string | null) {
@@ -977,7 +985,7 @@ export function PluginPage({
   }
 
   useEffect(() => {
-    if (!bridgeReady || !serviceWebviewPreloadPath) {
+    if (!bridgeReady || !serviceWebviewPreloadUrl) {
       return undefined;
     }
 
@@ -1062,7 +1070,7 @@ export function PluginPage({
     active,
     service?.id,
     service?.status,
-    serviceWebviewPreloadPath,
+    serviceWebviewPreloadUrl,
     embeddedUrl,
     webviewSrcUrl,
     webviewRenderKey,
@@ -1070,7 +1078,7 @@ export function PluginPage({
   ]);
 
   useEffect(() => {
-    if (active === false || !bridgeReady || !serviceWebviewPreloadPath) {
+    if (active === false || !bridgeReady || !serviceWebviewPreloadUrl) {
       return;
     }
     seedAgentWebclientAccessToken();
@@ -1079,7 +1087,7 @@ export function PluginPage({
     bridgeReady,
     embeddedUrl,
     service?.id,
-    serviceWebviewPreloadPath,
+    serviceWebviewPreloadUrl,
     webviewRenderKey,
   ]);
 
@@ -1365,7 +1373,7 @@ export function PluginPage({
     <section className="pan-page pan-page-embedded" {...surfaceVisibilityProps}>
       <div className="pan-drag-region" aria-hidden="true" />
       <div className="pan-frame-shell">
-        {bridgeReady && serviceWebviewPreloadPath ? (
+        {bridgeReady && serviceWebviewPreloadUrl ? (
           <>
             {webviewLoadError ? (
               <section
@@ -1380,12 +1388,12 @@ export function PluginPage({
             {createElement("webview", {
               key: webviewRenderKey,
               ref: (node: Electron.WebviewTag | null) => {
-                !webviewRef.current && (webviewRef.current = node);
+                webviewRef.current = node;
               },
               src: webviewSrcUrl,
               title: serviceDisplayName,
               className: "pan-frame",
-              preload: serviceWebviewPreloadPath,
+              preload: serviceWebviewPreloadUrl,
               partition: `persist:zenmind-service-${pluginId || "plugin"}`,
               allowpopups: "true",
               style: { width: "100%", height: "100%", border: "none" },

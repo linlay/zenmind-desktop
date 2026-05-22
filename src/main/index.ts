@@ -1743,6 +1743,9 @@ function createWindow() {
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
     webPreferences.sandbox = false;
+    if (usesServicePreload) {
+      webPreferences.preload = servicePreloadPath;
+    }
   });
 
   mainWindow.on("focus", () => {
@@ -3502,6 +3505,7 @@ function registerIpcHandlers() {
     return runServiceMutation(() => handlePluginUninstall(app, serviceId, mainWindow));
   });
   ipcMain.handle("plugins.getServiceWebviewPreloadPath", async () => getServiceWebviewPreloadPath());
+  ipcMain.handle("plugins.getServiceWebviewPreloadUrl", async () => getServiceWebviewPreloadUrl());
   ipcMain.handle("market.getSettings", async () => getMarketSettings(app));
   ipcMain.handle("market.saveSettings", async (_event, input) => saveMarketSettings(app, input));
   ipcMain.handle("market.list", async () => listMarketItems(app));

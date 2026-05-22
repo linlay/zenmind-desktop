@@ -155,6 +155,7 @@ export interface DesktopApi {
     install: () => Promise<PluginInstallResult>;
     uninstall: (serviceId: ServiceId) => Promise<PluginInstallResult>;
     getServiceWebviewPreloadPath: () => Promise<string>;
+    getServiceWebviewPreloadUrl: () => Promise<string>;
   };
   market: {
     getSettings: () => Promise<MarketSettings>;
