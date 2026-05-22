@@ -51,7 +51,8 @@ const api: DesktopApi = {
     updateIssue: (id: string, input: TaskBoardIssueUpdateInput) =>
       ipcRenderer.invoke("taskBoard.updateIssue", id, input),
     deleteIssue: (id: string) => ipcRenderer.invoke("taskBoard.deleteIssue", id),
-    moveIssue: (input: TaskBoardIssueMoveInput) => ipcRenderer.invoke("taskBoard.moveIssue", input)
+    moveIssue: (input: TaskBoardIssueMoveInput) => ipcRenderer.invoke("taskBoard.moveIssue", input),
+    syncIssueSchedule: (issueId: string) => ipcRenderer.invoke("taskBoard.syncIssueSchedule", issueId)
   },
   assistant: {
     getSettings: () => ipcRenderer.invoke("assistant.getSettings"),

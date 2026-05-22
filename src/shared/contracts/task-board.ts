@@ -30,6 +30,11 @@ export interface TaskBoardIssue {
   position: number;
   chatId: string | null;
   runId: string | null;
+  scheduleId: string | null;
+  scheduleEnabled: boolean;
+  scheduleCron: string | null;
+  scheduleMessage: string | null;
+  scheduleTimezone: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -41,6 +46,11 @@ export interface TaskBoardIssueInput {
   priority?: TaskBoardPriority;
   assigneeAgentKey?: string | null;
   assigneeName?: string | null;
+  scheduleId?: string | null;
+  scheduleEnabled?: boolean;
+  scheduleCron?: string | null;
+  scheduleMessage?: string | null;
+  scheduleTimezone?: string | null;
 }
 
 export interface TaskBoardIssueUpdateInput {
@@ -52,6 +62,11 @@ export interface TaskBoardIssueUpdateInput {
   assigneeName?: string | null;
   chatId?: string | null;
   runId?: string | null;
+  scheduleId?: string | null;
+  scheduleEnabled?: boolean;
+  scheduleCron?: string | null;
+  scheduleMessage?: string | null;
+  scheduleTimezone?: string | null;
 }
 
 export interface TaskBoardIssueMoveInput {

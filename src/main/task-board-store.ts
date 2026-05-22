@@ -46,6 +46,11 @@ const taskBoardIssueSchema = z.object({
   position: z.number(),
   chatId: z.string().nullable(),
   runId: z.string().nullable(),
+  scheduleId: z.string().nullable().optional(),
+  scheduleEnabled: z.boolean().optional(),
+  scheduleCron: z.string().nullable().optional(),
+  scheduleMessage: z.string().nullable().optional(),
+  scheduleTimezone: z.string().nullable().optional(),
   createdAt: z.string().min(1),
   updatedAt: z.string().min(1)
 });
@@ -225,7 +230,23 @@ function normalizeStoredTaskBoardStore(value: unknown): { store: StoredTaskBoard
       status
     });
     if (parsedIssue.success) {
-      issues.push(parsedIssue.data);
+      issues.push({
+        ...parsedIssue.data,
+        scheduleId: nullableTrimmedText(parsedIssue.data.scheduleId),
+        scheduleEnabled: parsedIssue.data.scheduleEnabled === true,
+        scheduleCron: nullableTrimmedText(parsedIssue.data.scheduleCron),
+        scheduleMessage: nullableTrimmedText(parsedIssue.data.scheduleMessage),
+        scheduleTimezone: nullableTrimmedText(parsedIssue.data.scheduleTimezone)
+      });
+      if (
+        parsedIssue.data.scheduleId === undefined ||
+        parsedIssue.data.scheduleEnabled === undefined ||
+        parsedIssue.data.scheduleCron === undefined ||
+        parsedIssue.data.scheduleMessage === undefined ||
+        parsedIssue.data.scheduleTimezone === undefined
+      ) {
+        changed = true;
+      }
     } else {
       changed = true;
     }
@@ -241,7 +262,7 @@ function normalizeStoredTaskBoardStore(value: unknown): { store: StoredTaskBoard
   return {
     store: {
       version: STORAGE_VERSION,
-      issues: sortIssues(parsedStore.data.issues)
+      issues: sortIssues(issues)
     },
     changed
   };
@@ -270,6 +291,11 @@ function buildIssue(input: TaskBoardIssueInput, existingIssues: TaskBoardIssue[]
     position: nextIssuePosition(existingIssues, status),
     chatId: null,
     runId: null,
+    scheduleId: nullableTrimmedText(input.scheduleId),
+    scheduleEnabled: input.scheduleEnabled === true,
+    scheduleCron: nullableTrimmedText(input.scheduleCron),
+    scheduleMessage: nullableTrimmedText(input.scheduleMessage),
+    scheduleTimezone: nullableTrimmedText(input.scheduleTimezone),
     createdAt: timestamp,
     updatedAt: timestamp
   };
@@ -311,6 +337,21 @@ function applyIssueUpdate(issue: TaskBoardIssue, input: TaskBoardIssueUpdateInpu
   }
   if (input.runId !== undefined) {
     nextIssue.runId = nullableTrimmedText(input.runId);
+  }
+  if (input.scheduleId !== undefined) {
+    nextIssue.scheduleId = nullableTrimmedText(input.scheduleId);
+  }
+  if (input.scheduleEnabled !== undefined) {
+    nextIssue.scheduleEnabled = input.scheduleEnabled === true;
+  }
+  if (input.scheduleCron !== undefined) {
+    nextIssue.scheduleCron = nullableTrimmedText(input.scheduleCron);
+  }
+  if (input.scheduleMessage !== undefined) {
+    nextIssue.scheduleMessage = nullableTrimmedText(input.scheduleMessage);
+  }
+  if (input.scheduleTimezone !== undefined) {
+    nextIssue.scheduleTimezone = nullableTrimmedText(input.scheduleTimezone);
   }
 
   return nextIssue;

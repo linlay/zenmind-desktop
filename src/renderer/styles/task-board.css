@@ -514,6 +514,19 @@
 .task-board-priority-bars span:nth-child(4) { height: 11px; }
 .task-board-priority-bars span.is-on { opacity: 1; }
 
+.task-board-schedule-badge {
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 5px;
+  padding: 0 6px;
+  background: rgba(22, 163, 74, 0.1);
+  color: #15803d;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .task-board-run-dot {
   position: absolute;
   top: 12px;
@@ -686,10 +699,30 @@
   border-color: #1677ff;
 }
 
+.task-board-field input:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
 .task-board-field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.task-board-schedule-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--task-board-border);
+  border-radius: var(--task-board-radius);
+  background: color-mix(in srgb, var(--task-board-bg) 82%, var(--task-board-card));
+}
+
+.task-board-schedule-toggle {
+  justify-content: flex-start;
+  color: var(--task-board-ink);
+  font-weight: 800;
 }
 
 .task-board-modal-actions {

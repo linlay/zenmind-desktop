@@ -323,7 +323,7 @@ function unwrapPlatformResponse<T>(payload: unknown): T {
   return payload as T;
 }
 
-async function callAgentPlatform<T>(
+export async function callAgentPlatform<T>(
   app: App,
   pathOrUrl: string,
   options: { method?: string; body?: unknown } = {}

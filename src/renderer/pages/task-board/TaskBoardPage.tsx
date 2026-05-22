@@ -45,6 +45,11 @@ type IssueFormState = {
   status: TaskBoardStatus;
   priority: TaskBoardPriority;
   assigneeAgentKey: string;
+  scheduleEnabled: boolean;
+  schedulePreset: string;
+  scheduleCron: string;
+  scheduleMessage: string;
+  scheduleTimezone: string;
 };
 
 type DisplayState = {
@@ -86,12 +91,24 @@ const PRIORITY_META: Record<TaskBoardPriority, { label: string; tone: string; ba
   none: { label: "No priority", tone: "none", bars: 0 }
 };
 
+const TASK_BOARD_SCHEDULE_PRESETS = [
+  { label: "每天 08:00", value: "0 8 * * *" },
+  { label: "每天 09:00", value: "0 9 * * *" },
+  { label: "工作日 18:00", value: "0 18 * * 1-5" },
+  { label: "每小时", value: "0 * * * *" }
+] as const;
+
 const emptyForm: IssueFormState = {
   title: "",
   description: "",
   status: "backlog",
   priority: "medium",
-  assigneeAgentKey: ""
+  assigneeAgentKey: "",
+  scheduleEnabled: false,
+  schedulePreset: TASK_BOARD_SCHEDULE_PRESETS[0].value,
+  scheduleCron: TASK_BOARD_SCHEDULE_PRESETS[0].value,
+  scheduleMessage: "",
+  scheduleTimezone: "Asia/Shanghai"
 };
 
 const defaultDisplayState: DisplayState = {
@@ -148,12 +165,21 @@ function computeDropPosition(targetIssues: TaskBoardIssue[], insertIndex: number
 }
 
 function createFormFromIssue(issue: TaskBoardIssue): IssueFormState {
+  const scheduleCron = issue.scheduleCron ?? TASK_BOARD_SCHEDULE_PRESETS[0].value;
+  const schedulePreset = TASK_BOARD_SCHEDULE_PRESETS.some((preset) => preset.value === scheduleCron)
+    ? scheduleCron
+    : "custom";
   return {
     title: issue.title,
     description: issue.description,
     status: issue.status,
     priority: issue.priority,
-    assigneeAgentKey: issue.assigneeAgentKey ?? ""
+    assigneeAgentKey: issue.assigneeAgentKey ?? "",
+    scheduleEnabled: issue.scheduleEnabled,
+    schedulePreset,
+    scheduleCron,
+    scheduleMessage: issue.scheduleMessage ?? "",
+    scheduleTimezone: issue.scheduleTimezone ?? "Asia/Shanghai"
   };
 }
 
@@ -166,6 +192,17 @@ function getVisibleAssigneeName(name: string | null | undefined) {
   const trimmed = name?.trim() ?? "";
   if (!trimmed) return "";
   return Array.from(trimmed).length <= 4 ? trimmed : "";
+}
+
+function isFiveFieldCron(value: string) {
+  return value.trim().split(/\s+/u).length === 5;
+}
+
+function getScheduleDisplayLabel(issue: TaskBoardIssue) {
+  if (!issue.scheduleEnabled || !issue.scheduleCron) {
+    return "";
+  }
+  return TASK_BOARD_SCHEDULE_PRESETS.find((preset) => preset.value === issue.scheduleCron)?.label ?? issue.scheduleCron;
 }
 
 function createNavigationAgentFromOption(agent: DesktopPetAgentOption): AssistantNavAgentItem {
@@ -481,6 +518,18 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       setFeedback({ tone: "error", message: "请选择智能体后再进入 In Progress。" });
       return;
     }
+    if (form.scheduleEnabled && !form.assigneeAgentKey) {
+      setFeedback({ tone: "error", message: "请选择智能体后再启用定时任务。" });
+      return;
+    }
+    if (form.scheduleEnabled && !isFiveFieldCron(form.scheduleCron)) {
+      setFeedback({ tone: "error", message: "定时任务需要 5 段 cron，例如 0 8 * * *。" });
+      return;
+    }
+    if (form.scheduleEnabled && !form.scheduleMessage.trim()) {
+      setFeedback({ tone: "error", message: "请填写定时任务要执行的内容。" });
+      return;
+    }
     const assigneeName = getAssigneeName(form.assigneeAgentKey, agents);
     const savedStatus = shouldRunAfterSave ? modal?.issue?.status ?? "todo" : form.status;
     const payload: TaskBoardIssueInput | TaskBoardIssueUpdateInput = {
@@ -489,17 +538,32 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       status: savedStatus,
       priority: form.priority,
       assigneeAgentKey: form.assigneeAgentKey || null,
-      assigneeName
+      assigneeName,
+      scheduleId: modal?.issue?.scheduleId ?? null,
+      scheduleEnabled: form.scheduleEnabled,
+      scheduleCron: form.scheduleEnabled ? form.scheduleCron : null,
+      scheduleMessage: form.scheduleEnabled ? form.scheduleMessage : null,
+      scheduleTimezone: form.scheduleEnabled ? form.scheduleTimezone : null
     };
 
     try {
       const result = modal?.mode === "edit" && modal.issue
         ? await taskBoardApi.updateIssue(modal.issue.id, payload)
         : await taskBoardApi.createIssue(payload as TaskBoardIssueInput);
-      const savedIssue = result.issue;
-      setIssues(sortIssues(result.issues));
-      setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
-      if (result.ok) {
+      let savedIssue = result.issue;
+      let nextIssues = result.issues;
+      let nextMessage = result.message;
+      let nextTone: Feedback["tone"] = result.ok ? "success" : "error";
+      if (result.ok && savedIssue && (form.scheduleEnabled || savedIssue.scheduleId)) {
+        const scheduleResult = await taskBoardApi.syncIssueSchedule(savedIssue.id);
+        savedIssue = scheduleResult.issue ?? savedIssue;
+        nextIssues = scheduleResult.issues;
+        nextTone = scheduleResult.ok ? "success" : "error";
+        nextMessage = scheduleResult.ok ? "任务和定时任务已保存。" : scheduleResult.message;
+      }
+      setIssues(sortIssues(nextIssues));
+      setFeedback({ tone: nextTone, message: nextMessage });
+      if (result.ok && nextTone === "success") {
         setModal(null);
         if (shouldRunAfterSave && savedIssue) {
           void assignIssueToAssistant(savedIssue, form.assigneeAgentKey);
@@ -915,6 +979,80 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 ))}
               </select>
             </label>
+            <section className="task-board-schedule-panel" aria-label="定时任务">
+              <label className="task-board-check-row task-board-schedule-toggle">
+                <input
+                  type="checkbox"
+                  checked={form.scheduleEnabled}
+                  onChange={(event) => setForm((current) => ({
+                    ...current,
+                    scheduleEnabled: event.target.checked,
+                    scheduleMessage: event.target.checked && !current.scheduleMessage.trim()
+                      ? current.description.trim() || current.title.trim()
+                      : current.scheduleMessage
+                  }))}
+                />
+                <span>定时执行</span>
+              </label>
+              {form.scheduleEnabled ? (
+                <>
+                  <div className="task-board-field-grid">
+                    <label className="task-board-field">
+                      <span>时间</span>
+                      <select
+                        value={form.schedulePreset}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setForm((current) => ({
+                            ...current,
+                            schedulePreset: value,
+                            scheduleCron: value === "custom" ? current.scheduleCron : value
+                          }));
+                        }}
+                      >
+                        {TASK_BOARD_SCHEDULE_PRESETS.map((preset) => (
+                          <option key={preset.value} value={preset.value}>{preset.label}</option>
+                        ))}
+                        <option value="custom">自定义 cron</option>
+                      </select>
+                    </label>
+                    <label className="task-board-field">
+                      <span>时区</span>
+                      <input
+                        value={form.scheduleTimezone}
+                        onChange={(event) => setForm((current) => ({
+                          ...current,
+                          scheduleTimezone: event.target.value
+                        }))}
+                      />
+                    </label>
+                  </div>
+                  <label className="task-board-field">
+                    <span>Cron</span>
+                    <input
+                      value={form.scheduleCron}
+                      disabled={form.schedulePreset !== "custom"}
+                      onChange={(event) => setForm((current) => ({
+                        ...current,
+                        scheduleCron: event.target.value
+                      }))}
+                      placeholder="0 8 * * *"
+                    />
+                  </label>
+                  <label className="task-board-field">
+                    <span>要让它做什么</span>
+                    <textarea
+                      value={form.scheduleMessage}
+                      onChange={(event) => setForm((current) => ({
+                        ...current,
+                        scheduleMessage: event.target.value
+                      }))}
+                      rows={3}
+                    />
+                  </label>
+                </>
+              ) : null}
+            </section>
             <div className="task-board-modal-actions">
               {modal.mode === "edit" && modal.issue ? (
                 <button
@@ -1093,9 +1231,11 @@ function TaskBoardCardContent({
   const chatActionLabel = getIssueChatActionLabel(issue);
   const visibleChatActionLabel = awaitingConfirmation ? "等待你确认" : chatActionLabel;
   const visibleAssigneeName = getVisibleAssigneeName(issue.assigneeName);
+  const scheduleLabel = getScheduleDisplayLabel(issue);
   const shouldShowFooter = Boolean(
     (display.assignee && visibleAssigneeName) ||
     display.priority ||
+    scheduleLabel ||
     chatActionLabel
   );
   const mainContent = (
@@ -1139,6 +1279,11 @@ function TaskBoardCardContent({
             </span>
           ) : null}
           {display.priority ? <PriorityBadge priority={issue.priority} /> : null}
+          {scheduleLabel ? (
+            <span className="task-board-schedule-badge" title={issue.scheduleCron ?? undefined}>
+              {scheduleLabel}
+            </span>
+          ) : null}
           {chatActionLabel ? (
             <button
               type="button"

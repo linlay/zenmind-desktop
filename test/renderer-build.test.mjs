@@ -912,8 +912,14 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(preload, /taskBoard:\s*\{/);
   assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.listIssues"\)/);
   assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.moveIssue", input\)/);
+  assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.syncIssueSchedule", issueId\)/);
   assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.listIssues"/);
   assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.moveIssue"/);
+  assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.syncIssueSchedule"/);
+  assert.match(mainProcess, /syncTaskBoardIssueSchedule/);
+  assert.match(mainProcess, /\/api\/schedule\/create/);
+  assert.match(mainProcess, /\/api\/schedule\/update/);
+  assert.match(mainProcess, /\/api\/schedule\/delete/);
   assert.match(mainProcess, /syncTaskBoardIssueFromAssistantEvent/);
   assert.match(mainProcess, /event\.type === "done" \|\| event\.type === "run\.complete"[\s\S]{0,120}return "in_review"/);
   assert.match(mainProcess, /updateTaskBoardIssueByRunId\(app, event\.runId/);
@@ -972,9 +978,13 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /shouldRunAfterSave && !form\.assigneeAgentKey/);
   assert.match(taskBoardPage, /请选择智能体后再进入 In Progress。/);
   assert.match(taskBoardPage, /assignIssueToAssistant\(savedIssue, form\.assigneeAgentKey\)/);
+  assert.match(taskBoardPage, /scheduleEnabled/);
+  assert.match(taskBoardPage, /每天 08:00/);
+  assert.match(taskBoardPage, /taskBoardApi\.syncIssueSchedule/);
+  assert.match(taskBoardPage, /task-board-schedule-badge/);
   assert.match(taskBoardPage, /resolveAssistantTaskStatus/);
   assert.match(taskBoardPage, /status:\s*"in_review"[\s\S]*?runId:\s*null/);
-  assert.match(taskBoardPage, /<header className="task-board-breadcrumb">\s*<strong>Issues<\/strong>\s*<\/header>/);
+  assert.doesNotMatch(taskBoardPage, /<header className="task-board-breadcrumb">\s*<strong>Issues<\/strong>\s*<\/header>/);
   assert.doesNotMatch(taskBoardPage, /task-board-workspace-mark/);
   assert.doesNotMatch(taskBoardPage, /task-board-breadcrumb-separator/);
   assert.match(taskBoardPage, /function isIssueDragLocked\(issue: TaskBoardIssue \| null \| undefined\)/);
@@ -1008,6 +1018,8 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-run-dot\s*\{[\s\S]{0,220}position:\s*absolute;[\s\S]{0,220}right:[\s\S]{0,220}background:\s*#16a34a;/);
   assert.match(globalStyles, /\.task-board-chat-action\s*\{/);
   assert.match(globalStyles, /\.task-board-chat-action\.is-awaiting\s*\{/);
+  assert.match(globalStyles, /\.task-board-schedule-panel\s*\{/);
+  assert.match(globalStyles, /\.task-board-schedule-badge\s*\{/);
   assert.match(globalStyles, /\.task-board-chat-action\.is-human-loop\s*\{[\s\S]{0,180}background:\s*#16a34a;/);
   assert.doesNotMatch(globalStyles, /\.task-board-human-loop-hint\s*\{/);
   assert.doesNotMatch(globalStyles, /\.task-board-card-action\s*\{/);

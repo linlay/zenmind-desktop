@@ -91,21 +91,40 @@ test("task board updates and deletes existing issues", (t) => {
   const app = createTempApp(t);
   const created = createTaskBoardIssue(app, {
     title: "旧标题",
-    priority: "low"
+    priority: "low",
+    scheduleEnabled: true,
+    scheduleCron: " 0 8 * * * ",
+    scheduleMessage: " 每天 8 点检查状态 ",
+    scheduleTimezone: " Asia/Shanghai "
   });
   assert.ok(created.issue);
+  assert.equal(created.issue.scheduleEnabled, true);
+  assert.equal(created.issue.scheduleId, null);
+  assert.equal(created.issue.scheduleCron, "0 8 * * *");
+  assert.equal(created.issue.scheduleMessage, "每天 8 点检查状态");
+  assert.equal(created.issue.scheduleTimezone, "Asia/Shanghai");
 
   const updated = updateTaskBoardIssue(app, created.issue.id, {
     title: "新标题",
     priority: "urgent",
     chatId: "chat-1",
-    runId: "run-1"
+    runId: "run-1",
+    scheduleId: "schedule-1",
+    scheduleEnabled: false,
+    scheduleCron: null,
+    scheduleMessage: null,
+    scheduleTimezone: null
   });
   assert.equal(updated.ok, true);
   assert.equal(updated.issue?.title, "新标题");
   assert.equal(updated.issue?.priority, "urgent");
   assert.equal(updated.issue?.chatId, "chat-1");
   assert.equal(updated.issue?.runId, "run-1");
+  assert.equal(updated.issue?.scheduleId, "schedule-1");
+  assert.equal(updated.issue?.scheduleEnabled, false);
+  assert.equal(updated.issue?.scheduleCron, null);
+  assert.equal(updated.issue?.scheduleMessage, null);
+  assert.equal(updated.issue?.scheduleTimezone, null);
 
   const removed = deleteTaskBoardIssue(app, created.issue.id);
   assert.equal(removed.ok, true);
