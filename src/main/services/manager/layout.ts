@@ -64,7 +64,7 @@ export function resolveServiceRuntimePath(layout: ServiceLayout, relativePath: s
   }
   const baseName = path.basename(relativePath);
   if (/\.pid$/iu.test(baseName) || /(^|[\\/])pid([\\/]|$)/iu.test(relativePath)) {
-    return path.join(layout.stateDir, "pid", baseName);
+    return path.join(layout.stateDir, baseName);
   }
   if (/\.log$/iu.test(baseName)) {
     return path.join(layout.logDir, baseName);

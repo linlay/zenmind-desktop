@@ -122,11 +122,30 @@ function runAppServerScript(
     : args;
 
   return new Promise((resolve, reject) => {
-    const childEnv = {
+    const childEnv: NodeJS.ProcessEnv = {
       ...process.env,
       ...buildLayoutEnv(layout),
       ...env
     };
+
+    // Ensure common tool paths are available (Git mingw64 for openssl, etc.)
+    if (process.platform === "win32") {
+      const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
+      const userProfile = process.env.USERPROFILE ?? "";
+      const nodeBinDir = process.env.ZENMIND_NODE_BIN
+        ? path.dirname(process.env.ZENMIND_NODE_BIN)
+        : (process.execPath ? path.dirname(process.execPath) : null);
+      const staticPaths = [
+        path.join(programFiles, "Git", "mingw64", "bin"),
+        path.join(programFiles, "Git", "usr", "bin"),
+        ...(userProfile ? [path.join(userProfile, "bin")] : []),
+        ...(nodeBinDir ? [nodeBinDir] : [])
+      ];
+      const pathKey = childEnv.PATH !== undefined ? "PATH" : "Path";
+      const current = (childEnv[pathKey] ?? "").split(path.delimiter).filter(Boolean);
+      childEnv[pathKey] = [...new Set([...current, ...staticPaths])].join(path.delimiter);
+    }
+
     execFile(command, commandArgs, {
       cwd: layout.programDir,
       env: childEnv,

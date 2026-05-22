@@ -958,6 +958,8 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               surfaceLabel="任务聊天"
               embedPath={buildTaskBoardChatEmbedPath(chatModalRequest)}
               skipContextRegistration
+              loadInitialEmbeddedUrlDirectly
+              suppressInitialLoadingCopy
             />
             <button
               type="button"

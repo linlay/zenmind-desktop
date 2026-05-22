@@ -58,6 +58,8 @@ type PluginPageProps = {
   embedPath?: string;
   surfaceLabel?: string;
   skipContextRegistration?: boolean;
+  loadInitialEmbeddedUrlDirectly?: boolean;
+  suppressInitialLoadingCopy?: boolean;
 };
 
 const MAX_PLUGIN_PAGE_CONTEXT_HEADINGS = 24;
@@ -394,6 +396,8 @@ export function PluginPage({
   embedPath,
   surfaceLabel,
   skipContextRegistration,
+  loadInitialEmbeddedUrlDirectly,
+  suppressInitialLoadingCopy,
 }: PluginPageProps) {
   const location = useLocation();
   const currentRoute = `${location.pathname}${location.search}`;
@@ -417,7 +421,6 @@ export function PluginPage({
   const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] =
     useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
-  const agentWebclientTokenReloadTimerRef = useRef<number | null>(null);
   const surfaceVisibilityProps =
     active === undefined
       ? {}
@@ -475,8 +478,11 @@ export function PluginPage({
     webviewReloadKey,
   ]);
   const webviewSrcUrl = useMemo(
-    () => buildPluginWebviewSrcUrl(embeddedUrl),
-    [embeddedUrl],
+    () =>
+      loadInitialEmbeddedUrlDirectly
+        ? embeddedUrl
+        : buildPluginWebviewSrcUrl(embeddedUrl),
+    [embeddedUrl, loadInitialEmbeddedUrlDirectly],
   );
   const webviewBaseKey = useMemo(
     () => [service?.id ?? "service", webviewReloadKey, webviewSrcUrl].join(":"),
@@ -846,22 +852,12 @@ export function PluginPage({
       .issueAccessToken("missing")
       .then(async (result) => {
         const token = result.ok ? result.token : null;
-        const shouldReloadAfterInjection =
-          await injectAgentWebclientAccessToken(token);
+        await injectAgentWebclientAccessToken(token);
         sendBridgeMessageToWebview({
           type: bridgeProtocol.responseType,
           requestId: `agent_webclient_seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           token,
         });
-        if (shouldReloadAfterInjection) {
-          if (agentWebclientTokenReloadTimerRef.current !== null) {
-            window.clearTimeout(agentWebclientTokenReloadTimerRef.current);
-          }
-          agentWebclientTokenReloadTimerRef.current = window.setTimeout(() => {
-            agentWebclientTokenReloadTimerRef.current = null;
-            webviewRef.current?.reload();
-          }, 50);
-        }
         if (!result.ok) {
           setBridgeError(result.message);
         }
@@ -1090,15 +1086,6 @@ export function PluginPage({
     serviceWebviewPreloadUrl,
     webviewRenderKey,
   ]);
-
-  useEffect(() => {
-    return () => {
-      if (agentWebclientTokenReloadTimerRef.current !== null) {
-        window.clearTimeout(agentWebclientTokenReloadTimerRef.current);
-        agentWebclientTokenReloadTimerRef.current = null;
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (service?.id !== "agent-webclient" || active === false || !embeddedUrl) {
@@ -1399,6 +1386,12 @@ export function PluginPage({
               style: { width: "100%", height: "100%", border: "none" },
             })}
           </>
+        ) : suppressInitialLoadingCopy ? (
+          <section
+            className="empty-state"
+            aria-busy="true"
+            aria-label={`${serviceDisplayName} 正在加载`}
+          />
         ) : (
           <section className="empty-state">
             <p className="eyebrow">PLUGIN</p>
