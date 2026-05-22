@@ -542,15 +542,6 @@
 }
 
 .desktop-agent-icon-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  color: #fff;
-  overflow: hidden;
-}
-
-.desktop-agent-icon-avatar svg {
   width: 18px;
   height: 18px;
 }
