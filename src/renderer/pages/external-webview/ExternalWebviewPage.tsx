@@ -281,6 +281,16 @@ function BookmarkOverflowIcon() {
   );
 }
 
+function DevToolsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M4.5 5.75 2.75 10l1.75 4.25" />
+      <path d="m15.5 5.75 1.75 4.25-1.75 4.25" />
+      <path d="m8.25 15.25 3.5-10.5" />
+    </svg>
+  );
+}
+
 type SiteIconProps = {
   title: string;
   url: string;
@@ -1594,6 +1604,23 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     }
   };
 
+  const handleOpenDevTools = () => {
+    if (!activeTab) {
+      return;
+    }
+
+    const activeWebview = webviewRefs.current.get(activeTab.id);
+    if (!activeWebview) {
+      return;
+    }
+
+    try {
+      activeWebview.openDevTools();
+    } catch {
+      // Ignore attempts before the guest contents are ready.
+    }
+  };
+
   const handleNavigateToInputUrl = () => {
     if (!activeTab) {
       return;
@@ -2262,6 +2289,16 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
             title={activeBookmark ? "取消收藏当前页" : "收藏当前页"}
           >
             <StarIcon />
+          </button>
+          <button
+            type="button"
+            className="external-webview-devtools-toggle"
+            onClick={handleOpenDevTools}
+            disabled={!activeTab}
+            aria-label="打开当前网页 DevTools"
+            title="打开当前网页 DevTools"
+          >
+            <DevToolsIcon />
           </button>
           <button
             type="button"

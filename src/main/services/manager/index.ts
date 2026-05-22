@@ -2703,7 +2703,6 @@ const AGENT_PLATFORM_DEPRECATED_ENV_KEYS = [
   "AGENT_CONTAINER_HUB_DESTROY_QUEUE_DELAY_MS",
   "AGENT_STREAM_INCLUDE_TOOL_PAYLOAD_EVENTS",
   "AGENT_STREAM_INCLUDE_DEBUG_EVENTS",
-  "RUNTIME_DIR",
   "AGENT_CONFIG_DIR",
   "AGENT_AGENTS_EXTERNAL_DIR",
   "AGENT_TEAMS_EXTERNAL_DIR",
@@ -2978,9 +2977,6 @@ const agentPlatformDesktopRuntimePaths = [
   ["SKILLS_MARKET_DIR", "skills-market"]
 ] as const;
 
-const agentPlatformDesktopInitializationRuntimePaths = agentPlatformDesktopRuntimePaths
-  .filter(([key]) => key !== "TOOLS_DIR");
-
 function resolveHomeDir(app?: App | null) {
   try {
     const homePath = app?.getPath("home")?.trim();
@@ -3020,6 +3016,16 @@ function normalizeConfigPath(value: string, homeDir = resolveHomeDir()) {
   return path.normalize(expandHomeShortcut(value, homeDir)).replace(/\\/gu, "/");
 }
 
+function stripNormalizedPathSuffix(value: string, suffix: string) {
+  if (value === suffix) {
+    return ".";
+  }
+  if (value.endsWith(`/${suffix}`)) {
+    return value.slice(0, -suffix.length - 1) || "/";
+  }
+  return "";
+}
+
 function formatDesktopAgentPlatformRuntimePath(app: App, value: string) {
   if (process.platform === "win32") {
     return value;
@@ -3047,6 +3053,10 @@ function resolveAgentPlatformInitializationRuntimeRoot(app: App) {
     return path.join(homeDir, ".zenmind");
   }
   return path.join(homeDir, ".zenmind");
+}
+
+function formatDesktopAgentPlatformRuntimeRoot(app: App, runtimeRoot: string) {
+  return formatDesktopAgentPlatformRuntimePath(app, runtimeRoot);
 }
 
 function countMatchingFiles(rootDir: string, maxDepth: number, predicate: (filePath: string) => boolean, depth = 0): number {
@@ -3140,6 +3150,53 @@ function hasConfiguredAgentPlatformRuntimePath(env: Map<string, string>) {
     return true;
   }
   return agentPlatformDesktopRuntimePaths.some(([key]) => Boolean(env.get(key)?.trim()));
+}
+
+function getAgentPlatformRuntimePathKeysResolvingUnderRoot(env: Map<string, string>, runtimeRoot: string) {
+  const homeDir = resolveHomeDir();
+  const normalizedRuntimeRoot = normalizeConfigPath(runtimeRoot, homeDir);
+  const keys: string[] = [];
+
+  for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
+    const value = env.get(key)?.trim();
+    if (!value) {
+      continue;
+    }
+    const normalizedValue = normalizeConfigPath(value, homeDir);
+    const normalizedExpected = normalizeConfigPath(path.join(normalizedRuntimeRoot, relativePath), homeDir);
+    if (normalizedValue === normalizedExpected) {
+      keys.push(key);
+    }
+  }
+
+  return keys;
+}
+
+function inferAgentPlatformRuntimeRootFromChildPaths(env: Map<string, string>) {
+  const homeDir = resolveHomeDir();
+  const roots = new Set<string>();
+  let configuredPathCount = 0;
+
+  for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
+    const value = env.get(key)?.trim();
+    if (!value) {
+      continue;
+    }
+    configuredPathCount += 1;
+    const normalizedValue = normalizeConfigPath(value, homeDir);
+    const normalizedRelativePath = normalizeConfigPath(relativePath, homeDir);
+    const root = stripNormalizedPathSuffix(normalizedValue, normalizedRelativePath);
+    if (!root) {
+      return "";
+    }
+    roots.add(root);
+  }
+
+  if (configuredPathCount < 2 || roots.size !== 1) {
+    return "";
+  }
+
+  return [...roots][0] ?? "";
 }
 
 function resolveLegacyAgentPlatformRuntimeRootMigration(app: App, env: Map<string, string>) {
@@ -3493,6 +3550,12 @@ function normalizeAgentWebclientEnvContentForDesktop(content: string) {
 function normalizeAgentPlatformEnvContentForRuntime(content: string, layout?: ServiceLayout) {
   const env = parseEnvFileContent(content);
   const migrated = new Map<string, string>();
+  const configuredRuntimeRoot = env.get("RUNTIME_DIR")?.trim();
+  const inferredRuntimeRoot = configuredRuntimeRoot ? "" : inferAgentPlatformRuntimeRootFromChildPaths(env);
+  const runtimeRoot = configuredRuntimeRoot || inferredRuntimeRoot;
+  const runtimeChildKeysToRemove = runtimeRoot
+    ? getAgentPlatformRuntimePathKeysResolvingUnderRoot(env, runtimeRoot)
+    : [];
 
   for (const [oldKey, newKey] of AGENT_PLATFORM_ENV_KEY_RENAMES) {
     const oldValue = env.get(oldKey)?.trim();
@@ -3502,13 +3565,8 @@ function normalizeAgentPlatformEnvContentForRuntime(content: string, layout?: Se
     }
   }
 
-  const legacyRuntimeRoot = env.get("RUNTIME_DIR")?.trim();
-  if (legacyRuntimeRoot) {
-    for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
-      if (!env.get(key)?.trim()) {
-        migrated.set(key, path.join(legacyRuntimeRoot, relativePath));
-      }
-    }
+  if (inferredRuntimeRoot) {
+    migrated.set("RUNTIME_DIR", inferredRuntimeRoot);
   }
 
   normalizeShellSourcedAgentPlatformEnvValues(env, migrated);
@@ -3516,7 +3574,13 @@ function normalizeAgentPlatformEnvContentForRuntime(content: string, layout?: Se
   syncAgentPlatformEmbeddedCdpEnv(migrated);
 
   return removeDesktopManagedAgentPlatformEnvContent(
-    upsertEnvFileContent(removeEnvKeysFromContent(content, AGENT_PLATFORM_DEPRECATED_ENV_KEYS), migrated),
+    upsertEnvFileContent(
+      removeEnvKeysFromContent(
+        removeEnvKeysFromContent(content, AGENT_PLATFORM_DEPRECATED_ENV_KEYS),
+        runtimeChildKeysToRemove
+      ),
+      migrated
+    ),
     layout
   );
 }
@@ -3889,9 +3953,7 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
     updates.set("PROVIDER_APIKEY_KEY_PART", DEFAULT_PROVIDER_APIKEY_KEY_PART);
     await syncAgentPlatformContainerHubUrl(app, env, updates, { force: true });
     const runtimeRoot = resolveAgentPlatformInitializationRuntimeRoot(app);
-    for (const [key, relativePath] of agentPlatformDesktopInitializationRuntimePaths) {
-      updates.set(key, formatDesktopAgentPlatformRuntimePath(app, path.join(runtimeRoot, relativePath)));
-    }
+    updates.set("RUNTIME_DIR", formatDesktopAgentPlatformRuntimeRoot(app, runtimeRoot));
   }
 
   if (service.id === "agent-webclient") {
@@ -4012,9 +4074,7 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   const migratedRuntimeRoot = resolveLegacyAgentPlatformRuntimeRootMigration(app, env);
   if (migratedRuntimeRoot) {
     const homeDir = resolveHomeDir(app);
-    for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
-      updates.set(key, formatDesktopAgentPlatformRuntimePath(app, path.join(migratedRuntimeRoot, relativePath)));
-    }
+    updates.set("RUNTIME_DIR", formatDesktopAgentPlatformRuntimeRoot(app, migratedRuntimeRoot));
     console.warn(
       `[service-manager] Migrated agent-platform runtime paths from legacy desktop default ${path.join(homeDir, "zenmind")} to ${migratedRuntimeRoot}`
     );
@@ -4022,11 +4082,7 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
 
   const desktopRuntimeRoot = resolvePreferredAgentPlatformRuntimeRoot(app);
   if (!hasConfiguredAgentPlatformRuntimePath(env)) {
-    for (const [key, relativePath] of agentPlatformDesktopRuntimePaths) {
-      if (!env.get(key)) {
-        updates.set(key, formatDesktopAgentPlatformRuntimePath(app, path.join(desktopRuntimeRoot, relativePath)));
-      }
-    }
+    updates.set("RUNTIME_DIR", formatDesktopAgentPlatformRuntimeRoot(app, desktopRuntimeRoot));
   }
 
   if (updates.size > 0) {

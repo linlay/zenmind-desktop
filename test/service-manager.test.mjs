@@ -352,6 +352,7 @@ function createStartupCoreAssetsFixture(options = {}) {
         "CONTAINER_HUB_BASE_URL=https://bundle-hub.example.test",
         "",
         "# Runtime directories",
+        "# RUNTIME_DIR=./runtime",
         "# REGISTRIES_DIR=./runtime/registries",
         "# OWNER_DIR=./runtime/owner",
         "# AGENTS_DIR=./runtime/agents",
@@ -1397,14 +1398,47 @@ test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys and
   assert.match(next, /^AUTH_ENABLED=false$/m);
   assert.match(next, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/old\.pem$/m);
   assert.match(next, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:11960$/m);
-  assert.match(next, /^AGENTS_DIR=\/tmp\/legacy-runtime\/agents$/m);
-  assert.match(next, /^REGISTRIES_DIR=\/tmp\/legacy-runtime\/registries$/m);
+  assert.match(next, /^RUNTIME_DIR=\/tmp\/legacy-runtime$/m);
+  assert.doesNotMatch(next, /^AGENTS_DIR=\/tmp\/legacy-runtime\/agents$/m);
+  assert.doesNotMatch(next, /^REGISTRIES_DIR=\/tmp\/legacy-runtime\/registries$/m);
   assert.match(next, /^CLAUDE_CODE_ACP_ARGS='-y @zed-industries\/claude-code-acp'$/m);
   assert.doesNotMatch(next, /^AGENT_AUTH_ENABLED=/m);
   assert.doesNotMatch(next, /^AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
   assert.doesNotMatch(next, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
-  assert.doesNotMatch(next, /^RUNTIME_DIR=/m);
   assert.doesNotMatch(next, /^GATEWAY_WS_URL=/m);
+});
+
+test("normalizeAgentPlatformEnvContentForRuntime folds managed child runtime dirs under RUNTIME_DIR", () => {
+  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
+    [
+      "SERVER_PORT=11949",
+      "RUNTIME_DIR=/tmp/agent-runtime",
+      "REGISTRIES_DIR=/tmp/agent-runtime/registries",
+      "MEMORY_DIR=/tmp/agent-runtime/memory",
+      "CHATS_DIR=/tmp/custom-chats"
+    ].join("\n")
+  );
+
+  assert.match(next, /^RUNTIME_DIR=\/tmp\/agent-runtime$/m);
+  assert.doesNotMatch(next, /^REGISTRIES_DIR=/m);
+  assert.doesNotMatch(next, /^MEMORY_DIR=/m);
+  assert.match(next, /^CHATS_DIR=\/tmp\/custom-chats$/m);
+});
+
+test("normalizeAgentPlatformEnvContentForRuntime infers RUNTIME_DIR from legacy managed child dirs", () => {
+  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
+    [
+      "SERVER_PORT=11949",
+      "REGISTRIES_DIR=/tmp/agent-runtime/registries",
+      "AGENTS_DIR=/tmp/agent-runtime/agents",
+      "PAN_DIR=/tmp/agent-runtime/pan"
+    ].join("\n")
+  );
+
+  assert.match(next, /^RUNTIME_DIR=\/tmp\/agent-runtime$/m);
+  assert.doesNotMatch(next, /^REGISTRIES_DIR=/m);
+  assert.doesNotMatch(next, /^AGENTS_DIR=/m);
+  assert.doesNotMatch(next, /^PAN_DIR=/m);
 });
 
 test("normalizeAgentPlatformEnvContentForRuntime injects the Desktop embedded CDP gateway", () => {
@@ -2506,21 +2540,23 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
     assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
     assert.match(envContent, /^SERVER_PORT=7078$/m);
     assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
-    assert.match(envContent, /^REGISTRIES_DIR=~\/\.zenmind\/registries$/m);
+    assert.match(envContent, /^RUNTIME_DIR=~\/\.zenmind$/m);
+    assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
     assert.doesNotMatch(envContent, /^TOOLS_DIR=/m);
-    assert.match(envContent, /^OWNER_DIR=~\/\.zenmind\/owner$/m);
-    assert.match(envContent, /^AGENTS_DIR=~\/\.zenmind\/agents$/m);
-    assert.match(envContent, /^TEAMS_DIR=~\/\.zenmind\/teams$/m);
-    assert.match(envContent, /^ROOT_DIR=~\/\.zenmind\/root$/m);
-    assert.match(envContent, /^SCHEDULES_DIR=~\/\.zenmind\/schedules$/m);
-    assert.match(envContent, /^CHATS_DIR=~\/\.zenmind\/chats$/m);
-    assert.match(envContent, /^MEMORY_DIR=~\/\.zenmind\/memory$/m);
-    assert.match(envContent, /^SKILLS_MARKET_DIR=~\/\.zenmind\/skills-market$/m);
-    assert.match(envContent, /^PAN_DIR=~\/\.zenmind\/pan$/m);
+    assert.doesNotMatch(envContent, /^OWNER_DIR=/m);
+    assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
+    assert.doesNotMatch(envContent, /^TEAMS_DIR=/m);
+    assert.doesNotMatch(envContent, /^ROOT_DIR=/m);
+    assert.doesNotMatch(envContent, /^SCHEDULES_DIR=/m);
+    assert.doesNotMatch(envContent, /^CHATS_DIR=/m);
+    assert.doesNotMatch(envContent, /^MEMORY_DIR=/m);
+    assert.doesNotMatch(envContent, /^SKILLS_MARKET_DIR=/m);
+    assert.doesNotMatch(envContent, /^PAN_DIR=/m);
     assert.doesNotMatch(envContent, /^# PROVIDER_APIKEY_KEY_PART=/m);
-    assert.doesNotMatch(envContent, /^# REGISTRIES_DIR=/m);
-    assert.ok(envContent.indexOf("# Runtime directories") < envContent.indexOf("REGISTRIES_DIR=~/.zenmind/registries"));
-    assert.ok(envContent.indexOf("PAN_DIR=~/.zenmind/pan") < envContent.indexOf("# Provider apiKey AES(...)"));
+    assert.doesNotMatch(envContent, /^# RUNTIME_DIR=/m);
+    assert.match(envContent, /^# REGISTRIES_DIR=\.\/runtime\/registries$/m);
+    assert.ok(envContent.indexOf("# Runtime directories") < envContent.indexOf("RUNTIME_DIR=~/.zenmind"));
+    assert.ok(envContent.indexOf("RUNTIME_DIR=~/.zenmind") < envContent.indexOf("# Provider apiKey AES(...)"));
     assert.ok(envContent.indexOf("# Provider apiKey AES(...)") < envContent.indexOf("PROVIDER_APIKEY_KEY_PART=0.1.0"));
     assert.equal(fs.existsSync(path.join(configDir, "configs", "local-public-key.pem")), true);
     for (const fileName of [
@@ -2618,9 +2654,10 @@ test("initializeService recreates Desktop defaults for core services after confi
     assert.match(platformEnv, /^AUTH_ENABLED=true$/m);
     assert.match(platformEnv, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
     assert.match(platformEnv, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:7079$/m);
-    assert.match(platformEnv, /^REGISTRIES_DIR=~\/\.zenmind\/registries$/m);
+    assert.match(platformEnv, /^RUNTIME_DIR=~\/\.zenmind$/m);
+    assert.doesNotMatch(platformEnv, /^REGISTRIES_DIR=/m);
     assert.doesNotMatch(platformEnv, /^TOOLS_DIR=/m);
-    assert.match(platformEnv, /^PAN_DIR=~\/\.zenmind\/pan$/m);
+    assert.doesNotMatch(platformEnv, /^PAN_DIR=/m);
     assert.equal(
       fs.readFileSync(path.join(getTestConfigDir(userDataRoot, "agent-platform"), "configs", "local-public-key.pem"), "utf8"),
       appServerPublicKey

@@ -277,6 +277,7 @@
 .external-webview-tab-add,
 .external-webview-toolbar-button,
 .external-webview-bookmark-toggle,
+.external-webview-devtools-toggle,
 .external-webview-debug-toggle,
 .external-webview-bookmark-overflow {
   display: inline-flex;
@@ -295,6 +296,7 @@
 .external-webview-tab-add svg,
 .external-webview-toolbar-button svg,
 .external-webview-bookmark-toggle svg,
+.external-webview-devtools-toggle svg,
 .external-webview-bookmark-overflow svg,
 .external-webview-toolbar-location-icon svg {
   width: 16px;
@@ -320,6 +322,7 @@
 .external-webview-tab-add:hover,
 .external-webview-toolbar-button:hover:not(:disabled),
 .external-webview-bookmark-toggle:hover:not(:disabled),
+.external-webview-devtools-toggle:hover:not(:disabled),
 .external-webview-debug-toggle:hover,
 .external-webview-bookmark-overflow:hover {
   background: var(--browser-hover);
@@ -434,6 +437,15 @@
   -webkit-app-region: no-drag;
 }
 
+.external-webview-devtools-toggle {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
 .external-webview-debug-toggle {
   flex: none;
   width: 30px;
@@ -465,6 +477,11 @@
 }
 
 .external-webview-bookmark-toggle:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.external-webview-devtools-toggle:disabled {
   opacity: 0.38;
   cursor: not-allowed;
 }

@@ -441,9 +441,11 @@ function getHelpCategories(isWindows: boolean): HelpCategory[] {
                 <kbd>R</kbd>：刷新当前页面
               </li>
               <li>
-                <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> /{" "}
-                <kbd>F12</kbd>：打开开发者工具 (DevTools)
+                <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> /{" "}
+                <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd>：打开当前焦点的 DevTools
               </li>
+              <li>焦点在主界面时调试 ZenMind React 外壳；焦点在内嵌网页时调试该 webview 的网页内容。</li>
+              <li>浏览器工具栏的 DevTools 按钮打开当前网页 DevTools；pg 按钮用于 desktop.page 动作调试。</li>
               <li>
                 <kbd>Cmd</kbd> + <kbd>Q</kbd> / <kbd>Alt</kbd> +{" "}
                 <kbd>F4</kbd>：退出应用

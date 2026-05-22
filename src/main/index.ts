@@ -1766,6 +1766,24 @@ function createWindow() {
   });
 
   mainWindow.webContents.on("did-attach-webview", (_event, contents) => {
+    contents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown" || input.isAutoRepeat || input.key.toLowerCase() !== "i") {
+        return;
+      }
+
+      const isMacDevToolsShortcut =
+        process.platform === "darwin" && input.meta && input.alt && !input.control && !input.shift;
+      const isDesktopDevToolsShortcut =
+        process.platform !== "darwin" && input.control && input.shift && !input.meta && !input.alt;
+
+      if (!isMacDevToolsShortcut && !isDesktopDevToolsShortcut) {
+        return;
+      }
+
+      event.preventDefault();
+      contents.openDevTools({ mode: "detach" });
+    });
+
     contents.on("did-fail-load", (_guestEvent, errorCode, errorDescription, validatedUrl, isMainFrame) => {
       if (errorCode === -3) {
         return;
