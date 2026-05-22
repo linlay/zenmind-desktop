@@ -123,7 +123,7 @@ process.on("SIGTERM", () => shutdown(0));
 const syncOs = isWindows ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
 const syncArch = detectSyncArch();
 try {
-  await runAndWait(nodeBin, ["./scripts/sync-builtin-assets.mjs", `--os=${syncOs}`, `--arch=${syncArch}`]);
+  await runAndWait("node", ["./scripts/sync-builtin-assets.mjs", `--os=${syncOs}`, `--arch=${syncArch}`]);
 } catch (error) {
   console.error(
     `[dev] builtin asset sync failed; dev startup requires a complete core builtin asset set.\n` +

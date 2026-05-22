@@ -99,13 +99,20 @@ export function readManifestFromArchive(archivePath) {
     return null;
   }
 
-  const execOpts = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] };
+  const execOpts = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 * 1024 * 1024 };
   let raw;
   if (!isZipArchive(archivePath)) {
     raw = execFileSync("tar", ["-xzf", archivePath, "-O", manifestEntry], execOpts);
   } else if (canUseUnzip()) {
-    // 通配符同时覆盖正斜杠（标准 zip）和反斜杠（PowerShell Compress-Archive 旧产物）
-    raw = execFileSync("unzip", ["-p", archivePath, "*manifest.json"], execOpts);
+    try {
+      raw = execFileSync("unzip", ["-p", archivePath, manifestEntry], execOpts);
+    } catch {
+      try {
+        raw = execFileSync("unzip", ["-p", archivePath, "*/manifest.json"], execOpts);
+      } catch {
+        raw = execFileSync("unzip", ["-p", archivePath, "*manifest.json"], execOpts);
+      }
+    }
   } else {
     raw = execFileSync("tar", ["-xOf", archivePath, manifestEntry], execOpts);
   }
@@ -120,26 +127,28 @@ export function readArchiveEntryText(archivePath, entryPath) {
     return null;
   }
 
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-archive-"));
-  try {
-    if (!isZipArchive(archivePath)) {
-      execFileSync("tar", ["-xzf", archivePath, "-C", tempRoot], { stdio: "ignore" });
-    } else if (canUseUnzip()) {
-      execFileSync("unzip", ["-qq", archivePath, "-d", tempRoot], { stdio: "ignore" });
-    } else {
-      execFileSync("tar", ["-xf", archivePath, "-C", tempRoot], { stdio: "ignore" });
+  const execOpts = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 * 1024 * 1024 };
+  let raw;
+  if (!isZipArchive(archivePath)) {
+    raw = execFileSync("tar", ["-xzf", archivePath, "-O", matchedEntry], execOpts);
+  } else if (canUseUnzip()) {
+    try {
+      raw = execFileSync("unzip", ["-p", archivePath, matchedEntry], execOpts);
+    } catch {
+      try {
+        raw = execFileSync("unzip", ["-p", archivePath, "*/" + path.basename(normalizedEntryPath)], execOpts);
+      } catch {
+        raw = execFileSync("unzip", ["-p", archivePath, "*" + path.basename(normalizedEntryPath)], execOpts);
+      }
     }
-
-    const extractedPath = path.join(tempRoot, ...matchedEntry.split("/"));
-    if (!fs.existsSync(extractedPath)) {
-      return null;
-    }
-
-    const raw = fs.readFileSync(extractedPath, "utf8");
-    return raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
-  } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+  } else {
+    raw = execFileSync("tar", ["-xOf", archivePath, matchedEntry], execOpts);
   }
+
+  if (!raw) {
+    return null;
+  }
+  return raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
 }
 
 function listArchivesInDirectory(directoryPath) {

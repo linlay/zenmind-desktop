@@ -636,7 +636,7 @@ export function listTarEntries(archivePath: string) {
 }
 
 export function findManifestEntry(archivePath: string) {
-  return listTarEntries(archivePath).find((entry) => entry.endsWith("/manifest.json") || entry === "manifest.json") ?? null;
+  return listTarEntries(archivePath).find((entry) => entry.endsWith("/manifest.json") || entry.endsWith("\\manifest.json") || entry === "manifest.json") ?? null;
 }
 
 export function readManifestFromArchive(archivePath: string) {

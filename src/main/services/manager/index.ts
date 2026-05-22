@@ -138,13 +138,21 @@ function getStaticServicePaths() {
     const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
     const localAppData = process.env.LOCALAPPDATA ?? "";
     const appData = process.env.APPDATA ?? "";
+    const userProfile = process.env.USERPROFILE ?? "";
+    const nodeBinDir = process.env.ZENMIND_NODE_BIN
+      ? path.dirname(process.env.ZENMIND_NODE_BIN)
+      : (process.execPath ? path.dirname(process.execPath) : null);
     return [
       path.join(programFiles, "nodejs"),
       path.join(programFiles, "Docker", "Docker", "resources", "bin"),
       path.join(programFiles, "RedHat", "Podman"),
       path.join(programFiles, "Podman"),
       ...(localAppData ? [path.join(localAppData, "Programs", "nodejs")] : []),
-      ...(appData ? [path.join(appData, "npm")] : [])
+      ...(appData ? [path.join(appData, "npm")] : []),
+      path.join(programFiles, "Git", "mingw64", "bin"),
+      path.join(programFiles, "Git", "usr", "bin"),
+      ...(userProfile ? [path.join(userProfile, "bin")] : []),
+      ...(nodeBinDir ? [nodeBinDir] : [])
     ];
   }
 
@@ -327,7 +335,6 @@ function prepareServiceExecutionLayout(_service: ServiceDefinition, layout: Serv
   ensureDir(layout.configDir);
   ensureDir(layout.dataDir);
   ensureDir(layout.stateDir);
-  ensureDir(path.join(layout.stateDir, "pid"));
   ensureDir(layout.logDir);
 }
 
@@ -596,7 +603,7 @@ function patchAgentPlatformRuntimeNames(programDir: string) {
     const original = content;
     content = content
       .replace(/LOG_FILE="\$LOG_DIR\/\$APP_NAME\.log"/gu, 'LOG_FILE="$LOG_DIR/agent-platform.log"')
-      .replace(/PID_FILE="\$RUN_DIR\/\$APP_NAME\.pid"/gu, 'PID_FILE="$RUN_DIR/pid/agent-platform.pid"');
+      .replace(/PID_FILE="\$RUN_DIR\/\$APP_NAME\.pid"/gu, 'PID_FILE="$RUN_DIR/agent-platform.pid"');
     if (!content.includes('mkdir -p "$(dirname "$PID_FILE")"')) {
       content = content.replace(
         /program_clear_stale_pid_file "\$PID_FILE" "\$APP_NAME"/gu,
@@ -619,7 +626,7 @@ function patchAgentPlatformRuntimeNames(programDir: string) {
       )
       .replace(
         /\$Script:PidFile\s*=\s*Join-Path\s+\$Script:RunDir\s+["']\$Script:AppName\.pid["']/gu,
-        '$Script:PidFile = Join-Path (Join-Path $Script:RunDir "pid") "agent-platform.pid"'
+        '$Script:PidFile = Join-Path $Script:RunDir "agent-platform.pid"'
       );
     if (!content.includes('Split-Path -Parent $Script:PidFile')) {
       content = content.replace(
@@ -693,8 +700,15 @@ function listMissingBundleEntries(service: ServiceDefinition, archivePath: strin
     if (entries.has(expectedPath) || entries.has(`${expectedPath}/`)) {
       return false;
     }
+    const backslashPath = expectedPath.replace(/\//g, "\\");
+    if (entries.has(backslashPath) || entries.has(`${backslashPath}\\`)) {
+      return false;
+    }
     const prefix = expectedPath.endsWith("/") ? expectedPath : `${expectedPath}/`;
-    return ![...entries].some((entry) => entry.startsWith(prefix));
+    const backslashPrefix = backslashPath.endsWith("\\") ? backslashPath : `${backslashPath}\\`;
+    return ![...entries].some(
+      (entry) => entry.startsWith(prefix) || entry.startsWith(backslashPrefix)
+    );
   });
   bundleValidationCache.set(archivePath, {
     key: cacheKey,
@@ -1031,7 +1045,15 @@ function readPid(pidFilePath: string) {
   if (!fs.existsSync(pidFilePath)) {
     return null;
   }
-  const raw = fs.readFileSync(pidFilePath, "utf8").trim();
+  let raw: string;
+  try {
+    raw = fs.readFileSync(pidFilePath, "utf8").trim();
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code === "EBUSY") {
+      return null;
+    }
+    throw error;
+  }
   const pid = Number.parseInt(raw, 10);
   return Number.isFinite(pid) ? pid : null;
 }
@@ -2605,12 +2627,13 @@ export async function verifyServiceState(
   serviceId: ServiceId,
   desired: ServiceDesiredStatus
 ): Promise<ServiceVerification> {
+  const delayMs = getServiceVerificationDelayMs();
   const first = await collectServiceVerification(app, serviceId, desired);
-  if (!first.verification.verified || getServiceVerificationDelayMs() <= 0) {
+  if (first.verification.verified && delayMs <= 0) {
     return first.verification;
   }
 
-  await delay(getServiceVerificationDelayMs());
+  await delay(delayMs > 0 ? delayMs : 1500);
   const second = await collectServiceVerification(app, serviceId, desired);
   return second.verification;
 }
@@ -2924,7 +2947,7 @@ function agentPlatformInstallNeedsRefresh(installDir: string) {
       if (
         programCommon.includes('PID_FILE="$RUN_DIR/$APP_NAME.pid"') ||
         programCommon.includes('LOG_FILE="$LOG_DIR/$APP_NAME.log"') ||
-        (declaresPidFile && !programCommon.includes('PID_FILE="$RUN_DIR/pid/agent-platform.pid"'))
+        (declaresPidFile && !programCommon.includes('PID_FILE="$RUN_DIR/agent-platform.pid"'))
       ) {
         return true;
       }
@@ -2936,7 +2959,7 @@ function agentPlatformInstallNeedsRefresh(installDir: string) {
       if (
         programCommon.includes('$Script:PidFile = Join-Path $Script:RunDir "$Script:AppName.pid"') ||
         programCommon.includes('$Script:LogFile = Join-Path $Script:LogDir "$Script:AppName.log"') ||
-        (declaresPidFile && !programCommon.includes('$Script:PidFile = Join-Path (Join-Path $Script:RunDir "pid") "agent-platform.pid"'))
+        (declaresPidFile && !programCommon.includes('$Script:PidFile = Join-Path $Script:RunDir "agent-platform.pid"'))
       ) {
         return true;
       }
