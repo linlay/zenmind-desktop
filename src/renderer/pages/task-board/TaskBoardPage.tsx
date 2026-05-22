@@ -1035,14 +1035,6 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         </div>
         <div className="task-board-toolbar-right">
           <span className="task-board-count">{filteredCount}/{totalCount} Issues</span>
-          <button
-            type="button"
-            className="task-board-primary-button"
-            disabled={!taskBoardReady}
-            onClick={() => openCreateModal()}
-          >
-            + New Issue
-          </button>
         </div>
       </div>
 
