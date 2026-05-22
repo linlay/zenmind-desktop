@@ -7,6 +7,7 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 
 test("Desktop SSO login and logout open the embedded SSO browser tab", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const oidcSsoSource = fs.readFileSync(path.join(projectRoot, "src", "main", "oidc-sso.ts"), "utf8");
   const startLoginBlock = source.match(/ipcMain\.handle\("sso\.startLogin"[\s\S]*?ipcMain\.handle\("sso\.logout"/u)?.[0] ?? "";
   const logoutBlock = source.match(/ipcMain\.handle\("sso\.logout"[\s\S]*?ipcMain\.handle\("clipboard\.writeText"/u)?.[0] ?? "";
 
@@ -21,6 +22,7 @@ test("Desktop SSO login and logout open the embedded SSO browser tab", () => {
   assert.match(source, /async function syncDesktopSsoBrowserCookies\(\)/u);
   assert.match(source, /session\.defaultSession/u);
   assert.match(source, /getDesktopSsoProxyBrowserCookieDetails\(\)/u);
+  assert.match(oidcSsoSource, /browserUrl: oidcConfig\.loginUrl \? undefined : buildDesktopSsoProxyUrl\(authorizeUrl\)/u);
   assert.match(startLoginBlock, /onBeforeStatusChanged: async \(status\) => \{[\s\S]{0,160}if \(status\.authenticated\) \{[\s\S]{0,120}await syncDesktopSsoBrowserCookies\(\);/u);
   assert.match(startLoginBlock, /openDesktopSsoBrowserUrl\(\{\s*url: result\.browserUrl \|\| result\.authorizeUrl,\s*label: "IAM 登录",\s*browserOrigin: result\.browserUrl \? undefined : result\.browserOrigin,\s*resolveRedirect: Boolean\(result\.browserUrl\)\s*\}\)/u);
   assert.match(startLoginBlock, /failDesktopSsoFlow\(browserOpenResult\.message\)/u);

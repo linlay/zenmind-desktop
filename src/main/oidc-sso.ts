@@ -20,6 +20,7 @@ import { resolveHomeZenmindRoot } from "./env-bootstrap";
 type OidcConfig = {
   issuer: string;
   authorizeUrl: string;
+  loginUrl?: string;
   tokenUrl: string;
   clientId: string;
   clientSecret: string;
@@ -117,6 +118,7 @@ const IDENTITY_PROVIDER_URL_FIELDS = [
 const OIDC_CONFIG_STRING_FIELDS = [
   "issuer",
   "authorizeUrl",
+  "loginUrl",
   "tokenUrl",
   "clientId",
   "clientSecret",
@@ -128,6 +130,7 @@ const OIDC_CONFIG_STRING_FIELDS = [
 const OIDC_CONFIG_URL_FIELDS = [
   "issuer",
   "authorizeUrl",
+  "loginUrl",
   "tokenUrl",
   "redirectUri",
   "wellKnownUrl",
@@ -306,6 +309,9 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
     config.browserOrigin = browserOrigin;
   }
   for (const field of OIDC_CONFIG_URL_FIELDS) {
+    if (!config[field]) {
+      continue;
+    }
     try {
       new URL(config[field]);
     } catch {
@@ -505,12 +511,31 @@ function writeHtmlResponse(response: http.ServerResponse, statusCode: number, ht
 }
 
 function buildAuthorizeUrl(state: string, config: OidcConfig = DEFAULT_OIDC_CONFIG) {
+  if (config.loginUrl) {
+    return buildConfiguredLoginUrl(state, config.loginUrl);
+  }
   const url = new URL(config.authorizeUrl);
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", config.redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
   url.searchParams.set("prompt", "login");
+  return url.toString();
+}
+
+function buildConfiguredLoginUrl(state: string, loginUrl: string) {
+  const url = new URL(loginUrl);
+  if (url.hash) {
+    const hashValue = url.hash.slice(1);
+    const queryStartIndex = hashValue.indexOf("?");
+    const hashPath = queryStartIndex >= 0 ? hashValue.slice(0, queryStartIndex) : hashValue;
+    const hashQuery = queryStartIndex >= 0 ? hashValue.slice(queryStartIndex + 1) : "";
+    const hashParams = new URLSearchParams(hashQuery);
+    hashParams.set("state", state);
+    url.hash = `${hashPath}?${hashParams.toString()}`;
+    return url.toString();
+  }
+  url.searchParams.set("state", state);
   return url.toString();
 }
 
@@ -582,6 +607,9 @@ export function rewriteDesktopSsoProxySetCookieHeader(header: string) {
 function getDesktopSsoBrowserCookieOrigins(config: OidcConfig = DEFAULT_OIDC_CONFIG) {
   const origins = new Set<string>();
   origins.add(getDesktopSsoProxyTargetOrigin(config));
+  if (config.loginUrl) {
+    origins.add(new URL(config.loginUrl).origin);
+  }
   if (config.browserOrigin) {
     origins.add(config.browserOrigin);
   }
@@ -837,10 +865,14 @@ export function getIdentityProviderCookieHosts(config: OidcConfig = DEFAULT_OIDC
   for (const value of [
     config.issuer,
     config.authorizeUrl,
+    config.loginUrl,
     config.tokenUrl,
     config.wellKnownUrl,
     config.logoutUrl
   ]) {
+    if (!value) {
+      continue;
+    }
     try {
       const host = new URL(value).hostname.trim().toLowerCase();
       if (host) {
@@ -1135,7 +1167,7 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
     return {
       ok: true,
       authorizeUrl,
-      browserUrl: buildDesktopSsoProxyUrl(authorizeUrl),
+      browserUrl: oidcConfig.loginUrl ? undefined : buildDesktopSsoProxyUrl(authorizeUrl),
       browserOrigin: oidcConfig.browserOrigin,
       status: cloneStatus(status),
       message: "已打开 IAM 单点登录。"
@@ -1222,6 +1254,7 @@ export const __testInternals = {
   loadDesktopSsoConfig,
   resolveDesktopSsoConfigPath,
   buildLogoutUrl,
+  buildConfiguredLoginUrl,
   buildTokenExchangeRequest,
   normalizeCallbackRequest,
   validateIdToken

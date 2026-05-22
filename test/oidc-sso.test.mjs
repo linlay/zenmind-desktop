@@ -64,6 +64,28 @@ test("buildAuthorizeUrl creates an authorization-code URL with state and fixed l
   assert.equal(url.searchParams.get("prompt"), "login");
 });
 
+test("buildAuthorizeUrl preserves configured hash login URL params and only replaces state", () => {
+  const loginUrl = "https://iam.example.com/#/login?service=yrlvk3yqqwa70xv6yq9y4q&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fapi%2Fauth%2Foidc%2Fcallback&state=placeholder&prompt=login&client_id=MTdjNzdjZTU3ZTExNDUzMWJmMjk4OTQ4MzdkNzY1YmU&sourceApp=Desktop";
+  const url = new URL(buildAuthorizeUrl("runtime-state", {
+    ...DEFAULT_OIDC_CONFIG,
+    loginUrl
+  }));
+  const hashQuery = url.hash.slice(url.hash.indexOf("?") + 1);
+  const hashParams = new URLSearchParams(hashQuery);
+
+  assert.equal(url.origin, "https://iam.example.com");
+  assert.equal(url.pathname, "/");
+  assert.equal(url.search, "");
+  assert.equal(url.hash.startsWith("#/login?"), true);
+  assert.equal(hashParams.get("service"), "yrlvk3yqqwa70xv6yq9y4q");
+  assert.equal(hashParams.get("response_type"), "code");
+  assert.equal(hashParams.get("redirect_uri"), "http://localhost:8080/api/auth/oidc/callback");
+  assert.equal(hashParams.get("state"), "runtime-state");
+  assert.equal(hashParams.get("prompt"), "login");
+  assert.equal(hashParams.get("client_id"), "MTdjNzdjZTU3ZTExNDUzMWJmMjk4OTQ4MzdkNzY1YmU");
+  assert.equal(hashParams.get("sourceApp"), "Desktop");
+});
+
 test("getDesktopSsoStatus hides Desktop SSO when the home config file is missing", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-default-config-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -152,6 +174,33 @@ test("loadDesktopSsoConfig honors explicit copied IAM OIDC URLs", (t) => {
   assert.equal(result.config.logoutUrl, "https://iam.example.com/auth/ssoLogout");
   assert.equal(result.config.clientId, DEFAULT_OIDC_CONFIG.clientId);
   assert.equal(result.config.browserOrigin, undefined);
+});
+
+test("loadDesktopSsoConfig honors explicit full IAM login URL", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-login-url-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  const loginUrl = "https://iam.example.com/#/login?service=svc&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fapi%2Fauth%2Foidc%2Fcallback&state=old&prompt=login&client_id=desktop&sourceApp=Desktop";
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      loginUrl,
+      clientId: "desktop",
+      clientSecret: "secret"
+    }),
+    "utf8"
+  );
+
+  const result = loadDesktopSsoConfig(createTestApp(homePath));
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.equal(result.config.loginUrl, loginUrl);
+  assert.equal(result.config.clientId, "desktop");
+  assert.equal(result.config.clientSecret, "secret");
 });
 
 test("resolveDesktopSsoConfigPath uses platform-specific home paths", () => {
