@@ -411,7 +411,9 @@ export async function listSandboxImageMarketItems(
   try {
     const client = new ContainerHubClient(config);
     const environments = await client.listEnvironments();
-    const environmentItems = environments.map(sandboxEnvironmentToMarketItem);
+    const environmentItems = environments
+      .filter((environment) => environment.available)
+      .map(sandboxEnvironmentToMarketItem);
     return {
       items: mergeSandboxMarketItems(localImages.items, environmentItems),
       offline: false,

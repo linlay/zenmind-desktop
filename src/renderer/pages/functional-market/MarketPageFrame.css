@@ -249,27 +249,43 @@
   border-radius: 8px;
 }
 
+.market-import-progress-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.22);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
 .market-import-progress-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  width: 100%;
+  gap: 10px;
+  width: min(520px, 100%);
+  max-height: min(520px, calc(100vh - 48px));
   min-width: 0;
-  padding: 12px;
+  overflow: auto;
+  padding: 18px;
   border-radius: 8px;
-  background: var(--market-control-card);
+  background: rgba(255, 255, 255, 0.98);
   border: 1px solid var(--market-control-border);
   color: var(--market-control-text);
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
 }
 
 :root[data-theme="dark"] .market-import-progress-panel {
-  box-shadow: none;
+  background: var(--market-control-card);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
 }
 
 .market-import-progress-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
@@ -289,6 +305,13 @@
   line-height: 1.25;
 }
 
+.market-import-progress-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 6px;
+}
+
 .market-import-progress-head span {
   display: inline-flex;
   align-items: center;
@@ -301,6 +324,39 @@
   color: var(--market-control-muted);
   font-size: 11px;
   font-weight: 700;
+}
+
+.market-import-progress-close {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  border: 1px solid var(--market-control-border);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  color: var(--market-control-muted);
+  cursor: pointer;
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+}
+
+.market-import-progress-close:hover,
+.market-import-progress-close:focus-visible {
+  border-color: rgba(0, 82, 217, 0.24);
+  background: var(--accent-soft);
+  color: var(--market-control-blue);
+}
+
+.market-import-progress-close svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .market-import-progress-message {
@@ -479,13 +535,14 @@
 }
 
 .sandbox-image-panel {
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px 12px;
+  align-items: start;
   justify-content: stretch;
 }
 
 .sandbox-image-card {
   width: 100%;
-  min-height: 122px;
   border-color: var(--market-control-border);
   background: var(--market-control-card);
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
@@ -507,6 +564,12 @@
   box-shadow: 0 10px 28px rgba(31, 35, 41, 0.08);
   outline: none;
   transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.market-skill-card.sandbox-image-card {
+  gap: 7px;
+  min-height: 100px;
+  padding: 10px 12px;
 }
 
 :root[data-theme="dark"] .market-plugin-feature,
@@ -708,6 +771,11 @@
   color: var(--ink-soft);
   font-size: 12px;
   font-weight: 600;
+}
+
+.sandbox-image-card .market-plugin-meta {
+  margin-top: 4px;
+  padding-top: 7px;
 }
 
 .market-card-footer-main {
@@ -1162,6 +1230,16 @@
     padding: 14px;
   }
 
+  .market-import-progress-backdrop {
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .market-import-progress-panel {
+    max-height: calc(100vh - 32px);
+    padding: 14px;
+  }
+
   .market-image-detail-grid div {
     grid-template-columns: minmax(0, 1fr);
     gap: 3px;
@@ -1173,6 +1251,7 @@
   .market-toolbar-btn,
   .market-item-action,
   .market-image-action-button,
+  .market-import-progress-close,
   .market-search,
   .market-select,
   .market-plugin-feature,

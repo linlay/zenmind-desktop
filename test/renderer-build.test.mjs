@@ -1138,8 +1138,14 @@ test("sandbox image market is a local image management surface", () => {
   assert.match(sandboxMarket, /SandboxImageImportProgressEvent/);
   assert.match(sandboxMarket, /importProgressEvents/);
   assert.match(sandboxMarket, /getMarketMethod\("onSandboxImageImportProgress"\)/);
+  assert.match(sandboxMarket, /onDismissImportProgress/);
+  assert.match(sandboxMarket, /market-import-progress-backdrop/);
   assert.match(sandboxMarket, /market-import-progress-panel/);
+  assert.match(sandboxMarket, /role="dialog"/);
+  assert.match(sandboxMarket, /aria-modal="true"/);
+  assert.match(sandboxMarket, /market-import-progress-close/);
   assert.match(sandboxMarket, /market-import-progress-log/);
+  assert.match(sandboxMarket, /latest\.stage !== "done"/);
   assert.match(sandboxMarket, /getMarketMethod\("exportSandboxImage"\)/);
   assert.match(sandboxMarket, /getMarketMethod\("deleteSandboxImage"\)/);
   assert.match(sandboxMarket, /market-image-detail-dialog/);
@@ -1151,7 +1157,19 @@ test("sandbox image market is a local image management surface", () => {
   assert.match(readSourceFile("src", "renderer", "pages", "functional-market", "marketDisplay.tsx"), /market-sandbox-image-symbol/);
   assert.match(
     readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
-    /grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(260px,\s*1fr\)\)/
+    /grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(320px,\s*1fr\)\)/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.sandbox-image-panel\s*\{[\s\S]*?align-items:\s*start;/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.market-skill-card\.sandbox-image-card\s*\{[\s\S]*?min-height:\s*100px;[\s\S]*?padding:\s*10px 12px;/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.sandbox-image-card\s+\.market-plugin-meta\s*\{[\s\S]*?margin-top:\s*4px;[\s\S]*?padding-top:\s*7px;/
   );
   assert.match(
     readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
@@ -1195,7 +1213,19 @@ test("sandbox image market is a local image management surface", () => {
   );
   assert.match(
     readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
-    /\.market-import-progress-panel\s*\{[\s\S]*?background:\s*var\(--market-control-card\);[\s\S]*?border:\s*1px solid var\(--market-control-border\);/
+    /\.market-import-progress-backdrop\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*90;[\s\S]*?backdrop-filter:\s*blur\(8px\);/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.market-import-progress-panel\s*\{[\s\S]*?width:\s*min\(520px,\s*100%\);[\s\S]*?max-height:\s*min\(520px,\s*calc\(100vh - 48px\)\);/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.market-import-progress-panel\s*\{[\s\S]*?background:\s*rgba\(255,\s*255,\s*255,\s*0\.98\);[\s\S]*?box-shadow:\s*0 24px 70px rgba\(15,\s*23,\s*42,\s*0\.24\);/
+  );
+  assert.match(
+    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    /\.market-import-progress-close\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;/
   );
   assert.match(
     readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),

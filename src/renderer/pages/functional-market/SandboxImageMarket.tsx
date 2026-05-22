@@ -24,10 +24,12 @@ interface SandboxImageMarketSectionProps {
   feedbackNotice: PageFeedbackItem | null;
   exportingItemId: string;
   importProgressEvents: SandboxImageImportProgressEvent[];
+  importProgressDismissed: boolean;
   isImportingImage: boolean;
   isLoadingMarket: boolean;
   items: MarketItem[];
   onDeleteSandboxImage: (item: MarketItem) => void;
+  onDismissImportProgress: () => void;
   onExportSandboxImage: (item: MarketItem) => void;
   onImportSandboxImage: () => void;
   onQueryChange: (query: string) => void;
@@ -137,6 +139,7 @@ export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) 
   const [exportingItemId, setExportingItemId] = useState("");
   const [isImportingImage, setIsImportingImage] = useState(false);
   const [importProgressEvents, setImportProgressEvents] = useState<SandboxImageImportProgressEvent[]>([]);
+  const [importProgressDismissed, setImportProgressDismissed] = useState(false);
   const [marketFeedback, setMarketFeedback] = useState<PageFeedbackItem | null>(null);
   const [selectedImageId, setSelectedImageId] = useState("");
 
@@ -195,6 +198,7 @@ export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) 
 
   async function handleImportSandboxImage() {
     setIsImportingImage(true);
+    setImportProgressDismissed(false);
     setImportProgressEvents([]);
     try {
       const importSandboxImage = getMarketMethod("importSandboxImage");
@@ -271,10 +275,12 @@ export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) 
         feedbackNotice={marketFeedback}
         exportingItemId={exportingItemId}
         importProgressEvents={importProgressEvents}
+        importProgressDismissed={importProgressDismissed}
         isImportingImage={isImportingImage}
         isLoadingMarket={isLoadingMarket}
         items={items}
         onDeleteSandboxImage={(item) => void handleDeleteSandboxImage(item)}
+        onDismissImportProgress={() => setImportProgressDismissed(true)}
         onExportSandboxImage={(item) => void handleExportSandboxImage(item)}
         onImportSandboxImage={() => void handleImportSandboxImage()}
         onQueryChange={setQuery}
@@ -294,10 +300,12 @@ export function SandboxImageMarketSection({
   feedbackNotice,
   exportingItemId,
   importProgressEvents,
+  importProgressDismissed,
   isImportingImage,
   isLoadingMarket,
   items,
   onDeleteSandboxImage,
+  onDismissImportProgress,
   onExportSandboxImage,
   onImportSandboxImage,
   onQueryChange,
@@ -412,7 +420,7 @@ export function SandboxImageMarketSection({
   }
 
   function renderImportProgressPanel() {
-    if (!latestImportProgress && !isImportingImage) {
+    if (importProgressDismissed || (!latestImportProgress && !isImportingImage)) {
       return null;
     }
     const latest = latestImportProgress ?? {
@@ -423,33 +431,53 @@ export function SandboxImageMarketSection({
     const statusClass = latest.stage === "failed"
       ? "is-error"
       : latest.stage === "done" ? "is-complete" : "is-running";
+    const shouldShowImportProgressLog = importProgressLogEvents.length > 0 && latest.stage !== "done";
 
     return (
-      <section className={`market-import-progress-panel ${statusClass}`} aria-live="polite">
-        <div className="market-import-progress-head">
-          <div>
-            <p className="eyebrow">镜像导入进程</p>
-            <h2>{sandboxImportStageLabel(latest.stage)}</h2>
+      <div className="market-import-progress-backdrop">
+        <section
+          className={`market-import-progress-panel ${statusClass}`}
+          aria-label="镜像导入进度"
+          aria-live="polite"
+          aria-modal="true"
+          role="dialog"
+        >
+          <div className="market-import-progress-head">
+            <div>
+              <p className="eyebrow">镜像导入进程</p>
+              <h2>{sandboxImportStageLabel(latest.stage)}</h2>
+            </div>
+            <div className="market-import-progress-actions">
+              <span>{latest.engine ?? "Docker / Podman"}</span>
+              <button
+                type="button"
+                className="market-import-progress-close"
+                aria-label="关闭导入进度"
+                title="关闭"
+                onClick={onDismissImportProgress}
+              >
+                <CloseIcon />
+              </button>
+            </div>
           </div>
-          <span>{latest.engine ?? "Docker / Podman"}</span>
-        </div>
-        <p className="market-import-progress-message">{latest.message}</p>
-        {isImportingImage ? (
-          <div className="market-import-progress-bar" aria-hidden="true">
-            <span />
-          </div>
-        ) : null}
-        {importProgressLogEvents.length > 0 ? (
-          <ol className="market-import-progress-log">
-            {importProgressLogEvents.map((event, index) => (
-              <li key={`${event.taskId ?? "import"}-${index}-${event.message}`}>
-                <span>{event.stream ?? "engine"}</span>
-                <code>{event.message}</code>
-              </li>
-            ))}
-          </ol>
-        ) : null}
-      </section>
+          <p className="market-import-progress-message">{latest.message}</p>
+          {isImportingImage ? (
+            <div className="market-import-progress-bar" aria-hidden="true">
+              <span />
+            </div>
+          ) : null}
+          {shouldShowImportProgressLog ? (
+            <ol className="market-import-progress-log">
+              {importProgressLogEvents.map((event, index) => (
+                <li key={`${event.taskId ?? "import"}-${index}-${event.message}`}>
+                  <span>{event.stream ?? "engine"}</span>
+                  <code>{event.message}</code>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </section>
+      </div>
     );
   }
 
@@ -513,7 +541,6 @@ export function SandboxImageMarketSection({
                     </div>
                   </div>
                 </div>
-                {description ? <p className="market-card-description">{description}</p> : null}
                 <div className="market-plugin-meta">
                   <div className="market-card-footer-main sandbox-image-footer-tags">
                     <span className="market-meta-pill sandbox-engine-pill">

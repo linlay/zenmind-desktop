@@ -373,6 +373,62 @@ test("listMarketItems maps Container Hub environments into sandbox image market 
   });
 });
 
+test("listMarketItems hides unavailable Container Hub environments from sandbox image market items", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-missing-envs-"));
+  const app = createApp(root);
+  const binDir = path.join(root, "bin");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
+set -eu
+exit 1
+`);
+  writeFakeContainerEngine(binDir, "podman", `#!/bin/sh
+set -eu
+exit 1
+`);
+
+  await withPathPrefix(binDir, async () => {
+    await withFixtureServer(new Map([
+      ["/api/v1/skills?page=1&limit=100", skillsEnvelope([])],
+      ["/api/environments", JSON.stringify([
+        {
+          name: "daily-office",
+          description: "Office automation sandbox",
+          image_repository: "daily-office",
+          image_tag: "latest",
+          image_ref: "daily-office:latest",
+          available: false,
+          enabled: true,
+          available_build_targets: ["image"],
+          last_build: null
+        },
+        {
+          name: "toolbox",
+          description: "Toolbox sandbox",
+          image_repository: "toolbox",
+          image_tag: "latest",
+          image_ref: "toolbox:latest",
+          available: false,
+          enabled: true,
+          available_build_targets: ["image"],
+          last_build: null
+        }
+      ])]
+    ]), async (baseUrl) => {
+      const result = await listMarketItems(app, {
+        catalog: { schemaVersion: 1, items: [] },
+        skillsApiBaseUrl: baseUrl,
+        containerHubBaseUrl: baseUrl
+      });
+
+      assert.equal(result.sandboxOffline, false);
+      assert.equal(result.items.some((item) => item.type === "sandbox-image" && item.id === "daily-office"), false);
+      assert.equal(result.items.some((item) => item.type === "sandbox-image" && item.id === "toolbox"), false);
+    });
+  });
+});
+
 test("listMarketItems lists local sandbox images from the container engine", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-images-"));
   const app = createApp(root);
