@@ -866,7 +866,6 @@ export function AppSidebar({
         key={chat.chatId}
         className={[
           "assistant-worker-chat-item",
-          "worker-chat-item",
           isActive ? "is-active" : "",
           !chat.isRead ? "is-unread" : "",
         ]
@@ -896,7 +895,7 @@ export function AppSidebar({
           </span>
           <button
             type="button"
-            className="assistant-worker-chat-menu-button chat-actions-trigger"
+            className="assistant-worker-chat-menu-button"
             aria-label="会话更多操作"
             title="更多"
             onClick={(event) => handleAssistantOpenChatMenu(event, chat)}
@@ -1083,7 +1082,7 @@ export function AppSidebar({
             aria-label={args.label}
             title={args.label}
           >
-            <FolderIcon expanded={expanded} width={24} />
+            <FolderIcon expanded={expanded} width={18} />
             <span className="sidebar-group-heading-main">
               {isCollapsed ? (
                 <span className="sidebar-link-icon">

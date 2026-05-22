@@ -289,7 +289,7 @@
 .sidebar-link {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 36px;
   padding: 0 4px;
   border: 1px solid transparent;
@@ -337,8 +337,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   flex: none;
 }
 
@@ -409,9 +409,7 @@
 
 .app-sidebar:not(.is-collapsed) .sidebar-link,
 .app-sidebar:not(.is-collapsed) .sidebar-link-utility {
-  margin-left: 4px;
-  margin-right: 4px;
-  padding: 0 4px;
+  padding: 0 8px;
   border-radius: 8px;
 }
 
@@ -458,7 +456,7 @@
 }
 
 .sidebar-group-heading>svg {
-  color: var(--ink-muted);
+  color: var(--ink-soft);
 }
 
 .sidebar-group-heading-main {
@@ -484,16 +482,13 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 0 4px 4px;
   padding: 0;
   border-left: 0;
 }
 
 .sidebar-child-link {
   min-height: 30px;
-  margin-left: 0;
-  margin-right: 0;
-  padding: 0 4px;
+  padding-left: 32px !important;
 }
 
 .sidebar-child-link .sidebar-link-icon {
@@ -796,11 +791,15 @@
 
 .assistant-worker-chat-action {
   position: relative;
-  flex: 0 0 48px;
   height: 20px;
 }
 
-.assistant-worker-chat-action .worker-panel-time-label,
+.assistant-worker-chat-item:hover .assistant-worker-chat-action{
+  opacity: 0;
+}
+.assistant-worker-chat-action .worker-panel-time-label{
+  opacity: 0;
+}
 .assistant-worker-chat-action .assistant-worker-unread-dot,
 .assistant-worker-chat-action .worker-chat-loading {
   position: absolute;
@@ -823,7 +822,7 @@
 }
 
 .assistant-worker-chat-action[data-action="time"] .worker-panel-time-label {
-  display: inline;
+  opacity: 1;
 }
 
 .assistant-worker-chat-action[data-action="loading"] .worker-chat-loading {
@@ -842,11 +841,14 @@
 }
 
 .assistant-worker-chat-menu-button {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
   display: none;
   align-items: center;
   justify-content: flex-end;
   flex: 0 0 auto;
-  width: 48px;
   height: 20px;
   padding: 0;
   border: 0;
@@ -858,10 +860,6 @@
 
 .assistant-worker-chat-item:hover .assistant-worker-chat-menu-button {
   display: inline-flex;
-}
-
-.assistant-worker-chat-item:hover .assistant-worker-chat-action {
-  display: none;
 }
 
 .worker-chat-divider {
@@ -1507,8 +1505,6 @@
 .app-sidebar button {
   app-region: no-drag;
   -webkit-app-region: no-drag;
-  position: relative;
-  z-index: 1;
 }
 
 /* ── Header (legacy) ── */
