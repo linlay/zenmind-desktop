@@ -14,6 +14,7 @@ import {
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
+  SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
   type ServiceWebviewBridgeMessage,
 } from "../../../shared/service-webview-bridge";
 import { getServiceDisplayName } from "../../service-display";
@@ -418,8 +419,7 @@ export function PluginPage({
   const [webviewRetryNonce, setWebviewRetryNonce] = useState(0);
   const [webviewLoadError, setWebviewLoadError] = useState(false);
   const [webviewCurrentUrl, setWebviewCurrentUrl] = useState("");
-  const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] =
-    useState("");
+  const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] = useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const surfaceVisibilityProps =
     active === undefined
@@ -788,12 +788,7 @@ export function PluginPage({
 
   function dispatchPluginRouteEventToWebview(payload: Record<string, unknown>) {
     try {
-      webviewRef.current?.executeJavaScript(
-        `
-        window.dispatchEvent(new CustomEvent('${SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL}', { detail: ${JSON.stringify(payload)} }))
-        `,
-        true,
-      );
+      webviewRef.current?.send(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, payload);
     } catch {
       // Ignore bridge delivery while the guest webContents is being recreated.
     }
