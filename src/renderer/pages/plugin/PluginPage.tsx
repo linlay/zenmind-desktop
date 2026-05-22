@@ -59,6 +59,7 @@ type PluginPageProps = {
   surfaceLabel?: string;
   skipContextRegistration?: boolean;
   loadInitialEmbeddedUrlDirectly?: boolean;
+  suppressInitialLoadingCopy?: boolean;
 };
 
 const MAX_PLUGIN_PAGE_CONTEXT_HEADINGS = 24;
@@ -396,6 +397,7 @@ export function PluginPage({
   surfaceLabel,
   skipContextRegistration,
   loadInitialEmbeddedUrlDirectly,
+  suppressInitialLoadingCopy,
 }: PluginPageProps) {
   const location = useLocation();
   const currentRoute = `${location.pathname}${location.search}`;
@@ -1384,6 +1386,12 @@ export function PluginPage({
               style: { width: "100%", height: "100%", border: "none" },
             })}
           </>
+        ) : suppressInitialLoadingCopy ? (
+          <section
+            className="empty-state"
+            aria-busy="true"
+            aria-label={`${serviceDisplayName} 正在加载`}
+          />
         ) : (
           <section className="empty-state">
             <p className="eyebrow">PLUGIN</p>

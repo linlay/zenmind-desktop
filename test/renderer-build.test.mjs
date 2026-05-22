@@ -1532,9 +1532,11 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /registerDesktopActionProviderForScope\(\s*"embeddedWeb"/);
   assert.match(pluginPage, /skipContextRegistration\?: boolean/);
   assert.match(pluginPage, /loadInitialEmbeddedUrlDirectly\?: boolean/);
+  assert.match(pluginPage, /suppressInitialLoadingCopy\?: boolean/);
   assert.match(pluginPage, /loadInitialEmbeddedUrlDirectly[\s\S]{0,180}\?\s*embeddedUrl\s*:\s*buildPluginWebviewSrcUrl\(embeddedUrl\)/);
   const taskBoardPage = readSourceFile("src", "renderer", "pages", "task-board", "TaskBoardPage.tsx");
   assert.match(taskBoardPage, /loadInitialEmbeddedUrlDirectly/);
+  assert.match(taskBoardPage, /suppressInitialLoadingCopy/);
   assert.match(pluginPage, /service\?\.status !== "running"[\s\S]{0,80}\|\|\s*skipContextRegistration/);
   assert.match(pluginPage, /!embeddedUrl[\s\S]{0,80}\|\|\s*skipContextRegistration/);
   assert.match(pluginPage, /tryReadPluginWebviewPageContext/);
@@ -1563,6 +1565,8 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /bridgeReady,[\s\S]{0,120}serviceWebviewPreloadUrl,[\s\S]{0,120}webviewRenderKey/);
   assert.match(pluginPage, /if \(active === false \|\| !bridgeReady \|\| !serviceWebviewPreloadUrl\) \{[\s\S]{0,80}return;[\s\S]{0,120}seedAgentWebclientAccessToken\(\)/);
   assert.match(pluginPage, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*service\?\.id,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*\]/);
+  assert.match(pluginPage, /suppressInitialLoadingCopy\s*\?\s*\(/);
+  assert.match(pluginPage, /aria-label=\{`\$\{serviceDisplayName\} 正在加载`\}/);
   assert.match(pluginPage, /webviewRef\.current = node/);
   assert.doesNotMatch(pluginPage, /!webviewRef\.current && \(webviewRef\.current = node\)/);
   assert.match(sendBridgeMessageBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,\s*payload\)/);

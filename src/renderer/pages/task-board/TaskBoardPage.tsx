@@ -959,6 +959,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               embedPath={buildTaskBoardChatEmbedPath(chatModalRequest)}
               skipContextRegistration
               loadInitialEmbeddedUrlDirectly
+              suppressInitialLoadingCopy
             />
             <button
               type="button"
