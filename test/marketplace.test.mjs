@@ -117,11 +117,42 @@ function writeFakeContainerEngine(binDir, name, script) {
 
 async function withPathPrefix(prefix, fn) {
   const previousPath = process.env.PATH;
+  const previousContainerEnginePaths = process.env.ZENMIND_CONTAINER_ENGINE_PATHS;
   process.env.PATH = `${prefix}${path.delimiter}${previousPath ?? ""}`;
+  process.env.ZENMIND_CONTAINER_ENGINE_PATHS = prefix;
   try {
     return await fn();
   } finally {
     process.env.PATH = previousPath;
+    if (previousContainerEnginePaths === undefined) {
+      delete process.env.ZENMIND_CONTAINER_ENGINE_PATHS;
+    } else {
+      process.env.ZENMIND_CONTAINER_ENGINE_PATHS = previousContainerEnginePaths;
+    }
+  }
+}
+
+async function withEnvPatch(patch, fn) {
+  const previous = new Map();
+  for (const key of Object.keys(patch)) {
+    previous.set(key, process.env[key]);
+    const value = patch[key];
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of previous.entries()) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
   }
 }
 
@@ -251,6 +282,51 @@ test("listMarketItems reads all Skills API pages", async (t) => {
     assert.equal(result.items.filter((item) => item.type === "skill").length, 2);
     assert.ok(result.items.some((item) => item.id === "first-skill"));
     assert.ok(result.items.some((item) => item.id === "second-skill"));
+  });
+});
+
+test("listMarketItems resolves sandbox images when Docker is outside the inherited Desktop PATH", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-desktop-path-"));
+  const app = createApp(root);
+  const inheritedPathDir = path.join(root, "desktop-path");
+  const enginePathDir = path.join(root, "docker-app-bin");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  fs.mkdirSync(inheritedPathDir, { recursive: true });
+  writeFakeContainerEngine(enginePathDir, "docker", `#!/bin/sh
+set -eu
+if [ "$1" = "info" ]; then
+  exit 0
+fi
+if [ "$1" = "image" ] && [ "$2" = "ls" ]; then
+  printf 'sha256:desktop123\\tdaily-office\\tlatest\\t3.06GB\\t2026-05-22 10:00:00 +0800 CST\\n'
+  exit 0
+fi
+echo "unexpected docker command: $*" >&2
+exit 2
+`);
+
+  await withEnvPatch({
+    PATH: inheritedPathDir,
+    ZENMIND_CONTAINER_ENGINE_PATHS: enginePathDir
+  }, async () => {
+    await withFixtureServer(new Map([
+      ["/api/v1/skills?page=1&limit=100", skillsEnvelope([])]
+    ]), async (skillsBaseUrl) => {
+      const result = await listMarketItems(app, {
+        catalog: { schemaVersion: 1, items: [] },
+        skillsApiBaseUrl: skillsBaseUrl
+      });
+      const image = result.items.find((item) =>
+        item.type === "sandbox-image" && item.id === "daily-office:latest"
+      );
+
+      assert.equal(result.sandboxOffline, false);
+      assert.equal(result.sandboxMessage, "");
+      assert.equal(image?.containerEngine, "docker");
+      assert.equal(image?.imageRef, "daily-office:latest");
+      assert.equal(image?.imageSize, "3.06GB");
+    });
   });
 });
 

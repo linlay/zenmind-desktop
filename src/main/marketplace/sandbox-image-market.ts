@@ -9,6 +9,11 @@ import type {
   MarketItem,
   SandboxImageImportProgressEvent
 } from "../../shared/contracts";
+import {
+  type ContainerEngineName,
+  type ContainerEngineResolution,
+  resolveContainerEngine
+} from "../container-engine";
 import { ContainerHubClient, type ContainerHubConfig, type ContainerHubEnvironment } from "../copilot/core/container-hub";
 import { extractArchiveToDir, listArchiveEntries } from "../archive-utils";
 import { readEnvFile } from "../env-file";
@@ -21,10 +26,7 @@ import {
 } from "./common";
 
 const CONTAINER_HUB_SERVICE_ID = "agent-container-hub";
-const CONTAINER_ENGINES = ["docker", "podman"] as const;
 const IMAGE_COMMAND_TIMEOUT_MS = 300_000;
-
-type ContainerEngineName = typeof CONTAINER_ENGINES[number];
 
 interface SandboxImageImportOptions {
   taskId?: string;
@@ -103,20 +105,6 @@ function sandboxEnvironmentToMarketItem(environment: ContainerHubEnvironment): M
   };
 }
 
-function resolveContainerEngine(): ContainerEngineName | "" {
-  for (const engine of CONTAINER_ENGINES) {
-    const result = spawnSync(engine, ["info"], {
-      encoding: "utf8",
-      stdio: "ignore",
-      timeout: 5_000
-    });
-    if (result.status === 0) {
-      return engine;
-    }
-  }
-  return "";
-}
-
 function parseContainerImageList(raw: string): LocalContainerImage[] {
   return raw
     .split(/\r?\n/u)
@@ -169,23 +157,24 @@ function localContainerImageToMarketItem(image: LocalContainerImage, engine: Con
   };
 }
 
-function listLocalContainerImages(): { engine: ContainerEngineName | ""; items: MarketItem[]; message: string } {
+function listLocalContainerImages(): { engine: ContainerEngineResolution | null; items: MarketItem[]; message: string } {
   const engine = resolveContainerEngine();
   if (!engine) {
     return {
-      engine: "",
+      engine: null,
       items: [],
       message: "未检测到可用的 Docker 或 Podman。"
     };
   }
 
-  const result = spawnSync(engine, [
+  const result = spawnSync(engine.command, [
     "image",
     "ls",
     "--format",
     "{{.ID}}\t{{.Repository}}\t{{.Tag}}\t{{.Size}}"
   ], {
     encoding: "utf8",
+    env: engine.env,
     timeout: 30_000
   });
   if (result.status !== 0) {
@@ -193,27 +182,28 @@ function listLocalContainerImages(): { engine: ContainerEngineName | ""; items: 
     return {
       engine,
       items: [],
-      message: detail || `${engine} image ls 执行失败。`
+      message: detail || `${engine.name} image ls 执行失败。`
     };
   }
 
   return {
     engine,
-    items: parseContainerImageList(result.stdout).map((image) => localContainerImageToMarketItem(image, engine)),
+    items: parseContainerImageList(result.stdout).map((image) => localContainerImageToMarketItem(image, engine.name)),
     message: ""
   };
 }
 
-function runEngineCommand(engine: ContainerEngineName, args: string[]): Promise<{ stdout: string; stderr: string }> {
+function runEngineCommand(engine: ContainerEngineResolution, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFile(engine, args, {
+    execFile(engine.command, args, {
       encoding: "utf8",
+      env: engine.env,
       timeout: IMAGE_COMMAND_TIMEOUT_MS,
       windowsHide: true
     }, (error, stdout, stderr) => {
       if (error) {
         const detail = String(stderr || stdout || error.message).trim();
-        reject(new Error(detail || `${engine} ${args.join(" ")} 执行失败。`));
+        reject(new Error(detail || `${engine.name} ${args.join(" ")} 执行失败。`));
         return;
       }
       resolve({
@@ -251,12 +241,13 @@ function collectOutputLines(
 }
 
 function runStreamingEngineCommand(
-  engine: ContainerEngineName,
+  engine: ContainerEngineResolution,
   args: string[],
   onOutput: (event: { line: string; stream: "stdout" | "stderr" }) => void
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(engine, args, {
+    const child = spawn(engine.command, args, {
+      env: engine.env,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
     });
@@ -288,7 +279,7 @@ function runStreamingEngineCommand(
     };
     const timeout = setTimeout(() => {
       child.kill();
-      finish(() => reject(new Error(`${engine} ${args.join(" ")} 执行超时。`)));
+      finish(() => reject(new Error(`${engine.name} ${args.join(" ")} 执行超时。`)));
     }, IMAGE_COMMAND_TIMEOUT_MS);
 
     child.stdout.setEncoding("utf8");
@@ -311,7 +302,7 @@ function runStreamingEngineCommand(
       flushPendingOutput();
       if (code !== 0) {
         const detail = String(stderr || stdout).trim();
-        finish(() => reject(new Error(detail || `${engine} ${args.join(" ")} 执行失败。`)));
+        finish(() => reject(new Error(detail || `${engine.name} ${args.join(" ")} 执行失败。`)));
         return;
       }
       finish(() => resolve({ stdout, stderr }));
@@ -505,13 +496,13 @@ export async function importSandboxImageFromPath(
       stage: "archive-ready",
       message: "已准备好镜像归档。",
       archivePath: prepared.archivePath,
-      engine
+      engine: engine.name
     });
     emitSandboxImageImportProgress(options, {
       stage: "loading",
-      message: `${engine} 正在导入沙箱镜像。`,
+      message: `${engine.name} 正在导入沙箱镜像。`,
       archivePath: prepared.archivePath,
-      engine
+      engine: engine.name
     });
     const result = await runStreamingEngineCommand(
       engine,
@@ -521,7 +512,7 @@ export async function importSandboxImageFromPath(
           stage: "output",
           message: line,
           archivePath: prepared.archivePath,
-          engine,
+          engine: engine.name,
           stream
         });
       }
@@ -530,9 +521,9 @@ export async function importSandboxImageFromPath(
     const imageRef = parseLoadedImageRef(output) || path.basename(prepared.archivePath);
     emitSandboxImageImportProgress(options, {
       stage: "done",
-      message: `${engine} 已导入沙箱镜像${imageRef ? `：${imageRef}` : "。"}`,
+      message: `${engine.name} 已导入沙箱镜像${imageRef ? `：${imageRef}` : "。"}`,
       archivePath: prepared.archivePath,
-      engine,
+      engine: engine.name,
       imageRef,
       done: true,
       ok: true
@@ -542,7 +533,7 @@ export async function importSandboxImageFromPath(
       itemId: imageRef,
       type: "sandbox-image",
       state: "installed",
-      message: `${engine} 已导入沙箱镜像${imageRef ? `：${imageRef}` : "。"}`,
+      message: `${engine.name} 已导入沙箱镜像${imageRef ? `：${imageRef}` : "。"}`,
       serviceId: CONTAINER_HUB_SERVICE_ID,
       imageRef
     };
@@ -551,7 +542,7 @@ export async function importSandboxImageFromPath(
       stage: "failed",
       message: error instanceof Error ? error.message : String(error),
       archivePath: prepared.archivePath,
-      engine,
+      engine: engine.name,
       done: true,
       ok: false
     });
@@ -580,7 +571,7 @@ export async function deleteSandboxImage(
     itemId: imageRef,
     type: "sandbox-image",
     state: "not-installed",
-    message: `${engine} 已删除沙箱镜像：${imageRef}`,
+    message: `${engine.name} 已删除沙箱镜像：${imageRef}`,
     serviceId: CONTAINER_HUB_SERVICE_ID,
     imageRef
   };
@@ -611,7 +602,7 @@ export async function exportSandboxImageToPath(
     itemId: imageRef,
     type: "sandbox-image",
     state: "installed",
-    message: `${engine} 已导出沙箱镜像：${imageRef}`,
+    message: `${engine.name} 已导出沙箱镜像：${imageRef}`,
     serviceId: CONTAINER_HUB_SERVICE_ID,
     imageRef,
     filePath: outputPath
