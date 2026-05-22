@@ -90,6 +90,13 @@ type NavigationPushEvent = {
   [key: string]: unknown;
 };
 
+export type AssistantNavigationPushEvent = {
+  type: string;
+  chatId: string | null;
+  runId: string | null;
+  status: string | null;
+};
+
 type MinimalWebSocket = {
   onopen: (() => void) | null;
   onmessage: ((event: { data?: unknown }) => void) | null;
@@ -620,6 +627,7 @@ export class AssistantNavigationStatusClient {
     getServiceState: (app: App, serviceId: ServiceId) => Promise<ServiceState>;
     issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
     onSnapshot: (result: AssistantNavAgentItemsResult) => void;
+    onPushEvent?: (event: AssistantNavigationPushEvent) => void;
     onDebug?: (message: string) => void;
   }) {}
 
@@ -744,6 +752,13 @@ export class AssistantNavigationStatusClient {
     if (toText(frame.frame) !== "push") {
       return;
     }
+    const event = toPushEvent(frame);
+    this.options.onPushEvent?.({
+      type: event.type,
+      chatId: readPushChatId(event) || null,
+      runId: toText(event.runId) || toText(event.lastRunId) || null,
+      status: toText(event.status) || null
+    });
     const next = applyAssistantNavigationPush(this.latestResult.items, frame);
     if (next.changed) {
       this.setSnapshot({

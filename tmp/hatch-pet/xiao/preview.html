@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>小肖桌面宠物动效预览</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+        background: #f7f8fb;
+        color: #172033;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 18px;
+        max-width: 1100px;
+      }
+
+      .card {
+        display: grid;
+        min-height: 230px;
+        place-items: center;
+        gap: 8px;
+        padding: 18px 12px 14px;
+        border: 1px solid #dfe4ec;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 8px 18px rgba(31, 45, 70, 0.08);
+      }
+
+      .pet {
+        width: 112px;
+        height: auto;
+        transform-origin: 50% 86%;
+        filter: drop-shadow(0 12px 18px rgba(18, 44, 91, 0.18));
+      }
+
+      .label {
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .idle {
+        animation: breathe 3.6s ease-in-out infinite;
+      }
+
+      .hover {
+        animation: hoverReaction 1.05s ease-in-out infinite;
+      }
+
+      .dragging {
+        animation: dragging 0.82s ease-in-out infinite;
+        transform-origin: 50% 16%;
+      }
+
+      .thinking,
+      .awaiting,
+      .running {
+        animation: thinking 1.48s ease-in-out infinite;
+      }
+
+      .message {
+        animation: messageNudge 1.18s ease-in-out infinite;
+      }
+
+      .done {
+        animation: pop 0.9s ease-out infinite;
+      }
+
+      .error {
+        animation: shake 0.84s ease-in-out infinite;
+      }
+
+      @keyframes breathe {
+        0%, 100% { transform: translateY(0) scale(1); }
+        50% { transform: translateY(-3px) scale(1.025); }
+      }
+
+      @keyframes hoverReaction {
+        0%, 100% { transform: translateY(0) rotate(0deg); }
+        50% { transform: translateY(-8px) rotate(-2deg); }
+      }
+
+      @keyframes dragging {
+        0%, 100% { transform: rotate(-4deg) translateY(0); }
+        50% { transform: rotate(4deg) translateY(4px); }
+      }
+
+      @keyframes thinking {
+        0%, 100% { transform: translateY(0) rotate(0deg); }
+        33% { transform: translateY(-4px) rotate(-1.5deg); }
+        66% { transform: translateY(-2px) rotate(1.5deg); }
+      }
+
+      @keyframes messageNudge {
+        0%, 100% { transform: translateX(0) translateY(0); }
+        30% { transform: translateX(-4px) translateY(-3px); }
+        60% { transform: translateX(4px) translateY(-2px); }
+      }
+
+      @keyframes pop {
+        0%, 100% { transform: scale(1); }
+        38% { transform: scale(1.09) translateY(-6px); }
+      }
+
+      @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        20% { transform: translateX(-4px) rotate(-2deg); }
+        40% { transform: translateX(4px) rotate(2deg); }
+        60% { transform: translateX(-3px) rotate(-1deg); }
+        80% { transform: translateX(3px) rotate(1deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="grid">
+      <section class="card"><img class="pet idle" src="../../../public/desktop-pet/xiao/pet-idle.png" alt="小肖 idle" /><span class="label">idle</span></section>
+      <section class="card"><img class="pet hover" src="../../../public/desktop-pet/xiao/pet-hover.png" alt="小肖 hover" /><span class="label">hover</span></section>
+      <section class="card"><img class="pet dragging" src="../../../public/desktop-pet/xiao/pet-dragging.png" alt="小肖 dragging" /><span class="label">dragging</span></section>
+      <section class="card"><img class="pet thinking" src="../../../public/desktop-pet/xiao/pet-thinking.png" alt="小肖 thinking" /><span class="label">thinking</span></section>
+      <section class="card"><img class="pet message" src="../../../public/desktop-pet/xiao/pet-message.png" alt="小肖 message" /><span class="label">message</span></section>
+      <section class="card"><img class="pet done" src="../../../public/desktop-pet/xiao/pet-done.png" alt="小肖 done" /><span class="label">done</span></section>
+      <section class="card"><img class="pet error" src="../../../public/desktop-pet/xiao/pet-error.png" alt="小肖 error" /><span class="label">error</span></section>
+      <section class="card"><img class="pet running" src="../../../public/desktop-pet/xiao/pet-running.png" alt="小肖 running" /><span class="label">running</span></section>
+      <section class="card"><img class="pet awaiting" src="../../../public/desktop-pet/xiao/pet-awaiting.png" alt="小肖 awaiting" /><span class="label">awaiting</span></section>
+    </main>
+  </body>
+</html>

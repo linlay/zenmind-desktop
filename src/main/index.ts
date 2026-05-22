@@ -60,6 +60,7 @@ import {
   deleteSandboxImage,
   exportSandboxImageToPath,
   getMarketSettings,
+  importSkillFromCommand,
   importSandboxImageFromPath,
   importSkillFromPath,
   installMarketItem,
@@ -100,6 +101,7 @@ import {
   listTaskBoardIssues,
   moveTaskBoardIssue,
   updateTaskBoardIssue,
+  updateTaskBoardIssueByChatId,
   updateTaskBoardIssueByRunId
 } from "./task-board-store";
 import {
@@ -3085,9 +3087,16 @@ const logStreamSubscriptions = new Map<
   }
 >();
 
-function resolveTaskBoardStatusFromAssistantEvent(event: AssistantEvent): TaskBoardStatus | null {
+type TaskBoardAssistantSyncEvent = {
+  type?: string;
+  status?: string | null;
+  chatId?: string | null;
+  runId?: string | null;
+};
+
+function resolveTaskBoardStatusFromAssistantEvent(event: TaskBoardAssistantSyncEvent): TaskBoardStatus | null {
   if (event.type === "done" || event.type === "run.complete") {
-    return "done";
+    return "in_review";
   }
   if (
     event.type === "error" ||
@@ -3106,19 +3115,33 @@ function resolveTaskBoardStatusFromAssistantEvent(event: AssistantEvent): TaskBo
   return null;
 }
 
-function syncTaskBoardIssueFromAssistantEvent(event: AssistantEvent) {
+function syncTaskBoardIssueFromAssistantEvent(event: TaskBoardAssistantSyncEvent) {
   const status = resolveTaskBoardStatusFromAssistantEvent(event);
-  if (!status || !event.runId) {
+  if (!status || (!event.runId && !event.chatId)) {
     return;
   }
 
-  const result = updateTaskBoardIssueByRunId(app, event.runId, {
+  const input: TaskBoardIssueUpdateInput = {
     status,
-    chatId: event.chatId,
     runId: null
-  });
-  if (!result.ok && result.message !== "任务运行不存在。") {
-    console.warn(`[task-board] failed to sync assistant run ${event.runId}: ${result.message}`);
+  };
+  if (event.chatId) {
+    input.chatId = event.chatId;
+  }
+
+  const runResult = event.runId ? updateTaskBoardIssueByRunId(app, event.runId, input) : null;
+  if (runResult?.ok) {
+    return;
+  }
+
+  const chatResult = event.chatId ? updateTaskBoardIssueByChatId(app, event.chatId, input) : null;
+  if (chatResult?.ok) {
+    return;
+  }
+
+  const result = chatResult ?? runResult;
+  if (result && result.message !== "任务运行不存在。" && result.message !== "任务会话不存在。") {
+    console.warn(`[task-board] failed to sync assistant run ${event.runId ?? event.chatId}: ${result.message}`);
   }
 }
 
@@ -3143,6 +3166,7 @@ function registerIpcHandlers() {
     getServiceState,
     issueAccessToken: issueAgentAccessToken,
     onSnapshot: emitAssistantNavigationAgentsChanged,
+    onPushEvent: syncTaskBoardIssueFromAssistantEvent,
     onDebug: (message) => {
       console.warn(`[assistant-navigation] status unavailable: ${message}`);
     }
@@ -3602,6 +3626,13 @@ function registerIpcHandlers() {
       };
     }
     return importSkillFromPath(app, result.filePaths[0]);
+  }));
+  ipcMain.handle("market.importSkillFromCommand", async (_event, commandText: string) => runServiceMutation(async () => {
+    const result = await importSkillFromCommand(app, commandText);
+    if (result.ok) {
+      await session.defaultSession.clearCache();
+    }
+    return result;
   }));
   ipcMain.handle("panAuth.importPrivateKey", async () => {
     const result = await showFileDialog({

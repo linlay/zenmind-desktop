@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "run_dir": "/Users/jialin/Desktop/zenmind-desktop/tmp/hatch-pet/curry-shot",
+  "spritesheet": "/Users/jialin/Desktop/zenmind-desktop/tmp/hatch-pet/curry-shot/final/spritesheet.webp",
+  "validation": "/Users/jialin/Desktop/zenmind-desktop/tmp/hatch-pet/curry-shot/final/validation.json",
+  "contact_sheet": "/Users/jialin/Desktop/zenmind-desktop/tmp/hatch-pet/curry-shot/qa/contact-sheet.png",
+  "review": "/Users/jialin/Desktop/zenmind-desktop/tmp/hatch-pet/curry-shot/qa/review.json",
+  "videos": "/Users/jialin/Desktop/zenmind-desktop/tmp/hatch-pet/curry-shot/qa/videos",
+  "package": "/Users/jialin/.codex/pets/curry-shot"
+}

@@ -4,6 +4,7 @@ import {
   DEFAULT_MARKETPLACE_CATALOG_URL,
   DEFAULT_SKILLS_API_BASE_URL,
   getMarketSettings,
+  upsertInstalledRecord,
   normalizeCatalog,
   normalizeSkillsApiBaseUrl,
   readInstalledRecords,
@@ -31,6 +32,11 @@ import {
   listSkillMarketItems,
   uninstallSkillMarketItem
 } from "./marketplace/skill-market";
+import {
+  getSkillInstallDir,
+  installSkillFromCommand as installSkillFromCommandInput,
+  listInstalledSkills
+} from "./skill-installer";
 
 export {
   DEFAULT_MARKETPLACE_CATALOG_URL,
@@ -127,6 +133,22 @@ export async function updateMarketItem(app: App, itemId: string, options: Market
 
 export async function importSkillFromPath(app: App, sourcePath: string): Promise<MarketCommandResult> {
   return importSkillMarketItemFromPath(app, sourcePath);
+}
+
+export async function importSkillFromCommand(app: App, commandText: string): Promise<MarketCommandResult> {
+  const result = await installSkillFromCommandInput(app, commandText);
+  if (result.ok) {
+    const installed = listInstalledSkills(app).find((item) => item.id === result.itemId);
+    upsertInstalledRecord(app, {
+      id: result.itemId,
+      type: "skill",
+      version: installed?.version ?? "0.0.0",
+      source: "cloud",
+      installPath: result.installPath ?? getSkillInstallDir(app, result.itemId),
+      installedAt: new Date().toISOString()
+    });
+  }
+  return result;
 }
 
 export async function uninstallMarketItem(

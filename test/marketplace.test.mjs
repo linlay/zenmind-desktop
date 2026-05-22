@@ -16,6 +16,7 @@ const {
   deleteSandboxImage,
   exportSandboxImageToPath,
   getMarketSettings,
+  importSkillFromCommand,
   importSandboxImageFromPath,
   installMarketItem,
   listMarketItems,
@@ -283,6 +284,20 @@ test("listMarketItems reads all Skills API pages", async (t) => {
     assert.ok(result.items.some((item) => item.id === "first-skill"));
     assert.ok(result.items.some((item) => item.id === "second-skill"));
   });
+});
+
+test("listMarketItems keeps skill cloud download command-only when no Skills API is configured", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-command-only-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const result = await listMarketItems(app, {
+    catalog: { schemaVersion: 1, items: [] }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.offline, false);
+  assert.doesNotMatch(result.message, /技能市场暂不可用/);
 });
 
 test("listMarketItems resolves sandbox images when Docker is outside the inherited Desktop PATH", async (t) => {
@@ -874,6 +889,70 @@ test("saved skillsApiBaseUrl is used by list and install", async (t) => {
     assert.equal(result.ok, true);
     assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "saved-skill"), "SKILL.md")), true);
   });
+});
+
+test("importSkillFromCommand runs an npm or npx download command and installs the produced skill", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-command-skill-"));
+  const app = createApp(root);
+  const binDir = path.join(root, "bin");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  fs.mkdirSync(binDir, { recursive: true });
+  const npxPath = path.join(binDir, process.platform === "win32" ? "npx.cmd" : "npx");
+  const script = process.platform === "win32"
+    ? `@echo off
+echo %USERPROFILE% | findstr /C:"skills-market" >nul || exit /b 42
+set target=%USERPROFILE%\\.claude\\skills\\downloaded-skill
+mkdir "%target%"
+echo # Downloaded Skill>"%target%\\SKILL.md"
+echo {"id":"downloaded-skill","name":"Downloaded Skill","version":"1.2.3","description":"Downloaded by command","tags":["cloud"]}>"%target%\\skill.json"
+`
+    : `#!/bin/sh
+set -eu
+case "$HOME" in
+  *skills-market/.downloads/zenmind-skill-download-*/home) ;;
+  *) echo "unexpected HOME: $HOME" >&2; exit 42 ;;
+esac
+target="$HOME/.claude/skills/downloaded-skill"
+mkdir -p "$target"
+printf '# Downloaded Skill\\n' > "$target/SKILL.md"
+printf '{"id":"downloaded-skill","name":"Downloaded Skill","version":"1.2.3","description":"Downloaded by command","tags":["cloud"]}\\n' > "$target/skill.json"
+`;
+  fs.writeFileSync(npxPath, script, "utf8");
+  fs.chmodSync(npxPath, 0o755);
+
+  await withPathPrefix(binDir, async () => {
+    const result = await importSkillFromCommand(
+      app,
+      "npx -y @lobehub/market-cli skills install downloaded-skill --agent claude-code"
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.type, "skill");
+    assert.equal(result.state, "installed");
+    assert.equal(result.itemId, "downloaded-skill");
+    assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "downloaded-skill"), "SKILL.md")), true);
+    assert.equal(fs.existsSync(path.join(root, "home", ".claude", "skills", "downloaded-skill")), false);
+
+    const listed = await listMarketItems(app, {
+      catalog: { schemaVersion: 1, items: [] },
+      skillsApiBaseUrl: "http://127.0.0.1:1"
+    });
+    const installed = listed.items.find((item) => item.id === "downloaded-skill");
+    assert.equal(installed?.source, "cloud");
+    assert.equal(installed?.state, "installed");
+  });
+});
+
+test("importSkillFromCommand rejects non npm and npx commands", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-command-reject-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await assert.rejects(
+    () => importSkillFromCommand(app, "curl https://example.test/skill.tar.gz"),
+    /仅支持 npm 或 npx/
+  );
 });
 
 test("installMarketItem downloads plugin archives but rejects builtin manifests", async (t) => {

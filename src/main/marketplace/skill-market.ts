@@ -12,6 +12,7 @@ import {
   asObject,
   asString,
   asStringArray,
+  DEFAULT_SKILLS_API_BASE_URL,
   downloadAsset,
   fetchJson,
   findCatalogItem,
@@ -119,6 +120,14 @@ async function loadSkillCatalog(app: App, options: MarketplaceOptions = {}): Pro
   const baseUrl = options.skillsApiBaseUrl
     ? normalizeSkillsApiBaseUrl(options.skillsApiBaseUrl)
     : getMarketSettings(app).skillsApiBaseUrl;
+  if (!options.skillsApiBaseUrl && baseUrl === DEFAULT_SKILLS_API_BASE_URL) {
+    return {
+      catalog: { schemaVersion: 1, items: [] },
+      offline: false,
+      message: "技能云端下载支持输入 npm/npx 指令。",
+      sourceUrl: baseUrl
+    };
+  }
   try {
     const items = (await fetchAllSkillsApiItems(baseUrl))
       .map((item) => skillsApiItemToCatalogItem(baseUrl, item))

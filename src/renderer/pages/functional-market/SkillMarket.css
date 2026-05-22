@@ -1,9 +1,9 @@
-.market-api-config {
+.market-command-input {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
-  min-width: 280px;
+  min-height: 32px;
+  width: min(100%, 460px);
   padding: 0 8px;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -13,19 +13,12 @@
   pointer-events: auto;
 }
 
-.market-api-config:focus-within {
+.market-command-input:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-.market-api-config span {
-  flex: none;
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.market-api-config input {
+.market-command-input input {
   min-width: 0;
   width: 100%;
   border: 0;
@@ -34,6 +27,13 @@
   color: var(--ink);
   font: inherit;
   font-size: 12px;
+}
+
+.market-command-panel {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 .market-skill-actions {
@@ -60,6 +60,10 @@
 .market-skill-action-card:hover {
   border-color: var(--accent-glow);
   box-shadow: var(--panel-shadow-hover);
+}
+
+.market-skill-command-card {
+  align-items: flex-end;
 }
 
 .market-skill-action-card h2 {
@@ -137,7 +141,7 @@
     flex-direction: column;
   }
 
-  .market-api-config {
+  .market-command-input {
     width: 100%;
     min-width: 0;
   }

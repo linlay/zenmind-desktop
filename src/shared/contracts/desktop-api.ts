@@ -166,6 +166,7 @@ export interface DesktopApi {
     update: (itemId: string) => Promise<MarketCommandResult>;
     uninstall: (itemId: string) => Promise<MarketCommandResult>;
     importSkill: () => Promise<MarketCommandResult>;
+    importSkillFromCommand: (commandText: string) => Promise<MarketCommandResult>;
     importSandboxImage: () => Promise<MarketCommandResult>;
     onSandboxImageImportProgress: (listener: SandboxImageImportProgressListener) => () => void;
     exportSandboxImage: (itemId: string) => Promise<MarketCommandResult>;

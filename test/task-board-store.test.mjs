@@ -9,6 +9,7 @@ const {
   deleteTaskBoardIssue,
   listTaskBoardIssues,
   moveTaskBoardIssue,
+  updateTaskBoardIssueByChatId,
   updateTaskBoardIssueByRunId,
   updateTaskBoardIssue,
   __testInternals
@@ -258,7 +259,7 @@ test("task board rejects manual status updates while an issue has an active assi
   );
 });
 
-test("task board allows assistant completion updates that clear an active run", (t) => {
+test("task board moves assistant completion updates into review and clears an active run", (t) => {
   const app = createTempApp(t);
   const created = createTaskBoardIssue(app, {
     title: "交给智能体处理",
@@ -273,34 +274,63 @@ test("task board allows assistant completion updates that clear an active run", 
   assert.ok(running);
 
   const updated = updateTaskBoardIssue(app, running.id, {
-    status: "done",
+    status: "in_review",
     chatId: "chat-1",
     runId: null
   });
 
   assert.equal(updated.ok, true);
-  assert.equal(updated.issue?.status, "done");
+  assert.equal(updated.issue?.status, "in_review");
   assert.equal(updated.issue?.runId, null);
   assert.deepEqual(
     listTaskBoardIssues(app).issues.map((issue) => [issue.title, issue.status, issue.runId]),
-    [["交给智能体处理", "done", null]]
+    [["交给智能体处理", "in_review", null]]
   );
 });
 
-test("task board recovers from corrupt persisted JSON", (t) => {
+test("task board rejects non-drag status updates into done", (t) => {
   const app = createTempApp(t);
-  const targetPath = __testInternals.getTaskBoardIssuesPath(app);
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, "{broken", "utf8");
+  const created = createTaskBoardIssue(app, {
+    title: "需要人工确认",
+    status: "in_review"
+  }).issue;
+  assert.ok(created);
 
-  const result = listTaskBoardIssues(app);
+  const updated = updateTaskBoardIssue(app, created.id, {
+    status: "done"
+  });
 
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.issues, []);
-  assert.doesNotThrow(() => JSON.parse(fs.readFileSync(targetPath, "utf8")));
+  assert.equal(updated.ok, false);
+  assert.match(updated.message, /拖拽到 Done/);
+  assert.deepEqual(
+    listTaskBoardIssues(app).issues.map((issue) => [issue.title, issue.status]),
+    [["需要人工确认", "in_review"]]
+  );
 });
 
-test("task board updates assistant run completion by run id", (t) => {
+test("task board allows user drag moves from review into done", (t) => {
+  const app = createTempApp(t);
+  const created = createTaskBoardIssue(app, {
+    title: "需要人工确认",
+    status: "in_review"
+  }).issue;
+  assert.ok(created);
+
+  const moved = moveTaskBoardIssue(app, {
+    id: created.id,
+    status: "done",
+    position: 1
+  });
+
+  assert.equal(moved.ok, true);
+  assert.equal(moved.issue?.status, "done");
+  assert.deepEqual(
+    listTaskBoardIssues(app).issues.map((issue) => [issue.title, issue.status]),
+    [["需要人工确认", "done"]]
+  );
+});
+
+test("task board rejects assistant run completion updates directly into done", (t) => {
   const app = createTempApp(t);
   const created = createTaskBoardIssue(app, {
     title: "交给智能体处理",
@@ -320,12 +350,111 @@ test("task board updates assistant run completion by run id", (t) => {
     runId: null
   });
 
+  assert.equal(completed.ok, false);
+  assert.match(completed.message, /拖拽到 Done/);
+  assert.deepEqual(
+    listTaskBoardIssues(app).issues.map((issue) => [issue.title, issue.status, issue.runId]),
+    [["交给智能体处理", "in_progress", "run-1"]]
+  );
+});
+
+test("task board recovers from corrupt persisted JSON", (t) => {
+  const app = createTempApp(t);
+  const targetPath = __testInternals.getTaskBoardIssuesPath(app);
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fs.writeFileSync(targetPath, "{broken", "utf8");
+
+  const result = listTaskBoardIssues(app);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.issues, []);
+  assert.doesNotThrow(() => JSON.parse(fs.readFileSync(targetPath, "utf8")));
+});
+
+test("task board updates assistant run completion by run id into review", (t) => {
+  const app = createTempApp(t);
+  const created = createTaskBoardIssue(app, {
+    title: "交给智能体处理",
+    status: "todo"
+  }).issue;
+  assert.ok(created);
+
+  updateTaskBoardIssue(app, created.id, {
+    status: "in_progress",
+    chatId: "chat-1",
+    runId: "run-1"
+  });
+
+  const completed = updateTaskBoardIssueByRunId(app, "run-1", {
+    status: "in_review",
+    chatId: "chat-1",
+    runId: null
+  });
+
   assert.equal(completed.ok, true);
-  assert.equal(completed.issue?.status, "done");
+  assert.equal(completed.issue?.status, "in_review");
   assert.equal(completed.issue?.chatId, "chat-1");
   assert.equal(completed.issue?.runId, null);
   assert.deepEqual(
     listTaskBoardIssues(app).issues.map((issue) => [issue.title, issue.status, issue.runId]),
-    [["交给智能体处理", "done", null]]
+    [["交给智能体处理", "in_review", null]]
+  );
+});
+
+test("task board updates stale in-progress assistant runs by chat id into review", (t) => {
+  const app = createTempApp(t);
+  const created = createTaskBoardIssue(app, {
+    title: "同一会话继续执行",
+    status: "todo"
+  }).issue;
+  assert.ok(created);
+
+  updateTaskBoardIssue(app, created.id, {
+    status: "in_progress",
+    chatId: "chat-1",
+    runId: "run-old"
+  });
+
+  const completed = updateTaskBoardIssueByChatId(app, "chat-1", {
+    status: "in_review",
+    chatId: "chat-1",
+    runId: null
+  });
+
+  assert.equal(completed.ok, true);
+  assert.equal(completed.issue?.status, "in_review");
+  assert.equal(completed.issue?.chatId, "chat-1");
+  assert.equal(completed.issue?.runId, null);
+  assert.deepEqual(
+    listTaskBoardIssues(app).issues.map((issue) => [issue.title, issue.status, issue.runId]),
+    [["同一会话继续执行", "in_review", null]]
+  );
+});
+
+test("task board rejects assistant chat completion updates directly into done", (t) => {
+  const app = createTempApp(t);
+  const created = createTaskBoardIssue(app, {
+    title: "同一会话继续执行",
+    status: "todo"
+  }).issue;
+  assert.ok(created);
+
+  updateTaskBoardIssue(app, created.id, {
+    status: "in_progress",
+    chatId: "chat-1",
+    runId: "run-old"
+  });
+
+  const completed = updateTaskBoardIssueByChatId(app, "chat-1", {
+    status: "done",
+    chatId: "chat-1",
+    runId: null
+  });
+
+  assert.equal(completed.ok, false);
+  assert.match(completed.message, /拖拽到 Done/);
+  assert.deepEqual(
+    listTaskBoardIssues(app).issues.map((issue) => [issue.title, issue.status, issue.runId]),
+    [["同一会话继续执行", "in_progress", "run-old"]]
   );
 });

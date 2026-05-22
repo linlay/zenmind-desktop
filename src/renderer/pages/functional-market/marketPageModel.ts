@@ -33,7 +33,7 @@ export const MARKET_TAB_DEFINITIONS: MarketTabDefinition[] = [
     id: "skills",
     label: "技能",
     title: "技能市场",
-    subtitle: "支持本地导入或从云端下载技能包。"
+    subtitle: "支持本地导入，或输入 npm/npx 指令下载安装到 Desktop 技能目录。"
   },
   {
     id: "sandboxImages",

@@ -1,0 +1,20 @@
+
+--- page 1 ---
+会话登出 logout
+会话登出 logout
+接口基本信息
+接口名称 会话登出接口
+接口地址 http(s)://<iam_host>:<port>/auth/ssoLogout
+HTTP Method GET
+请求参数传递方式 URL 参数
+接口提供方 IAM 认证服务器
+接口调用方 应用系统服务器
+功能描述 会话登出，应用系统服务器重定向到 IAM 认证服务器
+报文规范
+字段名称 数据类型 字段说明 约束条件 必要性 备注
+请求报文
+callback String (128) Y
+IAM 认证服务器登出
+后跳转
+示例
+http(s)://<ip>:<port>/auth/ssoLogout?callback=https://www.qq.com/

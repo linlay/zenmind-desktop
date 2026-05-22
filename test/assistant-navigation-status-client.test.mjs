@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
+  AssistantNavigationStatusClient,
   applyAssistantNavigationPush,
   buildAssistantNavigationAgentsFromPlatformAgents,
   readAssistantNavigationAgentsFromPlatform,
@@ -283,4 +284,36 @@ test("assistant navigation push ignores heartbeat and refreshes unknown notifica
     type: "run.finished",
     payload: { chatId: "chat-1" }
   }).type, "run.complete");
+});
+
+test("assistant navigation status client forwards normalized run push events", () => {
+  const pushEvents = [];
+  const client = new AssistantNavigationStatusClient({
+    app: {},
+    getServiceState: async () => ({ status: "stopped" }),
+    issueAccessToken: async () => ({ ok: false, message: "unused" }),
+    onSnapshot: () => undefined,
+    onPushEvent: (event) => pushEvents.push(event)
+  });
+
+  try {
+    client.handleWebSocketMessage(JSON.stringify({
+      frame: "push",
+      type: "run.finished",
+      chatId: "chat-1",
+      runId: "run-2",
+      status: "idle"
+    }));
+
+    assert.deepEqual(pushEvents, [
+      {
+        type: "run.complete",
+        chatId: "chat-1",
+        runId: "run-2",
+        status: "idle"
+      }
+    ]);
+  } finally {
+    client.stop();
+  }
 });

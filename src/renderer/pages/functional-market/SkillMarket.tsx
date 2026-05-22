@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { MarketItem, MarketSettings } from "@shared/contracts";
+import type { MarketItem } from "@shared/contracts";
 import { useServices } from "../../services/ServicesContext";
 import { registerDesktopActionProvider } from "../../services/desktopActionRegistry";
 import { MarketPageFrame } from "./MarketPageFrame";
@@ -18,11 +18,9 @@ import {
   skillDetailChips
 } from "./marketDisplay";
 import {
-  DEFAULT_SKILLS_API_BASE_URL,
   MARKET_TAB_DEFINITIONS,
   createEmptyMarketResult,
   getMarketTabDefinition,
-  isValidSkillsApiBaseUrl,
   matchesMarketItemQuery,
   skillSourceMatches,
   type MarketViewProps,
@@ -33,31 +31,32 @@ import "./SkillMarket.css";
 interface SkillMarketToolbarProps {
   isImportingSkill: boolean;
   isLoadingMarket: boolean;
-  isSavingSkillsApi: boolean;
-  marketSettingsSkillsApiBaseUrl: string;
   onImportSkill: () => void;
   onRefresh: () => void;
-  onSaveSkillsApiBaseUrl: () => void;
-  onSkillsApiDraftChange: (value: string) => void;
-  skillsApiDraft: string;
 }
 
 interface SkillMarketSectionProps {
   busyItemId: string;
+  commandDraft: string;
   isImportingSkill: boolean;
+  isInstallingCommand: boolean;
   isLoadingMarket: boolean;
   items: MarketItem[];
   marketFeedback: string;
   marketOffline: boolean;
-  marketSourceUrl: string;
-  marketSettingsSkillsApiBaseUrl: string;
+  onCommandDraftChange: (value: string) => void;
   onImportSkill: () => void;
+  onInstallCommand: () => void;
   onInstallItem: (item: MarketItem) => void;
   onQueryChange: (query: string) => void;
   onScopeChange: (scope: SkillScope) => void;
   onUninstallItem: (item: MarketItem) => void;
   query: string;
   scope: SkillScope;
+}
+
+function isPackageDownloadCommand(value: string) {
+  return /^(npm|npx)(\s|$)/iu.test(value.trim());
 }
 
 export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
@@ -68,11 +67,8 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
   const [isLoadingMarket, setIsLoadingMarket] = useState(true);
   const [busyItemId, setBusyItemId] = useState("");
   const [isImportingSkill, setIsImportingSkill] = useState(false);
-  const [marketSettings, setMarketSettings] = useState<MarketSettings>({
-    skillsApiBaseUrl: DEFAULT_SKILLS_API_BASE_URL
-  });
-  const [skillsApiDraft, setSkillsApiDraft] = useState(DEFAULT_SKILLS_API_BASE_URL);
-  const [isSavingSkillsApi, setIsSavingSkillsApi] = useState(false);
+  const [isInstallingCommand, setIsInstallingCommand] = useState(false);
+  const [commandDraft, setCommandDraft] = useState("");
   const [marketFeedback, setMarketFeedback] = useState("");
 
   const items = useMemo(
@@ -92,7 +88,7 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
       }
       const next = await command();
       setMarketResult(next);
-      setMarketFeedback(next.offline ? next.message : "");
+      setMarketFeedback(next.message.includes("技能市场暂不可用") ? next.message : "");
     } catch (reason) {
       console.warn("[skill-market] failed to load market data", reason);
       setMarketFeedback(normalizeError(reason));
@@ -102,38 +98,21 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
   }
 
   useEffect(() => {
-    async function loadSettings() {
-      try {
-        const getSettings = getMarketMethod("getSettings");
-        if (!getSettings) {
-          throw createMissingMarketApiError("getSettings");
-        }
-        const next = await getSettings();
-        setMarketSettings(next);
-        setSkillsApiDraft(next.skillsApiBaseUrl);
-      } catch (reason) {
-        console.warn("[skill-market] failed to load market settings", reason);
-        setMarketFeedback(normalizeError(reason));
-      }
-    }
-    void loadSettings();
     void loadMarket(false);
   }, []);
 
   useEffect(() => {
     return registerDesktopActionProvider(async (request) => {
-      const nextUrl = typeof request.args?.skillsApiBaseUrl === "string"
-        ? request.args.skillsApiBaseUrl.trim()
-        : typeof (request.args?.patch as { skillsApiBaseUrl?: unknown } | undefined)?.skillsApiBaseUrl === "string"
-          ? String((request.args?.patch as { skillsApiBaseUrl?: unknown }).skillsApiBaseUrl).trim()
-          : skillsApiDraft.trim();
+      const nextCommand = typeof request.args?.skillDownloadCommand === "string"
+        ? request.args.skillDownloadCommand.trim()
+        : typeof (request.args?.patch as { skillDownloadCommand?: unknown } | undefined)?.skillDownloadCommand === "string"
+          ? String((request.args?.patch as { skillDownloadCommand?: unknown }).skillDownloadCommand).trim()
+          : commandDraft.trim();
       const validation = {
-        field: "skillsApiBaseUrl",
-        value: nextUrl,
-        valid: isValidSkillsApiBaseUrl(nextUrl),
-        message: isValidSkillsApiBaseUrl(nextUrl)
-          ? "技能市场地址格式正确。"
-          : "技能市场地址请输入 http/https 服务根地址，或以 /api/v1 结尾。"
+        field: "skillDownloadCommand",
+        value: nextCommand,
+        valid: isPackageDownloadCommand(nextCommand),
+        message: isPackageDownloadCommand(nextCommand) ? "技能下载指令格式正确。" : "云端下载只支持 npm 或 npx 指令。"
       };
 
       switch (request.action) {
@@ -144,10 +123,9 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
               page: "market",
               activeTab,
               fields: {
-                skillsApiBaseUrl: {
-                  draft: skillsApiDraft,
-                  saved: marketSettings.skillsApiBaseUrl,
-                  valid: isValidSkillsApiBaseUrl(skillsApiDraft)
+                skillDownloadCommand: {
+                  draft: commandDraft,
+                  valid: isPackageDownloadCommand(commandDraft)
                 }
               }
             }
@@ -158,7 +136,7 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
             result: {
               valid: validation.valid,
               issues: validation.valid ? [] : [validation],
-              fields: { skillsApiBaseUrl: validation }
+              fields: { skillDownloadCommand: validation }
             }
           };
         case "desktop.page.previewPatch":
@@ -167,9 +145,9 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
             preview: {
               page: "market",
               changes: [{
-                field: "skillsApiBaseUrl",
-                from: skillsApiDraft,
-                to: nextUrl,
+                field: "skillDownloadCommand",
+                from: commandDraft,
+                to: nextCommand,
                 valid: validation.valid
               }]
             }
@@ -186,21 +164,21 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
             };
           }
           onTabChange("skills");
-          setSkillsApiDraft(nextUrl);
-          setMarketFeedback("已填入技能市场地址，保存前请确认。");
+          setCommandDraft(nextCommand);
+          setMarketFeedback("已填入云端下载指令，请确认后执行。");
           return {
             ok: true,
             result: {
               applied: true,
-              field: "skillsApiBaseUrl",
-              value: nextUrl
+              field: "skillDownloadCommand",
+              value: nextCommand
             }
           };
         default:
           return null;
       }
     });
-  }, [activeTab, marketSettings.skillsApiBaseUrl, onTabChange, skillsApiDraft]);
+  }, [activeTab, commandDraft, onTabChange]);
 
   async function refreshEverything() {
     await refreshServices();
@@ -214,37 +192,42 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
       if (!importSkill) {
         throw createMissingMarketApiError("importSkill");
       }
-      await importSkill();
+      const result = await importSkill();
       await refreshEverything();
+      setMarketFeedback(result.message);
     } catch (reason) {
       console.warn("[skill-market] failed to import skill", reason);
+      setMarketFeedback(normalizeError(reason));
     } finally {
       setIsImportingSkill(false);
     }
   }
 
-  async function handleSaveSkillsApiBaseUrl() {
-    const nextUrl = skillsApiDraft.trim();
-    if (!isValidSkillsApiBaseUrl(nextUrl)) {
-      setMarketFeedback("技能市场地址请输入 http/https 服务根地址，或以 /api/v1 结尾。");
+  async function handleInstallCommand() {
+    const nextCommand = commandDraft.trim();
+    if (!nextCommand) {
+      setMarketFeedback("请输入 npm 或 npx 下载指令。");
       return;
     }
-    setIsSavingSkillsApi(true);
+    if (!isPackageDownloadCommand(nextCommand)) {
+      setMarketFeedback("云端下载只支持 npm 或 npx 指令。");
+      return;
+    }
+    setIsInstallingCommand(true);
     try {
-      const saveSettings = getMarketMethod("saveSettings");
-      if (!saveSettings) {
-        throw createMissingMarketApiError("saveSettings");
+      const importFromCommand = getMarketMethod("importSkillFromCommand");
+      if (!importFromCommand) {
+        throw createMissingMarketApiError("importSkillFromCommand");
       }
-      const next = await saveSettings({ skillsApiBaseUrl: nextUrl });
-      setMarketSettings(next);
-      setSkillsApiDraft(next.skillsApiBaseUrl);
-      setMarketFeedback("技能市场地址已保存。");
-      await loadMarket(true);
+      const result = await importFromCommand(nextCommand);
+      await refreshEverything();
+      setScope("云端");
+      setMarketFeedback(result.message);
     } catch (reason) {
-      console.warn("[skill-market] failed to save market settings", reason);
+      console.warn("[skill-market] failed to import skill from command", reason);
       setMarketFeedback(normalizeError(reason));
     } finally {
-      setIsSavingSkillsApi(false);
+      setIsInstallingCommand(false);
     }
   }
 
@@ -294,26 +277,23 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
         <SkillMarketToolbar
           isImportingSkill={isImportingSkill}
           isLoadingMarket={isLoadingMarket}
-          isSavingSkillsApi={isSavingSkillsApi}
-          marketSettingsSkillsApiBaseUrl={marketSettings.skillsApiBaseUrl}
           onImportSkill={() => void handleImportSkill()}
           onRefresh={() => void loadMarket(true)}
-          onSaveSkillsApiBaseUrl={() => void handleSaveSkillsApiBaseUrl()}
-          onSkillsApiDraftChange={setSkillsApiDraft}
-          skillsApiDraft={skillsApiDraft}
         />
       )}
     >
       <SkillMarketSection
         busyItemId={busyItemId}
+        commandDraft={commandDraft}
         isImportingSkill={isImportingSkill}
+        isInstallingCommand={isInstallingCommand}
         isLoadingMarket={isLoadingMarket}
         items={items}
         marketFeedback={marketFeedback}
         marketOffline={marketResult.offline}
-        marketSettingsSkillsApiBaseUrl={marketSettings.skillsApiBaseUrl}
-        marketSourceUrl={marketResult.sourceUrl}
+        onCommandDraftChange={setCommandDraft}
         onImportSkill={() => void handleImportSkill()}
+        onInstallCommand={() => void handleInstallCommand()}
         onInstallItem={(item) => void handleInstallItem(item)}
         onQueryChange={setQuery}
         onScopeChange={setScope}
@@ -328,34 +308,13 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
 export function SkillMarketToolbar({
   isImportingSkill,
   isLoadingMarket,
-  isSavingSkillsApi,
-  marketSettingsSkillsApiBaseUrl,
   onImportSkill,
-  onRefresh,
-  onSaveSkillsApiBaseUrl,
-  onSkillsApiDraftChange,
-  skillsApiDraft
+  onRefresh
 }: SkillMarketToolbarProps) {
   return (
     <>
-      <label className="market-api-config">
-        <span>技能 API</span>
-        <input
-          value={skillsApiDraft}
-          onChange={(event) => onSkillsApiDraftChange(event.target.value)}
-          placeholder={DEFAULT_SKILLS_API_BASE_URL}
-        />
-      </label>
       <button type="button" className="market-toolbar-btn" onClick={onRefresh}>
         {isLoadingMarket ? "刷新中" : "刷新市场"}
-      </button>
-      <button
-        type="button"
-        className="market-toolbar-btn"
-        onClick={onSaveSkillsApiBaseUrl}
-        disabled={isSavingSkillsApi || skillsApiDraft.trim() === marketSettingsSkillsApiBaseUrl}
-      >
-        {isSavingSkillsApi ? "保存中" : "保存地址"}
       </button>
       <button
         type="button"
@@ -371,14 +330,16 @@ export function SkillMarketToolbar({
 
 export function SkillMarketSection({
   busyItemId,
+  commandDraft,
   isImportingSkill,
+  isInstallingCommand,
   isLoadingMarket,
   items,
   marketFeedback,
   marketOffline,
-  marketSettingsSkillsApiBaseUrl,
-  marketSourceUrl,
+  onCommandDraftChange,
   onImportSkill,
+  onInstallCommand,
   onInstallItem,
   onQueryChange,
   onScopeChange,
@@ -460,14 +421,25 @@ export function SkillMarketSection({
           </button>
         </section>
 
-        <section className="market-skill-action-card">
-          <div>
+        <section className="market-skill-action-card market-skill-command-card">
+          <div className="market-command-panel">
             <p className="eyebrow">云端下载</p>
-            <h2>从云端技能库下载</h2>
-            <p>{marketSourceUrl || marketSettingsSkillsApiBaseUrl}</p>
+            <h2>输入 npm/npx 指令下载</h2>
+            <label className="market-command-input">
+              <input
+                value={commandDraft}
+                onChange={(event) => onCommandDraftChange(event.target.value)}
+                placeholder="npx -y ..."
+              />
+            </label>
           </div>
-          <button type="button" className="market-toolbar-btn" onClick={() => onScopeChange("云端")}>
-            浏览云端
+          <button
+            type="button"
+            className="market-toolbar-btn"
+            onClick={onInstallCommand}
+            disabled={isInstallingCommand || !commandDraft.trim()}
+          >
+            {isInstallingCommand ? "下载中" : "执行下载"}
           </button>
         </section>
       </div>
@@ -528,7 +500,7 @@ export function SkillMarketSection({
       ) : (
         <section className="market-empty-state">
           <h2>{isLoadingMarket ? "正在加载技能" : "暂无技能"}</h2>
-          <p>可以刷新云端市场，或从本地导入 Skill 包。</p>
+          <p>可以刷新市场、从本地导入 Skill 包，或输入 npm/npx 指令下载。</p>
         </section>
       )}
     </div>

@@ -184,6 +184,7 @@ const api: DesktopApi = {
     update: (itemId: string) => ipcRenderer.invoke("market.update", itemId),
     uninstall: (itemId: string) => ipcRenderer.invoke("market.uninstall", itemId),
     importSkill: () => ipcRenderer.invoke("market.importSkill"),
+    importSkillFromCommand: (commandText: string) => ipcRenderer.invoke("market.importSkillFromCommand", commandText),
     importSandboxImage: () => ipcRenderer.invoke("market.importSandboxImage"),
     onSandboxImageImportProgress: (listener: SandboxImageImportProgressListener) => {
       const handleSandboxImageImportProgress = (

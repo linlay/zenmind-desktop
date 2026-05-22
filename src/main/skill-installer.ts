@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../shared/contracts";
 import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
@@ -22,6 +24,12 @@ type SkillInstallOptions = {
   expectedVersion?: string;
   metadata?: Partial<SkillMetadata>;
 };
+
+const execFileAsync = promisify(execFile);
+const COMMAND_INSTALL_TIMEOUT_MS = 120_000;
+const COMMAND_INSTALL_MAX_BUFFER = 1024 * 1024;
+const COMMAND_DISCOVERY_MAX_DEPTH = 5;
+const COMMAND_DISCOVERY_MAX_ENTRIES = 2_000;
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -254,6 +262,178 @@ function cleanupBackup(backupDir: string) {
   }
 }
 
+function splitCommandLine(input: string) {
+  const tokens: string[] = [];
+  let current = "";
+  let quote = "";
+  let escaping = false;
+  let tokenStarted = false;
+  for (const char of input.trim()) {
+    if (escaping) {
+      current += char;
+      escaping = false;
+      tokenStarted = true;
+      continue;
+    }
+    if (char === "\\" && quote !== "'") {
+      escaping = true;
+      tokenStarted = true;
+      continue;
+    }
+    if ((char === "\"" || char === "'") && (!quote || quote === char)) {
+      quote = quote ? "" : char;
+      tokenStarted = true;
+      continue;
+    }
+    if (!quote && /\s/u.test(char)) {
+      if (tokenStarted) {
+        tokens.push(current);
+        current = "";
+        tokenStarted = false;
+      }
+      continue;
+    }
+    current += char;
+    tokenStarted = true;
+  }
+  if (escaping) {
+    current += "\\";
+  }
+  if (quote) {
+    throw new Error("下载指令中的引号未闭合。");
+  }
+  if (tokenStarted) {
+    tokens.push(current);
+  }
+  return tokens;
+}
+
+function normalizedPackageCommandName(command: string) {
+  const basename = path.basename(command).toLowerCase();
+  return basename.replace(/\.(cmd|exe)$/u, "");
+}
+
+function ensureSupportedPackageCommand(command: string) {
+  const name = normalizedPackageCommandName(command);
+  if (name !== "npm" && name !== "npx") {
+    throw new Error("云端技能下载指令仅支持 npm 或 npx。");
+  }
+  return name;
+}
+
+function windowsCommandLineArg(value: string) {
+  return `"${value.replace(/"/gu, "\\\"").replace(/%/gu, "%%")}"`;
+}
+
+function resolvePackageManagerExecution(command: string, args: string[]) {
+  const name = ensureSupportedPackageCommand(command);
+  if (process.platform === "win32") {
+    // npm/npx on Windows are normally .cmd shims, so execute them through cmd.exe explicitly.
+    const executable = command.toLowerCase().endsWith(".cmd") || command.toLowerCase().endsWith(".exe")
+      ? command
+      : `${name}.cmd`;
+    return {
+      command: process.env.ComSpec || "cmd.exe",
+      args: ["/d", "/s", "/c", [executable, ...args].map(windowsCommandLineArg).join(" ")]
+    };
+  }
+
+  if (process.platform === "darwin") {
+    return { command, args };
+  }
+
+  return { command, args };
+}
+
+function isInstallableArchive(filePath: string) {
+  const normalized = filePath.toLowerCase();
+  return (
+    normalized.endsWith(".tar.gz") ||
+    normalized.endsWith(".tgz") ||
+    normalized.endsWith(".skill") ||
+    normalized.endsWith(".zip")
+  );
+}
+
+function isIgnoredCommandDiscoveryDir(name: string) {
+  return name === ".git" || name === ".cache" || name === ".npm" || name === ".pnpm-store";
+}
+
+function createCommandInstallEnv(downloadRoot: string) {
+  const homeDir = path.join(downloadRoot, "home");
+  const npmCacheDir = path.join(downloadRoot, "npm-cache");
+  fs.mkdirSync(homeDir, { recursive: true });
+  fs.mkdirSync(npmCacheDir, { recursive: true });
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    HOME: homeDir,
+    npm_config_cache: npmCacheDir
+  };
+
+  if (process.platform === "win32") {
+    env.USERPROFILE = homeDir;
+    const parsed = path.parse(homeDir);
+    env.HOMEDRIVE = parsed.root.replace(/\\$/u, "");
+    env.HOMEPATH = homeDir.slice(env.HOMEDRIVE.length) || "\\";
+  } else if (process.platform === "darwin") {
+    env.HOME = homeDir;
+  }
+
+  return env;
+}
+
+function relativeDepth(root: string, filePath: string) {
+  const relative = path.relative(root, filePath);
+  return relative ? relative.split(path.sep).length : 0;
+}
+
+function findDownloadedSkillSource(root: string) {
+  const archives: string[] = [];
+  const skillDirs: string[] = [];
+  const skillFiles: string[] = [];
+  let visited = 0;
+
+  function walk(currentDir: string, depth: number) {
+    if (depth > COMMAND_DISCOVERY_MAX_DEPTH || visited > COMMAND_DISCOVERY_MAX_ENTRIES) {
+      return;
+    }
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      visited += 1;
+      if (visited > COMMAND_DISCOVERY_MAX_ENTRIES) {
+        return;
+      }
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isFile()) {
+        if (entry.name === "SKILL.md") {
+          skillFiles.push(fullPath);
+        } else if (isInstallableArchive(fullPath)) {
+          archives.push(fullPath);
+        }
+        continue;
+      }
+      if (entry.isDirectory()) {
+        if (isIgnoredCommandDiscoveryDir(entry.name)) {
+          continue;
+        }
+        if (fs.existsSync(path.join(fullPath, "SKILL.md"))) {
+          skillDirs.push(fullPath);
+        }
+        walk(fullPath, depth + 1);
+      }
+    }
+  }
+
+  walk(root, 0);
+  const sortedArchives = archives.sort((left, right) => relativeDepth(root, left) - relativeDepth(root, right) || left.localeCompare(right));
+  const sortedSkillDirs = skillDirs.sort((left, right) => relativeDepth(root, left) - relativeDepth(root, right) || left.localeCompare(right));
+  const sortedSkillFiles = skillFiles.sort((left, right) => relativeDepth(root, left) - relativeDepth(root, right) || left.localeCompare(right));
+  const candidates = [...sortedArchives, ...sortedSkillDirs, ...sortedSkillFiles];
+  if (candidates.length === 0) {
+    throw new Error("下载指令执行完成，但没有找到 .skill、.tar.gz、.zip 或包含 SKILL.md 的技能目录。");
+  }
+  return candidates[0];
+}
+
 async function buildMessage(app: App, skillName: string) {
   try {
     const state = await getServiceState(app, "agent-platform");
@@ -273,7 +453,21 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
   const tempRoot = fs.mkdtempSync(path.join(skillsRoot, ".tmp-"));
   let preparedDir = "";
   try {
-    if (extension.endsWith(".md")) {
+    const sourceStats = fs.statSync(sourcePath);
+    if (sourceStats.isDirectory()) {
+      preparedDir = path.join(tempRoot, slugify(options.metadata?.id || options.expectedId || path.basename(sourcePath)));
+      fs.cpSync(sourcePath, preparedDir, { recursive: true });
+      if (!fs.existsSync(path.join(preparedDir, "SKILL.md"))) {
+        throw new Error("Skill 目录缺少 SKILL.md");
+      }
+      writeSkillMetadataIfMissing(preparedDir, {
+        id: options.metadata?.id ?? options.expectedId,
+        name: options.metadata?.name,
+        version: options.metadata?.version ?? options.expectedVersion,
+        description: options.metadata?.description,
+        tags: options.metadata?.tags
+      });
+    } else if (extension.endsWith(".md")) {
       const skillId = slugify(path.basename(sourcePath));
       preparedDir = path.join(tempRoot, skillId);
       fs.mkdirSync(preparedDir, { recursive: true });
@@ -333,6 +527,37 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
     };
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+export async function installSkillFromCommand(app: App, commandText: string): Promise<MarketCommandResult> {
+  const tokens = splitCommandLine(commandText);
+  if (tokens.length === 0) {
+    throw new Error("请输入 npm 或 npx 下载指令。");
+  }
+  const [command, ...args] = tokens;
+  const execution = resolvePackageManagerExecution(command, args);
+  const downloadsRoot = path.join(getSkillsMarketDir(app), ".downloads");
+  fs.mkdirSync(downloadsRoot, { recursive: true });
+  const downloadRoot = fs.mkdtempSync(path.join(downloadsRoot, "zenmind-skill-download-"));
+  try {
+    await execFileAsync(execution.command, execution.args, {
+      cwd: downloadRoot,
+      env: createCommandInstallEnv(downloadRoot),
+      encoding: "utf8",
+      timeout: COMMAND_INSTALL_TIMEOUT_MS,
+      maxBuffer: COMMAND_INSTALL_MAX_BUFFER,
+      windowsHide: true
+    });
+    const sourcePath = findDownloadedSkillSource(downloadRoot);
+    return await installSkillFromPath(app, sourcePath, { source: "cloud" });
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`云端技能下载失败：${error.message}`);
+    }
+    throw error;
+  } finally {
+    fs.rmSync(downloadRoot, { recursive: true, force: true });
   }
 }
 
