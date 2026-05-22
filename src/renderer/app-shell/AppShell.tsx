@@ -481,9 +481,16 @@ export function AppShell() {
     return nextState;
   }
 
-  function openAssistantDock() {
+  function openAssistantDock(request?: AssistantWorkerOpenRequest) {
     if (isAgentWebclientMainRoute) {
       return;
+    }
+    if (request) {
+      assistantDockOpenRequestPathRef.current = location.pathname;
+      setAssistantDockOpenRequest(request);
+    } else {
+      assistantDockOpenRequestPathRef.current = null;
+      setAssistantDockOpenRequest(null);
     }
     setAssistantDockOpen(true);
   }
@@ -540,6 +547,8 @@ export function AppShell() {
   useEffect(() => {
     if (currentCopilotPreference?.enabled === false && assistantDockOpen && !assistantRunningRunId) {
       setAssistantDockOpen(false);
+      setAssistantDockOpenRequest(null);
+      assistantDockOpenRequestPathRef.current = null;
     }
   }, [assistantDockOpen, assistantRunningRunId, currentCopilotPreference?.enabled]);
 
@@ -574,9 +583,7 @@ export function AppShell() {
 
   useEffect(() => {
     return window.electronAPI.onOpenAssistantWorker((request) => {
-      assistantDockOpenRequestPathRef.current = location.pathname;
-      setAssistantDockOpenRequest(request);
-      openAssistantDock();
+      openAssistantDock(request);
     });
   }, [location.pathname]);
 
@@ -1335,7 +1342,11 @@ export function AppShell() {
           customSidebarItems={customSidebarItems}
           assistantNavAgents={assistantNavAgents}
           onOpenAssistantDock={() => openAssistantDock()}
-          onCloseAssistantDock={() => setAssistantDockOpen(false)}
+          onCloseAssistantDock={() => {
+            setAssistantDockOpen(false);
+            setAssistantDockOpenRequest(null);
+            assistantDockOpenRequestPathRef.current = null;
+          }}
           onRequestNavigate={requestSidebarNavigation}
           onNavigateItem={undefined}
           onToggleCollapsed={toggleSidebarCollapsed}
@@ -1380,7 +1391,7 @@ export function AppShell() {
                 />
               }
             />
-            <Route path="/kanban" element={<TaskBoardPage />} />
+            <Route path="/kanban" element={<TaskBoardPage hostTheme={themeMode} />} />
             <Route path="/control-center" element={<ControlCenterPage />} />
             <Route
               path="/settings"
@@ -1440,6 +1451,7 @@ export function AppShell() {
         onClose={() => {
           setAssistantDockOpen(false);
           setAssistantDockOpenRequest(null);
+          assistantDockOpenRequestPathRef.current = null;
         }}
         onRunningRunIdChange={setAssistantRunningRunId}
       />

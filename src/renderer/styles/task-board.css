@@ -69,7 +69,7 @@
 .task-board-primary-button,
 .task-board-secondary-button,
 .task-board-danger-button,
-.task-board-card-action,
+.task-board-chat-action,
 .task-board-column-actions button,
 .task-board-modal-head button,
 .task-board-feedback button {
@@ -95,7 +95,6 @@
 .task-board-tool:hover,
 .task-board-tool.is-active,
 .task-board-column-actions button:hover,
-.task-board-card-action:hover,
 .task-board-secondary-button:hover {
   background: rgba(0, 82, 217, 0.08);
   border-color: rgba(0, 82, 217, 0.24);
@@ -233,6 +232,34 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+:root[data-theme="dark"] .task-board-chat-action {
+  background: rgba(87, 144, 255, 0.14);
+  border-color: rgba(87, 144, 255, 0.28);
+  color: #9dbdff;
+}
+
+:root[data-theme="dark"] .task-board-chat-action.is-awaiting {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}
+
+:root[data-theme="dark"] .task-board-chat-action.is-human-loop {
+  background: #22c55e;
+  border-color: #22c55e;
+  color: #052e16;
+}
+
+:root[data-theme="dark"] .task-board-card.is-awaiting-confirmation {
+  border-color: rgba(251, 146, 60, 0.56);
+  background: color-mix(in srgb, var(--task-board-card) 84%, #f97316);
+  box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.16), 0 14px 26px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-theme="dark"] .task-board-card.is-awaiting-confirmation .task-board-card-main strong {
+  color: #ffedd5;
+}
+
 .task-board-column.is-warning {
   background: rgba(245, 158, 11, 0.08);
 }
@@ -326,6 +353,7 @@
 }
 
 .task-board-card {
+  position: relative;
   border: 1px solid var(--task-board-border);
   border-radius: var(--task-board-radius);
   background: var(--task-board-card);
@@ -345,9 +373,18 @@
   touch-action: auto;
 }
 
-.task-board-card.is-drag-locked .task-board-run-badge {
-  background: rgba(217, 119, 6, 0.13);
-  color: #b45309;
+.task-board-card.is-drag-locked .task-board-card-main {
+  padding-right: 20px;
+}
+
+.task-board-card.is-awaiting-confirmation {
+  border-color: rgba(217, 119, 6, 0.58);
+  background: color-mix(in srgb, var(--task-board-card) 88%, #f97316);
+  box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.12), 0 12px 24px rgba(217, 119, 6, 0.16);
+}
+
+.task-board-card.is-awaiting-confirmation .task-board-card-main strong {
+  color: #9a3412;
 }
 
 .task-board-drag-overlay {
@@ -411,20 +448,23 @@
 }
 
 .task-board-avatar {
-  width: 22px;
+  min-width: 22px;
+  max-width: 72px;
   height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 999px;
+  padding: 0 7px;
   background: #e8f0ff;
   color: #0958d9;
   font-size: 11px;
   font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.task-board-priority,
-.task-board-run-badge {
+.task-board-priority {
   min-height: 20px;
   display: inline-flex;
   align-items: center;
@@ -474,22 +514,54 @@
 .task-board-priority-bars span:nth-child(4) { height: 11px; }
 .task-board-priority-bars span.is-on { opacity: 1; }
 
-.task-board-run-badge {
-  background: rgba(22, 163, 74, 0.12);
-  color: #16a34a;
+.task-board-run-dot {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.14);
 }
 
-.task-board-card-action {
+.task-board-chat-action {
   min-height: 22px;
-  margin-left: auto;
   padding: 0 7px;
+  background: rgba(22, 119, 255, 0.08);
+  border-color: rgba(22, 119, 255, 0.2);
+  color: #0958d9;
   font-size: 11px;
-  color: var(--task-board-muted);
+  font-weight: 800;
+  white-space: nowrap;
 }
 
-.task-board-card-action:disabled {
+.task-board-chat-action:hover:not(:disabled) {
+  background: rgba(22, 119, 255, 0.14);
+  border-color: rgba(22, 119, 255, 0.32);
+}
+
+.task-board-chat-action.is-awaiting {
+  background: rgba(217, 119, 6, 0.12);
+  border-color: rgba(217, 119, 6, 0.24);
+  color: #b45309;
+}
+
+.task-board-chat-action.is-human-loop {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(22, 163, 74, 0.22);
+}
+
+.task-board-chat-action.is-human-loop:hover:not(:disabled) {
+  background: #15803d;
+  border-color: #15803d;
+}
+
+.task-board-chat-action:disabled {
   opacity: 0.55;
-  cursor: progress;
+  cursor: not-allowed;
 }
 
 .task-board-empty-column {
@@ -519,6 +591,62 @@
   background: var(--task-board-card);
   box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
   padding: 16px;
+}
+
+.task-board-chat-modal-layer {
+  z-index: 92;
+  padding: clamp(12px, 3vw, 32px);
+}
+
+.task-board-chat-modal {
+  position: relative;
+  width: min(760px, calc(100vw - 48px));
+  height: min(860px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--task-board-border);
+  border-radius: var(--task-board-radius);
+  background: var(--embedded-surface-dock-bg, var(--task-board-card));
+  box-shadow: 0 24px 72px rgba(15, 23, 42, 0.28);
+}
+
+.task-board-chat-modal .pan-page {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.task-board-chat-modal .pan-frame {
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.task-board-chat-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--task-board-muted);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.task-board-chat-modal-close:hover {
+  border-color: rgba(22, 119, 255, 0.34);
+  color: #1677ff;
+  background: #ffffff;
 }
 
 .task-board-modal-head {
@@ -569,70 +697,6 @@
   grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 8px;
-}
-
-.task-board-agent-picker {
-  width: min(420px, 100%);
-}
-
-.task-board-agent-list {
-  display: grid;
-  gap: 8px;
-}
-
-.task-board-agent-option {
-  min-height: 58px;
-  display: grid;
-  grid-template-columns: 34px 1fr;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid var(--task-board-border);
-  border-radius: 7px;
-  background: var(--task-board-bg);
-  color: var(--task-board-ink);
-  padding: 8px 10px;
-  text-align: left;
-}
-
-.task-board-agent-option:hover {
-  border-color: rgba(22, 119, 255, 0.44);
-  background: rgba(22, 119, 255, 0.06);
-}
-
-.task-board-agent-option:disabled {
-  cursor: progress;
-  opacity: 0.6;
-}
-
-.task-board-agent-avatar {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background: #e8f0ff;
-  color: #0958d9;
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.task-board-agent-option span:last-child {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.task-board-agent-option strong,
-.task-board-agent-option small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.task-board-agent-option small {
-  color: var(--task-board-muted);
-  font-size: 11px;
 }
 
 .task-board-secondary-button,

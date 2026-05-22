@@ -299,7 +299,12 @@ test("assistant launcher sits beside the sidebar collapse button", () => {
   assert.equal(fs.existsSync(nativeAssistantDockPath), false);
   assert.match(appShell, /function AgentWebclientCopilotDock/);
   assert.match(appShell, /onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}/);
-  assert.match(appShell, /embedPath=\{AGENT_WEBCLIENT_COPILOT_PATH\}/);
+  assert.match(appShell, /function buildAgentWebclientCopilotPath/);
+  assert.match(appShell, /if \(!agentKey\) \{[\s\S]{0,80}return AGENT_WEBCLIENT_COPILOT_PATH/);
+  assert.match(appShell, /if \(!chatId\) \{[\s\S]{0,100}return `\/agent\/\$\{encodeURIComponent\(agentKey\)\}`/);
+  assert.match(appShell, /params\.set\("chatId", chatId\)/);
+  assert.match(appShell, /return `\/agent\/\$\{encodeURIComponent\(agentKey\)\}\?\$\{params\.toString\(\)\}`/);
+  assert.match(appShell, /embedPath=\{targetEmbedPath\}/);
   assert.match(sidebarSource, /sidebar-top-actions/);
   assert.match(sidebarSource, /sidebar-assistant-top-button/);
   assert.match(sidebarSource, /"打开 ZenMind 助手"/);
@@ -436,9 +441,9 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /renderStatusBadges/);
   assert.match(sidebarSource, /summarizeAgentStatus\(assistantNavAgents\)/);
   assert.match(sidebarSource, /assistant-worker-collapse worker-collapse/);
-  assert.match(sidebarSource, /ant-collapse-item/);
-  assert.match(sidebarSource, /ant-collapse-header-text/);
-  assert.match(sidebarSource, /<AgentIcon icon=\{agent\.icon\} className="worker-panel-icon" size=\{32\} type="agent" \/>/);
+  assert.match(sidebarSource, /className="assistant-worker-collapse-item"/);
+  assert.match(sidebarSource, /className="assistant-worker-header-text"/);
+  assert.match(sidebarSource, /<AgentIcon[\s\S]*?icon=\{agent\.icon\}[\s\S]*?className="worker-panel-icon"[\s\S]*?size=\{32\}[\s\S]*?type="agent"[\s\S]*?\/>/);
   assert.doesNotMatch(sidebarSource, /renderAssistantAgentIcon/);
   assert.doesNotMatch(sidebarSource, /SidebarIllustration kind="agent"/);
   assert.match(sidebarSource, /worker-panel-header-body/);
@@ -447,8 +452,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /worker-chat-item-head/);
   assert.match(sidebarSource, /worker-chat-name/);
   assert.match(sidebarSource, /worker-panel-time-label/);
-  assert.match(sidebarSource, /title="全部已读"/);
-  assert.match(sidebarSource, /title="新建对话"/);
+  assert.match(sidebarSource, /<Tooltip content="全部已读">/);
+  assert.match(sidebarSource, /<Tooltip content="新建对话">/);
   assert.match(sidebarSource, /查看更多（共/);
   assert.match(sidebarSource, /等待审批/);
   assert.match(sidebarSource, /exportChat/);
@@ -473,16 +478,16 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(globalStyles, /\.worker-panel-role\s*\{[\s\S]*?font-size:\s*11px;/);
   assert.match(globalStyles, /\.worker-panel-preview\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?height:\s*20px;/);
   assert.match(globalStyles, /\.worker-chat-name\s*\{[\s\S]*?font-size:\s*12px;/);
-  assert.match(globalStyles, /\.assistant-worker-header\s*\{[\s\S]*?padding:\s*6px 2px;/);
-  assert.match(globalStyles, /\.assistant-worker-collapse-item\.ant-collapse-item-active \.assistant-worker-header\s*\{[\s\S]*?padding:\s*6px 10px;/);
-  assert.match(globalStyles, /\.ant-collapse-item-active \.worker-panel-icon\s*\{[\s\S]*?transform:\s*scale\(0\.8\);/);
+  assert.match(globalStyles, /\.assistant-worker-header\s*\{[\s\S]*?padding:\s*6px 10px;/);
+  assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded\s*\{[\s\S]*?background:\s*var\(--surface\);/);
+  assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded \.worker-panel-icon\s*\{[\s\S]*?transform:\s*scale\(0\.8\);/);
   assert.match(globalStyles, /\.worker-chat-preview-list \.status-line\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?color:\s*var\(--ink-muted\);/);
   assert.match(agentIconSource, /BUILTIN_ICON_CONFIGS/);
   assert.match(agentIconSource, /ledger/);
   assert.match(agentIconSource, /isImageIcon/);
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_ITEMS/);
-  assert.match(appShell, /<Route path="\/kanban" element=\{<TaskBoardPage \/>/);
+  assert.match(appShell, /<Route path="\/kanban" element=\{<TaskBoardPage hostTheme=\{themeMode\} \/>/);
   assert.doesNotMatch(appShell, /KanbanPlaceholderPage/);
   assert.match(sidebarSource, /label:\s*"任务看板"/);
   assert.match(appShell, /assistantNavAgents/);
@@ -862,7 +867,7 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /assistantDockOpenRequestPathRef\.current = location\.pathname[\s\S]*?setAssistantDockOpenRequest\(request\)/);
   assert.match(appShell, /const targetAgentKey = openRequest\?\.agentKey \?\? openRequest\?\.workerKey \?\? resolvedAgentKey/);
   assert.match(appShell, /data-open-agent-key=\{targetAgentKey\}/);
-  assert.match(appShell, /key=\{`agent-webclient-copilot:\$\{targetAgentKey\}`\}/);
+  assert.match(appShell, /key=\{`agent-webclient-copilot:\$\{targetEmbedPath\}`\}/);
   assert.match(sidebarSource, /assistantLauncherVisible/);
   assert.match(sidebarSource, /assistantLauncherDisabled/);
   assert.match(sidebarSource, /assistantLauncherVisible \? \(/);
@@ -891,6 +896,11 @@ test("task board route exposes native desktop api and page styles", () => {
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
+  const taskBoardStore = fs.readFileSync(path.join(projectRoot, "src", "main", "task-board-store.ts"), "utf8");
+  const assistantNavigationStatusClient = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "copilot", "core", "assistant-navigation-status-client.ts"),
+    "utf8"
+  );
   const taskBoardPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "task-board", "TaskBoardPage.tsx"),
     "utf8"
@@ -905,19 +915,65 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.listIssues"/);
   assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.moveIssue"/);
   assert.match(mainProcess, /syncTaskBoardIssueFromAssistantEvent/);
+  assert.match(mainProcess, /event\.type === "done" \|\| event\.type === "run\.complete"[\s\S]{0,120}return "in_review"/);
   assert.match(mainProcess, /updateTaskBoardIssueByRunId\(app, event\.runId/);
+  assert.match(mainProcess, /updateTaskBoardIssueByChatId/);
+  assert.match(mainProcess, /updateTaskBoardIssueByChatId\(app,\s*event\.chatId/);
+  assert.match(mainProcess, /onPushEvent:\s*syncTaskBoardIssueFromAssistantEvent/);
+  assert.match(taskBoardStore, /export function updateTaskBoardIssueByChatId/);
+  assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);
+  assert.match(assistantNavigationStatusClient, /this\.options\.onPushEvent\?\./);
   assert.match(appShell, /import \{ TaskBoardPage \} from "\.\.\/pages\/task-board\/TaskBoardPage"/);
   assert.match(taskBoardPage, /function readTaskBoardApi/);
   assert.match(taskBoardPage, /taskBoardApi\.listIssues\(\)/);
   assert.match(taskBoardPage, /taskBoardApi\.createIssue/);
   assert.match(taskBoardPage, /window\.electronAPI\.assistant\.startRun/);
-  assert.match(taskBoardPage, /不要直接修改任务看板文件或任务状态/);
+  assert.match(taskBoardPage, /不要直接修改任务看板文件或任务状态；Desktop 会在你完成后自动把任务更新到 In Review。/);
   assert.match(taskBoardPage, /window\.electronAPI\.assistant\.onAssistantEvent/);
-  assert.match(taskBoardPage, /setAgentPickerIssue/);
+  assert.match(taskBoardPage, /window\.electronAPI\.assistant\.onNavigationAgentsChanged/);
+  assert.match(taskBoardPage, /window\.electronAPI\.assistant\.listAgents\(\)/);
+  assert.match(appShell, /<TaskBoardPage hostTheme=\{themeMode\} \/>/);
+  assert.doesNotMatch(appShell, /<TaskBoardPage onOpenAssistantChat=/);
+  assert.match(taskBoardPage, /type TaskBoardPageProps/);
+  assert.match(taskBoardPage, /hostTheme:\s*ThemeMode/);
+  assert.match(taskBoardPage, /import \{ PluginPage \} from "\.\.\/plugin\/PluginPage"/);
+  assert.match(taskBoardPage, /const \[chatModalRequest,\s*setChatModalRequest\]/);
+  assert.match(taskBoardPage, /function buildTaskBoardChatEmbedPath/);
+  assert.match(taskBoardPage, /chatId\?:\s*string/);
+  assert.match(taskBoardPage, /const chatId = request\.chatId\?\.trim\(\) \?\? ""/);
+  assert.match(taskBoardPage, /if \(!chatId\) \{[\s\S]{0,120}return `\/agent\/\$\{encodeURIComponent\(request\.agentKey\)\}`/);
+  assert.match(taskBoardPage, /params\.set\("chatId", chatId\)/);
+  assert.match(taskBoardPage, /return `\/agent\/\$\{encodeURIComponent\(request\.agentKey\)\}`/);
+  assert.match(taskBoardPage, /function getIssueChatActionLabel/);
+  assert.match(taskBoardPage, /function issueHasPendingAwaiting/);
+  assert.match(taskBoardPage, /"查看\/确认"/);
+  assert.match(taskBoardPage, /"查看聊天"/);
+  assert.match(taskBoardPage, /等待你确认/);
+  assert.match(taskBoardPage, /const visibleChatActionLabel = awaitingConfirmation \? "等待你确认" : chatActionLabel/);
+  assert.doesNotMatch(taskBoardPage, /task-board-human-loop-hint/);
+  assert.match(taskBoardPage, /is-awaiting-confirmation/);
+  assert.match(taskBoardPage, /function openAssistantIssueChat/);
+  assert.match(taskBoardPage, /setChatModalRequest\(\{[\s\S]{0,180}agentKey[\s\S]{0,180}chatId/);
+  assert.match(taskBoardPage, /<PluginPage[\s\S]{0,260}pluginId="agent-webclient"[\s\S]{0,260}embedPath=\{buildTaskBoardChatEmbedPath\(chatModalRequest\)\}/);
+  assert.match(taskBoardPage, /task-board-chat-modal-layer/);
+  assert.match(taskBoardPage, /task-board-chat-modal/);
+  assert.doesNotMatch(taskBoardPage, /void openAssistantIssueChat\(updateResult\.issue/);
+  assert.match(taskBoardPage, /task-board-chat-action/);
+  assert.doesNotMatch(taskBoardPage, /setAgentPickerIssue/);
+  assert.doesNotMatch(taskBoardPage, /requestAssignIssueToAssistant/);
   assert.match(taskBoardPage, /<DragOverlay[\s\S]*?dropAnimation=\{null\}/);
   assert.match(taskBoardPage, /taskBoardApi\.updateIssue\(issue\.id,[\s\S]*?status:\s*"in_progress"/);
+  assert.match(taskBoardPage, /function openInProgressAssignmentModal\(issue: TaskBoardIssue\)/);
+  assert.match(taskBoardPage, /setForm\(\{[\s\S]{0,160}\.\.\.createFormFromIssue\(issue\),[\s\S]{0,120}status:\s*"in_progress"/);
+  assert.match(taskBoardPage, /targetStatus === "in_progress" && activeIssue\.status !== "in_progress"/);
+  assert.match(taskBoardPage, /activeIssue\.assigneeAgentKey\?\.trim\(\)[\s\S]{0,180}assignIssueToAssistant\(activeIssue, activeIssue\.assigneeAgentKey\)/);
+  assert.match(taskBoardPage, /openInProgressAssignmentModal\(activeIssue\)/);
+  assert.match(taskBoardPage, /form\.status === "in_progress" && !modal\?\.issue\?\.runId/);
+  assert.match(taskBoardPage, /shouldRunAfterSave && !form\.assigneeAgentKey/);
+  assert.match(taskBoardPage, /请选择智能体后再进入 In Progress。/);
+  assert.match(taskBoardPage, /assignIssueToAssistant\(savedIssue, form\.assigneeAgentKey\)/);
   assert.match(taskBoardPage, /resolveAssistantTaskStatus/);
-  assert.match(taskBoardPage, /status:\s*"done"[\s\S]*?runId:\s*null/);
+  assert.match(taskBoardPage, /status:\s*"in_review"[\s\S]*?runId:\s*null/);
   assert.match(taskBoardPage, /<header className="task-board-breadcrumb">\s*<strong>Issues<\/strong>\s*<\/header>/);
   assert.doesNotMatch(taskBoardPage, /task-board-workspace-mark/);
   assert.doesNotMatch(taskBoardPage, /task-board-breadcrumb-separator/);
@@ -925,12 +981,40 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /return Boolean\(issue\?\.runId\);/);
   assert.match(taskBoardPage, /useSortable\(\{\s*id:\s*issue\.id,[\s\S]*?disabled:\s*dragLocked/);
   assert.match(taskBoardPage, /is-drag-locked/);
+  assert.match(taskBoardPage, /data-drag-locked=\{dragLocked \? "true" : undefined\}/);
+  assert.match(taskBoardPage, /\{\.\.\.sortable\.attributes\}\s*aria-disabled=\{undefined\}/);
+  assert.doesNotMatch(taskBoardPage, /aria-disabled=\{dragLocked\}/);
+  assert.match(taskBoardPage, /function getVisibleAssigneeName\(name: string \| null \| undefined\)/);
+  assert.match(taskBoardPage, /return Array\.from\(trimmed\)\.length <= 4 \? trimmed : ""/);
+  assert.match(taskBoardPage, /const visibleAssigneeName = getVisibleAssigneeName\(issue\.assigneeName\)/);
+  assert.match(taskBoardPage, /visibleAssigneeName \? \(/);
+  assert.doesNotMatch(taskBoardPage, /issue\.assigneeName\.slice\(0, 1\)/);
+  assert.match(taskBoardPage, /issue\.runId \? \([\s\S]{0,180}<span[\s\S]{0,120}className="task-board-run-dot"[\s\S]{0,120}aria-label="运行中"/);
+  assert.doesNotMatch(taskBoardPage, /task-board-run-badge/);
+  assert.match(taskBoardPage, /const shouldShowFooter = Boolean/);
+  assert.doesNotMatch(taskBoardPage, /className="task-board-card-action"/);
+  assert.doesNotMatch(taskBoardPage, />\s*\{busy \? "提交中" : "交给智能体"\}\s*<\/button>/);
+  assert.doesNotMatch(taskBoardPage, /busy \? "提交中" : issue\.runId \? "运行中" : "交给智能体"/);
+  assert.doesNotMatch(taskBoardPage, /aria-label=\{`\$\{meta\.label\} 更多`\}/);
   assert.match(globalStyles, /\.task-board-page\s*\{/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
   assert.match(globalStyles, /\.task-board-column\s*\{/);
   assert.match(globalStyles, /\.task-board-card\s*\{/);
+  assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,180}position:\s*relative;/);
   assert.match(globalStyles, /\.task-board-card\.is-drag-locked\s*\{/);
+  assert.match(globalStyles, /\.task-board-card\.is-drag-locked \.task-board-card-main\s*\{[\s\S]{0,120}padding-right:/);
+  assert.match(globalStyles, /\.task-board-card\.is-awaiting-confirmation\s*\{/);
+  assert.match(globalStyles, /\.task-board-run-dot\s*\{[\s\S]{0,220}position:\s*absolute;[\s\S]{0,220}right:[\s\S]{0,220}background:\s*#16a34a;/);
+  assert.match(globalStyles, /\.task-board-chat-action\s*\{/);
+  assert.match(globalStyles, /\.task-board-chat-action\.is-awaiting\s*\{/);
+  assert.match(globalStyles, /\.task-board-chat-action\.is-human-loop\s*\{[\s\S]{0,180}background:\s*#16a34a;/);
+  assert.doesNotMatch(globalStyles, /\.task-board-human-loop-hint\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.task-board-card-action\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.task-board-agent-picker\s*\{/);
+  assert.match(globalStyles, /\.task-board-chat-modal-layer\s*\{/);
+  assert.match(globalStyles, /\.task-board-chat-modal\s*\{/);
+  assert.match(globalStyles, /\.task-board-chat-modal \.pan-page\s*\{/);
 });
 
 test("custom sidebar agent association is exposed across desktop api layers", () => {
@@ -1082,7 +1166,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(externalWebviewPage, /desktop\.embeddedWeb\.closeTab/);
   assert.doesNotMatch(externalWebviewPage, /querySelector\(request/);
   assert.match(marketPage, /registerDesktopActionProvider/);
-  assert.match(marketPage, /skillsApiBaseUrl/);
+  assert.match(marketPage, /skillDownloadCommand/);
 });
 
 test("built index uses relative asset paths", () => {
@@ -1107,16 +1191,15 @@ test("plugin market guards stale preload market api before skill import", () => 
   assert.match(marketPage, /function getPluginApi\(/);
   assert.match(marketPage, /MARKET_API_UNAVAILABLE_MESSAGE/);
   assert.match(marketPage, /PLUGIN_API_UNAVAILABLE_MESSAGE/);
-  assert.match(marketPage, /getMarketMethod\("getSettings"\)/);
-  assert.match(marketPage, /getMarketMethod\("saveSettings"\)/);
-  assert.match(marketPage, /market-api-config/);
-  assert.match(marketPage, /保存地址/);
+  assert.match(marketPage, /getMarketMethod\("importSkillFromCommand"\)/);
+  assert.match(marketPage, /market-command-input/);
+  assert.match(marketPage, /执行下载/);
   assert.match(marketPage, /console\.warn\("\[skill-market\] failed to load market data"/);
   assert.doesNotMatch(marketPage, /window\.electronAPI\.market\.importSkill\(\)/);
   assert.doesNotMatch(marketPage, /installPlugin\(\)/);
   assert.doesNotMatch(marketPage, /market-feedback/);
   assert.doesNotMatch(marketStyles, /\.market-feedback/);
-  assert.match(marketStyles, /\.market-api-config/);
+  assert.match(marketStyles, /\.market-command-input/);
   assert.match(marketStyles, /\.market-status/);
 });
 
@@ -1684,7 +1767,7 @@ test("assistant dock opens the agent webclient copilot in right-side embedded mo
 
   assert.match(appShell, /const AGENT_WEBCLIENT_COPILOT_PATH = "\/copilot"/);
   assert.match(appShell, /assistantCopilotOpen \? "has-assistant-dock-full" : ""/);
-  assert.match(appShell, /window\.electronAPI\.onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\(\)/);
+  assert.match(appShell, /window\.electronAPI\.onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\(request\)/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
   assert.match(dockComponent, /skipContextRegistration/);
   assert.doesNotMatch(appShell, /<AssistantDock/);
@@ -1809,6 +1892,19 @@ test("desktop pet base mode stays sprite-sized while bubble and preview modes ex
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root:not\(\.has-bubble\):not\(\.has-preview\)\s+\.desktop-pet-image[\s\S]{0,120}width:\s*100%/);
 });
 
+test("desktop pet preview rows reserve room for two-line item content", () => {
+  const globalStyles = readRendererStyles();
+
+  assert.match(globalStyles, /\.desktop-pet-preview-item\s*\{[\s\S]{0,260}min-height:\s*52px;/);
+  assert.match(globalStyles, /\.desktop-pet-preview-item\s*\{[\s\S]{0,260}align-items:\s*center;/);
+  assert.match(globalStyles, /\.desktop-pet-preview-item-copy\s*\{[\s\S]{0,160}display:\s*flex;/);
+  assert.match(globalStyles, /\.desktop-pet-preview-item-copy\s*\{[\s\S]{0,220}flex-direction:\s*column;/);
+  assert.match(globalStyles, /\.desktop-pet-preview-item-copy\s*\{[\s\S]{0,260}justify-content:\s*center;/);
+  assert.match(globalStyles, /\.desktop-pet-preview.is-expanded\s+\.desktop-pet-preview-item\s*\{[\s\S]{0,80}align-items:\s*center;/);
+  assert.match(globalStyles, /\.desktop-pet-preview-item\s+small\s*\{[\s\S]{0,160}align-self:\s*center;/);
+  assert.match(globalStyles, /\.desktop-pet-preview-item-dot\s*\{[\s\S]{0,160}align-self:\s*center;/);
+});
+
 test("desktop pet button suppresses native focus rings in the transparent window", () => {
   const globalStyles = readRendererStyles();
 
@@ -1840,7 +1936,9 @@ test("desktop pet visual states stay local to renderer priority", () => {
     "utf8"
   );
 
-  assert.match(desktopPet, /type DesktopPetVisualStatus = DesktopPetStatus \| "dragging" \| "hover" \| "message" \| "thinking" \| "dancing"/);
+  assert.match(desktopPet, /"dragging-left"/);
+  assert.match(desktopPet, /"dragging-right"/);
+  assert.match(desktopPet, /DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX = 3/);
   assert.match(desktopPet, /const \[isHovering, setIsHovering\] = useState\(false\)/);
   assert.match(desktopPet, /const \[isKeyboardFocused, setIsKeyboardFocused\] = useState\(false\)/);
   assert.match(desktopPet, /const \[isDancing, setIsDancing\] = useState\(false\)/);
@@ -1850,7 +1948,8 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /desktopPet\.setMouseInteractive\(interactive\)/);
   assert.match(desktopPet, /typeof window\.electronAPI\.desktopPet\.onDanceRequested === "function"/);
   assert.match(desktopPet, /desktopPet\.onDanceRequested\(startDance\)/);
-  assert.match(desktopPet, /isDragging[\s\S]{0,120}\? "dragging"/);
+  assert.match(desktopPet, /isDragging[\s\S]{0,180}\? dragDirection === "left"/);
+  assert.match(desktopPet, /window\.addEventListener\("pointermove", handleWindowPointerMove\)/);
   assert.match(desktopPet, /isDancing && appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID[\s\S]{0,80}\? "dancing"/);
   assert.match(desktopPet, /displayStatus === "running" \|\| displayStatus === "awaiting"/);
   assert.match(desktopPet, /hasMessageReaction[\s\S]{0,80}\? "message"/);
@@ -1877,9 +1976,12 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /matches\(":focus-visible"\)/);
   assert.match(sharedDesktopPet, /id:\s*"dario"/);
   assert.match(sharedDesktopPet, /id:\s*"mini-sama"/);
+  assert.match(sharedDesktopPet, /id:\s*"idol-pony"/);
   assert.match(sharedDesktopPet, /assetBasePath:\s*"\.\/desktop-pet\/dario"/);
   assert.match(sharedDesktopPet, /assetBasePath:\s*"\.\/desktop-pet\/mini-sama"/);
   assert.match(sharedDesktopPet, /dragging:\s*"pet-dragging\.png"/);
+  assert.match(sharedDesktopPet, /"dragging-left":\s*"pet-dragging-left\.png"/);
+  assert.match(sharedDesktopPet, /"dragging-right":\s*"pet-dragging-right\.png"/);
   assert.match(sharedDesktopPet, /hover:\s*"pet-hover\.png"/);
   assert.match(sharedDesktopPet, /message:\s*"pet-message\.png"/);
   assert.match(sharedDesktopPet, /thinking:\s*"pet-thinking\.png"/);
@@ -1913,7 +2015,14 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(contracts, /DesktopPetDanceRequestedListener/);
   assert.match(contracts, /setMouseInteractive: \(interactive: boolean\) => Promise<\{ ok: boolean \}>/);
   assert.match(contracts, /onDanceRequested: \(listener: DesktopPetDanceRequestedListener\) => \(\) => void/);
-  assert.match(petAssetScript, /classicVisualVariants = \["idle", "hover", "dragging", "thinking", "message", "done", "error"\]/);
+  assert.match(petAssetScript, /"dragging-left"/);
+  assert.match(petAssetScript, /"dragging-right"/);
+  assert.match(petAssetScript, /"idol-pony"/);
+  assert.match(sharedDesktopPet, /displayName:\s*"爱你"/);
+  assert.match(petAssetScript, /displayName:\s*"爱你"/);
+  assert.match(petAssetScript, /"dragging-left":\s*\{\s*row:\s*1,\s*column:\s*2\s*\}/);
+  assert.match(petAssetScript, /"dragging-right":\s*\{\s*row:\s*1,\s*column:\s*2,\s*mirrorX:\s*true\s*\}/);
+  assert.match(petAssetScript, /ctx\.scale\(-1,\s*1\)/);
   assert.match(petAssetScript, /dario-a7bdc389/);
   assert.match(petAssetScript, /mini-sama-3ee267a2/);
   assert.match(petAssetScript, /awaiting:\s*"thinking"/);

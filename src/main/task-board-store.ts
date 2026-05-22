@@ -28,6 +28,7 @@ const STORAGE_VERSION = 1;
 const ISSUE_IDENTIFIER_PREFIX = "ZEN";
 const TASK_BOARD_DIRECTORY = "task-board";
 const TASK_BOARD_FILENAME = "issues.json";
+const NON_DRAG_DONE_TRANSITION_MESSAGE = "只有用户确认完成后才能拖拽到 Done。";
 
 const taskBoardStatusSchema = z.enum(TASK_BOARD_STATUSES);
 const taskBoardPrioritySchema = z.enum(TASK_BOARD_PRIORITIES);
@@ -104,6 +105,10 @@ function normalizeTaskBoardStatus(value: unknown): TaskBoardStatus | null {
 
 function normalizeDescription(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function isNonDragDoneTransition(issue: TaskBoardIssue, requestedStatus: TaskBoardStatus | null) {
+  return requestedStatus === "done" && issue.status !== "done";
 }
 
 function nowIso() {
@@ -370,6 +375,13 @@ export function updateTaskBoardIssue(
       issues: cloneIssues(store.issues)
     };
   }
+  if (isNonDragDoneTransition(currentIssue, requestedStatus)) {
+    return {
+      ok: false,
+      message: NON_DRAG_DONE_TRANSITION_MESSAGE,
+      issues: cloneIssues(store.issues)
+    };
+  }
 
   const nextIssue = applyIssueUpdate(currentIssue, input);
   if (!nextIssue) {
@@ -407,7 +419,17 @@ export function updateTaskBoardIssueByRunId(
     };
   }
 
-  const nextIssue = applyIssueUpdate(store.issues[issueIndex]!, input);
+  const currentIssue = store.issues[issueIndex]!;
+  const requestedStatus = input.status !== undefined ? normalizeTaskBoardStatus(input.status) : null;
+  if (isNonDragDoneTransition(currentIssue, requestedStatus)) {
+    return {
+      ok: false,
+      message: NON_DRAG_DONE_TRANSITION_MESSAGE,
+      issues: cloneIssues(store.issues)
+    };
+  }
+
+  const nextIssue = applyIssueUpdate(currentIssue, input);
   if (!nextIssue) {
     return {
       ok: false,
@@ -422,6 +444,54 @@ export function updateTaskBoardIssueByRunId(
   return {
     ok: true,
     message: "任务运行状态已更新。",
+    issue: cloneIssue(nextIssue),
+    issues: cloneIssues(nextIssues)
+  };
+}
+
+export function updateTaskBoardIssueByChatId(
+  app: AppPathProvider,
+  chatId: string,
+  input: TaskBoardIssueUpdateInput
+): TaskBoardIssueResult {
+  const trimmedChatId = trimText(chatId);
+  const store = readStore(app);
+  const issueIndex = store.issues.findIndex((issue) =>
+    issue.chatId === trimmedChatId && issue.status === "in_progress"
+  );
+  if (!trimmedChatId || issueIndex < 0) {
+    return {
+      ok: false,
+      message: "任务会话不存在。",
+      issues: cloneIssues(store.issues)
+    };
+  }
+
+  const currentIssue = store.issues[issueIndex]!;
+  const requestedStatus = input.status !== undefined ? normalizeTaskBoardStatus(input.status) : null;
+  if (isNonDragDoneTransition(currentIssue, requestedStatus)) {
+    return {
+      ok: false,
+      message: NON_DRAG_DONE_TRANSITION_MESSAGE,
+      issues: cloneIssues(store.issues)
+    };
+  }
+
+  const nextIssue = applyIssueUpdate(currentIssue, input);
+  if (!nextIssue) {
+    return {
+      ok: false,
+      message: "任务标题不能为空。",
+      issues: cloneIssues(store.issues)
+    };
+  }
+
+  const nextIssues = [...store.issues];
+  nextIssues[issueIndex] = nextIssue;
+  writeStore(app, { ...store, issues: nextIssues });
+  return {
+    ok: true,
+    message: "任务会话状态已更新。",
     issue: cloneIssue(nextIssue),
     issues: cloneIssues(nextIssues)
   };

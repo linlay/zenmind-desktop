@@ -103,11 +103,22 @@ function shouldShowSecondaryPreview(primary: string, secondary: string) {
 type DesktopPetDragState = {
   pointerId: number;
   target: HTMLElement;
+  lastScreenX: number;
 };
 
-type DesktopPetVisualStatus = DesktopPetStatus | "dragging" | "hover" | "message" | "thinking" | "dancing";
+type DesktopPetDragDirection = "left" | "right" | null;
+type DesktopPetVisualStatus =
+  | DesktopPetStatus
+  | "dragging"
+  | "dragging-left"
+  | "dragging-right"
+  | "hover"
+  | "message"
+  | "thinking"
+  | "dancing";
 
 const DESKTOP_PET_DANCE_DURATION_MS = 3000;
+const DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX = 3;
 const DESKTOP_PET_IMAGE_HIT_MARGIN = 8;
 
 function rectContainsPoint(rect: DOMRect, x: number, y: number, margin = 0) {
@@ -141,6 +152,7 @@ export function DesktopPet() {
   const [isHovering, setIsHovering] = useState(false);
   const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [dragDirection, setDragDirection] = useState<DesktopPetDragDirection>(null);
   const [isDancing, setIsDancing] = useState(false);
   const dragStateRef = useRef<DesktopPetDragState | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
@@ -172,6 +184,7 @@ export function DesktopPet() {
     }
     dragStateRef.current = null;
     setIsDragging(false);
+    setDragDirection(null);
   }
 
   function clearDanceTimer() {
@@ -317,7 +330,11 @@ export function DesktopPet() {
     }
   }, [isDragging]);
   const visualStatus: DesktopPetVisualStatus = isDragging
-    ? "dragging"
+    ? dragDirection === "left"
+      ? "dragging-left"
+      : dragDirection === "right"
+        ? "dragging-right"
+        : "dragging"
     : isDancing && appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID
       ? "dancing"
     : displayStatus === "running" || displayStatus === "awaiting"
@@ -395,7 +412,8 @@ export function DesktopPet() {
     const target = event.currentTarget;
     dragStateRef.current = {
       pointerId: event.pointerId,
-      target
+      target,
+      lastScreenX: event.screenX
     };
     try {
       target.setPointerCapture(event.pointerId);
@@ -409,6 +427,18 @@ export function DesktopPet() {
     const pointerId = event.pointerId;
     const handleWindowPointerUp = (pointerEvent: globalThis.PointerEvent) => {
       void finishDrag(pointerEvent.pointerId, true);
+    };
+    const handleWindowPointerMove = (pointerEvent: globalThis.PointerEvent) => {
+      const currentDragState = dragStateRef.current;
+      if (!currentDragState || currentDragState.pointerId !== pointerEvent.pointerId) {
+        return;
+      }
+      const deltaX = pointerEvent.screenX - currentDragState.lastScreenX;
+      currentDragState.lastScreenX = pointerEvent.screenX;
+      if (Math.abs(deltaX) < DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX) {
+        return;
+      }
+      setDragDirection(deltaX < 0 ? "left" : "right");
     };
     const handleWindowPointerCancel = (pointerEvent: globalThis.PointerEvent) => {
       void finishDrag(pointerEvent.pointerId, false);
@@ -432,6 +462,7 @@ export function DesktopPet() {
 
     dragCleanupRef.current = () => {
       window.removeEventListener("pointerup", handleWindowPointerUp);
+      window.removeEventListener("pointermove", handleWindowPointerMove);
       window.removeEventListener("pointercancel", handleWindowPointerCancel);
       window.removeEventListener("mouseup", handleWindowMouseUp);
       window.removeEventListener("blur", handleForcedDragEnd);
@@ -440,6 +471,7 @@ export function DesktopPet() {
       target.removeEventListener("lostpointercapture", handleLostPointerCapture);
     };
     window.addEventListener("pointerup", handleWindowPointerUp);
+    window.addEventListener("pointermove", handleWindowPointerMove);
     window.addEventListener("pointercancel", handleWindowPointerCancel);
     window.addEventListener("mouseup", handleWindowMouseUp);
     window.addEventListener("blur", handleForcedDragEnd);

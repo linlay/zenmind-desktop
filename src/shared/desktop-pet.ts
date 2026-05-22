@@ -30,6 +30,13 @@ export const DESKTOP_PET_APPEARANCE_OPTIONS = [
     description: "黑发西装形象，带着花束和金色奖杯。",
     assetBasePath: "./desktop-pet/xiao",
     previewAssetPath: "./desktop-pet/xiao/pet-idle.png"
+  },
+  {
+    id: "idol-pony",
+    displayName: "爱你",
+    description: "侧马尾 Q 版形象，带着红心和麦克风。",
+    assetBasePath: "./desktop-pet/idol-pony",
+    previewAssetPath: "./desktop-pet/idol-pony/pet-idle.png"
   }
 ] as const;
 
@@ -50,6 +57,8 @@ const DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
   dancing: "pet-idle.png",
   done: "pet-done.png",
   dragging: "pet-dragging.png",
+  "dragging-left": "pet-dragging-left.png",
+  "dragging-right": "pet-dragging-right.png",
   error: "pet-error.png",
   hover: "pet-hover.png",
   idle: "pet-idle.png",

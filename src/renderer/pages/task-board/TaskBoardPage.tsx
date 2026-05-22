@@ -21,6 +21,7 @@ import type {
   AssistantEvent,
   AssistantNavAgentItem,
   DesktopApi,
+  DesktopPetAgentOption,
   TaskBoardIssue,
   TaskBoardIssueInput,
   TaskBoardIssueUpdateInput,
@@ -28,9 +29,15 @@ import type {
   TaskBoardStatus
 } from "../../../shared/contracts";
 import { TASK_BOARD_PRIORITIES, TASK_BOARD_STATUSES } from "../../../shared/contracts";
+import { PluginPage } from "../plugin/PluginPage";
 
 type MenuKind = "filter" | "display" | null;
 type ModalMode = "create" | "edit";
+type ThemeMode = "light" | "dark";
+type ModalState = {
+  mode: ModalMode;
+  issue?: TaskBoardIssue;
+};
 
 type IssueFormState = {
   title: string;
@@ -49,6 +56,16 @@ type DisplayState = {
 type Feedback = {
   tone: "success" | "error";
   message: string;
+};
+
+type TaskBoardPageProps = {
+  hostTheme: ThemeMode;
+};
+
+type TaskBoardChatModalRequest = {
+  agentKey: string;
+  chatId?: string;
+  displayName?: string;
 };
 
 const missingTaskBoardApiMessage = "任务看板 Desktop API 未加载。请退出并重新启动 ZenMind Desktop，让新的 preload 生效。";
@@ -109,7 +126,7 @@ function descriptionPreview(description: string) {
 function buildAssistantPrompt(issue: TaskBoardIssue) {
   const parts = [
     "请你处理下面这个 ZenMind 任务看板任务，并在完成后总结结果。",
-    "不要直接修改任务看板文件或任务状态；Desktop 会在你完成后自动把任务更新到 Done。",
+    "不要直接修改任务看板文件或任务状态；Desktop 会在你完成后自动把任务更新到 In Review。",
     `任务编号：${issue.identifier}`,
     `标题：${issue.title}`,
     `状态：${STATUS_META[issue.status].label}`,
@@ -145,6 +162,38 @@ function getAssigneeName(agentKey: string, agents: AssistantNavAgentItem[]) {
   return agents.find((agent) => agent.agentKey === agentKey)?.displayName ?? agentKey;
 }
 
+function getVisibleAssigneeName(name: string | null | undefined) {
+  const trimmed = name?.trim() ?? "";
+  if (!trimmed) return "";
+  return Array.from(trimmed).length <= 4 ? trimmed : "";
+}
+
+function createNavigationAgentFromOption(agent: DesktopPetAgentOption): AssistantNavAgentItem {
+  return {
+    agentKey: agent.agentKey,
+    displayName: agent.displayName || agent.agentKey,
+    role: agent.role,
+    icon: undefined,
+    unreadCount: agent.unreadCount,
+    unreadChatCount: 0,
+    chatCount: 0,
+    hasPendingAwaiting: false,
+    latestChatId: null,
+    latestPreview: "",
+    updatedAt: "",
+    recentChats: []
+  };
+}
+
+async function loadTaskBoardAgents(): Promise<AssistantNavAgentItem[]> {
+  const navigationResult = await window.electronAPI.assistant.listNavigationAgents();
+  if (navigationResult.ok && navigationResult.items.length > 0) {
+    return navigationResult.items;
+  }
+  const fallbackAgents = await window.electronAPI.assistant.listAgents();
+  return fallbackAgents.map(createNavigationAgentFromOption);
+}
+
 function resolveAssistantTaskStatus(event: AssistantEvent): {
   status: TaskBoardStatus;
   tone: Feedback["tone"];
@@ -152,9 +201,9 @@ function resolveAssistantTaskStatus(event: AssistantEvent): {
 } | null {
   if (event.type === "done" || event.type === "run.complete") {
     return {
-      status: "done",
+      status: "in_review",
       tone: "success",
-      message: "智能体已处理完成，任务已更新为 Done。"
+      message: "智能体已处理完成，任务已更新为 In Review。"
     };
   }
   if (
@@ -190,20 +239,75 @@ function isIssueDragLocked(issue: TaskBoardIssue | null | undefined) {
   return Boolean(issue?.runId);
 }
 
-export function TaskBoardPage() {
+function isIssueChatViewable(issue: TaskBoardIssue) {
+  return Boolean(issue.chatId && (
+    issue.status === "in_progress" ||
+    issue.status === "in_review" ||
+    issue.status === "done"
+  ));
+}
+
+function getIssueChatActionLabel(issue: TaskBoardIssue) {
+  if (!isIssueChatViewable(issue)) {
+    return null;
+  }
+  return issue.status === "in_progress" ? "查看/确认" : "查看聊天";
+}
+
+function issueHasPendingAwaiting(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
+  const chatId = issue.chatId?.trim();
+  if (issue.status !== "in_progress" || !chatId) {
+    return false;
+  }
+
+  return agents.some((agent) => {
+    const matchingChat = agent.recentChats.find((chat) => chat.chatId === chatId);
+    if (matchingChat) {
+      return matchingChat.hasPendingAwaiting;
+    }
+    return agent.latestChatId === chatId && agent.hasPendingAwaiting;
+  });
+}
+
+function resolveIssueAgentKey(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
+  if (issue.assigneeAgentKey?.trim()) {
+    return issue.assigneeAgentKey.trim();
+  }
+  const chatId = issue.chatId?.trim();
+  if (!chatId) {
+    return "";
+  }
+  const matchedAgent = agents.find((agent) =>
+    agent.latestChatId === chatId ||
+    agent.recentChats.some((chat) => chat.chatId === chatId)
+  );
+  return matchedAgent?.agentKey ?? "";
+}
+
+function buildTaskBoardChatEmbedPath(request: TaskBoardChatModalRequest) {
+  const chatId = request.chatId?.trim() ?? "";
+  if (!chatId) {
+    return `/agent/${encodeURIComponent(request.agentKey)}`;
+  }
+  const params = new URLSearchParams();
+  params.set("chatId", chatId);
+  return `/agent/${encodeURIComponent(request.agentKey)}?${params.toString()}`;
+}
+
+export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const [issues, setIssues] = useState<TaskBoardIssue[]>([]);
   const [agents, setAgents] = useState<AssistantNavAgentItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busyIssueId, setBusyIssueId] = useState<string | null>(null);
+  const [, setBusyIssueId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [menu, setMenu] = useState<MenuKind>(null);
   const [query, setQuery] = useState("");
   const [priorityFilters, setPriorityFilters] = useState<TaskBoardPriority[]>([]);
   const [display, setDisplay] = useState<DisplayState>(defaultDisplayState);
-  const [modal, setModal] = useState<{ mode: ModalMode; issue?: TaskBoardIssue } | null>(null);
+  const [modal, setModal] = useState<ModalState | null>(null);
+  const [chatModalRequest, setChatModalRequest] = useState<TaskBoardChatModalRequest | null>(null);
   const [form, setForm] = useState<IssueFormState>(emptyForm);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
-  const [agentPickerIssue, setAgentPickerIssue] = useState<TaskBoardIssue | null>(null);
   const issuesRef = useRef<TaskBoardIssue[]>([]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const taskBoardReady = readTaskBoardApi() !== null;
@@ -224,11 +328,11 @@ export function TaskBoardPage() {
       try {
         const [issueResult, agentResult] = await Promise.all([
           taskBoardApi.listIssues(),
-          window.electronAPI.assistant.listNavigationAgents()
+          loadTaskBoardAgents()
         ]);
         if (cancelled) return;
         setIssues(sortIssues(issueResult.issues));
-        setAgents(agentResult.items ?? []);
+        setAgents(agentResult);
       } catch (error) {
         if (!cancelled) {
           setFeedback({
@@ -249,8 +353,36 @@ export function TaskBoardPage() {
   }, []);
 
   useEffect(() => {
+    const unsubscribe = window.electronAPI.assistant.onNavigationAgentsChanged((result) => {
+      if (result.ok) {
+        setAgents(result.items);
+        return;
+      }
+      void loadTaskBoardAgents().then((items) => {
+        if (items.length > 0) {
+          setAgents(items);
+        }
+      });
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
     issuesRef.current = issues;
   }, [issues]);
+
+  useEffect(() => {
+    if (!chatModalRequest || typeof document === "undefined") {
+      return undefined;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setChatModalRequest(null);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [chatModalRequest]);
 
   useEffect(() => {
     const removeAssistantEventListener = window.electronAPI.assistant.onAssistantEvent(async (event) => {
@@ -323,6 +455,15 @@ export function TaskBoardPage() {
     setModal({ mode: "edit", issue });
   }
 
+  function openInProgressAssignmentModal(issue: TaskBoardIssue) {
+    setForm({
+      ...createFormFromIssue(issue),
+      status: "in_progress"
+    });
+    setModal({ mode: "edit", issue });
+    setFeedback({ tone: "error", message: "请选择智能体后再进入 In Progress。" });
+  }
+
   async function submitForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const taskBoardApi = readTaskBoardApi();
@@ -335,11 +476,17 @@ export function TaskBoardPage() {
       setFeedback({ tone: "error", message: "请输入任务标题。" });
       return;
     }
+    const shouldRunAfterSave = form.status === "in_progress" && !modal?.issue?.runId;
+    if (shouldRunAfterSave && !form.assigneeAgentKey) {
+      setFeedback({ tone: "error", message: "请选择智能体后再进入 In Progress。" });
+      return;
+    }
     const assigneeName = getAssigneeName(form.assigneeAgentKey, agents);
+    const savedStatus = shouldRunAfterSave ? modal?.issue?.status ?? "todo" : form.status;
     const payload: TaskBoardIssueInput | TaskBoardIssueUpdateInput = {
       title,
       description: form.description,
-      status: form.status,
+      status: savedStatus,
       priority: form.priority,
       assigneeAgentKey: form.assigneeAgentKey || null,
       assigneeName
@@ -349,10 +496,14 @@ export function TaskBoardPage() {
       const result = modal?.mode === "edit" && modal.issue
         ? await taskBoardApi.updateIssue(modal.issue.id, payload)
         : await taskBoardApi.createIssue(payload as TaskBoardIssueInput);
+      const savedIssue = result.issue;
       setIssues(sortIssues(result.issues));
       setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
       if (result.ok) {
         setModal(null);
+        if (shouldRunAfterSave && savedIssue) {
+          void assignIssueToAssistant(savedIssue, form.assigneeAgentKey);
+        }
       }
     } catch (error) {
       setFeedback({
@@ -379,12 +530,15 @@ export function TaskBoardPage() {
     }
   }
 
-  function requestAssignIssueToAssistant(issue: TaskBoardIssue) {
-    if (agents.length > 1) {
-      setAgentPickerIssue(issue);
-      return;
+  async function getAvailableAgents() {
+    if (agents.length > 0) {
+      return agents;
     }
-    void assignIssueToAssistant(issue);
+    const nextAgents = await loadTaskBoardAgents();
+    if (nextAgents.length > 0) {
+      setAgents(nextAgents);
+    }
+    return nextAgents;
   }
 
   async function assignIssueToAssistant(issue: TaskBoardIssue, selectedAgentKey?: string) {
@@ -393,7 +547,8 @@ export function TaskBoardPage() {
       setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
       return;
     }
-    const agentKey = selectedAgentKey ?? issue.assigneeAgentKey ?? agents[0]?.agentKey ?? "";
+    const availableAgents = await getAvailableAgents();
+    const agentKey = selectedAgentKey ?? issue.assigneeAgentKey ?? availableAgents[0]?.agentKey ?? "";
     if (!agentKey) {
       setFeedback({ tone: "error", message: "请先在智能体列表中配置可用智能体。" });
       return;
@@ -413,12 +568,11 @@ export function TaskBoardPage() {
       const updateResult = await taskBoardApi.updateIssue(issue.id, {
         status: "in_progress",
         assigneeAgentKey: agentKey,
-        assigneeName: getAssigneeName(agentKey, agents),
+        assigneeName: getAssigneeName(agentKey, availableAgents),
         chatId: runResult.chatId,
         runId: runResult.runId
       });
       setIssues(sortIssues(updateResult.issues));
-      setAgentPickerIssue(null);
       setFeedback({ tone: "success", message: "已交给智能体处理。" });
     } catch (error) {
       setFeedback({
@@ -428,6 +582,24 @@ export function TaskBoardPage() {
     } finally {
       setBusyIssueId(null);
     }
+  }
+
+  async function openAssistantIssueChat(issue: TaskBoardIssue) {
+    const chatId = issue.chatId?.trim() ?? "";
+    if (!chatId) {
+      setFeedback({ tone: "error", message: "当前任务还没有关联聊天记录。" });
+      return;
+    }
+    const agentKey = resolveIssueAgentKey(issue, agents);
+    if (!agentKey) {
+      setFeedback({ tone: "error", message: "当前任务没有绑定智能体，无法打开对应聊天。" });
+      return;
+    }
+    setChatModalRequest({
+      agentKey,
+      chatId,
+      displayName: getAssigneeName(agentKey, agents) ?? issue.assigneeName ?? undefined
+    });
   }
 
   function handleDragStart(event: DragStartEvent) {
@@ -469,6 +641,16 @@ export function TaskBoardPage() {
     const overIssue = issueMap.get(overId);
     const targetStatus = getStatusFromColumnId(overId) ?? overIssue?.status ?? null;
     if (!targetStatus) {
+      return;
+    }
+
+    if (targetStatus === "in_progress" && activeIssue.status !== "in_progress") {
+      if (activeIssue.assigneeAgentKey?.trim()) {
+        void assignIssueToAssistant(activeIssue, activeIssue.assigneeAgentKey);
+      } else {
+        void getAvailableAgents();
+        openInProgressAssignmentModal(activeIssue);
+      }
       return;
     }
 
@@ -630,12 +812,12 @@ export function TaskBoardPage() {
                 key={status}
                 status={status}
                 issues={columnIssues}
+                agents={agents}
                 display={display}
-                busyIssueId={busyIssueId}
                 canAdd={taskBoardReady}
                 onAdd={() => openCreateModal(status)}
                 onEdit={openEditModal}
-                onAssign={requestAssignIssueToAssistant}
+                onOpenChat={openAssistantIssueChat}
               />
             );
           })}
@@ -647,11 +829,11 @@ export function TaskBoardPage() {
               <article className="task-board-card task-board-drag-overlay-card">
                 <TaskBoardCardContent
                   issue={activeDragIssue}
+                  awaitingConfirmation={false}
                   display={display}
-                  busy={false}
                   interactive={false}
                   onEdit={() => undefined}
-                  onAssign={() => undefined}
+                  onOpenChat={() => undefined}
                 />
               </article>
             ) : null}
@@ -659,52 +841,6 @@ export function TaskBoardPage() {
           document.body
         ) : null}
       </DndContext>
-
-      {agentPickerIssue ? (
-        <div className="task-board-modal-layer" role="presentation" onMouseDown={() => setAgentPickerIssue(null)}>
-          <div
-            className="task-board-modal task-board-agent-picker"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="task-board-agent-picker-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="task-board-modal-head">
-              <strong id="task-board-agent-picker-title">选择智能体</strong>
-              <button type="button" onClick={() => setAgentPickerIssue(null)} aria-label="关闭">×</button>
-            </div>
-            <div className="task-board-agent-list">
-              {agents.map((agent) => (
-                <button
-                  key={agent.agentKey}
-                  type="button"
-                  className="task-board-agent-option"
-                  disabled={busyIssueId === agentPickerIssue.id}
-                  onClick={() => void assignIssueToAssistant(agentPickerIssue, agent.agentKey)}
-                >
-                  <span className="task-board-agent-avatar" aria-hidden="true">
-                    {agent.displayName.slice(0, 1).toUpperCase()}
-                  </span>
-                  <span>
-                    <strong>{agent.displayName}</strong>
-                    <small>{agent.role || agent.agentKey}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="task-board-modal-actions">
-              <span />
-              <button
-                type="button"
-                className="task-board-secondary-button"
-                onClick={() => setAgentPickerIssue(null)}
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {modal ? (
         <div className="task-board-modal-layer" role="presentation" onMouseDown={() => setModal(null)}>
@@ -804,6 +940,37 @@ export function TaskBoardPage() {
           </form>
         </div>
       ) : null}
+
+      {chatModalRequest ? (
+        <div className="task-board-modal-layer task-board-chat-modal-layer" role="presentation" onMouseDown={() => setChatModalRequest(null)}>
+          <section
+            className="task-board-chat-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={chatModalRequest.displayName ? `${chatModalRequest.displayName} 聊天` : "任务聊天"}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <PluginPage
+              key={`task-board-chat:${chatModalRequest.agentKey}:${chatModalRequest.chatId}`}
+              active
+              hostTheme={hostTheme}
+              pluginId="agent-webclient"
+              surfaceLabel="任务聊天"
+              embedPath={buildTaskBoardChatEmbedPath(chatModalRequest)}
+              skipContextRegistration
+            />
+            <button
+              type="button"
+              className="task-board-chat-modal-close"
+              aria-label="关闭聊天"
+              title="关闭"
+              onClick={() => setChatModalRequest(null)}
+            >
+              ×
+            </button>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -811,21 +978,21 @@ export function TaskBoardPage() {
 function TaskBoardColumn({
   status,
   issues,
+  agents,
   display,
-  busyIssueId,
   canAdd,
   onAdd,
   onEdit,
-  onAssign
+  onOpenChat
 }: {
   status: TaskBoardStatus;
   issues: TaskBoardIssue[];
+  agents: AssistantNavAgentItem[];
   display: DisplayState;
-  busyIssueId: string | null;
   canAdd: boolean;
   onAdd: () => void;
   onEdit: (issue: TaskBoardIssue) => void;
-  onAssign: (issue: TaskBoardIssue) => void | Promise<void>;
+  onOpenChat: (issue: TaskBoardIssue) => void | Promise<void>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: getColumnId(status) });
   const meta = STATUS_META[status];
@@ -838,7 +1005,6 @@ function TaskBoardColumn({
           <span>{issues.length}</span>
         </div>
         <div className="task-board-column-actions">
-          <button type="button" aria-label={`${meta.label} 更多`}>…</button>
           <button type="button" aria-label={`添加到 ${meta.label}`} disabled={!canAdd} onClick={onAdd}>+</button>
         </div>
       </header>
@@ -848,10 +1014,10 @@ function TaskBoardColumn({
             <TaskBoardCard
               key={issue.id}
               issue={issue}
+              awaitingConfirmation={issueHasPendingAwaiting(issue, agents)}
               display={display}
-              busy={busyIssueId === issue.id}
               onEdit={() => onEdit(issue)}
-              onAssign={() => void onAssign(issue)}
+              onOpenChat={() => void onOpenChat(issue)}
             />
           ))}
         </SortableContext>
@@ -865,16 +1031,16 @@ function TaskBoardColumn({
 
 function TaskBoardCard({
   issue,
+  awaitingConfirmation,
   display,
-  busy,
   onEdit,
-  onAssign
+  onOpenChat
 }: {
   issue: TaskBoardIssue;
+  awaitingConfirmation: boolean;
   display: DisplayState;
-  busy: boolean;
   onEdit: () => void;
-  onAssign: () => void;
+  onOpenChat: () => void;
 }) {
   const dragLocked = isIssueDragLocked(issue);
   const sortable = useSortable({ id: issue.id, disabled: dragLocked });
@@ -887,18 +1053,24 @@ function TaskBoardCard({
     <article
       ref={sortable.setNodeRef}
       style={style}
-      className={`task-board-card ${sortable.isDragging ? "is-dragging-source" : ""} ${dragLocked ? "is-drag-locked" : ""}`}
-      aria-disabled={dragLocked}
+      className={[
+        "task-board-card",
+        sortable.isDragging ? "is-dragging-source" : "",
+        dragLocked ? "is-drag-locked" : "",
+        awaitingConfirmation ? "is-awaiting-confirmation" : ""
+      ].filter(Boolean).join(" ")}
+      data-drag-locked={dragLocked ? "true" : undefined}
       {...sortable.attributes}
+      aria-disabled={undefined}
       {...(dragLocked ? {} : sortable.listeners)}
     >
       <TaskBoardCardContent
         issue={issue}
+        awaitingConfirmation={awaitingConfirmation}
         display={display}
-        busy={busy}
         interactive
         onEdit={onEdit}
-        onAssign={onAssign}
+        onOpenChat={onOpenChat}
       />
     </article>
   );
@@ -906,20 +1078,28 @@ function TaskBoardCard({
 
 function TaskBoardCardContent({
   issue,
+  awaitingConfirmation,
   display,
-  busy,
   interactive,
   onEdit,
-  onAssign
+  onOpenChat
 }: {
   issue: TaskBoardIssue;
+  awaitingConfirmation: boolean;
   display: DisplayState;
-  busy: boolean;
   interactive: boolean;
   onEdit: () => void;
-  onAssign: () => void;
+  onOpenChat: () => void;
 }) {
   const preview = descriptionPreview(issue.description);
+  const chatActionLabel = getIssueChatActionLabel(issue);
+  const visibleChatActionLabel = awaitingConfirmation ? "等待你确认" : chatActionLabel;
+  const visibleAssigneeName = getVisibleAssigneeName(issue.assigneeName);
+  const shouldShowFooter = Boolean(
+    (display.assignee && visibleAssigneeName) ||
+    display.priority ||
+    chatActionLabel
+  );
   const mainContent = (
     <>
       <span className="task-board-card-id">{issue.identifier}</span>
@@ -930,6 +1110,9 @@ function TaskBoardCardContent({
 
   return (
     <>
+      {issue.runId ? (
+        <span className="task-board-run-dot" aria-label="运行中" title="运行中" />
+      ) : null}
       {interactive ? (
         <div
           className="task-board-card-main"
@@ -950,30 +1133,42 @@ function TaskBoardCardContent({
           {mainContent}
         </div>
       )}
-      <footer className="task-board-card-foot">
-        {display.assignee ? (
-          <span className="task-board-avatar" title={issue.assigneeName ?? "未分配"}>
-            {issue.assigneeName ? issue.assigneeName.slice(0, 1).toUpperCase() : "?"}
-          </span>
-        ) : null}
-        {display.priority ? <PriorityBadge priority={issue.priority} /> : null}
-        {issue.runId ? <span className="task-board-run-badge">运行中</span> : null}
-        <button
-          type="button"
-          className="task-board-card-action"
-          disabled={busy || !interactive}
-          tabIndex={interactive ? 0 : -1}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            if (interactive) {
-              onAssign();
-            }
-          }}
-        >
-          {busy ? "提交中" : "交给智能体"}
-        </button>
-      </footer>
+      {shouldShowFooter ? (
+        <footer className="task-board-card-foot">
+          {display.assignee && visibleAssigneeName ? (
+            <span className="task-board-avatar" title={issue.assigneeName ?? undefined}>
+              {visibleAssigneeName}
+            </span>
+          ) : null}
+          {display.priority ? <PriorityBadge priority={issue.priority} /> : null}
+          {chatActionLabel ? (
+            <button
+              type="button"
+              className={[
+                "task-board-chat-action",
+                issue.status === "in_progress" ? "is-awaiting" : "",
+                awaitingConfirmation ? "is-human-loop" : ""
+              ].filter(Boolean).join(" ")}
+              disabled={!interactive}
+              tabIndex={interactive ? 0 : -1}
+              aria-label={
+                awaitingConfirmation
+                  ? `打开 ${issue.identifier} 的聊天记录并处理确认`
+                  : `打开 ${issue.identifier} 的聊天记录`
+              }
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (interactive) {
+                  onOpenChat();
+                }
+              }}
+            >
+              {visibleChatActionLabel}
+            </button>
+          ) : null}
+        </footer>
+      ) : null}
     </>
   );
 }

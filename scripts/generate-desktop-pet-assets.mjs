@@ -12,7 +12,17 @@ const size = {
   height: 360
 };
 
-const classicVisualVariants = ["idle", "hover", "dragging", "thinking", "message", "done", "error"];
+const classicVisualVariants = [
+  "idle",
+  "hover",
+  "dragging",
+  "dragging-left",
+  "dragging-right",
+  "thinking",
+  "message",
+  "done",
+  "error"
+];
 
 const compatibilityVariantAliases = {
   awaiting: "thinking",
@@ -31,6 +41,12 @@ const communityAppearances = [
     displayName: "Mini Sama",
     sourceUrl: "https://github.com/xpert-ai/chatkit-js/tree/main/packages/chatkit-ui/public/pets/mini-sama",
     spritesheetSourceUrl: "https://gitpets.com/api/assets/pets/mini-sama-3ee267a2/spritesheet.webp"
+  },
+  {
+    id: "idol-pony",
+    displayName: "爱你",
+    sourceUrl: "local hatch-pet run",
+    spritesheetSourceUrl: "scripts/assets/desktop-pet/idol-pony/spritesheet.webp"
   }
 ];
 
@@ -54,6 +70,8 @@ const communityAtlas = {
 
 const communityFrameSelections = {
   dragging: { row: 4, column: 2 },
+  "dragging-left": { row: 1, column: 2 },
+  "dragging-right": { row: 1, column: 2, mirrorX: true },
   done: { row: 4, column: 3 },
   error: { row: 5, column: 5 },
   hover: { row: 3, column: 1 },
@@ -573,11 +591,18 @@ function drawSpark(ctx) {
 }
 
 function renderPetVariant(variant) {
+  const resolvedVariant = variant === "dragging-left" || variant === "dragging-right"
+    ? "dragging"
+    : variant;
   const canvas = createCanvas(size.width, size.height);
   const ctx = canvas.getContext("2d");
+  if (variant === "dragging-right") {
+    ctx.translate(size.width, 0);
+    ctx.scale(-1, 1);
+  }
   drawBackdrop(ctx);
-  drawHead(ctx, variant);
-  drawBody(ctx, variant);
+  drawHead(ctx, resolvedVariant);
+  drawBody(ctx, resolvedVariant);
   return canvas.toBuffer("image/png");
 }
 
@@ -590,7 +615,7 @@ function getCommunityFrameSelection(variant) {
 }
 
 function renderCommunityPetVariant(image, variant) {
-  const { row, column } = getCommunityFrameSelection(variant);
+  const { row, column, mirrorX = false } = getCommunityFrameSelection(variant);
   const cellWidth = Math.floor(image.width / communityAtlas.columns);
   const cellHeight = Math.floor(image.height / communityAtlas.rows);
   const canvas = createCanvas(size.width, size.height);
@@ -600,17 +625,23 @@ function renderCommunityPetVariant(image, variant) {
   const targetHeight = Math.round(cellHeight * targetScale);
   const targetX = Math.round((size.width - targetWidth) / 2);
   const targetY = Math.round(size.height - targetHeight - 8);
+  ctx.save();
+  if (mirrorX) {
+    ctx.translate(size.width, 0);
+    ctx.scale(-1, 1);
+  }
   ctx.drawImage(
     image,
     column * cellWidth,
     row * cellHeight,
     cellWidth,
     cellHeight,
-    targetX,
+    mirrorX ? size.width - targetX - targetWidth : targetX,
     targetY,
     targetWidth,
     targetHeight
   );
+  ctx.restore();
   return canvas.toBuffer("image/png");
 }
 

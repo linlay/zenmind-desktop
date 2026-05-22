@@ -162,10 +162,11 @@ test("desktop pet stores a safe appearance id", () => {
   assert.equal(sanitizeDesktopPetAppearanceId("  dario  "), "dario");
   assert.equal(sanitizeDesktopPetAppearanceId("  mini-sama  "), "mini-sama");
   assert.equal(sanitizeDesktopPetAppearanceId("  xiao  "), "xiao");
+  assert.equal(sanitizeDesktopPetAppearanceId("  idol-pony  "), "idol-pony");
   assert.equal(sanitizeDesktopPetAppearanceId("  sprout  "), "dario");
   assert.equal(sanitizeDesktopPetAppearanceId("  starlight  "), "mini-sama");
   assert.equal(sanitizeDesktopPetAppearanceId("missing-pet"), DEFAULT_DESKTOP_PET_APPEARANCE_ID);
-  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS.length, 4);
+  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS.length, 5);
 });
 
 test("desktop pet context menu only offers dance for the classic appearance", () => {
@@ -185,12 +186,28 @@ test("desktop pet context menu only offers dance for the classic appearance", ()
     getDesktopPetContextMenuItems("xiao").map((item) => item.label),
     ["关闭宠物"]
   );
+  assert.deepEqual(
+    getDesktopPetContextMenuItems("idol-pony").map((item) => item.label),
+    ["关闭宠物"]
+  );
 });
 
 test("desktop pet generated resources cover all visual states", () => {
   const root = path.join(process.cwd(), "public", "desktop-pet");
-  const states = ["idle", "hover", "dragging", "thinking", "message", "done", "error", "running", "awaiting"];
-  const appearances = ["", "dario", "mini-sama", "xiao", "sprout", "starlight"];
+  const states = [
+    "idle",
+    "hover",
+    "dragging",
+    "dragging-left",
+    "dragging-right",
+    "thinking",
+    "message",
+    "done",
+    "error",
+    "running",
+    "awaiting"
+  ];
+  const appearances = ["", "dario", "mini-sama", "xiao", "idol-pony", "sprout", "starlight"];
 
   for (const appearance of appearances) {
     for (const state of states) {
@@ -316,7 +333,7 @@ test("desktop pet shows bound agent unread count while idle", () => {
   assert.equal(state.agentDisplayName, "小宅");
   assert.equal(state.agentStatusStale, false);
   assert.equal(state.appearanceId, DEFAULT_DESKTOP_PET_APPEARANCE_ID);
-  assert.equal(state.appearanceOptions.length, 4);
+  assert.equal(state.appearanceOptions.length, 5);
 });
 
 test("desktop pet state exposes selectable agent options", () => {

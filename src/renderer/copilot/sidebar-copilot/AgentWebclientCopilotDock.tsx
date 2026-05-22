@@ -4,6 +4,21 @@ import { PluginPage } from "../../pages/plugin/PluginPage";
 
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
 
+function buildAgentWebclientCopilotPath(openRequest: AssistantWorkerOpenRequest | null) {
+  const agentKey = (openRequest?.agentKey ?? openRequest?.workerKey ?? "").trim();
+  const chatId = openRequest?.chatId?.trim() ?? "";
+  if (!agentKey) {
+    return AGENT_WEBCLIENT_COPILOT_PATH;
+  }
+  if (!chatId) {
+    return `/agent/${encodeURIComponent(agentKey)}`;
+  }
+
+  const params = new URLSearchParams();
+  params.set("chatId", chatId);
+  return `/agent/${encodeURIComponent(agentKey)}?${params.toString()}`;
+}
+
 export function AgentWebclientCopilotDock({
   open,
   hostTheme,
@@ -22,6 +37,7 @@ export function AgentWebclientCopilotDock({
   onRunningRunIdChange: (runId: string | null) => void;
 }) {
   const targetAgentKey = openRequest?.agentKey ?? openRequest?.workerKey ?? resolvedAgentKey;
+  const targetEmbedPath = buildAgentWebclientCopilotPath(openRequest);
 
   useEffect(() => {
     if (!open) {
@@ -41,9 +57,9 @@ export function AgentWebclientCopilotDock({
       data-open-agent-key={targetAgentKey}
     >
       <PluginPage
-        key={`agent-webclient-copilot:${targetAgentKey}`}
+        key={`agent-webclient-copilot:${targetEmbedPath}`}
         active={open}
-        embedPath={AGENT_WEBCLIENT_COPILOT_PATH}
+        embedPath={targetEmbedPath}
         hostTheme={hostTheme}
         pluginId="agent-webclient"
         surfaceLabel="助手"
