@@ -1531,6 +1531,10 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.doesNotMatch(pluginPage, /<<<<<<<|=======|>>>>>>>/);
   assert.match(pluginPage, /registerDesktopActionProviderForScope\(\s*"embeddedWeb"/);
   assert.match(pluginPage, /skipContextRegistration\?: boolean/);
+  assert.match(pluginPage, /loadInitialEmbeddedUrlDirectly\?: boolean/);
+  assert.match(pluginPage, /loadInitialEmbeddedUrlDirectly[\s\S]{0,180}\?\s*embeddedUrl\s*:\s*buildPluginWebviewSrcUrl\(embeddedUrl\)/);
+  const taskBoardPage = readSourceFile("src", "renderer", "pages", "task-board", "TaskBoardPage.tsx");
+  assert.match(taskBoardPage, /loadInitialEmbeddedUrlDirectly/);
   assert.match(pluginPage, /service\?\.status !== "running"[\s\S]{0,80}\|\|\s*skipContextRegistration/);
   assert.match(pluginPage, /!embeddedUrl[\s\S]{0,80}\|\|\s*skipContextRegistration/);
   assert.match(pluginPage, /tryReadPluginWebviewPageContext/);
@@ -1566,8 +1570,8 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(sendPluginRouteBlock, /executeJavaScript/);
   assert.match(sendPluginRouteBlock, /CustomEvent\('\$\{SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL\}'/);
   assert.match(pluginPage, /__ZENMIND_AGENT_WEBCLIENT_AUTH_FALLBACK__/);
-  assert.match(pluginPage, /agentWebclientTokenReloadTimerRef/);
-  assert.match(pluginPage, /webviewRef\.current\?\.reload\(\)/);
+  assert.doesNotMatch(pluginPage, /agentWebclientTokenReloadTimerRef/);
+  assert.doesNotMatch(pluginPage, /webviewRef\.current\?\.reload\(\)/);
   assert.match(pluginPage, /issueAccessToken\("missing"\)/);
   assert.match(pluginPage, /agent_webclient_seed_/);
   assert.match(pluginPage, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);
