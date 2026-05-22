@@ -1,0 +1,12 @@
+.Popover {
+  position: fixed;
+  z-index: 10000;
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  border: 1px solid var(--desktop-ui-border);
+  border-radius: 8px;
+  background: var(--desktop-ui-card);
+  color: var(--desktop-ui-text);
+  box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(10px);
+}
