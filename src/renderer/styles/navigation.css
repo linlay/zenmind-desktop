@@ -351,7 +351,7 @@
 
 .sidebar-link:not(.sidebar-link-active) .sidebar-link-icon svg,
 .sidebar-link:not(.sidebar-link-active) .sidebar-link-icon img {
-  filter: grayscale(1) saturate(0) opacity(0.72);
+  filter: grayscale(1) saturate(0);
 }
 
 .sidebar-link-active .sidebar-link-icon svg,
@@ -979,44 +979,28 @@
 }
 
 .sidebar-tool-menu {
-  position: fixed;
-  z-index: 80;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  width: 228px;
-  padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow:
-    0 18px 40px rgba(15, 23, 42, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  padding: 4px;
 }
 
 .sidebar-tool-menu .sidebar-tool-menu-item {
   min-width: 0;
-  min-height: 52px;
-  flex-direction: column;
-  justify-content: center;
-  gap: 3px;
+  gap: 10px;
   margin: 0;
   padding: 5px 2px;
   text-align: center;
 }
 
 .sidebar-tool-menu .sidebar-tool-menu-item .sidebar-link-icon {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
 }
 
 .sidebar-tool-menu .sidebar-tool-menu-item .sidebar-link-label {
-  width: 100%;
-  font-size: 11px;
   line-height: 1.15;
-  text-align: center;
   white-space: normal;
 }
 

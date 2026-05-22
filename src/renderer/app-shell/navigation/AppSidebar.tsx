@@ -18,6 +18,7 @@ import {
 import { AgentIcon } from "./AgentIcon";
 import { Collapse } from "../../components/Collapse";
 import { Tooltip } from "../../components/Tooltip";
+import { Popover } from "../../components/Popover";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -1166,13 +1167,8 @@ export function AppSidebar({
   }
 
   function renderToolMenu() {
-    if (!toolMenuOpen || typeof document === "undefined") {
-      return null;
-    }
-
-    return createPortal(
+    return (
       <div
-        ref={toolMenuPanelRef}
         className={[
           "sidebar-tool-menu",
           isCollapsed
@@ -1181,16 +1177,11 @@ export function AppSidebar({
         ]
           .filter(Boolean)
           .join(" ")}
-        style={{
-          left: `${toolMenuPosition?.left ?? -9999}px`,
-          top: `${toolMenuPosition?.top ?? -9999}px`,
-        }}
         role="menu"
         aria-label="固定工具区"
       >
         {fixedToolItems.map((item) => renderToolLink(item))}
-      </div>,
-      document.body,
+      </div>
     );
   }
 
@@ -1297,36 +1288,40 @@ export function AppSidebar({
         <div className="sidebar-footer-divider" aria-hidden="true" />
         <div className="sidebar-footer-actions">
           <div className="sidebar-tool-menu-anchor">
-            <button
-              type="button"
-              className={[
-                "sidebar-link",
-                "sidebar-link-utility",
-                "sidebar-tool-menu-trigger",
-                fixedToolItems.some((item) => isRouteActive(item.to))
-                  ? "sidebar-link-active"
-                  : "",
-                toolMenuOpen ? "is-open" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              ref={toolMenuTriggerRef}
-              onClick={handleToolMenuTriggerClick}
-              aria-label="打开设置"
-              aria-haspopup="menu"
-              aria-expanded={toolMenuOpen}
-              title="设置"
-            >
-              <span className="sidebar-link-icon">
-                <SidebarIllustration kind="control" />
-              </span>
-              <span className="sidebar-link-label">设置</span>
-              <span className="sidebar-link-label-collapsed" aria-hidden="true">
-                {getCollapsedSidebarLabel("设置")}
-              </span>
-            </button>
+            <Popover placement="top-start" content={renderToolMenu()}>
+              <button
+                type="button"
+                className={[
+                  "sidebar-link",
+                  "sidebar-link-utility",
+                  "sidebar-tool-menu-trigger",
+                  fixedToolItems.some((item) => isRouteActive(item.to))
+                    ? "sidebar-link-active"
+                    : "",
+                  toolMenuOpen ? "is-open" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                ref={toolMenuTriggerRef}
+                onClick={handleToolMenuTriggerClick}
+                aria-label="打开设置"
+                aria-haspopup="menu"
+                aria-expanded={toolMenuOpen}
+                title="设置"
+              >
+                <span className="sidebar-link-icon">
+                  <SidebarIllustration kind="control" />
+                </span>
+                <span className="sidebar-link-label">设置</span>
+                <span
+                  className="sidebar-link-label-collapsed"
+                  aria-hidden="true"
+                >
+                  {getCollapsedSidebarLabel("设置")}
+                </span>
+              </button>
+            </Popover>
           </div>
-          {renderToolMenu()}
           {renderAssistantChatMenu()}
         </div>
       </div>
