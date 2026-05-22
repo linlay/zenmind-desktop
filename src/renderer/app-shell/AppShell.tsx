@@ -355,9 +355,10 @@ export function AppShell() {
     Boolean(activeAgentWebclientRoute) ||
     location.pathname.startsWith("/service/") ||
     location.pathname.startsWith("/plugin/");
+  const isTaskBoardRoute = location.pathname === "/kanban";
   const isMarketRoute = location.pathname === "/market";
   const usesStandardBaseSurface =
-    location.pathname === "/kanban" ||
+    isTaskBoardRoute ||
     location.pathname === "/control-center" ||
     location.pathname === "/market" ||
     location.pathname === "/help" ||
@@ -1260,6 +1261,7 @@ export function AppShell() {
         usesEmbeddedSurface ? "has-embedded-surface" : "",
         usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
         usesPluginSurface ? "has-plugin-surface" : "",
+        isTaskBoardRoute ? "has-task-board-controls" : "",
         isMarketRoute ? "has-market-controls" : "",
         usesStandardBaseSurface ? "has-standard-base-surface" : "",
         shouldRenderDesktopSso ? "has-desktop-sso-status" : "",

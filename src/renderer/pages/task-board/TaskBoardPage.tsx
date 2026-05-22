@@ -5,9 +5,12 @@ import {
   DragOverlay,
   PointerSensor,
   closestCenter,
+  pointerWithin,
+  rectIntersection,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent
 } from "@dnd-kit/core";
@@ -34,6 +37,8 @@ import { PluginPage } from "../plugin/PluginPage";
 type MenuKind = "filter" | "display" | null;
 type ModalMode = "create" | "edit";
 type ThemeMode = "light" | "dark";
+type TaskBoardSchedulePlan = "hourly" | "daily" | "weekdays" | "weekly" | "custom";
+type ScheduleMenuKind = "plan" | "time";
 type ModalState = {
   mode: ModalMode;
   issue?: TaskBoardIssue;
@@ -46,7 +51,8 @@ type IssueFormState = {
   priority: TaskBoardPriority;
   assigneeAgentKey: string;
   scheduleEnabled: boolean;
-  schedulePreset: string;
+  schedulePreset: TaskBoardSchedulePlan;
+  scheduleTime: string;
   scheduleCron: string;
   scheduleMessage: string;
   scheduleTimezone: string;
@@ -91,12 +97,19 @@ const PRIORITY_META: Record<TaskBoardPriority, { label: string; tone: string; ba
   none: { label: "No priority", tone: "none", bars: 0 }
 };
 
-const TASK_BOARD_SCHEDULE_PRESETS = [
-  { label: "每天 08:00", value: "0 8 * * *" },
-  { label: "每天 09:00", value: "0 9 * * *" },
-  { label: "工作日 18:00", value: "0 18 * * 1-5" },
-  { label: "每小时", value: "0 * * * *" }
-] as const;
+const DEFAULT_TASK_BOARD_SCHEDULE_PLAN: TaskBoardSchedulePlan = "daily";
+const DEFAULT_TASK_BOARD_SCHEDULE_TIME = "09:00";
+const DEFAULT_TASK_BOARD_SCHEDULE_CRON = "0 9 * * *";
+
+const TASK_BOARD_SCHEDULE_PLANS = [
+  { label: "每小时", value: "hourly" },
+  { label: "每天", value: "daily" },
+  { label: "工作日", value: "weekdays" },
+  { label: "每周", value: "weekly" },
+  { label: "自定义", value: "custom" }
+] satisfies ReadonlyArray<{ label: string; value: TaskBoardSchedulePlan }>;
+
+const TASK_BOARD_SCHEDULE_TIME_OPTIONS = buildScheduleTimeOptions();
 
 const emptyForm: IssueFormState = {
   title: "",
@@ -105,8 +118,9 @@ const emptyForm: IssueFormState = {
   priority: "medium",
   assigneeAgentKey: "",
   scheduleEnabled: false,
-  schedulePreset: TASK_BOARD_SCHEDULE_PRESETS[0].value,
-  scheduleCron: TASK_BOARD_SCHEDULE_PRESETS[0].value,
+  schedulePreset: DEFAULT_TASK_BOARD_SCHEDULE_PLAN,
+  scheduleTime: DEFAULT_TASK_BOARD_SCHEDULE_TIME,
+  scheduleCron: DEFAULT_TASK_BOARD_SCHEDULE_CRON,
   scheduleMessage: "",
   scheduleTimezone: "Asia/Shanghai"
 };
@@ -126,6 +140,20 @@ function getStatusFromColumnId(id: string): TaskBoardStatus | null {
   return TASK_BOARD_STATUSES.includes(status as TaskBoardStatus) ? status as TaskBoardStatus : null;
 }
 
+function detectTaskBoardCollisions(args: Parameters<CollisionDetection>[0]) {
+  const pointerCollisions = pointerWithin(args);
+  if (pointerCollisions.length > 0) {
+    return pointerCollisions;
+  }
+
+  const intersectingCollisions = rectIntersection(args);
+  if (intersectingCollisions.length > 0) {
+    return intersectingCollisions;
+  }
+
+  return closestCenter(args);
+}
+
 function sortIssues(issues: TaskBoardIssue[]) {
   const statusOrder = new Map(TASK_BOARD_STATUSES.map((status, index) => [status, index]));
   return [...issues].sort((a, b) => {
@@ -138,6 +166,153 @@ function sortIssues(issues: TaskBoardIssue[]) {
 
 function descriptionPreview(description: string) {
   return description.replace(/\s+/gu, " ").trim();
+}
+
+function padScheduleNumber(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function buildScheduleTimeOptions() {
+  const options: string[] = [];
+  for (let hour = 0; hour < 24; hour += 1) {
+    for (let minute = 0; minute < 60; minute += 15) {
+      options.push(`${padScheduleNumber(hour)}:${padScheduleNumber(minute)}`);
+    }
+  }
+  return options;
+}
+
+function normalizeScheduleTime(value: string) {
+  const match = value.trim().match(/^(\d{1,2}):(\d{1,2})/u);
+  if (!match) {
+    return DEFAULT_TASK_BOARD_SCHEDULE_TIME;
+  }
+  const hour = Math.min(23, Math.max(0, Number(match[1])));
+  const minute = Math.min(59, Math.max(0, Number(match[2])));
+  const roundedTotalMinutes = Math.min((23 * 60) + 45, Math.round(((hour * 60) + minute) / 15) * 15);
+  return `${padScheduleNumber(Math.floor(roundedTotalMinutes / 60))}:${padScheduleNumber(roundedTotalMinutes % 60)}`;
+}
+
+function scheduleTimeParts(value: string) {
+  const [hour, minute] = normalizeScheduleTime(value).split(":");
+  return {
+    hour: String(Number(hour)),
+    minute: String(Number(minute))
+  };
+}
+
+function buildScheduleCron(plan: TaskBoardSchedulePlan, time: string, customCron: string) {
+  if (plan === "custom") {
+    return customCron.trim();
+  }
+  const { hour, minute } = scheduleTimeParts(time);
+  if (plan === "hourly") {
+    return `${minute} * * * *`;
+  }
+  if (plan === "weekdays") {
+    return `${minute} ${hour} * * 1-5`;
+  }
+  if (plan === "weekly") {
+    return `${minute} ${hour} * * 1`;
+  }
+  return `${minute} ${hour} * * *`;
+}
+
+function isNumericCronPart(value: string) {
+  return /^\d+$/u.test(value);
+}
+
+function isFifteenMinuteCronMinute(value: string) {
+  if (!isNumericCronPart(value)) {
+    return false;
+  }
+  const minute = Number(value);
+  return minute >= 0 && minute <= 59 && minute % 15 === 0;
+}
+
+function isCronHour(value: string) {
+  if (!isNumericCronPart(value)) {
+    return false;
+  }
+  const hour = Number(value);
+  return hour >= 0 && hour <= 23;
+}
+
+function formatScheduleTime(hour: string, minute: string) {
+  return `${padScheduleNumber(Number(hour))}:${padScheduleNumber(Number(minute))}`;
+}
+
+function parseScheduleFormFromCron(value: string | null | undefined) {
+  const scheduleCron = value?.trim() || DEFAULT_TASK_BOARD_SCHEDULE_CRON;
+  const parts = scheduleCron.split(/\s+/u);
+  if (parts.length !== 5) {
+    return {
+      schedulePreset: "custom" as TaskBoardSchedulePlan,
+      scheduleTime: DEFAULT_TASK_BOARD_SCHEDULE_TIME,
+      scheduleCron
+    };
+  }
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+  if (!isFifteenMinuteCronMinute(minute)) {
+    return {
+      schedulePreset: "custom" as TaskBoardSchedulePlan,
+      scheduleTime: DEFAULT_TASK_BOARD_SCHEDULE_TIME,
+      scheduleCron
+    };
+  }
+  if (hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return {
+      schedulePreset: "hourly" as TaskBoardSchedulePlan,
+      scheduleTime: formatScheduleTime("0", minute),
+      scheduleCron
+    };
+  }
+  if (!isCronHour(hour) || dayOfMonth !== "*" || month !== "*") {
+    return {
+      schedulePreset: "custom" as TaskBoardSchedulePlan,
+      scheduleTime: DEFAULT_TASK_BOARD_SCHEDULE_TIME,
+      scheduleCron
+    };
+  }
+  if (dayOfWeek === "*") {
+    return {
+      schedulePreset: "daily" as TaskBoardSchedulePlan,
+      scheduleTime: formatScheduleTime(hour, minute),
+      scheduleCron
+    };
+  }
+  if (dayOfWeek === "1-5") {
+    return {
+      schedulePreset: "weekdays" as TaskBoardSchedulePlan,
+      scheduleTime: formatScheduleTime(hour, minute),
+      scheduleCron
+    };
+  }
+  if (dayOfWeek === "1") {
+    return {
+      schedulePreset: "weekly" as TaskBoardSchedulePlan,
+      scheduleTime: formatScheduleTime(hour, minute),
+      scheduleCron
+    };
+  }
+  return {
+    schedulePreset: "custom" as TaskBoardSchedulePlan,
+    scheduleTime: DEFAULT_TASK_BOARD_SCHEDULE_TIME,
+    scheduleCron
+  };
+}
+
+function getSchedulePlanLabel(plan: TaskBoardSchedulePlan) {
+  return TASK_BOARD_SCHEDULE_PLANS.find((candidate) => candidate.value === plan)?.label ?? "自定义";
+}
+
+function buildCompactTaskTitle(description: string) {
+  const firstLine = description
+    .trim()
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find(Boolean) ?? "";
+  return Array.from(firstLine).slice(0, 24).join("");
 }
 
 function buildAssistantPrompt(issue: TaskBoardIssue) {
@@ -165,10 +340,7 @@ function computeDropPosition(targetIssues: TaskBoardIssue[], insertIndex: number
 }
 
 function createFormFromIssue(issue: TaskBoardIssue): IssueFormState {
-  const scheduleCron = issue.scheduleCron ?? TASK_BOARD_SCHEDULE_PRESETS[0].value;
-  const schedulePreset = TASK_BOARD_SCHEDULE_PRESETS.some((preset) => preset.value === scheduleCron)
-    ? scheduleCron
-    : "custom";
+  const scheduleForm = parseScheduleFormFromCron(issue.scheduleCron);
   return {
     title: issue.title,
     description: issue.description,
@@ -176,8 +348,9 @@ function createFormFromIssue(issue: TaskBoardIssue): IssueFormState {
     priority: issue.priority,
     assigneeAgentKey: issue.assigneeAgentKey ?? "",
     scheduleEnabled: issue.scheduleEnabled,
-    schedulePreset,
-    scheduleCron,
+    schedulePreset: scheduleForm.schedulePreset,
+    scheduleTime: scheduleForm.scheduleTime,
+    scheduleCron: scheduleForm.scheduleCron,
     scheduleMessage: issue.scheduleMessage ?? "",
     scheduleTimezone: issue.scheduleTimezone ?? "Asia/Shanghai"
   };
@@ -202,7 +375,15 @@ function getScheduleDisplayLabel(issue: TaskBoardIssue) {
   if (!issue.scheduleEnabled || !issue.scheduleCron) {
     return "";
   }
-  return TASK_BOARD_SCHEDULE_PRESETS.find((preset) => preset.value === issue.scheduleCron)?.label ?? issue.scheduleCron;
+  const scheduleForm = parseScheduleFormFromCron(issue.scheduleCron);
+  if (scheduleForm.schedulePreset === "custom") {
+    return issue.scheduleCron;
+  }
+  if (scheduleForm.schedulePreset === "hourly") {
+    const minute = Number(scheduleForm.scheduleTime.split(":")[1]);
+    return `每小时 ${padScheduleNumber(minute)} 分`;
+  }
+  return `${getSchedulePlanLabel(scheduleForm.schedulePreset)} ${scheduleForm.scheduleTime}`;
 }
 
 function createNavigationAgentFromOption(agent: DesktopPetAgentOption): AssistantNavAgentItem {
@@ -344,8 +525,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const [modal, setModal] = useState<ModalState | null>(null);
   const [chatModalRequest, setChatModalRequest] = useState<TaskBoardChatModalRequest | null>(null);
   const [form, setForm] = useState<IssueFormState>(emptyForm);
+  const [formCompact, setFormCompact] = useState(true);
+  const [scheduleMenuOpen, setScheduleMenuOpen] = useState<ScheduleMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const issuesRef = useRef<TaskBoardIssue[]>([]);
+  const selectedScheduleTimeRef = useRef<HTMLButtonElement | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const taskBoardReady = readTaskBoardApi() !== null;
 
@@ -407,6 +591,12 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   useEffect(() => {
     issuesRef.current = issues;
   }, [issues]);
+
+  useEffect(() => {
+    if (scheduleMenuOpen === "time") {
+      selectedScheduleTimeRef.current?.scrollIntoView({ block: "center" });
+    }
+  }, [form.scheduleTime, scheduleMenuOpen]);
 
   useEffect(() => {
     if (!chatModalRequest || typeof document === "undefined") {
@@ -484,11 +674,15 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       return;
     }
     setForm({ ...emptyForm, status });
+    setFormCompact(true);
+    setScheduleMenuOpen(null);
     setModal({ mode: "create" });
   }
 
   function openEditModal(issue: TaskBoardIssue) {
     setForm(createFormFromIssue(issue));
+    setFormCompact(true);
+    setScheduleMenuOpen(null);
     setModal({ mode: "edit", issue });
   }
 
@@ -497,8 +691,49 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       ...createFormFromIssue(issue),
       status: "in_progress"
     });
+    setFormCompact(true);
+    setScheduleMenuOpen(null);
     setModal({ mode: "edit", issue });
     setFeedback({ tone: "error", message: "请选择智能体后再进入 In Progress。" });
+  }
+
+  function toggleFormCompactMode() {
+    if (formCompact) {
+      setForm((current) => {
+        if (current.title.trim()) {
+          return current;
+        }
+        return {
+          ...current,
+          title: buildCompactTaskTitle(current.description)
+        };
+      });
+    }
+    setScheduleMenuOpen(null);
+    setFormCompact((current) => !current);
+  }
+
+  function toggleScheduleMenu(menuName: ScheduleMenuKind) {
+    setScheduleMenuOpen((current) => current === menuName ? null : menuName);
+  }
+
+  function updateSchedulePlan(plan: TaskBoardSchedulePlan) {
+    setForm((current) => ({
+      ...current,
+      schedulePreset: plan,
+      scheduleCron: buildScheduleCron(plan, current.scheduleTime, current.scheduleCron)
+    }));
+    setScheduleMenuOpen(null);
+  }
+
+  function updateScheduleTime(time: string) {
+    const nextTime = normalizeScheduleTime(time);
+    setForm((current) => ({
+      ...current,
+      scheduleTime: nextTime,
+      scheduleCron: buildScheduleCron(current.schedulePreset, nextTime, current.scheduleCron)
+    }));
+    setScheduleMenuOpen(null);
   }
 
   async function submitForm(event: FormEvent<HTMLFormElement>) {
@@ -508,11 +743,15 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
       return;
     }
-    const title = form.title.trim();
+    const title = formCompact && modal?.mode === "create"
+      ? buildCompactTaskTitle(form.description)
+      : form.title.trim();
     if (!title) {
-      setFeedback({ tone: "error", message: "请输入任务标题。" });
+      setFeedback({ tone: "error", message: formCompact ? "请输入任务描述。" : "请输入任务标题。" });
       return;
     }
+    const resolvedScheduleCron = buildScheduleCron(form.schedulePreset, form.scheduleTime, form.scheduleCron);
+    const resolvedScheduleMessage = form.scheduleMessage.trim() || form.description.trim() || title;
     const shouldRunAfterSave = form.status === "in_progress" && !modal?.issue?.runId;
     if (shouldRunAfterSave && !form.assigneeAgentKey) {
       setFeedback({ tone: "error", message: "请选择智能体后再进入 In Progress。" });
@@ -522,11 +761,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       setFeedback({ tone: "error", message: "请选择智能体后再启用定时任务。" });
       return;
     }
-    if (form.scheduleEnabled && !isFiveFieldCron(form.scheduleCron)) {
+    if (form.scheduleEnabled && !isFiveFieldCron(resolvedScheduleCron)) {
       setFeedback({ tone: "error", message: "定时任务需要 5 段 cron，例如 0 8 * * *。" });
       return;
     }
-    if (form.scheduleEnabled && !form.scheduleMessage.trim()) {
+    if (form.scheduleEnabled && !resolvedScheduleMessage) {
       setFeedback({ tone: "error", message: "请填写定时任务要执行的内容。" });
       return;
     }
@@ -541,8 +780,8 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       assigneeName,
       scheduleId: modal?.issue?.scheduleId ?? null,
       scheduleEnabled: form.scheduleEnabled,
-      scheduleCron: form.scheduleEnabled ? form.scheduleCron : null,
-      scheduleMessage: form.scheduleEnabled ? form.scheduleMessage : null,
+      scheduleCron: form.scheduleEnabled ? resolvedScheduleCron : null,
+      scheduleMessage: form.scheduleEnabled ? resolvedScheduleMessage : null,
       scheduleTimezone: form.scheduleEnabled ? form.scheduleTimezone : null
     };
 
@@ -859,7 +1098,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={detectTaskBoardCollisions}
         onDragStart={handleDragStart}
         onDragCancel={clearActiveDrag}
         onDragEnd={handleDragEnd}
@@ -905,71 +1144,98 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       {modal ? (
         <div className="task-board-modal-layer" role="presentation" onMouseDown={() => setModal(null)}>
           <form
-            className="task-board-modal"
+            className={`task-board-modal ${formCompact ? "is-compact" : "is-advanced"}`}
             onSubmit={submitForm}
             onMouseDown={(event) => event.stopPropagation()}
             noValidate
           >
             <div className="task-board-modal-head">
               <strong>{modal.mode === "edit" ? "编辑任务" : "新建任务"}</strong>
-              <button type="button" onClick={() => setModal(null)} aria-label="关闭">×</button>
+              <div className="task-board-modal-head-actions">
+                <button
+                  type="button"
+                  className="task-board-modal-mode-button"
+                  onClick={toggleFormCompactMode}
+                >
+                  {formCompact ? "高级模式" : "精简模式"}
+                </button>
+                <button type="button" className="task-board-modal-close-button" onClick={() => setModal(null)} aria-label="关闭">×</button>
+              </div>
             </div>
-            <label className="task-board-field">
-              <span>标题</span>
-              <input
-                value={form.title}
-                onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-                autoFocus
-                required
-              />
-            </label>
+            {!formCompact ? (
+              <label className="task-board-field">
+                <span>标题</span>
+                <input
+                  value={form.title}
+                  onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                  autoFocus={!formCompact}
+                  required
+                />
+              </label>
+            ) : null}
             <label className="task-board-field">
               <span>描述</span>
               <textarea
                 value={form.description}
-                onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-                rows={4}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setForm((current) => ({
+                    ...current,
+                    description: value,
+                    scheduleMessage: current.scheduleEnabled && !current.scheduleMessage.trim()
+                      ? value.trim() || current.title.trim()
+                      : current.scheduleMessage
+                  }));
+                }}
+                rows={formCompact ? 5 : 4}
+                autoFocus={formCompact}
               />
             </label>
-            <div className="task-board-field-grid">
-              <label className="task-board-field">
-                <span>状态</span>
-                <select
-                  value={form.status}
-                  disabled={modalStatusLocked}
-                  onChange={(event) => setForm((current) => ({
-                    ...current,
-                    status: event.target.value as TaskBoardStatus
-                  }))}
-                >
-                  {TASK_BOARD_STATUSES.map((status) => (
-                    <option key={status} value={status}>{STATUS_META[status].label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="task-board-field">
-                <span>优先级</span>
-                <select
-                  value={form.priority}
-                  onChange={(event) => setForm((current) => ({
-                    ...current,
-                    priority: event.target.value as TaskBoardPriority
-                  }))}
-                >
-                  {TASK_BOARD_PRIORITIES.map((priority) => (
-                    <option key={priority} value={priority}>{PRIORITY_META[priority].label}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            {!formCompact ? (
+              <div className="task-board-field-grid">
+                <label className="task-board-field">
+                  <span>状态</span>
+                  <select
+                    value={form.status}
+                    disabled={modalStatusLocked}
+                    onChange={(event) => setForm((current) => ({
+                      ...current,
+                      status: event.target.value as TaskBoardStatus
+                    }))}
+                  >
+                    {TASK_BOARD_STATUSES.map((status) => (
+                      <option key={status} value={status}>{STATUS_META[status].label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="task-board-field">
+                  <span>优先级</span>
+                  <select
+                    value={form.priority}
+                    onChange={(event) => setForm((current) => ({
+                      ...current,
+                      priority: event.target.value as TaskBoardPriority
+                    }))}
+                  >
+                    {TASK_BOARD_PRIORITIES.map((priority) => (
+                      <option key={priority} value={priority}>{PRIORITY_META[priority].label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : null}
             <label className="task-board-field">
               <span>负责人</span>
               <select
                 value={form.assigneeAgentKey}
-                onChange={(event) => setForm((current) => ({
-                  ...current,
-                  assigneeAgentKey: event.target.value
-                }))}
+                onChange={(event) => {
+                  const assigneeAgentKey = event.target.value;
+                  setForm((current) => ({
+                    ...current,
+                    assigneeAgentKey,
+                    status: current.status === "todo" && assigneeAgentKey ? "in_progress" : current.status
+                  }));
+                }}
               >
                 <option value="">未分配</option>
                 {agents.map((agent) => (
@@ -979,80 +1245,114 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 ))}
               </select>
             </label>
-            <section className="task-board-schedule-panel" aria-label="定时任务">
-              <label className="task-board-check-row task-board-schedule-toggle">
-                <input
-                  type="checkbox"
-                  checked={form.scheduleEnabled}
-                  onChange={(event) => setForm((current) => ({
-                    ...current,
-                    scheduleEnabled: event.target.checked,
-                    scheduleMessage: event.target.checked && !current.scheduleMessage.trim()
-                      ? current.description.trim() || current.title.trim()
-                      : current.scheduleMessage
-                  }))}
-                />
-                <span>定时执行</span>
-              </label>
-              {form.scheduleEnabled ? (
-                <>
-                  <div className="task-board-field-grid">
-                    <label className="task-board-field">
-                      <span>时间</span>
-                      <select
-                        value={form.schedulePreset}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setForm((current) => ({
+            {!formCompact ? (
+              <section className="task-board-schedule-panel" aria-label="定时任务">
+                <label className="task-board-check-row task-board-schedule-toggle">
+                  <input
+                    type="checkbox"
+                    checked={form.scheduleEnabled}
+                    onChange={(event) => setForm((current) => {
+                      const enabled = event.target.checked;
+                      return {
+                        ...current,
+                        scheduleEnabled: enabled,
+                        scheduleCron: enabled
+                          ? buildScheduleCron(current.schedulePreset, current.scheduleTime, current.scheduleCron)
+                          : current.scheduleCron,
+                        scheduleMessage: enabled && !current.scheduleMessage.trim()
+                          ? current.description.trim() || current.title.trim()
+                          : current.scheduleMessage
+                      };
+                    })}
+                  />
+                  <span>定时执行</span>
+                </label>
+                {form.scheduleEnabled ? (
+                  <div className="task-board-schedule-popover">
+                    <span className="task-board-schedule-panel-title">计划</span>
+                    <div className="task-board-field task-board-schedule-select-field">
+                      <span>频率</span>
+                      <div className={`task-board-schedule-menu ${scheduleMenuOpen === "plan" ? "is-open" : ""}`}>
+                        <button
+                          type="button"
+                          className="task-board-schedule-menu-trigger"
+                          aria-haspopup="listbox"
+                          aria-expanded={scheduleMenuOpen === "plan"}
+                          onClick={() => toggleScheduleMenu("plan")}
+                        >
+                          <span>{getSchedulePlanLabel(form.schedulePreset)}</span>
+                          <span className="task-board-schedule-menu-arrow" aria-hidden="true">⌄</span>
+                        </button>
+                        {scheduleMenuOpen === "plan" ? (
+                          <div className="task-board-schedule-menu-list" role="listbox" aria-label="计划频率">
+                            {TASK_BOARD_SCHEDULE_PLANS.map((plan) => (
+                              <button
+                                key={plan.value}
+                                type="button"
+                                className={plan.value === form.schedulePreset ? "is-selected" : ""}
+                                role="option"
+                                aria-selected={plan.value === form.schedulePreset}
+                                onClick={() => updateSchedulePlan(plan.value)}
+                              >
+                                {plan.label}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    {form.schedulePreset === "custom" ? (
+                      <label className="task-board-field">
+                        <span>Cron</span>
+                        <input
+                          value={form.scheduleCron}
+                          onChange={(event) => setForm((current) => ({
                             ...current,
-                            schedulePreset: value,
-                            scheduleCron: value === "custom" ? current.scheduleCron : value
-                          }));
-                        }}
-                      >
-                        {TASK_BOARD_SCHEDULE_PRESETS.map((preset) => (
-                          <option key={preset.value} value={preset.value}>{preset.label}</option>
-                        ))}
-                        <option value="custom">自定义 cron</option>
-                      </select>
-                    </label>
-                    <label className="task-board-field">
-                      <span>时区</span>
-                      <input
-                        value={form.scheduleTimezone}
-                        onChange={(event) => setForm((current) => ({
-                          ...current,
-                          scheduleTimezone: event.target.value
-                        }))}
-                      />
-                    </label>
+                            scheduleCron: event.target.value
+                          }))}
+                          placeholder="0 9 * * *"
+                        />
+                      </label>
+                    ) : (
+                      <div className="task-board-schedule-time-control">
+                        <div className="task-board-field task-board-schedule-select-field">
+                          <span>时间</span>
+                          <div className={`task-board-schedule-menu ${scheduleMenuOpen === "time" ? "is-open" : ""}`}>
+                            <button
+                              type="button"
+                              className="task-board-schedule-menu-trigger"
+                              aria-haspopup="listbox"
+                              aria-expanded={scheduleMenuOpen === "time"}
+                              onClick={() => toggleScheduleMenu("time")}
+                            >
+                              <span>{form.scheduleTime}</span>
+                              <span className="task-board-schedule-menu-arrow" aria-hidden="true">⌄</span>
+                            </button>
+                            {scheduleMenuOpen === "time" ? (
+                              <div className="task-board-schedule-menu-list is-time-list" role="listbox" aria-label="计划时间">
+                                {TASK_BOARD_SCHEDULE_TIME_OPTIONS.map((time) => (
+                                  <button
+                                    key={time}
+                                    ref={time === form.scheduleTime ? selectedScheduleTimeRef : null}
+                                    type="button"
+                                    className={time === form.scheduleTime ? "is-selected" : ""}
+                                    role="option"
+                                    aria-selected={time === form.scheduleTime}
+                                    onClick={() => updateScheduleTime(time)}
+                                  >
+                                    {time}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <label className="task-board-field">
-                    <span>Cron</span>
-                    <input
-                      value={form.scheduleCron}
-                      disabled={form.schedulePreset !== "custom"}
-                      onChange={(event) => setForm((current) => ({
-                        ...current,
-                        scheduleCron: event.target.value
-                      }))}
-                      placeholder="0 8 * * *"
-                    />
-                  </label>
-                  <label className="task-board-field">
-                    <span>要让它做什么</span>
-                    <textarea
-                      value={form.scheduleMessage}
-                      onChange={(event) => setForm((current) => ({
-                        ...current,
-                        scheduleMessage: event.target.value
-                      }))}
-                      rows={3}
-                    />
-                  </label>
-                </>
-              ) : null}
-            </section>
+                ) : null}
+              </section>
+            ) : null}
             <div className="task-board-modal-actions">
               {modal.mode === "edit" && modal.issue ? (
                 <button
@@ -1063,7 +1363,6 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   删除
                 </button>
               ) : null}
-              <span />
               <button type="button" className="task-board-secondary-button" onClick={() => setModal(null)}>
                 取消
               </button>
@@ -1133,7 +1432,7 @@ function TaskBoardColumn({
   const { setNodeRef, isOver } = useDroppable({ id: getColumnId(status) });
   const meta = STATUS_META[status];
   return (
-    <section className={`task-board-column is-${meta.tone} ${isOver ? "is-over" : ""}`}>
+    <section ref={setNodeRef} className={`task-board-column is-${meta.tone} ${isOver ? "is-over" : ""}`}>
       <header className="task-board-column-head">
         <div className="task-board-column-title">
           <span className={`task-board-status-dot is-${meta.tone}`} aria-hidden="true" />
@@ -1144,7 +1443,7 @@ function TaskBoardColumn({
           <button type="button" aria-label={`添加到 ${meta.label}`} disabled={!canAdd} onClick={onAdd}>+</button>
         </div>
       </header>
-      <div ref={setNodeRef} className="task-board-column-body">
+      <div className="task-board-column-body">
         <SortableContext items={issues.map((issue) => issue.id)} strategy={verticalListSortingStrategy}>
           {issues.map((issue) => (
             <TaskBoardCard

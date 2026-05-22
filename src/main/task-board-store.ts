@@ -332,6 +332,14 @@ function applyIssueUpdate(issue: TaskBoardIssue, input: TaskBoardIssueUpdateInpu
   if (input.assigneeName !== undefined) {
     nextIssue.assigneeName = nullableTrimmedText(input.assigneeName);
   }
+  if (
+    input.status === undefined &&
+    input.assigneeAgentKey !== undefined &&
+    issue.status === "todo" &&
+    nextIssue.assigneeAgentKey
+  ) {
+    nextIssue.status = "in_progress";
+  }
   if (input.chatId !== undefined) {
     nextIssue.chatId = nullableTrimmedText(input.chatId);
   }

@@ -7,6 +7,7 @@
   --task-board-shadow: 0 3px 8px rgba(15, 23, 42, 0.06);
   --task-board-radius: 8px;
   min-height: 100%;
+  position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -40,13 +41,13 @@
 }
 
 .task-board-toolbar {
-  min-height: 48px;
+  min-height: 42px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 16px;
+  gap: 10px;
+  padding: 6px 14px;
 }
 
 .task-board-toolbar,
@@ -61,7 +62,7 @@
 .task-board-toolbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -106,14 +107,22 @@
 }
 
 .task-board-search {
-  width: clamp(120px, 18vw, 240px);
-  height: 30px;
+  width: clamp(108px, 16vw, 200px);
+  height: 28px;
   border: 1px solid var(--task-board-border);
   border-radius: 6px;
   background: var(--task-board-card);
   color: var(--task-board-ink);
-  padding: 0 10px;
+  padding: 0 9px;
+  font-size: 13px;
+  font-weight: 600;
   outline: none;
+}
+
+.task-board-search::placeholder {
+  color: var(--task-board-muted);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .task-board-search:focus {
@@ -133,6 +142,13 @@
   color: #ffffff;
   font-size: 12px;
   font-weight: 800;
+}
+
+.task-board-toolbar .task-board-primary-button {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 1;
 }
 
 .task-board-primary-button:hover {
@@ -177,7 +193,15 @@
 }
 
 .task-board-feedback {
-  margin: 0 16px 8px;
+  position: absolute;
+  top: 52px;
+  left: 14px;
+  z-index: 70;
+  right: 14px;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
   min-height: 34px;
   display: flex;
   align-items: center;
@@ -186,8 +210,24 @@
   padding: 7px 10px;
   border: 1px solid var(--task-board-border);
   border-radius: var(--task-board-radius);
-  background: var(--task-board-card);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   font-size: 12px;
+}
+
+.task-board-feedback span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+:root[data-theme="dark"] .task-board-feedback {
+  background: rgba(32, 33, 36, 0.96);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
 }
 
 .task-board-feedback.is-success {
@@ -606,6 +646,11 @@
   padding: 16px;
 }
 
+.task-board-modal.is-compact {
+  width: min(460px, 100%);
+  gap: 12px;
+}
+
 .task-board-chat-modal-layer {
   z-index: 92;
   padding: clamp(12px, 3vw, 32px);
@@ -666,6 +711,55 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+
+.task-board-modal-head-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-board-modal-head .task-board-modal-mode-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  color: #1677ff;
+  appearance: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.task-board-modal-head .task-board-modal-mode-button:hover {
+  color: #0958d9;
+  background: transparent;
+}
+
+.task-board-modal-close-button {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  appearance: none;
+  font-size: 20px;
+  line-height: 1;
 }
 
 .task-board-field {
@@ -725,22 +819,136 @@
   font-weight: 800;
 }
 
-.task-board-modal-actions {
+.task-board-schedule-popover {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--task-board-border);
+  border-radius: 8px;
+  background: var(--task-board-card);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.task-board-schedule-panel-title {
+  color: var(--task-board-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.task-board-schedule-time-control {
+  display: grid;
   gap: 8px;
 }
 
-.task-board-secondary-button,
-.task-board-danger-button {
+.task-board-schedule-select-field {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.task-board-schedule-menu {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.task-board-schedule-menu-trigger {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--task-board-border);
+  border-radius: 6px;
+  background: var(--task-board-bg);
+  color: var(--task-board-ink);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  padding: 0 10px;
+  text-align: left;
+}
+
+.task-board-schedule-menu-trigger span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-board-schedule-menu-trigger:hover,
+.task-board-schedule-menu.is-open .task-board-schedule-menu-trigger {
+  border-color: #1677ff;
+}
+
+.task-board-schedule-menu-arrow {
+  color: var(--task-board-muted);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.task-board-schedule-menu-list {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: grid;
+  max-height: 164px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--task-board-border);
+  border-radius: 8px;
+  background: var(--task-board-card);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16);
+}
+
+.task-board-schedule-menu-list.is-time-list {
+  max-height: 184px;
+}
+
+.task-board-schedule-menu-list button {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--task-board-ink);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  padding: 0 9px;
+  text-align: left;
+}
+
+.task-board-schedule-menu-list button:hover,
+.task-board-schedule-menu-list button.is-selected {
+  background: rgba(22, 119, 255, 0.1);
+  color: #0958d9;
+}
+
+.task-board-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.task-board-modal-actions .task-board-secondary-button,
+.task-board-modal-actions .task-board-primary-button,
+.task-board-modal-actions .task-board-danger-button {
   min-height: 32px;
+  min-width: 72px;
   padding: 0 12px;
   font-size: 12px;
   font-weight: 800;
 }
 
 .task-board-danger-button {
+  margin-right: auto;
   color: #dc2626;
   border-color: rgba(220, 38, 38, 0.28);
 }

@@ -131,6 +131,28 @@ test("task board updates and deletes existing issues", (t) => {
   assert.deepEqual(removed.issues, []);
 });
 
+test("task board promotes todo issues to in progress when an assignee is set", (t) => {
+  const app = createTempApp(t);
+  const created = createTaskBoardIssue(app, {
+    title: "交给负责人处理",
+    status: "todo"
+  }).issue;
+  assert.ok(created);
+
+  const updated = updateTaskBoardIssue(app, created.id, {
+    assigneeAgentKey: "zenmi",
+    assigneeName: "小宅"
+  });
+
+  assert.equal(updated.ok, true);
+  assert.equal(updated.issue?.status, "in_progress");
+  assert.equal(updated.issue?.assigneeAgentKey, "zenmi");
+  assert.deepEqual(
+    listTaskBoardIssues(app).issues.map((issue) => [issue.title, issue.status, issue.assigneeAgentKey]),
+    [["交给负责人处理", "in_progress", "zenmi"]]
+  );
+});
+
 test("task board moves issues across status columns and reorders positions", (t) => {
   const app = createTempApp(t);
   const first = createTaskBoardIssue(app, { title: "第一项" }).issue;
