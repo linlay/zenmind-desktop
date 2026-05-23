@@ -1157,6 +1157,20 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-chat-modal \.pan-page\s*\{/);
 });
 
+test("task board status order places blocked after done", () => {
+  const contracts = readSourceFile("src", "shared", "contracts", "task-board.ts");
+  const taskBoardDb = readSourceFile("src", "main", "task-board-db.ts");
+
+  assert.match(
+    contracts,
+    /TASK_BOARD_STATUSES\s*=\s*\[[\s\S]*?"in_review",[\s\S]*?"done",[\s\S]*?"blocked"[\s\S]*?\]/,
+  );
+  assert.match(
+    taskBoardDb,
+    /WHEN 'in_review' THEN 3[\s\S]*?WHEN 'done' THEN 4[\s\S]*?WHEN 'blocked' THEN 5/,
+  );
+});
+
 test("custom sidebar agent association is exposed across desktop api layers", () => {
   const contracts = readSharedContractsSource();
   const store = fs.readFileSync(path.join(projectRoot, "src", "main", "navigation", "custom-sidebar-store.ts"), "utf8");

@@ -314,9 +314,9 @@ export function readTaskBoardIssues(db: DatabaseSync): TaskBoardIssue[] {
         WHEN 'backlog' THEN 0
         WHEN 'todo' THEN 1
         WHEN 'in_progress' THEN 2
-        WHEN 'blocked' THEN 3
-        WHEN 'in_review' THEN 4
-        WHEN 'done' THEN 5
+        WHEN 'in_review' THEN 3
+        WHEN 'done' THEN 4
+        WHEN 'blocked' THEN 5
         ELSE 99
       END,
       position ASC,

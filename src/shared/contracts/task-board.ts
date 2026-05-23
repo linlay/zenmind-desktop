@@ -4,9 +4,9 @@ export const TASK_BOARD_STATUSES = [
   "backlog",
   "todo",
   "in_progress",
-  "blocked",
   "in_review",
-  "done"
+  "done",
+  "blocked"
 ] as const;
 
 export const TASK_BOARD_PRIORITIES = [
