@@ -1440,6 +1440,14 @@ function closeLogViewerWindow() {
   return logViewerWindowController.close();
 }
 
+function minimizeLogViewerWindow() {
+  return logViewerWindowController.minimize();
+}
+
+function maximizeLogViewerWindow() {
+  return logViewerWindowController.maximize();
+}
+
 function hideQuickAssistantForNativeDialog() {
   quickCopilotWindowController.hideForNativeDialog();
 }
@@ -3632,6 +3640,8 @@ function registerIpcHandlers() {
     });
   });
   ipcMain.handle("services.closeLogViewer", async () => closeLogViewerWindow());
+  ipcMain.handle("services.minimizeLogViewer", async () => minimizeLogViewerWindow());
+  ipcMain.handle("services.maximizeLogViewer", async () => maximizeLogViewerWindow());
   ipcMain.handle(
     "services.readLog",
     async (_event, serviceId: ServiceId, target: ServiceLogTarget, options?: ServiceLogReadOptions) => {

@@ -147,7 +147,11 @@ function getStaticServicePaths() {
       path.join(programFiles, "Docker", "Docker", "resources", "bin"),
       path.join(programFiles, "RedHat", "Podman"),
       path.join(programFiles, "Podman"),
-      ...(localAppData ? [path.join(localAppData, "Programs", "nodejs")] : []),
+      ...(localAppData ? [
+        path.join(localAppData, "Programs", "nodejs"),
+        path.join(localAppData, "Programs", "Podman"),
+        path.join(localAppData, "Programs", "RedHat", "Podman")
+      ] : []),
       ...(appData ? [path.join(appData, "npm")] : []),
       path.join(programFiles, "Git", "mingw64", "bin"),
       path.join(programFiles, "Git", "usr", "bin"),
@@ -1400,6 +1404,22 @@ function terminateProcessList(pids: number[]) {
   const uniquePids = [...new Set(pids)].filter((pid) => Number.isFinite(pid) && pid > 0);
   if (uniquePids.length === 0 || uniquePids.every((pid) => !isProcessRunning(pid))) {
     return true;
+  }
+
+  if (process.platform === "win32") {
+    for (const pid of uniquePids) {
+      if (isProcessRunning(pid)) {
+        try {
+          spawnSync("taskkill.exe", ["/PID", String(pid), "/F"], {
+            env: buildServiceEnv(),
+            timeout: 2000
+          });
+        } catch {
+          // ignore
+        }
+      }
+    }
+    return uniquePids.every((pid) => !isProcessRunning(pid));
   }
 
   signalProcessList(uniquePids, "SIGTERM");
@@ -4183,15 +4203,11 @@ const NODE_BIN_START_ENV_SERVICE_IDS = new Set<ServiceId>([
 
 function resolveNodeBinStartEnv() {
   const nodeBin = resolveNodeBin();
-  if (IS_WINDOWS) {
-    return { NODE_BIN: nodeBin };
+  const env: Record<string, string> = { NODE_BIN: nodeBin };
+  if (nodeBin === process.execPath) {
+    env.ELECTRON_RUN_AS_NODE = "1";
   }
-
-  if (process.platform === "darwin") {
-    return { NODE_BIN: nodeBin };
-  }
-
-  return { NODE_BIN: nodeBin };
+  return env;
 }
 
 function getStartCommandEnvOverrides(_app: App, service: ServiceDefinition) {

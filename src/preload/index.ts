@@ -171,7 +171,18 @@ const api: DesktopApi = {
     openLogViewer: (request: ServiceOpenLogViewerRequest) => ipcRenderer.invoke("services.openLogViewer", request),
     revealPath: (targetPath: string, options?: ServiceRevealPathOptions) =>
       ipcRenderer.invoke("services.revealPath", targetPath, options),
-    closeLogViewer: () => ipcRenderer.invoke("services.closeLogViewer")
+    closeLogViewer: () => ipcRenderer.invoke("services.closeLogViewer"),
+    minimizeLogViewer: () => ipcRenderer.invoke("services.minimizeLogViewer"),
+    maximizeLogViewer: () => ipcRenderer.invoke("services.maximizeLogViewer"),
+    onLogViewerMaximized: (listener: (maximized: boolean) => void) => {
+      const handleMaximized = (_event: Electron.IpcRendererEvent, maximized: boolean) => {
+        listener(maximized);
+      };
+      ipcRenderer.on("log-viewer.maximized", handleMaximized);
+      return () => {
+        ipcRenderer.off("log-viewer.maximized", handleMaximized);
+      };
+    }
   },
   plugins: {
     install: () => ipcRenderer.invoke("plugins.install"),

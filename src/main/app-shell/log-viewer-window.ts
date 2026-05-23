@@ -40,6 +40,25 @@ export class LogViewerWindowController {
     return { ok: true };
   }
 
+  minimize() {
+    if (this.window && !this.window.isDestroyed()) {
+      this.window.minimize();
+    }
+    return { ok: true };
+  }
+
+  maximize() {
+    if (this.window && !this.window.isDestroyed()) {
+      if (this.window.isMaximized()) {
+        this.window.unmaximize();
+      } else {
+        this.window.maximize();
+      }
+    }
+    return { ok: true };
+  }
+
+
   private buildRoute(request: ServiceOpenLogViewerRequest) {
     const params = new URLSearchParams({
       serviceId: request.serviceId,
@@ -63,9 +82,9 @@ export class LogViewerWindowController {
       show: false,
       frame: false,
       resizable: true,
-      maximizable: false,
-      minimizable: false,
-      fullscreenable: false,
+      maximizable: true,
+      minimizable: true,
+      fullscreenable: true,
       ...(ownerWindow ? { parent: ownerWindow, modal: false } : {}),
       title: "ZenMind Logs",
       backgroundColor: "#F6F8FC",
@@ -105,6 +124,18 @@ export class LogViewerWindowController {
       }
       this.window.show();
       this.window.focus();
+    });
+
+    this.window.on("maximize", () => {
+      if (this.window && !this.window.isDestroyed()) {
+        this.window.webContents.send("log-viewer.maximized", true);
+      }
+    });
+
+    this.window.on("unmaximize", () => {
+      if (this.window && !this.window.isDestroyed()) {
+        this.window.webContents.send("log-viewer.maximized", false);
+      }
     });
 
     this.window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {

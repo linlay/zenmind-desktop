@@ -35,7 +35,11 @@ export function getDefaultContainerEnginePathEntries(options: ContainerEnginePat
       path.join(programFiles, "Docker", "Docker", "resources", "bin"),
       path.join(programFiles, "RedHat", "Podman"),
       path.join(programFiles, "Podman"),
-      ...(localAppData ? [path.join(localAppData, "Programs", "Docker", "Docker", "resources", "bin")] : [])
+      ...(localAppData ? [
+        path.join(localAppData, "Programs", "Docker", "Docker", "resources", "bin"),
+        path.join(localAppData, "Programs", "Podman"),
+        path.join(localAppData, "Programs", "RedHat", "Podman")
+      ] : [])
     ];
   }
 

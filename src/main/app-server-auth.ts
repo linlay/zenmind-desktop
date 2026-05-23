@@ -128,7 +128,10 @@ function runAppServerScript(
       ...env
     };
 
-    // Ensure common tool paths are available (Git mingw64 for openssl, etc.)
+    // Ensure common tool paths are available (Git mingw64, etc.)
+    // Note: openssl and sqlite3 are no longer required by setup-public-key.ps1
+    // or token scripts since they use pure .NET crypto and bundled System.Data.SQLite.
+    // We keep this path augmentation for robustness/other possible tools.
     if (process.platform === "win32") {
       const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
       const userProfile = process.env.USERPROFILE ?? "";

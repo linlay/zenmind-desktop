@@ -956,23 +956,38 @@ function loadBuiltinsForTest(userDataRoot, assetsRoot, appOptions = {}) {
 }
 
 function writeContainerHubBundleRoot(bundleRoot, options = {}) {
-  const startScriptContent = options.startScriptContent ?? "#!/usr/bin/env bash\necho start\n";
-  const deployScriptContent = options.deployScriptContent ??
-    "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p run\nprintf '%s\\n' 'agent-container-hub' >> run/deploy.log\n";
+  const isWindows = process.platform === "win32";
+  const ext = isWindows ? "ps1" : "sh";
+
+  let startScriptContent = options.startScriptContent ?? (isWindows ? "exit 0\r\n" : "#!/usr/bin/env bash\necho start\n");
+  let deployScriptContent = options.deployScriptContent ?? (isWindows
+    ? "New-Item -ItemType Directory -Force -Path (Join-Path $PSScriptRoot 'run') | Out-Null\r\nAdd-Content -LiteralPath (Join-Path $PSScriptRoot 'run/deploy.log') -Value 'agent-container-hub'"
+    : "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p run\nprintf '%s\\n' 'agent-container-hub' >> run/deploy.log\n");
+
   const bindAddr = options.bindAddr ?? "127.0.0.1:11960";
   const defaultPort = Number(String(bindAddr).match(/:(\d+)$/u)?.[1] || 11960);
-  const assetFileName = options.assetFileName ?? "agent-container-hub-v0.1.0-darwin-arm64.tar.gz";
+  const assetFileName = options.assetFileName ?? (isWindows ? "agent-container-hub-v0.1.0-windows-amd64.zip" : "agent-container-hub-v0.1.0-darwin-arm64.tar.gz");
 
   fs.mkdirSync(path.join(bundleRoot, "backend"), { recursive: true });
   fs.mkdirSync(path.join(bundleRoot, "configs", "environments"), { recursive: true });
   fs.mkdirSync(path.join(bundleRoot, "data", "rootfs"), { recursive: true });
   fs.mkdirSync(path.join(bundleRoot, "data", "builds"), { recursive: true });
   fs.mkdirSync(path.join(bundleRoot, "scripts"), { recursive: true });
-  fs.writeFileSync(path.join(bundleRoot, "backend", "agent-container-hub"), "binary", "utf8");
-  fs.writeFileSync(path.join(bundleRoot, "deploy.sh"), deployScriptContent, "utf8");
-  fs.writeFileSync(path.join(bundleRoot, "start.sh"), startScriptContent, "utf8");
-  fs.writeFileSync(path.join(bundleRoot, "stop.sh"), "#!/usr/bin/env bash\necho stop\n", "utf8");
-  fs.writeFileSync(path.join(bundleRoot, "scripts", "program-common.sh"), "#!/usr/bin/env bash\n", "utf8");
+
+  const exeName = isWindows ? "agent-container-hub.exe" : "agent-container-hub";
+  fs.writeFileSync(path.join(bundleRoot, "backend", exeName), "binary", "utf8");
+
+  if (isWindows && typeof options.startScriptContent === "string" && options.startScriptContent.includes("#!/usr/bin/env")) {
+    startScriptContent = "exit 0\r\n";
+  }
+  if (isWindows && typeof options.deployScriptContent === "string" && options.deployScriptContent.includes("#!/usr/bin/env")) {
+    deployScriptContent = "New-Item -ItemType Directory -Force -Path (Join-Path $PSScriptRoot 'run') | Out-Null\r\nAdd-Content -LiteralPath (Join-Path $PSScriptRoot 'run/deploy.log') -Value 'agent-container-hub'";
+  }
+
+  fs.writeFileSync(path.join(bundleRoot, `deploy.${ext}`), deployScriptContent, "utf8");
+  fs.writeFileSync(path.join(bundleRoot, `start.${ext}`), startScriptContent, "utf8");
+  fs.writeFileSync(path.join(bundleRoot, `stop.${ext}`), isWindows ? "exit 0\r\n" : "#!/usr/bin/env bash\necho stop\n", "utf8");
+  fs.writeFileSync(path.join(bundleRoot, "scripts", `program-common.${ext}`), isWindows ? "# fixture\r\n" : "#!/usr/bin/env bash\n", "utf8");
   fs.writeFileSync(path.join(bundleRoot, ".env.example"), `BIND_ADDR=${bindAddr}\n`, "utf8");
   fs.writeFileSync(
     path.join(bundleRoot, "manifest.json"),
@@ -994,12 +1009,12 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
           enabled: true
         },
         backend: {
-          entry: "backend/agent-container-hub"
+          entry: `backend/${exeName}`
         },
         scripts: {
-          start: ["start.sh", "--daemon"],
-          stop: "stop.sh",
-          deploy: "deploy.sh"
+          start: isWindows ? [`start.${ext}`, "--daemon"] : ["start.sh", "--daemon"],
+          stop: `stop.${ext}`,
+          deploy: `deploy.${ext}`
         },
         configFiles: [
           {
@@ -1015,11 +1030,11 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
           logRelativePath: "run/agent-container-hub.log",
           errorLogRelativePath: "run/agent-container-hub.stderr.log",
           requiredPaths: [
-            "backend/agent-container-hub",
-            "start.sh",
-            "stop.sh",
-            "deploy.sh",
-            "scripts/program-common.sh",
+            `backend/${exeName}`,
+            `start.${ext}`,
+            `stop.${ext}`,
+            `deploy.${ext}`,
+            `scripts/program-common.${ext}`,
             ".env.example",
             "manifest.json",
             "configs/environments"
@@ -1124,33 +1139,51 @@ function writePluginInstallRoot(installDir, options = {}) {
   const version = options.version ?? "v1.0.0";
   const port = options.port ?? 9300;
   const errorLogRelativePath = options.errorLogRelativePath ?? null;
-  const deployScriptContent =
-    options.deployScriptContent === undefined
-      ? [
-          "#!/usr/bin/env bash",
-          "set -euo pipefail",
-          'config_dir="${SERVICE_CONFIG_DIR:-$PWD}"',
-          'state_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
-          'mkdir -p "$config_dir" "$state_dir"',
-          'if [ ! -f "$config_dir/.env" ]; then cp .env.example "$config_dir/.env"; fi',
-          'printf deployed > "$state_dir/deploy-marker.txt"'
-        ].join("\n") + "\n"
+  const isWindows = process.platform === "win32";
+  const ext = isWindows ? "ps1" : "sh";
+
+  let deployScriptContent = options.deployScriptContent === undefined
+      ? isWindows
+        ? [
+            "New-Item -ItemType Directory -Force -Path $env:SERVICE_CONFIG_DIR | Out-Null",
+            "New-Item -ItemType Directory -Force -Path $env:SERVICE_STATE_DIR | Out-Null",
+            "if (-not (Test-Path (Join-Path $env:SERVICE_CONFIG_DIR '.env'))) { Copy-Item .env.example (Join-Path $env:SERVICE_CONFIG_DIR '.env') -Force }",
+            "[System.IO.File]::WriteAllText((Join-Path $env:SERVICE_STATE_DIR 'deploy-marker.txt'), 'deployed')"
+          ].join("\r\n")
+        : [
+            "#!/usr/bin/env bash",
+            "set -euo pipefail",
+            'config_dir="${SERVICE_CONFIG_DIR:-$PWD}"',
+            'state_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
+            'mkdir -p "$config_dir" "$state_dir"',
+            'if [ ! -f "$config_dir/.env" ]; then cp .env.example "$config_dir/.env"; fi',
+            'printf deployed > "$state_dir/deploy-marker.txt"'
+          ].join("\n") + "\n"
       : options.deployScriptContent;
-  const requiredPaths = ["manifest.json", "start.sh", "stop.sh", ".env.example"];
+
+  if (isWindows && typeof deployScriptContent === "string" && deployScriptContent.includes("#!/usr/bin/env")) {
+    if (deployScriptContent.includes("exit 1")) {
+      deployScriptContent = "Write-Error 'deploy failed'\r\nthrow 'deploy failed'\r\n";
+    } else {
+      deployScriptContent = "exit 0\r\n";
+    }
+  }
+
+  const requiredPaths = ["manifest.json", `start.${ext}`, `stop.${ext}`, ".env.example"];
 
   fs.mkdirSync(path.join(installDir, "run"), { recursive: true });
   fs.writeFileSync(path.join(installDir, ".env.example"), `PORT=${port}\n`, "utf8");
-  fs.writeFileSync(path.join(installDir, "start.sh"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
-  fs.writeFileSync(path.join(installDir, "stop.sh"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
+  fs.writeFileSync(path.join(installDir, `start.${ext}`), isWindows ? "exit 0\r\n" : "#!/usr/bin/env bash\nexit 0\n", "utf8");
+  fs.writeFileSync(path.join(installDir, `stop.${ext}`), isWindows ? "exit 0\r\n" : "#!/usr/bin/env bash\nexit 0\n", "utf8");
 
   const scripts = {
-    start: "start.sh",
-    stop: "stop.sh"
+    start: `start.${ext}`,
+    stop: `stop.${ext}`
   };
   if (deployScriptContent !== false) {
-    fs.writeFileSync(path.join(installDir, "deploy.sh"), deployScriptContent, "utf8");
-    requiredPaths.push("deploy.sh");
-    scripts.deploy = "deploy.sh";
+    fs.writeFileSync(path.join(installDir, `deploy.${ext}`), deployScriptContent, "utf8");
+    requiredPaths.push(`deploy.${ext}`);
+    scripts.deploy = `deploy.${ext}`;
   }
 
   fs.writeFileSync(
@@ -1193,7 +1226,8 @@ function writePluginInstallRoot(installDir, options = {}) {
     "utf8"
   );
 
-  for (const scriptName of ["start.sh", "stop.sh", "deploy.sh"]) {
+  const scriptNames = isWindows ? ["start.ps1", "stop.ps1", "deploy.ps1"] : ["start.sh", "stop.sh", "deploy.sh"];
+  for (const scriptName of scriptNames) {
     const scriptPath = path.join(installDir, scriptName);
     if (fs.existsSync(scriptPath)) {
       fs.chmodSync(scriptPath, 0o755);

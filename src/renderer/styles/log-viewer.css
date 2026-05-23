@@ -13,12 +13,20 @@
 .log-viewer-window-drag-zone {
   position: absolute;
   top: 0;
-  right: 52px;
-  left: 72px;
   z-index: 8;
   height: 38px;
   app-region: drag;
   -webkit-app-region: drag;
+}
+
+.log-viewer-window-drag-zone.is-mac {
+  left: 72px;
+  right: 0;
+}
+
+.log-viewer-window-drag-zone.is-windows {
+  left: 0;
+  right: 120px;
 }
 
 
@@ -51,8 +59,14 @@
   overflow: hidden;
 }
 
-.log-viewer-close-button {
+.log-viewer-window-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex: none;
+}
+
+.log-viewer-control-button {
   display: inline-grid;
   place-items: center;
   width: 32px;
@@ -68,12 +82,17 @@
   transition: background 0.12s, color 0.12s;
 }
 
-.log-viewer-close-button:hover {
+.log-viewer-control-button:hover {
+  background: var(--desktop-ui-card-soft);
+  color: var(--desktop-ui-text);
+}
+
+.log-viewer-control-button.close:hover {
   background: rgba(220, 38, 38, 0.1);
   color: #dc2626;
 }
 
-:root[data-theme="dark"] .log-viewer-close-button:hover {
+:root[data-theme="dark"] .log-viewer-control-button.close:hover {
   background: rgba(248, 113, 113, 0.15);
   color: #f87171;
 }

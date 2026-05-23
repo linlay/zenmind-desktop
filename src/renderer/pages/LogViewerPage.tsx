@@ -268,6 +268,17 @@ export function LogViewerPage() {
 		[joinedContent, deferredQuery],
 	);
 	const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
+	const [isMaximized, setIsMaximized] = useState(false);
+
+	useEffect(() => {
+		if (typeof window.electronAPI?.services?.onLogViewerMaximized === "function") {
+			const cleanup = window.electronAPI.services.onLogViewerMaximized((maximized) => {
+				setIsMaximized(maximized);
+			});
+			return cleanup;
+		}
+	}, []);
+
 
 	useEffect(() => {
 		tailFollowEnabledRef.current = tailFollowEnabled;
@@ -809,6 +820,14 @@ export function LogViewerPage() {
 		void window.electronAPI.services.closeLogViewer();
 	}
 
+	function minimizeWindow() {
+		void window.electronAPI.services.minimizeLogViewer?.();
+	}
+
+	function maximizeWindow() {
+		void window.electronAPI.services.maximizeLogViewer?.();
+	}
+
 	const hasMatches = matches.length > 0;
 	const hasLoadedContent = joinedContent.length > 0;
 	const isPartialLoad =
@@ -823,7 +842,7 @@ export function LogViewerPage() {
 	return (
 		<main className="log-viewer-page">
 			<div
-				className="log-viewer-window-drag-zone"
+				className={`log-viewer-window-drag-zone ${isMac ? "is-mac" : "is-windows"}`}
 				aria-hidden="true"
 			/>
 			<section
@@ -835,17 +854,47 @@ export function LogViewerPage() {
 						<h1 id="log-viewer-title">{state.title || title}</h1>
 					</div>
 					{!isMac ? (
-						<button
-							type="button"
-							className="log-viewer-close-button"
-							onClick={closeWindow}
-							aria-label="关闭"
-							title="关闭"
-						>
-							<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" focusable="false">
-								<path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-							</svg>
-						</button>
+						<div className="log-viewer-window-controls">
+							<button
+								type="button"
+								className="log-viewer-control-button minimize"
+								onClick={minimizeWindow}
+								aria-label="最小化"
+								title="最小化"
+							>
+								<svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+									<path d="M1 5h8" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
+								</svg>
+							</button>
+							<button
+								type="button"
+								className="log-viewer-control-button maximize"
+								onClick={maximizeWindow}
+								aria-label={isMaximized ? "还原" : "最大化"}
+								title={isMaximized ? "还原" : "最大化"}
+							>
+								{isMaximized ? (
+									<svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+										<path d="M3 1.5h5.5v5.5M1.5 3h5.5v5.5h-5.5z" stroke="currentColor" strokeWidth="1" fill="none"/>
+									</svg>
+								) : (
+									<svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+										<rect x="1.5" y="1.5" width="7" height="7" stroke="currentColor" strokeWidth="1" fill="none"/>
+									</svg>
+								)}
+							</button>
+							<button
+								type="button"
+								className="log-viewer-control-button close"
+								onClick={closeWindow}
+								aria-label="关闭"
+								title="关闭"
+							>
+								<svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+									<path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
+								</svg>
+							</button>
+						</div>
 					) : null}
 				</header>
 

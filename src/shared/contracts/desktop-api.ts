@@ -154,6 +154,9 @@ export interface DesktopApi {
     openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
     revealPath: (targetPath: string, options?: ServiceRevealPathOptions) => Promise<ServiceRevealPathResult>;
     closeLogViewer: () => Promise<{ ok: boolean }>;
+    minimizeLogViewer: () => Promise<{ ok: boolean }>;
+    maximizeLogViewer: () => Promise<{ ok: boolean }>;
+    onLogViewerMaximized: (listener: (maximized: boolean) => void) => () => void;
   };
   plugins: {
     install: () => Promise<PluginInstallResult>;
