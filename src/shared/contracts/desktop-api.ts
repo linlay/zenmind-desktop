@@ -71,6 +71,9 @@ export type NativeDialogVisibilityListener = (state: { open: boolean }) => void;
 export type SandboxImageImportProgressListener = (event: SandboxImageImportProgressEvent) => void;
 
 export interface DesktopApi {
+  shell: {
+    openExternal: (url: string) => Promise<{ ok: boolean; error?: string }>;
+  };
   clipboard: {
     writeText: (text: string) => Promise<{ ok: boolean; message?: string }>;
   };

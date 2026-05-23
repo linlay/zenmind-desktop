@@ -1,5 +1,5 @@
 import { createElement, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useParams, useNavigate } from "react-router-dom";
 import { useServices } from "../../services/ServicesContext";
 import { registerAssistantPageContextProvider } from "../../services/assistantPageContext";
 import {
@@ -401,6 +401,7 @@ export function PluginPage({
   suppressInitialLoadingCopy,
 }: PluginPageProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const currentRoute = `${location.pathname}${location.search}`;
   const { pluginId: routePluginId } = useParams<{ pluginId: string }>();
   const pluginId = pluginIdProp ?? routePluginId ?? "";
@@ -1354,6 +1355,20 @@ export function PluginPage({
   return (
     <section className="pan-page pan-page-embedded" {...surfaceVisibilityProps}>
       <div className="pan-drag-region" aria-hidden="true" />
+      {active && pluginId !== "agent-webclient" && (
+        <button
+          className="embedded-back-button"
+          onClick={() => {
+            navigate(-1);
+          }}
+          title="返回上一页"
+          aria-label="返回"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+            <path d="m313-440 224 224-57 57-320-320 320-320 57 57-224 224h487v80H313Z"/>
+          </svg>
+        </button>
+      )}
       <div className="pan-frame-shell">
         {bridgeReady && serviceWebviewPreloadUrl ? (
           <>

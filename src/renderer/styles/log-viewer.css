@@ -13,13 +13,14 @@
 .log-viewer-window-drag-zone {
   position: absolute;
   top: 0;
-  right: 0;
+  right: 52px;
   left: 72px;
   z-index: 8;
   height: 38px;
   app-region: drag;
   -webkit-app-region: drag;
 }
+
 
 .log-viewer-panel {
   position: relative;
@@ -45,7 +46,36 @@
 }
 
 .log-viewer-copy {
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
+}
+
+.log-viewer-close-button {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--desktop-ui-muted);
+  cursor: pointer;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+  transition: background 0.12s, color 0.12s;
+}
+
+.log-viewer-close-button:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+:root[data-theme="dark"] .log-viewer-close-button:hover {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
 }
 
 .log-viewer-copy h1 {

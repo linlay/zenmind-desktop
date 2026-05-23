@@ -3350,6 +3350,18 @@ function registerIpcHandlers() {
     ...desktopActionOptions
   });
 
+  ipcMain.handle("shell.openExternal", async (_event, url: string) => {
+    if (typeof url === "string" && (url.startsWith("http:") || url.startsWith("https:"))) {
+      try {
+        await shell.openExternal(url);
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: String(error) };
+      }
+    }
+    return { ok: false, error: "invalid_protocol" };
+  });
+
   ipcMain.handle("assistant.getSettings", async () => getAgentPlatformMinimaxSettingsPublic(app) ?? getAssistantSettings(app));
   ipcMain.handle("assistant.saveSettings", async (_event, input: AssistantSettingsInput) =>
     saveAssistantSettings(app, input)

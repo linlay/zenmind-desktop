@@ -42,6 +42,9 @@ import type {
 import type { DesktopActionCallRequest } from "../shared/desktop-actions";
 
 const api: DesktopApi = {
+  shell: {
+    openExternal: (url: string) => ipcRenderer.invoke("shell.openExternal", url)
+  },
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text)
   },

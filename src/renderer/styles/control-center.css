@@ -3194,6 +3194,13 @@
   transform: translateX(1px);
 }
 
+.service-action-button .service-action-icon-restart {
+  fill: currentColor;
+  stroke: none;
+  width: 20px;
+  height: 20px;
+}
+
 .service-action-button .service-action-icon-info {
   width: 17px;
   height: 17px;
@@ -3281,6 +3288,7 @@
 
 .service-detail-metadata-item.is-endpoint {
   min-width: 0;
+  overflow: hidden;
 }
 
 .service-detail-metadata-item.is-log-actions {

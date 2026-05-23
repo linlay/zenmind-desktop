@@ -1923,6 +1923,70 @@
   overflow: hidden;
 }
 
+/* ── 悬浮返回按钮样式 ── */
+.embedded-back-button {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  color: #1e293b;
+  cursor: pointer;
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.08), 
+    0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  pointer-events: auto;
+}
+
+:root[data-theme="dark"] .embedded-back-button {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #f1f5f9;
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.24), 
+    0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.embedded-back-button:hover {
+  transform: scale(1.06);
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(203, 213, 225, 1);
+  color: var(--accent, #3b82f6);
+  box-shadow: 
+    0 6px 16px rgba(0, 0, 0, 0.12),
+    0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+:root[data-theme="dark"] .embedded-back-button:hover {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--accent, #3b82f6);
+  box-shadow: 
+    0 6px 16px rgba(0, 0, 0, 0.36),
+    0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+.embedded-back-button:active {
+  transform: scale(0.94);
+}
+
+.embedded-back-button svg {
+  display: block;
+  flex: none;
+}
+
 .pan-drag-region {
   position: relative;
   flex: none;

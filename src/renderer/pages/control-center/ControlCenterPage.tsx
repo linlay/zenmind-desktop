@@ -254,15 +254,12 @@ function ReinstallServiceIcon() {
 function RestartServiceIcon() {
   return (
     <svg
-      className="service-action-icon"
-      viewBox="0 0 24 24"
+      className="service-action-icon service-action-icon-restart"
+      viewBox="0 -960 960 960"
       aria-hidden="true"
       focusable="false"
     >
-      <path d="M20 12a8 8 0 0 1-13.6 5.7" />
-      <path d="M4 12A8 8 0 0 1 17.6 6.3" />
-      <path d="M17 3.5v4h4" />
-      <path d="M7 20.5v-4H3" />
+      <path d="M440-122q-121-15-200.5-105.5T160-440q0-66 26-126.5T260-672l57 57q-38 34-57.5 79T240-440q0 88 56 155.5T440-202v80Zm80 0v-80q87-16 143.5-83T720-440q0-100-70-170t-170-70h-3l44 44-56 56-140-140 140-140 56 56-44 44h3q134 0 227 93t93 227q0 121-79.5 211.5T520-122Z" />
     </svg>
   );
 }
@@ -1685,7 +1682,7 @@ export function ControlCenterPage() {
                       )
                     }
                     aria-label="详情"
-                    title="详情"
+                    data-tooltip="卸载插件"
                   >
                     <ServiceInfoIcon />
                   </button>
@@ -1758,13 +1755,16 @@ export function ControlCenterPage() {
                       className="service-detail-link truncated-hover-value"
                       data-full-value={detailEndpoint}
                       onClick={(event) => {
+                        event.preventDefault();
                         if (
                           activeDetailService.frontendMode ===
                           "none"
                         ) {
+                          if (detailEndpoint) {
+                            void window.electronAPI.shell.openExternal(detailEndpoint);
+                          }
                           return;
                         }
-                        event.preventDefault();
                         navigate(
                           `/service/${activeDetailService.id}`,
                         );

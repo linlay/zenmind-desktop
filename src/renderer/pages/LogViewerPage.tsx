@@ -169,6 +169,9 @@ function isWindowsFindShortcut(event: KeyboardEvent) {
 	);
 }
 
+const isMac = /Mac|iPhone|iPod|iPad/i.test(navigator.userAgent);
+
+
 function ArrowUpwardIcon() {
 	return (
 		<svg
@@ -819,7 +822,10 @@ export function LogViewerPage() {
 
 	return (
 		<main className="log-viewer-page">
-			<div className="log-viewer-window-drag-zone" aria-hidden="true" />
+			<div
+				className="log-viewer-window-drag-zone"
+				aria-hidden="true"
+			/>
 			<section
 				className="log-viewer-panel"
 				aria-labelledby="log-viewer-title"
@@ -828,6 +834,19 @@ export function LogViewerPage() {
 					<div className="log-viewer-copy">
 						<h1 id="log-viewer-title">{state.title || title}</h1>
 					</div>
+					{!isMac ? (
+						<button
+							type="button"
+							className="log-viewer-close-button"
+							onClick={closeWindow}
+							aria-label="关闭"
+							title="关闭"
+						>
+							<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" focusable="false">
+								<path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+							</svg>
+						</button>
+					) : null}
 				</header>
 
 				<div className="log-viewer-tip-row">
