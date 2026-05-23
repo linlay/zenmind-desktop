@@ -3,9 +3,11 @@ import {
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
+  DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
+  SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
   type ServiceWebviewBridgeMessage
 } from "../shared/service-webview-bridge";
 
@@ -32,7 +34,8 @@ const MAIN_WORLD_SCRIPT = `
     "zenmind:agent-app-auth:response",
     "zenmind:pan-app-auth:response",
     "zenmind:agent-app-clipboard:response",
-    "desktopContextChanged"
+    "desktopContextChanged",
+    "desktopRouteChanged"
   ]);
   const originalWindowPostMessage = window.postMessage.bind(window);
   const originalParentPostMessage = window.parent && window.parent !== window && typeof window.parent.postMessage === "function"
@@ -192,6 +195,7 @@ function isDesktopBridgeRequest(value: ServiceWebviewBridgeMessage) {
 function isDesktopBridgeDeliver(value: ServiceWebviewBridgeMessage) {
   return value.type === AGENT_APP_CLIPBOARD_RESPONSE_TYPE ||
     value.type === DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE ||
+    value.type === DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE ||
     Boolean(value.type && /:auth:response$/u.test(value.type));
 }
 
@@ -238,6 +242,14 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL, (_event, payload: Service
   if (payload.type && /:auth:response$/u.test(payload.type)) {
     sendBridgeDebug("auth-response-seeded");
   }
+});
+
+ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, (_event, payload: ServiceWebviewBridgeMessage) => {
+  if (!isBridgeMessage(payload) || payload.type !== DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE) {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent(PRELOAD_TO_PAGE_EVENT, { detail: payload }));
+  sendBridgeDebug("route-changed", String(payload.reason || ""));
 });
 
 // 暴露 API 给 浏览器JS（渲染进程）

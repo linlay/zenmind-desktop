@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
 import { CustomSidebarRouteFallback, CustomSidebarSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
@@ -108,28 +108,6 @@ function createUnavailableDesktopSsoStatus(): DesktopSsoStatus {
 
 function getDesktopSsoApi() {
   return window.electronAPI.sso?.getStatus ? window.electronAPI.sso : null;
-}
-
-type DesktopSsoDismissEvent = ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement>;
-
-function isDesktopSsoDismissZone(event: DesktopSsoDismissEvent) {
-  const target = event.target;
-  if (target instanceof Element) {
-    if (target.closest(".app-sso-status-action")) {
-      return false;
-    }
-    if (target.closest(".app-sso-status-close")) {
-      return true;
-    }
-  }
-  const rect = event.currentTarget.getBoundingClientRect();
-  return event.clientX >= rect.right - 64;
-}
-
-function dismissDesktopSsoEvent(event: DesktopSsoDismissEvent, dismiss: () => void) {
-  event.preventDefault();
-  event.stopPropagation();
-  dismiss();
 }
 
 function normalizeCachedAssistantNavAgentItem(value: unknown): AssistantNavAgentItem | null {
@@ -324,7 +302,6 @@ export function AppShell() {
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [desktopSsoBusy, setDesktopSsoBusy] = useState(false);
-  const [desktopSsoDismissed, setDesktopSsoDismissed] = useState(false);
   const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
   const [customSidebarItemsLoaded, setCustomSidebarItemsLoaded] = useState(false);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
@@ -1231,24 +1208,6 @@ export function AppShell() {
     themeMode
   ]);
 
-  const desktopSsoUserLabel = desktopSsoStatus?.authenticated
-    ? desktopSsoStatus.user?.name || desktopSsoStatus.user?.email || desktopSsoStatus.user?.sub || "已登录"
-    : desktopSsoStatus?.pending
-      ? "登录中"
-      : "未登录";
-  const desktopSsoMessage = desktopSsoStatus?.message || "Desktop 单点登录";
-  const desktopSsoActionLabel = desktopSsoStatus?.authenticated
-    ? "退出登录"
-    : desktopSsoStatus?.pending
-      ? "重新打开"
-      : "登录";
-  const desktopSsoClassName = [
-    "app-sso-status",
-    desktopSsoStatus?.authenticated ? "is-authenticated" : "",
-    desktopSsoStatus?.pending ? "is-pending" : "",
-    desktopSsoStatus?.error ? "is-error" : ""
-  ].filter(Boolean).join(" ");
-  const shouldRenderDesktopSso = desktopSsoStatus?.configured === true && !desktopSsoDismissed;
   const appShellStyle = {
     "--app-sidebar-width": `${renderedSidebarWidth}px`
   } as CSSProperties;
@@ -1264,70 +1223,17 @@ export function AppShell() {
         isTaskBoardRoute ? "has-task-board-controls" : "",
         isMarketRoute ? "has-market-controls" : "",
         usesStandardBaseSurface ? "has-standard-base-surface" : "",
-        shouldRenderDesktopSso ? "has-desktop-sso-status" : "",
         assistantCopilotOpen ? "has-assistant-dock" : "",
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
+        sidebarCollapsed ? "is-sidebar-collapsed" : "",
         isSidebarResizing ? "is-sidebar-resizing" : "",
         "has-translucent-sidebar",
         isMac ? "is-mac-translucent-sidebar" : ""
       ].filter(Boolean).join(" ")}
     >
       <div className="app-window-drag-region" aria-hidden="true" />
-      {shouldRenderDesktopSso && (
-        <div
-          className={desktopSsoClassName}
-          aria-live="polite"
-          onPointerDownCapture={(event) => {
-            if (isDesktopSsoDismissZone(event)) {
-              dismissDesktopSsoEvent(event, () => setDesktopSsoDismissed(true));
-            }
-          }}
-          onMouseDownCapture={(event) => {
-            if (isDesktopSsoDismissZone(event)) {
-              dismissDesktopSsoEvent(event, () => setDesktopSsoDismissed(true));
-            }
-          }}
-        >
-          <span className="app-sso-status-dot" aria-hidden="true" />
-          <span className="app-sso-status-copy">
-            <span className="app-sso-status-title">{desktopSsoUserLabel}</span>
-            <span className="app-sso-status-message">{desktopSsoMessage}</span>
-          </span>
-          <button
-            type="button"
-            className="app-sso-status-action"
-            onClick={() => {
-              void (desktopSsoStatus?.authenticated
-                ? handleDesktopSsoLogout()
-                : handleDesktopSsoLogin());
-            }}
-            disabled={desktopSsoBusy}
-          >
-            {desktopSsoBusy ? "处理中" : desktopSsoActionLabel}
-          </button>
-          <button
-            type="button"
-            className="app-sso-status-close"
-            onPointerDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setDesktopSsoDismissed(true);
-            }}
-            onMouseDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setDesktopSsoDismissed(true);
-            }}
-            onClick={() => setDesktopSsoDismissed(true)}
-            aria-label="关闭登录状态"
-            title="关闭"
-          >
-            <span aria-hidden="true" />
-          </button>
-        </div>
-      )}
       <div className="app-sidebar-shell">
         <AppSidebar
           isCollapsed={sidebarCollapsed}
@@ -1343,12 +1249,16 @@ export function AppShell() {
           customSidebarNavOrder={normalizedCustomSidebarGroupOrder}
           customSidebarItems={customSidebarItems}
           assistantNavAgents={assistantNavAgents}
+          desktopSsoStatus={desktopSsoStatus}
+          desktopSsoBusy={desktopSsoBusy}
           onOpenAssistantDock={() => openAssistantDock()}
           onCloseAssistantDock={() => {
             setAssistantDockOpen(false);
             setAssistantDockOpenRequest(null);
             assistantDockOpenRequestPathRef.current = null;
           }}
+          onDesktopSsoLogin={handleDesktopSsoLogin}
+          onDesktopSsoLogout={handleDesktopSsoLogout}
           onRequestNavigate={requestSidebarNavigation}
           onNavigateItem={undefined}
           onToggleCollapsed={toggleSidebarCollapsed}

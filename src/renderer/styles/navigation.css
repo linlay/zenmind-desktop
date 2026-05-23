@@ -108,6 +108,10 @@
   backdrop-filter: blur(18px) saturate(130%);
   -webkit-backdrop-filter: blur(18px) saturate(130%);
   overflow: hidden;
+  app-region: drag;
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .app-shell.is-mac-translucent-sidebar .app-sidebar {
@@ -397,6 +401,89 @@
 
 .sidebar-link-utility {
   min-height: 36px;
+}
+
+.sidebar-sso-entry {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-sso-entry:hover,
+.sidebar-sso-entry:focus-visible {
+  background: rgba(37, 99, 235, 0.08);
+  outline: none;
+}
+
+.sidebar-sso-entry:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+}
+
+.sidebar-sso-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+
+.sidebar-sso-entry.is-authenticated .sidebar-sso-dot {
+  background: #10b981;
+}
+
+.sidebar-sso-entry.is-pending .sidebar-sso-dot {
+  background: #f59e0b;
+}
+
+.sidebar-sso-entry.is-error .sidebar-sso-dot {
+  background: #ef4444;
+}
+
+.sidebar-sso-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sidebar-sso-title,
+.sidebar-sso-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-sso-title {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.sidebar-sso-message {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--ink-muted);
+}
+
+.sidebar-sso-action {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 650;
+  white-space: nowrap;
 }
 
 :root[data-theme="dark"] .sidebar-link {
@@ -1050,6 +1137,56 @@
   gap: 6px;
 }
 
+.app-shell.is-mac-platform .app-sidebar.is-collapsed {
+  --sidebar-toolbar-height: 64px;
+}
+
+.app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions {
+  top: 30px;
+  left: 0;
+  right: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr;
+  place-items: center;
+  box-sizing: border-box;
+  gap: 0;
+}
+
+.app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button {
+  width: 100%;
+  height: 24px;
+  justify-self: stretch;
+  border-radius: 8px;
+  background: transparent;
+  border-color: transparent;
+  color: rgba(71, 85, 105, 0.82);
+}
+
+.app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button:hover,
+.app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button:focus-visible {
+  background: rgba(148, 163, 184, 0.18);
+  border-color: rgba(148, 163, 184, 0.16);
+}
+
+.app-sidebar.is-collapsed .sidebar-top-actions .sidebar-assistant-top-button {
+  display: none;
+  pointer-events: none;
+}
+
+.app-shell.is-mac-platform.is-sidebar-collapsed .app-sidebar-resizer {
+  flex: 0 0 0;
+  width: 0;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.app-shell.is-mac-platform.is-sidebar-collapsed .app-sidebar-resizer .app-sidebar-resizer-line {
+  display: none;
+}
+
 .app-sidebar.is-collapsed .sidebar-nav {
   align-items: center;
   gap: 4px;
@@ -1183,6 +1320,24 @@
 }
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger .sidebar-link-label-collapsed {
+  display: none;
+}
+
+.app-sidebar.is-collapsed .sidebar-sso-entry {
+  width: 48px;
+  min-height: 32px;
+  justify-content: center;
+  margin: 0 auto;
+  padding: 0;
+  gap: 0;
+  border-radius: 8px;
+}
+
+.app-sidebar.is-collapsed .sidebar-sso-copy {
+  display: none;
+}
+
+.app-sidebar.is-collapsed .sidebar-sso-action {
   display: none;
 }
 

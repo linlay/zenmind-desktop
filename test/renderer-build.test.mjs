@@ -293,6 +293,14 @@ test("assistant launcher sits beside the sidebar collapse button", () => {
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
   );
+  const sidebarAssistantClosedIcon = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "assets", "sidebar-icons", "sidebar-assistant-closed.svg"),
+    "utf8"
+  );
+  const sidebarAssistantOpenIcon = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "assets", "sidebar-icons", "sidebar-assistant-open.svg"),
+    "utf8"
+  );
   const globalStyles = readRendererStyles();
   const nativeAssistantDockPath = path.join(projectRoot, "src", "renderer", "components", "AssistantDock.tsx");
 
@@ -300,16 +308,23 @@ test("assistant launcher sits beside the sidebar collapse button", () => {
   assert.match(appShell, /function AgentWebclientCopilotDock/);
   assert.match(appShell, /onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}/);
   assert.match(appShell, /function buildAgentWebclientCopilotPath/);
+  assert.match(appShell, /fallbackAgentKey = ""/);
+  assert.match(appShell, /openRequest\?\.agentKey \?\? openRequest\?\.workerKey \?\? fallbackAgentKey/);
   assert.match(appShell, /if \(!agentKey\) \{[\s\S]{0,80}return AGENT_WEBCLIENT_COPILOT_PATH/);
   assert.match(appShell, /if \(!chatId\) \{[\s\S]{0,100}return `\/agent\/\$\{encodeURIComponent\(agentKey\)\}`/);
   assert.match(appShell, /params\.set\("chatId", chatId\)/);
   assert.match(appShell, /return `\/agent\/\$\{encodeURIComponent\(agentKey\)\}\?\$\{params\.toString\(\)\}`/);
+  assert.match(appShell, /buildAgentWebclientCopilotPath\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /embedPath=\{targetEmbedPath\}/);
   assert.match(sidebarSource, /sidebar-top-actions/);
   assert.match(sidebarSource, /sidebar-assistant-top-button/);
   assert.match(sidebarSource, /"打开 ZenMind 助手"/);
   assert.match(sidebarSource, /"关闭 ZenMind 助手"/);
   assert.match(sidebarSource, /"当前页面不可开启 ZenMind 助手"/);
+  assert.doesNotMatch(sidebarAssistantClosedIcon, /<text\b/);
+  assert.doesNotMatch(sidebarAssistantOpenIcon, /<text\b/);
+  assert.match(sidebarAssistantClosedIcon, /viewBox="0 0 24 24"/);
+  assert.match(sidebarAssistantOpenIcon, /viewBox="0 0 24 24"/);
   assert.match(globalStyles, /--assistant-dock-embedded-width:\s*360px;/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{/);
   assert.doesNotMatch(globalStyles, /\.assistant-dock-/);
@@ -339,7 +354,17 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
     "utf8"
   );
   const globalStyles = readRendererStyles();
+  const appSidebarRule = globalStyles.match(/^\.app-sidebar\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body;
   const collapseButtonRule = globalStyles.match(/^\.app-sidebar-collapse-button\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body;
+  const collapsedMacTopActionsRule = globalStyles.match(
+    /^\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body;
+  const collapsedMacTopActionButtonRule = globalStyles.match(
+    /^\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions \.app-sidebar-collapse-button\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body;
+  const collapsedAssistantTopButtonRule = globalStyles.match(
+    /^\.app-sidebar\.is-collapsed \.sidebar-top-actions \.sidebar-assistant-top-button\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body;
 
   assert.match(appShell, /onToggleCollapsed=\{toggleSidebarCollapsed\}/);
   assert.match(appShell, /isMac=\{isMac\}/);
@@ -355,6 +380,7 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(appShell, /aria-orientation="vertical"/);
   assert.match(appShell, /aria-label="调整侧边栏宽度"/);
   assert.match(appShell, /onPointerDown=\{handleSidebarResizerPointerDown\}/);
+  assert.match(appShell, /sidebarCollapsed \? "is-sidebar-collapsed" : ""/);
   assert.match(appShell, /isSidebarResizing \? "is-sidebar-resizing" : ""/);
   assert.match(sidebarSource, /onToggleCollapsed\?:\s*\(\)\s*=>\s*void;/);
   assert.match(sidebarSource, /type SidebarCollapseToggleVariant = "compact" \| "nav";/);
@@ -369,6 +395,9 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(sidebarSource, /<div className="sidebar-top-actions">/);
   assert.doesNotMatch(sidebarSource, /sidebar-collapsed-toggle-slot/);
   assert.doesNotMatch(sidebarSource, /sidebar-collapse-control/);
+  assert.ok(appSidebarRule, "missing .app-sidebar rule");
+  assert.match(appSidebarRule, /app-region:\s*drag;/);
+  assert.match(appSidebarRule, /-webkit-app-region:\s*drag;/);
   assert.ok(collapseButtonRule, "missing .app-sidebar-collapse-button rule");
   assert.match(collapseButtonRule, /appearance:\s*none;/);
   assert.doesNotMatch(globalStyles, /\.app-shell\.is-sidebar-expanded\s*\{/);
@@ -380,11 +409,62 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(globalStyles, /\.app-sidebar-resizer\s*\{[\s\S]*?cursor:\s*col-resize;/);
   assert.match(globalStyles, /\.app-sidebar-resizer-line\s*\{/);
   assert.match(globalStyles, /\.app-sidebar-resizer:hover \.app-sidebar-resizer-line,[\s\S]*?\.app-sidebar-resizer\.is-active \.app-sidebar-resizer-line\s*\{/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform\.is-sidebar-collapsed \.app-sidebar-resizer\s*\{[\s\S]*?flex:\s*0 0 0;/);
+  assert.ok(collapsedMacTopActionsRule, "missing mac collapsed top actions rule");
+  assert.match(collapsedMacTopActionsRule, /left:\s*0;/);
+  assert.match(collapsedMacTopActionsRule, /right:\s*0;/);
+  assert.match(collapsedMacTopActionsRule, /width:\s*100%;/);
+  assert.match(collapsedMacTopActionsRule, /grid-template-columns:\s*1fr;/);
+  assert.match(collapsedMacTopActionsRule, /place-items:\s*center;/);
+  assert.doesNotMatch(collapsedMacTopActionsRule, /translateX\(-50%\)/);
+  assert.ok(collapsedMacTopActionButtonRule, "missing mac collapsed top action button rule");
+  assert.match(collapsedMacTopActionButtonRule, /width:\s*100%;/);
+  assert.match(collapsedMacTopActionButtonRule, /justify-self:\s*stretch;/);
+  assert.match(collapsedMacTopActionButtonRule, /border-radius:\s*8px;/);
+  assert.match(collapsedMacTopActionButtonRule, /background:\s*transparent;/);
+  assert.ok(collapsedAssistantTopButtonRule, "missing collapsed assistant top button rule");
+  assert.match(collapsedAssistantTopButtonRule, /display:\s*none;/);
+  assert.match(collapsedAssistantTopButtonRule, /pointer-events:\s*none;/);
   assert.match(globalStyles, /\.app-sidebar-resize-overlay\s*\{/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-compact\s*\{[\s\S]*?width:\s*24px;/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button\.is-nav\s*\{[\s\S]*?width:\s*var\(--sidebar-collapse-toggle-nav-width, 48px\);/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-chevron::before/);
   assert.match(globalStyles, /\.app-sidebar-collapse-button-icon-panel\s*\{[\s\S]*?width:\s*16px;/);
+  assert.match(globalStyles, /\.app-sidebar a,\s*[\s\S]*?\.app-sidebar button\s*\{[\s\S]*?app-region:\s*no-drag;/);
+});
+
+test("body-level popovers stay clickable above Electron drag regions", () => {
+  const popoverStyles = readSourceFile(
+    "src",
+    "renderer",
+    "components",
+    "Popover",
+    "index.module.css"
+  );
+  const popoverRule = popoverStyles.match(/^\.Popover\s*\{(?<body>[\s\S]*?)^\}/m)
+    ?.groups?.body;
+
+  assert.ok(popoverRule, "missing .Popover rule");
+  assert.match(popoverRule, /app-region:\s*no-drag;/);
+  assert.match(popoverRule, /-webkit-app-region:\s*no-drag;/);
+  assert.match(popoverRule, /pointer-events:\s*auto;/);
+});
+
+test("fixed sidebar tool menu uses controlled popover state", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+
+  assert.match(
+    sidebarSource,
+    /<Popover[\s\S]{0,160}placement="top-start"[\s\S]{0,160}content=\{renderToolMenu\(\)\}[\s\S]{0,160}open=\{toolMenuOpen\}[\s\S]{0,160}onOpenChange=\{setToolMenuOpen\}/
+  );
+  assert.doesNotMatch(sidebarSource, /toolMenuPosition/);
+  assert.doesNotMatch(sidebarSource, /toolMenuPanelRef/);
 });
 
 test("sidebar renders task board and section groups above the fixed tool menu", () => {
@@ -474,8 +554,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(globalStyles, /\.sidebar-tool-menu\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(globalStyles, /\.sidebar-group-heading\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
-  assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?margin:\s*0 4px 4px;[\s\S]*?border-left:\s*0;/);
-  assert.match(globalStyles, /\.worker-panel-role\s*\{[\s\S]*?font-size:\s*11px;/);
+  assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*0;[\s\S]*?border-left:\s*0;/);
+  assert.match(globalStyles, /\.worker-panel-role\s*\{[\s\S]*?font-size:\s*12px;/);
   assert.match(globalStyles, /\.worker-panel-preview\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?height:\s*20px;/);
   assert.match(globalStyles, /\.worker-chat-name\s*\{[\s\S]*?font-size:\s*12px;/);
   assert.match(globalStyles, /\.assistant-worker-header\s*\{[\s\S]*?padding:\s*6px 10px;/);
@@ -866,6 +946,7 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /assistantDockOpenRequestPathRef\.current !== location\.pathname[\s\S]*?setAssistantDockOpenRequest\(null\)/);
   assert.match(appShell, /assistantDockOpenRequestPathRef\.current = location\.pathname[\s\S]*?setAssistantDockOpenRequest\(request\)/);
   assert.match(appShell, /const targetAgentKey = openRequest\?\.agentKey \?\? openRequest\?\.workerKey \?\? resolvedAgentKey/);
+  assert.match(appShell, /const targetEmbedPath = buildAgentWebclientCopilotPath\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /data-open-agent-key=\{targetAgentKey\}/);
   assert.match(appShell, /key=\{`agent-webclient-copilot:\$\{targetEmbedPath\}`\}/);
   assert.match(sidebarSource, /assistantLauncherVisible/);
@@ -1630,8 +1711,8 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.doesNotMatch(pluginPage, /!webviewRef\.current && \(webviewRef\.current = node\)/);
   assert.match(sendBridgeMessageBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,\s*payload\)/);
   assert.doesNotMatch(sendBridgeMessageBlock, /executeJavaScript/);
-  assert.match(sendPluginRouteBlock, /executeJavaScript/);
-  assert.match(sendPluginRouteBlock, /CustomEvent\('\$\{SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL\}'/);
+  assert.match(sendPluginRouteBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,\s*payload\)/);
+  assert.doesNotMatch(sendPluginRouteBlock, /executeJavaScript/);
   assert.match(pluginPage, /__ZENMIND_AGENT_WEBCLIENT_AUTH_FALLBACK__/);
   assert.doesNotMatch(pluginPage, /agentWebclientTokenReloadTimerRef/);
   assert.doesNotMatch(pluginPage, /webviewRef\.current\?\.reload\(\)/);
@@ -1639,6 +1720,10 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /agent_webclient_seed_/);
   assert.match(pluginPage, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);
   assert.match(serviceWebviewPreload, /sendToHost/);
+  assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
+  assert.match(serviceWebviewPreload, /DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE/);
+  assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
+  assert.match(serviceWebviewPreload, /payload\.type !== DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE/);
   assert.match(serviceWebviewPreload, /window\.postMessage/);
   assert.match(serviceWebviewPreload, /window\.parent\.postMessage/);
   assert.match(serviceWebviewPreload, /MessageEvent\("message"/);
@@ -1959,6 +2044,24 @@ test("desktop pet base mode stays sprite-sized while bubble and preview modes ex
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root:not\(\.has-bubble\):not\(\.has-preview\)\s+\.desktop-pet-image[\s\S]{0,120}width:\s*100%/);
 });
 
+test("idol pony task running sprite uses the smooth high-frame strip", () => {
+  const globalStyles = readRendererStyles();
+  const desktopPetSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
+    "utf8"
+  );
+
+  assert.match(desktopPetSource, /task-run-left\.webp/);
+  assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,180}height:\s*104px;/);
+  assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,220}background-size:\s*1440px\s+104px;/);
+  assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,260}background-position:\s*0\s+0;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-task-run-animation\s+\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,180}animation:\s*desktop-pet-idol-pony-run-frames var\(--desktop-pet-task-run-animation-duration,\s*1500ms\) steps\(15,\s*end\) infinite;/);
+  assert.match(globalStyles, /@keyframes desktop-pet-idol-pony-run-frames\s*\{[\s\S]{0,120}to\s*\{\s*background-position:\s*-1440px\s+0;/);
+  assert.doesNotMatch(globalStyles, /background-position:\s*0\s+-200%;/);
+  assert.doesNotMatch(globalStyles, /background-position:\s*-800%\s+-200%;/);
+  assert.doesNotMatch(globalStyles, /background-position:\s*-768px\s+-216px;/);
+});
+
 test("desktop pet preview rows reserve room for two-line item content", () => {
   const globalStyles = readRendererStyles();
 
@@ -2092,6 +2195,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /ctx\.scale\(-1,\s*1\)/);
   assert.match(petAssetScript, /dario-a7bdc389/);
   assert.match(petAssetScript, /mini-sama-3ee267a2/);
+  assert.match(petAssetScript, /task-run-left\.webp/);
   assert.match(petAssetScript, /awaiting:\s*"thinking"/);
   assert.match(petAssetScript, /running:\s*"thinking"/);
   assert.match(petAssetScript, /function drawHoverArm/);
@@ -2099,6 +2203,10 @@ test("desktop pet visual states stay local to renderer priority", () => {
 
 test("desktop sso waits for a user click and keeps pending login recoverable", () => {
   const appShell = readAppShellSource();
+  const sidebarSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
+    "utf8"
+  );
   const contracts = readSharedContractsSource();
   const globalStyles = readRendererStyles();
 
@@ -2106,35 +2214,36 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(contracts, /browserUrl\?: string;/);
   assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
   assert.doesNotMatch(appShell, /void handleDesktopSsoLogin\(\);/);
-  assert.match(appShell, /const shouldRenderDesktopSso = desktopSsoStatus\?\.configured === true && !desktopSsoDismissed;/);
-  assert.match(appShell, /\{shouldRenderDesktopSso && \(/);
-  assert.match(appShell, /const \[desktopSsoDismissed, setDesktopSsoDismissed\] = useState\(false\);/);
-  assert.match(appShell, /setDesktopSsoDismissed\(true\)/);
-  assert.match(appShell, /shouldRenderDesktopSso \? "has-desktop-sso-status" : ""/);
-  assert.match(appShell, /function isDesktopSsoDismissZone\(event: DesktopSsoDismissEvent\)/);
-  assert.match(appShell, /event\.clientX >= rect\.right - 64/);
-  assert.match(appShell, /onPointerDownCapture=\{\(event\) => \{[\s\S]{0,220}isDesktopSsoDismissZone\(event\)[\s\S]{0,220}dismissDesktopSsoEvent/);
-  assert.match(appShell, /className="app-sso-status-close"[\s\S]*?onPointerDown=\{\(event\) => \{[\s\S]{0,180}setDesktopSsoDismissed\(true\);[\s\S]{0,80}\}\}/);
-  assert.match(appShell, /className="app-sso-status-close"[\s\S]*?onMouseDown=\{\(event\) => \{[\s\S]{0,180}setDesktopSsoDismissed\(true\);[\s\S]{0,80}\}\}/);
-  assert.match(appShell, /className="app-sso-status-close"/);
-  assert.match(appShell, /aria-label="关闭登录状态"/);
-  assert.match(globalStyles, /\.app-sso-status-close\s*\{/);
-  assert.match(globalStyles, /\.app-sso-status-close\s*\{[\s\S]{0,180}width:\s*44px;/);
-  assert.match(globalStyles, /\.app-sso-status-close\s*\{[\s\S]{0,220}height:\s*32px;/);
-  assert.match(globalStyles, /\.app-sso-status-close span,[\s\S]{0,80}\.app-sso-status-close span::before\s*\{[\s\S]{0,180}pointer-events:\s*none;/);
-  assert.match(globalStyles, /\.app-sso-status-close span::before/);
-  assert.match(globalStyles, /\.app-sso-status\s*\{[\s\S]{0,260}z-index:\s*40;/);
-  assert.match(globalStyles, /\.app-shell\.has-desktop-sso-status\s+\.app-window-drag-region\s*\{[\s\S]*?right:\s*max\(0px,\s*min\(500px,\s*calc\(100vw - var\(--app-sidebar-width,\s*160px\) - 72px\)\)\);/);
-  assert.match(globalStyles, /\.app-sso-status\s*\{[\s\S]{0,80}top:\s*76px;/);
-  assert.match(globalStyles, /\.app-shell\.has-standard-base-surface\s+\.app-sso-status\s*\{[\s\S]*?right:\s*176px;/);
-  assert.match(globalStyles, /\.app-sso-status,[\s\S]{0,80}\.app-sso-status \*\s*\{[\s\S]{0,180}-webkit-app-region:\s*no-drag;/);
-  assert.match(globalStyles, /\.app-sso-status-action,[\s\S]{0,80}\.app-sso-status-close\s*\{[\s\S]{0,180}pointer-events:\s*auto;/);
-  assert.match(globalStyles, /\.app-sso-status-action,[\s\S]{0,80}\.app-sso-status-close\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
-  assert.match(appShell, /desktopSsoStatus\?\.authenticated[\s\S]{0,120}\? "退出登录"/);
-  assert.match(appShell, /desktopSsoStatus\?\.pending[\s\S]{0,120}\? "重新打开"/);
-  assert.match(appShell, /: "登录";/);
-  assert.match(appShell, /<div[\s\S]{0,120}className=\{desktopSsoClassName\}[\s\S]{0,120}aria-live="polite"[\s\S]{0,320}onPointerDownCapture/);
-  assert.doesNotMatch(appShell, /disabled=\{desktopSsoBusy \|\| desktopSsoStatus\?\.pending === true\}/);
+  assert.match(appShell, /desktopSsoStatus=\{desktopSsoStatus\}/);
+  assert.match(appShell, /desktopSsoBusy=\{desktopSsoBusy\}/);
+  assert.match(appShell, /onDesktopSsoLogin=\{handleDesktopSsoLogin\}/);
+  assert.match(appShell, /onDesktopSsoLogout=\{handleDesktopSsoLogout\}/);
+  assert.doesNotMatch(appShell, /const \[desktopSsoDismissed, setDesktopSsoDismissed\]/);
+  assert.doesNotMatch(appShell, /className=\{desktopSsoClassName\}/);
+  assert.doesNotMatch(appShell, /has-desktop-sso-status/);
+
+  assert.match(sidebarSource, /desktopSsoStatus\?:\s*DesktopSsoStatus \| null;/);
+  assert.match(sidebarSource, /const shouldRenderDesktopSso = desktopSsoStatus\?\.configured === true;/);
+  assert.match(sidebarSource, /function renderDesktopSsoEntry\(\)/);
+  assert.match(sidebarSource, /function handleDesktopSsoEntryClick\(\)/);
+  assert.match(sidebarSource, /className=\{desktopSsoClassName\}/);
+  assert.match(sidebarSource, /aria-label=\{desktopSsoActionLabel\}/);
+  assert.match(sidebarSource, /if \(desktopSsoStatus\.authenticated\) \{[\s\S]{0,220}window\.confirm\("确定退出当前登录吗？"\)[\s\S]{0,220}if \(!confirmed\) \{[\s\S]{0,80}return;[\s\S]{0,220}onDesktopSsoLogout\?\.\(\);[\s\S]{0,80}return;/);
+  assert.match(sidebarSource, /onDesktopSsoLogin\?\.\(\);/);
+  assert.doesNotMatch(sidebarSource, /desktopSsoStatus\.authenticated[\s\S]{0,140}\? onDesktopSsoLogout\?\.\(\)[\s\S]{0,140}: onDesktopSsoLogin\?\.\(\)/);
+  assert.match(sidebarSource, /disabled=\{desktopSsoBusy\}/);
+  assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name \|\| desktopSsoStatus\.user\?\.email \|\| desktopSsoStatus\.user\?\.sub \|\| "已登录"/);
+  assert.match(sidebarSource, /desktopSsoStatus\.pending[\s\S]{0,120}\? "重新打开"/);
+  assert.match(sidebarSource, /: "登录";/);
+  assert.match(sidebarSource, /\{renderDesktopSsoEntry\(\)\}/);
+
+  assert.match(globalStyles, /\.sidebar-sso-entry\s*\{/);
+  assert.match(globalStyles, /\.sidebar-sso-entry\s*\{[\s\S]*?width:\s*100%;/);
+  assert.match(globalStyles, /\.sidebar-sso-entry\.is-authenticated \.sidebar-sso-dot\s*\{[\s\S]*?background:\s*#10b981;/);
+  assert.match(globalStyles, /\.sidebar-sso-entry\.is-pending \.sidebar-sso-dot\s*\{[\s\S]*?background:\s*#f59e0b;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-sso-entry\s*\{[\s\S]*?width:\s*48px;/);
+  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-sso-copy\s*\{[\s\S]*?display:\s*none;/);
+  assert.doesNotMatch(globalStyles, /\.app-sso-status/);
 });
 
 test("embedded browser accepts host-opened tabs after multiple tabs exist", () => {

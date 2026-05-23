@@ -75,3 +75,14 @@ test("task board uses pointer-first collisions and the whole column as the drop 
   assert.match(taskBoardPage, /<section[\s\S]{0,160}ref=\{setNodeRef\}/);
   assert.doesNotMatch(taskBoardPage, /<div ref=\{setNodeRef\} className="task-board-column-body">/);
 });
+
+test("task board cards expose a right-click delete menu", () => {
+  const taskBoardPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "task-board", "TaskBoardPage.tsx"),
+    "utf8"
+  );
+
+  assert.match(taskBoardPage, /onContextMenu=\{handleContextMenu\}/);
+  assert.match(taskBoardPage, /className="task-board-card-context-menu"/);
+  assert.match(taskBoardPage, /onClick=\{\(\) => void deleteIssue\(issue\)\}/);
+});

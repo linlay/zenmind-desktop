@@ -4,8 +4,8 @@ import { PluginPage } from "../../pages/plugin/PluginPage";
 
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
 
-function buildAgentWebclientCopilotPath(openRequest: AssistantWorkerOpenRequest | null) {
-  const agentKey = (openRequest?.agentKey ?? openRequest?.workerKey ?? "").trim();
+function buildAgentWebclientCopilotPath(openRequest: AssistantWorkerOpenRequest | null, fallbackAgentKey = "") {
+  const agentKey = (openRequest?.agentKey ?? openRequest?.workerKey ?? fallbackAgentKey).trim();
   const chatId = openRequest?.chatId?.trim() ?? "";
   if (!agentKey) {
     return AGENT_WEBCLIENT_COPILOT_PATH;
@@ -37,7 +37,7 @@ export function AgentWebclientCopilotDock({
   onRunningRunIdChange: (runId: string | null) => void;
 }) {
   const targetAgentKey = openRequest?.agentKey ?? openRequest?.workerKey ?? resolvedAgentKey;
-  const targetEmbedPath = buildAgentWebclientCopilotPath(openRequest);
+  const targetEmbedPath = buildAgentWebclientCopilotPath(openRequest, resolvedAgentKey);
 
   useEffect(() => {
     if (!open) {

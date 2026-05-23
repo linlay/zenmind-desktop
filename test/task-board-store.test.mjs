@@ -265,6 +265,44 @@ test("task board supports blocked issues between in progress and review", (t) =>
   );
 });
 
+test("task board lists the newest issue first inside each status column", async (t) => {
+  const app = createTempApp(t);
+  const older = createTaskBoardIssue(app, {
+    title: "先完成的任务",
+    status: "in_review"
+  }).issue;
+  const newer = createTaskBoardIssue(app, {
+    title: "后完成的任务",
+    status: "in_review"
+  }).issue;
+  assert.ok(older);
+  assert.ok(newer);
+
+  updateTaskBoardIssue(app, older.id, { description: "先进入评审" });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  updateTaskBoardIssue(app, newer.id, { description: "最新进入评审" });
+
+  assert.deepEqual(
+    listTaskBoardIssues(app)
+      .issues
+      .filter((issue) => issue.status === "in_review")
+      .map((issue) => issue.title),
+    ["后完成的任务", "先完成的任务"]
+  );
+
+  moveTaskBoardIssue(app, { id: older.id, status: "done", position: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  moveTaskBoardIssue(app, { id: newer.id, status: "done", position: 2 });
+
+  assert.deepEqual(
+    listTaskBoardIssues(app)
+      .issues
+      .filter((issue) => issue.status === "done")
+      .map((issue) => issue.title),
+    ["后完成的任务", "先完成的任务"]
+  );
+});
+
 test("task board migrates legacy JSON issues into SQLite and normalizes status aliases", (t) => {
   const app = createTempApp(t);
   const legacyPath = __testInternals.getLegacyTaskBoardIssuesPath(app);

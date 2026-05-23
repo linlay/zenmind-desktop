@@ -10,6 +10,7 @@ import type {
   AssistantNavAgentItem,
   AssistantNavChatItem,
   CustomSidebarItem,
+  DesktopSsoStatus,
 } from "../../../shared/contracts";
 import {
   createCustomSidebarNavOrderKey,
@@ -43,11 +44,6 @@ type SidebarGroupState = Record<SidebarGroupId, boolean>;
 type SidebarStatusSummary = {
   unreadCount: number;
   pendingCount: number;
-};
-
-type ToolMenuPosition = {
-  top: number;
-  left: number;
 };
 
 type AssistantChatMenuState = {
@@ -398,8 +394,12 @@ type AppSidebarProps = {
   customSidebarNavOrder?: SidebarNavOrderItemKey[];
   customSidebarItems: CustomSidebarItem[];
   assistantNavAgents?: AssistantNavAgentItem[];
+  desktopSsoStatus?: DesktopSsoStatus | null;
+  desktopSsoBusy?: boolean;
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
+  onDesktopSsoLogin?: () => void;
+  onDesktopSsoLogout?: () => void;
   onRequestNavigate?: (targetPath: string) => boolean;
   onNavigateItem?: () => void;
   onToggleCollapsed?: () => void;
@@ -419,8 +419,12 @@ export function AppSidebar({
   customSidebarNavOrder = [],
   customSidebarItems,
   assistantNavAgents = [],
+  desktopSsoStatus = null,
+  desktopSsoBusy = false,
   onOpenAssistantDock,
   onCloseAssistantDock,
+  onDesktopSsoLogin,
+  onDesktopSsoLogout,
   onRequestNavigate,
   onNavigateItem,
   onToggleCollapsed,
@@ -429,15 +433,12 @@ export function AppSidebar({
     readInitialSidebarGroupState,
   );
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
-  const [toolMenuPosition, setToolMenuPosition] =
-    useState<ToolMenuPosition | null>(null);
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
     useState("");
   const [assistantChatMenu, setAssistantChatMenu] =
     useState<AssistantChatMenuState | null>(null);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const toolMenuPanelRef = useRef<HTMLDivElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
   const currentRouteAgentInfo = readAgentRouteInfo(currentRoute);
   const pendingRouteAgentInfo = pendingPath
@@ -446,6 +447,7 @@ export function AppSidebar({
   const currentAgentKey = currentRouteAgentInfo.agentKey;
   const currentChatId = currentRouteAgentInfo.chatId;
   const pendingAgentKey = pendingRouteAgentInfo.agentKey;
+  const shouldRenderDesktopSso = desktopSsoStatus?.configured === true;
   const assistantStatusSummary = useMemo(
     () => summarizeAgentStatus(assistantNavAgents),
     [assistantNavAgents],
@@ -492,70 +494,6 @@ export function AppSidebar({
       // Ignore localStorage failures in restricted renderer contexts.
     }
   }, [sidebarGroupState]);
-
-  useEffect(() => {
-    if (!toolMenuOpen) {
-      return undefined;
-    }
-
-    function updateToolMenuPosition() {
-      const triggerRect = toolMenuTriggerRef.current?.getBoundingClientRect();
-      if (!triggerRect) {
-        return;
-      }
-      const panelWidth = toolMenuPanelRef.current?.offsetWidth ?? 228;
-      const panelHeight = toolMenuPanelRef.current?.offsetHeight ?? 174;
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-      const gap = 8;
-      const left = isCollapsed
-        ? Math.min(viewportWidth - panelWidth - gap, triggerRect.right + gap)
-        : Math.min(viewportWidth - panelWidth - gap, triggerRect.left);
-      const top = isCollapsed
-        ? Math.min(viewportHeight - panelHeight - gap, triggerRect.top)
-        : triggerRect.top - panelHeight - gap;
-      setToolMenuPosition({
-        left: Math.max(gap, left),
-        top: Math.max(gap, top),
-      });
-    }
-
-    function handleDocumentPointerDown(event: PointerEvent) {
-      const target = event.target;
-      if (!(target instanceof Node)) {
-        return;
-      }
-      if (
-        toolMenuTriggerRef.current?.contains(target) ||
-        toolMenuPanelRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setToolMenuOpen(false);
-    }
-
-    function handleDocumentKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setToolMenuOpen(false);
-        toolMenuTriggerRef.current?.focus();
-      }
-    }
-
-    updateToolMenuPosition();
-    const frame = window.requestAnimationFrame(updateToolMenuPosition);
-    document.addEventListener("pointerdown", handleDocumentPointerDown);
-    document.addEventListener("keydown", handleDocumentKeyDown);
-    window.addEventListener("resize", updateToolMenuPosition);
-    window.addEventListener("scroll", updateToolMenuPosition, true);
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      document.removeEventListener("pointerdown", handleDocumentPointerDown);
-      document.removeEventListener("keydown", handleDocumentKeyDown);
-      window.removeEventListener("resize", updateToolMenuPosition);
-      window.removeEventListener("scroll", updateToolMenuPosition, true);
-    };
-  }, [isCollapsed, toolMenuOpen]);
 
   useEffect(() => {
     if (!assistantChatMenu) {
@@ -724,10 +662,6 @@ export function AppSidebar({
       onOpenAssistantDock?.();
     }
     onNavigateItem?.();
-  }
-
-  function handleToolMenuTriggerClick() {
-    setToolMenuOpen((current) => !current);
   }
 
   function toggleSidebarGroup(groupId: SidebarGroupId) {
@@ -1185,6 +1119,67 @@ export function AppSidebar({
     );
   }
 
+  function handleDesktopSsoEntryClick() {
+    if (!desktopSsoStatus) {
+      return;
+    }
+    if (desktopSsoStatus.authenticated) {
+      const confirmed = window.confirm("确定退出当前登录吗？");
+      if (!confirmed) {
+        return;
+      }
+      onDesktopSsoLogout?.();
+      return;
+    }
+    onDesktopSsoLogin?.();
+  }
+
+  function renderDesktopSsoEntry() {
+    if (!shouldRenderDesktopSso || !desktopSsoStatus) {
+      return null;
+    }
+
+    const desktopSsoUserLabel = desktopSsoStatus.authenticated
+      ? desktopSsoStatus.user?.name || desktopSsoStatus.user?.email || desktopSsoStatus.user?.sub || "已登录"
+      : desktopSsoStatus.pending
+        ? "登录中"
+        : "未登录";
+    const desktopSsoMessage = desktopSsoStatus.message || "Desktop 单点登录";
+    const desktopSsoActionLabel = desktopSsoStatus.authenticated
+      ? "退出登录"
+      : desktopSsoStatus.pending
+        ? "重新打开"
+        : "登录";
+    const desktopSsoClassName = [
+      "sidebar-sso-entry",
+      desktopSsoStatus.authenticated ? "is-authenticated" : "",
+      desktopSsoStatus.pending ? "is-pending" : "",
+      desktopSsoStatus.error ? "is-error" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    return (
+      <button
+        type="button"
+        className={desktopSsoClassName}
+        onClick={handleDesktopSsoEntryClick}
+        disabled={desktopSsoBusy}
+        aria-label={desktopSsoActionLabel}
+        title={desktopSsoActionLabel}
+      >
+        <span className="sidebar-sso-dot" aria-hidden="true" />
+        <span className="sidebar-sso-copy">
+          <span className="sidebar-sso-title">{desktopSsoUserLabel}</span>
+          <span className="sidebar-sso-message">{desktopSsoMessage}</span>
+        </span>
+        <span className="sidebar-sso-action" aria-hidden="true">
+          {desktopSsoBusy ? "处理中" : desktopSsoActionLabel}
+        </span>
+      </button>
+    );
+  }
+
   function renderAssistantChatMenu() {
     if (!assistantChatMenu || typeof document === "undefined") {
       return null;
@@ -1288,7 +1283,12 @@ export function AppSidebar({
         <div className="sidebar-footer-divider" aria-hidden="true" />
         <div className="sidebar-footer-actions">
           <div className="sidebar-tool-menu-anchor">
-            <Popover placement="top-start" content={renderToolMenu()}>
+            <Popover
+              placement="top-start"
+              content={renderToolMenu()}
+              open={toolMenuOpen}
+              onOpenChange={setToolMenuOpen}
+            >
               <button
                 type="button"
                 className={[
@@ -1303,7 +1303,6 @@ export function AppSidebar({
                   .filter(Boolean)
                   .join(" ")}
                 ref={toolMenuTriggerRef}
-                onClick={handleToolMenuTriggerClick}
                 aria-label="打开设置"
                 aria-haspopup="menu"
                 aria-expanded={toolMenuOpen}
@@ -1322,6 +1321,7 @@ export function AppSidebar({
               </button>
             </Popover>
           </div>
+          {renderDesktopSsoEntry()}
           {renderAssistantChatMenu()}
         </div>
       </div>

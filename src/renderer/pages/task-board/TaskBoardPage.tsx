@@ -82,6 +82,12 @@ type TaskBoardChatModalRequest = {
   displayName?: string;
 };
 
+type TaskBoardContextMenu = {
+  issueId: string;
+  x: number;
+  y: number;
+};
+
 const missingTaskBoardApiMessage = "任务看板 Desktop API 未加载。请退出并重新启动 ZenMind Desktop，让新的 preload 生效。";
 const TASK_BOARD_FEEDBACK_AUTO_CLOSE_MS = 3000;
 
@@ -161,11 +167,18 @@ function detectTaskBoardCollisions(args: Parameters<CollisionDetection>[0]) {
   return closestCenter(args);
 }
 
+function issueUpdatedTime(issue: TaskBoardIssue) {
+  const timestamp = Date.parse(issue.updatedAt);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 function sortIssues(issues: TaskBoardIssue[]) {
   const statusOrder = new Map(TASK_BOARD_STATUSES.map((status, index) => [status, index]));
   return [...issues].sort((a, b) => {
     const statusDelta = (statusOrder.get(a.status) ?? 99) - (statusOrder.get(b.status) ?? 99);
     if (statusDelta !== 0) return statusDelta;
+    const updatedDelta = issueUpdatedTime(b) - issueUpdatedTime(a);
+    if (updatedDelta !== 0) return updatedDelta;
     if (a.position !== b.position) return a.position - b.position;
     return a.number - b.number;
   });
@@ -606,6 +619,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState<ScheduleMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<TaskBoardContextMenu | null>(null);
   const issuesRef = useRef<TaskBoardIssue[]>([]);
   const selectedScheduleTimeRef = useRef<HTMLButtonElement | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -669,6 +683,28 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   useEffect(() => {
     issuesRef.current = issues;
   }, [issues]);
+
+  useEffect(() => {
+    if (!contextMenu || typeof window === "undefined" || typeof document === "undefined") {
+      return undefined;
+    }
+    const closeContextMenu = () => setContextMenu(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeContextMenu();
+      }
+    };
+    window.addEventListener("pointerdown", closeContextMenu);
+    window.addEventListener("resize", closeContextMenu);
+    window.addEventListener("scroll", closeContextMenu, true);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", closeContextMenu);
+      window.removeEventListener("resize", closeContextMenu);
+      window.removeEventListener("scroll", closeContextMenu, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
 
   useEffect(() => {
     if (!feedback || feedback.tone !== "success") {
@@ -774,6 +810,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   }
 
   function openEditModal(issue: TaskBoardIssue) {
+    setContextMenu(null);
     setForm(createFormFromIssue(issue));
     setFormCompact(true);
     setAttachmentBusy(false);
@@ -980,6 +1017,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   }
 
   async function deleteIssue(issue: TaskBoardIssue) {
+    setContextMenu(null);
     const taskBoardApi = readTaskBoardApi();
     if (!taskBoardApi) {
       setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
@@ -994,6 +1032,18 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     if (result.ok) {
       setModal(null);
     }
+  }
+
+  function openIssueContextMenu(issue: TaskBoardIssue, event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const viewportWidth = typeof window === "undefined" ? event.clientX : window.innerWidth;
+    const viewportHeight = typeof window === "undefined" ? event.clientY : window.innerHeight;
+    setContextMenu({
+      issueId: issue.id,
+      x: Math.min(event.clientX, Math.max(8, viewportWidth - 176)),
+      y: Math.min(event.clientY, Math.max(8, viewportHeight - 48))
+    });
   }
 
   async function getAvailableAgents() {
@@ -1275,6 +1325,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 onAdd={() => openCreateModal(status)}
                 onEdit={openEditModal}
                 onOpenChat={openAssistantIssueChat}
+                onOpenContextMenu={openIssueContextMenu}
               />
             );
           })}
@@ -1298,6 +1349,30 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
           document.body
         ) : null}
       </DndContext>
+
+      {contextMenu ? (() => {
+        const issue = issueMap.get(contextMenu.issueId);
+        if (!issue) {
+          return null;
+        }
+        return (
+          <div
+            className="task-board-card-context-menu"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            role="menu"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="task-board-card-context-danger"
+              onClick={() => void deleteIssue(issue)}
+            >
+              删除任务
+            </button>
+          </div>
+        );
+      })() : null}
 
       {modal ? (
         <div className="task-board-modal-layer" role="presentation" onMouseDown={() => setModal(null)}>
@@ -1615,7 +1690,8 @@ function TaskBoardColumn({
   canAdd,
   onAdd,
   onEdit,
-  onOpenChat
+  onOpenChat,
+  onOpenContextMenu
 }: {
   status: TaskBoardStatus;
   issues: TaskBoardIssue[];
@@ -1625,6 +1701,7 @@ function TaskBoardColumn({
   onAdd: () => void;
   onEdit: (issue: TaskBoardIssue) => void;
   onOpenChat: (issue: TaskBoardIssue) => void | Promise<void>;
+  onOpenContextMenu: (issue: TaskBoardIssue, event: MouseEvent<HTMLElement>) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: getColumnId(status) });
   const meta = STATUS_META[status];
@@ -1657,6 +1734,7 @@ function TaskBoardColumn({
               display={display}
               onEdit={() => onEdit(issue)}
               onOpenChat={() => void onOpenChat(issue)}
+              onOpenContextMenu={(event) => onOpenContextMenu(issue, event)}
             />
           ))}
         </SortableContext>
@@ -1673,13 +1751,15 @@ function TaskBoardCard({
   awaitingConfirmation,
   display,
   onEdit,
-  onOpenChat
+  onOpenChat,
+  onOpenContextMenu
 }: {
   issue: TaskBoardIssue;
   awaitingConfirmation: boolean;
   display: DisplayState;
   onEdit: () => void;
   onOpenChat: () => void;
+  onOpenContextMenu: (event: MouseEvent<HTMLElement>) => void;
 }) {
   const dragLocked = isIssueDragLocked(issue);
   const sortable = useSortable({ id: issue.id, disabled: dragLocked });
@@ -1687,6 +1767,9 @@ function TaskBoardCard({
     transform: sortable.isDragging ? undefined : CSS.Transform.toString(sortable.transform),
     transition: sortable.isDragging ? undefined : sortable.transition
   };
+  function handleContextMenu(event: MouseEvent<HTMLElement>) {
+    onOpenContextMenu(event);
+  }
 
   return (
     <article
@@ -1701,6 +1784,7 @@ function TaskBoardCard({
       data-drag-locked={dragLocked ? "true" : undefined}
       {...sortable.attributes}
       aria-disabled={undefined}
+      onContextMenu={handleContextMenu}
       {...(dragLocked ? {} : sortable.listeners)}
     >
       <TaskBoardCardContent

@@ -163,11 +163,20 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function issueUpdatedTime(issue: TaskBoardIssue) {
+  const timestamp = Date.parse(issue.updatedAt);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 function sortIssues(issues: TaskBoardIssue[]) {
   return [...issues].sort((a, b) => {
     const statusDelta = (statusRank.get(a.status) ?? 99) - (statusRank.get(b.status) ?? 99);
     if (statusDelta !== 0) {
       return statusDelta;
+    }
+    const updatedDelta = issueUpdatedTime(b) - issueUpdatedTime(a);
+    if (updatedDelta !== 0) {
+      return updatedDelta;
     }
     if (a.position !== b.position) {
       return a.position - b.position;

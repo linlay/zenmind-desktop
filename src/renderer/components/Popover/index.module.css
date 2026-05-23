@@ -9,4 +9,7 @@
   color: var(--desktop-ui-text);
   box-shadow: var(--panel-shadow);
   backdrop-filter: blur(10px);
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
 }
