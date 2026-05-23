@@ -184,6 +184,7 @@ import { DESKTOP_ACTION_DEFINITIONS } from "../shared/desktop-actions";
 import { AgentPlatformPetStatusClient } from "./copilot/pet-copilot/pet-status-client";
 import { AgentPlatformPetStreamClient } from "./copilot/pet-copilot/pet-stream-client";
 import {
+  applyDesktopPetActiveRunEvent,
   clampDesktopPetPosition,
   createDesktopPetState,
   createDefaultDesktopPetLocalStatus,
@@ -191,6 +192,7 @@ import {
   getAnchoredDesktopPetBounds,
   getDesktopPetLogicalPositionFromBounds,
   getDesktopPetWindowSize,
+  resolveDesktopPetRunningTaskCount,
   type DesktopPetBoundAgentStatus,
   type DesktopPetLocalStatus,
   type DesktopPetWindowMode,
@@ -318,6 +320,7 @@ let dismissedDesktopPetDonePreview: { chatId: string; runId: string } | null = n
 let desktopPetPendingProgrammaticBoundsSignature: string | null = null;
 let desktopPetProgrammaticBoundsGuardTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopPetMouseInteractive = true;
+let desktopPetActiveRunIds = new Set<string>();
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -456,6 +459,49 @@ function isDismissedDesktopPetDoneEvent(event: ReturnType<typeof normalizeDeskto
   return !event.runId || dismissedDesktopPetDonePreview.runId === event.runId;
 }
 
+function updateDesktopPetActiveRuns(event: { type?: unknown; runId?: unknown; data?: unknown } | null | undefined) {
+  const result = applyDesktopPetActiveRunEvent(desktopPetActiveRunIds, event);
+  if (!result.changed) {
+    return false;
+  }
+  desktopPetActiveRunIds = result.activeRunIds;
+  refreshDesktopPetState();
+  return true;
+}
+
+function clearDesktopPetActiveRuns() {
+  if (desktopPetActiveRunIds.size === 0) {
+    return false;
+  }
+  desktopPetActiveRunIds = new Set();
+  refreshDesktopPetState();
+  return true;
+}
+
+function getTaskBoardActiveRunIdsForDesktopPet() {
+  try {
+    return listTaskBoardIssues(app).issues
+      .filter((issue) => issue.status === "in_progress" && Boolean(issue.runId))
+      .map((issue) => issue.runId)
+      .filter((runId): runId is string => Boolean(runId));
+  } catch (error) {
+    console.warn("[desktop-pet] failed to read task-board active runs", error);
+    return [];
+  }
+}
+
+function getDesktopPetRunningTaskCountForState() {
+  const fallbackRunning = desktopPetLocalStatus.status === "running" ||
+    desktopPetLocalStatus.status === "awaiting" ||
+    desktopPetAgentStatus?.presence === "busy" ||
+    Boolean(desktopPetAgentStatus?.hasPendingAwaiting);
+  return resolveDesktopPetRunningTaskCount({
+    activeRunIds: desktopPetActiveRunIds,
+    taskBoardRunIds: getTaskBoardActiveRunIdsForDesktopPet(),
+    fallbackRunning
+  });
+}
+
 function getDesktopPetAgentStatusForState() {
   if (
     !desktopPetAgentStatus ||
@@ -516,6 +562,9 @@ function ensureAgentPlatformPetStatusClient() {
     issueAccessToken: issueAgentAccessToken,
     onStatus: (status) => {
       desktopPetAgentStatus = status;
+      if (!status) {
+        clearDesktopPetActiveRuns();
+      }
       if (refreshCompletedDesktopPetPreviewFromAgentStatus(status)) {
         return;
       }
@@ -536,10 +585,12 @@ function ensureAgentPlatformPetStatusClient() {
     },
     onRunStarted: ({ runId, chatId }) => {
       // AgentPlatformPetStatusClient already filters this callback to the bound agent.
+      updateDesktopPetActiveRuns({ type: "run.started", runId });
       clearDismissedDesktopPetDonePreview(chatId, runId);
       ensureAgentPlatformPetStreamClient()?.attach(runId, chatId);
     },
     onRunFinished: ({ runId, chatId, message }) => {
+      updateDesktopPetActiveRuns({ type: "run.finished", runId });
       const panel = desktopPetPreviewProjector.getPanel();
       const resolvedRunId = runId || (panel && (!chatId || panel.chatId === chatId) ? panel.runId : "");
       if (!resolvedRunId) {
@@ -601,6 +652,7 @@ function stopAgentPlatformPetStatusClient() {
   agentPlatformPetStreamClient = null;
   desktopPetAgentStatus = null;
   desktopPetAgentOptions = [];
+  clearDesktopPetActiveRuns();
 }
 
 function scheduleAgentPlatformPetStatusRefresh(delayMs = 0, force = false) {
@@ -624,7 +676,8 @@ function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
     localStatus: desktopPetLocalStatus,
     agentStatus: getDesktopPetAgentStatusForState(),
     agentOptions: desktopPetAgentOptions,
-    previewPanel: desktopPetPreviewProjector.getPanel()
+    previewPanel: desktopPetPreviewProjector.getPanel(),
+    runningTaskCount: getDesktopPetRunningTaskCountForState()
   });
   applyDesktopPetWindowBounds();
   if (
@@ -1373,6 +1426,7 @@ function ingestDesktopPetAgentEvent(event: unknown, meta: { source?: string; tra
   if (normalizedEvent?.type === "request.query" || normalizedEvent?.type === "run.start") {
     clearDismissedDesktopPetDonePreview(normalizedEvent.chatId, normalizedEvent.runId);
   }
+  updateDesktopPetActiveRuns(normalizedEvent);
   if (isDismissedDesktopPetDoneEvent(normalizedEvent)) {
     return;
   }
@@ -4005,6 +4059,7 @@ function registerIpcHandlers() {
     }
     if (boundAgentChanged) {
       desktopPetAgentStatus = null;
+      clearDesktopPetActiveRuns();
     }
     if (typeof input.enabled === "boolean") {
       if (input.enabled) {

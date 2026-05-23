@@ -768,10 +768,23 @@ const communityBuffersById = new Map();
 for (const appearance of communityAppearances) {
   const buffers = await renderCommunityAppearance(appearance);
   communityBuffersById.set(appearance.id, buffers);
-  await writeVariantFiles(
-    path.join(outputDirectory, appearance.id),
-    buffers
+  const appearanceOutputDirectory = path.join(outputDirectory, appearance.id);
+  await writeVariantFiles(appearanceOutputDirectory, buffers);
+  await fs.copyFile(
+    path.join(sourceAssetDirectory, appearance.id, "spritesheet.webp"),
+    path.join(appearanceOutputDirectory, "spritesheet.webp")
   );
+  const taskRunSourcePath = path.join(sourceAssetDirectory, appearance.id, "task-run-left.webp");
+  try {
+    await fs.copyFile(
+      taskRunSourcePath,
+      path.join(appearanceOutputDirectory, "task-run-left.webp")
+    );
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+  }
 }
 
 for (const [legacyId, targetId] of Object.entries(legacyCommunityAppearanceAliases)) {

@@ -101,6 +101,7 @@ export interface DesktopPetState {
   agentStatusStale: boolean;
   agentOptions: DesktopPetAgentOption[];
   previewPanel: DesktopPetPreviewPanel | null;
+  runningTaskCount: number;
   updatedAt: string;
 }
 

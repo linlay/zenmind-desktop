@@ -178,6 +178,23 @@ body.desktop-pet-body,
   animation: desktop-pet-thinking 1.48s ease-in-out infinite;
 }
 
+.desktop-pet-root.is-appearance-idol-pony.has-task-run-animation .desktop-pet-image {
+  filter:
+    drop-shadow(0 18px 24px rgba(18, 44, 91, 0.24))
+    drop-shadow(0 0 14px rgba(255, 76, 126, 0.18));
+}
+
+.desktop-pet-task-run-sprite {
+  display: block;
+  width: 96px;
+  height: 104px;
+  background-repeat: no-repeat;
+  background-size: 1440px 104px;
+  background-position: 0 0;
+  transform-origin: 50% 86%;
+  will-change: background-position;
+}
+
 .desktop-pet-root.is-awaiting .desktop-pet-image {
   animation: desktop-pet-thinking 1.48s ease-in-out infinite;
 }
@@ -188,6 +205,10 @@ body.desktop-pet-body,
 
 .desktop-pet-root.is-error .desktop-pet-image {
   animation: desktop-pet-shake 0.42s ease-in-out 2;
+}
+
+.desktop-pet-root.has-task-run-animation .desktop-pet-task-run-sprite {
+  animation: desktop-pet-idol-pony-run-frames var(--desktop-pet-task-run-animation-duration, 1500ms) steps(15, end) infinite;
 }
 
 .desktop-pet-speech {
@@ -551,6 +572,12 @@ body.desktop-pet-body,
   }
   50% {
     transform: translateY(-5px) rotate(-1.8deg) scale(1.018);
+  }
+}
+
+@keyframes desktop-pet-idol-pony-run-frames {
+  to {
+    background-position: -1440px 0;
   }
 }
 

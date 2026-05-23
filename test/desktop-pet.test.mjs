@@ -11,13 +11,17 @@ const {
   DESKTOP_PET_WINDOW_SIZE,
   DESKTOP_PET_WINDOW_SIZES,
   __testInternals: desktopPetInternals,
+  applyDesktopPetActiveRunEvent,
   clampDesktopPetPosition,
   createDesktopPetState,
   createDefaultDesktopPetLocalStatus,
+  getDesktopPetRunningTaskAnimationDurationMs,
   getDesktopPetContextMenuItems,
   readDesktopPetStoredState,
+  resolveDesktopPetRunningTaskCount,
   sanitizeDesktopPetAppearanceId,
   sanitizeDesktopPetBoundAgentKey,
+  shouldUseDesktopPetTaskRunningAnimation,
   writeDesktopPetStoredState,
   isDesktopPetSupportedPlatform
 } = await import("../dist-electron/main/desktop-pet.js");
@@ -218,6 +222,16 @@ test("desktop pet generated resources cover all visual states", () => {
       );
     }
   }
+  assert.equal(
+    fs.existsSync(path.join(root, "idol-pony", "spritesheet.webp")),
+    true,
+    "idol-pony missing spritesheet.webp for frame-based running animation"
+  );
+  assert.equal(
+    fs.existsSync(path.join(root, "idol-pony", "task-run-left.webp")),
+    true,
+    "idol-pony missing high-frame task-run-left.webp for smooth task running animation"
+  );
 });
 
 test("desktop pet persists state on Windows", (t) => {
@@ -354,6 +368,117 @@ test("desktop pet state exposes selectable agent options", () => {
   assert.deepEqual(state.agentOptions, [
     { agentKey: "zenmi", displayName: "小宅", role: "平台总管", unreadCount: 8 }
   ]);
+});
+
+test("desktop pet state exposes a safe running task count", () => {
+  const defaultState = createDesktopPetState({
+    enabled: true,
+    lastVisible: true,
+    unreadCount: 0,
+    boundAgentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY
+  }, {
+    supported: true,
+    visible: true,
+    localStatus: createDefaultDesktopPetLocalStatus()
+  });
+  const runningState = createDesktopPetState({
+    enabled: true,
+    lastVisible: true,
+    unreadCount: 0,
+    boundAgentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY
+  }, {
+    supported: true,
+    visible: true,
+    localStatus: createDefaultDesktopPetLocalStatus(),
+    runningTaskCount: 2.8
+  });
+  const invalidState = createDesktopPetState({
+    enabled: true,
+    lastVisible: true,
+    unreadCount: 0,
+    boundAgentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY
+  }, {
+    supported: true,
+    visible: true,
+    localStatus: createDefaultDesktopPetLocalStatus(),
+    runningTaskCount: -1
+  });
+
+  assert.equal(defaultState.runningTaskCount, 0);
+  assert.equal(runningState.runningTaskCount, 3);
+  assert.equal(invalidState.runningTaskCount, 0);
+});
+
+test("desktop pet active run events count running tasks idempotently", () => {
+  let state = applyDesktopPetActiveRunEvent(new Set(), { type: "run.started", runId: "run-1" });
+  assert.equal(state.runningTaskCount, 1);
+  assert.deepEqual([...state.activeRunIds], ["run-1"]);
+  assert.equal(state.changed, true);
+
+  state = applyDesktopPetActiveRunEvent(state.activeRunIds, { type: "run.started", runId: "run-1" });
+  assert.equal(state.runningTaskCount, 1);
+  assert.equal(state.changed, false);
+
+  state = applyDesktopPetActiveRunEvent(state.activeRunIds, { type: "run.start", runId: "run-2" });
+  assert.equal(state.runningTaskCount, 2);
+  assert.deepEqual([...state.activeRunIds].sort(), ["run-1", "run-2"]);
+
+  state = applyDesktopPetActiveRunEvent(state.activeRunIds, { type: "run.complete", runId: "run-1" });
+  assert.equal(state.runningTaskCount, 1);
+  assert.deepEqual([...state.activeRunIds], ["run-2"]);
+
+  state = applyDesktopPetActiveRunEvent(state.activeRunIds, { type: "run.finished", runId: "run-2" });
+  assert.equal(state.runningTaskCount, 0);
+  assert.deepEqual([...state.activeRunIds], []);
+
+  state = applyDesktopPetActiveRunEvent(state.activeRunIds, { type: "run.finished", runId: "run-2" });
+  assert.equal(state.runningTaskCount, 0);
+  assert.equal(state.changed, false);
+});
+
+test("only idol pony uses task running animation and speeds up with more tasks", () => {
+  assert.equal(shouldUseDesktopPetTaskRunningAnimation("idol-pony", 1), true);
+  assert.equal(shouldUseDesktopPetTaskRunningAnimation("idol-pony", 0), false);
+  assert.equal(shouldUseDesktopPetTaskRunningAnimation(DEFAULT_DESKTOP_PET_APPEARANCE_ID, 3), false);
+
+  const oneTaskDuration = getDesktopPetRunningTaskAnimationDurationMs(1);
+  const twoTaskDuration = getDesktopPetRunningTaskAnimationDurationMs(2);
+  const threeTaskDuration = getDesktopPetRunningTaskAnimationDurationMs(3);
+  const cappedDuration = getDesktopPetRunningTaskAnimationDurationMs(99);
+
+  assert.equal(oneTaskDuration, 1500);
+  assert.equal(twoTaskDuration, 1250);
+  assert.equal(threeTaskDuration, 1000);
+  assert.ok(twoTaskDuration < oneTaskDuration);
+  assert.ok(threeTaskDuration < twoTaskDuration);
+  assert.equal(cappedDuration, desktopPetInternals.DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS);
+});
+
+test("desktop pet derives running task count from existing task-board runs after restart", () => {
+  assert.equal(
+    resolveDesktopPetRunningTaskCount({
+      activeRunIds: [],
+      taskBoardRunIds: ["run-board-1", "run-board-2", "run-board-2"],
+      fallbackRunning: false
+    }),
+    2
+  );
+  assert.equal(
+    resolveDesktopPetRunningTaskCount({
+      activeRunIds: [],
+      taskBoardRunIds: [],
+      fallbackRunning: true
+    }),
+    1
+  );
+  assert.equal(
+    resolveDesktopPetRunningTaskCount({
+      activeRunIds: ["run-event-1", "run-event-2", "run-event-3"],
+      taskBoardRunIds: ["run-board-1"],
+      fallbackRunning: true
+    }),
+    3
+  );
 });
 
 test("desktop pet local awaiting status displays as thinking", () => {

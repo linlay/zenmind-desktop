@@ -12,15 +12,25 @@ import type {
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS,
   DESKTOP_PET_APPEARANCE_OPTIONS,
+  applyDesktopPetActiveRunEvent,
+  getDesktopPetRunningTaskAnimationDurationMs,
   normalizeDesktopPetAppearanceId,
-  normalizeDesktopPetBoundAgentKey
+  normalizeDesktopPetBoundAgentKey,
+  resolveDesktopPetRunningTaskCount,
+  sanitizeDesktopPetRunningTaskCount,
+  shouldUseDesktopPetTaskRunningAnimation
 } from "../../../shared/desktop-pet";
 import { getDesktopPetSettingsPath as resolveDesktopPetSettingsPath } from "../../user-paths";
 export {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
-  DESKTOP_PET_APPEARANCE_OPTIONS
+  DESKTOP_PET_APPEARANCE_OPTIONS,
+  applyDesktopPetActiveRunEvent,
+  getDesktopPetRunningTaskAnimationDurationMs,
+  resolveDesktopPetRunningTaskCount,
+  shouldUseDesktopPetTaskRunningAnimation
 } from "../../../shared/desktop-pet";
 
 export const DESKTOP_PET_WINDOW_SIZE = {
@@ -373,6 +383,7 @@ export function createDesktopPetState(
     agentStatus?: DesktopPetBoundAgentStatus | null;
     agentOptions?: DesktopPetAgentOption[];
     previewPanel?: DesktopPetPreviewPanel | null;
+    runningTaskCount?: unknown;
   } = {}
 ): DesktopPetState {
   const localStatus = options.localStatus ?? createDefaultDesktopPetLocalStatus(settings);
@@ -398,6 +409,7 @@ export function createDesktopPetState(
     agentStatusStale: agentStatus?.stale ?? agentDefaults.stale,
     agentOptions: options.agentOptions ?? [],
     previewPanel: options.previewPanel ?? null,
+    runningTaskCount: sanitizeDesktopPetRunningTaskCount(options.runningTaskCount),
     updatedAt: new Date().toISOString()
   };
 }
@@ -458,6 +470,7 @@ export function getDesktopPetLogicalPositionFromBounds(
 export const __testInternals = {
   DEFAULT_OFFSET,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS,
   DESKTOP_PET_WINDOW_SIZES,
   sanitizeDesktopPetStoredState,
   sanitizeDesktopPetAppearanceId,

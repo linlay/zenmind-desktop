@@ -1,6 +1,10 @@
 export const DESKTOP_PET_ROUTE = "/desktop-pet";
 export const DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY = "zenmi";
 export const DEFAULT_DESKTOP_PET_APPEARANCE_ID = "classic";
+export const DESKTOP_PET_RUNNING_TASK_ANIMATION_BASE_MS = 1500;
+export const DESKTOP_PET_RUNNING_TASK_ANIMATION_STEP_MS = 250;
+export const DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS = 900;
+export const DESKTOP_PET_RUNNING_TASK_ANIMATION_MAX_TASKS = 4;
 
 export const DESKTOP_PET_APPEARANCE_OPTIONS = [
   {
@@ -66,6 +70,111 @@ const DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
   thinking: "pet-thinking.png",
   running: "pet-running.png"
 };
+
+const DESKTOP_PET_RUN_START_EVENT_TYPES = new Set(["run.started", "run.start", "request.query"]);
+const DESKTOP_PET_RUN_TERMINAL_EVENT_TYPES = new Set([
+  "run.finished",
+  "run.complete",
+  "run.error",
+  "run.cancel",
+  "run.stopped",
+  "run.interrupt",
+  "run.expired",
+  "done"
+]);
+
+type DesktopPetActiveRunEvent = {
+  type?: unknown;
+  runId?: unknown;
+  runID?: unknown;
+  data?: unknown;
+};
+
+function toDesktopPetText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readDesktopPetEventRunId(event: DesktopPetActiveRunEvent) {
+  const data = typeof event.data === "object" && event.data !== null
+    ? event.data as Record<string, unknown>
+    : {};
+  return toDesktopPetText(event.runId) ||
+    toDesktopPetText(event.runID) ||
+    toDesktopPetText(data.runId) ||
+    toDesktopPetText(data.runID);
+}
+
+export function sanitizeDesktopPetRunningTaskCount(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
+}
+
+export function getDesktopPetRunningTaskAnimationDurationMs(runningTaskCount: unknown) {
+  const count = sanitizeDesktopPetRunningTaskCount(runningTaskCount);
+  if (count <= 0) {
+    return DESKTOP_PET_RUNNING_TASK_ANIMATION_BASE_MS;
+  }
+  const effectiveCount = Math.min(count, DESKTOP_PET_RUNNING_TASK_ANIMATION_MAX_TASKS);
+  return Math.max(
+    DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS,
+    DESKTOP_PET_RUNNING_TASK_ANIMATION_BASE_MS - ((effectiveCount - 1) * DESKTOP_PET_RUNNING_TASK_ANIMATION_STEP_MS)
+  );
+}
+
+export function shouldUseDesktopPetTaskRunningAnimation(appearanceId: unknown, runningTaskCount: unknown) {
+  return normalizeDesktopPetAppearanceId(appearanceId) === "idol-pony" &&
+    sanitizeDesktopPetRunningTaskCount(runningTaskCount) > 0;
+}
+
+export function applyDesktopPetActiveRunEvent(
+  activeRunIds: Iterable<string>,
+  event: DesktopPetActiveRunEvent | null | undefined
+) {
+  const nextRunIds = new Set(activeRunIds);
+  const type = toDesktopPetText(event?.type);
+  const runId = event ? readDesktopPetEventRunId(event) : "";
+  if (!type || !runId) {
+    return {
+      activeRunIds: nextRunIds,
+      runningTaskCount: nextRunIds.size,
+      changed: false
+    };
+  }
+
+  const previousSize = nextRunIds.size;
+  if (DESKTOP_PET_RUN_START_EVENT_TYPES.has(type)) {
+    nextRunIds.add(runId);
+  } else if (DESKTOP_PET_RUN_TERMINAL_EVENT_TYPES.has(type)) {
+    nextRunIds.delete(runId);
+  }
+  return {
+    activeRunIds: nextRunIds,
+    runningTaskCount: nextRunIds.size,
+    changed: nextRunIds.size !== previousSize
+  };
+}
+
+function countUniqueDesktopPetRunIds(values: Iterable<unknown>) {
+  const ids = new Set<string>();
+  for (const value of values) {
+    const runId = toDesktopPetText(value);
+    if (runId) {
+      ids.add(runId);
+    }
+  }
+  return ids.size;
+}
+
+export function resolveDesktopPetRunningTaskCount(input: {
+  activeRunIds?: Iterable<unknown>;
+  taskBoardRunIds?: Iterable<unknown>;
+  fallbackRunning?: boolean;
+}) {
+  const activeRunCount = countUniqueDesktopPetRunIds(input.activeRunIds ?? []);
+  const taskBoardRunCount = countUniqueDesktopPetRunIds(input.taskBoardRunIds ?? []);
+  const explicitCount = Math.max(activeRunCount, taskBoardRunCount);
+  return explicitCount > 0 || !input.fallbackRunning ? explicitCount : 1;
+}
 
 export function normalizeDesktopPetBoundAgentKey(value: unknown) {
   const normalized = typeof value === "string" ? value.trim() : "";

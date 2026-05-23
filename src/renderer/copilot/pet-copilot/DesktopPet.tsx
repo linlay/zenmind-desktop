@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type FocusEvent as ReactFocusEvent,
   type PointerEvent as ReactPointerEvent
@@ -12,8 +13,10 @@ import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_APPEARANCE_OPTIONS,
+  getDesktopPetRunningTaskAnimationDurationMs,
   getDesktopPetStatusAssetPath,
-  normalizeDesktopPetAppearanceId
+  normalizeDesktopPetAppearanceId,
+  shouldUseDesktopPetTaskRunningAnimation
 } from "../../../shared/desktop-pet";
 
 function createFallbackDesktopPetState(): DesktopPetState {
@@ -35,6 +38,7 @@ function createFallbackDesktopPetState(): DesktopPetState {
     agentStatusStale: true,
     agentOptions: [],
     previewPanel: null,
+    runningTaskCount: 0,
     updatedAt: ""
   };
 }
@@ -120,6 +124,7 @@ type DesktopPetVisualStatus =
 const DESKTOP_PET_DANCE_DURATION_MS = 3000;
 const DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX = 3;
 const DESKTOP_PET_IMAGE_HIT_MARGIN = 8;
+const IDOL_PONY_RUNNING_SPRITE_PATH = "./desktop-pet/idol-pony/task-run-left.webp";
 
 function rectContainsPoint(rect: DOMRect, x: number, y: number, margin = 0) {
   return x >= rect.left - margin &&
@@ -316,6 +321,20 @@ export function DesktopPet() {
     () => normalizeDesktopPetAppearanceId(petState.appearanceId),
     [petState.appearanceId]
   );
+  const runningTaskCount = Math.max(0, Math.round(Number(petState.runningTaskCount) || 0));
+  const shouldShowTaskRunAnimation = !isDragging &&
+    shouldUseDesktopPetTaskRunningAnimation(appearanceId, runningTaskCount);
+  const taskRunAnimationDurationMs = getDesktopPetRunningTaskAnimationDurationMs(runningTaskCount);
+  const rootStyle = shouldShowTaskRunAnimation
+    ? ({
+        "--desktop-pet-task-run-animation-duration": `${taskRunAnimationDurationMs}ms`
+      } as CSSProperties)
+    : undefined;
+  const taskRunSpriteStyle = shouldShowTaskRunAnimation
+    ? {
+        backgroundImage: `url("${IDOL_PONY_RUNNING_SPRITE_PATH}")`
+      }
+    : undefined;
   useEffect(() => {
     appearanceIdRef.current = appearanceId;
     if (appearanceId !== DEFAULT_DESKTOP_PET_APPEARANCE_ID) {
@@ -337,6 +356,8 @@ export function DesktopPet() {
         : "dragging"
     : isDancing && appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID
       ? "dancing"
+    : shouldShowTaskRunAnimation
+      ? "running"
     : displayStatus === "running" || displayStatus === "awaiting"
       ? "thinking"
       : displayStatus === "done" || displayStatus === "error"
@@ -511,10 +532,12 @@ export function DesktopPet() {
         "desktop-pet-root",
         `is-${visualStatus}`,
         `is-appearance-${appearanceId}`,
+        shouldShowTaskRunAnimation ? "has-task-run-animation" : "",
         showPreviewPanel ? "has-preview" : "",
         showBubble ? "has-bubble" : "",
         isDragging ? "is-dragging" : ""
       ].filter(Boolean).join(" ")}
+      style={rootStyle}
       aria-label="ZenMind 桌面宠物"
     >
       <div
@@ -597,7 +620,15 @@ export function DesktopPet() {
             }
           }}
         >
-          <img src={assetPath} alt="" aria-hidden="true" className="desktop-pet-image" />
+          {shouldShowTaskRunAnimation ? (
+            <span
+              aria-hidden="true"
+              className="desktop-pet-image desktop-pet-task-run-sprite"
+              style={taskRunSpriteStyle}
+            />
+          ) : (
+            <img src={assetPath} alt="" aria-hidden="true" className="desktop-pet-image" />
+          )}
           {showUnreadBadge ? (
             <span className="desktop-pet-unread-badge" aria-label={`${unreadCount} 条未读消息`}>
               {unreadText}
