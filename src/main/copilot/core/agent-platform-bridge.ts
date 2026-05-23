@@ -309,6 +309,17 @@ function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
   return event;
 }
 
+function isAssistantRunTerminalEvent(event: AssistantEvent) {
+  return event.type === "done" ||
+    event.type === "run.complete" ||
+    event.type === "error" ||
+    event.type === "stopped" ||
+    event.type === "run.error" ||
+    event.type === "run.stopped" ||
+    event.type === "run.interrupt" ||
+    event.type === "run.expired";
+}
+
 function mapChatSummary(summary: PlatformChatSummary): AssistantChatSummary {
   const id = readString(summary.chatId);
   return {
@@ -816,11 +827,20 @@ export class AgentPlatformAssistantBridge {
       if (!response.ok) {
         throw new Error(await readErrorText(response));
       }
-      await this.consumeQueryStream(response, {
+      const sawTerminalEvent = await this.consumeQueryStream(response, {
         runId: run.runId,
         chatId: run.chatId,
         source: request.source
       });
+      if (!sawTerminalEvent) {
+        this.options.onEvent({
+          runId: run.runId,
+          chatId: run.chatId,
+          type: "run.complete",
+          createdAt: nowIso(),
+          ...(request.source ? { source: request.source } : {})
+        });
+      }
     } catch (error) {
       if ((error as Error).name === "AbortError") {
         this.options.onEvent({
@@ -852,24 +872,29 @@ export class AgentPlatformAssistantBridge {
     source?: AssistantStartRunRequest["source"];
   }) {
     if (!response.body) {
-      return;
+      return false;
     }
     const parser = new DesktopPetSseParser();
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+    let sawTerminalEvent = false;
     try {
       while (true) {
         const { done, value } = await reader.read();
         const chunk = decoder.decode(value || new Uint8Array(), { stream: !done });
         const result = done ? parser.finish() : parser.push(chunk);
         for (const event of result.events) {
-          this.options.onEvent(normalizePlatformEvent(event.raw, fallback) ?? {
+          const normalizedEvent = normalizePlatformEvent(event.raw, fallback) ?? {
             runId: fallback.runId,
             chatId: fallback.chatId,
             type: "content.delta",
             createdAt: nowIso(),
             delta: event.delta || event.text || event.content || ""
-          });
+          };
+          if (isAssistantRunTerminalEvent(normalizedEvent)) {
+            sawTerminalEvent = true;
+          }
+          this.options.onEvent(normalizedEvent);
         }
         if (result.done) {
           break;
@@ -881,6 +906,7 @@ export class AgentPlatformAssistantBridge {
     } finally {
       reader.releaseLock();
     }
+    return sawTerminalEvent;
   }
 
   private async uploadAttachments(baseUrl: string, token: string, chatId: string, runId: string, attachments: AssistantAttachment[]) {

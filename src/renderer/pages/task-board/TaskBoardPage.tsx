@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -21,6 +21,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type {
+  AssistantAttachment,
   AssistantEvent,
   AssistantNavAgentItem,
   DesktopApi,
@@ -47,6 +48,8 @@ type ModalState = {
 type IssueFormState = {
   title: string;
   description: string;
+  attachmentChatId: string;
+  attachments: AssistantAttachment[];
   status: TaskBoardStatus;
   priority: TaskBoardPriority;
   assigneeAgentKey: string;
@@ -80,11 +83,13 @@ type TaskBoardChatModalRequest = {
 };
 
 const missingTaskBoardApiMessage = "任务看板 Desktop API 未加载。请退出并重新启动 ZenMind Desktop，让新的 preload 生效。";
+const TASK_BOARD_FEEDBACK_AUTO_CLOSE_MS = 3000;
 
 const STATUS_META: Record<TaskBoardStatus, { label: string; shortLabel: string; tone: string }> = {
   backlog: { label: "Backlog", shortLabel: "待整理", tone: "neutral" },
   todo: { label: "Todo", shortLabel: "待办", tone: "muted" },
   in_progress: { label: "In Progress", shortLabel: "进行中", tone: "warning" },
+  blocked: { label: "Blocked", shortLabel: "阻塞", tone: "danger" },
   in_review: { label: "In Review", shortLabel: "评审中", tone: "success" },
   done: { label: "Done", shortLabel: "已完成", tone: "info" }
 };
@@ -114,6 +119,8 @@ const TASK_BOARD_SCHEDULE_TIME_OPTIONS = buildScheduleTimeOptions();
 const emptyForm: IssueFormState = {
   title: "",
   description: "",
+  attachmentChatId: "",
+  attachments: [],
   status: "backlog",
   priority: "medium",
   assigneeAgentKey: "",
@@ -344,6 +351,8 @@ function createFormFromIssue(issue: TaskBoardIssue): IssueFormState {
   return {
     title: issue.title,
     description: issue.description,
+    attachmentChatId: issue.attachmentChatId ?? issue.chatId ?? createTaskBoardAttachmentChatId(issue.id),
+    attachments: issue.attachments ?? [],
     status: issue.status,
     priority: issue.priority,
     assigneeAgentKey: issue.assigneeAgentKey ?? "",
@@ -354,6 +363,58 @@ function createFormFromIssue(issue: TaskBoardIssue): IssueFormState {
     scheduleMessage: issue.scheduleMessage ?? "",
     scheduleTimezone: issue.scheduleTimezone ?? "Asia/Shanghai"
   };
+}
+
+function createTaskBoardAttachmentChatId(seed: string) {
+  const safeSeed = seed.replace(/[^a-zA-Z0-9_-]/gu, "_");
+  return `task-board-${safeSeed}`;
+}
+
+function createTaskBoardDraftAttachmentChatId() {
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  return `task-board-draft-${Date.now().toString(36)}-${randomPart}`;
+}
+
+function getVisibleTaskBoardAttachments(attachments: AssistantAttachment[] | null | undefined) {
+  return (attachments ?? []).filter((attachment) => !attachment.hidden);
+}
+
+function formatTaskBoardAttachmentSize(sizeBytes: number) {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return "";
+  }
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+  if (sizeBytes < 1024 * 1024) {
+    return `${Math.round(sizeBytes / 102.4) / 10} KB`;
+  }
+  return `${Math.round(sizeBytes / 1024 / 102.4) / 10} MB`;
+}
+
+function mergeTaskBoardIssueAttachmentDraft(
+  issue: TaskBoardIssue | undefined,
+  attachmentChatId: string,
+  attachments: AssistantAttachment[]
+) {
+  if (!issue) {
+    return issue;
+  }
+  return {
+    ...issue,
+    attachmentChatId: attachments.length > 0 ? attachmentChatId : null,
+    attachments
+  };
+}
+
+function mergeTaskBoardIssuesAttachmentDraft(
+  issues: TaskBoardIssue[],
+  savedIssue: TaskBoardIssue | undefined
+) {
+  if (!savedIssue) {
+    return issues;
+  }
+  return issues.map((issue) => issue.id === savedIssue.id ? savedIssue : issue);
 }
 
 function getAssigneeName(agentKey: string, agents: AssistantNavAgentItem[]) {
@@ -437,9 +498,9 @@ function resolveAssistantTaskStatus(event: AssistantEvent): {
     event.status === "stopped"
   ) {
     return {
-      status: "todo",
+      status: "blocked",
       tone: "error",
-      message: "智能体处理未完成，任务已退回 Todo。"
+      message: "智能体处理未完成，任务已更新为 Blocked。"
     };
   }
   return null;
@@ -457,9 +518,25 @@ function isIssueDragLocked(issue: TaskBoardIssue | null | undefined) {
   return Boolean(issue?.runId);
 }
 
+function canCreateIssueFromColumnDoubleClick(status: TaskBoardStatus) {
+  return status === "backlog" || status === "todo";
+}
+
+function shouldCreateIssueFromColumnDoubleClick(event: MouseEvent<HTMLElement>, status: TaskBoardStatus) {
+  if (!canCreateIssueFromColumnDoubleClick(status)) {
+    return false;
+  }
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return event.currentTarget === target;
+  }
+  return !target.closest(".task-board-card");
+}
+
 function isIssueChatViewable(issue: TaskBoardIssue) {
   return Boolean(issue.chatId && (
     issue.status === "in_progress" ||
+    issue.status === "blocked" ||
     issue.status === "in_review" ||
     issue.status === "done"
   ));
@@ -526,6 +603,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const [chatModalRequest, setChatModalRequest] = useState<TaskBoardChatModalRequest | null>(null);
   const [form, setForm] = useState<IssueFormState>(emptyForm);
   const [formCompact, setFormCompact] = useState(true);
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState<ScheduleMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const issuesRef = useRef<TaskBoardIssue[]>([]);
@@ -593,6 +671,20 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   }, [issues]);
 
   useEffect(() => {
+    if (!feedback || feedback.tone !== "success") {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setFeedback((current) => (current === feedback ? null : current));
+    }, TASK_BOARD_FEEDBACK_AUTO_CLOSE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [feedback]);
+
+  useEffect(() => {
     if (scheduleMenuOpen === "time") {
       selectedScheduleTimeRef.current?.scrollIntoView({ block: "center" });
     }
@@ -657,7 +749,8 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         issue.identifier,
         issue.title,
         issue.description,
-        issue.assigneeName ?? ""
+        issue.assigneeName ?? "",
+        ...getVisibleTaskBoardAttachments(issue.attachments).map((attachment) => attachment.name)
       ].join(" ").toLowerCase();
       return haystack.includes(keyword);
     });
@@ -673,8 +766,9 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
       return;
     }
-    setForm({ ...emptyForm, status });
+    setForm({ ...emptyForm, status, attachmentChatId: createTaskBoardDraftAttachmentChatId() });
     setFormCompact(true);
+    setAttachmentBusy(false);
     setScheduleMenuOpen(null);
     setModal({ mode: "create" });
   }
@@ -682,6 +776,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   function openEditModal(issue: TaskBoardIssue) {
     setForm(createFormFromIssue(issue));
     setFormCompact(true);
+    setAttachmentBusy(false);
     setScheduleMenuOpen(null);
     setModal({ mode: "edit", issue });
   }
@@ -692,6 +787,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       status: "in_progress"
     });
     setFormCompact(true);
+    setAttachmentBusy(false);
     setScheduleMenuOpen(null);
     setModal({ mode: "edit", issue });
     setFeedback({ tone: "error", message: "请选择智能体后再进入 In Progress。" });
@@ -734,6 +830,63 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       scheduleCron: buildScheduleCron(current.schedulePreset, nextTime, current.scheduleCron)
     }));
     setScheduleMenuOpen(null);
+  }
+
+  async function addTaskBoardAttachments() {
+    if (attachmentBusy) {
+      return;
+    }
+    const fallbackChatId = modal?.issue
+      ? createTaskBoardAttachmentChatId(modal.issue.id)
+      : createTaskBoardDraftAttachmentChatId();
+    const attachmentChatId = form.attachmentChatId || fallbackChatId;
+    setAttachmentBusy(true);
+    setForm((current) => ({
+      ...current,
+      attachmentChatId: current.attachmentChatId || attachmentChatId
+    }));
+    try {
+      const result = await window.electronAPI.assistant.pickAttachments(attachmentChatId);
+      if (result.cancelled) {
+        return;
+      }
+      if (!result.ok && result.attachments.length === 0) {
+        setFeedback({ tone: "error", message: result.message });
+        return;
+      }
+      setForm((current) => ({
+        ...current,
+        attachmentChatId: result.chatId || attachmentChatId,
+        attachments: [...current.attachments, ...result.attachments]
+      }));
+      setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "附件上传失败。"
+      });
+    } finally {
+      setAttachmentBusy(false);
+    }
+  }
+
+  function removeTaskBoardAttachment(attachmentId: string) {
+    setForm((current) => ({
+      ...current,
+      attachments: current.attachments.filter((attachment) =>
+        attachment.id !== attachmentId && attachment.sourceAttachmentId !== attachmentId
+      )
+    }));
+  }
+
+  async function openTaskBoardAttachment(attachment: AssistantAttachment) {
+    const chatId = form.attachmentChatId.trim();
+    if (!chatId) {
+      setFeedback({ tone: "error", message: "附件位置缺失，无法打开。" });
+      return;
+    }
+    const result = await window.electronAPI.assistant.openAttachment(chatId, attachment.id);
+    setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
   }
 
   async function submitForm(event: FormEvent<HTMLFormElement>) {
@@ -782,21 +935,31 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       scheduleEnabled: form.scheduleEnabled,
       scheduleCron: form.scheduleEnabled ? resolvedScheduleCron : null,
       scheduleMessage: form.scheduleEnabled ? resolvedScheduleMessage : null,
-      scheduleTimezone: form.scheduleEnabled ? form.scheduleTimezone : null
+      scheduleTimezone: form.scheduleEnabled ? form.scheduleTimezone : null,
+      attachmentChatId: form.attachments.length > 0 ? form.attachmentChatId : null,
+      attachments: form.attachments
     };
 
     try {
       const result = modal?.mode === "edit" && modal.issue
         ? await taskBoardApi.updateIssue(modal.issue.id, payload)
         : await taskBoardApi.createIssue(payload as TaskBoardIssueInput);
-      let savedIssue = result.issue;
-      let nextIssues = result.issues;
+      let savedIssue = mergeTaskBoardIssueAttachmentDraft(
+        result.issue,
+        form.attachmentChatId,
+        form.attachments
+      );
+      let nextIssues = mergeTaskBoardIssuesAttachmentDraft(result.issues, savedIssue);
       let nextMessage = result.message;
       let nextTone: Feedback["tone"] = result.ok ? "success" : "error";
       if (result.ok && savedIssue && (form.scheduleEnabled || savedIssue.scheduleId)) {
         const scheduleResult = await taskBoardApi.syncIssueSchedule(savedIssue.id);
-        savedIssue = scheduleResult.issue ?? savedIssue;
-        nextIssues = scheduleResult.issues;
+        savedIssue = mergeTaskBoardIssueAttachmentDraft(
+          scheduleResult.issue ?? savedIssue,
+          form.attachmentChatId,
+          form.attachments
+        );
+        nextIssues = mergeTaskBoardIssuesAttachmentDraft(scheduleResult.issues, savedIssue);
         nextTone = scheduleResult.ok ? "success" : "error";
         nextMessage = scheduleResult.ok ? "任务和定时任务已保存。" : scheduleResult.message;
       }
@@ -860,9 +1023,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     setBusyIssueId(issue.id);
     try {
       const runResult = await window.electronAPI.assistant.startRun({
+        ...(issue.attachmentChatId && issue.attachments.length > 0 ? { chatId: issue.attachmentChatId } : {}),
         agentKey,
         message: buildAssistantPrompt(issue),
-        source: "copilot"
+        source: "copilot",
+        attachments: issue.attachments
       });
       if (!runResult.ok) {
         setFeedback({ tone: "error", message: runResult.message || "智能体启动失败。" });
@@ -1000,6 +1165,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   }
 
   const modalStatusLocked = modal?.mode === "edit" && Boolean(modal.issue?.runId);
+  const visibleFormAttachments = getVisibleTaskBoardAttachments(form.attachments);
 
   return (
     <section className="task-board-page" aria-label="任务看板">
@@ -1165,8 +1331,18 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 />
               </label>
             ) : null}
-            <label className="task-board-field">
-              <span>描述</span>
+            <div className="task-board-field">
+              <div className="task-board-field-head">
+                <span>描述</span>
+                <button
+                  type="button"
+                  className="task-board-attachment-add-button"
+                  onClick={() => void addTaskBoardAttachments()}
+                  disabled={attachmentBusy}
+                >
+                  {attachmentBusy ? "上传中" : "添加附件"}
+                </button>
+              </div>
               <textarea
                 value={form.description}
                 onChange={(event) => {
@@ -1182,7 +1358,36 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 rows={formCompact ? 5 : 4}
                 autoFocus={formCompact}
               />
-            </label>
+              {visibleFormAttachments.length > 0 ? (
+                <div className="task-board-attachment-list" aria-label="任务附件">
+                  {visibleFormAttachments.map((attachment) => {
+                    const sizeLabel = formatTaskBoardAttachmentSize(attachment.sizeBytes);
+                    return (
+                      <div key={attachment.id} className="task-board-attachment-chip">
+                        <button
+                          type="button"
+                          className="task-board-attachment-open"
+                          onClick={() => void openTaskBoardAttachment(attachment)}
+                          title={sizeLabel ? `${attachment.name} · ${sizeLabel}` : attachment.name}
+                        >
+                          <span className="task-board-attachment-icon" aria-hidden="true">⌘</span>
+                          <span className="task-board-attachment-name">{attachment.name}</span>
+                          {sizeLabel ? <span className="task-board-attachment-size">{sizeLabel}</span> : null}
+                        </button>
+                        <button
+                          type="button"
+                          className="task-board-attachment-remove"
+                          onClick={() => removeTaskBoardAttachment(attachment.id)}
+                          aria-label={`移除附件 ${attachment.name}`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
             {!formCompact ? (
               <div className="task-board-field-grid">
                 <label className="task-board-field">
@@ -1435,7 +1640,14 @@ function TaskBoardColumn({
           <button type="button" aria-label={`添加到 ${meta.label}`} disabled={!canAdd} onClick={onAdd}>+</button>
         </div>
       </header>
-      <div className="task-board-column-body">
+      <div
+        className="task-board-column-body"
+        onDoubleClick={(event) => {
+          if (shouldCreateIssueFromColumnDoubleClick(event, status)) {
+            onAdd();
+          }
+        }}
+      >
         <SortableContext items={issues.map((issue) => issue.id)} strategy={verticalListSortingStrategy}>
           {issues.map((issue) => (
             <TaskBoardCard

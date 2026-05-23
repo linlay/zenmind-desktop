@@ -98,3 +98,25 @@ test("external webview new-tab button stays next to the tab strip content", () =
   assert.match(tabStripRule, /max-width:\s*calc\(100%\s*-\s*42px\);/);
   assert.ok(tabAddRules.some((rule) => /flex:\s*none;/.test(rule)));
 });
+
+test("task board constrains its page height so columns can scroll vertically", () => {
+  const pageRule = readRule(".task-board-page");
+  const columnRule = readRule(".task-board-column");
+  const columnBodyRule = readRule(".task-board-column-body");
+
+  assert.match(pageRule, /^\s*height:\s*100%;/m);
+  assert.match(pageRule, /^\s*min-height:\s*0;/m);
+  assert.match(pageRule, /overflow:\s*hidden;/);
+  assert.match(columnRule, /min-height:\s*0;/);
+  assert.match(columnBodyRule, /min-height:\s*0;/);
+  assert.match(columnBodyRule, /overflow-y:\s*auto;/);
+});
+
+test("task board cards keep vertical pan gestures available inside scrollable columns", () => {
+  const cardRule = readRule(".task-board-card");
+  const lockedCardRule = readRule(".task-board-card.is-drag-locked");
+
+  assert.match(cardRule, /touch-action:\s*pan-y;/);
+  assert.doesNotMatch(cardRule, /touch-action:\s*none;/);
+  assert.match(lockedCardRule, /touch-action:\s*auto;/);
+});

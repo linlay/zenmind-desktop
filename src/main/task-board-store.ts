@@ -1,8 +1,9 @@
 import fs from "node:fs";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import type {
+  AssistantAttachment,
   TaskBoardDeleteResult,
   TaskBoardIssue,
   TaskBoardIssueInput,
@@ -14,6 +15,16 @@ import type {
   TaskBoardStatus
 } from "../shared/contracts";
 import { TASK_BOARD_PRIORITIES, TASK_BOARD_STATUSES } from "../shared/contracts";
+import {
+  countTaskBoardIssues,
+  getTaskBoardMeta,
+  getLegacyTaskBoardIssuesPath,
+  getTaskBoardDatabasePath,
+  readTaskBoardIssues,
+  replaceTaskBoardIssues,
+  setTaskBoardMeta,
+  withTaskBoardDatabase
+} from "./task-board-db";
 
 type AppPathProvider = {
   getPath(name: "userData"): string;
@@ -26,12 +37,29 @@ type StoredTaskBoardIssues = {
 
 const STORAGE_VERSION = 1;
 const ISSUE_IDENTIFIER_PREFIX = "ZEN";
-const TASK_BOARD_DIRECTORY = "task-board";
-const TASK_BOARD_FILENAME = "issues.json";
 const NON_DRAG_DONE_TRANSITION_MESSAGE = "只有用户确认完成后才能拖拽到 Done。";
 
 const taskBoardStatusSchema = z.enum(TASK_BOARD_STATUSES);
 const taskBoardPrioritySchema = z.enum(TASK_BOARD_PRIORITIES);
+const taskBoardAttachmentSchema = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number().nonnegative(),
+  text: z.string(),
+  dataUrl: z.string().optional(),
+  truncated: z.boolean().optional(),
+  error: z.string().optional(),
+  kind: z.enum(["input", "artifact"]).optional(),
+  artifactId: z.string().optional(),
+  description: z.string().optional(),
+  sha256: z.string().optional(),
+  url: z.string().optional(),
+  document: z.record(z.string(), z.unknown()).optional(),
+  hidden: z.boolean().optional(),
+  sourceAttachmentId: z.string().optional(),
+  pageNumber: z.number().optional()
+}).passthrough();
 
 const taskBoardIssueSchema = z.object({
   id: z.string().min(1),
@@ -51,6 +79,8 @@ const taskBoardIssueSchema = z.object({
   scheduleCron: z.string().nullable().optional(),
   scheduleMessage: z.string().nullable().optional(),
   scheduleTimezone: z.string().nullable().optional(),
+  attachmentChatId: z.string().nullable().optional(),
+  attachments: z.array(taskBoardAttachmentSchema).optional(),
   createdAt: z.string().min(1),
   updatedAt: z.string().min(1)
 });
@@ -71,7 +101,10 @@ const taskBoardStatusAliases: Record<string, TaskBoardStatus> = {
   "in-process": "in_progress",
   inprogress: "in_progress",
   processing: "in_progress",
-  running: "in_progress"
+  running: "in_progress",
+  block: "blocked",
+  blocked: "blocked",
+  stuck: "blocked"
 };
 
 const statusRank = new Map<TaskBoardStatus, number>(
@@ -112,19 +145,22 @@ function normalizeDescription(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeAttachments(value: unknown): AssistantAttachment[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((attachment) => taskBoardAttachmentSchema.safeParse(attachment))
+    .filter((result) => result.success)
+    .map((result) => result.data as AssistantAttachment);
+}
+
 function isNonDragDoneTransition(issue: TaskBoardIssue, requestedStatus: TaskBoardStatus | null) {
   return requestedStatus === "done" && issue.status !== "done";
 }
 
 function nowIso() {
   return new Date().toISOString();
-}
-
-function createEmptyStore(): StoredTaskBoardIssues {
-  return {
-    version: STORAGE_VERSION,
-    issues: []
-  };
 }
 
 function sortIssues(issues: TaskBoardIssue[]) {
@@ -148,46 +184,47 @@ function cloneIssues(issues: TaskBoardIssue[]) {
   return sortIssues(issues).map(cloneIssue);
 }
 
-function getTaskBoardRoot(app: AppPathProvider) {
-  return path.join(app.getPath("userData"), TASK_BOARD_DIRECTORY);
-}
-
-function getTaskBoardIssuesPath(app: AppPathProvider) {
-  return path.join(getTaskBoardRoot(app), TASK_BOARD_FILENAME);
-}
-
 function writeStore(app: AppPathProvider, store: StoredTaskBoardIssues) {
-  const targetPath = getTaskBoardIssuesPath(app);
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tempPath, `${JSON.stringify({ ...store, issues: sortIssues(store.issues) }, null, 2)}\n`, "utf8");
-  fs.renameSync(tempPath, targetPath);
+  withTaskBoardDatabase(app, (db) => {
+    replaceTaskBoardIssues(db, sortIssues(store.issues));
+  });
 }
 
 function readStore(app: AppPathProvider): StoredTaskBoardIssues {
-  const targetPath = getTaskBoardIssuesPath(app);
-  if (!fs.existsSync(targetPath)) {
-    const emptyStore = createEmptyStore();
-    writeStore(app, emptyStore);
-    return emptyStore;
+  return withTaskBoardDatabase(app, (db) => {
+    migrateLegacyJsonIfNeeded(app, db);
+    return {
+      version: STORAGE_VERSION,
+      issues: readTaskBoardIssues(db)
+    };
+  });
+}
+
+function migrateLegacyJsonIfNeeded(app: AppPathProvider, db: DatabaseSync) {
+  if (getTaskBoardMeta(db, "json_migrated_at")) {
+    return;
+  }
+  if (countTaskBoardIssues(db) > 0) {
+    return;
+  }
+
+  const legacyPath = getLegacyTaskBoardIssuesPath(app);
+  if (!fs.existsSync(legacyPath)) {
+    return;
   }
 
   try {
-    const raw = fs.readFileSync(targetPath, "utf8");
+    const raw = fs.readFileSync(legacyPath, "utf8");
     const normalized = normalizeStoredTaskBoardStore(JSON.parse(raw));
-    if (normalized) {
-      if (normalized.changed) {
-        writeStore(app, normalized.store);
-      }
-      return normalized.store;
+    if (!normalized) {
+      return;
     }
+    replaceTaskBoardIssues(db, normalized.store.issues);
+    setTaskBoardMeta(db, "json_migrated_at", nowIso());
+    setTaskBoardMeta(db, "json_source_path", legacyPath);
   } catch {
-    // Corrupt local state should not block Desktop startup.
+    // Corrupt legacy JSON should not block Desktop startup or rewrite the source file.
   }
-
-  const recoveredStore = createEmptyStore();
-  writeStore(app, recoveredStore);
-  return recoveredStore;
 }
 
 function nextIssueNumber(issues: TaskBoardIssue[]) {
@@ -236,14 +273,18 @@ function normalizeStoredTaskBoardStore(value: unknown): { store: StoredTaskBoard
         scheduleEnabled: parsedIssue.data.scheduleEnabled === true,
         scheduleCron: nullableTrimmedText(parsedIssue.data.scheduleCron),
         scheduleMessage: nullableTrimmedText(parsedIssue.data.scheduleMessage),
-        scheduleTimezone: nullableTrimmedText(parsedIssue.data.scheduleTimezone)
+        scheduleTimezone: nullableTrimmedText(parsedIssue.data.scheduleTimezone),
+        attachmentChatId: nullableTrimmedText(parsedIssue.data.attachmentChatId),
+        attachments: normalizeAttachments(parsedIssue.data.attachments)
       });
       if (
         parsedIssue.data.scheduleId === undefined ||
         parsedIssue.data.scheduleEnabled === undefined ||
         parsedIssue.data.scheduleCron === undefined ||
         parsedIssue.data.scheduleMessage === undefined ||
-        parsedIssue.data.scheduleTimezone === undefined
+        parsedIssue.data.scheduleTimezone === undefined ||
+        parsedIssue.data.attachmentChatId === undefined ||
+        parsedIssue.data.attachments === undefined
       ) {
         changed = true;
       }
@@ -296,6 +337,8 @@ function buildIssue(input: TaskBoardIssueInput, existingIssues: TaskBoardIssue[]
     scheduleCron: nullableTrimmedText(input.scheduleCron),
     scheduleMessage: nullableTrimmedText(input.scheduleMessage),
     scheduleTimezone: nullableTrimmedText(input.scheduleTimezone),
+    attachmentChatId: nullableTrimmedText(input.attachmentChatId),
+    attachments: normalizeAttachments(input.attachments),
     createdAt: timestamp,
     updatedAt: timestamp
   };
@@ -361,6 +404,12 @@ function applyIssueUpdate(issue: TaskBoardIssue, input: TaskBoardIssueUpdateInpu
   if (input.scheduleTimezone !== undefined) {
     nextIssue.scheduleTimezone = nullableTrimmedText(input.scheduleTimezone);
   }
+  if (input.attachmentChatId !== undefined) {
+    nextIssue.attachmentChatId = nullableTrimmedText(input.attachmentChatId);
+  }
+  if (input.attachments !== undefined) {
+    nextIssue.attachments = normalizeAttachments(input.attachments);
+  }
 
   return nextIssue;
 }
@@ -371,7 +420,7 @@ export function listTaskBoardIssues(app: AppPathProvider): TaskBoardListResult {
     ok: true,
     message: "任务看板已加载。",
     issues: cloneIssues(store.issues),
-    storagePath: getTaskBoardIssuesPath(app)
+    storagePath: getTaskBoardDatabasePath(app)
   };
 }
 
@@ -609,6 +658,7 @@ export function deleteTaskBoardIssue(app: AppPathProvider, issueId: string): Tas
 }
 
 export const __testInternals = {
-  getTaskBoardIssuesPath,
+  getLegacyTaskBoardIssuesPath,
+  getTaskBoardDatabasePath,
   readStore
 };

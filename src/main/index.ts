@@ -3129,7 +3129,7 @@ function resolveTaskBoardStatusFromAssistantEvent(event: TaskBoardAssistantSyncE
     event.status === "timeout" ||
     event.status === "stopped"
   ) {
-    return "todo";
+    return "blocked";
   }
   return null;
 }

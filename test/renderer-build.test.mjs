@@ -922,6 +922,8 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(mainProcess, /\/api\/schedule\/delete/);
   assert.match(mainProcess, /syncTaskBoardIssueFromAssistantEvent/);
   assert.match(mainProcess, /event\.type === "done" \|\| event\.type === "run\.complete"[\s\S]{0,120}return "in_review"/);
+  assert.match(mainProcess, /event\.type === "run\.error"/);
+  assert.match(mainProcess, /event\.status === "timeout"[\s\S]{0,120}return "blocked"/);
   assert.match(mainProcess, /updateTaskBoardIssueByRunId\(app, event\.runId/);
   assert.match(mainProcess, /updateTaskBoardIssueByChatId/);
   assert.match(mainProcess, /updateTaskBoardIssueByChatId\(app,\s*event\.chatId/);
@@ -933,6 +935,14 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /function readTaskBoardApi/);
   assert.match(taskBoardPage, /taskBoardApi\.listIssues\(\)/);
   assert.match(taskBoardPage, /taskBoardApi\.createIssue/);
+  assert.match(taskBoardPage, /function canCreateIssueFromColumnDoubleClick\(status: TaskBoardStatus\)/);
+  assert.match(taskBoardPage, /return status === "backlog" \|\| status === "todo";/);
+  assert.match(taskBoardPage, /function shouldCreateIssueFromColumnDoubleClick/);
+  assert.match(taskBoardPage, /target\.closest\("\.task-board-card"\)/);
+  assert.match(taskBoardPage, /onDoubleClick=\{\(event\) => \{[\s\S]{0,220}shouldCreateIssueFromColumnDoubleClick\(event, status\)[\s\S]{0,120}onAdd\(\)/);
+  assert.match(taskBoardPage, /TASK_BOARD_FEEDBACK_AUTO_CLOSE_MS = 3000/);
+  assert.match(taskBoardPage, /if \(!feedback \|\| feedback\.tone !== "success"\) \{/);
+  assert.match(taskBoardPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,140}setFeedback\(\(current\) => \(current === feedback \? null : current\)\)/);
   assert.match(taskBoardPage, /window\.electronAPI\.assistant\.startRun/);
   assert.match(taskBoardPage, /不要直接修改任务看板文件或任务状态；Desktop 会在你完成后自动把任务更新到 In Review。/);
   assert.match(taskBoardPage, /window\.electronAPI\.assistant\.onAssistantEvent/);
@@ -979,6 +989,9 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /form\.status === "in_progress" && !modal\?\.issue\?\.runId/);
   assert.match(taskBoardPage, /shouldRunAfterSave && !form\.assigneeAgentKey/);
   assert.match(taskBoardPage, /请选择智能体后再进入 In Progress。/);
+  assert.match(taskBoardPage, /function mergeTaskBoardIssueAttachmentDraft/);
+  assert.match(taskBoardPage, /mergeTaskBoardIssueAttachmentDraft\(\s*result\.issue[\s\S]{0,160}form\.attachmentChatId[\s\S]{0,160}form\.attachments/);
+  assert.match(taskBoardPage, /mergeTaskBoardIssuesAttachmentDraft\(\s*result\.issues[\s\S]{0,160}savedIssue/);
   assert.match(taskBoardPage, /assignIssueToAssistant\(savedIssue, form\.assigneeAgentKey\)/);
   assert.match(taskBoardPage, /const \[formCompact,\s*setFormCompact\] = useState\(true\)/);
   assert.match(taskBoardPage, /setFormCompact\(true\)/);
@@ -1005,6 +1018,9 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /task-board-schedule-badge/);
   assert.match(taskBoardPage, /resolveAssistantTaskStatus/);
   assert.match(taskBoardPage, /status:\s*"in_review"[\s\S]*?runId:\s*null/);
+  assert.match(taskBoardPage, /status:\s*"blocked"[\s\S]*?智能体处理未完成，任务已更新为 Blocked。/);
+  assert.doesNotMatch(taskBoardPage, /附件：\$\{/);
+  assert.doesNotMatch(taskBoardPage, /task-board-attachment-badge/);
   assert.doesNotMatch(taskBoardPage, /<header className="task-board-breadcrumb">\s*<strong>Issues<\/strong>\s*<\/header>/);
   assert.doesNotMatch(taskBoardPage, /task-board-workspace-mark/);
   assert.doesNotMatch(taskBoardPage, /task-board-breadcrumb-separator/);

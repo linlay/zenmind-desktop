@@ -94,10 +94,12 @@ test("agent platform assistant bridge forwards startRun to /api/query with beare
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, "http://127.0.0.1:18888/api/query");
-    assert.deepEqual(events.map((event) => event.type), ["run.start", "content.delta"]);
+    assert.deepEqual(events.map((event) => event.type), ["run.start", "content.delta", "run.complete"]);
     assert.equal(events[1].delta, "hi");
     assert.equal(events[1].runId, result.runId);
     assert.equal(events[1].chatId, result.chatId);
+    assert.equal(events[2].runId, result.runId);
+    assert.equal(events[2].chatId, result.chatId);
   } finally {
     globalThis.fetch = originalFetch;
   }

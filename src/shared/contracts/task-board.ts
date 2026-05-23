@@ -1,7 +1,10 @@
+import type { AssistantAttachment } from "./attachments";
+
 export const TASK_BOARD_STATUSES = [
   "backlog",
   "todo",
   "in_progress",
+  "blocked",
   "in_review",
   "done"
 ] as const;
@@ -35,6 +38,8 @@ export interface TaskBoardIssue {
   scheduleCron: string | null;
   scheduleMessage: string | null;
   scheduleTimezone: string | null;
+  attachmentChatId: string | null;
+  attachments: AssistantAttachment[];
   createdAt: string;
   updatedAt: string;
 }
@@ -51,6 +56,8 @@ export interface TaskBoardIssueInput {
   scheduleCron?: string | null;
   scheduleMessage?: string | null;
   scheduleTimezone?: string | null;
+  attachmentChatId?: string | null;
+  attachments?: AssistantAttachment[];
 }
 
 export interface TaskBoardIssueUpdateInput {
@@ -67,6 +74,8 @@ export interface TaskBoardIssueUpdateInput {
   scheduleCron?: string | null;
   scheduleMessage?: string | null;
   scheduleTimezone?: string | null;
+  attachmentChatId?: string | null;
+  attachments?: AssistantAttachment[];
 }
 
 export interface TaskBoardIssueMoveInput {
