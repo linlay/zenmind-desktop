@@ -30,6 +30,12 @@ const COMMAND_INSTALL_TIMEOUT_MS = 120_000;
 const COMMAND_INSTALL_MAX_BUFFER = 1024 * 1024;
 const COMMAND_DISCOVERY_MAX_DEPTH = 5;
 const COMMAND_DISCOVERY_MAX_ENTRIES = 2_000;
+const ANTHROPIC_SKILLS_LEGACY_IDS = new Map([
+  ["docx-manipulation", "docx"],
+  ["pdf-manipulation", "pdf"],
+  ["pptx-manipulation", "pptx"],
+  ["xlsx-manipulation", "xlsx"]
+]);
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -321,6 +327,121 @@ function ensureSupportedPackageCommand(command: string) {
   return name;
 }
 
+function isNpxFlagWithValue(value: string) {
+  return [
+    "-c",
+    "--call",
+    "--cache",
+    "--package",
+    "-p",
+    "--registry",
+    "--userconfig"
+  ].includes(value);
+}
+
+function findPackageExecutionStartIndex(args: string[], startIndex = 0) {
+  for (let index = startIndex; index < args.length; index += 1) {
+    const value = args[index];
+    if (value === "--") {
+      continue;
+    }
+    if (isNpxFlagWithValue(value)) {
+      index += 1;
+      continue;
+    }
+    if (value.startsWith("--package=") || value.startsWith("-p=")) {
+      continue;
+    }
+    if (value.startsWith("-")) {
+      continue;
+    }
+    return index;
+  }
+  return -1;
+}
+
+function isSkillsPackageSpecifier(value: string) {
+  return /^skills(?:@.+)?$/u.test(value.trim());
+}
+
+function isAnthropicSkillsSource(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/\.git$/u, "");
+  return (
+    normalized === "anthropics/skills" ||
+    normalized === "github:anthropics/skills" ||
+    normalized === "git@github.com:anthropics/skills" ||
+    normalized === "https://github.com/anthropics/skills" ||
+    normalized === "http://github.com/anthropics/skills"
+  );
+}
+
+function findAnthropicSkillsAddSourceIndex(args: string[], startIndex: number) {
+  if (startIndex < 0 || !isSkillsPackageSpecifier(args[startIndex] || "")) {
+    return -1;
+  }
+  let commandIndex = startIndex + 1;
+  if (args[commandIndex] === "--") {
+    commandIndex += 1;
+  }
+  if (args[commandIndex] === "skills") {
+    commandIndex += 1;
+  }
+  if (
+    args[commandIndex] !== "add" ||
+    !isAnthropicSkillsSource(args[commandIndex + 1] || "")
+  ) {
+    return -1;
+  }
+  return commandIndex + 1;
+}
+
+function normalizeAnthropicSkillsAddArgs(args: string[], startIndex: number) {
+  if (findAnthropicSkillsAddSourceIndex(args, startIndex) < 0) {
+    return args;
+  }
+
+  return args.map((arg, index) => {
+    if (arg.startsWith("--skill=")) {
+      const skillId = arg.slice("--skill=".length);
+      const mapped = ANTHROPIC_SKILLS_LEGACY_IDS.get(skillId);
+      return mapped ? `--skill=${mapped}` : arg;
+    }
+    if (args[index - 1] === "--skill") {
+      return ANTHROPIC_SKILLS_LEGACY_IDS.get(arg) ?? arg;
+    }
+    return arg;
+  });
+}
+
+function normalizeNpxDownloadArgs(args: string[]) {
+  return normalizeAnthropicSkillsAddArgs(args, findPackageExecutionStartIndex(args));
+}
+
+function normalizeNpmDownloadArgs(args: string[]) {
+  const subcommand = args[0];
+  if (subcommand !== "exec" && subcommand !== "x") {
+    return args;
+  }
+  return normalizeAnthropicSkillsAddArgs(args, findPackageExecutionStartIndex(args, 1));
+}
+
+function normalizeSkillDownloadCommand(command: string, args: string[]) {
+  const name = normalizedPackageCommandName(command);
+  if (name === "npx") {
+    return {
+      command,
+      args: normalizeNpxDownloadArgs(args)
+    };
+  }
+  if (name === "npm") {
+    return {
+      command,
+      args: normalizeNpmDownloadArgs(args)
+    };
+  }
+  return { command, args };
+}
+
 function windowsCommandLineArg(value: string) {
   return `"${value.replace(/"/gu, "\\\"").replace(/%/gu, "%%")}"`;
 }
@@ -535,7 +656,8 @@ export async function installSkillFromCommand(app: App, commandText: string): Pr
   if (tokens.length === 0) {
     throw new Error("请输入 npm 或 npx 下载指令。");
   }
-  const [command, ...args] = tokens;
+  const [rawCommand, ...rawArgs] = tokens;
+  const { command, args } = normalizeSkillDownloadCommand(rawCommand, rawArgs);
   const execution = resolvePackageManagerExecution(command, args);
   const downloadsRoot = path.join(getSkillsMarketDir(app), ".downloads");
   fs.mkdirSync(downloadsRoot, { recursive: true });

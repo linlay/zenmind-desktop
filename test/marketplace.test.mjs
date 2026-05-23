@@ -116,6 +116,59 @@ function writeFakeContainerEngine(binDir, name, script) {
   return enginePath;
 }
 
+function writeFakePackageManager(binDir, name, logPath) {
+  fs.mkdirSync(binDir, { recursive: true });
+  const runnerPath = path.join(binDir, "fake-package-manager.cjs");
+  if (!fs.existsSync(runnerPath)) {
+    fs.writeFileSync(
+      runnerPath,
+      `const fs = require("node:fs");
+const path = require("node:path");
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(logPath)}, args.join(" ") + "\\n", "utf8");
+if (args.some((arg) => /(?:docx|pdf|pptx|xlsx)-manipulation/.test(arg))) {
+  process.exit(7);
+}
+let skillId = "";
+for (let index = 0; index < args.length; index += 1) {
+  const arg = args[index];
+  if (arg === "--skill") {
+    skillId = args[index + 1] || "";
+    break;
+  }
+  if (arg.startsWith("--skill=")) {
+    skillId = arg.slice("--skill=".length);
+    break;
+  }
+}
+if (!skillId) {
+  process.exit(8);
+}
+const home = process.env.USERPROFILE || process.env.HOME;
+const target = path.join(home, ".codex", "skills", skillId);
+fs.mkdirSync(target, { recursive: true });
+fs.writeFileSync(path.join(target, "SKILL.md"), "# " + skillId + "\\n", "utf8");
+fs.writeFileSync(path.join(target, "skill.json"), JSON.stringify({
+  id: skillId,
+  name: skillId.toUpperCase(),
+  version: "1.0.0",
+  description: "Fake downloaded skill",
+  tags: ["cloud"]
+}) + "\\n", "utf8");
+`,
+      "utf8"
+    );
+  }
+
+  const executablePath = path.join(binDir, process.platform === "win32" ? `${name}.cmd` : name);
+  const script = process.platform === "win32"
+    ? `@echo off\r\nnode "%~dp0fake-package-manager.cjs" %*\r\n`
+    : `#!/bin/sh\nexec node "$(dirname "$0")/fake-package-manager.cjs" "$@"\n`;
+  fs.writeFileSync(executablePath, script, "utf8");
+  fs.chmodSync(executablePath, 0o755);
+  return executablePath;
+}
+
 async function withPathPrefix(prefix, fn) {
   const previousPath = process.env.PATH;
   const previousContainerEnginePaths = process.env.ZENMIND_CONTAINER_ENGINE_PATHS;
@@ -942,6 +995,103 @@ printf '{"id":"downloaded-skill","name":"Downloaded Skill","version":"1.2.3","de
     assert.equal(installed?.source, "cloud");
     assert.equal(installed?.state, "installed");
   });
+});
+
+test("importSkillFromCommand maps old Anthropic skill ids before running skills add", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-command-skill-alias-"));
+  const app = createApp(root);
+  const binDir = path.join(root, "bin");
+  const logPath = path.join(root, "npx-args.log");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  fs.mkdirSync(binDir, { recursive: true });
+  const npxPath = path.join(binDir, process.platform === "win32" ? "npx.cmd" : "npx");
+  const script = process.platform === "win32"
+    ? `@echo off
+echo %*>"${logPath}"
+echo %* | findstr /C:"--skill docx-manipulation" >nul && exit /b 7
+echo %* | findstr /C:"--skill docx" >nul || exit /b 8
+set target=%USERPROFILE%\\.codex\\skills\\docx
+mkdir "%target%"
+echo # DOCX>"%target%\\SKILL.md"
+echo {"id":"docx","name":"DOCX","version":"1.0.0","description":"Anthropic skill","tags":["cloud"]}>"%target%\\skill.json"
+`
+    : `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" > "${logPath}"
+case " $* " in
+  *" --skill docx-manipulation "*) exit 7 ;;
+esac
+case " $* " in
+  *" --skill docx "*) ;;
+  *) exit 8 ;;
+esac
+target="$HOME/.codex/skills/docx"
+mkdir -p "$target"
+printf '# DOCX\\n' > "$target/SKILL.md"
+printf '{"id":"docx","name":"DOCX","version":"1.0.0","description":"Anthropic skill","tags":["cloud"]}\\n' > "$target/skill.json"
+`;
+  fs.writeFileSync(npxPath, script, "utf8");
+  fs.chmodSync(npxPath, 0o755);
+
+  await withPathPrefix(binDir, async () => {
+    const result = await importSkillFromCommand(
+      app,
+      "npx skills add https://github.com/anthropics/skills --skill docx-manipulation"
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.itemId, "docx");
+    assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "docx"), "SKILL.md")), true);
+    assert.match(fs.readFileSync(logPath, "utf8"), /--skill docx(?:\s|$)/);
+    assert.doesNotMatch(fs.readFileSync(logPath, "utf8"), /docx-manipulation/);
+  });
+});
+
+test("importSkillFromCommand normalizes common npm and npx skills add formats", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-command-skill-formats-"));
+  const app = createApp(root);
+  const binDir = path.join(root, "bin");
+  const logPath = path.join(root, "package-manager-args.log");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeFakePackageManager(binDir, "npm", logPath);
+  writeFakePackageManager(binDir, "npx", logPath);
+
+  const cases = [
+    {
+      command: "npx --yes skills@latest add https://github.com/anthropics/skills --skill=pdf-manipulation",
+      expectedId: "pdf"
+    },
+    {
+      command: "npx --package skills -- skills add git@github.com:anthropics/skills.git --skill pptx-manipulation",
+      expectedId: "pptx"
+    },
+    {
+      command: "npm exec --yes -- skills add https://github.com/anthropics/skills --skill xlsx-manipulation",
+      expectedId: "xlsx"
+    },
+    {
+      command: "npm x skills@latest -- add github:anthropics/skills --skill=docx-manipulation",
+      expectedId: "docx"
+    }
+  ];
+
+  await withPathPrefix(binDir, async () => {
+    for (const item of cases) {
+      const result = await importSkillFromCommand(app, item.command);
+
+      assert.equal(result.ok, true);
+      assert.equal(result.itemId, item.expectedId);
+      assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, item.expectedId), "SKILL.md")), true);
+    }
+  });
+
+  const log = fs.readFileSync(logPath, "utf8");
+  assert.doesNotMatch(log, /(?:docx|pdf|pptx|xlsx)-manipulation/);
+  for (const expectedId of cases.map((item) => item.expectedId)) {
+    assert.match(log, new RegExp(`--skill(?:=| )${expectedId}(?:\\s|$)`));
+  }
 });
 
 test("importSkillFromCommand rejects non npm and npx commands", async (t) => {
