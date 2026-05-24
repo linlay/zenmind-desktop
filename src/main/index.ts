@@ -3197,7 +3197,7 @@ type TaskBoardAssistantSyncEvent = {
 
 function resolveTaskBoardStatusFromAssistantEvent(event: TaskBoardAssistantSyncEvent): TaskBoardStatus | null {
   if (event.type === "done" || event.type === "run.complete") {
-    return "in_review";
+    return "completed";
   }
   if (
     event.type === "error" ||
@@ -3211,7 +3211,7 @@ function resolveTaskBoardStatusFromAssistantEvent(event: TaskBoardAssistantSyncE
     event.status === "timeout" ||
     event.status === "stopped"
   ) {
-    return "blocked";
+    return "todo";
   }
   return null;
 }
@@ -3246,16 +3246,16 @@ function syncTaskBoardIssueFromAssistantEvent(event: TaskBoardAssistantSyncEvent
   }
 }
 
-type TaskBoardScheduleDetail = {
+type TaskBoardAutomationDetail = {
   id?: string;
   scheduleId?: string;
 };
 
-function readPlatformScheduleId(value: unknown) {
+function readPlatformAutomationId(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return "";
   }
-  const record = value as TaskBoardScheduleDetail;
+  const record = value as TaskBoardAutomationDetail;
   return typeof record.id === "string" && record.id.trim()
     ? record.id.trim()
     : typeof record.scheduleId === "string" && record.scheduleId.trim()
@@ -3263,38 +3263,37 @@ function readPlatformScheduleId(value: unknown) {
       : "";
 }
 
-function buildTaskBoardScheduleMessage(issue: TaskBoardIssue) {
-  const message = issue.scheduleMessage?.trim() || issue.description.trim() || issue.title.trim();
+function buildTaskBoardAutomationMessage(issue: TaskBoardIssue) {
+  const message = issue.automationMessage?.trim() || issue.description.trim() || issue.title.trim();
   return [
     message,
     "",
     "关联 ZenMind 任务看板任务：",
-    `任务编号：${issue.identifier}`,
+    `任务编号：${issue.id}`,
     `标题：${issue.title}`
   ].join("\n");
 }
 
-function buildTaskBoardSchedulePayload(issue: TaskBoardIssue) {
+function buildTaskBoardAutomationPayload(issue: TaskBoardIssue) {
   return {
-    name: `任务看板 ${issue.identifier}: ${issue.title}`.slice(0, 120),
-    description: `来自 ZenMind Desktop 任务看板：${issue.identifier}`,
-    cron: issue.scheduleCron?.trim() ?? "",
+    name: `任务看板 ${issue.id}: ${issue.title}`.slice(0, 120),
+    description: `来自 ZenMind Desktop 任务看板：${issue.id}`,
+    cron: issue.automationCron?.trim() ?? "",
     agentKey: issue.assigneeAgentKey?.trim() ?? "",
     enabled: true,
-    zoneId: issue.scheduleTimezone?.trim() || "Asia/Shanghai",
+    zoneId: issue.automationTimezone?.trim() || "Asia/Shanghai",
     query: {
-      message: buildTaskBoardScheduleMessage(issue),
+      message: buildTaskBoardAutomationMessage(issue),
       hidden: true,
       params: {
         source: "task-board",
-        issueId: issue.id,
-        issueIdentifier: issue.identifier
+        issueId: issue.id
       }
     }
   };
 }
 
-async function syncTaskBoardIssueSchedule(issueId: string) {
+async function syncTaskBoardIssueAutomation(issueId: string) {
   const issue = listTaskBoardIssues(app).issues.find((candidate) => candidate.id === String(issueId ?? "").trim());
   if (!issue) {
     return {
@@ -3304,16 +3303,16 @@ async function syncTaskBoardIssueSchedule(issueId: string) {
     };
   }
 
-  if (!issue.scheduleEnabled) {
-    if (issue.scheduleId) {
+  if (!issue.automationEnabled) {
+    if (issue.automationId) {
       await callAgentPlatform(app, "/api/schedule/delete", {
         method: "POST",
-        body: { id: issue.scheduleId }
+        body: { id: issue.automationId }
       });
     }
     return updateTaskBoardIssue(app, issue.id, {
-      scheduleId: null,
-      scheduleEnabled: false
+      automationId: null,
+      automationEnabled: false
     });
   }
 
@@ -3324,58 +3323,58 @@ async function syncTaskBoardIssueSchedule(issueId: string) {
       issues: listTaskBoardIssues(app).issues
     };
   }
-  if (!issue.scheduleCron?.trim()) {
+  if (!issue.automationCron?.trim()) {
     return {
       ok: false,
-      message: "请设置定时任务 cron。",
+      message: "请设置自动化 cron。",
       issues: listTaskBoardIssues(app).issues
     };
   }
-  if (!issue.scheduleMessage?.trim()) {
+  if (!issue.automationMessage?.trim()) {
     return {
       ok: false,
-      message: "请填写定时任务要执行的内容。",
+      message: "请填写自动化要执行的内容。",
       issues: listTaskBoardIssues(app).issues
     };
   }
 
-  const payload = buildTaskBoardSchedulePayload(issue);
-  const detail = issue.scheduleId
-    ? await callAgentPlatform<TaskBoardScheduleDetail>(app, "/api/schedule/update", {
+  const payload = buildTaskBoardAutomationPayload(issue);
+  const detail = issue.automationId
+    ? await callAgentPlatform<TaskBoardAutomationDetail>(app, "/api/schedule/update", {
       method: "POST",
-      body: { id: issue.scheduleId, ...payload }
+      body: { id: issue.automationId, ...payload }
     })
-    : await callAgentPlatform<TaskBoardScheduleDetail>(app, "/api/schedule/create", {
+    : await callAgentPlatform<TaskBoardAutomationDetail>(app, "/api/schedule/create", {
       method: "POST",
       body: payload
     });
-  const scheduleId = readPlatformScheduleId(detail) || issue.scheduleId;
-  if (!scheduleId) {
+  const automationId = readPlatformAutomationId(detail) || issue.automationId;
+  if (!automationId) {
     return {
       ok: false,
-      message: "agent-platform 未返回定时任务 ID。",
+      message: "agent-platform 未返回自动化 ID。",
       issues: listTaskBoardIssues(app).issues
     };
   }
   return updateTaskBoardIssue(app, issue.id, {
-    scheduleId,
-    scheduleEnabled: true
+    automationId,
+    automationEnabled: true
   });
 }
 
-async function deleteTaskBoardIssueWithSchedule(issueId: string) {
+async function deleteTaskBoardIssueWithAutomation(issueId: string) {
   const currentIssues = listTaskBoardIssues(app).issues;
   const issue = currentIssues.find((candidate) => candidate.id === String(issueId ?? "").trim());
-  if (issue?.scheduleId) {
+  if (issue?.automationId) {
     try {
       await callAgentPlatform(app, "/api/schedule/delete", {
         method: "POST",
-        body: { id: issue.scheduleId }
+        body: { id: issue.automationId }
       });
     } catch (error) {
       return {
         ok: false,
-        message: `定时任务删除失败：${error instanceof Error ? error.message : String(error)}`,
+        message: `自动化删除失败：${error instanceof Error ? error.message : String(error)}`,
         issues: currentIssues
       };
     }
@@ -4037,13 +4036,13 @@ function registerIpcHandlers() {
     updateTaskBoardIssue(app, issueId, input)
   );
   ipcMain.handle("taskBoard.deleteIssue", async (_event, issueId: string) =>
-    deleteTaskBoardIssueWithSchedule(issueId)
+    deleteTaskBoardIssueWithAutomation(issueId)
   );
   ipcMain.handle("taskBoard.moveIssue", async (_event, input: TaskBoardIssueMoveInput) =>
     moveTaskBoardIssue(app, input)
   );
-  ipcMain.handle("taskBoard.syncIssueSchedule", async (_event, issueId: string) =>
-    syncTaskBoardIssueSchedule(issueId)
+  ipcMain.handle("taskBoard.syncIssueAutomation", async (_event, issueId: string) =>
+    syncTaskBoardIssueAutomation(issueId)
   );
   ipcMain.handle("customSidebar.list", async () => listCustomSidebarItems(app));
   ipcMain.handle("customSidebar.add", async (_event, input: CustomSidebarItemInput) => {

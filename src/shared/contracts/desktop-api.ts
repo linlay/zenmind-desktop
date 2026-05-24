@@ -91,7 +91,7 @@ export interface DesktopApi {
     updateIssue: (id: string, input: TaskBoardIssueUpdateInput) => Promise<TaskBoardIssueResult>;
     deleteIssue: (id: string) => Promise<TaskBoardDeleteResult>;
     moveIssue: (input: TaskBoardIssueMoveInput) => Promise<TaskBoardIssueResult>;
-    syncIssueSchedule: (issueId: string) => Promise<TaskBoardIssueResult>;
+    syncIssueAutomation: (issueId: string) => Promise<TaskBoardIssueResult>;
   };
   assistant: {
     getSettings: () => Promise<AssistantSettingsPublic>;

@@ -381,7 +381,7 @@
 }
 
 .task-board-column.is-in_progress,
-.task-board-column.is-done {
+.task-board-column.is-completed {
   z-index: 20;
 }
 
@@ -709,11 +709,6 @@
   color: #2563eb;
 }
 
-.task-board-priority.is-none {
-  background: rgba(148, 163, 184, 0.16);
-  color: var(--task-board-muted);
-}
-
 .task-board-priority-bars {
   width: 10px;
   height: 10px;
@@ -735,7 +730,7 @@
 .task-board-priority-bars span:nth-child(4) { height: 11px; }
 .task-board-priority-bars span.is-on { opacity: 1; }
 
-.task-board-schedule-badge,
+.task-board-automation-badge,
 .task-board-attachment-badge {
   width: 18px;
   height: 18px;
@@ -748,7 +743,7 @@
   white-space: nowrap;
 }
 
-.task-board-schedule-badge {
+.task-board-automation-badge {
   background: rgba(22, 163, 74, 0.1);
   color: #15803d;
 }
@@ -758,7 +753,7 @@
   color: #4f46e5;
 }
 
-.task-board-schedule-badge .task-board-icon,
+.task-board-automation-badge .task-board-icon,
 .task-board-attachment-badge .task-board-icon,
 .task-board-chat-action .task-board-icon {
   width: 12px;
@@ -1112,7 +1107,7 @@
   gap: 12px;
 }
 
-.task-board-schedule-panel {
+.task-board-automation-panel {
   display: grid;
   gap: 12px;
   padding: 12px;
@@ -1121,13 +1116,13 @@
   background: color-mix(in srgb, var(--task-board-bg) 82%, var(--task-board-card));
 }
 
-.task-board-schedule-toggle {
+.task-board-automation-toggle {
   justify-content: flex-start;
   color: var(--task-board-ink);
   font-weight: 800;
 }
 
-.task-board-schedule-popover {
+.task-board-automation-popover {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
@@ -1138,30 +1133,30 @@
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
-.task-board-schedule-panel-title {
+.task-board-automation-panel-title {
   color: var(--task-board-muted);
   font-size: 12px;
   font-weight: 800;
 }
 
-.task-board-schedule-time-control {
+.task-board-automation-time-control {
   display: grid;
   gap: 8px;
 }
 
-.task-board-schedule-select-field {
+.task-board-automation-select-field {
   position: relative;
   width: 100%;
   min-width: 0;
 }
 
-.task-board-schedule-menu {
+.task-board-automation-menu {
   position: relative;
   width: 100%;
   min-width: 0;
 }
 
-.task-board-schedule-menu-trigger {
+.task-board-automation-menu-trigger {
   width: 100%;
   min-height: 34px;
   display: flex;
@@ -1179,25 +1174,25 @@
   text-align: left;
 }
 
-.task-board-schedule-menu-trigger span:first-child {
+.task-board-automation-menu-trigger span:first-child {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.task-board-schedule-menu-trigger:hover,
-.task-board-schedule-menu.is-open .task-board-schedule-menu-trigger {
+.task-board-automation-menu-trigger:hover,
+.task-board-automation-menu.is-open .task-board-automation-menu-trigger {
   border-color: #1677ff;
 }
 
-.task-board-schedule-menu-arrow {
+.task-board-automation-menu-arrow {
   color: var(--task-board-muted);
   font-size: 14px;
   line-height: 1;
 }
 
-.task-board-schedule-menu-list {
+.task-board-automation-menu-list {
   position: absolute;
   z-index: 6;
   top: calc(100% + 4px);
@@ -1213,11 +1208,11 @@
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16);
 }
 
-.task-board-schedule-menu-list.is-time-list {
+.task-board-automation-menu-list.is-time-list {
   max-height: 184px;
 }
 
-.task-board-schedule-menu-list button {
+.task-board-automation-menu-list button {
   min-height: 30px;
   display: flex;
   align-items: center;
@@ -1232,8 +1227,8 @@
   text-align: left;
 }
 
-.task-board-schedule-menu-list button:hover,
-.task-board-schedule-menu-list button.is-selected {
+.task-board-automation-menu-list button:hover,
+.task-board-automation-menu-list button.is-selected {
   background: rgba(22, 119, 255, 0.1);
   color: #0958d9;
 }

@@ -4,17 +4,13 @@ export const TASK_BOARD_STATUSES = [
   "backlog",
   "todo",
   "in_progress",
-  "in_review",
-  "done",
-  "blocked"
+  "completed"
 ] as const;
 
 export const TASK_BOARD_PRIORITIES = [
-  "urgent",
   "high",
   "medium",
-  "low",
-  "none"
+  "low"
 ] as const;
 
 export type TaskBoardStatus = typeof TASK_BOARD_STATUSES[number];
@@ -22,22 +18,19 @@ export type TaskBoardPriority = typeof TASK_BOARD_PRIORITIES[number];
 
 export interface TaskBoardIssue {
   id: string;
-  number: number;
-  identifier: string;
   title: string;
   description: string;
   status: TaskBoardStatus;
   priority: TaskBoardPriority;
   assigneeAgentKey: string | null;
-  assigneeName: string | null;
   position: number;
   chatId: string | null;
   runId: string | null;
-  scheduleId: string | null;
-  scheduleEnabled: boolean;
-  scheduleCron: string | null;
-  scheduleMessage: string | null;
-  scheduleTimezone: string | null;
+  automationId: string | null;
+  automationEnabled: boolean;
+  automationCron: string | null;
+  automationMessage: string | null;
+  automationTimezone: string | null;
   attachmentChatId: string | null;
   attachments: AssistantAttachment[];
   createdAt: string;
@@ -50,12 +43,11 @@ export interface TaskBoardIssueInput {
   status?: TaskBoardStatus;
   priority?: TaskBoardPriority;
   assigneeAgentKey?: string | null;
-  assigneeName?: string | null;
-  scheduleId?: string | null;
-  scheduleEnabled?: boolean;
-  scheduleCron?: string | null;
-  scheduleMessage?: string | null;
-  scheduleTimezone?: string | null;
+  automationId?: string | null;
+  automationEnabled?: boolean;
+  automationCron?: string | null;
+  automationMessage?: string | null;
+  automationTimezone?: string | null;
   attachmentChatId?: string | null;
   attachments?: AssistantAttachment[];
 }
@@ -66,14 +58,13 @@ export interface TaskBoardIssueUpdateInput {
   status?: TaskBoardStatus;
   priority?: TaskBoardPriority;
   assigneeAgentKey?: string | null;
-  assigneeName?: string | null;
   chatId?: string | null;
   runId?: string | null;
-  scheduleId?: string | null;
-  scheduleEnabled?: boolean;
-  scheduleCron?: string | null;
-  scheduleMessage?: string | null;
-  scheduleTimezone?: string | null;
+  automationId?: string | null;
+  automationEnabled?: boolean;
+  automationCron?: string | null;
+  automationMessage?: string | null;
+  automationTimezone?: string | null;
   attachmentChatId?: string | null;
   attachments?: AssistantAttachment[];
 }

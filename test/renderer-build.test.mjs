@@ -1006,18 +1006,18 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(preload, /taskBoard:\s*\{/);
   assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.listIssues"\)/);
   assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.moveIssue", input\)/);
-  assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.syncIssueSchedule", issueId\)/);
+  assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.syncIssueAutomation", issueId\)/);
   assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.listIssues"/);
   assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.moveIssue"/);
-  assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.syncIssueSchedule"/);
-  assert.match(mainProcess, /syncTaskBoardIssueSchedule/);
+  assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.syncIssueAutomation"/);
+  assert.match(mainProcess, /syncTaskBoardIssueAutomation/);
   assert.match(mainProcess, /\/api\/schedule\/create/);
   assert.match(mainProcess, /\/api\/schedule\/update/);
   assert.match(mainProcess, /\/api\/schedule\/delete/);
   assert.match(mainProcess, /syncTaskBoardIssueFromAssistantEvent/);
-  assert.match(mainProcess, /event\.type === "done" \|\| event\.type === "run\.complete"[\s\S]{0,120}return "in_review"/);
+  assert.match(mainProcess, /event\.type === "done" \|\| event\.type === "run\.complete"[\s\S]{0,120}return "completed"/);
   assert.match(mainProcess, /event\.type === "run\.error"/);
-  assert.match(mainProcess, /event\.status === "timeout"[\s\S]{0,120}return "blocked"/);
+  assert.match(mainProcess, /event\.status === "timeout"[\s\S]{0,120}return "todo"/);
   assert.match(mainProcess, /updateTaskBoardIssueByRunId\(app, event\.runId/);
   assert.match(mainProcess, /updateTaskBoardIssueByChatId/);
   assert.match(mainProcess, /updateTaskBoardIssueByChatId\(app,\s*event\.chatId/);
@@ -1096,27 +1096,27 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /t\("taskBoard\.feedback\.descriptionRequired"\)/);
   assert.match(taskBoardPage, /formCompact \? t\("taskBoard\.modal\.advancedMode"\) : t\("taskBoard\.modal\.compactMode"\)/);
   assert.match(taskBoardPage, /!formCompact \? \(/);
-  assert.match(taskBoardPage, /scheduleEnabled/);
-  assert.match(taskBoardPage, /TASK_BOARD_SCHEDULE_PLANS/);
-  assert.match(taskBoardPage, /TASK_BOARD_SCHEDULE_TIME_OPTIONS/);
-  assert.match(taskBoardPage, /scheduleTime/);
-  assert.match(taskBoardPage, /function buildScheduleCron/);
-  assert.match(taskBoardPage, /const \[scheduleMenuOpen,\s*setScheduleMenuOpen\] = useState<ScheduleMenuKind \| null>\(null\)/);
-  assert.match(taskBoardPage, /selectedScheduleTimeRef\.current\?\.scrollIntoView/);
-  assert.match(taskBoardPage, /className="task-board-schedule-menu-trigger"/);
-  assert.match(taskBoardPage, /task-board-schedule-menu-list is-time-list/);
-  assert.doesNotMatch(taskBoardPage, /className="task-board-schedule-time-select"/);
+  assert.match(taskBoardPage, /automationEnabled/);
+  assert.match(taskBoardPage, /TASK_BOARD_AUTOMATION_PLANS/);
+  assert.match(taskBoardPage, /TASK_BOARD_AUTOMATION_TIME_OPTIONS/);
+  assert.match(taskBoardPage, /automationTime/);
+  assert.match(taskBoardPage, /function buildAutomationCron/);
+  assert.match(taskBoardPage, /const \[automationMenuOpen,\s*setAutomationMenuOpen\] = useState<AutomationMenuKind \| null>\(null\)/);
+  assert.match(taskBoardPage, /selectedAutomationTimeRef\.current\?\.scrollIntoView/);
+  assert.match(taskBoardPage, /className="task-board-automation-menu-trigger"/);
+  assert.match(taskBoardPage, /task-board-automation-menu-list is-time-list/);
+  assert.doesNotMatch(taskBoardPage, /className="task-board-automation-time-select"/);
   assert.match(taskBoardPage, /minute < 60; minute \+= 15/);
-  assert.match(taskBoardPage, /labelKey: "taskBoard\.schedule\.daily"/);
-  assert.match(taskBoardPage, /labelKey: "taskBoard\.schedule\.weekdays"/);
-  assert.match(taskBoardPage, /labelKey: "taskBoard\.schedule\.weekly"/);
-  assert.match(taskBoardPage, /taskBoardApi\.syncIssueSchedule/);
-  assert.match(taskBoardPage, /task-board-schedule-badge/);
+  assert.match(taskBoardPage, /labelKey: "taskBoard\.automation\.daily"/);
+  assert.match(taskBoardPage, /labelKey: "taskBoard\.automation\.weekdays"/);
+  assert.match(taskBoardPage, /labelKey: "taskBoard\.automation\.weekly"/);
+  assert.match(taskBoardPage, /taskBoardApi\.syncIssueAutomation/);
+  assert.match(taskBoardPage, /task-board-automation-badge/);
   assert.match(taskBoardPage, /resolveAssistantTaskStatus/);
-  assert.match(taskBoardPage, /status:\s*"in_review"[\s\S]*?runId:\s*null/);
-  assert.match(taskBoardPage, /status:\s*"blocked"[\s\S]*?t\("taskBoard\.feedback\.agentIncomplete"\)/);
+  assert.match(taskBoardPage, /status:\s*"completed"[\s\S]*?runId:\s*null/);
+  assert.match(taskBoardPage, /status:\s*"todo"[\s\S]*?t\("taskBoard\.feedback\.agentIncomplete"\)/);
   assert.doesNotMatch(taskBoardPage, /附件：\$\{/);
-  assert.doesNotMatch(taskBoardPage, /task-board-attachment-badge/);
+  assert.match(taskBoardPage, /task-board-attachment-badge/);
   assert.doesNotMatch(taskBoardPage, /<header className="task-board-breadcrumb">\s*<strong>Issues<\/strong>\s*<\/header>/);
   assert.doesNotMatch(taskBoardPage, /task-board-workspace-mark/);
   assert.doesNotMatch(taskBoardPage, /task-board-breadcrumb-separator/);
@@ -1127,14 +1127,14 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /data-drag-locked=\{dragLocked \? "true" : undefined\}/);
   assert.match(taskBoardPage, /\{\.\.\.sortable\.attributes\}\s*aria-disabled=\{undefined\}/);
   assert.doesNotMatch(taskBoardPage, /aria-disabled=\{dragLocked\}/);
-  assert.match(taskBoardPage, /function getVisibleAssigneeName\(name: string \| null \| undefined\)/);
+  assert.match(taskBoardPage, /function getVisibleAssigneeName\(issue: TaskBoardIssue, agents: AssistantNavAgentItem\[\]\)/);
   assert.match(taskBoardPage, /return Array\.from\(trimmed\)\.length <= 4 \? trimmed : ""/);
-  assert.match(taskBoardPage, /const visibleAssigneeName = getVisibleAssigneeName\(issue\.assigneeName\)/);
-  assert.match(taskBoardPage, /visibleAssigneeName \? \(/);
+  assert.match(taskBoardPage, /const visibleAssigneeName = getVisibleAssigneeName\(issue, agents\)/);
+  assert.match(taskBoardPage, /display\.assignee && visibleAssigneeName \? visibleAssigneeName : t\("taskBoard\.form\.unassigned"\)/);
   assert.doesNotMatch(taskBoardPage, /issue\.assigneeName\.slice\(0, 1\)/);
   assert.match(taskBoardPage, /issue\.runId \? \([\s\S]{0,180}<span[\s\S]{0,120}className="task-board-run-dot"[\s\S]{0,120}aria-label=\{t\("taskBoard\.run\.running"\)\}/);
   assert.doesNotMatch(taskBoardPage, /task-board-run-badge/);
-  assert.match(taskBoardPage, /const shouldShowFooter = Boolean/);
+  assert.match(taskBoardPage, /<footer className="task-board-card-foot">/);
   assert.doesNotMatch(taskBoardPage, /className="task-board-card-action"/);
   assert.doesNotMatch(taskBoardPage, />\s*\{busy \? "提交中" : "交给智能体"\}\s*<\/button>/);
   assert.doesNotMatch(taskBoardPage, /busy \? "提交中" : issue\.runId \? "运行中" : "交给智能体"/);
@@ -1151,17 +1151,17 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-run-dot\s*\{[\s\S]{0,220}position:\s*absolute;[\s\S]{0,220}right:[\s\S]{0,220}background:\s*#16a34a;/);
   assert.match(globalStyles, /\.task-board-chat-action\s*\{/);
   assert.match(globalStyles, /\.task-board-chat-action\.is-awaiting\s*\{/);
-  assert.match(globalStyles, /\.task-board-schedule-panel\s*\{/);
-  assert.match(globalStyles, /\.task-board-schedule-badge\s*\{/);
+  assert.match(globalStyles, /\.task-board-automation-panel\s*\{/);
+  assert.match(globalStyles, /\.task-board-automation-badge\s*\{/);
   assert.match(globalStyles, /\.task-board-chat-action\.is-human-loop\s*\{[\s\S]{0,180}background:\s*#16a34a;/);
   assert.match(globalStyles, /\.task-board-modal-head-actions/);
   assert.match(globalStyles, /\.task-board-modal-mode-button[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?white-space:\s*nowrap;/);
   assert.match(globalStyles, /\.task-board-modal\.is-compact/);
-  assert.match(globalStyles, /\.task-board-schedule-popover/);
-  assert.match(globalStyles, /\.task-board-schedule-menu-trigger/);
-  assert.match(globalStyles, /\.task-board-schedule-menu-list\s*\{[\s\S]*?top:\s*calc\(100% \+ 4px\);[\s\S]*?max-height:\s*164px;/);
-  assert.match(globalStyles, /\.task-board-schedule-menu-list\.is-time-list\s*\{[\s\S]*?max-height:\s*184px;/);
-  assert.doesNotMatch(globalStyles, /\.task-board-schedule-time-select/);
+  assert.match(globalStyles, /\.task-board-automation-popover/);
+  assert.match(globalStyles, /\.task-board-automation-menu-trigger/);
+  assert.match(globalStyles, /\.task-board-automation-menu-list\s*\{[\s\S]*?top:\s*calc\(100% \+ 4px\);[\s\S]*?max-height:\s*164px;/);
+  assert.match(globalStyles, /\.task-board-automation-menu-list\.is-time-list\s*\{[\s\S]*?max-height:\s*184px;/);
+  assert.doesNotMatch(globalStyles, /\.task-board-automation-time-select/);
   assert.match(globalStyles, /\.app-shell\.has-task-board-controls\s+\.app-window-drag-region,\s*\.app-shell\.has-task-board-controls\s+\.app-main-drag-region\s*\{[\s\S]*?display:\s*none;/);
   assert.match(globalStyles, /\.task-board-modal-actions \.task-board-secondary-button/);
   assert.doesNotMatch(globalStyles, /\.task-board-human-loop-hint\s*\{/);
@@ -1172,17 +1172,17 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-chat-modal \.pan-page\s*\{/);
 });
 
-test("task board status order places blocked after done", () => {
+test("task board status order places completed after in progress", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "task-board.ts");
   const taskBoardDb = readSourceFile("src", "main", "task-board-db.ts");
 
   assert.match(
     contracts,
-    /TASK_BOARD_STATUSES\s*=\s*\[[\s\S]*?"in_review",[\s\S]*?"done",[\s\S]*?"blocked"[\s\S]*?\]/,
+    /TASK_BOARD_STATUSES\s*=\s*\[[\s\S]*?"backlog",[\s\S]*?"todo",[\s\S]*?"in_progress",[\s\S]*?"completed"[\s\S]*?\]/,
   );
   assert.match(
     taskBoardDb,
-    /WHEN 'in_review' THEN 3[\s\S]*?WHEN 'done' THEN 4[\s\S]*?WHEN 'blocked' THEN 5/,
+    /WHEN 'in_progress' THEN 2[\s\S]*?WHEN 'completed' THEN 3/,
   );
 });
 

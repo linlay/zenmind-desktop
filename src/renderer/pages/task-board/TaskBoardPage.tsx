@@ -40,8 +40,8 @@ import { PluginPage } from "../plugin/PluginPage";
 type MenuKind = "filter" | "display" | null;
 type ModalMode = "create" | "edit";
 type ThemeMode = "light" | "dark";
-type TaskBoardSchedulePlan = "hourly" | "daily" | "weekdays" | "weekly" | "custom";
-type ScheduleMenuKind = "plan" | "time";
+type TaskBoardAutomationPlan = "hourly" | "daily" | "weekdays" | "weekly" | "custom";
+type AutomationMenuKind = "plan" | "time";
 type ModalState = {
   mode: ModalMode;
   issue?: TaskBoardIssue;
@@ -55,12 +55,12 @@ type IssueFormState = {
   status: TaskBoardStatus;
   priority: TaskBoardPriority;
   assigneeAgentKey: string;
-  scheduleEnabled: boolean;
-  schedulePreset: TaskBoardSchedulePlan;
-  scheduleTime: string;
-  scheduleCron: string;
-  scheduleMessage: string;
-  scheduleTimezone: string;
+  automationEnabled: boolean;
+  automationPreset: TaskBoardAutomationPlan;
+  automationTime: string;
+  automationCron: string;
+  automationMessage: string;
+  automationTimezone: string;
 };
 
 type DisplayState = {
@@ -96,7 +96,7 @@ const VISIBLE_TASK_BOARD_STATUSES = [
   "backlog",
   "todo",
   "in_progress",
-  "done"
+  "completed"
 ] satisfies ReadonlyArray<TaskBoardStatus>;
 const VISIBLE_TASK_BOARD_STATUS_SET = new Set<TaskBoardStatus>(VISIBLE_TASK_BOARD_STATUSES);
 
@@ -104,32 +104,28 @@ const STATUS_META: Record<TaskBoardStatus, { labelKey: TranslationKey; tone: str
   backlog: { labelKey: "taskBoard.status.backlog", tone: "neutral" },
   todo: { labelKey: "taskBoard.status.todo", tone: "muted" },
   in_progress: { labelKey: "taskBoard.status.inProgress", tone: "warning" },
-  blocked: { labelKey: "taskBoard.status.blocked", tone: "danger" },
-  in_review: { labelKey: "taskBoard.status.inReview", tone: "success" },
-  done: { labelKey: "taskBoard.status.done", tone: "info" }
+  completed: { labelKey: "taskBoard.status.completed", tone: "info" }
 };
 
 const PRIORITY_META: Record<TaskBoardPriority, { labelKey: TranslationKey; tone: string; bars: number }> = {
-  urgent: { labelKey: "taskBoard.priority.urgent", tone: "danger", bars: 4 },
   high: { labelKey: "taskBoard.priority.high", tone: "high", bars: 3 },
   medium: { labelKey: "taskBoard.priority.medium", tone: "medium", bars: 2 },
-  low: { labelKey: "taskBoard.priority.low", tone: "low", bars: 1 },
-  none: { labelKey: "taskBoard.priority.none", tone: "none", bars: 0 }
+  low: { labelKey: "taskBoard.priority.low", tone: "low", bars: 1 }
 };
 
-const DEFAULT_TASK_BOARD_SCHEDULE_PLAN: TaskBoardSchedulePlan = "daily";
-const DEFAULT_TASK_BOARD_SCHEDULE_TIME = "09:00";
-const DEFAULT_TASK_BOARD_SCHEDULE_CRON = "0 9 * * *";
+const DEFAULT_TASK_BOARD_AUTOMATION_PLAN: TaskBoardAutomationPlan = "daily";
+const DEFAULT_TASK_BOARD_AUTOMATION_TIME = "09:00";
+const DEFAULT_TASK_BOARD_AUTOMATION_CRON = "0 9 * * *";
 
-const TASK_BOARD_SCHEDULE_PLANS = [
-  { labelKey: "taskBoard.schedule.hourly", value: "hourly" },
-  { labelKey: "taskBoard.schedule.daily", value: "daily" },
-  { labelKey: "taskBoard.schedule.weekdays", value: "weekdays" },
-  { labelKey: "taskBoard.schedule.weekly", value: "weekly" },
-  { labelKey: "taskBoard.schedule.custom", value: "custom" }
-] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: TaskBoardSchedulePlan }>;
+const TASK_BOARD_AUTOMATION_PLANS = [
+  { labelKey: "taskBoard.automation.hourly", value: "hourly" },
+  { labelKey: "taskBoard.automation.daily", value: "daily" },
+  { labelKey: "taskBoard.automation.weekdays", value: "weekdays" },
+  { labelKey: "taskBoard.automation.weekly", value: "weekly" },
+  { labelKey: "taskBoard.automation.custom", value: "custom" }
+] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: TaskBoardAutomationPlan }>;
 
-const TASK_BOARD_SCHEDULE_TIME_OPTIONS = buildScheduleTimeOptions();
+const TASK_BOARD_AUTOMATION_TIME_OPTIONS = buildAutomationTimeOptions();
 
 const emptyForm: IssueFormState = {
   title: "",
@@ -139,12 +135,12 @@ const emptyForm: IssueFormState = {
   status: "backlog",
   priority: "medium",
   assigneeAgentKey: "",
-  scheduleEnabled: false,
-  schedulePreset: DEFAULT_TASK_BOARD_SCHEDULE_PLAN,
-  scheduleTime: DEFAULT_TASK_BOARD_SCHEDULE_TIME,
-  scheduleCron: DEFAULT_TASK_BOARD_SCHEDULE_CRON,
-  scheduleMessage: "",
-  scheduleTimezone: "Asia/Shanghai"
+  automationEnabled: false,
+  automationPreset: DEFAULT_TASK_BOARD_AUTOMATION_PLAN,
+  automationTime: DEFAULT_TASK_BOARD_AUTOMATION_TIME,
+  automationCron: DEFAULT_TASK_BOARD_AUTOMATION_CRON,
+  automationMessage: "",
+  automationTimezone: "Asia/Shanghai"
 };
 
 const defaultDisplayState: DisplayState = {
@@ -189,7 +185,7 @@ function sortIssues(issues: TaskBoardIssue[]) {
     const updatedDelta = issueUpdatedTime(b) - issueUpdatedTime(a);
     if (updatedDelta !== 0) return updatedDelta;
     if (a.position !== b.position) return a.position - b.position;
-    return a.number - b.number;
+    return a.id.localeCompare(b.id);
   });
 }
 
@@ -197,44 +193,44 @@ function descriptionPreview(description: string) {
   return description.replace(/\s+/gu, " ").trim();
 }
 
-function padScheduleNumber(value: number) {
+function padAutomationNumber(value: number) {
   return String(value).padStart(2, "0");
 }
 
-function buildScheduleTimeOptions() {
+function buildAutomationTimeOptions() {
   const options: string[] = [];
   for (let hour = 0; hour < 24; hour += 1) {
     for (let minute = 0; minute < 60; minute += 15) {
-      options.push(`${padScheduleNumber(hour)}:${padScheduleNumber(minute)}`);
+      options.push(`${padAutomationNumber(hour)}:${padAutomationNumber(minute)}`);
     }
   }
   return options;
 }
 
-function normalizeScheduleTime(value: string) {
+function normalizeAutomationTime(value: string) {
   const match = value.trim().match(/^(\d{1,2}):(\d{1,2})/u);
   if (!match) {
-    return DEFAULT_TASK_BOARD_SCHEDULE_TIME;
+    return DEFAULT_TASK_BOARD_AUTOMATION_TIME;
   }
   const hour = Math.min(23, Math.max(0, Number(match[1])));
   const minute = Math.min(59, Math.max(0, Number(match[2])));
   const roundedTotalMinutes = Math.min((23 * 60) + 45, Math.round(((hour * 60) + minute) / 15) * 15);
-  return `${padScheduleNumber(Math.floor(roundedTotalMinutes / 60))}:${padScheduleNumber(roundedTotalMinutes % 60)}`;
+  return `${padAutomationNumber(Math.floor(roundedTotalMinutes / 60))}:${padAutomationNumber(roundedTotalMinutes % 60)}`;
 }
 
-function scheduleTimeParts(value: string) {
-  const [hour, minute] = normalizeScheduleTime(value).split(":");
+function automationTimeParts(value: string) {
+  const [hour, minute] = normalizeAutomationTime(value).split(":");
   return {
     hour: String(Number(hour)),
     minute: String(Number(minute))
   };
 }
 
-function buildScheduleCron(plan: TaskBoardSchedulePlan, time: string, customCron: string) {
+function buildAutomationCron(plan: TaskBoardAutomationPlan, time: string, customCron: string) {
   if (plan === "custom") {
     return customCron.trim();
   }
-  const { hour, minute } = scheduleTimeParts(time);
+  const { hour, minute } = automationTimeParts(time);
   if (plan === "hourly") {
     return `${minute} * * * *`;
   }
@@ -267,72 +263,72 @@ function isCronHour(value: string) {
   return hour >= 0 && hour <= 23;
 }
 
-function formatScheduleTime(hour: string, minute: string) {
-  return `${padScheduleNumber(Number(hour))}:${padScheduleNumber(Number(minute))}`;
+function formatAutomationTime(hour: string, minute: string) {
+  return `${padAutomationNumber(Number(hour))}:${padAutomationNumber(Number(minute))}`;
 }
 
-function parseScheduleFormFromCron(value: string | null | undefined) {
-  const scheduleCron = value?.trim() || DEFAULT_TASK_BOARD_SCHEDULE_CRON;
-  const parts = scheduleCron.split(/\s+/u);
+function parseAutomationFormFromCron(value: string | null | undefined) {
+  const automationCron = value?.trim() || DEFAULT_TASK_BOARD_AUTOMATION_CRON;
+  const parts = automationCron.split(/\s+/u);
   if (parts.length !== 5) {
     return {
-      schedulePreset: "custom" as TaskBoardSchedulePlan,
-      scheduleTime: DEFAULT_TASK_BOARD_SCHEDULE_TIME,
-      scheduleCron
+      automationPreset: "custom" as TaskBoardAutomationPlan,
+      automationTime: DEFAULT_TASK_BOARD_AUTOMATION_TIME,
+      automationCron
     };
   }
   const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
   if (!isFifteenMinuteCronMinute(minute)) {
     return {
-      schedulePreset: "custom" as TaskBoardSchedulePlan,
-      scheduleTime: DEFAULT_TASK_BOARD_SCHEDULE_TIME,
-      scheduleCron
+      automationPreset: "custom" as TaskBoardAutomationPlan,
+      automationTime: DEFAULT_TASK_BOARD_AUTOMATION_TIME,
+      automationCron
     };
   }
   if (hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
     return {
-      schedulePreset: "hourly" as TaskBoardSchedulePlan,
-      scheduleTime: formatScheduleTime("0", minute),
-      scheduleCron
+      automationPreset: "hourly" as TaskBoardAutomationPlan,
+      automationTime: formatAutomationTime("0", minute),
+      automationCron
     };
   }
   if (!isCronHour(hour) || dayOfMonth !== "*" || month !== "*") {
     return {
-      schedulePreset: "custom" as TaskBoardSchedulePlan,
-      scheduleTime: DEFAULT_TASK_BOARD_SCHEDULE_TIME,
-      scheduleCron
+      automationPreset: "custom" as TaskBoardAutomationPlan,
+      automationTime: DEFAULT_TASK_BOARD_AUTOMATION_TIME,
+      automationCron
     };
   }
   if (dayOfWeek === "*") {
     return {
-      schedulePreset: "daily" as TaskBoardSchedulePlan,
-      scheduleTime: formatScheduleTime(hour, minute),
-      scheduleCron
+      automationPreset: "daily" as TaskBoardAutomationPlan,
+      automationTime: formatAutomationTime(hour, minute),
+      automationCron
     };
   }
   if (dayOfWeek === "1-5") {
     return {
-      schedulePreset: "weekdays" as TaskBoardSchedulePlan,
-      scheduleTime: formatScheduleTime(hour, minute),
-      scheduleCron
+      automationPreset: "weekdays" as TaskBoardAutomationPlan,
+      automationTime: formatAutomationTime(hour, minute),
+      automationCron
     };
   }
   if (dayOfWeek === "1") {
     return {
-      schedulePreset: "weekly" as TaskBoardSchedulePlan,
-      scheduleTime: formatScheduleTime(hour, minute),
-      scheduleCron
+      automationPreset: "weekly" as TaskBoardAutomationPlan,
+      automationTime: formatAutomationTime(hour, minute),
+      automationCron
     };
   }
   return {
-    schedulePreset: "custom" as TaskBoardSchedulePlan,
-    scheduleTime: DEFAULT_TASK_BOARD_SCHEDULE_TIME,
-    scheduleCron
+    automationPreset: "custom" as TaskBoardAutomationPlan,
+    automationTime: DEFAULT_TASK_BOARD_AUTOMATION_TIME,
+    automationCron
   };
 }
 
-function getSchedulePlanLabel(plan: TaskBoardSchedulePlan, t: TranslateFunction) {
-  const labelKey = TASK_BOARD_SCHEDULE_PLANS.find((candidate) => candidate.value === plan)?.labelKey ?? "taskBoard.schedule.custom";
+function getAutomationPlanLabel(plan: TaskBoardAutomationPlan, t: TranslateFunction) {
+  const labelKey = TASK_BOARD_AUTOMATION_PLANS.find((candidate) => candidate.value === plan)?.labelKey ?? "taskBoard.automation.custom";
   return t(labelKey);
 }
 
@@ -349,7 +345,7 @@ function buildAssistantPrompt(issue: TaskBoardIssue, t: TranslateFunction) {
   const parts = [
     t("taskBoard.prompt.intro"),
     t("taskBoard.prompt.rule"),
-    t("taskBoard.prompt.identifier", { value: issue.identifier }),
+    t("taskBoard.prompt.id", { value: issue.id }),
     t("taskBoard.prompt.title", { value: issue.title }),
     t("taskBoard.prompt.status", { value: t(STATUS_META[issue.status].labelKey) }),
     t("taskBoard.prompt.priority", { value: t(PRIORITY_META[issue.priority].labelKey) })
@@ -370,7 +366,7 @@ function computeDropPosition(targetIssues: TaskBoardIssue[], insertIndex: number
 }
 
 function createFormFromIssue(issue: TaskBoardIssue): IssueFormState {
-  const scheduleForm = parseScheduleFormFromCron(issue.scheduleCron);
+  const automationForm = parseAutomationFormFromCron(issue.automationCron);
   return {
     title: issue.title,
     description: issue.description,
@@ -379,12 +375,12 @@ function createFormFromIssue(issue: TaskBoardIssue): IssueFormState {
     status: issue.status,
     priority: issue.priority,
     assigneeAgentKey: issue.assigneeAgentKey ?? "",
-    scheduleEnabled: issue.scheduleEnabled,
-    schedulePreset: scheduleForm.schedulePreset,
-    scheduleTime: scheduleForm.scheduleTime,
-    scheduleCron: scheduleForm.scheduleCron,
-    scheduleMessage: issue.scheduleMessage ?? "",
-    scheduleTimezone: issue.scheduleTimezone ?? "Asia/Shanghai"
+    automationEnabled: issue.automationEnabled,
+    automationPreset: automationForm.automationPreset,
+    automationTime: automationForm.automationTime,
+    automationCron: automationForm.automationCron,
+    automationMessage: issue.automationMessage ?? "",
+    automationTimezone: issue.automationTimezone ?? "Asia/Shanghai"
   };
 }
 
@@ -445,8 +441,8 @@ function getAssigneeName(agentKey: string, agents: AssistantNavAgentItem[]) {
   return agents.find((agent) => agent.agentKey === agentKey)?.displayName ?? agentKey;
 }
 
-function getVisibleAssigneeName(name: string | null | undefined) {
-  const trimmed = name?.trim() ?? "";
+function getVisibleAssigneeName(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
+  const trimmed = getAssigneeName(issue.assigneeAgentKey ?? "", agents)?.trim() ?? "";
   if (!trimmed) return "";
   return Array.from(trimmed).length <= 4 ? trimmed : "";
 }
@@ -455,19 +451,19 @@ function isFiveFieldCron(value: string) {
   return value.trim().split(/\s+/u).length === 5;
 }
 
-function getScheduleDisplayLabel(issue: TaskBoardIssue, t: TranslateFunction) {
-  if (!issue.scheduleEnabled || !issue.scheduleCron) {
+function getAutomationDisplayLabel(issue: TaskBoardIssue, t: TranslateFunction) {
+  if (!issue.automationEnabled || !issue.automationCron) {
     return "";
   }
-  const scheduleForm = parseScheduleFormFromCron(issue.scheduleCron);
-  if (scheduleForm.schedulePreset === "custom") {
-    return issue.scheduleCron;
+  const automationForm = parseAutomationFormFromCron(issue.automationCron);
+  if (automationForm.automationPreset === "custom") {
+    return issue.automationCron;
   }
-  if (scheduleForm.schedulePreset === "hourly") {
-    const minute = Number(scheduleForm.scheduleTime.split(":")[1]);
-    return t("taskBoard.schedule.hourlyAtMinute", { minute: padScheduleNumber(minute) });
+  if (automationForm.automationPreset === "hourly") {
+    const minute = Number(automationForm.automationTime.split(":")[1]);
+    return t("taskBoard.automation.hourlyAtMinute", { minute: padAutomationNumber(minute) });
   }
-  return `${getSchedulePlanLabel(scheduleForm.schedulePreset, t)} ${scheduleForm.scheduleTime}`;
+  return `${getAutomationPlanLabel(automationForm.automationPreset, t)} ${automationForm.automationTime}`;
 }
 
 function formatCompactIssueDate(value: string) {
@@ -476,7 +472,7 @@ function formatCompactIssueDate(value: string) {
     return "";
   }
   const date = new Date(timestamp);
-  return `${padScheduleNumber(date.getMonth() + 1)}-${padScheduleNumber(date.getDate())}`;
+  return `${padAutomationNumber(date.getMonth() + 1)}-${padAutomationNumber(date.getDate())}`;
 }
 
 function getIssueLineMeta(issue: TaskBoardIssue, awaitingConfirmation: boolean, t: TranslateFunction) {
@@ -489,8 +485,8 @@ function getIssueLineMeta(issue: TaskBoardIssue, awaitingConfirmation: boolean, 
   if (issue.status === "backlog") {
     return formatCompactIssueDate(issue.createdAt || issue.updatedAt);
   }
-  if (issue.status === "done") {
-    return t("taskBoard.status.done");
+  if (issue.status === "completed") {
+    return t("taskBoard.status.completed");
   }
   return t(STATUS_META[issue.status].labelKey);
 }
@@ -528,7 +524,7 @@ function resolveAssistantTaskStatus(event: AssistantEvent, t: TranslateFunction)
 } | null {
   if (event.type === "done" || event.type === "run.complete") {
     return {
-      status: "done",
+      status: "completed",
       tone: "success",
       message: t("taskBoard.feedback.agentDone")
     };
@@ -546,7 +542,7 @@ function resolveAssistantTaskStatus(event: AssistantEvent, t: TranslateFunction)
     event.status === "stopped"
   ) {
     return {
-      status: "blocked",
+      status: "todo",
       tone: "error",
       message: t("taskBoard.feedback.agentIncomplete")
     };
@@ -584,9 +580,7 @@ function shouldCreateIssueFromColumnDoubleClick(event: MouseEvent<HTMLElement>, 
 function isIssueChatViewable(issue: TaskBoardIssue) {
   return Boolean(issue.chatId && (
     issue.status === "in_progress" ||
-    issue.status === "blocked" ||
-    issue.status === "in_review" ||
-    issue.status === "done"
+    issue.status === "completed"
   ));
 }
 
@@ -653,12 +647,12 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const [form, setForm] = useState<IssueFormState>(emptyForm);
   const [formCompact, setFormCompact] = useState(true);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
-  const [scheduleMenuOpen, setScheduleMenuOpen] = useState<ScheduleMenuKind | null>(null);
+  const [automationMenuOpen, setAutomationMenuOpen] = useState<AutomationMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<TaskBoardContextMenu | null>(null);
   const [backlogExpanded, setBacklogExpanded] = useState(false);
   const issuesRef = useRef<TaskBoardIssue[]>([]);
-  const selectedScheduleTimeRef = useRef<HTMLButtonElement | null>(null);
+  const selectedAutomationTimeRef = useRef<HTMLButtonElement | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const taskBoardReady = readTaskBoardApi() !== null;
   const missingTaskBoardApiMessage = t("taskBoard.missingApi", { appName: t("app.name") });
@@ -759,10 +753,10 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   }, [feedback]);
 
   useEffect(() => {
-    if (scheduleMenuOpen === "time") {
-      selectedScheduleTimeRef.current?.scrollIntoView({ block: "center" });
+    if (automationMenuOpen === "time") {
+      selectedAutomationTimeRef.current?.scrollIntoView({ block: "center" });
     }
-  }, [form.scheduleTime, scheduleMenuOpen]);
+  }, [form.automationTime, automationMenuOpen]);
 
   useEffect(() => {
     if (!chatModalRequest || typeof document === "undefined") {
@@ -825,15 +819,16 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         return true;
       }
       const haystack = [
-        issue.identifier,
+        issue.id,
         issue.title,
         issue.description,
-        issue.assigneeName ?? "",
+        issue.assigneeAgentKey ?? "",
+        getAssigneeName(issue.assigneeAgentKey ?? "", agents) ?? "",
         ...getVisibleTaskBoardAttachments(issue.attachments).map((attachment) => attachment.name)
       ].join(" ").toLowerCase();
       return haystack.includes(keyword);
     });
-  }, [priorityFilters, query, visibleIssues]);
+  }, [agents, priorityFilters, query, visibleIssues]);
 
   const issueMap = useMemo(() => new Map(issues.map((issue) => [issue.id, issue])), [issues]);
   const filteredCount = filteredIssues.length;
@@ -848,7 +843,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     setForm({ ...emptyForm, status, attachmentChatId: createTaskBoardDraftAttachmentChatId() });
     setFormCompact(true);
     setAttachmentBusy(false);
-    setScheduleMenuOpen(null);
+    setAutomationMenuOpen(null);
     setModal({ mode: "create" });
   }
 
@@ -857,7 +852,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     setForm(createFormFromIssue(issue));
     setFormCompact(true);
     setAttachmentBusy(false);
-    setScheduleMenuOpen(null);
+    setAutomationMenuOpen(null);
     setModal({ mode: "edit", issue });
   }
 
@@ -868,7 +863,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     });
     setFormCompact(true);
     setAttachmentBusy(false);
-    setScheduleMenuOpen(null);
+    setAutomationMenuOpen(null);
     setModal({ mode: "edit", issue });
     setFeedback({ tone: "error", message: t("taskBoard.feedback.assigneeRequiredForProgress") });
   }
@@ -885,31 +880,31 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         };
       });
     }
-    setScheduleMenuOpen(null);
+    setAutomationMenuOpen(null);
     setFormCompact((current) => !current);
   }
 
-  function toggleScheduleMenu(menuName: ScheduleMenuKind) {
-    setScheduleMenuOpen((current) => current === menuName ? null : menuName);
+  function toggleAutomationMenu(menuName: AutomationMenuKind) {
+    setAutomationMenuOpen((current) => current === menuName ? null : menuName);
   }
 
-  function updateSchedulePlan(plan: TaskBoardSchedulePlan) {
+  function updateAutomationPlan(plan: TaskBoardAutomationPlan) {
     setForm((current) => ({
       ...current,
-      schedulePreset: plan,
-      scheduleCron: buildScheduleCron(plan, current.scheduleTime, current.scheduleCron)
+      automationPreset: plan,
+      automationCron: buildAutomationCron(plan, current.automationTime, current.automationCron)
     }));
-    setScheduleMenuOpen(null);
+    setAutomationMenuOpen(null);
   }
 
-  function updateScheduleTime(time: string) {
-    const nextTime = normalizeScheduleTime(time);
+  function updateAutomationTime(time: string) {
+    const nextTime = normalizeAutomationTime(time);
     setForm((current) => ({
       ...current,
-      scheduleTime: nextTime,
-      scheduleCron: buildScheduleCron(current.schedulePreset, nextTime, current.scheduleCron)
+      automationTime: nextTime,
+      automationCron: buildAutomationCron(current.automationPreset, nextTime, current.automationCron)
     }));
-    setScheduleMenuOpen(null);
+    setAutomationMenuOpen(null);
   }
 
   async function addTaskBoardAttachments() {
@@ -983,27 +978,26 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       setFeedback({ tone: "error", message: formCompact ? t("taskBoard.feedback.descriptionRequired") : t("taskBoard.feedback.titleRequired") });
       return;
     }
-    const resolvedScheduleCron = buildScheduleCron(form.schedulePreset, form.scheduleTime, form.scheduleCron);
-    const resolvedScheduleMessage = form.scheduleMessage.trim() || form.description.trim() || title;
+    const resolvedAutomationCron = buildAutomationCron(form.automationPreset, form.automationTime, form.automationCron);
+    const resolvedAutomationMessage = form.automationMessage.trim() || form.description.trim() || title;
     const shouldRunAfterSave = form.status === "in_progress" && !modal?.issue?.runId;
     const shouldRunTodoAssigneeAfterDelay = form.status === "todo" && Boolean(form.assigneeAgentKey) && !modal?.issue?.runId;
     if (shouldRunAfterSave && !form.assigneeAgentKey) {
       setFeedback({ tone: "error", message: t("taskBoard.feedback.assigneeRequiredForProgress") });
       return;
     }
-    if (form.scheduleEnabled && !form.assigneeAgentKey) {
-      setFeedback({ tone: "error", message: t("taskBoard.feedback.assigneeRequiredForSchedule") });
+    if (form.automationEnabled && !form.assigneeAgentKey) {
+      setFeedback({ tone: "error", message: t("taskBoard.feedback.assigneeRequiredForAutomation") });
       return;
     }
-    if (form.scheduleEnabled && !isFiveFieldCron(resolvedScheduleCron)) {
+    if (form.automationEnabled && !isFiveFieldCron(resolvedAutomationCron)) {
       setFeedback({ tone: "error", message: t("taskBoard.feedback.invalidCron") });
       return;
     }
-    if (form.scheduleEnabled && !resolvedScheduleMessage) {
-      setFeedback({ tone: "error", message: t("taskBoard.feedback.scheduleMessageRequired") });
+    if (form.automationEnabled && !resolvedAutomationMessage) {
+      setFeedback({ tone: "error", message: t("taskBoard.feedback.automationMessageRequired") });
       return;
     }
-    const assigneeName = getAssigneeName(form.assigneeAgentKey, agents);
     const savedStatus = shouldRunAfterSave ? modal?.issue?.status ?? "todo" : form.status;
     const payload: TaskBoardIssueInput | TaskBoardIssueUpdateInput = {
       title,
@@ -1011,12 +1005,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       status: savedStatus,
       priority: form.priority,
       assigneeAgentKey: form.assigneeAgentKey || null,
-      assigneeName,
-      scheduleId: modal?.issue?.scheduleId ?? null,
-      scheduleEnabled: form.scheduleEnabled,
-      scheduleCron: form.scheduleEnabled ? resolvedScheduleCron : null,
-      scheduleMessage: form.scheduleEnabled ? resolvedScheduleMessage : null,
-      scheduleTimezone: form.scheduleEnabled ? form.scheduleTimezone : null,
+      automationId: modal?.issue?.automationId ?? null,
+      automationEnabled: form.automationEnabled,
+      automationCron: form.automationEnabled ? resolvedAutomationCron : null,
+      automationMessage: form.automationEnabled ? resolvedAutomationMessage : null,
+      automationTimezone: form.automationEnabled ? form.automationTimezone : null,
       attachmentChatId: form.attachments.length > 0 ? form.attachmentChatId : null,
       attachments: form.attachments
     };
@@ -1033,16 +1026,16 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       let nextIssues = mergeTaskBoardIssuesAttachmentDraft(result.issues, savedIssue);
       let nextMessage = result.message;
       let nextTone: Feedback["tone"] = result.ok ? "success" : "error";
-      if (result.ok && savedIssue && (form.scheduleEnabled || savedIssue.scheduleId)) {
-        const scheduleResult = await taskBoardApi.syncIssueSchedule(savedIssue.id);
+      if (result.ok && savedIssue && (form.automationEnabled || savedIssue.automationId)) {
+        const automationResult = await taskBoardApi.syncIssueAutomation(savedIssue.id);
         savedIssue = mergeTaskBoardIssueAttachmentDraft(
-          scheduleResult.issue ?? savedIssue,
+          automationResult.issue ?? savedIssue,
           form.attachmentChatId,
           form.attachments
         );
-        nextIssues = mergeTaskBoardIssuesAttachmentDraft(scheduleResult.issues, savedIssue);
-        nextTone = scheduleResult.ok ? "success" : "error";
-        nextMessage = scheduleResult.ok ? t("taskBoard.feedback.taskAndScheduleSaved") : scheduleResult.message;
+        nextIssues = mergeTaskBoardIssuesAttachmentDraft(automationResult.issues, savedIssue);
+        nextTone = automationResult.ok ? "success" : "error";
+        nextMessage = automationResult.ok ? t("taskBoard.feedback.taskAndAutomationSaved") : automationResult.message;
       }
       setIssues(sortIssues(nextIssues));
       setFeedback({ tone: nextTone, message: nextMessage });
@@ -1135,7 +1128,6 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       const updateResult = await taskBoardApi.updateIssue(issue.id, {
         status: "in_progress",
         assigneeAgentKey: agentKey,
-        assigneeName: getAssigneeName(agentKey, availableAgents),
         chatId: runResult.chatId,
         runId: runResult.runId
       });
@@ -1165,7 +1157,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     setChatModalRequest({
       agentKey,
       chatId,
-      displayName: getAssigneeName(agentKey, agents) ?? issue.assigneeName ?? undefined
+      displayName: getAssigneeName(agentKey, agents) ?? undefined
     });
   }
 
@@ -1394,6 +1386,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 <TaskBoardCardContent
                   issue={activeDragIssue}
                   awaitingConfirmation={false}
+                  agents={agents}
                   display={display}
                   t={t}
                   interactive={false}
@@ -1482,9 +1475,9 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   setForm((current) => ({
                     ...current,
                     description: value,
-                    scheduleMessage: current.scheduleEnabled && !current.scheduleMessage.trim()
+                    automationMessage: current.automationEnabled && !current.automationMessage.trim()
                       ? value.trim() || current.title.trim()
-                      : current.scheduleMessage
+                      : current.automationMessage
                   }));
                 }}
                 rows={formCompact ? 5 : 4}
@@ -1574,53 +1567,53 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               </select>
             </label>
             {!formCompact ? (
-              <section className="task-board-schedule-panel" aria-label={t("taskBoard.form.schedulePanel")}>
-                <label className="task-board-check-row task-board-schedule-toggle">
+              <section className="task-board-automation-panel" aria-label={t("taskBoard.form.automationPanel")}>
+                <label className="task-board-check-row task-board-automation-toggle">
                   <input
                     type="checkbox"
-                    checked={form.scheduleEnabled}
+                    checked={form.automationEnabled}
                     onChange={(event) => setForm((current) => {
                       const enabled = event.target.checked;
                       return {
                         ...current,
-                        scheduleEnabled: enabled,
-                        scheduleCron: enabled
-                          ? buildScheduleCron(current.schedulePreset, current.scheduleTime, current.scheduleCron)
-                          : current.scheduleCron,
-                        scheduleMessage: enabled && !current.scheduleMessage.trim()
+                        automationEnabled: enabled,
+                        automationCron: enabled
+                          ? buildAutomationCron(current.automationPreset, current.automationTime, current.automationCron)
+                          : current.automationCron,
+                        automationMessage: enabled && !current.automationMessage.trim()
                           ? current.description.trim() || current.title.trim()
-                          : current.scheduleMessage
+                          : current.automationMessage
                       };
                     })}
                   />
-                  <span>{t("taskBoard.form.scheduleEnabled")}</span>
+                  <span>{t("taskBoard.form.automationEnabled")}</span>
                 </label>
-                {form.scheduleEnabled ? (
-                  <div className="task-board-schedule-popover">
-                    <span className="task-board-schedule-panel-title">{t("taskBoard.form.schedulePlan")}</span>
-                    <div className="task-board-field task-board-schedule-select-field">
-                      <span>{t("taskBoard.form.scheduleFrequency")}</span>
-                      <div className={`task-board-schedule-menu ${scheduleMenuOpen === "plan" ? "is-open" : ""}`}>
+                {form.automationEnabled ? (
+                  <div className="task-board-automation-popover">
+                    <span className="task-board-automation-panel-title">{t("taskBoard.form.automationPlan")}</span>
+                    <div className="task-board-field task-board-automation-select-field">
+                      <span>{t("taskBoard.form.automationFrequency")}</span>
+                      <div className={`task-board-automation-menu ${automationMenuOpen === "plan" ? "is-open" : ""}`}>
                         <button
                           type="button"
-                          className="task-board-schedule-menu-trigger"
+                          className="task-board-automation-menu-trigger"
                           aria-haspopup="listbox"
-                          aria-expanded={scheduleMenuOpen === "plan"}
-                          onClick={() => toggleScheduleMenu("plan")}
+                          aria-expanded={automationMenuOpen === "plan"}
+                          onClick={() => toggleAutomationMenu("plan")}
                         >
-                          <span>{getSchedulePlanLabel(form.schedulePreset, t)}</span>
-                          <span className="task-board-schedule-menu-arrow" aria-hidden="true">⌄</span>
+                          <span>{getAutomationPlanLabel(form.automationPreset, t)}</span>
+                          <span className="task-board-automation-menu-arrow" aria-hidden="true">⌄</span>
                         </button>
-                        {scheduleMenuOpen === "plan" ? (
-                          <div className="task-board-schedule-menu-list" role="listbox" aria-label={t("taskBoard.form.scheduleFrequencyList")}>
-                            {TASK_BOARD_SCHEDULE_PLANS.map((plan) => (
+                        {automationMenuOpen === "plan" ? (
+                          <div className="task-board-automation-menu-list" role="listbox" aria-label={t("taskBoard.form.automationFrequencyList")}>
+                            {TASK_BOARD_AUTOMATION_PLANS.map((plan) => (
                               <button
                                 key={plan.value}
                                 type="button"
-                                className={plan.value === form.schedulePreset ? "is-selected" : ""}
+                                className={plan.value === form.automationPreset ? "is-selected" : ""}
                                 role="option"
-                                aria-selected={plan.value === form.schedulePreset}
-                                onClick={() => updateSchedulePlan(plan.value)}
+                                aria-selected={plan.value === form.automationPreset}
+                                onClick={() => updateAutomationPlan(plan.value)}
                               >
                                 {t(plan.labelKey)}
                               </button>
@@ -1629,44 +1622,44 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                         ) : null}
                       </div>
                     </div>
-                    {form.schedulePreset === "custom" ? (
+                    {form.automationPreset === "custom" ? (
                       <label className="task-board-field">
                         <span>{t("taskBoard.form.cron")}</span>
                         <input
-                          value={form.scheduleCron}
+                          value={form.automationCron}
                           onChange={(event) => setForm((current) => ({
                             ...current,
-                            scheduleCron: event.target.value
+                            automationCron: event.target.value
                           }))}
                           placeholder="0 9 * * *"
                         />
                       </label>
                     ) : (
-                      <div className="task-board-schedule-time-control">
-                        <div className="task-board-field task-board-schedule-select-field">
-                          <span>{t("taskBoard.form.scheduleTime")}</span>
-                          <div className={`task-board-schedule-menu ${scheduleMenuOpen === "time" ? "is-open" : ""}`}>
+                      <div className="task-board-automation-time-control">
+                        <div className="task-board-field task-board-automation-select-field">
+                          <span>{t("taskBoard.form.automationTime")}</span>
+                          <div className={`task-board-automation-menu ${automationMenuOpen === "time" ? "is-open" : ""}`}>
                             <button
                               type="button"
-                              className="task-board-schedule-menu-trigger"
+                              className="task-board-automation-menu-trigger"
                               aria-haspopup="listbox"
-                              aria-expanded={scheduleMenuOpen === "time"}
-                              onClick={() => toggleScheduleMenu("time")}
+                              aria-expanded={automationMenuOpen === "time"}
+                              onClick={() => toggleAutomationMenu("time")}
                             >
-                              <span>{form.scheduleTime}</span>
-                              <span className="task-board-schedule-menu-arrow" aria-hidden="true">⌄</span>
+                              <span>{form.automationTime}</span>
+                              <span className="task-board-automation-menu-arrow" aria-hidden="true">⌄</span>
                             </button>
-                            {scheduleMenuOpen === "time" ? (
-                              <div className="task-board-schedule-menu-list is-time-list" role="listbox" aria-label={t("taskBoard.form.scheduleTimeList")}>
-                                {TASK_BOARD_SCHEDULE_TIME_OPTIONS.map((time) => (
+                            {automationMenuOpen === "time" ? (
+                              <div className="task-board-automation-menu-list is-time-list" role="listbox" aria-label={t("taskBoard.form.automationTimeList")}>
+                                {TASK_BOARD_AUTOMATION_TIME_OPTIONS.map((time) => (
                                   <button
                                     key={time}
-                                    ref={time === form.scheduleTime ? selectedScheduleTimeRef : null}
+                                    ref={time === form.automationTime ? selectedAutomationTimeRef : null}
                                     type="button"
-                                    className={time === form.scheduleTime ? "is-selected" : ""}
+                                    className={time === form.automationTime ? "is-selected" : ""}
                                     role="option"
-                                    aria-selected={time === form.scheduleTime}
-                                    onClick={() => updateScheduleTime(time)}
+                                    aria-selected={time === form.automationTime}
+                                    onClick={() => updateAutomationTime(time)}
                                   >
                                     {time}
                                   </button>
@@ -1809,6 +1802,7 @@ function TaskBoardColumn({
               key={issue.id}
               issue={issue}
               awaitingConfirmation={issueHasPendingAwaiting(issue, agents)}
+              agents={agents}
               display={display}
               t={t}
               onEdit={() => onEdit(issue)}
@@ -1872,6 +1866,7 @@ function TaskBoardCard({
       <TaskBoardCardContent
         issue={issue}
         awaitingConfirmation={awaitingConfirmation}
+        agents={agents}
         display={display}
         t={t}
         interactive
@@ -1885,6 +1880,7 @@ function TaskBoardCard({
 function TaskBoardCardContent({
   issue,
   awaitingConfirmation,
+  agents,
   display,
   t,
   interactive,
@@ -1893,6 +1889,7 @@ function TaskBoardCardContent({
 }: {
   issue: TaskBoardIssue;
   awaitingConfirmation: boolean;
+  agents: AssistantNavAgentItem[];
   display: DisplayState;
   t: TranslateFunction;
   interactive: boolean;
@@ -1901,14 +1898,14 @@ function TaskBoardCardContent({
 }) {
   const chatActionLabel = getIssueChatActionLabel(issue, t);
   const visibleChatActionLabel = awaitingConfirmation ? t("taskBoard.chat.awaitingConfirmation") : chatActionLabel;
-  const visibleAssigneeName = getVisibleAssigneeName(issue.assigneeName);
-  const scheduleLabel = getScheduleDisplayLabel(issue, t);
+  const visibleAssigneeName = getVisibleAssigneeName(issue, agents);
+  const automationLabel = getAutomationDisplayLabel(issue, t);
   const lineMeta = getIssueLineMeta(issue, awaitingConfirmation, t);
   const hasVisibleAttachment = getVisibleTaskBoardAttachments(issue.attachments).length > 0;
   const mainContent = (
     <>
       <div className="task-board-card-line task-board-card-line-top">
-        <span className="task-board-card-id">{issue.identifier}</span>
+        <span className="task-board-card-id">{issue.id}</span>
         {lineMeta ? (
           <span className={`task-board-card-meta ${issue.runId || awaitingConfirmation ? "is-live" : ""}`}>
             {lineMeta}
@@ -1949,8 +1946,8 @@ function TaskBoardCardContent({
           {display.assignee && visibleAssigneeName ? visibleAssigneeName : t("taskBoard.form.unassigned")}
         </span>
         <span className="task-board-card-foot-actions">
-          {scheduleLabel ? (
-            <span className="task-board-schedule-badge" title={issue.scheduleCron ?? undefined}>
+          {automationLabel ? (
+            <span className="task-board-automation-badge" title={issue.automationCron ?? undefined}>
               <TaskBoardIcon kind="clock" />
             </span>
           ) : null}
@@ -1971,8 +1968,8 @@ function TaskBoardCardContent({
               tabIndex={interactive ? 0 : -1}
               aria-label={
                 awaitingConfirmation
-                  ? t("taskBoard.chat.openWithConfirmation", { identifier: issue.identifier })
-                  : t("taskBoard.chat.open", { identifier: issue.identifier })
+                  ? t("taskBoard.chat.openWithConfirmation", { id: issue.id })
+                  : t("taskBoard.chat.open", { id: issue.id })
               }
               title={visibleChatActionLabel ?? undefined}
               onPointerDown={(event) => event.stopPropagation()}
