@@ -2240,8 +2240,8 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /"dragging-left"/);
   assert.match(petAssetScript, /"dragging-right"/);
   assert.match(petAssetScript, /"idol-pony"/);
-  assert.match(sharedDesktopPet, /displayName:\s*"爱你"/);
-  assert.match(petAssetScript, /displayName:\s*"爱你"/);
+  assert.match(sharedDesktopPet, /displayName:\s*"小凌"/);
+  assert.match(petAssetScript, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /"dragging-left":\s*\{\s*row:\s*1,\s*column:\s*2\s*\}/);
   assert.match(petAssetScript, /"dragging-right":\s*\{\s*row:\s*1,\s*column:\s*2,\s*mirrorX:\s*true\s*\}/);
   assert.match(petAssetScript, /ctx\.scale\(-1,\s*1\)/);

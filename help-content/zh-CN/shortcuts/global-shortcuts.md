@@ -1,0 +1,5 @@
+- `Cmd` + `R` / `Ctrl` + `R`：刷新当前页面
+- `Cmd` + `Option` + `I` / `Ctrl` + `Shift` + `I`：打开当前焦点的 DevTools
+- 焦点在主界面时调试 ZenMind React 外壳；焦点在内嵌网页时调试该 webview 的网页内容。
+- 浏览器工具栏的 DevTools 按钮打开当前网页 DevTools；pg 按钮用于 desktop.page 动作调试。
+- `Cmd` + `Q` / `Alt` + `F4`：退出应用

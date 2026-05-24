@@ -1,0 +1,3 @@
+- **`none`**: No frontend UI. The service appears only as a card in Control Center.
+- **`embedded`**: Embedded frontend. It can open in a webview from the detail page and does not appear in the top navigation.
+- **`standalone`**: Standalone frontend. When running, it appears automatically in the top navigation and can also open from the detail page.

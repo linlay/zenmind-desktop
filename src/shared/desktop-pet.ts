@@ -37,8 +37,8 @@ export const DESKTOP_PET_APPEARANCE_OPTIONS = [
   },
   {
     id: "idol-pony",
-    displayName: "爱你",
-    description: "侧马尾 Q 版形象，带着红心和麦克风。",
+    displayName: "小凌",
+    description: "侧马尾 Q 版形象，带着爱心和麦克风。",
     assetBasePath: "./desktop-pet/idol-pony",
     previewAssetPath: "./desktop-pet/idol-pony/pet-idle.png"
   }

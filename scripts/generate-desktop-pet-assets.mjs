@@ -44,7 +44,7 @@ const communityAppearances = [
   },
   {
     id: "idol-pony",
-    displayName: "爱你",
+    displayName: "小凌",
     sourceUrl: "local hatch-pet run",
     spritesheetSourceUrl: "scripts/assets/desktop-pet/idol-pony/spritesheet.webp"
   }

@@ -1,0 +1,4 @@
+- **EADDRINUSE**: The port is already in use. See the port troubleshooting steps above.
+- **EACCES**: Permission denied. Check Desktop data directory and script permissions.
+- **ENOENT**: File not found. Confirm the service is installed correctly and its resources are complete.
+- **Docker daemon not running**: Start Docker Desktop or Podman.

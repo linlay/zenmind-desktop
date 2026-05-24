@@ -1,0 +1,4 @@
+- **操作系统**：macOS (arm64) 或 Windows (x64)
+- **Node.js**：v18 或更高版本（开发环境）
+- **Docker / Podman**：如需使用容器仓库（agent-container-hub）服务，需要安装 Docker Desktop 或 Podman
+- **磁盘空间**：建议预留至少 2GB 可用空间
