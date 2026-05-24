@@ -3423,6 +3423,58 @@ function registerIpcHandlers() {
     }
     return { ok: false, error: "invalid_protocol" };
   });
+  ipcMain.handle("desktopDialog.selectDirectory", async (event) => {
+    try {
+      const ownerWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+      const isMac = process.platform === "darwin";
+      const isWindows = process.platform === "win32";
+      let properties: Array<"openDirectory" | "createDirectory">;
+      if (isMac) {
+        properties = ["openDirectory", "createDirectory"];
+      } else if (isWindows) {
+        properties = ["openDirectory", "createDirectory"];
+      } else {
+        properties = ["openDirectory", "createDirectory"];
+      }
+      const result = await showFileDialog({
+        title: "选择项目目录",
+        properties
+      }, ownerWindow);
+      if (result.canceled || result.filePaths.length === 0) {
+        return {
+          ok: false as const,
+          path: "",
+          message: "已取消选择目录。"
+        };
+      }
+      return {
+        ok: true as const,
+        path: result.filePaths[0],
+        message: "已选择目录。"
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        path: "",
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  ipcMain.handle("desktopShell.openPath", async (_event, targetPath: string) => {
+    try {
+      return await revealPathInFileManager(targetPath, { targetType: "directory" }, {
+        showItemInFolder: (pathToReveal) => shell.showItemInFolder(pathToReveal),
+        openPath: (pathToOpen) => shell.openPath(pathToOpen),
+        platform: process.platform
+      });
+    } catch (error) {
+      return {
+        ok: false as const,
+        path: typeof targetPath === "string" ? targetPath : "",
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
 
   ipcMain.handle("assistant.getSettings", async () => getAgentPlatformMinimaxSettingsPublic(app) ?? getAssistantSettings(app));
   ipcMain.handle("assistant.saveSettings", async (_event, input: AssistantSettingsInput) =>

@@ -1669,6 +1669,14 @@ test("plugin page provides webview-backed assistant context instead of guessing 
     path.join(projectRoot, "src", "preload", "service-webview.ts"),
     "utf8"
   );
+  const serviceWebviewBridgeHost = readSourceFile("src", "renderer", "services", "serviceWebviewBridgeHost.ts");
+  const serviceWebviewBridgeReserved = readSourceFile(
+    "src",
+    "renderer",
+    "services",
+    "serviceWebviewBridgeReservedCapabilities.ts"
+  );
+  const serviceWebviewBridgeContracts = readSourceFile("src", "shared", "service-webview-bridge.ts");
   const mainProcess = readSourceFile("src", "main", "index.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
   const contracts = readSharedContractsSource();
@@ -1732,7 +1740,16 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.doesNotMatch(pluginPage, /webviewRef\.current\?\.reload\(\)/);
   assert.match(pluginPage, /issueAccessToken\("missing"\)/);
   assert.match(pluginPage, /agent_webclient_seed_/);
-  assert.match(pluginPage, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);
+  assert.match(pluginPage, /handleServiceWebviewBridgeMessage/);
+  assert.match(serviceWebviewBridgeHost, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);
+  assert.match(serviceWebviewBridgeHost, /AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeHost, /DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeHost, /DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeReserved, /media\.microphone/);
+  assert.match(serviceWebviewBridgeReserved, /media\.camera/);
+  assert.match(serviceWebviewBridgeReserved, /screen\.capture/);
+  assert.match(serviceWebviewBridgeContracts, /DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE/);
   assert.match(serviceWebviewPreload, /sendToHost/);
   assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
   assert.match(serviceWebviewPreload, /DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE/);
@@ -1748,13 +1765,19 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewPreload, /sendBridgeDebug/);
   assert.match(serviceWebviewPreload, /preload-installed/);
   assert.match(serviceWebviewPreload, /auth-response-seeded/);
-  assert.match(serviceWebviewPreload, /AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
+  assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES/);
   assert.match(serviceWebviewPreload, /DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE/);
   assert.match(mainProcess, /getServiceWebviewPreloadUrl\(\)[\s\S]{0,120}pathToFileURL\(getServiceWebviewPreloadPath\(\)\)\.toString\(\)/);
+  assert.match(mainProcess, /ipcMain\.handle\("desktopDialog\.selectDirectory"/);
+  assert.match(mainProcess, /ipcMain\.handle\("desktopShell\.openPath"/);
   assert.match(mainProcess, /webPreferences\.preload = servicePreloadPath/);
   assert.match(mainProcess, /ipcMain\.handle\("plugins\.getServiceWebviewPreloadUrl", async \(\) => getServiceWebviewPreloadUrl\(\)\)/);
   assert.match(preload, /getServiceWebviewPreloadUrl:\s*\(\) => ipcRenderer\.invoke\("plugins\.getServiceWebviewPreloadUrl"\)/);
+  assert.match(preload, /desktopDialog:[\s\S]{0,120}selectDirectory:\s*\(\) => ipcRenderer\.invoke\("desktopDialog\.selectDirectory"\)/);
+  assert.match(preload, /desktopShell:[\s\S]{0,140}openPath:\s*\(targetPath: string\) => ipcRenderer\.invoke\("desktopShell\.openPath", targetPath\)/);
   assert.match(contracts, /getServiceWebviewPreloadUrl:\s*\(\) => Promise<string>/);
+  assert.match(contracts, /desktopDialog:[\s\S]{0,120}selectDirectory:\s*\(\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
+  assert.match(contracts, /desktopShell:[\s\S]{0,120}openPath:\s*\(targetPath: string\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
   assert.match(globalStyles, /\.embedded-plugin-error\s*\{/);
 });
 

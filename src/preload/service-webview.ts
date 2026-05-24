@@ -1,9 +1,12 @@
 import { ipcRenderer, webFrame, contextBridge } from "electron";
 import {
-  AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
+  DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
+  DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,
+  SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES,
+  SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
@@ -27,15 +30,11 @@ const MAIN_WORLD_SCRIPT = `
     "zenmind:agent-app-auth:request",
     "zenmind:pan-app-auth:request"
   ]);
-  const BRIDGE_REQUEST_TYPES = new Set([
-    "zenmind:agent-app-clipboard:request"
-  ]);
+  const BRIDGE_REQUEST_TYPES = new Set(${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES)});
   const BRIDGE_RESPONSE_TYPES = new Set([
     "zenmind:agent-app-auth:response",
     "zenmind:pan-app-auth:response",
-    "zenmind:agent-app-clipboard:response",
-    "desktopContextChanged",
-    "desktopRouteChanged"
+    ...${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES)}
   ]);
   const originalWindowPostMessage = window.postMessage.bind(window);
   const originalParentPostMessage = window.parent && window.parent !== window && typeof window.parent.postMessage === "function"
@@ -181,7 +180,7 @@ function sendBridgeDebug(stage: string, message = "") {
 }
 
 function isDesktopBridgeRequest(value: ServiceWebviewBridgeMessage) {
-  if (value.type === AGENT_APP_CLIPBOARD_REQUEST_TYPE) {
+  if (value.type && (SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES as readonly string[]).includes(value.type)) {
     return Boolean(value.requestId);
   }
   return Boolean(
@@ -194,6 +193,8 @@ function isDesktopBridgeRequest(value: ServiceWebviewBridgeMessage) {
 
 function isDesktopBridgeDeliver(value: ServiceWebviewBridgeMessage) {
   return value.type === AGENT_APP_CLIPBOARD_RESPONSE_TYPE ||
+    value.type === DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE ||
+    value.type === DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE ||
     value.type === DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE ||
     value.type === DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE ||
     Boolean(value.type && /:auth:response$/u.test(value.type));

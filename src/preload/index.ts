@@ -45,6 +45,12 @@ const api: DesktopApi = {
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke("shell.openExternal", url)
   },
+  desktopDialog: {
+    selectDirectory: () => ipcRenderer.invoke("desktopDialog.selectDirectory")
+  },
+  desktopShell: {
+    openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath)
+  },
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text)
   },

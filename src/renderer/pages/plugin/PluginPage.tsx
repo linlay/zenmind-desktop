@@ -7,16 +7,14 @@ import {
   getPluginAuthBridgeProtocol,
 } from "../../../shared/auth-bridge";
 import {
-  AGENT_APP_CLIPBOARD_REQUEST_TYPE,
-  AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
-  SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
   type ServiceWebviewBridgeMessage,
 } from "../../../shared/service-webview-bridge";
+import { handleServiceWebviewBridgeMessage } from "../../services/serviceWebviewBridgeHost";
 import { getServiceDisplayName } from "../../service-display";
 import type {
   AssistantPageContext,
@@ -779,7 +777,7 @@ export function PluginPage({
     };
   }, []);
 
-  function sendBridgeMessageToWebview(payload: Record<string, unknown>) {
+  function sendBridgeMessageToWebview(payload: ServiceWebviewBridgeMessage) {
     try {
       webviewRef.current?.send(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL, payload);
     } catch {
@@ -886,64 +884,15 @@ export function PluginPage({
       return;
     }
 
-    if (payload.type === SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE) {
-      console.info(
-        "[service-webview]",
-        service?.id || "plugin",
-        payload.stage || "",
-        payload.message || "",
-      );
-      return;
-    }
-
-    if (
-      bridgeProtocol &&
-      payload.type === bridgeProtocol.requestType &&
-      (payload.action === "getAccessToken" ||
-        payload.action === "refreshAccessToken")
-    ) {
-      void window.electronAPI.agentAuth
-        .issueAccessToken(
-          payload.reason === "unauthorized" ? "unauthorized" : "missing",
-        )
-        .then((result) => {
-          sendBridgeMessageToWebview({
-            type: bridgeProtocol.responseType,
-            requestId: payload.requestId,
-            token: result.ok ? result.token : null,
-          });
-          if (!result.ok) {
-            setBridgeError(result.message);
-          }
-        })
-        .catch((reason) => {
-          setBridgeError(
-            reason instanceof Error ? reason.message : String(reason),
-          );
-        });
-      return;
-    }
-
-    if (payload.type === AGENT_APP_CLIPBOARD_REQUEST_TYPE) {
-      void window.electronAPI.clipboard
-        .writeText(typeof payload.text === "string" ? payload.text : "")
-        .then((result) => {
-          sendBridgeMessageToWebview({
-            type: AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
-            requestId: payload.requestId,
-            ok: result.ok,
-            message: result.message ?? "",
-          });
-        })
-        .catch((reason) => {
-          sendBridgeMessageToWebview({
-            type: AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
-            requestId: payload.requestId,
-            ok: false,
-            message: reason instanceof Error ? reason.message : String(reason),
-          });
-        });
-    }
+    handleServiceWebviewBridgeMessage(payload, {
+      serviceId: service?.id,
+      bridgeProtocol,
+      sendBridgeMessageToWebview,
+      setBridgeError,
+      logDebug: (stage, message) => {
+        console.info("[service-webview]", service?.id || "plugin", stage, message);
+      },
+    });
   }
 
   function webviewLoadedChromeErrorPage() {
