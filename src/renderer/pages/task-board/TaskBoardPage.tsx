@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -91,6 +91,13 @@ type TaskBoardContextMenu = {
 };
 
 const TASK_BOARD_FEEDBACK_AUTO_CLOSE_MS = 3000;
+const VISIBLE_TASK_BOARD_STATUSES = [
+  "backlog",
+  "todo",
+  "in_progress",
+  "done"
+] satisfies ReadonlyArray<TaskBoardStatus>;
+const VISIBLE_TASK_BOARD_STATUS_SET = new Set<TaskBoardStatus>(VISIBLE_TASK_BOARD_STATUSES);
 
 const STATUS_META: Record<TaskBoardStatus, { labelKey: TranslationKey; tone: string }> = {
   backlog: { labelKey: "taskBoard.status.backlog", tone: "neutral" },
@@ -462,6 +469,31 @@ function getScheduleDisplayLabel(issue: TaskBoardIssue, t: TranslateFunction) {
   return `${getSchedulePlanLabel(scheduleForm.schedulePreset, t)} ${scheduleForm.scheduleTime}`;
 }
 
+function formatCompactIssueDate(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+  const date = new Date(timestamp);
+  return `${padScheduleNumber(date.getMonth() + 1)}-${padScheduleNumber(date.getDate())}`;
+}
+
+function getIssueLineMeta(issue: TaskBoardIssue, awaitingConfirmation: boolean, t: TranslateFunction) {
+  if (awaitingConfirmation) {
+    return t("taskBoard.chat.awaitingConfirmation");
+  }
+  if (issue.runId) {
+    return t("taskBoard.run.running");
+  }
+  if (issue.status === "backlog") {
+    return formatCompactIssueDate(issue.createdAt || issue.updatedAt);
+  }
+  if (issue.status === "done") {
+    return t("taskBoard.status.done");
+  }
+  return t(STATUS_META[issue.status].labelKey);
+}
+
 function createNavigationAgentFromOption(agent: DesktopPetAgentOption): AssistantNavAgentItem {
   return {
     agentKey: agent.agentKey,
@@ -776,9 +808,14 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     return removeAssistantEventListener;
   }, [t]);
 
+  const visibleIssues = useMemo(
+    () => issues.filter((issue) => VISIBLE_TASK_BOARD_STATUS_SET.has(issue.status)),
+    [issues]
+  );
+
   const filteredIssues = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    return sortIssues(issues).filter((issue) => {
+    return sortIssues(visibleIssues).filter((issue) => {
       if (priorityFilters.length > 0 && !priorityFilters.includes(issue.priority)) {
         return false;
       }
@@ -794,11 +831,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       ].join(" ").toLowerCase();
       return haystack.includes(keyword);
     });
-  }, [issues, priorityFilters, query]);
+  }, [priorityFilters, query, visibleIssues]);
 
   const issueMap = useMemo(() => new Map(issues.map((issue) => [issue.id, issue])), [issues]);
   const filteredCount = filteredIssues.length;
-  const totalCount = issues.length;
+  const totalCount = visibleIssues.length;
   const activeDragIssue = activeDragIssueId ? issueMap.get(activeDragIssueId) ?? null : null;
 
   function openCreateModal(status: TaskBoardStatus = "backlog") {
@@ -1225,41 +1262,42 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     <section className="task-board-page" aria-label={t("taskBoard.title")}>
       <div className="task-board-toolbar">
         <div className="task-board-toolbar-left">
-          <button type="button" className="task-board-tool is-active">
-            <span className="task-board-tool-icon" aria-hidden="true">▦</span>
-            {t("taskBoard.toolbar.board")}
-          </button>
+          <div className="task-board-search-wrap">
+            <TaskBoardIcon kind="search" />
+            <input
+              className="task-board-search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("taskBoard.search.placeholder")}
+              aria-label={t("taskBoard.search.ariaLabel")}
+            />
+          </div>
           <button
             type="button"
-            className={`task-board-tool ${menu === "filter" ? "is-active" : ""}`}
+            className={`task-board-tool is-icon-only ${menu === "filter" ? "is-active" : ""}`}
+            aria-label={t("taskBoard.toolbar.filter")}
+            title={t("taskBoard.toolbar.filter")}
             onClick={() => setMenu(menu === "filter" ? null : "filter")}
           >
-            <span className="task-board-tool-icon" aria-hidden="true">⌕</span>
-            {t("taskBoard.toolbar.filter")}
+            <TaskBoardIcon kind="filter" />
           </button>
-          <button
-            type="button"
-            className={`task-board-tool ${menu === "display" ? "is-active" : ""}`}
-            onClick={() => setMenu(menu === "display" ? null : "display")}
-          >
-            <span className="task-board-tool-icon" aria-hidden="true">☷</span>
-            {t("taskBoard.toolbar.display")}
-          </button>
-          <input
-            className="task-board-search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("taskBoard.search.placeholder")}
-            aria-label={t("taskBoard.search.ariaLabel")}
-          />
         </div>
         <div className="task-board-toolbar-right">
           <span className="task-board-count">{t("taskBoard.toolbar.issueCount", { filtered: filteredCount, total: totalCount })}</span>
+          <button
+            type="button"
+            className={`task-board-tool is-icon-only ${menu === "display" ? "is-active" : ""}`}
+            aria-label={t("taskBoard.toolbar.display")}
+            title={t("taskBoard.toolbar.display")}
+            onClick={() => setMenu(menu === "display" ? null : "display")}
+          >
+            <TaskBoardIcon kind="display" />
+          </button>
         </div>
       </div>
 
       {menu ? (
-        <div className="task-board-menu-panel">
+        <div className={`task-board-menu-panel is-${menu}`}>
           {menu === "filter" ? (
             <>
               <strong>{t("taskBoard.filter.priority")}</strong>
@@ -1316,7 +1354,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         onDragEnd={handleDragEnd}
       >
         <div className="task-board-columns" aria-busy={loading}>
-          {TASK_BOARD_STATUSES.map((status) => {
+          {VISIBLE_TASK_BOARD_STATUSES.map((status) => {
             const columnIssues = filteredIssues.filter((issue) => issue.status === status);
             return (
               <TaskBoardColumn
@@ -1715,7 +1753,7 @@ function TaskBoardColumn({
   const meta = STATUS_META[status];
   const label = t(meta.labelKey);
   return (
-    <section ref={setNodeRef} className={`task-board-column is-${meta.tone} ${isOver ? "is-over" : ""}`}>
+    <section ref={setNodeRef} className={`task-board-column is-${status} is-${meta.tone} ${isOver ? "is-over" : ""}`}>
       <header className="task-board-column-head">
         <div className="task-board-column-title">
           <span className={`task-board-status-dot is-${meta.tone}`} aria-hidden="true" />
@@ -1829,22 +1867,23 @@ function TaskBoardCardContent({
   onEdit: () => void;
   onOpenChat: () => void;
 }) {
-  const preview = descriptionPreview(issue.description);
   const chatActionLabel = getIssueChatActionLabel(issue, t);
   const visibleChatActionLabel = awaitingConfirmation ? t("taskBoard.chat.awaitingConfirmation") : chatActionLabel;
   const visibleAssigneeName = getVisibleAssigneeName(issue.assigneeName);
   const scheduleLabel = getScheduleDisplayLabel(issue, t);
-  const shouldShowFooter = Boolean(
-    (display.assignee && visibleAssigneeName) ||
-    display.priority ||
-    scheduleLabel ||
-    chatActionLabel
-  );
+  const lineMeta = getIssueLineMeta(issue, awaitingConfirmation, t);
+  const hasVisibleAttachment = getVisibleTaskBoardAttachments(issue.attachments).length > 0;
   const mainContent = (
     <>
-      <span className="task-board-card-id">{issue.identifier}</span>
-      <strong>{issue.title}</strong>
-      {display.description && preview ? <span className="task-board-card-description">{preview}</span> : null}
+      <div className="task-board-card-line task-board-card-line-top">
+        <span className="task-board-card-id">{issue.identifier}</span>
+        {lineMeta ? (
+          <span className={`task-board-card-meta ${issue.runId || awaitingConfirmation ? "is-live" : ""}`}>
+            {lineMeta}
+          </span>
+        ) : null}
+      </div>
+      <strong title={display.description ? descriptionPreview(issue.description) || issue.title : issue.title}>{issue.title}</strong>
     </>
   );
 
@@ -1873,17 +1912,19 @@ function TaskBoardCardContent({
           {mainContent}
         </div>
       )}
-      {shouldShowFooter ? (
-        <footer className="task-board-card-foot">
-          {display.assignee && visibleAssigneeName ? (
-            <span className="task-board-avatar" title={issue.assigneeName ?? undefined}>
-              {visibleAssigneeName}
-            </span>
-          ) : null}
-          {display.priority ? <PriorityBadge priority={issue.priority} t={t} /> : null}
+      <footer className="task-board-card-foot">
+        <span className="task-board-card-assignee">
+          {display.assignee && visibleAssigneeName ? visibleAssigneeName : t("taskBoard.form.unassigned")}
+        </span>
+        <span className="task-board-card-foot-actions">
           {scheduleLabel ? (
             <span className="task-board-schedule-badge" title={issue.scheduleCron ?? undefined}>
-              {scheduleLabel}
+              <TaskBoardIcon kind="clock" />
+            </span>
+          ) : null}
+          {hasVisibleAttachment ? (
+            <span className="task-board-attachment-badge" title={t("taskBoard.form.attachments")}>
+              <TaskBoardIcon kind="attachment" />
             </span>
           ) : null}
           {chatActionLabel ? (
@@ -1901,6 +1942,7 @@ function TaskBoardCardContent({
                   ? t("taskBoard.chat.openWithConfirmation", { identifier: issue.identifier })
                   : t("taskBoard.chat.open", { identifier: issue.identifier })
               }
+              title={visibleChatActionLabel ?? undefined}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
@@ -1909,12 +1951,60 @@ function TaskBoardCardContent({
                 }
               }}
             >
-              {visibleChatActionLabel}
+              <TaskBoardIcon kind="message" />
             </button>
           ) : null}
-        </footer>
-      ) : null}
+          {display.priority ? <PriorityBadge priority={issue.priority} t={t} /> : null}
+        </span>
+      </footer>
     </>
+  );
+}
+
+function TaskBoardIcon({ kind }: { kind: "attachment" | "clock" | "display" | "filter" | "message" | "search" }) {
+  const paths: Record<typeof kind, ReactNode> = {
+    attachment: (
+      <path d="M7.5 11.5 12 7a2.1 2.1 0 0 1 3 3l-6 6a3.1 3.1 0 0 1-4.4-4.4l6.4-6.4" />
+    ),
+    clock: (
+      <>
+        <circle cx="10" cy="10" r="6" />
+        <path d="M10 6.8V10l2.3 1.4" />
+      </>
+    ),
+    display: (
+      <>
+        <path d="M4 6h12" />
+        <path d="M4 10h12" />
+        <path d="M4 14h12" />
+        <path d="M7 4v4" />
+        <path d="M13 8v4" />
+      </>
+    ),
+    filter: (
+      <>
+        <path d="M4 5h12" />
+        <path d="M6.5 10h7" />
+        <path d="M9 15h2" />
+      </>
+    ),
+    message: (
+      <>
+        <path d="M5 5.5h10v7H9l-3.5 2.7v-2.7H5z" />
+        <path d="M7.5 8h5" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="8.5" cy="8.5" r="4.5" />
+        <path d="m12 12 3.5 3.5" />
+      </>
+    )
+  };
+  return (
+    <svg className="task-board-icon" viewBox="0 0 20 20" aria-hidden="true">
+      {paths[kind]}
+    </svg>
   );
 }
 

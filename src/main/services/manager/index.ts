@@ -4372,22 +4372,6 @@ async function startServiceInternal(
     }
   }
 
-  // Bridge registration hook（无论是否已在运行都走一遍，幂等）
-  if (service.kind === "plugin") {
-    const { registerBridge } = await import("../../bridge-registrar");
-    try {
-      const regResult = await registerBridge(app, serviceId);
-      if (!regResult.ok) {
-        result = {
-          ...result,
-          message: `${result.message} (但桥接注册失败: ${regResult.message})`
-        };
-      }
-    } catch (error) {
-      console.warn(`[service-manager] Bridge registration failed for ${serviceId}:`, error);
-    }
-  }
-
   const verifiedResult = await attachServiceVerification(app, serviceId, result, "running", `${service.name} 启动命令已执行`);
   return verifiedResult;
 }
@@ -4426,19 +4410,6 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
     throw new Error(stopVerification.message);
   }
   startedThisSession.delete(serviceId);
-
-  // Bridge unregistration hook
-  if (service.kind === "plugin") {
-    const { unregisterBridge } = await import("../../bridge-registrar");
-    try {
-      const unregResult = await unregisterBridge(app, serviceId);
-      if (!unregResult.ok) {
-        console.warn(`[service-manager] Bridge unregistration failed for ${serviceId}: ${unregResult.message}`);
-      }
-    } catch (error) {
-      console.warn(`[service-manager] Bridge unregistration failed for ${serviceId}:`, error);
-    }
-  }
 
   return attachServiceVerification(app, serviceId, result, "stopped", `${service.name} 停止命令已执行`);
 }
