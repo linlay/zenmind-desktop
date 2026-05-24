@@ -9,11 +9,12 @@ HOST_PLATFORM := unsupported
 endif
 endif
 
-.PHONY: help icons build test release release-mac release-win release-win-docker clean-dist
+.PHONY: help icons sync-version build test release release-mac release-win release-win-docker clean-dist
 
 help:
 	@printf "ZenMind Desktop targets:\n"
 	@printf "  make icons              Regenerate app and tray icons\n"
+	@printf "  make sync-version       Sync package metadata from VERSION\n"
 	@printf "  make build              Build Electron main and renderer bundles\n"
 	@printf "  make test               Run the project test suite\n"
 	@printf "  make release            Build a release package for the current host platform\n"
@@ -24,6 +25,9 @@ help:
 
 icons:
 	npm run icons
+
+sync-version:
+	npm run sync:version
 
 build:
 	npm run build
@@ -42,13 +46,13 @@ else
 	@exit 1
 endif
 
-release-mac: icons
+release-mac: sync-version icons
 	npm run dist:mac
 
-release-win: icons
+release-win: sync-version icons
 	npm run dist:win
 
-release-win-docker: icons
+release-win-docker: sync-version icons
 	npm run dist:win-docker
 
 clean-dist:

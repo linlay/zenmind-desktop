@@ -1,11 +1,12 @@
 {
   "name": "zenmind-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "ZenMind 应用壳",
   "main": "dist-electron/main/index.js",
   "scripts": {
     "icons": "node ./scripts/generate-app-icons.mjs",
+    "sync:version": "node ./scripts/sync-package-version.mjs",
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
     "i18n:check": "node ./scripts/i18n/validate-dictionaries.mjs && node ./scripts/i18n/scan-hardcoded-text.mjs",
     "build:main:types": "tsc -p tsconfig.main.json",
@@ -16,9 +17,9 @@
     "stage:app": "node ./scripts/stage-app.mjs",
     "dev": "node ./scripts/dev.mjs",
     "start": "npm run dev",
-    "dist:mac": "node ./scripts/sync-builtin-assets.mjs --os=darwin --arch=arm64 && npm run build && npm run stage:app -- --os=darwin --arch=arm64 && electron-builder --mac --arm64",
-    "dist:win": "node ./scripts/sync-builtin-assets.mjs --os=windows --arch=amd64 && npm run build && npm run stage:app -- --os=win32 --arch=x64 && electron-builder --win --x64",
-    "dist:win-docker": "node ./scripts/dist-win.mjs",
+    "dist:mac": "npm run sync:version && node ./scripts/sync-builtin-assets.mjs --os=darwin --arch=arm64 && npm run build && npm run stage:app -- --os=darwin --arch=arm64 && electron-builder --mac --arm64",
+    "dist:win": "npm run sync:version && node ./scripts/sync-builtin-assets.mjs --os=windows --arch=amd64 && npm run build && npm run stage:app -- --os=win32 --arch=x64 && electron-builder --win --x64",
+    "dist:win-docker": "npm run sync:version && node ./scripts/dist-win.mjs",
     "test": "npm run build && node --test ./test/*.test.mjs"
   },
   "dependencies": {
