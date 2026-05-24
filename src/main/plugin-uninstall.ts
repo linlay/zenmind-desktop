@@ -1,5 +1,6 @@
 import type { App, BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from "electron";
 import type { PluginInstallResult, ServiceId } from "../shared/contracts";
+import type { TranslateFunction } from "../shared/i18n";
 import { uninstallPlugin } from "./plugin-loader";
 import { getService } from "./services/service-registry";
 
@@ -8,18 +9,41 @@ type ShowMessageBox = typeof import("electron").dialog.showMessageBox;
 interface HandlePluginUninstallDeps {
   getServiceById?: typeof getService;
   showMessageBox?: ShowMessageBox;
+  t?: TranslateFunction;
   uninstall?: typeof uninstallPlugin;
 }
 
-export function buildPluginUninstallDialogOptions(serviceName: string): MessageBoxOptions {
+function fallbackT(key: Parameters<TranslateFunction>[0], params?: Parameters<TranslateFunction>[1]) {
+  switch (key) {
+    case "plugin.uninstall.cancel":
+      return "取消";
+    case "plugin.uninstall.confirm":
+      return "卸载";
+    case "plugin.uninstall.title":
+      return "卸载插件";
+    case "plugin.uninstall.message":
+      return `确定要卸载插件 ${params?.name ?? ""} 吗？`;
+    case "plugin.uninstall.detail":
+      return "插件目录将被删除，此操作不可撤销。";
+    case "plugin.uninstall.cancelled":
+      return "已取消卸载。";
+    default:
+      return key;
+  }
+}
+
+export function buildPluginUninstallDialogOptions(
+  serviceName: string,
+  t: TranslateFunction = fallbackT
+): MessageBoxOptions {
   return {
     type: "warning",
-    buttons: ["取消", "卸载"],
+    buttons: [t("plugin.uninstall.cancel"), t("plugin.uninstall.confirm")],
     defaultId: 0,
     cancelId: 0,
-    title: "卸载插件",
-    message: `确定要卸载插件 ${serviceName} 吗？`,
-    detail: "插件目录将被删除，此操作不可撤销。"
+    title: t("plugin.uninstall.title"),
+    message: t("plugin.uninstall.message", { name: serviceName }),
+    detail: t("plugin.uninstall.detail")
   };
 }
 
@@ -47,6 +71,7 @@ export async function handlePluginUninstall(
 ): Promise<PluginInstallResult> {
   const getServiceById = deps.getServiceById ?? getService;
   const showMessageBox = deps.showMessageBox ?? getDefaultShowMessageBox();
+  const t = deps.t ?? fallbackT;
   const uninstall = deps.uninstall ?? uninstallPlugin;
   const service = getServiceById(serviceId);
 
@@ -56,11 +81,11 @@ export async function handlePluginUninstall(
 
   const result = await showPluginUninstallDialog(
     ownerWindow,
-    buildPluginUninstallDialogOptions(service.name),
+    buildPluginUninstallDialogOptions(service.name, t),
     showMessageBox
   );
   if (result.response === 0) {
-    return { ok: false, message: "已取消卸载。" };
+    return { ok: false, message: t("plugin.uninstall.cancelled") };
   }
 
   return uninstall(app, serviceId);

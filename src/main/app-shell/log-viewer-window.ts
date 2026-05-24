@@ -58,6 +58,10 @@ export class LogViewerWindowController {
     return { ok: true };
   }
 
+  getWindow() {
+    return this.window && !this.window.isDestroyed() ? this.window : null;
+  }
+
 
   private buildRoute(request: ServiceOpenLogViewerRequest) {
     const params = new URLSearchParams({

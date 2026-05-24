@@ -6,13 +6,14 @@ import {
 export type BuildApplicationMenuOptions = {
   appName: string;
   platform: NodeJS.Platform;
+  t: (key: "menu.file" | "menu.settings" | "menu.settingsEllipsis") => string;
   openSettings: () => void;
 };
 
 export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
   const isMac = options.platform === "darwin";
   const settingsItem: MenuItemConstructorOptions = {
-    label: isMac ? "设置..." : "设置",
+    label: isMac ? options.t("menu.settingsEllipsis") : options.t("menu.settings"),
     accelerator: "CmdOrCtrl+,",
     click: () => options.openSettings()
   };
@@ -36,7 +37,7 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
           ]
         }
       : {
-          label: "File",
+          label: options.t("menu.file"),
           submenu: [settingsItem, { type: "separator" }, { role: "quit" }]
         },
     { role: "editMenu" },

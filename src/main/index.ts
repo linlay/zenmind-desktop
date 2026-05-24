@@ -217,6 +217,8 @@ import {
   captureAssistantScreenshot as captureCopilotScreenshot,
   type ScreenshotCaptureSource
 } from "./copilot/sidebar-copilot/screenshot";
+import { initializeMainI18n, setMainLocale, t } from "./i18n/main-i18n";
+import { isSupportedLocale } from "../shared/i18n";
 
 let mainWindow: BrowserWindow | null = null;
 let desktopPetWindow: BrowserWindow | null = null;
@@ -280,6 +282,7 @@ function getServiceWebviewPreloadUrl() {
 
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName(ZENMIND_PRODUCT_NAME);
+initializeMainI18n(app);
 const homeZenmindRootAtProcessStart = resolveHomeZenmindRoot(app, process.platform);
 const requireEnvZipImportAtStartup = shouldRequireMacEnvZipImport({
   platform: process.platform,
@@ -386,6 +389,8 @@ const nativeDialogController = new NativeDialogVisibilityController({
 
 const appTrayController = new AppTrayController({
   platform: process.platform,
+  appName: ZENMIND_PRODUCT_NAME,
+  t,
   mainDir: __dirname,
   resourcesPath: process.resourcesPath,
   getDesktopPetEnabled: () => desktopPetSettings.enabled,
@@ -2969,8 +2974,23 @@ function buildApplicationMenu() {
   installApplicationMenu({
     appName: app.name,
     platform: process.platform,
+    t,
     openSettings: () => navigateMainWindow("/settings")
   });
+}
+
+function emitLocaleChanged(settings: ReturnType<typeof setMainLocale>) {
+  for (const targetWindow of [
+    mainWindow,
+    desktopPetWindow,
+    quickCopilotWindowController.getWindow(),
+    logViewerWindowController.getWindow()
+  ]) {
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      continue;
+    }
+    targetWindow.webContents.send("settings.localeChanged", settings);
+  }
 }
 
 async function ensureMacFirstInstallEnvZipImported() {
@@ -3810,7 +3830,7 @@ function registerIpcHandlers() {
     return installResult;
   }));
   ipcMain.handle("plugins.uninstall", async (_event, serviceId: ServiceId) => {
-    return runServiceMutation(() => handlePluginUninstall(app, serviceId, mainWindow));
+    return runServiceMutation(() => handlePluginUninstall(app, serviceId, mainWindow, { t }));
   });
   ipcMain.handle("plugins.getServiceWebviewPreloadPath", async () => getServiceWebviewPreloadPath());
   ipcMain.handle("plugins.getServiceWebviewPreloadUrl", async () => getServiceWebviewPreloadUrl());
@@ -4171,6 +4191,17 @@ function registerIpcHandlers() {
   ipcMain.handle("settings.setNativeThemeSource", async (_event, themeMode: string) =>
     setNativeThemeSource(themeMode)
   );
+  ipcMain.handle("settings.getLocale", async () => initializeMainI18n(app));
+  ipcMain.handle("settings.setLocale", async (_event, locale: unknown) => {
+    if (!isSupportedLocale(locale)) {
+      return initializeMainI18n(app);
+    }
+    const settings = setMainLocale(app, locale);
+    buildApplicationMenu();
+    appTrayController.refreshContextMenu();
+    emitLocaleChanged(settings);
+    return settings;
+  });
 }
 
 if (gotSingleInstanceLock) {

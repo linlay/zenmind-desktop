@@ -19,6 +19,7 @@ import type {
   AssistantWorkerOpenRequest,
   DesktopPetStateListener,
   DesktopApi,
+  LocaleChangedListener,
   NavigateListener,
   NativeDialogVisibilityListener,
   SandboxImageImportProgressListener,
@@ -252,7 +253,22 @@ const api: DesktopApi = {
   settings: {
     getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
     getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
-    setNativeThemeSource: (themeMode) => ipcRenderer.invoke("settings.setNativeThemeSource", themeMode)
+    setNativeThemeSource: (themeMode) => ipcRenderer.invoke("settings.setNativeThemeSource", themeMode),
+    getLocale: () => ipcRenderer.invoke("settings.getLocale"),
+    setLocale: (locale) => ipcRenderer.invoke("settings.setLocale", locale),
+    onLocaleChanged: (listener: LocaleChangedListener) => {
+      const handleLocaleChanged = (
+        _event: Electron.IpcRendererEvent,
+        settings: Parameters<LocaleChangedListener>[0]
+      ) => {
+        listener(settings);
+      };
+
+      ipcRenderer.on("settings.localeChanged", handleLocaleChanged);
+      return () => {
+        ipcRenderer.off("settings.localeChanged", handleLocaleChanged);
+      };
+    }
   },
   desktopActions: {
     respond: (response: DesktopActionRendererResponse) => ipcRenderer.invoke("desktopActions.respond", response),

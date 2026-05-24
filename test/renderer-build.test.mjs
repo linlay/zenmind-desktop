@@ -483,9 +483,12 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
     "utf8"
   );
 
-  assert.match(sidebarSource, /taskBoardNavItem[\s\S]*?orderKey:\s*"kanban"[\s\S]*?to:\s*"\/kanban"[\s\S]*?label:\s*"任务看板"/);
-  assert.match(sidebarSource, /assistantGroupNavItem[\s\S]*?orderKey:\s*"group:assistants"[\s\S]*?label:\s*"智能助理"/);
-  assert.match(sidebarSource, /websitesGroupNavItem[\s\S]*?orderKey:\s*"group:websites"[\s\S]*?label:\s*"内嵌网站"/);
+  assert.match(sidebarSource, /taskBoardNavItemBase[\s\S]*?orderKey:\s*"kanban"[\s\S]*?to:\s*"\/kanban"/);
+  assert.match(sidebarSource, /assistantGroupNavItemBase[\s\S]*?orderKey:\s*"group:assistants"[\s\S]*?entryType:\s*"assistants"/);
+  assert.match(sidebarSource, /websitesGroupNavItemBase[\s\S]*?orderKey:\s*"group:websites"[\s\S]*?entryType:\s*"websites"/);
+  assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)/);
+  assert.match(sidebarSource, /label:\s*t\("nav\.assistants"\)/);
+  assert.match(sidebarSource, /label:\s*t\("nav\.embeddedWebsites"\)/);
   assert.match(sidebarSource, /SIDEBAR_GROUP_STATE_STORAGE_KEY/);
   assert.doesNotMatch(sidebarSource, /assistantHomeNavItem/);
   assert.doesNotMatch(sidebarSource, /智能助理首页|智能助手首页/);
@@ -539,8 +542,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /exportChat/);
   assert.match(sidebarSource, /renameChat/);
   assert.match(sidebarSource, /archiveChat/);
-  assert.match(sidebarSource, /fixedToolRows[\s\S]*?to:\s*"\/agents"[\s\S]*?label:\s*"智能体"[\s\S]*?to:\s*"\/schedules"[\s\S]*?label:\s*"自动化"[\s\S]*?to:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
-  assert.match(sidebarSource, /fixedToolRows[\s\S]*?to:\s*"\/control-center"[\s\S]*?label:\s*"控制中心"[\s\S]*?to:\s*"\/market"[\s\S]*?label:\s*"功能市场"[\s\S]*?to:\s*"\/settings"[\s\S]*?label:\s*"设置"[\s\S]*?to:\s*"\/help"[\s\S]*?label:\s*"帮助"/);
+  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/schedules"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
+  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/control-center"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?to:\s*"\/help"[\s\S]*?labelKey:\s*"nav\.help"/);
   assert.match(sidebarSource, /sidebar-footer-divider/);
   assert.match(sidebarSource, /createPortal/);
   assert.match(sidebarSource, /sidebar-tool-menu-trigger/);
@@ -550,7 +553,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.doesNotMatch(sidebarSource, /sidebar-tool-grid/);
   assert.doesNotMatch(sidebarSource, /sidebar-assistant-launcher/);
   assert.doesNotMatch(sidebarSource, /sortSidebarNavItems\(/);
-  assert.match(sidebarSource, /taskBoardNavItem,[\s\S]*?assistantGroupNavItem,[\s\S]*?websitesGroupNavItem/);
+  assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)[\s\S]*?label:\s*t\("nav\.assistants"\)[\s\S]*?label:\s*t\("nav\.embeddedWebsites"\)/);
   assert.match(globalStyles, /\.sidebar-tool-menu\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(globalStyles, /\.sidebar-group-heading\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
@@ -569,20 +572,21 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_ITEMS/);
   assert.match(appShell, /<Route path="\/kanban" element=\{<TaskBoardPage hostTheme=\{themeMode\} \/>/);
   assert.doesNotMatch(appShell, /KanbanPlaceholderPage/);
-  assert.match(sidebarSource, /label:\s*"任务看板"/);
+  assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)/);
   assert.match(appShell, /assistantNavAgents/);
   assert.match(appShell, /listNavigationAgents/);
-  assert.match(appShell, /routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?label:\s*"智能体"/);
-  assert.match(appShell, /routePath:\s*"\/schedules"[\s\S]*?embedPath:\s*"\/schedules"[\s\S]*?label:\s*"自动化"/);
-  assert.match(appShell, /routePath:\s*"\/memory"[\s\S]*?embedPath:\s*"\/memory"[\s\S]*?label:\s*"记忆管理"/);
-  assert.match(appShell, /const activeAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search\)/);
+  assert.match(appShell, /routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"/);
+  assert.match(appShell, /routePath:\s*"\/schedules"[\s\S]*?embedPath:\s*"\/schedules"[\s\S]*?labelKey:\s*"nav\.schedules"/);
+  assert.match(appShell, /routePath:\s*"\/memory"[\s\S]*?embedPath:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
+  assert.match(appShell, /const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search\)/);
+  assert.match(appShell, /const activeAgentWebclientRoute = rawActiveAgentWebclientRoute[\s\S]*?label:\s*"labelKey" in rawActiveAgentWebclientRoute[\s\S]*?t\(rawActiveAgentWebclientRoute\.labelKey\)/);
   assert.match(appShell, /function readAgentWebclientRouteEmbedPath\(search: string\)/);
   assert.match(appShell, /new URLSearchParams\(search\)\.get\("embedPath"\)/);
   assert.match(appShell, /function resolveSingleAgentWebclientRoute\(pathname: string, search: string\)/);
   assert.match(appShell, /matchPath\("\/agent\/:agentKey", pathname\)/);
   assert.match(appShell, /for \(const key of \["chatId", "history", "historyRequest"\]\)/);
   assert.match(appShell, /embedPath:\s*`\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
-  assert.match(appShell, /embedPath\.startsWith\("\/agent\/"\) \? "智能助理" : "智能体"/);
+  assert.match(appShell, /labelKey:\s*embedPath\.startsWith\("\/agent\/"\) \? "nav\.assistants" : "nav\.agents"/);
   assert.match(appShell, /activeAgentWebclientRoute[\s\S]*?\? "agent-webclient"[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
   assert.match(appShell, /embedPath=\{pluginId === "agent-webclient" \? activeAgentWebclientRoute\?\.embedPath : undefined\}/);
   assert.match(appShell, /if \(currentRoute !== pendingSidebarNavigationPath\)/);
@@ -652,7 +656,7 @@ test("settings route keeps the global sidebar and renders page-internal split se
   assert.doesNotMatch(sidebarSource, /pendingSettingsSectionId\?: SettingsSectionId \| null;/);
   assert.doesNotMatch(sidebarSource, /sidebar-settings-nav/);
   assert.doesNotMatch(sidebarSource, /sidebar-link-settings/);
-  assert.match(sidebarSource, /to:\s*"\/settings"[\s\S]*?label:\s*"设置"/);
+  assert.match(sidebarSource, /to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"/);
   assert.match(sidebarSource, /fixedToolRows/);
   assert.match(sidebarSource, /sidebar-assistant-top-button/);
   assert.match(sidebarSource, /app-sidebar-collapse-button/);

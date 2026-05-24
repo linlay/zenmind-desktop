@@ -20,6 +20,7 @@ import { AgentIcon } from "./AgentIcon";
 import { Collapse } from "../../components/Collapse";
 import { Tooltip } from "../../components/Tooltip";
 import { Popover } from "../../components/Popover";
+import { useI18n } from "../../i18n/useI18n";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -59,54 +60,49 @@ const defaultSidebarGroupState: SidebarGroupState = {
   websites: true,
 };
 
-const taskBoardNavItem: SidebarPrimaryEntry = {
+const taskBoardNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   orderKey: "kanban",
   to: "/kanban",
-  label: "任务看板",
   icon: "futures",
 };
 
-const assistantGroupNavItem: SidebarPrimaryEntry = {
+const assistantGroupNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   orderKey: "group:assistants",
   to: "",
-  label: "智能助理",
   icon: "assistant",
   entryType: "assistants",
 };
 
-const websitesGroupNavItem: SidebarPrimaryEntry = {
+const websitesGroupNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   orderKey: "group:websites",
   to: "",
-  label: "内嵌网站",
   icon: "website",
   entryType: "websites",
 };
 
-const fixedToolRows: SidebarToolItem[][] = [
+const fixedToolRowsBase: Array<Array<Omit<SidebarToolItem, "label"> & { labelKey: "nav.agents" | "nav.schedules" | "nav.memory" | "nav.controlCenter" | "nav.market" | "nav.settings" | "nav.help" }>> = [
   [
-    { orderKey: "agents", to: "/agents", label: "智能体", icon: "agent" },
+    { orderKey: "agents", to: "/agents", labelKey: "nav.agents", icon: "agent" },
     {
       orderKey: "schedules",
       to: "/schedules",
-      label: "自动化",
+      labelKey: "nav.schedules",
       icon: "schedule",
     },
-    { orderKey: "memory", to: "/memory", label: "记忆管理", icon: "memory" },
+    { orderKey: "memory", to: "/memory", labelKey: "nav.memory", icon: "memory" },
   ],
   [
     {
       orderKey: "control-center",
       to: "/control-center",
-      label: "控制中心",
+      labelKey: "nav.controlCenter",
       icon: "control",
     },
-    { orderKey: "market", to: "/market", label: "功能市场", icon: "market" },
-    { orderKey: "settings", to: "/settings", label: "设置", icon: "settings" },
+    { orderKey: "market", to: "/market", labelKey: "nav.market", icon: "market" },
+    { orderKey: "settings", to: "/settings", labelKey: "nav.settings", icon: "settings" },
   ],
-  [{ orderKey: "help", to: "/help", label: "帮助", icon: "help" }],
+  [{ orderKey: "help", to: "/help", labelKey: "nav.help", icon: "help" }],
 ];
-
-const fixedToolItems = fixedToolRows.flat();
 
 function getCollapsedSidebarLabel(label: string) {
   const Segmenter =
@@ -429,6 +425,7 @@ export function AppSidebar({
   onNavigateItem,
   onToggleCollapsed,
 }: AppSidebarProps) {
+  const { t } = useI18n();
   const [sidebarGroupState, setSidebarGroupState] = useState<SidebarGroupState>(
     readInitialSidebarGroupState,
   );
@@ -474,11 +471,15 @@ export function AppSidebar({
       });
   }, [customSidebarItems, customSidebarNavOrder]);
 
-  const navItems = [
-    taskBoardNavItem,
-    assistantGroupNavItem,
-    websitesGroupNavItem,
+  const navItems: SidebarPrimaryEntry[] = [
+    { ...taskBoardNavItemBase, label: t("nav.taskBoard") },
+    { ...assistantGroupNavItemBase, label: t("nav.assistants") },
+    { ...websitesGroupNavItemBase, label: t("nav.embeddedWebsites") },
   ];
+  const fixedToolRows: SidebarToolItem[][] = fixedToolRowsBase.map((row) =>
+    row.map(({ labelKey, ...item }) => ({ ...item, label: t(labelKey) }))
+  );
+  const fixedToolItems = fixedToolRows.flat();
   const chromeToolbarClassName = [
     "sidebar-chrome-toolbar",
     isMac ? "is-mac" : isWindows ? "is-windows" : "is-default",

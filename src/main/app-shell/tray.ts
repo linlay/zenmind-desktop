@@ -6,9 +6,12 @@ import {
   type MenuItemConstructorOptions
 } from "electron";
 import { APP_ICON_ASSET_DIRECTORIES, APP_ICON_ASSET_FILENAMES } from "../../shared/app-icon-assets";
+import type { TranslationKey, TranslateFunction } from "../../shared/i18n";
 
 export type AppTrayControllerOptions = {
   platform: NodeJS.Platform;
+  appName: string;
+  t: TranslateFunction;
   mainDir: string;
   resourcesPath: string;
   getDesktopPetEnabled: () => boolean;
@@ -32,7 +35,7 @@ export class AppTrayController {
     }
 
     this.tray = new Tray(this.createIcon());
-    this.tray.setToolTip("ZenMind");
+    this.tray.setToolTip(this.options.appName);
     if (this.options.platform !== "darwin") {
       this.tray.setContextMenu(this.buildMenu());
     }
@@ -45,7 +48,11 @@ export class AppTrayController {
   }
 
   refreshContextMenu() {
-    if (!this.tray || this.options.platform === "darwin") {
+    if (!this.tray) {
+      return;
+    }
+    this.tray.setToolTip(this.options.appName);
+    if (this.options.platform === "darwin") {
       return;
     }
     this.tray.setContextMenu(this.buildMenu());
@@ -97,24 +104,25 @@ export class AppTrayController {
   }
 
   private buildMenu() {
+    const t = (key: TranslationKey, params?: Parameters<TranslateFunction>[1]) => this.options.t(key, params);
     const template: MenuItemConstructorOptions[] = [
       {
-        label: "和 ZenMind 聊天",
+        label: t("tray.chatWithApp", { appName: this.options.appName }),
         click: () => this.options.openAssistantChat()
       },
       {
-        label: "打开 ZenMind",
+        label: t("tray.openApp", { appName: this.options.appName }),
         click: () => this.options.openAssistantTarget("tray-menu")
       },
       {
-        label: "设置",
+        label: t("tray.settings"),
         click: () => this.options.openSettings()
       },
       ...(this.options.isDesktopPetSupported()
         ? [
             { type: "separator" as const },
             {
-              label: this.options.getDesktopPetEnabled() ? "关闭桌面宠物" : "显示桌面宠物",
+              label: this.options.getDesktopPetEnabled() ? t("tray.hideDesktopPet") : t("tray.showDesktopPet"),
               click: () => {
                 if (this.options.getDesktopPetEnabled()) {
                   this.options.hideDesktopPet();
@@ -127,7 +135,7 @@ export class AppTrayController {
         : []),
       { type: "separator" },
       {
-        label: "退出",
+        label: t("tray.quit"),
         click: () => this.options.quit()
       }
     ];

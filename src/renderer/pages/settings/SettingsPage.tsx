@@ -43,6 +43,8 @@ import {
   type SettingsSectionId
 } from "../../settingsPageSections";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shell/navigation/sidebarNavOrder";
+import { useI18n } from "../../i18n/useI18n";
+import type { SupportedLocale } from "../../../shared/i18n";
 
 type SettingsPageProps = {
   themeMode: "light" | "dark";
@@ -288,6 +290,7 @@ export function SettingsPage({
   onRefreshCustomSidebarItems,
   onAssistantSettingsChange
 }: SettingsPageProps) {
+  const { locale, setLocale, t } = useI18n();
   const location = useLocation();
   const currentRoute = `${location.pathname}${location.search}`;
   const noticeIdRef = useRef(0);
@@ -329,8 +332,19 @@ export function SettingsPage({
       createSettingsSectionDefinitions({
         isWindows,
         desktopPetSupported
+      }).map((definition) => {
+        const localized: Record<SettingsSectionId, { label: string; description: string }> = {
+          appearance: { label: t("settings.appearance.label"), description: t("settings.appearance.description") },
+          navigation: { label: t("settings.navigation.label"), description: t("settings.navigation.description") },
+          quickAssistant: { label: t("settings.quickAssistant.label"), description: t("settings.quickAssistant.description") },
+          desktopPet: { label: t("settings.desktopPet.label"), description: t("settings.desktopPet.description") },
+          embeddedWebsites: { label: t("settings.embeddedWebsites.label"), description: t("settings.embeddedWebsites.description") },
+          dataRoot: { label: t("settings.dataRoot.label"), description: t("settings.dataRoot.description") },
+          memory: { label: t("settings.memory.label"), description: t("settings.memory.description") }
+        };
+        return { ...definition, ...localized[definition.id] };
       }),
-    [desktopPetSupported, isWindows]
+    [desktopPetSupported, isWindows, t]
   );
   const visibleSections = useMemo(
     () => getVisibleSettingsSections(sectionDefinitions),
@@ -381,6 +395,18 @@ export function SettingsPage({
     }
   ) {
     showSectionNotice(sectionId, result.message, result.ok ? "success" : "error");
+  }
+
+  async function handleLocaleChange(nextLocale: SupportedLocale) {
+    if (nextLocale === locale) {
+      return;
+    }
+    try {
+      await setLocale(nextLocale);
+      showSectionNotice("appearance", `${t("settings.language.current")}：${nextLocale}`, "success");
+    } catch (reason) {
+      showSectionNotice("appearance", reason instanceof Error ? reason.message : String(reason), "error");
+    }
   }
 
   useEffect(() => {
@@ -1382,55 +1408,84 @@ export function SettingsPage({
     switch (activeSection) {
       case "appearance":
         return (
-          <div className="data-root-card settings-theme-card">
-            <div>
-              <p className="eyebrow">APPEARANCE</p>
-              <h2>主题模式</h2>
-              <p className="page-copy">
-                选择你更习惯的界面风格。当前正在使用
-                <strong>{themeMode === "light" ? "浅色" : "深色"}</strong>
-                主题。
-              </p>
+          <>
+            <div className="data-root-card settings-theme-card">
+              <div>
+                <p className="eyebrow">APPEARANCE</p>
+                <h2>{t("settings.appearance.theme")}</h2>
+                <p className="page-copy">
+                  {t("settings.appearance.description")} <strong>{themeMode === "light" ? t("settings.appearance.light") : t("settings.appearance.dark")}</strong>
+                </p>
+              </div>
+              <div className="settings-theme-actions">
+                <button
+                  type="button"
+                  className={themeMode === "light" ? "settings-theme-option is-active" : "settings-theme-option"}
+                  onClick={() => {
+                    if (themeMode !== "light") {
+                      onToggleTheme();
+                    }
+                  }}
+                >
+                  <span className="settings-theme-preview settings-theme-preview-light" aria-hidden="true">
+                    <span />
+                    <span />
+                  </span>
+                  <span className="settings-theme-copy">
+                    <strong>{t("settings.appearance.light")}</strong>
+                    <span>适合白天和明亮环境</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={themeMode === "dark" ? "settings-theme-option is-active" : "settings-theme-option"}
+                  onClick={() => {
+                    if (themeMode !== "dark") {
+                      onToggleTheme();
+                    }
+                  }}
+                >
+                  <span className="settings-theme-preview settings-theme-preview-dark" aria-hidden="true">
+                    <span />
+                    <span />
+                  </span>
+                  <span className="settings-theme-copy">
+                    <strong>{t("settings.appearance.dark")}</strong>
+                    <span>适合夜间和长时间专注</span>
+                  </span>
+                </button>
+              </div>
             </div>
-            <div className="settings-theme-actions">
-              <button
-                type="button"
-                className={themeMode === "light" ? "settings-theme-option is-active" : "settings-theme-option"}
-                onClick={() => {
-                  if (themeMode !== "light") {
-                    onToggleTheme();
-                  }
-                }}
-              >
-                <span className="settings-theme-preview settings-theme-preview-light" aria-hidden="true">
-                  <span />
-                  <span />
-                </span>
-                <span className="settings-theme-copy">
-                  <strong>浅色</strong>
-                  <span>适合白天和明亮环境</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={themeMode === "dark" ? "settings-theme-option is-active" : "settings-theme-option"}
-                onClick={() => {
-                  if (themeMode !== "dark") {
-                    onToggleTheme();
-                  }
-                }}
-              >
-                <span className="settings-theme-preview settings-theme-preview-dark" aria-hidden="true">
-                  <span />
-                  <span />
-                </span>
-                <span className="settings-theme-copy">
-                  <strong>深色</strong>
-                  <span>适合夜间和长时间专注</span>
-                </span>
-              </button>
+            <div className="data-root-card settings-theme-card">
+              <div>
+                <p className="eyebrow">LANGUAGE</p>
+                <h2>{t("settings.language.label")}</h2>
+                <p className="page-copy">{t("settings.language.description")}</p>
+              </div>
+              <div className="settings-theme-actions">
+                <button
+                  type="button"
+                  className={locale === "zh-CN" ? "settings-theme-option is-active" : "settings-theme-option"}
+                  onClick={() => void handleLocaleChange("zh-CN")}
+                >
+                  <span className="settings-theme-copy">
+                    <strong>{t("settings.language.zhCN")}</strong>
+                    <span>zh-CN</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={locale === "en-US" ? "settings-theme-option is-active" : "settings-theme-option"}
+                  onClick={() => void handleLocaleChange("en-US")}
+                >
+                  <span className="settings-theme-copy">
+                    <strong>{t("settings.language.enUS")}</strong>
+                    <span>en-US</span>
+                  </span>
+                </button>
+              </div>
             </div>
-          </div>
+          </>
         );
       case "navigation": {
         const defaultCopilotPages = createDefaultDesktopCopilotPagePreferences();

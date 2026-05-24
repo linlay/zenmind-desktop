@@ -54,6 +54,7 @@ import {
   type SidebarNavOrderItem,
   type SidebarNavOrderItemKey
 } from "./navigation/sidebarNavOrder";
+import { useI18n } from "../i18n/useI18n";
 
 type ThemeMode = "light" | "dark";
 
@@ -67,9 +68,9 @@ const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
 const AGENT_WEBCLIENT_ROUTE_ITEMS = [
-  { routePath: "/agents", embedPath: "/agents", label: "智能体" },
-  { routePath: "/schedules", embedPath: "/schedules", label: "自动化" },
-  { routePath: "/memory", embedPath: "/memory", label: "记忆管理" }
+  { routePath: "/agents", embedPath: "/agents", labelKey: "nav.agents" },
+  { routePath: "/schedules", embedPath: "/schedules", labelKey: "nav.schedules" },
+  { routePath: "/memory", embedPath: "/memory", labelKey: "nav.memory" }
 ] as const;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
@@ -94,13 +95,13 @@ function readSettingsPatch(args: Record<string, unknown>) {
   return asRecord(args.patch);
 }
 
-function createUnavailableDesktopSsoStatus(): DesktopSsoStatus {
+function createUnavailableDesktopSsoStatus(message: string): DesktopSsoStatus {
   return {
     configured: true,
     authenticated: false,
     pending: false,
     user: null,
-    message: "当前运行实例尚未加载单点登录，请重启 Desktop。",
+    message,
     error: "Desktop SSO preload API unavailable.",
     updatedAt: new Date().toISOString()
   };
@@ -255,6 +256,7 @@ function createFallbackStartupRestoreState(): StartupRestoreState {
 }
 
 export function AppShell() {
+  const { t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
@@ -309,7 +311,15 @@ export function AppShell() {
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [startupCardDismissed, setStartupCardDismissed] = useState(false);
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
-  const activeAgentWebclientRoute = resolveAgentWebclientRoute(location.pathname, location.search);
+  const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute(location.pathname, location.search);
+  const activeAgentWebclientRoute = rawActiveAgentWebclientRoute
+    ? {
+        ...rawActiveAgentWebclientRoute,
+        label: "labelKey" in rawActiveAgentWebclientRoute
+          ? t(rawActiveAgentWebclientRoute.labelKey)
+          : rawActiveAgentWebclientRoute.label
+      }
+    : null;
   const activePluginId = activeAgentWebclientRoute
     ? "agent-webclient"
     : resolvePluginRouteId(location.pathname);
@@ -372,8 +382,13 @@ export function AppShell() {
       serviceItems: [],
       experimentalItems: [],
       customItems: []
+    }).map((item) => {
+      if (item.key === "kanban") return { ...item, label: t("nav.taskBoard") };
+      if (item.key === "group:assistants") return { ...item, label: t("nav.assistants") };
+      if (item.key === "group:websites") return { ...item, label: t("nav.embeddedWebsites") };
+      return item;
     });
-  }, []);
+  }, [t]);
   const normalizedSidebarNavOrder = useMemo(
     () => normalizeSidebarNavOrder(sidebarNavOrder, availableSidebarNavOrderItems),
     [availableSidebarNavOrderItems, sidebarNavOrder]
@@ -476,7 +491,7 @@ export function AppShell() {
   async function handleDesktopSsoLogin() {
     const ssoApi = getDesktopSsoApi();
     if (!ssoApi) {
-      setDesktopSsoStatus(createUnavailableDesktopSsoStatus());
+      setDesktopSsoStatus(createUnavailableDesktopSsoStatus(t("startup.ssoUnavailable")));
       return;
     }
     setDesktopSsoBusy(true);
@@ -491,7 +506,7 @@ export function AppShell() {
   async function handleDesktopSsoLogout() {
     const ssoApi = getDesktopSsoApi();
     if (!ssoApi) {
-      setDesktopSsoStatus(createUnavailableDesktopSsoStatus());
+      setDesktopSsoStatus(createUnavailableDesktopSsoStatus(t("startup.ssoUnavailable")));
       return;
     }
     setDesktopSsoBusy(true);
@@ -575,7 +590,7 @@ export function AppShell() {
     let cancelled = false;
     const ssoApi = getDesktopSsoApi();
     if (!ssoApi) {
-      setDesktopSsoStatus(createUnavailableDesktopSsoStatus());
+      setDesktopSsoStatus(createUnavailableDesktopSsoStatus(t("startup.ssoUnavailable")));
       return () => {
         cancelled = true;
       };
@@ -1430,7 +1445,7 @@ function resolveAgentWebclientRoute(pathname: string, search = "") {
   return {
     routePath: `${ASSISTANT_TARGET_PATH}${search}`,
     embedPath,
-    label: embedPath.startsWith("/agent/") ? "智能助理" : "智能体"
+    labelKey: embedPath.startsWith("/agent/") ? "nav.assistants" : "nav.agents"
   };
 }
 

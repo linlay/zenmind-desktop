@@ -8,6 +8,7 @@ import type { MarketCommandResult, MarketListResult, MarketSettings, MarketSetti
 import type { TaskBoardDeleteResult, TaskBoardIssueInput, TaskBoardIssueMoveInput, TaskBoardIssueResult, TaskBoardIssueUpdateInput, TaskBoardListResult } from "./task-board";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
 import type { AssistantChatDetail, AssistantChatSummary, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
+import type { LocaleSettings, SupportedLocale } from "../i18n";
 
 export interface PanAuthStatus {
   configured: boolean;
@@ -69,6 +70,7 @@ export type DesktopSsoStatusListener = (status: DesktopSsoStatus) => void;
 
 export type NativeDialogVisibilityListener = (state: { open: boolean }) => void;
 export type SandboxImageImportProgressListener = (event: SandboxImageImportProgressEvent) => void;
+export type LocaleChangedListener = (settings: LocaleSettings) => void;
 
 export interface DesktopApi {
   shell: {
@@ -203,6 +205,9 @@ export interface DesktopApi {
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
     setNativeThemeSource: (themeMode: "light" | "dark") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
+    getLocale: () => Promise<LocaleSettings>;
+    setLocale: (locale: SupportedLocale) => Promise<LocaleSettings>;
+    onLocaleChanged: (listener: LocaleChangedListener) => () => void;
   };
   desktopActions: {
     respond: (response: DesktopActionRendererResponse) => Promise<{ ok: boolean }>;
