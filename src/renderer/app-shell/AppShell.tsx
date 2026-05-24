@@ -55,6 +55,11 @@ import {
   type SidebarNavOrderItemKey
 } from "./navigation/sidebarNavOrder";
 import { useI18n } from "../i18n/useI18n";
+import {
+  normalizeAssistantNavAgent,
+  normalizeAssistantNavAgentItemsResult,
+  normalizeAssistantNavAgents
+} from "../assistantNavigation";
 
 type ThemeMode = "light" | "dark";
 
@@ -79,10 +84,13 @@ const DEFAULT_ASSISTANT_NAV_AGENT: AssistantNavAgentItem = {
   displayName: "小宅",
   role: "平台总管",
   unreadCount: 0,
+  unreadChatCount: 0,
+  chatCount: 0,
   hasPendingAwaiting: false,
   latestChatId: null,
   latestPreview: "",
-  updatedAt: ""
+  updatedAt: "",
+  recentChats: []
 };
 
 function asRecord(value: unknown) {
@@ -112,28 +120,7 @@ function getDesktopSsoApi() {
 }
 
 function normalizeCachedAssistantNavAgentItem(value: unknown): AssistantNavAgentItem | null {
-  const record = asRecord(value);
-  const agentKey = typeof record.agentKey === "string" ? record.agentKey.trim() : "";
-  const displayName = typeof record.displayName === "string" ? record.displayName.trim() : "";
-  if (!agentKey || !displayName) {
-    return null;
-  }
-  const unreadCount = typeof record.unreadCount === "number" && Number.isFinite(record.unreadCount)
-    ? Math.max(0, Math.floor(record.unreadCount))
-    : 0;
-  const latestChatId = typeof record.latestChatId === "string" && record.latestChatId.trim()
-    ? record.latestChatId.trim()
-    : null;
-  return {
-    agentKey,
-    displayName,
-    role: typeof record.role === "string" ? record.role.trim() : "",
-    unreadCount,
-    hasPendingAwaiting: record.hasPendingAwaiting === true,
-    latestChatId,
-    latestPreview: typeof record.latestPreview === "string" ? record.latestPreview.trim() : "",
-    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : ""
-  };
+  return normalizeAssistantNavAgent(value);
 }
 
 function createDefaultAssistantNavAgents() {
@@ -421,9 +408,10 @@ export function AppShell() {
         if (!result.ok) {
           return;
         }
-        setAssistantNavAgents(result.items);
-        if (result.items.length > 0) {
-          writeAssistantNavAgentsCache(result.items);
+        const nextItems = normalizeAssistantNavAgents(result.items);
+        setAssistantNavAgents(nextItems);
+        if (nextItems.length > 0) {
+          writeAssistantNavAgentsCache(nextItems);
         } else {
           clearAssistantNavAgentsCache();
         }
@@ -447,9 +435,10 @@ export function AppShell() {
         return;
       }
       assistantNavAgentsRefreshIdRef.current += 1;
-      setAssistantNavAgents(result.items);
-      if (result.items.length > 0) {
-        writeAssistantNavAgentsCache(result.items);
+      const nextResult = normalizeAssistantNavAgentItemsResult(result);
+      setAssistantNavAgents(nextResult.items);
+      if (nextResult.items.length > 0) {
+        writeAssistantNavAgentsCache(nextResult.items);
       } else {
         clearAssistantNavAgentsCache();
       }

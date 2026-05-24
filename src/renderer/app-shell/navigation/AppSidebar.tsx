@@ -21,6 +21,10 @@ import { Collapse } from "../../components/Collapse";
 import { Tooltip } from "../../components/Tooltip";
 import { Popover } from "../../components/Popover";
 import { useI18n } from "../../i18n/useI18n";
+import {
+  getAssistantNavAgentNonNegativeInteger,
+  getAssistantNavAgentRecentChats
+} from "../../assistantNavigation";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -238,7 +242,7 @@ function createAgentNewChatRoute(agentKey: string) {
 }
 
 function createAgentDefaultRoute(agent: AssistantNavAgentItem) {
-  const firstChatId = agent.recentChats[0]?.chatId || agent.latestChatId || "";
+  const firstChatId = getAssistantNavAgentRecentChats(agent)[0]?.chatId || agent.latestChatId || "";
   return firstChatId
     ? createAgentChatRoute(agent.agentKey, firstChatId)
     : createAgentRoute(agent.agentKey);
@@ -256,7 +260,7 @@ function summarizeAgentStatus(
 ): SidebarStatusSummary {
   return {
     unreadCount: items.reduce(
-      (total, item) => total + Math.max(0, item.unreadCount),
+      (total, item) => total + getAssistantNavAgentNonNegativeInteger(item.unreadCount),
       0,
     ),
     pendingCount: items.filter((item) => item.hasPendingAwaiting).length,
@@ -850,11 +854,12 @@ export function AppSidebar({
     const expanded = expandedAssistantAgentKey === agent.agentKey;
     const selected =
       currentAgentKey === agent.agentKey || pendingAgentKey === agent.agentKey;
-    const recentChats = (agent.recentChats ?? []).slice(0, 5);
-    const chatCount = Math.max(0, agent.chatCount, recentChats.length);
+    const recentChats = getAssistantNavAgentRecentChats(agent).slice(0, 5);
+    const chatCount = Math.max(0, getAssistantNavAgentNonNegativeInteger(agent.chatCount), recentChats.length);
     const unreadCount = Math.max(
       0,
-      agent.unreadCount || agent.unreadChatCount || 0,
+      getAssistantNavAgentNonNegativeInteger(agent.unreadCount),
+      getAssistantNavAgentNonNegativeInteger(agent.unreadChatCount),
     );
     const latestPreview =
       agent.latestPreview || (chatCount > 0 ? "" : "暂无会话");
@@ -945,7 +950,7 @@ export function AppSidebar({
                     ) : null}
                     <span className="worker-panel-time-label">
                       {formatAssistantChatTime(
-                        agent.recentChats?.[0]?.updatedAt,
+                        getAssistantNavAgentRecentChats(agent)[0]?.updatedAt,
                       )}
                     </span>
                   </span>

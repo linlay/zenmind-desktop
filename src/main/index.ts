@@ -137,6 +137,7 @@ import type {
   DesktopPageContextSnapshot,
   DesktopPetAgentOption,
   DesktopPetSettingsInput,
+  RendererDiagnosticReport,
   AssistantPastedImageInput,
   AssistantWorkerOpenRequest,
   CustomSidebarItemInput,
@@ -1741,6 +1742,60 @@ function normalizeMainWindowBeforeShow(targetWindow: BrowserWindow) {
   }
 }
 
+function reportRendererDiagnostic(source: string, details: Record<string, unknown>) {
+  safeConsoleError("[renderer-diagnostic]", {
+    source,
+    ...details
+  });
+}
+
+function attachRendererDiagnostics(targetWindow: BrowserWindow) {
+  if (process.platform === "darwin") {
+    targetWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+      if (level < 2) {
+        return;
+      }
+      reportRendererDiagnostic("console-message", {
+        platform: "darwin",
+        level,
+        message,
+        line,
+        sourceId
+      });
+    });
+    return;
+  }
+
+  if (process.platform === "win32") {
+    targetWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+      if (level < 2) {
+        return;
+      }
+      reportRendererDiagnostic("console-message", {
+        platform: "win32",
+        level,
+        message,
+        line,
+        sourceId
+      });
+    });
+    return;
+  }
+
+  targetWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    if (level < 2) {
+      return;
+    }
+    reportRendererDiagnostic("console-message", {
+      platform: process.platform,
+      level,
+      message,
+      line,
+      sourceId
+    });
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -1767,6 +1822,7 @@ function createWindow() {
   });
 
   applyMainWindowAppearance(mainWindow);
+  attachRendererDiagnostics(mainWindow);
 
   mainWindow.once("ready-to-show", () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -3437,6 +3493,21 @@ function registerIpcHandlers() {
   };
   startDesktopActionBridge({
     ...desktopActionOptions
+  });
+
+  ipcMain.on("diagnostics.rendererError", (event, report: RendererDiagnosticReport) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    reportRendererDiagnostic("renderer-error", {
+      windowId: ownerWindow?.id ?? null,
+      route: event.sender.getURL(),
+      source: typeof report?.source === "string" ? report.source : "unknown",
+      message: typeof report?.message === "string" ? report.message : String(report),
+      stack: typeof report?.stack === "string" ? report.stack : undefined,
+      componentStack: typeof report?.componentStack === "string" ? report.componentStack : undefined,
+      filename: typeof report?.filename === "string" ? report.filename : undefined,
+      lineno: typeof report?.lineno === "number" ? report.lineno : undefined,
+      colno: typeof report?.colno === "number" ? report.colno : undefined
+    });
   });
 
   ipcMain.handle("shell.openExternal", async (_event, url: string) => {

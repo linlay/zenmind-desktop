@@ -1,4 +1,5 @@
 import { useLocation } from "react-router-dom";
+import { AppErrorBoundary } from "./AppErrorBoundary";
 import { AppShell } from "./app-shell/AppShell";
 import { DesktopPet } from "./copilot/pet-copilot/DesktopPet";
 import { QuickCopilotRoute } from "./copilot/quick-copilot/QuickCopilotRoute";
@@ -11,29 +12,40 @@ export { EXTERNAL_EXPERIMENTAL_ITEMS } from "./app-shell/AppShell";
 
 export function App() {
   const location = useLocation();
+  const resetKey = `${location.pathname}${location.search}${location.hash}`;
   if (location.pathname === "/quick-assistant") {
     return (
-      <ServicesProvider>
-        <QuickCopilotRoute />
-      </ServicesProvider>
+      <AppErrorBoundary resetKey={resetKey}>
+        <ServicesProvider>
+          <QuickCopilotRoute />
+        </ServicesProvider>
+      </AppErrorBoundary>
     );
   }
   if (location.pathname === DESKTOP_PET_ROUTE) {
-    return <DesktopPet />;
+    return (
+      <AppErrorBoundary resetKey={resetKey}>
+        <DesktopPet />
+      </AppErrorBoundary>
+    );
   }
   if (location.pathname === "/log-viewer") {
     return (
-      <ServicesProvider>
-        <LogViewerPage />
-      </ServicesProvider>
+      <AppErrorBoundary resetKey={resetKey}>
+        <ServicesProvider>
+          <LogViewerPage />
+        </ServicesProvider>
+      </AppErrorBoundary>
     );
   }
 
   return (
-    <I18nProvider>
-      <ServicesProvider>
-        <AppShell />
-      </ServicesProvider>
-    </I18nProvider>
+    <AppErrorBoundary resetKey={resetKey}>
+      <I18nProvider>
+        <ServicesProvider>
+          <AppShell />
+        </ServicesProvider>
+      </I18nProvider>
+    </AppErrorBoundary>
   );
 }

@@ -72,6 +72,16 @@ export type NativeDialogVisibilityListener = (state: { open: boolean }) => void;
 export type SandboxImageImportProgressListener = (event: SandboxImageImportProgressEvent) => void;
 export type LocaleChangedListener = (settings: LocaleSettings) => void;
 
+export interface RendererDiagnosticReport {
+  source: "window-error" | "unhandledrejection" | "react-error-boundary";
+  message: string;
+  stack?: string;
+  componentStack?: string;
+  filename?: string;
+  lineno?: number;
+  colno?: number;
+}
+
 export interface DesktopApi {
   shell: {
     openExternal: (url: string) => Promise<{ ok: boolean; error?: string }>;
@@ -218,6 +228,9 @@ export interface DesktopApi {
   currentPage: {
     publishSnapshot: (snapshot: DesktopPageContextSnapshot) => Promise<{ ok: boolean }>;
     getSnapshot: () => Promise<DesktopPageContextSnapshot | null>;
+  };
+  diagnostics: {
+    reportRendererError: (report: RendererDiagnosticReport) => void;
   };
   desktopPet: {
     getSettings: () => Promise<DesktopPetSettings>;

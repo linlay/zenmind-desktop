@@ -34,6 +34,10 @@ import type {
 } from "../../../shared/contracts";
 import { TASK_BOARD_PRIORITIES, TASK_BOARD_STATUSES } from "../../../shared/contracts";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
+import {
+  getAssistantNavAgentRecentChats,
+  normalizeAssistantNavAgents
+} from "../../assistantNavigation";
 import { useI18n } from "../../i18n/useI18n";
 import { PluginPage } from "../plugin/PluginPage";
 
@@ -511,7 +515,7 @@ function createNavigationAgentFromOption(agent: DesktopPetAgentOption): Assistan
 async function loadTaskBoardAgents(): Promise<AssistantNavAgentItem[]> {
   const navigationResult = await window.electronAPI.assistant.listNavigationAgents();
   if (navigationResult.ok && navigationResult.items.length > 0) {
-    return navigationResult.items;
+    return normalizeAssistantNavAgents(navigationResult.items);
   }
   const fallbackAgents = await window.electronAPI.assistant.listAgents();
   return fallbackAgents.map(createNavigationAgentFromOption);
@@ -598,7 +602,7 @@ function issueHasPendingAwaiting(issue: TaskBoardIssue, agents: AssistantNavAgen
   }
 
   return agents.some((agent) => {
-    const matchingChat = agent.recentChats.find((chat) => chat.chatId === chatId);
+    const matchingChat = getAssistantNavAgentRecentChats(agent).find((chat) => chat.chatId === chatId);
     if (matchingChat) {
       return matchingChat.hasPendingAwaiting;
     }
@@ -616,7 +620,7 @@ function resolveIssueAgentKey(issue: TaskBoardIssue, agents: AssistantNavAgentIt
   }
   const matchedAgent = agents.find((agent) =>
     agent.latestChatId === chatId ||
-    agent.recentChats.some((chat) => chat.chatId === chatId)
+    getAssistantNavAgentRecentChats(agent).some((chat) => chat.chatId === chatId)
   );
   return matchedAgent?.agentKey ?? "";
 }
@@ -700,7 +704,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   useEffect(() => {
     const unsubscribe = window.electronAPI.assistant.onNavigationAgentsChanged((result) => {
       if (result.ok) {
-        setAgents(result.items);
+        setAgents(normalizeAssistantNavAgents(result.items));
         return;
       }
       void loadTaskBoardAgents().then((items) => {
@@ -1822,6 +1826,7 @@ function TaskBoardColumn({
 function TaskBoardCard({
   issue,
   awaitingConfirmation,
+  agents,
   display,
   t,
   onEdit,
@@ -1830,6 +1835,7 @@ function TaskBoardCard({
 }: {
   issue: TaskBoardIssue;
   awaitingConfirmation: boolean;
+  agents: AssistantNavAgentItem[];
   display: DisplayState;
   t: TranslateFunction;
   onEdit: () => void;

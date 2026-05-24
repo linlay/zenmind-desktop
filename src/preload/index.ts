@@ -22,6 +22,7 @@ import type {
   LocaleChangedListener,
   NavigateListener,
   NativeDialogVisibilityListener,
+  RendererDiagnosticReport,
   SandboxImageImportProgressListener,
   ServicesChangedListener,
   ServiceId,
@@ -292,6 +293,11 @@ const api: DesktopApi = {
     publishSnapshot: (snapshot) => ipcRenderer.invoke("currentPage.publishSnapshot", snapshot),
     getSnapshot: () => ipcRenderer.invoke("currentPage.getSnapshot")
   },
+  diagnostics: {
+    reportRendererError: (report: RendererDiagnosticReport) => {
+      ipcRenderer.send("diagnostics.rendererError", report);
+    }
+  },
   desktopPet: {
     getSettings: () => ipcRenderer.invoke("desktopPet.getSettings"),
     getState: () => ipcRenderer.invoke("desktopPet.getState"),
@@ -411,5 +417,25 @@ const api: DesktopApi = {
     };
   }
 };
+
+window.addEventListener("error", (event) => {
+  api.diagnostics.reportRendererError({
+    source: "window-error",
+    message: event.message || "Renderer window error",
+    stack: event.error instanceof Error ? event.error.stack : undefined,
+    filename: event.filename,
+    lineno: event.lineno,
+    colno: event.colno
+  });
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  api.diagnostics.reportRendererError({
+    source: "unhandledrejection",
+    message: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined
+  });
+});
 
 contextBridge.exposeInMainWorld("electronAPI", api);
