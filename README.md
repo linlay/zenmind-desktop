@@ -81,10 +81,10 @@ DevTools 可用于查看控制台日志、网络请求、DOM 结构以及页面�
 - 需要认证的服务或插件（如 `agent-webclient`、`pan-webclient`）通过 `auth-bridge.ts` 构建带参数的嵌入 URL，并通过 postMessage Token Bridge 获取 JWT。
 
 ### 服务配置文件
-- 新安装的 Desktop 配置与运行数据根目录为 `~/.zenmind/.desktop`，按 `config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；这里不存放可替换程序产物。
-- 服务程序安装到 macOS `~/Library/Application Support/ZenMind/services/<service-id>/<version>/` 或 Windows `%APPDATA%\ZenMind\services\<service-id>\<version>\`，服务配置保存到 `~/.zenmind/.desktop/config/services/<service-id>/`，运行数据保存到 `~/.zenmind/.desktop/data/services/<service-id>/`。
+- 新安装的 Desktop 配置与运行数据根目录为 macOS `~/.zenmind/.desktop`、Windows `%APPDATA%\ZenMind\.desktop`，按 `config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；这里不存放可替换程序产物。
+- 服务程序安装到 macOS `~/Library/Application Support/ZenMind/services/<service-id>/<version>/` 或 Windows `%APPDATA%\ZenMind\services\<service-id>\<version>\`，服务配置保存到 Desktop 配置根目录的 `config/services/<service-id>/`，运行数据保存到 `data/services/<service-id>/`。
 - 每个内置服务会在安装时自动完成初始化；缺失的 `.env` 会从 `.env.example` 复制生成，随后由桌面端进行读写。
-- 插件程序安装到 macOS `~/Library/Application Support/ZenMind/plugins/<plugin-id>/<version>/` 或 Windows `%APPDATA%\ZenMind\plugins\<plugin-id>\<version>\`，插件配置保存到 `~/.zenmind/.desktop/config/plugins/<plugin-id>/`。
+- 插件程序安装到 macOS `~/Library/Application Support/ZenMind/plugins/<plugin-id>/<version>/` 或 Windows `%APPDATA%\ZenMind\plugins\<plugin-id>\<version>\`，插件配置保存到 Desktop 配置根目录的 `config/plugins/<plugin-id>/`。
 - 插件导入只负责解包和注册；点击控制中心中的“初始化”后，Desktop 才会补齐缺失配置、修复脚本权限并执行 `scripts.deploy`。
 
 ### 敏感信息管理
@@ -139,7 +139,7 @@ npm run dist:win-docker
 
 ### 卸载
 - macOS：运行 `/Applications/ZenMind.app/Contents/Resources/uninstall.sh`。脚本会先检查应用是否仍在运行，随后删除 `/Applications/ZenMind.app`，并弹窗询问是否清理 `~/.zenmind/.desktop` 和 `~/Library/Application Support/ZenMind`；默认保留数据。
-- Windows：通过控制面板或开始菜单中的卸载入口执行 NSIS 卸载器。卸载会删除安装目录，并询问是否清理 `%USERPROFILE%\.zenmind\.desktop` 和 `%APPDATA%\ZenMind`；默认保留数据。
+- Windows：通过控制面板或开始菜单中的卸载入口执行 NSIS 卸载器。卸载会删除安装目录，并询问是否清理 `%APPDATA%\ZenMind`；默认保留数据。
 
 ### 打包资源约定
 - `package.json` 中的 `build.files` 会打入桌面应用运行所需代码。
@@ -167,7 +167,7 @@ npm run dist:win-docker
 ### 日志与运行状态
 - 桌面端通过主进程统一管理服务运行状态。
 - 每个服务都会维护 PID 文件和日志文件路径，并在控制中心中展示。
-- 服务实际程序目录位于 Application Support 的 `ZenMind/services/<service-id>/<version>/` 下；配置、状态和日志分别位于 `~/.zenmind/.desktop/config/services/`、`state/services/`、`logs/services/`。
+- 服务实际程序目录位于 Application Support 的 `ZenMind/services/<service-id>/<version>/` 下；配置、状态和日志分别位于 Desktop 配置根目录的 `config/services/`、`state/services/`、`logs/services/`。
 
 ### 常见排查
 - 启动失败时，先检查控制中心展示的状态文案、日志文件路径和 PID 文件路径。

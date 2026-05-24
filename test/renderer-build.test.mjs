@@ -884,6 +884,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(mainProcess, /nativeTheme\.themeSource = themeMode === "dark" \? "dark" : "light"/);
   assert.match(mainProcess, /ipcMain\.handle\("settings\.setNativeThemeSource"/);
   assert.match(mainProcess, /ipcMain\.handle\("settings\.getLocale", async \(\) => initializeMainI18n\(app\)\)/);
+  assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);/);
+  assert.match(mainProcess, /initializeMainI18n\(app, \{ isFirstInstall: isFirstDesktopInstall \}\)/);
   assert.match(mainProcess, /ipcMain\.handle\("settings\.setLocale", async \(_event, locale: unknown\) => \{/);
   assert.match(mainProcess, /buildApplicationMenu\(\);[\s\S]{0,120}appTrayController\.refreshContextMenu\(\);[\s\S]{0,120}emitLocaleChanged\(settings\);/);
   assert.doesNotMatch(contracts, /setSidebarTranslucency/);

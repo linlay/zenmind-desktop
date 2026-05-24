@@ -16,6 +16,7 @@ const {
 } = require("../dist-electron/shared/sidebar-layout.js");
 
 test("sidebar layout normalizes legacy storage into the new state shape", () => {
+  assert.equal(SIDEBAR_EXPANDED_MIN_WIDTH, 280);
   assert.deepEqual(normalizeSidebarLayoutState(null), {
     mode: "expanded",
     expandedWidth: SIDEBAR_EXPANDED_MIN_WIDTH

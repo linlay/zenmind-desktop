@@ -25,6 +25,12 @@ test("desktop locale store falls back to supported system locale", () => {
   assert.deepEqual(settings, { locale: "en-US", source: "system" });
 });
 
+test("desktop locale store defaults first installs to English", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-locale-store-first-install-"));
+  const settings = readDesktopLocaleSettings(createApp(root, "zh-CN"), { isFirstInstall: true });
+  assert.deepEqual(settings, { locale: "en-US", source: "default" });
+});
+
 test("desktop locale store falls back to default for unsupported locale", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-locale-store-"));
   const settings = readDesktopLocaleSettings(createApp(root, "fr-FR"));
@@ -36,7 +42,7 @@ test("desktop locale store saves preferences under desktop config root", () => {
   const app = createApp(root, "fr-FR");
   const saved = saveDesktopLocale(app, "en-US");
   assert.deepEqual(saved, { locale: "en-US", source: "stored" });
-  assert.deepEqual(readDesktopLocaleSettings(app), { locale: "en-US", source: "stored" });
+  assert.deepEqual(readDesktopLocaleSettings(app, { isFirstInstall: true }), { locale: "en-US", source: "stored" });
   assert.equal(
     __testInternals.getPreferencesPath(app),
     path.join(root, "home", ".zenmind", ".desktop", "config", "desktop", "preferences.json")

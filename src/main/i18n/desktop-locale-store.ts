@@ -5,9 +5,14 @@ import { DEFAULT_LOCALE, normalizeLocale, type LocaleSettings, type SupportedLoc
 import { getDesktopConfigRoot } from "../user-paths";
 
 const PREFERENCES_FILE = "preferences.json";
+const FIRST_INSTALL_DEFAULT_LOCALE: SupportedLocale = "en-US";
 
 export type DesktopPreferences = {
   locale: SupportedLocale;
+};
+
+type DesktopLocaleReadOptions = {
+  isFirstInstall?: boolean;
 };
 
 function getPreferencesPath(app: App) {
@@ -41,10 +46,13 @@ function getSystemLocale(app: App) {
   }
 }
 
-export function readDesktopLocaleSettings(app: App): LocaleSettings {
+export function readDesktopLocaleSettings(app: App, options: DesktopLocaleReadOptions = {}): LocaleSettings {
   const storedLocale = normalizeLocale(readStoredPreferences(app).locale);
   if (storedLocale) {
     return { locale: storedLocale, source: "stored" };
+  }
+  if (options.isFirstInstall) {
+    return { locale: FIRST_INSTALL_DEFAULT_LOCALE, source: "default" };
   }
   const systemLocale = getSystemLocale(app);
   if (systemLocale) {
@@ -74,6 +82,7 @@ export function saveDesktopLocale(app: App, locale: SupportedLocale): LocaleSett
 }
 
 export const __testInternals = {
+  FIRST_INSTALL_DEFAULT_LOCALE,
   PREFERENCES_FILE,
   getPreferencesPath
 };

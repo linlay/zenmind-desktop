@@ -167,6 +167,7 @@ import {
   resolveBuiltinBrowserUrl
 } from "../shared/browser-surfaces";
 import {
+  desktopDataRootExists,
   ensureDataRoot,
   getDataRoot,
   getElectronUserDataRoot
@@ -282,7 +283,11 @@ function getServiceWebviewPreloadUrl() {
 
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName(ZENMIND_PRODUCT_NAME);
-initializeMainI18n(app);
+const isFirstDesktopInstall = !desktopDataRootExists(app);
+const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
+if (isFirstDesktopInstall) {
+  setMainLocale(app, initialLocaleSettings.locale);
+}
 const homeZenmindRootAtProcessStart = resolveHomeZenmindRoot(app, process.platform);
 const requireEnvZipImportAtStartup = shouldRequireMacEnvZipImport({
   platform: process.platform,
@@ -295,7 +300,10 @@ if (process.platform === "win32") {
   app.setAppUserModelId(ZENMIND_APP_ID);
 }
 
-let desktopPetSettings = readDesktopPetStoredState(app, process.platform);
+let desktopPetSettings = readDesktopPetStoredState(app, process.platform, { isFirstInstall: isFirstDesktopInstall });
+if (isFirstDesktopInstall) {
+  desktopPetSettings = saveDesktopPetSettings(app, desktopPetSettings, process.platform);
+}
 let desktopPetLocalStatus: DesktopPetLocalStatus = createDefaultDesktopPetLocalStatus(desktopPetSettings);
 let desktopPetAgentStatus: DesktopPetBoundAgentStatus | null = null;
 let desktopPetAgentOptions: DesktopPetAgentOption[] = [];

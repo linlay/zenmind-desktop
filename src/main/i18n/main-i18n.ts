@@ -5,8 +5,8 @@ import { readDesktopLocaleSettings, saveDesktopLocale } from "./desktop-locale-s
 let currentLocale: SupportedLocale = DEFAULT_LOCALE;
 let currentTranslator = createTranslator(currentLocale);
 
-export function initializeMainI18n(app: App): LocaleSettings {
-  const settings = readDesktopLocaleSettings(app);
+export function initializeMainI18n(app: App, options: { isFirstInstall?: boolean } = {}): LocaleSettings {
+  const settings = readDesktopLocaleSettings(app, options);
   currentLocale = settings.locale;
   currentTranslator = createTranslator(currentLocale);
   return settings;

@@ -258,6 +258,34 @@ test("desktop pet persists state on Windows", (t) => {
   assert.equal(fs.existsSync(desktopPetInternals.getDesktopPetRoot(app)), true);
 });
 
+test("desktop pet defaults to disabled on first install", (t) => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-pet-first-install-"));
+  t.after(() => {
+    fs.rmSync(userData, { recursive: true, force: true });
+  });
+  const app = createPathApp(userData);
+
+  const state = readDesktopPetStoredState(app, "darwin", { isFirstInstall: true });
+
+  assert.equal(state.enabled, false);
+  assert.equal(state.lastVisible, false);
+  assert.equal(state.boundAgentKey, DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY);
+  assert.equal(state.appearanceId, DEFAULT_DESKTOP_PET_APPEARANCE_ID);
+});
+
+test("desktop pet keeps the legacy missing-file default for existing installs", (t) => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-pet-existing-install-"));
+  t.after(() => {
+    fs.rmSync(userData, { recursive: true, force: true });
+  });
+  const app = createPathApp(userData);
+
+  const state = readDesktopPetStoredState(app, "darwin");
+
+  assert.equal(state.enabled, true);
+  assert.equal(state.lastVisible, true);
+});
+
 test("desktop pet ignores state files on unsupported platforms", (t) => {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-pet-unsupported-"));
   t.after(() => {

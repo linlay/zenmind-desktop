@@ -17,6 +17,7 @@ const DESKTOP_DIRS = [
 type DesktopRootOptions = {
   platform?: NodeJS.Platform;
   homePath: string;
+  appDataPath: string;
 };
 
 type ApplicationSupportRootOptions = {
@@ -28,11 +29,18 @@ function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
   return platform === "win32" ? path.win32 : path;
 }
 
-function resolveDesktopRootFromHome({
+function resolveDesktopRoot({
   platform = process.platform,
-  homePath
+  homePath,
+  appDataPath
 }: DesktopRootOptions) {
   const pathApi = pathApiForPlatform(platform);
+  if (platform === "win32") {
+    return pathApi.resolve(pathApi.join(appDataPath, "ZenMind", ".desktop"));
+  }
+  if (platform === "darwin") {
+    return pathApi.resolve(pathApi.join(homePath, ".zenmind", ".desktop"));
+  }
   return pathApi.resolve(pathApi.join(homePath, ".zenmind", ".desktop"));
 }
 
@@ -79,9 +87,10 @@ function getAppDataPath(app: Pick<App, "getPath">) {
 }
 
 function getDesktopRootPath(app: Pick<App, "getPath">) {
-  return resolveDesktopRootFromHome({
+  return resolveDesktopRoot({
     platform: process.platform,
-    homePath: getHomePath(app)
+    homePath: getHomePath(app),
+    appDataPath: getAppDataPath(app)
   });
 }
 
@@ -118,6 +127,10 @@ export function getDataRoot(app: App) {
 }
 
 export const getDesktopRoot = getDataRoot;
+
+export function desktopDataRootExists(app: App) {
+  return fs.existsSync(getDesktopRootPath(app));
+}
 
 export function ensureDataRoot(app: App) {
   const dataRoot = getDesktopRootPath(app);
@@ -233,6 +246,6 @@ export function getElectronUserDataRoot(app: App) {
 
 export const __testInternals = {
   DESKTOP_DIRS,
-  resolveDesktopRootFromHome,
+  resolveDesktopRoot,
   resolveApplicationSupportRoot
 };

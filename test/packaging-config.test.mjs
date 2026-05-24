@@ -68,8 +68,8 @@ test("custom uninstall assets default to keeping data and delete desktop plus pr
   assert.match(installerScript, /SetShellVarContext current/);
   assert.match(installerScript, /MessageBox MB_YESNO\|MB_ICONQUESTION/);
   assert.match(installerScript, /\/SD IDNO/);
-  assert.match(installerScript, /RMDir \/r "\$PROFILE\\.zenmind\\.desktop"/);
   assert.match(installerScript, /RMDir \/r "\$APPDATA\\ZenMind"/);
+  assert.doesNotMatch(installerScript, /\$PROFILE\\.zenmind\\.desktop/);
   assert.doesNotMatch(installerScript, /\$APPDATA\\zenmind-desktop/);
   assert.match(uninstallScript, /APP_NAME="ZenMind"/);
   assert.match(uninstallScript, /APP_PATH="\/Applications\/\$\{APP_NAME\}\.app"/);

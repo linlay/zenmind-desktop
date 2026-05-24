@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   __testInternals,
+  desktopDataRootExists,
   ensureDataRoot,
   getApplicationSupportRoot,
   getCredentialsRoot,
@@ -81,13 +82,14 @@ test("ensureDataRoot creates layered subdirectories under the current data root"
   assert.equal(fs.existsSync(path.join(dataRoot, "state", "desktop")), true);
 });
 
-test("Windows new installs resolve to the layered desktop root under the user profile", () => {
-  const root = __testInternals.resolveDesktopRootFromHome({
+test("Windows new installs resolve to the layered desktop root under AppData", () => {
+  const root = __testInternals.resolveDesktopRoot({
     platform: "win32",
-    homePath: String.raw`C:\Users\alice`
+    homePath: String.raw`C:\Users\alice`,
+    appDataPath: String.raw`C:\Users\alice\AppData\Roaming`
   });
 
-  assert.equal(root, String.raw`C:\Users\alice\.zenmind\.desktop`);
+  assert.equal(root, String.raw`C:\Users\alice\AppData\Roaming\ZenMind\.desktop`);
 });
 
 test("macOS program root resolves under Application Support/ZenMind", () => {
@@ -119,6 +121,20 @@ test("appData contents do not change the desktop root", (t) => {
   });
 
   assert.equal(getDataRoot(app), path.resolve(expectedRoot));
+});
+
+test("desktop data root existence is checked before creating directories", (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-paths-exists-"));
+  const app = createApp(tempRoot);
+  const expectedRoot = path.join(tempRoot, "home", ".zenmind", ".desktop");
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  assert.equal(desktopDataRootExists(app), false);
+  fs.mkdirSync(expectedRoot, { recursive: true });
+  assert.equal(desktopDataRootExists(app), true);
 });
 
 test("managed directory helpers split programs from desktop configuration", (t) => {

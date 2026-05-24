@@ -70,6 +70,10 @@ type DesktopPetStoredState = {
   };
 };
 
+type DesktopPetReadOptions = {
+  isFirstInstall?: boolean;
+};
+
 export type DesktopPetLocalStatus = {
   status: DesktopPetStatus;
   hint: string;
@@ -166,7 +170,11 @@ function isGenericDesktopPetDoneHint(value: unknown) {
   return !normalized || DESKTOP_PET_STATUS_HINTS.has(normalized);
 }
 
-function sanitizeDesktopPetStoredState(value: unknown, supported: boolean): DesktopPetStoredState {
+function sanitizeDesktopPetStoredState(
+  value: unknown,
+  supported: boolean,
+  options: DesktopPetReadOptions = {}
+): DesktopPetStoredState {
   const candidate = typeof value === "object" && value !== null
     ? value as Partial<DesktopPetStoredState>
     : {};
@@ -177,8 +185,8 @@ function sanitizeDesktopPetStoredState(value: unknown, supported: boolean): Desk
       }
     : undefined;
   return {
-    enabled: supported ? candidate.enabled !== false : false,
-    lastVisible: supported ? candidate.lastVisible !== false : false,
+    enabled: supported ? candidate.enabled ?? !options.isFirstInstall : false,
+    lastVisible: supported ? candidate.lastVisible ?? !options.isFirstInstall : false,
     unreadCount: sanitizeDesktopPetUnreadCount(candidate.unreadCount),
     boundAgentKey: sanitizeDesktopPetBoundAgentKey(candidate.boundAgentKey),
     appearanceId: sanitizeDesktopPetAppearanceId(candidate.appearanceId),
@@ -190,7 +198,11 @@ export function isDesktopPetSupportedPlatform(platform: Platform) {
   return platform === "darwin" || platform === "win32";
 }
 
-export function readDesktopPetStoredState(app: App, platform: Platform = process.platform) {
+export function readDesktopPetStoredState(
+  app: App,
+  platform: Platform = process.platform,
+  options: DesktopPetReadOptions = {}
+) {
   const supported = isDesktopPetSupportedPlatform(platform);
   if (!supported) {
     return sanitizeDesktopPetStoredState(null, supported);
@@ -202,7 +214,7 @@ export function readDesktopPetStoredState(app: App, platform: Platform = process
     return sanitizeDesktopPetStoredState(JSON.parse(raw), supported);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT" || (error as Error).name === "SyntaxError") {
-      return sanitizeDesktopPetStoredState(null, supported);
+      return sanitizeDesktopPetStoredState(null, supported, options);
     }
     throw error;
   }
