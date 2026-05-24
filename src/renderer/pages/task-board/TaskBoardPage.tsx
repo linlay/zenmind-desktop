@@ -91,6 +91,7 @@ type TaskBoardContextMenu = {
 };
 
 const TASK_BOARD_FEEDBACK_AUTO_CLOSE_MS = 3000;
+const TASK_BOARD_TODO_ASSIGNEE_START_DELAY_MS = 1000;
 const VISIBLE_TASK_BOARD_STATUSES = [
   "backlog",
   "todo",
@@ -527,7 +528,7 @@ function resolveAssistantTaskStatus(event: AssistantEvent, t: TranslateFunction)
 } | null {
   if (event.type === "done" || event.type === "run.complete") {
     return {
-      status: "in_review",
+      status: "done",
       tone: "success",
       message: t("taskBoard.feedback.agentDone")
     };
@@ -655,6 +656,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const [scheduleMenuOpen, setScheduleMenuOpen] = useState<ScheduleMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<TaskBoardContextMenu | null>(null);
+  const [backlogExpanded, setBacklogExpanded] = useState(false);
   const issuesRef = useRef<TaskBoardIssue[]>([]);
   const selectedScheduleTimeRef = useRef<HTMLButtonElement | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -984,6 +986,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     const resolvedScheduleCron = buildScheduleCron(form.schedulePreset, form.scheduleTime, form.scheduleCron);
     const resolvedScheduleMessage = form.scheduleMessage.trim() || form.description.trim() || title;
     const shouldRunAfterSave = form.status === "in_progress" && !modal?.issue?.runId;
+    const shouldRunTodoAssigneeAfterDelay = form.status === "todo" && Boolean(form.assigneeAgentKey) && !modal?.issue?.runId;
     if (shouldRunAfterSave && !form.assigneeAgentKey) {
       setFeedback({ tone: "error", message: t("taskBoard.feedback.assigneeRequiredForProgress") });
       return;
@@ -1047,6 +1050,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         setModal(null);
         if (shouldRunAfterSave && savedIssue) {
           void assignIssueToAssistant(savedIssue, form.assigneeAgentKey);
+        } else if (shouldRunTodoAssigneeAfterDelay && savedIssue) {
+          const savedAgentKey = form.assigneeAgentKey;
+          window.setTimeout(() => {
+            void assignIssueToAssistant(savedIssue, savedAgentKey);
+          }, TASK_BOARD_TODO_ASSIGNEE_START_DELAY_MS);
         }
       }
     } catch (error) {
@@ -1353,7 +1361,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         onDragCancel={clearActiveDrag}
         onDragEnd={handleDragEnd}
       >
-        <div className="task-board-columns" aria-busy={loading}>
+        <div
+          className={`task-board-columns ${backlogExpanded ? "is-backlog-expanded" : ""}`}
+          aria-busy={loading}
+          onClick={() => setBacklogExpanded(false)}
+        >
           {VISIBLE_TASK_BOARD_STATUSES.map((status) => {
             const columnIssues = filteredIssues.filter((issue) => issue.status === status);
             return (
@@ -1366,6 +1378,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 t={t}
                 canAdd={taskBoardReady}
                 onAdd={() => openCreateModal(status)}
+                onSelectColumn={() => setBacklogExpanded(status === "backlog")}
                 onEdit={openEditModal}
                 onOpenChat={openAssistantIssueChat}
                 onOpenContextMenu={openIssueContextMenu}
@@ -1548,8 +1561,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   const assigneeAgentKey = event.target.value;
                   setForm((current) => ({
                     ...current,
-                    assigneeAgentKey,
-                    status: current.status === "todo" && assigneeAgentKey ? "in_progress" : current.status
+                    assigneeAgentKey
                   }));
                 }}
               >
@@ -1734,6 +1746,7 @@ function TaskBoardColumn({
   t,
   canAdd,
   onAdd,
+  onSelectColumn,
   onEdit,
   onOpenChat,
   onOpenContextMenu
@@ -1745,6 +1758,7 @@ function TaskBoardColumn({
   t: TranslateFunction;
   canAdd: boolean;
   onAdd: () => void;
+  onSelectColumn: () => void;
   onEdit: (issue: TaskBoardIssue) => void;
   onOpenChat: (issue: TaskBoardIssue) => void | Promise<void>;
   onOpenContextMenu: (issue: TaskBoardIssue, event: MouseEvent<HTMLElement>) => void;
@@ -1753,7 +1767,14 @@ function TaskBoardColumn({
   const meta = STATUS_META[status];
   const label = t(meta.labelKey);
   return (
-    <section ref={setNodeRef} className={`task-board-column is-${status} is-${meta.tone} ${isOver ? "is-over" : ""}`}>
+    <section
+      ref={setNodeRef}
+      className={`task-board-column is-${status} is-${meta.tone} ${isOver ? "is-over" : ""}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelectColumn();
+      }}
+    >
       <header className="task-board-column-head">
         <div className="task-board-column-title">
           <span className={`task-board-status-dot is-${meta.tone}`} aria-hidden="true" />
@@ -1761,7 +1782,17 @@ function TaskBoardColumn({
           <span>{issues.length}</span>
         </div>
         <div className="task-board-column-actions">
-          <button type="button" aria-label={t("taskBoard.column.addTo", { status: label })} disabled={!canAdd} onClick={onAdd}>+</button>
+          <button
+            type="button"
+            aria-label={t("taskBoard.column.addTo", { status: label })}
+            disabled={!canAdd}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAdd();
+            }}
+          >
+            +
+          </button>
         </div>
       </header>
       <div
@@ -1835,6 +1866,7 @@ function TaskBoardCard({
       {...sortable.attributes}
       aria-disabled={undefined}
       onContextMenu={handleContextMenu}
+      onClick={(event) => event.stopPropagation()}
       {...(dragLocked ? {} : sortable.listeners)}
     >
       <TaskBoardCardContent
