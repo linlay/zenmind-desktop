@@ -33,6 +33,8 @@ import type {
   TaskBoardStatus
 } from "../../../shared/contracts";
 import { TASK_BOARD_PRIORITIES, TASK_BOARD_STATUSES } from "../../../shared/contracts";
+import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
+import { useI18n } from "../../i18n/useI18n";
 import { PluginPage } from "../plugin/PluginPage";
 
 type MenuKind = "filter" | "display" | null;
@@ -88,24 +90,23 @@ type TaskBoardContextMenu = {
   y: number;
 };
 
-const missingTaskBoardApiMessage = "任务看板 Desktop API 未加载。请退出并重新启动 ZenMind Desktop，让新的 preload 生效。";
 const TASK_BOARD_FEEDBACK_AUTO_CLOSE_MS = 3000;
 
-const STATUS_META: Record<TaskBoardStatus, { label: string; shortLabel: string; tone: string }> = {
-  backlog: { label: "Backlog", shortLabel: "待整理", tone: "neutral" },
-  todo: { label: "Todo", shortLabel: "待办", tone: "muted" },
-  in_progress: { label: "In Progress", shortLabel: "进行中", tone: "warning" },
-  blocked: { label: "Blocked", shortLabel: "阻塞", tone: "danger" },
-  in_review: { label: "In Review", shortLabel: "评审中", tone: "success" },
-  done: { label: "Done", shortLabel: "已完成", tone: "info" }
+const STATUS_META: Record<TaskBoardStatus, { labelKey: TranslationKey; tone: string }> = {
+  backlog: { labelKey: "taskBoard.status.backlog", tone: "neutral" },
+  todo: { labelKey: "taskBoard.status.todo", tone: "muted" },
+  in_progress: { labelKey: "taskBoard.status.inProgress", tone: "warning" },
+  blocked: { labelKey: "taskBoard.status.blocked", tone: "danger" },
+  in_review: { labelKey: "taskBoard.status.inReview", tone: "success" },
+  done: { labelKey: "taskBoard.status.done", tone: "info" }
 };
 
-const PRIORITY_META: Record<TaskBoardPriority, { label: string; tone: string; bars: number }> = {
-  urgent: { label: "Urgent", tone: "danger", bars: 4 },
-  high: { label: "High", tone: "high", bars: 3 },
-  medium: { label: "Medium", tone: "medium", bars: 2 },
-  low: { label: "Low", tone: "low", bars: 1 },
-  none: { label: "No priority", tone: "none", bars: 0 }
+const PRIORITY_META: Record<TaskBoardPriority, { labelKey: TranslationKey; tone: string; bars: number }> = {
+  urgent: { labelKey: "taskBoard.priority.urgent", tone: "danger", bars: 4 },
+  high: { labelKey: "taskBoard.priority.high", tone: "high", bars: 3 },
+  medium: { labelKey: "taskBoard.priority.medium", tone: "medium", bars: 2 },
+  low: { labelKey: "taskBoard.priority.low", tone: "low", bars: 1 },
+  none: { labelKey: "taskBoard.priority.none", tone: "none", bars: 0 }
 };
 
 const DEFAULT_TASK_BOARD_SCHEDULE_PLAN: TaskBoardSchedulePlan = "daily";
@@ -113,12 +114,12 @@ const DEFAULT_TASK_BOARD_SCHEDULE_TIME = "09:00";
 const DEFAULT_TASK_BOARD_SCHEDULE_CRON = "0 9 * * *";
 
 const TASK_BOARD_SCHEDULE_PLANS = [
-  { label: "每小时", value: "hourly" },
-  { label: "每天", value: "daily" },
-  { label: "工作日", value: "weekdays" },
-  { label: "每周", value: "weekly" },
-  { label: "自定义", value: "custom" }
-] satisfies ReadonlyArray<{ label: string; value: TaskBoardSchedulePlan }>;
+  { labelKey: "taskBoard.schedule.hourly", value: "hourly" },
+  { labelKey: "taskBoard.schedule.daily", value: "daily" },
+  { labelKey: "taskBoard.schedule.weekdays", value: "weekdays" },
+  { labelKey: "taskBoard.schedule.weekly", value: "weekly" },
+  { labelKey: "taskBoard.schedule.custom", value: "custom" }
+] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: TaskBoardSchedulePlan }>;
 
 const TASK_BOARD_SCHEDULE_TIME_OPTIONS = buildScheduleTimeOptions();
 
@@ -322,8 +323,9 @@ function parseScheduleFormFromCron(value: string | null | undefined) {
   };
 }
 
-function getSchedulePlanLabel(plan: TaskBoardSchedulePlan) {
-  return TASK_BOARD_SCHEDULE_PLANS.find((candidate) => candidate.value === plan)?.label ?? "自定义";
+function getSchedulePlanLabel(plan: TaskBoardSchedulePlan, t: TranslateFunction) {
+  const labelKey = TASK_BOARD_SCHEDULE_PLANS.find((candidate) => candidate.value === plan)?.labelKey ?? "taskBoard.schedule.custom";
+  return t(labelKey);
 }
 
 function buildCompactTaskTitle(description: string) {
@@ -335,17 +337,17 @@ function buildCompactTaskTitle(description: string) {
   return Array.from(firstLine).slice(0, 24).join("");
 }
 
-function buildAssistantPrompt(issue: TaskBoardIssue) {
+function buildAssistantPrompt(issue: TaskBoardIssue, t: TranslateFunction) {
   const parts = [
-    "请你处理下面这个 ZenMind 任务看板任务，并在完成后总结结果。",
-    "不要直接修改任务看板文件或任务状态；Desktop 会在你完成后自动把任务更新到 In Review。",
-    `任务编号：${issue.identifier}`,
-    `标题：${issue.title}`,
-    `状态：${STATUS_META[issue.status].label}`,
-    `优先级：${PRIORITY_META[issue.priority].label}`
+    t("taskBoard.prompt.intro"),
+    t("taskBoard.prompt.rule"),
+    t("taskBoard.prompt.identifier", { value: issue.identifier }),
+    t("taskBoard.prompt.title", { value: issue.title }),
+    t("taskBoard.prompt.status", { value: t(STATUS_META[issue.status].labelKey) }),
+    t("taskBoard.prompt.priority", { value: t(PRIORITY_META[issue.priority].labelKey) })
   ];
   if (issue.description.trim()) {
-    parts.push(`描述：${issue.description.trim()}`);
+    parts.push(t("taskBoard.prompt.description", { value: issue.description.trim() }));
   }
   return parts.join("\n");
 }
@@ -445,7 +447,7 @@ function isFiveFieldCron(value: string) {
   return value.trim().split(/\s+/u).length === 5;
 }
 
-function getScheduleDisplayLabel(issue: TaskBoardIssue) {
+function getScheduleDisplayLabel(issue: TaskBoardIssue, t: TranslateFunction) {
   if (!issue.scheduleEnabled || !issue.scheduleCron) {
     return "";
   }
@@ -455,9 +457,9 @@ function getScheduleDisplayLabel(issue: TaskBoardIssue) {
   }
   if (scheduleForm.schedulePreset === "hourly") {
     const minute = Number(scheduleForm.scheduleTime.split(":")[1]);
-    return `每小时 ${padScheduleNumber(minute)} 分`;
+    return t("taskBoard.schedule.hourlyAtMinute", { minute: padScheduleNumber(minute) });
   }
-  return `${getSchedulePlanLabel(scheduleForm.schedulePreset)} ${scheduleForm.scheduleTime}`;
+  return `${getSchedulePlanLabel(scheduleForm.schedulePreset, t)} ${scheduleForm.scheduleTime}`;
 }
 
 function createNavigationAgentFromOption(agent: DesktopPetAgentOption): AssistantNavAgentItem {
@@ -486,7 +488,7 @@ async function loadTaskBoardAgents(): Promise<AssistantNavAgentItem[]> {
   return fallbackAgents.map(createNavigationAgentFromOption);
 }
 
-function resolveAssistantTaskStatus(event: AssistantEvent): {
+function resolveAssistantTaskStatus(event: AssistantEvent, t: TranslateFunction): {
   status: TaskBoardStatus;
   tone: Feedback["tone"];
   message: string;
@@ -495,7 +497,7 @@ function resolveAssistantTaskStatus(event: AssistantEvent): {
     return {
       status: "in_review",
       tone: "success",
-      message: "智能体已处理完成，任务已更新为 In Review。"
+      message: t("taskBoard.feedback.agentDone")
     };
   }
   if (
@@ -513,7 +515,7 @@ function resolveAssistantTaskStatus(event: AssistantEvent): {
     return {
       status: "blocked",
       tone: "error",
-      message: "智能体处理未完成，任务已更新为 Blocked。"
+      message: t("taskBoard.feedback.agentIncomplete")
     };
   }
   return null;
@@ -555,11 +557,11 @@ function isIssueChatViewable(issue: TaskBoardIssue) {
   ));
 }
 
-function getIssueChatActionLabel(issue: TaskBoardIssue) {
+function getIssueChatActionLabel(issue: TaskBoardIssue, t: TranslateFunction) {
   if (!isIssueChatViewable(issue)) {
     return null;
   }
-  return issue.status === "in_progress" ? "查看/确认" : "查看聊天";
+  return issue.status === "in_progress" ? t("taskBoard.chat.viewOrConfirm") : t("taskBoard.chat.view");
 }
 
 function issueHasPendingAwaiting(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
@@ -603,6 +605,7 @@ function buildTaskBoardChatEmbedPath(request: TaskBoardChatModalRequest) {
 }
 
 export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
+  const { t } = useI18n();
   const [issues, setIssues] = useState<TaskBoardIssue[]>([]);
   const [agents, setAgents] = useState<AssistantNavAgentItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -624,6 +627,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const selectedScheduleTimeRef = useRef<HTMLButtonElement | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const taskBoardReady = readTaskBoardApi() !== null;
+  const missingTaskBoardApiMessage = t("taskBoard.missingApi", { appName: t("app.name") });
 
   useEffect(() => {
     let cancelled = false;
@@ -650,7 +654,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         if (!cancelled) {
           setFeedback({
             tone: "error",
-            message: error instanceof Error ? error.message : "任务看板加载失败。"
+            message: error instanceof Error ? error.message : t("taskBoard.feedback.loadFailed")
           });
         }
       } finally {
@@ -663,7 +667,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [missingTaskBoardApiMessage, t]);
 
   useEffect(() => {
     const unsubscribe = window.electronAPI.assistant.onNavigationAgentsChanged((result) => {
@@ -741,7 +745,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
 
   useEffect(() => {
     const removeAssistantEventListener = window.electronAPI.assistant.onAssistantEvent(async (event) => {
-      const nextTaskStatus = resolveAssistantTaskStatus(event);
+      const nextTaskStatus = resolveAssistantTaskStatus(event, t);
       if (!nextTaskStatus) {
         return;
       }
@@ -764,13 +768,13 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       } catch (error) {
         setFeedback({
           tone: "error",
-          message: error instanceof Error ? error.message : "任务状态回写失败。"
+          message: error instanceof Error ? error.message : t("taskBoard.feedback.statusWritebackFailed")
         });
       }
     });
 
     return removeAssistantEventListener;
-  }, []);
+  }, [t]);
 
   const filteredIssues = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -827,7 +831,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     setAttachmentBusy(false);
     setScheduleMenuOpen(null);
     setModal({ mode: "edit", issue });
-    setFeedback({ tone: "error", message: "请选择智能体后再进入 In Progress。" });
+    setFeedback({ tone: "error", message: t("taskBoard.feedback.assigneeRequiredForProgress") });
   }
 
   function toggleFormCompactMode() {
@@ -900,7 +904,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: error instanceof Error ? error.message : "附件上传失败。"
+        message: error instanceof Error ? error.message : t("taskBoard.feedback.attachmentUploadFailed")
       });
     } finally {
       setAttachmentBusy(false);
@@ -919,7 +923,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   async function openTaskBoardAttachment(attachment: AssistantAttachment) {
     const chatId = form.attachmentChatId.trim();
     if (!chatId) {
-      setFeedback({ tone: "error", message: "附件位置缺失，无法打开。" });
+      setFeedback({ tone: "error", message: t("taskBoard.feedback.attachmentLocationMissing") });
       return;
     }
     const result = await window.electronAPI.assistant.openAttachment(chatId, attachment.id);
@@ -937,26 +941,26 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       ? buildCompactTaskTitle(form.description)
       : form.title.trim();
     if (!title) {
-      setFeedback({ tone: "error", message: formCompact ? "请输入任务描述。" : "请输入任务标题。" });
+      setFeedback({ tone: "error", message: formCompact ? t("taskBoard.feedback.descriptionRequired") : t("taskBoard.feedback.titleRequired") });
       return;
     }
     const resolvedScheduleCron = buildScheduleCron(form.schedulePreset, form.scheduleTime, form.scheduleCron);
     const resolvedScheduleMessage = form.scheduleMessage.trim() || form.description.trim() || title;
     const shouldRunAfterSave = form.status === "in_progress" && !modal?.issue?.runId;
     if (shouldRunAfterSave && !form.assigneeAgentKey) {
-      setFeedback({ tone: "error", message: "请选择智能体后再进入 In Progress。" });
+      setFeedback({ tone: "error", message: t("taskBoard.feedback.assigneeRequiredForProgress") });
       return;
     }
     if (form.scheduleEnabled && !form.assigneeAgentKey) {
-      setFeedback({ tone: "error", message: "请选择智能体后再启用定时任务。" });
+      setFeedback({ tone: "error", message: t("taskBoard.feedback.assigneeRequiredForSchedule") });
       return;
     }
     if (form.scheduleEnabled && !isFiveFieldCron(resolvedScheduleCron)) {
-      setFeedback({ tone: "error", message: "定时任务需要 5 段 cron，例如 0 8 * * *。" });
+      setFeedback({ tone: "error", message: t("taskBoard.feedback.invalidCron") });
       return;
     }
     if (form.scheduleEnabled && !resolvedScheduleMessage) {
-      setFeedback({ tone: "error", message: "请填写定时任务要执行的内容。" });
+      setFeedback({ tone: "error", message: t("taskBoard.feedback.scheduleMessageRequired") });
       return;
     }
     const assigneeName = getAssigneeName(form.assigneeAgentKey, agents);
@@ -998,7 +1002,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         );
         nextIssues = mergeTaskBoardIssuesAttachmentDraft(scheduleResult.issues, savedIssue);
         nextTone = scheduleResult.ok ? "success" : "error";
-        nextMessage = scheduleResult.ok ? "任务和定时任务已保存。" : scheduleResult.message;
+        nextMessage = scheduleResult.ok ? t("taskBoard.feedback.taskAndScheduleSaved") : scheduleResult.message;
       }
       setIssues(sortIssues(nextIssues));
       setFeedback({ tone: nextTone, message: nextMessage });
@@ -1011,7 +1015,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: error instanceof Error ? error.message : "任务保存失败。"
+        message: error instanceof Error ? error.message : t("taskBoard.feedback.saveFailed")
       });
     }
   }
@@ -1023,7 +1027,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
       return;
     }
-    if (!window.confirm(`删除任务「${issue.title}」？`)) {
+    if (!window.confirm(t("taskBoard.confirm.delete", { title: issue.title }))) {
       return;
     }
     const result = await taskBoardApi.deleteIssue(issue.id);
@@ -1066,7 +1070,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     const availableAgents = await getAvailableAgents();
     const agentKey = selectedAgentKey ?? issue.assigneeAgentKey ?? availableAgents[0]?.agentKey ?? "";
     if (!agentKey) {
-      setFeedback({ tone: "error", message: "请先在智能体列表中配置可用智能体。" });
+      setFeedback({ tone: "error", message: t("taskBoard.feedback.noAgents") });
       return;
     }
 
@@ -1075,12 +1079,12 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       const runResult = await window.electronAPI.assistant.startRun({
         ...(issue.attachmentChatId && issue.attachments.length > 0 ? { chatId: issue.attachmentChatId } : {}),
         agentKey,
-        message: buildAssistantPrompt(issue),
+        message: buildAssistantPrompt(issue, t),
         source: "copilot",
         attachments: issue.attachments
       });
       if (!runResult.ok) {
-        setFeedback({ tone: "error", message: runResult.message || "智能体启动失败。" });
+        setFeedback({ tone: "error", message: runResult.message || t("taskBoard.feedback.assistantStartFailed") });
         return;
       }
       const updateResult = await taskBoardApi.updateIssue(issue.id, {
@@ -1091,11 +1095,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         runId: runResult.runId
       });
       setIssues(sortIssues(updateResult.issues));
-      setFeedback({ tone: "success", message: "已交给智能体处理。" });
+      setFeedback({ tone: "success", message: t("taskBoard.feedback.assignedToAssistant") });
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: error instanceof Error ? error.message : "智能体启动失败。"
+        message: error instanceof Error ? error.message : t("taskBoard.feedback.assistantStartFailed")
       });
     } finally {
       setBusyIssueId(null);
@@ -1105,12 +1109,12 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   async function openAssistantIssueChat(issue: TaskBoardIssue) {
     const chatId = issue.chatId?.trim() ?? "";
     if (!chatId) {
-      setFeedback({ tone: "error", message: "当前任务还没有关联聊天记录。" });
+      setFeedback({ tone: "error", message: t("taskBoard.feedback.noChat") });
       return;
     }
     const agentKey = resolveIssueAgentKey(issue, agents);
     if (!agentKey) {
-      setFeedback({ tone: "error", message: "当前任务没有绑定智能体，无法打开对应聊天。" });
+      setFeedback({ tone: "error", message: t("taskBoard.feedback.noBoundAgent") });
       return;
     }
     setChatModalRequest({
@@ -1124,7 +1128,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     const activeIssue = issueMap.get(String(event.active.id));
     if (isIssueDragLocked(activeIssue)) {
       setActiveDragIssueId(null);
-      setFeedback({ tone: "error", message: "智能体正在回答，完成后才能切换状态。" });
+      setFeedback({ tone: "error", message: t("taskBoard.feedback.dragLocked") });
       return;
     }
     setActiveDragIssueId(String(event.active.id));
@@ -1152,7 +1156,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       return;
     }
     if (isIssueDragLocked(activeIssue)) {
-      setFeedback({ tone: "error", message: "智能体正在回答，完成后才能切换状态。" });
+      setFeedback({ tone: "error", message: t("taskBoard.feedback.dragLocked") });
       return;
     }
 
@@ -1218,12 +1222,12 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const visibleFormAttachments = getVisibleTaskBoardAttachments(form.attachments);
 
   return (
-    <section className="task-board-page" aria-label="任务看板">
+    <section className="task-board-page" aria-label={t("taskBoard.title")}>
       <div className="task-board-toolbar">
         <div className="task-board-toolbar-left">
           <button type="button" className="task-board-tool is-active">
             <span className="task-board-tool-icon" aria-hidden="true">▦</span>
-            Board
+            {t("taskBoard.toolbar.board")}
           </button>
           <button
             type="button"
@@ -1231,7 +1235,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             onClick={() => setMenu(menu === "filter" ? null : "filter")}
           >
             <span className="task-board-tool-icon" aria-hidden="true">⌕</span>
-            Filter
+            {t("taskBoard.toolbar.filter")}
           </button>
           <button
             type="button"
@@ -1239,18 +1243,18 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             onClick={() => setMenu(menu === "display" ? null : "display")}
           >
             <span className="task-board-tool-icon" aria-hidden="true">☷</span>
-            Display
+            {t("taskBoard.toolbar.display")}
           </button>
           <input
             className="task-board-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索任务"
-            aria-label="搜索任务"
+            placeholder={t("taskBoard.search.placeholder")}
+            aria-label={t("taskBoard.search.ariaLabel")}
           />
         </div>
         <div className="task-board-toolbar-right">
-          <span className="task-board-count">{filteredCount}/{totalCount} Issues</span>
+          <span className="task-board-count">{t("taskBoard.toolbar.issueCount", { filtered: filteredCount, total: totalCount })}</span>
         </div>
       </div>
 
@@ -1258,7 +1262,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         <div className="task-board-menu-panel">
           {menu === "filter" ? (
             <>
-              <strong>优先级</strong>
+              <strong>{t("taskBoard.filter.priority")}</strong>
               <div className="task-board-menu-grid">
                 {TASK_BOARD_PRIORITIES.map((priority) => (
                   <label key={priority} className="task-board-check-row">
@@ -1267,18 +1271,18 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                       checked={priorityFilters.includes(priority)}
                       onChange={() => togglePriority(priority)}
                     />
-                    <PriorityBadge priority={priority} />
+                    <PriorityBadge priority={priority} t={t} />
                   </label>
                 ))}
               </div>
             </>
           ) : (
             <>
-              <strong>卡片字段</strong>
+              <strong>{t("taskBoard.display.cardFields")}</strong>
               {Object.entries({
-                description: "描述",
-                assignee: "负责人",
-                priority: "优先级"
+                description: t("taskBoard.display.description"),
+                assignee: t("taskBoard.display.assignee"),
+                priority: t("taskBoard.display.priority")
               } satisfies Record<keyof DisplayState, string>).map(([key, label]) => (
                 <label key={key} className="task-board-check-row">
                   <input
@@ -1300,7 +1304,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       {feedback ? (
         <div className={`task-board-feedback is-${feedback.tone}`}>
           <span>{feedback.message}</span>
-          <button type="button" onClick={() => setFeedback(null)} aria-label="关闭提示">×</button>
+          <button type="button" onClick={() => setFeedback(null)} aria-label={t("taskBoard.notice.close")}>×</button>
         </div>
       ) : null}
 
@@ -1321,6 +1325,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 issues={columnIssues}
                 agents={agents}
                 display={display}
+                t={t}
                 canAdd={taskBoardReady}
                 onAdd={() => openCreateModal(status)}
                 onEdit={openEditModal}
@@ -1339,6 +1344,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   issue={activeDragIssue}
                   awaitingConfirmation={false}
                   display={display}
+                  t={t}
                   interactive={false}
                   onEdit={() => undefined}
                   onOpenChat={() => undefined}
@@ -1368,7 +1374,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               className="task-board-card-context-danger"
               onClick={() => void deleteIssue(issue)}
             >
-              删除任务
+              {t("taskBoard.context.delete")}
             </button>
           </div>
         );
@@ -1383,21 +1389,21 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             noValidate
           >
             <div className="task-board-modal-head">
-              <strong>{modal.mode === "edit" ? "编辑任务" : "新建任务"}</strong>
+              <strong>{modal.mode === "edit" ? t("taskBoard.modal.editTitle") : t("taskBoard.modal.createTitle")}</strong>
               <div className="task-board-modal-head-actions">
                 <button
                   type="button"
                   className="task-board-modal-mode-button"
                   onClick={toggleFormCompactMode}
                 >
-                  {formCompact ? "高级模式" : "精简模式"}
+                  {formCompact ? t("taskBoard.modal.advancedMode") : t("taskBoard.modal.compactMode")}
                 </button>
-                <button type="button" className="task-board-modal-close-button" onClick={() => setModal(null)} aria-label="关闭">×</button>
+                <button type="button" className="task-board-modal-close-button" onClick={() => setModal(null)} aria-label={t("taskBoard.modal.close")}>×</button>
               </div>
             </div>
             {!formCompact ? (
               <label className="task-board-field">
-                <span>标题</span>
+                <span>{t("taskBoard.form.title")}</span>
                 <input
                   value={form.title}
                   onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
@@ -1408,14 +1414,14 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             ) : null}
             <div className="task-board-field">
               <div className="task-board-field-head">
-                <span>描述</span>
+                <span>{t("taskBoard.form.description")}</span>
                 <button
                   type="button"
                   className="task-board-attachment-add-button"
                   onClick={() => void addTaskBoardAttachments()}
                   disabled={attachmentBusy}
                 >
-                  {attachmentBusy ? "上传中" : "添加附件"}
+                  {attachmentBusy ? t("taskBoard.form.uploading") : t("taskBoard.form.addAttachment")}
                 </button>
               </div>
               <textarea
@@ -1434,7 +1440,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 autoFocus={formCompact}
               />
               {visibleFormAttachments.length > 0 ? (
-                <div className="task-board-attachment-list" aria-label="任务附件">
+                <div className="task-board-attachment-list" aria-label={t("taskBoard.form.attachments")}>
                   {visibleFormAttachments.map((attachment) => {
                     const sizeLabel = formatTaskBoardAttachmentSize(attachment.sizeBytes);
                     return (
@@ -1453,7 +1459,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                           type="button"
                           className="task-board-attachment-remove"
                           onClick={() => removeTaskBoardAttachment(attachment.id)}
-                          aria-label={`移除附件 ${attachment.name}`}
+                          aria-label={t("taskBoard.form.removeAttachment", { name: attachment.name })}
                         >
                           ×
                         </button>
@@ -1466,7 +1472,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             {!formCompact ? (
               <div className="task-board-field-grid">
                 <label className="task-board-field">
-                  <span>状态</span>
+                  <span>{t("taskBoard.form.status")}</span>
                   <select
                     value={form.status}
                     disabled={modalStatusLocked}
@@ -1476,12 +1482,12 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                     }))}
                   >
                     {TASK_BOARD_STATUSES.map((status) => (
-                      <option key={status} value={status}>{STATUS_META[status].label}</option>
+                      <option key={status} value={status}>{t(STATUS_META[status].labelKey)}</option>
                     ))}
                   </select>
                 </label>
                 <label className="task-board-field">
-                  <span>优先级</span>
+                  <span>{t("taskBoard.form.priority")}</span>
                   <select
                     value={form.priority}
                     onChange={(event) => setForm((current) => ({
@@ -1490,14 +1496,14 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                     }))}
                   >
                     {TASK_BOARD_PRIORITIES.map((priority) => (
-                      <option key={priority} value={priority}>{PRIORITY_META[priority].label}</option>
+                      <option key={priority} value={priority}>{t(PRIORITY_META[priority].labelKey)}</option>
                     ))}
                   </select>
                 </label>
               </div>
             ) : null}
             <label className="task-board-field">
-              <span>负责人</span>
+              <span>{t("taskBoard.form.assignee")}</span>
               <select
                 value={form.assigneeAgentKey}
                 onChange={(event) => {
@@ -1509,7 +1515,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   }));
                 }}
               >
-                <option value="">未分配</option>
+                <option value="">{t("taskBoard.form.unassigned")}</option>
                 {agents.map((agent) => (
                   <option key={agent.agentKey} value={agent.agentKey}>
                     {agent.displayName}
@@ -1518,7 +1524,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               </select>
             </label>
             {!formCompact ? (
-              <section className="task-board-schedule-panel" aria-label="定时任务">
+              <section className="task-board-schedule-panel" aria-label={t("taskBoard.form.schedulePanel")}>
                 <label className="task-board-check-row task-board-schedule-toggle">
                   <input
                     type="checkbox"
@@ -1537,13 +1543,13 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                       };
                     })}
                   />
-                  <span>定时执行</span>
+                  <span>{t("taskBoard.form.scheduleEnabled")}</span>
                 </label>
                 {form.scheduleEnabled ? (
                   <div className="task-board-schedule-popover">
-                    <span className="task-board-schedule-panel-title">计划</span>
+                    <span className="task-board-schedule-panel-title">{t("taskBoard.form.schedulePlan")}</span>
                     <div className="task-board-field task-board-schedule-select-field">
-                      <span>频率</span>
+                      <span>{t("taskBoard.form.scheduleFrequency")}</span>
                       <div className={`task-board-schedule-menu ${scheduleMenuOpen === "plan" ? "is-open" : ""}`}>
                         <button
                           type="button"
@@ -1552,11 +1558,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                           aria-expanded={scheduleMenuOpen === "plan"}
                           onClick={() => toggleScheduleMenu("plan")}
                         >
-                          <span>{getSchedulePlanLabel(form.schedulePreset)}</span>
+                          <span>{getSchedulePlanLabel(form.schedulePreset, t)}</span>
                           <span className="task-board-schedule-menu-arrow" aria-hidden="true">⌄</span>
                         </button>
                         {scheduleMenuOpen === "plan" ? (
-                          <div className="task-board-schedule-menu-list" role="listbox" aria-label="计划频率">
+                          <div className="task-board-schedule-menu-list" role="listbox" aria-label={t("taskBoard.form.scheduleFrequencyList")}>
                             {TASK_BOARD_SCHEDULE_PLANS.map((plan) => (
                               <button
                                 key={plan.value}
@@ -1566,7 +1572,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                                 aria-selected={plan.value === form.schedulePreset}
                                 onClick={() => updateSchedulePlan(plan.value)}
                               >
-                                {plan.label}
+                                {t(plan.labelKey)}
                               </button>
                             ))}
                           </div>
@@ -1575,7 +1581,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                     </div>
                     {form.schedulePreset === "custom" ? (
                       <label className="task-board-field">
-                        <span>Cron</span>
+                        <span>{t("taskBoard.form.cron")}</span>
                         <input
                           value={form.scheduleCron}
                           onChange={(event) => setForm((current) => ({
@@ -1588,7 +1594,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                     ) : (
                       <div className="task-board-schedule-time-control">
                         <div className="task-board-field task-board-schedule-select-field">
-                          <span>时间</span>
+                          <span>{t("taskBoard.form.scheduleTime")}</span>
                           <div className={`task-board-schedule-menu ${scheduleMenuOpen === "time" ? "is-open" : ""}`}>
                             <button
                               type="button"
@@ -1601,7 +1607,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                               <span className="task-board-schedule-menu-arrow" aria-hidden="true">⌄</span>
                             </button>
                             {scheduleMenuOpen === "time" ? (
-                              <div className="task-board-schedule-menu-list is-time-list" role="listbox" aria-label="计划时间">
+                              <div className="task-board-schedule-menu-list is-time-list" role="listbox" aria-label={t("taskBoard.form.scheduleTimeList")}>
                                 {TASK_BOARD_SCHEDULE_TIME_OPTIONS.map((time) => (
                                   <button
                                     key={time}
@@ -1632,14 +1638,14 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   className="task-board-danger-button"
                   onClick={() => void deleteIssue(modal.issue!)}
                 >
-                  删除
+                  {t("taskBoard.form.delete")}
                 </button>
               ) : null}
               <button type="button" className="task-board-secondary-button" onClick={() => setModal(null)}>
-                取消
+                {t("taskBoard.form.cancel")}
               </button>
               <button type="submit" className="task-board-primary-button" disabled={!taskBoardReady}>
-                保存
+                {t("taskBoard.form.save")}
               </button>
             </div>
           </form>
@@ -1652,7 +1658,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             className="task-board-chat-modal"
             role="dialog"
             aria-modal="true"
-            aria-label={chatModalRequest.displayName ? `${chatModalRequest.displayName} 聊天` : "任务聊天"}
+            aria-label={chatModalRequest.displayName ? t("taskBoard.chat.modalLabel", { name: chatModalRequest.displayName }) : t("taskBoard.chat.defaultModalLabel")}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <PluginPage
@@ -1660,7 +1666,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               active
               hostTheme={hostTheme}
               pluginId="agent-webclient"
-              surfaceLabel="任务聊天"
+              surfaceLabel={t("taskBoard.chat.surfaceLabel")}
               embedPath={buildTaskBoardChatEmbedPath(chatModalRequest)}
               skipContextRegistration
               loadInitialEmbeddedUrlDirectly
@@ -1669,8 +1675,8 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             <button
               type="button"
               className="task-board-chat-modal-close"
-              aria-label="关闭聊天"
-              title="关闭"
+              aria-label={t("taskBoard.chat.close")}
+              title={t("taskBoard.modal.close")}
               onClick={() => setChatModalRequest(null)}
             >
               ×
@@ -1687,6 +1693,7 @@ function TaskBoardColumn({
   issues,
   agents,
   display,
+  t,
   canAdd,
   onAdd,
   onEdit,
@@ -1697,6 +1704,7 @@ function TaskBoardColumn({
   issues: TaskBoardIssue[];
   agents: AssistantNavAgentItem[];
   display: DisplayState;
+  t: TranslateFunction;
   canAdd: boolean;
   onAdd: () => void;
   onEdit: (issue: TaskBoardIssue) => void;
@@ -1705,16 +1713,17 @@ function TaskBoardColumn({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: getColumnId(status) });
   const meta = STATUS_META[status];
+  const label = t(meta.labelKey);
   return (
     <section ref={setNodeRef} className={`task-board-column is-${meta.tone} ${isOver ? "is-over" : ""}`}>
       <header className="task-board-column-head">
         <div className="task-board-column-title">
           <span className={`task-board-status-dot is-${meta.tone}`} aria-hidden="true" />
-          <strong>{meta.label}</strong>
+          <strong>{label}</strong>
           <span>{issues.length}</span>
         </div>
         <div className="task-board-column-actions">
-          <button type="button" aria-label={`添加到 ${meta.label}`} disabled={!canAdd} onClick={onAdd}>+</button>
+          <button type="button" aria-label={t("taskBoard.column.addTo", { status: label })} disabled={!canAdd} onClick={onAdd}>+</button>
         </div>
       </header>
       <div
@@ -1732,6 +1741,7 @@ function TaskBoardColumn({
               issue={issue}
               awaitingConfirmation={issueHasPendingAwaiting(issue, agents)}
               display={display}
+              t={t}
               onEdit={() => onEdit(issue)}
               onOpenChat={() => void onOpenChat(issue)}
               onOpenContextMenu={(event) => onOpenContextMenu(issue, event)}
@@ -1739,7 +1749,7 @@ function TaskBoardColumn({
           ))}
         </SortableContext>
         {issues.length === 0 ? (
-          <p className="task-board-empty-column">拖到这里</p>
+          <p className="task-board-empty-column">{t("taskBoard.column.empty")}</p>
         ) : null}
       </div>
     </section>
@@ -1750,6 +1760,7 @@ function TaskBoardCard({
   issue,
   awaitingConfirmation,
   display,
+  t,
   onEdit,
   onOpenChat,
   onOpenContextMenu
@@ -1757,6 +1768,7 @@ function TaskBoardCard({
   issue: TaskBoardIssue;
   awaitingConfirmation: boolean;
   display: DisplayState;
+  t: TranslateFunction;
   onEdit: () => void;
   onOpenChat: () => void;
   onOpenContextMenu: (event: MouseEvent<HTMLElement>) => void;
@@ -1791,6 +1803,7 @@ function TaskBoardCard({
         issue={issue}
         awaitingConfirmation={awaitingConfirmation}
         display={display}
+        t={t}
         interactive
         onEdit={onEdit}
         onOpenChat={onOpenChat}
@@ -1803,6 +1816,7 @@ function TaskBoardCardContent({
   issue,
   awaitingConfirmation,
   display,
+  t,
   interactive,
   onEdit,
   onOpenChat
@@ -1810,15 +1824,16 @@ function TaskBoardCardContent({
   issue: TaskBoardIssue;
   awaitingConfirmation: boolean;
   display: DisplayState;
+  t: TranslateFunction;
   interactive: boolean;
   onEdit: () => void;
   onOpenChat: () => void;
 }) {
   const preview = descriptionPreview(issue.description);
-  const chatActionLabel = getIssueChatActionLabel(issue);
-  const visibleChatActionLabel = awaitingConfirmation ? "等待你确认" : chatActionLabel;
+  const chatActionLabel = getIssueChatActionLabel(issue, t);
+  const visibleChatActionLabel = awaitingConfirmation ? t("taskBoard.chat.awaitingConfirmation") : chatActionLabel;
   const visibleAssigneeName = getVisibleAssigneeName(issue.assigneeName);
-  const scheduleLabel = getScheduleDisplayLabel(issue);
+  const scheduleLabel = getScheduleDisplayLabel(issue, t);
   const shouldShowFooter = Boolean(
     (display.assignee && visibleAssigneeName) ||
     display.priority ||
@@ -1836,7 +1851,7 @@ function TaskBoardCardContent({
   return (
     <>
       {issue.runId ? (
-        <span className="task-board-run-dot" aria-label="运行中" title="运行中" />
+        <span className="task-board-run-dot" aria-label={t("taskBoard.run.running")} title={t("taskBoard.run.running")} />
       ) : null}
       {interactive ? (
         <div
@@ -1865,7 +1880,7 @@ function TaskBoardCardContent({
               {visibleAssigneeName}
             </span>
           ) : null}
-          {display.priority ? <PriorityBadge priority={issue.priority} /> : null}
+          {display.priority ? <PriorityBadge priority={issue.priority} t={t} /> : null}
           {scheduleLabel ? (
             <span className="task-board-schedule-badge" title={issue.scheduleCron ?? undefined}>
               {scheduleLabel}
@@ -1883,8 +1898,8 @@ function TaskBoardCardContent({
               tabIndex={interactive ? 0 : -1}
               aria-label={
                 awaitingConfirmation
-                  ? `打开 ${issue.identifier} 的聊天记录并处理确认`
-                  : `打开 ${issue.identifier} 的聊天记录`
+                  ? t("taskBoard.chat.openWithConfirmation", { identifier: issue.identifier })
+                  : t("taskBoard.chat.open", { identifier: issue.identifier })
               }
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
@@ -1903,7 +1918,7 @@ function TaskBoardCardContent({
   );
 }
 
-function PriorityBadge({ priority }: { priority: TaskBoardPriority }) {
+function PriorityBadge({ priority, t }: { priority: TaskBoardPriority; t: TranslateFunction }) {
   const meta = PRIORITY_META[priority];
   return (
     <span className={`task-board-priority is-${meta.tone}`}>
@@ -1912,7 +1927,7 @@ function PriorityBadge({ priority }: { priority: TaskBoardPriority }) {
           <span key={index} className={index < meta.bars ? "is-on" : ""} />
         ))}
       </span>
-      {meta.label}
+      {t(meta.labelKey)}
     </span>
   );
 }
