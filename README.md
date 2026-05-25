@@ -81,7 +81,8 @@ DevTools 可用于查看控制台日志、网络请求、DOM 结构以及页面�
 - 需要认证的服务或插件（如 `agent-webclient`、`pan-webclient`）通过 `auth-bridge.ts` 构建带参数的嵌入 URL，并通过 postMessage Token Bridge 获取 JWT。
 
 ### 服务配置文件
-- 新安装的 Desktop 配置与运行数据根目录为 macOS `~/.zenmind/.desktop`、Windows `%APPDATA%\ZenMind\.desktop`，按 `config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；这里不存放可替换程序产物。
+- 新安装的 Desktop 配置与运行数据根目录为 macOS `~/.zenmind/.desktop`、Windows `%USERPROFILE%\.zenmind\.desktop`，按 `config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；这里不存放可替换程序产物。
+- 首次启动导入 `env.zip` 时，解压生成的环境目录为 macOS `~/.zenmind`、Windows `%USERPROFILE%\.zenmind`，不放在 AppData 下。
 - 服务程序安装到 macOS `~/Library/Application Support/ZenMind/services/<service-id>/<version>/` 或 Windows `%APPDATA%\ZenMind\services\<service-id>\<version>\`，服务配置保存到 Desktop 配置根目录的 `config/services/<service-id>/`，运行数据保存到 `data/services/<service-id>/`。
 - 每个内置服务会在安装时自动完成初始化；缺失的 `.env` 会从 `.env.example` 复制生成，随后由桌面端进行读写。
 - 插件程序安装到 macOS `~/Library/Application Support/ZenMind/plugins/<plugin-id>/<version>/` 或 Windows `%APPDATA%\ZenMind\plugins\<plugin-id>\<version>\`，插件配置保存到 Desktop 配置根目录的 `config/plugins/<plugin-id>/`。

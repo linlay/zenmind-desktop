@@ -82,14 +82,13 @@ test("ensureDataRoot creates layered subdirectories under the current data root"
   assert.equal(fs.existsSync(path.join(dataRoot, "state", "desktop")), true);
 });
 
-test("Windows new installs resolve to the layered desktop root under AppData", () => {
+test("Windows new installs resolve to the layered desktop root under home", () => {
   const root = __testInternals.resolveDesktopRoot({
     platform: "win32",
-    homePath: String.raw`C:\Users\alice`,
-    appDataPath: String.raw`C:\Users\alice\AppData\Roaming`
+    homePath: String.raw`C:\Users\alice`
   });
 
-  assert.equal(root, String.raw`C:\Users\alice\AppData\Roaming\ZenMind\.desktop`);
+  assert.equal(root, String.raw`C:\Users\alice\.zenmind\.desktop`);
 });
 
 test("macOS program root resolves under Application Support/ZenMind", () => {

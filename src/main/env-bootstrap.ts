@@ -79,11 +79,12 @@ export function homeZenmindEnvExists(app: AppPathReader, platform: NodeJS.Platfo
   });
 }
 
-export function shouldRequireMacEnvZipImport(input: {
+export function shouldRequireEnvZipImport(input: {
   platform?: NodeJS.Platform;
   homeZenmindEnvExistedAtStartup: boolean;
 }) {
-  return (input.platform ?? process.platform) === "darwin" && !input.homeZenmindEnvExistedAtStartup;
+  const platform = input.platform ?? process.platform;
+  return (platform === "darwin" || platform === "win32") && !input.homeZenmindEnvExistedAtStartup;
 }
 
 function normalizeArchiveEntryName(entryName: string) {

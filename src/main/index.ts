@@ -177,7 +177,7 @@ import {
   homeZenmindEnvExists,
   importEnvZipToZenmind,
   resolveHomeZenmindRoot,
-  shouldRequireMacEnvZipImport
+  shouldRequireEnvZipImport
 } from "./env-bootstrap";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { safeConsoleError } from "./safe-console";
@@ -290,7 +290,7 @@ if (isFirstDesktopInstall) {
   setMainLocale(app, initialLocaleSettings.locale);
 }
 const homeZenmindRootAtProcessStart = resolveHomeZenmindRoot(app, process.platform);
-const requireEnvZipImportAtStartup = shouldRequireMacEnvZipImport({
+const requireEnvZipImportAtStartup = shouldRequireEnvZipImport({
   platform: process.platform,
   homeZenmindEnvExistedAtStartup: homeZenmindEnvExists(app, process.platform)
 });
@@ -3036,7 +3036,7 @@ function emitLocaleChanged(settings: ReturnType<typeof setMainLocale>) {
   }
 }
 
-async function ensureMacFirstInstallEnvZipImported() {
+async function ensureFirstInstallEnvZipImported() {
   if (!requireEnvZipImportAtStartup) {
     return true;
   }
@@ -4268,7 +4268,7 @@ if (gotSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     ensureDarwinDockIdentity();
-    if (!(await ensureMacFirstInstallEnvZipImported())) {
+    if (!(await ensureFirstInstallEnvZipImported())) {
       app.quit();
       return;
     }

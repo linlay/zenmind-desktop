@@ -10,7 +10,8 @@ const JSZip = require("jszip");
 const {
   homeZenmindEnvExists,
   importEnvZipToZenmind,
-  shouldRequireMacEnvZipImport
+  resolveHomeZenmindRoot,
+  shouldRequireEnvZipImport
 } = require("../dist-electron/main/env-bootstrap.js");
 
 function createApp(root) {
@@ -33,7 +34,7 @@ async function writeZip(zipPath, entries) {
   fs.writeFileSync(zipPath, await zip.generateAsync({ type: "nodebuffer" }));
 }
 
-test("mac first launch requires env.zip when only Desktop-created state exists", () => {
+test("mac and Windows first launch requires env.zip when only Desktop-created state exists", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-state-"));
   const app = createApp(root);
   const homeZenmindRoot = path.join(root, "home", ".zenmind");
@@ -43,9 +44,16 @@ test("mac first launch requires env.zip when only Desktop-created state exists",
 
     assert.equal(homeZenmindEnvExists(app, "darwin"), false);
     assert.equal(
-      shouldRequireMacEnvZipImport({
+      shouldRequireEnvZipImport({
         platform: "darwin",
         homeZenmindEnvExistedAtStartup: homeZenmindEnvExists(app, "darwin")
+      }),
+      true
+    );
+    assert.equal(
+      shouldRequireEnvZipImport({
+        platform: "win32",
+        homeZenmindEnvExistedAtStartup: false
       }),
       true
     );
@@ -53,8 +61,8 @@ test("mac first launch requires env.zip when only Desktop-created state exists",
     fs.mkdirSync(path.join(homeZenmindRoot, "registries"), { recursive: true });
     assert.equal(homeZenmindEnvExists(app, "darwin"), true);
     assert.equal(
-      shouldRequireMacEnvZipImport({
-        platform: "win32",
+      shouldRequireEnvZipImport({
+        platform: "linux",
         homeZenmindEnvExistedAtStartup: false
       }),
       false
@@ -121,4 +129,17 @@ test("importEnvZipToZenmind strips timestamped zenmind-env wrapper", async () =>
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("Windows env.zip target root is the user .zenmind directory", () => {
+  const app = {
+    getPath(name) {
+      if (name === "home") {
+        return String.raw`C:\Users\alice`;
+      }
+      assert.fail(`unexpected app.getPath(${name})`);
+    }
+  };
+
+  assert.equal(resolveHomeZenmindRoot(app, "win32"), String.raw`C:\Users\alice\.zenmind`);
 });

@@ -17,7 +17,6 @@ const DESKTOP_DIRS = [
 type DesktopRootOptions = {
   platform?: NodeJS.Platform;
   homePath: string;
-  appDataPath: string;
 };
 
 type ApplicationSupportRootOptions = {
@@ -31,12 +30,11 @@ function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
 
 function resolveDesktopRoot({
   platform = process.platform,
-  homePath,
-  appDataPath
+  homePath
 }: DesktopRootOptions) {
   const pathApi = pathApiForPlatform(platform);
   if (platform === "win32") {
-    return pathApi.resolve(pathApi.join(appDataPath, "ZenMind", ".desktop"));
+    return pathApi.resolve(pathApi.join(homePath, ".zenmind", ".desktop"));
   }
   if (platform === "darwin") {
     return pathApi.resolve(pathApi.join(homePath, ".zenmind", ".desktop"));
@@ -89,8 +87,7 @@ function getAppDataPath(app: Pick<App, "getPath">) {
 function getDesktopRootPath(app: Pick<App, "getPath">) {
   return resolveDesktopRoot({
     platform: process.platform,
-    homePath: getHomePath(app),
-    appDataPath: getAppDataPath(app)
+    homePath: getHomePath(app)
   });
 }
 
