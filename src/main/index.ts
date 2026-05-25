@@ -1177,32 +1177,11 @@ async function markAgentPlatformChatReadFromDesktopPet(chatId: string) {
 }
 
 async function openAssistantFromDesktopPet() {
-  const targetChatId = desktopPetState.chatId ??
-    (desktopPetLocalStatus.status !== "idle" ? desktopPetLocalStatus.chatId : null);
-  const agentKey = desktopPetAgentStatus?.agentKey ||
-    desktopPetState.boundAgentKey ||
-    desktopPetSettings.boundAgentKey;
-  const openResult = await showAssistantTargetWindow(
-    "desktop-pet",
-    createAgentWebclientRoute({
-      agentKey,
-      chatId: targetChatId
-    })
-  );
-  const targetWindow = openResult.window;
-  if (targetWindow && !targetWindow.isDestroyed()) {
-    targetWindow.webContents.send("app.openAssistantWorker", {
-      chatId: targetChatId ?? undefined,
-      agentKey,
-      focusComposerOnComplete: desktopPetState.status !== "running"
-    } satisfies AssistantWorkerOpenRequest);
-  }
-  if (targetChatId && desktopPetState.unreadCount > 0) {
-    void markAgentPlatformChatReadFromDesktopPet(targetChatId);
-  }
+  showMainWindow();
+  const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
   return {
-    ok: openResult.ok,
-    message: openResult.message
+    ok: Boolean(targetWindow),
+    message: targetWindow ? "ZenMind 已打开。" : "ZenMind 主窗口不可用。"
   };
 }
 

@@ -26,7 +26,7 @@ type StoredTaskBoardIssues = {
   issues: TaskBoardIssue[];
 };
 
-const NON_DRAG_COMPLETED_TRANSITION_MESSAGE = "只有用户确认完成后才能拖拽到 Completed。";
+const NON_DRAG_COMPLETED_TRANSITION_MESSAGE = "只有用户确认完成后才能拖拽到「已完成」。";
 const statusRank = new Map<TaskBoardStatus, number>(
   TASK_BOARD_STATUSES.map((status, index) => [status, index])
 );

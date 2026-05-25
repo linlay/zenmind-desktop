@@ -1825,7 +1825,8 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.doesNotMatch(mainProcess, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
   assert.match(mainProcess, /openAgent: scheduleQuickAgentOpenRequest/);
   assert.match(mainProcess, /async function openAssistantFromDesktopPet/);
-  assert.match(mainProcess, /showAssistantTargetWindow\(\s*"desktop-pet",[\s\S]*?createAgentWebclientRoute/);
+  assert.match(mainProcess, /async function openAssistantFromDesktopPet\(\) \{[\s\S]{0,120}showMainWindow\(\);/);
+  assert.doesNotMatch(mainProcess, /showAssistantTargetWindow\(\s*"desktop-pet"/);
   assert.match(mainProcess, /targetWindow\.webContents\.send\("app\.openAssistantWorker"/);
   assert.match(mainProcess, /async function openAssistantWorker/);
   assert.match(mainProcess, /showAssistantTargetWindow\(\s*"assistant-worker",[\s\S]*?createAgentWebclientRoute/);
@@ -2079,6 +2080,17 @@ test("desktop pet drag ends on lost pointer signals", () => {
   assert.match(mainProcess, /webContents\.on\("context-menu"[\s\S]{0,120}endDesktopPetWindowDrag\(\)/);
 });
 
+test("desktop pet click opens ZenMind without assistant sidebar copy", () => {
+  const desktopPet = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
+    "utf8"
+  );
+
+  assert.match(desktopPet, /desktopPet\.openAssistant/);
+  assert.match(desktopPet, /aria-label="打开 ZenMind"/);
+  assert.doesNotMatch(desktopPet, /打开侧边栏助手/);
+});
+
 test("desktop pet base mode stays sprite-sized while bubble and preview modes expand separately", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const petGeometry = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "pet-copilot", "desktop-pet.ts"), "utf8");
@@ -2287,6 +2299,8 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /desktopSsoStatus\.authenticated[\s\S]{0,140}\? onDesktopSsoLogout\?\.\(\)[\s\S]{0,140}: onDesktopSsoLogin\?\.\(\)/);
   assert.match(sidebarSource, /disabled=\{desktopSsoBusy\}/);
   assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name \|\| desktopSsoStatus\.user\?\.email \|\| desktopSsoStatus\.user\?\.sub \|\| "已登录"/);
+  assert.match(sidebarSource, /desktopSsoStatus\.authenticated \|\| desktopSsoStatus\.pending \|\| desktopSsoStatus\.error/);
+  assert.match(sidebarSource, /\{desktopSsoMessage \? <span className="sidebar-sso-message">\{desktopSsoMessage\}<\/span> : null\}/);
   assert.match(sidebarSource, /desktopSsoStatus\.pending[\s\S]{0,120}\? "重新打开"/);
   assert.match(sidebarSource, /: "登录";/);
   assert.match(sidebarSource, /\{renderDesktopSsoEntry\(\)\}/);

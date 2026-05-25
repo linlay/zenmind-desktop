@@ -41,3 +41,6 @@ playwright-report/
 *.pid.lock
 
 .antigravitycli/
+
+# Local assistant files
+agent.md

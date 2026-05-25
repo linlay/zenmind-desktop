@@ -296,7 +296,7 @@ test("task board rejects manual status updates into completed", (t) => {
   });
 
   assert.equal(updated.ok, false);
-  assert.match(updated.message, /Completed/);
+  assert.match(updated.message, /已完成/);
   assert.deepEqual(
     listTaskBoardIssues(app).issues.map((issue) => [issue.title, issue.status]),
     [["需要人工确认", "in_progress"]]

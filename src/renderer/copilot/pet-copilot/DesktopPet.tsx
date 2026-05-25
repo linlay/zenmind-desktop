@@ -411,14 +411,14 @@ export function DesktopPet() {
     void window.electronAPI.desktopPet.setPreviewExpanded(!previewPanel.expanded);
   }
 
-  async function finishDrag(pointerId: number | null, openAssistantIfClick: boolean) {
+  async function finishDrag(pointerId: number | null, openAppIfClick: boolean) {
     const dragState = dragStateRef.current;
     if (!dragState || (pointerId !== null && dragState.pointerId !== pointerId)) {
       return;
     }
     resetLocalDragState();
     const result = await endDrag();
-    if (openAssistantIfClick && !result.moved) {
+    if (openAppIfClick && !result.moved) {
       void window.electronAPI.desktopPet.openAssistant();
     }
   }
@@ -610,7 +610,7 @@ export function DesktopPet() {
         <button
           type="button"
           className="desktop-pet-button"
-          aria-label="打开侧边栏助手"
+          aria-label="打开 ZenMind"
           onFocus={handleButtonFocus}
           onBlur={handleButtonBlur}
           onKeyDown={(event) => {
