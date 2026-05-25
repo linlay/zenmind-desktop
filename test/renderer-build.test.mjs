@@ -946,7 +946,7 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /resolveDesktopCopilotPreference/);
   assert.match(appShell, /assistantLauncherVisible = currentCopilotPreference\?\.enabled !== false/);
   assert.match(appShell, /currentCopilotPreference\?\.enabled === false && assistantDockOpen && !assistantRunningRunId/);
-  assert.match(appShell, /isAgentWebclientMainRoute = location\.pathname === ASSISTANT_TARGET_PATH/);
+  assert.match(appShell, /isAgentWebclientMainRoute = location\.pathname === ASSISTANT_TARGET_PATH \|\| isSingleAgentWebclientRoute\(location\.pathname\)/);
   assert.match(appShell, /assistantCopilotOpen = assistantDockOpen && !isAgentWebclientMainRoute/);
   assert.match(appShell, /isAgentWebclientMainRoute && assistantDockOpen/);
   assert.match(appShell, /assistantLauncherDisabled=\{isAgentWebclientMainRoute\}/);
@@ -964,6 +964,7 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /const targetEmbedPath = buildAgentWebclientCopilotPath\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /data-open-agent-key=\{targetAgentKey\}/);
   assert.match(appShell, /key=\{`agent-webclient-copilot:\$\{targetEmbedPath\}`\}/);
+  assert.match(appShell, /function isSingleAgentWebclientRoute\(pathname: string\)[\s\S]*?matchPath\("\/agent\/:agentKey", pathname\)/);
   assert.match(sidebarSource, /assistantLauncherVisible/);
   assert.match(sidebarSource, /assistantLauncherDisabled/);
   assert.match(sidebarSource, /assistantLauncherVisible \? \(/);
@@ -1145,6 +1146,8 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
   assert.match(globalStyles, /\.task-board-column\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.task-board-column\.is-todo\s*\{[\s\S]*?margin-left:\s*calc\(\(var\(--task-board-column-width\) \* -0\.5\) - 16px\)/);
+  assert.doesNotMatch(globalStyles, /\.task-board-columns\.is-backlog-expanded \.task-board-column\.is-todo/);
   assert.match(globalStyles, /\.task-board-card\s*\{/);
   assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,180}position:\s*relative;/);
   assert.match(globalStyles, /\.task-board-card\.is-drag-locked\s*\{/);
@@ -2299,8 +2302,8 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /desktopSsoStatus\.authenticated[\s\S]{0,140}\? onDesktopSsoLogout\?\.\(\)[\s\S]{0,140}: onDesktopSsoLogin\?\.\(\)/);
   assert.match(sidebarSource, /disabled=\{desktopSsoBusy\}/);
   assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name \|\| desktopSsoStatus\.user\?\.email \|\| desktopSsoStatus\.user\?\.sub \|\| "已登录"/);
-  assert.match(sidebarSource, /desktopSsoStatus\.authenticated \|\| desktopSsoStatus\.pending \|\| desktopSsoStatus\.error/);
-  assert.match(sidebarSource, /\{desktopSsoMessage \? <span className="sidebar-sso-message">\{desktopSsoMessage\}<\/span> : null\}/);
+  assert.doesNotMatch(sidebarSource, /desktopSsoMessage/);
+  assert.doesNotMatch(sidebarSource, /sidebar-sso-message/);
   assert.match(sidebarSource, /desktopSsoStatus\.pending[\s\S]{0,120}\? "重新打开"/);
   assert.match(sidebarSource, /: "登录";/);
   assert.match(sidebarSource, /\{renderDesktopSsoEntry\(\)\}/);
@@ -2309,6 +2312,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(globalStyles, /\.sidebar-sso-entry\s*\{[\s\S]*?width:\s*100%;/);
   assert.match(globalStyles, /\.sidebar-sso-entry\.is-authenticated \.sidebar-sso-dot\s*\{[\s\S]*?background:\s*#10b981;/);
   assert.match(globalStyles, /\.sidebar-sso-entry\.is-pending \.sidebar-sso-dot\s*\{[\s\S]*?background:\s*#f59e0b;/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-sso-message/);
   assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-sso-entry\s*\{[\s\S]*?width:\s*48px;/);
   assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-sso-copy\s*\{[\s\S]*?display:\s*none;/);
   assert.doesNotMatch(globalStyles, /\.app-sso-status/);

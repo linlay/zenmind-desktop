@@ -1150,9 +1150,6 @@ export function AppSidebar({
       : desktopSsoStatus.pending
         ? "登录中"
         : "未登录";
-    const desktopSsoMessage = desktopSsoStatus.authenticated || desktopSsoStatus.pending || desktopSsoStatus.error
-      ? desktopSsoStatus.message || "Desktop 单点登录"
-      : "";
     const desktopSsoActionLabel = desktopSsoStatus.authenticated
       ? "退出登录"
       : desktopSsoStatus.pending
@@ -1179,7 +1176,6 @@ export function AppSidebar({
         <span className="sidebar-sso-dot" aria-hidden="true" />
         <span className="sidebar-sso-copy">
           <span className="sidebar-sso-title">{desktopSsoUserLabel}</span>
-          {desktopSsoMessage ? <span className="sidebar-sso-message">{desktopSsoMessage}</span> : null}
         </span>
         <span className="sidebar-sso-action" aria-hidden="true">
           {desktopSsoBusy ? "处理中" : desktopSsoActionLabel}

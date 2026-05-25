@@ -369,17 +369,7 @@
   z-index: 10;
 }
 
-.task-board-column.is-todo {
-  z-index: 20;
-  margin-left: calc((var(--task-board-column-width) * -0.5) - 16px);
-  box-shadow: -12px 0 25px -5px rgba(15, 23, 42, 0.08), var(--task-board-shadow);
-}
-
-.task-board-columns.is-backlog-expanded .task-board-column.is-todo {
-  margin-left: 0;
-  box-shadow: var(--task-board-shadow);
-}
-
+.task-board-column.is-todo,
 .task-board-column.is-in_progress,
 .task-board-column.is-completed {
   z-index: 20;

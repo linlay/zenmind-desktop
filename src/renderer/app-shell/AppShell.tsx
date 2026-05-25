@@ -360,7 +360,7 @@ export function AppShell() {
     : "";
   const resolvedCopilotAgentKey = customSidebarAgentKey || currentCopilotPreference?.agentKey || "";
   const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
-  const isAgentWebclientMainRoute = location.pathname === ASSISTANT_TARGET_PATH;
+  const isAgentWebclientMainRoute = location.pathname === ASSISTANT_TARGET_PATH || isSingleAgentWebclientRoute(location.pathname);
   const assistantCopilotOpen = assistantDockOpen && !isAgentWebclientMainRoute;
   const sidebarCollapsed = sidebarState.mode === "collapsed";
   const renderedSidebarWidth = resolveRenderedSidebarWidth(sidebarState);
@@ -1444,6 +1444,10 @@ function readAgentWebclientRouteEmbedPath(search: string) {
   } catch {
     return "";
   }
+}
+
+function isSingleAgentWebclientRoute(pathname: string) {
+  return Boolean(matchPath("/agent/:agentKey", pathname));
 }
 
 function resolveSingleAgentWebclientRoute(pathname: string, search: string) {

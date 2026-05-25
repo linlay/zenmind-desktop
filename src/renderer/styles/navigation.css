@@ -453,12 +453,9 @@
   min-width: 0;
   flex: 1 1 auto;
   display: flex;
-  flex-direction: column;
-  gap: 1px;
 }
 
-.sidebar-sso-title,
-.sidebar-sso-message {
+.sidebar-sso-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -469,12 +466,6 @@
   line-height: 16px;
   font-weight: 650;
   color: var(--ink);
-}
-
-.sidebar-sso-message {
-  font-size: 11px;
-  line-height: 14px;
-  color: var(--ink-muted);
 }
 
 .sidebar-sso-action {
