@@ -626,13 +626,24 @@ function resolveIssueAgentKey(issue: TaskBoardIssue, agents: AssistantNavAgentIt
 }
 
 function buildTaskBoardChatEmbedPath(request: TaskBoardChatModalRequest) {
+  const agentKey = request.agentKey.trim();
   const chatId = request.chatId?.trim() ?? "";
-  if (!chatId) {
-    return `/agent/${encodeURIComponent(request.agentKey)}`;
+  if (!agentKey) {
+    if (!chatId) {
+      return "/copilot";
+    }
+    const params = new URLSearchParams();
+    params.set("chatId", chatId);
+    return `/copilot?${params.toString()}`;
   }
+
+  if (!chatId) {
+    return `/agent/${encodeURIComponent(agentKey)}`;
+  }
+
   const params = new URLSearchParams();
   params.set("chatId", chatId);
-  return `/agent/${encodeURIComponent(request.agentKey)}?${params.toString()}`;
+  return `/agent/${encodeURIComponent(agentKey)}?${params.toString()}`;
 }
 
 export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {

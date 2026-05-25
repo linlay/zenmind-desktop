@@ -313,7 +313,7 @@
   gap: 16px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 24px;
+  padding: 12px;
 }
 
 .task-board-column {
@@ -329,7 +329,7 @@
   border-radius: 12px;
   background: var(--task-board-card);
   box-shadow: var(--task-board-shadow);
-  padding: 14px;
+  padding: 10px;
   transition: margin 0.24s ease, box-shadow 0.24s ease, background 0.16s ease;
 }
 
@@ -385,7 +385,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 0 9px;
+  padding: 0 0 8px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.05);
 }
 
@@ -467,7 +467,7 @@
   flex-direction: column;
   gap: 8px;
   border-radius: var(--task-board-radius);
-  padding-top: 10px;
+  padding-top: 8px;
 }
 
 .task-board-column-body::-webkit-scrollbar,
@@ -1276,7 +1276,7 @@
   }
 
   .task-board-columns {
-    padding: 16px 14px;
+    padding: 12px;
   }
 }
 

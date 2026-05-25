@@ -4,12 +4,27 @@ import { PluginPage } from "../../pages/plugin/PluginPage";
 
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
 
+function normalizeAgentKey(value = "") {
+  const trimmed = value.trim();
+  return trimmed.startsWith("agent:") ? trimmed.slice("agent:".length).trim() : trimmed;
+}
+
+function resolveTargetAgentKey(openRequest: AssistantWorkerOpenRequest | null, fallbackAgentKey = "") {
+  return normalizeAgentKey(openRequest?.agentKey ?? openRequest?.workerKey ?? fallbackAgentKey);
+}
+
 function buildAgentWebclientCopilotPath(openRequest: AssistantWorkerOpenRequest | null, fallbackAgentKey = "") {
-  const agentKey = (openRequest?.agentKey ?? openRequest?.workerKey ?? fallbackAgentKey).trim();
+  const agentKey = resolveTargetAgentKey(openRequest, fallbackAgentKey);
   const chatId = openRequest?.chatId?.trim() ?? "";
   if (!agentKey) {
-    return AGENT_WEBCLIENT_COPILOT_PATH;
+    if (!chatId) {
+      return AGENT_WEBCLIENT_COPILOT_PATH;
+    }
+    const params = new URLSearchParams();
+    params.set("chatId", chatId);
+    return `${AGENT_WEBCLIENT_COPILOT_PATH}?${params.toString()}`;
   }
+
   if (!chatId) {
     return `/agent/${encodeURIComponent(agentKey)}`;
   }
@@ -36,7 +51,7 @@ export function AgentWebclientCopilotDock({
   onClose: () => void;
   onRunningRunIdChange: (runId: string | null) => void;
 }) {
-  const targetAgentKey = openRequest?.agentKey ?? openRequest?.workerKey ?? resolvedAgentKey;
+  const targetAgentKey = resolveTargetAgentKey(openRequest, resolvedAgentKey);
   const targetEmbedPath = buildAgentWebclientCopilotPath(openRequest, resolvedAgentKey);
 
   useEffect(() => {
@@ -64,6 +79,8 @@ export function AgentWebclientCopilotDock({
         pluginId="agent-webclient"
         surfaceLabel="助手"
         skipContextRegistration
+        loadInitialEmbeddedUrlDirectly
+        suppressInitialLoadingCopy
       />
       <button
         type="button"

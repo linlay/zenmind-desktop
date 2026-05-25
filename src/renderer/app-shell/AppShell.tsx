@@ -358,7 +358,7 @@ export function AppShell() {
   const customSidebarAgentKey = activeCustomSidebarItemId
     ? customSidebarItemMap.get(activeCustomSidebarItemId)?.agentKey || ""
     : "";
-  const resolvedCopilotAgentKey = customSidebarAgentKey || currentCopilotPreference?.agentKey || "";
+  const resolvedCopilotAgentKey = customSidebarAgentKey || currentCopilotPreference?.agentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
   const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
   const isAgentWebclientMainRoute = location.pathname === ASSISTANT_TARGET_PATH || isSingleAgentWebclientRoute(location.pathname);
   const assistantCopilotOpen = assistantDockOpen && !isAgentWebclientMainRoute;
