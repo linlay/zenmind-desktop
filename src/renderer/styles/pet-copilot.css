@@ -178,7 +178,8 @@ body.desktop-pet-body,
   animation: desktop-pet-thinking 1.48s ease-in-out infinite;
 }
 
-.desktop-pet-root.is-appearance-idol-pony.has-task-run-animation .desktop-pet-image {
+.desktop-pet-root.is-appearance-idol-pony.has-task-run-animation .desktop-pet-image,
+.desktop-pet-root.is-appearance-xiao.has-task-run-animation .desktop-pet-image {
   filter:
     drop-shadow(0 18px 24px rgba(18, 44, 91, 0.24))
     drop-shadow(0 0 14px rgba(255, 76, 126, 0.18));

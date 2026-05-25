@@ -2113,7 +2113,7 @@ test("desktop pet base mode stays sprite-sized while bubble and preview modes ex
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root:not\(\.has-bubble\):not\(\.has-preview\)\s+\.desktop-pet-image[\s\S]{0,120}width:\s*100%/);
 });
 
-test("idol pony task running sprite uses the smooth high-frame strip", () => {
+test("task running sprite uses the smooth high-frame strip", () => {
   const globalStyles = readRendererStyles();
   const desktopPetSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
@@ -2121,10 +2121,12 @@ test("idol pony task running sprite uses the smooth high-frame strip", () => {
   );
 
   assert.match(desktopPetSource, /task-run-left\.webp/);
+  assert.match(desktopPetSource, /getDesktopPetTaskRunSpritePath\(appearanceId\)/);
   assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,180}height:\s*104px;/);
   assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,220}background-size:\s*1440px\s+104px;/);
   assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,260}background-position:\s*0\s+0;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-task-run-animation\s+\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,180}animation:\s*desktop-pet-idol-pony-run-frames var\(--desktop-pet-task-run-animation-duration,\s*1500ms\) steps\(15,\s*end\) infinite;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-appearance-xiao\.has-task-run-animation\s+\.desktop-pet-image/);
   assert.match(globalStyles, /@keyframes desktop-pet-idol-pony-run-frames\s*\{[\s\S]{0,120}to\s*\{\s*background-position:\s*-1440px\s+0;/);
   assert.doesNotMatch(globalStyles, /background-position:\s*0\s+-200%;/);
   assert.doesNotMatch(globalStyles, /background-position:\s*-800%\s+-200%;/);
@@ -2257,14 +2259,21 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /"dragging-left"/);
   assert.match(petAssetScript, /"dragging-right"/);
   assert.match(petAssetScript, /"idol-pony"/);
+  assert.match(petAssetScript, /id:\s*"xiao"/);
+  assert.match(petAssetScript, /spritesheet-source\.png/);
+  assert.match(petAssetScript, /task-run-left-source\.png/);
   assert.match(sharedDesktopPet, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /"dragging-left":\s*\{\s*row:\s*1,\s*column:\s*2\s*\}/);
   assert.match(petAssetScript, /"dragging-right":\s*\{\s*row:\s*1,\s*column:\s*2,\s*mirrorX:\s*true\s*\}/);
+  assert.match(petAssetScript, /"dragging-left":\s*\{\s*row:\s*7,\s*column:\s*2\s*\}/);
+  assert.match(petAssetScript, /"dragging-right":\s*\{\s*row:\s*7,\s*column:\s*2,\s*mirrorX:\s*true\s*\}/);
   assert.match(petAssetScript, /ctx\.scale\(-1,\s*1\)/);
   assert.match(petAssetScript, /dario-a7bdc389/);
   assert.match(petAssetScript, /mini-sama-3ee267a2/);
   assert.match(petAssetScript, /task-run-left\.webp/);
+  assert.match(petAssetScript, /function renderXiaoTaskRunSprite/);
+  assert.match(petAssetScript, /function renderXiaoSpritesheet/);
   assert.match(petAssetScript, /awaiting:\s*"thinking"/);
   assert.match(petAssetScript, /running:\s*"thinking"/);
   assert.match(petAssetScript, /function drawHoverArm/);

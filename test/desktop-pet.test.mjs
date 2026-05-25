@@ -228,9 +228,19 @@ test("desktop pet generated resources cover all visual states", () => {
     "idol-pony missing spritesheet.webp for frame-based running animation"
   );
   assert.equal(
+    fs.existsSync(path.join(root, "xiao", "spritesheet.webp")),
+    true,
+    "xiao missing spritesheet.webp for frame-based visual states"
+  );
+  assert.equal(
     fs.existsSync(path.join(root, "idol-pony", "task-run-left.webp")),
     true,
     "idol-pony missing high-frame task-run-left.webp for smooth task running animation"
+  );
+  assert.equal(
+    fs.existsSync(path.join(root, "xiao", "task-run-left.webp")),
+    true,
+    "xiao missing high-frame task-run-left.webp for smooth task running animation"
   );
 });
 
@@ -464,9 +474,11 @@ test("desktop pet active run events count running tasks idempotently", () => {
   assert.equal(state.changed, false);
 });
 
-test("only idol pony uses task running animation and speeds up with more tasks", () => {
+test("animated pets use task running animation and speed up with more tasks", () => {
   assert.equal(shouldUseDesktopPetTaskRunningAnimation("idol-pony", 1), true);
   assert.equal(shouldUseDesktopPetTaskRunningAnimation("idol-pony", 0), false);
+  assert.equal(shouldUseDesktopPetTaskRunningAnimation("xiao", 1), true);
+  assert.equal(shouldUseDesktopPetTaskRunningAnimation("xiao", 0), false);
   assert.equal(shouldUseDesktopPetTaskRunningAnimation(DEFAULT_DESKTOP_PET_APPEARANCE_ID, 3), false);
 
   const oneTaskDuration = getDesktopPetRunningTaskAnimationDurationMs(1);

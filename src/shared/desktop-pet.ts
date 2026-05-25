@@ -50,6 +50,7 @@ const LEGACY_DESKTOP_PET_BOUND_AGENT_KEY_ALIASES: Record<string, string> = {
 };
 
 const DESKTOP_PET_APPEARANCE_IDS: Set<string> = new Set(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id));
+const DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS: Set<string> = new Set(["idol-pony", "xiao"]);
 
 const LEGACY_DESKTOP_PET_APPEARANCE_ID_ALIASES: Record<string, string> = {
   sprout: "dario",
@@ -122,7 +123,7 @@ export function getDesktopPetRunningTaskAnimationDurationMs(runningTaskCount: un
 }
 
 export function shouldUseDesktopPetTaskRunningAnimation(appearanceId: unknown, runningTaskCount: unknown) {
-  return normalizeDesktopPetAppearanceId(appearanceId) === "idol-pony" &&
+  return DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS.has(normalizeDesktopPetAppearanceId(appearanceId)) &&
     sanitizeDesktopPetRunningTaskCount(runningTaskCount) > 0;
 }
 

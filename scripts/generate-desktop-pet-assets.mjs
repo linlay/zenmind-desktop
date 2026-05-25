@@ -65,7 +65,15 @@ const legacyCommunityAppearanceAliases = {
 
 const communityAtlas = {
   columns: 8,
-  rows: 9
+  rows: 9,
+  cellWidth: 192,
+  cellHeight: 208
+};
+
+const taskRunSprite = {
+  columns: 15,
+  frameWidth: 192,
+  frameHeight: 208
 };
 
 const communityFrameSelections = {
@@ -77,6 +85,19 @@ const communityFrameSelections = {
   hover: { row: 3, column: 1 },
   idle: { row: 0, column: 0 },
   message: { row: 3, column: 2 },
+  thinking: { row: 8, column: 2 }
+};
+
+const xiaoFrameSelections = {
+  dragging: { row: 7, column: 2 },
+  "dragging-left": { row: 7, column: 2 },
+  "dragging-right": { row: 7, column: 2, mirrorX: true },
+  done: { row: 6, column: 4 },
+  error: { row: 5, column: 3 },
+  hover: { row: 6, column: 1 },
+  idle: { row: 0, column: 0 },
+  message: { row: 6, column: 3 },
+  running: { row: 1, column: 2 },
   thinking: { row: 8, column: 2 }
 };
 
@@ -614,8 +635,8 @@ function getCommunityFrameSelection(variant) {
   return selection;
 }
 
-function renderCommunityPetVariant(image, variant) {
-  const { row, column, mirrorX = false } = getCommunityFrameSelection(variant);
+function renderCommunityPetVariant(image, variant, frameSelection = getCommunityFrameSelection(variant)) {
+  const { row, column, mirrorX = false } = frameSelection;
   const cellWidth = Math.floor(image.width / communityAtlas.columns);
   const cellHeight = Math.floor(image.height / communityAtlas.rows);
   const canvas = createCanvas(size.width, size.height);
@@ -691,36 +712,224 @@ function chromaKeySourceImage(image) {
   return subjectCanvas;
 }
 
-function drawXiaoSourceVariant(subjectCanvas) {
-  const canvas = createCanvas(size.width, size.height);
-  const ctx = canvas.getContext("2d");
-  const targetScale = Math.min((size.width * 0.8) / subjectCanvas.width, (size.height * 0.9) / subjectCanvas.height);
+function chromaKeyMagentaCell(image, sx, sy, sw, sh) {
+  const sourceCanvas = createCanvas(sw, sh);
+  const sourceContext = sourceCanvas.getContext("2d");
+  sourceContext.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
+  const imageData = sourceContext.getImageData(0, 0, sw, sh);
+  const pixels = imageData.data;
+  const keepPixels = new Uint8Array(sw * sh);
+  let minX = sw;
+  let minY = sh;
+  let maxX = 0;
+  let maxY = 0;
+
+  for (let index = 0; index < pixels.length; index += 4) {
+    const red = pixels[index];
+    const green = pixels[index + 1];
+    const blue = pixels[index + 2];
+    const keyLike = red > 70 && blue > 70 && green < 120 && red > green * 1.35 && blue > green * 1.2 && Math.abs(red - blue) < 115;
+    if (keyLike) {
+      pixels[index + 3] = 0;
+      continue;
+    }
+    const pixelIndex = index / 4;
+    keepPixels[pixelIndex] = pixels[index + 3] > 10 ? 1 : 0;
+  }
+
+  const selectedPixels = selectPrimarySpriteComponent(keepPixels, sw, sh);
+  for (let pixelIndex = 0; pixelIndex < selectedPixels.length; pixelIndex += 1) {
+    const index = pixelIndex * 4;
+    if (!selectedPixels[pixelIndex]) {
+      pixels[index + 3] = 0;
+      continue;
+    }
+    const x = pixelIndex % sw;
+    const y = Math.floor(pixelIndex / sw);
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+
+  sourceContext.putImageData(imageData, 0, 0);
+  if (maxX < minX || maxY < minY) {
+    return createCanvas(1, 1);
+  }
+
+  const padding = 3;
+  const cropX = Math.max(0, minX - padding);
+  const cropY = Math.max(0, minY - padding);
+  const cropWidth = Math.min(sw - cropX, maxX - minX + padding * 2);
+  const cropHeight = Math.min(sh - cropY, maxY - minY + padding * 2);
+  const subjectCanvas = createCanvas(cropWidth, cropHeight);
+  const subjectContext = subjectCanvas.getContext("2d");
+  subjectContext.drawImage(sourceCanvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+  return subjectCanvas;
+}
+
+function selectPrimarySpriteComponent(mask, width, height) {
+  const visited = new Uint8Array(mask.length);
+  const selected = new Uint8Array(mask.length);
+  const centerX = width / 2;
+  const centerY = height / 2;
+  let bestScore = -Infinity;
+  let bestPixels = [];
+
+  for (let start = 0; start < mask.length; start += 1) {
+    if (!mask[start] || visited[start]) {
+      continue;
+    }
+    const stack = [start];
+    const component = [];
+    visited[start] = 1;
+    let sumX = 0;
+    let sumY = 0;
+    let minX = width;
+    let minY = height;
+    let maxX = 0;
+    let maxY = 0;
+
+    while (stack.length > 0) {
+      const pixelIndex = stack.pop();
+      component.push(pixelIndex);
+      const x = pixelIndex % width;
+      const y = Math.floor(pixelIndex / width);
+      sumX += x;
+      sumY += y;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+
+      const neighbors = [
+        pixelIndex - 1,
+        pixelIndex + 1,
+        pixelIndex - width,
+        pixelIndex + width
+      ];
+      for (const neighbor of neighbors) {
+        if (neighbor < 0 || neighbor >= mask.length || visited[neighbor] || !mask[neighbor]) {
+          continue;
+        }
+        if ((neighbor === pixelIndex - 1 && x === 0) || (neighbor === pixelIndex + 1 && x === width - 1)) {
+          continue;
+        }
+        visited[neighbor] = 1;
+        stack.push(neighbor);
+      }
+    }
+
+    const componentCenterX = sumX / component.length;
+    const componentCenterY = sumY / component.length;
+    const distance = Math.hypot(componentCenterX - centerX, componentCenterY - centerY);
+    const score = component.length - distance * 16;
+    if (score > bestScore) {
+      bestScore = score;
+      bestPixels = component;
+    }
+  }
+
+  for (const pixelIndex of bestPixels) {
+    selected[pixelIndex] = 1;
+  }
+  return selected;
+}
+
+function drawSubjectInFrame(ctx, subjectCanvas, frameX, frameY, frameWidth, frameHeight, mirrorX = false) {
+  const targetScale = Math.min((frameWidth * 0.9) / subjectCanvas.width, (frameHeight * 0.92) / subjectCanvas.height);
   const targetWidth = Math.round(subjectCanvas.width * targetScale);
   const targetHeight = Math.round(subjectCanvas.height * targetScale);
-  const targetX = Math.round(size.width / 2);
-  const targetY = Math.round(size.height - targetHeight / 2 - 12);
-
+  const targetX = frameX + Math.round((frameWidth - targetWidth) / 2);
+  const targetY = frameY + Math.round(frameHeight - targetHeight - 6);
   ctx.save();
-  ctx.translate(targetX, targetY);
-  ctx.drawImage(subjectCanvas, -targetWidth / 2, -targetHeight / 2, targetWidth, targetHeight);
+  if (mirrorX) {
+    ctx.translate(frameX + frameWidth, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(subjectCanvas, frameWidth - (targetX - frameX) - targetWidth, targetY, targetWidth, targetHeight);
+  } else {
+    ctx.drawImage(subjectCanvas, targetX, targetY, targetWidth, targetHeight);
+  }
   ctx.restore();
-  return canvas.toBuffer("image/png");
+}
+
+function renderXiaoSpritesheet(image) {
+  const canvas = createCanvas(communityAtlas.columns * communityAtlas.cellWidth, communityAtlas.rows * communityAtlas.cellHeight);
+  const ctx = canvas.getContext("2d");
+  const sourceCellWidth = image.width / communityAtlas.columns;
+  const sourceCellHeight = image.height / communityAtlas.rows;
+  for (let row = 0; row < communityAtlas.rows; row += 1) {
+    for (let column = 0; column < communityAtlas.columns; column += 1) {
+      const centerX = (column + 0.5) * sourceCellWidth;
+      const centerY = (row + 0.5) * sourceCellHeight;
+      const sampleWidth = sourceCellWidth * 0.92;
+      const sampleHeight = sourceCellHeight * 1.62;
+      const sx = Math.max(0, Math.round(centerX - sampleWidth / 2));
+      const sy = Math.max(0, Math.round(centerY - sampleHeight / 2));
+      const nextSx = Math.min(image.width, Math.round(centerX + sampleWidth / 2));
+      const nextSy = Math.min(image.height, Math.round(centerY + sampleHeight / 2));
+      const subjectCanvas = chromaKeyMagentaCell(image, sx, sy, nextSx - sx, nextSy - sy);
+      drawSubjectInFrame(
+        ctx,
+        subjectCanvas,
+        column * communityAtlas.cellWidth,
+        row * communityAtlas.cellHeight,
+        communityAtlas.cellWidth,
+        communityAtlas.cellHeight
+      );
+    }
+  }
+  return canvas;
+}
+
+function renderXiaoPetVariant(spritesheet, variant) {
+  const selection = xiaoFrameSelections[variant];
+  if (!selection) {
+    throw new Error(`No Xiao frame selection configured for ${variant}`);
+  }
+  return renderCommunityPetVariant(spritesheet, variant, selection);
+}
+
+function renderXiaoTaskRunSprite(image) {
+  const canvas = createCanvas(taskRunSprite.frameWidth * taskRunSprite.columns, taskRunSprite.frameHeight);
+  const ctx = canvas.getContext("2d");
+
+  for (let frame = 0; frame < taskRunSprite.columns; frame += 1) {
+    const frameWidth = image.width / taskRunSprite.columns;
+    const sourceWidth = frameWidth * 1.52;
+    const centerX = (frame + 0.5) * frameWidth;
+    const sx = Math.max(0, Math.round(centerX - sourceWidth / 2));
+    const nextSx = Math.min(image.width, Math.round(centerX + sourceWidth / 2));
+    const subjectCanvas = chromaKeyMagentaCell(image, sx, 0, nextSx - sx, image.height);
+    drawSubjectInFrame(
+      ctx,
+      subjectCanvas,
+      frame * taskRunSprite.frameWidth,
+      0,
+      taskRunSprite.frameWidth,
+      taskRunSprite.frameHeight
+    );
+  }
+
+  return canvas.toBuffer("image/webp");
 }
 
 async function renderScriptedAppearance(appearance) {
   if (appearance.id !== "xiao") {
     throw new Error(`No scripted pet renderer configured for ${appearance.displayName}`);
   }
-  const sourcePath = path.join(sourceAssetDirectory, appearance.id, "source-chroma.png");
-  const sourceImage = await loadImage(sourcePath);
-  const subjectCanvas = chromaKeySourceImage(sourceImage);
+  const spritesheetImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "spritesheet-source.png"));
+  const taskRunImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "task-run-left-source.png"));
+  const spritesheet = renderXiaoSpritesheet(spritesheetImage);
   const buffers = new Map();
-  const imageBuffer = drawXiaoSourceVariant(subjectCanvas);
-  // 小肖必须始终使用用户确认的同一张 Q 版肖战源图，状态变化只交给渲染层 CSS 动效处理。
   for (const variant of classicVisualVariants) {
-    buffers.set(variant, imageBuffer);
+    buffers.set(variant, renderXiaoPetVariant(spritesheet, variant));
   }
-  return buffers;
+  return {
+    buffers,
+    spritesheetBuffer: spritesheet.toBuffer("image/webp"),
+    taskRunSpriteBuffer: renderXiaoTaskRunSprite(taskRunImage)
+  };
 }
 
 async function renderCommunityAppearance(appearance) {
@@ -760,8 +969,15 @@ for (const variant of classicVisualVariants) {
 await writeVariantFiles(outputDirectory, defaultBuffers);
 
 for (const appearance of scriptedAppearances) {
-  const buffers = await renderScriptedAppearance(appearance);
-  await writeVariantFiles(path.join(outputDirectory, appearance.id), buffers);
+  const renderedAppearance = await renderScriptedAppearance(appearance);
+  const appearanceOutputDirectory = path.join(outputDirectory, appearance.id);
+  await writeVariantFiles(appearanceOutputDirectory, renderedAppearance.buffers);
+  if (renderedAppearance.spritesheetBuffer) {
+    await fs.writeFile(path.join(appearanceOutputDirectory, "spritesheet.webp"), renderedAppearance.spritesheetBuffer);
+  }
+  if (renderedAppearance.taskRunSpriteBuffer) {
+    await fs.writeFile(path.join(appearanceOutputDirectory, "task-run-left.webp"), renderedAppearance.taskRunSpriteBuffer);
+  }
 }
 
 const communityBuffersById = new Map();

@@ -124,7 +124,6 @@ type DesktopPetVisualStatus =
 const DESKTOP_PET_DANCE_DURATION_MS = 3000;
 const DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX = 3;
 const DESKTOP_PET_IMAGE_HIT_MARGIN = 8;
-const IDOL_PONY_RUNNING_SPRITE_PATH = "./desktop-pet/idol-pony/task-run-left.webp";
 
 function rectContainsPoint(rect: DOMRect, x: number, y: number, margin = 0) {
   return x >= rect.left - margin &&
@@ -150,6 +149,10 @@ function pointIntersectsVisiblePetArea(x: number, y: number) {
     pointIntersectsElement(".desktop-pet-unread-badge", x, y, 4) ||
     pointIntersectsElement(".desktop-pet-speech", x, y) ||
     pointIntersectsElement(".desktop-pet-preview", x, y);
+}
+
+function getDesktopPetTaskRunSpritePath(appearanceId: string) {
+  return `./desktop-pet/${appearanceId}/task-run-left.webp`;
 }
 
 export function DesktopPet() {
@@ -332,7 +335,7 @@ export function DesktopPet() {
     : undefined;
   const taskRunSpriteStyle = shouldShowTaskRunAnimation
     ? {
-        backgroundImage: `url("${IDOL_PONY_RUNNING_SPRITE_PATH}")`
+        backgroundImage: `url("${getDesktopPetTaskRunSpritePath(appearanceId)}")`
       }
     : undefined;
   useEffect(() => {
