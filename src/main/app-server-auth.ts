@@ -89,6 +89,48 @@ function readAppServerAuthSettings(layout: AppServerAuthLayout) {
   };
 }
 
+type ResolvedCommand = {
+  command: string;
+  args: string[];
+};
+
+function resolveAppServerCommand(layout: AppServerAuthLayout, subcommand: string): ResolvedCommand {
+  const binaryName = process.platform === "win32" ? "zenmind-app-server.exe" : "zenmind-app-server";
+  const binaryPath = path.join(layout.programDir, "backend", binaryName);
+  if (fs.existsSync(binaryPath)) {
+    return {
+      command: binaryPath,
+      args: [subcommand]
+    };
+  }
+
+  // Fallback for tests/legacy: look for scripts/subcommand.ps1 or .sh
+  if (process.platform === "win32") {
+    const windowsScript = path.join(layout.programDir, "scripts", `${subcommand}.ps1`);
+    if (fs.existsSync(windowsScript)) {
+      return {
+        command: windowsPowerShellPath(),
+        args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", windowsScript]
+      };
+    }
+    throw new Error(`zenmind-app-server 缺少后端二进制文件：backend/${binaryName} 且缺少 fallback Windows 脚本：scripts/${subcommand}.ps1`);
+  }
+
+  if (process.platform === "darwin" || process.platform === "linux") {
+    const unixScript = path.join(layout.programDir, "scripts", `${subcommand}.sh`);
+    if (fs.existsSync(unixScript)) {
+      fs.chmodSync(unixScript, 0o755);
+      return {
+        command: unixScript,
+        args: []
+      };
+    }
+    throw new Error(`zenmind-app-server 缺少后端二进制文件：backend/${binaryName} 且缺少 fallback Unix 脚本：scripts/${subcommand}.sh`);
+  }
+
+  throw new Error(`不支持的平台：${process.platform}`);
+}
+
 function resolveAppServerScript(layout: AppServerAuthLayout, baseName: string) {
   if (process.platform === "win32") {
     const windowsScript = path.join(layout.programDir, "scripts", `${baseName}.ps1`);
@@ -112,14 +154,12 @@ function resolveAppServerScript(layout: AppServerAuthLayout, baseName: string) {
 
 function runAppServerScript(
   layout: AppServerAuthLayout,
-  scriptPath: string,
+  resolved: ResolvedCommand,
   args: string[],
   env: NodeJS.ProcessEnv
 ): Promise<ExecResult> {
-  const command = process.platform === "win32" ? windowsPowerShellPath() : scriptPath;
-  const commandArgs = process.platform === "win32"
-    ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, ...args]
-    : args;
+  const command = resolved.command;
+  const commandArgs = [...resolved.args, ...args];
 
   return new Promise((resolve, reject) => {
     const childEnv: NodeJS.ProcessEnv = {
@@ -129,9 +169,6 @@ function runAppServerScript(
     };
 
     // Ensure common tool paths are available (Git mingw64, etc.)
-    // Note: openssl and sqlite3 are no longer required by setup-public-key.ps1
-    // or token scripts since they use pure .NET crypto and bundled System.Data.SQLite.
-    // We keep this path augmentation for robustness/other possible tools.
     if (process.platform === "win32") {
       const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
       const userProfile = process.env.USERPROFILE ?? "";
@@ -175,14 +212,14 @@ function isSqliteBusyError(reason: unknown) {
 
 async function runAppServerAuthScript(
   layout: AppServerAuthLayout,
-  scriptPath: string,
+  resolved: ResolvedCommand,
   args: string[],
   env: NodeJS.ProcessEnv
 ): Promise<ExecResult> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= APP_SERVER_AUTH_SCRIPT_RETRY_DELAYS_MS.length; attempt += 1) {
     try {
-      return await runAppServerScript(layout, scriptPath, args, env);
+      return await runAppServerScript(layout, resolved, args, env);
     } catch (reason) {
       lastError = reason;
       if (!isSqliteBusyError(reason) || attempt >= APP_SERVER_AUTH_SCRIPT_RETRY_DELAYS_MS.length) {
@@ -272,8 +309,8 @@ export async function ensureAppServerJwk(app: App) {
   ensureDir(path.dirname(settings.dbPath));
   ensureDir(keyDir);
 
-  const scriptPath = resolveAppServerScript(layout, "setup-public-key");
-  await runAppServerAuthScript(layout, scriptPath, buildSetupPublicKeyArgs(settings, keyDir, publicKeyPath), {
+  const resolved = resolveAppServerCommand(layout, "setup-public-key");
+  await runAppServerAuthScript(layout, resolved, buildSetupPublicKeyArgs(settings, keyDir, publicKeyPath), {
     AUTH_DB_PATH: settings.dbPath
   });
 
@@ -292,8 +329,8 @@ export async function issueAppServerAccessToken(app: App) {
   const settings = readAppServerAuthSettings(layout);
   await ensureAppServerJwk(app);
 
-  const scriptPath = resolveAppServerScript(layout, "issue-bridge-access-token");
-  const result = await runAppServerAuthScript(layout, scriptPath, buildIssueAccessTokenArgs(settings), {
+  const resolved = resolveAppServerCommand(layout, "issue-bridge-access-token");
+  const result = await runAppServerAuthScript(layout, resolved, buildIssueAccessTokenArgs(settings), {
     AUTH_DB_PATH: settings.dbPath,
     AUTH_ISSUER: settings.issuer,
     AUTH_APP_USERNAME: settings.username
@@ -309,7 +346,9 @@ export async function issueAppServerAccessToken(app: App) {
 export const __testInternals = {
   getAppServerLayout,
   readAppServerAuthSettings,
+  resolveAppServerCommand,
   resolveAppServerScript,
   runAppServerScript,
   runAppServerAuthScript
 };
+

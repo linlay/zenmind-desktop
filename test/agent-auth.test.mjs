@@ -11,6 +11,11 @@ const {
   __testInternals: registryInternals,
   registerPlugin
 } = require("../dist-electron/main/service-registry.js");
+const {
+  getServiceDataRoot,
+  getServicesRoot,
+  getServiceConfigRoot
+} = require("../dist-electron/main/user-paths.js");
 
 function createAppStub(root) {
   return {
@@ -34,6 +39,9 @@ function decodeJson(part) {
 }
 
 function registerAppServerFixture(root, options = {}) {
+  const app = createAppStub(root);
+  const isWindows = process.platform === "win32";
+  const ext = isWindows ? "ps1" : "sh";
   const service = registerPlugin({
     id: "zenmind-app-server",
     name: "认证服务",
@@ -42,8 +50,8 @@ function registerAppServerFixture(root, options = {}) {
     description: "fixture",
     frontend: { mode: "standalone" },
     scripts: {
-      start: "start.sh",
-      stop: "stop.sh"
+      start: `start.${ext}`,
+      stop: `stop.${ext}`
     },
     runtime: {},
     web: {
@@ -55,78 +63,131 @@ function registerAppServerFixture(root, options = {}) {
       bundleTopLevelDir: "zenmind-app-server"
     }
   });
-  const programDir = path.join(root, "appData", "ZenMind", "services", service.id, service.version);
-  const configDir = path.join(root, "home", ".zenmind", ".desktop", "config", "services", service.id);
+  const programDir = path.join(getServicesRoot(app), service.id, service.version);
+  const configDir = getServiceConfigRoot(app, service.id, service.kind);
   fs.mkdirSync(path.join(programDir, "scripts"), { recursive: true });
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(
     path.join(configDir, ".env"),
     [
       "SERVER_PORT=7076",
-      "AUTH_DB_PATH=" + path.join(root, "home", ".zenmind", ".desktop", "data", "services", service.id, "auth.db"),
+      "AUTH_DB_PATH=" + path.join(getServiceDataRoot(app, service.id, service.kind), "auth.db"),
       "AUTH_ISSUER=http://issuer.test",
       "AUTH_APP_USERNAME=app"
     ].join("\n") + "\n",
     "utf8"
   );
-  fs.writeFileSync(
-    path.join(programDir, "scripts", "setup-public-key.sh"),
-    [
+  if (isWindows) {
+    fs.writeFileSync(
+      path.join(programDir, "scripts", "setup-public-key.ps1"),
+      [
+        "param([string]$mode, [string]$db, [string]$out, [string]$publicOut)",
+        "New-Item -ItemType Directory -Path (Split-Path -Parent $publicOut) -Force | Out-Null",
+        "[System.IO.File]::WriteAllText($publicOut, \"APP_SERVER_PUBLIC_KEY`n\")"
+      ].join("\r\n"),
+      "utf8"
+    );
+
+    const issueScriptLines = [
+      "param([string]$db, [string]$issuer, [string]$username, [string]$deviceName)"
+    ];
+    if (options.lockedIssueAttempts) {
+      const markerPath = path.join(root, "issue-attempts.txt");
+      issueScriptLines.push(
+        `$marker = '${markerPath.replace(/'/g, "''")}'`,
+        "$attempt = 0",
+        "if (Test-Path -LiteralPath $marker) {",
+        "  $attempt = [int](Get-Content -LiteralPath $marker -Raw)",
+        "}",
+        "$attempt += 1",
+        "[System.IO.File]::WriteAllText($marker, $attempt)",
+        `if ($attempt -le ${options.lockedIssueAttempts}) {`,
+        "  [Console]::Error.WriteLine('Error: stepping, database is locked (5)')",
+        "  exit 1",
+        "}"
+      );
+    }
+    if (options.issueCounterPath) {
+      const counterPath = options.issueCounterPath;
+      issueScriptLines.push(
+        `$counter = '${counterPath.replace(/'/g, "''")}'`,
+        "$count = 0",
+        "if (Test-Path -LiteralPath $counter) {",
+        "  $count = [int](Get-Content -LiteralPath $counter -Raw)",
+        "}",
+        "$count += 1",
+        "[System.IO.File]::WriteAllText($counter, $count)"
+      );
+    }
+    issueScriptLines.push(
+      "Write-Output 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImZpeHR1cmUiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwOi8vaXNzdWVyLnRlc3QiLCJzdWIiOiJhcHAiLCJzY29wZSI6ImFwcCIsImRldmljZV9pZCI6ImRldmljZS0xIn0.signature'"
+    );
+
+    fs.writeFileSync(
+      path.join(programDir, "scripts", "issue-bridge-access-token.ps1"),
+      issueScriptLines.join("\r\n") + "\r\n",
+      "utf8"
+    );
+  } else {
+    fs.writeFileSync(
+      path.join(programDir, "scripts", "setup-public-key.sh"),
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "public_out=''",
+        "while [ $# -gt 0 ]; do",
+        "  case \"$1\" in",
+        "    --public-out) public_out=\"$2\"; shift 2 ;;",
+        "    *) shift ;;",
+        "  esac",
+        "done",
+        "mkdir -p \"$(dirname \"$public_out\")\"",
+        "printf 'APP_SERVER_PUBLIC_KEY\\n' > \"$public_out\""
+      ].join("\n") + "\n",
+      "utf8"
+    );
+    const issueScriptLines = [
       "#!/usr/bin/env bash",
-      "set -euo pipefail",
-      "public_out=''",
-      "while [ $# -gt 0 ]; do",
-      "  case \"$1\" in",
-      "    --public-out) public_out=\"$2\"; shift 2 ;;",
-      "    *) shift ;;",
-      "  esac",
-      "done",
-      "mkdir -p \"$(dirname \"$public_out\")\"",
-      "printf 'APP_SERVER_PUBLIC_KEY\\n' > \"$public_out\""
-    ].join("\n") + "\n",
-    "utf8"
-  );
-  const issueScriptLines = [
-    "#!/usr/bin/env bash",
-    "set -euo pipefail"
-  ];
-  if (options.lockedIssueAttempts) {
-    const markerPath = path.join(root, "issue-attempts.txt");
+      "set -euo pipefail"
+    ];
+    if (options.lockedIssueAttempts) {
+      const markerPath = path.join(root, "issue-attempts.txt");
+      issueScriptLines.push(
+        `marker=${JSON.stringify(markerPath)}`,
+        "attempt=0",
+        "if [ -f \"$marker\" ]; then",
+        "  attempt=$(cat \"$marker\")",
+        "fi",
+        "attempt=$((attempt + 1))",
+        "printf '%s' \"$attempt\" > \"$marker\"",
+        `if [ "$attempt" -le ${options.lockedIssueAttempts} ]; then`,
+        "  printf '%s\\n' 'Error: stepping, database is locked (5)' >&2",
+        "  exit 1",
+        "fi"
+      );
+    }
+    if (options.issueCounterPath) {
+      issueScriptLines.push(
+        `counter=${JSON.stringify(options.issueCounterPath)}`,
+        "count=0",
+        "if [ -f \"$counter\" ]; then",
+        "  count=$(cat \"$counter\")",
+        "fi",
+        "count=$((count + 1))",
+        "printf '%s' \"$count\" > \"$counter\""
+      );
+    }
     issueScriptLines.push(
-      `marker=${JSON.stringify(markerPath)}`,
-      "attempt=0",
-      "if [ -f \"$marker\" ]; then",
-      "  attempt=$(cat \"$marker\")",
-      "fi",
-      "attempt=$((attempt + 1))",
-      "printf '%s' \"$attempt\" > \"$marker\"",
-      `if [ "$attempt" -le ${options.lockedIssueAttempts} ]; then`,
-      "  printf '%s\\n' 'Error: stepping, database is locked (5)' >&2",
-      "  exit 1",
-      "fi"
+      "printf '%s\\n' 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImZpeHR1cmUiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwOi8vaXNzdWVyLnRlc3QiLCJzdWIiOiJhcHAiLCJzY29wZSI6ImFwcCIsImRldmljZV9pZCI6ImRldmljZS0xIn0.signature'"
     );
-  }
-  if (options.issueCounterPath) {
-    issueScriptLines.push(
-      `counter=${JSON.stringify(options.issueCounterPath)}`,
-      "count=0",
-      "if [ -f \"$counter\" ]; then",
-      "  count=$(cat \"$counter\")",
-      "fi",
-      "count=$((count + 1))",
-      "printf '%s' \"$count\" > \"$counter\""
+    fs.writeFileSync(
+      path.join(programDir, "scripts", "issue-bridge-access-token.sh"),
+      issueScriptLines.join("\n") + "\n",
+      "utf8"
     );
+    fs.chmodSync(path.join(programDir, "scripts", "setup-public-key.sh"), 0o755);
+    fs.chmodSync(path.join(programDir, "scripts", "issue-bridge-access-token.sh"), 0o755);
   }
-  issueScriptLines.push(
-    "printf '%s\\n' 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImZpeHR1cmUiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwOi8vaXNzdWVyLnRlc3QiLCJzdWIiOiJhcHAiLCJzY29wZSI6ImFwcCIsImRldmljZV9pZCI6ImRldmljZS0xIn0.signature'"
-  );
-  fs.writeFileSync(
-    path.join(programDir, "scripts", "issue-bridge-access-token.sh"),
-    issueScriptLines.join("\n") + "\n",
-    "utf8"
-  );
-  fs.chmodSync(path.join(programDir, "scripts", "setup-public-key.sh"), 0o755);
-  fs.chmodSync(path.join(programDir, "scripts", "issue-bridge-access-token.sh"), 0o755);
 }
 
 test("issueAgentAccessToken uses zenmind-app-server to issue an app token", async () => {
@@ -144,11 +205,9 @@ test("issueAgentAccessToken uses zenmind-app-server to issue an app token", asyn
     assert.equal(payload.sub, "app");
     assert.equal(payload.scope, "app");
     assert.equal(payload.device_id, "device-1");
+    const publicKeyPath = path.join(getServiceDataRoot(app, "zenmind-app-server"), "keys", "publicKey.pem");
     assert.equal(
-      fs.readFileSync(
-        path.join(tempRoot, "home", ".zenmind", ".desktop", "data", "services", "zenmind-app-server", "keys", "publicKey.pem"),
-        "utf8"
-      ),
+      fs.readFileSync(publicKeyPath, "utf8"),
       "APP_SERVER_PUBLIC_KEY\n"
     );
   } finally {

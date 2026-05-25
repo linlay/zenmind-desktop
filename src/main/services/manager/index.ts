@@ -1186,7 +1186,7 @@ function parseProcessTreeRowsFromPs(stdout: string): ProcessTreeRow[] {
     .filter((row) => Number.isFinite(row.pid) && row.pid > 0 && Number.isFinite(row.ppid) && row.ppid >= 0);
 }
 
-function parseProcessTreeRowsFromPowerShell(stdout: string): ProcessTreeRow[] {
+function parseProcessTreeRowsFromWindowsPowerShell(stdout: string): ProcessTreeRow[] {
   const trimmed = stdout.trim();
   if (!trimmed) {
     return [];
@@ -1228,7 +1228,7 @@ function readProcessTreeRows() {
       if (result.status !== 0 || result.error) {
         return [];
       }
-      return parseProcessTreeRowsFromPowerShell(result.stdout);
+      return parseProcessTreeRowsFromWindowsPowerShell(result.stdout);
     }
 
     const result = spawnSync("ps", ["-axo", "pid=,ppid="], {
@@ -5370,7 +5370,7 @@ export const __testInternals = {
   normalizeAgentWebclientEnvContentForDesktop,
   applyAgentPlatformWindowsHostShellDefaults,
   parseProcessTreeRowsFromPs,
-  parseProcessTreeRowsFromPowerShell,
+  parseProcessTreeRowsFromPowerShell: parseProcessTreeRowsFromWindowsPowerShell,
   buildProcessTreePids,
   collectManagedRootPids,
   captureManagedProcessCleanupSnapshot,
