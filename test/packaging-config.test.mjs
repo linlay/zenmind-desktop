@@ -11,6 +11,7 @@ const uninstallScriptPath = path.join(projectRoot, "scripts", "uninstall.sh");
 const distWinScriptPath = path.join(projectRoot, "scripts", "dist-win.mjs");
 const stageAppScriptPath = path.join(projectRoot, "scripts", "stage-app.mjs");
 const buildMainBundleScriptPath = path.join(projectRoot, "scripts", "build-main-bundle.mjs");
+const bundledMainPath = path.join(projectRoot, "build", "bundle", "dist-electron", "main", "index.js");
 
 function loadPackageJson() {
   return JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
@@ -56,6 +57,13 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
   assert.equal(packageJson.scripts?.["dist:win-docker"], "node ./scripts/dist-win.mjs");
   assert.notEqual(packageJson.build?.nsis?.perMachine, true);
   assert.equal(packageJson.build?.nsis?.include, "build/installer.nsh");
+});
+
+test("main-process bundle keeps process tree parser test export bound", () => {
+  const bundledMain = fs.readFileSync(bundledMainPath, "utf8");
+
+  assert.match(bundledMain, /parseProcessTreeRowsFromPowerShell:/);
+  assert.doesNotMatch(bundledMain, /(?<!:)parseProcessTreeRowsFromPowerShell[,}]/);
 });
 
 test("custom uninstall assets default to keeping data and delete desktop plus program data on request", () => {

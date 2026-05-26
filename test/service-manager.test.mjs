@@ -616,8 +616,9 @@ function createStartupCoreAssetsFixture(options = {}) {
       fs.chmodSync(path.join(bundleRoot, deployFileName), 0o755);
       fs.chmodSync(path.join(bundleRoot, "scripts", programCommonName), 0o755);
       if (service.id === "zenmind-app-server") {
-        fs.chmodSync(path.join(bundleRoot, "scripts", "setup-public-key.sh"), 0o755);
-        fs.chmodSync(path.join(bundleRoot, "scripts", "issue-bridge-access-token.sh"), 0o755);
+        const ext = isWindows ? "ps1" : "sh";
+        fs.chmodSync(path.join(bundleRoot, "scripts", `setup-public-key.${ext}`), 0o755);
+        fs.chmodSync(path.join(bundleRoot, "scripts", `issue-bridge-access-token.${ext}`), 0o755);
       }
     }
 
@@ -5155,23 +5156,37 @@ test("runStartupPreparation bootstraps development first launch with core servic
 });
 
 test("runExecFile resolves when a daemon child keeps stdout open", async () => {
+  const isWindows = process.platform === "win32";
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-run-exec-daemon-"));
-  const scriptPath = path.join(tempRoot, "start.sh");
-  fs.writeFileSync(
-    scriptPath,
-    [
-      "#!/usr/bin/env bash",
-      "set -euo pipefail",
-      "sleep 3 &",
-      "echo $! > daemon.pid",
-      "echo started"
-    ].join("\n"),
-    "utf8"
-  );
-  fs.chmodSync(scriptPath, 0o755);
+  const scriptName = isWindows ? "start.ps1" : "start.sh";
+  const scriptPath = path.join(tempRoot, scriptName);
+  if (isWindows) {
+    fs.writeFileSync(
+      scriptPath,
+      [
+        "$proc = Start-Process -FilePath powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','Start-Sleep -Seconds 3' -PassThru",
+        "$proc.Id | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'daemon.pid')",
+        "Write-Output 'started'"
+      ].join("\r\n"),
+      "utf8"
+    );
+  } else {
+    fs.writeFileSync(
+      scriptPath,
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "sleep 3 &",
+        "echo $! > daemon.pid",
+        "echo started"
+      ].join("\n"),
+      "utf8"
+    );
+    fs.chmodSync(scriptPath, 0o755);
+  }
 
   const startedAt = Date.now();
-  const result = await __testInternals.runExecFile("./start.sh", [], tempRoot);
+  const result = await __testInternals.runExecFile(`./${scriptName}`, [], tempRoot);
   const elapsedMs = Date.now() - startedAt;
   assert.ok(elapsedMs < 2500, `expected command to resolve before daemon exits, took ${elapsedMs}ms`);
   assert.match(result.stdout, /started/);
