@@ -39,6 +39,7 @@ export function PluginSurfaceHost({
           active={activePluginId === pluginId}
           embedPath={pluginId === "agent-webclient" ? activeAgentWebclientRoute?.embedPath : undefined}
           hostTheme={hostTheme}
+          loadInitialEmbeddedUrlDirectly={pluginId === "agent-webclient" && Boolean(activeAgentWebclientRoute?.embedPath)}
           pluginId={pluginId}
           surfaceLabel={pluginId === "agent-webclient" ? activeAgentWebclientRoute?.label : undefined}
         />

@@ -71,6 +71,19 @@ test("sidebar does not expose the built-in Chrome surface", () => {
   assert.doesNotMatch(sidebarSource, /BUILTIN_BROWSER_ROUTE/);
 });
 
+test("main agent webclient surface direct-loads active embed path", () => {
+  const surfaceHosts = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx"
+  );
+
+  assert.match(surfaceHosts, /embedPath=\{pluginId === "agent-webclient" \? activeAgentWebclientRoute\?\.embedPath : undefined\}/);
+  assert.match(surfaceHosts, /loadInitialEmbeddedUrlDirectly=\{pluginId === "agent-webclient" && Boolean\(activeAgentWebclientRoute\?\.embedPath\)\}/);
+});
+
 test("control center keeps service operations in the prototype dashboard layout", () => {
   const controlCenter = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "control-center", "ControlCenterPage.tsx"),
