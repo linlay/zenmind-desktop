@@ -555,8 +555,7 @@
   background: #16a34a;
 }
 
-.task-board-card.is-completed .task-board-card-main strong,
-.task-board-card.is-completed .task-board-card-detail {
+.task-board-card.is-completed .task-board-card-main strong {
   color: color-mix(in srgb, var(--task-board-ink) 76%, var(--task-board-muted));
 }
 
@@ -703,7 +702,6 @@
 }
 
 .task-board-card-id,
-.task-board-card-meta,
 .task-board-card-assignee {
   color: var(--task-board-muted);
   font-size: 10px;
@@ -718,23 +716,6 @@
   letter-spacing: 0.04em;
 }
 
-.task-board-card-meta {
-  flex: 0 0 auto;
-  min-width: 0;
-  max-width: 142px;
-  padding: 2px 6px;
-  border-radius: 5px;
-  background: rgba(148, 163, 184, 0.08);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 9px;
-  font-weight: 800;
-}
-
-.task-board-card-meta.is-live {
-  color: #b45309;
-  background: rgba(245, 158, 11, 0.1);
-}
-
 .task-board-card-main strong {
   display: block;
   min-height: 15px;
@@ -746,73 +727,6 @@
   font-weight: 700;
 }
 
-.task-board-card-stage {
-  flex: 0 0 auto;
-  max-width: 76px;
-  height: 19px;
-  display: inline-flex;
-  align-items: center;
-  border-radius: 5px;
-  padding: 0 6px;
-  overflow: hidden;
-  color: #475569;
-  background: rgba(100, 116, 139, 0.1);
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 19px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.task-board-card-stage.is-todo {
-  color: #1d4ed8;
-  background: rgba(37, 99, 235, 0.1);
-}
-
-.task-board-card-stage.is-in_progress,
-.task-board-card-stage.is-awaiting {
-  color: #b45309;
-  background: rgba(245, 158, 11, 0.12);
-}
-
-.task-board-card-stage.is-completed {
-  color: #15803d;
-  background: rgba(22, 163, 74, 0.1);
-}
-
-:root[data-theme="dark"] .task-board-card-stage {
-  color: #cbd5e1;
-  background: rgba(148, 163, 184, 0.14);
-}
-
-:root[data-theme="dark"] .task-board-card-stage.is-todo {
-  color: #93c5fd;
-  background: rgba(96, 165, 250, 0.14);
-}
-
-:root[data-theme="dark"] .task-board-card-stage.is-in_progress,
-:root[data-theme="dark"] .task-board-card-stage.is-awaiting {
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.16);
-}
-
-:root[data-theme="dark"] .task-board-card-stage.is-completed {
-  color: #86efac;
-  background: rgba(34, 197, 94, 0.14);
-}
-
-.task-board-card-detail {
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  color: var(--task-board-muted);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 19px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .task-board-card-foot {
   height: 20px;
   display: flex;
@@ -821,14 +735,6 @@
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
-}
-
-.task-board-card-foot-main {
-  min-width: 0;
-  flex: 1 1 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .task-board-card-assignee {
@@ -981,17 +887,6 @@
 .task-board-chat-action .task-board-icon {
   width: 12px;
   height: 12px;
-}
-
-.task-board-run-dot {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: #16a34a;
-  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.14);
 }
 
 .task-board-chat-action {

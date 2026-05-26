@@ -76,8 +76,6 @@ type DisplayState = {
 };
 
 type TaskBoardCardPresentation = {
-  stageLabel: string;
-  detail: string;
   assigneeLabel: string;
   assigneeTitle: string;
 };
@@ -515,79 +513,6 @@ function getAutomationDisplayLabel(issue: TaskBoardIssue, t: TranslateFunction) 
   return `${getAutomationPlanLabel(automationForm.automationPreset, t)} ${automationForm.automationTime}`;
 }
 
-function formatCompactIssueDate(value: string) {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return "";
-  }
-  const date = new Date(timestamp);
-  return `${padAutomationNumber(date.getMonth() + 1)}-${padAutomationNumber(date.getDate())}`;
-}
-
-function getIssueLineMeta(issue: TaskBoardIssue, awaitingConfirmation: boolean, t: TranslateFunction) {
-  if (awaitingConfirmation) {
-    return t("taskBoard.chat.awaitingConfirmation");
-  }
-  if (issue.runId) {
-    return t("taskBoard.run.running");
-  }
-  if (issue.status === "backlog") {
-    return formatCompactIssueDate(issue.createdAt || issue.updatedAt);
-  }
-  if (issue.status === "completed") {
-    return t("taskBoard.status.completed");
-  }
-  return t(STATUS_META[issue.status].labelKey);
-}
-
-function getIssueCardStageLabel(issue: TaskBoardIssue, awaitingConfirmation: boolean, t: TranslateFunction) {
-  if (awaitingConfirmation) {
-    return t("taskBoard.card.stage.awaiting");
-  }
-  if (issue.runId || issue.status === "in_progress") {
-    return t("taskBoard.card.stage.inProgress");
-  }
-  if (issue.status === "backlog") {
-    return t("taskBoard.card.stage.backlog");
-  }
-  if (issue.status === "todo") {
-    return t("taskBoard.card.stage.todo");
-  }
-  return t("taskBoard.card.stage.completed");
-}
-
-function getIssueCardDetail(
-  issue: TaskBoardIssue,
-  options: {
-    awaitingConfirmation: boolean;
-    automationLabel: string;
-    description: string;
-    hasChatAction: boolean;
-    visibleAttachmentCount: number;
-  },
-  t: TranslateFunction
-) {
-  if (options.awaitingConfirmation) {
-    return t("taskBoard.card.detail.awaiting");
-  }
-  if (issue.status === "in_progress") {
-    return issue.runId ? t("taskBoard.card.detail.running") : t("taskBoard.card.detail.inProgress");
-  }
-  if (issue.status === "completed") {
-    return options.hasChatAction ? t("taskBoard.card.detail.completed") : t("taskBoard.card.detail.completedNoChat");
-  }
-  if (issue.status === "todo") {
-    if (options.automationLabel) {
-      return t("taskBoard.card.detail.todoWithAutomation", { label: options.automationLabel });
-    }
-    if (options.visibleAttachmentCount > 0) {
-      return t("taskBoard.card.detail.todoWithAttachments", { count: options.visibleAttachmentCount });
-    }
-    return options.description || t("taskBoard.card.detail.todo");
-  }
-  return options.description || t("taskBoard.card.detail.backlog");
-}
-
 function getIssueCardAssigneeLabel(
   visibleAssigneeName: string,
   displayAssignee: boolean,
@@ -607,22 +532,14 @@ function getIssueCardAssigneeAvatarLabel(name: string) {
 }
 
 function getIssueCardPresentation(
-  issue: TaskBoardIssue,
   options: {
-    awaitingConfirmation: boolean;
-    automationLabel: string;
-    description: string;
     displayAssignee: boolean;
-    hasChatAction: boolean;
     visibleAssigneeName: string;
-    visibleAttachmentCount: number;
   },
   t: TranslateFunction
 ): TaskBoardCardPresentation {
   const assigneeLabel = getIssueCardAssigneeLabel(options.visibleAssigneeName, options.displayAssignee, t);
   return {
-    stageLabel: getIssueCardStageLabel(issue, options.awaitingConfirmation, t),
-    detail: getIssueCardDetail(issue, options, t),
     assigneeLabel,
     assigneeTitle: options.visibleAssigneeName || assigneeLabel
   };
@@ -2046,20 +1963,13 @@ function TaskBoardCardContent({
   const assigneeAgent = getAssigneeAgent(issue, agents);
   const visibleAssigneeName = getVisibleAssigneeName(issue, agents);
   const automationLabel = getAutomationDisplayLabel(issue, t);
-  const lineMeta = getIssueLineMeta(issue, awaitingConfirmation, t);
   const visibleAttachments = getVisibleTaskBoardAttachments(issue.attachments);
   const hasVisibleAttachment = visibleAttachments.length > 0;
   const description = display.description ? descriptionPreview(issue.description) : "";
   const cardPresentation = getIssueCardPresentation(
-    issue,
     {
-      awaitingConfirmation,
-      automationLabel,
-      description,
       displayAssignee: display.assignee,
-      hasChatAction: Boolean(chatActionLabel),
-      visibleAssigneeName,
-      visibleAttachmentCount: visibleAttachments.length
+      visibleAssigneeName
     },
     t
   );
@@ -2070,11 +1980,6 @@ function TaskBoardCardContent({
           <span className="task-board-card-id">{issue.id}</span>
           {display.priority ? <PriorityBadge priority={issue.priority} t={t} /> : null}
         </span>
-        {lineMeta ? (
-          <span className={`task-board-card-meta ${issue.runId || awaitingConfirmation ? "is-live" : ""}`}>
-            {lineMeta}
-          </span>
-        ) : null}
       </div>
       <strong title={description || issue.title}>{issue.title}</strong>
     </>
@@ -2082,9 +1987,6 @@ function TaskBoardCardContent({
 
   return (
     <>
-      {issue.runId ? (
-        <span className="task-board-run-dot" aria-label={t("taskBoard.run.running")} title={t("taskBoard.run.running")} />
-      ) : null}
       {interactive ? (
         <div
           className="task-board-card-main"
@@ -2106,38 +2008,28 @@ function TaskBoardCardContent({
         </div>
       )}
       <footer className="task-board-card-foot">
-        <span className="task-board-card-foot-main">
-          <span className={`task-board-card-stage is-${awaitingConfirmation ? "awaiting" : issue.status}`}>
-            {cardPresentation.stageLabel}
+        {cardPresentation.assigneeLabel ? (
+          <span
+            className={`task-board-card-assignee ${visibleAssigneeName ? "" : "is-unassigned"}`}
+            title={cardPresentation.assigneeTitle || undefined}
+          >
+            {visibleAssigneeName ? (
+              assigneeAgent?.icon ? (
+                <AgentIcon
+                  icon={assigneeAgent.icon}
+                  className="task-board-card-assignee-icon"
+                  size={16}
+                />
+              ) : (
+                <span className="task-board-card-assignee-avatar" aria-hidden="true">
+                  {getIssueCardAssigneeAvatarLabel(visibleAssigneeName)}
+                </span>
+              )
+            ) : null}
+            <span className="task-board-card-assignee-name">{cardPresentation.assigneeLabel}</span>
           </span>
-          {cardPresentation.detail ? (
-            <span className="task-board-card-detail" title={cardPresentation.detail}>
-              {cardPresentation.detail}
-            </span>
-          ) : null}
-        </span>
+        ) : <span className="task-board-card-assignee" aria-hidden="true" />}
         <span className="task-board-card-foot-actions">
-          {cardPresentation.assigneeLabel ? (
-            <span
-              className={`task-board-card-assignee ${visibleAssigneeName ? "" : "is-unassigned"}`}
-              title={cardPresentation.assigneeTitle || undefined}
-            >
-              {visibleAssigneeName ? (
-                assigneeAgent?.icon ? (
-                  <AgentIcon
-                    icon={assigneeAgent.icon}
-                    className="task-board-card-assignee-icon"
-                    size={16}
-                  />
-                ) : (
-                  <span className="task-board-card-assignee-avatar" aria-hidden="true">
-                    {getIssueCardAssigneeAvatarLabel(visibleAssigneeName)}
-                  </span>
-                )
-              ) : null}
-              <span className="task-board-card-assignee-name">{cardPresentation.assigneeLabel}</span>
-            </span>
-          ) : null}
           {automationLabel ? (
             <span className="task-board-automation-badge" title={issue.automationCron ?? undefined}>
               <TaskBoardIcon kind="clock" />
