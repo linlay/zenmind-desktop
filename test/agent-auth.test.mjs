@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { issueAgentAccessToken } = require("../dist-electron/main/agent-auth.js");
+const { __testInternals: appServerAuthInternals } = require("../dist-electron/main/app-server-auth.js");
 const {
   __testInternals: registryInternals,
   registerPlugin
@@ -16,6 +17,8 @@ const {
   getServicesRoot,
   getServiceConfigRoot
 } = require("../dist-electron/main/user-paths.js");
+
+const TEST_APP_SERVER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
 
 function createAppStub(root) {
   return {
@@ -66,6 +69,11 @@ function registerAppServerFixture(root, options = {}) {
   const programDir = path.join(getServicesRoot(app), service.id, service.version);
   const configDir = getServiceConfigRoot(app, service.id, service.kind);
   fs.mkdirSync(path.join(programDir, "scripts"), { recursive: true });
+  if (options.includeBackendBinary) {
+    const binaryName = isWindows ? "zenmind-app-server.exe" : "zenmind-app-server";
+    fs.mkdirSync(path.join(programDir, "backend"), { recursive: true });
+    fs.writeFileSync(path.join(programDir, "backend", binaryName), "backend fixture\n", "utf8");
+  }
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(
     path.join(configDir, ".env"),
@@ -73,18 +81,34 @@ function registerAppServerFixture(root, options = {}) {
       "SERVER_PORT=7076",
       "AUTH_DB_PATH=" + path.join(getServiceDataRoot(app, service.id, service.kind), "auth.db"),
       "AUTH_ISSUER=http://issuer.test",
-      "AUTH_APP_USERNAME=app"
+      "AUTH_APP_USERNAME=app",
+      ...(options.quotedBcryptEnv ? [
+        `AUTH_ADMIN_PASSWORD_BCRYPT='${TEST_APP_SERVER_BCRYPT}'`,
+        `AUTH_APP_MASTER_PASSWORD_BCRYPT='${TEST_APP_SERVER_BCRYPT}'`
+      ] : [])
     ].join("\n") + "\n",
     "utf8"
   );
   if (isWindows) {
-    fs.writeFileSync(
-      path.join(programDir, "scripts", "setup-public-key.ps1"),
-      [
+    const setupScriptLines = [
         "param([string]$mode, [string]$db, [string]$out, [string]$publicOut)",
+        ...(options.quotedBcryptEnv ? [
+          `$expected = '${TEST_APP_SERVER_BCRYPT.replace(/'/g, "''")}'`,
+          "if ($env:AUTH_ADMIN_PASSWORD_BCRYPT -ne $expected) {",
+          "  [Console]::Error.WriteLine('bad admin bcrypt env')",
+          "  exit 1",
+          "}",
+          "if ($env:AUTH_APP_MASTER_PASSWORD_BCRYPT -ne $expected) {",
+          "  [Console]::Error.WriteLine('bad app master bcrypt env')",
+          "  exit 1",
+          "}"
+        ] : []),
         "New-Item -ItemType Directory -Path (Split-Path -Parent $publicOut) -Force | Out-Null",
         "[System.IO.File]::WriteAllText($publicOut, \"APP_SERVER_PUBLIC_KEY`n\")"
-      ].join("\r\n"),
+    ];
+    fs.writeFileSync(
+      path.join(programDir, "scripts", "setup-public-key.ps1"),
+      setupScriptLines.join("\r\n"),
       "utf8"
     );
 
@@ -134,6 +158,17 @@ function registerAppServerFixture(root, options = {}) {
       [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
+        ...(options.quotedBcryptEnv ? [
+          `expected='${TEST_APP_SERVER_BCRYPT}'`,
+          "if [ \"${AUTH_ADMIN_PASSWORD_BCRYPT:-}\" != \"$expected\" ]; then",
+          "  printf '%s\\n' 'bad admin bcrypt env' >&2",
+          "  exit 1",
+          "fi",
+          "if [ \"${AUTH_APP_MASTER_PASSWORD_BCRYPT:-}\" != \"$expected\" ]; then",
+          "  printf '%s\\n' 'bad app master bcrypt env' >&2",
+          "  exit 1",
+          "fi"
+        ] : []),
         "public_out=''",
         "while [ $# -gt 0 ]; do",
         "  case \"$1\" in",
@@ -210,6 +245,44 @@ test("issueAgentAccessToken uses zenmind-app-server to issue an app token", asyn
       fs.readFileSync(publicKeyPath, "utf8"),
       "APP_SERVER_PUBLIC_KEY\n"
     );
+  } finally {
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("issueAgentAccessToken passes unquoted bcrypt env values to app-server auth scripts", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-auth-"));
+  const app = createAppStub(tempRoot);
+  registerAppServerFixture(tempRoot, { quotedBcryptEnv: true });
+
+  try {
+    const result = await issueAgentAccessToken(app, "missing");
+    assert.equal(result.ok, true, result.message);
+    assert.match(result.token, /^.+\..+\..+$/);
+  } finally {
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("resolveAppServerCommand prefers auth helper scripts when backend binary is installed", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-auth-"));
+  const app = createAppStub(tempRoot);
+  registerAppServerFixture(tempRoot, { includeBackendBinary: true });
+
+  try {
+    const layout = appServerAuthInternals.getAppServerLayout(app);
+    const setupCommand = appServerAuthInternals.resolveAppServerCommand(layout, "setup-public-key");
+    const issueCommand = appServerAuthInternals.resolveAppServerCommand(layout, "issue-bridge-access-token");
+
+    if (process.platform === "win32") {
+      assert.ok(setupCommand.args.some((arg) => arg.endsWith(path.join("scripts", "setup-public-key.ps1"))));
+      assert.ok(issueCommand.args.some((arg) => arg.endsWith(path.join("scripts", "issue-bridge-access-token.ps1"))));
+    } else {
+      assert.ok(setupCommand.command.endsWith(path.join("scripts", "setup-public-key.sh")));
+      assert.ok(issueCommand.command.endsWith(path.join("scripts", "issue-bridge-access-token.sh")));
+    }
   } finally {
     registryInternals.clearServices();
     fs.rmSync(tempRoot, { recursive: true, force: true });
