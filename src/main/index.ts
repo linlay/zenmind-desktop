@@ -76,7 +76,7 @@ import {
   killProcessByPid,
   showPortConflictDialog
 } from "./services/port-conflict";
-import { resolveWebviewOpenDisposition } from "./webview-open-tab";
+import { resolveWebviewOpenDisposition, shouldDownloadUrlFromWebview } from "./webview-open-tab";
 import { revealPathInFileManager } from "./reveal-path";
 import { buildApplicationMenu as installApplicationMenu } from "./app-shell/app-menu";
 import { LogViewerWindowController } from "./app-shell/log-viewer-window";
@@ -1877,6 +1877,14 @@ function createWindow() {
   });
 
   mainWindow.webContents.on("did-attach-webview", (_event, contents) => {
+    const downloadFromWebview = (url: string) => {
+      try {
+        contents.downloadURL(url);
+      } catch (error) {
+        safeConsoleError("failed to start webview download", { url, error });
+      }
+    };
+
     contents.on("before-input-event", (event, input) => {
       if (input.type !== "keyDown" || input.isAutoRepeat || input.key.toLowerCase() !== "i") {
         return;
@@ -1917,7 +1925,16 @@ function createWindow() {
             isMainFrame,
             diagnosticsError: error instanceof Error ? error.message : String(error)
           });
-        });
+      });
+    });
+
+    contents.on("will-navigate", (event, url) => {
+      if (!shouldDownloadUrlFromWebview(url)) {
+        return;
+      }
+
+      event.preventDefault();
+      downloadFromWebview(url);
     });
 
     contents.on("render-process-gone", (_guestEvent, details) => {
@@ -1928,7 +1945,13 @@ function createWindow() {
     });
 
     contents.setWindowOpenHandler(({ url }) => {
-      if (resolveWebviewOpenDisposition(url) === "tab") {
+      const disposition = resolveWebviewOpenDisposition(url);
+      if (disposition === "download") {
+        downloadFromWebview(url);
+        return { action: "deny" };
+      }
+
+      if (disposition === "tab") {
         setImmediate(() => {
           if (!mainWindow || mainWindow.isDestroyed()) {
             void shell.openExternal(url).catch((error) => {
@@ -2114,12 +2137,39 @@ function sanitizeDownloadFilename(filename: string, fallback: string) {
 function getAssistantExportDefaultPath(filename: string) {
   const safeFilename = sanitizeDownloadFilename(filename, "chat-export.json");
   if (process.platform === "win32") {
-    return path.join(app.getPath("desktop"), safeFilename);
+    return path.join(app.getPath("downloads"), safeFilename);
   }
   if (process.platform === "darwin") {
-    return path.join(app.getPath("desktop"), safeFilename);
+    return path.join(app.getPath("downloads"), safeFilename);
   }
   return path.join(app.getPath("home"), safeFilename);
+}
+
+function getDesktopDownloadDefaultPath(filename: string) {
+  const safeFilename = sanitizeDownloadFilename(filename, "download");
+  if (process.platform === "win32") {
+    return path.join(app.getPath("downloads"), safeFilename);
+  }
+  if (process.platform === "darwin") {
+    return path.join(app.getPath("downloads"), safeFilename);
+  }
+  return path.join(app.getPath("home"), safeFilename);
+}
+
+async function getAvailableFilePath(targetPath: string) {
+  const parsedPath = path.parse(targetPath);
+  for (let index = 0; index < 1000; index += 1) {
+    const candidatePath =
+      index === 0
+        ? targetPath
+        : path.join(parsedPath.dir, `${parsedPath.name} (${index})${parsedPath.ext}`);
+    try {
+      await fs.promises.access(candidatePath, fs.constants.F_OK);
+    } catch {
+      return candidatePath;
+    }
+  }
+  return path.join(parsedPath.dir, `${parsedPath.name}-${Date.now()}${parsedPath.ext}`);
 }
 
 function getSandboxImageExportDefaultPath(imageRef: string) {
@@ -2138,16 +2188,10 @@ async function saveAssistantChatExport(
   if (!result.ok) {
     return { ok: false, message: result.message };
   }
-  const saveResult = await showSaveDialog({
-    title: process.platform === "win32" ? "保存会话导出" : "保存会话导出",
-    defaultPath: getAssistantExportDefaultPath(result.filename),
-    buttonLabel: process.platform === "win32" ? "保存" : "保存"
-  });
-  if (saveResult.canceled || !saveResult.filePath) {
-    return { ok: false, message: "已取消导出。" };
-  }
-  await fs.promises.writeFile(saveResult.filePath, result.bytes);
-  return { ok: true, message: "已导出会话。", filePath: saveResult.filePath };
+  const exportPath = await getAvailableFilePath(getAssistantExportDefaultPath(result.filename));
+  await fs.promises.mkdir(path.dirname(exportPath), { recursive: true });
+  await fs.promises.writeFile(exportPath, result.bytes);
+  return { ok: true, message: "已下载会话导出。", filePath: exportPath };
 }
 
 function createStartupRestoreState(
@@ -3548,6 +3592,27 @@ function registerIpcHandlers() {
       return {
         ok: false as const,
         path: typeof targetPath === "string" ? targetPath : "",
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  ipcMain.handle("desktopDownloads.saveFile", async (_event, input: unknown) => {
+    try {
+      const payload = input && typeof input === "object" ? input as Record<string, unknown> : {};
+      const filename = typeof payload.filename === "string" ? payload.filename : "";
+      const dataBase64 = typeof payload.dataBase64 === "string" ? payload.dataBase64 : "";
+      const downloadPath = await getAvailableFilePath(getDesktopDownloadDefaultPath(filename));
+      await fs.promises.mkdir(path.dirname(downloadPath), { recursive: true });
+      await fs.promises.writeFile(downloadPath, Buffer.from(dataBase64, "base64"));
+      return {
+        ok: true as const,
+        path: downloadPath,
+        message: "已下载文件。"
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        path: "",
         message: error instanceof Error ? error.message : String(error)
       };
     }

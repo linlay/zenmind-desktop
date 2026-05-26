@@ -53,6 +53,9 @@ const api: DesktopApi = {
   desktopShell: {
     openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath)
   },
+  desktopDownloads: {
+    saveFile: (input) => ipcRenderer.invoke("desktopDownloads.saveFile", input)
+  },
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke("clipboard.writeText", text)
   },

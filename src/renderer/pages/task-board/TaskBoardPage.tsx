@@ -16,6 +16,7 @@ import {
 } from "@dnd-kit/core";
 import {
   SortableContext,
+  arrayMove,
   useSortable,
   verticalListSortingStrategy
 } from "@dnd-kit/sortable";
@@ -38,6 +39,7 @@ import {
   getAssistantNavAgentRecentChats,
   normalizeAssistantNavAgents
 } from "../../assistantNavigation";
+import { AgentIcon } from "../../app-shell/navigation/AgentIcon";
 import { useI18n } from "../../i18n/useI18n";
 import { PluginPage } from "../plugin/PluginPage";
 
@@ -71,6 +73,13 @@ type DisplayState = {
   description: boolean;
   assignee: boolean;
   priority: boolean;
+};
+
+type TaskBoardCardPresentation = {
+  stageLabel: string;
+  detail: string;
+  assigneeLabel: string;
+  assigneeTitle: string;
 };
 
 type Feedback = {
@@ -186,9 +195,9 @@ function sortIssues(issues: TaskBoardIssue[]) {
   return [...issues].sort((a, b) => {
     const statusDelta = (statusOrder.get(a.status) ?? 99) - (statusOrder.get(b.status) ?? 99);
     if (statusDelta !== 0) return statusDelta;
+    if (a.position !== b.position) return a.position - b.position;
     const updatedDelta = issueUpdatedTime(b) - issueUpdatedTime(a);
     if (updatedDelta !== 0) return updatedDelta;
-    if (a.position !== b.position) return a.position - b.position;
     return a.id.localeCompare(b.id);
   });
 }
@@ -369,6 +378,34 @@ function computeDropPosition(targetIssues: TaskBoardIssue[], insertIndex: number
   return (before!.position + after!.position) / 2;
 }
 
+function computeSortableDropPosition(
+  issues: TaskBoardIssue[],
+  activeId: string,
+  overIssue: TaskBoardIssue | undefined,
+  targetStatus: TaskBoardStatus
+) {
+  const targetIssues = sortIssues(issues).filter((issue) => issue.status === targetStatus);
+  if (overIssue?.status === targetStatus) {
+    const activeIndex = targetIssues.findIndex((issue) => issue.id === activeId);
+    const overIndex = targetIssues.findIndex((issue) => issue.id === overIssue.id);
+    if (activeIndex >= 0 && overIndex >= 0) {
+      const reorderedIssues = arrayMove(targetIssues, activeIndex, overIndex);
+      const insertIndex = reorderedIssues.findIndex((issue) => issue.id === activeId);
+      return computeDropPosition(
+        reorderedIssues.filter((issue) => issue.id !== activeId),
+        insertIndex
+      );
+    }
+  }
+
+  const targetIssuesWithoutActive = targetIssues.filter((issue) => issue.id !== activeId);
+  const overIndex = overIssue
+    ? targetIssuesWithoutActive.findIndex((issue) => issue.id === overIssue.id)
+    : targetIssuesWithoutActive.length;
+  const insertIndex = overIssue && overIndex >= 0 ? overIndex : targetIssuesWithoutActive.length;
+  return computeDropPosition(targetIssuesWithoutActive, insertIndex);
+}
+
 function createFormFromIssue(issue: TaskBoardIssue): IssueFormState {
   const automationForm = parseAutomationFormFromCron(issue.automationCron);
   return {
@@ -445,10 +482,18 @@ function getAssigneeName(agentKey: string, agents: AssistantNavAgentItem[]) {
   return agents.find((agent) => agent.agentKey === agentKey)?.displayName ?? agentKey;
 }
 
+function getAssigneeAgent(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
+  const agentKey = issue.assigneeAgentKey?.trim();
+  return agentKey ? agents.find((agent) => agent.agentKey === agentKey) : undefined;
+}
+
 function getVisibleAssigneeName(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
   const trimmed = getAssigneeName(issue.assigneeAgentKey ?? "", agents)?.trim() ?? "";
-  if (!trimmed) return "";
-  return Array.from(trimmed).length <= 4 ? trimmed : "";
+  return trimmed;
+}
+
+function truncateTaskBoardAssigneeName(name: string) {
+  return Array.from(name.trim()).slice(0, 4).join("");
 }
 
 function isFiveFieldCron(value: string) {
@@ -493,6 +538,94 @@ function getIssueLineMeta(issue: TaskBoardIssue, awaitingConfirmation: boolean, 
     return t("taskBoard.status.completed");
   }
   return t(STATUS_META[issue.status].labelKey);
+}
+
+function getIssueCardStageLabel(issue: TaskBoardIssue, awaitingConfirmation: boolean, t: TranslateFunction) {
+  if (awaitingConfirmation) {
+    return t("taskBoard.card.stage.awaiting");
+  }
+  if (issue.runId || issue.status === "in_progress") {
+    return t("taskBoard.card.stage.inProgress");
+  }
+  if (issue.status === "backlog") {
+    return t("taskBoard.card.stage.backlog");
+  }
+  if (issue.status === "todo") {
+    return t("taskBoard.card.stage.todo");
+  }
+  return t("taskBoard.card.stage.completed");
+}
+
+function getIssueCardDetail(
+  issue: TaskBoardIssue,
+  options: {
+    awaitingConfirmation: boolean;
+    automationLabel: string;
+    description: string;
+    hasChatAction: boolean;
+    visibleAttachmentCount: number;
+  },
+  t: TranslateFunction
+) {
+  if (options.awaitingConfirmation) {
+    return t("taskBoard.card.detail.awaiting");
+  }
+  if (issue.status === "in_progress") {
+    return issue.runId ? t("taskBoard.card.detail.running") : t("taskBoard.card.detail.inProgress");
+  }
+  if (issue.status === "completed") {
+    return options.hasChatAction ? t("taskBoard.card.detail.completed") : t("taskBoard.card.detail.completedNoChat");
+  }
+  if (issue.status === "todo") {
+    if (options.automationLabel) {
+      return t("taskBoard.card.detail.todoWithAutomation", { label: options.automationLabel });
+    }
+    if (options.visibleAttachmentCount > 0) {
+      return t("taskBoard.card.detail.todoWithAttachments", { count: options.visibleAttachmentCount });
+    }
+    return options.description || t("taskBoard.card.detail.todo");
+  }
+  return options.description || t("taskBoard.card.detail.backlog");
+}
+
+function getIssueCardAssigneeLabel(
+  visibleAssigneeName: string,
+  displayAssignee: boolean,
+  t: TranslateFunction
+) {
+  if (!displayAssignee) {
+    return "";
+  }
+  if (!visibleAssigneeName) {
+    return t("taskBoard.form.unassigned");
+  }
+  return truncateTaskBoardAssigneeName(visibleAssigneeName);
+}
+
+function getIssueCardAssigneeAvatarLabel(name: string) {
+  return Array.from(name.trim())[0]?.toUpperCase() ?? "";
+}
+
+function getIssueCardPresentation(
+  issue: TaskBoardIssue,
+  options: {
+    awaitingConfirmation: boolean;
+    automationLabel: string;
+    description: string;
+    displayAssignee: boolean;
+    hasChatAction: boolean;
+    visibleAssigneeName: string;
+    visibleAttachmentCount: number;
+  },
+  t: TranslateFunction
+): TaskBoardCardPresentation {
+  const assigneeLabel = getIssueCardAssigneeLabel(options.visibleAssigneeName, options.displayAssignee, t);
+  return {
+    stageLabel: getIssueCardStageLabel(issue, options.awaitingConfirmation, t),
+    detail: getIssueCardDetail(issue, options, t),
+    assigneeLabel,
+    assigneeTitle: options.visibleAssigneeName || assigneeLabel
+  };
 }
 
 function createNavigationAgentFromOption(agent: DesktopPetAgentOption): AssistantNavAgentItem {
@@ -1228,13 +1361,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       return;
     }
 
-    const targetIssues = sortIssues(issues)
-      .filter((issue) => issue.status === targetStatus && issue.id !== activeId);
-    const overIndex = overIssue
-      ? Math.max(0, targetIssues.findIndex((issue) => issue.id === overIssue.id))
-      : targetIssues.length;
-    const insertIndex = overIssue && overIndex >= 0 ? overIndex : targetIssues.length;
-    const nextPosition = computeDropPosition(targetIssues, insertIndex);
+    const nextPosition = computeSortableDropPosition(issues, activeId, overIssue, targetStatus);
 
     if (activeIssue.status === targetStatus && activeIssue.position === nextPosition) {
       return;
@@ -1397,7 +1524,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         {typeof document !== "undefined" ? createPortal(
           <DragOverlay adjustScale={false} dropAnimation={null} zIndex={120}>
             {activeDragIssue ? (
-              <article className="task-board-card task-board-drag-overlay-card">
+              <article className={`task-board-card task-board-drag-overlay-card is-${activeDragIssue.status}`}>
                 <TaskBoardCardContent
                   issue={activeDragIssue}
                   awaitingConfirmation={false}
@@ -1869,6 +1996,7 @@ function TaskBoardCard({
       style={style}
       className={[
         "task-board-card",
+        `is-${issue.status}`,
         sortable.isDragging ? "is-dragging-source" : "",
         dragLocked ? "is-drag-locked" : "",
         awaitingConfirmation ? "is-awaiting-confirmation" : ""
@@ -1915,21 +2043,40 @@ function TaskBoardCardContent({
 }) {
   const chatActionLabel = getIssueChatActionLabel(issue, t);
   const visibleChatActionLabel = awaitingConfirmation ? t("taskBoard.chat.awaitingConfirmation") : chatActionLabel;
+  const assigneeAgent = getAssigneeAgent(issue, agents);
   const visibleAssigneeName = getVisibleAssigneeName(issue, agents);
   const automationLabel = getAutomationDisplayLabel(issue, t);
   const lineMeta = getIssueLineMeta(issue, awaitingConfirmation, t);
-  const hasVisibleAttachment = getVisibleTaskBoardAttachments(issue.attachments).length > 0;
+  const visibleAttachments = getVisibleTaskBoardAttachments(issue.attachments);
+  const hasVisibleAttachment = visibleAttachments.length > 0;
+  const description = display.description ? descriptionPreview(issue.description) : "";
+  const cardPresentation = getIssueCardPresentation(
+    issue,
+    {
+      awaitingConfirmation,
+      automationLabel,
+      description,
+      displayAssignee: display.assignee,
+      hasChatAction: Boolean(chatActionLabel),
+      visibleAssigneeName,
+      visibleAttachmentCount: visibleAttachments.length
+    },
+    t
+  );
   const mainContent = (
     <>
       <div className="task-board-card-line task-board-card-line-top">
-        <span className="task-board-card-id">{issue.id}</span>
+        <span className="task-board-card-id-group">
+          <span className="task-board-card-id">{issue.id}</span>
+          {display.priority ? <PriorityBadge priority={issue.priority} t={t} /> : null}
+        </span>
         {lineMeta ? (
           <span className={`task-board-card-meta ${issue.runId || awaitingConfirmation ? "is-live" : ""}`}>
             {lineMeta}
           </span>
         ) : null}
       </div>
-      <strong title={display.description ? descriptionPreview(issue.description) || issue.title : issue.title}>{issue.title}</strong>
+      <strong title={description || issue.title}>{issue.title}</strong>
     </>
   );
 
@@ -1959,10 +2106,38 @@ function TaskBoardCardContent({
         </div>
       )}
       <footer className="task-board-card-foot">
-        <span className="task-board-card-assignee">
-          {display.assignee && visibleAssigneeName ? visibleAssigneeName : t("taskBoard.form.unassigned")}
+        <span className="task-board-card-foot-main">
+          <span className={`task-board-card-stage is-${awaitingConfirmation ? "awaiting" : issue.status}`}>
+            {cardPresentation.stageLabel}
+          </span>
+          {cardPresentation.detail ? (
+            <span className="task-board-card-detail" title={cardPresentation.detail}>
+              {cardPresentation.detail}
+            </span>
+          ) : null}
         </span>
         <span className="task-board-card-foot-actions">
+          {cardPresentation.assigneeLabel ? (
+            <span
+              className={`task-board-card-assignee ${visibleAssigneeName ? "" : "is-unassigned"}`}
+              title={cardPresentation.assigneeTitle || undefined}
+            >
+              {visibleAssigneeName ? (
+                assigneeAgent?.icon ? (
+                  <AgentIcon
+                    icon={assigneeAgent.icon}
+                    className="task-board-card-assignee-icon"
+                    size={16}
+                  />
+                ) : (
+                  <span className="task-board-card-assignee-avatar" aria-hidden="true">
+                    {getIssueCardAssigneeAvatarLabel(visibleAssigneeName)}
+                  </span>
+                )
+              ) : null}
+              <span className="task-board-card-assignee-name">{cardPresentation.assigneeLabel}</span>
+            </span>
+          ) : null}
           {automationLabel ? (
             <span className="task-board-automation-badge" title={issue.automationCron ?? undefined}>
               <TaskBoardIcon kind="clock" />
@@ -2000,7 +2175,6 @@ function TaskBoardCardContent({
               <TaskBoardIcon kind="message" />
             </button>
           ) : null}
-          {display.priority ? <PriorityBadge priority={issue.priority} t={t} /> : null}
         </span>
       </footer>
     </>

@@ -109,9 +109,9 @@ function sortIssues(issues: TaskBoardIssue[]) {
   return [...issues].sort((a, b) => {
     const statusDelta = (statusRank.get(a.status) ?? 99) - (statusRank.get(b.status) ?? 99);
     if (statusDelta !== 0) return statusDelta;
+    if (a.position !== b.position) return a.position - b.position;
     const updatedDelta = issueUpdatedTime(b) - issueUpdatedTime(a);
     if (updatedDelta !== 0) return updatedDelta;
-    if (a.position !== b.position) return a.position - b.position;
     return a.id.localeCompare(b.id);
   });
 }

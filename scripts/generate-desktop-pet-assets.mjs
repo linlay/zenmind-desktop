@@ -853,6 +853,28 @@ function drawSubjectInFrame(ctx, subjectCanvas, frameX, frameY, frameWidth, fram
   ctx.restore();
 }
 
+function drawXiaoSourceVariant(subjectCanvas, options = {}) {
+  const { mirrorX = false, offsetX = 0, rotate = 0 } = options;
+  const canvas = createCanvas(size.width, size.height);
+  const ctx = canvas.getContext("2d");
+  const targetScale = Math.min((size.width * 0.8) / subjectCanvas.width, (size.height * 0.9) / subjectCanvas.height);
+  const targetWidth = Math.round(subjectCanvas.width * targetScale);
+  const targetHeight = Math.round(subjectCanvas.height * targetScale);
+  const targetX = Math.round(size.width / 2) + offsetX;
+  const targetY = Math.round(size.height - targetHeight / 2 - 12);
+
+  ctx.save();
+  ctx.translate(targetX, targetY);
+  ctx.rotate(rotate);
+  if (mirrorX) {
+    ctx.scale(-1, 1);
+  }
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(subjectCanvas, -targetWidth / 2, -targetHeight / 2, targetWidth, targetHeight);
+  ctx.restore();
+  return canvas.toBuffer("image/png");
+}
+
 function renderXiaoSpritesheet(image) {
   const canvas = createCanvas(communityAtlas.columns * communityAtlas.cellWidth, communityAtlas.rows * communityAtlas.cellHeight);
   const ctx = canvas.getContext("2d");
@@ -918,13 +940,19 @@ async function renderScriptedAppearance(appearance) {
   if (appearance.id !== "xiao") {
     throw new Error(`No scripted pet renderer configured for ${appearance.displayName}`);
   }
+  const sourceImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "source-chroma.png"));
   const spritesheetImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "spritesheet-source.png"));
   const taskRunImage = await loadImage(path.join(sourceAssetDirectory, appearance.id, "task-run-left-source.png"));
+  const subjectCanvas = chromaKeySourceImage(sourceImage);
   const spritesheet = renderXiaoSpritesheet(spritesheetImage);
   const buffers = new Map();
+  const crispSourceBuffer = drawXiaoSourceVariant(subjectCanvas);
   for (const variant of classicVisualVariants) {
-    buffers.set(variant, renderXiaoPetVariant(spritesheet, variant));
+    buffers.set(variant, crispSourceBuffer);
   }
+  buffers.set("dragging", drawXiaoSourceVariant(subjectCanvas, { rotate: -0.04 }));
+  buffers.set("dragging-left", drawXiaoSourceVariant(subjectCanvas, { offsetX: -8, rotate: -0.05 }));
+  buffers.set("dragging-right", drawXiaoSourceVariant(subjectCanvas, { mirrorX: true, offsetX: 8, rotate: 0.05 }));
   return {
     buffers,
     spritesheetBuffer: spritesheet.toBuffer("image/webp"),

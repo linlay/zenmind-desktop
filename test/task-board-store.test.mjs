@@ -40,6 +40,13 @@ function assertTaskBoardId(value) {
   assert.equal(Number.isFinite(Number.parseInt(value, 36)), true);
 }
 
+function waitForNextMillisecond() {
+  const startedAt = Date.now();
+  while (Date.now() === startedAt) {
+    // Keep timestamps deterministic for ordering tests.
+  }
+}
+
 test("task board initializes an empty fresh database under the desktop home directory", (t) => {
   const app = createTempApp(t);
   const result = listTaskBoardIssues(app);
@@ -221,6 +228,32 @@ test("task board moves issues across status columns and reorders positions", (t)
       [first.id, "backlog", 1],
       [third.id, "todo", -1]
     ]
+  );
+});
+
+test("task board orders todo issues by position before updated time", (t) => {
+  const app = createTempApp(t);
+  const first = createTaskBoardIssue(app, { title: "第一项", status: "todo" }).issue;
+  const second = createTaskBoardIssue(app, { title: "第二项", status: "todo" }).issue;
+  const third = createTaskBoardIssue(app, { title: "第三项", status: "todo" }).issue;
+
+  waitForNextMillisecond();
+  const updated = updateTaskBoardIssue(app, third.id, { title: "第三项更新" });
+  assert.equal(updated.ok, true);
+  assert.deepEqual(
+    listTaskBoardIssues(app).issues.map((issue) => issue.id),
+    [first.id, second.id, third.id]
+  );
+
+  const moved = moveTaskBoardIssue(app, {
+    id: third.id,
+    status: "todo",
+    position: 0
+  });
+  assert.equal(moved.ok, true);
+  assert.deepEqual(
+    listTaskBoardIssues(app).issues.map((issue) => issue.id),
+    [third.id, first.id, second.id]
   );
 });
 

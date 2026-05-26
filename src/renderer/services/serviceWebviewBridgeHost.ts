@@ -4,6 +4,8 @@ import {
   AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE,
   DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE,
+  DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE,
+  DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
   DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE,
   DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
@@ -126,6 +128,28 @@ export function handleServiceWebviewBridgeMessage(
       })
       .catch((reason) => {
         sendFailure(context, DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
+      });
+    return true;
+  }
+
+  if (payload.type === DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE) {
+    void window.electronAPI.desktopDownloads
+      .saveFile({
+        filename: typeof payload.filename === "string" ? payload.filename : "",
+        mimeType: typeof payload.mimeType === "string" ? payload.mimeType : "",
+        dataBase64: typeof payload.dataBase64 === "string" ? payload.dataBase64 : ""
+      })
+      .then((result) => {
+        context.sendBridgeMessageToWebview({
+          type: DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
+          requestId: payload.requestId,
+          ok: result.ok,
+          message: result.message ?? "",
+          path: result.path ?? ""
+        });
+      })
+      .catch((reason) => {
+        sendFailure(context, DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
       });
     return true;
   }

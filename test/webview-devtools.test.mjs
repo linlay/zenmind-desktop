@@ -15,6 +15,16 @@ test("webview guest contents expose platform-specific DevTools shortcut", () => 
   assert.match(attachBlock, /event\.preventDefault\(\);[\s\S]*contents\.openDevTools\(\{\s*mode: "detach"\s*\}\)/u);
 });
 
+test("webview guest contents download generated artifacts instead of opening blank tabs", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const attachBlock = source.match(/mainWindow\.webContents\.on\("did-attach-webview"[\s\S]*?mainWindow\.loadURL/u)?.[0] ?? "";
+
+  assert.match(attachBlock, /const downloadFromWebview = \(url: string\) => \{/u);
+  assert.match(attachBlock, /contents\.downloadURL\(url\)/u);
+  assert.match(attachBlock, /contents\.on\("will-navigate"[\s\S]*?shouldDownloadUrlFromWebview\(url\)[\s\S]*?event\.preventDefault\(\);[\s\S]*?downloadFromWebview\(url\);/u);
+  assert.match(attachBlock, /if \(disposition === "download"\) \{[\s\S]*?downloadFromWebview\(url\);[\s\S]*?return \{ action: "deny" \};/u);
+});
+
 test("external webview toolbar opens DevTools for the active tab", () => {
   const source = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx"),

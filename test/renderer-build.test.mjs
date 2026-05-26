@@ -1149,8 +1149,8 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
   assert.match(globalStyles, /\.task-board-column\s*\{/);
-  assert.doesNotMatch(globalStyles, /\.task-board-column\.is-todo\s*\{[\s\S]*?margin-left:\s*calc\(\(var\(--task-board-column-width\) \* -0\.5\) - 16px\)/);
-  assert.doesNotMatch(globalStyles, /\.task-board-columns\.is-backlog-expanded \.task-board-column\.is-todo/);
+  assert.match(globalStyles, /\.task-board-column\.is-todo\s*\{[\s\S]*?margin-left:\s*calc\(\(var\(--task-board-column-width\) \* -0\.5\) - 16px\)/);
+  assert.match(globalStyles, /\.task-board-columns\.is-backlog-expanded \.task-board-column\.is-todo/);
   assert.match(globalStyles, /\.task-board-card\s*\{/);
   assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,180}position:\s*relative;/);
   assert.match(globalStyles, /\.task-board-card\.is-drag-locked\s*\{/);
@@ -1768,11 +1768,13 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeHost, /AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeHost, /DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE/);
+  assert.match(serviceWebviewBridgeHost, /DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeReserved, /media\.microphone/);
   assert.match(serviceWebviewBridgeReserved, /media\.camera/);
   assert.match(serviceWebviewBridgeReserved, /screen\.capture/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE/);
+  assert.match(serviceWebviewBridgeContracts, /DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE/);
   assert.match(serviceWebviewPreload, /sendToHost/);
   assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
   assert.match(serviceWebviewPreload, /DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE/);
@@ -1793,14 +1795,17 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(mainProcess, /getServiceWebviewPreloadUrl\(\)[\s\S]{0,120}pathToFileURL\(getServiceWebviewPreloadPath\(\)\)\.toString\(\)/);
   assert.match(mainProcess, /ipcMain\.handle\("desktopDialog\.selectDirectory"/);
   assert.match(mainProcess, /ipcMain\.handle\("desktopShell\.openPath"/);
+  assert.match(mainProcess, /ipcMain\.handle\("desktopDownloads\.saveFile"/);
   assert.match(mainProcess, /webPreferences\.preload = servicePreloadPath/);
   assert.match(mainProcess, /ipcMain\.handle\("plugins\.getServiceWebviewPreloadUrl", async \(\) => getServiceWebviewPreloadUrl\(\)\)/);
   assert.match(preload, /getServiceWebviewPreloadUrl:\s*\(\) => ipcRenderer\.invoke\("plugins\.getServiceWebviewPreloadUrl"\)/);
   assert.match(preload, /desktopDialog:[\s\S]{0,120}selectDirectory:\s*\(\) => ipcRenderer\.invoke\("desktopDialog\.selectDirectory"\)/);
   assert.match(preload, /desktopShell:[\s\S]{0,140}openPath:\s*\(targetPath: string\) => ipcRenderer\.invoke\("desktopShell\.openPath", targetPath\)/);
+  assert.match(preload, /desktopDownloads:[\s\S]{0,140}saveFile:\s*\(input\) => ipcRenderer\.invoke\("desktopDownloads\.saveFile", input\)/);
   assert.match(contracts, /getServiceWebviewPreloadUrl:\s*\(\) => Promise<string>/);
   assert.match(contracts, /desktopDialog:[\s\S]{0,120}selectDirectory:\s*\(\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
   assert.match(contracts, /desktopShell:[\s\S]{0,120}openPath:\s*\(targetPath: string\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
+  assert.match(contracts, /desktopDownloads:[\s\S]{0,220}saveFile:\s*\(input: \{[\s\S]{0,160}dataBase64\?: string;[\s\S]{0,120}\}\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
   assert.match(globalStyles, /\.embedded-plugin-error\s*\{/);
 });
 
@@ -1813,6 +1818,21 @@ test("embedded cdp exposes service frontends as webview surfaces", () => {
   assert.match(mainProcess, /active:\s*snapshotMatchesService/);
   assert.match(mainProcess, /currentPageSnapshotMatchesSurface/);
   assert.doesNotMatch(mainProcess, /failed to list iframe targets/);
+});
+
+test("assistant chat export writes directly to the download location", () => {
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const exportPathBlock =
+    mainProcess.match(/function getAssistantExportDefaultPath[\s\S]*?function getSandboxImageExportDefaultPath/u)?.[0] ?? "";
+  const saveExportBlock =
+    mainProcess.match(/async function saveAssistantChatExport[\s\S]*?function createStartupRestoreState/u)?.[0] ?? "";
+
+  assert.match(exportPathBlock, /process\.platform === "win32"[\s\S]*?app\.getPath\("downloads"\)/u);
+  assert.match(exportPathBlock, /process\.platform === "darwin"[\s\S]*?app\.getPath\("downloads"\)/u);
+  assert.match(exportPathBlock, /getAvailableFilePath/u);
+  assert.match(saveExportBlock, /const exportPath = await getAvailableFilePath\(getAssistantExportDefaultPath\(result\.filename\)\)/u);
+  assert.match(saveExportBlock, /fs\.promises\.writeFile\(exportPath, result\.bytes\)/u);
+  assert.doesNotMatch(saveExportBlock, /showSaveDialog/u);
 });
 
 test("assistant entrypoints restore core services before opening embedded webclient", () => {

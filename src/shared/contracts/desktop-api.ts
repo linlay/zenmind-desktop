@@ -92,6 +92,13 @@ export interface DesktopApi {
   desktopShell: {
     openPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;
   };
+  desktopDownloads: {
+    saveFile: (input: {
+      filename?: string;
+      mimeType?: string;
+      dataBase64?: string;
+    }) => Promise<{ ok: boolean; path?: string; message?: string }>;
+  };
   clipboard: {
     writeText: (text: string) => Promise<{ ok: boolean; message?: string }>;
   };
