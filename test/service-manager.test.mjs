@@ -1381,6 +1381,51 @@ test("normalizeAgentContainerHubEnvContentForDesktop preserves custom absolute d
   assert.match(next, /^ENGINE=podman$/m);
 });
 
+test("normalizeAgentPlatformBashConfigContent removes deprecated path policy keys", () => {
+  const next = __testInternals.normalizeAgentPlatformBashConfigContent(
+    [
+      "working-directory: .",
+      "allowed-paths:",
+      "  - .",
+      "  - /tmp",
+      "allowed-commands: ls,pwd,git",
+      "path-checked-commands: ls,cat",
+      "path-check-bypass-commands: git",
+      "shell-features-enabled: true"
+    ].join("\n") + "\n"
+  );
+
+  assert.match(next, /^working-directory: \.$/m);
+  assert.match(next, /^allowed-commands: ls,pwd,git$/m);
+  assert.match(next, /^shell-features-enabled: true$/m);
+  assert.doesNotMatch(next, /^allowed-paths:/m);
+  assert.doesNotMatch(next, /^\s+- \/tmp$/m);
+  assert.doesNotMatch(next, /^path-checked-commands:/m);
+  assert.doesNotMatch(next, /^path-check-bypass-commands:/m);
+});
+
+test("normalizeAgentPlatformFileToolsConfigContent removes deprecated path allowlists", () => {
+  const next = __testInternals.normalizeAgentPlatformFileToolsConfigContent(
+    [
+      "working-directory: .",
+      "allowed-read-paths:",
+      "  - .",
+      "  - /tmp",
+      "allowed-write-paths:",
+      "  - .",
+      "max-read-bytes: 1048576",
+      "require-write-approval: true"
+    ].join("\n") + "\n"
+  );
+
+  assert.match(next, /^working-directory: \.$/m);
+  assert.match(next, /^max-read-bytes: 1048576$/m);
+  assert.match(next, /^require-write-approval: true$/m);
+  assert.doesNotMatch(next, /^allowed-read-paths:/m);
+  assert.doesNotMatch(next, /^allowed-write-paths:/m);
+  assert.doesNotMatch(next, /^\s+- \/tmp$/m);
+});
+
 test("applyAgentPlatformWindowsHostShellDefaults injects PowerShell defaults on Windows", () => {
   const updates = new Map();
   const changed = __testInternals.applyAgentPlatformWindowsHostShellDefaults(
@@ -3375,6 +3420,72 @@ test("ensurePreStartRequirements does not rewrite agent platform desktop env bin
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("ensurePreStartRequirements removes deprecated agent platform config keys", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-config-migrate-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
+  const platformConfigDir = getTestConfigDir(userDataRoot, platformService.id);
+  const configsDir = path.join(platformConfigDir, "configs");
+  const bashConfigPath = path.join(configsDir, "bash.yml");
+  const fileToolsConfigPath = path.join(configsDir, "file-tools.yml");
+
+  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  fs.mkdirSync(configsDir, { recursive: true });
+  fs.writeFileSync(
+    bashConfigPath,
+    [
+      "working-directory: .",
+      "allowed-paths:",
+      "  - .",
+      "  - /tmp",
+      "allowed-commands: ls,pwd,git",
+      "path-checked-commands: ls,cat",
+      "path-check-bypass-commands: git"
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    fileToolsConfigPath,
+    [
+      "working-directory: .",
+      "allowed-read-paths:",
+      "  - .",
+      "allowed-write-paths:",
+      "  - .",
+      "max-read-bytes: 1048576"
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  writeTestEnv(
+    userDataRoot,
+    platformService.id,
+    `SERVER_PORT=11949\nAUTH_LOCAL_PUBLIC_KEY_FILE=${path.join(tempRoot, "custom", "public-key.pem")}\n`
+  );
+
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+
+    const bashConfig = fs.readFileSync(bashConfigPath, "utf8");
+    const fileToolsConfig = fs.readFileSync(fileToolsConfigPath, "utf8");
+    assert.match(bashConfig, /^allowed-commands: ls,pwd,git$/m);
+    assert.doesNotMatch(bashConfig, /^allowed-paths:/m);
+    assert.doesNotMatch(bashConfig, /^path-checked-commands:/m);
+    assert.doesNotMatch(bashConfig, /^path-check-bypass-commands:/m);
+    assert.match(fileToolsConfig, /^max-read-bytes: 1048576$/m);
+    assert.doesNotMatch(fileToolsConfig, /^allowed-read-paths:/m);
+    assert.doesNotMatch(fileToolsConfig, /^allowed-write-paths:/m);
+  } finally {
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("ensurePreStartRequirements preserves custom agent platform auth public key path", async () => {

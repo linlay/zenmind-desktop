@@ -2715,6 +2715,15 @@ const AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS = [
 const AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS = [
   "AGENT_WS_ENABLED"
 ] as const;
+const AGENT_PLATFORM_DEPRECATED_BASH_CONFIG_KEYS = [
+  "allowed-paths",
+  "path-checked-commands",
+  "path-check-bypass-commands"
+] as const;
+const AGENT_PLATFORM_DEPRECATED_FILE_TOOLS_CONFIG_KEYS = [
+  "allowed-read-paths",
+  "allowed-write-paths"
+] as const;
 const AGENT_PLATFORM_DEPRECATED_ENV_KEYS = [
   "GATEWAY_USER_ID",
   "GATEWAY_TICKET",
@@ -3504,6 +3513,72 @@ function removeEnvKeysFromContent(content: string, keys: readonly string[]) {
   return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
 }
 
+function getTopLevelYamlKey(line: string) {
+  const match = /^([A-Za-z0-9_-]+)\s*:/u.exec(line);
+  return match?.[1] ?? "";
+}
+
+function removeDeprecatedTopLevelYamlKeys(content: string, keys: readonly string[]) {
+  const blocked = new Set(keys);
+  const nextLines: string[] = [];
+  let skippingRemovedBlock = false;
+
+  for (const line of content.split(/\r?\n/u)) {
+    const key = getTopLevelYamlKey(line);
+    if (key) {
+      skippingRemovedBlock = false;
+      if (blocked.has(key)) {
+        skippingRemovedBlock = true;
+        continue;
+      }
+    } else if (skippingRemovedBlock && /^[ \t]/u.test(line)) {
+      continue;
+    }
+
+    nextLines.push(line);
+  }
+
+  if (nextLines.length === 0) {
+    return "";
+  }
+  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
+}
+
+function normalizeAgentPlatformBashConfigContent(content: string) {
+  return removeDeprecatedTopLevelYamlKeys(content, AGENT_PLATFORM_DEPRECATED_BASH_CONFIG_KEYS);
+}
+
+function normalizeAgentPlatformFileToolsConfigContent(content: string) {
+  return removeDeprecatedTopLevelYamlKeys(content, AGENT_PLATFORM_DEPRECATED_FILE_TOOLS_CONFIG_KEYS);
+}
+
+function normalizeAgentPlatformDeprecatedConfigFile(filePath: string, normalize: (content: string) => string) {
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
+  const current = fs.readFileSync(filePath, "utf8");
+  const next = normalize(current);
+  if (next === current) {
+    return false;
+  }
+  fs.writeFileSync(filePath, next, "utf8");
+  return true;
+}
+
+function normalizeAgentPlatformDeprecatedConfigFiles(layout: ServiceLayout) {
+  const configsDir = path.join(layout.configDir, "configs");
+  return [
+    normalizeAgentPlatformDeprecatedConfigFile(
+      path.join(configsDir, "bash.yml"),
+      normalizeAgentPlatformBashConfigContent
+    ),
+    normalizeAgentPlatformDeprecatedConfigFile(
+      path.join(configsDir, "file-tools.yml"),
+      normalizeAgentPlatformFileToolsConfigContent
+    )
+  ].some(Boolean);
+}
+
 function removeAgentWebclientManagedNodeBinPlaceholder(content: string) {
   const nextLines = content
     .split(/\r?\n/u)
@@ -4094,6 +4169,8 @@ async function ensureAgentPlatformAppServerPublicKey(app: App, layout: ServiceLa
 }
 
 async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefinition, layout: ServiceLayout) {
+  normalizeAgentPlatformDeprecatedConfigFiles(layout);
+
   const envPath = layout.envPath;
   const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
   const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(currentContent, layout);
@@ -4141,6 +4218,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   patchProgramCommonForLayeredLayout(layout.programDir);
 
   if (service.id === "agent-platform") {
+    await ensureAgentPlatformDesktopConfig(app, service, layout);
     await ensureAgentPlatformContainerHubDependency(app, layout);
   }
 
@@ -5366,6 +5444,8 @@ export const __testInternals = {
   resolveAcpCommandForDesktop,
   normalizeAgentPlatformEnvContentForRuntime,
   normalizeAgentPlatformEnvContentForSave,
+  normalizeAgentPlatformBashConfigContent,
+  normalizeAgentPlatformFileToolsConfigContent,
   normalizeAgentContainerHubEnvContentForDesktop,
   normalizeAgentWebclientEnvContentForDesktop,
   applyAgentPlatformWindowsHostShellDefaults,
