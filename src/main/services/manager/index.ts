@@ -74,6 +74,7 @@ type ProcessTreeRow = {
 type ManagedRootPid = {
   pid: number;
   serviceId: ServiceId;
+  installDir?: string;
   pidFilePaths: string[];
 };
 
@@ -81,11 +82,36 @@ type ManagedProcessCleanupTarget = ManagedRootPid & {
   treePids: number[];
 };
 
+type ManagedProcessCleanupTargets = {
+  roots: ManagedRootPid[];
+  stalePidFilePaths: string[];
+};
+
 type ManagedServiceStopState = {
   mainPidFilePath: string;
   managedMainPid: number | null;
   port: number;
   managedPortPids: number[];
+};
+
+type TerminateProcessTreeOptions = {
+  platform?: NodeJS.Platform | string;
+  isProcessRunningImpl?: (pid: number | null) => boolean;
+  spawnSyncImpl?: typeof spawnSync;
+  listProcessTreePidsImpl?: typeof listProcessTreePids;
+  terminateProcessListImpl?: typeof terminateProcessList;
+};
+
+type ForceCleanupManagedProcessesOptions = {
+  platform?: NodeJS.Platform | string;
+  collectManagedProcessCleanupTargetsImpl?: (app: App) => ManagedProcessCleanupTargets;
+  terminateProcessTreeImpl?: typeof terminateProcessTree;
+  terminateProcessListImpl?: typeof terminateProcessList;
+  listProcessTreePidsImpl?: typeof listProcessTreePids;
+  isProcessRunningImpl?: (pid: number | null) => boolean;
+  pidMatchesInstallDirImpl?: typeof pidMatchesInstallDir;
+  removePidFileImpl?: typeof removePidFile;
+  consoleError?: (message: string) => void;
 };
 
 type PowerShellCapturePayload = ExecResult & {
@@ -1305,6 +1331,22 @@ function writePidFile(pidFilePath: string, pid: number) {
   fs.writeFileSync(pidFilePath, `${pid}\n`, "utf8");
 }
 
+function readManagedPidFile(pidFilePaths: string[]) {
+  for (const pidFilePath of pidFilePaths) {
+    const pid = readPid(pidFilePath);
+    if (pid) {
+      return pid;
+    }
+  }
+  return null;
+}
+
+function writeManagedPidFiles(pidFilePaths: string[], pid: number) {
+  for (const pidFilePath of pidFilePaths) {
+    writePidFile(pidFilePath, pid);
+  }
+}
+
 function listBuiltinSiblingInstallDirs(app: App, service: ServiceDefinition, currentInstallDir: string) {
   const versionRoot = getBuiltinServiceVersionRoot(app, service.id);
   if (!fs.existsSync(versionRoot)) {
@@ -1431,19 +1473,25 @@ function terminateProcessList(pids: number[]) {
   return waitForProcessesExit(uniquePids, 1000);
 }
 
-function terminateProcessTree(rootPid: number) {
-  if (!isProcessRunning(rootPid)) {
+function terminateProcessTree(rootPid: number, options: TerminateProcessTreeOptions = {}) {
+  const platform = options.platform ?? process.platform;
+  const isProcessRunningImpl = options.isProcessRunningImpl ?? isProcessRunning;
+  const spawnSyncImpl = options.spawnSyncImpl ?? spawnSync;
+  const listProcessTreePidsImpl = options.listProcessTreePidsImpl ?? listProcessTreePids;
+  const terminateProcessListImpl = options.terminateProcessListImpl ?? terminateProcessList;
+
+  if (!isProcessRunningImpl(rootPid)) {
     return true;
   }
 
-  if (IS_WINDOWS) {
+  if (platform === "win32") {
     try {
-      const result = spawnSync("taskkill.exe", ["/PID", String(rootPid), "/T", "/F"], {
+      const result = spawnSyncImpl("taskkill.exe", ["/PID", String(rootPid), "/T", "/F"], {
         encoding: "utf8",
         env: buildServiceEnv(),
         timeout: 5000
       });
-      if (result.status === 0 || !isProcessRunning(rootPid)) {
+      if (result.status === 0 || !isProcessRunningImpl(rootPid)) {
         return true;
       }
     } catch {
@@ -1451,8 +1499,8 @@ function terminateProcessTree(rootPid: number) {
     }
   }
 
-  const treePids = listProcessTreePids(rootPid);
-  return terminateProcessList(treePids.length > 0 ? treePids : [rootPid]);
+  const treePids = listProcessTreePidsImpl(rootPid);
+  return terminateProcessListImpl(treePids.length > 0 ? treePids : [rootPid]);
 }
 
 function removePidFile(pidFilePath: string) {
@@ -1461,6 +1509,23 @@ function removePidFile(pidFilePath: string) {
   } catch {
     // Ignore pid cleanup failures and let the next startup attempt surface a real error if needed.
   }
+}
+
+function uniqueNonEmptyPaths(paths: string[]) {
+  return [...new Set(paths.filter(Boolean))];
+}
+
+function getManagedPidFilePaths(service: ServiceDefinition, layout: ServiceLayout) {
+  if (!service.runtime.pidRelativePath) {
+    return [];
+  }
+
+  const pidFileName = path.basename(service.runtime.pidRelativePath);
+  return uniqueNonEmptyPaths([
+    resolveRuntimePath(layout, service.runtime.pidRelativePath),
+    resolveRuntimePath(layout.programDir, service.runtime.pidRelativePath),
+    pidFileName ? path.join(layout.stateDir, "pid", pidFileName) : ""
+  ]);
 }
 
 function addManagedRootPid(
@@ -1477,7 +1542,7 @@ function addManagedRootPid(
   const existing = roots.get(pid);
   if (existing) {
     if (pidFilePath) {
-      existing.pidFilePaths.push(pidFilePath);
+      existing.pidFilePaths = uniqueNonEmptyPaths([...existing.pidFilePaths, pidFilePath]);
     }
     return;
   }
@@ -1485,12 +1550,14 @@ function addManagedRootPid(
   roots.set(pid, {
     pid,
     serviceId,
+    installDir,
     pidFilePaths: pidFilePath ? [pidFilePath] : []
   });
 }
 
-function collectManagedRootPids(app: App) {
+function collectManagedProcessCleanupTargets(app: App): ManagedProcessCleanupTargets {
   const roots = new Map<number, ManagedRootPid>();
+  const stalePidFilePaths = new Set<string>();
 
   for (const service of getAllServices()) {
     const installDir = getInstallDir(app, service);
@@ -1499,8 +1566,20 @@ function collectManagedRootPids(app: App) {
       continue;
     }
 
-    const pidFilePath = resolveRuntimePath(layout, service.runtime.pidRelativePath);
-    addManagedRootPid(roots, service.id, readPid(pidFilePath), installDir, pidFilePath);
+    for (const pidFilePath of getManagedPidFilePaths(service, layout)) {
+      const pid = readPid(pidFilePath);
+      if (!pid) {
+        if (fs.existsSync(pidFilePath)) {
+          stalePidFilePaths.add(pidFilePath);
+        }
+        continue;
+      }
+      if (!isProcessRunning(pid) || !pidMatchesInstallDir(pid, installDir)) {
+        stalePidFilePaths.add(pidFilePath);
+        continue;
+      }
+      addManagedRootPid(roots, service.id, pid, installDir, pidFilePath);
+    }
 
     const envPath = layout.envPath;
     const env = fs.existsSync(envPath) ? readEnvFile(envPath) : new Map<string, string>();
@@ -1512,7 +1591,14 @@ function collectManagedRootPids(app: App) {
     }
   }
 
-  return [...roots.values()];
+  return {
+    roots: [...roots.values()],
+    stalePidFilePaths: [...stalePidFilePaths]
+  };
+}
+
+function collectManagedRootPids(app: App) {
+  return collectManagedProcessCleanupTargets(app).roots;
 }
 
 export function captureManagedProcessCleanupSnapshot(app: App) {
@@ -1536,7 +1622,8 @@ function mergeCleanupTargets(targets: ManagedProcessCleanupTarget[], roots: Mana
   for (const root of roots) {
     const existing = merged.get(root.pid);
     if (existing) {
-      existing.pidFilePaths.push(...root.pidFilePaths);
+      existing.installDir = existing.installDir ?? root.installDir;
+      existing.pidFilePaths = uniqueNonEmptyPaths([...existing.pidFilePaths, ...root.pidFilePaths]);
       if (existing.treePids.length === 0) {
         existing.treePids = listProcessTreePids(root.pid);
       }
@@ -1553,25 +1640,72 @@ function mergeCleanupTargets(targets: ManagedProcessCleanupTarget[], roots: Mana
   return [...merged.values()];
 }
 
-export async function forceCleanupManagedProcesses(app: App, snapshot: ManagedProcessCleanupTarget[] = []) {
-  const roots = mergeCleanupTargets(snapshot, collectManagedRootPids(app));
+function buildCleanupTreePids(root: ManagedProcessCleanupTarget, listProcessTreePidsImpl: typeof listProcessTreePids) {
+  const pids = [...listProcessTreePidsImpl(root.pid), ...root.treePids]
+    .filter((pid) => Number.isFinite(pid) && pid > 0 && pid !== root.pid);
+  return [...new Set([...pids, root.pid])];
+}
+
+function shouldRemoveManagedPidFile(
+  root: ManagedProcessCleanupTarget,
+  isProcessRunningImpl: (pid: number | null) => boolean,
+  pidMatchesInstallDirImpl: typeof pidMatchesInstallDir
+) {
+  if (!isProcessRunningImpl(root.pid)) {
+    return true;
+  }
+  if (root.installDir && !pidMatchesInstallDirImpl(root.pid, root.installDir)) {
+    return true;
+  }
+  return false;
+}
+
+export async function forceCleanupManagedProcesses(
+  app: App,
+  snapshot: ManagedProcessCleanupTarget[] = [],
+  options: ForceCleanupManagedProcessesOptions = {}
+) {
+  const collectManagedProcessCleanupTargetsImpl =
+    options.collectManagedProcessCleanupTargetsImpl ?? collectManagedProcessCleanupTargets;
+  const terminateProcessTreeImpl = options.terminateProcessTreeImpl ?? terminateProcessTree;
+  const terminateProcessListImpl = options.terminateProcessListImpl ?? terminateProcessList;
+  const listProcessTreePidsImpl = options.listProcessTreePidsImpl ?? listProcessTreePids;
+  const isProcessRunningImpl = options.isProcessRunningImpl ?? isProcessRunning;
+  const pidMatchesInstallDirImpl = options.pidMatchesInstallDirImpl ?? pidMatchesInstallDir;
+  const removePidFileImpl = options.removePidFileImpl ?? removePidFile;
+  const consoleError = options.consoleError ?? console.error;
+  const platform = options.platform ?? process.platform;
+  const collected = collectManagedProcessCleanupTargetsImpl(app);
+  const roots = mergeCleanupTargets(snapshot, collected.roots);
   const failures: string[] = [];
 
+  for (const stalePidFilePath of collected.stalePidFilePaths) {
+    removePidFileImpl(stalePidFilePath);
+  }
+
   for (const root of roots) {
-    const terminated = root.treePids.length > 0
-      ? terminateProcessList(root.treePids)
-      : terminateProcessTree(root.pid);
-    for (const pidFilePath of root.pidFilePaths) {
-      removePidFile(pidFilePath);
+    const treePids = buildCleanupTreePids(root, listProcessTreePidsImpl);
+    const terminated = platform === "win32"
+      ? terminateProcessTreeImpl(root.pid, {
+          platform,
+          isProcessRunningImpl,
+          listProcessTreePidsImpl,
+          terminateProcessListImpl
+        })
+      : terminateProcessListImpl(treePids);
+    if (terminated || shouldRemoveManagedPidFile(root, isProcessRunningImpl, pidMatchesInstallDirImpl)) {
+      for (const pidFilePath of root.pidFilePaths) {
+        removePidFileImpl(pidFilePath);
+      }
     }
 
-    if (!terminated && root.treePids.some((pid) => isProcessRunning(pid))) {
+    if (!terminated && treePids.some((pid) => isProcessRunningImpl(pid))) {
       failures.push(`${root.serviceId}: PID ${root.pid}`);
     }
   }
 
   if (failures.length > 0) {
-    console.error(`failed to force-clean managed service processes: ${failures.join("; ")}`);
+    consoleError(`failed to force-clean managed service processes: ${failures.join("; ")}`);
   }
 }
 
@@ -2311,6 +2445,7 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   const layout = getServiceLayout(app, service);
   const installed = fs.existsSync(installDir);
   const pidFilePath = resolveRuntimePath(layout, service.runtime.pidRelativePath);
+  const pidFilePaths = getManagedPidFilePaths(service, layout);
   const logFilePath = resolveRuntimePath(layout, service.runtime.logRelativePath);
   const errorLogFilePath = resolveRuntimePath(layout, service.runtime.errorLogRelativePath);
   const configFiles = service.configFiles.map((configFile) => {
@@ -2328,7 +2463,7 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   const env = installed ? readEnvFile(layout.envPath) : new Map<string, string>();
   const port = parsePort(service, env);
   const webUrl = installed ? getWebUrl(service, env) : getWebUrl(service, new Map<string, string>());
-  const pidFromFile = installed ? readPid(pidFilePath) : null;
+  const pidFromFile = installed ? readManagedPidFile(pidFilePaths) : null;
   const missingRuntimeFiles = installed ? listMissingRuntimeFiles(service, installDir) : [];
   const initializationState =
     installed && missingRuntimeFiles.length === 0 ? readInitializationState(layout) : null;
@@ -2342,14 +2477,16 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   let running = installed && missingRuntimeFiles.length === 0 && isProcessRunning(pid);
   let conflictingPortPid: number | null = null;
 
+  if (running && pidFromFile) {
+    writeManagedPidFiles(pidFilePaths, pidFromFile);
+  }
+
   if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !running && port > 0) {
     const detectedPid = detectManagedServicePid(installDir, port);
     if (detectedPid) {
       pid = detectedPid;
       running = true;
-      if (pidFromFile !== detectedPid) {
-        writePidFile(pidFilePath, detectedPid);
-      }
+      writeManagedPidFiles(pidFilePaths, detectedPid);
     } else {
       conflictingPortPid = listListeningPids(port).find((candidatePid) => candidatePid !== pidFromFile) ?? null;
     }
