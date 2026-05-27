@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -66,14 +67,43 @@ export function getDefaultContainerEnginePathEntries(options: ContainerEnginePat
 
 export function buildContainerEngineEnv(options: ContainerEnginePathOptions = {}) {
   const baseEnv = options.env ?? process.env;
+  const platform = options.platform ?? process.platform;
   const env = { ...baseEnv };
+  const currentPath = baseEnv.PATH ?? baseEnv.Path;
   const pathEntries = [
     ...splitPathList(baseEnv.ZENMIND_CONTAINER_ENGINE_PATHS),
-    ...splitPathList(baseEnv.PATH),
-    ...getDefaultContainerEnginePathEntries(options)
+    ...splitPathList(currentPath),
+    ...getDefaultContainerEnginePathEntries({ ...options, platform })
   ];
   env.PATH = [...new Set(pathEntries)].join(path.delimiter);
+  if (platform === "win32") {
+    env.Path = env.PATH;
+  }
   return env;
+}
+
+function commandBasenames(command: string, platform: NodeJS.Platform) {
+  if (platform !== "win32") {
+    return [command];
+  }
+  return command.toLowerCase().endsWith(".exe") ? [command] : [`${command}.exe`, command];
+}
+
+function findCommandInPathEntries(command: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform) {
+  const pathEntries = splitPathList(env.PATH);
+  for (const dirPath of pathEntries) {
+    for (const basename of commandBasenames(command, platform)) {
+      const candidate = path.join(dirPath, basename);
+      try {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          return candidate;
+        }
+      } catch {
+        // Keep scanning other candidates when a PATH entry is unreadable.
+      }
+    }
+  }
+  return "";
 }
 
 function resolveCommandPath(command: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform) {
@@ -85,12 +115,12 @@ function resolveCommandPath(command: string, env: NodeJS.ProcessEnv, platform: N
     timeout: 1_500
   });
   if (result.status !== 0 || result.error) {
-    return "";
+    return findCommandInPathEntries(command, env, platform);
   }
   return result.stdout
     .split(/\r?\n/u)
     .map((entry) => entry.trim())
-    .find(Boolean) ?? "";
+    .find(Boolean) ?? findCommandInPathEntries(command, env, platform);
 }
 
 export function resolveContainerEngine(options: ContainerEngineResolveOptions = {}): ContainerEngineResolution | null {

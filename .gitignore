@@ -41,6 +41,7 @@ playwright-report/
 *.pid.lock
 
 .antigravitycli/
+.serena/
 
 # Local assistant files
 agent.md

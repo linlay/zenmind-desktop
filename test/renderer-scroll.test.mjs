@@ -121,13 +121,25 @@ test("task board columns and cards adapt to the available board width", () => {
 
   assert.match(pageRule, /--task-board-column-gap:\s*16px;/);
   assert.match(pageRule, /--task-board-column-min-width:\s*260px;/);
+  assert.match(pageRule, /--task-board-column-fit-width:\s*calc\(\(100% - 32px\) \/ 3\);/);
   assert.match(
     pageRule,
-    /--task-board-column-width:\s*max\(var\(--task-board-column-min-width\),\s*calc\(\(100% - 48px\) \/ 4\)\);/
+    /--task-board-column-width:\s*max\(\s*calc\(\(100% - 48px\) \/ 4\),\s*min\(var\(--task-board-column-min-width\), var\(--task-board-column-fit-width\)\)\s*\);/
+  );
+  assert.match(
+    pageRule,
+    /--task-board-columns-total-width:\s*calc\(\s*var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+\s*var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\)\s*\);/
+  );
+  assert.match(
+    pageRule,
+    /--task-board-column-fold-offset:\s*max\(0px,\s*calc\(var\(--task-board-columns-total-width\) - 100%\)\);/
   );
   assert.match(columnsRule, /gap:\s*var\(--task-board-column-gap\);/);
+  assert.match(columnsRule, /overflow-x:\s*hidden;/);
   assert.doesNotMatch(styles, /\.task-board-columns\.is-backlog-expanded/);
-  assert.doesNotMatch(styles, /\.task-board-column\.is-todo\s*\{[\s\S]*?margin-left:/);
+  assert.match(readRule(".task-board-column.is-todo"), /margin-left:\s*calc\(var\(--task-board-column-fold-offset\) \* -1\);/);
+  assert.doesNotMatch(readRule(".task-board-column.is-in_progress"), /margin-left:/);
+  assert.doesNotMatch(readRule(".task-board-column.is-completed"), /margin-left:/);
   assert.match(columnRule, /flex:\s*0\s+0\s+var\(--task-board-column-width\);/);
   assert.match(columnRule, /width:\s*var\(--task-board-column-width\);/);
   assert.match(columnRule, /min-width:\s*var\(--task-board-column-width\);/);
