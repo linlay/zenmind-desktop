@@ -115,23 +115,23 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.doesNotMatch(controlCenter, /<span>进程 ID \(PID\)<\/span>/);
   assert.doesNotMatch(controlCenter, /<span>主日志路径<\/span>/);
   assert.doesNotMatch(controlCenter, /<span>错误日志路径<\/span>/);
-  assert.match(controlCenter, /label:\s*"描述"/);
-  assert.match(controlCenter, /label:\s*"安装目录"/);
-  assert.match(controlCenter, /label:\s*"主日志路径"/);
-  assert.match(controlCenter, /label:\s*"错误日志路径"/);
-  assert.match(controlCenter, /label:\s*"进程 ID \(PID\)"/);
+  assert.match(controlCenter, /label:\s*t\("controlCenter\.meta\.description"\)/);
+  assert.match(controlCenter, /label:\s*t\("controlCenter\.meta\.installDir"\)/);
+  assert.match(controlCenter, /label:\s*t\("controlCenter\.meta\.mainLogPath"\)/);
+  assert.match(controlCenter, /label:\s*t\("controlCenter\.meta\.errorLogPath"\)/);
+  assert.match(controlCenter, /label:\s*t\("controlCenter\.meta\.pid"\)/);
   assert.match(controlCenter, /service-detail-metadata-item is-endpoint/);
   assert.match(controlCenter, /service-detail-metadata-item is-log-actions/);
-  assert.match(controlCenter, />\s*日志\s*</);
-  assert.match(controlCenter, /className="service-detail-log-action"[\s\S]*?aria-label="查看日志"[\s\S]*?<LogArticleIcon \/>/);
-  assert.match(controlCenter, /className="service-detail-log-action"[\s\S]*?aria-label="打开日志位置"[\s\S]*?<LogFolderIcon \/>/);
+  assert.match(controlCenter, /t\("controlCenter\.logs"\)/);
+  assert.match(controlCenter, /className="service-detail-log-action"[\s\S]*?aria-label=\{t\("controlCenter\.viewLog"\)\}[\s\S]*?<LogArticleIcon \/>/);
+  assert.match(controlCenter, /className="service-detail-log-action"[\s\S]*?aria-label=\{t\("controlCenter\.openLogLocation"\)\}[\s\S]*?<LogFolderIcon \/>/);
   assert.match(controlCenter, /icon:\s*"article"/);
   assert.match(controlCenter, /icon:\s*"folder"/);
   assert.match(controlCenter, /action\.icon ===[\s\S]*?"article"[\s\S]*?<LogArticleIcon \/>[\s\S]*?<LogFolderIcon \/>/);
-  assert.match(controlCenter, /aria-label="显示配置文件位置"[\s\S]*?<LogFolderIcon \/>/);
+  assert.match(controlCenter, /aria-label=\{t\("controlCenter\.config\.showFileLocation"\)\}[\s\S]*?<LogFolderIcon \/>/);
   assert.match(controlCenter, /openLogViewer\([\s\S]*?activeDetailService,[\s\S]*?"main"/);
   assert.match(controlCenter, /revealServicePath\(\s*activeDetailService\s*\.healthMeta\.logFilePath,\s*"file",?\s*\)/);
-  assert.match(controlCenter, /config-title-main[\s\S]*?config-title-label[\s\S]*?config-terminal-icon[\s\S]*?<ConfigTerminalIcon \/>[\s\S]*?<h3>配置<\/h3>[\s\S]*?config-file-select config-title-file-select[\s\S]*?data-config-file-select-root[\s\S]*?config-file-select-trigger[\s\S]*?aria-haspopup="listbox"[\s\S]*?config-file-select-panel[\s\S]*?role="listbox"[\s\S]*?config-select-wrap/);
+  assert.match(controlCenter, /config-title-main[\s\S]*?config-title-label[\s\S]*?config-terminal-icon[\s\S]*?<ConfigTerminalIcon \/>[\s\S]*?<h3>\{t\("controlCenter\.config"\)\}<\/h3>[\s\S]*?config-file-select config-title-file-select[\s\S]*?data-config-file-select-root[\s\S]*?config-file-select-trigger[\s\S]*?aria-haspopup="listbox"[\s\S]*?config-file-select-panel[\s\S]*?role="listbox"[\s\S]*?config-select-wrap/);
   assert.match(controlCenter, /function selectConfigFile\(configKey: string\)/);
   assert.match(controlCenter, /service-nav-card is-compact-service/);
   assert.match(controlCenter, /service-nav-help-button/);
@@ -157,14 +157,14 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.doesNotMatch(controlCenter, /<ServiceDetailIcon \/>/);
   assert.match(controlCenter, /className="service-title-actions service-primary-actions"/);
   assert.match(controlCenter, /openServiceDetail\(\s*activeDetailService\.id,?\s*\)/);
-  assert.match(controlCenter, /aria-label="详情"[\s\S]*?<ServiceInfoIcon \/>/);
+  assert.match(controlCenter, /aria-label=\{t\("controlCenter\.actions\.details"\)\}[\s\S]*?<ServiceInfoIcon \/>/);
   assert.match(controlCenter, /activeDetailService\.status !== "running"/);
   assert.match(controlCenter, /role="button"[\s\S]*?handleServiceCardKeyDown\(\s*event,\s*cardId,?\s*\)/);
   assert.doesNotMatch(controlCenter, /<p className="service-nav-description">/);
   assert.match(controlCenter, /service-nav-version-inline/);
-  assert.match(controlCenter, /管理并监控您的基础设施服务集群。/);
-  assert.match(controlCenter, /已注册服务/);
-  assert.match(controlCenter, /运行中实例/);
+  assert.match(controlCenter, /t\("controlCenter\.copy"\)/);
+  assert.match(controlCenter, /t\("controlCenter\.metrics\.registeredServices"\)/);
+  assert.match(controlCenter, /t\("controlCenter\.metrics\.runningInstances"\)/);
   assert.match(controlCenter, /handleQuickStart/);
   assert.match(controlCenter, /handleInstallPlugin/);
   assert.match(controlCenter, /installBuiltinFromBundle/);
@@ -249,11 +249,11 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.ok(darkServiceNavHelpTipRule);
   assert.doesNotMatch(serviceNavHelpTipRule, /background:\s*rgba\(255,\s*255,\s*255,\s*0\.98\);/);
   assert.doesNotMatch(darkServiceNavHelpTipRule, /background:\s*#20242b;/);
-  assert.match(controlCenter, /data-tooltip="查看说明"/);
-  assert.match(controlCenter, /data-tooltip="打开前端"/);
+  assert.match(controlCenter, /data-tooltip=\{t\("controlCenter\.help\.viewDescription"\)\}/);
+  assert.match(controlCenter, /data-tooltip=\{t\("controlCenter\.actions\.openFrontend"\)\}/);
   assert.match(
     controlCenter,
-    /data-tooltip=\{\s*activeDetailService\.status ===\s*"initialization-required"\s*\?\s*"初始化"\s*:\s*"重新初始化"\s*\}/
+    /data-tooltip=\{\s*activeDetailService\.status ===\s*"initialization-required"\s*\?\s*t\("controlCenter\.actions\.initialize"\)\s*:\s*t\("controlCenter\.actions\.reinitialize"\)\s*\}/
   );
   assert.doesNotMatch(
     controlCenter,
@@ -559,6 +559,11 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/schedules"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/control-center"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?to:\s*"\/help"[\s\S]*?labelKey:\s*"nav\.help"/);
   assert.match(sidebarSource, /sidebar-footer-divider/);
+  assert.match(sidebarSource, /aria-label=\{t\("nav\.sidebar\.fixedTools"\)\}/);
+  assert.match(sidebarSource, /aria-label=\{t\("nav\.sidebar\.openSettings"\)\}/);
+  assert.match(sidebarSource, /title=\{t\("nav\.settings"\)\}/);
+  assert.match(sidebarSource, /<span className="sidebar-link-label">\{t\("nav\.settings"\)\}<\/span>/);
+  assert.match(sidebarSource, /getCollapsedSidebarLabel\(t\("nav\.settings"\)\)/);
   assert.match(sidebarSource, /createPortal/);
   assert.match(sidebarSource, /sidebar-tool-menu-trigger/);
   assert.match(sidebarSource, /sidebar-tool-menu-item/);
@@ -655,14 +660,14 @@ test("settings route keeps the global sidebar and renders page-internal split se
   assert.doesNotMatch(appShell, /onSelectSettingsSection=\{handleSelectSettingsSection\}/);
 
   assert.match(settingsSections, /type SettingsSectionId/);
-  assert.match(settingsSections, /id:\s*"appearance"[\s\S]*?label:\s*"外观"[\s\S]*?layout:\s*"measure"/);
-  assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"导航栏"[\s\S]*?layout:\s*"wide"/);
-  assert.match(settingsSections, /id:\s*"quickAssistant"[\s\S]*?label:\s*"快捷助手"[\s\S]*?layout:\s*"measure"/);
+  assert.match(settingsSections, /id:\s*"appearance"[\s\S]*?label:\s*"appearance"[\s\S]*?layout:\s*"measure"/);
+  assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"navigation"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsSections, /id:\s*"quickAssistant"[\s\S]*?label:\s*"quickAssistant"[\s\S]*?layout:\s*"measure"/);
   assert.doesNotMatch(settingsSections, /id:\s*"sideAssistant"/);
-  assert.match(settingsSections, /id:\s*"desktopPet"[\s\S]*?label:\s*"宠物助手"/);
-  assert.match(settingsSections, /id:\s*"embeddedWebsites"[\s\S]*?label:\s*"内嵌网站"[\s\S]*?layout:\s*"wide"/);
-  assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"数据目录"/);
-  assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"助手记忆"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsSections, /id:\s*"desktopPet"[\s\S]*?label:\s*"desktopPet"/);
+  assert.match(settingsSections, /id:\s*"embeddedWebsites"[\s\S]*?label:\s*"embeddedWebsites"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"dataRoot"/);
+  assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"memory"[\s\S]*?layout:\s*"wide"/);
   assert.doesNotMatch(settingsSections, /icon:/);
 
   assert.doesNotMatch(sidebarSource, /isSettingsMode\?: boolean;/);
@@ -728,7 +733,7 @@ test("settings page scopes notices to the active section and keeps load failures
   assert.match(settingsPage, /const activeSectionReadError = activeSection \? sectionReadErrors\[activeSection\] \?\? "" : "";/);
   assert.match(settingsPage, /settings-section-feedback/);
   assert.match(settingsPage, /<PageFeedbackStack/);
-  assert.match(settingsPage, /showSectionNotice\("desktopPet", nextState\.enabled \? "桌面宠物已开启。" : "桌面宠物已关闭。", "success"\)/);
+  assert.match(settingsPage, /showSectionNotice\("desktopPet", nextState\.enabled \? t\("settings\.desktopPet\.noticeEnabled"\) : t\("settings\.desktopPet\.noticeDisabled"\), "success"\)/);
   assert.doesNotMatch(settingsPage, /导航页签排序已更新/);
   assert.match(settingsPage, /showSectionNotice\("quickAssistant", reason instanceof Error \? reason\.message : String\(reason\), "error"\)/);
   assert.match(settingsPage, /feedback-banner warning-banner settings-section-read-error/);
@@ -768,23 +773,23 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsStore, /quickAssistantAgentKey:\s*settings\.quickAssistantAgentKey/);
   assert.match(settingsStore, /desktopCopilotPages:\s*settings\.desktopCopilotPages/);
   assert.doesNotMatch(settingsPage, /<p className="eyebrow">NAVIGATION<\/p>/);
-  assert.match(settingsPage, /导航栏/);
+  assert.match(settingsPage, /settings\.navigation\.label/);
   assert.doesNotMatch(settingsPage, /半透明度/);
   assert.doesNotMatch(settingsPage, /导航栏半透明效果/);
   assert.doesNotMatch(settingsPage, /type="range"/);
-  assert.match(settingsPage, /固定主导航/);
-  assert.match(settingsPage, /固定工具区/);
-  assert.match(settingsPage, /带侧边助手/);
-  assert.match(settingsPage, /不带侧边助手/);
+  assert.match(settingsPage, /settings\.navigation\.fixedMain/);
+  assert.match(settingsPage, /settings\.navigation\.fixedTools/);
+  assert.match(settingsPage, /settings\.navigation\.sideAssistantColumn/);
+  assert.match(settingsPage, /settings\.navigation\.noSideAssistant/);
   assert.match(settingsPage, /getCopilotPageKeyForSidebarNavOrderItem/);
   assert.match(settingsPage, /handleSelectNavigationCopilotAgent/);
-  assert.match(settingsPage, /aria-label="固定主导航顺序"/);
+  assert.match(settingsPage, /settings\.navigation\.fixedMainOrder/);
   assert.match(settingsPage, /data-sidebar-nav-order-key/);
   assert.doesNotMatch(settingsPage, /handleSidebarNavPointerDown/);
   assert.doesNotMatch(settingsPage, /document\.addEventListener\("pointermove"/);
   assert.doesNotMatch(settingsPage, /navigation-order-drag-handle/);
-  assert.match(settingsPage, /内嵌网站/);
-  assert.match(settingsPage, /智能体增强/);
+  assert.match(settingsPage, /settings\.embeddedWebsites\.label/);
+  assert.match(settingsPage, /settings\.embeddedWebsites\.agentEnhancement/);
   assert.match(settingsPage, /handleUpdateCustomSidebarAgent/);
   assert.match(settingsPage, /window\.electronAPI\.customSidebar\.update/);
   assert.doesNotMatch(settingsPage, /自定义侧边栏/);
@@ -798,10 +803,10 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /将常用网页作为内嵌网站固定至导航栏便捷访问。内嵌网站仅保存在本地，支持导入导出，系统入口不可修改/);
   assert.doesNotMatch(settingsPage, /按模块管理桌面工作台、助手能力和本地数据行为/);
   assert.doesNotMatch(settingsPage, /className="custom-sidebar-copy"/);
-  assert.match(settingsPage, /快捷助手/);
+  assert.match(settingsPage, /settings\.quickAssistant\.label/);
   assert.doesNotMatch(settingsPage, /case "sideAssistant"/);
   assert.doesNotMatch(settingsPage, /SIDE ASSISTANT/);
-  assert.match(settingsPage, /侧边助手默认智能体/);
+  assert.match(settingsPage, /settings\.navigation\.defaultAssistant/);
   assert.match(settingsPage, /desktopPetSupported/);
   assert.match(settingsPage, /handleToggleDesktopPet/);
   assert.match(settingsPage, /quickAssistantEnabled/);
@@ -812,8 +817,8 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /页面 Copilot/);
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
-  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?label:\s*"智能体"[\s\S]*?label:\s*"自动化"[\s\S]*?label:\s*"记忆管理"/);
-  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?label:\s*"控制中心"[\s\S]*?label:\s*"功能市场"[\s\S]*?label:\s*"设置"[\s\S]*?label:\s*"帮助"/);
+  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?labelKey:\s*"nav\.memory"/);
+  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?labelKey:\s*"nav\.help"/);
   assert.match(settingsPage, /copilotPageKey:\s*"controlCenter"/);
   assert.match(settingsPage, /copilotPageKey:\s*"market"/);
   assert.match(settingsPage, /navigation-order-fixed-label/);
@@ -822,14 +827,46 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /handleSelectDesktopHelperAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*desktopHelperAgentKey: normalizedAgentKey\s*\}\)/);
   assert.match(settingsPage, /desktopCopilotPages: nextPages/);
-  assert.match(settingsPage, /下方每个固定工具入口可单独选择是否显示侧边助手/);
-  assert.match(settingsPage, /顺序固定为任务看板、智能助理、内嵌网站/);
-  assert.match(settingsPage, /固定为弹出菜单，不参与排序/);
-  assert.match(settingsPage, /aria-label="快捷助手配置"/);
-  assert.match(settingsPage, /aria-label="侧边助手默认智能体"/);
+  assert.match(settingsPage, /settings\.navigation\.defaultAssistantDescription/);
+  assert.match(settingsPage, /settings\.navigation\.fixedMainDescription/);
+  assert.match(settingsPage, /settings\.navigation\.fixedToolsDescription/);
+  assert.match(settingsPage, /settings\.quickAssistant\.panelAria/);
+  assert.match(settingsPage, /settings\.navigation\.defaultAssistant/);
   assert.match(globalStyles, /grid-template-columns:\s*minmax\(140px,\s*1fr\)\s*minmax\(220px,\s*300px\)\s*124px/);
   assert.doesNotMatch(settingsPage, /onClick=\{resetSidebarNavOrder\}/);
   assert.doesNotMatch(settingsPage, /moveSidebarNavOrderItem/);
+});
+
+test("settings page memory section routes visible text through i18n", () => {
+  const settingsPage = readSourceFile(
+    "src",
+    "renderer",
+    "pages",
+    "settings",
+    "SettingsPage.tsx"
+  );
+
+  assert.match(settingsPage, /<h2 className="settings-sidebar-title">\{t\("settings\.title"\)\}<\/h2>/);
+  assert.match(settingsPage, /aria-label=\{t\("settings\.directory"\)\}/);
+  assert.match(settingsPage, /t\("settings\.memory\.sectionDescription"\)/);
+  assert.match(settingsPage, /t\("settings\.memory\.recall"\)/);
+  assert.match(settingsPage, /t\("settings\.memory\.storage"\)/);
+  assert.doesNotMatch(
+    settingsPage,
+    /助手记忆|记忆召回|自动学习|最近记忆|本地存储|最近记录|暂无操作|已暂停引用|仅保留现有记忆|设置目录/
+  );
+});
+
+test("settings page renderer text is routed through i18n", () => {
+  const settingsFiles = [
+    ["src", "renderer", "pages", "settings", "SettingsPage.tsx"],
+    ["src", "renderer", "settingsPageSections.ts"]
+  ];
+
+  for (const segments of settingsFiles) {
+    const source = readSourceFile(...segments);
+    assert.doesNotMatch(source, /[\p{Script=Han}]/u, `${segments.join("/")} contains hardcoded Chinese text`);
+  }
 });
 
 test("sidebar translucency is fixed and not user configurable", () => {
@@ -1156,6 +1193,8 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /targetStatus === "in_progress" && activeIssue\.status !== "in_progress"/);
   assert.match(taskBoardPage, /activeIssue\.assigneeAgentKey\?\.trim\(\)[\s\S]{0,180}assignIssueToAssistant\(activeIssue, activeIssue\.assigneeAgentKey\)/);
   assert.match(taskBoardPage, /openInProgressAssignmentModal\(activeIssue\)/);
+  assert.match(taskBoardPage, /targetStatus === "todo" && activeIssue\.status !== "todo"[\s\S]{0,220}activeIssue\.assigneeAgentKey\?\.trim\(\)/);
+  assert.match(taskBoardPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,180}assignIssueToAssistant\(result\.issue, activeIssue\.assigneeAgentKey\)/);
   assert.match(taskBoardPage, /form\.status === "in_progress" && !modal\?\.issue\?\.runId/);
   assert.match(taskBoardPage, /shouldRunAfterSave && !form\.assigneeAgentKey/);
   assert.match(taskBoardPage, /t\("taskBoard\.feedback\.assigneeRequiredForProgress"\)/);
@@ -1460,11 +1499,14 @@ test("plugin market guards stale preload market api before skill import", () => 
 
   assert.match(marketPage, /function getMarketApi\(/);
   assert.match(marketPage, /function getPluginApi\(/);
-  assert.match(marketPage, /MARKET_API_UNAVAILABLE_MESSAGE/);
-  assert.match(marketPage, /PLUGIN_API_UNAVAILABLE_MESSAGE/);
+  assert.match(marketPage, /t\("market\.error\.marketApiUnavailable"/);
+  assert.match(marketPage, /t\("market\.error\.pluginApiUnavailable"/);
   assert.match(marketPage, /getMarketMethod\("importSkillFromCommand"\)/);
   assert.match(marketPage, /market-command-input/);
-  assert.match(marketPage, /执行下载/);
+  assert.match(marketPage, /t\("market\.skill\.cloudDownload\.run"\)/);
+  assert.match(marketPage, /const skillMarketOffline = Boolean\(next\.skillOffline\)/);
+  assert.match(marketPage, /setMarketFeedback\(skillMarketOffline \? next\.skillMessage \?\? "" : ""\)/);
+  assert.match(marketPage, /marketOffline=\{Boolean\(marketResult\.skillOffline\)\}/);
   assert.match(marketPage, /console\.warn\("\[skill-market\] failed to load market data"/);
   assert.doesNotMatch(marketPage, /window\.electronAPI\.market\.importSkill\(\)/);
   assert.doesNotMatch(marketPage, /installPlugin\(\)/);
@@ -1472,6 +1514,37 @@ test("plugin market guards stale preload market api before skill import", () => 
   assert.doesNotMatch(marketStyles, /\.market-feedback/);
   assert.match(marketStyles, /\.market-command-input/);
   assert.match(marketStyles, /\.market-status/);
+});
+
+test("functional market renderer text is routed through i18n", () => {
+  const marketFiles = [
+    "MarketPageFrame.tsx",
+    "PluginMarket.tsx",
+    "SkillMarket.tsx",
+    "SandboxImageMarket.tsx",
+    "marketDisplay.tsx",
+    "marketPageApi.ts",
+    "marketPageModel.ts"
+  ];
+
+  for (const filename of marketFiles) {
+    const source = readSourceFile("src", "renderer", "pages", "functional-market", filename);
+    assert.doesNotMatch(source, /[\p{Script=Han}]/u, `${filename} contains hardcoded Chinese text`);
+  }
+});
+
+test("main marketplace user-facing text is routed through i18n", () => {
+  const marketplaceFiles = [
+    "common.ts",
+    "plugin-market.ts",
+    "skill-market.ts",
+    "sandbox-image-market.ts"
+  ];
+
+  for (const filename of marketplaceFiles) {
+    const source = readSourceFile("src", "main", "marketplace", filename);
+    assert.doesNotMatch(source, /[\p{Script=Han}]/u, `${filename} contains hardcoded Chinese text`);
+  }
 });
 
 test("sandbox image market is a local image management surface", () => {
@@ -1484,10 +1557,10 @@ test("sandbox image market is a local image management surface", () => {
   );
   const marketModel = readSourceFile("src", "renderer", "pages", "functional-market", "marketPageModel.ts");
 
-  assert.match(marketModel, /管理本机 Docker \/ Podman 中已有的沙箱镜像包/);
+  assert.match(marketModel, /market\.tab\.sandboxImages\.subtitle/);
   assert.match(sandboxMarket, /PageFeedbackStack/);
   assert.match(sandboxMarket, /sandboxImageDescription/);
-  assert.match(sandboxMarket, /description === LOCAL_SANDBOX_IMAGE_DESCRIPTION \? "" : description/);
+  assert.match(sandboxMarket, /description === t\("market\.sandbox\.localDescription"\) \? "" : description/);
   assert.match(sandboxMarket, /getMarketMethod\("importSandboxImage"\)/);
   assert.match(sandboxMarket, /SandboxImageImportProgressEvent/);
   assert.match(sandboxMarket, /importProgressEvents/);
@@ -1506,7 +1579,7 @@ test("sandbox image market is a local image management surface", () => {
   assert.match(sandboxMarket, /market-image-action-button/);
   assert.match(sandboxMarket, /sandbox-image-panel/);
   assert.doesNotMatch(sandboxMarket, /market-provider-dot/);
-  assert.match(sandboxMarket, /不能撤销/);
+  assert.match(sandboxMarket, /t\("market\.sandbox\.confirmDelete"/);
   assert.match(sandboxMarket, /Docker \/ Podman/);
   assert.match(readSourceFile("src", "renderer", "pages", "functional-market", "marketDisplay.tsx"), /market-sandbox-image-symbol/);
   assert.match(
@@ -1585,11 +1658,11 @@ test("sandbox image market is a local image management surface", () => {
     readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
     /\.market-import-progress-log\s*\{[\s\S]*?font-family:\s*ui-monospace/
   );
-  assert.match(sandboxMarket, /查看/);
-  assert.match(sandboxMarket, /导出/);
-  assert.match(sandboxMarket, /删除/);
+  assert.match(sandboxMarket, /t\("market\.sandbox\.action\.view"/);
+  assert.match(sandboxMarket, /t\("market\.sandbox\.action\.export"/);
+  assert.match(sandboxMarket, /t\("market\.sandbox\.action\.delete"/);
   assert.doesNotMatch(sandboxMarket, /getMarketMethod\("buildSandboxImage"\)/);
-  assert.doesNotMatch(sandboxMarket, /构建中|重新构建|onBuildSandboxImage/);
+  assert.doesNotMatch(sandboxMarket, /onBuildSandboxImage/);
 });
 
 test("sandbox image import progress is exposed across desktop api layers", () => {
@@ -1976,6 +2049,20 @@ test("native assistant page context captures shell sidebar, left region, and mod
   assert.match(pageContextService, /webview/);
 });
 
+test("control center renderer text is routed through i18n", () => {
+  const controlCenter = readSourceFile(
+    "src",
+    "renderer",
+    "pages",
+    "control-center",
+    "ControlCenterPage.tsx"
+  );
+
+  assert.match(controlCenter, /useI18n/);
+  assert.doesNotMatch(controlCenter, /[\p{Script=Han}]/u);
+  assert.doesNotMatch(controlCenter, /getServiceDisplayName/);
+});
+
 test("service logs open in a separate floating log viewer window", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const logViewerWindow = fs.readFileSync(
@@ -2085,6 +2172,18 @@ test("service log viewer keeps find controls inside the log area", () => {
   assert.match(globalStyles, /\.log-match\.is-active\s*\{/);
 });
 
+test("service log viewer renderer text is routed through i18n", () => {
+  const logViewerPage = readSourceFile(
+    "src",
+    "renderer",
+    "pages",
+    "LogViewerPage.tsx"
+  );
+
+  assert.match(logViewerPage, /useI18n/);
+  assert.doesNotMatch(logViewerPage, /[\p{Script=Han}]/u);
+});
+
 test("assistant dock opens the agent webclient copilot in right-side embedded mode", () => {
   const appShell = readAppShellSource();
   const dockComponent = fs.readFileSync(
@@ -2179,7 +2278,7 @@ test("desktop pet appearance picker confirms persistence before success feedback
   assert.match(settingsPage, /case "desktopPet":/);
   assert.match(settingsPage, /return desktopPetSupported \? \(/);
   assert.match(settingsPage, /nextState\.appearanceId === appearanceId/);
-  assert.match(settingsPage, /桌面宠物形象切换未生效/);
+  assert.match(settingsPage, /settings\.desktopPet\.noticeAppearanceFailed/);
   assert.match(settingsPage, /disabled=\{Boolean\(desktopPetAppearancePending\) && !selected\}/);
   assert.doesNotMatch(settingsPage, /\?\?\s*"小宅"/);
   assert.doesNotMatch(settingsPage, /disabled=\{Boolean\(desktopPetAppearancePending\) \|\| selected\}/);
@@ -2435,15 +2534,17 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /function handleDesktopSsoEntryClick\(\)/);
   assert.match(sidebarSource, /className=\{desktopSsoClassName\}/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoActionLabel\}/);
-  assert.match(sidebarSource, /if \(desktopSsoStatus\.authenticated\) \{[\s\S]{0,220}window\.confirm\("确定退出当前登录吗？"\)[\s\S]{0,220}if \(!confirmed\) \{[\s\S]{0,80}return;[\s\S]{0,220}onDesktopSsoLogout\?\.\(\);[\s\S]{0,80}return;/);
+  assert.match(sidebarSource, /if \(desktopSsoStatus\.authenticated\) \{[\s\S]{0,220}window\.confirm\(t\("sidebar\.sso\.confirmSignOut"\)\)[\s\S]{0,220}if \(!confirmed\) \{[\s\S]{0,80}return;[\s\S]{0,220}onDesktopSsoLogout\?\.\(\);[\s\S]{0,80}return;/);
   assert.match(sidebarSource, /onDesktopSsoLogin\?\.\(\);/);
   assert.doesNotMatch(sidebarSource, /desktopSsoStatus\.authenticated[\s\S]{0,140}\? onDesktopSsoLogout\?\.\(\)[\s\S]{0,140}: onDesktopSsoLogin\?\.\(\)/);
   assert.match(sidebarSource, /disabled=\{desktopSsoBusy\}/);
-  assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name \|\| desktopSsoStatus\.user\?\.email \|\| desktopSsoStatus\.user\?\.sub \|\| "已登录"/);
+  assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name \|\| desktopSsoStatus\.user\?\.email \|\| desktopSsoStatus\.user\?\.sub \|\| t\("sidebar\.sso\.signedIn"\)/);
   assert.doesNotMatch(sidebarSource, /desktopSsoMessage/);
   assert.doesNotMatch(sidebarSource, /sidebar-sso-message/);
-  assert.match(sidebarSource, /desktopSsoStatus\.pending[\s\S]{0,120}\? "重新打开"/);
-  assert.match(sidebarSource, /: "登录";/);
+  assert.match(sidebarSource, /desktopSsoStatus\.pending[\s\S]{0,120}\? t\("sidebar\.sso\.signingIn"\)/);
+  assert.match(sidebarSource, /desktopSsoStatus\.pending[\s\S]{0,120}\? t\("sidebar\.sso\.reopen"\)/);
+  assert.match(sidebarSource, /: t\("sidebar\.sso\.signIn"\);/);
+  assert.doesNotMatch(sidebarSource, /"登录中"|"重新打开"/);
   assert.match(sidebarSource, /\{renderDesktopSsoEntry\(\)\}/);
 
   assert.match(globalStyles, /\.sidebar-sso-entry\s*\{/);

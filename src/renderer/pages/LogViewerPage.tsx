@@ -13,6 +13,7 @@ import type {
 	ServiceLogTarget,
 } from "@shared/contracts";
 import { useServices } from "../services/ServicesContext";
+import { useI18n } from "../i18n/useI18n";
 
 type LogPage = {
 	startOffset: number;
@@ -238,9 +239,11 @@ function RotateAutoIcon() {
 export function LogViewerPage() {
 	const [searchParams] = useSearchParams();
 	const { readLog, watchLog } = useServices();
+	const { t } = useI18n();
 	const serviceId = searchParams.get("serviceId")?.trim() || "";
 	const target = normalizeLogTarget(searchParams.get("target"));
-	const title = searchParams.get("title")?.trim() || "日志文件";
+	const title = searchParams.get("title")?.trim() || t("logViewer.titleFallback");
+	const rotatedNotice = t("logViewer.notice.rotated");
 	const requestKey = `${serviceId}:${target}:${title}`;
 	const requestIdRef = useRef(0);
 	const watchCleanupRef = useRef<(() => void) | null>(null);
@@ -297,7 +300,7 @@ export function LogViewerPage() {
 				...createEmptyLogViewerState(),
 				title,
 				target,
-				error: "缺少日志服务标识。",
+				error: t("logViewer.error.missingServiceId"),
 			});
 			return;
 		}
@@ -377,7 +380,7 @@ export function LogViewerPage() {
 				watchCleanupRef.current = null;
 			}
 		};
-	}, [readLog, requestKey, serviceId, target, title, watchLog]);
+	}, [readLog, requestKey, serviceId, target, title, watchLog, t]);
 
 	useEffect(() => {
 		return () => {
@@ -490,7 +493,7 @@ export function LogViewerPage() {
 				return {
 					...current,
 					streaming: false,
-					error: event.message || "日志实时输出中断。",
+					error: event.message || t("logViewer.error.streamInterrupted"),
 				};
 			}
 
@@ -505,7 +508,7 @@ export function LogViewerPage() {
 					totalBytes: event.totalBytes,
 					streaming: true,
 					error: "",
-					notice: event.message || "日志已刷新到最新内容。",
+					notice: event.message || t("logViewer.notice.refreshed"),
 				};
 			}
 
@@ -545,7 +548,7 @@ export function LogViewerPage() {
 				streaming: true,
 				error: "",
 				notice:
-					current.notice === "日志已轮转，已刷新到最新内容。"
+					current.notice === rotatedNotice
 						? ""
 						: current.notice,
 			};
@@ -599,7 +602,7 @@ export function LogViewerPage() {
 					hasPrevious: result.hasPrevious,
 					totalBytes: result.totalBytes,
 					query: currentViewer.query,
-					notice: "日志已轮转，已刷新到最新内容。",
+					notice: rotatedNotice,
 				});
 				return {
 					prependedLength: result.content.length,
@@ -837,7 +840,14 @@ export function LogViewerPage() {
 	const resultSummary =
 		deferredQuery.trim().length > 0
 			? `${hasMatches ? activeMatchIndex + 1 : 0} / ${matches.length}`
-			: "输入关键词检索";
+			: t("logViewer.find.summaryPlaceholder");
+	const minimizeLabel = t("logViewer.window.minimize");
+	const maximizeLabel = t("logViewer.window.maximize");
+	const restoreLabel = t("logViewer.window.restore");
+	const closeLabel = t("logViewer.window.close");
+	const followToggleLabel = tailFollowEnabled
+		? t("logViewer.follow.disable")
+		: t("logViewer.follow.enable");
 
 	return (
 		<main className="log-viewer-page">
@@ -859,8 +869,8 @@ export function LogViewerPage() {
 								type="button"
 								className="log-viewer-control-button minimize"
 								onClick={minimizeWindow}
-								aria-label="最小化"
-								title="最小化"
+								aria-label={minimizeLabel}
+								title={minimizeLabel}
 							>
 								<svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
 									<path d="M1 5h8" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
@@ -870,8 +880,8 @@ export function LogViewerPage() {
 								type="button"
 								className="log-viewer-control-button maximize"
 								onClick={maximizeWindow}
-								aria-label={isMaximized ? "还原" : "最大化"}
-								title={isMaximized ? "还原" : "最大化"}
+								aria-label={isMaximized ? restoreLabel : maximizeLabel}
+								title={isMaximized ? restoreLabel : maximizeLabel}
 							>
 								{isMaximized ? (
 									<svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
@@ -887,8 +897,8 @@ export function LogViewerPage() {
 								type="button"
 								className="log-viewer-control-button close"
 								onClick={closeWindow}
-								aria-label="关闭"
-								title="关闭"
+								aria-label={closeLabel}
+								title={closeLabel}
 							>
 								<svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
 									<path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
@@ -902,7 +912,7 @@ export function LogViewerPage() {
 					{state.streaming ? (
 						<div className="log-viewer-tip is-live">
 							<span className="log-viewer-live-dot" aria-hidden="true" />
-							<span>实时输出中</span>
+							<span>{t("logViewer.live")}</span>
 						</div>
 					) : null}
 
@@ -911,8 +921,8 @@ export function LogViewerPage() {
 						className={`log-viewer-follow-toggle${tailFollowEnabled ? " is-active" : ""}`}
 						onClick={toggleTailFollow}
 						disabled={state.loadingInitial}
-						aria-label={tailFollowEnabled ? "取消自动滚动" : "开启自动滚动"}
-						title={tailFollowEnabled ? "取消自动滚动" : "开启自动滚动"}
+						aria-label={followToggleLabel}
+						title={followToggleLabel}
 					>
 						<RotateAutoIcon />
 					</button>
@@ -931,7 +941,7 @@ export function LogViewerPage() {
 						<div
 							className="log-viewer-find-panel"
 							role="search"
-							aria-label="查找日志"
+							aria-label={t("logViewer.find.aria")}
 						>
 							<label className="log-viewer-find-input">
 								<svg
@@ -967,7 +977,7 @@ export function LogViewerPage() {
 											event.shiftKey ? -1 : 1,
 										);
 									}}
-									placeholder="输入关键词"
+									placeholder={t("logViewer.find.placeholder")}
 									disabled={
 										state.loadingInitial ||
 										state.loadingPrevious
@@ -982,7 +992,7 @@ export function LogViewerPage() {
 								className="log-viewer-find-nav"
 								onClick={() => selectRelativeMatch(-1)}
 								disabled={!hasMatches}
-								aria-label="上一个匹配"
+								aria-label={t("logViewer.find.previous")}
 							>
 								↑
 							</button>
@@ -991,7 +1001,7 @@ export function LogViewerPage() {
 								className="log-viewer-find-nav"
 								onClick={() => selectRelativeMatch(1)}
 								disabled={!hasMatches}
-								aria-label="下一个匹配"
+								aria-label={t("logViewer.find.next")}
 							>
 								↓
 							</button>
@@ -999,7 +1009,7 @@ export function LogViewerPage() {
 								type="button"
 								className="log-viewer-find-close"
 								onClick={handleCloseSearch}
-								aria-label="关闭日志查找"
+								aria-label={t("logViewer.find.close")}
 							>
 								×
 							</button>
@@ -1012,7 +1022,7 @@ export function LogViewerPage() {
 						onScroll={handleBodyScroll}
 					>
 						{state.loadingInitial ? (
-							<div className="loading-box">正在读取日志...</div>
+							<div className="loading-box">{t("logViewer.loading")}</div>
 						) : null}
 						{!state.loadingInitial &&
 						state.exists &&
@@ -1025,8 +1035,8 @@ export function LogViewerPage() {
 									disabled={state.loadingPrevious}
 								>
 									{state.loadingPrevious
-										? "加载中..."
-										: "加载更早日志"}
+										? t("logViewer.loadingMore")
+										: t("logViewer.loadEarlier")}
 								</button>
 							</div>
 						) : null}
@@ -1035,19 +1045,19 @@ export function LogViewerPage() {
 						!state.hasPrevious &&
 						state.pages.length > 0 ? (
 							<div className="log-viewer-pagination-hint">
-								已到日志开头
+								{t("logViewer.startReached")}
 							</div>
 						) : null}
 						{!state.loadingInitial && !state.exists ? (
 							<div className="log-viewer-empty">
-								日志文件不存在或尚未生成。
+								{t("logViewer.missingFile")}
 							</div>
 						) : null}
 						{!state.loadingInitial &&
 						state.exists &&
 						!hasLoadedContent ? (
 							<div className="log-viewer-empty">
-								日志文件为空。
+								{t("logViewer.emptyFile")}
 							</div>
 						) : null}
 						{!state.loadingInitial &&
@@ -1071,8 +1081,8 @@ export function LogViewerPage() {
 						type="button"
 						className="log-viewer-scroll-jump log-viewer-scroll-top"
 						onClick={handleScrollToTop}
-						aria-label="滚动到顶部"
-						title="滚动到顶部"
+						aria-label={t("logViewer.scrollTop")}
+						title={t("logViewer.scrollTop")}
 					>
 						<ArrowUpwardIcon />
 					</button>
@@ -1082,8 +1092,8 @@ export function LogViewerPage() {
 						type="button"
 						className="log-viewer-scroll-jump log-viewer-scroll-bottom"
 						onClick={handleScrollToBottom}
-						aria-label="滚动到底部"
-						title="滚动到底部"
+						aria-label={t("logViewer.scrollBottom")}
+						title={t("logViewer.scrollBottom")}
 					>
 						<ArrowDownwardIcon />
 					</button>

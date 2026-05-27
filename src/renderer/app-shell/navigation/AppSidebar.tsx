@@ -1174,7 +1174,7 @@ export function AppSidebar({
           .filter(Boolean)
           .join(" ")}
         role="menu"
-        aria-label="固定工具区"
+        aria-label={t("nav.sidebar.fixedTools")}
       >
         {fixedToolItems.map((item) => renderToolLink(item))}
       </div>
@@ -1186,7 +1186,7 @@ export function AppSidebar({
       return;
     }
     if (desktopSsoStatus.authenticated) {
-      const confirmed = window.confirm("确定退出当前登录吗？");
+      const confirmed = window.confirm(t("sidebar.sso.confirmSignOut"));
       if (!confirmed) {
         return;
       }
@@ -1202,15 +1202,15 @@ export function AppSidebar({
     }
 
     const desktopSsoUserLabel = desktopSsoStatus.authenticated
-      ? desktopSsoStatus.user?.name || desktopSsoStatus.user?.email || desktopSsoStatus.user?.sub || "已登录"
+      ? desktopSsoStatus.user?.name || desktopSsoStatus.user?.email || desktopSsoStatus.user?.sub || t("sidebar.sso.signedIn")
       : desktopSsoStatus.pending
-        ? "登录中"
-        : "未登录";
+        ? t("sidebar.sso.signingIn")
+        : t("sidebar.sso.signedOut");
     const desktopSsoActionLabel = desktopSsoStatus.authenticated
-      ? "退出登录"
+      ? t("sidebar.sso.signOut")
       : desktopSsoStatus.pending
-        ? "重新打开"
-        : "登录";
+        ? t("sidebar.sso.reopen")
+        : t("sidebar.sso.signIn");
     const desktopSsoClassName = [
       "sidebar-sso-entry",
       desktopSsoStatus.authenticated ? "is-authenticated" : "",
@@ -1234,7 +1234,7 @@ export function AppSidebar({
           <span className="sidebar-sso-title">{desktopSsoUserLabel}</span>
         </span>
         <span className="sidebar-sso-action" aria-hidden="true">
-          {desktopSsoBusy ? "处理中" : desktopSsoActionLabel}
+          {desktopSsoBusy ? t("sidebar.sso.busy") : desktopSsoActionLabel}
         </span>
       </button>
     );
@@ -1363,20 +1363,20 @@ export function AppSidebar({
                   .filter(Boolean)
                   .join(" ")}
                 ref={toolMenuTriggerRef}
-                aria-label="打开设置"
+                aria-label={t("nav.sidebar.openSettings")}
                 aria-haspopup="menu"
                 aria-expanded={toolMenuOpen}
-                title="设置"
+                title={t("nav.settings")}
               >
                 <span className="sidebar-link-icon">
                   <SidebarIllustration kind="control" />
                 </span>
-                <span className="sidebar-link-label">设置</span>
+                <span className="sidebar-link-label">{t("nav.settings")}</span>
                 <span
                   className="sidebar-link-label-collapsed"
                   aria-hidden="true"
                 >
-                  {getCollapsedSidebarLabel("设置")}
+                  {getCollapsedSidebarLabel(t("nav.settings"))}
                 </span>
               </button>
             </Popover>

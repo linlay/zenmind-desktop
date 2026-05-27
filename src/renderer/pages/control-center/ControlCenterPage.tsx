@@ -9,33 +9,38 @@ import type {
 } from "@shared/contracts";
 import { useServices } from "../../services/ServicesContext";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName } from "../../service-display";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
+import { useI18n } from "../../i18n/useI18n";
+import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 
-const CORE_MODULES = [
+type CoreModuleDefinition = {
+  id: ServiceId;
+  nameKey: TranslationKey;
+  descriptionKey: TranslationKey;
+};
+
+const CORE_MODULES: readonly CoreModuleDefinition[] = [
   {
     id: "zenmind-app-server",
-    name: "认证服务",
-    description:
-      "认证与管理服务，提供 OAuth2/OIDC、管理后台、App 访问令牌和设备管理。",
+    nameKey: "controlCenter.service.authentication.name",
+    descriptionKey: "controlCenter.service.authentication.description",
   },
   {
     id: "agent-platform",
-    name: "智能体平台",
-    description: "AI Agent 运行时，提供对话、工具执行和沙箱能力。",
+    nameKey: "controlCenter.service.agentPlatform.name",
+    descriptionKey: "controlCenter.service.agentPlatform.description",
   },
   {
     id: "agent-webclient",
-    name: AGENT_WEBCLIENT_DISPLAY_NAME,
-    description:
-      "独立进程模式的 AGENT Web 客户端，负责静态资源托管并代理 API 请求。",
+    nameKey: "service.agentWebclientDisplayName",
+    descriptionKey: "controlCenter.service.agentWebclient.description",
   },
   {
     id: "agent-container-hub",
-    name: "容器仓库",
-    description: "宿主机容器服务，负责为后续智能体运行时提供沙箱能力。",
+    nameKey: "controlCenter.service.containerHub.name",
+    descriptionKey: "controlCenter.service.containerHub.description",
   },
-] as const;
+];
 
 const QUICK_START_ORDER = [
   "zenmind-app-server",
@@ -93,7 +98,9 @@ type HelpTipState = {
   top: number;
   left: number;
 };
-type CoreModuleEntry = (typeof CORE_MODULES)[number] & {
+type CoreModuleEntry = CoreModuleDefinition & {
+  name: string;
+  description: string;
   service: ServiceState | null;
 };
 type MetaItem = {
@@ -109,40 +116,90 @@ type MetaItem = {
   }>;
 };
 
-function shouldShowInitializeAction(service: ServiceState) {
-  return (
-    service.status === "initialization-required" ||
-    service.message.startsWith("初始化失败")
-  );
+function getCoreModuleDefinition(serviceId: ServiceId) {
+  return CORE_MODULES.find((module) => module.id === serviceId) ?? null;
 }
 
-function getErrorLogDisplay(service: ServiceState) {
+function getLocalizedServiceDisplayName(
+  serviceId: ServiceId,
+  serviceName: string,
+  t: TranslateFunction,
+) {
+  const coreModule = getCoreModuleDefinition(serviceId);
+  return coreModule ? t(coreModule.nameKey) : serviceName;
+}
+
+function getLocalizedServiceDescription(
+  service: Pick<ServiceState, "id" | "description">,
+  t: TranslateFunction,
+) {
+  const coreModule = getCoreModuleDefinition(service.id);
+  if (coreModule) {
+    return t(coreModule.descriptionKey);
+  }
+  return service.description || t("controlCenter.fallback.description");
+}
+
+function getServiceStatusLabel(
+  status: ServiceState["status"],
+  t: TranslateFunction,
+) {
+  switch (status) {
+    case "not-installed":
+      return t("controlCenter.status.notInstalled");
+    case "initialization-required":
+      return t("controlCenter.status.initializationRequired");
+    case "stopped":
+      return t("controlCenter.status.stopped");
+    case "running":
+      return t("controlCenter.status.running");
+    case "config-required":
+      return t("controlCenter.status.configRequired");
+    case "dependency-missing":
+      return t("controlCenter.status.dependencyMissing");
+    case "error":
+      return t("controlCenter.status.error");
+    default:
+      return t("controlCenter.status.pending");
+  }
+}
+
+function formatNameList(names: string[], t: TranslateFunction) {
+  return names.join(t("controlCenter.list.separator"));
+}
+
+function shouldShowInitializeAction(service: ServiceState) {
+  return service.status === "initialization-required";
+}
+
+function getErrorLogDisplay(service: ServiceState, t: TranslateFunction) {
   if (service.healthMeta.errorLogFilePath) {
     return service.healthMeta.errorLogFilePath;
   }
   if (service.healthMeta.logFilePath) {
-    return "无独立错误日志，stderr 已并入日志文件";
+    return t("service.noIndependentErrorLog");
   }
-  return "未声明";
+  return t("service.notDeclared");
 }
 
 function getConfigSourceLabel(
   configFile: ServiceConfigFile,
+  t: TranslateFunction,
   meta?: ConfigMeta,
 ) {
   if (meta?.source === "file") {
-    return "已创建";
+    return t("controlCenter.config.source.file");
   }
   if (meta?.source === "template") {
-    return "来自模板";
+    return t("controlCenter.config.source.template");
   }
   if (meta?.source === "missing") {
-    return "未创建";
+    return t("controlCenter.config.source.missing");
   }
   if (configFile.exists) {
-    return "已创建";
+    return t("controlCenter.config.source.file");
   }
-  return "未读取";
+  return t("controlCenter.config.source.pending");
 }
 
 function getConfigSourceClass(
@@ -198,14 +255,14 @@ function getConfigDirectoryPaths(configFiles: ServiceConfigFile[]) {
   ];
 }
 
-function getPidDisplay(service: ServiceState) {
+function getPidDisplay(service: ServiceState, t: TranslateFunction) {
   if (service.healthMeta.pid) {
     return String(service.healthMeta.pid);
   }
   if (service.healthMeta.pidFilePath) {
-    return `PID 文件：${service.healthMeta.pidFilePath}`;
+    return t("service.pidFile", { path: service.healthMeta.pidFilePath });
   }
-  return "未声明";
+  return t("service.notDeclared");
 }
 
 function StartServiceIcon() {
@@ -391,6 +448,7 @@ export function ControlCenterPage() {
     installPlugin,
     uninstallPlugin,
   } = useServices();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const [activeId, setActiveId] = useState<ServiceId | null>(null);
@@ -426,9 +484,11 @@ export function ControlCenterPage() {
     () =>
       CORE_MODULES.map((module) => ({
         ...module,
+        name: t(module.nameKey),
+        description: t(module.descriptionKey),
         service: serviceById.get(module.id) ?? null,
       })),
-    [serviceById],
+    [serviceById, t],
   );
   const coreServices = useMemo(
     () =>
@@ -634,22 +694,22 @@ export function ControlCenterPage() {
     configMeta[activeDetailService.id]?.[selectedConfigFile.key],
   );
   const errorLogDisplay = activeDetailService
-    ? getErrorLogDisplay(activeDetailService)
-    : "未声明";
+    ? getErrorLogDisplay(activeDetailService, t)
+    : t("service.notDeclared");
   const detailEndpoint = activeDetailService?.healthMeta.webUrl ?? "";
   const configDirectoryPaths = activeDetailService
     ? getConfigDirectoryPaths(activeDetailService.configFiles)
     : [];
   const activeDetailName = activeDetailService
-    ? getServiceDisplayName(
+    ? getLocalizedServiceDisplayName(
       activeDetailService.id,
       activeDetailService.name,
+      t,
     )
     : "";
   const activeDetailDescription = activeDetailService
     ? activeCoreModule?.description ||
-    activeDetailService.description ||
-    "基础设施服务"
+    getLocalizedServiceDescription(activeDetailService, t)
     : "";
 
   function selectService(cardId: ServiceId) {
@@ -925,7 +985,7 @@ export function ControlCenterPage() {
     ).filter((service): service is ServiceState => Boolean(service));
 
     if (orderedServices.length === 0) {
-      setFeedback("当前没有可一键启动的服务。容器仓库需要手动启动。");
+      setFeedback(t("controlCenter.feedback.noQuickStartServices"));
       return;
     }
 
@@ -937,7 +997,7 @@ export function ControlCenterPage() {
       for (const service of orderedServices) {
         if (service.status === "running") {
           skippedNames.push(
-            getServiceDisplayName(service.id, service.name),
+            getLocalizedServiceDisplayName(service.id, service.name, t),
           );
           continue;
         }
@@ -946,33 +1006,45 @@ export function ControlCenterPage() {
           const result = await start(service.id);
           if (result.ok) {
             startedNames.push(
-              getServiceDisplayName(service.id, service.name),
+              getLocalizedServiceDisplayName(service.id, service.name, t),
             );
           } else {
             failedMessages.push(
-              `${getServiceDisplayName(service.id, service.name)}：${result.message}`,
+              t("controlCenter.feedback.serviceFailed", {
+                name: getLocalizedServiceDisplayName(service.id, service.name, t),
+                message: result.message,
+              }),
             );
           }
         } catch (reason) {
           failedMessages.push(
-            `${getServiceDisplayName(service.id, service.name)}：${reason instanceof Error ? reason.message : String(reason)}`,
+            t("controlCenter.feedback.serviceFailed", {
+              name: getLocalizedServiceDisplayName(service.id, service.name, t),
+              message: reason instanceof Error ? reason.message : String(reason),
+            }),
           );
         }
       }
 
       const summary = [
         startedNames.length > 0
-          ? `已启动 ${startedNames.join("、")}`
+          ? t("controlCenter.feedback.startedNames", {
+            names: formatNameList(startedNames, t),
+          })
           : "",
         skippedNames.length > 0
-          ? `已跳过运行中的 ${skippedNames.join("、")}`
+          ? t("controlCenter.feedback.skippedNames", {
+            names: formatNameList(skippedNames, t),
+          })
           : "",
-        failedMessages.length > 0 ? failedMessages.join("；") : "",
+        failedMessages.length > 0
+          ? failedMessages.join(t("controlCenter.feedback.separator"))
+          : "",
       ]
         .filter(Boolean)
-        .join("。");
+        .join(t("controlCenter.feedback.sentenceSeparator"));
 
-      setFeedback(summary || "一键启动完成。");
+      setFeedback(summary || t("controlCenter.feedback.quickStartDone"));
     } finally {
       setIsBatchStarting(false);
     }
@@ -982,13 +1054,13 @@ export function ControlCenterPage() {
     ? [
       {
         key: "pidFile",
-        label: "进程 ID (PID)",
-        value: getPidDisplay(activeDetailService),
-        title: getPidDisplay(activeDetailService),
+        label: t("controlCenter.meta.pid"),
+        value: getPidDisplay(activeDetailService, t),
+        title: getPidDisplay(activeDetailService, t),
         actions: activeDetailService.healthMeta.pidFilePath
           ? [
             {
-              label: "显示",
+              label: t("controlCenter.meta.show"),
               icon: "folder",
               onAction: () =>
                 void revealServicePath(
@@ -1002,19 +1074,19 @@ export function ControlCenterPage() {
       },
       {
         key: "description",
-        label: "描述",
-        value: activeDetailDescription || "未声明",
-        title: activeDetailDescription || "未声明",
+        label: t("controlCenter.meta.description"),
+        value: activeDetailDescription || t("service.notDeclared"),
+        title: activeDetailDescription || t("service.notDeclared"),
       },
       {
         key: "installDir",
-        label: "安装目录",
-        value: activeDetailService.installDir || "未声明",
-        title: activeDetailService.installDir || "未声明",
+        label: t("controlCenter.meta.installDir"),
+        value: activeDetailService.installDir || t("service.notDeclared"),
+        title: activeDetailService.installDir || t("service.notDeclared"),
         actions: activeDetailService.installDir
           ? [
             {
-              label: "打开",
+              label: t("common.open"),
               icon: "folder",
               onAction: () =>
                 void revealServicePath(
@@ -1027,23 +1099,25 @@ export function ControlCenterPage() {
       },
       {
         key: "configDirs",
-        label: "配置目录",
+        label: t("controlCenter.meta.configDirs"),
         value:
           configDirectoryPaths.length > 0
-            ? configDirectoryPaths.join("、")
-            : "未声明",
+            ? formatNameList(configDirectoryPaths, t)
+            : t("service.notDeclared"),
         title:
           configDirectoryPaths.length > 0
             ? configDirectoryPaths.join("\n")
-            : "未声明",
+            : t("service.notDeclared"),
         actions:
           configDirectoryPaths.length > 0
             ? configDirectoryPaths.map(
               (directoryPath, index) => ({
                 label:
                   configDirectoryPaths.length === 1
-                    ? "打开"
-                    : `打开 ${index + 1}`,
+                    ? t("common.open")
+                    : t("controlCenter.meta.openPathWithIndex", {
+                      index: index + 1,
+                    }),
                 icon: "folder",
                 onAction: () =>
                   void revealServicePath(
@@ -1056,25 +1130,27 @@ export function ControlCenterPage() {
       },
       {
         key: "logFile",
-        label: "主日志路径",
+        label: t("controlCenter.meta.mainLogPath"),
         value:
-          activeDetailService.healthMeta.logFilePath || "未声明",
+          activeDetailService.healthMeta.logFilePath || t("service.notDeclared"),
         title:
-          activeDetailService.healthMeta.logFilePath || "未声明",
+          activeDetailService.healthMeta.logFilePath || t("service.notDeclared"),
         actions: activeDetailService.healthMeta.logFilePath
           ? [
             {
-              label: "查看日志",
+              label: t("controlCenter.viewLog"),
               icon: "article",
               onAction: () =>
                 void openLogViewer(
                   activeDetailService,
                   "main",
-                  `${getServiceDisplayName(activeDetailService.id, activeDetailService.name)} · 日志文件`,
+                  t("controlCenter.logs.mainTitle", {
+                    name: activeDetailName,
+                  }),
                 ),
             },
             {
-              label: "显示",
+              label: t("controlCenter.meta.show"),
               icon: "folder",
               onAction: () =>
                 void revealServicePath(
@@ -1088,23 +1164,25 @@ export function ControlCenterPage() {
       },
       {
         key: "errorLog",
-        label: "错误日志路径",
+        label: t("controlCenter.meta.errorLogPath"),
         value: errorLogDisplay,
         title: errorLogDisplay,
         actions: activeDetailService.healthMeta.errorLogFilePath
           ? [
             {
-              label: "查看日志",
+              label: t("controlCenter.viewLog"),
               icon: "article",
               onAction: () =>
                 void openLogViewer(
                   activeDetailService,
                   "error",
-                  `${getServiceDisplayName(activeDetailService.id, activeDetailService.name)} · 错误日志`,
+                  t("controlCenter.logs.errorTitle", {
+                    name: activeDetailName,
+                  }),
                 ),
             },
             {
-              label: "显示",
+              label: t("controlCenter.meta.show"),
               icon: "folder",
               onAction: () =>
                 void revealServicePath(
@@ -1118,7 +1196,9 @@ export function ControlCenterPage() {
       },
     ]
     : [];
-  const activeDetailStatusText = activeDetailService?.statusLabel || "待接入";
+  const activeDetailStatusText = activeDetailService
+    ? getServiceStatusLabel(activeDetailService.status, t)
+    : t("controlCenter.status.pending");
   const activeDetailStatusDetail =
     activeDetailService &&
       activeDetailService.status !== "running" &&
@@ -1126,22 +1206,30 @@ export function ControlCenterPage() {
       activeDetailService.message !== activeDetailService.statusLabel
       ? activeDetailService.message
       : "";
-  const registeredStatusLabel = serviceCounts.total > 0 ? "活跃" : "空";
-  const runningStatusLabel = serviceCounts.running > 0 ? "运行中" : "待命";
+  const registeredStatusLabel =
+    serviceCounts.total > 0
+      ? t("controlCenter.metrics.active")
+      : t("controlCenter.metrics.empty");
+  const runningStatusLabel =
+    serviceCounts.running > 0
+      ? t("controlCenter.metrics.running")
+      : t("controlCenter.metrics.standby");
 
   return (
     <section ref={pageRef} className="control-center-page workspace-wide">
       <div className="page-head control-center-hero">
         <div className="control-center-hero-copy">
-          <h1>控制中心</h1>
-          <p>管理并监控您的基础设施服务集群。</p>
+          <h1>{t("controlCenter.title")}</h1>
+          <p>{t("controlCenter.copy")}</p>
         </div>
         <div
           className="control-center-dashboard-metrics"
-          aria-label="服务概览"
+          aria-label={t("controlCenter.metrics.ariaLabel")}
         >
           <div className="control-center-metric-card">
-            <span className="summary-kicker">已注册服务</span>
+            <span className="summary-kicker">
+              {t("controlCenter.metrics.registeredServices")}
+            </span>
             <div className="control-center-metric-value">
               <strong>{serviceCounts.total}</strong>
               <span className="control-center-metric-chip is-success">
@@ -1150,7 +1238,9 @@ export function ControlCenterPage() {
             </div>
           </div>
           <div className="control-center-metric-card">
-            <span className="summary-kicker">运行中实例</span>
+            <span className="summary-kicker">
+              {t("controlCenter.metrics.runningInstances")}
+            </span>
             <div className="control-center-metric-value">
               <strong>{serviceCounts.running}</strong>
               <span className="control-center-metric-chip is-warning">
@@ -1186,29 +1276,35 @@ export function ControlCenterPage() {
         />
       ) : null}
       {loading ? (
-        <div className="loading-box">正在读取服务状态…</div>
+        <div className="loading-box">
+          {t("controlCenter.loadingServices")}
+        </div>
       ) : null}
 
       <div className="control-center-shell">
         <aside
           className="service-sider service-catalog"
-          aria-label="服务目录"
+          aria-label={t("controlCenter.catalog.ariaLabel")}
         >
           <div className="service-accordion">
             {[
               {
                 key: "core" as const,
-                title: "核心服务",
-                subtitle: `${coreModules.length} 个核心服务`,
+                title: t("controlCenter.group.core"),
+                subtitle: t("controlCenter.group.coreSubtitle", {
+                  count: coreModules.length,
+                }),
                 services: coreModules,
-                empty: "暂无核心服务",
+                empty: t("controlCenter.group.coreEmpty"),
               },
               {
                 key: "market" as const,
-                title: "功能市场",
-                subtitle: `${marketServices.length} 个插件`,
+                title: t("controlCenter.group.market"),
+                subtitle: t("controlCenter.group.marketSubtitle", {
+                  count: marketServices.length,
+                }),
                 services: marketServices,
-                empty: "暂无已导入插件",
+                empty: t("controlCenter.group.marketEmpty"),
               },
             ].map((group) => {
               const isOpen =
@@ -1245,8 +1341,8 @@ export function ControlCenterPage() {
                         disabled={isBatchStarting}
                       >
                         {isBatchStarting
-                          ? "启动中..."
-                          : "一键启动"}
+                          ? t("controlCenter.quickStarting")
+                          : t("controlCenter.quickStart")}
                       </button>
                     ) : null}
                     {group.key === "market" ? (
@@ -1260,7 +1356,7 @@ export function ControlCenterPage() {
                         <span aria-hidden="true">
                           +
                         </span>
-                        导入插件
+                        {t("controlCenter.importPlugin")}
                       </button>
                     ) : null}
                   </div>
@@ -1280,9 +1376,10 @@ export function ControlCenterPage() {
                           const cardName =
                             "service" in item &&
                               service
-                              ? getServiceDisplayName(
+                              ? getLocalizedServiceDisplayName(
                                 service.id,
                                 item.name,
+                                t,
                               )
                               : item.name;
                           const isSelected =
@@ -1295,8 +1392,8 @@ export function ControlCenterPage() {
                             pendingAction.serviceId ===
                             service.id;
                           const statusLabel = service
-                            ? service.statusLabel
-                            : "待接入";
+                            ? getServiceStatusLabel(service.status, t)
+                            : t("controlCenter.status.pending");
                           const statusClassName =
                             isPendingLifecycle
                               ? "loading"
@@ -1309,13 +1406,12 @@ export function ControlCenterPage() {
                             "service" in item &&
                               service
                               ? item.description ||
-                              service.description ||
-                              "暂无描述。"
+                              getLocalizedServiceDescription(service, t)
                               : "service" in item
                                 ? item.description ||
-                                "暂无描述。"
+                                t("controlCenter.fallback.description")
                                 : item.description ||
-                                "暂无描述。";
+                                t("controlCenter.fallback.description");
                           const isHelpTipOpen =
                             helpTip?.serviceId ===
                             cardId;
@@ -1374,11 +1470,13 @@ export function ControlCenterPage() {
                                         ) =>
                                           event.stopPropagation()
                                         }
-                                        aria-label={`查看${cardName}说明`}
+                                        aria-label={t("controlCenter.help.viewServiceDescription", {
+                                          name: cardName,
+                                        })}
                                         aria-expanded={
                                           isHelpTipOpen
                                         }
-                                        data-tooltip="查看说明"
+                                        data-tooltip={t("controlCenter.help.viewDescription")}
                                       >
                                         <ServiceHelpIcon />
                                       </button>
@@ -1390,7 +1488,7 @@ export function ControlCenterPage() {
                                     className="service-nav-version-status"
                                     title={
                                       isPendingLifecycle
-                                        ? "处理中"
+                                        ? t("controlCenter.status.processing")
                                         : `${service.version} · ${statusLabel}`
                                     }
                                   >
@@ -1459,7 +1557,7 @@ export function ControlCenterPage() {
                 </div>
                 <div
                   className="service-title-actions service-primary-actions"
-                  aria-label="服务快捷操作"
+                  aria-label={t("controlCenter.actions.ariaLabel")}
                 >
                   {activeDetailService.kind === "builtin" &&
                     (activeDetailService.status ===
@@ -1488,8 +1586,8 @@ export function ControlCenterPage() {
                         activeId ===
                         activeDetailService.id
                       }
-                      aria-label="重新安装"
-                      data-tooltip="重新安装"
+                      aria-label={t("controlCenter.actions.reinstall")}
+                      data-tooltip={t("controlCenter.actions.reinstall")}
                     >
                       <ReinstallServiceIcon />
                     </button>
@@ -1510,8 +1608,8 @@ export function ControlCenterPage() {
                     disabled={
                       activeId === activeDetailService.id
                     }
-                    aria-label="启动服务"
-                    data-tooltip="启动服务"
+                    aria-label={t("controlCenter.actions.start")}
+                    data-tooltip={t("controlCenter.actions.start")}
                   >
                     <StartServiceIcon />
                   </button>
@@ -1531,8 +1629,8 @@ export function ControlCenterPage() {
                     disabled={
                       activeId === activeDetailService.id
                     }
-                    aria-label="停止"
-                    data-tooltip="停止"
+                    aria-label={t("controlCenter.actions.stop")}
+                    data-tooltip={t("controlCenter.actions.stop")}
                   >
                     <StopServiceIcon />
                   </button>
@@ -1552,8 +1650,8 @@ export function ControlCenterPage() {
                     disabled={
                       activeId === activeDetailService.id
                     }
-                    aria-label="重启"
-                    data-tooltip="重启"
+                    aria-label={t("controlCenter.actions.restart")}
+                    data-tooltip={t("controlCenter.actions.restart")}
                   >
                     <RestartServiceIcon />
                   </button>
@@ -1568,8 +1666,8 @@ export function ControlCenterPage() {
                           `/service/${activeDetailService.id}`,
                         )
                       }
-                      aria-label="打开前端"
-                      data-tooltip="打开前端"
+                      aria-label={t("controlCenter.actions.openFrontend")}
+                      data-tooltip={t("controlCenter.actions.openFrontend")}
                     >
                       <OpenFrontendIcon />
                     </button>
@@ -1597,8 +1695,8 @@ export function ControlCenterPage() {
                         activeId ===
                         activeDetailService.id
                       }
-                      aria-label="安装"
-                      data-tooltip="安装"
+                      aria-label={t("controlCenter.actions.install")}
+                      data-tooltip={t("controlCenter.actions.install")}
                     >
                       <InstallServiceIcon />
                     </button>
@@ -1629,14 +1727,14 @@ export function ControlCenterPage() {
                       aria-label={
                         activeDetailService.status ===
                           "initialization-required"
-                          ? "初始化"
-                          : "重新初始化"
+                          ? t("controlCenter.actions.initialize")
+                          : t("controlCenter.actions.reinitialize")
                       }
                       data-tooltip={
                         activeDetailService.status ===
                           "initialization-required"
-                          ? "初始化"
-                          : "重新初始化"
+                          ? t("controlCenter.actions.initialize")
+                          : t("controlCenter.actions.reinitialize")
                       }
                     >
                       <RestartServiceIcon />
@@ -1667,8 +1765,8 @@ export function ControlCenterPage() {
                         activeId ===
                         activeDetailService.id
                       }
-                      aria-label="卸载插件"
-                      data-tooltip="卸载插件"
+                      aria-label={t("controlCenter.actions.uninstallPlugin")}
+                      data-tooltip={t("controlCenter.actions.uninstallPlugin")}
                     >
                       <UninstallServiceIcon />
                     </button>
@@ -1681,8 +1779,8 @@ export function ControlCenterPage() {
                         activeDetailService.id,
                       )
                     }
-                    aria-label="详情"
-                    data-tooltip="卸载插件"
+                    aria-label={t("controlCenter.actions.details")}
+                    data-tooltip={t("controlCenter.actions.details")}
                   >
                     <ServiceInfoIcon />
                   </button>
@@ -1691,13 +1789,13 @@ export function ControlCenterPage() {
 
               <div className="service-detail-metadata">
                 <div className="service-detail-metadata-item">
-                  <span>当前版本</span>
+                  <span>{t("controlCenter.meta.currentVersion")}</span>
                   <strong>
                     {activeDetailService.version}
                   </strong>
                 </div>
                 <div className="service-detail-metadata-item">
-                  <span>实例状态</span>
+                  <span>{t("controlCenter.meta.instanceStatus")}</span>
                   <strong
                     className={`service-status-text ${statusClass(activeDetailService.status)}`}
                   >
@@ -1705,7 +1803,7 @@ export function ControlCenterPage() {
                   </strong>
                 </div>
                 <div className="service-detail-metadata-item is-log-actions">
-                  <span>日志</span>
+                  <span>{t("controlCenter.logs")}</span>
                   <div className="service-detail-log-actions">
                     <button
                       type="button"
@@ -1714,15 +1812,17 @@ export function ControlCenterPage() {
                         void openLogViewer(
                           activeDetailService,
                           "main",
-                          `${getServiceDisplayName(activeDetailService.id, activeDetailService.name)} · 日志文件`,
+                          t("controlCenter.logs.mainTitle", {
+                            name: activeDetailName,
+                          }),
                         )
                       }
                       disabled={
                         !activeDetailService.healthMeta
                           .logFilePath
                       }
-                      aria-label="查看日志"
-                      title="查看日志"
+                      aria-label={t("controlCenter.viewLog")}
+                      title={t("controlCenter.viewLog")}
                     >
                       <LogArticleIcon />
                     </button>
@@ -1740,15 +1840,15 @@ export function ControlCenterPage() {
                         !activeDetailService.healthMeta
                           .logFilePath
                       }
-                      aria-label="打开日志位置"
-                      title="打开日志位置"
+                      aria-label={t("controlCenter.openLogLocation")}
+                      title={t("controlCenter.openLogLocation")}
                     >
                       <LogFolderIcon />
                     </button>
                   </div>
                 </div>
                 <div className="service-detail-metadata-item is-endpoint">
-                  <span>内部访问地址</span>
+                  <span>{t("controlCenter.meta.endpoint")}</span>
                   {detailEndpoint ? (
                     <a
                       href={detailEndpoint}
@@ -1775,7 +1875,7 @@ export function ControlCenterPage() {
                       </span>
                     </a>
                   ) : (
-                    <strong>未声明</strong>
+                    <strong>{t("service.notDeclared")}</strong>
                   )}
                 </div>
               </div>
@@ -1798,7 +1898,7 @@ export function ControlCenterPage() {
                     >
                       <ConfigTerminalIcon />
                     </span>
-                    <h3>配置</h3>
+                    <h3>{t("controlCenter.config")}</h3>
                   </div>
                   {selectedConfigFile ? (
                     <div
@@ -1808,7 +1908,7 @@ export function ControlCenterPage() {
                       <button
                         type="button"
                         className="config-file-select-trigger"
-                        aria-label="选择配置文件"
+                        aria-label={t("controlCenter.config.selectFile")}
                         aria-haspopup="listbox"
                         aria-expanded={
                           configFileSelectOpen
@@ -1837,6 +1937,7 @@ export function ControlCenterPage() {
                           ·{" "}
                           {getConfigSourceLabel(
                             selectedConfigFile,
+                            t,
                             selectedConfigMeta,
                           )}
                         </span>
@@ -1846,7 +1947,7 @@ export function ControlCenterPage() {
                         <div
                           className="config-file-select-panel"
                           role="listbox"
-                          aria-label="选择配置文件"
+                          aria-label={t("controlCenter.config.selectFile")}
                         >
                           {activeDetailService.configFiles.map(
                             (configFile) => {
@@ -1881,6 +1982,7 @@ export function ControlCenterPage() {
                                     ·{" "}
                                     {getConfigSourceLabel(
                                       configFile,
+                                      t,
                                       fileMeta,
                                     )}
                                   </span>
@@ -1947,7 +2049,7 @@ export function ControlCenterPage() {
                         !selectedConfigDirty
                       }
                     >
-                      保存
+                      {t("common.save")}
                     </button>
                   </div>
                 ) : null}
@@ -1975,19 +2077,19 @@ export function ControlCenterPage() {
                   {selectedConfigMeta?.source ===
                     "template" ? (
                     <p className="service-message">
-                      当前内容来自模板，保存或初始化后才会写入目标文件。
+                      {t("controlCenter.config.templateNotice")}
                     </p>
                   ) : null}
                   {selectedConfigMeta?.source ===
                     "missing" ? (
                     <p className="service-message">
-                      当前文件尚未创建，保存后会写入目标路径。
+                      {t("controlCenter.config.missingNotice")}
                     </p>
                   ) : null}
                 </>
               ) : (
                 <p className="service-message">
-                  该服务未声明可编辑配置文件。
+                  {t("controlCenter.config.empty")}
                 </p>
               )}
             </section>
@@ -2001,23 +2103,20 @@ export function ControlCenterPage() {
                   className="service-detail-dialog"
                   role="dialog"
                   aria-modal="true"
-                  aria-label={`${getServiceDisplayName(activeDetailService.id, activeDetailService.name)} 详情`}
+                  aria-label={t("controlCenter.dialog.ariaLabel", {
+                    name: activeDetailName,
+                  })}
                   onClick={(event) => event.stopPropagation()}
                 >
                   <div className="service-detail-dialog-head">
-                    <h3>
-                      {getServiceDisplayName(
-                        activeDetailService.id,
-                        activeDetailService.name,
-                      )}
-                    </h3>
+                    <h3>{activeDetailName}</h3>
                     <button
                       type="button"
                       className="service-detail-dialog-close"
                       onClick={() =>
                         setDetailDialogOpen(false)
                       }
-                      aria-label="关闭详情"
+                      aria-label={t("controlCenter.dialog.close")}
                     >
                       &times;
                     </button>
@@ -2070,7 +2169,7 @@ export function ControlCenterPage() {
                       </div>
                     ))}
                     <div className="service-detail-list-item">
-                      <dt>配置文件</dt>
+                      <dt>{t("controlCenter.meta.configFiles")}</dt>
                       <dd>
                         {activeDetailService.configFiles
                           .length > 0 ? (
@@ -2101,6 +2200,7 @@ export function ControlCenterPage() {
                                     >
                                       {getConfigSourceLabel(
                                         configFile,
+                                        t,
                                         fileMeta,
                                       )}
                                     </span>
@@ -2113,8 +2213,8 @@ export function ControlCenterPage() {
                                           "file",
                                         )
                                       }
-                                      aria-label="显示配置文件位置"
-                                      title="显示配置文件位置"
+                                      aria-label={t("controlCenter.config.showFileLocation")}
+                                      title={t("controlCenter.config.showFileLocation")}
                                     >
                                       <LogFolderIcon />
                                     </button>
@@ -2124,12 +2224,12 @@ export function ControlCenterPage() {
                             )}
                           </div>
                         ) : (
-                          <span>未声明</span>
+                          <span>{t("service.notDeclared")}</span>
                         )}
                       </dd>
                     </div>
                     <div className="service-detail-list-item">
-                      <dt>前置条件</dt>
+                      <dt>{t("controlCenter.meta.prerequisites")}</dt>
                       <dd>
                         {activeDetailService.healthMeta
                           .prerequisites.length >
@@ -2146,7 +2246,7 @@ export function ControlCenterPage() {
                             )}
                           </div>
                         ) : (
-                          <span>无</span>
+                          <span>{t("common.none")}</span>
                         )}
                       </dd>
                     </div>
@@ -2159,22 +2259,26 @@ export function ControlCenterPage() {
           <article className="service-card control-center-detail">
             <div className="service-card-head">
               <div>
-                <p className="service-kicker">默认集成模块</p>
+                <p className="service-kicker">
+                  {t("controlCenter.empty.defaultIntegratedModule")}
+                </p>
                 <h2>{activeCoreModule.name}</h2>
               </div>
-              <span className="status-pill idle">待接入</span>
+              <span className="status-pill idle">
+                {t("controlCenter.status.pending")}
+              </span>
             </div>
 
             <p className="service-description">
               {activeCoreModule.description}
             </p>
             <p className="service-message">
-              该模块会默认展示在控制中心中。当前运行时还没有读到对应服务清单，请确认内置资源已同步到应用后再进行配置和安装。
+              {t("controlCenter.empty.coreModuleNotLoaded")}
             </p>
           </article>
         ) : (
           <div className="loading-box control-center-empty">
-            暂无已登记服务。
+            {t("controlCenter.empty.noRegisteredServices")}
           </div>
         )}
       </div>
@@ -2184,7 +2288,9 @@ export function ControlCenterPage() {
           className="service-nav-help-tip service-nav-help-tip-portal"
           role="tooltip"
           data-service-help-tip-root
-          aria-label={`${helpTip.label}说明`}
+          aria-label={t("controlCenter.help.tipAriaLabel", {
+            name: helpTip.label,
+          })}
           style={{
             top: `${helpTip.top}px`,
             left: `${helpTip.left}px`,

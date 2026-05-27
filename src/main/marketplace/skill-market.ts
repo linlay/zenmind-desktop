@@ -7,6 +7,7 @@ import {
   listInstalledSkills,
   uninstallSkill
 } from "../skill-installer";
+import { t } from "../i18n/main-i18n";
 import {
   asNumber,
   asObject,
@@ -124,7 +125,7 @@ async function loadSkillCatalog(app: App, options: MarketplaceOptions = {}): Pro
     return {
       catalog: { schemaVersion: 1, items: [] },
       offline: false,
-      message: "技能云端下载支持输入 npm/npx 指令。",
+      message: t("market.main.skillCommandHint"),
       sourceUrl: baseUrl
     };
   }
@@ -135,14 +136,14 @@ async function loadSkillCatalog(app: App, options: MarketplaceOptions = {}): Pro
     return {
       catalog: { schemaVersion: 1, items },
       offline: false,
-      message: "技能市场已刷新。",
+      message: t("market.main.skillCatalogRefreshed"),
       sourceUrl: baseUrl
     };
   } catch (error) {
     return {
       catalog: { schemaVersion: 1, items: [] },
       offline: true,
-      message: `技能市场暂不可用：${error instanceof Error ? error.message : String(error)}`,
+      message: t("market.main.skillCatalogUnavailable", { reason: error instanceof Error ? error.message : String(error) }),
       sourceUrl: baseUrl
     };
   }
@@ -167,7 +168,7 @@ export async function installSkillMarketItem(
   const item = findCatalogItem(catalog, itemId, "skill");
   const selected = selectAsset(item);
   if (!selected) {
-    throw new Error("当前平台暂无可安装资源。");
+    throw new Error(t("market.main.platformUnavailable"));
   }
   const archivePath = await downloadAsset(app, item, selected.asset);
   try {

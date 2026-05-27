@@ -1,10 +1,8 @@
 import type { DesktopApi } from "@shared/contracts";
+import type { TranslateFunction } from "@shared/i18n";
 
 type MarketApi = DesktopApi["market"];
 type PluginApi = DesktopApi["plugins"];
-
-const MARKET_API_UNAVAILABLE_MESSAGE = "市场功能已更新，请刷新窗口或重启 Desktop 后再试。";
-const PLUGIN_API_UNAVAILABLE_MESSAGE = "插件导入功能已更新，请刷新窗口或重启 Desktop 后再试。";
 
 function getMarketApi(): Partial<MarketApi> | null {
   return ((window.electronAPI as Partial<DesktopApi> | undefined)?.market ?? null) as Partial<MarketApi> | null;
@@ -26,12 +24,12 @@ export function getPluginMethod<K extends keyof PluginApi>(method: K): PluginApi
   return typeof command === "function" ? command as PluginApi[K] : null;
 }
 
-export function createMissingMarketApiError(method: keyof MarketApi) {
-  return new Error(`${MARKET_API_UNAVAILABLE_MESSAGE}（缺少 market.${method}）`);
+export function createMissingMarketApiError(method: keyof MarketApi, t: TranslateFunction) {
+  return new Error(t("market.error.marketApiUnavailable", { method }));
 }
 
-export function createMissingPluginApiError(method: keyof PluginApi) {
-  return new Error(`${PLUGIN_API_UNAVAILABLE_MESSAGE}（缺少 plugins.${method}）`);
+export function createMissingPluginApiError(method: keyof PluginApi, t: TranslateFunction) {
+  return new Error(t("market.error.pluginApiUnavailable", { method }));
 }
 
 export function normalizeError(reason: unknown) {
