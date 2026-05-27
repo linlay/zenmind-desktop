@@ -288,6 +288,27 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-status-message\.danger\s*\{/);
 });
 
+test("startup loading screen uses localized copy", () => {
+  const startupGate = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "startup",
+    "StartupGate.tsx"
+  );
+
+  assert.match(startupGate, /useI18n\(\)/);
+  assert.match(startupGate, /t\("startup\.title\.starting"\)/);
+  assert.match(startupGate, /t\("startup\.phase\.installing"\)/);
+  assert.match(startupGate, /t\("startup\.service\.authentication"\)/);
+  assert.match(startupGate, /t\("startup\.action\.openControlCenter"\)/);
+  assert.doesNotMatch(startupGate, /getServiceDisplayName/);
+  assert.doesNotMatch(
+    startupGate,
+    /"(?:正在启动|服务未就绪|启动较慢|已就绪|安装中\.\.\.|初始化中\.\.\.|启动中\.\.\.|等待前序服务|等待启动|重新检查|进入控制中心|认证服务|智能体平台)"/
+  );
+});
+
 test("desktop custom theme tokens are shared by control center and log viewer", () => {
   const globalStyles = readRendererStyles();
 
