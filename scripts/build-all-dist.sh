@@ -16,10 +16,10 @@ Usage:
   scripts/build-all-dist.sh [options]
 
 Build latest dist/release packages for:
-  container-hub -> agent-container-hub
-  webclient     -> term-webclient
-  platform      -> agent-platform
-  app-server    -> zenmind-app-server
+  container-hub   -> agent-container-hub
+  agent-webclient -> agent-webclient
+  platform        -> agent-platform
+  app-server      -> zenmind-app-server
 
 Options:
   --only a,b,c     Build only selected short names.
@@ -168,7 +168,7 @@ log "host=$HOST_OS root=$ZENMIND_ROOT"
 
 PROJECT_SPECS=(
   "container-hub|agent-container-hub|release"
-  "webclient|term-webclient|release"
+  "agent-webclient|agent-webclient|release"
   "platform|agent-platform|release"
   "app-server|zenmind-app-server|release"
 )

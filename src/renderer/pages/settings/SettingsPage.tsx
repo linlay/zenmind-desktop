@@ -544,6 +544,11 @@ export function SettingsPage({
     ? desktopPetState.appearanceOptions
     : [...DESKTOP_PET_APPEARANCE_OPTIONS];
   const currentDesktopPetAppearanceId = desktopPetState?.appearanceId || DEFAULT_DESKTOP_PET_APPEARANCE_ID;
+  const defaultDesktopPetAppearance = DESKTOP_PET_APPEARANCE_OPTIONS.find((appearance) => appearance.id === DEFAULT_DESKTOP_PET_APPEARANCE_ID) ??
+    DESKTOP_PET_APPEARANCE_OPTIONS[0];
+  const currentDesktopPetAppearance = desktopPetAppearanceOptions.find(
+    (appearance) => appearance.id === currentDesktopPetAppearanceId
+  );
   const currentDesktopPetAgentOption = desktopPetAgentOptions.find(
     (agent) => agent.agentKey === currentDesktopPetBoundAgentKey
   );
@@ -1737,7 +1742,7 @@ export function SettingsPage({
               <div className="desktop-pet-appearance-section" aria-label="宠物形象">
                 <div className="desktop-pet-appearance-heading">
                   <span>宠物形象</span>
-                  <small>当前：{desktopPetAppearanceOptions.find((appearance) => appearance.id === currentDesktopPetAppearanceId)?.displayName ?? "小宅"}</small>
+                  <small>当前：{currentDesktopPetAppearance?.displayName ?? defaultDesktopPetAppearance.displayName}</small>
                 </div>
                 <div className="desktop-pet-appearance-grid">
                   {desktopPetAppearanceOptions.map((appearance) => {

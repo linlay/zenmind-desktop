@@ -380,7 +380,7 @@ async function confirmPageControlAction(
 ): Promise<PageControlConfirmationDecision> {
   const summary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
     ? args.confirmationSummary.trim()
-    : `允许小宅助理操作 ${scope.origin} 页面？`;
+    : `允许桌面助理操作 ${scope.origin} 页面？`;
   const targetLabel = [scope.surfaceLabel, scope.pageTitle].filter(Boolean).join(" · ") || scope.origin;
   const dialogOptions = {
     type: "question" as const,

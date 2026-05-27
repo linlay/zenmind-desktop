@@ -78,6 +78,16 @@ function readAppServerEnv(layout: AppServerAuthLayout) {
   return parseEnvFileContent(content);
 }
 
+function buildAppServerAuthScriptEnv(
+  layout: AppServerAuthLayout,
+  overrides: NodeJS.ProcessEnv
+) {
+  return {
+    ...Object.fromEntries(readAppServerEnv(layout)),
+    ...overrides
+  };
+}
+
 function readAppServerAuthSettings(layout: AppServerAuthLayout) {
   const env = readAppServerEnv(layout);
   const service = getService(APP_SERVER_SERVICE_ID);
@@ -97,14 +107,8 @@ type ResolvedCommand = {
 function resolveAppServerCommand(layout: AppServerAuthLayout, subcommand: string): ResolvedCommand {
   const binaryName = process.platform === "win32" ? "zenmind-app-server.exe" : "zenmind-app-server";
   const binaryPath = path.join(layout.programDir, "backend", binaryName);
-  if (fs.existsSync(binaryPath)) {
-    return {
-      command: binaryPath,
-      args: [subcommand]
-    };
-  }
 
-  // Fallback for tests/legacy: look for scripts/subcommand.ps1 or .sh
+  // Auth helpers are bundled as scripts; the backend binary is the long-running server.
   if (process.platform === "win32") {
     const windowsScript = path.join(layout.programDir, "scripts", `${subcommand}.ps1`);
     if (fs.existsSync(windowsScript)) {
@@ -113,7 +117,6 @@ function resolveAppServerCommand(layout: AppServerAuthLayout, subcommand: string
         args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", windowsScript]
       };
     }
-    throw new Error(`zenmind-app-server 缺少后端二进制文件：backend/${binaryName} 且缺少 fallback Windows 脚本：scripts/${subcommand}.ps1`);
   }
 
   if (process.platform === "darwin" || process.platform === "linux") {
@@ -125,7 +128,21 @@ function resolveAppServerCommand(layout: AppServerAuthLayout, subcommand: string
         args: []
       };
     }
-    throw new Error(`zenmind-app-server 缺少后端二进制文件：backend/${binaryName} 且缺少 fallback Unix 脚本：scripts/${subcommand}.sh`);
+  }
+
+  if (fs.existsSync(binaryPath)) {
+    return {
+      command: binaryPath,
+      args: [subcommand]
+    };
+  }
+
+  if (process.platform === "win32") {
+    throw new Error(`zenmind-app-server 缺少后端二进制文件：backend/${binaryName} 且缺少 Windows 脚本：scripts/${subcommand}.ps1`);
+  }
+
+  if (process.platform === "darwin" || process.platform === "linux") {
+    throw new Error(`zenmind-app-server 缺少后端二进制文件：backend/${binaryName} 且缺少 Unix 脚本：scripts/${subcommand}.sh`);
   }
 
   throw new Error(`不支持的平台：${process.platform}`);
@@ -311,7 +328,9 @@ export async function ensureAppServerJwk(app: App) {
 
   const resolved = resolveAppServerCommand(layout, "setup-public-key");
   await runAppServerAuthScript(layout, resolved, buildSetupPublicKeyArgs(settings, keyDir, publicKeyPath), {
-    AUTH_DB_PATH: settings.dbPath
+    ...buildAppServerAuthScriptEnv(layout, {
+      AUTH_DB_PATH: settings.dbPath
+    })
   });
 
   if (!fs.existsSync(publicKeyPath)) {
@@ -331,9 +350,11 @@ export async function issueAppServerAccessToken(app: App) {
 
   const resolved = resolveAppServerCommand(layout, "issue-bridge-access-token");
   const result = await runAppServerAuthScript(layout, resolved, buildIssueAccessTokenArgs(settings), {
-    AUTH_DB_PATH: settings.dbPath,
-    AUTH_ISSUER: settings.issuer,
-    AUTH_APP_USERNAME: settings.username
+    ...buildAppServerAuthScriptEnv(layout, {
+      AUTH_DB_PATH: settings.dbPath,
+      AUTH_ISSUER: settings.issuer,
+      AUTH_APP_USERNAME: settings.username
+    })
   });
 
   const token = result.stdout.trim().split(/\r?\n/u).filter(Boolean).at(-1)?.trim() ?? "";
@@ -351,4 +372,3 @@ export const __testInternals = {
   runAppServerScript,
   runAppServerAuthScript
 };
-
