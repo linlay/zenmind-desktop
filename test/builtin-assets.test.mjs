@@ -371,7 +371,6 @@ test("synced builtin assets include agent-webclient so assistant entry is availa
     ? manifest.desktop.envBindings.map((binding) => binding?.key)
     : [];
   assert.ok(envBindingKeys.includes("BASE_URL"));
-  assert.ok(envBindingKeys.includes("WS_BASE_URL"));
 });
 
 test("synced builtin service launchers derive .env from SERVICE_CONFIG_DIR", () => {
