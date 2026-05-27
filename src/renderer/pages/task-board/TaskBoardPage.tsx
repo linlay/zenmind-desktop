@@ -2087,7 +2087,7 @@ function TaskBoardCardContent({
           className={`task-board-card-status is-${cardStatus.tone}`}
           title={cardStatus.updatedTime ? `${cardStatus.label} · ${cardStatus.updatedTime}` : cardStatus.label}
         >
-          {cardStatus.tone !== "backlog" ? <span className="task-board-run-dot" aria-hidden="true" /> : null}
+          {cardStatus.tone !== "backlog" && cardStatus.tone !== "todo" ? <span className="task-board-run-dot" aria-hidden="true" /> : null}
           <span className="task-board-card-status-label">{cardStatus.label}</span>
           <span className="task-board-card-status-time">{cardStatus.updatedTime}</span>
         </span>

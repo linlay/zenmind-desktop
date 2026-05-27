@@ -1023,7 +1023,7 @@ test("task board cards show three-line status metadata and light actions", () =>
   assert.match(taskBoardPage, /const cardStatus = getIssueCardStatusPresentation\(issue, \{[\s\S]{0,120}awaitingConfirmation[\s\S]{0,120}sortIndex/);
   assert.match(taskBoardPage, /\{status !== "backlog" \? <span className=\{`task-board-status-dot is-\$\{meta\.tone\}`\} aria-hidden="true" \/> : null\}/);
   assert.match(taskBoardPage, /className=\{`task-board-card-status is-\$\{cardStatus\.tone\}`\}/);
-  assert.match(taskBoardPage, /\{cardStatus\.tone !== "backlog" \? <span className="task-board-run-dot" aria-hidden="true" \/> : null\}/);
+  assert.match(taskBoardPage, /\{cardStatus\.tone !== "backlog" && cardStatus\.tone !== "todo" \? <span className="task-board-run-dot" aria-hidden="true" \/> : null\}/);
   assert.match(taskBoardPage, /<span className="task-board-card-status-label">\{cardStatus\.label\}<\/span>/);
   assert.match(taskBoardPage, /<span className="task-board-card-status-time">\{cardStatus\.updatedTime\}<\/span>/);
   assert.match(taskBoardPage, /title=\{automationLabel\}/);
