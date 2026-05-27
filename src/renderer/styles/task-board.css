@@ -6,7 +6,16 @@
   --task-board-border: rgba(15, 23, 42, 0.08);
   --task-board-column-gap: 16px;
   --task-board-column-min-width: 260px;
-  --task-board-column-width: max(var(--task-board-column-min-width), calc((100% - 48px) / 4));
+  --task-board-column-fit-width: calc((100% - 32px) / 3);
+  --task-board-column-width: max(
+    calc((100% - 48px) / 4),
+    min(var(--task-board-column-min-width), var(--task-board-column-fit-width))
+  );
+  --task-board-columns-total-width: calc(
+    var(--task-board-column-width) + var(--task-board-column-width) + var(--task-board-column-width) + var(--task-board-column-width) +
+    var(--task-board-column-gap) + var(--task-board-column-gap) + var(--task-board-column-gap)
+  );
+  --task-board-column-fold-offset: max(0px, calc(var(--task-board-columns-total-width) - 100%));
   --task-board-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
   --task-board-radius: 8px;
   height: 100%;
@@ -313,7 +322,7 @@
   min-height: 0;
   display: flex;
   gap: var(--task-board-column-gap);
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   padding: 12px;
 }
@@ -381,7 +390,11 @@
   z-index: 10;
 }
 
-.task-board-column.is-todo,
+.task-board-column.is-todo {
+  z-index: 20;
+  margin-left: calc(var(--task-board-column-fold-offset) * -1);
+}
+
 .task-board-column.is-in_progress,
 .task-board-column.is-completed {
   z-index: 20;

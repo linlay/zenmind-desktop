@@ -8,7 +8,7 @@
     "icons": "node ./scripts/generate-app-icons.mjs",
     "sync:version": "node ./scripts/sync-package-version.mjs",
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
-    "i18n:check": "node ./scripts/i18n/validate-dictionaries.mjs && node ./scripts/i18n/scan-hardcoded-text.mjs",
+    "i18n:check": "node ./scripts/i18n/validate-dictionaries.mjs && node ./scripts/i18n/validate-language-separation.mjs && node ./scripts/i18n/scan-hardcoded-text.mjs",
     "build:main:types": "tsc -p tsconfig.main.json",
     "build:main:bundle": "node ./scripts/build-main-bundle.mjs",
     "build:main": "npm run build:main:types && npm run build:main:bundle",

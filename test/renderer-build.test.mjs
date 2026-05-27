@@ -526,8 +526,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.doesNotMatch(sidebarSource, /AssistantHistoryState/);
   assert.doesNotMatch(sidebarSource, /assistantHistory/);
   assert.doesNotMatch(sidebarSource, /renderAssistantHistory/);
-  assert.match(sidebarSource, /const recentChats = \(agent\.recentChats \?\? \[\]\)\.slice\(0, 5\);/);
-  assert.match(sidebarSource, /const chatCount = Math\.max\(0, agent\.chatCount, recentChats\.length\);/);
+  assert.match(sidebarSource, /const recentChats = getAssistantNavAgentRecentChats\(agent\)\.slice\(0, 5\);/);
+  assert.match(sidebarSource, /const chatCount = Math\.max\(0, getAssistantNavAgentNonNegativeInteger\(agent\.chatCount\), recentChats\.length\);/);
   assert.match(sidebarSource, /recentChats\.length > 0 \? \(/);
   assert.match(sidebarSource, /\) : chatCount === 0 \? \(\s*<div className="status-line">暂无会话<\/div>/);
   assert.match(sidebarSource, /chatCount > recentChats\.length \? \(/);
@@ -959,10 +959,13 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(resolver, /"\/memory"[\s\S]*?"memory"/);
   assert.match(appShell, /resolveDesktopCopilotPreference/);
   assert.match(appShell, /assistantLauncherVisible = currentCopilotPreference\?\.enabled !== false/);
-  assert.match(appShell, /currentCopilotPreference\?\.enabled === false && assistantDockOpen && !assistantRunningRunId/);
+  assert.match(appShell, /\[assistantDockOpenPath, setAssistantDockOpenPath\] = useState<string \| null>\(null\)/);
+  assert.match(appShell, /assistantDockOpen = assistantDockOpenPath !== null/);
+  assert.match(appShell, /currentCopilotPreference\?\.enabled === false && assistantDockOpenPath === location\.pathname && !assistantRunningRunId/);
   assert.match(appShell, /isAgentWebclientMainRoute = location\.pathname === ASSISTANT_TARGET_PATH \|\| isSingleAgentWebclientRoute\(location\.pathname\)/);
-  assert.match(appShell, /assistantCopilotOpen = assistantDockOpen && !isAgentWebclientMainRoute/);
-  assert.match(appShell, /isAgentWebclientMainRoute && assistantDockOpen/);
+  assert.match(appShell, /assistantCopilotOpen = assistantDockOpen && assistantDockOpenPath === location\.pathname && !isAgentWebclientMainRoute/);
+  assert.match(appShell, /assistantDockOpenPath !== location\.pathname[\s\S]{0,180}setAssistantDockOpenPath\(null\)/);
+  assert.doesNotMatch(appShell, /isAgentWebclientMainRoute && assistantDockOpen[\s\S]{0,180}setAssistantDockOpenPath\(null\)/);
   assert.match(appShell, /assistantLauncherDisabled=\{isAgentWebclientMainRoute\}/);
   assert.match(appShell, /open=\{assistantCopilotOpen\}/);
   assert.match(appShell, /assistantLauncherVisible=\{assistantLauncherVisible\}/);
@@ -974,6 +977,7 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /assistantDockOpenRequestPathRef = useRef<string \| null>\(null\)/);
   assert.match(appShell, /assistantDockOpenRequestPathRef\.current !== location\.pathname[\s\S]*?setAssistantDockOpenRequest\(null\)/);
   assert.match(appShell, /assistantDockOpenRequestPathRef\.current = location\.pathname[\s\S]*?setAssistantDockOpenRequest\(request\)/);
+  assert.match(appShell, /setAssistantDockOpenPath\(location\.pathname\)/);
   assert.match(appShell, /const targetAgentKey = resolveTargetAgentKey\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /const targetEmbedPath = buildAgentWebclientCopilotPath\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /data-open-agent-key=\{targetAgentKey\}/);
@@ -1211,9 +1215,15 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-page\s*\{/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
-  assert.match(globalStyles, /--task-board-column-width:\s*max\(var\(--task-board-column-min-width\),\s*calc\(\(100% - 48px\) \/ 4\)\);/);
+  assert.match(globalStyles, /--task-board-column-fit-width:\s*calc\(\(100% - 32px\) \/ 3\);/);
+  assert.match(globalStyles, /--task-board-column-width:\s*max\(\s*calc\(\(100% - 48px\) \/ 4\),\s*min\(var\(--task-board-column-min-width\), var\(--task-board-column-fit-width\)\)\s*\);/);
+  assert.match(globalStyles, /--task-board-columns-total-width:\s*calc\(\s*var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+\s*var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\)\s*\);/);
+  assert.match(globalStyles, /--task-board-column-fold-offset:\s*max\(0px,\s*calc\(var\(--task-board-columns-total-width\) - 100%\)\);/);
+  assert.match(globalStyles, /\.task-board-columns\s*\{[\s\S]{0,220}overflow-x:\s*hidden;/);
   assert.match(globalStyles, /\.task-board-column\s*\{/);
-  assert.doesNotMatch(globalStyles, /\.task-board-column\.is-todo\s*\{[\s\S]*?margin-left:/);
+  assert.match(globalStyles, /\.task-board-column\.is-todo\s*\{[\s\S]{0,180}margin-left:\s*calc\(var\(--task-board-column-fold-offset\) \* -1\);/);
+  assert.doesNotMatch(globalStyles, /\.task-board-column\.is-in_progress\s*\{[^}]*margin-left:/);
+  assert.doesNotMatch(globalStyles, /\.task-board-column\.is-completed\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(taskBoardPage, /backlogExpanded/);
   assert.doesNotMatch(taskBoardPage, /setBacklogExpanded/);
   assert.doesNotMatch(globalStyles, /\.task-board-columns\.is-backlog-expanded/);
@@ -1312,19 +1322,19 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.doesNotMatch(appShell, /setInterval\([\s\S]*?listNavigationAgents/);
 });
 
-test("assistant navigation agents use cached or shared default agent while platform warms up", () => {
+test("assistant navigation agents stay empty before platform data is ready", () => {
   const appShell = readAppShellSource();
 
-  assert.match(appShell, /ASSISTANT_NAV_AGENTS_CACHE_KEY\s*=\s*"zenmind-desktop\.assistant-nav-agents-cache"/);
-  assert.match(appShell, /DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY/);
-  assert.match(appShell, /DESKTOP_PET_APPEARANCE_OPTIONS/);
-  assert.match(appShell, /DEFAULT_ASSISTANT_NAV_AGENT[\s\S]*?agentKey:\s*DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY[\s\S]*?displayName:\s*DEFAULT_ASSISTANT_NAV_AGENT_DISPLAY_NAME[\s\S]*?role:\s*""/);
+  assert.doesNotMatch(appShell, /ASSISTANT_NAV_AGENTS_CACHE_KEY/);
+  assert.doesNotMatch(appShell, /DEFAULT_ASSISTANT_NAV_AGENT/);
+  assert.doesNotMatch(appShell, /createDefaultAssistantNavAgents/);
+  assert.doesNotMatch(appShell, /readInitialAssistantNavAgents/);
+  assert.doesNotMatch(appShell, /localStorage\.getItem\("zenmind-desktop\.assistant-nav-agents-cache"\)/);
   assert.doesNotMatch(appShell, /displayName:\s*"小宅"/);
   assert.doesNotMatch(appShell, /role:\s*"平台总管"/);
-  assert.match(appShell, /function readInitialAssistantNavAgents\(\): AssistantNavAgentItem\[\]/);
-  assert.match(appShell, /useState<AssistantNavAgentItem\[\]>\(readInitialAssistantNavAgents\)/);
-  assert.match(appShell, /writeAssistantNavAgentsCache\(nextItems\)/);
-  assert.match(appShell, /clearAssistantNavAgentsCache\(\)/);
+  assert.match(appShell, /useState<AssistantNavAgentItem\[\]>\(\[\]\)/);
+  assert.doesNotMatch(appShell, /writeAssistantNavAgentsCache/);
+  assert.doesNotMatch(appShell, /clearAssistantNavAgentsCache/);
   assert.doesNotMatch(appShell, /setAssistantNavAgents\(result\.ok \? result\.items : \[\]\)/);
   assert.doesNotMatch(appShell, /catch\s*\{[\s\S]{0,220}?setAssistantNavAgents\(\[\]\)/);
 });

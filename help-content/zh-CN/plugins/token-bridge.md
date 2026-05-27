@@ -1,4 +1,4 @@
-需要认证的服务或插件可通过 postMessage Token Bridge 与 Desktop 通信，获取 JWT 令牌：
+需要认证的服务或插件可通过 postMessage 令牌桥接与桌面端通信，获取 JWT 令牌：
 
 1. 服务 webview 发送消息：
 
@@ -11,7 +11,7 @@
 }
 ```
 
-2. Desktop 签发 JWT 后回传：
+2. 桌面端签发 JWT 后回传：
 
 ```json
 {
