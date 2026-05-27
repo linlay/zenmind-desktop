@@ -112,6 +112,30 @@ test("task board constrains its page height so columns can scroll vertically", (
   assert.match(columnBodyRule, /overflow-y:\s*auto;/);
 });
 
+test("task board columns and cards adapt to the available board width", () => {
+  const pageRule = readRule(".task-board-page");
+  const columnsRule = readRule(".task-board-columns");
+  const columnRule = readRule(".task-board-column");
+  const cardRule = readRule(".task-board-card");
+  const styles = readStyles();
+
+  assert.match(pageRule, /--task-board-column-gap:\s*16px;/);
+  assert.match(pageRule, /--task-board-column-min-width:\s*260px;/);
+  assert.match(
+    pageRule,
+    /--task-board-column-width:\s*max\(var\(--task-board-column-min-width\),\s*calc\(\(100% - 48px\) \/ 4\)\);/
+  );
+  assert.match(columnsRule, /gap:\s*var\(--task-board-column-gap\);/);
+  assert.doesNotMatch(styles, /\.task-board-columns\.is-backlog-expanded/);
+  assert.doesNotMatch(styles, /\.task-board-column\.is-todo\s*\{[\s\S]*?margin-left:/);
+  assert.match(columnRule, /flex:\s*0\s+0\s+var\(--task-board-column-width\);/);
+  assert.match(columnRule, /width:\s*var\(--task-board-column-width\);/);
+  assert.match(columnRule, /min-width:\s*var\(--task-board-column-width\);/);
+  assert.match(columnRule, /max-width:\s*var\(--task-board-column-width\);/);
+  assert.match(cardRule, /width:\s*100%;/);
+  assert.match(cardRule, /min-width:\s*0;/);
+});
+
 test("task board cards keep vertical pan gestures available inside scrollable columns", () => {
   const cardRule = readRule(".task-board-card");
   const lockedCardRule = readRule(".task-board-card.is-drag-locked");

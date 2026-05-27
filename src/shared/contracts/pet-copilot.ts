@@ -2,6 +2,7 @@ import type { AssistantAwaitingMode } from "./copilot";
 
 export type DesktopPetStatus = "idle" | "running" | "awaiting" | "done" | "error";
 export type DesktopPetAgentPresence = "available" | "busy" | "away" | "offline";
+export type DesktopPetEdgeDock = "top" | null;
 
 export interface DesktopPetSettings {
   enabled: boolean;
@@ -102,6 +103,7 @@ export interface DesktopPetState {
   agentOptions: DesktopPetAgentOption[];
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
+  edgeDock: DesktopPetEdgeDock;
   updatedAt: string;
 }
 

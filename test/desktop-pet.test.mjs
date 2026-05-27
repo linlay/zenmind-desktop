@@ -18,6 +18,7 @@ const {
   getDesktopPetRunningTaskAnimationDurationMs,
   getDesktopPetContextMenuItems,
   readDesktopPetStoredState,
+  resolveDesktopPetEdgeDock,
   resolveDesktopPetRunningTaskCount,
   sanitizeDesktopPetAppearanceId,
   sanitizeDesktopPetBoundAgentKey,
@@ -115,6 +116,67 @@ test("desktop pet can be dragged into the top edge of the display", () => {
   });
 
   assert.equal(bounds.y, 0);
+});
+
+test("desktop pet can dock the visible sprite footprint to display edges", () => {
+  const display = {
+    x: 0,
+    y: 0,
+    width: 1440,
+    height: 900
+  };
+  const footprint = desktopPetInternals.DESKTOP_PET_VISIBLE_FOOTPRINT;
+  const bounds = clampDesktopPetPosition({ x: -50, y: 9999 }, display, DESKTOP_PET_WINDOW_SIZE, {
+    allowVisibleEdgeDock: true
+  });
+
+  assert.equal(bounds.x + footprint.x, display.x);
+  assert.equal(bounds.y + footprint.y + footprint.height, display.y + display.height);
+  assert.equal(bounds.width, DESKTOP_PET_WINDOW_SIZE.width);
+  assert.equal(bounds.height, DESKTOP_PET_WINDOW_SIZE.height);
+});
+
+test("desktop pet snaps near display edges when docking is enabled", () => {
+  const display = {
+    x: 0,
+    y: 0,
+    width: 1440,
+    height: 900
+  };
+  const footprint = desktopPetInternals.DESKTOP_PET_VISIBLE_FOOTPRINT;
+  const left = clampDesktopPetPosition({
+    x: display.x - footprint.x + 12,
+    y: 200
+  }, display, DESKTOP_PET_WINDOW_SIZE, {
+    allowVisibleEdgeDock: true,
+    stickToEdges: true
+  });
+  const right = clampDesktopPetPosition({
+    x: display.x + display.width - footprint.x - footprint.width - 12,
+    y: 200
+  }, display, DESKTOP_PET_WINDOW_SIZE, {
+    allowVisibleEdgeDock: true,
+    stickToEdges: true
+  });
+
+  assert.equal(left.x + footprint.x, display.x);
+  assert.equal(right.x + footprint.x + footprint.width, display.x + display.width);
+});
+
+test("desktop pet top docking keeps the Electron window on screen", () => {
+  const display = {
+    x: 0,
+    y: 0,
+    width: 1440,
+    height: 900
+  };
+  const bounds = clampDesktopPetPosition({ x: 120, y: -80 }, display, DESKTOP_PET_WINDOW_SIZE, {
+    allowVisibleEdgeDock: true,
+    stickToEdges: true
+  });
+
+  assert.equal(bounds.y, display.y);
+  assert.equal(resolveDesktopPetEdgeDock({ x: bounds.x, y: bounds.y }, display), "top");
 });
 
 test("desktop pet exposes anchored preview window sizes", () => {

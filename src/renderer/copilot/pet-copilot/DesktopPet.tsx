@@ -39,6 +39,7 @@ function createFallbackDesktopPetState(): DesktopPetState {
     agentOptions: [],
     previewPanel: null,
     runningTaskCount: 0,
+    edgeDock: null,
     updatedAt: ""
   };
 }
@@ -538,6 +539,7 @@ export function DesktopPet() {
         shouldShowTaskRunAnimation ? "has-task-run-animation" : "",
         showPreviewPanel ? "has-preview" : "",
         showBubble ? "has-bubble" : "",
+        petState.edgeDock === "top" ? "is-edge-dock-top" : "",
         isDragging ? "is-dragging" : ""
       ].filter(Boolean).join(" ")}
       style={rootStyle}

@@ -4,6 +4,7 @@ import type { App, Rectangle } from "electron";
 import type {
   DesktopPetAgentOption,
   DesktopPetAgentPresence,
+  DesktopPetEdgeDock,
   DesktopPetPreviewPanel,
   DesktopPetSettings,
   DesktopPetState,
@@ -36,6 +37,13 @@ export {
 export const DESKTOP_PET_WINDOW_SIZE = {
   width: 176,
   height: 198
+} as const;
+
+export const DESKTOP_PET_VISIBLE_FOOTPRINT = {
+  x: 40,
+  y: 52,
+  width: 96,
+  height: 108
 } as const;
 
 export type DesktopPetWindowMode = "base" | "bubble" | "preview-collapsed" | "preview-expanded";
@@ -95,6 +103,10 @@ export type DesktopPetBoundAgentStatus = {
 };
 
 type DisplayArea = Pick<Rectangle, "x" | "y" | "width" | "height">;
+type DesktopPetClampOptions = {
+  allowVisibleEdgeDock?: boolean;
+  stickToEdges?: boolean;
+};
 export type DesktopPetContextMenuAction = "dance" | "hide";
 
 export type DesktopPetContextMenuItem = {
@@ -106,6 +118,7 @@ const DEFAULT_OFFSET = {
   x: 20,
   y: 78
 } as const;
+const DESKTOP_PET_EDGE_STICK_DISTANCE_PX = 24;
 const DESKTOP_PET_MESSAGE_PREVIEW_MAX_LENGTH = 30;
 const DESKTOP_PET_DONE_FALLBACK_HINT = "暂无回复预览";
 const DESKTOP_PET_STATUS_HINTS = new Set(["思考中", "已完成", "回复已生成", "出错了", "目标智能体未在线", "打开对话查看完整回复", DESKTOP_PET_DONE_FALLBACK_HINT]);
@@ -396,6 +409,7 @@ export function createDesktopPetState(
     agentOptions?: DesktopPetAgentOption[];
     previewPanel?: DesktopPetPreviewPanel | null;
     runningTaskCount?: unknown;
+    edgeDock?: DesktopPetEdgeDock;
   } = {}
 ): DesktopPetState {
   const localStatus = options.localStatus ?? createDefaultDesktopPetLocalStatus(settings);
@@ -422,6 +436,7 @@ export function createDesktopPetState(
     agentOptions: options.agentOptions ?? [],
     previewPanel: options.previewPanel ?? null,
     runningTaskCount: sanitizeDesktopPetRunningTaskCount(options.runningTaskCount),
+    edgeDock: options.edgeDock ?? null,
     updatedAt: new Date().toISOString()
   };
 }
@@ -433,23 +448,69 @@ export function getDesktopPetWindowSize(mode: DesktopPetWindowMode = "base") {
 export function clampDesktopPetPosition(
   position: { x: number; y: number } | undefined,
   displayArea: DisplayArea,
-  size: { width: number; height: number } = DESKTOP_PET_WINDOW_SIZE
+  size: { width: number; height: number } = DESKTOP_PET_WINDOW_SIZE,
+  options: DesktopPetClampOptions = {}
 ) {
   const width = size.width;
   const height = size.height;
-  const minX = displayArea.x;
+  const allowVisibleEdgeDock = options.allowVisibleEdgeDock &&
+    width === DESKTOP_PET_WINDOW_SIZE.width &&
+    height === DESKTOP_PET_WINDOW_SIZE.height;
+  const minX = allowVisibleEdgeDock
+    ? displayArea.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x
+    : displayArea.x;
   const minY = displayArea.y;
-  const maxX = displayArea.x + Math.max(0, displayArea.width - width);
-  const maxY = displayArea.y + Math.max(0, displayArea.height - height);
+  const maxX = allowVisibleEdgeDock
+    ? displayArea.x + Math.max(
+      0,
+      displayArea.width - DESKTOP_PET_VISIBLE_FOOTPRINT.x - DESKTOP_PET_VISIBLE_FOOTPRINT.width
+    )
+    : displayArea.x + Math.max(0, displayArea.width - width);
+  const maxY = allowVisibleEdgeDock
+    ? displayArea.y + Math.max(
+      0,
+      displayArea.height - DESKTOP_PET_VISIBLE_FOOTPRINT.y - DESKTOP_PET_VISIBLE_FOOTPRINT.height
+    )
+    : displayArea.y + Math.max(0, displayArea.height - height);
   const fallbackX = Math.min(maxX, displayArea.x + DEFAULT_OFFSET.x);
   const fallbackY = Math.min(maxY, displayArea.y + DEFAULT_OFFSET.y);
   const resolved = position ?? { x: fallbackX, y: fallbackY };
+  let x = Math.round(resolved.x);
+  let y = Math.round(resolved.y);
+  if (allowVisibleEdgeDock && options.stickToEdges) {
+    const rightEdge = displayArea.x + displayArea.width;
+    const bottomEdge = displayArea.y + displayArea.height;
+    const visibleLeft = x + DESKTOP_PET_VISIBLE_FOOTPRINT.x;
+    const visibleRight = visibleLeft + DESKTOP_PET_VISIBLE_FOOTPRINT.width;
+    const visibleTop = y + DESKTOP_PET_VISIBLE_FOOTPRINT.y;
+    const visibleBottom = visibleTop + DESKTOP_PET_VISIBLE_FOOTPRINT.height;
+    if (Math.abs(visibleLeft - displayArea.x) <= DESKTOP_PET_EDGE_STICK_DISTANCE_PX) {
+      x = minX;
+    } else if (Math.abs(visibleRight - rightEdge) <= DESKTOP_PET_EDGE_STICK_DISTANCE_PX) {
+      x = maxX;
+    }
+    if (Math.abs(visibleTop - displayArea.y) <= DESKTOP_PET_EDGE_STICK_DISTANCE_PX) {
+      y = minY;
+    } else if (Math.abs(visibleBottom - bottomEdge) <= DESKTOP_PET_EDGE_STICK_DISTANCE_PX) {
+      y = maxY;
+    }
+  }
   return {
-    x: Math.max(minX, Math.min(maxX, Math.round(resolved.x))),
-    y: Math.max(minY, Math.min(maxY, Math.round(resolved.y))),
+    x: Math.max(minX, Math.min(maxX, x)),
+    y: Math.max(minY, Math.min(maxY, y)),
     width,
     height
   };
+}
+
+export function resolveDesktopPetEdgeDock(
+  position: { x: number; y: number } | undefined,
+  displayArea: DisplayArea
+): DesktopPetEdgeDock {
+  if (!position) {
+    return null;
+  }
+  return position.y <= displayArea.y + DESKTOP_PET_EDGE_STICK_DISTANCE_PX ? "top" : null;
 }
 
 export function getAnchoredDesktopPetBounds(
@@ -458,7 +519,9 @@ export function getAnchoredDesktopPetBounds(
   mode: DesktopPetWindowMode = "base"
 ) {
   const size = getDesktopPetWindowSize(mode);
-  const baseBounds = clampDesktopPetPosition(position, displayArea, DESKTOP_PET_WINDOW_SIZE);
+  const baseBounds = clampDesktopPetPosition(position, displayArea, DESKTOP_PET_WINDOW_SIZE, {
+    allowVisibleEdgeDock: true
+  });
   if (mode === "base") {
     return baseBounds;
   }
@@ -482,6 +545,7 @@ export function getDesktopPetLogicalPositionFromBounds(
 export const __testInternals = {
   DEFAULT_OFFSET,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  DESKTOP_PET_VISIBLE_FOOTPRINT,
   DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS,
   DESKTOP_PET_WINDOW_SIZES,
   sanitizeDesktopPetStoredState,
@@ -489,6 +553,7 @@ export const __testInternals = {
   sanitizeDesktopPetMessagePreview,
   sanitizeDesktopPetUnreadCount,
   resolveMergedDesktopPetStatus,
+  resolveDesktopPetEdgeDock,
   getAnchoredDesktopPetBounds,
   getDesktopPetLogicalPositionFromBounds,
   getDesktopPetRoot

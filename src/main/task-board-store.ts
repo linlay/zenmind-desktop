@@ -8,9 +8,10 @@ import type {
   TaskBoardIssueUpdateInput,
   TaskBoardListResult,
   TaskBoardPriority,
+  TaskBoardRunState,
   TaskBoardStatus
 } from "../shared/contracts";
-import { TASK_BOARD_PRIORITIES, TASK_BOARD_STATUSES } from "../shared/contracts";
+import { TASK_BOARD_PRIORITIES, TASK_BOARD_RUN_STATES, TASK_BOARD_STATUSES } from "../shared/contracts";
 import {
   getTaskBoardDatabasePath,
   readTaskBoardIssues,
@@ -62,6 +63,11 @@ function normalizeTaskBoardStatus(value: unknown): TaskBoardStatus | null {
     return raw as TaskBoardStatus;
   }
   return taskBoardStatusAliases[raw] ?? null;
+}
+
+function normalizeTaskBoardRunState(value: unknown): TaskBoardRunState | null {
+  const raw = trimText(value).toLowerCase();
+  return TASK_BOARD_RUN_STATES.includes(raw as TaskBoardRunState) ? raw as TaskBoardRunState : null;
 }
 
 function normalizeDescription(value: unknown) {
@@ -159,6 +165,7 @@ function buildIssue(input: TaskBoardIssueInput, existingIssues: TaskBoardIssue[]
     position: nextIssuePosition(existingIssues, status),
     chatId: null,
     runId: null,
+    runState: normalizeTaskBoardRunState(input.runState),
     automationId: nullableTrimmedText(input.automationId),
     automationEnabled: input.automationEnabled === true,
     automationCron: nullableTrimmedText(input.automationCron),
@@ -192,6 +199,19 @@ function applyIssueUpdate(issue: TaskBoardIssue, input: TaskBoardIssueUpdateInpu
   if (input.assigneeAgentKey !== undefined) nextIssue.assigneeAgentKey = nullableTrimmedText(input.assigneeAgentKey);
   if (input.chatId !== undefined) nextIssue.chatId = nullableTrimmedText(input.chatId);
   if (input.runId !== undefined) nextIssue.runId = nullableTrimmedText(input.runId);
+  if (input.runState !== undefined) {
+    nextIssue.runState = normalizeTaskBoardRunState(input.runState);
+  } else if (input.runId !== undefined) {
+    if (nextIssue.runId) {
+      nextIssue.runState = "running";
+    } else if (nextIssue.status === "completed") {
+      nextIssue.runState = "completed";
+    } else if (issue.runId && nextIssue.status === "todo") {
+      nextIssue.runState = "failed";
+    }
+  } else if (input.status !== undefined && nextIssue.status !== issue.status && !nextIssue.runId) {
+    nextIssue.runState = null;
+  }
   if (input.automationId !== undefined) nextIssue.automationId = nullableTrimmedText(input.automationId);
   if (input.automationEnabled !== undefined) nextIssue.automationEnabled = input.automationEnabled === true;
   if (input.automationCron !== undefined) nextIssue.automationCron = nullableTrimmedText(input.automationCron);
@@ -319,14 +339,16 @@ export function moveTaskBoardIssue(app: AppPathProvider, input: TaskBoardIssueMo
   if (!targetStatus || !Number.isFinite(input.position)) {
     return { ok: false, message: "任务移动参数无效。", issues: cloneIssues(store.issues) };
   }
-  if (store.issues[issueIndex]!.runId) {
+  const currentIssue = store.issues[issueIndex]!;
+  if (currentIssue.runId) {
     return { ok: false, message: "智能体正在回答，完成后才能切换状态。", issues: cloneIssues(store.issues) };
   }
 
   const nextIssue: TaskBoardIssue = {
-    ...store.issues[issueIndex]!,
+    ...currentIssue,
     status: targetStatus,
     position: input.position,
+    runState: targetStatus === currentIssue.status ? currentIssue.runState : null,
     updatedAt: nowIso()
   };
   const nextIssues = [...store.issues];

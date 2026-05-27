@@ -50,6 +50,22 @@ body.desktop-pet-body,
   margin-top: -1px;
 }
 
+.desktop-pet-root.is-edge-dock-top:not(.has-bubble):not(.has-preview) {
+  align-items: flex-start;
+}
+
+.desktop-pet-root.is-edge-dock-top:not(.has-bubble):not(.has-preview) .desktop-pet-hitbox {
+  justify-content: flex-start;
+  min-height: 108px;
+  padding-top: 0;
+}
+
+.desktop-pet-root.is-edge-dock-top:not(.has-bubble):not(.has-preview) .desktop-pet-button {
+  align-items: flex-start;
+  min-height: 108px;
+  margin-top: 0;
+}
+
 .desktop-pet-root.is-dragging,
 .desktop-pet-root.is-dragging .desktop-pet-hitbox,
 .desktop-pet-root.is-dragging .desktop-pet-button {

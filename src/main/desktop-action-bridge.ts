@@ -192,10 +192,10 @@ function readItemId(args: Record<string, unknown>) {
   return itemId;
 }
 
-function readScheduleId(args: Record<string, unknown>) {
-  const id = readString(args, "id") || readString(args, "scheduleId");
+function readAutomationId(args: Record<string, unknown>) {
+  const id = readString(args, "id") || readString(args, "automationId") || readString(args, "scheduleId");
   if (!id) {
-    throw new Error("schedule id is required");
+    throw new Error("automation id is required");
   }
   return id;
 }
@@ -272,10 +272,10 @@ function validateAgentConfig(args: Record<string, unknown>) {
   };
 }
 
-function validateSchedule(args: Record<string, unknown>) {
+function validateAutomation(args: Record<string, unknown>) {
   const issues = [];
   if (!readString(args, "name") && !readString(args, "id")) {
-    issues.push({ field: "name", message: "schedule name is required for create, id is required for update" });
+    issues.push({ field: "name", message: "automation name is required for create, id is required for update" });
   }
   if (!readString(args, "cron")) {
     issues.push({ field: "cron", message: "cron is required" });
@@ -798,29 +798,30 @@ async function executeAction(
     case "desktop.agents.disableAgent":
     case "desktop.agents.reloadAgents":
       return fail(action, "unsupported_action", `${action} is reserved but not implemented in Desktop v1.`);
-    case "desktop.automations.listSchedules":
-      return ok(action, await callAgentPlatform(options.app, "/api/schedules", { method: "POST", body: {} }));
-    case "desktop.automations.getScheduleDetail":
-      return ok(action, await callAgentPlatform(options.app, "/api/schedule", { method: "POST", body: { id: readScheduleId(args) } }));
-    case "desktop.automations.validateSchedule":
-      return ok(action, validateSchedule(args));
-    case "desktop.automations.previewSchedule":
-      return preview(action, { schedule: args, validation: validateSchedule(args) });
-    case "desktop.automations.createSchedule":
-      return ok(action, await callAgentPlatform(options.app, "/api/schedule-create", { method: "POST", body: args }));
-    case "desktop.automations.updateSchedule":
-      return ok(action, await callAgentPlatform(options.app, "/api/schedule-update", { method: "POST", body: args }));
-    case "desktop.automations.pauseSchedule":
-    case "desktop.automations.resumeSchedule":
-      return ok(action, await callAgentPlatform(options.app, "/api/schedule-toggle", {
+    case "desktop.automations.listAutomations":
+      return ok(action, await callAgentPlatform(options.app, "/api/automations", { method: "POST", body: {} }));
+    case "desktop.automations.getAutomationDetail":
+      return ok(action, await callAgentPlatform(options.app, "/api/automation", { method: "POST", body: { id: readAutomationId(args) } }));
+    case "desktop.automations.validateAutomation":
+      return ok(action, validateAutomation(args));
+    case "desktop.automations.previewAutomation":
+      return preview(action, { automation: args, validation: validateAutomation(args) });
+    case "desktop.automations.createAutomation":
+      return ok(action, await callAgentPlatform(options.app, "/api/automation/create", { method: "POST", body: args }));
+    case "desktop.automations.updateAutomation":
+      return ok(action, await callAgentPlatform(options.app, "/api/automation/update", { method: "POST", body: args }));
+    case "desktop.automations.pauseAutomation":
+    case "desktop.automations.resumeAutomation":
+      return ok(action, await callAgentPlatform(options.app, "/api/automation/toggle", {
         method: "POST",
-        body: { id: readScheduleId(args), enabled: action === "desktop.automations.resumeSchedule" }
+        body: { id: readAutomationId(args), enabled: action === "desktop.automations.resumeAutomation" }
       }));
-    case "desktop.automations.deleteSchedule":
-      return ok(action, await callAgentPlatform(options.app, "/api/schedule-delete", { method: "POST", body: { id: readScheduleId(args) } }));
+    case "desktop.automations.deleteAutomation":
+      return ok(action, await callAgentPlatform(options.app, "/api/automation/delete", { method: "POST", body: { id: readAutomationId(args) } }));
     case "desktop.automations.explainNextRun": {
-      const detail = await callAgentPlatform<Record<string, unknown>>(options.app, "/api/schedule", { method: "POST", body: { id: readScheduleId(args) } });
-      return ok(action, { id: readScheduleId(args), nextFireTime: detail.nextFireTime ?? null, detail });
+      const id = readAutomationId(args);
+      const detail = await callAgentPlatform<Record<string, unknown>>(options.app, "/api/automation", { method: "POST", body: { id } });
+      return ok(action, { id, nextFireTime: detail.nextFireTime ?? null, detail });
     }
     default:
       return fail(action, "unknown_action", `unknown action: ${action}`);

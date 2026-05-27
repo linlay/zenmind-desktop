@@ -44,3 +44,4 @@ playwright-report/
 
 # Local assistant files
 agent.md
+.codegraph/

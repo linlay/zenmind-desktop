@@ -65,15 +65,15 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.agents.disableAgent", kind: "execute", category: "agents", description: "Disable an agent." },
   { name: "desktop.agents.reloadAgents", kind: "execute", category: "agents", description: "Reload agents." },
 
-  { name: "desktop.automations.listSchedules", kind: "read", category: "automations", description: "List schedules." },
-  { name: "desktop.automations.getScheduleDetail", kind: "read", category: "automations", description: "Read one schedule." },
-  { name: "desktop.automations.validateSchedule", kind: "validate", category: "automations", description: "Validate a schedule payload." },
-  { name: "desktop.automations.previewSchedule", kind: "preview", category: "automations", description: "Preview a schedule payload." },
-  { name: "desktop.automations.createSchedule", kind: "execute", category: "automations", description: "Create a schedule." },
-  { name: "desktop.automations.updateSchedule", kind: "execute", category: "automations", description: "Update a schedule." },
-  { name: "desktop.automations.pauseSchedule", kind: "execute", category: "automations", description: "Pause a schedule." },
-  { name: "desktop.automations.resumeSchedule", kind: "execute", category: "automations", description: "Resume a schedule." },
-  { name: "desktop.automations.deleteSchedule", kind: "execute", category: "automations", description: "Delete a schedule." },
+  { name: "desktop.automations.listAutomations", kind: "read", category: "automations", description: "List automations." },
+  { name: "desktop.automations.getAutomationDetail", kind: "read", category: "automations", description: "Read one automation." },
+  { name: "desktop.automations.validateAutomation", kind: "validate", category: "automations", description: "Validate an automation payload." },
+  { name: "desktop.automations.previewAutomation", kind: "preview", category: "automations", description: "Preview an automation payload." },
+  { name: "desktop.automations.createAutomation", kind: "execute", category: "automations", description: "Create an automation." },
+  { name: "desktop.automations.updateAutomation", kind: "execute", category: "automations", description: "Update an automation." },
+  { name: "desktop.automations.pauseAutomation", kind: "execute", category: "automations", description: "Pause an automation." },
+  { name: "desktop.automations.resumeAutomation", kind: "execute", category: "automations", description: "Resume an automation." },
+  { name: "desktop.automations.deleteAutomation", kind: "execute", category: "automations", description: "Delete an automation." },
   { name: "desktop.automations.explainNextRun", kind: "read", category: "automations", description: "Explain the next schedule run." }
 ] as const satisfies readonly DesktopActionDefinition[];
 
