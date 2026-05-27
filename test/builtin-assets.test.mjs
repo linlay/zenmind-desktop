@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
@@ -130,6 +131,12 @@ function writeBuiltinTarArchive({
   fs.mkdirSync(path.dirname(archivePath), { recursive: true });
   fs.copyFileSync(fixture.tarPath, archivePath);
   fs.rmSync(fixture.root, { recursive: true, force: true });
+}
+
+function computeAssetSignature(assetPath) {
+  const stat = fs.statSync(assetPath);
+  const sha256 = createHash("sha256").update(fs.readFileSync(assetPath)).digest("hex");
+  return `${stat.size}:${sha256}`;
 }
 
 function ensureSyncedAssets() {
@@ -768,17 +775,20 @@ test("ZENMIND_BUILTIN_ASSETS_SOURCE overrides workspace fallback and syncs built
       {
         id: serviceId,
         version,
-        assetFileName: path.basename(sourceArchivePath)
+        assetFileName: path.basename(sourceArchivePath),
+        assetSignature: computeAssetSignature(sourceArchivePath)
       }
     ]);
 
     const outputRoot = path.join(projectRoot, "build", "resources", "services");
+    const outputArchivePath = path.join(outputRoot, serviceId, path.basename(sourceArchivePath));
     const outputManifest = JSON.parse(
       fs.readFileSync(path.join(outputRoot, "manifest.json"), "utf8")
     );
     assert.equal(outputManifest.services.length, 1);
     assert.deepEqual(outputManifest.services, syncedManifest);
-    assert.ok(fs.existsSync(path.join(outputRoot, serviceId, path.basename(sourceArchivePath))));
+    assert.equal(outputManifest.services[0].assetSignature, computeAssetSignature(outputArchivePath));
+    assert.ok(fs.existsSync(outputArchivePath));
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
     fs.rmSync(fallbackArchivePath, { force: true });

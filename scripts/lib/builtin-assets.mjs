@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 
 // monorepo 根目录：zenmind-desktop 的上一级
@@ -14,6 +15,12 @@ const REQUIRED_DESKTOP_CORE_SERVICE_IDS = [
 
 function isArchiveFileName(fileName) {
   return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
+}
+
+function computeAssetSignature(assetPath) {
+  const stat = fs.statSync(assetPath);
+  const sha256 = createHash("sha256").update(fs.readFileSync(assetPath)).digest("hex");
+  return `${stat.size}:${sha256}`;
 }
 
 function scanArchiveDirectory(dirPath, tryAddArchive) {
@@ -700,7 +707,8 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), { os, arch } = {}
     return {
       id: service.id,
       version: service.version,
-      assetFileName: service.assetFileName
+      assetFileName: service.assetFileName,
+      assetSignature: computeAssetSignature(outputArchivePath)
     };
   });
 

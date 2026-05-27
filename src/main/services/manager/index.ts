@@ -326,6 +326,14 @@ function isCommandBasenameMatch(command: string, expected: string) {
 }
 
 const bundleValidationCache = new Map<string, { key: string; missingEntries: string[] }>();
+const syncedAssetManifestCache = new Map<string, { key: string; services: SyncedAssetManifestService[] }>();
+
+type SyncedAssetManifestService = {
+  id?: unknown;
+  version?: unknown;
+  assetFileName?: unknown;
+  assetSignature?: unknown;
+};
 
 function getAssetPath(app: App, service: ServiceDefinition) {
   if (!service.desktop.assetFileName) {
@@ -387,15 +395,86 @@ function computeAssetSignature(assetPath: string) {
   return `${stat.size}:${hash}`;
 }
 
+function moveExtractedBuiltinRoot(extractedRoot: string, finalInstallDir: string) {
+  try {
+    fs.renameSync(extractedRoot, finalInstallDir);
+    return;
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+    if (code !== "EPERM" && code !== "EACCES" && code !== "EXDEV") {
+      throw error;
+    }
+  }
+
+  fs.cpSync(extractedRoot, finalInstallDir, { recursive: true, force: true });
+  fs.rmSync(extractedRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+}
+
+function readSyncedBuiltinAssetManifest(app: App) {
+  const manifestPath = path.join(getBuiltinAssetsRoot(app), "manifest.json");
+  if (!fs.existsSync(manifestPath)) {
+    return [];
+  }
+
+  try {
+    const stat = fs.statSync(manifestPath);
+    const cacheKey = `${stat.size}:${stat.mtimeMs}`;
+    const cached = syncedAssetManifestCache.get(manifestPath);
+    if (cached && cached.key === cacheKey) {
+      return cached.services;
+    }
+
+    const parsed = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as { services?: unknown };
+    const services = Array.isArray(parsed.services)
+      ? parsed.services.filter((item): item is SyncedAssetManifestService => Boolean(item) && typeof item === "object")
+      : [];
+    syncedAssetManifestCache.set(manifestPath, {
+      key: cacheKey,
+      services
+    });
+    return services;
+  } catch {
+    return [];
+  }
+}
+
+function readSyncedBuiltinAssetSignature(app: App, service: ServiceDefinition) {
+  const assetFileName = service.desktop.assetFileName;
+  if (!assetFileName) {
+    return undefined;
+  }
+
+  const match = readSyncedBuiltinAssetManifest(app).find((entry) =>
+    entry.id === service.id &&
+    entry.version === service.version &&
+    entry.assetFileName === assetFileName &&
+    typeof entry.assetSignature === "string" &&
+    entry.assetSignature.trim().length > 0
+  );
+
+  return typeof match?.assetSignature === "string" ? match.assetSignature : undefined;
+}
+
 function readBuiltinAssetSignature(app: App, service: ServiceDefinition) {
   if (service.kind !== "builtin") {
     return undefined;
+  }
+  const syncedSignature = readSyncedBuiltinAssetSignature(app, service);
+  if (syncedSignature) {
+    return syncedSignature;
   }
   const assetPath = getOptionalBundleAssetPath(app, service);
   return assetPath ? computeAssetSignature(assetPath) : undefined;
 }
 
-function isAssetNewerThanInstall(assetPath: string, layoutOrInstallDir: ServiceLayout | string) {
+function isAssetNewerThanInstall(
+  assetPath: string,
+  layoutOrInstallDir: ServiceLayout | string,
+  app?: App,
+  service?: ServiceDefinition
+) {
   try {
     const initStatePath = getInitializationStatePath(layoutOrInstallDir);
     if (!fs.existsSync(initStatePath)) {
@@ -403,7 +482,10 @@ function isAssetNewerThanInstall(assetPath: string, layoutOrInstallDir: ServiceL
     }
     const initializationState = readInitializationState(layoutOrInstallDir);
     if (initializationState?.assetSignature) {
-      return initializationState.assetSignature !== computeAssetSignature(assetPath);
+      const assetSignature = app && service
+        ? readBuiltinAssetSignature(app, service) ?? computeAssetSignature(assetPath)
+        : computeAssetSignature(assetPath);
+      return initializationState.assetSignature !== assetSignature;
     }
     const assetMtime = fs.statSync(assetPath).mtimeMs;
     return assetMtime > fs.statSync(initStatePath).mtimeMs;
@@ -434,10 +516,32 @@ function needsBundledAssetRefresh(app: App, service: ServiceDefinition) {
     if (serviceInstallNeedsRefresh(service, installDir)) {
       return true;
     }
-    return isAssetNewerThanInstall(assetPath, layout);
+    return isAssetNewerThanInstall(assetPath, layout, app, service);
   } catch {
     return false;
   }
+}
+
+function installedBuiltinNeedsStartupRepair(app: App, service: ServiceDefinition, current: ServiceState) {
+  if (service.kind !== "builtin") {
+    return false;
+  }
+
+  const installDir = getInstallDir(app, service);
+  const layout = getServiceLayout(app, service);
+  if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
+    return true;
+  }
+
+  const initializationState = readInitializationState(layout);
+  if (
+    initializationState?.status !== "succeeded" ||
+    initializationState.version !== service.version
+  ) {
+    return true;
+  }
+
+  return shouldReinitializeMissingCoreServiceConfig(service, current);
 }
 
 function writeInitializationState(layoutOrInstallDir: ServiceLayout | string, state: InitializationState) {
@@ -2326,6 +2430,7 @@ export async function installBuiltinService(
     const assetPath = options.archivePath
       ? ensureArchiveHealthy(service, options.archivePath, "安装包")
       : ensureBundleAssetHealthy(app, service);
+    const initializationAssetSignature = options.archivePath ? computeAssetSignature(assetPath) : undefined;
 
     const finalInstallDir = getInstallDir(app, service);
     const layout = getServiceLayout(app, service);
@@ -2335,7 +2440,7 @@ export async function installBuiltinService(
       !fs.existsSync(finalInstallDir) ||
       !isInstallHealthy(service, finalInstallDir) ||
       serviceInstallNeedsRefresh(service, finalInstallDir) ||
-      isAssetNewerThanInstall(assetPath, layout);
+      isAssetNewerThanInstall(assetPath, layout, options.archivePath ? undefined : app, service);
 
     const preservedEnvPath = layout.envPath;
     const hasCurrentEnv = fileExists(preservedEnvPath);
@@ -2349,7 +2454,10 @@ export async function installBuiltinService(
     await reconcileBuiltinSiblingInstallDirs(app, service, finalInstallDir);
 
     if (!needsExtract) {
-      const initialization = await initializeServiceInternal(app, serviceId, { skipInstallRefresh: true });
+      const initialization = await initializeServiceInternal(app, serviceId, {
+        skipInstallRefresh: true,
+        assetSignatureOverride: initializationAssetSignature
+      });
       if (!initialization.ok) {
         throw new Error(initialization.message);
       }
@@ -2368,8 +2476,11 @@ export async function installBuiltinService(
         throw new Error(`unexpected archive layout for ${service.id}`);
       }
       const extractedRoot = path.join(tempRoot, entries[0]);
-      fs.rmSync(finalInstallDir, { recursive: true, force: true });
-      fs.cpSync(extractedRoot, finalInstallDir, { recursive: true });
+      if (fs.existsSync(finalInstallDir)) {
+        await stopBuiltinInstallDir(service, finalInstallDir);
+      }
+      fs.rmSync(finalInstallDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      moveExtractedBuiltinRoot(extractedRoot, finalInstallDir);
       patchProgramCommonForLayeredLayout(finalInstallDir);
       if (preservedEnv.content) {
         ensureDir(path.dirname(layout.envPath));
@@ -2378,7 +2489,10 @@ export async function installBuiltinService(
           writeAgentPlatformLegacyEnvBackupIfNeeded(layout.configDir, preservedEnv.backupContent);
         }
       }
-      const initialization = await initializeServiceInternal(app, serviceId, { skipInstallRefresh: true });
+      const initialization = await initializeServiceInternal(app, serviceId, {
+        skipInstallRefresh: true,
+        assetSignatureOverride: initializationAssetSignature
+      });
       if (!initialization.ok) {
         throw new Error(initialization.message);
       }
@@ -2398,7 +2512,7 @@ export async function initializeService(app: App, serviceId: ServiceId): Promise
 async function initializeServiceInternal(
   app: App,
   serviceId: ServiceId,
-  options: { skipInstallRefresh?: boolean } = {}
+  options: { skipInstallRefresh?: boolean; assetSignatureOverride?: string } = {}
 ): Promise<ServiceCommandResult> {
   const timing = beginStartupTiming("initializeServiceInternal", {
     serviceId,
@@ -2459,7 +2573,7 @@ async function initializeServiceInternal(
         });
       }
       await ensureInitializationRequirements(app, service, layout);
-      const assetSignature = readBuiltinAssetSignature(app, service);
+      const assetSignature = options.assetSignatureOverride ?? readBuiltinAssetSignature(app, service);
       writeInitializationState(layout, {
         version: service.version,
         status: "succeeded",
@@ -3187,8 +3301,8 @@ function agentPlatformInstallNeedsRefresh(installDir: string) {
       const programCommon = fs.readFileSync(programCommonPs1Path, "utf8");
       const declaresPidFile = /(^|\r?\n)\s*\$Script:PidFile\s*=/u.test(programCommon);
       const hasDesktopPidFile =
-        programCommon.includes('$Script:PidFile = Join-Path $Script:RunDir "agent-platform.pid"') ||
-        programCommon.includes('$Script:PidFile = Join-Path (Join-Path $Script:RunDir "pid") "agent-platform.pid"');
+        /\$Script:PidFile\s*=\s*Join-Path\s+\$Script:RunDir\s+['"]agent-platform\.pid['"]/u.test(programCommon) ||
+        /\$Script:PidFile\s*=\s*Join-Path\s+\(Join-Path\s+\$Script:RunDir\s+['"]pid['"]\)\s+['"]agent-platform\.pid['"]/u.test(programCommon);
       if (
         programCommon.includes('$Script:PidFile = Join-Path $Script:RunDir "$Script:AppName.pid"') ||
         programCommon.includes('$Script:LogFile = Join-Path $Script:LogDir "$Script:AppName.log"') ||
@@ -4434,7 +4548,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   if (service.id === "agent-webclient") {
     const assetPath = getOptionalBundleAssetPath(app, service);
     const forceRefresh = agentWebclientInstallNeedsRefresh(installDir);
-    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, layout))) {
+    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, layout, app, service))) {
       await installBuiltinService(app, service.id, {
         force: forceRefresh,
         source: "ensurePreStartRequirements:agent-webclient-refresh"
@@ -4445,7 +4559,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
   if (service.id === "zenmind-app-server") {
     const assetPath = getOptionalBundleAssetPath(app, service);
     const forceRefresh = zenmindAppServerInstallNeedsRefresh(installDir);
-    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, layout))) {
+    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, layout, app, service))) {
       await installBuiltinService(app, service.id, {
         force: forceRefresh,
         source: "ensurePreStartRequirements:app-server-refresh"
@@ -4484,8 +4598,15 @@ type StartServiceOptions = {
 
 function getPreparedStartupStartOptions(): StartServiceOptions {
   return {
+    skipPreStartRequirements: true,
     skipBuiltinAssetRefresh: true
   };
+}
+
+function yieldStartupScheduler() {
+  return new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 const NODE_BIN_START_ENV_SERVICE_IDS = new Set<ServiceId>([
@@ -4555,7 +4676,7 @@ async function runServiceCommand(
           throw new Error(`${service.name} 未安装或安装已损坏。`);
         }
         await installBuiltinService(app, service.id, { source: "runServiceCommand:missing-install" });
-      } else if (assetPath && isAssetNewerThanInstall(assetPath, getServiceLayout(app, service))) {
+      } else if (assetPath && isAssetNewerThanInstall(assetPath, getServiceLayout(app, service), app, service)) {
         await installBuiltinService(app, service.id, { source: "runServiceCommand:asset-newer" });
       }
     } else if (!fs.existsSync(installDir) || !isInstallHealthy(service, installDir)) {
@@ -5479,6 +5600,53 @@ async function restoreOptionalStartupServices(
   };
 }
 
+async function startPreparedDefaultStartupServiceForBootstrap(
+  app: App,
+  serviceId: ServiceId,
+  current: ServiceState,
+  options: StartupRestoreOptions = {}
+): Promise<StartupServiceResult> {
+  try {
+    options.onStarting?.(serviceId);
+    options.onProgress?.(serviceId, "starting", `${current.name} starting...`);
+    await yieldStartupScheduler();
+    const startedAt = Date.now();
+    const result = await startServiceInternal(app, serviceId, getPreparedStartupStartOptions());
+    const elapsedMs = Date.now() - startedAt;
+    if (result.ok && result.service.status === "running") {
+      console.info(`[service-manager] bootstrapped ${serviceId} in ${elapsedMs}ms`);
+      options.onProgress?.(serviceId, "succeeded", result.message);
+      return {
+        serviceId,
+        ok: true,
+        message: result.message,
+        running: true
+      };
+    }
+
+    const failureMessage = result.ok
+      ? `${result.service.name} did not enter running state after start`
+      : result.message;
+    console.warn(`[service-manager] failed to bootstrap ${serviceId} after ${elapsedMs}ms: ${failureMessage}`);
+    options.onProgress?.(serviceId, "failed", failureMessage);
+    return {
+      serviceId,
+      ok: false,
+      message: failureMessage,
+      running: false
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    options.onProgress?.(serviceId, "failed", message);
+    return {
+      serviceId,
+      ok: false,
+      message,
+      running: false
+    };
+  }
+}
+
 function shouldEnableBuiltinBootstrap(_app: App) {
   return true;
 }
@@ -5503,17 +5671,8 @@ async function shouldRunBuiltinBootstrap(app: App) {
       return true;
     }
 
-    if (current.status === "error") {
-      const installDir = getInstallDir(app, service);
-      const initializationState = fs.existsSync(installDir) ? readInitializationState(getServiceLayout(app, service)) : null;
-      if (
-        !fs.existsSync(installDir) ||
-        !isInstallHealthy(service, installDir) ||
-        initializationState?.status !== "succeeded" ||
-        initializationState.version !== service.version
-      ) {
-        return true;
-      }
+    if (current.status === "error" && installedBuiltinNeedsStartupRepair(app, service, current)) {
+      return true;
     }
   }
 
@@ -5522,7 +5681,6 @@ async function shouldRunBuiltinBootstrap(app: App) {
     if (
       current.status === "not-installed" ||
       current.status === "initialization-required" ||
-      current.status === "error" ||
       shouldReinitializeMissingCoreServiceConfig(getService(serviceId), current)
     ) {
       return true;
@@ -5530,6 +5688,10 @@ async function shouldRunBuiltinBootstrap(app: App) {
 
     const service = getService(serviceId);
     if (service.kind === "builtin" && needsBundledAssetRefresh(app, service)) {
+      return true;
+    }
+
+    if (current.status === "error" && installedBuiltinNeedsStartupRepair(app, service, current)) {
       return true;
     }
   }
@@ -5547,11 +5709,13 @@ async function prepareBuiltinServiceForStartup(
   const service = getService(serviceId);
   let current = await getServiceState(app, serviceId);
   const bundledAssetNeedsRefresh = service.kind === "builtin" && needsBundledAssetRefresh(app, service);
+  const installNeedsRepair =
+    current.status === "error" && installedBuiltinNeedsStartupRepair(app, service, current);
 
   if (
     current.status === "not-installed" ||
-    current.status === "error" ||
-    bundledAssetNeedsRefresh
+    bundledAssetNeedsRefresh ||
+    installNeedsRepair
   ) {
     options.onProgress?.(serviceId, "installing", `${current.name} 安装中...`);
     if (bundledAssetNeedsRefresh && current.status === "running") {
@@ -5627,6 +5791,7 @@ export async function runStartupPreparation(
     }
   }
 
+  const preparedDefaultServices = new Map<ServiceId, ServiceState>();
   for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
     try {
       const preparation = await prepareBuiltinServiceForStartup(app, serviceId, {
@@ -5639,28 +5804,53 @@ export async function runStartupPreparation(
       }
 
       const current = preparation.service;
-      options.onStarting?.(serviceId);
-      options.onProgress?.(serviceId, "starting", `${current.name} 启动中...`);
-      const startedAt = Date.now();
-      const result = await startServiceInternal(app, serviceId, getPreparedStartupStartOptions());
-      const elapsedMs = Date.now() - startedAt;
-      if (result.ok && result.service.status === "running") {
-        console.info(`[service-manager] bootstrapped ${serviceId} in ${elapsedMs}ms`);
-        started.push(serviceId);
-        options.onProgress?.(serviceId, "succeeded", result.message);
-        continue;
-      }
-
-      const failureMessage = result.ok
-        ? `${result.service.name} 启动后未进入运行中状态。`
-        : result.message;
-      console.warn(`[service-manager] failed to bootstrap ${serviceId} after ${elapsedMs}ms: ${failureMessage}`);
-      failures.push(`${serviceId}: ${failureMessage}`);
-      options.onProgress?.(serviceId, "failed", failureMessage);
+      preparedDefaultServices.set(serviceId, current);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       failures.push(`${serviceId}: ${message}`);
       options.onProgress?.(serviceId, "failed", message);
+    }
+  }
+
+  const startOptions = {
+    onStarting: options.onStarting,
+    onProgress: options.onProgress
+  };
+  const appServerStartupResult = preparedDefaultServices.has("zenmind-app-server")
+    ? await startPreparedDefaultStartupServiceForBootstrap(
+        app,
+        "zenmind-app-server",
+        preparedDefaultServices.get("zenmind-app-server")!,
+        startOptions
+      )
+    : null;
+  const startResults = [
+    ...(appServerStartupResult ? [appServerStartupResult] : []),
+    ...(appServerStartupResult?.ok && appServerStartupResult.running
+      ? await Promise.all(
+          DEFAULT_STARTUP_SERVICE_IDS
+            .filter((serviceId) => serviceId !== "zenmind-app-server" && preparedDefaultServices.has(serviceId))
+            .map((serviceId) =>
+              startPreparedDefaultStartupServiceForBootstrap(
+                app,
+                serviceId,
+                preparedDefaultServices.get(serviceId)!,
+                startOptions
+              )
+            )
+        )
+      : [])
+  ];
+  const startResultById = new Map(startResults.map((result) => [result.serviceId, result]));
+  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
+    const result = startResultById.get(serviceId);
+    if (!result) {
+      continue;
+    }
+    if (result.ok && result.running) {
+      started.push(serviceId);
+    } else {
+      failures.push(`${serviceId}: ${result.message}`);
     }
   }
 
@@ -5731,6 +5921,7 @@ export const __testInternals = {
   buildVerificationResult,
   getInitializationStatePath,
   readInitializationState,
+  readBuiltinAssetSignature,
   readLogRange,
   getLastRunningServicesStatePath,
   getDefaultStartupServiceIds,
