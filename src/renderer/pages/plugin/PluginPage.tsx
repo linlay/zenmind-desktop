@@ -6,6 +6,7 @@ import {
   buildPluginEmbeddedUrl,
   getPluginAuthBridgeProtocol,
 } from "../../../shared/auth-bridge";
+import { useI18n } from "../../i18n/useI18n";
 import {
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
@@ -403,6 +404,7 @@ export function PluginPage({
   const currentRoute = `${location.pathname}${location.search}`;
   const { pluginId: routePluginId } = useParams<{ pluginId: string }>();
   const pluginId = pluginIdProp ?? routePluginId ?? "";
+  const { locale } = useI18n();
   const { services, refresh: refreshServices } = useServices();
   const service = services.find((s) => s.id === pluginId);
   const agentPlatformService =
@@ -461,6 +463,7 @@ export function PluginPage({
   const embeddedUrl = useMemo(() => {
     return buildPluginEmbeddedUrl(service?.id, webUrl, {
       hostTheme,
+      hostLocale: service?.id === "agent-webclient" ? locale : undefined,
       desktopAuthContext:
         service?.id === "agent-webclient" ? webviewReloadKey : undefined,
       embedPath: effectiveEmbedPath,
@@ -471,6 +474,7 @@ export function PluginPage({
   }, [
     effectiveEmbedPath,
     hostTheme,
+    locale,
     service?.healthMeta.port,
     service?.id,
     webUrl,

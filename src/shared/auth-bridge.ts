@@ -25,6 +25,7 @@ export function getPluginAuthBridgeProtocol(
 
 type BuildPluginEmbeddedUrlOptions = {
   hostTheme?: "light" | "dark";
+  hostLocale?: "zh-CN" | "en-US";
   desktopAuthContext?: string;
   baseUrl?: string;
   embedPath?: string;
@@ -92,6 +93,10 @@ function parsePluginWebUrl(webUrl: string, baseUrl?: string) {
   }
 }
 
+function normalizePluginLocale(value: unknown) {
+  return value === "zh-CN" || value === "en-US" ? value : "";
+}
+
 export function buildPluginEmbeddedUrl(
   serviceId: string | undefined,
   webUrl: string,
@@ -109,6 +114,10 @@ export function buildPluginEmbeddedUrl(
     url.search = embeddedUrl.search;
     if (options.hostTheme) {
       url.searchParams.set(url.pathname.startsWith("/agent/") ? "theme" : "hostTheme", options.hostTheme);
+    }
+    const hostLocale = normalizePluginLocale(options.hostLocale);
+    if (hostLocale) {
+      url.searchParams.set("lang", hostLocale);
     }
     if (options.desktopAuthContext?.trim()) {
       url.searchParams.set("desktopAuthContext", options.desktopAuthContext.trim());
