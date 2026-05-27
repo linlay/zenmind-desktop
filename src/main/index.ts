@@ -228,6 +228,8 @@ import { isSupportedLocale } from "../shared/i18n";
 let mainWindow: BrowserWindow | null = null;
 let desktopPetWindow: BrowserWindow | null = null;
 let isHandlingQuit = false;
+let shutdownCleanupPromise: Promise<void> | null = null;
+let shutdownCleanupComplete = false;
 let pendingMainWindowCloseCancel: (() => void) | null = null;
 let serviceMutationQueue = Promise.resolve();
 let mainWindowSidebarTranslucencyEnabled = true;
@@ -4485,15 +4487,13 @@ if (gotSingleInstanceLock) {
   });
 }
 
-app.on("before-quit", (event) => {
-  if (isHandlingQuit) {
-    return;
+function runShutdownCleanup() {
+  if (shutdownCleanupPromise) {
+    return shutdownCleanupPromise;
   }
-  event.preventDefault();
-  isHandlingQuit = true;
   const shutdownStartedAt = Date.now();
   const processCleanupSnapshot = captureManagedProcessCleanupSnapshot(app);
-  stopRunningServicesForShutdown(app)
+  shutdownCleanupPromise = stopRunningServicesForShutdown(app)
     .catch((error) => {
       console.error("failed while shutting down desktop services", error);
     })
@@ -4506,9 +4506,21 @@ app.on("before-quit", (event) => {
       console.error("failed while force-cleaning desktop service processes", error);
     })
     .finally(() => {
+      shutdownCleanupComplete = true;
       console.log(`[main] app shutdown cleanup finished in ${Date.now() - shutdownStartedAt}ms`);
-      app.quit();
     });
+  return shutdownCleanupPromise;
+}
+
+app.on("before-quit", (event) => {
+  if (shutdownCleanupComplete) {
+    return;
+  }
+  event.preventDefault();
+  isHandlingQuit = true;
+  void runShutdownCleanup().finally(() => {
+    app.quit();
+  });
 });
 
 app.on("will-quit", () => {
