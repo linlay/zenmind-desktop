@@ -1277,15 +1277,27 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
+  const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
 
   assert.match(contracts, /agentKey\?: string/);
   assert.match(contracts, /interface CustomSidebarUpdateInput/);
   assert.match(contracts, /update: \(id: string, input: CustomSidebarUpdateInput\) => Promise<CustomSidebarItemResult>/);
+  assert.match(contracts, /add: \(input: CustomSidebarItemInput\) => Promise<CustomSidebarItemResult>/);
   assert.match(store, /export function updateCustomSidebarItem/);
   assert.match(store, /delete updated\.agentKey/);
+  assert.match(store, /export function addCustomSidebarItem/);
   assert.match(mainProcess, /ipcMain\.handle\("customSidebar\.update"/);
   assert.match(preload, /update: \(id, input\) => ipcRenderer\.invoke\("customSidebar\.update", id, input\)/);
+  assert.match(preload, /add: \(input\) => ipcRenderer\.invoke\("customSidebar\.add", input\)/);
   assert.match(appShell, /resolvedCopilotAgentKey/);
+  assert.match(appShell, /function createCustomSidebarItem\(input: CustomSidebarItemInput\): Promise<CustomSidebarItemResult>[\s\S]*?window\.electronAPI\.customSidebar\.add\(input\)/);
+  assert.match(appShell, /onCreateCustomSidebarItem=\{createCustomSidebarItem\}/);
+  assert.match(appSidebar, /args\.groupId === "websites" && !isCollapsed/);
+  assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
+  assert.match(appSidebar, /function renderWebsiteDialog\(\)/);
+  assert.match(appSidebar, /网页地址[\s\S]*?显示名称[\s\S]*?侧边智能助手/);
+  assert.match(appSidebar, /onCreateCustomSidebarItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}\)/);
+  assert.match(appSidebar, /requestNavigate\(`\/custom-sidebar\/\$\{result\.item\.id\}`\)/);
 });
 
 test("assistant navigation agents are exposed through dedicated ipc without changing pet agents", () => {

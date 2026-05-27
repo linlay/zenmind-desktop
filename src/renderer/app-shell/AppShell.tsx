@@ -17,7 +17,7 @@ import {
   registerDesktopActionProviderForScope,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, DesktopSsoStatus, ServiceId, StartupRestoreState } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, CustomSidebarItemInput, CustomSidebarItemResult, DesktopSsoStatus, ServiceId, StartupRestoreState } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DESKTOP_COPILOT_PAGE_KEYS,
@@ -328,6 +328,12 @@ export function AppShell() {
     if (result.ok) {
       updateCustomSidebarItems(result.items);
     }
+    return result;
+  }
+
+  async function createCustomSidebarItem(input: CustomSidebarItemInput): Promise<CustomSidebarItemResult> {
+    const result = await window.electronAPI.customSidebar.add(input);
+    updateCustomSidebarItems(result.items);
     return result;
   }
 
@@ -1196,6 +1202,7 @@ export function AppShell() {
           onDesktopSsoLogin={handleDesktopSsoLogin}
           onDesktopSsoLogout={handleDesktopSsoLogout}
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
+          onCreateCustomSidebarItem={createCustomSidebarItem}
           onRequestNavigate={requestSidebarNavigation}
           onNavigateItem={undefined}
           onToggleCollapsed={toggleSidebarCollapsed}

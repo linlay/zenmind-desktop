@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import {
@@ -10,6 +10,8 @@ import type {
   AssistantNavAgentItem,
   AssistantNavChatItem,
   CustomSidebarItem,
+  CustomSidebarItemInput,
+  CustomSidebarItemResult,
   DesktopSsoStatus,
 } from "../../../shared/contracts";
 import {
@@ -401,6 +403,7 @@ type AppSidebarProps = {
   onDesktopSsoLogin?: () => void;
   onDesktopSsoLogout?: () => void;
   onRefreshAssistantNavAgents?: () => Promise<void> | void;
+  onCreateCustomSidebarItem?: (input: CustomSidebarItemInput) => Promise<CustomSidebarItemResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
   onNavigateItem?: () => void;
   onToggleCollapsed?: () => void;
@@ -427,6 +430,7 @@ export function AppSidebar({
   onDesktopSsoLogin,
   onDesktopSsoLogout,
   onRefreshAssistantNavAgents,
+  onCreateCustomSidebarItem,
   onRequestNavigate,
   onNavigateItem,
   onToggleCollapsed,
@@ -439,6 +443,12 @@ export function AppSidebar({
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
     useState("");
   const [creatingCoderProject, setCreatingCoderProject] = useState(false);
+  const [websiteDialogOpen, setWebsiteDialogOpen] = useState(false);
+  const [websiteLabel, setWebsiteLabel] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [websiteAgentKey, setWebsiteAgentKey] = useState("");
+  const [websiteCreatePending, setWebsiteCreatePending] = useState(false);
+  const [websiteCreateError, setWebsiteCreateError] = useState("");
   const [assistantChatMenu, setAssistantChatMenu] =
     useState<AssistantChatMenuState | null>(null);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
@@ -502,6 +512,22 @@ export function AppSidebar({
       // Ignore localStorage failures in restricted renderer contexts.
     }
   }, [sidebarGroupState]);
+
+  useEffect(() => {
+    if (!websiteDialogOpen) {
+      return undefined;
+    }
+
+    function handleDocumentKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !websiteCreatePending) {
+        setWebsiteDialogOpen(false);
+      }
+    }
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [websiteCreatePending, websiteDialogOpen]);
 
   useEffect(() => {
     if (!assistantChatMenu) {
@@ -626,6 +652,46 @@ export function AppSidebar({
       console.warn("[assistant] failed to create CODER project", error);
     } finally {
       setCreatingCoderProject(false);
+    }
+  }
+
+  function openWebsiteDialog(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    setWebsiteLabel("");
+    setWebsiteUrl("");
+    setWebsiteAgentKey("");
+    setWebsiteCreateError("");
+    setWebsiteDialogOpen(true);
+  }
+
+  async function handleCreateWebsite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (websiteCreatePending || !onCreateCustomSidebarItem) {
+      return;
+    }
+    setWebsiteCreatePending(true);
+    setWebsiteCreateError("");
+    try {
+      const result = await onCreateCustomSidebarItem({
+        label: websiteLabel,
+        url: websiteUrl,
+        agentKey: websiteAgentKey
+      });
+      if (!result.ok || !result.item) {
+        setWebsiteCreateError(result.message || "添加内嵌网站失败。");
+        return;
+      }
+      setWebsiteDialogOpen(false);
+      setWebsiteLabel("");
+      setWebsiteUrl("");
+      setWebsiteAgentKey("");
+      setSidebarGroupState((current) => ({ ...current, websites: true }));
+      requestNavigate(`/custom-sidebar/${result.item.id}`);
+    } catch (error) {
+      setWebsiteCreateError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWebsiteCreatePending(false);
     }
   }
 
@@ -1091,6 +1157,22 @@ export function AppSidebar({
                 </button>
               </Tooltip>
             ) : null}
+            {args.groupId === "websites" && !isCollapsed ? (
+              <Tooltip content="新增内嵌网站">
+                <button
+                  type="button"
+                  className="assistant-worker-icon-button sidebar-website-add-button"
+                  aria-label="新增内嵌网站"
+                  title="新增内嵌网站"
+                  onClick={openWebsiteDialog}
+                >
+                  <span
+                    className="assistant-material-icon is-add"
+                    aria-hidden="true"
+                  />
+                </button>
+              </Tooltip>
+            ) : null}
           </button>
         }
       >
@@ -1282,6 +1364,103 @@ export function AppSidebar({
     );
   }
 
+  function renderWebsiteDialog() {
+    if (!websiteDialogOpen || typeof document === "undefined") {
+      return null;
+    }
+
+    return createPortal(
+      <div
+        className="sidebar-website-dialog-layer"
+        role="presentation"
+        onMouseDown={() => {
+          if (!websiteCreatePending) {
+            setWebsiteDialogOpen(false);
+          }
+        }}
+      >
+        <form
+          className="sidebar-website-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sidebar-website-dialog-title"
+          onSubmit={(event) => void handleCreateWebsite(event)}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="sidebar-website-dialog-head">
+            <strong id="sidebar-website-dialog-title">新增内嵌网站</strong>
+            <button
+              type="button"
+              className="sidebar-website-dialog-close"
+              aria-label="关闭"
+              disabled={websiteCreatePending}
+              onClick={() => setWebsiteDialogOpen(false)}
+            >
+              ×
+            </button>
+          </div>
+          <label className="sidebar-website-dialog-field">
+            <span>网页地址</span>
+            <input
+              value={websiteUrl}
+              onChange={(event) => setWebsiteUrl(event.target.value)}
+              placeholder="jira.example.com"
+              required
+              autoFocus
+            />
+          </label>
+          <label className="sidebar-website-dialog-field">
+            <span>显示名称</span>
+            <input
+              value={websiteLabel}
+              onChange={(event) => setWebsiteLabel(event.target.value)}
+              placeholder="例如：知识库"
+              maxLength={24}
+            />
+          </label>
+          <label className="sidebar-website-dialog-field">
+            <span>侧边智能助手</span>
+            <select
+              value={websiteAgentKey}
+              onChange={(event) => setWebsiteAgentKey(event.target.value)}
+              disabled={assistantNavAgents.length === 0}
+            >
+              <option value="">默认助手</option>
+              {assistantNavAgents.map((agent) => (
+                <option value={agent.agentKey} key={agent.agentKey}>
+                  {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          {websiteCreateError ? (
+            <div className="sidebar-website-dialog-error" role="alert">
+              {websiteCreateError}
+            </div>
+          ) : null}
+          <div className="sidebar-website-dialog-actions">
+            <button
+              type="button"
+              className="sidebar-website-secondary-button"
+              disabled={websiteCreatePending}
+              onClick={() => setWebsiteDialogOpen(false)}
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              className="sidebar-website-primary-button"
+              disabled={websiteCreatePending}
+            >
+              {websiteCreatePending ? "添加中..." : "添加"}
+            </button>
+          </div>
+        </form>
+      </div>,
+      document.body,
+    );
+  }
+
   return (
     <aside className={isCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
       <div className="sidebar-chrome">
@@ -1383,6 +1562,7 @@ export function AppSidebar({
           </div>
           {renderDesktopSsoEntry()}
           {renderAssistantChatMenu()}
+          {renderWebsiteDialog()}
         </div>
       </div>
     </aside>
