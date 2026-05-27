@@ -379,8 +379,7 @@ function createStartupCoreAssetsFixture(options = {}) {
         `PORT=${portBase}`,
         "# DESKTOP_APP=true",
         "BASE_URL=https://bundle-platform.example.test",
-        "WS_BASE_URL=https://bundle-platform.example.test",
-        "VOICE_BASE_URL=https://bundle-platform.example.test"
+        "# VOICE_BASE_URL=https://bundle-platform.example.test"
       ].join("\n") + "\n",
       extraPaths: [["backend"], ["frontend", "dist"], ["scripts"]]
     }
@@ -3306,8 +3305,8 @@ test("initializeService recreates Desktop defaults for core services after confi
     assert.equal([...webclientEnv.matchAll(/^DESKTOP_APP=/gm)].length, 1);
     assert.ok(webclientEnv.indexOf("DESKTOP_APP=true") < webclientEnv.indexOf("BASE_URL=http://127.0.0.1:7078"));
     assert.match(webclientEnv, /^BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
-    assert.match(webclientEnv, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
-    assert.match(webclientEnv, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
+    assert.doesNotMatch(webclientEnv, /^WS_BASE_URL=/m);
+    assert.doesNotMatch(webclientEnv, /^VOICE_BASE_URL=/m);
     for (const serviceId of serviceIds) {
       const service = getBuiltinService(serviceId);
       assert.match(
@@ -4659,8 +4658,8 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   const serverContent = fs.readFileSync(path.join(webclientInstallDir, "backend", "server.cjs"), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(webclientInstallDir, "manifest.json"), "utf8"));
   assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
-  assert.match(envContent, /WS_BASE_URL=http:\/\/127\.0\.0\.1:12949/);
-  assert.match(envContent, /VOICE_BASE_URL=http:\/\/127\.0\.0\.1:12949/);
+  assert.match(envContent, /^WS_BASE_URL=http:\/\/localhost:11949$/m);
+  assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:117078$/m);
   assert.match(envContent, /PORT=7080/);
   assert.match(envContent, /^NODE_BIN=\/tmp\/stale-node$/m);
   assert.match(envContent, /^NODE_ENV=development$/m);

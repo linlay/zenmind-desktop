@@ -1062,7 +1062,8 @@ const CORE_SERVICE_IDS = new Set<ServiceId>([
   "zenmind-app-server"
 ]);
 const PROCESS_EXEC_PATH_PLACEHOLDER = "{{processExecPath}}";
-const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL", "WS_BASE_URL", "VOICE_BASE_URL"] as const;
+const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL"] as const;
+const AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS = new Set(["WS_BASE_URL", "VOICE_BASE_URL"]);
 const AGENT_WEBCLIENT_DESKTOP_ENV_UPDATES = new Map([["DESKTOP_APP", "true"]]);
 const DESKTOP_MANAGED_PLATFORM_URL_PORTS = new Set([
   "7078",
@@ -4309,6 +4310,9 @@ async function ensureLocalCliAcpRelayDesktopConfig(app: App, layout: ServiceLayo
 async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<string, string>, updates: Map<string, string>) {
   for (const binding of service.desktop.envBindings) {
     const bindingKey = binding.key;
+    if (service.id === "agent-webclient" && AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS.has(bindingKey)) {
+      continue;
+    }
     const currentValue = env.get(bindingKey) ?? "";
 
     if (binding.onlyIfDefault) {
