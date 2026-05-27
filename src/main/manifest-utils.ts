@@ -163,34 +163,6 @@ const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = 
         "http://localhost:7200",
         "http://127.0.0.1:7000",
         "http://localhost:7000"
-      ],
-      WS_BASE_URL: [
-        "",
-        "http://127.0.0.1:7078",
-        "http://localhost:7078",
-        "http://127.0.0.1:11949",
-        "http://localhost:11949",
-        "http://127.0.0.1:18081",
-        "http://localhost:18081",
-        "http://127.0.0.1:117078",
-        "http://localhost:117078",
-        "http://127.0.0.1:7200",
-        "http://localhost:7200",
-        "http://127.0.0.1:7000",
-        "http://localhost:7000"
-      ],
-      VOICE_BASE_URL: [
-        "",
-        "http://127.0.0.1:7078",
-        "http://localhost:7078",
-        "http://127.0.0.1:11949",
-        "http://localhost:11949",
-        "http://127.0.0.1:18081",
-        "http://localhost:18081",
-        "http://127.0.0.1:117078",
-        "http://localhost:117078",
-        "http://127.0.0.1:11953",
-        "http://localhost:11953"
       ]
     }
   },

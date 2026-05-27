@@ -379,8 +379,7 @@ function createStartupCoreAssetsFixture(options = {}) {
         `PORT=${portBase}`,
         "# DESKTOP_APP=true",
         "BASE_URL=https://bundle-platform.example.test",
-        "WS_BASE_URL=https://bundle-platform.example.test",
-        "VOICE_BASE_URL=https://bundle-platform.example.test"
+        "# VOICE_BASE_URL=https://bundle-platform.example.test"
       ].join("\n") + "\n",
       extraPaths: [["backend"], ["frontend", "dist"], ["scripts"]]
     }
@@ -751,6 +750,16 @@ function isPidRunning(pid) {
 async function waitForPidExit(pid) {
   for (let i = 0; i < 20; i += 1) {
     if (!isPidRunning(pid)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
+}
+
+async function waitForFile(filePath) {
+  for (let i = 0; i < 20; i += 1) {
+    if (fs.existsSync(filePath)) {
       return true;
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -1960,6 +1969,227 @@ test("terminateProcessTree treats already-exited pids as cleaned up", () => {
   assert.equal(__testInternals.terminateProcessTree(99999999), true);
 });
 
+test("terminateProcessTree uses taskkill tree mode on Windows", () => {
+  const calls = [];
+  const terminated = __testInternals.terminateProcessTree(4321, {
+    platform: "win32",
+    isProcessRunningImpl: (pid) => pid === 4321,
+    spawnSyncImpl: (command, args) => {
+      calls.push({ command, args });
+      return createSpawnSyncResult(0);
+    }
+  });
+
+  assert.equal(terminated, true);
+  assert.deepEqual(calls, [
+    {
+      command: "taskkill.exe",
+      args: ["/PID", "4321", "/T", "/F"]
+    }
+  ]);
+});
+
+test("collectManagedRootPids reads legacy state pid directory", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-legacy-pid-root-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = getTestPluginProgramDir(userDataRoot, "legacy-plugin");
+  const app = createApp(userDataRoot);
+  const fixturePath = path.join(installDir, "legacy-worker.mjs");
+  let child = null;
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    id: "legacy-plugin",
+    port: 0,
+    deployScriptContent: false
+  });
+  fs.writeFileSync(fixturePath, "setInterval(() => {}, 1000);\n", "utf8");
+
+  try {
+    child = spawn(process.execPath, [fixturePath], {
+      cwd: installDir,
+      stdio: "ignore"
+    });
+    assert.ok(child.pid, "expected fixture process to expose a pid");
+    const legacyPidPath = getTestPidPath(userDataRoot, "legacy-plugin", "test-plugin.pid", "plugins");
+    fs.mkdirSync(path.dirname(legacyPidPath), { recursive: true });
+    fs.writeFileSync(legacyPidPath, `${child.pid}\n`, "utf8");
+
+    const roots = __testInternals.collectManagedRootPids(app);
+    assert.equal(roots.some((root) => root.pid === child.pid && root.pidFilePaths.includes(legacyPidPath)), true);
+  } finally {
+    if (child?.pid && isPidRunning(child.pid)) {
+      try {
+        process.kill(child.pid, "SIGKILL");
+      } catch {
+        // Process may already be gone when the test finishes.
+      }
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("forceCleanupManagedProcesses removes stale legacy pid files without killing unrelated processes", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-stale-legacy-pid-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = getTestPluginProgramDir(userDataRoot, "stale-legacy-plugin");
+  const app = createApp(userDataRoot);
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    id: "stale-legacy-plugin",
+    port: 0,
+    deployScriptContent: false
+  });
+
+  try {
+    const legacyPidPath = getTestPidPath(userDataRoot, "stale-legacy-plugin", "test-plugin.pid", "plugins");
+    fs.mkdirSync(path.dirname(legacyPidPath), { recursive: true });
+    fs.writeFileSync(legacyPidPath, `${process.pid}\n`, "utf8");
+
+    await forceCleanupManagedProcesses(app);
+
+    assert.equal(fs.existsSync(legacyPidPath), false);
+    assert.equal(isPidRunning(process.pid), true);
+  } finally {
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("forceCleanupManagedProcesses recomputes process trees before killing snapshot roots", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("This fixture uses POSIX process parentage; Windows tree cleanup is covered by unit tests.");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-dynamic-tree-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = getTestPluginProgramDir(userDataRoot, "dynamic-tree-plugin");
+  const app = createApp(userDataRoot);
+  const triggerPath = path.join(tempRoot, "spawn-child");
+  const childPidPath = path.join(tempRoot, "child.pid");
+  const rootPath = path.join(installDir, "dynamic-root.mjs");
+  const childPath = path.join(installDir, "dynamic-child.mjs");
+  let root = null;
+  let childPid = null;
+
+  registryInternals.clearServices();
+  writePluginInstallRoot(installDir, {
+    id: "dynamic-tree-plugin",
+    port: 0,
+    deployScriptContent: false
+  });
+  fs.writeFileSync(childPath, "setInterval(() => {}, 1000);\n", "utf8");
+  fs.writeFileSync(
+    rootPath,
+    [
+      'import fs from "node:fs";',
+      'import { spawn } from "node:child_process";',
+      "const [triggerPath, childPath, childPidPath] = process.argv.slice(2);",
+      "let child = null;",
+      "setInterval(() => {",
+      "  if (child || !fs.existsSync(triggerPath)) { return; }",
+      "  child = spawn(process.execPath, [childPath], { cwd: process.cwd(), stdio: 'ignore' });",
+      "  fs.writeFileSync(childPidPath, `${child.pid}\\n`, 'utf8');",
+      "}, 25);"
+    ].join("\n"),
+    "utf8"
+  );
+
+  try {
+    const startResult = spawnSync(
+      "sh",
+      [
+        "-c",
+        'nohup "$1" "$2" "$3" "$4" "$5" >/dev/null 2>&1 & echo $!',
+        "zenmind-dynamic-tree",
+        process.execPath,
+        rootPath,
+        triggerPath,
+        childPath,
+        childPidPath
+      ],
+      {
+        cwd: installDir,
+        encoding: "utf8"
+      }
+    );
+    assert.equal(startResult.status, 0, startResult.stderr || startResult.stdout);
+    root = { pid: Number.parseInt(startResult.stdout.trim(), 10) };
+    assert.ok(root.pid, "expected root process to expose a pid");
+    const pidPath = path.join(getTestStateDir(userDataRoot, "dynamic-tree-plugin", "plugins"), "test-plugin.pid");
+    fs.mkdirSync(path.dirname(pidPath), { recursive: true });
+    fs.writeFileSync(pidPath, `${root.pid}\n`, "utf8");
+
+    const snapshot = __testInternals.captureManagedProcessCleanupSnapshot(app);
+    fs.writeFileSync(triggerPath, "spawn\n", "utf8");
+    assert.equal(await waitForFile(childPidPath), true, "expected root process to spawn a child");
+    childPid = Number.parseInt(fs.readFileSync(childPidPath, "utf8"), 10);
+    assert.equal(isPidRunning(childPid), true);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    await forceCleanupManagedProcesses(app, snapshot);
+
+    assert.equal(await waitForPidExit(root.pid), true);
+    assert.equal(await waitForPidExit(childPid), true);
+  } finally {
+    for (const pid of [childPid, root?.pid]) {
+      if (pid && isPidRunning(pid)) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Process may already be gone after cleanup.
+        }
+      }
+    }
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("forceCleanupManagedProcesses reports failed roots and keeps live matching pid files", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-cleanup-failure-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  const pidFilePath = path.join(tempRoot, "managed.pid");
+  const errors = [];
+
+  fs.writeFileSync(pidFilePath, "4321\n", "utf8");
+
+  try {
+    await forceCleanupManagedProcesses(
+      app,
+      [
+        {
+          pid: 4321,
+          serviceId: "failure-plugin",
+          installDir: tempRoot,
+          pidFilePaths: [pidFilePath],
+          treePids: []
+        }
+      ],
+      {
+        collectManagedProcessCleanupTargetsImpl: () => ({
+          roots: [],
+          stalePidFilePaths: []
+        }),
+        terminateProcessTreeImpl: () => false,
+        terminateProcessListImpl: () => false,
+        isProcessRunningImpl: (pid) => pid === 4321,
+        pidMatchesInstallDirImpl: () => true,
+        consoleError: (message) => errors.push(message)
+      }
+    );
+
+    assert.equal(fs.existsSync(pidFilePath), true);
+    assert.match(errors.join("\n"), /failure-plugin: PID 4321/u);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 function createManagedStopState(overrides = {}) {
   return {
     mainPidFilePath: "/tmp/test-service.pid",
@@ -3075,8 +3305,8 @@ test("initializeService recreates Desktop defaults for core services after confi
     assert.equal([...webclientEnv.matchAll(/^DESKTOP_APP=/gm)].length, 1);
     assert.ok(webclientEnv.indexOf("DESKTOP_APP=true") < webclientEnv.indexOf("BASE_URL=http://127.0.0.1:7078"));
     assert.match(webclientEnv, /^BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
-    assert.match(webclientEnv, /^WS_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
-    assert.match(webclientEnv, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:7078$/m);
+    assert.doesNotMatch(webclientEnv, /^WS_BASE_URL=/m);
+    assert.doesNotMatch(webclientEnv, /^VOICE_BASE_URL=/m);
     for (const serviceId of serviceIds) {
       const service = getBuiltinService(serviceId);
       assert.match(
@@ -4428,8 +4658,8 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   const serverContent = fs.readFileSync(path.join(webclientInstallDir, "backend", "server.cjs"), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(webclientInstallDir, "manifest.json"), "utf8"));
   assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
-  assert.match(envContent, /WS_BASE_URL=http:\/\/127\.0\.0\.1:12949/);
-  assert.match(envContent, /VOICE_BASE_URL=http:\/\/127\.0\.0\.1:12949/);
+  assert.match(envContent, /^WS_BASE_URL=http:\/\/localhost:11949$/m);
+  assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:117078$/m);
   assert.match(envContent, /PORT=7080/);
   assert.match(envContent, /^NODE_BIN=\/tmp\/stale-node$/m);
   assert.match(envContent, /^NODE_ENV=development$/m);

@@ -480,7 +480,7 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
       .map((binding) => (binding && typeof binding.key === "string" ? binding.key.trim() : ""))
       .filter(Boolean)
     : [];
-  for (const requiredKey of ["BASE_URL", "WS_BASE_URL"]) {
+  for (const requiredKey of ["BASE_URL"]) {
     if (!envBindingKeys.includes(requiredKey)) {
       throw new Error(
         `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
