@@ -1294,21 +1294,29 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "core", "agent-platform-bridge.ts"), "utf8");
   const appShell = readAppShellSource();
+  const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
 
   assert.match(contracts, /interface AssistantNavAgentItem/);
   assert.match(contracts, /icon\?: AssistantNavAgentIcon/);
   assert.match(contracts, /recentChats: AssistantNavChatItem\[\]/);
   assert.match(contracts, /hasPendingAwaiting:\s*boolean/);
   assert.match(contracts, /interface AssistantNavAgentItemsResult/);
+  assert.match(contracts, /interface AssistantCreateCoderProjectRequest/);
+  assert.match(contracts, /interface AssistantCreateCoderProjectResult/);
   assert.match(contracts, /AssistantNavigationAgentsChangedListener/);
   assert.match(contracts, /listAgents: \(\) => Promise<DesktopPetAgentOption\[\]>/);
   assert.match(contracts, /listNavigationAgents: \(\) => Promise<AssistantNavAgentItemsResult>/);
+  assert.match(contracts, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) => Promise<AssistantCreateCoderProjectResult>/);
   assert.match(contracts, /markAgentChatsRead: \(agentKey: string\) => Promise<AssistantNavActionResult>/);
   assert.match(preload, /listAgents: \(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
   assert.match(preload, /listNavigationAgents: \(\) => ipcRenderer\.invoke\("assistant\.listNavigationAgents"\)/);
+  assert.match(preload, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createCoderProject", input\)/);
   assert.match(preload, /onNavigationAgentsChanged/);
   assert.match(mainProcess, /ipcMain\.handle\("assistant\.listAgents"/);
   assert.match(mainProcess, /ipcMain\.handle\("assistant\.listNavigationAgents"/);
+  assert.match(mainProcess, /ipcMain\.handle\("assistant\.createCoderProject"/);
+  assert.match(mainProcess, /callAgentPlatform<\{ key\?: string \}>\(app, "\/api\/agent\/create"/);
+  assert.match(mainProcess, /assistantNavigationStatusClient\?\.scheduleRefresh\(0\)/);
   assert.match(mainProcess, /AssistantNavigationStatusClient/);
   assert.match(mainProcess, /assistant\.navigationAgentsChanged/);
   assert.match(mainProcess, /ok:\s*false,[\s\S]*?items:\s*\[\]/);
@@ -1319,6 +1327,10 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(bridge, /createNavigationAgentItem/);
   assert.match(appShell, /onNavigationAgentsChanged/);
   assert.match(appShell, /setAssistantNavAgents\(nextItems\)/);
+  assert.match(appShell, /onRefreshAssistantNavAgents=\{refreshAssistantNavAgents\}/);
+  assert.match(appSidebar, /handleCreateCoderProject/);
+  assert.match(appSidebar, /window\.electronAPI\.desktopDialog\.selectDirectory\(\)[\s\S]*?window\.electronAPI\.assistant\.createCoderProject/);
+  assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-assistant-project-button"/);
   assert.doesNotMatch(appShell, /setInterval\([\s\S]*?listNavigationAgents/);
 });
 

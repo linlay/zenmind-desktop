@@ -400,6 +400,7 @@ type AppSidebarProps = {
   onCloseAssistantDock?: () => void;
   onDesktopSsoLogin?: () => void;
   onDesktopSsoLogout?: () => void;
+  onRefreshAssistantNavAgents?: () => Promise<void> | void;
   onRequestNavigate?: (targetPath: string) => boolean;
   onNavigateItem?: () => void;
   onToggleCollapsed?: () => void;
@@ -425,6 +426,7 @@ export function AppSidebar({
   onCloseAssistantDock,
   onDesktopSsoLogin,
   onDesktopSsoLogout,
+  onRefreshAssistantNavAgents,
   onRequestNavigate,
   onNavigateItem,
   onToggleCollapsed,
@@ -436,6 +438,7 @@ export function AppSidebar({
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
     useState("");
+  const [creatingCoderProject, setCreatingCoderProject] = useState(false);
   const [assistantChatMenu, setAssistantChatMenu] =
     useState<AssistantChatMenuState | null>(null);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
@@ -593,6 +596,37 @@ export function AppSidebar({
       return;
     }
     onNavigateItem?.();
+  }
+
+  async function handleCreateCoderProject(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (creatingCoderProject) {
+      return;
+    }
+    setCreatingCoderProject(true);
+    try {
+      const selection = await window.electronAPI.desktopDialog.selectDirectory();
+      if (!selection.ok || !selection.path) {
+        return;
+      }
+      const result = await window.electronAPI.assistant.createCoderProject({
+        workspaceDir: selection.path
+      });
+      if (!result.ok) {
+        console.warn("[assistant] failed to create CODER project", result.message);
+        return;
+      }
+      await onRefreshAssistantNavAgents?.();
+      if (result.agentKey) {
+        setExpandedAssistantAgentKey(result.agentKey);
+        requestNavigate(createAgentRoute(result.agentKey));
+      }
+    } catch (error) {
+      console.warn("[assistant] failed to create CODER project", error);
+    } finally {
+      setCreatingCoderProject(false);
+    }
   }
 
   function handleAssistantAgentHeaderClick(agent: AssistantNavAgentItem) {
@@ -1035,6 +1069,28 @@ export function AppSidebar({
                 ? renderStatusBadges(args.status, "sidebar-group-status")
                 : null}
             </span>
+            {args.groupId === "assistants" && !isCollapsed ? (
+              <Tooltip content="新增项目">
+                <button
+                  type="button"
+                  className="assistant-worker-icon-button sidebar-assistant-project-button"
+                  aria-label="新增项目"
+                  title="新增项目"
+                  disabled={creatingCoderProject}
+                  onClick={handleCreateCoderProject}
+                >
+                  <span
+                    className={[
+                      "assistant-material-icon",
+                      creatingCoderProject ? "is-loading" : "is-add"
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    aria-hidden="true"
+                  />
+                </button>
+              </Tooltip>
+            ) : null}
           </button>
         }
       >

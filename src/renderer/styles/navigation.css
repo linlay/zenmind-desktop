@@ -813,6 +813,21 @@
   color: #1677ff;
 }
 
+.assistant-worker-icon-button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.assistant-worker-icon-button:disabled:hover {
+  background: transparent;
+  color: var(--ink-muted);
+}
+
+.sidebar-assistant-project-button {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
 .assistant-worker-chat-item {
   position: relative;
   display: flex;

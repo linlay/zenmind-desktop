@@ -148,6 +148,17 @@ export interface AssistantNavAgentItemsResult {
   updatedAt: string;
 }
 
+export interface AssistantCreateCoderProjectRequest {
+  workspaceDir: string;
+}
+
+export interface AssistantCreateCoderProjectResult {
+  ok: boolean;
+  message: string;
+  agentKey?: string;
+  workspaceDir?: string;
+}
+
 export interface AssistantNavActionResult {
   ok: boolean;
   message: string;

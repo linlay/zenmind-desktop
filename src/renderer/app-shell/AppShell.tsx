@@ -1195,6 +1195,7 @@ export function AppShell() {
           }}
           onDesktopSsoLogin={handleDesktopSsoLogin}
           onDesktopSsoLogout={handleDesktopSsoLogout}
+          onRefreshAssistantNavAgents={refreshAssistantNavAgents}
           onRequestNavigate={requestSidebarNavigation}
           onNavigateItem={undefined}
           onToggleCollapsed={toggleSidebarCollapsed}
