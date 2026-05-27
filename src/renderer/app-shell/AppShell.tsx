@@ -32,6 +32,11 @@ import {
   shouldShowStartupProgressCard
 } from "../../shared/startup-gate";
 import {
+  DEFAULT_DESKTOP_PET_APPEARANCE_ID,
+  DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  DESKTOP_PET_APPEARANCE_OPTIONS
+} from "../../shared/desktop-pet";
+import {
   BUILTIN_BROWSER_DEFAULT_URL,
   BUILTIN_BROWSER_ROUTE,
   BUILTIN_BROWSER_SURFACE_ID,
@@ -79,10 +84,13 @@ const AGENT_WEBCLIENT_ROUTE_ITEMS = [
 ] as const;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
+const DEFAULT_ASSISTANT_NAV_AGENT_DISPLAY_NAME =
+  DESKTOP_PET_APPEARANCE_OPTIONS.find((option) => option.id === DEFAULT_DESKTOP_PET_APPEARANCE_ID)?.displayName ??
+  DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
 const DEFAULT_ASSISTANT_NAV_AGENT: AssistantNavAgentItem = {
-  agentKey: "zenmi",
-  displayName: "小宅",
-  role: "平台总管",
+  agentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  displayName: DEFAULT_ASSISTANT_NAV_AGENT_DISPLAY_NAME,
+  role: "",
   unreadCount: 0,
   unreadChatCount: 0,
   chatCount: 0,

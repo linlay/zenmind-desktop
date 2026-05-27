@@ -1254,18 +1254,22 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(bridge, /chatHasPendingAwaiting/);
   assert.match(bridge, /createNavigationAgentItem/);
   assert.match(appShell, /onNavigationAgentsChanged/);
-  assert.match(appShell, /setAssistantNavAgents\(result\.items\)/);
+  assert.match(appShell, /setAssistantNavAgents\(nextItems\)/);
   assert.doesNotMatch(appShell, /setInterval\([\s\S]*?listNavigationAgents/);
 });
 
-test("assistant navigation agents use cached or default XiaoZhai while platform warms up", () => {
+test("assistant navigation agents use cached or shared default agent while platform warms up", () => {
   const appShell = readAppShellSource();
 
   assert.match(appShell, /ASSISTANT_NAV_AGENTS_CACHE_KEY\s*=\s*"zenmind-desktop\.assistant-nav-agents-cache"/);
-  assert.match(appShell, /DEFAULT_ASSISTANT_NAV_AGENT[\s\S]*?agentKey:\s*"zenmi"[\s\S]*?displayName:\s*"小宅"[\s\S]*?role:\s*"平台总管"/);
+  assert.match(appShell, /DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY/);
+  assert.match(appShell, /DESKTOP_PET_APPEARANCE_OPTIONS/);
+  assert.match(appShell, /DEFAULT_ASSISTANT_NAV_AGENT[\s\S]*?agentKey:\s*DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY[\s\S]*?displayName:\s*DEFAULT_ASSISTANT_NAV_AGENT_DISPLAY_NAME[\s\S]*?role:\s*""/);
+  assert.doesNotMatch(appShell, /displayName:\s*"小宅"/);
+  assert.doesNotMatch(appShell, /role:\s*"平台总管"/);
   assert.match(appShell, /function readInitialAssistantNavAgents\(\): AssistantNavAgentItem\[\]/);
   assert.match(appShell, /useState<AssistantNavAgentItem\[\]>\(readInitialAssistantNavAgents\)/);
-  assert.match(appShell, /writeAssistantNavAgentsCache\(result\.items\)/);
+  assert.match(appShell, /writeAssistantNavAgentsCache\(nextItems\)/);
   assert.match(appShell, /clearAssistantNavAgentsCache\(\)/);
   assert.doesNotMatch(appShell, /setAssistantNavAgents\(result\.ok \? result\.items : \[\]\)/);
   assert.doesNotMatch(appShell, /catch\s*\{[\s\S]{0,220}?setAssistantNavAgents\(\[\]\)/);
@@ -1331,6 +1335,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /confirmMutatingAction/);
   assert.match(bridge, /PageControlGrantStore/);
   assert.match(bridge, /允许本次页面操作/);
+  assert.doesNotMatch(bridge, /小宅助理/);
   assert.match(mainProcess, /startDesktopActionBridge\(\{/);
   assert.match(mainProcess, /desktopActions\.respond/);
   assert.match(mainProcess, /desktopActions\.call/);
@@ -2100,7 +2105,18 @@ test("desktop pet appearance picker confirms persistence before success feedback
   assert.match(settingsPage, /nextState\.appearanceId === appearanceId/);
   assert.match(settingsPage, /桌面宠物形象切换未生效/);
   assert.match(settingsPage, /disabled=\{Boolean\(desktopPetAppearancePending\) && !selected\}/);
+  assert.doesNotMatch(settingsPage, /\?\?\s*"小宅"/);
   assert.doesNotMatch(settingsPage, /disabled=\{Boolean\(desktopPetAppearancePending\) \|\| selected\}/);
+});
+
+test("desktop pet legacy agent aliases avoid inline display-name literals", () => {
+  const petStatusClient = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "copilot", "pet-copilot", "pet-status-client.ts"),
+    "utf8"
+  );
+
+  assert.match(petStatusClient, /LEGACY_DESKTOP_PET_BOUND_AGENT_REQUEST_KEYS/);
+  assert.doesNotMatch(petStatusClient, /requestedKey === "小宅"/);
 });
 
 test("desktop pet drag ends on lost pointer signals", () => {

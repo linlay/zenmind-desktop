@@ -1,7 +1,12 @@
 import type { App } from "electron";
 import type { AgentAuthIssueResult, DesktopPetAgentOption, ServiceId, ServiceState } from "../../../shared/contracts";
 import type { DesktopPetBoundAgentStatus } from "./desktop-pet";
-import { DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY, sanitizeDesktopPetBoundAgentKey } from "./desktop-pet";
+import {
+  DEFAULT_DESKTOP_PET_APPEARANCE_ID,
+  DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  DESKTOP_PET_APPEARANCE_OPTIONS,
+  sanitizeDesktopPetBoundAgentKey
+} from "./desktop-pet";
 
 type AgentPlatformApiResponse<T> = {
   code?: number;
@@ -56,6 +61,13 @@ const AGENT_PLATFORM_UNAVAILABLE_RETRY_MS = 12_000;
 const AGENT_PLATFORM_DONE_REFRESH_MS = 4_200;
 const AGENT_PLATFORM_DONE_REMINDER_MAX_AGE_MS = 10 * 60 * 1000;
 const AGENT_PLATFORM_DONE_FALLBACK_PREVIEW = "暂无回复预览";
+const DEFAULT_DESKTOP_PET_AGENT_DISPLAY_NAME =
+  DESKTOP_PET_APPEARANCE_OPTIONS.find((appearance) => appearance.id === DEFAULT_DESKTOP_PET_APPEARANCE_ID)?.displayName ??
+  DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
+const LEGACY_DESKTOP_PET_BOUND_AGENT_REQUEST_KEYS = new Set([
+  "zen",
+  DEFAULT_DESKTOP_PET_AGENT_DISPLAY_NAME
+]);
 const AGENT_PLATFORM_STATUS_PREVIEWS = new Set(["思考中", "已完成", "回复已生成", "出错了", "目标智能体未在线", "打开对话查看完整回复", AGENT_PLATFORM_DONE_FALLBACK_PREVIEW]);
 
 function toText(value: unknown) {
@@ -246,7 +258,7 @@ export function resolveAgentPlatformPetBoundAgentKey(
   }
 
   const defaultAgent = findAgentByKey(agents, DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY);
-  if (defaultAgent && (requestedKey === "zen" || requestedKey === "小宅")) {
+  if (defaultAgent && LEGACY_DESKTOP_PET_BOUND_AGENT_REQUEST_KEYS.has(requestedKey)) {
     return {
       requestedKey,
       resolvedKey: getAgentKey(defaultAgent),
