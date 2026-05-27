@@ -18,6 +18,7 @@ import { ContainerHubClient, type ContainerHubConfig, type ContainerHubEnvironme
 import { extractArchiveToDir, listArchiveEntries } from "../archive-utils";
 import { readEnvFile } from "../env-file";
 import { getServiceState } from "../services/manager";
+import { t } from "../i18n/main-i18n";
 import {
   asString,
   normalizeContainerHubBaseUrl,
@@ -40,6 +41,12 @@ type LocalContainerImage = {
   size: string;
   createdAt: string;
 };
+
+function sandboxImageImportedMessage(engineName: string, imageRef: string) {
+  return imageRef
+    ? t("market.sandbox.importedWithRef", { engine: engineName, imageRef })
+    : t("market.sandbox.imported", { engine: engineName });
+}
 
 async function resolveContainerHubConfig(app: App, options: MarketplaceOptions = {}): Promise<ContainerHubConfig | null> {
   if (options.containerHubBaseUrl !== undefined) {
@@ -78,9 +85,11 @@ function sandboxEnvironmentToMarketItem(environment: ContainerHubEnvironment): M
   const state = sandboxBuildState(environment);
   const imageRef = environment.imageRef || [environment.imageRepository, environment.imageTag].filter(Boolean).join(":");
   const tags = [
-    environment.enabled ? "已启用" : "已停用",
-    environment.availableBuildTargets.length > 0 ? `${environment.availableBuildTargets.length} 个构建目标` : null,
-    environment.lastBuild?.target ? `目标 ${environment.lastBuild.target}` : null
+    environment.enabled ? t("market.sandbox.environmentEnabled") : t("market.sandbox.environmentDisabled"),
+    environment.availableBuildTargets.length > 0
+      ? t("market.sandbox.buildTargetCount", { count: environment.availableBuildTargets.length })
+      : null,
+    environment.lastBuild?.target ? t("market.sandbox.buildTarget", { target: environment.lastBuild.target }) : null
   ].filter((tag): tag is string => Boolean(tag));
 
   return {
@@ -100,8 +109,8 @@ function sandboxEnvironmentToMarketItem(environment: ContainerHubEnvironment): M
     buildJobId: environment.lastBuild?.id,
     buildTargetCount: environment.availableBuildTargets.length,
     message: state === "failed"
-      ? environment.lastBuild?.status || "构建失败"
-      : state === "installing" ? "镜像构建中" : undefined
+      ? environment.lastBuild?.status || t("market.sandbox.buildFailed")
+      : state === "installing" ? t("market.sandbox.imageBuilding") : undefined
   };
 }
 
@@ -133,8 +142,8 @@ function localContainerImageToMarketItem(image: LocalContainerImage, engine: Con
   const imageRef = `${image.repository}:${image.tag}`;
   const tags = [
     engine,
-    image.size ? `大小 ${image.size}` : null,
-    image.createdAt ? `创建 ${image.createdAt}` : null
+    image.size ? t("market.sandbox.imageSize", { size: image.size }) : null,
+    image.createdAt ? t("market.sandbox.imageCreated", { createdAt: image.createdAt }) : null
   ].filter((tag): tag is string => Boolean(tag));
 
   return {
@@ -142,7 +151,7 @@ function localContainerImageToMarketItem(image: LocalContainerImage, engine: Con
     type: "sandbox-image",
     name: image.repository,
     version: image.tag || "latest",
-    description: "本机容器引擎中的沙箱镜像。",
+    description: t("market.sandbox.localImageDescription"),
     tags,
     state: "installed",
     source: "local",
@@ -163,7 +172,7 @@ function listLocalContainerImages(): { engine: ContainerEngineResolution | null;
     return {
       engine: null,
       items: [],
-      message: "未检测到可用的 Docker 或 Podman。"
+      message: t("market.sandbox.noEngine")
     };
   }
 
@@ -182,7 +191,7 @@ function listLocalContainerImages(): { engine: ContainerEngineResolution | null;
     return {
       engine,
       items: [],
-      message: detail || `${engine.name} image ls 执行失败。`
+      message: detail || t("market.sandbox.engineCommandFailed", { engine: engine.name, command: "image ls" })
     };
   }
 
@@ -203,7 +212,7 @@ function runEngineCommand(engine: ContainerEngineResolution, args: string[]): Pr
     }, (error, stdout, stderr) => {
       if (error) {
         const detail = String(stderr || stdout || error.message).trim();
-        reject(new Error(detail || `${engine.name} ${args.join(" ")} 执行失败。`));
+        reject(new Error(detail || t("market.sandbox.engineCommandFailed", { engine: engine.name, command: args.join(" ") })));
         return;
       }
       resolve({
@@ -279,7 +288,7 @@ function runStreamingEngineCommand(
     };
     const timeout = setTimeout(() => {
       child.kill();
-      finish(() => reject(new Error(`${engine.name} ${args.join(" ")} 执行超时。`)));
+      finish(() => reject(new Error(t("market.sandbox.engineCommandTimeout", { engine: engine.name, command: args.join(" ") }))));
     }, IMAGE_COMMAND_TIMEOUT_MS);
 
     child.stdout.setEncoding("utf8");
@@ -302,7 +311,7 @@ function runStreamingEngineCommand(
       flushPendingOutput();
       if (code !== 0) {
         const detail = String(stderr || stdout).trim();
-        finish(() => reject(new Error(detail || `${engine.name} ${args.join(" ")} 执行失败。`)));
+        finish(() => reject(new Error(detail || t("market.sandbox.engineCommandFailed", { engine: engine.name, command: args.join(" ") }))));
         return;
       }
       finish(() => resolve({ stdout, stderr }));
@@ -329,7 +338,7 @@ function findBundledImageArchiveEntry(sourcePath: string) {
     return "";
   }
   if (imageEntries.length > 1) {
-    throw new Error("镜像包内只能包含一个 images/ 下的镜像归档。");
+    throw new Error(t("market.sandbox.multipleBundledArchives"));
   }
   return imageEntries[0];
 }
@@ -348,7 +357,7 @@ function prepareImageArchiveForImport(sourcePath: string): { archivePath: string
     extractArchiveToDir(sourcePath, tempRoot);
     const archivePath = path.join(tempRoot, entry);
     if (!fs.existsSync(archivePath)) {
-      throw new Error(`镜像包内未找到镜像归档：${entry}`);
+      throw new Error(t("market.sandbox.bundledArchiveMissing", { entry }));
     }
     return {
       archivePath,
@@ -404,7 +413,7 @@ export async function listSandboxImageMarketItems(
     return {
       items: [],
       offline: true,
-      message: localImages.message || "沙箱镜像市场需要先启动 Container Hub。"
+      message: localImages.message || t("market.sandbox.requiresContainerHub")
     };
   }
 
@@ -424,13 +433,13 @@ export async function listSandboxImageMarketItems(
       return {
         items: localImages.items,
         offline: false,
-        message: `Container Hub 暂不可用，仅显示本机镜像：${error instanceof Error ? error.message : String(error)}`
+        message: t("market.sandbox.hubUnavailableLocalOnly", { reason: error instanceof Error ? error.message : String(error) })
       };
     }
     return {
       items: [],
       offline: true,
-      message: `沙箱镜像市场暂不可用：${error instanceof Error ? error.message : String(error)}`
+      message: t("market.sandbox.unavailable", { reason: error instanceof Error ? error.message : String(error) })
     };
   }
 }
@@ -442,11 +451,11 @@ export async function buildSandboxImage(
 ): Promise<MarketCommandResult> {
   const environmentName = itemId.trim();
   if (!environmentName) {
-    throw new Error("缺少沙箱环境名称。");
+    throw new Error(t("market.sandbox.missingEnvironmentName"));
   }
   const config = await resolveContainerHubConfig(app, options);
   if (!config?.baseURL) {
-    throw new Error("沙箱镜像构建需要先启动 Container Hub。");
+    throw new Error(t("market.sandbox.buildRequiresContainerHub"));
   }
   const client = new ContainerHubClient(config);
   const job = await client.startBuildJob(environmentName);
@@ -455,7 +464,9 @@ export async function buildSandboxImage(
     itemId: environmentName,
     type: "sandbox-image",
     state: "installing",
-    message: job.id ? `已开始构建 ${environmentName}。` : `已提交 ${environmentName} 构建。`,
+    message: job.id
+      ? t("market.sandbox.buildStarted", { environmentName })
+      : t("market.sandbox.buildSubmitted", { environmentName }),
     serviceId: CONTAINER_HUB_SERVICE_ID,
     environmentName,
     imageRef: job.imageRef,
@@ -472,37 +483,37 @@ export async function importSandboxImageFromPath(
 ): Promise<MarketCommandResult> {
   const archivePath = sourcePath.trim();
   if (!archivePath) {
-    throw new Error("缺少沙箱镜像压缩文件路径。");
+    throw new Error(t("market.sandbox.missingArchivePath"));
   }
   if (!fs.existsSync(archivePath)) {
-    throw new Error(`沙箱镜像压缩文件不存在：${archivePath}`);
+    throw new Error(t("market.sandbox.archiveMissing", { archivePath }));
   }
   emitSandboxImageImportProgress(options, {
     stage: "checking-engine",
-    message: "正在检查 Docker / Podman 容器引擎。"
+    message: t("market.sandbox.checkingEngine")
   });
   const engine = resolveContainerEngine();
   if (!engine) {
     emitSandboxImageImportProgress(options, {
       stage: "failed",
-      message: "导入沙箱镜像需要可用的 Docker 或 Podman。",
+      message: t("market.sandbox.importRequiresEngine"),
       done: true,
       ok: false
     });
-    throw new Error("导入沙箱镜像需要可用的 Docker 或 Podman。");
+    throw new Error(t("market.sandbox.importRequiresEngine"));
   }
 
   const prepared = prepareImageArchiveForImport(archivePath);
   try {
     emitSandboxImageImportProgress(options, {
       stage: "archive-ready",
-      message: "已准备好镜像归档。",
+      message: t("market.sandbox.archiveReady"),
       archivePath: prepared.archivePath,
       engine: engine.name
     });
     emitSandboxImageImportProgress(options, {
       stage: "loading",
-      message: `${engine.name} 正在导入沙箱镜像。`,
+      message: t("market.sandbox.importingEngine", { engine: engine.name }),
       archivePath: prepared.archivePath,
       engine: engine.name
     });
@@ -523,7 +534,7 @@ export async function importSandboxImageFromPath(
     const imageRef = parseLoadedImageRef(output) || path.basename(prepared.archivePath);
     emitSandboxImageImportProgress(options, {
       stage: "done",
-      message: `${engine.name} 已导入沙箱镜像${imageRef ? `：${imageRef}` : "。"}`,
+      message: sandboxImageImportedMessage(engine.name, imageRef),
       archivePath: prepared.archivePath,
       engine: engine.name,
       imageRef,
@@ -535,7 +546,7 @@ export async function importSandboxImageFromPath(
       itemId: imageRef,
       type: "sandbox-image",
       state: "installed",
-      message: `${engine.name} 已导入沙箱镜像${imageRef ? `：${imageRef}` : "。"}`,
+      message: sandboxImageImportedMessage(engine.name, imageRef),
       serviceId: CONTAINER_HUB_SERVICE_ID,
       imageRef
     };
@@ -560,11 +571,11 @@ export async function deleteSandboxImage(
 ): Promise<MarketCommandResult> {
   const imageRef = itemId.trim();
   if (!imageRef) {
-    throw new Error("缺少沙箱镜像名称。");
+    throw new Error(t("market.sandbox.missingImageName"));
   }
   const engine = resolveContainerEngine();
   if (!engine) {
-    throw new Error("删除沙箱镜像需要可用的 Docker 或 Podman。");
+    throw new Error(t("market.sandbox.deleteRequiresEngine"));
   }
 
   await runEngineCommand(engine, ["image", "rm", imageRef]);
@@ -573,7 +584,7 @@ export async function deleteSandboxImage(
     itemId: imageRef,
     type: "sandbox-image",
     state: "not-installed",
-    message: `${engine.name} 已删除沙箱镜像：${imageRef}`,
+    message: t("market.sandbox.deleted", { engine: engine.name, imageRef }),
     serviceId: CONTAINER_HUB_SERVICE_ID,
     imageRef
   };
@@ -586,15 +597,15 @@ export async function exportSandboxImageToPath(
 ): Promise<MarketCommandResult> {
   const imageRef = itemId.trim();
   if (!imageRef) {
-    throw new Error("缺少沙箱镜像名称。");
+    throw new Error(t("market.sandbox.missingImageName"));
   }
   const outputPath = targetPath.trim();
   if (!outputPath) {
-    throw new Error("缺少沙箱镜像导出路径。");
+    throw new Error(t("market.sandbox.missingExportPath"));
   }
   const engine = resolveContainerEngine();
   if (!engine) {
-    throw new Error("导出沙箱镜像需要可用的 Docker 或 Podman。");
+    throw new Error(t("market.sandbox.exportRequiresEngine"));
   }
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
@@ -604,7 +615,7 @@ export async function exportSandboxImageToPath(
     itemId: imageRef,
     type: "sandbox-image",
     state: "installed",
-    message: `${engine.name} 已导出沙箱镜像：${imageRef}`,
+    message: t("market.sandbox.exported", { engine: engine.name, imageRef }),
     serviceId: CONTAINER_HUB_SERVICE_ID,
     imageRef,
     filePath: outputPath

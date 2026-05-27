@@ -1,4 +1,5 @@
 import type { MarketItem, ServiceState } from "@shared/contracts";
+import type { TranslateFunction } from "@shared/i18n";
 import { marketStateLabel } from "./marketPageModel";
 
 export function getPluginStatusClass(status: ServiceState["status"]) {
@@ -39,11 +40,11 @@ export function canOpenPlugin(service: ServiceState | null) {
   return Boolean(service && service.frontendMode !== "none" && service.status === "running");
 }
 
-export function marketSourceLabel(item: MarketItem) {
+export function marketSourceLabel(item: MarketItem, t: TranslateFunction) {
   if (item.type === "sandbox-image") {
-    return item.containerEngine ? item.containerEngine : "本机镜像";
+    return item.containerEngine ? item.containerEngine : t("market.source.localImage");
   }
-  return item.source === "local" ? "本地导入" : "云端市场";
+  return item.source === "local" ? t("market.source.localImport") : t("market.source.cloud");
 }
 
 export function marketVersionLabel(item: MarketItem) {
@@ -54,44 +55,44 @@ export function marketVersionLabel(item: MarketItem) {
   return version.startsWith("v") ? version : `v${version}`;
 }
 
-export function marketItemStateLabel(item: MarketItem) {
+export function marketItemStateLabel(item: MarketItem, t: TranslateFunction) {
   if (item.type !== "sandbox-image") {
-    return marketStateLabel(item.state);
+    return marketStateLabel(item.state, t);
   }
   switch (item.state) {
     case "installed":
-      return "可用";
+      return t("market.sandbox.state.available");
     case "installing":
-      return "处理中";
+      return t("market.sandbox.state.processing");
     case "failed":
-      return "操作失败";
+      return t("market.sandbox.state.failed");
     case "not-installed":
-      return "未导入";
+      return t("market.sandbox.state.notImported");
     default:
-      return marketStateLabel(item.state);
+      return marketStateLabel(item.state, t);
   }
 }
 
-function frontendModeLabel(mode: ServiceState["frontendMode"]) {
+function frontendModeLabel(mode: ServiceState["frontendMode"], t: TranslateFunction) {
   switch (mode) {
     case "standalone":
-      return "独立前端";
+      return t("market.frontend.standalone");
     case "embedded":
-      return "内嵌前端";
+      return t("market.frontend.embedded");
     case "none":
     default:
-      return "无前端";
+      return t("market.frontend.none");
   }
 }
 
-export function pluginMetricLabel(service: ServiceState | null) {
+export function pluginMetricLabel(service: ServiceState | null, t: TranslateFunction) {
   if (service?.healthMeta.port) {
-    return `${service.healthMeta.port} 端口`;
+    return t("market.metric.port", { port: service.healthMeta.port });
   }
   if (service) {
-    return frontendModeLabel(service.frontendMode);
+    return frontendModeLabel(service.frontendMode, t);
   }
-  return "待接入";
+  return t("market.metric.pendingIntegration");
 }
 
 export function marketCardDescription(item: MarketItem) {
@@ -102,10 +103,10 @@ export function marketCardDescription(item: MarketItem) {
   return item.tags.length > 0 ? item.tags.join(" / ") : "";
 }
 
-export function pluginDetailChips(item: MarketItem, service: ServiceState | null) {
+export function pluginDetailChips(item: MarketItem, service: ServiceState | null, t: TranslateFunction) {
   return [
-    service ? frontendModeLabel(service.frontendMode) : null,
-    service?.configFiles.length ? `${service.configFiles.length} 个配置` : null,
+    service ? frontendModeLabel(service.frontendMode, t) : null,
+    service?.configFiles.length ? t("market.detail.configCount", { count: service.configFiles.length }) : null,
     ...item.tags
   ].filter((chip): chip is string => Boolean(chip)).slice(0, 3);
 }
@@ -114,23 +115,23 @@ export function skillDetailChips(item: MarketItem) {
   return item.tags.slice(0, 3);
 }
 
-export function sandboxDetailChips(item: MarketItem) {
+export function sandboxDetailChips(item: MarketItem, t: TranslateFunction) {
   return [
     item.imageRef,
-    item.containerEngine ? `引擎 ${item.containerEngine}` : null,
-    item.imageSize ? `大小 ${item.imageSize}` : null,
+    item.containerEngine ? t("market.detail.engine", { engine: item.containerEngine }) : null,
+    item.imageSize ? t("market.detail.size", { size: item.imageSize }) : null,
     ...item.tags
   ].filter((chip): chip is string => Boolean(chip)).slice(0, 3);
 }
 
-export function sandboxMetricLabel(item: MarketItem) {
+export function sandboxMetricLabel(item: MarketItem, t: TranslateFunction) {
   if (item.imageSize) {
     return item.imageSize;
   }
   if (item.containerEngine) {
     return item.containerEngine;
   }
-  return item.imageRef ? "本机镜像" : "镜像包";
+  return item.imageRef ? t("market.source.localImage") : t("market.metric.imagePackage");
 }
 
 export function MarketCardGlyph({ kind }: { kind: "plugin" | "skill" | "sandbox" }) {

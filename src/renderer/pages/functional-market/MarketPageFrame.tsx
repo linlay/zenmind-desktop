@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { MarketTab, MarketTabDefinition } from "./marketPageModel";
+import { useI18n } from "../../i18n/useI18n";
 import "./MarketPageFrame.css";
 
 interface MarketPageFrameProps {
@@ -21,11 +22,13 @@ export function MarketPageFrame({
   title,
   toolbar
 }: MarketPageFrameProps) {
+  const { t } = useI18n();
+
   return (
     <section className="market-page">
       <div className="market-shell">
         <div className="market-topbar">
-          <div className="market-tabs" role="tablist" aria-label="市场页签">
+          <div className="market-tabs" role="tablist" aria-label={t("market.tabs.ariaLabel")}>
             {tabs.map((tab) => (
               <button
                 key={tab.id}

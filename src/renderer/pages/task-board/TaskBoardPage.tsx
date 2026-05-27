@@ -1385,6 +1385,9 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       return;
     }
 
+    const todoAssigneeAgentKey = targetStatus === "todo" && activeIssue.status !== "todo"
+      ? activeIssue.assigneeAgentKey?.trim() ?? ""
+      : "";
     const previousIssues = issues;
     const optimisticIssue = {
       ...activeIssue,
@@ -1401,6 +1404,12 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     if (result.ok) {
       setIssues(sortIssues(result.issues));
       setFeedback({ tone: "success", message: result.message });
+      if (todoAssigneeAgentKey && result.issue) {
+        const savedIssue = result.issue;
+        window.setTimeout(() => {
+          void assignIssueToAssistant(savedIssue, todoAssigneeAgentKey);
+        }, TASK_BOARD_TODO_ASSIGNEE_START_DELAY_MS);
+      }
     } else {
       setIssues(previousIssues);
       setFeedback({ tone: "error", message: result.message });

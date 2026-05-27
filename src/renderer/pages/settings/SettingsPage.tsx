@@ -22,7 +22,6 @@ import {
   DEFAULT_QUICK_ASSISTANT_AGENT_KEY,
   DEFAULT_QUICK_ASSISTANT_ENABLED,
   DESKTOP_COPILOT_PAGE_KEYS,
-  DESKTOP_COPILOT_PAGE_LABELS,
   createDefaultDesktopCopilotPagePreferences,
   type DesktopCopilotPageKey,
   type DesktopCopilotPagePreferences
@@ -44,7 +43,7 @@ import {
 } from "../../settingsPageSections";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shell/navigation/sidebarNavOrder";
 import { useI18n } from "../../i18n/useI18n";
-import type { SupportedLocale } from "../../../shared/i18n";
+import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
 
 type SettingsPageProps = {
   themeMode: "light" | "dark";
@@ -136,59 +135,78 @@ function getCopilotPageKeyForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey
   return null;
 }
 
-function getFixedAssistantLabelForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey): string | null {
+function getDesktopCopilotPageLabel(pageKey: DesktopCopilotPageKey, t: TranslateFunction) {
+  switch (pageKey) {
+    case "controlCenter":
+      return t("nav.controlCenter");
+    case "market":
+      return t("nav.market");
+    case "help":
+      return t("nav.help");
+    case "agents":
+      return t("nav.agents");
+    case "schedules":
+      return t("nav.schedules");
+    case "memory":
+      return t("nav.memory");
+    default:
+      return pageKey;
+  }
+}
+
+function getFixedAssistantLabelForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey, t: TranslateFunction): string | null {
   if (itemKey === "kanban") {
-    return "预留入口";
+    return t("settings.reservedEntry");
   }
   if (itemKey === "group:assistants" || itemKey === "group:websites") {
-    return "分组入口";
+    return t("nav.group.fixedEntry");
   }
   if (itemKey.startsWith("custom:")) {
-    return "内嵌网站中配置";
+    return t("settings.configuredInEmbeddedWebsites");
   }
   if (itemKey.startsWith("service:")) {
-    return "服务页默认显示";
+    return t("settings.servicePageDefault");
   }
   if (itemKey.startsWith("experimental:")) {
-    return "外部页默认显示";
+    return t("settings.externalPageDefault");
   }
   return null;
 }
 
 type FixedNavigationToolConfig = {
   id: string;
-  label: string;
+  labelKey: TranslationKey;
   copilotPageKey: DesktopCopilotPageKey | null;
-  fixedAssistantLabel?: string;
+  fixedAssistantLabelKey?: TranslationKey;
 };
 
 const fixedNavigationToolRows: FixedNavigationToolConfig[][] = [
   [
-    { id: "agents", label: "智能体", copilotPageKey: "agents" },
-    { id: "schedules", label: "自动化", copilotPageKey: "schedules" },
-    { id: "memory", label: "记忆管理", copilotPageKey: "memory" }
+    { id: "agents", labelKey: "nav.agents", copilotPageKey: "agents" },
+    { id: "schedules", labelKey: "nav.schedules", copilotPageKey: "schedules" },
+    { id: "memory", labelKey: "nav.memory", copilotPageKey: "memory" }
   ],
   [
-    { id: "controlCenter", label: "控制中心", copilotPageKey: "controlCenter" },
-    { id: "market", label: "功能市场", copilotPageKey: "market" },
-    { id: "settings", label: "设置", copilotPageKey: null, fixedAssistantLabel: "默认助手" },
+    { id: "controlCenter", labelKey: "nav.controlCenter", copilotPageKey: "controlCenter" },
+    { id: "market", labelKey: "nav.market", copilotPageKey: "market" },
+    { id: "settings", labelKey: "nav.settings", copilotPageKey: null, fixedAssistantLabelKey: "settings.defaultAssistant" },
   ],
   [
-    { id: "help", label: "帮助", copilotPageKey: "help" }
+    { id: "help", labelKey: "nav.help", copilotPageKey: "help" }
   ]
 ];
 
 const fixedNavigationTools = fixedNavigationToolRows.flat();
 
-function formatMemoryTime(value: string | null | undefined) {
+function formatMemoryTime(value: string | null | undefined, locale: SupportedLocale, t: TranslateFunction) {
   if (!value) {
-    return "暂无";
+    return t("common.none");
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return "暂无";
+    return t("common.none");
   }
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(locale, {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -196,14 +214,14 @@ function formatMemoryTime(value: string | null | undefined) {
   }).format(date);
 }
 
-function formatMemoryStatus(value: AssistantMemoryItem["status"]) {
+function formatMemoryStatus(value: AssistantMemoryItem["status"], t: TranslateFunction) {
   switch (value) {
     case "active":
-      return "生效中";
+      return t("settings.memory.statusActive");
     case "open":
-      return "观察中";
+      return t("settings.memory.statusOpen");
     case "archived":
-      return "已归档";
+      return t("settings.memory.statusArchived");
     default:
       return value;
   }
@@ -217,14 +235,49 @@ function formatMemoryPreview(summary: string, maxLength = 88) {
   return `${normalized.slice(0, maxLength)}...`;
 }
 
-function formatMemoryAuditSummary(summary: AssistantMemorySummary["recentAudit"]) {
+function formatMemoryAuditSummary(summary: AssistantMemorySummary["recentAudit"], t: TranslateFunction) {
   if (!summary) {
-    return "暂无操作";
+    return t("settings.memory.noActivity");
   }
   return [summary.operation, summary.status, summary.reason].filter(Boolean).join(" / ");
 }
 
+function getDesktopPetAppearanceLabel(appearanceId: string, fallback: string, t: TranslateFunction) {
+  switch (appearanceId) {
+    case "classic":
+      return t("settings.desktopPet.appearance.classic.label");
+    case "dario":
+      return t("settings.desktopPet.appearance.dario.label");
+    case "mini-sama":
+      return t("settings.desktopPet.appearance.miniSama.label");
+    case "xiao":
+      return t("settings.desktopPet.appearance.xiao.label");
+    case "idol-pony":
+      return t("settings.desktopPet.appearance.idolPony.label");
+    default:
+      return fallback;
+  }
+}
+
+function getDesktopPetAppearanceDescription(appearanceId: string, fallback: string, t: TranslateFunction) {
+  switch (appearanceId) {
+    case "classic":
+      return t("settings.desktopPet.appearance.classic.description");
+    case "dario":
+      return t("settings.desktopPet.appearance.dario.description");
+    case "mini-sama":
+      return t("settings.desktopPet.appearance.miniSama.description");
+    case "xiao":
+      return t("settings.desktopPet.appearance.xiao.description");
+    case "idol-pony":
+      return t("settings.desktopPet.appearance.idolPony.description");
+    default:
+      return fallback;
+  }
+}
+
 function WindowsDataRootCard() {
+  const { t } = useI18n();
   const [dataRoot, setDataRoot] = useState("");
   const [dataRootLoading, setDataRootLoading] = useState(true);
   const [dataRootError, setDataRootError] = useState("");
@@ -260,9 +313,9 @@ function WindowsDataRootCard() {
     <div className="data-root-card">
       <div>
         <p className="eyebrow">DATA ROOT</p>
-        <h2>数据目录</h2>
+        <h2>{t("settings.dataRoot.label")}</h2>
         <p className="page-copy">
-          Windows 端会将配置、数据、状态、日志、缓存、密钥和浏览器 profile 按分层目录保存在本机数据目录中；相关程序产物则保存在 ZenMind 的应用目录中。
+          {t("settings.dataRoot.storageDescription")}
         </p>
       </div>
       {dataRootError ? (
@@ -271,7 +324,7 @@ function WindowsDataRootCard() {
         </div>
       ) : null}
       <div className="data-root-actions">
-        <div className="data-root-path">{dataRootLoading ? "正在读取..." : dataRoot || "未配置"}</div>
+        <div className="data-root-path">{dataRootLoading ? t("settings.dataRoot.loading") : dataRoot || t("settings.dataRoot.unset")}</div>
       </div>
     </div>
   );
@@ -549,6 +602,11 @@ export function SettingsPage({
   const currentDesktopPetAppearance = desktopPetAppearanceOptions.find(
     (appearance) => appearance.id === currentDesktopPetAppearanceId
   );
+  const currentDesktopPetAppearanceLabel = getDesktopPetAppearanceLabel(
+    currentDesktopPetAppearance?.id ?? defaultDesktopPetAppearance.id,
+    currentDesktopPetAppearance?.displayName ?? defaultDesktopPetAppearance.displayName,
+    t
+  );
   const currentDesktopPetAgentOption = desktopPetAgentOptions.find(
     (agent) => agent.agentKey === currentDesktopPetBoundAgentKey
   );
@@ -579,7 +637,7 @@ export function SettingsPage({
       return [{
         field: `desktopCopilotPages.${pageKey}.agentKey`,
         pageKey,
-        message: `${DESKTOP_COPILOT_PAGE_LABELS[pageKey]} 的侧边助手智能体不可用。`
+        message: t("settings.navigation.copilotAgentUnavailable", { page: getDesktopCopilotPageLabel(pageKey, t) })
       }];
     });
     return {
@@ -642,7 +700,7 @@ export function SettingsPage({
       setDesktopCopilotPages(nextSettings.desktopCopilotPages);
       onAssistantSettingsChange?.(nextSettings);
       setReadErrorSections(["sideAssistant"], "");
-      showSectionNotice("sideAssistant", "侧边助手配置已保存。", "success");
+      showSectionNotice("sideAssistant", t("settings.navigation.sideAssistantSaved"), "success");
       return nextSettings;
     } catch (reason) {
       setDesktopCopilotPages(previousPages);
@@ -724,16 +782,16 @@ export function SettingsPage({
         value: requestedHelperAgentKey,
         valid: Boolean(requestedHelperAgentKey && nextHelperAgent),
         message: nextHelperAgent
-          ? "侧边栏默认助手配置可用。"
-          : "请选择当前智能体列表中存在的侧边栏默认助手。"
+          ? t("settings.navigation.helperAgentValid")
+          : t("settings.navigation.helperAgentInvalid")
       };
       const quickAssistantValidation = {
         field: "quickAssistantAgentKey",
         value: requestedQuickAssistantAgentKey,
         valid: Boolean(requestedQuickAssistantAgentKey && nextQuickAssistantAgent),
         message: nextQuickAssistantAgent
-          ? "快捷助手默认智能体配置可用。"
-          : "请选择当前智能体列表中存在的快捷助手默认智能体。"
+          ? t("settings.quickAssistant.agentValid")
+          : t("settings.quickAssistant.agentInvalid")
       };
       const actionPatchHelperAgentKey = typeof actionPatch.desktopHelperAgentKey === "string"
         ? actionPatch.desktopHelperAgentKey.trim()
@@ -763,16 +821,16 @@ export function SettingsPage({
         value: actionPatchHelperAgentKey,
         valid: Boolean(actionPatchHelperAgentKey && actionPatchHelperAgent),
         message: actionPatchHelperAgent
-          ? "侧边栏默认助手配置可用。"
-          : "请选择当前智能体列表中存在的侧边栏默认助手。"
+          ? t("settings.navigation.helperAgentValid")
+          : t("settings.navigation.helperAgentInvalid")
       };
       const actionPatchQuickAssistantValidation = {
         field: "quickAssistantAgentKey",
         value: actionPatchQuickAssistantAgentKey,
         valid: Boolean(actionPatchQuickAssistantAgentKey && actionPatchQuickAssistantAgent),
         message: actionPatchQuickAssistantAgent
-          ? "快捷助手默认智能体配置可用。"
-          : "请选择当前智能体列表中存在的快捷助手默认智能体。"
+          ? t("settings.quickAssistant.agentValid")
+          : t("settings.quickAssistant.agentInvalid")
       };
       const actionPatchCopilotValidation = validateCopilotPages(actionPatchCopilotPages);
 
@@ -801,7 +859,7 @@ export function SettingsPage({
               ok: false,
               error: {
                 code: "missing_form_patch",
-                message: "fillForm 需要提供要填写的字段。"
+                message: t("settings.action.fillFormMissing")
               }
             };
           }
@@ -818,7 +876,7 @@ export function SettingsPage({
                   ? actionPatchHelperValidation.message
                   : actionPatchQuickAssistantAgentTouched && !actionPatchQuickAssistantValidation.valid
                     ? actionPatchQuickAssistantValidation.message
-                    : "侧边助手配置不可用。",
+                    : t("settings.navigation.sideAssistantUnavailable"),
                 details: {
                   helperValidation: actionPatchHelperValidation,
                   quickAssistantValidation: actionPatchQuickAssistantValidation,
@@ -886,16 +944,16 @@ export function SettingsPage({
             value: submitPatchHelperAgentKey,
             valid: Boolean(submitPatchHelperAgentKey && submitPatchHelperAgent),
             message: submitPatchHelperAgent
-              ? "侧边栏默认助手配置可用。"
-              : "请选择当前智能体列表中存在的侧边栏默认助手。"
+              ? t("settings.navigation.helperAgentValid")
+              : t("settings.navigation.helperAgentInvalid")
           };
           const submitPatchQuickAssistantValidation = {
             field: "quickAssistantAgentKey",
             value: submitPatchQuickAssistantAgentKey,
             valid: Boolean(submitPatchQuickAssistantAgentKey && submitPatchQuickAssistantAgent),
             message: submitPatchQuickAssistantAgent
-              ? "快捷助手默认智能体配置可用。"
-              : "请选择当前智能体列表中存在的快捷助手默认智能体。"
+              ? t("settings.quickAssistant.agentValid")
+              : t("settings.quickAssistant.agentInvalid")
           };
           const submitPatchCopilotValidation = validateCopilotPages(submitPatchCopilotPages);
           if (
@@ -911,7 +969,7 @@ export function SettingsPage({
                   ? submitPatchHelperValidation.message
                   : submitPatchQuickAssistantAgentTouched && !submitPatchQuickAssistantValidation.valid
                     ? submitPatchQuickAssistantValidation.message
-                    : "侧边助手配置不可用。",
+                    : t("settings.navigation.sideAssistantUnavailable"),
                 details: {
                   helperValidation: submitPatchHelperValidation,
                   quickAssistantValidation: submitPatchQuickAssistantValidation,
@@ -933,7 +991,7 @@ export function SettingsPage({
             setReadErrorSections(["quickAssistant"], "");
             showSectionNotice(
               "quickAssistant",
-              nextSettings.quickAssistantEnabled ? "快捷助手已开启。" : "快捷助手已关闭。",
+              nextSettings.quickAssistantEnabled ? t("settings.quickAssistant.noticeEnabled") : t("settings.quickAssistant.noticeDisabled"),
               "success"
             );
           }
@@ -1016,7 +1074,7 @@ export function SettingsPage({
                   ? helperValidation.message
                   : quickAssistantAgentTouched && !quickAssistantValidation.valid
                     ? quickAssistantValidation.message
-                    : "侧边助手配置不可用。",
+                    : t("settings.navigation.sideAssistantUnavailable"),
                 details: { helperValidation, quickAssistantValidation, copilotValidation }
               }
             };
@@ -1034,7 +1092,7 @@ export function SettingsPage({
             setReadErrorSections(["quickAssistant"], "");
             showSectionNotice(
               "quickAssistant",
-              nextSettings.quickAssistantEnabled ? "快捷助手已开启。" : "快捷助手已关闭。",
+              nextSettings.quickAssistantEnabled ? t("settings.quickAssistant.noticeEnabled") : t("settings.quickAssistant.noticeDisabled"),
               "success"
             );
           }
@@ -1069,7 +1127,8 @@ export function SettingsPage({
     quickAssistantAgentKey,
     quickAssistantEnabled,
     memorySettings?.autoLearn,
-    memorySettings?.enabled
+    memorySettings?.enabled,
+    t
   ]);
 
   async function refreshMemoryItems() {
@@ -1183,7 +1242,7 @@ export function SettingsPage({
         enabled: !memorySettings.enabled
       });
       await refreshMemoryItems();
-      showSectionNotice("memory", nextSettings.enabled ? "助手记忆已开启。" : "助手记忆已关闭。", "success");
+      showSectionNotice("memory", nextSettings.enabled ? t("settings.memory.noticeEnabled") : t("settings.memory.noticeDisabled"), "success");
     } catch (reason) {
       showSectionNotice("memory", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
@@ -1202,7 +1261,7 @@ export function SettingsPage({
         autoLearn: !memorySettings.autoLearn
       });
       await refreshMemoryItems();
-      showSectionNotice("memory", nextSettings.autoLearn ? "自动学习已开启。" : "自动学习已关闭。", "success");
+      showSectionNotice("memory", nextSettings.autoLearn ? t("settings.memory.noticeAutoLearnEnabled") : t("settings.memory.noticeAutoLearnDisabled"), "success");
     } catch (reason) {
       showSectionNotice("memory", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
@@ -1239,8 +1298,8 @@ export function SettingsPage({
   const memoryTotal = memoryStats?.total ?? 0;
   const memoryFactCount = memoryStats?.factCount ?? 0;
   const memoryObservationCount = memoryStats?.observationCount ?? 0;
-  const memoryRecallLabel = memorySettings?.enabled ? "回答时按需引用" : "已暂停引用";
-  const memoryAutoLearnLabel = memorySettings?.autoLearn ? "对话后自动整理" : "仅保留现有记忆";
+  const memoryRecallLabel = memorySettings?.enabled ? t("settings.memory.recallEnabled") : t("settings.memory.recallDisabled");
+  const memoryAutoLearnLabel = memorySettings?.autoLearn ? t("settings.memory.autoLearnEnabled") : t("settings.memory.autoLearnDisabled");
 
   async function handleToggleDesktopPet() {
     setDesktopPetPending(true);
@@ -1250,7 +1309,7 @@ export function SettingsPage({
       });
       setDesktopPetState(nextState);
       setReadErrorSections(["desktopPet"], "");
-      showSectionNotice("desktopPet", nextState.enabled ? "桌面宠物已开启。" : "桌面宠物已关闭。", "success");
+      showSectionNotice("desktopPet", nextState.enabled ? t("settings.desktopPet.noticeEnabled") : t("settings.desktopPet.noticeDisabled"), "success");
     } catch (reason) {
       showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
@@ -1273,11 +1332,13 @@ export function SettingsPage({
       if (nextState.appearanceId === appearanceId) {
         showSectionNotice(
           "desktopPet",
-          `桌面宠物形象已切换为 ${selectedAppearance?.displayName ?? appearanceId}。`,
+          t("settings.desktopPet.noticeAppearanceChanged", {
+            name: getDesktopPetAppearanceLabel(appearanceId, selectedAppearance?.displayName ?? appearanceId, t)
+          }),
           "success"
         );
       } else {
-        showSectionNotice("desktopPet", "桌面宠物形象切换未生效，请重启应用后再试。", "error");
+        showSectionNotice("desktopPet", t("settings.desktopPet.noticeAppearanceFailed"), "error");
       }
     } catch (reason) {
       showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
@@ -1302,7 +1363,7 @@ export function SettingsPage({
       setDesktopPetState(nextState);
       setDesktopPetBoundAgentKey(nextState.boundAgentKey);
       setReadErrorSections(["desktopPet"], "");
-      showSectionNotice("desktopPet", `桌面宠物已绑定到 ${nextAgent?.displayName ?? nextState.boundAgentKey}。`, "success");
+      showSectionNotice("desktopPet", t("settings.desktopPet.noticeBoundAgentChanged", { name: nextAgent?.displayName ?? nextState.boundAgentKey }), "success");
     } catch (reason) {
       setDesktopPetBoundAgentKey(previousBoundAgentKey);
       showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
@@ -1331,7 +1392,7 @@ export function SettingsPage({
       setReadErrorSections(["sideAssistant"], "");
       showSectionNotice(
         "sideAssistant",
-        `侧边助手默认智能体已切换为 ${nextAgent?.displayName ?? nextSettings.desktopHelperAgentKey}。`,
+        t("settings.navigation.defaultAgentChanged", { name: nextAgent?.displayName ?? nextSettings.desktopHelperAgentKey }),
         "success"
       );
     } catch (reason) {
@@ -1358,7 +1419,7 @@ export function SettingsPage({
       setReadErrorSections(["quickAssistant"], "");
       showSectionNotice(
         "quickAssistant",
-        nextSettings.quickAssistantEnabled ? "快捷助手已开启。" : "快捷助手已关闭。",
+        nextSettings.quickAssistantEnabled ? t("settings.quickAssistant.noticeEnabled") : t("settings.quickAssistant.noticeDisabled"),
         "success"
       );
     } catch (reason) {
@@ -1390,7 +1451,7 @@ export function SettingsPage({
       setReadErrorSections(["quickAssistant"], "");
       showSectionNotice(
         "quickAssistant",
-        `快捷助手默认智能体已切换为 ${nextAgent?.displayName ?? nextSettings.quickAssistantAgentKey}。`,
+        t("settings.quickAssistant.noticeAgentChanged", { name: nextAgent?.displayName ?? nextSettings.quickAssistantAgentKey }),
         "success"
       );
     } catch (reason) {
@@ -1438,7 +1499,7 @@ export function SettingsPage({
                   </span>
                   <span className="settings-theme-copy">
                     <strong>{t("settings.appearance.light")}</strong>
-                    <span>适合白天和明亮环境</span>
+                    <span>{t("settings.appearance.lightDescription")}</span>
                   </span>
                 </button>
                 <button
@@ -1456,7 +1517,7 @@ export function SettingsPage({
                   </span>
                   <span className="settings-theme-copy">
                     <strong>{t("settings.appearance.dark")}</strong>
-                    <span>适合夜间和长时间专注</span>
+                    <span>{t("settings.appearance.darkDescription")}</span>
                   </span>
                 </button>
               </div>
@@ -1496,6 +1557,8 @@ export function SettingsPage({
         const defaultCopilotPages = createDefaultDesktopCopilotPagePreferences();
         function renderFixedNavigationToolRow(tool: FixedNavigationToolConfig) {
           const copilotPageKey = tool.copilotPageKey;
+          const toolLabel = t(tool.labelKey);
+          const fixedAssistantLabel = tool.fixedAssistantLabelKey ? t(tool.fixedAssistantLabelKey) : null;
           const copilotPreference = copilotPageKey
             ? desktopCopilotPages[copilotPageKey] ?? defaultCopilotPages[copilotPageKey]
             : null;
@@ -1508,12 +1571,12 @@ export function SettingsPage({
             selectedCopilotAgentKey && assistantAgentOptions.some((agent) => agent.agentKey === selectedCopilotAgentKey)
           );
           const showUnavailableAgentOption = Boolean(selectedCopilotAgentKey && !selectedAgentAvailable);
-          const assistantSelectValue = tool.fixedAssistantLabel ? "__fixed__" : selectedCopilotAgentKey;
+          const assistantSelectValue = fixedAssistantLabel ? "__fixed__" : selectedCopilotAgentKey;
           return (
             <div className="navigation-order-row navigation-order-row-fixed" role="listitem" key={tool.id}>
-              <div className="navigation-order-title-cell navigation-order-title-cell-fixed" title="固定入口">
+              <div className="navigation-order-title-cell navigation-order-title-cell-fixed" title={t("settings.navigation.fixedEntry")}>
                 <span className="navigation-order-fixed-dot" aria-hidden="true" />
-                <span className="navigation-order-title">{tool.label}</span>
+                <span className="navigation-order-title">{toolLabel}</span>
               </div>
               <label className="navigation-order-assistant-field">
                 <span className="desktop-pet-agent-select-wrap">
@@ -1525,15 +1588,17 @@ export function SettingsPage({
                       }
                     }}
                     disabled={!copilotPageKey || assistantAgentOptions.length === 0 || copilotPending}
-                    aria-label={`${tool.label} 侧边助手`}
+                    aria-label={t("settings.navigation.sideAssistantFor", { label: toolLabel })}
                   >
-                    <option value="">不带侧边助手</option>
-                    {tool.fixedAssistantLabel ? (
-                      <option value="__fixed__">{tool.fixedAssistantLabel}</option>
+                    <option value="">{t("settings.navigation.noSideAssistant")}</option>
+                    {fixedAssistantLabel ? (
+                      <option value="__fixed__">{fixedAssistantLabel}</option>
                     ) : null}
                     {showUnavailableAgentOption ? (
                       <option value={selectedCopilotAgentKey}>
-                        {assistantAgentOptions.length === 0 ? "正在读取智能体列表..." : `不可用：${selectedCopilotAgentKey}`}
+                        {assistantAgentOptions.length === 0
+                          ? t("settings.navigation.agentsLoading")
+                          : t("settings.navigation.unavailableAgent", { agentKey: selectedCopilotAgentKey })}
                       </option>
                     ) : null}
                     {assistantAgentOptions.map((agent) => (
@@ -1544,17 +1609,17 @@ export function SettingsPage({
                   </select>
                 </span>
               </label>
-              <div className="navigation-order-fixed-label">固定</div>
+              <div className="navigation-order-fixed-label">{t("settings.navigation.fixed")}</div>
             </div>
           );
         }
         return (
-          <div className="data-root-card navigation-settings-card" aria-label="导航栏配置">
+          <div className="data-root-card navigation-settings-card" aria-label={t("settings.navigation.panelAria")}>
             <div className="navigation-settings-panel">
-              <div className="navigation-assistant-default" aria-label="侧边助手默认智能体">
+              <div className="navigation-assistant-default" aria-label={t("settings.navigation.defaultAssistant")}>
                 <div className="page-copilot-row-main">
-                  <strong>侧边助手默认智能体</strong>
-                  <span>保留旧配置兼容；下方每个固定工具入口可单独选择是否显示侧边助手。</span>
+                  <strong>{t("settings.navigation.defaultAssistant")}</strong>
+                  <span>{t("settings.navigation.defaultAssistantDescription")}</span>
                 </div>
                 <label className="desktop-pet-agent-field navigation-assistant-default-field">
                   <span className="desktop-pet-agent-select-wrap">
@@ -1562,10 +1627,10 @@ export function SettingsPage({
                       value={assistantAgentOptions.some((agent) => agent.agentKey === desktopHelperAgentKey) ? desktopHelperAgentKey : ""}
                       onChange={(event) => void handleSelectDesktopHelperAgentKey(event.target.value)}
                       disabled={assistantAgentOptions.length === 0 || desktopHelperAgentPending}
-                      aria-label="侧边助手默认智能体"
+                      aria-label={t("settings.navigation.defaultAssistant")}
                     >
                       <option value="">
-                        {assistantAgentOptions.length === 0 ? "正在读取智能体列表..." : "请选择智能体"}
+                        {assistantAgentOptions.length === 0 ? t("settings.navigation.agentsLoading") : t("settings.navigation.selectAgent")}
                       </option>
                       {assistantAgentOptions.map((agent) => (
                         <option value={agent.agentKey} key={agent.agentKey}>
@@ -1576,26 +1641,26 @@ export function SettingsPage({
                   </span>
                   <span className="desktop-pet-agent-note">
                     {desktopHelperAgentPending
-                      ? "保存中..."
-                      : `当前默认：${
-                          assistantAgentOptions.find((agent) => agent.agentKey === (assistantSettings?.desktopHelperAgentKey || desktopHelperAgentKey))?.displayName ||
-                          assistantSettings?.desktopHelperAgentKey ||
-                          desktopHelperAgentKey
-                        }`}
+                      ? t("settings.navigation.saving")
+                      : t("settings.navigation.currentDefault", {
+                          name: assistantAgentOptions.find((agent) => agent.agentKey === (assistantSettings?.desktopHelperAgentKey || desktopHelperAgentKey))?.displayName ||
+                            assistantSettings?.desktopHelperAgentKey ||
+                            desktopHelperAgentKey
+                        })}
                   </span>
                 </label>
               </div>
               <div className="navigation-order-section">
                 <div className="custom-sidebar-list-head">
-                  <strong>固定主导航</strong>
-                  <span>顺序固定为任务看板、智能助理、内嵌网站。</span>
+                  <strong>{t("settings.navigation.fixedMain")}</strong>
+                  <span>{t("settings.navigation.fixedMainDescription")}</span>
                 </div>
                 <div className="navigation-order-grid-head" aria-hidden="true">
-                  <span>页面</span>
-                  <span>带侧边助手</span>
-                  <span>状态</span>
+                  <span>{t("settings.navigation.pageColumn")}</span>
+                  <span>{t("settings.navigation.sideAssistantColumn")}</span>
+                  <span>{t("settings.navigation.statusColumn")}</span>
                 </div>
-                <div className="navigation-order-list" role="list" aria-label="固定主导航顺序">
+                <div className="navigation-order-list" role="list" aria-label={t("settings.navigation.fixedMainOrder")}>
                   {sidebarNavOrder.map((itemKey, index) => {
                     const itemLabel = sidebarNavOrderLabels.get(itemKey) ?? itemKey;
                     const copilotPageKey = getCopilotPageKeyForSidebarNavOrderItem(itemKey);
@@ -1609,7 +1674,7 @@ export function SettingsPage({
                     const selectedCopilotAgentKey = copilotPreference?.enabled ? copilotPreference.agentKey : "";
                     const fixedAssistantLabel = copilotPageKey
                       ? null
-                      : getFixedAssistantLabelForSidebarNavOrderItem(itemKey);
+                      : getFixedAssistantLabelForSidebarNavOrderItem(itemKey, t);
                     const assistantSelectValue = fixedAssistantLabel ? "__fixed__" : selectedCopilotAgentKey;
                     const selectedAgentAvailable = Boolean(
                       selectedCopilotAgentKey && assistantAgentOptions.some((agent) => agent.agentKey === selectedCopilotAgentKey)
@@ -1626,7 +1691,7 @@ export function SettingsPage({
                       >
                         <div
                           className="navigation-order-title-cell"
-                          title={`第 ${index + 1} 项`}
+                          title={t("settings.navigation.itemTitle", { index: index + 1 })}
                         >
                           <span className="navigation-order-title">{itemLabel}</span>
                         </div>
@@ -1640,15 +1705,17 @@ export function SettingsPage({
                                 }
                               }}
                               disabled={!copilotPageKey || assistantAgentOptions.length === 0 || copilotPending}
-                              aria-label={`${itemLabel} 侧边助手`}
+                              aria-label={t("settings.navigation.sideAssistantFor", { label: itemLabel })}
                             >
-                              <option value="">不带侧边助手</option>
+                              <option value="">{t("settings.navigation.noSideAssistant")}</option>
                               {fixedAssistantLabel ? (
                                 <option value="__fixed__">{fixedAssistantLabel}</option>
                               ) : null}
                               {showUnavailableAgentOption ? (
                                 <option value={selectedCopilotAgentKey}>
-                                  {assistantAgentOptions.length === 0 ? "正在读取智能体列表..." : `不可用：${selectedCopilotAgentKey}`}
+                                  {assistantAgentOptions.length === 0
+                                    ? t("settings.navigation.agentsLoading")
+                                    : t("settings.navigation.unavailableAgent", { agentKey: selectedCopilotAgentKey })}
                                 </option>
                               ) : null}
                               {assistantAgentOptions.map((agent) => (
@@ -1660,17 +1727,17 @@ export function SettingsPage({
                           </span>
                         </label>
                         <div className="navigation-order-actions">
-                          <span className="navigation-order-fixed-label">第 {index + 1} 项</span>
+                          <span className="navigation-order-fixed-label">{t("settings.navigation.itemIndex", { index: index + 1 })}</span>
                         </div>
                       </div>
                     );
                   })}
                 </div>
                 <div className="custom-sidebar-list-head navigation-fixed-tools-head">
-                  <strong>固定工具区</strong>
-                  <span>固定为弹出菜单，不参与排序。</span>
+                  <strong>{t("settings.navigation.fixedTools")}</strong>
+                  <span>{t("settings.navigation.fixedToolsDescription")}</span>
                 </div>
-                <div className="navigation-order-list navigation-fixed-tool-list" role="list" aria-label="固定工具区">
+                <div className="navigation-order-list navigation-fixed-tool-list" role="list" aria-label={t("settings.navigation.fixedTools")}>
                   {fixedNavigationTools.map((tool) => renderFixedNavigationToolRow(tool))}
                 </div>
               </div>
@@ -1682,16 +1749,16 @@ export function SettingsPage({
         return (
           <div className="data-root-card settings-switch-card desktop-helper-settings-card">
             <div>
-              <div className="quick-assistant-settings-panel" aria-label="快捷助手配置">
+              <div className="quick-assistant-settings-panel" aria-label={t("settings.quickAssistant.panelAria")}>
                 <div className="page-copilot-row-main">
-                  <strong>快捷助手</strong>
+                  <strong>{t("settings.quickAssistant.label")}</strong>
                   <span>
                     {quickAssistantEnabled
-                      ? `Option+Space 已开启，默认使用 ${getAgentLabel(quickAssistantAgentKey)}`
-                      : "Option+Space 已关闭"}
+                      ? t("settings.quickAssistant.statusEnabled", { name: getAgentLabel(quickAssistantAgentKey) })
+                      : t("settings.quickAssistant.statusDisabled")}
                   </span>
                   {quickAssistantEnabled && !isKnownAssistantAgent(quickAssistantAgentKey) ? (
-                    <em>当前默认智能体不可用，请重新选择。</em>
+                    <em>{t("settings.quickAssistant.defaultUnavailable")}</em>
                   ) : null}
                 </div>
                 <button
@@ -1699,25 +1766,27 @@ export function SettingsPage({
                   className={quickAssistantEnabled ? "settings-switch is-on" : "settings-switch"}
                   role="switch"
                   aria-checked={quickAssistantEnabled}
-                  aria-label="快捷助手"
+                  aria-label={t("settings.quickAssistant.label")}
                   disabled={quickAssistantPending}
                   onClick={() => void handleToggleQuickAssistantEnabled()}
                 >
                   <span aria-hidden="true" />
                 </button>
                 <label className="desktop-pet-agent-field">
-                  <span>默认智能体</span>
+                  <span>{t("settings.quickAssistant.defaultAgent")}</span>
                   <span className="desktop-pet-agent-select-wrap">
                     <select
                       value={isKnownAssistantAgent(quickAssistantAgentKey) ? quickAssistantAgentKey : ""}
                       onChange={(event) => void handleSelectQuickAssistantAgentKey(event.target.value)}
                       disabled={!quickAssistantEnabled || assistantAgentOptions.length === 0 || quickAssistantAgentPending}
-                      aria-label="快捷助手默认智能体"
+                      aria-label={t("settings.quickAssistant.defaultAgent")}
                     >
                       <option value="">
                         {assistantAgentOptions.length === 0
-                          ? "正在读取智能体列表..."
-                          : isKnownAssistantAgent(quickAssistantAgentKey) ? "请选择智能体" : `不可用：${quickAssistantAgentKey}`}
+                          ? t("settings.navigation.agentsLoading")
+                          : isKnownAssistantAgent(quickAssistantAgentKey)
+                            ? t("settings.navigation.selectAgent")
+                            : t("settings.navigation.unavailableAgent", { agentKey: quickAssistantAgentKey })}
                       </option>
                       {assistantAgentOptions.map((agent) => (
                         <option value={agent.agentKey} key={agent.agentKey}>
@@ -1736,18 +1805,22 @@ export function SettingsPage({
           <div className="data-root-card settings-switch-card desktop-pet-settings-card">
             <div>
               <p className="settings-inline-note">
-                当前状态：{desktopPetState?.enabled ? "已开启" : "已关闭"}
-                {desktopPetState?.enabled && desktopPetState.visible ? " / 已显示" : ""}
+                {t("settings.desktopPet.currentStatus", {
+                  status: desktopPetState?.enabled ? t("settings.desktopPet.enabled") : t("settings.desktopPet.disabled"),
+                  visible: desktopPetState?.enabled && desktopPetState.visible ? t("settings.desktopPet.visibleSuffix") : ""
+                })}
               </p>
-              <div className="desktop-pet-appearance-section" aria-label="宠物形象">
+              <div className="desktop-pet-appearance-section" aria-label={t("settings.desktopPet.appearance")}>
                 <div className="desktop-pet-appearance-heading">
-                  <span>宠物形象</span>
-                  <small>当前：{currentDesktopPetAppearance?.displayName ?? defaultDesktopPetAppearance.displayName}</small>
+                  <span>{t("settings.desktopPet.appearance")}</span>
+                  <small>{t("settings.desktopPet.currentAppearance", { name: currentDesktopPetAppearanceLabel })}</small>
                 </div>
                 <div className="desktop-pet-appearance-grid">
                   {desktopPetAppearanceOptions.map((appearance) => {
                     const selected = appearance.id === currentDesktopPetAppearanceId;
                     const pending = desktopPetAppearancePending === appearance.id;
+                    const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
+                    const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
                     return (
                       <button
                         type="button"
@@ -1761,8 +1834,8 @@ export function SettingsPage({
                           <img src={appearance.previewAssetPath} alt="" />
                         </span>
                         <span className="desktop-pet-appearance-copy">
-                          <strong>{appearance.displayName}</strong>
-                          <small>{pending ? "切换中..." : appearance.description}</small>
+                          <strong>{appearanceLabel}</strong>
+                          <small>{pending ? t("settings.desktopPet.switching") : appearanceDescription}</small>
                         </span>
                       </button>
                     );
@@ -1771,7 +1844,7 @@ export function SettingsPage({
               </div>
               <div className="desktop-pet-agent-form">
                 <label className="desktop-pet-agent-field">
-                  <span>选择智能体</span>
+                  <span>{t("settings.desktopPet.selectAgent")}</span>
                   <span className="desktop-pet-agent-select-wrap">
                     <select
                       value={desktopPetAgentOptions.some((agent) => agent.agentKey === desktopPetBoundAgentKey) ? desktopPetBoundAgentKey : ""}
@@ -1784,10 +1857,10 @@ export function SettingsPage({
                     >
                       <option value="">
                         {!desktopPetEnabled
-                          ? "开启后读取智能体列表"
+                          ? t("settings.desktopPet.loadAgentsAfterEnabled")
                           : desktopPetAgentOptions.length === 0
-                            ? "正在读取智能体列表..."
-                            : "请选择智能体"}
+                            ? t("settings.navigation.agentsLoading")
+                            : t("settings.navigation.selectAgent")}
                       </option>
                       {desktopPetAgentOptions.map((agent) => (
                         <option value={agent.agentKey} key={agent.agentKey}>
@@ -1798,12 +1871,12 @@ export function SettingsPage({
                   </span>
                   <span className="desktop-pet-agent-note">
                     {desktopPetBoundAgentPending
-                      ? "绑定中..."
-                      : `当前绑定：${
-                          currentDesktopPetAgentOption?.displayName
+                      ? t("settings.desktopPet.binding")
+                      : t("settings.desktopPet.currentBinding", {
+                          name: currentDesktopPetAgentOption?.displayName
                             ? `${currentDesktopPetAgentOption.displayName}${currentDesktopPetAgentOption.role ? ` · ${currentDesktopPetAgentOption.role}` : ""}`
                             : currentDesktopPetBoundAgentKey
-                        }`}
+                        })}
                   </span>
                 </label>
               </div>
@@ -1813,7 +1886,7 @@ export function SettingsPage({
               className={desktopPetState?.enabled ? "settings-switch is-on" : "settings-switch"}
               role="switch"
               aria-checked={Boolean(desktopPetState?.enabled)}
-              aria-label="桌面宠物"
+              aria-label={t("settings.desktopPet.label")}
               disabled={desktopPetPending}
               onClick={() => void handleToggleDesktopPet()}
             >
@@ -1827,32 +1900,32 @@ export function SettingsPage({
             <div className="custom-sidebar-panel">
               <form className="custom-sidebar-form" onSubmit={(event) => void handleAddCustomSidebarItem(event)}>
                 <label>
-                  <span>显示名称</span>
+                  <span>{t("settings.embeddedWebsites.displayName")}</span>
                   <input
                     value={customSidebarLabel}
                     onChange={(event) => setCustomSidebarLabel(event.target.value)}
-                    placeholder="例如：官网、知识库"
+                    placeholder={t("settings.embeddedWebsites.displayNamePlaceholder")}
                     maxLength={24}
                   />
                 </label>
                 <label>
-                  <span>网页地址</span>
+                  <span>{t("settings.embeddedWebsites.url")}</span>
                   <input
                     value={customSidebarUrl}
                     onChange={(event) => setCustomSidebarUrl(event.target.value)}
-                    placeholder="支持输入完整链接或域名，例如 jira.example.com"
+                    placeholder={t("settings.embeddedWebsites.urlPlaceholder")}
                     required
                   />
                 </label>
                 <div className="custom-sidebar-submit-wrap">
                   <button type="submit" className="text-button custom-sidebar-submit" disabled={customSidebarPending}>
-                    {customSidebarPending ? "添加中..." : "添加内嵌网站"}
+                    {customSidebarPending ? t("settings.embeddedWebsites.adding") : t("settings.embeddedWebsites.add")}
                   </button>
                 </div>
               </form>
 
               <div className="custom-sidebar-list-head">
-                <strong>已添加的内嵌网站</strong>
+                <strong>{t("settings.embeddedWebsites.addedTitle")}</strong>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <button
                     type="button"
@@ -1860,7 +1933,7 @@ export function SettingsPage({
                     onClick={() => void handleImportCustomSidebarItems()}
                     disabled={customSidebarTransferPending !== ""}
                   >
-                    {customSidebarTransferPending === "import" ? "导入中..." : "导入"}
+                    {customSidebarTransferPending === "import" ? t("settings.embeddedWebsites.importing") : t("settings.embeddedWebsites.import")}
                   </button>
                   <button
                     type="button"
@@ -1868,15 +1941,15 @@ export function SettingsPage({
                     onClick={() => void handleExportCustomSidebarItems()}
                     disabled={customSidebarTransferPending !== ""}
                   >
-                    {customSidebarTransferPending === "export" ? "导出中..." : "导出"}
+                    {customSidebarTransferPending === "export" ? t("settings.embeddedWebsites.exporting") : t("settings.embeddedWebsites.export")}
                   </button>
                   <button type="button" className="text-button" onClick={() => void handleReloadCustomSidebarItems()}>
-                    刷新
+                    {t("settings.embeddedWebsites.refresh")}
                   </button>
                 </div>
               </div>
               {customSidebarItems.length === 0 ? (
-                <div className="custom-sidebar-empty">还没有添加内嵌网站，添加后会显示在系统入口下方。</div>
+                <div className="custom-sidebar-empty">{t("settings.embeddedWebsites.empty")}</div>
               ) : (
                 <div className="custom-sidebar-list">
                   {customSidebarItems.map((item) => {
@@ -1893,17 +1966,17 @@ export function SettingsPage({
                             <strong>{item.label}</strong>
                             <span>{item.url}</span>
                             <div className="custom-sidebar-row-agent">
-                              <span className="custom-sidebar-row-agent-label">智能体增强</span>
+                              <span className="custom-sidebar-row-agent-label">{t("settings.embeddedWebsites.agentEnhancement")}</span>
                               <select
                                 className="custom-sidebar-agent-select"
                                 value={itemAgentKey}
                                 onChange={(event) => void handleUpdateCustomSidebarAgent(item.id, event.target.value)}
                                 disabled={assistantAgentOptions.length === 0 || itemAgentPending}
-                                aria-label={`${item.label} 关联智能体`}
+                                aria-label={t("settings.embeddedWebsites.linkedAgentFor", { label: item.label })}
                               >
-                                <option value="">默认助手</option>
+                                <option value="">{t("settings.defaultAssistant")}</option>
                                 {itemAgentKey && !itemAgentKnown ? (
-                                  <option value={itemAgentKey}>不可用：{itemAgentKey}</option>
+                                  <option value={itemAgentKey}>{t("settings.navigation.unavailableAgent", { agentKey: itemAgentKey })}</option>
                                 ) : null}
                                 {assistantAgentOptions.map((agent) => (
                                   <option value={agent.agentKey} key={agent.agentKey}>
@@ -1920,7 +1993,7 @@ export function SettingsPage({
                           onClick={() => void handleDeleteCustomSidebarItem(item)}
                           disabled={deletingCustomSidebarId === item.id}
                         >
-                          {deletingCustomSidebarId === item.id ? "删除中..." : "删除"}
+                          {deletingCustomSidebarId === item.id ? t("settings.embeddedWebsites.deleting") : t("settings.embeddedWebsites.delete")}
                         </button>
                       </div>
                     );
@@ -1937,35 +2010,37 @@ export function SettingsPage({
           <div className="data-root-card assistant-memory-card">
             <div className="custom-sidebar-copy assistant-memory-copy">
               <p className="eyebrow">MEMORY</p>
-              <h2>助手记忆</h2>
+              <h2>{t("settings.memory.label")}</h2>
               <p className="page-copy">
-                侧边助手会在本机静默学习长期偏好和可复用结论，并在后续回答中按需引用。
+                {t("settings.memory.sectionDescription")}
               </p>
-              <div className="assistant-memory-stats" aria-label="记忆统计">
+              <div className="assistant-memory-stats" aria-label={t("settings.memory.statsLabel")}>
                 <div>
                   <strong>{memoryTotal}</strong>
-                  <span>全部</span>
+                  <span>{t("settings.memory.statsTotal")}</span>
                 </div>
                 <div>
                   <strong>{memoryFactCount}</strong>
-                  <span>稳定</span>
+                  <span>{t("settings.memory.statsStable")}</span>
                 </div>
                 <div>
                   <strong>{memoryObservationCount}</strong>
-                  <span>观察</span>
+                  <span>{t("settings.memory.statsObservation")}</span>
                 </div>
               </div>
-              <div className="assistant-memory-timeline" aria-label="记忆时间">
-                <span>学习 {formatMemoryTime(memoryStats?.lastLearnedAt)}</span>
-                <span>引用 {formatMemoryTime(memoryStats?.lastReferencedAt)}</span>
+              <div className="assistant-memory-timeline" aria-label={t("settings.memory.timelineLabel")}>
+                <span>{t("settings.memory.learnedAt", { time: formatMemoryTime(memoryStats?.lastLearnedAt, locale, t) })}</span>
+                <span>{t("settings.memory.referencedAt", { time: formatMemoryTime(memoryStats?.lastReferencedAt, locale, t) })}</span>
               </div>
-              <p className="assistant-memory-audit">最近记录：{formatMemoryAuditSummary(memoryRecentAudit)}</p>
+              <p className="assistant-memory-audit">
+                {t("settings.memory.recentRecord", { summary: formatMemoryAuditSummary(memoryRecentAudit, t) })}
+              </p>
             </div>
             <div className="assistant-memory-panel">
               <div className="assistant-memory-switches">
                 <div className="assistant-memory-switch-row">
                   <span className="assistant-memory-switch-copy">
-                    <span>记忆召回</span>
+                    <span>{t("settings.memory.recall")}</span>
                     <small>{memoryRecallLabel}</small>
                   </span>
                   <button
@@ -1973,7 +2048,7 @@ export function SettingsPage({
                     className={memorySettings?.enabled ? "settings-switch is-on" : "settings-switch"}
                     role="switch"
                     aria-checked={Boolean(memorySettings?.enabled)}
-                    aria-label="记忆召回"
+                    aria-label={t("settings.memory.recall")}
                     disabled={!memorySettings || memoryPending === "settings"}
                     onClick={() => void handleToggleMemoryEnabled()}
                   >
@@ -1982,7 +2057,7 @@ export function SettingsPage({
                 </div>
                 <div className="assistant-memory-switch-row">
                   <span className="assistant-memory-switch-copy">
-                    <span>自动学习</span>
+                    <span>{t("settings.memory.autoLearn")}</span>
                     <small>{memoryAutoLearnLabel}</small>
                   </span>
                   <button
@@ -1990,7 +2065,7 @@ export function SettingsPage({
                     className={memorySettings?.autoLearn ? "settings-switch is-on" : "settings-switch"}
                     role="switch"
                     aria-checked={Boolean(memorySettings?.autoLearn)}
-                    aria-label="自动学习"
+                    aria-label={t("settings.memory.autoLearn")}
                     disabled={!memorySettings || memoryPending === "settings"}
                     onClick={() => void handleToggleMemoryAutoLearn()}
                   >
@@ -1999,8 +2074,12 @@ export function SettingsPage({
                 </div>
               </div>
               <div className="custom-sidebar-list-head assistant-memory-section-head">
-                <strong>最近记忆</strong>
-                <span>{memoryItems.length > 0 ? `最近 ${recentMemoryItems.length} / ${memoryItems.length}` : "暂无"}</span>
+                <strong>{t("settings.memory.recent")}</strong>
+                <span>
+                  {memoryItems.length > 0
+                    ? t("settings.memory.recentCount", { shown: recentMemoryItems.length, total: memoryItems.length })
+                    : t("common.none")}
+                </span>
               </div>
               {recentMemoryItems.length > 0 ? (
                 <div className="assistant-memory-list">
@@ -2009,22 +2088,22 @@ export function SettingsPage({
                       <div className="assistant-memory-row-main">
                         <div className="assistant-memory-row-title">
                           <strong>{item.title}</strong>
-                          <span>{item.category} / {formatMemoryStatus(item.status)}</span>
+                          <span>{item.category} / {formatMemoryStatus(item.status, t)}</span>
                         </div>
                         <p>{formatMemoryPreview(item.summary, 64)}</p>
                       </div>
-                      <time dateTime={item.updatedAt}>{formatMemoryTime(item.updatedAt)}</time>
+                      <time dateTime={item.updatedAt}>{formatMemoryTime(item.updatedAt, locale, t)}</time>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="settings-inline-note">最近记忆会在这里显示。</p>
+                <p className="settings-inline-note">{t("settings.memory.recentEmpty")}</p>
               )}
               <div className="assistant-memory-storage-card">
                 <div className="assistant-memory-storage-header">
                   <div>
-                    <strong>本地存储</strong>
-                    <span>路径和审计日志默认收起，需要时再查看。</span>
+                    <strong>{t("settings.memory.storage")}</strong>
+                    <span>{t("settings.memory.storageDescription")}</span>
                   </div>
                   <span className="assistant-memory-storage-actions">
                     <button
@@ -2033,7 +2112,7 @@ export function SettingsPage({
                       onClick={() => void handleOpenMemoryDirectory()}
                       disabled={memoryPending === "open"}
                     >
-                      {memoryPending === "open" ? "打开中..." : "打开目录"}
+                      {memoryPending === "open" ? t("settings.memory.openingDirectory") : t("settings.memory.openDirectory")}
                     </button>
                     <button
                       type="button"
@@ -2041,31 +2120,31 @@ export function SettingsPage({
                       onClick={() => void handleClearMemoryItems()}
                       disabled={memoryTotal === 0 || memoryPending === "clear"}
                     >
-                      {memoryPending === "clear" ? "清空中..." : "清空"}
+                      {memoryPending === "clear" ? t("settings.memory.clearing") : t("common.clear")}
                     </button>
                   </span>
                 </div>
                 <details className="assistant-memory-storage-details">
                   <summary>
-                    <span>查看本地文件路径</span>
+                    <span>{t("settings.memory.viewLocalPaths")}</span>
                     <span className="assistant-memory-storage-caret" aria-hidden="true" />
                   </summary>
                   <div className="assistant-memory-storage">
                     <div>
-                      <span>记忆目录</span>
-                      <code>{memoryStorage?.directoryPath ?? "正在读取..."}</code>
+                      <span>{t("settings.memory.directoryPath")}</span>
+                      <code>{memoryStorage?.directoryPath ?? t("settings.memory.loadingValue")}</code>
                     </div>
                     <div>
-                      <span>结构化记忆</span>
-                      <code>{memoryStorage?.recordsPath ?? "正在读取..."}</code>
+                      <span>{t("settings.memory.recordsPath")}</span>
+                      <code>{memoryStorage?.recordsPath ?? t("settings.memory.loadingValue")}</code>
                     </div>
                     <div>
-                      <span>静态长期记忆</span>
-                      <code>{memoryStorage?.staticPath ?? "正在读取..."}</code>
+                      <span>{t("settings.memory.staticPath")}</span>
+                      <code>{memoryStorage?.staticPath ?? t("settings.memory.loadingValue")}</code>
                     </div>
                     <div>
-                      <span>审计日志</span>
-                      <code>{memoryStorage?.auditPath ?? "正在读取..."}</code>
+                      <span>{t("settings.memory.auditPath")}</span>
+                      <code>{memoryStorage?.auditPath ?? t("settings.memory.loadingValue")}</code>
                     </div>
                   </div>
                 </details>
@@ -2086,9 +2165,9 @@ export function SettingsPage({
       <div className="settings-layout split-workspace-layout">
         <aside className="settings-sidebar-card split-workspace-sidebar-card">
           <div>
-            <h2 className="settings-sidebar-title">设置</h2>
+            <h2 className="settings-sidebar-title">{t("settings.title")}</h2>
           </div>
-          <nav className="settings-directory-nav" aria-label="设置目录">
+          <nav className="settings-directory-nav" aria-label={t("settings.directory")}>
             {visibleSections.map((section) => {
               const isActive = section.id === activeSectionDefinition?.id;
               return (
@@ -2116,8 +2195,8 @@ export function SettingsPage({
           <div className={`settings-content-shell ${activeSectionWidthClass}`}>
             <div className="settings-page-head">
               <p className="eyebrow">SETTINGS</p>
-              <h1>{activeSectionDefinition?.label ?? "设置"}</h1>
-              <p className="page-copy">{activeSectionDefinition?.description ?? "管理当前设置模块。"}</p>
+              <h1>{activeSectionDefinition?.label ?? t("settings.title")}</h1>
+              <p className="page-copy">{activeSectionDefinition?.description ?? t("settings.description")}</p>
             </div>
 
             <div className="settings-section-body">

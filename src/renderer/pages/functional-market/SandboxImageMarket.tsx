@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MarketItem, SandboxImageImportProgressEvent } from "@shared/contracts";
 import { PageFeedbackStack, type PageFeedbackItem } from "../../components/PageFeedbackStack";
+import { useI18n } from "../../i18n/useI18n";
 import { MarketPageFrame } from "./MarketPageFrame";
 import {
   createMissingMarketApiError,
@@ -12,8 +13,8 @@ import {
   marketVersionLabel
 } from "./marketDisplay";
 import {
-  MARKET_TAB_DEFINITIONS,
   createEmptyMarketResult,
+  getMarketTabDefinitions,
   getMarketTabDefinition,
   matchesMarketItemQuery,
   type MarketViewProps
@@ -41,32 +42,31 @@ interface SandboxImageMarketSectionProps {
   selectedImage: MarketItem | null;
 }
 
-const LOCAL_SANDBOX_IMAGE_DESCRIPTION = "本机容器引擎中的沙箱镜像。";
 const MAX_IMPORT_PROGRESS_EVENTS = 8;
 
-function sandboxImageDescription(item: MarketItem) {
+function sandboxImageDescription(item: MarketItem, t: ReturnType<typeof useI18n>["t"]) {
   const description = item.description.trim();
-  return description === LOCAL_SANDBOX_IMAGE_DESCRIPTION ? "" : description;
+  return description === t("market.sandbox.localDescription") ? "" : description;
 }
 
-function sandboxImportStageLabel(stage: SandboxImageImportProgressEvent["stage"]) {
+function sandboxImportStageLabel(stage: SandboxImageImportProgressEvent["stage"], t: ReturnType<typeof useI18n>["t"]) {
   switch (stage) {
     case "checking-engine":
-      return "检查容器引擎";
+      return t("market.sandbox.stage.checkingEngine");
     case "extracting":
-      return "解析镜像压缩包";
+      return t("market.sandbox.stage.extracting");
     case "archive-ready":
-      return "准备镜像归档";
+      return t("market.sandbox.stage.archiveReady");
     case "loading":
-      return "导入镜像";
+      return t("market.sandbox.stage.loading");
     case "output":
-      return "导入中";
+      return t("market.sandbox.stage.output");
     case "done":
-      return "导入完成";
+      return t("market.sandbox.stage.done");
     case "failed":
-      return "导入失败";
+      return t("market.sandbox.stage.failed");
     default:
-      return "导入镜像";
+      return t("market.sandbox.stage.loading");
   }
 }
 
@@ -132,6 +132,7 @@ function CloseIcon() {
 }
 
 export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [marketResult, setMarketResult] = useState(createEmptyMarketResult);
   const [isLoadingMarket, setIsLoadingMarket] = useState(true);
@@ -145,9 +146,9 @@ export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) 
 
   const items = useMemo(
     () => marketResult.items.filter((item) =>
-      item.type === "sandbox-image" && matchesMarketItemQuery(item, query)
+      item.type === "sandbox-image" && matchesMarketItemQuery(item, query, t)
     ),
-    [marketResult.items, query]
+    [marketResult.items, query, t]
   );
   const selectedImage = useMemo(
     () => items.find((item) => item.id === selectedImageId) ?? null,
@@ -169,7 +170,7 @@ export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) 
       const commandName = force ? "refresh" : "list";
       const command = getMarketMethod(commandName);
       if (!command) {
-        throw createMissingMarketApiError(commandName);
+        throw createMissingMarketApiError(commandName, t);
       }
       const next = await command();
       setMarketResult(next);
@@ -203,7 +204,7 @@ export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) 
     try {
       const importSandboxImage = getMarketMethod("importSandboxImage");
       if (!importSandboxImage) {
-        throw createMissingMarketApiError("importSandboxImage");
+        throw createMissingMarketApiError("importSandboxImage", t);
       }
       const result = await importSandboxImage();
       await loadMarket(true);
@@ -218,14 +219,14 @@ export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) 
 
   async function handleDeleteSandboxImage(item: MarketItem) {
     const imageRef = item.imageRef ?? item.id;
-    if (!window.confirm(`确定删除沙箱镜像？\n\n${imageRef}\n\n此操作会从本机 Docker / Podman 移除镜像，不能撤销。`)) {
+    if (!window.confirm(t("market.sandbox.confirmDelete", { imageRef }))) {
       return;
     }
     setBusyItemId(item.id);
     try {
       const deleteSandboxImage = getMarketMethod("deleteSandboxImage");
       if (!deleteSandboxImage) {
-        throw createMissingMarketApiError("deleteSandboxImage");
+        throw createMissingMarketApiError("deleteSandboxImage", t);
       }
       const result = await deleteSandboxImage(imageRef);
       if (selectedImageId === item.id) {
@@ -247,7 +248,7 @@ export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) 
     try {
       const exportSandboxImage = getMarketMethod("exportSandboxImage");
       if (!exportSandboxImage) {
-        throw createMissingMarketApiError("exportSandboxImage");
+        throw createMissingMarketApiError("exportSandboxImage", t);
       }
       const result = await exportSandboxImage(imageRef);
       setMarketFeedback(createFeedback(result.ok ? "success" : "error", result.message));
@@ -259,14 +260,14 @@ export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) 
     }
   }
 
-  const activeDefinition = getMarketTabDefinition(activeTab);
+  const activeDefinition = getMarketTabDefinition(activeTab, t);
 
   return (
     <MarketPageFrame
       activeTab={activeTab}
       onTabChange={onTabChange}
       subtitle={activeDefinition.subtitle}
-      tabs={MARKET_TAB_DEFINITIONS}
+      tabs={getMarketTabDefinitions(t)}
       title={activeDefinition.title}
       toolbar={null}
     >
@@ -316,6 +317,7 @@ export function SandboxImageMarketSection({
   sandboxOffline,
   selectedImage
 }: SandboxImageMarketSectionProps) {
+  const { t } = useI18n();
   const sandboxStatus = sandboxMessage;
   const latestImportProgress = importProgressEvents[importProgressEvents.length - 1] ?? null;
   const importProgressLogEvents = importProgressEvents.filter((event) => event.stage === "output").slice(-4);
@@ -337,8 +339,8 @@ export function SandboxImageMarketSection({
         <button
           type="button"
           className="market-image-action-button"
-          aria-label={`查看 ${item.name} 镜像详情`}
-          title="查看"
+          aria-label={t("market.sandbox.action.viewDetails", { name: item.name })}
+          title={t("market.sandbox.action.view")}
           onClick={() => onSelectImage(item)}
         >
           <EyeIcon />
@@ -346,8 +348,8 @@ export function SandboxImageMarketSection({
         <button
           type="button"
           className="market-image-action-button"
-          aria-label={`${exporting ? "导出中" : "导出"} ${item.name}`}
-          title={exporting ? "导出中" : "导出"}
+          aria-label={`${exporting ? t("market.sandbox.action.exporting") : t("market.sandbox.action.export")} ${item.name}`}
+          title={exporting ? t("market.sandbox.action.exporting") : t("market.sandbox.action.export")}
           disabled={exporting}
           onClick={() => onExportSandboxImage(item)}
         >
@@ -356,8 +358,8 @@ export function SandboxImageMarketSection({
         <button
           type="button"
           className="market-image-action-button is-danger"
-          aria-label={`${deleting ? "删除中" : "删除"} ${item.name}`}
-          title={deleting ? "删除中" : "删除"}
+          aria-label={`${deleting ? t("market.sandbox.action.deleting") : t("market.sandbox.action.delete")} ${item.name}`}
+          title={deleting ? t("market.sandbox.action.deleting") : t("market.sandbox.action.delete")}
           disabled={deleting}
           onClick={() => onDeleteSandboxImage(item)}
         >
@@ -369,12 +371,12 @@ export function SandboxImageMarketSection({
 
   function renderImageDetail(image: MarketItem) {
     const rows = [
-      ["镜像", image.imageRef ?? image.id],
-      ["镜像 ID", image.imageId ?? ""],
-      ["引擎", image.containerEngine ?? ""],
-      ["版本", marketVersionLabel(image)],
-      ["大小", image.imageSize ?? ""],
-      ["创建时间", image.imageCreatedAt ?? ""],
+      [t("market.sandbox.detail.image"), image.imageRef ?? image.id],
+      [t("market.sandbox.detail.imageId"), image.imageId ?? ""],
+      [t("market.sandbox.detail.engine"), image.containerEngine ?? ""],
+      [t("market.sandbox.detail.version"), marketVersionLabel(image)],
+      [t("market.sandbox.detail.size"), image.imageSize ?? ""],
+      [t("market.sandbox.detail.createdAt"), image.imageCreatedAt ?? ""],
       ["Environment", image.environmentName ?? ""]
     ].filter((row): row is [string, string] => Boolean(row[1]));
 
@@ -382,7 +384,7 @@ export function SandboxImageMarketSection({
       <div className="market-image-detail-backdrop" onClick={() => onSelectImage(null)}>
         <section
           className="market-image-detail-dialog"
-          aria-label="沙箱镜像详情"
+          aria-label={t("market.sandbox.detail.dialogLabel")}
           aria-modal="true"
           role="dialog"
           onClick={(event) => event.stopPropagation()}
@@ -393,14 +395,14 @@ export function SandboxImageMarketSection({
                 <MarketCardGlyph kind="sandbox" />
               </div>
               <div>
-                <p className="eyebrow">镜像详情</p>
+                <p className="eyebrow">{t("market.sandbox.detail.eyebrow")}</p>
                 <h2>{image.name}</h2>
               </div>
             </div>
             <button
               type="button"
               className="market-image-detail-close"
-              aria-label="关闭镜像详情"
+              aria-label={t("market.sandbox.detail.close")}
               onClick={() => onSelectImage(null)}
             >
               <CloseIcon />
@@ -425,7 +427,7 @@ export function SandboxImageMarketSection({
     }
     const latest = latestImportProgress ?? {
       stage: "loading",
-      message: "正在启动沙箱镜像导入。",
+      message: t("market.sandbox.progress.starting"),
       engine: "Docker / Podman"
     } satisfies SandboxImageImportProgressEvent;
     const statusClass = latest.stage === "failed"
@@ -437,23 +439,23 @@ export function SandboxImageMarketSection({
       <div className="market-import-progress-backdrop">
         <section
           className={`market-import-progress-panel ${statusClass}`}
-          aria-label="镜像导入进度"
+          aria-label={t("market.sandbox.progress.dialogLabel")}
           aria-live="polite"
           aria-modal="true"
           role="dialog"
         >
           <div className="market-import-progress-head">
             <div>
-              <p className="eyebrow">镜像导入进程</p>
-              <h2>{sandboxImportStageLabel(latest.stage)}</h2>
+              <p className="eyebrow">{t("market.sandbox.progress.eyebrow")}</p>
+              <h2>{sandboxImportStageLabel(latest.stage, t)}</h2>
             </div>
             <div className="market-import-progress-actions">
               <span>{latest.engine ?? "Docker / Podman"}</span>
               <button
                 type="button"
                 className="market-import-progress-close"
-                aria-label="关闭导入进度"
-                title="关闭"
+                aria-label={t("market.sandbox.progress.close")}
+                title={t("common.close")}
                 onClick={onDismissImportProgress}
               >
                 <CloseIcon />
@@ -498,13 +500,13 @@ export function SandboxImageMarketSection({
           <input
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="搜索镜像名 / 标签 / 引擎"
+            placeholder={t("market.sandbox.search.placeholder")}
           />
         </label>
         <div className="sandbox-image-filter-actions">
           <button type="button" className="market-toolbar-btn sandbox-image-text-button" onClick={onRefresh}>
             <RefreshIcon />
-            <span>{isLoadingMarket ? "刷新中" : "刷新镜像"}</span>
+            <span>{isLoadingMarket ? t("market.sandbox.refreshing") : t("market.sandbox.refresh")}</span>
           </button>
           <button
             type="button"
@@ -513,7 +515,7 @@ export function SandboxImageMarketSection({
             disabled={isImportingImage}
           >
             <ImportIcon />
-            <span>{isImportingImage ? "导入中" : "导入镜像"}</span>
+            <span>{isImportingImage ? t("market.sandbox.importing") : t("market.sandbox.import")}</span>
           </button>
         </div>
       </div>
@@ -525,7 +527,7 @@ export function SandboxImageMarketSection({
       {items.length > 0 ? (
         <div className="market-plugin-panel sandbox-image-panel">
           {items.map((image) => {
-            const description = sandboxImageDescription(image);
+            const description = sandboxImageDescription(image, t);
             return (
               <article key={`${image.type}:${image.id}`} className="market-skill-card sandbox-image-card">
                 <div className="market-plugin-feature-head">
@@ -544,10 +546,10 @@ export function SandboxImageMarketSection({
                 <div className="market-plugin-meta">
                   <div className="market-card-footer-main sandbox-image-footer-tags">
                     <span className="market-meta-pill sandbox-engine-pill">
-                      {image.containerEngine ?? "本机镜像"}
+                      {image.containerEngine ?? t("market.source.localImage")}
                     </span>
                     <span className="market-meta-pill">{marketVersionLabel(image)}</span>
-                    <span className="market-meta-pill">{image.imageSize ?? "未知大小"}</span>
+                    <span className="market-meta-pill">{image.imageSize ?? t("market.sandbox.unknownSize")}</span>
                   </div>
                 </div>
               </article>
@@ -556,8 +558,8 @@ export function SandboxImageMarketSection({
         </div>
       ) : (
         <section className="market-empty-state">
-          <h2>{isLoadingMarket ? "正在加载沙箱镜像" : "暂无沙箱镜像"}</h2>
-          <p>可以刷新本机镜像列表，或导入 Docker / Podman 镜像压缩包。</p>
+          <h2>{isLoadingMarket ? t("market.sandbox.empty.loading") : t("market.sandbox.empty.title")}</h2>
+          <p>{t("market.sandbox.empty.description")}</p>
         </section>
       )}
     </div>
