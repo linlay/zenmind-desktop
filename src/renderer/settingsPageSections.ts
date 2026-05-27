@@ -27,50 +27,50 @@ export function createSettingsSectionDefinitions({
   return [
     {
       id: "appearance",
-      label: "外观",
-      description: "切换主题模式并调整桌面工作台的界面风格。",
+      label: "appearance",
+      description: "",
       layout: "measure",
       visible: true
     },
     {
       id: "navigation",
-      label: "导航栏",
-      description: "管理左侧主导航页签的显示顺序和侧边助手显示规则。",
+      label: "navigation",
+      description: "",
       layout: "wide",
       visible: true
     },
     {
       id: "quickAssistant",
-      label: "快捷助手",
-      description: "配置 Option+Space 唤起的快捷助手默认行为。",
+      label: "quickAssistant",
+      description: "",
       layout: "measure",
       visible: true
     },
     {
       id: "desktopPet",
-      label: "宠物助手",
-      description: "管理桌面宠物的开关、形象和绑定智能体。",
+      label: "desktopPet",
+      description: "",
       layout: "measure",
       visible: desktopPetSupported
     },
     {
       id: "embeddedWebsites",
-      label: "内嵌网站",
-      description: "固定常用网页入口，并管理其智能体增强配置。",
+      label: "embeddedWebsites",
+      description: "",
       layout: "wide",
       visible: true
     },
     {
       id: "dataRoot",
-      label: "数据目录",
-      description: "查看应用本地数据目录位置和存储说明。",
+      label: "dataRoot",
+      description: "",
       layout: "measure",
       visible: isWindows
     },
     {
       id: "memory",
-      label: "助手记忆",
-      description: "管理本地记忆召回、自动学习和存储内容。",
+      label: "memory",
+      description: "",
       layout: "wide",
       visible: true
     }

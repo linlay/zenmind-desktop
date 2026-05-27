@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { MarketItem, ServiceState } from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
 import { getServiceDisplayName } from "../../service-display";
+import { useI18n } from "../../i18n/useI18n";
 import { useServices } from "../../services/ServicesContext";
 import { MarketPageFrame } from "./MarketPageFrame";
 import {
@@ -23,8 +24,8 @@ import {
   pluginMetricLabel
 } from "./marketDisplay";
 import {
-  MARKET_TAB_DEFINITIONS,
   createEmptyMarketResult,
+  getMarketTabDefinitions,
   getMarketTabDefinition,
   matchesMarketItemQuery,
   type MarketViewProps
@@ -51,6 +52,7 @@ interface PluginMarketSectionProps {
 
 export function PluginMarket({ activeTab, onTabChange }: MarketViewProps) {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const { services, refresh: refreshServices } = useServices();
   const [query, setQuery] = useState("");
   const [marketResult, setMarketResult] = useState(createEmptyMarketResult);
@@ -60,8 +62,8 @@ export function PluginMarket({ activeTab, onTabChange }: MarketViewProps) {
 
   const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services]);
   const items = useMemo(
-    () => marketResult.items.filter((item) => item.type === "plugin" && matchesMarketItemQuery(item, query)),
-    [marketResult.items, query]
+    () => marketResult.items.filter((item) => item.type === "plugin" && matchesMarketItemQuery(item, query, t)),
+    [marketResult.items, query, t]
   );
 
   async function loadMarket(force = false) {
@@ -70,7 +72,7 @@ export function PluginMarket({ activeTab, onTabChange }: MarketViewProps) {
       const commandName = force ? "refresh" : "list";
       const command = getMarketMethod(commandName);
       if (!command) {
-        throw createMissingMarketApiError(commandName);
+        throw createMissingMarketApiError(commandName, t);
       }
       setMarketResult(await command());
     } catch (reason) {
@@ -94,7 +96,7 @@ export function PluginMarket({ activeTab, onTabChange }: MarketViewProps) {
     try {
       const install = getPluginMethod("install");
       if (!install) {
-        throw createMissingPluginApiError("install");
+        throw createMissingPluginApiError("install", t);
       }
       await install();
       await refreshEverything();
@@ -111,7 +113,7 @@ export function PluginMarket({ activeTab, onTabChange }: MarketViewProps) {
       const commandName = item.state === "update-available" ? "update" : "install";
       const action = getMarketMethod(commandName);
       if (!action) {
-        throw createMissingMarketApiError(commandName);
+        throw createMissingMarketApiError(commandName, t);
       }
       await action(item.id);
       await refreshEverything();
@@ -135,14 +137,14 @@ export function PluginMarket({ activeTab, onTabChange }: MarketViewProps) {
     });
   }
 
-  const activeDefinition = getMarketTabDefinition(activeTab);
+  const activeDefinition = getMarketTabDefinition(activeTab, t);
 
   return (
     <MarketPageFrame
       activeTab={activeTab}
       onTabChange={onTabChange}
       subtitle={activeDefinition.subtitle}
-      tabs={MARKET_TAB_DEFINITIONS}
+      tabs={getMarketTabDefinitions(t)}
       title={activeDefinition.title}
       toolbar={(
         <PluginMarketToolbar
@@ -173,10 +175,12 @@ export function PluginMarketToolbar({
   onImportPlugin,
   onRefresh
 }: PluginMarketToolbarProps) {
+  const { t } = useI18n();
+
   return (
     <>
       <button type="button" className="market-toolbar-btn" onClick={onRefresh}>
-        {isLoadingMarket ? "刷新中" : "刷新市场"}
+        {isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
       </button>
       <button
         type="button"
@@ -184,7 +188,7 @@ export function PluginMarketToolbar({
         onClick={onImportPlugin}
         disabled={isImportingPlugin}
       >
-        {isImportingPlugin ? "导入中" : "导入插件"}
+        {isImportingPlugin ? t("market.toolbar.importing") : t("market.plugin.import")}
       </button>
     </>
   );
@@ -200,6 +204,8 @@ export function PluginMarketSection({
   query,
   serviceById
 }: PluginMarketSectionProps) {
+  const { t } = useI18n();
+
   function renderPluginAction(item: MarketItem) {
     const service = serviceById.get(item.id) ?? null;
     const busy = busyItemId === item.id;
@@ -214,7 +220,7 @@ export function PluginMarketSection({
             onInstallItem(item);
           }}
         >
-          {busy ? "安装中" : item.state === "update-available" ? "更新" : "安装"}
+          {busy ? t("market.action.installing") : item.state === "update-available" ? t("market.action.update") : t("market.action.install")}
         </button>
       );
     }
@@ -227,7 +233,7 @@ export function PluginMarketSection({
           onOpenPlugin(item);
         }}
       >
-        {canOpenPlugin(service) ? "打开" : "管理"}
+        {canOpenPlugin(service) ? t("market.action.open") : t("market.action.manage")}
       </button>
     );
   }
@@ -243,7 +249,7 @@ export function PluginMarketSection({
           <input
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="搜索插件"
+            placeholder={t("market.search.plugins")}
           />
         </label>
       </div>
@@ -254,7 +260,7 @@ export function PluginMarketSection({
             const service = serviceById.get(plugin.id) ?? null;
             const displayName = getServiceDisplayName(plugin.id, plugin.name);
             const description = marketCardDescription(plugin);
-            const detailChips = pluginDetailChips(plugin, service);
+            const detailChips = pluginDetailChips(plugin, service, t);
             return (
               <article
                 key={`${plugin.type}:${plugin.id}`}
@@ -283,13 +289,13 @@ export function PluginMarketSection({
                     </div>
                     <span className="market-provider-pill">
                       <span className="market-provider-dot" aria-hidden="true" />
-                      {marketSourceLabel(plugin)}
+                      {marketSourceLabel(plugin, t)}
                     </span>
                   </div>
                 </div>
                 {description ? <p className="market-card-description">{description}</p> : null}
                 {detailChips.length > 0 ? (
-                  <div className="market-card-tags" aria-label={`${displayName} 标签`}>
+                  <div className="market-card-tags" aria-label={t("market.tags.aria", { name: displayName })}>
                     {detailChips.map((chip) => (
                       <span key={chip} className="market-chip">{chip}</span>
                     ))}
@@ -302,10 +308,10 @@ export function PluginMarketSection({
                         className={`market-plugin-status-dot ${service ? getPluginStatusClass(service.status) : getMarketItemStatusClass(plugin.state)}`}
                         aria-hidden="true"
                       />
-                      {marketItemStateLabel(plugin)}
+                      {marketItemStateLabel(plugin, t)}
                     </span>
                     <span className="market-meta-pill">{marketVersionLabel(plugin)}</span>
-                    <span className="market-meta-pill">{pluginMetricLabel(service)}</span>
+                    <span className="market-meta-pill">{pluginMetricLabel(service, t)}</span>
                   </div>
                   <div className="market-card-footer-action">
                     {renderPluginAction(plugin)}
@@ -317,8 +323,8 @@ export function PluginMarketSection({
         </div>
       ) : (
         <section className="market-empty-state">
-          <h2>{isLoadingMarket ? "正在加载市场" : "暂无插件"}</h2>
-          <p>可以刷新云端市场，或从本地导入插件包。</p>
+          <h2>{isLoadingMarket ? t("market.plugin.empty.loading") : t("market.plugin.empty.title")}</h2>
+          <p>{t("market.plugin.empty.description")}</p>
         </section>
       )}
     </div>

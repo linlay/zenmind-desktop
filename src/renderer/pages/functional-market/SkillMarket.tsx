@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MarketItem } from "@shared/contracts";
 import { useServices } from "../../services/ServicesContext";
+import { useI18n } from "../../i18n/useI18n";
 import { registerDesktopActionProvider } from "../../services/desktopActionRegistry";
 import { MarketPageFrame } from "./MarketPageFrame";
 import {
@@ -18,8 +19,8 @@ import {
   skillDetailChips
 } from "./marketDisplay";
 import {
-  MARKET_TAB_DEFINITIONS,
   createEmptyMarketResult,
+  getMarketTabDefinitions,
   getMarketTabDefinition,
   matchesMarketItemQuery,
   skillSourceMatches,
@@ -60,9 +61,10 @@ function isPackageDownloadCommand(value: string) {
 }
 
 export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
+  const { t } = useI18n();
   const { refresh: refreshServices } = useServices();
   const [query, setQuery] = useState("");
-  const [scope, setScope] = useState<SkillScope>("全部");
+  const [scope, setScope] = useState<SkillScope>("all");
   const [marketResult, setMarketResult] = useState(createEmptyMarketResult);
   const [isLoadingMarket, setIsLoadingMarket] = useState(true);
   const [busyItemId, setBusyItemId] = useState("");
@@ -73,9 +75,9 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
 
   const items = useMemo(
     () => marketResult.items.filter((item) =>
-      item.type === "skill" && matchesMarketItemQuery(item, query) && skillSourceMatches(item, scope)
+      item.type === "skill" && matchesMarketItemQuery(item, query, t) && skillSourceMatches(item, scope)
     ),
-    [marketResult.items, query, scope]
+    [marketResult.items, query, scope, t]
   );
 
   async function loadMarket(force = false) {
@@ -84,11 +86,12 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
       const commandName = force ? "refresh" : "list";
       const command = getMarketMethod(commandName);
       if (!command) {
-        throw createMissingMarketApiError(commandName);
+        throw createMissingMarketApiError(commandName, t);
       }
       const next = await command();
+      const skillMarketOffline = Boolean(next.skillOffline);
       setMarketResult(next);
-      setMarketFeedback(next.message.includes("技能市场暂不可用") ? next.message : "");
+      setMarketFeedback(skillMarketOffline ? next.skillMessage ?? "" : "");
     } catch (reason) {
       console.warn("[skill-market] failed to load market data", reason);
       setMarketFeedback(normalizeError(reason));
@@ -112,7 +115,7 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
         field: "skillDownloadCommand",
         value: nextCommand,
         valid: isPackageDownloadCommand(nextCommand),
-        message: isPackageDownloadCommand(nextCommand) ? "技能下载指令格式正确。" : "云端下载只支持 npm 或 npx 指令。"
+        message: isPackageDownloadCommand(nextCommand) ? t("market.skill.download.valid") : t("market.skill.download.unsupported")
       };
 
       switch (request.action) {
@@ -165,7 +168,7 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
           }
           onTabChange("skills");
           setCommandDraft(nextCommand);
-          setMarketFeedback("已填入云端下载指令，请确认后执行。");
+          setMarketFeedback(t("market.skill.download.prefilled"));
           return {
             ok: true,
             result: {
@@ -178,7 +181,7 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
           return null;
       }
     });
-  }, [activeTab, commandDraft, onTabChange]);
+  }, [activeTab, commandDraft, onTabChange, t]);
 
   async function refreshEverything() {
     await refreshServices();
@@ -190,7 +193,7 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
     try {
       const importSkill = getMarketMethod("importSkill");
       if (!importSkill) {
-        throw createMissingMarketApiError("importSkill");
+        throw createMissingMarketApiError("importSkill", t);
       }
       const result = await importSkill();
       await refreshEverything();
@@ -206,22 +209,22 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
   async function handleInstallCommand() {
     const nextCommand = commandDraft.trim();
     if (!nextCommand) {
-      setMarketFeedback("请输入 npm 或 npx 下载指令。");
+      setMarketFeedback(t("market.skill.download.required"));
       return;
     }
     if (!isPackageDownloadCommand(nextCommand)) {
-      setMarketFeedback("云端下载只支持 npm 或 npx 指令。");
+      setMarketFeedback(t("market.skill.download.unsupported"));
       return;
     }
     setIsInstallingCommand(true);
     try {
       const importFromCommand = getMarketMethod("importSkillFromCommand");
       if (!importFromCommand) {
-        throw createMissingMarketApiError("importSkillFromCommand");
+        throw createMissingMarketApiError("importSkillFromCommand", t);
       }
       const result = await importFromCommand(nextCommand);
       await refreshEverything();
-      setScope("云端");
+      setScope("cloud");
       setMarketFeedback(result.message);
     } catch (reason) {
       console.warn("[skill-market] failed to import skill from command", reason);
@@ -237,7 +240,7 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
       const commandName = item.state === "update-available" ? "update" : "install";
       const action = getMarketMethod(commandName);
       if (!action) {
-        throw createMissingMarketApiError(commandName);
+        throw createMissingMarketApiError(commandName, t);
       }
       await action(item.id);
       await refreshEverything();
@@ -253,7 +256,7 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
     try {
       const uninstall = getMarketMethod("uninstall");
       if (!uninstall) {
-        throw createMissingMarketApiError("uninstall");
+        throw createMissingMarketApiError("uninstall", t);
       }
       await uninstall(item.id);
       await refreshEverything();
@@ -264,14 +267,14 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
     }
   }
 
-  const activeDefinition = getMarketTabDefinition(activeTab);
+  const activeDefinition = getMarketTabDefinition(activeTab, t);
 
   return (
     <MarketPageFrame
       activeTab={activeTab}
       onTabChange={onTabChange}
       subtitle={activeDefinition.subtitle}
-      tabs={MARKET_TAB_DEFINITIONS}
+      tabs={getMarketTabDefinitions(t)}
       title={activeDefinition.title}
       toolbar={(
         <SkillMarketToolbar
@@ -290,7 +293,7 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
         isLoadingMarket={isLoadingMarket}
         items={items}
         marketFeedback={marketFeedback}
-        marketOffline={marketResult.offline}
+        marketOffline={Boolean(marketResult.skillOffline)}
         onCommandDraftChange={setCommandDraft}
         onImportSkill={() => void handleImportSkill()}
         onInstallCommand={() => void handleInstallCommand()}
@@ -311,10 +314,12 @@ export function SkillMarketToolbar({
   onImportSkill,
   onRefresh
 }: SkillMarketToolbarProps) {
+  const { t } = useI18n();
+
   return (
     <>
       <button type="button" className="market-toolbar-btn" onClick={onRefresh}>
-        {isLoadingMarket ? "刷新中" : "刷新市场"}
+        {isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
       </button>
       <button
         type="button"
@@ -322,7 +327,7 @@ export function SkillMarketToolbar({
         onClick={onImportSkill}
         disabled={isImportingSkill}
       >
-        {isImportingSkill ? "导入中" : "本地导入"}
+        {isImportingSkill ? t("market.toolbar.importing") : t("market.skill.localImport")}
       </button>
     </>
   );
@@ -347,6 +352,8 @@ export function SkillMarketSection({
   query,
   scope
 }: SkillMarketSectionProps) {
+  const { t } = useI18n();
+
   function renderSkillAction(item: MarketItem) {
     const busy = busyItemId === item.id;
     if (item.state === "not-installed" || item.state === "update-available") {
@@ -356,9 +363,9 @@ export function SkillMarketSection({
           className="market-skill-action"
           disabled={busy || item.state === "incompatible"}
           onClick={() => onInstallItem(item)}
-          aria-label={`${item.state === "update-available" ? "更新" : "安装"} ${item.name}`}
+          aria-label={item.state === "update-available" ? t("market.skill.action.update", { name: item.name }) : t("market.skill.action.install", { name: item.name })}
         >
-          {busy ? "..." : item.state === "update-available" ? "更新" : "+"}
+          {busy ? "..." : item.state === "update-available" ? t("market.action.update") : "+"}
         </button>
       );
     }
@@ -368,7 +375,7 @@ export function SkillMarketSection({
         className="market-skill-action"
         disabled={busy}
         onClick={() => onUninstallItem(item)}
-        aria-label={`卸载 ${item.name}`}
+        aria-label={t("market.skill.action.uninstall", { name: item.name })}
       >
         {busy ? "..." : "✓"}
       </button>
@@ -391,15 +398,15 @@ export function SkillMarketSection({
           <input
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="搜索技能"
+            placeholder={t("market.search.skills")}
           />
         </label>
 
         <label className="market-select">
           <select value={scope} onChange={(event) => onScopeChange(event.target.value as SkillScope)}>
-            <option value="全部">全部</option>
-            <option value="云端">云端</option>
-            <option value="本地">本地</option>
+            <option value="all">{t("market.skill.scope.all")}</option>
+            <option value="cloud">{t("market.skill.scope.cloud")}</option>
+            <option value="local">{t("market.skill.scope.local")}</option>
           </select>
         </label>
       </div>
@@ -407,9 +414,9 @@ export function SkillMarketSection({
       <div className="market-skill-actions">
         <section className="market-skill-action-card">
           <div>
-            <p className="eyebrow">本地上传</p>
-            <h2>从本地导入技能</h2>
-            <p>支持 `.zip`、`.tar.gz`、`.skill` 和 `SKILL.md` 文件。</p>
+            <p className="eyebrow">{t("market.skill.localUpload.eyebrow")}</p>
+            <h2>{t("market.skill.localUpload.title")}</h2>
+            <p>{t("market.skill.localUpload.description")}</p>
           </div>
           <button
             type="button"
@@ -417,14 +424,14 @@ export function SkillMarketSection({
             onClick={onImportSkill}
             disabled={isImportingSkill}
           >
-            {isImportingSkill ? "导入中" : "选择文件"}
+            {isImportingSkill ? t("market.toolbar.importing") : t("market.skill.localUpload.chooseFile")}
           </button>
         </section>
 
         <section className="market-skill-action-card market-skill-command-card">
           <div className="market-command-panel">
-            <p className="eyebrow">云端下载</p>
-            <h2>输入 npm/npx 指令下载</h2>
+            <p className="eyebrow">{t("market.skill.cloudDownload.eyebrow")}</p>
+            <h2>{t("market.skill.cloudDownload.title")}</h2>
             <label className="market-command-input">
               <input
                 value={commandDraft}
@@ -439,7 +446,7 @@ export function SkillMarketSection({
             onClick={onInstallCommand}
             disabled={isInstallingCommand || !commandDraft.trim()}
           >
-            {isInstallingCommand ? "下载中" : "执行下载"}
+            {isInstallingCommand ? t("market.skill.cloudDownload.downloading") : t("market.skill.cloudDownload.run")}
           </button>
         </section>
       </div>
@@ -448,7 +455,7 @@ export function SkillMarketSection({
         <div className="market-skill-groups">
           <section className="market-group">
             <div className="market-group-head">
-              <h2>{scope === "全部" ? "技能" : `${scope}技能`}</h2>
+              <h2>{scope === "all" ? t("market.skill.group.all") : t("market.skill.group.scoped", { scope: scope === "cloud" ? t("market.skill.scope.cloud") : t("market.skill.scope.local") })}</h2>
             </div>
 
             <div className="market-skill-grid">
@@ -470,13 +477,13 @@ export function SkillMarketSection({
                         </div>
                         <span className="market-provider-pill">
                           <span className="market-provider-dot" aria-hidden="true" />
-                          {marketSourceLabel(skill)}
+                          {marketSourceLabel(skill, t)}
                         </span>
                       </div>
                     </div>
                     {description ? <p className="market-card-description">{description}</p> : null}
                     {detailChips.length > 0 ? (
-                      <div className="market-card-tags" aria-label={`${skill.name} 标签`}>
+                      <div className="market-card-tags" aria-label={t("market.tags.aria", { name: skill.name })}>
                         {detailChips.map((chip) => (
                           <span key={chip} className="market-chip">{chip}</span>
                         ))}
@@ -486,7 +493,7 @@ export function SkillMarketSection({
                       <div className="market-card-footer-main">
                         <span className={`market-state-pill ${getMarketItemStatusClass(skill.state)}`}>
                           <span className={`market-plugin-status-dot ${getMarketItemStatusClass(skill.state)}`} aria-hidden="true" />
-                          {marketItemStateLabel(skill)}
+                          {marketItemStateLabel(skill, t)}
                         </span>
                         <span className="market-meta-pill">{marketVersionLabel(skill)}</span>
                       </div>
@@ -499,8 +506,8 @@ export function SkillMarketSection({
         </div>
       ) : (
         <section className="market-empty-state">
-          <h2>{isLoadingMarket ? "正在加载技能" : "暂无技能"}</h2>
-          <p>可以刷新市场、从本地导入 Skill 包，或输入 npm/npx 指令下载。</p>
+          <h2>{isLoadingMarket ? t("market.skill.empty.loading") : t("market.skill.empty.title")}</h2>
+          <p>{t("market.skill.empty.description")}</p>
         </section>
       )}
     </div>

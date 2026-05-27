@@ -124,6 +124,8 @@ import {
 import { getService } from "./services/service-registry";
 import type {
   AssistantEvent,
+  AssistantCreateCoderProjectRequest,
+  AssistantCreateCoderProjectResult,
   AssistantAttachmentTaskProgress,
   AssistantNavActionResult,
   AssistantNavAgentItemsResult,
@@ -2202,6 +2204,41 @@ function emitAssistantNavigationAgentsChanged(result: AssistantNavAgentItemsResu
   }
 }
 
+function workspaceNameFromPath(workspaceDir: string): string {
+  const normalized = String(workspaceDir || "").trim();
+  return normalized.split(/[\\/]+/).filter(Boolean).pop() || "project";
+}
+
+function coderAgentKeyFromWorkspace(workspaceDir: string): string {
+  const base = workspaceNameFromPath(workspaceDir)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `coder-${base || "project"}`;
+}
+
+function buildCoderProjectAgentCreateRequest(workspaceDir: string) {
+  const key = coderAgentKeyFromWorkspace(workspaceDir);
+  const name = key;
+  return {
+    key,
+    definition: {
+      key,
+      name,
+      mode: "CODER",
+      workspace: {
+        root: workspaceDir
+      },
+      runtimeConfig: {
+        workspaceRoot: workspaceDir
+      },
+      visibility: {
+        scopes: ["nav", "copilot"]
+      }
+    }
+  };
+}
+
 function sanitizeDownloadFilename(filename: string, fallback: string) {
   const normalized = filename.trim() || fallback;
   return normalized.replace(/[<>:"/\\|?*\u0000-\u001F]/gu, "_").slice(0, 180) || fallback;
@@ -3745,6 +3782,40 @@ function registerIpcHandlers() {
         items: [],
         message: error instanceof Error ? error.message : "agent-platform 暂不可用。",
         updatedAt: new Date().toISOString()
+      };
+    }
+  });
+  ipcMain.handle("assistant.createCoderProject", async (
+    _event,
+    input: AssistantCreateCoderProjectRequest
+  ): Promise<AssistantCreateCoderProjectResult> => {
+    const workspaceDir = String(input?.workspaceDir || "").trim();
+    if (!workspaceDir) {
+      return {
+        ok: false,
+        message: "缺少项目目录，无法创建 CODER 智能体。"
+      };
+    }
+    const request = buildCoderProjectAgentCreateRequest(workspaceDir);
+    try {
+      const response = await callAgentPlatform<{ key?: string }>(app, "/api/agent/create", {
+        method: "POST",
+        body: request
+      });
+      const agentKey = String(response?.key || request.key).trim();
+      assistantNavigationStatusClient?.scheduleRefresh(0);
+      return {
+        ok: true,
+        message: "已创建 CODER 智能体。",
+        agentKey,
+        workspaceDir
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        agentKey: request.key,
+        workspaceDir
       };
     }
   });

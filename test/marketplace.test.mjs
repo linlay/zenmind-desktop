@@ -353,6 +353,34 @@ test("listMarketItems keeps skill cloud download command-only when no Skills API
   assert.doesNotMatch(result.message, /技能市场暂不可用/);
 });
 
+test("listMarketItems reports plugin and skill marketplace status separately", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-section-status-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/marketplace/index.json", (_req, res) => {
+      res.statusCode = 403;
+      res.end("forbidden");
+    }],
+    ["/api/v1/skills?page=1&limit=100", skillsEnvelope([
+      { name: "visible-skill", display_name: "Visible Skill", description: "Visible", latest_version: "1.0.0" }
+    ])]
+  ]), async (baseUrl) => {
+    const result = await listMarketItems(app, {
+      catalogUrl: `${baseUrl}/marketplace/index.json`,
+      skillsApiBaseUrl: baseUrl
+    });
+
+    assert.equal(result.offline, true);
+    assert.equal(result.pluginOffline, true);
+    assert.match(result.pluginMessage, /403/);
+    assert.equal(result.skillOffline, false);
+    assert.doesNotMatch(result.skillMessage, /403/);
+    assert.ok(result.items.some((item) => item.id === "visible-skill" && item.type === "skill"));
+  });
+});
+
 test("listMarketItems resolves sandbox images when Docker is outside the inherited Desktop PATH", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-sandbox-desktop-path-"));
   const app = createApp(root);
@@ -1141,7 +1169,7 @@ test("installMarketItem downloads plugin archives but rejects builtin manifests"
 
     await assert.rejects(
       () => installMarketItem(app, "cloud-builtin", { catalog, skillsApiBaseUrl: "http://127.0.0.1:1" }),
-      /云端插件包必须声明 kind=plugin/
+      /云端插件包必须声明为插件类型。/
     );
     assert.equal(fs.existsSync(getPluginInstallDir(app, "cloud-builtin")), false);
   });

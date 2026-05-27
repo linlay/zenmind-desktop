@@ -3,9 +3,10 @@ import type {
   MarketItem,
   MarketListResult
 } from "@shared/contracts";
+import type { TranslateFunction, TranslationKey } from "@shared/i18n";
 
 export type MarketTab = "plugins" | "skills" | "sandboxImages";
-export type SkillScope = "全部" | "云端" | "本地";
+export type SkillScope = "all" | "cloud" | "local";
 
 export interface MarketTabDefinition {
   id: MarketTab;
@@ -22,66 +23,72 @@ export interface MarketViewProps {
 export const DEFAULT_MARKET_TAB: MarketTab = "plugins";
 export const DEFAULT_SKILLS_API_BASE_URL = "http://127.0.0.1:8080";
 
-export const MARKET_TAB_DEFINITIONS: MarketTabDefinition[] = [
-  {
-    id: "plugins",
-    label: "插件",
-    title: "功能市场",
-    subtitle: "从云端安装插件，或继续导入本地插件包。"
+const MARKET_TAB_KEYS: Record<MarketTab, { label: TranslationKey; title: TranslationKey; subtitle: TranslationKey }> = {
+  plugins: {
+    label: "market.tab.plugins.label",
+    title: "market.tab.plugins.title",
+    subtitle: "market.tab.plugins.subtitle"
   },
-  {
-    id: "skills",
-    label: "技能",
-    title: "技能市场",
-    subtitle: "支持本地导入，或输入 npm/npx 指令下载安装到 Desktop 技能目录。"
+  skills: {
+    label: "market.tab.skills.label",
+    title: "market.tab.skills.title",
+    subtitle: "market.tab.skills.subtitle"
   },
-  {
-    id: "sandboxImages",
-    label: "沙箱镜像",
-    title: "沙箱镜像市场",
-    subtitle: "管理本机 Docker / Podman 中已有的沙箱镜像包。"
+  sandboxImages: {
+    label: "market.tab.sandboxImages.label",
+    title: "market.tab.sandboxImages.title",
+    subtitle: "market.tab.sandboxImages.subtitle"
   }
-];
+};
 
-export function getMarketTabDefinition(tab: MarketTab) {
-  return MARKET_TAB_DEFINITIONS.find((definition) => definition.id === tab) ?? MARKET_TAB_DEFINITIONS[0];
+export function getMarketTabDefinitions(t: TranslateFunction): MarketTabDefinition[] {
+  return (Object.keys(MARKET_TAB_KEYS) as MarketTab[]).map((id) => ({
+    id,
+    label: t(MARKET_TAB_KEYS[id].label),
+    title: t(MARKET_TAB_KEYS[id].title),
+    subtitle: t(MARKET_TAB_KEYS[id].subtitle)
+  }));
 }
 
-export function marketStateLabel(state: MarketInstallState) {
+export function getMarketTabDefinition(tab: MarketTab, t: TranslateFunction) {
+  return getMarketTabDefinitions(t).find((definition) => definition.id === tab) ?? getMarketTabDefinitions(t)[0];
+}
+
+export function marketStateLabel(state: MarketInstallState, t: TranslateFunction) {
   switch (state) {
     case "installed":
-      return "已安装";
+      return t("market.state.installed");
     case "update-available":
-      return "可更新";
+      return t("market.state.updateAvailable");
     case "local-imported":
-      return "已导入";
+      return t("market.state.localImported");
     case "incompatible":
-      return "不兼容";
+      return t("market.state.incompatible");
     case "installing":
-      return "安装中";
+      return t("market.state.installing");
     case "failed":
-      return "失败";
+      return t("market.state.failed");
     case "not-installed":
     default:
-      return "未安装";
+      return t("market.state.notInstalled");
   }
 }
 
-export function matchesMarketItemQuery(item: MarketItem, query: string) {
+export function matchesMarketItemQuery(item: MarketItem, query: string, t: TranslateFunction) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) {
     return true;
   }
-  return `${item.name} ${item.description} ${item.version} ${item.tags.join(" ")} ${marketStateLabel(item.state)} ${item.imageRef ?? ""} ${item.environmentName ?? ""}`
+  return `${item.name} ${item.description} ${item.version} ${item.tags.join(" ")} ${marketStateLabel(item.state, t)} ${item.imageRef ?? ""} ${item.environmentName ?? ""}`
     .toLowerCase()
     .includes(normalized);
 }
 
 export function skillSourceMatches(item: MarketItem, scope: SkillScope) {
-  if (scope === "云端") {
+  if (scope === "cloud") {
     return item.source === "cloud";
   }
-  if (scope === "本地") {
+  if (scope === "local") {
     return item.source === "local";
   }
   return true;
@@ -94,6 +101,10 @@ export function createEmptyMarketResult(): MarketListResult {
     offline: false,
     message: "",
     items: [],
+    pluginMessage: "",
+    pluginOffline: false,
+    skillMessage: "",
+    skillOffline: false,
     sandboxMessage: "",
     sandboxOffline: false
   };

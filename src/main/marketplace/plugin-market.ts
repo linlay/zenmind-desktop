@@ -4,6 +4,7 @@ import type { MarketCommandResult, MarketItem } from "../../shared/contracts";
 import { readManifestFromArchive } from "../manifest-utils";
 import { getPluginInstallDir, installPluginFromArchive, uninstallPlugin } from "../plugin-loader";
 import { getAllServices } from "../services/service-registry";
+import { t } from "../i18n/main-i18n";
 import {
   catalogCachePath,
   DEFAULT_MARKETPLACE_CATALOG_URL,
@@ -40,7 +41,7 @@ async function loadPluginCatalog(app: App, options: MarketplaceOptions = {}): Pr
     return {
       catalog: pluginOnlyCatalog(normalizeCatalog(options.catalog)),
       offline: false,
-      message: "已加载指定市场清单。",
+      message: t("market.main.catalogLoaded"),
       sourceUrl: options.catalogUrl ?? DEFAULT_MARKETPLACE_CATALOG_URL
     };
   }
@@ -52,7 +53,7 @@ async function loadPluginCatalog(app: App, options: MarketplaceOptions = {}): Pr
     return {
       catalog: pluginOnlyCatalog(catalog),
       offline: false,
-      message: "市场已刷新。",
+      message: t("market.main.catalogRefreshed"),
       sourceUrl: catalogUrl
     };
   } catch (error) {
@@ -61,14 +62,14 @@ async function loadPluginCatalog(app: App, options: MarketplaceOptions = {}): Pr
       return {
         catalog: pluginOnlyCatalog(normalizeCatalog(cached)),
         offline: true,
-        message: `当前使用缓存市场：${error instanceof Error ? error.message : String(error)}`,
+        message: t("market.main.cachedCatalog", { reason: error instanceof Error ? error.message : String(error) }),
         sourceUrl: catalogUrl
       };
     }
     return {
       catalog: { schemaVersion: 1, items: [] },
       offline: true,
-      message: `市场暂不可用：${error instanceof Error ? error.message : String(error)}`,
+      message: t("market.main.catalogUnavailable", { reason: error instanceof Error ? error.message : String(error) }),
       sourceUrl: catalogUrl
     };
   }
@@ -111,16 +112,16 @@ export async function installPluginMarketItem(
   const item = findCatalogItem(catalog, itemId, "plugin");
   const selected = selectAsset(item);
   if (!selected) {
-    throw new Error("当前平台暂无可安装资源。");
+    throw new Error(t("market.main.platformUnavailable"));
   }
   const archivePath = await downloadAsset(app, item, selected.asset);
   try {
     const manifest = readManifestFromArchive(archivePath);
     if (manifest.kind !== "plugin") {
-      throw new Error("云端插件包必须声明 kind=plugin");
+      throw new Error(t("market.main.pluginKindRequired"));
     }
     if (manifest.id !== item.id) {
-      throw new Error(`插件包 id 不匹配：期望 ${item.id}，实际 ${manifest.id}`);
+      throw new Error(t("market.main.pluginIdMismatch", { expected: item.id, actual: manifest.id }));
     }
     const result = await installPluginFromArchive(app, archivePath);
     const installPath = getPluginInstallDir(app, item.id);

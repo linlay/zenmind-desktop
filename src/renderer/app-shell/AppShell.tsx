@@ -17,7 +17,7 @@ import {
   registerDesktopActionProviderForScope,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, DesktopSsoStatus, ServiceId, StartupRestoreState } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, CustomSidebarItemInput, CustomSidebarItemResult, DesktopSsoStatus, ServiceId, StartupRestoreState } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DESKTOP_COPILOT_PAGE_KEYS,
@@ -31,11 +31,6 @@ import {
   shouldAutoOpenAssistant,
   shouldShowStartupProgressCard
 } from "../../shared/startup-gate";
-import {
-  DEFAULT_DESKTOP_PET_APPEARANCE_ID,
-  DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
-  DESKTOP_PET_APPEARANCE_OPTIONS
-} from "../../shared/desktop-pet";
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
   BUILTIN_BROWSER_ROUTE,
@@ -61,7 +56,6 @@ import {
 } from "./navigation/sidebarNavOrder";
 import { useI18n } from "../i18n/useI18n";
 import {
-  normalizeAssistantNavAgent,
   normalizeAssistantNavAgentItemsResult,
   normalizeAssistantNavAgents
 } from "../assistantNavigation";
@@ -72,7 +66,6 @@ const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = "zenmind-desktop.sidebar-nav-order";
 const CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY = "zenmind-desktop.custom-sidebar-group-order";
-const ASSISTANT_NAV_AGENTS_CACHE_KEY = "zenmind-desktop.assistant-nav-agents-cache";
 const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
@@ -84,22 +77,6 @@ const AGENT_WEBCLIENT_ROUTE_ITEMS = [
 ] as const;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
-const DEFAULT_ASSISTANT_NAV_AGENT_DISPLAY_NAME =
-  DESKTOP_PET_APPEARANCE_OPTIONS.find((option) => option.id === DEFAULT_DESKTOP_PET_APPEARANCE_ID)?.displayName ??
-  DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
-const DEFAULT_ASSISTANT_NAV_AGENT: AssistantNavAgentItem = {
-  agentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
-  displayName: DEFAULT_ASSISTANT_NAV_AGENT_DISPLAY_NAME,
-  role: "",
-  unreadCount: 0,
-  unreadChatCount: 0,
-  chatCount: 0,
-  hasPendingAwaiting: false,
-  latestChatId: null,
-  latestPreview: "",
-  updatedAt: "",
-  recentChats: []
-};
 
 function asRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -125,54 +102,6 @@ function createUnavailableDesktopSsoStatus(message: string): DesktopSsoStatus {
 
 function getDesktopSsoApi() {
   return window.electronAPI.sso?.getStatus ? window.electronAPI.sso : null;
-}
-
-function normalizeCachedAssistantNavAgentItem(value: unknown): AssistantNavAgentItem | null {
-  return normalizeAssistantNavAgent(value);
-}
-
-function createDefaultAssistantNavAgents() {
-  return [{ ...DEFAULT_ASSISTANT_NAV_AGENT }];
-}
-
-function readInitialAssistantNavAgents(): AssistantNavAgentItem[] {
-  if (typeof window === "undefined") {
-    return createDefaultAssistantNavAgents();
-  }
-  try {
-    const savedValue = window.localStorage.getItem(ASSISTANT_NAV_AGENTS_CACHE_KEY);
-    const parsed = savedValue ? JSON.parse(savedValue) : [];
-    const cachedItems = Array.isArray(parsed)
-      ? parsed
-        .map(normalizeCachedAssistantNavAgentItem)
-        .filter((item): item is AssistantNavAgentItem => Boolean(item))
-      : [];
-    return cachedItems.length > 0 ? cachedItems : createDefaultAssistantNavAgents();
-  } catch {
-    return createDefaultAssistantNavAgents();
-  }
-}
-
-function writeAssistantNavAgentsCache(items: AssistantNavAgentItem[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    window.localStorage.setItem(ASSISTANT_NAV_AGENTS_CACHE_KEY, JSON.stringify(items));
-  } catch {
-    // Ignore localStorage failures in restricted renderer contexts.
-  }
-}
-
-function clearAssistantNavAgentsCache() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    window.localStorage.removeItem(ASSISTANT_NAV_AGENTS_CACHE_KEY);
-  } catch {
-    // Ignore localStorage failures in restricted renderer contexts.
-  }
 }
 
 function readStoredSidebarNavOrder(storageKey: string): SidebarNavOrderItemKey[] {
@@ -291,11 +220,11 @@ export function AppShell() {
     readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY)
   );
   const [customSidebarGroupOrder, setCustomSidebarGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialCustomSidebarGroupOrder);
-  const [assistantDockOpen, setAssistantDockOpen] = useState(false);
+  const [assistantDockOpenPath, setAssistantDockOpenPath] = useState<string | null>(null);
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
-  const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>(readInitialAssistantNavAgents);
+  const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [desktopSsoBusy, setDesktopSsoBusy] = useState(false);
@@ -369,7 +298,8 @@ export function AppShell() {
   const resolvedCopilotAgentKey = customSidebarAgentKey || currentCopilotPreference?.agentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
   const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
   const isAgentWebclientMainRoute = location.pathname === ASSISTANT_TARGET_PATH || isSingleAgentWebclientRoute(location.pathname);
-  const assistantCopilotOpen = assistantDockOpen && !isAgentWebclientMainRoute;
+  const assistantDockOpen = assistantDockOpenPath !== null;
+  const assistantCopilotOpen = assistantDockOpen && assistantDockOpenPath === location.pathname && !isAgentWebclientMainRoute;
   const sidebarCollapsed = sidebarState.mode === "collapsed";
   const renderedSidebarWidth = resolveRenderedSidebarWidth(sidebarState);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
@@ -401,6 +331,12 @@ export function AppShell() {
     return result;
   }
 
+  async function createCustomSidebarItem(input: CustomSidebarItemInput): Promise<CustomSidebarItemResult> {
+    const result = await window.electronAPI.customSidebar.add(input);
+    updateCustomSidebarItems(result.items);
+    return result;
+  }
+
   function updateCustomSidebarItems(items: CustomSidebarItem[]) {
     setCustomSidebarItems(items);
     setCustomSidebarItemsLoaded(true);
@@ -418,14 +354,9 @@ export function AppShell() {
         }
         const nextItems = normalizeAssistantNavAgents(result.items);
         setAssistantNavAgents(nextItems);
-        if (nextItems.length > 0) {
-          writeAssistantNavAgentsCache(nextItems);
-        } else {
-          clearAssistantNavAgentsCache();
-        }
       }
     } catch {
-      // Keep cached/default agents visible while agent-platform is still warming up.
+      // Keep the current live list while agent-platform is still warming up.
     }
   }
 
@@ -445,11 +376,6 @@ export function AppShell() {
       assistantNavAgentsRefreshIdRef.current += 1;
       const nextResult = normalizeAssistantNavAgentItemsResult(result);
       setAssistantNavAgents(nextResult.items);
-      if (nextResult.items.length > 0) {
-        writeAssistantNavAgentsCache(nextResult.items);
-      } else {
-        clearAssistantNavAgentsCache();
-      }
     });
 
     return () => {
@@ -482,7 +408,7 @@ export function AppShell() {
       assistantDockOpenRequestPathRef.current = null;
       setAssistantDockOpenRequest(null);
     }
-    setAssistantDockOpen(true);
+    setAssistantDockOpenPath(location.pathname);
   }
 
   async function handleDesktopSsoLogin() {
@@ -535,20 +461,24 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (currentCopilotPreference?.enabled === false && assistantDockOpen && !assistantRunningRunId) {
-      setAssistantDockOpen(false);
+    if (currentCopilotPreference?.enabled === false && assistantDockOpenPath === location.pathname && !assistantRunningRunId) {
+      setAssistantDockOpenPath(null);
       setAssistantDockOpenRequest(null);
       assistantDockOpenRequestPathRef.current = null;
     }
-  }, [assistantDockOpen, assistantRunningRunId, currentCopilotPreference?.enabled]);
+  }, [assistantDockOpenPath, assistantRunningRunId, currentCopilotPreference?.enabled, location.pathname]);
 
   useEffect(() => {
-    if (isAgentWebclientMainRoute && assistantDockOpen) {
-      setAssistantDockOpen(false);
+    if (
+      assistantDockOpenPath &&
+      !isAgentWebclientMainRoute &&
+      assistantDockOpenPath !== location.pathname
+    ) {
+      setAssistantDockOpenPath(null);
       setAssistantDockOpenRequest(null);
       assistantDockOpenRequestPathRef.current = null;
     }
-  }, [assistantDockOpen, isAgentWebclientMainRoute]);
+  }, [assistantDockOpenPath, isAgentWebclientMainRoute, location.pathname]);
 
   useEffect(() => {
     if (!assistantDockOpenRequest) {
@@ -1265,12 +1195,14 @@ export function AppShell() {
           desktopSsoBusy={desktopSsoBusy}
           onOpenAssistantDock={() => openAssistantDock()}
           onCloseAssistantDock={() => {
-            setAssistantDockOpen(false);
+            setAssistantDockOpenPath(null);
             setAssistantDockOpenRequest(null);
             assistantDockOpenRequestPathRef.current = null;
           }}
           onDesktopSsoLogin={handleDesktopSsoLogin}
           onDesktopSsoLogout={handleDesktopSsoLogout}
+          onRefreshAssistantNavAgents={refreshAssistantNavAgents}
+          onCreateCustomSidebarItem={createCustomSidebarItem}
           onRequestNavigate={requestSidebarNavigation}
           onNavigateItem={undefined}
           onToggleCollapsed={toggleSidebarCollapsed}
@@ -1373,7 +1305,7 @@ export function AppShell() {
         openRequest={assistantDockOpenRequest}
         resolvedAgentKey={resolvedCopilotAgentKey}
         onClose={() => {
-          setAssistantDockOpen(false);
+          setAssistantDockOpenPath(null);
           setAssistantDockOpenRequest(null);
           assistantDockOpenRequestPathRef.current = null;
         }}

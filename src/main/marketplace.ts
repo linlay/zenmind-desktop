@@ -61,6 +61,10 @@ function combineMarketSections(
       ...skillMarket.items,
       ...sandboxImageMarket.items
     ],
+    pluginMessage: pluginMarket.message,
+    pluginOffline: pluginMarket.offline,
+    skillMessage: skillMarket.message,
+    skillOffline: skillMarket.offline,
     sandboxMessage: sandboxImageMarket.message,
     sandboxOffline: sandboxImageMarket.offline
   };

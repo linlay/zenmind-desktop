@@ -50,11 +50,6 @@ import {
   normalizeLogStreamPollInterval
 } from "./logs";
 import {
-  EMBEDDED_CDP_GATEWAY_HOST,
-  EMBEDDED_CDP_GATEWAY_PORT,
-  EMBEDDED_CDP_GATEWAY_URL
-} from "../../../shared/embedded-cdp";
-import {
   beginStartupTiming,
   flushStartupTimingSummary
 } from "../../startup-timing";
@@ -4146,7 +4141,6 @@ function normalizeAgentPlatformEnvContentForRuntime(content: string, layout?: Se
 
   normalizeShellSourcedAgentPlatformEnvValues(env, migrated);
   migrateAgentPlatformLegacyChatEnv(env, migrated);
-  syncAgentPlatformEmbeddedCdpEnv(migrated);
 
   return removeDesktopManagedAgentPlatformEnvContent(
     upsertEnvFileContent(
@@ -4394,12 +4388,6 @@ function syncCoreServiceDefaultPortEnv(
   }
 }
 
-function syncAgentPlatformEmbeddedCdpEnv(updates: Map<string, string>) {
-  updates.set("CDP_HOST", EMBEDDED_CDP_GATEWAY_HOST);
-  updates.set("CDP_PORT", String(EMBEDDED_CDP_GATEWAY_PORT));
-  updates.set("ZENMIND_DESKTOP_CDP_GATEWAY_URL", EMBEDDED_CDP_GATEWAY_URL);
-}
-
 function isDesktopManagedContainerHubUrl(value: string) {
   return isDesktopManagedHttpUrl(
     value,
@@ -4643,7 +4631,6 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   const updates = new Map<string, string>();
 
   await applyEnvBindings(app, service, env, updates);
-  syncAgentPlatformEmbeddedCdpEnv(updates);
   await syncAgentPlatformContainerHubUrl(app, env, updates);
 
   if (!env.get("PROVIDER_APIKEY_KEY_PART")?.trim()) {

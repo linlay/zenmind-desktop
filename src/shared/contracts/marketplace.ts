@@ -57,6 +57,10 @@ export interface MarketListResult {
   offline: boolean;
   message: string;
   items: MarketItem[];
+  pluginMessage?: string;
+  pluginOffline?: boolean;
+  skillMessage?: string;
+  skillOffline?: boolean;
   sandboxMessage?: string;
   sandboxOffline?: boolean;
 }

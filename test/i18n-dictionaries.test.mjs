@@ -8,3 +8,10 @@ test("i18n dictionaries are complete and placeholders match", () => {
   });
   assert.match(output, /validated \d+ i18n keys/);
 });
+
+test("localized resources keep Chinese and English content separated", () => {
+  const output = execFileSync("node", ["./scripts/i18n/validate-language-separation.mjs"], {
+    encoding: "utf8"
+  });
+  assert.match(output, /validated localized language separation/);
+});

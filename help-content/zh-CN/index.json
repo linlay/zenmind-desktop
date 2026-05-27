@@ -31,7 +31,7 @@
         { "id": "plugin-not-visible", "title": "插件安装后为什么不显示？", "file": "plugins/plugin-not-visible.md" },
         { "id": "package-and-install-plugin", "title": "如何打包和安装插件？", "file": "plugins/package-and-install-plugin.md" },
         { "id": "frontend-mode", "title": "前端模式 (frontendMode) 有哪几种？", "file": "plugins/frontend-mode.md" },
-        { "id": "token-bridge", "title": "认证桥接 (Token Bridge) 如何使用？", "file": "plugins/token-bridge.md" }
+        { "id": "token-bridge", "title": "令牌桥接如何使用？", "file": "plugins/token-bridge.md" }
       ]
     },
     {

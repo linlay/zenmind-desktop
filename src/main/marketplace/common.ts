@@ -16,6 +16,7 @@ import {
   getMarketplaceConfigRoot,
   getMarketplaceStateRoot
 } from "../user-paths";
+import { t } from "../i18n/main-i18n";
 
 export const DEFAULT_MARKETPLACE_CATALOG_URL = "http://47.100.131.144:9001/marketplace/index.json";
 export const DEFAULT_SKILLS_API_BASE_URL = "http://127.0.0.1:8080";
@@ -180,13 +181,13 @@ export function normalizeSkillsApiBaseUrl(value: unknown) {
   try {
     parsed = new URL(input);
   } catch {
-    throw new Error("技能市场地址必须是有效的 http 或 https URL。");
+    throw new Error(t("market.main.skillsApiInvalidUrl"));
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("技能市场地址仅支持 http 或 https。");
+    throw new Error(t("market.main.skillsApiUnsupportedProtocol"));
   }
   if (parsed.search || parsed.hash) {
-    throw new Error("技能市场地址不应包含查询参数或锚点。");
+    throw new Error(t("market.main.skillsApiNoSearch"));
   }
   const pathname = parsed.pathname.replace(/\/+$/u, "") || "/";
   if (pathname === "/") {
@@ -195,7 +196,7 @@ export function normalizeSkillsApiBaseUrl(value: unknown) {
   if (pathname === "/api/v1") {
     return `${parsed.origin}/api/v1`;
   }
-  throw new Error("技能市场地址请输入服务根地址，或以 /api/v1 结尾。");
+  throw new Error(t("market.main.skillsApiInvalidPath"));
 }
 
 export function normalizeContainerHubBaseUrl(value: unknown) {
@@ -207,13 +208,13 @@ export function normalizeContainerHubBaseUrl(value: unknown) {
   try {
     parsed = new URL(input);
   } catch {
-    throw new Error("Container Hub 地址必须是有效的 http 或 https URL。");
+    throw new Error(t("market.main.containerHubInvalidUrl"));
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Container Hub 地址仅支持 http 或 https。");
+    throw new Error(t("market.main.containerHubUnsupportedProtocol"));
   }
   if (parsed.search || parsed.hash) {
-    throw new Error("Container Hub 地址不应包含查询参数或锚点。");
+    throw new Error(t("market.main.containerHubNoSearch"));
   }
   return `${parsed.origin}${parsed.pathname.replace(/\/+$/u, "")}`;
 }
@@ -280,17 +281,17 @@ function extensionForAsset(asset: MarketAsset) {
 export async function downloadAsset(app: App, item: MarketCatalogItem, asset: MarketAsset) {
   const response = await fetch(asset.url);
   if (!response.ok) {
-    throw new Error(`下载失败：HTTP ${response.status}`);
+    throw new Error(t("market.main.downloadFailed", { status: response.status }));
   }
   const bytes = Buffer.from(await response.arrayBuffer());
   if (asset.sizeBytes > 0 && bytes.length !== asset.sizeBytes) {
-    throw new Error(`下载大小不匹配：期望 ${asset.sizeBytes}，实际 ${bytes.length}`);
+    throw new Error(t("market.main.downloadSizeMismatch", { expected: asset.sizeBytes, actual: bytes.length }));
   }
   const downloadPath = path.join(downloadsRoot(app), `${item.id}-${Date.now()}${extensionForAsset(asset)}`);
   fs.writeFileSync(downloadPath, bytes);
   if (asset.sha256 && sha256(downloadPath) !== asset.sha256) {
     fs.rmSync(downloadPath, { force: true });
-    throw new Error("下载包 sha256 校验失败");
+    throw new Error(t("market.main.downloadChecksumFailed"));
   }
   return downloadPath;
 }
@@ -364,7 +365,7 @@ function catalogItemToMarketItem(item: MarketCatalogItem, record: InstalledRecor
     installedVersion,
     installPath,
     serviceId: item.type === "plugin" ? item.id : undefined,
-    message: state === "incompatible" ? "当前平台暂无可安装资源。" : undefined
+    message: state === "incompatible" ? t("market.main.platformUnavailable") : undefined
   };
 }
 
@@ -394,7 +395,7 @@ export function mergeCatalogItems(app: App, catalogItems: MarketCatalogItem[], l
 export function findCatalogItem(catalog: Catalog, itemId: string, type?: InstallableMarketType) {
   const item = catalog.items.find((entry) => entry.id === itemId && (!type || entry.type === type));
   if (!item) {
-    throw new Error(`市场中未找到 ${itemId}`);
+    throw new Error(t("market.main.catalogItemNotFound", { itemId }));
   }
   return item;
 }
