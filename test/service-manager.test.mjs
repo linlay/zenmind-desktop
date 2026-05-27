@@ -1530,8 +1530,18 @@ test("normalizeAgentPlatformEnvContentForRuntime infers RUNTIME_DIR from legacy 
   assert.doesNotMatch(next, /^PAN_DIR=/m);
 });
 
-test("normalizeAgentPlatformEnvContentForRuntime injects the Desktop embedded CDP gateway", () => {
-  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
+test("normalizeAgentPlatformEnvContentForRuntime does not inject Desktop CDP env bindings", () => {
+  const withoutCdp = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
+    [
+      "SERVER_PORT=11949"
+    ].join("\n")
+  );
+
+  assert.doesNotMatch(withoutCdp, /^CDP_HOST=/m);
+  assert.doesNotMatch(withoutCdp, /^CDP_PORT=/m);
+  assert.doesNotMatch(withoutCdp, /^ZENMIND_DESKTOP_CDP_GATEWAY_URL=/m);
+
+  const withExistingCdp = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
       "SERVER_PORT=11949",
       "CDP_HOST=localhost",
@@ -1539,9 +1549,9 @@ test("normalizeAgentPlatformEnvContentForRuntime injects the Desktop embedded CD
     ].join("\n")
   );
 
-  assert.match(next, /^CDP_HOST=127\.0\.0\.1$/m);
-  assert.match(next, /^CDP_PORT=11789$/m);
-  assert.match(next, /^ZENMIND_DESKTOP_CDP_GATEWAY_URL=http:\/\/127\.0\.0\.1:11789$/m);
+  assert.match(withExistingCdp, /^CDP_HOST=localhost$/m);
+  assert.match(withExistingCdp, /^CDP_PORT=9222$/m);
+  assert.doesNotMatch(withExistingCdp, /^ZENMIND_DESKTOP_CDP_GATEWAY_URL=/m);
 });
 
 test("normalizeAgentPlatformEnvContentForRuntime removes legacy chat ticket gates and ignores placeholder image secrets", () => {
