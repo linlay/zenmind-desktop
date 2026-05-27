@@ -339,22 +339,32 @@
   background: var(--task-board-card);
 }
 
+:root[data-theme="dark"] .task-board-attachment-badge,
 :root[data-theme="dark"] .task-board-chat-action {
-  background: rgba(87, 144, 255, 0.14);
-  border-color: rgba(87, 144, 255, 0.28);
-  color: #9dbdff;
+  background: transparent;
+  border-color: transparent;
+  color: var(--task-board-muted);
 }
 
 :root[data-theme="dark"] .task-board-chat-action.is-awaiting {
-  background: rgba(245, 158, 11, 0.15);
-  border-color: rgba(245, 158, 11, 0.3);
-  color: #fbbf24;
+  background: transparent;
+  border-color: transparent;
+  color: var(--task-board-muted);
 }
 
 :root[data-theme="dark"] .task-board-chat-action.is-human-loop {
-  background: #22c55e;
-  border-color: #22c55e;
-  color: #052e16;
+  background: transparent;
+  border-color: transparent;
+  color: var(--task-board-muted);
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .task-board-attachment-badge:hover,
+:root[data-theme="dark"] .task-board-chat-action:hover:not(:disabled),
+:root[data-theme="dark"] .task-board-chat-action.is-human-loop:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: transparent;
+  color: var(--task-board-ink);
 }
 
 :root[data-theme="dark"] .task-board-card.is-awaiting-confirmation {
@@ -965,8 +975,9 @@
   width: 20px;
   min-width: 20px;
   padding: 0;
-  background: rgba(99, 102, 241, 0.1);
-  color: #4f46e5;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--task-board-muted);
   font-size: 0;
 }
 
@@ -991,35 +1002,38 @@
   justify-content: center;
   padding: 0;
   border-radius: 6px;
-  border-color: rgba(9, 88, 217, 0.16);
-  background: rgba(9, 88, 217, 0.08);
-  color: #0958d9;
+  border-color: transparent;
+  background: transparent;
+  color: var(--task-board-muted);
   font-size: 0;
   font-weight: 800;
   white-space: nowrap;
 }
 
+.task-board-attachment-badge:hover,
 .task-board-chat-action:hover:not(:disabled) {
-  background: rgba(22, 119, 255, 0.1);
-  border-color: rgba(22, 119, 255, 0.18);
+  background: rgba(15, 23, 42, 0.05);
+  border-color: transparent;
+  color: var(--task-board-ink);
 }
 
 .task-board-chat-action.is-awaiting {
-  background: rgba(217, 119, 6, 0.12);
-  border-color: rgba(217, 119, 6, 0.24);
-  color: #b45309;
+  background: transparent;
+  border-color: transparent;
+  color: var(--task-board-muted);
 }
 
 .task-board-chat-action.is-human-loop {
-  background: #16a34a;
-  border-color: #16a34a;
-  color: #fff;
-  box-shadow: 0 6px 14px rgba(22, 163, 74, 0.22);
+  background: transparent;
+  border-color: transparent;
+  color: var(--task-board-muted);
+  box-shadow: none;
 }
 
 .task-board-chat-action.is-human-loop:hover:not(:disabled) {
-  background: #15803d;
-  border-color: #15803d;
+  background: rgba(15, 23, 42, 0.05);
+  border-color: transparent;
+  color: var(--task-board-ink);
 }
 
 .task-board-chat-action:disabled {

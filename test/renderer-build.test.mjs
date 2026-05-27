@@ -1045,7 +1045,9 @@ test("task board cards show three-line status metadata and light actions", () =>
   assert.match(taskBoardStyles, /\.task-board-automation-label\s*\{/);
   assert.doesNotMatch(taskBoardStyles, /\.task-board-card::before/);
   assert.doesNotMatch(taskBoardStyles, /\.task-board-card\.is-[^{]+::before/);
-  assert.match(taskBoardStyles, /\.task-board-chat-action\s*\{[\s\S]{0,220}border-radius:\s*6px;[\s\S]{0,220}background:\s*rgba\(9, 88, 217, 0\.08\);/);
+  assert.match(taskBoardStyles, /\.task-board-chat-action\s*\{[\s\S]{0,220}border-color:\s*transparent;[\s\S]{0,220}background:\s*transparent;[\s\S]{0,220}color:\s*var\(--task-board-muted\);/);
+  assert.match(taskBoardStyles, /\.task-board-attachment-badge\s*\{[\s\S]{0,220}border:\s*1px solid transparent;[\s\S]{0,220}background:\s*transparent;[\s\S]{0,220}color:\s*var\(--task-board-muted\);/);
+  assert.match(taskBoardStyles, /\.task-board-attachment-badge:hover,[\s\S]{0,120}\.task-board-chat-action:hover:not\(:disabled\)\s*\{[\s\S]{0,180}background:\s*rgba\(15, 23, 42, 0\.05\);/);
   assert.match(taskBoardStyles, /\.task-board-card-foot-actions\s*\{[\s\S]{0,160}height:\s*20px;/);
 });
 
@@ -1226,7 +1228,7 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-chat-action\.is-awaiting\s*\{/);
   assert.match(globalStyles, /\.task-board-automation-panel\s*\{/);
   assert.match(globalStyles, /\.task-board-automation-badge\s*\{/);
-  assert.match(globalStyles, /\.task-board-chat-action\.is-human-loop\s*\{[\s\S]{0,180}background:\s*#16a34a;/);
+  assert.match(globalStyles, /\.task-board-chat-action\.is-human-loop\s*\{[\s\S]{0,180}background:\s*transparent;[\s\S]{0,180}box-shadow:\s*none;/);
   assert.match(globalStyles, /\.task-board-modal-head-actions/);
   assert.match(globalStyles, /\.task-board-modal-mode-button[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?white-space:\s*nowrap;/);
   assert.match(globalStyles, /\.task-board-modal\.is-compact/);
