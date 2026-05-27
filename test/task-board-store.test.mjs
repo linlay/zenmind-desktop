@@ -355,6 +355,73 @@ test("task board allows assistant completion updates to completed when clearing 
   assert.equal(completed.ok, true);
   assert.equal(completed.issue.status, "completed");
   assert.equal(completed.issue.runId, null);
+  assert.equal(completed.issue.runState, "completed");
+});
+
+test("task board persists failed assistant run state when returning to todo", (t) => {
+  const app = createTempApp(t);
+  const created = createTaskBoardIssue(app, {
+    title: "交给智能体处理",
+    status: "in_progress"
+  }).issue;
+  updateTaskBoardIssue(app, created.id, {
+    runId: "run-1",
+    chatId: "chat-1",
+    runState: "running"
+  });
+
+  const failed = updateTaskBoardIssueByRunId(app, "run-1", {
+    status: "todo",
+    runId: null,
+    runState: "failed"
+  });
+
+  assert.equal(failed.ok, true);
+  assert.equal(failed.issue.status, "todo");
+  assert.equal(failed.issue.runId, null);
+  assert.equal(failed.issue.runState, "failed");
+});
+
+test("task board persists cancelled assistant run state without moving columns", (t) => {
+  const app = createTempApp(t);
+  const created = createTaskBoardIssue(app, {
+    title: "取消后留在当前列",
+    status: "in_progress"
+  }).issue;
+  updateTaskBoardIssue(app, created.id, {
+    runId: "run-cancelled",
+    chatId: "chat-cancelled",
+    runState: "running"
+  });
+
+  const cancelled = updateTaskBoardIssueByRunId(app, "run-cancelled", {
+    runId: null,
+    runState: "cancelled"
+  });
+
+  assert.equal(cancelled.ok, true);
+  assert.equal(cancelled.issue.status, "in_progress");
+  assert.equal(cancelled.issue.runId, null);
+  assert.equal(cancelled.issue.runState, "cancelled");
+});
+
+test("task board clears stale run state on manual cross-column moves", (t) => {
+  const app = createTempApp(t);
+  const created = createTaskBoardIssue(app, {
+    title: "需要重新整理",
+    status: "todo",
+    runState: "failed"
+  }).issue;
+
+  const moved = moveTaskBoardIssue(app, {
+    id: created.id,
+    status: "backlog",
+    position: 1
+  });
+
+  assert.equal(moved.ok, true);
+  assert.equal(moved.issue.status, "backlog");
+  assert.equal(moved.issue.runState, null);
 });
 
 test("task board updates stale in-progress assistant runs by chat id", (t) => {
@@ -376,4 +443,5 @@ test("task board updates stale in-progress assistant runs by chat id", (t) => {
   assert.equal(completed.ok, true);
   assert.equal(completed.issue.status, "completed");
   assert.equal(completed.issue.runId, null);
+  assert.equal(completed.issue.runState, "completed");
 });

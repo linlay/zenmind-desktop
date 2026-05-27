@@ -13,8 +13,16 @@ export const TASK_BOARD_PRIORITIES = [
   "low"
 ] as const;
 
+export const TASK_BOARD_RUN_STATES = [
+  "running",
+  "completed",
+  "failed",
+  "cancelled"
+] as const;
+
 export type TaskBoardStatus = typeof TASK_BOARD_STATUSES[number];
 export type TaskBoardPriority = typeof TASK_BOARD_PRIORITIES[number];
+export type TaskBoardRunState = typeof TASK_BOARD_RUN_STATES[number];
 
 export interface TaskBoardIssue {
   id: string;
@@ -26,6 +34,7 @@ export interface TaskBoardIssue {
   position: number;
   chatId: string | null;
   runId: string | null;
+  runState: TaskBoardRunState | null;
   automationId: string | null;
   automationEnabled: boolean;
   automationCron: string | null;
@@ -43,6 +52,7 @@ export interface TaskBoardIssueInput {
   status?: TaskBoardStatus;
   priority?: TaskBoardPriority;
   assigneeAgentKey?: string | null;
+  runState?: TaskBoardRunState | null;
   automationId?: string | null;
   automationEnabled?: boolean;
   automationCron?: string | null;
@@ -60,6 +70,7 @@ export interface TaskBoardIssueUpdateInput {
   assigneeAgentKey?: string | null;
   chatId?: string | null;
   runId?: string | null;
+  runState?: TaskBoardRunState | null;
   automationId?: string | null;
   automationEnabled?: boolean;
   automationCron?: string | null;

@@ -190,10 +190,13 @@ import {
   clampDesktopPetPosition,
   createDesktopPetState,
   createDefaultDesktopPetLocalStatus,
+  DESKTOP_PET_VISIBLE_FOOTPRINT,
+  DESKTOP_PET_WINDOW_SIZE,
   getDesktopPetContextMenuItems,
   getAnchoredDesktopPetBounds,
   getDesktopPetLogicalPositionFromBounds,
   getDesktopPetWindowSize,
+  resolveDesktopPetEdgeDock,
   resolveDesktopPetRunningTaskCount,
   type DesktopPetBoundAgentStatus,
   type DesktopPetLocalStatus,
@@ -533,6 +536,9 @@ function getDesktopPetAgentStatusForState() {
 }
 
 function getDesktopPetWindowMode(): DesktopPetWindowMode {
+  if (desktopPetDragState) {
+    return "base";
+  }
   const panel = desktopPetPreviewProjector.getPanel();
   if (!panel?.visible) {
     const messagePreview = typeof desktopPetState.messagePreview === "string"
@@ -691,7 +697,11 @@ function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
     agentStatus: getDesktopPetAgentStatusForState(),
     agentOptions: desktopPetAgentOptions,
     previewPanel: desktopPetPreviewProjector.getPanel(),
-    runningTaskCount: getDesktopPetRunningTaskCountForState()
+    runningTaskCount: getDesktopPetRunningTaskCountForState(),
+    edgeDock: resolveDesktopPetEdgeDock(
+      desktopPetSettings.position,
+      getDesktopPetDisplayBounds(desktopPetSettings.position)
+    )
   });
   applyDesktopPetWindowBounds();
   if (
@@ -731,14 +741,23 @@ function scheduleDesktopPetIdleReset(timeoutMs = 4200, clearPreview = false) {
 
 function getDesktopPetDisplayBounds(position?: { x: number; y: number }) {
   if (position) {
-    return screen.getDisplayMatching({
-      x: position.x,
-      y: position.y,
-      width: 1,
-      height: 1
-    }).bounds;
+    return getDesktopPetPointDisplayBounds({
+      x: position.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x +
+        Math.round(DESKTOP_PET_VISIBLE_FOOTPRINT.width / 2),
+      y: position.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y +
+        Math.round(DESKTOP_PET_VISIBLE_FOOTPRINT.height / 2)
+    });
   }
-  return screen.getPrimaryDisplay().bounds;
+  return screen.getPrimaryDisplay().workArea;
+}
+
+function getDesktopPetPointDisplayBounds(point: { x: number; y: number }) {
+  return screen.getDisplayMatching({
+    x: point.x,
+    y: point.y,
+    width: 1,
+    height: 1
+  }).workArea;
 }
 
 function getDesktopPetBounds() {
@@ -792,7 +811,7 @@ function applyDesktopPetWindowBounds() {
   desktopPetWindow.setBounds(nextBounds, false);
 }
 
-function persistDesktopPetPosition() {
+function persistDesktopPetPosition(mode: DesktopPetWindowMode = getDesktopPetWindowMode()) {
   if (!desktopPetWindow || desktopPetWindow.isDestroyed()) {
     return;
   }
@@ -808,7 +827,7 @@ function persistDesktopPetPosition() {
     }
     return;
   }
-  const logicalPosition = getDesktopPetLogicalPositionFromBounds(bounds, getDesktopPetWindowMode());
+  const logicalPosition = getDesktopPetLogicalPositionFromBounds(bounds, mode);
   const currentPosition = desktopPetSettings.position;
   if (currentPosition && currentPosition.x === logicalPosition.x && currentPosition.y === logicalPosition.y) {
     return;
@@ -834,14 +853,44 @@ function moveDesktopPetWindowBy(delta: { x?: unknown; y?: unknown }) {
 
   const currentBounds = desktopPetWindow.getBounds();
   const cursorPoint = screen.getCursorScreenPoint();
-  const size = getDesktopPetWindowSize(getDesktopPetWindowMode());
+  const mode = getDesktopPetWindowMode();
+  const size = getDesktopPetWindowSize(mode);
   const nextBounds = clampDesktopPetPosition({
     x: currentBounds.x + Math.round(deltaX),
     y: currentBounds.y + Math.round(deltaY)
-  }, getDesktopPetDisplayBounds(cursorPoint), size);
+  }, getDesktopPetPointDisplayBounds(cursorPoint), size, {
+    allowVisibleEdgeDock: mode === "base"
+  });
   desktopPetWindow.setBounds(nextBounds, false);
   desktopPetWindow.moveTop();
   return { ok: true };
+}
+
+function stickDesktopPetWindowToEdge(mode: DesktopPetWindowMode = getDesktopPetWindowMode()) {
+  if (!desktopPetWindow || desktopPetWindow.isDestroyed()) {
+    return;
+  }
+  const currentBounds = desktopPetWindow.getBounds();
+  const logicalPosition = getDesktopPetLogicalPositionFromBounds(currentBounds, mode);
+  const displayBounds = getDesktopPetDisplayBounds(logicalPosition);
+  const snappedBounds = clampDesktopPetPosition(logicalPosition, displayBounds, DESKTOP_PET_WINDOW_SIZE, {
+    allowVisibleEdgeDock: true,
+    stickToEdges: true
+  });
+  const snappedPosition = {
+    x: snappedBounds.x,
+    y: snappedBounds.y
+  };
+  const nextBounds = getAnchoredDesktopPetBounds(snappedPosition, displayBounds, mode);
+  if (
+    currentBounds.x === nextBounds.x &&
+    currentBounds.y === nextBounds.y &&
+    currentBounds.width === nextBounds.width &&
+    currentBounds.height === nextBounds.height
+  ) {
+    return;
+  }
+  desktopPetWindow.setBounds(nextBounds, false);
 }
 
 function clearDesktopPetDragTimer() {
@@ -849,6 +898,25 @@ function clearDesktopPetDragTimer() {
     clearInterval(desktopPetDragTimer);
     desktopPetDragTimer = null;
   }
+}
+
+function prepareDesktopPetWindowForDrag(mode: DesktopPetWindowMode) {
+  if (!desktopPetWindow || desktopPetWindow.isDestroyed() || mode === "base") {
+    return;
+  }
+  const currentBounds = desktopPetWindow.getBounds();
+  const logicalPosition = getDesktopPetLogicalPositionFromBounds(currentBounds, mode);
+  const displayBounds = getDesktopPetDisplayBounds(logicalPosition);
+  const nextBounds = getAnchoredDesktopPetBounds(logicalPosition, displayBounds, "base");
+  if (
+    currentBounds.x === nextBounds.x &&
+    currentBounds.y === nextBounds.y &&
+    currentBounds.width === nextBounds.width &&
+    currentBounds.height === nextBounds.height
+  ) {
+    return;
+  }
+  desktopPetWindow.setBounds(nextBounds, false);
 }
 
 function beginDesktopPetWindowDrag(point: { x?: unknown; y?: unknown }) {
@@ -862,6 +930,7 @@ function beginDesktopPetWindowDrag(point: { x?: unknown; y?: unknown }) {
     x: Number.isFinite(startX) ? startX : fallbackPoint.x,
     y: Number.isFinite(startY) ? startY : fallbackPoint.y
   };
+  const initialMode = getDesktopPetWindowMode();
   clearDesktopPetDragTimer();
   desktopPetDragState = {
     startPoint,
@@ -869,6 +938,7 @@ function beginDesktopPetWindowDrag(point: { x?: unknown; y?: unknown }) {
     moved: false,
     startedAt: Date.now()
   };
+  prepareDesktopPetWindowForDrag(initialMode);
 
   desktopPetDragTimer = setInterval(() => {
     if (!desktopPetDragState || !desktopPetWindow || desktopPetWindow.isDestroyed()) {
@@ -904,7 +974,8 @@ function endDesktopPetWindowDrag() {
   desktopPetDragState = null;
   clearDesktopPetDragTimer();
   if (moved) {
-    persistDesktopPetPosition();
+    stickDesktopPetWindowToEdge("base");
+    persistDesktopPetPosition("base");
   }
   return {
     ok: true,
@@ -1248,7 +1319,7 @@ function createDesktopPetWindow() {
     desktopPetWindow.setAlwaysOnTop(true);
   }
   setDesktopPetWindowMouseInteractive(false);
-  desktopPetWindow.on("move", persistDesktopPetPosition);
+  desktopPetWindow.on("move", () => persistDesktopPetPosition());
   desktopPetWindow.on("show", () => {
     setDesktopPetWindowMouseInteractive(false);
     refreshDesktopPetState();
@@ -3286,33 +3357,56 @@ function resolveTaskBoardStatusFromAssistantEvent(event: TaskBoardAssistantSyncE
   if (event.type === "done" || event.type === "run.complete") {
     return "completed";
   }
-  if (
-    event.type === "error" ||
+  return null;
+}
+
+function isCancelledTaskBoardAssistantEvent(event: TaskBoardAssistantSyncEvent) {
+  return (
+    event.type === "run.cancel" ||
+    event.type === "task.cancel" ||
     event.type === "stopped" ||
-    event.type === "run.error" ||
     event.type === "run.stopped" ||
     event.type === "run.interrupt" ||
+    event.status === "cancelled" ||
+    event.status === "canceled" ||
+    event.status === "stopped"
+  );
+}
+
+function resolveTaskBoardRunStateFromAssistantEvent(event: TaskBoardAssistantSyncEvent): TaskBoardIssue["runState"] {
+  const status = resolveTaskBoardStatusFromAssistantEvent(event);
+  if (status === "completed") {
+    return "completed";
+  }
+  if (isCancelledTaskBoardAssistantEvent(event)) {
+    return "cancelled";
+  }
+  if (
+    event.type === "error" ||
+    event.type === "run.error" ||
     event.type === "run.expired" ||
     event.status === "error" ||
-    event.status === "cancelled" ||
-    event.status === "timeout" ||
-    event.status === "stopped"
+    event.status === "timeout"
   ) {
-    return "todo";
+    return "failed";
   }
   return null;
 }
 
 function syncTaskBoardIssueFromAssistantEvent(event: TaskBoardAssistantSyncEvent) {
   const status = resolveTaskBoardStatusFromAssistantEvent(event);
-  if (!status || (!event.runId && !event.chatId)) {
+  const runState = resolveTaskBoardRunStateFromAssistantEvent(event);
+  if (!runState || (!event.runId && !event.chatId)) {
     return;
   }
 
   const input: TaskBoardIssueUpdateInput = {
-    status,
-    runId: null
+    runId: null,
+    runState
   };
+  if (status) {
+    input.status = status;
+  }
   if (event.chatId) {
     input.chatId = event.chatId;
   }
@@ -3392,7 +3486,7 @@ async function syncTaskBoardIssueAutomation(issueId: string) {
 
   if (!issue.automationEnabled) {
     if (issue.automationId) {
-      await callAgentPlatform(app, "/api/schedule/delete", {
+      await callAgentPlatform(app, "/api/automation/delete", {
         method: "POST",
         body: { id: issue.automationId }
       });
@@ -3427,11 +3521,11 @@ async function syncTaskBoardIssueAutomation(issueId: string) {
 
   const payload = buildTaskBoardAutomationPayload(issue);
   const detail = issue.automationId
-    ? await callAgentPlatform<TaskBoardAutomationDetail>(app, "/api/schedule/update", {
+    ? await callAgentPlatform<TaskBoardAutomationDetail>(app, "/api/automation/update", {
       method: "POST",
       body: { id: issue.automationId, ...payload }
     })
-    : await callAgentPlatform<TaskBoardAutomationDetail>(app, "/api/schedule/create", {
+    : await callAgentPlatform<TaskBoardAutomationDetail>(app, "/api/automation/create", {
       method: "POST",
       body: payload
     });
@@ -3454,7 +3548,7 @@ async function deleteTaskBoardIssueWithAutomation(issueId: string) {
   const issue = currentIssues.find((candidate) => candidate.id === String(issueId ?? "").trim());
   if (issue?.automationId) {
     try {
-      await callAgentPlatform(app, "/api/schedule/delete", {
+      await callAgentPlatform(app, "/api/automation/delete", {
         method: "POST",
         body: { id: issue.automationId }
       });

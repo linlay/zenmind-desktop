@@ -17,6 +17,7 @@ type TaskBoardIssueRow = {
   position: number;
   chat_id: string | null;
   run_id: string | null;
+  run_state: TaskBoardIssue["runState"];
   automation_id: string | null;
   automation_enabled: number;
   automation_cron: string | null;
@@ -50,6 +51,7 @@ function issueFromRow(row: TaskBoardIssueRow): TaskBoardIssue {
     position: row.position,
     chatId: row.chat_id,
     runId: row.run_id,
+    runState: row.run_state,
     automationId: row.automation_id,
     automationEnabled: row.automation_enabled === 1,
     automationCron: row.automation_cron,
@@ -85,6 +87,7 @@ function issueParams(issue: TaskBoardIssue) {
     issue.position,
     issue.chatId,
     issue.runId,
+    issue.runState,
     issue.automationId,
     issue.automationEnabled ? 1 : 0,
     issue.automationCron,
@@ -95,6 +98,99 @@ function issueParams(issue: TaskBoardIssue) {
     issue.createdAt,
     issue.updatedAt
   ];
+}
+
+function ensureTaskBoardIssueColumns(db: DatabaseSync) {
+  const columns = new Set(
+    (db.prepare("PRAGMA table_info(task_board_issues)").all() as Array<{ name: string }>)
+      .map((column) => column.name)
+  );
+  if (!columns.has("run_state")) {
+    db.exec(`
+      ALTER TABLE task_board_issues
+      ADD COLUMN run_state TEXT CHECK (run_state IN ('running','completed','failed','cancelled'))
+    `);
+  }
+}
+
+function ensureTaskBoardRunStateConstraint(db: DatabaseSync) {
+  const row = db.prepare(`
+    SELECT sql FROM sqlite_master
+    WHERE type = 'table' AND name = 'task_board_issues'
+  `).get() as { sql?: string } | undefined;
+  if (!row?.sql || row.sql.includes("'cancelled'")) {
+    return;
+  }
+  db.exec(`
+    ALTER TABLE task_board_issues RENAME TO task_board_issues_old_run_state;
+
+    CREATE TABLE task_board_issues (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+      description TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL CHECK (status IN ('backlog','todo','in_progress','completed')),
+      priority TEXT NOT NULL CHECK (priority IN ('high','medium','low')),
+      assignee_agent_key TEXT,
+      position REAL NOT NULL,
+      chat_id TEXT,
+      run_id TEXT,
+      run_state TEXT CHECK (run_state IN ('running','completed','failed','cancelled')),
+      automation_id TEXT,
+      automation_enabled INTEGER NOT NULL DEFAULT 0 CHECK (automation_enabled IN (0, 1)),
+      automation_cron TEXT,
+      automation_message TEXT,
+      automation_timezone TEXT,
+      attachment_chat_id TEXT,
+      attachments_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    INSERT INTO task_board_issues (
+      id,
+      title,
+      description,
+      status,
+      priority,
+      assignee_agent_key,
+      position,
+      chat_id,
+      run_id,
+      run_state,
+      automation_id,
+      automation_enabled,
+      automation_cron,
+      automation_message,
+      automation_timezone,
+      attachment_chat_id,
+      attachments_json,
+      created_at,
+      updated_at
+    )
+    SELECT
+      id,
+      title,
+      description,
+      status,
+      priority,
+      assignee_agent_key,
+      position,
+      chat_id,
+      run_id,
+      run_state,
+      automation_id,
+      automation_enabled,
+      automation_cron,
+      automation_message,
+      automation_timezone,
+      attachment_chat_id,
+      attachments_json,
+      created_at,
+      updated_at
+    FROM task_board_issues_old_run_state;
+
+    DROP TABLE task_board_issues_old_run_state;
+  `);
 }
 
 function ensureTaskBoardIssueIndexes(db: DatabaseSync) {
@@ -134,6 +230,7 @@ export function openTaskBoardDatabase(app: AppPathProvider) {
       position REAL NOT NULL,
       chat_id TEXT,
       run_id TEXT,
+      run_state TEXT CHECK (run_state IN ('running','completed','failed','cancelled')),
       automation_id TEXT,
       automation_enabled INTEGER NOT NULL DEFAULT 0 CHECK (automation_enabled IN (0, 1)),
       automation_cron TEXT,
@@ -145,8 +242,10 @@ export function openTaskBoardDatabase(app: AppPathProvider) {
       updated_at TEXT NOT NULL
     );
   `);
+  ensureTaskBoardIssueColumns(db);
+  ensureTaskBoardRunStateConstraint(db);
   ensureTaskBoardIssueIndexes(db);
-  setTaskBoardMeta(db, "schema_version", "3");
+  setTaskBoardMeta(db, "schema_version", "5");
   return db;
 }
 
@@ -171,6 +270,7 @@ export function readTaskBoardIssues(db: DatabaseSync): TaskBoardIssue[] {
       position,
       chat_id,
       run_id,
+      run_state,
       automation_id,
       automation_enabled,
       automation_cron,
@@ -207,6 +307,7 @@ export function replaceTaskBoardIssues(db: DatabaseSync, issues: TaskBoardIssue[
       position,
       chat_id,
       run_id,
+      run_state,
       automation_id,
       automation_enabled,
       automation_cron,
@@ -216,7 +317,7 @@ export function replaceTaskBoardIssues(db: DatabaseSync, issues: TaskBoardIssue[
       attachments_json,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   db.exec("BEGIN IMMEDIATE");
   try {

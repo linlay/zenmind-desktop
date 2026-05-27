@@ -1001,6 +1001,54 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.doesNotMatch(globalStyles, /\.sidebar-assistant-switch/);
 });
 
+test("task board cards show three-line status metadata and light actions", () => {
+  const contracts = readSourceFile("src", "shared", "contracts", "task-board.ts");
+  const taskBoardPage = readSourceFile("src", "renderer", "pages", "task-board", "TaskBoardPage.tsx");
+  const taskBoardStyles = readSourceFile("src", "renderer", "styles", "task-board.css");
+
+  assert.match(contracts, /TASK_BOARD_RUN_STATES/);
+  assert.match(contracts, /"cancelled"/);
+  assert.match(contracts, /runState: TaskBoardRunState \| null/);
+  assert.match(taskBoardPage, /function formatIssueUpdatedTime\(updatedAt: string\)/);
+  assert.match(taskBoardPage, /function getIssueCardStatusPresentation\(\s*issue: TaskBoardIssue,\s*options:/);
+  assert.match(taskBoardPage, /issue\.status === "backlog"[\s\S]{0,220}label:\s*formatIssueUpdatedTime\(issue\.updatedAt\)/);
+  assert.match(taskBoardPage, /issue\.status === "todo"[\s\S]{0,220}label:\s*formatTaskBoardSortNumber\(options\.sortIndex, issue\.position\)/);
+  assert.doesNotMatch(taskBoardPage, /taskBoard\.card\.(updatedAt|sortOrder)/);
+  assert.match(taskBoardPage, /options\.awaitingConfirmation && issue\.status === "in_progress"[\s\S]{0,260}taskBoard\.run\.awaitingApproval/);
+  assert.match(taskBoardPage, /issue\.runState === "cancelled"[\s\S]{0,220}taskBoard\.run\.cancelled[\s\S]{0,220}tone: "cancelled"/);
+  assert.match(taskBoardPage, /issue\.runState === "failed"[\s\S]{0,220}taskBoard\.run\.failed[\s\S]{0,220}tone: "failed"/);
+  assert.match(taskBoardPage, /issue\.runState === "running" \|\| \(issue\.status === "in_progress" && Boolean\(issue\.runId\)\)[\s\S]{0,220}taskBoard\.run\.running[\s\S]{0,220}tone: "running"/);
+  assert.match(taskBoardPage, /issue\.status === "completed"[\s\S]{0,220}taskBoard\.run\.succeeded[\s\S]{0,220}tone: "succeeded"/);
+  assert.match(taskBoardPage, /label: t\(STATUS_META\[issue\.status\]\.labelKey\)[\s\S]{0,120}tone: issue\.status/);
+  assert.match(taskBoardPage, /const cardStatus = getIssueCardStatusPresentation\(issue, \{[\s\S]{0,120}awaitingConfirmation[\s\S]{0,120}sortIndex/);
+  assert.match(taskBoardPage, /\{status !== "backlog" \? <span className=\{`task-board-status-dot is-\$\{meta\.tone\}`\} aria-hidden="true" \/> : null\}/);
+  assert.match(taskBoardPage, /className=\{`task-board-card-status is-\$\{cardStatus\.tone\}`\}/);
+  assert.match(taskBoardPage, /\{cardStatus\.tone !== "backlog" \? <span className="task-board-run-dot" aria-hidden="true" \/> : null\}/);
+  assert.match(taskBoardPage, /<span className="task-board-card-status-label">\{cardStatus\.label\}<\/span>/);
+  assert.match(taskBoardPage, /<span className="task-board-card-status-time">\{cardStatus\.updatedTime\}<\/span>/);
+  assert.match(taskBoardPage, /title=\{automationLabel\}/);
+  assert.match(taskBoardPage, /className="task-board-automation-label">\{automationLabel\}<\/span>/);
+  assert.match(taskBoardPage, /runState: nextTaskStatus\.runState/);
+  assert.match(taskBoardPage, /runState: "running"/);
+  assert.match(taskBoardStyles, /\.task-board-card-line-top\s*\{[\s\S]{0,120}height:\s*18px;/);
+  assert.match(taskBoardStyles, /\.task-board-card-status\s*\{[\s\S]{0,180}max-width:[\s\S]{0,180}height:\s*18px;/);
+  assert.match(taskBoardStyles, /\.task-board-card-status\.is-succeeded[\s\S]{0,160}#15803d/);
+  assert.match(taskBoardStyles, /\.task-board-card-status\.is-failed[\s\S]{0,160}#b91c1c/);
+  assert.match(taskBoardStyles, /\.task-board-card-status\.is-cancelled[\s\S]{0,160}#475569/);
+  assert.match(taskBoardStyles, /\.task-board-card-status\.is-awaiting[\s\S]{0,160}#b45309/);
+  assert.match(taskBoardStyles, /\.task-board-card-status\.is-running[\s\S]{0,160}#b45309/);
+  const taskBoardStatusRules = taskBoardStyles.match(/[^{}]*\.task-board-card-status\.is-[^{}]*\{[^{}]*\}/g) ?? [];
+  assert.notEqual(taskBoardStatusRules.length, 0);
+  for (const rule of taskBoardStatusRules.filter((rule) => !rule.includes(".task-board-run-dot"))) {
+    assert.doesNotMatch(rule, /background:/);
+  }
+  assert.match(taskBoardStyles, /\.task-board-automation-label\s*\{/);
+  assert.doesNotMatch(taskBoardStyles, /\.task-board-card::before/);
+  assert.doesNotMatch(taskBoardStyles, /\.task-board-card\.is-[^{]+::before/);
+  assert.match(taskBoardStyles, /\.task-board-chat-action\s*\{[\s\S]{0,220}border-radius:\s*6px;[\s\S]{0,220}background:\s*rgba\(9, 88, 217, 0\.08\);/);
+  assert.match(taskBoardStyles, /\.task-board-card-foot-actions\s*\{[\s\S]{0,160}height:\s*20px;/);
+});
+
 test("task board route exposes native desktop api and page styles", () => {
   const contracts = readSharedContractsSource();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
@@ -1028,13 +1076,14 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.moveIssue"/);
   assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.syncIssueAutomation"/);
   assert.match(mainProcess, /syncTaskBoardIssueAutomation/);
-  assert.match(mainProcess, /\/api\/schedule\/create/);
-  assert.match(mainProcess, /\/api\/schedule\/update/);
-  assert.match(mainProcess, /\/api\/schedule\/delete/);
+  assert.match(mainProcess, /\/api\/automation\/create/);
+  assert.match(mainProcess, /\/api\/automation\/update/);
+  assert.match(mainProcess, /\/api\/automation\/delete/);
+  assert.doesNotMatch(mainProcess, /\/api\/schedule(?:\/|-)(?:create|update|delete)/);
   assert.match(mainProcess, /syncTaskBoardIssueFromAssistantEvent/);
   assert.match(mainProcess, /event\.type === "done" \|\| event\.type === "run\.complete"[\s\S]{0,120}return "completed"/);
   assert.match(mainProcess, /event\.type === "run\.error"/);
-  assert.match(mainProcess, /event\.status === "timeout"[\s\S]{0,120}return "todo"/);
+  assert.match(mainProcess, /event\.status === "timeout"[\s\S]{0,220}return "failed"/);
   assert.match(mainProcess, /updateTaskBoardIssueByRunId\(app, event\.runId/);
   assert.match(mainProcess, /updateTaskBoardIssueByChatId/);
   assert.match(mainProcess, /updateTaskBoardIssueByChatId\(app,\s*event\.chatId/);
@@ -1133,7 +1182,7 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /task-board-automation-badge/);
   assert.match(taskBoardPage, /resolveAssistantTaskStatus/);
   assert.match(taskBoardPage, /status:\s*"completed"[\s\S]*?runId:\s*null/);
-  assert.match(taskBoardPage, /status:\s*"todo"[\s\S]*?t\("taskBoard\.feedback\.agentIncomplete"\)/);
+  assert.match(taskBoardPage, /runState:\s*"failed"[\s\S]*?t\("taskBoard\.feedback\.agentIncomplete"\)/);
   assert.doesNotMatch(taskBoardPage, /附件：\$\{/);
   assert.match(taskBoardPage, /task-board-attachment-badge/);
   assert.doesNotMatch(taskBoardPage, /<header className="task-board-breadcrumb">\s*<strong>Issues<\/strong>\s*<\/header>/);
@@ -1147,11 +1196,10 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /\{\.\.\.sortable\.attributes\}\s*aria-disabled=\{undefined\}/);
   assert.doesNotMatch(taskBoardPage, /aria-disabled=\{dragLocked\}/);
   assert.match(taskBoardPage, /function getVisibleAssigneeName\(issue: TaskBoardIssue, agents: AssistantNavAgentItem\[\]\)/);
-  assert.match(taskBoardPage, /return Array\.from\(trimmed\)\.length <= 4 \? trimmed : ""/);
+  assert.match(taskBoardPage, /function truncateTaskBoardAssigneeName\(name: string\)[\s\S]{0,120}Array\.from\(name\.trim\(\)\)\.slice\(0, 4\)\.join\(""\)/);
   assert.match(taskBoardPage, /const visibleAssigneeName = getVisibleAssigneeName\(issue, agents\)/);
-  assert.match(taskBoardPage, /display\.assignee && visibleAssigneeName \? visibleAssigneeName : t\("taskBoard\.form\.unassigned"\)/);
+  assert.match(taskBoardPage, /return truncateTaskBoardAssigneeName\(visibleAssigneeName\);/);
   assert.doesNotMatch(taskBoardPage, /issue\.assigneeName\.slice\(0, 1\)/);
-  assert.match(taskBoardPage, /issue\.runId \? \([\s\S]{0,180}<span[\s\S]{0,120}className="task-board-run-dot"[\s\S]{0,120}aria-label=\{t\("taskBoard\.run\.running"\)\}/);
   assert.doesNotMatch(taskBoardPage, /task-board-run-badge/);
   assert.match(taskBoardPage, /<footer className="task-board-card-foot">/);
   assert.doesNotMatch(taskBoardPage, /className="task-board-card-action"/);
@@ -1161,15 +1209,19 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-page\s*\{/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
+  assert.match(globalStyles, /--task-board-column-width:\s*max\(var\(--task-board-column-min-width\),\s*calc\(\(100% - 48px\) \/ 4\)\);/);
   assert.match(globalStyles, /\.task-board-column\s*\{/);
-  assert.match(globalStyles, /\.task-board-column\.is-todo\s*\{[\s\S]*?margin-left:\s*calc\(\(var\(--task-board-column-width\) \* -0\.5\) - 16px\)/);
-  assert.match(globalStyles, /\.task-board-columns\.is-backlog-expanded \.task-board-column\.is-todo/);
+  assert.doesNotMatch(globalStyles, /\.task-board-column\.is-todo\s*\{[\s\S]*?margin-left:/);
+  assert.doesNotMatch(taskBoardPage, /backlogExpanded/);
+  assert.doesNotMatch(taskBoardPage, /setBacklogExpanded/);
+  assert.doesNotMatch(globalStyles, /\.task-board-columns\.is-backlog-expanded/);
   assert.match(globalStyles, /\.task-board-card\s*\{/);
   assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,180}position:\s*relative;/);
   assert.match(globalStyles, /\.task-board-card\.is-drag-locked\s*\{/);
   assert.match(globalStyles, /\.task-board-card\.is-drag-locked \.task-board-card-main\s*\{[\s\S]{0,120}padding-right:/);
   assert.match(globalStyles, /\.task-board-card\.is-awaiting-confirmation\s*\{/);
-  assert.match(globalStyles, /\.task-board-run-dot\s*\{[\s\S]{0,220}position:\s*absolute;[\s\S]{0,220}right:[\s\S]{0,220}background:\s*#16a34a;/);
+  assert.match(globalStyles, /\.task-board-card-status\s*\{[\s\S]{0,220}height:\s*18px;[\s\S]{0,220}overflow:\s*hidden;/);
+  assert.match(globalStyles, /\.task-board-run-dot\s*\{[\s\S]{0,160}background:\s*currentColor;/);
   assert.match(globalStyles, /\.task-board-chat-action\s*\{/);
   assert.match(globalStyles, /\.task-board-chat-action\.is-awaiting\s*\{/);
   assert.match(globalStyles, /\.task-board-automation-panel\s*\{/);
@@ -1324,7 +1376,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.doesNotMatch(actionCatalog, /desktop\.page\./);
   assert.doesNotMatch(actionCatalog, /desktop\.embeddedWeb\./);
   assert.match(actionCatalog, /desktop\.market\.applySettingsPatch/);
-  assert.match(actionCatalog, /desktop\.automations\.listSchedules/);
+  assert.match(actionCatalog, /desktop\.automations\.listAutomations/);
   assert.doesNotMatch(actionCatalog, /desktop\.memory\./);
   assert.match(bridge, /GET" && url\.pathname === "\/health"/);
   assert.match(bridge, /GET" && url\.pathname === "\/actions"/);

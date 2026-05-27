@@ -80,6 +80,12 @@ type TaskBoardCardPresentation = {
   assigneeTitle: string;
 };
 
+type TaskBoardCardStatusPresentation = {
+  label: string;
+  tone: TaskBoardStatus | "running" | "awaiting" | "succeeded" | "failed" | "cancelled";
+  updatedTime: string;
+};
+
 type Feedback = {
   tone: "success" | "error";
   message: string;
@@ -206,6 +212,33 @@ function descriptionPreview(description: string) {
 
 function padAutomationNumber(value: number) {
   return String(value).padStart(2, "0");
+}
+
+function isSameLocalDate(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function formatIssueUpdatedTime(updatedAt: string) {
+  const updatedDate = new Date(updatedAt);
+  if (Number.isNaN(updatedDate.getTime())) {
+    return "";
+  }
+  const time = `${padAutomationNumber(updatedDate.getHours())}:${padAutomationNumber(updatedDate.getMinutes())}`;
+  if (isSameLocalDate(updatedDate, new Date())) {
+    return time;
+  }
+  return `${padAutomationNumber(updatedDate.getMonth() + 1)}/${padAutomationNumber(updatedDate.getDate())} ${time}`;
+}
+
+function formatTaskBoardSortNumber(sortIndex: number | undefined, position: number) {
+  if (typeof sortIndex === "number" && Number.isFinite(sortIndex) && sortIndex > 0) {
+    return `#${Math.round(sortIndex)}`;
+  }
+  return Number.isFinite(position) ? `#${Math.max(1, Math.round(position))}` : "";
 }
 
 function buildAutomationTimeOptions() {
@@ -545,6 +578,50 @@ function getIssueCardPresentation(
   };
 }
 
+function getIssueCardStatusPresentation(
+  issue: TaskBoardIssue,
+  options: {
+    awaitingConfirmation: boolean;
+    sortIndex?: number;
+  },
+  t: TranslateFunction
+): TaskBoardCardStatusPresentation {
+  if (issue.runState === "cancelled") {
+    return { label: t("taskBoard.run.cancelled"), tone: "cancelled", updatedTime: "" };
+  }
+  if (issue.runState === "failed") {
+    return { label: t("taskBoard.run.failed"), tone: "failed", updatedTime: "" };
+  }
+  if (issue.runState === "completed" || issue.status === "completed") {
+    return { label: t("taskBoard.run.succeeded"), tone: "succeeded", updatedTime: "" };
+  }
+  if (options.awaitingConfirmation && issue.status === "in_progress") {
+    return { label: t("taskBoard.run.awaitingApproval"), tone: "awaiting", updatedTime: "" };
+  }
+  if (issue.runState === "running" || (issue.status === "in_progress" && Boolean(issue.runId))) {
+    return { label: t("taskBoard.run.running"), tone: "running", updatedTime: "" };
+  }
+  if (issue.status === "backlog") {
+    return {
+      label: formatIssueUpdatedTime(issue.updatedAt),
+      tone: "backlog",
+      updatedTime: ""
+    };
+  }
+  if (issue.status === "todo") {
+    return {
+      label: formatTaskBoardSortNumber(options.sortIndex, issue.position),
+      tone: "todo",
+      updatedTime: ""
+    };
+  }
+  return {
+    label: t(STATUS_META[issue.status].labelKey),
+    tone: issue.status,
+    updatedTime: ""
+  };
+}
+
 function createNavigationAgentFromOption(agent: DesktopPetAgentOption): AssistantNavAgentItem {
   return {
     agentKey: agent.agentKey,
@@ -571,32 +648,52 @@ async function loadTaskBoardAgents(): Promise<AssistantNavAgentItem[]> {
   return fallbackAgents.map(createNavigationAgentFromOption);
 }
 
+function isCancelledAssistantTaskEvent(event: AssistantEvent) {
+  const eventStatus = String(event.status ?? "");
+  return (
+    event.type === "run.cancel" ||
+    event.type === "task.cancel" ||
+    event.type === "stopped" ||
+    event.type === "run.stopped" ||
+    event.type === "run.interrupt" ||
+    eventStatus === "cancelled" ||
+    eventStatus === "canceled" ||
+    eventStatus === "stopped"
+  );
+}
+
 function resolveAssistantTaskStatus(event: AssistantEvent, t: TranslateFunction): {
-  status: TaskBoardStatus;
+  status: TaskBoardStatus | null;
+  runState: TaskBoardIssue["runState"];
   tone: Feedback["tone"];
   message: string;
 } | null {
   if (event.type === "done" || event.type === "run.complete") {
     return {
       status: "completed",
+      runState: "completed",
       tone: "success",
       message: t("taskBoard.feedback.agentDone")
     };
   }
+  if (isCancelledAssistantTaskEvent(event)) {
+    return {
+      status: null,
+      runState: "cancelled",
+      tone: "error",
+      message: t("taskBoard.feedback.agentCancelled")
+    };
+  }
   if (
     event.type === "error" ||
-    event.type === "stopped" ||
     event.type === "run.error" ||
-    event.type === "run.stopped" ||
-    event.type === "run.interrupt" ||
     event.type === "run.expired" ||
     event.status === "error" ||
-    event.status === "cancelled" ||
-    event.status === "timeout" ||
-    event.status === "stopped"
+    event.status === "timeout"
   ) {
     return {
-      status: "todo",
+      status: null,
+      runState: "failed",
       tone: "error",
       message: t("taskBoard.feedback.agentIncomplete")
     };
@@ -715,7 +812,6 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const [automationMenuOpen, setAutomationMenuOpen] = useState<AutomationMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<TaskBoardContextMenu | null>(null);
-  const [backlogExpanded, setBacklogExpanded] = useState(false);
   const issuesRef = useRef<TaskBoardIssue[]>([]);
   const selectedAutomationTimeRef = useRef<HTMLButtonElement | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -851,11 +947,15 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         return;
       }
       try {
-        const result = await taskBoardApi.updateIssue(issue.id, {
-          status: nextTaskStatus.status,
+        const issueUpdate: TaskBoardIssueUpdateInput = {
           chatId: event.chatId || issue.chatId,
-          runId: null
-        });
+          runId: null,
+          runState: nextTaskStatus.runState
+        };
+        if (nextTaskStatus.status) {
+          issueUpdate.status = nextTaskStatus.status;
+        }
+        const result = await taskBoardApi.updateIssue(issue.id, issueUpdate);
         setIssues(sortIssues(result.issues));
         setFeedback({ tone: nextTaskStatus.tone, message: nextTaskStatus.message });
       } catch (error) {
@@ -1194,7 +1294,8 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         status: "in_progress",
         assigneeAgentKey: agentKey,
         chatId: runResult.chatId,
-        runId: runResult.runId
+        runId: runResult.runId,
+        runState: "running"
       });
       setIssues(sortIssues(updateResult.issues));
       setFeedback({ tone: "success", message: t("taskBoard.feedback.assignedToAssistant") });
@@ -1413,9 +1514,8 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         onDragEnd={handleDragEnd}
       >
         <div
-          className={`task-board-columns ${backlogExpanded ? "is-backlog-expanded" : ""}`}
+          className="task-board-columns"
           aria-busy={loading}
-          onClick={() => setBacklogExpanded(false)}
         >
           {VISIBLE_TASK_BOARD_STATUSES.map((status) => {
             const columnIssues = filteredIssues.filter((issue) => issue.status === status);
@@ -1429,7 +1529,6 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 t={t}
                 canAdd={taskBoardReady}
                 onAdd={() => openCreateModal(status)}
-                onSelectColumn={() => setBacklogExpanded(status === "backlog")}
                 onEdit={openEditModal}
                 onOpenChat={openAssistantIssueChat}
                 onOpenContextMenu={openIssueContextMenu}
@@ -1798,7 +1897,6 @@ function TaskBoardColumn({
   t,
   canAdd,
   onAdd,
-  onSelectColumn,
   onEdit,
   onOpenChat,
   onOpenContextMenu
@@ -1810,7 +1908,6 @@ function TaskBoardColumn({
   t: TranslateFunction;
   canAdd: boolean;
   onAdd: () => void;
-  onSelectColumn: () => void;
   onEdit: (issue: TaskBoardIssue) => void;
   onOpenChat: (issue: TaskBoardIssue) => void | Promise<void>;
   onOpenContextMenu: (issue: TaskBoardIssue, event: MouseEvent<HTMLElement>) => void;
@@ -1822,14 +1919,10 @@ function TaskBoardColumn({
     <section
       ref={setNodeRef}
       className={`task-board-column is-${status} is-${meta.tone} ${isOver ? "is-over" : ""}`}
-      onClick={(event) => {
-        event.stopPropagation();
-        onSelectColumn();
-      }}
     >
       <header className="task-board-column-head">
         <div className="task-board-column-title">
-          <span className={`task-board-status-dot is-${meta.tone}`} aria-hidden="true" />
+          {status !== "backlog" ? <span className={`task-board-status-dot is-${meta.tone}`} aria-hidden="true" /> : null}
           <strong>{label}</strong>
           <span>{issues.length}</span>
         </div>
@@ -1856,10 +1949,11 @@ function TaskBoardColumn({
         }}
       >
         <SortableContext items={issues.map((issue) => issue.id)} strategy={verticalListSortingStrategy}>
-          {issues.map((issue) => (
+          {issues.map((issue, index) => (
             <TaskBoardCard
               key={issue.id}
               issue={issue}
+              sortIndex={index + 1}
               awaitingConfirmation={issueHasPendingAwaiting(issue, agents)}
               agents={agents}
               display={display}
@@ -1880,6 +1974,7 @@ function TaskBoardColumn({
 
 function TaskBoardCard({
   issue,
+  sortIndex,
   awaitingConfirmation,
   agents,
   display,
@@ -1889,6 +1984,7 @@ function TaskBoardCard({
   onOpenContextMenu
 }: {
   issue: TaskBoardIssue;
+  sortIndex: number;
   awaitingConfirmation: boolean;
   agents: AssistantNavAgentItem[];
   display: DisplayState;
@@ -1927,6 +2023,7 @@ function TaskBoardCard({
     >
       <TaskBoardCardContent
         issue={issue}
+        sortIndex={sortIndex}
         awaitingConfirmation={awaitingConfirmation}
         agents={agents}
         display={display}
@@ -1941,6 +2038,7 @@ function TaskBoardCard({
 
 function TaskBoardCardContent({
   issue,
+  sortIndex,
   awaitingConfirmation,
   agents,
   display,
@@ -1950,6 +2048,7 @@ function TaskBoardCardContent({
   onOpenChat
 }: {
   issue: TaskBoardIssue;
+  sortIndex?: number;
   awaitingConfirmation: boolean;
   agents: AssistantNavAgentItem[];
   display: DisplayState;
@@ -1966,6 +2065,10 @@ function TaskBoardCardContent({
   const visibleAttachments = getVisibleTaskBoardAttachments(issue.attachments);
   const hasVisibleAttachment = visibleAttachments.length > 0;
   const description = display.description ? descriptionPreview(issue.description) : "";
+  const cardStatus = getIssueCardStatusPresentation(issue, {
+    awaitingConfirmation,
+    sortIndex
+  }, t);
   const cardPresentation = getIssueCardPresentation(
     {
       displayAssignee: display.assignee,
@@ -1979,6 +2082,14 @@ function TaskBoardCardContent({
         <span className="task-board-card-id-group">
           <span className="task-board-card-id">{issue.id}</span>
           {display.priority ? <PriorityBadge priority={issue.priority} t={t} /> : null}
+        </span>
+        <span
+          className={`task-board-card-status is-${cardStatus.tone}`}
+          title={cardStatus.updatedTime ? `${cardStatus.label} · ${cardStatus.updatedTime}` : cardStatus.label}
+        >
+          {cardStatus.tone !== "backlog" ? <span className="task-board-run-dot" aria-hidden="true" /> : null}
+          <span className="task-board-card-status-label">{cardStatus.label}</span>
+          <span className="task-board-card-status-time">{cardStatus.updatedTime}</span>
         </span>
       </div>
       <strong title={description || issue.title}>{issue.title}</strong>
@@ -2031,8 +2142,9 @@ function TaskBoardCardContent({
         ) : <span className="task-board-card-assignee" aria-hidden="true" />}
         <span className="task-board-card-foot-actions">
           {automationLabel ? (
-            <span className="task-board-automation-badge" title={issue.automationCron ?? undefined}>
+            <span className="task-board-automation-badge" title={automationLabel}>
               <TaskBoardIcon kind="clock" />
+              <span className="task-board-automation-label">{automationLabel}</span>
             </span>
           ) : null}
           {hasVisibleAttachment ? (
