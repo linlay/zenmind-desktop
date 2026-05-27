@@ -812,6 +812,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const [automationMenuOpen, setAutomationMenuOpen] = useState<AutomationMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<TaskBoardContextMenu | null>(null);
+  const [backlogExpanded, setBacklogExpanded] = useState(false);
   const issuesRef = useRef<TaskBoardIssue[]>([]);
   const selectedAutomationTimeRef = useRef<HTMLButtonElement | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -1523,8 +1524,9 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         onDragEnd={handleDragEnd}
       >
         <div
-          className="task-board-columns"
+          className={`task-board-columns ${backlogExpanded ? "is-backlog-expanded" : ""}`}
           aria-busy={loading}
+          onClick={() => setBacklogExpanded(false)}
         >
           {VISIBLE_TASK_BOARD_STATUSES.map((status) => {
             const columnIssues = filteredIssues.filter((issue) => issue.status === status);
@@ -1538,6 +1540,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 t={t}
                 canAdd={taskBoardReady}
                 onAdd={() => openCreateModal(status)}
+                onSelectColumn={() => setBacklogExpanded(status === "backlog")}
                 onEdit={openEditModal}
                 onOpenChat={openAssistantIssueChat}
                 onOpenContextMenu={openIssueContextMenu}
@@ -1906,6 +1909,7 @@ function TaskBoardColumn({
   t,
   canAdd,
   onAdd,
+  onSelectColumn,
   onEdit,
   onOpenChat,
   onOpenContextMenu
@@ -1917,6 +1921,7 @@ function TaskBoardColumn({
   t: TranslateFunction;
   canAdd: boolean;
   onAdd: () => void;
+  onSelectColumn: () => void;
   onEdit: (issue: TaskBoardIssue) => void;
   onOpenChat: (issue: TaskBoardIssue) => void | Promise<void>;
   onOpenContextMenu: (issue: TaskBoardIssue, event: MouseEvent<HTMLElement>) => void;
@@ -1928,6 +1933,10 @@ function TaskBoardColumn({
     <section
       ref={setNodeRef}
       className={`task-board-column is-${status} is-${meta.tone} ${isOver ? "is-over" : ""}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelectColumn();
+      }}
     >
       <header className="task-board-column-head">
         <div className="task-board-column-title">

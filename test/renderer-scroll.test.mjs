@@ -136,7 +136,7 @@ test("task board columns and cards adapt to the available board width", () => {
   );
   assert.match(columnsRule, /gap:\s*var\(--task-board-column-gap\);/);
   assert.match(columnsRule, /overflow-x:\s*hidden;/);
-  assert.doesNotMatch(styles, /\.task-board-columns\.is-backlog-expanded/);
+  assert.match(styles, /\.task-board-columns\.is-backlog-expanded \.task-board-column\.is-todo\s*\{[\s\S]*?margin-left:\s*0;/);
   assert.match(readRule(".task-board-column.is-todo"), /margin-left:\s*calc\(var\(--task-board-column-fold-offset\) \* -1\);/);
   assert.doesNotMatch(readRule(".task-board-column.is-in_progress"), /margin-left:/);
   assert.doesNotMatch(readRule(".task-board-column.is-completed"), /margin-left:/);
