@@ -41,6 +41,15 @@ test("buildPluginEmbeddedUrl carries desktop auth context for agent-webclient", 
   );
 });
 
+test("buildPluginEmbeddedUrl passes Desktop locale to agent-webclient", () => {
+  assert.equal(
+    buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {
+      hostLocale: "en-US"
+    }),
+    "http://127.0.0.1:9090/?lang=en-US"
+  );
+});
+
 test("buildPluginEmbeddedUrl opens agent-webclient desktop sections with auth context", () => {
   for (const embedPath of ["/agents", "/schedules", "/memory", "/copilot"]) {
     assert.equal(

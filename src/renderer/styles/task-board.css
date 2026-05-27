@@ -395,6 +395,10 @@
   margin-left: calc(var(--task-board-column-fold-offset) * -1);
 }
 
+.task-board-columns.is-backlog-expanded .task-board-column.is-todo {
+  margin-left: 0;
+}
+
 .task-board-column.is-in_progress,
 .task-board-column.is-completed {
   z-index: 20;

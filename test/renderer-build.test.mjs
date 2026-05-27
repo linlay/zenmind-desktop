@@ -1263,9 +1263,11 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-column\.is-todo\s*\{[\s\S]{0,180}margin-left:\s*calc\(var\(--task-board-column-fold-offset\) \* -1\);/);
   assert.doesNotMatch(globalStyles, /\.task-board-column\.is-in_progress\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(globalStyles, /\.task-board-column\.is-completed\s*\{[^}]*margin-left:/);
-  assert.doesNotMatch(taskBoardPage, /backlogExpanded/);
-  assert.doesNotMatch(taskBoardPage, /setBacklogExpanded/);
-  assert.doesNotMatch(globalStyles, /\.task-board-columns\.is-backlog-expanded/);
+  assert.match(taskBoardPage, /const \[backlogExpanded,\s*setBacklogExpanded\] = useState\(false\)/);
+  assert.match(taskBoardPage, /className=\{`task-board-columns \$\{backlogExpanded \? "is-backlog-expanded" : ""\}`\}/);
+  assert.match(taskBoardPage, /onClick=\{\(\) => setBacklogExpanded\(false\)\}/);
+  assert.match(taskBoardPage, /onSelectColumn=\{\(\) => setBacklogExpanded\(status === "backlog"\)\}/);
+  assert.match(globalStyles, /\.task-board-columns\.is-backlog-expanded \.task-board-column\.is-todo\s*\{[\s\S]{0,120}margin-left:\s*0;/);
   assert.match(globalStyles, /\.task-board-card\s*\{/);
   assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,180}position:\s*relative;/);
   assert.match(globalStyles, /\.task-board-card\.is-drag-locked\s*\{/);
