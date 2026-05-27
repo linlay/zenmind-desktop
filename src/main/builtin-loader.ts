@@ -4,6 +4,7 @@ import type { App } from "electron";
 import type { Manifest } from "../shared/contracts";
 import { readManifestFile, readManifestFromArchive } from "./manifest-utils";
 import { clearServices, registerService } from "./services/service-registry";
+import { beginStartupTiming } from "./startup-timing";
 import { getServicesRoot } from "./user-paths";
 
 const manifestCache = new Map<string, { key: string; manifest: Manifest }>();
@@ -142,28 +143,36 @@ function loadInstalledBuiltinServices(app: App, ignoredServiceIds: Set<string> =
 }
 
 export function loadBuiltinServices(app: App) {
-  clearServices("builtin");
+  const timing = beginStartupTiming("loadBuiltinServices");
+  let loadedCount = 0;
+  try {
+    clearServices("builtin");
 
-  const builtinAssetsRoot = getBuiltinAssetsRoot(app);
-  const loaded = [];
-  const loadedServiceIds = new Set<string>();
-  for (const tarPath of listBuiltinArchivePaths(builtinAssetsRoot)) {
-    const manifest = readCachedManifest(tarPath);
-    if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
-      continue;
-    }
-    const definition = registerService(manifest, {
-      defaultKind: "builtin",
-      desktop: {
-        assetFileName: path.basename(tarPath)
+    const builtinAssetsRoot = getBuiltinAssetsRoot(app);
+    const loaded = [];
+    const loadedServiceIds = new Set<string>();
+    for (const tarPath of listBuiltinArchivePaths(builtinAssetsRoot)) {
+      const manifest = readCachedManifest(tarPath);
+      if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
+        continue;
       }
-    });
-    if (definition.kind === "builtin") {
-      loaded.push(definition);
-      loadedServiceIds.add(definition.id);
+      const definition = registerService(manifest, {
+        defaultKind: "builtin",
+        desktop: {
+          assetFileName: path.basename(tarPath)
+        }
+      });
+      if (definition.kind === "builtin") {
+        loaded.push(definition);
+        loadedServiceIds.add(definition.id);
+      }
     }
-  }
 
-  loaded.push(...loadInstalledBuiltinServices(app, loadedServiceIds));
-  return loaded.sort((left, right) => left.id.localeCompare(right.id));
+    loaded.push(...loadInstalledBuiltinServices(app, loadedServiceIds));
+    const sorted = loaded.sort((left, right) => left.id.localeCompare(right.id));
+    loadedCount = sorted.length;
+    return sorted;
+  } finally {
+    timing.end({ count: loadedCount });
+  }
 }

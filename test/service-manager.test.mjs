@@ -4,6 +4,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
@@ -1250,12 +1251,18 @@ function writePluginInstallRoot(installDir, options = {}) {
   return manifest;
 }
 
-function createSpawnSyncResult(status) {
+function createSpawnSyncResult(status, output = {}) {
   return {
     status,
-    stdout: "",
-    stderr: ""
+    stdout: output.stdout ?? "",
+    stderr: output.stderr ?? ""
   };
+}
+
+function computeAssetSignature(assetPath) {
+  const stat = fs.statSync(assetPath);
+  const hash = createHash("sha256").update(fs.readFileSync(assetPath)).digest("hex");
+  return `${stat.size}:${hash}`;
 }
 
 function isCommandLookup(command, args, name) {
@@ -1279,6 +1286,30 @@ function withSpawnSyncMock(mockImplementation, run) {
       delete process.env.SHELL;
     } else {
       process.env.SHELL = previousShell;
+    }
+  }
+}
+
+async function withEnvPatch(patch, fn) {
+  const previous = new Map();
+  for (const key of Object.keys(patch)) {
+    previous.set(key, process.env[key]);
+    const value = patch[key];
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of previous.entries()) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
   }
 }
@@ -1673,6 +1704,150 @@ test("agent-platform start env does not inject NODE_BIN or port overrides", asyn
   } finally {
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("core builtin start commands run in daemon mode", () => {
+  assert.deepEqual(
+    __testInternals.getDesktopStartCommand({
+      id: "agent-platform",
+      kind: "builtin",
+      startCommand: ["start.ps1"]
+    }),
+    ["start.ps1", "--daemon"]
+  );
+  assert.deepEqual(
+    __testInternals.getDesktopStartCommand({
+      id: "agent-webclient",
+      kind: "builtin",
+      startCommand: ["start.sh", "--daemon"]
+    }),
+    ["start.sh", "--daemon"]
+  );
+  assert.deepEqual(
+    __testInternals.getDesktopStartCommand({
+      id: "custom-plugin",
+      kind: "plugin",
+      startCommand: ["start.ps1"]
+    }),
+    ["start.ps1"]
+  );
+});
+
+test("desktop start commands skip a second builtin asset refresh", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-start-command-options-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot);
+
+  try {
+    const options = __testInternals.getDesktopStartCommandOptions(app, getBuiltinService("agent-platform"));
+
+    assert.equal(options.refreshBuiltinAsset, false);
+    assert.equal(options.env, undefined);
+  } finally {
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("prepared startup starts without repeating builtin asset refresh", () => {
+  assert.deepEqual(__testInternals.getPreparedStartupStartOptions(), {
+    skipPreStartRequirements: true,
+    skipBuiltinAssetRefresh: true
+  });
+});
+
+test("agent-platform refresh check accepts pid subdirectory runtime scripts", () => {
+  const installDir = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-refresh-"));
+
+  try {
+    fs.mkdirSync(path.join(installDir, "configs"), { recursive: true });
+    fs.mkdirSync(path.join(installDir, "scripts"), { recursive: true });
+    fs.writeFileSync(
+      path.join(installDir, "manifest.json"),
+      `${JSON.stringify({
+        runtime: {
+          pidRelativePath: "run/agent-platform.pid",
+          logRelativePath: "run/agent-platform.log"
+        },
+        configFiles: [
+          {
+            key: "desktop",
+            relativePath: "configs/desktop.yml",
+            templateRelativePath: "configs/desktop.example.yml"
+          }
+        ]
+      }, null, 2)}\n`,
+      "utf8"
+    );
+    fs.writeFileSync(
+      path.join(installDir, "configs", "desktop.example.yml"),
+      "bridges:\n  - path: /actions/call\n  - path: /cdp/call\n",
+      "utf8"
+    );
+    fs.writeFileSync(
+      path.join(installDir, "scripts", "program-common.sh"),
+      [
+        'PID_FILE="$RUN_DIR/pid/agent-platform.pid"',
+        'LOG_FILE="$LOG_DIR/agent-platform.log"'
+      ].join("\n"),
+      "utf8"
+    );
+    fs.writeFileSync(
+      path.join(installDir, "scripts", "program-common.ps1"),
+      [
+        '$Script:PidFile = Join-Path (Join-Path $Script:RunDir "pid") "agent-platform.pid"',
+        '$Script:LogFile = Join-Path $Script:LogDir "agent-platform.log"'
+      ].join("\r\n"),
+      "utf8"
+    );
+
+    assert.equal(__testInternals.agentPlatformInstallNeedsRefresh(installDir), false);
+  } finally {
+    fs.rmSync(installDir, { recursive: true, force: true });
+  }
+});
+
+test("agent-platform refresh check accepts PowerShell single-quoted runtime paths", () => {
+  const installDir = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-refresh-quotes-"));
+
+  try {
+    fs.mkdirSync(path.join(installDir, "configs"), { recursive: true });
+    fs.mkdirSync(path.join(installDir, "scripts"), { recursive: true });
+    fs.writeFileSync(
+      path.join(installDir, "manifest.json"),
+      `${JSON.stringify({
+        runtime: {
+          pidRelativePath: "run/agent-platform.pid",
+          logRelativePath: "run/agent-platform.log"
+        },
+        configFiles: [
+          {
+            key: "desktop",
+            relativePath: "configs/desktop.yml",
+            templateRelativePath: "configs/desktop.example.yml"
+          }
+        ]
+      }, null, 2)}\n`,
+      "utf8"
+    );
+    fs.writeFileSync(
+      path.join(installDir, "configs", "desktop.example.yml"),
+      "bridges:\n  - path: /actions/call\n  - path: /cdp/call\n",
+      "utf8"
+    );
+    fs.writeFileSync(
+      path.join(installDir, "scripts", "program-common.ps1"),
+      [
+        "$Script:PidFile = Join-Path $Script:RunDir 'agent-platform.pid'",
+        "$Script:LogFile = Join-Path $Script:LogDir 'agent-platform.log'"
+      ].join("\r\n"),
+      "utf8"
+    );
+
+    assert.equal(__testInternals.agentPlatformInstallNeedsRefresh(installDir), false);
+  } finally {
+    fs.rmSync(installDir, { recursive: true, force: true });
   }
 });
 
@@ -2185,6 +2360,95 @@ test("installBuiltinService repairs damaged install and preserves env", async ()
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("readBuiltinAssetSignature uses the synced builtin asset manifest when available", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-asset-signature-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const fixture = createBuiltinRestoreFixture();
+  const serviceId = "custom-builtin";
+  const assetFileName = fs.readdirSync(path.join(fixture.assetsRoot, serviceId))
+    .find((entry) => entry.endsWith(".zip") || entry.endsWith(".tar.gz"));
+  assert.ok(assetFileName, "expected fixture archive");
+  fs.writeFileSync(
+    path.join(fixture.assetsRoot, "manifest.json"),
+    `${JSON.stringify({
+      generatedAt: "2026-05-26T00:00:00.000Z",
+      services: [
+        {
+          id: serviceId,
+          version: "v1.0.0",
+          assetFileName,
+          assetSignature: "manifest-signature-sentinel"
+        }
+      ]
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
+
+  try {
+    assert.equal(
+      __testInternals.readBuiltinAssetSignature(app, getService(serviceId)),
+      "manifest-signature-sentinel"
+    );
+  } finally {
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("installBuiltinService installs extracted builtin root without an extra directory copy", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-install-without-copy-"));
+  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot);
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const originalCpSync = fs.cpSync;
+  fs.cpSync = () => {
+    throw new Error("cpSync should not be used for builtin install");
+  };
+
+  try {
+    await installBuiltinService(app, "agent-container-hub");
+
+    assert.ok(fs.existsSync(path.join(installDir, "start.sh")) || fs.existsSync(path.join(installDir, "start.ps1")));
+    assert.ok(fs.existsSync(path.join(installDir, "manifest.json")));
+    assert.equal(__testInternals.isInstallHealthy(getService("agent-container-hub"), installDir), true);
+  } finally {
+    fs.cpSync = originalCpSync;
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("installBuiltinService falls back to copying when Windows blocks extracted root rename", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-install-rename-fallback-"));
+  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot);
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const originalRenameSync = fs.renameSync;
+  let blockedRename = false;
+
+  fs.renameSync = (from, to) => {
+    if (String(from).includes("agent-container-hub") && String(to) === installDir) {
+      blockedRename = true;
+      const error = new Error("simulated Windows rename EPERM");
+      error.code = "EPERM";
+      throw error;
+    }
+    return originalRenameSync(from, to);
+  };
+
+  try {
+    await installBuiltinService(app, "agent-container-hub");
+
+    assert.equal(blockedRename, true);
+    assert.ok(fs.existsSync(path.join(installDir, "manifest.json")));
+    assert.equal(__testInternals.isInstallHealthy(getService("agent-container-hub"), installDir), true);
+  } finally {
+    fs.renameSync = originalRenameSync;
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("installBuiltinService removes stale container hub relative path env during initialization", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-hub-env-normalize-"));
   const envContent = [
@@ -2669,10 +2933,10 @@ test("decodePowerShellCapturePayload restores UTF-8 error text", () => {
 test("containerEngineAvailable requires a reachable engine daemon", () => {
   const detected = withSpawnSyncMock((command, args = []) => {
     if (isCommandLookup(command, args, "docker")) {
-      return createSpawnSyncResult(0);
+      return createSpawnSyncResult(0, { stdout: "docker\n" });
     }
     if (isCommandLookup(command, args, "podman")) {
-      return createSpawnSyncResult(0);
+      return createSpawnSyncResult(0, { stdout: "podman\n" });
     }
     if ((command === "docker" || command === "podman") && args[0] === "info") {
       return createSpawnSyncResult(1);
@@ -2686,10 +2950,10 @@ test("containerEngineAvailable requires a reachable engine daemon", () => {
 test("containerEngineAvailable falls back to podman when docker daemon is unreachable", () => {
   const detected = withSpawnSyncMock((command, args = []) => {
     if (isCommandLookup(command, args, "docker")) {
-      return createSpawnSyncResult(0);
+      return createSpawnSyncResult(0, { stdout: "docker\n" });
     }
     if (isCommandLookup(command, args, "podman")) {
-      return createSpawnSyncResult(0);
+      return createSpawnSyncResult(0, { stdout: "podman\n" });
     }
     if (command === "docker" && args[0] === "info") {
       return createSpawnSyncResult(1);
@@ -2701,6 +2965,58 @@ test("containerEngineAvailable falls back to podman when docker daemon is unreac
   }, () => __testInternals.containerEngineAvailable());
 
   assert.equal(detected, "podman");
+});
+
+test("containerEngineAvailable finds a Windows podman.exe when command lookup misses it", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-podman-path-"));
+  const podmanPath = path.join(tempRoot, "podman.exe");
+  fs.writeFileSync(podmanPath, "", "utf8");
+
+  const detected = await withEnvPatch({
+    PATH: tempRoot,
+    Path: tempRoot,
+    LOCALAPPDATA: path.join(tempRoot, "LocalAppData")
+  }, async () => withSpawnSyncMock((command, args = []) => {
+    if (isCommandLookup(command, args, "docker") || isCommandLookup(command, args, "podman")) {
+      return createSpawnSyncResult(1);
+    }
+    if (command === podmanPath && args[0] === "info") {
+      return createSpawnSyncResult(0);
+    }
+    assert.fail(`unexpected spawnSync call: ${command} ${args.join(" ")}`);
+  }, () => __testInternals.containerEngineAvailable()));
+
+  assert.equal(detected, "podman");
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("probeContainerEngines reports installed engines separately from daemon readiness", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-podman-not-ready-"));
+  const podmanPath = path.join(tempRoot, "podman.exe");
+  fs.writeFileSync(podmanPath, "", "utf8");
+
+  const result = await withEnvPatch({
+    PATH: tempRoot,
+    Path: tempRoot,
+    LOCALAPPDATA: path.join(tempRoot, "LocalAppData")
+  }, async () => withSpawnSyncMock((command, args = []) => {
+    if (isCommandLookup(command, args, "docker") || isCommandLookup(command, args, "podman")) {
+      return createSpawnSyncResult(1);
+    }
+    if (command === podmanPath && args[0] === "info") {
+      return createSpawnSyncResult(1, {
+        stderr: "Cannot connect to Podman. failed to connect: dial tcp 127.0.0.1:64571"
+      });
+    }
+    assert.fail(`unexpected spawnSync call: ${command} ${args.join(" ")}`);
+  }, () => __testInternals.probeContainerEngines()));
+
+  assert.equal(result.engine, "");
+  const podman = result.probes.find((probe) => probe.engine === "podman");
+  assert.equal(podman.installed, true);
+  assert.equal(podman.reachable, false);
+  assert.match(podman.message, /Cannot connect to Podman/);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
 test("installBuiltinService force reinstalls healthy install and preserves env", async () => {
@@ -2737,8 +3053,12 @@ test("installBuiltinService force reinstalls healthy install and preserves env",
 
 test("installBuiltinService installs from selected archive when archivePath is provided", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-selected-archive-install-"));
-  const builtinArchiveStartScript = "#!/usr/bin/env bash\necho builtin start\n";
-  const selectedArchiveStartScript = "#!/usr/bin/env bash\necho selected start\n";
+  const builtinArchiveStartScript = process.platform === "win32"
+    ? "Write-Output 'builtin start'\r\n"
+    : "#!/usr/bin/env bash\necho builtin start\n";
+  const selectedArchiveStartScript = process.platform === "win32"
+    ? "Write-Output 'selected start'\r\n"
+    : "#!/usr/bin/env bash\necho selected start\n";
   const builtinFixture = createContainerHubBundleFixture(path.join(tempRoot, "builtin"), {
     startScriptContent: builtinArchiveStartScript
   });
@@ -2759,9 +3079,16 @@ test("installBuiltinService installs from selected archive when archivePath is p
     archivePath: selectedArchivePath
   });
 
+  const startScriptName = process.platform === "win32" ? "start.ps1" : "start.sh";
   assert.equal(
-    fs.readFileSync(path.join(builtinFixture.installDir, "start.sh"), "utf8"),
+    fs.readFileSync(path.join(builtinFixture.installDir, startScriptName), "utf8"),
     selectedArchiveStartScript
+  );
+  assert.equal(
+    readInitializationStatePath(
+      getTestInitializationStatePath(builtinFixture.userDataRoot, "agent-container-hub")
+    ).assetSignature,
+    computeAssetSignature(selectedArchivePath)
   );
 
   restore();
@@ -5181,6 +5508,7 @@ test("runStartupPreparation bootstraps packaged first launch with the three core
     assert.match(hubEnv, /^BIND_ADDR=127\.0\.0\.1:7079$/mu);
     assert.notEqual(hubState.status, "running");
     assert.equal(fs.existsSync(path.join(hubInstallDir, "run", "started.txt")), false);
+
   } finally {
     await stopStartupCoreProcesses(app);
     restore();
@@ -5255,6 +5583,67 @@ test("runStartupPreparation does not reinstall healthy packaged core services wh
   }
 });
 
+test("runStartupPreparation does not reinstall a healthy packaged service with a runtime error", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const originalRenameSync = fs.renameSync;
+  let portServer;
+
+  try {
+    const appServerPort = await getAvailableLocalPort();
+    const platformPort = await getAvailableLocalPort();
+    const webclientPort = await getAvailableLocalPort();
+
+    for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
+      await installBuiltinService(app, serviceId);
+    }
+
+    writeTestEnv(userDataRoot, "zenmind-app-server", `SERVER_PORT=${appServerPort}\n`);
+    writeTestEnv(userDataRoot, "agent-platform", `SERVER_PORT=${platformPort}\n`);
+    writeTestEnv(
+      userDataRoot,
+      "agent-webclient",
+      [
+        `PORT=${webclientPort}`,
+        `BASE_URL=http://127.0.0.1:${platformPort}`,
+        `WS_BASE_URL=http://127.0.0.1:${platformPort}`,
+        `VOICE_BASE_URL=http://127.0.0.1:${platformPort}`,
+        ""
+      ].join("\n")
+    );
+
+    portServer = net.createServer();
+    await new Promise((resolve, reject) => {
+      portServer.once("error", reject);
+      portServer.listen(platformPort, "127.0.0.1", resolve);
+    });
+
+    fs.renameSync = (from, to) => {
+      if (String(to).includes(`${path.sep}agent-platform${path.sep}`)) {
+        throw new Error("agent-platform should not be reinstalled for a runtime-only startup error");
+      }
+      return originalRenameSync(from, to);
+    };
+
+    const result = await runStartupPreparation(app);
+
+    assert.doesNotMatch(result.failures.join("\n"), /should not be reinstalled/);
+  } finally {
+    fs.renameSync = originalRenameSync;
+    if (portServer) {
+      await new Promise((resolve) => portServer.close(resolve));
+    }
+    await stopStartupCoreProcesses(app);
+    restore();
+    try {
+      fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+    } catch {
+      // Windows can keep fixture process directories busy briefly after failed starts.
+    }
+  }
+});
+
 test("runStartupPreparation restores healthy packaged core services in parallel", async () => {
   const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 500 });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
@@ -5289,6 +5678,85 @@ test("runStartupPreparation restores healthy packaged core services in parallel"
     await stopStartupCoreProcesses(app);
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runStartupPreparation only starts packaged first-launch dependents after app-server is running", async () => {
+  const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 500 });
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
+  const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
+  const startingTimes = new Map();
+  const succeededTimes = new Map();
+
+  process.env.SERVICE_VERIFY_DELAY_MS = "0";
+
+  try {
+    const appServerPort = await getAvailableLocalPort();
+    const platformPort = await getAvailableLocalPort();
+    const webclientPort = await getAvailableLocalPort();
+    writeTestEnv(userDataRoot, "zenmind-app-server", `SERVER_PORT=${appServerPort}\n`);
+    writeTestEnv(userDataRoot, "agent-platform", `SERVER_PORT=${platformPort}\n`);
+    writeTestEnv(
+      userDataRoot,
+      "agent-webclient",
+      [
+        `PORT=${webclientPort}`,
+        `BASE_URL=http://127.0.0.1:${platformPort}`,
+        `WS_BASE_URL=http://127.0.0.1:${platformPort}`,
+        `VOICE_BASE_URL=http://127.0.0.1:${platformPort}`,
+        ""
+      ].join("\n")
+    );
+
+    const result = await runStartupPreparation(app, {
+      onStarting(serviceId) {
+        if (["zenmind-app-server", "agent-platform", "agent-webclient"].includes(serviceId)) {
+          startingTimes.set(serviceId, Date.now());
+        }
+      },
+      onProgress(serviceId, phase) {
+        if (["zenmind-app-server", "agent-platform", "agent-webclient"].includes(serviceId) && phase === "succeeded") {
+          succeededTimes.set(serviceId, Date.now());
+        }
+      }
+    });
+    assert.equal(result.mode, "bootstrap");
+    if (!succeededTimes.has("zenmind-app-server")) {
+      assert.equal(startingTimes.has("agent-platform"), false, "agent-platform should not start when app-server is not running");
+      assert.equal(startingTimes.has("agent-webclient"), false, "agent-webclient should not start when app-server is not running");
+      assert.match(result.failures.join("\n"), /zenmind-app-server:/);
+      return;
+    }
+
+    const startTimes = ["agent-platform", "agent-webclient"].map((serviceId) => {
+      assert.equal(startingTimes.has(serviceId), true, `${serviceId} should reach starting phase`);
+      return startingTimes.get(serviceId);
+    });
+    const spreadMs = Math.max(...startTimes) - Math.min(...startTimes);
+
+    assert.ok(
+      startingTimes.get("agent-platform") >= succeededTimes.get("zenmind-app-server"),
+      "agent-platform should not start before app-server is running"
+    );
+    assert.ok(
+      startingTimes.get("agent-webclient") >= succeededTimes.get("zenmind-app-server"),
+      "agent-webclient should not start before app-server is running"
+    );
+    assert.ok(spreadMs < 500, `expected parallel bootstrap starting callbacks, got spread ${spreadMs}ms`);
+  } finally {
+    if (previousVerifyDelay === undefined) {
+      delete process.env.SERVICE_VERIFY_DELAY_MS;
+    } else {
+      process.env.SERVICE_VERIFY_DELAY_MS = previousVerifyDelay;
+    }
+    await stopStartupCoreProcesses(app);
+    restore();
+    try {
+      fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+    } catch {
+      // Windows may keep synthetic child-process directories busy briefly after failed starts.
+    }
   }
 });
 

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { beginStartupTiming } from "./startup-timing";
 
 function isZipArchive(archivePath: string) {
   return archivePath.toLowerCase().endsWith(".zip");
@@ -97,18 +98,25 @@ try {
 }
 
 export function extractArchiveToDir(archivePath: string, targetDir: string) {
+  const timing = beginStartupTiming("extractArchiveToDir", {
+    archive: archivePath.split(/[\\/]/u).pop() ?? archivePath
+  });
   const archiveType = ensureSupportedArchive(archivePath);
-  if (archiveType === "zip") {
-    runPowerShell(`
+  try {
+    if (archiveType === "zip") {
+      runPowerShell(`
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $dest = ${quotePowerShell(targetDir)}
 if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Recurse -Force }
 [System.IO.Compression.ZipFile]::ExtractToDirectory(${quotePowerShell(archivePath)}, $dest)
 `);
-    return;
-  }
+      return;
+    }
 
-  execFileSync(tarCommand(), ["-xzf", archivePath, "-C", targetDir], { timeout: SYNC_TIMEOUT_MS });
+    execFileSync(tarCommand(), ["-xzf", archivePath, "-C", targetDir], { timeout: SYNC_TIMEOUT_MS });
+  } finally {
+    timing.end({ type: archiveType });
+  }
 }
 
 export function readFileFromArchive(archivePath: string, entryPath: string) {
