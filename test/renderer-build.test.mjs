@@ -1194,7 +1194,7 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /activeIssue\.assigneeAgentKey\?\.trim\(\)[\s\S]{0,180}assignIssueToAssistant\(activeIssue, activeIssue\.assigneeAgentKey\)/);
   assert.match(taskBoardPage, /openInProgressAssignmentModal\(activeIssue\)/);
   assert.match(taskBoardPage, /targetStatus === "todo" && activeIssue\.status !== "todo"[\s\S]{0,220}activeIssue\.assigneeAgentKey\?\.trim\(\)/);
-  assert.match(taskBoardPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,180}assignIssueToAssistant\(result\.issue, activeIssue\.assigneeAgentKey\)/);
+  assert.match(taskBoardPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,180}assignIssueToAssistant\(savedIssue, todoAssigneeAgentKey\)/);
   assert.match(taskBoardPage, /form\.status === "in_progress" && !modal\?\.issue\?\.runId/);
   assert.match(taskBoardPage, /shouldRunAfterSave && !form\.assigneeAgentKey/);
   assert.match(taskBoardPage, /t\("taskBoard\.feedback\.assigneeRequiredForProgress"\)/);
