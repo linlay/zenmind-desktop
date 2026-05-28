@@ -396,6 +396,7 @@ type AppSidebarProps = {
   customSidebarNavOrder?: SidebarNavOrderItemKey[];
   customSidebarItems: CustomSidebarItem[];
   assistantNavAgents?: AssistantNavAgentItem[];
+  copilotAgentOptions?: AssistantNavAgentItem[];
   desktopSsoStatus?: DesktopSsoStatus | null;
   desktopSsoBusy?: boolean;
   onOpenAssistantDock?: () => void;
@@ -423,6 +424,7 @@ export function AppSidebar({
   customSidebarNavOrder = [],
   customSidebarItems,
   assistantNavAgents = [],
+  copilotAgentOptions = [],
   desktopSsoStatus = null,
   desktopSsoBusy = false,
   onOpenAssistantDock,
@@ -1440,10 +1442,10 @@ export function AppSidebar({
             <select
               value={websiteAgentKey}
               onChange={(event) => setWebsiteAgentKey(event.target.value)}
-              disabled={assistantNavAgents.length === 0}
+              disabled={copilotAgentOptions.length === 0}
             >
               <option value="">默认助手</option>
-              {assistantNavAgents.map((agent) => (
+              {copilotAgentOptions.map((agent) => (
                 <option value={agent.agentKey} key={agent.agentKey}>
                   {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
                 </option>

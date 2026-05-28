@@ -225,6 +225,7 @@ export function AppShell() {
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
+  const [copilotAgentOptions, setCopilotAgentOptions] = useState<AssistantNavAgentItem[]>([]);
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [desktopSsoBusy, setDesktopSsoBusy] = useState(false);
@@ -360,15 +361,29 @@ export function AppShell() {
     }
   }
 
+  async function refreshCopilotAgentOptions() {
+    try {
+      const result = await window.electronAPI.assistant.listCopilotAgents();
+      if (!result.ok) {
+        return;
+      }
+      setCopilotAgentOptions(normalizeAssistantNavAgents(result.items));
+    } catch {
+      // Keep the current picker list while agent-platform is still warming up.
+    }
+  }
+
   function refreshAssistantNavAgentsAfterStartupReady(nextState: StartupRestoreState) {
     if (nextState.phase === "succeeded") {
       void refreshAssistantNavAgents();
+      void refreshCopilotAgentOptions();
     }
   }
 
   useEffect(() => {
     let cancelled = false;
     void refreshAssistantNavAgents();
+    void refreshCopilotAgentOptions();
     const unsubscribe = window.electronAPI.assistant.onNavigationAgentsChanged((result) => {
       if (cancelled || !result.ok) {
         return;
@@ -388,6 +403,7 @@ export function AppShell() {
   useEffect(() => {
     if (agentPlatformRunning) {
       void refreshAssistantNavAgents();
+      void refreshCopilotAgentOptions();
     }
   }, [agentPlatformRunning]);
 
@@ -1191,6 +1207,7 @@ export function AppShell() {
           customSidebarNavOrder={normalizedCustomSidebarGroupOrder}
           customSidebarItems={customSidebarItems}
           assistantNavAgents={assistantNavAgents}
+          copilotAgentOptions={copilotAgentOptions}
           desktopSsoStatus={desktopSsoStatus}
           desktopSsoBusy={desktopSsoBusy}
           onOpenAssistantDock={() => openAssistantDock()}

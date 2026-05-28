@@ -415,6 +415,27 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
   };
 }
 
+function createCopilotAgentItem(agent: PlatformAgentSummary): AssistantNavAgentItem | null {
+  const agentKey = readAgentKey(agent);
+  if (!agentKey) {
+    return null;
+  }
+  return {
+    agentKey,
+    displayName: readAgentDisplayName(agent, agentKey),
+    role: toText(agent.role),
+    ...(readAgentIcon(agent) ? { icon: readAgentIcon(agent) } : {}),
+    unreadCount: 0,
+    unreadChatCount: 0,
+    chatCount: 0,
+    hasPendingAwaiting: false,
+    latestChatId: null,
+    latestPreview: "",
+    updatedAt: nowIso(),
+    recentChats: []
+  };
+}
+
 export function buildAssistantNavigationAgentsFromPlatformAgents(
   agentsInput: unknown,
   includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT
@@ -422,6 +443,14 @@ export function buildAssistantNavigationAgentsFromPlatformAgents(
   const agents = Array.isArray(agentsInput) ? agentsInput as PlatformAgentSummary[] : [];
   return agents
     .map((agent) => createNavigationAgentItem(agent, includeChatLimit))
+    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent))
+    .sort((left, right) => left.displayName.localeCompare(right.displayName, "zh-CN"));
+}
+
+export function buildAssistantCopilotAgentsFromPlatformAgents(agentsInput: unknown): AssistantNavAgentItem[] {
+  const agents = Array.isArray(agentsInput) ? agentsInput as PlatformAgentSummary[] : [];
+  return agents
+    .map(createCopilotAgentItem)
     .filter((agent): agent is AssistantNavAgentItem => Boolean(agent))
     .sort((left, right) => left.displayName.localeCompare(right.displayName, "zh-CN"));
 }
@@ -674,6 +703,17 @@ export async function readAssistantNavigationAgentsFromPlatform(
     token
   );
   return buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit);
+}
+
+export async function readAssistantCopilotAgentsFromPlatform(
+  baseUrl: string,
+  token: string
+): Promise<AssistantNavAgentItem[]> {
+  const agents = await readApiJson<unknown[]>(
+    `${createApiUrl(baseUrl, "/api/agents")}?scope=copilot`,
+    token
+  );
+  return buildAssistantCopilotAgentsFromPlatformAgents(agents);
 }
 
 export class AssistantNavigationStatusClient {

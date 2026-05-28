@@ -122,6 +122,7 @@ export interface DesktopApi {
     getMemorySummary: () => Promise<AssistantMemorySummary>;
     listAgents: () => Promise<DesktopPetAgentOption[]>;
     listNavigationAgents: () => Promise<AssistantNavAgentItemsResult>;
+    listCopilotAgents: () => Promise<AssistantNavAgentItemsResult>;
     createCoderProject: (input: AssistantCreateCoderProjectRequest) => Promise<AssistantCreateCoderProjectResult>;
     openMemoryDirectory: () => Promise<{ ok: boolean; message: string; path?: string }>;
     listMemoryItems: () => Promise<{

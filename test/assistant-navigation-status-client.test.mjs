@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 const {
   AssistantNavigationStatusClient,
   applyAssistantNavigationPush,
+  readAssistantCopilotAgentsFromPlatform,
   buildAssistantNavigationAgentsFromPlatformAgents,
   readAssistantNavigationAgentsFromPlatform,
   __testInternals
@@ -71,6 +72,49 @@ test("assistant navigation snapshot uses /api/agents includeChats and agent stat
     assert.equal(items[0].latestPreview, "newer reply");
     assert.equal(items[0].hasPendingAwaiting, true);
     assert.deepEqual(items[0].recentChats.map((chat) => chat.chatId), ["chat-new", "chat-old"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("assistant copilot picker snapshot uses /api/agents scope without chats", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init });
+    assert.equal(init.headers.Authorization, "Bearer desktop-token");
+    return new Response(JSON.stringify({
+      code: 0,
+      msg: "success",
+      data: [
+        {
+          key: "desktopAssistant",
+          name: "桌面助手",
+          role: "侧边助手",
+          icon: { color: "#2563eb", name: "sparkles" },
+          chats: [{ chatId: "should-not-be-used" }],
+          stats: { totalCount: 12, unreadCount: 3 }
+        }
+      ]
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  try {
+    const items = await readAssistantCopilotAgentsFromPlatform("http://127.0.0.1:18888", "desktop-token");
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/agents?scope=copilot");
+    assert.equal(items.length, 1);
+    assert.equal(items[0].agentKey, "desktopAssistant");
+    assert.equal(items[0].displayName, "桌面助手");
+    assert.equal(items[0].role, "侧边助手");
+    assert.deepEqual(items[0].icon, { color: "#2563eb", name: "sparkles" });
+    assert.equal(items[0].chatCount, 0);
+    assert.equal(items[0].unreadCount, 0);
+    assert.deepEqual(items[0].recentChats, []);
   } finally {
     globalThis.fetch = originalFetch;
   }

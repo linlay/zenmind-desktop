@@ -34,7 +34,10 @@ import type {
 import { toDesktopPetAgentOptions } from "../pet-copilot/pet-status-client";
 import { DesktopPetSseParser } from "../pet-copilot/desktop-pet-preview";
 import { resolveAssistantAttachmentPath } from "../attachments/attachment-store";
-import { readAssistantNavigationAgentsFromPlatform } from "./assistant-navigation-status-client";
+import {
+  readAssistantCopilotAgentsFromPlatform,
+  readAssistantNavigationAgentsFromPlatform
+} from "./assistant-navigation-status-client";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const DONE_SENTINEL = "[DONE]";
@@ -570,6 +573,24 @@ export class AgentPlatformAssistantBridge {
       ok: true,
       items: await readAssistantNavigationAgentsFromPlatform(availability.baseUrl, availability.token),
       message: "已读取智能助手导航状态。",
+      updatedAt: nowIso()
+    };
+  }
+
+  async listCopilotAgents(): Promise<AssistantNavAgentItemsResult> {
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return {
+        ok: false,
+        items: [],
+        message: availability.message,
+        updatedAt: nowIso()
+      };
+    }
+    return {
+      ok: true,
+      items: await readAssistantCopilotAgentsFromPlatform(availability.baseUrl, availability.token),
+      message: "已读取侧边助手智能体列表。",
       updatedAt: nowIso()
     };
   }

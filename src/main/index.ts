@@ -3785,6 +3785,19 @@ function registerIpcHandlers() {
       };
     }
   });
+  ipcMain.handle("assistant.listCopilotAgents", async (): Promise<AssistantNavAgentItemsResult> => {
+    try {
+      return await assistantBridge.listCopilotAgents();
+    } catch (error) {
+      console.warn("[assistant] failed to list copilot agents", error);
+      return {
+        ok: false,
+        items: [],
+        message: error instanceof Error ? error.message : "agent-platform 暂不可用。",
+        updatedAt: new Date().toISOString()
+      };
+    }
+  });
   ipcMain.handle("assistant.createCoderProject", async (
     _event,
     input: AssistantCreateCoderProjectRequest
