@@ -3206,12 +3206,16 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
     assert.ok(envContent.indexOf("RUNTIME_DIR=~/.zenmind") < envContent.indexOf("# Provider apiKey AES(...)"));
     assert.ok(envContent.indexOf("# Provider apiKey AES(...)") < envContent.indexOf("PROVIDER_APIKEY_KEY_PART=0.1.0"));
     assert.equal(fs.existsSync(path.join(configDir, "configs", "local-public-key.pem")), true);
+    assert.deepEqual(
+      platformService.configFiles
+        .map((configFile) => configFile.key)
+        .filter((key) => ["container-hub", "bash", "file-tools", "cors", "channels"].includes(key)),
+      []
+    );
     for (const fileName of [
-      "container-hub.yml",
-      "desktop.yml",
-      "bash.yml",
-      "file-tools.yml",
-      "cors.yml",
+      "runtime.yml",
+      "host-tools.yml",
+      "ai-tools.yml",
       "prompts.yml"
     ]) {
       assert.equal(
@@ -3220,7 +3224,18 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
         `expected canonical config ${fileName} to be initialized`
       );
     }
-    assert.equal(fs.readFileSync(path.join(configDir, "configs", "channels.yml"), "utf8"), "");
+    for (const fileName of [
+      "container-hub.yml",
+      "bash.yml",
+      "file-tools.yml",
+      "cors.yml"
+    ]) {
+      assert.equal(
+        fs.existsSync(path.join(configDir, "configs", fileName)),
+        false,
+        `expected removed config ${fileName} to stay uninitialized`
+      );
+    }
     assert.equal(fs.existsSync(path.join(installDir, ".env")), false);
     assert.equal(fs.existsSync(path.join(installDir, "configs", "local-public-key.pem")), false);
     assert.equal(fs.existsSync(path.join(installDir, ".zenmind-desktop-generated-config")), false);
