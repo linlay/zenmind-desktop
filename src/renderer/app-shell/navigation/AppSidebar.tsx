@@ -734,7 +734,7 @@ export function AppSidebar({
     setAssistantChatMenu({
       chat,
       x: Math.min(window.innerWidth - 180, Math.max(8, rect.right - 170)),
-      y: Math.min(window.innerHeight - 132, Math.max(8, rect.bottom + 4)),
+      y: Math.min(window.innerHeight - 172, Math.max(8, rect.bottom + 4)),
     });
   }
 
@@ -755,6 +755,15 @@ export function AppSidebar({
   async function handleAssistantArchiveChat(chat: AssistantNavChatItem) {
     setAssistantChatMenu(null);
     await window.electronAPI.assistant.archiveChat(chat.chatId);
+  }
+
+  async function handleAssistantDeleteChat(chat: AssistantNavChatItem) {
+    setAssistantChatMenu(null);
+    const chatLabel = chat.chatName?.trim() || chat.chatId;
+    if (!window.confirm(`确定要删除会话“${chatLabel}”吗？`)) {
+      return;
+    }
+    await window.electronAPI.assistant.deleteChat(chat.chatId);
   }
 
   function handleAssistantDockClick() {
@@ -1358,6 +1367,14 @@ export function AppSidebar({
         >
           <span aria-hidden="true">□</span>
           <span>归档</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => void handleAssistantDeleteChat(chat)}
+        >
+          <span aria-hidden="true">×</span>
+          <span>删除</span>
         </button>
       </div>,
       document.body,

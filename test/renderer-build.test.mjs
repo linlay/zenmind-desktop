@@ -577,6 +577,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /exportChat/);
   assert.match(sidebarSource, /renameChat/);
   assert.match(sidebarSource, /archiveChat/);
+  assert.match(sidebarSource, /deleteChat/);
+  assert.match(sidebarSource, /<span>删除<\/span>/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/schedules"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/control-center"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?to:\s*"\/help"[\s\S]*?labelKey:\s*"nav\.help"/);
   assert.match(sidebarSource, /sidebar-footer-divider/);
