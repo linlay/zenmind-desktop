@@ -1,12 +1,10 @@
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
+import { npmCmd, runAndWait } from "./platform/spawn.mjs";
 
 const projectRoot = process.cwd();
-const isWindows = process.platform === "win32";
-const npmCmd = isWindows ? "npm.cmd" : "npm";
 const bundleRoot = path.join(projectRoot, "build", "bundle", "dist-electron");
 const rendererRoot = path.join(projectRoot, "dist-renderer");
 const stageRoot = path.join(projectRoot, "build", "app");
@@ -134,30 +132,6 @@ function writeStagePackageJson(rootDir, target) {
     `${JSON.stringify(stagePackage, null, 2)}\n`,
     "utf8"
   );
-}
-
-function run(cmd, args, options = {}) {
-  return spawn(cmd, args, {
-    cwd: stageRoot,
-    stdio: "inherit",
-    env: process.env,
-    shell: isWindows,
-    ...options
-  });
-}
-
-function runAndWait(cmd, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = run(cmd, args, options);
-    child.once("error", reject);
-    child.once("exit", (code) => {
-      if (code === 0) {
-        resolve(undefined);
-        return;
-      }
-      reject(new Error(`${cmd} ${args.join(" ")} exited with code ${code ?? -1}`));
-    });
-  });
 }
 
 function expectedCanvasRuntimePackage(target) {
@@ -300,17 +274,21 @@ async function installRuntimeDependencies(target) {
     return;
   }
 
-  await runAndWait(npmCmd, [
-    "install",
-    "--omit=dev",
-    "--include=optional",
-    "--ignore-scripts",
-    "--no-package-lock",
-    "--no-fund",
-    "--no-audit",
-    `--os=${target.os}`,
-    `--cpu=${target.arch}`
-  ]);
+  await runAndWait(
+    npmCmd,
+    [
+      "install",
+      "--omit=dev",
+      "--include=optional",
+      "--ignore-scripts",
+      "--no-package-lock",
+      "--no-fund",
+      "--no-audit",
+      `--os=${target.os}`,
+      `--cpu=${target.arch}`
+    ],
+    { cwd: stageRoot }
+  );
   verifyCanvasRuntime(target);
 }
 

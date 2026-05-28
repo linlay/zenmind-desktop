@@ -9,6 +9,8 @@ const packageJsonPath = path.join(projectRoot, "package.json");
 const installerIncludePath = path.join(projectRoot, "build", "installer.nsh");
 const uninstallScriptPath = path.join(projectRoot, "scripts", "uninstall.sh");
 const distWinScriptPath = path.join(projectRoot, "scripts", "dist-win.mjs");
+const distWinDockerScriptPath = path.join(projectRoot, "scripts", "platform", "dist-win-docker.mjs");
+const distWinHostScriptPath = path.join(projectRoot, "scripts", "platform", "dist-win-host.mjs");
 const stageAppScriptPath = path.join(projectRoot, "scripts", "stage-app.mjs");
 const buildMainBundleScriptPath = path.join(projectRoot, "scripts", "build-main-bundle.mjs");
 const bundledMainPath = path.join(projectRoot, "build", "bundle", "dist-electron", "main", "index.js");
@@ -54,7 +56,7 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
   assert.doesNotMatch(packageJson.scripts?.["dist:mac"] ?? "", /prepare:voice-asr/);
   assert.doesNotMatch(packageJson.scripts?.["dist:win"] ?? "", /prepare:voice-asr/);
   assert.match(packageJson.scripts?.["dist:win"] ?? "", /electron-builder --win --x64/);
-  assert.equal(packageJson.scripts?.["dist:win-docker"], "node ./scripts/dist-win.mjs");
+  assert.equal(packageJson.scripts?.["dist:win-docker"], "npm run sync:version && node ./scripts/dist-win.mjs");
   assert.notEqual(packageJson.build?.nsis?.perMachine, true);
   assert.equal(packageJson.build?.nsis?.include, "build/installer.nsh");
 });
@@ -69,7 +71,7 @@ test("main-process bundle keeps process tree parser test export bound", () => {
 test("custom uninstall assets default to keeping data and delete desktop plus program data on request", () => {
   const installerScript = fs.readFileSync(installerIncludePath, "utf8");
   const uninstallScript = fs.readFileSync(uninstallScriptPath, "utf8");
-  const distWinScript = fs.readFileSync(distWinScriptPath, "utf8");
+  const distWinDockerScript = fs.readFileSync(distWinDockerScriptPath, "utf8");
   const tempOutPathMatch = installerScript.match(/!macro customUnInstall\s+SetOutPath \$TEMP\s+SetShellVarContext current/s);
 
   assert.ok(tempOutPathMatch, "custom uninstall should switch CWD to $TEMP before reading shell vars");
@@ -85,35 +87,40 @@ test("custom uninstall assets default to keeping data and delete desktop plus pr
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/ZenMind"/);
   assert.doesNotMatch(uninstallScript, /Library\/Application Support\/zenmind-desktop/);
   assert.match(uninstallScript, /default button "Keep Data"/);
-  assert.match(distWinScript, /electronuserland\/builder:wine/);
+  assert.match(distWinDockerScript, /electronuserland\/builder:wine/);
 });
 
 test("dist-win docker flow syncs builtin assets on the host before entering Docker", () => {
   const distWinScript = fs.readFileSync(distWinScriptPath, "utf8");
+  const distWinDockerScript = fs.readFileSync(distWinDockerScriptPath, "utf8");
+  const distWinHostScript = fs.readFileSync(distWinHostScriptPath, "utf8");
   const stageAppScript = fs.readFileSync(stageAppScriptPath, "utf8");
   const buildMainBundleScript = fs.readFileSync(buildMainBundleScriptPath, "utf8");
 
-  assert.match(distWinScript, /async function syncWindowsBuiltinAssets\(\)/);
-  assert.doesNotMatch(distWinScript, /prepareWindowsVoiceAsrAssets/);
+  assert.match(distWinScript, /isWindows\(\)/);
+  assert.match(distWinScript, /import\("\.\/platform\/dist-win-host\.mjs"\)/);
+  assert.match(distWinScript, /import\("\.\/platform\/dist-win-docker\.mjs"\)/);
+  assert.match(distWinDockerScript, /async function syncWindowsBuiltinAssets\(\)/);
+  assert.doesNotMatch(distWinDockerScript, /prepareWindowsVoiceAsrAssets/);
   assert.match(
-    distWinScript,
-    /await syncWindowsBuiltinAssets\(\);\s*\n\s*await runAndWait\(npmCmd, \["run", "build"\]\);\s*\n\s*const npmCacheDir/
+    distWinDockerScript,
+    /await syncWindowsBuiltinAssets\(\);\s*\n\s*await runAndWait\(npmCmd, \["run", "build"\], \{ cwd: projectRoot \}\);\s*\n\s*const npmCacheDir/
   );
   assert.match(
-    distWinScript,
+    distWinDockerScript,
     /"--volume",\s*\n\s*"zenmind-desktop-node-modules:\/project\/node_modules",/
   );
   assert.match(
-    distWinScript,
+    distWinDockerScript,
     /"npm install --no-package-lock --ignore-scripts",\s*\n\s*"node \.\/scripts\/stage-app\.mjs --os=win32 --arch=x64",\s*\n\s*"npx electron-builder --win --x64",\s*\n\s*"node \.\/scripts\/verify-win-package\.mjs"/
   );
   assert.match(
-    distWinScript,
-    /await runAndWait\(npmCmd, \["run", "stage:app", "--", "--os=win32", "--arch=x64"\]\);/
+    distWinHostScript,
+    /await runAndWait\(npmCmd, \["run", "stage:app", "--", "--os=win32", "--arch=x64"\], \{/
   );
   assert.match(
-    distWinScript,
-    /await runAndWait\(nodeBin\(\), \["\.\/scripts\/verify-win-package\.mjs"\]\);/
+    distWinHostScript,
+    /await runAndWait\(nodeBin\(\), \["\.\/scripts\/verify-win-package\.mjs"\], \{ cwd: projectRoot \}\);/
   );
   assert.match(stageAppScript, /"build", "bundle", "dist-electron"/);
   assert.match(stageAppScript, /"build", "app"/);
@@ -137,15 +144,15 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   assert.doesNotMatch(stageAppScript, /unexpected non-windows ffmpeg runtime packages in win32 stage/);
   assert.doesNotMatch(stageAppScript, /exceljs|docx|pptxgenjs|pdfjs-dist|zod/);
   assert.doesNotMatch(
-    distWinScript,
+    distWinDockerScript,
     /"npm install(?: --no-package-lock)?",\s*\n\s*"npm run build",\s*\n\s*"npx electron-builder --win --x64"/
   );
   assert.doesNotMatch(
-    distWinScript,
+    distWinDockerScript,
     /"--volume",\s*\n\s*"\/project\/node_modules",/
   );
   assert.doesNotMatch(
-    distWinScript,
+    distWinDockerScript,
     /"node \.\/scripts\/sync-builtin-assets\.mjs --os=windows --arch=amd64"/
   );
 });

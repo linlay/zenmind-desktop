@@ -587,11 +587,12 @@ test("actual synced agent-platform asset includes required entries", () => {
 test("actual synced agent-platform asset no longer bundles the local relay", () => {
   const { assetPath } = getSyncedAsset("agent-platform");
   const manifest = readManifestFromArchive(assetPath);
-  const programCommon = readArchiveEntryText(assetPath, "agent-platform/scripts/program-common.sh");
+  const programCommonName = assetPath.endsWith(".zip") ? "program-common.ps1" : "program-common.sh";
+  const programCommon = readArchiveEntryText(assetPath, `agent-platform/scripts/${programCommonName}`);
   const envExample = readArchiveEntryText(assetPath, "agent-platform/.env.example");
   const entries = listArchiveEntries(assetPath);
 
-  assert.ok(programCommon, "expected bundled agent-platform program-common.sh to be readable");
+  assert.ok(programCommon, `expected bundled agent-platform ${programCommonName} to be readable`);
   assert.ok(envExample, "expected bundled agent-platform .env.example to be readable");
   assert.equal([...entries].some((entry) => entry.includes("local-cli-acp-relay")), false);
   assert.doesNotMatch(programCommon, /LOCAL_CLI_ACP_RELAY_/);
@@ -627,7 +628,7 @@ test("validateBundleArchive fails when required entries are missing", () => {
 
   assert.throws(
     () => validateBundleArchive(service, fixture.tarPath),
-    /Missing required entries: .*start\.sh/
+    /Missing required entries: .*(start\.sh|start\.ps1)/
   );
 
   fs.rmSync(fixture.root, { recursive: true, force: true });

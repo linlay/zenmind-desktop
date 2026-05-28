@@ -148,9 +148,10 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(controlCenter, /left:\s*anchorRect\.right - \(pageRect\?\.left \?\? 0\) \+ 10/);
   assert.match(controlCenter, /style=\{\{\s*top:\s*`\$\{helpTip\.top\}px`,\s*left:\s*`\$\{helpTip\.left\}px`,?\s*\}\}/);
   assert.doesNotMatch(controlCenter, /<span className="service-nav-help-tip" role="tooltip">/);
-  const serviceHelpFunctionBody = controlCenter.match(
-    /function openServiceHelp\(\n(?<signature>[\s\S]*?)\n\s*\) \{(?<body>[\s\S]*?)\n\s*\}\n\n\s*function openServiceDetail/
-  )?.groups?.body;
+  const serviceHelpFunctionBody = controlCenter.slice(
+    controlCenter.indexOf("function openServiceHelp("),
+    controlCenter.indexOf("function openServiceDetail(")
+  );
   assert.ok(serviceHelpFunctionBody);
   assert.doesNotMatch(serviceHelpFunctionBody, /setDetailDialogOpen\(true\)/);
   assert.doesNotMatch(controlCenter, /function ServiceDetailIcon/);
@@ -910,8 +911,9 @@ test("sidebar translucency is fixed and not user configurable", () => {
     "utf8"
   );
   const globalStyles = readRendererStyles();
-  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const settingsHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "settings-handlers.ts"), "utf8");
   const contracts = readSharedContractsSource();
 
   assert.match(appShell, /"has-translucent-sidebar"/);
@@ -975,10 +977,11 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(mainProcess, /ipcMain\.handle\("settings\.getLocale", async \(\) => initializeMainI18n\(app\)\)/);
   assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);/);
   assert.match(mainProcess, /initializeMainI18n\(app, \{ isFirstInstall: isFirstDesktopInstall \}\)/);
-  assert.match(mainProcess, /ipcMain\.handle\("settings\.setLocale", async \(_event, locale: unknown\) => \{/);
-  assert.match(mainProcess, /buildApplicationMenu\(\);[\s\S]{0,120}appTrayController\.refreshContextMenu\(\);[\s\S]{0,120}emitLocaleChanged\(settings\);/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setLocale", async \(_event: any, locale: unknown\) => \{/);
+  assert.match(settingsHandlers, /buildApplicationMenu\(\);[\s\S]{0,120}refreshTrayContextMenu\(\);[\s\S]{0,120}emitLocaleChanged\(settings\);/);
   assert.doesNotMatch(contracts, /setSidebarTranslucency/);
   assert.doesNotMatch(mainProcess, /settings\.setSidebarTranslucency/);
+  assert.doesNotMatch(settingsHandlers, /settings\.setSidebarTranslucency/);
 });
 
 test("sidebar navigation order helper normalizes and sorts available items", () => {
@@ -1191,6 +1194,8 @@ test("task board scheduled todo cards show execution countdown instead of sort n
 test("task board route exposes native desktop api and page styles", () => {
   const contracts = readSharedContractsSource();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const taskBoardHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "task-board-handlers.ts"), "utf8");
+  const taskBoardSync = fs.readFileSync(path.join(projectRoot, "src", "main", "task-board-sync.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
@@ -1211,22 +1216,23 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.listIssues"\)/);
   assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.moveIssue", input\)/);
   assert.match(preload, /ipcRenderer\.invoke\("taskBoard\.syncIssueAutomation", issueId\)/);
-  assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.listIssues"/);
-  assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.moveIssue"/);
-  assert.match(mainProcess, /ipcMain\.handle\("taskBoard\.syncIssueAutomation"/);
-  assert.match(mainProcess, /syncTaskBoardIssueAutomation/);
-  assert.match(mainProcess, /\/api\/automation\/create/);
-  assert.match(mainProcess, /\/api\/automation\/update/);
-  assert.match(mainProcess, /\/api\/automation\/delete/);
-  assert.doesNotMatch(mainProcess, /\/api\/schedule(?:\/|-)(?:create|update|delete)/);
+  assert.match(mainProcess, /registerTaskBoardIpcHandlers\(ipcMain,/);
+  assert.match(taskBoardHandlers, /ipcMain\.handle\("taskBoard\.listIssues"/);
+  assert.match(taskBoardHandlers, /ipcMain\.handle\("taskBoard\.moveIssue"/);
+  assert.match(taskBoardHandlers, /ipcMain\.handle\("taskBoard\.syncIssueAutomation"/);
+  assert.match(taskBoardSync, /syncTaskBoardIssueAutomation/);
+  assert.match(taskBoardSync, /\/api\/automation\/create/);
+  assert.match(taskBoardSync, /\/api\/automation\/update/);
+  assert.match(taskBoardSync, /\/api\/automation\/delete/);
+  assert.doesNotMatch(taskBoardSync, /\/api\/schedule(?:\/|-)(?:create|update|delete)/);
   assert.match(mainProcess, /syncTaskBoardIssueFromAssistantEvent/);
-  assert.match(mainProcess, /event\.type === "done" \|\| event\.type === "run\.complete"[\s\S]{0,120}return "completed"/);
-  assert.match(mainProcess, /event\.type === "run\.error"/);
-  assert.match(mainProcess, /event\.status === "timeout"[\s\S]{0,220}return "failed"/);
-  assert.match(mainProcess, /updateTaskBoardIssueByRunId\(app, event\.runId/);
-  assert.match(mainProcess, /updateTaskBoardIssueByChatId/);
-  assert.match(mainProcess, /updateTaskBoardIssueByChatId\(app,\s*event\.chatId/);
-  assert.match(mainProcess, /onPushEvent:\s*syncTaskBoardIssueFromAssistantEvent/);
+  assert.match(taskBoardSync, /event\.type === "done" \|\| event\.type === "run\.complete"[\s\S]{0,120}return "completed"/);
+  assert.match(taskBoardSync, /event\.type === "run\.error"/);
+  assert.match(taskBoardSync, /event\.status === "timeout"[\s\S]{0,220}return "failed"/);
+  assert.match(taskBoardSync, /updateTaskBoardIssueByRunId\(app, event\.runId/);
+  assert.match(taskBoardSync, /updateTaskBoardIssueByChatId/);
+  assert.match(taskBoardSync, /updateTaskBoardIssueByChatId\(app,\s*event\.chatId/);
+  assert.match(mainProcess, /onPushEvent:\s*\(event\) => syncTaskBoardIssueFromAssistantEvent\(app, event\)/);
   assert.match(taskBoardStore, /export function updateTaskBoardIssueByChatId/);
   assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);
   assert.match(assistantNavigationStatusClient, /this\.options\.onPushEvent\?\./);
@@ -1463,6 +1469,7 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
   const contracts = readSharedContractsSource();
   const store = fs.readFileSync(path.join(projectRoot, "src", "main", "navigation", "custom-sidebar-store.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const taskBoardHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "task-board-handlers.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
@@ -1474,7 +1481,8 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
   assert.match(store, /export function updateCustomSidebarItem/);
   assert.match(store, /delete updated\.agentKey/);
   assert.match(store, /export function addCustomSidebarItem/);
-  assert.match(mainProcess, /ipcMain\.handle\("customSidebar\.update"/);
+  assert.match(mainProcess, /registerTaskBoardIpcHandlers\(ipcMain,/);
+  assert.match(taskBoardHandlers, /ipcMain\.handle\("customSidebar\.update"/);
   assert.match(preload, /update: \(id, input\) => ipcRenderer\.invoke\("customSidebar\.update", id, input\)/);
   assert.match(preload, /add: \(input\) => ipcRenderer\.invoke\("customSidebar\.add", input\)/);
   assert.match(appShell, /resolvedCopilotAgentKey/);
@@ -1491,6 +1499,7 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
 test("assistant navigation agents are exposed through dedicated ipc without changing pet agents", () => {
   const contracts = readSharedContractsSource();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const assistantHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "assistant-handlers.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "core", "agent-platform-bridge.ts"), "utf8");
   const appShell = readAppShellSource();
@@ -1512,14 +1521,15 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(preload, /listNavigationAgents: \(\) => ipcRenderer\.invoke\("assistant\.listNavigationAgents"\)/);
   assert.match(preload, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createCoderProject", input\)/);
   assert.match(preload, /onNavigationAgentsChanged/);
-  assert.match(mainProcess, /ipcMain\.handle\("assistant\.listAgents"/);
-  assert.match(mainProcess, /ipcMain\.handle\("assistant\.listNavigationAgents"/);
-  assert.match(mainProcess, /ipcMain\.handle\("assistant\.createCoderProject"/);
-  assert.match(mainProcess, /callAgentPlatform<\{ key\?: string \}>\(app, "\/api\/agent\/create"/);
-  assert.match(mainProcess, /assistantNavigationStatusClient\?\.scheduleRefresh\(0\)/);
+  assert.match(mainProcess, /registerAssistantIpcHandlers\(ipcMain,/);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listAgents"/);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listNavigationAgents"/);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.createCoderProject"/);
+  assert.match(assistantHandlers, /callAgentPlatform\?\.?\(app, "\/api\/agent\/create"/);
+  assert.match(assistantHandlers, /assistantNavigationStatusClient\?\.scheduleRefresh\(0\)/);
   assert.match(mainProcess, /AssistantNavigationStatusClient/);
   assert.match(mainProcess, /assistant\.navigationAgentsChanged/);
-  assert.match(mainProcess, /ok:\s*false,[\s\S]*?items:\s*\[\]/);
+  assert.match(assistantHandlers, /ok:\s*false,[\s\S]*?items:\s*\[\]/);
   assert.match(bridge, /async listAgents\(\): Promise<DesktopPetAgentOption\[\]>/);
   assert.match(bridge, /async listNavigationAgents\(\): Promise<AssistantNavAgentItemsResult>/);
   assert.match(bridge, /readAssistantNavigationAgentsFromPlatform/);
@@ -1571,6 +1581,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   const actionCatalog = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
   const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const assistantHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "assistant-handlers.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const registry = fs.readFileSync(
@@ -1613,8 +1624,8 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /允许本次页面操作/);
   assert.doesNotMatch(bridge, /小宅助理/);
   assert.match(mainProcess, /startDesktopActionBridge\(\{/);
-  assert.match(mainProcess, /desktopActions\.respond/);
-  assert.match(mainProcess, /desktopActions\.call/);
+  assert.match(assistantHandlers, /desktopActions\.respond/);
+  assert.match(assistantHandlers, /desktopActions\.call/);
   assert.match(preload, /desktopActions:\s*\{/);
   assert.match(preload, /ipcRenderer\.invoke\("desktopActions\.respond"/);
   assert.match(preload, /ipcRenderer\.on\("desktopActions\.call"/);
@@ -1830,7 +1841,7 @@ test("sandbox image import progress is exposed across desktop api layers", () =>
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
   const marketContracts = readSourceFile("src", "shared", "contracts", "marketplace.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
-  const main = readSourceFile("src", "main", "index.ts");
+  const marketplaceHandlers = readSourceFile("src", "main", "ipc", "marketplace-handlers.ts");
 
   assert.match(marketContracts, /export interface SandboxImageImportProgressEvent/);
   assert.match(desktopApi, /SandboxImageImportProgressListener/);
@@ -1838,9 +1849,9 @@ test("sandbox image import progress is exposed across desktop api layers", () =>
   assert.match(preload, /onSandboxImageImportProgress:\s*\(listener:\s*SandboxImageImportProgressListener\)\s*=>/);
   assert.match(preload, /ipcRenderer\.on\("market\.sandboxImageImportProgress"/);
   assert.match(preload, /ipcRenderer\.off\("market\.sandboxImageImportProgress"/);
-  assert.match(main, /event\.sender\.send\("market\.sandboxImageImportProgress"/);
-  assert.match(main, /const taskId\s*=\s*`sandbox-import-/);
-  assert.match(main, /event\.sender\.send\("market\.sandboxImageImportProgress",\s*\{[\s\S]*?taskId,[\s\S]*?\.\.\.progress/);
+  assert.match(marketplaceHandlers, /event\.sender\.send\("market\.sandboxImageImportProgress"/);
+  assert.match(marketplaceHandlers, /const taskId\s*=\s*`sandbox-import-/);
+  assert.match(marketplaceHandlers, /event\.sender\.send\("market\.sandboxImageImportProgress",\s*\{[\s\S]*?taskId,[\s\S]*?\.\.\.progress/);
 });
 
 test("market route disables the global drag overlay above toolbar controls", () => {
@@ -1907,29 +1918,34 @@ test("window drag uses css-only app-region approach", () => {
 
 test("mac fullscreen forces the main window to an opaque background", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const appState = readSourceFile("src", "main", "app-state.ts");
+  const windowManager = readSourceFile("src", "main", "window-manager.ts");
 
-  assert.match(mainProcess, /let mainWindowSidebarTranslucencyEnabled = true;/);
-  assert.match(mainProcess, /vibrancy:\s*"under-window"\s+as const/);
-  assert.match(mainProcess, /visualEffectState:\s*"active"\s+as const/);
-  assert.match(mainProcess, /function applyMainWindowAppearance\(targetWindow: BrowserWindow \| null\)/);
+  assert.match(appState, /mainWindowSidebarTranslucencyEnabled:\s*initialState\.mainWindowSidebarTranslucencyEnabled \?\? true/);
+  assert.match(mainProcess, /isSidebarTranslucencyEnabled:\s*\(\) => appState\.mainWindowSidebarTranslucencyEnabled/);
+  assert.match(windowManager, /vibrancy:\s*"under-window"\s+as const/);
+  assert.match(windowManager, /visualEffectState:\s*"active"\s+as const/);
+  assert.match(windowManager, /applyAppearance\(targetWindow: TWindow \| null\)/);
   assert.match(
-    mainProcess,
-    /if \(process\.platform === "darwin"\)\s*\{[\s\S]*?mainWindowSidebarTranslucencyEnabled && !targetWindow\.isFullScreen\(\);[\s\S]*?targetWindow\.setVibrancy\("under-window"\);[\s\S]*?targetWindow\.setVibrancy\(null\);[\s\S]*?targetWindow\.setBackgroundColor\(useSidebarTranslucency \? "#00000000" : "#FFFFFF"\);/
+    windowManager,
+    /if \(options\.platform === "darwin"\)\s*\{[\s\S]*?isSidebarTranslucencyEnabled\?\.\(\) \?\? true\) && !targetWindow\.isFullScreen\(\);[\s\S]*?targetWindow\.setVibrancy\(useSidebarTranslucency \? "under-window" : null\);[\s\S]*?targetWindow\.setBackgroundColor\(useSidebarTranslucency \? "#00000000" : "#FFFFFF"\);/
   );
-  assert.match(mainProcess, /if \(process\.platform === "win32"\)\s*\{[\s\S]*?targetWindow\.setBackgroundColor\("#FFFFFF"\);[\s\S]*?return;[\s\S]*?\}/);
-  assert.match(mainProcess, /mainWindow\.on\("enter-full-screen", \(\) => \{[\s\S]*?applyMainWindowAppearance\(mainWindow\);[\s\S]*?\}\);/);
-  assert.match(mainProcess, /mainWindow\.on\("leave-full-screen", \(\) => \{[\s\S]*?applyMainWindowAppearance\(mainWindow\);[\s\S]*?\}\);/);
+  assert.match(windowManager, /targetWindow\.setBackgroundColor\("#FFFFFF"\);/);
+  assert.match(windowManager, /targetWindow\.on\("enter-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?\}\);/);
+  assert.match(windowManager, /targetWindow\.on\("leave-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?\}\);/);
 });
 
 test("main process keeps app identity visible in platform program bars", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const platformAdapter = readSourceFile("src", "main", "platform-adapter.ts");
 
   assert.match(mainProcess, /const ZENMIND_APP_ID = "cc\.zenmind\.desktop";/);
   assert.match(mainProcess, /const ZENMIND_PRODUCT_NAME = "ZenMind";/);
   assert.match(mainProcess, /app\.setName\(ZENMIND_PRODUCT_NAME\);/);
+  assert.match(mainProcess, /applyPlatformAppInit\(process\.platform, app, ZENMIND_APP_ID\);/);
   assert.match(
-    mainProcess,
-    /if \(process\.platform === "win32"\)\s*\{[\s\S]*?app\.setAppUserModelId\(ZENMIND_APP_ID\);[\s\S]*?\}/
+    platformAdapter,
+    /if \(platform === "win32"\)\s*\{[\s\S]*?app\.setAppUserModelId\(appId\);[\s\S]*?\}/
   );
   assert.match(mainProcess, /function ensureDarwinDockIdentity\(\)/);
   assert.match(
@@ -1938,7 +1954,9 @@ test("main process keeps app identity visible in platform program bars", () => {
   );
   assert.match(mainProcess, /app\.setActivationPolicy\("regular"\);/);
   assert.match(mainProcess, /dock\.show\(\)\.catch/);
-  assert.match(mainProcess, /ensureDarwinDockIdentity\(\);[\s\S]*?const targetWindow = getMainWindowForActivation\(\);/);
+  assert.match(mainProcess, /ensureDockIdentity:\s*ensureDarwinDockIdentity/);
+  assert.match(mainProcess, /showMainWindow\(\);/);
+  assert.match(readSourceFile("src", "main", "window-manager.ts"), /options\.ensureDockIdentity\(\);[\s\S]*?const targetWindow = activateMainWindow\(\);/);
 });
 
 test("external webview tabs use repeatable pointer reordering", () => {
@@ -2029,6 +2047,9 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   );
   const serviceWebviewBridgeContracts = readSourceFile("src", "shared", "service-webview-bridge.ts");
   const mainProcess = readSourceFile("src", "main", "index.ts");
+  const servicesHandlers = readSourceFile("src", "main", "ipc", "services-handlers.ts");
+  const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
+  const windowManager = readSourceFile("src", "main", "window-manager.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
   const contracts = readSharedContractsSource();
   const sendBridgeMessageBlock = pluginPage.slice(
@@ -2121,11 +2142,11 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES/);
   assert.match(serviceWebviewPreload, /DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE/);
   assert.match(mainProcess, /getServiceWebviewPreloadUrl\(\)[\s\S]{0,120}pathToFileURL\(getServiceWebviewPreloadPath\(\)\)\.toString\(\)/);
-  assert.match(mainProcess, /ipcMain\.handle\("desktopDialog\.selectDirectory"/);
-  assert.match(mainProcess, /ipcMain\.handle\("desktopShell\.openPath"/);
-  assert.match(mainProcess, /ipcMain\.handle\("desktopDownloads\.saveFile"/);
-  assert.match(mainProcess, /webPreferences\.preload = servicePreloadPath/);
-  assert.match(mainProcess, /ipcMain\.handle\("plugins\.getServiceWebviewPreloadUrl", async \(\) => getServiceWebviewPreloadUrl\(\)\)/);
+  assert.match(shellHandlers, /ipcMain\.handle\("desktopDialog\.selectDirectory"/);
+  assert.match(shellHandlers, /ipcMain\.handle\("desktopShell\.openPath"/);
+  assert.match(shellHandlers, /ipcMain\.handle\("desktopDownloads\.saveFile"/);
+  assert.match(windowManager, /webPreferences\.preload = input\.servicePreloadPath/);
+  assert.match(servicesHandlers, /ipcMain\.handle\("plugins\.getServiceWebviewPreloadUrl", async \(\) => getServiceWebviewPreloadUrl\(\)\)/);
   assert.match(preload, /getServiceWebviewPreloadUrl:\s*\(\) => ipcRenderer\.invoke\("plugins\.getServiceWebviewPreloadUrl"\)/);
   assert.match(preload, /desktopDialog:[\s\S]{0,120}selectDirectory:\s*\(\) => ipcRenderer\.invoke\("desktopDialog\.selectDirectory"\)/);
   assert.match(preload, /desktopShell:[\s\S]{0,140}openPath:\s*\(targetPath: string\) => ipcRenderer\.invoke\("desktopShell\.openPath", targetPath\)/);
@@ -2138,27 +2159,26 @@ test("plugin page provides webview-backed assistant context instead of guessing 
 });
 
 test("embedded cdp exposes service frontends as webview surfaces", () => {
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const cdpIntegration = readSourceFile("src", "main", "cdp-integration.ts");
 
-  assert.match(mainProcess, /createEmbeddedCdpServiceSurface/);
-  assert.match(mainProcess, /kind:\s*"webview"/);
-  assert.match(mainProcess, /webContentsId:\s*contents\?\.id/);
-  assert.match(mainProcess, /active:\s*snapshotMatchesService/);
-  assert.match(mainProcess, /currentPageSnapshotMatchesSurface/);
-  assert.doesNotMatch(mainProcess, /failed to list iframe targets/);
+  assert.match(cdpIntegration, /createEmbeddedCdpServiceSurface/);
+  assert.match(cdpIntegration, /kind:\s*"webview"/);
+  assert.match(cdpIntegration, /webContentsId:\s*input\.contents\?\.id/);
+  assert.match(cdpIntegration, /active:\s*snapshotMatchesService/);
+  assert.match(cdpIntegration, /currentPageSnapshot\.surfaceId === input\.service\.id/);
+  assert.doesNotMatch(cdpIntegration, /failed to list iframe targets/);
 });
 
 test("assistant chat export writes directly to the download location", () => {
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
   const exportPathBlock =
-    mainProcess.match(/function getAssistantExportDefaultPath[\s\S]*?function getSandboxImageExportDefaultPath/u)?.[0] ?? "";
+    assistantHandlers.match(/function getAssistantExportDefaultPath[\s\S]*?async function getAvailableFilePath/u)?.[0] ?? "";
   const saveExportBlock =
-    mainProcess.match(/async function saveAssistantChatExport[\s\S]*?function createStartupRestoreState/u)?.[0] ?? "";
+    assistantHandlers.match(/async function saveAssistantChatExport[\s\S]*?function coderAgentKeyFromWorkspace/u)?.[0] ?? "";
 
-  assert.match(exportPathBlock, /process\.platform === "win32"[\s\S]*?app\.getPath\("downloads"\)/u);
-  assert.match(exportPathBlock, /process\.platform === "darwin"[\s\S]*?app\.getPath\("downloads"\)/u);
+  assert.match(exportPathBlock, /platform === "win32" \|\| platform === "darwin"[\s\S]*?app\.getPath\("downloads"\)/u);
   assert.match(exportPathBlock, /getAvailableFilePath/u);
-  assert.match(saveExportBlock, /const exportPath = await getAvailableFilePath\(getAssistantExportDefaultPath\(result\.filename\)\)/u);
+  assert.match(saveExportBlock, /const exportPath = await getAvailableFilePath\(getAssistantExportDefaultPath\(app, result\.filename, platform\)\)/u);
   assert.match(saveExportBlock, /fs\.promises\.writeFile\(exportPath, result\.bytes\)/u);
   assert.doesNotMatch(saveExportBlock, /showSaveDialog/u);
 });
@@ -2226,6 +2246,7 @@ test("control center renderer text is routed through i18n", () => {
 
 test("service logs open in a separate floating log viewer window", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const servicesHandlers = readSourceFile("src", "main", "ipc", "services-handlers.ts");
   const logViewerWindow = fs.readFileSync(
     path.join(projectRoot, "src", "main", "app-shell", "log-viewer-window.ts"),
     "utf8"
@@ -2246,7 +2267,7 @@ test("service logs open in a separate floating log viewer window", () => {
   assert.match(mainProcess, /openLogViewerWindow\(request: ServiceOpenLogViewerRequest\)/);
   assert.match(logViewerWindow, /private window: BrowserWindow \| null = null/);
   assert.match(logViewerWindow, /private createWindow\(\)/);
-  assert.match(mainProcess, /services\.openLogViewer/);
+  assert.match(servicesHandlers, /services\.openLogViewer/);
   assert.match(logViewerWindow, /loadRendererRoute\(targetWindow, routePath\)/);
   assert.match(logViewerWindow, /width:\s*1240,[\s\S]*?height:\s*860,[\s\S]*?minWidth:\s*760,[\s\S]*?minHeight:\s*520,/);
   assert.match(logViewerWindow, /ownerWindow \? \{ parent: ownerWindow, modal: false \} : \{\}/);
@@ -2461,7 +2482,7 @@ test("desktop pet drag ends on lost pointer signals", () => {
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
     "utf8"
   );
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
 
   assert.match(desktopPet, /lostpointercapture/);
   assert.match(desktopPet, /window\.addEventListener\("pointerup"/);
@@ -2469,8 +2490,8 @@ test("desktop pet drag ends on lost pointer signals", () => {
   assert.match(desktopPet, /window\.addEventListener\("blur"/);
   assert.match(desktopPet, /window\.addEventListener\("contextmenu"/);
   assert.match(desktopPet, /document\.addEventListener\("visibilitychange"/);
-  assert.match(mainProcess, /DESKTOP_PET_DRAG_FORCE_END_MS/);
-  assert.match(mainProcess, /webContents\.on\("context-menu"[\s\S]{0,120}endDesktopPetWindowDrag\(\)/);
+  assert.match(desktopPetController, /clearTimer\(\);/);
+  assert.match(desktopPetController, /webContents\.on\("context-menu"[\s\S]{0,120}options\.endDrag\(\)/);
 });
 
 test("desktop pet click opens ZenMind without assistant sidebar copy", () => {
@@ -2486,10 +2507,11 @@ test("desktop pet click opens ZenMind without assistant sidebar copy", () => {
 
 test("desktop pet base mode stays sprite-sized while bubble and preview modes expand separately", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
   const petGeometry = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "pet-copilot", "desktop-pet.ts"), "utf8");
   const globalStyles = readRendererStyles();
 
-  assert.match(mainProcess, /return shouldShowBubble \? "bubble" : "base";/);
+  assert.match(desktopPetController, /return shouldShowBubble \? "bubble" : "base";/);
   assert.doesNotMatch(mainProcess, /shouldHideDesktopPetForMainWindow/);
   assert.doesNotMatch(mainProcess, /syncDesktopPetWindowVisibility/);
   assert.match(petGeometry, /width:\s*176,/);
@@ -2560,6 +2582,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   const sharedDesktopPet = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-pet.ts"), "utf8");
   const globalStyles = readRendererStyles();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const desktopPetHandlers = readSourceFile("src", "main", "ipc", "desktop-pet-handlers.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const petAssetScript = fs.readFileSync(
@@ -2629,15 +2652,15 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(globalStyles, /@keyframes desktop-pet-dragging/);
   assert.match(globalStyles, /@keyframes desktop-pet-thinking/);
   assert.match(globalStyles, /@keyframes desktop-pet-message-nudge/);
-  assert.match(mainProcess, /getDesktopPetContextMenuItems\(desktopPetSettings\.appearanceId\)/);
+  assert.match(mainProcess, /getDesktopPetContextMenuItems\(appState\.desktopPetSettings\.appearanceId\)/);
   assert.match(mainProcess, /function setDesktopPetWindowMouseInteractive\(interactive: boolean\)/);
   assert.match(mainProcess, /setIgnoreMouseEvents\(!interactive, \{ forward: true \}\)/);
   assert.match(mainProcess, /process\.platform === "win32"[\s\S]{0,220}setIgnoreMouseEvents\(false\)/);
   assert.match(mainProcess, /const isWindows = process\.platform === "win32";/);
   assert.match(mainProcess, /\.\.\.\(isWindows \? \{ thickFrame: false \} : \{\}\)/);
   assert.match(mainProcess, /if \(isMac\) \{[\s\S]{0,180}setVisibleOnAllWorkspaces\(true, \{ visibleOnFullScreen: true \}\);[\s\S]{0,80}\} else if \(isWindows\) \{[\s\S]{0,80}setAlwaysOnTop\(true\);/);
-  assert.match(mainProcess, /desktopPet\.setMouseInteractive/);
-  assert.match(mainProcess, /desktopPet\.dismissPreview/);
+  assert.match(desktopPetHandlers, /desktopPet\.setMouseInteractive/);
+  assert.match(desktopPetHandlers, /desktopPet\.dismissPreview/);
   assert.match(mainProcess, /desktopPet\.danceRequested/);
   assert.match(preload, /dismissPreview: \(\) => ipcRenderer\.invoke\("desktopPet\.dismissPreview"\)/);
   assert.match(preload, /setMouseInteractive: \(interactive\) => ipcRenderer\.invoke\("desktopPet\.setMouseInteractive", interactive\)/);

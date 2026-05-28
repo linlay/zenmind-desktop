@@ -7,22 +7,26 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 
 test("webview guest contents expose platform-specific DevTools shortcut", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
-  const attachBlock = source.match(/mainWindow\.webContents\.on\("did-attach-webview"[\s\S]*?contents\.on\("did-fail-load"/u)?.[0] ?? "";
+  const windowManagerSource = fs.readFileSync(path.join(projectRoot, "src", "main", "window-manager.ts"), "utf8");
+  const attachBlock = source.match(/configureMainWindowWebContents\(targetWindow,[\s\S]*?\n  \}\);/u)?.[0] ?? "";
 
-  assert.match(attachBlock, /contents\.on\("before-input-event"/u);
-  assert.match(attachBlock, /process\.platform === "darwin"[\s\S]*input\.meta[\s\S]*input\.alt/u);
-  assert.match(attachBlock, /process\.platform !== "darwin"[\s\S]*input\.control[\s\S]*input\.shift/u);
-  assert.match(attachBlock, /event\.preventDefault\(\);[\s\S]*contents\.openDevTools\(\{\s*mode: "detach"\s*\}\)/u);
+  assert.match(windowManagerSource, /contents\.on\("before-input-event"/u);
+  assert.match(source, /import \{[\s\S]*isDevToolsShortcut[\s\S]*\} from "\.\/platform-adapter"/u);
+  assert.match(windowManagerSource, /configureAttachedWebview\(contents,/u);
+  assert.match(attachBlock, /isDevToolsShortcut,/u);
+  assert.match(windowManagerSource, /event\.preventDefault\(\);[\s\S]*contents\.openDevTools\(\{\s*mode: "detach"\s*\}\)/u);
 });
 
 test("webview guest contents download generated artifacts instead of opening blank tabs", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
-  const attachBlock = source.match(/mainWindow\.webContents\.on\("did-attach-webview"[\s\S]*?mainWindow\.loadURL/u)?.[0] ?? "";
+  const windowManagerSource = fs.readFileSync(path.join(projectRoot, "src", "main", "window-manager.ts"), "utf8");
+  const attachBlock = source.match(/configureMainWindowWebContents\(targetWindow,[\s\S]*?\n  \}\);/u)?.[0] ?? "";
 
-  assert.match(attachBlock, /const downloadFromWebview = \(url: string\) => \{/u);
-  assert.match(attachBlock, /contents\.downloadURL\(url\)/u);
-  assert.match(attachBlock, /contents\.on\("will-navigate"[\s\S]*?shouldDownloadUrlFromWebview\(url\)[\s\S]*?event\.preventDefault\(\);[\s\S]*?downloadFromWebview\(url\);/u);
-  assert.match(attachBlock, /if \(disposition === "download"\) \{[\s\S]*?downloadFromWebview\(url\);[\s\S]*?return \{ action: "deny" \};/u);
+  assert.match(attachBlock, /shouldDownloadUrl: shouldDownloadUrlFromWebview/u);
+  assert.match(windowManagerSource, /const downloadFromWebview = \(url: string\) => \{/u);
+  assert.match(windowManagerSource, /contents\.downloadURL\(url\)/u);
+  assert.match(windowManagerSource, /contents\.on\("will-navigate"[\s\S]*?options\.shouldDownloadUrl\(url\)[\s\S]*?event\.preventDefault\(\);[\s\S]*?downloadFromWebview\(url\);/u);
+  assert.match(windowManagerSource, /if \(disposition === "download"\) \{[\s\S]*?downloadFromWebview\(url\);[\s\S]*?return \{ action: "deny" \};/u);
 });
 
 test("external webview toolbar opens DevTools for the active tab", () => {

@@ -82,7 +82,7 @@ try {
     return new Set(
       entries
         .filter((entry): entry is string => typeof entry === "string")
-        .map((entry) => entry.trim())
+        .map((entry) => entry.trim().replace(/\\/g, "/"))
         .filter(Boolean)
     );
   }
@@ -126,7 +126,7 @@ export function readFileFromArchive(archivePath: string, entryPath: string) {
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::OpenRead(${quotePowerShell(archivePath)})
 try {
-  $entry = $zip.GetEntry(${quotePowerShell(entryPath)})
+  $entry = $zip.Entries | Where-Object { $_.FullName.Replace('\\', '/') -eq ${quotePowerShell(entryPath.replace(/\\/g, "/"))} } | Select-Object -First 1
   if ($null -eq $entry) {
     throw ${quotePowerShell(`archive entry not found: ${entryPath}`)}
   }

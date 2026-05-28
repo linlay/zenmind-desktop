@@ -25,7 +25,7 @@ type ApplicationSupportRootOptions = {
 };
 
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
-  return platform === "win32" ? path.win32 : path;
+  return platform === "win32" ? path.win32 : path.posix;
 }
 
 function resolveDesktopRoot({
