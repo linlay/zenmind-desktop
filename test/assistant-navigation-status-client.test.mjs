@@ -58,7 +58,7 @@ test("assistant navigation snapshot uses /api/agents includeChats and agent stat
     const items = await readAssistantNavigationAgentsFromPlatform("http://127.0.0.1:18888", "desktop-token", 5);
 
     assert.equal(requests.length, 1);
-    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/agents?includeChats=5");
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/agents?includeChats=5&scope=nav");
     assert.equal(items.length, 1);
     assert.equal(items[0].agentKey, "codeAssistant");
     assert.equal(items[0].displayName, "代码助手");

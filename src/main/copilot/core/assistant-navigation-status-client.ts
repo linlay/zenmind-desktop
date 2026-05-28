@@ -602,7 +602,7 @@ export async function readAssistantNavigationAgentsFromPlatform(
   includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT
 ): Promise<AssistantNavAgentItem[]> {
   const agents = await readApiJson<unknown[]>(
-    `${createApiUrl(baseUrl, "/api/agents")}?includeChats=${encodeURIComponent(String(includeChatLimit))}`,
+    `${createApiUrl(baseUrl, "/api/agents")}?includeChats=${encodeURIComponent(String(includeChatLimit))}&scope=nav`,
     token
   );
   return buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit);
