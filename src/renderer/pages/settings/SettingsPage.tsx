@@ -11,6 +11,7 @@ import type {
   AssistantMemorySummary,
   AssistantMemoryStorage,
   AssistantMemoryStats,
+  AssistantNavAgentItem,
   AssistantSettingsPublic,
   CustomSidebarItem,
   CustomSidebarItemsResult,
@@ -88,6 +89,16 @@ function asRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function toAssistantAgentOptions(items: AssistantNavAgentItem[]): DesktopPetAgentOption[] {
+  return items.map((agent) => ({
+    agentKey: agent.agentKey,
+    displayName: agent.displayName,
+    role: agent.role,
+    icon: agent.icon,
+    unreadCount: agent.unreadCount
+  }));
 }
 
 function buildSettingsActionPatch(
@@ -578,18 +589,21 @@ export function SettingsPage({
     let cancelled = false;
     Promise.all([
       window.electronAPI.assistant.getSettings(),
-      window.electronAPI.assistant.listAgents()
+      window.electronAPI.assistant.listCopilotAgents()
     ])
-      .then(([settings, agents]) => {
+      .then(([settings, agentsResult]) => {
         if (cancelled) {
           return;
+        }
+        if (!agentsResult.ok) {
+          throw new Error(agentsResult.message);
         }
         setAssistantSettings(settings);
         setDesktopHelperAgentKey(settings.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY);
         setQuickAssistantEnabled(settings.quickAssistantEnabled);
         setQuickAssistantAgentKey(settings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
         setDesktopCopilotPages(settings.desktopCopilotPages || createDefaultDesktopCopilotPagePreferences());
-        setAssistantAgentOptions(Array.isArray(agents) ? agents : []);
+        setAssistantAgentOptions(toAssistantAgentOptions(Array.isArray(agentsResult.items) ? agentsResult.items : []));
         setReadErrorSections(ASSISTANT_SETTINGS_SECTION_IDS, "");
       })
       .catch((reason) => {

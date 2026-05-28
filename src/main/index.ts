@@ -178,6 +178,7 @@ import {
 import {
   homeZenmindEnvExists,
   importEnvZipToZenmind,
+  resolveDesktopVersion,
   resolveHomeZenmindRoot,
   shouldRequireEnvZipImport
 } from "./env-bootstrap";
@@ -3234,7 +3235,12 @@ async function ensureFirstInstallEnvZipImported() {
     }
 
     try {
-      const importResult = await importEnvZipToZenmind(app, result.filePaths[0], process.platform);
+      const importResult = await importEnvZipToZenmind(
+        app,
+        result.filePaths[0],
+        process.platform,
+        resolveDesktopVersion(app)
+      );
       console.info(
         `[main] imported env.zip into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
       );

@@ -1442,7 +1442,7 @@ export function AppSidebar({
             <select
               value={websiteAgentKey}
               onChange={(event) => setWebsiteAgentKey(event.target.value)}
-              disabled={copilotAgentOptions.length === 0}
+              disabled={websiteCreatePending}
             >
               <option value="">默认助手</option>
               {copilotAgentOptions.map((agent) => (

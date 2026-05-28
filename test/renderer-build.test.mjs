@@ -1477,6 +1477,7 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
+  const settingsPage = fs.readFileSync(path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.tsx"), "utf8");
 
   assert.match(contracts, /agentKey\?: string/);
   assert.match(contracts, /interface CustomSidebarUpdateInput/);
@@ -1498,6 +1499,12 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
   assert.match(appShell, /copilotAgentOptions/);
   assert.match(appShell, /listCopilotAgents/);
   assert.match(appSidebar, /copilotAgentOptions\.map/);
+  assert.match(appSidebar, /侧边智能助手[\s\S]*?disabled=\{websiteCreatePending\}[\s\S]*?copilotAgentOptions\.map/);
+  assert.doesNotMatch(appSidebar, /disabled=\{copilotAgentOptions\.length === 0\}/);
+  assert.match(settingsPage, /window\.electronAPI\.assistant\.listCopilotAgents\(\)/);
+  assert.match(settingsPage, /function toAssistantAgentOptions\(items: AssistantNavAgentItem\[\]\): DesktopPetAgentOption\[\]/);
+  assert.match(settingsPage, /setAssistantAgentOptions\(toAssistantAgentOptions\(Array\.isArray\(agentsResult\.items\) \? agentsResult\.items : \[\]\)\)/);
+  assert.doesNotMatch(settingsPage, /window\.electronAPI\.assistant\.listAgents\(\)/);
   assert.match(appSidebar, /onCreateCustomSidebarItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}\)/);
   assert.match(appSidebar, /requestNavigate\(`\/custom-sidebar\/\$\{result\.item\.id\}`\)/);
 });
