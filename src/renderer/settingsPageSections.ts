@@ -5,7 +5,8 @@ export type SettingsSectionId =
   | "desktopPet"
   | "embeddedWebsites"
   | "dataRoot"
-  | "memory";
+  | "memory"
+  | "about";
 
 export type SettingsSectionLayout = "measure" | "wide";
 
@@ -72,6 +73,13 @@ export function createSettingsSectionDefinitions({
       label: "memory",
       description: "",
       layout: "wide",
+      visible: true
+    },
+    {
+      id: "about",
+      label: "about",
+      description: "",
+      layout: "measure",
       visible: true
     }
   ];

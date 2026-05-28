@@ -4483,6 +4483,9 @@ function registerIpcHandlers() {
   });
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
   ipcMain.handle("settings.getPlatform", async () => process.platform);
+  ipcMain.handle("settings.getAppInfo", async () => ({
+    version: app.getVersion()
+  }));
   ipcMain.handle("settings.setNativeThemeSource", async (_event, themeMode: string) =>
     setNativeThemeSource(themeMode)
   );

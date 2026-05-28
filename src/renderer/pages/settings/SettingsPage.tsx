@@ -14,6 +14,7 @@ import type {
   AssistantSettingsPublic,
   CustomSidebarItem,
   CustomSidebarItemsResult,
+  DesktopAppInfo,
   DesktopPetAgentOption,
   DesktopPetState
 } from "../../../shared/contracts";
@@ -330,6 +331,58 @@ function WindowsDataRootCard() {
   );
 }
 
+function AboutAppCard() {
+  const { t } = useI18n();
+  const [appInfo, setAppInfo] = useState<DesktopAppInfo | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    window.electronAPI.settings
+      .getAppInfo()
+      .then((nextAppInfo) => {
+        if (!cancelled) {
+          setAppInfo(nextAppInfo);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAppInfo({ version: "" });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const version = useMemo(() => {
+    if (appInfo === null) {
+      return t("common.loading");
+    }
+    if (!appInfo.version) {
+      return t("common.error");
+    }
+    return appInfo.version.startsWith("v") ? appInfo.version : `v${appInfo.version}`;
+  }, [appInfo, t]);
+
+  return (
+    <div className="data-root-card settings-about-card">
+      <div>
+        <p className="eyebrow">ABOUT</p>
+        <h2>{t("settings.about.label")}</h2>
+        <p className="page-copy">
+          {t("settings.about.description")}
+        </p>
+      </div>
+      <div className="settings-about-meta">
+        <span>{t("settings.about.version")}</span>
+        <strong>{version}</strong>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage({
   themeMode,
   onToggleTheme,
@@ -393,7 +446,8 @@ export function SettingsPage({
           desktopPet: { label: t("settings.desktopPet.label"), description: t("settings.desktopPet.description") },
           embeddedWebsites: { label: t("settings.embeddedWebsites.label"), description: t("settings.embeddedWebsites.description") },
           dataRoot: { label: t("settings.dataRoot.label"), description: t("settings.dataRoot.description") },
-          memory: { label: t("settings.memory.label"), description: t("settings.memory.description") }
+          memory: { label: t("settings.memory.label"), description: t("settings.memory.description") },
+          about: { label: t("settings.about.label"), description: t("settings.about.description") }
         };
         return { ...definition, ...localized[definition.id] };
       }),
@@ -2152,6 +2206,8 @@ export function SettingsPage({
             </div>
           </div>
         );
+      case "about":
+        return <AboutAppCard />;
       default:
         return null;
     }
@@ -2184,7 +2240,6 @@ export function SettingsPage({
                   }}
                 >
                   <span className="settings-directory-btn-label">{section.label}</span>
-                  <span className="settings-directory-btn-desc">{section.description}</span>
                 </button>
               );
             })}

@@ -671,6 +671,10 @@ test("settings route keeps the global sidebar and renders page-internal split se
     path.join(projectRoot, "src", "renderer", "settingsPageSections.ts"),
     "utf8"
   );
+  const settingsStyles = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.css"),
+    "utf8"
+  );
   const brandMark = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "components", "BrandMark.tsx"),
     "utf8"
@@ -691,6 +695,7 @@ test("settings route keeps the global sidebar and renders page-internal split se
   assert.match(settingsSections, /id:\s*"embeddedWebsites"[\s\S]*?label:\s*"embeddedWebsites"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"dataRoot"/);
   assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"memory"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsSections, /id:\s*"about"[\s\S]*?label:\s*"about"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
   assert.doesNotMatch(settingsSections, /icon:/);
 
   assert.doesNotMatch(sidebarSource, /isSettingsMode\?: boolean;/);
@@ -707,8 +712,12 @@ test("settings route keeps the global sidebar and renders page-internal split se
   assert.match(settingsPage, /switch \(activeSection\)/);
   assert.match(settingsPage, /case "appearance"/);
   assert.match(settingsPage, /case "memory"/);
+  assert.match(settingsPage, /case "about"/);
+  assert.match(settingsPage, /<AboutAppCard \/>/);
   assert.match(settingsPage, /split-workspace-layout/);
   assert.match(settingsPage, /settings-directory-nav/);
+  assert.doesNotMatch(settingsPage, /settings-directory-btn-desc/);
+  assert.doesNotMatch(settingsStyles, /settings-directory-btn-desc/);
   assert.match(settingsPage, /contentRef\.current\?\.scrollTo/);
   assert.doesNotMatch(settingsPage, /settings-mode-close-button/);
   assert.doesNotMatch(settingsPage, /onExitSettingsMode/);
@@ -946,16 +955,20 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(macDarkSidebarRule, /brightness\(0\.76\)/);
 
   assert.doesNotMatch(preload, /setSidebarTranslucency/);
+  assert.match(preload, /getAppInfo:\s*\(\) => ipcRenderer\.invoke\("settings\.getAppInfo"\)/);
   assert.match(preload, /setNativeThemeSource:\s*\(themeMode\) => ipcRenderer\.invoke\("settings\.setNativeThemeSource", themeMode\)/);
   assert.match(preload, /getLocale:\s*\(\) => ipcRenderer\.invoke\("settings\.getLocale"\)/);
   assert.match(preload, /setLocale:\s*\(locale\) => ipcRenderer\.invoke\("settings\.setLocale", locale\)/);
   assert.match(preload, /ipcRenderer\.on\("settings\.localeChanged"/);
+  assert.match(contracts, /interface DesktopAppInfo/);
+  assert.match(contracts, /getAppInfo: \(\) => Promise<DesktopAppInfo>/);
   assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark"\)/);
   assert.match(contracts, /getLocale: \(\) => Promise<LocaleSettings>/);
   assert.match(contracts, /setLocale: \(locale: SupportedLocale\) => Promise<LocaleSettings>/);
   assert.match(contracts, /onLocaleChanged: \(listener: LocaleChangedListener\) => \(\) => void/);
   assert.match(mainProcess, /nativeTheme/);
   assert.match(mainProcess, /nativeTheme\.themeSource = themeMode === "dark" \? "dark" : "light"/);
+  assert.match(mainProcess, /ipcMain\.handle\("settings\.getAppInfo"[\s\S]*?app\.getVersion\(\)/);
   assert.match(mainProcess, /ipcMain\.handle\("settings\.setNativeThemeSource"/);
   assert.match(mainProcess, /ipcMain\.handle\("settings\.getLocale", async \(\) => initializeMainI18n\(app\)\)/);
   assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);/);
