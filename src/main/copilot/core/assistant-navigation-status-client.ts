@@ -120,6 +120,18 @@ const NAVIGATION_REFRESH_DEBOUNCE_MS = 350;
 const NAVIGATION_UNAVAILABLE_RETRY_MS = 12_000;
 const NAVIGATION_RECONNECT_MS = 10_000;
 const IGNORED_PUSH_TYPES = new Set(["heartbeat", "live.connected"]);
+const FINISHED_AWAITING_STATUSES = new Set([
+  "answered",
+  "cancelled",
+  "canceled",
+  "completed",
+  "done",
+  "error",
+  "expired",
+  "failed",
+  "resolved",
+  "timeout"
+]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -140,6 +152,59 @@ function toFiniteNumber(value: unknown) {
 
 function toNonNegativeInteger(value: unknown) {
   return Math.max(0, Math.round(toFiniteNumber(value)));
+}
+
+function isFinishedAwaitingStatus(value: string) {
+  return FINISHED_AWAITING_STATUSES.has(value);
+}
+
+function hasAwaitingListItems(value: unknown) {
+  return Array.isArray(value) && value.some((item) => isObjectRecord(item));
+}
+
+function hasPendingAwaitingPayload(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => hasPendingAwaitingPayload(item));
+  }
+  if (!isObjectRecord(value)) {
+    return false;
+  }
+
+  const type = toText(value.type).toLowerCase();
+  if (type === "awaiting.answer") {
+    return false;
+  }
+  const mode = toText(value.mode).toLowerCase();
+  if (mode === "approval" && !hasAwaitingListItems(value.approvals)) {
+    return false;
+  }
+
+  const status = toText(value.status).toLowerCase();
+  if (isFinishedAwaitingStatus(status)) {
+    return false;
+  }
+
+  if (isObjectRecord(value.answer)) {
+    const answerType = toText(value.answer.type).toLowerCase();
+    const answerStatus = toText(value.answer.status).toLowerCase();
+    if (answerType === "awaiting.answer" || isFinishedAwaitingStatus(answerStatus)) {
+      return false;
+    }
+  }
+
+  if (value.hasPendingAwaiting === true) {
+    return true;
+  }
+  if (value.hasPendingAwaiting === false) {
+    return false;
+  }
+  if (toNonNegativeInteger(value.awaitingCount) > 0) {
+    return true;
+  }
+  if (type === "awaiting.ask" || status === "awaiting" || status === "pending" || toText(value.awaitingId)) {
+    return true;
+  }
+  return hasPendingAwaitingPayload(value.awaiting);
 }
 
 function toTimestampMs(value: unknown) {
@@ -255,10 +320,13 @@ function readChatPendingAwaiting(chat: PlatformChatSummary) {
   if (chat.hasPendingAwaiting === true) {
     return true;
   }
+  if (chat.hasPendingAwaiting === false) {
+    return false;
+  }
   if (toNonNegativeInteger(chat.awaitingCount) > 0) {
     return true;
   }
-  if (isObjectRecord(chat.awaiting)) {
+  if (hasPendingAwaitingPayload(chat.awaiting)) {
     return true;
   }
   return toText(chat.status).toLowerCase() === "awaiting";
@@ -415,7 +483,7 @@ function readPushPendingAwaiting(event: NavigationPushEvent, fallback: boolean) 
   if (toNonNegativeInteger(event.awaitingCount) > 0) {
     return true;
   }
-  if (isObjectRecord(event.awaiting)) {
+  if (hasPendingAwaitingPayload(event.awaiting)) {
     return true;
   }
   if (toText(event.status).toLowerCase() === "awaiting") {

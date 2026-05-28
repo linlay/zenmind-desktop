@@ -377,6 +377,7 @@ function createNavigationAgentItem(agent: DesktopPetAgentOption, chats: Platform
     agentKey: agent.agentKey,
     displayName: agent.displayName,
     role: agent.role,
+    ...(agent.icon === undefined ? {} : { icon: agent.icon }),
     unreadCount: Math.max(0, agent.unreadCount, unreadFromChats),
     unreadChatCount: Math.max(0, agent.unreadCount, unreadFromChats),
     chatCount: sortedChats.length,
