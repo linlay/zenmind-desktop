@@ -1223,6 +1223,7 @@ export function AppShell() {
           onDesktopSsoLogin={handleDesktopSsoLogin}
           onDesktopSsoLogout={handleDesktopSsoLogout}
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
+          onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
           onCreateCustomSidebarItem={createCustomSidebarItem}
           onRequestNavigate={requestSidebarNavigation}
           onNavigateItem={undefined}

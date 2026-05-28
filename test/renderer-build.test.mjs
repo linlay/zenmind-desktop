@@ -1531,13 +1531,17 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
   assert.match(appShell, /resolvedCopilotAgentKey/);
   assert.match(appShell, /function createCustomSidebarItem\(input: CustomSidebarItemInput\): Promise<CustomSidebarItemResult>[\s\S]*?window\.electronAPI\.customSidebar\.add\(input\)/);
   assert.match(appShell, /onCreateCustomSidebarItem=\{createCustomSidebarItem\}/);
+  assert.match(appShell, /onRefreshCopilotAgentOptions=\{refreshCopilotAgentOptions\}/);
   assert.match(appSidebar, /args\.groupId === "websites" && !isCollapsed/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
   assert.match(appSidebar, /function renderWebsiteDialog\(\)/);
   assert.match(appSidebar, /网页地址[\s\S]*?显示名称[\s\S]*?侧边智能助手/);
+  assert.match(appSidebar, /onRefreshCopilotAgentOptions\?: \(\) => Promise<void> \| void/);
+  assert.match(appSidebar, /function openWebsiteDialog\(event: MouseEvent<HTMLElement>\)[\s\S]*?setWebsiteDialogOpen\(true\);[\s\S]*?void onRefreshCopilotAgentOptions\?\.\(\);/);
   assert.match(appShell, /copilotAgentOptions/);
   assert.match(appShell, /listCopilotAgents/);
   assert.match(appSidebar, /copilotAgentOptions\.map/);
+  assert.match(appSidebar, /<option value="">默认助手<\/option>[\s\S]*?\{copilotAgentOptions\.map\(\(agent\) => \(/);
   assert.match(appSidebar, /侧边智能助手[\s\S]*?disabled=\{websiteCreatePending\}[\s\S]*?copilotAgentOptions\.map/);
   assert.doesNotMatch(appSidebar, /disabled=\{copilotAgentOptions\.length === 0\}/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.listCopilotAgents\(\)/);

@@ -404,6 +404,7 @@ type AppSidebarProps = {
   onDesktopSsoLogin?: () => void;
   onDesktopSsoLogout?: () => void;
   onRefreshAssistantNavAgents?: () => Promise<void> | void;
+  onRefreshCopilotAgentOptions?: () => Promise<void> | void;
   onCreateCustomSidebarItem?: (input: CustomSidebarItemInput) => Promise<CustomSidebarItemResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
   onNavigateItem?: () => void;
@@ -432,6 +433,7 @@ export function AppSidebar({
   onDesktopSsoLogin,
   onDesktopSsoLogout,
   onRefreshAssistantNavAgents,
+  onRefreshCopilotAgentOptions,
   onCreateCustomSidebarItem,
   onRequestNavigate,
   onNavigateItem,
@@ -665,6 +667,7 @@ export function AppSidebar({
     setWebsiteAgentKey("");
     setWebsiteCreateError("");
     setWebsiteDialogOpen(true);
+    void onRefreshCopilotAgentOptions?.();
   }
 
   async function handleCreateWebsite(event: FormEvent<HTMLFormElement>) {
