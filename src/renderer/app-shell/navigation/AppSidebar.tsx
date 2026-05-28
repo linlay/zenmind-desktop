@@ -1422,22 +1422,22 @@ export function AppSidebar({
             </button>
           </div>
           <label className="sidebar-website-dialog-field">
+            <span>网站名</span>
+            <input
+              value={websiteLabel}
+              onChange={(event) => setWebsiteLabel(event.target.value)}
+              placeholder="例如：知识库"
+              maxLength={24}
+              autoFocus
+            />
+          </label>
+          <label className="sidebar-website-dialog-field">
             <span>网页地址</span>
             <input
               value={websiteUrl}
               onChange={(event) => setWebsiteUrl(event.target.value)}
               placeholder="example.com"
               required
-              autoFocus
-            />
-          </label>
-          <label className="sidebar-website-dialog-field">
-            <span>显示名称</span>
-            <input
-              value={websiteLabel}
-              onChange={(event) => setWebsiteLabel(event.target.value)}
-              placeholder="例如：知识库"
-              maxLength={24}
             />
           </label>
           <label className="sidebar-website-dialog-field">

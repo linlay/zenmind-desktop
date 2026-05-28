@@ -1535,7 +1535,7 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
   assert.match(appSidebar, /args\.groupId === "websites" && !isCollapsed/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
   assert.match(appSidebar, /function renderWebsiteDialog\(\)/);
-  assert.match(appSidebar, /网页地址[\s\S]*?显示名称[\s\S]*?侧边智能助手/);
+  assert.match(appSidebar, /网站名[\s\S]*?网页地址[\s\S]*?侧边智能助手/);
   assert.match(appSidebar, /onRefreshCopilotAgentOptions\?: \(\) => Promise<void> \| void/);
   assert.match(appSidebar, /function openWebsiteDialog\(event: MouseEvent<HTMLElement>\)[\s\S]*?setWebsiteDialogOpen\(true\);[\s\S]*?void onRefreshCopilotAgentOptions\?\.\(\);/);
   assert.match(appShell, /copilotAgentOptions/);
