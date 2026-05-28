@@ -68,6 +68,10 @@ export interface DesktopSsoLogoutResult {
 
 export type DesktopSsoStatusListener = (status: DesktopSsoStatus) => void;
 
+export interface DesktopAppInfo {
+  version: string;
+}
+
 export type NativeDialogVisibilityListener = (state: { open: boolean }) => void;
 export type SandboxImageImportProgressListener = (event: SandboxImageImportProgressEvent) => void;
 export type LocaleChangedListener = (settings: LocaleSettings) => void;
@@ -222,6 +226,7 @@ export interface DesktopApi {
   settings: {
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
+    getAppInfo: () => Promise<DesktopAppInfo>;
     setNativeThemeSource: (themeMode: "light" | "dark") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
     getLocale: () => Promise<LocaleSettings>;
     setLocale: (locale: SupportedLocale) => Promise<LocaleSettings>;

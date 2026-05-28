@@ -260,6 +260,7 @@ const api: DesktopApi = {
   settings: {
     getDataRoot: () => ipcRenderer.invoke("settings.getDataRoot"),
     getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
+    getAppInfo: () => ipcRenderer.invoke("settings.getAppInfo"),
     setNativeThemeSource: (themeMode) => ipcRenderer.invoke("settings.setNativeThemeSource", themeMode),
     getLocale: () => ipcRenderer.invoke("settings.getLocale"),
     setLocale: (locale) => ipcRenderer.invoke("settings.setLocale", locale),

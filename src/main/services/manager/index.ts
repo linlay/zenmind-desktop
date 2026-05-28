@@ -2458,11 +2458,6 @@ function ensureDefaultConfig(service: ServiceDefinition, layout: ServiceLayout) 
     if (fs.existsSync(targetPath)) {
       continue;
     }
-    if (service.id === "agent-platform" && configFile.relativePath === "configs/channels.yml") {
-      ensureDir(path.dirname(targetPath));
-      fs.writeFileSync(targetPath, "", "utf8");
-      continue;
-    }
     if (!configFile.templateRelativePath) {
       continue;
     }
@@ -3377,7 +3372,6 @@ function zenmindAppServerInstallNeedsRefresh(installDir: string) {
 
 function agentPlatformInstallNeedsRefresh(installDir: string) {
   const manifestPath = path.join(installDir, "manifest.json");
-  const desktopExamplePath = path.join(installDir, "configs", "desktop.example.yml");
   const programCommonShPath = path.join(installDir, "scripts", "program-common.sh");
   const programCommonPs1Path = path.join(installDir, "scripts", "program-common.ps1");
 
@@ -3393,26 +3387,24 @@ function agentPlatformInstallNeedsRefresh(installDir: string) {
       ) {
         return true;
       }
-      const hasDesktopBridgeConfig = Array.isArray(manifest.configFiles) &&
-        manifest.configFiles.some((entry) =>
-          entry?.key === "desktop" &&
-          entry.relativePath === "configs/desktop.yml" &&
-          entry.templateRelativePath === "configs/desktop.example.yml"
-        );
-      if (!hasDesktopBridgeConfig) {
+      const configKeys = new Set(
+        Array.isArray(manifest.configFiles)
+          ? manifest.configFiles.map((entry) => entry?.key).filter((key): key is string => typeof key === "string")
+          : []
+      );
+      const requiredConfigKeys = [
+        "env",
+        "runtime",
+        "host-tools",
+        "ai-tools",
+        "channels",
+        "coder-settings",
+        "local-public-key",
+        "prompts"
+      ];
+      if (requiredConfigKeys.some((key) => !configKeys.has(key))) {
         return true;
       }
-    }
-
-    if (!fs.existsSync(desktopExamplePath)) {
-      return true;
-    }
-    const desktopExample = fs.readFileSync(desktopExamplePath, "utf8");
-    if (
-      !/path:\s*\/actions\/call/u.test(desktopExample) ||
-      !/path:\s*\/cdp\/call/u.test(desktopExample)
-    ) {
-      return true;
     }
 
     if (fs.existsSync(programCommonShPath)) {

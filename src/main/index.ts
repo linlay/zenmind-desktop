@@ -3847,7 +3847,13 @@ function registerIpcHandlers() {
   ipcMain.handle("assistant.captureScreenshot", async (_event, chatId?: string | null) =>
     captureAssistantScreenshot(chatId, "sidebar")
   );
-  ipcMain.handle("assistant.deleteChat", async (_event, chatId: string) => assistantBridge.deleteChat(chatId));
+  ipcMain.handle("assistant.deleteChat", async (_event, chatId: string) => {
+    const result = await assistantBridge.deleteChat(chatId);
+    if (result.ok) {
+      assistantNavigationStatusClient?.scheduleRefresh(0);
+    }
+    return result;
+  });
   ipcMain.handle("assistant.markAgentChatsRead", async (_event, agentKey: string) => {
     const result = await assistantBridge.markAgentChatsRead(agentKey);
     if (result.ok) {
@@ -4477,6 +4483,9 @@ function registerIpcHandlers() {
   });
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
   ipcMain.handle("settings.getPlatform", async () => process.platform);
+  ipcMain.handle("settings.getAppInfo", async () => ({
+    version: app.getVersion()
+  }));
   ipcMain.handle("settings.setNativeThemeSource", async (_event, themeMode: string) =>
     setNativeThemeSource(themeMode)
   );

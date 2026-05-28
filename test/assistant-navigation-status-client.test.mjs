@@ -58,7 +58,7 @@ test("assistant navigation snapshot uses /api/agents includeChats and agent stat
     const items = await readAssistantNavigationAgentsFromPlatform("http://127.0.0.1:18888", "desktop-token", 5);
 
     assert.equal(requests.length, 1);
-    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/agents?includeChats=5");
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/agents?includeChats=5&scope=nav");
     assert.equal(items.length, 1);
     assert.equal(items[0].agentKey, "codeAssistant");
     assert.equal(items[0].displayName, "代码助手");
@@ -99,6 +99,57 @@ test("assistant navigation snapshot flattens chats from agents only", () => {
   assert.equal(items[0].agentKey, "zenmi");
   assert.equal(items[0].chatCount, 1);
   assert.equal(items[0].recentChats[0].agentKey, "zenmi");
+});
+
+test("assistant navigation snapshot ignores finished awaiting payloads", () => {
+  const items = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "zenmi",
+      name: "小宅",
+      stats: { totalCount: 1, unreadCount: 0 },
+      chats: [
+        {
+          chatId: "chat-finished",
+          chatName: "已结束等待项",
+          updatedAt: 1000,
+          awaiting: {
+            type: "awaiting.answer",
+            status: "error",
+            awaitingId: "await-1"
+          }
+        }
+      ]
+    }
+  ]);
+
+  assert.equal(items[0].hasPendingAwaiting, false);
+  assert.equal(items[0].recentChats[0].hasPendingAwaiting, false);
+});
+
+test("assistant navigation snapshot ignores empty approval awaitings", () => {
+  const items = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "zenmi",
+      name: "小宅",
+      stats: { totalCount: 1, unreadCount: 0 },
+      chats: [
+        {
+          chatId: "chat-empty-approval",
+          chatName: "空审批",
+          updatedAt: 1000,
+          awaiting: {
+            type: "awaiting.ask",
+            mode: "approval",
+            runId: "run-1",
+            awaitingId: "await-1"
+          }
+        }
+      ]
+    }
+  ]);
+
+  assert.equal(items[0].hasPendingAwaiting, false);
+  assert.equal(items[0].recentChats[0].hasPendingAwaiting, false);
 });
 
 test("assistant navigation snapshot reads compatible agent chat fields", () => {

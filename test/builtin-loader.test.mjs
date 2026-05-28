@@ -303,18 +303,11 @@ test("loadBuiltinServices falls back to installed builtin manifests when synced 
     assert.equal(loaded[0].description, "installed fallback");
     assert.equal(service.name, "智能体平台");
     assert.equal(service.configFiles[0].relativePath, ".env");
-    assert.ok(service.configFiles.some((configFile) =>
-      configFile.key === "prompts" &&
-      configFile.relativePath === "configs/prompts.yml" &&
-      configFile.templateRelativePath === "configs/prompts.example.yml" &&
-      configFile.required === false
-    ));
-    assert.ok(service.configFiles.some((configFile) =>
-      configFile.key === "channels" &&
-      configFile.relativePath === "configs/channels.yml" &&
-      configFile.templateRelativePath === "configs/channels.example.yml" &&
-      configFile.required === false
-    ));
+    assert.deepEqual(
+      service.configFiles.map((configFile) => configFile.key),
+      ["env"]
+    );
+    assert.equal(service.configFiles.some((configFile) => configFile.key === "channels"), false);
   } finally {
     registryInternals.clearServices();
     if (previousAssetsRoot) {

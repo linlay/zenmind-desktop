@@ -377,6 +377,7 @@ function createNavigationAgentItem(agent: DesktopPetAgentOption, chats: Platform
     agentKey: agent.agentKey,
     displayName: agent.displayName,
     role: agent.role,
+    ...(agent.icon === undefined ? {} : { icon: agent.icon }),
     unreadCount: Math.max(0, agent.unreadCount, unreadFromChats),
     unreadChatCount: Math.max(0, agent.unreadCount, unreadFromChats),
     chatCount: sortedChats.length,
@@ -610,15 +611,23 @@ export class AgentPlatformAssistantBridge {
   }
 
   async deleteChat(chatId: string) {
+    const trimmedChatId = chatId.trim();
+    if (!trimmedChatId) {
+      return { ok: false, message: "缺少会话 ID。" };
+    }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
       return { ok: false, message: availability.message };
     }
-    const response = await this.platformFetch(availability.baseUrl, "/api/chat-delete", {
-      method: "POST",
-      headers: this.jsonHeaders(availability.token),
-      body: JSON.stringify({ chatId })
-    });
+    const response = await this.platformFetch(
+      availability.baseUrl,
+      `/api/chat/delete?chatId=${encodeURIComponent(trimmedChatId)}`,
+      {
+        method: "POST",
+        headers: this.jsonHeaders(availability.token),
+        body: JSON.stringify({})
+      }
+    );
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
     }

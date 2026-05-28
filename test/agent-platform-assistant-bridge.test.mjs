@@ -117,7 +117,7 @@ test("agent platform assistant bridge lists and normalizes agents from /api/agen
       msg: "success",
       data: [
         { key: "codeAssistant", name: "代码助手", role: "CLI 代码助手", stats: { unreadCount: 3 } },
-        { key: "zenmi", name: "小宅", role: "平台总管", stats: { unreadCount: 1 } },
+        { key: "zenmi", name: "小宅", role: "平台总管", icon: { name: "zenith" }, stats: { unreadCount: 1 } },
         { name: "缺少 key" }
       ]
     }), {
@@ -132,7 +132,7 @@ test("agent platform assistant bridge lists and normalizes agents from /api/agen
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, "http://127.0.0.1:18888/api/agents");
     assert.deepEqual(agents, [
-      { agentKey: "zenmi", displayName: "小宅", role: "平台总管", unreadCount: 1 },
+      { agentKey: "zenmi", displayName: "小宅", role: "平台总管", icon: { name: "zenith" }, unreadCount: 1 },
       { agentKey: "codeAssistant", displayName: "代码助手", role: "CLI 代码助手", unreadCount: 3 }
     ]);
   } finally {
@@ -168,6 +168,32 @@ test("agent platform assistant bridge maps submitAwaiting and stopRun to platfor
     assert.deepEqual(requests[0].body.params, [{ id: "q1", answer: "ok" }]);
     assert.equal(requests[1].url, "http://127.0.0.1:18888/api/interrupt");
     assert.equal(requests[1].body.runId, "run_1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge deletes chats through the platform chat delete endpoint", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const { bridge } = makeBridge();
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init, body: JSON.parse(String(init.body)) });
+    assert.equal(init.headers.Authorization, "Bearer desktop-token");
+    return new Response(JSON.stringify({ code: 0, msg: "success", data: {} }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  try {
+    const result = await bridge.deleteChat(" chat_1 ");
+
+    assert.equal(result.ok, true);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/delete?chatId=chat_1");
+    assert.equal(requests[0].init.method, "POST");
+    assert.deepEqual(requests[0].body, {});
   } finally {
     globalThis.fetch = originalFetch;
   }

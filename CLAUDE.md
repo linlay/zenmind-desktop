@@ -1,255 +1,208 @@
 # CLAUDE.md
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+Project instructions for AI coding agents working in `zenmind-desktop`.
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+## 1. Work Style
 
-## 1. Think Before Coding
+Behavioral guidelines to reduce common LLM coding mistakes. Bias toward cautious, surgical, verified work.
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+### Think Before Coding
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+Don't assume. Don't hide confusion. Surface tradeoffs.
 
-## 2. Simplicity First
+- State assumptions when they affect implementation.
+- If multiple interpretations exist, present them instead of picking silently.
+- If a simpler approach exists, say so.
+- If something is unclear and cannot be discovered from the repo, ask.
 
-**Minimum code that solves the problem. Nothing speculative.**
+### Simplicity First
+
+Minimum code that solves the problem. Nothing speculative.
 
 - No features beyond what was asked.
 - No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
+- No flexibility or configurability that was not requested.
 - No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+- If a change can be much smaller without losing behavior, make it smaller.
 
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+### Surgical Changes
 
-## 3. Surgical Changes
+Touch only what is required.
 
-**Touch only what you must. Clean up only your own mess.**
+- Do not improve adjacent code, comments, or formatting unless needed.
+- Do not refactor unrelated code.
+- Match existing style, even when another style is tempting.
+- Remove imports, variables, and functions only when your own changes made them unused.
+- Mention unrelated dead code instead of deleting it.
 
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
+Every changed line should trace directly to the user's request.
 
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
+### Goal-Driven Execution
 
-The test: Every changed line should trace directly to the user's request.
+Turn work into verifiable goals.
 
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-
-## 1. 项目概览
-`zenmind-desktop` 是一个桌面端控制壳项目，目标是把内置服务和第三方插件随 Electron 应用分发，并提供统一的服务控制台。桌面端负责发现内置服务、运行时加载插件、安装资源包、写入默认配置、执行启动与停止脚本，并向渲染层暴露服务状态与控制能力。
-
-项目支持两种服务来源：
-- **内置服务（builtin）**：随应用打包分发，当前包含 `agent-container-hub`、`agent-platform`、`agent-webclient` 和 `zenmind-app-server`。
-- **插件（plugin）**：运行时通过 `.tar.gz` 包导入。程序存储在 macOS `~/Library/Application Support/ZenMind/plugins/<plugin-id>/<version>/` 或 Windows `%APPDATA%\ZenMind\plugins\<plugin-id>\<version>\`，配置保存在 `~/.zenmind/.desktop/config/plugins/<plugin-id>/`。插件包必须包含 `manifest.json` 清单文件。
-- Desktop 不再随安装包内置任何插件，插件统一通过导入归档包接入。
-
-前端按三种模式区分：
-- **无前端**（`frontendMode: "none"`）：只在控制中心显示。
-- **内嵌前端**（`frontendMode: "embedded"`）：可在详情页打开，但不会出现在顶部导航栏。
-- **独立前端**（`frontendMode: "standalone"`）：可在详情页打开，运行中会出现在顶部导航栏。
-
-## 2. 技术栈
-- Electron 36
-- React 18
-- React Router 6，渲染层使用 `HashRouter`
-- Vite 7
-- TypeScript 5
-- electron-builder 24
-- Node.js 原生 `node:test`
-- npm 作为默认脚本入口
-
-## 3. 架构设计
-项目采用 Electron 标准三层结构：
-- `src/main`：主进程，负责窗口创建、IPC 注册、插件加载、服务安装与生命周期管理。
-- `src/preload`：通过 `contextBridge` 暴露受控桌面 API 给渲染层。
-- `src/renderer`：React 界面，展示控制中心和服务前端页面。
-- `src/shared`：主进程与渲染层共用的类型契约和认证桥接逻辑。
-
-核心调用链如下：
-- 渲染层通过 `window.electronAPI.services.*` 发起服务操作，通过 `window.electronAPI.plugins.*` 发起插件管理操作，通过 `window.electronAPI.agentAuth.*` 发起令牌签发。
-- preload 层把调用桥接到 `ipcRenderer.invoke(...)`。
-- 主进程在 `src/main/index.ts` 注册对应 `ipcMain.handle(...)` 处理器。
-- `service-manager` 执行资源校验、安装、配置读写、脚本调用、状态探测与日志元数据收集。
-- `plugin-loader` 负责插件的扫描加载、安装和卸载。
-- `plugin-uninstall` 负责卸载确认对话框和卸载流程编排。
-- `builtin-loader` 负责从内置 tar.gz 资源包提取 `manifest.json` 并注册 builtin 服务。
-- `service-registry` 维护统一的动态服务注册表，通过 `getAllServices()` 统一返回。
-- `env-file` 提供 `.env` 文件的解析和读取工具函数。
-- `pan-auth` 负责 pan-webclient 使用的 Desktop App 私钥导入、RSA 密钥对管理和 JWT 签发。
-- `app-server-auth` 负责调用 `zenmind-app-server` 的本地脚本导出 JWK public key 并签发 agent-platform access token。
-- `agent-auth` 负责 Desktop AGENT access token 桥接，token 由 `zenmind-app-server` 颁发。
-- `auth-bridge`（shared）定义特定服务或插件的 postMessage 认证桥接协议，当前覆盖 `agent-webclient` 和 `pan-webclient`。
-- 渲染层 webview 直接访问各服务自身监听端口，不再经过桌面端中转。需要认证的服务或插件通过 postMessage Token Bridge 获取 Desktop 签发的 JWT。
-
-## 4. 目录结构
-- `src/main`
-  - `index.ts`：窗口创建、IPC 注册、应用生命周期、DevTools 快捷键。
-  - `builtin-loader.ts`：扫描内置资源包并提取 `manifest.json`。
-  - `manifest-utils.ts`：Manifest 解析、兼容映射、`ServiceDefinition` 归一化和 tar.gz 清单读取。
-  - `service-registry.ts`：统一服务注册/注销与查询。
-  - `service-manager.ts`：服务安装、启停、配置读写、状态探测。
-  - `plugin-loader.ts`：插件扫描、安装（从 tar.gz）、卸载。
-  - `plugin-uninstall.ts`：插件卸载确认对话框与流程编排。
-  - `pan-auth.ts`：Pan 网盘私钥导入、RSA 密钥对生成与 JWT 签发。
-  - `app-server-auth.ts`：调用 zenmind-app-server 脚本导出 JWK public key、签发 app access token。
-  - `agent-auth.ts`：Desktop AGENT access token 桥接，委托 zenmind-app-server 签发。
-  - `env-file.ts`：`.env` 文件解析与读取。
-- `src/preload`：桌面 API 暴露层，包含 `services`、`plugins`、`panAuth`、`agentAuth` 四个命名空间。
-- `src/renderer`
-  - `pages/ControlCenterPage.tsx`：服务控制中心。
-  - `pages/PluginPage.tsx`：通用服务前端页面，通过 webview 加载服务 web 入口，支持 postMessage Token Bridge 认证。
-  - `pages/PlaceholderPage.tsx`：占位页面，用于智能助理、智能体、插件市场、帮助等预留入口。
-  - `components/Header.tsx`：顶部导航栏，动态展示运行中且 `frontendMode === "standalone"` 的服务入口。
-  - `services/ServicesContext.tsx`：React Context，封装所有服务和插件操作。
-- `src/shared`
-  - `contracts.ts`：共享类型定义，包含 `DesktopApi` 接口。
-  - `auth-bridge.ts`：插件认证桥接协议定义和 URL 构建逻辑。
-- `scripts`：开发辅助脚本和内置资源同步逻辑。
-- `build/resources/services`：开发期内置服务资源同步输出目录。
-- `docs`：插件开发指南。
-- `test`：Node 测试，覆盖资源包校验、服务管理和构建约束。
-
-## 5. 数据结构
-核心共享结构定义在 `src/shared/contracts.ts`：
-- `ServiceId`：`string` 类型，支持任意动态 ID（内置服务和插件共用）。
-- `ServiceKind`：`"builtin" | "plugin"`，区分内置服务和插件。
-- `FrontendMode`：`"none" | "embedded" | "standalone"`，区分服务前端暴露方式。
-- `ServiceStatus`：描述未安装、已停止、运行中、缺配置、缺依赖、错误等状态。
-- `ServiceConfigFile`：单个配置文件的键、标签、相对路径、绝对路径、是否必须和是否存在。
-- `ServiceHealthMeta`：PID、PID 文件路径、主日志路径、可选的独立错误日志路径、访问入口、端口和前置条件列表。
-- `ServiceState`：渲染层展示服务卡片时使用的统一结构，包含 `frontendMode` 字段。
-- `Manifest`：内置服务和插件共用的统一清单结构，包含 `kind`、`frontend`、`api`、`backend`、`scripts`、`configFiles`、`runtime`、`web`、`prerequisites` 与 `desktop` 扩展字段；其中 `runtime.errorLogRelativePath` 仅在服务实际生成独立 stderr 文件时填写。
-- `ManifestCommand`：`string | string[]`，支持单字符串或命令数组两种写法。
-- `DesktopApi`：preload 暴露给渲染层的完整 API 接口定义。
-- `AgentAuthRefreshReason`：`"missing" | "unauthorized"`，令牌签发原因。
-- `AgentAuthIssueResult`：令牌签发结果。
-- `PluginInstallResult`：插件安装/卸载结果。
-
-认证桥接结构定义在 `src/shared/auth-bridge.ts`：
-- `PluginAuthBridgeProtocol`：定义 `requestType` 和 `responseType` 消息类型。
-- 当前注册了 `agent-webclient` 和 `pan-webclient` 两个桥接协议。
-
-## 6. API 定义
-当前通过 preload 暴露的 IPC 能力如下：
-
-### services 命名空间
-- `services.list`：列出所有服务状态（包含内置服务和已导入插件）。
-- `services.installBuiltin`：安装指定内置服务。
-- `services.initialize`：执行服务初始化流程（补默认配置、修复脚本权限、执行 `scripts.deploy`）。
-- `services.getStatus`：读取单个服务状态。
-- `services.start`：启动服务。
-- `services.stop`：停止服务。
-- `services.restart`：重启服务。
-- `services.readConfig`：读取指定配置项内容。
-- `services.writeConfig`：写入指定配置项内容。
-- `services.importFile`：导入外部文件到服务目录。
-- `services.getLogsMeta`：读取日志路径与存在性信息。
-
-### plugins 命名空间
-- `plugins.install`：弹出文件选择对话框，选择 `.tar.gz` 插件包进行导入。
-- `plugins.uninstall`：卸载指定插件（弹出确认对话框，确认后删除目录并注销注册）。
-
-### panAuth 命名空间
-- `panAuth.importPrivateKey`：导入 Desktop App 私钥。
-- `panAuth.getStatus`：读取私钥配置状态。
-
-### agentAuth 命名空间
-- `agentAuth.issueAccessToken`：请求 `zenmind-app-server` 签发 Desktop AGENT access token，接受 `reason` 参数（`"missing"` 或 `"unauthorized"`）。
-
-## 7. 插件系统
-### 插件包结构
 ```text
-my-plugin/
-  manifest.json           # 必须
-  start.sh                # 启动脚本
-  stop.sh                 # 停止脚本
-  .env.example            # 配置模板（可选）
-  frontend/dist/          # 前端构建产物（可选，frontend.mode != "none" 时需要）
+1. Change behavior -> verify with targeted test or inspection.
+2. Update contracts/docs -> verify references and build/static checks.
+3. Finish -> summarize changed files and verification.
 ```
 
-### 插件生命周期
-1. 用户在控制中心点击"导入插件"，选择 `.tar.gz` 包。
-2. 主进程解压到平台程序数据目录的 `ZenMind/plugins/{id}/{version}/`，读取 `manifest.json` 并注册。
-3. 控制中心左侧边栏立即出现新服务卡片，状态为"待初始化"。
-4. 用户完成必要的配置编辑后，点击"初始化"；Desktop 会补齐模板配置、修复脚本权限，并执行 `scripts.deploy`。
-5. 初始化成功后，插件进入可启动状态；启动后，`frontendMode !== "none"` 的插件会在详情区显示"打开前端"按钮；`frontendMode === "standalone"` 时会出现在顶部导航栏。
-6. 下次启动 Electron 时，`loadInstalledPlugins` 自动扫描 Application Support 下的 `ZenMind/plugins/` 并重新注册；未初始化的插件仍会保持"待初始化"。
-7. 卸载时弹出确认对话框，确认后停止运行中的服务、删除插件目录并从注册表移除。
+## 2. Project Overview
 
-### 认证桥接
-需要认证的服务或插件（如 `agent-webclient`、`pan-webclient`）通过 postMessage Token Bridge 与 Desktop 通信：
-1. 服务 webview 发送 `{ type: requestType, requestId, action: "getAccessToken" | "refreshAccessToken", reason? }` 消息。
-2. `PluginPage` 监听消息，调用 `agentAuth.issueAccessToken` 签发 JWT。
-3. 将 `{ type: responseType, requestId, token }` 回传给 webview。
+`zenmind-desktop` is an Electron desktop control shell for bundled services and runtime plugins.
 
-## 8. 开发要点
-- 开发模式依赖 `scripts/dev.mjs` 串起资源同步、主进程编译、Vite 启动和 Electron 启动。
-- 内置资源必须先经过 `npm run sync:assets`，否则安装与测试会因为缺少资源包失败。
-- `npm run sync:assets` 会从工作区各项目和聚合产物目录中提取 builtin bundle 的 `manifest.json`，只同步 `kind === "builtin"` 的 bundle。支持 `--os` 和 `--arch` 参数按平台过滤。
-- `agent-platform` 作为 builtin 启动前会自动注入 Container Hub 地址、`SERVER_PORT`、`AGENT_AUTH_ENABLED=true` 和本地 RSA 公钥路径。
-- 渲染层必须继续使用 `HashRouter`，以避免 Electron 文件协议下的路由问题。
-- 生产环境从 `process.resourcesPath/services` 读取内置资源；开发环境从 `build/resources/services` 读取。
-- 服务初始化阶段会尝试把模板配置复制为 `.env`，因此配置模板应始终随服务资源一起分发。
-- 桌面端退出时会在 `before-quit` 中停止本次会话启动过的服务。
-- preload 脚本在 Electron 窗口创建时加载，修改后必须重启整个 Electron 进程才能生效，仅刷新页面无效。
-- 顶部导航栏由 `Header.tsx` 动态生成，固定项为"控制中心"（前）和"插件市场"、"帮助"（后），运行中且 `frontendMode === "standalone"` 的服务会自动插入中间。
-- 有前端的服务 webview 会直接指向服务自身的 `healthMeta.webUrl`。特定服务或插件（如 `agent-webclient`、`pan-webclient`）会通过 `auth-bridge.ts` 构建带参数的嵌入 URL。
-- `ManifestCommand` 支持 `string` 和 `string[]` 两种写法。`.ps1` 脚本会自动通过 `powershell`（Windows）或 `pwsh`（其他平台）执行。
+Desktop is responsible for:
 
-## 9. 打包约定
-- `agent-container-hub` 的 builtin bundle 对齐 Hub 新规范：
-  - 文件名不再带 `program`
-  - 二进制位于 `backend/agent-container-hub`
-  - PID / 日志位于 `run/`
-  - 根目录必须包含 `manifest.json`
-- `agent-platform` 和 `zenmind-app-server` 仍沿用现有 program bundle 规范。
-- macOS 打包使用 `npm run dist:mac`，输出 DMG，使用 ad-hoc 签名。
-- Windows 打包使用 `npm run dist:win`，输出 NSIS 安装包。
+- Discovering builtin services.
+- Loading installed plugins.
+- Installing service and plugin bundles.
+- Writing default configuration.
+- Running start, stop, deploy, and verification scripts.
+- Exposing service state and control APIs to the renderer.
 
-## 10. 已知约束与注意事项
-- 当前打包目标主要是 macOS arm64 和 Windows x64，其他平台尚未在本仓库配置完整分发链路。
-- 内置服务资源依赖外部打包产物，资源包内容缺失会直接导致安装或测试失败。
-- `agent-container-hub` 依赖本机可用的 Docker 或 Podman。
-- `pan-webclient` 仍通过插件系统导入；Desktop 不再打包任何内置插件，缺失插件时优先检查导入产物。
-- Desktop 配置与运行数据根目录为 `~/.zenmind/.desktop`，按 `config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；可替换程序产物位于 macOS `~/Library/Application Support/ZenMind` 或 Windows `%APPDATA%\ZenMind`。
-- pan-webclient 的 RSA 私钥由 Desktop 管理并存储在 `secrets/` 下；agent-platform 只信任 `zenmind-app-server` 的 JWK public key，access token 也由 app-server 颁发。
+Service sources:
 
+- `builtin`: bundled with the app. Current builtin services include `agent-container-hub`, `agent-platform`, `agent-webclient`, and `zenmind-app-server`.
+- `plugin`: imported at runtime from `.tar.gz` archives. Desktop no longer bundles plugins in the installer.
 
-## 11. AI 行为红线
+Frontend modes:
 
-**除非用户发出明确指令让你执行修改代码任务，否则永远只能输出计划和解决方案文字。**
+- `none`: service appears only in Control Center.
+- `embedded`: frontend can open inside the service detail page.
+- `standalone`: frontend can open and appears in navigation while running.
 
-- 用户说"给出解决方案"、"输出方案"、"分析一下"时 → 只输出文字/文档。
-- 只有用户明确说"执行修改"、"改代码"、"apply changes"、"动手改" 时 → 才修改代码文件。
-- 如果不确定，先问："你是要我输出方案文档，还是直接执行代码修改？"
-- 违反此规则会浪费大量 token 并可能引入代码错误。
-- 详见 `docs/ai_mistakes.md` 中"未经授权直接执行代码修改（2026-04-24）"条目。
+## 3. Architecture
+
+Electron uses these layers:
+
+- `src/main`: windows, IPC, plugin loading, service lifecycle, auth, filesystem integration.
+- `src/preload`: `contextBridge` layer that exposes a controlled desktop API.
+- `src/renderer`: React shell, Control Center, settings, navigation, service/plugin webviews.
+- `src/shared`: contracts, manifest types, auth bridge helpers, shared UI/runtime types.
+
+Core flow:
+
+- Renderer calls `window.electronAPI.*`.
+- Preload bridges calls to `ipcRenderer.invoke(...)`.
+- Main process registers `ipcMain.handle(...)` in `src/main/index.ts`.
+- Service and plugin work is delegated to manager/loader modules.
+- Webviews access service `healthMeta.webUrl` directly; Desktop no longer proxies all frontend assets.
+
+Important modules include `services/manager`, `plugin-loader`, `plugin-uninstall`, `builtin-loader`, `service-registry`, `manifest-utils`, `auth-bridge`, `agent-auth`, `app-server-auth`, and `pan-auth`.
+
+## 4. Repository Map
+
+- `src/main/index.ts`: app lifecycle, window creation, IPC handlers, menu/tray hooks, shortcuts.
+- `src/main/user-paths.ts`: platform-aware data, config, state, logs, cache, secrets, and profile roots.
+- `src/main/navigation/custom-sidebar-store.ts`: embedded website configuration storage.
+- `src/main/task-board-db.ts`: task board SQLite storage path and schema.
+- `src/preload`: renderer-facing Desktop API and service webview bridges.
+- `src/renderer/app-shell`: main shell, navigation, mounted embedded surfaces.
+- `src/renderer/pages`: Control Center, settings, plugin pages, external webview, task board, help.
+- `src/shared/contracts`: shared API and data contracts.
+- `docs`: plugin development, data directory layout, and AI mistake notes.
+- `test`: Node tests for service management, loader behavior, contracts, renderer constraints, and docs.
+
+## 5. Data Directories
+
+Desktop runtime data lives under a layered data root:
+
+- macOS: `~/.zenmind/.desktop/`
+- Windows: `%USERPROFILE%\.zenmind\.desktop\`
+
+Layers:
+
+- `config/`: desktop, service, plugin, and marketplace configuration.
+- `data/`: persistent service and plugin runtime data.
+- `state/`: pid files, initialization state, startup restore state, SSO session state.
+- `logs/`: service and plugin logs.
+- `cache/`: rebuildable cache, currently including marketplace cache.
+- `secrets/`: local credentials and private keys.
+- `profiles/`: Electron/Chromium profile data.
+
+Embedded website entries are stored in `config/desktop/custom-sidebar-items.json`.
+
+Electron cookies, localStorage, webview session data, and browser cache are stored under `profiles/electron/`.
+
+Full details: `docs/data-directories.md`.
+
+Program bundles do not live in the desktop data root. They live under:
+
+- macOS: `~/Library/Application Support/ZenMind/`
+- Windows: `%APPDATA%\ZenMind\`
+
+## 6. Platform Compatibility
+
+When behavior differs by platform, branch explicitly near the logic.
+
+- Use `if (isWindows) { ... }` and `if (isMac) { ... }` style checks when paths, scripts, runtimes, packaging, or UI interactions differ.
+- Do not rely on implicit shared fallback behavior when Windows and macOS have different requirements.
+- Prefer Electron paths such as `app.getPath("home")`, `app.getPath("desktop")`, `app.getPath("appData")`, and `app.getPath("userData")`.
+- For filesystem behavior, verify both the Windows path and the macOS path, even if debugging only one platform.
+- Clarity is more important than clever abstraction for compatibility-sensitive code.
+
+## 7. Shared Contracts
+
+Core shared structures live in `src/shared/contracts`:
+
+- `ServiceId`: dynamic string ID shared by builtin services and plugins.
+- `ServiceKind`: `builtin` or `plugin`.
+- `FrontendMode`: `none`, `embedded`, or `standalone`.
+- `ServiceStatus`: install, configuration, dependency, running, stopped, and error states.
+- `ServiceState`: renderer-facing service card state.
+- `Manifest`: common service/plugin manifest shape.
+- `ManifestCommand`: command string or command array.
+- `DesktopApi`: full preload API exposed to the renderer.
+
+Keep main, preload, renderer, and shared contracts in sync when changing APIs.
+
+## 8. Service And Plugin Behavior
+
+- Builtin resources are read from `process.resourcesPath/services` in production and `build/resources/services` in development.
+- Development assets must be synced with `npm run sync:assets` before tests that depend on builtin bundles.
+- Service initialization may copy template config to `.env`, repair script permissions, and run `scripts.deploy`.
+- Desktop stops services it started during the session in `before-quit`.
+- `agent-platform` startup injects Container Hub address, `SERVER_PORT`, `AGENT_AUTH_ENABLED=true`, and the local RSA public key path.
+- `ManifestCommand` supports both `string` and `string[]`.
+- `.ps1` scripts run through `powershell` on Windows and `pwsh` elsewhere.
+- Plugins must include `manifest.json`; optional frontend assets depend on `frontend.mode`.
+- Runtime plugin installs are scanned from Application Support on app launch.
+
+## 9. Webviews And Renderer Rules
+
+- Service and plugin webviews load the service's own web URL directly.
+- `agent-webclient` and `pan-webclient` use the shared postMessage Token Bridge.
+- Token bridge messages include `requestId`; Desktop replies with the matching token response.
+- Preload changes require restarting the Electron process; page refresh alone is not enough.
+- Keep `HashRouter`; it avoids route issues under Electron file protocol.
+- Navigation includes fixed Control Center, plugin market, help, assistants, and embedded website groups.
+- Running services with `frontendMode === "standalone"` may appear as navigation entries.
+- Custom embedded websites are managed through the `customSidebar` API and rendered with `ExternalWebviewPage`.
+
+## 10. Development And Packaging
+
+- Key commands: `npm run dev`, `npm run sync:assets`, `npm run build`, `npm test`, `npm run dist:mac`, `npm run dist:win`.
+- Current distribution targets are mainly macOS arm64 and Windows x64.
+- Builtin service resources depend on external packaged artifacts; missing bundles can break install and tests.
+- `agent-container-hub` depends on local Docker or Podman availability.
+- `agent-container-hub` bundles use binary `backend/agent-container-hub`, pid/logs in `run/`, and root `manifest.json`.
+- `agent-platform` and `zenmind-app-server` still follow their existing program bundle conventions.
+- `pan-webclient` is imported through the plugin system; it is not bundled in Desktop.
+
+## 11. Known Sensitive Areas
+
+- User path logic in `src/main/user-paths.ts` must stay platform-explicit.
+- Service lifecycle changes can affect startup restore, shutdown cleanup, logs, and pid handling.
+- Auth bridge changes can affect both Desktop and embedded web clients.
+- Manifest compatibility changes can affect builtin services and runtime plugins.
+- Renderer API changes require updating preload and shared `DesktopApi` contracts together.
+- Desktop pet and assistant settings share the desktop config root, so avoid filename collisions.
+
+## 12. AI Behavior Red Lines
+
+Unless the user clearly asks for implementation, output only plans and solution text.
+
+- User asks "give a solution", "output a plan", or "analyze" -> do not edit files.
+- User asks "implement", "modify", "apply changes", or "change code" -> perform the requested edits.
+- If intent is unclear, ask whether they want a plan or direct implementation.
+- This prevents wasted tokens and accidental code churn.

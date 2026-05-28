@@ -1,4 +1,4 @@
-import type { CSSProperties, ImgHTMLAttributes, SVGProps } from "react";
+import { useEffect, useState, type CSSProperties, type ImgHTMLAttributes, type SVGProps } from "react";
 import type { AssistantNavAgentIcon } from "../../../shared/contracts";
 
 type AgentIconProps = {
@@ -458,11 +458,19 @@ export function AgentIcon({
   size = 32,
   type = "agent",
 }: AgentIconProps) {
-  if (typeof icon === "string" && isImageIcon(icon)) {
+  const imageSource = typeof icon === "string" && isImageIcon(icon) ? icon.trim() : "";
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageSource]);
+
+  if (imageSource && !imageFailed) {
     const imageProps: ImgHTMLAttributes<HTMLImageElement> = {
       className,
-      src: icon.trim(),
+      src: imageSource,
       alt: "",
+      onError: () => setImageFailed(true),
       style: {
         width: size,
         height: size,

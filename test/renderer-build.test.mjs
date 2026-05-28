@@ -288,6 +288,27 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-status-message\.danger\s*\{/);
 });
 
+test("startup loading screen uses localized copy", () => {
+  const startupGate = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "startup",
+    "StartupGate.tsx"
+  );
+
+  assert.match(startupGate, /useI18n\(\)/);
+  assert.match(startupGate, /t\("startup\.title\.starting"\)/);
+  assert.match(startupGate, /t\("startup\.phase\.installing"\)/);
+  assert.match(startupGate, /t\("startup\.service\.authentication"\)/);
+  assert.match(startupGate, /t\("startup\.action\.openControlCenter"\)/);
+  assert.doesNotMatch(startupGate, /getServiceDisplayName/);
+  assert.doesNotMatch(
+    startupGate,
+    /"(?:正在启动|服务未就绪|启动较慢|已就绪|安装中\.\.\.|初始化中\.\.\.|启动中\.\.\.|等待前序服务|等待启动|重新检查|进入控制中心|认证服务|智能体平台)"/
+  );
+});
+
 test("desktop custom theme tokens are shared by control center and log viewer", () => {
   const globalStyles = readRendererStyles();
 
@@ -556,6 +577,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /exportChat/);
   assert.match(sidebarSource, /renameChat/);
   assert.match(sidebarSource, /archiveChat/);
+  assert.match(sidebarSource, /deleteChat/);
+  assert.match(sidebarSource, /<span>删除<\/span>/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/schedules"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/control-center"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?to:\s*"\/help"[\s\S]*?labelKey:\s*"nav\.help"/);
   assert.match(sidebarSource, /sidebar-footer-divider/);
@@ -587,6 +610,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(agentIconSource, /BUILTIN_ICON_CONFIGS/);
   assert.match(agentIconSource, /ledger/);
   assert.match(agentIconSource, /isImageIcon/);
+  assert.match(agentIconSource, /useState\(false\)/);
+  assert.match(agentIconSource, /onError:\s*\(\)\s*=>\s*setImageFailed\(true\)/);
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_ITEMS/);
   assert.match(appShell, /<Route path="\/kanban" element=\{<TaskBoardPage hostTheme=\{themeMode\} \/>/);
@@ -648,6 +673,10 @@ test("settings route keeps the global sidebar and renders page-internal split se
     path.join(projectRoot, "src", "renderer", "settingsPageSections.ts"),
     "utf8"
   );
+  const settingsStyles = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.css"),
+    "utf8"
+  );
   const brandMark = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "components", "BrandMark.tsx"),
     "utf8"
@@ -668,6 +697,7 @@ test("settings route keeps the global sidebar and renders page-internal split se
   assert.match(settingsSections, /id:\s*"embeddedWebsites"[\s\S]*?label:\s*"embeddedWebsites"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"dataRoot"/);
   assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"memory"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsSections, /id:\s*"about"[\s\S]*?label:\s*"about"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
   assert.doesNotMatch(settingsSections, /icon:/);
 
   assert.doesNotMatch(sidebarSource, /isSettingsMode\?: boolean;/);
@@ -684,8 +714,12 @@ test("settings route keeps the global sidebar and renders page-internal split se
   assert.match(settingsPage, /switch \(activeSection\)/);
   assert.match(settingsPage, /case "appearance"/);
   assert.match(settingsPage, /case "memory"/);
+  assert.match(settingsPage, /case "about"/);
+  assert.match(settingsPage, /<AboutAppCard \/>/);
   assert.match(settingsPage, /split-workspace-layout/);
   assert.match(settingsPage, /settings-directory-nav/);
+  assert.doesNotMatch(settingsPage, /settings-directory-btn-desc/);
+  assert.doesNotMatch(settingsStyles, /settings-directory-btn-desc/);
   assert.match(settingsPage, /contentRef\.current\?\.scrollTo/);
   assert.doesNotMatch(settingsPage, /settings-mode-close-button/);
   assert.doesNotMatch(settingsPage, /onExitSettingsMode/);
@@ -923,16 +957,20 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(macDarkSidebarRule, /brightness\(0\.76\)/);
 
   assert.doesNotMatch(preload, /setSidebarTranslucency/);
+  assert.match(preload, /getAppInfo:\s*\(\) => ipcRenderer\.invoke\("settings\.getAppInfo"\)/);
   assert.match(preload, /setNativeThemeSource:\s*\(themeMode\) => ipcRenderer\.invoke\("settings\.setNativeThemeSource", themeMode\)/);
   assert.match(preload, /getLocale:\s*\(\) => ipcRenderer\.invoke\("settings\.getLocale"\)/);
   assert.match(preload, /setLocale:\s*\(locale\) => ipcRenderer\.invoke\("settings\.setLocale", locale\)/);
   assert.match(preload, /ipcRenderer\.on\("settings\.localeChanged"/);
+  assert.match(contracts, /interface DesktopAppInfo/);
+  assert.match(contracts, /getAppInfo: \(\) => Promise<DesktopAppInfo>/);
   assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark"\)/);
   assert.match(contracts, /getLocale: \(\) => Promise<LocaleSettings>/);
   assert.match(contracts, /setLocale: \(locale: SupportedLocale\) => Promise<LocaleSettings>/);
   assert.match(contracts, /onLocaleChanged: \(listener: LocaleChangedListener\) => \(\) => void/);
   assert.match(mainProcess, /nativeTheme/);
   assert.match(mainProcess, /nativeTheme\.themeSource = themeMode === "dark" \? "dark" : "light"/);
+  assert.match(mainProcess, /ipcMain\.handle\("settings\.getAppInfo"[\s\S]*?app\.getVersion\(\)/);
   assert.match(mainProcess, /ipcMain\.handle\("settings\.setNativeThemeSource"/);
   assert.match(mainProcess, /ipcMain\.handle\("settings\.getLocale", async \(\) => initializeMainI18n\(app\)\)/);
   assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);/);
@@ -1053,7 +1091,7 @@ test("task board cards show three-line status metadata and light actions", () =>
   assert.match(taskBoardPage, /function formatIssueUpdatedTime\(updatedAt: string\)/);
   assert.match(taskBoardPage, /function getIssueCardStatusPresentation\(\s*issue: TaskBoardIssue,\s*options:/);
   assert.match(taskBoardPage, /issue\.status === "backlog"[\s\S]{0,220}label:\s*formatIssueUpdatedTime\(issue\.updatedAt\)/);
-  assert.match(taskBoardPage, /issue\.status === "todo"[\s\S]{0,220}label:\s*formatTaskBoardSortNumber\(options\.sortIndex, issue\.position\)/);
+  assert.match(taskBoardPage, /issue\.status === "todo"[\s\S]{0,280}label:\s*automationCountdown \|\| formatTaskBoardSortNumber\(options\.sortIndex, issue\.position\)/);
   assert.doesNotMatch(taskBoardPage, /taskBoard\.card\.(updatedAt|sortOrder)/);
   assert.match(taskBoardPage, /options\.awaitingConfirmation && issue\.status === "in_progress"[\s\S]{0,260}taskBoard\.run\.awaitingApproval/);
   assert.match(taskBoardPage, /issue\.runState === "cancelled"[\s\S]{0,220}taskBoard\.run\.cancelled[\s\S]{0,220}tone: "cancelled"/);
@@ -1062,7 +1100,8 @@ test("task board cards show three-line status metadata and light actions", () =>
   assert.match(taskBoardPage, /issue\.status === "completed"[\s\S]{0,220}taskBoard\.run\.succeeded[\s\S]{0,220}tone: "succeeded"/);
   assert.match(taskBoardPage, /label: t\(STATUS_META\[issue\.status\]\.labelKey\)[\s\S]{0,120}tone: issue\.status/);
   assert.match(taskBoardPage, /const cardStatus = getIssueCardStatusPresentation\(issue, \{[\s\S]{0,120}awaitingConfirmation[\s\S]{0,120}sortIndex/);
-  assert.match(taskBoardPage, /\{status !== "backlog" \? <span className=\{`task-board-status-dot is-\$\{meta\.tone\}`\} aria-hidden="true" \/> : null\}/);
+  assert.match(taskBoardPage, /<span className=\{`task-board-status-dot is-\$\{meta\.tone\}`\} aria-hidden="true" \/>/);
+  assert.doesNotMatch(taskBoardPage, /status !== "backlog" \? <span className=\{`task-board-status-dot/);
   assert.match(taskBoardPage, /className=\{`task-board-card-status is-\$\{cardStatus\.tone\}`\}/);
   assert.match(taskBoardPage, /\{cardStatus\.tone !== "backlog" && cardStatus\.tone !== "todo" \? <span className="task-board-run-dot" aria-hidden="true" \/> : null\}/);
   assert.match(taskBoardPage, /<span className="task-board-card-status-label">\{cardStatus\.label\}<\/span>/);
@@ -1071,8 +1110,8 @@ test("task board cards show three-line status metadata and light actions", () =>
   assert.match(taskBoardPage, /className="task-board-automation-label">\{automationLabel\}<\/span>/);
   assert.match(taskBoardPage, /runState: nextTaskStatus\.runState/);
   assert.match(taskBoardPage, /runState: "running"/);
-  assert.match(taskBoardStyles, /\.task-board-card-line-top\s*\{[\s\S]{0,120}height:\s*18px;/);
-  assert.match(taskBoardStyles, /\.task-board-card-status\s*\{[\s\S]{0,180}max-width:[\s\S]{0,180}height:\s*18px;/);
+  assert.match(taskBoardStyles, /\.task-board-card-line-top\s*\{[\s\S]{0,120}height:\s*20px;/);
+  assert.match(taskBoardStyles, /\.task-board-card-status\s*\{[\s\S]{0,180}max-width:[\s\S]{0,180}height:\s*20px;/);
   assert.match(taskBoardStyles, /\.task-board-card-status\.is-succeeded[\s\S]{0,160}#15803d/);
   assert.match(taskBoardStyles, /\.task-board-card-status\.is-failed[\s\S]{0,160}#b91c1c/);
   assert.match(taskBoardStyles, /\.task-board-card-status\.is-cancelled[\s\S]{0,160}#475569/);
@@ -1080,16 +1119,73 @@ test("task board cards show three-line status metadata and light actions", () =>
   assert.match(taskBoardStyles, /\.task-board-card-status\.is-running[\s\S]{0,160}#b45309/);
   const taskBoardStatusRules = taskBoardStyles.match(/[^{}]*\.task-board-card-status\.is-[^{}]*\{[^{}]*\}/g) ?? [];
   assert.notEqual(taskBoardStatusRules.length, 0);
-  for (const rule of taskBoardStatusRules.filter((rule) => !rule.includes(".task-board-run-dot"))) {
+  for (const rule of taskBoardStatusRules.filter(
+    (rule) => !rule.includes(".task-board-run-dot") && !rule.includes(".task-board-card-status.is-succeeded")
+  )) {
     assert.doesNotMatch(rule, /background:/);
   }
+  assert.match(taskBoardStyles, /\.task-board-card-status\.is-completed,[\s\S]{0,120}\.task-board-card-status\.is-succeeded\s*\{[\s\S]{0,120}background:\s*rgba\(22, 163, 74, 0\.1\);/);
   assert.match(taskBoardStyles, /\.task-board-automation-label\s*\{/);
   assert.doesNotMatch(taskBoardStyles, /\.task-board-card::before/);
   assert.doesNotMatch(taskBoardStyles, /\.task-board-card\.is-[^{]+::before/);
-  assert.match(taskBoardStyles, /\.task-board-chat-action\s*\{[\s\S]{0,220}border-color:\s*transparent;[\s\S]{0,220}background:\s*transparent;[\s\S]{0,220}color:\s*var\(--task-board-muted\);/);
-  assert.match(taskBoardStyles, /\.task-board-attachment-badge\s*\{[\s\S]{0,220}border:\s*1px solid transparent;[\s\S]{0,220}background:\s*transparent;[\s\S]{0,220}color:\s*var\(--task-board-muted\);/);
+  assert.match(taskBoardStyles, /\.task-board-chat-action\s*\{[\s\S]{0,240}border-color:\s*rgba\(148, 163, 184, 0\.3\);[\s\S]{0,240}background:\s*rgba\(248, 250, 252, 0\.92\);[\s\S]{0,240}color:\s*#64748b;/);
+  assert.match(taskBoardStyles, /\.task-board-attachment-badge\s*\{[\s\S]{0,180}width:\s*28px;[\s\S]{0,180}height:\s*28px;[\s\S]{0,220}border:\s*1px solid rgba\(148, 163, 184, 0\.3\);[\s\S]{0,220}background:\s*rgba\(248, 250, 252, 0\.92\);[\s\S]{0,220}color:\s*#64748b;/);
   assert.match(taskBoardStyles, /\.task-board-attachment-badge:hover,[\s\S]{0,120}\.task-board-chat-action:hover:not\(:disabled\)\s*\{[\s\S]{0,180}background:\s*rgba\(15, 23, 42, 0\.05\);/);
-  assert.match(taskBoardStyles, /\.task-board-card-foot-actions\s*\{[\s\S]{0,160}height:\s*20px;/);
+  assert.match(taskBoardStyles, /\.task-board-card-foot-actions\s*\{[\s\S]{0,160}height:\s*28px;/);
+  assert.match(taskBoardStyles, /\.task-board-chat-action\s*\{[\s\S]{0,180}width:\s*28px;[\s\S]{0,180}height:\s*28px;/);
+  assert.match(taskBoardStyles, /\.task-board-attachment-badge \.task-board-icon\s*\{[\s\S]{0,120}width:\s*22px;[\s\S]{0,120}height:\s*22px;/);
+  assert.match(taskBoardStyles, /\.task-board-chat-action \.task-board-icon\s*\{[\s\S]{0,120}width:\s*22px;[\s\S]{0,120}height:\s*22px;/);
+});
+
+test("task board todo column can filter scheduled tasks", () => {
+  const taskBoardPage = readSourceFile("src", "renderer", "pages", "task-board", "TaskBoardPage.tsx");
+  const taskBoardStyles = readSourceFile("src", "renderer", "styles", "task-board.css");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(taskBoardPage, /type TaskBoardTodoAutomationFilter = "all" \| "scheduled" \| "manual"/);
+  assert.match(taskBoardPage, /const TASK_BOARD_TODO_AUTOMATION_FILTERS = \[/);
+  assert.match(taskBoardPage, /function shouldShowIssueForTodoAutomationFilter\(\s*issue: Pick<TaskBoardIssue, "status" \| "automationEnabled" \| "automationCron">,\s*filter: TaskBoardTodoAutomationFilter/);
+  assert.match(taskBoardPage, /issue\.status !== "todo" \|\| filter === "all"/);
+  assert.match(taskBoardPage, /return filter === "scheduled" \? automated : !automated/);
+  assert.match(taskBoardPage, /const \[todoAutomationFilter,\s*setTodoAutomationFilter\] = useState<TaskBoardTodoAutomationFilter>\("all"\)/);
+  assert.match(taskBoardPage, /shouldShowIssueForTodoAutomationFilter\(issue, todoAutomationFilter\)/);
+  assert.match(taskBoardPage, /className="task-board-column-filter"/);
+  assert.match(taskBoardPage, /TASK_BOARD_TODO_AUTOMATION_FILTERS\.map/);
+  assert.match(taskBoardPage, /aria-label=\{t\("taskBoard\.filter\.todoAutomation"\)\}/);
+  assert.match(taskBoardPage, /todoAutomationFilter === option\.value \? "is-active" : ""/);
+  assert.match(taskBoardStyles, /\.task-board-column-filter\s*\{[\s\S]{0,220}display:\s*grid;[\s\S]{0,220}grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/);
+  assert.match(taskBoardStyles, /\.task-board-column-filter button\.is-active\s*\{[\s\S]{0,180}background:\s*var\(--task-board-accent\);/);
+  assert.match(zhCN, /"taskBoard\.filter\.todoAutomation": "待办定时筛选"/);
+  assert.match(zhCN, /"taskBoard\.filter\.scheduledOnly": "定时"/);
+  assert.match(zhCN, /"taskBoard\.filter\.manualOnly": "普通"/);
+  assert.match(enUS, /"taskBoard\.filter\.todoAutomation": "Todo schedule filter"/);
+  assert.match(enUS, /"taskBoard\.filter\.scheduledOnly": "Scheduled"/);
+  assert.match(enUS, /"taskBoard\.filter\.manualOnly": "Manual"/);
+});
+
+test("task board scheduled tasks wait for automation time before assistant run", () => {
+  const taskBoardPage = readSourceFile("src", "renderer", "pages", "task-board", "TaskBoardPage.tsx");
+
+  assert.match(taskBoardPage, /const shouldRunAfterSave = form\.status === "in_progress" && !form\.automationEnabled && !modal\?\.issue\?\.runId;/);
+  assert.match(taskBoardPage, /const shouldRunTodoAssigneeAfterDelay = form\.status === "todo" && !form\.automationEnabled && Boolean\(form\.assigneeAgentKey\) && !modal\?\.issue\?\.runId;/);
+  assert.doesNotMatch(taskBoardPage, /form\.status === "todo" && Boolean\(form\.assigneeAgentKey\) && !modal\?\.issue\?\.runId/);
+});
+
+test("task board scheduled todo cards show execution countdown instead of sort number", () => {
+  const taskBoardPage = readSourceFile("src", "renderer", "pages", "task-board", "TaskBoardPage.tsx");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(taskBoardPage, /function getNextTaskBoardAutomationTime\(issue: Pick<TaskBoardIssue, "automationEnabled" \| "automationCron">, now: Date\)/);
+  assert.match(taskBoardPage, /function formatTaskBoardAutomationCountdown\(issue: Pick<TaskBoardIssue, "automationEnabled" \| "automationCron">, now: Date, t: TranslateFunction\)/);
+  assert.match(taskBoardPage, /const automationCountdown = hasIssueAutomation\(issue\)[\s\S]{0,160}formatTaskBoardAutomationCountdown\(issue, options\.now, t\) \|\| getAutomationDisplayLabel\(issue, t\)/);
+  assert.match(taskBoardPage, /label: automationCountdown \|\| formatTaskBoardSortNumber\(options\.sortIndex, issue\.position\)/);
+  assert.match(taskBoardPage, /const \[taskBoardCountdownNow,\s*setTaskBoardCountdownNow\] = useState\(\(\) => Date\.now\(\)\)/);
+  assert.match(taskBoardPage, /TASK_BOARD_COUNTDOWN_REFRESH_MS/);
+  assert.match(taskBoardPage, /now=\{new Date\(taskBoardCountdownNow\)\}/);
+  assert.match(zhCN, /"taskBoard\.countdown\.minutes": "\{minutes\}分钟"/);
+  assert.match(enUS, /"taskBoard\.countdown\.minutes": "\{minutes\}m"/);
 });
 
 test("task board route exposes native desktop api and page styles", () => {
@@ -1171,6 +1267,9 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /return `\/agent\/\$\{encodeURIComponent\(agentKey\)\}\?\$\{params\.toString\(\)\}`/);
   assert.match(taskBoardPage, /function getIssueChatActionLabel/);
   assert.match(taskBoardPage, /function issueHasPendingAwaiting/);
+  assert.match(taskBoardPage, /const matchingChat = getAssistantNavAgentRecentChats\(agent\)\.find\(\(chat\) => chat\.chatId === chatId\)/);
+  assert.match(taskBoardPage, /return matchingChat\?\.hasPendingAwaiting === true/);
+  assert.doesNotMatch(taskBoardPage, /agent\.latestChatId === chatId && agent\.hasPendingAwaiting/);
   assert.match(taskBoardPage, /t\("taskBoard\.chat\.viewOrConfirm"\)/);
   assert.match(taskBoardPage, /t\("taskBoard\.chat\.view"\)/);
   assert.match(taskBoardPage, /t\("taskBoard\.chat\.awaitingConfirmation"\)/);
@@ -1195,7 +1294,7 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /openInProgressAssignmentModal\(activeIssue\)/);
   assert.match(taskBoardPage, /targetStatus === "todo" && activeIssue\.status !== "todo"[\s\S]{0,220}activeIssue\.assigneeAgentKey\?\.trim\(\)/);
   assert.match(taskBoardPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,180}assignIssueToAssistant\(savedIssue, todoAssigneeAgentKey\)/);
-  assert.match(taskBoardPage, /form\.status === "in_progress" && !modal\?\.issue\?\.runId/);
+  assert.match(taskBoardPage, /form\.status === "in_progress" && !form\.automationEnabled && !modal\?\.issue\?\.runId/);
   assert.match(taskBoardPage, /shouldRunAfterSave && !form\.assigneeAgentKey/);
   assert.match(taskBoardPage, /t\("taskBoard\.feedback\.assigneeRequiredForProgress"\)/);
   assert.match(taskBoardPage, /function mergeTaskBoardIssueAttachmentDraft/);
@@ -1213,6 +1312,8 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /TASK_BOARD_AUTOMATION_PLANS/);
   assert.match(taskBoardPage, /TASK_BOARD_AUTOMATION_TIME_OPTIONS/);
   assert.match(taskBoardPage, /automationTime/);
+  assert.match(taskBoardPage, /function hasIssueAutomation\(issue: Pick<TaskBoardIssue, "automationEnabled" \| "automationCron">\)/);
+  assert.match(taskBoardPage, /function openEditModal\(issue: TaskBoardIssue\)[\s\S]{0,220}setFormCompact\(!hasIssueAutomation\(issue\)\);/);
   assert.match(taskBoardPage, /function buildAutomationCron/);
   assert.match(taskBoardPage, /const \[automationMenuOpen,\s*setAutomationMenuOpen\] = useState<AutomationMenuKind \| null>\(null\)/);
   assert.match(taskBoardPage, /selectedAutomationTimeRef\.current\?\.scrollIntoView/);
@@ -1244,9 +1345,46 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /function truncateTaskBoardAssigneeName\(name: string\)[\s\S]{0,120}Array\.from\(name\.trim\(\)\)\.slice\(0, 4\)\.join\(""\)/);
   assert.match(taskBoardPage, /const visibleAssigneeName = getVisibleAssigneeName\(issue, agents\)/);
   assert.match(taskBoardPage, /return truncateTaskBoardAssigneeName\(visibleAssigneeName\);/);
+  assert.match(taskBoardPage, /function getAssigneeAgent\(issue: TaskBoardIssue, agents: AssistantNavAgentItem\[\]\)/);
+  assert.match(taskBoardPage, /function mergeTaskBoardAgentIcons\(currentAgents: AssistantNavAgentItem\[\], nextAgents: AssistantNavAgentItem\[\]\)/);
+  assert.match(taskBoardPage, /function createNavigationAgentFromOption\(agent: DesktopPetAgentOption\): AssistantNavAgentItem[\s\S]{0,260}icon: agent\.icon/);
+  assert.match(taskBoardPage, /async function hydrateTaskBoardAgentIcons\(items: AssistantNavAgentItem\[\]\)/);
+  assert.match(taskBoardPage, /function hasTaskBoardAgentIcon\(icon: AssistantNavAgentItem\["icon"\] \| null \| undefined\)/);
+  assert.match(taskBoardPage, /icon\.name\?\.trim\(\) \|\| icon\.color\?\.trim\(\)/);
+  assert.match(taskBoardPage, /items\.some\(\(agent\) => !hasTaskBoardAgentIcon\(agent\.icon\)\)/);
+  assert.match(taskBoardPage, /const fallbackItems = agentOptions\.map\(createNavigationAgentFromOption\)/);
+  assert.match(taskBoardPage, /return mergeTaskBoardAgentIcons\(fallbackItems, items\)/);
+  assert.match(taskBoardPage, /const navigationItems = normalizeAssistantNavAgents\(navigationResult\.items\)/);
+  assert.match(taskBoardPage, /return await hydrateTaskBoardAgentIcons\(navigationItems\)/);
+  assert.match(taskBoardPage, /const previousIcons = new Map/);
+  assert.match(taskBoardPage, /previousIcon \? \{ \.\.\.agent, icon: previousIcon \} : agent/);
+  assert.match(taskBoardPage, /setAgents\(\(currentAgents\) => mergeTaskBoardAgentIcons\(currentAgents, normalizeAssistantNavAgents\(result\.items\)\)\)/);
+  assert.match(taskBoardPage, /setAgents\(\(currentAgents\) => mergeTaskBoardAgentIcons\(currentAgents, items\)\)/);
+  assert.match(taskBoardPage, /const assigneeAgent = getAssigneeAgent\(issue, agents\)/);
+  assert.match(taskBoardPage, /const assigneeIcon = hasTaskBoardAgentIcon\(assigneeAgent\?\.icon\) \? assigneeAgent\?\.icon : undefined/);
+  assert.match(taskBoardPage, /function getIssueCardAssigneeAvatarLabel\(name: string\)/);
+  assert.doesNotMatch(taskBoardPage, /function TaskBoardAssigneeIcon/);
+  assert.match(taskBoardPage, /className=\{`task-board-card-assignee-avatar\$\{assigneeIcon \? " has-icon" : ""\}`\}/);
+  assert.match(taskBoardPage, /assigneeIcon \? \([\s\S]{0,180}<AgentIcon[\s\S]{0,180}icon=\{assigneeIcon\}[\s\S]{0,180}className="task-board-card-assignee-icon"[\s\S]{0,180}size=\{18\}/);
+  assert.match(taskBoardPage, /\) : \([\s\S]{0,120}className="task-board-card-assignee-avatar-label"[\s\S]{0,120}getIssueCardAssigneeAvatarLabel\(visibleAssigneeName\)/);
+  assert.doesNotMatch(taskBoardPage, /task-board-card-assignee-avatar-label[\s\S]{0,220}assigneeIcon \? \(/);
+  assert.match(taskBoardPage, /className="task-board-card-assignee-avatar-label"/);
+  assert.match(taskBoardPage, /getIssueCardAssigneeAvatarLabel\(visibleAssigneeName\)/);
+  assert.doesNotMatch(taskBoardPage, /task-board-card-assignee-icon-frame/);
+  assert.doesNotMatch(taskBoardPage, /<span className="task-board-card-assignee-icon" aria-hidden="true" \/>/);
+  assert.doesNotMatch(globalStyles, /\.task-board-card-assignee-icon-frame\s*\{/);
+  assert.match(globalStyles, /\.task-board-card-assignee-icon\s*\{[\s\S]{0,180}width:\s*18px;[\s\S]{0,180}height:\s*18px;/);
+  assert.doesNotMatch(globalStyles, /\.task-board-card-assignee-icon::before/);
+  assert.doesNotMatch(globalStyles, /\.task-board-card-assignee-icon::after/);
+  assert.doesNotMatch(globalStyles, /#fde047 0%, #facc15 48%, #d69e13/);
+  assert.match(globalStyles, /\.task-board-card-assignee-avatar\s*\{/);
+  assert.match(globalStyles, /\.task-board-card-assignee-avatar-label\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.task-board-card-assignee-avatar\.has-icon \.task-board-card-assignee-avatar-label/);
   assert.doesNotMatch(taskBoardPage, /issue\.assigneeName\.slice\(0, 1\)/);
   assert.doesNotMatch(taskBoardPage, /task-board-run-badge/);
   assert.match(taskBoardPage, /<footer className="task-board-card-foot">/);
+  assert.match(taskBoardPage, /className="task-board-column-summary"/);
+  assert.match(taskBoardPage, /className="task-board-empty-illustration"/);
   assert.doesNotMatch(taskBoardPage, /className="task-board-card-action"/);
   assert.doesNotMatch(taskBoardPage, />\s*\{busy \? "提交中" : "交给智能体"\}\s*<\/button>/);
   assert.doesNotMatch(taskBoardPage, /busy \? "提交中" : issue\.runId \? "运行中" : "交给智能体"/);
@@ -1260,7 +1398,7 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /--task-board-column-fold-offset:\s*max\(0px,\s*calc\(var\(--task-board-columns-total-width\) - 100%\)\);/);
   assert.match(globalStyles, /\.task-board-columns\s*\{[\s\S]{0,220}overflow-x:\s*hidden;/);
   assert.match(globalStyles, /\.task-board-column\s*\{/);
-  assert.match(globalStyles, /\.task-board-column\.is-todo\s*\{[\s\S]{0,180}margin-left:\s*calc\(var\(--task-board-column-fold-offset\) \* -1\);/);
+  assert.match(globalStyles, /\.task-board-column\.is-todo\s*\{[\s\S]{0,260}margin-left:\s*calc\(var\(--task-board-column-fold-offset\) \* -1\);/);
   assert.doesNotMatch(globalStyles, /\.task-board-column\.is-in_progress\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(globalStyles, /\.task-board-column\.is-completed\s*\{[^}]*margin-left:/);
   assert.match(taskBoardPage, /const \[backlogExpanded,\s*setBacklogExpanded\] = useState\(false\)/);
@@ -1270,16 +1408,25 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-columns\.is-backlog-expanded \.task-board-column\.is-todo\s*\{[\s\S]{0,120}margin-left:\s*0;/);
   assert.match(globalStyles, /\.task-board-card\s*\{/);
   assert.match(globalStyles, /\.task-board-card\s*\{[\s\S]{0,180}position:\s*relative;/);
+  assert.doesNotMatch(globalStyles, /\.task-board-card::before/);
+  assert.match(globalStyles, /\.task-board-column-summary\s*\{/);
+  assert.match(globalStyles, /\.task-board-column-summary\s*\{[\s\S]{0,220}flex-direction:\s*row;[\s\S]{0,220}align-items:\s*center;/);
+  assert.match(globalStyles, /\.task-board-column-summary-text\s*\{/);
+  assert.match(globalStyles, /\.task-board-empty-illustration\s*\{/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.task-board-page\s*\{[\s\S]{0,260}--task-board-bg:\s*#111418;[\s\S]{0,260}background:/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.task-board-column\.is-backlog\s*\{[\s\S]{0,180}--task-board-column-tint:\s*#121c2d;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.task-board-empty-column\s*\{[\s\S]{0,220}background:\s*color-mix\(in srgb, var\(--task-board-column-tint\) 34%, rgba\(15, 18, 24, 0\.84\)\);/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.task-board-column-summary\s*\{[\s\S]{0,120}color:\s*#e2e8f0;/);
   assert.match(globalStyles, /\.task-board-card\.is-drag-locked\s*\{/);
   assert.match(globalStyles, /\.task-board-card\.is-drag-locked \.task-board-card-main\s*\{[\s\S]{0,120}padding-right:/);
   assert.match(globalStyles, /\.task-board-card\.is-awaiting-confirmation\s*\{/);
-  assert.match(globalStyles, /\.task-board-card-status\s*\{[\s\S]{0,220}height:\s*18px;[\s\S]{0,220}overflow:\s*hidden;/);
+  assert.match(globalStyles, /\.task-board-card-status\s*\{[\s\S]{0,220}height:\s*20px;[\s\S]{0,220}overflow:\s*hidden;/);
   assert.match(globalStyles, /\.task-board-run-dot\s*\{[\s\S]{0,160}background:\s*currentColor;/);
   assert.match(globalStyles, /\.task-board-chat-action\s*\{/);
   assert.match(globalStyles, /\.task-board-chat-action\.is-awaiting\s*\{/);
   assert.match(globalStyles, /\.task-board-automation-panel\s*\{/);
   assert.match(globalStyles, /\.task-board-automation-badge\s*\{/);
-  assert.match(globalStyles, /\.task-board-chat-action\.is-human-loop\s*\{[\s\S]{0,180}background:\s*transparent;[\s\S]{0,180}box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.task-board-chat-action\.is-human-loop\s*\{[\s\S]{0,220}background:\s*rgba\(245, 158, 11, 0\.14\);[\s\S]{0,220}box-shadow:\s*none;/);
   assert.match(globalStyles, /\.task-board-modal-head-actions/);
   assert.match(globalStyles, /\.task-board-modal-mode-button[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?white-space:\s*nowrap;/);
   assert.match(globalStyles, /\.task-board-modal\.is-compact/);
@@ -2134,11 +2281,12 @@ test("service log viewer lets users pause tail following and jump back to the la
   assert.match(logViewerPage, /<RotateAutoIcon \/>/);
   assert.match(logViewerPage, /function ArrowUpwardIcon/);
   assert.match(logViewerPage, /function ArrowDownwardIcon/);
-  assert.match(logViewerPage, /aria-label=\{tailFollowEnabled \? "取消自动滚动" : "开启自动滚动"\}/);
+  assert.match(logViewerPage, /const followToggleLabel = tailFollowEnabled[\s\S]{0,120}t\("logViewer\.follow\.disable"\)[\s\S]{0,120}t\("logViewer\.follow\.enable"\)/);
+  assert.match(logViewerPage, /aria-label=\{followToggleLabel\}/);
   assert.match(logViewerPage, /className="log-viewer-live-dot"/);
   assert.match(logViewerPage, /aria-hidden="true"/);
-  assert.match(logViewerPage, /aria-label="滚动到顶部"/);
-  assert.match(logViewerPage, /aria-label="滚动到底部"/);
+  assert.match(logViewerPage, /aria-label=\{t\("logViewer\.scrollTop"\)\}/);
+  assert.match(logViewerPage, /aria-label=\{t\("logViewer\.scrollBottom"\)\}/);
   assert.match(logViewerPage, /handleScrollToTop/);
   assert.match(logViewerPage, /handleScrollToBottom/);
   assert.match(logViewerPage, /scrollJumpTarget/);
@@ -2172,10 +2320,10 @@ test("service log viewer keeps find controls inside the log area", () => {
   );
   const globalStyles = readRendererStyles();
 
-  assert.match(logViewerPage, /aria-label="查找日志"/);
+  assert.match(logViewerPage, /aria-label=\{t\("logViewer\.find\.aria"\)\}/);
   assert.match(logViewerPage, /handleOpenSearch/);
   assert.match(logViewerPage, /handleCloseSearch/);
-  assert.match(logViewerPage, /aria-label="关闭日志查找"/);
+  assert.match(logViewerPage, /aria-label=\{t\("logViewer\.find\.close"\)\}/);
   assert.match(logViewerPage, /selectRelativeMatch\(-1\)/);
   assert.match(logViewerPage, /selectRelativeMatch\(1\)/);
   assert.match(logViewerPage, /renderLogContent\(\s*joinedContent,\s*matches,\s*activeMatchIndex,\s*\)/);

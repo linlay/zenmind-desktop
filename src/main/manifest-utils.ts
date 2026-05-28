@@ -338,64 +338,8 @@ function resolveConfigFiles(raw: Record<string, unknown>) {
   });
 }
 
-const agentPlatformDesktopConfigFiles: ManifestConfigFile[] = [
-  {
-    key: "container-hub",
-    label: "configs/container-hub.yml",
-    relativePath: "configs/container-hub.yml",
-    templateRelativePath: "configs/container-hub.example.yml",
-    required: false
-  },
-  {
-    key: "bash",
-    label: "configs/bash.yml",
-    relativePath: "configs/bash.yml",
-    templateRelativePath: "configs/bash.example.yml",
-    required: false
-  },
-  {
-    key: "file-tools",
-    label: "configs/file-tools.yml",
-    relativePath: "configs/file-tools.yml",
-    templateRelativePath: "configs/file-tools.example.yml",
-    required: false
-  },
-  {
-    key: "cors",
-    label: "configs/cors.yml",
-    relativePath: "configs/cors.yml",
-    templateRelativePath: "configs/cors.example.yml",
-    required: false
-  },
-  {
-    key: "prompts",
-    label: "configs/prompts.yml",
-    relativePath: "configs/prompts.yml",
-    templateRelativePath: "configs/prompts.example.yml",
-    required: false
-  },
-  {
-    key: "channels",
-    label: "configs/channels.yml",
-    relativePath: "configs/channels.yml",
-    templateRelativePath: "configs/channels.example.yml",
-    required: false
-  }
-];
-
-function resolveServiceConfigFiles(raw: Record<string, unknown>, serviceId: string) {
-  const configFiles = resolveConfigFiles(raw);
-  if (serviceId !== "agent-platform") {
-    return configFiles;
-  }
-
-  const existingKeys = new Set(configFiles.map((configFile) => configFile.key));
-  const existingPaths = new Set(configFiles.map((configFile) => configFile.relativePath));
-  const missingConfigFiles = agentPlatformDesktopConfigFiles.filter(
-    (configFile) => !existingKeys.has(configFile.key) && !existingPaths.has(configFile.relativePath)
-  );
-
-  return missingConfigFiles.length > 0 ? [...configFiles, ...missingConfigFiles] : configFiles;
+function resolveServiceConfigFiles(raw: Record<string, unknown>, _serviceId: string) {
+  return resolveConfigFiles(raw);
 }
 
 function resolveRuntime(raw: Record<string, unknown>) {

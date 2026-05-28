@@ -1,8 +1,8 @@
 import { Navigate } from "react-router-dom";
-import type { ServiceId, ServiceState, StartupRestoreState } from "../../../shared/contracts";
+import type { ServiceId, ServiceState, StartupRestoreServicePhase, StartupRestoreState } from "../../../shared/contracts";
+import type { TranslateFunction } from "../../../shared/i18n";
 import { resolveStartupRootPath } from "../../../shared/startup-gate";
-import { formatStartupStatusText } from "../../../shared/startup-status";
-import { AGENT_WEBCLIENT_DISPLAY_NAME, getServiceDisplayName } from "../../service-display";
+import { useI18n } from "../../i18n/useI18n";
 
 export function RootRouteRedirect({
   startupRestoreState,
@@ -36,6 +36,7 @@ export function StartupLoadingScreen({
   onRefresh: () => void;
   onOpenControlCenter: () => void;
 }) {
+  const { t } = useI18n();
   const readyCount = startupRestoreState.services.filter((service) => service.phase === "succeeded").length;
   const totalCount = startupRestoreState.serviceOrder.length;
   const hasFailure = startupRestoreState.phase === "failed";
@@ -46,18 +47,27 @@ export function StartupLoadingScreen({
     ? startupServices[startupRestoreState.serviceOrder.indexOf(activeAction.serviceId)] ?? null
     : null;
   const activeServiceName = activeAction
-    ? activeService
-      ? getServiceDisplayName(activeService.id, activeService.name)
-      : getStartupServiceFallbackName(activeAction.serviceId)
+    ? getStartupServiceDisplayName(
+      activeAction.serviceId,
+      activeService?.name ?? activeAction.serviceId,
+      t
+    )
     : "";
-  const title = hasFailure ? "服务未就绪" : timedOut ? "启动较慢" : "正在启动";
-  const statusText = hasFailure
-    ? "有核心服务需要处理"
+  const title = hasFailure
+    ? t("startup.title.failed")
     : timedOut
-      ? "核心服务仍在响应中"
+      ? t("startup.title.slow")
+      : t("startup.title.starting");
+  const statusText = hasFailure
+    ? t("startup.status.failed")
+    : timedOut
+      ? t("startup.status.slow")
       : activeAction
-        ? formatStartupStatusText(activeServiceName, activeAction.message)
-        : "正在准备核心服务";
+        ? t("startup.status.active", {
+          name: activeServiceName,
+          phase: getActiveStartupPhaseLabel(activeAction.phase, t)
+        })
+        : t("startup.status.preparing");
 
   return (
     <div className="startup-loading-screen">
@@ -74,7 +84,7 @@ export function StartupLoadingScreen({
 
         <div className="startup-loading-summary">
           <strong>{readyCount}/{totalCount}</strong>
-          <span>已就绪</span>
+          <span>{t("startup.summary.ready")}</span>
         </div>
 
         <div className="startup-loading-list">
@@ -82,9 +92,7 @@ export function StartupLoadingScreen({
             const fallbackId = serviceId as ServiceId;
             const service = startupServices[index] ?? null;
             const startupServiceState = startupRestoreState.services.find((item) => item.serviceId === fallbackId);
-            const displayName = service
-              ? getServiceDisplayName(service.id, service.name)
-              : getStartupServiceFallbackName(fallbackId);
+            const displayName = getStartupServiceDisplayName(fallbackId, service?.name ?? fallbackId, t);
             const previousServicesReady = startupRestoreState.serviceOrder
               .slice(0, index)
               .every((previousServiceId) => {
@@ -100,21 +108,13 @@ export function StartupLoadingScreen({
               );
             const isReady = startupPhase === "succeeded";
             const isFailed = startupPhase === "failed";
-            const statusLabel = isReady
-              ? "已就绪"
-              : isFailed
-                ? "启动失败"
-                : startupPhase === "installing"
-                  ? "安装中..."
-                  : startupPhase === "initializing"
-                    ? "初始化中..."
-                : isActiveStartupService
-                  ? "启动中..."
-                  : !previousServicesReady
-                    ? "等待前序服务"
-                    : servicesLoading && startupRestoreState.phase === "idle"
-                      ? "读取中..."
-                      : "等待启动";
+            const statusLabel = getStartupListPhaseLabel(
+              startupPhase,
+              previousServicesReady,
+              servicesLoading,
+              startupRestoreState.phase,
+              t
+            );
 
             return (
               <div className="startup-loading-item" key={fallbackId}>
@@ -144,10 +144,10 @@ export function StartupLoadingScreen({
         {timedOut || hasFailure ? (
           <div className="startup-loading-actions">
             <button type="button" className="action-button" onClick={onRefresh}>
-              重新检查
+              {t("startup.action.refresh")}
             </button>
             <button type="button" className="text-button" onClick={onOpenControlCenter}>
-              进入控制中心
+              {t("startup.action.openControlCenter")}
             </button>
           </div>
         ) : null}
@@ -156,15 +156,56 @@ export function StartupLoadingScreen({
   );
 }
 
-function getStartupServiceFallbackName(serviceId: ServiceId) {
+function getStartupServiceDisplayName(serviceId: ServiceId, serviceName: string, t: TranslateFunction) {
   switch (serviceId) {
     case "zenmind-app-server":
-      return "认证服务";
+      return t("startup.service.authentication");
     case "agent-platform":
-      return "智能体平台";
+      return t("startup.service.agentPlatform");
     case "agent-webclient":
-      return AGENT_WEBCLIENT_DISPLAY_NAME;
+      return t("startup.service.agentWebclient");
     default:
-      return serviceId;
+      return serviceName;
+  }
+}
+
+function getActiveStartupPhaseLabel(phase: StartupRestoreServicePhase, t: TranslateFunction) {
+  switch (phase) {
+    case "installing":
+      return t("startup.phase.installing");
+    case "initializing":
+      return t("startup.phase.initializing");
+    case "starting":
+    default:
+      return t("startup.phase.starting");
+  }
+}
+
+function getStartupListPhaseLabel(
+  phase: StartupRestoreServicePhase,
+  previousServicesReady: boolean,
+  servicesLoading: boolean,
+  startupPhase: StartupRestoreState["phase"],
+  t: TranslateFunction
+) {
+  switch (phase) {
+    case "succeeded":
+      return t("startup.phase.ready");
+    case "failed":
+      return t("startup.phase.failed");
+    case "installing":
+      return t("startup.phase.installing");
+    case "initializing":
+      return t("startup.phase.initializing");
+    case "starting":
+      return t("startup.phase.starting");
+    default:
+      if (!previousServicesReady) {
+        return t("startup.phase.waitingPrevious");
+      }
+      if (servicesLoading && startupPhase === "idle") {
+        return t("startup.phase.reading");
+      }
+      return t("startup.phase.waiting");
   }
 }
