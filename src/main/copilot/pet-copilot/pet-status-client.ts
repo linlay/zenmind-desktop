@@ -1,5 +1,5 @@
 import type { App } from "electron";
-import type { AgentAuthIssueResult, DesktopPetAgentOption, ServiceId, ServiceState } from "../../../shared/contracts";
+import type { AgentAuthIssueResult, AssistantNavAgentIcon, DesktopPetAgentOption, ServiceId, ServiceState } from "../../../shared/contracts";
 import type { DesktopPetBoundAgentStatus } from "./desktop-pet";
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
@@ -19,6 +19,7 @@ type AgentSummary = {
   name?: unknown;
   displayName?: unknown;
   role?: unknown;
+  icon?: unknown;
   stats?: {
     unreadCount?: unknown;
   };
@@ -203,6 +204,23 @@ function findAgentByDisplayName(agents: AgentSummary[], displayName: string) {
   return agents.find((agent) => getAgentDisplayName(agent) === displayName) ?? null;
 }
 
+function readAgentIcon(agent: AgentSummary): AssistantNavAgentIcon | undefined {
+  if (typeof agent.icon === "string" && agent.icon.trim()) {
+    return agent.icon.trim();
+  }
+  if (isObjectRecord(agent.icon)) {
+    const color = toText(agent.icon.color);
+    const name = toText(agent.icon.name);
+    if (color || name) {
+      return {
+        ...(color ? { color } : {}),
+        ...(name ? { name } : {})
+      };
+    }
+  }
+  return undefined;
+}
+
 export function toDesktopPetAgentOptions(agentsInput: unknown): DesktopPetAgentOption[] {
   return (toArray(agentsInput) as AgentSummary[])
     .map((agent) => {
@@ -210,10 +228,12 @@ export function toDesktopPetAgentOptions(agentsInput: unknown): DesktopPetAgentO
       if (!agentKey) {
         return null;
       }
+      const icon = readAgentIcon(agent);
       return {
         agentKey,
         displayName: getAgentDisplayName(agent) || agentKey,
         role: toText(agent.role),
+        ...(icon ? { icon } : {}),
         unreadCount: Math.max(0, Math.round(toFiniteNumber(agent.stats?.unreadCount)))
       };
     })

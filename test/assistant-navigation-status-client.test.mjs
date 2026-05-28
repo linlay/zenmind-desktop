@@ -101,6 +101,57 @@ test("assistant navigation snapshot flattens chats from agents only", () => {
   assert.equal(items[0].recentChats[0].agentKey, "zenmi");
 });
 
+test("assistant navigation snapshot ignores finished awaiting payloads", () => {
+  const items = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "zenmi",
+      name: "小宅",
+      stats: { totalCount: 1, unreadCount: 0 },
+      chats: [
+        {
+          chatId: "chat-finished",
+          chatName: "已结束等待项",
+          updatedAt: 1000,
+          awaiting: {
+            type: "awaiting.answer",
+            status: "error",
+            awaitingId: "await-1"
+          }
+        }
+      ]
+    }
+  ]);
+
+  assert.equal(items[0].hasPendingAwaiting, false);
+  assert.equal(items[0].recentChats[0].hasPendingAwaiting, false);
+});
+
+test("assistant navigation snapshot ignores empty approval awaitings", () => {
+  const items = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "zenmi",
+      name: "小宅",
+      stats: { totalCount: 1, unreadCount: 0 },
+      chats: [
+        {
+          chatId: "chat-empty-approval",
+          chatName: "空审批",
+          updatedAt: 1000,
+          awaiting: {
+            type: "awaiting.ask",
+            mode: "approval",
+            runId: "run-1",
+            awaitingId: "await-1"
+          }
+        }
+      ]
+    }
+  ]);
+
+  assert.equal(items[0].hasPendingAwaiting, false);
+  assert.equal(items[0].recentChats[0].hasPendingAwaiting, false);
+});
+
 test("assistant navigation snapshot reads compatible agent chat fields", () => {
   const items = buildAssistantNavigationAgentsFromPlatformAgents([
     {

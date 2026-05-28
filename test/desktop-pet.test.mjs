@@ -996,12 +996,12 @@ test("agent-platform bound agent resolver uses exact key before prefix healing",
 test("agent-platform agent options let settings show names instead of requiring keys", () => {
   const options = toDesktopPetAgentOptions([
     { key: "codeAssistant", name: "代码助手", role: "CLI 代码助手", stats: { unreadCount: 99 } },
-    { key: "zenmi", name: "小宅", role: "平台总管", stats: { unreadCount: 8 } },
+    { key: "zenmi", name: "小宅", role: "平台总管", icon: { name: "zenith" }, stats: { unreadCount: 8 } },
     { name: "缺少 key" }
   ]);
 
   assert.deepEqual(options.slice(0, 2), [
-    { agentKey: "zenmi", displayName: "小宅", role: "平台总管", unreadCount: 8 },
+    { agentKey: "zenmi", displayName: "小宅", role: "平台总管", icon: { name: "zenith" }, unreadCount: 8 },
     { agentKey: "codeAssistant", displayName: "代码助手", role: "CLI 代码助手", unreadCount: 99 }
   ]);
 });

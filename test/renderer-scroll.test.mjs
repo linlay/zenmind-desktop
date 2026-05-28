@@ -110,6 +110,8 @@ test("task board constrains its page height so columns can scroll vertically", (
   assert.match(columnRule, /min-height:\s*0;/);
   assert.match(columnBodyRule, /min-height:\s*0;/);
   assert.match(columnBodyRule, /overflow-y:\s*auto;/);
+  assert.match(readRule(".task-board-column.is-completed .task-board-column-body"), /scrollbar-width:\s*thin;/);
+  assert.match(readRule(".task-board-column.is-completed .task-board-column-body::-webkit-scrollbar"), /display:\s*block;/);
 });
 
 test("task board columns and cards adapt to the available board width", () => {
@@ -144,8 +146,11 @@ test("task board columns and cards adapt to the available board width", () => {
   assert.match(columnRule, /width:\s*var\(--task-board-column-width\);/);
   assert.match(columnRule, /min-width:\s*var\(--task-board-column-width\);/);
   assert.match(columnRule, /max-width:\s*var\(--task-board-column-width\);/);
+  assert.match(cardRule, /flex:\s*0\s+0\s+96px;/);
   assert.match(cardRule, /width:\s*100%;/);
   assert.match(cardRule, /min-width:\s*0;/);
+  assert.match(cardRule, /box-shadow:\s*none;/);
+  assert.match(readRule(".task-board-card:hover"), /box-shadow:\s*none;/);
 });
 
 test("task board cards keep vertical pan gestures available inside scrollable columns", () => {
