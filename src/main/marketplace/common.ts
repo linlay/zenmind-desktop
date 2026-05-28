@@ -18,7 +18,7 @@ import {
 } from "../user-paths";
 import { t } from "../i18n/main-i18n";
 
-export const DEFAULT_MARKETPLACE_CATALOG_URL = "http://47.100.131.144:9001/marketplace/index.json";
+export const DEFAULT_MARKETPLACE_CATALOG_URL = "https://marketplace.example.com/marketplace/index.json";
 export const DEFAULT_SKILLS_API_BASE_URL = "http://127.0.0.1:8080";
 
 export type Catalog = {

@@ -1423,7 +1423,7 @@ export function AppSidebar({
             <input
               value={websiteUrl}
               onChange={(event) => setWebsiteUrl(event.target.value)}
-              placeholder="jira.example.com"
+              placeholder="example.com"
               required
               autoFocus
             />

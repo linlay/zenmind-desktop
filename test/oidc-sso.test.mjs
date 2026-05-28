@@ -56,7 +56,7 @@ function createTestApp(homePath) {
 test("buildAuthorizeUrl creates an authorization-code URL with state and fixed localhost redirect", () => {
   const url = new URL(buildAuthorizeUrl("state-123"));
 
-  assert.equal(url.origin + url.pathname, "https://eiam.qiuer.net/auth/oauth2/authorize");
+  assert.equal(url.origin + url.pathname, "https://iam.example.com/auth/oauth2/authorize");
   assert.equal(url.searchParams.get("client_id"), DEFAULT_OIDC_CONFIG.clientId);
   assert.equal(url.searchParams.get("redirect_uri"), "http://localhost:8080/api/auth/oidc/callback");
   assert.equal(url.searchParams.get("response_type"), "code");
@@ -107,9 +107,9 @@ test("loadDesktopSsoConfig requires enabled true before exposing the login entry
   fs.mkdirSync(configRoot, { recursive: true });
 
   for (const content of [
-    JSON.stringify({ enabled: false, identityProviderHost: "eiam.gtjaqh.net" }),
-    JSON.stringify({ identityProviderHost: "eiam.gtjaqh.net" }),
-    "eiam.gtjaqh.net"
+    JSON.stringify({ enabled: false, identityProviderHost: "business.example.com" }),
+    JSON.stringify({ identityProviderHost: "business.example.com" }),
+    "business.example.com"
   ]) {
     fs.writeFileSync(path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME), content, "utf8");
 
@@ -128,7 +128,7 @@ test("loadDesktopSsoConfig does not rewrite copied OIDC endpoints from a bare IA
   fs.mkdirSync(configRoot, { recursive: true });
   fs.writeFileSync(
     path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
-    JSON.stringify({ enabled: true, identityProviderHost: "eiam.gtjaqh.net" }),
+    JSON.stringify({ enabled: true, identityProviderHost: "business.example.com" }),
     "utf8"
   );
 
@@ -142,7 +142,7 @@ test("loadDesktopSsoConfig does not rewrite copied OIDC endpoints from a bare IA
   assert.equal(result.config.logoutUrl, DEFAULT_OIDC_CONFIG.logoutUrl);
   assert.equal(result.config.redirectUri, DEFAULT_OIDC_CONFIG.redirectUri);
   assert.equal(result.config.clientId, DEFAULT_OIDC_CONFIG.clientId);
-  assert.equal(result.config.browserOrigin, "https://eiam.gtjaqh.net");
+  assert.equal(result.config.browserOrigin, "https://business.example.com");
 });
 
 test("loadDesktopSsoConfig honors explicit copied IAM OIDC URLs", (t) => {
@@ -215,21 +215,21 @@ test("resolveDesktopSsoConfigPath uses platform-specific home paths", () => {
 });
 
 test("getIdentityProviderCookieHosts targets the IAM host used by Chrome login", () => {
-  assert.deepEqual(getIdentityProviderCookieHosts(), ["eiam.qiuer.net"]);
+  assert.deepEqual(getIdentityProviderCookieHosts(), ["iam.example.com"]);
 });
 
 test("buildDesktopSsoProxyUrl keeps the browser on the localhost callback origin", () => {
   assert.equal(
-    buildDesktopSsoProxyUrl("https://eiam.qiuer.net/auth/oauth2/authorize?client_id=desktop#frag"),
+    buildDesktopSsoProxyUrl("https://iam.example.com/auth/oauth2/authorize?client_id=desktop#frag"),
     "http://localhost:8080/auth/oauth2/authorize?client_id=desktop#frag"
   );
 });
 
 test("rewriteDesktopSsoProxyLocation maps IAM redirects back through the localhost proxy", () => {
-  const upstreamRequestUrl = new URL("https://eiam.qiuer.net/auth/oauth2/authorize?client_id=desktop");
+  const upstreamRequestUrl = new URL("https://iam.example.com/auth/oauth2/authorize?client_id=desktop");
 
   assert.equal(
-    rewriteDesktopSsoProxyLocation("https://eiam.qiuer.net/#/login?service=svc", upstreamRequestUrl),
+    rewriteDesktopSsoProxyLocation("https://iam.example.com/#/login?service=svc", upstreamRequestUrl),
     "http://localhost:8080/#/login?service=svc"
   );
   assert.equal(
@@ -244,7 +244,7 @@ test("rewriteDesktopSsoProxyLocation maps IAM redirects back through the localho
 
 test("rewriteDesktopSsoProxySetCookieHeader makes IAM cookies usable on localhost", () => {
   assert.equal(
-    rewriteDesktopSsoProxySetCookieHeader("iauth=abc; Path=/; Domain=eiam.qiuer.net; Secure; HttpOnly; SameSite=None"),
+    rewriteDesktopSsoProxySetCookieHeader("iauth=abc; Path=/; Domain=iam.example.com; Secure; HttpOnly; SameSite=None"),
     "iauth=abc; Path=/; HttpOnly; SameSite=Lax"
   );
 });
@@ -253,11 +253,11 @@ test("buildDesktopSsoBrowserCookieDetails mirrors proxy cookies to business-visi
   assert.deepEqual(
     buildDesktopSsoBrowserCookieDetails(
       new Map([["iauth", "abc"]]),
-      { ...DEFAULT_OIDC_CONFIG, browserOrigin: "https://eiam.gtjaqh.net" }
+      { ...DEFAULT_OIDC_CONFIG, browserOrigin: "https://business.example.com" }
     ),
     [
       {
-        url: "https://eiam.qiuer.net",
+        url: "https://iam.example.com",
         name: "iauth",
         value: "abc",
         path: "/",
@@ -266,7 +266,7 @@ test("buildDesktopSsoBrowserCookieDetails mirrors proxy cookies to business-visi
         sameSite: "lax"
       },
       {
-        url: "https://eiam.gtjaqh.net",
+        url: "https://business.example.com",
         name: "iauth",
         value: "abc",
         path: "/",
@@ -282,7 +282,7 @@ test("buildTokenExchangeRequest posts the document-style token URL from the main
   const request = buildTokenExchangeRequest("callback-code");
   const url = new URL(request.url);
 
-  assert.equal(url.origin + url.pathname, "https://eiam.qiuer.net/auth/oauth2/token");
+  assert.equal(url.origin + url.pathname, "https://iam.example.com/auth/oauth2/token");
   assert.equal(request.method, "POST");
   assert.equal(url.searchParams.get("client_id"), DEFAULT_OIDC_CONFIG.clientId);
   assert.equal(url.searchParams.get("client_secret"), DEFAULT_OIDC_CONFIG.clientSecret);
@@ -337,10 +337,10 @@ test("validateIdToken verifies RS256 signature, issuer, audience, and returns pu
     if (url === DEFAULT_OIDC_CONFIG.wellKnownUrl) {
       return {
         ok: true,
-        json: async () => ({ jwks_uri: "https://eiam.qiuer.net/auth/oidc/jwks" })
+        json: async () => ({ jwks_uri: "https://iam.example.com/auth/oidc/jwks" })
       };
     }
-    if (url === "https://eiam.qiuer.net/auth/oidc/jwks") {
+    if (url === "https://iam.example.com/auth/oidc/jwks") {
       return {
         ok: true,
         json: async () => ({ keys: [{ ...jwk, kid, alg: "RS256", use: "sig" }] })

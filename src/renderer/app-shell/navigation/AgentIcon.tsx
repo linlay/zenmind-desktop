@@ -53,7 +53,7 @@ const BUILTIN_ICON_CONFIGS: Record<string, BuiltinIconConfig> = {
   node: { gradient: ["#818CF8", "#3730A3"], shape: "node" },
   echo: { gradient: ["#2DD4BF", "#0F766E"], shape: "echo" },
   nova: { gradient: ["#F87171", "#B91C1C"], shape: "star" },
-  zenith: { gradient: ["#FDE047", "#CA8A04"], shape: "pillar" },
+  summit: { gradient: ["#FDE047", "#CA8A04"], shape: "pillar" },
 };
 
 export const AGENT_ICON_NAMES = Object.keys(BUILTIN_ICON_CONFIGS);

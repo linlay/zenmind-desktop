@@ -205,7 +205,7 @@ export const enUSMessages = {
   "settings.embeddedWebsites.displayName": "Display name",
   "settings.embeddedWebsites.displayNamePlaceholder": "For example: Official site, Knowledge base",
   "settings.embeddedWebsites.url": "Website URL",
-  "settings.embeddedWebsites.urlPlaceholder": "Enter a full URL or domain, for example jira.example.com",
+  "settings.embeddedWebsites.urlPlaceholder": "Enter a full URL or domain, for example example.com",
   "settings.embeddedWebsites.adding": "Adding...",
   "settings.embeddedWebsites.add": "Add embedded website",
   "settings.embeddedWebsites.addedTitle": "Added embedded websites",

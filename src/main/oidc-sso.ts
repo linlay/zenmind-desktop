@@ -139,14 +139,14 @@ const OIDC_CONFIG_URL_FIELDS = [
 ] as const;
 
 export const DEFAULT_OIDC_CONFIG: OidcConfig = {
-  issuer: "https://eiam.qiuer.net/auth/oidc/CA68B05042044F44AD4D2B5F672A53AE",
-  authorizeUrl: "https://eiam.qiuer.net/auth/oauth2/authorize",
-  tokenUrl: "https://eiam.qiuer.net/auth/oauth2/token",
-  clientId: "MTdjNzdjZTU3ZTExNDUzMWJmMjk4OTQ4MzdkNzY1YmU",
-  clientSecret: "3CH2p8r3NMURy+5E8BYZTK/AYlWCh+Rr",
+  issuer: "https://iam.example.com/auth/oidc/example-app",
+  authorizeUrl: "https://iam.example.com/auth/oauth2/authorize",
+  tokenUrl: "https://iam.example.com/auth/oauth2/token",
+  clientId: "desktop-test-client",
+  clientSecret: "desktop-test-secret",
   redirectUri: `http://${CALLBACK_HOST}:${CALLBACK_PORT}${CALLBACK_PATH}`,
-  wellKnownUrl: "https://eiam.qiuer.net/auth/oidc/CA68B05042044F44AD4D2B5F672A53AE/.well-known/openid-configuration",
-  logoutUrl: "https://eiam.qiuer.net/auth/ssoLogout",
+  wellKnownUrl: "https://iam.example.com/auth/oidc/example-app/.well-known/openid-configuration",
+  logoutUrl: "https://iam.example.com/auth/ssoLogout",
   logoutCallbackUri: `http://${CALLBACK_HOST}:${CALLBACK_PORT}${LOGOUT_CALLBACK_PATH}`
 };
 

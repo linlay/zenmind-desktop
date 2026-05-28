@@ -51,6 +51,45 @@ function readSharedContractsSource() {
   ].join("\n");
 }
 
+function collectTextFiles(root, files = []) {
+  for (const child of fs.readdirSync(root, { withFileTypes: true })) {
+    const childPath = path.join(root, child.name);
+    if (child.isDirectory()) {
+      collectTextFiles(childPath, files);
+      continue;
+    }
+    if (/\.(?:ts|tsx|js|mjs|json|md)$/u.test(child.name)) {
+      files.push(childPath);
+    }
+  }
+  return files;
+}
+
+test("source and tests do not contain internal endpoint or legacy icon literals", () => {
+  const forbiddenValues = [
+    "47.100.131." + "144:9001",
+    "eiam.qiuer" + ".net",
+    "eiam.gtjaqh" + ".net",
+    "jira.example" + ".com",
+    "zeni" + "th"
+  ];
+  const files = [
+    ...collectTextFiles(path.join(projectRoot, "src")),
+    ...collectTextFiles(path.join(projectRoot, "test"))
+  ];
+
+  for (const filePath of files) {
+    const content = fs.readFileSync(filePath, "utf8");
+    for (const forbiddenValue of forbiddenValues) {
+      assert.equal(
+        content.includes(forbiddenValue),
+        false,
+        `${path.relative(projectRoot, filePath)} contains a forbidden literal`
+      );
+    }
+  }
+});
+
 test("renderer entry uses HashRouter for Electron routing", () => {
   const rendererEntry = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "main.tsx"),

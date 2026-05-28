@@ -165,10 +165,6 @@ function normalizeEditableUrl(rawValue: string) {
 function shouldRefreshWebviewAfterDesktopSso(value: string) {
   try {
     const parsedUrl = new URL(value);
-    const hostname = parsedUrl.hostname.toLowerCase();
-    if (!["eiam.qiuer.net", "eiam.gtjaqh.net"].includes(hostname)) {
-      return false;
-    }
     if (parsedUrl.pathname === "/auth/oauth2/authorize") {
       return true;
     }
