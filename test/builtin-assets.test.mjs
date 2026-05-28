@@ -574,15 +574,13 @@ test("actual synced agent-platform asset includes required entries", () => {
     assert.ok(entries.has("agent-platform/stop.sh"));
     assert.ok(entries.has("agent-platform/backend/agent-platform"));
   }
-  assert.ok(entries.has("agent-platform/configs/desktop.example.yml"));
+  assert.ok(entries.has("agent-platform/configs/channels.example.yml"));
+  assert.ok(entries.has("agent-platform/configs/coder-settings.example.yml"));
+  assert.ok(entries.has("agent-platform/configs/local-public-key.example.pem"));
   const manifest = readManifestFromArchive(assetPath);
-  assert.ok(
-    manifest.configFiles?.some?.((entry) =>
-      entry?.key === "desktop" &&
-      entry.relativePath === "configs/desktop.yml" &&
-      entry.templateRelativePath === "configs/desktop.example.yml"
-    ),
-    "expected agent-platform manifest to expose desktop bridge config"
+  assert.deepEqual(
+    manifest.configFiles?.map?.((entry) => entry.key),
+    ["env", "runtime", "host-tools", "ai-tools", "channels", "coder-settings", "local-public-key", "prompts"]
   );
 });
 

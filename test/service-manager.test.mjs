@@ -3207,15 +3207,21 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
     assert.ok(envContent.indexOf("# Provider apiKey AES(...)") < envContent.indexOf("PROVIDER_APIKEY_KEY_PART=0.1.0"));
     assert.equal(fs.existsSync(path.join(configDir, "configs", "local-public-key.pem")), true);
     assert.deepEqual(
+      platformService.configFiles.map((configFile) => configFile.key),
+      ["env", "runtime", "host-tools", "ai-tools", "channels", "coder-settings", "local-public-key", "prompts"]
+    );
+    assert.deepEqual(
       platformService.configFiles
         .map((configFile) => configFile.key)
-        .filter((key) => ["container-hub", "bash", "file-tools", "cors", "channels"].includes(key)),
+        .filter((key) => ["container-hub", "bash", "file-tools", "cors"].includes(key)),
       []
     );
     for (const fileName of [
       "runtime.yml",
       "host-tools.yml",
       "ai-tools.yml",
+      "channels.yml",
+      "coder-settings.yml",
       "prompts.yml"
     ]) {
       assert.equal(
@@ -3236,6 +3242,7 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
         `expected removed config ${fileName} to stay uninitialized`
       );
     }
+    assert.equal(fs.readFileSync(path.join(configDir, "configs", "channels.yml"), "utf8"), "");
     assert.equal(fs.existsSync(path.join(installDir, ".env")), false);
     assert.equal(fs.existsSync(path.join(installDir, "configs", "local-public-key.pem")), false);
     assert.equal(fs.existsSync(path.join(installDir, ".zenmind-desktop-generated-config")), false);
@@ -3248,7 +3255,7 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
       assert.doesNotMatch(programCommon, /agent-platform-runner\.log/);
       assert.doesNotMatch(programCommon, /PID_FILE="\$RUN_DIR\/\$APP_NAME\.pid"/);
       if (/PID_FILE=/u.test(programCommon)) {
-        assert.match(programCommon, /PID_FILE="\$RUN_DIR\/pid\/agent-platform\.pid"/);
+        assert.match(programCommon, /PID_FILE="\$RUN_DIR\/agent-platform\.pid"/);
       }
     }
     const programCommonPs1Path = path.join(installDir, "scripts", "program-common.ps1");
@@ -3258,11 +3265,12 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
       assert.doesNotMatch(programCommon, /agent-platform-runner\.log/);
       assert.doesNotMatch(programCommon, /\$Script:AppName\.pid/);
       if (/\$Script:PidFile\s*=/u.test(programCommon)) {
-        assert.match(programCommon, /\$Script:PidFile = Join-Path \(Join-Path \$Script:RunDir "pid"\) "agent-platform\.pid"/);
+        assert.match(programCommon, /\$Script:PidFile = Join-Path \$Script:RunDir 'agent-platform\.pid'/);
       }
     }
     assert.equal(__testInternals.agentPlatformInstallNeedsRefresh(installDir), false);
-    fs.rmSync(path.join(installDir, "configs", "desktop.example.yml"), { force: true });
+    manifest.configFiles = manifest.configFiles.filter((configFile) => configFile.key !== "coder-settings");
+    fs.writeFileSync(path.join(installDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     assert.equal(__testInternals.agentPlatformInstallNeedsRefresh(installDir), true);
   } finally {
     restore();
