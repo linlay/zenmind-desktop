@@ -73,7 +73,8 @@ const STARTUP_LOADING_TIMEOUT_MS = 45000;
 const AGENT_WEBCLIENT_ROUTE_ITEMS = [
   { routePath: "/agents", embedPath: "/agents", labelKey: "nav.agents" },
   { routePath: "/schedules", embedPath: "/schedules", labelKey: "nav.schedules" },
-  { routePath: "/memory", embedPath: "/memory", labelKey: "nav.memory" }
+  { routePath: "/memory", embedPath: "/memory", labelKey: "nav.memory" },
+  { routePath: "/copilot", embedPath: "/copilot", labelKey: "nav.assistants" }
 ] as const;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
@@ -236,7 +237,7 @@ export function AppShell() {
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [startupCardDismissed, setStartupCardDismissed] = useState(false);
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
-  const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute(location.pathname, location.search);
+  const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute(location.pathname, location.search, copilotAgentOptions);
   const activeAgentWebclientRoute = rawActiveAgentWebclientRoute
     ? {
         ...rawActiveAgentWebclientRoute,
@@ -298,7 +299,10 @@ export function AppShell() {
     : "";
   const resolvedCopilotAgentKey = customSidebarAgentKey || currentCopilotPreference?.agentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
   const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
-  const isAgentWebclientMainRoute = location.pathname === ASSISTANT_TARGET_PATH || isSingleAgentWebclientRoute(location.pathname);
+  const isAgentWebclientMainRoute =
+    location.pathname === ASSISTANT_TARGET_PATH ||
+    isSingleAgentWebclientRoute(location.pathname) ||
+    isCopilotAgentWebclientRoute(location.pathname);
   const assistantDockOpen = assistantDockOpenPath !== null;
   const assistantCopilotOpen = assistantDockOpen && assistantDockOpenPath === location.pathname && !isAgentWebclientMainRoute;
   const sidebarCollapsed = sidebarState.mode === "collapsed";
@@ -1291,6 +1295,8 @@ export function AppShell() {
             <Route path="/agents" element={null} />
             <Route path="/schedules" element={null} />
             <Route path="/memory" element={null} />
+            <Route path="/copilot" element={null} />
+            <Route path="/copilot/:agentKey" element={null} />
             <Route path="/agent/:agentKey" element={null} />
             <Route path="/external/:itemId" element={<ExternalItemRoute itemMap={experimentalItemMap} />} />
             <Route
@@ -1368,7 +1374,12 @@ function resolvePluginRouteId(pathname: string) {
     null;
 }
 
-function resolveAgentWebclientRoute(pathname: string, search = "") {
+function resolveAgentWebclientRoute(pathname: string, search = "", copilotAgentOptions: AssistantNavAgentItem[] = []) {
+  const copilotRoute = resolveCopilotAgentWebclientRoute(pathname, search, copilotAgentOptions);
+  if (copilotRoute) {
+    return copilotRoute;
+  }
+
   const staticRoute = AGENT_WEBCLIENT_ROUTE_ITEMS.find((item) => item.routePath === pathname);
   if (staticRoute) {
     return staticRoute;
@@ -1405,6 +1416,42 @@ function readAgentWebclientRouteEmbedPath(search: string) {
 
 function isSingleAgentWebclientRoute(pathname: string) {
   return Boolean(matchPath("/agent/:agentKey", pathname));
+}
+
+function isCopilotAgentWebclientRoute(pathname: string) {
+  return pathname === "/copilot" || Boolean(matchPath("/copilot/:agentKey", pathname));
+}
+
+function getFirstCopilotAgentKey(copilotAgentOptions: AssistantNavAgentItem[]) {
+  return copilotAgentOptions.find((agent) => agent.agentKey.trim())?.agentKey.trim() ?? "";
+}
+
+function resolveCopilotAgentWebclientRoute(
+  pathname: string,
+  search: string,
+  copilotAgentOptions: AssistantNavAgentItem[]
+) {
+  const firstAgentKey = getFirstCopilotAgentKey(copilotAgentOptions);
+  const match = matchPath("/copilot/:agentKey", pathname);
+  const requestedAgentKey = match?.params.agentKey?.trim() ?? "";
+
+  if (pathname !== "/copilot" && !requestedAgentKey) {
+    return null;
+  }
+
+  const matchedAgentKey = requestedAgentKey && copilotAgentOptions.some((agent) => agent.agentKey === requestedAgentKey)
+    ? requestedAgentKey
+    : "";
+  const targetAgentKey = matchedAgentKey || firstAgentKey || requestedAgentKey;
+  const targetPath = targetAgentKey
+    ? `/copilot/${encodeURIComponent(targetAgentKey)}`
+    : "/copilot";
+
+  return {
+    routePath: `${pathname}${search}`,
+    embedPath: `${targetPath}${search}`,
+    labelKey: "nav.assistants"
+  };
 }
 
 function resolveSingleAgentWebclientRoute(pathname: string, search: string) {
