@@ -24,6 +24,14 @@ const {
   loadDesktopSsoConfig,
   resolveDesktopSsoConfigPath,
   buildTokenExchangeRequest,
+  buildCookieAccessTokenExchangeRequest,
+  buildDesktopSsoAccessTokenCookieDetails,
+  completeDesktopSsoBrowserLogin,
+  completeDesktopSsoCookieLogin,
+  getDesktopSsoAccessTokenCookieLookup,
+  getDesktopSsoAccessTokenCookieLookups,
+  isDesktopSsoLoginCompletionUrl,
+  readCookieAccessTokenFromResponse,
   normalizeCallbackRequest,
   validateIdToken
 } = __testInternals;
@@ -47,6 +55,9 @@ function createTestApp(homePath) {
     getPath(name) {
       if (name === "home") {
         return homePath;
+      }
+      if (name === "userData") {
+        return path.join(homePath, "userData");
       }
       throw new Error(`unexpected app path ${name}`);
     }
@@ -203,6 +214,180 @@ test("loadDesktopSsoConfig honors explicit full IAM login URL", (t) => {
   assert.equal(result.config.clientSecret, "secret");
 });
 
+test("loadDesktopSsoConfig supports configurable AI login and cookie access token exchange", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-cookie-token-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      loginUrl: "https://ai.qiuer.net/",
+      browserOrigin: "https://ai.qiuer.net",
+      loginCompletionUrl: "https://ai.qiuer.net/oauth2/callback",
+      cookieAccessTokenExchange: {
+        url: "/api/auth/token",
+        method: "post",
+        headers: {
+          "X-Desktop-Client": "ZenMind"
+        },
+        body: {
+          source: "desktop"
+        },
+        accessTokenPath: "data.access_token"
+      },
+      accessTokenCookie: {
+        url: "https://ai.qiuer.net",
+        name: "ai_access_token",
+        httpOnly: false
+      }
+    }),
+    "utf8"
+  );
+
+  const result = loadDesktopSsoConfig(createTestApp(homePath));
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.equal(result.config.loginUrl, "https://ai.qiuer.net/");
+  assert.equal(result.config.browserOrigin, "https://ai.qiuer.net");
+  assert.equal(result.config.loginCompletionUrl, "https://ai.qiuer.net/oauth2/callback");
+  assert.deepEqual(result.config.cookieAccessTokenExchange, {
+    url: "https://ai.qiuer.net/api/auth/token",
+    method: "POST",
+    headers: {
+      "X-Desktop-Client": "ZenMind",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ source: "desktop" }),
+    accessTokenPath: "data.access_token"
+  });
+  assert.deepEqual(result.config.accessTokenCookie, {
+    url: "https://ai.qiuer.net/",
+    name: "ai_access_token",
+    path: "/",
+    secure: true,
+    httpOnly: false,
+    sameSite: "lax"
+  });
+});
+
+test("direct AI login can preserve the configured URL and complete with browser cookies only", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-ai-cookie-login-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      loginUrl: "https://ai.qiuer.net/",
+      appendLoginState: false,
+      browserOrigin: "https://ai.qiuer.net",
+      loginCompletionUrl: "https://ai.qiuer.net/oauth2/callback"
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  const result = loadDesktopSsoConfig(app);
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.equal(result.config.appendLoginState, false);
+  assert.equal(buildAuthorizeUrl("runtime-state", result.config), "https://ai.qiuer.net/");
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/oauth2/callback?code=abc"), true);
+
+  const status = completeDesktopSsoBrowserLogin(app, "https://ai.qiuer.net/oauth2/callback?code=abc");
+
+  assert.equal(status.authenticated, true);
+  assert.equal(status.user.sub, "ai.qiuer.net");
+  assert.equal("accessToken" in status, false);
+});
+
+test("direct AI login can complete on a logged-in page and inject token cookies into configured targets", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-ai-authorization-token-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      loginUrl: "https://ai.qiuer.net/",
+      appendLoginState: false,
+      browserOrigin: "https://ai.qiuer.net",
+      loginCompletionUrls: [
+        "https://ai.qiuer.net/oauth2/callback",
+        "https://ai.qiuer.net/"
+      ],
+      cookieAccessTokenExchange: {
+        url: "https://ai.qiuer.net/authorization",
+        accessTokenPath: "access_token"
+      },
+      accessTokenCookies: [
+        {
+          url: "https://ai.qiuer.net/",
+          name: "access_token",
+          httpOnly: false
+        },
+        {
+          url: "https://gtjaqh.net/",
+          name: "access_token",
+          httpOnly: false
+        }
+      ]
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  const result = loadDesktopSsoConfig(app);
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.config.loginCompletionUrls, [
+    "https://ai.qiuer.net/oauth2/callback",
+    "https://ai.qiuer.net/"
+  ]);
+  assert.equal(result.config.cookieAccessTokenExchange.url, "https://ai.qiuer.net/authorization");
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/"), true);
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/?from=desktop"), true);
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/login"), false);
+  assert.deepEqual(getDesktopSsoAccessTokenCookieLookups(app), [
+    {
+      url: "https://ai.qiuer.net/",
+      name: "access_token"
+    },
+    {
+      url: "https://gtjaqh.net/",
+      name: "access_token"
+    }
+  ]);
+  assert.deepEqual(buildDesktopSsoAccessTokenCookieDetails("token-123", result.config), [
+    {
+      url: "https://ai.qiuer.net/",
+      name: "access_token",
+      value: "token-123",
+      path: "/",
+      secure: true,
+      httpOnly: false,
+      sameSite: "lax"
+    },
+    {
+      url: "https://gtjaqh.net/",
+      name: "access_token",
+      value: "token-123",
+      path: "/",
+      secure: true,
+      httpOnly: false,
+      sameSite: "lax"
+    }
+  ]);
+});
+
 test("resolveDesktopSsoConfigPath uses platform-specific home paths", () => {
   assert.equal(
     resolveDesktopSsoConfigPath(createTestApp("/Users/tester"), "darwin"),
@@ -291,6 +476,87 @@ test("buildTokenExchangeRequest posts the document-style token URL from the main
   assert.equal(url.searchParams.get("code"), "callback-code");
   assert.equal(request.body, undefined);
   assert.equal("Content-Type" in request.headers, false);
+});
+
+test("buildCookieAccessTokenExchangeRequest sends cookies and extracts configured access token path", () => {
+  const config = {
+    ...DEFAULT_OIDC_CONFIG,
+    cookieAccessTokenExchange: {
+      url: "https://ai.qiuer.net/api/auth/token",
+      method: "POST",
+      headers: {
+        "X-Desktop-Client": "ZenMind"
+      },
+      body: "{}",
+      accessTokenPath: "data.access_token"
+    }
+  };
+  const request = buildCookieAccessTokenExchangeRequest("sid=abc; iam=def", config);
+
+  assert.deepEqual(request, {
+    url: "https://ai.qiuer.net/api/auth/token",
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "X-Desktop-Client": "ZenMind",
+      Cookie: "sid=abc; iam=def"
+    },
+    body: "{}"
+  });
+  assert.equal(readCookieAccessTokenFromResponse({ data: { access_token: "token-123" } }, config), "token-123");
+  assert.throws(
+    () => readCookieAccessTokenFromResponse({ data: {} }, config),
+    /access_token/i
+  );
+});
+
+test("login completion URL and access token cookie injection are configurable", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-cookie-injection-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      browserOrigin: "https://ai.qiuer.net",
+      loginCompletionUrl: "https://ai.qiuer.net/oauth2/callback",
+      cookieAccessTokenExchange: {
+        url: "https://ai.qiuer.net/api/auth/token"
+      },
+      accessTokenCookie: {
+        url: "https://ai.qiuer.net/app",
+        name: "desktop_token",
+        sameSite: "none"
+      }
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/oauth2/callback?code=abc"), true);
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/"), false);
+  assert.deepEqual(getDesktopSsoAccessTokenCookieLookup(app), {
+    url: "https://ai.qiuer.net/app",
+    name: "desktop_token"
+  });
+  assert.deepEqual(buildDesktopSsoAccessTokenCookieDetails("token-123", loadDesktopSsoConfig(app).config), [
+    {
+      url: "https://ai.qiuer.net/app",
+      name: "desktop_token",
+      value: "token-123",
+      path: "/",
+      secure: true,
+      httpOnly: false,
+      sameSite: "no_restriction"
+    }
+  ]);
+  const status = completeDesktopSsoCookieLogin(app, "token-123");
+
+  assert.equal(status.authenticated, true);
+  assert.equal(status.user.sub, "desktop-sso-cookie");
+  assert.equal("accessToken" in status, false);
 });
 
 test("normalizeCallbackRequest rejects missing, mismatched, and reused authorization codes", () => {
