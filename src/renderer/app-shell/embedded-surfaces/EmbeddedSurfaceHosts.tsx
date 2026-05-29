@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { ExternalWebviewPage } from "../../pages/external-webview/ExternalWebviewPage";
 import { PlaceholderPage } from "../../pages/PlaceholderPage";
@@ -12,10 +12,32 @@ type AgentWebclientRouteItem = {
   label: string;
 };
 
+type AgentWebclientRouteKind = "chat" | "copilot" | "management";
+
 type EmbeddedSidebarItem = {
   label: string;
   url: string;
 };
+
+const AGENT_WEBCLIENT_PLUGIN_ID = "agent-webclient";
+const AGENT_WEBCLIENT_CHAT_SURFACE_ID = "agent-webclient-chat";
+const AGENT_WEBCLIENT_COPILOT_SURFACE_ID = "agent-webclient-copilot";
+
+function resolveAgentWebclientRouteKind(
+  route: AgentWebclientRouteItem | null,
+): AgentWebclientRouteKind | null {
+  const embedPath = route?.embedPath.trim() ?? "";
+  if (!embedPath) {
+    return null;
+  }
+  if (embedPath.startsWith("/agent/")) {
+    return "chat";
+  }
+  if (embedPath === "/copilot" || embedPath.startsWith("/copilot/") || embedPath.startsWith("/copilot?")) {
+    return "copilot";
+  }
+  return "management";
+}
 
 export function PluginSurfaceHost({
   activePluginId,
@@ -28,31 +50,106 @@ export function PluginSurfaceHost({
   hostTheme: ThemeMode;
   mountedPluginIds: string[];
 }) {
+  const activeAgentWebclientRouteKind = resolveAgentWebclientRouteKind(activeAgentWebclientRoute);
+  const lastAgentChatRouteRef = useRef<AgentWebclientRouteItem | null>(null);
+  const lastCopilotRouteRef = useRef<AgentWebclientRouteItem | null>(null);
+
+  if (activeAgentWebclientRouteKind === "chat") {
+    lastAgentChatRouteRef.current = activeAgentWebclientRoute;
+  }
+  if (activeAgentWebclientRouteKind === "copilot") {
+    lastCopilotRouteRef.current = activeAgentWebclientRoute;
+  }
+
+  const agentWebclientMounted = mountedPluginIds.includes(AGENT_WEBCLIENT_PLUGIN_ID);
+  const agentChatRoute =
+    activeAgentWebclientRouteKind === "chat"
+      ? activeAgentWebclientRoute
+      : lastAgentChatRouteRef.current;
+  const copilotRoute =
+    activeAgentWebclientRouteKind === "copilot"
+      ? activeAgentWebclientRoute
+      : lastCopilotRouteRef.current;
+  const activeSurfaceId =
+    activePluginId === AGENT_WEBCLIENT_PLUGIN_ID
+      ? activeAgentWebclientRouteKind === "chat"
+        ? AGENT_WEBCLIENT_CHAT_SURFACE_ID
+        : activeAgentWebclientRouteKind === "copilot"
+          ? AGENT_WEBCLIENT_COPILOT_SURFACE_ID
+          : AGENT_WEBCLIENT_PLUGIN_ID
+      : activePluginId;
+  const nonAgentPluginIds = mountedPluginIds.filter((pluginId) => pluginId !== AGENT_WEBCLIENT_PLUGIN_ID);
+  const shouldRenderAgentChatSurface = agentWebclientMounted && Boolean(agentChatRoute);
+  const shouldRenderCopilotSurface = agentWebclientMounted && Boolean(copilotRoute);
+  const shouldRenderAgentManagementSurface =
+    agentWebclientMounted &&
+    activePluginId === AGENT_WEBCLIENT_PLUGIN_ID &&
+    activeAgentWebclientRouteKind !== "chat" &&
+    activeAgentWebclientRouteKind !== "copilot";
+
   useEffect(() => {
-    setActivePluginSurfaceId(mountedPluginIds.length > 0 ? activePluginId : null);
+    setActivePluginSurfaceId(activeSurfaceId);
     return () => {
       setActivePluginSurfaceId(null);
     };
-  }, [activePluginId, mountedPluginIds.length]);
+  }, [activeSurfaceId]);
 
-  if (mountedPluginIds.length === 0) {
+  if (
+    nonAgentPluginIds.length === 0 &&
+    !shouldRenderAgentChatSurface &&
+    !shouldRenderCopilotSurface &&
+    !shouldRenderAgentManagementSurface
+  ) {
     return null;
   }
 
   return (
     <>
       {/* Keep embedded plugin browsing contexts mounted so sidebar switches do not tear down live sessions. */}
-      {mountedPluginIds.map((pluginId) => (
+      {nonAgentPluginIds.map((pluginId) => (
         <PluginPage
           key={pluginId}
           active={activePluginId === pluginId}
-          embedPath={pluginId === "agent-webclient" ? activeAgentWebclientRoute?.embedPath : undefined}
           hostTheme={hostTheme}
-          loadInitialEmbeddedUrlDirectly={pluginId === "agent-webclient" && Boolean(activeAgentWebclientRoute?.embedPath)}
           pluginId={pluginId}
-          surfaceLabel={pluginId === "agent-webclient" ? activeAgentWebclientRoute?.label : undefined}
         />
       ))}
+      {shouldRenderAgentChatSurface ? (
+        <PluginPage
+          key={AGENT_WEBCLIENT_CHAT_SURFACE_ID}
+          active={activePluginId === AGENT_WEBCLIENT_PLUGIN_ID && activeAgentWebclientRouteKind === "chat"}
+          embedPath={agentChatRoute?.embedPath}
+          hostTheme={hostTheme}
+          loadInitialEmbeddedUrlDirectly={Boolean(agentChatRoute?.embedPath)}
+          pluginId={AGENT_WEBCLIENT_PLUGIN_ID}
+          surfaceId={AGENT_WEBCLIENT_CHAT_SURFACE_ID}
+          surfaceLabel={agentChatRoute?.label}
+        />
+      ) : null}
+      {shouldRenderCopilotSurface ? (
+        <PluginPage
+          key={AGENT_WEBCLIENT_COPILOT_SURFACE_ID}
+          active={activePluginId === AGENT_WEBCLIENT_PLUGIN_ID && activeAgentWebclientRouteKind === "copilot"}
+          embedPath={copilotRoute?.embedPath}
+          hostTheme={hostTheme}
+          loadInitialEmbeddedUrlDirectly={Boolean(copilotRoute?.embedPath)}
+          pluginId={AGENT_WEBCLIENT_PLUGIN_ID}
+          surfaceId={AGENT_WEBCLIENT_COPILOT_SURFACE_ID}
+          surfaceLabel={copilotRoute?.label}
+        />
+      ) : null}
+      {shouldRenderAgentManagementSurface ? (
+        <PluginPage
+          key={AGENT_WEBCLIENT_PLUGIN_ID}
+          active
+          embedPath={activeAgentWebclientRouteKind === "management" ? activeAgentWebclientRoute?.embedPath : undefined}
+          hostTheme={hostTheme}
+          loadInitialEmbeddedUrlDirectly={activeAgentWebclientRouteKind === "management" && Boolean(activeAgentWebclientRoute?.embedPath)}
+          pluginId={AGENT_WEBCLIENT_PLUGIN_ID}
+          surfaceId={AGENT_WEBCLIENT_PLUGIN_ID}
+          surfaceLabel={activeAgentWebclientRoute?.label}
+        />
+      ) : null}
     </>
   );
 }

@@ -120,7 +120,7 @@ test("sidebar does not expose the built-in Chrome surface", () => {
   assert.doesNotMatch(sidebarSource, /BUILTIN_BROWSER_ROUTE/);
 });
 
-test("main agent webclient surface direct-loads active embed path", () => {
+test("main agent webclient keeps chat and copilot webviews separate from management", () => {
   const surfaceHosts = readSourceFile(
     "src",
     "renderer",
@@ -129,8 +129,17 @@ test("main agent webclient surface direct-loads active embed path", () => {
     "EmbeddedSurfaceHosts.tsx"
   );
 
-  assert.match(surfaceHosts, /embedPath=\{pluginId === "agent-webclient" \? activeAgentWebclientRoute\?\.embedPath : undefined\}/);
-  assert.match(surfaceHosts, /loadInitialEmbeddedUrlDirectly=\{pluginId === "agent-webclient" && Boolean\(activeAgentWebclientRoute\?\.embedPath\)\}/);
+  assert.match(surfaceHosts, /const AGENT_WEBCLIENT_CHAT_SURFACE_ID = "agent-webclient-chat"/);
+  assert.match(surfaceHosts, /const AGENT_WEBCLIENT_COPILOT_SURFACE_ID = "agent-webclient-copilot"/);
+  assert.match(surfaceHosts, /lastAgentChatRouteRef/);
+  assert.match(surfaceHosts, /lastCopilotRouteRef/);
+  assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "chat"/);
+  assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "copilot"/);
+  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_CHAT_SURFACE_ID\}/);
+  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_SURFACE_ID\}/);
+  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_PLUGIN_ID\}/);
+  assert.match(surfaceHosts, /pluginId=\{AGENT_WEBCLIENT_PLUGIN_ID\}/);
+  assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
 });
 
 test("control center keeps service operations in the prototype dashboard layout", () => {
@@ -687,7 +696,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /embedPath:\s*`\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
   assert.match(appShell, /labelKey:\s*embedPath\.startsWith\("\/agent\/"\) \? "nav\.assistants" : "nav\.agents"/);
   assert.match(appShell, /activeAgentWebclientRoute[\s\S]*?\? "agent-webclient"[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
-  assert.match(appShell, /embedPath=\{pluginId === "agent-webclient" \? activeAgentWebclientRoute\?\.embedPath : undefined\}/);
+  assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_CHAT_SURFACE_ID\}/);
+  assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_SURFACE_ID\}/);
   assert.match(appShell, /if \(currentRoute !== pendingSidebarNavigationPath\)/);
   assert.match(appShell, /function requestSidebarNavigation\(targetPath: string\)[\s\S]*?navigate\(targetPath\);[\s\S]*?return true;/);
   assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeAgentWebclientRoute\)/);
@@ -1149,7 +1159,9 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /const targetAgentKey = resolveTargetAgentKey\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /const targetEmbedPath = buildAgentWebclientCopilotPath\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /data-open-agent-key=\{targetAgentKey\}/);
-  assert.match(appShell, /key=\{`agent-webclient-copilot:\$\{targetEmbedPath\}`\}/);
+  assert.match(appShell, /key=\{AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID\}/);
+  assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID\}/);
+  assert.doesNotMatch(appShell, /key=\{`agent-webclient-copilot:\$\{targetEmbedPath\}`\}/);
   assert.match(appShell, /function isSingleAgentWebclientRoute\(pathname: string\)[\s\S]*?matchPath\("\/agent\/:agentKey", pathname\)/);
   assert.match(sidebarSource, /assistantLauncherVisible/);
   assert.match(sidebarSource, /assistantLauncherDisabled/);
@@ -2158,9 +2170,12 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /registerAssistantPageContextProvider/);
   assert.doesNotMatch(pluginPage, /<<<<<<<|=======|>>>>>>>/);
   assert.match(pluginPage, /registerDesktopActionProviderForScope\(\s*"embeddedWeb"/);
+  assert.match(pluginPage, /surfaceId\?: string/);
   assert.match(pluginPage, /skipContextRegistration\?: boolean/);
   assert.match(pluginPage, /loadInitialEmbeddedUrlDirectly\?: boolean/);
   assert.match(pluginPage, /suppressInitialLoadingCopy\?: boolean/);
+  assert.match(pluginPage, /const surfaceId = surfaceIdProp\?\.trim\(\) \|\| pluginId/);
+  assert.match(pluginPage, /registerPluginSurfaceWebviewRef\(surfaceId, webviewRef\)/);
   assert.match(pluginPage, /const webviewOriginSrcUrl = useMemo\([\s\S]{0,120}buildPluginWebviewSrcUrl\(embeddedUrl\)/);
   assert.match(pluginPage, /const webviewDirectLoadScope = \[[\s\S]{0,160}webviewOriginSrcUrl/);
   assert.match(pluginPage, /initialWebviewSrcRef\.current\?\.scope !== webviewDirectLoadScope/);

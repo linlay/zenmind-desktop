@@ -55,6 +55,7 @@ import {
 type PluginPageProps = {
   hostTheme: "light" | "dark";
   pluginId?: string;
+  surfaceId?: string;
   active?: boolean;
   embedPath?: string;
   surfaceLabel?: string;
@@ -393,6 +394,7 @@ async function tryReadPluginWebviewPageContext(
 export function PluginPage({
   hostTheme,
   pluginId: pluginIdProp,
+  surfaceId: surfaceIdProp,
   active,
   embedPath,
   surfaceLabel,
@@ -405,6 +407,7 @@ export function PluginPage({
   const currentRoute = `${location.pathname}${location.search}`;
   const { pluginId: routePluginId } = useParams<{ pluginId: string }>();
   const pluginId = pluginIdProp ?? routePluginId ?? "";
+  const surfaceId = surfaceIdProp?.trim() || pluginId;
   const { locale } = useI18n();
   const { services, refresh: refreshServices } = useServices();
   const service = services.find((s) => s.id === pluginId);
@@ -433,8 +436,8 @@ export function PluginPage({
         };
 
   useEffect(() => {
-    return registerPluginSurfaceWebviewRef(pluginId, webviewRef);
-  }, [pluginId]);
+    return registerPluginSurfaceWebviewRef(surfaceId, webviewRef);
+  }, [surfaceId]);
 
   const webUrl = service?.healthMeta.webUrl ?? "";
   const bridgeProtocol = useMemo(
@@ -549,7 +552,7 @@ export function PluginPage({
         serviceDisplayName,
         embeddedUrl,
         webUrl,
-        pluginId,
+        surfaceId,
         serviceDisplayName,
         surfaceRoute,
         effectiveEmbedPath,
@@ -559,7 +562,7 @@ export function PluginPage({
         serviceDisplayName,
         embeddedUrl,
         webUrl,
-        pluginId,
+        surfaceId,
         serviceDisplayName,
         surfaceRoute,
         effectiveEmbedPath,
@@ -601,9 +604,9 @@ export function PluginPage({
     const webContentsId = readWebviewContentsId(webviewRef.current);
     return {
       route: currentRoute,
-      pageKey: `webview:${currentRoute}:${pluginId}:${currentUrl || "webview"}`,
+      pageKey: `webview:${currentRoute}:${surfaceId}:${currentUrl || "webview"}`,
       pageKind: "webview" as const,
-      ...(pluginId ? { surfaceId: pluginId } : {}),
+      ...(surfaceId ? { surfaceId } : {}),
       ...(serviceDisplayName ? { surfaceLabel: serviceDisplayName } : {}),
       ...(surfaceRoute ? { surfaceRoute } : {}),
       ...(effectiveEmbedPath ? { embedPath: effectiveEmbedPath } : {}),
@@ -969,7 +972,7 @@ export function PluginPage({
       void window.electronAPI.debug.registerWebviewSurface({
         webContentsId,
         kind: "plugin",
-        ...(pluginId ? { surfaceId: pluginId } : {}),
+        ...(surfaceId ? { surfaceId } : {}),
         ...(serviceDisplayName ? { surfaceLabel: serviceDisplayName } : {}),
         tabId: surfaceRoute,
         url: readCurrentWebviewUrl()
@@ -1070,6 +1073,7 @@ export function PluginPage({
     bridgeReady,
     active,
     pluginId,
+    surfaceId,
     service?.id,
     service?.status,
     serviceDisplayName,
@@ -1146,7 +1150,7 @@ export function PluginPage({
     active,
     currentRoute,
     embeddedUrl,
-    pluginId,
+    surfaceId,
     service?.status,
     serviceDisplayName,
     skipContextRegistration,
@@ -1169,7 +1173,7 @@ export function PluginPage({
   }, [
     active,
     embeddedUrl,
-    pluginId,
+    surfaceId,
     service?.status,
     serviceDisplayName,
     skipContextRegistration,
@@ -1202,7 +1206,7 @@ export function PluginPage({
     active,
     currentRoute,
     embeddedUrl,
-    pluginId,
+    surfaceId,
     service?.status,
     serviceDisplayName,
     skipContextRegistration,
@@ -1223,7 +1227,7 @@ export function PluginPage({
     function requestTargetsDifferentSurface(args: Record<string, unknown>) {
       const targetSurfaceId =
         typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
-      return Boolean(targetSurfaceId && targetSurfaceId !== pluginId);
+      return Boolean(targetSurfaceId && targetSurfaceId !== surfaceId);
     }
 
     return registerDesktopActionProviderForScope(
@@ -1243,7 +1247,9 @@ export function PluginPage({
               ok: true,
               result: {
                 surface: {
-                  id: pluginId,
+                  id: surfaceId,
+                  surfaceId,
+                  serviceId: pluginId,
                   label: serviceDisplayName,
                   url: embeddedUrl,
                   active: active !== false,
@@ -1293,6 +1299,7 @@ export function PluginPage({
     active,
     embeddedUrl,
     pluginId,
+    surfaceId,
     service?.status,
     serviceDisplayName,
     skipContextRegistration,

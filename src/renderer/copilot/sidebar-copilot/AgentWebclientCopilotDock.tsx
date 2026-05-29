@@ -3,6 +3,7 @@ import type { AssistantWorkerOpenRequest } from "../../../shared/contracts";
 import { PluginPage } from "../../pages/plugin/PluginPage";
 
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
+const AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID = "agent-webclient-copilot-dock";
 
 function normalizeAgentKey(value = "") {
   const trimmed = value.trim();
@@ -72,11 +73,12 @@ export function AgentWebclientCopilotDock({
       data-open-agent-key={targetAgentKey}
     >
       <PluginPage
-        key={`agent-webclient-copilot:${targetEmbedPath}`}
+        key={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
         active={open}
         embedPath={targetEmbedPath}
         hostTheme={hostTheme}
         pluginId="agent-webclient"
+        surfaceId={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
         surfaceLabel="助手"
         skipContextRegistration
         loadInitialEmbeddedUrlDirectly
