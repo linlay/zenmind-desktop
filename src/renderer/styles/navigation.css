@@ -531,6 +531,9 @@
 .sidebar-group-heading:hover {
   background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
 }
+.sidebar-group-heading:hover .sidebar-link-label{
+  color: var(--ink);
+}
 
 .sidebar-group-heading-main {
   display: inline-flex;
@@ -1103,7 +1106,6 @@
   background-color: var(--line);
   margin: 0 20px;
 }
-
 .worker-chat-preview-list .status-line {
   border: 0;
   background: transparent;

@@ -1250,13 +1250,7 @@ export function AppSidebar({
         >
           {args.groupId === "assistants" ? (
             <div className="assistant-worker-collapse worker-collapse">
-              {assistantNavAgents.length > 0 ? (
-                assistantNavAgents.map((agent) => renderAssistantAgent(agent))
-              ) : (
-                <div className="status-line">
-                  {t("sidebar.assistants.empty")}
-                </div>
-              )}
+              {assistantNavAgents?.map((agent) => renderAssistantAgent(agent))}
             </div>
           ) : (
             args.children.map((item) => renderSidebarChildLink(item))
