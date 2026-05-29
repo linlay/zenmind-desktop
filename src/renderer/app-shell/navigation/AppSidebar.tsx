@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type MouseEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import {
@@ -25,7 +32,7 @@ import { Popover } from "../../components/Popover";
 import { useI18n } from "../../i18n/useI18n";
 import {
   getAssistantNavAgentNonNegativeInteger,
-  getAssistantNavAgentRecentChats
+  getAssistantNavAgentRecentChats,
 } from "../../assistantNavigation";
 
 type SidebarNavItem = {
@@ -86,16 +93,39 @@ const websitesGroupNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   entryType: "websites",
 };
 
-const fixedToolRowsBase: Array<Array<Omit<SidebarToolItem, "label"> & { labelKey: "nav.agents" | "nav.schedules" | "nav.memory" | "nav.controlCenter" | "nav.market" | "nav.settings" | "nav.help" }>> = [
+const fixedToolRowsBase: Array<
+  Array<
+    Omit<SidebarToolItem, "label"> & {
+      labelKey:
+        | "nav.agents"
+        | "nav.schedules"
+        | "nav.memory"
+        | "nav.controlCenter"
+        | "nav.market"
+        | "nav.settings"
+        | "nav.help";
+    }
+  >
+> = [
   [
-    { orderKey: "agents", to: "/agents", labelKey: "nav.agents", icon: "agent" },
+    {
+      orderKey: "agents",
+      to: "/agents",
+      labelKey: "nav.agents",
+      icon: "agent",
+    },
     {
       orderKey: "schedules",
       to: "/schedules",
       labelKey: "nav.schedules",
       icon: "schedule",
     },
-    { orderKey: "memory", to: "/memory", labelKey: "nav.memory", icon: "memory" },
+    {
+      orderKey: "memory",
+      to: "/memory",
+      labelKey: "nav.memory",
+      icon: "memory",
+    },
   ],
   [
     {
@@ -104,8 +134,18 @@ const fixedToolRowsBase: Array<Array<Omit<SidebarToolItem, "label"> & { labelKey
       labelKey: "nav.controlCenter",
       icon: "control",
     },
-    { orderKey: "market", to: "/market", labelKey: "nav.market", icon: "market" },
-    { orderKey: "settings", to: "/settings", labelKey: "nav.settings", icon: "settings" },
+    {
+      orderKey: "market",
+      to: "/market",
+      labelKey: "nav.market",
+      icon: "market",
+    },
+    {
+      orderKey: "settings",
+      to: "/settings",
+      labelKey: "nav.settings",
+      icon: "settings",
+    },
   ],
   [{ orderKey: "help", to: "/help", labelKey: "nav.help", icon: "help" }],
 ];
@@ -244,7 +284,10 @@ function createAgentNewChatRoute(agentKey: string) {
 }
 
 function createAgentDefaultRoute(agent: AssistantNavAgentItem) {
-  const firstChatId = getAssistantNavAgentRecentChats(agent)[0]?.chatId || agent.latestChatId || "";
+  const firstChatId =
+    getAssistantNavAgentRecentChats(agent)[0]?.chatId ||
+    agent.latestChatId ||
+    "";
   return firstChatId
     ? createAgentChatRoute(agent.agentKey, firstChatId)
     : createAgentRoute(agent.agentKey);
@@ -262,7 +305,8 @@ function summarizeAgentStatus(
 ): SidebarStatusSummary {
   return {
     unreadCount: items.reduce(
-      (total, item) => total + getAssistantNavAgentNonNegativeInteger(item.unreadCount),
+      (total, item) =>
+        total + getAssistantNavAgentNonNegativeInteger(item.unreadCount),
       0,
     ),
     pendingCount: items.filter((item) => item.hasPendingAwaiting).length,
@@ -405,7 +449,9 @@ type AppSidebarProps = {
   onDesktopSsoLogout?: () => void;
   onRefreshAssistantNavAgents?: () => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
-  onCreateCustomSidebarItem?: (input: CustomSidebarItemInput) => Promise<CustomSidebarItemResult>;
+  onCreateCustomSidebarItem?: (
+    input: CustomSidebarItemInput,
+  ) => Promise<CustomSidebarItemResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
   onNavigateItem?: () => void;
   onToggleCollapsed?: () => void;
@@ -498,7 +544,7 @@ export function AppSidebar({
     { ...websitesGroupNavItemBase, label: t("nav.embeddedWebsites") },
   ];
   const fixedToolRows: SidebarToolItem[][] = fixedToolRowsBase.map((row) =>
-    row.map(({ labelKey, ...item }) => ({ ...item, label: t(labelKey) }))
+    row.map(({ labelKey, ...item }) => ({ ...item, label: t(labelKey) })),
   );
   const fixedToolItems = fixedToolRows.flat();
   const chromeToolbarClassName = [
@@ -636,15 +682,19 @@ export function AppSidebar({
     }
     setCreatingCoderProject(true);
     try {
-      const selection = await window.electronAPI.desktopDialog.selectDirectory();
+      const selection =
+        await window.electronAPI.desktopDialog.selectDirectory();
       if (!selection.ok || !selection.path) {
         return;
       }
       const result = await window.electronAPI.assistant.createCoderProject({
-        workspaceDir: selection.path
+        workspaceDir: selection.path,
       });
       if (!result.ok) {
-        console.warn("[assistant] failed to create CODER project", result.message);
+        console.warn(
+          "[assistant] failed to create CODER project",
+          result.message,
+        );
         return;
       }
       await onRefreshAssistantNavAgents?.();
@@ -681,7 +731,7 @@ export function AppSidebar({
       const result = await onCreateCustomSidebarItem({
         label: websiteLabel,
         url: websiteUrl,
-        agentKey: websiteAgentKey
+        agentKey: websiteAgentKey,
       });
       if (!result.ok || !result.item) {
         setWebsiteCreateError(result.message || "添加内嵌网站失败。");
@@ -694,7 +744,9 @@ export function AppSidebar({
       setSidebarGroupState((current) => ({ ...current, websites: true }));
       requestNavigate(`/custom-sidebar/${result.item.id}`);
     } catch (error) {
-      setWebsiteCreateError(error instanceof Error ? error.message : String(error));
+      setWebsiteCreateError(
+        error instanceof Error ? error.message : String(error),
+      );
     } finally {
       setWebsiteCreatePending(false);
     }
@@ -969,7 +1021,11 @@ export function AppSidebar({
     const selected =
       currentAgentKey === agent.agentKey || pendingAgentKey === agent.agentKey;
     const recentChats = getAssistantNavAgentRecentChats(agent).slice(0, 5);
-    const chatCount = Math.max(0, getAssistantNavAgentNonNegativeInteger(agent.chatCount), recentChats.length);
+    const chatCount = Math.max(
+      0,
+      getAssistantNavAgentNonNegativeInteger(agent.chatCount),
+      recentChats.length,
+    );
     const unreadCount = Math.max(
       0,
       getAssistantNavAgentNonNegativeInteger(agent.unreadCount),
@@ -1047,10 +1103,7 @@ export function AppSidebar({
                             handleAssistantNewChat(event, agent)
                           }
                         >
-                          <span
-                            className="assistant-material-icon is-add"
-                            aria-hidden="true"
-                          />
+                          <EditSquareIcon width={16} />
                         </button>
                       </Tooltip>
                     </span>
@@ -1137,7 +1190,6 @@ export function AppSidebar({
             aria-label={args.label}
             title={args.label}
           >
-            <FolderIcon expanded={expanded} width={18} />
             <span className="sidebar-group-heading-main">
               {isCollapsed ? (
                 <span className="sidebar-link-icon">
@@ -1145,6 +1197,11 @@ export function AppSidebar({
                 </span>
               ) : null}
               <span className="sidebar-link-label">{args.label}</span>
+              <ArrowIcon
+                className="sidebar-group-heading-arrow"
+                expanded={expanded}
+                width={18}
+              />
               {args.status && !expanded
                 ? renderStatusBadges(args.status, "sidebar-group-status")
                 : null}
@@ -1159,15 +1216,14 @@ export function AppSidebar({
                   disabled={creatingCoderProject}
                   onClick={handleCreateCoderProject}
                 >
-                  <span
-                    className={[
-                      "assistant-material-icon",
-                      creatingCoderProject ? "is-loading" : "is-add"
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    aria-hidden="true"
-                  />
+                  {creatingCoderProject ? (
+                    <span
+                      className="assistant-material-icon is-loading"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <EditSquareIcon width={16} />
+                  )}
                 </button>
               </Tooltip>
             ) : null}
@@ -1180,10 +1236,7 @@ export function AppSidebar({
                   title="新增内嵌网站"
                   onClick={openWebsiteDialog}
                 >
-                  <span
-                    className="assistant-material-icon is-add"
-                    aria-hidden="true"
-                  />
+                  <EditSquareIcon width={16} />
                 </button>
               </Tooltip>
             ) : null}
@@ -1200,7 +1253,9 @@ export function AppSidebar({
               {assistantNavAgents.length > 0 ? (
                 assistantNavAgents.map((agent) => renderAssistantAgent(agent))
               ) : (
-                <div className="status-line">{t("sidebar.assistants.empty")}</div>
+                <div className="status-line">
+                  {t("sidebar.assistants.empty")}
+                </div>
               )}
             </div>
           ) : (
@@ -1298,7 +1353,10 @@ export function AppSidebar({
     }
 
     const desktopSsoUserLabel = desktopSsoStatus.authenticated
-      ? desktopSsoStatus.user?.name || desktopSsoStatus.user?.email || desktopSsoStatus.user?.sub || t("sidebar.sso.signedIn")
+      ? desktopSsoStatus.user?.name ||
+        desktopSsoStatus.user?.email ||
+        desktopSsoStatus.user?.sub ||
+        t("sidebar.sso.signedIn")
       : desktopSsoStatus.pending
         ? t("sidebar.sso.signingIn")
         : t("sidebar.sso.signedOut");
@@ -1450,7 +1508,8 @@ export function AppSidebar({
               <option value="">默认助手</option>
               {copilotAgentOptions.map((agent) => (
                 <option value={agent.agentKey} key={agent.agentKey}>
-                  {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                  {agent.displayName}
+                  {agent.role ? ` · ${agent.role}` : ""}
                 </option>
               ))}
             </select>
@@ -1591,11 +1650,11 @@ export function AppSidebar({
   );
 }
 
-const FolderIcon: React.FC<
+const ArrowIcon: React.FC<
   React.SVGProps<SVGSVGElement> & { expanded?: boolean }
 > = (props) => {
-  const { expanded, ...restProps } = props;
-  return expanded ? (
+  const { expanded, style, ...restProps } = props;
+  return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       height="24px"
@@ -1603,19 +1662,28 @@ const FolderIcon: React.FC<
       width="24px"
       fill="currentColor"
       {...restProps}
+      style={{
+        transition: "transform 0.3s",
+        transform: `rotate(${expanded ? 90 : 0}deg)`,
+        ...style,
+      }}
     >
-      <path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640H447l-80-80H160v480l96-320h684L837-217q-8 26-29.5 41.5T760-160H160Zm84-80h516l72-240H316l-72 240Zm0 0 72-240-72 240Zm-84-400v-80 80Z" />
+      <path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z" />
     </svg>
-  ) : (
+  );
+};
+
+const EditSquareIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => {
+  return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       height="24px"
       viewBox="0 -960 960 960"
       width="24px"
       fill="currentColor"
-      {...restProps}
+      {...props}
     >
-      <path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z" />
+      <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h357l-80 80H200v560h560v-278l80-80v358q0 33-23.5 56.5T760-120H200Zm280-360ZM360-360v-170l367-367q12-12 27-18t30-6q16 0 30.5 6t26.5 18l56 57q11 12 17 26.5t6 29.5q0 15-5.5 29.5T897-728L530-360H360Zm481-424-56-56 56 56ZM440-440h56l232-232-28-28-29-28-231 231v57Zm260-260-29-28 29 28 28 28-28-28Z" />
     </svg>
   );
 };
