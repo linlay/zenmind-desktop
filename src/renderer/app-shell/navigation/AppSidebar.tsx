@@ -509,9 +509,15 @@ export function AppSidebar({
   const [websiteCreateError, setWebsiteCreateError] = useState("");
   const [assistantChatMenu, setAssistantChatMenu] =
     useState<AssistantChatMenuState | null>(null);
+  const [agentMenu, setAgentMenu] = useState<{
+    agent: AssistantNavAgentItem;
+    x: number;
+    y: number;
+  } | null>(null);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
+  const agentMenuRef = useRef<HTMLDivElement | null>(null);
   const currentRouteAgentInfo = readAgentRouteInfo(currentRoute);
   const pendingRouteAgentInfo = pendingPath
     ? readAgentRouteInfo(pendingPath)
@@ -613,6 +619,33 @@ export function AppSidebar({
       document.removeEventListener("keydown", handleDocumentKeyDown);
     };
   }, [assistantChatMenu]);
+
+  useEffect(() => {
+    if (!agentMenu) {
+      return undefined;
+    }
+    function handleDocumentPointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        agentMenuRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setAgentMenu(null);
+    }
+    function handleDocumentKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setAgentMenu(null);
+      }
+    }
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleDocumentPointerDown);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [agentMenu]);
 
   useEffect(() => {
     const matched = assistantNavAgents.find(
@@ -1113,6 +1146,21 @@ export function AppSidebar({
                           <EditSquareIcon width={16} />
                         </button>
                       </Tooltip>
+                      <Tooltip content="更多操作">
+                        <button
+                          type="button"
+                          className="assistant-worker-icon-button"
+                          aria-label={`更多操作 ${agent.displayName}`}
+                          onClick={(event) =>
+                            handleOpenAgentMenu(event, agent)
+                          }
+                        >
+                          <span
+                            className="assistant-material-icon is-more"
+                            aria-hidden="true"
+                          />
+                        </button>
+                      </Tooltip>
                     </span>
                   </span>
                   <span className="worker-panel-preview">
@@ -1451,6 +1499,80 @@ export function AppSidebar({
     );
   }
 
+  function handleOpenAgentMenu(
+    event: MouseEvent<HTMLButtonElement>,
+    agent: AssistantNavAgentItem,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    setAgentMenu({
+      agent,
+      x: Math.min(window.innerWidth - 180, Math.max(8, rect.right - 170)),
+      y: Math.min(window.innerHeight - 140, Math.max(8, rect.bottom + 4)),
+    });
+  }
+
+  function getOpenWorkspaceDisabledReason(agent: AssistantNavAgentItem) {
+    const workspaceDir = agent.workspaceDir?.trim() ?? "";
+    if (!workspaceDir) {
+      return "工作目录不可用";
+    }
+    if (workspaceDir === "@chat") {
+      return "当前智能体没有本地工作目录";
+    }
+    if (agent.workspaceDirExists === false) {
+      return "工作目录不存在";
+    }
+    return "";
+  }
+
+  async function handleOpenWorkspace(agent: AssistantNavAgentItem) {
+    const disabledReason = getOpenWorkspaceDisabledReason(agent);
+    if (disabledReason) {
+      return;
+    }
+    setAgentMenu(null);
+    if (agent.workspaceDir) {
+      await window.electronAPI.desktopShell.openPath(agent.workspaceDir);
+    }
+  }
+
+  async function handleRenameAgent(agent: AssistantNavAgentItem) {
+    setAgentMenu(null);
+    const nextName = window.prompt("修改名称", agent.displayName);
+    if (!nextName?.trim()) {
+      return;
+    }
+    try {
+      await window.electronAPI.desktopActions.call({
+        action: "desktop.agents.updateAgent",
+        args: {
+          key: agent.agentKey,
+          definition: { name: nextName.trim() },
+        },
+      });
+      await onRefreshAssistantNavAgents?.();
+    } catch (error) {
+      console.warn("[assistant] failed to rename agent", error);
+    }
+  }
+
+  function handleEditAgent(agent: AssistantNavAgentItem) {
+    setAgentMenu(null);
+    const webviewRef = getActivePluginSurfaceWebviewRef()?.current;
+    if (webviewRef) {
+      webviewRef.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
+        action: "navigate",
+        data: {
+          path: `/agents/${encodeURIComponent(agent.agentKey)}`,
+        },
+      });
+    } else {
+      requestNavigate("/agents");
+    }
+  }
+
   function renderAssistantChatMenu() {
     if (!assistantChatMenu || typeof document === "undefined") {
       return null;
@@ -1495,6 +1617,52 @@ export function AppSidebar({
         >
           <span aria-hidden="true">×</span>
           <span>删除</span>
+        </button>
+      </div>,
+      document.body,
+    );
+  }
+
+  function renderAgentMenu() {
+    if (!agentMenu || typeof document === "undefined") {
+      return null;
+    }
+    const agent = agentMenu.agent;
+    const isCoder = agent.mode === "CODER";
+    const openWorkspaceDisabledReason = getOpenWorkspaceDisabledReason(agent);
+    return createPortal(
+      <div
+        ref={agentMenuRef}
+        className="assistant-chat-actions-menu"
+        style={{ left: agentMenu.x, top: agentMenu.y }}
+        role="menu"
+        aria-label="智能体操作"
+      >
+        <button
+          type="button"
+          role="menuitem"
+          disabled={Boolean(openWorkspaceDisabledReason)}
+          aria-disabled={Boolean(openWorkspaceDisabledReason)}
+          title={openWorkspaceDisabledReason || agent.workspaceDir}
+          onClick={() => void handleOpenWorkspace(agent)}
+        >
+          <span>打开工作目录</span>
+        </button>
+        {isCoder ? (
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => void handleRenameAgent(agent)}
+          >
+            <span>修改名称</span>
+          </button>
+        ) : null}
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => handleEditAgent(agent)}
+        >
+          <span>编辑智能体</span>
         </button>
       </div>,
       document.body,
@@ -1700,6 +1868,7 @@ export function AppSidebar({
           </div>
           {renderDesktopSsoEntry()}
           {renderAssistantChatMenu()}
+          {renderAgentMenu()}
           {renderWebsiteDialog()}
         </div>
       </div>

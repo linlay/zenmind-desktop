@@ -1611,6 +1611,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /icon\?: AssistantNavAgentIcon/);
   assert.match(contracts, /recentChats: AssistantNavChatItem\[\]/);
   assert.match(contracts, /hasPendingAwaiting:\s*boolean/);
+  assert.match(contracts, /workspaceDirExists\?: boolean/);
   assert.match(contracts, /interface AssistantNavAgentItemsResult/);
   assert.match(contracts, /interface AssistantCreateCoderProjectRequest/);
   assert.match(contracts, /interface AssistantCreateCoderProjectResult/);
@@ -1647,6 +1648,9 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(appSidebar, /handleCreateCoderProject/);
   assert.match(appSidebar, /window\.electronAPI\.desktopDialog\.selectDirectory\(\)[\s\S]*?window\.electronAPI\.assistant\.createCoderProject/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-assistant-project-button"/);
+  assert.match(appSidebar, /function getOpenWorkspaceDisabledReason\(agent: AssistantNavAgentItem\)/);
+  assert.match(appSidebar, /agent\.workspaceDirExists === false/);
+  assert.match(appSidebar, /disabled=\{Boolean\(openWorkspaceDisabledReason\)\}/);
   assert.doesNotMatch(appShell, /setInterval\([\s\S]*?listNavigationAgents/);
 });
 

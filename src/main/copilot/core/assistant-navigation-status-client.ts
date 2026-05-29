@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
@@ -44,6 +45,15 @@ type PlatformAgentSummary = {
   displayName?: unknown;
   role?: unknown;
   icon?: unknown;
+  mode?: unknown;
+  workspaceDir?: unknown;
+  workspaceRoot?: unknown;
+  workspace?: {
+    root?: unknown;
+  };
+  runtimeConfig?: {
+    workspaceRoot?: unknown;
+  };
   stats?: {
     totalCount?: unknown;
     unreadCount?: unknown;
@@ -143,6 +153,26 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 function toText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readAgentWorkspaceDir(agent: PlatformAgentSummary) {
+  return (
+    toText(agent.workspaceDir) ||
+    toText(agent.workspaceRoot) ||
+    toText(agent.workspace?.root) ||
+    toText(agent.runtimeConfig?.workspaceRoot)
+  );
+}
+
+function checkWorkspaceDirExists(workspaceDir: string) {
+  if (!workspaceDir || workspaceDir === "@chat") {
+    return false;
+  }
+  try {
+    return fs.existsSync(workspaceDir) && fs.statSync(workspaceDir).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 function toFiniteNumber(value: unknown) {
@@ -389,6 +419,7 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
   if (!agentKey) {
     return null;
   }
+  const workspaceDir = readAgentWorkspaceDir(agent);
   const chats = readAgentChats(agent, agentKey);
   const recentChats = chats.slice(0, includeChatLimit);
   const latestChat = recentChats[0] ?? null;
@@ -411,7 +442,10 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
     latestChatId: latestChat?.chatId ?? null,
     latestPreview: latestPreview.slice(0, 120),
     updatedAt: latestChat?.updatedAt ?? nowIso(),
-    recentChats
+    recentChats,
+    mode: toText(agent.mode) || undefined,
+    workspaceDir: workspaceDir || undefined,
+    workspaceDirExists: checkWorkspaceDirExists(workspaceDir),
   };
 }
 
@@ -420,6 +454,7 @@ function createCopilotAgentItem(agent: PlatformAgentSummary): AssistantNavAgentI
   if (!agentKey) {
     return null;
   }
+  const workspaceDir = readAgentWorkspaceDir(agent);
   return {
     agentKey,
     displayName: readAgentDisplayName(agent, agentKey),
@@ -432,7 +467,10 @@ function createCopilotAgentItem(agent: PlatformAgentSummary): AssistantNavAgentI
     latestChatId: null,
     latestPreview: "",
     updatedAt: nowIso(),
-    recentChats: []
+    recentChats: [],
+    mode: toText(agent.mode) || undefined,
+    workspaceDir: workspaceDir || undefined,
+    workspaceDirExists: checkWorkspaceDirExists(workspaceDir),
   };
 }
 

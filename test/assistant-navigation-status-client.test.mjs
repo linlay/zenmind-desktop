@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -242,6 +245,43 @@ test("assistant navigation snapshot reads compatible agent chat fields", () => {
   assert.equal(beta.recentChats[0].chatId, "related-1");
   assert.equal(beta.recentChats[0].chatName, "Related title");
   assert.equal(beta.latestPreview, "Related preview");
+});
+
+test("assistant navigation snapshot resolves and validates workspace directories", () => {
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-nav-workspace-"));
+  try {
+    const missingWorkspace = path.join(workspaceRoot, "missing");
+    const items = buildAssistantNavigationAgentsFromPlatformAgents([
+      {
+        key: "runtime-config",
+        name: "Runtime Config",
+        runtimeConfig: { workspaceRoot },
+        stats: { totalCount: 0, unreadCount: 0 }
+      },
+      {
+        key: "chat-agent",
+        name: "Chat Agent",
+        workspaceDir: "@chat",
+        stats: { totalCount: 0, unreadCount: 0 }
+      },
+      {
+        key: "missing-agent",
+        name: "Missing Agent",
+        workspaceRoot: missingWorkspace,
+        stats: { totalCount: 0, unreadCount: 0 }
+      }
+    ]);
+
+    const byKey = new Map(items.map((item) => [item.agentKey, item]));
+    assert.equal(byKey.get("runtime-config")?.workspaceDir, workspaceRoot);
+    assert.equal(byKey.get("runtime-config")?.workspaceDirExists, true);
+    assert.equal(byKey.get("chat-agent")?.workspaceDir, "@chat");
+    assert.equal(byKey.get("chat-agent")?.workspaceDirExists, false);
+    assert.equal(byKey.get("missing-agent")?.workspaceDir, missingWorkspace);
+    assert.equal(byKey.get("missing-agent")?.workspaceDirExists, false);
+  } finally {
+    fs.rmSync(workspaceRoot, { recursive: true, force: true });
+  }
 });
 
 test("assistant navigation push reducer handles read, unread and read_all", () => {

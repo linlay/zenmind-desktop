@@ -9,6 +9,7 @@ import {
   SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES,
   SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
+  SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
@@ -17,6 +18,7 @@ import {
 
 const PAGE_TO_PRELOAD_EVENT = "__zenmindServiceWebviewBridgeMessage";
 const PRELOAD_TO_PAGE_EVENT = "__zenmindServiceWebviewBridgeDeliver";
+const PRELOAD_TO_PAGE_ACTION_EVENT = "__zenmindServiceWebviewBridgeAction";
 const DESKTOP_WEBVIEW_BRIDGE_FLAG = "__ZENMIND_DESKTOP_WEBVIEW_BRIDGE__";
 const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = "agent-webclient.appAccessToken";
 const AGENT_APP_AUTH_CONTEXT_STORAGE_KEY = "agent-webclient.appAuthContext";
@@ -24,6 +26,7 @@ const MAIN_WORLD_SCRIPT = `
 (() => {
   const PAGE_TO_PRELOAD_EVENT = ${JSON.stringify(PAGE_TO_PRELOAD_EVENT)};
   const PRELOAD_TO_PAGE_EVENT = ${JSON.stringify(PRELOAD_TO_PAGE_EVENT)};
+  const PRELOAD_TO_PAGE_ACTION_EVENT = ${JSON.stringify(PRELOAD_TO_PAGE_ACTION_EVENT)};
   const DESKTOP_WEBVIEW_BRIDGE_FLAG = ${JSON.stringify(DESKTOP_WEBVIEW_BRIDGE_FLAG)};
   const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = ${JSON.stringify(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY)};
   const AGENT_APP_AUTH_CONTEXT_STORAGE_KEY = ${JSON.stringify(AGENT_APP_AUTH_CONTEXT_STORAGE_KEY)};
@@ -159,6 +162,18 @@ const MAIN_WORLD_SCRIPT = `
       source: window
     }));
   });
+
+  window.addEventListener(PRELOAD_TO_PAGE_ACTION_EVENT, (event) => {
+    const payload = event.detail;
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+    window.dispatchEvent(new MessageEvent("message", {
+      data: payload,
+      origin: location.origin,
+      source: window
+    }));
+  });
 })();
 `;
 
@@ -253,6 +268,14 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, (_event, payload: ServiceWe
   }
   window.dispatchEvent(new CustomEvent(PRELOAD_TO_PAGE_EVENT, { detail: payload }));
   sendBridgeDebug("route-changed", String(payload.reason || ""));
+});
+
+ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, (_event, payload: Record<string, unknown>) => {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent(PRELOAD_TO_PAGE_ACTION_EVENT, { detail: payload }));
+  sendBridgeDebug("action-dispatched", String(payload.action || ""));
 });
 
 // 暴露 API 给 浏览器JS（渲染进程）

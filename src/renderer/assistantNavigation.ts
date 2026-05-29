@@ -70,7 +70,13 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
     latestChatId,
     latestPreview: toText(record.latestPreview),
     updatedAt: toText(record.updatedAt) || latestChat?.updatedAt || "",
-    recentChats
+    recentChats,
+    mode: toText(record.mode) || undefined,
+    workspaceDir: toText(record.workspaceDir) || undefined,
+    workspaceDirExists:
+      typeof record.workspaceDirExists === "boolean"
+        ? record.workspaceDirExists
+        : undefined,
   };
 }
 

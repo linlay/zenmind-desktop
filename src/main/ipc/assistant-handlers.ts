@@ -79,24 +79,17 @@ async function saveAssistantChatExport(
   return { ok: true, message: "已下载会话导出。", filePath: exportPath };
 }
 
-function coderAgentKeyFromWorkspace(workspaceDir: string): string {
-  const segments = workspaceDir.replace(/[/\\]+$/, "").split(/[/\\]/);
-  const base = (segments[segments.length - 1] || "project")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return `coder-${base || "project"}`;
+function workspaceNameFromPath(workspaceDir: string): string {
+  const normalized = String(workspaceDir || "").trim();
+  return normalized.split(/[\\/]+/).filter(Boolean).pop() || "project";
 }
 
 function buildCoderProjectAgentCreateRequest(workspaceDir: string) {
-  const key = coderAgentKeyFromWorkspace(workspaceDir);
-  const name = key;
   return {
-    key,
     definition: {
-      key,
-      name,
+      name: workspaceNameFromPath(workspaceDir),
       mode: "CODER",
+      icon: { name: "folder" },
       workspace: { root: workspaceDir },
       runtimeConfig: { workspaceRoot: workspaceDir },
       visibility: { scopes: ["nav", "copilot"] }
@@ -226,14 +219,14 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
         method: "POST",
         body: request
       });
-      const agentKey = String(response?.key || request.key).trim();
+      const agentKey = String(response?.key || "").trim();
       assistantNavigationStatusClient?.scheduleRefresh(0);
       return { ok: true, message: "已创建 CODER 智能体。", agentKey, workspaceDir };
     } catch (error) {
       return {
         ok: false,
         message: error instanceof Error ? error.message : String(error),
-        agentKey: request.key,
+        agentKey: "",
         workspaceDir
       };
     }

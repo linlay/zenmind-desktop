@@ -139,6 +139,9 @@ export interface AssistantNavAgentItem {
   latestPreview: string;
   updatedAt: string;
   recentChats: AssistantNavChatItem[];
+  mode?: string;
+  workspaceDir?: string;
+  workspaceDirExists?: boolean;
 }
 
 export interface AssistantNavAgentItemsResult {

@@ -1457,23 +1457,14 @@ function workspaceNameFromPath(workspaceDir: string): string {
   return normalized.split(/[\\/]+/).filter(Boolean).pop() || "project";
 }
 
-function coderAgentKeyFromWorkspace(workspaceDir: string): string {
-  const base = workspaceNameFromPath(workspaceDir)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return `coder-${base || "project"}`;
-}
-
 function buildCoderProjectAgentCreateRequest(workspaceDir: string) {
-  const key = coderAgentKeyFromWorkspace(workspaceDir);
-  const name = key;
   return {
-    key,
     definition: {
-      key,
-      name,
+      name: workspaceNameFromPath(workspaceDir),
       mode: "CODER",
+      icon: {
+        name: "folder"
+      },
       workspace: {
         root: workspaceDir
       },

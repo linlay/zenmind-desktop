@@ -15,16 +15,16 @@ function loadCoderProjectHelpers() {
     .slice(start, end)
     .replaceAll(": string", "")
     .replaceAll(": string[]", "");
-  return Function(`${helperSource}; return { coderAgentKeyFromWorkspace, buildCoderProjectAgentCreateRequest };`)();
+  return Function(`${helperSource}; return { workspaceNameFromPath, buildCoderProjectAgentCreateRequest };`)();
 }
 
-test("CODER project helper creates matching agent keys from workspace paths", () => {
-  const { coderAgentKeyFromWorkspace } = loadCoderProjectHelpers();
+test("CODER project helper derives names from workspace paths", () => {
+  const { workspaceNameFromPath } = loadCoderProjectHelpers();
 
-  assert.equal(coderAgentKeyFromWorkspace("/Users/demo/Project/agent-coder"), "coder-agent-coder");
-  assert.equal(coderAgentKeyFromWorkspace("/Users/demo/Project/My App"), "coder-my-app");
-  assert.equal(coderAgentKeyFromWorkspace("C:\\Users\\demo\\Project\\Agent Coder"), "coder-agent-coder");
-  assert.equal(coderAgentKeyFromWorkspace("/Users/demo/项目"), "coder-project");
+  assert.equal(workspaceNameFromPath("/Users/demo/Project/agent-coder"), "agent-coder");
+  assert.equal(workspaceNameFromPath("/Users/demo/Project/My App"), "My App");
+  assert.equal(workspaceNameFromPath("C:\\Users\\demo\\Project\\Agent Coder"), "Agent Coder");
+  assert.equal(workspaceNameFromPath("/Users/demo/项目"), "项目");
 });
 
 test("CODER project helper builds the expected agent create payload", () => {
@@ -32,11 +32,12 @@ test("CODER project helper builds the expected agent create payload", () => {
   const payload = buildCoderProjectAgentCreateRequest("/Users/demo/Project/agent-coder");
 
   assert.deepEqual(payload, {
-    key: "coder-agent-coder",
     definition: {
-      key: "coder-agent-coder",
-      name: "coder-agent-coder",
+      name: "agent-coder",
       mode: "CODER",
+      icon: {
+        name: "folder"
+      },
       workspace: {
         root: "/Users/demo/Project/agent-coder"
       },
