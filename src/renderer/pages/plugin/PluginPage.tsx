@@ -481,13 +481,32 @@ export function PluginPage({
     webUrl,
     webviewReloadKey,
   ]);
-  const webviewSrcUrl = useMemo(
-    () =>
-      loadInitialEmbeddedUrlDirectly
-        ? embeddedUrl
-        : buildPluginWebviewSrcUrl(embeddedUrl),
-    [embeddedUrl, loadInitialEmbeddedUrlDirectly],
+  const webviewOriginSrcUrl = useMemo(
+    () => buildPluginWebviewSrcUrl(embeddedUrl),
+    [embeddedUrl],
   );
+  const webviewDirectLoadScope = [
+    service?.id ?? "service",
+    webviewReloadKey,
+    webviewOriginSrcUrl,
+  ].join(":");
+  const initialWebviewSrcRef = useRef<{ scope: string; url: string } | null>(
+    null,
+  );
+  if (
+    loadInitialEmbeddedUrlDirectly &&
+    embeddedUrl &&
+    initialWebviewSrcRef.current?.scope !== webviewDirectLoadScope
+  ) {
+    initialWebviewSrcRef.current = {
+      scope: webviewDirectLoadScope,
+      url: embeddedUrl,
+    };
+  }
+  const webviewSrcUrl =
+    loadInitialEmbeddedUrlDirectly
+      ? (initialWebviewSrcRef.current?.url ?? embeddedUrl)
+      : webviewOriginSrcUrl;
   const webviewBaseKey = useMemo(
     () => [service?.id ?? "service", webviewReloadKey, webviewSrcUrl].join(":"),
     [service?.id, webviewReloadKey, webviewSrcUrl],

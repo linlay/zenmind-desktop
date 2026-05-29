@@ -2139,7 +2139,10 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /skipContextRegistration\?: boolean/);
   assert.match(pluginPage, /loadInitialEmbeddedUrlDirectly\?: boolean/);
   assert.match(pluginPage, /suppressInitialLoadingCopy\?: boolean/);
-  assert.match(pluginPage, /loadInitialEmbeddedUrlDirectly[\s\S]{0,180}\?\s*embeddedUrl\s*:\s*buildPluginWebviewSrcUrl\(embeddedUrl\)/);
+  assert.match(pluginPage, /const webviewOriginSrcUrl = useMemo\([\s\S]{0,120}buildPluginWebviewSrcUrl\(embeddedUrl\)/);
+  assert.match(pluginPage, /const webviewDirectLoadScope = \[[\s\S]{0,160}webviewOriginSrcUrl/);
+  assert.match(pluginPage, /initialWebviewSrcRef\.current\?\.scope !== webviewDirectLoadScope/);
+  assert.match(pluginPage, /loadInitialEmbeddedUrlDirectly[\s\S]{0,120}\?\s*\(initialWebviewSrcRef\.current\?\.url \?\? embeddedUrl\)[\s\S]{0,80}:\s*webviewOriginSrcUrl/);
   const taskBoardPage = readSourceFile("src", "renderer", "pages", "task-board", "TaskBoardPage.tsx");
   assert.match(taskBoardPage, /loadInitialEmbeddedUrlDirectly/);
   assert.match(taskBoardPage, /suppressInitialLoadingCopy/);
