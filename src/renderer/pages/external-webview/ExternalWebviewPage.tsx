@@ -123,6 +123,8 @@ const BOOKMARK_MENU_MAX_HEIGHT = 340;
 type ExternalWebviewPaneProps = {
   tab: ExternalWebviewTabState;
   active: boolean;
+  surfaceId?: string;
+  surfaceLabel?: string;
   onTabStateChange: (tabId: string, patch: ExternalWebviewTabPatch) => void;
   onWebviewRefChange: (tabId: string, webview: Electron.WebviewTag | null) => void;
 };
@@ -350,11 +352,14 @@ function areStringArraysEqual(first: string[], second: string[]) {
 function ExternalWebviewPane({
   tab,
   active,
+  surfaceId,
+  surfaceLabel,
   onTabStateChange,
   onWebviewRefChange
 }: ExternalWebviewPaneProps) {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const initialSrcRef = useRef(tab.currentUrl);
+  const registeredDebugWebContentsIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     const webview = webviewRef.current;
@@ -364,9 +369,11 @@ function ExternalWebviewPane({
 
     const syncFromWebview = (patch: ExternalWebviewTabPatch = {}) => {
       const nextPatch: ExternalWebviewTabPatch = { ...patch };
+      let nextWebContentsId: number | null = null;
 
       try {
-        nextPatch.guestId = webview.getWebContentsId();
+        nextWebContentsId = webview.getWebContentsId();
+        nextPatch.guestId = nextWebContentsId;
       } catch {
         // Ignore until Electron attaches the underlying guest contents.
       }
@@ -402,6 +409,18 @@ function ExternalWebviewPane({
       }
 
       onTabStateChange(tab.id, nextPatch);
+
+      if (nextWebContentsId) {
+        registeredDebugWebContentsIdRef.current = nextWebContentsId;
+        void window.electronAPI.debug.registerWebviewSurface({
+          webContentsId: nextWebContentsId,
+          kind: "external",
+          ...(surfaceId ? { surfaceId } : {}),
+          ...(surfaceLabel ? { surfaceLabel } : {}),
+          tabId: tab.id,
+          url: nextPatch.currentUrl ?? tab.currentUrl
+        });
+      }
     };
 
     const handleDomReady = () => {
@@ -443,6 +462,10 @@ function ExternalWebviewPane({
     syncFromWebview();
 
     return () => {
+      if (registeredDebugWebContentsIdRef.current) {
+        void window.electronAPI.debug.unregisterWebviewSurface(registeredDebugWebContentsIdRef.current);
+        registeredDebugWebContentsIdRef.current = null;
+      }
       webview.removeEventListener("dom-ready", handleDomReady);
       webview.removeEventListener("did-start-loading", handleDidStartLoading);
       webview.removeEventListener("did-stop-loading", handleDidStopLoading);
@@ -451,7 +474,7 @@ function ExternalWebviewPane({
       webview.removeEventListener("page-title-updated", handlePageTitleUpdated);
       webview.removeEventListener("page-favicon-updated", handlePageFaviconUpdated);
     };
-  }, [onTabStateChange, tab.id]);
+  }, [onTabStateChange, surfaceId, surfaceLabel, tab.currentUrl, tab.id]);
 
   return (
     <div
@@ -2368,6 +2391,8 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
             key={tab.id}
             tab={tab}
             active={tab.id === browserState.activeTabId}
+            surfaceId={surfaceId}
+            surfaceLabel={surfaceLabel ?? title}
             onTabStateChange={handleTabStateChange}
             onWebviewRefChange={(tabId, webview) => {
               if (webview) {

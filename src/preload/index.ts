@@ -304,6 +304,30 @@ const api: DesktopApi = {
       ipcRenderer.send("diagnostics.rendererError", report);
     }
   },
+  debug: {
+    openViewer: () => ipcRenderer.invoke("debug.openViewer"),
+    closeViewer: () => ipcRenderer.invoke("debug.closeViewer"),
+    listEvents: () => ipcRenderer.invoke("debug.listEvents"),
+    clearEvents: () => ipcRenderer.invoke("debug.clearEvents"),
+    registerWebviewSurface: (metadata) => ipcRenderer.invoke("debug.registerWebviewSurface", metadata),
+    unregisterWebviewSurface: (webContentsId: number) =>
+      ipcRenderer.invoke("debug.unregisterWebviewSurface", webContentsId),
+    openWebviewDevTools: (webContentsId: number) =>
+      ipcRenderer.invoke("debug.openWebviewDevTools", webContentsId),
+    onEvent: (listener) => {
+      const handleDebugEvent = (
+        _event: Electron.IpcRendererEvent,
+        debugEvent: Parameters<typeof listener>[0]
+      ) => {
+        listener(debugEvent);
+      };
+
+      ipcRenderer.on("debug.event", handleDebugEvent);
+      return () => {
+        ipcRenderer.off("debug.event", handleDebugEvent);
+      };
+    }
+  },
   desktopPet: {
     getSettings: () => ipcRenderer.invoke("desktopPet.getSettings"),
     getState: () => ipcRenderer.invoke("desktopPet.getState"),

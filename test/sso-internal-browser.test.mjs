@@ -18,7 +18,11 @@ test("Desktop SSO login and logout open the embedded SSO browser tab", () => {
   assert.match(source, /partition: DESKTOP_SSO_WEBVIEW_PARTITION/u);
   assert.match(source, /userAgent: getDesktopSsoBrowserUserAgent\(\)/u);
   assert.match(source, /session\.fromPartition\(DESKTOP_SSO_WEBVIEW_PARTITION\)/u);
-  assert.match(source, /setProxy\(\{\s*proxyRules: "direct:\/\/"\s*\}\)/u);
+  assert.match(source, /setProxy\(isDesktopSsoLocalProxyUrl\(input\.url\)\s*\?\s*\{\s*mode: "direct"\s*\}\s*:\s*\{\s*mode: "system"\s*\}\)/u);
+  assert.match(source, /input\.resolveRedirect === false\s*\?\s*input\.url/u);
+  assert.match(source, /completeDesktopSsoLoginFromWebview\(contents, url\)/u);
+  assert.match(source, /contents\.on\("did-stop-loading"[\s\S]{0,120}completeDesktopSsoLoginFromWebview\(contents, contents\.getURL\(\)\)/u);
+  assert.match(source, /async function mirrorDesktopSsoSessionCookiesToDefault\(sourceSession: Session\)/u);
   assert.match(source, /async function syncDesktopSsoBrowserCookies\(\)/u);
   assert.match(source, /session\.defaultSession/u);
   assert.match(source, /getDesktopSsoProxyBrowserCookieDetails\(\)/u);
