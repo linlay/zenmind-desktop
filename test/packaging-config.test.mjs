@@ -68,6 +68,15 @@ test("main-process bundle keeps process tree parser test export bound", () => {
   assert.doesNotMatch(bundledMain, /(?<!:)parseProcessTreeRowsFromPowerShell[,}]/);
 });
 
+test("main-process bundle handles installer shutdown command from a second instance", () => {
+  const bundledMain = fs.readFileSync(bundledMainPath, "utf8");
+
+  assert.match(bundledMain, /--zenmind-shutdown-for-update/);
+  assert.match(bundledMain, /second-instance/);
+  assert.match(bundledMain, /before-quit/);
+  assert.match(bundledMain, /shutdownCleanupPromise/);
+});
+
 test("custom uninstall assets default to keeping data and delete desktop plus program data on request", () => {
   const installerScript = fs.readFileSync(installerIncludePath, "utf8");
   const uninstallScript = fs.readFileSync(uninstallScriptPath, "utf8");
@@ -88,6 +97,21 @@ test("custom uninstall assets default to keeping data and delete desktop plus pr
   assert.doesNotMatch(uninstallScript, /Library\/Application Support\/zenmind-desktop/);
   assert.match(uninstallScript, /default button "Keep Data"/);
   assert.match(distWinDockerScript, /electronuserland\/builder:wine/);
+});
+
+test("windows installer requests graceful app shutdown and cleans managed service processes before overwrite", () => {
+  const installerScript = fs.readFileSync(installerIncludePath, "utf8");
+
+  assert.match(installerScript, /!macro customCheckAppRunning/);
+  assert.match(installerScript, /--zenmind-shutdown-for-update/);
+  assert.match(installerScript, /Stop-ZenMindManagedProcesses/);
+  assert.match(installerScript, /Get-CimInstance Win32_Process/);
+  assert.match(installerScript, /%APPDATA%\\ZenMind/);
+  assert.match(installerScript, /%USERPROFILE%\\.zenmind\\.desktop\\state/);
+  assert.match(installerScript, /Remove-Item -LiteralPath \$\$_.FullName -Force/);
+  assert.match(installerScript, /taskkill \/f \/im "\$\{APP_EXECUTABLE_FILENAME\}"/);
+  assert.match(installerScript, /nsExec::ExecToLog `%SYSTEMROOT%\\System32\\WindowsPowerShell.*Stop-ZenMindManagedProcesses"`\s+Pop \$R2/s);
+  assert.match(installerScript, /nsExec::ExecToLog `"\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}" --zenmind-shutdown-for-update`\s+Pop \$R2/);
 });
 
 test("dist-win docker flow syncs builtin assets on the host before entering Docker", () => {

@@ -2300,6 +2300,37 @@ test("forceStopServiceInstallDir cleans managed processes for agent-platform on 
   assert.deepEqual(removedPidFiles, ["/tmp/agent-platform.pid"]);
 });
 
+test("getServiceState removes stale pid files that point to unrelated live processes", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-stale-live-pid-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const fixture = createStartupCoreAssetsFixture();
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot);
+
+  try {
+    await installBuiltinService(app, "agent-platform");
+    markInitializationState(getTestInitializationStatePath(userDataRoot, "agent-platform"), "v1.0.0");
+    const pidPath = getTestPidPath(userDataRoot, "agent-platform", "agent-platform.pid");
+    fs.mkdirSync(path.dirname(pidPath), { recursive: true });
+    fs.writeFileSync(pidPath, `${process.pid}\n`, "utf8");
+
+    const state = await getServiceState(app, "agent-platform");
+
+    assert.notEqual(state.status, "running");
+    assert.equal(state.healthMeta.pid, null);
+    assert.equal(fs.existsSync(pidPath), false);
+  } finally {
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("shutdown stop timeout defaults are shorter on Windows overwrite exits", () => {
+  assert.equal(__testInternals.getShutdownStopCommandTimeoutMs(undefined, "win32"), 1000);
+  assert.equal(__testInternals.getShutdownStopCommandTimeoutMs(undefined, "darwin"), 2500);
+  assert.equal(__testInternals.getShutdownStopCommandTimeoutMs(75, "win32"), 75);
+});
+
 test("runServiceRestart does not start the service when stop fails", async () => {
   let started = false;
 
