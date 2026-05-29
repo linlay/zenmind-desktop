@@ -1200,7 +1200,7 @@ export function AppSidebar({
               {assistantNavAgents.length > 0 ? (
                 assistantNavAgents.map((agent) => renderAssistantAgent(agent))
               ) : (
-                <div className="status-line">暂无智能体</div>
+                <div className="status-line">{t("sidebar.assistants.empty")}</div>
               )}
             </div>
           ) : (

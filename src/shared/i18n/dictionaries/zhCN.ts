@@ -61,6 +61,7 @@ export const zhCNMessages = {
   "sidebar.sso.reopen": "重新打开",
   "sidebar.sso.busy": "处理中",
   "sidebar.sso.confirmSignOut": "确定退出当前登录吗？",
+  "sidebar.assistants.empty": "暂无智能体",
 
   "settings.title": "设置",
   "settings.description": "管理当前设置模块。",

@@ -709,6 +709,23 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.doesNotMatch(pluginPage, /agent:start-new-conversation/);
 });
 
+test("assistant sidebar empty state is localized", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(sidebarSource, /<div className="status-line">\{t\("sidebar\.assistants\.empty"\)\}<\/div>/);
+  assert.doesNotMatch(sidebarSource, /暂无智能体/);
+  assert.match(zhCN, /"sidebar\.assistants\.empty": "暂无智能体"/);
+  assert.match(enUS, /"sidebar\.assistants\.empty": "No assistants"/);
+});
+
 test("settings route keeps the global sidebar and renders page-internal split sections", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(

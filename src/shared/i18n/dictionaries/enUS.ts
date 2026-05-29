@@ -61,6 +61,7 @@ export const enUSMessages = {
   "sidebar.sso.reopen": "Reopen",
   "sidebar.sso.busy": "Working",
   "sidebar.sso.confirmSignOut": "Sign out of the current account?",
+  "sidebar.assistants.empty": "No assistants",
 
   "settings.title": "Settings",
   "settings.description": "Manage the current settings module.",
