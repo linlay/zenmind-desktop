@@ -48,7 +48,25 @@ export interface ServicesIpcHandlerOptions {
   getArchiveExtensions?: (platform: string) => string[];
 
   // Startup restore state
-  startupRestoreController?: { getState: () => any };
+  startupRestoreController?: {
+    getState: () => any;
+    beginSession: (mode: string) => void;
+    updateService: (serviceId: string, phase: any, message: string) => void;
+    finishSession: (mode: string, failures: any[]) => void;
+    failCurrentSession: (message: string) => void;
+    setEnvImportRequired: (message?: string) => void;
+  };
+
+  // Environment zip import operations (TDD index-ts-slimming)
+  importEnvZipToZenmind?: (app: any, zipPath: string, platform: string) => Promise<{ copiedFiles: number; skippedFiles: number }>;
+  loadBuiltinServices?: (app: any) => void;
+  loadInstalledPlugins?: (app: any) => void;
+  notifyServicesChanged?: () => void;
+  runStartupPreparation?: (app: any, callbacks: {
+    onModeResolved: (mode: string) => void;
+    onStarting: (serviceId: string) => void;
+    onProgress: (serviceId: string, phase: any, message: string) => void;
+  }) => Promise<{ mode: string; failures: any[] }>;
 
   // Session cache clearing (injected to allow testing without electron)
   clearSessionCache?: () => Promise<void>;
@@ -86,7 +104,12 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     logStreamSubscriptions,
     getArchiveExtensions,
     startupRestoreController,
-    clearSessionCache
+    clearSessionCache,
+    importEnvZipToZenmind,
+    loadBuiltinServices,
+    loadInstalledPlugins,
+    notifyServicesChanged,
+    runStartupPreparation
   } = options;
 
   // ---------------------------------------------------------------------------
@@ -97,6 +120,66 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
   ipcMain.handle("services.getStartupRestoreState", async () =>
     startupRestoreController?.getState()
   );
+
+  ipcMain.handle("services.importEnvZip", async () => {
+    const result = await showFileDialog({
+      title: "选择 env.zip",
+      defaultPath: app.getPath("home"),
+      properties: ["openFile"],
+      filters: [{ name: "env.zip", extensions: ["zip"] }]
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, message: "已取消导入。" };
+    }
+
+    if (!importEnvZipToZenmind || !runStartupPreparation) {
+      return { ok: false, message: "环境初始化配置不可用。" };
+    }
+
+    try {
+      startupRestoreController?.beginSession("bootstrap");
+      startupRestoreController?.updateService("zenmind-app-server", "installing", "正在导入 env.zip...");
+      notifyServicesChanged?.();
+
+      const importResult = await importEnvZipToZenmind(app, result.filePaths[0], platform);
+      console.info(
+        `[main] imported env.zip: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
+      );
+
+      loadBuiltinServices?.(app);
+      loadInstalledPlugins?.(app);
+      notifyServicesChanged?.();
+
+      void runServiceMutation(() => runStartupPreparation(app, {
+        onModeResolved: (mode: string) => {
+          startupRestoreController?.beginSession(mode);
+        },
+        onStarting: (serviceId: string) => {
+          startupRestoreController?.updateService(serviceId, "starting", "启动中...");
+        },
+        onProgress: (serviceId: string, phase: any, message: string) => {
+          startupRestoreController?.updateService(serviceId, phase, message);
+          notifyServicesChanged?.();
+        }
+      }))
+        .then((result) => {
+          startupRestoreController?.finishSession(result.mode, result.failures);
+          notifyServicesChanged?.();
+        })
+        .catch((error) => {
+          startupRestoreController?.failCurrentSession(error instanceof Error ? error.message : String(error));
+          notifyServicesChanged?.();
+        });
+
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      startupRestoreController?.setEnvImportRequired(message);
+      notifyServicesChanged?.();
+      return { ok: false, message };
+    }
+  });
 
   ipcMain.handle("services.getStatus", async (_event: any, serviceId: string) =>
     getServiceState(app, serviceId)

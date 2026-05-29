@@ -197,7 +197,8 @@ const api: DesktopApi = {
       return () => {
         ipcRenderer.off("log-viewer.maximized", handleMaximized);
       };
-    }
+    },
+    importEnvZip: () => ipcRenderer.invoke("services.importEnvZip")
   },
   plugins: {
     install: () => ipcRenderer.invoke("plugins.install"),

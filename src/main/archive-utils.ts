@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import fs from "node:fs";
 import { beginStartupTiming } from "./startup-timing";
 
 function isZipArchive(archivePath: string) {
@@ -49,6 +50,23 @@ function runPowerShell(script: string) {
   );
 }
 
+function runPowerShellAsync(script: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "powershell",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+      { encoding: "utf8", timeout: SYNC_TIMEOUT_MS },
+      (error, stdout) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(stdout || "");
+        }
+      }
+    );
+  });
+}
+
 function decodeBase64Utf8(content: string) {
   const trimmed = content.trim();
   return trimmed ? Buffer.from(trimmed, "base64").toString("utf8") : "";
@@ -97,27 +115,65 @@ try {
   );
 }
 
-export function extractArchiveToDir(archivePath: string, targetDir: string) {
+export async function extractArchiveToDir(archivePath: string, targetDir: string): Promise<void> {
   const timing = beginStartupTiming("extractArchiveToDir", {
     archive: archivePath.split(/[\\/]/u).pop() ?? archivePath
   });
   const archiveType = ensureSupportedArchive(archivePath);
   try {
+    fs.mkdirSync(targetDir, { recursive: true });
+
     if (archiveType === "zip") {
-      runPowerShell(`
+      try {
+        await new Promise<void>((resolve, reject) => {
+          execFile(
+            "tar.exe",
+            ["-xf", archivePath, "-C", targetDir],
+            { timeout: SYNC_TIMEOUT_MS },
+            (error) => {
+              if (error) {
+                reject(error);
+              } else {
+                resolve();
+              }
+            }
+          );
+        });
+        return;
+      } catch (tarError) {
+        console.warn(`[archive-utils] tar.exe failed to extract, falling back to PowerShell:`, tarError);
+        try {
+          fs.rmSync(targetDir, { recursive: true, force: true });
+        } catch {}
+        fs.mkdirSync(targetDir, { recursive: true });
+        await runPowerShellAsync(`
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $dest = ${quotePowerShell(targetDir)}
-if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Recurse -Force }
 [System.IO.Compression.ZipFile]::ExtractToDirectory(${quotePowerShell(archivePath)}, $dest)
 `);
-      return;
+        return;
+      }
     }
 
-    execFileSync(tarCommand(), ["-xzf", archivePath, "-C", targetDir], { timeout: SYNC_TIMEOUT_MS });
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        tarCommand(),
+        ["-xzf", archivePath, "-C", targetDir],
+        { timeout: SYNC_TIMEOUT_MS },
+        (error) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
+        }
+      );
+    });
   } finally {
     timing.end({ type: archiveType });
   }
 }
+
 
 export function readFileFromArchive(archivePath: string, entryPath: string) {
   const archiveType = ensureSupportedArchive(archivePath);

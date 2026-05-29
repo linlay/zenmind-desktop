@@ -46,12 +46,15 @@ test("startup gate keeps waiting while services are still loading or starting", 
 });
 
 test("startup gate shows the bootstrap progress card only while bootstrap needs attention", () => {
-  assert.equal(shouldShowStartupProgressCard(null, false), false);
-  assert.equal(shouldShowStartupProgressCard({ mode: "restore", phase: "running" }, false), false);
+  assert.equal(shouldShowStartupProgressCard(null, false), true);
+  assert.equal(shouldShowStartupProgressCard(null, true), false);
+  assert.equal(shouldShowStartupProgressCard({ mode: "restore", phase: "running" }, false), true);
+  assert.equal(shouldShowStartupProgressCard({ mode: "restore", phase: "running" }, true), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "running" }, false), true);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "failed" }, false), true);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "succeeded" }, false), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "succeeded" }, true), false);
+  assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "env-import-required" }, false), false);
 });
 
 test("startup gate routes root traffic to control center during bootstrap and task board otherwise", () => {
@@ -59,6 +62,7 @@ test("startup gate routes root traffic to control center during bootstrap and ta
   assert.equal(resolveStartupRootPath({ mode: "bootstrap", phase: "running" }, false), "/control-center");
   assert.equal(resolveStartupRootPath({ mode: "bootstrap", phase: "succeeded" }, true), "/kanban");
   assert.equal(resolveStartupRootPath({ mode: "restore", phase: "running" }, false), "/kanban");
+  assert.equal(resolveStartupRootPath({ phase: "env-import-required" }, false), "/control-center");
 });
 
 test("startup gate only auto-opens the assistant after bootstrap succeeds", () => {

@@ -2605,7 +2605,7 @@ export async function installBuiltinService(
 
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `${service.id}-extract-`));
     try {
-      extractArchiveToDir(assetPath, tempRoot);
+      await extractArchiveToDir(assetPath, tempRoot);
       didExtract = true;
       const entries = fs.readdirSync(tempRoot);
       if (entries.length !== 1) {

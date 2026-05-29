@@ -18,6 +18,7 @@ export type StartupRestoreController = {
   updateService(serviceId: ServiceId, phase: StartupRestoreServiceState["phase"], message?: string): StartupRestoreState;
   finishSession(mode: StartupRestoreMode, failures: string[]): StartupRestoreState;
   failCurrentSession(message: string): StartupRestoreState;
+  setEnvImportRequired(message?: string): StartupRestoreState;
 };
 
 export function createStartupRestoreState(
@@ -133,6 +134,14 @@ export function createStartupRestoreController(
         phase: "failed",
         currentServiceId: null,
         failedServiceId: state.currentServiceId,
+        message
+      });
+    },
+    setEnvImportRequired(message = "首次安装需要导入 env.zip") {
+      const state = cloneStartupRestoreState(currentState);
+      return commitState({
+        ...state,
+        phase: "env-import-required",
         message
       });
     }

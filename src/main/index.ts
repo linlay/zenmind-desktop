@@ -48,6 +48,11 @@ import {
   verifyServiceState,
   writeServiceConfig
 } from "./services/manager";
+import {
+  hideWindowsForShutdown,
+  runWithShutdownDeadline,
+  prepareQuitUi as prepareQuitUiFromCleanup
+} from "./shutdown-cleanup";
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
@@ -279,6 +284,7 @@ const mainProcessContext = createMainProcessContext({
 const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
 const LOG_VIEWER_ROUTE = "/log-viewer";
 const DEBUG_VIEWER_SHORTCUT = "CommandOrControl+Shift+D";
+const SHUTDOWN_CLEANUP_DEADLINE_MS = 10_000;
 const QUICK_AGENT_WEBCLIENT_PATHNAMES = new Set(["/copilot"]);
 const QUICK_AGENT_OPEN_RETRY_COUNT = 24;
 const QUICK_AGENT_OPEN_RETRY_MS = 180;
@@ -2089,8 +2095,14 @@ function registerIpcHandlers(context: MainProcessContext) {
     revealPathInFileManager,
     getServiceWebviewPreloadPath,
     getServiceWebviewPreloadUrl,
-    startupRestoreController
+    startupRestoreController,
+    importEnvZipToZenmind,
+    loadBuiltinServices,
+    loadInstalledPlugins,
+    notifyServicesChanged,
+    runStartupPreparation
   }));
+
   registerMarketplaceIpcHandlers(ipcMain, createMarketplaceIpcHandlerOptions(context, {
     t,
     runServiceMutation,
@@ -2199,15 +2211,9 @@ if (gotSingleInstanceLock) {
     showMainWindow();
   });
 
-  app.whenReady().then(async () => {
+  app.whenReady().then(() => {
     ensureDarwinDockIdentity();
-    if (!(await ensureFirstInstallEnvZipImported())) {
-      app.quit();
-      return;
-    }
     ensureDataRoot(app);
-    loadBuiltinServices(app);
-    loadInstalledPlugins(app);
     registerIpcHandlers(mainProcessContext);
     configureAppMediaPermissions();
     createWindow();
@@ -2220,6 +2226,41 @@ if (gotSingleInstanceLock) {
     buildApplicationMenu();
     registerQuickAssistantShortcut();
     registerDebugViewerShortcut();
+
+    if (appState.mainWindow) {
+      let pipelineStarted = false;
+      const startPipeline = () => {
+        if (pipelineStarted) return;
+        pipelineStarted = true;
+        void handleStartupPipeline();
+      };
+      appState.mainWindow.once("ready-to-show", startPipeline);
+      // Fallback timeout to ensure startup progress starts even if ready-to-show is delayed or skipped
+      setTimeout(startPipeline, 1000);
+    } else {
+      void handleStartupPipeline();
+    }
+
+    app.on("activate", () => {
+      if (nativeDialogController.isOpen()) {
+        return;
+      }
+      showMainWindow();
+    });
+  });
+}
+
+async function handleStartupPipeline() {
+  try {
+    if (requireEnvZipImportAtStartup) {
+      startupRestoreController.setEnvImportRequired();
+      notifyServicesChanged();
+      return;
+    }
+    loadBuiltinServices(app);
+    loadInstalledPlugins(app);
+    notifyServicesChanged();
+
     void runServiceMutation(() => runStartupPreparation(app, {
       onModeResolved: (mode) => {
         startupRestoreController.beginSession(mode);
@@ -2243,33 +2284,33 @@ if (gotSingleInstanceLock) {
         startupRestoreController.failCurrentSession(error instanceof Error ? error.message : String(error));
         console.error("failed to prepare startup services", error);
       });
-    app.on("activate", () => {
-      if (nativeDialogController.isOpen()) {
-        return;
-      }
-      showMainWindow();
-    });
-  });
+  } catch (error) {
+    console.error("Failed in startup pipeline", error);
+  }
 }
 
-function runShutdownCleanup() {
+function runShutdownCleanup(): Promise<void> {
   if (appState.shutdownCleanupPromise) {
     return appState.shutdownCleanupPromise;
   }
   const shutdownStartedAt = Date.now();
   const processCleanupSnapshot = captureManagedProcessCleanupSnapshot(app);
-  appState.shutdownCleanupPromise = stopRunningServicesForShutdown(app)
-    .catch((error) => {
-      console.error("failed while shutting down desktop services", error);
-    })
-    .then(async () => {
-      const cleanupStartedAt = Date.now();
-      await forceCleanupManagedProcesses(app, processCleanupSnapshot);
-      console.log(`[main] desktop service force cleanup finished in ${Date.now() - cleanupStartedAt}ms`);
-    })
-    .catch((error) => {
-      console.error("failed while force-cleaning desktop service processes", error);
-    })
+  appState.shutdownCleanupPromise = runWithShutdownDeadline(
+    () => stopRunningServicesForShutdown(app)
+      .catch((error) => {
+        console.error("failed while shutting down desktop services", error);
+      })
+      .then(async () => {
+        const cleanupStartedAt = Date.now();
+        await forceCleanupManagedProcesses(app, processCleanupSnapshot);
+        console.log(`[main] desktop service force cleanup finished in ${Date.now() - cleanupStartedAt}ms`);
+      })
+      .catch((error) => {
+        console.error("failed while force-cleaning desktop service processes", error);
+      }),
+    { timeoutMs: SHUTDOWN_CLEANUP_DEADLINE_MS }
+  )
+    .then(() => undefined)
     .finally(() => {
       appState.shutdownCleanupComplete = true;
       console.log(`[main] app shutdown cleanup finished in ${Date.now() - shutdownStartedAt}ms`);
@@ -2282,12 +2323,10 @@ function hasInstallerShutdownArg(commandLine: string[]) {
 }
 
 function prepareQuitUi() {
-  for (const targetWindow of BrowserWindow.getAllWindows()) {
-    if (!targetWindow.isDestroyed() && targetWindow.isVisible()) {
-      targetWindow.hide();
-    }
-  }
-  appTrayController.destroy();
+  prepareQuitUiFromCleanup({
+    getAllWindows: () => BrowserWindow.getAllWindows(),
+    destroyTray: () => appTrayController.destroy()
+  });
 }
 
 function requestAppQuit() {
@@ -2303,6 +2342,7 @@ app.on("before-quit", (event) => {
   event.preventDefault();
   appState.isHandlingQuit = true;
   prepareQuitUi();
+  hideWindowsForShutdown(appState);
   void runShutdownCleanup().finally(() => {
     app.quit();
   });

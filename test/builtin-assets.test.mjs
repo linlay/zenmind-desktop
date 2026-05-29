@@ -637,13 +637,8 @@ test("validateBundleArchive fails when required entries are missing", () => {
 test("validateBundleArchive rejects legacy agent-platform bundles that still embed relay assets", () => {
   const service = findBuiltinServiceForCurrentPlatform("agent-platform");
 
-  const fixture = createTarBundle(service, {
-    "backend/agent-platform": "binary\n",
+  const mockFiles = {
     "local-cli-acp-relay/relay.mjs": "console.log('relay');\n",
-    "start.sh": "#!/usr/bin/env bash\nexit 0\n",
-    "stop.sh": "#!/usr/bin/env bash\nexit 0\n",
-    "deploy.sh": "#!/usr/bin/env bash\nexit 0\n",
-    "scripts/program-common.sh": 'echo legacy relay bundle\n',
     ".env.example": "# LOCAL_CLI_ACP_RELAY_ENABLED=true\n",
     "configs/container-hub.example.yml": "containerHub: {}\n",
     "runtime/registries/providers/.keep": "\n",
@@ -664,7 +659,15 @@ test("validateBundleArchive rejects legacy agent-platform bundles that still emb
         ]
       }
     })
-  });
+  };
+
+  for (const entry of service.requiredBundleEntries) {
+    if (path.extname(entry) !== "" && !mockFiles[entry]) {
+      mockFiles[entry] = "mock content\n";
+    }
+  }
+
+  const fixture = createTarBundle(service, mockFiles);
 
   assert.throws(
     () => validateBundleArchive(service, fixture.tarPath),

@@ -93,7 +93,7 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
   // Extract to temp dir first to read manifest
   const tmpDir = fs.mkdtempSync(path.join(root, ".tmp-"));
   try {
-    extractArchiveToDir(archivePath, tmpDir);
+    await extractArchiveToDir(archivePath, tmpDir);
     const entries = fs.readdirSync(tmpDir);
     if (entries.length !== 1) {
       throw new Error("插件包应包含单个顶层目录");

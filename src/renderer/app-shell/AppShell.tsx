@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "re
 import { AppSidebar } from "./navigation/AppSidebar";
 import { CustomSidebarRouteFallback, CustomSidebarSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
 import { RootRouteRedirect, StartupLoadingScreen } from "./startup/StartupGate";
+import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
 import { ControlCenterPage } from "../pages/control-center/ControlCenterPage";
 import { ExternalWebviewPage } from "../pages/external-webview/ExternalWebviewPage";
@@ -238,6 +239,8 @@ export function AppShell() {
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [startupCardDismissed, setStartupCardDismissed] = useState(false);
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
+  const [envImportBusy, setEnvImportBusy] = useState(false);
+  const [envImportError, setEnvImportError] = useState("");
   const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute(location.pathname, location.search, copilotAgentOptions);
   const activeAgentWebclientRoute = rawActiveAgentWebclientRoute
     ? {
@@ -432,6 +435,21 @@ export function AppShell() {
       setAssistantDockOpenRequest(null);
     }
     setAssistantDockOpenPath(location.pathname);
+  }
+
+  async function handleEnvImport() {
+    setEnvImportBusy(true);
+    setEnvImportError("");
+    try {
+      const result = await window.electronAPI.services.importEnvZip();
+      if (!result.ok) {
+        setEnvImportError(result.message);
+      }
+    } catch (err) {
+      setEnvImportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEnvImportBusy(false);
+    }
   }
 
   async function handleDesktopSsoLogin() {
@@ -1367,6 +1385,13 @@ export function AppShell() {
                 : undefined
             });
           }}
+        />
+      ) : null}
+      {resolvedStartupRestoreState.phase === "env-import-required" ? (
+        <EnvImportOverlay
+          errorMessage={envImportError}
+          busy={envImportBusy}
+          onImport={handleEnvImport}
         />
       ) : null}
     </div>
