@@ -28,9 +28,21 @@ export function getStartupBlockingService(startupServices: Array<ServiceState | 
 
 export function shouldShowStartupProgressCard(
   startupRestoreState: StartupRestoreState | null,
-  _startupAllReady: boolean
+  startupAllReady: boolean
 ) {
-  if (!startupRestoreState || startupRestoreState.mode !== "bootstrap") {
+  if (!startupRestoreState) {
+    return !startupAllReady;
+  }
+
+  if (startupRestoreState.phase === "env-import-required") {
+    return false;
+  }
+
+  if (startupAllReady) {
+    return false;
+  }
+
+  if (startupRestoreState.phase === "succeeded") {
     return false;
   }
 
@@ -50,6 +62,10 @@ export function shouldAutoOpenAssistant(startupRestoreState: StartupRestoreState
 export function resolveStartupRootPath(startupRestoreState: StartupRestoreState | null, startupAllReady: boolean) {
   if (!startupRestoreState) {
     return null;
+  }
+
+  if (startupRestoreState.phase === "env-import-required") {
+    return "/control-center";
   }
 
   if (startupRestoreState.mode === "bootstrap" && !startupAllReady) {

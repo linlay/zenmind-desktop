@@ -396,9 +396,9 @@ test("assistant launcher sits beside the sidebar collapse button", () => {
   assert.match(appShell, /function resolveTargetAgentKey/);
   assert.match(appShell, /normalizeAgentKey\(openRequest\?\.agentKey \?\? openRequest\?\.workerKey \?\? fallbackAgentKey\)/);
   assert.match(appShell, /if \(!agentKey\) \{[\s\S]{0,160}return AGENT_WEBCLIENT_COPILOT_PATH/);
-  assert.match(appShell, /if \(!chatId\) \{[\s\S]{0,100}return `\/agent\/\$\{encodeURIComponent\(agentKey\)\}`/);
+  assert.match(appShell, /if \(!chatId\) \{[\s\S]{0,120}return [\s\S]{0,80}AGENT_WEBCLIENT_COPILOT_PATH[\s\S]{0,80}encodeURIComponent\(agentKey\)/);
   assert.match(appShell, /params\.set\("chatId", chatId\)/);
-  assert.match(appShell, /return `\/agent\/\$\{encodeURIComponent\(agentKey\)\}\?\$\{params\.toString\(\)\}`/);
+  assert.match(appShell, /return [\s\S]{0,80}AGENT_WEBCLIENT_COPILOT_PATH[\s\S]{0,80}encodeURIComponent\(agentKey\)[\s\S]{0,80}params\.toString\(\)/);
   assert.match(appShell, /buildAgentWebclientCopilotPath\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /embedPath=\{targetEmbedPath\}/);
   assert.match(sidebarSource, /sidebar-top-actions/);
@@ -672,7 +672,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"/);
   assert.match(appShell, /routePath:\s*"\/schedules"[\s\S]*?embedPath:\s*"\/schedules"[\s\S]*?labelKey:\s*"nav\.schedules"/);
   assert.match(appShell, /routePath:\s*"\/memory"[\s\S]*?embedPath:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
-  assert.match(appShell, /const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search\)/);
+  assert.match(appShell, /const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search/);
   assert.match(appShell, /const activeAgentWebclientRoute = rawActiveAgentWebclientRoute[\s\S]*?label:\s*"labelKey" in rawActiveAgentWebclientRoute[\s\S]*?t\(rawActiveAgentWebclientRoute\.labelKey\)/);
   assert.match(appShell, /function readAgentWebclientRouteEmbedPath\(search: string\)/);
   assert.match(appShell, /new URLSearchParams\(search\)\.get\("embedPath"\)/);
@@ -1019,11 +1019,12 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(contracts, /getLocale: \(\) => Promise<LocaleSettings>/);
   assert.match(contracts, /setLocale: \(locale: SupportedLocale\) => Promise<LocaleSettings>/);
   assert.match(contracts, /onLocaleChanged: \(listener: LocaleChangedListener\) => \(\) => void/);
-  assert.match(mainProcess, /nativeTheme/);
-  assert.match(mainProcess, /nativeTheme\.themeSource = themeMode === "dark" \? "dark" : "light"/);
-  assert.match(mainProcess, /ipcMain\.handle\("settings\.getAppInfo"[\s\S]*?app\.getVersion\(\)/);
-  assert.match(mainProcess, /ipcMain\.handle\("settings\.setNativeThemeSource"/);
-  assert.match(mainProcess, /ipcMain\.handle\("settings\.getLocale", async \(\) => initializeMainI18n\(app\)\)/);
+  assert.match(settingsHandlers, /nativeTheme/);
+  assert.match(settingsHandlers, /nativeTheme\.themeSource = themeMode === "dark" \? "dark" : "light"/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getAppInfo"[\s\S]*?app\.getVersion\(\)/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setNativeThemeSource"/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getLocale", async \(\) => initializeMainI18n\(app\)\)/);
+  assert.match(mainProcess, /registerSettingsIpcHandlers\(/);
   assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);/);
   assert.match(mainProcess, /initializeMainI18n\(app, \{ isFirstInstall: isFirstDesktopInstall \}\)/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setLocale", async \(_event: any, locale: unknown\) => \{/);
@@ -1089,7 +1090,7 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /\[assistantDockOpenPath, setAssistantDockOpenPath\] = useState<string \| null>\(null\)/);
   assert.match(appShell, /assistantDockOpen = assistantDockOpenPath !== null/);
   assert.match(appShell, /currentCopilotPreference\?\.enabled === false && assistantDockOpenPath === location\.pathname && !assistantRunningRunId/);
-  assert.match(appShell, /isAgentWebclientMainRoute = location\.pathname === ASSISTANT_TARGET_PATH \|\| isSingleAgentWebclientRoute\(location\.pathname\)/);
+  assert.match(appShell, /isAgentWebclientMainRoute =[\s\S]*?location\.pathname === ASSISTANT_TARGET_PATH \|\|[\s\S]*?isSingleAgentWebclientRoute\(location\.pathname\)/);
   assert.match(appShell, /assistantCopilotOpen = assistantDockOpen && assistantDockOpenPath === location\.pathname && !isAgentWebclientMainRoute/);
   assert.match(appShell, /assistantDockOpenPath !== location\.pathname[\s\S]{0,180}setAssistantDockOpenPath\(null\)/);
   assert.doesNotMatch(appShell, /isAgentWebclientMainRoute && assistantDockOpen[\s\S]{0,180}setAssistantDockOpenPath\(null\)/);
@@ -1540,7 +1541,7 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
   assert.match(appSidebar, /args\.groupId === "websites" && !isCollapsed/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
   assert.match(appSidebar, /function renderWebsiteDialog\(\)/);
-  assert.match(appSidebar, /网页地址[\s\S]*?显示名称[\s\S]*?侧边智能助手/);
+  assert.match(appSidebar, /网站名[\s\S]*?网页地址[\s\S]*?侧边智能助手/);
   assert.match(appSidebar, /onCreateCustomSidebarItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}\)/);
   assert.match(appSidebar, /requestNavigate\(`\/custom-sidebar\/\$\{result\.item\.id\}`\)/);
 });
@@ -1995,7 +1996,7 @@ test("main process keeps app identity visible in platform program bars", () => {
   assert.match(mainProcess, /const ZENMIND_APP_ID = "cc\.zenmind\.desktop";/);
   assert.match(mainProcess, /const ZENMIND_PRODUCT_NAME = "ZenMind";/);
   assert.match(mainProcess, /app\.setName\(ZENMIND_PRODUCT_NAME\);/);
-  assert.match(mainProcess, /applyPlatformAppInit\(process\.platform, app, ZENMIND_APP_ID\);/);
+  assert.match(mainProcess, /applyPlatformAppInit\((?:process|mainProcessContext)\.platform, app, ZENMIND_APP_ID\);/);
   assert.match(
     platformAdapter,
     /if \(platform === "win32"\)\s*\{[\s\S]*?app\.setAppUserModelId\(appId\);[\s\S]*?\}/
@@ -2003,7 +2004,7 @@ test("main process keeps app identity visible in platform program bars", () => {
   assert.match(mainProcess, /function ensureDarwinDockIdentity\(\)/);
   assert.match(
     mainProcess,
-    /if \(process\.platform !== "darwin"\)\s*\{[\s\S]*?return;[\s\S]*?\}/
+    /if \((?:process|mainProcessContext)\.platform !== "darwin"\)\s*\{[\s\S]*?return;[\s\S]*?\}/
   );
   assert.match(mainProcess, /app\.setActivationPolicy\("regular"\);/);
   assert.match(mainProcess, /dock\.show\(\)\.catch/);
@@ -2708,8 +2709,8 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(mainProcess, /getDesktopPetContextMenuItems\(appState\.desktopPetSettings\.appearanceId\)/);
   assert.match(mainProcess, /function setDesktopPetWindowMouseInteractive\(interactive: boolean\)/);
   assert.match(mainProcess, /setIgnoreMouseEvents\(!interactive, \{ forward: true \}\)/);
-  assert.match(mainProcess, /process\.platform === "win32"[\s\S]{0,220}setIgnoreMouseEvents\(false\)/);
-  assert.match(mainProcess, /const isWindows = process\.platform === "win32";/);
+  assert.match(mainProcess, /(?:process|mainProcessContext)\.platform === "win32"[\s\S]{0,220}setIgnoreMouseEvents\(false\)/);
+  assert.match(mainProcess, /const isWindows = (?:process|mainProcessContext)\.platform === "win32";/);
   assert.match(mainProcess, /\.\.\.\(isWindows \? \{ thickFrame: false \} : \{\}\)/);
   assert.match(mainProcess, /if \(isMac\) \{[\s\S]{0,180}setVisibleOnAllWorkspaces\(true, \{ visibleOnFullScreen: true \}\);[\s\S]{0,80}\} else if \(isWindows\) \{[\s\S]{0,80}setAlwaysOnTop\(true\);/);
   assert.match(desktopPetHandlers, /desktopPet\.setMouseInteractive/);

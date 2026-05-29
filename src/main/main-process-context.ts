@@ -138,6 +138,11 @@ export interface ServicesIpcHandlerContextDependencies {
   getServiceWebviewPreloadPath: (...args: any[]) => unknown;
   getServiceWebviewPreloadUrl: (...args: any[]) => unknown;
   startupRestoreController: unknown;
+  importEnvZipToZenmind?: (...args: any[]) => unknown;
+  loadBuiltinServices?: (...args: any[]) => unknown;
+  loadInstalledPlugins?: (...args: any[]) => unknown;
+  notifyServicesChanged?: (...args: any[]) => unknown;
+  runStartupPreparation?: (...args: any[]) => unknown;
 }
 
 export function createServicesIpcHandlerOptions(
@@ -174,6 +179,11 @@ export function createServicesIpcHandlerOptions(
     getServiceWebviewPreloadUrl: dependencies.getServiceWebviewPreloadUrl,
     logStreamSubscriptions: context.state.logStreamSubscriptions,
     startupRestoreController: dependencies.startupRestoreController,
+    importEnvZipToZenmind: dependencies.importEnvZipToZenmind,
+    loadBuiltinServices: dependencies.loadBuiltinServices,
+    loadInstalledPlugins: dependencies.loadInstalledPlugins,
+    notifyServicesChanged: dependencies.notifyServicesChanged,
+    runStartupPreparation: dependencies.runStartupPreparation,
     clearSessionCache: () => (context.session as any).defaultSession.clearCache()
   };
 }

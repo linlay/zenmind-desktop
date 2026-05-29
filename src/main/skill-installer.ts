@@ -606,7 +606,7 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
       );
     } else {
       ensureSafeArchiveEntries(sourcePath);
-      extractArchiveToDir(sourcePath, tempRoot);
+      await extractArchiveToDir(sourcePath, tempRoot);
       preparedDir = getPreparedSkillDir(tempRoot, slugify(options.metadata?.id || options.expectedId || path.basename(sourcePath)));
       if (!fs.existsSync(path.join(preparedDir, "SKILL.md"))) {
         throw new Error("Skill 包缺少 SKILL.md");

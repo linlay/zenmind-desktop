@@ -18,7 +18,9 @@ function makeMockIpcMain() {
 
 function makeBaseOptions(overrides = {}) {
   return {
-    app: {},
+    app: {
+      getPath: (name) => name === "home" ? "/user/home" : ""
+    },
     shell: {
       showItemInFolder: () => {},
       openPath: async () => ""
@@ -443,4 +445,64 @@ test("services.installBuiltinFromBundle installs when service is stopped", async
   assert.equal(installed, true);
   assert.equal(cacheCleared, true);
   assert.equal(result.ok, true);
+});
+
+// ---------------------------------------------------------------------------
+// 15. services.importEnvZip
+// ---------------------------------------------------------------------------
+test("services.importEnvZip returns ok:false when dialog is canceled", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+
+  registerServicesIpcHandlers(ipc, makeBaseOptions({
+    showFileDialog: async () => ({ canceled: true, filePaths: [] })
+  }));
+
+  const result = await handlers["services.importEnvZip"]({});
+  assert.equal(result.ok, false);
+  assert.ok(result.message.includes("已取消"));
+});
+
+test("services.importEnvZip executes bootstrap process when dialog is confirmed", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  let sessionMode = null;
+  let finishedSessionMode = null;
+  let envZipImportedPath = null;
+  let servicesChangedCalled = 0;
+  let runStartupPrepCalled = false;
+
+  registerServicesIpcHandlers(ipc, makeBaseOptions({
+    showFileDialog: async () => ({ canceled: false, filePaths: ["/path/to/env.zip"] }),
+    app: { getPath: (name) => name === "home" ? "/user/home" : "" },
+    startupRestoreController: {
+      getState: () => ({}),
+      beginSession: (mode) => { sessionMode = mode; },
+      updateService: () => {},
+      finishSession: (mode) => { finishedSessionMode = mode; },
+      failCurrentSession: () => {},
+      setEnvImportRequired: () => {}
+    },
+    importEnvZipToZenmind: async (app, zipPath, platform) => {
+      envZipImportedPath = zipPath;
+      return { copiedFiles: 5, skippedFiles: 2 };
+    },
+    loadBuiltinServices: () => {},
+    loadInstalledPlugins: () => {},
+    notifyServicesChanged: () => { servicesChangedCalled++; },
+    runStartupPreparation: async (app, callbacks) => {
+      runStartupPrepCalled = true;
+      callbacks.onModeResolved("restore");
+      return { mode: "restore", failures: [] };
+    }
+  }));
+
+  const result = await handlers["services.importEnvZip"]({});
+  assert.equal(result.ok, true);
+  assert.equal(envZipImportedPath, "/path/to/env.zip");
+  assert.equal(sessionMode, "restore");
+
+  // Wait for the asynchronous runStartupPreparation promise chain to settle
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(runStartupPrepCalled, true);
+  assert.equal(finishedSessionMode, "restore");
+  assert.ok(servicesChangedCalled > 0);
 });

@@ -343,7 +343,7 @@ function findBundledImageArchiveEntry(sourcePath: string) {
   return imageEntries[0];
 }
 
-function prepareImageArchiveForImport(sourcePath: string): { archivePath: string; cleanup: () => void } {
+async function prepareImageArchiveForImport(sourcePath: string): Promise<{ archivePath: string; cleanup: () => void }> {
   const entry = findBundledImageArchiveEntry(sourcePath);
   if (!entry) {
     return {
@@ -354,7 +354,7 @@ function prepareImageArchiveForImport(sourcePath: string): { archivePath: string
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sandbox-image-"));
   try {
-    extractArchiveToDir(sourcePath, tempRoot);
+    await extractArchiveToDir(sourcePath, tempRoot);
     const archivePath = path.join(tempRoot, entry);
     if (!fs.existsSync(archivePath)) {
       throw new Error(t("market.sandbox.bundledArchiveMissing", { entry }));
@@ -503,7 +503,7 @@ export async function importSandboxImageFromPath(
     throw new Error(t("market.sandbox.importRequiresEngine"));
   }
 
-  const prepared = prepareImageArchiveForImport(archivePath);
+  const prepared = await prepareImageArchiveForImport(archivePath);
   try {
     emitSandboxImageImportProgress(options, {
       stage: "archive-ready",
