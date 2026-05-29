@@ -207,13 +207,21 @@ export const Popover: React.FC<PopoverProps> = (props) => {
       window.cancelAnimationFrame(frameRef.current ?? 0);
       frameRef.current = window.requestAnimationFrame(updatePosition);
     };
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (
-        !closeOnOutsideClick ||
-        !target ||
+    const isInsidePopover = (target: EventTarget | null) => {
+      if (!(target instanceof Node)) {
+        return false;
+      }
+
+      return (
         triggerRef.current?.contains(target) ||
         popoverRef.current?.contains(target)
+      );
+    };
+    const handleOutsideInteraction = (event: MouseEvent | PointerEvent) => {
+      const target = event.target;
+      if (
+        !closeOnOutsideClick ||
+        isInsidePopover(target)
       ) {
         return;
       }
@@ -228,13 +236,19 @@ export const Popover: React.FC<PopoverProps> = (props) => {
 
     window.addEventListener("resize", scheduleUpdate);
     window.addEventListener("scroll", scheduleUpdate, true);
-    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("pointerdown", handleOutsideInteraction, true);
+    document.addEventListener("click", handleOutsideInteraction, true);
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
       window.removeEventListener("resize", scheduleUpdate);
       window.removeEventListener("scroll", scheduleUpdate, true);
-      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener(
+        "pointerdown",
+        handleOutsideInteraction,
+        true,
+      );
+      document.removeEventListener("click", handleOutsideInteraction, true);
       window.removeEventListener("keydown", handleKeyDown);
       window.cancelAnimationFrame(frameRef.current ?? 0);
     };

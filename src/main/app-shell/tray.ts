@@ -58,6 +58,14 @@ export class AppTrayController {
     this.tray.setContextMenu(this.buildMenu());
   }
 
+  destroy() {
+    if (!this.tray) {
+      return;
+    }
+    this.tray.destroy();
+    this.tray = null;
+  }
+
   private createIcon() {
     const platformIconPath =
       this.options.platform === "win32"

@@ -285,6 +285,7 @@ const QUICK_AGENT_OPEN_RETRY_MS = 180;
 const DESKTOP_ACTION_RENDERER_TIMEOUT_MS = 8_000;
 const ZENMIND_APP_ID = "cc.zenmind.desktop";
 const ZENMIND_PRODUCT_NAME = "ZenMind";
+const INSTALLER_SHUTDOWN_ARG = "--zenmind-shutdown-for-update";
 const DESKTOP_PET_DONE_PREVIEW_FALLBACK = "暂无回复预览";
 const DESKTOP_PET_GENERIC_DONE_PREVIEWS = new Set([
   "思考中",
@@ -541,6 +542,10 @@ if (!gotSingleInstanceLock) {
   app.exit(0);
 }
 
+if (process.argv.includes(INSTALLER_SHUTDOWN_ARG)) {
+  app.exit(0);
+}
+
 function delay(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
@@ -632,7 +637,7 @@ const appTrayController = new AppTrayController({
   openSettings: () => showMainWindow("/settings"),
   showDesktopPet: () => showDesktopPetWindow(),
   hideDesktopPet: () => hideDesktopPetWindow(true),
-  quit: () => app.quit()
+  quit: () => requestAppQuit()
 });
 const desktopSsoController = createDesktopSsoController({
   app,
@@ -2186,7 +2191,11 @@ function registerIpcHandlers(context: MainProcessContext) {
 }
 
 if (gotSingleInstanceLock) {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, commandLine) => {
+    if (hasInstallerShutdownArg(commandLine)) {
+      requestAppQuit();
+      return;
+    }
     showMainWindow();
   });
 
@@ -2268,12 +2277,32 @@ function runShutdownCleanup() {
   return appState.shutdownCleanupPromise;
 }
 
+function hasInstallerShutdownArg(commandLine: string[]) {
+  return commandLine.includes(INSTALLER_SHUTDOWN_ARG);
+}
+
+function prepareQuitUi() {
+  for (const targetWindow of BrowserWindow.getAllWindows()) {
+    if (!targetWindow.isDestroyed() && targetWindow.isVisible()) {
+      targetWindow.hide();
+    }
+  }
+  appTrayController.destroy();
+}
+
+function requestAppQuit() {
+  appState.isHandlingQuit = true;
+  prepareQuitUi();
+  app.quit();
+}
+
 app.on("before-quit", (event) => {
   if (appState.shutdownCleanupComplete) {
     return;
   }
   event.preventDefault();
   appState.isHandlingQuit = true;
+  prepareQuitUi();
   void runShutdownCleanup().finally(() => {
     app.quit();
   });

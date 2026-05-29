@@ -270,6 +270,7 @@ const INSTALL_ONLY_STARTUP_SERVICE_ID_SET = new Set<ServiceId>(INSTALL_ONLY_STAR
 const DEFAULT_STARTUP_SERVICE_ID_SET = new Set<ServiceId>(DEFAULT_STARTUP_SERVICE_IDS);
 const SERVICE_COMMAND_TIMEOUT_MS = 60_000;
 const SHUTDOWN_SERVICE_STOP_TIMEOUT_MS = 2_500;
+const WINDOWS_SHUTDOWN_SERVICE_STOP_TIMEOUT_MS = 1_000;
 
 function buildServiceEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -1438,9 +1439,19 @@ function writePidFile(pidFilePath: string, pid: number) {
   fs.writeFileSync(pidFilePath, `${pid}\n`, "utf8");
 }
 
-function readManagedPidFile(pidFilePaths: string[]) {
+function readManagedPidFile(pidFilePaths: string[], installDir?: string) {
   for (const pidFilePath of pidFilePaths) {
     const pid = readPid(pidFilePath);
+    if (!pid) {
+      if (fs.existsSync(pidFilePath)) {
+        removePidFile(pidFilePath);
+      }
+      continue;
+    }
+    if (installDir && (!isProcessRunning(pid) || !pidMatchesInstallDir(pid, installDir))) {
+      removePidFile(pidFilePath);
+      continue;
+    }
     if (pid) {
       return pid;
     }
@@ -2759,7 +2770,7 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   const env = installed ? readEnvFile(layout.envPath) : new Map<string, string>();
   const port = parsePort(service, env);
   const webUrl = installed ? getWebUrl(service, env) : getWebUrl(service, new Map<string, string>());
-  const pidFromFile = installed ? readManagedPidFile(pidFilePaths) : null;
+  const pidFromFile = installed ? readManagedPidFile(pidFilePaths, installDir) : null;
   const missingRuntimeFiles = installed ? listMissingRuntimeFiles(service, installDir) : [];
   const initializationState =
     installed && missingRuntimeFiles.length === 0 ? readInitializationState(layout) : null;
@@ -5324,10 +5335,12 @@ type ShutdownServiceStopResult = {
   message: string;
 };
 
-function getShutdownStopCommandTimeoutMs(timeoutMs: number | undefined) {
+function getShutdownStopCommandTimeoutMs(timeoutMs: number | undefined, platform: NodeJS.Platform | string = process.platform) {
   return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
     ? Math.floor(timeoutMs)
-    : SHUTDOWN_SERVICE_STOP_TIMEOUT_MS;
+    : platform === "win32"
+      ? WINDOWS_SHUTDOWN_SERVICE_STOP_TIMEOUT_MS
+      : SHUTDOWN_SERVICE_STOP_TIMEOUT_MS;
 }
 
 function getErrorMessage(error: unknown) {
@@ -6032,6 +6045,7 @@ export const __testInternals = {
   collectManagedServiceStopState,
   forceStopServiceInstallDir,
   ensureManagedServiceStoppedForPlatform,
+  getShutdownStopCommandTimeoutMs,
   resolveLegacyAgentPlatformRuntimeRootMigration,
   decodePowerShellCapturePayload,
   runExecFile,
