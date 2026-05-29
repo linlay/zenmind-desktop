@@ -65,11 +65,21 @@ function collectTextFiles(root, files = []) {
   return files;
 }
 
+function textFromCodes(...codes) {
+  return String.fromCharCode(...codes);
+}
+
 test("source and tests do not contain internal endpoint or legacy icon literals", () => {
+  const internalHostSuffix = textFromCodes(46, 110, 101, 116);
+  const internalLoginHostPrefix = textFromCodes(101, 105, 97, 109, 46);
+  const internalVendorHost = textFromCodes(113, 105, 117, 101, 114);
+  const internalBrokerHost = textFromCodes(103, 116, 106, 97, 113, 104);
   const forbiddenValues = [
     "47.100.131." + "144:9001",
-    "eiam.qiuer" + ".net",
-    "eiam.gtjaqh" + ".net",
+    internalVendorHost,
+    internalBrokerHost,
+    internalLoginHostPrefix + internalVendorHost + internalHostSuffix,
+    internalLoginHostPrefix + internalBrokerHost + internalHostSuffix,
     "jira.example" + ".com",
     "zeni" + "th"
   ];
