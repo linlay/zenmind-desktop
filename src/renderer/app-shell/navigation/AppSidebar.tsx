@@ -1067,7 +1067,7 @@ export function AppSidebar({
                 <AgentIcon
                   icon={agent.icon}
                   className="worker-panel-icon"
-                  size={32}
+                  size={selected ? 20 : 32}
                   type="agent"
                 />
                 <span className="assistant-worker-main worker-panel-main">
