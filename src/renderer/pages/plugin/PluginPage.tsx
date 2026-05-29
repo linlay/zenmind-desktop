@@ -34,6 +34,7 @@ import {
   publishCurrentPageContextSnapshot,
   subscribeCurrentPageContext,
 } from "../../services/currentPageContext";
+import { registerPluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import {
   registerCurrentPageExecutor,
   registerDesktopActionProviderForScope,
@@ -430,6 +431,10 @@ export function PluginPage({
           hidden: !active,
           "aria-hidden": !active,
         };
+
+  useEffect(() => {
+    return registerPluginSurfaceWebviewRef(pluginId, webviewRef);
+  }, [pluginId]);
 
   const webUrl = service?.healthMeta.webUrl ?? "";
   const bridgeProtocol = useMemo(

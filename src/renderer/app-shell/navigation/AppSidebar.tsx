@@ -34,6 +34,8 @@ import {
   getAssistantNavAgentNonNegativeInteger,
   getAssistantNavAgentRecentChats,
 } from "../../assistantNavigation";
+import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
+import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -1145,7 +1147,20 @@ export function AppSidebar({
               className="worker-chat-more assistant-worker-more"
               onClick={(event) => {
                 event.stopPropagation();
-                requestNavigate(createAgentHistoryRoute(agent.agentKey));
+                const webviewRef = getActivePluginSurfaceWebviewRef()?.current;
+                if (webviewRef) {
+                  webviewRef.send(
+                    SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
+                    {
+                      action: "openChatHistory",
+                      data: {
+                        agentKey: agent.agentKey,
+                      },
+                    },
+                  );
+                } else {
+                  requestNavigate(createAgentHistoryRoute(agent.agentKey));
+                }
               }}
             >
               查看更多（共 {chatCount} 条
