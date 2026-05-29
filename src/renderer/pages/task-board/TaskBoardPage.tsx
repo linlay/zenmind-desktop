@@ -724,10 +724,13 @@ function getTaskBoardColumnSummary(status: TaskBoardStatus, count: number, t: Tr
 }
 
 function getTaskBoardEmptyHint(status: TaskBoardStatus, t: TranslateFunction) {
-  if (status === "in_progress") {
-    return t("taskBoard.column.emptyInProgress");
-  }
-  return t("taskBoard.column.emptyDefault");
+  const hintKey: Record<TaskBoardStatus, TranslationKey> = {
+    backlog: "taskBoard.column.emptyBacklog",
+    todo: "taskBoard.column.emptyTodo",
+    in_progress: "taskBoard.column.emptyInProgress",
+    completed: "taskBoard.column.emptyCompleted"
+  };
+  return t(hintKey[status]);
 }
 
 function createNavigationAgentFromOption(agent: DesktopPetAgentOption): AssistantNavAgentItem {
@@ -1714,6 +1717,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   awaitingConfirmation={false}
                   agents={agents}
                   display={display}
+                  now={new Date(taskBoardCountdownNow)}
                   t={t}
                   interactive={false}
                   onEdit={() => undefined}
@@ -1731,7 +1735,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         if (!issue) {
           return null;
         }
-        return (
+        const menu = (
           <div
             className="task-board-card-context-menu"
             style={{ left: contextMenu.x, top: contextMenu.y }}
@@ -1748,6 +1752,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             </button>
           </div>
         );
+        return typeof document !== "undefined" ? createPortal(menu, document.body) : menu;
       })() : null}
 
       {modal ? (
@@ -2107,6 +2112,20 @@ function TaskBoardColumn({
           <strong>{label}</strong>
           <span>{issues.length}</span>
         </div>
+        {status === "todo" ? (
+          <div className="task-board-column-filter" aria-label={t("taskBoard.filter.todoAutomation")} onClick={(event) => event.stopPropagation()}>
+            {TASK_BOARD_TODO_AUTOMATION_FILTERS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={todoAutomationFilter === option.value ? "is-active" : ""}
+                onClick={() => onTodoAutomationFilterChange(option.value)}
+              >
+                {t(option.labelKey)}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="task-board-column-actions">
           <button
             type="button"
@@ -2121,20 +2140,6 @@ function TaskBoardColumn({
           </button>
         </div>
       </header>
-      {status === "todo" ? (
-        <div className="task-board-column-filter" aria-label={t("taskBoard.filter.todoAutomation")} onClick={(event) => event.stopPropagation()}>
-          {TASK_BOARD_TODO_AUTOMATION_FILTERS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={todoAutomationFilter === option.value ? "is-active" : ""}
-              onClick={() => onTodoAutomationFilterChange(option.value)}
-            >
-              {t(option.labelKey)}
-            </button>
-          ))}
-        </div>
-      ) : null}
       <div
         className="task-board-column-body"
         onDoubleClick={(event) => {

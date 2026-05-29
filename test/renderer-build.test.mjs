@@ -728,6 +728,24 @@ test("assistant sidebar empty state is localized", () => {
   assert.match(enUS, /"sidebar\.assistants\.empty": "No assistants"/);
 });
 
+test("assistant sidebar empty state waits for navigation load", () => {
+  const appShell = readAppShellSource();
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+
+  assert.match(appShell, /const \[assistantNavAgentsLoaded, setAssistantNavAgentsLoaded\] = useState\(false\);/);
+  assert.match(appShell, /setAssistantNavAgentsLoaded\(true\);/);
+  assert.match(appShell, /assistantNavAgentsLoaded=\{assistantNavAgentsLoaded\}/);
+  assert.match(sidebarSource, /assistantNavAgentsLoaded\?: boolean;/);
+  assert.match(sidebarSource, /assistantNavAgentsLoaded = true,/);
+  assert.match(sidebarSource, /assistantNavAgentsLoaded \? \(\s*<div className="status-line">\{t\("sidebar\.assistants\.empty"\)\}<\/div>\s*\) : null/);
+});
+
 test("settings route keeps the global sidebar and renders page-internal split sections", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(

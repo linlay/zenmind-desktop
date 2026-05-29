@@ -4,6 +4,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 const stylesPath = path.resolve(import.meta.dirname, "../src/renderer/styles.css");
+const projectRoot = path.resolve(import.meta.dirname, "..");
+
+function readSourceFile(...segments) {
+  return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
+}
 
 function readCssWithImports(filePath, visited = new Set()) {
   const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(import.meta.dirname, "..", filePath);
@@ -22,7 +27,7 @@ function readStyles() {
 }
 
 function readRules(selector) {
-  const styles = readStyles();
+  const styles = readStyles().replace(/\/\*[\s\S]*?\*\//g, "");
   const rules = styles.matchAll(/(?<selectors>[^{}]+)\{(?<body>[^}]+)\}/g);
   const matches = [];
 
@@ -97,6 +102,47 @@ test("external webview new-tab button stays next to the tab strip content", () =
   assert.match(tabStripRule, /flex:\s*0\s+1\s+auto;/);
   assert.match(tabStripRule, /max-width:\s*calc\(100%\s*-\s*42px\);/);
   assert.ok(tabAddRules.some((rule) => /flex:\s*none;/.test(rule)));
+});
+
+test("sidebar navigation scrolls independently so footer actions stay reachable", () => {
+  const navRule = readRules(".sidebar-nav").find((rule) =>
+    /overflow-y:\s*auto;/.test(rule)
+  );
+  const footerRule = readRules(".sidebar-footer").find((rule) =>
+    /flex:\s*0\s+0\s+auto;/.test(rule)
+  );
+  const scrollbarRule = readRule(".sidebar-nav::-webkit-scrollbar");
+
+  assert.ok(navRule, "missing scrollable .sidebar-nav rule");
+  assert.ok(footerRule, "missing fixed .sidebar-footer rule");
+  assert.match(navRule, /^\s*flex:\s*1;/m);
+  assert.match(navRule, /^\s*min-height:\s*0;/m);
+  assert.match(navRule, /overflow-y:\s*auto;/);
+  assert.match(navRule, /overflow-x:\s*hidden;/);
+  assert.match(navRule, /scrollbar-width:\s*thin;/);
+  assert.match(navRule, /app-region:\s*no-drag;/);
+  assert.match(navRule, /-webkit-app-region:\s*no-drag;/);
+  assert.match(footerRule, /flex:\s*0\s+0\s+auto;/);
+  assert.match(scrollbarRule, /width:\s*6px;/);
+});
+
+test("embedded website group scrolls after six rows without pushing footer", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+  const websiteChildrenRule = readRule(".sidebar-website-children");
+  const websiteScrollbarRule = readRule(".sidebar-website-children::-webkit-scrollbar");
+
+  assert.match(sidebarSource, /sidebar-website-children/);
+  assert.match(websiteChildrenRule, /max-height:\s*calc\(\(30px \* 6\) \+ \(2px \* 5\)\);/);
+  assert.match(websiteChildrenRule, /overflow-y:\s*auto;/);
+  assert.match(websiteChildrenRule, /overflow-x:\s*hidden;/);
+  assert.match(websiteChildrenRule, /scrollbar-width:\s*thin;/);
+  assert.match(websiteScrollbarRule, /width:\s*6px;/);
 });
 
 test("task board constrains its page height so columns can scroll vertically", () => {

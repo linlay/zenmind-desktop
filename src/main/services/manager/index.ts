@@ -2899,6 +2899,8 @@ function getServiceVerificationDelayMs() {
   return Number.isFinite(raw) && raw >= 0 ? raw : 1500;
 }
 
+const CONTAINER_HUB_RUNNING_VERIFICATION_TIMEOUT_MS = 6000;
+
 function normalizeProbeUrl(baseURL: string, pathname?: string) {
   const parsed = new URL(baseURL);
   if (pathname) {
@@ -3095,16 +3097,31 @@ export async function verifyServiceState(
   let verified = false;
   try {
     const delayMs = getServiceVerificationDelayMs();
-    const first = await collectServiceVerification(app, serviceId, desired);
-    if (first.verification.verified && delayMs <= 0) {
+    const service = getService(serviceId);
+    const retryUntil = service.id === "agent-container-hub" && desired === "running"
+      ? Date.now() + CONTAINER_HUB_RUNNING_VERIFICATION_TIMEOUT_MS
+      : 0;
+    let current = await collectServiceVerification(app, serviceId, desired);
+    if (current.verification.verified && delayMs <= 0) {
       verified = true;
-      return first.verification;
+      return current.verification;
     }
 
-    await delay(delayMs > 0 ? delayMs : 1500);
-    const second = await collectServiceVerification(app, serviceId, desired);
-    verified = second.verification.verified;
-    return second.verification;
+    do {
+      await delay(delayMs > 0 ? delayMs : 1500);
+      current = await collectServiceVerification(app, serviceId, desired);
+      if (current.verification.verified) {
+        verified = true;
+        return current.verification;
+      }
+    } while (
+      retryUntil > 0 &&
+      Date.now() < retryUntil &&
+      shouldRetryServiceVerification(service, desired, current.verification)
+    );
+
+    verified = current.verification.verified;
+    return current.verification;
   } finally {
     timing.end({ verified });
   }
@@ -3113,6 +3130,18 @@ export async function verifyServiceState(
 function serviceVerificationFailureMessage(actionMessage: string, verification: ServiceVerification) {
   const issues = verification.issues.length > 0 ? verification.issues.join("；") : `状态为 ${verification.actualStatus}`;
   return `${actionMessage}，但复查失败：${issues}`;
+}
+
+function shouldRetryServiceVerification(
+  service: ServiceDefinition,
+  desired: ServiceDesiredStatus,
+  verification: ServiceVerification
+) {
+  return service.id === "agent-container-hub" &&
+    desired === "running" &&
+    !verification.verified &&
+    verification.actualStatus === "running" &&
+    verification.pidAlive;
 }
 
 async function attachServiceVerification(

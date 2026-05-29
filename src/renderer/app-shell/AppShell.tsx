@@ -226,6 +226,7 @@ export function AppShell() {
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
+  const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [copilotAgentOptions, setCopilotAgentOptions] = useState<AssistantNavAgentItem[]>([]);
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
@@ -358,6 +359,7 @@ export function AppShell() {
           return;
         }
         const nextItems = normalizeAssistantNavAgents(result.items);
+        setAssistantNavAgentsLoaded(true);
         setAssistantNavAgents(nextItems);
       }
     } catch {
@@ -394,6 +396,7 @@ export function AppShell() {
       }
       assistantNavAgentsRefreshIdRef.current += 1;
       const nextResult = normalizeAssistantNavAgentItemsResult(result);
+      setAssistantNavAgentsLoaded(true);
       setAssistantNavAgents(nextResult.items);
     });
 
@@ -1211,6 +1214,7 @@ export function AppShell() {
           customSidebarNavOrder={normalizedCustomSidebarGroupOrder}
           customSidebarItems={customSidebarItems}
           assistantNavAgents={assistantNavAgents}
+          assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           copilotAgentOptions={copilotAgentOptions}
           desktopSsoStatus={desktopSsoStatus}
           desktopSsoBusy={desktopSsoBusy}

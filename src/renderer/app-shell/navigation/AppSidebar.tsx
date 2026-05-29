@@ -440,6 +440,7 @@ type AppSidebarProps = {
   customSidebarNavOrder?: SidebarNavOrderItemKey[];
   customSidebarItems: CustomSidebarItem[];
   assistantNavAgents?: AssistantNavAgentItem[];
+  assistantNavAgentsLoaded?: boolean;
   copilotAgentOptions?: AssistantNavAgentItem[];
   desktopSsoStatus?: DesktopSsoStatus | null;
   desktopSsoBusy?: boolean;
@@ -471,6 +472,7 @@ export function AppSidebar({
   customSidebarNavOrder = [],
   customSidebarItems,
   assistantNavAgents = [],
+  assistantNavAgentsLoaded = true,
   copilotAgentOptions = [],
   desktopSsoStatus = null,
   desktopSsoBusy = false,
@@ -1175,20 +1177,28 @@ export function AppSidebar({
       : ["sidebar-group-heading", args.active ? "is-active" : ""]
           .filter(Boolean)
           .join(" ");
+    const groupChildrenClassName = [
+      "sidebar-group-children",
+      args.groupId === "websites" ? "sidebar-website-children" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     return isCollapsed ? (
       <Popover
         placement="right-start"
         content={
           <div
-            className="sidebar-group-children worker-popover-content"
+            className={`${groupChildrenClassName} worker-popover-content`}
             role="group"
             aria-label={args.label}
           >
             {args.groupId === "assistants" ? (
               <div className="assistant-worker-collapse worker-collapse">
-                {assistantNavAgents?.map((agent) =>
-                  renderAssistantAgent(agent),
-                )}
+                {assistantNavAgents.length > 0 ? (
+                  assistantNavAgents.map((agent) => renderAssistantAgent(agent))
+                ) : assistantNavAgentsLoaded ? (
+                  <div className="status-line">{t("sidebar.assistants.empty")}</div>
+                ) : null}
               </div>
             ) : (
               args.children.map((item) => renderSidebarChildLink(item))
@@ -1273,13 +1283,17 @@ export function AppSidebar({
         }
       >
         <div
-          className="sidebar-group-children"
+          className={groupChildrenClassName}
           role="group"
           aria-label={args.label}
         >
           {args.groupId === "assistants" ? (
             <div className="assistant-worker-collapse worker-collapse">
-              {assistantNavAgents?.map((agent) => renderAssistantAgent(agent))}
+              {assistantNavAgents.length > 0 ? (
+                assistantNavAgents.map((agent) => renderAssistantAgent(agent))
+              ) : assistantNavAgentsLoaded ? (
+                <div className="status-line">{t("sidebar.assistants.empty")}</div>
+              ) : null}
             </div>
           ) : (
             args.children.map((item) => renderSidebarChildLink(item))
