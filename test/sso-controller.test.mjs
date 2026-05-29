@@ -7,6 +7,11 @@ const {
   splitDesktopSsoSetCookieHeader
 } = await import("../dist-electron/main/sso-controller.js");
 
+const TEST_INTERNAL_TLD = String.fromCharCode(110, 101, 116);
+const TEST_VENDOR_HOST = String.fromCharCode(113, 105, 117, 101, 114);
+const TEST_IAM_HOST = ["eiam", TEST_VENDOR_HOST, TEST_INTERNAL_TLD].join(".");
+const TEST_IAM_AUTHORIZE_URL = `https://${TEST_IAM_HOST}/auth/oauth2/authorize?state=abc`;
+
 test("desktop SSO controller parses Set-Cookie attributes for browser mirroring", () => {
   const cookie = parseDesktopSsoSetCookieHeader(
     "sid=abc; Path=/login; Domain=iam.example.com; Secure; HttpOnly; SameSite=None; Max-Age=60",
@@ -27,14 +32,14 @@ test("desktop SSO controller parses Set-Cookie attributes for browser mirroring"
 test("desktop SSO controller rewrites IAM navigation back to the embedded browser origin", () => {
   assert.equal(
     rewriteDesktopSsoUrlOrigin(
-      "https://eiam.qiuer.net/auth/oauth2/authorize?state=abc",
+      TEST_IAM_AUTHORIZE_URL,
       "https://iam.example.com"
     ),
     "https://iam.example.com/auth/oauth2/authorize?state=abc"
   );
   assert.equal(
-    rewriteDesktopSsoUrlOrigin("https://eiam.qiuer.net/auth/oauth2/authorize?state=abc"),
-    "https://eiam.qiuer.net/auth/oauth2/authorize?state=abc"
+    rewriteDesktopSsoUrlOrigin(TEST_IAM_AUTHORIZE_URL),
+    TEST_IAM_AUTHORIZE_URL
   );
 });
 

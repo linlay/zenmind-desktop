@@ -51,6 +51,55 @@ function readSharedContractsSource() {
   ].join("\n");
 }
 
+function collectTextFiles(root, files = []) {
+  for (const child of fs.readdirSync(root, { withFileTypes: true })) {
+    const childPath = path.join(root, child.name);
+    if (child.isDirectory()) {
+      collectTextFiles(childPath, files);
+      continue;
+    }
+    if (/\.(?:ts|tsx|js|mjs|json|md)$/u.test(child.name)) {
+      files.push(childPath);
+    }
+  }
+  return files;
+}
+
+function textFromCodes(...codes) {
+  return String.fromCharCode(...codes);
+}
+
+test("source and tests do not contain internal endpoint or legacy icon literals", () => {
+  const internalHostSuffix = textFromCodes(46, 110, 101, 116);
+  const internalLoginHostPrefix = textFromCodes(101, 105, 97, 109, 46);
+  const internalVendorHost = textFromCodes(113, 105, 117, 101, 114);
+  const internalBrokerHost = textFromCodes(103, 116, 106, 97, 113, 104);
+  const forbiddenValues = [
+    "47.100.131." + "144:9001",
+    internalVendorHost,
+    internalBrokerHost,
+    internalLoginHostPrefix + internalVendorHost + internalHostSuffix,
+    internalLoginHostPrefix + internalBrokerHost + internalHostSuffix,
+    "jira.example" + ".com",
+    "zeni" + "th"
+  ];
+  const files = [
+    ...collectTextFiles(path.join(projectRoot, "src")),
+    ...collectTextFiles(path.join(projectRoot, "test"))
+  ];
+
+  for (const filePath of files) {
+    const content = fs.readFileSync(filePath, "utf8");
+    for (const forbiddenValue of forbiddenValues) {
+      assert.equal(
+        content.includes(forbiddenValue),
+        false,
+        `${path.relative(projectRoot, filePath)} contains a forbidden literal`
+      );
+    }
+  }
+});
+
 test("renderer entry uses HashRouter for Electron routing", () => {
   const rendererEntry = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "main.tsx"),

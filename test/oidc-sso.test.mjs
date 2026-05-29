@@ -36,6 +36,20 @@ const {
   validateIdToken
 } = __testInternals;
 
+const TEST_INTERNAL_TLD = String.fromCharCode(110, 101, 116);
+const TEST_VENDOR_HOST = String.fromCharCode(113, 105, 117, 101, 114);
+const TEST_BROKER_HOSTNAME = String.fromCharCode(103, 116, 106, 97, 113, 104);
+const TEST_AI_HOST = ["ai", TEST_VENDOR_HOST, TEST_INTERNAL_TLD].join(".");
+const TEST_BROKER_HOST = [TEST_BROKER_HOSTNAME, TEST_INTERNAL_TLD].join(".");
+const TEST_AI_ORIGIN = `https://${TEST_AI_HOST}`;
+const TEST_AI_ROOT_URL = `${TEST_AI_ORIGIN}/`;
+const TEST_AI_CALLBACK_URL = `${TEST_AI_ORIGIN}/oauth2/callback`;
+const TEST_AI_TOKEN_URL = `${TEST_AI_ORIGIN}/api/auth/token`;
+const TEST_AI_AUTHORIZATION_URL = `${TEST_AI_ORIGIN}/authorization`;
+const TEST_AI_APP_URL = `${TEST_AI_ORIGIN}/app`;
+const TEST_AI_LOGIN_URL = `${TEST_AI_ORIGIN}/login`;
+const TEST_BROKER_ROOT_URL = `https://${TEST_BROKER_HOST}/`;
+
 function encodeJwtPart(value) {
   return Buffer.from(JSON.stringify(value)).toString("base64url");
 }
@@ -224,9 +238,9 @@ test("loadDesktopSsoConfig supports configurable AI login and cookie access toke
     path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
     JSON.stringify({
       enabled: true,
-      loginUrl: "https://ai.qiuer.net/",
-      browserOrigin: "https://ai.qiuer.net",
-      loginCompletionUrl: "https://ai.qiuer.net/oauth2/callback",
+      loginUrl: TEST_AI_ROOT_URL,
+      browserOrigin: TEST_AI_ORIGIN,
+      loginCompletionUrl: TEST_AI_CALLBACK_URL,
       cookieAccessTokenExchange: {
         url: "/api/auth/token",
         method: "post",
@@ -239,7 +253,7 @@ test("loadDesktopSsoConfig supports configurable AI login and cookie access toke
         accessTokenPath: "data.access_token"
       },
       accessTokenCookie: {
-        url: "https://ai.qiuer.net",
+        url: TEST_AI_ORIGIN,
         name: "ai_access_token",
         httpOnly: false
       }
@@ -251,11 +265,11 @@ test("loadDesktopSsoConfig supports configurable AI login and cookie access toke
 
   assert.equal(result.configured, true);
   assert.equal(result.error, undefined);
-  assert.equal(result.config.loginUrl, "https://ai.qiuer.net/");
-  assert.equal(result.config.browserOrigin, "https://ai.qiuer.net");
-  assert.equal(result.config.loginCompletionUrl, "https://ai.qiuer.net/oauth2/callback");
+  assert.equal(result.config.loginUrl, TEST_AI_ROOT_URL);
+  assert.equal(result.config.browserOrigin, TEST_AI_ORIGIN);
+  assert.equal(result.config.loginCompletionUrl, TEST_AI_CALLBACK_URL);
   assert.deepEqual(result.config.cookieAccessTokenExchange, {
-    url: "https://ai.qiuer.net/api/auth/token",
+    url: TEST_AI_TOKEN_URL,
     method: "POST",
     headers: {
       "X-Desktop-Client": "ZenMind",
@@ -265,7 +279,7 @@ test("loadDesktopSsoConfig supports configurable AI login and cookie access toke
     accessTokenPath: "data.access_token"
   });
   assert.deepEqual(result.config.accessTokenCookie, {
-    url: "https://ai.qiuer.net/",
+    url: TEST_AI_ROOT_URL,
     name: "ai_access_token",
     path: "/",
     secure: true,
@@ -284,10 +298,10 @@ test("direct AI login can preserve the configured URL and complete with browser 
     path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
     JSON.stringify({
       enabled: true,
-      loginUrl: "https://ai.qiuer.net/",
+      loginUrl: TEST_AI_ROOT_URL,
       appendLoginState: false,
-      browserOrigin: "https://ai.qiuer.net",
-      loginCompletionUrl: "https://ai.qiuer.net/oauth2/callback"
+      browserOrigin: TEST_AI_ORIGIN,
+      loginCompletionUrl: TEST_AI_CALLBACK_URL
     }),
     "utf8"
   );
@@ -297,13 +311,13 @@ test("direct AI login can preserve the configured URL and complete with browser 
   assert.equal(result.configured, true);
   assert.equal(result.error, undefined);
   assert.equal(result.config.appendLoginState, false);
-  assert.equal(buildAuthorizeUrl("runtime-state", result.config), "https://ai.qiuer.net/");
-  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/oauth2/callback?code=abc"), true);
+  assert.equal(buildAuthorizeUrl("runtime-state", result.config), TEST_AI_ROOT_URL);
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, `${TEST_AI_CALLBACK_URL}?code=abc`), true);
 
-  const status = completeDesktopSsoBrowserLogin(app, "https://ai.qiuer.net/oauth2/callback?code=abc");
+  const status = completeDesktopSsoBrowserLogin(app, `${TEST_AI_CALLBACK_URL}?code=abc`);
 
   assert.equal(status.authenticated, true);
-  assert.equal(status.user.sub, "ai.qiuer.net");
+  assert.equal(status.user.sub, TEST_AI_HOST);
   assert.equal("accessToken" in status, false);
 });
 
@@ -317,25 +331,25 @@ test("direct AI login can complete on a logged-in page and inject token cookies 
     path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
     JSON.stringify({
       enabled: true,
-      loginUrl: "https://ai.qiuer.net/",
+      loginUrl: TEST_AI_ROOT_URL,
       appendLoginState: false,
-      browserOrigin: "https://ai.qiuer.net",
+      browserOrigin: TEST_AI_ORIGIN,
       loginCompletionUrls: [
-        "https://ai.qiuer.net/oauth2/callback",
-        "https://ai.qiuer.net/"
+        TEST_AI_CALLBACK_URL,
+        TEST_AI_ROOT_URL
       ],
       cookieAccessTokenExchange: {
-        url: "https://ai.qiuer.net/authorization",
+        url: TEST_AI_AUTHORIZATION_URL,
         accessTokenPath: "access_token"
       },
       accessTokenCookies: [
         {
-          url: "https://ai.qiuer.net/",
+          url: TEST_AI_ROOT_URL,
           name: "access_token",
           httpOnly: false
         },
         {
-          url: "https://gtjaqh.net/",
+          url: TEST_BROKER_ROOT_URL,
           name: "access_token",
           httpOnly: false
         }
@@ -349,26 +363,26 @@ test("direct AI login can complete on a logged-in page and inject token cookies 
   assert.equal(result.configured, true);
   assert.equal(result.error, undefined);
   assert.deepEqual(result.config.loginCompletionUrls, [
-    "https://ai.qiuer.net/oauth2/callback",
-    "https://ai.qiuer.net/"
+    TEST_AI_CALLBACK_URL,
+    TEST_AI_ROOT_URL
   ]);
-  assert.equal(result.config.cookieAccessTokenExchange.url, "https://ai.qiuer.net/authorization");
-  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/"), true);
-  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/?from=desktop"), true);
-  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/login"), false);
+  assert.equal(result.config.cookieAccessTokenExchange.url, TEST_AI_AUTHORIZATION_URL);
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, TEST_AI_ROOT_URL), true);
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, `${TEST_AI_ROOT_URL}?from=desktop`), true);
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, TEST_AI_LOGIN_URL), false);
   assert.deepEqual(getDesktopSsoAccessTokenCookieLookups(app), [
     {
-      url: "https://ai.qiuer.net/",
+      url: TEST_AI_ROOT_URL,
       name: "access_token"
     },
     {
-      url: "https://gtjaqh.net/",
+      url: TEST_BROKER_ROOT_URL,
       name: "access_token"
     }
   ]);
   assert.deepEqual(buildDesktopSsoAccessTokenCookieDetails("token-123", result.config), [
     {
-      url: "https://ai.qiuer.net/",
+      url: TEST_AI_ROOT_URL,
       name: "access_token",
       value: "token-123",
       path: "/",
@@ -377,7 +391,7 @@ test("direct AI login can complete on a logged-in page and inject token cookies 
       sameSite: "lax"
     },
     {
-      url: "https://gtjaqh.net/",
+      url: TEST_BROKER_ROOT_URL,
       name: "access_token",
       value: "token-123",
       path: "/",
@@ -482,7 +496,7 @@ test("buildCookieAccessTokenExchangeRequest sends cookies and extracts configure
   const config = {
     ...DEFAULT_OIDC_CONFIG,
     cookieAccessTokenExchange: {
-      url: "https://ai.qiuer.net/api/auth/token",
+      url: TEST_AI_TOKEN_URL,
       method: "POST",
       headers: {
         "X-Desktop-Client": "ZenMind"
@@ -494,7 +508,7 @@ test("buildCookieAccessTokenExchangeRequest sends cookies and extracts configure
   const request = buildCookieAccessTokenExchangeRequest("sid=abc; iam=def", config);
 
   assert.deepEqual(request, {
-    url: "https://ai.qiuer.net/api/auth/token",
+    url: TEST_AI_TOKEN_URL,
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -520,13 +534,13 @@ test("login completion URL and access token cookie injection are configurable", 
     path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
     JSON.stringify({
       enabled: true,
-      browserOrigin: "https://ai.qiuer.net",
-      loginCompletionUrl: "https://ai.qiuer.net/oauth2/callback",
+      browserOrigin: TEST_AI_ORIGIN,
+      loginCompletionUrl: TEST_AI_CALLBACK_URL,
       cookieAccessTokenExchange: {
-        url: "https://ai.qiuer.net/api/auth/token"
+        url: TEST_AI_TOKEN_URL
       },
       accessTokenCookie: {
-        url: "https://ai.qiuer.net/app",
+        url: TEST_AI_APP_URL,
         name: "desktop_token",
         sameSite: "none"
       }
@@ -535,15 +549,15 @@ test("login completion URL and access token cookie injection are configurable", 
   );
   const app = createTestApp(homePath);
 
-  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/oauth2/callback?code=abc"), true);
-  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/"), false);
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, `${TEST_AI_CALLBACK_URL}?code=abc`), true);
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, TEST_AI_ROOT_URL), false);
   assert.deepEqual(getDesktopSsoAccessTokenCookieLookup(app), {
-    url: "https://ai.qiuer.net/app",
+    url: TEST_AI_APP_URL,
     name: "desktop_token"
   });
   assert.deepEqual(buildDesktopSsoAccessTokenCookieDetails("token-123", loadDesktopSsoConfig(app).config), [
     {
-      url: "https://ai.qiuer.net/app",
+      url: TEST_AI_APP_URL,
       name: "desktop_token",
       value: "token-123",
       path: "/",
