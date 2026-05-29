@@ -623,7 +623,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /<Tooltip content="全部已读">/);
   assert.match(sidebarSource, /<Tooltip content="新建对话">/);
   assert.match(sidebarSource, /查看更多（共/);
-  assert.match(sidebarSource, /等待审批/);
+  assert.match(sidebarSource, /t\("taskBoard\.run\.awaitingApproval"\)/);
   assert.match(sidebarSource, /exportChat/);
   assert.match(sidebarSource, /renameChat/);
   assert.match(sidebarSource, /archiveChat/);
@@ -662,6 +662,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(agentIconSource, /isImageIcon/);
   assert.match(agentIconSource, /useState\(false\)/);
   assert.match(agentIconSource, /onError:\s*\(\)\s*=>\s*setImageFailed\(true\)/);
+  assert.match(agentIconSource, /readIconColor\(icon\) \|\| "#94a3b8"/);
+  assert.doesNotMatch(agentIconSource, /readIconColor\(icon\) \|\| "var\(--accent\)"/);
 
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_ITEMS/);
   assert.match(appShell, /<Route path="\/kanban" element=\{<TaskBoardPage hostTheme=\{themeMode\} \/>/);

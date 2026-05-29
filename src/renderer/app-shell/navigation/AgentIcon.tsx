@@ -489,7 +489,7 @@ export function AgentIcon({
 
   const style: CSSProperties = {
     fontSize: size,
-    color: readIconColor(icon) || "var(--accent)",
+    color: readIconColor(icon) || "#94a3b8",
   };
   return (
     <svg

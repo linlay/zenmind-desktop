@@ -1032,8 +1032,9 @@
   flex: none;
   border-radius: 999px;
   padding: 1px 5px;
-  background: rgba(245, 158, 11, 0.16);
-  color: #8a3d00;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  color: #b45309;
   font-size: 10px;
   line-height: 1.4;
 }
@@ -1268,8 +1269,9 @@
 }
 
 :root[data-theme="dark"] .chat-awaiting-status {
-  color: #fde68a;
-  background: rgba(245, 158, 11, 0.24);
+  background: rgba(180, 83, 9, 0.2);
+  border-color: rgba(251, 191, 36, 0.34);
+  color: #facc15;
 }
 
 :root[data-theme="dark"] .sidebar-group-divider {

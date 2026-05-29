@@ -932,7 +932,9 @@ export function AppSidebar({
             {chat.lastRunContent || chat.chatName || "暂无预览"}
           </span>
           {chat.hasPendingAwaiting ? (
-            <span className="chat-awaiting-status">等待审批</span>
+            <span className="chat-awaiting-status">
+              {t("taskBoard.run.awaitingApproval")}
+            </span>
           ) : null}
           <span className="assistant-worker-chat-action" data-action={action}>
             <span
@@ -1060,7 +1062,9 @@ export function AppSidebar({
                       {latestPreview}
                     </span>
                     {agent.hasPendingAwaiting ? (
-                      <span className="chat-awaiting-status">等待审批</span>
+                      <span className="chat-awaiting-status">
+                        {t("taskBoard.run.awaitingApproval")}
+                      </span>
                     ) : null}
                     <span className="worker-panel-time-label">
                       {formatAssistantChatTime(
