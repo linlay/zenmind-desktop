@@ -657,11 +657,14 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded\s*\{[\s\S]*?background:\s*var\(--surface\);/);
   assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded \.worker-panel-icon\s*\{[\s\S]*?transform:\s*scale\(0\.8\);/);
   assert.match(globalStyles, /\.worker-chat-preview-list \.status-line\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?color:\s*var\(--ink-muted\);/);
-  assert.match(agentIconSource, /BUILTIN_ICON_CONFIGS/);
-  assert.match(agentIconSource, /ledger/);
+  assert.match(agentIconSource, /defaultIcon from "\.\.\/\.\.\/assets\/agent-icons\/default\.svg"/);
+  assert.match(agentIconSource, /const IconMap/);
+  assert.match(agentIconSource, /AGENT_ICON_NAMES[\s\S]*"folder"[\s\S]*"coder"[\s\S]*"terminal"/);
+  assert.doesNotMatch(agentIconSource, /BUILTIN_ICON_CONFIGS/);
+  assert.doesNotMatch(agentIconSource, /ledger/);
   assert.match(agentIconSource, /isImageIcon/);
   assert.match(agentIconSource, /useState\(false\)/);
-  assert.match(agentIconSource, /onError:\s*\(\)\s*=>\s*setImageFailed\(true\)/);
+  assert.match(agentIconSource, /\(\)\s*=>\s*setImageFailed\(true\)/);
   assert.match(agentIconSource, /readIconColor\(icon\) \|\| "#94a3b8"/);
   assert.doesNotMatch(agentIconSource, /readIconColor\(icon\) \|\| "var\(--accent\)"/);
 
