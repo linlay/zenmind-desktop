@@ -8,6 +8,7 @@ import type { MarketCommandResult, MarketListResult, MarketSettings, MarketSetti
 import type { TaskBoardDeleteResult, TaskBoardIssueInput, TaskBoardIssueMoveInput, TaskBoardIssueResult, TaskBoardIssueUpdateInput, TaskBoardListResult } from "./task-board";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
 import type { AssistantChatDetail, AssistantChatSummary, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
+import type { DebugEvent, DebugEventListener, DebugWebviewSurfaceRegistration } from "./debug";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
 
 export interface PanAuthStatus {
@@ -122,6 +123,7 @@ export interface DesktopApi {
     getMemorySummary: () => Promise<AssistantMemorySummary>;
     listAgents: () => Promise<DesktopPetAgentOption[]>;
     listNavigationAgents: () => Promise<AssistantNavAgentItemsResult>;
+    listCopilotAgents: () => Promise<AssistantNavAgentItemsResult>;
     createCoderProject: (input: AssistantCreateCoderProjectRequest) => Promise<AssistantCreateCoderProjectResult>;
     openMemoryDirectory: () => Promise<{ ok: boolean; message: string; path?: string }>;
     listMemoryItems: () => Promise<{
@@ -244,6 +246,16 @@ export interface DesktopApi {
   };
   diagnostics: {
     reportRendererError: (report: RendererDiagnosticReport) => void;
+  };
+  debug: {
+    openViewer: () => Promise<{ ok: boolean }>;
+    closeViewer: () => Promise<{ ok: boolean }>;
+    listEvents: () => Promise<DebugEvent[]>;
+    clearEvents: () => Promise<{ ok: boolean }>;
+    onEvent: (listener: DebugEventListener) => () => void;
+    registerWebviewSurface: (metadata: DebugWebviewSurfaceRegistration) => Promise<{ ok: boolean }>;
+    unregisterWebviewSurface: (webContentsId: number) => Promise<{ ok: boolean }>;
+    openWebviewDevTools: (webContentsId: number) => Promise<{ ok: boolean; message?: string }>;
   };
   desktopPet: {
     getSettings: () => Promise<DesktopPetSettings>;

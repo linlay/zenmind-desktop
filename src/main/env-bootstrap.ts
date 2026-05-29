@@ -5,6 +5,7 @@ import type { App } from "electron";
 import JSZip from "jszip";
 
 type AppPathReader = Pick<App, "getPath">;
+type AppVersionReader = Partial<Pick<App, "getAppPath" | "getVersion">>;
 
 type EnvZipEntry = {
   relativePath: string;
@@ -22,6 +23,7 @@ export type EnvZipImportResult = {
 const ENV_ARCHIVE_WRAPPER_DIRS = new Set([".zenmind", "zenmind", "zenmind-env", "env"]);
 const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-market"] as const;
 const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-bootstrap.json");
+const VERSION_FILE_NAME = "VERSION";
 
 function isEnvArchiveWrapperDir(dirName: string) {
   const normalizedDirName = dirName.trim().toLowerCase();
@@ -164,6 +166,45 @@ function resolveSafeTargetPath(targetRoot: string, relativePath: string) {
   return targetPath;
 }
 
+function normalizeVersion(value: string) {
+  return value.trim().replace(/^v/iu, "");
+}
+
+function readVersionFileIfExists(filePath: string) {
+  try {
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      return null;
+    }
+    const version = normalizeVersion(fs.readFileSync(filePath, "utf8"));
+    return version || null;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveDesktopVersion(app: AppVersionReader = {}) {
+  const candidateRoots = [
+    typeof app.getAppPath === "function" ? app.getAppPath() : "",
+    process.cwd()
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidateRoot of candidateRoots) {
+    const version = readVersionFileIfExists(path.join(candidateRoot, VERSION_FILE_NAME));
+    if (version) {
+      return version;
+    }
+  }
+
+  if (typeof app.getVersion === "function") {
+    const version = normalizeVersion(app.getVersion());
+    if (version) {
+      return version;
+    }
+  }
+
+  throw new Error("无法读取 Desktop VERSION。");
+}
+
 function normalizeZipEntries(zip: JSZip) {
   const zipObjects = Object.values(zip.files);
   const usableEntries = zipObjects.filter((entry) => !shouldSkipArchiveEntry(entry.name));
@@ -188,6 +229,28 @@ function normalizeZipEntries(zip: JSZip) {
   return entries;
 }
 
+async function validateEnvZipVersion(entries: EnvZipEntry[], expectedDesktopVersion: string) {
+  const normalizedExpectedVersion = normalizeVersion(expectedDesktopVersion);
+  if (!normalizedExpectedVersion) {
+    throw new Error("Desktop VERSION 为空，无法校验 env.zip。");
+  }
+
+  const versionEntry = entries.find(
+    (entry) => !entry.directory && entry.relativePath === VERSION_FILE_NAME
+  );
+  if (!versionEntry) {
+    throw new Error("env.zip 缺少 VERSION 文件。");
+  }
+
+  const envVersion = normalizeVersion(await versionEntry.entry.async("string"));
+  if (!envVersion) {
+    throw new Error("env.zip VERSION 为空。");
+  }
+  if (envVersion !== normalizedExpectedVersion) {
+    throw new Error(`env.zip VERSION 不匹配：期望 ${normalizedExpectedVersion}，实际 ${envVersion}。`);
+  }
+}
+
 function writeEnvImportMarker(targetRoot: string, result: Omit<EnvZipImportResult, "targetRoot">) {
   const markerPath = path.join(targetRoot, ENV_IMPORT_MARKER_RELATIVE_PATH);
   fs.mkdirSync(path.dirname(markerPath), { recursive: true });
@@ -205,7 +268,8 @@ function writeEnvImportMarker(targetRoot: string, result: Omit<EnvZipImportResul
 export async function importEnvZipToZenmind(
   app: AppPathReader,
   zipPath: string,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  expectedDesktopVersion: string = resolveDesktopVersion(app as AppVersionReader)
 ): Promise<EnvZipImportResult> {
   if (path.extname(zipPath).toLowerCase() !== ".zip") {
     throw new Error("首次安装只能导入 env.zip。");
@@ -213,6 +277,7 @@ export async function importEnvZipToZenmind(
 
   const zip = await JSZip.loadAsync(await fs.promises.readFile(zipPath));
   const entries = normalizeZipEntries(zip);
+  await validateEnvZipVersion(entries, expectedDesktopVersion);
   const targetRoot = resolveHomeZenmindRoot(app, platform);
   let copiedFiles = 0;
   let skippedFiles = 0;

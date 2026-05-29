@@ -1519,11 +1519,13 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /markAgentChatsRead: \(agentKey: string\) => Promise<AssistantNavActionResult>/);
   assert.match(preload, /listAgents: \(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
   assert.match(preload, /listNavigationAgents: \(\) => ipcRenderer\.invoke\("assistant\.listNavigationAgents"\)/);
+  assert.match(preload, /listCopilotAgents: \(\) => ipcRenderer\.invoke\("assistant\.listCopilotAgents"\)/);
   assert.match(preload, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createCoderProject", input\)/);
   assert.match(preload, /onNavigationAgentsChanged/);
   assert.match(mainProcess, /registerAssistantIpcHandlers\(ipcMain,/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listAgents"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listNavigationAgents"/);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listCopilotAgents"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.createCoderProject"/);
   assert.match(assistantHandlers, /callAgentPlatform\?\.?\(app, "\/api\/agent\/create"/);
   assert.match(assistantHandlers, /assistantNavigationStatusClient\?\.scheduleRefresh\(0\)/);
@@ -1532,7 +1534,9 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantHandlers, /ok:\s*false,[\s\S]*?items:\s*\[\]/);
   assert.match(bridge, /async listAgents\(\): Promise<DesktopPetAgentOption\[\]>/);
   assert.match(bridge, /async listNavigationAgents\(\): Promise<AssistantNavAgentItemsResult>/);
+  assert.match(bridge, /async listCopilotAgents\(\): Promise<AssistantNavAgentItemsResult>/);
   assert.match(bridge, /readAssistantNavigationAgentsFromPlatform/);
+  assert.match(bridge, /readAssistantCopilotAgentsFromPlatform/);
   assert.match(bridge, /chatHasPendingAwaiting/);
   assert.match(bridge, /createNavigationAgentItem/);
   assert.match(appShell, /onNavigationAgentsChanged/);

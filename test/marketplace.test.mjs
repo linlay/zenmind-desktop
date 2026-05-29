@@ -252,8 +252,8 @@ async function withFixtureServer(files, fn) {
   }
 }
 
-test("DEFAULT_MARKETPLACE_CATALOG_URL points at the RustFS marketplace catalog", () => {
-  assert.equal(DEFAULT_MARKETPLACE_CATALOG_URL, "http://47.100.131.144:9001/marketplace/index.json");
+test("DEFAULT_MARKETPLACE_CATALOG_URL points at the example marketplace catalog", () => {
+  assert.equal(DEFAULT_MARKETPLACE_CATALOG_URL, "https://marketplace.example.com/marketplace/index.json");
   assert.equal(DEFAULT_SKILLS_API_BASE_URL, "http://127.0.0.1:8080");
 });
 

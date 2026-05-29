@@ -21,6 +21,9 @@ type OidcConfig = {
   issuer: string;
   authorizeUrl: string;
   loginUrl?: string;
+  appendLoginState: boolean;
+  loginCompletionUrl?: string;
+  loginCompletionUrls?: string[];
   tokenUrl: string;
   clientId: string;
   clientSecret: string;
@@ -29,6 +32,29 @@ type OidcConfig = {
   logoutUrl: string;
   logoutCallbackUri: string;
   browserOrigin?: string;
+  cookieAccessTokenExchange?: CookieAccessTokenExchangeConfig;
+  accessTokenCookie?: AccessTokenCookieConfig;
+  accessTokenCookies?: AccessTokenCookieConfig[];
+};
+
+type CookieAccessTokenExchangeConfig = {
+  url: string;
+  method: "GET" | "POST";
+  headers: Record<string, string>;
+  body?: string;
+  accessTokenPath: string;
+};
+
+type AccessTokenCookieSameSite = "lax" | "strict" | "no_restriction";
+
+type AccessTokenCookieConfig = {
+  url: string;
+  name: string;
+  path: string;
+  domain?: string;
+  secure: boolean;
+  httpOnly: boolean;
+  sameSite: AccessTokenCookieSameSite;
 };
 
 type DesktopSsoConfigLoadResult =
@@ -57,6 +83,13 @@ type DesktopSsoConfigLoadResult =
 type TokenExchangeRequest = {
   url: string;
   method: "POST";
+  headers: Record<string, string>;
+  body?: string;
+};
+
+type CookieAccessTokenExchangeRequest = {
+  url: string;
+  method: CookieAccessTokenExchangeConfig["method"];
   headers: Record<string, string>;
   body?: string;
 };
@@ -101,6 +134,17 @@ export type DesktopSsoBrowserCookieDetails = {
   sameSite: "lax";
 };
 
+export type DesktopSsoAccessTokenCookieDetails = {
+  url: string;
+  name: string;
+  value: string;
+  path: string;
+  domain?: string;
+  secure: boolean;
+  httpOnly: boolean;
+  sameSite: AccessTokenCookieSameSite;
+};
+
 const CALLBACK_PORT = 8080;
 const CALLBACK_HOST = "localhost";
 const CALLBACK_ORIGIN = `http://${CALLBACK_HOST}:${CALLBACK_PORT}`;
@@ -119,6 +163,7 @@ const OIDC_CONFIG_STRING_FIELDS = [
   "issuer",
   "authorizeUrl",
   "loginUrl",
+  "loginCompletionUrl",
   "tokenUrl",
   "clientId",
   "clientSecret",
@@ -131,23 +176,27 @@ const OIDC_CONFIG_URL_FIELDS = [
   "issuer",
   "authorizeUrl",
   "loginUrl",
+  "loginCompletionUrl",
   "tokenUrl",
   "redirectUri",
   "wellKnownUrl",
   "logoutUrl",
   "logoutCallbackUri"
 ] as const;
+const DEFAULT_COOKIE_ACCESS_TOKEN_PATH = "access_token";
+const DEFAULT_ACCESS_TOKEN_COOKIE_NAME = "access_token";
 
 export const DEFAULT_OIDC_CONFIG: OidcConfig = {
-  issuer: "https://eiam.qiuer.net/auth/oidc/CA68B05042044F44AD4D2B5F672A53AE",
-  authorizeUrl: "https://eiam.qiuer.net/auth/oauth2/authorize",
-  tokenUrl: "https://eiam.qiuer.net/auth/oauth2/token",
-  clientId: "MTdjNzdjZTU3ZTExNDUzMWJmMjk4OTQ4MzdkNzY1YmU",
-  clientSecret: "3CH2p8r3NMURy+5E8BYZTK/AYlWCh+Rr",
+  issuer: "https://iam.example.com/auth/oidc/example-app",
+  authorizeUrl: "https://iam.example.com/auth/oauth2/authorize",
+  tokenUrl: "https://iam.example.com/auth/oauth2/token",
+  clientId: "desktop-test-client",
+  clientSecret: "desktop-test-secret",
   redirectUri: `http://${CALLBACK_HOST}:${CALLBACK_PORT}${CALLBACK_PATH}`,
-  wellKnownUrl: "https://eiam.qiuer.net/auth/oidc/CA68B05042044F44AD4D2B5F672A53AE/.well-known/openid-configuration",
-  logoutUrl: "https://eiam.qiuer.net/auth/ssoLogout",
-  logoutCallbackUri: `http://${CALLBACK_HOST}:${CALLBACK_PORT}${LOGOUT_CALLBACK_PATH}`
+  wellKnownUrl: "https://iam.example.com/auth/oidc/example-app/.well-known/openid-configuration",
+  logoutUrl: "https://iam.example.com/auth/ssoLogout",
+  logoutCallbackUri: `http://${CALLBACK_HOST}:${CALLBACK_PORT}${LOGOUT_CALLBACK_PATH}`,
+  appendLoginState: true
 };
 
 let currentStatus: DesktopSsoStatus = createSignedOutStatus("尚未登录。");
@@ -156,6 +205,7 @@ let callbackServerReady: Promise<void> | null = null;
 let callbackHooks: CallbackHooks = {};
 let pendingLogin: PendingLogin | null = null;
 let desktopSsoProxyState: DesktopSsoProxyState | null = null;
+let currentAccessToken = "";
 const usedAuthorizationCodes = new Set<string>();
 
 function createSignedOutStatus(message: string): DesktopSsoStatus {
@@ -244,6 +294,37 @@ function getRecordString(record: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
+function getRecordObject(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function getRecordStringArray(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  if (value === undefined) {
+    return [];
+  }
+  if (typeof value === "string") {
+    return value.trim() ? [value.trim()] : [];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error(`${key} 必须是字符串或字符串数组。`);
+  }
+  const values: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") {
+      throw new Error(`${key} 只能包含字符串。`);
+    }
+    const normalizedItem = item.trim();
+    if (normalizedItem) {
+      values.push(normalizedItem);
+    }
+  }
+  return values;
+}
+
 function isConfigEnabled(record: Record<string, unknown>) {
   const value = record.enabled;
   if (value === true) {
@@ -253,6 +334,22 @@ function isConfigEnabled(record: Record<string, unknown>) {
     return /^(?:true|1|on|yes)$/iu.test(value.trim());
   }
   return false;
+}
+
+function getRecordBoolean(record: Record<string, unknown>, key: string, defaultValue: boolean) {
+  const value = record[key];
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    if (/^(?:true|1|on|yes)$/iu.test(value.trim())) {
+      return true;
+    }
+    if (/^(?:false|0|off|no)$/iu.test(value.trim())) {
+      return false;
+    }
+  }
+  return defaultValue;
 }
 
 function parseDesktopSsoConfigContent(content: string) {
@@ -296,6 +393,192 @@ function normalizeIdentityProviderOrigin(record: Record<string, unknown>) {
   return url.origin;
 }
 
+function hasHeader(headers: Record<string, string>, name: string) {
+  const normalizedName = name.toLowerCase();
+  return Object.keys(headers).some((headerName) => headerName.toLowerCase() === normalizedName);
+}
+
+function normalizeCookieAccessTokenExchangeHeaders(record: Record<string, unknown>) {
+  if (!("headers" in record)) {
+    return {};
+  }
+  const rawHeaders = getRecordObject(record, "headers");
+  if (!rawHeaders) {
+    throw new Error("cookieAccessTokenExchange.headers 必须是 JSON 对象。");
+  }
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(rawHeaders)) {
+    const normalizedName = name.trim();
+    if (!normalizedName) {
+      continue;
+    }
+    if (typeof value !== "string") {
+      throw new Error("cookieAccessTokenExchange.headers 只能包含字符串值。");
+    }
+    headers[normalizedName] = value;
+  }
+  return headers;
+}
+
+function normalizeCookieAccessTokenExchangeMethod(record: Record<string, unknown>) {
+  const method = (getRecordString(record, "method") || "GET").toUpperCase();
+  if (method !== "GET" && method !== "POST") {
+    throw new Error("cookieAccessTokenExchange.method 只支持 GET 或 POST。");
+  }
+  return method;
+}
+
+function normalizeCookieAccessTokenExchangeBody(
+  record: Record<string, unknown>,
+  method: CookieAccessTokenExchangeConfig["method"],
+  headers: Record<string, string>
+) {
+  if (!("body" in record)) {
+    return undefined;
+  }
+  if (method === "GET") {
+    throw new Error("cookieAccessTokenExchange.body 只能和 POST 一起使用。");
+  }
+  const body = record.body;
+  if (typeof body === "string") {
+    return body;
+  }
+  if (body && typeof body === "object") {
+    if (!hasHeader(headers, "Content-Type")) {
+      headers["Content-Type"] = "application/json";
+    }
+    return JSON.stringify(body);
+  }
+  throw new Error("cookieAccessTokenExchange.body 必须是字符串或 JSON 对象。");
+}
+
+function normalizeCookieAccessTokenExchangeConfig(
+  record: Record<string, unknown>,
+  config: OidcConfig
+): CookieAccessTokenExchangeConfig | undefined {
+  if (!("cookieAccessTokenExchange" in record)) {
+    return undefined;
+  }
+  const exchangeRecord = getRecordObject(record, "cookieAccessTokenExchange");
+  if (!exchangeRecord) {
+    throw new Error("cookieAccessTokenExchange 必须是 JSON 对象。");
+  }
+  const rawUrl = getRecordString(exchangeRecord, "url");
+  if (!rawUrl) {
+    throw new Error("cookieAccessTokenExchange.url 不能为空。");
+  }
+  const baseOrigin = config.browserOrigin || getDesktopSsoProxyTargetOrigin(config);
+  const method = normalizeCookieAccessTokenExchangeMethod(exchangeRecord);
+  const headers = normalizeCookieAccessTokenExchangeHeaders(exchangeRecord);
+  const body = normalizeCookieAccessTokenExchangeBody(exchangeRecord, method, headers);
+  const accessTokenPath = getRecordString(exchangeRecord, "accessTokenPath") || DEFAULT_COOKIE_ACCESS_TOKEN_PATH;
+  return {
+    url: new URL(rawUrl, baseOrigin).toString(),
+    method,
+    headers,
+    ...(body !== undefined ? { body } : {}),
+    accessTokenPath
+  };
+}
+
+function normalizeAccessTokenCookieSameSite(value: string) {
+  const normalizedValue = value.trim().toLowerCase();
+  if (normalizedValue === "strict") {
+    return "strict";
+  }
+  if (normalizedValue === "none" || normalizedValue === "no_restriction") {
+    return "no_restriction";
+  }
+  return "lax";
+}
+
+function normalizeAccessTokenCookieConfig(
+  record: Record<string, unknown>,
+  config: OidcConfig,
+  enabledByDefault: boolean
+): AccessTokenCookieConfig | undefined {
+  if (!("accessTokenCookie" in record)) {
+    if (!enabledByDefault) {
+      return undefined;
+    }
+    const url = config.browserOrigin || new URL(config.loginUrl || config.authorizeUrl).origin;
+    return {
+      url: new URL(url).toString(),
+      name: DEFAULT_ACCESS_TOKEN_COOKIE_NAME,
+      path: "/",
+      secure: new URL(url).protocol === "https:",
+      httpOnly: false,
+      sameSite: "lax"
+    };
+  }
+  const cookieRecord = getRecordObject(record, "accessTokenCookie");
+  if (!cookieRecord) {
+    throw new Error("accessTokenCookie 必须是 JSON 对象。");
+  }
+  return normalizeAccessTokenCookieRecord(cookieRecord, config);
+}
+
+function normalizeAccessTokenCookieRecord(
+  cookieRecord: Record<string, unknown>,
+  config: OidcConfig
+): AccessTokenCookieConfig {
+  const rawUrl =
+    getRecordString(cookieRecord, "url") ||
+    config.browserOrigin ||
+    new URL(config.loginUrl || config.authorizeUrl).origin;
+  const url = new URL(rawUrl);
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("accessTokenCookie.url 只支持 http 或 https。");
+  }
+  const name = getRecordString(cookieRecord, "name") || DEFAULT_ACCESS_TOKEN_COOKIE_NAME;
+  const pathValue = getRecordString(cookieRecord, "path") || "/";
+  const domain = getRecordString(cookieRecord, "domain");
+  const secureValue = cookieRecord.secure;
+  const httpOnlyValue = cookieRecord.httpOnly;
+  return {
+    url: url.toString(),
+    name,
+    path: pathValue.startsWith("/") ? pathValue : `/${pathValue}`,
+    ...(domain ? { domain } : {}),
+    secure: typeof secureValue === "boolean" ? secureValue : url.protocol === "https:",
+    httpOnly: typeof httpOnlyValue === "boolean" ? httpOnlyValue : false,
+    sameSite: normalizeAccessTokenCookieSameSite(getRecordString(cookieRecord, "sameSite"))
+  };
+}
+
+function normalizeAccessTokenCookieConfigs(
+  record: Record<string, unknown>,
+  config: OidcConfig,
+  enabledByDefault: boolean
+) {
+  if (!("accessTokenCookies" in record)) {
+    const cookieConfig = normalizeAccessTokenCookieConfig(record, config, enabledByDefault);
+    return cookieConfig ? [cookieConfig] : [];
+  }
+  const rawValue = record.accessTokenCookies;
+  if (!Array.isArray(rawValue)) {
+    throw new Error("accessTokenCookies 必须是 JSON 对象数组。");
+  }
+  const cookieConfigs: AccessTokenCookieConfig[] = [];
+  for (const item of rawValue) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("accessTokenCookies 只能包含 JSON 对象。");
+    }
+    cookieConfigs.push(normalizeAccessTokenCookieRecord(item as Record<string, unknown>, config));
+  }
+  return cookieConfigs;
+}
+
+function normalizeLoginCompletionUrls(record: Record<string, unknown>, config: OidcConfig) {
+  const baseOrigin = config.browserOrigin || new URL(config.loginUrl || config.authorizeUrl).origin;
+  const rawValues = [
+    ...getRecordStringArray(record, "loginCompletionUrls"),
+    getRecordString(record, "loginCompletionUrl"),
+    getRecordString(record, "loginSuccessUrl")
+  ].filter(Boolean);
+  return [...new Set(rawValues.map((value) => new URL(value, baseOrigin).toString()))];
+}
+
 function buildOidcConfigFromRecord(record: Record<string, unknown>) {
   const config: OidcConfig = { ...DEFAULT_OIDC_CONFIG };
   for (const field of OIDC_CONFIG_STRING_FIELDS) {
@@ -307,6 +590,21 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
   const browserOrigin = normalizeIdentityProviderOrigin(record);
   if (browserOrigin) {
     config.browserOrigin = browserOrigin;
+  }
+  config.appendLoginState = getRecordBoolean(record, "appendLoginState", true);
+  const cookieAccessTokenExchange = normalizeCookieAccessTokenExchangeConfig(record, config);
+  if (cookieAccessTokenExchange) {
+    config.cookieAccessTokenExchange = cookieAccessTokenExchange;
+  }
+  const loginCompletionUrls = normalizeLoginCompletionUrls(record, config);
+  if (loginCompletionUrls.length > 0) {
+    config.loginCompletionUrl = loginCompletionUrls[0];
+    config.loginCompletionUrls = loginCompletionUrls;
+  }
+  const accessTokenCookies = normalizeAccessTokenCookieConfigs(record, config, Boolean(cookieAccessTokenExchange));
+  if (accessTokenCookies.length > 0) {
+    config.accessTokenCookie = accessTokenCookies[0];
+    config.accessTokenCookies = accessTokenCookies;
   }
   for (const field of OIDC_CONFIG_URL_FIELDS) {
     if (!config[field]) {
@@ -394,6 +692,7 @@ function loadSession(app: App) {
 
 function clearSession(app: App) {
   pendingLogin = null;
+  currentAccessToken = "";
   const filePath = getSessionPath(app);
   try {
     fs.rmSync(filePath, { force: true });
@@ -512,7 +811,7 @@ function writeHtmlResponse(response: http.ServerResponse, statusCode: number, ht
 
 function buildAuthorizeUrl(state: string, config: OidcConfig = DEFAULT_OIDC_CONFIG) {
   if (config.loginUrl) {
-    return buildConfiguredLoginUrl(state, config.loginUrl);
+    return buildConfiguredLoginUrl(state, config.loginUrl, config.appendLoginState);
   }
   const url = new URL(config.authorizeUrl);
   url.searchParams.set("client_id", config.clientId);
@@ -523,7 +822,10 @@ function buildAuthorizeUrl(state: string, config: OidcConfig = DEFAULT_OIDC_CONF
   return url.toString();
 }
 
-function buildConfiguredLoginUrl(state: string, loginUrl: string) {
+function buildConfiguredLoginUrl(state: string, loginUrl: string, appendState = true) {
+  if (!appendState) {
+    return new URL(loginUrl).toString();
+  }
   const url = new URL(loginUrl);
   if (url.hash) {
     const hashValue = url.hash.slice(1);
@@ -612,6 +914,9 @@ function getDesktopSsoBrowserCookieOrigins(config: OidcConfig = DEFAULT_OIDC_CON
   }
   if (config.browserOrigin) {
     origins.add(config.browserOrigin);
+  }
+  if (config.cookieAccessTokenExchange) {
+    origins.add(new URL(config.cookieAccessTokenExchange.url).origin);
   }
   return [...origins];
 }
@@ -868,7 +1173,8 @@ export function getIdentityProviderCookieHosts(config: OidcConfig = DEFAULT_OIDC
     config.loginUrl,
     config.tokenUrl,
     config.wellKnownUrl,
-    config.logoutUrl
+    config.logoutUrl,
+    config.cookieAccessTokenExchange?.url
   ]) {
     if (!value) {
       continue;
@@ -909,6 +1215,104 @@ function buildTokenExchangeRequest(code: string, config: OidcConfig = DEFAULT_OI
       "Accept": "application/json"
     }
   };
+}
+
+function buildCookieAccessTokenExchangeRequest(
+  cookieHeader: string,
+  config: OidcConfig = DEFAULT_OIDC_CONFIG
+): CookieAccessTokenExchangeRequest | null {
+  const exchangeConfig = config.cookieAccessTokenExchange;
+  if (!exchangeConfig) {
+    return null;
+  }
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    ...exchangeConfig.headers
+  };
+  const normalizedCookieHeader = cookieHeader.trim();
+  if (normalizedCookieHeader) {
+    headers.Cookie = normalizedCookieHeader;
+  }
+  return {
+    url: exchangeConfig.url,
+    method: exchangeConfig.method,
+    headers,
+    ...(exchangeConfig.body !== undefined ? { body: exchangeConfig.body } : {})
+  };
+}
+
+function readJsonPathValue(value: unknown, pathValue: string) {
+  let currentValue = value;
+  for (const segment of pathValue.split(".")) {
+    const key = segment.trim();
+    if (!key) {
+      return undefined;
+    }
+    if (!currentValue || typeof currentValue !== "object") {
+      return undefined;
+    }
+    currentValue = (currentValue as Record<string, unknown>)[key];
+  }
+  return currentValue;
+}
+
+function readCookieAccessTokenFromResponse(value: unknown, config: OidcConfig = DEFAULT_OIDC_CONFIG) {
+  const pathValue = config.cookieAccessTokenExchange?.accessTokenPath || DEFAULT_COOKIE_ACCESS_TOKEN_PATH;
+  const accessToken = normalizeStringClaim(readJsonPathValue(value, pathValue));
+  if (!accessToken) {
+    throw new Error(`Cookie access_token 响应缺少 ${pathValue}。`);
+  }
+  return accessToken;
+}
+
+function getJwtPayload(token: string) {
+  const [, payloadPart] = token.split(".");
+  if (!payloadPart) {
+    return {};
+  }
+  try {
+    return decodeJsonPart(payloadPart);
+  } catch {
+    return {};
+  }
+}
+
+function createCookieAccessTokenClaims(accessToken: string, config: OidcConfig): DesktopSsoClaims {
+  const payload = getJwtPayload(accessToken);
+  return {
+    sub: normalizeStringClaim(payload.sub) || "desktop-sso-cookie",
+    issuer: normalizeStringClaim(payload.iss) || config.browserOrigin || new URL(config.loginUrl || config.authorizeUrl).origin,
+    audience: normalizeAudience(payload.aud) || config.cookieAccessTokenExchange?.url || config.clientId,
+    ...(normalizeStringClaim(payload.name) ? { name: normalizeStringClaim(payload.name) } : {}),
+    ...(normalizeStringClaim(payload.email) ? { email: normalizeStringClaim(payload.email) } : {})
+  };
+}
+
+function urlsMatchOriginAndPath(value: string, expected: string) {
+  try {
+    const valueUrl = new URL(value);
+    const expectedUrl = new URL(expected);
+    return valueUrl.origin === expectedUrl.origin && valueUrl.pathname === expectedUrl.pathname;
+  } catch {
+    return false;
+  }
+}
+
+async function exchangeCookieForAccessToken(
+  cookieHeader: string,
+  fetchImpl: FetchLike = fetch as unknown as FetchLike,
+  config: OidcConfig = DEFAULT_OIDC_CONFIG
+) {
+  const request = buildCookieAccessTokenExchangeRequest(cookieHeader, config);
+  if (!request) {
+    return "";
+  }
+  const tokenResponse = await fetchJson(fetchImpl, request.url, {
+    method: request.method,
+    headers: request.headers,
+    body: request.body
+  });
+  return readCookieAccessTokenFromResponse(tokenResponse, config);
 }
 
 function normalizeCallbackRequest(
@@ -1115,6 +1519,7 @@ export function getDesktopSsoStatus(app?: App): DesktopSsoStatus {
 
 export function failDesktopSsoFlow(message: string): DesktopSsoStatus {
   pendingLogin = null;
+  currentAccessToken = "";
   const status = createFailedStatus(message);
   setCurrentStatus(status);
   return cloneStatus(status);
@@ -1153,6 +1558,7 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
     };
   }
   try {
+    currentAccessToken = "";
     await ensureCallbackServer(app, hooks);
     activateDesktopSsoProxy(oidcConfig, { resetCookies: true });
     const state = randomUUID();
@@ -1182,6 +1588,131 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
       message
     };
   }
+}
+
+export function getDesktopSsoCookieAccessTokenExchangeUrl(app: Pick<App, "getPath">) {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured || configResult.error || !configResult.config?.cookieAccessTokenExchange) {
+    return null;
+  }
+  return configResult.config.cookieAccessTokenExchange.url;
+}
+
+export function isDesktopSsoLoginCompletionUrl(app: Pick<App, "getPath">, value: string) {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured || configResult.error || !configResult.config) {
+    return false;
+  }
+  const completionUrls = configResult.config.loginCompletionUrls ||
+    (configResult.config.loginCompletionUrl ? [configResult.config.loginCompletionUrl] : []);
+  return completionUrls.some((completionUrl) => urlsMatchOriginAndPath(value, completionUrl));
+}
+
+export function buildDesktopSsoAccessTokenCookieDetails(
+  accessToken: string,
+  config: OidcConfig = DEFAULT_OIDC_CONFIG
+): DesktopSsoAccessTokenCookieDetails[] {
+  const token = accessToken.trim();
+  const cookieConfigs = config.accessTokenCookies ||
+    (config.accessTokenCookie ? [config.accessTokenCookie] : []);
+  if (!token || cookieConfigs.length === 0) {
+    return [];
+  }
+  return cookieConfigs.map((details) => ({
+    url: details.url,
+    name: details.name,
+    value: token,
+    path: details.path,
+    ...(details.domain ? { domain: details.domain } : {}),
+    secure: details.secure,
+    httpOnly: details.httpOnly,
+    sameSite: details.sameSite
+  }));
+}
+
+export function getDesktopSsoAccessTokenCookieDetails(app: Pick<App, "getPath">, accessToken: string) {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured || configResult.error || !configResult.config) {
+    return [];
+  }
+  return buildDesktopSsoAccessTokenCookieDetails(accessToken, configResult.config);
+}
+
+export function getDesktopSsoAccessTokenCookieLookup(app: Pick<App, "getPath">) {
+  return getDesktopSsoAccessTokenCookieLookups(app)[0] || null;
+}
+
+export function getDesktopSsoAccessTokenCookieLookups(app: Pick<App, "getPath">) {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured || configResult.error || !configResult.config) {
+    return [];
+  }
+  const cookieConfigs = configResult.config.accessTokenCookies ||
+    (configResult.config.accessTokenCookie ? [configResult.config.accessTokenCookie] : []);
+  return cookieConfigs.map((cookieConfig) => ({
+    url: cookieConfig.url,
+    name: cookieConfig.name
+  }));
+}
+
+export async function exchangeConfiguredDesktopSsoCookieForAccessToken(
+  app: Pick<App, "getPath">,
+  cookieHeader: string,
+  fetchImpl: FetchLike = fetch as unknown as FetchLike
+) {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured || configResult.error || !configResult.config) {
+    return "";
+  }
+  const accessToken = await exchangeCookieForAccessToken(cookieHeader, fetchImpl, configResult.config);
+  if (accessToken) {
+    currentAccessToken = accessToken;
+  }
+  return accessToken;
+}
+
+export function getDesktopSsoAccessToken() {
+  return currentAccessToken || null;
+}
+
+export function completeDesktopSsoBrowserLogin(app: App, completionUrl: string): DesktopSsoStatus {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured) {
+    return createUnconfiguredStatus(configResult.message);
+  }
+  if (configResult.error || !configResult.config) {
+    return createFailedStatus(configResult.error || "Desktop 单点登录配置缺少 OIDC 参数。");
+  }
+  pendingLogin = null;
+  const parsedUrl = new URL(completionUrl);
+  const status = createAuthenticatedStatus({
+    sub: parsedUrl.hostname || "desktop-sso-browser",
+    issuer: configResult.config.browserOrigin || parsedUrl.origin,
+    audience: configResult.config.browserOrigin || parsedUrl.origin
+  });
+  setCurrentStatus(status);
+  saveSession(app, status);
+  return cloneStatus(status);
+}
+
+export function completeDesktopSsoCookieLogin(app: App, accessToken: string): DesktopSsoStatus {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured) {
+    return createUnconfiguredStatus(configResult.message);
+  }
+  if (configResult.error || !configResult.config) {
+    return createFailedStatus(configResult.error || "Desktop 单点登录配置缺少 OIDC 参数。");
+  }
+  const token = accessToken.trim();
+  if (!token) {
+    return createFailedStatus("Cookie access_token 为空。");
+  }
+  pendingLogin = null;
+  currentAccessToken = token;
+  const status = createAuthenticatedStatus(createCookieAccessTokenClaims(token, configResult.config));
+  setCurrentStatus(status);
+  saveSession(app, status);
+  return cloneStatus(status);
 }
 
 export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Promise<DesktopSsoLogoutResult> {
@@ -1256,6 +1787,14 @@ export const __testInternals = {
   buildLogoutUrl,
   buildConfiguredLoginUrl,
   buildTokenExchangeRequest,
+  buildCookieAccessTokenExchangeRequest,
+  buildDesktopSsoAccessTokenCookieDetails,
+  completeDesktopSsoBrowserLogin,
+  completeDesktopSsoCookieLogin,
+  getDesktopSsoAccessTokenCookieLookup,
+  getDesktopSsoAccessTokenCookieLookups,
+  isDesktopSsoLoginCompletionUrl,
+  readCookieAccessTokenFromResponse,
   normalizeCallbackRequest,
   validateIdToken
 };

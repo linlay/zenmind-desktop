@@ -74,6 +74,7 @@ import {
 import { resolveWebviewOpenDisposition, shouldDownloadUrlFromWebview } from "./webview-open-tab";
 import { revealPathInFileManager } from "./reveal-path";
 import { buildApplicationMenu as installApplicationMenu } from "./app-shell/app-menu";
+import { DebugViewerWindowController } from "./app-shell/debug-viewer-window";
 import { LogViewerWindowController } from "./app-shell/log-viewer-window";
 import { NativeDialogVisibilityController } from "./app-shell/native-dialogs";
 import { AppTrayController } from "./app-shell/tray";
@@ -128,6 +129,8 @@ import type {
   AssistantVoiceTranscriptionRequest,
   DesktopActionRendererRequest,
   DesktopActionRendererResponse,
+  DebugEvent,
+  DebugWebviewSurfaceRegistration,
   DesktopPetAgentOption,
   DesktopPetSettingsInput,
   RendererDiagnosticReport,
@@ -229,6 +232,8 @@ import {
 import { initializeMainI18n, setMainLocale, t } from "./i18n/main-i18n";
 import { isSupportedLocale } from "../shared/i18n";
 import { createStartupRestoreController, STARTUP_RESTORE_SERVICE_ORDER } from "./startup-restore";
+import { createDebugEventStore } from "./debug/debug-events";
+import { WebviewDebugManager } from "./debug/webview-debug-manager";
 import {
   applyPlatformAppInit,
   getArchiveExtensions,
@@ -273,6 +278,7 @@ const mainProcessContext = createMainProcessContext({
 });
 const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
 const LOG_VIEWER_ROUTE = "/log-viewer";
+const DEBUG_VIEWER_SHORTCUT = "CommandOrControl+Shift+D";
 const QUICK_AGENT_WEBCLIENT_PATHNAMES = new Set(["/copilot"]);
 const QUICK_AGENT_OPEN_RETRY_COUNT = 24;
 const QUICK_AGENT_OPEN_RETRY_MS = 180;
@@ -582,6 +588,20 @@ const logViewerWindowController = new LogViewerWindowController({
   getOwnerWindow: () => appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null,
   loadRendererRoute,
   onRendererError: safeConsoleError
+});
+
+const debugEventStore = createDebugEventStore({ maxEvents: 1000 });
+const debugViewerWindowController = new DebugViewerWindowController({
+  preloadPath: path.join(__dirname, "..", "preload", "index.js"),
+  platform: mainProcessContext.platform,
+  getOwnerWindow: () => appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null,
+  loadRendererRoute,
+  onRendererError: safeConsoleError
+});
+const webviewDebugManager = new WebviewDebugManager({
+  store: debugEventStore,
+  emitEvent: emitDebugEvent,
+  onError: safeConsoleError
 });
 
 const nativeDialogController = new NativeDialogVisibilityController({
@@ -1184,6 +1204,50 @@ async function openLogViewerWindow(request: ServiceOpenLogViewerRequest) {
   return logViewerWindowController.open(request);
 }
 
+function emitDebugEvent(event: DebugEvent) {
+  const targetWindow = debugViewerWindowController.getWindow();
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+  targetWindow.webContents.send("debug.event", event);
+}
+
+async function openDebugViewerWindow() {
+  return debugViewerWindowController.open();
+}
+
+function closeDebugViewerWindow() {
+  return debugViewerWindowController.close();
+}
+
+function readDebugWebContentsId(value: unknown) {
+  const webContentsId = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(webContentsId) || webContentsId <= 0) {
+    throw new Error("缺少有效的 webContentsId。");
+  }
+  return webContentsId;
+}
+
+function normalizeDebugSurfaceRegistration(input: unknown): DebugWebviewSurfaceRegistration {
+  const record = input && typeof input === "object" && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : {};
+  const webContentsId = readDebugWebContentsId(record.webContentsId);
+  const kind = record.kind === "plugin" || record.kind === "external" ? record.kind : "webview";
+  const readOptionalString = (key: string) => {
+    const value = record[key];
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  };
+  return {
+    webContentsId,
+    kind,
+    ...(readOptionalString("surfaceId") ? { surfaceId: readOptionalString("surfaceId") } : {}),
+    ...(readOptionalString("surfaceLabel") ? { surfaceLabel: readOptionalString("surfaceLabel") } : {}),
+    ...(readOptionalString("tabId") ? { tabId: readOptionalString("tabId") } : {}),
+    ...(readOptionalString("url") ? { url: readOptionalString("url") } : {})
+  };
+}
+
 function closeLogViewerWindow() {
   return logViewerWindowController.close();
 }
@@ -1237,6 +1301,15 @@ function registerQuickAssistantShortcut() {
   });
 }
 
+function registerDebugViewerShortcut() {
+  const registered = globalShortcut.register(DEBUG_VIEWER_SHORTCUT, () => {
+    void openDebugViewerWindow();
+  });
+  if (!registered) {
+    console.warn(`failed to register debug viewer shortcut: ${DEBUG_VIEWER_SHORTCUT}`);
+  }
+}
+
 async function collectWebviewLoadDiagnostics(contents: Electron.WebContents, validatedUrl: string) {
   const sessionRef = contents.session;
   let resolvedProxy = "unknown";
@@ -1286,6 +1359,9 @@ function createWindow() {
     report: safeConsoleError,
     openExternal: shell.openExternal,
     schedule: setImmediate
+  });
+  targetWindow.webContents.on("did-attach-webview", (_event, contents) => {
+    webviewDebugManager.attachWebContents(contents);
   });
 
   void loadMainWindowRenderer(targetWindow, {
@@ -1533,7 +1609,7 @@ async function openBrowserUrl(input: {
       action: "open_url",
       target: targetUrl,
       url: targetUrl,
-      message: `Sent ${input.label || targetUrl} to the built-in browser.`
+      message: `已将「${input.label || targetUrl}」发送到内置浏览器。`
     };
   }
   for (let attempt = 0; attempt < 32; attempt += 1) {
@@ -1889,6 +1965,8 @@ async function renderAssistantPdf(html: string) {
 
 function registerIpcHandlers(context: MainProcessContext) {
   const state = context.state;
+  webviewDebugManager.start();
+  webviewDebugManager.attachSession(session.defaultSession);
   const assistantBridge = new AgentPlatformAssistantBridge({
     app,
     getServiceState,
@@ -1933,6 +2011,33 @@ function registerIpcHandlers(context: MainProcessContext) {
     revealPathInFileManager,
     reportRendererDiagnostic
   }));
+  ipcMain.handle("debug.openViewer", async () => openDebugViewerWindow());
+  ipcMain.handle("debug.closeViewer", async () => closeDebugViewerWindow());
+  ipcMain.handle("debug.listEvents", async () => debugEventStore.listEvents());
+  ipcMain.handle("debug.clearEvents", async () => {
+    debugEventStore.clearEvents();
+    return { ok: true };
+  });
+  ipcMain.handle("debug.registerWebviewSurface", async (_event, metadata) => {
+    webviewDebugManager.registerSurface(normalizeDebugSurfaceRegistration(metadata));
+    return { ok: true };
+  });
+  ipcMain.handle("debug.unregisterWebviewSurface", async (_event, webContentsId) => {
+    webviewDebugManager.unregisterSurface(readDebugWebContentsId(webContentsId));
+    return { ok: true };
+  });
+  ipcMain.handle("debug.openWebviewDevTools", async (_event, rawWebContentsId) => {
+    const webContentsId = readDebugWebContentsId(rawWebContentsId);
+    if (!debugEventStore.getSurface(webContentsId)) {
+      return { ok: false, message: "未找到对应的内嵌网页。" };
+    }
+    const targetContents = webContents.fromId(webContentsId);
+    if (!targetContents || targetContents.isDestroyed()) {
+      return { ok: false, message: "内嵌网页已关闭。" };
+    }
+    targetContents.openDevTools({ mode: "detach" });
+    return { ok: true };
+  });
 
   registerAssistantIpcHandlers(ipcMain, createAssistantIpcHandlerOptions(context, {
     assistantBridge,
@@ -2105,6 +2210,7 @@ if (gotSingleInstanceLock) {
     createAppTray();
     buildApplicationMenu();
     registerQuickAssistantShortcut();
+    registerDebugViewerShortcut();
     void runServiceMutation(() => runStartupPreparation(app, {
       onModeResolved: (mode) => {
         startupRestoreController.beginSession(mode);
@@ -2183,6 +2289,8 @@ app.on("will-quit", () => {
     platform: mainProcessContext.platform,
     globalShortcut
   });
+  globalShortcut.unregister(DEBUG_VIEWER_SHORTCUT);
+  webviewDebugManager.stop();
 });
 
 app.on("window-all-closed", () => {

@@ -422,6 +422,7 @@ export function PluginPage({
   const [webviewCurrentUrl, setWebviewCurrentUrl] = useState("");
   const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] = useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
+  const registeredDebugWebContentsIdRef = useRef<number | null>(null);
   const surfaceVisibilityProps =
     active === undefined
       ? {}
@@ -911,6 +912,7 @@ export function PluginPage({
 
   function syncWebviewState() {
     setWebviewCurrentUrl(readCurrentWebviewUrl());
+    registerDebugWebviewSurface();
     if (!webviewLoadedChromeErrorPage()) {
       setWebviewLoadError(false);
       return;
@@ -927,6 +929,30 @@ export function PluginPage({
         current === webviewRetryNonce ? current + 1 : current,
       );
     }, 450);
+  }
+
+  function registerDebugWebviewSurface() {
+    const targetWebview = webviewRef.current;
+    if (!targetWebview) {
+      return;
+    }
+    try {
+      const webContentsId = targetWebview.getWebContentsId();
+      if (!webContentsId) {
+        return;
+      }
+      registeredDebugWebContentsIdRef.current = webContentsId;
+      void window.electronAPI.debug.registerWebviewSurface({
+        webContentsId,
+        kind: "plugin",
+        ...(pluginId ? { surfaceId: pluginId } : {}),
+        ...(serviceDisplayName ? { surfaceLabel: serviceDisplayName } : {}),
+        tabId: surfaceRoute,
+        url: readCurrentWebviewUrl()
+      });
+    } catch {
+      // Ignore until Electron attaches the guest webContents.
+    }
   }
 
   useEffect(() => {
@@ -962,6 +988,7 @@ export function PluginPage({
           "navigation",
         );
       }
+      registerDebugWebviewSurface();
       seedAgentWebclientAccessToken();
     };
     const handleDidNavigateInPage = (event: Event) => {
@@ -977,6 +1004,7 @@ export function PluginPage({
           "navigation",
         );
       }
+      registerDebugWebviewSurface();
       seedAgentWebclientAccessToken();
     };
     const handleDidFailLoad = () => syncWebviewState();
@@ -995,6 +1023,10 @@ export function PluginPage({
     const seedTimers = scheduleAgentWebclientAccessTokenSeeds();
 
     return () => {
+      if (registeredDebugWebContentsIdRef.current) {
+        void window.electronAPI.debug.unregisterWebviewSurface(registeredDebugWebContentsIdRef.current);
+        registeredDebugWebContentsIdRef.current = null;
+      }
       seedTimers.forEach((timer) => window.clearTimeout(timer));
       targetWebview.removeEventListener("dom-ready", handleDomReady);
       targetWebview.removeEventListener("did-finish-load", handleDidFinishLoad);
@@ -1013,10 +1045,13 @@ export function PluginPage({
     bridgeProtocol,
     bridgeReady,
     active,
+    pluginId,
     service?.id,
     service?.status,
+    serviceDisplayName,
     serviceWebviewPreloadUrl,
     embeddedUrl,
+    surfaceRoute,
     webviewSrcUrl,
     webviewRenderKey,
     webviewRetryNonce,

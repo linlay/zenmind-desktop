@@ -396,6 +396,7 @@ type AppSidebarProps = {
   customSidebarNavOrder?: SidebarNavOrderItemKey[];
   customSidebarItems: CustomSidebarItem[];
   assistantNavAgents?: AssistantNavAgentItem[];
+  copilotAgentOptions?: AssistantNavAgentItem[];
   desktopSsoStatus?: DesktopSsoStatus | null;
   desktopSsoBusy?: boolean;
   onOpenAssistantDock?: () => void;
@@ -403,6 +404,7 @@ type AppSidebarProps = {
   onDesktopSsoLogin?: () => void;
   onDesktopSsoLogout?: () => void;
   onRefreshAssistantNavAgents?: () => Promise<void> | void;
+  onRefreshCopilotAgentOptions?: () => Promise<void> | void;
   onCreateCustomSidebarItem?: (input: CustomSidebarItemInput) => Promise<CustomSidebarItemResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
   onNavigateItem?: () => void;
@@ -423,6 +425,7 @@ export function AppSidebar({
   customSidebarNavOrder = [],
   customSidebarItems,
   assistantNavAgents = [],
+  copilotAgentOptions = [],
   desktopSsoStatus = null,
   desktopSsoBusy = false,
   onOpenAssistantDock,
@@ -430,6 +433,7 @@ export function AppSidebar({
   onDesktopSsoLogin,
   onDesktopSsoLogout,
   onRefreshAssistantNavAgents,
+  onRefreshCopilotAgentOptions,
   onCreateCustomSidebarItem,
   onRequestNavigate,
   onNavigateItem,
@@ -663,6 +667,7 @@ export function AppSidebar({
     setWebsiteAgentKey("");
     setWebsiteCreateError("");
     setWebsiteDialogOpen(true);
+    void onRefreshCopilotAgentOptions?.();
   }
 
   async function handleCreateWebsite(event: FormEvent<HTMLFormElement>) {
@@ -1417,22 +1422,22 @@ export function AppSidebar({
             </button>
           </div>
           <label className="sidebar-website-dialog-field">
-            <span>网页地址</span>
-            <input
-              value={websiteUrl}
-              onChange={(event) => setWebsiteUrl(event.target.value)}
-              placeholder="jira.example.com"
-              required
-              autoFocus
-            />
-          </label>
-          <label className="sidebar-website-dialog-field">
-            <span>显示名称</span>
+            <span>网站名</span>
             <input
               value={websiteLabel}
               onChange={(event) => setWebsiteLabel(event.target.value)}
               placeholder="例如：知识库"
               maxLength={24}
+              autoFocus
+            />
+          </label>
+          <label className="sidebar-website-dialog-field">
+            <span>网页地址</span>
+            <input
+              value={websiteUrl}
+              onChange={(event) => setWebsiteUrl(event.target.value)}
+              placeholder="example.com"
+              required
             />
           </label>
           <label className="sidebar-website-dialog-field">
@@ -1440,10 +1445,10 @@ export function AppSidebar({
             <select
               value={websiteAgentKey}
               onChange={(event) => setWebsiteAgentKey(event.target.value)}
-              disabled={assistantNavAgents.length === 0}
+              disabled={websiteCreatePending}
             >
               <option value="">默认助手</option>
-              {assistantNavAgents.map((agent) => (
+              {copilotAgentOptions.map((agent) => (
                 <option value={agent.agentKey} key={agent.agentKey}>
                   {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
                 </option>

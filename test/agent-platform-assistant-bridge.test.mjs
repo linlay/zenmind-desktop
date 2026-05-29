@@ -117,7 +117,7 @@ test("agent platform assistant bridge lists and normalizes agents from /api/agen
       msg: "success",
       data: [
         { key: "codeAssistant", name: "代码助手", role: "CLI 代码助手", stats: { unreadCount: 3 } },
-        { key: "zenmi", name: "小宅", role: "平台总管", icon: { name: "zenith" }, stats: { unreadCount: 1 } },
+        { key: "zenmi", name: "小宅", role: "平台总管", icon: { name: "summit" }, stats: { unreadCount: 1 } },
         { name: "缺少 key" }
       ]
     }), {
@@ -132,7 +132,7 @@ test("agent platform assistant bridge lists and normalizes agents from /api/agen
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, "http://127.0.0.1:18888/api/agents");
     assert.deepEqual(agents, [
-      { agentKey: "zenmi", displayName: "小宅", role: "平台总管", icon: { name: "zenith" }, unreadCount: 1 },
+      { agentKey: "zenmi", displayName: "小宅", role: "平台总管", icon: { name: "summit" }, unreadCount: 1 },
       { agentKey: "codeAssistant", displayName: "代码助手", role: "CLI 代码助手", unreadCount: 3 }
     ]);
   } finally {

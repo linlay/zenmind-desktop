@@ -26,12 +26,12 @@ function buildAgentWebclientCopilotPath(openRequest: AssistantWorkerOpenRequest 
   }
 
   if (!chatId) {
-    return `/agent/${encodeURIComponent(agentKey)}`;
+    return `${AGENT_WEBCLIENT_COPILOT_PATH}/${encodeURIComponent(agentKey)}`;
   }
 
   const params = new URLSearchParams();
   params.set("chatId", chatId);
-  return `/agent/${encodeURIComponent(agentKey)}?${params.toString()}`;
+  return `${AGENT_WEBCLIENT_COPILOT_PATH}/${encodeURIComponent(agentKey)}?${params.toString()}`;
 }
 
 export function AgentWebclientCopilotDock({

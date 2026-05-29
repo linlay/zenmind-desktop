@@ -11,6 +11,7 @@ import type {
   AssistantMemorySummary,
   AssistantMemoryStorage,
   AssistantMemoryStats,
+  AssistantNavAgentItem,
   AssistantSettingsPublic,
   CustomSidebarItem,
   CustomSidebarItemsResult,
@@ -88,6 +89,16 @@ function asRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function toAssistantAgentOptions(items: AssistantNavAgentItem[]): DesktopPetAgentOption[] {
+  return items.map((agent) => ({
+    agentKey: agent.agentKey,
+    displayName: agent.displayName,
+    role: agent.role,
+    icon: agent.icon,
+    unreadCount: agent.unreadCount
+  }));
 }
 
 function buildSettingsActionPatch(
@@ -446,6 +457,7 @@ export function SettingsPage({
           desktopPet: { label: t("settings.desktopPet.label"), description: t("settings.desktopPet.description") },
           embeddedWebsites: { label: t("settings.embeddedWebsites.label"), description: t("settings.embeddedWebsites.description") },
           dataRoot: { label: t("settings.dataRoot.label"), description: t("settings.dataRoot.description") },
+          debug: { label: t("settings.debug.label"), description: t("settings.debug.description") },
           memory: { label: t("settings.memory.label"), description: t("settings.memory.description") },
           about: { label: t("settings.about.label"), description: t("settings.about.description") }
         };
@@ -578,18 +590,21 @@ export function SettingsPage({
     let cancelled = false;
     Promise.all([
       window.electronAPI.assistant.getSettings(),
-      window.electronAPI.assistant.listAgents()
+      window.electronAPI.assistant.listCopilotAgents()
     ])
-      .then(([settings, agents]) => {
+      .then(([settings, agentsResult]) => {
         if (cancelled) {
           return;
+        }
+        if (!agentsResult.ok) {
+          throw new Error(agentsResult.message);
         }
         setAssistantSettings(settings);
         setDesktopHelperAgentKey(settings.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY);
         setQuickAssistantEnabled(settings.quickAssistantEnabled);
         setQuickAssistantAgentKey(settings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
         setDesktopCopilotPages(settings.desktopCopilotPages || createDefaultDesktopCopilotPagePreferences());
-        setAssistantAgentOptions(Array.isArray(agents) ? agents : []);
+        setAssistantAgentOptions(toAssistantAgentOptions(Array.isArray(agentsResult.items) ? agentsResult.items : []));
         setReadErrorSections(ASSISTANT_SETTINGS_SECTION_IDS, "");
       })
       .catch((reason) => {
@@ -2059,6 +2074,24 @@ export function SettingsPage({
         );
       case "dataRoot":
         return isWindows ? <WindowsDataRootCard /> : null;
+      case "debug":
+        return (
+          <div className="data-root-card">
+            <div className="debug-settings-copy">
+              <p className="eyebrow">DEBUG</p>
+              <h2>{t("settings.debug.label")}</h2>
+              <p className="page-copy">{t("settings.debug.sectionDescription")}</p>
+              <p className="settings-inline-note">{t("settings.debug.shortcut")}</p>
+            </div>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => void window.electronAPI.debug.openViewer()}
+            >
+              {t("settings.debug.openViewer")}
+            </button>
+          </div>
+        );
       case "memory":
         return (
           <div className="data-root-card assistant-memory-card">

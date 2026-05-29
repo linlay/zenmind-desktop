@@ -24,6 +24,14 @@ const {
   loadDesktopSsoConfig,
   resolveDesktopSsoConfigPath,
   buildTokenExchangeRequest,
+  buildCookieAccessTokenExchangeRequest,
+  buildDesktopSsoAccessTokenCookieDetails,
+  completeDesktopSsoBrowserLogin,
+  completeDesktopSsoCookieLogin,
+  getDesktopSsoAccessTokenCookieLookup,
+  getDesktopSsoAccessTokenCookieLookups,
+  isDesktopSsoLoginCompletionUrl,
+  readCookieAccessTokenFromResponse,
   normalizeCallbackRequest,
   validateIdToken
 } = __testInternals;
@@ -48,6 +56,9 @@ function createTestApp(homePath) {
       if (name === "home") {
         return homePath;
       }
+      if (name === "userData") {
+        return path.join(homePath, "userData");
+      }
       throw new Error(`unexpected app path ${name}`);
     }
   };
@@ -56,7 +67,7 @@ function createTestApp(homePath) {
 test("buildAuthorizeUrl creates an authorization-code URL with state and fixed localhost redirect", () => {
   const url = new URL(buildAuthorizeUrl("state-123"));
 
-  assert.equal(url.origin + url.pathname, "https://eiam.qiuer.net/auth/oauth2/authorize");
+  assert.equal(url.origin + url.pathname, "https://iam.example.com/auth/oauth2/authorize");
   assert.equal(url.searchParams.get("client_id"), DEFAULT_OIDC_CONFIG.clientId);
   assert.equal(url.searchParams.get("redirect_uri"), "http://localhost:8080/api/auth/oidc/callback");
   assert.equal(url.searchParams.get("response_type"), "code");
@@ -107,9 +118,9 @@ test("loadDesktopSsoConfig requires enabled true before exposing the login entry
   fs.mkdirSync(configRoot, { recursive: true });
 
   for (const content of [
-    JSON.stringify({ enabled: false, identityProviderHost: "eiam.gtjaqh.net" }),
-    JSON.stringify({ identityProviderHost: "eiam.gtjaqh.net" }),
-    "eiam.gtjaqh.net"
+    JSON.stringify({ enabled: false, identityProviderHost: "business.example.com" }),
+    JSON.stringify({ identityProviderHost: "business.example.com" }),
+    "business.example.com"
   ]) {
     fs.writeFileSync(path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME), content, "utf8");
 
@@ -128,7 +139,7 @@ test("loadDesktopSsoConfig does not rewrite copied OIDC endpoints from a bare IA
   fs.mkdirSync(configRoot, { recursive: true });
   fs.writeFileSync(
     path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
-    JSON.stringify({ enabled: true, identityProviderHost: "eiam.gtjaqh.net" }),
+    JSON.stringify({ enabled: true, identityProviderHost: "business.example.com" }),
     "utf8"
   );
 
@@ -142,7 +153,7 @@ test("loadDesktopSsoConfig does not rewrite copied OIDC endpoints from a bare IA
   assert.equal(result.config.logoutUrl, DEFAULT_OIDC_CONFIG.logoutUrl);
   assert.equal(result.config.redirectUri, DEFAULT_OIDC_CONFIG.redirectUri);
   assert.equal(result.config.clientId, DEFAULT_OIDC_CONFIG.clientId);
-  assert.equal(result.config.browserOrigin, "https://eiam.gtjaqh.net");
+  assert.equal(result.config.browserOrigin, "https://business.example.com");
 });
 
 test("loadDesktopSsoConfig honors explicit copied IAM OIDC URLs", (t) => {
@@ -203,6 +214,180 @@ test("loadDesktopSsoConfig honors explicit full IAM login URL", (t) => {
   assert.equal(result.config.clientSecret, "secret");
 });
 
+test("loadDesktopSsoConfig supports configurable AI login and cookie access token exchange", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-cookie-token-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      loginUrl: "https://ai.qiuer.net/",
+      browserOrigin: "https://ai.qiuer.net",
+      loginCompletionUrl: "https://ai.qiuer.net/oauth2/callback",
+      cookieAccessTokenExchange: {
+        url: "/api/auth/token",
+        method: "post",
+        headers: {
+          "X-Desktop-Client": "ZenMind"
+        },
+        body: {
+          source: "desktop"
+        },
+        accessTokenPath: "data.access_token"
+      },
+      accessTokenCookie: {
+        url: "https://ai.qiuer.net",
+        name: "ai_access_token",
+        httpOnly: false
+      }
+    }),
+    "utf8"
+  );
+
+  const result = loadDesktopSsoConfig(createTestApp(homePath));
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.equal(result.config.loginUrl, "https://ai.qiuer.net/");
+  assert.equal(result.config.browserOrigin, "https://ai.qiuer.net");
+  assert.equal(result.config.loginCompletionUrl, "https://ai.qiuer.net/oauth2/callback");
+  assert.deepEqual(result.config.cookieAccessTokenExchange, {
+    url: "https://ai.qiuer.net/api/auth/token",
+    method: "POST",
+    headers: {
+      "X-Desktop-Client": "ZenMind",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ source: "desktop" }),
+    accessTokenPath: "data.access_token"
+  });
+  assert.deepEqual(result.config.accessTokenCookie, {
+    url: "https://ai.qiuer.net/",
+    name: "ai_access_token",
+    path: "/",
+    secure: true,
+    httpOnly: false,
+    sameSite: "lax"
+  });
+});
+
+test("direct AI login can preserve the configured URL and complete with browser cookies only", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-ai-cookie-login-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      loginUrl: "https://ai.qiuer.net/",
+      appendLoginState: false,
+      browserOrigin: "https://ai.qiuer.net",
+      loginCompletionUrl: "https://ai.qiuer.net/oauth2/callback"
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  const result = loadDesktopSsoConfig(app);
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.equal(result.config.appendLoginState, false);
+  assert.equal(buildAuthorizeUrl("runtime-state", result.config), "https://ai.qiuer.net/");
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/oauth2/callback?code=abc"), true);
+
+  const status = completeDesktopSsoBrowserLogin(app, "https://ai.qiuer.net/oauth2/callback?code=abc");
+
+  assert.equal(status.authenticated, true);
+  assert.equal(status.user.sub, "ai.qiuer.net");
+  assert.equal("accessToken" in status, false);
+});
+
+test("direct AI login can complete on a logged-in page and inject token cookies into configured targets", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-ai-authorization-token-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      loginUrl: "https://ai.qiuer.net/",
+      appendLoginState: false,
+      browserOrigin: "https://ai.qiuer.net",
+      loginCompletionUrls: [
+        "https://ai.qiuer.net/oauth2/callback",
+        "https://ai.qiuer.net/"
+      ],
+      cookieAccessTokenExchange: {
+        url: "https://ai.qiuer.net/authorization",
+        accessTokenPath: "access_token"
+      },
+      accessTokenCookies: [
+        {
+          url: "https://ai.qiuer.net/",
+          name: "access_token",
+          httpOnly: false
+        },
+        {
+          url: "https://gtjaqh.net/",
+          name: "access_token",
+          httpOnly: false
+        }
+      ]
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  const result = loadDesktopSsoConfig(app);
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.config.loginCompletionUrls, [
+    "https://ai.qiuer.net/oauth2/callback",
+    "https://ai.qiuer.net/"
+  ]);
+  assert.equal(result.config.cookieAccessTokenExchange.url, "https://ai.qiuer.net/authorization");
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/"), true);
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/?from=desktop"), true);
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/login"), false);
+  assert.deepEqual(getDesktopSsoAccessTokenCookieLookups(app), [
+    {
+      url: "https://ai.qiuer.net/",
+      name: "access_token"
+    },
+    {
+      url: "https://gtjaqh.net/",
+      name: "access_token"
+    }
+  ]);
+  assert.deepEqual(buildDesktopSsoAccessTokenCookieDetails("token-123", result.config), [
+    {
+      url: "https://ai.qiuer.net/",
+      name: "access_token",
+      value: "token-123",
+      path: "/",
+      secure: true,
+      httpOnly: false,
+      sameSite: "lax"
+    },
+    {
+      url: "https://gtjaqh.net/",
+      name: "access_token",
+      value: "token-123",
+      path: "/",
+      secure: true,
+      httpOnly: false,
+      sameSite: "lax"
+    }
+  ]);
+});
+
 test("resolveDesktopSsoConfigPath uses platform-specific home paths", () => {
   assert.equal(
     resolveDesktopSsoConfigPath(createTestApp("/Users/tester"), "darwin"),
@@ -215,21 +400,21 @@ test("resolveDesktopSsoConfigPath uses platform-specific home paths", () => {
 });
 
 test("getIdentityProviderCookieHosts targets the IAM host used by Chrome login", () => {
-  assert.deepEqual(getIdentityProviderCookieHosts(), ["eiam.qiuer.net"]);
+  assert.deepEqual(getIdentityProviderCookieHosts(), ["iam.example.com"]);
 });
 
 test("buildDesktopSsoProxyUrl keeps the browser on the localhost callback origin", () => {
   assert.equal(
-    buildDesktopSsoProxyUrl("https://eiam.qiuer.net/auth/oauth2/authorize?client_id=desktop#frag"),
+    buildDesktopSsoProxyUrl("https://iam.example.com/auth/oauth2/authorize?client_id=desktop#frag"),
     "http://localhost:8080/auth/oauth2/authorize?client_id=desktop#frag"
   );
 });
 
 test("rewriteDesktopSsoProxyLocation maps IAM redirects back through the localhost proxy", () => {
-  const upstreamRequestUrl = new URL("https://eiam.qiuer.net/auth/oauth2/authorize?client_id=desktop");
+  const upstreamRequestUrl = new URL("https://iam.example.com/auth/oauth2/authorize?client_id=desktop");
 
   assert.equal(
-    rewriteDesktopSsoProxyLocation("https://eiam.qiuer.net/#/login?service=svc", upstreamRequestUrl),
+    rewriteDesktopSsoProxyLocation("https://iam.example.com/#/login?service=svc", upstreamRequestUrl),
     "http://localhost:8080/#/login?service=svc"
   );
   assert.equal(
@@ -244,7 +429,7 @@ test("rewriteDesktopSsoProxyLocation maps IAM redirects back through the localho
 
 test("rewriteDesktopSsoProxySetCookieHeader makes IAM cookies usable on localhost", () => {
   assert.equal(
-    rewriteDesktopSsoProxySetCookieHeader("iauth=abc; Path=/; Domain=eiam.qiuer.net; Secure; HttpOnly; SameSite=None"),
+    rewriteDesktopSsoProxySetCookieHeader("iauth=abc; Path=/; Domain=iam.example.com; Secure; HttpOnly; SameSite=None"),
     "iauth=abc; Path=/; HttpOnly; SameSite=Lax"
   );
 });
@@ -253,11 +438,11 @@ test("buildDesktopSsoBrowserCookieDetails mirrors proxy cookies to business-visi
   assert.deepEqual(
     buildDesktopSsoBrowserCookieDetails(
       new Map([["iauth", "abc"]]),
-      { ...DEFAULT_OIDC_CONFIG, browserOrigin: "https://eiam.gtjaqh.net" }
+      { ...DEFAULT_OIDC_CONFIG, browserOrigin: "https://business.example.com" }
     ),
     [
       {
-        url: "https://eiam.qiuer.net",
+        url: "https://iam.example.com",
         name: "iauth",
         value: "abc",
         path: "/",
@@ -266,7 +451,7 @@ test("buildDesktopSsoBrowserCookieDetails mirrors proxy cookies to business-visi
         sameSite: "lax"
       },
       {
-        url: "https://eiam.gtjaqh.net",
+        url: "https://business.example.com",
         name: "iauth",
         value: "abc",
         path: "/",
@@ -282,7 +467,7 @@ test("buildTokenExchangeRequest posts the document-style token URL from the main
   const request = buildTokenExchangeRequest("callback-code");
   const url = new URL(request.url);
 
-  assert.equal(url.origin + url.pathname, "https://eiam.qiuer.net/auth/oauth2/token");
+  assert.equal(url.origin + url.pathname, "https://iam.example.com/auth/oauth2/token");
   assert.equal(request.method, "POST");
   assert.equal(url.searchParams.get("client_id"), DEFAULT_OIDC_CONFIG.clientId);
   assert.equal(url.searchParams.get("client_secret"), DEFAULT_OIDC_CONFIG.clientSecret);
@@ -291,6 +476,87 @@ test("buildTokenExchangeRequest posts the document-style token URL from the main
   assert.equal(url.searchParams.get("code"), "callback-code");
   assert.equal(request.body, undefined);
   assert.equal("Content-Type" in request.headers, false);
+});
+
+test("buildCookieAccessTokenExchangeRequest sends cookies and extracts configured access token path", () => {
+  const config = {
+    ...DEFAULT_OIDC_CONFIG,
+    cookieAccessTokenExchange: {
+      url: "https://ai.qiuer.net/api/auth/token",
+      method: "POST",
+      headers: {
+        "X-Desktop-Client": "ZenMind"
+      },
+      body: "{}",
+      accessTokenPath: "data.access_token"
+    }
+  };
+  const request = buildCookieAccessTokenExchangeRequest("sid=abc; iam=def", config);
+
+  assert.deepEqual(request, {
+    url: "https://ai.qiuer.net/api/auth/token",
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "X-Desktop-Client": "ZenMind",
+      Cookie: "sid=abc; iam=def"
+    },
+    body: "{}"
+  });
+  assert.equal(readCookieAccessTokenFromResponse({ data: { access_token: "token-123" } }, config), "token-123");
+  assert.throws(
+    () => readCookieAccessTokenFromResponse({ data: {} }, config),
+    /access_token/i
+  );
+});
+
+test("login completion URL and access token cookie injection are configurable", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-cookie-injection-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      browserOrigin: "https://ai.qiuer.net",
+      loginCompletionUrl: "https://ai.qiuer.net/oauth2/callback",
+      cookieAccessTokenExchange: {
+        url: "https://ai.qiuer.net/api/auth/token"
+      },
+      accessTokenCookie: {
+        url: "https://ai.qiuer.net/app",
+        name: "desktop_token",
+        sameSite: "none"
+      }
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/oauth2/callback?code=abc"), true);
+  assert.equal(isDesktopSsoLoginCompletionUrl(app, "https://ai.qiuer.net/"), false);
+  assert.deepEqual(getDesktopSsoAccessTokenCookieLookup(app), {
+    url: "https://ai.qiuer.net/app",
+    name: "desktop_token"
+  });
+  assert.deepEqual(buildDesktopSsoAccessTokenCookieDetails("token-123", loadDesktopSsoConfig(app).config), [
+    {
+      url: "https://ai.qiuer.net/app",
+      name: "desktop_token",
+      value: "token-123",
+      path: "/",
+      secure: true,
+      httpOnly: false,
+      sameSite: "no_restriction"
+    }
+  ]);
+  const status = completeDesktopSsoCookieLogin(app, "token-123");
+
+  assert.equal(status.authenticated, true);
+  assert.equal(status.user.sub, "desktop-sso-cookie");
+  assert.equal("accessToken" in status, false);
 });
 
 test("normalizeCallbackRequest rejects missing, mismatched, and reused authorization codes", () => {
@@ -337,10 +603,10 @@ test("validateIdToken verifies RS256 signature, issuer, audience, and returns pu
     if (url === DEFAULT_OIDC_CONFIG.wellKnownUrl) {
       return {
         ok: true,
-        json: async () => ({ jwks_uri: "https://eiam.qiuer.net/auth/oidc/jwks" })
+        json: async () => ({ jwks_uri: "https://iam.example.com/auth/oidc/jwks" })
       };
     }
-    if (url === "https://eiam.qiuer.net/auth/oidc/jwks") {
+    if (url === "https://iam.example.com/auth/oidc/jwks") {
       return {
         ok: true,
         json: async () => ({ keys: [{ ...jwk, kid, alg: "RS256", use: "sig" }] })

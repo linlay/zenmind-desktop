@@ -78,6 +78,7 @@ const api: DesktopApi = {
     getMemorySummary: () => ipcRenderer.invoke("assistant.getMemorySummary"),
     listAgents: () => ipcRenderer.invoke("assistant.listAgents"),
     listNavigationAgents: () => ipcRenderer.invoke("assistant.listNavigationAgents"),
+    listCopilotAgents: () => ipcRenderer.invoke("assistant.listCopilotAgents"),
     createCoderProject: (input: AssistantCreateCoderProjectRequest) =>
       ipcRenderer.invoke("assistant.createCoderProject", input),
     openMemoryDirectory: () => ipcRenderer.invoke("assistant.openMemoryDirectory"),
@@ -303,6 +304,30 @@ const api: DesktopApi = {
   diagnostics: {
     reportRendererError: (report: RendererDiagnosticReport) => {
       ipcRenderer.send("diagnostics.rendererError", report);
+    }
+  },
+  debug: {
+    openViewer: () => ipcRenderer.invoke("debug.openViewer"),
+    closeViewer: () => ipcRenderer.invoke("debug.closeViewer"),
+    listEvents: () => ipcRenderer.invoke("debug.listEvents"),
+    clearEvents: () => ipcRenderer.invoke("debug.clearEvents"),
+    registerWebviewSurface: (metadata) => ipcRenderer.invoke("debug.registerWebviewSurface", metadata),
+    unregisterWebviewSurface: (webContentsId: number) =>
+      ipcRenderer.invoke("debug.unregisterWebviewSurface", webContentsId),
+    openWebviewDevTools: (webContentsId: number) =>
+      ipcRenderer.invoke("debug.openWebviewDevTools", webContentsId),
+    onEvent: (listener) => {
+      const handleDebugEvent = (
+        _event: Electron.IpcRendererEvent,
+        debugEvent: Parameters<typeof listener>[0]
+      ) => {
+        listener(debugEvent);
+      };
+
+      ipcRenderer.on("debug.event", handleDebugEvent);
+      return () => {
+        ipcRenderer.off("debug.event", handleDebugEvent);
+      };
     }
   },
   desktopPet: {
