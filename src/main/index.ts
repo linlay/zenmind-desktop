@@ -25,10 +25,17 @@ import {
 import { issueAgentAccessToken } from "./agent-auth";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import {
+  completeDesktopSsoBrowserLogin,
+  completeDesktopSsoCookieLogin,
+  exchangeConfiguredDesktopSsoCookieForAccessToken,
   failDesktopSsoFlow,
+  getDesktopSsoAccessTokenCookieDetails,
+  getDesktopSsoAccessTokenCookieLookups,
+  getDesktopSsoCookieAccessTokenExchangeUrl,
   getDesktopSsoCookieMirrorOrigins,
   getDesktopSsoStatus,
   getDesktopSsoProxyBrowserCookieDetails,
+  isDesktopSsoLoginCompletionUrl,
   logoutDesktopSso,
   startDesktopSsoLogin
 } from "./oidc-sso";
@@ -79,6 +86,7 @@ import {
 import { resolveWebviewOpenDisposition, shouldDownloadUrlFromWebview } from "./webview-open-tab";
 import { revealPathInFileManager } from "./reveal-path";
 import { buildApplicationMenu as installApplicationMenu } from "./app-shell/app-menu";
+import { DebugViewerWindowController } from "./app-shell/debug-viewer-window";
 import { LogViewerWindowController } from "./app-shell/log-viewer-window";
 import { NativeDialogVisibilityController } from "./app-shell/native-dialogs";
 import { AppTrayController } from "./app-shell/tray";
@@ -136,6 +144,8 @@ import type {
   AssistantVoiceTranscriptionRequest,
   DesktopActionRendererRequest,
   DesktopActionRendererResponse,
+  DebugEvent,
+  DebugWebviewSurfaceRegistration,
   DesktopPageContextSnapshot,
   DesktopPetAgentOption,
   DesktopPetSettingsInput,
@@ -227,6 +237,8 @@ import {
 } from "./copilot/sidebar-copilot/screenshot";
 import { initializeMainI18n, setMainLocale, t } from "./i18n/main-i18n";
 import { isSupportedLocale } from "../shared/i18n";
+import { createDebugEventStore } from "./debug/debug-events";
+import { WebviewDebugManager } from "./debug/webview-debug-manager";
 
 let mainWindow: BrowserWindow | null = null;
 let desktopPetWindow: BrowserWindow | null = null;
@@ -242,6 +254,7 @@ const desktopActionRendererRequests = new Map<string, {
 }>();
 const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
 const LOG_VIEWER_ROUTE = "/log-viewer";
+const DEBUG_VIEWER_SHORTCUT = "CommandOrControl+Shift+D";
 const QUICK_AGENT_WEBCLIENT_PATHNAMES = new Set(["/copilot"]);
 const QUICK_AGENT_OPEN_RETRY_COUNT = 24;
 const QUICK_AGENT_OPEN_RETRY_MS = 180;
@@ -253,6 +266,7 @@ const MAC_FULLSCREEN_CLOSE_FALLBACK_MS = 2200;
 const ZENMIND_APP_ID = "cc.zenmind.desktop";
 const ZENMIND_PRODUCT_NAME = "ZenMind";
 const DESKTOP_SSO_WEBVIEW_PARTITION = "persist:zenmind-desktop-sso";
+const DESKTOP_SSO_CALLBACK_ORIGIN = "http://localhost:8080";
 const DESKTOP_PET_DONE_PREVIEW_FALLBACK = "暂无回复预览";
 const DESKTOP_PET_GENERIC_DONE_PREVIEWS = new Set([
   "思考中",
@@ -334,6 +348,7 @@ let desktopPetDragState: {
 let agentPlatformPetStatusClient: AgentPlatformPetStatusClient | null = null;
 let agentPlatformPetStreamClient: AgentPlatformPetStreamClient | null = null;
 let assistantNavigationStatusClient: AssistantNavigationStatusClient | null = null;
+const desktopSsoCompletingGuestIds = new Set<number>();
 const desktopPetPreviewProjector = new DesktopPetPreviewProjector();
 let desktopPetPreviewRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let dismissedDesktopPetDonePreview: { chatId: string; runId: string } | null = null;
@@ -395,6 +410,20 @@ const logViewerWindowController = new LogViewerWindowController({
   getOwnerWindow: () => mainWindow && !mainWindow.isDestroyed() ? mainWindow : null,
   loadRendererRoute,
   onRendererError: safeConsoleError
+});
+
+const debugEventStore = createDebugEventStore({ maxEvents: 1000 });
+const debugViewerWindowController = new DebugViewerWindowController({
+  preloadPath: path.join(__dirname, "..", "preload", "index.js"),
+  platform: process.platform,
+  getOwnerWindow: () => mainWindow && !mainWindow.isDestroyed() ? mainWindow : null,
+  loadRendererRoute,
+  onRendererError: safeConsoleError
+});
+const webviewDebugManager = new WebviewDebugManager({
+  store: debugEventStore,
+  emitEvent: emitDebugEvent,
+  onError: safeConsoleError
 });
 
 const nativeDialogController = new NativeDialogVisibilityController({
@@ -1559,6 +1588,50 @@ async function openLogViewerWindow(request: ServiceOpenLogViewerRequest) {
   return logViewerWindowController.open(request);
 }
 
+function emitDebugEvent(event: DebugEvent) {
+  const targetWindow = debugViewerWindowController.getWindow();
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+  targetWindow.webContents.send("debug.event", event);
+}
+
+async function openDebugViewerWindow() {
+  return debugViewerWindowController.open();
+}
+
+function closeDebugViewerWindow() {
+  return debugViewerWindowController.close();
+}
+
+function readDebugWebContentsId(value: unknown) {
+  const webContentsId = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(webContentsId) || webContentsId <= 0) {
+    throw new Error("缺少有效的 webContentsId。");
+  }
+  return webContentsId;
+}
+
+function normalizeDebugSurfaceRegistration(input: unknown): DebugWebviewSurfaceRegistration {
+  const record = input && typeof input === "object" && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : {};
+  const webContentsId = readDebugWebContentsId(record.webContentsId);
+  const kind = record.kind === "plugin" || record.kind === "external" ? record.kind : "webview";
+  const readOptionalString = (key: string) => {
+    const value = record[key];
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  };
+  return {
+    webContentsId,
+    kind,
+    ...(readOptionalString("surfaceId") ? { surfaceId: readOptionalString("surfaceId") } : {}),
+    ...(readOptionalString("surfaceLabel") ? { surfaceLabel: readOptionalString("surfaceLabel") } : {}),
+    ...(readOptionalString("tabId") ? { tabId: readOptionalString("tabId") } : {}),
+    ...(readOptionalString("url") ? { url: readOptionalString("url") } : {})
+  };
+}
+
 function closeLogViewerWindow() {
   return logViewerWindowController.close();
 }
@@ -1610,6 +1683,15 @@ function registerQuickAssistantShortcut() {
     globalShortcut,
     controller: quickCopilotWindowController
   });
+}
+
+function registerDebugViewerShortcut() {
+  const registered = globalShortcut.register(DEBUG_VIEWER_SHORTCUT, () => {
+    void openDebugViewerWindow();
+  });
+  if (!registered) {
+    console.warn(`failed to register debug viewer shortcut: ${DEBUG_VIEWER_SHORTCUT}`);
+  }
 }
 
 function applyMainWindowAppearance(targetWindow: BrowserWindow | null) {
@@ -1953,6 +2035,8 @@ function createWindow() {
   });
 
   mainWindow.webContents.on("did-attach-webview", (_event, contents) => {
+    webviewDebugManager.attachWebContents(contents);
+
     const downloadFromWebview = (url: string) => {
       try {
         contents.downloadURL(url);
@@ -2002,6 +2086,21 @@ function createWindow() {
             diagnosticsError: error instanceof Error ? error.message : String(error)
           });
       });
+    });
+
+    contents.on("did-navigate", (_guestEvent, url) => {
+      void completeDesktopSsoLoginFromWebview(contents, url);
+    });
+
+    contents.on("did-navigate-in-page", (_guestEvent, url, isMainFrame) => {
+      if (!isMainFrame) {
+        return;
+      }
+      void completeDesktopSsoLoginFromWebview(contents, url);
+    });
+
+    contents.on("did-stop-loading", () => {
+      void completeDesktopSsoLoginFromWebview(contents, contents.getURL());
     });
 
     contents.on("will-navigate", (event, url) => {
@@ -2785,6 +2884,14 @@ function rewriteDesktopSsoUrlOrigin(value: string, browserOrigin?: string) {
   return url.toString();
 }
 
+function isDesktopSsoLocalProxyUrl(value: string) {
+  try {
+    return new URL(value).origin === DESKTOP_SSO_CALLBACK_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
 function parseDesktopSsoSetCookieHeader(header: string, responseUrl: string): CookiesSetDetails | null {
   const responseUrlObject = new URL(responseUrl);
   const [nameValuePair, ...attributes] = header.split(";");
@@ -2982,11 +3089,13 @@ async function openDesktopSsoBrowserUrl(input: {
   resolveRedirect?: boolean;
 }) {
   const ssoSession = session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
-  await ssoSession.setProxy({ proxyRules: "direct://" });
+  await ssoSession.setProxy(isDesktopSsoLocalProxyUrl(input.url)
+    ? { mode: "direct" }
+    : { mode: "system" });
   return openBrowserUrl({
     ...input,
     url: input.resolveRedirect === false
-      ? rewriteDesktopSsoUrlOrigin(input.url, input.browserOrigin)
+      ? input.url
       : await resolveDesktopSsoNavigationUrl(ssoSession, input.url, input.browserOrigin),
     requireOperableTarget: false,
     partition: DESKTOP_SSO_WEBVIEW_PARTITION,
@@ -3023,6 +3132,97 @@ async function syncDesktopSsoBrowserCookies() {
       });
     }));
   }));
+}
+
+async function mirrorDesktopSsoSessionCookiesToDefault(sourceSession: Session) {
+  const mirrorOrigins = getDesktopSsoCookieMirrorOrigins(app);
+  await Promise.all(mirrorOrigins.map(async (origin) => {
+    const cookies = await sourceSession.cookies.get({ url: origin });
+    await Promise.all(cookies.map(async (cookie) => {
+      await session.defaultSession.cookies.set({
+        url: origin,
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain || undefined,
+        path: cookie.path || "/",
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        expirationDate: cookie.expirationDate,
+        sameSite: cookie.sameSite
+      });
+    }));
+  }));
+}
+
+async function setDesktopSsoAccessTokenCookies(accessToken: string, targetSessions: Session[]) {
+  const cookieDetails = getDesktopSsoAccessTokenCookieDetails(app, accessToken);
+  await Promise.all(cookieDetails.flatMap((details) =>
+    targetSessions.map(async (targetSession) => {
+      await targetSession.cookies.set(details);
+    })
+  ));
+}
+
+async function readDesktopSsoAccessTokenCookie(sourceSession: Session) {
+  for (const lookup of getDesktopSsoAccessTokenCookieLookups(app)) {
+    const cookies = await sourceSession.cookies.get({
+      url: lookup.url,
+      name: lookup.name
+    });
+    const token = cookies[0]?.value?.trim();
+    if (token) {
+      return token;
+    }
+  }
+  return "";
+}
+
+async function exchangeDesktopSsoAccessTokenWithCookies() {
+  const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(app);
+  if (!exchangeUrl) {
+    return "";
+  }
+  const ssoSession = session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+  const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, exchangeUrl);
+  const accessToken = await exchangeConfiguredDesktopSsoCookieForAccessToken(app, cookieHeader);
+  if (accessToken) {
+    await setDesktopSsoAccessTokenCookies(accessToken, [session.defaultSession, ssoSession]);
+  }
+  return accessToken;
+}
+
+async function completeDesktopSsoLoginFromWebview(contents: WebContents, url: string) {
+  if (!getDesktopSsoStatus(app).pending || !isDesktopSsoLoginCompletionUrl(app, url)) {
+    return;
+  }
+  if (desktopSsoCompletingGuestIds.has(contents.id)) {
+    return;
+  }
+  desktopSsoCompletingGuestIds.add(contents.id);
+  try {
+    await mirrorDesktopSsoSessionCookiesToDefault(contents.session);
+    const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(app);
+    const accessToken = exchangeUrl
+      ? await exchangeConfiguredDesktopSsoCookieForAccessToken(
+        app,
+        await buildDesktopSsoCookieHeader(contents.session, exchangeUrl)
+      )
+      : await readDesktopSsoAccessTokenCookie(contents.session);
+    const status = accessToken
+      ? completeDesktopSsoCookieLogin(app, accessToken)
+      : completeDesktopSsoBrowserLogin(app, url);
+    if (accessToken) {
+      await setDesktopSsoAccessTokenCookies(accessToken, [session.defaultSession, contents.session]);
+    }
+    broadcastDesktopSsoStatus(status);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status = failDesktopSsoFlow(message);
+    broadcastDesktopSsoStatus(status);
+    safeConsoleError("desktop sso cookie login failed", { url, error });
+  } finally {
+    desktopSsoCompletingGuestIds.delete(contents.id);
+  }
 }
 
 async function clearDesktopSsoBrowserCookies() {
@@ -3182,7 +3382,8 @@ function emitLocaleChanged(settings: ReturnType<typeof setMainLocale>) {
     mainWindow,
     desktopPetWindow,
     quickCopilotWindowController.getWindow(),
-    logViewerWindowController.getWindow()
+    logViewerWindowController.getWindow(),
+    debugViewerWindowController.getWindow()
   ]) {
     if (!targetWindow || targetWindow.isDestroyed()) {
       continue;
@@ -3609,6 +3810,9 @@ async function deleteTaskBoardIssueWithAutomation(issueId: string) {
 }
 
 function registerIpcHandlers() {
+  webviewDebugManager.start();
+  webviewDebugManager.attachSession(session.defaultSession);
+
   const assistantBridge = new AgentPlatformAssistantBridge({
     app,
     getServiceState,
@@ -3670,6 +3874,34 @@ function registerIpcHandlers() {
       lineno: typeof report?.lineno === "number" ? report.lineno : undefined,
       colno: typeof report?.colno === "number" ? report.colno : undefined
     });
+  });
+
+  ipcMain.handle("debug.openViewer", async () => openDebugViewerWindow());
+  ipcMain.handle("debug.closeViewer", async () => closeDebugViewerWindow());
+  ipcMain.handle("debug.listEvents", async () => debugEventStore.listEvents());
+  ipcMain.handle("debug.clearEvents", async () => {
+    debugEventStore.clearEvents();
+    return { ok: true };
+  });
+  ipcMain.handle("debug.registerWebviewSurface", async (_event, metadata) => {
+    webviewDebugManager.registerSurface(normalizeDebugSurfaceRegistration(metadata));
+    return { ok: true };
+  });
+  ipcMain.handle("debug.unregisterWebviewSurface", async (_event, webContentsId) => {
+    webviewDebugManager.unregisterSurface(readDebugWebContentsId(webContentsId));
+    return { ok: true };
+  });
+  ipcMain.handle("debug.openWebviewDevTools", async (_event, rawWebContentsId) => {
+    const webContentsId = readDebugWebContentsId(rawWebContentsId);
+    if (!debugEventStore.getSurface(webContentsId)) {
+      return { ok: false, message: "未找到对应的内嵌网页。" };
+    }
+    const targetContents = webContents.fromId(webContentsId);
+    if (!targetContents || targetContents.isDestroyed()) {
+      return { ok: false, message: "内嵌网页已关闭。" };
+    }
+    targetContents.openDevTools({ mode: "detach" });
+    return { ok: true };
   });
 
   ipcMain.handle("shell.openExternal", async (_event, url: string) => {
@@ -4283,6 +4515,7 @@ function registerIpcHandlers() {
       onBeforeStatusChanged: async (status) => {
         if (status.authenticated) {
           await syncDesktopSsoBrowserCookies();
+          await exchangeDesktopSsoAccessTokenWithCookies();
         }
       },
       onStatusChanged: broadcastDesktopSsoStatus
@@ -4546,6 +4779,7 @@ if (gotSingleInstanceLock) {
     createAppTray();
     buildApplicationMenu();
     registerQuickAssistantShortcut();
+    registerDebugViewerShortcut();
     void runServiceMutation(() => runStartupPreparation(app, {
       onModeResolved: (mode) => {
         beginStartupRestoreSession(mode);
@@ -4633,6 +4867,8 @@ app.on("will-quit", () => {
     platform: process.platform,
     globalShortcut
   });
+  globalShortcut.unregister(DEBUG_VIEWER_SHORTCUT);
+  webviewDebugManager.stop();
 });
 
 app.on("window-all-closed", () => {

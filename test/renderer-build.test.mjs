@@ -1562,6 +1562,15 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
   assert.match(appSidebar, /requestNavigate\(`\/custom-sidebar\/\$\{result\.item\.id\}`\)/);
 });
 
+test("custom sidebar quick add dialog uses opaque backgrounds", () => {
+  const navigationStyles = readSourceFile("src", "renderer", "styles", "navigation.css");
+
+  assert.match(navigationStyles, /\.sidebar-website-dialog\s*\{[\s\S]*?background: #fff;/);
+  assert.match(navigationStyles, /\.sidebar-website-dialog-field input,\s*\.sidebar-website-dialog-field select\s*\{[\s\S]*?background: #fff;/);
+  assert.match(navigationStyles, /:root\[data-theme="dark"\] \.sidebar-website-dialog\s*\{[\s\S]*?background: #303236;/);
+  assert.match(navigationStyles, /:root\[data-theme="dark"\] \.sidebar-website-dialog-field input,\s*:root\[data-theme="dark"\] \.sidebar-website-dialog-field select\s*\{[\s\S]*?background: #2a2b2f;/);
+});
+
 test("assistant navigation agents are exposed through dedicated ipc without changing pet agents", () => {
   const contracts = readSharedContractsSource();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");

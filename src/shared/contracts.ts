@@ -8,3 +8,4 @@ export * from "./contracts/attachments";
 export * from "./contracts/marketplace";
 export * from "./contracts/task-board";
 export * from "./contracts/desktop-api";
+export * from "./contracts/debug";

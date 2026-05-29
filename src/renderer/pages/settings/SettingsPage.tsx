@@ -457,6 +457,7 @@ export function SettingsPage({
           desktopPet: { label: t("settings.desktopPet.label"), description: t("settings.desktopPet.description") },
           embeddedWebsites: { label: t("settings.embeddedWebsites.label"), description: t("settings.embeddedWebsites.description") },
           dataRoot: { label: t("settings.dataRoot.label"), description: t("settings.dataRoot.description") },
+          debug: { label: t("settings.debug.label"), description: t("settings.debug.description") },
           memory: { label: t("settings.memory.label"), description: t("settings.memory.description") },
           about: { label: t("settings.about.label"), description: t("settings.about.description") }
         };
@@ -2073,6 +2074,24 @@ export function SettingsPage({
         );
       case "dataRoot":
         return isWindows ? <WindowsDataRootCard /> : null;
+      case "debug":
+        return (
+          <div className="data-root-card">
+            <div className="debug-settings-copy">
+              <p className="eyebrow">DEBUG</p>
+              <h2>{t("settings.debug.label")}</h2>
+              <p className="page-copy">{t("settings.debug.sectionDescription")}</p>
+              <p className="settings-inline-note">{t("settings.debug.shortcut")}</p>
+            </div>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => void window.electronAPI.debug.openViewer()}
+            >
+              {t("settings.debug.openViewer")}
+            </button>
+          </div>
+        );
       case "memory":
         return (
           <div className="data-root-card assistant-memory-card">

@@ -5,6 +5,7 @@ export type SettingsSectionId =
   | "desktopPet"
   | "embeddedWebsites"
   | "dataRoot"
+  | "debug"
   | "memory"
   | "about";
 
@@ -67,6 +68,13 @@ export function createSettingsSectionDefinitions({
       description: "",
       layout: "measure",
       visible: isWindows
+    },
+    {
+      id: "debug",
+      label: "debug",
+      description: "",
+      layout: "measure",
+      visible: true
     },
     {
       id: "memory",
