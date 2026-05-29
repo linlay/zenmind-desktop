@@ -592,11 +592,17 @@
   font-size: 18px;
 }
 
+.task-board-column.is-todo .task-board-column-head {
+  padding-bottom: 12px;
+}
+
 .task-board-column-filter {
+  flex: 1 1 160px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
-  margin: -2px 0 10px;
+  max-width: 220px;
+  margin: 0 0 0 auto;
   padding: 3px;
   border: 1px solid color-mix(in srgb, var(--task-board-accent) 18%, rgba(148, 163, 184, 0.24));
   border-radius: 10px;

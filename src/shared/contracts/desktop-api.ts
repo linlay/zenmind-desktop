@@ -189,6 +189,7 @@ export interface DesktopApi {
     minimizeLogViewer: () => Promise<{ ok: boolean }>;
     maximizeLogViewer: () => Promise<{ ok: boolean }>;
     onLogViewerMaximized: (listener: (maximized: boolean) => void) => () => void;
+    importEnvZip: () => Promise<{ ok: boolean; message: string }>;
   };
   plugins: {
     install: () => Promise<PluginInstallResult>;

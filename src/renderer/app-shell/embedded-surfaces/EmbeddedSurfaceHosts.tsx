@@ -1,7 +1,9 @@
+import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { ExternalWebviewPage } from "../../pages/external-webview/ExternalWebviewPage";
 import { PlaceholderPage } from "../../pages/PlaceholderPage";
 import { PluginPage } from "../../pages/plugin/PluginPage";
+import { setActivePluginSurfaceId } from "../../services/pluginSurfaceWebviewRefs";
 
 type ThemeMode = "light" | "dark";
 
@@ -26,6 +28,13 @@ export function PluginSurfaceHost({
   hostTheme: ThemeMode;
   mountedPluginIds: string[];
 }) {
+  useEffect(() => {
+    setActivePluginSurfaceId(mountedPluginIds.length > 0 ? activePluginId : null);
+    return () => {
+      setActivePluginSurfaceId(null);
+    };
+  }, [activePluginId, mountedPluginIds.length]);
+
   if (mountedPluginIds.length === 0) {
     return null;
   }

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "re
 import { AppSidebar } from "./navigation/AppSidebar";
 import { CustomSidebarRouteFallback, CustomSidebarSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
 import { RootRouteRedirect, StartupLoadingScreen } from "./startup/StartupGate";
+import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
 import { ControlCenterPage } from "../pages/control-center/ControlCenterPage";
 import { ExternalWebviewPage } from "../pages/external-webview/ExternalWebviewPage";
@@ -226,6 +227,7 @@ export function AppShell() {
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
+  const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [copilotAgentOptions, setCopilotAgentOptions] = useState<AssistantNavAgentItem[]>([]);
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
@@ -237,6 +239,8 @@ export function AppShell() {
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [startupCardDismissed, setStartupCardDismissed] = useState(false);
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
+  const [envImportBusy, setEnvImportBusy] = useState(false);
+  const [envImportError, setEnvImportError] = useState("");
   const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute(location.pathname, location.search, copilotAgentOptions);
   const activeAgentWebclientRoute = rawActiveAgentWebclientRoute
     ? {
@@ -358,6 +362,7 @@ export function AppShell() {
           return;
         }
         const nextItems = normalizeAssistantNavAgents(result.items);
+        setAssistantNavAgentsLoaded(true);
         setAssistantNavAgents(nextItems);
       }
     } catch {
@@ -394,6 +399,7 @@ export function AppShell() {
       }
       assistantNavAgentsRefreshIdRef.current += 1;
       const nextResult = normalizeAssistantNavAgentItemsResult(result);
+      setAssistantNavAgentsLoaded(true);
       setAssistantNavAgents(nextResult.items);
     });
 
@@ -429,6 +435,21 @@ export function AppShell() {
       setAssistantDockOpenRequest(null);
     }
     setAssistantDockOpenPath(location.pathname);
+  }
+
+  async function handleEnvImport() {
+    setEnvImportBusy(true);
+    setEnvImportError("");
+    try {
+      const result = await window.electronAPI.services.importEnvZip();
+      if (!result.ok) {
+        setEnvImportError(result.message);
+      }
+    } catch (err) {
+      setEnvImportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEnvImportBusy(false);
+    }
   }
 
   async function handleDesktopSsoLogin() {
@@ -1211,6 +1232,7 @@ export function AppShell() {
           customSidebarNavOrder={normalizedCustomSidebarGroupOrder}
           customSidebarItems={customSidebarItems}
           assistantNavAgents={assistantNavAgents}
+          assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           copilotAgentOptions={copilotAgentOptions}
           desktopSsoStatus={desktopSsoStatus}
           desktopSsoBusy={desktopSsoBusy}
@@ -1363,6 +1385,13 @@ export function AppShell() {
                 : undefined
             });
           }}
+        />
+      ) : null}
+      {resolvedStartupRestoreState.phase === "env-import-required" ? (
+        <EnvImportOverlay
+          errorMessage={envImportError}
+          busy={envImportBusy}
+          onImport={handleEnvImport}
         />
       ) : null}
     </div>

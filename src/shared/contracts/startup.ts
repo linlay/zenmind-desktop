@@ -4,7 +4,7 @@ export type NavigateListener = (path: string) => void;
 export type ServicesChangedListener = () => void;
 
 export type StartupRestoreMode = "restore" | "bootstrap";
-export type StartupRestorePhase = "idle" | "running" | "succeeded" | "failed";
+export type StartupRestorePhase = "idle" | "running" | "succeeded" | "failed" | "env-import-required";
 export type StartupRestoreServicePhase =
   | "pending"
   | "installing"

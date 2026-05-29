@@ -3981,6 +3981,105 @@ test("startService verifies running container hub with port and runtime-info pro
   }
 });
 
+test("startService waits for delayed container hub runtime-info readiness", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("This fixture uses a POSIX shell daemon; Windows service verification is covered by process and port parser tests.");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-hub-delayed-ready-"));
+  const port = await getAvailableLocalPort();
+  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot, {
+    bindAddr: `127.0.0.1:${port}`,
+    startScriptContent: [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      'state_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
+      'log_dir="${SERVICE_LOG_DIR:-$PWD/run}"',
+      'mkdir -p "$state_dir/pid" "$log_dir" run',
+      'env_file="${SERVICE_CONFIG_DIR:-$PWD}/.env"',
+      'if [ -f "$env_file" ]; then set -a; . "$env_file"; set +a; fi',
+      "cat > run/container-hub-delayed-fixture.js <<'NODE'",
+      "const http = require('node:http');",
+      `const fallbackPort = ${port};`,
+      "const bindAddr = process.env.BIND_ADDR || `127.0.0.1:${fallbackPort}`;",
+      "const port = Number(String(bindAddr).match(/:(\\d+)$/)?.[1] || fallbackPort);",
+      "const server = http.createServer((req, res) => {",
+      "  if (req.url === '/api/runtime-info') {",
+      "    res.writeHead(200, { 'content-type': 'application/json' });",
+      "    res.end(JSON.stringify({ engine: 'docker', ok: true }));",
+      "    return;",
+      "  }",
+      "  res.writeHead(200, { 'content-type': 'text/html' });",
+      "  res.end('<!doctype html><title>Container Hub</title>');",
+      "});",
+      "setTimeout(() => server.listen(port, '127.0.0.1'), 1000);",
+      "process.on('SIGTERM', () => server.close(() => process.exit(0)));",
+      "NODE",
+      "node \"$PWD/run/container-hub-delayed-fixture.js\" > \"$log_dir/agent-container-hub.log\" 2> \"$log_dir/agent-container-hub.stderr.log\" &",
+      "printf '%s\\n' \"$!\" > \"$state_dir/pid/agent-container-hub.pid\""
+    ].join("\n")
+  });
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const service = getBuiltinService("agent-container-hub");
+  const previousSpawnSync = childProcess.spawnSync;
+  const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
+
+  process.env.SERVICE_VERIFY_DELAY_MS = "50";
+
+  try {
+    await installBuiltinService(app, service.id);
+    const initStatePath = __testInternals.getInitializationStatePath(installDir);
+    fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
+    fs.writeFileSync(
+      initStatePath,
+      `${JSON.stringify({
+        version: service.version,
+        status: "succeeded",
+        updatedAt: new Date().toISOString()
+      }, null, 2)}\n`,
+      "utf8"
+    );
+
+    childProcess.spawnSync = (command, args = [], options = {}) => {
+      if (isCommandLookup(command, args, "docker")) {
+        return createSpawnSyncResult(0);
+      }
+      if (isCommandLookup(command, args, "podman")) {
+        return createSpawnSyncResult(1);
+      }
+      if (command === "docker" && args[0] === "info") {
+        return createSpawnSyncResult(0);
+      }
+      return previousSpawnSync(command, args, options);
+    };
+
+    const result = await startService(app, service.id);
+
+    assert.equal(result.ok, true, JSON.stringify(result, null, 2));
+    assert.equal(result.service.status, "running");
+    assert.equal(result.verification.verified, true);
+    assert.equal(result.verification.portListening, true);
+    assert.equal(result.verification.runtimeInfoOk, true);
+  } finally {
+    childProcess.spawnSync = previousSpawnSync;
+    if (previousVerifyDelay === undefined) {
+      delete process.env.SERVICE_VERIFY_DELAY_MS;
+    } else {
+      process.env.SERVICE_VERIFY_DELAY_MS = previousVerifyDelay;
+    }
+    const pidPath = getTestPidPath(userDataRoot, service.id, "agent-container-hub.pid");
+    const pid = Number(fs.existsSync(pidPath) ? fs.readFileSync(pidPath, "utf8").trim() : 0);
+    if (pid > 0) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {}
+    }
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("ensurePreStartRequirements does not rewrite agent platform desktop env bindings", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-prestart-"));
   const userDataRoot = path.join(tempRoot, "user-data");
