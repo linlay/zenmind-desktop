@@ -926,9 +926,6 @@ export function AppSidebar({
           )}
         </span>
         <span className="sidebar-link-label">{item.label}</span>
-        <span className="sidebar-link-label-collapsed" aria-hidden="true">
-          {getCollapsedSidebarLabel(item.label)}
-        </span>
       </NavLink>
     );
   }
@@ -1174,7 +1171,40 @@ export function AppSidebar({
       : ["sidebar-group-heading", args.active ? "is-active" : ""]
           .filter(Boolean)
           .join(" ");
-    return (
+    return isCollapsed ? (
+      <Popover
+        placement="right-start"
+        content={
+          <div
+            className="sidebar-group-children worker-popover-content"
+            role="group"
+            aria-label={args.label}
+          >
+            {args.groupId === "assistants" ? (
+              <div className="assistant-worker-collapse worker-collapse">
+                {assistantNavAgents?.map((agent) =>
+                  renderAssistantAgent(agent),
+                )}
+              </div>
+            ) : (
+              args.children.map((item) => renderSidebarChildLink(item))
+            )}
+          </div>
+        }
+      >
+        <button className={groupTriggerClassName}>
+          <span className="sidebar-group-heading-main">
+            <span className="sidebar-link-icon">
+              <SidebarIllustration kind={args.icon} />
+            </span>
+            <span className="sidebar-link-label">{args.label}</span>
+            {args.status && !expanded
+              ? renderStatusBadges(args.status, "sidebar-group-status")
+              : null}
+          </span>
+        </button>
+      </Popover>
+    ) : (
       <Collapse
         key={args.groupId}
         expanded={expanded}
@@ -1191,11 +1221,6 @@ export function AppSidebar({
             title={args.label}
           >
             <span className="sidebar-group-heading-main">
-              {isCollapsed ? (
-                <span className="sidebar-link-icon">
-                  <SidebarIllustration kind={args.icon} />
-                </span>
-              ) : null}
               <span className="sidebar-link-label">{args.label}</span>
               <ArrowIcon
                 className="sidebar-group-heading-arrow"
@@ -1206,7 +1231,7 @@ export function AppSidebar({
                 ? renderStatusBadges(args.status, "sidebar-group-status")
                 : null}
             </span>
-            {args.groupId === "assistants" && !isCollapsed ? (
+            {args.groupId === "assistants" ? (
               <Tooltip content="新增项目">
                 <button
                   type="button"
@@ -1227,7 +1252,7 @@ export function AppSidebar({
                 </button>
               </Tooltip>
             ) : null}
-            {args.groupId === "websites" && !isCollapsed ? (
+            {args.groupId === "websites" ? (
               <Tooltip content="新增内嵌网站">
                 <button
                   type="button"

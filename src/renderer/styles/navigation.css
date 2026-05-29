@@ -534,7 +534,9 @@
 .sidebar-group-heading:hover .sidebar-link-label{
   color: var(--ink);
 }
-
+.app-sidebar.is-collapsed .sidebar-group-heading-main{
+  flex-direction: column;
+}
 .sidebar-group-heading-main {
   display: inline-flex;
   align-items: center;
@@ -559,6 +561,11 @@
   background: rgba(148, 163, 184, 0.28);
 }
 
+.worker-popover-content.sidebar-group-children{
+  max-width: 300px;
+  min-width: 200px;
+  padding: 4px;
+}
 .sidebar-group-children {
   display: flex;
   flex-direction: column;
@@ -596,7 +603,7 @@
 
 .assistant-worker-collapse-item.is-expanded {
   background: var(--surface);
-  box-shadow: var(--panel-shadow);
+  border: 1px solid var(--line);
 }
 
 .assistant-worker-header {
@@ -1367,15 +1374,7 @@
 }
 
 .app-sidebar.is-collapsed .sidebar-link-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  font-size: 10px;
 }
 
 .app-sidebar.is-collapsed .sidebar-link-label-collapsed {
@@ -1432,10 +1431,6 @@
 .app-sidebar.is-collapsed .sidebar-group-trigger .sidebar-link-icon {
   width: 32px;
   height: 32px;
-}
-
-.app-sidebar.is-collapsed .sidebar-group-children {
-  display: none;
 }
 
 .app-sidebar.is-collapsed .sidebar-group-trigger .sidebar-status-badges {
