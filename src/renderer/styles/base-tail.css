@@ -79,7 +79,6 @@ code {
   .app-sidebar {
     width: auto;
     min-height: auto;
-    padding: 16px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }

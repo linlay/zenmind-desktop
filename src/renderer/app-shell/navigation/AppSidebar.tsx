@@ -379,10 +379,14 @@ type SidebarCollapseToggleProps = {
 function SidebarCollapseToggleIcon({ isCollapsed }: { isCollapsed: boolean }) {
   if (isCollapsed) {
     return (
-      <span
-        className="app-sidebar-collapse-button-icon app-sidebar-collapse-button-icon-chevron"
-        aria-hidden="true"
-      />
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 -960 960 960"
+        fill="currentColor"
+        width="16px"
+      >
+        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm200-80h360v-560H400v560Z" />
+      </svg>
     );
   }
 
@@ -1149,15 +1153,12 @@ export function AppSidebar({
                 event.stopPropagation();
                 const webviewRef = getActivePluginSurfaceWebviewRef()?.current;
                 if (webviewRef) {
-                  webviewRef.send(
-                    SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
-                    {
-                      action: "openChatHistory",
-                      data: {
-                        agentKey: agent.agentKey,
-                      },
+                  webviewRef.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
+                    action: "openChatHistory",
+                    data: {
+                      agentKey: agent.agentKey,
                     },
-                  );
+                  });
                 } else {
                   requestNavigate(createAgentHistoryRoute(agent.agentKey));
                 }
@@ -1212,7 +1213,9 @@ export function AppSidebar({
                 {assistantNavAgents.length > 0 ? (
                   assistantNavAgents.map((agent) => renderAssistantAgent(agent))
                 ) : assistantNavAgentsLoaded ? (
-                  <div className="status-line">{t("sidebar.assistants.empty")}</div>
+                  <div className="status-line">
+                    {t("sidebar.assistants.empty")}
+                  </div>
                 ) : null}
               </div>
             ) : (
@@ -1276,7 +1279,7 @@ export function AppSidebar({
                       aria-hidden="true"
                     />
                   ) : (
-                    <EditSquareIcon width={16} />
+                    <AddIcon width={16} />
                   )}
                 </button>
               </Tooltip>
@@ -1290,7 +1293,7 @@ export function AppSidebar({
                   title="新增内嵌网站"
                   onClick={openWebsiteDialog}
                 >
-                  <EditSquareIcon width={16} />
+                  <AddIcon width={16} />
                 </button>
               </Tooltip>
             ) : null}
@@ -1307,7 +1310,9 @@ export function AppSidebar({
               {assistantNavAgents.length > 0 ? (
                 assistantNavAgents.map((agent) => renderAssistantAgent(agent))
               ) : assistantNavAgentsLoaded ? (
-                <div className="status-line">{t("sidebar.assistants.empty")}</div>
+                <div className="status-line">
+                  {t("sidebar.assistants.empty")}
+                </div>
               ) : null}
             </div>
           ) : (
@@ -1736,6 +1741,21 @@ const EditSquareIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => {
       {...props}
     >
       <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h357l-80 80H200v560h560v-278l80-80v358q0 33-23.5 56.5T760-120H200Zm280-360ZM360-360v-170l367-367q12-12 27-18t30-6q16 0 30.5 6t26.5 18l56 57q11 12 17 26.5t6 29.5q0 15-5.5 29.5T897-728L530-360H360Zm481-424-56-56 56 56ZM440-440h56l232-232-28-28-29-28-231 231v57Zm260-260-29-28 29 28 28 28-28-28Z" />
+    </svg>
+  );
+};
+
+const AddIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      height="24px"
+      viewBox="0 -960 960 960"
+      width="24px"
+      fill="currentColor"
+      {...props}
+    >
+      <path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z" />
     </svg>
   );
 };
