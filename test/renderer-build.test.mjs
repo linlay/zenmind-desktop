@@ -620,7 +620,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /assistant-worker-collapse worker-collapse/);
   assert.match(sidebarSource, /className="assistant-worker-collapse-item"/);
   assert.match(sidebarSource, /className="assistant-worker-header-text"/);
-  assert.match(sidebarSource, /<AgentIcon[\s\S]*?icon=\{agent\.icon\}[\s\S]*?className="worker-panel-icon"[\s\S]*?size=\{32\}[\s\S]*?type="agent"[\s\S]*?\/>/);
+  assert.match(sidebarSource, /<AgentIcon[\s\S]*?icon=\{agent\.icon\}[\s\S]*?className="worker-panel-icon"[\s\S]*?size=\{selected \? 20 : 32\}[\s\S]*?type="agent"[\s\S]*?\/>/);
   assert.doesNotMatch(sidebarSource, /renderAssistantAgentIcon/);
   assert.doesNotMatch(sidebarSource, /SidebarIllustration kind="agent"/);
   assert.match(sidebarSource, /worker-panel-header-body/);
@@ -638,8 +638,10 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /archiveChat/);
   assert.match(sidebarSource, /deleteChat/);
   assert.match(sidebarSource, /<span>删除<\/span>/);
-  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/schedules"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
-  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/control-center"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?to:\s*"\/help"[\s\S]*?labelKey:\s*"nav\.help"/);
+  assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/schedules"[\s\S]*?icon:\s*"schedule"/);
+  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
+  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/control-center"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?to:\s*"\/help"[\s\S]*?labelKey:\s*"nav\.help"/);
+  assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/schedules"/);
   assert.match(sidebarSource, /sidebar-footer-divider/);
   assert.match(sidebarSource, /aria-label=\{t\("nav\.sidebar\.fixedTools"\)\}/);
   assert.match(sidebarSource, /aria-label=\{t\("nav\.sidebar\.openSettings"\)\}/);
@@ -653,12 +655,13 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /sidebar-group-heading/);
   assert.doesNotMatch(sidebarSource, /sidebar-tool-grid/);
   assert.doesNotMatch(sidebarSource, /sidebar-assistant-launcher/);
-  assert.doesNotMatch(sidebarSource, /sortSidebarNavItems\(/);
-  assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)[\s\S]*?label:\s*t\("nav\.assistants"\)[\s\S]*?label:\s*t\("nav\.embeddedWebsites"\)/);
+  assert.match(sidebarSource, /sortSidebarNavItems\(/);
+  assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)[\s\S]*?label:\s*t\("nav\.schedules"\)[\s\S]*?label:\s*t\("nav\.assistants"\)[\s\S]*?label:\s*t\("nav\.embeddedWebsites"\)/);
   assert.match(globalStyles, /\.sidebar-tool-menu\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(globalStyles, /\.sidebar-group-heading\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*0;[\s\S]*?border-left:\s*0;/);
+  assert.match(globalStyles, /\.sidebar-custom-child-link\s*\{[\s\S]*?padding-left:\s*4px !important;/);
   assert.match(globalStyles, /\.worker-panel-role\s*\{[\s\S]*?font-size:\s*12px;/);
   assert.match(globalStyles, /\.worker-panel-preview\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?height:\s*20px;/);
   assert.match(globalStyles, /\.worker-chat-name\s*\{[\s\S]*?font-size:\s*12px;/);
@@ -952,8 +955,8 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /页面 Copilot/);
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
-  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?labelKey:\s*"nav\.memory"/);
-  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?labelKey:\s*"nav\.help"/);
+  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?labelKey:\s*"nav\.memory"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?labelKey:\s*"nav\.help"/);
+  assert.doesNotMatch(settingsPage, /fixedNavigationToolRows[\s\S]*?labelKey:\s*"nav\.schedules"/);
   assert.match(settingsPage, /copilotPageKey:\s*"controlCenter"/);
   assert.match(settingsPage, /copilotPageKey:\s*"market"/);
   assert.match(settingsPage, /navigation-order-fixed-label/);
@@ -1098,11 +1101,13 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
 
   assert.match(orderHelper, /export type SidebarNavOrderItemKey/);
   assert.match(orderHelper, /"kanban"/);
+  assert.match(orderHelper, /"schedules"/);
   assert.match(orderHelper, /"group:assistants"/);
   assert.match(orderHelper, /"group:websites"/);
   assert.match(orderHelper, /STATIC_SIDEBAR_NAV_ORDER_ITEMS/);
   assert.match(orderHelper, /createDefaultSidebarNavOrderItems/);
   assert.match(orderHelper, /staticItems\.get\("kanban"\)/);
+  assert.match(orderHelper, /staticItems\.get\("schedules"\)/);
   assert.doesNotMatch(orderHelper, /staticItems\.get\("market"\)/);
   assert.doesNotMatch(orderHelper, /staticItems\.get\("agents"\)/);
   assert.doesNotMatch(orderHelper, /staticItems\.get\("help"\)/);
@@ -1121,7 +1126,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /normalizeSidebarNavOrder\(sidebarNavOrder, availableSidebarNavOrderItems\)/);
   assert.match(appShell, /customSidebarNavOrder=\{normalizedCustomSidebarGroupOrder\}/);
   assert.match(sidebarSource, /sidebarNavOrder:\s*SidebarNavOrderItemKey\[\]/);
-  assert.doesNotMatch(sidebarSource, /sortSidebarNavItems\(/);
+  assert.match(sidebarSource, /sortSidebarNavItems\(/);
 });
 
 test("page-level copilot controls sidebar visibility and assistant agent following", () => {
@@ -2315,7 +2320,7 @@ test("assistant chat export writes directly to the download location", () => {
   const exportPathBlock =
     assistantHandlers.match(/function getAssistantExportDefaultPath[\s\S]*?async function getAvailableFilePath/u)?.[0] ?? "";
   const saveExportBlock =
-    assistantHandlers.match(/async function saveAssistantChatExport[\s\S]*?function coderAgentKeyFromWorkspace/u)?.[0] ?? "";
+    assistantHandlers.match(/async function saveAssistantChatExport[\s\S]*?function workspaceNameFromPath/u)?.[0] ?? "";
 
   assert.match(exportPathBlock, /platform === "win32" \|\| platform === "darwin"[\s\S]*?app\.getPath\("downloads"\)/u);
   assert.match(exportPathBlock, /getAvailableFilePath/u);

@@ -628,6 +628,10 @@
   padding-left: 32px !important;
 }
 
+.sidebar-custom-child-link {
+  padding-left: 4px !important;
+}
+
 .sidebar-child-link .sidebar-link-icon {
   width: 18px;
   height: 18px;

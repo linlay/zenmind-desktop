@@ -22,6 +22,7 @@ import type {
 } from "../../../shared/contracts";
 import {
   createCustomSidebarNavOrderKey,
+  sortSidebarNavItems,
   type SidebarNavOrderItemKey,
 } from "./sidebarNavOrder";
 import { AgentIcon } from "./AgentIcon";
@@ -87,6 +88,12 @@ const taskBoardNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   icon: "futures",
 };
 
+const schedulesNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
+  orderKey: "schedules",
+  to: "/schedules",
+  icon: "schedule",
+};
+
 const assistantGroupNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   orderKey: "group:assistants",
   to: "",
@@ -106,7 +113,6 @@ const fixedToolRowsBase: Array<
     Omit<SidebarToolItem, "label"> & {
       labelKey:
         | "nav.agents"
-        | "nav.schedules"
         | "nav.memory"
         | "nav.controlCenter"
         | "nav.market"
@@ -123,16 +129,16 @@ const fixedToolRowsBase: Array<
       icon: "agent",
     },
     {
-      orderKey: "schedules",
-      to: "/schedules",
-      labelKey: "nav.schedules",
-      icon: "schedule",
-    },
-    {
       orderKey: "memory",
       to: "/memory",
       labelKey: "nav.memory",
       icon: "memory",
+    },
+    {
+      orderKey: "market",
+      to: "/market",
+      labelKey: "nav.market",
+      icon: "market",
     },
   ],
   [
@@ -141,12 +147,6 @@ const fixedToolRowsBase: Array<
       to: "/control-center",
       labelKey: "nav.controlCenter",
       icon: "control",
-    },
-    {
-      orderKey: "market",
-      to: "/market",
-      labelKey: "nav.market",
-      icon: "market",
     },
     {
       orderKey: "settings",
@@ -551,11 +551,15 @@ export function AppSidebar({
       });
   }, [customSidebarItems, customSidebarNavOrder]);
 
-  const navItems: SidebarPrimaryEntry[] = [
-    { ...taskBoardNavItemBase, label: t("nav.taskBoard") },
-    { ...assistantGroupNavItemBase, label: t("nav.assistants") },
-    { ...websitesGroupNavItemBase, label: t("nav.embeddedWebsites") },
-  ];
+  const navItems: SidebarPrimaryEntry[] = sortSidebarNavItems(
+    [
+      { ...taskBoardNavItemBase, label: t("nav.taskBoard") },
+      { ...schedulesNavItemBase, label: t("nav.schedules") },
+      { ...assistantGroupNavItemBase, label: t("nav.assistants") },
+      { ...websitesGroupNavItemBase, label: t("nav.embeddedWebsites") },
+    ],
+    sidebarNavOrder,
+  );
   const fixedToolRows: SidebarToolItem[][] = fixedToolRowsBase.map((row) =>
     row.map(({ labelKey, ...item }) => ({ ...item, label: t(labelKey) })),
   );
@@ -987,6 +991,9 @@ export function AppSidebar({
     item: SidebarNavItem & { status?: SidebarStatusSummary },
   ) {
     const showIcon = !item.orderKey.startsWith("custom:");
+    const extraClassName = showIcon
+      ? "sidebar-child-link"
+      : "sidebar-child-link sidebar-custom-child-link";
     return (
       <NavLink
         key={item.to}
@@ -994,7 +1001,7 @@ export function AppSidebar({
         onClick={(event) => handleItemClick(event, item.to)}
         aria-label={item.label}
         title={item.label}
-        className={() => getSidebarLinkClassName(item.to, "sidebar-child-link")}
+        className={() => getSidebarLinkClassName(item.to, extraClassName)}
       >
         {showIcon ? (
           <span className="sidebar-link-icon">

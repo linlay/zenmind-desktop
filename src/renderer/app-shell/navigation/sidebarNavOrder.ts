@@ -25,6 +25,7 @@ type SidebarNavOrderInput = {
 
 export const STATIC_SIDEBAR_NAV_ORDER_ITEMS: SidebarNavOrderItem[] = [
   { key: "kanban", label: "任务看板" },
+  { key: "schedules", label: "自动化" },
   { key: "group:assistants", label: "智能助理" },
   { key: "group:websites", label: "内嵌网站" },
 ];
@@ -48,6 +49,7 @@ export function createDefaultSidebarNavOrderItems({
   const staticItems = new Map(STATIC_SIDEBAR_NAV_ORDER_ITEMS.map((item) => [item.key, item]));
   return [
     staticItems.get("kanban")!,
+    staticItems.get("schedules")!,
     staticItems.get("group:assistants")!,
     staticItems.get("group:websites")!
   ];

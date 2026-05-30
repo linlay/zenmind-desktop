@@ -142,7 +142,9 @@ function buildSettingsActionPatch(
 }
 
 function getCopilotPageKeyForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey): DesktopCopilotPageKey | null {
-  void itemKey;
+  if (itemKey === "schedules") {
+    return "schedules";
+  }
   return null;
 }
 
@@ -194,15 +196,12 @@ type FixedNavigationToolConfig = {
 const fixedNavigationToolRows: FixedNavigationToolConfig[][] = [
   [
     { id: "agents", labelKey: "nav.agents", copilotPageKey: "agents" },
-    { id: "schedules", labelKey: "nav.schedules", copilotPageKey: "schedules" },
-    { id: "memory", labelKey: "nav.memory", copilotPageKey: "memory" }
+    { id: "memory", labelKey: "nav.memory", copilotPageKey: "memory" },
+    { id: "market", labelKey: "nav.market", copilotPageKey: "market" }
   ],
   [
     { id: "controlCenter", labelKey: "nav.controlCenter", copilotPageKey: "controlCenter" },
-    { id: "market", labelKey: "nav.market", copilotPageKey: "market" },
     { id: "settings", labelKey: "nav.settings", copilotPageKey: null, fixedAssistantLabelKey: "settings.defaultAssistant" },
-  ],
-  [
     { id: "help", labelKey: "nav.help", copilotPageKey: "help" }
   ]
 ];

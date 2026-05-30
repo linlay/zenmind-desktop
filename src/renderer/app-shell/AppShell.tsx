@@ -318,6 +318,7 @@ export function AppShell() {
       customItems: []
     }).map((item) => {
       if (item.key === "kanban") return { ...item, label: t("nav.taskBoard") };
+      if (item.key === "schedules") return { ...item, label: t("nav.schedules") };
       if (item.key === "group:assistants") return { ...item, label: t("nav.assistants") };
       if (item.key === "group:websites") return { ...item, label: t("nav.embeddedWebsites") };
       return item;
