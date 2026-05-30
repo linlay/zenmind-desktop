@@ -662,7 +662,7 @@ test("validateBundleArchive rejects legacy agent-platform bundles that still emb
   };
 
   for (const entry of service.requiredBundleEntries) {
-    if (path.extname(entry) !== "" && !mockFiles[entry]) {
+    if ((path.extname(entry) !== "" || entry.startsWith("backend/")) && !mockFiles[entry]) {
       mockFiles[entry] = "mock content\n";
     }
   }

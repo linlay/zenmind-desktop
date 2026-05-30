@@ -15,6 +15,7 @@ import {
   DESKTOP_PET_APPEARANCE_OPTIONS,
   getDesktopPetRunningTaskAnimationDurationMs,
   getDesktopPetStatusAssetPath,
+  isDesktopPetDanceAppearance,
   normalizeDesktopPetAppearanceId,
   shouldUseDesktopPetTaskRunningAnimation
 } from "../../../shared/desktop-pet";
@@ -123,6 +124,7 @@ type DesktopPetVisualStatus =
   | "dancing";
 
 const DESKTOP_PET_DANCE_DURATION_MS = 3000;
+const DESKTOP_PET_IDOL_PONY_DANCE_DURATION_MS = 4600;
 const DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX = 3;
 const DESKTOP_PET_IMAGE_HIT_MARGIN = 8;
 
@@ -154,6 +156,14 @@ function pointIntersectsVisiblePetArea(x: number, y: number) {
 
 function getDesktopPetTaskRunSpritePath(appearanceId: string) {
   return `./desktop-pet/${appearanceId}/task-run-left.webp`;
+}
+
+function getDesktopPetDanceSpritePath(appearanceId: string) {
+  return `./desktop-pet/${appearanceId}/dance.webp`;
+}
+
+function getDesktopPetDanceDurationMs(appearanceId: string) {
+  return appearanceId === "idol-pony" ? DESKTOP_PET_IDOL_PONY_DANCE_DURATION_MS : DESKTOP_PET_DANCE_DURATION_MS;
 }
 
 export function DesktopPet() {
@@ -226,15 +236,16 @@ export function DesktopPet() {
   }
 
   function startDance() {
-    if (appearanceIdRef.current !== DEFAULT_DESKTOP_PET_APPEARANCE_ID || draggingRef.current) {
+    if (!isDesktopPetDanceAppearance(appearanceIdRef.current) || draggingRef.current) {
       return;
     }
+    const durationMs = getDesktopPetDanceDurationMs(appearanceIdRef.current);
     clearDanceTimer();
     setIsDancing(true);
     danceTimeoutRef.current = window.setTimeout(() => {
       danceTimeoutRef.current = null;
       setIsDancing(false);
-    }, DESKTOP_PET_DANCE_DURATION_MS);
+    }, durationMs);
   }
 
   function beginDrag(point: { x: number; y: number }) {
@@ -259,13 +270,13 @@ export function DesktopPet() {
     setMouseInteractive(false);
     void window.electronAPI.desktopPet.getState().then((nextState) => {
       setPetState(nextState);
-      if (!nextState.visible || normalizeDesktopPetAppearanceId(nextState.appearanceId) !== DEFAULT_DESKTOP_PET_APPEARANCE_ID) {
+      if (!nextState.visible || !isDesktopPetDanceAppearance(nextState.appearanceId)) {
         stopDancing();
       }
     }).catch(() => undefined);
     const dispose = window.electronAPI.desktopPet.onStateChanged((nextState) => {
       setPetState(nextState);
-      if (!nextState.visible || normalizeDesktopPetAppearanceId(nextState.appearanceId) !== DEFAULT_DESKTOP_PET_APPEARANCE_ID) {
+      if (!nextState.visible || !isDesktopPetDanceAppearance(nextState.appearanceId)) {
         stopDancing();
       }
     });
@@ -326,7 +337,8 @@ export function DesktopPet() {
     [petState.appearanceId]
   );
   const runningTaskCount = Math.max(0, Math.round(Number(petState.runningTaskCount) || 0));
-  const shouldShowTaskRunAnimation = !isDragging &&
+  const shouldShowDanceSpriteAnimation = isDancing && appearanceId === "idol-pony";
+  const shouldShowTaskRunAnimation = !isDragging && !isDancing &&
     shouldUseDesktopPetTaskRunningAnimation(appearanceId, runningTaskCount);
   const taskRunAnimationDurationMs = getDesktopPetRunningTaskAnimationDurationMs(runningTaskCount);
   const rootStyle = shouldShowTaskRunAnimation
@@ -339,9 +351,14 @@ export function DesktopPet() {
         backgroundImage: `url("${getDesktopPetTaskRunSpritePath(appearanceId)}")`
       }
     : undefined;
+  const danceSpriteStyle = shouldShowDanceSpriteAnimation
+    ? {
+        backgroundImage: `url("${getDesktopPetDanceSpritePath(appearanceId)}")`
+      }
+    : undefined;
   useEffect(() => {
     appearanceIdRef.current = appearanceId;
-    if (appearanceId !== DEFAULT_DESKTOP_PET_APPEARANCE_ID) {
+    if (!isDesktopPetDanceAppearance(appearanceId)) {
       stopDancing();
     }
   }, [appearanceId]);
@@ -358,7 +375,7 @@ export function DesktopPet() {
       : dragDirection === "right"
         ? "dragging-right"
         : "dragging"
-    : isDancing && appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID
+    : isDancing && isDesktopPetDanceAppearance(appearanceId)
       ? "dancing"
     : shouldShowTaskRunAnimation
       ? "running"
@@ -536,6 +553,7 @@ export function DesktopPet() {
         "desktop-pet-root",
         `is-${visualStatus}`,
         `is-appearance-${appearanceId}`,
+        shouldShowDanceSpriteAnimation ? "has-dance-animation" : "",
         shouldShowTaskRunAnimation ? "has-task-run-animation" : "",
         showPreviewPanel ? "has-preview" : "",
         showBubble ? "has-bubble" : "",
@@ -625,7 +643,13 @@ export function DesktopPet() {
             }
           }}
         >
-          {shouldShowTaskRunAnimation ? (
+          {shouldShowDanceSpriteAnimation ? (
+            <span
+              aria-hidden="true"
+              className="desktop-pet-image desktop-pet-dance-sprite"
+              style={danceSpriteStyle}
+            />
+          ) : shouldShowTaskRunAnimation ? (
             <span
               aria-hidden="true"
               className="desktop-pet-image desktop-pet-task-run-sprite"

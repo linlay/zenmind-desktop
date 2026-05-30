@@ -17,6 +17,7 @@ import {
   DESKTOP_PET_APPEARANCE_OPTIONS,
   applyDesktopPetActiveRunEvent,
   getDesktopPetRunningTaskAnimationDurationMs,
+  isDesktopPetDanceAppearance,
   normalizeDesktopPetAppearanceId,
   normalizeDesktopPetBoundAgentKey,
   resolveDesktopPetRunningTaskCount,
@@ -146,7 +147,7 @@ export function sanitizeDesktopPetAppearanceId(value: unknown) {
 export function getDesktopPetContextMenuItems(appearanceId: unknown): DesktopPetContextMenuItem[] {
   const normalizedAppearanceId = sanitizeDesktopPetAppearanceId(appearanceId);
   return [
-    ...(normalizedAppearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID
+    ...(isDesktopPetDanceAppearance(normalizedAppearanceId)
       ? [{
           action: "dance" as const,
           label: "跳舞"

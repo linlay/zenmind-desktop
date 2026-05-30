@@ -1,4 +1,4 @@
-import { ipcRenderer, webFrame, contextBridge } from "electron";
+import { ipcRenderer, webFrame } from "electron";
 import {
   AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
@@ -277,11 +277,3 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, (_event, payload: Record<s
   window.dispatchEvent(new CustomEvent(PRELOAD_TO_PAGE_ACTION_EVENT, { detail: payload }));
   sendBridgeDebug("action-dispatched", String(payload.action || ""));
 });
-
-// 暴露 API 给 浏览器JS（渲染进程）
-contextBridge.exposeInMainWorld('electronAPI', {
-  // 渲染进程 → 主进程
-  sendToMain: (channel: string, data: any) => ipcRenderer.send(channel, data),
-  // 渲染进程 监听 主进程消息
-  onFromMain: (channel: string, callback: any) => ipcRenderer.on(channel, callback)
-})

@@ -513,10 +513,13 @@ function createStartupCoreAssetsFixture(options = {}) {
           options.failOnStartServiceId === service.id
             ? "throw 'fixture start failure'"
             : [
-                "$pidDir = if ($env:SERVICE_STATE_DIR) { Join-Path $env:SERVICE_STATE_DIR 'pid' } else { $runDir }",
+                "$pidDir = if ($env:SERVICE_STATE_DIR) { $env:SERVICE_STATE_DIR } else { $runDir }",
                 "New-Item -ItemType Directory -Path $pidDir -Force | Out-Null",
                 "if ($env:NODE_BIN) { $env:NODE_BIN | Set-Content -LiteralPath (Join-Path $runDir 'node-bin.txt') }",
-                "$proc = Start-Process -FilePath powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','Start-Sleep -Seconds 300' -WindowStyle Hidden -PassThru",
+                "$fixtureScript = Join-Path $runDir '${service.id}-fixture.mjs'",
+                "[System.IO.File]::WriteAllText($fixtureScript, 'setInterval(() => {}, 1000);')",
+                "$nodeBin = if ($env:NODE_BIN) { $env:NODE_BIN } else { 'node' }",
+                "$proc = Start-Process -FilePath $nodeBin -ArgumentList $fixtureScript -WindowStyle Hidden -PassThru",
                 `$proc.Id | Set-Content -LiteralPath (Join-Path $pidDir '${service.id}.pid')`,
                 "Set-Content -LiteralPath (Join-Path $runDir 'started.txt') -Value 'started'"
               ].join("\r\n")
@@ -526,7 +529,7 @@ function createStartupCoreAssetsFixture(options = {}) {
       fs.writeFileSync(
         path.join(bundleRoot, stopFileName),
         [
-          `$pidFile = if ($env:SERVICE_STATE_DIR) { Join-Path (Join-Path $env:SERVICE_STATE_DIR 'pid') '${service.id}.pid' } else { Join-Path $PSScriptRoot '${pidRelativePath.replace(/\\/g, "/")}' }`,
+          `$pidFile = if ($env:SERVICE_STATE_DIR) { Join-Path $env:SERVICE_STATE_DIR '${service.id}.pid' } else { Join-Path $PSScriptRoot '${pidRelativePath.replace(/\\/g, "/")}' }`,
           "if (Test-Path -LiteralPath $pidFile) {",
           "  $pidValue = (Get-Content -LiteralPath $pidFile -Raw).Trim()",
           "  if ($pidValue) { Stop-Process -Id ([int]$pidValue) -ErrorAction SilentlyContinue }",
@@ -559,13 +562,15 @@ function createStartupCoreAssetsFixture(options = {}) {
           "set -euo pipefail",
           "mkdir -p run",
           unixStartPrelude,
-          'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}/pid"',
+          'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
           'if [ -z "${SERVICE_STATE_DIR:-}" ]; then pid_dir="$PWD/run"; fi',
           'mkdir -p "$pid_dir"',
           options.failOnStartServiceId === service.id
             ? "echo fixture start failure >&2\nexit 1"
             : [
-                `node -e "setInterval(() => {}, 1000)" >/dev/null 2>&1 &`,
+                `fixture_script="$PWD/run/${service.id}-fixture.mjs"`,
+                `printf 'setInterval(() => {}, 1000);\\n' > "$fixture_script"`,
+                `node "$fixture_script" >/dev/null 2>&1 &`,
                 'if [ -n "${NODE_BIN:-}" ]; then printf "%s" "$NODE_BIN" > run/node-bin.txt; fi',
                 `echo $! > "$pid_dir/${service.id}.pid"`,
                 "printf started > run/started.txt"
@@ -578,7 +583,7 @@ function createStartupCoreAssetsFixture(options = {}) {
         [
           "#!/usr/bin/env bash",
           "set -euo pipefail",
-          'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}/pid"',
+          'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
           'if [ -z "${SERVICE_STATE_DIR:-}" ]; then pid_dir="$PWD/run"; fi',
           `pid_file="$pid_dir/${service.id}.pid"`,
           'if [ -f "$pid_file" ]; then',
@@ -653,13 +658,29 @@ function createStartupCoreAssetsFixture(options = {}) {
             required: true
           },
           ...(service.id === "agent-platform"
-            ? [{
-                key: "desktop",
-                label: "desktop.yml",
-                relativePath: "configs/desktop.yml",
-                templateRelativePath: "configs/desktop.example.yml",
-                required: true
-              }]
+            ? [
+                {
+                  key: "desktop",
+                  label: "desktop.yml",
+                  relativePath: "configs/desktop.yml",
+                  templateRelativePath: "configs/desktop.example.yml",
+                  required: true
+                },
+                ...[
+                  "runtime",
+                  "host-tools",
+                  "ai-tools",
+                  "channels",
+                  "coder-settings",
+                  "local-public-key",
+                  "prompts"
+                ].map((key) => ({
+                  key,
+                  label: key === "local-public-key" ? "local-public-key.pem" : `${key}.yml`,
+                  relativePath: key === "local-public-key" ? "configs/local-public-key.pem" : `configs/${key}.yml`,
+                  required: false
+                }))
+              ]
             : [])
         ],
         runtime: {
@@ -825,6 +846,10 @@ function getTestInitializationStatePath(userDataRoot, serviceId, kind = "service
 }
 
 function getTestPidPath(userDataRoot, serviceId, fileName, kind = "services") {
+  return path.join(getTestStateDir(userDataRoot, serviceId, kind), fileName);
+}
+
+function getTestLegacyPidPath(userDataRoot, serviceId, fileName, kind = "services") {
   return path.join(getTestStateDir(userDataRoot, serviceId, kind), "pid", fileName);
 }
 
@@ -1780,12 +1805,15 @@ test("agent-platform refresh check accepts pid subdirectory runtime scripts", ()
           logRelativePath: "run/agent-platform.log"
         },
         configFiles: [
-          {
-            key: "desktop",
-            relativePath: "configs/desktop.yml",
-            templateRelativePath: "configs/desktop.example.yml"
-          }
-        ]
+          "env",
+          "runtime",
+          "host-tools",
+          "ai-tools",
+          "channels",
+          "coder-settings",
+          "local-public-key",
+          "prompts"
+        ].map((key) => ({ key }))
       }, null, 2)}\n`,
       "utf8"
     );
@@ -1831,12 +1859,15 @@ test("agent-platform refresh check accepts PowerShell single-quoted runtime path
           logRelativePath: "run/agent-platform.log"
         },
         configFiles: [
-          {
-            key: "desktop",
-            relativePath: "configs/desktop.yml",
-            templateRelativePath: "configs/desktop.example.yml"
-          }
-        ]
+          "env",
+          "runtime",
+          "host-tools",
+          "ai-tools",
+          "channels",
+          "coder-settings",
+          "local-public-key",
+          "prompts"
+        ].map((key) => ({ key }))
       }, null, 2)}\n`,
       "utf8"
     );
@@ -2021,7 +2052,7 @@ test("collectManagedRootPids reads legacy state pid directory", () => {
       stdio: "ignore"
     });
     assert.ok(child.pid, "expected fixture process to expose a pid");
-    const legacyPidPath = getTestPidPath(userDataRoot, "legacy-plugin", "test-plugin.pid", "plugins");
+    const legacyPidPath = getTestLegacyPidPath(userDataRoot, "legacy-plugin", "test-plugin.pid", "plugins");
     fs.mkdirSync(path.dirname(legacyPidPath), { recursive: true });
     fs.writeFileSync(legacyPidPath, `${child.pid}\n`, "utf8");
 
@@ -2054,7 +2085,7 @@ test("forceCleanupManagedProcesses removes stale legacy pid files without killin
   });
 
   try {
-    const legacyPidPath = getTestPidPath(userDataRoot, "stale-legacy-plugin", "test-plugin.pid", "plugins");
+    const legacyPidPath = getTestLegacyPidPath(userDataRoot, "stale-legacy-plugin", "test-plugin.pid", "plugins");
     fs.mkdirSync(path.dirname(legacyPidPath), { recursive: true });
     fs.writeFileSync(legacyPidPath, `${process.pid}\n`, "utf8");
 
@@ -3009,8 +3040,17 @@ test("containerEngineAvailable falls back to podman when docker daemon is unreac
 
 test("containerEngineAvailable finds a Windows podman.exe when command lookup misses it", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-podman-path-"));
-  const podmanPath = path.join(tempRoot, "podman.exe");
-  fs.writeFileSync(podmanPath, "", "utf8");
+  const dockerFallbackPaths = new Set([
+    path.join(tempRoot, "docker"),
+    path.join(tempRoot, "docker.exe")
+  ]);
+  const podmanFallbackPaths = new Set([
+    path.join(tempRoot, "podman"),
+    path.join(tempRoot, "podman.exe")
+  ]);
+  for (const commandPath of [...dockerFallbackPaths, ...podmanFallbackPaths]) {
+    fs.writeFileSync(commandPath, "", "utf8");
+  }
 
   const detected = await withEnvPatch({
     PATH: tempRoot,
@@ -3020,7 +3060,10 @@ test("containerEngineAvailable finds a Windows podman.exe when command lookup mi
     if (isCommandLookup(command, args, "docker") || isCommandLookup(command, args, "podman")) {
       return createSpawnSyncResult(1);
     }
-    if (command === podmanPath && args[0] === "info") {
+    if (dockerFallbackPaths.has(command) && args[0] === "info") {
+      return createSpawnSyncResult(1);
+    }
+    if (podmanFallbackPaths.has(command) && args[0] === "info") {
       return createSpawnSyncResult(0);
     }
     assert.fail(`unexpected spawnSync call: ${command} ${args.join(" ")}`);
@@ -3032,8 +3075,17 @@ test("containerEngineAvailable finds a Windows podman.exe when command lookup mi
 
 test("probeContainerEngines reports installed engines separately from daemon readiness", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-podman-not-ready-"));
-  const podmanPath = path.join(tempRoot, "podman.exe");
-  fs.writeFileSync(podmanPath, "", "utf8");
+  const dockerFallbackPaths = new Set([
+    path.join(tempRoot, "docker"),
+    path.join(tempRoot, "docker.exe")
+  ]);
+  const podmanFallbackPaths = new Set([
+    path.join(tempRoot, "podman"),
+    path.join(tempRoot, "podman.exe")
+  ]);
+  for (const commandPath of [...dockerFallbackPaths, ...podmanFallbackPaths]) {
+    fs.writeFileSync(commandPath, "", "utf8");
+  }
 
   const result = await withEnvPatch({
     PATH: tempRoot,
@@ -3043,7 +3095,10 @@ test("probeContainerEngines reports installed engines separately from daemon rea
     if (isCommandLookup(command, args, "docker") || isCommandLookup(command, args, "podman")) {
       return createSpawnSyncResult(1);
     }
-    if (command === podmanPath && args[0] === "info") {
+    if (dockerFallbackPaths.has(command) && args[0] === "info") {
+      return createSpawnSyncResult(1);
+    }
+    if (podmanFallbackPaths.has(command) && args[0] === "info") {
       return createSpawnSyncResult(1, {
         stderr: "Cannot connect to Podman. failed to connect: dial tcp 127.0.0.1:64571"
       });
@@ -3897,7 +3952,7 @@ test("startService verifies running container hub with port and runtime-info pro
       "set -euo pipefail",
       'state_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
       'log_dir="${SERVICE_LOG_DIR:-$PWD/run}"',
-      'mkdir -p "$state_dir/pid" "$log_dir" run',
+      'mkdir -p "$state_dir" "$log_dir" run',
       'env_file="${SERVICE_CONFIG_DIR:-$PWD}/.env"',
       'if [ -f "$env_file" ]; then set -a; . "$env_file"; set +a; fi',
       "cat > run/container-hub-fixture.js <<'NODE'",
@@ -3918,7 +3973,7 @@ test("startService verifies running container hub with port and runtime-info pro
       "process.on('SIGTERM', () => server.close(() => process.exit(0)));",
       "NODE",
       "node \"$PWD/run/container-hub-fixture.js\" > \"$log_dir/agent-container-hub.log\" 2> \"$log_dir/agent-container-hub.stderr.log\" &",
-      "printf '%s\\n' \"$!\" > \"$state_dir/pid/agent-container-hub.pid\"",
+      "printf '%s\\n' \"$!\" > \"$state_dir/agent-container-hub.pid\"",
       'probe_port="$(node -e "const bindAddr = process.env.BIND_ADDR || process.argv[1]; console.log(String(bindAddr).match(/:(\\\\d+)$/)?.[1] || process.argv[2])" "127.0.0.1:' + port + '" "' + port + '")"',
       "for attempt in $(seq 1 50); do",
       '  node -e "const port=Number(process.argv[1]); require(\'node:http\').get(\'http://127.0.0.1:\'+port+\'/api/runtime-info\', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on(\'error\', () => process.exit(1))" "$probe_port" && exit 0',
@@ -3996,7 +4051,7 @@ test("startService waits for delayed container hub runtime-info readiness", asyn
       "set -euo pipefail",
       'state_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
       'log_dir="${SERVICE_LOG_DIR:-$PWD/run}"',
-      'mkdir -p "$state_dir/pid" "$log_dir" run',
+      'mkdir -p "$state_dir" "$log_dir" run',
       'env_file="${SERVICE_CONFIG_DIR:-$PWD}/.env"',
       'if [ -f "$env_file" ]; then set -a; . "$env_file"; set +a; fi',
       "cat > run/container-hub-delayed-fixture.js <<'NODE'",
@@ -4017,7 +4072,7 @@ test("startService waits for delayed container hub runtime-info readiness", asyn
       "process.on('SIGTERM', () => server.close(() => process.exit(0)));",
       "NODE",
       "node \"$PWD/run/container-hub-delayed-fixture.js\" > \"$log_dir/agent-container-hub.log\" 2> \"$log_dir/agent-container-hub.stderr.log\" &",
-      "printf '%s\\n' \"$!\" > \"$state_dir/pid/agent-container-hub.pid\""
+      "printf '%s\\n' \"$!\" > \"$state_dir/agent-container-hub.pid\""
     ].join("\n")
   });
   const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
@@ -4118,19 +4173,21 @@ test("ensurePreStartRequirements does not rewrite agent platform desktop env bin
   }
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.doesNotMatch(envContent, /^CONTAINER_HUB_BASE_URL=/m);
-  assert.match(envContent, /^SERVER_PORT=11949$/m);
-  assert.match(envContent, /^AGENT_WS_ENABLED=true$/m);
+  assert.match(envContent, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960$/m);
+  assert.match(envContent, /^SERVER_PORT=7078$/m);
+  assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
   assert.match(envContent, /^AUTH_ENABLED=true$/m);
-  assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
-  assert.doesNotMatch(envContent, /^PROVIDER_APIKEY_KEY_PART=/m);
-  assert.match(envContent, /^GATEWAY_WS_URL=/m);
-  assert.match(envContent, /^GATEWAY_USER_ID=/m);
-  assert.match(envContent, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
-  assert.match(envContent, /^AGENT_AUTH_ENABLED=false$/m);
-  assert.match(envContent, /^CHAT_RESOURCE_TICKET_ENABLED=true$/m);
-  assert.match(envContent, /^CHAT_IMAGE_TOKEN_SECRET=/m);
-  assert.equal(fs.existsSync(path.join(getTestConfigDir(userDataRoot, platformService.id), ".env.legacy-backup")), false);
+  assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
+  assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
+  assert.doesNotMatch(envContent, /^GATEWAY_WS_URL=/m);
+  assert.doesNotMatch(envContent, /^GATEWAY_USER_ID=/m);
+  assert.doesNotMatch(envContent, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
+  assert.doesNotMatch(envContent, /^AGENT_AUTH_ENABLED=/m);
+  assert.doesNotMatch(envContent, /^CHAT_RESOURCE_TICKET_ENABLED=/m);
+  assert.doesNotMatch(envContent, /^CHAT_IMAGE_TOKEN_SECRET=/m);
+  const legacyBackupPath = path.join(getTestConfigDir(userDataRoot, platformService.id), ".env.legacy-backup");
+  assert.equal(fs.existsSync(legacyBackupPath), true);
+  assert.match(fs.readFileSync(legacyBackupPath, "utf8"), /^AGENT_CONTAINER_HUB_BASE_URL=http:\/\/host\.docker\.internal:11960$/m);
   assert.doesNotMatch(envContent, /^NODE_BIN=/m);
   assert.doesNotMatch(envContent, /^CLOUDFLARED_BIN=/m);
   assert.doesNotMatch(envContent, /^CLAUDE_CODE_ACP_COMMAND=/m);
@@ -4621,12 +4678,9 @@ test("ensurePreStartRequirements leaves stale legacy desktop runtime paths uncha
   }
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.doesNotMatch(envContent, /^AGENTS_DIR=~\/\.zenmind\/agents$/m);
-  assert.doesNotMatch(envContent, /^REGISTRIES_DIR=~\/\.zenmind\/registries$/m);
-  assert.match(
-    envContent,
-    new RegExp(`AGENTS_DIR=${path.join(legacyRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  );
+  assert.match(envContent, new RegExp(`^RUNTIME_DIR=${legacyRuntimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+  assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
+  assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -4686,18 +4740,9 @@ test("ensurePreStartRequirements does not rewrite runtime paths to the resolved 
   }
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.doesNotMatch(
-    envContent,
-    new RegExp(`AGENTS_DIR=${path.join(desktopRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  );
-  assert.doesNotMatch(
-    envContent,
-    new RegExp(`REGISTRIES_DIR=${path.join(desktopRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  );
-  assert.match(
-    envContent,
-    new RegExp(`AGENTS_DIR=${path.join(legacyRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  );
+  assert.match(envContent, new RegExp(`^RUNTIME_DIR=${legacyRuntimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+  assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
+  assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -4757,18 +4802,9 @@ test("ensurePreStartRequirements does not rewrite runtime paths to a hidden desk
   }
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.doesNotMatch(
-    envContent,
-    new RegExp(`AGENTS_DIR=${path.join(desktopRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  );
-  assert.doesNotMatch(
-    envContent,
-    new RegExp(`REGISTRIES_DIR=${path.join(desktopRuntimeRoot, "registries").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  );
-  assert.match(
-    envContent,
-    new RegExp(`AGENTS_DIR=${path.join(legacyRuntimeRoot, "agents").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  );
+  assert.match(envContent, new RegExp(`^RUNTIME_DIR=${legacyRuntimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+  assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
+  assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -4864,7 +4900,9 @@ test("startService injects agent-webclient NODE_BIN without persisting it to env
           "New-Item -ItemType Directory -Path $runDir -Force | Out-Null",
           "if (-not $env:NODE_BIN) { throw 'missing NODE_BIN' }",
           "$env:NODE_BIN | Set-Content -LiteralPath (Join-Path $runDir 'node-bin.txt')",
-          "$proc = Start-Process -FilePath $env:NODE_BIN -ArgumentList '-e','setInterval(() => {}, 1000)' -WindowStyle Hidden -PassThru",
+          "$fixtureScript = Join-Path $runDir 'agent-webclient-fixture.mjs'",
+          "[System.IO.File]::WriteAllText($fixtureScript, 'setInterval(() => {}, 1000);')",
+          "$proc = Start-Process -FilePath $env:NODE_BIN -ArgumentList $fixtureScript -WindowStyle Hidden -PassThru",
           `$proc.Id | Set-Content -LiteralPath '${webclientPidPath.replace(/'/g, "''")}'`,
           "Set-Content -LiteralPath (Join-Path $runDir 'started.txt') -Value 'started'"
         ].join("\r\n"),
@@ -4877,12 +4915,14 @@ test("startService injects agent-webclient NODE_BIN without persisting it to env
           "#!/usr/bin/env bash",
           "set -euo pipefail",
           "mkdir -p run",
-          'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}/pid"',
+          'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
           'if [ -z "${SERVICE_STATE_DIR:-}" ]; then pid_dir="$PWD/run"; fi',
           'mkdir -p "$pid_dir"',
           ': "${NODE_BIN:?missing NODE_BIN}"',
           'printf "%s" "$NODE_BIN" > run/node-bin.txt',
-          '"$NODE_BIN" -e "setInterval(() => {}, 1000)" >/dev/null 2>&1 &',
+          'fixture_script="$PWD/run/agent-webclient-fixture.mjs"',
+          'printf "setInterval(() => {}, 1000);\\n" > "$fixture_script"',
+          '"$NODE_BIN" "$fixture_script" >/dev/null 2>&1 &',
           'echo $! > "$pid_dir/agent-webclient.pid"',
           "printf started > run/started.txt"
         ].join("\n") + "\n",
@@ -4942,12 +4982,14 @@ test("startService injects local-cli-acp-relay NODE_BIN without persisting it to
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         "mkdir -p run",
-        'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}/pid"',
+        'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
         'if [ -z "${SERVICE_STATE_DIR:-}" ]; then pid_dir="$PWD/run"; fi',
         'mkdir -p "$pid_dir"',
         ': "${NODE_BIN:?missing NODE_BIN}"',
         'printf "%s" "$NODE_BIN" > run/node-bin.txt',
-        '"$NODE_BIN" -e "setInterval(() => {}, 1000)" >/dev/null 2>&1 &',
+        'fixture_script="$PWD/run/local-cli-acp-relay-fixture.mjs"',
+        'printf "setInterval(() => {}, 1000);\\n" > "$fixture_script"',
+        '"$NODE_BIN" "$fixture_script" >/dev/null 2>&1 &',
         'echo $! > "$pid_dir/test-plugin.pid"',
         "printf started > run/started.txt"
       ].join("\n") + "\n",
@@ -5415,9 +5457,12 @@ test("restoreRunningServices keeps going after optional container hub restore fa
       [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}/pid"',
+        'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
         'mkdir -p "$pid_dir"',
-        'node -e "setInterval(() => {}, 1000)" >/dev/null 2>&1 &',
+        'mkdir -p run',
+        'fixture_script="$PWD/run/restored-plugin-fixture.mjs"',
+        'printf "setInterval(() => {}, 1000);\\n" > "$fixture_script"',
+        'node "$fixture_script" >/dev/null 2>&1 &',
         'echo $! > "$pid_dir/test-plugin.pid"'
       ].join("\n")
     );
@@ -6085,7 +6130,7 @@ test("runStartupPreparation reinitializes packaged core services that are missin
   }
 });
 
-test("runStartupPreparation continues after one bootstrap failure and reports the failure", async () => {
+test("runStartupPreparation reports one bootstrap failure and skips blocked dependents", async () => {
   const fixture = createStartupCoreAssetsFixture({ failOnStartServiceId: "zenmind-app-server" });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, { isPackaged: true });
@@ -6095,9 +6140,9 @@ test("runStartupPreparation continues after one bootstrap failure and reports th
     assert.equal(result.mode, "bootstrap");
     assert.equal(result.failures.length, 1);
     assert.match(result.failures[0], /zenmind-app-server/u);
-    assert.deepEqual(result.started, ["agent-platform", "agent-webclient"]);
-    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "run", "started.txt")), true);
-    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-webclient", "v1.0.0"), "run", "started.txt")), true);
+    assert.deepEqual(result.started, []);
+    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "run", "started.txt")), false);
+    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-webclient", "v1.0.0"), "run", "started.txt")), false);
   } finally {
     await stopStartupCoreProcesses(app);
     restore();
