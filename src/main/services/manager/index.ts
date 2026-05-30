@@ -2317,7 +2317,7 @@ function resolveContainerEngineCommand(name: string, env: NodeJS.ProcessEnv, dia
     ? r.stdout
       .split(/\r?\n/u)
       .map((entry) => entry.trim())
-      .find(Boolean) ?? ""
+      .find(Boolean) ?? name
     : "";
   const fallback = located ? "" : findCommandInServicePath(name, env);
   if (diagOnce) {

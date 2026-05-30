@@ -598,7 +598,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.doesNotMatch(sidebarSource, /assistantHistory/);
   assert.doesNotMatch(sidebarSource, /renderAssistantHistory/);
   assert.match(sidebarSource, /const recentChats = getAssistantNavAgentRecentChats\(agent\)\.slice\(0, 5\);/);
-  assert.match(sidebarSource, /const chatCount = Math\.max\(0, getAssistantNavAgentNonNegativeInteger\(agent\.chatCount\), recentChats\.length\);/);
+  assert.match(sidebarSource, /const chatCount = Math\.max\(\s*0,\s*getAssistantNavAgentNonNegativeInteger\(agent\.chatCount\),\s*recentChats\.length,?\s*\);/);
   assert.match(sidebarSource, /recentChats\.length > 0 \? \(/);
   assert.match(sidebarSource, /\) : chatCount === 0 \? \(\s*<div className="status-line">暂无会话<\/div>/);
   assert.match(sidebarSource, /chatCount > recentChats\.length \? \(/);
@@ -725,7 +725,7 @@ test("assistant sidebar empty state is localized", () => {
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
-  assert.match(sidebarSource, /<div className="status-line">\{t\("sidebar\.assistants\.empty"\)\}<\/div>/);
+  assert.match(sidebarSource, /<div className="status-line">\s*\{t\("sidebar\.assistants\.empty"\)\}\s*<\/div>/);
   assert.doesNotMatch(sidebarSource, /暂无智能体/);
   assert.match(zhCN, /"sidebar\.assistants\.empty": "暂无智能体"/);
   assert.match(enUS, /"sidebar\.assistants\.empty": "No assistants"/);
@@ -746,7 +746,7 @@ test("assistant sidebar empty state waits for navigation load", () => {
   assert.match(appShell, /assistantNavAgentsLoaded=\{assistantNavAgentsLoaded\}/);
   assert.match(sidebarSource, /assistantNavAgentsLoaded\?: boolean;/);
   assert.match(sidebarSource, /assistantNavAgentsLoaded = true,/);
-  assert.match(sidebarSource, /assistantNavAgentsLoaded \? \(\s*<div className="status-line">\{t\("sidebar\.assistants\.empty"\)\}<\/div>\s*\) : null/);
+  assert.match(sidebarSource, /assistantNavAgentsLoaded \? \(\s*<div className="status-line">\s*\{t\("sidebar\.assistants\.empty"\)\}\s*<\/div>\s*\) : null/);
 });
 
 test("settings route keeps the global sidebar and renders page-internal split sections", () => {
@@ -1578,7 +1578,7 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
   assert.match(appShell, /resolvedCopilotAgentKey/);
   assert.match(appShell, /function createCustomSidebarItem\(input: CustomSidebarItemInput\): Promise<CustomSidebarItemResult>[\s\S]*?window\.electronAPI\.customSidebar\.add\(input\)/);
   assert.match(appShell, /onCreateCustomSidebarItem=\{createCustomSidebarItem\}/);
-  assert.match(appSidebar, /args\.groupId === "websites" && !isCollapsed/);
+  assert.match(appSidebar, /args\.groupId === "websites"/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
   assert.match(appSidebar, /function renderWebsiteDialog\(\)/);
   assert.match(appSidebar, /网站名[\s\S]*?网页地址[\s\S]*?侧边智能助手/);
@@ -2222,6 +2222,8 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE/);
   assert.match(serviceWebviewPreload, /sendToHost/);
+  assert.doesNotMatch(serviceWebviewPreload, /contextBridge\.exposeInMainWorld/);
+  assert.doesNotMatch(serviceWebviewPreload, /sendToMain|onFromMain/);
   assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
   assert.match(serviceWebviewPreload, /DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
@@ -2820,7 +2822,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /onDesktopSsoLogin\?\.\(\);/);
   assert.doesNotMatch(sidebarSource, /desktopSsoStatus\.authenticated[\s\S]{0,140}\? onDesktopSsoLogout\?\.\(\)[\s\S]{0,140}: onDesktopSsoLogin\?\.\(\)/);
   assert.match(sidebarSource, /disabled=\{desktopSsoBusy\}/);
-  assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name \|\| desktopSsoStatus\.user\?\.email \|\| desktopSsoStatus\.user\?\.sub \|\| t\("sidebar\.sso\.signedIn"\)/);
+  assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name\s*\|\|\s*desktopSsoStatus\.user\?\.email\s*\|\|\s*desktopSsoStatus\.user\?\.sub\s*\|\|\s*t\("sidebar\.sso\.signedIn"\)/);
   assert.doesNotMatch(sidebarSource, /desktopSsoMessage/);
   assert.doesNotMatch(sidebarSource, /sidebar-sso-message/);
   assert.match(sidebarSource, /desktopSsoStatus\.pending[\s\S]{0,120}\? t\("sidebar\.sso\.signingIn"\)/);

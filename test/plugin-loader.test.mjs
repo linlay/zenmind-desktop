@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -389,21 +389,34 @@ test("uninstallPlugin stops a running plugin before deleting its install dir", a
   const configDir = getLayeredPluginConfigDir(userDataRoot, "test-plugin");
   const stateDir = path.join(getLayeredDesktopRoot(userDataRoot), "state", "plugins", "test-plugin");
   const stopScriptPath = path.join(installDir, "stop.sh");
-  fs.mkdirSync(path.join(stateDir, "pid"), { recursive: true });
+  fs.mkdirSync(stateDir, { recursive: true });
   fs.mkdirSync(configDir, { recursive: true });
-  fs.mkdirSync(installDir, { recursive: true });
+  fs.mkdirSync(path.join(installDir, "run"), { recursive: true });
   fs.writeFileSync(path.join(installDir, "manifest.json"), "{\"id\":\"test-plugin\"}\n", "utf8");
   fs.writeFileSync(path.join(configDir, ".env"), "PORT=9300\n", "utf8");
   fs.writeFileSync(path.join(installDir, "start.sh"), "#!/usr/bin/env bash\nexit 0\n", "utf8");
   fs.writeFileSync(
     stopScriptPath,
     `#!/usr/bin/env bash
-rm -f "$SERVICE_STATE_DIR/pid/test-plugin.pid"
+pid_file="$SERVICE_STATE_DIR/test-plugin.pid"
+if [ -f "$pid_file" ]; then
+  kill "$(cat "$pid_file")" >/dev/null 2>&1 || true
+  rm -f "$pid_file"
+fi
 printf stopped > ${JSON.stringify(stopMarkerPath)}
 `,
     "utf8"
   );
-  fs.writeFileSync(path.join(stateDir, "pid", "test-plugin.pid"), `${process.pid}\n`, "utf8");
+  const fixtureProcessPath = path.join(installDir, "run", "test-plugin-fixture.mjs");
+  fs.writeFileSync(fixtureProcessPath, "setInterval(() => {}, 1000);\n", "utf8");
+  const child = spawn(process.execPath, [fixtureProcessPath], { stdio: "ignore" });
+  assert.ok(child.pid, "expected fixture plugin process to expose a pid");
+  t.after(() => {
+    try {
+      process.kill(child.pid, "SIGTERM");
+    } catch {}
+  });
+  fs.writeFileSync(path.join(stateDir, "test-plugin.pid"), `${child.pid}\n`, "utf8");
   const initStatePath = path.join(stateDir, "init-state.json");
   fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
   fs.writeFileSync(

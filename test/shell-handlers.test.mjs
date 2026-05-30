@@ -209,6 +209,15 @@ test("registerShellIpcHandlers registers desktopDownloads.saveFile and manages f
   assert.equal(mkdirDir, "C:\\Users\\test\\Downloads");
   assert.equal(writeFilePath, "C:\\Users\\test\\Downloads\\report (2).pdf");
   assert.equal(writeFileBuffer.toString("utf8"), "hello");
+
+  const invalidRes = await handlers["desktopDownloads.saveFile"]({}, {
+    filename: "report.pdf"
+  });
+  assert.deepEqual(invalidRes, {
+    ok: false,
+    path: "",
+    message: "下载请求无效。"
+  });
 });
 
 test("registerShellIpcHandlers listens to diagnostics.rendererError", () => {
@@ -266,4 +275,3 @@ test("registerShellIpcHandlers listens to diagnostics.rendererError", () => {
     }
   });
 });
-

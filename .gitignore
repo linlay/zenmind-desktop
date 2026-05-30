@@ -10,6 +10,7 @@ release/
 
 build/app/
 build/bundle/
+build/dev/
 build/local-builtin-source/
 build/resources/services/
 build-all.sh
@@ -45,4 +46,6 @@ playwright-report/
 
 # Local assistant files
 agent.md
+.agents/skills/
+skills-lock.json
 .codegraph/

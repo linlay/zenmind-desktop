@@ -5,7 +5,7 @@ import {
   buildElectronSpawnErrorMessage,
   resolveValidatedElectronBinaryPath
 } from "./lib/electron-installation.mjs";
-import { hostArch, isWindows, syncOsLabel } from "./platform/detect.mjs";
+import { hostArch, hostPlatform, isWindows, syncOsLabel } from "./platform/detect.mjs";
 import { npmCmd, run, runAndWait } from "./platform/spawn.mjs";
 
 const projectRoot = process.cwd();
@@ -75,9 +75,12 @@ await runAndWait(npmCmd, ["run", "build:main"], { cwd: projectRoot });
 track(run(npmCmd, ["exec", "vite", "--", "--host", "127.0.0.1"], { cwd: projectRoot }));
 await waitForUrl("http://127.0.0.1:5173");
 
+const platform = hostPlatform();
 const { spawnElectron } = isWindows()
   ? await import("./platform/dev-windows.mjs")
-  : await import("./platform/dev-unix.mjs");
+  : platform === "darwin"
+    ? await import("./platform/dev-darwin.mjs")
+    : await import("./platform/dev-unix.mjs");
 const electron = track(spawnElectron(electronBinary, projectRoot));
 
 electron.once("error", (error) => {

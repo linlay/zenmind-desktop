@@ -5,8 +5,48 @@ import {
   clipboard as electronClipboard,
   BrowserWindow as ElectronBrowserWindow
 } from "electron";
+import type { BrowserWindow, IpcMain, IpcMainEvent, IpcMainInvokeEvent } from "electron";
 
-export function registerShellIpcHandlers(ipcMain: any, options: any) {
+type ShellIpcResult = {
+  ok: boolean;
+  path?: string;
+  message?: string;
+};
+
+type ShellIpcOptions = {
+  shell?: typeof electronShell;
+  clipboard?: typeof electronClipboard;
+  BrowserWindow?: Pick<typeof ElectronBrowserWindow, "fromWebContents">;
+  app?: {
+    getPath: (name: string) => string;
+  };
+  platform?: NodeJS.Platform | string;
+  mainWindow?: BrowserWindow | null;
+  showFileDialog?: (
+    options: { title: string; properties: Array<"openDirectory" | "createDirectory"> },
+    ownerWindow?: BrowserWindow | null
+  ) => Promise<{ canceled: boolean; filePaths: string[] }>;
+  revealPathInFileManager?: (
+    targetPath: string,
+    options: { targetType: "directory" },
+    fsOptions: {
+      showItemInFolder: (pathToReveal: string) => void;
+      openPath: (pathToOpen: string) => Promise<string>;
+      platform?: NodeJS.Platform | string;
+    }
+  ) => Promise<ShellIpcResult>;
+  fsAccess?: (filePath: string, mode?: number) => Promise<unknown>;
+  fsMkdir?: (dir: string, options: { recursive: true }) => Promise<unknown>;
+  fsWriteFile?: (filePath: string, data: Buffer) => Promise<unknown>;
+  reportRendererDiagnostic?: (source: string, data: Record<string, unknown>) => void;
+};
+
+type DesktopDownloadPayload = {
+  filename?: string;
+  dataBase64: string;
+};
+
+export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">, options: ShellIpcOptions) {
   const shell = options.shell || electronShell;
   const clipboard = options.clipboard || electronClipboard;
   const BrowserWindow = options.BrowserWindow || ElectronBrowserWindow;
@@ -16,32 +56,48 @@ export function registerShellIpcHandlers(ipcMain: any, options: any) {
     return normalized.replace(/[<>:"/\\|?*\u0000-\u001F]/gu, "_").slice(0, 180) || fallback;
   }
 
+  function getPlatformPath() {
+    return options.platform === "win32" ? path.win32 : path.posix;
+  }
+
+  function isDesktopDownloadPayload(input: unknown): input is DesktopDownloadPayload {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      return false;
+    }
+    const payload = input as Record<string, unknown>;
+    return typeof payload.dataBase64 === "string";
+  }
+
   function getDesktopDownloadDefaultPath(filename: string) {
     const safeFilename = sanitizeDownloadFilename(filename, "download");
     const downloadsDir = options.platform === "win32" || options.platform === "darwin"
-      ? options.app.getPath("downloads")
-      : options.app.getPath("home");
-    return path.join(downloadsDir, safeFilename);
+      ? options.app?.getPath("downloads")
+      : options.app?.getPath("home");
+    if (!downloadsDir) {
+      throw new Error("downloads_path_unavailable");
+    }
+    return getPlatformPath().join(downloadsDir, safeFilename);
   }
 
   async function getAvailableFilePath(targetPath: string) {
-    const parsedPath = path.parse(targetPath);
+    const platformPath = getPlatformPath();
+    const parsedPath = platformPath.parse(targetPath);
     const fsAccess = options.fsAccess || fs.promises.access;
     for (let index = 0; index < 1000; index += 1) {
       const candidatePath =
         index === 0
           ? targetPath
-          : path.join(parsedPath.dir, `${parsedPath.name} (${index})${parsedPath.ext}`);
+          : platformPath.join(parsedPath.dir, `${parsedPath.name} (${index})${parsedPath.ext}`);
       try {
         await fsAccess(candidatePath, fs.constants.F_OK);
       } catch {
         return candidatePath;
       }
     }
-    return path.join(parsedPath.dir, `${parsedPath.name}-${Date.now()}${parsedPath.ext}`);
+    return platformPath.join(parsedPath.dir, `${parsedPath.name}-${Date.now()}${parsedPath.ext}`);
   }
 
-  ipcMain.handle("shell.openExternal", async (_event: any, url: string) => {
+  ipcMain.handle("shell.openExternal", async (_event: IpcMainInvokeEvent, url: string) => {
     if (typeof url === "string" && (url.startsWith("http:") || url.startsWith("https:"))) {
       try {
         await shell.openExternal(url);
@@ -53,14 +109,14 @@ export function registerShellIpcHandlers(ipcMain: any, options: any) {
     return { ok: false, error: "invalid_protocol" };
   });
 
-  ipcMain.handle("desktopDialog.selectDirectory", async (event: any) => {
+  ipcMain.handle("desktopDialog.selectDirectory", async (event: IpcMainInvokeEvent) => {
     try {
       const ownerWindow = BrowserWindow.fromWebContents(event.sender) ?? options.mainWindow;
-      const result = await options.showFileDialog({
+      const result = await options.showFileDialog?.({
         title: "选择项目目录",
         properties: ["openDirectory", "createDirectory"]
       }, ownerWindow);
-      if (result.canceled || result.filePaths.length === 0) {
+      if (!result || result.canceled || result.filePaths.length === 0) {
         return {
           ok: false as const,
           path: "",
@@ -81,9 +137,9 @@ export function registerShellIpcHandlers(ipcMain: any, options: any) {
     }
   });
 
-  ipcMain.handle("desktopShell.openPath", async (_event: any, targetPath: string) => {
+  ipcMain.handle("desktopShell.openPath", async (_event: IpcMainInvokeEvent, targetPath: string) => {
     try {
-      return await options.revealPathInFileManager(targetPath, { targetType: "directory" }, {
+      return await options.revealPathInFileManager?.(targetPath, { targetType: "directory" }, {
         showItemInFolder: (pathToReveal: string) => shell.showItemInFolder(pathToReveal),
         openPath: (pathToOpen: string) => shell.openPath(pathToOpen),
         platform: options.platform
@@ -97,7 +153,7 @@ export function registerShellIpcHandlers(ipcMain: any, options: any) {
     }
   });
 
-  ipcMain.handle("clipboard.writeText", async (_event: any, text: string) => {
+  ipcMain.handle("clipboard.writeText", async (_event: IpcMainInvokeEvent, text: string) => {
     try {
       clipboard.writeText(String(text ?? ""));
       return { ok: true as const };
@@ -109,19 +165,26 @@ export function registerShellIpcHandlers(ipcMain: any, options: any) {
     }
   });
 
-  ipcMain.handle("desktopDownloads.saveFile", async (_event: any, input: unknown) => {
+  ipcMain.handle("desktopDownloads.saveFile", async (_event: IpcMainInvokeEvent, input: unknown) => {
     try {
-      const payload = input && typeof input === "object" ? input as Record<string, unknown> : {};
-      const filename = typeof payload.filename === "string" ? payload.filename : "";
-      const dataBase64 = typeof payload.dataBase64 === "string" ? payload.dataBase64 : "";
+      if (!isDesktopDownloadPayload(input)) {
+        return {
+          ok: false as const,
+          path: "",
+          message: "下载请求无效。"
+        };
+      }
+      const filename = typeof input.filename === "string" ? input.filename : "";
+      const dataBase64 = input.dataBase64;
       
       const defaultPath = getDesktopDownloadDefaultPath(filename);
       const downloadPath = await getAvailableFilePath(defaultPath);
+      const platformPath = getPlatformPath();
       
       const fsMkdir = options.fsMkdir || fs.promises.mkdir;
       const fsWriteFile = options.fsWriteFile || fs.promises.writeFile;
       
-      await fsMkdir(path.dirname(downloadPath), { recursive: true });
+      await fsMkdir(platformPath.dirname(downloadPath), { recursive: true });
       await fsWriteFile(downloadPath, Buffer.from(dataBase64, "base64"));
       
       return {
@@ -138,18 +201,19 @@ export function registerShellIpcHandlers(ipcMain: any, options: any) {
     }
   });
 
-  ipcMain.on("diagnostics.rendererError", (event: any, report: any) => {
+  ipcMain.on("diagnostics.rendererError", (event: IpcMainEvent, report: unknown) => {
+    const rendererReport = report && typeof report === "object" ? report as Record<string, unknown> : {};
     const ownerWindow = BrowserWindow.fromWebContents(event.sender);
-    options.reportRendererDiagnostic("renderer-error", {
+    options.reportRendererDiagnostic?.("renderer-error", {
       windowId: ownerWindow?.id ?? null,
       route: event.sender.getURL(),
-      source: typeof report?.source === "string" ? report.source : "unknown",
-      message: typeof report?.message === "string" ? report.message : String(report),
-      stack: typeof report?.stack === "string" ? report.stack : undefined,
-      componentStack: typeof report?.componentStack === "string" ? report.componentStack : undefined,
-      filename: typeof report?.filename === "string" ? report.filename : undefined,
-      lineno: typeof report?.lineno === "number" ? report.lineno : undefined,
-      colno: typeof report?.colno === "number" ? report.colno : undefined
+      source: typeof rendererReport.source === "string" ? rendererReport.source : "unknown",
+      message: typeof rendererReport.message === "string" ? rendererReport.message : String(report),
+      stack: typeof rendererReport.stack === "string" ? rendererReport.stack : undefined,
+      componentStack: typeof rendererReport.componentStack === "string" ? rendererReport.componentStack : undefined,
+      filename: typeof rendererReport.filename === "string" ? rendererReport.filename : undefined,
+      lineno: typeof rendererReport.lineno === "number" ? rendererReport.lineno : undefined,
+      colno: typeof rendererReport.colno === "number" ? rendererReport.colno : undefined
     });
   });
 }
