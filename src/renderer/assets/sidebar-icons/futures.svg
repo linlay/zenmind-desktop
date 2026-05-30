@@ -1,10 +1,6 @@
 <svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
-  <rect x="24" y="24" width="208" height="208" rx="40" fill="#1D4ED8"/>
-  <rect x="24" y="24" width="208" height="208" rx="40" fill="#FFFFFF" opacity="0.08"/>
-  <line x1="72" y1="70" x2="72" y2="190" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
-  <rect x="60" y="100" width="24" height="56" rx="4" fill="#FFFFFF"/>
-  <line x1="128" y1="56" x2="128" y2="200" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
-  <rect x="116" y="80" width="24" height="80" rx="4" fill="#34D399"/>
-  <line x1="184" y1="86" x2="184" y2="178" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
-  <rect x="172" y="110" width="24" height="44" rx="4" fill="#F87171"/>
+  <rect x="32" y="40" width="192" height="176" rx="32" fill="#F97316"/>
+  <rect x="64" y="80" width="32" height="80" rx="12" fill="#FFFFFF"/>
+  <rect x="112" y="80" width="32" height="104" rx="12" fill="#FFFFFF"/>
+  <rect x="160" y="80" width="32" height="56" rx="12" fill="#FFFFFF"/>
 </svg>
