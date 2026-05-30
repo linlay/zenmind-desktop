@@ -27,10 +27,12 @@ function createBridgeOptions(overrides = {}) {
   };
 }
 
-test("Desktop action catalog does not expose page or embedded web actions", () => {
+test("Desktop action catalog exposes embedded web actions but not page actions", () => {
   const names = DESKTOP_ACTION_DEFINITIONS.map((definition) => definition.name);
   assert.equal(names.some((name) => name.startsWith("desktop.page.")), false);
-  assert.equal(names.some((name) => name.startsWith("desktop.embeddedWeb.")), false);
+  assert.ok(names.includes("desktop.embeddedWeb.listSurfaces"));
+  assert.ok(names.includes("desktop.embeddedWeb.navigate"));
+  assert.ok(names.includes("desktop.embeddedWeb.interactElement"));
   assert.ok(names.includes("desktop.controlCenter.listServices"));
   assert.ok(names.includes("desktop.agents.deleteAgent"));
 });
@@ -42,6 +44,35 @@ test("Desktop Action Bridge rejects page actions", async () => {
   });
   assert.equal(response.ok, false);
   assert.equal(response.error.code, "unknown_action");
+});
+
+test("Desktop Action Bridge forwards embedded web actions to renderer providers", async () => {
+  let got;
+  const response = await handleDesktopActionRequest(createBridgeOptions({
+    callRendererAction: async (request) => {
+      got = request;
+      return {
+        requestId: request.requestId,
+        action: request.action,
+        ok: true,
+        result: { surfaces: [{ id: "browser", label: "Browser" }] }
+      };
+    }
+  }), {
+    requestId: "embedded-web-test",
+    action: "desktop.embeddedWeb.listSurfaces",
+    args: { surfaceId: "browser" }
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.action, "desktop.embeddedWeb.listSurfaces");
+  assert.deepEqual(response.result, { surfaces: [{ id: "browser", label: "Browser" }] });
+  assert.deepEqual(got, {
+    requestId: "embedded-web-test",
+    action: "desktop.embeddedWeb.listSurfaces",
+    args: { surfaceId: "browser" },
+    source: undefined
+  });
 });
 
 test("Desktop CDP Bridge executes CDP calls", async () => {

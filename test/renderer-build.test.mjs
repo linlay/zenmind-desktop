@@ -1742,7 +1742,9 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(actionCatalog, /desktop\.controlCenter\.listServices/);
   assert.match(actionCatalog, /desktop\.settings\.applyPatch/);
   assert.doesNotMatch(actionCatalog, /desktop\.page\./);
-  assert.doesNotMatch(actionCatalog, /desktop\.embeddedWeb\./);
+  assert.match(actionCatalog, /desktop\.embeddedWeb\.listSurfaces/);
+  assert.match(actionCatalog, /desktop\.embeddedWeb\.navigate/);
+  assert.match(actionCatalog, /desktop\.embeddedWeb\.interactElement/);
   assert.match(actionCatalog, /desktop\.market\.applySettingsPatch/);
   assert.match(actionCatalog, /desktop\.automations\.listAutomations/);
   assert.doesNotMatch(actionCatalog, /desktop\.memory\./);
