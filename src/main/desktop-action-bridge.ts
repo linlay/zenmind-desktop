@@ -794,6 +794,8 @@ async function executeAction(
       return ok(action, await callAgentPlatform(options.app, "/api/agent-create", { method: "POST", body: args }));
     case "desktop.agents.updateAgent":
       return ok(action, await callAgentPlatform(options.app, "/api/agent-update", { method: "POST", body: args }));
+    case "desktop.agents.deleteAgent":
+      return ok(action, await callAgentPlatform(options.app, "/api/agent-delete", { method: "POST", body: { key: readAgentKey(args) } }));
     case "desktop.agents.cloneAgent":
     case "desktop.agents.disableAgent":
     case "desktop.agents.reloadAgents":

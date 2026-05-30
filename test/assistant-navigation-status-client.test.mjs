@@ -255,6 +255,8 @@ test("assistant navigation snapshot resolves and validates workspace directories
       {
         key: "runtime-config",
         name: "Runtime Config",
+        type: "agent",
+        mode: "CODER",
         runtimeConfig: { workspaceRoot },
         stats: { totalCount: 0, unreadCount: 0 }
       },
@@ -275,6 +277,8 @@ test("assistant navigation snapshot resolves and validates workspace directories
     const byKey = new Map(items.map((item) => [item.agentKey, item]));
     assert.equal(byKey.get("runtime-config")?.workspaceDir, workspaceRoot);
     assert.equal(byKey.get("runtime-config")?.workspaceDirExists, true);
+    assert.equal(byKey.get("runtime-config")?.rowType, "agent");
+    assert.equal(byKey.get("runtime-config")?.agentType, "coder");
     assert.equal(byKey.get("chat-agent")?.workspaceDir, "@chat");
     assert.equal(byKey.get("chat-agent")?.workspaceDirExists, false);
     assert.equal(byKey.get("missing-agent")?.workspaceDir, missingWorkspace);

@@ -427,6 +427,7 @@ export function PluginPage({
   const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] = useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const registeredDebugWebContentsIdRef = useRef<number | null>(null);
+  const lastDirectWebviewRouteRef = useRef("");
   const surfaceVisibilityProps =
     active === undefined
       ? {}
@@ -836,6 +837,39 @@ export function PluginPage({
     dispatchPluginRouteEventToWebview(payload);
   }
 
+  function requestDirectWebviewRouteLoad() {
+    if (!loadInitialEmbeddedUrlDirectly || !embeddedUrl) {
+      return;
+    }
+
+    const targetWebview = webviewRef.current;
+    if (!targetWebview) {
+      return;
+    }
+
+    try {
+      const currentUrl = targetWebview.getURL().trim();
+      const normalizedCurrentUrl = currentUrl
+        ? resolvePluginCurrentUrl(currentUrl, embeddedUrl, webviewSrcUrl)
+        : "";
+      if (normalizedCurrentUrl === embeddedUrl) {
+        lastDirectWebviewRouteRef.current = embeddedUrl;
+        return;
+      }
+      if (!currentUrl && lastDirectWebviewRouteRef.current === embeddedUrl) {
+        return;
+      }
+      lastDirectWebviewRouteRef.current = embeddedUrl;
+      setWebviewCurrentUrl(embeddedUrl);
+      void targetWebview.loadURL(embeddedUrl);
+    } catch (reason) {
+      console.warn(
+        "[service-webview] failed to load direct embedded route",
+        reason instanceof Error ? reason.message : String(reason),
+      );
+    }
+  }
+
   async function injectAgentWebclientAccessToken(token: string | null) {
     if (service?.id !== "agent-webclient") {
       return false;
@@ -1097,6 +1131,21 @@ export function PluginPage({
     service?.id,
     serviceWebviewPreloadUrl,
     webviewRenderKey,
+  ]);
+
+  useEffect(() => {
+    if (active === false || !bridgeReady || !serviceWebviewPreloadUrl) {
+      return;
+    }
+    requestDirectWebviewRouteLoad();
+  }, [
+    active,
+    bridgeReady,
+    embeddedUrl,
+    loadInitialEmbeddedUrlDirectly,
+    serviceWebviewPreloadUrl,
+    webviewRenderKey,
+    webviewSrcUrl,
   ]);
 
   useEffect(() => {

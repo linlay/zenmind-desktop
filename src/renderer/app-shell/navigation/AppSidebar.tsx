@@ -68,6 +68,14 @@ type AssistantChatMenuState = {
   y: number;
 };
 
+type AgentDialogState = {
+  kind: "rename" | "delete";
+  agent: AssistantNavAgentItem;
+  value: string;
+  pending: boolean;
+  error: string;
+};
+
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = "zenmind-desktop.sidebar-groups";
 
 const defaultSidebarGroupState: SidebarGroupState = {
@@ -505,6 +513,9 @@ export function AppSidebar({
     x: number;
     y: number;
   } | null>(null);
+  const [agentDialog, setAgentDialog] = useState<AgentDialogState | null>(
+    null,
+  );
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
@@ -583,6 +594,23 @@ export function AppSidebar({
       document.removeEventListener("keydown", handleDocumentKeyDown);
     };
   }, [websiteCreatePending, websiteDialogOpen]);
+
+  useEffect(() => {
+    if (!agentDialog) {
+      return undefined;
+    }
+
+    function handleDocumentKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !agentDialog.pending) {
+        setAgentDialog(null);
+      }
+    }
+
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [agentDialog]);
 
   useEffect(() => {
     if (!assistantChatMenu) {
@@ -1518,6 +1546,92 @@ export function AppSidebar({
     return "";
   }
 
+  function isAgentRow(agent: AssistantNavAgentItem) {
+    return agent.rowType === "agent";
+  }
+
+  function isCoderAgent(agent: AssistantNavAgentItem) {
+    return isAgentRow(agent) && agent.agentType === "coder";
+  }
+
+  function asPlainRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  function readActionResultRecord(response: unknown) {
+    const record = asPlainRecord(response);
+    return asPlainRecord(record.result);
+  }
+
+  function readAgentDetailRecord(value: unknown) {
+    const result = readActionResultRecord(value);
+    const nestedAgent = asPlainRecord(result.agent);
+    return Object.keys(nestedAgent).length > 0 ? nestedAgent : result;
+  }
+
+  function buildAgentDefinitionForRename(
+    detail: Record<string, unknown>,
+    agent: AssistantNavAgentItem,
+    nextName: string,
+  ) {
+    const currentDefinition = asPlainRecord(detail.definition);
+    const definition =
+      Object.keys(currentDefinition).length > 0
+        ? { ...currentDefinition }
+        : ([
+            "key",
+            "mode",
+            "icon",
+            "workspace",
+            "runtimeConfig",
+            "model",
+            "modelConfig",
+            "tools",
+            "toolConfig",
+            "visibility",
+            "prompts",
+            "soulPrompt",
+            "agentsPrompt",
+          ] as const).reduce<Record<string, unknown>>((next, key) => {
+            if (detail[key] !== undefined) {
+              next[key] = detail[key];
+            }
+            return next;
+          }, {});
+
+    if (!definition.key) {
+      definition.key = agent.agentKey;
+    }
+    if (!definition.mode && agent.mode) {
+      definition.mode = agent.mode;
+    }
+    if (!definition.icon && agent.icon) {
+      definition.icon = agent.icon;
+    }
+    if (!definition.workspace && agent.workspaceDir && agent.workspaceDir !== "@chat") {
+      definition.workspace = { root: agent.workspaceDir };
+    }
+    if (!definition.runtimeConfig && agent.workspaceDir && agent.workspaceDir !== "@chat") {
+      definition.runtimeConfig = { workspaceRoot: agent.workspaceDir };
+    }
+    definition.name = nextName;
+
+    return definition.mode ? definition : null;
+  }
+
+  function getCurrentRouteSearch() {
+    const queryIndex = currentRoute.indexOf("?");
+    return queryIndex >= 0 ? currentRoute.slice(queryIndex) : "";
+  }
+
+  function createAgentEditWindowUrl(agent: AssistantNavAgentItem) {
+    const url = new URL(window.location.href);
+    url.hash = `/agents/${encodeURIComponent(agent.agentKey)}${getCurrentRouteSearch()}`;
+    return url.toString();
+  }
+
   async function handleOpenWorkspace(agent: AssistantNavAgentItem) {
     const disabledReason = getOpenWorkspaceDisabledReason(agent);
     if (disabledReason) {
@@ -1525,42 +1639,126 @@ export function AppSidebar({
     }
     setAgentMenu(null);
     if (agent.workspaceDir) {
-      await window.electronAPI.desktopShell.openPath(agent.workspaceDir);
+      await openWorkspaceDirectory(agent.workspaceDir, agent.agentKey);
     }
+  }
+
+  async function openWorkspaceDirectory(workspaceDir: string, _agentKey: string) {
+    await window.electronAPI.desktopShell.openPath(workspaceDir);
   }
 
   async function handleRenameAgent(agent: AssistantNavAgentItem) {
     setAgentMenu(null);
-    const nextName = window.prompt("修改名称", agent.displayName);
-    if (!nextName?.trim()) {
-      return;
-    }
-    try {
-      await window.electronAPI.desktopActions.call({
-        action: "desktop.agents.updateAgent",
-        args: {
-          key: agent.agentKey,
-          definition: { name: nextName.trim() },
-        },
-      });
-      await onRefreshAssistantNavAgents?.();
-    } catch (error) {
-      console.warn("[assistant] failed to rename agent", error);
-    }
+    setAgentDialog({
+      kind: "rename",
+      agent,
+      value: agent.displayName,
+      pending: false,
+      error: "",
+    });
   }
 
   function handleEditAgent(agent: AssistantNavAgentItem) {
     setAgentMenu(null);
-    const webviewRef = getActivePluginSurfaceWebviewRef()?.current;
-    if (webviewRef) {
-      webviewRef.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
-        action: "navigate",
-        data: {
-          path: `/agents/${encodeURIComponent(agent.agentKey)}`,
+    window.open(createAgentEditWindowUrl(agent), "_blank");
+  }
+
+  function handleDeleteAgent(agent: AssistantNavAgentItem) {
+    setAgentMenu(null);
+    setAgentDialog({
+      kind: "delete",
+      agent,
+      value: agent.displayName,
+      pending: false,
+      error: "",
+    });
+  }
+
+  async function handleConfirmRenameAgent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!agentDialog || agentDialog.kind !== "rename" || agentDialog.pending) {
+      return;
+    }
+    const nextName = agentDialog.value.trim();
+    if (!nextName) {
+      setAgentDialog((current) =>
+        current ? { ...current, error: "请输入智能体名称。" } : current,
+      );
+      return;
+    }
+    const targetAgent = agentDialog.agent;
+    setAgentDialog((current) =>
+      current ? { ...current, pending: true, error: "" } : current,
+    );
+    try {
+      const detailResponse = await window.electronAPI.desktopActions.call({
+        action: "desktop.agents.getAgentDetail",
+        args: { key: targetAgent.agentKey },
+      });
+      if (!detailResponse.ok) {
+        throw new Error(detailResponse.error?.message || "读取智能体详情失败。");
+      }
+      const definition = buildAgentDefinitionForRename(
+        readAgentDetailRecord(detailResponse),
+        targetAgent,
+        nextName,
+      );
+      if (!definition) {
+        throw new Error("智能体详情不完整，无法安全修改名称。");
+      }
+      const updateResponse = await window.electronAPI.desktopActions.call({
+        action: "desktop.agents.updateAgent",
+        args: {
+          key: targetAgent.agentKey,
+          definition,
         },
       });
-    } else {
-      requestNavigate("/agents");
+      if (!updateResponse.ok) {
+        throw new Error(updateResponse.error?.message || "修改智能体名称失败。");
+      }
+      setAgentDialog(null);
+      await onRefreshAssistantNavAgents?.();
+    } catch (error) {
+      setAgentDialog((current) =>
+        current
+          ? {
+              ...current,
+              pending: false,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          : current,
+      );
+    }
+  }
+
+  async function handleConfirmDeleteAgent() {
+    if (!agentDialog || agentDialog.kind !== "delete" || agentDialog.pending) {
+      return;
+    }
+    const targetAgent = agentDialog.agent;
+    setAgentDialog((current) =>
+      current ? { ...current, pending: true, error: "" } : current,
+    );
+    try {
+      const response = await window.electronAPI.desktopActions.call({
+        action: "desktop.agents.deleteAgent",
+        args: { key: targetAgent.agentKey },
+      });
+      if (!response.ok) {
+        throw new Error(response.error?.message || "删除智能体失败。");
+      }
+      setAgentDialog(null);
+      await onRefreshAssistantNavAgents?.();
+    } catch (error) {
+      setAgentDialog((current) =>
+        current
+          ? {
+              ...current,
+              pending: false,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          : current,
+      );
     }
   }
 
@@ -1619,7 +1817,8 @@ export function AppSidebar({
       return null;
     }
     const agent = agentMenu.agent;
-    const isCoder = agent.mode === "CODER";
+    const agentRow = isAgentRow(agent);
+    const coderAgent = isCoderAgent(agent);
     const openWorkspaceDisabledReason = getOpenWorkspaceDisabledReason(agent);
     return createPortal(
       <div
@@ -1639,7 +1838,7 @@ export function AppSidebar({
         >
           <span>打开工作目录</span>
         </button>
-        {isCoder ? (
+        {agentRow ? (
           <button
             type="button"
             role="menuitem"
@@ -1648,13 +1847,122 @@ export function AppSidebar({
             <span>修改名称</span>
           </button>
         ) : null}
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => handleEditAgent(agent)}
+        {agentRow ? (
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => handleEditAgent(agent)}
+          >
+            <span>编辑智能体</span>
+          </button>
+        ) : null}
+        {coderAgent ? (
+          <button
+            type="button"
+            className="is-danger"
+            role="menuitem"
+            onClick={() => handleDeleteAgent(agent)}
+          >
+            <span>删除智能体</span>
+          </button>
+        ) : null}
+      </div>,
+      document.body,
+    );
+  }
+
+  function renderAgentDialog() {
+    if (!agentDialog || typeof document === "undefined") {
+      return null;
+    }
+    const isRename = agentDialog.kind === "rename";
+    const title = isRename ? "修改名称" : "删除智能体";
+    return createPortal(
+      <div
+        className="sidebar-agent-dialog-layer"
+        role="presentation"
+        onMouseDown={() => {
+          if (!agentDialog.pending) {
+            setAgentDialog(null);
+          }
+        }}
+      >
+        <form
+          className="sidebar-agent-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sidebar-agent-dialog-title"
+          onSubmit={
+            isRename
+              ? (event) => void handleConfirmRenameAgent(event)
+              : (event) => {
+                  event.preventDefault();
+                  void handleConfirmDeleteAgent();
+                }
+          }
+          onMouseDown={(event) => event.stopPropagation()}
         >
-          <span>编辑智能体</span>
-        </button>
+          <div className="sidebar-agent-dialog-head">
+            <strong id="sidebar-agent-dialog-title">{title}</strong>
+            <button
+              type="button"
+              className="sidebar-agent-dialog-close"
+              aria-label="关闭"
+              disabled={agentDialog.pending}
+              onClick={() => setAgentDialog(null)}
+            >
+              ×
+            </button>
+          </div>
+          {isRename ? (
+            <label className="sidebar-agent-dialog-field">
+              <span>名称</span>
+              <input
+                value={agentDialog.value}
+                onChange={(event) =>
+                  setAgentDialog((current) =>
+                    current
+                      ? { ...current, value: event.target.value, error: "" }
+                      : current,
+                  )
+                }
+                disabled={agentDialog.pending}
+                maxLength={80}
+                autoFocus
+              />
+            </label>
+          ) : (
+            <p className="sidebar-agent-dialog-copy">
+              确定要删除“{agentDialog.agent.displayName}”吗？此操作无法撤销。
+            </p>
+          )}
+          {agentDialog.error ? (
+            <div className="sidebar-agent-dialog-error" role="alert">
+              {agentDialog.error}
+            </div>
+          ) : null}
+          <div className="sidebar-agent-dialog-actions">
+            <button
+              type="button"
+              className="sidebar-agent-secondary-button"
+              disabled={agentDialog.pending}
+              onClick={() => setAgentDialog(null)}
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              className={
+                isRename
+                  ? "sidebar-agent-primary-button"
+                  : "sidebar-agent-danger-button"
+              }
+              disabled={agentDialog.pending}
+            >
+              {agentDialog.pending ? "处理中..." : isRename ? "保存" : "删除"}
+            </button>
+          </div>
+        </form>
       </div>,
       document.body,
     );
@@ -1860,6 +2168,7 @@ export function AppSidebar({
           {renderDesktopSsoEntry()}
           {renderAssistantChatMenu()}
           {renderAgentMenu()}
+          {renderAgentDialog()}
           {renderWebsiteDialog()}
         </div>
       </div>

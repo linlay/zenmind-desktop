@@ -61,6 +61,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.agents.createAgentDraft", kind: "preview", category: "agents", description: "Create an agent draft payload." },
   { name: "desktop.agents.createAgent", kind: "execute", category: "agents", description: "Create an agent." },
   { name: "desktop.agents.updateAgent", kind: "execute", category: "agents", description: "Update an agent." },
+  { name: "desktop.agents.deleteAgent", kind: "execute", category: "agents", description: "Delete an agent." },
   { name: "desktop.agents.cloneAgent", kind: "execute", category: "agents", description: "Clone an agent." },
   { name: "desktop.agents.disableAgent", kind: "execute", category: "agents", description: "Disable an agent." },
   { name: "desktop.agents.reloadAgents", kind: "execute", category: "agents", description: "Reload agents." },

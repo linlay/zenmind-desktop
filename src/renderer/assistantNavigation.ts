@@ -71,6 +71,8 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
     latestPreview: toText(record.latestPreview),
     updatedAt: toText(record.updatedAt) || latestChat?.updatedAt || "",
     recentChats,
+    rowType: record.rowType === "agent" ? "agent" : undefined,
+    agentType: toText(record.agentType) || undefined,
     mode: toText(record.mode) || undefined,
     workspaceDir: toText(record.workspaceDir) || undefined,
     workspaceDirExists:

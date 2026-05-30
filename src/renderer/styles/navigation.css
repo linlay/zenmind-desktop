@@ -1227,6 +1227,138 @@
   background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
 }
 
+.assistant-chat-actions-menu button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.assistant-chat-actions-menu button:disabled:hover {
+  background: transparent;
+}
+
+.assistant-chat-actions-menu button.is-danger {
+  color: var(--danger);
+}
+
+.assistant-chat-actions-menu button.is-danger:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.sidebar-agent-dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.sidebar-agent-dialog {
+  width: min(360px, 100%);
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--desktop-ui-card);
+  box-shadow: var(--panel-shadow);
+}
+
+.sidebar-agent-dialog-head,
+.sidebar-agent-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sidebar-agent-dialog-head strong {
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.sidebar-agent-dialog-close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.sidebar-agent-dialog-close:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
+  color: var(--ink);
+}
+
+.sidebar-agent-dialog-field {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+.sidebar-agent-dialog-field input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  outline: none;
+}
+
+.sidebar-agent-dialog-copy {
+  margin: 16px 0 0;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.sidebar-agent-dialog-error {
+  margin-top: 12px;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.sidebar-agent-dialog-actions {
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.sidebar-agent-dialog-actions button {
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.sidebar-agent-secondary-button {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink);
+}
+
+.sidebar-agent-primary-button,
+.sidebar-agent-danger-button {
+  border: 0;
+  color: #fff;
+}
+
+.sidebar-agent-primary-button {
+  background: var(--desktop-ui-primary);
+}
+
+.sidebar-agent-danger-button {
+  background: var(--danger);
+}
+
+.sidebar-agent-dialog-actions button:disabled,
+.sidebar-agent-dialog-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .sidebar-status-badges {
   display: inline-flex;
   align-items: center;

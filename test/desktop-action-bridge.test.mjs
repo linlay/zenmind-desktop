@@ -32,6 +32,7 @@ test("Desktop action catalog does not expose page or embedded web actions", () =
   assert.equal(names.some((name) => name.startsWith("desktop.page.")), false);
   assert.equal(names.some((name) => name.startsWith("desktop.embeddedWeb.")), false);
   assert.ok(names.includes("desktop.controlCenter.listServices"));
+  assert.ok(names.includes("desktop.agents.deleteAgent"));
 });
 
 test("Desktop Action Bridge rejects page actions", async () => {

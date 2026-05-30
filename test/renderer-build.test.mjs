@@ -714,7 +714,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(pluginPage, /effectiveEmbedPath/);
   assert.match(pluginPage, /get\("embedPath"\)/);
   assert.match(pluginPage, /embedPath: effectiveEmbedPath/);
-  assert.doesNotMatch(pluginPage, /webview\.loadURL\(embeddedUrl\)/);
+  assert.match(pluginPage, /function requestDirectWebviewRouteLoad\(\)/);
+  assert.match(pluginPage, /targetWebview\.loadURL\(embeddedUrl\)/);
   assert.match(pluginPage, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.doesNotMatch(pluginPage, /buildAgentWebclientSelectWorkerScript/);
   assert.doesNotMatch(pluginPage, /agentWebclientRouteAgentKey/);
@@ -1602,6 +1603,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   const contracts = readSharedContractsSource();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const assistantHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "assistant-handlers.ts"), "utf8");
+  const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
+  const desktopActionBridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "core", "agent-platform-bridge.ts"), "utf8");
   const appShell = readAppShellSource();
@@ -1611,6 +1614,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /icon\?: AssistantNavAgentIcon/);
   assert.match(contracts, /recentChats: AssistantNavChatItem\[\]/);
   assert.match(contracts, /hasPendingAwaiting:\s*boolean/);
+  assert.match(contracts, /rowType\?: "agent"/);
+  assert.match(contracts, /agentType\?: string/);
   assert.match(contracts, /workspaceDirExists\?: boolean/);
   assert.match(contracts, /interface AssistantNavAgentItemsResult/);
   assert.match(contracts, /interface AssistantCreateCoderProjectRequest/);
@@ -1651,6 +1656,19 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(appSidebar, /function getOpenWorkspaceDisabledReason\(agent: AssistantNavAgentItem\)/);
   assert.match(appSidebar, /agent\.workspaceDirExists === false/);
   assert.match(appSidebar, /disabled=\{Boolean\(openWorkspaceDisabledReason\)\}/);
+  assert.match(appSidebar, /openWorkspaceDirectory\(agent\.workspaceDir, agent\.agentKey\)/);
+  assert.match(appSidebar, /const title = isRename \? "修改名称" : "删除智能体"/);
+  assert.match(appSidebar, /role="dialog"/);
+  assert.match(appSidebar, /desktop\.agents\.getAgentDetail/);
+  assert.match(appSidebar, /buildAgentDefinitionForRename/);
+  assert.doesNotMatch(appSidebar, /definition:\s*\{\s*name:\s*nextName/);
+  assert.match(appSidebar, /window\.open\(createAgentEditWindowUrl\(agent\), "_blank"\)/);
+  assert.match(appSidebar, /agent\.agentType === "coder"/);
+  assert.match(appSidebar, /desktop\.agents\.deleteAgent/);
+  assert.match(appSidebar, /className="is-danger"/);
+  assert.match(desktopActions, /desktop\.agents\.deleteAgent/);
+  assert.match(desktopActionBridge, /case "desktop\.agents\.deleteAgent"/);
+  assert.match(desktopActionBridge, /"\/api\/agent-delete"[\s\S]*?body:\s*\{\s*key: readAgentKey\(args\)\s*\}/);
   assert.doesNotMatch(appShell, /setInterval\([\s\S]*?listNavigationAgents/);
 });
 
@@ -2215,6 +2233,11 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /bridgeReady,[\s\S]{0,120}serviceWebviewPreloadUrl,[\s\S]{0,120}webviewRenderKey/);
   assert.match(pluginPage, /if \(active === false \|\| !bridgeReady \|\| !serviceWebviewPreloadUrl\) \{[\s\S]{0,80}return;[\s\S]{0,120}seedAgentWebclientAccessToken\(\)/);
   assert.match(pluginPage, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*service\?\.id,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*\]/);
+  assert.match(pluginPage, /function requestDirectWebviewRouteLoad\(\)/);
+  assert.match(pluginPage, /!loadInitialEmbeddedUrlDirectly \|\| !embeddedUrl/);
+  assert.match(pluginPage, /normalizedCurrentUrl === embeddedUrl/);
+  assert.match(pluginPage, /targetWebview\.loadURL\(embeddedUrl\)/);
+  assert.match(pluginPage, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*loadInitialEmbeddedUrlDirectly,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*webviewSrcUrl,\s*\]/);
   assert.match(pluginPage, /suppressInitialLoadingCopy\s*\?\s*\(/);
   assert.match(pluginPage, /aria-label=\{`\$\{serviceDisplayName\} 正在加载`\}/);
   assert.match(pluginPage, /webviewRef\.current = node/);
