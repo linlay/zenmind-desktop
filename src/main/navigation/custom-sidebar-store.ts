@@ -2,11 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import type { CustomSidebarItem, CustomSidebarItemInput, CustomSidebarUpdateInput } from "../../shared/contracts";
-import { CUSTOM_SIDEBAR_ICON_IDS } from "../../shared/custom-sidebar-icons";
 import { getDesktopConfigRoot } from "../user-paths";
 
 const CUSTOM_SIDEBAR_FILE = "custom-sidebar-items.json";
-const MAX_CUSTOM_SIDEBAR_ITEMS = CUSTOM_SIDEBAR_ICON_IDS.length;
+const MAX_CUSTOM_SIDEBAR_ITEMS = 14;
 
 type StoredCustomSidebarItems = {
   items: CustomSidebarItem[];
@@ -72,15 +71,7 @@ function normalizeAgentKey(inputAgentKey: unknown) {
   return normalized || undefined;
 }
 
-function isKnownIconId(iconId: unknown): iconId is string {
-  return typeof iconId === "string" && (CUSTOM_SIDEBAR_ICON_IDS as readonly string[]).includes(iconId);
-}
-
-function pickNextIconId(usedIconIds: Set<string>) {
-  return CUSTOM_SIDEBAR_ICON_IDS.find((iconId) => !usedIconIds.has(iconId)) ?? null;
-}
-
-function normalizeItem(item: Partial<CustomSidebarItem>, usedIconIds: Set<string>): CustomSidebarItem | null {
+function normalizeItem(item: Partial<CustomSidebarItem>): CustomSidebarItem | null {
   if (typeof item.id !== "string" || typeof item.label !== "string" || typeof item.url !== "string") {
     return null;
   }
@@ -88,20 +79,11 @@ function normalizeItem(item: Partial<CustomSidebarItem>, usedIconIds: Set<string
   try {
     const url = normalizeUrl(item.url);
     const now = Date.now();
-    const iconId =
-      isKnownIconId(item.iconId) && !usedIconIds.has(item.iconId)
-        ? item.iconId
-        : pickNextIconId(usedIconIds);
-    if (!iconId) {
-      return null;
-    }
-    usedIconIds.add(iconId);
     const agentKey = normalizeAgentKey(item.agentKey);
     return {
       id: item.id.trim() || createItemId(),
       label: normalizeLabel(item.label, url),
       url,
-      iconId,
       ...(agentKey ? { agentKey } : {}),
       createdAt: typeof item.createdAt === "number" ? item.createdAt : now,
       updatedAt: typeof item.updatedAt === "number" ? item.updatedAt : now
@@ -114,7 +96,6 @@ function normalizeItem(item: Partial<CustomSidebarItem>, usedIconIds: Set<string
 function sanitizeItems(rawItems: Partial<CustomSidebarItem>[]) {
   const seenIds = new Set<string>();
   const seenUrls = new Set<string>();
-  const usedIconIds = new Set<string>();
   const items: CustomSidebarItem[] = [];
 
   for (const rawItem of rawItems) {
@@ -122,7 +103,7 @@ function sanitizeItems(rawItems: Partial<CustomSidebarItem>[]) {
       continue;
     }
 
-    const item = normalizeItem(rawItem, usedIconIds);
+    const item = normalizeItem(rawItem);
     if (!item || seenIds.has(item.id) || seenUrls.has(item.url)) {
       continue;
     }
@@ -201,24 +182,12 @@ export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
       };
     }
 
-    const usedIconIds = new Set(items.map((item) => item.iconId));
-    const iconId = pickNextIconId(usedIconIds);
-    if (!iconId) {
-      return {
-        ok: false,
-        item: null,
-        items,
-        message: "图标库已用完，请先删除一个内嵌网站。"
-      };
-    }
-
     const now = Date.now();
     const agentKey = normalizeAgentKey(input.agentKey);
     const item: CustomSidebarItem = {
       id: createItemId(),
       label: normalizeLabel(input.label, url),
       url,
-      iconId,
       ...(agentKey ? { agentKey } : {}),
       createdAt: now,
       updatedAt: now
@@ -388,6 +357,5 @@ export const __testInternals = {
   normalizeUrl,
   normalizeLabel,
   normalizeAgentKey,
-  pickNextIconId,
   parseItemsFileContent
 };

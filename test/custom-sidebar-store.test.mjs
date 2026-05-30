@@ -53,7 +53,7 @@ test("custom sidebar items persist locally with normalized URLs", (t) => {
   assert.equal(added.ok, true);
   assert.equal(added.item?.label, "百度");
   assert.equal(added.item?.url, "https://www.baidu.com/");
-  assert.equal(added.item?.iconId, "desktop-01");
+  assert.equal("iconId" in added.item, false);
   assert.equal(added.items.length, 1);
   assert.equal(fs.existsSync(__testInternals.getCustomSidebarPath(app)), true);
 
@@ -111,7 +111,7 @@ test("custom sidebar rejects duplicates and deletes only custom items", (t) => {
   });
   assert.equal(added.ok, true);
   assert.equal(added.item?.label, "百度");
-  assert.equal(added.item?.iconId, "desktop-01");
+  assert.equal("iconId" in added.item, false);
 
   const duplicate = addCustomSidebarItem(app, {
     label: "重复百度",
@@ -126,8 +126,8 @@ test("custom sidebar rejects duplicates and deletes only custom items", (t) => {
   assert.equal(removed.items.length, 0);
 });
 
-test("custom sidebar assigns icon library entries without repeating current items", (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-custom-sidebar-icons-"));
+test("custom sidebar adds multiple embedded websites without icon fields", (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-custom-sidebar-no-icons-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const app = createApp(userDataRoot);
 
@@ -146,9 +146,9 @@ test("custom sidebar assigns icon library entries without repeating current item
 
   assert.equal(first.ok, true);
   assert.equal(second.ok, true);
-  assert.equal(first.item?.iconId, "desktop-01");
-  assert.equal(second.item?.iconId, "desktop-02");
-  assert.equal(new Set(second.items.map((item) => item.iconId)).size, second.items.length);
+  assert.equal("iconId" in first.item, false);
+  assert.equal("iconId" in second.item, false);
+  assert.equal(second.items.every((item) => !("iconId" in item)), true);
 
   const removed = removeCustomSidebarItem(app, first.item.id);
   assert.equal(removed.ok, true);
@@ -158,8 +158,8 @@ test("custom sidebar assigns icon library entries without repeating current item
     url: "github.com"
   });
   assert.equal(reused.ok, true);
-  assert.equal(reused.item?.iconId, "desktop-01");
-  assert.equal(new Set(reused.items.map((item) => item.iconId)).size, reused.items.length);
+  assert.equal("iconId" in reused.item, false);
+  assert.equal(reused.items.every((item) => !("iconId" in item)), true);
 });
 
 test("custom sidebar export and import preserve items across machines", (t) => {
@@ -188,6 +188,7 @@ test("custom sidebar export and import preserve items across machines", (t) => {
 
   assert.equal(imported.ok, true);
   assert.equal(imported.items.length, 2);
+  assert.equal(imported.items.every((item) => !("iconId" in item)), true);
   assert.deepEqual(
     imported.items.map((item) => item.url),
     ["https://www.baidu.com/", "https://github.com/"]
@@ -212,8 +213,8 @@ test("custom sidebar import merges new items and skips existing URLs", (t) => {
     app,
     JSON.stringify({
       items: [
-        { id: "a", label: "百度", url: "https://www.baidu.com/" },
-        { id: "b", label: "GitHub", url: "github.com", agentKey: 123 }
+        { id: "a", label: "百度", url: "https://www.baidu.com/", iconId: "desktop-01" },
+        { id: "b", label: "GitHub", url: "github.com", agentKey: 123, iconId: "desktop-02" }
       ]
     })
   );
@@ -225,4 +226,5 @@ test("custom sidebar import merges new items and skips existing URLs", (t) => {
     ["https://www.baidu.com/", "https://github.com/"]
   );
   assert.equal(imported.items[1].agentKey, undefined);
+  assert.equal(imported.items.every((item) => !("iconId" in item)), true);
 });

@@ -1,4 +1,3 @@
-import { CUSTOM_SIDEBAR_ICONS } from "../../shared/custom-sidebar-icons";
 import { APP_ICON_ASSET_FILENAMES } from "../../shared/app-icon-assets";
 import agentIcon from "../assets/sidebar-icons/agent.svg";
 import assistantIcon from "../assets/sidebar-icons/assistant.svg";
@@ -42,8 +41,6 @@ type SidebarIllustrationProps = {
   className?: string;
 };
 
-const customSidebarIconDataUris = new Map<string, string>();
-
 const sidebarIllustrationSources: Record<SidebarIllustrationKind, string> = {
   agent: agentIcon,
   assistant: assistantIcon,
@@ -62,18 +59,6 @@ const sidebarIllustrationSources: Record<SidebarIllustrationKind, string> = {
   website: websiteIcon
 };
 
-function getCustomSidebarIconDataUri(iconId: string) {
-  const cached = customSidebarIconDataUris.get(iconId);
-  if (cached) {
-    return cached;
-  }
-
-  const icon = CUSTOM_SIDEBAR_ICONS.find((candidate) => candidate.id === iconId) ?? CUSTOM_SIDEBAR_ICONS[0];
-  const dataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(icon.svg)}`;
-  customSidebarIconDataUris.set(iconId, dataUri);
-  return dataUri;
-}
-
 export function BrandMark({ className }: BrandMarkProps) {
   return (
     <img
@@ -86,10 +71,6 @@ export function BrandMark({ className }: BrandMarkProps) {
       }}
     />
   );
-}
-
-export function CustomSidebarIcon({ iconId, className }: { iconId: string; className?: string }) {
-  return <img src={getCustomSidebarIconDataUri(iconId)} alt="" aria-hidden="true" className={className} />;
 }
 
 export function SidebarIllustration({ kind, className }: SidebarIllustrationProps) {

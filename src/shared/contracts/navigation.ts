@@ -2,7 +2,6 @@ export interface CustomSidebarItem {
   id: string;
   label: string;
   url: string;
-  iconId: string;
   agentKey?: string;
   createdAt: number;
   updatedAt: number;

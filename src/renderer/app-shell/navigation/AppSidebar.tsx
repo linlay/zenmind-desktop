@@ -9,7 +9,6 @@ import {
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import {
-  CustomSidebarIcon,
   SidebarIllustration,
   type SidebarIllustrationKind,
 } from "../../components/BrandMark";
@@ -42,7 +41,6 @@ type SidebarNavItem = {
   to: string;
   label: string;
   icon: SidebarIllustrationKind;
-  iconId?: string;
 };
 
 type SidebarToolItem = Omit<SidebarNavItem, "orderKey"> & {
@@ -543,7 +541,6 @@ export function AppSidebar({
         to: `/custom-sidebar/${item.id}`,
         label: item.label,
         icon: "website" as const,
-        iconId: item.iconId,
       }))
       .sort((left, right) => {
         const leftIndex =
@@ -979,11 +976,7 @@ export function AppSidebar({
         className={() => getSidebarLinkClassName(item.to, extraClassName)}
       >
         <span className="sidebar-link-icon">
-          {item.iconId ? (
-            <CustomSidebarIcon iconId={item.iconId} />
-          ) : (
-            <SidebarIllustration kind={item.icon} />
-          )}
+          <SidebarIllustration kind={item.icon} />
         </span>
         <span className="sidebar-link-label">{item.label}</span>
       </NavLink>
@@ -993,6 +986,7 @@ export function AppSidebar({
   function renderSidebarChildLink(
     item: SidebarNavItem & { status?: SidebarStatusSummary },
   ) {
+    const showIcon = !item.orderKey.startsWith("custom:");
     return (
       <NavLink
         key={item.to}
@@ -1002,13 +996,11 @@ export function AppSidebar({
         title={item.label}
         className={() => getSidebarLinkClassName(item.to, "sidebar-child-link")}
       >
-        <span className="sidebar-link-icon">
-          {item.iconId ? (
-            <CustomSidebarIcon iconId={item.iconId} />
-          ) : (
+        {showIcon ? (
+          <span className="sidebar-link-icon">
             <SidebarIllustration kind={item.icon} />
-          )}
-        </span>
+          </span>
+        ) : null}
         <span className="sidebar-link-label">{item.label}</span>
         {item.status
           ? renderStatusBadges(item.status, "sidebar-child-status")

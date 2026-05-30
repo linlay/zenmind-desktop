@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useLocation } from "react-router-dom";
-import { CustomSidebarIcon } from "../../components/BrandMark";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import "../SplitWorkspaceLayout.css";
 import "./SettingsPage.css";
@@ -2028,9 +2027,6 @@ export function SettingsPage({
                     return (
                       <div className="custom-sidebar-row" key={item.id}>
                         <div className="custom-sidebar-row-main">
-                          <span className="custom-sidebar-row-icon" aria-hidden="true">
-                            <CustomSidebarIcon iconId={item.iconId} />
-                          </span>
                           <div className="custom-sidebar-row-copy">
                             <strong>{item.label}</strong>
                             <span>{item.url}</span>

@@ -1222,24 +1222,7 @@
   display: flex;
   align-items: center;
   flex: 1;
-  gap: 10px;
   min-width: 0;
-}
-
-.custom-sidebar-row-icon {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: rgba(14, 165, 233, 0.1);
-}
-
-.custom-sidebar-row-icon img {
-  width: 24px;
-  height: 24px;
-  display: block;
 }
 
 .custom-sidebar-row-copy {
