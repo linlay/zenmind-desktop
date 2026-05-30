@@ -235,7 +235,7 @@ test("desktop pet stores a safe appearance id", () => {
   assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS.length, 5);
 });
 
-test("desktop pet context menu only offers dance for the classic appearance", () => {
+test("desktop pet context menu offers dance for supported appearances", () => {
   assert.deepEqual(
     getDesktopPetContextMenuItems(DEFAULT_DESKTOP_PET_APPEARANCE_ID).map((item) => item.label),
     ["跳舞", "关闭宠物"]
@@ -254,7 +254,7 @@ test("desktop pet context menu only offers dance for the classic appearance", ()
   );
   assert.deepEqual(
     getDesktopPetContextMenuItems("idol-pony").map((item) => item.label),
-    ["关闭宠物"]
+    ["跳舞", "关闭宠物"]
   );
 });
 
@@ -298,6 +298,11 @@ test("desktop pet generated resources cover all visual states", () => {
     fs.existsSync(path.join(root, "idol-pony", "task-run-left.webp")),
     true,
     "idol-pony missing high-frame task-run-left.webp for smooth task running animation"
+  );
+  assert.equal(
+    fs.existsSync(path.join(root, "idol-pony", "dance.webp")),
+    true,
+    "idol-pony missing high-frame dance.webp for right-click dance animation"
   );
   assert.equal(
     fs.existsSync(path.join(root, "xiao", "task-run-left.webp")),

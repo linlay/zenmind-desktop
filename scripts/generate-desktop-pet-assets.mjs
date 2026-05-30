@@ -76,6 +76,11 @@ const taskRunSprite = {
   frameHeight: 208
 };
 
+const optionalCommunityAssetNames = [
+  "task-run-left.webp",
+  "dance.webp"
+];
+
 const communityFrameSelections = {
   dragging: { row: 4, column: 2 },
   "dragging-left": { row: 1, column: 2 },
@@ -1018,15 +1023,17 @@ for (const appearance of communityAppearances) {
     path.join(sourceAssetDirectory, appearance.id, "spritesheet.webp"),
     path.join(appearanceOutputDirectory, "spritesheet.webp")
   );
-  const taskRunSourcePath = path.join(sourceAssetDirectory, appearance.id, "task-run-left.webp");
-  try {
-    await fs.copyFile(
-      taskRunSourcePath,
-      path.join(appearanceOutputDirectory, "task-run-left.webp")
-    );
-  } catch (error) {
-    if (error?.code !== "ENOENT") {
-      throw error;
+  for (const assetName of optionalCommunityAssetNames) {
+    const sourcePath = path.join(sourceAssetDirectory, appearance.id, assetName);
+    try {
+      await fs.copyFile(
+        sourcePath,
+        path.join(appearanceOutputDirectory, assetName)
+      );
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        throw error;
+      }
     }
   }
 }

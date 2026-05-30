@@ -2703,7 +2703,8 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /desktopPet\.onDanceRequested\(startDance\)/);
   assert.match(desktopPet, /isDragging[\s\S]{0,180}\? dragDirection === "left"/);
   assert.match(desktopPet, /window\.addEventListener\("pointermove", handleWindowPointerMove\)/);
-  assert.match(desktopPet, /isDancing && appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID[\s\S]{0,80}\? "dancing"/);
+  assert.match(desktopPet, /shouldShowDanceSpriteAnimation[\s\S]{0,220}getDesktopPetDanceSpritePath\(appearanceId\)/);
+  assert.match(desktopPet, /isDancing && isDesktopPetDanceAppearance\(appearanceId\)[\s\S]{0,80}\? "dancing"/);
   assert.match(desktopPet, /displayStatus === "running" \|\| displayStatus === "awaiting"/);
   assert.match(desktopPet, /hasMessageReaction[\s\S]{0,80}\? "message"/);
   assert.match(desktopPet, /displayStatus === "idle" && !isDragging && !hasMessageReaction/);
@@ -2739,8 +2740,12 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(sharedDesktopPet, /message:\s*"pet-message\.png"/);
   assert.match(sharedDesktopPet, /thinking:\s*"pet-thinking\.png"/);
   assert.match(sharedDesktopPet, /dancing:\s*"pet-idle\.png"/);
+  assert.match(sharedDesktopPet, /isDesktopPetDanceAppearance/);
+  assert.match(sharedDesktopPet, /"idol-pony"/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-hover\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-dancing\s+\.desktop-pet-image/);
+  assert.match(globalStyles, /\.desktop-pet-dance-sprite\s*\{[\s\S]{0,240}background-size:\s*2304px\s+104px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-dance-animation\s+\.desktop-pet-dance-sprite\s*\{[\s\S]{0,220}animation:\s*desktop-pet-idol-pony-dance-frames 4600ms steps\(24,\s*end\) 1 both;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-dragging\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-thinking\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-message\s+\.desktop-pet-image/);
@@ -2784,6 +2789,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /dario-a7bdc389/);
   assert.match(petAssetScript, /mini-sama-3ee267a2/);
   assert.match(petAssetScript, /task-run-left\.webp/);
+  assert.match(petAssetScript, /dance\.webp/);
   assert.match(petAssetScript, /function renderXiaoTaskRunSprite/);
   assert.match(petAssetScript, /function renderXiaoSpritesheet/);
   assert.match(petAssetScript, /awaiting:\s*"thinking"/);
