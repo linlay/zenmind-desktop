@@ -7,6 +7,7 @@
 @import "./styles/navigation.css";
 @import "./styles/control-center.css";
 @import "./styles/log-viewer.css";
+@import "./styles/agent-platform-monitor.css";
 @import "./styles/debug-viewer.css";
 @import "./styles/external-webview.css";
 @import "./styles/task-board.css";

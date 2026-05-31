@@ -34,6 +34,7 @@ import type {
   ServiceLogStreamListener,
   ServiceLogStreamOptions,
   ServiceLogTarget,
+  AgentPlatformMonitorReadOptions,
   StartupRestoreState,
   StartupRestoreStateListener,
   TaskBoardIssueInput,
@@ -184,6 +185,9 @@ const api: DesktopApi = {
       };
     },
     openLogViewer: (request: ServiceOpenLogViewerRequest) => ipcRenderer.invoke("services.openLogViewer", request),
+    openAgentPlatformMonitor: () => ipcRenderer.invoke("services.openAgentPlatformMonitor"),
+    readAgentPlatformMonitor: (options?: AgentPlatformMonitorReadOptions) =>
+      ipcRenderer.invoke("services.readAgentPlatformMonitor", options),
     revealPath: (targetPath: string, options?: ServiceRevealPathOptions) =>
       ipcRenderer.invoke("services.revealPath", targetPath, options),
     closeLogViewer: () => ipcRenderer.invoke("services.closeLogViewer"),
@@ -196,6 +200,18 @@ const api: DesktopApi = {
       ipcRenderer.on("log-viewer.maximized", handleMaximized);
       return () => {
         ipcRenderer.off("log-viewer.maximized", handleMaximized);
+      };
+    },
+    closeAgentPlatformMonitor: () => ipcRenderer.invoke("services.closeAgentPlatformMonitor"),
+    minimizeAgentPlatformMonitor: () => ipcRenderer.invoke("services.minimizeAgentPlatformMonitor"),
+    maximizeAgentPlatformMonitor: () => ipcRenderer.invoke("services.maximizeAgentPlatformMonitor"),
+    onAgentPlatformMonitorMaximized: (listener: (maximized: boolean) => void) => {
+      const handleMaximized = (_event: Electron.IpcRendererEvent, maximized: boolean) => {
+        listener(maximized);
+      };
+      ipcRenderer.on("agent-platform-monitor.maximized", handleMaximized);
+      return () => {
+        ipcRenderer.off("agent-platform-monitor.maximized", handleMaximized);
       };
     },
     importEnvZip: () => ipcRenderer.invoke("services.importEnvZip")

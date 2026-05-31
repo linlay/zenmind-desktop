@@ -1,5 +1,5 @@
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
-import type { ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult } from "./services";
+import type { AgentPlatformMonitorReadOptions, AgentPlatformMonitorReadResult, ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult } from "./services";
 import type { PluginInstallResult } from "./manifest";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { CustomSidebarDeleteResult, CustomSidebarItemInput, CustomSidebarItemResult, CustomSidebarItemsResult, CustomSidebarTransferResult, CustomSidebarUpdateInput } from "./navigation";
@@ -184,11 +184,17 @@ export interface DesktopApi {
       listener: ServiceLogStreamListener
     ) => () => void;
     openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
+    openAgentPlatformMonitor: () => Promise<{ ok: boolean }>;
+    readAgentPlatformMonitor: (options?: AgentPlatformMonitorReadOptions) => Promise<AgentPlatformMonitorReadResult>;
     revealPath: (targetPath: string, options?: ServiceRevealPathOptions) => Promise<ServiceRevealPathResult>;
     closeLogViewer: () => Promise<{ ok: boolean }>;
     minimizeLogViewer: () => Promise<{ ok: boolean }>;
     maximizeLogViewer: () => Promise<{ ok: boolean }>;
     onLogViewerMaximized: (listener: (maximized: boolean) => void) => () => void;
+    closeAgentPlatformMonitor: () => Promise<{ ok: boolean }>;
+    minimizeAgentPlatformMonitor: () => Promise<{ ok: boolean }>;
+    maximizeAgentPlatformMonitor: () => Promise<{ ok: boolean }>;
+    onAgentPlatformMonitorMaximized: (listener: (maximized: boolean) => void) => () => void;
     importEnvZip: () => Promise<{ ok: boolean; message: string }>;
   };
   plugins: {

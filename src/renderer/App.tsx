@@ -4,6 +4,7 @@ import { AppShell } from "./app-shell/AppShell";
 import { DesktopPet } from "./copilot/pet-copilot/DesktopPet";
 import { QuickCopilotRoute } from "./copilot/quick-copilot/QuickCopilotRoute";
 import { DebugViewerPage } from "./pages/DebugViewerPage";
+import { AgentPlatformMonitorPage } from "./pages/AgentPlatformMonitorPage";
 import { LogViewerPage } from "./pages/LogViewerPage";
 import { ServicesProvider } from "./services/ServicesContext";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
@@ -36,6 +37,15 @@ export function App() {
         <ServicesProvider>
           <LogViewerPage />
         </ServicesProvider>
+      </AppErrorBoundary>
+    );
+  }
+  if (location.pathname === "/agent-platform-monitor") {
+    return (
+      <AppErrorBoundary resetKey={resetKey}>
+        <I18nProvider>
+          <AgentPlatformMonitorPage />
+        </I18nProvider>
       </AppErrorBoundary>
     );
   }

@@ -116,6 +116,90 @@ export interface ServiceOpenLogViewerRequest {
   title: string;
 }
 
+export interface AgentPlatformMonitorReadOptions {
+  sessionId?: string;
+  connectionLimit?: number;
+  messageLimit?: number;
+}
+
+export interface AgentPlatformMonitorConnection {
+  sessionId: string;
+  kind: string;
+  active: boolean;
+  subject: string;
+  gatewayId: string;
+  channel: string;
+  remoteAddr: string;
+  userAgent: string;
+  connectedAt: number;
+  closedAt: number;
+  lastSeenAt: number;
+  lastMessageAt: number;
+  receivedMessages: number;
+  sentMessages: number;
+  errors: number;
+  inflightRequests: number;
+  activeStreams: number;
+  writeQueueDepth: number;
+}
+
+export interface AgentPlatformMonitorMessage {
+  seq: number;
+  timestamp: number;
+  sessionId: string;
+  direction: string;
+  frame: string;
+  type: string;
+  id: string;
+  sizeBytes: number;
+  payloadPreview: string;
+  truncated: boolean;
+  error: string;
+}
+
+export interface AgentPlatformMonitorOverview {
+  generatedAt: number;
+  ws: {
+    connectionCount: number;
+    latestConnection: AgentPlatformMonitorConnection | null;
+    recentMessages: AgentPlatformMonitorMessage[];
+  };
+}
+
+export interface AgentPlatformMonitorConnectionsSnapshot {
+  generatedAt: number;
+  connectionCount: number;
+  connections: AgentPlatformMonitorConnection[];
+}
+
+export interface AgentPlatformMonitorMessagesSnapshot {
+  generatedAt: number;
+  messages: AgentPlatformMonitorMessage[];
+}
+
+export interface AgentPlatformMonitorSnapshot {
+  overview: AgentPlatformMonitorOverview;
+  connections: AgentPlatformMonitorConnectionsSnapshot;
+  messages: AgentPlatformMonitorMessagesSnapshot;
+  filters: {
+    sessionId: string;
+    connectionLimit: number;
+    messageLimit: number;
+  };
+  fetchedAt: string;
+}
+
+export type AgentPlatformMonitorReadResult =
+  | {
+    ok: true;
+    message: string;
+    snapshot: AgentPlatformMonitorSnapshot;
+  }
+  | {
+    ok: false;
+    message: string;
+  };
+
 export interface ServiceRevealPathOptions {
   targetType?: "file" | "directory";
 }

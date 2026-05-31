@@ -368,6 +368,23 @@ function OpenFrontendIcon() {
   );
 }
 
+function MonitorServiceIcon() {
+  return (
+    <svg
+      className="service-action-icon"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M4.75 18.25h14.5" />
+      <path d="M6.25 15.25V8.75" />
+      <path d="M12 15.25V5.75" />
+      <path d="M17.75 15.25v-4.5" />
+      <path d="M5.5 19.25h13a1.25 1.25 0 0 0 1.25-1.25V5.75A1.25 1.25 0 0 0 18.5 4.5h-13a1.25 1.25 0 0 0-1.25 1.25V18a1.25 1.25 0 0 0 1.25 1.25Z" />
+    </svg>
+  );
+}
+
 function ServiceHelpIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -869,6 +886,19 @@ export function ControlCenterPage() {
       target,
       title,
     });
+  }
+
+  async function openAgentPlatformMonitor() {
+    try {
+      const result = await window.electronAPI.services.openAgentPlatformMonitor();
+      if (!result.ok) {
+        setFeedback(t("controlCenter.feedback.monitorOpenFailed"));
+      }
+    } catch (reason) {
+      setFeedback(
+        reason instanceof Error ? reason.message : String(reason),
+      );
+    }
   }
 
   async function revealServicePath(
@@ -1670,6 +1700,22 @@ export function ControlCenterPage() {
                       data-tooltip={t("controlCenter.actions.openFrontend")}
                     >
                       <OpenFrontendIcon />
+                    </button>
+                  ) : null}
+                  {activeDetailService.id === "agent-platform" ? (
+                    <button
+                      type="button"
+                      className="service-title-text-button service-action-button is-primary"
+                      onClick={() =>
+                        void openAgentPlatformMonitor()
+                      }
+                      disabled={
+                        activeDetailService.status !== "running"
+                      }
+                      aria-label={t("controlCenter.actions.openMonitor")}
+                      data-tooltip={t("controlCenter.actions.openMonitor")}
+                    >
+                      <MonitorServiceIcon />
                     </button>
                   ) : null}
                   {activeDetailService.kind === "builtin" &&

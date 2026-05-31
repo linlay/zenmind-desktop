@@ -47,6 +47,15 @@ function makeBaseOptions(overrides = {}) {
     closeLogViewerWindow: () => {},
     minimizeLogViewerWindow: () => {},
     maximizeLogViewerWindow: () => {},
+    openAgentPlatformMonitorWindow: async () => ({ ok: true }),
+    closeAgentPlatformMonitorWindow: () => {},
+    minimizeAgentPlatformMonitorWindow: () => {},
+    maximizeAgentPlatformMonitorWindow: () => {},
+    issueAgentPlatformAccessToken: async () => ({ ok: true, token: "test-token", message: "" }),
+    agentPlatformFetch: async () => ({
+      ok: true,
+      json: async () => ({ code: 0, msg: "success", data: {} })
+    }),
     revealPathInFileManager: async () => ({ ok: true }),
     getServiceWebviewPreloadPath: () => "/preload/service-webview.js",
     getServiceWebviewPreloadUrl: () => "file:///preload/service-webview.js",
@@ -271,6 +280,127 @@ test("services.openLogViewer delegates to openLogViewerWindow", async () => {
   assert.deepEqual(openedRequest, { serviceId: "agent-platform", target: "error", title: "Agent Logs" });
 });
 
+test("services.openAgentPlatformMonitor delegates to monitor window", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  let opened = false;
+
+  registerServicesIpcHandlers(ipc, makeBaseOptions({
+    openAgentPlatformMonitorWindow: async () => {
+      opened = true;
+      return { ok: true };
+    }
+  }));
+
+  const result = await handlers["services.openAgentPlatformMonitor"]({});
+  assert.equal(opened, true);
+  assert.deepEqual(result, { ok: true });
+});
+
+test("services.readAgentPlatformMonitor reports when agent-platform is not running", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+
+  registerServicesIpcHandlers(ipc, makeBaseOptions({
+    getServiceState: async () => ({
+      status: "stopped",
+      message: "",
+      healthMeta: { webUrl: "", port: null }
+    })
+  }));
+
+  const result = await handlers["services.readAgentPlatformMonitor"]({});
+  assert.equal(result.ok, false);
+  assert.match(result.message, /未运行|not running/u);
+});
+
+test("services.readAgentPlatformMonitor reports token failures", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+
+  registerServicesIpcHandlers(ipc, makeBaseOptions({
+    getServiceState: async () => ({
+      status: "running",
+      healthMeta: { webUrl: "http://127.0.0.1:11949", port: 11949 }
+    }),
+    issueAgentPlatformAccessToken: async () => ({ ok: false, token: "", message: "token unavailable" })
+  }));
+
+  const result = await handlers["services.readAgentPlatformMonitor"]({});
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "token unavailable");
+});
+
+test("services.readAgentPlatformMonitor fetches all monitor endpoints with auth and query", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const calls = [];
+
+  registerServicesIpcHandlers(ipc, makeBaseOptions({
+    getServiceState: async () => ({
+      status: "running",
+      healthMeta: { webUrl: "http://127.0.0.1:11949", port: 11949 }
+    }),
+    issueAgentPlatformAccessToken: async () => ({ ok: true, token: "monitor-token", message: "" }),
+    agentPlatformFetch: async (url, init) => {
+      calls.push({ url, init });
+      const parsed = new URL(url);
+      let data;
+      if (parsed.pathname === "/api/monitor") {
+        data = {
+          generatedAt: 1710000000000,
+          ws: {
+            connectionCount: 1,
+            latestConnection: null,
+            recentMessages: []
+          }
+        };
+      } else if (parsed.pathname === "/api/monitor/ws/connections") {
+        data = {
+          generatedAt: 1710000000001,
+          connectionCount: 1,
+          connections: [{ sessionId: "session-1", active: true }]
+        };
+      } else if (parsed.pathname === "/api/monitor/ws/messages") {
+        data = {
+          generatedAt: 1710000000002,
+          messages: [{ seq: 1, sessionId: "session-1", direction: "inbound" }]
+        };
+      } else {
+        throw new Error(`unexpected path ${parsed.pathname}`);
+      }
+      return {
+        ok: true,
+        json: async () => ({ code: 0, msg: "success", data })
+      };
+    }
+  }));
+
+  const result = await handlers["services.readAgentPlatformMonitor"]({}, {
+    sessionId: " session-1 ",
+    connectionLimit: 33,
+    messageLimit: 7
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.snapshot.filters.sessionId, "session-1");
+  assert.equal(result.snapshot.filters.connectionLimit, 33);
+  assert.equal(result.snapshot.filters.messageLimit, 7);
+  assert.deepEqual(
+    calls.map((call) => new URL(call.url).pathname).sort(),
+    ["/api/monitor", "/api/monitor/ws/connections", "/api/monitor/ws/messages"].sort()
+  );
+  for (const call of calls) {
+    assert.equal(call.init.headers.Authorization, "Bearer monitor-token");
+    assert.equal(call.init.headers.Accept, "application/json");
+  }
+  const overviewUrl = new URL(calls.find((call) => call.url.includes("/api/monitor?")).url);
+  const connectionsUrl = new URL(calls.find((call) => call.url.includes("/api/monitor/ws/connections")).url);
+  const messagesUrl = new URL(calls.find((call) => call.url.includes("/api/monitor/ws/messages")).url);
+
+  assert.equal(overviewUrl.searchParams.get("messageLimit"), "7");
+  assert.equal(connectionsUrl.searchParams.get("limit"), "33");
+  assert.equal(connectionsUrl.searchParams.get("sessionId"), "session-1");
+  assert.equal(messagesUrl.searchParams.get("limit"), "7");
+  assert.equal(messagesUrl.searchParams.get("sessionId"), "session-1");
+});
+
 // ---------------------------------------------------------------------------
 // 10. services.closeLogViewer / minimize / maximize
 // ---------------------------------------------------------------------------
@@ -279,20 +409,32 @@ test("services.closeLogViewer / minimizeLogViewer / maximizeLogViewer delegate c
   let closed = false;
   let minimized = false;
   let maximized = false;
+  let monitorClosed = false;
+  let monitorMinimized = false;
+  let monitorMaximized = false;
 
   registerServicesIpcHandlers(ipc, makeBaseOptions({
     closeLogViewerWindow: () => { closed = true; },
     minimizeLogViewerWindow: () => { minimized = true; },
-    maximizeLogViewerWindow: () => { maximized = true; }
+    maximizeLogViewerWindow: () => { maximized = true; },
+    closeAgentPlatformMonitorWindow: () => { monitorClosed = true; },
+    minimizeAgentPlatformMonitorWindow: () => { monitorMinimized = true; },
+    maximizeAgentPlatformMonitorWindow: () => { monitorMaximized = true; }
   }));
 
   await handlers["services.closeLogViewer"]({});
   await handlers["services.minimizeLogViewer"]({});
   await handlers["services.maximizeLogViewer"]({});
+  await handlers["services.closeAgentPlatformMonitor"]({});
+  await handlers["services.minimizeAgentPlatformMonitor"]({});
+  await handlers["services.maximizeAgentPlatformMonitor"]({});
 
   assert.equal(closed, true);
   assert.equal(minimized, true);
   assert.equal(maximized, true);
+  assert.equal(monitorClosed, true);
+  assert.equal(monitorMinimized, true);
+  assert.equal(monitorMaximized, true);
 });
 
 // ---------------------------------------------------------------------------

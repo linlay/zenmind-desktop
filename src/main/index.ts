@@ -78,6 +78,7 @@ import {
 import { resolveWebviewOpenDisposition, shouldDownloadUrlFromWebview } from "./webview-open-tab";
 import { revealPathInFileManager } from "./reveal-path";
 import { buildApplicationMenu as installApplicationMenu } from "./app-shell/app-menu";
+import { AgentPlatformMonitorWindowController } from "./app-shell/agent-platform-monitor-window";
 import { DebugViewerWindowController } from "./app-shell/debug-viewer-window";
 import { LogViewerWindowController } from "./app-shell/log-viewer-window";
 import { NativeDialogVisibilityController } from "./app-shell/native-dialogs";
@@ -545,6 +546,14 @@ const quickCopilotWindowController = new QuickCopilotWindowController({
 const logViewerWindowController = new LogViewerWindowController({
   preloadPath: path.join(__dirname, "..", "preload", "index.js"),
   routePath: LOG_VIEWER_ROUTE,
+  platform: mainProcessContext.platform,
+  getOwnerWindow: () => appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null,
+  loadRendererRoute,
+  onRendererError: safeConsoleError
+});
+
+const agentPlatformMonitorWindowController = new AgentPlatformMonitorWindowController({
+  preloadPath: path.join(__dirname, "..", "preload", "index.js"),
   platform: mainProcessContext.platform,
   getOwnerWindow: () => appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null,
   loadRendererRoute,
@@ -1049,6 +1058,10 @@ async function openLogViewerWindow(request: ServiceOpenLogViewerRequest) {
   return logViewerWindowController.open(request);
 }
 
+async function openAgentPlatformMonitorWindow() {
+  return agentPlatformMonitorWindowController.open();
+}
+
 function emitDebugEvent(event: DebugEvent) {
   const targetWindow = debugViewerWindowController.getWindow();
   if (!targetWindow || targetWindow.isDestroyed()) {
@@ -1075,6 +1088,18 @@ function minimizeLogViewerWindow() {
 
 function maximizeLogViewerWindow() {
   return logViewerWindowController.maximize();
+}
+
+function closeAgentPlatformMonitorWindow() {
+  return agentPlatformMonitorWindowController.close();
+}
+
+function minimizeAgentPlatformMonitorWindow() {
+  return agentPlatformMonitorWindowController.minimize();
+}
+
+function maximizeAgentPlatformMonitorWindow() {
+  return agentPlatformMonitorWindowController.maximize();
 }
 
 function hideQuickAssistantForNativeDialog() {
@@ -1754,6 +1779,11 @@ function registerIpcHandlers(context: MainProcessContext) {
     closeLogViewerWindow,
     minimizeLogViewerWindow,
     maximizeLogViewerWindow,
+    openAgentPlatformMonitorWindow,
+    closeAgentPlatformMonitorWindow,
+    minimizeAgentPlatformMonitorWindow,
+    maximizeAgentPlatformMonitorWindow,
+    issueAgentPlatformAccessToken: issueAgentAccessToken,
     revealPathInFileManager,
     getServiceWebviewPreloadPath,
     getServiceWebviewPreloadUrl,
