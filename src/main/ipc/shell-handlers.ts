@@ -1,11 +1,15 @@
 import fs from "node:fs";
-import path from "node:path";
 import {
   shell as electronShell,
   clipboard as electronClipboard,
   BrowserWindow as ElectronBrowserWindow
 } from "electron";
 import type { BrowserWindow, IpcMain, IpcMainEvent, IpcMainInvokeEvent } from "electron";
+import {
+  getAvailableFilePath,
+  getDesktopDownloadDefaultPath,
+  getPlatformPath
+} from "../download-paths";
 
 type ShellIpcResult = {
   ok: boolean;
@@ -51,50 +55,12 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
   const clipboard = options.clipboard || electronClipboard;
   const BrowserWindow = options.BrowserWindow || ElectronBrowserWindow;
 
-  function sanitizeDownloadFilename(filename: string, fallback: string) {
-    const normalized = filename.trim() || fallback;
-    return normalized.replace(/[<>:"/\\|?*\u0000-\u001F]/gu, "_").slice(0, 180) || fallback;
-  }
-
-  function getPlatformPath() {
-    return options.platform === "win32" ? path.win32 : path.posix;
-  }
-
   function isDesktopDownloadPayload(input: unknown): input is DesktopDownloadPayload {
     if (!input || typeof input !== "object" || Array.isArray(input)) {
       return false;
     }
     const payload = input as Record<string, unknown>;
     return typeof payload.dataBase64 === "string";
-  }
-
-  function getDesktopDownloadDefaultPath(filename: string) {
-    const safeFilename = sanitizeDownloadFilename(filename, "download");
-    const downloadsDir = options.platform === "win32" || options.platform === "darwin"
-      ? options.app?.getPath("downloads")
-      : options.app?.getPath("home");
-    if (!downloadsDir) {
-      throw new Error("downloads_path_unavailable");
-    }
-    return getPlatformPath().join(downloadsDir, safeFilename);
-  }
-
-  async function getAvailableFilePath(targetPath: string) {
-    const platformPath = getPlatformPath();
-    const parsedPath = platformPath.parse(targetPath);
-    const fsAccess = options.fsAccess || fs.promises.access;
-    for (let index = 0; index < 1000; index += 1) {
-      const candidatePath =
-        index === 0
-          ? targetPath
-          : platformPath.join(parsedPath.dir, `${parsedPath.name} (${index})${parsedPath.ext}`);
-      try {
-        await fsAccess(candidatePath, fs.constants.F_OK);
-      } catch {
-        return candidatePath;
-      }
-    }
-    return platformPath.join(parsedPath.dir, `${parsedPath.name}-${Date.now()}${parsedPath.ext}`);
   }
 
   ipcMain.handle("shell.openExternal", async (_event: IpcMainInvokeEvent, url: string) => {
@@ -177,9 +143,12 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       const filename = typeof input.filename === "string" ? input.filename : "";
       const dataBase64 = input.dataBase64;
       
-      const defaultPath = getDesktopDownloadDefaultPath(filename);
-      const downloadPath = await getAvailableFilePath(defaultPath);
-      const platformPath = getPlatformPath();
+      const defaultPath = getDesktopDownloadDefaultPath(options.app, filename, options.platform);
+      const downloadPath = await getAvailableFilePath(defaultPath, {
+        platform: options.platform,
+        fsAccess: options.fsAccess
+      });
+      const platformPath = getPlatformPath(options.platform);
       
       const fsMkdir = options.fsMkdir || fs.promises.mkdir;
       const fsWriteFile = options.fsWriteFile || fs.promises.writeFile;

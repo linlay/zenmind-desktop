@@ -11,7 +11,7 @@ const { __testInternals: appServerAuthInternals } = require("../dist-electron/ma
 const {
   __testInternals: registryInternals,
   registerPlugin
-} = require("../dist-electron/main/service-registry.js");
+} = require("../dist-electron/main/services/service-registry.js");
 const {
   getServiceDataRoot,
   getServicesRoot,

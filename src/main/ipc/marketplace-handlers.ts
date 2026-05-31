@@ -1,17 +1,4 @@
-import path from "node:path";
-
-function sanitizeDownloadFilename(filename: string, fallback: string) {
-  const normalized = filename.trim() || fallback;
-  return normalized.replace(/[<>:"/\\|?*\u0000-\u001F]/gu, "_").slice(0, 180) || fallback;
-}
-
-function getSandboxImageExportDefaultPath(app: any, platform: string, imageRef: string) {
-  const safeFilename = sanitizeDownloadFilename(`${imageRef || "sandbox-image"}.tar`, "sandbox-image.tar");
-  if (platform === "win32" || platform === "darwin") {
-    return path.join(app.getPath("desktop"), safeFilename);
-  }
-  return path.join(app.getPath("home"), safeFilename);
-}
+import { getSandboxImageExportDefaultPath } from "../download-paths";
 
 export interface MarketplaceIpcHandlerOptions {
   app: any;

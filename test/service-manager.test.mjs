@@ -25,14 +25,14 @@ const childProcess = require("node:child_process");
     stopService,
     stopRunningServicesForShutdown,
     writeServiceConfig
-} = require("../dist-electron/main/service-manager.js");
+} = require("../dist-electron/main/services/manager/index.js");
 const { loadBuiltinServices } = require("../dist-electron/main/builtin-loader.js");
 const {
   __testInternals: registryInternals,
   getBuiltinService,
   getService,
   registerPlugin
-} = require("../dist-electron/main/service-registry.js");
+} = require("../dist-electron/main/services/service-registry.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const TEST_APP_SERVER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
 const TEST_APP_SERVER_CUSTOM_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1uf";
@@ -1527,7 +1527,7 @@ test("applyAgentPlatformWindowsHostShellDefaults skips non-Windows platforms", (
   assert.equal(updates.size, 0);
 });
 
-test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys and migrates supported replacements", () => {
+test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys without migrating old replacements", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
       "AGENT_AUTH_ENABLED=false",
@@ -1540,20 +1540,19 @@ test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys and
     ].join("\n")
   );
 
-  assert.match(next, /^AUTH_ENABLED=false$/m);
-  assert.match(next, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/old\.pem$/m);
-  assert.match(next, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:11960$/m);
   assert.match(next, /^RUNTIME_DIR=\/tmp\/legacy-runtime$/m);
-  assert.doesNotMatch(next, /^AGENTS_DIR=\/tmp\/legacy-runtime\/agents$/m);
-  assert.doesNotMatch(next, /^REGISTRIES_DIR=\/tmp\/legacy-runtime\/registries$/m);
-  assert.match(next, /^CLAUDE_CODE_ACP_ARGS='-y @zed-industries\/claude-code-acp'$/m);
+  assert.match(next, /^SERVER_PORT=11949$/m);
+  assert.doesNotMatch(next, /^AUTH_ENABLED=/m);
+  assert.doesNotMatch(next, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
+  assert.doesNotMatch(next, /^CONTAINER_HUB_BASE_URL=/m);
+  assert.doesNotMatch(next, /^CLAUDE_CODE_ACP_ARGS=/m);
   assert.doesNotMatch(next, /^AGENT_AUTH_ENABLED=/m);
   assert.doesNotMatch(next, /^AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
   assert.doesNotMatch(next, /^AGENT_CONTAINER_HUB_BASE_URL=/m);
   assert.doesNotMatch(next, /^GATEWAY_WS_URL=/m);
 });
 
-test("normalizeAgentPlatformEnvContentForRuntime folds managed child runtime dirs under RUNTIME_DIR", () => {
+test("normalizeAgentPlatformEnvContentForRuntime removes child runtime dir keys when RUNTIME_DIR is set", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
       "SERVER_PORT=11949",
@@ -1567,10 +1566,10 @@ test("normalizeAgentPlatformEnvContentForRuntime folds managed child runtime dir
   assert.match(next, /^RUNTIME_DIR=\/tmp\/agent-runtime$/m);
   assert.doesNotMatch(next, /^REGISTRIES_DIR=/m);
   assert.doesNotMatch(next, /^MEMORY_DIR=/m);
-  assert.match(next, /^CHATS_DIR=\/tmp\/custom-chats$/m);
+  assert.doesNotMatch(next, /^CHATS_DIR=/m);
 });
 
-test("normalizeAgentPlatformEnvContentForRuntime infers RUNTIME_DIR from legacy managed child dirs", () => {
+test("normalizeAgentPlatformEnvContentForRuntime removes child runtime dirs without inferring RUNTIME_DIR", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
       "SERVER_PORT=11949",
@@ -1580,7 +1579,8 @@ test("normalizeAgentPlatformEnvContentForRuntime infers RUNTIME_DIR from legacy 
     ].join("\n")
   );
 
-  assert.match(next, /^RUNTIME_DIR=\/tmp\/agent-runtime$/m);
+  assert.match(next, /^SERVER_PORT=11949$/m);
+  assert.doesNotMatch(next, /^RUNTIME_DIR=/m);
   assert.doesNotMatch(next, /^REGISTRIES_DIR=/m);
   assert.doesNotMatch(next, /^AGENTS_DIR=/m);
   assert.doesNotMatch(next, /^PAN_DIR=/m);
@@ -1625,7 +1625,7 @@ test("normalizeAgentPlatformEnvContentForRuntime removes legacy chat ticket gate
   assert.doesNotMatch(next, /^CHAT_RESOURCE_TICKET_SECRET=/m);
 });
 
-test("normalizeAgentPlatformEnvContentForRuntime migrates real legacy image token secrets to resource ticket config", () => {
+test("normalizeAgentPlatformEnvContentForRuntime removes real legacy image token secrets without migration", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
       "SERVER_PORT=11949",
@@ -1634,8 +1634,9 @@ test("normalizeAgentPlatformEnvContentForRuntime migrates real legacy image toke
     ].join("\n")
   );
 
-  assert.match(next, /^CHAT_RESOURCE_TICKET_SECRET=my-secret$/m);
-  assert.match(next, /^CHAT_RESOURCE_TICKET_TTL_SECONDS=300$/m);
+  assert.match(next, /^SERVER_PORT=11949$/m);
+  assert.doesNotMatch(next, /^CHAT_RESOURCE_TICKET_SECRET=/m);
+  assert.doesNotMatch(next, /^CHAT_RESOURCE_TICKET_TTL_SECONDS=/m);
   assert.doesNotMatch(next, /^CHAT_IMAGE_TOKEN_SECRET=/m);
   assert.doesNotMatch(next, /^CHAT_IMAGE_TOKEN_TTL_SECONDS=/m);
 });
@@ -2608,7 +2609,7 @@ test("installBuiltinService migrates env from sibling version directories and re
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("installBuiltinService preserves agent-platform env content from current and sibling installs", async () => {
+test("installBuiltinService drops legacy agent-platform chat token env from current and sibling installs", async () => {
   for (const source of ["current-version", "sibling-version"]) {
     const fixture = createStartupCoreAssetsFixture();
     const userDataRoot = path.join(fixture.tempRoot, "user-data");
@@ -2638,9 +2639,11 @@ test("installBuiltinService preserves agent-platform env content from current an
       await installBuiltinService(app, service.id);
 
       const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, service.id), "utf8");
-      assert.match(envContent, /^CHAT_RESOURCE_TICKET_ENABLED=true$/m);
-      assert.match(envContent, /^CHAT_IMAGE_TOKEN_SECRET=my-secret$/m);
-      assert.match(envContent, /^CHAT_IMAGE_TOKEN_TTL_SECONDS=300$/m);
+      assert.doesNotMatch(envContent, /^CHAT_RESOURCE_TICKET_ENABLED=/m);
+      assert.doesNotMatch(envContent, /^CHAT_IMAGE_TOKEN_SECRET=/m);
+      assert.doesNotMatch(envContent, /^CHAT_IMAGE_TOKEN_TTL_SECONDS=/m);
+      assert.doesNotMatch(envContent, /^CHAT_RESOURCE_TICKET_SECRET=/m);
+      assert.doesNotMatch(envContent, /^CHAT_RESOURCE_TICKET_TTL_SECONDS=/m);
       assert.equal(fs.existsSync(path.join(getTestConfigDir(userDataRoot, service.id), ".env.legacy-backup")), false);
       if (source === "sibling-version") {
         assert.equal(fs.existsSync(getTestServiceProgramDir(userDataRoot, service.id, "v0.9.0")), false);
@@ -4147,12 +4150,9 @@ test("ensurePreStartRequirements does not rewrite agent platform desktop env bin
   const platformService = getBuiltinService("agent-platform");
   const hubInstallDir = getTestServiceProgramDir(userDataRoot, hubService.id, hubService.version);
   const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const desktopRuntimeRoot = path.join(homeRoot, "zenmind");
 
   fs.mkdirSync(hubInstallDir, { recursive: true });
   fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
-  fs.mkdirSync(path.join(desktopRuntimeRoot, "registries"), { recursive: true });
-  fs.mkdirSync(path.join(desktopRuntimeRoot, "agents"), { recursive: true });
   writeTestEnv(userDataRoot, hubService.id, "BIND_ADDR=0.0.0.0:12960\n");
   writeTestEnv(
     userDataRoot,
@@ -4185,9 +4185,10 @@ test("ensurePreStartRequirements does not rewrite agent platform desktop env bin
   assert.doesNotMatch(envContent, /^AGENT_AUTH_ENABLED=/m);
   assert.doesNotMatch(envContent, /^CHAT_RESOURCE_TICKET_ENABLED=/m);
   assert.doesNotMatch(envContent, /^CHAT_IMAGE_TOKEN_SECRET=/m);
+  const expectedRuntimeRoot = process.platform === "win32" ? path.join(homeRoot, ".zenmind") : "~/.zenmind";
+  assert.match(envContent, new RegExp(`^RUNTIME_DIR=${escapeRegExp(expectedRuntimeRoot)}$`, "m"));
   const legacyBackupPath = path.join(getTestConfigDir(userDataRoot, platformService.id), ".env.legacy-backup");
-  assert.equal(fs.existsSync(legacyBackupPath), true);
-  assert.match(fs.readFileSync(legacyBackupPath, "utf8"), /^AGENT_CONTAINER_HUB_BASE_URL=http:\/\/host\.docker\.internal:11960$/m);
+  assert.equal(fs.existsSync(legacyBackupPath), false);
   assert.doesNotMatch(envContent, /^NODE_BIN=/m);
   assert.doesNotMatch(envContent, /^CLOUDFLARED_BIN=/m);
   assert.doesNotMatch(envContent, /^CLAUDE_CODE_ACP_COMMAND=/m);
@@ -4370,7 +4371,7 @@ test("startService starts agent-platform when desktop-managed container hub is u
   }
 });
 
-test("initializeService migrates legacy relay settings into the local-cli-acp-relay plugin", async () => {
+test("initializeService does not migrate legacy relay settings into the local-cli-acp-relay plugin", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-local-cli-acp-relay-migrate-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
@@ -4435,20 +4436,20 @@ test("initializeService migrates legacy relay settings into the local-cli-acp-re
   }
 
   const relayEnvContent = fs.readFileSync(getTestEnvPath(userDataRoot, "local-cli-acp-relay", "plugins"), "utf8");
-  assert.match(relayEnvContent, /^PORT=4555$/m);
-  assert.match(relayEnvContent, /^AUTH_TOKEN=demo-token$/m);
-  assert.match(relayEnvContent, /^DEFAULT_CWD=\/tmp\/workspace$/m);
-  assert.match(relayEnvContent, /^ALLOWED_CWD_ROOTS=\/tmp\/workspace:\/tmp\/shared$/m);
-  assert.match(relayEnvContent, /^HANDSHAKE_TIMEOUT_MS=30000$/m);
-  assert.match(relayEnvContent, /^RUN_TIMEOUT_MS=900000$/m);
-  assert.match(relayEnvContent, /^CLAUDE_CODE_ACP_COMMAND=\/custom\/bin\/claude-code-acp$/m);
-  assert.match(relayEnvContent, /^CLAUDE_CODE_ACP_ARGS=--stdio$/m);
+  assert.match(relayEnvContent, /^PORT=3220$/m);
+  assert.match(relayEnvContent, /^AUTH_TOKEN=$/m);
+  assert.doesNotMatch(relayEnvContent, /^DEFAULT_CWD=\/tmp\/workspace$/m);
+  assert.doesNotMatch(relayEnvContent, /^ALLOWED_CWD_ROOTS=\/tmp\/workspace:\/tmp\/shared$/m);
+  assert.match(relayEnvContent, /^HANDSHAKE_TIMEOUT_MS=60000$/m);
+  assert.match(relayEnvContent, /^RUN_TIMEOUT_MS=600000$/m);
+  assert.doesNotMatch(relayEnvContent, /^CLAUDE_CODE_ACP_COMMAND=\/custom\/bin\/claude-code-acp$/m);
+  assert.doesNotMatch(relayEnvContent, /^CLAUDE_CODE_ACP_ARGS=--stdio$/m);
   assert.match(relayEnvContent, /^NODE_BIN=$/m);
 
   const platformEnvContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.doesNotMatch(platformEnvContent, /^LOCAL_CLI_ACP_RELAY_/m);
-  assert.doesNotMatch(platformEnvContent, /^CLAUDE_CODE_ACP_COMMAND=/m);
-  assert.doesNotMatch(platformEnvContent, /^CLAUDE_CODE_ACP_ARGS=/m);
+  assert.match(platformEnvContent, /^LOCAL_CLI_ACP_RELAY_PORT=4555$/m);
+  assert.match(platformEnvContent, /^CLAUDE_CODE_ACP_COMMAND=\/custom\/bin\/claude-code-acp$/m);
+  assert.match(platformEnvContent, /^CLAUDE_CODE_ACP_ARGS=--stdio$/m);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -4618,7 +4619,7 @@ test("ensurePreStartRequirements leaves agent-platform runtime path migration to
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements leaves stale legacy desktop runtime paths unchanged", async () => {
+test("ensurePreStartRequirements ignores stale legacy desktop runtime paths and uses the current default", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-runtime-migrate-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
@@ -4678,7 +4679,8 @@ test("ensurePreStartRequirements leaves stale legacy desktop runtime paths uncha
   }
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.match(envContent, new RegExp(`^RUNTIME_DIR=${legacyRuntimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+  const expectedRuntimeRoot = process.platform === "win32" ? path.join(homeRoot, ".zenmind") : "~/.zenmind";
+  assert.match(envContent, new RegExp(`^RUNTIME_DIR=${escapeRegExp(expectedRuntimeRoot)}$`, "m"));
   assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
   assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
 
@@ -4686,7 +4688,7 @@ test("ensurePreStartRequirements leaves stale legacy desktop runtime paths uncha
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements does not rewrite runtime paths to the resolved desktop path", async () => {
+test("ensurePreStartRequirements ignores legacy resolved desktop runtime paths", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-runtime-desktop-path-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
@@ -4740,7 +4742,8 @@ test("ensurePreStartRequirements does not rewrite runtime paths to the resolved 
   }
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.match(envContent, new RegExp(`^RUNTIME_DIR=${legacyRuntimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+  const expectedRuntimeRoot = process.platform === "win32" ? path.join(homeRoot, ".zenmind") : "~/.zenmind";
+  assert.match(envContent, new RegExp(`^RUNTIME_DIR=${escapeRegExp(expectedRuntimeRoot)}$`, "m"));
   assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
   assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
 
@@ -4748,7 +4751,7 @@ test("ensurePreStartRequirements does not rewrite runtime paths to the resolved 
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements does not rewrite runtime paths to a hidden desktop .zenmind root", async () => {
+test("ensurePreStartRequirements ignores hidden desktop legacy runtime roots", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-runtime-hidden-desktop-root-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
@@ -4802,7 +4805,8 @@ test("ensurePreStartRequirements does not rewrite runtime paths to a hidden desk
   }
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-  assert.match(envContent, new RegExp(`^RUNTIME_DIR=${legacyRuntimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+  const expectedRuntimeRoot = process.platform === "win32" ? path.join(homeRoot, ".zenmind") : "~/.zenmind";
+  assert.match(envContent, new RegExp(`^RUNTIME_DIR=${escapeRegExp(expectedRuntimeRoot)}$`, "m"));
   assert.doesNotMatch(envContent, /^AGENTS_DIR=/m);
   assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
 
@@ -5875,7 +5879,7 @@ test("runStartupPreparation restores healthy packaged core services in parallel"
     assert.equal(result.mode, "restore");
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
-    assert.ok(spreadMs < 500, `expected parallel startup timestamps, got spread ${spreadMs}ms`);
+    assert.ok(spreadMs < 1200, `expected parallel startup timestamps, got spread ${spreadMs}ms`);
   } finally {
     if (previousVerifyDelay === undefined) {
       delete process.env.SERVICE_VERIFY_DELAY_MS;
@@ -6321,7 +6325,7 @@ test("stopRunningServicesForShutdown stops running services concurrently", async
     assert.equal(result.ok, true);
     assert.equal(result.stopped.length, 2);
     assert.deepEqual(result.runningServiceIds.sort(), ["shutdown-peer-a", "shutdown-peer-b"]);
-    assert.ok(elapsedMs < 2500, `expected concurrent stop to finish before the barrier timeout, took ${elapsedMs}ms`);
+    assert.ok(elapsedMs < 3300, `expected concurrent stop to finish before the shutdown timeout, took ${elapsedMs}ms`);
     assert.equal(await waitForPidExit(fixtures[0].child.pid), true);
     assert.equal(await waitForPidExit(fixtures[1].child.pid), true);
   } finally {

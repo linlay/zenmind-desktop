@@ -280,15 +280,7 @@ function toManifestCommand(value: unknown): ManifestCommand | undefined {
 
 function resolveFrontend(raw: Record<string, unknown>) {
   const frontend = asObject(raw.frontend);
-  const legacyFrontendMode = raw.frontendMode;
-  const legacyHasFrontend = raw.hasFrontend;
-  const mode = isFrontendMode(frontend.mode)
-    ? frontend.mode
-    : isFrontendMode(legacyFrontendMode)
-      ? legacyFrontendMode
-      : legacyHasFrontend === true
-        ? "standalone"
-        : "none";
+  const mode = isFrontendMode(frontend.mode) ? frontend.mode : "none";
 
   return {
     mode,
@@ -304,10 +296,9 @@ function resolveFrontend(raw: Record<string, unknown>) {
 
 function resolveScripts(raw: Record<string, unknown>) {
   const scripts = asObject(raw.scripts);
-  const legacyRuntime = asObject(raw.runtime);
 
-  const start = toManifestCommand(scripts.start ?? legacyRuntime.startCommand);
-  const stop = toManifestCommand(scripts.stop ?? legacyRuntime.stopCommand);
+  const start = toManifestCommand(scripts.start);
+  const stop = toManifestCommand(scripts.stop);
   const deploy = toManifestCommand(scripts.deploy);
 
   if (!start || !stop) {

@@ -25,17 +25,17 @@ const {
   shouldUseDesktopPetTaskRunningAnimation,
   writeDesktopPetStoredState,
   isDesktopPetSupportedPlatform
-} = await import("../dist-electron/main/desktop-pet.js");
+} = await import("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
 
 const {
   DesktopPetPreviewProjector,
   DesktopPetSseParser,
   sanitizeDesktopPetPreviewText
-} = await import("../dist-electron/main/desktop-pet-preview.js");
+} = await import("../dist-electron/main/copilot/pet-copilot/desktop-pet-preview.js");
 
 const {
   AgentPlatformPetStreamClient
-} = await import("../dist-electron/main/agent-platform-pet-stream.js");
+} = await import("../dist-electron/main/copilot/pet-copilot/pet-stream-client.js");
 
 const {
   AgentPlatformPetStatusClient,
@@ -44,7 +44,7 @@ const {
   buildAgentPlatformPetStatus: buildStatusFromPlatform,
   resolveAgentPlatformPetBoundAgentKey,
   toDesktopPetAgentOptions
-} = await import("../dist-electron/main/agent-platform-pet-status.js");
+} = await import("../dist-electron/main/copilot/pet-copilot/pet-status-client.js");
 
 function waitFor(predicate, timeoutMs = 800) {
   const startedAt = Date.now();

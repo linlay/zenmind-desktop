@@ -12,7 +12,7 @@ const { listArchiveEntries } = require("../dist-electron/main/archive-utils.js")
 const {
   __testInternals: registryInternals,
   getBuiltinService
-} = require("../dist-electron/main/service-registry.js");
+} = require("../dist-electron/main/services/service-registry.js");
 
 function createApp(userDataRoot) {
   const tempRoot = path.dirname(userDataRoot);

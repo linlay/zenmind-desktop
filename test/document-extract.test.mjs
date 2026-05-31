@@ -10,7 +10,7 @@ const JSZip = require("jszip");
 const ExcelJS = require("exceljs");
 const {
   extractDocumentTextFromFile
-} = require("../dist-electron/main/assistant/document-extract.js");
+} = require("../dist-electron/main/copilot/attachments/document-extract.js");
 
 function makeTempRoot(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-document-extract-test-"));

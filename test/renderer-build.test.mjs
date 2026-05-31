@@ -2193,6 +2193,10 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   );
   const sendPluginRouteBlock = pluginPage.slice(
     pluginPage.indexOf("function dispatchPluginRouteEventToWebview"),
+    pluginPage.indexOf("function requestDirectWebviewRouteLoad")
+  );
+  const directRouteLoadBlock = pluginPage.slice(
+    pluginPage.indexOf("function requestDirectWebviewRouteLoad"),
     pluginPage.indexOf("async function injectAgentWebclientAccessToken")
   );
 
@@ -2243,6 +2247,11 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /function requestDirectWebviewRouteLoad\(\)/);
   assert.match(pluginPage, /!loadInitialEmbeddedUrlDirectly \|\| !embeddedUrl/);
   assert.match(pluginPage, /normalizedCurrentUrl === embeddedUrl/);
+  assert.match(pluginPage, /buildClientSideRouteNavigationScript/);
+  assert.match(directRouteLoadBlock, /currentParsed\.origin === targetParsed\.origin/);
+  assert.match(directRouteLoadBlock, /targetWebview\.executeJavaScript\(/);
+  assert.match(pluginPage, /window\.history\.pushState/);
+  assert.match(pluginPage, /PopStateEvent\("popstate"/);
   assert.match(pluginPage, /targetWebview\.loadURL\(embeddedUrl\)/);
   assert.match(pluginPage, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*loadInitialEmbeddedUrlDirectly,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*webviewSrcUrl,\s*\]/);
   assert.match(pluginPage, /suppressInitialLoadingCopy\s*\?\s*\(/);
@@ -2319,20 +2328,25 @@ test("embedded cdp exposes service frontends as webview surfaces", () => {
 
 test("assistant chat export writes directly to the download location", () => {
   const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
+  const downloadPaths = readSourceFile("src", "main", "download-paths.ts");
   const exportPathBlock =
-    assistantHandlers.match(/function getAssistantExportDefaultPath[\s\S]*?async function getAvailableFilePath/u)?.[0] ?? "";
+    downloadPaths.match(/export function getAssistantExportDefaultPath[\s\S]*?export function getDesktopDownloadDefaultPath/u)?.[0] ?? "";
   const saveExportBlock =
-    assistantHandlers.match(/async function saveAssistantChatExport[\s\S]*?function workspaceNameFromPath/u)?.[0] ?? "";
+    assistantHandlers.match(/async function saveAssistantChatExport[\s\S]*?\/\/ ---------------------------------------------------------------------------/u)?.[0] ?? "";
 
   assert.match(exportPathBlock, /platform === "win32" \|\| platform === "darwin"[\s\S]*?app\.getPath\("downloads"\)/u);
-  assert.match(exportPathBlock, /getAvailableFilePath/u);
-  assert.match(saveExportBlock, /const exportPath = await getAvailableFilePath\(getAssistantExportDefaultPath\(app, result\.filename, platform\)\)/u);
+  assert.match(downloadPaths, /export async function getAvailableFilePath/u);
+  assert.match(saveExportBlock, /const exportPath = await getAvailableFilePath\(getAssistantExportDefaultPath\(app, result\.filename, platform\), \{/u);
   assert.match(saveExportBlock, /fs\.promises\.writeFile\(exportPath, result\.bytes\)/u);
   assert.doesNotMatch(saveExportBlock, /showSaveDialog/u);
 });
 
 test("assistant entrypoints restore core services before opening embedded webclient", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const quickRouting = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "copilot", "quick-copilot", "routing.ts"),
+    "utf8"
+  );
   const trayController = fs.readFileSync(
     path.join(projectRoot, "src", "main", "app-shell", "tray.ts"),
     "utf8"
@@ -2342,9 +2356,9 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
   assert.match(mainProcess, /await runServiceMutation\(\(\) => ensureAssistantTargetServicesRunning\(source\)\)/);
   assert.match(mainProcess, /async function showAssistantTargetWindow/);
-  assert.match(mainProcess, /function createAgentWebclientRoute/);
-  assert.match(mainProcess, /\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
-  assert.doesNotMatch(mainProcess, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
+  assert.match(quickRouting, /function createAgentWebclientRoute/);
+  assert.match(quickRouting, /\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
+  assert.doesNotMatch(quickRouting, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
   assert.match(mainProcess, /openAgent: scheduleQuickAgentOpenRequest/);
   assert.match(mainProcess, /async function openAssistantFromDesktopPet/);
   assert.match(mainProcess, /async function openAssistantFromDesktopPet\(\) \{[\s\S]{0,120}showMainWindow\(\);/);
@@ -2730,6 +2744,10 @@ test("desktop pet visual states stay local to renderer priority", () => {
   const sharedDesktopPet = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-pet.ts"), "utf8");
   const globalStyles = readRendererStyles();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const desktopPetWindow = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "copilot", "pet-copilot", "window.ts"),
+    "utf8"
+  );
   const desktopPetHandlers = readSourceFile("src", "main", "ipc", "desktop-pet-handlers.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
@@ -2809,9 +2827,9 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(mainProcess, /function setDesktopPetWindowMouseInteractive\(interactive: boolean\)/);
   assert.match(mainProcess, /setIgnoreMouseEvents\(!interactive, \{ forward: true \}\)/);
   assert.match(mainProcess, /(?:process|mainProcessContext)\.platform === "win32"[\s\S]{0,220}setIgnoreMouseEvents\(false\)/);
-  assert.match(mainProcess, /const isWindows = (?:process|mainProcessContext)\.platform === "win32";/);
-  assert.match(mainProcess, /\.\.\.\(isWindows \? \{ thickFrame: false \} : \{\}\)/);
-  assert.match(mainProcess, /if \(isMac\) \{[\s\S]{0,180}setVisibleOnAllWorkspaces\(true, \{ visibleOnFullScreen: true \}\);[\s\S]{0,80}\} else if \(isWindows\) \{[\s\S]{0,80}setAlwaysOnTop\(true\);/);
+  assert.match(desktopPetWindow, /const isWindows = options\.platform === "win32";/);
+  assert.match(desktopPetWindow, /\.\.\.\(isWindows \? \{ thickFrame: false \} : \{\}\)/);
+  assert.match(desktopPetWindow, /if \(isMac\) \{[\s\S]{0,180}setVisibleOnAllWorkspaces\(true, \{ visibleOnFullScreen: true \}\);[\s\S]{0,80}\} else if \(isWindows\) \{[\s\S]{0,80}setAlwaysOnTop\(true\);/);
   assert.match(desktopPetHandlers, /desktopPet\.setMouseInteractive/);
   assert.match(desktopPetHandlers, /desktopPet\.dismissPreview/);
   assert.match(mainProcess, /desktopPet\.danceRequested/);

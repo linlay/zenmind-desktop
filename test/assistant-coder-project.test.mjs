@@ -6,13 +6,16 @@ import path from "node:path";
 const projectRoot = process.cwd();
 
 function loadCoderProjectHelpers() {
-  const source = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const source = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "copilot", "core", "coder-project.ts"),
+    "utf8"
+  );
   const start = source.indexOf("function workspaceNameFromPath");
-  const end = source.indexOf("function sanitizeDownloadFilename", start);
+  const end = source.length;
   assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
   const helperSource = source
     .slice(start, end)
+    .replaceAll("export ", "")
     .replaceAll(": string", "")
     .replaceAll(": string[]", "");
   return Function(`${helperSource}; return { workspaceNameFromPath, buildCoderProjectAgentCreateRequest };`)();

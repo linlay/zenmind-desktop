@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { AgentPlatformAssistantBridge } = require("../dist-electron/main/assistant/agent-platform-bridge.js");
+const { AgentPlatformAssistantBridge } = require("../dist-electron/main/copilot/core/agent-platform-bridge.js");
 
 function makeApp() {
   return {

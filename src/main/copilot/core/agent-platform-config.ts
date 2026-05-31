@@ -73,7 +73,7 @@ function endpointToBaseURL(baseURL: string, endpointPath: string) {
   return endpoint.replace(/\/chat\/completions$/u, "");
 }
 
-function getPathOrFallback(app: App, name: "desktop" | "home", fallback: string) {
+function getPathOrFallback(app: App, name: "home", fallback: string) {
   try {
     return app.getPath(name);
   } catch {
@@ -128,11 +128,9 @@ function listInstalledAgentPlatformEnvPaths(app: App) {
 }
 
 function readAgentPlatformEnv(app: App) {
-  const desktopPath = getPathOrFallback(app, "desktop", path.join(getPathOrFallback(app, "home", process.env.HOME || ""), "Desktop"));
   const envPaths = [
     path.join(getServiceConfigRoot(app, "agent-platform", "builtin"), ".env"),
-    ...listInstalledAgentPlatformEnvPaths(app),
-    path.join(desktopPath, "agent-platform", ".env")
+    ...listInstalledAgentPlatformEnvPaths(app)
   ];
   const merged = new Map<string, string>();
   for (const envPath of [...new Set(envPaths)].reverse()) {
@@ -198,9 +196,7 @@ function looksLikePlaceholderProviderAPIKey(apiKey: string) {
 
 function resolveProviderConfigLocation(app: App, providerKey = "minimax"): ProviderConfigLocation | null {
   const env = readAgentPlatformEnv(app);
-  const desktopPath = getPathOrFallback(app, "desktop", path.join(getPathOrFallback(app, "home", process.env.HOME || ""), "Desktop"));
-  const homePath = getPathOrFallback(app, "home", path.dirname(desktopPath));
-  const legacyDesktopPath = path.join(homePath, "Desktop");
+  const homePath = getPathOrFallback(app, "home", process.env.HOME || "");
   const candidates: Array<{ providerPath: string; modelDirs: string[] }> = [];
   const envRegistriesDir = process.env.REGISTRIES_DIR || process.env.AGENT_PLATFORM_REGISTRIES_DIR;
   if (envRegistriesDir) {
@@ -219,32 +215,11 @@ function resolveProviderConfigLocation(app: App, providerKey = "minimax"): Provi
     });
   }
 
-  const runtimeRegistryDirs = [
-    path.join(homePath, ".zenmind", "registries"),
-    path.join(desktopPath, ".zenmind", "registries"),
-    path.join(legacyDesktopPath, ".zenmind", "registries"),
-    path.join(desktopPath, "zenmind-env", "registries"),
-    path.join(legacyDesktopPath, "zenmind-env", "registries"),
-    path.join(homePath, "zenmind", "registries")
-  ];
-  for (const registriesDir of [...new Set(runtimeRegistryDirs)]) {
-    candidates.push({
-      providerPath: path.join(registriesDir, "providers", `${providerKey}.yml`),
-      modelDirs: [path.join(registriesDir, "models")]
-    });
-  }
-
-  const desktopRegistriesDir = path.join(desktopPath, "zenmind-env", "registries");
-
-  if (providerKey === "minimax") {
-    candidates.push({
-      providerPath: path.join(desktopPath, "minimax.yml"),
-      modelDirs: [
-        path.join(desktopRegistriesDir, "models"),
-        path.join(desktopPath, "zenmind-env", "registries.example", "models")
-      ]
-    });
-  }
+  const runtimeRegistriesDir = path.join(homePath, ".zenmind", "registries");
+  candidates.push({
+    providerPath: path.join(runtimeRegistriesDir, "providers", `${providerKey}.yml`),
+    modelDirs: [path.join(runtimeRegistriesDir, "models")]
+  });
 
   const match = candidates.find((candidate) => fs.existsSync(candidate.providerPath));
   return match ? { ...match, env } : null;

@@ -5,7 +5,7 @@ import type {
   DesktopActionRendererRequest,
   DesktopActionRendererResponse
 } from "../../shared/contracts";
-import { getAssistantPageContext } from "./assistantPageContext";
+import { getAssistantPageContext } from "../copilot/page-context/assistantPageContext";
 import { getCurrentPageContextSnapshot } from "./currentPageContext";
 
 export type DesktopActionProvider = (

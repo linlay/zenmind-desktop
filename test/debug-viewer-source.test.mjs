@@ -11,15 +11,17 @@ function readSourceFile(...segments) {
 
 test("debug viewer IPC and webRequest listeners are wired in the main process", () => {
   const mainProcess = readSourceFile("src", "main", "index.ts");
+  const debugHandlers = readSourceFile("src", "main", "ipc", "debug-handlers.ts");
   const debugWindow = readSourceFile("src", "main", "app-shell", "debug-viewer-window.ts");
 
   assert.match(mainProcess, /WebviewDebugManager/);
   assert.match(mainProcess, /DebugViewerWindowController/);
   assert.match(mainProcess, /session\.defaultSession/);
-  assert.match(mainProcess, /debug\.openViewer/);
-  assert.match(mainProcess, /debug\.registerWebviewSurface/);
-  assert.match(mainProcess, /debug\.openWebviewDevTools/);
-  assert.match(mainProcess, /webContents\.fromId\(webContentsId\)/);
+  assert.match(mainProcess, /registerDebugIpcHandlers/);
+  assert.match(debugHandlers, /debug\.openViewer/);
+  assert.match(debugHandlers, /debug\.registerWebviewSurface/);
+  assert.match(debugHandlers, /debug\.openWebviewDevTools/);
+  assert.match(debugHandlers, /webContents\.fromId\(webContentsId\)/);
   assert.match(debugWindow, /DEBUG_VIEWER_ROUTE/);
   assert.match(debugWindow, /loadRendererRoute\(targetWindow, DEBUG_VIEWER_ROUTE\)/);
 });

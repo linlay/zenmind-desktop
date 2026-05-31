@@ -28,7 +28,7 @@ import {
   type DesktopCopilotPagePreferences
 } from "../../../shared/assistant-settings";
 import { sanitizeDesktopCopilotPagePreferences } from "../../../shared/page-copilot";
-import { getAssistantPageContext } from "../../services/assistantPageContext";
+import { getAssistantPageContext } from "../../copilot/page-context/assistantPageContext";
 import { publishCurrentPageContextSnapshot } from "../../services/currentPageContext";
 import { registerDesktopActionProvider } from "../../services/desktopActionRegistry";
 import {

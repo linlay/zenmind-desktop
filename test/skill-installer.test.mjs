@@ -16,7 +16,7 @@ const {
 const {
   registerService,
   __testInternals: registryInternals
-} = require("../dist-electron/main/service-registry.js");
+} = require("../dist-electron/main/services/service-registry.js");
 
 function createApp(root) {
   return {

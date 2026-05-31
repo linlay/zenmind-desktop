@@ -1,7 +1,7 @@
 import { createElement, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams, useNavigate } from "react-router-dom";
 import { useServices } from "../../services/ServicesContext";
-import { registerAssistantPageContextProvider } from "../../services/assistantPageContext";
+import { registerAssistantPageContextProvider } from "../../copilot/page-context/assistantPageContext";
 import {
   buildPluginEmbeddedUrl,
   getPluginAuthBridgeProtocol,
@@ -329,6 +329,26 @@ function buildPluginRouteChangedMessage(
     search: parsed.search,
     hash: parsed.hash,
   };
+}
+
+function buildClientSideRouteNavigationScript(targetUrl: string) {
+  return `(() => {
+    const target = new URL(${JSON.stringify(targetUrl)}, window.location.href);
+    if (target.origin !== window.location.origin) {
+      return { ok: false, reason: "origin-mismatch", href: window.location.href };
+    }
+    const oldUrl = window.location.href;
+    const nextPath = target.pathname + target.search + target.hash;
+    const currentPath = window.location.pathname + window.location.search + window.location.hash;
+    if (nextPath !== currentPath) {
+      window.history.pushState(window.history.state, "", nextPath);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+      if (new URL(oldUrl).hash !== target.hash) {
+        window.dispatchEvent(new HashChangeEvent("hashchange", { oldURL: oldUrl, newURL: target.href }));
+      }
+    }
+    return { ok: true, href: window.location.href };
+  })()`;
 }
 
 async function tryReadPluginWebviewPageContext(
@@ -861,6 +881,26 @@ export function PluginPage({
       }
       lastDirectWebviewRouteRef.current = embeddedUrl;
       setWebviewCurrentUrl(embeddedUrl);
+      const currentParsed = parseHttpUrl(currentUrl);
+      const targetParsed = parseHttpUrl(embeddedUrl);
+      if (
+        currentParsed &&
+        targetParsed &&
+        currentParsed.origin === targetParsed.origin &&
+        !webviewLoadedChromeErrorPage()
+      ) {
+        void targetWebview.executeJavaScript(
+          buildClientSideRouteNavigationScript(embeddedUrl),
+          true,
+        ).catch((reason) => {
+          console.warn(
+            "[service-webview] failed to apply client-side embedded route",
+            reason instanceof Error ? reason.message : String(reason),
+          );
+          void targetWebview.loadURL(embeddedUrl);
+        });
+        return;
+      }
       void targetWebview.loadURL(embeddedUrl);
     } catch (reason) {
       console.warn(

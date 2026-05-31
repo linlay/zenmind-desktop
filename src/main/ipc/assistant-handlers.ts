@@ -1,5 +1,10 @@
-import fs from "node:fs";
 import path from "node:path";
+import fs from "node:fs";
+import {
+  getAssistantExportDefaultPath,
+  getAvailableFilePath
+} from "../download-paths";
+import { buildCoderProjectAgentCreateRequest } from "../copilot/core/coder-project";
 
 export interface AssistantIpcHandlerOptions {
   assistantBridge: any;
@@ -30,39 +35,6 @@ export interface AssistantIpcHandlerOptions {
   platform?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Pure helpers (no electron deps) — can be unit tested directly
-// ---------------------------------------------------------------------------
-
-function sanitizeDownloadFilename(filename: string, fallback: string) {
-  const normalized = filename.trim() || fallback;
-  return normalized.replace(/[<>:"/\\|?*\u0000-\u001F]/gu, "_").slice(0, 180) || fallback;
-}
-
-function getAssistantExportDefaultPath(app: any, filename: string, platform: string = process.platform) {
-  const safeFilename = sanitizeDownloadFilename(filename, "chat-export.json");
-  if (platform === "win32" || platform === "darwin") {
-    return path.join(app.getPath("downloads"), safeFilename);
-  }
-  return path.join(app.getPath("home"), safeFilename);
-}
-
-async function getAvailableFilePath(targetPath: string) {
-  const parsedPath = path.parse(targetPath);
-  for (let index = 0; index < 1000; index += 1) {
-    const candidatePath =
-      index === 0
-        ? targetPath
-        : path.join(parsedPath.dir, `${parsedPath.name} (${index})${parsedPath.ext}`);
-    try {
-      await fs.promises.access(candidatePath, fs.constants.F_OK);
-    } catch {
-      return candidatePath;
-    }
-  }
-  return path.join(parsedPath.dir, `${parsedPath.name}-${Date.now()}${parsedPath.ext}`);
-}
-
 async function saveAssistantChatExport(
   assistantBridge: any,
   chatId: string,
@@ -73,28 +45,12 @@ async function saveAssistantChatExport(
   if (!result.ok) {
     return { ok: false, message: result.message };
   }
-  const exportPath = await getAvailableFilePath(getAssistantExportDefaultPath(app, result.filename, platform));
+  const exportPath = await getAvailableFilePath(getAssistantExportDefaultPath(app, result.filename, platform), {
+    platform
+  });
   await fs.promises.mkdir(path.dirname(exportPath), { recursive: true });
   await fs.promises.writeFile(exportPath, result.bytes);
   return { ok: true, message: "已下载会话导出。", filePath: exportPath };
-}
-
-function workspaceNameFromPath(workspaceDir: string): string {
-  const normalized = String(workspaceDir || "").trim();
-  return normalized.split(/[\\/]+/).filter(Boolean).pop() || "project";
-}
-
-function buildCoderProjectAgentCreateRequest(workspaceDir: string) {
-  return {
-    definition: {
-      name: workspaceNameFromPath(workspaceDir),
-      mode: "CODER",
-      icon: { name: "folder" },
-      workspace: { root: workspaceDir },
-      runtimeConfig: { workspaceRoot: workspaceDir },
-      visibility: { scopes: ["nav", "copilot"] }
-    }
-  };
 }
 
 // ---------------------------------------------------------------------------

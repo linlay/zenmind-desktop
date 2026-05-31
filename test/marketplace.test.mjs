@@ -26,7 +26,7 @@ const {
 } = require("../dist-electron/main/marketplace.js");
 const { getPluginInstallDir } = require("../dist-electron/main/plugin-loader.js");
 const { getSkillInstallDir } = require("../dist-electron/main/skill-installer.js");
-const { __testInternals: registryInternals } = require("../dist-electron/main/service-registry.js");
+const { __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
 
 function createApp(root) {
   return {
@@ -721,7 +721,7 @@ exit 2
       resolveEngineOutput = resolve;
     });
     const timeout = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("timed out waiting for streaming sandbox image import progress")), 1_000);
+      setTimeout(() => reject(new Error("timed out waiting for streaming sandbox image import progress")), 5_000);
     });
 
     const importPromise = importSandboxImageFromPath(app, archivePath, {

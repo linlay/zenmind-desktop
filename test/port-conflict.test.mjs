@@ -10,7 +10,7 @@ const {
   isPortConflictError,
   killProcessByPid,
   showPortConflictDialog
-} = require("../dist-electron/main/port-conflict.js");
+} = require("../dist-electron/main/services/port-conflict.js");
 
 test("isPortConflictError recognizes common port conflict errors", () => {
   assert.equal(isPortConflictError("listen tcp :11949: bind: address already in use"), true);

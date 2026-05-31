@@ -3,20 +3,22 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { registerPlugin, unregisterPlugin } = require("../dist-electron/main/service-registry.js");
+const { registerPlugin, unregisterPlugin } = require("../dist-electron/main/services/service-registry.js");
 
-test("registerPlugin keeps backward compatibility for legacy hasFrontend manifests", () => {
+test("registerPlugin ignores legacy hasFrontend without frontend.mode", () => {
   const definition = registerPlugin({
-    id: "legacy-plugin",
-    name: "Legacy Plugin",
+    id: "current-plugin",
+    name: "Current Plugin",
     version: "v1.0.0",
-    description: "legacy manifest",
+    description: "current manifest",
     hasFrontend: true,
+    scripts: {
+      start: ["./start.sh"],
+      stop: ["./stop.sh"]
+    },
     runtime: {
       pidRelativePath: ".runtime/legacy.pid",
-      logRelativePath: ".runtime/legacy.log",
-      startCommand: ["./start.sh"],
-      stopCommand: ["./stop.sh"]
+      logRelativePath: ".runtime/legacy.log"
     },
     web: {
       routePath: "/legacy/",
@@ -25,22 +27,26 @@ test("registerPlugin keeps backward compatibility for legacy hasFrontend manifes
     }
   });
 
-  assert.equal(definition.frontendMode, "standalone");
-  unregisterPlugin("legacy-plugin");
+  assert.equal(definition.frontendMode, "none");
+  unregisterPlugin("current-plugin");
 });
 
-test("registerPlugin preserves explicit frontendMode", () => {
+test("registerPlugin preserves explicit frontend.mode", () => {
   const definition = registerPlugin({
     id: "embedded-plugin",
     name: "Embedded Plugin",
     version: "v1.0.0",
     description: "embedded manifest",
-    frontendMode: "embedded",
+    frontend: {
+      mode: "embedded"
+    },
+    scripts: {
+      start: ["./start.sh"],
+      stop: ["./stop.sh"]
+    },
     runtime: {
       pidRelativePath: ".runtime/embedded.pid",
-      logRelativePath: ".runtime/embedded.log",
-      startCommand: ["./start.sh"],
-      stopCommand: ["./stop.sh"]
+      logRelativePath: ".runtime/embedded.log"
     },
     web: {
       routePath: "/",
@@ -60,13 +66,17 @@ test("registerPlugin preserves runtime.errorLogRelativePath when provided", () =
     name: "Windows Plugin",
     version: "v1.0.0",
     description: "windows manifest",
-    frontendMode: "none",
+    frontend: {
+      mode: "none"
+    },
+    scripts: {
+      start: ["./start.ps1", "--daemon"],
+      stop: ["./stop.ps1"]
+    },
     runtime: {
       pidRelativePath: ".runtime/windows.pid",
       logRelativePath: ".runtime/windows.log",
-      errorLogRelativePath: ".runtime/windows.stderr.log",
-      startCommand: ["./start.ps1", "--daemon"],
-      stopCommand: ["./stop.ps1"]
+      errorLogRelativePath: ".runtime/windows.stderr.log"
     },
     web: {
       routePath: "",

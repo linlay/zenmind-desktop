@@ -12,12 +12,12 @@ const {
   __testInternals: serviceManagerInternals,
   getInstallDir,
   getServiceState
-} = require("../dist-electron/main/service-manager.js");
+} = require("../dist-electron/main/services/manager/index.js");
 const {
   __testInternals: registryInternals,
   getService,
   registerPlugin
-} = require("../dist-electron/main/service-registry.js");
+} = require("../dist-electron/main/services/service-registry.js");
 
 function createApp(userDataRoot) {
   const tempRoot = path.dirname(userDataRoot);

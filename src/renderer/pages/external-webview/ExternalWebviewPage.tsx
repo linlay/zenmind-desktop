@@ -35,7 +35,7 @@ import {
   type EmbeddedWebReadInclude,
   type EmbeddedWebStructuredTarget
 } from "../../../shared/embedded-web-scripts";
-import { registerAssistantPageContextProvider } from "../../services/assistantPageContext";
+import { registerAssistantPageContextProvider } from "../../copilot/page-context/assistantPageContext";
 import {
   getCurrentPageContextSnapshot,
   publishCurrentPageContextSnapshot,

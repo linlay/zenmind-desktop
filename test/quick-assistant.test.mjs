@@ -7,7 +7,7 @@ const {
   isQuickAssistantSupportedPlatform,
   QUICK_ASSISTANT_SHORTCUT,
   QUICK_ASSISTANT_WEB_COPILOT_SIZE
-} = await import("../dist-electron/main/quick-assistant.js");
+} = await import("../dist-electron/main/copilot/quick-copilot/quick-copilot.js");
 
 test("quick assistant is only enabled on macOS", () => {
   assert.equal(isQuickAssistantSupportedPlatform("darwin"), true);

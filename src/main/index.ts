@@ -17,7 +17,6 @@ import {
   type MenuItemConstructorOptions,
   type Rectangle,
   type WebContents,
-  type WebFrameMain
 } from "electron";
 import { issueAgentAccessToken } from "./agent-auth";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
@@ -125,17 +124,13 @@ import type {
   AssistantCreateCoderProjectRequest,
   AssistantCreateCoderProjectResult,
   AssistantAttachmentTaskProgress,
-  AssistantNavActionResult,
   AssistantNavAgentItemsResult,
   AssistantSettingsInput,
   AssistantStartRunRequest,
   AssistantSubmitAwaitingRequest,
   AssistantVoiceCorrectionRequest,
   AssistantVoiceTranscriptionRequest,
-  DesktopActionRendererRequest,
-  DesktopActionRendererResponse,
   DebugEvent,
-  DebugWebviewSurfaceRegistration,
   DesktopPetAgentOption,
   DesktopPetSettingsInput,
   RendererDiagnosticReport,
@@ -175,9 +170,11 @@ import {
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { safeConsoleError } from "./safe-console";
 import { callAgentPlatform, handleDesktopActionRequest, startDesktopActionBridge } from "./desktop-action-bridge";
+import { callDesktopActionRenderer } from "./desktop-action-renderer";
 import { DESKTOP_ACTION_DEFINITIONS } from "../shared/desktop-actions";
 import { AgentPlatformPetStatusClient } from "./copilot/pet-copilot/pet-status-client";
 import { AgentPlatformPetStreamClient } from "./copilot/pet-copilot/pet-stream-client";
+import { createDesktopPetBrowserWindow } from "./copilot/pet-copilot/window";
 import {
   clampDesktopPetPosition,
   createDesktopPetState,
@@ -221,11 +218,16 @@ import { registerTaskBoardIpcHandlers } from "./ipc/task-board-handlers";
 import { registerSsoIpcHandlers } from "./ipc/sso-handlers";
 import { registerSettingsIpcHandlers } from "./ipc/settings-handlers";
 import { registerMarketplaceIpcHandlers } from "./ipc/marketplace-handlers";
+import { registerDebugIpcHandlers } from "./ipc/debug-handlers";
 import {
   isQuickAssistantMediaPermissionAllowed,
 } from "./copilot/quick-copilot/quick-copilot";
 import { QuickCopilotWindowController } from "./copilot/quick-copilot/window";
 import { registerQuickCopilotIpcHandlers } from "./copilot/quick-copilot/ipc";
+import {
+  createAgentWebclientRoute,
+  scheduleQuickAgentOpenRequest
+} from "./copilot/quick-copilot/routing";
 import {
   registerQuickCopilotShortcut,
   unregisterQuickCopilotShortcut
@@ -270,6 +272,11 @@ import {
   createMainWindowLifecycleController,
   loadMainWindowRenderer
 } from "./window-manager";
+import {
+  getRendererEntry,
+  loadRendererRoute
+} from "./renderer-route";
+import { parseSafeLoopbackWebUrl } from "./loopback-url";
 
 const appState = createMainAppState();
 const mainProcessContext = createMainProcessContext({
@@ -285,10 +292,6 @@ const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
 const LOG_VIEWER_ROUTE = "/log-viewer";
 const DEBUG_VIEWER_SHORTCUT = "CommandOrControl+Shift+D";
 const SHUTDOWN_CLEANUP_DEADLINE_MS = 10_000;
-const QUICK_AGENT_WEBCLIENT_PATHNAMES = new Set(["/copilot"]);
-const QUICK_AGENT_OPEN_RETRY_COUNT = 24;
-const QUICK_AGENT_OPEN_RETRY_MS = 180;
-const DESKTOP_ACTION_RENDERER_TIMEOUT_MS = 8_000;
 const ZENMIND_APP_ID = "cc.zenmind.desktop";
 const ZENMIND_PRODUCT_NAME = "ZenMind";
 const INSTALLER_SHUTDOWN_ARG = "--zenmind-shutdown-for-update";
@@ -422,44 +425,15 @@ const desktopPetDragController = createDesktopPetDragController({
 const desktopPetWindowController = createDesktopPetWindowController({
   platform: mainProcessContext.platform,
   createWindow: (bounds) => {
-    const isMac = mainProcessContext.platform === "darwin";
-    const isWindows = mainProcessContext.platform === "win32";
-
-    const win = new BrowserWindow({
-      ...bounds,
-      show: false,
-      frame: false,
-      transparent: true,
-      resizable: false,
-      maximizable: false,
-      minimizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      hasShadow: false,
-      title: "ZenMind Desktop Xianzun",
-      backgroundColor: "#00000000",
-      ...(isWindows ? { thickFrame: false } : {}),
-      webPreferences: {
-        preload: path.join(__dirname, "..", "preload", "index.js"),
-        contextIsolation: true,
-        nodeIntegration: false,
-        devTools: false,
-        sandbox: false
+    const win = createDesktopPetBrowserWindow({
+      bounds,
+      platform: mainProcessContext.platform,
+      preloadPath: path.join(__dirname, "..", "preload", "index.js"),
+      onClosed: () => {
+        appState.desktopPetWindow = null;
       }
     });
-
-    if (isMac) {
-      win.setAlwaysOnTop(true, "floating");
-      win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    } else if (isWindows) {
-      win.setAlwaysOnTop(true);
-    }
-
     appState.desktopPetWindow = win;
-    win.on("closed", () => {
-      appState.desktopPetWindow = null;
-    });
-
     return win;
   },
   getSettings: () => appState.desktopPetSettings,
@@ -556,30 +530,6 @@ function delay(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
-}
-
-function getRendererEntry() {
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
-  if (devServerUrl) {
-    return devServerUrl;
-  }
-  return path.join(__dirname, "..", "..", "dist-renderer", "index.html");
-}
-
-function getRendererRouteUrl(routePath: string) {
-  const rendererEntry = getRendererEntry();
-  if (process.env.VITE_DEV_SERVER_URL) {
-    return `${rendererEntry.replace(/\/$/u, "")}/#${routePath}`;
-  }
-  return rendererEntry;
-}
-
-function loadRendererRoute(targetWindow: BrowserWindow, routePath: string) {
-  const rendererEntry = getRendererEntry();
-  if (process.env.VITE_DEV_SERVER_URL) {
-    return targetWindow.loadURL(getRendererRouteUrl(routePath));
-  }
-  return targetWindow.loadFile(rendererEntry, { hash: routePath });
 }
 
 const quickCopilotWindowController = new QuickCopilotWindowController({
@@ -929,122 +879,6 @@ function setDesktopPetWindowMouseInteractive(interactive: boolean) {
   return { ok: true };
 }
 
-function collectWebFrames(frame: WebFrameMain, frames: WebFrameMain[] = []) {
-  frames.push(frame);
-  for (const childFrame of frame.frames) {
-    collectWebFrames(childFrame, frames);
-  }
-  return frames;
-}
-
-function isLoopbackHostname(hostname: string) {
-  const normalized = hostname.toLowerCase();
-  return normalized === "localhost" ||
-    normalized === "::1" ||
-    normalized === "[::1]" ||
-    /^127(?:\.\d{1,3}){3}$/u.test(normalized);
-}
-
-function parseSafeLoopbackWebUrl(value: string) {
-  try {
-    const parsed = new URL(value);
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      return null;
-    }
-    return isLoopbackHostname(parsed.hostname) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function createAgentWebclientRoute(request: {
-  agentKey?: string | null;
-  chatId?: string | null;
-}) {
-  const agentKey = request.agentKey?.trim() ?? "";
-  if (!agentKey) {
-    return ASSISTANT_TARGET_PATH;
-  }
-
-  const params = new URLSearchParams();
-  const chatId = request.chatId?.trim() ?? "";
-  if (chatId) {
-    params.set("chatId", chatId);
-  }
-  const query = params.toString();
-  return `/agent/${encodeURIComponent(agentKey)}${query ? `?${query}` : ""}`;
-}
-
-function isQuickAgentWebclientFrame(frame: WebFrameMain) {
-  try {
-    return QUICK_AGENT_WEBCLIENT_PATHNAMES.has(new URL(frame.url).pathname);
-  } catch {
-    return false;
-  }
-}
-
-function createQuickAgentOpenScript(request: {
-  agentKey: string;
-  focusComposerOnComplete: boolean;
-}) {
-  const agentKey = request.agentKey.trim();
-  if (!agentKey) {
-    return "true;";
-  }
-  return [
-    "window.dispatchEvent(new CustomEvent('agent:select-worker', {",
-    `  detail: ${JSON.stringify({
-      agentKey,
-      focusComposerOnComplete: request.focusComposerOnComplete
-    })}`,
-    "}));",
-    "true;"
-  ].join("\n");
-}
-
-function dispatchQuickAgentOpenRequest(
-  targetWindow: BrowserWindow,
-  request: {
-    agentKey: string;
-    focusComposerOnComplete: boolean;
-  }
-) {
-  const script = createQuickAgentOpenScript(request);
-  const frames = collectWebFrames(targetWindow.webContents.mainFrame).filter(isQuickAgentWebclientFrame);
-  let dispatched = false;
-  for (const frame of frames) {
-    dispatched = true;
-    frame.executeJavaScript(script).catch((error) => {
-      console.warn("[quick-assistant] failed to open agent webclient copilot", error);
-    });
-  }
-  return dispatched;
-}
-
-function scheduleQuickAgentOpenRequest(
-  targetWindow: BrowserWindow,
-  request: {
-    chatId: string;
-    agentKey: string;
-    focusComposerOnComplete: boolean;
-  },
-  attempt = 0
-) {
-  if (targetWindow.isDestroyed()) {
-    return;
-  }
-  if (dispatchQuickAgentOpenRequest(targetWindow, request)) {
-    return;
-  }
-  if (attempt >= QUICK_AGENT_OPEN_RETRY_COUNT) {
-    console.warn("[quick-assistant] agent webclient copilot frame was not ready");
-    return;
-  }
-  setTimeout(() => {
-    scheduleQuickAgentOpenRequest(targetWindow, request, attempt + 1);
-  }, QUICK_AGENT_OPEN_RETRY_MS);
-}
-
 async function ensureAssistantTargetServicesRunning(source: string) {
   const failures: string[] = [];
 
@@ -1229,34 +1063,6 @@ async function openDebugViewerWindow() {
 
 function closeDebugViewerWindow() {
   return debugViewerWindowController.close();
-}
-
-function readDebugWebContentsId(value: unknown) {
-  const webContentsId = typeof value === "number" ? value : Number(value);
-  if (!Number.isInteger(webContentsId) || webContentsId <= 0) {
-    throw new Error("缺少有效的 webContentsId。");
-  }
-  return webContentsId;
-}
-
-function normalizeDebugSurfaceRegistration(input: unknown): DebugWebviewSurfaceRegistration {
-  const record = input && typeof input === "object" && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : {};
-  const webContentsId = readDebugWebContentsId(record.webContentsId);
-  const kind = record.kind === "plugin" || record.kind === "external" ? record.kind : "webview";
-  const readOptionalString = (key: string) => {
-    const value = record[key];
-    return typeof value === "string" && value.trim() ? value.trim() : undefined;
-  };
-  return {
-    webContentsId,
-    kind,
-    ...(readOptionalString("surfaceId") ? { surfaceId: readOptionalString("surfaceId") } : {}),
-    ...(readOptionalString("surfaceLabel") ? { surfaceLabel: readOptionalString("surfaceLabel") } : {}),
-    ...(readOptionalString("tabId") ? { tabId: readOptionalString("tabId") } : {}),
-    ...(readOptionalString("url") ? { url: readOptionalString("url") } : {})
-  };
 }
 
 function closeLogViewerWindow() {
@@ -1452,89 +1258,6 @@ function emitAssistantNavigationAgentsChanged(result: AssistantNavAgentItemsResu
   }
 }
 
-function workspaceNameFromPath(workspaceDir: string): string {
-  const normalized = String(workspaceDir || "").trim();
-  return normalized.split(/[\\/]+/).filter(Boolean).pop() || "project";
-}
-
-function buildCoderProjectAgentCreateRequest(workspaceDir: string) {
-  return {
-    definition: {
-      name: workspaceNameFromPath(workspaceDir),
-      mode: "CODER",
-      icon: {
-        name: "folder"
-      },
-      workspace: {
-        root: workspaceDir
-      },
-      runtimeConfig: {
-        workspaceRoot: workspaceDir
-      },
-      visibility: {
-        scopes: ["nav", "copilot"]
-      }
-    }
-  };
-}
-
-function sanitizeDownloadFilename(filename: string, fallback: string) {
-  const normalized = filename.trim() || fallback;
-  return normalized.replace(/[<>:"/\\|?*\u0000-\u001F]/gu, "_").slice(0, 180) || fallback;
-}
-
-function getAssistantExportDefaultPath(filename: string) {
-  const safeFilename = sanitizeDownloadFilename(filename, "chat-export.json");
-  if (mainProcessContext.platform === "win32") {
-    return path.join(app.getPath("downloads"), safeFilename);
-  }
-  if (mainProcessContext.platform === "darwin") {
-    return path.join(app.getPath("downloads"), safeFilename);
-  }
-  return path.join(app.getPath("home"), safeFilename);
-}
-
-function getDesktopDownloadDefaultPath(filename: string) {
-  const safeFilename = sanitizeDownloadFilename(filename, "download");
-  if (mainProcessContext.platform === "win32") {
-    return path.join(app.getPath("downloads"), safeFilename);
-  }
-  if (mainProcessContext.platform === "darwin") {
-    return path.join(app.getPath("downloads"), safeFilename);
-  }
-  return path.join(app.getPath("home"), safeFilename);
-}
-
-async function getAvailableFilePath(targetPath: string) {
-  const parsedPath = path.parse(targetPath);
-  for (let index = 0; index < 1000; index += 1) {
-    const candidatePath =
-      index === 0
-        ? targetPath
-        : path.join(parsedPath.dir, `${parsedPath.name} (${index})${parsedPath.ext}`);
-    try {
-      await fs.promises.access(candidatePath, fs.constants.F_OK);
-    } catch {
-      return candidatePath;
-    }
-  }
-  return path.join(parsedPath.dir, `${parsedPath.name}-${Date.now()}${parsedPath.ext}`);
-}
-
-async function saveAssistantChatExport(
-  assistantBridge: AgentPlatformAssistantBridge,
-  chatId: string
-): Promise<AssistantNavActionResult> {
-  const result = await assistantBridge.downloadChatExport(chatId);
-  if (!result.ok) {
-    return { ok: false, message: result.message };
-  }
-  const exportPath = await getAvailableFilePath(getAssistantExportDefaultPath(result.filename));
-  await fs.promises.mkdir(path.dirname(exportPath), { recursive: true });
-  await fs.promises.writeFile(exportPath, result.bytes);
-  return { ok: true, message: "已下载会话导出。", filePath: exportPath };
-}
-
 async function runServiceMutation<T>(task: () => Promise<T>) {
   const previousTask = appState.serviceMutationQueue;
   let releaseQueue = () => {};
@@ -1548,41 +1271,6 @@ async function runServiceMutation<T>(task: () => Promise<T>) {
     releaseQueue();
     notifyServicesChanged();
   }
-}
-
-async function callDesktopActionRenderer(
-  request: DesktopActionRendererRequest
-): Promise<DesktopActionRendererResponse> {
-  const targetWindow = appState.mainWindow;
-  if (!targetWindow || targetWindow.isDestroyed()) {
-    return {
-      requestId: request.requestId,
-      action: request.action,
-      ok: false,
-      error: {
-        code: "renderer_unavailable",
-        message: "Desktop 主窗口不可用。"
-      }
-    };
-  }
-
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      appState.desktopActionRendererRequests.delete(request.requestId);
-      resolve({
-        requestId: request.requestId,
-        action: request.action,
-        ok: false,
-        error: {
-          code: "renderer_timeout",
-          message: "当前页面未及时响应 Desktop 动作请求。"
-        }
-      });
-    }, DESKTOP_ACTION_RENDERER_TIMEOUT_MS);
-
-    appState.desktopActionRendererRequests.set(request.requestId, { resolve, timeout });
-    targetWindow.webContents.send("desktopActions.call", request);
-  });
 }
 
 function navigateMainWindow(targetPath: string) {
@@ -2001,7 +1689,10 @@ function registerIpcHandlers(context: MainProcessContext) {
     assistantBridge,
     navigate: showMainWindow,
     openLogViewer: openLogViewerWindow,
-    callRendererAction: callDesktopActionRenderer,
+    callRendererAction: (request) => callDesktopActionRenderer(request, {
+      getMainWindow: () => appState.mainWindow,
+      pendingRequests: appState.desktopActionRendererRequests
+    }),
     cdpIntegration
   });
   startDesktopActionBridge({
@@ -2013,32 +1704,12 @@ function registerIpcHandlers(context: MainProcessContext) {
     revealPathInFileManager,
     reportRendererDiagnostic
   }));
-  ipcMain.handle("debug.openViewer", async () => openDebugViewerWindow());
-  ipcMain.handle("debug.closeViewer", async () => closeDebugViewerWindow());
-  ipcMain.handle("debug.listEvents", async () => debugEventStore.listEvents());
-  ipcMain.handle("debug.clearEvents", async () => {
-    debugEventStore.clearEvents();
-    return { ok: true };
-  });
-  ipcMain.handle("debug.registerWebviewSurface", async (_event, metadata) => {
-    webviewDebugManager.registerSurface(normalizeDebugSurfaceRegistration(metadata));
-    return { ok: true };
-  });
-  ipcMain.handle("debug.unregisterWebviewSurface", async (_event, webContentsId) => {
-    webviewDebugManager.unregisterSurface(readDebugWebContentsId(webContentsId));
-    return { ok: true };
-  });
-  ipcMain.handle("debug.openWebviewDevTools", async (_event, rawWebContentsId) => {
-    const webContentsId = readDebugWebContentsId(rawWebContentsId);
-    if (!debugEventStore.getSurface(webContentsId)) {
-      return { ok: false, message: "未找到对应的内嵌网页。" };
-    }
-    const targetContents = webContents.fromId(webContentsId);
-    if (!targetContents || targetContents.isDestroyed()) {
-      return { ok: false, message: "内嵌网页已关闭。" };
-    }
-    targetContents.openDevTools({ mode: "detach" });
-    return { ok: true };
+  registerDebugIpcHandlers(ipcMain, {
+    openViewer: openDebugViewerWindow,
+    closeViewer: closeDebugViewerWindow,
+    debugEventStore,
+    webviewDebugManager,
+    webContents
   });
 
   registerAssistantIpcHandlers(ipcMain, createAssistantIpcHandlerOptions(context, {

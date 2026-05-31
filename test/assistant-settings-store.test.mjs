@@ -7,7 +7,7 @@ import path from "node:path";
 const {
   readAssistantSettingsFromRoot,
   saveAssistantSettingsToRoot
-} = await import("../dist-electron/main/assistant/settings-store.js");
+} = await import("../dist-electron/main/copilot/core/settings-store.js");
 
 function makeTempRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-assistant-settings-"));
