@@ -15,6 +15,7 @@ import {
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
   type ServiceWebviewBridgeMessage
 } from "../shared/service-webview-bridge";
+import { resolveServiceWebviewWsMonitorUrl } from "../shared/service-webview-ws-monitor";
 
 const PAGE_TO_PRELOAD_EVENT = "__zenmindServiceWebviewBridgeMessage";
 const PRELOAD_TO_PAGE_EVENT = "__zenmindServiceWebviewBridgeDeliver";
@@ -40,6 +41,14 @@ const MAIN_WORLD_SCRIPT = `
     "zenmind:pan-app-auth:response",
     ...${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES)}
   ]);
+  const resolveServiceWebviewWsMonitorUrl = ${resolveServiceWebviewWsMonitorUrl.toString()};
+  const initialWsSource = (() => {
+    try {
+      return new URLSearchParams(window.location.search || "").get("wsSource")?.trim() || "";
+    } catch {
+      return "";
+    }
+  })();
   const originalWindowPostMessage = window.postMessage.bind(window);
   const originalParentPostMessage = window.parent && window.parent !== window && typeof window.parent.postMessage === "function"
     ? window.parent.postMessage.bind(window.parent)
@@ -68,6 +77,66 @@ const MAIN_WORLD_SCRIPT = `
 
   function dispatchToPreload(value) {
     window.dispatchEvent(new CustomEvent(PAGE_TO_PRELOAD_EVENT, { detail: value }));
+  }
+
+  function readWsMonitorPageHref() {
+    if (!initialWsSource) {
+      return window.location.href;
+    }
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.get("wsSource")) {
+        url.searchParams.set("wsSource", initialWsSource);
+      }
+      return url.toString();
+    } catch {
+      return window.location.href;
+    }
+  }
+
+  function installWebSocketMonitorMetadata() {
+    const OriginalWebSocket = window.WebSocket;
+    if (typeof OriginalWebSocket !== "function" || OriginalWebSocket.__ZENMIND_WS_MONITOR_WRAPPED__) {
+      return;
+    }
+    function ZenmindServiceWebviewWebSocket(url, protocols) {
+      const nextUrl = resolveServiceWebviewWsMonitorUrl(url, readWsMonitorPageHref());
+      if (arguments.length > 1) {
+        return new OriginalWebSocket(nextUrl, protocols);
+      }
+      return new OriginalWebSocket(nextUrl);
+    }
+    try {
+      Object.setPrototypeOf(ZenmindServiceWebviewWebSocket, OriginalWebSocket);
+    } catch {
+      // Ignore prototype wiring failures in restricted renderer contexts.
+    }
+    ZenmindServiceWebviewWebSocket.prototype = OriginalWebSocket.prototype;
+    for (const key of ["CONNECTING", "OPEN", "CLOSING", "CLOSED"]) {
+      try {
+        Object.defineProperty(ZenmindServiceWebviewWebSocket, key, {
+          configurable: true,
+          enumerable: true,
+          value: OriginalWebSocket[key]
+        });
+      } catch {
+        // Static WebSocket constants are best-effort metadata.
+      }
+    }
+    try {
+      Object.defineProperty(ZenmindServiceWebviewWebSocket, "__ZENMIND_WS_MONITOR_WRAPPED__", {
+        configurable: true,
+        enumerable: false,
+        value: true
+      });
+    } catch {
+      ZenmindServiceWebviewWebSocket.__ZENMIND_WS_MONITOR_WRAPPED__ = true;
+    }
+    try {
+      window.WebSocket = ZenmindServiceWebviewWebSocket;
+    } catch {
+      // Ignore non-writable WebSocket globals.
+    }
   }
 
   function readDesktopAuthContext() {
@@ -125,6 +194,8 @@ const MAIN_WORLD_SCRIPT = `
     }
     original(value, targetOrigin, transfer);
   }
+
+  installWebSocketMonitorMetadata();
 
   try {
     window.postMessage = function zenmindWindowPostMessage(value, targetOrigin, transfer) {

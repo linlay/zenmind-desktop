@@ -9,6 +9,7 @@ type ThemeMode = "light" | "dark";
 const QUICK_COPILOT_THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const QUICK_COPILOT_STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
+const AGENT_WEBCLIENT_QUICK_COPILOT_SURFACE_ID = "agent-webclient-quick-copilot";
 
 function readStoredThemeMode() {
   if (typeof window === "undefined") {
@@ -94,6 +95,7 @@ export function QuickCopilotRoute() {
         embedPath={AGENT_WEBCLIENT_COPILOT_PATH}
         hostTheme={hostTheme}
         pluginId="agent-webclient"
+        surfaceId={AGENT_WEBCLIENT_QUICK_COPILOT_SURFACE_ID}
         surfaceLabel="助手"
       />
       <span className="quick-web-copilot-agent-marker" data-open-agent-key={quickAssistantAgentKey} aria-hidden="true" />

@@ -2239,6 +2239,8 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /loadInitialEmbeddedUrlDirectly\?: boolean/);
   assert.match(pluginPage, /suppressInitialLoadingCopy\?: boolean/);
   assert.match(pluginPage, /const surfaceId = surfaceIdProp\?\.trim\(\) \|\| pluginId/);
+  assert.match(pluginPage, /resolveAgentWebclientWsSource/);
+  assert.match(pluginPage, /wsSource/);
   assert.match(pluginPage, /registerPluginSurfaceWebviewRef\(surfaceId, webviewRef\)/);
   assert.match(pluginPage, /const webviewOriginSrcUrl = useMemo\([\s\S]{0,120}buildPluginWebviewSrcUrl\(embeddedUrl\)/);
   assert.match(pluginPage, /const webviewDirectLoadScope = \[[\s\S]{0,160}webviewOriginSrcUrl/);
@@ -2247,6 +2249,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   const taskBoardPage = readSourceFile("src", "renderer", "pages", "task-board", "TaskBoardPage.tsx");
   assert.match(taskBoardPage, /loadInitialEmbeddedUrlDirectly/);
   assert.match(taskBoardPage, /suppressInitialLoadingCopy/);
+  assert.match(taskBoardPage, /surfaceId="agent-webclient-task-board-chat"/);
   assert.match(pluginPage, /service\?\.status !== "running"[\s\S]{0,80}\|\|\s*skipContextRegistration/);
   assert.match(pluginPage, /!embeddedUrl[\s\S]{0,80}\|\|\s*skipContextRegistration/);
   assert.match(pluginPage, /tryReadPluginWebviewPageContext/);
@@ -2324,6 +2327,9 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewPreload, /agent-webclient\.appAccessToken/);
   assert.match(serviceWebviewPreload, /agent-webclient\.appAuthContext/);
   assert.match(serviceWebviewPreload, /window\.__AGENT_APP_ACCESS_TOKEN/);
+  assert.match(serviceWebviewPreload, /resolveServiceWebviewWsMonitorUrl/);
+  assert.match(serviceWebviewPreload, /window\.WebSocket = ZenmindServiceWebviewWebSocket/);
+  assert.match(serviceWebviewPreload, /initialWsSource/);
   assert.match(serviceWebviewPreload, /sendBridgeDebug/);
   assert.match(serviceWebviewPreload, /preload-installed/);
   assert.match(serviceWebviewPreload, /auth-response-seeded/);

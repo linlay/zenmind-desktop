@@ -9,6 +9,7 @@ import type {
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
+import { getDesktopDeviceId } from "../../device-identity";
 
 type AgentPlatformApiResponse<T> = {
   code?: number;
@@ -281,12 +282,16 @@ function createApiUrl(baseUrl: string, pathname: string) {
   return url.toString();
 }
 
-function createWsUrl(baseUrl: string, token: string) {
+const ASSISTANT_NAVIGATION_WS_SOURCE = "desktop-assistant-nav-status";
+
+function createWsUrl(baseUrl: string, token: string, source = "", deviceId = "") {
   const url = new URL("/ws", baseUrl);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   if (token.trim()) {
     url.searchParams.set("token", token.trim());
   }
+  url.searchParams.set("source", source.trim());
+  url.searchParams.set("deviceId", deviceId.trim());
   return url.toString();
 }
 
@@ -899,7 +904,14 @@ export class AssistantNavigationStatusClient {
     this.closeWebSocket();
     this.lastBaseUrl = baseUrl;
     this.lastToken = token;
-    const socket = new WebSocketConstructor(createWsUrl(baseUrl, token));
+    const socket = new WebSocketConstructor(
+      createWsUrl(
+        baseUrl,
+        token,
+        ASSISTANT_NAVIGATION_WS_SOURCE,
+        getDesktopDeviceId(this.options.app)
+      )
+    );
     this.ws = socket;
     socket.onmessage = (event) => this.handleWebSocketMessage(event.data);
     socket.onclose = () => this.handleWebSocketClosed();

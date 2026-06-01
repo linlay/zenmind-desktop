@@ -2040,6 +2040,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               active
               hostTheme={hostTheme}
               pluginId="agent-webclient"
+              surfaceId="agent-webclient-task-board-chat"
               surfaceLabel={t("taskBoard.chat.surfaceLabel")}
               embedPath={buildTaskBoardChatEmbedPath(chatModalRequest)}
               skipContextRegistration

@@ -1,5 +1,6 @@
 import type { App } from "electron";
 import type { AgentAuthIssueResult, AssistantNavAgentIcon, DesktopPetAgentOption, ServiceId, ServiceState } from "../../../shared/contracts";
+import { getDesktopDeviceId } from "../../device-identity";
 import type { DesktopPetBoundAgentStatus } from "./desktop-pet";
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
@@ -136,12 +137,16 @@ function createApiUrl(baseUrl: string, pathname: string) {
   return url.toString();
 }
 
-function createWsUrl(baseUrl: string, token: string) {
+const DESKTOP_PET_STATUS_WS_SOURCE = "desktop-pet-status";
+
+function createWsUrl(baseUrl: string, token: string, source = "", deviceId = "") {
   const url = new URL("/ws", baseUrl);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   if (token.trim()) {
     url.searchParams.set("token", token.trim());
   }
+  url.searchParams.set("source", source.trim());
+  url.searchParams.set("deviceId", deviceId.trim());
   return url.toString();
 }
 
@@ -703,7 +708,12 @@ export class AgentPlatformPetStatusClient {
     this.closeWebSocket();
     this.lastBaseUrl = baseUrl;
     this.lastToken = token;
-    const wsUrl = createWsUrl(baseUrl, token);
+    const wsUrl = createWsUrl(
+      baseUrl,
+      token,
+      DESKTOP_PET_STATUS_WS_SOURCE,
+      getDesktopDeviceId(this.options.app)
+    );
     const socket = new WebSocketConstructor(wsUrl);
     this.ws = socket;
     socket.onmessage = (event) => this.handleWebSocketMessage(event.data);

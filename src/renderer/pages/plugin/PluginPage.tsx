@@ -66,6 +66,51 @@ type PluginPageProps = {
 
 const MAX_PLUGIN_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_PLUGIN_PAGE_CONTEXT_BODY_TEXT = 40000;
+const AGENT_WEBCLIENT_SOURCE_FALLBACK = "agent-webclient";
+const AGENT_WEBCLIENT_SOURCE_CHAT = "agent-webclient-chat";
+const AGENT_WEBCLIENT_SOURCE_COPILOT = "agent-webclient-copilot";
+const AGENT_WEBCLIENT_SOURCE_COPILOT_DOCK = "agent-webclient-copilot-dock";
+const AGENT_WEBCLIENT_SOURCE_MANAGEMENT = "agent-webclient-management";
+const AGENT_WEBCLIENT_SOURCE_QUICK_COPILOT = "agent-webclient-quick-copilot";
+const AGENT_WEBCLIENT_SOURCE_TASK_BOARD_CHAT = "agent-webclient-task-board-chat";
+
+function isCopilotEmbedPath(value: string) {
+  return value === "/copilot" || value.startsWith("/copilot/") || value.startsWith("/copilot?");
+}
+
+function resolveAgentWebclientWsSource(surfaceId: string, embedPath: string | undefined) {
+  const normalizedSurfaceId = surfaceId.trim();
+  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_COPILOT_DOCK) {
+    return AGENT_WEBCLIENT_SOURCE_COPILOT_DOCK;
+  }
+  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_QUICK_COPILOT) {
+    return AGENT_WEBCLIENT_SOURCE_QUICK_COPILOT;
+  }
+  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_TASK_BOARD_CHAT) {
+    return AGENT_WEBCLIENT_SOURCE_TASK_BOARD_CHAT;
+  }
+  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_CHAT) {
+    return AGENT_WEBCLIENT_SOURCE_CHAT;
+  }
+  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_COPILOT) {
+    return AGENT_WEBCLIENT_SOURCE_COPILOT;
+  }
+  if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_FALLBACK) {
+    return AGENT_WEBCLIENT_SOURCE_MANAGEMENT;
+  }
+
+  const normalizedEmbedPath = (embedPath ?? "").trim();
+  if (normalizedEmbedPath.startsWith("/agent/")) {
+    return AGENT_WEBCLIENT_SOURCE_CHAT;
+  }
+  if (isCopilotEmbedPath(normalizedEmbedPath)) {
+    return AGENT_WEBCLIENT_SOURCE_COPILOT;
+  }
+  if (normalizedEmbedPath === "/agents" || normalizedEmbedPath === "/schedules" || normalizedEmbedPath === "/memory") {
+    return AGENT_WEBCLIENT_SOURCE_MANAGEMENT;
+  }
+  return AGENT_WEBCLIENT_SOURCE_FALLBACK;
+}
 const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
   const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();
   const readMetaDescription = () => {
@@ -490,6 +535,9 @@ export function PluginPage({
     service?.id === "agent-webclient"
       ? embedPath || routeEmbedPath || undefined
       : undefined;
+  const wsSource = service?.id === "agent-webclient"
+    ? resolveAgentWebclientWsSource(surfaceId, effectiveEmbedPath)
+    : undefined;
   const embeddedUrl = useMemo(() => {
     return buildPluginEmbeddedUrl(service?.id, webUrl, {
       hostTheme,
@@ -497,6 +545,7 @@ export function PluginPage({
       desktopAuthContext:
         service?.id === "agent-webclient" ? webviewReloadKey : undefined,
       embedPath: effectiveEmbedPath,
+      wsSource,
       baseUrl: service?.healthMeta.port
         ? `http://127.0.0.1:${service.healthMeta.port}`
         : undefined,
@@ -509,6 +558,7 @@ export function PluginPage({
     service?.id,
     webUrl,
     webviewReloadKey,
+    wsSource,
   ]);
   const webviewOriginSrcUrl = useMemo(
     () => buildPluginWebviewSrcUrl(embeddedUrl),

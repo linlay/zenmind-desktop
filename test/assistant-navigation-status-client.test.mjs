@@ -15,6 +15,18 @@ const {
   __testInternals
 } = require("../dist-electron/main/copilot/core/assistant-navigation-status-client.js");
 
+test("assistant navigation websocket URL reports monitor metadata", () => {
+  assert.equal(
+    __testInternals.createWsUrl(
+      "http://127.0.0.1:7078",
+      "token-1",
+      "desktop-assistant-nav-status",
+      "device-1"
+    ),
+    "ws://127.0.0.1:7078/ws?token=token-1&source=desktop-assistant-nav-status&deviceId=device-1"
+  );
+});
+
 test("assistant navigation snapshot uses /api/agents includeChats and agent stats", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];

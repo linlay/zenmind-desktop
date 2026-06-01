@@ -43,7 +43,8 @@ const {
   applyAgentPlatformPetPush,
   buildAgentPlatformPetStatus: buildStatusFromPlatform,
   resolveAgentPlatformPetBoundAgentKey,
-  toDesktopPetAgentOptions
+  toDesktopPetAgentOptions,
+  __testInternals: petStatusClientInternals
 } = await import("../dist-electron/main/copilot/pet-copilot/pet-status-client.js");
 
 function waitFor(predicate, timeoutMs = 800) {
@@ -63,6 +64,18 @@ function waitFor(predicate, timeoutMs = 800) {
     tick();
   });
 }
+
+test("desktop pet status websocket URL reports monitor metadata", () => {
+  assert.equal(
+    petStatusClientInternals.createWsUrl(
+      "http://127.0.0.1:7078",
+      "token-1",
+      "desktop-pet-status",
+      "device-1"
+    ),
+    "ws://127.0.0.1:7078/ws?token=token-1&source=desktop-pet-status&deviceId=device-1"
+  );
+});
 
 function createPathApp(userData) {
   const tempRoot = userData;

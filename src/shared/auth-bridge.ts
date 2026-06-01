@@ -29,6 +29,7 @@ type BuildPluginEmbeddedUrlOptions = {
   desktopAuthContext?: string;
   baseUrl?: string;
   embedPath?: string;
+  wsSource?: string;
 };
 
 function getRuntimeUrlBase() {
@@ -121,6 +122,9 @@ export function buildPluginEmbeddedUrl(
     }
     if (options.desktopAuthContext?.trim()) {
       url.searchParams.set("desktopAuthContext", options.desktopAuthContext.trim());
+    }
+    if (options.wsSource?.trim()) {
+      url.searchParams.set("wsSource", options.wsSource.trim());
     }
   }
   if (serviceId === "pan-webclient") {
