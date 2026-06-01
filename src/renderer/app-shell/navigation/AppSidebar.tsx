@@ -67,6 +67,14 @@ type AssistantChatMenuState = {
   y: number;
 };
 
+type AgentSelectionOptions = {
+  preferNewChat?: boolean;
+};
+
+type NavigateOptions = {
+  retriggerAgentRoute?: boolean;
+};
+
 type AgentDialogState = {
   kind: "rename" | "delete";
   agent: AssistantNavAgentItem;
@@ -299,6 +307,26 @@ function createAgentDefaultRoute(agent: AssistantNavAgentItem) {
   return firstChatId
     ? createAgentChatRoute(agent.agentKey, firstChatId)
     : createAgentRoute(agent.agentKey);
+}
+
+function createAgentSelectionRoute(
+  agent: AssistantNavAgentItem,
+  options: AgentSelectionOptions = {},
+) {
+  if (!options.preferNewChat) {
+    return createAgentDefaultRoute(agent);
+  }
+
+  const latestChat = getAssistantNavAgentRecentChats(agent)[0];
+  const latestChatId = latestChat?.chatId.trim() ?? "";
+  if (
+    latestChatId &&
+    (latestChat.hasPendingAwaiting === true || latestChat.isRead === false)
+  ) {
+    return createAgentChatRoute(agent.agentKey, latestChatId);
+  }
+
+  return createAgentNewChatRoute(agent.agentKey);
 }
 
 function createAgentHistoryRoute(agentKey: string) {
@@ -725,8 +753,48 @@ export function AppSidebar({
     setToolMenuOpen(false);
   }
 
-  function requestNavigate(targetPath: string) {
+  function dispatchAgentRouteActionToActiveWebview(targetPath: string) {
+    const { agentKey, chatId } = readAgentRouteInfo(targetPath);
+    if (!agentKey) {
+      return false;
+    }
+
+    const webview = getActivePluginSurfaceWebviewRef()?.current;
+    if (!webview) {
+      return false;
+    }
+
+    const eventName = chatId
+      ? "agent:load-chat"
+      : "agent:start-new-conversation";
+    const detail = chatId
+      ? {
+          chatId,
+          focusComposerOnComplete: true,
+        }
+      : {
+          agentKey,
+          preserveWorkerContext: true,
+          focusComposerOnComplete: true,
+        };
+    const script = [
+      `window.dispatchEvent(new CustomEvent(${JSON.stringify(eventName)}, {`,
+      `  detail: ${JSON.stringify(detail)}`,
+      "}));",
+      "true;",
+    ].join("\n");
+
+    void webview.executeJavaScript(script, true).catch((error) => {
+      console.warn("[assistant] failed to retrigger agent route", error);
+    });
+    return true;
+  }
+
+  function requestNavigate(targetPath: string, options: NavigateOptions = {}) {
     if (targetPath === currentRoute) {
+      if (options.retriggerAgentRoute) {
+        dispatchAgentRouteActionToActiveWebview(targetPath);
+      }
       return;
     }
     if (onRequestNavigate && !onRequestNavigate(targetPath)) {
@@ -813,8 +881,20 @@ export function AppSidebar({
     }
   }
 
-  function handleAssistantAgentHeaderClick(agent: AssistantNavAgentItem) {
-    requestNavigate(createAgentDefaultRoute(agent));
+  function handleAssistantAgentExpand(
+    agent: AssistantNavAgentItem,
+    expanded: boolean,
+  ) {
+    setExpandedAssistantAgentKey(expanded ? agent.agentKey : "");
+    if (!expanded) {
+      return;
+    }
+    requestNavigate(
+      createAgentSelectionRoute(agent, { preferNewChat: !isCollapsed }),
+      {
+        retriggerAgentRoute: true,
+      },
+    );
   }
 
   function handleAssistantNewChat(
@@ -1097,14 +1177,9 @@ export function AppSidebar({
         key={agent.agentKey}
         className="assistant-worker-collapse-item"
         expanded={expanded}
-        onExpand={(val) =>
-          setExpandedAssistantAgentKey(val ? agent.agentKey : "")
-        }
+        onExpand={(val) => handleAssistantAgentExpand(agent, val)}
         header={
-          <div
-            className="assistant-worker-header"
-            onClick={() => handleAssistantAgentHeaderClick(agent)}
-          >
+          <div className="assistant-worker-header">
             <span className="assistant-worker-header-text">
               <span
                 className={[
