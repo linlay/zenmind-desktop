@@ -284,8 +284,8 @@
   scrollbar-width: thin;
   position: relative;
   z-index: 1;
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
+  app-region: drag;
+  -webkit-app-region: drag;
 }
 
 .sidebar-nav::-webkit-scrollbar {
@@ -1943,7 +1943,12 @@
 }
 
 .app-sidebar a,
-.app-sidebar button {
+.app-sidebar button,
+.app-sidebar input,
+.app-sidebar select,
+.app-sidebar textarea,
+.app-sidebar [role="button"],
+.app-sidebar [role="menuitem"] {
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
