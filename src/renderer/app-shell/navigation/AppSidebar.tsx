@@ -385,12 +385,21 @@ type SidebarCollapseToggleProps = {
 
 function SidebarCollapseToggleIcon({ isCollapsed }: { isCollapsed: boolean }) {
   if (isCollapsed) {
-    return <span className="app-sidebar-collapse-button-icon app-sidebar-collapse-button-icon-chevron" aria-hidden="true" />;
+    return (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 -960 960 960"
+        width="16px"
+        height="16px"
+      >
+        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm200-80h360v-560H400v560Z" />
+      </svg>
+    );
   }
 
   return (
     <svg
-      className="app-sidebar-collapse-button-icon app-sidebar-collapse-button-icon-panel"
+      className="app-sidebar-collapse-button-icon-panel"
       viewBox="0 -960 960 960"
       aria-hidden="true"
       focusable="false"
@@ -512,9 +521,7 @@ export function AppSidebar({
     x: number;
     y: number;
   } | null>(null);
-  const [agentDialog, setAgentDialog] = useState<AgentDialogState | null>(
-    null,
-  );
+  const [agentDialog, setAgentDialog] = useState<AgentDialogState | null>(null);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
@@ -659,10 +666,7 @@ export function AppSidebar({
     }
     function handleDocumentPointerDown(event: PointerEvent) {
       const target = event.target;
-      if (
-        target instanceof Node &&
-        agentMenuRef.current?.contains(target)
-      ) {
+      if (target instanceof Node && agentMenuRef.current?.contains(target)) {
         return;
       }
       setAgentMenu(null);
@@ -1184,9 +1188,7 @@ export function AppSidebar({
                           type="button"
                           className="assistant-worker-icon-button"
                           aria-label={`更多操作 ${agent.displayName}`}
-                          onClick={(event) =>
-                            handleOpenAgentMenu(event, agent)
-                          }
+                          onClick={(event) => handleOpenAgentMenu(event, agent)}
                         >
                           <span
                             className="assistant-material-icon is-more"
@@ -1599,21 +1601,23 @@ export function AppSidebar({
     const definition =
       Object.keys(currentDefinition).length > 0
         ? { ...currentDefinition }
-        : ([
-            "key",
-            "mode",
-            "icon",
-            "workspace",
-            "runtimeConfig",
-            "model",
-            "modelConfig",
-            "tools",
-            "toolConfig",
-            "visibility",
-            "prompts",
-            "soulPrompt",
-            "agentsPrompt",
-          ] as const).reduce<Record<string, unknown>>((next, key) => {
+        : (
+            [
+              "key",
+              "mode",
+              "icon",
+              "workspace",
+              "runtimeConfig",
+              "model",
+              "modelConfig",
+              "tools",
+              "toolConfig",
+              "visibility",
+              "prompts",
+              "soulPrompt",
+              "agentsPrompt",
+            ] as const
+          ).reduce<Record<string, unknown>>((next, key) => {
             if (detail[key] !== undefined) {
               next[key] = detail[key];
             }
@@ -1629,10 +1633,18 @@ export function AppSidebar({
     if (!definition.icon && agent.icon) {
       definition.icon = agent.icon;
     }
-    if (!definition.workspace && agent.workspaceDir && agent.workspaceDir !== "@chat") {
+    if (
+      !definition.workspace &&
+      agent.workspaceDir &&
+      agent.workspaceDir !== "@chat"
+    ) {
       definition.workspace = { root: agent.workspaceDir };
     }
-    if (!definition.runtimeConfig && agent.workspaceDir && agent.workspaceDir !== "@chat") {
+    if (
+      !definition.runtimeConfig &&
+      agent.workspaceDir &&
+      agent.workspaceDir !== "@chat"
+    ) {
       definition.runtimeConfig = { workspaceRoot: agent.workspaceDir };
     }
     definition.name = nextName;
@@ -1662,7 +1674,10 @@ export function AppSidebar({
     }
   }
 
-  async function openWorkspaceDirectory(workspaceDir: string, _agentKey: string) {
+  async function openWorkspaceDirectory(
+    workspaceDir: string,
+    _agentKey: string,
+  ) {
     await window.electronAPI.desktopShell.openPath(workspaceDir);
   }
 
@@ -1715,7 +1730,9 @@ export function AppSidebar({
         args: { key: targetAgent.agentKey },
       });
       if (!detailResponse.ok) {
-        throw new Error(detailResponse.error?.message || "读取智能体详情失败。");
+        throw new Error(
+          detailResponse.error?.message || "读取智能体详情失败。",
+        );
       }
       const definition = buildAgentDefinitionForRename(
         readAgentDetailRecord(detailResponse),
@@ -1733,7 +1750,9 @@ export function AppSidebar({
         },
       });
       if (!updateResponse.ok) {
-        throw new Error(updateResponse.error?.message || "修改智能体名称失败。");
+        throw new Error(
+          updateResponse.error?.message || "修改智能体名称失败。",
+        );
       }
       setAgentDialog(null);
       await onRefreshAssistantNavAgents?.();
