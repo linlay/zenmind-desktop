@@ -2886,8 +2886,9 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(sharedDesktopPet, /"idol-pony"/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-hover\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-dancing\s+\.desktop-pet-image/);
-  assert.match(globalStyles, /\.desktop-pet-dance-sprite\s*\{[\s\S]{0,240}background-size:\s*2304px\s+104px;/);
-  assert.match(globalStyles, /\.desktop-pet-root\.has-dance-animation\s+\.desktop-pet-dance-sprite\s*\{[\s\S]{0,220}animation:\s*desktop-pet-idol-pony-dance-frames 4600ms steps\(24,\s*end\) 1 both;/);
+  assert.match(globalStyles, /\.desktop-pet-dance-sprite\s*\{[\s\S]{0,240}background-size:\s*2880px\s+104px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-dance-animation\s+\.desktop-pet-dance-sprite\s*\{[\s\S]{0,220}animation:\s*desktop-pet-idol-pony-dance-frames 5200ms steps\(30,\s*end\) 1 both;/);
+  assert.match(globalStyles, /@keyframes desktop-pet-idol-pony-dance-frames\s*\{[\s\S]*?background-position:\s*-2880px 0;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-dragging\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-thinking\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-message\s+\.desktop-pet-image/);

@@ -222,7 +222,7 @@ body.desktop-pet-body,
   width: 96px;
   height: 104px;
   background-repeat: no-repeat;
-  background-size: 2304px 104px;
+  background-size: 2880px 104px;
   background-position: 0 0;
   transform-origin: 50% 86%;
   will-change: background-position;
@@ -245,7 +245,7 @@ body.desktop-pet-body,
 }
 
 .desktop-pet-root.has-dance-animation .desktop-pet-dance-sprite {
-  animation: desktop-pet-idol-pony-dance-frames 4600ms steps(24, end) 1 both;
+  animation: desktop-pet-idol-pony-dance-frames 5200ms steps(30, end) 1 both;
   filter:
     drop-shadow(0 18px 24px rgba(18, 44, 91, 0.2))
     drop-shadow(0 0 12px rgba(255, 76, 126, 0.16));
@@ -623,7 +623,7 @@ body.desktop-pet-body,
 
 @keyframes desktop-pet-idol-pony-dance-frames {
   to {
-    background-position: -2304px 0;
+    background-position: -2880px 0;
   }
 }
 
