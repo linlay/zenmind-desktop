@@ -395,6 +395,41 @@ test("assistant navigation push reducer handles awaiting, run lifecycle and arch
   assert.deepEqual(archived.items[0].recentChats, []);
 });
 
+test("assistant navigation push refreshes completed runs that omit final preview", () => {
+  const baseItems = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "codeAssistant",
+      name: "代码助手",
+      stats: { totalCount: 0, unreadCount: 0 },
+      chats: []
+    }
+  ]);
+
+  const started = applyAssistantNavigationPush(baseItems, {
+    frame: "push",
+    type: "run.started",
+    chatId: "chat-new",
+    agentKey: "codeAssistant",
+    runId: "run-new",
+    timestamp: 2000
+  });
+  assert.equal(started.changed, true);
+  assert.equal(started.shouldRefresh, false);
+  assert.equal(started.items[0].recentChats[0].lastRunContent, "思考中");
+
+  const finished = applyAssistantNavigationPush(started.items, {
+    frame: "push",
+    type: "run.finished",
+    chatId: "chat-new",
+    agentKey: "codeAssistant",
+    runId: "run-new",
+    timestamp: 3000
+  });
+  assert.equal(finished.changed, true);
+  assert.equal(finished.shouldRefresh, true);
+  assert.equal(finished.items[0].hasPendingAwaiting, false);
+});
+
 test("assistant navigation push ignores heartbeat and refreshes unknown notifications", () => {
   const baseItems = buildAssistantNavigationAgentsFromPlatformAgents([
     { key: "codeAssistant", name: "代码助手", chats: [] }
