@@ -269,11 +269,25 @@ test("window manager builds platform-specific main window options", () => {
   assert.equal(macOptions.titleBarStyle, "hidden");
   assert.equal(macOptions.transparent, true);
   assert.equal(macOptions.vibrancy, "under-window");
+  assert.equal(macOptions.backgroundColor, "#00000000");
   assert.equal(macOptions.webPreferences.preload, "C:/app/preload/index.js");
   assert.equal(macOptions.webPreferences.contextIsolation, true);
   assert.equal(macOptions.webPreferences.webviewTag, true);
   assert.equal(Object.hasOwn(winOptions, "titleBarStyle"), false);
   assert.equal(winOptions.backgroundColor, "#FFFFFF");
+});
+
+test("window manager includes initial locale arguments for renderer bootstrap", () => {
+  const options = buildMainWindowOptions({
+    platform: "win32",
+    preloadPath: "C:/app/preload/index.js",
+    initialLocaleSettings: { locale: "en-US", source: "stored" }
+  });
+
+  assert.deepEqual(options.webPreferences.additionalArguments, [
+    "--zenmind-initial-locale=en-US",
+    "--zenmind-initial-locale-source=stored"
+  ]);
 });
 
 test("window manager loads the main renderer from dev URL or production file", async () => {

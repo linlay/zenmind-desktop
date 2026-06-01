@@ -44,6 +44,15 @@ import type {
   WebviewOpenTabRequest
 } from "../shared/contracts";
 import type { DesktopActionCallRequest } from "../shared/desktop-actions";
+import { readInitialLocaleSettingsFromArgv } from "../shared/i18n/initial-locale-args";
+import { DEFAULT_LOCALE } from "../shared/i18n/locales";
+import type { LocaleSettings } from "../shared/i18n/types";
+
+const fallbackInitialLocaleSettings: LocaleSettings = {
+  locale: DEFAULT_LOCALE,
+  source: "default"
+};
+const initialLocaleSettings = readInitialLocaleSettingsFromArgv(process.argv) ?? fallbackInitialLocaleSettings;
 
 const api: DesktopApi = {
   shell: {
@@ -280,6 +289,7 @@ const api: DesktopApi = {
     getPlatform: () => ipcRenderer.invoke("settings.getPlatform"),
     getAppInfo: () => ipcRenderer.invoke("settings.getAppInfo"),
     setNativeThemeSource: (themeMode) => ipcRenderer.invoke("settings.setNativeThemeSource", themeMode),
+    getInitialLocale: () => ({ ...initialLocaleSettings }),
     getLocale: () => ipcRenderer.invoke("settings.getLocale"),
     setLocale: (locale) => ipcRenderer.invoke("settings.setLocale", locale),
     onLocaleChanged: (listener: LocaleChangedListener) => {

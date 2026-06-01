@@ -237,7 +237,7 @@ import {
   captureAssistantScreenshot as captureCopilotScreenshot,
   type ScreenshotCaptureSource
 } from "./copilot/sidebar-copilot/screenshot";
-import { initializeMainI18n, setMainLocale, t } from "./i18n/main-i18n";
+import { getMainLocaleSettings, initializeMainI18n, setMainLocale, t } from "./i18n/main-i18n";
 import { isSupportedLocale } from "../shared/i18n";
 import { createStartupRestoreController, STARTUP_RESTORE_SERVICE_ORDER } from "./startup-restore";
 import { createDebugEventStore } from "./debug/debug-events";
@@ -1181,7 +1181,8 @@ function reportRendererDiagnostic(source: string, details: Record<string, unknow
 function createWindow() {
   appState.mainWindow = new BrowserWindow(buildMainWindowOptions({
     platform: mainProcessContext.platform,
-    preloadPath: path.join(__dirname, "..", "preload", "index.js")
+    preloadPath: path.join(__dirname, "..", "preload", "index.js"),
+    initialLocaleSettings: getMainLocaleSettings()
   }));
   const targetWindow = appState.mainWindow;
 

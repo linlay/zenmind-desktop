@@ -98,7 +98,7 @@
   flex-direction: column;
   width: 100%;
   min-height: 100%;
-  padding: 0 8px 10px;
+  padding: 0 0 8px 8px;
   background: transparent;
   border: none;
   border-right: none;
@@ -216,10 +216,6 @@
   align-items: center;
   min-height: var(--sidebar-toolbar-height, 56px);
   padding: 0 8px;
-}
-
-.sidebar-chrome-toolbar.is-mac {
-  padding-left: var(--mac-traffic-light-safe-area);
 }
 
 .sidebar-collapsed-toggle-button {
@@ -507,7 +503,7 @@
 
 .app-sidebar:not(.is-collapsed) .sidebar-link,
 .app-sidebar:not(.is-collapsed) .sidebar-link-utility {
-  padding: 0 4px;
+  padding: 0 8px;
   border-radius: 8px;
 }
 
@@ -625,11 +621,6 @@
 
 .sidebar-child-link {
   min-height: 30px;
-  padding-left: 32px !important;
-}
-
-.sidebar-custom-child-link {
-  padding-left: 4px !important;
 }
 
 .sidebar-child-link .sidebar-link-icon {
@@ -1887,40 +1878,6 @@
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
     0 0 0 3px rgba(148, 163, 184, 0.1);
-}
-
-.app-sidebar-collapse-button-icon {
-  display: block;
-  flex: none;
-}
-
-.app-sidebar-collapse-button-icon-chevron {
-  position: relative;
-  width: 8px;
-  height: 12px;
-}
-
-.app-sidebar-collapse-button-icon-chevron::before,
-.app-sidebar-collapse-button-icon-chevron::after {
-  content: "";
-  position: absolute;
-  width: 8px;
-  height: 1.75px;
-  right: 0;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.app-sidebar-collapse-button-icon-chevron::before {
-  top: 6px;
-  transform: rotate(45deg);
-  transform-origin: 100% 50%;
-}
-
-.app-sidebar-collapse-button-icon-chevron::after {
-  bottom: 6px;
-  transform: rotate(-45deg);
-  transform-origin: 100% 50%;
 }
 
 .app-sidebar-collapse-button-icon-panel {

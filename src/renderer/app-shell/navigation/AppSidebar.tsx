@@ -41,6 +41,7 @@ type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
   to: string;
   label: string;
+  collapsedLabel?: string;
   icon: SidebarIllustrationKind;
 };
 
@@ -412,12 +413,21 @@ type SidebarCollapseToggleProps = {
 
 function SidebarCollapseToggleIcon({ isCollapsed }: { isCollapsed: boolean }) {
   if (isCollapsed) {
-    return <span className="app-sidebar-collapse-button-icon app-sidebar-collapse-button-icon-chevron" aria-hidden="true" />;
+    return (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 -960 960 960"
+        width="16px"
+        height="16px"
+      >
+        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm200-80h360v-560H400v560Z" />
+      </svg>
+    );
   }
 
   return (
     <svg
-      className="app-sidebar-collapse-button-icon app-sidebar-collapse-button-icon-panel"
+      className="app-sidebar-collapse-button-icon-panel"
       viewBox="0 -960 960 960"
       aria-hidden="true"
       focusable="false"
@@ -539,9 +549,7 @@ export function AppSidebar({
     x: number;
     y: number;
   } | null>(null);
-  const [agentDialog, setAgentDialog] = useState<AgentDialogState | null>(
-    null,
-  );
+  const [agentDialog, setAgentDialog] = useState<AgentDialogState | null>(null);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
@@ -581,10 +589,22 @@ export function AppSidebar({
 
   const navItems: SidebarPrimaryEntry[] = sortSidebarNavItems(
     [
-      { ...taskBoardNavItemBase, label: t("nav.taskBoard") },
+      {
+        ...taskBoardNavItemBase,
+        label: t("nav.taskBoard"),
+        collapsedLabel: t("nav.taskBoardCollapsed"),
+      },
       { ...schedulesNavItemBase, label: t("nav.schedules") },
-      { ...assistantGroupNavItemBase, label: t("nav.assistants") },
-      { ...websitesGroupNavItemBase, label: t("nav.embeddedWebsites") },
+      {
+        ...assistantGroupNavItemBase,
+        label: t("nav.assistants"),
+        collapsedLabel: t("nav.assistantsCollapsed"),
+      },
+      {
+        ...websitesGroupNavItemBase,
+        label: t("nav.embeddedWebsites"),
+        collapsedLabel: t("nav.embeddedWebsitesCollapsed"),
+      },
     ],
     sidebarNavOrder,
   );
@@ -674,10 +694,7 @@ export function AppSidebar({
     }
     function handleDocumentPointerDown(event: PointerEvent) {
       const target = event.target;
-      if (
-        target instanceof Node &&
-        agentMenuRef.current?.contains(target)
-      ) {
+      if (target instanceof Node && agentMenuRef.current?.contains(target)) {
         return;
       }
       setAgentMenu(null);
@@ -1050,6 +1067,8 @@ export function AppSidebar({
   }
 
   function renderSidebarLink(item: SidebarNavItem, extraClassName = "") {
+    const visibleLabel =
+      isCollapsed && item.collapsedLabel ? item.collapsedLabel : item.label;
     return (
       <NavLink
         key={item.to}
@@ -1062,7 +1081,7 @@ export function AppSidebar({
         <span className="sidebar-link-icon">
           <SidebarIllustration kind={item.icon} />
         </span>
-        <span className="sidebar-link-label">{item.label}</span>
+        <span className="sidebar-link-label">{visibleLabel}</span>
       </NavLink>
     );
   }
@@ -1244,9 +1263,7 @@ export function AppSidebar({
                           type="button"
                           className="assistant-worker-icon-button"
                           aria-label={`更多操作 ${agent.displayName}`}
-                          onClick={(event) =>
-                            handleOpenAgentMenu(event, agent)
-                          }
+                          onClick={(event) => handleOpenAgentMenu(event, agent)}
                         >
                           <span
                             className="assistant-material-icon is-more"
@@ -1317,6 +1334,7 @@ export function AppSidebar({
   function renderSidebarGroup(args: {
     groupId: SidebarGroupId;
     label: string;
+    collapsedLabel?: string;
     icon: SidebarIllustrationKind;
     active: boolean;
     status?: SidebarStatusSummary;
@@ -1340,6 +1358,8 @@ export function AppSidebar({
     ]
       .filter(Boolean)
       .join(" ");
+    const visibleLabel =
+      isCollapsed && args.collapsedLabel ? args.collapsedLabel : args.label;
     return isCollapsed ? (
       <Popover
         placement="right-start"
@@ -1370,7 +1390,7 @@ export function AppSidebar({
             <span className="sidebar-link-icon">
               <SidebarIllustration kind={args.icon} />
             </span>
-            <span className="sidebar-link-label">{args.label}</span>
+            <span className="sidebar-link-label">{visibleLabel}</span>
             {args.status && !expanded
               ? renderStatusBadges(args.status, "sidebar-group-status")
               : null}
@@ -1469,6 +1489,7 @@ export function AppSidebar({
       return renderSidebarGroup({
         groupId: "assistants",
         label: item.label,
+        collapsedLabel: item.collapsedLabel,
         icon: item.icon,
         active: isAssistantGroupActive(),
         status: assistantStatusSummary,
@@ -1479,6 +1500,7 @@ export function AppSidebar({
       return renderSidebarGroup({
         groupId: "websites",
         label: item.label,
+        collapsedLabel: item.collapsedLabel,
         icon: item.icon,
         active: isWebsiteGroupActive(),
         children: customItems,
@@ -1654,21 +1676,23 @@ export function AppSidebar({
     const definition =
       Object.keys(currentDefinition).length > 0
         ? { ...currentDefinition }
-        : ([
-            "key",
-            "mode",
-            "icon",
-            "workspace",
-            "runtimeConfig",
-            "model",
-            "modelConfig",
-            "tools",
-            "toolConfig",
-            "visibility",
-            "prompts",
-            "soulPrompt",
-            "agentsPrompt",
-          ] as const).reduce<Record<string, unknown>>((next, key) => {
+        : (
+            [
+              "key",
+              "mode",
+              "icon",
+              "workspace",
+              "runtimeConfig",
+              "model",
+              "modelConfig",
+              "tools",
+              "toolConfig",
+              "visibility",
+              "prompts",
+              "soulPrompt",
+              "agentsPrompt",
+            ] as const
+          ).reduce<Record<string, unknown>>((next, key) => {
             if (detail[key] !== undefined) {
               next[key] = detail[key];
             }
@@ -1684,10 +1708,18 @@ export function AppSidebar({
     if (!definition.icon && agent.icon) {
       definition.icon = agent.icon;
     }
-    if (!definition.workspace && agent.workspaceDir && agent.workspaceDir !== "@chat") {
+    if (
+      !definition.workspace &&
+      agent.workspaceDir &&
+      agent.workspaceDir !== "@chat"
+    ) {
       definition.workspace = { root: agent.workspaceDir };
     }
-    if (!definition.runtimeConfig && agent.workspaceDir && agent.workspaceDir !== "@chat") {
+    if (
+      !definition.runtimeConfig &&
+      agent.workspaceDir &&
+      agent.workspaceDir !== "@chat"
+    ) {
       definition.runtimeConfig = { workspaceRoot: agent.workspaceDir };
     }
     definition.name = nextName;
@@ -1717,7 +1749,10 @@ export function AppSidebar({
     }
   }
 
-  async function openWorkspaceDirectory(workspaceDir: string, _agentKey: string) {
+  async function openWorkspaceDirectory(
+    workspaceDir: string,
+    _agentKey: string,
+  ) {
     await window.electronAPI.desktopShell.openPath(workspaceDir);
   }
 
@@ -1770,7 +1805,9 @@ export function AppSidebar({
         args: { key: targetAgent.agentKey },
       });
       if (!detailResponse.ok) {
-        throw new Error(detailResponse.error?.message || "读取智能体详情失败。");
+        throw new Error(
+          detailResponse.error?.message || "读取智能体详情失败。",
+        );
       }
       const definition = buildAgentDefinitionForRename(
         readAgentDetailRecord(detailResponse),
@@ -1788,7 +1825,9 @@ export function AppSidebar({
         },
       });
       if (!updateResponse.ok) {
-        throw new Error(updateResponse.error?.message || "修改智能体名称失败。");
+        throw new Error(
+          updateResponse.error?.message || "修改智能体名称失败。",
+        );
       }
       setAgentDialog(null);
       await onRefreshAssistantNavAgents?.();

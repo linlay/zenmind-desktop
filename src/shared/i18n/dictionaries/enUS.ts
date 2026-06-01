@@ -36,8 +36,11 @@ export const enUSMessages = {
   "tray.quit": "Quit",
 
   "nav.taskBoard": "Task Board",
+  "nav.taskBoardCollapsed": "Tasks",
   "nav.assistants": "Assistants",
+  "nav.assistantsCollapsed": "Assts",
   "nav.embeddedWebsites": "Embedded Websites",
+  "nav.embeddedWebsitesCollapsed": "Webs",
   "nav.agents": "Agents",
   "nav.schedules": "Automations",
   "nav.memory": "Memory",
@@ -693,6 +696,11 @@ export const enUSMessages = {
   "startup.service.authentication": "Authentication Service",
   "startup.service.agentPlatform": "Agent Platform",
   "startup.service.agentWebclient": "Assistant",
+  "startup.envImport.title": "Initialize ZenMind Environment",
+  "startup.envImport.descriptionPrefix": "The app environment is not configured. Import",
+  "startup.envImport.descriptionSuffix": "on first run to finish setup.",
+  "startup.envImport.action": "Select and import env.zip",
+  "startup.envImport.importing": "Importing system environment...",
   "startup.ssoUnavailable": "The current instance has not loaded single sign-on. Restart Desktop.",
 
   "service.agentWebclientDisplayName": "Assistant",
