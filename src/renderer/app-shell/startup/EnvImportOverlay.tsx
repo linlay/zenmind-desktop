@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useI18n } from "../../i18n/useI18n";
 
 export function EnvImportOverlay({
   onImport,
@@ -9,13 +9,12 @@ export function EnvImportOverlay({
   errorMessage: string;
   busy: boolean;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="env-import-overlay">
-      {/* 独立的背景遮罩/模糊层 */}
       <div className="env-import-backdrop" aria-hidden="true" />
 
-
-      {/* 居中自定义导入弹窗 */}
       <div className="env-import-card">
         <div className="zenmind-logo-wrapper">
           <svg
@@ -52,9 +51,9 @@ export function EnvImportOverlay({
           </svg>
         </div>
 
-        <h1 className="env-import-title">初始化 ZenMind 环境</h1>
+        <h1 className="env-import-title">{t("startup.envImport.title")}</h1>
         <p className="env-import-desc">
-          检测到您的应用环境尚未配置。首次运行需要导入 <code>env.zip</code> 包以完成系统的初始化配置。
+          {t("startup.envImport.descriptionPrefix")} <code>env.zip</code> {t("startup.envImport.descriptionSuffix")}
         </p>
 
         {errorMessage ? (
@@ -80,10 +79,10 @@ export function EnvImportOverlay({
                 display: "inline-block",
                 animation: "spin 1s linear infinite"
               }} />
-              <span>正在导入系统环境...</span>
+              <span>{t("startup.envImport.importing")}</span>
             </>
           ) : (
-            "选择并导入 env.zip"
+            t("startup.envImport.action")
           )}
         </button>
       </div>

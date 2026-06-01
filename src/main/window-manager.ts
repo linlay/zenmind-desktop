@@ -1,4 +1,6 @@
 import type { BrowserWindow } from "electron";
+import { createInitialLocaleArguments } from "../shared/i18n/initial-locale-args";
+import type { LocaleSettings } from "../shared/i18n/types";
 import type { DesktopPlatform } from "./platform-adapter";
 
 const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
@@ -95,14 +97,19 @@ type AttachedWebviewOptions<TMainWindow> = {
 export function buildMainWindowOptions(input: {
   platform: DesktopPlatform;
   preloadPath: string;
+  initialLocaleSettings?: LocaleSettings;
 }): MainWindowOptions {
+  const initialLocaleArguments = input.initialLocaleSettings
+    ? createInitialLocaleArguments(input.initialLocaleSettings)
+    : [];
+
   return {
     width: 1440,
     height: 920,
     minWidth: 1180,
     minHeight: 760,
     show: false,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: input.platform === "darwin" ? "#00000000" : "#FFFFFF",
     ...(input.platform === "darwin"
       ? {
           titleBarStyle: "hidden" as const,
@@ -116,7 +123,8 @@ export function buildMainWindowOptions(input: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      webviewTag: true
+      webviewTag: true,
+      ...(initialLocaleArguments.length > 0 ? { additionalArguments: initialLocaleArguments } : {})
     }
   };
 }

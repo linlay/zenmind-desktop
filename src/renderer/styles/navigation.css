@@ -606,6 +606,10 @@
   scrollbar-width: thin;
 }
 
+.sidebar-website-children .sidebar-child-link {
+  padding-left: 4px !important;
+}
+
 .sidebar-website-children::-webkit-scrollbar {
   width: 6px;
 }

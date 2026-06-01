@@ -231,6 +231,7 @@ export interface DesktopApi {
     getPlatform: () => Promise<string>;
     getAppInfo: () => Promise<DesktopAppInfo>;
     setNativeThemeSource: (themeMode: "light" | "dark") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
+    getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;
     setLocale: (locale: SupportedLocale) => Promise<LocaleSettings>;
     onLocaleChanged: (listener: LocaleChangedListener) => () => void;

@@ -41,6 +41,7 @@ type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
   to: string;
   label: string;
+  collapsedLabel?: string;
   icon: SidebarIllustrationKind;
 };
 
@@ -553,10 +554,22 @@ export function AppSidebar({
 
   const navItems: SidebarPrimaryEntry[] = sortSidebarNavItems(
     [
-      { ...taskBoardNavItemBase, label: t("nav.taskBoard") },
+      {
+        ...taskBoardNavItemBase,
+        label: t("nav.taskBoard"),
+        collapsedLabel: t("nav.taskBoardCollapsed"),
+      },
       { ...schedulesNavItemBase, label: t("nav.schedules") },
-      { ...assistantGroupNavItemBase, label: t("nav.assistants") },
-      { ...websitesGroupNavItemBase, label: t("nav.embeddedWebsites") },
+      {
+        ...assistantGroupNavItemBase,
+        label: t("nav.assistants"),
+        collapsedLabel: t("nav.assistantsCollapsed"),
+      },
+      {
+        ...websitesGroupNavItemBase,
+        label: t("nav.embeddedWebsites"),
+        collapsedLabel: t("nav.embeddedWebsitesCollapsed"),
+      },
     ],
     sidebarNavOrder,
   );
@@ -970,6 +983,8 @@ export function AppSidebar({
   }
 
   function renderSidebarLink(item: SidebarNavItem, extraClassName = "") {
+    const visibleLabel =
+      isCollapsed && item.collapsedLabel ? item.collapsedLabel : item.label;
     return (
       <NavLink
         key={item.to}
@@ -982,7 +997,7 @@ export function AppSidebar({
         <span className="sidebar-link-icon">
           <SidebarIllustration kind={item.icon} />
         </span>
-        <span className="sidebar-link-label">{item.label}</span>
+        <span className="sidebar-link-label">{visibleLabel}</span>
       </NavLink>
     );
   }
@@ -1242,6 +1257,7 @@ export function AppSidebar({
   function renderSidebarGroup(args: {
     groupId: SidebarGroupId;
     label: string;
+    collapsedLabel?: string;
     icon: SidebarIllustrationKind;
     active: boolean;
     status?: SidebarStatusSummary;
@@ -1265,6 +1281,8 @@ export function AppSidebar({
     ]
       .filter(Boolean)
       .join(" ");
+    const visibleLabel =
+      isCollapsed && args.collapsedLabel ? args.collapsedLabel : args.label;
     return isCollapsed ? (
       <Popover
         placement="right-start"
@@ -1295,7 +1313,7 @@ export function AppSidebar({
             <span className="sidebar-link-icon">
               <SidebarIllustration kind={args.icon} />
             </span>
-            <span className="sidebar-link-label">{args.label}</span>
+            <span className="sidebar-link-label">{visibleLabel}</span>
             {args.status && !expanded
               ? renderStatusBadges(args.status, "sidebar-group-status")
               : null}
@@ -1394,6 +1412,7 @@ export function AppSidebar({
       return renderSidebarGroup({
         groupId: "assistants",
         label: item.label,
+        collapsedLabel: item.collapsedLabel,
         icon: item.icon,
         active: isAssistantGroupActive(),
         status: assistantStatusSummary,
@@ -1404,6 +1423,7 @@ export function AppSidebar({
       return renderSidebarGroup({
         groupId: "websites",
         label: item.label,
+        collapsedLabel: item.collapsedLabel,
         icon: item.icon,
         active: isWebsiteGroupActive(),
         children: customItems,

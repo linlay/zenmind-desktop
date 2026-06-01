@@ -11,8 +11,24 @@ const fallbackSettings: LocaleSettings = {
   source: "default"
 };
 
+function applyDocumentLocale(locale: SupportedLocale) {
+  document.documentElement.lang = locale;
+}
+
+function readInitialLocaleSettings() {
+  try {
+    return window.electronAPI.settings.getInitialLocale();
+  } catch {
+    return fallbackSettings;
+  }
+}
+
 export function I18nProvider({ children }: I18nProviderProps) {
-  const [settings, setSettings] = useState<LocaleSettings>(fallbackSettings);
+  const [settings, setSettings] = useState<LocaleSettings>(() => {
+    const initialSettings = readInitialLocaleSettings();
+    applyDocumentLocale(initialSettings.locale);
+    return initialSettings;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -33,6 +49,10 @@ export function I18nProvider({ children }: I18nProviderProps) {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    applyDocumentLocale(settings.locale);
+  }, [settings.locale]);
 
   const value = useMemo(() => ({
     locale: settings.locale,

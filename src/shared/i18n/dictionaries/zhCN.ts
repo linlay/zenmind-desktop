@@ -36,8 +36,11 @@ export const zhCNMessages = {
   "tray.quit": "退出",
 
   "nav.taskBoard": "任务看板",
+  "nav.taskBoardCollapsed": "任务看板",
   "nav.assistants": "智能助理",
+  "nav.assistantsCollapsed": "智能助理",
   "nav.embeddedWebsites": "内嵌网站",
+  "nav.embeddedWebsitesCollapsed": "内嵌网站",
   "nav.agents": "智能体",
   "nav.schedules": "自动化",
   "nav.memory": "记忆管理",
@@ -650,6 +653,11 @@ export const zhCNMessages = {
   "startup.service.authentication": "认证服务",
   "startup.service.agentPlatform": "智能体平台",
   "startup.service.agentWebclient": "智能助理",
+  "startup.envImport.title": "初始化 ZenMind 环境",
+  "startup.envImport.descriptionPrefix": "检测到您的应用环境尚未配置。首次运行需要导入",
+  "startup.envImport.descriptionSuffix": "包以完成系统的初始化配置。",
+  "startup.envImport.action": "选择并导入 env.zip",
+  "startup.envImport.importing": "正在导入系统环境...",
   "startup.ssoUnavailable": "当前运行实例尚未加载单点登录，请重启桌面端。",
 
   "service.agentWebclientDisplayName": "智能助理",
