@@ -22,3 +22,5 @@
 ```
 
 认证协议定义在 `src/shared/auth-bridge.ts` 中。
+
+返回的 JWT payload 中包含 `device_id`，它与 Desktop 启动服务/插件时注入的 `DESKTOP_DEVICE_ID` 是同一个安装级 UUID。

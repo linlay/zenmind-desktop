@@ -94,6 +94,11 @@ my-plugin/
 - Windows 插件使用 `.ps1` 脚本，例如 `start.ps1`、`stop.ps1`、`deploy.ps1`
 - `manifest.json` 中的 `scripts.start`、`scripts.stop`、`scripts.deploy` 应与对应平台脚本文件名保持一致
 - `scripts.deploy` 会被 Desktop 作为“初始化”钩子执行；脚本需要幂等，能够安全重复运行
+- 插件后端如需设备标识，应读取启动环境变量 `DESKTOP_DEVICE_ID`。该值由 Desktop 生成并代表当前 Desktop 安装级 UUID，插件不应自行生成另一套 device id。
+
+认证说明：
+- 需要认证的 webview 插件通过 Desktop Token Bridge 获取 JWT 后，可从 JWT payload 的 `device_id` 读取同一个安装级设备标识。
+- 第一版不会向不走认证的纯前端插件额外暴露 device id bridge；这类插件如需设备标识，应通过自己的后端读取 `DESKTOP_DEVICE_ID` 后再提供给前端。
 
 兼容性说明：
 - Desktop 不再扫描 `plugin-manifest.json`。

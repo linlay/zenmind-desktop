@@ -22,3 +22,5 @@ Services or plugins that require authentication can use the postMessage Token Br
 ```
 
 The authentication protocol is defined in `src/shared/auth-bridge.ts`.
+
+The returned JWT payload includes `device_id`, which matches the installation-level `DESKTOP_DEVICE_ID` injected into service and plugin processes by Desktop.
