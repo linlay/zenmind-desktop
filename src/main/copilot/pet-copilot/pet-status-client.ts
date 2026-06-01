@@ -137,7 +137,7 @@ function createApiUrl(baseUrl: string, pathname: string) {
   return url.toString();
 }
 
-const DESKTOP_PET_STATUS_WS_SOURCE = "desktop-pet-status";
+const DESKTOP_PET_STATUS_WS_SOURCE = "desktop-pet";
 
 function createWsUrl(baseUrl: string, token: string, source = "", deviceId = "") {
   const url = new URL("/ws", baseUrl);

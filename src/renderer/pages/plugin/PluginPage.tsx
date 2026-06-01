@@ -73,6 +73,9 @@ const AGENT_WEBCLIENT_SOURCE_COPILOT_DOCK = "agent-webclient-copilot-dock";
 const AGENT_WEBCLIENT_SOURCE_MANAGEMENT = "agent-webclient-management";
 const AGENT_WEBCLIENT_SOURCE_QUICK_COPILOT = "agent-webclient-quick-copilot";
 const AGENT_WEBCLIENT_SOURCE_TASK_BOARD_CHAT = "agent-webclient-task-board-chat";
+const DESKTOP_WS_SOURCE_AGENT_WEBCLIENT = "desktop-agent-webclient";
+const DESKTOP_WS_SOURCE_CHAT = "desktop-chat";
+const DESKTOP_WS_SOURCE_COPILOT = "desktop-copilot";
 
 function isCopilotEmbedPath(value: string) {
   return value === "/copilot" || value.startsWith("/copilot/") || value.startsWith("/copilot?");
@@ -81,35 +84,35 @@ function isCopilotEmbedPath(value: string) {
 function resolveAgentWebclientWsSource(surfaceId: string, embedPath: string | undefined) {
   const normalizedSurfaceId = surfaceId.trim();
   if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_COPILOT_DOCK) {
-    return AGENT_WEBCLIENT_SOURCE_COPILOT_DOCK;
+    return DESKTOP_WS_SOURCE_COPILOT;
   }
   if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_QUICK_COPILOT) {
-    return AGENT_WEBCLIENT_SOURCE_QUICK_COPILOT;
+    return DESKTOP_WS_SOURCE_COPILOT;
   }
   if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_TASK_BOARD_CHAT) {
-    return AGENT_WEBCLIENT_SOURCE_TASK_BOARD_CHAT;
+    return DESKTOP_WS_SOURCE_CHAT;
   }
   if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_CHAT) {
-    return AGENT_WEBCLIENT_SOURCE_CHAT;
+    return DESKTOP_WS_SOURCE_CHAT;
   }
   if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_COPILOT) {
-    return AGENT_WEBCLIENT_SOURCE_COPILOT;
+    return DESKTOP_WS_SOURCE_COPILOT;
   }
   if (normalizedSurfaceId === AGENT_WEBCLIENT_SOURCE_FALLBACK) {
-    return AGENT_WEBCLIENT_SOURCE_MANAGEMENT;
+    return DESKTOP_WS_SOURCE_AGENT_WEBCLIENT;
   }
 
   const normalizedEmbedPath = (embedPath ?? "").trim();
   if (normalizedEmbedPath.startsWith("/agent/")) {
-    return AGENT_WEBCLIENT_SOURCE_CHAT;
+    return DESKTOP_WS_SOURCE_CHAT;
   }
   if (isCopilotEmbedPath(normalizedEmbedPath)) {
-    return AGENT_WEBCLIENT_SOURCE_COPILOT;
+    return DESKTOP_WS_SOURCE_COPILOT;
   }
   if (normalizedEmbedPath === "/agents" || normalizedEmbedPath === "/schedules" || normalizedEmbedPath === "/memory") {
-    return AGENT_WEBCLIENT_SOURCE_MANAGEMENT;
+    return DESKTOP_WS_SOURCE_AGENT_WEBCLIENT;
   }
-  return AGENT_WEBCLIENT_SOURCE_FALLBACK;
+  return DESKTOP_WS_SOURCE_AGENT_WEBCLIENT;
 }
 const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
   const normalize = (value) => String(value || "").replace(/\\s+/g, " ").trim();

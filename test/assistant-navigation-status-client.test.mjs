@@ -20,10 +20,10 @@ test("assistant navigation websocket URL reports monitor metadata", () => {
     __testInternals.createWsUrl(
       "http://127.0.0.1:7078",
       "token-1",
-      "desktop-assistant-nav-status",
+      "desktop-nav",
       "device-1"
     ),
-    "ws://127.0.0.1:7078/ws?token=token-1&source=desktop-assistant-nav-status&deviceId=device-1"
+    "ws://127.0.0.1:7078/ws?token=token-1&source=desktop-nav&deviceId=device-1"
   );
 });
 

@@ -47,10 +47,10 @@ test("buildPluginEmbeddedUrl carries ws source metadata for agent-webclient", ()
       hostTheme: "dark",
       hostLocale: "zh-CN",
       desktopAuthContext: "webclient:101:platform:202",
-      wsSource: "agent-webclient-copilot-dock",
+      wsSource: "desktop-copilot",
       embedPath: "/copilot"
     }),
-    "http://127.0.0.1:9090/copilot?hostTheme=dark&lang=zh-CN&desktopAuthContext=webclient%3A101%3Aplatform%3A202&wsSource=agent-webclient-copilot-dock"
+    "http://127.0.0.1:9090/copilot?hostTheme=dark&lang=zh-CN&desktopAuthContext=webclient%3A101%3Aplatform%3A202&wsSource=desktop-copilot"
   );
 });
 

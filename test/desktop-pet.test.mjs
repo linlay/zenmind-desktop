@@ -70,10 +70,10 @@ test("desktop pet status websocket URL reports monitor metadata", () => {
     petStatusClientInternals.createWsUrl(
       "http://127.0.0.1:7078",
       "token-1",
-      "desktop-pet-status",
+      "desktop-pet",
       "device-1"
     ),
-    "ws://127.0.0.1:7078/ws?token=token-1&source=desktop-pet-status&deviceId=device-1"
+    "ws://127.0.0.1:7078/ws?token=token-1&source=desktop-pet&deviceId=device-1"
   );
 });
 

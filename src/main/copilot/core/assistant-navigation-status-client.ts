@@ -282,7 +282,7 @@ function createApiUrl(baseUrl: string, pathname: string) {
   return url.toString();
 }
 
-const ASSISTANT_NAVIGATION_WS_SOURCE = "desktop-assistant-nav-status";
+const ASSISTANT_NAVIGATION_WS_SOURCE = "desktop-nav";
 
 function createWsUrl(baseUrl: string, token: string, source = "", deviceId = "") {
   const url = new URL("/ws", baseUrl);
