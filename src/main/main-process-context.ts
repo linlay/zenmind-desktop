@@ -135,9 +135,6 @@ export interface ServicesIpcHandlerContextDependencies {
   minimizeLogViewerWindow: (...args: any[]) => unknown;
   maximizeLogViewerWindow: (...args: any[]) => unknown;
   openAgentPlatformMonitorWindow: (...args: any[]) => unknown;
-  closeAgentPlatformMonitorWindow: (...args: any[]) => unknown;
-  minimizeAgentPlatformMonitorWindow: (...args: any[]) => unknown;
-  maximizeAgentPlatformMonitorWindow: (...args: any[]) => unknown;
   issueAgentPlatformAccessToken: (...args: any[]) => unknown;
   revealPathInFileManager: (...args: any[]) => unknown;
   getServiceWebviewPreloadPath: (...args: any[]) => unknown;
@@ -180,9 +177,6 @@ export function createServicesIpcHandlerOptions(
     minimizeLogViewerWindow: dependencies.minimizeLogViewerWindow,
     maximizeLogViewerWindow: dependencies.maximizeLogViewerWindow,
     openAgentPlatformMonitorWindow: dependencies.openAgentPlatformMonitorWindow,
-    closeAgentPlatformMonitorWindow: dependencies.closeAgentPlatformMonitorWindow,
-    minimizeAgentPlatformMonitorWindow: dependencies.minimizeAgentPlatformMonitorWindow,
-    maximizeAgentPlatformMonitorWindow: dependencies.maximizeAgentPlatformMonitorWindow,
     issueAgentPlatformAccessToken: dependencies.issueAgentPlatformAccessToken,
     revealPathInFileManager: dependencies.revealPathInFileManager,
     getServiceWebviewPreloadPath: dependencies.getServiceWebviewPreloadPath,

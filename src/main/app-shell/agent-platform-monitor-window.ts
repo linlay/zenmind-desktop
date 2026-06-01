@@ -1,12 +1,8 @@
 import { BrowserWindow } from "electron";
 
-export const AGENT_PLATFORM_MONITOR_ROUTE = "/agent-platform-monitor";
-
 type AgentPlatformMonitorWindowControllerOptions = {
-  preloadPath: string;
   platform: NodeJS.Platform;
   getOwnerWindow: () => BrowserWindow | null;
-  loadRendererRoute: (targetWindow: BrowserWindow, routePath: string) => Promise<unknown>;
   onRendererError: (message: string, details: unknown) => void;
 };
 
@@ -18,9 +14,17 @@ export class AgentPlatformMonitorWindowController {
     this.options = options;
   }
 
-  async open() {
+  async open(url: string) {
     const targetWindow = this.createWindow();
-    await this.options.loadRendererRoute(targetWindow, AGENT_PLATFORM_MONITOR_ROUTE);
+    try {
+      await targetWindow.loadURL(url);
+    } catch (error) {
+      this.options.onRendererError("agent platform monitor failed to load", {
+        url: sanitizeMonitorUrl(url),
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
     if (targetWindow.isDestroyed()) {
       return { ok: false };
     }
@@ -29,31 +33,6 @@ export class AgentPlatformMonitorWindowController {
     }
     targetWindow.focus();
     targetWindow.moveTop();
-    return { ok: true };
-  }
-
-  close() {
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.close();
-    }
-    return { ok: true };
-  }
-
-  minimize() {
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.minimize();
-    }
-    return { ok: true };
-  }
-
-  maximize() {
-    if (this.window && !this.window.isDestroyed()) {
-      if (this.window.isMaximized()) {
-        this.window.unmaximize();
-      } else {
-        this.window.maximize();
-      }
-    }
     return { ok: true };
   }
 
@@ -73,7 +52,7 @@ export class AgentPlatformMonitorWindowController {
       minWidth: 860,
       minHeight: 560,
       show: false,
-      frame: false,
+      frame: true,
       resizable: true,
       maximizable: true,
       minimizable: true,
@@ -82,11 +61,10 @@ export class AgentPlatformMonitorWindowController {
       title: "ZenMind Agent Platform Monitor",
       backgroundColor: "#F7F8FA",
       webPreferences: {
-        preload: this.options.preloadPath,
         contextIsolation: true,
         nodeIntegration: false,
         devTools: false,
-        sandbox: false
+        sandbox: true
       }
     };
 
@@ -94,8 +72,7 @@ export class AgentPlatformMonitorWindowController {
       this.window = new BrowserWindow({
         ...commonWindowOptions,
         skipTaskbar: true,
-        transparent: false,
-        titleBarStyle: "hidden" as const
+        transparent: false
       });
     } else if (this.options.platform === "win32") {
       this.window = new BrowserWindow({
@@ -119,23 +96,11 @@ export class AgentPlatformMonitorWindowController {
       this.window.focus();
     });
 
-    this.window.on("maximize", () => {
-      if (this.window && !this.window.isDestroyed()) {
-        this.window.webContents.send("agent-platform-monitor.maximized", true);
-      }
-    });
-
-    this.window.on("unmaximize", () => {
-      if (this.window && !this.window.isDestroyed()) {
-        this.window.webContents.send("agent-platform-monitor.maximized", false);
-      }
-    });
-
     this.window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
       this.options.onRendererError("agent platform monitor renderer failed to load", {
         errorCode,
         errorDescription,
-        validatedUrl
+        validatedUrl: sanitizeMonitorUrl(validatedUrl)
       });
     });
 
@@ -143,17 +108,22 @@ export class AgentPlatformMonitorWindowController {
       this.options.onRendererError("agent platform monitor render process exited unexpectedly", details);
     });
 
-    this.window.webContents.on("preload-error", (_event, preloadPath, error) => {
-      this.options.onRendererError("agent platform monitor preload failed", {
-        preloadPath,
-        error: error?.stack || String(error)
-      });
-    });
-
     this.window.on("closed", () => {
       this.window = null;
     });
 
     return this.window;
+  }
+}
+
+function sanitizeMonitorUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.searchParams.has("access_token")) {
+      url.searchParams.set("access_token", "<HIDDEN_TOKEN>");
+    }
+    return url.toString();
+  } catch {
+    return String(value).replace(/([?&]access_token=)[^&\s]+/iu, "$1<HIDDEN_TOKEN>");
   }
 }

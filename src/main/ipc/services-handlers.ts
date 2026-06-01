@@ -1,24 +1,8 @@
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
-const AGENT_PLATFORM_MONITOR_DEFAULT_CONNECTION_LIMIT = 100;
-const AGENT_PLATFORM_MONITOR_DEFAULT_MESSAGE_LIMIT = 50;
-
-type AgentPlatformMonitorReadOptions = {
-  sessionId?: string;
-  connectionLimit?: number;
-  messageLimit?: number;
-};
 
 type AgentPlatformAvailability =
-  | { ok: true; baseUrl: string; token: string }
+  | { ok: true; monitorUrl: string }
   | { ok: false; message: string };
-
-type PlatformApiResponse<T> = {
-  code?: number;
-  msg?: string;
-  data?: T;
-};
-
-type FetchLike = (input: string, init?: any) => Promise<any>;
 
 export interface ServicesIpcHandlerOptions {
   app: any;
@@ -55,10 +39,7 @@ export interface ServicesIpcHandlerOptions {
   closeLogViewerWindow: () => void;
   minimizeLogViewerWindow: () => void;
   maximizeLogViewerWindow: () => void;
-  openAgentPlatformMonitorWindow: () => Promise<any>;
-  closeAgentPlatformMonitorWindow: () => void;
-  minimizeAgentPlatformMonitorWindow: () => void;
-  maximizeAgentPlatformMonitorWindow: () => void;
+  openAgentPlatformMonitorWindow: (url: string) => Promise<any>;
 
   // Path reveal
   revealPathInFileManager: (targetPath: string, options?: any, fsOptions?: any) => Promise<any>;
@@ -99,78 +80,15 @@ export interface ServicesIpcHandlerOptions {
 
   // Agent platform monitor
   issueAgentPlatformAccessToken?: (app: any, reason: "missing" | "unauthorized") => Promise<any>;
-  agentPlatformFetch?: FetchLike;
 }
 
-function normalizeMonitorLimit(value: unknown, fallback: number, min: number, max: number) {
-  const numberValue = Number(value);
-  if (!Number.isFinite(numberValue)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, Math.round(numberValue)));
-}
-
-function normalizeMonitorSessionId(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function createApiUrl(baseUrl: string, pathname: string, params?: Record<string, string | number>) {
-  const url = new URL(pathname, baseUrl);
-  if (params) {
-    for (const [key, value] of Object.entries(params)) {
-      const normalizedValue = String(value).trim();
-      if (normalizedValue) {
-        url.searchParams.set(key, normalizedValue);
-      }
-    }
-  }
+function createAgentPlatformMonitorUrl(baseUrl: string, token: string) {
+  const url = new URL("/monitor", baseUrl);
+  url.searchParams.set("access_token", token);
   return url.toString();
 }
 
-function unwrapAgentPlatformResponse<T>(payload: unknown): T {
-  if (payload && typeof payload === "object" && "code" in payload && "data" in payload) {
-    const response = payload as PlatformApiResponse<T>;
-    if (response.code !== 0) {
-      throw new Error(response.msg || `agent-platform returned code ${response.code}`);
-    }
-    return response.data as T;
-  }
-  return payload as T;
-}
-
-async function readResponseText(response: any) {
-  if (typeof response?.text !== "function") {
-    return `HTTP ${response?.status ?? "unknown"}`;
-  }
-  try {
-    const text = await response.text();
-    return text.trim() || `HTTP ${response.status}`;
-  } catch {
-    return `HTTP ${response.status}`;
-  }
-}
-
-async function fetchAgentPlatformJson<T>(
-  fetchImpl: FetchLike,
-  baseUrl: string,
-  pathname: string,
-  token: string,
-  params?: Record<string, string | number>
-) {
-  const response = await fetchImpl(createApiUrl(baseUrl, pathname, params), {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${token}`
-    }
-  });
-  if (!response.ok) {
-    throw new Error(await readResponseText(response));
-  }
-  return unwrapAgentPlatformResponse<T>(await response.json());
-}
-
-async function resolveAgentPlatformMonitorAvailability(options: {
+async function resolveAgentPlatformMonitorUrl(options: {
   app: any;
   getServiceState: (app: any, serviceId: string) => Promise<any>;
   issueAgentPlatformAccessToken?: (app: any, reason: "missing" | "unauthorized") => Promise<any>;
@@ -201,7 +119,7 @@ async function resolveAgentPlatformMonitorAvailability(options: {
       message: tokenResult?.message || "agent-platform token 不可用。"
     };
   }
-  return { ok: true, baseUrl, token };
+  return { ok: true, monitorUrl: createAgentPlatformMonitorUrl(baseUrl, token) };
 }
 
 export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHandlerOptions) {
@@ -231,9 +149,6 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     minimizeLogViewerWindow,
     maximizeLogViewerWindow,
     openAgentPlatformMonitorWindow,
-    closeAgentPlatformMonitorWindow,
-    minimizeAgentPlatformMonitorWindow,
-    maximizeAgentPlatformMonitorWindow,
     revealPathInFileManager,
     getServiceWebviewPreloadPath,
     getServiceWebviewPreloadUrl,
@@ -246,8 +161,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     loadInstalledPlugins,
     notifyServicesChanged,
     runStartupPreparation,
-    issueAgentPlatformAccessToken,
-    agentPlatformFetch = fetch
+    issueAgentPlatformAccessToken
   } = options;
 
   // ---------------------------------------------------------------------------
@@ -457,29 +371,9 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
   ipcMain.handle("services.minimizeLogViewer", async () => minimizeLogViewerWindow());
   ipcMain.handle("services.maximizeLogViewer", async () => maximizeLogViewerWindow());
 
-  ipcMain.handle("services.openAgentPlatformMonitor", async () => openAgentPlatformMonitorWindow());
-  ipcMain.handle("services.closeAgentPlatformMonitor", async () => closeAgentPlatformMonitorWindow());
-  ipcMain.handle("services.minimizeAgentPlatformMonitor", async () => minimizeAgentPlatformMonitorWindow());
-  ipcMain.handle("services.maximizeAgentPlatformMonitor", async () => maximizeAgentPlatformMonitorWindow());
-
-  ipcMain.handle("services.readAgentPlatformMonitor", async (_event: any, rawOptions?: AgentPlatformMonitorReadOptions) => {
-    const options = rawOptions ?? {};
-    const connectionLimit = normalizeMonitorLimit(
-      options.connectionLimit,
-      AGENT_PLATFORM_MONITOR_DEFAULT_CONNECTION_LIMIT,
-      1,
-      500
-    );
-    const messageLimit = normalizeMonitorLimit(
-      options.messageLimit,
-      AGENT_PLATFORM_MONITOR_DEFAULT_MESSAGE_LIMIT,
-      1,
-      50
-    );
-    const sessionId = normalizeMonitorSessionId(options.sessionId);
-
+  ipcMain.handle("services.openAgentPlatformMonitor", async () => {
     try {
-      const availability = await resolveAgentPlatformMonitorAvailability({
+      const availability = await resolveAgentPlatformMonitorUrl({
         app,
         getServiceState,
         issueAgentPlatformAccessToken
@@ -487,37 +381,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       if (!availability.ok) {
         return availability;
       }
-
-      const messageParams = {
-        limit: messageLimit,
-        ...(sessionId ? { sessionId } : {})
-      };
-      const [overview, connections, messages] = await Promise.all([
-        fetchAgentPlatformJson(agentPlatformFetch, availability.baseUrl, "/api/monitor", availability.token, {
-          messageLimit
-        }),
-        fetchAgentPlatformJson(agentPlatformFetch, availability.baseUrl, "/api/monitor/ws/connections", availability.token, {
-          limit: connectionLimit,
-          ...(sessionId ? { sessionId } : {})
-        }),
-        fetchAgentPlatformJson(agentPlatformFetch, availability.baseUrl, "/api/monitor/ws/messages", availability.token, messageParams)
-      ]);
-
-      return {
-        ok: true,
-        message: "agent-platform monitor snapshot loaded.",
-        snapshot: {
-          overview,
-          connections,
-          messages,
-          filters: {
-            sessionId,
-            connectionLimit,
-            messageLimit
-          },
-          fetchedAt: new Date().toISOString()
-        }
-      };
+      return openAgentPlatformMonitorWindow(availability.monitorUrl);
     } catch (error) {
       return {
         ok: false,

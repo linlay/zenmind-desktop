@@ -2548,7 +2548,7 @@ test("service log viewer renderer text is routed through i18n", () => {
   assert.doesNotMatch(logViewerPage, /[\p{Script=Han}]/u);
 });
 
-test("agent-platform monitor opens as a separate manual-refresh window", () => {
+test("agent-platform monitor opens the platform /monitor page in a separate window", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const servicesHandlers = readSourceFile("src", "main", "ipc", "services-handlers.ts");
   const monitorWindow = readSourceFile("src", "main", "app-shell", "agent-platform-monitor-window.ts");
@@ -2559,33 +2559,37 @@ test("agent-platform monitor opens as a separate manual-refresh window", () => {
     path.join(projectRoot, "src", "renderer", "pages", "control-center", "ControlCenterPage.tsx"),
     "utf8"
   );
-  const monitorPage = readSourceFile("src", "renderer", "pages", "AgentPlatformMonitorPage.tsx");
   const globalStyles = readRendererStyles();
+  const monitorPagePath = path.join(projectRoot, "src", "renderer", "pages", "AgentPlatformMonitorPage.tsx");
+  const monitorStylesPath = path.join(projectRoot, "src", "renderer", "styles", "agent-platform-monitor.css");
 
   assert.match(mainProcess, /AgentPlatformMonitorWindowController/);
-  assert.match(mainProcess, /openAgentPlatformMonitorWindow\(\)/);
-  assert.match(monitorWindow, /AGENT_PLATFORM_MONITOR_ROUTE = "\/agent-platform-monitor"/);
+  assert.match(mainProcess, /openAgentPlatformMonitorWindow\(url: string\)/);
+  assert.match(monitorWindow, /loadURL\(url\)/);
+  assert.match(monitorWindow, /access_token/);
+  assert.match(monitorWindow, /frame:\s*true/);
   assert.match(monitorWindow, /if \(this\.options\.platform === "darwin"\)/);
   assert.match(monitorWindow, /else if \(this\.options\.platform === "win32"\)/);
   assert.match(monitorWindow, /else \{/);
-  assert.match(servicesHandlers, /services\.readAgentPlatformMonitor/);
+  assert.match(servicesHandlers, /services\.openAgentPlatformMonitor/);
   assert.match(servicesHandlers, /issueAgentPlatformAccessToken/);
-  assert.match(servicesHandlers, /\/api\/monitor\/ws\/connections/);
-  assert.match(servicesHandlers, /\/api\/monitor\/ws\/messages/);
+  assert.match(servicesHandlers, /new URL\("\/monitor"/);
+  assert.match(servicesHandlers, /searchParams\.set\("access_token"/);
+  assert.doesNotMatch(servicesHandlers, /services\.readAgentPlatformMonitor/);
+  assert.doesNotMatch(servicesHandlers, /\/api\/monitor\/ws\/connections/);
+  assert.doesNotMatch(servicesHandlers, /\/api\/monitor\/ws\/messages/);
   assert.match(preload, /openAgentPlatformMonitor/);
-  assert.match(preload, /readAgentPlatformMonitor/);
-  assert.match(preload, /onAgentPlatformMonitorMaximized/);
-  assert.match(contracts, /AgentPlatformMonitorReadOptions/);
-  assert.match(contracts, /AgentPlatformMonitorSnapshot/);
-  assert.match(app, /location\.pathname === "\/agent-platform-monitor"/);
+  assert.doesNotMatch(preload, /readAgentPlatformMonitor/);
+  assert.doesNotMatch(preload, /onAgentPlatformMonitorMaximized/);
+  assert.doesNotMatch(contracts, /AgentPlatformMonitorReadOptions/);
+  assert.doesNotMatch(contracts, /AgentPlatformMonitorSnapshot/);
+  assert.doesNotMatch(app, /location\.pathname === "\/agent-platform-monitor"/);
   assert.match(controlCenter, /activeDetailService\.id === "agent-platform"/);
   assert.match(controlCenter, /window\.electronAPI\.services\.openAgentPlatformMonitor/);
   assert.match(controlCenter, /activeDetailService\.status !== "running"/);
-  assert.match(monitorPage, /useI18n/);
-  assert.doesNotMatch(monitorPage, /[\p{Script=Han}]/u);
-  assert.doesNotMatch(monitorPage, /setInterval/);
-  assert.match(monitorPage, /readAgentPlatformMonitor/);
-  assert.match(globalStyles, /\.agent-monitor-page/);
+  assert.equal(fs.existsSync(monitorPagePath), false);
+  assert.equal(fs.existsSync(monitorStylesPath), false);
+  assert.doesNotMatch(globalStyles, /\.agent-monitor-page/);
 });
 
 test("assistant dock opens the agent webclient copilot in right-side embedded mode", () => {

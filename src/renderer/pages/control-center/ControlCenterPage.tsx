@@ -892,7 +892,7 @@ export function ControlCenterPage() {
     try {
       const result = await window.electronAPI.services.openAgentPlatformMonitor();
       if (!result.ok) {
-        setFeedback(t("controlCenter.feedback.monitorOpenFailed"));
+        setFeedback(result.message || t("controlCenter.feedback.monitorOpenFailed"));
       }
     } catch (reason) {
       setFeedback(
