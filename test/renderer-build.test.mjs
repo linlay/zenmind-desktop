@@ -2580,6 +2580,9 @@ test("agent-platform monitor opens the platform /monitor page in a separate wind
   assert.match(monitorWindow, /loadURL\(url\)/);
   assert.match(monitorWindow, /access_token/);
   assert.match(monitorWindow, /frame:\s*true/);
+  assert.doesNotMatch(monitorWindow, /parent:\s*ownerWindow/);
+  assert.doesNotMatch(monitorWindow, /modal:\s*false/);
+  assert.doesNotMatch(monitorWindow, /getOwnerWindow/);
   assert.match(monitorWindow, /if \(this\.options\.platform === "darwin"\)/);
   assert.match(monitorWindow, /else if \(this\.options\.platform === "win32"\)/);
   assert.match(monitorWindow, /else \{/);

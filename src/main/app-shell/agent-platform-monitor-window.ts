@@ -2,7 +2,6 @@ import { BrowserWindow } from "electron";
 
 type AgentPlatformMonitorWindowControllerOptions = {
   platform: NodeJS.Platform;
-  getOwnerWindow: () => BrowserWindow | null;
   onRendererError: (message: string, details: unknown) => void;
 };
 
@@ -45,7 +44,6 @@ export class AgentPlatformMonitorWindowController {
       return this.window;
     }
 
-    const ownerWindow = this.options.getOwnerWindow();
     const commonWindowOptions = {
       width: 1180,
       height: 820,
@@ -57,7 +55,6 @@ export class AgentPlatformMonitorWindowController {
       maximizable: true,
       minimizable: true,
       fullscreenable: true,
-      ...(ownerWindow ? { parent: ownerWindow, modal: false } : {}),
       title: "ZenMind Agent Platform Monitor",
       backgroundColor: "#F7F8FA",
       webPreferences: {

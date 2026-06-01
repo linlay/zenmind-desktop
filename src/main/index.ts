@@ -556,7 +556,6 @@ const logViewerWindowController = new LogViewerWindowController({
 
 const agentPlatformMonitorWindowController = new AgentPlatformMonitorWindowController({
   platform: mainProcessContext.platform,
-  getOwnerWindow: () => appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null,
   onRendererError: safeConsoleError
 });
 
