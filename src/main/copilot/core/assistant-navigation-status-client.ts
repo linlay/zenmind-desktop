@@ -744,7 +744,11 @@ export function applyAssistantNavigationPush(
     }
     nextAgent.unreadCount = readPushUnreadCount(event, nextAgent.unreadCount, "preserve");
     nextItems[agentIndex] = refreshAgentDerivedFields(nextAgent);
-    return { items: nextItems, changed: true, shouldRefresh: false };
+    return {
+      items: nextItems,
+      changed: true,
+      shouldRefresh: type === "run.complete" && !readPushPreview(event)
+    };
   }
 
   return { items: currentItems, changed: false, shouldRefresh: true };
