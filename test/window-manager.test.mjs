@@ -606,6 +606,7 @@ test("window manager configures attached webviews for downloads, DevTools and po
   const contents = new FakeWebContents(42);
   const sentTabs = [];
   const externalUrls = [];
+  const navigatedUrls = [];
   const diagnostics = [];
   const prevented = { devtools: false, navigate: false };
 
@@ -622,6 +623,9 @@ test("window manager configures attached webviews for downloads, DevTools and po
     resolveOpenDisposition: (url) => url.includes("inside") ? "tab" : "external",
     collectLoadDiagnostics: async () => ({ guestId: 42 }),
     report: (source, details) => diagnostics.push({ source, details }),
+    onWebviewNavigation: (url, details) => {
+      navigatedUrls.push({ url, details });
+    },
     openExternal: async (url) => {
       externalUrls.push(url);
     },
@@ -655,4 +659,26 @@ test("window manager configures attached webviews for downloads, DevTools and po
 
   assert.deepEqual(contents.windowOpenHandler({ url: "https://example.test/outside" }), { action: "deny" });
   assert.deepEqual(externalUrls, ["https://example.test/outside"]);
+
+  contents.emit("did-navigate", {}, "https://example.test/home");
+  contents.emit("did-navigate-in-page", {}, "https://example.test/home#ready", true);
+  contents.emit("did-navigate-in-page", {}, "https://example.test/sidebar", false);
+  assert.deepEqual(navigatedUrls, [
+    {
+      url: "https://example.test/home",
+      details: {
+        guestId: 42,
+        isInPage: false,
+        isMainFrame: true
+      }
+    },
+    {
+      url: "https://example.test/home#ready",
+      details: {
+        guestId: 42,
+        isInPage: true,
+        isMainFrame: true
+      }
+    }
+  ]);
 });

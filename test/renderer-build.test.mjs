@@ -2970,7 +2970,8 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /onDesktopSsoLogin\?\.\(\);/);
   assert.doesNotMatch(sidebarSource, /desktopSsoStatus\.authenticated[\s\S]{0,140}\? onDesktopSsoLogout\?\.\(\)[\s\S]{0,140}: onDesktopSsoLogin\?\.\(\)/);
   assert.match(sidebarSource, /disabled=\{desktopSsoBusy\}/);
-  assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name\s*\|\|\s*desktopSsoStatus\.user\?\.email\s*\|\|\s*desktopSsoStatus\.user\?\.sub\s*\|\|\s*t\("sidebar\.sso\.signedIn"\)/);
+  assert.match(sidebarSource, /desktopSsoStatus\.authenticated\s*\?\s*t\("sidebar\.sso\.signedIn"\)/);
+  assert.doesNotMatch(sidebarSource, /desktopSsoStatus\.user\?\.name\s*\|\|\s*desktopSsoStatus\.user\?\.email\s*\|\|\s*desktopSsoStatus\.user\?\.sub/);
   assert.doesNotMatch(sidebarSource, /desktopSsoMessage/);
   assert.doesNotMatch(sidebarSource, /sidebar-sso-message/);
   assert.match(sidebarSource, /desktopSsoStatus\.pending[\s\S]{0,120}\? t\("sidebar\.sso\.signingIn"\)/);

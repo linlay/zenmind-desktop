@@ -1566,10 +1566,7 @@ export function AppSidebar({
     }
 
     const desktopSsoUserLabel = desktopSsoStatus.authenticated
-      ? desktopSsoStatus.user?.name ||
-        desktopSsoStatus.user?.email ||
-        desktopSsoStatus.user?.sub ||
-        t("sidebar.sso.signedIn")
+      ? t("sidebar.sso.signedIn")
       : desktopSsoStatus.pending
         ? t("sidebar.sso.signingIn")
         : t("sidebar.sso.signedOut");

@@ -21,8 +21,10 @@ import {
 import { issueAgentAccessToken } from "./agent-auth";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import {
+  completeDesktopSsoBrowserLogin,
   failDesktopSsoFlow,
   getDesktopSsoStatus,
+  isDesktopSsoLoginCompletionUrl,
   logoutDesktopSso,
   startDesktopSsoLogin
 } from "./oidc-sso";
@@ -610,6 +612,21 @@ const desktopSsoController = createDesktopSsoController({
   openBrowserUrl
 });
 
+function handleDesktopSsoWebviewNavigation(url: string) {
+  try {
+    const status = getDesktopSsoStatus(app);
+    if (!status.pending || !isDesktopSsoLoginCompletionUrl(app, url)) {
+      return;
+    }
+    completeDesktopSsoBrowserLogin(app, url);
+  } catch (error) {
+    safeConsoleError("failed to complete desktop sso from webview navigation", {
+      url,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
 function clearDesktopPetIdleResetTimer() {
   if (appState.desktopPetIdleResetTimer) {
     clearTimeout(appState.desktopPetIdleResetTimer);
@@ -1186,6 +1203,7 @@ function createWindow() {
     resolveOpenDisposition: resolveWebviewOpenDisposition,
     collectLoadDiagnostics: collectWebviewLoadDiagnostics,
     report: safeConsoleError,
+    onWebviewNavigation: handleDesktopSsoWebviewNavigation,
     openExternal: shell.openExternal,
     schedule: setImmediate
   });

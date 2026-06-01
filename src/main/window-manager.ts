@@ -90,6 +90,7 @@ type AttachedWebviewOptions<TMainWindow> = {
   resolveOpenDisposition(url: string): "download" | "tab" | "external";
   collectLoadDiagnostics(contents: AttachedWebviewLike, validatedUrl: string): Promise<Record<string, unknown>>;
   report(source: string, details: Record<string, unknown>): void;
+  onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
   openExternal(url: string): Promise<unknown>;
   schedule(callback: () => void): void;
 };
@@ -232,6 +233,7 @@ export function configureMainWindowWebContents<
     resolveOpenDisposition(url: string): "download" | "tab" | "external";
     collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
     report(source: string, details: Record<string, unknown>): void;
+    onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
     openExternal(url: string): Promise<unknown>;
     schedule(callback: () => void): void;
   }
@@ -290,6 +292,7 @@ export function configureMainWindowWebContents<
       resolveOpenDisposition: options.resolveOpenDisposition,
       collectLoadDiagnostics: options.collectLoadDiagnostics,
       report: options.report,
+      onWebviewNavigation: options.onWebviewNavigation,
       openExternal: options.openExternal,
       schedule: options.schedule
     });
@@ -447,6 +450,25 @@ export function configureAttachedWebview<TMainWindow extends {
 
     event.preventDefault();
     downloadFromWebview(url);
+  });
+
+  contents.on("did-navigate", (_guestEvent, url) => {
+    options.onWebviewNavigation?.(url, {
+      guestId: contents.id,
+      isInPage: false,
+      isMainFrame: true
+    });
+  });
+
+  contents.on("did-navigate-in-page", (_guestEvent, url, isMainFrame) => {
+    if (isMainFrame === false) {
+      return;
+    }
+    options.onWebviewNavigation?.(url, {
+      guestId: contents.id,
+      isInPage: true,
+      isMainFrame: true
+    });
   });
 
   contents.on("render-process-gone", (_guestEvent, details) => {
