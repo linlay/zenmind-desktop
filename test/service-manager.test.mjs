@@ -1742,6 +1742,44 @@ test("agent-platform start env does not inject NODE_BIN or port overrides", asyn
   }
 });
 
+test("service command env injects DESKTOP_DEVICE_ID for builtin and plugin layouts without persisting it", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-device-env-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  const builtinEnvPath = writeTestEnv(userDataRoot, "agent-platform", "SERVER_PORT=7078\n");
+  const pluginEnvPath = writeTestEnv(userDataRoot, "test-plugin", "PORT=9090\n", "plugins");
+  const builtinLayout = {
+    programDir: getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"),
+    configDir: getTestConfigDir(userDataRoot, "agent-platform"),
+    dataDir: getTestDataDir(userDataRoot, "agent-platform"),
+    stateDir: getTestStateDir(userDataRoot, "agent-platform"),
+    logDir: getTestLogDir(userDataRoot, "agent-platform"),
+    envPath: builtinEnvPath
+  };
+  const pluginLayout = {
+    programDir: getTestPluginProgramDir(userDataRoot, "test-plugin"),
+    configDir: getTestConfigDir(userDataRoot, "test-plugin", "plugins"),
+    dataDir: getTestDataDir(userDataRoot, "test-plugin", "plugins"),
+    stateDir: getTestStateDir(userDataRoot, "test-plugin", "plugins"),
+    logDir: getTestLogDir(userDataRoot, "test-plugin", "plugins"),
+    envPath: pluginEnvPath
+  };
+
+  try {
+    const builtinEnv = __testInternals.buildDesktopServiceCommandEnv(app, builtinLayout, undefined);
+    const pluginEnv = __testInternals.buildDesktopServiceCommandEnv(app, pluginLayout, { NODE_BIN: "/tmp/node" });
+
+    assert.equal(typeof builtinEnv.DESKTOP_DEVICE_ID, "string");
+    assert.match(builtinEnv.DESKTOP_DEVICE_ID, /^[0-9a-f-]{36}$/i);
+    assert.equal(pluginEnv.DESKTOP_DEVICE_ID, builtinEnv.DESKTOP_DEVICE_ID);
+    assert.equal(pluginEnv.NODE_BIN, "/tmp/node");
+    assert.equal(fs.readFileSync(builtinEnvPath, "utf8"), "SERVER_PORT=7078\n");
+    assert.equal(fs.readFileSync(pluginEnvPath, "utf8"), "PORT=9090\n");
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("core builtin start commands run in daemon mode", () => {
   assert.deepEqual(
     __testInternals.getDesktopStartCommand({

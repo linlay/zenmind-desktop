@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import type { App } from "electron";
 import { parseEnvFileContent } from "./env-file";
 import { getService } from "./services/service-registry";
+import { getDesktopDeviceId } from "./device-identity";
 import {
   getServiceConfigRoot,
   getServiceDataRoot,
@@ -279,7 +280,10 @@ function buildSetupPublicKeyArgs(settings: ReturnType<typeof readAppServerAuthSe
   throw new Error(`不支持的平台：${process.platform}`);
 }
 
-function buildIssueAccessTokenArgs(settings: ReturnType<typeof readAppServerAuthSettings>) {
+function buildIssueAccessTokenArgsWithDeviceId(
+  settings: ReturnType<typeof readAppServerAuthSettings>,
+  desktopDeviceId: string
+) {
   if (process.platform === "win32") {
     return [
       "-Db",
@@ -289,7 +293,9 @@ function buildIssueAccessTokenArgs(settings: ReturnType<typeof readAppServerAuth
       "-Username",
       settings.username,
       "-DeviceName",
-      DESKTOP_DEVICE_NAME
+      DESKTOP_DEVICE_NAME,
+      "-DeviceId",
+      desktopDeviceId
     ];
   }
 
@@ -302,11 +308,33 @@ function buildIssueAccessTokenArgs(settings: ReturnType<typeof readAppServerAuth
       "--username",
       settings.username,
       "--device-name",
-      DESKTOP_DEVICE_NAME
+      DESKTOP_DEVICE_NAME,
+      "--device-id",
+      desktopDeviceId
     ];
   }
 
   throw new Error(`不支持的平台：${process.platform}`);
+}
+
+function readJwtPayload(token: string) {
+  const [, payloadPart] = token.split(".");
+  if (!payloadPart) {
+    throw new Error("zenmind-app-server 返回的 access token 不是有效 JWT。");
+  }
+  try {
+    return JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8")) as Record<string, unknown>;
+  } catch {
+    throw new Error("zenmind-app-server 返回的 access token payload 无法解析。");
+  }
+}
+
+function validateAccessTokenDeviceId(token: string, desktopDeviceId: string) {
+  const payload = readJwtPayload(token);
+  const tokenDeviceId = typeof payload.device_id === "string" ? payload.device_id.trim() : "";
+  if (tokenDeviceId !== desktopDeviceId) {
+    throw new Error("zenmind-app-server access token 的 device_id 与 DESKTOP_DEVICE_ID 不一致。");
+  }
 }
 
 export function getAppServerPublicKeyExportPath(app: App) {
@@ -346,14 +374,16 @@ export async function ensureAppServerJwk(app: App) {
 export async function issueAppServerAccessToken(app: App) {
   const layout = getAppServerLayout(app);
   const settings = readAppServerAuthSettings(layout);
+  const desktopDeviceId = getDesktopDeviceId(app);
   await ensureAppServerJwk(app);
 
   const resolved = resolveAppServerCommand(layout, "issue-bridge-access-token");
-  const result = await runAppServerAuthScript(layout, resolved, buildIssueAccessTokenArgs(settings), {
+  const result = await runAppServerAuthScript(layout, resolved, buildIssueAccessTokenArgsWithDeviceId(settings, desktopDeviceId), {
     ...buildAppServerAuthScriptEnv(layout, {
       AUTH_DB_PATH: settings.dbPath,
       AUTH_ISSUER: settings.issuer,
-      AUTH_APP_USERNAME: settings.username
+      AUTH_APP_USERNAME: settings.username,
+      DESKTOP_DEVICE_ID: desktopDeviceId
     })
   });
 
@@ -361,6 +391,7 @@ export async function issueAppServerAccessToken(app: App) {
   if (!token) {
     throw new Error("zenmind-app-server 未返回 access token。");
   }
+  validateAccessTokenDeviceId(token, desktopDeviceId);
   return token;
 }
 
@@ -369,6 +400,9 @@ export const __testInternals = {
   readAppServerAuthSettings,
   resolveAppServerCommand,
   resolveAppServerScript,
+  buildIssueAccessTokenArgsWithDeviceId,
+  readJwtPayload,
+  validateAccessTokenDeviceId,
   runAppServerScript,
   runAppServerAuthScript
 };

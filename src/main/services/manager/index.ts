@@ -66,6 +66,7 @@ import {
   buildServiceEnv,
   resolveNodeBin
 } from "./command-env";
+import { getDesktopDeviceId } from "../../device-identity";
 import {
   decodePowerShellCapturePayload,
   IS_WINDOWS,
@@ -2371,6 +2372,18 @@ function getDesktopStartCommandOptions(app: App, service: ServiceDefinition): Ru
   };
 }
 
+function buildDesktopServiceCommandEnv(
+  app: App,
+  layout: ServiceLayout,
+  overrides: NodeJS.ProcessEnv | undefined
+) {
+  return {
+    ...buildServiceLayoutEnv(layout),
+    ...(overrides ?? {}),
+    DESKTOP_DEVICE_ID: getDesktopDeviceId(app)
+  };
+}
+
 function isDaemonStartArg(value: string) {
   return value.trim().toLowerCase() === "--daemon" || value.trim().toLowerCase() === "-daemon";
 }
@@ -2433,10 +2446,7 @@ async function runServiceCommand(
     prepareServiceExecutionLayout(service, layout);
     await runExecFile(command[0], command.slice(1), installDir, {
       timeoutMs: options.timeoutMs,
-      env: {
-        ...buildServiceLayoutEnv(layout),
-        ...(options.env ?? {})
-      }
+      env: buildDesktopServiceCommandEnv(app, layout, options.env)
     });
     return {
       ok: true,
@@ -3625,6 +3635,7 @@ export const __testInternals = {
   zenmindAppServerInstallNeedsRefresh,
   resolveNodeBin,
   getStartCommandEnvOverrides,
+  buildDesktopServiceCommandEnv,
   getDesktopStartCommand,
   getDesktopStartCommandOptions,
   getPreparedStartupStartOptions,

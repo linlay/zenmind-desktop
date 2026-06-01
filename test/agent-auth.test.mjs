@@ -15,10 +15,12 @@ const {
 const {
   getServiceDataRoot,
   getServicesRoot,
-  getServiceConfigRoot
+  getServiceConfigRoot,
+  getDesktopConfigRoot
 } = require("../dist-electron/main/user-paths.js");
 
 const TEST_APP_SERVER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
+const TEST_DESKTOP_DEVICE_ID = "9d8f4d98-14e6-4af9-b60e-6f949560dbb6";
 
 function createAppStub(root) {
   return {
@@ -41,8 +43,44 @@ function decodeJson(part) {
   return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
 }
 
+function encodeJson(part) {
+  return Buffer.from(JSON.stringify(part), "utf8").toString("base64url");
+}
+
+function createFixtureJwt(deviceId) {
+  return [
+    encodeJson({ alg: "RS256", kid: "fixture", typ: "JWT" }),
+    encodeJson({
+      iss: "http://issuer.test",
+      sub: "app",
+      scope: "app",
+      device_id: deviceId
+    }),
+    "signature"
+  ].join(".");
+}
+
+function writeDesktopDeviceIdentityFixture(app, deviceId = TEST_DESKTOP_DEVICE_ID) {
+  const identityPath = path.join(getDesktopConfigRoot(app), "device-identity.json");
+  fs.mkdirSync(path.dirname(identityPath), { recursive: true });
+  fs.writeFileSync(
+    identityPath,
+    `${JSON.stringify({
+      version: 1,
+      deviceId,
+      createdAt: "2026-06-01T00:00:00.000Z"
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  return identityPath;
+}
+
 function registerAppServerFixture(root, options = {}) {
   const app = createAppStub(root);
+  const desktopDeviceId = options.desktopDeviceId ?? TEST_DESKTOP_DEVICE_ID;
+  const tokenDeviceId = options.tokenDeviceId ?? desktopDeviceId;
+  const fixtureToken = createFixtureJwt(tokenDeviceId);
+  writeDesktopDeviceIdentityFixture(app, desktopDeviceId);
   const isWindows = process.platform === "win32";
   const ext = isWindows ? "ps1" : "sh";
   const service = registerPlugin({
@@ -112,8 +150,14 @@ function registerAppServerFixture(root, options = {}) {
       "utf8"
     );
 
+    const escapedDesktopDeviceId = desktopDeviceId.replace(/'/g, "''");
     const issueScriptLines = [
-      "param([string]$db, [string]$issuer, [string]$username, [string]$deviceName)"
+      "param([string]$db, [string]$issuer, [string]$username, [string]$deviceName, [string]$deviceId)",
+      `$expectedDeviceId = '${escapedDesktopDeviceId}'`,
+      "if ($deviceId -ne $expectedDeviceId) {",
+      "  [Console]::Error.WriteLine(\"missing or unexpected DeviceId: $deviceId\")",
+      "  exit 1",
+      "}"
     ];
     if (options.lockedIssueAttempts) {
       const markerPath = path.join(root, "issue-attempts.txt");
@@ -144,7 +188,7 @@ function registerAppServerFixture(root, options = {}) {
       );
     }
     issueScriptLines.push(
-      "Write-Output 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImZpeHR1cmUiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwOi8vaXNzdWVyLnRlc3QiLCJzdWIiOiJhcHAiLCJzY29wZSI6ImFwcCIsImRldmljZV9pZCI6ImRldmljZS0xIn0.signature'"
+      `Write-Output '${fixtureToken.replace(/'/g, "''")}'`
     );
 
     fs.writeFileSync(
@@ -183,7 +227,18 @@ function registerAppServerFixture(root, options = {}) {
     );
     const issueScriptLines = [
       "#!/usr/bin/env bash",
-      "set -euo pipefail"
+      "set -euo pipefail",
+      "desktop_device_id=''",
+      "while [ $# -gt 0 ]; do",
+      "  case \"$1\" in",
+      "    --device-id) desktop_device_id=\"${2:-}\"; shift 2 ;;",
+      "    *) shift ;;",
+      "  esac",
+      "done",
+      `if [ "$desktop_device_id" != ${JSON.stringify(desktopDeviceId)} ]; then`,
+      "  printf '%s\\n' \"missing or unexpected --device-id: $desktop_device_id\" >&2",
+      "  exit 1",
+      "fi"
     ];
     if (options.lockedIssueAttempts) {
       const markerPath = path.join(root, "issue-attempts.txt");
@@ -213,7 +268,7 @@ function registerAppServerFixture(root, options = {}) {
       );
     }
     issueScriptLines.push(
-      "printf '%s\\n' 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImZpeHR1cmUiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwOi8vaXNzdWVyLnRlc3QiLCJzdWIiOiJhcHAiLCJzY29wZSI6ImFwcCIsImRldmljZV9pZCI6ImRldmljZS0xIn0.signature'"
+      `printf '%s\\n' ${JSON.stringify(fixtureToken)}`
     );
     fs.writeFileSync(
       path.join(programDir, "scripts", "issue-bridge-access-token.sh"),
@@ -239,12 +294,29 @@ test("issueAgentAccessToken uses zenmind-app-server to issue an app token", asyn
     assert.equal(payload.iss, "http://issuer.test");
     assert.equal(payload.sub, "app");
     assert.equal(payload.scope, "app");
-    assert.equal(payload.device_id, "device-1");
+    assert.equal(payload.device_id, TEST_DESKTOP_DEVICE_ID);
     const publicKeyPath = path.join(getServiceDataRoot(app, "zenmind-app-server"), "keys", "publicKey.pem");
     assert.equal(
       fs.readFileSync(publicKeyPath, "utf8"),
       "APP_SERVER_PUBLIC_KEY\n"
     );
+  } finally {
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("issueAgentAccessToken rejects app-server tokens with a mismatched device_id", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-auth-"));
+  const app = createAppStub(tempRoot);
+  registerAppServerFixture(tempRoot, {
+    tokenDeviceId: "3f84a4db-3b13-454d-95e4-c11d3534cd21"
+  });
+
+  try {
+    const result = await issueAgentAccessToken(app, "missing");
+    assert.equal(result.ok, false);
+    assert.match(result.message, /device_id .*DESKTOP_DEVICE_ID/u);
   } finally {
     registryInternals.clearServices();
     fs.rmSync(tempRoot, { recursive: true, force: true });
