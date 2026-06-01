@@ -228,6 +228,11 @@ function isSqliteBusyError(reason: unknown) {
   return /database is locked|SQLITE_BUSY|sqlite_busy|locking protocol|Error:\s*stepping,\s*database is locked|\(5\)/iu.test(message);
 }
 
+function isUnsupportedDeviceIdArgumentError(reason: unknown) {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  return /unknown argument:\s*(?:--device-id|-DeviceId)|unrecognized (?:option|argument).*?(?:--device-id|-DeviceId)/iu.test(message);
+}
+
 async function runAppServerAuthScript(
   layout: AppServerAuthLayout,
   resolved: ResolvedCommand,
@@ -317,6 +322,36 @@ function buildIssueAccessTokenArgsWithDeviceId(
   throw new Error(`不支持的平台：${process.platform}`);
 }
 
+function buildLegacyIssueAccessTokenArgs(settings: ReturnType<typeof readAppServerAuthSettings>) {
+  if (process.platform === "win32") {
+    return [
+      "-Db",
+      settings.dbPath,
+      "-Issuer",
+      settings.issuer,
+      "-Username",
+      settings.username,
+      "-DeviceName",
+      DESKTOP_DEVICE_NAME
+    ];
+  }
+
+  if (process.platform === "darwin" || process.platform === "linux") {
+    return [
+      "--db",
+      settings.dbPath,
+      "--issuer",
+      settings.issuer,
+      "--username",
+      settings.username,
+      "--device-name",
+      DESKTOP_DEVICE_NAME
+    ];
+  }
+
+  throw new Error(`不支持的平台：${process.platform}`);
+}
+
 function readJwtPayload(token: string) {
   const [, payloadPart] = token.split(".");
   if (!payloadPart) {
@@ -326,6 +361,14 @@ function readJwtPayload(token: string) {
     return JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8")) as Record<string, unknown>;
   } catch {
     throw new Error("zenmind-app-server 返回的 access token payload 无法解析。");
+  }
+}
+
+function validateAccessTokenHasDeviceId(token: string) {
+  const payload = readJwtPayload(token);
+  const tokenDeviceId = typeof payload.device_id === "string" ? payload.device_id.trim() : "";
+  if (!tokenDeviceId) {
+    throw new Error("zenmind-app-server access token 缺少 device_id。");
   }
 }
 
@@ -378,20 +421,35 @@ export async function issueAppServerAccessToken(app: App) {
   await ensureAppServerJwk(app);
 
   const resolved = resolveAppServerCommand(layout, "issue-bridge-access-token");
-  const result = await runAppServerAuthScript(layout, resolved, buildIssueAccessTokenArgsWithDeviceId(settings, desktopDeviceId), {
+  const env = {
     ...buildAppServerAuthScriptEnv(layout, {
       AUTH_DB_PATH: settings.dbPath,
       AUTH_ISSUER: settings.issuer,
       AUTH_APP_USERNAME: settings.username,
       DESKTOP_DEVICE_ID: desktopDeviceId
     })
-  });
+  };
+  let shouldValidateExactDeviceId = true;
+  let result: ExecResult;
+  try {
+    result = await runAppServerAuthScript(layout, resolved, buildIssueAccessTokenArgsWithDeviceId(settings, desktopDeviceId), env);
+  } catch (reason) {
+    if (!isUnsupportedDeviceIdArgumentError(reason)) {
+      throw reason;
+    }
+    shouldValidateExactDeviceId = false;
+    result = await runAppServerAuthScript(layout, resolved, buildLegacyIssueAccessTokenArgs(settings), env);
+  }
 
   const token = result.stdout.trim().split(/\r?\n/u).filter(Boolean).at(-1)?.trim() ?? "";
   if (!token) {
     throw new Error("zenmind-app-server 未返回 access token。");
   }
-  validateAccessTokenDeviceId(token, desktopDeviceId);
+  if (shouldValidateExactDeviceId) {
+    validateAccessTokenDeviceId(token, desktopDeviceId);
+  } else {
+    validateAccessTokenHasDeviceId(token);
+  }
   return token;
 }
 
@@ -401,7 +459,9 @@ export const __testInternals = {
   resolveAppServerCommand,
   resolveAppServerScript,
   buildIssueAccessTokenArgsWithDeviceId,
+  buildLegacyIssueAccessTokenArgs,
   readJwtPayload,
+  validateAccessTokenHasDeviceId,
   validateAccessTokenDeviceId,
   runAppServerScript,
   runAppServerAuthScript

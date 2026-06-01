@@ -80,7 +80,6 @@ const SETTINGS_ACTION_PATCH_FIELDS = [
 const SETTINGS_NOTICE_AUTO_CLOSE_MS = 3200;
 const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
   "quickAssistant",
-  "sideAssistant",
   "embeddedWebsites"
 ];
 
@@ -196,7 +195,6 @@ type FixedNavigationToolConfig = {
 const fixedNavigationToolRows: FixedNavigationToolConfig[][] = [
   [
     { id: "agents", labelKey: "nav.agents", copilotPageKey: "agents" },
-    { id: "memory", labelKey: "nav.memory", copilotPageKey: "memory" },
     { id: "market", labelKey: "nav.market", copilotPageKey: "market" }
   ],
   [

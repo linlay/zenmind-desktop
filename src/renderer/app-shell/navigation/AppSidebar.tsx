@@ -122,7 +122,6 @@ const fixedToolRowsBase: Array<
     Omit<SidebarToolItem, "label"> & {
       labelKey:
         | "nav.agents"
-        | "nav.memory"
         | "nav.controlCenter"
         | "nav.market"
         | "nav.settings"
@@ -136,12 +135,6 @@ const fixedToolRowsBase: Array<
       to: "/agents",
       labelKey: "nav.agents",
       icon: "agent",
-    },
-    {
-      orderKey: "memory",
-      to: "/memory",
-      labelKey: "nav.memory",
-      icon: "memory",
     },
     {
       orderKey: "market",

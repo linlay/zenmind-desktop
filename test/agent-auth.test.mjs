@@ -231,14 +231,20 @@ function registerAppServerFixture(root, options = {}) {
       "desktop_device_id=''",
       "while [ $# -gt 0 ]; do",
       "  case \"$1\" in",
-      "    --device-id) desktop_device_id=\"${2:-}\"; shift 2 ;;",
+      ...(options.legacyIssueScript ? [
+        "    --device-id) printf '%s\\n' '[issue-bridge-access-token] unknown argument: --device-id' >&2; exit 1 ;;"
+      ] : [
+        "    --device-id) desktop_device_id=\"${2:-}\"; shift 2 ;;"
+      ]),
       "    *) shift ;;",
       "  esac",
       "done",
-      `if [ "$desktop_device_id" != ${JSON.stringify(desktopDeviceId)} ]; then`,
-      "  printf '%s\\n' \"missing or unexpected --device-id: $desktop_device_id\" >&2",
-      "  exit 1",
-      "fi"
+      ...(options.legacyIssueScript ? [] : [
+        `if [ "$desktop_device_id" != ${JSON.stringify(desktopDeviceId)} ]; then`,
+        "  printf '%s\\n' \"missing or unexpected --device-id: $desktop_device_id\" >&2",
+        "  exit 1",
+        "fi"
+      ])
     ];
     if (options.lockedIssueAttempts) {
       const markerPath = path.join(root, "issue-attempts.txt");
@@ -317,6 +323,27 @@ test("issueAgentAccessToken rejects app-server tokens with a mismatched device_i
     const result = await issueAgentAccessToken(app, "missing");
     assert.equal(result.ok, false);
     assert.match(result.message, /device_id .*DESKTOP_DEVICE_ID/u);
+  } finally {
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("issueAgentAccessToken retries legacy app-server scripts without --device-id", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-auth-"));
+  const app = createAppStub(tempRoot);
+  registerAppServerFixture(tempRoot, {
+    legacyIssueScript: true,
+    tokenDeviceId: "c74d9d0b-dffa-43d4-9b19-4ed3b83fdfc9"
+  });
+
+  try {
+    const result = await issueAgentAccessToken(app, "missing");
+    assert.equal(result.ok, true, result.message);
+    assert.match(result.token, /^.+\..+\..+$/);
+    const [, payloadPart] = result.token.split(".");
+    const payload = decodeJson(payloadPart);
+    assert.equal(payload.device_id, "c74d9d0b-dffa-43d4-9b19-4ed3b83fdfc9");
   } finally {
     registryInternals.clearServices();
     fs.rmSync(tempRoot, { recursive: true, force: true });

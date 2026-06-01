@@ -81,7 +81,7 @@ export function createSettingsSectionDefinitions({
       label: "memory",
       description: "",
       layout: "wide",
-      visible: true
+      visible: false
     },
     {
       id: "about",

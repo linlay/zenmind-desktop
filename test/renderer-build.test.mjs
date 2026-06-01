@@ -658,7 +658,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /deleteChat/);
   assert.match(sidebarSource, /<span>删除<\/span>/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/schedules"[\s\S]*?icon:\s*"schedule"/);
-  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
+  assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
+  assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/control-center"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?to:\s*"\/help"[\s\S]*?labelKey:\s*"nav\.help"/);
   assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/schedules"/);
   assert.match(sidebarSource, /sidebar-footer-divider/);
@@ -974,7 +975,8 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /页面 Copilot/);
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
-  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?labelKey:\s*"nav\.memory"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?labelKey:\s*"nav\.help"/);
+  assert.match(settingsPage, /fixedNavigationToolRows[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?labelKey:\s*"nav\.help"/);
+  assert.doesNotMatch(settingsPage, /fixedNavigationToolRows[\s\S]*?labelKey:\s*"nav\.memory"/);
   assert.doesNotMatch(settingsPage, /fixedNavigationToolRows[\s\S]*?labelKey:\s*"nav\.schedules"/);
   assert.match(settingsPage, /copilotPageKey:\s*"controlCenter"/);
   assert.match(settingsPage, /copilotPageKey:\s*"market"/);
@@ -1012,6 +1014,16 @@ test("settings page memory section routes visible text through i18n", () => {
     settingsPage,
     /助手记忆|记忆召回|自动学习|最近记忆|本地存储|最近记录|暂无操作|已暂停引用|仅保留现有记忆|设置目录/
   );
+});
+
+test("settings page hides assistant memory while the module is disabled", () => {
+  const settingsSections = readSourceFile(
+    "src",
+    "renderer",
+    "settingsPageSections.ts"
+  );
+
+  assert.match(settingsSections, /id:\s*"memory"[\s\S]*?visible:\s*false/);
 });
 
 test("settings page renderer text is routed through i18n", () => {
