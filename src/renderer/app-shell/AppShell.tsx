@@ -271,6 +271,9 @@ export function AppShell() {
   const activeEmbeddedAgentWebclientRoute = isEmbeddedAgentWebclientRoute(activeAgentWebclientRoute)
     ? activeAgentWebclientRoute
     : null;
+  const usesAgentNativeSurface =
+    activeAgentWebclientRoute?.mode === "native" &&
+    (activeAgentWebclientRoute.key === "agents" || activeAgentWebclientRoute.key === "schedules");
   const activePluginId = activeEmbeddedAgentWebclientRoute
     ? AGENT_WEBCLIENT_SERVICE_ID
     : resolvePluginRouteId(location.pathname);
@@ -778,6 +781,13 @@ export function AppShell() {
   }, [usesEmbeddedSurface]);
 
   useEffect(() => {
+    document.body.classList.toggle("agent-native-surface-body", usesAgentNativeSurface);
+    return () => {
+      document.body.classList.remove("agent-native-surface-body");
+    };
+  }, [usesAgentNativeSurface]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify(sidebarState));
     } catch {
@@ -1237,6 +1247,7 @@ export function AppShell() {
         usesEmbeddedSurface ? "has-embedded-surface" : "",
         usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
         usesPluginSurface ? "has-plugin-surface" : "",
+        usesAgentNativeSurface ? "has-agent-native-surface" : "",
         isTaskBoardRoute ? "has-task-board-controls" : "",
         isMarketRoute ? "has-market-controls" : "",
         usesStandardBaseSurface ? "has-standard-base-surface" : "",
@@ -1359,14 +1370,14 @@ export function AppShell() {
               <Route
                 key={routeDefinition.key}
                 path={routeDefinition.routePath}
-                element={<AgentWebclientNativeRouteOutlet route={activeAgentWebclientRoute} />}
+                element={<AgentWebclientNativeRouteOutlet route={activeAgentWebclientRoute} hostTheme={themeMode} />}
               />
             ))}
             {AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS.map((routePattern) => (
               <Route
                 key={routePattern}
                 path={routePattern}
-                element={<AgentWebclientNativeRouteOutlet route={activeAgentWebclientRoute} />}
+                element={<AgentWebclientNativeRouteOutlet route={activeAgentWebclientRoute} hostTheme={themeMode} />}
               />
             ))}
             <Route path="/external/:itemId" element={<ExternalItemRoute itemMap={experimentalItemMap} />} />
@@ -1511,7 +1522,7 @@ function resolveAgentManagementWebclientRoute(pathname: string, search: string):
     embedPath: `${pathname}${search}`,
     labelKey: "nav.agents",
     kind: "management",
-    mode: "embedded"
+    mode: "native"
   };
 }
 

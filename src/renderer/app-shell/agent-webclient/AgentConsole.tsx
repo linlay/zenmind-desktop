@@ -24,7 +24,7 @@ import {
   SaveOutlined,
   SearchOutlined
 } from "@ant-design/icons";
-import { Button, Empty, Input, Select, Spin, Tag } from "antd";
+import { Button, Input, Select, Spin, Tag } from "antd";
 import type { TranslateFunction } from "../../../shared/i18n";
 import { AgentIcon, AGENT_ICON_NAMES } from "../navigation/AgentIcon";
 import { useI18n } from "../../i18n/useI18n";
@@ -906,9 +906,10 @@ export function AgentConsole({
           </div>
           <Spin spinning={loadingList || savingOrder}>
             {filteredAgents.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("agentConsole.empty")}>
+              <div className="command-empty-state">
+                {t("agentConsole.empty")}
                 <Button size="small" type="primary" onClick={startCreate}>{t("agentConsole.action.create")}</Button>
-              </Empty>
+              </div>
             ) : (
               <DndContext
                 sensors={sensors}

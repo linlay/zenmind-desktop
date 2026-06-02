@@ -38,7 +38,7 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
     embedPath: "/agents",
     labelKey: "nav.agents",
     kind: "management",
-    mode: "embedded"
+    mode: "native"
   },
   {
     key: "schedules",
@@ -46,7 +46,7 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
     embedPath: "/schedules",
     labelKey: "nav.schedules",
     kind: "management",
-    mode: "embedded"
+    mode: "native"
   },
   {
     key: "memory",

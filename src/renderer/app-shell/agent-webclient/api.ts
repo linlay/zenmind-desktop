@@ -28,10 +28,19 @@ async function requestAgentPlatform<T>(input: {
 }): Promise<T> {
   const api = window.electronAPI.agentPlatform?.request;
   if (!api) {
-    throw new Error("agent-platform preload bridge is unavailable");
+    throw new Error("当前窗口尚未连接智能体平台桥接，请重启 ZenMind 后重试。");
   }
 
-  const result = await api<T>(input);
+  let result: Awaited<ReturnType<typeof api<T>>>;
+  try {
+    result = await api<T>(input);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("agentPlatform.request") || message.includes("No handler registered")) {
+      throw new Error("当前窗口尚未连接智能体平台桥接，请重启 ZenMind 后重试。");
+    }
+    throw error;
+  }
   if (!result.ok) {
     throw new Error(result.message || "agent-platform request failed");
   }

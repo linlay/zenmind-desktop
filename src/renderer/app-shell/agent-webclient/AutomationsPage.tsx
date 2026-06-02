@@ -7,7 +7,7 @@ import {
   SaveOutlined,
   SearchOutlined
 } from "@ant-design/icons";
-import { Button, Checkbox, Empty, Input, Select, Spin, Switch, Tag, Tooltip } from "antd";
+import { Button, Checkbox, Input, Select, Spin, Switch, Tag, Tooltip } from "antd";
 import type { TranslateFunction } from "../../../shared/i18n";
 import { useI18n } from "../../i18n/useI18n";
 import {
@@ -628,9 +628,10 @@ export function AutomationsPage() {
             </div>
             <Spin spinning={loading}>
               {filteredAutomations.length === 0 ? (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("automationConsole.empty")}>
+                <div className="command-empty-state">
+                  {t("automationConsole.empty")}
                   <Button size="small" type="primary" onClick={startCreate}>{t("automationConsole.action.create")}</Button>
-                </Empty>
+                </div>
               ) : (
                 <div className="automation-list-items">
                   {filteredAutomations.map((item) => (
@@ -836,9 +837,11 @@ export function AutomationsPage() {
               </div>
               <Spin spinning={executionsLoading}>
                 {!selectedId ? (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("automationConsole.executions.emptyNoSelection")} />
+                  <div className="command-empty-state">
+                    {t("automationConsole.executions.emptyNoSelection")}
+                  </div>
                 ) : executions.length === 0 ? (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("automationConsole.executions.empty")} />
+                  <div className="command-empty-state">{t("automationConsole.executions.empty")}</div>
                 ) : (
                   <div className="automation-execution-list">
                     {executions.map((item) => (
