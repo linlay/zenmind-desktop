@@ -4271,6 +4271,85 @@ test("ensurePreStartRequirements does not rewrite agent platform desktop env bin
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("ensurePreStartRequirements applies desktop-register before agent-platform starts", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-desktop-register-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
+  const providersRoot = path.join(homeRoot, ".zenmind", "registries", "providers");
+  const registerPath = path.join(homeRoot, ".zenmind", "desktop-register.json");
+  const originalFetch = globalThis.fetch;
+  const issuedKey = "dk_DesktopRegisterIntegrationKey";
+  let requestBody = null;
+
+  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  fs.mkdirSync(providersRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(providersRoot, "th-deepseek.yml"),
+    "key: th-deepseek\nbaseUrl: https://transit-hub.zenmind.cc\ndefaultModel: th-deepseek-v4-flash\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(providersRoot, "th-minimax.yml"),
+    "key: th-minimax\nbaseUrl: https://transit-hub.zenmind.cc\napiKey: YOUR_TRANSIT_HUB_KEY\ndefaultModel: th-minimax-m3\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    registerPath,
+    `${JSON.stringify({
+      version: 1,
+      enabled: true,
+      endpoint: "https://transit-hub.zenmind.cc/api/apply-apikey",
+      grant: { type: "jwt", token: "jwt-token" },
+      providers: ["th-deepseek", "th-minimax"]
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  writeTestEnv(userDataRoot, platformService.id, "SERVER_PORT=11949\n");
+
+  globalThis.fetch = async (_url, init = {}) => {
+    requestBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => JSON.stringify({ key: issuedKey })
+    };
+  };
+
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+
+    const deviceIdentity = JSON.parse(fs.readFileSync(
+      path.join(homeRoot, ".zenmind", ".desktop", "config", "desktop", "device-identity.json"),
+      "utf8"
+    ));
+    assert.deepEqual(requestBody, { name: deviceIdentity.deviceId });
+    assert.match(
+      fs.readFileSync(path.join(providersRoot, "th-deepseek.yml"), "utf8"),
+      /^apiKey: dk_DesktopRegisterIntegrationKey$/m
+    );
+    assert.match(
+      fs.readFileSync(path.join(providersRoot, "th-minimax.yml"), "utf8"),
+      /^apiKey: dk_DesktopRegisterIntegrationKey$/m
+    );
+    assert.equal(JSON.parse(fs.readFileSync(registerPath, "utf8")).enabled, false);
+  } finally {
+    if (originalFetch === undefined) {
+      delete globalThis.fetch;
+    } else {
+      globalThis.fetch = originalFetch;
+    }
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("ensurePreStartRequirements removes deprecated agent platform config keys", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-config-migrate-"));
   const userDataRoot = path.join(tempRoot, "user-data");

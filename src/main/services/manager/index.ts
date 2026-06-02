@@ -66,6 +66,7 @@ import {
   buildServiceEnv,
   resolveNodeBin
 } from "./command-env";
+import { ensureDesktopRegisterApiKey } from "../../desktop-register";
 import { getDesktopDeviceId } from "../../device-identity";
 import {
   decodePowerShellCapturePayload,
@@ -2272,6 +2273,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 
   if (service.id === "agent-platform") {
     await ensureAgentPlatformDesktopConfig(app, service, layout);
+    await ensureDesktopRegisterApiKey(app);
     await ensureAgentPlatformContainerHubDependency(app, layout);
   }
 
