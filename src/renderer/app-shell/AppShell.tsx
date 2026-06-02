@@ -1,16 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
-import { CustomSidebarRouteFallback, CustomSidebarSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
+import { BuiltinBrowserSurfaceHost, CustomSidebarRouteFallback, CustomSidebarSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
+import { AgentWebclientNativeRouteOutlet } from "./agent-webclient/AgentWebclientNativeRouteOutlet";
 import { RootRouteRedirect, StartupLoadingScreen } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
-import { ControlCenterPage } from "../pages/control-center/ControlCenterPage";
-import { ExternalWebviewPage } from "../pages/external-webview/ExternalWebviewPage";
-import { HelpPage } from "../pages/HelpPage";
-import { FunctionalMarketPage } from "../pages/functional-market";
-import { SettingsPage } from "../pages/settings/SettingsPage";
-import { TaskBoardPage } from "../pages/task-board/TaskBoardPage";
 import { useServices } from "../services/ServicesContext";
 import { getAssistantPageContext } from "../copilot/page-context/assistantPageContext";
 import { publishCurrentPageContextSnapshot } from "../services/currentPageContext";
@@ -60,25 +55,48 @@ import {
   normalizeAssistantNavAgentItemsResult,
   normalizeAssistantNavAgents
 } from "../assistantNavigation";
+import {
+  AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS,
+  AGENT_WEBCLIENT_ROUTE_DEFINITIONS,
+  AGENT_WEBCLIENT_SERVICE_ID,
+  AGENT_WEBCLIENT_TARGET_PATH,
+  findAgentWebclientRouteDefinition,
+  isEmbeddedAgentWebclientRoute,
+  type AgentWebclientResolvedRoute
+} from "../../shared/agent-webclient-routes";
 
 type ThemeMode = "light" | "dark";
+
+const ControlCenterPage = lazy(() =>
+  import("../pages/control-center/ControlCenterPage").then((module) => ({ default: module.ControlCenterPage }))
+);
+const HelpPage = lazy(() =>
+  import("../pages/HelpPage").then((module) => ({ default: module.HelpPage }))
+);
+const FunctionalMarketPage = lazy(() =>
+  import("../pages/functional-market").then((module) => ({ default: module.FunctionalMarketPage }))
+);
+const SettingsPage = lazy(() =>
+  import("../pages/settings/SettingsPage").then((module) => ({ default: module.SettingsPage }))
+);
+const TaskBoardPage = lazy(() =>
+  import("../pages/task-board/TaskBoardPage").then((module) => ({ default: module.TaskBoardPage }))
+);
 
 const THEME_STORAGE_KEY = "zenmind-desktop.theme";
 const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = "zenmind-desktop.sidebar-nav-order";
 const CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY = "zenmind-desktop.custom-sidebar-group-order";
-const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
+const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
-const AGENT_WEBCLIENT_ROUTE_ITEMS = [
-  { routePath: "/agents", embedPath: "/agents", labelKey: "nav.agents" },
-  { routePath: "/schedules", embedPath: "/schedules", labelKey: "nav.schedules" },
-  { routePath: "/memory", embedPath: "/memory", labelKey: "nav.memory" },
-  { routePath: "/copilot", embedPath: "/copilot", labelKey: "nav.assistants" }
-] as const;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
+
+function RouteSuspense({ children }: { children: ReactNode }) {
+  return <Suspense fallback={null}>{children}</Suspense>;
+}
 
 function asRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -245,13 +263,16 @@ export function AppShell() {
   const activeAgentWebclientRoute = rawActiveAgentWebclientRoute
     ? {
         ...rawActiveAgentWebclientRoute,
-        label: "labelKey" in rawActiveAgentWebclientRoute
+        label: rawActiveAgentWebclientRoute.labelKey
           ? t(rawActiveAgentWebclientRoute.labelKey)
           : rawActiveAgentWebclientRoute.label
       }
     : null;
-  const activePluginId = activeAgentWebclientRoute
-    ? "agent-webclient"
+  const activeEmbeddedAgentWebclientRoute = isEmbeddedAgentWebclientRoute(activeAgentWebclientRoute)
+    ? activeAgentWebclientRoute
+    : null;
+  const activePluginId = activeEmbeddedAgentWebclientRoute
+    ? AGENT_WEBCLIENT_SERVICE_ID
     : resolvePluginRouteId(location.pathname);
   const activeCustomSidebarItemId = resolveCustomSidebarRouteId(location.pathname);
   const [mountedPluginIds, setMountedPluginIds] = useState<string[]>(() =>
@@ -260,16 +281,20 @@ export function AppShell() {
   const [mountedCustomSidebarItemIds, setMountedCustomSidebarItemIds] = useState<string[]>(() =>
     activeCustomSidebarItemId ? [activeCustomSidebarItemId] : []
   );
+  const [builtinBrowserSurfaceMounted, setBuiltinBrowserSurfaceMounted] = useState(
+    () => location.pathname === BUILTIN_BROWSER_ROUTE
+  );
   const usesEmbeddedSurface =
-    Boolean(activeAgentWebclientRoute) ||
+    Boolean(activeEmbeddedAgentWebclientRoute) ||
     location.pathname.startsWith("/service/") ||
     location.pathname.startsWith("/plugin/") ||
     location.pathname.startsWith("/external/") ||
     location.pathname === BUILTIN_BROWSER_ROUTE ||
     location.pathname.startsWith("/custom-sidebar/");
   const usesBuiltinBrowserSurface = location.pathname === BUILTIN_BROWSER_ROUTE;
+  const shouldMountBuiltinBrowserSurface = builtinBrowserSurfaceMounted || usesBuiltinBrowserSurface;
   const usesPluginSurface =
-    Boolean(activeAgentWebclientRoute) ||
+    Boolean(activeEmbeddedAgentWebclientRoute) ||
     location.pathname.startsWith("/service/") ||
     location.pathname.startsWith("/plugin/");
   const isTaskBoardRoute = location.pathname === "/kanban";
@@ -604,7 +629,7 @@ export function AppShell() {
 
   useEffect(() => {
     if (
-      !shouldAutoOpenAssistant(startupRestoreState, startupAllReady) ||
+      !shouldAutoOpenAssistant(startupRestoreState, startupAllReady, location.pathname) ||
       startupNavigationDoneRef.current
     ) {
       return;
@@ -613,7 +638,7 @@ export function AppShell() {
     startupNavigationDoneRef.current = true;
     setStartupTimedOut(false);
     navigate("/kanban", { replace: true });
-  }, [navigate, startupAllReady, startupRestoreState]);
+  }, [location.pathname, navigate, startupAllReady, startupRestoreState]);
 
   useEffect(() => {
     if (startupRestoreState?.mode !== "bootstrap") {
@@ -848,6 +873,14 @@ export function AppShell() {
         : [...current, activeCustomSidebarItemId]
     );
   }, [activeCustomSidebarItemId]);
+
+  useEffect(() => {
+    if (!usesBuiltinBrowserSurface) {
+      return;
+    }
+
+    setBuiltinBrowserSurfaceMounted(true);
+  }, [usesBuiltinBrowserSurface]);
 
   useEffect(() => {
     if (!customSidebarItemsLoaded) {
@@ -1273,9 +1306,13 @@ export function AppShell() {
           <div className="app-main-drag-region" aria-hidden="true" />
           <PluginSurfaceHost
             activePluginId={activePluginId}
-            activeAgentWebclientRoute={activeAgentWebclientRoute}
+            activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}
             hostTheme={themeMode}
             mountedPluginIds={mountedPluginIds}
+          />
+          <BuiltinBrowserSurfaceHost
+            active={usesBuiltinBrowserSurface}
+            mounted={shouldMountBuiltinBrowserSurface}
           />
           <CustomSidebarSurfaceHost
             activeItemId={activeCustomSidebarItemId}
@@ -1292,53 +1329,53 @@ export function AppShell() {
                 />
               }
             />
-            <Route path="/kanban" element={<TaskBoardPage hostTheme={themeMode} />} />
-            <Route path="/control-center" element={<ControlCenterPage />} />
+            <Route path="/kanban" element={<RouteSuspense><TaskBoardPage hostTheme={themeMode} /></RouteSuspense>} />
+            <Route path="/control-center" element={<RouteSuspense><ControlCenterPage /></RouteSuspense>} />
             <Route
               path="/settings"
               element={
-                <SettingsPage
-                  themeMode={themeMode}
-                  onToggleTheme={toggleTheme}
-                  isMac={isMac}
-                  isWindows={isWindows}
-                  sidebarNavOrder={normalizedSidebarNavOrder}
-                  availableSidebarNavOrderItems={availableSidebarNavOrderItems}
-                  onSidebarNavOrderChange={setSidebarNavOrder}
-                  customSidebarItems={customSidebarItems}
-                  onCustomSidebarItemsChange={updateCustomSidebarItems}
-                  onRefreshCustomSidebarItems={refreshCustomSidebarItems}
-                  onAssistantSettingsChange={setAssistantSettings}
-                />
+                <RouteSuspense>
+                  <SettingsPage
+                    themeMode={themeMode}
+                    onToggleTheme={toggleTheme}
+                    isMac={isMac}
+                    isWindows={isWindows}
+                    sidebarNavOrder={normalizedSidebarNavOrder}
+                    availableSidebarNavOrderItems={availableSidebarNavOrderItems}
+                    onSidebarNavOrderChange={setSidebarNavOrder}
+                    customSidebarItems={customSidebarItems}
+                    onCustomSidebarItemsChange={updateCustomSidebarItems}
+                    onRefreshCustomSidebarItems={refreshCustomSidebarItems}
+                    onAssistantSettingsChange={setAssistantSettings}
+                  />
+                </RouteSuspense>
               }
             />
             <Route
               path="/assistant"
               element={<Navigate to={ASSISTANT_TARGET_PATH} replace />}
             />
-            <Route path="/agents" element={null} />
-            <Route path="/schedules" element={null} />
-            <Route path="/memory" element={null} />
-            <Route path="/copilot" element={null} />
-            <Route path="/copilot/:agentKey" element={null} />
-            <Route path="/agent/:agentKey" element={null} />
+            {AGENT_WEBCLIENT_ROUTE_DEFINITIONS.map((routeDefinition) => (
+              <Route
+                key={routeDefinition.key}
+                path={routeDefinition.routePath}
+                element={<AgentWebclientNativeRouteOutlet route={activeAgentWebclientRoute} />}
+              />
+            ))}
+            {AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS.map((routePattern) => (
+              <Route
+                key={routePattern}
+                path={routePattern}
+                element={<AgentWebclientNativeRouteOutlet route={activeAgentWebclientRoute} />}
+              />
+            ))}
             <Route path="/external/:itemId" element={<ExternalItemRoute itemMap={experimentalItemMap} />} />
-            <Route
-              path={BUILTIN_BROWSER_ROUTE}
-              element={
-                <ExternalWebviewPage
-                  surfaceId={BUILTIN_BROWSER_SURFACE_ID}
-                  surfaceLabel={BUILTIN_BROWSER_SURFACE_LABEL}
-                  title={BUILTIN_BROWSER_SURFACE_LABEL}
-                  url={BUILTIN_BROWSER_DEFAULT_URL}
-                />
-              }
-            />
+            <Route path={BUILTIN_BROWSER_ROUTE} element={null} />
             <Route path="/custom-sidebar/:itemId" element={<CustomSidebarRouteFallback itemMap={customSidebarItemMap} />} />
             <Route path="/service/:serviceId" element={null} />
             <Route path="/plugin/:pluginId" element={null} />
-            <Route path="/market" element={<FunctionalMarketPage />} />
-            <Route path="/help" element={<HelpPage isWindows={isWindows} />} />
+            <Route path="/market" element={<RouteSuspense><FunctionalMarketPage /></RouteSuspense>} />
+            <Route path="/help" element={<RouteSuspense><HelpPage isWindows={isWindows} /></RouteSuspense>} />
           </Routes>
         </main>
       </div>
@@ -1405,15 +1442,24 @@ function resolvePluginRouteId(pathname: string) {
     null;
 }
 
-function resolveAgentWebclientRoute(pathname: string, search = "", copilotAgentOptions: AssistantNavAgentItem[] = []) {
+function resolveAgentWebclientRoute(
+  pathname: string,
+  search = "",
+  copilotAgentOptions: AssistantNavAgentItem[] = []
+): AgentWebclientResolvedRoute | null {
   const copilotRoute = resolveCopilotAgentWebclientRoute(pathname, search, copilotAgentOptions);
   if (copilotRoute) {
     return copilotRoute;
   }
 
-  const staticRoute = AGENT_WEBCLIENT_ROUTE_ITEMS.find((item) => item.routePath === pathname);
+  const staticRoute = findAgentWebclientRouteDefinition(pathname);
   if (staticRoute) {
     return staticRoute;
+  }
+
+  const agentManagementRoute = resolveAgentManagementWebclientRoute(pathname, search);
+  if (agentManagementRoute) {
+    return agentManagementRoute;
   }
 
   const agentRoute = resolveSingleAgentWebclientRoute(pathname, search);
@@ -1431,9 +1477,12 @@ function resolveAgentWebclientRoute(pathname: string, search = "", copilotAgentO
   }
 
   return {
+    key: "assistant-target",
     routePath: `${ASSISTANT_TARGET_PATH}${search}`,
     embedPath,
-    labelKey: embedPath.startsWith("/agent/") ? "nav.assistants" : "nav.agents"
+    labelKey: embedPath.startsWith("/agent/") ? "nav.assistants" : "nav.agents",
+    kind: embedPath.startsWith("/agent/") ? "chat" : embedPath.startsWith("/copilot") ? "copilot" : "management",
+    mode: "embedded"
   };
 }
 
@@ -1447,6 +1496,23 @@ function readAgentWebclientRouteEmbedPath(search: string) {
 
 function isSingleAgentWebclientRoute(pathname: string) {
   return Boolean(matchPath("/agent/:agentKey", pathname));
+}
+
+function resolveAgentManagementWebclientRoute(pathname: string, search: string): AgentWebclientResolvedRoute | null {
+  const match = matchPath("/agents/:agentKey", pathname);
+  const agentKey = match?.params.agentKey?.trim() ?? "";
+  if (!agentKey) {
+    return null;
+  }
+
+  return {
+    key: "agents",
+    routePath: `${pathname}${search}`,
+    embedPath: `${pathname}${search}`,
+    labelKey: "nav.agents",
+    kind: "management",
+    mode: "embedded"
+  };
 }
 
 function isCopilotAgentWebclientRoute(pathname: string) {
@@ -1479,9 +1545,12 @@ function resolveCopilotAgentWebclientRoute(
     : "/copilot";
 
   return {
+    key: "copilot",
     routePath: `${pathname}${search}`,
     embedPath: `${targetPath}${search}`,
-    labelKey: "nav.assistants"
+    labelKey: "nav.assistants",
+    kind: "copilot",
+    mode: "embedded"
   };
 }
 
@@ -1501,9 +1570,12 @@ function resolveSingleAgentWebclientRoute(pathname: string, search: string) {
   }
   const embedQuery = embedParams.toString();
   return {
+    key: "agent-chat",
     routePath: `${pathname}${search}`,
     embedPath: `/agent/${encodeURIComponent(agentKey)}${embedQuery ? `?${embedQuery}` : ""}`,
-    label: "智能助理"
+    label: "智能助理",
+    kind: "chat",
+    mode: "embedded"
   };
 }
 

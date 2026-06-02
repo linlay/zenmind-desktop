@@ -179,17 +179,58 @@ const sharedCoreServicePortOverrides: Record<string, CoreServicePortOverride> = 
   }
 };
 
+const testCoreServicePortOffsets: Record<string, number> = {
+  "agent-webclient": 0,
+  "agent-platform": 1,
+  "zenmind-app-server": 2,
+  "agent-container-hub": 3
+};
+
+function getTestCoreServicePortBase() {
+  const raw = process.env.ZENMIND_TEST_CORE_SERVICE_PORT_BASE?.trim() ?? "";
+  if (!raw || !/^\d+$/u.test(raw)) {
+    return null;
+  }
+
+  const portBase = Number.parseInt(raw, 10);
+  return Number.isInteger(portBase) && portBase > 0 && portBase + 3 <= 65535
+    ? portBase
+    : null;
+}
+
+function applyTestCoreServicePortBase(
+  overrides: Record<string, CoreServicePortOverride>,
+  portBase: number | null
+) {
+  if (!portBase) {
+    return overrides;
+  }
+
+  return Object.fromEntries(Object.entries(overrides).map(([serviceId, override]) => {
+    const offset = testCoreServicePortOffsets[serviceId];
+    return [
+      serviceId,
+      offset === undefined
+        ? override
+        : {
+            ...override,
+            defaultPort: portBase + offset
+          }
+    ];
+  }));
+}
+
 function getCoreServicePortOverrides(): Record<string, CoreServicePortOverride> {
   // The defaults are currently shared, but builtin service manifests are platform-specific.
   if (process.platform === "win32") {
-    return sharedCoreServicePortOverrides;
+    return applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
   }
 
   if (process.platform === "darwin") {
-    return sharedCoreServicePortOverrides;
+    return applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
   }
 
-  return sharedCoreServicePortOverrides;
+  return applyTestCoreServicePortBase(sharedCoreServicePortOverrides, getTestCoreServicePortBase());
 }
 
 function getCoreServicePortOverride(serviceId: string) {

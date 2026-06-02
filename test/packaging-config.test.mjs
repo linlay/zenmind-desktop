@@ -19,6 +19,15 @@ function loadPackageJson() {
   return JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
 }
 
+test("renderer declares Ant Design component libraries used by native webclient pages", () => {
+  const dependencies = loadPackageJson().dependencies ?? {};
+
+  assert.match(dependencies.antd ?? "", /^\^5\./);
+  assert.match(dependencies["@ant-design/icons"] ?? "", /^\^6\./);
+  assert.match(dependencies["@ant-design/x"] ?? "", /^\^1\./);
+  assert.match(dependencies["@ant-design/x-markdown"] ?? "", /^\^2\./);
+});
+
 test("electron-builder packaging uses staged app input, restricted locales, and NSIS uninstall hook", () => {
   const packageJson = loadPackageJson();
   const extraResources = packageJson.build?.extraResources ?? [];

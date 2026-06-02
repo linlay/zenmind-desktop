@@ -1,6 +1,9 @@
 import type { App, BrowserWindow, CookiesSetDetails, Session } from "electron";
 import {
+  exchangeConfiguredDesktopSsoCookieForAccessToken,
+  getDesktopSsoAccessTokenCookieDetails,
   getDesktopSsoCookieMirrorOrigins,
+  getDesktopSsoCookieAccessTokenExchangeUrl,
   getDesktopSsoProxyBrowserCookieDetails,
   getDesktopSsoStatus
 } from "./oidc-sso";
@@ -10,6 +13,7 @@ import { safeConsoleError } from "./safe-console";
 export const DESKTOP_SSO_WEBVIEW_PARTITION = "persist:zenmind-desktop-sso";
 
 type DesktopSsoStatus = ReturnType<typeof getDesktopSsoStatus>;
+type CookieAccessTokenFetch = Parameters<typeof exchangeConfiguredDesktopSsoCookieForAccessToken>[2];
 
 type BrowserOpenInput = {
   url: string;
@@ -313,6 +317,29 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           });
         }));
       }));
+    },
+    async exchangeBrowserCookieAccessToken(fetchImpl?: CookieAccessTokenFetch) {
+      const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(options.app);
+      if (!exchangeUrl) {
+        return "";
+      }
+      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+      const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, exchangeUrl);
+      const accessToken = await exchangeConfiguredDesktopSsoCookieForAccessToken(options.app, cookieHeader, fetchImpl);
+      if (!accessToken) {
+        return "";
+      }
+      const cookieDetails = getDesktopSsoAccessTokenCookieDetails(options.app, accessToken);
+      const targetSessions = [
+        options.session.defaultSession,
+        ssoSession
+      ];
+      await Promise.all(cookieDetails.flatMap((details) =>
+        targetSessions.map(async (targetSession) => {
+          await targetSession.cookies.set(details);
+        })
+      ));
+      return accessToken;
     },
     async clearBrowserCookies() {
       const cookieDetails = getDesktopSsoProxyBrowserCookieDetails();

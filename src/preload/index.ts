@@ -251,6 +251,9 @@ const api: DesktopApi = {
   agentAuth: {
     issueAccessToken: (reason) => ipcRenderer.invoke("agentAuth.issueAccessToken", reason)
   },
+  agentPlatform: {
+    request: (input) => ipcRenderer.invoke("agentPlatform.request", input)
+  },
   sso: {
     getStatus: () => ipcRenderer.invoke("sso.getStatus"),
     startLogin: () => ipcRenderer.invoke("sso.startLogin"),

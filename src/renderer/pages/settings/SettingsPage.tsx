@@ -411,6 +411,7 @@ export function SettingsPage({
   const [sectionReadErrors, setSectionReadErrors] = useState<SectionReadErrorMap>({});
   const [customSidebarLabel, setCustomSidebarLabel] = useState("");
   const [customSidebarUrl, setCustomSidebarUrl] = useState("");
+  const [editingCustomSidebarId, setEditingCustomSidebarId] = useState("");
   const [customSidebarPending, setCustomSidebarPending] = useState(false);
   const [customSidebarTransferPending, setCustomSidebarTransferPending] = useState("");
   const [customSidebarAgentPendingId, setCustomSidebarAgentPendingId] = useState("");
@@ -1212,6 +1213,11 @@ export function SettingsPage({
 
   async function handleAddCustomSidebarItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (editingCustomSidebarId) {
+      await handleUpdateCustomSidebarItem(editingCustomSidebarId);
+      return;
+    }
+
     setCustomSidebarPending(true);
     try {
       const result = await window.electronAPI.customSidebar.add({
@@ -1231,12 +1237,51 @@ export function SettingsPage({
     }
   }
 
+  function resetCustomSidebarForm() {
+    setEditingCustomSidebarId("");
+    setCustomSidebarLabel("");
+    setCustomSidebarUrl("");
+  }
+
+  function handleStartEditCustomSidebarItem(item: CustomSidebarItem) {
+    setEditingCustomSidebarId(item.id);
+    setCustomSidebarLabel(item.label);
+    setCustomSidebarUrl(item.url);
+    setNotice((current) => current?.sectionId === "embeddedWebsites" ? null : current);
+  }
+
+  function handleCancelEditCustomSidebarItem() {
+    resetCustomSidebarForm();
+  }
+
+  async function handleUpdateCustomSidebarItem(itemId: string) {
+    setCustomSidebarPending(true);
+    try {
+      const result = await window.electronAPI.customSidebar.update(itemId, {
+        label: customSidebarLabel,
+        url: customSidebarUrl
+      });
+      showSectionResultNotice("embeddedWebsites", result);
+      onCustomSidebarItemsChange(result.items);
+      if (result.ok) {
+        resetCustomSidebarForm();
+      }
+    } catch (reason) {
+      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setCustomSidebarPending(false);
+    }
+  }
+
   async function handleDeleteCustomSidebarItem(item: CustomSidebarItem) {
     setDeletingCustomSidebarId(item.id);
     try {
       const result = await window.electronAPI.customSidebar.remove(item.id);
       showSectionResultNotice("embeddedWebsites", result);
       onCustomSidebarItemsChange(result.items);
+      if (editingCustomSidebarId === item.id) {
+        resetCustomSidebarForm();
+      }
     } catch (reason) {
       showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
@@ -1272,6 +1317,7 @@ export function SettingsPage({
       const result = await window.electronAPI.customSidebar.import();
       showSectionResultNotice("embeddedWebsites", result);
       onCustomSidebarItemsChange(result.items);
+      resetCustomSidebarForm();
     } catch (reason) {
       showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
@@ -1534,6 +1580,9 @@ export function SettingsPage({
   const activeSectionWidthClass = activeSectionDefinition?.layout === "wide" ? "workspace-wide" : "workspace-measure";
   const activeSectionReadError = activeSection ? sectionReadErrors[activeSection] ?? "" : "";
   const activeSectionNotice = notice && notice.sectionId === activeSection ? notice : null;
+  const editingCustomSidebarItem = editingCustomSidebarId
+    ? customSidebarItems.find((item) => item.id === editingCustomSidebarId) ?? null
+    : null;
 
   function renderActiveSection() {
     switch (activeSection) {
@@ -1984,10 +2033,31 @@ export function SettingsPage({
                 </label>
                 <div className="custom-sidebar-submit-wrap">
                   <button type="submit" className="text-button custom-sidebar-submit" disabled={customSidebarPending}>
-                    {customSidebarPending ? t("settings.embeddedWebsites.adding") : t("settings.embeddedWebsites.add")}
+                    {customSidebarPending
+                      ? editingCustomSidebarId
+                        ? t("settings.embeddedWebsites.updating")
+                        : t("settings.embeddedWebsites.adding")
+                      : editingCustomSidebarId
+                        ? t("settings.embeddedWebsites.save")
+                        : t("settings.embeddedWebsites.add")}
                   </button>
+                  {editingCustomSidebarId ? (
+                    <button
+                      type="button"
+                      className="text-button custom-sidebar-cancel"
+                      onClick={handleCancelEditCustomSidebarItem}
+                      disabled={customSidebarPending}
+                    >
+                      {t("settings.embeddedWebsites.cancel")}
+                    </button>
+                  ) : null}
                 </div>
               </form>
+              {editingCustomSidebarItem ? (
+                <div className="custom-sidebar-editing-note">
+                  {t("settings.embeddedWebsites.editing", { label: editingCustomSidebarItem.label })}
+                </div>
+              ) : null}
 
               <div className="custom-sidebar-list-head">
                 <strong>{t("settings.embeddedWebsites.addedTitle")}</strong>
@@ -2021,8 +2091,9 @@ export function SettingsPage({
                     const itemAgentKey = item.agentKey || "";
                     const itemAgentKnown = !itemAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === itemAgentKey);
                     const itemAgentPending = customSidebarAgentPendingId === item.id;
+                    const itemEditing = editingCustomSidebarId === item.id;
                     return (
-                      <div className="custom-sidebar-row" key={item.id}>
+                      <div className={itemEditing ? "custom-sidebar-row is-editing" : "custom-sidebar-row"} key={item.id}>
                         <div className="custom-sidebar-row-main">
                           <div className="custom-sidebar-row-copy">
                             <strong>{item.label}</strong>
@@ -2049,14 +2120,24 @@ export function SettingsPage({
                             </div>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          className="danger-text-button"
-                          onClick={() => void handleDeleteCustomSidebarItem(item)}
-                          disabled={deletingCustomSidebarId === item.id}
-                        >
-                          {deletingCustomSidebarId === item.id ? t("settings.embeddedWebsites.deleting") : t("settings.embeddedWebsites.delete")}
-                        </button>
+                        <div className="custom-sidebar-row-actions">
+                          <button
+                            type="button"
+                            className="text-button"
+                            onClick={() => handleStartEditCustomSidebarItem(item)}
+                            disabled={customSidebarPending || deletingCustomSidebarId === item.id}
+                          >
+                            {itemEditing ? t("settings.embeddedWebsites.editingButton") : t("settings.embeddedWebsites.edit")}
+                          </button>
+                          <button
+                            type="button"
+                            className="danger-text-button"
+                            onClick={() => void handleDeleteCustomSidebarItem(item)}
+                            disabled={deletingCustomSidebarId === item.id}
+                          >
+                            {deletingCustomSidebarId === item.id ? t("settings.embeddedWebsites.deleting") : t("settings.embeddedWebsites.delete")}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}

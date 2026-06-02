@@ -1,6 +1,9 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { AssistantWorkerOpenRequest } from "../../../shared/contracts";
-import { PluginPage } from "../../pages/plugin/PluginPage";
+
+const PluginPage = lazy(() =>
+  import("../../pages/plugin/PluginPage").then((module) => ({ default: module.PluginPage }))
+);
 
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
 const AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID = "agent-webclient-copilot-dock";
@@ -52,8 +55,15 @@ export function AgentWebclientCopilotDock({
   onClose: () => void;
   onRunningRunIdChange: (runId: string | null) => void;
 }) {
+  const [mounted, setMounted] = useState(open);
   const targetAgentKey = resolveTargetAgentKey(openRequest, resolvedAgentKey);
   const targetEmbedPath = buildAgentWebclientCopilotPath(openRequest, resolvedAgentKey);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -72,18 +82,22 @@ export function AgentWebclientCopilotDock({
       data-open-chat-id={openRequest?.chatId ?? ""}
       data-open-agent-key={targetAgentKey}
     >
-      <PluginPage
-        key={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
-        active={open}
-        embedPath={targetEmbedPath}
-        hostTheme={hostTheme}
-        pluginId="agent-webclient"
-        surfaceId={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
-        surfaceLabel="助手"
-        skipContextRegistration
-        loadInitialEmbeddedUrlDirectly
-        suppressInitialLoadingCopy
-      />
+      {mounted ? (
+        <Suspense fallback={null}>
+          <PluginPage
+            key={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
+            active={open}
+            embedPath={targetEmbedPath}
+            hostTheme={hostTheme}
+            pluginId="agent-webclient"
+            surfaceId={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
+            surfaceLabel="助手"
+            skipContextRegistration
+            loadInitialEmbeddedUrlDirectly
+            suppressInitialLoadingCopy
+          />
+        </Suspense>
+      ) : null}
       <button
         type="button"
         className="agent-webclient-copilot-close"

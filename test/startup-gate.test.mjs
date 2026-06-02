@@ -70,4 +70,6 @@ test("startup gate only auto-opens the assistant after bootstrap succeeds", () =
   assert.equal(shouldAutoOpenAssistant({ mode: "restore", phase: "succeeded" }, true), false);
   assert.equal(shouldAutoOpenAssistant({ mode: "bootstrap", phase: "running" }, true), false);
   assert.equal(shouldAutoOpenAssistant({ mode: "bootstrap", phase: "succeeded" }, true), true);
+  assert.equal(shouldAutoOpenAssistant({ mode: "bootstrap", phase: "succeeded" }, true, "/control-center"), true);
+  assert.equal(shouldAutoOpenAssistant({ mode: "bootstrap", phase: "succeeded" }, true, "/market"), false);
 });

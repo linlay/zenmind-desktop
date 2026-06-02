@@ -9,7 +9,9 @@ import { createSign, generateKeyPairSync } from "node:crypto";
 const require = createRequire(import.meta.url);
 const {
   __testInternals,
-  getDesktopSsoStatus
+  exchangeConfiguredDesktopSsoCookieForAccessToken,
+  getDesktopSsoStatus,
+  logoutDesktopSso
 } = require("../dist-electron/main/oidc-sso.js");
 
 const {
@@ -28,6 +30,8 @@ const {
   buildDesktopSsoAccessTokenCookieDetails,
   completeDesktopSsoBrowserLogin,
   completeDesktopSsoCookieLogin,
+  getDesktopSsoCookieAccessTokenExchangeUrl,
+  getDesktopSsoAccessTokenFilePath,
   getDesktopSsoAccessTokenCookieLookup,
   getDesktopSsoAccessTokenCookieLookups,
   isDesktopSsoLoginCompletionUrl,
@@ -402,6 +406,44 @@ test("direct AI login can complete on a logged-in page and inject token cookies 
   ]);
 });
 
+test("direct AI login defaults cookie access_token exchange to the authorization endpoint", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-ai-default-token-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      loginUrl: TEST_AI_ROOT_URL,
+      appendLoginState: false,
+      browserOrigin: TEST_AI_ORIGIN
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  const result = loadDesktopSsoConfig(app);
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.config.cookieAccessTokenExchange, {
+    url: TEST_AI_AUTHORIZATION_URL,
+    method: "GET",
+    headers: {},
+    accessTokenPath: "access_token"
+  });
+  assert.deepEqual(result.config.accessTokenCookie, {
+    url: TEST_AI_ROOT_URL,
+    name: "access_token",
+    path: "/",
+    secure: true,
+    httpOnly: false,
+    sameSite: "lax"
+  });
+  assert.equal(getDesktopSsoCookieAccessTokenExchangeUrl(app), TEST_AI_AUTHORIZATION_URL);
+});
+
 test("resolveDesktopSsoConfigPath uses platform-specific home paths", () => {
   assert.equal(
     resolveDesktopSsoConfigPath(createTestApp("/Users/tester"), "darwin"),
@@ -571,6 +613,46 @@ test("login completion URL and access token cookie injection are configurable", 
   assert.equal(status.authenticated, true);
   assert.equal(status.user.sub, "desktop-sso-cookie");
   assert.equal("accessToken" in status, false);
+});
+
+test("cookie access_token exchange persists the token file and logout removes it", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-token-file-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      loginUrl: TEST_AI_ROOT_URL,
+      appendLoginState: false,
+      browserOrigin: TEST_AI_ORIGIN
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  const tokenFilePath = getDesktopSsoAccessTokenFilePath(app);
+
+  assert.equal(fs.existsSync(tokenFilePath), false);
+
+  const accessToken = await exchangeConfiguredDesktopSsoCookieForAccessToken(app, "sid=cookie-123", async () => ({
+    ok: true,
+    json: async () => ({ access_token: "token-123" })
+  }));
+
+  assert.equal(accessToken, "token-123");
+  assert.equal(fs.readFileSync(tokenFilePath, "utf8"), "token-123\n");
+  assert.equal(fs.statSync(tokenFilePath).mode & 0o777, 0o600);
+
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({ enabled: false }),
+    "utf8"
+  );
+  await logoutDesktopSso(app);
+
+  assert.equal(fs.existsSync(tokenFilePath), false);
 });
 
 test("normalizeCallbackRequest rejects missing, mismatched, and reused authorization codes", () => {

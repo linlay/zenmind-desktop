@@ -3,6 +3,7 @@ export interface SsoIpcHandlerOptions {
   desktopSsoController: {
     broadcastStatus: (status: any) => void;
     syncBrowserCookies: () => Promise<void>;
+    exchangeBrowserCookieAccessToken: () => Promise<string>;
     clearBrowserCookies: () => Promise<void>;
     openBrowserUrl: (input: {
       url: string;
@@ -45,6 +46,7 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
       onBeforeStatusChanged: async (status: any) => {
         if (status.authenticated) {
           await desktopSsoController.syncBrowserCookies();
+          await desktopSsoController.exchangeBrowserCookieAccessToken();
         }
       },
       onStatusChanged: desktopSsoController.broadcastStatus

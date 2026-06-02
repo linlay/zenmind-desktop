@@ -219,6 +219,10 @@
   padding: 0 8px;
 }
 
+.sidebar-chrome-toolbar.is-mac {
+  padding-left: var(--mac-traffic-light-safe-area);
+}
+
 .sidebar-collapsed-toggle-button {
   position: absolute !important;
   top: 4px;
@@ -269,6 +273,10 @@
   opacity: 0.52;
 }
 
+.sidebar-custom-child-link {
+  padding-left: 4px !important;
+}
+
 /* ── Sidebar Nav ── */
 
 .sidebar-nav {
@@ -285,8 +293,8 @@
   scrollbar-width: thin;
   position: relative;
   z-index: 1;
-  app-region: drag;
-  -webkit-app-region: drag;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 
 .sidebar-nav::-webkit-scrollbar {
@@ -1878,6 +1886,15 @@
 .app-sidebar-collapse-button-icon-panel {
   width: 16px;
   height: 16px;
+}
+
+.app-sidebar-collapse-button-icon-chevron {
+  width: 16px;
+  height: 16px;
+}
+
+.app-sidebar-collapse-button-icon-chevron::before {
+  content: "";
 }
 
 :root[data-theme="dark"] .app-sidebar-collapse-button {
