@@ -18,6 +18,7 @@ export interface MainAppState {
   mainWindow: BrowserWindow | null;
   desktopPetWindow: BrowserWindow | null;
   isHandlingQuit: boolean;
+  desktopSsoWebviewCompletionInFlight: boolean;
   shutdownCleanupPromise: Promise<void> | null;
   shutdownCleanupComplete: boolean;
   serviceMutationQueue: Promise<void>;
@@ -48,6 +49,7 @@ export function createMainAppState(initialState: Partial<MainAppState> = {}): Ma
     mainWindow: initialState.mainWindow ?? null,
     desktopPetWindow: initialState.desktopPetWindow ?? null,
     isHandlingQuit: initialState.isHandlingQuit ?? false,
+    desktopSsoWebviewCompletionInFlight: initialState.desktopSsoWebviewCompletionInFlight ?? false,
     shutdownCleanupPromise: initialState.shutdownCleanupPromise ?? null,
     shutdownCleanupComplete: initialState.shutdownCleanupComplete ?? false,
     serviceMutationQueue: initialState.serviceMutationQueue ?? Promise.resolve(),

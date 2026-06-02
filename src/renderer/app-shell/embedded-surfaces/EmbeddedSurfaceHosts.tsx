@@ -1,42 +1,46 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
-import { ExternalWebviewPage } from "../../pages/external-webview/ExternalWebviewPage";
 import { PlaceholderPage } from "../../pages/PlaceholderPage";
-import { PluginPage } from "../../pages/plugin/PluginPage";
 import { setActivePluginSurfaceId } from "../../services/pluginSurfaceWebviewRefs";
+import {
+  BUILTIN_BROWSER_DEFAULT_URL,
+  BUILTIN_BROWSER_SURFACE_ID,
+  BUILTIN_BROWSER_SURFACE_LABEL
+} from "../../../shared/browser-surfaces";
+import {
+  AGENT_WEBCLIENT_SERVICE_ID,
+  type AgentWebclientRouteKind,
+  type AgentWebclientResolvedRoute
+} from "../../../shared/agent-webclient-routes";
 
 type ThemeMode = "light" | "dark";
 
-type AgentWebclientRouteItem = {
-  embedPath: string;
-  label: string;
-};
+type AgentWebclientRouteItem = Pick<AgentWebclientResolvedRoute, "embedPath" | "label" | "kind">;
 
-type AgentWebclientRouteKind = "chat" | "copilot" | "management";
+const ExternalWebviewPage = lazy(() =>
+  import("../../pages/external-webview/ExternalWebviewPage").then((module) => ({ default: module.ExternalWebviewPage }))
+);
+const PluginPage = lazy(() =>
+  import("../../pages/plugin/PluginPage").then((module) => ({ default: module.PluginPage }))
+);
 
 type EmbeddedSidebarItem = {
   label: string;
   url: string;
 };
 
-const AGENT_WEBCLIENT_PLUGIN_ID = "agent-webclient";
+const AGENT_WEBCLIENT_PLUGIN_ID = AGENT_WEBCLIENT_SERVICE_ID;
 const AGENT_WEBCLIENT_CHAT_SURFACE_ID = "agent-webclient-chat";
 const AGENT_WEBCLIENT_COPILOT_SURFACE_ID = "agent-webclient-copilot";
+
+function EmbeddedSurfaceSuspense({ children }: { children: ReactNode }) {
+  return <Suspense fallback={null}>{children}</Suspense>;
+}
 
 function resolveAgentWebclientRouteKind(
   route: AgentWebclientRouteItem | null,
 ): AgentWebclientRouteKind | null {
-  const embedPath = route?.embedPath.trim() ?? "";
-  if (!embedPath) {
-    return null;
-  }
-  if (embedPath.startsWith("/agent/")) {
-    return "chat";
-  }
-  if (embedPath === "/copilot" || embedPath.startsWith("/copilot/") || embedPath.startsWith("/copilot?")) {
-    return "copilot";
-  }
-  return "management";
+  return route?.kind ?? null;
 }
 
 export function PluginSurfaceHost({
@@ -104,7 +108,7 @@ export function PluginSurfaceHost({
   }
 
   return (
-    <>
+    <EmbeddedSurfaceSuspense>
       {/* Keep embedded plugin browsing contexts mounted so sidebar switches do not tear down live sessions. */}
       {nonAgentPluginIds.map((pluginId) => (
         <PluginPage
@@ -150,7 +154,31 @@ export function PluginSurfaceHost({
           surfaceLabel={activeAgentWebclientRoute?.label}
         />
       ) : null}
-    </>
+    </EmbeddedSurfaceSuspense>
+  );
+}
+
+export function BuiltinBrowserSurfaceHost({
+  active,
+  mounted
+}: {
+  active: boolean;
+  mounted: boolean;
+}) {
+  if (!mounted) {
+    return null;
+  }
+
+  return (
+    <EmbeddedSurfaceSuspense>
+      <ExternalWebviewPage
+        surfaceId={BUILTIN_BROWSER_SURFACE_ID}
+        surfaceLabel={BUILTIN_BROWSER_SURFACE_LABEL}
+        active={active}
+        title={BUILTIN_BROWSER_SURFACE_LABEL}
+        url={BUILTIN_BROWSER_DEFAULT_URL}
+      />
+    </EmbeddedSurfaceSuspense>
   );
 }
 
@@ -173,7 +201,7 @@ export function CustomSidebarSurfaceHost({
   }
 
   return (
-    <>
+    <EmbeddedSurfaceSuspense>
       {visibleItemIds.map((itemId) => {
         const item = itemMap.get(itemId);
         if (!item) {
@@ -191,7 +219,7 @@ export function CustomSidebarSurfaceHost({
           />
         );
       })}
-    </>
+    </EmbeddedSurfaceSuspense>
   );
 }
 
@@ -212,7 +240,11 @@ export function ExternalItemRoute({
     );
   }
 
-  return <ExternalWebviewPage surfaceId={itemId} surfaceLabel={item.label} title={item.label} url={item.url} />;
+  return (
+    <EmbeddedSurfaceSuspense>
+      <ExternalWebviewPage surfaceId={itemId} surfaceLabel={item.label} title={item.label} url={item.url} />
+    </EmbeddedSurfaceSuspense>
+  );
 }
 
 export function CustomSidebarRouteFallback({

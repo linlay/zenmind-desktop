@@ -15,7 +15,7 @@ const {
   shouldRequireEnvZipImport
 } = require("../dist-electron/main/env-bootstrap.js");
 
-const DESKTOP_VERSION = "0.2.2";
+const DESKTOP_VERSION = fs.readFileSync(new URL("../VERSION", import.meta.url), "utf8").trim().replace(/^v/u, "");
 
 function createApp(root) {
   const homePath = path.join(root, "home");

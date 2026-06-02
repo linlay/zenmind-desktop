@@ -117,6 +117,7 @@ const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
 })()`;
 
 const BOOKMARKS_STORAGE_KEY = "zenmind-desktop.external-webview.bookmarks";
+const BLANK_EXTERNAL_WEBVIEW_URL = "about:blank";
 const BOOKMARK_MENU_WIDTH = 306;
 const BOOKMARK_MENU_MAX_HEIGHT = 340;
 
@@ -345,6 +346,10 @@ function areStringArraysEqual(first: string[], second: string[]) {
   return first.length === second.length && first.every((item, index) => item === second[index]);
 }
 
+function getEditableAddressInputValue(value: string) {
+  return value === BLANK_EXTERNAL_WEBVIEW_URL ? "" : value;
+}
+
 function ExternalWebviewPane({
   tab,
   active,
@@ -502,11 +507,14 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
   const webviewRefs = useRef(new Map<string, Electron.WebviewTag>());
   const surfaceKeyRef = useRef(`${title}\u0000${url}`);
   const activeRef = useRef(active !== false);
+  const surfaceClassName = [
+    "pan-page external-webview-page",
+    active === false ? "is-inactive-surface" : ""
+  ].filter(Boolean).join(" ");
   const surfaceVisibilityProps = active === undefined
     ? {}
     : {
-        hidden: !active,
-        "aria-hidden": !active
+        "aria-hidden": active === false
       };
 
   const createTab = (
@@ -1431,7 +1439,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
   }, [active, activeTab?.id, surfaceId, surfaceLabel, title, url]);
 
   useEffect(() => {
-    setAddressInputValue(activeTab?.currentUrl ?? url);
+    setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
   }, [activeTab?.id, activeTab?.currentUrl, url]);
 
   useEffect(() => {
@@ -1647,7 +1655,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
 
     const normalizedUrl = normalizeEditableUrl(addressInputValue);
     if (!normalizedUrl) {
-      setAddressInputValue(activeTab.currentUrl);
+      setAddressInputValue(getEditableAddressInputValue(activeTab.currentUrl));
       return;
     }
 
@@ -1660,7 +1668,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     void activeWebview.loadURL(normalizedUrl).then(() => {
       setAddressInputValue(normalizedUrl);
     }).catch(() => {
-      setAddressInputValue(activeTab.currentUrl);
+      setAddressInputValue(getEditableAddressInputValue(activeTab.currentUrl));
     });
   };
 
@@ -2167,7 +2175,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
 
   return (
     <>
-    <section className="pan-page external-webview-page" {...surfaceVisibilityProps}>
+    <section className={surfaceClassName} {...surfaceVisibilityProps}>
       <div className="pan-drag-region" aria-hidden="true" />
       <div className="external-webview-browser-chrome">
         <div className="external-webview-tabbar">
@@ -2239,13 +2247,13 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
               );
             })}
           </div>
-          <button
-            type="button"
-            className="external-webview-tab-add"
-            onClick={() => openTab(url, title)}
-            aria-label="新建标签页"
-            title="新建标签页"
-          >
+            <button
+              type="button"
+              className="external-webview-tab-add"
+              onClick={() => openTab(BLANK_EXTERNAL_WEBVIEW_URL, "")}
+              aria-label="新建标签页"
+              title="新建标签页"
+            >
             <PlusIcon />
           </button>
         </div>
@@ -2283,7 +2291,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
                 setAddressInputValue(event.target.value);
               }}
               onBlur={() => {
-                setAddressInputValue(activeTab?.currentUrl ?? url);
+                setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
               }}
               onKeyDown={(event) => {
                 if (event.key !== "Enter") {

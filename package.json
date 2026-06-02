@@ -23,10 +23,14 @@
     "test": "npm run build && node --test ./test/*.test.mjs"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.1.1",
+    "@ant-design/x": "^1.0.0",
+    "@ant-design/x-markdown": "^2.3.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@napi-rs/canvas": "^0.1.100",
+    "antd": "^5.0.0",
     "exceljs": "^4.4.0",
     "fast-xml-parser": "^5.7.2",
     "js-yaml": "^4.1.0",

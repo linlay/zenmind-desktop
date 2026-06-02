@@ -21,6 +21,7 @@ function makeBaseOptions(overrides = {}) {
     desktopSsoController: {
       broadcastStatus: () => {},
       syncBrowserCookies: async () => {},
+      exchangeBrowserCookieAccessToken: async () => "",
       clearBrowserCookies: async () => {},
       openBrowserUrl: async () => ({ ok: true })
     },
@@ -56,6 +57,7 @@ test("sso.startLogin syncs cookies before broadcasting authenticated status and 
   registerSsoIpcHandlers(ipc, makeBaseOptions({
     desktopSsoController: {
       syncBrowserCookies: async () => { calls.push("sync"); },
+      exchangeBrowserCookieAccessToken: async () => { calls.push("exchange"); },
       broadcastStatus: (status) => { calls.push(["broadcast", status]); },
       clearBrowserCookies: async () => { calls.push("clear"); },
       openBrowserUrl: async (input) => {
@@ -81,6 +83,7 @@ test("sso.startLogin syncs cookies before broadcasting authenticated status and 
   assert.equal(result.ok, true);
   assert.deepEqual(calls, [
     "sync",
+    "exchange",
     ["broadcast", authenticatedStatus],
     ["open", {
       url: "http://localhost:8080/auth",
@@ -100,6 +103,7 @@ test("sso.startLogin fails the flow when embedded browser opening fails", async 
     desktopSsoController: {
       broadcastStatus: (status) => broadcasts.push(status),
       syncBrowserCookies: async () => {},
+      exchangeBrowserCookieAccessToken: async () => "",
       clearBrowserCookies: async () => {},
       openBrowserUrl: async () => ({ ok: false, message: "open failed" })
     },
@@ -128,6 +132,7 @@ test("sso.logout clears browser cookies and opens logout URL", async () => {
     desktopSsoController: {
       broadcastStatus: (status) => calls.push(["broadcast", status]),
       syncBrowserCookies: async () => { calls.push("sync"); },
+      exchangeBrowserCookieAccessToken: async () => { calls.push("exchange"); },
       clearBrowserCookies: async () => { calls.push("clear"); },
       openBrowserUrl: async (input) => {
         calls.push(["open", input]);
@@ -177,4 +182,3 @@ test("agentAuth.issueAccessToken invokes issueAgentAccessToken", async () => {
   assert.equal(result, "mocked-token");
   assert.equal(issuedReason, "missing");
 });
-

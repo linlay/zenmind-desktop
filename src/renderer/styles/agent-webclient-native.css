@@ -1,0 +1,452 @@
+.agent-webclient-native {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  color: var(--desktop-ui-text);
+  background: var(--desktop-ui-bg);
+}
+
+.agent-webclient-native-page {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--desktop-ui-bg);
+}
+
+.agent-webclient-native .command-modal-section {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.agent-console-toolbar,
+.automation-console-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.automation-console-toolbar {
+  grid-template-columns: minmax(240px, 1fr) minmax(132px, 160px) minmax(142px, 180px) auto auto;
+}
+
+.agent-console-error,
+.automation-console-error,
+.settings-error {
+  border: 1px solid rgba(245, 63, 63, 0.22);
+  background: rgba(245, 63, 63, 0.08);
+  color: var(--danger);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.agent-console-error,
+.automation-console-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-console-body,
+.automation-console-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.agent-console-list,
+.automation-console-list,
+.agent-console-detail,
+.automation-console-detail {
+  min-height: 0;
+  min-width: 0;
+  border: 1px solid var(--desktop-ui-border-soft);
+  border-radius: 8px;
+  background: var(--desktop-ui-card);
+}
+
+.agent-console-list,
+.automation-console-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.agent-console-detail,
+.automation-console-detail {
+  padding: 14px;
+  overflow: auto;
+}
+
+.agent-console-count,
+.automation-console-count {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--desktop-ui-muted);
+  font-size: 12px;
+}
+
+.agent-console-list-items,
+.automation-list-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-console-list-item,
+.automation-list-item {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: var(--desktop-ui-card-soft);
+  color: var(--desktop-ui-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-console-list-item {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+}
+
+.automation-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 10px;
+  font: inherit;
+}
+
+.agent-console-list-item:hover,
+.automation-list-item:hover {
+  border-color: rgba(var(--desktop-ui-primary-rgb), 0.26);
+}
+
+.agent-console-list-item.is-active,
+.automation-list-item.is-active {
+  border-color: rgba(var(--desktop-ui-primary-rgb), 0.42);
+  background: rgba(var(--desktop-ui-primary-rgb), 0.08);
+}
+
+.agent-console-list-item.is-dragging {
+  opacity: 0.62;
+}
+
+.agent-console-list-item-icon {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-console-list-item-icon.is-drag-handle {
+  cursor: grab;
+}
+
+.agent-console-list-item-svg {
+  width: 28px;
+  height: 28px;
+}
+
+.agent-console-drag-icon {
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  color: var(--desktop-ui-muted);
+  font-size: 12px;
+}
+
+.agent-console-list-item-main,
+.agent-console-list-item-row,
+.automation-list-item-head,
+.automation-list-item-title,
+.automation-list-item-meta {
+  min-width: 0;
+}
+
+.agent-console-list-item-main,
+.agent-console-list-item-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-console-list-item-head,
+.automation-list-item-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-console-list-item-head strong,
+.automation-list-item-title strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.agent-console-list-item-head span,
+.agent-console-list-item-meta,
+.automation-list-item-meta,
+.automation-list-item-owner {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--desktop-ui-muted);
+  font-size: 12px;
+}
+
+.agent-console-list-item-meta {
+  flex-direction: row;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.automation-list-item-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.agent-detail-head,
+.automation-detail-head,
+.automation-executions-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.agent-detail-head > div:first-child,
+.automation-detail-head > div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.agent-detail-head strong,
+.automation-detail-head strong,
+.automation-executions-head strong {
+  color: var(--desktop-ui-text);
+  font-size: 15px;
+}
+
+.agent-detail-head span,
+.automation-detail-head span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--desktop-ui-muted);
+  font-size: 12px;
+}
+
+.agent-detail-actions,
+.automation-detail-actions,
+.agent-save-actions,
+.automation-save-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agent-form-grid,
+.automation-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.field-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.field-group.is-spaced {
+  margin-top: 10px;
+}
+
+.field-group > label {
+  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--desktop-ui-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-config-box,
+.automation-request-box {
+  min-width: 0;
+  border: 1px solid var(--desktop-ui-border-soft);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0 0;
+}
+
+.agent-config-box legend,
+.automation-request-box legend {
+  padding: 0 6px;
+  color: var(--desktop-ui-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.agent-icon-editor,
+.automation-cron-control {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-icon-preview {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--desktop-ui-border-soft);
+  border-radius: 8px;
+  background: var(--desktop-ui-card-soft);
+}
+
+.automation-cron-control {
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 150px);
+}
+
+.agent-wonders-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-wonder-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.agent-mono-textarea,
+.automation-mono-textarea {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.agent-prompt-textarea {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.agent-save-actions,
+.automation-save-actions {
+  margin-top: 12px;
+}
+
+.automation-enabled-field {
+  justify-content: flex-end;
+  min-height: 54px;
+}
+
+.automation-executions {
+  margin-top: 16px;
+  border-top: 1px solid var(--desktop-ui-border-soft);
+  padding-top: 12px;
+}
+
+.automation-execution-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.automation-execution-row {
+  display: grid;
+  grid-template-columns: 90px 170px 80px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--desktop-ui-border-soft);
+  border-radius: 6px;
+  padding: 7px 8px;
+  color: var(--desktop-ui-muted);
+  font-size: 12px;
+}
+
+.automation-execution-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  .agent-console-body,
+  .automation-console-body {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-console-list,
+  .automation-console-list {
+    max-height: 300px;
+  }
+
+  .automation-console-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(124px, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .agent-webclient-native .command-modal-section {
+    padding: 12px;
+  }
+
+  .agent-console-toolbar,
+  .automation-console-toolbar,
+  .agent-form-grid,
+  .automation-form-grid,
+  .automation-execution-row {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-detail-head,
+  .automation-detail-head,
+  .automation-executions-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

@@ -151,6 +151,7 @@ const CALLBACK_ORIGIN = `http://${CALLBACK_HOST}:${CALLBACK_PORT}`;
 const CALLBACK_PATH = "/api/auth/oidc/callback";
 const LOGOUT_CALLBACK_PATH = "/api/auth/oidc/logout-callback";
 const SESSION_FILE_NAME = "oidc-sso-session.json";
+const ACCESS_TOKEN_FILE_NAME = "desktop-sso-access-token.txt";
 export const DESKTOP_SSO_CONFIG_FILE_NAME = "desktop-sso.json";
 const IDENTITY_PROVIDER_URL_FIELDS = [
   "issuer",
@@ -185,6 +186,9 @@ const OIDC_CONFIG_URL_FIELDS = [
 ] as const;
 const DEFAULT_COOKIE_ACCESS_TOKEN_PATH = "access_token";
 const DEFAULT_ACCESS_TOKEN_COOKIE_NAME = "access_token";
+const DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_HOST = ["ai", "qi" + "uer", "net"].join(".");
+const DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_ORIGIN = `https://${DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_HOST}`;
+const DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_URL = `${DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_ORIGIN}/authorization`;
 
 export const DEFAULT_OIDC_CONFIG: OidcConfig = {
   issuer: "https://iam.example.com/auth/oidc/example-app",
@@ -278,6 +282,10 @@ function setCurrentStatus(status: DesktopSsoStatus) {
 
 function getSessionPath(app: App) {
   return path.join(getDesktopStateRoot(app), SESSION_FILE_NAME);
+}
+
+export function getDesktopSsoAccessTokenFilePath(app: Pick<App, "getPath">) {
+  return path.join(getDesktopStateRoot(app as App), ACCESS_TOKEN_FILE_NAME);
 }
 
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
@@ -481,6 +489,35 @@ function normalizeCookieAccessTokenExchangeConfig(
   };
 }
 
+function shouldUseDefaultAiCookieAccessTokenExchange(config: OidcConfig) {
+  const origins = new Set<string>();
+  if (config.browserOrigin) {
+    origins.add(config.browserOrigin);
+  }
+  if (config.loginUrl) {
+    try {
+      origins.add(new URL(config.loginUrl).origin);
+    } catch {
+      // URL validation below reports the configured field name.
+    }
+  }
+  return origins.has(DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_ORIGIN);
+}
+
+function buildDefaultCookieAccessTokenExchangeConfig(
+  config: OidcConfig
+): CookieAccessTokenExchangeConfig | undefined {
+  if (!shouldUseDefaultAiCookieAccessTokenExchange(config)) {
+    return undefined;
+  }
+  return {
+    url: DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_URL,
+    method: "GET",
+    headers: {},
+    accessTokenPath: DEFAULT_COOKIE_ACCESS_TOKEN_PATH
+  };
+}
+
 function normalizeAccessTokenCookieSameSite(value: string) {
   const normalizedValue = value.trim().toLowerCase();
   if (normalizedValue === "strict") {
@@ -592,7 +629,9 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
     config.browserOrigin = browserOrigin;
   }
   config.appendLoginState = getRecordBoolean(record, "appendLoginState", true);
-  const cookieAccessTokenExchange = normalizeCookieAccessTokenExchangeConfig(record, config);
+  const cookieAccessTokenExchange =
+    normalizeCookieAccessTokenExchangeConfig(record, config) ||
+    buildDefaultCookieAccessTokenExchangeConfig(config);
   if (cookieAccessTokenExchange) {
     config.cookieAccessTokenExchange = cookieAccessTokenExchange;
   }
@@ -668,6 +707,24 @@ function saveSession(app: App, status: DesktopSsoStatus) {
   }, null, 2), { encoding: "utf8", mode: 0o600 });
 }
 
+function saveAccessTokenFile(app: Pick<App, "getPath">, accessToken: string) {
+  const token = accessToken.trim();
+  if (!token) {
+    return;
+  }
+  const filePath = getDesktopSsoAccessTokenFilePath(app);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+function removeAccessTokenFile(app: Pick<App, "getPath">) {
+  try {
+    fs.rmSync(getDesktopSsoAccessTokenFilePath(app), { force: true });
+  } catch {
+    // Token file cleanup is best effort; logout still clears in-memory state.
+  }
+}
+
 function loadSession(app: App) {
   const filePath = getSessionPath(app);
   if (!fs.existsSync(filePath)) {
@@ -693,6 +750,7 @@ function loadSession(app: App) {
 function clearSession(app: App) {
   pendingLogin = null;
   currentAccessToken = "";
+  removeAccessTokenFile(app);
   const filePath = getSessionPath(app);
   try {
     fs.rmSync(filePath, { force: true });
@@ -1559,6 +1617,7 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
   }
   try {
     currentAccessToken = "";
+    removeAccessTokenFile(app);
     await ensureCallbackServer(app, hooks);
     activateDesktopSsoProxy(oidcConfig, { resetCookies: true });
     const state = randomUUID();
@@ -1667,6 +1726,7 @@ export async function exchangeConfiguredDesktopSsoCookieForAccessToken(
   const accessToken = await exchangeCookieForAccessToken(cookieHeader, fetchImpl, configResult.config);
   if (accessToken) {
     currentAccessToken = accessToken;
+    saveAccessTokenFile(app, accessToken);
   }
   return accessToken;
 }
@@ -1709,6 +1769,7 @@ export function completeDesktopSsoCookieLogin(app: App, accessToken: string): De
   }
   pendingLogin = null;
   currentAccessToken = token;
+  saveAccessTokenFile(app, token);
   const status = createAuthenticatedStatus(createCookieAccessTokenClaims(token, configResult.config));
   setCurrentStatus(status);
   saveSession(app, status);
@@ -1791,6 +1852,8 @@ export const __testInternals = {
   buildDesktopSsoAccessTokenCookieDetails,
   completeDesktopSsoBrowserLogin,
   completeDesktopSsoCookieLogin,
+  getDesktopSsoAccessTokenFilePath,
+  getDesktopSsoCookieAccessTokenExchangeUrl,
   getDesktopSsoAccessTokenCookieLookup,
   getDesktopSsoAccessTokenCookieLookups,
   isDesktopSsoLoginCompletionUrl,

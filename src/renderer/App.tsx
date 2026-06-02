@@ -1,15 +1,25 @@
+import { lazy, Suspense } from "react";
 import { useLocation } from "react-router-dom";
 import { AppErrorBoundary } from "./AppErrorBoundary";
 import { AppShell } from "./app-shell/AppShell";
-import { DesktopPet } from "./copilot/pet-copilot/DesktopPet";
-import { QuickCopilotRoute } from "./copilot/quick-copilot/QuickCopilotRoute";
-import { DebugViewerPage } from "./pages/DebugViewerPage";
-import { LogViewerPage } from "./pages/LogViewerPage";
 import { ServicesProvider } from "./services/ServicesContext";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { I18nProvider } from "./i18n/I18nProvider";
 
 export { EXTERNAL_EXPERIMENTAL_ITEMS } from "./app-shell/AppShell";
+
+const DesktopPet = lazy(() =>
+  import("./copilot/pet-copilot/DesktopPet").then((module) => ({ default: module.DesktopPet }))
+);
+const QuickCopilotRoute = lazy(() =>
+  import("./copilot/quick-copilot/QuickCopilotRoute").then((module) => ({ default: module.QuickCopilotRoute }))
+);
+const DebugViewerPage = lazy(() =>
+  import("./pages/DebugViewerPage").then((module) => ({ default: module.DebugViewerPage }))
+);
+const LogViewerPage = lazy(() =>
+  import("./pages/LogViewerPage").then((module) => ({ default: module.LogViewerPage }))
+);
 
 export function App() {
   const location = useLocation();
@@ -18,7 +28,9 @@ export function App() {
     return (
       <AppErrorBoundary resetKey={resetKey}>
         <ServicesProvider>
-          <QuickCopilotRoute />
+          <Suspense fallback={null}>
+            <QuickCopilotRoute />
+          </Suspense>
         </ServicesProvider>
       </AppErrorBoundary>
     );
@@ -26,7 +38,9 @@ export function App() {
   if (location.pathname === DESKTOP_PET_ROUTE) {
     return (
       <AppErrorBoundary resetKey={resetKey}>
-        <DesktopPet />
+        <Suspense fallback={null}>
+          <DesktopPet />
+        </Suspense>
       </AppErrorBoundary>
     );
   }
@@ -34,7 +48,9 @@ export function App() {
     return (
       <AppErrorBoundary resetKey={resetKey}>
         <ServicesProvider>
-          <LogViewerPage />
+          <Suspense fallback={null}>
+            <LogViewerPage />
+          </Suspense>
         </ServicesProvider>
       </AppErrorBoundary>
     );
@@ -43,7 +59,9 @@ export function App() {
     return (
       <AppErrorBoundary resetKey={resetKey}>
         <I18nProvider>
-          <DebugViewerPage />
+          <Suspense fallback={null}>
+            <DebugViewerPage />
+          </Suspense>
         </I18nProvider>
       </AppErrorBoundary>
     );

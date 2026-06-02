@@ -22,6 +22,7 @@ import { issueAgentAccessToken } from "./agent-auth";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import {
   completeDesktopSsoBrowserLogin,
+  completeDesktopSsoCookieLogin,
   failDesktopSsoFlow,
   getDesktopSsoStatus,
   isDesktopSsoLoginCompletionUrl,
@@ -216,6 +217,7 @@ import {
 import { registerDesktopPetIpcHandlers } from "./ipc/desktop-pet-handlers";
 import { registerShellIpcHandlers } from "./ipc/shell-handlers";
 import { registerAssistantIpcHandlers } from "./ipc/assistant-handlers";
+import { registerAgentPlatformIpcHandlers } from "./ipc/agent-platform-handlers";
 import { registerServicesIpcHandlers } from "./ipc/services-handlers";
 import { registerTaskBoardIpcHandlers } from "./ipc/task-board-handlers";
 import { registerSsoIpcHandlers } from "./ipc/sso-handlers";
@@ -611,18 +613,29 @@ const desktopSsoController = createDesktopSsoController({
   openBrowserUrl
 });
 
-function handleDesktopSsoWebviewNavigation(url: string) {
+async function handleDesktopSsoWebviewNavigation(url: string) {
   try {
     const status = getDesktopSsoStatus(app);
-    if (!status.pending || !isDesktopSsoLoginCompletionUrl(app, url)) {
+    if (appState.desktopSsoWebviewCompletionInFlight || !status.pending || !isDesktopSsoLoginCompletionUrl(app, url)) {
+      return;
+    }
+    appState.desktopSsoWebviewCompletionInFlight = true;
+    await desktopSsoController.syncBrowserCookies();
+    const accessToken = await desktopSsoController.exchangeBrowserCookieAccessToken();
+    if (accessToken) {
+      completeDesktopSsoCookieLogin(app, accessToken);
       return;
     }
     completeDesktopSsoBrowserLogin(app, url);
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    failDesktopSsoFlow(message);
     safeConsoleError("failed to complete desktop sso from webview navigation", {
       url,
-      error: error instanceof Error ? error.message : String(error)
+      error: message
     });
+  } finally {
+    appState.desktopSsoWebviewCompletionInFlight = false;
   }
 }
 
@@ -1758,6 +1771,11 @@ function registerIpcHandlers(context: MainProcessContext) {
     createAssistantAttachmentsFromFiles,
     captureAssistantScreenshot: captureAssistantScreenshot as any
   }));
+
+  registerAgentPlatformIpcHandlers(ipcMain, {
+    app,
+    callAgentPlatform
+  });
 
   registerQuickCopilotIpcHandlers(ipcMain, quickCopilotWindowController);
 

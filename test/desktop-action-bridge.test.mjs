@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { createRequire } from "node:module";
 
+const projectRoot = process.cwd();
 const require = createRequire(import.meta.url);
 const {
   handleDesktopActionRequest,
@@ -35,6 +38,17 @@ test("Desktop action catalog exposes embedded web actions but not page actions",
   assert.ok(names.includes("desktop.embeddedWeb.interactElement"));
   assert.ok(names.includes("desktop.controlCenter.listServices"));
   assert.ok(names.includes("desktop.agents.deleteAgent"));
+});
+
+test("Desktop Action Bridge uses current agent-platform agent CRUD API paths", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
+
+  assert.match(source, /"\/api\/agent\/create"/);
+  assert.match(source, /"\/api\/agent\/update"/);
+  assert.match(source, /"\/api\/agent\/delete"/);
+  assert.doesNotMatch(source, /\/api\/agent-create/);
+  assert.doesNotMatch(source, /\/api\/agent-update/);
+  assert.doesNotMatch(source, /\/api\/agent-delete/);
 });
 
 test("Desktop Action Bridge rejects page actions", async () => {

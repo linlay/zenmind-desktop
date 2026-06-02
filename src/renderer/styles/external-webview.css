@@ -84,6 +84,18 @@
   background: var(--browser-surface-strong);
 }
 
+.external-webview-page.is-inactive-surface {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
 :root[data-theme="dark"] .external-webview-page {
   --browser-bg: #1d2127;
   --browser-top: #262a31;
@@ -426,6 +438,25 @@
 
 .external-webview-toolbar-location-input::placeholder {
   color: var(--browser-muted);
+}
+
+:root[data-theme="dark"] .external-webview-toolbar-location {
+  background: #1f2329;
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme="dark"] .external-webview-toolbar-location:focus-within {
+  background: #262a31;
+}
+
+:root[data-theme="dark"] .external-webview-toolbar-location-input {
+  color: #f1f3f4;
+  -webkit-text-fill-color: #f1f3f4;
+}
+
+:root[data-theme="dark"] .external-webview-toolbar-location-input::placeholder {
+  color: #9aa0a6;
 }
 
 .external-webview-bookmark-toggle {

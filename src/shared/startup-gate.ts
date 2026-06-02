@@ -53,10 +53,19 @@ export function shouldShowStartupProgressCard(
   );
 }
 
-export function shouldAutoOpenAssistant(startupRestoreState: StartupRestoreState | null, startupAllReady: boolean) {
+export function shouldAutoOpenAssistant(
+  startupRestoreState: StartupRestoreState | null,
+  startupAllReady: boolean,
+  currentPathname = "/"
+) {
+  const isBootstrapOwnedRoute =
+    currentPathname === "/" ||
+    currentPathname === "/control-center";
+
   return startupRestoreState?.mode === "bootstrap" &&
     startupRestoreState.phase === "succeeded" &&
-    startupAllReady;
+    startupAllReady &&
+    isBootstrapOwnedRoute;
 }
 
 export function resolveStartupRootPath(startupRestoreState: StartupRestoreState | null, startupAllReady: boolean) {

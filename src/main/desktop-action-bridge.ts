@@ -22,6 +22,7 @@ import {
   type DesktopActionError,
   type DesktopActionSource
 } from "../shared/desktop-actions";
+import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../shared/agent-webclient-routes";
 import type { EmbeddedCdpCommandRequest } from "./embedded-cdp-gateway";
 import { issueAgentAccessToken } from "./agent-auth";
 import type { AgentPlatformAssistantBridge } from "./copilot/core/agent-platform-bridge";
@@ -98,6 +99,29 @@ const PAGE_CONTROL_LOW_RISK_INTERACTIONS = new Set(["fill", "scroll", "focus", "
 const PAGE_CONTROL_HIGH_RISK_PATTERN =
   /(提交|删除|移除|清空|支付|付款|购买|下单|订单|确认订单|退款|转账|授权|确认授权|同意授权|安装|卸载|启动|停止|重启|发布|发送|保存|登录|注册|submit|delete|remove|clear|pay|payment|purchase|buy|checkout|order|refund|transfer|authorize|approve|install|uninstall|start|stop|restart|deploy|publish|send|save|login|sign\s*in|sign\s*up)/iu;
 let activeServer: http.Server | null = null;
+
+const agentWebclientHelpTopicTitles = new Map([
+  ["agents", "智能体"],
+  ["schedules", "自动化"],
+  ["memory", "记忆管理"],
+  ["copilot", "智能助理"]
+]);
+
+function createAgentWebclientHelpTopics() {
+  return AGENT_WEBCLIENT_ROUTE_DEFINITIONS.map((route) => ({
+    id: route.key,
+    title: agentWebclientHelpTopicTitles.get(route.key) ?? route.key,
+    route: route.routePath
+  }));
+}
+
+function resolveAgentWebclientHelpRoute(topic: string) {
+  return AGENT_WEBCLIENT_ROUTE_DEFINITIONS.find((route) =>
+    route.key === topic ||
+    route.routePath === topic ||
+    route.routePath.slice(1) === topic
+  )?.routePath ?? null;
+}
 
 type PageControlGrantScope = {
   chatId: string;
@@ -751,9 +775,7 @@ async function executeAction(
         topics: [
           { id: "control-center", title: "控制中心", route: "/control-center" },
           { id: "market", title: "功能市场", route: "/market" },
-          { id: "agents", title: "智能体", route: "/agents" },
-          { id: "schedules", title: "自动化", route: "/schedules" },
-          { id: "memory", title: "记忆管理", route: "/memory" },
+          ...createAgentWebclientHelpTopics(),
           { id: "settings", title: "设置", route: "/settings" },
           { id: "help", title: "帮助", route: "/help" }
         ]
@@ -763,11 +785,7 @@ async function executeAction(
       const topic = readString(args, "topic") || readString(args, "id");
       const route = topic === "control-center" ? "/control-center"
         : topic === "market" ? "/market"
-          : topic === "agents" ? "/agents"
-            : topic === "schedules" ? "/schedules"
-              : topic === "memory" ? "/memory"
-                : topic === "settings" ? "/settings"
-                  : "/help";
+          : (resolveAgentWebclientHelpRoute(topic) ?? (topic === "settings" ? "/settings" : "/help"));
       options.navigate(route);
       return ok(action, { route });
     }
@@ -791,11 +809,11 @@ async function executeAction(
         agentsPrompt: typeof args.agentsPrompt === "string" ? args.agentsPrompt : ""
       });
     case "desktop.agents.createAgent":
-      return ok(action, await callAgentPlatform(options.app, "/api/agent-create", { method: "POST", body: args }));
+      return ok(action, await callAgentPlatform(options.app, "/api/agent/create", { method: "POST", body: args }));
     case "desktop.agents.updateAgent":
-      return ok(action, await callAgentPlatform(options.app, "/api/agent-update", { method: "POST", body: args }));
+      return ok(action, await callAgentPlatform(options.app, "/api/agent/update", { method: "POST", body: args }));
     case "desktop.agents.deleteAgent":
-      return ok(action, await callAgentPlatform(options.app, "/api/agent-delete", { method: "POST", body: { key: readAgentKey(args) } }));
+      return ok(action, await callAgentPlatform(options.app, "/api/agent/delete", { method: "POST", body: { key: readAgentKey(args) } }));
     case "desktop.agents.cloneAgent":
     case "desktop.agents.disableAgent":
     case "desktop.agents.reloadAgents":

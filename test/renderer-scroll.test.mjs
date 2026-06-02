@@ -104,6 +104,21 @@ test("external webview new-tab button stays next to the tab strip content", () =
   assert.ok(tabAddRules.some((rule) => /flex:\s*none;/.test(rule)));
 });
 
+test("external webview address bar stays readable in dark mode", () => {
+  const locationRule = readRule(':root[data-theme="dark"] .external-webview-toolbar-location');
+  const focusRule = readRule(':root[data-theme="dark"] .external-webview-toolbar-location:focus-within');
+  const inputRule = readRule(':root[data-theme="dark"] .external-webview-toolbar-location-input');
+  const placeholderRule = readRule(':root[data-theme="dark"] .external-webview-toolbar-location-input::placeholder');
+
+  assert.match(locationRule, /background:\s*#1f2329;/);
+  assert.match(locationRule, /border-color:\s*rgba\(255,\s*255,\s*255,\s*0\.14\);/);
+  assert.match(locationRule, /box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.04\);/);
+  assert.match(focusRule, /background:\s*#262a31;/);
+  assert.match(inputRule, /color:\s*#f1f3f4;/);
+  assert.match(inputRule, /-webkit-text-fill-color:\s*#f1f3f4;/);
+  assert.match(placeholderRule, /color:\s*#9aa0a6;/);
+});
+
 test("sidebar navigation scrolls independently so footer actions stay reachable", () => {
   const navRule = readRules(".sidebar-nav").find((rule) =>
     /overflow-y:\s*auto;/.test(rule)
