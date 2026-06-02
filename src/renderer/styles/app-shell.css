@@ -26,10 +26,14 @@
   -webkit-backdrop-filter: none;
 }
 
-body.agent-native-surface-body,
-.app-shell.has-agent-native-surface,
-.app-shell.is-mac-translucent-sidebar.has-agent-native-surface {
+body.agent-native-surface-body:not(.mac-translucent-sidebar-body),
+.app-shell.has-agent-native-surface:not(.is-mac-translucent-sidebar) {
   background: #ffffff;
+}
+
+body.agent-native-surface-body.mac-translucent-sidebar-body,
+.app-shell.is-mac-translucent-sidebar.has-agent-native-surface {
+  background: transparent;
 }
 
 .app-shell.has-agent-native-surface {

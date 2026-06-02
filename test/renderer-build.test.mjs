@@ -178,6 +178,8 @@ test("agent webclient management routes render native Ant Design pages", () => {
   assert.match(agentApi, /No handler registered/);
   assert.match(appShellCss, /has-agent-native-surface/);
   assert.match(appShellCss, /agent-native-surface-body/);
+  assert.match(appShellCss, /body\.agent-native-surface-body:not\(\.mac-translucent-sidebar-body\),\s*\.app-shell\.has-agent-native-surface:not\(\.is-mac-translucent-sidebar\)\s*\{[\s\S]*?background:\s*#ffffff;/);
+  assert.match(appShellCss, /body\.agent-native-surface-body\.mac-translucent-sidebar-body,\s*\.app-shell\.is-mac-translucent-sidebar\.has-agent-native-surface\s*\{[\s\S]*?background:\s*transparent;/);
   assert.match(appShellCss, /\.app-shell\.has-agent-native-surface \.ant-app\s*\{[\s\S]*?height:\s*100%;/);
   assert.match(appShellCss, /\.app-shell\.has-agent-native-surface \.app-window-drag-region,\s*\.app-shell\.has-agent-native-surface \.app-main-drag-region\s*\{[\s\S]*?display:\s*none;/);
   assert.match(nativeStyles, /\.agent-webclient-native \.agents-page,\s*\.agent-webclient-native \.automations-page\s*\{[\s\S]*?min-height:\s*100vh;[\s\S]*?padding:\s*10px;[\s\S]*?overflow:\s*auto;/);
