@@ -22,11 +22,11 @@ export const DESKTOP_PET_APPEARANCE_OPTIONS = [
     previewAssetPath: "./desktop-pet/dario/pet-idle.png"
   },
   {
-    id: "mini-sama",
+    id: "sama",
     displayName: "Mini Sama",
     description: "焦虑又机灵的宠物，适合董事会混乱能量。",
-    assetBasePath: "./desktop-pet/mini-sama",
-    previewAssetPath: "./desktop-pet/mini-sama/pet-idle.png"
+    assetBasePath: "./desktop-pet/sama",
+    previewAssetPath: "./desktop-pet/sama/pet-idle.png"
   },
   {
     id: "xiao",
@@ -36,11 +36,11 @@ export const DESKTOP_PET_APPEARANCE_OPTIONS = [
     previewAssetPath: "./desktop-pet/xiao/pet-idle.png"
   },
   {
-    id: "idol-pony",
+    id: "pony",
     displayName: "小凌",
     description: "侧马尾 Q 版形象，带着爱心和麦克风。",
-    assetBasePath: "./desktop-pet/idol-pony",
-    previewAssetPath: "./desktop-pet/idol-pony/pet-idle.png"
+    assetBasePath: "./desktop-pet/pony",
+    previewAssetPath: "./desktop-pet/pony/pet-idle.png"
   }
 ] as const;
 
@@ -50,13 +50,8 @@ const LEGACY_DESKTOP_PET_BOUND_AGENT_KEY_ALIASES: Record<string, string> = {
 };
 
 const DESKTOP_PET_APPEARANCE_IDS: Set<string> = new Set(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id));
-const DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS: Set<string> = new Set(["idol-pony", "xiao"]);
-const DESKTOP_PET_DANCE_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID, "idol-pony"]);
-
-const LEGACY_DESKTOP_PET_APPEARANCE_ID_ALIASES: Record<string, string> = {
-  sprout: "dario",
-  starlight: "mini-sama"
-};
+const DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS: Set<string> = new Set(["pony", "xiao"]);
+const DESKTOP_PET_DANCE_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID, "pony"]);
 
 const DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
   awaiting: "pet-awaiting.png",
@@ -192,12 +187,8 @@ export function normalizeDesktopPetBoundAgentKey(value: unknown) {
 
 export function normalizeDesktopPetAppearanceId(value: unknown) {
   const normalized = typeof value === "string" ? value.trim() : "";
-  const aliased = LEGACY_DESKTOP_PET_APPEARANCE_ID_ALIASES[normalized] ?? normalized;
   if (DESKTOP_PET_APPEARANCE_IDS.has(normalized)) {
     return normalized;
-  }
-  if (DESKTOP_PET_APPEARANCE_IDS.has(aliased)) {
-    return aliased;
   }
   return DEFAULT_DESKTOP_PET_APPEARANCE_ID;
 }

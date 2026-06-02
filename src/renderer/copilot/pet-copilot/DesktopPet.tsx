@@ -163,7 +163,7 @@ function getDesktopPetDanceSpritePath(appearanceId: string) {
 }
 
 function getDesktopPetDanceDurationMs(appearanceId: string) {
-  return appearanceId === "idol-pony" ? DESKTOP_PET_IDOL_PONY_DANCE_DURATION_MS : DESKTOP_PET_DANCE_DURATION_MS;
+  return appearanceId === "pony" ? DESKTOP_PET_IDOL_PONY_DANCE_DURATION_MS : DESKTOP_PET_DANCE_DURATION_MS;
 }
 
 export function DesktopPet() {
@@ -337,7 +337,7 @@ export function DesktopPet() {
     [petState.appearanceId]
   );
   const runningTaskCount = Math.max(0, Math.round(Number(petState.runningTaskCount) || 0));
-  const shouldShowDanceSpriteAnimation = isDancing && appearanceId === "idol-pony";
+  const shouldShowDanceSpriteAnimation = isDancing && appearanceId === "pony";
   const shouldShowTaskRunAnimation = !isDragging && !isDancing &&
     shouldUseDesktopPetTaskRunningAnimation(appearanceId, runningTaskCount);
   const taskRunAnimationDurationMs = getDesktopPetRunningTaskAnimationDurationMs(runningTaskCount);

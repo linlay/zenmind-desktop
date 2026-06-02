@@ -37,16 +37,16 @@ const communityAppearances = [
     spritesheetSourceUrl: "https://gitpets.com/api/assets/pets/dario-a7bdc389/spritesheet.webp"
   },
   {
-    id: "mini-sama",
+    id: "sama",
     displayName: "Mini Sama",
     sourceUrl: "https://github.com/xpert-ai/chatkit-js/tree/main/packages/chatkit-ui/public/pets/mini-sama",
     spritesheetSourceUrl: "https://gitpets.com/api/assets/pets/mini-sama-3ee267a2/spritesheet.webp"
   },
   {
-    id: "idol-pony",
+    id: "pony",
     displayName: "小凌",
     sourceUrl: "local hatch-pet run",
-    spritesheetSourceUrl: "scripts/assets/desktop-pet/idol-pony/spritesheet.webp"
+    spritesheetSourceUrl: "scripts/assets/desktop-pet/pony/spritesheet.webp"
   }
 ];
 
@@ -57,11 +57,6 @@ const scriptedAppearances = [
     notes: "A chibi built-in pet inspired by the provided references: swept black hair, dark suit, bouquet, and a gold award."
   }
 ];
-
-const legacyCommunityAppearanceAliases = {
-  sprout: "dario",
-  starlight: "mini-sama"
-};
 
 const communityAtlas = {
   columns: 8,
@@ -1036,12 +1031,4 @@ for (const appearance of communityAppearances) {
       }
     }
   }
-}
-
-for (const [legacyId, targetId] of Object.entries(legacyCommunityAppearanceAliases)) {
-  const buffers = communityBuffersById.get(targetId);
-  if (!buffers) {
-    throw new Error(`Missing ${targetId} buffers for legacy ${legacyId} appearance assets`);
-  }
-  await writeVariantFiles(path.join(outputDirectory, legacyId), buffers);
 }

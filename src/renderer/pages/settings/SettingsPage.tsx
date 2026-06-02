@@ -256,12 +256,12 @@ function getDesktopPetAppearanceLabel(appearanceId: string, fallback: string, t:
       return t("settings.desktopPet.appearance.classic.label");
     case "dario":
       return t("settings.desktopPet.appearance.dario.label");
-    case "mini-sama":
-      return t("settings.desktopPet.appearance.miniSama.label");
+    case "sama":
+      return t("settings.desktopPet.appearance.sama.label");
     case "xiao":
       return t("settings.desktopPet.appearance.xiao.label");
-    case "idol-pony":
-      return t("settings.desktopPet.appearance.idolPony.label");
+    case "pony":
+      return t("settings.desktopPet.appearance.pony.label");
     default:
       return fallback;
   }
@@ -273,12 +273,12 @@ function getDesktopPetAppearanceDescription(appearanceId: string, fallback: stri
       return t("settings.desktopPet.appearance.classic.description");
     case "dario":
       return t("settings.desktopPet.appearance.dario.description");
-    case "mini-sama":
-      return t("settings.desktopPet.appearance.miniSama.description");
+    case "sama":
+      return t("settings.desktopPet.appearance.sama.description");
     case "xiao":
       return t("settings.desktopPet.appearance.xiao.description");
-    case "idol-pony":
-      return t("settings.desktopPet.appearance.idolPony.description");
+    case "pony":
+      return t("settings.desktopPet.appearance.pony.description");
     default:
       return fallback;
   }

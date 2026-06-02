@@ -239,11 +239,13 @@ test("desktop pet stores a default bound agent key", () => {
 test("desktop pet stores a safe appearance id", () => {
   assert.equal(sanitizeDesktopPetAppearanceId(""), DEFAULT_DESKTOP_PET_APPEARANCE_ID);
   assert.equal(sanitizeDesktopPetAppearanceId("  dario  "), "dario");
-  assert.equal(sanitizeDesktopPetAppearanceId("  mini-sama  "), "mini-sama");
+  assert.equal(sanitizeDesktopPetAppearanceId("  sama  "), "sama");
   assert.equal(sanitizeDesktopPetAppearanceId("  xiao  "), "xiao");
-  assert.equal(sanitizeDesktopPetAppearanceId("  idol-pony  "), "idol-pony");
-  assert.equal(sanitizeDesktopPetAppearanceId("  sprout  "), "dario");
-  assert.equal(sanitizeDesktopPetAppearanceId("  starlight  "), "mini-sama");
+  assert.equal(sanitizeDesktopPetAppearanceId("  pony  "), "pony");
+  assert.equal(sanitizeDesktopPetAppearanceId("  mini-sama  "), DEFAULT_DESKTOP_PET_APPEARANCE_ID);
+  assert.equal(sanitizeDesktopPetAppearanceId("  idol-pony  "), DEFAULT_DESKTOP_PET_APPEARANCE_ID);
+  assert.equal(sanitizeDesktopPetAppearanceId("  sprout  "), DEFAULT_DESKTOP_PET_APPEARANCE_ID);
+  assert.equal(sanitizeDesktopPetAppearanceId("  starlight  "), DEFAULT_DESKTOP_PET_APPEARANCE_ID);
   assert.equal(sanitizeDesktopPetAppearanceId("missing-pet"), DEFAULT_DESKTOP_PET_APPEARANCE_ID);
   assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS.length, 5);
 });
@@ -258,7 +260,7 @@ test("desktop pet context menu offers dance for supported appearances", () => {
     ["关闭宠物"]
   );
   assert.deepEqual(
-    getDesktopPetContextMenuItems("mini-sama").map((item) => item.label),
+    getDesktopPetContextMenuItems("sama").map((item) => item.label),
     ["关闭宠物"]
   );
   assert.deepEqual(
@@ -266,7 +268,7 @@ test("desktop pet context menu offers dance for supported appearances", () => {
     ["关闭宠物"]
   );
   assert.deepEqual(
-    getDesktopPetContextMenuItems("idol-pony").map((item) => item.label),
+    getDesktopPetContextMenuItems("pony").map((item) => item.label),
     ["跳舞", "关闭宠物"]
   );
 });
@@ -286,7 +288,7 @@ test("desktop pet generated resources cover all visual states", () => {
     "running",
     "awaiting"
   ];
-  const appearances = ["", "dario", "mini-sama", "xiao", "idol-pony", "sprout", "starlight"];
+  const appearances = ["", "dario", "sama", "xiao", "pony"];
 
   for (const appearance of appearances) {
     for (const state of states) {
@@ -298,9 +300,9 @@ test("desktop pet generated resources cover all visual states", () => {
     }
   }
   assert.equal(
-    fs.existsSync(path.join(root, "idol-pony", "spritesheet.webp")),
+    fs.existsSync(path.join(root, "pony", "spritesheet.webp")),
     true,
-    "idol-pony missing spritesheet.webp for frame-based running animation"
+    "pony missing spritesheet.webp for frame-based running animation"
   );
   assert.equal(
     fs.existsSync(path.join(root, "xiao", "spritesheet.webp")),
@@ -308,14 +310,14 @@ test("desktop pet generated resources cover all visual states", () => {
     "xiao missing spritesheet.webp for frame-based visual states"
   );
   assert.equal(
-    fs.existsSync(path.join(root, "idol-pony", "task-run-left.webp")),
+    fs.existsSync(path.join(root, "pony", "task-run-left.webp")),
     true,
-    "idol-pony missing high-frame task-run-left.webp for smooth task running animation"
+    "pony missing high-frame task-run-left.webp for smooth task running animation"
   );
   assert.equal(
-    fs.existsSync(path.join(root, "idol-pony", "dance.webp")),
+    fs.existsSync(path.join(root, "pony", "dance.webp")),
     true,
-    "idol-pony missing high-frame dance.webp for right-click dance animation"
+    "pony missing high-frame dance.webp for right-click dance animation"
   );
   assert.equal(
     fs.existsSync(path.join(root, "xiao", "task-run-left.webp")),
@@ -555,8 +557,8 @@ test("desktop pet active run events count running tasks idempotently", () => {
 });
 
 test("animated pets use task running animation and speed up with more tasks", () => {
-  assert.equal(shouldUseDesktopPetTaskRunningAnimation("idol-pony", 1), true);
-  assert.equal(shouldUseDesktopPetTaskRunningAnimation("idol-pony", 0), false);
+  assert.equal(shouldUseDesktopPetTaskRunningAnimation("pony", 1), true);
+  assert.equal(shouldUseDesktopPetTaskRunningAnimation("pony", 0), false);
   assert.equal(shouldUseDesktopPetTaskRunningAnimation("xiao", 1), true);
   assert.equal(shouldUseDesktopPetTaskRunningAnimation("xiao", 0), false);
   assert.equal(shouldUseDesktopPetTaskRunningAnimation(DEFAULT_DESKTOP_PET_APPEARANCE_ID, 3), false);
