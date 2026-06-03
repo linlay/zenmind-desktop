@@ -11,9 +11,21 @@ release/
 build/app/
 build/bundle/
 build/dev/
+build/generated/
+build/icons/
 build/local-builtin-source/
 build/resources/services/
+build/electron-builder.*.json
+build/installer.nsh
 build-all.sh
+
+public/brand-icon.png
+public/tray-icon.png
+public/tray-icon.svg
+
+src/shared/generated/
+
+tmp/
 
 .vite/
 .cache/
