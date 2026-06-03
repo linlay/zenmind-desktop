@@ -514,7 +514,6 @@ export function AppSidebar({
   onOpenAssistantDock,
   onCloseAssistantDock,
   onDesktopSsoLogin,
-  onDesktopSsoLogout,
   onRefreshAssistantNavAgents,
   onRefreshCopilotAgentOptions,
   onCreateCustomSidebarItem,
@@ -555,7 +554,6 @@ export function AppSidebar({
   const currentAgentKey = currentRouteAgentInfo.agentKey;
   const currentChatId = currentRouteAgentInfo.chatId;
   const pendingAgentKey = pendingRouteAgentInfo.agentKey;
-  const shouldRenderDesktopSso = desktopSsoStatus?.configured === true;
   const assistantStatusSummary = useMemo(
     () => summarizeAgentStatus(assistantNavAgents),
     [assistantNavAgents],
@@ -606,6 +604,7 @@ export function AppSidebar({
     row.map(({ labelKey, ...item }) => ({ ...item, label: t(labelKey) })),
   );
   const fixedToolItems = fixedToolRows.flat();
+  const settingsToolItem = fixedToolItems.find((item) => item.to === "/settings");
   const chromeToolbarClassName = [
     "sidebar-chrome-toolbar",
     isMac ? "is-mac" : isWindows ? "is-windows" : "is-default",
@@ -1527,11 +1526,126 @@ export function AppSidebar({
     );
   }
 
+  function renderAccountMenuIcon(kind: "account" | "personal") {
+    return (
+      <span
+        className={`sidebar-account-menu-icon is-${kind}`}
+        aria-hidden="true"
+      />
+    );
+  }
+
+  function renderDisabledAccountMenuItem(
+    label: string,
+    icon: "account" | "personal",
+    extraClassName = "",
+  ) {
+    return (
+      <div
+        className={[
+          "sidebar-account-menu-item",
+          "is-disabled",
+          extraClassName,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        role="menuitem"
+        aria-disabled="true"
+      >
+        {renderAccountMenuIcon(icon)}
+        <span className="sidebar-account-menu-label">{label}</span>
+      </div>
+    );
+  }
+
+  function renderAccountMenuUserItem() {
+    const desktopSsoUserLabel = getDesktopSsoUserLabel();
+    const desktopSsoActionLabel = getDesktopSsoActionLabel();
+
+    if (desktopSsoStatus?.authenticated) {
+      return renderDisabledAccountMenuItem(
+        desktopSsoUserLabel,
+        "account",
+        "sidebar-account-menu-user",
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        className={[
+          "sidebar-account-menu-item",
+          "sidebar-account-menu-action",
+          "sidebar-account-menu-user",
+          desktopSsoStatus?.pending ? "is-pending" : "",
+          desktopSsoStatus?.error ? "is-error" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={handleDesktopSsoMenuActionClick}
+        disabled={desktopSsoBusy}
+        role="menuitem"
+        aria-label={desktopSsoActionLabel}
+        title={desktopSsoActionLabel}
+      >
+        {renderAccountMenuIcon("account")}
+        <span className="sidebar-account-menu-label">
+          {desktopSsoBusy ? t("sidebar.sso.busy") : desktopSsoUserLabel}
+        </span>
+      </button>
+    );
+  }
+
+  function getDesktopSsoUserLabel() {
+    if (!desktopSsoStatus) {
+      return t("sidebar.sso.signedOut");
+    }
+    if (desktopSsoStatus.authenticated) {
+      return (
+        desktopSsoStatus.user?.name?.trim() ||
+        desktopSsoStatus.user?.email?.trim() ||
+        t("sidebar.sso.signedIn")
+      );
+    }
+    return desktopSsoStatus.pending
+      ? t("sidebar.sso.signingIn")
+      : t("sidebar.sso.signedOut");
+  }
+
+  function getDesktopSsoActionLabel() {
+    return desktopSsoStatus?.pending
+      ? t("sidebar.sso.reopen")
+      : t("sidebar.sso.signIn");
+  }
+
+  function handleDesktopSsoMenuActionClick() {
+    onDesktopSsoLogin?.();
+    setToolMenuOpen(false);
+  }
+
+  function renderDesktopSsoAccountMenuSection() {
+    const accountDetails = desktopSsoStatus?.authenticated ? (
+      renderDisabledAccountMenuItem(
+        t("sidebar.account.personal"),
+        "personal",
+      )
+    ) : null;
+
+    return (
+      <>
+        {renderAccountMenuUserItem()}
+        {accountDetails}
+        <div className="sidebar-account-menu-divider" aria-hidden="true" />
+      </>
+    );
+  }
+
   function renderToolMenu() {
     return (
       <div
         className={[
           "sidebar-tool-menu",
+          "sidebar-account-menu",
           isCollapsed
             ? "is-from-collapsed-sidebar"
             : "is-from-expanded-sidebar",
@@ -1541,67 +1655,9 @@ export function AppSidebar({
         role="menu"
         aria-label={t("nav.sidebar.fixedTools")}
       >
+        {renderDesktopSsoAccountMenuSection()}
         {fixedToolItems.map((item) => renderToolLink(item))}
       </div>
-    );
-  }
-
-  function handleDesktopSsoEntryClick() {
-    if (!desktopSsoStatus) {
-      return;
-    }
-    if (desktopSsoStatus.authenticated) {
-      const confirmed = window.confirm(t("sidebar.sso.confirmSignOut"));
-      if (!confirmed) {
-        return;
-      }
-      onDesktopSsoLogout?.();
-      return;
-    }
-    onDesktopSsoLogin?.();
-  }
-
-  function renderDesktopSsoEntry() {
-    if (!shouldRenderDesktopSso || !desktopSsoStatus) {
-      return null;
-    }
-
-    const desktopSsoUserLabel = desktopSsoStatus.authenticated
-      ? t("sidebar.sso.signedIn")
-      : desktopSsoStatus.pending
-        ? t("sidebar.sso.signingIn")
-        : t("sidebar.sso.signedOut");
-    const desktopSsoActionLabel = desktopSsoStatus.authenticated
-      ? t("sidebar.sso.signOut")
-      : desktopSsoStatus.pending
-        ? t("sidebar.sso.reopen")
-        : t("sidebar.sso.signIn");
-    const desktopSsoClassName = [
-      "sidebar-sso-entry",
-      desktopSsoStatus.authenticated ? "is-authenticated" : "",
-      desktopSsoStatus.pending ? "is-pending" : "",
-      desktopSsoStatus.error ? "is-error" : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    return (
-      <button
-        type="button"
-        className={desktopSsoClassName}
-        onClick={handleDesktopSsoEntryClick}
-        disabled={desktopSsoBusy}
-        aria-label={desktopSsoActionLabel}
-        title={desktopSsoActionLabel}
-      >
-        <span className="sidebar-sso-dot" aria-hidden="true" />
-        <span className="sidebar-sso-copy">
-          <span className="sidebar-sso-title">{desktopSsoUserLabel}</span>
-        </span>
-        <span className="sidebar-sso-action" aria-hidden="true">
-          {desktopSsoBusy ? t("sidebar.sso.busy") : desktopSsoActionLabel}
-        </span>
-      </button>
     );
   }
 
@@ -2257,7 +2313,7 @@ export function AppSidebar({
                 title={t("nav.settings")}
               >
                 <span className="sidebar-link-icon">
-                  <SidebarIllustration kind="control" />
+                  <SidebarIllustration kind="settings" />
                 </span>
                 <span className="sidebar-link-label">{t("nav.settings")}</span>
                 <span
@@ -2266,10 +2322,15 @@ export function AppSidebar({
                 >
                   {getCollapsedSidebarLabel(t("nav.settings"))}
                 </span>
+                <span
+                  className="sidebar-tool-status-label"
+                  aria-hidden="true"
+                >
+                  {getDesktopSsoUserLabel()}
+                </span>
               </button>
             </Popover>
           </div>
-          {renderDesktopSsoEntry()}
           {renderAssistantChatMenu()}
           {renderAgentMenu()}
           {renderAgentDialog()}

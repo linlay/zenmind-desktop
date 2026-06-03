@@ -5849,6 +5849,85 @@ test("restoreRunningServices auto-installs and starts builtin services that are 
   }
 });
 
+test("runStartupPreparation applies desktop-register before preparing builtin services", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const homeRoot = getTestHomeRoot(userDataRoot);
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
+  const providersRoot = path.join(homeRoot, ".zenmind", "registries", "providers");
+  const registerPath = path.join(homeRoot, ".zenmind", "desktop-register.json");
+  const originalFetch = globalThis.fetch;
+  const issuedKey = "dk_RunStartupPreparationKey";
+  let requestBody = null;
+  let fetchSawBuiltinEnvBeforeRegistration = false;
+
+  fs.mkdirSync(providersRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(providersRoot, "th-deepseek.yml"),
+    "key: th-deepseek\nbaseUrl: https://transit-hub.zenmind.cc\napiKey: YOUR_API_KEY\ndefaultModel: th-deepseek-v4-flash\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(providersRoot, "th-minimax.yml"),
+    "key: th-minimax\nbaseUrl: https://transit-hub.zenmind.cc\napiKey: YOUR_API_KEY\ndefaultModel: th-minimax-m3\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    registerPath,
+    `${JSON.stringify({
+      version: 1,
+      enabled: true,
+      endpoint: "https://transit-hub.zenmind.cc/api/apply-apikey",
+      grant: { type: "jwt", token: "jwt-token" },
+      providers: ["th-deepseek", "th-minimax"]
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  globalThis.fetch = async (_url, init = {}) => {
+    fetchSawBuiltinEnvBeforeRegistration = fs.existsSync(getTestEnvPath(userDataRoot, "zenmind-app-server")) ||
+      fs.existsSync(getTestEnvPath(userDataRoot, "agent-platform")) ||
+      fs.existsSync(getTestEnvPath(userDataRoot, "agent-webclient"));
+    requestBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => JSON.stringify({ key: issuedKey })
+    };
+  };
+
+  try {
+    const result = await runStartupPreparation(app);
+
+    const deviceIdentity = JSON.parse(fs.readFileSync(
+      path.join(homeRoot, ".zenmind", ".desktop", "config", "desktop", "device-identity.json"),
+      "utf8"
+    ));
+    assert.deepEqual(requestBody, { name: deviceIdentity.deviceId });
+    assert.equal(fetchSawBuiltinEnvBeforeRegistration, false);
+    assert.equal(JSON.parse(fs.readFileSync(registerPath, "utf8")).enabled, false);
+    assert.match(
+      fs.readFileSync(path.join(providersRoot, "th-deepseek.yml"), "utf8"),
+      /^apiKey: dk_RunStartupPreparationKey$/m
+    );
+    assert.match(
+      fs.readFileSync(path.join(providersRoot, "th-minimax.yml"), "utf8"),
+      /^apiKey: dk_RunStartupPreparationKey$/m
+    );
+    assert.ok(result.started.includes("zenmind-app-server"));
+  } finally {
+    if (originalFetch === undefined) {
+      delete globalThis.fetch;
+    } else {
+      globalThis.fetch = originalFetch;
+    }
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runStartupPreparation bootstraps packaged first launch with the three core services", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");

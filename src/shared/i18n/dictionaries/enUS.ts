@@ -64,6 +64,7 @@ export const enUSMessages = {
   "sidebar.sso.reopen": "Reopen",
   "sidebar.sso.busy": "Working",
   "sidebar.sso.confirmSignOut": "Sign out of the current account?",
+  "sidebar.account.personal": "Personal account",
   "sidebar.assistants.empty": "No assistants",
 
   "agentConsole.action.add": "Add",

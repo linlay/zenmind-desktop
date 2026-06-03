@@ -3499,6 +3499,8 @@ export async function runStartupPreparation(
   } = {}
 ): Promise<StartupPreparationResult> {
   try {
+  await ensureDesktopRegisterApiKey(app);
+
   if (!(await shouldRunBuiltinBootstrap(app))) {
     options.onModeResolved?.("restore");
     const defaultRestoreResult = await restoreDefaultStartupServicesInParallel(app, {
