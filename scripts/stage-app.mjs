@@ -249,13 +249,10 @@ function verifyCanvasRuntime(target) {
     if (!installed.includes(expectedDir)) {
       throw new Error(`missing staged runtime dependency ${expectedPackage}`);
     }
-  }
-
-  if (target.os === "win32") {
-    const disallowed = installed.filter((entry) => entry.startsWith("canvas-linux-"));
+    const disallowed = installed.filter((entry) => entry !== expectedDir);
     if (disallowed.length > 0) {
       throw new Error(
-        `unexpected linux canvas runtime packages in win32 stage: ${disallowed.join(", ")}`
+        `unexpected canvas runtime packages in ${target.os}/${target.arch} stage: ${disallowed.join(", ")}`
       );
     }
   }

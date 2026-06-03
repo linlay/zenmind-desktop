@@ -16,6 +16,8 @@ function loadCoderProjectHelpers() {
   const helperSource = source
     .slice(start, end)
     .replaceAll("export ", "")
+    .replace(/,\s*options:\s*\{\s*acpProxyId\?: string\s*\}\s*=\s*\{\}/u, ", options = {}")
+    .replaceAll(": Record<string, string>", "")
     .replaceAll(": string", "")
     .replaceAll(": string[]", "");
   return Function(`${helperSource}; return { workspaceNameFromPath, buildCoderProjectAgentCreateRequest };`)();
@@ -51,5 +53,18 @@ test("CODER project helper builds the expected agent create payload", () => {
         scopes: ["nav", "copilot"]
       }
     }
+  });
+});
+
+test("CODER project helper can target an ACP proxy backend", () => {
+  const { buildCoderProjectAgentCreateRequest } = loadCoderProjectHelpers();
+  const payload = buildCoderProjectAgentCreateRequest("/Users/demo/Project/agent-coder", {
+    acpProxyId: "codex"
+  });
+
+  assert.deepEqual(payload.definition.runtimeConfig, {
+    workspaceRoot: "/Users/demo/Project/agent-coder",
+    coderBackend: "acp",
+    acpProxyId: "codex"
   });
 });

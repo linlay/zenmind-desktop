@@ -19,6 +19,7 @@ import type {
   CustomSidebarItemInput,
   CustomSidebarItemResult,
   DesktopSsoStatus,
+  ServiceState,
 } from "../../../shared/contracts";
 import {
   createCustomSidebarNavOrderKey,
@@ -85,12 +86,43 @@ type AgentDialogState = {
   error: string;
 };
 
+type CoderAcpProxyOption = {
+  serviceId: string;
+  acpProxyId: string;
+  label: string;
+};
+
+type RunningCoderAcpProxyOption = CoderAcpProxyOption & {
+  statusLabel: string;
+};
+
+type CoderAcpProjectDialogState = {
+  workspaceDir: string;
+  options: RunningCoderAcpProxyOption[];
+  selectedAcpProxyId: string;
+  pending: boolean;
+  error: string;
+};
+
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-groups`;
 
 const defaultSidebarGroupState: SidebarGroupState = {
   assistants: true,
   websites: true,
 };
+
+const CODER_ACP_PROXY_SERVICE_OPTIONS: CoderAcpProxyOption[] = [
+  {
+    serviceId: "proxy-acp-claudecode",
+    acpProxyId: "claude",
+    label: "Claude Code ACP Proxy",
+  },
+  {
+    serviceId: "proxy-acp-codex",
+    acpProxyId: "codex",
+    label: "Codex ACP Proxy",
+  },
+];
 
 const taskBoardNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   orderKey: "kanban",
@@ -217,6 +249,24 @@ function readInitialSidebarGroupState() {
   } catch {
     return defaultSidebarGroupState;
   }
+}
+
+function getRunningCoderAcpProxyOptions(
+  services: ServiceState[],
+): RunningCoderAcpProxyOption[] {
+  const servicesById = new Map(services.map((service) => [service.id, service]));
+  return CODER_ACP_PROXY_SERVICE_OPTIONS.flatMap((option) => {
+    const service = servicesById.get(option.serviceId);
+    if (!service || service.status !== "running") {
+      return [];
+    }
+    return [
+      {
+        ...option,
+        statusLabel: service.statusLabel || "运行中",
+      },
+    ];
+  });
 }
 
 function getRoutePathname(route: string) {
@@ -530,6 +580,8 @@ export function AppSidebar({
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
     useState("");
   const [creatingCoderProject, setCreatingCoderProject] = useState(false);
+  const [coderAcpProjectDialog, setCoderAcpProjectDialog] =
+    useState<CoderAcpProjectDialogState | null>(null);
   const [websiteDialogOpen, setWebsiteDialogOpen] = useState(false);
   const [websiteLabel, setWebsiteLabel] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
@@ -817,7 +869,7 @@ export function AppSidebar({
   async function handleCreateCoderProject(event: MouseEvent<HTMLElement>) {
     event.preventDefault();
     event.stopPropagation();
-    if (creatingCoderProject) {
+    if (creatingCoderProject || coderAcpProjectDialog) {
       return;
     }
     setCreatingCoderProject(true);
@@ -827,16 +879,60 @@ export function AppSidebar({
       if (!selection.ok || !selection.path) {
         return;
       }
-      const result = await window.electronAPI.assistant.createCoderProject({
-        workspaceDir: selection.path,
-      });
-      if (!result.ok) {
-        console.warn(
-          "[assistant] failed to create CODER project",
-          result.message,
+      const runningAcpProxies = getRunningCoderAcpProxyOptions(
+        await window.electronAPI.services.list(),
+      );
+      if (runningAcpProxies.length === 0) {
+        window.alert(
+          "没有检测到正在运行的 ACP 工具，请先在控制中心启动 Claude Code ACP Proxy 或 Codex ACP Proxy。",
         );
         return;
       }
+      setCoderAcpProjectDialog({
+        workspaceDir: selection.path,
+        options: runningAcpProxies,
+        selectedAcpProxyId: runningAcpProxies[0]?.acpProxyId ?? "",
+        pending: false,
+        error: "",
+      });
+    } catch (error) {
+      console.warn("[assistant] failed to prepare CODER project", error);
+    } finally {
+      setCreatingCoderProject(false);
+    }
+  }
+
+  async function handleSubmitCoderAcpProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const dialog = coderAcpProjectDialog;
+    if (!dialog || dialog.pending) {
+      return;
+    }
+    const selectedAcpProxy = dialog.options.find(
+      (option) => option.acpProxyId === dialog.selectedAcpProxyId,
+    );
+    if (!selectedAcpProxy) {
+      setCoderAcpProjectDialog({
+        ...dialog,
+        error: "请选择一个正在运行的 ACP 工具。",
+      });
+      return;
+    }
+    setCoderAcpProjectDialog({ ...dialog, pending: true, error: "" });
+    try {
+      const result = await window.electronAPI.assistant.createCoderProject({
+        workspaceDir: dialog.workspaceDir,
+        acpProxyId: selectedAcpProxy.acpProxyId,
+      });
+      if (!result.ok) {
+        setCoderAcpProjectDialog({
+          ...dialog,
+          pending: false,
+          error: result.message || "创建 CODER 智能体失败。",
+        });
+        return;
+      }
+      setCoderAcpProjectDialog(null);
       await onRefreshAssistantNavAgents?.();
       if (result.agentKey) {
         setExpandedAssistantAgentKey(result.agentKey);
@@ -844,8 +940,11 @@ export function AppSidebar({
       }
     } catch (error) {
       console.warn("[assistant] failed to create CODER project", error);
-    } finally {
-      setCreatingCoderProject(false);
+      setCoderAcpProjectDialog({
+        ...dialog,
+        pending: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -1425,7 +1524,7 @@ export function AppSidebar({
                   className="assistant-worker-icon-button sidebar-assistant-project-button"
                   aria-label="新增项目"
                   title="新增项目"
-                  disabled={creatingCoderProject}
+                  disabled={creatingCoderProject || Boolean(coderAcpProjectDialog)}
                   onClick={handleCreateCoderProject}
                 >
                   {creatingCoderProject ? (
@@ -2129,6 +2228,101 @@ export function AppSidebar({
     );
   }
 
+  function renderCoderAcpProjectDialog() {
+    if (!coderAcpProjectDialog || typeof document === "undefined") {
+      return null;
+    }
+
+    return createPortal(
+      <div
+        className="sidebar-website-dialog-layer"
+        role="presentation"
+        onMouseDown={() => {
+          if (!coderAcpProjectDialog.pending) {
+            setCoderAcpProjectDialog(null);
+          }
+        }}
+      >
+        <form
+          className="sidebar-website-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sidebar-coder-acp-dialog-title"
+          onSubmit={(event) => void handleSubmitCoderAcpProject(event)}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="sidebar-website-dialog-head">
+            <strong id="sidebar-coder-acp-dialog-title">选择 ACP 工具</strong>
+            <button
+              type="button"
+              className="sidebar-website-dialog-close"
+              aria-label="关闭"
+              disabled={coderAcpProjectDialog.pending}
+              onClick={() => setCoderAcpProjectDialog(null)}
+            >
+              ×
+            </button>
+          </div>
+          <label className="sidebar-website-dialog-field">
+            <span>项目目录</span>
+            <input value={coderAcpProjectDialog.workspaceDir} readOnly />
+          </label>
+          <label className="sidebar-website-dialog-field">
+            <span>ACP 工具</span>
+            <select
+              value={coderAcpProjectDialog.selectedAcpProxyId}
+              onChange={(event) =>
+                setCoderAcpProjectDialog((current) =>
+                  current
+                    ? {
+                        ...current,
+                        selectedAcpProxyId: event.target.value,
+                        error: "",
+                      }
+                    : current,
+                )
+              }
+              disabled={coderAcpProjectDialog.pending}
+              autoFocus
+            >
+              {coderAcpProjectDialog.options.map((option) => (
+                <option value={option.acpProxyId} key={option.serviceId}>
+                  {option.label} · {option.statusLabel}
+                </option>
+              ))}
+            </select>
+          </label>
+          {coderAcpProjectDialog.error ? (
+            <div className="sidebar-website-dialog-error" role="alert">
+              {coderAcpProjectDialog.error}
+            </div>
+          ) : null}
+          <div className="sidebar-website-dialog-actions">
+            <button
+              type="button"
+              className="sidebar-website-secondary-button"
+              disabled={coderAcpProjectDialog.pending}
+              onClick={() => setCoderAcpProjectDialog(null)}
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              className="sidebar-website-primary-button"
+              disabled={
+                coderAcpProjectDialog.pending ||
+                !coderAcpProjectDialog.selectedAcpProxyId
+              }
+            >
+              {coderAcpProjectDialog.pending ? "创建中..." : "创建"}
+            </button>
+          </div>
+        </form>
+      </div>,
+      document.body,
+    );
+  }
+
   function renderWebsiteDialog() {
     if (!websiteDialogOpen || typeof document === "undefined") {
       return null;
@@ -2335,6 +2529,7 @@ export function AppSidebar({
           {renderAssistantChatMenu()}
           {renderAgentMenu()}
           {renderAgentDialog()}
+          {renderCoderAcpProjectDialog()}
           {renderWebsiteDialog()}
         </div>
       </div>

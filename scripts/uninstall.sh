@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-APP_NAME="XiaoJun"
+APP_NAME="ZenMind"
 APP_PATH="/Applications/${APP_NAME}.app"
 DATA_PATH="${HOME}/.zenmind/.desktop"
 PROGRAM_DATA_PATH="${HOME}/Library/Application Support/ZenMind"

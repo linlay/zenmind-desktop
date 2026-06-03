@@ -1,8 +1,8 @@
 {
-  "name": "xiaojun-desktop",
+  "name": "zenmind-desktop",
   "version": "0.2.4",
   "private": true,
-  "description": "XiaoJun 应用壳",
+  "description": "ZenMind 应用壳",
   "main": "dist-electron/main/index.js",
   "scripts": {
     "brand:sync": "node ./scripts/sync-brand.mjs",

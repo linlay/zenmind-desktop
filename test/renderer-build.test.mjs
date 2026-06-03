@@ -1769,6 +1769,13 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(appShell, /onRefreshAssistantNavAgents=\{refreshAssistantNavAgents\}/);
   assert.match(appSidebar, /handleCreateCoderProject/);
   assert.match(appSidebar, /window\.electronAPI\.desktopDialog\.selectDirectory\(\)[\s\S]*?window\.electronAPI\.assistant\.createCoderProject/);
+  assert.match(appSidebar, /window\.electronAPI\.services\.list\(\)/);
+  assert.match(appSidebar, /proxy-acp-claudecode[\s\S]*?acpProxyId:\s*"claude"/);
+  assert.match(appSidebar, /proxy-acp-codex[\s\S]*?acpProxyId:\s*"codex"/);
+  assert.match(appSidebar, /acpProxyId:\s*selectedAcpProxy\.acpProxyId/);
+  assert.match(appSidebar, /没有检测到正在运行的 ACP 工具/);
+  assert.doesNotMatch(appSidebar, /使用本机 Claude Code 运行 CODER 助理/);
+  assert.doesNotMatch(appSidebar, /使用本机 Codex CLI 运行 CODER 助理/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-assistant-project-button"/);
   assert.match(appSidebar, /function getOpenWorkspaceDisabledReason\(agent: AssistantNavAgentItem\)/);
   assert.match(appSidebar, /agent\.workspaceDirExists === false/);
