@@ -644,7 +644,10 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /type AgentSelectionOptions = \{\s*preferNewChat\?: boolean;\s*\};/);
   assert.match(sidebarSource, /function createAgentSelectionRoute\(\s*agent: AssistantNavAgentItem,\s*options: AgentSelectionOptions = \{\},\s*\)/);
   assert.match(sidebarSource, /if \(!options\.preferNewChat\) \{\s*return createAgentDefaultRoute\(agent\);/);
-  assert.match(sidebarSource, /const latestChat = getAssistantNavAgentRecentChats\(agent\)\[0\];/);
+  assert.match(sidebarSource, /const recentChats = getAssistantNavAgentRecentChats\(agent\);/);
+  assert.match(sidebarSource, /const activeChat = recentChats\.find\(\(chat\) => chat\.hasActiveRun === true\);/);
+  assert.match(sidebarSource, /if \(activeChatId\) \{\s*return createAgentChatRoute\(agent\.agentKey, activeChatId\);/);
+  assert.match(sidebarSource, /const latestChat = recentChats\[0\];/);
   assert.match(sidebarSource, /latestChat\.hasPendingAwaiting === true \|\| latestChat\.isRead === false/);
   assert.match(sidebarSource, /return createAgentNewChatRoute\(agent\.agentKey\);/);
   assert.match(sidebarSource, /function createAgentHistoryRoute\(agentKey: string\)/);
@@ -734,7 +737,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*0;[\s\S]*?border-left:\s*0;/);
   assert.match(globalStyles, /\.sidebar-custom-child-link\s*\{[\s\S]*?padding-left:\s*4px !important;/);
-  assert.match(globalStyles, /\.worker-panel-role\s*\{[\s\S]*?font-size:\s*12px;/);
+  assert.match(globalStyles, /\.assistant-worker-name\s*\{[\s\S]*?font-weight:\s*500;/);
+  assert.match(globalStyles, /\.worker-panel-role\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?font-weight:\s*400;/);
   assert.match(globalStyles, /\.worker-panel-preview\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?height:\s*20px;/);
   assert.match(globalStyles, /\.worker-chat-name\s*\{[\s\S]*?font-size:\s*12px;/);
   assert.match(globalStyles, /\.assistant-worker-header\s*\{[\s\S]*?padding:\s*6px 10px;/);
@@ -1730,6 +1734,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /interface AssistantNavAgentItem/);
   assert.match(contracts, /icon\?: AssistantNavAgentIcon/);
   assert.match(contracts, /recentChats: AssistantNavChatItem\[\]/);
+  assert.match(contracts, /hasActiveRun:\s*boolean/);
   assert.match(contracts, /hasPendingAwaiting:\s*boolean/);
   assert.match(contracts, /rowType\?: "agent"/);
   assert.match(contracts, /agentType\?: string/);

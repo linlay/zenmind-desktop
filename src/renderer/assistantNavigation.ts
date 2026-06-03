@@ -35,6 +35,7 @@ function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): As
     lastRunId: toText(record.lastRunId),
     lastRunContent: toText(record.lastRunContent),
     isRead: record.isRead !== false,
+    hasActiveRun: record.hasActiveRun === true,
     hasPendingAwaiting: record.hasPendingAwaiting === true
   };
 }

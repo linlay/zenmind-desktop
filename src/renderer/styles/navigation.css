@@ -646,13 +646,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ink);
 }
 
 .worker-panel-role {
   margin-left: 8px;
   font-size: 12px;
+  font-weight: 400;
   color: var(--ink-muted);
 }
 

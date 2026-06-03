@@ -362,7 +362,14 @@ function createAgentSelectionRoute(
     return createAgentDefaultRoute(agent);
   }
 
-  const latestChat = getAssistantNavAgentRecentChats(agent)[0];
+  const recentChats = getAssistantNavAgentRecentChats(agent);
+  const activeChat = recentChats.find((chat) => chat.hasActiveRun === true);
+  const activeChatId = activeChat?.chatId.trim() ?? "";
+  if (activeChatId) {
+    return createAgentChatRoute(agent.agentKey, activeChatId);
+  }
+
+  const latestChat = recentChats[0];
   const latestChatId = latestChat?.chatId.trim() ?? "";
   if (
     latestChatId &&

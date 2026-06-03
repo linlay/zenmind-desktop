@@ -34,6 +34,9 @@ type PlatformChatSummary = {
   message?: unknown;
   read?: unknown;
   isRead?: unknown;
+  hasActiveRun?: unknown;
+  activeRun?: unknown;
+  running?: unknown;
   awaiting?: unknown;
   hasPendingAwaiting?: unknown;
   awaitingCount?: unknown;
@@ -94,6 +97,9 @@ type NavigationPushEvent = {
   isRead?: unknown;
   readAt?: unknown;
   readRunId?: unknown;
+  hasActiveRun?: unknown;
+  activeRun?: unknown;
+  running?: unknown;
   agentUnreadCount?: unknown;
   unreadCount?: unknown;
   awaiting?: unknown;
@@ -382,6 +388,43 @@ function readChatPendingAwaiting(chat: PlatformChatSummary) {
   return toText(chat.status).toLowerCase() === "awaiting";
 }
 
+function readActiveRunValue(value: unknown): boolean | null {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+    return !["0", "false", "done", "finished", "complete", "completed"].includes(normalized);
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value > 0 : null;
+  }
+  if (isObjectRecord(value)) {
+    return true;
+  }
+  return null;
+}
+
+function readChatActiveRun(chat: PlatformChatSummary) {
+  const explicitActiveRun = readActiveRunValue(chat.hasActiveRun);
+  if (explicitActiveRun !== null) {
+    return explicitActiveRun;
+  }
+  const activeRun = readActiveRunValue(chat.activeRun);
+  if (activeRun !== null) {
+    return activeRun;
+  }
+  const running = readActiveRunValue(chat.running);
+  if (running !== null) {
+    return running;
+  }
+  const status = toText(chat.status).toLowerCase();
+  return status === "running" || status === "active" || status === "in_progress";
+}
+
 function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem) {
   const rightTime = toTimestampMs(right.updatedAt);
   const leftTime = toTimestampMs(left.updatedAt);
@@ -406,6 +449,7 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
     lastRunId: toText(chat.lastRunId),
     lastRunContent,
     isRead: readChatIsRead(chat),
+    hasActiveRun: readChatActiveRun(chat),
     hasPendingAwaiting: readChatPendingAwaiting(chat)
   };
 }
@@ -583,6 +627,35 @@ function readPushPendingAwaiting(event: NavigationPushEvent, fallback: boolean) 
   return fallback;
 }
 
+function readPushActiveRun(event: NavigationPushEvent, fallback: boolean) {
+  if (event.type === "run.start") {
+    return true;
+  }
+  if (event.type === "run.complete") {
+    return false;
+  }
+  const explicitActiveRun = readActiveRunValue(event.hasActiveRun);
+  if (explicitActiveRun !== null) {
+    return explicitActiveRun;
+  }
+  const activeRun = readActiveRunValue(event.activeRun);
+  if (activeRun !== null) {
+    return activeRun;
+  }
+  const running = readActiveRunValue(event.running);
+  if (running !== null) {
+    return running;
+  }
+  const status = toText(event.status).toLowerCase();
+  if (status === "running" || status === "active" || status === "in_progress") {
+    return true;
+  }
+  if (status === "done" || status === "finished" || status === "complete" || status === "completed") {
+    return false;
+  }
+  return fallback;
+}
+
 function createChatPatchFromPush(event: NavigationPushEvent, current?: AssistantNavChatItem): AssistantNavChatItem | null {
   const chatId = readPushChatId(event);
   if (!chatId) {
@@ -612,6 +685,7 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
     lastRunId: toText(event.lastRunId) || toText(event.runId) || current?.lastRunId || "",
     lastRunContent: preview || current?.lastRunContent || (event.type === "run.start" ? "思考中" : ""),
     isRead,
+    hasActiveRun: readPushActiveRun(event, current?.hasActiveRun ?? false),
     hasPendingAwaiting: readPushPendingAwaiting(event, current?.hasPendingAwaiting ?? false)
   };
 }

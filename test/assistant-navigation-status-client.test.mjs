@@ -59,7 +59,8 @@ test("assistant navigation snapshot uses /api/agents includeChats and agent stat
               updatedAt: 2000,
               lastRunContent: "newer reply",
               isRead: false,
-              status: "awaiting"
+              status: "awaiting",
+              activeRun: { runId: "run-active" }
             }
           ]
         }
@@ -87,6 +88,8 @@ test("assistant navigation snapshot uses /api/agents includeChats and agent stat
     assert.equal(items[0].latestPreview, "newer reply");
     assert.equal(items[0].hasPendingAwaiting, true);
     assert.deepEqual(items[0].recentChats.map((chat) => chat.chatId), ["chat-new", "chat-old"]);
+    assert.equal(items[0].recentChats[0].hasActiveRun, true);
+    assert.equal(items[0].recentChats[1].hasActiveRun, false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -371,6 +374,7 @@ test("assistant navigation push reducer handles awaiting, run lifecycle and arch
   });
   assert.equal(started.changed, true);
   assert.equal(started.items[0].recentChats[0].lastRunId, "run-1");
+  assert.equal(started.items[0].recentChats[0].hasActiveRun, true);
   assert.equal(started.items[0].recentChats[0].hasPendingAwaiting, false);
 
   const awaiting = applyAssistantNavigationPush(started.items, {
@@ -393,6 +397,7 @@ test("assistant navigation push reducer handles awaiting, run lifecycle and arch
     timestamp: 4000
   });
   assert.equal(finished.items[0].latestPreview, "done");
+  assert.equal(finished.items[0].recentChats[0].hasActiveRun, false);
   assert.equal(finished.items[0].hasPendingAwaiting, false);
 
   const archived = applyAssistantNavigationPush(finished.items, {
@@ -428,6 +433,7 @@ test("assistant navigation push refreshes completed runs that omit final preview
   assert.equal(started.changed, true);
   assert.equal(started.shouldRefresh, false);
   assert.equal(started.items[0].recentChats[0].lastRunContent, "思考中");
+  assert.equal(started.items[0].recentChats[0].hasActiveRun, true);
 
   const finished = applyAssistantNavigationPush(started.items, {
     frame: "push",
@@ -439,6 +445,7 @@ test("assistant navigation push refreshes completed runs that omit final preview
   });
   assert.equal(finished.changed, true);
   assert.equal(finished.shouldRefresh, true);
+  assert.equal(finished.items[0].recentChats[0].hasActiveRun, false);
   assert.equal(finished.items[0].hasPendingAwaiting, false);
 });
 

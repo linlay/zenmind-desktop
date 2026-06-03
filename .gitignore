@@ -8,15 +8,7 @@ dist-electron/
 out/
 release/
 
-build/app/
-build/bundle/
-build/dev/
-build/generated/
-build/icons/
-build/local-builtin-source/
-build/resources/services/
-build/electron-builder.*.json
-build/installer.nsh
+build/
 build-all.sh
 
 public/brand-icon.png

@@ -123,6 +123,7 @@ export interface AssistantNavChatItem {
   lastRunId: string;
   lastRunContent: string;
   isRead: boolean;
+  hasActiveRun: boolean;
   hasPendingAwaiting: boolean;
 }
 
