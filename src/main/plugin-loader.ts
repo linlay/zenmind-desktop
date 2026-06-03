@@ -6,6 +6,7 @@ import { clearServices, getService, registerService, unregisterService } from ".
 import { fixShellScriptPermissions } from "./services/manager";
 import { extractArchiveToDir } from "./archive-utils";
 import { getPluginsRoot, getServiceConfigRoot, getServiceStateRoot } from "./user-paths";
+import { STORAGE_NAMESPACE } from "../shared/generated/brand";
 
 function readManifest(pluginDir: string) {
   const manifestPath = path.join(pluginDir, "manifest.json");
@@ -129,7 +130,7 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
     fs.mkdirSync(path.dirname(targetDir), { recursive: true });
     fs.cpSync(extractedDir, targetDir, { recursive: true });
     restorePreservedConfigFiles(configDir, preservedConfigFiles);
-    fs.rmSync(path.join(targetDir, ".zenmind-desktop"), { recursive: true, force: true });
+    fs.rmSync(path.join(targetDir, `.${STORAGE_NAMESPACE}`), { recursive: true, force: true });
     fixShellScriptPermissions(targetDir);
     registerService(manifest, { defaultKind: "plugin" });
     return { ok: true, message: `插件 ${manifest.name} 已导入，请完成初始化。`, serviceId: manifest.id };

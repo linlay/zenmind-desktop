@@ -4,14 +4,16 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { loadBrandConfig, resolveBrandId } from "./lib/brand-config.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const buildIconsDir = path.join(projectRoot, "build", "icons");
 const iconsetDir = path.join(buildIconsDir, "icon.iconset");
 const publicDir = path.join(projectRoot, "public");
+const brand = loadBrandConfig(projectRoot, resolveBrandId());
 
-const appIconSvgPath = path.join(buildIconsDir, "app-icon.svg");
-const trayIconSourceSvgPath = path.join(buildIconsDir, "tray-icon.svg");
+const appIconSvgPath = path.join(projectRoot, brand.icons.appIconSvg);
+const trayIconSourceSvgPath = path.join(projectRoot, brand.icons.trayIconSvg);
 const publicTrayIconSvgPath = path.join(publicDir, "tray-icon.svg");
 
 const pngSizes = [16, 32, 64, 128, 256, 512, 1024];
@@ -229,7 +231,7 @@ async function main() {
   writeFileIfChanged(path.join(publicDir, "tray-icon.png"), trayPng);
   await assertNonTransparentPng("public/tray-icon.png", trayPng);
 
-  console.log("generated ZenMind app icons");
+  console.log(`generated ${brand.productName} app icons`);
 }
 
 main().catch((error) => {

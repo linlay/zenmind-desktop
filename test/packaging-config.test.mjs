@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageJsonPath = path.join(projectRoot, "package.json");
+const electronBuilderConfigPath = path.join(projectRoot, "build", "electron-builder.zenmind.json");
 const installerIncludePath = path.join(projectRoot, "build", "installer.nsh");
 const uninstallScriptPath = path.join(projectRoot, "scripts", "uninstall.sh");
 const distWinScriptPath = path.join(projectRoot, "scripts", "dist-win.mjs");
@@ -19,6 +20,10 @@ function loadPackageJson() {
   return JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
 }
 
+function loadElectronBuilderConfig() {
+  return JSON.parse(fs.readFileSync(electronBuilderConfigPath, "utf8"));
+}
+
 test("renderer declares Ant Design component libraries used by native webclient pages", () => {
   const dependencies = loadPackageJson().dependencies ?? {};
 
@@ -30,15 +35,19 @@ test("renderer declares Ant Design component libraries used by native webclient 
 
 test("electron-builder packaging uses staged app input, restricted locales, and NSIS uninstall hook", () => {
   const packageJson = loadPackageJson();
-  const extraResources = packageJson.build?.extraResources ?? [];
+  const builderConfig = loadElectronBuilderConfig();
+  const extraResources = builderConfig.extraResources ?? [];
   const uninstallResource = extraResources.find((entry) => entry.from === "scripts");
   const trayIconResource = extraResources.find((entry) => entry.from === "public/tray-icon.png");
   const pluginsResource = extraResources.find((entry) => entry.from === "build/resources/plugins");
   const voiceAsrResource = extraResources.find((entry) => entry.from === "build/resources/voice-asr");
 
   assert.equal(packageJson.dependencies?.["@ffmpeg-installer/ffmpeg"], undefined);
-  assert.ok(!packageJson.build?.asarUnpack?.includes("node_modules/@ffmpeg-installer/*/ffmpeg"));
-  assert.ok(!packageJson.build?.asarUnpack?.includes("node_modules/@ffmpeg-installer/*/ffmpeg.exe"));
+  assert.equal(packageJson.build, undefined);
+  assert.ok(!builderConfig.asarUnpack?.includes("node_modules/@ffmpeg-installer/*/ffmpeg"));
+  assert.ok(!builderConfig.asarUnpack?.includes("node_modules/@ffmpeg-installer/*/ffmpeg.exe"));
+  assert.equal(builderConfig.appId, "cc.zenmind.desktop");
+  assert.equal(builderConfig.productName, "ZenMind");
   assert.deepEqual(uninstallResource, {
     from: "scripts",
     to: ".",
@@ -49,25 +58,20 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
     to: "tray-icon.png"
   });
   assert.equal(pluginsResource, undefined);
-  assert.equal(packageJson.build?.directories?.app, "build/app");
-  assert.deepEqual(packageJson.build?.electronLanguages, ["zh-CN", "en-US"]);
+  assert.equal(builderConfig.directories?.app, "build/app");
+  assert.deepEqual(builderConfig.electronLanguages, ["zh-CN", "en-US"]);
   assert.match(packageJson.scripts?.["build:main"] ?? "", /build:main:types/);
   assert.match(packageJson.scripts?.["build:main"] ?? "", /build:main:bundle/);
-  assert.equal(packageJson.scripts?.["icons"], "node ./scripts/generate-app-icons.mjs");
+  assert.equal(packageJson.scripts?.["icons"], "npm run brand:sync && node ./scripts/generate-app-icons.mjs");
   assert.equal(packageJson.scripts?.["stage:app"], "node ./scripts/stage-app.mjs");
-  assert.match(packageJson.scripts?.["dist:mac"] ?? "", /stage:app -- --os=darwin --arch=arm64/);
-  assert.match(packageJson.scripts?.["dist:win"] ?? "", /stage:app -- --os=win32 --arch=x64/);
-  assert.doesNotMatch(packageJson.scripts?.["dist:mac"] ?? "", /run icons/);
-  assert.doesNotMatch(packageJson.scripts?.["dist:win"] ?? "", /run icons/);
+  assert.equal(packageJson.scripts?.["dist:mac"], "node ./scripts/dist-mac.mjs");
+  assert.equal(packageJson.scripts?.["dist:win"], "node ./scripts/dist-win.mjs");
+  assert.equal(packageJson.scripts?.["dist:win-docker"], "node ./scripts/dist-win.mjs --docker");
   assert.equal(voiceAsrResource, undefined);
   assert.equal(packageJson.scripts?.["sync:plugins"], undefined);
   assert.equal(packageJson.scripts?.["prepare:voice-asr"], undefined);
-  assert.doesNotMatch(packageJson.scripts?.["dist:mac"] ?? "", /prepare:voice-asr/);
-  assert.doesNotMatch(packageJson.scripts?.["dist:win"] ?? "", /prepare:voice-asr/);
-  assert.match(packageJson.scripts?.["dist:win"] ?? "", /electron-builder --win --x64/);
-  assert.equal(packageJson.scripts?.["dist:win-docker"], "npm run sync:version && node ./scripts/dist-win.mjs");
-  assert.notEqual(packageJson.build?.nsis?.perMachine, true);
-  assert.equal(packageJson.build?.nsis?.include, "build/installer.nsh");
+  assert.notEqual(builderConfig.nsis?.perMachine, true);
+  assert.equal(builderConfig.nsis?.include, "build/installer.nsh");
 });
 
 test("main-process bundle keeps process tree parser test export bound", () => {
@@ -80,6 +84,7 @@ test("main-process bundle keeps process tree parser test export bound", () => {
 test("main-process bundle handles installer shutdown command from a second instance", () => {
   const bundledMain = fs.readFileSync(bundledMainPath, "utf8");
 
+  assert.match(bundledMain, /--desktop-shutdown-for-update/);
   assert.match(bundledMain, /--zenmind-shutdown-for-update/);
   assert.match(bundledMain, /second-instance/);
   assert.match(bundledMain, /before-quit/);
@@ -104,7 +109,7 @@ test("custom uninstall assets default to keeping data and delete desktop plus pr
   assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.zenmind\/\.desktop"/);
   assert.match(uninstallScript, /PROGRAM_DATA_PATH="\$\{HOME\}\/Library\/Application Support\/ZenMind"/);
   assert.doesNotMatch(uninstallScript, /Library\/Application Support\/zenmind-desktop/);
-  assert.match(uninstallScript, /default button "Keep Data"/);
+  assert.match(uninstallScript, /default button \\"Keep Data\\"/);
   assert.match(distWinDockerScript, /electronuserland\/builder:wine/);
 });
 
@@ -112,15 +117,15 @@ test("windows installer requests graceful app shutdown and cleans managed servic
   const installerScript = fs.readFileSync(installerIncludePath, "utf8");
 
   assert.match(installerScript, /!macro customCheckAppRunning/);
-  assert.match(installerScript, /--zenmind-shutdown-for-update/);
-  assert.match(installerScript, /Stop-ZenMindManagedProcesses/);
+  assert.match(installerScript, /--desktop-shutdown-for-update/);
+  assert.match(installerScript, /Stop-DesktopManagedProcesses/);
   assert.match(installerScript, /Get-CimInstance Win32_Process/);
   assert.match(installerScript, /%APPDATA%\\ZenMind/);
   assert.match(installerScript, /%USERPROFILE%\\.zenmind\\.desktop\\state/);
   assert.match(installerScript, /Remove-Item -LiteralPath \$\$_.FullName -Force/);
   assert.match(installerScript, /taskkill \/f \/im "\$\{APP_EXECUTABLE_FILENAME\}"/);
-  assert.match(installerScript, /nsExec::ExecToLog `%SYSTEMROOT%\\System32\\WindowsPowerShell.*Stop-ZenMindManagedProcesses"`\s+Pop \$R2/s);
-  assert.match(installerScript, /nsExec::ExecToLog `"\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}" --zenmind-shutdown-for-update`\s+Pop \$R2/);
+  assert.match(installerScript, /nsExec::ExecToLog `%SYSTEMROOT%\\System32\\WindowsPowerShell.*Stop-DesktopManagedProcesses"`\s+Pop \$R2/s);
+  assert.match(installerScript, /nsExec::ExecToLog `"\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}" --desktop-shutdown-for-update`\s+Pop \$R2/);
 });
 
 test("dist-win docker flow syncs builtin assets on the host before entering Docker", () => {
@@ -141,11 +146,11 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   );
   assert.match(
     distWinDockerScript,
-    /"--volume",\s*\n\s*"zenmind-desktop-node-modules:\/project\/node_modules",/
+    /"--volume",\s*\n\s*`\$\{brand\.packageName\}-node-modules:\/project\/node_modules`,/
   );
   assert.match(
     distWinDockerScript,
-    /"npm install --no-package-lock --ignore-scripts",\s*\n\s*"node \.\/scripts\/stage-app\.mjs --os=win32 --arch=x64",\s*\n\s*"npx electron-builder --win --x64",\s*\n\s*"node \.\/scripts\/verify-win-package\.mjs"/
+    /"npm install --no-package-lock --ignore-scripts",\s*\n\s*`node \.\/scripts\/sync-brand\.mjs --brand=\$\{brand\.id\}`,\s*\n\s*"node \.\/scripts\/stage-app\.mjs --os=win32 --arch=x64",\s*\n\s*`npx electron-builder --config \$\{path\.posix\.relative\("\/project", electronBuilderConfigPath\("\/project", brand\.id\)\)\} --win --x64`,\s*\n\s*"node \.\/scripts\/verify-win-package\.mjs"/
   );
   assert.match(
     distWinHostScript,
@@ -159,6 +164,7 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   assert.match(stageAppScript, /"build", "app"/);
   assert.match(stageAppScript, /"dist-renderer"/);
   assert.match(stageAppScript, /main:\s*"dist-electron\/main\/index\.js"/);
+  assert.match(stageAppScript, /desktopBuildTarget:/);
   assert.match(buildMainBundleScript, /"main\/attachment-worker"/);
   assert.match(buildMainBundleScript, /"main",\s*"copilot",\s*"attachments",\s*"attachment-worker\.ts"/);
   assert.match(stageAppScript, /"@napi-rs\/canvas": desktopPackage\.dependencies/);

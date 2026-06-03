@@ -8,6 +8,7 @@ import {
   type NativeImage,
   type Rectangle
 } from "electron";
+import { PRODUCT_NAME } from "../../../shared/generated/brand";
 import { createAssistantAttachmentFromImageBuffer } from "../attachments/attachment-store";
 
 export type ScreenshotCaptureSource = "sidebar" | "quick-assistant";
@@ -127,7 +128,7 @@ function selectScreenshotRegion(display: Display, platform: NodeJS.Platform) {
       hasShadow: false,
       ...(platform === "darwin" ? { roundedCorners: false } : {}),
       backgroundColor: "#00000000",
-      title: "ZenMind Screenshot Selection",
+      title: `${PRODUCT_NAME} Screenshot Selection`,
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
@@ -183,7 +184,7 @@ function getScreenshotPermissionMessage(platform: NodeJS.Platform) {
   if (platform === "darwin") {
     const status = systemPreferences.getMediaAccessStatus("screen");
     if (status === "denied" || status === "restricted") {
-      return "ZenMind 没有屏幕录制权限。请在系统设置 > 隐私与安全性 > 屏幕录制中允许 ZenMind 后重试。";
+      return `${PRODUCT_NAME} 没有屏幕录制权限。请在系统设置 > 隐私与安全性 > 屏幕录制中允许 ${PRODUCT_NAME} 后重试。`;
     }
     return "";
   }
@@ -359,12 +360,12 @@ async function captureScreenshotImage(
 
   if (options.platform === "darwin" && screenCaptureFailure.message.includes("没有获取到可用的屏幕截图")) {
     throw new Error(
-      "没有获取到系统屏幕截图源，也无法从当前 ZenMind 窗口截取该区域。请确认选择范围在 ZenMind 窗口内，或在系统设置 > 隐私与安全性 > 屏幕录制中允许 ZenMind。"
+      `没有获取到系统屏幕截图源，也无法从当前 ${PRODUCT_NAME} 窗口截取该区域。请确认选择范围在 ${PRODUCT_NAME} 窗口内，或在系统设置 > 隐私与安全性 > 屏幕录制中允许 ${PRODUCT_NAME}。`
     );
   }
 
   if (options.platform === "win32" && screenCaptureFailure.message.includes("没有获取到可用的屏幕截图")) {
-    throw new Error("没有获取到系统屏幕截图源，也无法从当前 ZenMind 窗口截取该区域，请重新选择窗口内区域后重试。");
+    throw new Error(`没有获取到系统屏幕截图源，也无法从当前 ${PRODUCT_NAME} 窗口截取该区域，请重新选择窗口内区域后重试。`);
   }
 
   throw screenCaptureFailure;

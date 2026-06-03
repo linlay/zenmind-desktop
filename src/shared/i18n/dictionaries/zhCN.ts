@@ -1,6 +1,10 @@
+import { APP_BRAND, PRODUCT_NAME } from "../../generated/brand";
+
+const brandMessages: Partial<Record<string, string>> = APP_BRAND.i18n["zh-CN"];
+
 export const zhCNMessages = {
-  "app.name": "ZenMind",
-  "app.productName": "ZenMind",
+  "app.name": brandMessages["app.name"] ?? PRODUCT_NAME,
+  "app.productName": brandMessages["app.productName"] ?? PRODUCT_NAME,
 
   "common.back": "后退",
   "common.cancel": "取消",
@@ -707,7 +711,7 @@ export const zhCNMessages = {
   "taskBoard.feedback.agentIncomplete": "智能体处理未完成，任务状态已更新。",
   "taskBoard.feedback.agentCancelled": "智能体运行已取消。",
   "taskBoard.feedback.statusWritebackFailed": "任务状态回写失败。",
-  "taskBoard.prompt.intro": "请你处理下面这个 ZenMind 任务看板任务，并在完成后总结结果。",
+  "taskBoard.prompt.intro": brandMessages["taskBoard.prompt.intro"] ?? `请你处理下面这个 ${PRODUCT_NAME} 任务看板任务，并在完成后总结结果。`,
   "taskBoard.prompt.rule": "不要直接修改任务看板文件或任务状态；桌面端会在你完成后自动把任务更新到「已完成」。",
   "taskBoard.prompt.id": "任务编号：{value}",
   "taskBoard.prompt.title": "标题：{value}",
@@ -758,7 +762,7 @@ export const zhCNMessages = {
   "startup.service.authentication": "认证服务",
   "startup.service.agentPlatform": "智能体平台",
   "startup.service.agentWebclient": "智能助理",
-  "startup.envImport.title": "初始化 ZenMind 环境",
+  "startup.envImport.title": brandMessages["startup.envImport.title"] ?? `初始化 ${PRODUCT_NAME} 环境`,
   "startup.envImport.descriptionPrefix": "检测到您的应用环境尚未配置。首次运行需要导入",
   "startup.envImport.descriptionSuffix": "包以完成系统的初始化配置。",
   "startup.envImport.action": "选择并导入 env.zip",

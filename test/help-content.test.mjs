@@ -68,6 +68,30 @@ test("help content includes platform template variables for plugin packaging", (
   }
 });
 
+test("help content uses brand template variables for product names and shared paths", () => {
+  const allHelpContent = locales.flatMap((locale) => {
+    const localeRoot = path.join(helpRoot, locale);
+    const files = [];
+    const visit = (dirPath) => {
+      for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+        const filePath = path.join(dirPath, entry.name);
+        if (entry.isDirectory()) {
+          visit(filePath);
+        } else if (entry.name.endsWith(".md") || entry.name === "index.json") {
+          files.push(fs.readFileSync(filePath, "utf8"));
+        }
+      }
+    };
+    visit(localeRoot);
+    return files;
+  }).join("\n");
+
+  assert.match(allHelpContent, /\{\{productName\}\}/);
+  assert.match(allHelpContent, /\{\{runtimeDataPathMac\}\}/);
+  assert.match(allHelpContent, /\{\{runtimeDataPathWindows\}\}/);
+  assert.doesNotMatch(allHelpContent, /ZenMind/);
+});
+
 test("help markdown renderer handles internal app links through React Router", () => {
   const rendererSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "help", "MarkdownContent.tsx"),

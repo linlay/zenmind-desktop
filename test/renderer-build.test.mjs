@@ -178,7 +178,7 @@ test("agent webclient management routes render native Ant Design pages", () => {
   assert.match(agentApi, /No handler registered/);
   assert.match(appShellCss, /has-agent-native-surface/);
   assert.match(appShellCss, /agent-native-surface-body/);
-  assert.match(appShellCss, /body\.agent-native-surface-body:not\(\.mac-translucent-sidebar-body\),\s*\.app-shell\.has-agent-native-surface:not\(\.is-mac-translucent-sidebar\)\s*\{[\s\S]*?background:\s*#ffffff;/);
+  assert.match(appShellCss, /body\.agent-native-surface-body:not\(\.mac-translucent-sidebar-body\),\s*\.app-shell\.has-agent-native-surface:not\(\.is-mac-translucent-sidebar\)\s*\{[\s\S]*?background:\s*var\(--bg-base\);/);
   assert.match(appShellCss, /body\.agent-native-surface-body\.mac-translucent-sidebar-body,\s*\.app-shell\.is-mac-translucent-sidebar\.has-agent-native-surface\s*\{[\s\S]*?background:\s*transparent;/);
   assert.match(appShellCss, /\.app-shell\.has-agent-native-surface \.ant-app\s*\{[\s\S]*?height:\s*100%;/);
   assert.match(appShellCss, /\.app-shell\.has-agent-native-surface \.app-window-drag-region,\s*\.app-shell\.has-agent-native-surface \.app-main-drag-region\s*\{[\s\S]*?display:\s*none;/);
@@ -463,9 +463,10 @@ test("assistant launcher sits beside the sidebar collapse button", () => {
   assert.match(appShell, /embedPath=\{targetEmbedPath\}/);
   assert.match(sidebarSource, /sidebar-top-actions/);
   assert.match(sidebarSource, /sidebar-assistant-top-button/);
-  assert.match(sidebarSource, /"打开 ZenMind 助手"/);
-  assert.match(sidebarSource, /"关闭 ZenMind 助手"/);
-  assert.match(sidebarSource, /"当前页面不可开启 ZenMind 助手"/);
+  assert.match(sidebarSource, /import \{ PRODUCT_NAME, STORAGE_NAMESPACE \}/);
+  assert.match(sidebarSource, /`打开 \$\{PRODUCT_NAME\} 助手`/);
+  assert.match(sidebarSource, /`关闭 \$\{PRODUCT_NAME\} 助手`/);
+  assert.match(sidebarSource, /`当前页面不可开启 \$\{PRODUCT_NAME\} 助手`/);
   assert.doesNotMatch(sidebarAssistantClosedIcon, /<text\b/);
   assert.doesNotMatch(sidebarAssistantOpenIcon, /<text\b/);
   assert.match(sidebarAssistantClosedIcon, /viewBox="0 0 24 24"/);
@@ -2185,10 +2186,10 @@ test("main process keeps app identity visible in platform program bars", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const platformAdapter = readSourceFile("src", "main", "platform-adapter.ts");
 
-  assert.match(mainProcess, /const ZENMIND_APP_ID = "cc\.zenmind\.desktop";/);
-  assert.match(mainProcess, /const ZENMIND_PRODUCT_NAME = "ZenMind";/);
-  assert.match(mainProcess, /app\.setName\(ZENMIND_PRODUCT_NAME\);/);
-  assert.match(mainProcess, /applyPlatformAppInit\((?:process|mainProcessContext)\.platform, app, ZENMIND_APP_ID\);/);
+  assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/shared\/generated\/brand"/);
+  assert.doesNotMatch(mainProcess, /ZENMIND_APP_ID|ZENMIND_PRODUCT_NAME/);
+  assert.match(mainProcess, /app\.setName\(PRODUCT_NAME\);/);
+  assert.match(mainProcess, /applyPlatformAppInit\((?:process|mainProcessContext)\.platform, app, APP_ID\);/);
   assert.match(
     platformAdapter,
     /if \(platform === "win32"\)\s*\{[\s\S]*?app\.setAppUserModelId\(appId\);[\s\S]*?\}/
@@ -2820,14 +2821,14 @@ test("desktop pet drag ends on lost pointer signals", () => {
   assert.match(desktopPetController, /webContents\.on\("context-menu"[\s\S]{0,120}options\.endDrag\(\)/);
 });
 
-test("desktop pet click opens ZenMind without assistant sidebar copy", () => {
+test("desktop pet click opens the branded app without assistant sidebar copy", () => {
   const desktopPet = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
     "utf8"
   );
 
   assert.match(desktopPet, /desktopPet\.openAssistant/);
-  assert.match(desktopPet, /aria-label="打开 ZenMind"/);
+  assert.match(desktopPet, /aria-label=\{`打开 \$\{PRODUCT_NAME\}`\}/);
   assert.doesNotMatch(desktopPet, /打开侧边栏助手/);
 });
 

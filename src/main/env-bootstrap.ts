@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import JSZip from "jszip";
+import { APP_BRAND } from "../shared/generated/brand";
 
 type AppPathReader = Pick<App, "getPath">;
 type AppVersionReader = Partial<Pick<App, "getAppPath" | "getVersion">>;
@@ -49,13 +50,13 @@ function getHomePath(app: AppPathReader) {
   return process.env.HOME || os.homedir();
 }
 
-export function resolveHomeZenmindRoot(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
+export function resolveRuntimeRoot(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
   const pathApi = pathApiForPlatform(platform);
-  return pathApi.resolve(pathApi.join(getHomePath(app), ".zenmind"));
+  return pathApi.resolve(pathApi.join(getHomePath(app), APP_BRAND.paths.runtimeRootDirName));
 }
 
-export function homeZenmindRootExists(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
-  const root = resolveHomeZenmindRoot(app, platform);
+export function runtimeRootExists(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
+  const root = resolveRuntimeRoot(app, platform);
   try {
     return fs.existsSync(root) && fs.statSync(root).isDirectory();
   } catch {
@@ -63,9 +64,9 @@ export function homeZenmindRootExists(app: AppPathReader, platform: NodeJS.Platf
   }
 }
 
-export function homeZenmindEnvExists(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
-  const root = resolveHomeZenmindRoot(app, platform);
-  if (!homeZenmindRootExists(app, platform)) {
+export function runtimeEnvExists(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
+  const root = resolveRuntimeRoot(app, platform);
+  if (!runtimeRootExists(app, platform)) {
     return false;
   }
   if (fs.existsSync(path.join(root, ENV_IMPORT_MARKER_RELATIVE_PATH))) {
@@ -83,10 +84,10 @@ export function homeZenmindEnvExists(app: AppPathReader, platform: NodeJS.Platfo
 
 export function shouldRequireEnvZipImport(input: {
   platform?: NodeJS.Platform;
-  homeZenmindEnvExistedAtStartup: boolean;
+  runtimeEnvExistedAtStartup: boolean;
 }) {
   const platform = input.platform ?? process.platform;
-  return (platform === "darwin" || platform === "win32") && !input.homeZenmindEnvExistedAtStartup;
+  return (platform === "darwin" || platform === "win32") && !input.runtimeEnvExistedAtStartup;
 }
 
 function normalizeArchiveEntryName(entryName: string) {
@@ -265,7 +266,7 @@ function writeEnvImportMarker(targetRoot: string, result: Omit<EnvZipImportResul
   );
 }
 
-export async function importEnvZipToZenmind(
+export async function importEnvZipToRuntime(
   app: AppPathReader,
   zipPath: string,
   platform: NodeJS.Platform = process.platform,
@@ -278,7 +279,7 @@ export async function importEnvZipToZenmind(
   const zip = await JSZip.loadAsync(await fs.promises.readFile(zipPath));
   const entries = normalizeZipEntries(zip);
   await validateEnvZipVersion(entries, expectedDesktopVersion);
-  const targetRoot = resolveHomeZenmindRoot(app, platform);
+  const targetRoot = resolveRuntimeRoot(app, platform);
   let copiedFiles = 0;
   let skippedFiles = 0;
   let createdDirectories = 0;

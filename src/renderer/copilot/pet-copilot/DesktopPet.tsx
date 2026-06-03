@@ -19,6 +19,7 @@ import {
   normalizeDesktopPetAppearanceId,
   shouldUseDesktopPetTaskRunningAnimation
 } from "../../../shared/desktop-pet";
+import { PRODUCT_NAME } from "../../../shared/generated/brand";
 
 function createFallbackDesktopPetState(): DesktopPetState {
   return {
@@ -561,7 +562,7 @@ export function DesktopPet() {
         isDragging ? "is-dragging" : ""
       ].filter(Boolean).join(" ")}
       style={rootStyle}
-      aria-label="ZenMind 桌面宠物"
+      aria-label={`${PRODUCT_NAME} 桌面宠物`}
     >
       <div
         className="desktop-pet-hitbox"
@@ -633,7 +634,7 @@ export function DesktopPet() {
         <button
           type="button"
           className="desktop-pet-button"
-          aria-label="打开 ZenMind"
+          aria-label={`打开 ${PRODUCT_NAME}`}
           onFocus={handleButtonFocus}
           onBlur={handleButtonBlur}
           onKeyDown={(event) => {

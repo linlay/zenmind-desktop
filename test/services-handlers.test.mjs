@@ -564,7 +564,7 @@ test("services.importEnvZip executes bootstrap process when dialog is confirmed"
       failCurrentSession: () => {},
       setEnvImportRequired: () => {}
     },
-    importEnvZipToZenmind: async (app, zipPath, platform) => {
+    importEnvZipToRuntime: async (app, zipPath, platform) => {
       envZipImportedPath = zipPath;
       return { copiedFiles: 5, skippedFiles: 2 };
     },

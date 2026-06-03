@@ -36,6 +36,7 @@ import {
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
+import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/generated/brand";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -84,7 +85,7 @@ type AgentDialogState = {
   error: string;
 };
 
-const SIDEBAR_GROUP_STATE_STORAGE_KEY = "zenmind-desktop.sidebar-groups";
+const SIDEBAR_GROUP_STATE_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-groups`;
 
 const defaultSidebarGroupState: SidebarGroupState = {
   assistants: true,
@@ -2254,10 +2255,10 @@ export function AppSidebar({
                 onClick={handleAssistantDockClick}
                 aria-label={
                   assistantLauncherDisabled
-                    ? "当前页面不可开启 ZenMind 助手"
+                    ? `当前页面不可开启 ${PRODUCT_NAME} 助手`
                     : assistantDockOpen
-                      ? "关闭 ZenMind 助手"
-                      : "打开 ZenMind 助手"
+                      ? `关闭 ${PRODUCT_NAME} 助手`
+                      : `打开 ${PRODUCT_NAME} 助手`
                 }
                 aria-disabled={assistantLauncherDisabled}
                 aria-pressed={assistantDockOpen}

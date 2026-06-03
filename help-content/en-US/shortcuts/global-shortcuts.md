@@ -1,5 +1,5 @@
 - `Cmd` + `R` / `Ctrl` + `R`: Refresh the current page.
 - `Cmd` + `Option` + `I` / `Ctrl` + `Shift` + `I`: Open DevTools for the currently focused surface.
-- When focus is in the main shell, this debugs the ZenMind React shell. When focus is inside an embedded page, this debugs that webview content.
+- When focus is in the main shell, this debugs the {{productName}} React shell. When focus is inside an embedded page, this debugs that webview content.
 - The browser toolbar DevTools button opens DevTools for the current webpage. The pg button is used for `desktop.page` action debugging.
 - `Cmd` + `Q` / `Alt` + `F4`: Quit the app.

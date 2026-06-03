@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import type { AssistantSettingsPublic } from "../../../shared/contracts";
 import { DEFAULT_QUICK_ASSISTANT_AGENT_KEY } from "../../../shared/assistant-settings";
+import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/generated/brand";
 import { useServices } from "../../services/ServicesContext";
 import { PluginPage } from "../../pages/plugin/PluginPage";
 
 type ThemeMode = "light" | "dark";
 
-const QUICK_COPILOT_THEME_STORAGE_KEY = "zenmind-desktop.theme";
+const QUICK_COPILOT_THEME_STORAGE_KEY = `${STORAGE_NAMESPACE}.theme`;
 const QUICK_COPILOT_STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
 const AGENT_WEBCLIENT_QUICK_COPILOT_SURFACE_ID = "agent-webclient-quick-copilot";
@@ -73,7 +74,7 @@ export function QuickCopilotRoute() {
           <span>
             {error ||
               failedService?.message ||
-              "ZenMind 正在恢复认证、智能体平台和 Web Copilot 服务。"}
+              `${PRODUCT_NAME} 正在恢复认证、智能体平台和 Web Copilot 服务。`}
           </span>
           <div className="quick-web-copilot-status-actions">
             <button type="button" onClick={() => void refresh()}>

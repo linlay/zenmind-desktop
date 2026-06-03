@@ -16,7 +16,8 @@ import {
   validateBundleArchive
 } from "../scripts/lib/builtin-assets.mjs";
 
-const BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
+const BUILTIN_ASSETS_SOURCE_ENV = "DESKTOP_BUILTIN_ASSETS_SOURCE";
+const LEGACY_BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
 const desktopProjectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let hasSyncedActualAssets = false;
 const requiredDesktopCoreServiceIds = [
@@ -722,7 +723,7 @@ test("validateBundleArchive accepts zip bundles", () => {
   fs.rmSync(fixture.root, { recursive: true, force: true });
 });
 
-test("ZENMIND_BUILTIN_ASSETS_SOURCE overrides workspace fallback and syncs builtin assets", () => {
+test("DESKTOP_BUILTIN_ASSETS_SOURCE overrides workspace fallback and legacy source env still works", () => {
   const workspaceRoot = path.resolve(desktopProjectRoot, "..");
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-source-"));
   const serviceId = `builtin-env-priority-${Date.now()}`;
@@ -756,7 +757,7 @@ test("ZENMIND_BUILTIN_ASSETS_SOURCE overrides workspace fallback and syncs built
 
   try {
     const fallbackServices = withEnv(BUILTIN_ASSETS_SOURCE_ENV, null, () =>
-      discoverBuiltinServices(platform)
+      withEnv(LEGACY_BUILTIN_ASSETS_SOURCE_ENV, null, () => discoverBuiltinServices(platform))
     );
     assert.equal(fallbackServices.length, 1);
     assert.equal(fallbackServices[0].sourceDir, workspaceRoot);
@@ -772,6 +773,11 @@ test("ZENMIND_BUILTIN_ASSETS_SOURCE overrides workspace fallback and syncs built
     const syncedManifest = withEnv(BUILTIN_ASSETS_SOURCE_ENV, sourceRoot, () =>
       syncBuiltinAssets(projectRoot, platform)
     );
+    const legacyConfiguredServices = withEnv(BUILTIN_ASSETS_SOURCE_ENV, null, () =>
+      withEnv(LEGACY_BUILTIN_ASSETS_SOURCE_ENV, sourceRoot, () => discoverBuiltinServices(platform))
+    );
+    assert.equal(legacyConfiguredServices.length, 1);
+    assert.equal(legacyConfiguredServices[0].sourceDir, path.dirname(sourceArchivePath));
     assert.deepEqual(syncedManifest, [
       {
         id: serviceId,
@@ -819,7 +825,7 @@ test("syncBuiltinAssets fails with an actionable error when required Desktop cor
   try {
     assert.throws(
       () => withEnv(BUILTIN_ASSETS_SOURCE_ENV, sourceRoot, () => syncBuiltinAssets(projectRoot, platform)),
-      /missing required Desktop builtin service assets[\s\S]*agent-webclient[\s\S]*ZENMIND_BUILTIN_ASSETS_SOURCE/u
+      /missing required Desktop builtin service assets[\s\S]*agent-webclient[\s\S]*DESKTOP_BUILTIN_ASSETS_SOURCE or ZENMIND_BUILTIN_ASSETS_SOURCE/u
     );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });

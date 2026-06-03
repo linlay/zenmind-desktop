@@ -49,8 +49,9 @@ function getStaticServicePaths() {
     const localAppData = process.env.LOCALAPPDATA ?? "";
     const appData = process.env.APPDATA ?? "";
     const userProfile = process.env.USERPROFILE ?? "";
-    const nodeBinDir = process.env.ZENMIND_NODE_BIN
-      ? path.dirname(process.env.ZENMIND_NODE_BIN)
+    const configuredNodeBin = process.env.DESKTOP_NODE_BIN ?? process.env.ZENMIND_NODE_BIN;
+    const nodeBinDir = configuredNodeBin
+      ? path.dirname(configuredNodeBin)
       : (process.execPath ? path.dirname(process.execPath) : null);
     return [
       path.join(programFiles, "nodejs"),
@@ -135,7 +136,7 @@ export function buildServiceEnv(): NodeJS.ProcessEnv {
 }
 
 export function resolveNodeBin() {
-  const explicit = process.env.ZENMIND_NODE_BIN?.trim();
+  const explicit = (process.env.DESKTOP_NODE_BIN ?? process.env.ZENMIND_NODE_BIN)?.trim();
   if (explicit && fs.existsSync(explicit)) {
     return explicit;
   }

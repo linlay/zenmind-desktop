@@ -1,25 +1,26 @@
 {
-  "name": "zenmind-desktop",
+  "name": "xiaojun-desktop",
   "version": "0.2.4",
   "private": true,
-  "description": "ZenMind 应用壳",
+  "description": "XiaoJun 应用壳",
   "main": "dist-electron/main/index.js",
   "scripts": {
-    "icons": "node ./scripts/generate-app-icons.mjs",
+    "brand:sync": "node ./scripts/sync-brand.mjs",
+    "icons": "npm run brand:sync && node ./scripts/generate-app-icons.mjs",
     "sync:version": "node ./scripts/sync-package-version.mjs",
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
     "i18n:check": "node ./scripts/i18n/validate-dictionaries.mjs && node ./scripts/i18n/validate-language-separation.mjs && node ./scripts/i18n/scan-hardcoded-text.mjs",
     "build:main:types": "tsc -p tsconfig.main.json",
     "build:main:bundle": "node ./scripts/build-main-bundle.mjs",
-    "build:main": "npm run build:main:types && npm run build:main:bundle",
-    "build:renderer": "vite build",
+    "build:main": "npm run brand:sync && npm run build:main:types && npm run build:main:bundle",
+    "build:renderer": "npm run brand:sync && vite build",
     "build": "npm run build:main && npm run build:renderer",
     "stage:app": "node ./scripts/stage-app.mjs",
     "dev": "node ./scripts/dev.mjs",
     "start": "npm run dev",
-    "dist:mac": "npm run sync:version && node ./scripts/sync-builtin-assets.mjs --os=darwin --arch=arm64 && npm run build && npm run stage:app -- --os=darwin --arch=arm64 && electron-builder --mac --arm64",
-    "dist:win": "npm run sync:version && node ./scripts/sync-builtin-assets.mjs --os=windows --arch=amd64 && npm run build && npm run stage:app -- --os=win32 --arch=x64 && electron-builder --win --x64",
-    "dist:win-docker": "npm run sync:version && node ./scripts/dist-win.mjs",
+    "dist:mac": "node ./scripts/dist-mac.mjs",
+    "dist:win": "node ./scripts/dist-win.mjs",
+    "dist:win-docker": "node ./scripts/dist-win.mjs --docker",
     "test": "npm run build && node --test ./test/*.test.mjs"
   },
   "dependencies": {
@@ -51,74 +52,5 @@
     "electron-builder": "^24.13.3",
     "typescript": "^5.9.2",
     "vite": "^7.1.7"
-  },
-  "build": {
-    "appId": "cc.zenmind.desktop",
-    "productName": "ZenMind",
-    "directories": {
-      "app": "build/app"
-    },
-    "files": [
-      "dist-renderer/**/*",
-      "dist-electron/**/*",
-      "package.json",
-      "node_modules/**/*",
-      "!node_modules/@napi-rs/canvas-linux-*",
-      "!node_modules/@napi-rs/canvas-linux-*/**/*",
-      "!node_modules/**/*.d.ts",
-      "!node_modules/**/*.map"
-    ],
-    "asarUnpack": [
-      "node_modules/@napi-rs/canvas-*/**/*"
-    ],
-    "npmRebuild": false,
-    "extraResources": [
-      {
-        "from": "build/resources/services",
-        "to": "services"
-      },
-      {
-        "from": "public/tray-icon.png",
-        "to": "tray-icon.png"
-      },
-      {
-        "from": "scripts",
-        "to": ".",
-        "filter": [
-          "uninstall.sh"
-        ]
-      }
-    ],
-    "mac": {
-      "icon": "build/icons/icon.icns",
-      "identity": null,
-      "extendInfo": {
-        "NSMicrophoneUsageDescription": "ZenMind 使用麦克风将你的语音输入转成文字。",
-        "NSSpeechRecognitionUsageDescription": "ZenMind 使用系统语音识别将你的语音输入转成文字。"
-      },
-      "target": [
-        "dmg"
-      ],
-      "category": "public.app-category.developer-tools",
-      "signIgnore": [
-        ".*"
-      ]
-    },
-    "electronLanguages": [
-      "zh-CN",
-      "en-US"
-    ],
-    "afterPack": "./scripts/fix-mac-sign.js",
-    "win": {
-      "icon": "build/icons/icon.ico",
-      "target": [
-        "nsis"
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "include": "build/installer.nsh"
-    }
   }
 }

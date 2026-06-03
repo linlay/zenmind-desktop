@@ -33,6 +33,7 @@ import {
   BUILTIN_BROWSER_SURFACE_ID,
   BUILTIN_BROWSER_SURFACE_LABEL
 } from "../../shared/browser-surfaces";
+import { STORAGE_NAMESPACE } from "../../shared/generated/brand";
 import {
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_EXPANDED_MAX_WIDTH,
@@ -83,10 +84,10 @@ const TaskBoardPage = lazy(() =>
   import("../pages/task-board/TaskBoardPage").then((module) => ({ default: module.TaskBoardPage }))
 );
 
-const THEME_STORAGE_KEY = "zenmind-desktop.theme";
-const SIDEBAR_STORAGE_KEY = "zenmind-desktop.sidebar";
-const SIDEBAR_NAV_ORDER_STORAGE_KEY = "zenmind-desktop.sidebar-nav-order";
-const CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY = "zenmind-desktop.custom-sidebar-group-order";
+const THEME_STORAGE_KEY = `${STORAGE_NAMESPACE}.theme`;
+const SIDEBAR_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar`;
+const SIDEBAR_NAV_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-nav-order`;
+const CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.custom-sidebar-group-order`;
 const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;

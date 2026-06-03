@@ -5,10 +5,12 @@ import {
   buildElectronSpawnErrorMessage,
   resolveValidatedElectronBinaryPath
 } from "./lib/electron-installation.mjs";
+import { syncBrandArtifacts, resolveBrandId } from "./lib/brand-config.mjs";
 import { hostArch, hostPlatform, isWindows, syncOsLabel } from "./platform/detect.mjs";
 import { npmCmd, run, runAndWait } from "./platform/spawn.mjs";
 
 const projectRoot = process.cwd();
+const brand = syncBrandArtifacts({ brandId: resolveBrandId() });
 const electronBinary = resolveValidatedElectronBinaryPath();
 
 // 把当前 Node 的目录顶到 PATH 最前，并显式声明 NODE_BIN，
@@ -16,6 +18,7 @@ const electronBinary = resolveValidatedElectronBinaryPath();
 const nodeBin = process.execPath;
 const nodeDir = path.dirname(nodeBin);
 process.env.PATH = `${nodeDir}${path.delimiter}${process.env.PATH ?? ""}`;
+process.env.DESKTOP_NODE_BIN = nodeBin;
 process.env.ZENMIND_NODE_BIN = nodeBin;
 
 function waitForUrl(url, timeoutMs = 30000) {
@@ -81,7 +84,7 @@ const { spawnElectron } = isWindows()
   : platform === "darwin"
     ? await import("./platform/dev-darwin.mjs")
     : await import("./platform/dev-unix.mjs");
-const electron = track(spawnElectron(electronBinary, projectRoot));
+const electron = track(spawnElectron(electronBinary, projectRoot, brand));
 
 electron.once("error", (error) => {
   console.error(

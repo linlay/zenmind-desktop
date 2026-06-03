@@ -6,6 +6,7 @@ import {
   EMBEDDED_CDP_GATEWAY_HOST,
   EMBEDDED_CDP_GATEWAY_PORT
 } from "../shared/embedded-cdp";
+import { PRODUCT_NAME } from "../shared/generated/brand";
 
 export type EmbeddedCdpSurface = {
   id: string;
@@ -310,7 +311,7 @@ export class EmbeddedCdpGateway {
   constructor(private readonly options: EmbeddedCdpGatewayOptions) {
     this.host = options.host ?? EMBEDDED_CDP_GATEWAY_HOST;
     this.port = options.port ?? EMBEDDED_CDP_GATEWAY_PORT;
-    this.version = options.version ?? "ZenMind Embedded Chromium";
+    this.version = options.version ?? `${PRODUCT_NAME} Embedded Chromium`;
   }
 
   start() {

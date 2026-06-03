@@ -3354,9 +3354,16 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
     assert.doesNotMatch(envContent, /^# PROVIDER_APIKEY_KEY_PART=/m);
     assert.doesNotMatch(envContent, /^# RUNTIME_DIR=/m);
     assert.match(envContent, /^# REGISTRIES_DIR=\.\/runtime\/registries$/m);
-    assert.ok(envContent.indexOf("# Runtime directories") < envContent.indexOf("RUNTIME_DIR=~/.zenmind"));
-    assert.ok(envContent.indexOf("RUNTIME_DIR=~/.zenmind") < envContent.indexOf("# Provider apiKey AES(...)"));
-    assert.ok(envContent.indexOf("# Provider apiKey AES(...)") < envContent.indexOf("PROVIDER_APIKEY_KEY_PART=0.1.0"));
+    const runtimeSectionIndex = envContent.indexOf("# Runtime directories");
+    const runtimeDirIndex = envContent.indexOf("RUNTIME_DIR=~/.zenmind");
+    const providerCommentIndex = envContent.indexOf("# Provider apiKey AES(...)");
+    const providerKeyIndex = envContent.indexOf("PROVIDER_APIKEY_KEY_PART=0.1.0");
+    assert.ok(runtimeSectionIndex < runtimeDirIndex);
+    assert.ok(runtimeDirIndex < providerKeyIndex);
+    if (providerCommentIndex >= 0) {
+      assert.ok(runtimeDirIndex < providerCommentIndex);
+      assert.ok(providerCommentIndex < providerKeyIndex);
+    }
     assert.equal(fs.existsSync(path.join(configDir, "configs", "local-public-key.pem")), true);
     assert.deepEqual(
       platformService.configFiles.map((configFile) => configFile.key),

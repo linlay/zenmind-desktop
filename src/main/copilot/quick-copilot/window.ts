@@ -1,5 +1,6 @@
 import type { App, BrowserWindow as BrowserWindowType } from "electron";
 import { BrowserWindow, screen } from "electron";
+import { PRODUCT_NAME } from "../../../shared/generated/brand";
 import { readAssistantSettings } from "../core/settings-store";
 import {
   getQuickAssistantWebCopilotBounds,
@@ -69,7 +70,7 @@ export class QuickCopilotWindowController {
       skipTaskbar: true,
       hasShadow: false,
       backgroundColor: "#00000000",
-      title: "ZenMind Quick Assistant Dismiss Layer",
+      title: `${PRODUCT_NAME} Quick Assistant Dismiss Layer`,
       webPreferences: {
         preload: this.options.preloadPath,
         contextIsolation: true,
@@ -135,7 +136,7 @@ export class QuickCopilotWindowController {
       skipTaskbar: true,
       hasShadow: false,
       backgroundColor: "#00000000",
-      title: "ZenMind Quick Assistant",
+      title: `${PRODUCT_NAME} Quick Assistant`,
       webPreferences: {
         preload: this.options.preloadPath,
         contextIsolation: true,

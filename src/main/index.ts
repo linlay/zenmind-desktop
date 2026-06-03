@@ -160,15 +160,21 @@ import {
   resolveBuiltinBrowserUrl
 } from "../shared/browser-surfaces";
 import {
+  APP_ID,
+  INSTALLER_SHUTDOWN_ARG,
+  LEGACY_INSTALLER_SHUTDOWN_ARGS,
+  PRODUCT_NAME
+} from "../shared/generated/brand";
+import {
   desktopDataRootExists,
   ensureDataRoot,
   getDataRoot,
   getElectronUserDataRoot
 } from "./user-paths";
 import {
-  homeZenmindEnvExists,
-  importEnvZipToZenmind,
-  resolveHomeZenmindRoot,
+  importEnvZipToRuntime,
+  resolveRuntimeRoot,
+  runtimeEnvExists,
   shouldRequireEnvZipImport
 } from "./env-bootstrap";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
@@ -297,9 +303,10 @@ const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
 const LOG_VIEWER_ROUTE = "/log-viewer";
 const DEBUG_VIEWER_SHORTCUT = "CommandOrControl+Shift+D";
 const SHUTDOWN_CLEANUP_DEADLINE_MS = 10_000;
-const ZENMIND_APP_ID = "cc.zenmind.desktop";
-const ZENMIND_PRODUCT_NAME = "ZenMind";
-const INSTALLER_SHUTDOWN_ARG = "--zenmind-shutdown-for-update";
+const INSTALLER_SHUTDOWN_ARGS = new Set<string>([
+  INSTALLER_SHUTDOWN_ARG,
+  ...LEGACY_INSTALLER_SHUTDOWN_ARGS
+]);
 const DESKTOP_PET_DONE_PREVIEW_FALLBACK = "暂无回复预览";
 const DESKTOP_PET_GENERIC_DONE_PREVIEWS = new Set([
   "思考中",
@@ -335,7 +342,7 @@ const cdpIntegration = createCdpIntegration({
   showMainWindow,
   delay,
   assistantTargetPath: ASSISTANT_TARGET_PATH,
-  version: `ZenMind/${app.getVersion()} Electron/${process.versions.electron}`
+  version: `${PRODUCT_NAME}/${app.getVersion()} Electron/${process.versions.electron}`
 });
 const mainWindowLifecycle = createMainWindowLifecycleController({
   platform: mainProcessContext.platform,
@@ -363,21 +370,21 @@ function getServiceWebviewPreloadUrl() {
 }
 
 // Keep dev Electron runs on the same data root as packaged builds.
-app.setName(ZENMIND_PRODUCT_NAME);
+app.setName(PRODUCT_NAME);
 const isFirstDesktopInstall = !desktopDataRootExists(app);
 const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
 if (isFirstDesktopInstall) {
   setMainLocale(app, initialLocaleSettings.locale);
 }
-const homeZenmindRootAtProcessStart = resolveHomeZenmindRoot(app, mainProcessContext.platform);
+const runtimeRootAtProcessStart = resolveRuntimeRoot(app, mainProcessContext.platform);
 const requireEnvZipImportAtStartup = shouldRequireEnvZipImport({
   platform: mainProcessContext.platform,
-  homeZenmindEnvExistedAtStartup: homeZenmindEnvExists(app, mainProcessContext.platform)
+  runtimeEnvExistedAtStartup: runtimeEnvExists(app, mainProcessContext.platform)
 });
 const electronUserDataRoot = getElectronUserDataRoot(app);
 fs.mkdirSync(electronUserDataRoot, { recursive: true });
 app.setPath("userData", electronUserDataRoot);
-applyPlatformAppInit(mainProcessContext.platform, app, ZENMIND_APP_ID);
+applyPlatformAppInit(mainProcessContext.platform, app, APP_ID);
 
 appState.desktopPetSettings = readDesktopPetStoredState(app, mainProcessContext.platform, { isFirstInstall: isFirstDesktopInstall });
 if (isFirstDesktopInstall) {
@@ -527,7 +534,7 @@ if (!gotSingleInstanceLock) {
   app.exit(0);
 }
 
-if (process.argv.includes(INSTALLER_SHUTDOWN_ARG)) {
+if (hasInstallerShutdownArg(process.argv)) {
   app.exit(0);
 }
 
@@ -584,7 +591,7 @@ const nativeDialogController = new NativeDialogVisibilityController({
 
 const appTrayController = new AppTrayController({
   platform: mainProcessContext.platform,
-  appName: ZENMIND_PRODUCT_NAME,
+  appName: PRODUCT_NAME,
   t,
   mainDir: __dirname,
   resourcesPath: process.resourcesPath,
@@ -592,7 +599,7 @@ const appTrayController = new AppTrayController({
   isDesktopPetSupported: () => isDesktopPetSupportedPlatform(mainProcessContext.platform),
   openAssistantChat: () => {
     void openAssistantWorker({
-      displayName: "ZenMind",
+      displayName: PRODUCT_NAME,
       role: "确认对话示例",
       focusComposerOnComplete: true
     });
@@ -1020,7 +1027,7 @@ async function openAssistantFromDesktopPet() {
   const targetWindow = appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null;
   return {
     ok: Boolean(targetWindow),
-    message: targetWindow ? "ZenMind 已打开。" : "ZenMind 主窗口不可用。"
+    message: targetWindow ? `${PRODUCT_NAME} 已打开。` : `${PRODUCT_NAME} 主窗口不可用。`
   };
 }
 
@@ -1518,8 +1525,8 @@ async function ensureFirstInstallEnvZipImported() {
       type: "warning",
       title: "首次安装需要导入 env.zip",
       message: "检测到 ~/.zenmind 环境未初始化，请先导入 env.zip。",
-      detail: `Target directory: ${homeZenmindRootAtProcessStart}\nImport only fills missing files and does not overwrite existing content.`,
-      buttons: ["选择 env.zip", "退出 ZenMind"],
+      detail: `Target directory: ${runtimeRootAtProcessStart}\nImport only fills missing files and does not overwrite existing content.`,
+      buttons: ["选择 env.zip", `退出 ${PRODUCT_NAME}`],
       defaultId: 0,
       cancelId: 1,
       noLink: true
@@ -1540,7 +1547,7 @@ async function ensureFirstInstallEnvZipImported() {
         type: "warning",
         title: "未导入 env.zip",
         message: "首次安装必须导入 env.zip 后才能继续。",
-        buttons: ["重新选择", "退出 ZenMind"],
+        buttons: ["重新选择", `退出 ${PRODUCT_NAME}`],
         defaultId: 0,
         cancelId: 1,
         noLink: true
@@ -1552,7 +1559,7 @@ async function ensureFirstInstallEnvZipImported() {
     }
 
     try {
-      const importResult = await importEnvZipToZenmind(app, result.filePaths[0], mainProcessContext.platform);
+      const importResult = await importEnvZipToRuntime(app, result.filePaths[0], mainProcessContext.platform);
       console.info(
         `[main] imported env.zip into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
       );
@@ -1563,7 +1570,7 @@ async function ensureFirstInstallEnvZipImported() {
         type: "error",
         title: "env.zip 导入失败",
         message,
-        buttons: ["重新选择", "退出 ZenMind"],
+        buttons: ["重新选择", `退出 ${PRODUCT_NAME}`],
         defaultId: 0,
         cancelId: 1,
         noLink: true
@@ -1577,7 +1584,7 @@ async function ensureFirstInstallEnvZipImported() {
 
 async function pickAssistantAttachments(chatId: string | null | undefined, ownerWindow: BrowserWindow | null) {
   const result = await showFileDialog({
-    title: "选择要给 ZenMind 读取的附件",
+    title: `选择要给 ${PRODUCT_NAME} 读取的附件`,
     properties: ["openFile", "multiSelections"],
     filters: [
       {
@@ -1807,7 +1814,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     getServiceWebviewPreloadPath,
     getServiceWebviewPreloadUrl,
     startupRestoreController,
-    importEnvZipToZenmind,
+    importEnvZipToRuntime,
     loadBuiltinServices,
     loadInstalledPlugins,
     notifyServicesChanged,
@@ -2030,7 +2037,7 @@ function runShutdownCleanup(): Promise<void> {
 }
 
 function hasInstallerShutdownArg(commandLine: string[]) {
-  return commandLine.includes(INSTALLER_SHUTDOWN_ARG);
+  return commandLine.some((arg) => INSTALLER_SHUTDOWN_ARGS.has(arg));
 }
 
 function prepareQuitUi() {

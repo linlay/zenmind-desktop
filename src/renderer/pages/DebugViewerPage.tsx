@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DebugEvent, DebugRequestEvent, DebugSanitizedHeaders } from "../../shared/contracts/debug";
+import { PRODUCT_NAME } from "../../shared/generated/brand";
 
 type EventKindFilter = "all" | DebugEvent["kind"];
 type StatusFilter = "all" | "failed" | "warning" | "ok";
@@ -280,7 +281,7 @@ export function DebugViewerPage() {
     <main className="debug-viewer-page">
       <header className="debug-viewer-toolbar">
         <div className="debug-viewer-title">
-          <span>ZenMind Debug</span>
+          <span>{PRODUCT_NAME} Debug</span>
           <h1>内嵌网页调试</h1>
         </div>
         <div className="debug-viewer-actions">

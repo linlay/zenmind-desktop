@@ -12,9 +12,10 @@ import {
   getServicesRoot,
   getServiceStateRoot
 } from "./user-paths";
+import { PRODUCT_NAME } from "../shared/generated/brand";
 
 const APP_SERVER_SERVICE_ID = "zenmind-app-server";
-const DESKTOP_DEVICE_NAME = "ZenMind Desktop";
+const DESKTOP_DEVICE_NAME = `${PRODUCT_NAME} Desktop`;
 const APP_SERVER_AUTH_SCRIPT_TIMEOUT_MS = 30_000;
 const APP_SERVER_AUTH_SCRIPT_RETRY_DELAYS_MS = [150, 350, 700, 1_200];
 
@@ -190,8 +191,9 @@ function runAppServerScript(
     if (process.platform === "win32") {
       const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
       const userProfile = process.env.USERPROFILE ?? "";
-      const nodeBinDir = process.env.ZENMIND_NODE_BIN
-        ? path.dirname(process.env.ZENMIND_NODE_BIN)
+      const configuredNodeBin = process.env.DESKTOP_NODE_BIN ?? process.env.ZENMIND_NODE_BIN;
+      const nodeBinDir = configuredNodeBin
+        ? path.dirname(configuredNodeBin)
         : (process.execPath ? path.dirname(process.execPath) : null);
       const staticPaths = [
         path.join(programFiles, "Git", "mingw64", "bin"),

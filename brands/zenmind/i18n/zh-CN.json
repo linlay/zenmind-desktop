@@ -1,0 +1,6 @@
+{
+  "app.name": "ZenMind",
+  "app.productName": "ZenMind",
+  "startup.envImport.title": "初始化 ZenMind 环境",
+  "taskBoard.prompt.intro": "请你处理下面这个 ZenMind 任务看板任务，并在完成后总结结果。"
+}

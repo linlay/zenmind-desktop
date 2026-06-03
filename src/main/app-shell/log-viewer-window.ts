@@ -1,5 +1,6 @@
 import { BrowserWindow } from "electron";
 import type { ServiceOpenLogViewerRequest } from "../../shared/contracts";
+import { PRODUCT_NAME } from "../../shared/generated/brand";
 
 type LogViewerWindowControllerOptions = {
   preloadPath: string;
@@ -90,7 +91,7 @@ export class LogViewerWindowController {
       minimizable: true,
       fullscreenable: true,
       ...(ownerWindow ? { parent: ownerWindow, modal: false } : {}),
-      title: "ZenMind Logs",
+      title: `${PRODUCT_NAME} Logs`,
       backgroundColor: "#F6F8FC",
       webPreferences: {
         preload: this.options.preloadPath,

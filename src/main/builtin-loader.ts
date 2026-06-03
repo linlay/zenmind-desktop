@@ -14,6 +14,9 @@ function isPackaged(app: App) {
 }
 
 export function getBuiltinAssetsRoot(app: App) {
+  if (process.env.DESKTOP_BUILTIN_ASSETS_ROOT) {
+    return process.env.DESKTOP_BUILTIN_ASSETS_ROOT;
+  }
   if (process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT) {
     return process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
   }

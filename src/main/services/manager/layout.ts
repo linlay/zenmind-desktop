@@ -10,8 +10,9 @@ import {
   getServicesRoot,
   getServiceStateRoot
 } from "../../user-paths";
+import { STORAGE_NAMESPACE } from "../../../shared/generated/brand";
 
-const INITIALIZATION_STATE_DIRNAME = ".zenmind-desktop";
+const INITIALIZATION_STATE_DIRNAME = `.${STORAGE_NAMESPACE}`;
 const INITIALIZATION_STATE_FILE = "init-state.json";
 
 export type ServiceLayout = {

@@ -5,6 +5,7 @@ import {
   getAvailableFilePath
 } from "../download-paths";
 import { buildCoderProjectAgentCreateRequest } from "../copilot/core/coder-project";
+import { PRODUCT_NAME } from "../../shared/generated/brand";
 
 export interface AssistantIpcHandlerOptions {
   assistantBridge: any;
@@ -261,7 +262,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   // ---------------------------------------------------------------------------
   ipcMain.handle("assistant.pickAttachments", async (_event: any, chatId?: string | null) => {
     const result = await showFileDialog?.({
-      title: "选择要给 ZenMind 读取的附件",
+      title: `选择要给 ${PRODUCT_NAME} 读取的附件`,
       properties: ["openFile", "multiSelections"],
       filters: [
         {

@@ -6,7 +6,9 @@ import { execFileSync } from "node:child_process";
 
 // monorepo 根目录：zenmind-desktop 的上一级
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
-const BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
+const BUILTIN_ASSETS_SOURCE_ENV = "DESKTOP_BUILTIN_ASSETS_SOURCE";
+const LEGACY_BUILTIN_ASSETS_SOURCE_ENV = "ZENMIND_BUILTIN_ASSETS_SOURCE";
+const BUILTIN_ASSETS_SOURCE_ENV_LABEL = `${BUILTIN_ASSETS_SOURCE_ENV} or ${LEGACY_BUILTIN_ASSETS_SOURCE_ENV}`;
 const REQUIRED_DESKTOP_CORE_SERVICE_IDS = [
   "zenmind-app-server",
   "agent-platform",
@@ -171,11 +173,11 @@ function listArchivesInDirectory(directoryPath) {
 
 function listConfiguredReleaseArchives(sourceRoot) {
   if (!fs.existsSync(sourceRoot)) {
-    throw new Error(`${BUILTIN_ASSETS_SOURCE_ENV} does not exist: ${sourceRoot}`);
+    throw new Error(`${BUILTIN_ASSETS_SOURCE_ENV_LABEL} does not exist: ${sourceRoot}`);
   }
 
   if (!fs.statSync(sourceRoot).isDirectory()) {
-    throw new Error(`${BUILTIN_ASSETS_SOURCE_ENV} must point to a directory: ${sourceRoot}`);
+    throw new Error(`${BUILTIN_ASSETS_SOURCE_ENV_LABEL} must point to a directory: ${sourceRoot}`);
   }
 
   const archives = [];
@@ -272,7 +274,10 @@ function listReleaseArchives() {
     }
   }
 
-  const configuredSourceRoot = process.env[BUILTIN_ASSETS_SOURCE_ENV]?.trim();
+  const configuredSourceRoot = (
+    process.env[BUILTIN_ASSETS_SOURCE_ENV] ??
+    process.env[LEGACY_BUILTIN_ASSETS_SOURCE_ENV]
+  )?.trim();
   if (configuredSourceRoot) {
     for (const archivePath of listConfiguredReleaseArchives(configuredSourceRoot)) {
       tryAddArchive(archivePath, 2);
@@ -317,7 +322,7 @@ export function assertRequiredDesktopCoreServices(services, platform = {}) {
   throw new Error(
     `missing required Desktop builtin service assets for ${formatPlatformLabel(platform)}: ${missingServiceIds.join(", ")}\n` +
       `Desktop startup requires ${REQUIRED_DESKTOP_CORE_SERVICE_IDS.join(", ")}.\n` +
-      `Regenerate or provide the missing upstream release bundle, or set ${BUILTIN_ASSETS_SOURCE_ENV} to a directory containing the complete Desktop builtin assets.`
+      `Regenerate or provide the missing upstream release bundle, or set ${BUILTIN_ASSETS_SOURCE_ENV_LABEL} to a directory containing the complete Desktop builtin assets.`
   );
 }
 

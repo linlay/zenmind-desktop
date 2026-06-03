@@ -15,7 +15,7 @@ import type {
   DesktopSsoStatus
 } from "../shared/contracts";
 import { getDesktopStateRoot } from "./user-paths";
-import { resolveHomeZenmindRoot } from "./env-bootstrap";
+import { resolveRuntimeRoot } from "./env-bootstrap";
 
 type OidcConfig = {
   issuer: string;
@@ -294,7 +294,7 @@ function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
 
 export function resolveDesktopSsoConfigPath(app: Pick<App, "getPath">, platform: NodeJS.Platform = process.platform) {
   const pathApi = pathApiForPlatform(platform);
-  return pathApi.join(resolveHomeZenmindRoot(app, platform), DESKTOP_SSO_CONFIG_FILE_NAME);
+  return pathApi.join(resolveRuntimeRoot(app, platform), DESKTOP_SSO_CONFIG_FILE_NAME);
 }
 
 function getRecordString(record: Record<string, unknown>, key: string) {

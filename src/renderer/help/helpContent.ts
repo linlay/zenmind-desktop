@@ -1,4 +1,5 @@
 import { DEFAULT_LOCALE, type SupportedLocale } from "../../shared/i18n";
+import { APP_BRAND, PRODUCT_NAME } from "../../shared/generated/brand";
 
 export type HelpContentItem = {
   id: string;
@@ -42,6 +43,13 @@ type HelpContentIndex = {
 type HelpTemplateVariables = {
   pluginArchiveLabel: string;
   pluginArchiveCommand: string;
+  productName: string;
+  runtimeDataPath: string;
+  programDataPath: string;
+  runtimeDataPathMac: string;
+  runtimeDataPathWindows: string;
+  programDataPathMac: string;
+  programDataPathWindows: string;
 };
 
 const indexModules = import.meta.glob("../../../help-content/**/index.json", {
@@ -118,16 +126,33 @@ function modulePathForLocale(locale: SupportedLocale, file: string) {
 }
 
 function getHelpTemplateVariables(isWindows: boolean): HelpTemplateVariables {
+  const sharedRuntimePath = isWindows
+    ? `%USERPROFILE%\\${APP_BRAND.paths.runtimeRootDirName}\\${APP_BRAND.paths.desktopDataSubdir}\\`
+    : `~/${APP_BRAND.paths.runtimeRootDirName}/${APP_BRAND.paths.desktopDataSubdir}/`;
+  const sharedProgramDataPath = isWindows
+    ? `%APPDATA%\\${APP_BRAND.paths.programDataDirName}\\`
+    : `~/Library/Application Support/${APP_BRAND.paths.programDataDirName}/`;
+  const commonVariables = {
+    productName: PRODUCT_NAME,
+    runtimeDataPath: sharedRuntimePath,
+    programDataPath: sharedProgramDataPath,
+    runtimeDataPathMac: `~/${APP_BRAND.paths.runtimeRootDirName}/${APP_BRAND.paths.desktopDataSubdir}/`,
+    runtimeDataPathWindows: `%USERPROFILE%\\${APP_BRAND.paths.runtimeRootDirName}\\${APP_BRAND.paths.desktopDataSubdir}\\`,
+    programDataPathMac: `~/Library/Application Support/${APP_BRAND.paths.programDataDirName}/`,
+    programDataPathWindows: `%APPDATA%\\${APP_BRAND.paths.programDataDirName}\\`
+  };
   if (isWindows) {
     return {
       pluginArchiveLabel: ".zip",
-      pluginArchiveCommand: "Compress-Archive -LiteralPath .\\my-plugin -DestinationPath .\\my-plugin.zip"
+      pluginArchiveCommand: "Compress-Archive -LiteralPath .\\my-plugin -DestinationPath .\\my-plugin.zip",
+      ...commonVariables
     };
   }
 
   return {
     pluginArchiveLabel: ".tar.gz",
-    pluginArchiveCommand: "tar -czf my-plugin.tar.gz -C /path/to my-plugin/"
+    pluginArchiveCommand: "tar -czf my-plugin.tar.gz -C /path/to my-plugin/",
+    ...commonVariables
   };
 }
 
@@ -151,12 +176,12 @@ function buildHelpContent(locale: SupportedLocale, isWindows: boolean): HelpCont
 
   return {
     locale,
-    sidebarTitle: parsedIndex.sidebarTitle,
-    heroTitle: parsedIndex.heroTitle,
-    heroDescription: parsedIndex.heroDescription,
+    sidebarTitle: applyHelpTemplateVariables(parsedIndex.sidebarTitle, variables),
+    heroTitle: applyHelpTemplateVariables(parsedIndex.heroTitle, variables),
+    heroDescription: applyHelpTemplateVariables(parsedIndex.heroDescription, variables),
     categories: parsedIndex.categories.map((category) => ({
       id: category.id,
-      label: category.label,
+      label: applyHelpTemplateVariables(category.label, variables),
       items: category.items.map((item) => {
         const markdownPath = modulePathForLocale(locale, item.file);
         const rawMarkdown = markdownModules[markdownPath];
@@ -165,7 +190,7 @@ function buildHelpContent(locale: SupportedLocale, isWindows: boolean): HelpCont
         }
         return {
           id: item.id,
-          title: item.title,
+          title: applyHelpTemplateVariables(item.title, variables),
           markdown: applyHelpTemplateVariables(rawMarkdown, variables)
         };
       })

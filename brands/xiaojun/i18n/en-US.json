@@ -1,0 +1,6 @@
+{
+  "app.name": "XiaoJun",
+  "app.productName": "XiaoJun",
+  "startup.envImport.title": "Initialize XiaoJun Environment",
+  "taskBoard.prompt.intro": "Please handle this XiaoJun task board task and summarize the result when finished."
+}

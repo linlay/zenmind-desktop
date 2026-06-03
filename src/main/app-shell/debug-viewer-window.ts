@@ -1,4 +1,5 @@
 import { BrowserWindow } from "electron";
+import { PRODUCT_NAME } from "../../shared/generated/brand";
 
 export const DEBUG_VIEWER_ROUTE = "/debug-viewer";
 
@@ -61,7 +62,7 @@ export class DebugViewerWindowController {
       minimizable: true,
       fullscreenable: true,
       ...(ownerWindow ? { parent: ownerWindow, modal: false } : {}),
-      title: "ZenMind Debug",
+      title: `${PRODUCT_NAME} Debug`,
       backgroundColor: "#F7F8FA",
       webPreferences: {
         preload: this.options.preloadPath,

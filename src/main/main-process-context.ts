@@ -140,7 +140,7 @@ export interface ServicesIpcHandlerContextDependencies {
   getServiceWebviewPreloadPath: (...args: any[]) => unknown;
   getServiceWebviewPreloadUrl: (...args: any[]) => unknown;
   startupRestoreController: unknown;
-  importEnvZipToZenmind?: (...args: any[]) => unknown;
+  importEnvZipToRuntime?: (...args: any[]) => unknown;
   loadBuiltinServices?: (...args: any[]) => unknown;
   loadInstalledPlugins?: (...args: any[]) => unknown;
   notifyServicesChanged?: (...args: any[]) => unknown;
@@ -183,7 +183,7 @@ export function createServicesIpcHandlerOptions(
     getServiceWebviewPreloadUrl: dependencies.getServiceWebviewPreloadUrl,
     logStreamSubscriptions: context.state.logStreamSubscriptions,
     startupRestoreController: dependencies.startupRestoreController,
-    importEnvZipToZenmind: dependencies.importEnvZipToZenmind,
+    importEnvZipToRuntime: dependencies.importEnvZipToRuntime,
     loadBuiltinServices: dependencies.loadBuiltinServices,
     loadInstalledPlugins: dependencies.loadInstalledPlugins,
     notifyServicesChanged: dependencies.notifyServicesChanged,

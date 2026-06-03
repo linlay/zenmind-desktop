@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-APP_NAME="ZenMind"
+APP_NAME="XiaoJun"
 APP_PATH="/Applications/${APP_NAME}.app"
 DATA_PATH="${HOME}/.zenmind/.desktop"
 PROGRAM_DATA_PATH="${HOME}/Library/Application Support/ZenMind"
@@ -14,7 +14,7 @@ show_dialog() {
 }
 
 is_app_running() {
-  osascript -e 'tell application "System Events" to return (name of processes) contains "ZenMind"'
+  osascript -e "tell application \"System Events\" to return (name of processes) contains \"$APP_NAME\""
 }
 
 remove_application_bundle() {
@@ -30,16 +30,12 @@ remove_application_bundle() {
 }
 
 prompt_for_data_cleanup() {
-  osascript <<'APPLESCRIPT'
-button returned of (display dialog "Do you also want to delete ZenMind app data?
-
-This removes ~/.zenmind/.desktop and ~/Library/Application Support/ZenMind, including settings, service config, service/plugin program files, credentials, logs, caches, and browser profiles." buttons {"Keep Data", "Delete Data"} default button "Keep Data" with icon caution)
-APPLESCRIPT
+  osascript -e "button returned of (display dialog \"Do you also want to delete $APP_NAME app data?\n\nThis removes $DATA_PATH and $PROGRAM_DATA_PATH, including settings, service config, service/plugin program files, credentials, logs, caches, and browser profiles.\" buttons {\"Keep Data\", \"Delete Data\"} default button \"Keep Data\" with icon caution)"
 }
 
 if [ "$(is_app_running)" = "true" ]; then
-  show_dialog "ZenMind is still running. Quit the app and run this uninstall script again."
-  printf '%s\n' "ZenMind is still running. Quit it and rerun this script."
+  show_dialog "$APP_NAME is still running. Quit the app and run this uninstall script again."
+  printf '%s\n' "$APP_NAME is still running. Quit it and rerun this script."
   exit 1
 fi
 
@@ -55,4 +51,4 @@ else
   printf '%s\n' "Kept program data: $PROGRAM_DATA_PATH"
 fi
 
-printf '%s\n' "ZenMind uninstall finished."
+printf '%s\n' "$APP_NAME uninstall finished."

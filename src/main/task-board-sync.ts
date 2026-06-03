@@ -13,6 +13,7 @@ import {
   updateTaskBoardIssueByChatId,
   updateTaskBoardIssueByRunId
 } from "./task-board-store";
+import { PRODUCT_NAME } from "../shared/generated/brand";
 
 type AppPathProvider = {
   getPath(name: "home"): string;
@@ -137,7 +138,7 @@ function buildTaskBoardAutomationMessage(issue: TaskBoardIssue) {
   return [
     message,
     "",
-    "关联 ZenMind 任务看板任务：",
+    `关联 ${PRODUCT_NAME} 任务看板任务：`,
     `任务编号：${issue.id}`,
     `标题：${issue.title}`
   ].join("\n");
@@ -146,7 +147,7 @@ function buildTaskBoardAutomationMessage(issue: TaskBoardIssue) {
 export function buildTaskBoardAutomationPayload(issue: TaskBoardIssue) {
   return {
     name: `任务看板 ${issue.id}: ${issue.title}`.slice(0, 120),
-    description: `来自 ZenMind Desktop 任务看板：${issue.id}`,
+    description: `来自 ${PRODUCT_NAME} Desktop 任务看板：${issue.id}`,
     cron: issue.automationCron?.trim() ?? "",
     agentKey: issue.assigneeAgentKey?.trim() ?? "",
     enabled: true,

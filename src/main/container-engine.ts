@@ -71,6 +71,7 @@ export function buildContainerEngineEnv(options: ContainerEnginePathOptions = {}
   const env = { ...baseEnv };
   const currentPath = baseEnv.PATH ?? baseEnv.Path;
   const pathEntries = [
+    ...splitPathList(baseEnv.DESKTOP_CONTAINER_ENGINE_PATHS),
     ...splitPathList(baseEnv.ZENMIND_CONTAINER_ENGINE_PATHS),
     ...splitPathList(currentPath),
     ...getDefaultContainerEnginePathEntries({ ...options, platform })

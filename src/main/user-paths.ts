@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import type { ServiceId, ServiceKind } from "../shared/contracts";
+import { APP_BRAND } from "../shared/generated/brand";
 
 const DESKTOP_DIRS = [
   "config",
@@ -33,13 +34,15 @@ function resolveDesktopRoot({
   homePath
 }: DesktopRootOptions) {
   const pathApi = pathApiForPlatform(platform);
+  const runtimeRootDirName = APP_BRAND.paths.runtimeRootDirName;
+  const desktopDataSubdir = APP_BRAND.paths.desktopDataSubdir;
   if (platform === "win32") {
-    return pathApi.resolve(pathApi.join(homePath, ".zenmind", ".desktop"));
+    return pathApi.resolve(pathApi.join(homePath, runtimeRootDirName, desktopDataSubdir));
   }
   if (platform === "darwin") {
-    return pathApi.resolve(pathApi.join(homePath, ".zenmind", ".desktop"));
+    return pathApi.resolve(pathApi.join(homePath, runtimeRootDirName, desktopDataSubdir));
   }
-  return pathApi.resolve(pathApi.join(homePath, ".zenmind", ".desktop"));
+  return pathApi.resolve(pathApi.join(homePath, runtimeRootDirName, desktopDataSubdir));
 }
 
 function resolveApplicationSupportRoot({
@@ -47,13 +50,14 @@ function resolveApplicationSupportRoot({
   appDataPath
 }: ApplicationSupportRootOptions) {
   const pathApi = pathApiForPlatform(platform);
+  const programDataDirName = APP_BRAND.paths.programDataDirName;
   if (platform === "win32") {
-    return pathApi.resolve(pathApi.join(appDataPath, "ZenMind"));
+    return pathApi.resolve(pathApi.join(appDataPath, programDataDirName));
   }
   if (platform === "darwin") {
-    return pathApi.resolve(pathApi.join(appDataPath, "ZenMind"));
+    return pathApi.resolve(pathApi.join(appDataPath, programDataDirName));
   }
-  return pathApi.resolve(pathApi.join(appDataPath, "ZenMind"));
+  return pathApi.resolve(pathApi.join(appDataPath, programDataDirName));
 }
 
 function tryGetAppPath(app: Pick<App, "getPath">, name: Parameters<App["getPath"]>[0]) {
@@ -188,7 +192,7 @@ export function getApplicationSupportRoot(app: App) {
 
 export function getAssistantTempRoot(app: App) {
   const tempRoot = tryGetAppPath(app, "temp") || os.tmpdir();
-  return path.join(tempRoot, "zenmind-desktop", "assistant");
+  return path.join(tempRoot, APP_BRAND.packageName, "assistant");
 }
 
 export function getStateRoot(app: App) {

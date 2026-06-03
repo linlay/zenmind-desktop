@@ -9,6 +9,7 @@ import type {
 import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
 import type { AssistantPageContext } from "../../../shared/contracts";
+import { STORAGE_NAMESPACE } from "../../../shared/generated/brand";
 import {
   createExternalWebviewBookmarkId,
   getAnchoredBookmarkMenuCoordinates,
@@ -116,7 +117,7 @@ const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
   };
 })()`;
 
-const BOOKMARKS_STORAGE_KEY = "zenmind-desktop.external-webview.bookmarks";
+const BOOKMARKS_STORAGE_KEY = `${STORAGE_NAMESPACE}.external-webview.bookmarks`;
 const BLANK_EXTERNAL_WEBVIEW_URL = "about:blank";
 const BOOKMARK_MENU_WIDTH = 306;
 const BOOKMARK_MENU_MAX_HEIGHT = 340;

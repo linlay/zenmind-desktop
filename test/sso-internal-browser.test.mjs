@@ -14,7 +14,8 @@ test("Desktop SSO login and logout open the embedded SSO browser tab", () => {
   const startLoginBlock = ssoHandlersSource.match(/ipcMain\.handle\("sso\.startLogin"[\s\S]*?ipcMain\.handle\("sso\.logout"/u)?.[0] ?? "";
   const logoutBlock = ssoHandlersSource.match(/ipcMain\.handle\("sso\.logout"[\s\S]*?\n\}/u)?.[0] ?? "";
 
-  assert.match(ssoControllerSource, /const DESKTOP_SSO_WEBVIEW_PARTITION = "persist:zenmind-desktop-sso";/u);
+  assert.match(ssoControllerSource, /import \{ STORAGE_NAMESPACE \} from "\.\.\/shared\/generated\/brand";/u);
+  assert.match(ssoControllerSource, /DESKTOP_SSO_WEBVIEW_PARTITION = `persist:\$\{STORAGE_NAMESPACE\}-sso`;/u);
   assert.match(platformAdapterSource, /function getDesktopSsoBrowserUserAgent/u);
   assert.match(platformAdapterSource, /Electron\//u);
   assert.match(platformAdapterSource, /\.replace\([^;]+Electron[^;]+/u);

@@ -1,0 +1,21 @@
+{
+  "id": "zenmind",
+  "packageName": "zenmind-desktop",
+  "storageNamespace": "zenmind-desktop",
+  "productName": "ZenMind",
+  "appId": "cc.zenmind.desktop",
+  "description": "ZenMind 应用壳",
+  "paths": {
+    "runtimeRootDirName": ".zenmind",
+    "desktopDataSubdir": ".desktop",
+    "programDataDirName": "ZenMind"
+  },
+  "mac": {
+    "microphoneUsageDescription": "ZenMind 使用麦克风将你的语音输入转成文字。",
+    "speechRecognitionUsageDescription": "ZenMind 使用系统语音识别将你的语音输入转成文字。"
+  },
+  "i18n": {
+    "zh-CN": "i18n/zh-CN.json",
+    "en-US": "i18n/en-US.json"
+  }
+}

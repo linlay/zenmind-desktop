@@ -1,4 +1,5 @@
 import type { AssistantPageContext } from "../../../shared/contracts";
+import { PRODUCT_NAME } from "../../../shared/generated/brand";
 
 export type AssistantPageContextProvider = () => Promise<AssistantPageContext | null>;
 
@@ -122,7 +123,7 @@ export async function getAssistantPageContext() {
   }
 
   const snapshot = createVisibleAppSnapshot();
-  const title = normalizeWhitespace(document.title || "ZenMind Desktop");
+  const title = normalizeWhitespace(document.title || `${PRODUCT_NAME} Desktop`);
   return {
     url: window.location.href,
     title,

@@ -1,4 +1,5 @@
 import { BrowserWindow } from "electron";
+import { PRODUCT_NAME } from "../../shared/generated/brand";
 
 type AgentPlatformMonitorWindowControllerOptions = {
   platform: NodeJS.Platform;
@@ -55,7 +56,7 @@ export class AgentPlatformMonitorWindowController {
       maximizable: true,
       minimizable: true,
       fullscreenable: true,
-      title: "ZenMind Agent Platform Monitor",
+      title: `${PRODUCT_NAME} Agent Platform Monitor`,
       backgroundColor: "#F7F8FA",
       webPreferences: {
         contextIsolation: true,

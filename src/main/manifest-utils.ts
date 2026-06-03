@@ -187,7 +187,7 @@ const testCoreServicePortOffsets: Record<string, number> = {
 };
 
 function getTestCoreServicePortBase() {
-  const raw = process.env.ZENMIND_TEST_CORE_SERVICE_PORT_BASE?.trim() ?? "";
+  const raw = (process.env.DESKTOP_TEST_CORE_SERVICE_PORT_BASE ?? process.env.ZENMIND_TEST_CORE_SERVICE_PORT_BASE)?.trim() ?? "";
   if (!raw || !/^\d+$/u.test(raw)) {
     return null;
   }

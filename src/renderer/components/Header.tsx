@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useServices } from "../services/ServicesContext";
 import { getServiceDisplayName, shouldShowServiceNavigationTab } from "../service-display";
+import { PRODUCT_NAME } from "../../shared/generated/brand";
 
 const staticNavItems = [
   { to: "/control-center", label: "控制中心" }
@@ -27,7 +28,7 @@ export function Header({ themeMode, onToggleTheme }: HeaderProps) {
   return (
     <header className="app-header">
       <div className="brand-block">
-        <span className="brand-kicker">ZenMind</span>
+        <span className="brand-kicker">{PRODUCT_NAME}</span>
         {/* <span className="brand-title">Desktop Control Shell</span> */}
       </div>
       <nav className="app-nav" aria-label="Main Navigation">

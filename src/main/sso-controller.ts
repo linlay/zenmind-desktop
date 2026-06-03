@@ -9,8 +9,9 @@ import {
 } from "./oidc-sso";
 import { getDesktopSsoBrowserUserAgent, type DesktopPlatform } from "./platform-adapter";
 import { safeConsoleError } from "./safe-console";
+import { STORAGE_NAMESPACE } from "../shared/generated/brand";
 
-export const DESKTOP_SSO_WEBVIEW_PARTITION = "persist:zenmind-desktop-sso";
+export const DESKTOP_SSO_WEBVIEW_PARTITION = `persist:${STORAGE_NAMESPACE}-sso`;
 
 type DesktopSsoStatus = ReturnType<typeof getDesktopSsoStatus>;
 type CookieAccessTokenFetch = Parameters<typeof exchangeConfiguredDesktopSsoCookieForAccessToken>[2];

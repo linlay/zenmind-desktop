@@ -1,4 +1,5 @@
 import { BrowserWindow, type Rectangle } from "electron";
+import { PRODUCT_NAME } from "../../../shared/generated/brand";
 
 export function createDesktopPetBrowserWindow(options: {
   bounds: Rectangle;
@@ -20,7 +21,7 @@ export function createDesktopPetBrowserWindow(options: {
     fullscreenable: false,
     skipTaskbar: true,
     hasShadow: false,
-    title: "ZenMind Desktop Xianzun",
+    title: `${PRODUCT_NAME} Desktop Xianzun`,
     backgroundColor: "#00000000",
     ...(isWindows ? { thickFrame: false } : {}),
     webPreferences: {

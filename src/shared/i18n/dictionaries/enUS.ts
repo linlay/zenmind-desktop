@@ -1,6 +1,10 @@
+import { APP_BRAND, PRODUCT_NAME } from "../../generated/brand";
+
+const brandMessages: Partial<Record<string, string>> = APP_BRAND.i18n["en-US"];
+
 export const enUSMessages = {
-  "app.name": "ZenMind",
-  "app.productName": "ZenMind",
+  "app.name": brandMessages["app.name"] ?? PRODUCT_NAME,
+  "app.productName": brandMessages["app.productName"] ?? PRODUCT_NAME,
 
   "common.back": "Back",
   "common.cancel": "Cancel",
@@ -707,7 +711,7 @@ export const enUSMessages = {
   "taskBoard.feedback.agentIncomplete": "The agent did not finish. Task status updated.",
   "taskBoard.feedback.agentCancelled": "Agent run cancelled.",
   "taskBoard.feedback.statusWritebackFailed": "Task status writeback failed.",
-  "taskBoard.prompt.intro": "Please handle this ZenMind task board task and summarize the result when finished.",
+  "taskBoard.prompt.intro": brandMessages["taskBoard.prompt.intro"] ?? `Please handle this ${PRODUCT_NAME} task board task and summarize the result when finished.`,
   "taskBoard.prompt.rule": "Do not directly edit task board files or task status; Desktop will automatically update the task to Completed after you finish.",
   "taskBoard.prompt.id": "Task ID: {value}",
   "taskBoard.prompt.title": "Title: {value}",
@@ -758,7 +762,7 @@ export const enUSMessages = {
   "startup.service.authentication": "Authentication Service",
   "startup.service.agentPlatform": "Agent Platform",
   "startup.service.agentWebclient": "Assistant",
-  "startup.envImport.title": "Initialize ZenMind Environment",
+  "startup.envImport.title": brandMessages["startup.envImport.title"] ?? `Initialize ${PRODUCT_NAME} Environment`,
   "startup.envImport.descriptionPrefix": "The app environment is not configured. Import",
   "startup.envImport.descriptionSuffix": "on first run to finish setup.",
   "startup.envImport.action": "Select and import env.zip",

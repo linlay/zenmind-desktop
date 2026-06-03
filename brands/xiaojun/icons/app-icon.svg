@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="XiaoJun app icon">
+  <defs>
+    <linearGradient id="xiaojun-gradient" x1="48" y1="40" x2="344" y2="352" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F8FAFC" />
+      <stop offset="44%" stop-color="#22C55E" />
+      <stop offset="100%" stop-color="#0F766E" />
+    </linearGradient>
+    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#064E3B" flood-opacity="0.2" />
+    </filter>
+  </defs>
+  <rect width="400" height="400" rx="84" fill="#FFFFFF" />
+  <path
+    d="M 344.889 238.823
+       A 90 90 0 0 1 238.798 344.982
+       A 90 90 0 0 1 93.909 306.159
+       A 90 90 0 0 1 55.111 161.177
+       A 90 90 0 0 1 161.202 55.018
+       A 90 90 0 0 1 306.091 93.841
+       A 90 90 0 0 1 344.889 238.823 Z"
+    fill="url(#xiaojun-gradient)"
+    filter="url(#soft-shadow)"
+  />
+  <g fill="#FFFFFF" transform="translate(0, -12)">
+    <rect x="117" y="168" width="164" height="34" rx="17" />
+    <rect x="117" y="234" width="164" height="34" rx="17" />
+    <path d="M 154 130 L 200 176 L 246 130 L 274 158 L 200 232 L 126 158 Z" opacity="0.96" />
+    <path d="M 154 310 L 200 264 L 246 310 L 274 282 L 200 208 L 126 282 Z" opacity="0.96" />
+  </g>
+</svg>

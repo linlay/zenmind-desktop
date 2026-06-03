@@ -3,11 +3,13 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { npmCmd, runAndWait } from "./platform/spawn.mjs";
+import { loadBrandConfig, resolveBrandId } from "./lib/brand-config.mjs";
 
 const projectRoot = process.cwd();
 const bundleRoot = path.join(projectRoot, "build", "bundle", "dist-electron");
 const rendererRoot = path.join(projectRoot, "dist-renderer");
 const stageRoot = path.join(projectRoot, "build", "app");
+const brand = loadBrandConfig(projectRoot, resolveBrandId());
 
 function parseArgs(argv) {
   const target = {
@@ -112,16 +114,16 @@ function readDesktopVersion(rootDir = projectRoot) {
 function writeStagePackageJson(rootDir, target) {
   const desktopPackage = readDesktopPackageJson(rootDir);
   const stagePackage = {
-    name: desktopPackage.name,
+    name: brand.packageName,
     version: readDesktopVersion(rootDir),
-    description: desktopPackage.description,
+    description: brand.description,
     main: "dist-electron/main/index.js",
-    productName: desktopPackage.build?.productName,
+    productName: brand.productName,
     author: desktopPackage.author,
     dependencies: {
       "@napi-rs/canvas": desktopPackage.dependencies?.["@napi-rs/canvas"]
     },
-    zenmindBuildTarget: {
+    desktopBuildTarget: {
       os: target.os,
       arch: target.arch
     }

@@ -7,8 +7,8 @@
       "id": "popular",
       "label": "Popular",
       "items": [
-        { "id": "what-is-zenmind", "title": "What is ZenMind?", "file": "popular/what-is-zenmind.md" },
-        { "id": "install", "title": "How do I install and start ZenMind for the first time?", "file": "popular/install.md" },
+        { "id": "what-is-zenmind", "title": "What is {{productName}}?", "file": "popular/what-is-zenmind.md" },
+        { "id": "install", "title": "How do I install and start {{productName}} for the first time?", "file": "popular/install.md" },
         { "id": "requirements", "title": "System requirements and environment setup", "file": "popular/requirements.md" },
         { "id": "data-directories", "title": "Where are data directories stored?", "file": "popular/data-directories.md" },
         { "id": "service-dependencies", "title": "Service dependencies", "file": "popular/service-dependencies.md" }

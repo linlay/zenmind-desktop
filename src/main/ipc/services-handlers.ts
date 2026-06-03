@@ -65,7 +65,7 @@ export interface ServicesIpcHandlerOptions {
   };
 
   // Environment zip import operations (TDD index-ts-slimming)
-  importEnvZipToZenmind?: (app: any, zipPath: string, platform: string) => Promise<{ copiedFiles: number; skippedFiles: number }>;
+  importEnvZipToRuntime?: (app: any, zipPath: string, platform: string) => Promise<{ copiedFiles: number; skippedFiles: number }>;
   loadBuiltinServices?: (app: any) => void;
   loadInstalledPlugins?: (app: any) => void;
   notifyServicesChanged?: () => void;
@@ -156,7 +156,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     getArchiveExtensions,
     startupRestoreController,
     clearSessionCache,
-    importEnvZipToZenmind,
+    importEnvZipToRuntime,
     loadBuiltinServices,
     loadInstalledPlugins,
     notifyServicesChanged,
@@ -185,7 +185,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       return { ok: false, message: "已取消导入。" };
     }
 
-    if (!importEnvZipToZenmind || !runStartupPreparation) {
+    if (!importEnvZipToRuntime || !runStartupPreparation) {
       return { ok: false, message: "环境初始化配置不可用。" };
     }
 
@@ -194,7 +194,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       startupRestoreController?.updateService("zenmind-app-server", "installing", "正在导入 env.zip...");
       notifyServicesChanged?.();
 
-      const importResult = await importEnvZipToZenmind(app, result.filePaths[0], platform);
+      const importResult = await importEnvZipToRuntime(app, result.filePaths[0], platform);
       console.info(
         `[main] imported env.zip: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
       );

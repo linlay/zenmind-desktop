@@ -4,6 +4,7 @@ import path from "node:path";
 import type { App } from "electron";
 import yaml from "js-yaml";
 import { getDesktopDeviceId } from "./device-identity";
+import { APP_BRAND } from "../shared/generated/brand";
 
 const DESKTOP_REGISTER_FILE = "desktop-register.json";
 const DEFAULT_ENDPOINT = "https://transit-hub.zenmind.cc/api/apply-apikey";
@@ -79,24 +80,24 @@ export function resolveDesktopRegisterPath(
   const pathApi = pathApiForPlatform(platform);
   const homePath = getHomePath(app);
   if (platform === "win32") {
-    return pathApi.resolve(pathApi.join(homePath, ".zenmind", DESKTOP_REGISTER_FILE));
+    return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName, DESKTOP_REGISTER_FILE));
   }
   if (platform === "darwin") {
-    return pathApi.resolve(pathApi.join(homePath, ".zenmind", DESKTOP_REGISTER_FILE));
+    return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName, DESKTOP_REGISTER_FILE));
   }
-  return pathApi.resolve(pathApi.join(homePath, ".zenmind", DESKTOP_REGISTER_FILE));
+  return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName, DESKTOP_REGISTER_FILE));
 }
 
-function resolveHomeZenmindRoot(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
+function resolveRuntimeRoot(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
   const pathApi = pathApiForPlatform(platform);
   const homePath = getHomePath(app);
   if (platform === "win32") {
-    return pathApi.resolve(pathApi.join(homePath, ".zenmind"));
+    return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName));
   }
   if (platform === "darwin") {
-    return pathApi.resolve(pathApi.join(homePath, ".zenmind"));
+    return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName));
   }
-  return pathApi.resolve(pathApi.join(homePath, ".zenmind"));
+  return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName));
 }
 
 function readRegisterConfig(registerPath: string) {
@@ -298,9 +299,9 @@ function readProviderTargets(input: {
   platform: NodeJS.Platform;
 }) {
   const pathApi = pathApiForPlatform(input.platform);
-  const homeZenmindRoot = resolveHomeZenmindRoot(input.app, input.platform);
+  const runtimeRoot = resolveRuntimeRoot(input.app, input.platform);
   return input.providers.map((providerKey) => {
-    const providerPath = pathApi.join(homeZenmindRoot, "registries", "providers", `${providerKey}.yml`);
+    const providerPath = pathApi.join(runtimeRoot, "registries", "providers", `${providerKey}.yml`);
     if (!fs.existsSync(providerPath)) {
       throw new Error(`desktop-register provider 文件不存在：${providerKey}`);
     }

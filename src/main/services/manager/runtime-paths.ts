@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
+import { APP_BRAND } from "../../../shared/generated/brand";
 
 export const agentPlatformDesktopRuntimePaths = [
   ["REGISTRIES_DIR", "registries"],
@@ -63,18 +64,19 @@ export function formatDesktopAgentPlatformRuntimePath(app: App, value: string) {
   const homeDir = resolveHomeDir(app);
   const normalizedHomeDir = normalizeConfigPath(homeDir, homeDir);
   const normalizedValue = normalizeConfigPath(value, homeDir);
-  const normalizedZenmindRoot = `${normalizedHomeDir}/.zenmind`;
-  if (normalizedValue === normalizedZenmindRoot) {
-    return "~/.zenmind";
+  const runtimeRootDirName = APP_BRAND.paths.runtimeRootDirName;
+  const normalizedRuntimeRoot = `${normalizedHomeDir}/${runtimeRootDirName}`;
+  if (normalizedValue === normalizedRuntimeRoot) {
+    return `~/${runtimeRootDirName}`;
   }
-  if (normalizedValue.startsWith(`${normalizedZenmindRoot}/`)) {
-    return `~/.zenmind/${normalizedValue.slice(normalizedZenmindRoot.length + 1)}`;
+  if (normalizedValue.startsWith(`${normalizedRuntimeRoot}/`)) {
+    return `~/${runtimeRootDirName}/${normalizedValue.slice(normalizedRuntimeRoot.length + 1)}`;
   }
   return value;
 }
 
 export function resolveAgentPlatformInitializationRuntimeRoot(app: App) {
-  return path.join(resolveHomeDir(app), ".zenmind");
+  return path.join(resolveHomeDir(app), APP_BRAND.paths.runtimeRootDirName);
 }
 
 export function formatDesktopAgentPlatformRuntimeRoot(app: App, runtimeRoot: string) {
@@ -82,7 +84,7 @@ export function formatDesktopAgentPlatformRuntimeRoot(app: App, runtimeRoot: str
 }
 
 export function resolvePreferredAgentPlatformRuntimeRoot(app?: App | null) {
-  return path.join(resolveHomeDir(app), ".zenmind");
+  return path.join(resolveHomeDir(app), APP_BRAND.paths.runtimeRootDirName);
 }
 
 export function resolveAgentPlatformAgentsDir(env: Map<string, string>, desktopRuntimeRoot: string | null) {

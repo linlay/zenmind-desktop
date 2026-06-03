@@ -2841,7 +2841,7 @@
     0 8px 16px rgba(0, 0, 0, 0.2);
 }
 
-.zenmind-logo-wrapper {
+.brand-logo-wrapper {
   position: relative;
   display: flex;
   align-items: center;
@@ -2854,8 +2854,9 @@
   animation: logo-float 3s ease-in-out infinite;
 }
 
-.zenmind-logo-svg {
-  color: #4F88FF;
+.brand-logo-image {
+  display: block;
+  object-fit: contain;
   animation: logo-pulse 2s ease-in-out infinite;
 }
 

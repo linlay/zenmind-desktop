@@ -19,6 +19,7 @@ import type {
   UpdateAgentRequest,
   UpdateAutomationRequest
 } from "./types";
+import { PRODUCT_NAME } from "../../../shared/generated/brand";
 
 async function requestAgentPlatform<T>(input: {
   path: string;
@@ -28,7 +29,7 @@ async function requestAgentPlatform<T>(input: {
 }): Promise<T> {
   const api = window.electronAPI.agentPlatform?.request;
   if (!api) {
-    throw new Error("当前窗口尚未连接智能体平台桥接，请重启 ZenMind 后重试。");
+    throw new Error(`当前窗口尚未连接智能体平台桥接，请重启 ${PRODUCT_NAME} 后重试。`);
   }
 
   let result: Awaited<ReturnType<typeof api<T>>>;
@@ -37,7 +38,7 @@ async function requestAgentPlatform<T>(input: {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("agentPlatform.request") || message.includes("No handler registered")) {
-      throw new Error("当前窗口尚未连接智能体平台桥接，请重启 ZenMind 后重试。");
+      throw new Error(`当前窗口尚未连接智能体平台桥接，请重启 ${PRODUCT_NAME} 后重试。`);
     }
     throw error;
   }

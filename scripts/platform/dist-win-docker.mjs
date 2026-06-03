@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { electronBuilderConfigPath, syncBrandArtifacts, resolveBrandId } from "../lib/brand-config.mjs";
 import { npmCmd, runAndWait } from "./spawn.mjs";
 
 const projectRoot = process.cwd();
@@ -24,7 +25,9 @@ async function syncWindowsBuiltinAssets() {
   });
 }
 
-export async function buildWithDocker() {
+export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: resolveBrandId() })) {
+  await runAndWait(npmCmd, ["run", "sync:version"], { cwd: projectRoot });
+  syncBrandArtifacts({ brandId: brand.id });
   await syncWindowsBuiltinAssets();
   await runAndWait(npmCmd, ["run", "build"], { cwd: projectRoot });
 
@@ -42,7 +45,7 @@ export async function buildWithDocker() {
     "--volume",
     `${projectRoot}:/project`,
     "--volume",
-    "zenmind-desktop-node-modules:/project/node_modules",
+    `${brand.packageName}-node-modules:/project/node_modules`,
     "--volume",
     `${npmCacheDir}:/root/.npm`
   ];
@@ -59,8 +62,9 @@ export async function buildWithDocker() {
     "-lc",
     [
       "npm install --no-package-lock --ignore-scripts",
+      `node ./scripts/sync-brand.mjs --brand=${brand.id}`,
       "node ./scripts/stage-app.mjs --os=win32 --arch=x64",
-      "npx electron-builder --win --x64",
+      `npx electron-builder --config ${path.posix.relative("/project", electronBuilderConfigPath("/project", brand.id))} --win --x64`,
       "node ./scripts/verify-win-package.mjs"
     ].join(" && ")
   );
