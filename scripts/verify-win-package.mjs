@@ -4,7 +4,7 @@ import path from "node:path";
 const projectRoot = process.cwd();
 const resourcesRoot = path.join(projectRoot, "dist", "win-unpacked", "resources");
 const requiredRuntimePackage = "@napi-rs/canvas-win32-x64-msvc";
-const forbiddenRuntimePrefix = "@napi-rs/canvas-linux-";
+const canvasRuntimePackagePattern = /@napi-rs\/canvas-(?!win32-x64-msvc\b)[^/]+/u;
 
 function walkFileTree(rootDir) {
   const output = [];
@@ -43,10 +43,10 @@ function main() {
     throw new Error(`missing ${requiredRuntimePackage} in dist/win-unpacked/resources`);
   }
 
-  const forbiddenMatches = paths.filter((filePath) => filePath.includes(forbiddenRuntimePrefix));
+  const forbiddenMatches = paths.filter((filePath) => canvasRuntimePackagePattern.test(filePath));
   if (forbiddenMatches.length > 0) {
     throw new Error(
-      `unexpected linux canvas runtime packages in Windows output:\n${forbiddenMatches.join("\n")}`
+      `unexpected non-win32-x64 canvas runtime packages in Windows output:\n${forbiddenMatches.join("\n")}`
     );
   }
 

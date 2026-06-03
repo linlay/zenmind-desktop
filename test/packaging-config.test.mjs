@@ -14,6 +14,7 @@ const distWinDockerScriptPath = path.join(projectRoot, "scripts", "platform", "d
 const distWinHostScriptPath = path.join(projectRoot, "scripts", "platform", "dist-win-host.mjs");
 const stageAppScriptPath = path.join(projectRoot, "scripts", "stage-app.mjs");
 const buildMainBundleScriptPath = path.join(projectRoot, "scripts", "build-main-bundle.mjs");
+const afterPackScriptPath = path.join(projectRoot, "scripts", "fix-mac-sign.js");
 const bundledMainPath = path.join(projectRoot, "build", "bundle", "dist-electron", "main", "index.js");
 
 function loadPackageJson() {
@@ -134,6 +135,7 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   const distWinHostScript = fs.readFileSync(distWinHostScriptPath, "utf8");
   const stageAppScript = fs.readFileSync(stageAppScriptPath, "utf8");
   const buildMainBundleScript = fs.readFileSync(buildMainBundleScriptPath, "utf8");
+  const afterPackScript = fs.readFileSync(afterPackScriptPath, "utf8");
 
   assert.match(distWinScript, /isWindows\(\)/);
   assert.match(distWinScript, /import\("\.\/platform\/dist-win-host\.mjs"\)/);
@@ -176,10 +178,18 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   assert.match(stageAppScript, /"--ignore-scripts"/);
   assert.match(stageAppScript, /"--no-package-lock"/);
   assert.match(stageAppScript, /@napi-rs\/canvas-win32-x64-msvc/);
+  assert.equal(loadElectronBuilderConfig().afterPack, "./scripts/fix-mac-sign.js");
+  assert.match(afterPackScript, /case "darwin\/arm64":\s*\n\s*return "canvas-darwin-arm64";/);
+  assert.match(afterPackScript, /case "win32\/x64":\s*\n\s*return "canvas-win32-x64-msvc";/);
+  assert.match(afterPackScript, /function pruneUnusedCanvasRuntimes\(context, resourcesRoot\)/);
+  assert.match(afterPackScript, /entry\.name\.startsWith\("canvas-"\)/);
+  assert.match(afterPackScript, /ELECTRON_LOCALE_ALLOWLIST[\s\S]*"en\.lproj"[\s\S]*"zh_CN\.lproj"/);
+  assert.match(afterPackScript, /context\.electronPlatformName !== "darwin"/);
   assert.doesNotMatch(stageAppScript, /@ffmpeg-installer\/darwin-arm64/);
   assert.doesNotMatch(stageAppScript, /@ffmpeg-installer\/win32-x64/);
   assert.doesNotMatch(stageAppScript, /ffmpeg\.exe/);
-  assert.match(stageAppScript, /unexpected linux canvas runtime packages in win32 stage/);
+  assert.match(stageAppScript, /unexpected canvas runtime packages in \$\{target\.os\}\/\$\{target\.arch\} stage/);
+  assert.match(fs.readFileSync(path.join(projectRoot, "scripts", "verify-win-package.mjs"), "utf8"), /unexpected non-win32-x64 canvas runtime packages/);
   assert.doesNotMatch(stageAppScript, /unexpected non-windows ffmpeg runtime packages in win32 stage/);
   assert.doesNotMatch(stageAppScript, /exceljs|docx|pptxgenjs|pdfjs-dist|zod/);
   assert.doesNotMatch(

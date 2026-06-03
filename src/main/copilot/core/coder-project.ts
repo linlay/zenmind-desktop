@@ -3,7 +3,19 @@ export function workspaceNameFromPath(workspaceDir: string): string {
   return normalized.split(/[\\/]+/).filter(Boolean).pop() || "project";
 }
 
-export function buildCoderProjectAgentCreateRequest(workspaceDir: string) {
+export function buildCoderProjectAgentCreateRequest(
+  workspaceDir: string,
+  options: { acpProxyId?: string } = {}
+) {
+  const acpProxyId = String(options.acpProxyId || "").trim();
+  const runtimeConfig: Record<string, string> = {
+    workspaceRoot: workspaceDir
+  };
+  if (acpProxyId) {
+    runtimeConfig.coderBackend = "acp";
+    runtimeConfig.acpProxyId = acpProxyId;
+  }
+
   return {
     definition: {
       name: workspaceNameFromPath(workspaceDir),
@@ -14,9 +26,7 @@ export function buildCoderProjectAgentCreateRequest(workspaceDir: string) {
       workspace: {
         root: workspaceDir
       },
-      runtimeConfig: {
-        workspaceRoot: workspaceDir
-      },
+      runtimeConfig,
       visibility: {
         scopes: ["nav", "copilot"]
       }
