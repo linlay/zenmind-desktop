@@ -2569,23 +2569,24 @@
 }
 
 .control-center-hero-copy {
-  gap: 10px;
+  gap: 6px;
 }
 
 .control-center-hero-copy h1 {
   margin: 0;
   color: var(--control-center-text);
-  font-size: 32px;
-  font-weight: 800;
-  line-height: 1.15;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0;
 }
 
 .control-center-hero-copy p {
   margin: 0;
   color: var(--control-center-muted);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.5;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.55;
 }
 
 .control-center-dashboard-metrics {

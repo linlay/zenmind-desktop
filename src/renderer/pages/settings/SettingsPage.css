@@ -1,29 +1,36 @@
+.settings-page {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .settings-sidebar-card {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 14px;
 }
 
 .settings-sidebar-title {
   margin: 0;
-  font-size: 24px;
-  line-height: 1.25;
-  font-weight: 600;
+  font-size: 16px;
+  line-height: 1.35;
+  font-weight: 700;
   color: var(--ink);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .settings-directory-nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
 .settings-directory-btn {
   width: 100%;
-  padding: 10px 16px;
+  min-height: 32px;
+  padding: 6px 10px;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
   color: var(--ink-soft);
   text-align: left;
@@ -54,8 +61,8 @@
 
 .settings-directory-btn-label {
   display: block;
-  font-size: 15px;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.35;
   font-weight: 600;
 }
 
@@ -76,8 +83,8 @@
 
 .settings-about-meta strong {
   color: var(--ink);
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .settings-main-card {
@@ -94,7 +101,7 @@
 .settings-content-shell {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
 }
 
 .settings-page-head {
@@ -102,21 +109,21 @@
 }
 
 .settings-page-head .eyebrow {
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .settings-page-head h1 {
-  margin: 0 0 12px;
-  font-size: 30px;
-  line-height: 1.2;
+  margin: 0 0 6px;
+  font-size: 18px;
+  line-height: 1.35;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   color: var(--ink);
 }
 
 .settings-page-head .page-copy {
   margin: 0;
-  font-size: 18px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--ink-soft);
 }
@@ -124,6 +131,95 @@
 .settings-section-body {
   position: relative;
   width: 100%;
+}
+
+.settings-page .eyebrow {
+  margin: 0 0 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.settings-page .data-root-card {
+  gap: 14px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+
+.settings-page .data-root-card h2 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.settings-page .data-root-card .page-copy,
+.settings-page .settings-inline-note {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.settings-page .settings-theme-actions {
+  gap: 10px;
+}
+
+.settings-page .settings-theme-option {
+  gap: 10px;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.settings-page .settings-theme-copy {
+  gap: 3px;
+}
+
+.settings-page .settings-theme-copy strong {
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.settings-page .settings-theme-copy span {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.settings-page .settings-theme-preview {
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.settings-page .settings-theme-preview span {
+  height: 10px;
+}
+
+.settings-page .custom-sidebar-form label,
+.settings-page .navigation-order-grid-head,
+.settings-page .custom-sidebar-list-head,
+.settings-page .navigation-order-fixed-label {
+  font-size: 12px;
+}
+
+.settings-page .custom-sidebar-form input,
+.settings-page .custom-sidebar-agent-select,
+.settings-page .text-button,
+.settings-page .danger-text-button {
+  font-size: 12px;
+}
+
+.settings-page .custom-sidebar-row-copy > strong,
+.settings-page .navigation-order-title {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.settings-page .custom-sidebar-row-copy > span,
+.settings-page .custom-sidebar-empty,
+.settings-page .custom-sidebar-editing-note {
+  font-size: 12px;
 }
 
 .settings-section-feedback {
@@ -155,10 +251,10 @@
   }
 
   .settings-page-head h1 {
-    font-size: 24px;
+    font-size: 16px;
   }
 
   .settings-page-head .page-copy {
-    font-size: 15px;
+    font-size: 12px;
   }
 }

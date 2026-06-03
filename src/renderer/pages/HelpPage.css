@@ -1,29 +1,30 @@
 .help-sidebar-title {
-  margin: 0 0 28px;
-  font-size: 24px;
-  line-height: 1.25;
-  font-weight: 600;
+  margin: 0 0 14px;
+  font-size: 16px;
+  line-height: 1.35;
+  font-weight: 700;
   color: var(--ink);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .help-nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
 .help-nav-btn {
   width: 100%;
-  padding: 10px 16px;
+  min-height: 32px;
+  padding: 6px 10px;
   border: none;
   border-radius: 8px;
   background: transparent;
   color: var(--ink-soft);
   text-align: left;
-  font-size: 15px;
-  line-height: 1.45;
-  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 600;
   cursor: pointer;
   transition: background-color 180ms ease, color 180ms ease;
 }
@@ -50,23 +51,23 @@
 }
 
 .help-hero {
-  margin-bottom: 40px;
+  margin-bottom: 24px;
   width: min(100%, 1100px);
 }
 
 .help-hero-title {
-  margin: 0 0 12px;
-  font-size: 30px;
-  line-height: 1.2;
+  margin: 0 0 6px;
+  font-size: 18px;
+  line-height: 1.35;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   color: var(--ink);
 }
 
 .help-hero-desc {
   margin: 0;
-  font-size: 18px;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.55;
   color: var(--ink-soft);
 }
 
@@ -112,7 +113,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 20px;
-  padding: 22px 0;
+  padding: 14px 0;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -126,9 +127,9 @@
 .help-faq-question {
   color: var(--ink);
   text-align: left;
-  font-size: 17px;
-  line-height: 1.5;
-  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 600;
   transition: color 180ms ease;
 }
 
@@ -150,9 +151,9 @@
 }
 
 .help-faq-answer {
-  padding: 0 0 24px;
-  font-size: 15px;
-  line-height: 1.7;
+  padding: 0 0 16px;
+  font-size: 12px;
+  line-height: 1.6;
   color: var(--ink-soft);
 }
 
@@ -246,11 +247,11 @@
   }
 
   .help-hero-title {
-    font-size: 24px;
+    font-size: 16px;
   }
 
   .help-hero-desc {
-    font-size: 15px;
+    font-size: 12px;
   }
 
   .help-faq-list {
