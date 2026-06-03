@@ -28,7 +28,7 @@
 
 body.agent-native-surface-body:not(.mac-translucent-sidebar-body),
 .app-shell.has-agent-native-surface:not(.is-mac-translucent-sidebar) {
-  background: #ffffff;
+  background: var(--bg-base);
 }
 
 body.agent-native-surface-body.mac-translucent-sidebar-body,
@@ -49,7 +49,14 @@ body.agent-native-surface-body.mac-translucent-sidebar-body,
 
 .app-shell.has-agent-native-surface .app-content,
 .app-shell.has-agent-native-surface .app-main {
-  background: #ffffff;
+  background: var(--bg-base);
+}
+
+:root[data-theme="dark"] body.agent-native-surface-body:not(.mac-translucent-sidebar-body),
+:root[data-theme="dark"] .app-shell.has-agent-native-surface:not(.is-mac-translucent-sidebar),
+:root[data-theme="dark"] .app-shell.has-agent-native-surface .app-content,
+:root[data-theme="dark"] .app-shell.has-agent-native-surface .app-main {
+  background: #111318;
 }
 
 .app-shell.has-agent-native-surface .app-main {

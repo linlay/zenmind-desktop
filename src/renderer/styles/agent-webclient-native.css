@@ -25,6 +25,23 @@
   color: var(--ink-1);
 }
 
+:root[data-theme="dark"] .agent-webclient-native {
+  --bg-base: #111318;
+  --bg-elev-1: #151821;
+  --bg-elev-2: #1b202a;
+  --bg-input: #171a21;
+  --bg-hover: rgba(87, 144, 255, 0.14);
+  --ink-1: #f4f7fb;
+  --ink-2: #c8d2e1;
+  --ink-muted: #8b96a8;
+  --line-soft: rgba(148, 163, 184, 0.18);
+  --line-strong: rgba(148, 163, 184, 0.3);
+  --accent-electric: #5790ff;
+  --accent-electric-strong: #8db3ff;
+  --accent-danger: #ff6b6b;
+  --accent-soft: rgba(87, 144, 255, 0.18);
+}
+
 .agent-webclient-native .agents-page,
 .agent-webclient-native .automations-page {
   max-width: none;
@@ -129,6 +146,44 @@
   opacity: 0.58;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.agent-webclient-native .ant-input,
+.agent-webclient-native .ant-input-affix-wrapper,
+.agent-webclient-native .ant-input-number,
+.agent-webclient-native .ant-select-selector {
+  border-color: color-mix(in srgb, var(--line-soft) 92%, transparent);
+  background: color-mix(in srgb, var(--bg-input) 92%, var(--bg-elev-2));
+  color: var(--ink-1);
+}
+
+.agent-webclient-native .ant-input:hover,
+.agent-webclient-native .ant-input-affix-wrapper:hover,
+.agent-webclient-native .ant-input-number:hover,
+.agent-webclient-native .ant-select-selector:hover {
+  border-color: color-mix(in srgb, var(--accent-electric) 42%, var(--line-strong));
+}
+
+.agent-webclient-native .ant-input:focus,
+.agent-webclient-native .ant-input-affix-wrapper-focused,
+.agent-webclient-native .ant-input-number-focused,
+.agent-webclient-native .ant-select-focused .ant-select-selector {
+  border-color: color-mix(in srgb, var(--accent-electric) 58%, var(--line-strong));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-electric) 16%, transparent);
+}
+
+.agent-webclient-native .ant-input::placeholder,
+.agent-webclient-native .ant-input-number-input::placeholder,
+.agent-webclient-native .ant-select-selection-placeholder {
+  color: color-mix(in srgb, var(--ink-muted) 78%, transparent);
+}
+
+.agent-webclient-native .ant-input-prefix,
+.agent-webclient-native .ant-input-suffix,
+.agent-webclient-native .ant-select-arrow,
+.agent-webclient-native .ant-select-clear,
+.agent-webclient-native .ant-checkbox-wrapper {
+  color: var(--ink-muted);
 }
 
 .agent-webclient-native .ant-tag {
