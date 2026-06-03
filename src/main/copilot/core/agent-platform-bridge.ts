@@ -555,7 +555,9 @@ export class AgentPlatformAssistantBridge {
   }
 
   async listAgents(): Promise<DesktopPetAgentOption[]> {
-    const data = await this.getJson<PlatformAgentSummary[]>("/api/agents");
+    const data = await this.getJson<PlatformAgentSummary[]>("/api/agents", {
+      fallbackWhenUnavailable: []
+    });
     return toDesktopPetAgentOptions(Array.isArray(data) ? data : []);
   }
 
@@ -988,9 +990,15 @@ export class AgentPlatformAssistantBridge {
     }
   }
 
-  private async getJson<T>(pathOrUrl: string, options: { allowNotFound?: boolean } = {}): Promise<T> {
+  private async getJson<T>(
+    pathOrUrl: string,
+    options: { allowNotFound?: boolean; fallbackWhenUnavailable?: T } = {}
+  ): Promise<T> {
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
+      if ("fallbackWhenUnavailable" in options) {
+        return options.fallbackWhenUnavailable as T;
+      }
       throw new Error(availability.message);
     }
     const response = await this.platformFetch(availability.baseUrl, pathOrUrl, {

@@ -140,6 +140,28 @@ test("agent platform assistant bridge lists and normalizes agents from /api/agen
   }
 });
 
+test("agent platform assistant bridge returns no agents when platform is installed but stopped", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge({
+    getServiceState: async () => ({
+      status: "stopped",
+      message: "服务已安装，可手动启动。",
+      healthMeta: { webUrl: "", port: null }
+    })
+  });
+  globalThis.fetch = async (url) => {
+    throw new Error(`unexpected request ${url}`);
+  };
+
+  try {
+    const agents = await bridge.listAgents();
+
+    assert.deepEqual(agents, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent platform assistant bridge maps submitAwaiting and stopRun to platform endpoints", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];

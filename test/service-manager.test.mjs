@@ -2420,6 +2420,31 @@ test("getServiceState removes stale pid files that point to unrelated live proce
   }
 });
 
+test("readManagedPidFile preserves live pid files when process ownership is temporarily unknown", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-unknown-pid-owner-"));
+  const pidPath = path.join(tempRoot, "zenmind-app-server.pid");
+  const removedPidFiles = [];
+
+  try {
+    fs.writeFileSync(pidPath, "4321\n", "utf8");
+
+    const pid = __testInternals.readManagedPidFile([pidPath], "C:\\Program Files\\ZenMind\\services\\zenmind-app-server", {
+      isProcessRunningImpl: (candidatePid) => candidatePid === 4321,
+      matchProcessInstallDirImpl: () => "unknown",
+      removePidFileImpl: (candidatePath) => {
+        removedPidFiles.push(candidatePath);
+        fs.rmSync(candidatePath, { force: true });
+      }
+    });
+
+    assert.equal(pid, 4321);
+    assert.equal(fs.existsSync(pidPath), true);
+    assert.deepEqual(removedPidFiles, []);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("shutdown stop timeout defaults are shorter on Windows overwrite exits", () => {
   assert.equal(__testInternals.getShutdownStopCommandTimeoutMs(undefined, "win32"), 1000);
   assert.equal(__testInternals.getShutdownStopCommandTimeoutMs(undefined, "darwin"), 2500);
