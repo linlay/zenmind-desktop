@@ -17,6 +17,7 @@ import websiteIcon from "../assets/sidebar-icons/website.svg";
 
 type BrandMarkProps = {
   className?: string;
+  ariaLabel?: string;
 };
 
 export type SidebarIllustrationKind =
@@ -59,13 +60,18 @@ const sidebarIllustrationSources: Record<SidebarIllustrationKind, string> = {
   website: websiteIcon
 };
 
-export function BrandMark({ className }: BrandMarkProps) {
+export function BrandMark({ className, ariaLabel }: BrandMarkProps) {
   return (
     <img
       src={`./${APP_ICON_ASSET_FILENAMES.brandIcon}`}
-      alt="品牌标识"
+      alt={ariaLabel ?? "品牌标识"}
       className={className}
-      style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: 8 }}
+      style={{
+        width: "var(--brand-mark-size, 100%)",
+        height: "var(--brand-mark-size, 100%)",
+        objectFit: "contain",
+        borderRadius: 8
+      }}
       onError={(event) => {
         (event.currentTarget as HTMLImageElement).style.visibility = "hidden";
       }}

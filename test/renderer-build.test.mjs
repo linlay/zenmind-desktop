@@ -1060,6 +1060,22 @@ test("settings route keeps the global sidebar and renders page-internal split se
   assert.doesNotMatch(brandMark, /"folder"/);
 });
 
+test("startup env import overlay uses packaged-relative brand icon", () => {
+  const envImportOverlay = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "startup",
+    "EnvImportOverlay.tsx"
+  );
+  const brandMark = readSourceFile("src", "renderer", "components", "BrandMark.tsx");
+
+  assert.match(envImportOverlay, /import \{ BrandMark \} from "\.\.\/\.\.\/components\/BrandMark";/);
+  assert.match(envImportOverlay, /<BrandMark className="brand-logo-image"/);
+  assert.doesNotMatch(envImportOverlay, /src=["']\/brand-icon\.png["']/);
+  assert.match(brandMark, /src=\{`\.\//);
+});
+
 test("settings page scopes notices to the active section and keeps load failures in-section", () => {
   const settingsPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.tsx"),

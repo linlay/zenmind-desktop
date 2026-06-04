@@ -11,6 +11,7 @@ import type {
 } from "../../shared/contracts/debug";
 
 const DEFAULT_MAX_EVENTS = 1000;
+const DEFAULT_MAX_PENDING_REQUESTS = 1000;
 const REDACTED_VALUE = "<redacted>";
 const SENSITIVE_HEADER_NAMES = new Set([
   "authorization",
@@ -22,6 +23,7 @@ const SENSITIVE_HEADER_NAMES = new Set([
 
 type DebugEventStoreOptions = {
   maxEvents?: number;
+  maxPendingRequests?: number;
   now?: () => number;
 };
 
@@ -155,6 +157,7 @@ function normalizeConsoleLevel(level: ConsoleMessageDetails["level"]): DebugCons
 
 export function createDebugEventStore(options: DebugEventStoreOptions = {}) {
   const maxEvents = Math.max(1, options.maxEvents ?? DEFAULT_MAX_EVENTS);
+  const maxPendingRequests = Math.max(1, options.maxPendingRequests ?? DEFAULT_MAX_PENDING_REQUESTS);
   const now = options.now ?? Date.now;
   const events: DebugEvent[] = [];
   const listeners = new Set<DebugEventListener>();
@@ -210,6 +213,12 @@ export function createDebugEventStore(options: DebugEventStoreOptions = {}) {
     const pending = buildPendingRequest(details);
     if (pending) {
       pendingRequests.set(key, pending);
+      if (pendingRequests.size > maxPendingRequests) {
+        const oldestKey = pendingRequests.keys().next().value;
+        if (typeof oldestKey === "string") {
+          pendingRequests.delete(oldestKey);
+        }
+      }
     }
     return pending;
   }
@@ -284,6 +293,10 @@ export function createDebugEventStore(options: DebugEventStoreOptions = {}) {
     clearEvents() {
       events.length = 0;
       pendingRequests.clear();
+    },
+
+    getPendingRequestCount() {
+      return pendingRequests.size;
     },
 
     subscribe(listener: DebugEventListener) {

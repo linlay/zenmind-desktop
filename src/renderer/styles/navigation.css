@@ -2988,15 +2988,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 140px;
-  height: 140px;
+  width: 108px;
+  height: 108px;
   border-radius: 50%;
   background: rgba(79, 136, 255, 0.06);
-  box-shadow: 0 0 30px rgba(79, 136, 255, 0.1);
+  box-shadow: 0 0 24px rgba(79, 136, 255, 0.1);
   animation: logo-float 3s ease-in-out infinite;
 }
 
 .brand-logo-image {
+  --brand-mark-size: 84px;
+
   display: block;
   object-fit: contain;
   animation: logo-pulse 2s ease-in-out infinite;
