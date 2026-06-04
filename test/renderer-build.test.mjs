@@ -700,7 +700,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.ok(newChatHandlerStart >= 0);
   assert.ok(markAllReadHandlerStart > newChatHandlerStart);
   const newChatHandler = sidebarSource.slice(newChatHandlerStart, markAllReadHandlerStart);
-  assert.doesNotMatch(newChatHandler, /preferNewChat|retriggerAgentRoute|createAgentSelectionRoute/);
+  assert.doesNotMatch(newChatHandler, /preferNewChat|createAgentSelectionRoute/);
+  assert.match(newChatHandler, /requestNavigate\(\s*createAgentNewChatRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
   assert.match(sidebarSource, /className="assistant-worker-collapse-item"/);
   assert.match(sidebarSource, /className="assistant-worker-header-text"/);
   assert.match(sidebarSource, /<AgentIcon[\s\S]*?icon=\{agent\.icon\}[\s\S]*?className="worker-panel-icon"[\s\S]*?size=\{selected \? 20 : 32\}[\s\S]*?type="agent"[\s\S]*?\/>/);
@@ -941,13 +942,34 @@ test("assistant sidebar awaiting chats use a right-side ring status", () => {
   );
   const globalStyles = readRendererStyles();
 
-  assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting[\s\S]{0,90}\? "awaiting"/);
+  assert.match(sidebarSource, /:\s*chat\.hasPendingAwaiting[\s\S]{0,90}\? "awaiting"/);
   assert.match(sidebarSource, /chat\.hasPendingAwaiting \? "has-awaiting" : ""/);
   assert.match(sidebarSource, /className="assistant-worker-awaiting-ring"/);
   assert.match(globalStyles, /\.assistant-worker-chat-item\.has-awaiting \.chat-awaiting-status\s*\{[\s\S]{0,80}margin-left: auto;/);
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\]\s*\{[\s\S]{0,80}width: 16px;/);
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-panel-time-label\s*\{[\s\S]{0,80}display: none;/);
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.assistant-worker-awaiting-ring\s*\{[\s\S]{0,80}display: inline-block;/);
+});
+
+test("assistant sidebar active chats use loading status instead of thinking text", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+  const globalStyles = readRendererStyles();
+
+  assert.match(sidebarSource, /function isAssistantRunningPreview\(value: string\)/);
+  assert.match(sidebarSource, /normalized === "思考中"/);
+  assert.match(sidebarSource, /const action = chat\.hasActiveRun\s*\?\s*"loading"\s*:\s*chat\.hasPendingAwaiting/);
+  assert.match(sidebarSource, /chat\.hasActiveRun && isAssistantRunningPreview\(chat\.lastRunContent\)/);
+  assert.match(sidebarSource, /className="worker-chat-loading assistant-material-icon is-loading"/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="loading"\]\s*\{[\s\S]{0,80}width: 18px;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="loading"\] \.worker-panel-time-label\s*\{[\s\S]{0,80}display: none;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="loading"\] \.worker-chat-loading\s*\{[\s\S]{0,80}display: inline-flex;/);
+  assert.match(globalStyles, /@keyframes assistant-worker-chat-spin\s*\{[\s\S]*?translateY\(-50%\) rotate\(360deg\)/);
 });
 
 test("assistant sidebar empty state is localized", () => {

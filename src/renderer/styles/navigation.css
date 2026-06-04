@@ -1142,8 +1142,23 @@
   opacity: 1;
 }
 
+.assistant-worker-chat-action[data-action="loading"] {
+  width: 18px;
+}
+
+.assistant-worker-chat-action[data-action="loading"] .worker-panel-time-label {
+  display: none;
+}
+
 .assistant-worker-chat-action[data-action="loading"] .worker-chat-loading {
   display: inline-flex;
+  animation-name: assistant-worker-chat-spin;
+}
+
+@keyframes assistant-worker-chat-spin {
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
 }
 
 .worker-panel-time-label {
