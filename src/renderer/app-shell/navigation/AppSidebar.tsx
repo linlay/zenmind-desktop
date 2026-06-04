@@ -461,6 +461,11 @@ function formatAssistantChatTime(updatedAt: string) {
   return formatYearMonth(updatedDate);
 }
 
+function isAssistantRunningPreview(value: string) {
+  const normalized = value.trim();
+  return normalized === "思考中" || normalized === "思考中...";
+}
+
 type SidebarCollapseToggleVariant = "compact" | "nav";
 
 type SidebarCollapseToggleProps = {
@@ -1070,7 +1075,9 @@ export function AppSidebar({
     event.preventDefault();
     event.stopPropagation();
     setExpandedAssistantAgentKey(agent.agentKey);
-    requestNavigate(createAgentNewChatRoute(agent.agentKey));
+    requestNavigate(createAgentNewChatRoute(agent.agentKey), {
+      retriggerAgentRoute: true,
+    });
   }
 
   async function handleAssistantMarkAllRead(
@@ -1331,11 +1338,17 @@ export function AppSidebar({
     activeChatId: string,
   ) {
     const isActive = activeChatId === chat.chatId;
-    const action = chat.hasPendingAwaiting
+    const action = chat.hasActiveRun
+      ? "loading"
+      : chat.hasPendingAwaiting
       ? "awaiting"
       : !chat.isRead
         ? "unread"
         : "time";
+    const previewText =
+      chat.hasActiveRun && isAssistantRunningPreview(chat.lastRunContent)
+        ? chat.chatName || "暂无预览"
+        : chat.lastRunContent || chat.chatName || "暂无预览";
     return (
       <button
         type="button"
@@ -1351,9 +1364,7 @@ export function AppSidebar({
         onClick={() => handleAssistantOpenChat(chat)}
       >
         <span className="worker-chat-item-head">
-          <span className="worker-chat-name">
-            {chat.lastRunContent || chat.chatName || "暂无预览"}
-          </span>
+          <span className="worker-chat-name">{previewText}</span>
           {chat.hasPendingAwaiting ? (
             <span className="chat-awaiting-status">
               {t("taskBoard.run.awaitingApproval")}
