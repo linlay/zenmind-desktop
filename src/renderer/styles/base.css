@@ -42,6 +42,11 @@ body.embedded-surface-body::before {
   background: transparent;
 }
 
+:root[data-theme="dark"] body.embedded-surface-body,
+:root[data-theme="dark"] body.embedded-surface-body.mac-translucent-sidebar-body {
+  background: var(--embedded-surface-shell-bg);
+}
+
 button,
 input,
 textarea {

@@ -549,8 +549,9 @@ function createStartupCoreAssetsFixture(options = {}) {
         [
           "$runDir = Join-Path $PSScriptRoot 'run'",
           "New-Item -ItemType Directory -Path $runDir -Force | Out-Null",
+          options.deployDelayMs ? `Start-Sleep -Milliseconds ${options.deployDelayMs}` : "",
           `Add-Content -LiteralPath (Join-Path $runDir 'deploy.log') -Value '${service.id}'`
-        ].join("\r\n"),
+        ].filter(Boolean).join("\r\n"),
         "utf8"
       );
       fs.writeFileSync(path.join(bundleRoot, "scripts", programCommonName), "# fixture\r\n", "utf8");
@@ -605,8 +606,9 @@ function createStartupCoreAssetsFixture(options = {}) {
           "#!/usr/bin/env bash",
           "set -euo pipefail",
           "mkdir -p run",
+          options.deployDelayMs ? `sleep ${options.deployDelayMs / 1000}` : "",
           `printf '%s\\n' '${service.id}' >> run/deploy.log`
-        ].join("\n") + "\n",
+        ].filter(Boolean).join("\n") + "\n",
         "utf8"
       );
       const programCommonContent = service.id === "zenmind-app-server"
@@ -6116,11 +6118,13 @@ test("runStartupPreparation does not reinstall a healthy packaged service with a
   }
 });
 
-test("runStartupPreparation restores healthy packaged core services in parallel", async () => {
+test("runStartupPreparation starts app-server before restoring dependent core services in parallel", async () => {
   const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 500 });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
   const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
+  const startingTimes = new Map();
+  const succeededTimes = new Map();
 
   process.env.SERVICE_VERIFY_DELAY_MS = "0";
 
@@ -6129,18 +6133,39 @@ test("runStartupPreparation restores healthy packaged core services in parallel"
       await installBuiltinService(app, serviceId);
     }
 
-    const result = await runStartupPreparation(app);
-    const startTimes = ["zenmind-app-server", "agent-platform", "agent-webclient"].map((serviceId) => {
+    const result = await runStartupPreparation(app, {
+      onStarting(serviceId) {
+        if (["zenmind-app-server", "agent-platform", "agent-webclient"].includes(serviceId)) {
+          startingTimes.set(serviceId, Date.now());
+        }
+      },
+      onProgress(serviceId, phase) {
+        if (["zenmind-app-server", "agent-platform", "agent-webclient"].includes(serviceId) && phase === "succeeded") {
+          succeededTimes.set(serviceId, Date.now());
+        }
+      }
+    });
+    const dependentStartTimes = ["agent-platform", "agent-webclient"].map((serviceId) => {
       const filePath = path.join(getTestServiceProgramDir(userDataRoot, serviceId, "v1.0.0"), "run", "start-time.txt");
       assert.equal(fs.existsSync(filePath), true, `${serviceId} should record a start timestamp`);
-      return Number.parseInt(fs.readFileSync(filePath, "utf8").trim(), 10);
+      assert.equal(startingTimes.has(serviceId), true, `${serviceId} should reach starting phase`);
+      return startingTimes.get(serviceId);
     });
-    const spreadMs = Math.max(...startTimes) - Math.min(...startTimes);
+    const spreadMs = Math.max(...dependentStartTimes) - Math.min(...dependentStartTimes);
 
     assert.equal(result.mode, "restore");
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
-    assert.ok(spreadMs < 1200, `expected parallel startup timestamps, got spread ${spreadMs}ms`);
+    assert.equal(succeededTimes.has("zenmind-app-server"), true, "zenmind-app-server should reach succeeded phase");
+    assert.ok(
+      startingTimes.get("agent-platform") >= succeededTimes.get("zenmind-app-server"),
+      "agent-platform should not start before app-server is running"
+    );
+    assert.ok(
+      startingTimes.get("agent-webclient") >= succeededTimes.get("zenmind-app-server"),
+      "agent-webclient should not start before app-server is running"
+    );
+    assert.ok(spreadMs < 500, `expected parallel restore starting callbacks, got spread ${spreadMs}ms`);
   } finally {
     if (previousVerifyDelay === undefined) {
       delete process.env.SERVICE_VERIFY_DELAY_MS;
@@ -6153,11 +6178,12 @@ test("runStartupPreparation restores healthy packaged core services in parallel"
   }
 });
 
-test("runStartupPreparation only starts packaged first-launch dependents after app-server is running", async () => {
-  const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 500 });
+test("runStartupPreparation prepares packaged first-launch core services in parallel and starts dependents after app-server is running", async () => {
+  const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 500, deployDelayMs: 300 });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
   const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
+  const installingTimes = new Map();
   const startingTimes = new Map();
   const succeededTimes = new Map();
 
@@ -6188,12 +6214,24 @@ test("runStartupPreparation only starts packaged first-launch dependents after a
         }
       },
       onProgress(serviceId, phase) {
-        if (["zenmind-app-server", "agent-platform", "agent-webclient"].includes(serviceId) && phase === "succeeded") {
-          succeededTimes.set(serviceId, Date.now());
+        if (["zenmind-app-server", "agent-platform", "agent-webclient"].includes(serviceId)) {
+          if (phase === "installing") {
+            installingTimes.set(serviceId, Date.now());
+          }
+          if (phase === "succeeded") {
+            succeededTimes.set(serviceId, Date.now());
+          }
         }
       }
     });
     assert.equal(result.mode, "bootstrap");
+    const installTimes = ["zenmind-app-server", "agent-platform", "agent-webclient"].map((serviceId) => {
+      assert.equal(installingTimes.has(serviceId), true, `${serviceId} should reach installing phase`);
+      return installingTimes.get(serviceId);
+    });
+    const installSpreadMs = Math.max(...installTimes) - Math.min(...installTimes);
+    assert.ok(installSpreadMs < 250, `expected parallel bootstrap install callbacks, got spread ${installSpreadMs}ms`);
+
     if (!succeededTimes.has("zenmind-app-server")) {
       assert.equal(startingTimes.has("agent-platform"), false, "agent-platform should not start when app-server is not running");
       assert.equal(startingTimes.has("agent-webclient"), false, "agent-webclient should not start when app-server is not running");

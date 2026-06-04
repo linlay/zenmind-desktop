@@ -262,6 +262,44 @@ test("assistant navigation snapshot reads compatible agent chat fields", () => {
   assert.equal(beta.latestPreview, "Related preview");
 });
 
+test("assistant navigation snapshot orders agents by latest chat time", () => {
+  const items = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "alpha",
+      name: "Alpha",
+      chats: [
+        {
+          chatId: "chat-alpha",
+          lastRunId: "zzzz",
+          updatedAt: 1000
+        }
+      ]
+    },
+    {
+      key: "empty",
+      name: "Empty",
+      chats: []
+    },
+    {
+      key: "beta",
+      name: "Beta",
+      chats: [
+        {
+          chatId: "chat-beta",
+          lastRunId: "0001",
+          updatedAt: 2000
+        }
+      ]
+    }
+  ]);
+
+  assert.deepEqual(items.map((item) => item.agentKey), [
+    "beta",
+    "alpha",
+    "empty"
+  ]);
+});
+
 test("assistant navigation snapshot resolves and validates workspace directories", () => {
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-nav-workspace-"));
   try {
@@ -447,6 +485,47 @@ test("assistant navigation push refreshes completed runs that omit final preview
   assert.equal(finished.shouldRefresh, true);
   assert.equal(finished.items[0].recentChats[0].hasActiveRun, false);
   assert.equal(finished.items[0].hasPendingAwaiting, false);
+});
+
+test("assistant navigation push reorders agents after newer chat updates", () => {
+  const baseItems = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "alpha",
+      name: "Alpha",
+      chats: [
+        {
+          chatId: "chat-alpha",
+          agentKey: "alpha",
+          updatedAt: 1000
+        }
+      ]
+    },
+    {
+      key: "beta",
+      name: "Beta",
+      chats: [
+        {
+          chatId: "chat-beta",
+          agentKey: "beta",
+          updatedAt: 2000
+        }
+      ]
+    }
+  ]);
+
+  assert.deepEqual(baseItems.map((item) => item.agentKey), ["beta", "alpha"]);
+
+  const updated = applyAssistantNavigationPush(baseItems, {
+    frame: "push",
+    type: "chat.updated",
+    chatId: "chat-alpha",
+    agentKey: "alpha",
+    timestamp: 3000
+  });
+
+  assert.equal(updated.changed, true);
+  assert.deepEqual(updated.items.map((item) => item.agentKey), ["alpha", "beta"]);
+  assert.equal(updated.items[0].recentChats[0].chatId, "chat-alpha");
 });
 
 test("assistant navigation push ignores heartbeat and refreshes unknown notifications", () => {

@@ -483,7 +483,10 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
   assert.match(globalStyles, /--embedded-surface-shell-bg:\s*#fff;/);
   assert.match(globalStyles, /--embedded-surface-dock-bg:\s*#fff;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\][\s\S]*?--embedded-surface-shell-bg:\s*#1f2329;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] body\.embedded-surface-body,\s*[\s\S]*?body\.embedded-surface-body\.mac-translucent-sidebar-body\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-translucent-sidebar\.has-embedded-surface\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-translucent-sidebar\.has-embedded-surface::before\s*\{[\s\S]*?display:\s*none;/);
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface \.app-content,\s*[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{[\s\S]*?background:\s*var\(--embedded-surface-dock-bg\);/);
   assert.match(globalStyles, /\.pan-frame\s*\{[\s\S]*?background:\s*var\(--embedded-surface-frame-bg\);/);
@@ -928,6 +931,25 @@ test("assistant sidebar chat history selection follows pending navigation", () =
   assert.doesNotMatch(sidebarSource, /const activeChatId = currentChatId \|\| "";/);
 });
 
+test("assistant sidebar awaiting chats use a right-side ring status", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+  const globalStyles = readRendererStyles();
+
+  assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting[\s\S]{0,90}\? "awaiting"/);
+  assert.match(sidebarSource, /chat\.hasPendingAwaiting \? "has-awaiting" : ""/);
+  assert.match(sidebarSource, /className="assistant-worker-awaiting-ring"/);
+  assert.match(globalStyles, /\.assistant-worker-chat-item\.has-awaiting \.chat-awaiting-status\s*\{[\s\S]{0,80}margin-left: auto;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\]\s*\{[\s\S]{0,80}width: 16px;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-panel-time-label\s*\{[\s\S]{0,80}display: none;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.assistant-worker-awaiting-ring\s*\{[\s\S]{0,80}display: inline-block;/);
+});
+
 test("assistant sidebar empty state is localized", () => {
   const sidebarSource = readSourceFile(
     "src",
@@ -1268,17 +1290,21 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(lightSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.08\)\s*0%/);
   assert.match(lightSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.05\)\s*46%/);
   assert.match(lightSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.03\)\s*100%/);
-  assert.match(darkSidebarRule, /rgba\(57,\s*58,\s*62,\s*0\.5\)\s*0%/);
-  assert.match(darkSidebarRule, /rgba\(46,\s*48,\s*52,\s*0\.44\)\s*40%/);
-  assert.match(darkSidebarRule, /rgba\(37,\s*39,\s*43,\s*0\.38\)\s*100%/);
+  assert.match(darkSidebarRule, /background:\s*#202020;/);
+  assert.doesNotMatch(darkSidebarRule, /rgba\(57,\s*58,\s*62,\s*0\.5\)/);
+  assert.doesNotMatch(darkSidebarRule, /rgba\(46,\s*48,\s*52,\s*0\.44\)/);
+  assert.doesNotMatch(darkSidebarRule, /rgba\(37,\s*39,\s*43,\s*0\.38\)/);
   assert.match(macSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.08\)\s*0%/);
   assert.match(macSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.05\)\s*46%/);
   assert.match(macSidebarRule, /rgba\(255,\s*255,\s*255,\s*0\.03\)\s*100%/);
   assert.match(macSidebarRule, /blur\(12px\)\s*saturate\(112%\)\s*brightness\(1\.01\)/);
-  assert.match(macDarkSidebarRule, /rgba\(57,\s*58,\s*62,\s*0\.5\)\s*0%/);
-  assert.match(macDarkSidebarRule, /rgba\(46,\s*48,\s*52,\s*0\.44\)\s*40%/);
-  assert.match(macDarkSidebarRule, /rgba\(37,\s*39,\s*43,\s*0\.38\)\s*100%/);
-  assert.match(macDarkSidebarRule, /brightness\(0\.76\)/);
+  assert.match(macDarkSidebarRule, /background:\s*#202020;/);
+  assert.match(macDarkSidebarRule, /backdrop-filter:\s*none;/);
+  assert.match(macDarkSidebarRule, /-webkit-backdrop-filter:\s*none;/);
+  assert.doesNotMatch(macDarkSidebarRule, /rgba\(57,\s*58,\s*62,\s*0\.5\)/);
+  assert.doesNotMatch(macDarkSidebarRule, /rgba\(46,\s*48,\s*52,\s*0\.44\)/);
+  assert.doesNotMatch(macDarkSidebarRule, /rgba\(37,\s*39,\s*43,\s*0\.38\)/);
+  assert.doesNotMatch(macDarkSidebarRule, /brightness\(0\.76\)/);
 
   assert.doesNotMatch(preload, /setSidebarTranslucency/);
   assert.match(preload, /getAppInfo:\s*\(\) => ipcRenderer\.invoke\("settings\.getAppInfo"\)/);

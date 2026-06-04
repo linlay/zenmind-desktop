@@ -1325,7 +1325,11 @@ export function AppSidebar({
     activeChatId: string,
   ) {
     const isActive = activeChatId === chat.chatId;
-    const action = !chat.isRead ? "unread" : "time";
+    const action = chat.hasPendingAwaiting
+      ? "awaiting"
+      : !chat.isRead
+        ? "unread"
+        : "time";
     return (
       <button
         type="button"
@@ -1334,6 +1338,7 @@ export function AppSidebar({
           "assistant-worker-chat-item",
           isActive ? "is-active" : "",
           !chat.isRead ? "is-unread" : "",
+          chat.hasPendingAwaiting ? "has-awaiting" : "",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -1352,6 +1357,10 @@ export function AppSidebar({
             <span
               className="assistant-worker-unread-dot chat-unread-dot is-unread"
               aria-label="未读"
+            />
+            <span
+              className="assistant-worker-awaiting-ring"
+              aria-label="待审批"
             />
             <span className="worker-panel-time-label">
               {formatAssistantChatTime(chat.updatedAt)}

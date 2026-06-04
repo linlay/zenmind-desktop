@@ -2172,6 +2172,13 @@ type StartupServiceResult = {
   running: boolean;
 };
 
+type StartupPreparationServiceResult = {
+  serviceId: ServiceId;
+  ok: boolean;
+  message: string;
+  service?: ServiceState;
+};
+
 async function prepareDefaultStartupServiceForParallelRestore(
   app: App,
   serviceId: ServiceId,
@@ -2294,7 +2301,7 @@ async function startDefaultStartupServiceForParallelRestore(
   }
 }
 
-async function restoreDefaultStartupServicesInParallel(
+async function restoreDefaultStartupServicesWithAppServerGate(
   app: App,
   options: StartupRestoreOptions = {}
 ) {
@@ -2314,10 +2321,22 @@ async function restoreDefaultStartupServicesInParallel(
     }
   }
 
-  const servicesToStart = DEFAULT_STARTUP_SERVICE_IDS.filter((serviceId) => !preflightFailures.has(serviceId));
-  const startResults = await Promise.all(
-    servicesToStart.map((serviceId) => startDefaultStartupServiceForParallelRestore(app, serviceId, options))
-  );
+  const appServerId: ServiceId = "zenmind-app-server";
+  const startResults: StartupServiceResult[] = [];
+
+  if (!preflightFailures.has(appServerId)) {
+    const appServerResult = await startDefaultStartupServiceForParallelRestore(app, appServerId, options);
+    startResults.push(appServerResult);
+    if (appServerResult.ok && appServerResult.running) {
+      const dependentServiceIds = DEFAULT_STARTUP_SERVICE_IDS.filter(
+        (serviceId) => serviceId !== appServerId && !preflightFailures.has(serviceId)
+      );
+      startResults.push(...await Promise.all(
+        dependentServiceIds.map((serviceId) => startDefaultStartupServiceForParallelRestore(app, serviceId, options))
+      ));
+    }
+  }
+
   const startResultById = new Map(startResults.map((result) => [result.serviceId, result]));
 
   for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
@@ -2544,6 +2563,44 @@ async function prepareBuiltinServiceForStartup(
   };
 }
 
+async function prepareDefaultStartupServiceForBootstrap(
+  app: App,
+  serviceId: ServiceId,
+  options: {
+    onProgress?: (serviceId: ServiceId, phase: StartupPreparationProgressPhase, message: string) => void;
+  } = {}
+): Promise<StartupPreparationServiceResult> {
+  try {
+    const preparation = await prepareBuiltinServiceForStartup(app, serviceId, {
+      onProgress: options.onProgress
+    });
+    if (!preparation.ok) {
+      options.onProgress?.(serviceId, "failed", preparation.message);
+      return {
+        serviceId,
+        ok: false,
+        message: preparation.message,
+        service: preparation.service
+      };
+    }
+
+    return {
+      serviceId,
+      ok: true,
+      message: preparation.message,
+      service: preparation.service
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    options.onProgress?.(serviceId, "failed", message);
+    return {
+      serviceId,
+      ok: false,
+      message
+    };
+  }
+}
+
 export async function runStartupPreparation(
   app: App,
   options: {
@@ -2557,7 +2614,7 @@ export async function runStartupPreparation(
 
   if (!(await shouldRunBuiltinBootstrap(app))) {
     options.onModeResolved?.("restore");
-    const defaultRestoreResult = await restoreDefaultStartupServicesInParallel(app, {
+    const defaultRestoreResult = await restoreDefaultStartupServicesWithAppServerGate(app, {
       onStarting: options.onStarting,
       onProgress: options.onProgress
     });
@@ -2595,24 +2652,19 @@ export async function runStartupPreparation(
   }
 
   const preparedDefaultServices = new Map<ServiceId, ServiceState>();
-  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
-    try {
-      const preparation = await prepareBuiltinServiceForStartup(app, serviceId, {
+  const preparedDefaultResults = await Promise.all(
+    DEFAULT_STARTUP_SERVICE_IDS.map((serviceId) =>
+      prepareDefaultStartupServiceForBootstrap(app, serviceId, {
         onProgress: options.onProgress
-      });
-      if (!preparation.ok) {
-        failures.push(`${serviceId}: ${preparation.message}`);
-        options.onProgress?.(serviceId, "failed", preparation.message);
-        continue;
-      }
-
-      const current = preparation.service;
-      preparedDefaultServices.set(serviceId, current);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      failures.push(`${serviceId}: ${message}`);
-      options.onProgress?.(serviceId, "failed", message);
+      })
+    )
+  );
+  for (const preparation of preparedDefaultResults) {
+    if (!preparation.ok || !preparation.service) {
+      failures.push(`${preparation.serviceId}: ${preparation.message}`);
+      continue;
     }
+    preparedDefaultServices.set(preparation.serviceId, preparation.service);
   }
 
   const startOptions = {

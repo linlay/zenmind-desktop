@@ -81,6 +81,10 @@ body.agent-native-surface-body.mac-translucent-sidebar-body,
   background: transparent;
 }
 
+:root[data-theme="dark"] .app-shell.is-mac-translucent-sidebar.has-embedded-surface {
+  background: var(--embedded-surface-shell-bg);
+}
+
 .app-shell.is-mac-translucent-sidebar {
   border-radius: 0;
   overflow: hidden;
@@ -108,6 +112,10 @@ body.agent-native-surface-body.mac-translucent-sidebar-body,
 
 .app-shell.is-mac-translucent-sidebar.has-embedded-surface::before {
   display: block;
+}
+
+:root[data-theme="dark"] .app-shell.is-mac-translucent-sidebar.has-embedded-surface::before {
+  display: none;
 }
 
 :root[data-theme="dark"] .app-shell::before {

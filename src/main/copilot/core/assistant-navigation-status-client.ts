@@ -434,6 +434,27 @@ function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem
   return left.chatId.localeCompare(right.chatId);
 }
 
+function readAgentLatestChatTime(agent: AssistantNavAgentItem) {
+  return toTimestampMs(agent.recentChats[0]?.updatedAt);
+}
+
+function compareNavigationAgents(left: AssistantNavAgentItem, right: AssistantNavAgentItem) {
+  const rightTime = readAgentLatestChatTime(right);
+  const leftTime = readAgentLatestChatTime(left);
+  if (rightTime !== leftTime) {
+    return rightTime - leftTime;
+  }
+  const displayNameComparison = left.displayName.localeCompare(right.displayName, "zh-CN");
+  if (displayNameComparison !== 0) {
+    return displayNameComparison;
+  }
+  return left.agentKey.localeCompare(right.agentKey);
+}
+
+function sortNavigationAgents(items: AssistantNavAgentItem[]) {
+  return [...items].sort(compareNavigationAgents);
+}
+
 function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): AssistantNavChatItem | null {
   const chatId = toText(chat.chatId) || toText(chat.id);
   if (!chatId) {
@@ -547,10 +568,9 @@ export function buildAssistantNavigationAgentsFromPlatformAgents(
   includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT
 ): AssistantNavAgentItem[] {
   const agents = Array.isArray(agentsInput) ? agentsInput as PlatformAgentSummary[] : [];
-  return agents
+  return sortNavigationAgents(agents
     .map((agent) => createNavigationAgentItem(agent, includeChatLimit))
-    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent))
-    .sort((left, right) => left.displayName.localeCompare(right.displayName, "zh-CN"));
+    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent)));
 }
 
 export function buildAssistantCopilotAgentsFromPlatformAgents(agentsInput: unknown): AssistantNavAgentItem[] {
@@ -768,7 +788,7 @@ export function applyAssistantNavigationPush(
       recentChats: nextAgent.recentChats.map((chat) => ({ ...chat, isRead: true }))
     });
     nextItems[agentIndex] = nextAgent;
-    return { items: nextItems, changed: true, shouldRefresh: false };
+    return { items: sortNavigationAgents(nextItems), changed: true, shouldRefresh: false };
   }
 
   if (type === "chat.deleted" || type === "chat.archived") {
@@ -779,7 +799,7 @@ export function applyAssistantNavigationPush(
     nextAgent.chatCount = Math.max(0, nextAgent.chatCount - (chatIndex >= 0 ? 1 : 0));
     nextAgent.unreadCount = currentChat && !currentChat.isRead ? Math.max(0, nextAgent.unreadCount - 1) : nextAgent.unreadCount;
     nextItems[agentIndex] = refreshAgentDerivedFields(nextAgent);
-    return { items: nextItems, changed: true, shouldRefresh: true };
+    return { items: sortNavigationAgents(nextItems), changed: true, shouldRefresh: true };
   }
 
   if (type === "chat.read" || type === "chat.unread") {
@@ -796,7 +816,7 @@ export function applyAssistantNavigationPush(
       type === "chat.read" ? "decrement" : "increment"
     );
     nextItems[agentIndex] = refreshAgentDerivedFields(nextAgent);
-    return { items: nextItems, changed: true, shouldRefresh: false };
+    return { items: sortNavigationAgents(nextItems), changed: true, shouldRefresh: false };
   }
 
   if (
@@ -824,7 +844,7 @@ export function applyAssistantNavigationPush(
     nextAgent.unreadCount = readPushUnreadCount(event, nextAgent.unreadCount, "preserve");
     nextItems[agentIndex] = refreshAgentDerivedFields(nextAgent);
     return {
-      items: nextItems,
+      items: sortNavigationAgents(nextItems),
       changed: true,
       shouldRefresh: type === "run.complete" && !readPushPreview(event)
     };
