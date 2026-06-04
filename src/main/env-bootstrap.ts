@@ -7,6 +7,7 @@ import { APP_BRAND } from "../shared/generated/brand";
 
 type AppPathReader = Pick<App, "getPath">;
 type AppVersionReader = Partial<Pick<App, "getAppPath" | "getVersion">>;
+type AppPackageReader = Partial<Pick<App, "isPackaged">>;
 
 type EnvZipEntry = {
   relativePath: string;
@@ -21,9 +22,15 @@ export type EnvZipImportResult = {
   createdDirectories: number;
 };
 
+export type BundledEnvZipImportResult = EnvZipImportResult & {
+  sourceZipPath: string;
+};
+
 const ENV_ARCHIVE_WRAPPER_DIRS = new Set([".zenmind", "zenmind", "zenmind-env", "env"]);
 const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-market"] as const;
 const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-bootstrap.json");
+const BUNDLED_ENV_RESOURCES_DIR_NAME = "env";
+const ENV_ZIP_FILE_NAME = "env.zip";
 const VERSION_FILE_NAME = "VERSION";
 
 function isEnvArchiveWrapperDir(dirName: string) {
@@ -88,6 +95,63 @@ export function shouldRequireEnvZipImport(input: {
 }) {
   const platform = input.platform ?? process.platform;
   return (platform === "darwin" || platform === "win32") && !input.runtimeEnvExistedAtStartup;
+}
+
+function bundledResourcesRoot(app: AppPackageReader, resourcesRootOverride?: string) {
+  if (resourcesRootOverride) {
+    return resourcesRootOverride;
+  }
+  return app.isPackaged
+    ? process.resourcesPath
+    : path.join(process.cwd(), "build", "resources");
+}
+
+function fileExists(filePath: string) {
+  try {
+    return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+export function resolveBundledEnvZipPath(
+  app: AppPackageReader,
+  platform: NodeJS.Platform = process.platform,
+  resourcesRootOverride?: string
+) {
+  const resourcesRoot = bundledResourcesRoot(app, resourcesRootOverride);
+  if (platform === "darwin") {
+    return path.join(resourcesRoot, BUNDLED_ENV_RESOURCES_DIR_NAME, ENV_ZIP_FILE_NAME);
+  }
+  if (platform === "win32") {
+    return path.join(resourcesRoot, BUNDLED_ENV_RESOURCES_DIR_NAME, ENV_ZIP_FILE_NAME);
+  }
+  return null;
+}
+
+export async function importBundledEnvZipToRuntime(
+  app: AppPathReader & AppPackageReader,
+  platform: NodeJS.Platform = process.platform,
+  options: {
+    resourcesRoot?: string;
+    expectedDesktopVersion?: string;
+  } = {}
+): Promise<BundledEnvZipImportResult | null> {
+  const zipPath = resolveBundledEnvZipPath(app, platform, options.resourcesRoot);
+  if (!zipPath || !fileExists(zipPath)) {
+    return null;
+  }
+
+  const result = await importEnvZipToRuntime(
+    app,
+    zipPath,
+    platform,
+    options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader)
+  );
+  return {
+    ...result,
+    sourceZipPath: zipPath
+  };
 }
 
 function normalizeArchiveEntryName(entryName: string) {

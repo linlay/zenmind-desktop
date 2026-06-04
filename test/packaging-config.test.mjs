@@ -9,6 +9,7 @@ const packageJsonPath = path.join(projectRoot, "package.json");
 const electronBuilderConfigPath = path.join(projectRoot, "build", "electron-builder.zenmind.json");
 const installerIncludePath = path.join(projectRoot, "build", "installer.nsh");
 const uninstallScriptPath = path.join(projectRoot, "scripts", "uninstall.sh");
+const distMacScriptPath = path.join(projectRoot, "scripts", "dist-mac.mjs");
 const distWinScriptPath = path.join(projectRoot, "scripts", "dist-win.mjs");
 const distWinDockerScriptPath = path.join(projectRoot, "scripts", "platform", "dist-win-docker.mjs");
 const distWinHostScriptPath = path.join(projectRoot, "scripts", "platform", "dist-win-host.mjs");
@@ -40,6 +41,7 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
   const extraResources = builderConfig.extraResources ?? [];
   const uninstallResource = extraResources.find((entry) => entry.from === "scripts");
   const trayIconResource = extraResources.find((entry) => entry.from === "public/tray-icon.png");
+  const envResource = extraResources.find((entry) => entry.from === "build/resources/env");
   const pluginsResource = extraResources.find((entry) => entry.from === "build/resources/plugins");
   const voiceAsrResource = extraResources.find((entry) => entry.from === "build/resources/voice-asr");
 
@@ -58,11 +60,16 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
     from: "public/tray-icon.png",
     to: "tray-icon.png"
   });
+  assert.deepEqual(envResource, {
+    from: "build/resources/env",
+    to: "env"
+  });
   assert.equal(pluginsResource, undefined);
   assert.equal(builderConfig.directories?.app, "build/app");
   assert.deepEqual(builderConfig.electronLanguages, ["zh-CN", "en-US"]);
   assert.match(packageJson.scripts?.["build:main"] ?? "", /build:main:types/);
   assert.match(packageJson.scripts?.["build:main"] ?? "", /build:main:bundle/);
+  assert.equal(packageJson.scripts?.["sync:env"], "node ./scripts/sync-env-zip.mjs");
   assert.equal(packageJson.scripts?.["icons"], "npm run brand:sync && node ./scripts/generate-app-icons.mjs");
   assert.equal(packageJson.scripts?.["stage:app"], "node ./scripts/stage-app.mjs");
   assert.equal(packageJson.scripts?.["dist:mac"], "node ./scripts/dist-mac.mjs");
@@ -130,6 +137,7 @@ test("windows installer requests graceful app shutdown and cleans managed servic
 });
 
 test("dist-win docker flow syncs builtin assets on the host before entering Docker", () => {
+  const distMacScript = fs.readFileSync(distMacScriptPath, "utf8");
   const distWinScript = fs.readFileSync(distWinScriptPath, "utf8");
   const distWinDockerScript = fs.readFileSync(distWinDockerScriptPath, "utf8");
   const distWinHostScript = fs.readFileSync(distWinHostScriptPath, "utf8");
@@ -140,7 +148,10 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   assert.match(distWinScript, /isWindows\(\)/);
   assert.match(distWinScript, /import\("\.\/platform\/dist-win-host\.mjs"\)/);
   assert.match(distWinScript, /import\("\.\/platform\/dist-win-docker\.mjs"\)/);
+  assert.match(distMacScript, /await runAndWait\(npmCmd, \["run", "sync:env"\], \{ cwd: projectRoot \}\);/);
   assert.match(distWinDockerScript, /async function syncWindowsBuiltinAssets\(\)/);
+  assert.match(distWinDockerScript, /await runAndWait\(npmCmd, \["run", "sync:env"\], \{ cwd: projectRoot \}\);/);
+  assert.match(distWinHostScript, /await runAndWait\(npmCmd, \["run", "sync:env"\], \{ cwd: projectRoot \}\);/);
   assert.doesNotMatch(distWinDockerScript, /prepareWindowsVoiceAsrAssets/);
   assert.match(
     distWinDockerScript,

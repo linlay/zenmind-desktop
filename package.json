@@ -1,6 +1,6 @@
 {
   "name": "zenmind-desktop",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "ZenMind 应用壳",
   "main": "dist-electron/main/index.js",
@@ -9,6 +9,7 @@
     "icons": "npm run brand:sync && node ./scripts/generate-app-icons.mjs",
     "sync:version": "node ./scripts/sync-package-version.mjs",
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",
+    "sync:env": "node ./scripts/sync-env-zip.mjs",
     "i18n:check": "node ./scripts/i18n/validate-dictionaries.mjs && node ./scripts/i18n/validate-language-separation.mjs && node ./scripts/i18n/scan-hardcoded-text.mjs",
     "build:main:types": "tsc -p tsconfig.main.json",
     "build:main:bundle": "node ./scripts/build-main-bundle.mjs",

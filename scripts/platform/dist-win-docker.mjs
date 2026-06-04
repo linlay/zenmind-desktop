@@ -27,6 +27,7 @@ async function syncWindowsBuiltinAssets() {
 
 export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: resolveBrandId() })) {
   await runAndWait(npmCmd, ["run", "sync:version"], { cwd: projectRoot });
+  await runAndWait(npmCmd, ["run", "sync:env"], { cwd: projectRoot });
   syncBrandArtifacts({ brandId: brand.id });
   await syncWindowsBuiltinAssets();
   await runAndWait(npmCmd, ["run", "build"], { cwd: projectRoot });

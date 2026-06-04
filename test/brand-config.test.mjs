@@ -109,6 +109,13 @@ test("brand sync generates runtime constants, package metadata, and builder conf
     assert.equal(builderConfig.appId, "cc.cutej.desktop");
     assert.equal(builderConfig.productName, "CuteJ");
     assert.equal(builderConfig.nsis.include, "build/installer.nsh");
+    assert.deepEqual(
+      builderConfig.extraResources.find((entry) => entry.from === "build/resources/env"),
+      {
+        from: "build/resources/env",
+        to: "env"
+      }
+    );
     assert.match(generatedTs, /export const APP_BRAND =/);
     assert.match(generatedTs, /CuteJ/);
     assert.match(installerInclude, /Requesting CuteJ to exit before installing/);

@@ -273,6 +273,10 @@ function electronBuilderConfig(brand) {
         to: "services"
       },
       {
+        from: "build/resources/env",
+        to: "env"
+      },
+      {
         from: "public/tray-icon.png",
         to: "tray-icon.png"
       },

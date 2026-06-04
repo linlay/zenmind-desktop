@@ -6,6 +6,7 @@ const projectRoot = process.cwd();
 const brand = syncBrandArtifacts({ brandId: resolveBrandId() });
 
 await runAndWait(npmCmd, ["run", "sync:version"], { cwd: projectRoot });
+await runAndWait(npmCmd, ["run", "sync:env"], { cwd: projectRoot });
 syncBrandArtifacts({ brandId: brand.id });
 await runAndWait("node", ["./scripts/sync-builtin-assets.mjs", "--os=darwin", "--arch=arm64"], { cwd: projectRoot });
 await runAndWait(npmCmd, ["run", "icons"], { cwd: projectRoot });

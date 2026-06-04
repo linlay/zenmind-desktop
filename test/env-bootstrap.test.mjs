@@ -8,7 +8,9 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
 const {
+  importBundledEnvZipToRuntime,
   importEnvZipToRuntime,
+  resolveBundledEnvZipPath,
   resolveDesktopVersion,
   resolveRuntimeRoot,
   runtimeEnvExists,
@@ -152,6 +154,54 @@ test("importEnvZipToRuntime accepts env VERSION without v prefix", async () => {
     await importEnvZipToRuntime(app, zipPath, "darwin", `v${DESKTOP_VERSION}`);
 
     assert.equal(fs.readFileSync(agentPath, "utf8"), "name: demo\n");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("bundled env.zip resolves to shared env resource path and imports automatically", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-bundled-"));
+  const app = createApp(root);
+  const resourcesRoot = path.join(root, "resources");
+  const bundledZipPath = path.join(resourcesRoot, "env", "env.zip");
+  const providerPath = path.join(root, "home", ".zenmind", "registries", "providers", "demo.yml");
+
+  try {
+    fs.mkdirSync(path.dirname(bundledZipPath), { recursive: true });
+    await writeZip(bundledZipPath, {
+      "env/VERSION": DESKTOP_VERSION,
+      "env/registries/providers/demo.yml": "name: provider\n"
+    });
+
+    assert.equal(resolveBundledEnvZipPath(app, "darwin", resourcesRoot), bundledZipPath);
+    assert.equal(resolveBundledEnvZipPath(app, "win32", resourcesRoot), bundledZipPath);
+    assert.equal(resolveBundledEnvZipPath(app, "linux", resourcesRoot), null);
+
+    const result = await importBundledEnvZipToRuntime(app, "darwin", {
+      resourcesRoot,
+      expectedDesktopVersion: DESKTOP_VERSION
+    });
+
+    assert.equal(result?.sourceZipPath, bundledZipPath);
+    assert.equal(fs.readFileSync(providerPath, "utf8"), "name: provider\n");
+    assert.equal(runtimeEnvExists(app, "darwin"), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("bundled env.zip import returns null when no packaged env exists", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-bundled-missing-"));
+  const app = createApp(root);
+
+  try {
+    assert.equal(
+      await importBundledEnvZipToRuntime(app, "darwin", {
+        resourcesRoot: path.join(root, "resources"),
+        expectedDesktopVersion: DESKTOP_VERSION
+      }),
+      null
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

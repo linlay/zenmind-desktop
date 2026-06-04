@@ -108,6 +108,11 @@ npm run dist:mac
 ```
 
 使用 `electron-builder` 输出 DMG 安装包，目标 arm64 架构，使用 ad-hoc 签名。
+如需把首启环境包内置进应用，可传入 `ENV_ZIP`：
+
+```bash
+BRAND=cutej ENV_ZIP=/path/to/env.zip npm run dist:mac
+```
 
 也可以使用 Makefile 入口：
 
@@ -123,6 +128,11 @@ npm run dist:win
 ```
 
 Windows 主机上会直接使用 `electron-builder` 输出 NSIS 安装包，目标 x64 架构。
+如需内置同一份首启环境包，可使用：
+
+```bash
+BRAND=cutej ENV_ZIP=/path/to/env.zip npm run dist:win
+```
 
 在 macOS 或 Linux 主机上，请改用：
 
@@ -145,6 +155,7 @@ npm run dist:win-docker
 ### 打包资源约定
 - `package.json` 中的 `build.files` 会打入桌面应用运行所需代码。
 - `build.extraResources` 会把 `build/resources/services` 下的内置服务资源复制进应用包。
+- `build.extraResources` 会把 `build/resources/env` 复制进应用包；设置 `ENV_ZIP=/path/to/env.zip` 打包时会生成 `build/resources/env/env.zip`，首启缺少运行环境时优先自动导入。
 - `build.extraResources` 同时会把 `scripts/uninstall.sh` 放入 macOS 应用包资源目录，供完整卸载使用。
 - `build/installer.nsh` 会注入 NSIS 卸载流程，在 Windows 上给用户选择是否清理应用数据。
 - `npm run sync:assets` 会扫描工作区内各服务目录以及聚合产物目录中的 `.tar.gz` / `.zip` 发布包，只同步 `manifest.json.kind === "builtin"` 的产物。支持 `--os` 和 `--arch` 参数按平台过滤。

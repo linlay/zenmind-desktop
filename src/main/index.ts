@@ -173,6 +173,7 @@ import {
   getElectronUserDataRoot
 } from "./user-paths";
 import {
+  importBundledEnvZipToRuntime,
   importEnvZipToRuntime,
   resolveRuntimeRoot,
   runtimeEnvExists,
@@ -1982,9 +1983,12 @@ if (gotSingleInstanceLock) {
 async function handleStartupPipeline() {
   try {
     if (requireEnvZipImportAtStartup) {
-      startupRestoreController.setEnvImportRequired();
-      notifyServicesChanged();
-      return;
+      const bundledEnvImport = await tryImportBundledEnvZipAtStartup();
+      if (!bundledEnvImport.ok) {
+        startupRestoreController.setEnvImportRequired(bundledEnvImport.message);
+        notifyServicesChanged();
+        return;
+      }
     }
     loadBuiltinServices(app);
     loadInstalledPlugins(app);
@@ -2015,6 +2019,33 @@ async function handleStartupPipeline() {
       });
   } catch (error) {
     console.error("Failed in startup pipeline", error);
+  }
+}
+
+async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: false; message: string }> {
+  try {
+    const importResult = await importBundledEnvZipToRuntime(app, mainProcessContext.platform);
+    if (!importResult) {
+      return {
+        ok: false,
+        message: ""
+      };
+    }
+
+    startupRestoreController.beginSession("bootstrap");
+    startupRestoreController.updateService("zenmind-app-server", "installing", "正在导入内置 env.zip...");
+    notifyServicesChanged();
+    console.info(
+      `[main] imported bundled env.zip from ${importResult.sourceZipPath} into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
+    );
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("failed to import bundled env.zip", error);
+    return {
+      ok: false,
+      message: `内置 env.zip 导入失败：${message}`
+    };
   }
 }
 
