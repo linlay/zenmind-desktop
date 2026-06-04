@@ -14,6 +14,7 @@ import {
   type SidebarIllustrationKind,
 } from "../../components/BrandMark";
 import type {
+  AssistantCreateCoderProjectRequest,
   AssistantNavAgentItem,
   AssistantNavChatItem,
   CustomSidebarItem,
@@ -929,14 +930,13 @@ export function AppSidebar({
       if (!selection.ok || !selection.path) {
         return;
       }
-      const runningAcpProxies = getRunningCoderAcpProxyOptions(
-        await window.electronAPI.services.list(),
-      );
-      if (runningAcpProxies.length === 0) {
-        window.alert(
-          "没有检测到正在运行的 ACP 工具，请先在控制中心启动 Claude Code ACP Proxy 或 Codex ACP Proxy。",
+      let runningAcpProxies: RunningCoderAcpProxyOption[] = [];
+      try {
+        runningAcpProxies = getRunningCoderAcpProxyOptions(
+          await window.electronAPI.services.list(),
         );
-        return;
+      } catch (error) {
+        console.warn("[assistant] failed to list CODER ACP proxy services", error);
       }
       setCoderAcpProjectDialog({
         workspaceDir: selection.path,
@@ -958,22 +958,28 @@ export function AppSidebar({
     if (!dialog || dialog.pending) {
       return;
     }
-    const selectedAcpProxy = dialog.options.find(
-      (option) => option.acpProxyId === dialog.selectedAcpProxyId,
-    );
-    if (!selectedAcpProxy) {
+    const selectedAcpProxy = dialog.selectedAcpProxyId
+      ? dialog.options.find(
+          (option) => option.acpProxyId === dialog.selectedAcpProxyId,
+        )
+      : null;
+    if (dialog.selectedAcpProxyId && !selectedAcpProxy) {
       setCoderAcpProjectDialog({
         ...dialog,
-        error: "请选择一个正在运行的 ACP 工具。",
+        error: "请选择一个正在运行的 ACP 工具，或选择不使用 ACP。",
       });
       return;
     }
     setCoderAcpProjectDialog({ ...dialog, pending: true, error: "" });
     try {
-      const result = await window.electronAPI.assistant.createCoderProject({
+      const createInput: AssistantCreateCoderProjectRequest = {
         workspaceDir: dialog.workspaceDir,
-        acpProxyId: selectedAcpProxy.acpProxyId,
-      });
+      };
+      if (selectedAcpProxy) {
+        createInput.acpProxyId = selectedAcpProxy.acpProxyId;
+      }
+      const result =
+        await window.electronAPI.assistant.createCoderProject(createInput);
       if (!result.ok) {
         setCoderAcpProjectDialog({
           ...dialog,
@@ -2433,7 +2439,7 @@ export function AppSidebar({
           onMouseDown={(event) => event.stopPropagation()}
         >
           <div className="sidebar-website-dialog-head">
-            <strong id="sidebar-coder-acp-dialog-title">选择 ACP 工具</strong>
+            <strong id="sidebar-coder-acp-dialog-title">创建 CODER 项目</strong>
             <button
               type="button"
               className="sidebar-website-dialog-close"
@@ -2449,7 +2455,7 @@ export function AppSidebar({
             <input value={coderAcpProjectDialog.workspaceDir} readOnly />
           </label>
           <label className="sidebar-website-dialog-field">
-            <span>ACP 工具</span>
+            <span>ACP 工具（可选）</span>
             <select
               value={coderAcpProjectDialog.selectedAcpProxyId}
               onChange={(event) =>
@@ -2466,6 +2472,7 @@ export function AppSidebar({
               disabled={coderAcpProjectDialog.pending}
               autoFocus
             >
+              <option value="">不使用 ACP（直接创建）</option>
               {coderAcpProjectDialog.options.map((option) => (
                 <option value={option.acpProxyId} key={option.serviceId}>
                   {option.label} · {option.statusLabel}
@@ -2490,10 +2497,7 @@ export function AppSidebar({
             <button
               type="submit"
               className="sidebar-website-primary-button"
-              disabled={
-                coderAcpProjectDialog.pending ||
-                !coderAcpProjectDialog.selectedAcpProxyId
-              }
+              disabled={coderAcpProjectDialog.pending}
             >
               {coderAcpProjectDialog.pending ? "创建中..." : "创建"}
             </button>

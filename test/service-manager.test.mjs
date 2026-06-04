@@ -6129,7 +6129,7 @@ test("runStartupPreparation does not reinstall a healthy packaged service with a
   }
 });
 
-test("runStartupPreparation starts app-server before restoring dependent core services in parallel", async () => {
+test("runStartupPreparation restores second-launch core services in parallel", async () => {
   const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 500 });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
@@ -6156,27 +6156,24 @@ test("runStartupPreparation starts app-server before restoring dependent core se
         }
       }
     });
-    const dependentStartTimes = ["agent-platform", "agent-webclient"].map((serviceId) => {
+    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
       const filePath = path.join(getTestServiceProgramDir(userDataRoot, serviceId, "v1.0.0"), "run", "start-time.txt");
       assert.equal(fs.existsSync(filePath), true, `${serviceId} should record a start timestamp`);
       assert.equal(startingTimes.has(serviceId), true, `${serviceId} should reach starting phase`);
-      return startingTimes.get(serviceId);
-    });
-    const spreadMs = Math.max(...dependentStartTimes) - Math.min(...dependentStartTimes);
+    }
 
     assert.equal(result.mode, "restore");
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
     assert.equal(succeededTimes.has("zenmind-app-server"), true, "zenmind-app-server should reach succeeded phase");
     assert.ok(
-      startingTimes.get("agent-platform") >= succeededTimes.get("zenmind-app-server"),
-      "agent-platform should not start before app-server is running"
+      startingTimes.get("agent-platform") < succeededTimes.get("zenmind-app-server"),
+      "agent-platform should start without waiting for app-server during restore"
     );
     assert.ok(
-      startingTimes.get("agent-webclient") >= succeededTimes.get("zenmind-app-server"),
-      "agent-webclient should not start before app-server is running"
+      startingTimes.get("agent-webclient") < succeededTimes.get("zenmind-app-server"),
+      "agent-webclient should start without waiting for app-server during restore"
     );
-    assert.ok(spreadMs < 500, `expected parallel restore starting callbacks, got spread ${spreadMs}ms`);
   } finally {
     if (previousVerifyDelay === undefined) {
       delete process.env.SERVICE_VERIFY_DELAY_MS;
@@ -6189,7 +6186,7 @@ test("runStartupPreparation starts app-server before restoring dependent core se
   }
 });
 
-test("runStartupPreparation prepares packaged first-launch core services in parallel and starts dependents after app-server is running", async () => {
+test("runStartupPreparation prepares packaged first-launch core services in parallel and starts core services sequentially", async () => {
   const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 500, deployDelayMs: 300 });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
@@ -6250,21 +6247,18 @@ test("runStartupPreparation prepares packaged first-launch core services in para
       return;
     }
 
-    const startTimes = ["agent-platform", "agent-webclient"].map((serviceId) => {
+    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
       assert.equal(startingTimes.has(serviceId), true, `${serviceId} should reach starting phase`);
-      return startingTimes.get(serviceId);
-    });
-    const spreadMs = Math.max(...startTimes) - Math.min(...startTimes);
+    }
 
     assert.ok(
       startingTimes.get("agent-platform") >= succeededTimes.get("zenmind-app-server"),
       "agent-platform should not start before app-server is running"
     );
     assert.ok(
-      startingTimes.get("agent-webclient") >= succeededTimes.get("zenmind-app-server"),
-      "agent-webclient should not start before app-server is running"
+      startingTimes.get("agent-webclient") >= succeededTimes.get("agent-platform"),
+      "agent-webclient should not start before agent-platform is running"
     );
-    assert.ok(spreadMs < 500, `expected parallel bootstrap starting callbacks, got spread ${spreadMs}ms`);
   } finally {
     if (previousVerifyDelay === undefined) {
       delete process.env.SERVICE_VERIFY_DELAY_MS;

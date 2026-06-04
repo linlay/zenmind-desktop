@@ -2296,17 +2296,17 @@ async function startDefaultStartupServiceForParallelRestore(
   }
 }
 
-async function restoreDefaultStartupServicesWithAppServerGate(
+async function restoreDefaultStartupServicesInParallel(
   app: App,
   options: StartupRestoreOptions = {}
 ) {
   const started: ServiceId[] = [];
   const failures: string[] = [];
-  const preflightResults: StartupServiceResult[] = [];
-
-  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
-    preflightResults.push(await prepareDefaultStartupServiceForParallelRestore(app, serviceId, options));
-  }
+  const preflightResults = await Promise.all(
+    DEFAULT_STARTUP_SERVICE_IDS.map((serviceId) =>
+      prepareDefaultStartupServiceForParallelRestore(app, serviceId, options)
+    )
+  );
 
   const preflightFailures = new Set<ServiceId>();
   for (const result of preflightResults) {
@@ -2316,21 +2316,11 @@ async function restoreDefaultStartupServicesWithAppServerGate(
     }
   }
 
-  const appServerId: ServiceId = "zenmind-app-server";
-  const startResults: StartupServiceResult[] = [];
-
-  if (!preflightFailures.has(appServerId)) {
-    const appServerResult = await startDefaultStartupServiceForParallelRestore(app, appServerId, options);
-    startResults.push(appServerResult);
-    if (appServerResult.ok && appServerResult.running) {
-      const dependentServiceIds = DEFAULT_STARTUP_SERVICE_IDS.filter(
-        (serviceId) => serviceId !== appServerId && !preflightFailures.has(serviceId)
-      );
-      startResults.push(...await Promise.all(
-        dependentServiceIds.map((serviceId) => startDefaultStartupServiceForParallelRestore(app, serviceId, options))
-      ));
-    }
-  }
+  const startResults = await Promise.all(
+    DEFAULT_STARTUP_SERVICE_IDS
+      .filter((serviceId) => !preflightFailures.has(serviceId))
+      .map((serviceId) => startDefaultStartupServiceForParallelRestore(app, serviceId, options))
+  );
 
   const startResultById = new Map(startResults.map((result) => [result.serviceId, result]));
 
@@ -2609,7 +2599,7 @@ export async function runStartupPreparation(
 
   if (!(await shouldRunBuiltinBootstrap(app))) {
     options.onModeResolved?.("restore");
-    const defaultRestoreResult = await restoreDefaultStartupServicesWithAppServerGate(app, {
+    const defaultRestoreResult = await restoreDefaultStartupServicesInParallel(app, {
       onStarting: options.onStarting,
       onProgress: options.onProgress
     });
@@ -2666,31 +2656,28 @@ export async function runStartupPreparation(
     onStarting: options.onStarting,
     onProgress: options.onProgress
   };
-  const appServerStartupResult = preparedDefaultServices.has("zenmind-app-server")
-    ? await startPreparedDefaultStartupServiceForBootstrap(
-        app,
-        "zenmind-app-server",
-        preparedDefaultServices.get("zenmind-app-server")!,
-        startOptions
-      )
-    : null;
-  const startResults = [
-    ...(appServerStartupResult ? [appServerStartupResult] : []),
-    ...(appServerStartupResult?.ok && appServerStartupResult.running
-      ? await Promise.all(
-          DEFAULT_STARTUP_SERVICE_IDS
-            .filter((serviceId) => serviceId !== "zenmind-app-server" && preparedDefaultServices.has(serviceId))
-            .map((serviceId) =>
-              startPreparedDefaultStartupServiceForBootstrap(
-                app,
-                serviceId,
-                preparedDefaultServices.get(serviceId)!,
-                startOptions
-              )
-            )
-        )
-      : [])
-  ];
+  const startResults: StartupServiceResult[] = [];
+  let defaultStartupBlocked = false;
+  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
+    if (!preparedDefaultServices.has(serviceId)) {
+      defaultStartupBlocked = true;
+      continue;
+    }
+    if (defaultStartupBlocked) {
+      continue;
+    }
+
+    const result = await startPreparedDefaultStartupServiceForBootstrap(
+      app,
+      serviceId,
+      preparedDefaultServices.get(serviceId)!,
+      startOptions
+    );
+    startResults.push(result);
+    if (!result.ok || !result.running) {
+      defaultStartupBlocked = true;
+    }
+  }
   const startResultById = new Map(startResults.map((result) => [result.serviceId, result]));
   for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
     const result = startResultById.get(serviceId);
