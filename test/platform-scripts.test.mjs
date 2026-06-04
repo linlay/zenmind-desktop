@@ -25,7 +25,7 @@ test("darwin dev launcher prepares a branded app bundle instead of showing Elect
   const { prepareDarwinDevElectronBinary } = await import("../scripts/platform/dev-darwin.mjs");
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-dev-app-"));
   const brand = {
-    productName: "cutej",
+    productName: "CuteJ",
     appId: "cc.cutej.desktop"
   };
   try {
@@ -52,13 +52,13 @@ test("darwin dev launcher prepares a branded app bundle instead of showing Elect
     );
 
     const preparedBinary = prepareDarwinDevElectronBinary(electronBinary, tempRoot, brand);
-    const preparedPlist = fs.readFileSync(path.join(tempRoot, "build", "dev", "cutej.app", "Contents", "Info.plist"), "utf8");
+    const preparedPlist = fs.readFileSync(path.join(tempRoot, "build", "dev", "CuteJ.app", "Contents", "Info.plist"), "utf8");
 
-    assert.equal(preparedBinary, path.join(tempRoot, "build", "dev", "cutej.app", "Contents", "MacOS", "cutej"));
-    assert.match(preparedPlist, /<key>CFBundleName<\/key><string>cutej<\/string>/);
-    assert.match(preparedPlist, /<key>CFBundleDisplayName<\/key><string>cutej<\/string>/);
+    assert.equal(preparedBinary, path.join(tempRoot, "build", "dev", "CuteJ.app", "Contents", "MacOS", "CuteJ"));
+    assert.match(preparedPlist, /<key>CFBundleName<\/key><string>CuteJ<\/string>/);
+    assert.match(preparedPlist, /<key>CFBundleDisplayName<\/key><string>CuteJ<\/string>/);
     assert.match(preparedPlist, /<key>CFBundleIdentifier<\/key><string>cc\.cutej\.desktop\.dev<\/string>/);
-    assert.match(preparedPlist, /<key>CFBundleExecutable<\/key><string>cutej<\/string>/);
+    assert.match(preparedPlist, /<key>CFBundleExecutable<\/key><string>CuteJ<\/string>/);
     assert.match(
       fs.readFileSync(path.join(projectRoot, "scripts", "platform", "dev-darwin.mjs"), "utf8"),
       /DESKTOP_BUILTIN_ASSETS_ROOT:\s*path\.join\(projectRoot, "build", "resources", "services"\)[\s\S]*?ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT:\s*path\.join\(projectRoot, "build", "resources", "services"\)/
@@ -72,7 +72,7 @@ test("darwin dev launcher prepares a branded app bundle instead of showing Elect
       /ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT:\s*path\.join\(projectRoot, "build", "resources", "services"\)/
     );
     assert.equal(
-      fs.readlinkSync(path.join(tempRoot, "build", "dev", "cutej.app", "Contents", "Frameworks", "Electron Framework.framework", "Electron Framework")),
+      fs.readlinkSync(path.join(tempRoot, "build", "dev", "CuteJ.app", "Contents", "Frameworks", "Electron Framework.framework", "Electron Framework")),
       "Versions/A/Electron Framework"
     );
   } finally {

@@ -78,11 +78,11 @@ test("brand resolver defaults to zenmind and accepts explicit cutej", () => {
 
   const cutej = loadBrandConfig(projectRoot, "cutej");
   assert.equal(cutej.appId, "cc.cutej.desktop");
-  assert.equal(cutej.productName, "cutej");
+  assert.equal(cutej.productName, "CuteJ");
   assert.equal(cutej.packageName, "cutej-desktop");
   assert.equal(cutej.storageNamespace, "zenmind-desktop");
   assert.equal(cutej.i18n["zh-CN"]["app.name"], "小君");
-  assert.match(cutej.i18n["en-US"]["startup.envImport.title"], /cutej/);
+  assert.match(cutej.i18n["en-US"]["startup.envImport.title"], /CuteJ/);
   assert.deepEqual(cutej.paths, zenmind.paths);
 });
 
@@ -100,20 +100,20 @@ test("brand sync generates runtime constants, package metadata, and builder conf
 
     assert.equal(brand.id, "cutej");
     assert.equal(packageJson.name, "cutej-desktop");
-    assert.equal(packageJson.description, "cutej 应用壳");
+    assert.equal(packageJson.description, "CuteJ 应用壳");
     assert.equal(packageJson.build, undefined);
     assert.equal(packageLock.name, "cutej-desktop");
     assert.equal(packageLock.packages[""].name, "cutej-desktop");
-    assert.equal(generatedBrand.productName, "cutej");
+    assert.equal(generatedBrand.productName, "CuteJ");
     assert.equal(generatedBrand.storageNamespace, "zenmind-desktop");
     assert.equal(builderConfig.appId, "cc.cutej.desktop");
-    assert.equal(builderConfig.productName, "cutej");
+    assert.equal(builderConfig.productName, "CuteJ");
     assert.equal(builderConfig.nsis.include, "build/installer.nsh");
     assert.match(generatedTs, /export const APP_BRAND =/);
-    assert.match(generatedTs, /cutej/);
-    assert.match(installerInclude, /Requesting cutej to exit before installing/);
+    assert.match(generatedTs, /CuteJ/);
+    assert.match(installerInclude, /Requesting CuteJ to exit before installing/);
     assert.match(installerInclude, /%APPDATA%\\ZenMind/);
-    assert.match(uninstallScript, /APP_NAME="cutej"/);
+    assert.match(uninstallScript, /APP_NAME="CuteJ"/);
     assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.zenmind\/\.desktop"/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

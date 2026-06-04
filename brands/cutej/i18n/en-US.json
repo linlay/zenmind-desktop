@@ -1,6 +1,6 @@
 {
-  "app.name": "cutej",
-  "app.productName": "cutej",
-  "startup.envImport.title": "Initialize cutej Environment",
-  "taskBoard.prompt.intro": "Please handle this cutej task board task and summarize the result when finished."
+  "app.name": "CuteJ",
+  "app.productName": "CuteJ",
+  "startup.envImport.title": "Initialize CuteJ Environment",
+  "taskBoard.prompt.intro": "Please handle this CuteJ task board task and summarize the result when finished."
 }
