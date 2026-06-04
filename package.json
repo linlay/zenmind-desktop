@@ -5,7 +5,7 @@
   "description": "ZenMind 应用壳",
   "main": "dist-electron/main/index.js",
   "scripts": {
-    "brand:sync": "node ./scripts/sync-brand.mjs",
+    "brand:sync": "node ./scripts/sync-brand.mjs && node ./scripts/generate-app-icons.mjs",
     "icons": "npm run brand:sync && node ./scripts/generate-app-icons.mjs",
     "sync:version": "node ./scripts/sync-package-version.mjs",
     "sync:assets": "node ./scripts/sync-builtin-assets.mjs",

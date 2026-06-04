@@ -11,6 +11,7 @@ import { npmCmd, run, runAndWait } from "./platform/spawn.mjs";
 
 const projectRoot = process.cwd();
 const brand = syncBrandArtifacts({ brandId: resolveBrandId() });
+await runAndWait("node", ["./scripts/generate-app-icons.mjs"], { cwd: projectRoot });
 const electronBinary = resolveValidatedElectronBinaryPath();
 
 // 把当前 Node 的目录顶到 PATH 最前，并显式声明 NODE_BIN，
