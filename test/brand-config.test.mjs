@@ -63,10 +63,10 @@ function walkFiles(root, predicate, result = []) {
   return result;
 }
 
-test("brand resolver defaults to zenmind and accepts explicit xiaojun", () => {
+test("brand resolver defaults to zenmind and accepts explicit cutej", () => {
   assert.equal(resolveBrandId([], {}), "zenmind");
-  assert.equal(resolveBrandId(["--brand=xiaojun"], {}), "xiaojun");
-  assert.equal(resolveBrandId(["--brand", "xiaojun"], {}), "xiaojun");
+  assert.equal(resolveBrandId(["--brand=cutej"], {}), "cutej");
+  assert.equal(resolveBrandId(["--brand", "cutej"], {}), "cutej");
 
   const zenmind = loadBrandConfig(projectRoot, "zenmind");
   assert.equal(zenmind.appId, "cc.zenmind.desktop");
@@ -76,44 +76,44 @@ test("brand resolver defaults to zenmind and accepts explicit xiaojun", () => {
   assert.equal(zenmind.paths.desktopDataSubdir, ".desktop");
   assert.equal(zenmind.paths.programDataDirName, "ZenMind");
 
-  const xiaojun = loadBrandConfig(projectRoot, "xiaojun");
-  assert.equal(xiaojun.appId, "cc.xiaojun.desktop");
-  assert.equal(xiaojun.productName, "XiaoJun");
-  assert.equal(xiaojun.packageName, "xiaojun-desktop");
-  assert.equal(xiaojun.storageNamespace, "zenmind-desktop");
-  assert.equal(xiaojun.i18n["zh-CN"]["app.name"], "XiaoJun");
-  assert.match(xiaojun.i18n["en-US"]["startup.envImport.title"], /XiaoJun/);
-  assert.deepEqual(xiaojun.paths, zenmind.paths);
+  const cutej = loadBrandConfig(projectRoot, "cutej");
+  assert.equal(cutej.appId, "cc.cutej.desktop");
+  assert.equal(cutej.productName, "cutej");
+  assert.equal(cutej.packageName, "cutej-desktop");
+  assert.equal(cutej.storageNamespace, "zenmind-desktop");
+  assert.equal(cutej.i18n["zh-CN"]["app.name"], "小君");
+  assert.match(cutej.i18n["en-US"]["startup.envImport.title"], /cutej/);
+  assert.deepEqual(cutej.paths, zenmind.paths);
 });
 
 test("brand sync generates runtime constants, package metadata, and builder config", () => {
   const root = createBrandSyncFixture();
   try {
-    const brand = syncBrandArtifacts({ rootDir: root, brandId: "xiaojun" });
+    const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
     const packageJson = readJson(path.join(root, "package.json"));
     const packageLock = readJson(path.join(root, "package-lock.json"));
     const generatedBrand = readJson(path.join(root, "build", "generated", "brand.json"));
-    const builderConfig = readJson(path.join(root, "build", "electron-builder.xiaojun.json"));
+    const builderConfig = readJson(path.join(root, "build", "electron-builder.cutej.json"));
     const generatedTs = fs.readFileSync(path.join(root, "src", "shared", "generated", "brand.ts"), "utf8");
     const installerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
     const uninstallScript = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
 
-    assert.equal(brand.id, "xiaojun");
-    assert.equal(packageJson.name, "xiaojun-desktop");
-    assert.equal(packageJson.description, "XiaoJun 应用壳");
+    assert.equal(brand.id, "cutej");
+    assert.equal(packageJson.name, "cutej-desktop");
+    assert.equal(packageJson.description, "cutej 应用壳");
     assert.equal(packageJson.build, undefined);
-    assert.equal(packageLock.name, "xiaojun-desktop");
-    assert.equal(packageLock.packages[""].name, "xiaojun-desktop");
-    assert.equal(generatedBrand.productName, "XiaoJun");
+    assert.equal(packageLock.name, "cutej-desktop");
+    assert.equal(packageLock.packages[""].name, "cutej-desktop");
+    assert.equal(generatedBrand.productName, "cutej");
     assert.equal(generatedBrand.storageNamespace, "zenmind-desktop");
-    assert.equal(builderConfig.appId, "cc.xiaojun.desktop");
-    assert.equal(builderConfig.productName, "XiaoJun");
+    assert.equal(builderConfig.appId, "cc.cutej.desktop");
+    assert.equal(builderConfig.productName, "cutej");
     assert.equal(builderConfig.nsis.include, "build/installer.nsh");
     assert.match(generatedTs, /export const APP_BRAND =/);
-    assert.match(generatedTs, /XiaoJun/);
-    assert.match(installerInclude, /Requesting XiaoJun to exit before installing/);
+    assert.match(generatedTs, /cutej/);
+    assert.match(installerInclude, /Requesting cutej to exit before installing/);
     assert.match(installerInclude, /%APPDATA%\\ZenMind/);
-    assert.match(uninstallScript, /APP_NAME="XiaoJun"/);
+    assert.match(uninstallScript, /APP_NAME="cutej"/);
     assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.zenmind\/\.desktop"/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -123,9 +123,9 @@ test("brand sync generates runtime constants, package metadata, and builder conf
 test("brand manifest validation rejects missing and malformed fields", () => {
   const invalidPackageRoot = createBrandSyncFixture();
   try {
-    writeBrandManifest(invalidPackageRoot, "xiaojun", { packageName: "XiaoJun Desktop" });
+    writeBrandManifest(invalidPackageRoot, "cutej", { packageName: "cutej Desktop" });
     assert.throws(
-      () => loadBrandConfig(invalidPackageRoot, "xiaojun"),
+      () => loadBrandConfig(invalidPackageRoot, "cutej"),
       /packageName is invalid/
     );
   } finally {
@@ -134,9 +134,9 @@ test("brand manifest validation rejects missing and malformed fields", () => {
 
   const invalidAppIdRoot = createBrandSyncFixture();
   try {
-    writeBrandManifest(invalidAppIdRoot, "xiaojun", { appId: "xiaojun" });
+    writeBrandManifest(invalidAppIdRoot, "cutej", { appId: "cutej" });
     assert.throws(
-      () => loadBrandConfig(invalidAppIdRoot, "xiaojun"),
+      () => loadBrandConfig(invalidAppIdRoot, "cutej"),
       /appId is invalid/
     );
   } finally {
@@ -145,9 +145,9 @@ test("brand manifest validation rejects missing and malformed fields", () => {
 
   const missingIconRoot = createBrandSyncFixture();
   try {
-    fs.rmSync(path.join(missingIconRoot, "brands", "xiaojun", "icons", "app-icon.svg"));
+    fs.rmSync(path.join(missingIconRoot, "brands", "cutej", "icons", "app-icon.svg"));
     assert.throws(
-      () => loadBrandConfig(missingIconRoot, "xiaojun"),
+      () => loadBrandConfig(missingIconRoot, "cutej"),
       /Brand icon file not found/
     );
   } finally {
@@ -157,13 +157,13 @@ test("brand manifest validation rejects missing and malformed fields", () => {
 
 test("brand icon inputs are manifest-driven and distinct per brand", () => {
   const zenmind = loadBrandConfig(projectRoot, "zenmind");
-  const xiaojun = loadBrandConfig(projectRoot, "xiaojun");
+  const cutej = loadBrandConfig(projectRoot, "cutej");
   const iconScript = fs.readFileSync(path.join(projectRoot, "scripts", "generate-app-icons.mjs"), "utf8");
 
-  assert.notEqual(zenmind.icons.appIconSvg, xiaojun.icons.appIconSvg);
+  assert.notEqual(zenmind.icons.appIconSvg, cutej.icons.appIconSvg);
   assert.notEqual(
     fs.readFileSync(path.join(projectRoot, zenmind.icons.appIconSvg), "utf8"),
-    fs.readFileSync(path.join(projectRoot, xiaojun.icons.appIconSvg), "utf8")
+    fs.readFileSync(path.join(projectRoot, cutej.icons.appIconSvg), "utf8")
   );
   assert.match(iconScript, /const appIconSvgPath = path\.join\(projectRoot, brand\.icons\.appIconSvg\);/);
   assert.match(iconScript, /const trayIconSourceSvgPath = path\.join\(projectRoot, brand\.icons\.trayIconSvg\);/);

@@ -1,0 +1,6 @@
+{
+  "app.name": "小君",
+  "app.productName": "小君",
+  "startup.envImport.title": "初始化 小君 环境",
+  "taskBoard.prompt.intro": "请你处理下面这个 小君 任务看板任务，并在完成后总结结果。"
+}
