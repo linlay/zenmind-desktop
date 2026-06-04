@@ -1579,6 +1579,25 @@ test("normalizeAgentPlatformEnvContentForRuntime removes deprecated env keys wit
   assert.doesNotMatch(next, /^GATEWAY_WS_URL=/m);
 });
 
+test("normalizeAgentPlatformEnvContentForRuntime removes the legacy provider key default only", () => {
+  const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
+    [
+      "SERVER_PORT=11949",
+      "PROVIDER_APIKEY_KEY_PART=0.1.0"
+    ].join("\n")
+  );
+  const custom = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
+    [
+      "SERVER_PORT=11949",
+      "PROVIDER_APIKEY_KEY_PART=custom-key-part"
+    ].join("\n")
+  );
+
+  assert.match(next, /^SERVER_PORT=11949$/m);
+  assert.doesNotMatch(next, /^PROVIDER_APIKEY_KEY_PART=/m);
+  assert.match(custom, /^PROVIDER_APIKEY_KEY_PART=custom-key-part$/m);
+});
+
 test("normalizeAgentPlatformEnvContentForRuntime removes child runtime dir keys when RUNTIME_DIR is set", () => {
   const next = __testInternals.normalizeAgentPlatformEnvContentForRuntime(
     [
@@ -3365,7 +3384,7 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
     assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
     assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
     assert.match(envContent, /^SERVER_PORT=7078$/m);
-    assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
+    assert.doesNotMatch(envContent, /^PROVIDER_APIKEY_KEY_PART=/m);
     assert.match(envContent, /^RUNTIME_DIR=~\/\.zenmind$/m);
     assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
     assert.doesNotMatch(envContent, /^TOOLS_DIR=/m);
@@ -3378,19 +3397,11 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
     assert.doesNotMatch(envContent, /^MEMORY_DIR=/m);
     assert.doesNotMatch(envContent, /^SKILLS_MARKET_DIR=/m);
     assert.doesNotMatch(envContent, /^PAN_DIR=/m);
-    assert.doesNotMatch(envContent, /^# PROVIDER_APIKEY_KEY_PART=/m);
     assert.doesNotMatch(envContent, /^# RUNTIME_DIR=/m);
     assert.match(envContent, /^# REGISTRIES_DIR=\.\/runtime\/registries$/m);
     const runtimeSectionIndex = envContent.indexOf("# Runtime directories");
     const runtimeDirIndex = envContent.indexOf("RUNTIME_DIR=~/.zenmind");
-    const providerCommentIndex = envContent.indexOf("# Provider apiKey AES(...)");
-    const providerKeyIndex = envContent.indexOf("PROVIDER_APIKEY_KEY_PART=0.1.0");
     assert.ok(runtimeSectionIndex < runtimeDirIndex);
-    assert.ok(runtimeDirIndex < providerKeyIndex);
-    if (providerCommentIndex >= 0) {
-      assert.ok(runtimeDirIndex < providerCommentIndex);
-      assert.ok(providerCommentIndex < providerKeyIndex);
-    }
     assert.equal(fs.existsSync(path.join(configDir, "configs", "local-public-key.pem")), true);
     assert.deepEqual(
       platformService.configFiles.map((configFile) => configFile.key),
@@ -3508,7 +3519,7 @@ test("initializeService recreates Desktop defaults for core services after confi
     assertAppServerDefaultBcryptEnv(appServerEnv);
     assert.match(platformEnv, /^SERVER_PORT=7078$/m);
     assert.match(platformEnv, /^AUTH_ENABLED=true$/m);
-    assert.match(platformEnv, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
+    assert.doesNotMatch(platformEnv, /^PROVIDER_APIKEY_KEY_PART=/m);
     assert.match(platformEnv, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:7079$/m);
     assert.match(platformEnv, /^RUNTIME_DIR=~\/\.zenmind$/m);
     assert.doesNotMatch(platformEnv, /^REGISTRIES_DIR=/m);
@@ -4283,7 +4294,7 @@ test("ensurePreStartRequirements does not rewrite agent platform desktop env bin
   assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
   assert.match(envContent, /^AUTH_ENABLED=true$/m);
   assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
-  assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
+  assert.doesNotMatch(envContent, /^PROVIDER_APIKEY_KEY_PART=/m);
   assert.doesNotMatch(envContent, /^GATEWAY_WS_URL=/m);
   assert.doesNotMatch(envContent, /^GATEWAY_USER_ID=/m);
   assert.doesNotMatch(envContent, /^AGENT_CONTAINER_HUB_BASE_URL=/m);

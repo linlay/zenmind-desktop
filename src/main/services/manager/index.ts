@@ -121,7 +121,6 @@ import {
 import {
   AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE,
   AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS,
-  DEFAULT_PROVIDER_APIKEY_KEY_PART,
   LOCAL_CLI_ACP_RELAY_PLUGIN_ID,
   PROCESS_EXEC_PATH_PLACEHOLDER,
   applyAgentPlatformWindowsHostShellDefaults,
@@ -1187,7 +1186,6 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
     if (getEnvValueWithUpdates(env, updates, "AUTH_ENABLED") !== "true") {
       updates.set("AUTH_ENABLED", "true");
     }
-    updates.set("PROVIDER_APIKEY_KEY_PART", DEFAULT_PROVIDER_APIKEY_KEY_PART);
     await syncAgentPlatformContainerHubUrl(app, env, updates, { force: true });
     const runtimeRoot = resolveAgentPlatformInitializationRuntimeRoot(app);
     updates.set("RUNTIME_DIR", formatDesktopAgentPlatformRuntimeRoot(app, runtimeRoot));
@@ -1303,9 +1301,6 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   await applyEnvBindings(app, service, env, updates);
   await syncAgentPlatformContainerHubUrl(app, env, updates);
 
-  if (!env.get("PROVIDER_APIKEY_KEY_PART")?.trim()) {
-    updates.set("PROVIDER_APIKEY_KEY_PART", DEFAULT_PROVIDER_APIKEY_KEY_PART);
-  }
   applyAgentPlatformWindowsHostShellDefaults(env, updates);
 
   const desktopRuntimeRoot = resolvePreferredAgentPlatformRuntimeRoot(app);

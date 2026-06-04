@@ -27,7 +27,8 @@ export const LOCAL_CLI_ACP_RELAY_PLUGIN_ID = "local-cli-acp-relay";
 const DEFAULT_CLAUDE_CODE_ACP_ARGS = "-y @zed-industries/claude-code-acp";
 const DEFAULT_LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS = "60000";
 const DEFAULT_LOCAL_CLI_ACP_RUN_TIMEOUT_MS = "600000";
-export const DEFAULT_PROVIDER_APIKEY_KEY_PART = "0.1.0";
+const LEGACY_PROVIDER_APIKEY_KEY_PART = "PROVIDER_APIKEY_KEY_PART";
+const LEGACY_PROVIDER_APIKEY_KEY_PART_DEFAULT = "0.1.0";
 const AGENT_BASH_SHELL_EXECUTABLE_KEY = "AGENT_BASH_SHELL_EXECUTABLE";
 const AGENT_BASH_SHELL_ARGS_KEY = "AGENT_BASH_SHELL_ARGS";
 const WINDOWS_AGENT_BASH_SHELL_EXECUTABLE = "powershell.exe";
@@ -401,9 +402,40 @@ function removeManagedAgentPlatformAuthLocalPublicKey(content: string, layout?: 
   return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
 }
 
+function removeLegacyProviderApiKeyDefault(content: string) {
+  const nextLines = content
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        return true;
+      }
+
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex <= 0) {
+        return true;
+      }
+
+      const key = trimmed.slice(0, separatorIndex).trim();
+      if (key !== LEGACY_PROVIDER_APIKEY_KEY_PART) {
+        return true;
+      }
+
+      const value = trimmed.slice(separatorIndex + 1).trim().replace(/^['"]|['"]$/gu, "");
+      return value !== LEGACY_PROVIDER_APIKEY_KEY_PART_DEFAULT;
+    });
+
+  if (nextLines.length === 0) {
+    return "";
+  }
+  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
+}
+
 function removeDesktopManagedAgentPlatformEnvContent(content: string, layout?: ServiceLayout) {
   return removeManagedAgentPlatformAuthLocalPublicKey(
-    removeEnvKeysFromContent(content, AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS),
+    removeLegacyProviderApiKeyDefault(
+      removeEnvKeysFromContent(content, AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS)
+    ),
     layout
   );
 }
