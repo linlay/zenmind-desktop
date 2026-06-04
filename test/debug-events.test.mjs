@@ -116,3 +116,43 @@ test("debug event store ignores unregistered webviews and truncates old events",
 
   assert.deepEqual(store.listEvents().map((event) => event.message), ["two", "three"]);
 });
+
+test("debug event store caps unfinished request tracking", () => {
+  const store = createDebugEventStore({ maxEvents: 10, maxPendingRequests: 2, now: () => 7000 });
+  store.registerSurface({ webContentsId: 12, kind: "webview", surfaceLabel: "Service Webview" });
+
+  store.recordRequestHeaders({
+    id: "one",
+    webContentsId: 12,
+    url: "https://api.example.test/one",
+    requestHeaders: { "X-Trace-Id": "one" },
+    timestamp: 1000
+  });
+  store.recordRequestHeaders({
+    id: "two",
+    webContentsId: 12,
+    url: "https://api.example.test/two",
+    requestHeaders: { "X-Trace-Id": "two" },
+    timestamp: 1001
+  });
+  store.recordRequestHeaders({
+    id: "three",
+    webContentsId: 12,
+    url: "https://api.example.test/three",
+    requestHeaders: { "X-Trace-Id": "three" },
+    timestamp: 1002
+  });
+
+  assert.equal(store.getPendingRequestCount(), 2);
+
+  store.recordRequestCompleted({
+    id: "two",
+    webContentsId: 12,
+    url: "https://api.example.test/two",
+    statusCode: 200,
+    timestamp: 1010
+  });
+
+  assert.equal(store.getPendingRequestCount(), 1);
+  assert.equal(store.listEvents()[0].requestHeaders["X-Trace-Id"], "two");
+});

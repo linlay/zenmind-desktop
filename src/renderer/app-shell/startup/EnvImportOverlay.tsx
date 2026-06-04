@@ -1,5 +1,6 @@
 import { useI18n } from "../../i18n/useI18n";
 import { PRODUCT_NAME } from "../../../shared/generated/brand";
+import { BrandMark } from "../../components/BrandMark";
 
 export function EnvImportOverlay({
   onImport,
@@ -18,13 +19,7 @@ export function EnvImportOverlay({
 
       <div className="env-import-card">
         <div className="brand-logo-wrapper">
-          <img
-            src="/brand-icon.png"
-            width="80"
-            height="80"
-            className="brand-logo-image"
-            aria-label={`${PRODUCT_NAME} Logo`}
-          />
+          <BrandMark className="brand-logo-image" ariaLabel={`${PRODUCT_NAME} Logo`} />
         </div>
 
         <h1 className="env-import-title">{t("startup.envImport.title")}</h1>

@@ -16,9 +16,16 @@ export default defineConfig({
     strictPort: true,
     watch: {
       ignored: [
+        "**/.cache/**",
+        "**/.vite/**",
+        "**/build/**",
+        "**/coverage/**",
         "**/dist/**",
         "**/dist-electron/**",
-        "**/dist-renderer/**"
+        "**/dist-renderer/**",
+        "**/out/**",
+        "**/release/**",
+        "**/tmp/**"
       ]
     }
   },
