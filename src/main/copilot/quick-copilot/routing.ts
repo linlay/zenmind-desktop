@@ -1,4 +1,5 @@
 import type { BrowserWindow, WebFrameMain } from "electron";
+import { AGENT_WEBCLIENT_TARGET_PATH } from "../../../shared/agent-webclient-routes";
 
 const QUICK_AGENT_WEBCLIENT_PATHNAMES = new Set(["/copilot"]);
 const QUICK_AGENT_OPEN_RETRY_COUNT = 24;
@@ -16,7 +17,7 @@ export function createAgentWebclientRoute(request: {
 }) {
   const agentKey = request.agentKey?.trim() ?? "";
   if (!agentKey) {
-    return "/service/agent-webclient";
+    return AGENT_WEBCLIENT_TARGET_PATH;
   }
 
   const params = new URLSearchParams();

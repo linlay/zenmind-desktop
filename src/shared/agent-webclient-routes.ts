@@ -1,5 +1,5 @@
 export const AGENT_WEBCLIENT_SERVICE_ID = "agent-webclient";
-export const AGENT_WEBCLIENT_TARGET_PATH = "/service/agent-webclient";
+export const AGENT_WEBCLIENT_TARGET_PATH = "/agents";
 
 export type AgentWebclientRouteKey =
   | "agents"

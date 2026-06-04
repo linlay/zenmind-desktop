@@ -89,6 +89,7 @@ const SIDEBAR_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar`;
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-nav-order`;
 const CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.custom-sidebar-group-order`;
 const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
+const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "/service/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
 const STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
@@ -97,6 +98,12 @@ const STARTUP_STATUS_REFRESH_MS = 1500;
 
 function RouteSuspense({ children }: { children: ReactNode }) {
   return <Suspense fallback={null}>{children}</Suspense>;
+}
+
+function LegacyAgentWebclientServiceRouteRedirect() {
+  const location = useLocation();
+  const embedPath = readAgentWebclientRouteEmbedPath(location.search);
+  return embedPath ? null : <Navigate to={ASSISTANT_TARGET_PATH} replace />;
 }
 
 function asRecord(value: unknown) {
@@ -272,12 +279,15 @@ export function AppShell() {
   const activeEmbeddedAgentWebclientRoute = isEmbeddedAgentWebclientRoute(activeAgentWebclientRoute)
     ? activeAgentWebclientRoute
     : null;
+  const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute(location.pathname, location.search);
   const usesAgentNativeSurface =
     activeAgentWebclientRoute?.mode === "native" &&
     (activeAgentWebclientRoute.key === "agents" || activeAgentWebclientRoute.key === "schedules");
   const activePluginId = activeEmbeddedAgentWebclientRoute
     ? AGENT_WEBCLIENT_SERVICE_ID
-    : resolvePluginRouteId(location.pathname);
+    : bareAgentWebclientServiceRoute
+      ? null
+      : resolvePluginRouteId(location.pathname);
   const activeCustomSidebarItemId = resolveCustomSidebarRouteId(location.pathname);
   const [mountedPluginIds, setMountedPluginIds] = useState<string[]>(() =>
     activePluginId ? [activePluginId] : []
@@ -290,7 +300,7 @@ export function AppShell() {
   );
   const usesEmbeddedSurface =
     Boolean(activeEmbeddedAgentWebclientRoute) ||
-    location.pathname.startsWith("/service/") ||
+    (!bareAgentWebclientServiceRoute && location.pathname.startsWith("/service/")) ||
     location.pathname.startsWith("/plugin/") ||
     location.pathname.startsWith("/external/") ||
     location.pathname === BUILTIN_BROWSER_ROUTE ||
@@ -299,7 +309,7 @@ export function AppShell() {
   const shouldMountBuiltinBrowserSurface = builtinBrowserSurfaceMounted || usesBuiltinBrowserSurface;
   const usesPluginSurface =
     Boolean(activeEmbeddedAgentWebclientRoute) ||
-    location.pathname.startsWith("/service/") ||
+    (!bareAgentWebclientServiceRoute && location.pathname.startsWith("/service/")) ||
     location.pathname.startsWith("/plugin/");
   const isTaskBoardRoute = location.pathname === "/kanban";
   const isMarketRoute = location.pathname === "/market";
@@ -1367,6 +1377,10 @@ export function AppShell() {
               path="/assistant"
               element={<Navigate to={ASSISTANT_TARGET_PATH} replace />}
             />
+            <Route
+              path={LEGACY_AGENT_WEBCLIENT_SERVICE_PATH}
+              element={<LegacyAgentWebclientServiceRouteRedirect />}
+            />
             {AGENT_WEBCLIENT_ROUTE_DEFINITIONS.map((routeDefinition) => (
               <Route
                 key={routeDefinition.key}
@@ -1479,7 +1493,7 @@ function resolveAgentWebclientRoute(
     return agentRoute;
   }
 
-  if (pathname !== ASSISTANT_TARGET_PATH) {
+  if (pathname !== LEGACY_AGENT_WEBCLIENT_SERVICE_PATH) {
     return null;
   }
 
@@ -1490,7 +1504,7 @@ function resolveAgentWebclientRoute(
 
   return {
     key: "assistant-target",
-    routePath: `${ASSISTANT_TARGET_PATH}${search}`,
+    routePath: `${LEGACY_AGENT_WEBCLIENT_SERVICE_PATH}${search}`,
     embedPath,
     labelKey: embedPath.startsWith("/agent/") ? "nav.assistants" : "nav.agents",
     kind: embedPath.startsWith("/agent/") ? "chat" : embedPath.startsWith("/copilot") ? "copilot" : "management",
@@ -1504,6 +1518,10 @@ function readAgentWebclientRouteEmbedPath(search: string) {
   } catch {
     return "";
   }
+}
+
+function isBareAgentWebclientServiceRoute(pathname: string, search: string) {
+  return pathname === LEGACY_AGENT_WEBCLIENT_SERVICE_PATH && !readAgentWebclientRouteEmbedPath(search);
 }
 
 function isSingleAgentWebclientRoute(pathname: string) {

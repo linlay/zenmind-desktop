@@ -505,6 +505,9 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   const collapsedMacTopActionsRule = globalStyles.match(
     /^\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions\s*\{(?<body>[\s\S]*?)^\}/m
   )?.groups?.body;
+  const collapsedMacChromeToolbarRule = globalStyles.match(
+    /^\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-chrome-toolbar\.is-mac\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body;
   const collapsedMacTopActionButtonRule = globalStyles.match(
     /^\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions \.app-sidebar-collapse-button\s*\{(?<body>[\s\S]*?)^\}/m
   )?.groups?.body;
@@ -556,6 +559,9 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(globalStyles, /\.app-sidebar-resizer-line\s*\{/);
   assert.match(globalStyles, /\.app-sidebar-resizer:hover \.app-sidebar-resizer-line,[\s\S]*?\.app-sidebar-resizer\.is-active \.app-sidebar-resizer-line\s*\{/);
   assert.match(globalStyles, /\.app-shell\.is-mac-platform\.is-sidebar-collapsed \.app-sidebar-resizer\s*\{[\s\S]*?flex:\s*0 0 0;/);
+  assert.ok(collapsedMacChromeToolbarRule, "missing mac collapsed chrome toolbar rule");
+  assert.match(collapsedMacChromeToolbarRule, /padding:\s*0;/);
+  assert.match(collapsedMacChromeToolbarRule, /justify-content:\s*center;/);
   assert.ok(collapsedMacTopActionsRule, "missing mac collapsed top actions rule");
   assert.match(collapsedMacTopActionsRule, /left:\s*0;/);
   assert.match(collapsedMacTopActionsRule, /right:\s*0;/);
@@ -779,6 +785,18 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /usesAgentNativeSurface \? "has-agent-native-surface" : ""/);
   assert.match(appShell, /function readAgentWebclientRouteEmbedPath\(search: string\)/);
   assert.match(appShell, /new URLSearchParams\(search\)\.get\("embedPath"\)/);
+  assert.match(appShell, /if \(pathname !== LEGACY_AGENT_WEBCLIENT_SERVICE_PATH\) \{/);
+  assert.match(appShell, /routePath:\s*`\$\{LEGACY_AGENT_WEBCLIENT_SERVICE_PATH\}\$\{search\}`/);
+  assert.match(appShell, /export const AGENT_WEBCLIENT_TARGET_PATH = "\/agents";/);
+  assert.match(appShell, /const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "\/service\/agent-webclient";/);
+  assert.match(appShell, /function isBareAgentWebclientServiceRoute\(pathname: string, search: string\)/);
+  assert.match(appShell, /const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute\(location\.pathname,\s*location\.search\)/);
+  assert.match(appShell, /const activePluginId = activeEmbeddedAgentWebclientRoute[\s\S]*?: bareAgentWebclientServiceRoute[\s\S]*?\? null[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
+  assert.match(appShell, /Boolean\(activeEmbeddedAgentWebclientRoute\) \|\|[\s\S]*?!bareAgentWebclientServiceRoute && location\.pathname\.startsWith\("\/service\/"\)/);
+  assert.match(appShell, /function LegacyAgentWebclientServiceRouteRedirect\(\)/);
+  assert.match(appShell, /const embedPath = readAgentWebclientRouteEmbedPath\(location\.search\)/);
+  assert.match(appShell, /return embedPath \? null : <Navigate to=\{ASSISTANT_TARGET_PATH\} replace \/>;/);
+  assert.match(appShell, /path=\{LEGACY_AGENT_WEBCLIENT_SERVICE_PATH\}[\s\S]*?<LegacyAgentWebclientServiceRouteRedirect \/>/);
   assert.match(appShell, /function resolveSingleAgentWebclientRoute\(pathname: string, search: string\)/);
   assert.match(appShell, /matchPath\("\/agent\/:agentKey", pathname\)/);
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)/);
@@ -1730,6 +1748,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "core", "agent-platform-bridge.ts"), "utf8");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
+  const globalStyles = readRendererStyles();
 
   assert.match(contracts, /interface AssistantNavAgentItem/);
   assert.match(contracts, /icon\?: AssistantNavAgentIcon/);
@@ -1788,10 +1807,23 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(appSidebar, /openWorkspaceDirectory\(agent\.workspaceDir, agent\.agentKey\)/);
   assert.match(appSidebar, /const title = isRename \? "修改名称" : "删除智能体"/);
   assert.match(appSidebar, /role="dialog"/);
+  const agentDialogInputRule = globalStyles.match(
+    /^\.sidebar-agent-dialog-field input\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
+  const agentDialogInputFocusRule = globalStyles.match(
+    /^\.sidebar-agent-dialog-field input:focus\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
+  assert.match(agentDialogInputRule, /border:\s*1px solid var\(--desktop-ui-border\);/);
+  assert.doesNotMatch(agentDialogInputRule, /var\(--border\)/);
+  assert.match(agentDialogInputFocusRule, /border-color:\s*var\(--desktop-ui-primary\);/);
+  assert.match(agentDialogInputFocusRule, /box-shadow:\s*0 0 0 2px rgba\(var\(--desktop-ui-primary-rgb\),\s*0\.14\);/);
   assert.match(appSidebar, /desktop\.agents\.getAgentDetail/);
   assert.match(appSidebar, /buildAgentDefinitionForRename/);
   assert.doesNotMatch(appSidebar, /definition:\s*\{\s*name:\s*nextName/);
-  assert.match(appSidebar, /window\.open\(createAgentEditWindowUrl\(agent\), "_blank"\)/);
+  assert.match(appSidebar, /function createAgentEditRoute\(agent: AssistantNavAgentItem\)/);
+  assert.match(appSidebar, /return `\/agents\/\$\{encodeURIComponent\(agent\.agentKey\)\}`;/);
+  assert.match(appSidebar, /requestNavigate\(createAgentEditRoute\(agent\)\)/);
+  assert.doesNotMatch(appSidebar, /window\.open\(createAgentEditWindowUrl\(agent\), "_blank"\)/);
   assert.match(appSidebar, /agent\.agentType === "coder"/);
   assert.match(appSidebar, /desktop\.agents\.deleteAgent/);
   assert.match(appSidebar, /className="is-danger"/);
@@ -2486,7 +2518,11 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
   assert.match(mainProcess, /await runServiceMutation\(\(\) => ensureAssistantTargetServicesRunning\(source\)\)/);
   assert.match(mainProcess, /async function showAssistantTargetWindow/);
+  assert.match(mainProcess, /const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;/);
+  assert.doesNotMatch(mainProcess, /const ASSISTANT_TARGET_PATH = "\/service\/agent-webclient";/);
   assert.match(quickRouting, /function createAgentWebclientRoute/);
+  assert.match(quickRouting, /return AGENT_WEBCLIENT_TARGET_PATH;/);
+  assert.doesNotMatch(quickRouting, /return "\/service\/agent-webclient";/);
   assert.match(quickRouting, /\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
   assert.doesNotMatch(quickRouting, /embedPath=\$\{encodeURIComponent\(embedPath\)\}/);
   assert.match(mainProcess, /openAgent: scheduleQuickAgentOpenRequest/);

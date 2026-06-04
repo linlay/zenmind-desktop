@@ -1238,11 +1238,16 @@
   width: 100%;
   min-height: 36px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--desktop-ui-border);
   border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
   outline: none;
+}
+
+.sidebar-agent-dialog-field input:focus {
+  border-color: var(--desktop-ui-primary);
+  box-shadow: 0 0 0 2px rgba(var(--desktop-ui-primary-rgb), 0.14);
 }
 
 .sidebar-agent-dialog-copy {
@@ -1571,6 +1576,11 @@
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed {
   --sidebar-toolbar-height: 64px;
+}
+
+.app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-chrome-toolbar.is-mac {
+  padding: 0;
+  justify-content: center;
 }
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions {

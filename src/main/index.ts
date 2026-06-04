@@ -182,6 +182,7 @@ import { safeConsoleError } from "./safe-console";
 import { callAgentPlatform, handleDesktopActionRequest, startDesktopActionBridge } from "./desktop-action-bridge";
 import { callDesktopActionRenderer } from "./desktop-action-renderer";
 import { DESKTOP_ACTION_DEFINITIONS } from "../shared/desktop-actions";
+import { AGENT_WEBCLIENT_TARGET_PATH } from "../shared/agent-webclient-routes";
 import { AgentPlatformPetStatusClient } from "./copilot/pet-copilot/pet-status-client";
 import { AgentPlatformPetStreamClient } from "./copilot/pet-copilot/pet-stream-client";
 import { createDesktopPetBrowserWindow } from "./copilot/pet-copilot/window";
@@ -299,7 +300,7 @@ const mainProcessContext = createMainProcessContext({
   session,
   nativeTheme
 });
-const ASSISTANT_TARGET_PATH = "/service/agent-webclient";
+const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
 const LOG_VIEWER_ROUTE = "/log-viewer";
 const DEBUG_VIEWER_SHORTCUT = "CommandOrControl+Shift+D";
 const SHUTDOWN_CLEANUP_DEADLINE_MS = 10_000;

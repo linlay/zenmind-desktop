@@ -1881,15 +1881,8 @@ export function AppSidebar({
     return definition.mode ? definition : null;
   }
 
-  function getCurrentRouteSearch() {
-    const queryIndex = currentRoute.indexOf("?");
-    return queryIndex >= 0 ? currentRoute.slice(queryIndex) : "";
-  }
-
-  function createAgentEditWindowUrl(agent: AssistantNavAgentItem) {
-    const url = new URL(window.location.href);
-    url.hash = `/agents/${encodeURIComponent(agent.agentKey)}${getCurrentRouteSearch()}`;
-    return url.toString();
+  function createAgentEditRoute(agent: AssistantNavAgentItem) {
+    return `/agents/${encodeURIComponent(agent.agentKey)}`;
   }
 
   async function handleOpenWorkspace(agent: AssistantNavAgentItem) {
@@ -1923,7 +1916,7 @@ export function AppSidebar({
 
   function handleEditAgent(agent: AssistantNavAgentItem) {
     setAgentMenu(null);
-    window.open(createAgentEditWindowUrl(agent), "_blank");
+    requestNavigate(createAgentEditRoute(agent));
   }
 
   function handleDeleteAgent(agent: AssistantNavAgentItem) {
