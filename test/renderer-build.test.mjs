@@ -717,6 +717,24 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /renameChat/);
   assert.match(sidebarSource, /archiveChat/);
   assert.match(sidebarSource, /deleteChat/);
+  const exportChatHandler =
+    sidebarSource.match(/async function handleAssistantExportChat[\s\S]*?function handleAssistantRenameChat/u)?.[0] ?? "";
+  const renameChatHandler =
+    sidebarSource.match(/function handleAssistantRenameChat[\s\S]*?async function handleConfirmRenameChat/u)?.[0] ?? "";
+  assert.match(exportChatHandler, /const result = await window\.electronAPI\.assistant\.exportChat\(chat\.chatId\)/u);
+  assert.match(exportChatHandler, /if \(!result\.ok\)/u);
+  assert.match(exportChatHandler, /window\.alert/u);
+  assert.match(renameChatHandler, /setAssistantChatRenameDialog\(\{/u);
+  assert.doesNotMatch(sidebarSource, /window\.prompt/u);
+  const confirmRenameChatHandler =
+    sidebarSource.match(/async function handleConfirmRenameChat[\s\S]*?async function handleAssistantArchiveChat/u)?.[0] ?? "";
+  assert.match(sidebarSource, /type AssistantChatRenameDialogState = \{/u);
+  assert.match(sidebarSource, /function renderAssistantChatRenameDialog\(\)/u);
+  assert.match(confirmRenameChatHandler, /const result = await window\.electronAPI\.assistant\.renameChat\(/u);
+  assert.match(confirmRenameChatHandler, /assistantChatRenameDialog\.chat\.chatId/u);
+  assert.match(confirmRenameChatHandler, /if \(!result\.ok\)/u);
+  assert.match(confirmRenameChatHandler, /setAssistantChatRenameDialog\(null\)/u);
+  assert.match(confirmRenameChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
   assert.match(sidebarSource, /<span>删除<\/span>/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/schedules"[\s\S]*?icon:\s*"schedule"/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
@@ -841,6 +859,73 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.doesNotMatch(pluginPage, /agent:select-worker/);
   assert.doesNotMatch(pluginPage, /agent:load-chat/);
   assert.doesNotMatch(pluginPage, /agent:start-new-conversation/);
+});
+
+test("sidebar top navigation exposes scoped back and forward history controls", () => {
+  const appShell = readAppShellSource();
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
+  const globalStyles = readRendererStyles();
+
+  assert.match(appShell, /type SidebarNavigationHistory = \{\s*back: string\[\];\s*forward: string\[\];\s*\};/);
+  assert.match(appShell, /const \[sidebarNavigationHistory,\s*setSidebarNavigationHistory\] = useState<SidebarNavigationHistory>/);
+  assert.match(appShell, /function navigateWithSidebarHistory\(targetPath: string, direction: "back" \| "forward"\)/);
+  assert.match(appShell, /function handleSidebarBackNavigation\(\)[\s\S]*?navigateWithSidebarHistory\(targetPath,\s*"back"\)/);
+  assert.match(appShell, /function handleSidebarForwardNavigation\(\)[\s\S]*?navigateWithSidebarHistory\(targetPath,\s*"forward"\)/);
+  assert.match(appShell, /function requestSidebarNavigation\(targetPath: string\)[\s\S]*?back:\s*\[\.\.\.current\.back,\s*currentRoute\]/);
+  assert.match(appShell, /function requestSidebarNavigation\(targetPath: string\)[\s\S]*?forward:\s*\[\]/);
+  assert.match(appShell, /sidebarNavigationCanGoBack=\{sidebarNavigationHistory\.back\.length > 0\}/);
+  assert.match(appShell, /sidebarNavigationCanGoForward=\{sidebarNavigationHistory\.forward\.length > 0\}/);
+  assert.match(appShell, /onSidebarNavigateBack=\{handleSidebarBackNavigation\}/);
+  assert.match(appShell, /onSidebarNavigateForward=\{handleSidebarForwardNavigation\}/);
+
+  assert.match(sidebarSource, /sidebarNavigationCanGoBack\?: boolean;/);
+  assert.match(sidebarSource, /sidebarNavigationCanGoForward\?: boolean;/);
+  assert.match(sidebarSource, /onSidebarNavigateBack\?: \(\) => void;/);
+  assert.match(sidebarSource, /onSidebarNavigateForward\?: \(\) => void;/);
+  assert.match(sidebarSource, /className="sidebar-history-controls"/);
+  assert.match(sidebarSource, /aria-label="后退"/);
+  assert.match(sidebarSource, /aria-label="前进"/);
+  assert.match(sidebarSource, /disabled=\{!sidebarNavigationCanGoBack\}/);
+  assert.match(sidebarSource, /disabled=\{!sidebarNavigationCanGoForward\}/);
+  assert.match(sidebarSource, /onClick=\{onSidebarNavigateBack\}/);
+  assert.match(sidebarSource, /onClick=\{onSidebarNavigateForward\}/);
+  assert.match(sidebarSource, /requestNavigate\(createAgentHistoryRoute\(agent\.agentKey\)\)/);
+  assert.doesNotMatch(sidebarSource, /action:\s*"openChatHistory"/);
+
+  assert.match(globalStyles, /\.sidebar-history-controls\s*\{/);
+  assert.match(globalStyles, /\.sidebar-history-button:disabled\s*\{/);
+  assert.doesNotMatch(settingsPage, /sidebarNavigationCanGoBack/);
+  assert.doesNotMatch(settingsPage, /onSidebarNavigateBack/);
+});
+
+test("assistant sidebar chat history selection follows pending navigation", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+
+  assert.match(sidebarSource, /const pendingChatId = pendingRouteAgentInfo\.chatId;/);
+  assert.match(sidebarSource, /const activeSidebarAgentKey = pendingPath \? pendingAgentKey : currentAgentKey;/);
+  assert.match(sidebarSource, /function getActiveSidebarAgentKey\(\)/);
+  assert.match(sidebarSource, /function getActiveSidebarChatId\(agentKey: string\)/);
+  assert.match(sidebarSource, /agent\.agentKey === activeSidebarAgentKey/);
+  assert.match(sidebarSource, /const activeAgentChanged =\s*lastAutoExpandedAssistantAgentKeyRef\.current !== matched\.agentKey;/);
+  assert.match(sidebarSource, /if \(activeAgentChanged\) \{[\s\S]{0,220}setExpandedAssistantAgentKey\(matched\.agentKey\);/);
+  assert.match(sidebarSource, /\}, \[assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKey\]\);/);
+  assert.match(sidebarSource, /return pendingPath \? pendingChatId : currentChatId;/);
+  assert.match(sidebarSource, /const selected =\s*getActiveSidebarAgentKey\(\) === agent\.agentKey;/);
+  assert.match(sidebarSource, /const activeChatId = getActiveSidebarChatId\(agent\.agentKey\);/);
+  assert.doesNotMatch(sidebarSource, /const activeChatId = currentChatId \|\| "";/);
 });
 
 test("assistant sidebar empty state is localized", () => {
@@ -2500,6 +2585,8 @@ test("assistant chat export writes directly to the download location", () => {
   assert.match(downloadPaths, /export async function getAvailableFilePath/u);
   assert.match(saveExportBlock, /const exportPath = await getAvailableFilePath\(getAssistantExportDefaultPath\(app, result\.filename, platform\), \{/u);
   assert.match(saveExportBlock, /fs\.promises\.writeFile\(exportPath, result\.bytes\)/u);
+  assert.match(readSourceFile("src", "main", "copilot", "core", "agent-platform-bridge.ts"), /\/api\/chat\/export\?chatId=/u);
+  assert.doesNotMatch(readSourceFile("src", "main", "copilot", "core", "agent-platform-bridge.ts"), /\/api\/chat-export/u);
   assert.doesNotMatch(saveExportBlock, /showSaveDialog/u);
 });
 

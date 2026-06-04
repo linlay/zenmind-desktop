@@ -253,6 +253,67 @@
   position: static !important;
 }
 
+.sidebar-history-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-history-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(71, 85, 105, 0.72);
+  cursor: pointer;
+  appearance: none;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+  transition:
+    background-color 0.2s ease-in-out,
+    border-color 0.2s ease-in-out,
+    color 0.2s ease-in-out,
+    opacity 0.2s ease-in-out;
+}
+
+.sidebar-history-button:hover:not(:disabled),
+.sidebar-history-button:focus-visible:not(:disabled) {
+  background: rgba(136, 151, 172, 0.1);
+  color: #1f2937;
+}
+
+.sidebar-history-button:focus-visible {
+  outline: none;
+}
+
+.sidebar-history-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.34;
+}
+
+.sidebar-history-button svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+:root[data-theme="dark"] .sidebar-history-button {
+  color: rgba(203, 213, 225, 0.72);
+}
+
+:root[data-theme="dark"] .sidebar-history-button:hover:not(:disabled),
+:root[data-theme="dark"] .sidebar-history-button:focus-visible:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+}
+
 .sidebar-assistant-top-button-icon {
   width: 16px;
   height: 16px;
@@ -1614,6 +1675,10 @@
 .app-sidebar.is-collapsed .sidebar-top-actions .sidebar-assistant-top-button {
   display: none;
   pointer-events: none;
+}
+
+.app-sidebar.is-collapsed .sidebar-history-controls {
+  display: none;
 }
 
 .app-shell.is-mac-platform.is-sidebar-collapsed .app-sidebar-resizer {

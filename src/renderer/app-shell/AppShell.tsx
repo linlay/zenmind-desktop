@@ -177,6 +177,11 @@ type SidebarResizeDragState = {
   startClientX: number;
 };
 
+type SidebarNavigationHistory = {
+  back: string[];
+  forward: string[];
+};
+
 function inferDesktopPlatform() {
   if (typeof navigator === "undefined") {
     return "";
@@ -261,6 +266,10 @@ export function AppShell() {
   const [customSidebarItems, setCustomSidebarItems] = useState<CustomSidebarItem[]>([]);
   const [customSidebarItemsLoaded, setCustomSidebarItemsLoaded] = useState(false);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
+  const [sidebarNavigationHistory, setSidebarNavigationHistory] = useState<SidebarNavigationHistory>({
+    back: [],
+    forward: []
+  });
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [startupCardDismissed, setStartupCardDismissed] = useState(false);
@@ -940,6 +949,10 @@ export function AppShell() {
       return false;
     }
 
+    setSidebarNavigationHistory((current) => ({
+      back: [...current.back, currentRoute],
+      forward: []
+    }));
     setPendingSidebarNavigationPath(targetPath);
     if (sidebarNavigationUnlockTimerRef.current !== null) {
       window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
@@ -950,6 +963,50 @@ export function AppShell() {
     }, SIDEBAR_NAVIGATION_LOCK_MS);
     navigate(targetPath);
     return true;
+  }
+
+  function navigateWithSidebarHistory(targetPath: string, direction: "back" | "forward") {
+    if (targetPath === currentRoute) {
+      return;
+    }
+
+    setSidebarNavigationHistory((current) => {
+      if (direction === "back") {
+        return {
+          back: current.back.slice(0, -1),
+          forward: [...current.forward, currentRoute]
+        };
+      }
+      return {
+        back: [...current.back, currentRoute],
+        forward: current.forward.slice(0, -1)
+      };
+    });
+    setPendingSidebarNavigationPath(targetPath);
+    if (sidebarNavigationUnlockTimerRef.current !== null) {
+      window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
+    }
+    sidebarNavigationUnlockTimerRef.current = window.setTimeout(() => {
+      setPendingSidebarNavigationPath(null);
+      sidebarNavigationUnlockTimerRef.current = null;
+    }, SIDEBAR_NAVIGATION_LOCK_MS);
+    navigate(targetPath);
+  }
+
+  function handleSidebarBackNavigation() {
+    const targetPath = sidebarNavigationHistory.back.at(-1);
+    if (!targetPath) {
+      return;
+    }
+    navigateWithSidebarHistory(targetPath, "back");
+  }
+
+  function handleSidebarForwardNavigation() {
+    const targetPath = sidebarNavigationHistory.forward.at(-1);
+    if (!targetPath) {
+      return;
+    }
+    navigateWithSidebarHistory(targetPath, "forward");
   }
 
   const experimentalItemMap = new Map(EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => [item.id, item]));
@@ -1292,6 +1349,8 @@ export function AppShell() {
           copilotAgentOptions={copilotAgentOptions}
           desktopSsoStatus={desktopSsoStatus}
           desktopSsoBusy={desktopSsoBusy}
+          sidebarNavigationCanGoBack={sidebarNavigationHistory.back.length > 0}
+          sidebarNavigationCanGoForward={sidebarNavigationHistory.forward.length > 0}
           onOpenAssistantDock={() => openAssistantDock()}
           onCloseAssistantDock={() => {
             setAssistantDockOpenPath(null);
@@ -1304,6 +1363,8 @@ export function AppShell() {
           onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
           onCreateCustomSidebarItem={createCustomSidebarItem}
           onRequestNavigate={requestSidebarNavigation}
+          onSidebarNavigateBack={handleSidebarBackNavigation}
+          onSidebarNavigateForward={handleSidebarForwardNavigation}
           onNavigateItem={undefined}
           onToggleCollapsed={toggleSidebarCollapsed}
         />

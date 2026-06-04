@@ -81,6 +81,7 @@ import {
 import { resolveWebviewOpenDisposition, shouldDownloadUrlFromWebview } from "./webview-open-tab";
 import { revealPathInFileManager } from "./reveal-path";
 import { buildApplicationMenu as installApplicationMenu } from "./app-shell/app-menu";
+import { createQuitConfirmationController } from "./app-shell/quit-confirmation";
 import { AgentPlatformMonitorWindowController } from "./app-shell/agent-platform-monitor-window";
 import { DebugViewerWindowController } from "./app-shell/debug-viewer-window";
 import { LogViewerWindowController } from "./app-shell/log-viewer-window";
@@ -588,6 +589,14 @@ const nativeDialogController = new NativeDialogVisibilityController({
   getTargetWindows: () => [appState.mainWindow, quickCopilotWindowController.getWindow()],
   hideQuickCopilot: hideQuickAssistantForNativeDialog,
   restoreQuickCopilot: restoreQuickAssistantAfterNativeDialog
+});
+const quitConfirmationController = createQuitConfirmationController({
+  platform: mainProcessContext.platform,
+  appName: PRODUCT_NAME,
+  t,
+  getOwnerWindow: () => appState.mainWindow,
+  showMessageBox: (options, ownerWindow) => nativeDialogController.showMessageBox(options, ownerWindow),
+  requestQuitWithoutConfirmation: () => beginAppQuitWithoutConfirmation()
 });
 
 const appTrayController = new AppTrayController({
@@ -1234,7 +1243,7 @@ function createWindow() {
   void loadMainWindowRenderer(targetWindow, {
     mode: process.env.VITE_DEV_SERVER_URL ? "dev" : "file",
     rendererEntry: getRendererEntry(),
-    quit: () => app.quit(),
+    quit: () => beginAppQuitWithoutConfirmation(),
     report: (message, error) => console.error(message, error)
   });
 
@@ -1498,7 +1507,8 @@ function buildApplicationMenu() {
     appName: app.name,
     platform: mainProcessContext.platform,
     t,
-    openSettings: () => navigateMainWindow("/settings")
+    openSettings: () => navigateMainWindow("/settings"),
+    requestQuit: () => requestAppQuit()
   });
 }
 
@@ -1924,7 +1934,7 @@ function registerIpcHandlers(context: MainProcessContext) {
 if (gotSingleInstanceLock) {
   app.on("second-instance", (_event, commandLine) => {
     if (hasInstallerShutdownArg(commandLine)) {
-      requestAppQuit();
+      beginAppQuitWithoutConfirmation();
       return;
     }
     showMainWindow();
@@ -2048,14 +2058,23 @@ function prepareQuitUi() {
   });
 }
 
-function requestAppQuit() {
+function beginAppQuitWithoutConfirmation() {
   appState.isHandlingQuit = true;
   prepareQuitUi();
   app.quit();
 }
 
+function requestAppQuit() {
+  void quitConfirmationController.confirmAndRequestAppQuit();
+}
+
 app.on("before-quit", (event) => {
   if (appState.shutdownCleanupComplete) {
+    return;
+  }
+  if (mainProcessContext.platform === "darwin" && !appState.isHandlingQuit) {
+    event.preventDefault();
+    requestAppQuit();
     return;
   }
   event.preventDefault();
@@ -2063,7 +2082,7 @@ app.on("before-quit", (event) => {
   prepareQuitUi();
   hideWindowsForShutdown(appState);
   void runShutdownCleanup().finally(() => {
-    app.quit();
+    beginAppQuitWithoutConfirmation();
   });
 });
 

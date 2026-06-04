@@ -31,6 +31,11 @@ export const enUSMessages = {
   "menu.file": "File",
   "menu.settings": "Settings",
   "menu.settingsEllipsis": "Settings...",
+  "menu.quit": "Quit {appName}",
+
+  "quitConfirm.title": "Quit {appName}?",
+  "quitConfirm.detail": "Active local tasks and services on this machine will be interrupted, and enabled automations won't run while {appName} is closed.",
+  "quitConfirm.quit": "Quit",
 
   "tray.chatWithApp": "Chat with {appName}",
   "tray.openApp": "Open {appName}",

@@ -6,6 +6,7 @@ import {
   type FormEvent,
   type MouseEvent,
 } from "react";
+import { LeftOutlined, RightOutlined } from "@ant-design/icons";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import {
@@ -36,7 +37,6 @@ import {
   getAssistantNavAgentRecentChats,
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
-import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/generated/brand";
 
 type SidebarNavItem = {
@@ -68,6 +68,13 @@ type AssistantChatMenuState = {
   chat: AssistantNavChatItem;
   x: number;
   y: number;
+};
+
+type AssistantChatRenameDialogState = {
+  chat: AssistantNavChatItem;
+  value: string;
+  pending: boolean;
+  error: string;
 };
 
 type AgentSelectionOptions = {
@@ -537,6 +544,8 @@ type AppSidebarProps = {
   copilotAgentOptions?: AssistantNavAgentItem[];
   desktopSsoStatus?: DesktopSsoStatus | null;
   desktopSsoBusy?: boolean;
+  sidebarNavigationCanGoBack?: boolean;
+  sidebarNavigationCanGoForward?: boolean;
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
   onDesktopSsoLogin?: () => void;
@@ -547,6 +556,8 @@ type AppSidebarProps = {
     input: CustomSidebarItemInput,
   ) => Promise<CustomSidebarItemResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
+  onSidebarNavigateBack?: () => void;
+  onSidebarNavigateForward?: () => void;
   onNavigateItem?: () => void;
   onToggleCollapsed?: () => void;
 };
@@ -569,6 +580,8 @@ export function AppSidebar({
   copilotAgentOptions = [],
   desktopSsoStatus = null,
   desktopSsoBusy = false,
+  sidebarNavigationCanGoBack = false,
+  sidebarNavigationCanGoForward = false,
   onOpenAssistantDock,
   onCloseAssistantDock,
   onDesktopSsoLogin,
@@ -576,6 +589,8 @@ export function AppSidebar({
   onRefreshCopilotAgentOptions,
   onCreateCustomSidebarItem,
   onRequestNavigate,
+  onSidebarNavigateBack,
+  onSidebarNavigateForward,
   onNavigateItem,
   onToggleCollapsed,
 }: AppSidebarProps) {
@@ -597,6 +612,8 @@ export function AppSidebar({
   const [websiteCreateError, setWebsiteCreateError] = useState("");
   const [assistantChatMenu, setAssistantChatMenu] =
     useState<AssistantChatMenuState | null>(null);
+  const [assistantChatRenameDialog, setAssistantChatRenameDialog] =
+    useState<AssistantChatRenameDialogState | null>(null);
   const [agentMenu, setAgentMenu] = useState<{
     agent: AssistantNavAgentItem;
     x: number;
@@ -614,6 +631,8 @@ export function AppSidebar({
   const currentAgentKey = currentRouteAgentInfo.agentKey;
   const currentChatId = currentRouteAgentInfo.chatId;
   const pendingAgentKey = pendingRouteAgentInfo.agentKey;
+  const pendingChatId = pendingRouteAgentInfo.chatId;
+  const activeSidebarAgentKey = pendingPath ? pendingAgentKey : currentAgentKey;
   const assistantStatusSummary = useMemo(
     () => summarizeAgentStatus(assistantNavAgents),
     [assistantNavAgents],
@@ -715,6 +734,23 @@ export function AppSidebar({
   }, [agentDialog]);
 
   useEffect(() => {
+    if (!assistantChatRenameDialog) {
+      return undefined;
+    }
+
+    function handleDocumentKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !assistantChatRenameDialog.pending) {
+        setAssistantChatRenameDialog(null);
+      }
+    }
+
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [assistantChatRenameDialog]);
+
+  useEffect(() => {
     if (!assistantChatMenu) {
       return undefined;
     }
@@ -767,10 +803,17 @@ export function AppSidebar({
 
   useEffect(() => {
     const matched = assistantNavAgents.find(
-      (agent) => agent.agentKey === currentAgentKey,
+      (agent) => agent.agentKey === activeSidebarAgentKey,
     );
     if (!matched) {
       lastAutoExpandedAssistantAgentKeyRef.current = "";
+      return;
+    }
+    const activeAgentChanged =
+      lastAutoExpandedAssistantAgentKeyRef.current !== matched.agentKey;
+    if (activeAgentChanged) {
+      lastAutoExpandedAssistantAgentKeyRef.current = matched.agentKey;
+      setExpandedAssistantAgentKey(matched.agentKey);
       return;
     }
     if (expandedAssistantAgentKey) {
@@ -784,7 +827,7 @@ export function AppSidebar({
     }
     lastAutoExpandedAssistantAgentKeyRef.current = matched.agentKey;
     setExpandedAssistantAgentKey(matched.agentKey);
-  }, [assistantNavAgents, currentAgentKey, expandedAssistantAgentKey]);
+  }, [assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKey]);
 
   function handleItemClick(
     event: MouseEvent<HTMLAnchorElement>,
@@ -1055,16 +1098,66 @@ export function AppSidebar({
 
   async function handleAssistantExportChat(chat: AssistantNavChatItem) {
     setAssistantChatMenu(null);
-    await window.electronAPI.assistant.exportChat(chat.chatId);
+    try {
+      const result = await window.electronAPI.assistant.exportChat(chat.chatId);
+      if (!result.ok) {
+        window.alert(result.message || "导出会话失败。");
+        return;
+      }
+      if (result.filePath) {
+        window.alert(`已导出到：\n${result.filePath}`);
+      }
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "导出会话失败。");
+    }
   }
 
-  async function handleAssistantRenameChat(chat: AssistantNavChatItem) {
+  function handleAssistantRenameChat(chat: AssistantNavChatItem) {
     setAssistantChatMenu(null);
-    const nextName = window.prompt("重命名会话", chat.chatName);
-    if (!nextName?.trim()) {
+    setAssistantChatRenameDialog({
+      chat,
+      value: chat.chatName,
+      pending: false,
+      error: "",
+    });
+  }
+
+  async function handleConfirmRenameChat(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!assistantChatRenameDialog || assistantChatRenameDialog.pending) {
       return;
     }
-    await window.electronAPI.assistant.renameChat(chat.chatId, nextName.trim());
+    const nextName = assistantChatRenameDialog.value.trim();
+    if (!nextName) {
+      setAssistantChatRenameDialog((current) =>
+        current ? { ...current, error: "请输入会话名称。" } : current,
+      );
+      return;
+    }
+    setAssistantChatRenameDialog((current) =>
+      current ? { ...current, pending: true, error: "" } : current,
+    );
+    try {
+      const result = await window.electronAPI.assistant.renameChat(
+        assistantChatRenameDialog.chat.chatId,
+        nextName,
+      );
+      if (!result.ok) {
+        throw new Error(result.message || "重命名会话失败。");
+      }
+      setAssistantChatRenameDialog(null);
+      await onRefreshAssistantNavAgents?.();
+    } catch (error) {
+      setAssistantChatRenameDialog((current) =>
+        current
+          ? {
+              ...current,
+              pending: false,
+              error: error instanceof Error ? error.message : "重命名会话失败。",
+            }
+          : current,
+      );
+    }
   }
 
   async function handleAssistantArchiveChat(chat: AssistantNavChatItem) {
@@ -1098,6 +1191,18 @@ export function AppSidebar({
       ...current,
       [groupId]: !current[groupId],
     }));
+  }
+
+  function getActiveSidebarAgentKey() {
+    return activeSidebarAgentKey;
+  }
+
+  function getActiveSidebarChatId(agentKey: string) {
+    const activeAgentKey = getActiveSidebarAgentKey();
+    if (activeAgentKey !== agentKey) {
+      return "";
+    }
+    return pendingPath ? pendingChatId : currentChatId;
   }
 
   function isRouteActive(targetPath: string) {
@@ -1275,8 +1380,7 @@ export function AppSidebar({
 
   function renderAssistantAgent(agent: AssistantNavAgentItem) {
     const expanded = expandedAssistantAgentKey === agent.agentKey;
-    const selected =
-      currentAgentKey === agent.agentKey || pendingAgentKey === agent.agentKey;
+    const selected = getActiveSidebarAgentKey() === agent.agentKey;
     const recentChats = getAssistantNavAgentRecentChats(agent).slice(0, 5);
     const chatCount = Math.max(
       0,
@@ -1290,7 +1394,7 @@ export function AppSidebar({
     );
     const latestPreview =
       agent.latestPreview || (chatCount > 0 ? "" : "暂无会话");
-    const activeChatId = currentChatId || "";
+    const activeChatId = getActiveSidebarChatId(agent.agentKey);
     return (
       <Collapse
         key={agent.agentKey}
@@ -1409,17 +1513,7 @@ export function AppSidebar({
               className="worker-chat-more assistant-worker-more"
               onClick={(event) => {
                 event.stopPropagation();
-                const webviewRef = getActivePluginSurfaceWebviewRef()?.current;
-                if (webviewRef) {
-                  webviewRef.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
-                    action: "openChatHistory",
-                    data: {
-                      agentKey: agent.agentKey,
-                    },
-                  });
-                } else {
-                  requestNavigate(createAgentHistoryRoute(agent.agentKey));
-                }
+                requestNavigate(createAgentHistoryRoute(agent.agentKey));
               }}
             >
               查看更多（共 {chatCount} 条
@@ -2072,6 +2166,84 @@ export function AppSidebar({
     );
   }
 
+  function renderAssistantChatRenameDialog() {
+    if (!assistantChatRenameDialog || typeof document === "undefined") {
+      return null;
+    }
+    return createPortal(
+      <div
+        className="sidebar-agent-dialog-layer"
+        role="presentation"
+        onMouseDown={() => {
+          if (!assistantChatRenameDialog.pending) {
+            setAssistantChatRenameDialog(null);
+          }
+        }}
+      >
+        <form
+          className="sidebar-agent-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sidebar-chat-rename-dialog-title"
+          onSubmit={(event) => void handleConfirmRenameChat(event)}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="sidebar-agent-dialog-head">
+            <strong id="sidebar-chat-rename-dialog-title">重命名会话</strong>
+            <button
+              type="button"
+              className="sidebar-agent-dialog-close"
+              aria-label="关闭"
+              disabled={assistantChatRenameDialog.pending}
+              onClick={() => setAssistantChatRenameDialog(null)}
+            >
+              ×
+            </button>
+          </div>
+          <label className="sidebar-agent-dialog-field">
+            <span>名称</span>
+            <input
+              value={assistantChatRenameDialog.value}
+              onChange={(event) =>
+                setAssistantChatRenameDialog((current) =>
+                  current
+                    ? { ...current, value: event.target.value, error: "" }
+                    : current,
+                )
+              }
+              disabled={assistantChatRenameDialog.pending}
+              maxLength={120}
+              autoFocus
+            />
+          </label>
+          {assistantChatRenameDialog.error ? (
+            <div className="sidebar-agent-dialog-error" role="alert">
+              {assistantChatRenameDialog.error}
+            </div>
+          ) : null}
+          <div className="sidebar-agent-dialog-actions">
+            <button
+              type="button"
+              className="sidebar-agent-secondary-button"
+              disabled={assistantChatRenameDialog.pending}
+              onClick={() => setAssistantChatRenameDialog(null)}
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              className="sidebar-agent-primary-button"
+              disabled={assistantChatRenameDialog.pending}
+            >
+              {assistantChatRenameDialog.pending ? "处理中..." : "保存"}
+            </button>
+          </div>
+        </form>
+      </div>,
+      document.body,
+    );
+  }
+
   function renderAgentMenu() {
     if (!agentMenu || typeof document === "undefined") {
       return null;
@@ -2433,6 +2605,28 @@ export function AppSidebar({
               variant="compact"
               onToggleCollapsed={onToggleCollapsed}
             />
+            <div className="sidebar-history-controls">
+              <button
+                type="button"
+                className="sidebar-history-button"
+                aria-label="后退"
+                title="后退"
+                disabled={!sidebarNavigationCanGoBack}
+                onClick={onSidebarNavigateBack}
+              >
+                <LeftOutlined aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="sidebar-history-button"
+                aria-label="前进"
+                title="前进"
+                disabled={!sidebarNavigationCanGoForward}
+                onClick={onSidebarNavigateForward}
+              >
+                <RightOutlined aria-hidden="true" />
+              </button>
+            </div>
             {assistantLauncherVisible ? (
               <button
                 type="button"
@@ -2527,6 +2721,7 @@ export function AppSidebar({
             </Popover>
           </div>
           {renderAssistantChatMenu()}
+          {renderAssistantChatRenameDialog()}
           {renderAgentMenu()}
           {renderAgentDialog()}
           {renderCoderAcpProjectDialog()}

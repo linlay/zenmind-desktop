@@ -2,12 +2,14 @@ import {
   Menu,
   type MenuItemConstructorOptions
 } from "electron";
+import type { TranslateFunction } from "../../shared/i18n";
 
 export type BuildApplicationMenuOptions = {
   appName: string;
   platform: NodeJS.Platform;
-  t: (key: "menu.file" | "menu.settings" | "menu.settingsEllipsis") => string;
+  t: TranslateFunction;
   openSettings: () => void;
+  requestQuit: () => void;
 };
 
 export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
@@ -33,7 +35,11 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
             { role: "hideOthers" },
             { role: "unhide" },
             { type: "separator" },
-            { role: "quit" }
+            {
+              label: options.t("menu.quit", { appName: options.appName }),
+              accelerator: "Command+Q",
+              click: () => options.requestQuit()
+            }
           ]
         }
       : {
