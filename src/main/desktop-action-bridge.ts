@@ -28,6 +28,7 @@ import { issueAgentAccessToken } from "./agent-auth";
 import type { AgentPlatformAssistantBridge } from "./copilot/core/agent-platform-bridge";
 import {
   getServiceLogsMeta,
+  getResponsiveServiceState,
   getServiceState,
   initializeService,
   installBuiltinService,
@@ -428,7 +429,7 @@ export async function callAgentPlatform<T>(
   pathOrUrl: string,
   options: { method?: string; body?: unknown } = {}
 ): Promise<T> {
-  const state = await getServiceState(app, "agent-platform");
+  const state = await getResponsiveServiceState(app, "agent-platform");
   const baseUrl = state.status === "running"
     ? state.healthMeta.webUrl.trim() || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "")
     : "";
@@ -756,7 +757,7 @@ async function executeAction(
       return ok(action, await listServices(options.app));
     case "desktop.controlCenter.getServiceStatus":
     case "desktop.controlCenter.getServiceDetail":
-      return ok(action, await getServiceState(options.app, readServiceId(args)));
+      return ok(action, await getResponsiveServiceState(options.app, readServiceId(args)));
     case "desktop.controlCenter.getServiceLogsMeta":
       return ok(action, await getServiceLogsMeta(options.app, readServiceId(args)));
     case "desktop.controlCenter.readServiceLog": {

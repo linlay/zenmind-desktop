@@ -9,6 +9,12 @@ import { getServicesRoot } from "./user-paths";
 
 const manifestCache = new Map<string, { key: string; manifest: Manifest }>();
 
+type BuiltinAssetIndexEntry = {
+  id: string;
+  version: string;
+  assetFileName: string;
+};
+
 function isPackaged(app: App) {
   return app.isPackaged;
 }
@@ -48,6 +54,37 @@ function listBuiltinArchivePaths(root: string) {
 
   archivePaths.sort((left, right) => left.localeCompare(right));
   return archivePaths;
+}
+
+function readBuiltinAssetIndex(root: string) {
+  const indexPath = path.join(root, "manifest.json");
+  const byAssetFileName = new Map<string, BuiltinAssetIndexEntry>();
+  if (!fs.existsSync(indexPath)) {
+    return byAssetFileName;
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(indexPath, "utf8")) as unknown;
+    const services = parsed && typeof parsed === "object" && Array.isArray((parsed as { services?: unknown }).services)
+      ? (parsed as { services: unknown[] }).services
+      : [];
+    for (const item of services) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const record = item as Record<string, unknown>;
+      const id = typeof record.id === "string" ? record.id.trim() : "";
+      const version = typeof record.version === "string" ? record.version.trim() : "";
+      const assetFileName = typeof record.assetFileName === "string" ? record.assetFileName.trim() : "";
+      if (id && version && assetFileName) {
+        byAssetFileName.set(assetFileName, { id, version, assetFileName });
+      }
+    }
+  } catch (error) {
+    console.warn(`[builtin-loader] failed to read builtin asset index ${indexPath}`, error);
+  }
+
+  return byAssetFileName;
 }
 
 function readCachedManifest(tarPath: string) {
@@ -152,27 +189,35 @@ export function loadBuiltinServices(app: App) {
     clearServices("builtin");
 
     const builtinAssetsRoot = getBuiltinAssetsRoot(app);
-    const loaded = [];
-    const loadedServiceIds = new Set<string>();
-    for (const tarPath of listBuiltinArchivePaths(builtinAssetsRoot)) {
-      const manifest = readCachedManifest(tarPath);
+    const registeredByServiceId = new Map(
+      loadInstalledBuiltinServices(app).map((definition) => [definition.id, definition])
+    );
+    const assetIndex = readBuiltinAssetIndex(builtinAssetsRoot);
+
+    for (const archivePath of listBuiltinArchivePaths(builtinAssetsRoot)) {
+      const assetFileName = path.basename(archivePath);
+      const indexedAsset = assetIndex.get(assetFileName);
+      const installed = indexedAsset ? registeredByServiceId.get(indexedAsset.id) : undefined;
+      if (indexedAsset && installed && installed.version.localeCompare(indexedAsset.version) >= 0) {
+        continue;
+      }
+
+      const manifest = readCachedManifest(archivePath);
       if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
         continue;
       }
       const definition = registerService(manifest, {
         defaultKind: "builtin",
         desktop: {
-          assetFileName: path.basename(tarPath)
+          assetFileName
         }
       });
       if (definition.kind === "builtin") {
-        loaded.push(definition);
-        loadedServiceIds.add(definition.id);
+        registeredByServiceId.set(definition.id, definition);
       }
     }
 
-    loaded.push(...loadInstalledBuiltinServices(app, loadedServiceIds));
-    const sorted = loaded.sort((left, right) => left.id.localeCompare(right.id));
+    const sorted = [...registeredByServiceId.values()].sort((left, right) => left.id.localeCompare(right.id));
     loadedCount = sorted.length;
     return sorted;
   } finally {

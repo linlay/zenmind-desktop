@@ -132,6 +132,14 @@ test("agent-platform fetch does not refresh token for non-auth failures", async 
   assert.deepEqual(issuedReasons, ["missing"]);
 });
 
+test("Desktop Action Bridge uses responsive service reads for agent-platform read paths", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
+
+  assert.match(source, /getResponsiveServiceState/);
+  assert.match(source, /await getResponsiveServiceState\(app, "agent-platform"\)/);
+  assert.doesNotMatch(source, /const state = await getServiceState\(app, "agent-platform"\)/);
+});
+
 test("Desktop Action Bridge rejects page actions", async () => {
   const response = await handleDesktopActionRequest(createBridgeOptions(), {
     action: "desktop.page.readCurrent",

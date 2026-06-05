@@ -207,6 +207,51 @@ test("bundled env.zip import returns null when no packaged env exists", async ()
   }
 });
 
+test("bundled env.zip refreshes bootstrap registry seed files without overwriting user data", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-seed-refresh-"));
+  const app = createApp(root);
+  const resourcesRoot = path.join(root, "resources");
+  const bundledZipPath = path.join(resourcesRoot, "env", "env.zip");
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  const bootstrapAgentPath = path.join(runtimeRoot, "agents", "bootstrap", "agent.yml");
+  const providerPath = path.join(runtimeRoot, "registries", "providers", "minimax.yml");
+  const modelPath = path.join(runtimeRoot, "registries", "models", "th-minimax.yml");
+  const ownerPath = path.join(runtimeRoot, "owner", "profile.yml");
+
+  try {
+    fs.mkdirSync(path.dirname(bundledZipPath), { recursive: true });
+    fs.mkdirSync(path.dirname(bootstrapAgentPath), { recursive: true });
+    fs.mkdirSync(path.dirname(providerPath), { recursive: true });
+    fs.mkdirSync(path.dirname(ownerPath), { recursive: true });
+    fs.writeFileSync(bootstrapAgentPath, "modelKey: stale-openai\n", "utf8");
+    fs.writeFileSync(providerPath, "apiKey: stale\n", "utf8");
+    fs.writeFileSync(ownerPath, "name: keep-user-owner\n", "utf8");
+
+    await writeZip(bundledZipPath, {
+      "env/VERSION": DESKTOP_VERSION,
+      "env/agents/bootstrap/agent.yml": "modelKey: th-minimax-m2_7-highspeed\n",
+      "env/registries/providers/minimax.yml": "defaultModel: minimax-m3\n",
+      "env/registries/models/th-minimax.yml": "provider: th-minimax\n",
+      "env/owner/profile.yml": "name: bundled-owner\n"
+    });
+
+    const result = await importBundledEnvZipToRuntime(app, "win32", {
+      resourcesRoot,
+      expectedDesktopVersion: DESKTOP_VERSION,
+      refreshRuntimeSeedFiles: true
+    });
+
+    assert.equal(result?.sourceZipPath, bundledZipPath);
+    assert.equal(fs.readFileSync(bootstrapAgentPath, "utf8"), "modelKey: th-minimax-m2_7-highspeed\n");
+    assert.equal(fs.readFileSync(providerPath, "utf8"), "defaultModel: minimax-m3\n");
+    assert.equal(fs.readFileSync(modelPath, "utf8"), "provider: th-minimax\n");
+    assert.equal(fs.readFileSync(ownerPath, "utf8"), "name: keep-user-owner\n");
+    assert.equal(result?.overwrittenFiles, 2);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("importEnvZipToRuntime rejects env.zip without VERSION", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-missing-version-"));
   const app = createApp(root);

@@ -13,6 +13,7 @@ type ReadManagedPidFileOptions = {
   isProcessRunningImpl: (pid: number | null) => boolean;
   matchProcessInstallDirImpl?: typeof matchProcessInstallDir;
   removePidFileImpl?: typeof removePidFile;
+  verifyInstallDir?: boolean;
 };
 
 export function resolveRuntimePath(layoutOrInstallDir: ServiceLayout | string, relativePath: string) {
@@ -96,7 +97,7 @@ export function readManagedPidFile(
       removePidFileImpl(pidFilePath);
       continue;
     }
-    if (installDir) {
+    if (installDir && options.verifyInstallDir !== false) {
       const match = matchProcessInstallDirImpl(pid, installDir);
       if (match === "mismatched") {
         removePidFileImpl(pidFilePath);

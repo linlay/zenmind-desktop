@@ -19,6 +19,7 @@ export type EnvZipImportResult = {
   targetRoot: string;
   copiedFiles: number;
   skippedFiles: number;
+  overwrittenFiles: number;
   createdDirectories: number;
 };
 
@@ -32,6 +33,10 @@ const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop"
 const BUNDLED_ENV_RESOURCES_DIR_NAME = "env";
 const ENV_ZIP_FILE_NAME = "env.zip";
 const VERSION_FILE_NAME = "VERSION";
+
+type EnvZipImportOptions = {
+  shouldOverwriteExistingFile?: (relativePath: string) => boolean;
+};
 
 function isEnvArchiveWrapperDir(dirName: string) {
   const normalizedDirName = dirName.trim().toLowerCase();
@@ -89,6 +94,32 @@ export function runtimeEnvExists(app: AppPathReader, platform: NodeJS.Platform =
   });
 }
 
+function runtimeSeedPathExists(root: string, relativePath: string) {
+  try {
+    const targetPath = path.join(root, relativePath);
+    return fs.existsSync(targetPath);
+  } catch {
+    return false;
+  }
+}
+
+export function runtimeEnvNeedsBundledSeedRefresh(
+  app: AppPathReader,
+  platform: NodeJS.Platform = process.platform
+) {
+  if (platform !== "darwin" && platform !== "win32") {
+    return false;
+  }
+  const root = resolveRuntimeRoot(app, platform);
+  if (!runtimeRootExists(app, platform)) {
+    return false;
+  }
+  return (
+    runtimeSeedPathExists(root, path.join("agents", "bootstrap")) ||
+    runtimeSeedPathExists(root, path.join("owner", "BOOTSTRAP.md"))
+  );
+}
+
 export function shouldRequireEnvZipImport(input: {
   platform?: NodeJS.Platform;
   runtimeEnvExistedAtStartup: boolean;
@@ -135,6 +166,7 @@ export async function importBundledEnvZipToRuntime(
   options: {
     resourcesRoot?: string;
     expectedDesktopVersion?: string;
+    refreshRuntimeSeedFiles?: boolean;
   } = {}
 ): Promise<BundledEnvZipImportResult | null> {
   const zipPath = resolveBundledEnvZipPath(app, platform, options.resourcesRoot);
@@ -146,7 +178,12 @@ export async function importBundledEnvZipToRuntime(
     app,
     zipPath,
     platform,
-    options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader)
+    options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader),
+    {
+      shouldOverwriteExistingFile: options.refreshRuntimeSeedFiles
+        ? isRefreshableRuntimeSeedPath
+        : undefined
+    }
   );
   return {
     ...result,
@@ -215,6 +252,20 @@ function normalizeSafeRelativePath(relativePath: string) {
     throw new Error(`env.zip 包含不安全路径：${relativePath}`);
   }
   return normalized;
+}
+
+function isRefreshableRuntimeSeedPath(relativePath: string) {
+  const segments = normalizeSafeRelativePath(relativePath).split("/");
+  if (segments[0] === "agents" && segments[1] === "bootstrap") {
+    return true;
+  }
+  if (segments[0] === "agents" && typeof segments[1] === "string" && segments[1].endsWith(".bootstrap")) {
+    return true;
+  }
+  if (segments[0] === "registries" && (segments[1] === "providers" || segments[1] === "models")) {
+    return true;
+  }
+  return false;
 }
 
 function resolveSafeTargetPath(targetRoot: string, relativePath: string) {
@@ -324,7 +375,8 @@ function writeEnvImportMarker(targetRoot: string, result: Omit<EnvZipImportResul
     `${JSON.stringify({
       importedAt: new Date().toISOString(),
       copiedFiles: result.copiedFiles,
-      skippedFiles: result.skippedFiles
+      skippedFiles: result.skippedFiles,
+      overwrittenFiles: result.overwrittenFiles
     }, null, 2)}\n`,
     "utf8"
   );
@@ -334,7 +386,8 @@ export async function importEnvZipToRuntime(
   app: AppPathReader,
   zipPath: string,
   platform: NodeJS.Platform = process.platform,
-  expectedDesktopVersion: string = resolveDesktopVersion(app as AppVersionReader)
+  expectedDesktopVersion: string = resolveDesktopVersion(app as AppVersionReader),
+  options: EnvZipImportOptions = {}
 ): Promise<EnvZipImportResult> {
   if (path.extname(zipPath).toLowerCase() !== ".zip") {
     throw new Error("首次安装只能导入 env.zip。");
@@ -346,6 +399,7 @@ export async function importEnvZipToRuntime(
   const targetRoot = resolveRuntimeRoot(app, platform);
   let copiedFiles = 0;
   let skippedFiles = 0;
+  let overwrittenFiles = 0;
   let createdDirectories = 0;
 
   fs.mkdirSync(targetRoot, { recursive: true });
@@ -361,7 +415,18 @@ export async function importEnvZipToRuntime(
     }
 
     if (fs.existsSync(targetPath)) {
-      skippedFiles += 1;
+      if (!options.shouldOverwriteExistingFile?.(entry.relativePath)) {
+        skippedFiles += 1;
+        continue;
+      }
+      const targetStat = await fs.promises.stat(targetPath).catch(() => null);
+      if (targetStat?.isDirectory()) {
+        skippedFiles += 1;
+        continue;
+      }
+      const content = await entry.entry.async("nodebuffer");
+      await fs.promises.writeFile(targetPath, content);
+      overwrittenFiles += 1;
       continue;
     }
 
@@ -378,6 +443,7 @@ export async function importEnvZipToRuntime(
   writeEnvImportMarker(targetRoot, {
     copiedFiles,
     skippedFiles,
+    overwrittenFiles,
     createdDirectories
   });
 
@@ -385,6 +451,7 @@ export async function importEnvZipToRuntime(
     targetRoot,
     copiedFiles,
     skippedFiles,
+    overwrittenFiles,
     createdDirectories
   };
 }

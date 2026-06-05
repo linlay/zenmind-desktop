@@ -15,6 +15,7 @@ const childProcess = require("node:child_process");
     forceCleanupManagedProcesses,
     getServiceState,
     getInstallDir,
+    listServices,
     initializeService,
     installBuiltinService,
     readServiceLog,
@@ -554,7 +555,16 @@ function createStartupCoreAssetsFixture(options = {}) {
         ].filter(Boolean).join("\r\n"),
         "utf8"
       );
-      fs.writeFileSync(path.join(bundleRoot, "scripts", programCommonName), "# fixture\r\n", "utf8");
+      const programCommonContent = service.id === "zenmind-app-server"
+        ? [
+            "function Resolve-ProgramFrontendDistDir {",
+            "  param([string]$Value)",
+            "  return $Value",
+            "}",
+            "$env:FRONTEND_DIST_DIR = if ($env:FRONTEND_DIST_DIR) { $env:FRONTEND_DIST_DIR } else { './frontend/dist' }"
+          ].join("\r\n") + "\r\n"
+        : "# fixture\r\n";
+      fs.writeFileSync(path.join(bundleRoot, "scripts", programCommonName), programCommonContent, "utf8");
     } else {
       const unixStartPrelude = options.recordStartTime
         ? [
@@ -1327,6 +1337,7 @@ function isCommandLookup(command, args, name) {
 function withSpawnSyncMock(mockImplementation, run) {
   const previousSpawnSync = childProcess.spawnSync;
   const previousShell = process.env.SHELL;
+  __testInternals.clearContainerEngineProbeCache();
   childProcess.spawnSync = mockImplementation;
   delete process.env.SHELL;
 
@@ -1334,6 +1345,7 @@ function withSpawnSyncMock(mockImplementation, run) {
     return run();
   } finally {
     childProcess.spawnSync = previousSpawnSync;
+    __testInternals.clearContainerEngineProbeCache();
     if (previousShell === undefined) {
       delete process.env.SHELL;
     } else {
@@ -2442,6 +2454,56 @@ test("getServiceState removes stale pid files that point to unrelated live proce
   }
 });
 
+test("listServices uses lightweight Windows state reads for UI refreshes", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows-only responsiveness regression test.");
+    return;
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-windows-list-services-responsive-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const app = createApp(userDataRoot);
+  const serviceId = "responsive-plugin";
+  const installDir = getTestPluginProgramDir(userDataRoot, serviceId);
+  const service = writePluginInstallRoot(installDir, {
+    id: serviceId,
+    name: "Responsive Plugin",
+    port: 19380,
+    deployScriptContent: false
+  });
+  const previousSpawnSync = childProcess.spawnSync;
+  const slowProbeCalls = [];
+
+  try {
+    writeTestEnv(userDataRoot, service.id, "PORT=19380\n", "plugins");
+    markInitializationState(getTestInitializationStatePath(userDataRoot, service.id, "plugins"), service.version);
+    const pidPath = getTestPidPath(userDataRoot, service.id, "test-plugin.pid", "plugins");
+    fs.mkdirSync(path.dirname(pidPath), { recursive: true });
+    fs.writeFileSync(pidPath, `${process.pid}\n`, "utf8");
+
+    childProcess.spawnSync = (command, args = [], options = {}) => {
+      const commandText = String(command).toLowerCase();
+      if (commandText.includes("powershell") || command === "netstat") {
+        slowProbeCalls.push(`${command} ${args.join(" ")}`);
+        return createSpawnSyncResult(1);
+      }
+      return previousSpawnSync(command, args, options);
+    };
+
+    const services = await listServices(app);
+    const state = services.find((item) => item.id === service.id);
+
+    assert.deepEqual(slowProbeCalls, []);
+    assert.equal(state?.status, "running");
+    assert.equal(state?.healthMeta.pid, process.pid);
+    assert.equal(fs.existsSync(pidPath), true);
+  } finally {
+    childProcess.spawnSync = previousSpawnSync;
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("readManagedPidFile preserves live pid files when process ownership is temporarily unknown", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-unknown-pid-owner-"));
   const pidPath = path.join(tempRoot, "zenmind-app-server.pid");
@@ -2576,6 +2638,87 @@ test("readBuiltinAssetSignature uses the synced builtin asset manifest when avai
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadBuiltinServices reuses installed builtin manifests without opening matching bundled archives", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-loader-installed-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const assetsRoot = path.join(tempRoot, "assets");
+  const serviceId = "fast-installed-builtin";
+  const version = "v1.0.0";
+  const assetFileName = process.platform === "win32"
+    ? `${serviceId}-${version}-windows-amd64.zip`
+    : `${serviceId}-${version}-darwin-arm64.tar.gz`;
+  const serviceAssetDir = path.join(assetsRoot, serviceId);
+  const installDir = getTestServiceProgramDir(userDataRoot, serviceId, version);
+  const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+
+  fs.mkdirSync(serviceAssetDir, { recursive: true });
+  fs.mkdirSync(installDir, { recursive: true });
+  fs.writeFileSync(path.join(serviceAssetDir, assetFileName), "not a real archive", "utf8");
+  fs.writeFileSync(
+    path.join(assetsRoot, "manifest.json"),
+    `${JSON.stringify({
+      generatedAt: "2026-06-05T00:00:00.000Z",
+      services: [{
+        id: serviceId,
+        version,
+        assetFileName,
+        assetSignature: "fixture-signature"
+      }]
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(installDir, "manifest.json"),
+    `${JSON.stringify({
+      id: serviceId,
+      name: "Fast Installed Builtin",
+      kind: "builtin",
+      version,
+      description: "fixture builtin already installed",
+      platform: { os: currentManifestOs(), arch: "amd64" },
+      frontend: { mode: "none" },
+      scripts: {
+        start: process.platform === "win32" ? "start.ps1" : "start.sh",
+        stop: process.platform === "win32" ? "stop.ps1" : "stop.sh"
+      },
+      runtime: {
+        pidRelativePath: "run/fast-installed-builtin.pid",
+        logRelativePath: "run/fast-installed-builtin.log",
+        requiredPaths: ["manifest.json"]
+      },
+      web: {
+        routePath: "",
+        portEnvKey: "PORT",
+        defaultPort: 0
+      },
+      desktop: {
+        assetFileName,
+        bundleTopLevelDir: serviceId
+      }
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  try {
+    process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = assetsRoot;
+    registryInternals.clearServices();
+    const loaded = loadBuiltinServices(createApp(userDataRoot));
+    const service = getBuiltinService(serviceId);
+
+    assert.equal(loaded.some((item) => item.id === serviceId), true);
+    assert.equal(service.version, version);
+    assert.equal(service.assetFileName, assetFileName);
+  } finally {
+    registryInternals.clearServices();
+    if (previousAssetsRoot) {
+      process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
+    } else {
+      delete process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
@@ -3178,6 +3321,31 @@ test("containerEngineAvailable falls back to podman when docker daemon is unreac
   }, () => __testInternals.containerEngineAvailable());
 
   assert.equal(detected, "podman");
+});
+
+test("probeContainerEngines reuses cached daemon checks when requested", () => {
+  let infoCalls = 0;
+
+  const results = withSpawnSyncMock((command, args = []) => {
+    if (isCommandLookup(command, args, "docker")) {
+      return createSpawnSyncResult(0, { stdout: "docker\n" });
+    }
+    if (isCommandLookup(command, args, "podman")) {
+      return createSpawnSyncResult(0, { stdout: "podman\n" });
+    }
+    if ((command === "docker" || command === "podman") && args[0] === "info") {
+      infoCalls += 1;
+      return createSpawnSyncResult(1);
+    }
+    assert.fail(`unexpected spawnSync call: ${command} ${args.join(" ")}`);
+  }, () => [
+    __testInternals.probeContainerEngines({ cache: true }),
+    __testInternals.probeContainerEngines({ cache: true })
+  ]);
+
+  assert.equal(results[0].engine, "");
+  assert.equal(results[1].engine, "");
+  assert.equal(infoCalls, 2);
 });
 
 test("containerEngineAvailable finds a Windows podman.exe when command lookup misses it", async () => {
