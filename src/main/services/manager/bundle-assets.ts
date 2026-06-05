@@ -127,7 +127,8 @@ export function listMissingBundleEntries(service: ServiceDefinition, archivePath
 
   const entries = listTarEntries(archivePath);
   const missingEntries = service.runtime.requiredPaths.filter((relativePath) => {
-    const expectedPath = `${service.desktop.bundleTopLevelDir}/${relativePath}`;
+    const normalizedRelativePath = relativePath.replace(/\\/g, "/");
+    const expectedPath = `${service.desktop.bundleTopLevelDir}/${normalizedRelativePath}`;
     if (entries.has(expectedPath) || entries.has(`${expectedPath}/`)) {
       return false;
     }

@@ -857,7 +857,7 @@ test("buildCookieAccessTokenExchangeRequest sends cookies and extracts configure
     url: TEST_AI_TOKEN_URL,
     method: "POST",
     headers: {
-      Accept: "application/json",
+      Accept: "text/plain,application/json,*/*",
       "X-Desktop-Client": "ZenMind",
       Cookie: "sid=abc; iam=def"
     },
@@ -957,6 +957,48 @@ test("cookie access_token exchange persists the token file and logout removes it
   await logoutDesktopSso(app);
 
   assert.equal(fs.existsSync(tokenFilePath), false);
+});
+
+test("cookie access_token exchange accepts a plain text token response", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-text-token-file-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      loginUrl: TEST_AI_ROOT_URL,
+      appendLoginState: false,
+      browserOrigin: TEST_AI_ORIGIN
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  const tokenFilePath = getDesktopSsoAccessTokenFilePath(app);
+  const calls = [];
+
+  const accessToken = await exchangeConfiguredDesktopSsoCookieForAccessToken(app, "sid=cookie-123", async (url, init) => {
+    calls.push({ url, init });
+    return {
+      ok: true,
+      headers: {
+        get(name) {
+          return name.toLowerCase() === "content-type" ? "text/plain;charset=UTF-8" : null;
+        }
+      },
+      text: async () => "token-from-plain-text\n",
+      json: async () => {
+        throw new Error("plain text token should not be parsed as JSON");
+      }
+    };
+  });
+
+  assert.equal(accessToken, "token-from-plain-text");
+  assert.equal(fs.readFileSync(tokenFilePath, "utf8"), "token-from-plain-text\n");
+  assert.equal(calls[0].url, TEST_AI_AUTHORIZATION_URL);
+  assert.equal(calls[0].init.headers.Accept, "text/plain,application/json,*/*");
 });
 
 test("normalizeCallbackRequest rejects missing, mismatched, and reused authorization codes", () => {

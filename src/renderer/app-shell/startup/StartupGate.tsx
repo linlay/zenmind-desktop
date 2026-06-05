@@ -93,13 +93,15 @@ export function StartupLoadingScreen({
             const service = startupServices[index] ?? null;
             const startupServiceState = startupRestoreState.services.find((item) => item.serviceId === fallbackId);
             const displayName = getStartupServiceDisplayName(fallbackId, service?.name ?? fallbackId, t);
-            const previousServicesReady = startupRestoreState.serviceOrder
-              .slice(0, index)
-              .every((previousServiceId) => {
-                const previousServiceState = startupRestoreState.services.find((item) => item.serviceId === previousServiceId);
-                return previousServiceState?.phase === "succeeded";
-              });
             const startupPhase = startupServiceState?.phase ?? "pending";
+            const appServerStartupPhase = startupRestoreState.services.find((item) =>
+              item.serviceId === "zenmind-app-server"
+            )?.phase;
+            const waitingForStartupDependency =
+              startupRestoreState.mode === "bootstrap" &&
+              startupPhase === "pending" &&
+              fallbackId !== "zenmind-app-server" &&
+              appServerStartupPhase === "starting";
             const isActiveStartupService =
               !timedOut && (
                 startupPhase === "installing" ||
@@ -110,7 +112,7 @@ export function StartupLoadingScreen({
             const isFailed = startupPhase === "failed";
             const statusLabel = getStartupListPhaseLabel(
               startupPhase,
-              previousServicesReady,
+              waitingForStartupDependency,
               servicesLoading,
               startupRestoreState.phase,
               t
@@ -183,7 +185,7 @@ function getActiveStartupPhaseLabel(phase: StartupRestoreServicePhase, t: Transl
 
 function getStartupListPhaseLabel(
   phase: StartupRestoreServicePhase,
-  previousServicesReady: boolean,
+  waitingForStartupDependency: boolean,
   servicesLoading: boolean,
   startupPhase: StartupRestoreState["phase"],
   t: TranslateFunction
@@ -200,7 +202,7 @@ function getStartupListPhaseLabel(
     case "starting":
       return t("startup.phase.starting");
     default:
-      if (!previousServicesReady) {
+      if (waitingForStartupDependency) {
         return t("startup.phase.waitingPrevious");
       }
       if (servicesLoading && startupPhase === "idle") {

@@ -688,7 +688,14 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /recentChats\.length > 0 \? \(/);
   assert.match(sidebarSource, /\) : chatCount === 0 \? \(\s*<div className="status-line">暂无会话<\/div>/);
   assert.match(sidebarSource, /chatCount > recentChats\.length \? \(/);
-  assert.match(sidebarSource, /requestNavigate\(createAgentHistoryRoute\(agent\.agentKey\)\)/);
+  assert.match(sidebarSource, /historyRequested: url\.searchParams\.get\("history"\)\?\.trim\(\) === "1"/);
+  assert.match(sidebarSource, /SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
+  assert.match(sidebarSource, /webview\.send\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,\s*\{\s*action:\s*"openChatHistory"/);
+  assert.match(sidebarSource, /workerKey: `agent:\$\{agentKey\}`/);
+  assert.match(sidebarSource, /lastRouteAgentInfoRef = useRef\(readAgentRouteInfo\(currentRoute\)\)/);
+  assert.match(sidebarSource, /previousRouteAgentInfo\.historyRequested/);
+  assert.match(sidebarSource, /setExpandedAssistantAgentKey\(""\)/);
+  assert.match(sidebarSource, /requestNavigate\(\s*createAgentHistoryRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
   assert.match(sidebarSource, /<div className="status-line">暂无会话<\/div>/);
   assert.doesNotMatch(sidebarSource, /暂无相关会话/);
   assert.doesNotMatch(sidebarSource, /Math\.max\(agent\.chatCount, recentChats\.length\) > 5/);
@@ -900,8 +907,8 @@ test("sidebar top navigation exposes scoped back and forward history controls", 
   assert.match(sidebarSource, /disabled=\{!sidebarNavigationCanGoForward\}/);
   assert.match(sidebarSource, /onClick=\{onSidebarNavigateBack\}/);
   assert.match(sidebarSource, /onClick=\{onSidebarNavigateForward\}/);
-  assert.match(sidebarSource, /requestNavigate\(createAgentHistoryRoute\(agent\.agentKey\)\)/);
-  assert.doesNotMatch(sidebarSource, /action:\s*"openChatHistory"/);
+  assert.match(sidebarSource, /requestNavigate\(\s*createAgentHistoryRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
+  assert.match(sidebarSource, /action:\s*"openChatHistory"/);
 
   assert.match(globalStyles, /\.sidebar-history-controls\s*\{/);
   assert.match(globalStyles, /\.sidebar-history-button:disabled\s*\{/);
@@ -2591,7 +2598,10 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE/);
   assert.match(serviceWebviewPreload, /sendToHost/);
   assert.doesNotMatch(serviceWebviewPreload, /contextBridge\.exposeInMainWorld/);
-  assert.doesNotMatch(serviceWebviewPreload, /sendToMain|onFromMain/);
+  assert.doesNotMatch(serviceWebviewPreload, /sendToMain/);
+  assert.match(serviceWebviewPreload, /onFromMain\(channel, listener\)/);
+  assert.match(serviceWebviewPreload, /emitFromMain\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,\s*payload\)/);
+  assert.match(serviceWebviewPreload, /emitFromMain\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,\s*payload\)/);
   assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
   assert.match(serviceWebviewPreload, /DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);

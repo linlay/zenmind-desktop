@@ -28,6 +28,8 @@ const MAIN_WORLD_SCRIPT = `
   const PAGE_TO_PRELOAD_EVENT = ${JSON.stringify(PAGE_TO_PRELOAD_EVENT)};
   const PRELOAD_TO_PAGE_EVENT = ${JSON.stringify(PRELOAD_TO_PAGE_EVENT)};
   const PRELOAD_TO_PAGE_ACTION_EVENT = ${JSON.stringify(PRELOAD_TO_PAGE_ACTION_EVENT)};
+  const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL)};
+  const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL)};
   const DESKTOP_WEBVIEW_BRIDGE_FLAG = ${JSON.stringify(DESKTOP_WEBVIEW_BRIDGE_FLAG)};
   const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = ${JSON.stringify(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY)};
   const AGENT_APP_AUTH_CONTEXT_STORAGE_KEY = ${JSON.stringify(AGENT_APP_AUTH_CONTEXT_STORAGE_KEY)};
@@ -53,6 +55,56 @@ const MAIN_WORLD_SCRIPT = `
   const originalParentPostMessage = window.parent && window.parent !== window && typeof window.parent.postMessage === "function"
     ? window.parent.postMessage.bind(window.parent)
     : originalWindowPostMessage;
+  const fromMainListeners = new Map();
+
+  function emitFromMain(channel, payload) {
+    const listeners = fromMainListeners.get(channel);
+    if (!listeners) {
+      return;
+    }
+    for (const listener of Array.from(listeners)) {
+      try {
+        listener({ channel }, payload);
+      } catch {
+        // Keep desktop bridge listeners isolated from each other.
+      }
+    }
+  }
+
+  function installElectronAPICompat() {
+    const existingElectronAPI = window.electronAPI;
+    if (existingElectronAPI && typeof existingElectronAPI.onFromMain === "function") {
+      return;
+    }
+    const electronAPI = {
+      ...(existingElectronAPI && typeof existingElectronAPI === "object" ? existingElectronAPI : {}),
+      onFromMain(channel, listener) {
+        const normalizedChannel = String(channel || "");
+        if (!normalizedChannel || typeof listener !== "function") {
+          return () => {};
+        }
+        const listeners = fromMainListeners.get(normalizedChannel) || new Set();
+        listeners.add(listener);
+        fromMainListeners.set(normalizedChannel, listeners);
+        return () => {
+          listeners.delete(listener);
+          if (listeners.size === 0) {
+            fromMainListeners.delete(normalizedChannel);
+          }
+        };
+      }
+    };
+    try {
+      Object.defineProperty(window, "electronAPI", {
+        configurable: true,
+        enumerable: false,
+        value: electronAPI,
+        writable: false
+      });
+    } catch {
+      window.electronAPI = electronAPI;
+    }
+  }
 
   try {
     Object.defineProperty(window, DESKTOP_WEBVIEW_BRIDGE_FLAG, {
@@ -196,6 +248,7 @@ const MAIN_WORLD_SCRIPT = `
   }
 
   installWebSocketMonitorMetadata();
+  installElectronAPICompat();
 
   try {
     window.postMessage = function zenmindWindowPostMessage(value, targetOrigin, transfer) {
@@ -227,6 +280,9 @@ const MAIN_WORLD_SCRIPT = `
       return;
     }
     seedAgentAppAccessToken(payload);
+    if (payload.type === ${JSON.stringify(DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE)}) {
+      emitFromMain(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, payload);
+    }
     window.dispatchEvent(new MessageEvent("message", {
       data: payload,
       origin: location.origin,
@@ -239,6 +295,7 @@ const MAIN_WORLD_SCRIPT = `
     if (!payload || typeof payload !== "object") {
       return;
     }
+    emitFromMain(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, payload);
     window.dispatchEvent(new MessageEvent("message", {
       data: payload,
       origin: location.origin,

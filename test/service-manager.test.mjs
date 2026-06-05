@@ -746,6 +746,7 @@ function createStartupCoreAssetsFixture(options = {}) {
 }
 
 async function stopStartupCoreProcesses(app) {
+  await __testInternals.waitForBackgroundStartupPreparations();
   for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
     try {
       const state = await getServiceState(app, serviceId);
@@ -2623,6 +2624,35 @@ test("installBuiltinService falls back to copying when Windows blocks extracted 
     assert.equal(blockedRename, true);
     assert.ok(fs.existsSync(path.join(installDir, "manifest.json")));
     assert.equal(__testInternals.isInstallHealthy(getService("agent-container-hub"), installDir), true);
+  } finally {
+    fs.renameSync = originalRenameSync;
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("installBuiltinService coalesces concurrent installs for the same builtin service", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-install-coalesce-"));
+  const { assetsRoot, userDataRoot, installDir } = createContainerHubBundleFixture(tempRoot);
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+  const originalRenameSync = fs.renameSync;
+  let installMoves = 0;
+
+  fs.renameSync = (from, to) => {
+    if (String(to) === installDir) {
+      installMoves += 1;
+    }
+    return originalRenameSync(from, to);
+  };
+
+  try {
+    await Promise.all([
+      installBuiltinService(app, "agent-container-hub"),
+      installBuiltinService(app, "agent-container-hub")
+    ]);
+
+    assert.equal(installMoves, 1);
+    assert.ok(fs.existsSync(path.join(installDir, "manifest.json")));
   } finally {
     fs.renameSync = originalRenameSync;
     restore();
@@ -4690,6 +4720,49 @@ test("ensurePreStartRequirements preserves a custom provider api key env part", 
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("ensurePreStartRequirements restores the default provider key part for AES provider api keys", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-aes-provider-key-part-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const homeRoot = path.join(tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+    homePath: homeRoot,
+    desktopPath: path.join(homeRoot, "Desktop")
+  });
+  const platformService = getBuiltinService("agent-platform");
+  const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
+  const providersRoot = path.join(homeRoot, ".zenmind", "registries", "providers");
+
+  fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
+  fs.mkdirSync(providersRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(providersRoot, "minimax.yml"),
+    "key: minimax\nbaseUrl: https://api.minimaxi.com\napiKey: AES(encrypted)\ndefaultModel: minimax-m2_7-openai\n",
+    "utf8"
+  );
+  writeTestEnv(
+    userDataRoot,
+    platformService.id,
+    "SERVER_PORT=11949\n"
+  );
+
+  const previousHome = process.env.HOME;
+  process.env.HOME = homeRoot;
+  try {
+    await __testInternals.ensurePreStartRequirements(app, platformService);
+
+    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
+    assert.match(envContent, /^PROVIDER_APIKEY_KEY_PART=0\.1\.0$/m);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("ensurePreStartRequirements fills default desktop ACP command for the local-cli-acp-relay plugin", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-local-cli-acp-relay-defaults-"));
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -5599,7 +5672,7 @@ test("startup restore always includes default quick-start services", () => {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("startup restore includes optional services that were running at shutdown", () => {
+test("startup restore skips install-only services that were running at shutdown", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-optional-startup-services-"));
   const app = createApp(tempRoot);
 
@@ -5609,21 +5682,19 @@ test("startup restore includes optional services that were running at shutdown",
   ]);
 
   assert.deepEqual(__testInternals.getServiceIdsToRestore(app), [
-    "agent-container-hub",
     "zenmind-app-server",
     "agent-platform",
     "agent-webclient",
     "custom-plugin"
   ]);
   assert.deepEqual(__testInternals.getOptionalServiceIdsToRestore(app), [
-    "agent-container-hub",
     "custom-plugin"
   ]);
 
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("restoreRunningServices keeps going after optional container hub restore failure", async () => {
+test("restoreRunningServices skips install-only container hub and restores other optional services", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-optional-restore-failure-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const app = createApp(userDataRoot);
@@ -5641,7 +5712,11 @@ test("restoreRunningServices keeps going after optional container hub restore fa
     });
     writeTestEnv(userDataRoot, "agent-container-hub", "PORT=0\n", "plugins");
     markInitializationState(getTestInitializationStatePath(userDataRoot, "agent-container-hub", "plugins"));
-    writeExecutableFile(path.join(hubFolder, "start.sh"), "#!/usr/bin/env bash\nexit 1\n");
+    if (process.platform === "win32") {
+      writeExecutableFile(path.join(hubFolder, "start.ps1"), "throw 'hub should not start'\r\n");
+    } else {
+      writeExecutableFile(path.join(hubFolder, "start.sh"), "#!/usr/bin/env bash\nexit 1\n");
+    }
 
     writePluginInstallRoot(pluginFolder, {
       id: "restored-plugin",
@@ -5651,20 +5726,37 @@ test("restoreRunningServices keeps going after optional container hub restore fa
     });
     writeTestEnv(userDataRoot, "restored-plugin", "PORT=0\n", "plugins");
     markInitializationState(getTestInitializationStatePath(userDataRoot, "restored-plugin", "plugins"));
-    writeExecutableFile(
-      path.join(pluginFolder, "start.sh"),
-      [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
-        'mkdir -p "$pid_dir"',
-        'mkdir -p run',
-        'fixture_script="$PWD/run/restored-plugin-fixture.mjs"',
-        'printf "setInterval(() => {}, 1000);\\n" > "$fixture_script"',
-        'node "$fixture_script" >/dev/null 2>&1 &',
-        'echo $! > "$pid_dir/test-plugin.pid"'
-      ].join("\n")
-    );
+    if (process.platform === "win32") {
+      writeExecutableFile(
+        path.join(pluginFolder, "start.ps1"),
+        [
+          "$pidDir = if ($env:SERVICE_STATE_DIR) { $env:SERVICE_STATE_DIR } else { Join-Path $PSScriptRoot 'run' }",
+          "New-Item -ItemType Directory -Path $pidDir -Force | Out-Null",
+          "$runDir = Join-Path $PSScriptRoot 'run'",
+          "New-Item -ItemType Directory -Path $runDir -Force | Out-Null",
+          "$fixtureScript = Join-Path $runDir 'restored-plugin-fixture.mjs'",
+          "[System.IO.File]::WriteAllText($fixtureScript, 'setInterval(() => {}, 1000);')",
+          "$nodeBin = if ($env:NODE_BIN) { $env:NODE_BIN } else { 'node' }",
+          "$proc = Start-Process -FilePath $nodeBin -ArgumentList $fixtureScript -WindowStyle Hidden -PassThru",
+          "$proc.Id | Set-Content -LiteralPath (Join-Path $pidDir 'test-plugin.pid')"
+        ].join("\r\n")
+      );
+    } else {
+      writeExecutableFile(
+        path.join(pluginFolder, "start.sh"),
+        [
+          "#!/usr/bin/env bash",
+          "set -euo pipefail",
+          'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
+          'mkdir -p "$pid_dir"',
+          'mkdir -p run',
+          'fixture_script="$PWD/run/restored-plugin-fixture.mjs"',
+          'printf "setInterval(() => {}, 1000);\\n" > "$fixture_script"',
+          'node "$fixture_script" >/dev/null 2>&1 &',
+          'echo $! > "$pid_dir/test-plugin.pid"'
+        ].join("\n")
+      );
+    }
 
     __testInternals.writeLastRunningServices(app, ["agent-container-hub", "restored-plugin"]);
 
@@ -5680,8 +5772,6 @@ test("restoreRunningServices keeps going after optional container hub restore fa
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.restored, ["restored-plugin"]);
     assert.deepEqual(startupEvents, [
-      "start:agent-container-hub",
-      "progress:agent-container-hub:failed",
       "start:restored-plugin",
       "progress:restored-plugin:succeeded"
     ]);
@@ -5808,7 +5898,7 @@ test("restoreRunningServices skips services that still need foreground install o
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("restoreRunningServices keeps default startup services running when optional container hub is unavailable", async () => {
+test("restoreRunningServices skips unavailable install-only container hub", async () => {
   const fixture = createStartupCoreAssetsFixture();
   addContainerHubAssetToFixture(fixture);
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
@@ -5841,10 +5931,8 @@ test("restoreRunningServices keeps default startup services running when optiona
 
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.restored, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
-    assert.deepEqual(startupEvents.slice(0, 2), [
-      "start:agent-container-hub",
-      "progress:agent-container-hub:failed"
-    ]);
+    assert.equal(startupEvents.includes("start:agent-container-hub"), false);
+    assert.equal(startupEvents.includes("progress:agent-container-hub:failed"), false);
     for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
       const service = getBuiltinService(serviceId);
       const installDir = getInstallDir(app, service);
@@ -5981,6 +6069,7 @@ test("runStartupPreparation bootstraps packaged first launch with the three core
   try {
     const result = await runStartupPreparation(app);
     const hubService = getBuiltinService("agent-container-hub");
+    await __testInternals.waitForBackgroundStartupPreparations();
     const hubInstallDir = getInstallDir(app, hubService);
     const hubState = await getServiceState(app, "agent-container-hub");
 	    const hubEnv = fs.readFileSync(getTestEnvPath(userDataRoot, hubService.id), "utf8");
@@ -5994,6 +6083,42 @@ test("runStartupPreparation bootstraps packaged first launch with the three core
     assert.notEqual(hubState.status, "running");
     assert.equal(fs.existsSync(path.join(hubInstallDir, "run", "started.txt")), false);
 
+  } finally {
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runStartupPreparation prepares packaged first-launch core services in parallel", async () => {
+  const fixture = createStartupCoreAssetsFixture({ deployDelayMs: 600 });
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
+  const installingTimes = new Map();
+
+  try {
+    const result = await runStartupPreparation(app, {
+      onProgress(serviceId, phase) {
+        if (
+          ["zenmind-app-server", "agent-platform", "agent-webclient"].includes(serviceId) &&
+          phase === "installing" &&
+          !installingTimes.has(serviceId)
+        ) {
+          installingTimes.set(serviceId, Date.now());
+        }
+      }
+    });
+
+    const installStartTimes = ["zenmind-app-server", "agent-platform", "agent-webclient"].map((serviceId) => {
+      assert.equal(installingTimes.has(serviceId), true, `${serviceId} should enter installing phase`);
+      return installingTimes.get(serviceId);
+    });
+    const spreadMs = Math.max(...installStartTimes) - Math.min(...installStartTimes);
+
+    assert.equal(result.mode, "bootstrap");
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.ok(spreadMs < 400, `expected parallel install progress, got spread ${spreadMs}ms`);
   } finally {
     await stopStartupCoreProcesses(app);
     restore();
@@ -6352,7 +6477,7 @@ test("runStartupPreparation collects parallel restore failures without cancellin
   }
 });
 
-test("runStartupPreparation installs missing container hub without starting it when core services are healthy", async () => {
+test("runStartupPreparation prepares missing container hub in the background when core services are healthy", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
@@ -6362,11 +6487,12 @@ test("runStartupPreparation installs missing container hub without starting it w
       await installBuiltinService(app, serviceId);
     }
 
-	    const markerPath = path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "marker.txt");
+    const markerPath = path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "marker.txt");
     fs.writeFileSync(markerPath, "keep", "utf8");
 
     const result = await runStartupPreparation(app);
     const hubService = getBuiltinService("agent-container-hub");
+    await __testInternals.waitForBackgroundStartupPreparations();
     const hubInstallDir = getInstallDir(app, hubService);
     const hubState = await getServiceState(app, "agent-container-hub");
 
@@ -6396,13 +6522,17 @@ test("runStartupPreparation does not block core services when optional container
 
   try {
     const result = await runStartupPreparation(app);
+    await __testInternals.waitForBackgroundStartupPreparations();
     const hubState = await getServiceState(app, "agent-container-hub");
 
     assert.equal(result.mode, "bootstrap");
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
-    assert.equal(hubState.status, "error");
-    assert.match(hubState.message, /container hub deploy failed/u);
+    assert.ok(
+      ["dependency-missing", "error"].includes(hubState.status),
+      `expected optional hub to be unavailable, got ${hubState.status}`
+    );
+    assert.notEqual(hubState.status, "running");
     for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
       const state = await getServiceState(app, serviceId);
       assert.equal(state.status, "running", `${serviceId} should run when container hub init fails`);
@@ -6466,6 +6596,7 @@ test("runStartupPreparation bootstraps development first launch with core servic
   try {
     const result = await runStartupPreparation(app);
     const hubService = getBuiltinService("agent-container-hub");
+    await __testInternals.waitForBackgroundStartupPreparations();
     const hubState = await getServiceState(app, "agent-container-hub");
 
     assert.equal(result.mode, "bootstrap");

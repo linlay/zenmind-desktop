@@ -39,6 +39,7 @@ import {
 } from "../../assistantNavigation";
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/generated/brand";
+import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -300,7 +301,7 @@ function getRouteEmbedPath(route: string) {
 function readAgentInfoFromWebclientPath(pathWithQuery: string) {
   const normalized = pathWithQuery.trim();
   if (!normalized) {
-    return { agentKey: "", chatId: "" };
+    return { agentKey: "", chatId: "", historyRequested: false };
   }
   try {
     const url = new URL(normalized, "http://agent-webclient.local");
@@ -308,9 +309,10 @@ function readAgentInfoFromWebclientPath(pathWithQuery: string) {
     return {
       agentKey: match?.[1] ? decodeURIComponent(match[1]) : "",
       chatId: url.searchParams.get("chatId")?.trim() ?? "",
+      historyRequested: url.searchParams.get("history")?.trim() === "1",
     };
   } catch {
-    return { agentKey: "", chatId: "" };
+    return { agentKey: "", chatId: "", historyRequested: false };
   }
 }
 
@@ -325,16 +327,17 @@ function readAgentRouteInfo(route: string) {
   }
   const queryIndex = route.indexOf("?");
   if (queryIndex < 0) {
-    return { agentKey: "", chatId: "" };
+    return { agentKey: "", chatId: "", historyRequested: false };
   }
   try {
     const searchParams = new URLSearchParams(route.slice(queryIndex + 1));
     return {
       agentKey: searchParams.get("agentKey")?.trim() ?? "",
       chatId: searchParams.get("chatId")?.trim() ?? "",
+      historyRequested: searchParams.get("history")?.trim() === "1",
     };
   } catch {
-    return { agentKey: "", chatId: "" };
+    return { agentKey: "", chatId: "", historyRequested: false };
   }
 }
 
@@ -628,13 +631,14 @@ export function AppSidebar({
   } | null>(null);
   const [agentDialog, setAgentDialog] = useState<AgentDialogState | null>(null);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
+  const lastRouteAgentInfoRef = useRef(readAgentRouteInfo(currentRoute));
   const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
   const agentMenuRef = useRef<HTMLDivElement | null>(null);
   const currentRouteAgentInfo = readAgentRouteInfo(currentRoute);
   const pendingRouteAgentInfo = pendingPath
     ? readAgentRouteInfo(pendingPath)
-    : { agentKey: "", chatId: "" };
+    : { agentKey: "", chatId: "", historyRequested: false };
   const currentAgentKey = currentRouteAgentInfo.agentKey;
   const currentChatId = currentRouteAgentInfo.chatId;
   const pendingAgentKey = pendingRouteAgentInfo.agentKey;
@@ -809,6 +813,31 @@ export function AppSidebar({
   }, [agentMenu]);
 
   useEffect(() => {
+    const previousRouteAgentInfo = lastRouteAgentInfoRef.current;
+    lastRouteAgentInfoRef.current = currentRouteAgentInfo;
+    if (
+      previousRouteAgentInfo.historyRequested &&
+      !currentRouteAgentInfo.historyRequested &&
+      currentAgentKey &&
+      currentChatId &&
+      previousRouteAgentInfo.agentKey === currentAgentKey &&
+      expandedAssistantAgentKey === currentAgentKey &&
+      (!pendingPath || pendingRouteAgentInfo.historyRequested)
+    ) {
+      lastAutoExpandedAssistantAgentKeyRef.current = currentAgentKey;
+      setExpandedAssistantAgentKey("");
+      return;
+    }
+  }, [
+    currentAgentKey,
+    currentChatId,
+    currentRouteAgentInfo,
+    expandedAssistantAgentKey,
+    pendingPath,
+    pendingRouteAgentInfo.historyRequested,
+  ]);
+
+  useEffect(() => {
     const matched = assistantNavAgents.find(
       (agent) => agent.agentKey === activeSidebarAgentKey,
     );
@@ -874,7 +903,7 @@ export function AppSidebar({
   }
 
   function dispatchAgentRouteActionToActiveWebview(targetPath: string) {
-    const { agentKey, chatId } = readAgentRouteInfo(targetPath);
+    const { agentKey, chatId, historyRequested } = readAgentRouteInfo(targetPath);
     if (!agentKey) {
       return false;
     }
@@ -882,6 +911,22 @@ export function AppSidebar({
     const webview = getActivePluginSurfaceWebviewRef()?.current;
     if (!webview) {
       return false;
+    }
+
+    if (historyRequested) {
+      try {
+        webview.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
+          action: "openChatHistory",
+          data: {
+            workerKey: `agent:${agentKey}`,
+            agentKey,
+          },
+        });
+        return true;
+      } catch (error) {
+        console.warn("[assistant] failed to open agent history", error);
+        return false;
+      }
     }
 
     const eventName = chatId
@@ -911,10 +956,14 @@ export function AppSidebar({
   }
 
   function requestNavigate(targetPath: string, options: NavigateOptions = {}) {
-    if (targetPath === currentRoute) {
-      if (options.retriggerAgentRoute) {
+    if (options.retriggerAgentRoute) {
+      const targetAgentInfo = readAgentRouteInfo(targetPath);
+      if (targetPath === currentRoute || targetAgentInfo.historyRequested) {
         dispatchAgentRouteActionToActiveWebview(targetPath);
       }
+    }
+
+    if (targetPath === currentRoute) {
       return;
     }
     if (onRequestNavigate && !onRequestNavigate(targetPath)) {
@@ -1540,7 +1589,9 @@ export function AppSidebar({
               className="worker-chat-more assistant-worker-more"
               onClick={(event) => {
                 event.stopPropagation();
-                requestNavigate(createAgentHistoryRoute(agent.agentKey));
+                requestNavigate(createAgentHistoryRoute(agent.agentKey), {
+                  retriggerAgentRoute: true,
+                });
               }}
             >
               查看更多（共 {chatCount} 条

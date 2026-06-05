@@ -2431,7 +2431,12 @@
   display: grid;
   place-items: center;
   padding: 28px;
+  background: #f6f8fc;
   pointer-events: none;
+}
+
+:root[data-theme="dark"] .startup-loading-screen {
+  background: #0f172a;
 }
 
 .startup-loading-card {

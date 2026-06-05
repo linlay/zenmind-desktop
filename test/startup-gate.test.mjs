@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -72,4 +74,30 @@ test("startup gate only auto-opens the assistant after bootstrap succeeds", () =
   assert.equal(shouldAutoOpenAssistant({ mode: "bootstrap", phase: "succeeded" }, true), true);
   assert.equal(shouldAutoOpenAssistant({ mode: "bootstrap", phase: "succeeded" }, true, "/control-center"), true);
   assert.equal(shouldAutoOpenAssistant({ mode: "bootstrap", phase: "succeeded" }, true, "/market"), false);
+});
+
+test("startup loading only shows previous-service waiting while app-server is starting", () => {
+  const source = fs.readFileSync(
+    path.resolve(import.meta.dirname, "../src/renderer/app-shell/startup/StartupGate.tsx"),
+    "utf8"
+  );
+
+  assert.match(source, /const waitingForStartupDependency =[\s\S]*appServerStartupPhase === "starting"/u);
+  assert.doesNotMatch(source, /slice\(0,\s*index\)/u);
+});
+
+test("startup shell avoids a blank white first frame", () => {
+  const mainProcessSource = fs.readFileSync(
+    path.resolve(import.meta.dirname, "../src/main/index.ts"),
+    "utf8"
+  );
+  const startupStyles = fs.readFileSync(
+    path.resolve(import.meta.dirname, "../src/renderer/styles/navigation.css"),
+    "utf8"
+  );
+  const readyToShowBlock = mainProcessSource.match(/app\.whenReady\(\)\.then\([\s\S]*?app\.on\("activate"/u)?.[0] ?? "";
+
+  assert.doesNotMatch(readyToShowBlock, /ready-to-show[\s\S]{0,240}handleStartupPipeline/u);
+  assert.match(readyToShowBlock, /void handleStartupPipeline\(\);/u);
+  assert.match(startupStyles, /\.startup-loading-screen\s*\{[\s\S]*?background:\s*#f6f8fc;/u);
 });
