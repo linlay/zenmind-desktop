@@ -8,7 +8,8 @@ const projectRoot = process.cwd();
 const require = createRequire(import.meta.url);
 const {
   handleDesktopActionRequest,
-  handleDesktopCdpRequest
+  handleDesktopCdpRequest,
+  __testInternals
 } = require("../dist-electron/main/desktop-action-bridge.js");
 const { DESKTOP_ACTION_DEFINITIONS } = require("../dist-electron/shared/desktop-actions.js");
 
@@ -49,6 +50,86 @@ test("Desktop Action Bridge uses current agent-platform agent CRUD API paths", (
   assert.doesNotMatch(source, /\/api\/agent-create/);
   assert.doesNotMatch(source, /\/api\/agent-update/);
   assert.doesNotMatch(source, /\/api\/agent-delete/);
+});
+
+test("agent-platform fetch retries once with a refreshed token after unauthorized", async () => {
+  const calls = [];
+  const issuedReasons = [];
+
+  const result = await __testInternals.fetchAgentPlatformWithAuth("http://127.0.0.1:7078", "/api/automations", {
+    method: "POST",
+    body: { search: "daily" },
+    issueToken: async (reason) => {
+      issuedReasons.push(reason);
+      return { ok: true, token: `${reason}-token` };
+    },
+    fetchImpl: async (url, init) => {
+      calls.push({
+        url,
+        authorization: init.headers.Authorization,
+        body: init.body
+      });
+      if (calls.length === 1) {
+        return new Response(JSON.stringify({ error: "unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({ code: 0, data: { items: [] } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  assert.deepEqual(result, { items: [] });
+  assert.deepEqual(issuedReasons, ["missing", "unauthorized"]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].authorization, "Bearer missing-token");
+  assert.equal(calls[1].authorization, "Bearer unauthorized-token");
+  assert.equal(calls[0].body, JSON.stringify({ search: "daily" }));
+  assert.equal(calls[1].body, JSON.stringify({ search: "daily" }));
+});
+
+test("agent-platform fetch stops after one unauthorized retry", async () => {
+  let fetchCount = 0;
+
+  await assert.rejects(
+    () => __testInternals.fetchAgentPlatformWithAuth("http://127.0.0.1:7078", "/api/automations", {
+      method: "POST",
+      body: {},
+      issueToken: async (reason) => ({ ok: true, token: `${reason}-token` }),
+      fetchImpl: async () => {
+        fetchCount += 1;
+        return new Response(JSON.stringify({ error: "unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }),
+    /agent-platform 鉴权失败，请重启智能体平台后重试。/
+  );
+
+  assert.equal(fetchCount, 2);
+});
+
+test("agent-platform fetch does not refresh token for non-auth failures", async () => {
+  const issuedReasons = [];
+
+  await assert.rejects(
+    () => __testInternals.fetchAgentPlatformWithAuth("http://127.0.0.1:7078", "/api/automations", {
+      method: "POST",
+      body: {},
+      issueToken: async (reason) => {
+        issuedReasons.push(reason);
+        return { ok: true, token: `${reason}-token` };
+      },
+      fetchImpl: async () => new Response("service unavailable", { status: 503 })
+    }),
+    /service unavailable/
+  );
+
+  assert.deepEqual(issuedReasons, ["missing"]);
 });
 
 test("Desktop Action Bridge rejects page actions", async () => {

@@ -21,6 +21,25 @@ import type {
 } from "./types";
 import { PRODUCT_NAME } from "../../../shared/generated/brand";
 
+function normalizeAgentPlatformErrorMessage(message: string) {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return "agent-platform request failed";
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as { error?: unknown };
+    if (typeof parsed.error === "string" && parsed.error.trim().toLowerCase() === "unauthorized") {
+      return "智能体平台登录态已过期，请重试。";
+    }
+  } catch {
+    // Fall through to string matching for non-JSON errors.
+  }
+  if (trimmed.toLowerCase().includes("\"error\":\"unauthorized\"")) {
+    return "智能体平台登录态已过期，请重试。";
+  }
+  return trimmed;
+}
+
 async function requestAgentPlatform<T>(input: {
   path: string;
   method?: "GET" | "POST" | "PUT" | "DELETE";
@@ -40,10 +59,10 @@ async function requestAgentPlatform<T>(input: {
     if (message.includes("agentPlatform.request") || message.includes("No handler registered")) {
       throw new Error(`当前窗口尚未连接智能体平台桥接，请重启 ${PRODUCT_NAME} 后重试。`);
     }
-    throw error;
+    throw new Error(normalizeAgentPlatformErrorMessage(message));
   }
   if (!result.ok) {
-    throw new Error(result.message || "agent-platform request failed");
+    throw new Error(normalizeAgentPlatformErrorMessage(result.message || "agent-platform request failed"));
   }
   return result.data as T;
 }
@@ -189,5 +208,6 @@ export function getAutomationExecutions(params: AutomationExecutionsRequest) {
 }
 
 export const __testInternals = {
+  normalizeAgentPlatformErrorMessage,
   requestAgentPlatform
 };
