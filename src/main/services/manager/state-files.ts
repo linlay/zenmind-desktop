@@ -87,13 +87,16 @@ export function getDefaultStartupServiceIds() {
 export function getServiceIdsToRestore(app: App) {
   return orderServiceIdsForRestore([
     ...getDefaultStartupServiceIds(),
-    ...readLastRunningServices(app)
+    ...readLastRunningServices(app).filter((serviceId) => !INSTALL_ONLY_STARTUP_SERVICE_ID_SET.has(serviceId))
   ]);
 }
 
 export function getOptionalServiceIdsToRestore(app: App) {
   return orderServiceIdsForRestore(
-    readLastRunningServices(app).filter((serviceId) => !DEFAULT_STARTUP_SERVICE_ID_SET.has(serviceId))
+    readLastRunningServices(app).filter((serviceId) =>
+      !DEFAULT_STARTUP_SERVICE_ID_SET.has(serviceId) &&
+      !INSTALL_ONLY_STARTUP_SERVICE_ID_SET.has(serviceId)
+    )
   );
 }
 

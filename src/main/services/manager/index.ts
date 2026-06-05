@@ -54,6 +54,7 @@ import {
 } from "./install-refresh";
 import {
   formatDesktopAgentPlatformRuntimeRoot,
+  expandHomeShortcut,
   hasConfiguredAgentPlatformRuntimePath,
   resolveAgentPlatformAgentsDir,
   resolveAgentPlatformInitializationRuntimeRoot,
@@ -121,6 +122,8 @@ import {
 import {
   AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE,
   AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS,
+  LEGACY_PROVIDER_APIKEY_KEY_PART,
+  LEGACY_PROVIDER_APIKEY_KEY_PART_DEFAULT,
   LOCAL_CLI_ACP_RELAY_PLUGIN_ID,
   PROCESS_EXEC_PATH_PLACEHOLDER,
   applyAgentPlatformWindowsHostShellDefaults,
@@ -193,6 +196,8 @@ export {
 } from "./managed-cleanup";
 
 const startedThisSession = new Set<ServiceId>();
+const inFlightBuiltinInstalls = new Map<string, Promise<string>>();
+const backgroundStartupPreparationTasks = new Set<Promise<void>>();
 
 type ServiceLogStreamCallback = (event: ServiceLogStreamEvent) => void;
 
@@ -209,6 +214,12 @@ type StartupPreparationResult = {
   mode: StartupRestoreMode;
   started: ServiceId[];
   failures: string[];
+};
+
+type StartupPreparationOptions = {
+  onModeResolved?: (mode: StartupRestoreMode) => void;
+  onStarting?: (serviceId: ServiceId) => void;
+  onProgress?: (serviceId: ServiceId, phase: StartupPreparationProgressPhase, message: string) => void;
 };
 
 const SHUTDOWN_SERVICE_STOP_TIMEOUT_MS = 2_500;
@@ -432,6 +443,50 @@ type InstallBuiltinServiceOptions = {
 };
 
 export async function installBuiltinService(
+  app: App,
+  serviceId: ServiceId,
+  options: InstallBuiltinServiceOptions = {}
+) {
+  const service = getService(serviceId);
+  if (service.kind !== "builtin") {
+    throw new Error(`service ${serviceId} is not a builtin service`);
+  }
+
+  const installKey = createBuiltinInstallKey(app, service, options);
+  const existingInstall = inFlightBuiltinInstalls.get(installKey);
+  if (existingInstall) {
+    return existingInstall;
+  }
+
+  const installTask = installBuiltinServiceInternal(app, serviceId, options);
+  const trackedInstallTask = installTask.finally(() => {
+    if (inFlightBuiltinInstalls.get(installKey) === trackedInstallTask) {
+      inFlightBuiltinInstalls.delete(installKey);
+    }
+  });
+  inFlightBuiltinInstalls.set(installKey, trackedInstallTask);
+  return trackedInstallTask;
+}
+
+function createBuiltinInstallKey(app: App, service: ServiceDefinition, options: InstallBuiltinServiceOptions) {
+  const appScope = (() => {
+    try {
+      return app.getPath("userData");
+    } catch {
+      return "unknown-user-data";
+    }
+  })();
+  const assetScope = options.archivePath ? path.resolve(options.archivePath) : "bundled";
+  return [
+    appScope,
+    service.id,
+    service.version,
+    options.force ? "force" : "normal",
+    assetScope
+  ].join("\0");
+}
+
+async function installBuiltinServiceInternal(
   app: App,
   serviceId: ServiceId,
   options: InstallBuiltinServiceOptions = {}
@@ -1016,6 +1071,67 @@ function getEnvValueWithUpdates(env: Map<string, string>, updates: Map<string, s
   return updates.get(key) ?? env.get(key) ?? "";
 }
 
+function resolveAgentPlatformEnvPath(app: App, value: string) {
+  return path.resolve(expandHomeShortcut(value, resolveHomeDir(app)));
+}
+
+function resolveAgentPlatformProviderRegistryDir(
+  app: App,
+  env: Map<string, string>,
+  updates: Map<string, string>,
+  fallbackRuntimeRoot: string
+) {
+  const registriesDir = getEnvValueWithUpdates(env, updates, "REGISTRIES_DIR").trim();
+  if (registriesDir) {
+    return path.join(resolveAgentPlatformEnvPath(app, registriesDir), "providers");
+  }
+
+  const runtimeRoot = getEnvValueWithUpdates(env, updates, "RUNTIME_DIR").trim();
+  const resolvedRuntimeRoot = runtimeRoot
+    ? resolveAgentPlatformEnvPath(app, runtimeRoot)
+    : fallbackRuntimeRoot;
+  return path.join(resolvedRuntimeRoot, "registries", "providers");
+}
+
+function providerRegistryHasAesWrappedApiKey(providersDir: string) {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(providersDir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+
+  return entries
+    .filter((entry) => entry.isFile() && /\.ya?ml$/iu.test(entry.name))
+    .some((entry) => {
+      const providerPath = path.join(providersDir, entry.name);
+      const content = fs.readFileSync(providerPath, "utf8");
+      return /^(?!\s*#)\s*apiKey\s*:\s*['"]?AES\(/imu.test(content);
+    });
+}
+
+function syncAgentPlatformProviderApiKeyEnvPart(
+  app: App,
+  env: Map<string, string>,
+  updates: Map<string, string>,
+  fallbackRuntimeRoot: string
+) {
+  if (getEnvValueWithUpdates(env, updates, LEGACY_PROVIDER_APIKEY_KEY_PART).trim()) {
+    return false;
+  }
+
+  const providersDir = resolveAgentPlatformProviderRegistryDir(app, env, updates, fallbackRuntimeRoot);
+  if (!providerRegistryHasAesWrappedApiKey(providersDir)) {
+    return false;
+  }
+
+  updates.set(LEGACY_PROVIDER_APIKEY_KEY_PART, LEGACY_PROVIDER_APIKEY_KEY_PART_DEFAULT);
+  return true;
+}
+
 function resolveEnvBindingValue(service: ServiceDefinition, bindingKey: string) {
   const binding = service.desktop.envBindings.find((item) => {
     return item.key === bindingKey && item.value !== undefined;
@@ -1307,6 +1423,8 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
   if (!hasConfiguredAgentPlatformRuntimePath(env)) {
     updates.set("RUNTIME_DIR", formatDesktopAgentPlatformRuntimeRoot(app, desktopRuntimeRoot));
   }
+
+  syncAgentPlatformProviderApiKeyEnvPart(app, env, updates, desktopRuntimeRoot);
 
   if (updates.size > 0) {
     normalizeShellSourcedAgentPlatformEnvUpdates(updates);
@@ -2461,26 +2579,6 @@ async function shouldRunBuiltinBootstrap(app: App) {
     return false;
   }
 
-  for (const serviceId of INSTALL_ONLY_STARTUP_SERVICE_IDS) {
-    const current = await getServiceState(app, serviceId);
-    if (
-      current.status === "not-installed" ||
-      current.status === "initialization-required" ||
-      shouldReinitializeMissingCoreServiceConfig(getService(serviceId), current)
-    ) {
-      return true;
-    }
-
-    const service = getService(serviceId);
-    if (service.kind === "builtin" && needsBundledAssetRefresh(app, service)) {
-      return true;
-    }
-
-    if (current.status === "error" && installedBuiltinNeedsStartupRepair(app, service, current)) {
-      return true;
-    }
-  }
-
   for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
     const current = await getServiceState(app, serviceId);
     if (
@@ -2551,9 +2649,7 @@ async function prepareBuiltinServiceForStartup(
 async function prepareDefaultStartupServiceForBootstrap(
   app: App,
   serviceId: ServiceId,
-  options: {
-    onProgress?: (serviceId: ServiceId, phase: StartupPreparationProgressPhase, message: string) => void;
-  } = {}
+  options: Pick<StartupPreparationOptions, "onProgress"> = {}
 ): Promise<StartupPreparationServiceResult> {
   try {
     const preparation = await prepareBuiltinServiceForStartup(app, serviceId, {
@@ -2586,38 +2682,10 @@ async function prepareDefaultStartupServiceForBootstrap(
   }
 }
 
-export async function runStartupPreparation(
+async function prepareInstallOnlyStartupServices(
   app: App,
-  options: {
-    onModeResolved?: (mode: StartupRestoreMode) => void;
-    onStarting?: (serviceId: ServiceId) => void;
-    onProgress?: (serviceId: ServiceId, phase: StartupPreparationProgressPhase, message: string) => void;
-  } = {}
-): Promise<StartupPreparationResult> {
-  try {
-  await ensureDesktopRegisterApiKey(app);
-
-  if (!(await shouldRunBuiltinBootstrap(app))) {
-    options.onModeResolved?.("restore");
-    const defaultRestoreResult = await restoreDefaultStartupServicesInParallel(app, {
-      onStarting: options.onStarting,
-      onProgress: options.onProgress
-    });
-    const optionalRestoreResult = await restoreOptionalStartupServices(app, {
-      onStarting: options.onStarting,
-      onProgress: options.onProgress
-    });
-    return {
-      mode: "restore",
-      started: [...defaultRestoreResult.started, ...optionalRestoreResult.started],
-      failures: [...defaultRestoreResult.failures, ...optionalRestoreResult.failures]
-    };
-  }
-
-  options.onModeResolved?.("bootstrap");
-  const started: ServiceId[] = [];
-  const failures: string[] = [];
-
+  options: Pick<StartupPreparationOptions, "onProgress"> = {}
+) {
   for (const serviceId of INSTALL_ONLY_STARTUP_SERVICE_IDS) {
     try {
       const result = await prepareBuiltinServiceForStartup(app, serviceId, {
@@ -2635,74 +2703,137 @@ export async function runStartupPreparation(
       options.onProgress?.(serviceId, "failed", message);
     }
   }
+}
 
-  const preparedDefaultServices = new Map<ServiceId, ServiceState>();
-  const preparedDefaultResults = await Promise.all(
-    DEFAULT_STARTUP_SERVICE_IDS.map((serviceId) =>
-      prepareDefaultStartupServiceForBootstrap(app, serviceId, {
-        onProgress: options.onProgress
-      })
-    )
-  );
-  for (const preparation of preparedDefaultResults) {
-    if (!preparation.ok || !preparation.service) {
-      failures.push(`${preparation.serviceId}: ${preparation.message}`);
-      continue;
-    }
-    preparedDefaultServices.set(preparation.serviceId, preparation.service);
-  }
-
-  const startOptions = {
-    onStarting: options.onStarting,
-    onProgress: options.onProgress
-  };
-  const startResults: StartupServiceResult[] = [];
-  let defaultStartupBlocked = false;
-  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
-    if (!preparedDefaultServices.has(serviceId)) {
-      defaultStartupBlocked = true;
-      continue;
-    }
-    if (defaultStartupBlocked) {
-      continue;
-    }
-
-    const result = await startPreparedDefaultStartupServiceForBootstrap(
-      app,
-      serviceId,
-      preparedDefaultServices.get(serviceId)!,
-      startOptions
-    );
-    startResults.push(result);
-    if (!result.ok || !result.running) {
-      defaultStartupBlocked = true;
-    }
-  }
-  const startResultById = new Map(startResults.map((result) => [result.serviceId, result]));
-  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
-    const result = startResultById.get(serviceId);
-    if (!result) {
-      continue;
-    }
-    if (result.ok && result.running) {
-      started.push(serviceId);
-    } else {
-      failures.push(`${serviceId}: ${result.message}`);
-    }
-  }
-
-  const optionalRestoreResult = await restoreOptionalStartupServices(app, {
-    onStarting: options.onStarting,
-    onProgress: options.onProgress
+function trackBackgroundStartupPreparation(task: Promise<void>) {
+  const trackedTask = task.finally(() => {
+    backgroundStartupPreparationTasks.delete(trackedTask);
   });
-  started.push(...optionalRestoreResult.started);
-  failures.push(...optionalRestoreResult.failures);
+  backgroundStartupPreparationTasks.add(trackedTask);
+}
 
-  return {
-    mode: "bootstrap",
-    started,
-    failures
-  };
+function prepareInstallOnlyStartupServicesInBackground(
+  app: App,
+  options: Pick<StartupPreparationOptions, "onProgress"> = {}
+) {
+  trackBackgroundStartupPreparation(
+    prepareInstallOnlyStartupServices(app, options).catch((error) => {
+      console.warn(
+        `[service-manager] optional startup service background preparation failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    })
+  );
+}
+
+async function waitForBackgroundStartupPreparations() {
+  await Promise.allSettled([...backgroundStartupPreparationTasks]);
+}
+
+export async function runStartupPreparation(
+  app: App,
+  options: StartupPreparationOptions = {}
+): Promise<StartupPreparationResult> {
+  try {
+    await ensureDesktopRegisterApiKey(app);
+
+    if (!(await shouldRunBuiltinBootstrap(app))) {
+      options.onModeResolved?.("restore");
+      const defaultRestoreResult = await restoreDefaultStartupServicesInParallel(app, {
+        onStarting: options.onStarting,
+        onProgress: options.onProgress
+      });
+      const optionalRestoreResult = await restoreOptionalStartupServices(app, {
+        onStarting: options.onStarting,
+        onProgress: options.onProgress
+      });
+      prepareInstallOnlyStartupServicesInBackground(app, {
+        onProgress: options.onProgress
+      });
+      return {
+        mode: "restore",
+        started: [...defaultRestoreResult.started, ...optionalRestoreResult.started],
+        failures: [...defaultRestoreResult.failures, ...optionalRestoreResult.failures]
+      };
+    }
+
+    options.onModeResolved?.("bootstrap");
+    const started: ServiceId[] = [];
+    const failures: string[] = [];
+
+    const preparedDefaultServices = new Map<ServiceId, ServiceState>();
+    const preparationResults = await Promise.all(
+      DEFAULT_STARTUP_SERVICE_IDS.map((serviceId) =>
+        prepareDefaultStartupServiceForBootstrap(app, serviceId, {
+          onProgress: options.onProgress
+        })
+      )
+    );
+
+    for (const result of preparationResults) {
+      if (!result.ok || !result.service) {
+        failures.push(`${result.serviceId}: ${result.message}`);
+        continue;
+      }
+
+      preparedDefaultServices.set(result.serviceId, result.service);
+    }
+
+    const startOptions = {
+      onStarting: options.onStarting,
+      onProgress: options.onProgress
+    };
+    const startResults: StartupServiceResult[] = [];
+    let defaultStartupBlocked = false;
+    for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
+      if (!preparedDefaultServices.has(serviceId)) {
+        defaultStartupBlocked = true;
+        continue;
+      }
+      if (defaultStartupBlocked) {
+        continue;
+      }
+
+      const result = await startPreparedDefaultStartupServiceForBootstrap(
+        app,
+        serviceId,
+        preparedDefaultServices.get(serviceId)!,
+        startOptions
+      );
+      startResults.push(result);
+      if (!result.ok || !result.running) {
+        defaultStartupBlocked = true;
+      }
+    }
+    const startResultById = new Map(startResults.map((result) => [result.serviceId, result]));
+    for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
+      const result = startResultById.get(serviceId);
+      if (!result) {
+        continue;
+      }
+      if (result.ok && result.running) {
+        started.push(serviceId);
+      } else {
+        failures.push(`${serviceId}: ${result.message}`);
+      }
+    }
+
+    const optionalRestoreResult = await restoreOptionalStartupServices(app, {
+      onStarting: options.onStarting,
+      onProgress: options.onProgress
+    });
+    started.push(...optionalRestoreResult.started);
+    failures.push(...optionalRestoreResult.failures);
+    prepareInstallOnlyStartupServicesInBackground(app, {
+      onProgress: options.onProgress
+    });
+
+    return {
+      mode: "bootstrap",
+      started,
+      failures
+    };
   } finally {
     flushStartupTimingSummary();
   }
@@ -2754,6 +2885,7 @@ export const __testInternals = {
   decodePowerShellCapturePayload,
   runExecFile,
   runServiceRestart,
+  waitForBackgroundStartupPreparations,
   probeHttpUrl,
   verifyServiceState,
   buildVerificationResult,

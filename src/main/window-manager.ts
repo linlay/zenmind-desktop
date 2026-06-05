@@ -110,7 +110,7 @@ export function buildMainWindowOptions(input: {
     minWidth: 1180,
     minHeight: 760,
     show: false,
-    backgroundColor: input.platform === "darwin" ? "#00000000" : "#FFFFFF",
+    backgroundColor: input.platform === "darwin" ? "#00000000" : "#F6F8FC",
     ...(input.platform === "darwin"
       ? {
           titleBarStyle: "hidden" as const,

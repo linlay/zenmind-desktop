@@ -1956,19 +1956,7 @@ if (gotSingleInstanceLock) {
     registerQuickAssistantShortcut();
     registerDebugViewerShortcut();
 
-    if (appState.mainWindow) {
-      let pipelineStarted = false;
-      const startPipeline = () => {
-        if (pipelineStarted) return;
-        pipelineStarted = true;
-        void handleStartupPipeline();
-      };
-      appState.mainWindow.once("ready-to-show", startPipeline);
-      // Fallback timeout to ensure startup progress starts even if ready-to-show is delayed or skipped
-      setTimeout(startPipeline, 1000);
-    } else {
-      void handleStartupPipeline();
-    }
+    void handleStartupPipeline();
 
     app.on("activate", () => {
       if (nativeDialogController.isOpen()) {

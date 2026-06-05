@@ -274,7 +274,7 @@ test("window manager builds platform-specific main window options", () => {
   assert.equal(macOptions.webPreferences.contextIsolation, true);
   assert.equal(macOptions.webPreferences.webviewTag, true);
   assert.equal(Object.hasOwn(winOptions, "titleBarStyle"), false);
-  assert.equal(winOptions.backgroundColor, "#FFFFFF");
+  assert.equal(winOptions.backgroundColor, "#F6F8FC");
 });
 
 test("window manager includes initial locale arguments for renderer bootstrap", () => {
