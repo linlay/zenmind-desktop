@@ -1,6 +1,6 @@
 {
   "name": "zenmind-desktop",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "ZenMind 应用壳",
   "main": "dist-electron/main/index.js",
