@@ -98,6 +98,9 @@ type FetchResponseLike = {
   ok: boolean;
   status?: number;
   statusText?: string;
+  headers?: {
+    get(name: string): string | null;
+  };
   json: () => Promise<unknown>;
   text?: () => Promise<string>;
 };
@@ -185,6 +188,7 @@ const OIDC_CONFIG_URL_FIELDS = [
   "logoutCallbackUri"
 ] as const;
 const DEFAULT_COOKIE_ACCESS_TOKEN_PATH = "access_token";
+const DEFAULT_COOKIE_ACCESS_TOKEN_ACCEPT = "text/plain,application/json,*/*";
 const DEFAULT_ACCESS_TOKEN_COOKIE_NAME = "access_token";
 const DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_HOST = ["ai", "qi" + "uer", "net"].join(".");
 const DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_ORIGIN = `https://${DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_HOST}`;
@@ -1284,7 +1288,7 @@ function buildCookieAccessTokenExchangeRequest(
     return null;
   }
   const headers: Record<string, string> = {
-    Accept: "application/json",
+    Accept: DEFAULT_COOKIE_ACCESS_TOKEN_ACCEPT,
     ...exchangeConfig.headers
   };
   const normalizedCookieHeader = cookieHeader.trim();
@@ -1315,12 +1319,21 @@ function readJsonPathValue(value: unknown, pathValue: string) {
 }
 
 function readCookieAccessTokenFromResponse(value: unknown, config: OidcConfig = DEFAULT_OIDC_CONFIG) {
+  const rawAccessToken = normalizeStringClaim(value);
+  if (rawAccessToken) {
+    return rawAccessToken;
+  }
   const pathValue = config.cookieAccessTokenExchange?.accessTokenPath || DEFAULT_COOKIE_ACCESS_TOKEN_PATH;
   const accessToken = normalizeStringClaim(readJsonPathValue(value, pathValue));
   if (!accessToken) {
     throw new Error(`Cookie access_token 响应缺少 ${pathValue}。`);
   }
   return accessToken;
+}
+
+function isJsonFetchResponse(response: FetchResponseLike) {
+  const contentType = response.headers?.get("content-type")?.toLowerCase() || "";
+  return contentType.includes("json");
 }
 
 function getJwtPayload(token: string) {
@@ -1365,12 +1378,19 @@ async function exchangeCookieForAccessToken(
   if (!request) {
     return "";
   }
-  const tokenResponse = await fetchJson(fetchImpl, request.url, {
+  const response = await fetchImpl(request.url, {
     method: request.method,
     headers: request.headers,
     body: request.body
   });
-  return readCookieAccessTokenFromResponse(tokenResponse, config);
+  if (!response.ok) {
+    const detail = await readFetchErrorBody(response);
+    throw new Error(`OIDC request failed: ${readFetchErrorStatus(response)}${detail ? ` - ${detail}` : ""}`);
+  }
+  if (!isJsonFetchResponse(response) && typeof response.text === "function") {
+    return readCookieAccessTokenFromResponse(await response.text(), config);
+  }
+  return readCookieAccessTokenFromResponse(await response.json(), config);
 }
 
 function normalizeCallbackRequest(

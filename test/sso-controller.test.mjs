@@ -60,9 +60,20 @@ class FakeCookieJar {
 class FakeElectronSession {
   cookies = new FakeCookieJar();
   proxyRules = "";
+  fetchCalls = [];
+  fetchResponses = [];
 
   async setProxy(input) {
     this.proxyRules = input.proxyRules;
+  }
+
+  async fetch(url, init) {
+    this.fetchCalls.push({ url, init });
+    const response = this.fetchResponses.shift();
+    if (!response) {
+      throw new Error("unexpected session fetch");
+    }
+    return response;
   }
 }
 
@@ -178,7 +189,7 @@ test("desktop SSO controller exchanges browser cookies for access_token and inje
     init: {
       method: "GET",
       headers: {
-        Accept: "application/json",
+        Accept: "text/plain,application/json,*/*",
         Cookie: "sid=cookie-123"
       },
       body: undefined
@@ -213,4 +224,64 @@ test("desktop SSO controller exchanges browser cookies for access_token and inje
       sameSite: "lax"
     }
   ]);
+});
+
+test("desktop SSO controller uses the SSO session fetch by default for access_token exchange", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-controller-session-fetch-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      loginUrl: TEST_AI_ROOT_URL,
+      appendLoginState: false,
+      browserOrigin: TEST_AI_ORIGIN
+    }),
+    "utf8"
+  );
+  const defaultSession = new FakeElectronSession();
+  const ssoSession = new FakeElectronSession();
+  ssoSession.fetchResponses.push({
+    ok: true,
+    json: async () => ({ access_token: "token-123" })
+  });
+  await ssoSession.cookies.set({
+    url: TEST_AI_ROOT_URL,
+    name: "sid",
+    value: "cookie-123",
+    path: "/",
+    secure: true,
+    httpOnly: true,
+    sameSite: "lax"
+  });
+  const controller = createDesktopSsoController({
+    app: createTestApp(homePath),
+    platform: "darwin",
+    session: {
+      defaultSession,
+      fromPartition() {
+        return ssoSession;
+      }
+    },
+    getMainWindow: () => null,
+    openBrowserUrl: async () => ({ ok: true })
+  });
+
+  const accessToken = await controller.exchangeBrowserCookieAccessToken();
+
+  assert.equal(accessToken, "token-123");
+  assert.deepEqual(ssoSession.fetchCalls, [{
+    url: TEST_AI_AUTHORIZATION_URL,
+    init: {
+      method: "GET",
+      headers: {
+        Accept: "text/plain,application/json,*/*",
+        Cookie: "sid=cookie-123"
+      },
+      body: undefined
+    }
+  }]);
 });

@@ -326,7 +326,8 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       }
       const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
       const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, exchangeUrl);
-      const accessToken = await exchangeConfiguredDesktopSsoCookieForAccessToken(options.app, cookieHeader, fetchImpl);
+      const accessTokenFetch = fetchImpl || ((url, init) => ssoSession.fetch(url, init));
+      const accessToken = await exchangeConfiguredDesktopSsoCookieForAccessToken(options.app, cookieHeader, accessTokenFetch);
       if (!accessToken) {
         return "";
       }
