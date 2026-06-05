@@ -121,6 +121,32 @@ test("desktop SSO controller splits combined Set-Cookie headers without splittin
   );
 });
 
+test("desktop SSO controller opens URLs with the system browser", async () => {
+  const openedUrls = [];
+  const controller = createDesktopSsoController({
+    app: createTestApp("/tmp/zenmind-sso-system-browser"),
+    platform: "darwin",
+    session: {
+      defaultSession: new FakeElectronSession(),
+      fromPartition: () => new FakeElectronSession()
+    },
+    getMainWindow: () => null,
+    openBrowserUrl: async () => ({ ok: true }),
+    openExternal: async (url) => {
+      openedUrls.push(url);
+    }
+  });
+
+  const result = await controller.openSystemBrowserUrl({
+    url: "https://accounts.google.com/o/oauth2/v2/auth?client_id=desktop",
+    label: "Google 登录"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.action, "open_system_browser");
+  assert.deepEqual(openedUrls, ["https://accounts.google.com/o/oauth2/v2/auth?client_id=desktop"]);
+});
+
 test("desktop SSO controller exchanges browser cookies for access_token and injects token cookies", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-controller-cookie-token-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -160,7 +186,8 @@ test("desktop SSO controller exchanges browser cookies for access_token and inje
       }
     },
     getMainWindow: () => null,
-    openBrowserUrl: async () => ({ ok: true })
+    openBrowserUrl: async () => ({ ok: true }),
+    openExternal: async () => {}
   });
   const fetchCalls = [];
   const accessToken = await controller.exchangeBrowserCookieAccessToken(async (url, init) => {
@@ -213,4 +240,104 @@ test("desktop SSO controller exchanges browser cookies for access_token and inje
       sameSite: "lax"
     }
   ]);
+});
+
+test("desktop SSO controller exchanges Google id_token for web session cookies and clears them", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-controller-web-session-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  const webOrigin = "https://www.zenmind.cc";
+  const exchangeUrl = `${webOrigin}/api/auth/desktop-sso/session`;
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      provider: "google",
+      clientId: "google-desktop-client",
+      clientSecret: "google-desktop-secret",
+      webSessionExchange: {
+        url: exchangeUrl,
+        cookieOrigins: [webOrigin],
+        clearCookies: [
+          {
+            url: webOrigin,
+            name: "__Host-zm_session"
+          }
+        ]
+      }
+    }),
+    "utf8"
+  );
+  const defaultSession = new FakeElectronSession();
+  const ssoSession = new FakeElectronSession();
+  const partitionRequests = [];
+  const controller = createDesktopSsoController({
+    app: createTestApp(homePath),
+    platform: "darwin",
+    session: {
+      defaultSession,
+      fromPartition(partition) {
+        partitionRequests.push(partition);
+        return ssoSession;
+      }
+    },
+    getMainWindow: () => null,
+    openBrowserUrl: async () => ({ ok: true }),
+    openExternal: async () => {}
+  });
+  const fetchCalls = [];
+  const exchanged = await controller.exchangeWebSession("google-id-token", async (url, init) => {
+    fetchCalls.push({ url, init });
+    return {
+      ok: true,
+      headers: new Headers({
+        "set-cookie": "__Host-zm_session=session-123; Path=/; Secure; HttpOnly; SameSite=Lax"
+      })
+    };
+  });
+
+  assert.equal(exchanged, true);
+  assert.deepEqual(fetchCalls, [{
+    url: exchangeUrl,
+    init: {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        provider: "google",
+        id_token: "google-id-token"
+      })
+    }
+  }]);
+  assert.deepEqual(await defaultSession.cookies.get({ url: webOrigin }), [{
+    url: webOrigin,
+    name: "__Host-zm_session",
+    value: "session-123",
+    path: "/",
+    secure: true,
+    httpOnly: true,
+    sameSite: "lax"
+  }]);
+  assert.deepEqual(await ssoSession.cookies.get({ url: webOrigin }), [{
+    url: webOrigin,
+    name: "__Host-zm_session",
+    value: "session-123",
+    path: "/",
+    secure: true,
+    httpOnly: true,
+    sameSite: "lax"
+  }]);
+
+  await controller.clearWebSessionCookies();
+
+  assert.deepEqual(partitionRequests, [
+    DESKTOP_SSO_WEBVIEW_PARTITION,
+    DESKTOP_SSO_WEBVIEW_PARTITION
+  ]);
+  assert.deepEqual(await defaultSession.cookies.get({ url: webOrigin }), []);
+  assert.deepEqual(await ssoSession.cookies.get({ url: webOrigin }), []);
 });

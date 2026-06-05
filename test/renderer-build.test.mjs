@@ -3263,17 +3263,19 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /function renderDesktopSsoAccountMenuSection\(\)/);
   assert.match(sidebarSource, /function renderAccountMenuUserItem\(\)/);
   assert.match(sidebarSource, /function handleDesktopSsoMenuActionClick\(\)/);
+  assert.match(sidebarSource, /function handleDesktopSsoLogoutClick/);
   assert.match(sidebarSource, /sidebar-account-menu/);
-  assert.match(sidebarSource, /sidebar\.account\.personal/);
-  assert.match(sidebarSource, /desktopSsoStatus\?\.authenticated \? \([\s\S]{0,180}sidebar\.account\.personal/);
+  assert.doesNotMatch(sidebarSource, /sidebar\.account\.personal/);
+  assert.doesNotMatch(sidebarSource, /is-personal/);
   assert.doesNotMatch(sidebarSource, /sidebar\.account\.remainingUsage/);
   assert.match(sidebarSource, /className="sidebar-tool-status-label"/);
   assert.match(sidebarSource, /\{getDesktopSsoUserLabel\(\)\}/);
   assert.match(sidebarSource, /fixedToolItems\.map\(\(item\) => renderToolLink\(item\)\)/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoActionLabel\}/);
-  assert.match(sidebarSource, /if \(desktopSsoStatus\?\.authenticated\) \{[\s\S]{0,180}return renderDisabledAccountMenuItem\(/);
-  assert.doesNotMatch(sidebarSource, /window\.confirm\(t\("sidebar\.sso\.confirmSignOut"\)\)/);
-  assert.doesNotMatch(sidebarSource, /onDesktopSsoLogout\?\.\(\)/);
+  assert.match(sidebarSource, /className="sidebar-account-menu-logout"/);
+  assert.match(sidebarSource, /aria-label=\{desktopSsoLogoutLabel\}/);
+  assert.match(sidebarSource, /window\.confirm\(t\("sidebar\.sso\.confirmSignOut"\)\)/);
+  assert.match(sidebarSource, /onDesktopSsoLogout\?\.\(\)/);
   assert.match(sidebarSource, /onDesktopSsoLogin\?\.\(\);/);
   assert.doesNotMatch(sidebarSource, /desktopSsoStatus\.authenticated[\s\S]{0,140}\? onDesktopSsoLogout\?\.\(\)[\s\S]{0,140}: onDesktopSsoLogin\?\.\(\)/);
   assert.match(sidebarSource, /disabled=\{desktopSsoBusy\}/);
@@ -3295,7 +3297,9 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-status-label\s*\{[\s\S]*?display:\s*none;/);
   assert.match(globalStyles, /\.sidebar-account-menu-label\s*\{[\s\S]*?text-overflow:\s*ellipsis;/);
   assert.match(globalStyles, /\.sidebar-account-menu-item\.is-disabled\s*\{[\s\S]*?cursor:\s*default;/);
+  assert.match(globalStyles, /\.sidebar-account-menu-logout\s*\{/);
   assert.match(globalStyles, /\.sidebar-account-menu-divider\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-account-menu-icon\.is-personal/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.sidebar-tool-menu\.sidebar-account-menu\s*\{/);
   assert.doesNotMatch(globalStyles, /\.sidebar-sso-message/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-sso-entry/);
@@ -3312,13 +3316,36 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
     path.join(projectRoot, "src", "shared", "contracts", "copilot.ts"),
     "utf8"
   );
+  const pluginPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
+    "utf8"
+  );
+  const mainProcess = readSourceFile("src", "main", "index.ts");
+  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const ssoHandlers = readSourceFile("src", "main", "ipc", "sso-handlers.ts");
+  const ssoController = readSourceFile("src", "main", "sso-controller.ts");
+  const oidcSso = readSourceFile("src", "main", "oidc-sso.ts");
 
   assert.match(copilotContracts, /partition\?: string;/);
   assert.match(copilotContracts, /userAgent\?: string;/);
   assert.match(externalWebviewPage, /partition\?: string;/);
   assert.match(externalWebviewPage, /userAgent\?: string;/);
   assert.match(externalWebviewPage, /partition: tab\.partition,/);
-  assert.match(externalWebviewPage, /useragent: tab\.userAgent,/);
+  assert.doesNotMatch(externalWebviewPage, /getRendererEmbeddedBrowserUserAgent/u);
+  assert.doesNotMatch(pluginPage, /embedded-browser-user-agent/u);
+  assert.match(oidcSso, /provider: "google"/u);
+  assert.match(oidcSso, /https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth/u);
+  assert.match(oidcSso, /https:\/\/oauth2\.googleapis\.com\/token/u);
+  assert.match(oidcSso, /GOOGLE_LOOPBACK_HOST = "127\.0\.0\.1"/u);
+  assert.match(oidcSso, /port: 0,[\s\S]{0,120}closeAfterCallback: true/u);
+  assert.match(oidcSso, /code_challenge/u);
+  assert.match(oidcSso, /openMode: "system" as const/u);
+  assert.match(ssoController, /async openSystemBrowserUrl/u);
+  assert.match(ssoController, /options\.openExternal\(targetUrl\)/u);
+  assert.match(ssoHandlers, /result\.openMode === "system"[\s\S]{0,120}openSystemBrowserUrl/u);
+  assert.doesNotMatch(mainProcess, /openInternalAuthBrowserWindow/u);
+  assert.doesNotMatch(mainProcess, /shouldOpenAuthUrlInInternalBrowser/u);
+  assert.doesNotMatch(windowManager, /openInternalAuthFromWebview/u);
   assert.match(externalWebviewPage, /function shouldRefreshWebviewAfterDesktopSso\(value: string\)/u);
   assert.match(externalWebviewPage, /window\.electronAPI\.sso\.onStatusChanged/u);
   assert.match(externalWebviewPage, /if \(!status\.authenticated\) \{/u);

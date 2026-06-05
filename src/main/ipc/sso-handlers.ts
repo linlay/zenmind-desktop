@@ -4,17 +4,23 @@ export interface SsoIpcHandlerOptions {
     broadcastStatus: (status: any) => void;
     syncBrowserCookies: () => Promise<void>;
     exchangeBrowserCookieAccessToken: () => Promise<string>;
+    exchangeWebSession: (idToken: string) => Promise<boolean>;
     clearBrowserCookies: () => Promise<void>;
+    clearWebSessionCookies: () => Promise<void>;
     openBrowserUrl: (input: {
       url: string;
       label: string;
       browserOrigin?: string;
       resolveRedirect: boolean;
     }) => Promise<{ ok: boolean; message?: string }>;
+    openSystemBrowserUrl: (input: {
+      url: string;
+      label: string;
+    }) => Promise<{ ok: boolean; message?: string }>;
   };
   getDesktopSsoStatus: (app: any) => any | Promise<any>;
   startDesktopSsoLogin: (app: any, options: {
-    onBeforeStatusChanged: (status: any) => Promise<void>;
+    onBeforeStatusChanged: (status: any, context?: { idToken?: string }) => Promise<void>;
     onStatusChanged: (status: any) => void;
   }) => Promise<any>;
   logoutDesktopSso: (app: any, options: {
@@ -43,21 +49,27 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
 
   ipcMain.handle("sso.startLogin", async () => {
     const result = await startDesktopSsoLogin(app, {
-      onBeforeStatusChanged: async (status: any) => {
+      onBeforeStatusChanged: async (status: any, context?: { idToken?: string }) => {
         if (status.authenticated) {
           await desktopSsoController.syncBrowserCookies();
           await desktopSsoController.exchangeBrowserCookieAccessToken();
+          await desktopSsoController.exchangeWebSession(context?.idToken || "");
         }
       },
       onStatusChanged: desktopSsoController.broadcastStatus
     });
     if (result.ok && result.authorizeUrl) {
-      const browserOpenResult = await desktopSsoController.openBrowserUrl({
-        url: result.browserUrl || result.authorizeUrl,
-        label: "IAM 登录",
-        browserOrigin: result.browserUrl ? undefined : result.browserOrigin,
-        resolveRedirect: Boolean(result.browserUrl)
-      });
+      const browserOpenResult = result.openMode === "system"
+        ? await desktopSsoController.openSystemBrowserUrl({
+          url: result.authorizeUrl,
+          label: "Google 登录"
+        })
+        : await desktopSsoController.openBrowserUrl({
+          url: result.browserUrl || result.authorizeUrl,
+          label: "IAM 登录",
+          browserOrigin: result.browserUrl ? undefined : result.browserOrigin,
+          resolveRedirect: Boolean(result.browserUrl)
+        });
       if (!browserOpenResult.ok) {
         const message = browserOpenResult.message || "Desktop SSO browser open failed";
         const status = failDesktopSsoFlow(message);
@@ -78,6 +90,7 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
       onStatusChanged: desktopSsoController.broadcastStatus
     });
     await desktopSsoController.clearBrowserCookies();
+    await desktopSsoController.clearWebSessionCookies();
     if (result.ok && result.logoutUrl) {
       const browserOpenResult = await desktopSsoController.openBrowserUrl({
         url: result.browserUrl || result.logoutUrl,

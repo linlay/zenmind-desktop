@@ -5,7 +5,9 @@ import {
   getDesktopSsoCookieMirrorOrigins,
   getDesktopSsoCookieAccessTokenExchangeUrl,
   getDesktopSsoProxyBrowserCookieDetails,
-  getDesktopSsoStatus
+  getDesktopSsoStatus,
+  getDesktopSsoWebSessionClearCookies,
+  getDesktopSsoWebSessionExchangeConfig
 } from "./oidc-sso";
 import { getDesktopSsoBrowserUserAgent, type DesktopPlatform } from "./platform-adapter";
 import { safeConsoleError } from "./safe-console";
@@ -15,6 +17,18 @@ export const DESKTOP_SSO_WEBVIEW_PARTITION = `persist:${STORAGE_NAMESPACE}-sso`;
 
 type DesktopSsoStatus = ReturnType<typeof getDesktopSsoStatus>;
 type CookieAccessTokenFetch = Parameters<typeof exchangeConfiguredDesktopSsoCookieForAccessToken>[2];
+
+type WebSessionExchangeFetch = (url: string, init: {
+  method: "POST";
+  headers: Record<string, string>;
+  body: string;
+}) => Promise<{
+  ok: boolean;
+  status?: number;
+  statusText?: string;
+  headers: Headers;
+  text?: () => Promise<string>;
+}>;
 
 type BrowserOpenInput = {
   url: string;
@@ -46,6 +60,7 @@ export type DesktopSsoControllerOptions = {
   session: ElectronSessionAccess;
   getMainWindow(): BrowserWindow | null;
   openBrowserUrl(input: BrowserOpenInput): Promise<BrowserOpenResult>;
+  openExternal(url: string): Promise<void>;
 };
 
 export function splitDesktopSsoSetCookieHeader(header: string) {
@@ -175,6 +190,41 @@ async function applyDesktopSsoSetCookieHeaders(
   }));
 }
 
+async function applyDesktopSsoSetCookieHeadersToSessions(
+  targetSessions: Session[],
+  responseUrls: string[],
+  setCookieHeaders: string[]
+) {
+  const uniqueResponseUrls = [...new Set(responseUrls)];
+  await Promise.all(uniqueResponseUrls.flatMap((responseUrl) =>
+    targetSessions.map((targetSession) =>
+      applyDesktopSsoSetCookieHeaders(targetSession, responseUrl, setCookieHeaders)
+    )
+  ));
+}
+
+async function readDesktopSsoWebSessionExchangeError(response: {
+  status?: number;
+  statusText?: string;
+  text?: () => Promise<string>;
+}) {
+  const status = typeof response.status === "number" && response.status > 0
+    ? response.status
+    : 0;
+  const statusText = response.statusText?.trim() || "";
+  let detail = "";
+  if (typeof response.text === "function") {
+    try {
+      detail = (await response.text()).trim();
+    } catch {
+      detail = "";
+    }
+  }
+  return [status ? String(status) : "", statusText, detail]
+    .filter(Boolean)
+    .join(" - ") || "unknown error";
+}
+
 async function buildDesktopSsoCookieHeader(ssoSession: Session, targetUrl: string) {
   const cookies = await ssoSession.cookies.get({ url: targetUrl });
   return cookies
@@ -289,6 +339,31 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         userAgent
       });
     },
+    async openSystemBrowserUrl(input: {
+      url: string;
+      label?: string;
+    }) {
+      const targetUrl = input.url.trim();
+      try {
+        await options.openExternal(targetUrl);
+        return {
+          ok: true,
+          action: "open_system_browser",
+          target: targetUrl,
+          url: targetUrl,
+          message: `已在系统默认浏览器打开「${input.label || targetUrl}」。`
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          action: "open_system_browser",
+          target: targetUrl,
+          url: targetUrl,
+          message: `无法在系统默认浏览器打开「${input.label || targetUrl}」。`,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    },
     async syncBrowserCookies() {
       const cookieDetails = getDesktopSsoProxyBrowserCookieDetails();
       const mirrorOrigins = getDesktopSsoCookieMirrorOrigins(options.app);
@@ -342,6 +417,41 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       ));
       return accessToken;
     },
+    async exchangeWebSession(idToken: string, fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
+      const exchangeConfig = getDesktopSsoWebSessionExchangeConfig(options.app);
+      const token = idToken.trim();
+      if (!exchangeConfig || !token) {
+        return false;
+      }
+      const response = await fetchImpl(exchangeConfig.url, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          provider: "google",
+          id_token: token
+        })
+      });
+      if (!response.ok) {
+        throw new Error(`Desktop SSO web session exchange failed: ${await readDesktopSsoWebSessionExchangeError(response)}`);
+      }
+      const setCookieHeaders = getDesktopSsoSetCookieHeaders(response.headers);
+      if (setCookieHeaders.length === 0) {
+        return false;
+      }
+      const targetSessions = [
+        options.session.defaultSession,
+        options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
+      ];
+      await applyDesktopSsoSetCookieHeadersToSessions(
+        targetSessions,
+        [exchangeConfig.url, ...exchangeConfig.cookieOrigins],
+        setCookieHeaders
+      );
+      return true;
+    },
     async clearBrowserCookies() {
       const cookieDetails = getDesktopSsoProxyBrowserCookieDetails();
       const mirrorOrigins = getDesktopSsoCookieMirrorOrigins(options.app);
@@ -368,6 +478,25 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
               // Cookie removal is best effort; local Desktop auth state is already cleared.
             }
           }));
+        })
+      ));
+    },
+    async clearWebSessionCookies() {
+      const clearCookies = getDesktopSsoWebSessionClearCookies(options.app);
+      if (clearCookies.length === 0) {
+        return;
+      }
+      const targetSessions = [
+        options.session.defaultSession,
+        options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
+      ];
+      await Promise.all(clearCookies.flatMap((details) =>
+        targetSessions.map(async (targetSession) => {
+          try {
+            await targetSession.cookies.remove(details.url, details.name);
+          } catch {
+            // Cookie removal is best effort; local Desktop auth state is already cleared.
+          }
         })
       ));
     }

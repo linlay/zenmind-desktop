@@ -628,7 +628,8 @@ const desktopSsoController = createDesktopSsoController({
   platform: mainProcessContext.platform,
   session,
   getMainWindow: () => appState.mainWindow,
-  openBrowserUrl
+  openBrowserUrl,
+  openExternal: shell.openExternal
 });
 
 async function handleDesktopSsoWebviewNavigation(url: string) {

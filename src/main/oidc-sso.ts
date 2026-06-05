@@ -1,9 +1,12 @@
 import fs from "node:fs";
 import http from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import {
   createPublicKey,
+  createHash,
   createVerify,
+  randomBytes,
   randomUUID,
   type KeyObject
 } from "node:crypto";
@@ -18,6 +21,7 @@ import { getDesktopStateRoot } from "./user-paths";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 
 type OidcConfig = {
+  provider?: string;
   issuer: string;
   authorizeUrl: string;
   loginUrl?: string;
@@ -26,15 +30,18 @@ type OidcConfig = {
   loginCompletionUrls?: string[];
   tokenUrl: string;
   clientId: string;
-  clientSecret: string;
+  clientSecret?: string;
   redirectUri: string;
+  scope?: string;
   wellKnownUrl: string;
   logoutUrl: string;
   logoutCallbackUri: string;
   browserOrigin?: string;
+  usePkce?: boolean;
   cookieAccessTokenExchange?: CookieAccessTokenExchangeConfig;
   accessTokenCookie?: AccessTokenCookieConfig;
   accessTokenCookies?: AccessTokenCookieConfig[];
+  webSessionExchange?: DesktopSsoWebSessionExchangeConfig;
 };
 
 type CookieAccessTokenExchangeConfig = {
@@ -55,6 +62,17 @@ type AccessTokenCookieConfig = {
   secure: boolean;
   httpOnly: boolean;
   sameSite: AccessTokenCookieSameSite;
+};
+
+export type DesktopSsoWebSessionClearCookieConfig = {
+  url: string;
+  name: string;
+};
+
+export type DesktopSsoWebSessionExchangeConfig = {
+  url: string;
+  cookieOrigins: string[];
+  clearCookies: DesktopSsoWebSessionClearCookieConfig[];
 };
 
 type DesktopSsoConfigLoadResult =
@@ -108,20 +126,51 @@ type FetchLike = (url: string, init?: {
   body?: string;
 }) => Promise<FetchResponseLike>;
 
+type ElectronFetchRuntime = {
+  net?: {
+    fetch?: FetchLike;
+  };
+};
+
 type CallbackHooks = {
-  onBeforeStatusChanged?: (status: DesktopSsoStatus) => void | Promise<void>;
+  onBeforeStatusChanged?: (
+    status: DesktopSsoStatus,
+    context?: DesktopSsoStatusChangeContext
+  ) => void | Promise<void>;
   onStatusChanged?: (status: DesktopSsoStatus) => void;
+};
+
+type DesktopSsoStatusChangeContext = {
+  provider?: string;
+  idToken?: string;
 };
 
 type PendingLogin = {
   state: string;
   startedAt: string;
   config: OidcConfig;
+  redirectUri: string;
+  codeVerifier?: string;
 };
 
 type DesktopSsoProxyState = {
   config: OidcConfig;
   cookies: Map<string, string>;
+};
+
+type CallbackServerInfo = {
+  host: string;
+  port: number;
+  origin: string;
+  redirectUri: string;
+  logoutCallbackUri: string;
+  closeAfterCallback: boolean;
+};
+
+type CallbackServerOptions = {
+  host: string;
+  port: number;
+  closeAfterCallback: boolean;
 };
 
 export type DesktopSsoBrowserCookieDetails = {
@@ -148,6 +197,7 @@ export type DesktopSsoAccessTokenCookieDetails = {
 const CALLBACK_PORT = 8080;
 const CALLBACK_HOST = "localhost";
 const CALLBACK_ORIGIN = `http://${CALLBACK_HOST}:${CALLBACK_PORT}`;
+const GOOGLE_LOOPBACK_HOST = "127.0.0.1";
 const CALLBACK_PATH = "/api/auth/oidc/callback";
 const LOGOUT_CALLBACK_PATH = "/api/auth/oidc/logout-callback";
 const SESSION_FILE_NAME = "oidc-sso-session.json";
@@ -161,6 +211,7 @@ const IDENTITY_PROVIDER_URL_FIELDS = [
   "logoutUrl"
 ] as const;
 const OIDC_CONFIG_STRING_FIELDS = [
+  "provider",
   "issuer",
   "authorizeUrl",
   "loginUrl",
@@ -169,6 +220,7 @@ const OIDC_CONFIG_STRING_FIELDS = [
   "clientId",
   "clientSecret",
   "redirectUri",
+  "scope",
   "wellKnownUrl",
   "logoutUrl",
   "logoutCallbackUri"
@@ -189,6 +241,7 @@ const DEFAULT_ACCESS_TOKEN_COOKIE_NAME = "access_token";
 const DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_HOST = ["ai", "qi" + "uer", "net"].join(".");
 const DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_ORIGIN = `https://${DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_HOST}`;
 const DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_URL = `${DEFAULT_AI_COOKIE_ACCESS_TOKEN_EXCHANGE_ORIGIN}/authorization`;
+const DEFAULT_GOOGLE_SCOPE = "openid email profile";
 
 export const DEFAULT_OIDC_CONFIG: OidcConfig = {
   issuer: "https://iam.example.com/auth/oidc/example-app",
@@ -203,9 +256,26 @@ export const DEFAULT_OIDC_CONFIG: OidcConfig = {
   appendLoginState: true
 };
 
+export const DEFAULT_GOOGLE_OIDC_CONFIG: OidcConfig = {
+  provider: "google",
+  issuer: "https://accounts.google.com",
+  authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+  tokenUrl: "https://oauth2.googleapis.com/token",
+  clientId: "",
+  clientSecret: "",
+  redirectUri: `http://${GOOGLE_LOOPBACK_HOST}${CALLBACK_PATH}`,
+  scope: DEFAULT_GOOGLE_SCOPE,
+  wellKnownUrl: "https://accounts.google.com/.well-known/openid-configuration",
+  logoutUrl: "",
+  logoutCallbackUri: `http://${GOOGLE_LOOPBACK_HOST}${LOGOUT_CALLBACK_PATH}`,
+  appendLoginState: true,
+  usePkce: true
+};
+
 let currentStatus: DesktopSsoStatus = createSignedOutStatus("尚未登录。");
 let callbackServer: http.Server | null = null;
 let callbackServerReady: Promise<void> | null = null;
+let callbackServerInfo: CallbackServerInfo | null = null;
 let callbackHooks: CallbackHooks = {};
 let pendingLogin: PendingLogin | null = null;
 let desktopSsoProxyState: DesktopSsoProxyState | null = null;
@@ -358,6 +428,65 @@ function getRecordBoolean(record: Record<string, unknown>, key: string, defaultV
     }
   }
   return defaultValue;
+}
+
+function normalizeProviderName(value: string | undefined) {
+  return (value || "").trim().toLowerCase();
+}
+
+function getUrlHostname(value: string | undefined) {
+  if (!value) {
+    return "";
+  }
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function isGoogleAccountsUrl(value: string | undefined) {
+  return getUrlHostname(value) === "accounts.google.com";
+}
+
+function isGoogleTokenUrl(value: string | undefined) {
+  return getUrlHostname(value) === "oauth2.googleapis.com";
+}
+
+function looksLikeGoogleOidcConfig(input: {
+  issuer?: string;
+  authorizeUrl?: string;
+  loginUrl?: string;
+  tokenUrl?: string;
+  wellKnownUrl?: string;
+}) {
+  return isGoogleAccountsUrl(input.issuer) ||
+    isGoogleAccountsUrl(input.authorizeUrl) ||
+    isGoogleAccountsUrl(input.loginUrl) ||
+    isGoogleAccountsUrl(input.wellKnownUrl) ||
+    isGoogleTokenUrl(input.tokenUrl);
+}
+
+function recordLooksLikeGoogleOidcConfig(record: Record<string, unknown>) {
+  return looksLikeGoogleOidcConfig({
+    issuer: getRecordString(record, "issuer"),
+    authorizeUrl: getRecordString(record, "authorizeUrl"),
+    loginUrl: getRecordString(record, "loginUrl"),
+    tokenUrl: getRecordString(record, "tokenUrl"),
+    wellKnownUrl: getRecordString(record, "wellKnownUrl")
+  });
+}
+
+function isGoogleOidcConfig(config: OidcConfig) {
+  return normalizeProviderName(config.provider) === "google" || looksLikeGoogleOidcConfig(config);
+}
+
+function shouldUsePkce(config: OidcConfig) {
+  return config.usePkce === true || isGoogleOidcConfig(config);
+}
+
+function shouldUseSystemBrowser(config: OidcConfig) {
+  return isGoogleOidcConfig(config);
 }
 
 function parseDesktopSsoConfigContent(content: string) {
@@ -616,34 +745,157 @@ function normalizeLoginCompletionUrls(record: Record<string, unknown>, config: O
   return [...new Set(rawValues.map((value) => new URL(value, baseOrigin).toString()))];
 }
 
+function normalizeHttpUrl(value: string, baseUrl: string, field: string) {
+  const url = new URL(value, baseUrl);
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error(`${field} 只支持 http 或 https。`);
+  }
+  return url.toString();
+}
+
+function normalizeHttpOrigin(value: string, field: string) {
+  const url = new URL(value);
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error(`${field} 只支持 http 或 https。`);
+  }
+  url.username = "";
+  url.password = "";
+  url.pathname = "";
+  url.search = "";
+  url.hash = "";
+  return url.origin;
+}
+
+function normalizeWebSessionCookieOrigins(
+  exchangeRecord: Record<string, unknown>,
+  exchangeUrl: string
+) {
+  const rawOrigins = getRecordStringArray(exchangeRecord, "cookieOrigins");
+  const origins = rawOrigins.length > 0
+    ? rawOrigins
+    : [new URL(exchangeUrl).origin];
+  return [...new Set(origins.map((origin) =>
+    normalizeHttpOrigin(origin, "webSessionExchange.cookieOrigins")
+  ))];
+}
+
+function normalizeWebSessionClearCookies(
+  exchangeRecord: Record<string, unknown>,
+  exchangeUrl: string
+): DesktopSsoWebSessionClearCookieConfig[] {
+  const rawValue = exchangeRecord.clearCookies;
+  if (rawValue === undefined) {
+    return [];
+  }
+  if (!Array.isArray(rawValue)) {
+    throw new Error("webSessionExchange.clearCookies 必须是 JSON 对象数组。");
+  }
+  const cookies: DesktopSsoWebSessionClearCookieConfig[] = [];
+  for (const item of rawValue) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("webSessionExchange.clearCookies 只能包含 JSON 对象。");
+    }
+    const cookieRecord = item as Record<string, unknown>;
+    const rawUrl = getRecordString(cookieRecord, "url");
+    const name = getRecordString(cookieRecord, "name");
+    if (!rawUrl) {
+      throw new Error("webSessionExchange.clearCookies.url 不能为空。");
+    }
+    if (!name) {
+      throw new Error("webSessionExchange.clearCookies.name 不能为空。");
+    }
+    cookies.push({
+      url: normalizeHttpUrl(rawUrl, exchangeUrl, "webSessionExchange.clearCookies.url"),
+      name
+    });
+  }
+  return cookies;
+}
+
+function normalizeWebSessionExchangeConfig(
+  record: Record<string, unknown>,
+  config: OidcConfig
+): DesktopSsoWebSessionExchangeConfig | undefined {
+  if (!("webSessionExchange" in record)) {
+    return undefined;
+  }
+  const exchangeRecord = getRecordObject(record, "webSessionExchange");
+  if (!exchangeRecord) {
+    throw new Error("webSessionExchange 必须是 JSON 对象。");
+  }
+  const rawUrl = getRecordString(exchangeRecord, "url");
+  if (!rawUrl) {
+    throw new Error("webSessionExchange.url 不能为空。");
+  }
+  const rawCookieOrigins = getRecordStringArray(exchangeRecord, "cookieOrigins");
+  const baseUrl = rawCookieOrigins[0] ||
+    config.browserOrigin ||
+    new URL(config.loginUrl || config.authorizeUrl).origin;
+  const url = normalizeHttpUrl(rawUrl, baseUrl, "webSessionExchange.url");
+  return {
+    url,
+    cookieOrigins: normalizeWebSessionCookieOrigins(exchangeRecord, url),
+    clearCookies: normalizeWebSessionClearCookies(exchangeRecord, url)
+  };
+}
+
 function buildOidcConfigFromRecord(record: Record<string, unknown>) {
-  const config: OidcConfig = { ...DEFAULT_OIDC_CONFIG };
+  const provider = normalizeProviderName(getRecordString(record, "provider"));
+  const useGoogleDesktopFlow = provider === "google" || recordLooksLikeGoogleOidcConfig(record);
+  const config: OidcConfig = useGoogleDesktopFlow
+    ? { ...DEFAULT_GOOGLE_OIDC_CONFIG }
+    : { ...DEFAULT_OIDC_CONFIG };
   for (const field of OIDC_CONFIG_STRING_FIELDS) {
+    if (
+      useGoogleDesktopFlow &&
+      (
+        field === "loginUrl" ||
+        field === "loginCompletionUrl" ||
+        field === "redirectUri" ||
+        field === "logoutUrl" ||
+        field === "logoutCallbackUri"
+      )
+    ) {
+      continue;
+    }
     const value = getRecordString(record, field);
     if (value) {
       config[field] = value;
     }
   }
-  const browserOrigin = normalizeIdentityProviderOrigin(record);
-  if (browserOrigin) {
+  config.provider = useGoogleDesktopFlow ? "google" : normalizeProviderName(config.provider);
+  const browserOrigin = useGoogleDesktopFlow ? "" : normalizeIdentityProviderOrigin(record);
+  if (!useGoogleDesktopFlow && browserOrigin) {
     config.browserOrigin = browserOrigin;
   }
   config.appendLoginState = getRecordBoolean(record, "appendLoginState", true);
+  config.usePkce = getRecordBoolean(record, "usePkce", shouldUsePkce(config));
+  if (useGoogleDesktopFlow) {
+    config.usePkce = true;
+  }
   const cookieAccessTokenExchange =
-    normalizeCookieAccessTokenExchangeConfig(record, config) ||
-    buildDefaultCookieAccessTokenExchangeConfig(config);
+    useGoogleDesktopFlow
+      ? null
+      : normalizeCookieAccessTokenExchangeConfig(record, config) ||
+        buildDefaultCookieAccessTokenExchangeConfig(config);
   if (cookieAccessTokenExchange) {
     config.cookieAccessTokenExchange = cookieAccessTokenExchange;
   }
-  const loginCompletionUrls = normalizeLoginCompletionUrls(record, config);
+  const loginCompletionUrls = useGoogleDesktopFlow ? [] : normalizeLoginCompletionUrls(record, config);
   if (loginCompletionUrls.length > 0) {
     config.loginCompletionUrl = loginCompletionUrls[0];
     config.loginCompletionUrls = loginCompletionUrls;
   }
-  const accessTokenCookies = normalizeAccessTokenCookieConfigs(record, config, Boolean(cookieAccessTokenExchange));
+  const accessTokenCookies = useGoogleDesktopFlow
+    ? []
+    : normalizeAccessTokenCookieConfigs(record, config, Boolean(cookieAccessTokenExchange));
   if (accessTokenCookies.length > 0) {
     config.accessTokenCookie = accessTokenCookies[0];
     config.accessTokenCookies = accessTokenCookies;
+  }
+  const webSessionExchange = normalizeWebSessionExchangeConfig(record, config);
+  if (webSessionExchange) {
+    config.webSessionExchange = webSessionExchange;
   }
   for (const field of OIDC_CONFIG_URL_FIELDS) {
     if (!config[field]) {
@@ -658,7 +910,10 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
   if (!config.clientId.trim()) {
     throw new Error("clientId 不能为空。");
   }
-  if (!config.clientSecret.trim()) {
+  if (!config.clientSecret?.trim()) {
+    if (isGoogleOidcConfig(config)) {
+      throw new Error("Google Desktop SSO 需要配置 clientSecret。");
+    }
     throw new Error("clientSecret 不能为空。");
   }
   return config;
@@ -867,16 +1122,39 @@ function writeHtmlResponse(response: http.ServerResponse, statusCode: number, ht
   response.end(html);
 }
 
-function buildAuthorizeUrl(state: string, config: OidcConfig = DEFAULT_OIDC_CONFIG) {
+function createPkceCodeVerifier() {
+  return randomBytes(32).toString("base64url");
+}
+
+function createPkceCodeChallenge(verifier: string) {
+  return createHash("sha256").update(verifier).digest("base64url");
+}
+
+function buildAuthorizeUrl(
+  state: string,
+  config: OidcConfig = DEFAULT_OIDC_CONFIG,
+  options: {
+    redirectUri?: string;
+    codeChallenge?: string;
+  } = {}
+) {
   if (config.loginUrl) {
     return buildConfiguredLoginUrl(state, config.loginUrl, config.appendLoginState);
   }
   const url = new URL(config.authorizeUrl);
   url.searchParams.set("client_id", config.clientId);
-  url.searchParams.set("redirect_uri", config.redirectUri);
+  url.searchParams.set("redirect_uri", options.redirectUri || config.redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
-  url.searchParams.set("prompt", "login");
+  if (isGoogleOidcConfig(config)) {
+    url.searchParams.set("scope", config.scope || DEFAULT_GOOGLE_SCOPE);
+    if (options.codeChallenge) {
+      url.searchParams.set("code_challenge", options.codeChallenge);
+      url.searchParams.set("code_challenge_method", "S256");
+    }
+  } else {
+    url.searchParams.set("prompt", "login");
+  }
   return url.toString();
 }
 
@@ -1259,11 +1537,40 @@ export function isDesktopSsoAuthorizeUrl(value: string, config: OidcConfig = DEF
   }
 }
 
-function buildTokenExchangeRequest(code: string, config: OidcConfig = DEFAULT_OIDC_CONFIG): TokenExchangeRequest {
+function buildTokenExchangeRequest(
+  code: string,
+  config: OidcConfig = DEFAULT_OIDC_CONFIG,
+  options: {
+    redirectUri?: string;
+    codeVerifier?: string;
+  } = {}
+): TokenExchangeRequest {
   const tokenUrl = new URL(config.tokenUrl);
+  if (isGoogleOidcConfig(config)) {
+    const bodyParams = new URLSearchParams();
+    bodyParams.set("client_id", config.clientId);
+    if (config.clientSecret?.trim()) {
+      bodyParams.set("client_secret", config.clientSecret.trim());
+    }
+    bodyParams.set("redirect_uri", options.redirectUri || config.redirectUri);
+    bodyParams.set("grant_type", "authorization_code");
+    bodyParams.set("code", code);
+    if (options.codeVerifier) {
+      bodyParams.set("code_verifier", options.codeVerifier);
+    }
+    return {
+      url: tokenUrl.toString(),
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: bodyParams.toString()
+    };
+  }
   tokenUrl.searchParams.set("client_id", config.clientId);
-  tokenUrl.searchParams.set("client_secret", config.clientSecret);
-  tokenUrl.searchParams.set("redirect_uri", config.redirectUri);
+  tokenUrl.searchParams.set("client_secret", config.clientSecret || "");
+  tokenUrl.searchParams.set("redirect_uri", options.redirectUri || config.redirectUri);
   tokenUrl.searchParams.set("grant_type", "authorization_code");
   tokenUrl.searchParams.set("code", code);
   return {
@@ -1393,18 +1700,81 @@ function normalizeCallbackRequest(
   return { code, state };
 }
 
-async function fetchJson(fetchImpl: FetchLike, url: string, init?: Parameters<FetchLike>[1]) {
-  const response = await fetchImpl(url, init);
+function loadElectronFetchRuntime(): ElectronFetchRuntime | null {
+  try {
+    const runtime = require("electron") as unknown;
+    return runtime && typeof runtime === "object" ? runtime as ElectronFetchRuntime : null;
+  } catch {
+    return null;
+  }
+}
+
+function getElectronNetFetch(runtime: ElectronFetchRuntime | null = loadElectronFetchRuntime()): FetchLike | null {
+  const net = runtime?.net;
+  const netFetch = net?.fetch;
+  if (typeof netFetch !== "function") {
+    return null;
+  }
+  return ((url, init) => netFetch.call(net, url, init)) as FetchLike;
+}
+
+function getDefaultOidcFetch(runtime?: ElectronFetchRuntime | null): FetchLike {
+  return getElectronNetFetch(runtime === undefined ? loadElectronFetchRuntime() : runtime) ||
+    (fetch as unknown as FetchLike);
+}
+
+function describeFetchError(error: unknown) {
+  const parts: string[] = [];
+  if (error instanceof Error) {
+    parts.push(error.message);
+    const cause = (error as Error & { cause?: unknown }).cause;
+    if (cause instanceof Error) {
+      if (cause.message && cause.message !== error.message) {
+        parts.push(cause.message);
+      }
+      const code = (cause as Error & { code?: unknown }).code;
+      if (typeof code === "string" && !parts.includes(code)) {
+        parts.push(code);
+      }
+    } else if (typeof cause === "string" && cause && cause !== error.message) {
+      parts.push(cause);
+    }
+  } else if (typeof error === "string") {
+    parts.push(error);
+  }
+  return parts.filter(Boolean).join(" - ") || String(error);
+}
+
+function buildOidcFetchStage(action: string, config: OidcConfig = DEFAULT_OIDC_CONFIG) {
+  return `${isGoogleOidcConfig(config) ? "Google" : "OIDC"} ${action}`;
+}
+
+async function fetchJson(
+  fetchImpl: FetchLike,
+  url: string,
+  init?: Parameters<FetchLike>[1],
+  stage = "OIDC request"
+) {
+  let response: FetchResponseLike;
+  try {
+    response = await fetchImpl(url, init);
+  } catch (error) {
+    throw new Error(`${stage} failed: ${describeFetchError(error)}`);
+  }
   if (!response.ok) {
     const detail = await readFetchErrorBody(response);
-    throw new Error(`OIDC request failed: ${readFetchErrorStatus(response)}${detail ? ` - ${detail}` : ""}`);
+    throw new Error(`${stage} failed: ${readFetchErrorStatus(response)}${detail ? ` - ${detail}` : ""}`);
   }
-  return response.json();
+  try {
+    return await response.json();
+  } catch (error) {
+    throw new Error(`${stage} failed: invalid JSON response - ${describeFetchError(error)}`);
+  }
 }
 
 async function validateIdToken(
   idToken: string,
-  fetchImpl: FetchLike = fetch as unknown as FetchLike,
+  fetchImpl: FetchLike = getDefaultOidcFetch(),
   config: OidcConfig = DEFAULT_OIDC_CONFIG
 ): Promise<DesktopSsoClaims> {
   const [headerPart, payloadPart, signaturePart] = idToken.split(".");
@@ -1427,12 +1797,22 @@ async function validateIdToken(
     throw new Error("id_token 已过期。");
   }
 
-  const discovery = await fetchJson(fetchImpl, config.wellKnownUrl) as { jwks_uri?: unknown };
+  const discovery = await fetchJson(
+    fetchImpl,
+    config.wellKnownUrl,
+    undefined,
+    buildOidcFetchStage("OIDC discovery", config)
+  ) as { jwks_uri?: unknown };
   const jwksUri = normalizeStringClaim(discovery.jwks_uri);
   if (!jwksUri) {
     throw new Error("OIDC well-known 配置缺少 jwks_uri。");
   }
-  const jwks = await fetchJson(fetchImpl, jwksUri) as { keys?: unknown };
+  const jwks = await fetchJson(
+    fetchImpl,
+    jwksUri,
+    undefined,
+    buildOidcFetchStage("JWKS fetch", config)
+  ) as { keys?: unknown };
   const keys = Array.isArray(jwks.keys) ? jwks.keys : [];
   const kid = normalizeStringClaim(header.kid);
   const key = keys.find((candidate) => {
@@ -1452,22 +1832,39 @@ async function validateIdToken(
   return createClaims(payload);
 }
 
-async function exchangeCodeForClaims(
+async function exchangeCodeForTokenClaims(
   code: string,
-  fetchImpl: FetchLike = fetch as unknown as FetchLike,
-  config: OidcConfig = DEFAULT_OIDC_CONFIG
+  fetchImpl: FetchLike = getDefaultOidcFetch(),
+  config: OidcConfig = DEFAULT_OIDC_CONFIG,
+  options: {
+    redirectUri?: string;
+    codeVerifier?: string;
+  } = {}
 ) {
-  const request = buildTokenExchangeRequest(code, config);
+  const request = buildTokenExchangeRequest(code, config, options);
   const tokenResponse = await fetchJson(fetchImpl, request.url, {
     method: request.method,
     headers: request.headers,
     body: request.body
-  }) as { id_token?: unknown };
+  }, buildOidcFetchStage("token exchange", config)) as { id_token?: unknown };
   const idToken = normalizeStringClaim(tokenResponse.id_token);
   if (!idToken) {
     throw new Error("Token 响应缺少 id_token。");
   }
-  return validateIdToken(idToken, fetchImpl, config);
+  const claims = await validateIdToken(idToken, fetchImpl, config);
+  return { claims, idToken };
+}
+
+async function exchangeCodeForClaims(
+  code: string,
+  fetchImpl: FetchLike = getDefaultOidcFetch(),
+  config: OidcConfig = DEFAULT_OIDC_CONFIG,
+  options: {
+    redirectUri?: string;
+    codeVerifier?: string;
+  } = {}
+) {
+  return (await exchangeCodeForTokenClaims(code, fetchImpl, config, options)).claims;
 }
 
 async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchLike) {
@@ -1475,10 +1872,18 @@ async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchL
     throw new Error("没有正在进行的单点登录。");
   }
   const { code } = normalizeCallbackRequest(requestUrl, pendingLogin.state);
-  const claims = await exchangeCodeForClaims(code, fetchImpl, pendingLogin.config);
+  const tokenClaims = await exchangeCodeForTokenClaims(code, fetchImpl, pendingLogin.config, {
+    redirectUri: pendingLogin.redirectUri,
+    codeVerifier: pendingLogin.codeVerifier
+  });
+  const claims = tokenClaims.claims;
+  const statusContext: DesktopSsoStatusChangeContext = {
+    provider: pendingLogin.config.provider,
+    idToken: tokenClaims.idToken
+  };
   pendingLogin = null;
   const status = createAuthenticatedStatus(claims);
-  await callbackHooks.onBeforeStatusChanged?.(status);
+  await callbackHooks.onBeforeStatusChanged?.(status, statusContext);
   setCurrentStatus(status);
   saveSession(app, status);
   return status;
@@ -1490,10 +1895,19 @@ function buildLogoutUrl(config: OidcConfig = DEFAULT_OIDC_CONFIG) {
   return url.toString();
 }
 
+function closeCallbackServerAfterResponse(response: http.ServerResponse) {
+  response.once("finish", closeCallbackServer);
+}
+
 async function handleCallbackRequest(app: App, request: http.IncomingMessage, response: http.ServerResponse) {
-  const requestUrl = new URL(request.url || "/", `http://${CALLBACK_HOST}:${CALLBACK_PORT}`);
+  const fallbackOrigin = callbackServerInfo?.origin || CALLBACK_ORIGIN;
+  const requestUrl = new URL(request.url || "/", fallbackOrigin);
+  const closeAfterCallback = callbackServerInfo?.closeAfterCallback === true;
   if (requestUrl.pathname === LOGOUT_CALLBACK_PATH) {
     desktopSsoProxyState?.cookies.clear();
+    if (closeAfterCallback) {
+      closeCallbackServerAfterResponse(response);
+    }
     writeHtmlResponse(response, 200, renderCallbackHtml("已退出登录", "IAM 会话登出已返回 Desktop。"));
     return;
   }
@@ -1518,24 +1932,70 @@ async function handleCallbackRequest(app: App, request: http.IncomingMessage, re
 
   try {
     const status = await handleLoginCallback(app, requestUrl);
+    if (closeAfterCallback) {
+      closeCallbackServerAfterResponse(response);
+    }
     writeHtmlResponse(response, 200, renderCallbackHtml("登录成功", `${status.user?.sub ?? "用户"} 已完成单点登录，可以回到 Desktop 继续使用。`));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     setCurrentStatus(createFailedStatus(message));
+    if (closeAfterCallback) {
+      closeCallbackServerAfterResponse(response);
+    }
     writeHtmlResponse(response, 400, renderCallbackHtml("登录失败", message));
   }
 }
 
-async function ensureCallbackServer(app: App, hooks: CallbackHooks = {}) {
+function closeCallbackServer() {
+  const server = callbackServer;
+  callbackServer = null;
+  callbackServerReady = null;
+  callbackServerInfo = null;
+  desktopSsoProxyState = null;
+  if (!server) {
+    return;
+  }
+  server.close(() => {});
+}
+
+function buildCallbackServerInfo(host: string, port: number, closeAfterCallback: boolean): CallbackServerInfo {
+  const origin = `http://${host}:${port}`;
+  return {
+    host,
+    port,
+    origin,
+    redirectUri: `${origin}${CALLBACK_PATH}`,
+    logoutCallbackUri: `${origin}${LOGOUT_CALLBACK_PATH}`,
+    closeAfterCallback
+  };
+}
+
+async function ensureCallbackServer(
+  app: App,
+  hooks: CallbackHooks = {},
+  options: CallbackServerOptions = {
+    host: CALLBACK_HOST,
+    port: CALLBACK_PORT,
+    closeAfterCallback: false
+  }
+) {
   callbackHooks = hooks;
   if (callbackServer && callbackServerReady) {
-    return callbackServerReady;
+    if (
+      callbackServerInfo?.host === options.host &&
+      callbackServerInfo.port === options.port &&
+      callbackServerInfo.closeAfterCallback === options.closeAfterCallback
+    ) {
+      await callbackServerReady;
+      return callbackServerInfo;
+    }
+    closeCallbackServer();
   }
 
   callbackServer = http.createServer((request, response) => {
     void handleCallbackRequest(app, request, response);
   });
-  callbackServerReady = new Promise((resolve, reject) => {
+  callbackServerReady = new Promise<void>((resolve, reject) => {
     const server = callbackServer;
     if (!server) {
       reject(new Error("callback server unavailable"));
@@ -1544,19 +2004,30 @@ async function ensureCallbackServer(app: App, hooks: CallbackHooks = {}) {
     const handleError = (error: NodeJS.ErrnoException) => {
       callbackServer = null;
       callbackServerReady = null;
+      callbackServerInfo = null;
       if (error.code === "EADDRINUSE") {
-        reject(new Error("OIDC 回调端口 8080 已被占用。"));
+        reject(new Error(`OIDC 回调端口 ${options.port} 已被占用。`));
         return;
       }
       reject(error);
     };
     server.once("error", handleError);
-    server.listen(CALLBACK_PORT, CALLBACK_HOST, () => {
+    server.listen(options.port, options.host, () => {
       server.off("error", handleError);
+      const address = server.address() as AddressInfo | null;
+      callbackServerInfo = buildCallbackServerInfo(
+        options.host,
+        address?.port || options.port,
+        options.closeAfterCallback
+      );
       resolve();
     });
   });
-  return callbackServerReady;
+  await callbackServerReady;
+  if (!callbackServerInfo) {
+    throw new Error("callback server did not report a listening address");
+  }
+  return callbackServerInfo;
 }
 
 export function getDesktopSsoStatus(app?: App): DesktopSsoStatus {
@@ -1618,21 +2089,51 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
   try {
     currentAccessToken = "";
     removeAccessTokenFile(app);
-    await ensureCallbackServer(app, hooks);
-    activateDesktopSsoProxy(oidcConfig, { resetCookies: true });
+    const useSystemBrowser = shouldUseSystemBrowser(oidcConfig);
+    const callbackInfo = await ensureCallbackServer(
+      app,
+      hooks,
+      useSystemBrowser
+        ? {
+          host: GOOGLE_LOOPBACK_HOST,
+          port: 0,
+          closeAfterCallback: true
+        }
+        : {
+          host: CALLBACK_HOST,
+          port: CALLBACK_PORT,
+          closeAfterCallback: false
+        }
+    );
+    if (!useSystemBrowser) {
+      activateDesktopSsoProxy(oidcConfig, { resetCookies: true });
+    }
     const state = randomUUID();
+    const codeVerifier = shouldUsePkce(oidcConfig) ? createPkceCodeVerifier() : undefined;
+    const redirectUri = useSystemBrowser ? callbackInfo.redirectUri : oidcConfig.redirectUri;
+    const loginConfig = {
+      ...oidcConfig,
+      redirectUri
+    };
     pendingLogin = {
       state,
       startedAt: new Date().toISOString(),
-      config: oidcConfig
+      config: loginConfig,
+      redirectUri,
+      ...(codeVerifier ? { codeVerifier } : {})
     };
-    const authorizeUrl = buildAuthorizeUrl(state, oidcConfig);
+    const authorizeUrl = buildAuthorizeUrl(state, loginConfig, {
+      redirectUri,
+      ...(codeVerifier ? { codeChallenge: createPkceCodeChallenge(codeVerifier) } : {})
+    });
     const status = createPendingStatus("正在等待 IAM 单点登录完成。");
     setCurrentStatus(status);
     return {
       ok: true,
       authorizeUrl,
-      browserUrl: oidcConfig.loginUrl ? undefined : buildDesktopSsoProxyUrl(authorizeUrl),
+      ...(useSystemBrowser
+        ? { openMode: "system" as const }
+        : { browserUrl: oidcConfig.loginUrl ? undefined : buildDesktopSsoProxyUrl(authorizeUrl) }),
       browserOrigin: oidcConfig.browserOrigin,
       status: cloneStatus(status),
       message: "已打开 IAM 单点登录。"
@@ -1712,6 +2213,23 @@ export function getDesktopSsoAccessTokenCookieLookups(app: Pick<App, "getPath">)
     url: cookieConfig.url,
     name: cookieConfig.name
   }));
+}
+
+export function getDesktopSsoWebSessionExchangeConfig(app: Pick<App, "getPath">) {
+  const configResult = loadDesktopSsoConfig(app);
+  if (!configResult.configured || configResult.error || !configResult.config?.webSessionExchange) {
+    return null;
+  }
+  const config = configResult.config.webSessionExchange;
+  return {
+    url: config.url,
+    cookieOrigins: [...config.cookieOrigins],
+    clearCookies: config.clearCookies.map((cookie) => ({ ...cookie }))
+  };
+}
+
+export function getDesktopSsoWebSessionClearCookies(app: Pick<App, "getPath">) {
+  return getDesktopSsoWebSessionExchangeConfig(app)?.clearCookies ?? [];
 }
 
 export async function exchangeConfiguredDesktopSsoCookieForAccessToken(
@@ -1810,10 +2328,22 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
       message: failedStatus.message
     };
   }
+  if (shouldUseSystemBrowser(oidcConfig)) {
+    closeCallbackServer();
+    return {
+      ok: true,
+      status: cloneStatus(status),
+      message: "已清除 Desktop 登录状态。"
+    };
+  }
   try {
-    await ensureCallbackServer(app, hooks);
+    const callbackInfo = await ensureCallbackServer(app, hooks);
     activateDesktopSsoProxy(oidcConfig);
-    const logoutUrl = buildLogoutUrl(oidcConfig);
+    const logoutConfig = {
+      ...oidcConfig,
+      logoutCallbackUri: callbackInfo.logoutCallbackUri
+    };
+    const logoutUrl = buildLogoutUrl(logoutConfig);
     return {
       ok: true,
       logoutUrl,
@@ -1834,8 +2364,10 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
 
 export const __testInternals = {
   DEFAULT_OIDC_CONFIG,
+  DEFAULT_GOOGLE_OIDC_CONFIG,
   DESKTOP_SSO_CONFIG_FILE_NAME,
   buildAuthorizeUrl,
+  createPkceCodeChallenge,
   buildDesktopSsoProxyUrl,
   buildDesktopSsoBrowserCookieDetails,
   getDesktopSsoCookieMirrorOrigins,
@@ -1856,8 +2388,14 @@ export const __testInternals = {
   getDesktopSsoCookieAccessTokenExchangeUrl,
   getDesktopSsoAccessTokenCookieLookup,
   getDesktopSsoAccessTokenCookieLookups,
+  getDesktopSsoWebSessionExchangeConfig,
+  getDesktopSsoWebSessionClearCookies,
   isDesktopSsoLoginCompletionUrl,
   readCookieAccessTokenFromResponse,
   normalizeCallbackRequest,
-  validateIdToken
+  getDefaultOidcFetch,
+  exchangeCodeForTokenClaims,
+  exchangeCodeForClaims,
+  validateIdToken,
+  closeCallbackServer
 };

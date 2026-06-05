@@ -6,7 +6,7 @@ import {
   type FormEvent,
   type MouseEvent,
 } from "react";
-import { LeftOutlined, RightOutlined } from "@ant-design/icons";
+import { LeftOutlined, LogoutOutlined, RightOutlined } from "@ant-design/icons";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import {
@@ -591,6 +591,7 @@ export function AppSidebar({
   onOpenAssistantDock,
   onCloseAssistantDock,
   onDesktopSsoLogin,
+  onDesktopSsoLogout,
   onRefreshAssistantNavAgents,
   onRefreshCopilotAgentOptions,
   onCreateCustomSidebarItem,
@@ -1753,7 +1754,7 @@ export function AppSidebar({
     );
   }
 
-  function renderAccountMenuIcon(kind: "account" | "personal") {
+  function renderAccountMenuIcon(kind: "account") {
     return (
       <span
         className={`sidebar-account-menu-icon is-${kind}`}
@@ -1762,38 +1763,38 @@ export function AppSidebar({
     );
   }
 
-  function renderDisabledAccountMenuItem(
-    label: string,
-    icon: "account" | "personal",
-    extraClassName = "",
-  ) {
-    return (
-      <div
-        className={[
-          "sidebar-account-menu-item",
-          "is-disabled",
-          extraClassName,
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        role="menuitem"
-        aria-disabled="true"
-      >
-        {renderAccountMenuIcon(icon)}
-        <span className="sidebar-account-menu-label">{label}</span>
-      </div>
-    );
-  }
-
   function renderAccountMenuUserItem() {
     const desktopSsoUserLabel = getDesktopSsoUserLabel();
     const desktopSsoActionLabel = getDesktopSsoActionLabel();
+    const desktopSsoLogoutLabel = t("sidebar.sso.signOut");
 
     if (desktopSsoStatus?.authenticated) {
-      return renderDisabledAccountMenuItem(
-        desktopSsoUserLabel,
-        "account",
-        "sidebar-account-menu-user",
+      return (
+        <div
+          className={[
+            "sidebar-account-menu-item",
+            "is-disabled",
+            "sidebar-account-menu-user",
+            "sidebar-account-menu-user-with-action",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          role="none"
+        >
+          {renderAccountMenuIcon("account")}
+          <span className="sidebar-account-menu-label">{desktopSsoUserLabel}</span>
+          <button
+            type="button"
+            className="sidebar-account-menu-logout"
+            onClick={handleDesktopSsoLogoutClick}
+            disabled={desktopSsoBusy}
+            role="menuitem"
+            aria-label={desktopSsoLogoutLabel}
+            title={desktopSsoLogoutLabel}
+          >
+            <LogoutOutlined />
+          </button>
+        </div>
       );
     }
 
@@ -1850,18 +1851,23 @@ export function AppSidebar({
     setToolMenuOpen(false);
   }
 
-  function renderDesktopSsoAccountMenuSection() {
-    const accountDetails = desktopSsoStatus?.authenticated ? (
-      renderDisabledAccountMenuItem(
-        t("sidebar.account.personal"),
-        "personal",
-      )
-    ) : null;
+  function handleDesktopSsoLogoutClick(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (desktopSsoBusy) {
+      return;
+    }
+    if (!window.confirm(t("sidebar.sso.confirmSignOut"))) {
+      return;
+    }
+    onDesktopSsoLogout?.();
+    setToolMenuOpen(false);
+  }
 
+  function renderDesktopSsoAccountMenuSection() {
     return (
       <>
         {renderAccountMenuUserItem()}
-        {accountDetails}
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
       </>
     );

@@ -1541,6 +1541,10 @@
   font-size: 14px;
 }
 
+.sidebar-account-menu-user-with-action {
+  padding-right: 2px;
+}
+
 .sidebar-account-menu-label {
   min-width: 0;
   flex: 1 1 auto;
@@ -1556,6 +1560,33 @@
 .sidebar-account-menu-action:disabled {
   cursor: not-allowed;
   opacity: 0.64;
+}
+
+.sidebar-account-menu-logout {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.sidebar-account-menu-logout:hover,
+.sidebar-account-menu-logout:focus-visible {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--ink);
+  outline: none;
+}
+
+.sidebar-account-menu-logout:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
 }
 
 .sidebar-account-menu-divider {
@@ -1597,27 +1628,6 @@
   height: 4px;
   border-radius: 999px 999px 0 0;
   background: currentColor;
-}
-
-.sidebar-account-menu-icon.is-personal::before {
-  position: absolute;
-  content: "";
-  inset: 1px;
-  border: 2px solid currentColor;
-  border-radius: 999px;
-}
-
-.sidebar-account-menu-icon.is-personal::after {
-  position: absolute;
-  content: "";
-  top: 7px;
-  right: -1px;
-  width: 6px;
-  height: 6px;
-  border: 2px solid currentColor;
-  border-left: 0;
-  border-bottom: 0;
-  transform: rotate(45deg);
 }
 
 :root[data-theme="dark"] .sidebar-group-heading {

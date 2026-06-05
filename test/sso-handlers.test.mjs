@@ -22,8 +22,11 @@ function makeBaseOptions(overrides = {}) {
       broadcastStatus: () => {},
       syncBrowserCookies: async () => {},
       exchangeBrowserCookieAccessToken: async () => "",
+      exchangeWebSession: async () => false,
       clearBrowserCookies: async () => {},
-      openBrowserUrl: async () => ({ ok: true })
+      clearWebSessionCookies: async () => {},
+      openBrowserUrl: async () => ({ ok: true }),
+      openSystemBrowserUrl: async () => ({ ok: true })
     },
     getDesktopSsoStatus: async () => ({ configured: true, authenticated: false }),
     startDesktopSsoLogin: async () => ({ ok: true }),
@@ -49,7 +52,7 @@ test("sso.getStatus returns desktop SSO status", async () => {
   assert.deepEqual(result, status);
 });
 
-test("sso.startLogin syncs cookies before broadcasting authenticated status and opens the embedded browser", async () => {
+test("sso.startLogin syncs cookies before broadcasting authenticated status and opens the embedded browser for legacy flows", async () => {
   const { ipc, handlers } = makeMockIpcMain();
   const calls = [];
   const authenticatedStatus = { configured: true, authenticated: true, pending: false };
@@ -58,16 +61,22 @@ test("sso.startLogin syncs cookies before broadcasting authenticated status and 
     desktopSsoController: {
       syncBrowserCookies: async () => { calls.push("sync"); },
       exchangeBrowserCookieAccessToken: async () => { calls.push("exchange"); },
+      exchangeWebSession: async (idToken) => { calls.push(["web-session", idToken]); },
       broadcastStatus: (status) => { calls.push(["broadcast", status]); },
       clearBrowserCookies: async () => { calls.push("clear"); },
+      clearWebSessionCookies: async () => { calls.push("clear-web"); },
       openBrowserUrl: async (input) => {
         calls.push(["open", input]);
         return { ok: true };
-      }
+      },
+      openSystemBrowserUrl: async (input) => {
+        calls.push(["system", input]);
+        return { ok: true };
+      },
     },
     startDesktopSsoLogin: async (app, options) => {
       assert.equal(app.name, "test-app");
-      await options.onBeforeStatusChanged(authenticatedStatus);
+      await options.onBeforeStatusChanged(authenticatedStatus, { idToken: "google-id-token" });
       options.onStatusChanged(authenticatedStatus);
       return {
         ok: true,
@@ -84,6 +93,7 @@ test("sso.startLogin syncs cookies before broadcasting authenticated status and 
   assert.deepEqual(calls, [
     "sync",
     "exchange",
+    ["web-session", "google-id-token"],
     ["broadcast", authenticatedStatus],
     ["open", {
       url: "http://localhost:8080/auth",
@@ -94,7 +104,46 @@ test("sso.startLogin syncs cookies before broadcasting authenticated status and 
   ]);
 });
 
-test("sso.startLogin fails the flow when embedded browser opening fails", async () => {
+test("sso.startLogin opens Google flows in the system browser", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const calls = [];
+
+  registerSsoIpcHandlers(ipc, makeBaseOptions({
+    desktopSsoController: {
+      broadcastStatus: (status) => calls.push(["broadcast", status]),
+      syncBrowserCookies: async () => { calls.push("sync"); },
+      exchangeBrowserCookieAccessToken: async () => { calls.push("exchange"); },
+      exchangeWebSession: async (idToken) => { calls.push(["web-session", idToken]); },
+      clearBrowserCookies: async () => { calls.push("clear"); },
+      clearWebSessionCookies: async () => { calls.push("clear-web"); },
+      openBrowserUrl: async (input) => {
+        calls.push(["embedded", input]);
+        return { ok: true };
+      },
+      openSystemBrowserUrl: async (input) => {
+        calls.push(["system", input]);
+        return { ok: true };
+      }
+    },
+    startDesktopSsoLogin: async () => ({
+      ok: true,
+      openMode: "system",
+      authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth?client_id=desktop"
+    })
+  }));
+
+  const result = await handlers["sso.startLogin"]({});
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [
+    ["system", {
+      url: "https://accounts.google.com/o/oauth2/v2/auth?client_id=desktop",
+      label: "Google 登录"
+    }]
+  ]);
+});
+
+test("sso.startLogin fails the flow when system browser opening fails", async () => {
   const { ipc, handlers } = makeMockIpcMain();
   const broadcasts = [];
   const failedStatus = { configured: true, authenticated: false, pending: false, message: "open failed" };
@@ -104,11 +153,15 @@ test("sso.startLogin fails the flow when embedded browser opening fails", async 
       broadcastStatus: (status) => broadcasts.push(status),
       syncBrowserCookies: async () => {},
       exchangeBrowserCookieAccessToken: async () => "",
+      exchangeWebSession: async () => false,
       clearBrowserCookies: async () => {},
-      openBrowserUrl: async () => ({ ok: false, message: "open failed" })
+      clearWebSessionCookies: async () => {},
+      openBrowserUrl: async () => ({ ok: true }),
+      openSystemBrowserUrl: async () => ({ ok: false, message: "open failed" })
     },
     startDesktopSsoLogin: async () => ({
       ok: true,
+      openMode: "system",
       authorizeUrl: "https://iam.example.test/auth",
       browserOrigin: "https://iam.example.test"
     }),
@@ -133,9 +186,15 @@ test("sso.logout clears browser cookies and opens logout URL", async () => {
       broadcastStatus: (status) => calls.push(["broadcast", status]),
       syncBrowserCookies: async () => { calls.push("sync"); },
       exchangeBrowserCookieAccessToken: async () => { calls.push("exchange"); },
+      exchangeWebSession: async (idToken) => { calls.push(["web-session", idToken]); },
       clearBrowserCookies: async () => { calls.push("clear"); },
+      clearWebSessionCookies: async () => { calls.push("clear-web"); },
       openBrowserUrl: async (input) => {
         calls.push(["open", input]);
+        return { ok: true };
+      },
+      openSystemBrowserUrl: async (input) => {
+        calls.push(["system", input]);
         return { ok: true };
       }
     },
@@ -156,6 +215,7 @@ test("sso.logout clears browser cookies and opens logout URL", async () => {
   assert.deepEqual(calls, [
     ["broadcast", loggedOutStatus],
     "clear",
+    "clear-web",
     ["open", {
       url: "https://iam.example.test/logout",
       label: "IAM 登出",

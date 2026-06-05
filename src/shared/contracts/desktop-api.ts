@@ -67,6 +67,7 @@ export interface DesktopSsoStartResult {
   authorizeUrl?: string;
   browserUrl?: string;
   browserOrigin?: string;
+  openMode?: "embedded" | "system";
   status: DesktopSsoStatus;
   message: string;
 }

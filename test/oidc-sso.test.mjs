@@ -11,13 +11,16 @@ const {
   __testInternals,
   exchangeConfiguredDesktopSsoCookieForAccessToken,
   getDesktopSsoStatus,
-  logoutDesktopSso
+  logoutDesktopSso,
+  startDesktopSsoLogin
 } = require("../dist-electron/main/oidc-sso.js");
 
 const {
   DEFAULT_OIDC_CONFIG,
+  DEFAULT_GOOGLE_OIDC_CONFIG,
   DESKTOP_SSO_CONFIG_FILE_NAME,
   buildAuthorizeUrl,
+  createPkceCodeChallenge,
   buildDesktopSsoProxyUrl,
   buildDesktopSsoBrowserCookieDetails,
   rewriteDesktopSsoProxyLocation,
@@ -34,9 +37,14 @@ const {
   getDesktopSsoAccessTokenFilePath,
   getDesktopSsoAccessTokenCookieLookup,
   getDesktopSsoAccessTokenCookieLookups,
+  getDesktopSsoWebSessionExchangeConfig,
+  getDesktopSsoWebSessionClearCookies,
   isDesktopSsoLoginCompletionUrl,
   readCookieAccessTokenFromResponse,
   normalizeCallbackRequest,
+  getDefaultOidcFetch,
+  exchangeCodeForTokenClaims,
+  exchangeCodeForClaims,
   validateIdToken
 } = __testInternals;
 
@@ -91,6 +99,28 @@ test("buildAuthorizeUrl creates an authorization-code URL with state and fixed l
   assert.equal(url.searchParams.get("response_type"), "code");
   assert.equal(url.searchParams.get("state"), "state-123");
   assert.equal(url.searchParams.get("prompt"), "login");
+});
+
+test("Google provider builds a PKCE authorization URL for loopback redirects", () => {
+  const codeVerifier = "google-desktop-code-verifier";
+  const redirectUri = "http://127.0.0.1:43123/api/auth/oidc/callback";
+  const url = new URL(buildAuthorizeUrl("state-123", {
+    ...DEFAULT_GOOGLE_OIDC_CONFIG,
+    clientId: "google-desktop-client"
+  }, {
+    redirectUri,
+    codeChallenge: createPkceCodeChallenge(codeVerifier)
+  }));
+
+  assert.equal(url.origin + url.pathname, "https://accounts.google.com/o/oauth2/v2/auth");
+  assert.equal(url.searchParams.get("client_id"), "google-desktop-client");
+  assert.equal(url.searchParams.get("redirect_uri"), redirectUri);
+  assert.equal(url.searchParams.get("response_type"), "code");
+  assert.equal(url.searchParams.get("scope"), "openid email profile");
+  assert.equal(url.searchParams.get("state"), "state-123");
+  assert.equal(url.searchParams.get("code_challenge_method"), "S256");
+  assert.equal(url.searchParams.get("code_challenge"), createPkceCodeChallenge(codeVerifier));
+  assert.equal(url.searchParams.has("prompt"), false);
 });
 
 test("buildAuthorizeUrl preserves configured hash login URL params and only replaces state", () => {
@@ -232,6 +262,163 @@ test("loadDesktopSsoConfig honors explicit full IAM login URL", (t) => {
   assert.equal(result.config.clientSecret, "secret");
 });
 
+test("loadDesktopSsoConfig requires Google desktop OAuth client secret", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-google-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      provider: "google",
+      clientId: "google-desktop-client"
+    }),
+    "utf8"
+  );
+
+  const result = loadDesktopSsoConfig(createTestApp(homePath));
+
+  assert.equal(result.configured, true);
+  assert.match(result.error, /Google Desktop SSO 需要配置 clientSecret/);
+});
+
+test("loadDesktopSsoConfig supports Google desktop OAuth with a client secret", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-google-config-secret-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      provider: "google",
+      clientId: "google-desktop-client",
+      clientSecret: "google-desktop-secret"
+    }),
+    "utf8"
+  );
+
+  const result = loadDesktopSsoConfig(createTestApp(homePath));
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.equal(result.config.provider, "google");
+  assert.equal(result.config.issuer, "https://accounts.google.com");
+  assert.equal(result.config.authorizeUrl, "https://accounts.google.com/o/oauth2/v2/auth");
+  assert.equal(result.config.tokenUrl, "https://oauth2.googleapis.com/token");
+  assert.equal(result.config.wellKnownUrl, "https://accounts.google.com/.well-known/openid-configuration");
+  assert.equal(result.config.clientId, "google-desktop-client");
+  assert.equal(result.config.clientSecret, "google-desktop-secret");
+  assert.equal(result.config.scope, "openid email profile");
+  assert.equal(result.config.usePkce, true);
+});
+
+test("loadDesktopSsoConfig supports Google desktop web session exchange", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-google-web-session-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      provider: "google",
+      clientId: "google-desktop-client",
+      clientSecret: "google-desktop-secret",
+      webSessionExchange: {
+        url: "https://www.zenmind.cc/api/auth/desktop-sso/session",
+        cookieOrigins: ["https://www.zenmind.cc/app"],
+        clearCookies: [
+          {
+            url: "https://www.zenmind.cc",
+            name: "__Host-zm_session"
+          }
+        ]
+      }
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  const result = loadDesktopSsoConfig(app);
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.equal(result.config.provider, "google");
+  assert.equal(result.config.usePkce, true);
+  assert.deepEqual(getDesktopSsoWebSessionExchangeConfig(app), {
+    url: "https://www.zenmind.cc/api/auth/desktop-sso/session",
+    cookieOrigins: ["https://www.zenmind.cc"],
+    clearCookies: [
+      {
+        url: "https://www.zenmind.cc/",
+        name: "__Host-zm_session"
+      }
+    ]
+  });
+  assert.deepEqual(getDesktopSsoWebSessionClearCookies(app), [
+    {
+      url: "https://www.zenmind.cc/",
+      name: "__Host-zm_session"
+    }
+  ]);
+});
+
+test("loadDesktopSsoConfig infers Google desktop OAuth from Google endpoints and ignores legacy web login fields", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-google-inferred-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenUrl: "https://oauth2.googleapis.com/token",
+      clientId: "google-desktop-client",
+      clientSecret: "google-desktop-secret",
+      loginUrl: "https://zenmind.cc/login",
+      redirectUri: "https://zenmind.cc/api/v1/auth/google/callback",
+      browserOrigin: "https://zenmind.cc",
+      loginCompletionUrls: [
+        "https://zenmind.cc/"
+      ],
+      cookieAccessTokenExchange: {
+        url: "https://zenmind.cc/api/v1/auth/desktop/token",
+        method: "post",
+        accessTokenPath: "access_token"
+      },
+      accessTokenCookie: {
+        url: "https://zenmind.cc",
+        name: "access_token"
+      },
+      logoutUrl: "https://zenmind.cc/logout"
+    }),
+    "utf8"
+  );
+
+  const result = loadDesktopSsoConfig(createTestApp(homePath));
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.equal(result.config.provider, "google");
+  assert.equal(result.config.clientId, "google-desktop-client");
+  assert.equal(result.config.clientSecret, "google-desktop-secret");
+  assert.equal(result.config.loginUrl, undefined);
+  assert.equal(result.config.redirectUri, DEFAULT_GOOGLE_OIDC_CONFIG.redirectUri);
+  assert.equal(result.config.browserOrigin, undefined);
+  assert.equal(result.config.loginCompletionUrls, undefined);
+  assert.equal(result.config.cookieAccessTokenExchange, undefined);
+  assert.equal(result.config.accessTokenCookie, undefined);
+  assert.equal(result.config.webSessionExchange, undefined);
+  assert.equal(result.config.logoutUrl, "");
+  assert.equal(result.config.usePkce, true);
+});
+
 test("loadDesktopSsoConfig supports configurable AI login and cookie access token exchange", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-cookie-token-config-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -323,6 +510,41 @@ test("direct AI login can preserve the configured URL and complete with browser 
   assert.equal(status.authenticated, true);
   assert.equal(status.user.sub, TEST_AI_HOST);
   assert.equal("accessToken" in status, false);
+});
+
+test("startDesktopSsoLogin uses an ephemeral 127.0.0.1 loopback server for Google", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-google-loopback-"));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      provider: "google",
+      clientId: "google-desktop-client",
+      clientSecret: "google-desktop-secret"
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  t.after(async () => {
+    await logoutDesktopSso(app);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const result = await startDesktopSsoLogin(app);
+  const url = new URL(result.authorizeUrl);
+  const redirectUri = new URL(url.searchParams.get("redirect_uri"));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.openMode, "system");
+  assert.equal(result.browserUrl, undefined);
+  assert.equal(redirectUri.hostname, "127.0.0.1");
+  assert.notEqual(redirectUri.port, "");
+  assert.equal(redirectUri.pathname, "/api/auth/oidc/callback");
+  assert.equal(url.searchParams.get("code_challenge_method"), "S256");
+  assert.ok(url.searchParams.get("code_challenge"));
 });
 
 test("direct AI login can complete on a logged-in page and inject token cookies into configured targets", (t) => {
@@ -534,6 +756,88 @@ test("buildTokenExchangeRequest posts the document-style token URL from the main
   assert.equal("Content-Type" in request.headers, false);
 });
 
+test("buildTokenExchangeRequest sends Google desktop PKCE exchanges as form-urlencoded body", () => {
+  const redirectUri = "http://127.0.0.1:43123/api/auth/oidc/callback";
+  const request = buildTokenExchangeRequest("callback-code", {
+    ...DEFAULT_GOOGLE_OIDC_CONFIG,
+    clientId: "google-desktop-client",
+    clientSecret: "google-desktop-secret"
+  }, {
+    redirectUri,
+    codeVerifier: "pkce-verifier"
+  });
+  const body = new URLSearchParams(request.body);
+
+  assert.equal(request.url, "https://oauth2.googleapis.com/token");
+  assert.equal(request.method, "POST");
+  assert.equal(request.headers["Content-Type"], "application/x-www-form-urlencoded");
+  assert.equal(body.get("client_id"), "google-desktop-client");
+  assert.equal(body.get("client_secret"), "google-desktop-secret");
+  assert.equal(body.get("redirect_uri"), redirectUri);
+  assert.equal(body.get("grant_type"), "authorization_code");
+  assert.equal(body.get("code"), "callback-code");
+  assert.equal(body.get("code_verifier"), "pkce-verifier");
+});
+
+test("default OIDC fetch provider uses Electron net.fetch when available", async () => {
+  const calls = [];
+  const fetchImpl = getDefaultOidcFetch({
+    net: {
+      fetch: async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          json: async () => ({ ok: true })
+        };
+      }
+    }
+  });
+
+  const response = await fetchImpl("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    body: "grant_type=authorization_code"
+  });
+
+  assert.equal(response.ok, true);
+  assert.deepEqual(calls, [
+    {
+      url: "https://oauth2.googleapis.com/token",
+      init: {
+        method: "POST",
+        headers: { Accept: "application/json" },
+        body: "grant_type=authorization_code"
+      }
+    }
+  ]);
+});
+
+test("exchangeCodeForClaims reports Google token exchange network failures with stage context", async () => {
+  const redirectUri = "http://127.0.0.1:43123/api/auth/oidc/callback";
+  const error = Object.assign(new TypeError("fetch failed"), {
+    cause: new Error("connect ETIMEDOUT 142.250.0.1:443")
+  });
+
+  await assert.rejects(
+    () => exchangeCodeForClaims(
+      "callback-code",
+      async () => {
+        throw error;
+      },
+      {
+        ...DEFAULT_GOOGLE_OIDC_CONFIG,
+        clientId: "google-desktop-client",
+        clientSecret: "google-desktop-secret"
+      },
+      {
+        redirectUri,
+        codeVerifier: "pkce-verifier"
+      }
+    ),
+    /Google token exchange failed: fetch failed - connect ETIMEDOUT/
+  );
+});
+
 test("buildCookieAccessTokenExchangeRequest sends cookies and extracts configured access token path", () => {
   const config = {
     ...DEFAULT_OIDC_CONFIG,
@@ -718,6 +1022,122 @@ test("validateIdToken verifies RS256 signature, issuer, audience, and returns pu
     issuer: DEFAULT_OIDC_CONFIG.issuer,
     audience: DEFAULT_OIDC_CONFIG.clientId
   });
+});
+
+test("exchangeCodeForTokenClaims preserves the raw id_token internally", async () => {
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const kid = "desktop-sso-token-claims-key";
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const token = createSignedJwt({
+    privateKey,
+    kid,
+    claims: {
+      iss: DEFAULT_OIDC_CONFIG.issuer,
+      aud: DEFAULT_OIDC_CONFIG.clientId,
+      sub: "user-claims",
+      iat: nowSeconds,
+      exp: nowSeconds + 300
+    }
+  });
+  const jwk = publicKey.export({ format: "jwk" });
+  const fetchImpl = async (url) => {
+    if (url.startsWith(DEFAULT_OIDC_CONFIG.tokenUrl)) {
+      return {
+        ok: true,
+        json: async () => ({ id_token: token })
+      };
+    }
+    if (url === DEFAULT_OIDC_CONFIG.wellKnownUrl) {
+      return {
+        ok: true,
+        json: async () => ({ jwks_uri: "https://iam.example.com/auth/oidc/jwks" })
+      };
+    }
+    if (url === "https://iam.example.com/auth/oidc/jwks") {
+      return {
+        ok: true,
+        json: async () => ({ keys: [{ ...jwk, kid, alg: "RS256", use: "sig" }] })
+      };
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const result = await exchangeCodeForTokenClaims("callback-code", fetchImpl);
+
+  assert.equal(result.idToken, token);
+  assert.deepEqual(result.claims, {
+    sub: "user-claims",
+    issuer: DEFAULT_OIDC_CONFIG.issuer,
+    audience: DEFAULT_OIDC_CONFIG.clientId
+  });
+  assert.deepEqual(await exchangeCodeForClaims("callback-code", fetchImpl), result.claims);
+});
+
+test("validateIdToken reports Google discovery network failures with stage context", async () => {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const googleConfig = {
+    ...DEFAULT_GOOGLE_OIDC_CONFIG,
+    clientId: "google-desktop-client"
+  };
+  const token = createSignedJwt({
+    privateKey,
+    kid: "google-test-key",
+    claims: {
+      iss: googleConfig.issuer,
+      aud: googleConfig.clientId,
+      sub: "user-001",
+      iat: nowSeconds,
+      exp: nowSeconds + 300
+    }
+  });
+
+  await assert.rejects(
+    () => validateIdToken(
+      token,
+      async () => {
+        throw new TypeError("fetch failed");
+      },
+      googleConfig
+    ),
+    /Google OIDC discovery failed: fetch failed/
+  );
+});
+
+test("validateIdToken reports Google JWKS network failures with stage context", async () => {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const googleConfig = {
+    ...DEFAULT_GOOGLE_OIDC_CONFIG,
+    clientId: "google-desktop-client"
+  };
+  const token = createSignedJwt({
+    privateKey,
+    kid: "google-test-key",
+    claims: {
+      iss: googleConfig.issuer,
+      aud: googleConfig.clientId,
+      sub: "user-001",
+      iat: nowSeconds,
+      exp: nowSeconds + 300
+    }
+  });
+  const fetchImpl = async (url) => {
+    if (url === googleConfig.wellKnownUrl) {
+      return {
+        ok: true,
+        json: async () => ({ jwks_uri: "https://www.googleapis.com/oauth2/v3/certs" })
+      };
+    }
+    throw Object.assign(new TypeError("fetch failed"), {
+      cause: new Error("connect ETIMEDOUT 142.250.0.1:443")
+    });
+  };
+
+  await assert.rejects(
+    () => validateIdToken(token, fetchImpl, googleConfig),
+    /Google JWKS fetch failed: fetch failed - connect ETIMEDOUT/
+  );
 });
 
 test("getDesktopSsoStatus exposes only public session state", () => {

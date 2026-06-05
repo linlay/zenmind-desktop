@@ -5,7 +5,7 @@ import path from "node:path";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
-test("Desktop SSO login and logout open the embedded SSO browser tab", () => {
+test("Desktop SSO opens Google in the system browser and keeps legacy embedded flow", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const ssoHandlersSource = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "sso-handlers.ts"), "utf8");
   const ssoControllerSource = fs.readFileSync(path.join(projectRoot, "src", "main", "sso-controller.ts"), "utf8");
@@ -16,6 +16,8 @@ test("Desktop SSO login and logout open the embedded SSO browser tab", () => {
 
   assert.match(ssoControllerSource, /import \{ STORAGE_NAMESPACE \} from "\.\.\/shared\/generated\/brand";/u);
   assert.match(ssoControllerSource, /DESKTOP_SSO_WEBVIEW_PARTITION = `persist:\$\{STORAGE_NAMESPACE\}-sso`;/u);
+  assert.match(ssoControllerSource, /async openSystemBrowserUrl/u);
+  assert.match(ssoControllerSource, /options\.openExternal\(targetUrl\)/u);
   assert.match(platformAdapterSource, /function getDesktopSsoBrowserUserAgent/u);
   assert.match(platformAdapterSource, /Electron\//u);
   assert.match(platformAdapterSource, /\.replace\([^;]+Electron[^;]+/u);
@@ -27,19 +29,26 @@ test("Desktop SSO login and logout open the embedded SSO browser tab", () => {
   assert.match(ssoControllerSource, /async exchangeBrowserCookieAccessToken/u);
   assert.match(ssoControllerSource, /defaultSession/u);
   assert.match(ssoControllerSource, /getDesktopSsoProxyBrowserCookieDetails\(\)/u);
+  assert.match(oidcSsoSource, /DEFAULT_GOOGLE_OIDC_CONFIG/u);
+  assert.match(oidcSsoSource, /GOOGLE_LOOPBACK_HOST = "127\.0\.0\.1"/u);
+  assert.match(oidcSsoSource, /openMode: "system" as const/u);
   assert.match(oidcSsoSource, /browserUrl: oidcConfig\.loginUrl \? undefined : buildDesktopSsoProxyUrl\(authorizeUrl\)/u);
-  assert.match(startLoginBlock, /onBeforeStatusChanged: async \(status(?:: any)?\) => \{[\s\S]{0,180}if \(status\.authenticated\) \{[\s\S]{0,140}await desktopSsoController\.syncBrowserCookies\(\);/u);
+  assert.match(startLoginBlock, /onBeforeStatusChanged: async \(status(?:: any)?, context\?: \{ idToken\?: string \}\) => \{[\s\S]{0,220}if \(status\.authenticated\) \{[\s\S]{0,140}await desktopSsoController\.syncBrowserCookies\(\);/u);
   assert.match(startLoginBlock, /await desktopSsoController\.exchangeBrowserCookieAccessToken\(\);/u);
+  assert.match(startLoginBlock, /await desktopSsoController\.exchangeWebSession\(context\?\.idToken \|\| ""\);/u);
   assert.match(source, /await desktopSsoController\.exchangeBrowserCookieAccessToken\(\)/u);
+  assert.match(startLoginBlock, /result\.openMode === "system"[\s\S]{0,160}desktopSsoController\.openSystemBrowserUrl/u);
   assert.match(startLoginBlock, /desktopSsoController\.openBrowserUrl\(\{\s*url: result\.browserUrl \|\| result\.authorizeUrl,[\s\S]*?resolveRedirect: Boolean\(result\.browserUrl\)\s*\}\)/u);
   assert.match(startLoginBlock, /failDesktopSsoFlow\(message\)/u);
   assert.match(logoutBlock, /await desktopSsoController\.clearBrowserCookies\(\);/u);
+  assert.match(logoutBlock, /await desktopSsoController\.clearWebSessionCookies\(\);/u);
   assert.match(logoutBlock, /desktopSsoController\.openBrowserUrl\(\{\s*url: result\.browserUrl \|\| result\.logoutUrl,[\s\S]*?resolveRedirect: false\s*\}\)/u);
   assert.match(logoutBlock, /failDesktopSsoFlow\(message\)/u);
   assert.match(source, /registerSsoIpcHandlers\(ipcMain,/u);
   assert.match(source, /webContents\.send\("webview\.openTab", \{[\s\S]*?sourceGuestId: -1,[\s\S]*?partition: input\.partition,[\s\S]*?userAgent: input\.userAgent/u);
   assert.match(source, /if \(input\.requireOperableTarget === false\) \{\s*return \{\s*ok: true,/u);
   assert.match(source, /message: `已将「\$\{input\.label \|\| targetUrl\}」发送到内置浏览器。`/u);
+  assert.doesNotMatch(source, /openInternalAuthBrowserWindow/u);
   assert.doesNotMatch(source, /openUrlInChrome/u);
   assert.doesNotMatch(source, /getDesktopSsoChromeProfileDir/u);
 });
