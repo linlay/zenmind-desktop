@@ -314,6 +314,9 @@ function focusMainWindowAfterDesktopSso(options: DesktopSsoControllerOptions) {
 
 export function createDesktopSsoController(options: DesktopSsoControllerOptions) {
   return {
+    returnToApp() {
+      focusMainWindowAfterDesktopSso(options);
+    },
     broadcastStatus(status: DesktopSsoStatus) {
       options.getMainWindow()?.webContents.send("sso.statusChanged", status);
       if (status.authenticated) {

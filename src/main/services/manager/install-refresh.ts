@@ -6,42 +6,54 @@ export function agentWebclientInstallNeedsRefresh(installDir: string) {
   const manifestPath = path.join(installDir, "manifest.json");
   const programCommonShPath = path.join(installDir, "scripts", "program-common.sh");
   const programCommonPs1Path = path.join(installDir, "scripts", "program-common.ps1");
-  let backendEntry = "backend/server.cjs";
   try {
     if (fs.existsSync(manifestPath)) {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+        frontend?: { hostManaged?: unknown } | null;
         backend?: { entry?: unknown } | null;
         runtime?: { requiredPaths?: unknown } | null;
       };
-      if (typeof manifest.backend?.entry === "string" && manifest.backend.entry.trim()) {
-        backendEntry = manifest.backend.entry.trim();
-      }
+      const backendEntry = typeof manifest.backend?.entry === "string" ? manifest.backend.entry.trim() : "";
       const requiredPaths = Array.isArray(manifest.runtime?.requiredPaths)
         ? manifest.runtime.requiredPaths.filter((entry): entry is string => typeof entry === "string")
         : [];
       if (
-        backendEntry === "backend/server.js" ||
-        requiredPaths.includes("backend/package.json") ||
-        requiredPaths.includes("backend/node_modules")
+        manifest.frontend?.hostManaged !== true ||
+        backendEntry ||
+        requiredPaths.some((entry) => entry.replace(/\\/g, "/").startsWith("backend/"))
       ) {
         return true;
       }
     }
 
-    const staleUnixLauncherMarkers = ["BACKEND_PACKAGE_FILE", "BACKEND_NODE_MODULES_DIR", "backend/package.json", "backend/node_modules"];
+    const staleUnixLauncherMarkers = [
+      "BACKEND_ENTRY",
+      "BACKEND_PACKAGE_FILE",
+      "BACKEND_NODE_MODULES_DIR",
+      "backend/server.cjs",
+      "backend/server.js",
+      "backend/package.json",
+      "backend/node_modules"
+    ];
     if (fs.existsSync(programCommonShPath)) {
       const programCommon = fs.readFileSync(programCommonShPath, "utf8");
-      const hasInvalidAbsoluteBackendEntry = /BACKEND_ENTRY=["']\/backend\/server\.cjs["']/u.test(programCommon);
-      if (hasInvalidAbsoluteBackendEntry || staleUnixLauncherMarkers.some((marker) => programCommon.includes(marker))) {
+      if (staleUnixLauncherMarkers.some((marker) => programCommon.includes(marker))) {
         return true;
       }
     }
 
-    const staleWindowsLauncherMarkers = ["BackendPackageFile", "BackendModulesDir", "backend\\package.json", "backend\\node_modules"];
+    const staleWindowsLauncherMarkers = [
+      "BackendEntry",
+      "BackendPackageFile",
+      "BackendModulesDir",
+      "backend\\server.cjs",
+      "backend\\server.js",
+      "backend\\package.json",
+      "backend\\node_modules"
+    ];
     if (fs.existsSync(programCommonPs1Path)) {
       const programCommon = fs.readFileSync(programCommonPs1Path, "utf8");
-      const hasInvalidAbsoluteBackendEntry = /\$Script:BackendEntry\s*=\s*["']\\?backend\\server\.cjs["']/u.test(programCommon);
-      if (hasInvalidAbsoluteBackendEntry || staleWindowsLauncherMarkers.some((marker) => programCommon.includes(marker))) {
+      if (staleWindowsLauncherMarkers.some((marker) => programCommon.includes(marker))) {
         return true;
       }
     }
@@ -49,25 +61,10 @@ export function agentWebclientInstallNeedsRefresh(installDir: string) {
     return true;
   }
 
-  const serverPath = fs.existsSync(path.join(installDir, backendEntry))
-    ? path.join(installDir, backendEntry)
-    : path.join(installDir, "backend", "server.js");
-  if (!fs.existsSync(serverPath)) {
-    return false;
-  }
-
-  try {
-    const serverContent = fs.readFileSync(serverPath, "utf8");
-    return (
-      serverContent.includes("(secure ? https : http).request") ||
-      serverContent.includes("function buildUpgradeRequest(") ||
-      !serverContent.includes("function createWebSocketProxy(") ||
-      !serverContent.includes("proxy.upgrade(req, socket, head)") ||
-      !serverContent.includes("server.on('upgrade'")
-    );
-  } catch {
-    return true;
-  }
+  return (
+    fs.existsSync(path.join(installDir, "backend", "server.cjs")) ||
+    fs.existsSync(path.join(installDir, "backend", "server.js"))
+  );
 }
 
 export function zenmindAppServerInstallNeedsRefresh(installDir: string) {

@@ -17,6 +17,7 @@ import type {
   DesktopSsoStartResult,
   DesktopSsoStatus
 } from "../shared/contracts";
+import { PRODUCT_NAME } from "../shared/generated/brand";
 import { getDesktopStateRoot } from "./user-paths";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 
@@ -141,6 +142,7 @@ type CallbackHooks = {
     context?: DesktopSsoStatusChangeContext
   ) => void | Promise<void>;
   onStatusChanged?: (status: DesktopSsoStatus) => void;
+  onReturnToAppRequested?: () => void | Promise<void>;
 };
 
 type DesktopSsoStatusChangeContext = {
@@ -203,6 +205,7 @@ const CALLBACK_ORIGIN = `http://${CALLBACK_HOST}:${CALLBACK_PORT}`;
 const GOOGLE_LOOPBACK_HOST = "127.0.0.1";
 const CALLBACK_PATH = "/api/auth/oidc/callback";
 const LOGOUT_CALLBACK_PATH = "/api/auth/oidc/logout-callback";
+const RETURN_TO_APP_PATH = "/api/auth/oidc/return-to-app";
 const SESSION_FILE_NAME = "oidc-sso-session.json";
 const ACCESS_TOKEN_FILE_NAME = "desktop-sso-access-token.txt";
 export const DESKTOP_SSO_CONFIG_FILE_NAME = "desktop-sso.json";
@@ -1085,9 +1088,17 @@ function keyObjectFromJwk(jwk: Record<string, unknown>): KeyObject {
   return createPublicKey({ key: jwk, format: "jwk" });
 }
 
-function renderCallbackHtml(title: string, message: string) {
+function renderCallbackHtml(title: string, message: string, options: {
+  actionHref?: string;
+  actionLabel?: string;
+} = {}) {
   const escapedTitle = escapeHtml(title);
   const escapedMessage = escapeHtml(message);
+  const actionHref = options.actionHref?.trim() || "";
+  const actionLabel = options.actionLabel?.trim() || "";
+  const actionHtml = actionHref && actionLabel
+    ? `<a class="primary-action" href="${escapeHtml(actionHref)}">${escapeHtml(actionLabel)}</a>`
+    : "";
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -1099,15 +1110,23 @@ function renderCallbackHtml(title: string, message: string) {
     main { width: min(520px, calc(100vw - 48px)); padding: 32px; border: 1px solid #d9e2ef; border-radius: 16px; background: #fff; box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12); }
     h1 { margin: 0 0 12px; font-size: 24px; line-height: 1.25; }
     p { margin: 0; font-size: 15px; line-height: 1.7; color: #44546a; }
+    .primary-action { display: inline-flex; align-items: center; justify-content: center; margin-top: 24px; min-height: 42px; padding: 0 18px; border-radius: 8px; background: #1f5eff; color: #fff; font-size: 15px; font-weight: 600; text-decoration: none; box-shadow: 0 10px 22px rgba(31, 94, 255, 0.24); }
+    .primary-action:focus-visible { outline: 3px solid rgba(31, 94, 255, 0.28); outline-offset: 3px; }
+    .primary-action:hover { background: #174edb; }
   </style>
 </head>
 <body>
   <main>
     <h1>${escapedTitle}</h1>
     <p>${escapedMessage}</p>
+    ${actionHtml}
   </main>
 </body>
 </html>`;
+}
+
+function buildReturnToAppUrl(origin: string) {
+  return `${origin}${RETURN_TO_APP_PATH}`;
 }
 
 function escapeHtml(value: string) {
@@ -1923,6 +1942,14 @@ async function handleCallbackRequest(app: App, request: http.IncomingMessage, re
   const fallbackOrigin = callbackServerInfo?.origin || CALLBACK_ORIGIN;
   const requestUrl = new URL(request.url || "/", fallbackOrigin);
   const closeAfterCallback = callbackServerInfo?.closeAfterCallback === true;
+  if (requestUrl.pathname === RETURN_TO_APP_PATH) {
+    await callbackHooks.onReturnToAppRequested?.();
+    if (closeAfterCallback) {
+      closeCallbackServerAfterResponse(response);
+    }
+    writeHtmlResponse(response, 200, renderCallbackHtml("已回到 Desktop", "可以关闭此浏览器页面。"));
+    return;
+  }
   if (requestUrl.pathname === LOGOUT_CALLBACK_PATH) {
     desktopSsoProxyState?.cookies.clear();
     if (closeAfterCallback) {
@@ -1952,10 +1979,14 @@ async function handleCallbackRequest(app: App, request: http.IncomingMessage, re
 
   try {
     const status = await handleLoginCallback(app, requestUrl);
-    if (closeAfterCallback) {
-      closeCallbackServerAfterResponse(response);
-    }
-    writeHtmlResponse(response, 200, renderCallbackHtml("登录成功", `${status.user?.sub ?? "用户"} 已完成单点登录，可以回到 Desktop 继续使用。`));
+    writeHtmlResponse(response, 200, renderCallbackHtml(
+      "登录成功",
+      `${status.user?.sub ?? "用户"} 已完成单点登录，可以回到 Desktop 继续使用。`,
+      {
+        actionHref: buildReturnToAppUrl(fallbackOrigin),
+        actionLabel: `回到 ${PRODUCT_NAME}`
+      }
+    ));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     setCurrentStatus(createFailedStatus(message));
@@ -2389,6 +2420,7 @@ export const __testInternals = {
   buildAuthorizeUrl,
   createPkceCodeChallenge,
   buildDesktopSsoProxyUrl,
+  buildReturnToAppUrl,
   buildDesktopSsoBrowserCookieDetails,
   getDesktopSsoCookieMirrorOrigins,
   rewriteDesktopSsoProxyLocation,
@@ -2417,5 +2449,6 @@ export const __testInternals = {
   exchangeCodeForTokenClaims,
   exchangeCodeForClaims,
   validateIdToken,
+  renderCallbackHtml,
   closeCallbackServer
 };

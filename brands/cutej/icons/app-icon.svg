@@ -12,6 +12,7 @@
       <stop offset="100%" stop-color="#d97706"/>
     </linearGradient>
   </defs>
+  <rect x="60" y="60" width="240" height="240" fill="#FFFFFF"/>
   <g fill="url(#logoGradient)">
     <polygon points="151,102.2 186,102.2 105,266 72,266"/>
     <polygon points="150,101.3 270,101.3 270,112.1 150,112.1"/>

@@ -22,6 +22,7 @@ const {
   buildAuthorizeUrl,
   createPkceCodeChallenge,
   buildDesktopSsoProxyUrl,
+  buildReturnToAppUrl,
   buildDesktopSsoBrowserCookieDetails,
   rewriteDesktopSsoProxyLocation,
   rewriteDesktopSsoProxySetCookieHeader,
@@ -45,7 +46,8 @@ const {
   getDefaultOidcFetch,
   exchangeCodeForTokenClaims,
   exchangeCodeForClaims,
-  validateIdToken
+  validateIdToken,
+  renderCallbackHtml
 } = __testInternals;
 
 const TEST_INTERNAL_TLD = String.fromCharCode(110, 101, 116);
@@ -547,6 +549,43 @@ test("startDesktopSsoLogin uses an ephemeral 127.0.0.1 loopback server for Googl
   assert.ok(url.searchParams.get("code_challenge"));
 });
 
+test("OIDC return-to-app endpoint responds without consuming the auth callback", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-return-to-app-"));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      provider: "google",
+      clientId: "google-desktop-client",
+      clientSecret: "google-desktop-secret"
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  let returnRequests = 0;
+  t.after(async () => {
+    await logoutDesktopSso(app);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const result = await startDesktopSsoLogin(app, {
+    onReturnToAppRequested: () => {
+      returnRequests += 1;
+    }
+  });
+  const authorizeUrl = new URL(result.authorizeUrl);
+  const redirectUri = new URL(authorizeUrl.searchParams.get("redirect_uri"));
+  const response = await fetch(buildReturnToAppUrl(redirectUri.origin));
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(returnRequests, 1);
+  assert.match(html, /可以关闭此浏览器页面。/);
+});
+
 test("direct AI login can complete on a logged-in page and inject token cookies into configured targets", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-ai-authorization-token-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -686,6 +725,23 @@ test("buildDesktopSsoProxyUrl keeps the browser on the localhost callback origin
     buildDesktopSsoProxyUrl("https://iam.example.com/auth/oauth2/authorize?client_id=desktop#frag"),
     "http://localhost:8080/auth/oauth2/authorize?client_id=desktop#frag"
   );
+});
+
+test("OIDC callback success page renders a return-to-app button on the loopback origin", () => {
+  const returnUrl = buildReturnToAppUrl("http://127.0.0.1:60456");
+  const html = renderCallbackHtml(
+    "登录成功",
+    "107554318085010644350 已完成单点登录，可以回到 Desktop 继续使用。",
+    {
+      actionHref: returnUrl,
+      actionLabel: "回到 ZenMind"
+    }
+  );
+
+  assert.equal(returnUrl, "http://127.0.0.1:60456/api/auth/oidc/return-to-app");
+  assert.match(html, /登录成功/);
+  assert.match(html, /回到 ZenMind/);
+  assert.match(html, /href="http:\/\/127\.0\.0\.1:60456\/api\/auth\/oidc\/return-to-app"/);
 });
 
 test("rewriteDesktopSsoProxyLocation maps IAM redirects back through the localhost proxy", () => {

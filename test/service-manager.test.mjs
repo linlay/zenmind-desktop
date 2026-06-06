@@ -379,7 +379,7 @@ function createStartupCoreAssetsFixture(options = {}) {
     {
       id: "agent-webclient",
       name: "智能助理",
-      frontend: { mode: "standalone", entry: "/" },
+      frontend: { mode: "standalone", entry: "/", directAccess: true, hostManaged: true },
       web: { routePath: "/", portEnvKey: "PORT", defaultPort: ports.webclient },
       envExample: [
         `PORT=${ports.webclient}`,
@@ -387,7 +387,7 @@ function createStartupCoreAssetsFixture(options = {}) {
         "BASE_URL=https://bundle-platform.example.test",
         "# VOICE_BASE_URL=https://bundle-platform.example.test"
       ].join("\n") + "\n",
-      extraPaths: [["backend"], ["frontend", "dist"], ["scripts"]]
+      extraPaths: [["frontend", "dist"], ["scripts"]]
     }
   ];
 
@@ -406,21 +406,6 @@ function createStartupCoreAssetsFixture(options = {}) {
     fs.mkdirSync(assetDir, { recursive: true });
 
     if (service.id === "agent-webclient") {
-      fs.writeFileSync(
-        path.join(bundleRoot, "backend", "server.cjs"),
-        [
-          "const http = require('http');",
-          "const { createProxyMiddleware } = require('http-proxy-middleware');",
-          "const server = http.createServer();",
-          "function createWebSocketProxy() {",
-          "  const proxy = createProxyMiddleware({ target: 'http://127.0.0.1:11949', ws: true });",
-          "  return { ws(req, socket, head) { proxy.upgrade(req, socket, head); } };",
-          "}",
-          "server.on('upgrade', () => {});",
-          "module.exports = { createWebSocketProxy };"
-        ].join("\n") + "\n",
-        "utf8"
-      );
       fs.writeFileSync(path.join(bundleRoot, "frontend", "dist", "index.html"), "<html></html>\n", "utf8");
     }
     if (service.id === "zenmind-app-server") {
@@ -620,7 +605,7 @@ function createStartupCoreAssetsFixture(options = {}) {
         : service.id === "agent-webclient"
           ? [
               "#!/usr/bin/env bash",
-              'BACKEND_ENTRY="$BUNDLE_ROOT/backend/server.cjs"'
+              "# agent-webclient is hosted by ZenMind Desktop."
             ].join("\n") + "\n"
         : "#!/usr/bin/env bash\n";
       fs.writeFileSync(path.join(bundleRoot, "scripts", programCommonName), programCommonContent, "utf8");
@@ -645,13 +630,6 @@ function createStartupCoreAssetsFixture(options = {}) {
         version: "v1.0.0",
         description: "fixture",
         frontend: service.frontend,
-        ...(service.id === "agent-webclient"
-          ? {
-              backend: {
-                entry: "backend/server.cjs"
-              }
-            }
-          : {}),
         scripts: {
           start: startFileName,
           stop: stopFileName,
@@ -701,7 +679,7 @@ function createStartupCoreAssetsFixture(options = {}) {
             ".env.example",
             "manifest.json",
             ...(service.id === "agent-platform" ? ["configs", "runtime"] : []),
-            ...(service.id === "agent-webclient" ? [path.join("backend", "server.cjs"), path.join("frontend", "dist", "index.html")] : []),
+            ...(service.id === "agent-webclient" ? [path.join("frontend", "dist", "index.html")] : []),
             ...(service.id === "zenmind-app-server" ? [
               path.join("frontend", "dist", "index.html"),
               path.join("scripts", isWindows ? "setup-public-key.ps1" : "setup-public-key.sh"),
@@ -751,8 +729,12 @@ async function stopStartupCoreProcesses(app) {
     try {
       const state = await getServiceState(app, serviceId);
       if (state.status === "running") {
+        if (serviceId === "agent-webclient") {
+          await stopService(app, serviceId);
+          continue;
+        }
         const pid = state.healthMeta.pid;
-        if (pid) {
+        if (pid && pid !== process.pid) {
           try {
             process.kill(pid);
           } catch {
@@ -5106,6 +5088,7 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
       "NODE_BIN=/tmp/stale-node"
     ].join("\n") + "\n",
   );
+  fs.mkdirSync(path.join(webclientInstallDir, "backend"), { recursive: true });
   fs.writeFileSync(
     path.join(webclientInstallDir, "backend", "server.cjs"),
     [
@@ -5126,7 +5109,6 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   await __testInternals.ensurePreStartRequirements(app, webclientService);
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, webclientService.id), "utf8");
-  const serverContent = fs.readFileSync(path.join(webclientInstallDir, "backend", "server.cjs"), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(webclientInstallDir, "manifest.json"), "utf8"));
   assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
   assert.match(envContent, /^WS_BASE_URL=http:\/\/localhost:11949$/m);
@@ -5136,29 +5118,23 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   assert.match(envContent, /^NODE_ENV=development$/m);
   assert.match(envContent, /^DEV_SERVER_ALLOWED_HOSTS=all$/m);
   assert.match(envContent, /^DESKTOP_APP=true$/m);
-  assert.match(serverContent, /function createWebSocketProxy\(/);
-  assert.match(serverContent, /proxy\.upgrade\(req, socket, head\)/);
-  assert.doesNotMatch(serverContent, /function buildUpgradeRequest\(/);
-  assert.doesNotMatch(serverContent, /\(secure \? https : http\)\.request/);
+  assert.equal(fs.existsSync(path.join(webclientInstallDir, "backend", "server.cjs")), false);
   assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(webclientInstallDir), false);
-  assert.equal(manifest.backend.entry, "backend/server.cjs");
-  assert.equal(manifest.frontend.embedPath, "/");
+  assert.equal(manifest.backend?.entry, undefined);
+  assert.equal(manifest.frontend.hostManaged, true);
   assert.equal(manifest.frontend.embedParams?.desktopApp, undefined);
 
   restore();
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("startService injects agent-webclient NODE_BIN without persisting it to env", async () => {
+test("startService hosts agent-webclient without executing bundle start script", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
   const webclientService = getBuiltinService("agent-webclient");
   const webclientInstallDir = getTestServiceProgramDir(userDataRoot, webclientService.id, webclientService.version);
   const startFileName = process.platform === "win32" ? "start.ps1" : "start.sh";
-  const expectedNodeBin = __testInternals.resolveNodeBin();
-  const expectedNodeBinLiteral = expectedNodeBin.includes(" ") ? `"${expectedNodeBin}"` : expectedNodeBin;
-  const webclientPidPath = getTestPidPath(userDataRoot, "agent-webclient", "agent-webclient.pid");
 
   try {
     await installBuiltinService(app, "agent-platform");
@@ -5170,12 +5146,6 @@ test("startService injects agent-webclient NODE_BIN without persisting it to env
         [
           "$runDir = Join-Path $PSScriptRoot 'run'",
           "New-Item -ItemType Directory -Path $runDir -Force | Out-Null",
-          "if (-not $env:NODE_BIN) { throw 'missing NODE_BIN' }",
-          "$env:NODE_BIN | Set-Content -LiteralPath (Join-Path $runDir 'node-bin.txt')",
-          "$fixtureScript = Join-Path $runDir 'agent-webclient-fixture.mjs'",
-          "[System.IO.File]::WriteAllText($fixtureScript, 'setInterval(() => {}, 1000);')",
-          "$proc = Start-Process -FilePath $env:NODE_BIN -ArgumentList $fixtureScript -WindowStyle Hidden -PassThru",
-          `$proc.Id | Set-Content -LiteralPath '${webclientPidPath.replace(/'/g, "''")}'`,
           "Set-Content -LiteralPath (Join-Path $runDir 'started.txt') -Value 'started'"
         ].join("\r\n"),
         "utf8"
@@ -5187,15 +5157,6 @@ test("startService injects agent-webclient NODE_BIN without persisting it to env
           "#!/usr/bin/env bash",
           "set -euo pipefail",
           "mkdir -p run",
-          'pid_dir="${SERVICE_STATE_DIR:-$PWD/run}"',
-          'if [ -z "${SERVICE_STATE_DIR:-}" ]; then pid_dir="$PWD/run"; fi',
-          'mkdir -p "$pid_dir"',
-          ': "${NODE_BIN:?missing NODE_BIN}"',
-          'printf "%s" "$NODE_BIN" > run/node-bin.txt',
-          'fixture_script="$PWD/run/agent-webclient-fixture.mjs"',
-          'printf "setInterval(() => {}, 1000);\\n" > "$fixture_script"',
-          '"$NODE_BIN" "$fixture_script" >/dev/null 2>&1 &',
-          'echo $! > "$pid_dir/agent-webclient.pid"',
           "printf started > run/started.txt"
         ].join("\n") + "\n",
         "utf8"
@@ -5205,10 +5166,12 @@ test("startService injects agent-webclient NODE_BIN without persisting it to env
 
     const webclientResult = await startService(app, "agent-webclient");
     assert.equal(webclientResult.ok, true, webclientResult.message);
-    assert.equal(fs.readFileSync(path.join(webclientInstallDir, "run", "node-bin.txt"), "utf8"), expectedNodeBin);
+    assert.equal(webclientResult.service.status, "running");
+    assert.equal(webclientResult.service.healthMeta.pid, process.pid);
+    assert.equal(webclientResult.service.healthMeta.webUrl, `http://127.0.0.1:${fixture.ports.webclient}/`);
+    assert.equal(fs.existsSync(path.join(webclientInstallDir, "run", "started.txt")), false);
 
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, webclientService.id), "utf8");
-    assert.doesNotMatch(envContent, new RegExp(`^NODE_BIN=${expectedNodeBinLiteral.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "m"));
     assert.doesNotMatch(envContent, /^NODE_BIN=/m);
   } finally {
     await stopStartupCoreProcesses(app);
@@ -5307,7 +5270,7 @@ test("startService injects local-cli-acp-relay NODE_BIN without persisting it to
   }
 });
 
-test("agentWebclientInstallNeedsRefresh catches server.cjs installs with stale dependency checks", () => {
+test("agentWebclientInstallNeedsRefresh catches legacy backend-managed installs", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-webclient-stale-launcher-"));
   const installDir = path.join(tempRoot, "agent-webclient");
 
@@ -5360,13 +5323,41 @@ test("agentWebclientInstallNeedsRefresh catches server.cjs installs with stale d
 
   assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), true);
 
+  fs.rmSync(path.join(installDir, "backend"), { recursive: true, force: true });
+  fs.writeFileSync(
+    path.join(installDir, "manifest.json"),
+    JSON.stringify({
+      frontend: {
+        mode: "standalone",
+        entry: "/",
+        hostManaged: true
+      },
+      runtime: {
+        requiredPaths: [
+          "start.sh",
+          "stop.sh",
+          "deploy.sh",
+          "scripts/program-common.sh",
+          ".env.example",
+          "manifest.json",
+          "frontend/dist/index.html"
+        ]
+      }
+    }, null, 2),
+    "utf8"
+  );
   fs.writeFileSync(
     path.join(installDir, "scripts", "program-common.sh"),
-    "#!/usr/bin/env bash\nBACKEND_ENTRY=\"$BUNDLE_ROOT/backend/server.cjs\"\n",
+    "#!/usr/bin/env bash\n# hosted by desktop\n",
     "utf8"
   );
 
   assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), false);
+
+  fs.mkdirSync(path.join(installDir, "backend"), { recursive: true });
+  fs.writeFileSync(path.join(installDir, "backend", "server.cjs"), "legacy\n", "utf8");
+  assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), true);
+  fs.rmSync(path.join(installDir, "backend"), { recursive: true, force: true });
 
   fs.writeFileSync(
     path.join(installDir, "scripts", "program-common.sh"),
@@ -5398,7 +5389,7 @@ test("initializeService refreshes stale agent-webclient launcher before deploy",
   assert.equal(result.ok, true);
 
   const programCommon = fs.readFileSync(programCommonPath, "utf8");
-  assert.match(programCommon, /BACKEND_ENTRY="\$BUNDLE_ROOT\/backend\/server\.cjs"/);
+  assert.doesNotMatch(programCommon, /BACKEND_ENTRY/);
   assert.doesNotMatch(programCommon, /BACKEND_ENTRY="\/backend\/server\.cjs"/);
   assert.equal(__testInternals.agentWebclientInstallNeedsRefresh(installDir), false);
 
@@ -5933,11 +5924,15 @@ test("restoreRunningServices skips unavailable install-only container hub", asyn
     assert.deepEqual(result.restored, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
     assert.equal(startupEvents.includes("start:agent-container-hub"), false);
     assert.equal(startupEvents.includes("progress:agent-container-hub:failed"), false);
-    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["zenmind-app-server", "agent-platform"]) {
       const service = getBuiltinService(serviceId);
       const installDir = getInstallDir(app, service);
       assert.equal(fs.existsSync(path.join(installDir, "run", "started.txt")), true);
     }
+    const webclientState = await getServiceState(app, "agent-webclient");
+    const webclientInstallDir = getInstallDir(app, getBuiltinService("agent-webclient"));
+    assert.equal(webclientState.status, "running");
+    assert.equal(fs.existsSync(path.join(webclientInstallDir, "run", "started.txt")), false);
   } finally {
     childProcess.spawnSync = previousSpawnSync;
     await stopStartupCoreProcesses(app);
@@ -6281,11 +6276,18 @@ test("runStartupPreparation restores second-launch core services in parallel", a
         }
       }
     });
-    for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
+    for (const serviceId of ["zenmind-app-server", "agent-platform"]) {
       const filePath = path.join(getTestServiceProgramDir(userDataRoot, serviceId, "v1.0.0"), "run", "start-time.txt");
       assert.equal(fs.existsSync(filePath), true, `${serviceId} should record a start timestamp`);
       assert.equal(startingTimes.has(serviceId), true, `${serviceId} should reach starting phase`);
     }
+    assert.equal(startingTimes.has("agent-webclient"), true, "agent-webclient should reach starting phase");
+    assert.equal(
+      fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-webclient", "v1.0.0"), "run", "start-time.txt")),
+      false,
+      "host-managed agent-webclient should not execute bundle start script"
+    );
+    assert.equal((await getServiceState(app, "agent-webclient")).status, "running");
 
     assert.equal(result.mode, "restore");
     assert.deepEqual(result.failures, []);
@@ -6464,7 +6466,8 @@ test("runStartupPreparation collects parallel restore failures without cancellin
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-webclient"]);
     assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "zenmind-app-server", "v1.0.0"), "run", "started.txt")), true);
     assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "run", "started.txt")), false);
-    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-webclient", "v1.0.0"), "run", "started.txt")), true);
+    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-webclient", "v1.0.0"), "run", "started.txt")), false);
+    assert.equal((await getServiceState(app, "agent-webclient")).status, "running");
   } finally {
     if (previousVerifyDelay === undefined) {
       delete process.env.SERVICE_VERIFY_DELAY_MS;
@@ -6496,9 +6499,9 @@ test("runStartupPreparation prepares missing container hub in the background whe
     const hubInstallDir = getInstallDir(app, hubService);
     const hubState = await getServiceState(app, "agent-container-hub");
 
-    assert.equal(result.mode, "bootstrap");
+    assert.equal(result.mode, "restore");
     assert.deepEqual(result.failures, []);
-    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.deepEqual([...result.started].sort(), ["agent-platform", "agent-webclient", "zenmind-app-server"]);
     assert.equal(fs.existsSync(markerPath), true);
     assert.equal(fs.existsSync(hubInstallDir), true);
     assert.equal(readInitializationStatePath(getTestInitializationStatePath(userDataRoot, hubService.id))?.status, "succeeded");
