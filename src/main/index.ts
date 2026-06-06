@@ -37,6 +37,7 @@ import {
   readServiceLog,
   watchServiceLog,
   getServiceState,
+  getResponsiveServiceState,
   initializeService,
   importServiceFile,
   installBuiltinService,
@@ -177,6 +178,7 @@ import {
   importEnvZipToRuntime,
   resolveRuntimeRoot,
   runtimeEnvExists,
+  runtimeEnvNeedsBundledSeedRefresh,
   shouldRequireEnvZipImport
 } from "./env-bootstrap";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
@@ -384,6 +386,10 @@ const requireEnvZipImportAtStartup = shouldRequireEnvZipImport({
   platform: mainProcessContext.platform,
   runtimeEnvExistedAtStartup: runtimeEnvExists(app, mainProcessContext.platform)
 });
+const refreshBundledEnvSeedFilesAtStartup = runtimeEnvNeedsBundledSeedRefresh(
+  app,
+  mainProcessContext.platform
+);
 const electronUserDataRoot = getElectronUserDataRoot(app);
 fs.mkdirSync(electronUserDataRoot, { recursive: true });
 app.setPath("userData", electronUserDataRoot);
@@ -497,7 +503,7 @@ const desktopPetClientLifecycleController = createDesktopPetClientLifecycleContr
   app,
   AgentStatusClientClass: AgentPlatformPetStatusClient,
   AgentStreamClientClass: AgentPlatformPetStreamClient,
-  getServiceState,
+  getServiceState: getResponsiveServiceState,
   issueAccessToken: issueAgentAccessToken,
   getSettings: () => appState.desktopPetSettings,
   saveSettings: (settings) => {
@@ -985,7 +991,7 @@ async function markAgentPlatformChatReadFromDesktopPet(chatId: string) {
     return;
   }
   try {
-    const serviceState = await getServiceState(app, "agent-platform");
+    const serviceState = await getResponsiveServiceState(app, "agent-platform");
     const baseUrl = serviceState.status === "running" ? serviceState.healthMeta.webUrl.trim() : "";
     if (!baseUrl) {
       return;
@@ -1721,7 +1727,7 @@ function registerIpcHandlers(context: MainProcessContext) {
   webviewDebugManager.attachSession(session.defaultSession);
   const assistantBridge = new AgentPlatformAssistantBridge({
     app,
-    getServiceState,
+    getServiceState: getResponsiveServiceState,
     issueAccessToken: issueAgentAccessToken,
     onEvent: (event) => {
       syncTaskBoardIssueFromAssistantEvent(app, event);
@@ -1736,7 +1742,7 @@ function registerIpcHandlers(context: MainProcessContext) {
   });
   state.assistantNavigationStatusClient = new AssistantNavigationStatusClient({
     app,
-    getServiceState,
+    getServiceState: getResponsiveServiceState,
     issueAccessToken: issueAgentAccessToken,
     onSnapshot: emitAssistantNavigationAgentsChanged,
     onPushEvent: (event) => syncTaskBoardIssueFromAssistantEvent(app, event),
@@ -1802,6 +1808,7 @@ function registerIpcHandlers(context: MainProcessContext) {
   registerServicesIpcHandlers(ipcMain, createServicesIpcHandlerOptions(context, {
     listServices,
     getServiceState,
+    getResponsiveServiceState,
     installBuiltinService,
     initializeService,
     startService,
@@ -1978,6 +1985,8 @@ async function handleStartupPipeline() {
         notifyServicesChanged();
         return;
       }
+    } else if (refreshBundledEnvSeedFilesAtStartup) {
+      await tryImportBundledEnvSeedFilesAtStartup();
     }
     loadBuiltinServices(app);
     loadInstalledPlugins(app);
@@ -2035,6 +2044,23 @@ async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: f
       ok: false,
       message: `内置 env.zip 导入失败：${message}`
     };
+  }
+}
+
+async function tryImportBundledEnvSeedFilesAtStartup() {
+  try {
+    const importResult = await importBundledEnvZipToRuntime(app, mainProcessContext.platform, {
+      refreshRuntimeSeedFiles: true
+    });
+    if (!importResult) {
+      return;
+    }
+
+    console.info(
+      `[main] refreshed bundled env seed files from ${importResult.sourceZipPath} into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}, overwritten=${importResult.overwrittenFiles}`
+    );
+  } catch (error) {
+    console.warn("failed to refresh bundled env seed files", error);
   }
 }
 

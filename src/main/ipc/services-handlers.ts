@@ -12,6 +12,7 @@ export interface ServicesIpcHandlerOptions {
   // Service manager operations
   listServices: (app: any) => Promise<any[]>;
   getServiceState: (app: any, serviceId: string) => Promise<any>;
+  getResponsiveServiceState?: (app: any, serviceId: string) => Promise<any>;
   installBuiltinService: (app: any, serviceId: string, options?: any) => Promise<any>;
   initializeService: (app: any, serviceId: string) => Promise<any>;
   startService: (app: any, serviceId: string) => Promise<any>;
@@ -129,6 +130,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     platform = process.platform,
     listServices,
     getServiceState,
+    getResponsiveServiceState,
     installBuiltinService,
     initializeService,
     startService,
@@ -233,8 +235,9 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     }
   });
 
+  const readServiceState = getResponsiveServiceState ?? getServiceState;
   ipcMain.handle("services.getStatus", async (_event: any, serviceId: string) =>
-    getServiceState(app, serviceId)
+    readServiceState(app, serviceId)
   );
 
   // ---------------------------------------------------------------------------
@@ -375,7 +378,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     try {
       const availability = await resolveAgentPlatformMonitorUrl({
         app,
-        getServiceState,
+        getServiceState: readServiceState,
         issueAgentPlatformAccessToken
       });
       if (!availability.ok) {

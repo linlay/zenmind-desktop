@@ -15,6 +15,34 @@ type ContainerEngineProbe = {
   message: string;
 };
 
+type ContainerEngineProbeResult = {
+  engine: string;
+  probes: ContainerEngineProbe[];
+};
+
+type ContainerEngineProbeOptions = {
+  cache?: boolean;
+};
+
+let cachedContainerEngineProbe: {
+  key: string;
+  result: ContainerEngineProbeResult;
+} | null = null;
+
+function getContainerEngineProbeCacheKey(env: NodeJS.ProcessEnv) {
+  return [
+    process.platform,
+    env.PATH ?? "",
+    env.Path ?? "",
+    env.LOCALAPPDATA ?? "",
+    env.HOME ?? ""
+  ].join("\0");
+}
+
+export function clearContainerEngineProbeCache() {
+  cachedContainerEngineProbe = null;
+}
+
 function getContainerEngineExecutableNames(name: string) {
   if (!IS_WINDOWS) {
     return [name];
@@ -56,9 +84,15 @@ function resolveContainerEngineCommand(name: string, env: NodeJS.ProcessEnv, dia
   return located || fallback;
 }
 
-export function probeContainerEngines() {
+export function probeContainerEngines(options: ContainerEngineProbeOptions = {}) {
   const timing = beginStartupTiming("containerEngineAvailable", {}, { log: false });
   const env = buildServiceEnv();
+  const cacheKey = options.cache ? getContainerEngineProbeCacheKey(env) : "";
+  if (cacheKey && cachedContainerEngineProbe?.key === cacheKey) {
+    timing.end({ engine: cachedContainerEngineProbe.result.engine || "none" });
+    return cachedContainerEngineProbe.result;
+  }
+
   const diagOnce = !containerEngineDiagOnce;
   containerEngineDiagOnce = true;
   if (diagOnce) {
@@ -110,16 +144,24 @@ export function probeContainerEngines() {
       });
       if (result.ok) {
         selectedEngine = engine;
-        return { engine, probes };
+        const result = { engine, probes };
+        if (cacheKey) {
+          cachedContainerEngineProbe = { key: cacheKey, result };
+        }
+        return result;
       }
     }
 
-    return { engine: "", probes };
+    const result = { engine: "", probes };
+    if (cacheKey) {
+      cachedContainerEngineProbe = { key: cacheKey, result };
+    }
+    return result;
   } finally {
     timing.end({ engine: selectedEngine || "none" });
   }
 }
 
-export function containerEngineAvailable() {
-  return probeContainerEngines().engine;
+export function containerEngineAvailable(options: ContainerEngineProbeOptions = {}) {
+  return probeContainerEngines(options).engine;
 }

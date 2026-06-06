@@ -141,6 +141,7 @@ import {
   resolveAcpCommandForDesktop
 } from "./env-normalization";
 import {
+  clearContainerEngineProbeCache,
   containerEngineAvailable,
   probeContainerEngines
 } from "./container-engine";
@@ -226,6 +227,18 @@ type StartupPreparationOptions = {
   onModeResolved?: (mode: StartupRestoreMode) => void;
   onStarting?: (serviceId: ServiceId) => void;
   onProgress?: (serviceId: ServiceId, phase: StartupPreparationProgressPhase, message: string) => void;
+};
+
+type ServiceStateReadMode = "strict" | "responsive";
+
+type ServiceStateReadOptions = {
+  mode?: ServiceStateReadMode;
+  cacheContainerEngineProbe?: boolean;
+};
+
+type ServiceVerificationOptions = {
+  stateReadOptions?: ServiceStateReadOptions;
+  skipManagedPortProbe?: boolean;
 };
 
 const SHUTDOWN_SERVICE_STOP_TIMEOUT_MS = 2_500;
@@ -334,7 +347,11 @@ function isHostManagedService(service: ServiceDefinition) {
   return isHostManagedAgentWebclientService(service);
 }
 
-function collectPrerequisites(service: ServiceDefinition, layout: ServiceLayout) {
+function collectPrerequisites(
+  service: ServiceDefinition,
+  layout: ServiceLayout,
+  options: { cacheContainerEngineProbe?: boolean } = {}
+) {
   const prerequisites: string[] = [];
   const envPath = layout.envPath;
   if (!fs.existsSync(envPath)) {
@@ -349,7 +366,7 @@ function collectPrerequisites(service: ServiceDefinition, layout: ServiceLayout)
   }
 
   if (service.id === "agent-container-hub") {
-    const engineProbe = probeContainerEngines();
+    const engineProbe = probeContainerEngines({ cache: options.cacheContainerEngineProbe });
     if (!engineProbe.engine) {
       const installed = engineProbe.probes.filter((probe) => probe.installed);
       if (installed.length > 0) {
@@ -688,14 +705,45 @@ async function initializeServiceInternal(
   }
 }
 
-export async function listServices(app: App) {
-  return Promise.all(getAllServices().map((service) => getServiceState(app, service.id)));
+function shouldUseResponsiveServiceState(options: ServiceStateReadOptions = {}) {
+  return process.platform === "win32" && options.mode === "responsive";
 }
 
-export async function getServiceState(app: App, serviceId: ServiceId): Promise<ServiceState> {
+function getResponsiveServiceStateReadOptions(): ServiceStateReadOptions {
+  return process.platform === "win32" ? { mode: "responsive" } : {};
+}
+
+function getStartupServiceStateReadOptions(
+  options: ServiceStateReadOptions = {}
+): ServiceStateReadOptions {
+  return {
+    ...options,
+    cacheContainerEngineProbe: true
+  };
+}
+
+function getStartupResponsiveServiceStateReadOptions(): ServiceStateReadOptions {
+  return getStartupServiceStateReadOptions(getResponsiveServiceStateReadOptions());
+}
+
+export async function listServices(app: App) {
+  const readOptions = getResponsiveServiceStateReadOptions();
+  return Promise.all(getAllServices().map((service) => getServiceState(app, service.id, readOptions)));
+}
+
+export async function getResponsiveServiceState(app: App, serviceId: ServiceId): Promise<ServiceState> {
+  return getServiceState(app, serviceId, getResponsiveServiceStateReadOptions());
+}
+
+export async function getServiceState(
+  app: App,
+  serviceId: ServiceId,
+  options: ServiceStateReadOptions = {}
+): Promise<ServiceState> {
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
   const layout = getServiceLayout(app, service);
+  const responsiveRead = shouldUseResponsiveServiceState(options);
   const installed = fs.existsSync(installDir);
   const pidFilePath = resolveRuntimePath(layout, service.runtime.pidRelativePath);
   const pidFilePaths = getManagedPidFilePaths(service, layout);
@@ -717,7 +765,10 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   const port = parsePort(service, env);
   const webUrl = installed ? getWebUrl(service, env) : getWebUrl(service, new Map<string, string>());
   const pidFromFile = installed
-    ? readManagedPidFile(pidFilePaths, installDir, { isProcessRunningImpl: isProcessRunning })
+    ? readManagedPidFile(pidFilePaths, installDir, {
+        isProcessRunningImpl: isProcessRunning,
+        verifyInstallDir: !responsiveRead
+      })
     : null;
   const missingRuntimeFiles = installed ? listMissingRuntimeFiles(service, installDir) : [];
   const initializationState =
@@ -725,8 +776,10 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
   const initializationSucceeded =
     initializationState?.status === "succeeded" && initializationState.version === service.version;
   const prerequisites =
-    installed && missingRuntimeFiles.length === 0 && initializationSucceeded
-      ? collectPrerequisites(service, layout)
+    installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !responsiveRead
+      ? collectPrerequisites(service, layout, {
+        cacheContainerEngineProbe: options.cacheContainerEngineProbe
+      })
       : [];
   const hostManaged = isHostManagedService(service);
   const hostState = hostManaged ? getAgentWebclientHostState(service.id) : null;
@@ -745,7 +798,7 @@ export async function getServiceState(app: App, serviceId: ServiceId): Promise<S
     writeManagedPidFiles(pidFilePaths, pidFromFile);
   }
 
-  if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !running && port > 0) {
+  if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !running && port > 0 && !responsiveRead) {
     if (hostManaged) {
       conflictingPortPid = listListeningPids(port).find((candidatePid) => candidatePid !== process.pid) ?? null;
     } else {
@@ -853,21 +906,32 @@ function buildVerificationResult(
   service: ServiceDefinition,
   state: ServiceState,
   desired: ServiceDesiredStatus,
-  probes: HttpProbeResult[] = []
+  probes: HttpProbeResult[] = [],
+  options: Pick<ServiceVerificationOptions, "skipManagedPortProbe"> = {}
 ): ServiceVerification {
   const installDir = getInstallDirFromState(state);
   const pid = state.healthMeta.pid;
   const pidAlive = desired === "running" ? isProcessRunning(pid) : !pid || !isProcessRunning(pid);
   const port = state.healthMeta.port ?? 0;
-  const listeningPids = port > 0 ? listListeningPids(port) : [];
+  const skipManagedPortProbe =
+    options.skipManagedPortProbe === true &&
+    desired === "running" &&
+    service.id !== "agent-container-hub";
   const hostManagedState = isHostManagedService(service) ? getAgentWebclientHostState(service.id) : null;
   const hostManagedPortPid = hostManagedState?.running && hostManagedState.port === port
     ? process.pid
     : null;
-  const managedPortPid = hostManagedPortPid ?? listeningPids.find((candidatePid) => (
-    installDir ? pidMatchesInstallDir(candidatePid, installDir) : true
-  )) ?? null;
-  const portListening = port > 0 ? Boolean(managedPortPid) : desired === "running";
+  const listeningPids = port > 0 && !skipManagedPortProbe && !hostManagedPortPid ? listListeningPids(port) : [];
+  const managedPortPid = hostManagedPortPid ?? (skipManagedPortProbe
+    ? null
+    : listeningPids.find((candidatePid) => (
+      installDir ? pidMatchesInstallDir(candidatePid, installDir) : true
+    )) ?? null);
+  const portListening = hostManagedPortPid
+    ? true
+    : skipManagedPortProbe
+    ? state.status === "running"
+    : port > 0 ? Boolean(managedPortPid) : desired === "running";
   const httpProbe = probes.find((probe) => probe.target === state.healthMeta.webUrl);
   const runtimeInfoProbe = probes.find((probe) => probe.target.includes("/api/runtime-info"));
   const issues: string[] = [];
@@ -951,10 +1015,11 @@ function getInstallDirFromState(state: ServiceState) {
 async function collectServiceVerification(
   app: App,
   serviceId: ServiceId,
-  desired: ServiceDesiredStatus
+  desired: ServiceDesiredStatus,
+  options: ServiceVerificationOptions = {}
 ): Promise<{ state: ServiceState; verification: ServiceVerification }> {
   const service = getService(serviceId);
-  const state = await getServiceState(app, serviceId);
+  const state = await getServiceState(app, serviceId, options.stateReadOptions);
   const probes: HttpProbeResult[] = [];
 
   if (desired === "running" && state.status === "running" && state.healthMeta.webUrl) {
@@ -967,14 +1032,15 @@ async function collectServiceVerification(
 
   return {
     state,
-    verification: buildVerificationResult(service, state, desired, probes)
+    verification: buildVerificationResult(service, state, desired, probes, options)
   };
 }
 
 export async function verifyServiceState(
   app: App,
   serviceId: ServiceId,
-  desired: ServiceDesiredStatus
+  desired: ServiceDesiredStatus,
+  options: ServiceVerificationOptions = {}
 ): Promise<ServiceVerification> {
   const timing = beginStartupTiming("verifyServiceState", { serviceId, desired });
   let verified = false;
@@ -984,7 +1050,7 @@ export async function verifyServiceState(
     const retryUntil = service.id === "agent-container-hub" && desired === "running"
       ? Date.now() + CONTAINER_HUB_RUNNING_VERIFICATION_TIMEOUT_MS
       : 0;
-    let current = await collectServiceVerification(app, serviceId, desired);
+    let current = await collectServiceVerification(app, serviceId, desired, options);
     if (current.verification.verified && delayMs <= 0) {
       verified = true;
       return current.verification;
@@ -992,7 +1058,7 @@ export async function verifyServiceState(
 
     do {
       await delay(delayMs > 0 ? delayMs : 1500);
-      current = await collectServiceVerification(app, serviceId, desired);
+      current = await collectServiceVerification(app, serviceId, desired, options);
       if (current.verification.verified) {
         verified = true;
         return current.verification;
@@ -1032,10 +1098,11 @@ async function attachServiceVerification(
   serviceId: ServiceId,
   result: ServiceCommandResult,
   desired: ServiceDesiredStatus,
-  actionMessage: string
+  actionMessage: string,
+  options: ServiceVerificationOptions = {}
 ): Promise<ServiceCommandResult> {
-  const verification = await verifyServiceState(app, serviceId, desired);
-  const service = await getServiceState(app, serviceId);
+  const verification = await verifyServiceState(app, serviceId, desired, options);
+  const service = await getServiceState(app, serviceId, options.stateReadOptions);
   if (!verification.verified) {
     return {
       ...result,
@@ -1519,17 +1586,36 @@ type RunServiceCommandOptions = {
   refreshBuiltinAsset?: boolean;
   timeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+  stateReadOptions?: ServiceStateReadOptions;
 };
 
 type StartServiceOptions = {
   skipPreStartRequirements?: boolean;
   skipBuiltinAssetRefresh?: boolean;
+  stateReadOptions?: ServiceStateReadOptions;
+  commandStateReadOptions?: ServiceStateReadOptions;
+  verificationOptions?: ServiceVerificationOptions;
 };
 
 function getPreparedStartupStartOptions(): StartServiceOptions {
   return {
     skipPreStartRequirements: true,
     skipBuiltinAssetRefresh: true
+  };
+}
+
+function getRestoreStartupStartOptions(): StartServiceOptions {
+  const stateReadOptions = getStartupServiceStateReadOptions();
+  const responsiveReadOptions = getStartupResponsiveServiceStateReadOptions();
+  return {
+    skipPreStartRequirements: true,
+    skipBuiltinAssetRefresh: true,
+    stateReadOptions,
+    commandStateReadOptions: responsiveReadOptions,
+    verificationOptions: {
+      stateReadOptions: responsiveReadOptions,
+      skipManagedPortProbe: true
+    }
   };
 }
 
@@ -1646,7 +1732,7 @@ async function runServiceCommand(
     return {
       ok: true,
       message: successMessage,
-      service: await getServiceState(app, service.id)
+      service: await getServiceState(app, service.id, options.stateReadOptions)
     } satisfies ServiceCommandResult;
   } finally {
     timing.end();
@@ -1658,7 +1744,7 @@ async function startServiceInternal(
   serviceId: ServiceId,
   options: StartServiceOptions = {}
 ): Promise<ServiceCommandResult> {
-  const current = await getServiceState(app, serviceId);
+  const current = await getServiceState(app, serviceId, options.stateReadOptions);
   const service = getService(serviceId);
   const installDir = getInstallDir(app, service);
   const shouldRefreshFromBundledAsset =
@@ -1674,7 +1760,7 @@ async function startServiceInternal(
   }
 
   const refreshedState = shouldRefreshFromBundledAsset
-    ? await getServiceState(app, serviceId)
+    ? await getServiceState(app, serviceId, options.stateReadOptions)
     : current;
   const initializationState = refreshedState.installed ? readInitializationState(getServiceLayout(app, service)) : null;
   let preparedState = refreshedState;
@@ -1710,7 +1796,7 @@ async function startServiceInternal(
   ) {
     await installBuiltinService(app, serviceId, { source: "startServiceInternal:asset-refresh" });
   }
-  const nextState = await getServiceState(app, serviceId);
+  const nextState = await getServiceState(app, serviceId, options.stateReadOptions);
   if (
     nextState.status === "config-required" ||
     nextState.status === "dependency-missing" ||
@@ -1733,7 +1819,7 @@ async function startServiceInternal(
     if (!options.skipPreStartRequirements) {
       await ensurePreStartRequirements(app, service);
     }
-    const preStartState = await getServiceState(app, serviceId);
+    const preStartState = await getServiceState(app, serviceId, options.stateReadOptions);
     if (
       preStartState.status === "config-required" ||
       preStartState.status === "dependency-missing" ||
@@ -1765,7 +1851,7 @@ async function startServiceInternal(
         result = {
           ok: true,
           message: `${service.name} 已启动。`,
-          service: await getServiceState(app, service.id)
+          service: await getServiceState(app, service.id, options.commandStateReadOptions ?? options.stateReadOptions)
         };
       } else {
         result = await runServiceCommand(
@@ -1773,14 +1859,24 @@ async function startServiceInternal(
           service,
           getDesktopStartCommand(service),
           `${service.name} 已启动。`,
-          getDesktopStartCommandOptions(app, service)
+          {
+            ...getDesktopStartCommandOptions(app, service),
+            stateReadOptions: options.commandStateReadOptions ?? options.stateReadOptions
+          }
         );
       }
       startedThisSession.add(serviceId);
     }
   }
 
-  const verifiedResult = await attachServiceVerification(app, serviceId, result, "running", `${service.name} 启动命令已执行`);
+  const verifiedResult = await attachServiceVerification(
+    app,
+    serviceId,
+    result,
+    "running",
+    `${service.name} 启动命令已执行`,
+    options.verificationOptions
+  );
   return verifiedResult;
 }
 
@@ -2356,7 +2452,17 @@ async function prepareDefaultStartupServiceForParallelRestore(
   options: StartupRestoreOptions
 ): Promise<StartupServiceResult> {
   try {
-    const current = await getServiceState(app, serviceId);
+    const responsiveCurrent = await getServiceState(app, serviceId, getStartupResponsiveServiceStateReadOptions());
+    if (responsiveCurrent.status === "running") {
+      return {
+        serviceId,
+        ok: true,
+        message: `${responsiveCurrent.name} 已在运行。`,
+        running: true
+      };
+    }
+
+    const current = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
     if (current.status === "running") {
       return {
         serviceId,
@@ -2380,7 +2486,7 @@ async function prepareDefaultStartupServiceForParallelRestore(
     }
 
     await ensurePreStartRequirements(app, getService(serviceId));
-    const prepared = await getServiceState(app, serviceId);
+    const prepared = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
     if (
       prepared.status === "config-required" ||
       prepared.status === "dependency-missing" ||
@@ -2419,7 +2525,7 @@ async function startDefaultStartupServiceForParallelRestore(
   options: StartupRestoreOptions
 ): Promise<StartupServiceResult> {
   try {
-    const current = await getServiceState(app, serviceId);
+    const current = await getServiceState(app, serviceId, getStartupResponsiveServiceStateReadOptions());
     options.onStarting?.(serviceId);
 
     if (current.status === "running") {
@@ -2436,7 +2542,7 @@ async function startDefaultStartupServiceForParallelRestore(
 
     options.onProgress?.(serviceId, "starting", `${current.name} 启动中...`);
     const startedAt = Date.now();
-    const result = await startServiceInternal(app, serviceId, { skipPreStartRequirements: true });
+    const result = await startServiceInternal(app, serviceId, getRestoreStartupStartOptions());
     const elapsedMs = Date.now() - startedAt;
     if (result.ok && result.service.status === "running") {
       console.info(`[service-manager] restored ${serviceId} in ${elapsedMs}ms`);
@@ -2638,7 +2744,7 @@ async function shouldRunBuiltinBootstrap(app: App) {
   }
 
   for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
-    const current = await getServiceState(app, serviceId);
+    const current = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
     if (
       current.status === "not-installed" ||
       current.status === "initialization-required" ||
@@ -2668,7 +2774,7 @@ async function prepareBuiltinServiceForStartup(
   } = {}
 ) {
   const service = getService(serviceId);
-  let current = await getServiceState(app, serviceId);
+  let current = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
   const bundledAssetNeedsRefresh = service.kind === "builtin" && needsBundledAssetRefresh(app, service);
   const installNeedsRepair =
     current.status === "error" && installedBuiltinNeedsStartupRepair(app, service, current);
@@ -2683,7 +2789,7 @@ async function prepareBuiltinServiceForStartup(
       await stopService(app, serviceId);
     }
     await installBuiltinService(app, serviceId, { source: "prepareBuiltinServiceForStartup" });
-    current = await getServiceState(app, serviceId);
+    current = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
   } else if (current.status === "initialization-required" || shouldReinitializeMissingCoreServiceConfig(service, current)) {
     options.onProgress?.(serviceId, "initializing", `${current.name} 初始化中...`);
     const initialization = await initializeService(app, serviceId);
@@ -2947,6 +3053,7 @@ export const __testInternals = {
   probeHttpUrl,
   verifyServiceState,
   buildVerificationResult,
+  clearContainerEngineProbeCache,
   matchProcessInstallDir,
   readManagedPidFile,
   getInitializationStatePath,

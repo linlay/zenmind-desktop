@@ -108,6 +108,31 @@ test("services.getStatus returns service state", async () => {
   assert.deepEqual(result, serviceState);
 });
 
+test("services.getStatus prefers responsive service state when provided", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const responsiveState = { status: "running", kind: "builtin", source: "responsive" };
+  let strictCalls = 0;
+  let responsiveCalls = 0;
+
+  registerServicesIpcHandlers(ipc, makeBaseOptions({
+    getServiceState: async () => {
+      strictCalls += 1;
+      return { status: "stopped", kind: "builtin", source: "strict" };
+    },
+    getResponsiveServiceState: async (app, id) => {
+      responsiveCalls += 1;
+      assert.equal(id, "agent-platform");
+      return responsiveState;
+    }
+  }));
+
+  const result = await handlers["services.getStatus"]({}, "agent-platform");
+
+  assert.deepEqual(result, responsiveState);
+  assert.equal(responsiveCalls, 1);
+  assert.equal(strictCalls, 0);
+});
+
 // ---------------------------------------------------------------------------
 // 4. services.start — delegates to runServiceMutation + handleServiceStart
 // ---------------------------------------------------------------------------
@@ -295,6 +320,43 @@ test("services.openAgentPlatformMonitor opens agent-platform /monitor with acces
   assert.equal(url.origin, "http://127.0.0.1:11949");
   assert.equal(url.pathname, "/monitor");
   assert.equal(url.searchParams.get("access_token"), "monitor-token");
+});
+
+test("services.openAgentPlatformMonitor prefers responsive service state when provided", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  let strictCalls = 0;
+  let responsiveCalls = 0;
+  let openedUrl = "";
+
+  registerServicesIpcHandlers(ipc, makeBaseOptions({
+    getServiceState: async () => {
+      strictCalls += 1;
+      return {
+        status: "stopped",
+        message: "",
+        healthMeta: { webUrl: "", port: null }
+      };
+    },
+    getResponsiveServiceState: async () => {
+      responsiveCalls += 1;
+      return {
+        status: "running",
+        healthMeta: { webUrl: "http://127.0.0.1:11949", port: 11949 }
+      };
+    },
+    issueAgentPlatformAccessToken: async () => ({ ok: true, token: "monitor-token", message: "" }),
+    openAgentPlatformMonitorWindow: async (url) => {
+      openedUrl = url;
+      return { ok: true };
+    }
+  }));
+
+  const result = await handlers["services.openAgentPlatformMonitor"]({});
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(new URL(openedUrl).origin, "http://127.0.0.1:11949");
+  assert.equal(responsiveCalls, 1);
+  assert.equal(strictCalls, 0);
 });
 
 test("services.openAgentPlatformMonitor reports when agent-platform is not running", async () => {

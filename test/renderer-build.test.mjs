@@ -112,6 +112,15 @@ test("renderer entry uses HashRouter for Electron routing", () => {
   assert.doesNotMatch(rendererEntry, /BrowserRouter/);
 });
 
+test("agent-webclient native API normalizes unauthorized JSON errors", () => {
+  const apiSource = readSourceFile("src", "renderer", "app-shell", "agent-webclient", "api.ts");
+
+  assert.match(apiSource, /function normalizeAgentPlatformErrorMessage/);
+  assert.match(apiSource, /智能体平台登录态已过期，请重试。/);
+  assert.match(apiSource, /"unauthorized"/);
+  assert.match(apiSource, /throw new Error\(normalizeAgentPlatformErrorMessage/);
+});
+
 test("sidebar does not expose the built-in Chrome surface", () => {
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),

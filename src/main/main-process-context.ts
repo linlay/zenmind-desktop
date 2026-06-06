@@ -115,6 +115,7 @@ export function createAssistantIpcHandlerOptions(
 export interface ServicesIpcHandlerContextDependencies {
   listServices: (...args: any[]) => unknown;
   getServiceState: (...args: any[]) => unknown;
+  getResponsiveServiceState?: (...args: any[]) => unknown;
   installBuiltinService: (...args: any[]) => unknown;
   initializeService: (...args: any[]) => unknown;
   startService: (...args: any[]) => unknown;
@@ -157,6 +158,7 @@ export function createServicesIpcHandlerOptions(
     platform: context.platform,
     listServices: dependencies.listServices,
     getServiceState: dependencies.getServiceState,
+    getResponsiveServiceState: dependencies.getResponsiveServiceState,
     installBuiltinService: dependencies.installBuiltinService,
     initializeService: dependencies.initializeService,
     startService: dependencies.startService,

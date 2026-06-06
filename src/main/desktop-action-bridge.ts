@@ -28,6 +28,7 @@ import { issueAgentAccessToken } from "./agent-auth";
 import type { AgentPlatformAssistantBridge } from "./copilot/core/agent-platform-bridge";
 import {
   getServiceLogsMeta,
+  getResponsiveServiceState,
   getServiceState,
   initializeService,
   installBuiltinService,
@@ -73,6 +74,19 @@ type PlatformResponse<T> = {
   data?: T;
 };
 
+type AgentPlatformTokenIssueReason = "missing" | "unauthorized";
+type AgentPlatformTokenIssueResult = {
+  ok?: boolean;
+  token?: string;
+  message?: string;
+};
+type AgentPlatformFetchOptions = {
+  method?: string;
+  body?: unknown;
+  issueToken: (reason: AgentPlatformTokenIssueReason) => Promise<AgentPlatformTokenIssueResult>;
+  fetchImpl?: typeof fetch;
+};
+
 type DesktopCdpCallRequest = {
   requestId?: string;
   method?: string;
@@ -98,6 +112,7 @@ const PAGE_CONTROL_GRANT_TTL_MS = 10 * 60 * 1000;
 const PAGE_CONTROL_LOW_RISK_INTERACTIONS = new Set(["fill", "scroll", "focus", "select"]);
 const PAGE_CONTROL_HIGH_RISK_PATTERN =
   /(提交|删除|移除|清空|支付|付款|购买|下单|订单|确认订单|退款|转账|授权|确认授权|同意授权|安装|卸载|启动|停止|重启|发布|发送|保存|登录|注册|submit|delete|remove|clear|pay|payment|purchase|buy|checkout|order|refund|transfer|authorize|approve|install|uninstall|start|stop|restart|deploy|publish|send|save|login|sign\s*in|sign\s*up)/iu;
+const AGENT_PLATFORM_AUTH_FAILURE_MESSAGE = "agent-platform 鉴权失败，请重启智能体平台后重试。";
 let activeServer: http.Server | null = null;
 
 const agentWebclientHelpTopicTitles = new Map([
@@ -347,12 +362,74 @@ function unwrapPlatformResponse<T>(payload: unknown): T {
   return payload as T;
 }
 
+function readObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function isUnauthorizedPayload(payload: unknown) {
+  const record = readObject(payload);
+  return typeof record.error === "string" && record.error.trim().toLowerCase() === "unauthorized";
+}
+
+async function readAgentPlatformResponse(response: Response) {
+  const text = await response.text();
+  if (!text.trim()) {
+    return { text, payload: null };
+  }
+  try {
+    return { text, payload: JSON.parse(text) as unknown };
+  } catch {
+    return { text, payload: null };
+  }
+}
+
+async function fetchAgentPlatformWithAuth<T>(
+  baseUrl: string,
+  pathOrUrl: string,
+  options: AgentPlatformFetchOptions
+): Promise<T> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const requestUrl = new URL(pathOrUrl, baseUrl).toString();
+  const requestBody = options.body === undefined ? undefined : JSON.stringify(options.body);
+
+  for (const reason of ["missing", "unauthorized"] as const) {
+    const token = await options.issueToken(reason);
+    if (!token.ok || !token.token?.trim()) {
+      throw new Error(token.message || "agent-platform token unavailable");
+    }
+
+    const response = await fetchImpl(requestUrl, {
+      method: options.method ?? "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token.token.trim()}`,
+        ...(requestBody === undefined ? {} : { "Content-Type": "application/json" })
+      },
+      ...(requestBody === undefined ? {} : { body: requestBody })
+    });
+    const { text, payload } = await readAgentPlatformResponse(response);
+    const unauthorized = response.status === 401 || isUnauthorizedPayload(payload);
+    if (unauthorized) {
+      if (reason === "missing") {
+        continue;
+      }
+      throw new Error(AGENT_PLATFORM_AUTH_FAILURE_MESSAGE);
+    }
+    if (!response.ok) {
+      throw new Error(text || `agent-platform returned HTTP ${response.status}`);
+    }
+    return unwrapPlatformResponse<T>(payload);
+  }
+
+  throw new Error(AGENT_PLATFORM_AUTH_FAILURE_MESSAGE);
+}
+
 export async function callAgentPlatform<T>(
   app: App,
   pathOrUrl: string,
   options: { method?: string; body?: unknown } = {}
 ): Promise<T> {
-  const state = await getServiceState(app, "agent-platform");
+  const state = await getResponsiveServiceState(app, "agent-platform");
   const baseUrl = state.status === "running"
     ? state.healthMeta.webUrl.trim() || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "")
     : "";
@@ -363,19 +440,10 @@ export async function callAgentPlatform<T>(
   if (!token.ok) {
     throw new Error(token.message || "agent-platform token unavailable");
   }
-  const response = await fetch(new URL(pathOrUrl, baseUrl).toString(), {
-    method: options.method ?? "GET",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${token.token}`,
-      ...(options.body === undefined ? {} : { "Content-Type": "application/json" })
-    },
-    ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) })
+  return fetchAgentPlatformWithAuth<T>(baseUrl, pathOrUrl, {
+    ...options,
+    issueToken: async (reason) => (reason === "missing" ? token : issueAgentAccessToken(app, reason))
   });
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
-  return unwrapPlatformResponse<T>(await response.json());
 }
 
 async function confirmMutatingAction(action: string, args: Record<string, unknown>, owner: BrowserWindow | null) {
@@ -689,7 +757,7 @@ async function executeAction(
       return ok(action, await listServices(options.app));
     case "desktop.controlCenter.getServiceStatus":
     case "desktop.controlCenter.getServiceDetail":
-      return ok(action, await getServiceState(options.app, readServiceId(args)));
+      return ok(action, await getResponsiveServiceState(options.app, readServiceId(args)));
     case "desktop.controlCenter.getServiceLogsMeta":
       return ok(action, await getServiceLogsMeta(options.app, readServiceId(args)));
     case "desktop.controlCenter.readServiceLog": {
@@ -997,3 +1065,7 @@ export function stopDesktopActionBridge() {
   activeServer = null;
   server?.close();
 }
+
+export const __testInternals = {
+  fetchAgentPlatformWithAuth
+};
