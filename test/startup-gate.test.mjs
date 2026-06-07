@@ -10,6 +10,7 @@ const {
   isStartupServiceWaiting,
   resolveStartupRootPath,
   shouldAutoOpenAssistant,
+  shouldRedirectStartupFailureToControlCenter,
   shouldShowStartupProgressCard
 } = require("../dist-electron/shared/startup-gate.js");
 
@@ -54,6 +55,7 @@ test("startup gate shows the bootstrap progress card only while bootstrap needs 
   assert.equal(shouldShowStartupProgressCard({ mode: "restore", phase: "running" }, true), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "running" }, false), true);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "failed" }, false), true);
+  assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "failed" }, false, "/settings"), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "succeeded" }, false), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "succeeded" }, true), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "env-import-required" }, false), false);
@@ -74,6 +76,17 @@ test("startup gate only auto-opens the assistant after bootstrap succeeds", () =
   assert.equal(shouldAutoOpenAssistant({ mode: "bootstrap", phase: "succeeded" }, true), true);
   assert.equal(shouldAutoOpenAssistant({ mode: "bootstrap", phase: "succeeded" }, true, "/control-center"), true);
   assert.equal(shouldAutoOpenAssistant({ mode: "bootstrap", phase: "succeeded" }, true, "/market"), false);
+});
+
+test("startup gate does not pull settings back into bootstrap failure handling", () => {
+  const failedBootstrapState = {
+    mode: "bootstrap",
+    phase: "failed"
+  };
+
+  assert.equal(shouldRedirectStartupFailureToControlCenter(failedBootstrapState, "/"), true);
+  assert.equal(shouldRedirectStartupFailureToControlCenter(failedBootstrapState, "/control-center"), true);
+  assert.equal(shouldRedirectStartupFailureToControlCenter(failedBootstrapState, "/settings"), false);
 });
 
 test("startup loading only shows previous-service waiting while app-server is starting", () => {

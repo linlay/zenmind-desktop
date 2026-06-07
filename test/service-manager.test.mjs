@@ -1988,6 +1988,94 @@ test("fixShellScriptPermissions marks shell scripts executable", () => {
   assert.equal(fs.statSync(textPath).mode & 0o777, 0o644);
 });
 
+test("patchProgramCommonForLayeredLayout repairs agent-platform deploy diagnostics and no-op HITL migration", () => {
+  const programDir = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-patch-"));
+  const scriptPath = path.join(programDir, "scripts", "program-common.sh");
+  const deployShPath = path.join(programDir, "deploy.sh");
+  const deployPs1Path = path.join(programDir, "deploy.ps1");
+
+  try {
+    fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
+    fs.writeFileSync(
+      path.join(programDir, "manifest.json"),
+      `${JSON.stringify({ id: "agent-platform" }, null, 2)}\n`,
+      "utf8"
+    );
+    fs.writeFileSync(
+      scriptPath,
+      [
+        "#!/usr/bin/env bash",
+        'LOG_FILE="$LOG_DIR/$APP_NAME.log"',
+        'PID_FILE="$RUN_DIR/$APP_NAME.pid"',
+        "program_migrate_hitl_budget_config() {",
+        "  if [[ -f \"$host_tools_file\" ]] && grep -Eq '^[[:space:]]*hitl-default-timeout-ms:' \"$host_tools_file\"; then",
+        "    legacy_file=\"$host_tools_file\"",
+        "  elif [[ -f \"$runtime_file\" ]] && grep -Eq '^[[:space:]]*hitl-default-timeout-ms:' \"$runtime_file\"; then",
+        "    legacy_file=\"$runtime_file\"",
+        "  else",
+        "    return",
+        "  fi",
+        "",
+        "  timeout_ms=\"600000\"",
+        "}"
+      ].join("\n") + "\n",
+      "utf8"
+    );
+    fs.writeFileSync(
+      deployShPath,
+      [
+        "#!/usr/bin/env bash",
+        'cd "$SCRIPT_DIR"',
+        "program_validate_bundle",
+        "program_initialize_config",
+        "program_load_env",
+        "program_prepare_runtime_dirs",
+        "",
+        'echo "[program-deploy] bundle validated"',
+        'echo "[program-deploy] backend binary: $BACKEND_BIN"',
+        'echo "[program-deploy] runtime directories prepared under $RUNTIME_ROOT and $RUN_DIR"'
+      ].join("\n") + "\n",
+      "utf8"
+    );
+    fs.writeFileSync(
+      deployPs1Path,
+      [
+        "$ErrorActionPreference = 'Stop'",
+        "Set-Location $ScriptDir",
+        "Test-ProgramBundle",
+        "Initialize-ProgramConfig",
+        "Import-ProgramEnv",
+        "Initialize-ProgramRuntime",
+        "",
+        "Write-Host '[program-deploy] bundle validated'",
+        'Write-Host ("[program-deploy] backend binary: {0}" -f $Script:BackendBin)',
+        'Write-Host ("[program-deploy] runtime directories prepared under {0} and {1}" -f $Script:RuntimeRoot, $Script:RunDir)'
+      ].join("\r\n") + "\r\n",
+      "utf8"
+    );
+
+    __testInternals.patchProgramCommonForLayeredLayout(programDir);
+
+    const patched = fs.readFileSync(scriptPath, "utf8");
+    const patchedDeploySh = fs.readFileSync(deployShPath, "utf8");
+    const patchedDeployPs1 = fs.readFileSync(deployPs1Path, "utf8");
+    assert.match(patched, /return 0/);
+    assert.doesNotMatch(patched, /\n\s*return\n\s*fi/);
+    assert.match(patched, /LOG_FILE="\$LOG_DIR\/agent-platform\.log"/);
+    assert.match(patched, /PID_FILE="\$RUN_DIR\/agent-platform\.pid"/);
+    assert.match(patchedDeploySh, /\[program-deploy\] validating bundle/);
+    assert.match(patchedDeploySh, /\[program-deploy\] initializing config under \$CONFIG_DIR/);
+    assert.match(patchedDeploySh, /\[program-deploy\] loading env: \$ENV_FILE/);
+    assert.match(patchedDeploySh, /\[program-deploy\] deploy complete/);
+    assert.match(patchedDeployPs1, /\[program-deploy\] validating bundle/);
+    assert.match(patchedDeployPs1, /\[program-deploy\] initializing config under \{0\}/);
+    assert.match(patchedDeployPs1, /\[program-deploy\] loading env: \{0\}/);
+    assert.match(patchedDeployPs1, /\[program-deploy\] deploy complete/);
+  } finally {
+    fs.rmSync(programDir, { recursive: true, force: true });
+  }
+});
+
 test("buildProcessTreePids returns descendants before the root process", () => {
   const result = __testInternals.buildProcessTreePids(10, [
     { pid: 10, ppid: 1 },
@@ -2623,17 +2711,18 @@ test("readBuiltinAssetSignature uses the synced builtin asset manifest when avai
   }
 });
 
-test("loadBuiltinServices reuses installed builtin manifests without opening matching bundled archives", () => {
+test("loadBuiltinServices reuses newer installed builtin manifests without opening older bundled archives", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-loader-installed-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const assetsRoot = path.join(tempRoot, "assets");
   const serviceId = "fast-installed-builtin";
-  const version = "v1.0.0";
+  const installedVersion = "v1.0.1";
+  const bundledVersion = "v1.0.0";
   const assetFileName = process.platform === "win32"
-    ? `${serviceId}-${version}-windows-amd64.zip`
-    : `${serviceId}-${version}-darwin-arm64.tar.gz`;
+    ? `${serviceId}-${bundledVersion}-windows-amd64.zip`
+    : `${serviceId}-${bundledVersion}-darwin-arm64.tar.gz`;
   const serviceAssetDir = path.join(assetsRoot, serviceId);
-  const installDir = getTestServiceProgramDir(userDataRoot, serviceId, version);
+  const installDir = getTestServiceProgramDir(userDataRoot, serviceId, installedVersion);
   const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
 
   fs.mkdirSync(serviceAssetDir, { recursive: true });
@@ -2645,7 +2734,7 @@ test("loadBuiltinServices reuses installed builtin manifests without opening mat
       generatedAt: "2026-06-05T00:00:00.000Z",
       services: [{
         id: serviceId,
-        version,
+        version: bundledVersion,
         assetFileName,
         assetSignature: "fixture-signature"
       }]
@@ -2658,7 +2747,7 @@ test("loadBuiltinServices reuses installed builtin manifests without opening mat
       id: serviceId,
       name: "Fast Installed Builtin",
       kind: "builtin",
-      version,
+      version: installedVersion,
       description: "fixture builtin already installed",
       platform: { os: currentManifestOs(), arch: "amd64" },
       frontend: { mode: "none" },
@@ -2691,7 +2780,7 @@ test("loadBuiltinServices reuses installed builtin manifests without opening mat
     const service = getBuiltinService(serviceId);
 
     assert.equal(loaded.some((item) => item.id === serviceId), true);
-    assert.equal(service.version, version);
+    assert.equal(service.version, installedVersion);
     assert.equal(service.assetFileName, assetFileName);
   } finally {
     registryInternals.clearServices();
@@ -4563,7 +4652,7 @@ test("ensurePreStartRequirements applies desktop-register before agent-platform 
       fs.readFileSync(path.join(providersRoot, "th-minimax.yml"), "utf8"),
       /^apiKey: dk_DesktopRegisterIntegrationKey$/m
     );
-    assert.equal(JSON.parse(fs.readFileSync(registerPath, "utf8")).enabled, false);
+    assert.equal(fs.existsSync(registerPath), false);
   } finally {
     if (originalFetch === undefined) {
       delete globalThis.fetch;
@@ -6202,7 +6291,7 @@ test("runStartupPreparation applies desktop-register before preparing builtin se
     ));
     assert.deepEqual(requestBody, { name: deviceIdentity.deviceId });
     assert.equal(fetchSawBuiltinEnvBeforeRegistration, false);
-    assert.equal(JSON.parse(fs.readFileSync(registerPath, "utf8")).enabled, false);
+    assert.equal(fs.existsSync(registerPath), false);
     assert.match(
       fs.readFileSync(path.join(providersRoot, "th-deepseek.yml"), "utf8"),
       /^apiKey: dk_RunStartupPreparationKey$/m

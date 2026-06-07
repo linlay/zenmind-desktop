@@ -143,11 +143,18 @@ test("agent webclient host serves frontend, runtime config, and HTTP proxies", a
   const fixture = createFixture();
   const port = await getAvailableLocalPort();
   let queryAcceptEncoding = "not-called";
+  let attachAcceptEncoding = "not-called";
   const api = await listenHttp((req, res) => {
     if (req.url === "/api/query") {
       queryAcceptEncoding = String(req.headers["accept-encoding"] ?? "");
       res.writeHead(200, { "Content-Type": "text/event-stream" });
       res.end("data: ok\n\n");
+      return;
+    }
+    if (req.url === "/api/attach") {
+      attachAcceptEncoding = String(req.headers["accept-encoding"] ?? "");
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.end("data: attach\n\n");
       return;
     }
     res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
@@ -199,6 +206,84 @@ test("agent webclient host serves frontend, runtime config, and HTTP proxies", a
     assert.equal(queryResponse.headers.get("cache-control"), "no-cache, no-transform");
     assert.equal(await queryResponse.text(), "data: ok\n\n");
     assert.equal(queryAcceptEncoding, "");
+    const attachResponse = await fetch(`http://127.0.0.1:${port}/api/attach`);
+    assert.equal(attachResponse.headers.get("x-accel-buffering"), "no");
+    assert.equal(attachResponse.headers.get("cache-control"), "no-cache, no-transform");
+    assert.equal(await attachResponse.text(), "data: attach\n\n");
+    assert.equal(attachAcceptEncoding, "");
+  } finally {
+    await stopAgentWebclientHost();
+    await closeServer(api.server);
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("agent webclient host uses manifest desktop hosting routes", async () => {
+  const fixture = createFixture();
+  const port = await getAvailableLocalPort();
+  fixture.service.frontend.spa = true;
+  fixture.service.desktop = {
+    hosting: {
+      runtimeConfig: {
+        path: "/desktop-runtime.js",
+        envKeys: ["CUSTOM_FLAG"]
+      },
+      spaRoutes: ["/custom/"],
+      proxyRoutes: [
+        {
+          match: "prefix",
+          path: "/platform",
+          targetEnv: "BASE_URL",
+          websocket: true,
+          ssePaths: ["/platform/stream"],
+          disableProxyBuffering: true,
+          stripRequestHeaders: ["sec-websocket-extensions"]
+        }
+      ]
+    }
+  };
+  let streamAcceptEncoding = "not-called";
+  const api = await listenHttp((req, res) => {
+    if (req.url === "/platform/stream") {
+      streamAcceptEncoding = String(req.headers["accept-encoding"] ?? "");
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.end("data: platform\n\n");
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end(`platform:${req.url}`);
+  });
+
+  try {
+    fs.writeFileSync(
+      fixture.layout.envPath,
+      [
+        `PORT=${port}`,
+        "DESKTOP_APP=true",
+        "CUSTOM_FLAG=enabled",
+        `BASE_URL=${api.url}`,
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+    await startAgentWebclientHost({
+      service: fixture.service,
+      layout: fixture.layout,
+      env: new Map([
+        ["BASE_URL", api.url],
+        ["PORT", String(port)]
+      ]),
+      port
+    });
+
+    assert.equal((await fetch(`http://127.0.0.1:${port}/runtime-config.js`)).status, 404);
+    assert.match(await readBody(await fetch(`http://127.0.0.1:${port}/desktop-runtime.js`)), /CUSTOM_FLAG":"enabled"/);
+    assert.match(await readBody(await fetch(`http://127.0.0.1:${port}/custom/page`)), /id="root"/);
+    assert.equal(await readBody(await fetch(`http://127.0.0.1:${port}/platform/ping`)), "platform:/platform/ping");
+    const streamResponse = await fetch(`http://127.0.0.1:${port}/platform/stream`);
+    assert.equal(streamResponse.headers.get("x-accel-buffering"), "no");
+    assert.equal(await streamResponse.text(), "data: platform\n\n");
+    assert.equal(streamAcceptEncoding, "");
   } finally {
     await stopAgentWebclientHost();
     await closeServer(api.server);
@@ -272,6 +357,52 @@ test("agent webclient host gates /ws and strips websocket extensions upstream", 
     assert.doesNotMatch(upstreamRequests[0], /sec-websocket-extensions/iu);
     assert.match(upstreamRequests[0], /Sec-WebSocket-Protocol: bearer\.demo/u);
     assert.match(upstreamRequests[0], /GET \/ws\?token=abc HTTP\/1\.1/u);
+  } finally {
+    await stopAgentWebclientHost();
+    await closeServer(upstream.server);
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("agent webclient host issues missing /ws access tokens without replacing supplied tokens", async () => {
+  const fixture = createFixture();
+  const port = await getAvailableLocalPort();
+  const issuedReasons = [];
+  const upstreamRequests = [];
+  const upstream = await listenRawUpgrade((socket) => {
+    socket.once("data", (chunk) => {
+      upstreamRequests.push(chunk.toString("latin1"));
+      socket.end("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n");
+    });
+  });
+
+  try {
+    fs.writeFileSync(fixture.layout.envPath, `PORT=${port}\nDESKTOP_APP=true\nBASE_URL=${upstream.url}\n`, "utf8");
+    await startAgentWebclientHost({
+      service: fixture.service,
+      layout: fixture.layout,
+      env: new Map([["BASE_URL", upstream.url]]),
+      port,
+      issueAccessToken: async (reason) => {
+        issuedReasons.push(reason);
+        return { ok: true, token: "desktop-token", message: "" };
+      }
+    });
+
+    const forwardedMissingToken = await openRawUpgrade(port, "/ws", [
+      "Sec-WebSocket-Extensions: permessage-deflate"
+    ]);
+    assert.match(forwardedMissingToken, /^HTTP\/1\.1 401 Unauthorized/);
+    assert.deepEqual(issuedReasons, ["missing"]);
+    assert.equal(upstreamRequests.length, 1);
+    assert.match(upstreamRequests[0], /GET \/ws\?token=desktop-token HTTP\/1\.1/u);
+    assert.doesNotMatch(upstreamRequests[0], /sec-websocket-extensions/iu);
+
+    const forwardedSuppliedToken = await openRawUpgrade(port, "/ws?token=abc");
+    assert.match(forwardedSuppliedToken, /^HTTP\/1\.1 401 Unauthorized/);
+    assert.deepEqual(issuedReasons, ["missing"]);
+    assert.equal(upstreamRequests.length, 2);
+    assert.match(upstreamRequests[1], /GET \/ws\?token=abc HTTP\/1\.1/u);
   } finally {
     await stopAgentWebclientHost();
     await closeServer(upstream.server);

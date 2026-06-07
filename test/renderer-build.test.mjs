@@ -3277,7 +3277,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /visibleToolItems/);
   assert.doesNotMatch(sidebarSource, /function renderDesktopSsoEntry\(\)/);
   assert.match(sidebarSource, /function getDesktopSsoUserLabel\(\)/);
-  assert.match(sidebarSource, /if \(!desktopSsoStatus\) \{[\s\S]{0,80}return t\("sidebar\.sso\.signedOut"\);/);
+  assert.match(sidebarSource, /if \(!desktopSsoStatus\) \{[\s\S]{0,80}return t\("sidebar\.sso\.signIn"\);/);
   assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name\?\.trim\(\)\s*\|\|[\s\S]{0,120}desktopSsoStatus\.user\?\.email\?\.trim\(\)/);
   assert.match(sidebarSource, /function renderDesktopSsoAccountMenuSection\(\)/);
   assert.match(sidebarSource, /function renderAccountMenuUserItem\(\)/);

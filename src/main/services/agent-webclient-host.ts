@@ -5,6 +5,16 @@ import net from "node:net";
 import path from "node:path";
 import tls from "node:tls";
 import type { Socket } from "node:net";
+import {
+  DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING
+} from "../../shared/contracts";
+import type {
+  AgentAuthIssueResult,
+  AgentAuthRefreshReason,
+  ManifestDesktopDisabledResponse,
+  ManifestDesktopHosting,
+  ManifestDesktopProxyRoute
+} from "../../shared/contracts";
 import type { ServiceDefinition } from "../manifest-utils";
 import { readEnvFile } from "../env-file";
 import type { ServiceLayout } from "./manager/layout";
@@ -17,27 +27,17 @@ const DEV_CORS_ALLOWED_ORIGINS = new Set([
 ]);
 const DEV_CORS_ALLOW_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 const DEV_CORS_ALLOW_HEADERS = "Content-Type, Authorization, Accept, Cache-Control";
-const RUNTIME_CONFIG_ENV_KEYS = [
-  "DESKTOP_APP",
-  "DEBUG_PANEL_ENABLED",
-  "DELTA_LOGS_ENABLED",
-  "SETTINGS_MENU_ENABLED",
-  "QUICK_ACTIONS_ENABLED",
-  "VOICE_ASR_CLIENT_GATE_ENABLED",
-  "VOICE_ASR_CLIENT_GATE_RMS_THRESHOLD",
-  "VOICE_ASR_CLIENT_GATE_OPEN_HOLD_MS",
-  "VOICE_ASR_CLIENT_GATE_CLOSE_HOLD_MS",
-  "VOICE_ASR_CLIENT_GATE_PRE_ROLL_MS"
-];
-const SPA_ROUTE_PREFIXES = [
-  "/agent/",
-  "/agents/",
-  "/automations",
-  "/copilot",
-  "/memory"
-];
 
 type Logger = Pick<typeof console, "error" | "warn" | "log">;
+
+type IssueAccessToken = (reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
+
+type HostManagedDesktopHosting = {
+  runtimeConfigPath: string;
+  runtimeConfigEnvKeys: string[];
+  spaRoutePrefixes: string[];
+  proxyRoutes: ManifestDesktopProxyRoute[];
+};
 
 type AgentWebclientHostConfig = {
   service: ServiceDefinition;
@@ -45,6 +45,7 @@ type AgentWebclientHostConfig = {
   env: Map<string, string>;
   port: number;
   logger?: Logger;
+  issueAccessToken?: IssueAccessToken;
 };
 
 type AgentWebclientHostRecord = {
@@ -54,10 +55,12 @@ type AgentWebclientHostRecord = {
   webUrl: string;
   frontendDist: string;
   indexFile: string;
+  frontendSpa: boolean;
   layout: ServiceLayout;
-  baseUrl: URL;
-  voiceBaseUrl: URL | null;
+  env: Map<string, string>;
+  hosting: HostManagedDesktopHosting;
   logger: Logger;
+  issueAccessToken?: IssueAccessToken;
   sockets: Set<Socket>;
 };
 
@@ -85,6 +88,78 @@ function normalizeEnvUrl(value: string | undefined, fallback?: string) {
   return raw ? new URL(raw) : null;
 }
 
+function normalizeRoutePath(routePath: string | undefined, fallback = "/") {
+  const trimmed = String(routePath ?? "").trim() || fallback;
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+function cloneDesktopHosting(hosting: ManifestDesktopHosting): ManifestDesktopHosting {
+  return {
+    ...(hosting.runtimeConfig
+      ? {
+          runtimeConfig: {
+            ...(hosting.runtimeConfig.path === undefined ? {} : { path: hosting.runtimeConfig.path }),
+            ...(hosting.runtimeConfig.envKeys === undefined ? {} : { envKeys: [...hosting.runtimeConfig.envKeys] })
+          }
+        }
+      : {}),
+    ...(hosting.spaRoutes === undefined ? {} : { spaRoutes: [...hosting.spaRoutes] }),
+    ...(hosting.proxyRoutes === undefined
+      ? {}
+      : {
+          proxyRoutes: hosting.proxyRoutes.map((route) => ({
+            ...route,
+            ...(route.ssePaths === undefined ? {} : { ssePaths: [...route.ssePaths] }),
+            ...(route.stripRequestHeaders === undefined ? {} : { stripRequestHeaders: [...route.stripRequestHeaders] }),
+            ...(route.disabledResponse === undefined
+              ? {}
+              : {
+                  disabledResponse: {
+                    ...route.disabledResponse
+                  }
+                })
+          }))
+        })
+  };
+}
+
+function sortProxyRoutes(routes: ManifestDesktopProxyRoute[]) {
+  return [...routes].sort((left, right) => {
+    if (left.match !== right.match) {
+      return left.match === "exact" ? -1 : 1;
+    }
+    return right.path.length - left.path.length;
+  });
+}
+
+function normalizeDesktopHosting(service: ServiceDefinition): HostManagedDesktopHosting {
+  const serviceHosting = service.desktop?.hosting;
+  const hosting = cloneDesktopHosting(
+    serviceHosting || (
+      service.id === "agent-webclient" && service.frontend.hostManaged === true
+        ? DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING
+        : {}
+    )
+  );
+
+  const defaultRuntimeConfig = DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING.runtimeConfig;
+  return {
+    runtimeConfigPath: normalizeRoutePath(hosting.runtimeConfig?.path, defaultRuntimeConfig?.path || "/runtime-config.js"),
+    runtimeConfigEnvKeys: hosting.runtimeConfig?.envKeys?.length
+      ? [...hosting.runtimeConfig.envKeys]
+      : [...(defaultRuntimeConfig?.envKeys || [])],
+    spaRoutePrefixes: hosting.spaRoutes?.map((routePath) => normalizeRoutePath(routePath)).filter(Boolean) || [],
+    proxyRoutes: sortProxyRoutes(
+      (hosting.proxyRoutes || []).map((route) => ({
+        ...route,
+        path: normalizeRoutePath(route.path),
+        ssePaths: route.ssePaths?.map((routePath) => normalizeRoutePath(routePath)).filter(Boolean),
+        stripRequestHeaders: route.stripRequestHeaders?.map((header) => header.trim()).filter(Boolean)
+      }))
+    )
+  };
+}
+
 function getFrontendDist(service: ServiceDefinition, layout: ServiceLayout) {
   const relativeDist = service.frontend.dist || path.join("frontend", "dist");
   return path.resolve(layout.programDir, relativeDist);
@@ -106,23 +181,42 @@ function assertHostConfig(config: AgentWebclientHostConfig) {
   return { frontendDist, indexFile };
 }
 
+function getEnvValue(record: AgentWebclientHostRecord, env: Map<string, string>, key: string) {
+  return env.get(key) ?? record.env.get(key);
+}
+
+function resolveRouteTarget(record: AgentWebclientHostRecord, route: ManifestDesktopProxyRoute) {
+  const fallback = route.targetEnv === "BASE_URL" ? DEFAULT_BASE_URL : undefined;
+  return normalizeEnvUrl(record.env.get(route.targetEnv), fallback);
+}
+
+function resolveRouteTargetFromEnv(
+  record: AgentWebclientHostRecord,
+  route: ManifestDesktopProxyRoute,
+  env: Map<string, string>
+) {
+  const fallback = route.targetEnv === "BASE_URL" ? DEFAULT_BASE_URL : undefined;
+  return normalizeEnvUrl(getEnvValue(record, env, route.targetEnv), fallback);
+}
+
+function isVoiceEnabled(record: AgentWebclientHostRecord, env: Map<string, string>) {
+  return record.hosting.proxyRoutes.some((route) =>
+    route.targetEnv === "VOICE_BASE_URL" && Boolean(resolveRouteTargetFromEnv(record, route, env))
+  );
+}
+
 function readRuntimeConfig(record: AgentWebclientHostRecord) {
   const currentEnv = readEnvFile(record.layout.envPath);
-  const runtimeConfig = RUNTIME_CONFIG_ENV_KEYS.reduce<Record<string, string>>((result, key) => {
-    result[key] = String(currentEnv.get(key) ?? "").trim();
+  const runtimeConfig = record.hosting.runtimeConfigEnvKeys.reduce<Record<string, string>>((result, key) => {
+    result[key] = String(getEnvValue(record, currentEnv, key) ?? "").trim();
     return result;
   }, {});
-  runtimeConfig.VOICE_ENABLED = String(Boolean(record.voiceBaseUrl));
+  runtimeConfig.VOICE_ENABLED = String(isVoiceEnabled(record, currentEnv));
   return runtimeConfig;
 }
 
 function createRuntimeConfigScript(runtimeConfig: Record<string, string>) {
   return `globalThis.__AGENT_WEBCLIENT_RUNTIME_CONFIG__ = ${JSON.stringify(runtimeConfig)};\n`;
-}
-
-function isDesktopAppRuntime(record: AgentWebclientHostRecord) {
-  const desktopAppValue = readRuntimeConfig(record).DESKTOP_APP;
-  return desktopAppValue.trim().toLowerCase() === "true";
 }
 
 function hasBearerWebSocketProtocol(req: http.IncomingMessage) {
@@ -163,13 +257,22 @@ function rejectUnauthenticatedWebSocketUpgrade(
   socket.destroy();
 }
 
-function rejectVoiceDisabledWebSocketUpgrade(socket: Socket) {
-  const payload = `${JSON.stringify({ error: "voice disabled" })}\n`;
+function writeDisabledWebSocketUpgrade(
+  socket: Socket,
+  response: ManifestDesktopDisabledResponse | undefined
+) {
+  const statusCode = response?.status ?? 404;
+  const statusMessage = statusCode === 404 ? "Not Found" : "Proxy Route Disabled";
+  const hasJson = response && "json" in response;
+  const contentType = response?.contentType || (hasJson ? "application/json; charset=utf-8" : "text/plain; charset=utf-8");
+  const payload = `${hasJson
+    ? JSON.stringify(response?.json)
+    : (response?.body ?? "disabled")}\n`;
   if (!socket.destroyed) {
     try {
       socket.write([
-        "HTTP/1.1 404 Not Found",
-        "Content-Type: application/json; charset=utf-8",
+        `HTTP/1.1 ${statusCode} ${statusMessage}`,
+        `Content-Type: ${contentType}`,
         `Content-Length: ${Buffer.byteLength(payload)}`,
         "",
         payload
@@ -188,8 +291,8 @@ function isSseQueryRequest(urlValue: string | undefined) {
   return parseRequestPath(urlValue) === "/api/query";
 }
 
-function isSpaRoutePath(requestPath: string) {
-  return SPA_ROUTE_PREFIXES.some((routePath) =>
+function isSpaRoutePath(record: AgentWebclientHostRecord, requestPath: string) {
+  return record.hosting.spaRoutePrefixes.some((routePath) =>
     requestPath === routePath || requestPath.startsWith(routePath)
   );
 }
@@ -226,7 +329,11 @@ function resolveFrontendRequest(record: AgentWebclientHostRecord, requestPath: s
     }
   }
 
-  if (path.extname(normalizedPath) && !isSpaRoutePath(normalizedPath)) {
+  if (!record.frontendSpa) {
+    return { type: "notFound" };
+  }
+
+  if (path.extname(normalizedPath) && !isSpaRoutePath(record, normalizedPath)) {
     return { type: "notFound" };
   }
 
@@ -326,23 +433,26 @@ function buildUpstreamUrl(target: URL, requestUrlValue: string | undefined) {
 function getProxyRequestHeaders(
   req: http.IncomingMessage,
   target: URL,
-  options: { sseQuery?: boolean } = {}
+  options: { sseRequest?: boolean; accessToken?: string | null } = {}
 ) {
   const headers: http.OutgoingHttpHeaders = {};
   for (const [key, value] of Object.entries(req.headers)) {
     if (value === undefined) {
       continue;
     }
-    if (options.sseQuery && key.toLowerCase() === "accept-encoding") {
+    if (options.sseRequest && key.toLowerCase() === "accept-encoding") {
       continue;
     }
     headers[key] = value;
+  }
+  if (options.accessToken && !getHeaderValue(req.headers, "authorization").trim()) {
+    headers.authorization = `Bearer ${options.accessToken}`;
   }
   headers.host = target.host;
   headers["x-forwarded-host"] = getHeaderValue(req.headers, "host");
   headers["x-forwarded-proto"] = "http";
   headers["x-forwarded-for"] = req.socket.remoteAddress ?? "";
-  if (options.sseQuery) {
+  if (options.sseRequest) {
     headers["accept-encoding"] = "";
   }
   return headers;
@@ -365,22 +475,168 @@ function handleProxyError(
   }
 }
 
-function proxyHttpRequest(
+function routeMatchesPath(route: ManifestDesktopProxyRoute, requestPath: string) {
+  return route.match === "exact"
+    ? requestPath === route.path
+    : requestPath.startsWith(route.path);
+}
+
+function findProxyRoute(
+  record: AgentWebclientHostRecord,
+  requestPath: string,
+  kind: "http" | "websocket"
+) {
+  return record.hosting.proxyRoutes.find((route) => {
+    if (kind === "http" && route.http === false) {
+      return false;
+    }
+    if (kind === "websocket" && route.websocket !== true) {
+      return false;
+    }
+    return routeMatchesPath(route, requestPath);
+  }) || null;
+}
+
+function isSseProxyRequest(route: ManifestDesktopProxyRoute, urlValue: string | undefined) {
+  const requestPath = parseRequestPath(urlValue);
+  return Boolean(route.ssePaths?.some((ssePath) => requestPath === ssePath));
+}
+
+function writeDisabledHttpResponse(
+  res: http.ServerResponse,
+  response: ManifestDesktopDisabledResponse | undefined
+) {
+  const statusCode = response?.status ?? 404;
+  if (response && "json" in response) {
+    writeJSON(res, statusCode, response.json);
+    return;
+  }
+  const payload = `${response?.body ?? "disabled"}\n`;
+  res.writeHead(statusCode, {
+    "Content-Type": response?.contentType || "text/plain; charset=utf-8",
+    "Content-Length": Buffer.byteLength(payload)
+  });
+  res.end(payload);
+}
+
+function writeMissingTargetHttpResponse(
   record: AgentWebclientHostRecord,
   req: http.IncomingMessage,
   res: http.ServerResponse,
+  route: ManifestDesktopProxyRoute
+) {
+  record.logger.error?.(
+    `[agent-webclient-host] missing proxy target ${route.targetEnv} for ${req.method} ${req.url || ""}`
+  );
+  res.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
+  res.end("upstream unavailable");
+}
+
+async function issueRouteAccessToken(
+  record: AgentWebclientHostRecord,
+  route: ManifestDesktopProxyRoute
+) {
+  if (route.auth !== "agent-platform-access-token") {
+    return { ok: true, token: "", message: "" } satisfies AgentAuthIssueResult;
+  }
+  if (!record.issueAccessToken) {
+    return {
+      ok: false,
+      token: "",
+      message: "desktop access token issuer unavailable"
+    } satisfies AgentAuthIssueResult;
+  }
+  return record.issueAccessToken("missing");
+}
+
+async function resolveHttpRouteAccessToken(
+  record: AgentWebclientHostRecord,
+  route: ManifestDesktopProxyRoute,
+  req: http.IncomingMessage
+) {
+  if (route.auth !== "agent-platform-access-token" || getHeaderValue(req.headers, "authorization").trim()) {
+    return null;
+  }
+  const tokenResult = await issueRouteAccessToken(record, route);
+  return tokenResult.ok && tokenResult.token.trim() ? tokenResult.token.trim() : null;
+}
+
+function writeHttpTokenIssueFailure(
+  record: AgentWebclientHostRecord,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  route: ManifestDesktopProxyRoute
+) {
+  record.logger.warn?.(
+    `[agent-webclient-host] blocked ${req.method} ${req.url || ""}: ${route.auth || "auth"} token unavailable`
+  );
+  res.writeHead(401, { "Content-Type": "text/plain; charset=utf-8" });
+  res.end("unauthorized");
+}
+
+function writeWebSocketTokenIssueFailure(
+  record: AgentWebclientHostRecord,
+  req: http.IncomingMessage,
+  socket: Socket,
+  message: string
+) {
+  record.logger.warn?.(
+    `[agent-webclient-host] blocked ${req.url || ""}: ${message}`
+  );
+  if (!socket.destroyed) {
+    try {
+      socket.write("HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 20\r\n\r\nupstream unavailable");
+    } catch {
+      // Ignore socket write failures while closing the failed authenticated upgrade.
+    }
+    socket.destroy();
+  }
+}
+
+async function resolveWebSocketRouteAccessToken(
+  record: AgentWebclientHostRecord,
+  route: ManifestDesktopProxyRoute,
+  req: http.IncomingMessage,
+  socket: Socket
+) {
+  if (route.auth !== "agent-platform-access-token" || hasWebSocketAccessToken(req)) {
+    return null;
+  }
+  const tokenResult = await issueRouteAccessToken(record, route);
+  if (tokenResult.ok && tokenResult.token.trim()) {
+    return tokenResult.token.trim();
+  }
+  if (record.issueAccessToken) {
+    writeWebSocketTokenIssueFailure(record, req, socket, tokenResult.message || "desktop access token unavailable");
+  } else {
+    rejectUnauthenticatedWebSocketUpgrade(req, socket, record.logger);
+  }
+  return undefined;
+}
+
+async function proxyHttpRequest(
+  record: AgentWebclientHostRecord,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  route: ManifestDesktopProxyRoute,
   target: URL
 ) {
   const upstreamUrl = buildUpstreamUrl(target, req.url);
   const client = upstreamUrl.protocol === "https:" ? https : http;
-  const sseQuery = isSseQueryRequest(req.url);
+  const sseRequest = isSseProxyRequest(route, req.url);
+  const accessToken = await resolveHttpRouteAccessToken(record, route, req);
+  if (route.auth === "agent-platform-access-token" && !accessToken && !getHeaderValue(req.headers, "authorization").trim()) {
+    writeHttpTokenIssueFailure(record, req, res, route);
+    return;
+  }
   const proxyReq = client.request(upstreamUrl, {
     method: req.method,
-    headers: getProxyRequestHeaders(req, target, { sseQuery })
+    headers: getProxyRequestHeaders(req, target, { sseRequest, accessToken })
   }, (proxyRes) => {
     const headers = { ...proxyRes.headers };
     if (
-      sseQuery &&
+      sseRequest &&
+      route.disableProxyBuffering !== false &&
       (proxyRes.statusCode ?? 0) >= 200 &&
       (proxyRes.statusCode ?? 0) < 300 &&
       String(proxyRes.headers["content-type"] || "").toLowerCase().startsWith("text/event-stream")
@@ -411,17 +667,25 @@ function targetPort(target: URL) {
   return target.protocol === "https:" ? 443 : 80;
 }
 
-function buildUpgradeRequest(req: http.IncomingMessage, target: URL) {
+function buildUpgradeRequest(
+  req: http.IncomingMessage,
+  target: URL,
+  options: { accessToken?: string | null; stripHeaders?: string[] } = {}
+) {
   const upstreamUrl = buildUpstreamUrl(target, req.url);
+  if (options.accessToken) {
+    upstreamUrl.searchParams.set("token", options.accessToken);
+  }
   const requestTarget = `${upstreamUrl.pathname}${upstreamUrl.search}`;
   const lines = [`GET ${requestTarget} HTTP/${req.httpVersion}`];
   let hasUpgrade = false;
+  const stripHeaders = new Set((options.stripHeaders || []).map((header) => header.toLowerCase()));
 
   for (let index = 0; index < req.rawHeaders.length; index += 2) {
     const name = req.rawHeaders[index] ?? "";
     const value = req.rawHeaders[index + 1] ?? "";
     const lowerName = name.toLowerCase();
-    if (!name || lowerName === "host" || lowerName === "connection" || lowerName === "sec-websocket-extensions") {
+    if (!name || lowerName === "host" || lowerName === "connection" || stripHeaders.has(lowerName)) {
       continue;
     }
     if (lowerName === "upgrade") {
@@ -467,7 +731,9 @@ function proxyWebSocketUpgrade(
   req: http.IncomingMessage,
   socket: Socket,
   head: Buffer,
-  target: URL
+  route: ManifestDesktopProxyRoute,
+  target: URL,
+  options: { accessToken?: string | null } = {}
 ) {
   const secure = target.protocol === "https:";
   const connectOptions = {
@@ -477,7 +743,10 @@ function proxyWebSocketUpgrade(
   let connected = false;
   const onConnect = () => {
     connected = true;
-    upstream.write(buildUpgradeRequest(req, target));
+    upstream.write(buildUpgradeRequest(req, target, {
+      accessToken: options.accessToken,
+      stripHeaders: route.stripRequestHeaders
+    }));
     if (head.byteLength > 0) {
       upstream.write(head);
     }
@@ -506,13 +775,13 @@ function proxyWebSocketUpgrade(
   });
 }
 
-function handleHttpRequest(record: AgentWebclientHostRecord, req: http.IncomingMessage, res: http.ServerResponse) {
+async function handleHttpRequest(record: AgentWebclientHostRecord, req: http.IncomingMessage, res: http.ServerResponse) {
   if (applyDevCors(req, res)) {
     return;
   }
 
   const requestPath = parseRequestPath(req.url);
-  if (requestPath === "/runtime-config.js" && (req.method === "GET" || req.method === "HEAD")) {
+  if (requestPath === record.hosting.runtimeConfigPath && (req.method === "GET" || req.method === "HEAD")) {
     const payload = createRuntimeConfigScript(readRuntimeConfig(record));
     res.writeHead(200, {
       "Content-Type": "application/javascript; charset=utf-8",
@@ -523,17 +792,18 @@ function handleHttpRequest(record: AgentWebclientHostRecord, req: http.IncomingM
     return;
   }
 
-  if (requestPath.startsWith("/api/voice")) {
-    if (!record.voiceBaseUrl) {
-      writeJSON(res, 404, { error: "voice disabled" });
+  const proxyRoute = findProxyRoute(record, requestPath, "http");
+  if (proxyRoute) {
+    const target = resolveRouteTarget(record, proxyRoute);
+    if (!target) {
+      if (proxyRoute.optional) {
+        writeDisabledHttpResponse(res, proxyRoute.disabledResponse);
+        return;
+      }
+      writeMissingTargetHttpResponse(record, req, res, proxyRoute);
       return;
     }
-    proxyHttpRequest(record, req, res, record.voiceBaseUrl);
-    return;
-  }
-
-  if (requestPath.startsWith("/api")) {
-    proxyHttpRequest(record, req, res, record.baseUrl);
+    await proxyHttpRequest(record, req, res, proxyRoute, target);
     return;
   }
 
@@ -552,31 +822,29 @@ function handleHttpRequest(record: AgentWebclientHostRecord, req: http.IncomingM
   sendFile(req, res, resolved.filePath);
 }
 
-function handleUpgrade(
+async function handleUpgrade(
   record: AgentWebclientHostRecord,
   req: http.IncomingMessage,
   socket: Socket,
   head: Buffer
 ) {
   const requestPath = parseRequestPath(req.url);
-  if (requestPath.startsWith("/api/voice")) {
-    if (record.voiceBaseUrl) {
-      proxyWebSocketUpgrade(record, req, socket, head, record.voiceBaseUrl);
+  const proxyRoute = findProxyRoute(record, requestPath, "websocket");
+  if (proxyRoute) {
+    const target = resolveRouteTarget(record, proxyRoute);
+    if (!target) {
+      if (proxyRoute.optional) {
+        writeDisabledWebSocketUpgrade(socket, proxyRoute.disabledResponse);
+        return;
+      }
+      writeWebSocketProxyError(record, new Error(`missing proxy target ${proxyRoute.targetEnv}`), req, socket);
       return;
     }
-    rejectVoiceDisabledWebSocketUpgrade(socket);
-    return;
-  }
-  if (requestPath.startsWith("/api")) {
-    proxyWebSocketUpgrade(record, req, socket, head, record.baseUrl);
-    return;
-  }
-  if (requestPath === "/ws") {
-    if (isDesktopAppRuntime(record) && !hasWebSocketAccessToken(req)) {
-      rejectUnauthenticatedWebSocketUpgrade(req, socket, record.logger);
+    const accessToken = await resolveWebSocketRouteAccessToken(record, proxyRoute, req, socket);
+    if (accessToken === undefined) {
       return;
     }
-    proxyWebSocketUpgrade(record, req, socket, head, record.baseUrl);
+    proxyWebSocketUpgrade(record, req, socket, head, proxyRoute, target, { accessToken });
     return;
   }
   socket.destroy();
@@ -615,8 +883,7 @@ export async function startAgentWebclientHost(config: AgentWebclientHostConfig) 
 
   const { frontendDist, indexFile } = assertHostConfig(config);
   const logger = config.logger || console;
-  const baseUrl = normalizeEnvUrl(config.env.get("BASE_URL"), DEFAULT_BASE_URL) ?? new URL(DEFAULT_BASE_URL);
-  const voiceBaseUrl = normalizeEnvUrl(config.env.get("VOICE_BASE_URL"));
+  const hosting = normalizeDesktopHosting(config.service);
   const webUrl = `http://${HOST}:${config.port}/`;
   const record: AgentWebclientHostRecord = {
     serviceId,
@@ -625,10 +892,12 @@ export async function startAgentWebclientHost(config: AgentWebclientHostConfig) 
     webUrl,
     frontendDist,
     indexFile,
+    frontendSpa: config.service.frontend.spa !== false,
     layout: config.layout,
-    baseUrl,
-    voiceBaseUrl,
+    env: config.env,
+    hosting,
     logger,
+    issueAccessToken: config.issueAccessToken,
     sockets: new Set()
   };
 
@@ -639,22 +908,18 @@ export async function startAgentWebclientHost(config: AgentWebclientHostConfig) 
     });
   });
   record.server.on("request", (req, res) => {
-    try {
-      handleHttpRequest(record, req, res);
-    } catch (error) {
+    handleHttpRequest(record, req, res).catch((error) => {
       logger.error?.(`[agent-webclient-host] request failed: ${error instanceof Error ? error.message : String(error)}`);
       if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
       }
       res.end("internal server error");
-    }
+    });
   });
   record.server.on("upgrade", (req, socket, head) => {
-    try {
-      handleUpgrade(record, req, socket as Socket, head);
-    } catch {
+    handleUpgrade(record, req, socket as Socket, head).catch(() => {
       socket.destroy();
-    }
+    });
   });
 
   await new Promise<void>((resolve, reject) => {

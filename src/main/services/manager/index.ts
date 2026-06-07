@@ -22,6 +22,7 @@ import type {
 import type { ServiceDefinition } from "../../manifest-utils";
 import { getAllServices, getService } from "../service-registry";
 import { ensureAppServerJwk } from "../../app-server-auth";
+import { issueAgentAccessToken } from "../../agent-auth";
 import { readEnvFile, parseEnvFileContent } from "../../env-file";
 import { extractArchiveToDir } from "../../archive-utils";
 import {
@@ -1846,7 +1847,8 @@ async function startServiceInternal(
           service,
           layout,
           env,
-          port
+          port,
+          issueAccessToken: (reason) => issueAgentAccessToken(app, reason)
         });
         result = {
           ok: true,
@@ -3011,6 +3013,7 @@ export const __testInternals = {
   containerEngineAvailable,
   probeContainerEngines,
   fixShellScriptPermissions,
+  patchProgramCommonForLayeredLayout,
   listMissingRuntimeFiles,
   isInstallHealthy,
   listMissingBundleEntries,

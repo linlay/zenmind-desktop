@@ -25,6 +25,7 @@ import {
 } from "../../shared/page-copilot";
 import {
   shouldAutoOpenAssistant,
+  shouldRedirectStartupFailureToControlCenter,
   shouldShowStartupProgressCard
 } from "../../shared/startup-gate";
 import {
@@ -343,7 +344,9 @@ export function AppShell() {
     service.status === "running"
   );
   const resolvedStartupRestoreState = startupRestoreState ?? createFallbackStartupRestoreState();
-  const showStartupCard = !startupCardDismissed && shouldShowStartupProgressCard(startupRestoreState, startupAllReady);
+  const showStartupCard =
+    !startupCardDismissed &&
+    shouldShowStartupProgressCard(startupRestoreState, startupAllReady, location.pathname);
   const customSidebarItemMap = useMemo(() => new Map(customSidebarItems.map((item) => [item.id, item])), [customSidebarItems]);
   const currentCopilotPreference = resolveDesktopCopilotPreference(assistantSettings?.desktopCopilotPages, location.pathname);
   const customSidebarAgentKey = activeCustomSidebarItemId
@@ -679,8 +682,8 @@ export function AppShell() {
 
   useEffect(() => {
     if (
-      startupRestoreState?.mode !== "bootstrap" ||
-      startupRestoreState.phase !== "failed"
+      !startupRestoreState ||
+      !shouldRedirectStartupFailureToControlCenter(startupRestoreState, location.pathname)
     ) {
       return;
     }
@@ -696,7 +699,7 @@ export function AppShell() {
         }
       }
     });
-  }, [navigate, startupRestoreState]);
+  }, [location.pathname, navigate, startupRestoreState]);
 
   useEffect(() => {
     refreshServicesRef.current = refreshServices;

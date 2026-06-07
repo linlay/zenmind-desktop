@@ -72,7 +72,7 @@ test("ensureDesktopRegisterApiKey skips when desktop-register.json is missing", 
   }
 });
 
-test("ensureDesktopRegisterApiKey writes provider keys and disables only the register flag", async () => {
+test("ensureDesktopRegisterApiKey writes provider keys and removes the register file on success", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-register-success-"));
   const app = createApp(root);
   const homeRoot = path.join(root, "home");
@@ -98,7 +98,6 @@ test("ensureDesktopRegisterApiKey writes provider keys and disables only the reg
   const registerPath = writeRegister(
     homeRoot,
     JSON.stringify({
-      version: 1,
       enabled: true,
       endpoint: "https://transit-hub.zenmind.cc/api/apply-apikey",
       grant: {
@@ -145,13 +144,76 @@ test("ensureDesktopRegisterApiKey writes provider keys and disables only the reg
     assert.match(fs.readFileSync(deepseekPath, "utf8"), /^apiKey: dk_TestDesktopKey123-abc$/m);
     assert.match(fs.readFileSync(minimaxPath, "utf8"), /^apiKey: existing-real-key$/m);
 
-    const registerText = fs.readFileSync(registerPath, "utf8");
-    const register = JSON.parse(registerText);
-    assert.equal(register.enabled, false);
-    assert.equal(register.grant.token, "jwt-token");
-    assert.equal("apiKey" in register, false);
-    assert.equal(registerText.includes(issuedKey), false);
+    assert.equal(fs.existsSync(registerPath), false);
   } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("buildResetContent produces safe cleanup content without version and with empty token", () => {
+  const config = {
+    version: 1,
+    enabled: true,
+    endpoint: "https://transit-hub.zenmind.cc/api/apply-apikey",
+    grant: { type: "jwt", token: "secret-jwt" },
+    providers: ["th-deepseek"]
+  };
+  const result = __testInternals.buildResetContent(config);
+  const parsed = JSON.parse(result);
+  assert.equal(parsed.enabled, false);
+  assert.equal(parsed.grant.token, "");
+  assert.equal(parsed.grant.type, "jwt");
+  assert.equal("version" in parsed, false);
+});
+
+test("ensureDesktopRegisterApiKey reports cleanup error when register deletion fails", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-register-cleanup-fail-"));
+  const app = createApp(root);
+  const homeRoot = path.join(root, "home");
+  const deepseekPath = writeProvider(
+    homeRoot,
+    "th-deepseek",
+    "key: th-deepseek\nbaseUrl: https://transit-hub.zenmind.cc\n"
+  );
+  const registerPath = writeRegister(
+    homeRoot,
+    JSON.stringify({
+      enabled: true,
+      endpoint: "https://transit-hub.zenmind.cc/api/apply-apikey",
+      grant: { type: "jwt", token: "jwt-token" },
+      providers: ["th-deepseek"]
+    }, null, 2) + "\n"
+  );
+  const originalRmSync = fs.rmSync;
+
+  try {
+    fs.rmSync = (targetPath, opts) => {
+      if (targetPath === registerPath) {
+        throw new Error("permission denied");
+      }
+      return originalRmSync(targetPath, opts);
+    };
+
+    await assert.rejects(
+      ensureDesktopRegisterApiKey(app, {
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          text: async () => JSON.stringify({ key: "dk_CleanupFailKey" })
+        })
+      }),
+      /desktop-register 清理失败/u
+    );
+
+    assert.match(fs.readFileSync(deepseekPath, "utf8"), /^apiKey: dk_CleanupFailKey$/m);
+    assert.equal(fs.existsSync(registerPath), true);
+    const register = JSON.parse(fs.readFileSync(registerPath, "utf8"));
+    assert.equal(register.enabled, false);
+    assert.equal(register.grant.token, "");
+    assert.equal("version" in register, false);
+  } finally {
+    fs.rmSync = originalRmSync;
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

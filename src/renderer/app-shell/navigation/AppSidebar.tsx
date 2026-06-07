@@ -1877,7 +1877,7 @@ export function AppSidebar({
 
   function getDesktopSsoUserLabel() {
     if (!desktopSsoStatus) {
-      return t("sidebar.sso.signedOut");
+      return t("sidebar.sso.signIn");
     }
     if (desktopSsoStatus.authenticated) {
       return (
@@ -1888,7 +1888,7 @@ export function AppSidebar({
     }
     return desktopSsoStatus.pending
       ? t("sidebar.sso.signingIn")
-      : t("sidebar.sso.signedOut");
+      : t("sidebar.sso.signIn");
   }
 
   function getDesktopSsoActionLabel() {
