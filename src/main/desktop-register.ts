@@ -375,14 +375,23 @@ export async function ensureDesktopRegisterApiKey(
   }
 
   const { content, config } = readRegisterConfig(registerPath);
+  const providers = normalizeProviders(config.providers);
+  let targets: ReturnType<typeof readProviderTargets>;
   if (config.enabled !== true) {
-    return { status: "skipped", reason: "disabled" };
+    try {
+      targets = readProviderTargets({ app, providers, platform });
+    } catch {
+      return { status: "skipped", reason: "disabled" };
+    }
+    if (!targets.some((target) => target.needsUpdate)) {
+      return { status: "skipped", reason: "disabled" };
+    }
+  } else {
+    targets = readProviderTargets({ app, providers, platform });
   }
 
   const endpoint = normalizeEndpoint(config.endpoint);
   const token = normalizeGrant(config.grant);
-  const providers = normalizeProviders(config.providers);
-  const targets = readProviderTargets({ app, providers, platform });
   const deviceId = getDesktopDeviceId(app);
   const apiKey = await requestApiKey({
     endpoint,

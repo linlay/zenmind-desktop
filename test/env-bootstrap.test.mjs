@@ -224,13 +224,29 @@ test("bundled env.zip refreshes bootstrap registry seed files without overwritin
     fs.mkdirSync(path.dirname(providerPath), { recursive: true });
     fs.mkdirSync(path.dirname(ownerPath), { recursive: true });
     fs.writeFileSync(bootstrapAgentPath, "modelKey: stale-openai\n", "utf8");
-    fs.writeFileSync(providerPath, "apiKey: stale\n", "utf8");
+    fs.writeFileSync(
+      providerPath,
+      [
+        "key: minimax",
+        "baseUrl: https://old.example.com",
+        "apiKey: real-user-key",
+        "defaultModel: stale-model",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
     fs.writeFileSync(ownerPath, "name: keep-user-owner\n", "utf8");
 
     await writeZip(bundledZipPath, {
       "env/VERSION": DESKTOP_VERSION,
       "env/agents/bootstrap/agent.yml": "modelKey: th-minimax-m2_7-highspeed\n",
-      "env/registries/providers/minimax.yml": "defaultModel: minimax-m3\n",
+      "env/registries/providers/minimax.yml": [
+        "key: minimax",
+        "baseUrl: https://api.minimaxi.com",
+        "apiKey: YOUR_API_KEY",
+        "defaultModel: minimax-m3",
+        ""
+      ].join("\n"),
       "env/registries/models/th-minimax.yml": "provider: th-minimax\n",
       "env/owner/profile.yml": "name: bundled-owner\n"
     });
@@ -243,7 +259,16 @@ test("bundled env.zip refreshes bootstrap registry seed files without overwritin
 
     assert.equal(result?.sourceZipPath, bundledZipPath);
     assert.equal(fs.readFileSync(bootstrapAgentPath, "utf8"), "modelKey: th-minimax-m2_7-highspeed\n");
-    assert.equal(fs.readFileSync(providerPath, "utf8"), "defaultModel: minimax-m3\n");
+    assert.equal(
+      fs.readFileSync(providerPath, "utf8"),
+      [
+        "key: minimax",
+        "baseUrl: https://api.minimaxi.com",
+        "apiKey: real-user-key",
+        "defaultModel: minimax-m3",
+        ""
+      ].join("\n")
+    );
     assert.equal(fs.readFileSync(modelPath, "utf8"), "provider: th-minimax\n");
     assert.equal(fs.readFileSync(ownerPath, "utf8"), "name: keep-user-owner\n");
     assert.equal(result?.overwrittenFiles, 2);

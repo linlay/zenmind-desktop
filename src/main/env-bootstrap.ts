@@ -268,6 +268,66 @@ function isRefreshableRuntimeSeedPath(relativePath: string) {
   return false;
 }
 
+function isProviderRegistryPath(relativePath: string) {
+  const segments = normalizeSafeRelativePath(relativePath).split("/");
+  return segments[0] === "registries" && segments[1] === "providers" && /\.ya?ml$/iu.test(segments[2] ?? "");
+}
+
+function extractTopLevelYamlScalar(content: string, key: string) {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const match = new RegExp(`^(${escapedKey}\\s*:\\s*)(.*)$`, "imu").exec(content);
+  if (!match) {
+    return null;
+  }
+  const rawValue = match[2].trim();
+  if (
+    (rawValue.startsWith("\"") && rawValue.endsWith("\"")) ||
+    (rawValue.startsWith("'") && rawValue.endsWith("'"))
+  ) {
+    return rawValue.slice(1, -1).trim();
+  }
+  return rawValue;
+}
+
+function looksLikePlaceholderApiKey(apiKey: string | null) {
+  if (!apiKey?.trim()) {
+    return true;
+  }
+  const normalized = apiKey.trim().toLowerCase();
+  return /(?:your|example|demo|placeholder|replace[-_\s]*me|change[-_\s]*me|xxx)/iu.test(normalized);
+}
+
+function replaceOrInsertTopLevelYamlScalar(content: string, key: string, value: string) {
+  const newline = content.includes("\r\n") ? "\r\n" : "\n";
+  const lines = content.split(/\r?\n/u);
+  if (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+
+  const keyPattern = new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\s*:`, "iu");
+  const existingIndex = lines.findIndex((line) => keyPattern.test(line));
+  if (existingIndex >= 0) {
+    const indent = /^\s*/u.exec(lines[existingIndex])?.[0] ?? "";
+    lines[existingIndex] = `${indent}${key}: ${value}`;
+    return `${lines.join(newline)}${newline}`;
+  }
+
+  const baseUrlIndex = lines.findIndex((line) => /^\s*baseUrl\s*:/iu.test(line));
+  const providerKeyIndex = lines.findIndex((line) => /^\s*key\s*:/iu.test(line));
+  const insertIndex = baseUrlIndex >= 0 ? baseUrlIndex + 1 : providerKeyIndex >= 0 ? providerKeyIndex + 1 : lines.length;
+  lines.splice(insertIndex, 0, `${key}: ${value}`);
+  return `${lines.join(newline)}${newline}`;
+}
+
+function mergeProviderRegistrySeedContent(existingContent: string, bundledContent: string) {
+  const existingApiKey = extractTopLevelYamlScalar(existingContent, "apiKey");
+  const bundledApiKey = extractTopLevelYamlScalar(bundledContent, "apiKey");
+  if (existingApiKey === null || looksLikePlaceholderApiKey(existingApiKey) || !looksLikePlaceholderApiKey(bundledApiKey)) {
+    return bundledContent;
+  }
+  return replaceOrInsertTopLevelYamlScalar(bundledContent, "apiKey", existingApiKey);
+}
+
 function resolveSafeTargetPath(targetRoot: string, relativePath: string) {
   const targetRootResolved = path.resolve(targetRoot);
   const targetPath = path.resolve(targetRootResolved, relativePath);
@@ -425,7 +485,16 @@ export async function importEnvZipToRuntime(
         continue;
       }
       const content = await entry.entry.async("nodebuffer");
-      await fs.promises.writeFile(targetPath, content);
+      if (isProviderRegistryPath(entry.relativePath)) {
+        const existingContent = await fs.promises.readFile(targetPath, "utf8");
+        await fs.promises.writeFile(
+          targetPath,
+          mergeProviderRegistrySeedContent(existingContent, content.toString("utf8")),
+          "utf8"
+        );
+      } else {
+        await fs.promises.writeFile(targetPath, content);
+      }
       overwrittenFiles += 1;
       continue;
     }
