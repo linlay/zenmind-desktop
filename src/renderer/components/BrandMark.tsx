@@ -1,5 +1,7 @@
 import { APP_ICON_ASSET_FILENAMES } from "../../shared/app-icon-assets";
+import aboutIcon from "../assets/sidebar-icons/about.svg";
 import agentIcon from "../assets/sidebar-icons/agent.svg";
+import appearanceIcon from "../assets/sidebar-icons/appearance.svg";
 import assistantIcon from "../assets/sidebar-icons/assistant.svg";
 import autumnIcon from "../assets/sidebar-icons/autumn.svg";
 import controlIcon from "../assets/sidebar-icons/control.svg";
@@ -21,6 +23,8 @@ type BrandMarkProps = {
 };
 
 export type SidebarIllustrationKind =
+  | "about"
+  | "appearance"
   | "control"
   | "assistant"
   | "agent"
@@ -43,7 +47,9 @@ type SidebarIllustrationProps = {
 };
 
 const sidebarIllustrationSources: Record<SidebarIllustrationKind, string> = {
+  about: aboutIcon,
   agent: agentIcon,
+  appearance: appearanceIcon,
   assistant: assistantIcon,
   autumn: autumnIcon,
   control: controlIcon,

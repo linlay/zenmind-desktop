@@ -54,6 +54,17 @@ import {
 } from "./navigation/sidebarNavOrder";
 import { useI18n } from "../i18n/useI18n";
 import {
+  buildLocalizedSettingsSections,
+  getVisibleSettingsSections,
+  type SettingsSectionId
+} from "../settingsPageSections";
+import {
+  buildSettingsSectionPath,
+  getDefaultSettingsSectionPath,
+  isSettingsRoute as matchSettingsRoute,
+  resolveSettingsSectionId
+} from "../settings/settingsRoutes";
+import {
   normalizeAssistantNavAgentItemsResult,
   normalizeAssistantNavAgents
 } from "../assistantNavigation";
@@ -67,7 +78,36 @@ import {
   type AgentWebclientResolvedRoute
 } from "../../shared/agent-webclient-routes";
 
-type ThemeMode = "light" | "dark";
+type ThemePreference = "light" | "dark" | "system";
+type ResolvedThemeMode = "light" | "dark";
+
+function readStoredThemePreference(): ThemePreference {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+  try {
+    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (savedTheme === "dark") {
+      return "dark";
+    }
+    if (savedTheme === "system") {
+      return "system";
+    }
+    return "light";
+  } catch {
+    return "light";
+  }
+}
+
+function resolveThemePreference(preference: ThemePreference): ResolvedThemeMode {
+  if (preference === "system") {
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      return "dark";
+    }
+    return "light";
+  }
+  return preference;
+}
 
 const ControlCenterPage = lazy(() =>
   import("../pages/control-center/ControlCenterPage").then((module) => ({ default: module.ControlCenterPage }))
@@ -222,20 +262,12 @@ export function AppShell() {
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
   const assistantDockOpenRequestPathRef = useRef<string | null>(null);
   const startupNavigationDoneRef = useRef(false);
+  const lastNonSettingsRouteRef = useRef("/kanban");
   const refreshServicesRef = useRef(refreshServices);
   const assistantNavAgentsRefreshIdRef = useRef(0);
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
-    if (typeof window === "undefined") {
-      return "light";
-    }
-    try {
-      const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-      return savedTheme === "dark" ? "dark" : "light";
-    } catch {
-      return "light";
-    }
-  });
+  const [themeMode, setThemeMode] = useState<ThemePreference>(() => readStoredThemePreference());
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedThemeMode>(() => resolveThemePreference(readStoredThemePreference()));
   const [sidebarState, setSidebarState] = useState<SidebarLayoutState>(() => {
     if (typeof window === "undefined") {
       return normalizeSidebarLayoutState(null);
@@ -328,11 +360,24 @@ export function AppShell() {
     location.pathname === "/control-center" ||
     location.pathname === "/market" ||
     location.pathname === "/help" ||
-    location.pathname === "/settings";
+    matchSettingsRoute(location.pathname);
   const isMac = desktopPlatform === "darwin";
   const isWindows = desktopPlatform === "win32";
-  const isSettingsRoute = location.pathname === "/settings";
+  const isSettingsRoute = matchSettingsRoute(location.pathname);
   const currentRoute = `${location.pathname}${location.search}`;
+  const settingsSectionDefinitions = useMemo(
+    () => buildLocalizedSettingsSections({ isWindows, t }),
+    [isWindows, t]
+  );
+  const visibleSettingsSections = useMemo(
+    () => getVisibleSettingsSections(settingsSectionDefinitions),
+    [settingsSectionDefinitions]
+  );
+  const visibleSettingsSectionIds = useMemo(
+    () => visibleSettingsSections.map((section) => section.id),
+    [visibleSettingsSections]
+  );
+  const activeSettingsSectionId = resolveSettingsSectionId(location.pathname, visibleSettingsSectionIds);
   const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
     services.find((service) => service.id === serviceId) ?? null
   );
@@ -756,13 +801,30 @@ export function AppShell() {
   }, [showStartupCard, startupRestoreState]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = themeMode;
+    const resolved = resolveThemePreference(themeMode);
+    setResolvedTheme(resolved);
+    document.documentElement.dataset.theme = resolved;
     window.electronAPI.settings.setNativeThemeSource(themeMode).catch(() => undefined);
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
     } catch {
       // Ignore persistence failures and keep the in-memory theme switch usable.
     }
+
+    if (themeMode !== "system") {
+      return;
+    }
+
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleSystemThemeChange = () => {
+      const nextResolved = media.matches ? "dark" : "light";
+      setResolvedTheme(nextResolved);
+      document.documentElement.dataset.theme = nextResolved;
+    };
+    media.addEventListener("change", handleSystemThemeChange);
+    return () => {
+      media.removeEventListener("change", handleSystemThemeChange);
+    };
   }, [themeMode]);
 
   useEffect(() => {
@@ -926,8 +988,8 @@ export function AppShell() {
     );
   }, [customSidebarItems, customSidebarItemsLoaded]);
 
-  function toggleTheme() {
-    setThemeMode((current) => (current === "light" ? "dark" : "light"));
+  function handleThemeModeChange(nextThemeMode: ThemePreference) {
+    setThemeMode(nextThemeMode);
   }
 
   function toggleSidebarCollapsed() {
@@ -935,7 +997,7 @@ export function AppShell() {
   }
 
   function handleSidebarResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || isSidebarResizing) {
+    if (event.button !== 0 || isSidebarResizing || isSettingsRoute) {
       return;
     }
 
@@ -1011,6 +1073,45 @@ export function AppShell() {
     }
     navigateWithSidebarHistory(targetPath, "forward");
   }
+
+  function handleSelectSettingsSection(sectionId: SettingsSectionId) {
+    const targetPath = buildSettingsSectionPath(sectionId);
+    if (targetPath === currentRoute) {
+      return;
+    }
+    requestSidebarNavigation(targetPath);
+  }
+
+  function handleExitSettingsMode() {
+    requestSidebarNavigation(lastNonSettingsRouteRef.current || "/kanban");
+  }
+
+  useEffect(() => {
+    if (isSettingsRoute) {
+      return;
+    }
+    lastNonSettingsRouteRef.current = currentRoute;
+  }, [currentRoute, isSettingsRoute]);
+
+  useEffect(() => {
+    if (!isSettingsRoute || location.pathname !== "/settings") {
+      return;
+    }
+    const normalizedSettingsPath = getDefaultSettingsSectionPath(visibleSettingsSectionIds);
+    if (normalizedSettingsPath !== location.pathname) {
+      navigate(normalizedSettingsPath, { replace: true });
+    }
+  }, [isSettingsRoute, location.pathname, navigate, visibleSettingsSectionIds]);
+
+  useEffect(() => {
+    if (!isSettingsRoute || !activeSettingsSectionId) {
+      return;
+    }
+    const normalizedSettingsPath = buildSettingsSectionPath(activeSettingsSectionId);
+    if (location.pathname !== normalizedSettingsPath) {
+      navigate(normalizedSettingsPath, { replace: true });
+    }
+  }, [activeSettingsSectionId, isSettingsRoute, location.pathname, navigate]);
 
   const experimentalItemMap = new Map(EXTERNAL_EXPERIMENTAL_ITEMS.map((item) => [item.id, item]));
 
@@ -1126,8 +1227,8 @@ export function AppShell() {
       const issues: Array<{ field: string; message: string; value?: unknown }> = [];
       const desktopPetPatch = asRecord(patch.desktopPet);
 
-      if ("themeMode" in patch && patch.themeMode !== "light" && patch.themeMode !== "dark") {
-        issues.push({ field: "themeMode", value: patch.themeMode, message: "themeMode must be light or dark." });
+      if ("themeMode" in patch && patch.themeMode !== "light" && patch.themeMode !== "dark" && patch.themeMode !== "system") {
+        issues.push({ field: "themeMode", value: patch.themeMode, message: "themeMode must be light, dark, or system." });
       }
       if ("enabled" in desktopPetPatch && typeof desktopPetPatch.enabled !== "boolean") {
         issues.push({ field: "desktopPet.enabled", value: desktopPetPatch.enabled, message: "desktopPet.enabled must be boolean." });
@@ -1245,7 +1346,7 @@ export function AppShell() {
           }
 
           const desktopPetPatch = asRecord(patch.desktopPet);
-          if (patch.themeMode === "light" || patch.themeMode === "dark") {
+          if (patch.themeMode === "light" || patch.themeMode === "dark" || patch.themeMode === "system") {
             setThemeMode(patch.themeMode);
           }
           if (Object.keys(desktopPetPatch).length > 0) {
@@ -1328,6 +1429,7 @@ export function AppShell() {
         isWindows ? "is-windows-platform" : "",
         sidebarCollapsed ? "is-sidebar-collapsed" : "",
         isSidebarResizing ? "is-sidebar-resizing" : "",
+        isSettingsRoute ? "is-settings-mode" : "",
         "has-translucent-sidebar",
         isMac ? "is-mac-translucent-sidebar" : ""
       ].filter(Boolean).join(" ")}
@@ -1370,11 +1472,17 @@ export function AppShell() {
           onSidebarNavigateForward={handleSidebarForwardNavigation}
           onNavigateItem={undefined}
           onToggleCollapsed={toggleSidebarCollapsed}
+          isSettingsMode={isSettingsRoute}
+          settingsSections={visibleSettingsSections}
+          activeSettingsSectionId={activeSettingsSectionId}
+          onSelectSettingsSection={handleSelectSettingsSection}
+          onExitSettingsMode={handleExitSettingsMode}
         />
       </div>
       <div
         className={[
           "app-sidebar-resizer",
+          isSettingsRoute ? "is-disabled" : "",
           isSidebarResizing ? "is-active" : ""
         ].filter(Boolean).join(" ")}
         role="separator"
@@ -1383,7 +1491,9 @@ export function AppShell() {
         aria-valuemin={SIDEBAR_COLLAPSED_WIDTH}
         aria-valuemax={SIDEBAR_EXPANDED_MAX_WIDTH}
         aria-valuenow={renderedSidebarWidth}
-        onPointerDown={handleSidebarResizerPointerDown}
+        aria-hidden={isSettingsRoute ? true : undefined}
+        aria-disabled={isSettingsRoute ? true : undefined}
+        onPointerDown={isSettingsRoute ? undefined : handleSidebarResizerPointerDown}
       >
         <span className="app-sidebar-resizer-line" aria-hidden="true" />
       </div>
@@ -1393,7 +1503,7 @@ export function AppShell() {
           <PluginSurfaceHost
             activePluginId={activePluginId}
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}
-            hostTheme={themeMode}
+            hostTheme={resolvedTheme}
             mountedPluginIds={mountedPluginIds}
           />
           <BuiltinBrowserSurfaceHost
@@ -1415,15 +1525,19 @@ export function AppShell() {
                 />
               }
             />
-            <Route path="/kanban" element={<RouteSuspense><TaskBoardPage hostTheme={themeMode} /></RouteSuspense>} />
+            <Route path="/kanban" element={<RouteSuspense><TaskBoardPage hostTheme={resolvedTheme} /></RouteSuspense>} />
             <Route path="/control-center" element={<RouteSuspense><ControlCenterPage /></RouteSuspense>} />
             <Route
               path="/settings"
+              element={<Navigate to={getDefaultSettingsSectionPath(visibleSettingsSectionIds)} replace />}
+            />
+            <Route
+              path="/settings/:sectionId"
               element={
                 <RouteSuspense>
                   <SettingsPage
                     themeMode={themeMode}
-                    onToggleTheme={toggleTheme}
+                    onThemeModeChange={handleThemeModeChange}
                     isMac={isMac}
                     isWindows={isWindows}
                     sidebarNavOrder={normalizedSidebarNavOrder}
@@ -1431,7 +1545,6 @@ export function AppShell() {
                     onSidebarNavOrderChange={setSidebarNavOrder}
                     customSidebarItems={customSidebarItems}
                     onCustomSidebarItemsChange={updateCustomSidebarItems}
-                    onRefreshCustomSidebarItems={refreshCustomSidebarItems}
                     onAssistantSettingsChange={setAssistantSettings}
                   />
                 </RouteSuspense>
@@ -1449,14 +1562,14 @@ export function AppShell() {
               <Route
                 key={routeDefinition.key}
                 path={routeDefinition.routePath}
-                element={<AgentWebclientNativeRouteOutlet route={activeAgentWebclientRoute} hostTheme={themeMode} />}
+                element={<AgentWebclientNativeRouteOutlet route={activeAgentWebclientRoute} hostTheme={resolvedTheme} />}
               />
             ))}
             {AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS.map((routePattern) => (
               <Route
                 key={routePattern}
                 path={routePattern}
-                element={<AgentWebclientNativeRouteOutlet route={activeAgentWebclientRoute} hostTheme={themeMode} />}
+                element={<AgentWebclientNativeRouteOutlet route={activeAgentWebclientRoute} hostTheme={resolvedTheme} />}
               />
             ))}
             <Route path="/external/:itemId" element={<ExternalItemRoute itemMap={experimentalItemMap} />} />
@@ -1474,7 +1587,7 @@ export function AppShell() {
       ) : null}
       <AgentWebclientCopilotDock
         open={assistantCopilotOpen}
-        hostTheme={themeMode}
+        hostTheme={resolvedTheme}
         nativeDialogVisible={nativeDialogVisible}
         openRequest={assistantDockOpenRequest}
         resolvedAgentKey={resolvedCopilotAgentKey}

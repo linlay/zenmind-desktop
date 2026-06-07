@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownContent } from "../help/MarkdownContent";
 import { getHelpContent } from "../help/helpContent";
 import { useI18n } from "../i18n/useI18n";
-import "./SplitWorkspaceLayout.css";
 import "./HelpPage.css";
 
 type HelpPageProps = {
@@ -18,11 +17,6 @@ export function HelpPage({ isWindows }: HelpPageProps) {
   const [openItems, setOpenItems] = useState<Set<string>>(new Set());
   const bodyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const contentRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    document.documentElement.classList.add("theme-help");
-    return () => document.documentElement.classList.remove("theme-help");
-  }, []);
 
   useEffect(() => {
     const categoryExists = helpContent.categories.some((category) => category.id === activeCat);
@@ -54,79 +48,95 @@ export function HelpPage({ isWindows }: HelpPageProps) {
   }, []);
 
   return (
-    <section className="help-page split-workspace-page">
-      <div className="help-layout split-workspace-layout">
-        <aside className="help-sidebar split-workspace-sidebar-card">
-          <h2 className="help-sidebar-title">{helpContent.sidebarTitle}</h2>
-          <nav className="help-nav">
-            {helpContent.categories.map((cat) => (
-              <button
-                key={cat.id}
-                className={`help-nav-btn${activeCat === cat.id ? " is-active" : ""}`}
-                onClick={() => switchCategory(cat.id)}
-              >
-                {cat.label}
-              </button>
-            ))}
-          </nav>
-        </aside>
-
-        <div className="help-main split-workspace-main-card" ref={contentRef}>
-          <div className="help-hero">
-            <h1 className="help-hero-title">{helpContent.heroTitle}</h1>
-            <p className="help-hero-desc">{helpContent.heroDescription}</p>
+    <section className="help-page help-page-single">
+      <div className="help-content-panel">
+        <div className="help-content-shell">
+          <div className="help-page-head">
+            <h1>{helpContent.sidebarTitle}</h1>
+            <p className="page-copy">{helpContent.heroDescription}</p>
           </div>
 
-          <div className="help-faq-list">
-            {currentCategory?.items.map((item) => {
-              const key = `${currentCategory.id}-${item.id}`;
-              const isOpen = openItems.has(key);
-              return (
-                <div
-                  key={key}
-                  className={`help-faq-item${isOpen ? " is-open" : ""}`}
-                >
-                  <button
-                    className="help-faq-trigger"
-                    onClick={() => toggleItem(key)}
-                    aria-expanded={isOpen}
-                  >
-                    <span className="help-faq-question">{item.title}</span>
-                    <svg
-                      className="help-faq-chevron"
-                      width="20"
-                      height="20"
-                      viewBox="0 0 20 20"
-                      fill="none"
+          <div className="help-section-body">
+            <div className="help-workspace">
+              <aside className="help-sidebar help-category-card">
+                <nav className="help-category-list" aria-label={helpContent.sidebarTitle}>
+                  {helpContent.categories.map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      className={`help-category-btn${activeCat === cat.id ? " is-active" : ""}`}
+                      onClick={() => switchCategory(cat.id)}
+                      aria-current={activeCat === cat.id ? "page" : undefined}
                     >
-                      <path
-                        d="M5 7.5L10 12.5L15 7.5"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </button>
-                  <div
-                    className="help-faq-body"
-                    ref={(el) => {
-                      if (el) bodyRefs.current.set(key, el);
-                      else bodyRefs.current.delete(key);
-                    }}
-                    style={{
-                      maxHeight: isOpen
-                        ? `${bodyRefs.current.get(key)?.scrollHeight ?? ACCORDION_FALLBACK_HEIGHT}px`
-                        : "0px",
-                    }}
-                  >
-                    <div className="help-faq-answer">
-                      <MarkdownContent markdown={item.markdown} />
-                    </div>
+                      {cat.label}
+                    </button>
+                  ))}
+                </nav>
+              </aside>
+
+              <div className="help-main-card help-item-card" ref={contentRef}>
+                <div className="help-item-section-head">
+                  <div>
+                    <strong>{currentCategory?.label ?? helpContent.sidebarTitle}</strong>
+                    <span>{helpContent.heroTitle}</span>
                   </div>
                 </div>
-              );
-            })}
+
+                <div className="help-faq-list help-item-list">
+                  {currentCategory?.items.map((item) => {
+                    const key = `${currentCategory.id}-${item.id}`;
+                    const isOpen = openItems.has(key);
+                    return (
+                      <div
+                        key={key}
+                        className={`help-faq-item help-item-row${isOpen ? " is-open" : ""}`}
+                      >
+                        <button
+                          type="button"
+                          className="help-faq-trigger"
+                          onClick={() => toggleItem(key)}
+                          aria-expanded={isOpen}
+                        >
+                          <span className="help-faq-question">{item.title}</span>
+                          <svg
+                            className="help-faq-chevron"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 20 20"
+                            fill="none"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M5 7.5L10 12.5L15 7.5"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                        <div
+                          className="help-faq-body"
+                          ref={(el) => {
+                            if (el) bodyRefs.current.set(key, el);
+                            else bodyRefs.current.delete(key);
+                          }}
+                          style={{
+                            maxHeight: isOpen
+                              ? `${bodyRefs.current.get(key)?.scrollHeight ?? ACCORDION_FALLBACK_HEIGHT}px`
+                              : "0px",
+                          }}
+                        >
+                          <div className="help-faq-answer">
+                            <MarkdownContent markdown={item.markdown} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -6,7 +6,7 @@ import {
   type FormEvent,
   type MouseEvent,
 } from "react";
-import { LeftOutlined, LogoutOutlined, RightOutlined } from "@ant-design/icons";
+import { LeftOutlined, RightOutlined } from "@ant-design/icons";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import {
@@ -40,6 +40,8 @@ import {
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/generated/brand";
 import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
+import type { SettingsSectionId } from "../../../shared/settings-sections";
+import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -535,6 +537,11 @@ function SidebarCollapseToggle({
   );
 }
 
+type SettingsSidebarSection = {
+  id: SettingsSectionId;
+  label: string;
+};
+
 type AppSidebarProps = {
   isCollapsed: boolean;
   isMac: boolean;
@@ -569,6 +576,11 @@ type AppSidebarProps = {
   onSidebarNavigateForward?: () => void;
   onNavigateItem?: () => void;
   onToggleCollapsed?: () => void;
+  isSettingsMode?: boolean;
+  settingsSections?: SettingsSidebarSection[];
+  activeSettingsSectionId?: SettingsSectionId | null;
+  onSelectSettingsSection?: (sectionId: SettingsSectionId) => void;
+  onExitSettingsMode?: () => void;
 };
 
 export function AppSidebar({
@@ -603,6 +615,11 @@ export function AppSidebar({
   onSidebarNavigateForward,
   onNavigateItem,
   onToggleCollapsed,
+  isSettingsMode = false,
+  settingsSections = [],
+  activeSettingsSectionId = null,
+  onSelectSettingsSection,
+  onExitSettingsMode,
 }: AppSidebarProps) {
   const { t } = useI18n();
   const [sidebarGroupState, setSidebarGroupState] = useState<SidebarGroupState>(
@@ -1686,6 +1703,9 @@ export function AppSidebar({
             title={args.label}
           >
             <span className="sidebar-group-heading-main">
+              <span className="sidebar-link-icon">
+                <SidebarIllustration kind={args.icon} />
+              </span>
               <span className="sidebar-link-label">{args.label}</span>
               <ArrowIcon
                 className="sidebar-group-heading-arrow"
@@ -1821,31 +1841,24 @@ export function AppSidebar({
 
     if (desktopSsoStatus?.authenticated) {
       return (
-        <div
+        <button
+          type="button"
           className={[
             "sidebar-account-menu-item",
-            "is-disabled",
+            "sidebar-account-menu-action",
             "sidebar-account-menu-user",
-            "sidebar-account-menu-user-with-action",
           ]
             .filter(Boolean)
             .join(" ")}
-          role="none"
+          onClick={handleDesktopSsoLogoutClick}
+          disabled={desktopSsoBusy}
+          role="menuitem"
+          aria-label={desktopSsoLogoutLabel}
+          title={desktopSsoUserLabel}
         >
           {renderAccountMenuIcon("account")}
-          <span className="sidebar-account-menu-label">{desktopSsoUserLabel}</span>
-          <button
-            type="button"
-            className="sidebar-account-menu-logout"
-            onClick={handleDesktopSsoLogoutClick}
-            disabled={desktopSsoBusy}
-            role="menuitem"
-            aria-label={desktopSsoLogoutLabel}
-            title={desktopSsoLogoutLabel}
-          >
-            <LogoutOutlined />
-          </button>
-        </div>
+          <span className="sidebar-account-menu-label">{desktopSsoLogoutLabel}</span>
+        </button>
       );
     }
 
@@ -1915,16 +1928,15 @@ export function AppSidebar({
     setToolMenuOpen(false);
   }
 
-  function renderDesktopSsoAccountMenuSection() {
-    return (
-      <>
-        {renderAccountMenuUserItem()}
-        <div className="sidebar-account-menu-divider" aria-hidden="true" />
-      </>
-    );
-  }
-
   function renderToolMenu() {
+    const topToolItems = fixedToolItems.filter((item) =>
+      item.to === "/agents" || item.to === "/market"
+    );
+    const middleToolItems = fixedToolItems.filter((item) =>
+      item.to === "/control-center" || item.to === "/help"
+    );
+    const settingsToolItems = fixedToolItems.filter((item) => item.to === "/settings");
+
     return (
       <div
         className={[
@@ -1939,8 +1951,12 @@ export function AppSidebar({
         role="menu"
         aria-label={t("nav.sidebar.fixedTools")}
       >
-        {renderDesktopSsoAccountMenuSection()}
-        {fixedToolItems.map((item) => renderToolLink(item))}
+        {topToolItems.map((item) => renderToolLink(item))}
+        <div className="sidebar-account-menu-divider" aria-hidden="true" />
+        {middleToolItems.map((item) => renderToolLink(item))}
+        <div className="sidebar-account-menu-divider" aria-hidden="true" />
+        {settingsToolItems.map((item) => renderToolLink(item))}
+        {renderAccountMenuUserItem()}
       </div>
     );
   }
@@ -2674,18 +2690,91 @@ export function AppSidebar({
     );
   }
 
+  function getSettingsSectionIcon(sectionId: SettingsSectionId): SidebarIllustrationKind {
+    switch (sectionId) {
+      case "appearance":
+        return "appearance";
+      case "navigation":
+        return "sidebar-assistant-closed";
+      case "quickAssistant":
+        return "assistant";
+      case "embeddedWebsites":
+        return "website";
+      case "dataRoot":
+        return "service";
+      case "debug":
+        return "control";
+      case "memory":
+        return "memory";
+      case "about":
+        return "about";
+      default:
+        return "settings";
+    }
+  }
+
+  function renderSettingsNav() {
+    return (
+      <div className="sidebar-settings-nav">
+        <button
+          type="button"
+          className="sidebar-link sidebar-link-utility sidebar-settings-back"
+          onClick={() => onExitSettingsMode?.()}
+        >
+          <span className="sidebar-link-icon" aria-hidden="true">
+            <LeftOutlined />
+          </span>
+          <span className="sidebar-link-label">{t("settings.backToApp")}</span>
+        </button>
+        <nav className="sidebar-settings-directory" aria-label={t("settings.directory")}>
+          {settingsSections.map((section) => {
+            const targetPath = buildSettingsSectionPath(section.id);
+            const isActive = activeSettingsSectionId === section.id;
+            return (
+              <NavLink
+                key={section.id}
+                to={targetPath}
+                className={({ isActive: routeActive }) =>
+                  [
+                    "sidebar-link",
+                    routeActive || isActive ? "sidebar-link-active" : "",
+                    pendingPath === targetPath ? "is-pending" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")
+                }
+                onClick={(event) => {
+                  event.preventDefault();
+                  onSelectSettingsSection?.(section.id);
+                }}
+              >
+                <span className="sidebar-link-icon" aria-hidden="true">
+                  <SidebarIllustration kind={getSettingsSectionIcon(section.id)} />
+                </span>
+                <span className="sidebar-link-label">{section.label}</span>
+              </NavLink>
+            );
+          })}
+        </nav>
+      </div>
+    );
+  }
+
   return (
     <aside className={isCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
       <div className="sidebar-chrome">
         <div className="sidebar-chrome-drag-region" aria-hidden="true" />
         <div className={chromeToolbarClassName}>
           <div className="sidebar-top-actions">
+            {!isSettingsMode ? (
             <SidebarCollapseToggle
               className="sidebar-collapsed-toggle-button"
               isCollapsed={isCollapsed}
               variant="compact"
               onToggleCollapsed={onToggleCollapsed}
             />
+            ) : null}
+            {!isSettingsMode ? (
             <div className="sidebar-history-controls">
               <button
                 type="button"
@@ -2708,7 +2797,8 @@ export function AppSidebar({
                 <RightOutlined aria-hidden="true" />
               </button>
             </div>
-            {assistantLauncherVisible ? (
+            ) : null}
+            {!isSettingsMode && assistantLauncherVisible ? (
               <button
                 type="button"
                 className={[
@@ -2750,9 +2840,10 @@ export function AppSidebar({
       </div>
 
       <nav className="sidebar-nav" aria-label="Primary Navigation">
-        {navItems.map((item) => renderPrimaryNavEntry(item))}
+        {isSettingsMode ? renderSettingsNav() : navItems.map((item) => renderPrimaryNavEntry(item))}
       </nav>
 
+      {!isSettingsMode ? (
       <div className="sidebar-footer">
         <div className="sidebar-footer-divider" aria-hidden="true" />
         <div className="sidebar-footer-actions">
@@ -2762,6 +2853,7 @@ export function AppSidebar({
               content={renderToolMenu()}
               open={toolMenuOpen}
               onOpenChange={setToolMenuOpen}
+              className="sidebar-tool-menu-popover"
             >
               <button
                 type="button"
@@ -2792,12 +2884,6 @@ export function AppSidebar({
                 >
                   {getCollapsedSidebarLabel(t("nav.settings"))}
                 </span>
-                <span
-                  className="sidebar-tool-status-label"
-                  aria-hidden="true"
-                >
-                  {getDesktopSsoUserLabel()}
-                </span>
               </button>
             </Popover>
           </div>
@@ -2809,6 +2895,7 @@ export function AppSidebar({
           {renderWebsiteDialog()}
         </div>
       </div>
+      ) : null}
     </aside>
   );
 }

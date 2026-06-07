@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { useLocation } from "react-router-dom";
+import { DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
+import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
-import "../SplitWorkspaceLayout.css";
 import "./SettingsPage.css";
 import type {
   AssistantMemoryItem,
@@ -13,7 +13,6 @@ import type {
   AssistantNavAgentItem,
   AssistantSettingsPublic,
   CustomSidebarItem,
-  CustomSidebarItemsResult,
   DesktopAppInfo,
   DesktopPetAgentOption,
   DesktopPetState
@@ -37,18 +36,20 @@ import {
   DESKTOP_PET_APPEARANCE_OPTIONS
 } from "../../../shared/desktop-pet";
 import {
-  createSettingsSectionDefinitions,
-  getDefaultSettingsSectionId,
+  buildLocalizedSettingsSections,
   getVisibleSettingsSections,
   type SettingsSectionId
 } from "../../settingsPageSections";
+import { resolveSettingsSectionId } from "../../settings/settingsRoutes";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shell/navigation/sidebarNavOrder";
 import { useI18n } from "../../i18n/useI18n";
 import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
 
+type ThemePreference = "light" | "dark" | "system";
+
 type SettingsPageProps = {
-  themeMode: "light" | "dark";
-  onToggleTheme: () => void;
+  themeMode: ThemePreference;
+  onThemeModeChange: (themeMode: ThemePreference) => void;
   isMac: boolean;
   isWindows: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
@@ -56,7 +57,6 @@ type SettingsPageProps = {
   onSidebarNavOrderChange: (order: SidebarNavOrderItemKey[]) => void;
   customSidebarItems: CustomSidebarItem[];
   onCustomSidebarItemsChange: (items: CustomSidebarItem[]) => void;
-  onRefreshCustomSidebarItems: () => Promise<CustomSidebarItemsResult>;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
 };
 
@@ -71,13 +71,39 @@ type SettingsNotice = {
 
 type SectionReadErrorMap = Partial<Record<SettingsSectionId, string>>;
 
+const THEME_PREFERENCE_OPTIONS: ThemePreference[] = ["light", "dark", "system"];
+
+function getThemePreferenceLabel(themeMode: ThemePreference, t: TranslateFunction) {
+  switch (themeMode) {
+    case "light":
+      return t("settings.appearance.light");
+    case "dark":
+      return t("settings.appearance.dark");
+    default:
+      return t("settings.appearance.system");
+  }
+}
+
+function ThemePreferenceIcon({ themeMode }: { themeMode: ThemePreference }) {
+  if (themeMode === "light") {
+    return <SunOutlined aria-hidden="true" />;
+  }
+  if (themeMode === "dark") {
+    return <MoonOutlined aria-hidden="true" />;
+  }
+  return <DesktopOutlined aria-hidden="true" />;
+}
+
+function getLocaleLabel(nextLocale: SupportedLocale, t: TranslateFunction) {
+  return nextLocale === "zh-CN" ? t("settings.language.zhCN") : t("settings.language.enUS");
+}
+
 const SETTINGS_ACTION_PATCH_FIELDS = [
   "desktopHelperAgentKey",
   "quickAssistantEnabled",
   "quickAssistantAgentKey",
   "desktopCopilotPages"
 ] as const;
-const SETTINGS_NOTICE_AUTO_CLOSE_MS = 3200;
 const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
   "quickAssistant",
   "embeddedWebsites"
@@ -320,7 +346,6 @@ function WindowsDataRootCard() {
   return (
     <div className="data-root-card">
       <div>
-        <p className="eyebrow">DATA ROOT</p>
         <h2>{t("settings.dataRoot.label")}</h2>
         <p className="page-copy">
           {t("settings.dataRoot.storageDescription")}
@@ -374,17 +399,15 @@ function AboutAppCard() {
   }, [appInfo, t]);
 
   return (
-    <div className="data-root-card settings-about-card">
-      <div>
-        <p className="eyebrow">ABOUT</p>
-        <h2>{t("settings.about.label")}</h2>
-        <p className="page-copy">
-          {t("settings.about.description")}
-        </p>
-      </div>
-      <div className="settings-about-meta">
-        <span>{t("settings.about.version")}</span>
-        <strong>{version}</strong>
+    <div className="settings-item-card settings-about-card" aria-label={t("settings.about.label")}>
+      <div className="settings-item-row settings-about-row">
+        <div className="settings-about-copy">
+          <strong>{t("settings.about.version")}</strong>
+          <span>{t("settings.about.versionDescription")}</span>
+        </div>
+        <div className="settings-about-version" aria-live="polite">
+          {version}
+        </div>
       </div>
     </div>
   );
@@ -392,7 +415,7 @@ function AboutAppCard() {
 
 export function SettingsPage({
   themeMode,
-  onToggleTheme,
+  onThemeModeChange,
   isMac,
   isWindows,
   sidebarNavOrder,
@@ -400,11 +423,11 @@ export function SettingsPage({
   onSidebarNavOrderChange,
   customSidebarItems,
   onCustomSidebarItemsChange,
-  onRefreshCustomSidebarItems,
   onAssistantSettingsChange
 }: SettingsPageProps) {
   const { locale, setLocale, t } = useI18n();
   const location = useLocation();
+  const { sectionId: sectionIdParam } = useParams();
   const currentRoute = `${location.pathname}${location.search}`;
   const noticeIdRef = useRef(0);
   const [notice, setNotice] = useState<SettingsNotice | null>(null);
@@ -442,37 +465,20 @@ export function SettingsPage({
   const desktopPetSupported = isMac || isWindows;
   const contentRef = useRef<HTMLDivElement>(null);
   const sectionDefinitions = useMemo(
-    () =>
-      createSettingsSectionDefinitions({
-        isWindows,
-        desktopPetSupported
-      }).map((definition) => {
-        const localized: Record<SettingsSectionId, { label: string; description: string }> = {
-          appearance: { label: t("settings.appearance.label"), description: t("settings.appearance.description") },
-          navigation: { label: t("settings.navigation.label"), description: t("settings.navigation.description") },
-          quickAssistant: { label: t("settings.quickAssistant.label"), description: t("settings.quickAssistant.description") },
-          desktopPet: { label: t("settings.desktopPet.label"), description: t("settings.desktopPet.description") },
-          embeddedWebsites: { label: t("settings.embeddedWebsites.label"), description: t("settings.embeddedWebsites.description") },
-          dataRoot: { label: t("settings.dataRoot.label"), description: t("settings.dataRoot.description") },
-          debug: { label: t("settings.debug.label"), description: t("settings.debug.description") },
-          memory: { label: t("settings.memory.label"), description: t("settings.memory.description") },
-          about: { label: t("settings.about.label"), description: t("settings.about.description") }
-        };
-        return { ...definition, ...localized[definition.id] };
-      }),
-    [desktopPetSupported, isWindows, t]
+    () => buildLocalizedSettingsSections({ isWindows, t }),
+    [isWindows, t]
   );
   const visibleSections = useMemo(
     () => getVisibleSettingsSections(sectionDefinitions),
     [sectionDefinitions]
   );
-  const [activeSection, setActiveSection] = useState<SettingsSectionId | null>(() =>
-    getDefaultSettingsSectionId(
-      createSettingsSectionDefinitions({
-        isWindows,
-        desktopPetSupported
-      })
-    )
+  const visibleSectionIds = useMemo(
+    () => visibleSections.map((section) => section.id),
+    [visibleSections]
+  );
+  const activeSection = resolveSettingsSectionId(
+    `/settings/${sectionIdParam ?? ""}`,
+    visibleSectionIds
   );
 
   function setReadErrorSections(sectionIds: SettingsSectionId[], message: string) {
@@ -490,6 +496,9 @@ export function SettingsPage({
   }
 
   function showSectionNotice(sectionId: SettingsSectionId, message: string, tone: NoticeTone) {
+    if (tone === "success") {
+      return;
+    }
     noticeIdRef.current += 1;
     setNotice({
       id: noticeIdRef.current,
@@ -519,41 +528,15 @@ export function SettingsPage({
     }
     try {
       await setLocale(nextLocale);
-      showSectionNotice("appearance", `${t("settings.language.current")}：${nextLocale}`, "success");
+      showSectionNotice("appearance", `${t("settings.language.current")}：${getLocaleLabel(nextLocale, t)}`, "success");
     } catch (reason) {
       showSectionNotice("appearance", reason instanceof Error ? reason.message : String(reason), "error");
     }
   }
 
   useEffect(() => {
-    const fallbackSectionId = getDefaultSettingsSectionId(sectionDefinitions);
-    if (!fallbackSectionId) {
-      return;
-    }
-    setActiveSection((currentSectionId) =>
-      visibleSections.some((definition) => definition.id === currentSectionId)
-        ? currentSectionId
-        : fallbackSectionId
-    );
-  }, [sectionDefinitions, visibleSections]);
-
-  useEffect(() => {
-    setNotice((current) => (current?.tone === "success" ? null : current));
+    contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [activeSection]);
-
-  useEffect(() => {
-    if (!notice || notice.tone !== "success") {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setNotice((current) => (current?.id === notice.id ? null : current));
-    }, SETTINGS_NOTICE_AUTO_CLOSE_MS);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [notice]);
 
   useEffect(() => {
     let cancelled = false;
@@ -628,19 +611,19 @@ export function SettingsPage({
       .then((state) => {
         if (!cancelled) {
           setDesktopPetState(state);
-          setReadErrorSections(["desktopPet"], "");
+          setReadErrorSections(["appearance"], "");
         }
       })
       .catch((reason) => {
         if (!cancelled) {
-          setReadErrorSections(["desktopPet"], reason instanceof Error ? reason.message : String(reason));
+          setReadErrorSections(["appearance"], reason instanceof Error ? reason.message : String(reason));
         }
       });
 
     const dispose = window.electronAPI.desktopPet.onStateChanged((state) => {
       if (!cancelled) {
         setDesktopPetState(state);
-        setReadErrorSections(["desktopPet"], "");
+        setReadErrorSections(["appearance"], "");
       }
     });
 
@@ -663,19 +646,6 @@ export function SettingsPage({
     ? desktopPetState.appearanceOptions
     : [...DESKTOP_PET_APPEARANCE_OPTIONS];
   const currentDesktopPetAppearanceId = desktopPetState?.appearanceId || DEFAULT_DESKTOP_PET_APPEARANCE_ID;
-  const defaultDesktopPetAppearance = DESKTOP_PET_APPEARANCE_OPTIONS.find((appearance) => appearance.id === DEFAULT_DESKTOP_PET_APPEARANCE_ID) ??
-    DESKTOP_PET_APPEARANCE_OPTIONS[0];
-  const currentDesktopPetAppearance = desktopPetAppearanceOptions.find(
-    (appearance) => appearance.id === currentDesktopPetAppearanceId
-  );
-  const currentDesktopPetAppearanceLabel = getDesktopPetAppearanceLabel(
-    currentDesktopPetAppearance?.id ?? defaultDesktopPetAppearance.id,
-    currentDesktopPetAppearance?.displayName ?? defaultDesktopPetAppearance.displayName,
-    t
-  );
-  const currentDesktopPetAgentOption = desktopPetAgentOptions.find(
-    (agent) => agent.agentKey === currentDesktopPetBoundAgentKey
-  );
 
   function isKnownAssistantAgent(agentKey: string) {
     return assistantAgentOptions.some((agent) => agent.agentKey === agentKey);
@@ -1213,10 +1183,6 @@ export function SettingsPage({
 
   async function handleAddCustomSidebarItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (editingCustomSidebarId) {
-      await handleUpdateCustomSidebarItem(editingCustomSidebarId);
-      return;
-    }
 
     setCustomSidebarPending(true);
     try {
@@ -1299,15 +1265,6 @@ export function SettingsPage({
       showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setCustomSidebarAgentPendingId("");
-    }
-  }
-
-  async function handleReloadCustomSidebarItems() {
-    try {
-      const result = await onRefreshCustomSidebarItems();
-      showSectionResultNotice("embeddedWebsites", result);
-    } catch (reason) {
-      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
     }
   }
 
@@ -1419,10 +1376,10 @@ export function SettingsPage({
         enabled: !desktopPetState?.enabled
       });
       setDesktopPetState(nextState);
-      setReadErrorSections(["desktopPet"], "");
-      showSectionNotice("desktopPet", nextState.enabled ? t("settings.desktopPet.noticeEnabled") : t("settings.desktopPet.noticeDisabled"), "success");
+      setReadErrorSections(["appearance"], "");
+      showSectionNotice("appearance", nextState.enabled ? t("settings.desktopPet.noticeEnabled") : t("settings.desktopPet.noticeDisabled"), "success");
     } catch (reason) {
-      showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("appearance", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopPetPending(false);
     }
@@ -1439,7 +1396,7 @@ export function SettingsPage({
         appearanceId
       });
       setDesktopPetState(nextState);
-      setReadErrorSections(["desktopPet"], "");
+      setReadErrorSections(["appearance"], "");
       if (nextState.appearanceId === appearanceId) {
         showSectionNotice(
           "desktopPet",
@@ -1449,10 +1406,10 @@ export function SettingsPage({
           "success"
         );
       } else {
-        showSectionNotice("desktopPet", t("settings.desktopPet.noticeAppearanceFailed"), "error");
+        showSectionNotice("appearance", t("settings.desktopPet.noticeAppearanceFailed"), "error");
       }
     } catch (reason) {
-      showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("appearance", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopPetAppearancePending("");
     }
@@ -1473,11 +1430,11 @@ export function SettingsPage({
       const nextAgent = nextState.agentOptions.find((agent) => agent.agentKey === nextState.boundAgentKey);
       setDesktopPetState(nextState);
       setDesktopPetBoundAgentKey(nextState.boundAgentKey);
-      setReadErrorSections(["desktopPet"], "");
-      showSectionNotice("desktopPet", t("settings.desktopPet.noticeBoundAgentChanged", { name: nextAgent?.displayName ?? nextState.boundAgentKey }), "success");
+      setReadErrorSections(["appearance"], "");
+      showSectionNotice("appearance", t("settings.desktopPet.noticeBoundAgentChanged", { name: nextAgent?.displayName ?? nextState.boundAgentKey }), "success");
     } catch (reason) {
       setDesktopPetBoundAgentKey(previousBoundAgentKey);
-      showSectionNotice("desktopPet", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("appearance", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopPetBoundAgentPending(false);
     }
@@ -1577,94 +1534,138 @@ export function SettingsPage({
   const activeSectionDefinition = activeSection
     ? visibleSections.find((definition) => definition.id === activeSection) ?? null
     : null;
-  const activeSectionWidthClass = activeSectionDefinition?.layout === "wide" ? "workspace-wide" : "workspace-measure";
   const activeSectionReadError = activeSection ? sectionReadErrors[activeSection] ?? "" : "";
-  const activeSectionNotice = notice && notice.sectionId === activeSection ? notice : null;
-  const editingCustomSidebarItem = editingCustomSidebarId
-    ? customSidebarItems.find((item) => item.id === editingCustomSidebarId) ?? null
-    : null;
+  const activeSectionNotice = notice && notice.sectionId === activeSection && notice.tone === "error" ? notice : null;
 
   function renderActiveSection() {
     switch (activeSection) {
       case "appearance":
         return (
           <>
-            <div className="data-root-card settings-theme-card">
-              <div>
-                <p className="eyebrow">APPEARANCE</p>
-                <h2>{t("settings.appearance.theme")}</h2>
-                <p className="page-copy">
-                  {t("settings.appearance.description")} <strong>{themeMode === "light" ? t("settings.appearance.light") : t("settings.appearance.dark")}</strong>
-                </p>
+            <div className="settings-appearance-panel">
+              <div className="settings-appearance-row">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.appearance.theme")}</strong>
+                  <span>{t("settings.appearance.themeDescription")}</span>
+                </div>
+                <div className="settings-theme-segment" role="radiogroup" aria-label={t("settings.appearance.theme")}>
+                  {THEME_PREFERENCE_OPTIONS.map((option) => (
+                    <button
+                      type="button"
+                      key={option}
+                      className={themeMode === option ? "settings-theme-segment-option is-active" : "settings-theme-segment-option"}
+                      role="radio"
+                      aria-checked={themeMode === option}
+                      onClick={() => {
+                        if (themeMode !== option) {
+                          onThemeModeChange(option);
+                        }
+                      }}
+                    >
+                      <span className="settings-theme-segment-icon" aria-hidden="true">
+                        <ThemePreferenceIcon themeMode={option} />
+                      </span>
+                      <span>{getThemePreferenceLabel(option, t)}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="settings-theme-actions">
-                <button
-                  type="button"
-                  className={themeMode === "light" ? "settings-theme-option is-active" : "settings-theme-option"}
-                  onClick={() => {
-                    if (themeMode !== "light") {
-                      onToggleTheme();
-                    }
-                  }}
-                >
-                  <span className="settings-theme-preview settings-theme-preview-light" aria-hidden="true">
-                    <span />
-                    <span />
-                  </span>
-                  <span className="settings-theme-copy">
-                    <strong>{t("settings.appearance.light")}</strong>
-                    <span>{t("settings.appearance.lightDescription")}</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className={themeMode === "dark" ? "settings-theme-option is-active" : "settings-theme-option"}
-                  onClick={() => {
-                    if (themeMode !== "dark") {
-                      onToggleTheme();
-                    }
-                  }}
-                >
-                  <span className="settings-theme-preview settings-theme-preview-dark" aria-hidden="true">
-                    <span />
-                    <span />
-                  </span>
-                  <span className="settings-theme-copy">
-                    <strong>{t("settings.appearance.dark")}</strong>
-                    <span>{t("settings.appearance.darkDescription")}</span>
-                  </span>
-                </button>
-              </div>
-            </div>
-            <div className="data-root-card settings-theme-card">
-              <div>
-                <p className="eyebrow">LANGUAGE</p>
-                <h2>{t("settings.language.label")}</h2>
-                <p className="page-copy">{t("settings.language.description")}</p>
-              </div>
-              <div className="settings-theme-actions">
-                <button
-                  type="button"
-                  className={locale === "zh-CN" ? "settings-theme-option is-active" : "settings-theme-option"}
-                  onClick={() => void handleLocaleChange("zh-CN")}
-                >
-                  <span className="settings-theme-copy">
-                    <strong>{t("settings.language.zhCN")}</strong>
-                    <span>zh-CN</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className={locale === "en-US" ? "settings-theme-option is-active" : "settings-theme-option"}
-                  onClick={() => void handleLocaleChange("en-US")}
-                >
-                  <span className="settings-theme-copy">
-                    <strong>{t("settings.language.enUS")}</strong>
-                    <span>en-US</span>
-                  </span>
-                </button>
+              <div className="settings-appearance-row">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.language.label")}</strong>
+                  <span>{t("settings.language.uiDescription")}</span>
+                </div>
+                <label className="settings-language-select-wrap">
+                  <select
+                    className="settings-language-select"
+                    value={locale}
+                    aria-label={t("settings.language.label")}
+                    onChange={(event) => void handleLocaleChange(event.target.value as SupportedLocale)}
+                  >
+                    <option value="zh-CN">{t("settings.language.zhCN")}</option>
+                    <option value="en-US">{t("settings.language.enUS")}</option>
+                  </select>
+                </label>
               </div>
             </div>
+            {desktopPetSupported ? (
+              <div className="settings-item-card settings-pet-card settings-appearance-pet-card">
+                <div className="settings-item-header settings-pet-header">
+                  <div className="settings-appearance-row-copy">
+                    <strong>{t("settings.desktopPet.label")}</strong>
+                    <span>{t("settings.desktopPet.description")}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className={desktopPetState?.enabled ? "settings-switch is-on" : "settings-switch"}
+                    role="switch"
+                    aria-checked={Boolean(desktopPetState?.enabled)}
+                    aria-label={t("settings.desktopPet.label")}
+                    disabled={desktopPetPending}
+                    onClick={() => void handleToggleDesktopPet()}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list" aria-label={t("settings.desktopPet.appearance")}>
+                  {desktopPetAppearanceOptions.map((appearance) => {
+                    const selected = appearance.id === currentDesktopPetAppearanceId;
+                    const pending = desktopPetAppearancePending === appearance.id;
+                    const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
+                    const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
+                    return (
+                      <div className="settings-pet-appearance-row desktop-pet-appearance-row" key={appearance.id}>
+                        <span className="desktop-pet-appearance-preview" aria-hidden="true">
+                          <img src={appearance.previewAssetPath} alt="" />
+                        </span>
+                        <span className="desktop-pet-appearance-copy">
+                          <strong>{appearanceLabel}</strong>
+                          <small>{appearanceDescription}</small>
+                        </span>
+                        <button
+                          type="button"
+                          className={selected ? "desktop-pet-appearance-select is-selected" : "desktop-pet-appearance-select"}
+                          aria-pressed={selected}
+                          disabled={selected || Boolean(desktopPetAppearancePending)}
+                          onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
+                        >
+                          {pending ? t("settings.desktopPet.switching") : selected ? t("settings.desktopPet.selected") : t("settings.desktopPet.select")}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="settings-item-form desktop-pet-agent-form">
+                  <label className="desktop-pet-agent-field">
+                    <span>{t("settings.desktopPet.selectAgent")}</span>
+                    <span className="desktop-pet-agent-select-wrap">
+                      <select
+                        value={desktopPetAgentOptions.some((agent) => agent.agentKey === desktopPetBoundAgentKey) ? desktopPetBoundAgentKey : ""}
+                        onChange={(event) => {
+                          const nextBoundAgentKey = event.target.value;
+                          setDesktopPetBoundAgentKey(nextBoundAgentKey);
+                          void handleSelectDesktopPetBoundAgentKey(nextBoundAgentKey);
+                        }}
+                        disabled={!desktopPetEnabled || desktopPetAgentOptions.length === 0 || desktopPetBoundAgentPending}
+                      >
+                        <option value="">
+                          {!desktopPetEnabled
+                            ? t("settings.desktopPet.loadAgentsAfterEnabled")
+                            : desktopPetAgentOptions.length === 0
+                              ? t("settings.navigation.agentsLoading")
+                              : t("settings.navigation.selectAgent")}
+                        </option>
+                        {desktopPetAgentOptions.map((agent) => (
+                          <option value={agent.agentKey} key={agent.agentKey}>
+                            {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            ) : null}
           </>
         );
       case "navigation": {
@@ -1687,9 +1688,8 @@ export function SettingsPage({
           const showUnavailableAgentOption = Boolean(selectedCopilotAgentKey && !selectedAgentAvailable);
           const assistantSelectValue = fixedAssistantLabel ? "__fixed__" : selectedCopilotAgentKey;
           return (
-            <div className="navigation-order-row navigation-order-row-fixed" role="listitem" key={tool.id}>
+            <div className="navigation-order-row navigation-order-row-fixed settings-item-row" role="listitem" key={tool.id}>
               <div className="navigation-order-title-cell navigation-order-title-cell-fixed" title={t("settings.navigation.fixedEntry")}>
-                <span className="navigation-order-fixed-dot" aria-hidden="true" />
                 <span className="navigation-order-title">{toolLabel}</span>
               </div>
               <label className="navigation-order-assistant-field">
@@ -1727,55 +1727,41 @@ export function SettingsPage({
             </div>
           );
         }
-        return (
-          <div className="data-root-card navigation-settings-card" aria-label={t("settings.navigation.panelAria")}>
-            <div className="navigation-settings-panel">
-              <div className="navigation-assistant-default" aria-label={t("settings.navigation.defaultAssistant")}>
-                <div className="page-copilot-row-main">
+          return (
+            <div className="settings-item-card navigation-settings-card" aria-label={t("settings.navigation.panelAria")}>
+              <div className="settings-item-section-head custom-sidebar-list-head navigation-assistant-default-head">
+                <div>
                   <strong>{t("settings.navigation.defaultAssistant")}</strong>
                   <span>{t("settings.navigation.defaultAssistantDescription")}</span>
                 </div>
-                <label className="desktop-pet-agent-field navigation-assistant-default-field">
-                  <span className="desktop-pet-agent-select-wrap">
-                    <select
-                      value={assistantAgentOptions.some((agent) => agent.agentKey === desktopHelperAgentKey) ? desktopHelperAgentKey : ""}
-                      onChange={(event) => void handleSelectDesktopHelperAgentKey(event.target.value)}
-                      disabled={assistantAgentOptions.length === 0 || desktopHelperAgentPending}
-                      aria-label={t("settings.navigation.defaultAssistant")}
-                    >
-                      <option value="">
-                        {assistantAgentOptions.length === 0 ? t("settings.navigation.agentsLoading") : t("settings.navigation.selectAgent")}
-                      </option>
-                      {assistantAgentOptions.map((agent) => (
-                        <option value={agent.agentKey} key={agent.agentKey}>
-                          {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
-                  <span className="desktop-pet-agent-note">
-                    {desktopHelperAgentPending
-                      ? t("settings.navigation.saving")
-                      : t("settings.navigation.currentDefault", {
-                          name: assistantAgentOptions.find((agent) => agent.agentKey === (assistantSettings?.desktopHelperAgentKey || desktopHelperAgentKey))?.displayName ||
-                            assistantSettings?.desktopHelperAgentKey ||
-                            desktopHelperAgentKey
-                        })}
-                  </span>
-                </label>
               </div>
-              <div className="navigation-order-section">
-                <div className="custom-sidebar-list-head">
+              <div className="settings-item-form navigation-assistant-default">
+                <span className="desktop-pet-agent-select-wrap navigation-assistant-default-select">
+                  <select
+                    value={assistantAgentOptions.some((agent) => agent.agentKey === desktopHelperAgentKey) ? desktopHelperAgentKey : ""}
+                    onChange={(event) => void handleSelectDesktopHelperAgentKey(event.target.value)}
+                    disabled={assistantAgentOptions.length === 0 || desktopHelperAgentPending}
+                    aria-label={t("settings.navigation.defaultAssistant")}
+                  >
+                    <option value="">
+                      {assistantAgentOptions.length === 0 ? t("settings.navigation.agentsLoading") : t("settings.navigation.selectAgent")}
+                    </option>
+                    {assistantAgentOptions.map((agent) => (
+                      <option value={agent.agentKey} key={agent.agentKey}>
+                        {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+              </div>
+              <div className="settings-item-section-head custom-sidebar-list-head">
+                <div>
                   <strong>{t("settings.navigation.fixedMain")}</strong>
                   <span>{t("settings.navigation.fixedMainDescription")}</span>
                 </div>
-                <div className="navigation-order-grid-head" aria-hidden="true">
-                  <span>{t("settings.navigation.pageColumn")}</span>
-                  <span>{t("settings.navigation.sideAssistantColumn")}</span>
-                  <span>{t("settings.navigation.statusColumn")}</span>
-                </div>
-                <div className="navigation-order-list" role="list" aria-label={t("settings.navigation.fixedMainOrder")}>
-                  {sidebarNavOrder.map((itemKey, index) => {
+              </div>
+              <div className="settings-item-list navigation-order-list" role="list" aria-label={t("settings.navigation.fixedMainOrder")}>
+                {sidebarNavOrder.map((itemKey, index) => {
                     const itemLabel = sidebarNavOrderLabels.get(itemKey) ?? itemKey;
                     const copilotPageKey = getCopilotPageKeyForSidebarNavOrderItem(itemKey);
                     const copilotPreference = copilotPageKey
@@ -1798,7 +1784,7 @@ export function SettingsPage({
                     );
                     return (
                       <div
-                        className="navigation-order-row"
+                        className="settings-item-row navigation-order-row"
                         data-sidebar-nav-order-key={itemKey}
                         key={itemKey}
                         role="listitem"
@@ -1846,265 +1832,209 @@ export function SettingsPage({
                       </div>
                     );
                   })}
-                </div>
-                <div className="custom-sidebar-list-head navigation-fixed-tools-head">
+              </div>
+              <div className="settings-item-section-head custom-sidebar-list-head navigation-fixed-tools-head">
+                <div>
                   <strong>{t("settings.navigation.fixedTools")}</strong>
                   <span>{t("settings.navigation.fixedToolsDescription")}</span>
                 </div>
-                <div className="navigation-order-list navigation-fixed-tool-list" role="list" aria-label={t("settings.navigation.fixedTools")}>
-                  {fixedNavigationTools.map((tool) => renderFixedNavigationToolRow(tool))}
-                </div>
+              </div>
+              <div className="settings-item-list navigation-order-list navigation-fixed-tool-list" role="list" aria-label={t("settings.navigation.fixedTools")}>
+                {fixedNavigationTools.map((tool) => renderFixedNavigationToolRow(tool))}
               </div>
             </div>
-          </div>
-        );
+          );
       }
       case "quickAssistant":
         return (
-          <div className="data-root-card settings-switch-card desktop-helper-settings-card">
-            <div>
-              <div className="quick-assistant-settings-panel" aria-label={t("settings.quickAssistant.panelAria")}>
-                <div className="page-copilot-row-main">
-                  <strong>{t("settings.quickAssistant.label")}</strong>
-                  <span>
-                    {quickAssistantEnabled
-                      ? t("settings.quickAssistant.statusEnabled", { name: getAgentLabel(quickAssistantAgentKey) })
-                      : t("settings.quickAssistant.statusDisabled")}
-                  </span>
-                  {quickAssistantEnabled && !isKnownAssistantAgent(quickAssistantAgentKey) ? (
-                    <em>{t("settings.quickAssistant.defaultUnavailable")}</em>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className={quickAssistantEnabled ? "settings-switch is-on" : "settings-switch"}
-                  role="switch"
-                  aria-checked={quickAssistantEnabled}
-                  aria-label={t("settings.quickAssistant.label")}
-                  disabled={quickAssistantPending}
-                  onClick={() => void handleToggleQuickAssistantEnabled()}
-                >
-                  <span aria-hidden="true" />
-                </button>
-                <label className="desktop-pet-agent-field">
-                  <span>{t("settings.quickAssistant.defaultAgent")}</span>
-                  <span className="desktop-pet-agent-select-wrap">
-                    <select
-                      value={isKnownAssistantAgent(quickAssistantAgentKey) ? quickAssistantAgentKey : ""}
-                      onChange={(event) => void handleSelectQuickAssistantAgentKey(event.target.value)}
-                      disabled={!quickAssistantEnabled || assistantAgentOptions.length === 0 || quickAssistantAgentPending}
-                      aria-label={t("settings.quickAssistant.defaultAgent")}
-                    >
-                      <option value="">
-                        {assistantAgentOptions.length === 0
-                          ? t("settings.navigation.agentsLoading")
-                          : isKnownAssistantAgent(quickAssistantAgentKey)
-                            ? t("settings.navigation.selectAgent")
-                            : t("settings.navigation.unavailableAgent", { agentKey: quickAssistantAgentKey })}
-                      </option>
-                      {assistantAgentOptions.map((agent) => (
-                        <option value={agent.agentKey} key={agent.agentKey}>
-                          {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
-                </label>
+          <div className="settings-item-card desktop-helper-settings-card" aria-label={t("settings.quickAssistant.panelAria")}>
+            <div className="settings-item-header">
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.quickAssistant.label")}</strong>
+                <span>
+                  {quickAssistantEnabled
+                    ? t("settings.quickAssistant.statusEnabled", { name: getAgentLabel(quickAssistantAgentKey) })
+                    : t("settings.quickAssistant.statusDisabled")}
+                </span>
+                {quickAssistantEnabled && !isKnownAssistantAgent(quickAssistantAgentKey) ? (
+                  <em>{t("settings.quickAssistant.defaultUnavailable")}</em>
+                ) : null}
               </div>
+              <button
+                type="button"
+                className={quickAssistantEnabled ? "settings-switch is-on" : "settings-switch"}
+                role="switch"
+                aria-checked={quickAssistantEnabled}
+                aria-label={t("settings.quickAssistant.label")}
+                disabled={quickAssistantPending}
+                onClick={() => void handleToggleQuickAssistantEnabled()}
+              >
+                <span aria-hidden="true" />
+              </button>
+            </div>
+            <div className="settings-item-form desktop-pet-agent-form">
+              <label className="desktop-pet-agent-field">
+                <span>{t("settings.quickAssistant.defaultAgent")}</span>
+                <span className="desktop-pet-agent-select-wrap">
+                  <select
+                    value={isKnownAssistantAgent(quickAssistantAgentKey) ? quickAssistantAgentKey : ""}
+                    onChange={(event) => void handleSelectQuickAssistantAgentKey(event.target.value)}
+                    disabled={!quickAssistantEnabled || assistantAgentOptions.length === 0 || quickAssistantAgentPending}
+                    aria-label={t("settings.quickAssistant.defaultAgent")}
+                  >
+                    <option value="">
+                      {assistantAgentOptions.length === 0
+                        ? t("settings.navigation.agentsLoading")
+                        : isKnownAssistantAgent(quickAssistantAgentKey)
+                          ? t("settings.navigation.selectAgent")
+                          : t("settings.navigation.unavailableAgent", { agentKey: quickAssistantAgentKey })}
+                    </option>
+                    {assistantAgentOptions.map((agent) => (
+                      <option value={agent.agentKey} key={agent.agentKey}>
+                        {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+              </label>
             </div>
           </div>
         );
-      case "desktopPet":
-        return desktopPetSupported ? (
-          <div className="data-root-card settings-switch-card desktop-pet-settings-card">
-            <div>
-              <p className="settings-inline-note">
-                {t("settings.desktopPet.currentStatus", {
-                  status: desktopPetState?.enabled ? t("settings.desktopPet.enabled") : t("settings.desktopPet.disabled"),
-                  visible: desktopPetState?.enabled && desktopPetState.visible ? t("settings.desktopPet.visibleSuffix") : ""
-                })}
-              </p>
-              <div className="desktop-pet-appearance-section" aria-label={t("settings.desktopPet.appearance")}>
-                <div className="desktop-pet-appearance-heading">
-                  <span>{t("settings.desktopPet.appearance")}</span>
-                  <small>{t("settings.desktopPet.currentAppearance", { name: currentDesktopPetAppearanceLabel })}</small>
-                </div>
-                <div className="desktop-pet-appearance-grid">
-                  {desktopPetAppearanceOptions.map((appearance) => {
-                    const selected = appearance.id === currentDesktopPetAppearanceId;
-                    const pending = desktopPetAppearancePending === appearance.id;
-                    const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
-                    const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
-                    return (
-                      <button
-                        type="button"
-                        className={selected ? "desktop-pet-appearance-card is-selected" : "desktop-pet-appearance-card"}
-                        key={appearance.id}
-                        aria-pressed={selected}
-                        disabled={Boolean(desktopPetAppearancePending) && !selected}
-                        onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
-                      >
-                        <span className="desktop-pet-appearance-preview" aria-hidden="true">
-                          <img src={appearance.previewAssetPath} alt="" />
-                        </span>
-                        <span className="desktop-pet-appearance-copy">
-                          <strong>{appearanceLabel}</strong>
-                          <small>{pending ? t("settings.desktopPet.switching") : appearanceDescription}</small>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="desktop-pet-agent-form">
-                <label className="desktop-pet-agent-field">
-                  <span>{t("settings.desktopPet.selectAgent")}</span>
-                  <span className="desktop-pet-agent-select-wrap">
-                    <select
-                      value={desktopPetAgentOptions.some((agent) => agent.agentKey === desktopPetBoundAgentKey) ? desktopPetBoundAgentKey : ""}
-                      onChange={(event) => {
-                        const nextBoundAgentKey = event.target.value;
-                        setDesktopPetBoundAgentKey(nextBoundAgentKey);
-                        void handleSelectDesktopPetBoundAgentKey(nextBoundAgentKey);
-                      }}
-                      disabled={!desktopPetEnabled || desktopPetAgentOptions.length === 0 || desktopPetBoundAgentPending}
-                    >
-                      <option value="">
-                        {!desktopPetEnabled
-                          ? t("settings.desktopPet.loadAgentsAfterEnabled")
-                          : desktopPetAgentOptions.length === 0
-                            ? t("settings.navigation.agentsLoading")
-                            : t("settings.navigation.selectAgent")}
-                      </option>
-                      {desktopPetAgentOptions.map((agent) => (
-                        <option value={agent.agentKey} key={agent.agentKey}>
-                          {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
-                  <span className="desktop-pet-agent-note">
-                    {desktopPetBoundAgentPending
-                      ? t("settings.desktopPet.binding")
-                      : t("settings.desktopPet.currentBinding", {
-                          name: currentDesktopPetAgentOption?.displayName
-                            ? `${currentDesktopPetAgentOption.displayName}${currentDesktopPetAgentOption.role ? ` · ${currentDesktopPetAgentOption.role}` : ""}`
-                            : currentDesktopPetBoundAgentKey
-                        })}
-                  </span>
-                </label>
-              </div>
-            </div>
-            <button
-              type="button"
-              className={desktopPetState?.enabled ? "settings-switch is-on" : "settings-switch"}
-              role="switch"
-              aria-checked={Boolean(desktopPetState?.enabled)}
-              aria-label={t("settings.desktopPet.label")}
-              disabled={desktopPetPending}
-              onClick={() => void handleToggleDesktopPet()}
-            >
-              <span aria-hidden="true" />
-            </button>
-          </div>
-        ) : null;
       case "embeddedWebsites":
         return (
-          <div className="data-root-card custom-sidebar-card">
-            <div className="custom-sidebar-panel">
-              <form className="custom-sidebar-form" onSubmit={(event) => void handleAddCustomSidebarItem(event)}>
-                <label>
-                  <span>{t("settings.embeddedWebsites.displayName")}</span>
-                  <input
-                    value={customSidebarLabel}
-                    onChange={(event) => setCustomSidebarLabel(event.target.value)}
-                    placeholder={t("settings.embeddedWebsites.displayNamePlaceholder")}
-                    maxLength={24}
-                  />
-                </label>
-                <label>
-                  <span>{t("settings.embeddedWebsites.url")}</span>
-                  <input
-                    value={customSidebarUrl}
-                    onChange={(event) => setCustomSidebarUrl(event.target.value)}
-                    placeholder={t("settings.embeddedWebsites.urlPlaceholder")}
-                    required
-                  />
-                </label>
-                <div className="custom-sidebar-submit-wrap">
-                  <button type="submit" className="text-button custom-sidebar-submit" disabled={customSidebarPending}>
-                    {customSidebarPending
-                      ? editingCustomSidebarId
-                        ? t("settings.embeddedWebsites.updating")
-                        : t("settings.embeddedWebsites.adding")
-                      : editingCustomSidebarId
-                        ? t("settings.embeddedWebsites.save")
-                        : t("settings.embeddedWebsites.add")}
-                  </button>
-                  {editingCustomSidebarId ? (
-                    <button
-                      type="button"
-                      className="text-button custom-sidebar-cancel"
-                      onClick={handleCancelEditCustomSidebarItem}
-                      disabled={customSidebarPending}
-                    >
-                      {t("settings.embeddedWebsites.cancel")}
-                    </button>
-                  ) : null}
+          <div className="settings-item-card custom-sidebar-card">
+            {!editingCustomSidebarId ? (
+              <>
+                <div className="settings-item-section-head custom-sidebar-list-head custom-sidebar-add-head">
+                  <div>
+                    <strong>{t("settings.embeddedWebsites.addTitle")}</strong>
+                    <span>{t("settings.embeddedWebsites.addDescription")}</span>
+                  </div>
                 </div>
-              </form>
-              {editingCustomSidebarItem ? (
-                <div className="custom-sidebar-editing-note">
-                  {t("settings.embeddedWebsites.editing", { label: editingCustomSidebarItem.label })}
+                <div className="settings-item-form custom-sidebar-add-form">
+                  <form className="custom-sidebar-form" onSubmit={(event) => void handleAddCustomSidebarItem(event)}>
+                    <label>
+                      <span>{t("settings.embeddedWebsites.displayName")}</span>
+                      <input
+                        value={customSidebarLabel}
+                        onChange={(event) => setCustomSidebarLabel(event.target.value)}
+                        placeholder={t("settings.embeddedWebsites.displayNamePlaceholder")}
+                        maxLength={24}
+                      />
+                    </label>
+                    <label>
+                      <span>{t("settings.embeddedWebsites.url")}</span>
+                      <input
+                        value={customSidebarUrl}
+                        onChange={(event) => setCustomSidebarUrl(event.target.value)}
+                        placeholder={t("settings.embeddedWebsites.urlPlaceholder")}
+                        required
+                      />
+                    </label>
+                    <div className="custom-sidebar-submit-wrap">
+                      <button type="submit" className="text-button custom-sidebar-submit" disabled={customSidebarPending}>
+                        {customSidebarPending ? t("settings.embeddedWebsites.adding") : t("settings.embeddedWebsites.add")}
+                      </button>
+                    </div>
+                  </form>
                 </div>
-              ) : null}
+              </>
+            ) : null}
 
-              <div className="custom-sidebar-list-head">
+            <div className="settings-item-section-head custom-sidebar-list-head custom-sidebar-added-head">
+              <div>
                 <strong>{t("settings.embeddedWebsites.addedTitle")}</strong>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <button
-                    type="button"
-                    className="text-button"
-                    onClick={() => void handleImportCustomSidebarItems()}
-                    disabled={customSidebarTransferPending !== ""}
-                  >
-                    {customSidebarTransferPending === "import" ? t("settings.embeddedWebsites.importing") : t("settings.embeddedWebsites.import")}
-                  </button>
-                  <button
-                    type="button"
-                    className="text-button"
-                    onClick={() => void handleExportCustomSidebarItems()}
-                    disabled={customSidebarTransferPending !== ""}
-                  >
-                    {customSidebarTransferPending === "export" ? t("settings.embeddedWebsites.exporting") : t("settings.embeddedWebsites.export")}
-                  </button>
-                  <button type="button" className="text-button" onClick={() => void handleReloadCustomSidebarItems()}>
-                    {t("settings.embeddedWebsites.refresh")}
-                  </button>
-                </div>
+                <span>{t("settings.embeddedWebsites.addedDescription")}</span>
               </div>
-              {customSidebarItems.length === 0 ? (
-                <div className="custom-sidebar-empty">{t("settings.embeddedWebsites.empty")}</div>
-              ) : (
-                <div className="custom-sidebar-list">
-                  {customSidebarItems.map((item) => {
-                    const itemAgentKey = item.agentKey || "";
-                    const itemAgentKnown = !itemAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === itemAgentKey);
-                    const itemAgentPending = customSidebarAgentPendingId === item.id;
-                    const itemEditing = editingCustomSidebarId === item.id;
-                    return (
-                      <div className={itemEditing ? "custom-sidebar-row is-editing" : "custom-sidebar-row"} key={item.id}>
-                        <div className="custom-sidebar-row-main">
-                          <div className="custom-sidebar-row-copy">
+              <div className="settings-item-section-actions">
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => void handleImportCustomSidebarItems()}
+                  disabled={customSidebarTransferPending !== "" || Boolean(editingCustomSidebarId)}
+                >
+                  {customSidebarTransferPending === "import" ? t("settings.embeddedWebsites.importing") : t("settings.embeddedWebsites.import")}
+                </button>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => void handleExportCustomSidebarItems()}
+                  disabled={customSidebarTransferPending !== "" || Boolean(editingCustomSidebarId)}
+                >
+                  {customSidebarTransferPending === "export" ? t("settings.embeddedWebsites.exporting") : t("settings.embeddedWebsites.export")}
+                </button>
+              </div>
+            </div>
+            {customSidebarItems.length === 0 ? (
+              <div className="settings-item-empty custom-sidebar-empty">{t("settings.embeddedWebsites.empty")}</div>
+            ) : (
+              <div className="settings-item-list custom-sidebar-list" role="list" aria-label={t("settings.embeddedWebsites.addedTitle")}>
+                {customSidebarItems.map((item) => {
+                  const itemAgentKey = item.agentKey || "";
+                  const itemAgentKnown = !itemAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === itemAgentKey);
+                  const itemAgentPending = customSidebarAgentPendingId === item.id;
+                  const itemEditing = editingCustomSidebarId === item.id;
+                  return (
+                    <div
+                      className={itemEditing ? "settings-item-row custom-sidebar-row is-editing" : "settings-item-row custom-sidebar-row"}
+                      key={item.id}
+                      role="listitem"
+                    >
+                      {itemEditing ? (
+                        <form
+                          className="custom-sidebar-row-edit-form"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void handleUpdateCustomSidebarItem(item.id);
+                          }}
+                        >
+                          <label>
+                            <span>{t("settings.embeddedWebsites.displayName")}</span>
+                            <input
+                              value={customSidebarLabel}
+                              onChange={(event) => setCustomSidebarLabel(event.target.value)}
+                              placeholder={t("settings.embeddedWebsites.displayNamePlaceholder")}
+                              maxLength={24}
+                              required
+                            />
+                          </label>
+                          <label>
+                            <span>{t("settings.embeddedWebsites.url")}</span>
+                            <input
+                              value={customSidebarUrl}
+                              onChange={(event) => setCustomSidebarUrl(event.target.value)}
+                              placeholder={t("settings.embeddedWebsites.urlPlaceholder")}
+                              required
+                            />
+                          </label>
+                          <div className="custom-sidebar-row-actions">
+                            <button type="submit" className="text-button" disabled={customSidebarPending}>
+                              {customSidebarPending ? t("settings.embeddedWebsites.updating") : t("settings.embeddedWebsites.save")}
+                            </button>
+                            <button
+                              type="button"
+                              className="text-button"
+                              onClick={handleCancelEditCustomSidebarItem}
+                              disabled={customSidebarPending}
+                            >
+                              {t("settings.embeddedWebsites.cancel")}
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <>
+                          <div className="custom-sidebar-site-cell">
                             <strong>{item.label}</strong>
-                            <span>{item.url}</span>
-                            <div className="custom-sidebar-row-agent">
-                              <span className="custom-sidebar-row-agent-label">{t("settings.embeddedWebsites.agentEnhancement")}</span>
+                            <span className="custom-sidebar-site-url" title={item.url}>
+                              {item.url}
+                            </span>
+                          </div>
+                          <label className="custom-sidebar-agent-field">
+                            <span className="desktop-pet-agent-select-wrap">
                               <select
-                                className="custom-sidebar-agent-select"
                                 value={itemAgentKey}
                                 onChange={(event) => void handleUpdateCustomSidebarAgent(item.id, event.target.value)}
-                                disabled={assistantAgentOptions.length === 0 || itemAgentPending}
+                                disabled={assistantAgentOptions.length === 0 || itemAgentPending || Boolean(editingCustomSidebarId)}
                                 aria-label={t("settings.embeddedWebsites.linkedAgentFor", { label: item.label })}
                               >
                                 <option value="">{t("settings.defaultAssistant")}</option>
@@ -2117,33 +2047,33 @@ export function SettingsPage({
                                   </option>
                                 ))}
                               </select>
-                            </div>
+                            </span>
+                          </label>
+                          <div className="custom-sidebar-row-actions">
+                            <button
+                              type="button"
+                              className="text-button"
+                              onClick={() => handleStartEditCustomSidebarItem(item)}
+                              disabled={customSidebarPending || deletingCustomSidebarId === item.id || Boolean(editingCustomSidebarId)}
+                            >
+                              {t("settings.embeddedWebsites.edit")}
+                            </button>
+                            <button
+                              type="button"
+                              className="danger-text-button"
+                              onClick={() => void handleDeleteCustomSidebarItem(item)}
+                              disabled={deletingCustomSidebarId === item.id || Boolean(editingCustomSidebarId)}
+                            >
+                              {deletingCustomSidebarId === item.id ? t("settings.embeddedWebsites.deleting") : t("settings.embeddedWebsites.delete")}
+                            </button>
                           </div>
-                        </div>
-                        <div className="custom-sidebar-row-actions">
-                          <button
-                            type="button"
-                            className="text-button"
-                            onClick={() => handleStartEditCustomSidebarItem(item)}
-                            disabled={customSidebarPending || deletingCustomSidebarId === item.id}
-                          >
-                            {itemEditing ? t("settings.embeddedWebsites.editingButton") : t("settings.embeddedWebsites.edit")}
-                          </button>
-                          <button
-                            type="button"
-                            className="danger-text-button"
-                            onClick={() => void handleDeleteCustomSidebarItem(item)}
-                            disabled={deletingCustomSidebarId === item.id}
-                          >
-                            {deletingCustomSidebarId === item.id ? t("settings.embeddedWebsites.deleting") : t("settings.embeddedWebsites.delete")}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       case "dataRoot":
@@ -2152,7 +2082,6 @@ export function SettingsPage({
         return (
           <div className="data-root-card">
             <div className="debug-settings-copy">
-              <p className="eyebrow">DEBUG</p>
               <h2>{t("settings.debug.label")}</h2>
               <p className="page-copy">{t("settings.debug.sectionDescription")}</p>
               <p className="settings-inline-note">{t("settings.debug.shortcut")}</p>
@@ -2170,7 +2099,6 @@ export function SettingsPage({
         return (
           <div className="data-root-card assistant-memory-card">
             <div className="custom-sidebar-copy assistant-memory-copy">
-              <p className="eyebrow">MEMORY</p>
               <h2>{t("settings.memory.label")}</h2>
               <p className="page-copy">
                 {t("settings.memory.sectionDescription")}
@@ -2198,69 +2126,72 @@ export function SettingsPage({
               </p>
             </div>
             <div className="assistant-memory-panel">
-              <div className="assistant-memory-switches">
-                <div className="assistant-memory-switch-row">
-                  <span className="assistant-memory-switch-copy">
-                    <span>{t("settings.memory.recall")}</span>
-                    <small>{memoryRecallLabel}</small>
-                  </span>
-                  <button
-                    type="button"
-                    className={memorySettings?.enabled ? "settings-switch is-on" : "settings-switch"}
-                    role="switch"
-                    aria-checked={Boolean(memorySettings?.enabled)}
-                    aria-label={t("settings.memory.recall")}
-                    disabled={!memorySettings || memoryPending === "settings"}
-                    onClick={() => void handleToggleMemoryEnabled()}
-                  >
-                    <span aria-hidden="true" />
-                  </button>
+              <div className="settings-item-card assistant-memory-settings-card">
+                <div className="settings-item-list assistant-memory-switches">
+                  <div className="settings-item-row assistant-memory-switch-row">
+                    <span className="assistant-memory-switch-copy">
+                      <span>{t("settings.memory.recall")}</span>
+                      <small>{memoryRecallLabel}</small>
+                    </span>
+                    <button
+                      type="button"
+                      className={memorySettings?.enabled ? "settings-switch is-on" : "settings-switch"}
+                      role="switch"
+                      aria-checked={Boolean(memorySettings?.enabled)}
+                      aria-label={t("settings.memory.recall")}
+                      disabled={!memorySettings || memoryPending === "settings"}
+                      onClick={() => void handleToggleMemoryEnabled()}
+                    >
+                      <span aria-hidden="true" />
+                    </button>
+                  </div>
+                  <div className="settings-item-row assistant-memory-switch-row">
+                    <span className="assistant-memory-switch-copy">
+                      <span>{t("settings.memory.autoLearn")}</span>
+                      <small>{memoryAutoLearnLabel}</small>
+                    </span>
+                    <button
+                      type="button"
+                      className={memorySettings?.autoLearn ? "settings-switch is-on" : "settings-switch"}
+                      role="switch"
+                      aria-checked={Boolean(memorySettings?.autoLearn)}
+                      aria-label={t("settings.memory.autoLearn")}
+                      disabled={!memorySettings || memoryPending === "settings"}
+                      onClick={() => void handleToggleMemoryAutoLearn()}
+                    >
+                      <span aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
-                <div className="assistant-memory-switch-row">
-                  <span className="assistant-memory-switch-copy">
-                    <span>{t("settings.memory.autoLearn")}</span>
-                    <small>{memoryAutoLearnLabel}</small>
-                  </span>
-                  <button
-                    type="button"
-                    className={memorySettings?.autoLearn ? "settings-switch is-on" : "settings-switch"}
-                    role="switch"
-                    aria-checked={Boolean(memorySettings?.autoLearn)}
-                    aria-label={t("settings.memory.autoLearn")}
-                    disabled={!memorySettings || memoryPending === "settings"}
-                    onClick={() => void handleToggleMemoryAutoLearn()}
-                  >
-                    <span aria-hidden="true" />
-                  </button>
+                <div className="settings-item-section-head custom-sidebar-list-head assistant-memory-section-head">
+                  <div>
+                    <strong>{t("settings.memory.recent")}</strong>
+                    <span>
+                      {memoryItems.length > 0
+                        ? t("settings.memory.recentCount", { shown: recentMemoryItems.length, total: memoryItems.length })
+                        : t("common.none")}
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <div className="custom-sidebar-list-head assistant-memory-section-head">
-                <strong>{t("settings.memory.recent")}</strong>
-                <span>
-                  {memoryItems.length > 0
-                    ? t("settings.memory.recentCount", { shown: recentMemoryItems.length, total: memoryItems.length })
-                    : t("common.none")}
-                </span>
-              </div>
-              {recentMemoryItems.length > 0 ? (
-                <div className="assistant-memory-list">
-                  {recentMemoryItems.map((item) => (
-                    <div className="assistant-memory-row" key={item.id}>
-                      <div className="assistant-memory-row-main">
-                        <div className="assistant-memory-row-title">
-                          <strong>{item.title}</strong>
-                          <span>{item.category} / {formatMemoryStatus(item.status, t)}</span>
+                {recentMemoryItems.length > 0 ? (
+                  <div className="settings-item-list assistant-memory-list">
+                    {recentMemoryItems.map((item) => (
+                      <div className="settings-item-row assistant-memory-row" key={item.id}>
+                        <div className="assistant-memory-row-main">
+                          <div className="assistant-memory-row-title">
+                            <strong>{item.title}</strong>
+                            <span>{item.category} / {formatMemoryStatus(item.status, t)}</span>
+                          </div>
+                          <p>{formatMemoryPreview(item.summary, 64)}</p>
                         </div>
-                        <p>{formatMemoryPreview(item.summary, 64)}</p>
+                        <time dateTime={item.updatedAt}>{formatMemoryTime(item.updatedAt, locale, t)}</time>
                       </div>
-                      <time dateTime={item.updatedAt}>{formatMemoryTime(item.updatedAt, locale, t)}</time>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="settings-inline-note">{t("settings.memory.recentEmpty")}</p>
-              )}
-              <div className="assistant-memory-storage-card">
+                    ))}
+                  </div>
+                ) : (
+                  <div className="settings-item-empty">{t("settings.memory.recentEmpty")}</div>
+                )}
+                <div className="settings-item-form assistant-memory-storage-card">
                 <div className="assistant-memory-storage-header">
                   <div>
                     <strong>{t("settings.memory.storage")}</strong>
@@ -2309,6 +2240,7 @@ export function SettingsPage({
                     </div>
                   </div>
                 </details>
+                </div>
               </div>
             </div>
           </div>
@@ -2322,68 +2254,35 @@ export function SettingsPage({
 
   return (
     <section
-      className="settings-page split-workspace-page"
+      className="settings-page settings-page-single"
       data-settings-section={activeSectionDefinition?.id ?? ""}
     >
-      <div className="settings-layout split-workspace-layout">
-        <aside className="settings-sidebar-card split-workspace-sidebar-card">
-          <div>
-            <h2 className="settings-sidebar-title">{t("settings.title")}</h2>
+      <div className="settings-content-panel" ref={contentRef}>
+        <div className="settings-content-shell">
+          <div className="settings-page-head">
+            <h1>{activeSectionDefinition?.label ?? t("settings.title")}</h1>
+            <p className="page-copy">{activeSectionDefinition?.description ?? t("settings.description")}</p>
           </div>
-          <nav className="settings-directory-nav" aria-label={t("settings.directory")}>
-            {visibleSections.map((section) => {
-              const isActive = section.id === activeSectionDefinition?.id;
-              return (
-                <button
-                  key={section.id}
-                  type="button"
-                  className={isActive ? "settings-directory-btn is-active" : "settings-directory-btn"}
-                  onClick={() => {
-                    if (section.id === activeSectionDefinition?.id) {
-                      return;
-                    }
-                    setActiveSection(section.id);
-                    contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-                  }}
-                >
-                  <span className="settings-directory-btn-label">{section.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </aside>
 
-        <div className="settings-main-card split-workspace-main-card" ref={contentRef}>
-          <div className={`settings-content-shell ${activeSectionWidthClass}`}>
-            <div className="settings-page-head">
-              <p className="eyebrow">SETTINGS</p>
-              <h1>{activeSectionDefinition?.label ?? t("settings.title")}</h1>
-              <p className="page-copy">{activeSectionDefinition?.description ?? t("settings.description")}</p>
-            </div>
-
-            <div className="settings-section-body">
-              {activeSectionNotice ? (
-                <div className="settings-section-feedback">
-                  <PageFeedbackStack
-                    items={[{
-                      id: activeSectionNotice.id,
-                      tone: activeSectionNotice.tone,
-                      message: activeSectionNotice.message,
-                      onDismiss:
-                        activeSectionNotice.tone === "error"
-                          ? () => dismissSectionNotice(activeSectionNotice.id)
-                          : undefined
-                    }]}
-                  />
-                </div>
-              ) : null}
-              {activeSectionReadError ? (
-                <div className="feedback-banner warning-banner settings-section-read-error" role="alert">
-                  {activeSectionReadError}
-                </div>
-              ) : null}
-              {renderActiveSection()}
-            </div>
+          <div className="settings-section-body">
+            {activeSectionNotice ? (
+              <div className="settings-section-feedback">
+                <PageFeedbackStack
+                  items={[{
+                    id: activeSectionNotice.id,
+                    tone: activeSectionNotice.tone,
+                    message: activeSectionNotice.message,
+                    onDismiss: () => dismissSectionNotice(activeSectionNotice.id)
+                  }]}
+                />
+              </div>
+            ) : null}
+            {activeSectionReadError ? (
+              <div className="feedback-banner warning-banner settings-section-read-error" role="alert">
+                {activeSectionReadError}
+              </div>
+            ) : null}
+            {renderActiveSection()}
           </div>
         </div>
       </div>
