@@ -793,27 +793,21 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(globalStyles, /\.sidebar-tool-menu\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(globalStyles, /\.sidebar-group-heading\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
-  assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?padding-inline:\s*var\(--sidebar-group-child-indent\)\s*8px;/);
-  assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?--sidebar-group-child-indent:\s*calc\(8px \+ 18px \+ 8px\);/);
-  assert.match(
-    globalStyles,
-    /\.sidebar-group-heading\.is-active \.sidebar-link-icon svg,[\s\S]*?filter:\s*none;/
-  );
+  assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*0;[\s\S]*?border-left:\s*0;/);
+  assert.match(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?color:\s*#1677ff;[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
+  assert.match(globalStyles, /\.sidebar-link:not\(\.sidebar-link-active\) \.sidebar-link-icon svg,[\s\S]*?filter:\s*grayscale\(1\) saturate\(0\);/);
   assert.match(globalStyles, /\.sidebar-link-active \.sidebar-link-icon svg,[\s\S]*?filter:\s*none;/);
-  assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?--sidebar-group-child-pill-padding:\s*6px;/);
-  assert.match(
-    globalStyles,
-    /\.app-sidebar:not\(\.is-collapsed\) \.sidebar-group-children \.sidebar-child-link[\s\S]*?margin-inline:\s*calc\(-1 \* var\(--sidebar-group-child-pill-padding\)\)\s*0;[\s\S]*?padding-inline:\s*var\(--sidebar-group-child-pill-padding\);/
-  );
-  assert.match(globalStyles, /\.sidebar-custom-child-link\s*\{[\s\S]*?padding-left:\s*0;/);
-  assert.doesNotMatch(globalStyles, /\.sidebar-custom-child-link\s*\{[\s\S]*?padding-left:\s*4px !important;/);
+  assert.match(globalStyles, /\.sidebar-custom-child-link\s*\{[\s\S]*?padding-left:\s*4px !important;/);
+  assert.doesNotMatch(globalStyles, /--sidebar-group-child-indent/);
+  assert.doesNotMatch(globalStyles, /--sidebar-group-child-pill-padding/);
+  assert.doesNotMatch(globalStyles, /\.app-sidebar:not\(\.is-collapsed\) \.sidebar-group-children \.sidebar-child-link/);
   assert.match(globalStyles, /\.assistant-worker-name\s*\{[\s\S]*?font-weight:\s*500;/);
   assert.match(globalStyles, /\.worker-panel-role\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?font-weight:\s*400;/);
   assert.match(globalStyles, /\.worker-panel-preview\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?height:\s*20px;/);
   assert.match(globalStyles, /\.worker-chat-name\s*\{[\s\S]*?font-size:\s*12px;/);
   assert.match(globalStyles, /\.assistant-worker-header\s*\{[\s\S]*?padding:\s*6px 10px;/);
   assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded\s*\{[\s\S]*?background:\s*var\(--surface\);/);
-  assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded \.worker-panel-icon\s*\{[\s\S]*?transform:\s*scale\(0\.8\);/);
+  assert.match(globalStyles, /\.assistant-worker-collapse-item\.is-expanded \.worker-panel-icon\s*\{[\s\S]*?width:\s*20px;[\s\S]*?height:\s*20px;/);
   assert.match(globalStyles, /\.worker-chat-preview-list \.status-line\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?color:\s*var\(--ink-muted\);/);
   assert.match(agentIconSource, /defaultIcon from "\.\.\/\.\.\/assets\/agent-icons\/default\.svg"/);
   assert.match(agentIconSource, /const IconMap/);
@@ -3435,8 +3429,8 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(globalStyles, /\.sidebar-account-menu \.sidebar-tool-menu-item,[\s\S]*?\.sidebar-account-menu-item\s*\{[\s\S]*?color:\s*var\(--ink-soft\);[\s\S]*?font-size:\s*14px;[\s\S]*?font-weight:\s*500;/);
   assert.match(globalStyles, /\.sidebar-account-menu \.sidebar-link-icon,[\s\S]*?\.sidebar-account-menu-icon\s*\{[\s\S]*?color:\s*var\(--ink-muted\);/);
   assert.match(globalStyles, /\.sidebar-account-menu-item\.is-disabled\s*\{[\s\S]*?color:\s*var\(--ink-muted\);/);
-  assert.match(globalStyles, /\.sidebar-link:hover,[\s\S]*?\.sidebar-link-active\s*\{[\s\S]*?background:\s*rgba\(136,\s*151,\s*172,\s*0\.1\);/);
-  assert.doesNotMatch(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
+  assert.match(globalStyles, /\.sidebar-link:hover:not\(\.sidebar-link-active\)\s*\{[\s\S]*?background:\s*rgba\(136,\s*151,\s*172,\s*0\.1\);/);
+  assert.match(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?color:\s*#1677ff;[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
   assert.match(
     globalStyles,
     /\.sidebar-account-menu \.sidebar-tool-menu-item:hover,[\s\S]*?\.sidebar-account-menu \.sidebar-tool-menu-item\.sidebar-link-active,[\s\S]*?background:\s*rgba\(136,\s*151,\s*172,\s*0\.1\);/

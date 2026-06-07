@@ -1909,9 +1909,6 @@ export function AppSidebar({
             title={args.label}
           >
             <span className="sidebar-group-heading-main">
-              <span className="sidebar-link-icon">
-                <SidebarIllustration kind={args.icon} />
-              </span>
               <span className="sidebar-link-label">{args.label}</span>
               <ArrowIcon
                 className="sidebar-group-heading-arrow"
