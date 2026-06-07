@@ -168,7 +168,7 @@ test("agent webclient management routes render native Ant Design pages", () => {
   const globalStyles = readSourceFile("src", "renderer", "styles.css");
 
   assert.match(routeDefinitions, /routePath:\s*"\/agents"[\s\S]*?mode:\s*"native"/);
-  assert.match(routeDefinitions, /routePath:\s*"\/schedules"[\s\S]*?mode:\s*"native"/);
+  assert.match(routeDefinitions, /routePath:\s*"\/automations"[\s\S]*?mode:\s*"native"/);
   assert.match(routeDefinitions, /routePath:\s*"\/memory"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/copilot"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /"\/agents\/:agentKey"/);
@@ -654,6 +654,11 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /label:\s*t\("nav\.assistants"\)/);
   assert.match(sidebarSource, /label:\s*t\("nav\.embeddedWebsites"\)/);
   assert.match(sidebarSource, /SIDEBAR_GROUP_STATE_STORAGE_KEY/);
+  assert.match(sidebarSource, /SIDEBAR_ASSISTANT_SORT_STORAGE_KEY/);
+  assert.match(sidebarSource, /type AssistantNavSortMode = "byName" \| "byTime"/);
+  assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(assistantNavAgents, assistantNavSortMode\)/);
+  assert.match(sidebarSource, /sidebar\.assistants\.sortByName/);
+  assert.match(sidebarSource, /sidebar\.assistants\.sortByTime/);
   assert.doesNotMatch(sidebarSource, /assistantHomeNavItem/);
   assert.doesNotMatch(sidebarSource, /智能助理首页|智能助手首页/);
   assert.match(sidebarSource, /createAgentRoute\(agent\.agentKey\)/);
@@ -661,12 +666,14 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /createAgentNewChatRoute\(agent\.agentKey\)/);
   assert.match(sidebarSource, /type AgentSelectionOptions = \{\s*preferNewChat\?: boolean;\s*\};/);
   assert.match(sidebarSource, /function createAgentSelectionRoute\(\s*agent: AssistantNavAgentItem,\s*options: AgentSelectionOptions = \{\},\s*\)/);
+  assert.match(sidebarSource, /function getAssistantAttentionChat\(agent: AssistantNavAgentItem\)/);
+  assert.match(sidebarSource, /getAssistantNavAgentRecentChats\(agent\)\.slice\(0, 5\)/);
+  assert.match(sidebarSource, /recentChats\.find\(\(chat\) => chat\.hasPendingAwaiting === true\)/);
+  assert.match(sidebarSource, /recentChats\.find\(\(chat\) => chat\.hasActiveRun === true\)/);
+  assert.match(sidebarSource, /recentChats\.find\(\(chat\) => chat\.isRead === false\)/);
+  assert.match(sidebarSource, /const attentionChat = getAssistantAttentionChat\(agent\);/);
+  assert.match(sidebarSource, /if \(attentionChatId\) \{\s*return createAgentChatRoute\(agent\.agentKey, attentionChatId\);/);
   assert.match(sidebarSource, /if \(!options\.preferNewChat\) \{\s*return createAgentDefaultRoute\(agent\);/);
-  assert.match(sidebarSource, /const recentChats = getAssistantNavAgentRecentChats\(agent\);/);
-  assert.match(sidebarSource, /const activeChat = recentChats\.find\(\(chat\) => chat\.hasActiveRun === true\);/);
-  assert.match(sidebarSource, /if \(activeChatId\) \{\s*return createAgentChatRoute\(agent\.agentKey, activeChatId\);/);
-  assert.match(sidebarSource, /const latestChat = recentChats\[0\];/);
-  assert.match(sidebarSource, /latestChat\.hasPendingAwaiting === true \|\| latestChat\.isRead === false/);
   assert.match(sidebarSource, /return createAgentNewChatRoute\(agent\.agentKey\);/);
   assert.match(sidebarSource, /function createAgentHistoryRoute\(agentKey: string\)/);
   assert.match(sidebarSource, /params\.set\("history", "1"\)/);
@@ -725,6 +732,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.doesNotMatch(sidebarSource, /SidebarIllustration kind="agent"/);
   assert.match(sidebarSource, /worker-panel-header-body/);
   assert.match(sidebarSource, /worker-panel-role/);
+  assert.match(sidebarSource, /mode !== "CODER"[\s\S]{0,200}worker-panel-role/);
   assert.match(sidebarSource, /worker-panel-preview/);
   assert.match(sidebarSource, /worker-chat-item-head/);
   assert.match(sidebarSource, /worker-chat-name/);
@@ -732,7 +740,11 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /<Tooltip content="全部已读">/);
   assert.match(sidebarSource, /<Tooltip content="新建对话">/);
   assert.match(sidebarSource, /查看更多（共/);
-  assert.match(sidebarSource, /t\("taskBoard\.run\.awaitingApproval"\)/);
+  assert.match(sidebarSource, /getAssistantAwaitingStatusKey/);
+  assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.approval/);
+  assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.form/);
+  assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.question/);
+  assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.plan/);
   assert.match(sidebarSource, /exportChat/);
   assert.match(sidebarSource, /renameChat/);
   assert.match(sidebarSource, /archiveChat/);
@@ -756,11 +768,11 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(confirmRenameChatHandler, /setAssistantChatRenameDialog\(null\)/u);
   assert.match(confirmRenameChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
   assert.match(sidebarSource, /<span>删除<\/span>/);
-  assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/schedules"[\s\S]*?icon:\s*"schedule"/);
+  assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/automations"[\s\S]*?icon:\s*"schedule"/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"/);
   assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
   assert.match(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/control-center"[\s\S]*?labelKey:\s*"nav\.controlCenter"[\s\S]*?to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"[\s\S]*?to:\s*"\/help"[\s\S]*?labelKey:\s*"nav\.help"/);
-  assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/schedules"/);
+  assert.doesNotMatch(sidebarSource, /fixedToolRowsBase[\s\S]*?to:\s*"\/automations"/);
   assert.match(sidebarSource, /sidebar-footer-divider/);
   assert.match(sidebarSource, /aria-label=\{t\("nav\.sidebar\.fixedTools"\)\}/);
   assert.match(sidebarSource, /aria-label=\{t\("nav\.sidebar\.openSettings"\)\}/);
@@ -811,7 +823,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /assistantNavAgents/);
   assert.match(appShell, /listNavigationAgents/);
   assert.match(appShell, /key:\s*"agents"[\s\S]*?routePath:\s*"\/agents"[\s\S]*?embedPath:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
-  assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/schedules"[\s\S]*?embedPath:\s*"\/schedules"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?embedPath:\s*"\/automations"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"memory"[\s\S]*?routePath:\s*"\/memory"[\s\S]*?embedPath:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"copilot"[\s\S]*?routePath:\s*"\/copilot"[\s\S]*?embedPath:\s*"\/copilot"[\s\S]*?labelKey:\s*"nav\.assistants"[\s\S]*?kind:\s*"copilot"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS[\s\S]*?"\/agents\/:agentKey"[\s\S]*?"\/copilot\/:agentKey"[\s\S]*?"\/agent\/:agentKey"/);
@@ -841,7 +853,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /matchPath\("\/agents\/:agentKey", pathname\)/);
   assert.match(appShell, /embedPath:\s*`\$\{pathname\}\$\{search\}`/);
   assert.match(appShell, /key:\s*"agents"[\s\S]*?routePath:\s*"\/agents"[\s\S]*?mode:\s*"native"/);
-  assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/schedules"[\s\S]*?mode:\s*"native"/);
+  assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?mode:\s*"native"/);
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"native"/);
   assert.match(appShell, /for \(const key of \["chatId", "history", "historyRequest"\]\)/);
   assert.match(appShell, /embedPath:\s*`\/agent\/\$\{encodeURIComponent\(agentKey\)\}/);
@@ -958,8 +970,9 @@ test("assistant sidebar awaiting chats use a right-side ring status", () => {
   );
   const globalStyles = readRendererStyles();
 
-  assert.match(sidebarSource, /:\s*chat\.hasPendingAwaiting[\s\S]{0,90}\? "awaiting"/);
+  assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"/);
   assert.match(sidebarSource, /chat\.hasPendingAwaiting \? "has-awaiting" : ""/);
+  assert.match(sidebarSource, /getAssistantAwaitingStatusKey\(chat\.awaitingMode\)/);
   assert.match(sidebarSource, /className="assistant-worker-awaiting-ring"/);
   assert.match(globalStyles, /\.assistant-worker-chat-item\.has-awaiting \.chat-awaiting-status\s*\{[\s\S]{0,80}margin-left: auto;/);
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\]\s*\{[\s\S]{0,80}width: 16px;/);
@@ -979,7 +992,7 @@ test("assistant sidebar active chats use loading status instead of thinking text
 
   assert.match(sidebarSource, /function isAssistantRunningPreview\(value: string\)/);
   assert.match(sidebarSource, /normalized === "思考中"/);
-  assert.match(sidebarSource, /const action = chat\.hasActiveRun\s*\?\s*"loading"\s*:\s*chat\.hasPendingAwaiting/);
+  assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"\s*:\s*chat\.hasActiveRun\s*\?\s*"loading"/);
   assert.match(sidebarSource, /chat\.hasActiveRun && isAssistantRunningPreview\(chat\.lastRunContent\)/);
   assert.match(sidebarSource, /className="worker-chat-loading assistant-material-icon is-loading"/);
   assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="loading"\]\s*\{[\s\S]{0,80}width: 18px;/);
@@ -1002,7 +1015,19 @@ test("assistant sidebar empty state is localized", () => {
   assert.match(sidebarSource, /<div className="status-line">\s*\{t\("sidebar\.assistants\.empty"\)\}\s*<\/div>/);
   assert.doesNotMatch(sidebarSource, /暂无智能体/);
   assert.match(zhCN, /"sidebar\.assistants\.empty": "暂无智能体"/);
+  assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.approval": "等待批准"/);
+  assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.form": "等待提交"/);
+  assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.question": "等待回答"/);
+  assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.plan": "等待实施"/);
+  assert.match(zhCN, /"sidebar\.assistants\.sortByName": "按名称"/);
+  assert.match(zhCN, /"sidebar\.assistants\.sortByTime": "按时间"/);
   assert.match(enUS, /"sidebar\.assistants\.empty": "No assistants"/);
+  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.approval": "Awaiting approval"/);
+  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.form": "Awaiting submission"/);
+  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.question": "Awaiting answer"/);
+  assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.plan": "Awaiting implementation"/);
+  assert.match(enUS, /"sidebar\.assistants\.sortByName": "By name"/);
+  assert.match(enUS, /"sidebar\.assistants\.sortByTime": "By time"/);
 });
 
 test("assistant sidebar empty state waits for navigation load", () => {
@@ -1920,7 +1945,10 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /recentChats: AssistantNavChatItem\[\]/);
   assert.match(contracts, /hasActiveRun:\s*boolean/);
   assert.match(contracts, /hasPendingAwaiting:\s*boolean/);
-  assert.match(contracts, /rowType\?: "agent"/);
+  assert.match(contracts, /awaitingMode\?: AssistantAwaitingMode/);
+  assert.match(contracts, /export type AssistantAwaitingMode = "approval" \| "question" \| "form" \| "plan"/);
+  assert.match(contracts, /"awaiting\.asking"/);
+  assert.match(contracts, /"awaiting\.answered"/);
   assert.match(contracts, /agentType\?: string/);
   assert.match(contracts, /workspaceDirExists\?: boolean/);
   assert.match(contracts, /interface AssistantNavAgentItemsResult/);

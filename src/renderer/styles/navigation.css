@@ -572,6 +572,77 @@
   background: rgba(148, 163, 184, 0.28);
 }
 
+.sidebar-assistant-popover-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 2px 4px 6px;
+  color: var(--ink-muted);
+}
+
+.sidebar-assistant-sort-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.sidebar-assistant-sort-button {
+  flex: 0 0 auto;
+}
+
+.sidebar-group-heading>.sidebar-assistant-sort-button {
+  margin-left: auto;
+}
+
+.sidebar-group-heading>.sidebar-assistant-sort-button+.sidebar-assistant-project-button {
+  margin-left: 0;
+}
+
+.sidebar-assistant-sort-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 128px;
+  padding: 4px;
+}
+
+.sidebar-assistant-sort-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.sidebar-assistant-sort-item:hover,
+.sidebar-assistant-sort-item.is-active {
+  background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
+  color: var(--ink);
+}
+
+.sidebar-assistant-sort-check {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 6px;
+  border-left: 2px solid #1677ff;
+  border-bottom: 2px solid #1677ff;
+  transform: rotate(-45deg);
+}
+
 .worker-popover-content.sidebar-group-children {
   max-width: 300px;
   min-width: 200px;
@@ -838,6 +909,13 @@
   border-top-color: currentColor;
   border-radius: 999px;
   animation: assistant-worker-spin 0.8s linear infinite;
+}
+
+.sidebar-assistant-preview-loading {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  color: var(--success);
 }
 
 @keyframes assistant-worker-spin {
@@ -1912,6 +1990,10 @@
 }
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger .sidebar-link-label-collapsed {
+  display: none;
+}
+
+.app-sidebar.is-collapsed .sidebar-tool-menu-trigger .sidebar-link-label {
   display: none;
 }
 

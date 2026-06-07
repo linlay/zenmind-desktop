@@ -109,7 +109,7 @@ function resolveAgentWebclientWsSource(surfaceId: string, embedPath: string | un
   if (isCopilotEmbedPath(normalizedEmbedPath)) {
     return DESKTOP_WS_SOURCE_COPILOT;
   }
-  if (normalizedEmbedPath === "/agents" || normalizedEmbedPath === "/schedules" || normalizedEmbedPath === "/memory") {
+  if (normalizedEmbedPath === "/agents" || normalizedEmbedPath === "/automations" || normalizedEmbedPath === "/memory") {
     return DESKTOP_WS_SOURCE_AGENT_WEBCLIENT;
   }
   return DESKTOP_WS_SOURCE_AGENT_WEBCLIENT;

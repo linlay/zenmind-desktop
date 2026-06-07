@@ -82,6 +82,8 @@ type PlatformChatSummary = {
   awaiting?: unknown;
   hasPendingAwaiting?: boolean;
   awaitingCount?: number;
+  awaitingMode?: unknown;
+  mode?: unknown;
   status?: string;
 };
 
@@ -171,6 +173,63 @@ function readString(value: unknown) {
 function readNumber(value: unknown) {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
+function readAwaitingMode(value: unknown): AssistantAwaitingMode | undefined {
+  const mode = readString(value).trim().toLowerCase();
+  return mode === "approval" ||
+    mode === "question" ||
+    mode === "form" ||
+    mode === "plan"
+    ? mode
+    : undefined;
+}
+
+function readAwaitingPayloadMode(value: unknown): AssistantAwaitingMode | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const mode = readAwaitingPayloadMode(item);
+      if (mode) {
+        return mode;
+      }
+    }
+    return undefined;
+  }
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  return readAwaitingMode(record.mode) || readAwaitingPayloadMode(record.awaiting);
+}
+
+function isPendingAwaitingPayload(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(isPendingAwaitingPayload);
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  const type = readString(record.type).trim().toLowerCase();
+  if (type === "awaiting.answer" || type === "awaiting.answered") {
+    return false;
+  }
+  const status = readString(record.status).trim().toLowerCase();
+  if (["answered", "cancelled", "canceled", "completed", "done", "error", "failed", "resolved", "timeout"].includes(status)) {
+    return false;
+  }
+  if (record.hasPendingAwaiting === true || readNumber(record.awaitingCount) > 0) {
+    return true;
+  }
+  if (record.hasPendingAwaiting === false) {
+    return false;
+  }
+  return type === "awaiting.ask" ||
+    type === "awaiting.asking" ||
+    status === "awaiting" ||
+    status === "pending" ||
+    Boolean(readString(record.awaitingId)) ||
+    isPendingAwaitingPayload(record.awaiting);
 }
 
 function timestampToIso(value: unknown) {
@@ -374,16 +433,25 @@ function readChatIsRead(summary: PlatformChatSummary) {
 }
 
 function chatHasPendingAwaiting(summary: PlatformChatSummary) {
-  if (summary.hasPendingAwaiting) {
+  if (summary.hasPendingAwaiting === true) {
     return true;
+  }
+  if (summary.hasPendingAwaiting === false) {
+    return false;
   }
   if (readNumber(summary.awaitingCount) > 0) {
     return true;
   }
-  if (summary.awaiting && typeof summary.awaiting === "object") {
+  if (isPendingAwaitingPayload(summary.awaiting)) {
     return true;
   }
   return readString(summary.status).toLowerCase() === "awaiting";
+}
+
+function readChatAwaitingMode(summary: PlatformChatSummary) {
+  return readAwaitingMode(summary.awaitingMode) ||
+    readAwaitingMode(summary.mode) ||
+    readAwaitingPayloadMode(summary.awaiting);
 }
 
 function compareChatUpdatedAt(left: PlatformChatSummary, right: PlatformChatSummary) {

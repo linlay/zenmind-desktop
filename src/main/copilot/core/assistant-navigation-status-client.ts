@@ -2,6 +2,7 @@ import fs from "node:fs";
 import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
+  AssistantAwaitingMode,
   AssistantNavAgentIcon,
   AssistantNavAgentItem,
   AssistantNavAgentItemsResult,
@@ -40,6 +41,8 @@ type PlatformChatSummary = {
   awaiting?: unknown;
   hasPendingAwaiting?: unknown;
   awaitingCount?: unknown;
+  awaitingMode?: unknown;
+  mode?: unknown;
   status?: unknown;
 };
 
@@ -47,7 +50,6 @@ type PlatformAgentSummary = {
   key?: unknown;
   name?: unknown;
   displayName?: unknown;
-  type?: unknown;
   agentType?: unknown;
   role?: unknown;
   icon?: unknown;
@@ -105,6 +107,8 @@ type NavigationPushEvent = {
   awaiting?: unknown;
   hasPendingAwaiting?: unknown;
   awaitingCount?: unknown;
+  awaitingMode?: unknown;
+  mode?: unknown;
   status?: unknown;
   [key: string]: unknown;
 };
@@ -164,6 +168,16 @@ function toText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function toAwaitingMode(value: unknown): AssistantAwaitingMode | undefined {
+  const mode = toText(value).toLowerCase();
+  return mode === "approval" ||
+    mode === "question" ||
+    mode === "form" ||
+    mode === "plan"
+    ? mode
+    : undefined;
+}
+
 function readAgentWorkspaceDir(agent: PlatformAgentSummary) {
   return (
     toText(agent.workspaceDir) ||
@@ -171,11 +185,6 @@ function readAgentWorkspaceDir(agent: PlatformAgentSummary) {
     toText(agent.workspace?.root) ||
     toText(agent.runtimeConfig?.workspaceRoot)
   );
-}
-
-function readAgentRowType(agent: PlatformAgentSummary): "agent" | undefined {
-  const rowType = toText(agent.type).toLowerCase();
-  return !rowType || rowType === "agent" ? "agent" : undefined;
 }
 
 function readAgentType(agent: PlatformAgentSummary) {
@@ -223,7 +232,7 @@ function hasPendingAwaitingPayload(value: unknown): boolean {
   }
 
   const type = toText(value.type).toLowerCase();
-  if (type === "awaiting.answer") {
+  if (type === "awaiting.answer" || type === "awaiting.answered") {
     return false;
   }
   const mode = toText(value.mode).toLowerCase();
@@ -239,7 +248,11 @@ function hasPendingAwaitingPayload(value: unknown): boolean {
   if (isObjectRecord(value.answer)) {
     const answerType = toText(value.answer.type).toLowerCase();
     const answerStatus = toText(value.answer.status).toLowerCase();
-    if (answerType === "awaiting.answer" || isFinishedAwaitingStatus(answerStatus)) {
+    if (
+      answerType === "awaiting.answer" ||
+      answerType === "awaiting.answered" ||
+      isFinishedAwaitingStatus(answerStatus)
+    ) {
       return false;
     }
   }
@@ -253,7 +266,13 @@ function hasPendingAwaitingPayload(value: unknown): boolean {
   if (toNonNegativeInteger(value.awaitingCount) > 0) {
     return true;
   }
-  if (type === "awaiting.ask" || status === "awaiting" || status === "pending" || toText(value.awaitingId)) {
+  if (
+    type === "awaiting.ask" ||
+    type === "awaiting.asking" ||
+    status === "awaiting" ||
+    status === "pending" ||
+    toText(value.awaitingId)
+  ) {
     return true;
   }
   return hasPendingAwaitingPayload(value.awaiting);
@@ -388,6 +407,30 @@ function readChatPendingAwaiting(chat: PlatformChatSummary) {
   return toText(chat.status).toLowerCase() === "awaiting";
 }
 
+function readAwaitingPayloadMode(value: unknown): AssistantAwaitingMode | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const mode = readAwaitingPayloadMode(item);
+      if (mode) {
+        return mode;
+      }
+    }
+    return undefined;
+  }
+  if (!isObjectRecord(value)) {
+    return undefined;
+  }
+  return toAwaitingMode(value.mode) || readAwaitingPayloadMode(value.awaiting);
+}
+
+function readChatAwaitingMode(chat: PlatformChatSummary): AssistantAwaitingMode | undefined {
+  return (
+    toAwaitingMode(chat.awaitingMode) ||
+    toAwaitingMode(chat.mode) ||
+    readAwaitingPayloadMode(chat.awaiting)
+  );
+}
+
 function readActiveRunValue(value: unknown): boolean | null {
   if (typeof value === "boolean") {
     return value;
@@ -471,7 +514,8 @@ function mapNavigationChat(chat: PlatformChatSummary, fallbackAgentKey = ""): As
     lastRunContent,
     isRead: readChatIsRead(chat),
     hasActiveRun: readChatActiveRun(chat),
-    hasPendingAwaiting: readChatPendingAwaiting(chat)
+    hasPendingAwaiting: readChatPendingAwaiting(chat),
+    awaitingMode: readChatAwaitingMode(chat)
   };
 }
 
@@ -528,7 +572,6 @@ function createNavigationAgentItem(agent: PlatformAgentSummary, includeChatLimit
     latestPreview: latestPreview.slice(0, 120),
     updatedAt: latestChat?.updatedAt ?? nowIso(),
     recentChats,
-    rowType: readAgentRowType(agent),
     agentType: readAgentType(agent),
     mode: toText(agent.mode) || undefined,
     workspaceDir: workspaceDir || undefined,
@@ -555,7 +598,6 @@ function createCopilotAgentItem(agent: PlatformAgentSummary): AssistantNavAgentI
     latestPreview: "",
     updatedAt: nowIso(),
     recentChats: [],
-    rowType: readAgentRowType(agent),
     agentType: readAgentType(agent),
     mode: toText(agent.mode) || undefined,
     workspaceDir: workspaceDir || undefined,
@@ -623,10 +665,15 @@ function readPushPreview(event: NavigationPushEvent) {
 }
 
 function readPushPendingAwaiting(event: NavigationPushEvent, fallback: boolean) {
-  if (event.type === "awaiting.ask") {
+  if (event.type === "awaiting.ask" || event.type === "awaiting.asking") {
     return true;
   }
-  if (event.type === "awaiting.answer" || event.type === "run.start" || event.type === "run.complete") {
+  if (
+    event.type === "awaiting.answer" ||
+    event.type === "awaiting.answered" ||
+    event.type === "run.start" ||
+    event.type === "run.complete"
+  ) {
     return false;
   }
   if (event.hasPendingAwaiting === true) {
@@ -645,6 +692,22 @@ function readPushPendingAwaiting(event: NavigationPushEvent, fallback: boolean) 
     return true;
   }
   return fallback;
+}
+
+function readPushAwaitingMode(
+  event: NavigationPushEvent,
+  hasPendingAwaiting: boolean,
+  fallback?: AssistantAwaitingMode,
+) {
+  if (!hasPendingAwaiting) {
+    return undefined;
+  }
+  return (
+    toAwaitingMode(event.awaitingMode) ||
+    toAwaitingMode(event.mode) ||
+    readAwaitingPayloadMode(event.awaiting) ||
+    fallback
+  );
 }
 
 function readPushActiveRun(event: NavigationPushEvent, fallback: boolean) {
@@ -697,6 +760,7 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
   } else if (isObjectRecord(event.read) && typeof event.read.isRead === "boolean") {
     isRead = event.read.isRead;
   }
+  const hasPendingAwaiting = readPushPendingAwaiting(event, current?.hasPendingAwaiting ?? false);
   return {
     chatId,
     chatName,
@@ -706,7 +770,8 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
     lastRunContent: preview || current?.lastRunContent || (event.type === "run.start" ? "思考中" : ""),
     isRead,
     hasActiveRun: readPushActiveRun(event, current?.hasActiveRun ?? false),
-    hasPendingAwaiting: readPushPendingAwaiting(event, current?.hasPendingAwaiting ?? false)
+    hasPendingAwaiting,
+    awaitingMode: readPushAwaitingMode(event, hasPendingAwaiting, current?.awaitingMode)
   };
 }
 
@@ -825,7 +890,9 @@ export function applyAssistantNavigationPush(
     type === "run.start" ||
     type === "run.complete" ||
     type === "awaiting.ask" ||
-    type === "awaiting.answer"
+    type === "awaiting.asking" ||
+    type === "awaiting.answer" ||
+    type === "awaiting.answered"
   ) {
     const patch = createChatPatchFromPush(event, currentChat);
     if (!patch) {

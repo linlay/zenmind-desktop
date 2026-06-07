@@ -6,7 +6,12 @@ import {
   type FormEvent,
   type MouseEvent,
 } from "react";
-import { LeftOutlined, LogoutOutlined, RightOutlined } from "@ant-design/icons";
+import {
+  LeftOutlined,
+  LogoutOutlined,
+  RightOutlined,
+  SortAscendingOutlined,
+} from "@ant-design/icons";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import {
@@ -66,6 +71,8 @@ type SidebarStatusSummary = {
   pendingCount: number;
 };
 
+type AssistantNavSortMode = "byName" | "byTime";
+
 type AssistantChatMenuState = {
   chat: AssistantNavChatItem;
   x: number;
@@ -114,6 +121,7 @@ type CoderAcpProjectDialogState = {
 };
 
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-groups`;
+const SIDEBAR_ASSISTANT_SORT_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-assistant-sort`;
 
 const defaultSidebarGroupState: SidebarGroupState = {
   assistants: true,
@@ -141,7 +149,7 @@ const taskBoardNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
 
 const schedulesNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   orderKey: "schedules",
-  to: "/schedules",
+  to: "/automations",
   icon: "schedule",
 };
 
@@ -260,6 +268,23 @@ function readInitialSidebarGroupState() {
   }
 }
 
+function normalizeAssistantNavSortMode(value: unknown): AssistantNavSortMode {
+  return value === "byName" || value === "byTime" ? value : "byTime";
+}
+
+function readInitialAssistantNavSortMode(): AssistantNavSortMode {
+  if (typeof window === "undefined") {
+    return "byTime";
+  }
+  try {
+    return normalizeAssistantNavSortMode(
+      window.localStorage.getItem(SIDEBAR_ASSISTANT_SORT_STORAGE_KEY),
+    );
+  } catch {
+    return "byTime";
+  }
+}
+
 function getRunningCoderAcpProxyOptions(
   services: ServiceState[],
 ): RunningCoderAcpProxyOption[] {
@@ -369,24 +394,14 @@ function createAgentSelectionRoute(
   agent: AssistantNavAgentItem,
   options: AgentSelectionOptions = {},
 ) {
+  const attentionChat = getAssistantAttentionChat(agent);
+  const attentionChatId = attentionChat?.chatId.trim() ?? "";
+  if (attentionChatId) {
+    return createAgentChatRoute(agent.agentKey, attentionChatId);
+  }
+
   if (!options.preferNewChat) {
     return createAgentDefaultRoute(agent);
-  }
-
-  const recentChats = getAssistantNavAgentRecentChats(agent);
-  const activeChat = recentChats.find((chat) => chat.hasActiveRun === true);
-  const activeChatId = activeChat?.chatId.trim() ?? "";
-  if (activeChatId) {
-    return createAgentChatRoute(agent.agentKey, activeChatId);
-  }
-
-  const latestChat = recentChats[0];
-  const latestChatId = latestChat?.chatId.trim() ?? "";
-  if (
-    latestChatId &&
-    (latestChat.hasPendingAwaiting === true || latestChat.isRead === false)
-  ) {
-    return createAgentChatRoute(agent.agentKey, latestChatId);
   }
 
   return createAgentNewChatRoute(agent.agentKey);
@@ -467,6 +482,83 @@ function formatAssistantChatTime(updatedAt: string) {
 function isAssistantRunningPreview(value: string) {
   const normalized = value.trim();
   return normalized === "思考中" || normalized === "思考中...";
+}
+
+function toAssistantSortTimestamp(value: string | undefined) {
+  const timestamp = value ? Date.parse(value) : 0;
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
+  const latestChat = getAssistantNavAgentRecentChats(agent)[0];
+  if (latestChat) {
+    return toAssistantSortTimestamp(latestChat.updatedAt);
+  }
+  return agent.latestChatId ? toAssistantSortTimestamp(agent.updatedAt) : 0;
+}
+
+function compareAssistantAgentsByTime(
+  left: AssistantNavAgentItem,
+  right: AssistantNavAgentItem,
+) {
+  const rightTime = readAssistantAgentLatestTimestamp(right);
+  const leftTime = readAssistantAgentLatestTimestamp(left);
+  if (rightTime !== leftTime) {
+    return rightTime - leftTime;
+  }
+  return compareAssistantAgentsByName(left, right);
+}
+
+function compareAssistantAgentsByName(
+  left: AssistantNavAgentItem,
+  right: AssistantNavAgentItem,
+) {
+  const displayNameComparison = left.displayName.localeCompare(
+    right.displayName,
+    "zh-CN",
+  );
+  if (displayNameComparison !== 0) {
+    return displayNameComparison;
+  }
+  return left.agentKey.localeCompare(right.agentKey);
+}
+
+function sortAssistantNavAgentsForMode(
+  items: AssistantNavAgentItem[],
+  sortMode: AssistantNavSortMode,
+) {
+  const compare =
+    sortMode === "byName"
+      ? compareAssistantAgentsByName
+      : compareAssistantAgentsByTime;
+  return [...items].sort(compare);
+}
+
+function getAssistantAwaitingStatusKey(
+  mode?: AssistantNavChatItem["awaitingMode"],
+) {
+  switch (mode) {
+    case "plan":
+      return "sidebar.assistants.awaitingStatus.plan";
+    case "question":
+      return "sidebar.assistants.awaitingStatus.question";
+    case "approval":
+      return "sidebar.assistants.awaitingStatus.approval";
+    case "form":
+      return "sidebar.assistants.awaitingStatus.form";
+    default:
+      return "taskBoard.run.awaitingApproval";
+  }
+}
+
+function getAssistantAttentionChat(agent: AssistantNavAgentItem) {
+  const recentChats = getAssistantNavAgentRecentChats(agent).slice(0, 5);
+  return (
+    recentChats.find((chat) => chat.hasPendingAwaiting === true) ||
+    recentChats.find((chat) => chat.hasActiveRun === true) ||
+    recentChats.find((chat) => chat.isRead === false) ||
+    null
+  );
 }
 
 type SidebarCollapseToggleVariant = "compact" | "nav";
@@ -608,6 +700,9 @@ export function AppSidebar({
   const [sidebarGroupState, setSidebarGroupState] = useState<SidebarGroupState>(
     readInitialSidebarGroupState,
   );
+  const [assistantNavSortMode, setAssistantNavSortMode] =
+    useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
+  const [assistantSortMenuOpen, setAssistantSortMenuOpen] = useState(false);
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
     useState("");
@@ -648,6 +743,14 @@ export function AppSidebar({
     () => summarizeAgentStatus(assistantNavAgents),
     [assistantNavAgents],
   );
+  const sortedAssistantNavAgents = useMemo(
+    () => sortAssistantNavAgentsForMode(assistantNavAgents, assistantNavSortMode),
+    [assistantNavAgents, assistantNavSortMode],
+  );
+  const assistantNavSortLabel =
+    assistantNavSortMode === "byName"
+      ? t("sidebar.assistants.sortByName")
+      : t("sidebar.assistants.sortByTime");
 
   const customItems: SidebarNavItem[] = useMemo(() => {
     const orderIndex = new Map(
@@ -676,7 +779,7 @@ export function AppSidebar({
         label: t("nav.taskBoard"),
         collapsedLabel: t("nav.taskBoardCollapsed"),
       },
-      { ...schedulesNavItemBase, label: t("nav.schedules") },
+      { ...schedulesNavItemBase, label: t("nav.schedules"), collapsedLabel: t("nav.schedulesCollapsed") },
       {
         ...assistantGroupNavItemBase,
         label: t("nav.assistants"),
@@ -710,6 +813,17 @@ export function AppSidebar({
       // Ignore localStorage failures in restricted renderer contexts.
     }
   }, [sidebarGroupState]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SIDEBAR_ASSISTANT_SORT_STORAGE_KEY,
+        assistantNavSortMode,
+      );
+    } catch {
+      // Ignore localStorage failures in restricted renderer contexts.
+    }
+  }, [assistantNavSortMode]);
 
   useEffect(() => {
     if (!websiteDialogOpen) {
@@ -1300,6 +1414,68 @@ export function AppSidebar({
     );
   }
 
+  function renderAssistantSortMenu() {
+    const options: Array<{ mode: AssistantNavSortMode; label: string }> = [
+      { mode: "byTime", label: t("sidebar.assistants.sortByTime") },
+      { mode: "byName", label: t("sidebar.assistants.sortByName") },
+    ];
+    return (
+      <div
+        className="sidebar-assistant-sort-menu"
+        role="menu"
+        aria-label={t("sidebar.assistants.sortMenu")}
+      >
+        {options.map((option) => (
+          <button
+            key={option.mode}
+            type="button"
+            className={[
+              "sidebar-assistant-sort-item",
+              assistantNavSortMode === option.mode ? "is-active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            role="menuitemradio"
+            aria-checked={assistantNavSortMode === option.mode}
+            onClick={() => {
+              setAssistantNavSortMode(option.mode);
+              setAssistantSortMenuOpen(false);
+            }}
+          >
+            <span>{option.label}</span>
+            {assistantNavSortMode === option.mode ? (
+              <span
+                className="sidebar-assistant-sort-check"
+                aria-hidden="true"
+              />
+            ) : null}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  function renderAssistantSortButton() {
+    return (
+      <Popover
+        open={assistantSortMenuOpen}
+        onOpenChange={setAssistantSortMenuOpen}
+        placement="bottom-end"
+        content={renderAssistantSortMenu()}
+      >
+        <button
+          type="button"
+          className="assistant-worker-icon-button sidebar-assistant-sort-button"
+          aria-label={t("sidebar.assistants.sort")}
+          title={assistantNavSortLabel}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <SortAscendingOutlined aria-hidden="true" />
+        </button>
+      </Popover>
+    );
+  }
+
   function renderStatusBadges(summary: SidebarStatusSummary, className = "") {
     const unreadLabel = formatUnreadCount(summary.unreadCount);
     if (summary.pendingCount <= 0 && !unreadLabel) {
@@ -1388,10 +1564,10 @@ export function AppSidebar({
     activeChatId: string,
   ) {
     const isActive = activeChatId === chat.chatId;
-    const action = chat.hasActiveRun
-      ? "loading"
-      : chat.hasPendingAwaiting
+    const action = chat.hasPendingAwaiting
       ? "awaiting"
+      : chat.hasActiveRun
+      ? "loading"
       : !chat.isRead
         ? "unread"
         : "time";
@@ -1417,7 +1593,7 @@ export function AppSidebar({
           <span className="worker-chat-name">{previewText}</span>
           {chat.hasPendingAwaiting ? (
             <span className="chat-awaiting-status">
-              {t("taskBoard.run.awaitingApproval")}
+              {t(getAssistantAwaitingStatusKey(chat.awaitingMode))}
             </span>
           ) : null}
           <span className="assistant-worker-chat-action" data-action={action}>
@@ -1468,8 +1644,25 @@ export function AppSidebar({
       getAssistantNavAgentNonNegativeInteger(agent.unreadCount),
       getAssistantNavAgentNonNegativeInteger(agent.unreadChatCount),
     );
-    const latestPreview =
-      agent.latestPreview || (chatCount > 0 ? "" : "暂无会话");
+    const awaitingChat = recentChats.find(
+      (chat) => chat.hasPendingAwaiting === true,
+    );
+    const activeRunChat = recentChats.find(
+      (chat) => chat.hasActiveRun === true,
+    );
+    const previewChat = awaitingChat || activeRunChat || recentChats[0] || null;
+    const previewText = previewChat
+      ? previewChat.hasActiveRun &&
+        isAssistantRunningPreview(previewChat.lastRunContent)
+        ? previewChat.chatName || "暂无预览"
+        : previewChat.lastRunContent || previewChat.chatName || "暂无预览"
+      : agent.latestPreview || (chatCount > 0 ? "" : "暂无会话");
+    const previewStatus =
+      awaitingChat || agent.hasPendingAwaiting
+        ? "awaiting"
+        : activeRunChat
+          ? "running"
+          : "";
     const activeChatId = getActiveSidebarChatId(agent.agentKey);
     return (
       <Collapse
@@ -1499,9 +1692,11 @@ export function AppSidebar({
                   <span className="worker-panel-header-body">
                     <span className="assistant-worker-name">
                       <span>{agent.displayName}</span>
-                      <span className="worker-panel-role">
-                        {agent.role || "--"}
-                      </span>
+                      {agent.mode !== "CODER" && (
+                        <span className="worker-panel-role">
+                          {agent.role || "--"}
+                        </span>
+                      )}
                     </span>
                     {unreadCount > 0 ? (
                       <span className="assistant-worker-badge">
@@ -1555,17 +1750,25 @@ export function AppSidebar({
                   </span>
                   <span className="worker-panel-preview">
                     <span className="assistant-worker-preview">
-                      {latestPreview}
+                      {previewText}
                     </span>
-                    {agent.hasPendingAwaiting ? (
+                    {previewStatus === "awaiting" ? (
                       <span className="chat-awaiting-status">
-                        {t("taskBoard.run.awaitingApproval")}
+                        {t(
+                          getAssistantAwaitingStatusKey(
+                            awaitingChat?.awaitingMode,
+                          ),
+                        )}
                       </span>
                     ) : null}
+                    {previewStatus === "running" ? (
+                      <span
+                        className="assistant-material-icon is-loading sidebar-assistant-preview-loading"
+                        aria-label="运行中"
+                      />
+                    ) : null}
                     <span className="worker-panel-time-label">
-                      {formatAssistantChatTime(
-                        getAssistantNavAgentRecentChats(agent)[0]?.updatedAt,
-                      )}
+                      {formatAssistantChatTime(previewChat?.updatedAt ?? "")}
                     </span>
                   </span>
                 </span>
@@ -1643,8 +1846,16 @@ export function AppSidebar({
           >
             {args.groupId === "assistants" ? (
               <div className="assistant-worker-collapse worker-collapse">
-                {assistantNavAgents.length > 0 ? (
-                  assistantNavAgents.map((agent) => renderAssistantAgent(agent))
+                <div className="sidebar-assistant-popover-tools">
+                  <span className="sidebar-assistant-sort-label">
+                    {assistantNavSortLabel}
+                  </span>
+                  {renderAssistantSortButton()}
+                </div>
+                {sortedAssistantNavAgents.length > 0 ? (
+                  sortedAssistantNavAgents.map((agent) =>
+                    renderAssistantAgent(agent),
+                  )
                 ) : assistantNavAgentsLoaded ? (
                   <div className="status-line">
                     {t("sidebar.assistants.empty")}
@@ -1697,6 +1908,9 @@ export function AppSidebar({
                 : null}
             </span>
             {args.groupId === "assistants" ? (
+              renderAssistantSortButton()
+            ) : null}
+            {args.groupId === "assistants" ? (
               <Tooltip content="新增项目">
                 <button
                   type="button"
@@ -1740,8 +1954,10 @@ export function AppSidebar({
         >
           {args.groupId === "assistants" ? (
             <div className="assistant-worker-collapse worker-collapse">
-              {assistantNavAgents.length > 0 ? (
-                assistantNavAgents.map((agent) => renderAssistantAgent(agent))
+              {sortedAssistantNavAgents.length > 0 ? (
+                sortedAssistantNavAgents.map((agent) =>
+                  renderAssistantAgent(agent),
+                )
               ) : assistantNavAgentsLoaded ? (
                 <div className="status-line">
                   {t("sidebar.assistants.empty")}
@@ -1973,12 +2189,8 @@ export function AppSidebar({
     return "";
   }
 
-  function isAgentRow(agent: AssistantNavAgentItem) {
-    return agent.rowType === "agent";
-  }
-
   function isCoderAgent(agent: AssistantNavAgentItem) {
-    return isAgentRow(agent) && agent.agentType === "coder";
+    return agent.agentType === "coder";
   }
 
   function asPlainRecord(value: unknown): Record<string, unknown> {
@@ -2332,8 +2544,7 @@ export function AppSidebar({
       return null;
     }
     const agent = agentMenu.agent;
-    const agentRow = isAgentRow(agent);
-    const coderAgent = isCoderAgent(agent);
+    const coderAgent = agent.agentType === "coder";
     const openWorkspaceDisabledReason = getOpenWorkspaceDisabledReason(agent);
     return createPortal(
       <div
@@ -2353,24 +2564,20 @@ export function AppSidebar({
         >
           <span>打开工作目录</span>
         </button>
-        {agentRow ? (
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => void handleRenameAgent(agent)}
-          >
-            <span>修改名称</span>
-          </button>
-        ) : null}
-        {agentRow ? (
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => handleEditAgent(agent)}
-          >
-            <span>编辑智能体</span>
-          </button>
-        ) : null}
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => void handleRenameAgent(agent)}
+        >
+          <span>修改名称</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => handleEditAgent(agent)}
+        >
+          <span>编辑智能体</span>
+        </button>
         {coderAgent ? (
           <button
             type="button"

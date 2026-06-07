@@ -20,6 +20,16 @@ function toNonNegativeInteger(value: unknown) {
     : 0;
 }
 
+function toAwaitingMode(value: unknown): AssistantNavChatItem["awaitingMode"] {
+  const mode = toText(value).toLowerCase();
+  return mode === "approval" ||
+    mode === "question" ||
+    mode === "form" ||
+    mode === "plan"
+    ? mode
+    : undefined;
+}
+
 function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): AssistantNavChatItem | null {
   const record = asRecord(value);
   const chatId = toText(record.chatId);
@@ -36,7 +46,8 @@ function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): As
     lastRunContent: toText(record.lastRunContent),
     isRead: record.isRead !== false,
     hasActiveRun: record.hasActiveRun === true,
-    hasPendingAwaiting: record.hasPendingAwaiting === true
+    hasPendingAwaiting: record.hasPendingAwaiting === true,
+    awaitingMode: toAwaitingMode(record.awaitingMode)
   };
 }
 
@@ -72,7 +83,6 @@ export function normalizeAssistantNavAgent(value: unknown): AssistantNavAgentIte
     latestPreview: toText(record.latestPreview),
     updatedAt: toText(record.updatedAt) || latestChat?.updatedAt || "",
     recentChats,
-    rowType: record.rowType === "agent" ? "agent" : undefined,
     agentType: toText(record.agentType) || undefined,
     mode: toText(record.mode) || undefined,
     workspaceDir: toText(record.workspaceDir) || undefined,
