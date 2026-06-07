@@ -1,30 +1,17 @@
-export type SettingsSectionId =
-  | "appearance"
-  | "navigation"
-  | "quickAssistant"
-  | "desktopPet"
-  | "embeddedWebsites"
-  | "dataRoot"
-  | "debug"
-  | "memory"
-  | "about";
+import type { SettingsSectionDefinition } from "../../shared/settings-sections";
+import type { TranslationKey } from "../../shared/i18n";
 
-export type SettingsSectionLayout = "measure" | "wide";
-
-export type SettingsSectionDefinition = {
-  id: SettingsSectionId;
-  label: string;
-  description: string;
-  layout: SettingsSectionLayout;
-  visible: boolean;
-};
+export type {
+  SettingsSectionDefinition,
+  SettingsSectionId,
+  SettingsSectionLayout
+} from "../../shared/settings-sections";
 
 export function createSettingsSectionDefinitions({
-  isWindows,
-  desktopPetSupported
+  isWindows
 }: {
   isWindows: boolean;
-  desktopPetSupported: boolean;
+  desktopPetSupported?: boolean;
 }): SettingsSectionDefinition[] {
   return [
     {
@@ -47,13 +34,6 @@ export function createSettingsSectionDefinitions({
       description: "",
       layout: "measure",
       visible: true
-    },
-    {
-      id: "desktopPet",
-      label: "desktopPet",
-      description: "",
-      layout: "measure",
-      visible: desktopPetSupported
     },
     {
       id: "embeddedWebsites",
@@ -99,4 +79,42 @@ export function getVisibleSettingsSections(definitions: SettingsSectionDefinitio
 
 export function getDefaultSettingsSectionId(definitions: SettingsSectionDefinition[]) {
   return getVisibleSettingsSections(definitions)[0]?.id ?? null;
+}
+
+const SETTINGS_SECTION_LABEL_KEYS: Record<
+  SettingsSectionDefinition["id"],
+  { label: TranslationKey; description: TranslationKey }
+> = {
+  appearance: { label: "settings.appearance.label", description: "settings.appearance.description" },
+  navigation: { label: "settings.navigation.label", description: "settings.navigation.description" },
+  quickAssistant: { label: "settings.quickAssistant.label", description: "settings.quickAssistant.description" },
+  embeddedWebsites: { label: "settings.embeddedWebsites.label", description: "settings.embeddedWebsites.description" },
+  dataRoot: { label: "settings.dataRoot.label", description: "settings.dataRoot.description" },
+  debug: { label: "settings.debug.label", description: "settings.debug.description" },
+  memory: { label: "settings.memory.label", description: "settings.memory.description" },
+  about: { label: "settings.about.label", description: "settings.about.description" }
+};
+
+export function localizeSettingsSectionDefinitions(
+  definitions: SettingsSectionDefinition[],
+  t: (key: TranslationKey) => string
+): SettingsSectionDefinition[] {
+  return definitions.map((definition) => {
+    const keys = SETTINGS_SECTION_LABEL_KEYS[definition.id];
+    return {
+      ...definition,
+      label: t(keys.label),
+      description: t(keys.description)
+    };
+  });
+}
+
+export function buildLocalizedSettingsSections({
+  isWindows,
+  t
+}: {
+  isWindows: boolean;
+  t: (key: TranslationKey) => string;
+}): SettingsSectionDefinition[] {
+  return localizeSettingsSectionDefinitions(createSettingsSectionDefinitions({ isWindows }), t);
 }

@@ -540,7 +540,9 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(appShell, /role="separator"/);
   assert.match(appShell, /aria-orientation="vertical"/);
   assert.match(appShell, /aria-label="调整侧边栏宽度"/);
-  assert.match(appShell, /onPointerDown=\{handleSidebarResizerPointerDown\}/);
+  assert.match(appShell, /onPointerDown=\{isSettingsRoute \? undefined : handleSidebarResizerPointerDown\}/);
+  assert.match(appShell, /isSettingsRoute \? "is-disabled" : ""/);
+  assert.match(globalStyles, /\.app-shell\.is-settings-mode \.app-sidebar-resizer/);
   assert.match(appShell, /sidebarCollapsed \? "is-sidebar-collapsed" : ""/);
   assert.match(appShell, /isSidebarResizing \? "is-sidebar-resizing" : ""/);
   assert.match(sidebarSource, /onToggleCollapsed\?:\s*\(\)\s*=>\s*void;/);
@@ -791,8 +793,20 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(globalStyles, /\.sidebar-tool-menu\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(globalStyles, /\.sidebar-group-heading\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
-  assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*0;[\s\S]*?border-left:\s*0;/);
-  assert.match(globalStyles, /\.sidebar-custom-child-link\s*\{[\s\S]*?padding-left:\s*4px !important;/);
+  assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?padding-inline:\s*var\(--sidebar-group-child-indent\)\s*8px;/);
+  assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?--sidebar-group-child-indent:\s*calc\(8px \+ 18px \+ 8px\);/);
+  assert.match(
+    globalStyles,
+    /\.sidebar-group-heading\.is-active \.sidebar-link-icon svg,[\s\S]*?filter:\s*none;/
+  );
+  assert.match(globalStyles, /\.sidebar-link-active \.sidebar-link-icon svg,[\s\S]*?filter:\s*none;/);
+  assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?--sidebar-group-child-pill-padding:\s*6px;/);
+  assert.match(
+    globalStyles,
+    /\.app-sidebar:not\(\.is-collapsed\) \.sidebar-group-children \.sidebar-child-link[\s\S]*?margin-inline:\s*calc\(-1 \* var\(--sidebar-group-child-pill-padding\)\)\s*0;[\s\S]*?padding-inline:\s*var\(--sidebar-group-child-pill-padding\);/
+  );
+  assert.match(globalStyles, /\.sidebar-custom-child-link\s*\{[\s\S]*?padding-left:\s*0;/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-custom-child-link\s*\{[\s\S]*?padding-left:\s*4px !important;/);
   assert.match(globalStyles, /\.assistant-worker-name\s*\{[\s\S]*?font-weight:\s*500;/);
   assert.match(globalStyles, /\.worker-panel-role\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?font-weight:\s*400;/);
   assert.match(globalStyles, /\.worker-panel-preview\s*\{[\s\S]*?font-size:\s*12px;[\s\S]*?height:\s*20px;/);
@@ -817,7 +831,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /key: AgentWebclientRouteKey;/);
   assert.match(appShell, /kind: AgentWebclientRouteKind;/);
   assert.match(appShell, /mode: AgentWebclientRouteMode;/);
-  assert.match(appShell, /<Route path="\/kanban" element=\{<RouteSuspense><TaskBoardPage hostTheme=\{themeMode\} \/><\/RouteSuspense>\}/);
+  assert.match(appShell, /<Route path="\/kanban" element=\{<RouteSuspense><TaskBoardPage hostTheme=\{resolvedTheme\} \/><\/RouteSuspense>\}/);
   assert.doesNotMatch(appShell, /KanbanPlaceholderPage/);
   assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)/);
   assert.match(appShell, /assistantNavAgents/);
@@ -871,9 +885,9 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeEmbeddedAgentWebclientRoute\)/);
   assert.match(appShell, /const usesPluginSurface =[\s\S]*?Boolean\(activeEmbeddedAgentWebclientRoute\)[\s\S]*?location\.pathname\.startsWith\("\/service\/"\)[\s\S]*?location\.pathname\.startsWith\("\/plugin\/"\)/);
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_DEFINITIONS\.map\(\(routeDefinition\) =>/);
-  assert.match(appShell, /path=\{routeDefinition\.routePath\}[\s\S]*?AgentWebclientNativeRouteOutlet route=\{activeAgentWebclientRoute\} hostTheme=\{themeMode\}/);
+  assert.match(appShell, /path=\{routeDefinition\.routePath\}[\s\S]*?AgentWebclientNativeRouteOutlet route=\{activeAgentWebclientRoute\} hostTheme=\{resolvedTheme\}/);
   assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS\.map\(\(routePattern\) =>/);
-  assert.match(appShell, /path=\{routePattern\}[\s\S]*?AgentWebclientNativeRouteOutlet route=\{activeAgentWebclientRoute\} hostTheme=\{themeMode\}/);
+  assert.match(appShell, /path=\{routePattern\}[\s\S]*?AgentWebclientNativeRouteOutlet route=\{activeAgentWebclientRoute\} hostTheme=\{resolvedTheme\}/);
   assert.doesNotMatch(appShell, /path="\/agents"[\s\S]{0,180}<PlaceholderPage/);
 
   assert.match(pluginPage, /embedPath\?: string;/);
@@ -1056,7 +1070,7 @@ test("assistant sidebar empty state waits for navigation load", () => {
   assert.match(sidebarSource, /assistantNavAgentsLoaded \? \(\s*<div className="status-line">\s*\{t\("sidebar\.assistants\.empty"\)\}\s*<\/div>\s*\) : null/);
 });
 
-test("settings route keeps the global sidebar and renders page-internal split sections", () => {
+test("settings route moves section navigation into the app sidebar and uses section subroutes", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
@@ -1074,61 +1088,95 @@ test("settings route keeps the global sidebar and renders page-internal split se
     path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.css"),
     "utf8"
   );
-  const brandMark = fs.readFileSync(
+  const themeStyles = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "styles", "theme.css"),
+    "utf8"
+  );
+  const controlCenterStyles = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "styles", "control-center.css"),
+    "utf8"
+  );
+  const brandMarkSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "components", "BrandMark.tsx"),
     "utf8"
   );
 
   assert.match(appShell, /<Route\s+path="\/settings"/);
-  assert.doesNotMatch(appShell, /lastNonSettingsRouteRef/);
-  assert.doesNotMatch(appShell, /buildSettingsSectionPath/);
-  assert.doesNotMatch(appShell, /navigate\(normalizedSettingsPath, \{ replace: true \}\)/);
-  assert.doesNotMatch(appShell, /onSelectSettingsSection=\{handleSelectSettingsSection\}/);
+  assert.match(appShell, /path="\/settings\/:sectionId"/);
+  assert.match(appShell, /lastNonSettingsRouteRef/);
+  assert.match(appShell, /buildSettingsSectionPath/);
+  assert.match(appShell, /navigate\(normalizedSettingsPath, \{ replace: true \}\)/);
+  assert.match(appShell, /onSelectSettingsSection=\{handleSelectSettingsSection\}/);
+  assert.match(appShell, /is-settings-mode/);
 
-  assert.match(settingsSections, /type SettingsSectionId/);
+  assert.match(settingsSections, /buildLocalizedSettingsSections/);
   assert.match(settingsSections, /id:\s*"appearance"[\s\S]*?label:\s*"appearance"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"navigation"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"quickAssistant"[\s\S]*?label:\s*"quickAssistant"[\s\S]*?layout:\s*"measure"/);
   assert.doesNotMatch(settingsSections, /id:\s*"sideAssistant"/);
-  assert.match(settingsSections, /id:\s*"desktopPet"[\s\S]*?label:\s*"desktopPet"/);
+  assert.doesNotMatch(settingsSections, /id:\s*"desktopPet"/);
   assert.match(settingsSections, /id:\s*"embeddedWebsites"[\s\S]*?label:\s*"embeddedWebsites"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"dataRoot"/);
   assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"memory"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"about"[\s\S]*?label:\s*"about"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
-  assert.doesNotMatch(settingsSections, /icon:/);
 
-  assert.doesNotMatch(sidebarSource, /isSettingsMode\?: boolean;/);
-  assert.doesNotMatch(sidebarSource, /settingsSections\?: SettingsSectionDefinition\[\];/);
-  assert.doesNotMatch(sidebarSource, /pendingSettingsSectionId\?: SettingsSectionId \| null;/);
-  assert.doesNotMatch(sidebarSource, /sidebar-settings-nav/);
-  assert.doesNotMatch(sidebarSource, /sidebar-link-settings/);
-  assert.match(sidebarSource, /to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"/);
-  assert.match(sidebarSource, /fixedToolRows/);
-  assert.match(sidebarSource, /sidebar-assistant-top-button/);
-  assert.match(sidebarSource, /app-sidebar-collapse-button/);
+  assert.match(sidebarSource, /isSettingsMode\?: boolean;/);
+  assert.match(sidebarSource, /\{!isSettingsMode \? \([\s\S]*?sidebar-collapsed-toggle-button/);
+  assert.match(sidebarSource, /settingsSections\?: SettingsSidebarSection\[\];/);
+  assert.match(sidebarSource, /sidebar-settings-nav/);
+  assert.match(sidebarSource, /settings\.backToApp/);
+  assert.match(sidebarSource, /onExitSettingsMode/);
+  assert.match(sidebarSource, /case "appearance"[\s\S]*?return "appearance"/);
+  assert.match(sidebarSource, /case "about"[\s\S]*?return "about"/);
+  assert.match(brandMarkSource, /about:\s*aboutIcon/);
+  assert.match(brandMarkSource, /appearance:\s*appearanceIcon/);
 
-  assert.match(settingsPage, /createSettingsSectionDefinitions/);
+  assert.match(settingsPage, /useParams\(\)/);
+  assert.match(settingsPage, /resolveSettingsSectionId/);
+  assert.match(settingsPage, /buildLocalizedSettingsSections/);
   assert.match(settingsPage, /switch \(activeSection\)/);
   assert.match(settingsPage, /case "appearance"/);
+  assert.match(settingsPage, /settings-appearance-panel/);
+  assert.match(settingsPage, /settings-appearance-row/);
+  assert.match(settingsPage, /settings-theme-segment/);
+  assert.match(settingsPage, /settings-language-select/);
+  assert.match(settingsStyles, /\.settings-language-select\s*\{[\s\S]*?border-radius:\s*8px;/);
+  assert.match(themeStyles, /--accent-border:\s*rgba\(var\(--accent-rgb\), 0\.46\)/);
+  assert.match(themeStyles, /--control-focus-ring:\s*0 0 0 3px var\(--accent-glow\)/);
+  assert.match(themeStyles, /--control-switch-height:\s*22px;/);
+  assert.doesNotMatch(settingsStyles, /rgba\(38, 99, 235/);
+  assert.match(settingsStyles, /\.desktop-pet-appearance-select\.is-selected\s*\{[\s\S]*?color: var\(--accent-on\)/);
+  assert.match(controlCenterStyles, /\.settings-switch\s*\{[\s\S]*?height: var\(--control-switch-height\)/);
+  assert.match(controlCenterStyles, /\.settings-switch\.is-on\s*\{[\s\S]*?background: var\(--accent\)/);
+  assert.doesNotMatch(controlCenterStyles, /#2F95FF/);
+  assert.doesNotMatch(controlCenterStyles, /\.assistant-memory-switch-row \.settings-switch\s*\{[\s\S]*?width: 54px;/);
+  assert.match(settingsPage, /onThemeModeChange/);
+  assert.doesNotMatch(settingsPage, /settings-theme-preview/);
+  assert.doesNotMatch(settingsPage, /onToggleTheme/);
+  assert.match(settingsPage, /settings-pet-card/);
+  assert.match(settingsPage, /settings-item-card/);
+  assert.match(settingsStyles, /\.settings-item-card,[\s\S]*?border-radius:\s*8px;/);
+  assert.doesNotMatch(settingsStyles, /\.settings-page \.navigation-settings-card,[\s\S]*?border:\s*none;/);
+  assert.match(settingsPage, /settings-pet-appearance-panel/);
+  assert.match(settingsPage, /settings-appearance-pet-card/);
+  assert.doesNotMatch(settingsPage, /settings\.desktopPet\.currentStatus/);
+  assert.doesNotMatch(settingsPage, /settings\.desktopPet\.currentBinding/);
+  assert.match(settingsStyles, /\.settings-appearance-panel/);
+  assert.match(settingsStyles, /\.settings-theme-segment/);
+  assert.doesNotMatch(settingsPage, /case "desktopPet"/);
   assert.match(settingsPage, /case "memory"/);
   assert.match(settingsPage, /case "about"/);
   assert.match(settingsPage, /<AboutAppCard \/>/);
-  assert.match(settingsPage, /split-workspace-layout/);
-  assert.match(settingsPage, /settings-directory-nav/);
-  assert.doesNotMatch(settingsPage, /settings-directory-btn-desc/);
-  assert.doesNotMatch(settingsStyles, /settings-directory-btn-desc/);
+  assert.match(settingsPage, /settings-item-card settings-about-card/);
+  assert.match(settingsPage, /settings-about-version/);
+  assert.match(settingsPage, /settings\.about\.versionDescription/);
+  assert.doesNotMatch(settingsPage, /settings-about-meta/);
+  assert.match(settingsStyles, /\.settings-about-version\s*\{[\s\S]*?border-radius:\s*8px;/);
+  assert.match(settingsPage, /settings-page-single/);
+  assert.match(settingsPage, /settings-content-panel/);
+  assert.doesNotMatch(settingsPage, /settings-directory-nav/);
   assert.match(settingsPage, /contentRef\.current\?\.scrollTo/);
-  assert.doesNotMatch(settingsPage, /settings-mode-close-button/);
-  assert.doesNotMatch(settingsPage, /onExitSettingsMode/);
-
-  assert.doesNotMatch(brandMark, /appearanceIcon/);
-  assert.doesNotMatch(brandMark, /folderIcon/);
-  assert.doesNotMatch(brandMark, /navigationIcon/);
-  assert.doesNotMatch(brandMark, /petIcon/);
-  assert.doesNotMatch(brandMark, /"appearance"/);
-  assert.doesNotMatch(brandMark, /"navigation"/);
-  assert.doesNotMatch(brandMark, /"pet"/);
-  assert.doesNotMatch(brandMark, /"folder"/);
+  assert.match(settingsStyles, /\.settings-content-panel/);
 });
 
 test("startup env import overlay uses packaged-relative brand icon", () => {
@@ -1173,19 +1221,25 @@ test("settings page scopes notices to the active section and keeps load failures
   assert.match(settingsPage, /const \[notice, setNotice\] = useState<SettingsNotice \| null>\(null\)/);
   assert.match(settingsPage, /const \[sectionReadErrors, setSectionReadErrors\] = useState<SectionReadErrorMap>\(\{\}\)/);
   assert.match(settingsPage, /function showSectionNotice\(sectionId: SettingsSectionId, message: string, tone: NoticeTone\)/);
-  assert.match(settingsPage, /SETTINGS_NOTICE_AUTO_CLOSE_MS = 3200/);
-  assert.match(settingsPage, /setNotice\(\(current\) => \(current\?\.tone === "success" \? null : current\)\)/);
-  assert.match(settingsPage, /setNotice\(\(current\) => \(current\?\.id === notice\.id \? null : current\)\)/);
-  assert.match(settingsPage, /const activeSectionNotice = notice && notice\.sectionId === activeSection \? notice : null;/);
+  assert.match(settingsPage, /if \(tone === "success"\) \{\s*return;\s*\}/);
+  assert.match(settingsPage, /const activeSectionNotice = notice && notice\.sectionId === activeSection && notice\.tone === "error" \? notice : null;/);
+  assert.doesNotMatch(settingsPage, /SETTINGS_NOTICE_AUTO_CLOSE_MS/);
   assert.match(settingsPage, /const activeSectionReadError = activeSection \? sectionReadErrors\[activeSection\] \?\? "" : "";/);
   assert.match(settingsPage, /settings-section-feedback/);
   assert.match(settingsPage, /<PageFeedbackStack/);
-  assert.match(settingsPage, /showSectionNotice\("desktopPet", nextState\.enabled \? t\("settings\.desktopPet\.noticeEnabled"\) : t\("settings\.desktopPet\.noticeDisabled"\), "success"\)/);
+  assert.match(settingsPage, /showSectionNotice\("appearance", nextState\.enabled \? t\("settings\.desktopPet\.noticeEnabled"\) : t\("settings\.desktopPet\.noticeDisabled"\), "success"\)/);
   assert.doesNotMatch(settingsPage, /导航页签排序已更新/);
   assert.match(settingsPage, /showSectionNotice\("quickAssistant", reason instanceof Error \? reason\.message : String\(reason\), "error"\)/);
   assert.match(settingsPage, /feedback-banner warning-banner settings-section-read-error/);
   assert.doesNotMatch(settingsPage, /\{feedback \? <div className="feedback-banner">\{feedback\}<\/div> : null\}/);
 
+  assert.match(settingsPageCss, /\.settings-pet-appearance-panel[\s\S]*?border: none;/);
+  assert.match(settingsPageCss, /\.settings-pet-appearance-panel[\s\S]*?border-top: 1px solid var\(--line\)/);
+  assert.match(settingsPageCss, /\.settings-pet-appearance-row \.desktop-pet-appearance-copy small[\s\S]*?color: var\(--ink-muted\)/);
+  assert.match(settingsPageCss, /\.desktop-pet-appearance-select\.is-selected\s*\{[\s\S]*?background: var\(--accent\)/);
+  assert.match(settingsPageCss, /\.desktop-pet-appearance-select\.is-selected\s*\{[\s\S]*?cursor: not-allowed/);
+  assert.match(settingsPageCss, /\.desktop-pet-appearance-select:disabled:not\(\.is-selected\)/);
+  assert.doesNotMatch(settingsPageCss, /rgba\(38, 99, 235/);
   assert.match(settingsPageCss, /\.settings-section-feedback\s*\{/);
   assert.match(settingsPageCss, /\.settings-section-read-error\s*\{/);
   assert.match(globalStyles, /\.page-feedback-anchor\s*\{/);
@@ -1197,6 +1251,10 @@ test("settings page scopes notices to the active section and keeps load failures
 test("settings page configures desktop helper default agent separately from desktop pet", () => {
   const settingsPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.tsx"),
+    "utf8"
+  );
+  const settingsPageSections = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "settingsPageSections.ts"),
     "utf8"
   );
   const sharedSettings = fs.readFileSync(
@@ -1220,13 +1278,16 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsStore, /quickAssistantAgentKey:\s*settings\.quickAssistantAgentKey/);
   assert.match(settingsStore, /desktopCopilotPages:\s*settings\.desktopCopilotPages/);
   assert.doesNotMatch(settingsPage, /<p className="eyebrow">NAVIGATION<\/p>/);
-  assert.match(settingsPage, /settings\.navigation\.label/);
+  assert.match(settingsPageSections, /settings\.navigation\.label/);
   assert.doesNotMatch(settingsPage, /半透明度/);
   assert.doesNotMatch(settingsPage, /导航栏半透明效果/);
   assert.doesNotMatch(settingsPage, /type="range"/);
   assert.match(settingsPage, /settings\.navigation\.fixedMain/);
   assert.match(settingsPage, /settings\.navigation\.fixedTools/);
-  assert.match(settingsPage, /settings\.navigation\.sideAssistantColumn/);
+  assert.match(settingsPage, /settings-item-card navigation-settings-card/);
+  assert.match(settingsPage, /settings-item-list navigation-order-list/);
+  assert.doesNotMatch(settingsPage, /navigation-order-grid-head/);
+  assert.doesNotMatch(settingsPage, /settings\.navigation\.currentDefault/);
   assert.match(settingsPage, /settings\.navigation\.noSideAssistant/);
   assert.match(settingsPage, /getCopilotPageKeyForSidebarNavOrderItem/);
   assert.match(settingsPage, /handleSelectNavigationCopilotAgent/);
@@ -1235,8 +1296,8 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /handleSidebarNavPointerDown/);
   assert.doesNotMatch(settingsPage, /document\.addEventListener\("pointermove"/);
   assert.doesNotMatch(settingsPage, /navigation-order-drag-handle/);
-  assert.match(settingsPage, /settings\.embeddedWebsites\.label/);
-  assert.match(settingsPage, /settings\.embeddedWebsites\.agentEnhancement/);
+  assert.match(settingsPageSections, /settings\.embeddedWebsites\.label/);
+  assert.match(settingsPage, /settings\.embeddedWebsites\.linkedAgentFor/);
   assert.match(settingsPage, /handleUpdateCustomSidebarAgent/);
   assert.match(settingsPage, /editingCustomSidebarId/);
   assert.match(settingsPage, /handleStartEditCustomSidebarItem/);
@@ -1258,7 +1319,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /将常用网页作为内嵌网站固定至导航栏便捷访问。内嵌网站仅保存在本地，支持导入导出，系统入口不可修改/);
   assert.doesNotMatch(settingsPage, /按模块管理桌面工作台、助手能力和本地数据行为/);
   assert.doesNotMatch(settingsPage, /className="custom-sidebar-copy"/);
-  assert.match(settingsPage, /settings\.quickAssistant\.label/);
+  assert.match(settingsPageSections, /settings\.quickAssistant\.label/);
   assert.doesNotMatch(settingsPage, /case "sideAssistant"/);
   assert.doesNotMatch(settingsPage, /SIDE ASSISTANT/);
   assert.match(settingsPage, /settings\.navigation\.defaultAssistant/);
@@ -1278,11 +1339,14 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /copilotPageKey:\s*"controlCenter"/);
   assert.match(settingsPage, /copilotPageKey:\s*"market"/);
   assert.match(settingsPage, /navigation-order-fixed-label/);
+  assert.doesNotMatch(settingsPage, /navigation-order-fixed-dot/);
   assert.match(settingsPage, /\{sidebarNavOrder\.map/);
   assert.match(settingsPage, /\{fixedNavigationTools\.map\(\(tool\) => renderFixedNavigationToolRow\(tool\)\)\}/);
   assert.match(settingsPage, /handleSelectDesktopHelperAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*desktopHelperAgentKey: normalizedAgentKey\s*\}\)/);
   assert.match(settingsPage, /desktopCopilotPages: nextPages/);
+  assert.match(settingsPage, /settings-item-section-head custom-sidebar-list-head navigation-assistant-default-head/);
+  assert.match(settingsPage, /settings-item-form navigation-assistant-default/);
   assert.match(settingsPage, /settings\.navigation\.defaultAssistantDescription/);
   assert.match(settingsPage, /settings\.navigation\.fixedMainDescription/);
   assert.match(settingsPage, /settings\.navigation\.fixedToolsDescription/);
@@ -1302,14 +1366,12 @@ test("settings page memory section routes visible text through i18n", () => {
     "SettingsPage.tsx"
   );
 
-  assert.match(settingsPage, /<h2 className="settings-sidebar-title">\{t\("settings\.title"\)\}<\/h2>/);
-  assert.match(settingsPage, /aria-label=\{t\("settings\.directory"\)\}/);
   assert.match(settingsPage, /t\("settings\.memory\.sectionDescription"\)/);
   assert.match(settingsPage, /t\("settings\.memory\.recall"\)/);
   assert.match(settingsPage, /t\("settings\.memory\.storage"\)/);
   assert.doesNotMatch(
     settingsPage,
-    /助手记忆|记忆召回|自动学习|最近记忆|本地存储|最近记录|暂无操作|已暂停引用|仅保留现有记忆|设置目录/
+    /助手记忆|记忆召回|自动学习|最近记忆|本地存储|最近记录|暂无操作|已暂停引用|仅保留现有记忆/
   );
 });
 
@@ -1401,12 +1463,12 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(preload, /ipcRenderer\.on\("settings\.localeChanged"/);
   assert.match(contracts, /interface DesktopAppInfo/);
   assert.match(contracts, /getAppInfo: \(\) => Promise<DesktopAppInfo>/);
-  assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark"\)/);
+  assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark" \| "system"\)/);
   assert.match(contracts, /getLocale: \(\) => Promise<LocaleSettings>/);
   assert.match(contracts, /setLocale: \(locale: SupportedLocale\) => Promise<LocaleSettings>/);
   assert.match(contracts, /onLocaleChanged: \(listener: LocaleChangedListener\) => \(\) => void/);
   assert.match(settingsHandlers, /nativeTheme/);
-  assert.match(settingsHandlers, /nativeTheme\.themeSource = themeMode === "dark" \? "dark" : "light"/);
+  assert.match(settingsHandlers, /nativeTheme\.themeSource = themeMode === "dark" \? "dark" : themeMode === "system" \? "system" : "light"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getAppInfo"[\s\S]*?app\.getVersion\(\)/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setNativeThemeSource"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getLocale", async \(\) => initializeMainI18n\(app\)\)/);
@@ -1695,7 +1757,7 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardPage, /window\.electronAPI\.assistant\.onAssistantEvent/);
   assert.match(taskBoardPage, /window\.electronAPI\.assistant\.onNavigationAgentsChanged/);
   assert.match(taskBoardPage, /window\.electronAPI\.assistant\.listAgents\(\)/);
-  assert.match(appShell, /<RouteSuspense><TaskBoardPage hostTheme=\{themeMode\} \/><\/RouteSuspense>/);
+  assert.match(appShell, /<RouteSuspense><TaskBoardPage hostTheme=\{resolvedTheme\} \/><\/RouteSuspense>/);
   assert.doesNotMatch(appShell, /<TaskBoardPage onOpenAssistantChat=/);
   assert.match(appShell, /const isTaskBoardRoute = location\.pathname === "\/kanban"/);
   assert.match(appShell, /isTaskBoardRoute \? "has-task-board-controls" : ""/);
@@ -3049,13 +3111,17 @@ test("desktop pet appearance picker confirms persistence before success feedback
 
   assert.match(settingsPage, /const desktopPetSupported = isMac \|\| isWindows;/);
   assert.match(settingsPage, /if \(!desktopPetSupported\) \{[\s\S]{0,120}return;/);
-  assert.match(settingsPage, /case "desktopPet":/);
-  assert.match(settingsPage, /return desktopPetSupported \? \(/);
+  assert.match(settingsPage, /settings-pet-card/);
+  assert.match(settingsPage, /settings-pet-appearance-panel/);
+  assert.match(settingsPage, /settings-appearance-pet-card/);
+  assert.doesNotMatch(settingsPage, /settings\.desktopPet\.currentStatus/);
+  assert.match(settingsPage, /case "appearance"[\s\S]*?desktopPetSupported \? \(/);
   assert.match(settingsPage, /nextState\.appearanceId === appearanceId/);
   assert.match(settingsPage, /settings\.desktopPet\.noticeAppearanceFailed/);
-  assert.match(settingsPage, /disabled=\{Boolean\(desktopPetAppearancePending\) && !selected\}/);
+  assert.match(settingsPage, /desktop-pet-appearance-list/);
+  assert.match(settingsPage, /disabled=\{selected \|\| Boolean\(desktopPetAppearancePending\)\}/);
+  assert.doesNotMatch(settingsPage, /disabled=\{Boolean\(desktopPetAppearancePending\) && !selected\}/);
   assert.doesNotMatch(settingsPage, /\?\?\s*"小宅"/);
-  assert.doesNotMatch(settingsPage, /disabled=\{Boolean\(desktopPetAppearancePending\) \|\| selected\}/);
 });
 
 test("desktop pet legacy agent aliases avoid inline display-name literals", () => {
@@ -3302,6 +3368,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   );
   const contracts = readSharedContractsSource();
   const globalStyles = readRendererStyles();
+  const accountMenuRule = globalStyles.match(/\.sidebar-tool-menu\.sidebar-account-menu\s*\{(?<body>[\s\S]*?)^\}/m);
 
   assert.match(contracts, /browserOrigin\?: string;/);
   assert.match(contracts, /browserUrl\?: string;/);
@@ -3323,7 +3390,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /function getDesktopSsoUserLabel\(\)/);
   assert.match(sidebarSource, /if \(!desktopSsoStatus\) \{[\s\S]{0,80}return t\("sidebar\.sso\.signIn"\);/);
   assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name\?\.trim\(\)\s*\|\|[\s\S]{0,120}desktopSsoStatus\.user\?\.email\?\.trim\(\)/);
-  assert.match(sidebarSource, /function renderDesktopSsoAccountMenuSection\(\)/);
+  assert.doesNotMatch(sidebarSource, /function renderDesktopSsoAccountMenuSection\(\)/);
   assert.match(sidebarSource, /function renderAccountMenuUserItem\(\)/);
   assert.match(sidebarSource, /function handleDesktopSsoMenuActionClick\(\)/);
   assert.match(sidebarSource, /function handleDesktopSsoLogoutClick/);
@@ -3331,11 +3398,13 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /sidebar\.account\.personal/);
   assert.doesNotMatch(sidebarSource, /is-personal/);
   assert.doesNotMatch(sidebarSource, /sidebar\.account\.remainingUsage/);
-  assert.match(sidebarSource, /className="sidebar-tool-status-label"/);
-  assert.match(sidebarSource, /\{getDesktopSsoUserLabel\(\)\}/);
-  assert.match(sidebarSource, /fixedToolItems\.map\(\(item\) => renderToolLink\(item\)\)/);
+  assert.doesNotMatch(sidebarSource, /className="sidebar-tool-status-label"/);
+  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\(\(item\) =>[\s\S]*?item\.to === "\/agents" \|\| item\.to === "\/market"/);
+  assert.match(sidebarSource, /const middleToolItems = fixedToolItems\.filter\(\(item\) =>[\s\S]*?item\.to === "\/control-center" \|\| item\.to === "\/help"/);
+  assert.match(sidebarSource, /const settingsToolItems = fixedToolItems\.filter\(\(item\) => item\.to === "\/settings"\);/);
+  assert.match(sidebarSource, /topToolItems\.map\(\(item\) => renderToolLink\(item\)\)[\s\S]*?sidebar-account-menu-divider[\s\S]*?middleToolItems\.map\(\(item\) => renderToolLink\(item\)\)[\s\S]*?sidebar-account-menu-divider[\s\S]*?settingsToolItems\.map\(\(item\) => renderToolLink\(item\)\)[\s\S]*?\{renderAccountMenuUserItem\(\)\}/);
+  assert.match(sidebarSource, /className="sidebar-tool-menu-popover"/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoActionLabel\}/);
-  assert.match(sidebarSource, /className="sidebar-account-menu-logout"/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoLogoutLabel\}/);
   assert.match(sidebarSource, /window\.confirm\(t\("sidebar\.sso\.confirmSignOut"\)\)/);
   assert.match(sidebarSource, /onDesktopSsoLogout\?\.\(\)/);
@@ -3355,15 +3424,38 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /fixedToolItems\.some\(\(item\) => isRouteActive\(item\.to\)\)/);
 
   assert.doesNotMatch(globalStyles, /\.sidebar-sso-entry\s*\{/);
+  assert.ok(accountMenuRule?.groups?.body, "missing .sidebar-tool-menu.sidebar-account-menu rule");
+  assert.match(globalStyles, /\.sidebar-tool-menu-popover\s*\{[\s\S]*?overflow:\s*visible;/);
+  assert.match(globalStyles, /\.sidebar-tool-menu-popover\s*\{[\s\S]*?background:\s*transparent;/);
   assert.match(globalStyles, /\.sidebar-tool-menu\.sidebar-account-menu\s*\{[\s\S]*?min-width:\s*240px;/);
-  assert.match(globalStyles, /\.sidebar-tool-status-label\s*\{[\s\S]*?margin-left:\s*auto;[\s\S]*?text-overflow:\s*ellipsis;/);
-  assert.match(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-status-label\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(globalStyles, /\.sidebar-tool-menu\.sidebar-account-menu\s*\{[\s\S]*?border:\s*1px solid var\(--line-strong\);/);
+  assert.match(globalStyles, /\.sidebar-tool-menu\.sidebar-account-menu\s*\{[\s\S]*?border-radius:\s*16px;/);
+  assert.match(globalStyles, /\.sidebar-tool-menu\.sidebar-account-menu\s*\{[\s\S]*?background:\s*var\(--surface-strong\);/);
+  assert.match(globalStyles, /\.sidebar-tool-menu\.sidebar-account-menu\s*\{[\s\S]*?overflow:\s*hidden;/);
+  assert.match(globalStyles, /\.sidebar-account-menu \.sidebar-tool-menu-item,[\s\S]*?\.sidebar-account-menu-item\s*\{[\s\S]*?color:\s*var\(--ink-soft\);[\s\S]*?font-size:\s*14px;[\s\S]*?font-weight:\s*500;/);
+  assert.match(globalStyles, /\.sidebar-account-menu \.sidebar-link-icon,[\s\S]*?\.sidebar-account-menu-icon\s*\{[\s\S]*?color:\s*var\(--ink-muted\);/);
+  assert.match(globalStyles, /\.sidebar-account-menu-item\.is-disabled\s*\{[\s\S]*?color:\s*var\(--ink-muted\);/);
+  assert.match(globalStyles, /\.sidebar-link:hover,[\s\S]*?\.sidebar-link-active\s*\{[\s\S]*?background:\s*rgba\(136,\s*151,\s*172,\s*0\.1\);/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
+  assert.match(
+    globalStyles,
+    /\.sidebar-account-menu \.sidebar-tool-menu-item:hover,[\s\S]*?\.sidebar-account-menu \.sidebar-tool-menu-item\.sidebar-link-active,[\s\S]*?background:\s*rgba\(136,\s*151,\s*172,\s*0\.1\);/
+  );
+  assert.doesNotMatch(globalStyles, /\.sidebar-account-menu \.sidebar-tool-menu-item:hover \.sidebar-link-icon,[\s\S]*?color:\s*var\(--accent\);/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-account-menu-action:hover \.sidebar-account-menu-icon[\s\S]*?color:\s*var\(--accent\);/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-account-menu-action:focus-visible \.sidebar-account-menu-icon[\s\S]*?color:\s*var\(--accent\);/);
+  assert.match(globalStyles, /\.sidebar-account-menu-user\s*\{[\s\S]*?font-size:\s*14px;[\s\S]*?font-weight:\s*500;/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-tool-status-label\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-status-label/);
   assert.match(globalStyles, /\.sidebar-account-menu-label\s*\{[\s\S]*?text-overflow:\s*ellipsis;/);
   assert.match(globalStyles, /\.sidebar-account-menu-item\.is-disabled\s*\{[\s\S]*?cursor:\s*default;/);
-  assert.match(globalStyles, /\.sidebar-account-menu-logout\s*\{/);
-  assert.match(globalStyles, /\.sidebar-account-menu-divider\s*\{/);
+  assert.match(globalStyles, /\.sidebar-tool-menu\.sidebar-account-menu\s*\{[\s\S]*?gap:\s*2px;/);
+  assert.match(globalStyles, /\.sidebar-tool-menu\.sidebar-account-menu\s*\{[\s\S]*?padding:\s*6px;/);
+  assert.match(globalStyles, /\.sidebar-account-menu \.sidebar-tool-menu-item,[\s\S]*?\.sidebar-account-menu-item\s*\{[\s\S]*?min-height:\s*28px;[\s\S]*?padding:\s*2px 8px;/);
+  assert.match(globalStyles, /\.sidebar-account-menu-divider\s*\{[\s\S]*?margin:\s*2px 8px;/);
   assert.doesNotMatch(globalStyles, /\.sidebar-account-menu-icon\.is-personal/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.sidebar-tool-menu\.sidebar-account-menu\s*\{/);
+  assert.doesNotMatch(accountMenuRule.groups.body, /rgba\(255,\s*255,\s*255,\s*0\.96\)/);
   assert.doesNotMatch(globalStyles, /\.sidebar-sso-message/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-sso-entry/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-sso-copy/);
@@ -3434,20 +3526,60 @@ test("embedded browser plus button opens a blank tab for manual address entry", 
   assert.doesNotMatch(externalWebviewPage, /onClick=\{\(\) => openTab\(url,\s*title\)\}/u);
 });
 
-test("embedded websites edit mode keeps form and row actions aligned", () => {
-  const settingsStyles = readRendererStyles();
+test("help page uses settings-aligned layout shell", () => {
+  const helpPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "HelpPage.tsx"),
+    "utf8"
+  );
+  const helpPageCss = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "HelpPage.css"),
+    "utf8"
+  );
+  const themeStyles = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "styles", "theme.css"),
+    "utf8"
+  );
 
-  assert.match(settingsStyles, /\.custom-sidebar-form\s*\{[\s\S]*?grid-template-columns:\s*minmax\(180px,\s*520px\)\s+minmax\(320px,\s*900px\)\s+minmax\(124px,\s*max-content\);/u);
-  assert.match(settingsStyles, /\.custom-sidebar-form\s*\{[\s\S]*?justify-content:\s*start;/u);
-  assert.match(settingsStyles, /\.custom-sidebar-submit-wrap\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-auto-flow:\s*column;[\s\S]*?align-items:\s*end;[\s\S]*?white-space:\s*nowrap;/u);
-  assert.match(settingsStyles, /\.custom-sidebar-submit-wrap\s+\.text-button\s*\{[\s\S]*?width:\s*auto;/u);
-  assert.match(settingsStyles, /\.custom-sidebar-submit-wrap\s+\.text-button\s*\{[\s\S]*?display:\s*inline-flex;[\s\S]*?height:\s*38px;[\s\S]*?font-size:\s*13px;[\s\S]*?font-weight:\s*600;[\s\S]*?line-height:\s*1;/u);
-  assert.doesNotMatch(settingsStyles, /\.custom-sidebar-submit-wrap\s+\.text-button,[\s\S]*?height:\s*30px;/u);
-  assert.match(settingsStyles, /\.custom-sidebar-row-actions\s+\.text-button,[\s\S]*?\.custom-sidebar-row-actions\s+\.danger-text-button\s*\{[\s\S]*?display:\s*inline-flex;[\s\S]*?height:\s*30px;[\s\S]*?font-size:\s*13px;[\s\S]*?font-weight:\s*600;[\s\S]*?line-height:\s*1;/u);
-  assert.match(settingsStyles, /\.custom-sidebar-row\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+112px;[\s\S]*?align-items:\s*end;/u);
-  assert.match(settingsStyles, /\.custom-sidebar-row-main\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-rows:\s*auto auto;/u);
-  assert.match(settingsStyles, /\.custom-sidebar-row-agent\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*max-content minmax\(0,\s*1fr\);/u);
-  assert.match(settingsStyles, /\.custom-sidebar-row-actions\s*\{[\s\S]*?justify-content:\s*flex-end;[\s\S]*?align-self:\s*end;[\s\S]*?width:\s*112px;[\s\S]*?min-height:\s*30px;/u);
+  assert.match(helpPage, /help-page help-page-single/);
+  assert.match(helpPage, /help-content-panel/);
+  assert.match(helpPage, /help-page-head/);
+  assert.match(helpPage, /help-item-card/);
+  assert.match(helpPage, /help-item-section-head/);
+  assert.match(helpPage, /className="help-sidebar help-category-card"/);
+  assert.doesNotMatch(helpPage, /split-workspace/);
+  assert.doesNotMatch(helpPage, /theme-help/);
+  assert.match(helpPageCss, /\.help-item-card[\s\S]*?border-radius:\s*8px;/u);
+  assert.match(helpPageCss, /\.help-page-head h1[\s\S]*?font-size:\s*18px;/u);
+  assert.match(helpPageCss, /\.help-item-section-head strong[\s\S]*?font-size:\s*13px;/u);
+  assert.match(themeStyles, /--help-content-max:\s*960px;/);
+});
+
+test("embedded websites use compact rows and inline edit", () => {
+  const settingsPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.tsx"),
+    "utf8"
+  );
+  const settingsPageCss = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "settings", "SettingsPage.css"),
+    "utf8"
+  );
+
+  assert.match(settingsPage, /settings\.embeddedWebsites\.addTitle/);
+  assert.match(settingsPage, /settings\.embeddedWebsites\.addDescription/);
+  assert.match(settingsPage, /settings\.embeddedWebsites\.addedDescription/);
+  assert.match(settingsPage, /custom-sidebar-add-head/);
+  assert.match(settingsPage, /custom-sidebar-row-edit-form/);
+  assert.match(settingsPage, /!editingCustomSidebarId \?/);
+  assert.match(settingsPage, /itemEditing \? \([\s\S]*?custom-sidebar-row-edit-form/);
+  assert.doesNotMatch(settingsPage, /custom-sidebar-editing-note/);
+  assert.doesNotMatch(settingsPage, /settings\.embeddedWebsites\.agentEnhancement/);
+  assert.match(settingsPage, /settings\.embeddedWebsites\.linkedAgentFor/);
+  assert.match(settingsPageCss, /\.settings-page \.custom-sidebar-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(140px,\s*1fr\)\s+minmax\(180px,\s*240px\)\s+auto;/u);
+  assert.match(settingsPageCss, /\.settings-page \.custom-sidebar-form input,[\s\S]*?\.settings-page \.custom-sidebar-row-edit-form input\s*\{[\s\S]*?border-radius:\s*8px;/u);
+  assert.match(settingsPageCss, /\.settings-page \.custom-sidebar-row-edit-form input:focus\s*\{[\s\S]*?box-shadow:\s*var\(--control-focus-ring\);/u);
+  assert.match(settingsPageCss, /\.settings-page \.custom-sidebar-add-form\s*\{[\s\S]*?padding:\s*10px 16px 14px;/u);
+  assert.match(settingsPageCss, /\.settings-page \.custom-sidebar-row-actions\s*\{[\s\S]*?flex-direction:\s*row;/u);
+  assert.match(settingsPage, /desktop-pet-agent-select-wrap/);
 });
 
 test("built-in browser surface remains mounted after leaving the chrome route", () => {

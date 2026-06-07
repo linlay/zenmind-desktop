@@ -108,11 +108,26 @@ test("startup shell avoids a blank white first frame", () => {
     path.resolve(import.meta.dirname, "../src/renderer/styles/navigation.css"),
     "utf8"
   );
+  const startupGateSource = fs.readFileSync(
+    path.resolve(import.meta.dirname, "../src/renderer/app-shell/startup/StartupGate.tsx"),
+    "utf8"
+  );
   const readyToShowBlock = mainProcessSource.match(/app\.whenReady\(\)\.then\([\s\S]*?app\.on\("activate"/u)?.[0] ?? "";
 
   assert.doesNotMatch(readyToShowBlock, /ready-to-show[\s\S]{0,240}handleStartupPipeline/u);
   assert.match(readyToShowBlock, /void handleStartupPipeline\(\);/u);
-  assert.match(startupStyles, /\.startup-loading-screen\s*\{[\s\S]*?background:\s*#f6f8fc;/u);
+  assert.doesNotMatch(startupGateSource, /PRODUCT_NAME/u);
+  assert.doesNotMatch(startupGateSource, /BrandMark/u);
+  assert.doesNotMatch(startupGateSource, /startup-loading-brand-layer/u);
+  assert.match(startupStyles, /\.startup-loading-screen\s*\{[\s\S]*?background:\s*rgba\(246,\s*248,\s*252,\s*0\.72\);/u);
+  assert.match(startupStyles, /\.startup-loading-screen::before\s*\{[\s\S]*?linear-gradient\(0\.25turn/u);
+  assert.match(startupStyles, /\.startup-loading-screen::before\s*\{[\s\S]*?animation:\s*startup-loading-background-shimmer/u);
+  assert.match(startupStyles, /@keyframes startup-loading-background-shimmer/u);
+  assert.match(startupStyles, /prefers-reduced-motion:\s*reduce/u);
+  assert.doesNotMatch(startupStyles, /@keyframes startup-loading-skeleton/u);
+  assert.doesNotMatch(startupStyles, /@keyframes startup-loading-brand-breathe/u);
+  assert.doesNotMatch(startupStyles, /startup-loading-brand-layer/u);
+  assert.doesNotMatch(startupStyles, /startup-loading-brand-mark/u);
 });
 
 test("startup pipeline imports bundled env.zip after old root migration", () => {

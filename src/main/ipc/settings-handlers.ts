@@ -12,7 +12,7 @@ export interface SettingsIpcHandlerOptions {
 }
 
 export function setNativeThemeSource(nativeTheme: { themeSource: string }, themeMode: string) {
-  nativeTheme.themeSource = themeMode === "dark" ? "dark" : "light";
+  nativeTheme.themeSource = themeMode === "dark" ? "dark" : themeMode === "system" ? "system" : "light";
   return {
     ok: true,
     themeSource: nativeTheme.themeSource
