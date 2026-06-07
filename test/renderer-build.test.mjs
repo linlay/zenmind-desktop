@@ -960,7 +960,7 @@ test("assistant sidebar chat history selection follows pending navigation", () =
   assert.doesNotMatch(sidebarSource, /const activeChatId = currentChatId \|\| "";/);
 });
 
-test("assistant sidebar awaiting chats use a right-side ring status", () => {
+test("assistant sidebar awaiting chats use a right-side loading status", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -973,11 +973,14 @@ test("assistant sidebar awaiting chats use a right-side ring status", () => {
   assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"/);
   assert.match(sidebarSource, /chat\.hasPendingAwaiting \? "has-awaiting" : ""/);
   assert.match(sidebarSource, /getAssistantAwaitingStatusKey\(chat\.awaitingMode\)/);
-  assert.match(sidebarSource, /className="assistant-worker-awaiting-ring"/);
+  assert.match(sidebarSource, /className="worker-chat-loading assistant-material-icon is-loading"/);
+  assert.doesNotMatch(sidebarSource, /assistant-worker-awaiting-ring/);
+  assert.doesNotMatch(globalStyles, /assistant-worker-awaiting-ring/);
   assert.match(globalStyles, /\.assistant-worker-chat-item\.has-awaiting \.chat-awaiting-status\s*\{[\s\S]{0,80}margin-left: auto;/);
-  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\]\s*\{[\s\S]{0,80}width: 16px;/);
-  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-panel-time-label\s*\{[\s\S]{0,80}display: none;/);
-  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.assistant-worker-awaiting-ring\s*\{[\s\S]{0,80}display: inline-block;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\],\s*\.assistant-worker-chat-action\[data-action="loading"\]\s*\{[\s\S]{0,100}width: 18px;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-panel-time-label,\s*\.assistant-worker-chat-action\[data-action="loading"\] \.worker-panel-time-label\s*\{[\s\S]{0,80}display: none;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading,\s*\.assistant-worker-chat-action\[data-action="loading"\] \.worker-chat-loading\s*\{[\s\S]{0,120}display: inline-flex;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading,[\s\S]{0,220}color: var\(--ink-muted\);/);
 });
 
 test("assistant sidebar active chats use loading status instead of thinking text", () => {
@@ -995,9 +998,14 @@ test("assistant sidebar active chats use loading status instead of thinking text
   assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"\s*:\s*chat\.hasActiveRun\s*\?\s*"loading"/);
   assert.match(sidebarSource, /chat\.hasActiveRun && isAssistantRunningPreview\(chat\.lastRunContent\)/);
   assert.match(sidebarSource, /className="worker-chat-loading assistant-material-icon is-loading"/);
-  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="loading"\]\s*\{[\s\S]{0,80}width: 18px;/);
-  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="loading"\] \.worker-panel-time-label\s*\{[\s\S]{0,80}display: none;/);
-  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="loading"\] \.worker-chat-loading\s*\{[\s\S]{0,80}display: inline-flex;/);
+  assert.match(sidebarSource, /previewStatus \? \(\s*<span[\s\S]{0,220}sidebar-assistant-preview-loading/);
+  assert.match(sidebarSource, /!\s*previewStatus && previewChat \? \(\s*<span className="worker-panel-time-label">/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\],\s*\.assistant-worker-chat-action\[data-action="loading"\]\s*\{[\s\S]{0,100}width: 18px;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-panel-time-label,\s*\.assistant-worker-chat-action\[data-action="loading"\] \.worker-panel-time-label\s*\{[\s\S]{0,80}display: none;/);
+  assert.match(globalStyles, /\.assistant-worker-chat-action\[data-action="awaiting"\] \.worker-chat-loading,\s*\.assistant-worker-chat-action\[data-action="loading"\] \.worker-chat-loading\s*\{[\s\S]{0,120}display: inline-flex;/);
+  assert.match(globalStyles, /\.sidebar-assistant-preview-loading\s*\{[\s\S]{0,120}color: var\(--ink-muted\);/);
+  assert.match(globalStyles, /\.assistant-worker-chat-item:hover \.assistant-worker-chat-action:not\(\[data-action="loading"\]\):not\(\[data-action="awaiting"\]\)/);
+  assert.match(globalStyles, /\.assistant-worker-chat-item:hover \.assistant-worker-chat-action:not\(\[data-action="loading"\]\):not\(\[data-action="awaiting"\]\) ~ \.assistant-worker-chat-menu-button/);
   assert.match(globalStyles, /@keyframes assistant-worker-chat-spin\s*\{[\s\S]*?translateY\(-50%\) rotate\(360deg\)/);
 });
 
@@ -1936,6 +1944,10 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   const desktopActionBridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "copilot", "core", "agent-platform-bridge.ts"), "utf8");
+  const assistantNavigationStatusClient = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "copilot", "core", "assistant-navigation-status-client.ts"),
+    "utf8"
+  );
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
   const globalStyles = readRendererStyles();
@@ -1949,6 +1961,10 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /export type AssistantAwaitingMode = "approval" \| "question" \| "form" \| "plan"/);
   assert.match(contracts, /"awaiting\.asking"/);
   assert.match(contracts, /"awaiting\.answered"/);
+  assert.doesNotMatch(assistantNavigationStatusClient, /awaiting\.ask"/);
+  assert.doesNotMatch(assistantNavigationStatusClient, /awaiting\.answer"/);
+  assert.doesNotMatch(bridge, /awaiting\.ask"/);
+  assert.doesNotMatch(bridge, /awaiting\.answer"/);
   assert.match(contracts, /agentType\?: string/);
   assert.match(contracts, /workspaceDirExists\?: boolean/);
   assert.match(contracts, /interface AssistantNavAgentItemsResult/);

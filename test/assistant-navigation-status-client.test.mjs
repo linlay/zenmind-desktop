@@ -175,7 +175,7 @@ test("assistant navigation snapshot ignores finished awaiting payloads", () => {
           chatName: "已结束等待项",
           updatedAt: 1000,
           awaiting: {
-            type: "awaiting.answer",
+            type: "awaiting.answered",
             status: "error",
             awaitingId: "await-1"
           }
@@ -440,6 +440,18 @@ test("assistant navigation push reducer handles awaiting, run lifecycle and arch
   assert.equal(started.items[0].recentChats[0].hasActiveRun, true);
   assert.equal(started.items[0].recentChats[0].hasPendingAwaiting, false);
 
+  const legacyAsk = applyAssistantNavigationPush(started.items, {
+    frame: "push",
+    type: "awaiting.ask",
+    chatId: "chat-1",
+    agentKey: "codeAssistant",
+    timestamp: 2500
+  });
+  assert.equal(legacyAsk.changed, false);
+  assert.equal(legacyAsk.shouldRefresh, true);
+  assert.equal(legacyAsk.items[0].hasPendingAwaiting, false);
+  assert.equal(legacyAsk.items[0].recentChats[0].hasPendingAwaiting, false);
+
   const awaiting = applyAssistantNavigationPush(started.items, {
     frame: "push",
     type: "awaiting.asking",
@@ -451,6 +463,18 @@ test("assistant navigation push reducer handles awaiting, run lifecycle and arch
   assert.equal(awaiting.items[0].hasPendingAwaiting, true);
   assert.equal(awaiting.items[0].recentChats[0].hasPendingAwaiting, true);
   assert.equal(awaiting.items[0].recentChats[0].awaitingMode, "question");
+
+  const legacyAnswer = applyAssistantNavigationPush(awaiting.items, {
+    frame: "push",
+    type: "awaiting.answer",
+    chatId: "chat-1",
+    agentKey: "codeAssistant",
+    timestamp: 3250
+  });
+  assert.equal(legacyAnswer.changed, false);
+  assert.equal(legacyAnswer.shouldRefresh, true);
+  assert.equal(legacyAnswer.items[0].hasPendingAwaiting, true);
+  assert.equal(legacyAnswer.items[0].recentChats[0].hasPendingAwaiting, true);
 
   const answered = applyAssistantNavigationPush(awaiting.items, {
     frame: "push",

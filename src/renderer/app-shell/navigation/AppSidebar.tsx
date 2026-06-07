@@ -1601,10 +1601,6 @@ export function AppSidebar({
               className="assistant-worker-unread-dot chat-unread-dot is-unread"
               aria-label="未读"
             />
-            <span
-              className="assistant-worker-awaiting-ring"
-              aria-label="待审批"
-            />
             <span className="worker-panel-time-label">
               {formatAssistantChatTime(chat.updatedAt)}
             </span>
@@ -1761,15 +1757,19 @@ export function AppSidebar({
                         )}
                       </span>
                     ) : null}
-                    {previewStatus === "running" ? (
+                    {previewStatus ? (
                       <span
                         className="assistant-material-icon is-loading sidebar-assistant-preview-loading"
-                        aria-label="运行中"
+                        aria-label={
+                          previewStatus === "awaiting" ? "等待中" : "运行中"
+                        }
                       />
                     ) : null}
-                    <span className="worker-panel-time-label">
-                      {formatAssistantChatTime(previewChat?.updatedAt ?? "")}
-                    </span>
+                    {!previewStatus && previewChat ? (
+                      <span className="worker-panel-time-label">
+                        {formatAssistantChatTime(previewChat.updatedAt)}
+                      </span>
+                    ) : null}
                   </span>
                 </span>
               </span>

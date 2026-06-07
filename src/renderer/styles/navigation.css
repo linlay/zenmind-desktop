@@ -915,7 +915,7 @@
   flex: 0 0 auto;
   width: 13px;
   height: 13px;
-  color: var(--success);
+  color: var(--ink-muted);
 }
 
 @keyframes assistant-worker-spin {
@@ -1165,7 +1165,7 @@
   height: 20px;
 }
 
-.assistant-worker-chat-item:hover .assistant-worker-chat-action {
+.assistant-worker-chat-item:hover .assistant-worker-chat-action:not([data-action="loading"]):not([data-action="awaiting"]) {
   opacity: 0;
 }
 
@@ -1174,7 +1174,6 @@
 }
 
 .assistant-worker-chat-action .assistant-worker-unread-dot,
-.assistant-worker-chat-action .assistant-worker-awaiting-ring,
 .assistant-worker-chat-action .worker-chat-loading {
   position: absolute;
   top: 50%;
@@ -1191,46 +1190,30 @@
   background: #1677ff;
 }
 
-.assistant-worker-awaiting-ring {
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--ink-muted);
-  border-radius: 999px;
-  background: transparent;
-  box-sizing: border-box;
-}
-
 .assistant-worker-chat-action[data-action="unread"] .assistant-worker-unread-dot {
   display: inline-block;
 }
 
-.assistant-worker-chat-action[data-action="awaiting"] {
-  width: 16px;
+.assistant-worker-chat-action[data-action="awaiting"],
+.assistant-worker-chat-action[data-action="loading"] {
+  width: 18px;
+  color: var(--ink-muted);
 }
 
-.assistant-worker-chat-action[data-action="awaiting"] .worker-panel-time-label {
+.assistant-worker-chat-action[data-action="awaiting"] .worker-panel-time-label,
+.assistant-worker-chat-action[data-action="loading"] .worker-panel-time-label {
   display: none;
-}
-
-.assistant-worker-chat-action[data-action="awaiting"] .assistant-worker-awaiting-ring {
-  display: inline-block;
 }
 
 .assistant-worker-chat-action[data-action="time"] .worker-panel-time-label {
   opacity: 1;
 }
 
-.assistant-worker-chat-action[data-action="loading"] {
-  width: 18px;
-}
-
-.assistant-worker-chat-action[data-action="loading"] .worker-panel-time-label {
-  display: none;
-}
-
+.assistant-worker-chat-action[data-action="awaiting"] .worker-chat-loading,
 .assistant-worker-chat-action[data-action="loading"] .worker-chat-loading {
   display: inline-flex;
   animation-name: assistant-worker-chat-spin;
+  color: var(--ink-muted);
 }
 
 @keyframes assistant-worker-chat-spin {
@@ -1268,7 +1251,7 @@
   cursor: pointer;
 }
 
-.assistant-worker-chat-item:hover .assistant-worker-chat-menu-button {
+.assistant-worker-chat-item:hover .assistant-worker-chat-action:not([data-action="loading"]):not([data-action="awaiting"]) ~ .assistant-worker-chat-menu-button {
   display: inline-flex;
 }
 

@@ -232,7 +232,7 @@ function hasPendingAwaitingPayload(value: unknown): boolean {
   }
 
   const type = toText(value.type).toLowerCase();
-  if (type === "awaiting.answer" || type === "awaiting.answered") {
+  if (type === "awaiting.answered") {
     return false;
   }
   const mode = toText(value.mode).toLowerCase();
@@ -249,7 +249,6 @@ function hasPendingAwaitingPayload(value: unknown): boolean {
     const answerType = toText(value.answer.type).toLowerCase();
     const answerStatus = toText(value.answer.status).toLowerCase();
     if (
-      answerType === "awaiting.answer" ||
       answerType === "awaiting.answered" ||
       isFinishedAwaitingStatus(answerStatus)
     ) {
@@ -267,7 +266,6 @@ function hasPendingAwaitingPayload(value: unknown): boolean {
     return true;
   }
   if (
-    type === "awaiting.ask" ||
     type === "awaiting.asking" ||
     status === "awaiting" ||
     status === "pending" ||
@@ -665,11 +663,10 @@ function readPushPreview(event: NavigationPushEvent) {
 }
 
 function readPushPendingAwaiting(event: NavigationPushEvent, fallback: boolean) {
-  if (event.type === "awaiting.ask" || event.type === "awaiting.asking") {
+  if (event.type === "awaiting.asking") {
     return true;
   }
   if (
-    event.type === "awaiting.answer" ||
     event.type === "awaiting.answered" ||
     event.type === "run.start" ||
     event.type === "run.complete"
@@ -889,9 +886,7 @@ export function applyAssistantNavigationPush(
     type === "chat.updated" ||
     type === "run.start" ||
     type === "run.complete" ||
-    type === "awaiting.ask" ||
     type === "awaiting.asking" ||
-    type === "awaiting.answer" ||
     type === "awaiting.answered"
   ) {
     const patch = createChatPatchFromPush(event, currentChat);

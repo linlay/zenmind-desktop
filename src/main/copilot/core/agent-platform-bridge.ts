@@ -211,7 +211,7 @@ function isPendingAwaitingPayload(value: unknown): boolean {
   }
   const record = value as Record<string, unknown>;
   const type = readString(record.type).trim().toLowerCase();
-  if (type === "awaiting.answer" || type === "awaiting.answered") {
+  if (type === "awaiting.answered") {
     return false;
   }
   const status = readString(record.status).trim().toLowerCase();
@@ -224,8 +224,7 @@ function isPendingAwaitingPayload(value: unknown): boolean {
   if (record.hasPendingAwaiting === false) {
     return false;
   }
-  return type === "awaiting.ask" ||
-    type === "awaiting.asking" ||
+  return type === "awaiting.asking" ||
     status === "awaiting" ||
     status === "pending" ||
     Boolean(readString(record.awaitingId)) ||
