@@ -130,6 +130,7 @@ export interface ServicesIpcHandlerContextDependencies {
   runServiceMutation: (...args: any[]) => unknown;
   handleServiceStart: (...args: any[]) => unknown;
   showFileDialog: (...args: any[]) => unknown;
+  showMessageBox?: (...args: any[]) => unknown;
   showArchiveDialog: (...args: any[]) => unknown;
   openLogViewerWindow: (...args: any[]) => unknown;
   closeLogViewerWindow: (...args: any[]) => unknown;
@@ -146,6 +147,14 @@ export interface ServicesIpcHandlerContextDependencies {
   loadInstalledPlugins?: (...args: any[]) => unknown;
   notifyServicesChanged?: (...args: any[]) => unknown;
   runStartupPreparation?: (...args: any[]) => unknown;
+  oldRootDecisionRef?: { current: "migrate" | "keep" | "cancel" | undefined };
+  generateBackupDirName?: (...args: any[]) => unknown;
+  migrateOldRootToBackup?: (...args: any[]) => unknown;
+  shouldPromptEnvRootConflict?: (...args: any[]) => unknown;
+  isFirstDesktopInstall?: boolean;
+  bundledEnvZipExistsAtStartup?: boolean;
+  runtimeRootExistedAtStartup?: boolean;
+  runtimeRootAtProcessStart?: string;
 }
 
 export function createServicesIpcHandlerOptions(
@@ -173,6 +182,7 @@ export function createServicesIpcHandlerOptions(
     runServiceMutation: dependencies.runServiceMutation,
     handleServiceStart: dependencies.handleServiceStart,
     showFileDialog: dependencies.showFileDialog,
+    showMessageBox: dependencies.showMessageBox,
     showArchiveDialog: dependencies.showArchiveDialog,
     openLogViewerWindow: dependencies.openLogViewerWindow,
     closeLogViewerWindow: dependencies.closeLogViewerWindow,
@@ -190,6 +200,14 @@ export function createServicesIpcHandlerOptions(
     loadInstalledPlugins: dependencies.loadInstalledPlugins,
     notifyServicesChanged: dependencies.notifyServicesChanged,
     runStartupPreparation: dependencies.runStartupPreparation,
+    oldRootDecisionRef: dependencies.oldRootDecisionRef,
+    generateBackupDirName: dependencies.generateBackupDirName,
+    migrateOldRootToBackup: dependencies.migrateOldRootToBackup,
+    shouldPromptEnvRootConflict: dependencies.shouldPromptEnvRootConflict,
+    isFirstDesktopInstall: dependencies.isFirstDesktopInstall,
+    bundledEnvZipExistsAtStartup: dependencies.bundledEnvZipExistsAtStartup,
+    runtimeRootExistedAtStartup: dependencies.runtimeRootExistedAtStartup,
+    runtimeRootAtProcessStart: dependencies.runtimeRootAtProcessStart,
     clearSessionCache: () => (context.session as any).defaultSession.clearCache()
   };
 }

@@ -114,3 +114,16 @@ test("startup shell avoids a blank white first frame", () => {
   assert.match(readyToShowBlock, /void handleStartupPipeline\(\);/u);
   assert.match(startupStyles, /\.startup-loading-screen\s*\{[\s\S]*?background:\s*#f6f8fc;/u);
 });
+
+test("startup pipeline imports bundled env.zip after old root migration", () => {
+  const mainProcessSource = fs.readFileSync(
+    path.resolve(import.meta.dirname, "../src/main/index.ts"),
+    "utf8"
+  );
+  const importDecisionBlock = mainProcessSource.match(
+    /const shouldImportBundledEnvZip =[\s\S]*?if \(shouldImportBundledEnvZip\)/u
+  )?.[0] ?? "";
+
+  assert.match(importDecisionBlock, /oldRootDecisionRef\.current === "migrate"/u);
+  assert.match(importDecisionBlock, /requireEnvZipImportAtStartup/u);
+});

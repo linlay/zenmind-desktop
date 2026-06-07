@@ -14,7 +14,11 @@ const {
   resolveDesktopVersion,
   resolveRuntimeRoot,
   runtimeEnvExists,
-  shouldRequireEnvZipImport
+  runtimeRootExists,
+  shouldRequireEnvZipImport,
+  generateBackupDirName,
+  migrateOldRootToBackup,
+  shouldPromptEnvRootConflict
 } = require("../dist-electron/main/env-bootstrap.js");
 
 const DESKTOP_VERSION = fs.readFileSync(new URL("../VERSION", import.meta.url), "utf8").trim().replace(/^v/u, "");
@@ -327,4 +331,177 @@ test("Windows env.zip target root is the user .zenmind directory", () => {
   };
 
   assert.equal(resolveRuntimeRoot(app, "win32"), String.raw`C:\Users\alice\.zenmind`);
+});
+
+test("macOS generateBackupDirName creates .zenmind-<timestamp> backup path", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-backup-"));
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  fs.mkdirSync(runtimeRoot, { recursive: true });
+
+  try {
+    const backupPath = generateBackupDirName(runtimeRoot, "darwin", 1_778_899_001);
+    assert.equal(backupPath, `${runtimeRoot}-1778899001`);
+    assert.equal(fs.existsSync(backupPath), false, "backup path should not already exist");
+    assert.ok(fs.existsSync(runtimeRoot), "original dir should still exist");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("generateBackupDirName appends -1, -2 on collision without overwriting", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-collision-"));
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  fs.mkdirSync(runtimeRoot, { recursive: true });
+
+  const backup1 = generateBackupDirName(runtimeRoot, "darwin", 1_778_899_002);
+  fs.mkdirSync(backup1, { recursive: true });
+
+  const backup2 = generateBackupDirName(runtimeRoot, "darwin", 1_778_899_002);
+
+  try {
+    assert.equal(backup2, `${runtimeRoot}-1778899002-1`);
+    assert.equal(fs.existsSync(backup1), true, "backup1 should still exist");
+    assert.equal(fs.existsSync(backup2), false, "backup2 should not exist yet");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Windows generateBackupDirName uses win32 separators", () => {
+  const runtimeRoot = String.raw`C:\Users\alice\.zenmind`;
+  const backupPath = generateBackupDirName(runtimeRoot, "win32", 1_778_899_003);
+
+  assert.equal(backupPath, String.raw`C:\Users\alice\.zenmind-1778899003`);
+});
+
+test("migrateOldRootToBackup renames existing .zenmind and returns backup path", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-rename-"));
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  fs.mkdirSync(runtimeRoot, { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, "VERSION"), "0.2.6\n", "utf8");
+
+  try {
+    const backupPath = `${runtimeRoot}-backup`;
+    assert.equal(migrateOldRootToBackup("darwin", runtimeRoot, backupPath), backupPath);
+    assert.equal(fs.existsSync(runtimeRoot), false, "original dir should no longer exist");
+    assert.equal(fs.existsSync(backupPath), true, "backup dir should exist");
+    assert.equal(fs.readFileSync(path.join(backupPath, "VERSION"), "utf8"), "0.2.6\n");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Windows migrateOldRootToBackup uses win32 path API", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-windows-"));
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  fs.mkdirSync(runtimeRoot, { recursive: true });
+
+  try {
+    const backupPath = generateBackupDirName(runtimeRoot, "win32", 1_778_899_004);
+    assert.equal(migrateOldRootToBackup("win32", runtimeRoot, backupPath), backupPath);
+    assert.equal(fs.existsSync(runtimeRoot), false, "original dir should no longer exist");
+    assert.equal(fs.existsSync(backupPath), true, "backup dir should exist");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("shouldPromptEnvRootConflict only prompts for first install with bundled env.zip and preexisting root", () => {
+  assert.equal(
+    shouldPromptEnvRootConflict({
+      platform: "darwin",
+      isFirstDesktopInstall: true,
+      bundledEnvZipExists: true,
+      runtimeRootExistedAtStartup: true
+    }),
+    true
+  );
+  assert.equal(
+    shouldPromptEnvRootConflict({
+      platform: "win32",
+      isFirstDesktopInstall: true,
+      bundledEnvZipExists: true,
+      runtimeRootExistedAtStartup: true
+    }),
+    true
+  );
+  assert.equal(
+    shouldPromptEnvRootConflict({
+      platform: "darwin",
+      isFirstDesktopInstall: false,
+      bundledEnvZipExists: true,
+      runtimeRootExistedAtStartup: true
+    }),
+    false
+  );
+  assert.equal(
+    shouldPromptEnvRootConflict({
+      platform: "darwin",
+      isFirstDesktopInstall: true,
+      bundledEnvZipExists: false,
+      runtimeRootExistedAtStartup: true
+    }),
+    false
+  );
+  assert.equal(
+    shouldPromptEnvRootConflict({
+      platform: "darwin",
+      isFirstDesktopInstall: true,
+      bundledEnvZipExists: true,
+      runtimeRootExistedAtStartup: false
+    }),
+    false
+  );
+  assert.equal(
+    shouldPromptEnvRootConflict({
+      platform: "linux",
+      isFirstDesktopInstall: true,
+      bundledEnvZipExists: true,
+      runtimeRootExistedAtStartup: true
+    }),
+    false
+  );
+});
+
+test("shouldPromptEnvRootConflict prompts even when old root already contains runtime env", () => {
+  assert.equal(
+    shouldPromptEnvRootConflict({
+      platform: "darwin",
+      isFirstDesktopInstall: true,
+      bundledEnvZipExists: true,
+      runtimeRootExistedAtStartup: true
+    }),
+    true
+  );
+});
+
+test("after migration env.zip can be imported into the new empty .zenmind", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-migrate-import-"));
+  const app = createApp(root);
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  const zipPath = path.join(root, "env.zip");
+
+  // Simulate old directory with content
+  fs.mkdirSync(path.join(runtimeRoot, "old-data"), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, "VERSION"), "0.2.5\n", "utf8");
+
+  const backupPath = migrateOldRootToBackup("darwin", runtimeRoot, `${runtimeRoot}-backup`);
+
+  // Now import env.zip into clean .zenmind
+  try {
+    await writeZip(zipPath, {
+      ".zenmind/VERSION": `v${DESKTOP_VERSION}\n`,
+      ".zenmind/agents/demo/agent.yml": "name: demo\n"
+    });
+
+    const result = await importEnvZipToRuntime(app, zipPath, "darwin", DESKTOP_VERSION);
+
+    assert.equal(result.targetRoot, runtimeRoot);
+    assert.equal(fs.readFileSync(path.join(runtimeRoot, "VERSION"), "utf8"), `v${DESKTOP_VERSION}\n`);
+    assert.equal(fs.readFileSync(path.join(runtimeRoot, "agents", "demo", "agent.yml"), "utf8"), "name: demo\n");
+    assert.equal(fs.existsSync(backupPath), true);
+    assert.equal(fs.readFileSync(path.join(backupPath, "VERSION"), "utf8"), "0.2.5\n");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

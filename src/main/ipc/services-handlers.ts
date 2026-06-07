@@ -33,6 +33,7 @@ export interface ServicesIpcHandlerOptions {
 
   // Dialogs
   showFileDialog: (opts: any, owner?: any) => Promise<any>;
+  showMessageBox?: (opts: any, owner?: any) => Promise<{ response: number }>;
   showArchiveDialog: (title: string) => Promise<any>;
 
   // Log viewer window controls
@@ -81,6 +82,21 @@ export interface ServicesIpcHandlerOptions {
 
   // Agent platform monitor
   issueAgentPlatformAccessToken?: (app: any, reason: "missing" | "unauthorized") => Promise<any>;
+
+  // Old root migration decision (shared from startup)
+  oldRootDecisionRef?: { current: "migrate" | "keep" | "cancel" | undefined };
+  generateBackupDirName?: (rootPath: string, platform: string) => string;
+  migrateOldRootToBackup?: (platform: string, rootPath: string, backupPath?: string) => string;
+  shouldPromptEnvRootConflict?: (input: {
+    platform: string;
+    isFirstDesktopInstall: boolean;
+    bundledEnvZipExists: boolean;
+    runtimeRootExistedAtStartup: boolean;
+  }) => boolean;
+  isFirstDesktopInstall?: boolean;
+  bundledEnvZipExistsAtStartup?: boolean;
+  runtimeRootExistedAtStartup?: boolean;
+  runtimeRootAtProcessStart?: string;
 }
 
 function createAgentPlatformMonitorUrl(baseUrl: string, token: string) {
@@ -145,6 +161,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     runServiceMutation,
     handleServiceStart,
     showFileDialog,
+    showMessageBox,
     showArchiveDialog,
     openLogViewerWindow,
     closeLogViewerWindow,
@@ -163,7 +180,15 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     loadInstalledPlugins,
     notifyServicesChanged,
     runStartupPreparation,
-    issueAgentPlatformAccessToken
+    issueAgentPlatformAccessToken,
+    oldRootDecisionRef,
+    generateBackupDirName,
+    migrateOldRootToBackup,
+    shouldPromptEnvRootConflict,
+    isFirstDesktopInstall,
+    bundledEnvZipExistsAtStartup,
+    runtimeRootExistedAtStartup,
+    runtimeRootAtProcessStart
   } = options;
 
   // ---------------------------------------------------------------------------
@@ -175,7 +200,137 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     startupRestoreController?.getState()
   );
 
+  function beginBootstrapStatus(message: string) {
+    startupRestoreController?.beginSession("bootstrap");
+    startupRestoreController?.updateService("zenmind-app-server", "installing", message);
+    notifyServicesChanged?.();
+  }
+
+  function scheduleStartupPreparationAfterEnvDecision() {
+    if (!runStartupPreparation) {
+      return false;
+    }
+
+    loadBuiltinServices?.(app);
+    loadInstalledPlugins?.(app);
+    notifyServicesChanged?.();
+
+    void runServiceMutation(() => runStartupPreparation(app, {
+      onModeResolved: (mode: string) => {
+        startupRestoreController?.beginSession(mode);
+      },
+      onStarting: (serviceId: string) => {
+        startupRestoreController?.updateService(serviceId, "starting", "启动中...");
+      },
+      onProgress: (serviceId: string, phase: any, message: string) => {
+        startupRestoreController?.updateService(serviceId, phase, message);
+        notifyServicesChanged?.();
+      }
+    }))
+      .then((result) => {
+        startupRestoreController?.finishSession(result.mode, result.failures);
+        notifyServicesChanged?.();
+      })
+      .catch((error) => {
+        startupRestoreController?.failCurrentSession(error instanceof Error ? error.message : String(error));
+        notifyServicesChanged?.();
+      });
+
+    return true;
+  }
+
+  function continueStartupWithExistingEnv() {
+    if (!runStartupPreparation) {
+      return { ok: false, message: "环境初始化配置不可用。" };
+    }
+
+    beginBootstrapStatus("跳过 env.zip 导入，使用现有环境目录...");
+    scheduleStartupPreparationAfterEnvDecision();
+    return { ok: true };
+  }
+
+  async function promptManualEnvRootConflict(): Promise<"migrate" | "keep" | "cancel" | undefined> {
+    if (oldRootDecisionRef?.current === "migrate" || oldRootDecisionRef?.current === "keep") {
+      return oldRootDecisionRef.current;
+    }
+    if (
+      !shouldPromptEnvRootConflict ||
+      !showMessageBox ||
+      !generateBackupDirName ||
+      !migrateOldRootToBackup ||
+      !runtimeRootAtProcessStart
+    ) {
+      return undefined;
+    }
+
+    const promptNeeded = shouldPromptEnvRootConflict({
+      platform: platform || process.platform,
+      isFirstDesktopInstall: Boolean(isFirstDesktopInstall),
+      bundledEnvZipExists: Boolean(bundledEnvZipExistsAtStartup),
+      runtimeRootExistedAtStartup: Boolean(runtimeRootExistedAtStartup)
+    });
+    if (!promptNeeded) {
+      return undefined;
+    }
+
+    const backupPath = generateBackupDirName(runtimeRootAtProcessStart, platform || process.platform);
+    const choice = await showMessageBox({
+      type: "warning",
+      title: "检测到旧环境目录",
+      message: `目录 ${runtimeRootAtProcessStart} 已存在，是否迁移旧数据？`,
+      detail: `迁移后旧目录将重命名为 ${backupPath}，然后导入全新环境。\n选择“使用旧数据”将跳过环境导入，直接使用现有目录。`,
+      buttons: ["迁移旧数据并初始化", "使用旧数据", "取消导入"],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true
+    });
+
+    if (choice.response === 1) {
+      if (oldRootDecisionRef) {
+        oldRootDecisionRef.current = "keep";
+      }
+      return "keep";
+    }
+    if (choice.response !== 0) {
+      return "cancel";
+    }
+
+    try {
+      migrateOldRootToBackup(platform || process.platform, runtimeRootAtProcessStart, backupPath);
+      if (oldRootDecisionRef) {
+        oldRootDecisionRef.current = "migrate";
+      }
+      return "migrate";
+    } catch (error) {
+      const retryChoice = await showMessageBox({
+        type: "error",
+        title: "旧环境迁移失败",
+        message: error instanceof Error ? error.message : String(error),
+        detail: `旧目录：${runtimeRootAtProcessStart}\n目标备份：${backupPath}`,
+        buttons: ["取消导入", "使用旧数据"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true
+      });
+      if (retryChoice.response === 1) {
+        if (oldRootDecisionRef) {
+          oldRootDecisionRef.current = "keep";
+        }
+        return "keep";
+      }
+      return "cancel";
+    }
+  }
+
   ipcMain.handle("services.importEnvZip", async () => {
+    const effectiveDecision = await promptManualEnvRootConflict();
+    if (effectiveDecision === "keep") {
+      return continueStartupWithExistingEnv();
+    }
+    if (effectiveDecision === "cancel") {
+      return { ok: false, message: "已取消导入。" };
+    }
+
     const result = await showFileDialog({
       title: "选择 env.zip",
       defaultPath: app.getPath("home"),
@@ -192,39 +347,14 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     }
 
     try {
-      startupRestoreController?.beginSession("bootstrap");
-      startupRestoreController?.updateService("zenmind-app-server", "installing", "正在导入 env.zip...");
-      notifyServicesChanged?.();
+      beginBootstrapStatus("正在导入 env.zip...");
 
       const importResult = await importEnvZipToRuntime(app, result.filePaths[0], platform);
       console.info(
         `[main] imported env.zip: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
       );
 
-      loadBuiltinServices?.(app);
-      loadInstalledPlugins?.(app);
-      notifyServicesChanged?.();
-
-      void runServiceMutation(() => runStartupPreparation(app, {
-        onModeResolved: (mode: string) => {
-          startupRestoreController?.beginSession(mode);
-        },
-        onStarting: (serviceId: string) => {
-          startupRestoreController?.updateService(serviceId, "starting", "启动中...");
-        },
-        onProgress: (serviceId: string, phase: any, message: string) => {
-          startupRestoreController?.updateService(serviceId, phase, message);
-          notifyServicesChanged?.();
-        }
-      }))
-        .then((result) => {
-          startupRestoreController?.finishSession(result.mode, result.failures);
-          notifyServicesChanged?.();
-        })
-        .catch((error) => {
-          startupRestoreController?.failCurrentSession(error instanceof Error ? error.message : String(error));
-          notifyServicesChanged?.();
-        });
+      scheduleStartupPreparationAfterEnvDecision();
 
       return { ok: true };
     } catch (error) {
