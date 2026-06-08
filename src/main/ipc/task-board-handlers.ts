@@ -3,6 +3,8 @@ export interface TaskBoardIpcHandlerOptions {
 
   // Task board
   listTaskBoardIssues: (app: any) => any;
+  getTaskBoardCloudConfig: (app: any) => any;
+  saveTaskBoardCloudConfig: (app: any, input: any) => any;
   createTaskBoardIssue: (app: any, input: any) => any;
   updateTaskBoardIssue: (app: any, issueId: string, input: any) => any;
   deleteTaskBoardIssueWithAutomation: (app: any, issueId: string, callAgentPlatform: any) => any;
@@ -34,6 +36,8 @@ export function registerTaskBoardIpcHandlers(ipcMain: any, options: TaskBoardIpc
   const {
     app,
     listTaskBoardIssues,
+    getTaskBoardCloudConfig,
+    saveTaskBoardCloudConfig,
     createTaskBoardIssue,
     updateTaskBoardIssue,
     deleteTaskBoardIssueWithAutomation,
@@ -66,6 +70,14 @@ export function registerTaskBoardIpcHandlers(ipcMain: any, options: TaskBoardIpc
   // ---------------------------------------------------------------------------
   ipcMain.handle("taskBoard.listIssues", async () =>
     listTaskBoardIssues(app)
+  );
+
+  ipcMain.handle("taskBoard.getCloudConfig", async () =>
+    getTaskBoardCloudConfig(app)
+  );
+
+  ipcMain.handle("taskBoard.saveCloudConfig", async (_event: any, input: any) =>
+    saveTaskBoardCloudConfig(app, input)
   );
 
   ipcMain.handle("taskBoard.createIssue", async (_event: any, input: any) =>

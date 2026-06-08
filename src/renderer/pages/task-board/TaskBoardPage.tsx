@@ -27,6 +27,7 @@ import type {
   AssistantNavAgentItem,
   DesktopApi,
   DesktopPetAgentOption,
+  TaskBoardCloudConfig,
   TaskBoardIssue,
   TaskBoardIssueInput,
   TaskBoardIssueUpdateInput,
@@ -43,7 +44,7 @@ import { AgentIcon } from "../../app-shell/navigation/AgentIcon";
 import { useI18n } from "../../i18n/useI18n";
 import { PluginPage } from "../plugin/PluginPage";
 
-type MenuKind = "filter" | "display" | null;
+type MenuKind = "filter" | "display" | "cloud" | null;
 type ModalMode = "create" | "edit";
 type ThemeMode = "light" | "dark";
 type TaskBoardAutomationPlan = "hourly" | "daily" | "weekdays" | "weekly" | "custom";
@@ -96,6 +97,8 @@ type Feedback = {
 type TaskBoardPageProps = {
   hostTheme: ThemeMode;
 };
+
+type TaskBoardConnectionState = NonNullable<Awaited<ReturnType<DesktopApi["taskBoard"]["listIssues"]>>["connectionState"]>;
 
 type TaskBoardChatModalRequest = {
   agentKey: string;
@@ -170,6 +173,12 @@ const emptyForm: IssueFormState = {
   automationMessage: "",
   automationTimezone: "Asia/Shanghai",
   syncToCloud: false
+};
+
+const defaultCloudConfig: TaskBoardCloudConfig = {
+  serverUrl: "",
+  token: "",
+  selectedProjectId: "default"
 };
 
 const defaultDisplayState: DisplayState = {
@@ -859,6 +868,21 @@ function readTaskBoardApi(): DesktopApi["taskBoard"] | null {
   return api && typeof api.listIssues === "function" ? api : null;
 }
 
+function getTaskBoardConnectionTone(state: TaskBoardConnectionState) {
+  if (state === "open") return "success";
+  if (state === "connecting") return "pending";
+  if (state === "error") return "error";
+  return "muted";
+}
+
+function getTaskBoardConnectionLabel(state: TaskBoardConnectionState, t: TranslateFunction) {
+  if (state === "open") return t("taskBoard.cloud.status.open");
+  if (state === "connecting") return t("taskBoard.cloud.status.connecting");
+  if (state === "closed") return t("taskBoard.cloud.status.closed");
+  if (state === "error") return t("taskBoard.cloud.status.error");
+  return t("taskBoard.cloud.status.disabled");
+}
+
 function isIssueDragLocked(issue: TaskBoardIssue | null | undefined) {
   return Boolean(issue?.runId);
 }
@@ -971,6 +995,9 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [menu, setMenu] = useState<MenuKind>(null);
   const [query, setQuery] = useState("");
+  const [cloudConfig, setCloudConfig] = useState<TaskBoardCloudConfig>(defaultCloudConfig);
+  const [connectionState, setConnectionState] = useState<TaskBoardConnectionState>("disabled");
+  const [cloudConfigSaving, setCloudConfigSaving] = useState(false);
   const [priorityFilters, setPriorityFilters] = useState<TaskBoardPriority[]>([]);
   const [todoAutomationFilter, setTodoAutomationFilter] = useState<TaskBoardTodoAutomationFilter>("all");
   const [taskBoardCountdownNow, setTaskBoardCountdownNow] = useState(() => Date.now());
@@ -1004,12 +1031,23 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
         return;
       }
       try {
-        const [issueResult, agentResult] = await Promise.all([
+        const configTask = typeof taskBoardApi.getCloudConfig === "function"
+          ? taskBoardApi.getCloudConfig()
+          : Promise.resolve({
+            ok: true,
+            message: "",
+            config: defaultCloudConfig,
+            connectionState: "disabled" as TaskBoardConnectionState
+          });
+        const [issueResult, configResult, agentResult] = await Promise.all([
           taskBoardApi.listIssues(),
+          configTask,
           loadTaskBoardAgents()
         ]);
         if (cancelled) return;
         setIssues(sortIssues(issueResult.issues));
+        setConnectionState(issueResult.connectionState ?? configResult.connectionState ?? "disabled");
+        setCloudConfig(configResult.config);
         setAgents(agentResult);
       } catch (error) {
         if (!cancelled) {
@@ -1030,6 +1068,45 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     };
   }, [missingTaskBoardApiMessage, t]);
 
+  async function reloadTaskBoard() {
+    const taskBoardApi = readTaskBoardApi();
+    if (!taskBoardApi) return;
+    const issueResult = await taskBoardApi.listIssues();
+    setIssues(sortIssues(issueResult.issues));
+    setConnectionState(issueResult.connectionState ?? "disabled");
+  }
+
+  async function saveCloudConfig(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const taskBoardApi = readTaskBoardApi();
+    if (!taskBoardApi) {
+      setFeedback({ tone: "error", message: missingTaskBoardApiMessage });
+      return;
+    }
+    if (typeof taskBoardApi.saveCloudConfig !== "function") {
+      setFeedback({ tone: "error", message: t("taskBoard.cloud.preloadOutdated") });
+      return;
+    }
+    setCloudConfigSaving(true);
+    try {
+      const result = await taskBoardApi.saveCloudConfig(cloudConfig);
+      setCloudConfig(result.config);
+      setConnectionState(result.connectionState ?? "disabled");
+      await reloadTaskBoard();
+      setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
+      if (result.ok) {
+        setMenu(null);
+      }
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : t("taskBoard.cloud.saveFailed")
+      });
+    } finally {
+      setCloudConfigSaving(false);
+    }
+  }
+
   useEffect(() => {
     const unsubscribe = window.electronAPI.assistant.onNavigationAgentsChanged((result) => {
       if (result.ok) {
@@ -1048,6 +1125,16 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   useEffect(() => {
     issuesRef.current = issues;
   }, [issues]);
+
+  useEffect(() => {
+    const taskBoardApi = readTaskBoardApi();
+    if (!taskBoardApi || typeof taskBoardApi.onChanged !== "function") {
+      return undefined;
+    }
+    return taskBoardApi.onChanged(() => {
+      void reloadTaskBoard();
+    });
+  }, []);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -1640,6 +1727,16 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
           </button>
         </div>
         <div className="task-board-toolbar-right">
+          <button
+            type="button"
+            className={`task-board-tool task-board-cloud-status is-${getTaskBoardConnectionTone(connectionState)} ${menu === "cloud" ? "is-active" : ""}`}
+            aria-label={t("taskBoard.cloud.configure")}
+            title={t("taskBoard.cloud.configure")}
+            onClick={() => setMenu(menu === "cloud" ? null : "cloud")}
+          >
+            <span className="task-board-cloud-dot" aria-hidden="true" />
+            <span className="task-board-tool-label">{getTaskBoardConnectionLabel(connectionState, t)}</span>
+          </button>
           <span className="task-board-count">{t("taskBoard.toolbar.issueCount", { filtered: filteredCount, total: totalCount })}</span>
           <button
             type="button"
@@ -1672,7 +1769,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 ))}
               </div>
             </>
-          ) : (
+          ) : menu === "display" ? (
             <>
               <strong>{t("taskBoard.display.cardFields")}</strong>
               {Object.entries({
@@ -1693,6 +1790,44 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 </label>
               ))}
             </>
+          ) : (
+            <form className="task-board-cloud-form" onSubmit={(event) => void saveCloudConfig(event)}>
+              <div className="task-board-cloud-form-head">
+                <strong>{t("taskBoard.cloud.title")}</strong>
+                <span className={`task-board-cloud-state is-${getTaskBoardConnectionTone(connectionState)}`}>
+                  {getTaskBoardConnectionLabel(connectionState, t)}
+                </span>
+              </div>
+              <label className="task-board-field">
+                <span>{t("taskBoard.cloud.serverUrl")}</span>
+                <input
+                  value={cloudConfig.serverUrl}
+                  onChange={(event) => setCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
+                  placeholder="http://127.0.0.1:8080"
+                />
+              </label>
+              <label className="task-board-field">
+                <span>{t("taskBoard.cloud.token")}</span>
+                <input
+                  value={cloudConfig.token}
+                  onChange={(event) => setCloudConfig((current) => ({ ...current, token: event.target.value }))}
+                  placeholder={t("taskBoard.cloud.tokenPlaceholder")}
+                />
+              </label>
+              <label className="task-board-field">
+                <span>{t("taskBoard.cloud.projectId")}</span>
+                <input
+                  value={cloudConfig.selectedProjectId}
+                  onChange={(event) => setCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
+                  placeholder="default"
+                />
+              </label>
+              <div className="task-board-cloud-actions">
+                <button type="submit" className="task-board-primary-button" disabled={cloudConfigSaving}>
+                  {cloudConfigSaving ? t("taskBoard.cloud.saving") : t("taskBoard.cloud.save")}
+                </button>
+              </div>
+            </form>
           )}
         </div>
       ) : null}

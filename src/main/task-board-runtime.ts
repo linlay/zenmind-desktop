@@ -5,6 +5,8 @@ import type {
   AssistantStartRunRequest,
   AssistantStartRunResult,
   DesktopPetAgentOption,
+  TaskBoardCloudConfig,
+  TaskBoardCloudConfigResult,
   TaskBoardCurrentUser,
   TaskBoardDeleteResult,
   TaskBoardIssue,
@@ -59,6 +61,7 @@ type TaskBoardRuntimeOptions = {
   app: App;
   assistantBridge: AssistantBridgeLike;
   callAgentPlatform: AgentPlatformCaller<App>;
+  onChanged?: () => void;
   onDebug?: (message: string) => void;
 };
 
@@ -100,8 +103,20 @@ function readBoolean(value: unknown) {
   return value === true;
 }
 
+function getTaskBoardConfigPath(app: App) {
+  return path.join(getDesktopConfigRoot(app), KANBAN_CONFIG_FILE);
+}
+
+function normalizeTaskBoardCloudConfig(input: TaskBoardDesktopConfigFile): TaskBoardCloudConfig {
+  return {
+    serverUrl: readText(input.serverUrl),
+    token: readText(input.token),
+    selectedProjectId: readText(input.selectedProjectId) || DEFAULT_SELECTED_PROJECT_ID
+  };
+}
+
 function readTaskBoardConfigFile(app: App): TaskBoardDesktopConfigFile {
-  const configPath = path.join(getDesktopConfigRoot(app), KANBAN_CONFIG_FILE);
+  const configPath = getTaskBoardConfigPath(app);
   if (!fs.existsSync(configPath)) {
     return {};
   }
@@ -113,7 +128,7 @@ function readTaskBoardConfigFile(app: App): TaskBoardDesktopConfigFile {
 }
 
 export function readTaskBoardWsConfig(app: App): KanbanDesktopWsConfig | null {
-  const config = readTaskBoardConfigFile(app);
+  const config = normalizeTaskBoardCloudConfig(readTaskBoardConfigFile(app));
   const serverUrl = readText(process.env.ZENMIND_KANBAN_SERVER_URL) || readText(config.serverUrl);
   if (!serverUrl) {
     return null;
@@ -125,6 +140,18 @@ export function readTaskBoardWsConfig(app: App): KanbanDesktopWsConfig | null {
       readText(config.selectedProjectId) ||
       DEFAULT_SELECTED_PROJECT_ID
   };
+}
+
+function readTaskBoardCloudConfig(app: App): TaskBoardCloudConfig {
+  return normalizeTaskBoardCloudConfig(readTaskBoardConfigFile(app));
+}
+
+function writeTaskBoardCloudConfig(app: App, input: TaskBoardDesktopConfigFile): TaskBoardCloudConfig {
+  const config = normalizeTaskBoardCloudConfig(input);
+  const configPath = getTaskBoardConfigPath(app);
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  return config;
 }
 
 function issueSyncMode(issue: TaskBoardIssue | null | undefined) {
@@ -155,6 +182,8 @@ function toCloudIssueInput(input: TaskBoardIssueInput | TaskBoardIssueUpdateInpu
     "workerAgent",
     "reviewerId",
     "reviewRequired",
+    "chatId",
+    "runId",
     "runState",
     "automationId",
     "automationEnabled",
@@ -282,6 +311,7 @@ export class TaskBoardRuntime {
       onAutomationSync: (payload) => this.syncRemoteAutomationPayload(payload),
       onStateChanged: (state) => {
         this.connectionState = state;
+        this.notifyChanged();
       },
       onDebug: this.options.onDebug
     });
@@ -298,6 +328,29 @@ export class TaskBoardRuntime {
   listIssues(): TaskBoardListResult {
     this.refreshConnection();
     return listDesktopKanbanIssues(this.options.app, this.currentUser(), this.connectionState);
+  }
+
+  getCloudConfig(): TaskBoardCloudConfigResult {
+    this.refreshConnection();
+    return {
+      ok: true,
+      message: "云端看板配置已加载。",
+      config: readTaskBoardCloudConfig(this.options.app),
+      configPath: getTaskBoardConfigPath(this.options.app),
+      connectionState: this.connectionState
+    };
+  }
+
+  saveCloudConfig(input: TaskBoardCloudConfig): TaskBoardCloudConfigResult {
+    const config = writeTaskBoardCloudConfig(this.options.app, input);
+    this.refreshConnection();
+    return {
+      ok: true,
+      message: config.serverUrl ? "云端看板配置已保存，正在重新连接。" : "云端看板配置已保存，连接已关闭。",
+      config,
+      configPath: getTaskBoardConfigPath(this.options.app),
+      connectionState: this.connectionState
+    };
   }
 
   async createIssue(input: TaskBoardIssueInput): Promise<TaskBoardIssueResult> {
@@ -604,10 +657,17 @@ export class TaskBoardRuntime {
 
   private applySnapshot(snapshot: TaskBoardCloudSnapshot) {
     applyDesktopKanbanCloudSnapshot(this.options.app, this.currentUser(), snapshot);
+    this.notifyChanged();
   }
 
   private applyDispatch(issue: unknown, revision: number): TaskBoardIssueResult {
-    return upsertDispatchedDesktopKanbanIssue(this.options.app, this.currentUser(), issue, revision, "cloud_dispatch");
+    const result = upsertDispatchedDesktopKanbanIssue(this.options.app, this.currentUser(), issue, revision, "cloud_dispatch");
+    this.notifyChanged();
+    return result;
+  }
+
+  private notifyChanged() {
+    this.options.onChanged?.();
   }
 
   private applyCloudIssueResponse(payload: unknown, fallbackMessage: string, origin: TaskBoardIssue["origin"] = "desktop"): TaskBoardIssueResult {

@@ -90,7 +90,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
   const hello = socket.sent[0];
   assert.equal(hello.op, "desktop.hello");
   assert.equal(hello.payload.deviceId, "device-1");
-  assert.equal(hello.payload.scope, "current_user");
+  assert.equal(hello.payload.scope, "project");
   assert.deepEqual(hello.payload.currentUser, {
     id: "user-1",
     name: "Desktop User",

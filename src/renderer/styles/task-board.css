@@ -176,6 +176,33 @@
   stroke-linejoin: round;
 }
 
+.task-board-cloud-status {
+  min-width: 96px;
+}
+
+.task-board-cloud-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #94a3b8;
+  flex: 0 0 auto;
+}
+
+.task-board-cloud-status.is-success .task-board-cloud-dot,
+.task-board-cloud-state.is-success::before {
+  background: #16a34a;
+}
+
+.task-board-cloud-status.is-pending .task-board-cloud-dot,
+.task-board-cloud-state.is-pending::before {
+  background: #d97706;
+}
+
+.task-board-cloud-status.is-error .task-board-cloud-dot,
+.task-board-cloud-state.is-error::before {
+  background: #dc2626;
+}
+
 .task-board-search-wrap {
   position: relative;
   width: clamp(220px, 24vw, 340px);
@@ -298,6 +325,11 @@
   right: 24px;
 }
 
+.task-board-menu-panel.is-cloud {
+  right: 24px;
+  width: min(420px, calc(100% - 32px));
+}
+
 .task-board-menu-grid {
   display: flex;
   flex-wrap: wrap;
@@ -310,6 +342,40 @@
   gap: 8px;
   color: var(--task-board-muted);
   font-size: 12px;
+}
+
+.task-board-cloud-form {
+  display: grid;
+  gap: 10px;
+}
+
+.task-board-cloud-form-head,
+.task-board-cloud-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.task-board-cloud-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--task-board-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.task-board-cloud-state::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #94a3b8;
 }
 
 .task-board-feedback {
@@ -2005,7 +2071,8 @@
   }
 
   .task-board-menu-panel.is-filter,
-  .task-board-menu-panel.is-display {
+  .task-board-menu-panel.is-display,
+  .task-board-menu-panel.is-cloud {
     left: 14px;
     right: 14px;
     width: auto;

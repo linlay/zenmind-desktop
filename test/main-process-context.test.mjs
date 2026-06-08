@@ -319,6 +319,8 @@ test("task board ipc options use context app and preserve sidebar item app bindi
   });
   const dependencies = {
     listTaskBoardIssues: () => [],
+    getTaskBoardCloudConfig: () => "get-cloud-config",
+    saveTaskBoardCloudConfig: () => "save-cloud-config",
     createTaskBoardIssue: () => "create",
     updateTaskBoardIssue: () => "update",
     deleteTaskBoardIssueWithAutomation: () => "delete",

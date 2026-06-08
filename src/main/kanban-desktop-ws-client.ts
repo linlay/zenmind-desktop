@@ -239,7 +239,7 @@ export class KanbanDesktopWsClient {
         deviceId: this.options.getDeviceId(),
         selectedProjectId: this.config?.selectedProjectId ?? "default",
         currentUser: this.options.getCurrentUser(),
-        scope: "current_user"
+        scope: "project"
       });
       const snapshot = await this.request<TaskBoardCloudSnapshot>("kanban.snapshot.get", {
         projectId: this.config?.selectedProjectId ?? "default"
