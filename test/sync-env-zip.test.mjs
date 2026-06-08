@@ -96,6 +96,9 @@ test("sync-env rejects invalid ENV_ZIP inputs", async () => {
   const root = createFixture();
   const textPath = path.join(root, "env.txt");
   const mismatchZipPath = path.join(root, "mismatch.zip");
+  const legacyWrapperZipPath = path.join(root, "legacy-wrapper.zip");
+  const bareZipPath = path.join(root, "bare.zip");
+  const nestedWrapperZipPath = path.join(root, "nested-wrapper.zip");
   const staleOutputZipPath = path.join(root, "build", "resources", "env", BUNDLED_ENV_FILE_NAME);
 
   try {
@@ -103,6 +106,18 @@ test("sync-env rejects invalid ENV_ZIP inputs", async () => {
     await writeZip(mismatchZipPath, {
       "env/VERSION": "9.9.9\n",
       "env/agents/demo/agent.yml": "name: demo\n"
+    });
+    await writeZip(legacyWrapperZipPath, {
+      "zenmind-env/VERSION": "1.2.3\n",
+      "zenmind-env/agents/demo/agent.yml": "name: demo\n"
+    });
+    await writeZip(bareZipPath, {
+      "VERSION": "1.2.3\n",
+      "agents/demo/agent.yml": "name: demo\n"
+    });
+    await writeZip(nestedWrapperZipPath, {
+      "env/env/VERSION": "1.2.3\n",
+      "env/env/agents/demo/agent.yml": "name: demo\n"
     });
 
     await assert.rejects(
@@ -132,6 +147,30 @@ test("sync-env rejects invalid ENV_ZIP inputs", async () => {
       /ENV_ZIP VERSION mismatch/
     );
     assert.equal(fs.existsSync(staleOutputZipPath), false);
+    await assert.rejects(
+      () => prepareBundledEnvZip({
+        rootDir: root,
+        env: { ENV_ZIP: legacyWrapperZipPath },
+        logger: silentLogger
+      }),
+      /single top-level env\/ directory/
+    );
+    await assert.rejects(
+      () => prepareBundledEnvZip({
+        rootDir: root,
+        env: { ENV_ZIP: bareZipPath },
+        logger: silentLogger
+      }),
+      /single top-level env\/ directory/
+    );
+    await assert.rejects(
+      () => prepareBundledEnvZip({
+        rootDir: root,
+        env: { ENV_ZIP: nestedWrapperZipPath },
+        logger: silentLogger
+      }),
+      /nested environment wrapper/
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

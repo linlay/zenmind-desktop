@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import JSZip from "jszip";
-import yaml from "js-yaml";
 import { APP_BRAND } from "../shared/generated/brand";
 
 export type EnvRootConflictDecision = "migrate" | "keep" | "cancel";
@@ -30,38 +29,12 @@ export type BundledEnvZipImportResult = EnvZipImportResult & {
   sourceZipPath: string;
 };
 
-const ENV_ARCHIVE_WRAPPER_DIRS = new Set([".zenmind", "zenmind", "zenmind-env", "env"]);
 const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-market"] as const;
 const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-bootstrap.json");
 const BUNDLED_ENV_RESOURCES_DIR_NAME = "env";
 const ENV_ZIP_FILE_NAME = "env.zip";
 const VERSION_FILE_NAME = "VERSION";
-const OWNER_BOOTSTRAP_RELATIVE_PATH = path.join("owner", "BOOTSTRAP.md");
-const OWNER_PROFILE_RELATIVE_PATHS = [
-  path.join("owner", "OWNER.md"),
-  path.join("owner", "profile.yml"),
-  path.join("owner", "profile.yaml")
-];
-const COMPLETED_OWNER_BOOTSTRAP_RELATIVE_PATH = path.join(
-  ".desktop",
-  "state",
-  "desktop",
-  "owner-bootstrap.completed.md"
-);
-
-type EnvZipImportOptions = {
-  shouldOverwriteExistingFile?: (relativePath: string) => boolean;
-};
-
-type MutableYamlRecord = Record<string, unknown>;
-
-function isEnvArchiveWrapperDir(dirName: string) {
-  const normalizedDirName = dirName.trim().toLowerCase();
-  return (
-    ENV_ARCHIVE_WRAPPER_DIRS.has(normalizedDirName) ||
-    /^zenmind-env[-_].+/u.test(normalizedDirName)
-  );
-}
+const ENV_ZIP_ROOT_DIR_NAME = "env";
 
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
   if (platform === "win32") {
@@ -132,79 +105,6 @@ export function runtimeEnvExists(app: AppPathReader, platform: NodeJS.Platform =
   });
 }
 
-function runtimeSeedPathExists(root: string, relativePath: string) {
-  try {
-    const targetPath = path.join(root, relativePath);
-    return fs.existsSync(targetPath);
-  } catch {
-    return false;
-  }
-}
-
-function hasMeaningfulOwnerContent(content: string) {
-  return content
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .some((line) =>
-      line &&
-      !line.startsWith("#") &&
-      !/^(?:todo|tbd|placeholder|example|待填写|未填写|请填写|请补充)(?:\b|[:：])/iu.test(line)
-    );
-}
-
-function runtimeHasCompletedOwnerProfile(root: string) {
-  for (const relativePath of OWNER_PROFILE_RELATIVE_PATHS) {
-    const ownerPath = path.join(root, relativePath);
-    try {
-      if (fileExists(ownerPath) && hasMeaningfulOwnerContent(fs.readFileSync(ownerPath, "utf8"))) {
-        return true;
-      }
-    } catch {
-      // Keep BOOTSTRAP.md in place when the existing owner file cannot be read safely.
-    }
-  }
-  return false;
-}
-
-function archiveCompletedOwnerBootstrap(targetRoot: string) {
-  const bootstrapPath = path.join(targetRoot, OWNER_BOOTSTRAP_RELATIVE_PATH);
-  if (!fileExists(bootstrapPath) || !runtimeHasCompletedOwnerProfile(targetRoot)) {
-    return false;
-  }
-
-  const archivePath = path.join(targetRoot, COMPLETED_OWNER_BOOTSTRAP_RELATIVE_PATH);
-  const archiveTarget = fileExists(archivePath)
-    ? path.join(
-        path.dirname(archivePath),
-        `owner-bootstrap.completed-${Date.now()}.md`
-      )
-    : archivePath;
-  try {
-    fs.mkdirSync(path.dirname(archiveTarget), { recursive: true });
-    fs.renameSync(bootstrapPath, archiveTarget);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function runtimeEnvNeedsBundledSeedRefresh(
-  app: AppPathReader,
-  platform: NodeJS.Platform = process.platform
-) {
-  if (platform !== "darwin" && platform !== "win32") {
-    return false;
-  }
-  const root = resolveRuntimeRoot(app, platform);
-  if (!runtimeRootExists(app, platform)) {
-    return false;
-  }
-  return (
-    runtimeSeedPathExists(root, path.join("agents", "bootstrap")) ||
-    runtimeSeedPathExists(root, path.join("owner", "BOOTSTRAP.md"))
-  );
-}
-
 export function shouldRequireEnvZipImport(input: {
   platform?: NodeJS.Platform;
   runtimeEnvExistedAtStartup: boolean;
@@ -260,7 +160,6 @@ export async function importBundledEnvZipToRuntime(
   options: {
     resourcesRoot?: string;
     expectedDesktopVersion?: string;
-    refreshRuntimeSeedFiles?: boolean;
   } = {}
 ): Promise<BundledEnvZipImportResult | null> {
   const zipPath = resolveBundledEnvZipPath(app, platform, options.resourcesRoot);
@@ -272,16 +171,8 @@ export async function importBundledEnvZipToRuntime(
     app,
     zipPath,
     platform,
-    options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader),
-    {
-      shouldOverwriteExistingFile: options.refreshRuntimeSeedFiles
-        ? isRefreshableRuntimeSeedPath
-        : undefined
-    }
+    options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader)
   );
-  if (options.refreshRuntimeSeedFiles) {
-    archiveCompletedOwnerBootstrap(result.targetRoot);
-  }
   return {
     ...result,
     sourceZipPath: zipPath
@@ -308,35 +199,6 @@ function shouldSkipArchiveEntry(entryName: string) {
   return segments[0] === "__MACOSX" || segments[segments.length - 1] === ".DS_Store";
 }
 
-function countWrapperSegments(fileNames: string[]) {
-  let strippedNames = fileNames.map(normalizeArchiveEntryName);
-  let wrapperDepth = 0;
-
-  while (strippedNames.length > 0) {
-    const segments = strippedNames.map((entryName) => entryName.split("/").filter(Boolean));
-    const firstSegment = segments[0]?.[0] ?? "";
-    if (
-      !firstSegment ||
-      !isEnvArchiveWrapperDir(firstSegment) ||
-      !segments.every((entrySegmentsValue) =>
-        entrySegmentsValue[0] === firstSegment && entrySegmentsValue.length > 1
-      )
-    ) {
-      break;
-    }
-
-    wrapperDepth += 1;
-    strippedNames = segments.map((entrySegmentsValue) => entrySegmentsValue.slice(1).join("/"));
-  }
-
-  return wrapperDepth;
-}
-
-function stripWrapperSegments(entryName: string, wrapperDepth: number) {
-  const segments = entrySegments(entryName).slice(wrapperDepth);
-  return segments.join("/");
-}
-
 function normalizeSafeRelativePath(relativePath: string) {
   const normalized = path.posix.normalize(relativePath.replace(/\\/gu, "/"));
   if (
@@ -351,141 +213,32 @@ function normalizeSafeRelativePath(relativePath: string) {
   return normalized;
 }
 
-function normalizeEnvZipEntryRelativePath(relativePath: string) {
-  const normalized = normalizeSafeRelativePath(relativePath);
-  const segments = normalized.split("/");
-  if (segments[0] === "agents" && segments[1]?.endsWith(".bootstrap")) {
-    segments[1] = segments[1].slice(0, -".bootstrap".length);
-    return segments.join("/");
-  }
-  return normalized;
+function isNestedEnvWrapperSegment(segment: string) {
+  const normalized = segment.trim().toLowerCase();
+  return (
+    normalized === ENV_ZIP_ROOT_DIR_NAME ||
+    normalized === ".zenmind" ||
+    normalized === "zenmind" ||
+    normalized === "zenmind-env" ||
+    /^zenmind-env[-_].+/u.test(normalized)
+  );
 }
 
-function isRefreshableRuntimeSeedPath(relativePath: string) {
-  const segments = normalizeSafeRelativePath(relativePath).split("/");
-  if (segments[0] === "agents" && segments[1] === "bootstrap") {
-    return true;
-  }
-  if (segments[0] === "agents" && typeof segments[1] === "string" && segments[1].endsWith(".bootstrap")) {
-    return true;
-  }
-  if (segments[0] === "registries" && (segments[1] === "providers" || segments[1] === "models")) {
-    return true;
-  }
-  return false;
-}
-
-function isProviderRegistryPath(relativePath: string) {
-  const segments = normalizeSafeRelativePath(relativePath).split("/");
-  return segments[0] === "registries" && segments[1] === "providers" && /\.ya?ml$/iu.test(segments[2] ?? "");
-}
-
-function isRecord(value: unknown): value is MutableYamlRecord {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function isAgentSeedConfigPath(relativePath: string) {
-  const segments = normalizeSafeRelativePath(relativePath).split("/");
-  return segments[0] === "agents" && segments.length === 3 && segments[2] === "agent.yml";
-}
-
-function normalizeLegacyTimeoutSeconds(value: unknown) {
-  const numericValue = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
-  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+function normalizeEnvZipEntryRelativePath(entryName: string) {
+  const segments = entrySegments(entryName);
+  if (segments.length === 0) {
     return null;
   }
-  return numericValue >= 1000 ? Math.round(numericValue / 1000) : numericValue;
-}
-
-function migrateLegacyAgentSeedYaml(content: Buffer, relativePath: string, platform: NodeJS.Platform) {
-  if (!isAgentSeedConfigPath(relativePath)) {
-    return content;
+  if (segments[0] !== ENV_ZIP_ROOT_DIR_NAME) {
+    throw new Error(`env.zip 必须解压为唯一顶层 env/ 目录，发现路径：${entryName}`);
   }
-
-  const rawContent = content.toString("utf8");
-  const parsed = yaml.load(rawContent);
-  if (!isRecord(parsed)) {
-    return content;
-  }
-
-  let changed = false;
-  const budget = parsed.budget;
-  if (isRecord(budget) && Object.prototype.hasOwnProperty.call(budget, "runTimeoutMs")) {
-    if (!Object.prototype.hasOwnProperty.call(budget, "timeout")) {
-      const timeout = normalizeLegacyTimeoutSeconds(budget.runTimeoutMs);
-      if (timeout !== null) {
-        budget.timeout = timeout;
-      }
-    }
-    delete budget.runTimeoutMs;
-    changed = true;
-  }
-
-  const runtimeConfig = parsed.runtimeConfig;
-  if (platform === "win32" && isRecord(runtimeConfig) && runtimeConfig.workspaceRoot === "/") {
-    runtimeConfig.workspaceRoot = "@chat";
-    changed = true;
-  }
-
-  if (!changed) {
-    return content;
-  }
-  return Buffer.from(yaml.dump(parsed, { lineWidth: -1, noRefs: true }), "utf8");
-}
-
-function extractTopLevelYamlScalar(content: string, key: string) {
-  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const match = new RegExp(`^(${escapedKey}\\s*:\\s*)(.*)$`, "imu").exec(content);
-  if (!match) {
+  if (segments.length === 1) {
     return null;
   }
-  const rawValue = match[2].trim();
-  if (
-    (rawValue.startsWith("\"") && rawValue.endsWith("\"")) ||
-    (rawValue.startsWith("'") && rawValue.endsWith("'"))
-  ) {
-    return rawValue.slice(1, -1).trim();
+  if (isNestedEnvWrapperSegment(segments[1] ?? "")) {
+    throw new Error(`env.zip 只能剥离一层 env/，发现嵌套环境目录：${entryName}`);
   }
-  return rawValue;
-}
-
-function looksLikePlaceholderApiKey(apiKey: string | null) {
-  if (!apiKey?.trim()) {
-    return true;
-  }
-  const normalized = apiKey.trim().toLowerCase();
-  return /(?:your|example|demo|placeholder|replace[-_\s]*me|change[-_\s]*me|xxx)/iu.test(normalized);
-}
-
-function replaceOrInsertTopLevelYamlScalar(content: string, key: string, value: string) {
-  const newline = content.includes("\r\n") ? "\r\n" : "\n";
-  const lines = content.split(/\r?\n/u);
-  if (lines.length > 0 && lines[lines.length - 1] === "") {
-    lines.pop();
-  }
-
-  const keyPattern = new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\s*:`, "iu");
-  const existingIndex = lines.findIndex((line) => keyPattern.test(line));
-  if (existingIndex >= 0) {
-    const indent = /^\s*/u.exec(lines[existingIndex])?.[0] ?? "";
-    lines[existingIndex] = `${indent}${key}: ${value}`;
-    return `${lines.join(newline)}${newline}`;
-  }
-
-  const baseUrlIndex = lines.findIndex((line) => /^\s*baseUrl\s*:/iu.test(line));
-  const providerKeyIndex = lines.findIndex((line) => /^\s*key\s*:/iu.test(line));
-  const insertIndex = baseUrlIndex >= 0 ? baseUrlIndex + 1 : providerKeyIndex >= 0 ? providerKeyIndex + 1 : lines.length;
-  lines.splice(insertIndex, 0, `${key}: ${value}`);
-  return `${lines.join(newline)}${newline}`;
-}
-
-function mergeProviderRegistrySeedContent(existingContent: string, bundledContent: string) {
-  const existingApiKey = extractTopLevelYamlScalar(existingContent, "apiKey");
-  const bundledApiKey = extractTopLevelYamlScalar(bundledContent, "apiKey");
-  if (existingApiKey === null || looksLikePlaceholderApiKey(existingApiKey) || !looksLikePlaceholderApiKey(bundledApiKey)) {
-    return bundledContent;
-  }
-  return replaceOrInsertTopLevelYamlScalar(bundledContent, "apiKey", existingApiKey);
+  return normalizeSafeRelativePath(segments.slice(1).join("/"));
 }
 
 function resolveSafeTargetPath(targetRoot: string, relativePath: string) {
@@ -544,19 +297,15 @@ export function resolveDesktopVersion(app: AppVersionReader = {}) {
 function normalizeZipEntries(zip: JSZip) {
   const zipObjects = Object.values(zip.files);
   const usableEntries = zipObjects.filter((entry) => !shouldSkipArchiveEntry(entry.name));
-  const fileNames = usableEntries
-    .filter((entry) => !entry.dir)
-    .map((entry) => entry.name);
-  const wrapperDepth = countWrapperSegments(fileNames);
 
   const entries: EnvZipEntry[] = [];
   for (const entry of usableEntries) {
-    const strippedPath = stripWrapperSegments(entry.name, wrapperDepth);
-    if (!strippedPath) {
+    const relativePath = normalizeEnvZipEntryRelativePath(entry.name);
+    if (!relativePath) {
       continue;
     }
     entries.push({
-      relativePath: normalizeEnvZipEntryRelativePath(strippedPath),
+      relativePath,
       directory: entry.dir,
       entry
     });
@@ -606,8 +355,7 @@ export async function importEnvZipToRuntime(
   app: AppPathReader,
   zipPath: string,
   platform: NodeJS.Platform = process.platform,
-  expectedDesktopVersion: string = resolveDesktopVersion(app as AppVersionReader),
-  options: EnvZipImportOptions = {}
+  expectedDesktopVersion: string = resolveDesktopVersion(app as AppVersionReader)
 ): Promise<EnvZipImportResult> {
   if (path.extname(zipPath).toLowerCase() !== ".zip") {
     throw new Error("首次安装只能导入 env.zip。");
@@ -619,7 +367,7 @@ export async function importEnvZipToRuntime(
   const targetRoot = resolveRuntimeRoot(app, platform);
   let copiedFiles = 0;
   let skippedFiles = 0;
-  let overwrittenFiles = 0;
+  const overwrittenFiles = 0;
   let createdDirectories = 0;
 
   fs.mkdirSync(targetRoot, { recursive: true });
@@ -635,41 +383,12 @@ export async function importEnvZipToRuntime(
     }
 
     if (fs.existsSync(targetPath)) {
-      if (!options.shouldOverwriteExistingFile?.(entry.relativePath)) {
-        skippedFiles += 1;
-        continue;
-      }
-      const targetStat = await fs.promises.stat(targetPath).catch(() => null);
-      if (targetStat?.isDirectory()) {
-        skippedFiles += 1;
-        continue;
-      }
-      const content = migrateLegacyAgentSeedYaml(
-        await entry.entry.async("nodebuffer"),
-        entry.relativePath,
-        platform
-      );
-      if (isProviderRegistryPath(entry.relativePath)) {
-        const existingContent = await fs.promises.readFile(targetPath, "utf8");
-        await fs.promises.writeFile(
-          targetPath,
-          mergeProviderRegistrySeedContent(existingContent, content.toString("utf8")),
-          "utf8"
-        );
-      } else {
-        await fs.promises.writeFile(targetPath, content);
-      }
-      overwrittenFiles += 1;
+      skippedFiles += 1;
       continue;
     }
 
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    const content = migrateLegacyAgentSeedYaml(
-      await entry.entry.async("nodebuffer"),
-      entry.relativePath,
-      platform
-    );
-    await fs.promises.writeFile(targetPath, content);
+    await fs.promises.writeFile(targetPath, await entry.entry.async("nodebuffer"));
     copiedFiles += 1;
   }
 

@@ -171,7 +171,6 @@ import {
   migrateOldRootToBackup,
   resolveRuntimeRoot,
   runtimeEnvExists,
-  runtimeEnvNeedsBundledSeedRefresh,
   runtimeRootExists,
   shouldPromptEnvRootConflict,
   shouldRequireEnvZipImport,
@@ -389,11 +388,6 @@ const envZipConflictNeedsDecision = shouldPromptEnvRootConflict({
   runtimeRootExistedAtStartup
 });
 const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
-const refreshBundledEnvSeedFilesAtStartup = runtimeEnvNeedsBundledSeedRefresh(
-  app,
-  mainProcessContext.platform
-);
-
 function initializeUserDataRootsAndSettings() {
   const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
   if (isFirstDesktopInstall) {
@@ -2062,8 +2056,6 @@ async function handleStartupPipeline() {
         notifyServicesChanged();
         return;
       }
-    } else if (oldRootDecisionRef.current !== "keep" && refreshBundledEnvSeedFilesAtStartup) {
-      await tryImportBundledEnvSeedFilesAtStartup();
     }
     loadBuiltinServices(app);
     loadInstalledPlugins(app);
@@ -2121,23 +2113,6 @@ async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: f
       ok: false,
       message: `内置 env.zip 导入失败：${message}`
     };
-  }
-}
-
-async function tryImportBundledEnvSeedFilesAtStartup() {
-  try {
-    const importResult = await importBundledEnvZipToRuntime(app, mainProcessContext.platform, {
-      refreshRuntimeSeedFiles: true
-    });
-    if (!importResult) {
-      return;
-    }
-
-    console.info(
-      `[main] refreshed bundled env seed files from ${importResult.sourceZipPath} into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}, overwritten=${importResult.overwrittenFiles}`
-    );
-  } catch (error) {
-    console.warn("failed to refresh bundled env seed files", error);
   }
 }
 

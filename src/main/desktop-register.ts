@@ -352,6 +352,9 @@ function safetyCleanRegister(registerPath: string, config: DesktopRegisterConfig
   if (platform !== "win32") {
     fs.chmodSync(registerPath, 0o600);
   }
+  if (config.enabled !== true) {
+    return;
+  }
   try {
     fs.rmSync(registerPath, { force: true });
   } catch (error) {

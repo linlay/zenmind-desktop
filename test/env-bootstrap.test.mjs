@@ -94,11 +94,11 @@ test("importEnvZipToRuntime strips env wrapper and only copies missing files", a
     fs.mkdirSync(path.dirname(existingAgentPath), { recursive: true });
     fs.writeFileSync(existingAgentPath, "name: keep\n", "utf8");
     await writeZip(zipPath, {
-      ".zenmind/VERSION": `v${DESKTOP_VERSION}\n`,
-      ".zenmind/agents/demo/agent.yml": "name: overwrite\n",
-      ".zenmind/registries/providers/demo.yml": "name: provider\n",
+      "env/VERSION": `v${DESKTOP_VERSION}\n`,
+      "env/agents/demo/agent.yml": "name: overwrite\n",
+      "env/registries/providers/demo.yml": "name: provider\n",
       "__MACOSX/._agent.yml": "ignored",
-      ".zenmind/.DS_Store": "ignored"
+      "env/.DS_Store": "ignored"
     });
 
     const result = await importEnvZipToRuntime(app, zipPath, "darwin", DESKTOP_VERSION);
@@ -109,7 +109,8 @@ test("importEnvZipToRuntime strips env wrapper and only copies missing files", a
     assert.equal(fs.readFileSync(existingAgentPath, "utf8"), "name: keep\n");
     assert.equal(fs.readFileSync(path.join(runtimeRoot, "VERSION"), "utf8"), `v${DESKTOP_VERSION}\n`);
     assert.equal(fs.readFileSync(registryPath, "utf8"), "name: provider\n");
-    assert.equal(fs.existsSync(path.join(runtimeRoot, ".zenmind")), false);
+    assert.equal(result.overwrittenFiles, 0);
+    assert.equal(fs.existsSync(path.join(runtimeRoot, "env")), false);
     assert.equal(fs.existsSync(markerPath), true);
     assert.equal(runtimeEnvExists(app, "darwin"), true);
   } finally {
@@ -117,27 +118,39 @@ test("importEnvZipToRuntime strips env wrapper and only copies missing files", a
   }
 });
 
-test("importEnvZipToRuntime strips timestamped zenmind-env wrapper", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-timestamp-"));
+test("importEnvZipToRuntime rejects non-standard env.zip wrappers", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-wrapper-"));
   const app = createApp(root);
-  const runtimeRoot = path.join(root, "home", ".zenmind");
-  const zipPath = path.join(root, "env.zip");
-  const providerPath = path.join(runtimeRoot, "registries", "providers", "demo.yml");
-  const panPath = path.join(runtimeRoot, "pan", ".gitkeep");
+  const legacyWrapperZipPath = path.join(root, "legacy-wrapper.zip");
+  const bareZipPath = path.join(root, "bare.zip");
+  const nestedWrapperZipPath = path.join(root, "nested-wrapper.zip");
 
   try {
-    await writeZip(zipPath, {
+    await writeZip(legacyWrapperZipPath, {
       "zenmind-env-20260516-220857/VERSION": DESKTOP_VERSION,
-      "zenmind-env-20260516-220857/registries/providers/demo.yml": "name: provider\n",
-      "zenmind-env-20260516-220857/pan/.gitkeep": ""
+      "zenmind-env-20260516-220857/agents/demo/agent.yml": "name: demo\n"
+    });
+    await writeZip(bareZipPath, {
+      "VERSION": DESKTOP_VERSION,
+      "agents/demo/agent.yml": "name: demo\n"
+    });
+    await writeZip(nestedWrapperZipPath, {
+      "env/env/VERSION": DESKTOP_VERSION,
+      "env/env/agents/demo/agent.yml": "name: demo\n"
     });
 
-    const result = await importEnvZipToRuntime(app, zipPath, "darwin", `v${DESKTOP_VERSION}`);
-
-    assert.equal(result.targetRoot, runtimeRoot);
-    assert.equal(fs.readFileSync(providerPath, "utf8"), "name: provider\n");
-    assert.equal(fs.existsSync(panPath), true);
-    assert.equal(fs.existsSync(path.join(runtimeRoot, "zenmind-env-20260516-220857")), false);
+    await assert.rejects(
+      () => importEnvZipToRuntime(app, legacyWrapperZipPath, "darwin", DESKTOP_VERSION),
+      /唯一顶层 env\/ 目录/
+    );
+    await assert.rejects(
+      () => importEnvZipToRuntime(app, bareZipPath, "darwin", DESKTOP_VERSION),
+      /唯一顶层 env\/ 目录/
+    );
+    await assert.rejects(
+      () => importEnvZipToRuntime(app, nestedWrapperZipPath, "darwin", DESKTOP_VERSION),
+      /只能剥离一层 env\//
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -211,18 +224,18 @@ test("bundled env.zip import returns null when no packaged env exists", async ()
   }
 });
 
-test("importEnvZipToRuntime migrates legacy bootstrap agent seed schema on Windows", async () => {
+test("importEnvZipToRuntime preserves bootstrap suffixes and legacy YAML fields", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-agent-seed-"));
   const app = createApp(root);
   const zipPath = path.join(root, "env.zip");
   const runtimeRoot = path.join(root, "home", ".zenmind");
-  const migratedAssistantPath = path.join(runtimeRoot, "agents", "desktopAssistant", "agent.yml");
-  const migratedZenmiPath = path.join(runtimeRoot, "agents", "zenmi", "agent.yml");
+  const assistantPath = path.join(runtimeRoot, "agents", "desktopAssistant.bootstrap", "agent.yml");
+  const zenmiPath = path.join(runtimeRoot, "agents", "zenmi.bootstrap", "agent.yml");
 
   try {
     await writeZip(zipPath, {
-      "zenmind-env/VERSION": DESKTOP_VERSION,
-      "zenmind-env/agents/desktopAssistant.bootstrap/agent.yml": [
+      "env/VERSION": DESKTOP_VERSION,
+      "env/agents/desktopAssistant.bootstrap/agent.yml": [
         "key: desktopAssistant",
         "name: Desktop Assistant",
         "budget:",
@@ -230,7 +243,7 @@ test("importEnvZipToRuntime migrates legacy bootstrap agent seed schema on Windo
         "  maxSteps: 50",
         ""
       ].join("\n"),
-      "zenmind-env/agents/zenmi.bootstrap/agent.yml": [
+      "env/agents/zenmi.bootstrap/agent.yml": [
         "key: zenmi",
         "name: Zenmi",
         "runtimeConfig:",
@@ -241,21 +254,24 @@ test("importEnvZipToRuntime migrates legacy bootstrap agent seed schema on Windo
 
     await importEnvZipToRuntime(app, zipPath, "win32", DESKTOP_VERSION);
 
-    assert.equal(fs.existsSync(path.join(runtimeRoot, "agents", "desktopAssistant.bootstrap")), false);
-    assert.equal(fs.existsSync(path.join(runtimeRoot, "agents", "zenmi.bootstrap")), false);
+    assert.equal(fs.existsSync(path.join(runtimeRoot, "agents", "desktopAssistant")), false);
+    assert.equal(fs.existsSync(path.join(runtimeRoot, "agents", "zenmi")), false);
+    assert.equal(fs.existsSync(path.join(runtimeRoot, "agents", "desktopAssistant.bootstrap")), true);
+    assert.equal(fs.existsSync(path.join(runtimeRoot, "agents", "zenmi.bootstrap")), true);
 
-    const assistantContent = fs.readFileSync(migratedAssistantPath, "utf8");
-    assert.match(assistantContent, /timeout:\s*1800/u);
-    assert.doesNotMatch(assistantContent, /runTimeoutMs/u);
+    const assistantContent = fs.readFileSync(assistantPath, "utf8");
+    assert.match(assistantContent, /runTimeoutMs:\s*1800000/u);
+    assert.doesNotMatch(assistantContent, /timeout:\s*1800/u);
 
-    const zenmiContent = fs.readFileSync(migratedZenmiPath, "utf8");
-    assert.match(zenmiContent, /workspaceRoot:\s*'@chat'|workspaceRoot:\s*"@chat"|workspaceRoot:\s*@chat/u);
+    const zenmiContent = fs.readFileSync(zenmiPath, "utf8");
+    assert.match(zenmiContent, /workspaceRoot:\s*\/\s*$/mu);
+    assert.doesNotMatch(zenmiContent, /workspaceRoot:\s*['"]?@chat/u);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("bundled env.zip refreshes bootstrap registry seed files without overwriting user data", async () => {
+test("bundled env.zip skips existing seed and registry files without overwriting user data", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-seed-refresh-"));
   const app = createApp(root);
   const platform = "darwin";
@@ -302,32 +318,33 @@ test("bundled env.zip refreshes bootstrap registry seed files without overwritin
 
     const result = await importBundledEnvZipToRuntime(app, platform, {
       resourcesRoot,
-      expectedDesktopVersion: DESKTOP_VERSION,
-      refreshRuntimeSeedFiles: true
+      expectedDesktopVersion: DESKTOP_VERSION
     });
 
     assert.equal(result?.sourceZipPath, bundledZipPath);
-    assert.equal(fs.readFileSync(bootstrapAgentPath, "utf8"), "modelKey: th-minimax-m2_7-highspeed\n");
+    assert.equal(fs.readFileSync(bootstrapAgentPath, "utf8"), "modelKey: stale-openai\n");
     assert.equal(
       fs.readFileSync(providerPath, "utf8"),
       [
         "key: minimax",
-        "baseUrl: https://api.minimaxi.com",
+        "baseUrl: https://old.example.com",
         "apiKey: real-user-key",
-        "defaultModel: minimax-m3",
+        "defaultModel: stale-model",
         ""
       ].join("\n")
     );
     assert.equal(fs.readFileSync(modelPath, "utf8"), "provider: th-minimax\n");
     assert.equal(fs.readFileSync(ownerPath, "utf8"), "name: keep-user-owner\n");
-    assert.equal(result?.overwrittenFiles, 2);
+    assert.equal(result?.copiedFiles, 2);
+    assert.equal(result?.skippedFiles, 3);
+    assert.equal(result?.overwrittenFiles, 0);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("bundled env.zip refresh archives stale owner bootstrap when owner is already complete", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-owner-complete-"));
+test("bundled env.zip leaves owner bootstrap files in place", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-owner-unchanged-"));
   const app = createApp(root);
   const resourcesRoot = path.join(root, "resources");
   const bundledZipPath = path.join(resourcesRoot, "env", "env.zip");
@@ -343,51 +360,18 @@ test("bundled env.zip refresh archives stale owner bootstrap when owner is alrea
 
     await writeZip(bundledZipPath, {
       "env/VERSION": DESKTOP_VERSION,
-      "env/agents/bootstrap/agent.yml": "modelKey: th-minimax-m2_7-highspeed\n"
+      "env/owner/BOOTSTRAP.md": "# Bundled bootstrap\n"
     });
 
     await importBundledEnvZipToRuntime(app, "win32", {
       resourcesRoot,
-      expectedDesktopVersion: DESKTOP_VERSION,
-      refreshRuntimeSeedFiles: true
-    });
-
-    assert.equal(fs.existsSync(bootstrapPath), false);
-    assert.equal(fs.readFileSync(ownerPath, "utf8"), "# Owner\n\nname: keep-user-owner\n");
-    assert.equal(
-      fs.existsSync(path.join(runtimeRoot, ".desktop", "state", "desktop", "owner-bootstrap.completed.md")),
-      true
-    );
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("bundled env.zip refresh keeps owner bootstrap when owner is not complete", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-owner-incomplete-"));
-  const app = createApp(root);
-  const resourcesRoot = path.join(root, "resources");
-  const bundledZipPath = path.join(resourcesRoot, "env", "env.zip");
-  const runtimeRoot = path.join(root, "home", ".zenmind");
-  const bootstrapPath = path.join(runtimeRoot, "owner", "BOOTSTRAP.md");
-
-  try {
-    fs.mkdirSync(path.dirname(bundledZipPath), { recursive: true });
-    fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
-    fs.writeFileSync(bootstrapPath, "# Bootstrap\n\nAsk the user to create OWNER.md.\n", "utf8");
-
-    await writeZip(bundledZipPath, {
-      "env/VERSION": DESKTOP_VERSION,
-      "env/agents/bootstrap/agent.yml": "modelKey: th-minimax-m2_7-highspeed\n"
-    });
-
-    await importBundledEnvZipToRuntime(app, "win32", {
-      resourcesRoot,
-      expectedDesktopVersion: DESKTOP_VERSION,
-      refreshRuntimeSeedFiles: true
+      expectedDesktopVersion: DESKTOP_VERSION
     });
 
     assert.equal(fs.existsSync(bootstrapPath), true);
+    assert.equal(fs.readFileSync(bootstrapPath, "utf8"), "# Bootstrap\n\nAsk the user to create OWNER.md.\n");
+    assert.equal(fs.readFileSync(ownerPath, "utf8"), "# Owner\n\nname: keep-user-owner\n");
+    assert.equal(fs.existsSync(path.join(runtimeRoot, ".desktop", "state", "desktop", "owner-bootstrap.completed.md")), false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -400,7 +384,7 @@ test("importEnvZipToRuntime rejects env.zip without VERSION", async () => {
 
   try {
     await writeZip(zipPath, {
-      ".zenmind/agents/demo/agent.yml": "name: demo\n"
+      "env/agents/demo/agent.yml": "name: demo\n"
     });
 
     await assert.rejects(
@@ -419,8 +403,8 @@ test("importEnvZipToRuntime rejects mismatched env VERSION", async () => {
 
   try {
     await writeZip(zipPath, {
-      ".zenmind/VERSION": "v9.9.9\n",
-      ".zenmind/agents/demo/agent.yml": "name: demo\n"
+      "env/VERSION": "v9.9.9\n",
+      "env/agents/demo/agent.yml": "name: demo\n"
     });
 
     await assert.rejects(
@@ -651,8 +635,8 @@ test("after migration env.zip can be imported into the new empty .zenmind", asyn
   // Now import env.zip into clean .zenmind
   try {
     await writeZip(zipPath, {
-      ".zenmind/VERSION": `v${DESKTOP_VERSION}\n`,
-      ".zenmind/agents/demo/agent.yml": "name: demo\n"
+      "env/VERSION": `v${DESKTOP_VERSION}\n`,
+      "env/agents/demo/agent.yml": "name: demo\n"
     });
 
     const result = await importEnvZipToRuntime(app, zipPath, "darwin", DESKTOP_VERSION);

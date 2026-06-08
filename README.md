@@ -114,6 +114,8 @@ npm run dist:mac
 BRAND=cutej ENV_ZIP=/path/to/env.zip npm run dist:mac
 ```
 
+`ENV_ZIP` 必须是标准环境包：解压后只能有一个顶层 `env/` 目录，实际运行内容位于 `env/VERSION`、`env/agents/`、`env/registries/` 等路径下。Desktop 首启导入只复制缺失文件；已存在的 agent、provider、owner 等文件会跳过，不会覆盖、迁移或自动修复旧 seed。
+
 也可以使用 Makefile 入口：
 
 ```bash
@@ -155,13 +157,14 @@ npm run dist:win-docker
 ### 打包资源约定
 - `package.json` 中的 `build.files` 会打入桌面应用运行所需代码。
 - `build.extraResources` 会把 `build/resources/services` 下的内置服务资源复制进应用包。
-- `build.extraResources` 会把 `build/resources/env` 复制进应用包；设置 `ENV_ZIP=/path/to/env.zip` 打包时会生成 `build/resources/env/env.zip`，首启缺少运行环境时优先自动导入。
+- `build.extraResources` 会把 `build/resources/env` 复制进应用包；设置 `ENV_ZIP=/path/to/env.zip` 打包时会生成 `build/resources/env/env.zip`，首启缺少运行环境时优先自动导入。`sync:env` 会拒绝 `.zenmind/`、`zenmind-env/`、裸顶层文件或嵌套 `env/env/` 结构。
 - `build.extraResources` 同时会把 `scripts/uninstall.sh` 放入 macOS 应用包资源目录，供完整卸载使用。
 - `build/installer.nsh` 会注入 NSIS 卸载流程，在 Windows 上给用户选择是否清理应用数据。
 - `npm run sync:assets` 会扫描工作区内各服务目录以及聚合产物目录中的 `.tar.gz` / `.zip` 发布包，只同步 `manifest.json.kind === "builtin"` 的产物。支持 `--os` 和 `--arch` 参数按平台过滤。
 - 如设置 `ZENMIND_BUILTIN_ASSETS_SOURCE`，`sync:assets` 会优先从该目录扫描 `<service-id>/<archive-file>` 结构的预收集产物，再 fallback 到工作区自动发现。`../zenmind-dist` 就符合这个目录结构。
 - Desktop 通过 bundle 内的 `manifest.json.desktop.bundleTopLevelDir` 和 `runtime.requiredPaths` 校验资源完整性。
 - 如新增内置服务，需要保证 release bundle 内自带完整 `manifest.json`，再执行打包。
+- 如需覆盖已有 `~/.zenmind` 运行环境，使用 env 包内的显式脚本 `env/scripts/overwrite-env.sh` 或 `env/scripts/overwrite-env.ps1`。Desktop 不会自动调用覆盖脚本，也不提供自动覆盖入口。
 
 ## 6. 运维
 ### 常用命令

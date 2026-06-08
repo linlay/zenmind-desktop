@@ -14,8 +14,8 @@ export const ENV_ZIP_ENV_VAR = "ENV_ZIP";
 export const BUNDLED_ENV_FILE_NAME = "env.zip";
 export const BUNDLED_ENV_MANIFEST_FILE_NAME = "manifest.json";
 
-const ENV_ARCHIVE_WRAPPER_DIRS = new Set([".zenmind", "zenmind", "zenmind-env", "env"]);
 const VERSION_FILE_NAME = "VERSION";
+const ENV_ZIP_ROOT_DIR_NAME = "env";
 
 function normalizeVersion(value) {
   return String(value ?? "").trim().replace(/^v/iu, "");
@@ -54,53 +54,60 @@ function shouldSkipArchiveEntry(entryName) {
   return segments[0] === "__MACOSX" || segments[segments.length - 1] === ".DS_Store";
 }
 
-function isEnvArchiveWrapperDir(dirName) {
-  const normalizedDirName = dirName.trim().toLowerCase();
+function normalizeSafeRelativePath(relativePath) {
+  const normalized = path.posix.normalize(relativePath.replace(/\\/gu, "/"));
+  if (
+    !normalized ||
+    normalized === "." ||
+    path.posix.isAbsolute(normalized) ||
+    normalized === ".." ||
+    normalized.startsWith("../")
+  ) {
+    throw new Error(`ENV_ZIP contains an unsafe path: ${relativePath}`);
+  }
+  return normalized;
+}
+
+function isNestedEnvWrapperSegment(segment) {
+  const normalized = segment.trim().toLowerCase();
   return (
-    ENV_ARCHIVE_WRAPPER_DIRS.has(normalizedDirName) ||
-    /^zenmind-env[-_].+/u.test(normalizedDirName)
+    normalized === ENV_ZIP_ROOT_DIR_NAME ||
+    normalized === ".zenmind" ||
+    normalized === "zenmind" ||
+    normalized === "zenmind-env" ||
+    /^zenmind-env[-_].+/u.test(normalized)
   );
 }
 
-function countWrapperSegments(fileNames) {
-  let strippedNames = fileNames.map(normalizeArchiveEntryName);
-  let wrapperDepth = 0;
-
-  while (strippedNames.length > 0) {
-    const segments = strippedNames.map((entryName) => entryName.split("/").filter(Boolean));
-    const firstSegment = segments[0]?.[0] ?? "";
-    if (
-      !firstSegment ||
-      !isEnvArchiveWrapperDir(firstSegment) ||
-      !segments.every((entrySegmentsValue) =>
-        entrySegmentsValue[0] === firstSegment && entrySegmentsValue.length > 1
-      )
-    ) {
-      break;
-    }
-
-    wrapperDepth += 1;
-    strippedNames = segments.map((entrySegmentsValue) => entrySegmentsValue.slice(1).join("/"));
+function normalizeEnvZipEntryRelativePath(entryName) {
+  const segments = entrySegments(entryName);
+  if (segments.length === 0) {
+    return null;
   }
-
-  return wrapperDepth;
-}
-
-function stripWrapperSegments(entryName, wrapperDepth) {
-  const segments = entrySegments(entryName).slice(wrapperDepth);
-  return segments.join("/");
+  if (segments[0] !== ENV_ZIP_ROOT_DIR_NAME) {
+    throw new Error(`ENV_ZIP must contain a single top-level env/ directory; found ${entryName}`);
+  }
+  if (segments.length === 1) {
+    return null;
+  }
+  if (isNestedEnvWrapperSegment(segments[1] ?? "")) {
+    throw new Error(`ENV_ZIP must not contain a nested environment wrapper under env/: ${entryName}`);
+  }
+  return normalizeSafeRelativePath(segments.slice(1).join("/"));
 }
 
 export async function readEnvZipVersion(zipPath) {
   const zip = await JSZip.loadAsync(await fs.promises.readFile(zipPath));
   const usableEntries = Object.values(zip.files).filter((entry) => !shouldSkipArchiveEntry(entry.name));
-  const fileNames = usableEntries
-    .filter((entry) => !entry.dir)
-    .map((entry) => entry.name);
-  const wrapperDepth = countWrapperSegments(fileNames);
-  const versionEntry = usableEntries.find(
-    (entry) => !entry.dir && stripWrapperSegments(entry.name, wrapperDepth) === VERSION_FILE_NAME
-  );
+  let versionEntry = null;
+
+  for (const entry of usableEntries) {
+    const relativePath = normalizeEnvZipEntryRelativePath(entry.name);
+    if (!entry.dir && relativePath === VERSION_FILE_NAME) {
+      versionEntry = entry;
+      break;
+    }
+  }
 
   if (!versionEntry) {
     return null;
