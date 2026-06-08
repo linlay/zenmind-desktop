@@ -522,24 +522,29 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: nowrap;
   gap: 8px;
   padding: 0 0 12px;
 }
 
 .task-board-column-title {
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: max-content;
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .task-board-column-title strong {
   font-size: 14px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .task-board-column-title span:last-child {
+  flex: 0 0 auto;
   min-width: 24px;
   height: 20px;
   display: inline-flex;
@@ -555,6 +560,7 @@
 }
 
 .task-board-status-dot {
+  flex: 0 0 auto;
   width: 7px;
   height: 7px;
   border: 0;
@@ -594,6 +600,7 @@
 }
 
 .task-board-column-actions {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -617,11 +624,12 @@
 }
 
 .task-board-column-filter {
-  flex: 1 1 160px;
+  flex: 1 1 132px;
+  min-width: 132px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
-  max-width: 220px;
+  max-width: 196px;
   margin: 0 0 0 auto;
   padding: 3px;
   border: 1px solid color-mix(in srgb, var(--task-board-accent) 18%, rgba(148, 163, 184, 0.24));
