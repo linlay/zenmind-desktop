@@ -1,6 +1,6 @@
 import type { App } from "electron";
 import type { AgentAuthIssueResult, AgentAuthRefreshReason } from "../shared/contracts";
-import { issueAppServerAccessToken } from "./app-server-auth";
+import { resolveDesktopCapability } from "./services/manager/capabilities";
 
 const TOKEN_REFRESH_SKEW_MS = 60_000;
 const TOKEN_FALLBACK_CACHE_TTL_MS = 5 * 60_000;
@@ -59,7 +59,8 @@ function readReusableCachedToken(cacheKey: string) {
 
 async function issueFreshAgentAccessToken(app: App, cacheKey: string): Promise<AgentAuthIssueResult> {
   try {
-    const token = await issueAppServerAccessToken(app);
+    const capability = await resolveDesktopCapability(app, "auth.accessToken");
+    const token = capability.token || capability.text || "";
     cachedTokens.set(cacheKey, {
       token,
       expiresAtMs: readTokenExpiresAtMs(token)

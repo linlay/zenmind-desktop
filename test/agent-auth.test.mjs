@@ -451,7 +451,7 @@ test("issueAgentAccessToken returns an app-server error when token issuing is un
     const result = await issueAgentAccessToken(app, "unauthorized");
     assert.equal(result.ok, false);
     assert.equal(result.token, "");
-    assert.match(result.message, /unknown service id: zenmind-app-server/u);
+    assert.match(result.message, /missing Desktop capability provider: auth\.accessToken/u);
   } finally {
     registryInternals.clearServices();
     fs.rmSync(tempRoot, { recursive: true, force: true });

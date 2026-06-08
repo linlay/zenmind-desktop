@@ -7,6 +7,8 @@ import type {
   ServiceConfigReadResult,
   ServiceDesiredStatus,
   ServiceId,
+  ManifestDesktopCapabilityPhase,
+  ManifestDesktopCapabilityRequirement,
   ServiceImportResult,
   ServiceLogReadOptions,
   ServiceLogReadResult,
@@ -21,7 +23,6 @@ import type {
 } from "../../../shared/contracts";
 import type { ServiceDefinition } from "../../manifest-utils";
 import { getAllServices, getService } from "../service-registry";
-import { ensureAppServerJwk } from "../../app-server-auth";
 import { issueAgentAccessToken } from "../../agent-auth";
 import { readEnvFile, parseEnvFileContent } from "../../env-file";
 import { extractArchiveToDir } from "../../archive-utils";
@@ -121,7 +122,6 @@ import {
   pidMatchesInstallDir
 } from "./process-identity";
 import {
-  AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE,
   AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS,
   LEGACY_PROVIDER_APIKEY_KEY_PART,
   LEGACY_PROVIDER_APIKEY_KEY_PART_DEFAULT,
@@ -129,7 +129,6 @@ import {
   PROCESS_EXEC_PATH_PLACEHOLDER,
   applyAgentPlatformWindowsHostShellDefaults,
   ensureLocalCliAcpRelayDesktopConfig,
-  isManagedAgentPlatformAuthLocalPublicKeyPath,
   normalizeAgentContainerHubEnvContentForDesktop,
   normalizeAgentPlatformBashConfigContent,
   normalizeAgentPlatformDeprecatedConfigFiles,
@@ -195,6 +194,7 @@ import {
   startAgentWebclientHost,
   stopAgentWebclientHost
 } from "../agent-webclient-host";
+import { resolveDesktopCapability } from "./capabilities";
 
 export { getInstallDir } from "./layout";
 export { fixShellScriptPermissions } from "./program-layout";
@@ -244,6 +244,7 @@ type ServiceVerificationOptions = {
 
 const SHUTDOWN_SERVICE_STOP_TIMEOUT_MS = 2_500;
 const WINDOWS_SHUTDOWN_SERVICE_STOP_TIMEOUT_MS = 1_000;
+const DEFAULT_DEPENDENCY_RUNNING_VERIFICATION_TIMEOUT_MS = 30_000;
 
 function ensureDir(targetPath: string) {
   fs.mkdirSync(targetPath, { recursive: true });
@@ -1013,6 +1014,15 @@ function getInstallDirFromState(state: ServiceState) {
   return state.installDir || "";
 }
 
+function hasVerifyRunningRequirements(service: ServiceDefinition) {
+  return service.desktop.capabilities.requires.some((requirement) => requirement.phase === "verifyRunning");
+}
+
+function getDependencyRunningVerificationTimeoutMs() {
+  const raw = Number.parseInt(process.env.SERVICE_DEPENDENCY_VERIFY_TIMEOUT_MS ?? "", 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_DEPENDENCY_RUNNING_VERIFICATION_TIMEOUT_MS;
+}
+
 async function collectServiceVerification(
   app: App,
   serviceId: ServiceId,
@@ -1031,9 +1041,36 @@ async function collectServiceVerification(
     }
   }
 
+  const layout = getServiceLayout(app, service);
+  const baseVerification = buildVerificationResult(service, state, desired, probes, options);
+  if (desired !== "running" || state.status !== "running") {
+    return {
+      state,
+      verification: baseVerification
+    };
+  }
+
+  const requirementIssues = await collectDesktopCapabilityRequirementIssues(
+    app,
+    service,
+    layout,
+    "verifyRunning",
+    options
+  );
+  if (requirementIssues.length === 0) {
+    return {
+      state,
+      verification: baseVerification
+    };
+  }
+
   return {
     state,
-    verification: buildVerificationResult(service, state, desired, probes, options)
+    verification: {
+      ...baseVerification,
+      verified: false,
+      issues: [...baseVerification.issues, ...requirementIssues]
+    }
   };
 }
 
@@ -1048,9 +1085,12 @@ export async function verifyServiceState(
   try {
     const delayMs = getServiceVerificationDelayMs();
     const service = getService(serviceId);
-    const retryUntil = service.id === "agent-container-hub" && desired === "running"
-      ? Date.now() + CONTAINER_HUB_RUNNING_VERIFICATION_TIMEOUT_MS
-      : 0;
+    const retryUntil =
+      service.id === "agent-container-hub" && desired === "running"
+        ? Date.now() + CONTAINER_HUB_RUNNING_VERIFICATION_TIMEOUT_MS
+        : hasVerifyRunningRequirements(service) && desired === "running"
+        ? Date.now() + getDependencyRunningVerificationTimeoutMs()
+        : 0;
     let current = await collectServiceVerification(app, serviceId, desired, options);
     if (current.verification.verified && delayMs <= 0) {
       verified = true;
@@ -1087,11 +1127,19 @@ function shouldRetryServiceVerification(
   desired: ServiceDesiredStatus,
   verification: ServiceVerification
 ) {
-  return service.id === "agent-container-hub" &&
+  const retriesContainerHub =
+    service.id === "agent-container-hub" &&
     desired === "running" &&
     !verification.verified &&
     verification.actualStatus === "running" &&
     verification.pidAlive;
+  const retriesVerifyRunningRequirements =
+    hasVerifyRunningRequirements(service) &&
+    desired === "running" &&
+    !verification.verified &&
+    verification.actualStatus === "running" &&
+    verification.pidAlive;
+  return retriesContainerHub || retriesVerifyRunningRequirements;
 }
 
 async function attachServiceVerification(
@@ -1121,6 +1169,36 @@ async function attachServiceVerification(
   };
 }
 
+function renderEnvBindingTemplate(value: string, values: Record<string, string>) {
+  return value.replace(/\{\{([A-Za-z0-9_.-]+)\}\}/gu, (_match, key: string) => values[key] ?? "");
+}
+
+function getEnvBindingTemplateValues(app: App, service: ServiceDefinition) {
+  const layout = getServiceLayout(app, service);
+  return {
+    "service.programDir": layout.programDir,
+    "service.configDir": layout.configDir,
+    "service.dataDir": layout.dataDir,
+    "service.stateDir": layout.stateDir,
+    "service.logDir": layout.logDir,
+    "service.envPath": layout.envPath,
+    serviceDefaultPort: String(service.web.defaultPort)
+  };
+}
+
+function getEnvBindingDefaultValues(
+  app: App,
+  service: ServiceDefinition,
+  binding: ServiceDefinition["desktop"]["envBindings"][number]
+) {
+  const values = getEnvBindingTemplateValues(app, service);
+  return (binding.defaults ?? [""]).map((item) => renderEnvBindingTemplate(item, values));
+}
+
+function resolveEnvBindingLiteralValue(app: App, service: ServiceDefinition, value: string) {
+  return renderEnvBindingTemplate(value, getEnvBindingTemplateValues(app, service));
+}
+
 async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<string, string>, updates: Map<string, string>) {
   for (const binding of service.desktop.envBindings) {
     const bindingKey = binding.key;
@@ -1130,7 +1208,7 @@ async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<s
     const currentValue = env.get(bindingKey) ?? "";
 
     if (binding.onlyIfDefault) {
-      const defaults = new Set(binding.defaults ?? [""]);
+      const defaults = new Set(getEnvBindingDefaultValues(app, service, binding));
       if (!defaults.has(currentValue)) {
         continue;
       }
@@ -1156,7 +1234,7 @@ async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<s
       ) {
         continue;
       }
-      const resolved = binding.value.replace("{{serviceDefaultPort}}", String(service.web.defaultPort));
+      const resolved = resolveEnvBindingLiteralValue(app, service, binding.value);
       updates.set(bindingKey, resolved);
     }
   }
@@ -1394,9 +1472,6 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
   }
 
   if (service.id === "agent-platform") {
-    if (getEnvValueWithUpdates(env, updates, "AUTH_ENABLED") !== "true") {
-      updates.set("AUTH_ENABLED", "true");
-    }
     await syncAgentPlatformContainerHubUrl(app, env, updates, { force: true });
     const runtimeRoot = resolveAgentPlatformInitializationRuntimeRoot(app);
     updates.set("RUNTIME_DIR", formatDesktopAgentPlatformRuntimeRoot(app, runtimeRoot));
@@ -1412,13 +1487,7 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
     });
   }
 
-  if (service.id === "zenmind-app-server") {
-    await ensureAppServerJwk(app);
-  }
-
-  if (service.id === "agent-platform") {
-    await ensureAgentPlatformAppServerPublicKey(app, layout);
-  }
+  await applyDesktopCapabilityRequirements(app, service, layout, "preStart");
 }
 
 function shouldReinitializeMissingCoreServiceConfig(service: ServiceDefinition, state: ServiceState) {
@@ -1460,44 +1529,149 @@ async function ensureAgentPlatformContainerHubDependency(app: App, layout: Servi
   );
 }
 
-async function ensureAgentPlatformAppServerPublicKey(app: App, layout: ServiceLayout) {
-  const envPath = layout.envPath;
-  const env = readEnvFile(envPath);
-  const publicKeyEnvValue = env.get("AUTH_LOCAL_PUBLIC_KEY_FILE")?.trim() ?? "";
-  const usesCustomPublicKey = publicKeyEnvValue
-    ? !isManagedAgentPlatformAuthLocalPublicKeyPath(publicKeyEnvValue, layout)
-    : false;
-  const updates = new Map<string, string>();
+function getCapabilityRequirementAction(requirement: ManifestDesktopCapabilityRequirement) {
+  if (requirement.action) {
+    return requirement.action;
+  }
+  return requirement.capability ? "preload" : "waitHttp";
+}
 
-  if (env.get("AUTH_ENABLED")?.trim() !== "true") {
-    updates.set("AUTH_ENABLED", "true");
+function describeCapabilityRequirement(requirement: ManifestDesktopCapabilityRequirement) {
+  if (requirement.capability) {
+    return `capability ${requirement.capability}`;
+  }
+  return `service ${requirement.service ?? "(unknown)"}`;
+}
+
+function resolveRequirementHttpTarget(webUrl: string, target: string | undefined) {
+  const trimmed = target?.trim() ?? "";
+  if (!trimmed) {
+    return webUrl;
+  }
+  if (/^https?:\/\//iu.test(trimmed)) {
+    return trimmed;
+  }
+  return normalizeProbeUrl(webUrl, trimmed);
+}
+
+async function ensureRequiredServiceHttpReachable(
+  app: App,
+  requirement: ManifestDesktopCapabilityRequirement,
+  options: ServiceVerificationOptions = {}
+) {
+  const requiredServiceId = requirement.service as ServiceId | undefined;
+  if (!requiredServiceId) {
+    throw new Error("HTTP dependency requirement missing service id.");
   }
 
-  if (usesCustomPublicKey) {
-    if (updates.size > 0) {
-      writeEnvFileUpdates(envPath, updates);
+  let requiredService: ServiceDefinition;
+  try {
+    requiredService = getService(requiredServiceId);
+  } catch {
+    throw new Error(`missing required service provider: ${requiredServiceId}`);
+  }
+
+  const state = await getServiceState(app, requiredService.id, options.stateReadOptions);
+  if (state.status !== "running") {
+    throw new Error(`${requiredService.name} is ${state.status}.`);
+  }
+
+  const webUrl = state.healthMeta.webUrl;
+  if (!webUrl) {
+    throw new Error(`${requiredService.name} does not expose a Desktop web URL.`);
+  }
+
+  const target = resolveRequirementHttpTarget(webUrl, requirement.target);
+  const probe = await probeHttpUrl(target);
+  if (!probe.ok) {
+    throw new Error(`${target} 探测失败：${probe.message || "HTTP 不可用"}`);
+  }
+}
+
+async function applyDesktopCapabilityRequirement(
+  app: App,
+  _service: ServiceDefinition,
+  layout: ServiceLayout,
+  requirement: ManifestDesktopCapabilityRequirement,
+  options: ServiceVerificationOptions = {}
+) {
+  const action = getCapabilityRequirementAction(requirement);
+
+  if (requirement.capability) {
+    if (action === "waitHttp") {
+      throw new Error(`${describeCapabilityRequirement(requirement)} cannot use waitHttp.`);
+    }
+    const result = await resolveDesktopCapability(app, requirement.capability, {
+      ensureProviderInstall: async (providerService) => {
+        await ensureMutableInstallDir(app, providerService);
+      }
+    });
+
+    if (action === "copyFile") {
+      if (!requirement.target) {
+        throw new Error(`${describeCapabilityRequirement(requirement)} copyFile missing target.`);
+      }
+      if (!result.filePath) {
+        throw new Error(`${describeCapabilityRequirement(requirement)} did not produce file output.`);
+      }
+      const targetPath = resolveConfigPath(layout, requirement.target);
+      const nextContent = result.text ?? fs.readFileSync(result.filePath, "utf8");
+      ensureDir(path.dirname(targetPath));
+      const currentContent = fs.existsSync(targetPath) ? fs.readFileSync(targetPath, "utf8") : "";
+      if (currentContent !== nextContent) {
+        fs.writeFileSync(targetPath, nextContent, "utf8");
+      }
+      return;
+    }
+
+    if (action !== "preload") {
+      throw new Error(`${describeCapabilityRequirement(requirement)} unsupported action ${action}.`);
     }
     return;
   }
 
-  if (publicKeyEnvValue !== AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE) {
-    updates.set("AUTH_LOCAL_PUBLIC_KEY_FILE", AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE);
+  if (requirement.service) {
+    if (action !== "waitHttp") {
+      throw new Error(`${describeCapabilityRequirement(requirement)} must use waitHttp.`);
+    }
+    await ensureRequiredServiceHttpReachable(app, requirement, options);
+    return;
   }
 
-  const appServerService = getService("zenmind-app-server");
-  await ensureMutableInstallDir(app, appServerService);
-  const { publicKeyPem } = await ensureAppServerJwk(app);
-  const targetPath = resolveConfigPath(layout, AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE);
+  throw new Error("Desktop capability requirement missing capability or service.");
+}
 
-  ensureDir(path.dirname(targetPath));
-  const currentPublicKey = fs.existsSync(targetPath) ? fs.readFileSync(targetPath, "utf8") : "";
-  if (currentPublicKey !== publicKeyPem) {
-    fs.writeFileSync(targetPath, publicKeyPem, "utf8");
+async function applyDesktopCapabilityRequirements(
+  app: App,
+  service: ServiceDefinition,
+  layout: ServiceLayout,
+  phase: ManifestDesktopCapabilityPhase,
+  options: ServiceVerificationOptions = {}
+) {
+  const requirements = service.desktop.capabilities.requires.filter((requirement) => requirement.phase === phase);
+  for (const requirement of requirements) {
+    await applyDesktopCapabilityRequirement(app, service, layout, requirement, options);
   }
+}
 
-  if (updates.size > 0) {
-    writeEnvFileUpdates(envPath, updates);
+async function collectDesktopCapabilityRequirementIssues(
+  app: App,
+  service: ServiceDefinition,
+  layout: ServiceLayout,
+  phase: ManifestDesktopCapabilityPhase,
+  options: ServiceVerificationOptions = {}
+) {
+  const issues: string[] = [];
+  const requirements = service.desktop.capabilities.requires.filter((requirement) => requirement.phase === phase);
+  for (const requirement of requirements) {
+    try {
+      await applyDesktopCapabilityRequirement(app, service, layout, requirement, options);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      issues.push(`${describeCapabilityRequirement(requirement)} 未就绪：${message}`);
+    }
   }
+  return issues;
 }
 
 async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefinition, layout: ServiceLayout) {
@@ -1579,12 +1753,9 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     if (updates.size > 0) {
       writeEnvFileUpdates(envPath, updates);
     }
-    await ensureAppServerJwk(app);
   }
 
-  if (service.id === "agent-platform") {
-    await ensureAgentPlatformAppServerPublicKey(app, layout);
-  }
+  await applyDesktopCapabilityRequirements(app, service, layout, "preStart");
 }
 
 type RunServiceCommandOptions = {
@@ -2954,28 +3125,18 @@ export async function runStartupPreparation(
       onStarting: options.onStarting,
       onProgress: options.onProgress
     };
-    const startResults: StartupServiceResult[] = [];
-    let defaultStartupBlocked = false;
-    for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
-      if (!preparedDefaultServices.has(serviceId)) {
-        defaultStartupBlocked = true;
-        continue;
-      }
-      if (defaultStartupBlocked) {
-        continue;
-      }
-
-      const result = await startPreparedDefaultStartupServiceForBootstrap(
-        app,
-        serviceId,
-        preparedDefaultServices.get(serviceId)!,
-        startOptions
-      );
-      startResults.push(result);
-      if (!result.ok || !result.running) {
-        defaultStartupBlocked = true;
-      }
-    }
+    const startResults = await Promise.all(
+      DEFAULT_STARTUP_SERVICE_IDS
+        .filter((serviceId) => preparedDefaultServices.has(serviceId))
+        .map((serviceId) =>
+          startPreparedDefaultStartupServiceForBootstrap(
+            app,
+            serviceId,
+            preparedDefaultServices.get(serviceId)!,
+            startOptions
+          )
+        )
+    );
     const startResultById = new Map(startResults.map((result) => [result.serviceId, result]));
     for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
       const result = startResultById.get(serviceId);

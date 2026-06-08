@@ -11,6 +11,9 @@ import type {
   ManifestCommand,
   ManifestConfigFile,
   ManifestDesktop,
+  ManifestDesktopCapabilities,
+  ManifestDesktopCapabilityProvider,
+  ManifestDesktopCapabilityRequirement,
   ManifestDesktopDisabledResponse,
   ManifestDesktopHosting,
   ManifestDesktopProxyRoute,
@@ -48,6 +51,10 @@ export interface ServiceDefinition extends Manifest {
   desktop: ManifestDesktop & {
     bundleTopLevelDir: string;
     envBindings: ManifestEnvBinding[];
+    capabilities: ManifestDesktopCapabilities & {
+      provides: ManifestDesktopCapabilityProvider[];
+      requires: ManifestDesktopCapabilityRequirement[];
+    };
   };
   assetFileName: string;
   bundleTopLevelDir: string;
@@ -93,6 +100,17 @@ function asBoolean(value: unknown) {
 
 function asNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function asStringRecord(value: unknown) {
+  const record = asObject(value);
+  const result: Record<string, string> = {};
+  for (const [key, item] of Object.entries(record)) {
+    if (typeof item === "string") {
+      result[key] = item;
+    }
+  }
+  return result;
 }
 
 type CorePortEnvBinding = {
@@ -305,6 +323,43 @@ function applyCoreServiceEnvBindingOverrides(serviceId: string, envBindings: Man
   }
 
   return nextBindings;
+}
+
+function mergeDesktopEnvBindings(defaults: ManifestEnvBinding[], declared: ManifestEnvBinding[]) {
+  const bindingsByKey = new Map<string, ManifestEnvBinding>();
+  for (const binding of defaults) {
+    bindingsByKey.set(binding.key, binding);
+  }
+  for (const binding of declared) {
+    bindingsByKey.set(binding.key, binding);
+  }
+  return [...bindingsByKey.values()];
+}
+
+function resolveDefaultDesktopEnvBindings(serviceId: string): ManifestEnvBinding[] {
+  if (serviceId !== "agent-platform") {
+    return [];
+  }
+
+  return [
+    {
+      key: "AUTH_ENABLED",
+      value: "true",
+      onlyIfDefault: true,
+      defaults: ["", "false", "0"]
+    },
+    {
+      key: "AUTH_LOCAL_PUBLIC_KEY_FILE",
+      value: "configs/local-public-key.pem",
+      onlyIfDefault: true,
+      defaults: [
+        "",
+        "local-public-key.pem",
+        "configs/local-public-key.pem",
+        "{{service.configDir}}/configs/local-public-key.pem"
+      ]
+    }
+  ];
 }
 
 function isFrontendMode(value: unknown): value is FrontendMode {
@@ -626,6 +681,264 @@ function resolveEnvBindings(raw: Record<string, unknown>): ManifestEnvBinding[] 
   return result;
 }
 
+function resolveCapabilityCommand(value: unknown) {
+  const command = toManifestCommand(value);
+  return command ?? undefined;
+}
+
+function resolveCapabilityProvider(value: unknown): ManifestDesktopCapabilityProvider | null {
+  const provider = asObject(value);
+  const id = asOptionalString(provider.id);
+  if (!id) {
+    return null;
+  }
+
+  const entry: ManifestDesktopCapabilityProvider = { id };
+  const command = resolveCapabilityCommand(provider.command);
+  if (command !== undefined) entry.command = command;
+  const windowsCommand = resolveCapabilityCommand(provider.windowsCommand);
+  if (windowsCommand !== undefined) entry.windowsCommand = windowsCommand;
+  const darwinCommand = resolveCapabilityCommand(provider.darwinCommand);
+  if (darwinCommand !== undefined) entry.darwinCommand = darwinCommand;
+  const linuxCommand = resolveCapabilityCommand(provider.linuxCommand);
+  if (linuxCommand !== undefined) entry.linuxCommand = linuxCommand;
+  const env = asStringRecord(provider.env);
+  if (Object.keys(env).length > 0) entry.env = env;
+  if (
+    provider.output !== undefined &&
+    provider.output !== "file" &&
+    provider.output !== "stdoutLastLine"
+  ) {
+    throw new Error(`invalid Desktop capability output for ${id}: ${String(provider.output)}`);
+  }
+  const output = provider.output === "file" || provider.output === "stdoutLastLine"
+    ? provider.output
+    : undefined;
+  if (output !== undefined) entry.output = output;
+  const outputPath = asOptionalString(provider.outputPath);
+  if (outputPath !== undefined) entry.outputPath = outputPath;
+  const dependsOn = asStringArray(provider.dependsOn);
+  if (dependsOn.length > 0) entry.dependsOn = dependsOn;
+  const retryOnSqliteBusy = asBoolean(provider.retryOnSqliteBusy);
+  if (retryOnSqliteBusy !== undefined) entry.retryOnSqliteBusy = retryOnSqliteBusy;
+  const validateJwtDeviceId = asBoolean(provider.validateJwtDeviceId);
+  if (validateJwtDeviceId !== undefined) entry.validateJwtDeviceId = validateJwtDeviceId;
+  const allowDeviceIdFallback = asBoolean(provider.allowDeviceIdFallback);
+  if (allowDeviceIdFallback !== undefined) entry.allowDeviceIdFallback = allowDeviceIdFallback;
+  return entry;
+}
+
+function resolveCapabilityRequirement(value: unknown): ManifestDesktopCapabilityRequirement | null {
+  const requirement = asObject(value);
+  const phase = requirement.phase === "preStart" || requirement.phase === "verifyRunning"
+    ? requirement.phase
+    : null;
+  if (!phase) {
+    if (requirement.capability !== undefined || requirement.service !== undefined) {
+      throw new Error(`invalid Desktop capability requirement phase: ${String(requirement.phase)}`);
+    }
+    return null;
+  }
+
+  const capability = asOptionalString(requirement.capability);
+  const service = asOptionalString(requirement.service);
+  if (!capability && !service) {
+    return null;
+  }
+
+  const action =
+    requirement.action === "copyFile" ||
+    requirement.action === "preload" ||
+    requirement.action === "waitHttp"
+      ? requirement.action
+      : undefined;
+  if (requirement.action !== undefined && action === undefined) {
+    throw new Error(`invalid Desktop capability requirement action: ${String(requirement.action)}`);
+  }
+  const target = asOptionalString(requirement.target);
+  return {
+    phase,
+    ...(capability ? { capability } : {}),
+    ...(service ? { service } : {}),
+    ...(action ? { action } : {}),
+    ...(target ? { target } : {})
+  };
+}
+
+function resolveDesktopCapabilities(raw: Record<string, unknown>): ManifestDesktopCapabilities & {
+  provides: ManifestDesktopCapabilityProvider[];
+  requires: ManifestDesktopCapabilityRequirement[];
+} {
+  const desktop = asObject(raw.desktop);
+  const capabilities = asObject(desktop.capabilities);
+  const provides = Array.isArray(capabilities.provides)
+    ? capabilities.provides.map(resolveCapabilityProvider).filter((item): item is ManifestDesktopCapabilityProvider => Boolean(item))
+    : [];
+  const requires = Array.isArray(capabilities.requires)
+    ? capabilities.requires.map(resolveCapabilityRequirement).filter((item): item is ManifestDesktopCapabilityRequirement => Boolean(item))
+    : [];
+  return { provides, requires };
+}
+
+function mergeDesktopCapabilities(
+  defaults: ManifestDesktopCapabilities | undefined,
+  declared: ManifestDesktopCapabilities & {
+    provides: ManifestDesktopCapabilityProvider[];
+    requires: ManifestDesktopCapabilityRequirement[];
+  }
+) {
+  const providesById = new Map<string, ManifestDesktopCapabilityProvider>();
+  for (const provider of defaults?.provides ?? []) {
+    providesById.set(provider.id, provider);
+  }
+  for (const provider of declared.provides) {
+    providesById.set(provider.id, provider);
+  }
+
+  const requirementKeys = new Set<string>();
+  const requires: ManifestDesktopCapabilityRequirement[] = [];
+  for (const requirement of [...(defaults?.requires ?? []), ...declared.requires]) {
+    const key = JSON.stringify(requirement);
+    if (requirementKeys.has(key)) {
+      continue;
+    }
+    requirementKeys.add(key);
+    requires.push(requirement);
+  }
+
+  return {
+    provides: [...providesById.values()],
+    requires
+  };
+}
+
+function authPublicKeyCapability(): ManifestDesktopCapabilityProvider {
+  const commonArgs = [
+    "--mode",
+    "bootstrap",
+    "--db",
+    "{{auth.dbPath}}",
+    "--out",
+    "{{provider.dataDir}}/keys",
+    "--public-out",
+    "{{output.path}}"
+  ];
+  return {
+    id: "auth.publicKey",
+    command: ["scripts/setup-public-key.sh", ...commonArgs],
+    darwinCommand: ["scripts/setup-public-key.sh", ...commonArgs],
+    linuxCommand: ["scripts/setup-public-key.sh", ...commonArgs],
+    windowsCommand: [
+      "scripts/setup-public-key.ps1",
+      "-Mode",
+      "bootstrap",
+      "-Db",
+      "{{auth.dbPath}}",
+      "-Out",
+      "{{provider.dataDir}}/keys",
+      "-PublicOut",
+      "{{output.path}}"
+    ],
+    env: {
+      AUTH_DB_PATH: "{{auth.dbPath}}"
+    },
+    output: "file",
+    outputPath: "{{provider.dataDir}}/keys/publicKey.pem",
+    retryOnSqliteBusy: true
+  };
+}
+
+function authAccessTokenCapability(): ManifestDesktopCapabilityProvider {
+  const commonArgs = [
+    "--db",
+    "{{auth.dbPath}}",
+    "--issuer",
+    "{{auth.issuer}}",
+    "--username",
+    "{{auth.username}}",
+    "--device-name",
+    "{{desktop.deviceName}}",
+    "--device-id",
+    "{{desktop.deviceId}}"
+  ];
+  return {
+    id: "auth.accessToken",
+    command: ["scripts/issue-bridge-access-token.sh", ...commonArgs],
+    darwinCommand: ["scripts/issue-bridge-access-token.sh", ...commonArgs],
+    linuxCommand: ["scripts/issue-bridge-access-token.sh", ...commonArgs],
+    windowsCommand: [
+      "scripts/issue-bridge-access-token.ps1",
+      "-Db",
+      "{{auth.dbPath}}",
+      "-Issuer",
+      "{{auth.issuer}}",
+      "-Username",
+      "{{auth.username}}",
+      "-DeviceName",
+      "{{desktop.deviceName}}",
+      "-DeviceId",
+      "{{desktop.deviceId}}"
+    ],
+    env: {
+      AUTH_DB_PATH: "{{auth.dbPath}}",
+      AUTH_ISSUER: "{{auth.issuer}}",
+      AUTH_APP_USERNAME: "{{auth.username}}",
+      DESKTOP_DEVICE_ID: "{{desktop.deviceId}}"
+    },
+    output: "stdoutLastLine",
+    dependsOn: ["auth.publicKey"],
+    retryOnSqliteBusy: true,
+    validateJwtDeviceId: true,
+    allowDeviceIdFallback: true
+  };
+}
+
+function resolveDefaultDesktopCapabilities(serviceId: string): ManifestDesktopCapabilities | undefined {
+  if (serviceId === "zenmind-app-server") {
+    return {
+      provides: [
+        authPublicKeyCapability(),
+        authAccessTokenCapability()
+      ],
+      requires: []
+    };
+  }
+
+  if (serviceId === "agent-platform") {
+    return {
+      provides: [],
+      requires: [
+        {
+          phase: "preStart",
+          capability: "auth.publicKey",
+          action: "copyFile",
+          target: "configs/local-public-key.pem"
+        }
+      ]
+    };
+  }
+
+  if (serviceId === "agent-webclient") {
+    return {
+      provides: [],
+      requires: [
+        {
+          phase: "verifyRunning",
+          capability: "auth.accessToken",
+          action: "preload"
+        },
+        {
+          phase: "verifyRunning",
+          service: "agent-platform",
+          action: "waitHttp"
+        }
+      ]
+    };
+  }
+
+  return undefined;
+}
+
 function resolveDesktop(
   raw: Record<string, unknown>,
   options: NormalizeManifestOptions,
@@ -639,18 +952,33 @@ function resolveDesktop(
     options.desktop?.bundleTopLevelDir ??
     asOptionalString(desktop.bundleTopLevelDir) ??
     serviceId;
-  const envBindings = resolveEnvBindings(raw);
+  const envBindings = mergeDesktopEnvBindings(
+    resolveDefaultDesktopEnvBindings(serviceId),
+    resolveEnvBindings(raw)
+  );
   const hosting =
     (options.desktop?.hosting ? cloneDesktopHosting(options.desktop.hosting) : undefined) ??
     resolveDesktopHosting(raw) ??
     resolveDefaultDesktopHosting(serviceId, frontend);
+  const capabilities = mergeDesktopCapabilities(
+    resolveDefaultDesktopCapabilities(serviceId),
+    resolveDesktopCapabilities(raw)
+  );
 
   return {
     assetFileName,
     bundleTopLevelDir,
     envBindings,
+    capabilities,
     ...(hosting ? { hosting } : {})
-  } satisfies ManifestDesktop & { bundleTopLevelDir: string; envBindings: ManifestEnvBinding[] };
+  } satisfies ManifestDesktop & {
+    bundleTopLevelDir: string;
+    envBindings: ManifestEnvBinding[];
+    capabilities: ManifestDesktopCapabilities & {
+      provides: ManifestDesktopCapabilityProvider[];
+      requires: ManifestDesktopCapabilityRequirement[];
+    };
+  };
 }
 
 function normalizeExecutable(entry: string) {

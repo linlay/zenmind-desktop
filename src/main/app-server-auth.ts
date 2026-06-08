@@ -4,7 +4,6 @@ import { execFile } from "node:child_process";
 import type { App } from "electron";
 import { parseEnvFileContent } from "./env-file";
 import { getService } from "./services/service-registry";
-import { getDesktopDeviceId } from "./device-identity";
 import {
   getServiceConfigRoot,
   getServiceDataRoot,
@@ -13,6 +12,7 @@ import {
   getServiceStateRoot
 } from "./user-paths";
 import { PRODUCT_NAME } from "../shared/generated/brand";
+import { resolveDesktopCapability } from "./services/manager/capabilities";
 
 const APP_SERVER_SERVICE_ID = "zenmind-app-server";
 const DESKTOP_DEVICE_NAME = `${PRODUCT_NAME} Desktop`;
@@ -388,28 +388,11 @@ export function getAppServerPublicKeyExportPath(app: App) {
 }
 
 export async function ensureAppServerJwk(app: App) {
-  const layout = getAppServerLayout(app);
-  if (!fs.existsSync(layout.programDir)) {
-    throw new Error("zenmind-app-server 未安装，无法签发 agent-platform access token。");
-  }
-
-  const settings = readAppServerAuthSettings(layout);
-  const keyDir = path.join(layout.dataDir, "keys");
-  const publicKeyPath = path.join(keyDir, "publicKey.pem");
-  ensureDir(path.dirname(settings.dbPath));
-  ensureDir(keyDir);
-
-  const resolved = resolveAppServerCommand(layout, "setup-public-key");
-  await runAppServerAuthScript(layout, resolved, buildSetupPublicKeyArgs(settings, keyDir, publicKeyPath), {
-    ...buildAppServerAuthScriptEnv(layout, {
-      AUTH_DB_PATH: settings.dbPath
-    })
-  });
-
+  const capability = await resolveDesktopCapability(app, "auth.publicKey");
+  const publicKeyPath = capability.filePath || getAppServerPublicKeyExportPath(app);
   if (!fs.existsSync(publicKeyPath)) {
     throw new Error(`zenmind-app-server 未导出 public key：${publicKeyPath}`);
   }
-
   return {
     publicKeyPath,
     publicKeyPem: fs.readFileSync(publicKeyPath, "utf8")
@@ -417,40 +400,10 @@ export async function ensureAppServerJwk(app: App) {
 }
 
 export async function issueAppServerAccessToken(app: App) {
-  const layout = getAppServerLayout(app);
-  const settings = readAppServerAuthSettings(layout);
-  const desktopDeviceId = getDesktopDeviceId(app);
-  await ensureAppServerJwk(app);
-
-  const resolved = resolveAppServerCommand(layout, "issue-bridge-access-token");
-  const env = {
-    ...buildAppServerAuthScriptEnv(layout, {
-      AUTH_DB_PATH: settings.dbPath,
-      AUTH_ISSUER: settings.issuer,
-      AUTH_APP_USERNAME: settings.username,
-      DESKTOP_DEVICE_ID: desktopDeviceId
-    })
-  };
-  let shouldValidateExactDeviceId = true;
-  let result: ExecResult;
-  try {
-    result = await runAppServerAuthScript(layout, resolved, buildIssueAccessTokenArgsWithDeviceId(settings, desktopDeviceId), env);
-  } catch (reason) {
-    if (!isUnsupportedDeviceIdArgumentError(reason)) {
-      throw reason;
-    }
-    shouldValidateExactDeviceId = false;
-    result = await runAppServerAuthScript(layout, resolved, buildLegacyIssueAccessTokenArgs(settings), env);
-  }
-
-  const token = result.stdout.trim().split(/\r?\n/u).filter(Boolean).at(-1)?.trim() ?? "";
+  const capability = await resolveDesktopCapability(app, "auth.accessToken");
+  const token = capability.token || capability.text || "";
   if (!token) {
     throw new Error("zenmind-app-server 未返回 access token。");
-  }
-  if (shouldValidateExactDeviceId) {
-    validateAccessTokenDeviceId(token, desktopDeviceId);
-  } else {
-    validateAccessTokenHasDeviceId(token);
   }
   return token;
 }

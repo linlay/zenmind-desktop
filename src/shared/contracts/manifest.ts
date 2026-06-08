@@ -96,6 +96,7 @@ export interface ManifestDesktop {
   bundleTopLevelDir?: string;
   envBindings?: ManifestEnvBinding[];
   hosting?: ManifestDesktopHosting;
+  capabilities?: ManifestDesktopCapabilities;
 }
 
 export interface ManifestEnvBinding {
@@ -105,6 +106,38 @@ export interface ManifestEnvBinding {
   template?: string;
   onlyIfDefault?: boolean;
   defaults?: string[];
+}
+
+export type ManifestDesktopCapabilityPhase = "preStart" | "verifyRunning";
+export type ManifestDesktopCapabilityOutput = "file" | "stdoutLastLine";
+export type ManifestDesktopCapabilityRequirementAction = "copyFile" | "preload" | "waitHttp";
+
+export interface ManifestDesktopCapabilityProvider {
+  id: string;
+  command?: ManifestCommand;
+  windowsCommand?: ManifestCommand;
+  darwinCommand?: ManifestCommand;
+  linuxCommand?: ManifestCommand;
+  env?: Record<string, string>;
+  output?: ManifestDesktopCapabilityOutput;
+  outputPath?: string;
+  dependsOn?: string[];
+  retryOnSqliteBusy?: boolean;
+  validateJwtDeviceId?: boolean;
+  allowDeviceIdFallback?: boolean;
+}
+
+export interface ManifestDesktopCapabilityRequirement {
+  phase: ManifestDesktopCapabilityPhase;
+  capability?: string;
+  service?: string;
+  action?: ManifestDesktopCapabilityRequirementAction;
+  target?: string;
+}
+
+export interface ManifestDesktopCapabilities {
+  provides?: ManifestDesktopCapabilityProvider[];
+  requires?: ManifestDesktopCapabilityRequirement[];
 }
 
 export interface Manifest {

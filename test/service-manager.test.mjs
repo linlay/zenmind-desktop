@@ -436,7 +436,17 @@ function createStartupCoreAssetsFixture(options = {}) {
         );
         fs.writeFileSync(
           path.join(bundleRoot, "scripts", "issue-bridge-access-token.ps1"),
-          "Write-Output 'fixture-token'\r\n",
+          [
+            "$deviceId = $env:DESKTOP_DEVICE_ID",
+            "$headerJson = '{\"alg\":\"RS256\",\"kid\":\"fixture\",\"typ\":\"JWT\"}'",
+            "$payloadJson = (@{ iss = 'fixture'; sub = 'app'; device_id = $deviceId } | ConvertTo-Json -Compress)",
+            "function ConvertTo-Base64Url([string]$Value) {",
+            "  return [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($Value)).TrimEnd('=').Replace('+','-').Replace('/','_')",
+            "}",
+            "$header = ConvertTo-Base64Url $headerJson",
+            "$payload = ConvertTo-Base64Url $payloadJson",
+            "Write-Output \"$header.$payload.signature\""
+          ].join("\r\n") + "\r\n",
           "utf8"
         );
       } else {
@@ -462,7 +472,11 @@ function createStartupCoreAssetsFixture(options = {}) {
           [
             "#!/usr/bin/env bash",
             "set -euo pipefail",
-            "printf '%s\\n' 'fixture-token'"
+            "node - <<'NODE'",
+            "const b64 = (value) => Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');",
+            "const deviceId = process.env.DESKTOP_DEVICE_ID || '';",
+            "console.log(`${b64({ alg: 'RS256', kid: 'fixture', typ: 'JWT' })}.${b64({ iss: 'fixture', sub: 'app', device_id: deviceId })}.signature`);",
+            "NODE"
           ].join("\n") + "\n",
           "utf8"
         );
@@ -508,10 +522,36 @@ function createStartupCoreAssetsFixture(options = {}) {
                 "$pidDir = if ($env:SERVICE_STATE_DIR) { $env:SERVICE_STATE_DIR } else { $runDir }",
                 "New-Item -ItemType Directory -Path $pidDir -Force | Out-Null",
                 "if ($env:NODE_BIN) { $env:NODE_BIN | Set-Content -LiteralPath (Join-Path $runDir 'node-bin.txt') }",
-                "$fixtureScript = Join-Path $runDir '${service.id}-fixture.mjs'",
-                "[System.IO.File]::WriteAllText($fixtureScript, 'setInterval(() => {}, 1000);')",
+                "$fixtureScript = Join-Path $runDir '${service.id}-fixture.cjs'",
+                "$fixtureScriptContent = @'",
+                "const port = Number(process.argv[2] || 0);",
+                `if (${service.id === "agent-platform" ? "true" : "false"} && port > 0) {`,
+                "  const http = require('node:http');",
+                "  const server = http.createServer((_req, res) => res.end('ok'));",
+                "  server.on('error', () => {});",
+                "  server.listen(port, '127.0.0.1');",
+                "}",
+                "setInterval(() => {}, 1000);",
+                "'@",
+                "[System.IO.File]::WriteAllText($fixtureScript, $fixtureScriptContent)",
                 "$nodeBin = if ($env:NODE_BIN) { $env:NODE_BIN } else { 'node' }",
-                "$proc = Start-Process -FilePath $nodeBin -ArgumentList $fixtureScript -WindowStyle Hidden -PassThru",
+                `$portKey = '${service.web.portEnvKey}'`,
+                "$servicePort = ''",
+                "$envFile = if ($env:SERVICE_CONFIG_DIR) { Join-Path $env:SERVICE_CONFIG_DIR '.env' } else { '' }",
+                "if ($envFile -and (Test-Path -LiteralPath $envFile)) {",
+                "  foreach ($line in Get-Content -LiteralPath $envFile) {",
+                "    if ($line -match ('^' + [regex]::Escape($portKey) + '=(.+)$')) {",
+                "      $value = $Matches[1].Trim()",
+                "      $value = $value.Trim(\"'\")",
+                "      $value = $value.Trim('\"')",
+                "      if ($value -match ':(\\d+)$') { $servicePort = $Matches[1] }",
+                "      elseif ($value -match '^\\d+$') { $servicePort = $value }",
+                "    }",
+                "  }",
+                "}",
+                "$fixtureArgs = @($fixtureScript)",
+                "if ($servicePort) { $fixtureArgs += $servicePort }",
+                "$proc = Start-Process -FilePath $nodeBin -ArgumentList $fixtureArgs -WindowStyle Hidden -PassThru",
                 `$proc.Id | Set-Content -LiteralPath (Join-Path $pidDir '${service.id}.pid')`,
                 "Set-Content -LiteralPath (Join-Path $runDir 'started.txt') -Value 'started'"
               ].join("\r\n")
@@ -570,9 +610,24 @@ function createStartupCoreAssetsFixture(options = {}) {
           options.failOnStartServiceId === service.id
             ? "echo fixture start failure >&2\nexit 1"
             : [
-                `fixture_script="$PWD/run/${service.id}-fixture.mjs"`,
-                `printf 'setInterval(() => {}, 1000);\\n' > "$fixture_script"`,
-                `node "$fixture_script" >/dev/null 2>&1 &`,
+                `fixture_script="$PWD/run/${service.id}-fixture.cjs"`,
+                "cat > \"$fixture_script\" <<'NODE'",
+                "const port = Number(process.argv[2] || 0);",
+                `if (${service.id === "agent-platform" ? "true" : "false"} && port > 0) {`,
+                "  const http = require('node:http');",
+                "  const server = http.createServer((_req, res) => res.end('ok'));",
+                "  server.on('error', () => {});",
+                "  server.listen(port, '127.0.0.1');",
+                "}",
+                "setInterval(() => {}, 1000);",
+                "NODE",
+                "service_port=''",
+                `port_key='${service.web.portEnvKey}'`,
+                'env_file="${SERVICE_CONFIG_DIR:-}/.env"',
+                'if [ -f "$env_file" ]; then',
+                "  service_port=\"$(node -e \"const fs=require('node:fs'); const [file,key]=process.argv.slice(1); const line=fs.readFileSync(file,'utf8').split(/\\\\r?\\\\n/).find((item)=>item.startsWith(key+'=')); const raw=(line?line.slice(key.length+1):'').trim().replace(/^['\\\\\\\"]|['\\\\\\\"]$/g,''); const match=raw.match(/:(\\\\d+)$/)||raw.match(/^(\\\\d+)/); if (match) process.stdout.write(match[1]);\" \"$env_file\" \"$port_key\")\"",
+                "fi",
+                `node "$fixture_script" "$service_port" >/dev/null 2>&1 &`,
                 'if [ -n "${NODE_BIN:-}" ]; then printf "%s" "$NODE_BIN" > run/node-bin.txt; fi',
                 `echo $! > "$pid_dir/${service.id}.pid"`,
                 "printf started > run/started.txt"
@@ -4187,6 +4242,9 @@ test("startService reinitializes a core builtin when its config was deleted", as
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
 
   try {
+    const platformStart = await startService(app, "agent-platform");
+    assert.equal(platformStart.ok, true, platformStart.message);
+
     await installBuiltinService(app, "agent-webclient");
     const installDir = getInstallDir(app, getBuiltinService("agent-webclient"));
     fs.rmSync(path.join(installDir, "run", "deploy.log"), { force: true });
@@ -5377,7 +5435,7 @@ test("ensurePreStartRequirements refreshes stale agent-webclient install and rew
   assert.match(envContent, /BASE_URL=http:\/\/127\.0\.0\.1:12949/);
   assert.match(envContent, /^WS_BASE_URL=http:\/\/localhost:11949$/m);
   assert.match(envContent, /^VOICE_BASE_URL=http:\/\/127\.0\.0\.1:117078$/m);
-  assert.match(envContent, /PORT=7080/);
+  assert.match(envContent, new RegExp(`^PORT=${webclientService.web.defaultPort}$`, "m"));
   assert.match(envContent, /^NODE_BIN=\/tmp\/stale-node$/m);
   assert.match(envContent, /^NODE_ENV=development$/m);
   assert.match(envContent, /^DEV_SERVER_ALLOWED_HOSTS=all$/m);
@@ -5403,6 +5461,8 @@ test("startService hosts agent-webclient without executing bundle start script",
   try {
     await installBuiltinService(app, "agent-platform");
     await installBuiltinService(app, "agent-webclient");
+    const platformStart = await startService(app, "agent-platform");
+    assert.equal(platformStart.ok, true, platformStart.message);
 
     if (process.platform === "win32") {
       fs.writeFileSync(
@@ -6577,7 +6637,7 @@ test("runStartupPreparation restores second-launch core services in parallel", a
   }
 });
 
-test("runStartupPreparation prepares packaged first-launch core services in parallel and starts core services sequentially", async () => {
+test("runStartupPreparation prepares packaged first-launch core services in parallel and gates webclient verification", async () => {
   const fixture = createStartupCoreAssetsFixture({ recordStartTime: true, startDelayMs: 500, deployDelayMs: 300 });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
@@ -6630,25 +6690,17 @@ test("runStartupPreparation prepares packaged first-launch core services in para
     });
     const installSpreadMs = Math.max(...installTimes) - Math.min(...installTimes);
     assert.ok(installSpreadMs < 250, `expected parallel bootstrap install callbacks, got spread ${installSpreadMs}ms`);
-
-    if (!succeededTimes.has("zenmind-app-server")) {
-      assert.equal(startingTimes.has("agent-platform"), false, "agent-platform should not start when app-server is not running");
-      assert.equal(startingTimes.has("agent-webclient"), false, "agent-webclient should not start when app-server is not running");
-      assert.match(result.failures.join("\n"), /zenmind-app-server:/);
-      return;
-    }
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
 
     for (const serviceId of ["zenmind-app-server", "agent-platform", "agent-webclient"]) {
       assert.equal(startingTimes.has(serviceId), true, `${serviceId} should reach starting phase`);
+      assert.equal(succeededTimes.has(serviceId), true, `${serviceId} should reach succeeded phase`);
     }
 
     assert.ok(
-      startingTimes.get("agent-platform") >= succeededTimes.get("zenmind-app-server"),
-      "agent-platform should not start before app-server is running"
-    );
-    assert.ok(
-      startingTimes.get("agent-webclient") >= succeededTimes.get("agent-platform"),
-      "agent-webclient should not start before agent-platform is running"
+      succeededTimes.get("agent-webclient") >= succeededTimes.get("agent-platform"),
+      "agent-webclient should only succeed after agent-platform satisfies verifyRunning requirements"
     );
   } finally {
     if (previousVerifyDelay === undefined) {
@@ -6714,8 +6766,10 @@ test("runStartupPreparation collects parallel restore failures without cancellin
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
   const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
+  const previousDependencyVerifyTimeout = process.env.SERVICE_DEPENDENCY_VERIFY_TIMEOUT_MS;
 
   process.env.SERVICE_VERIFY_DELAY_MS = "0";
+  process.env.SERVICE_DEPENDENCY_VERIFY_TIMEOUT_MS = "500";
 
   try {
     for (const serviceId of ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"]) {
@@ -6725,9 +6779,11 @@ test("runStartupPreparation collects parallel restore failures without cancellin
     const result = await runStartupPreparation(app);
 
     assert.equal(result.mode, "restore");
-    assert.equal(result.failures.length, 1);
-    assert.match(result.failures[0], /agent-platform/u);
-    assert.deepEqual(result.started, ["zenmind-app-server", "agent-webclient"]);
+    assert.equal(result.failures.length, 2);
+    assert.match(result.failures.join("\n"), /agent-platform/u);
+    assert.match(result.failures.join("\n"), /agent-webclient/u);
+    assert.match(result.failures.join("\n"), /service agent-platform 未就绪/u);
+    assert.deepEqual(result.started, ["zenmind-app-server"]);
     assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "zenmind-app-server", "v1.0.0"), "run", "started.txt")), true);
     assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "run", "started.txt")), false);
     assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-webclient", "v1.0.0"), "run", "started.txt")), false);
@@ -6737,6 +6793,11 @@ test("runStartupPreparation collects parallel restore failures without cancellin
       delete process.env.SERVICE_VERIFY_DELAY_MS;
     } else {
       process.env.SERVICE_VERIFY_DELAY_MS = previousVerifyDelay;
+    }
+    if (previousDependencyVerifyTimeout === undefined) {
+      delete process.env.SERVICE_DEPENDENCY_VERIFY_TIMEOUT_MS;
+    } else {
+      process.env.SERVICE_DEPENDENCY_VERIFY_TIMEOUT_MS = previousDependencyVerifyTimeout;
     }
     await stopStartupCoreProcesses(app);
     restore();
@@ -6835,7 +6896,7 @@ test("runStartupPreparation reinitializes packaged core services that are missin
   }
 });
 
-test("runStartupPreparation reports one bootstrap failure and skips blocked dependents", async () => {
+test("runStartupPreparation reports one bootstrap failure without blocking independent dependents", async () => {
   const fixture = createStartupCoreAssetsFixture({ failOnStartServiceId: "zenmind-app-server" });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
@@ -6845,9 +6906,10 @@ test("runStartupPreparation reports one bootstrap failure and skips blocked depe
     assert.equal(result.mode, "bootstrap");
     assert.equal(result.failures.length, 1);
     assert.match(result.failures[0], /zenmind-app-server/u);
-    assert.deepEqual(result.started, []);
-    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "run", "started.txt")), false);
+    assert.deepEqual(result.started, ["agent-platform", "agent-webclient"]);
+    assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-platform", "v1.0.0"), "run", "started.txt")), true);
     assert.equal(fs.existsSync(path.join(getTestServiceProgramDir(userDataRoot, "agent-webclient", "v1.0.0"), "run", "started.txt")), false);
+    assert.equal((await getServiceState(app, "agent-webclient")).status, "running");
   } finally {
     await stopStartupCoreProcesses(app);
     restore();
