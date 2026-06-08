@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import JSZip from "jszip";
+import yaml from "js-yaml";
 import { APP_BRAND } from "../shared/generated/brand";
 
 export type EnvRootConflictDecision = "migrate" | "keep" | "cancel";
@@ -51,6 +52,8 @@ const COMPLETED_OWNER_BOOTSTRAP_RELATIVE_PATH = path.join(
 type EnvZipImportOptions = {
   shouldOverwriteExistingFile?: (relativePath: string) => boolean;
 };
+
+type MutableYamlRecord = Record<string, unknown>;
 
 function isEnvArchiveWrapperDir(dirName: string) {
   const normalizedDirName = dirName.trim().toLowerCase();
@@ -332,6 +335,16 @@ function normalizeSafeRelativePath(relativePath: string) {
   return normalized;
 }
 
+function normalizeEnvZipEntryRelativePath(relativePath: string) {
+  const normalized = normalizeSafeRelativePath(relativePath);
+  const segments = normalized.split("/");
+  if (segments[0] === "agents" && segments[1]?.endsWith(".bootstrap")) {
+    segments[1] = segments[1].slice(0, -".bootstrap".length);
+    return segments.join("/");
+  }
+  return normalized;
+}
+
 function isRefreshableRuntimeSeedPath(relativePath: string) {
   const segments = normalizeSafeRelativePath(relativePath).split("/");
   if (segments[0] === "agents" && segments[1] === "bootstrap") {
@@ -349,6 +362,59 @@ function isRefreshableRuntimeSeedPath(relativePath: string) {
 function isProviderRegistryPath(relativePath: string) {
   const segments = normalizeSafeRelativePath(relativePath).split("/");
   return segments[0] === "registries" && segments[1] === "providers" && /\.ya?ml$/iu.test(segments[2] ?? "");
+}
+
+function isRecord(value: unknown): value is MutableYamlRecord {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isAgentSeedConfigPath(relativePath: string) {
+  const segments = normalizeSafeRelativePath(relativePath).split("/");
+  return segments[0] === "agents" && segments.length === 3 && segments[2] === "agent.yml";
+}
+
+function normalizeLegacyTimeoutSeconds(value: unknown) {
+  const numericValue = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return null;
+  }
+  return numericValue >= 1000 ? Math.round(numericValue / 1000) : numericValue;
+}
+
+function migrateLegacyAgentSeedYaml(content: Buffer, relativePath: string, platform: NodeJS.Platform) {
+  if (!isAgentSeedConfigPath(relativePath)) {
+    return content;
+  }
+
+  const rawContent = content.toString("utf8");
+  const parsed = yaml.load(rawContent);
+  if (!isRecord(parsed)) {
+    return content;
+  }
+
+  let changed = false;
+  const budget = parsed.budget;
+  if (isRecord(budget) && Object.prototype.hasOwnProperty.call(budget, "runTimeoutMs")) {
+    if (!Object.prototype.hasOwnProperty.call(budget, "timeout")) {
+      const timeout = normalizeLegacyTimeoutSeconds(budget.runTimeoutMs);
+      if (timeout !== null) {
+        budget.timeout = timeout;
+      }
+    }
+    delete budget.runTimeoutMs;
+    changed = true;
+  }
+
+  const runtimeConfig = parsed.runtimeConfig;
+  if (platform === "win32" && isRecord(runtimeConfig) && runtimeConfig.workspaceRoot === "/") {
+    runtimeConfig.workspaceRoot = "@chat";
+    changed = true;
+  }
+
+  if (!changed) {
+    return content;
+  }
+  return Buffer.from(yaml.dump(parsed, { lineWidth: -1, noRefs: true }), "utf8");
 }
 
 function extractTopLevelYamlScalar(content: string, key: string) {
@@ -474,7 +540,7 @@ function normalizeZipEntries(zip: JSZip) {
       continue;
     }
     entries.push({
-      relativePath: normalizeSafeRelativePath(strippedPath),
+      relativePath: normalizeEnvZipEntryRelativePath(strippedPath),
       directory: entry.dir,
       entry
     });
@@ -562,7 +628,11 @@ export async function importEnvZipToRuntime(
         skippedFiles += 1;
         continue;
       }
-      const content = await entry.entry.async("nodebuffer");
+      const content = migrateLegacyAgentSeedYaml(
+        await entry.entry.async("nodebuffer"),
+        entry.relativePath,
+        platform
+      );
       if (isProviderRegistryPath(entry.relativePath)) {
         const existingContent = await fs.promises.readFile(targetPath, "utf8");
         await fs.promises.writeFile(
@@ -578,7 +648,11 @@ export async function importEnvZipToRuntime(
     }
 
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    const content = await entry.entry.async("nodebuffer");
+    const content = migrateLegacyAgentSeedYaml(
+      await entry.entry.async("nodebuffer"),
+      entry.relativePath,
+      platform
+    );
     await fs.promises.writeFile(targetPath, content);
     copiedFiles += 1;
   }
