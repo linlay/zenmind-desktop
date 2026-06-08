@@ -33,14 +33,16 @@ test("Desktop SSO opens Google in the system browser and keeps legacy embedded f
   assert.match(oidcSsoSource, /GOOGLE_LOOPBACK_HOST = "127\.0\.0\.1"/u);
   assert.match(oidcSsoSource, /openMode: "system" as const/u);
   assert.match(oidcSsoSource, /browserUrl: oidcConfig\.loginUrl \? undefined : buildDesktopSsoProxyUrl\(authorizeUrl\)/u);
-  assert.match(startLoginBlock, /onBeforeStatusChanged: async \(status(?:: any)?, context\?: \{ idToken\?: string \}\) => \{[\s\S]{0,220}if \(status\.authenticated\) \{[\s\S]{0,140}await desktopSsoController\.syncBrowserCookies\(\);/u);
+  assert.match(startLoginBlock, /onBeforeStatusChanged: async \(status(?:: any)?, context\?: \{ idToken\?: string; ticket\?: string \}\) => \{[\s\S]{0,260}if \(context\?\.ticket\) \{[\s\S]{0,120}exchangeWebSessionTicket\?\.\(context\.ticket\)/u);
+  assert.match(startLoginBlock, /await desktopSsoController\.syncBrowserCookies\(\);/u);
   assert.match(startLoginBlock, /await desktopSsoController\.exchangeBrowserCookieAccessToken\(\);/u);
   assert.match(startLoginBlock, /await desktopSsoController\.exchangeWebSession\(context\?\.idToken \|\| ""\);/u);
-  assert.match(source, /await desktopSsoController\.exchangeBrowserCookieAccessToken\(\)/u);
+  assert.match(ssoHandlersSource, /await desktopSsoController\.exchangeBrowserCookieAccessToken\(\)/u);
   assert.match(startLoginBlock, /result\.openMode === "system"[\s\S]{0,160}desktopSsoController\.openSystemBrowserUrl/u);
   assert.match(startLoginBlock, /desktopSsoController\.openBrowserUrl\(\{\s*url: result\.browserUrl \|\| result\.authorizeUrl,[\s\S]*?resolveRedirect: Boolean\(result\.browserUrl\)\s*\}\)/u);
   assert.match(startLoginBlock, /failDesktopSsoFlow\(message\)/u);
   assert.match(logoutBlock, /await desktopSsoController\.clearBrowserCookies\(\);/u);
+  assert.match(logoutBlock, /desktopSsoController\.logoutWebSession\?\.\(\)/u);
   assert.match(logoutBlock, /await desktopSsoController\.clearWebSessionCookies\(\);/u);
   assert.match(logoutBlock, /desktopSsoController\.openBrowserUrl\(\{\s*url: result\.browserUrl \|\| result\.logoutUrl,[\s\S]*?resolveRedirect: false\s*\}\)/u);
   assert.match(logoutBlock, /failDesktopSsoFlow\(message\)/u);

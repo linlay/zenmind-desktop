@@ -118,7 +118,7 @@ function ensureTaskBoardRunStateConstraint(db: DatabaseSync) {
     SELECT sql FROM sqlite_master
     WHERE type = 'table' AND name = 'task_board_issues'
   `).get() as { sql?: string } | undefined;
-  if (!row?.sql || row.sql.includes("'cancelled'")) {
+  if (!row?.sql || (row.sql.includes("'cancelled'") && row.sql.includes("'in_review'"))) {
     return;
   }
   db.exec(`
@@ -128,7 +128,7 @@ function ensureTaskBoardRunStateConstraint(db: DatabaseSync) {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL CHECK (length(trim(title)) > 0),
       description TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL CHECK (status IN ('backlog','todo','in_progress','completed')),
+      status TEXT NOT NULL CHECK (status IN ('backlog','todo','in_progress','in_review','completed')),
       priority TEXT NOT NULL CHECK (priority IN ('high','medium','low')),
       assignee_agent_key TEXT,
       position REAL NOT NULL,
@@ -224,7 +224,7 @@ export function openTaskBoardDatabase(app: AppPathProvider) {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL CHECK (length(trim(title)) > 0),
       description TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL CHECK (status IN ('backlog','todo','in_progress','completed')),
+      status TEXT NOT NULL CHECK (status IN ('backlog','todo','in_progress','in_review','completed')),
       priority TEXT NOT NULL CHECK (priority IN ('high','medium','low')),
       assignee_agent_key TEXT,
       position REAL NOT NULL,
@@ -286,7 +286,8 @@ export function readTaskBoardIssues(db: DatabaseSync): TaskBoardIssue[] {
         WHEN 'backlog' THEN 0
         WHEN 'todo' THEN 1
         WHEN 'in_progress' THEN 2
-        WHEN 'completed' THEN 3
+        WHEN 'in_review' THEN 3
+        WHEN 'completed' THEN 4
         ELSE 99
       END,
       position ASC,

@@ -23,8 +23,10 @@ import { resolveRuntimeRoot } from "./env-bootstrap";
 
 type OidcConfig = {
   provider?: string;
+  authMode?: "server" | "oidc";
   issuer: string;
   authorizeUrl: string;
+  serverAuthorizeUrl?: string;
   loginUrl?: string;
   appendLoginState: boolean;
   loginCompletionUrl?: string;
@@ -140,7 +142,7 @@ type CallbackHooks = {
   onBeforeStatusChanged?: (
     status: DesktopSsoStatus,
     context?: DesktopSsoStatusChangeContext
-  ) => void | Promise<void>;
+  ) => void | DesktopSsoClaims | Promise<void | DesktopSsoClaims>;
   onStatusChanged?: (status: DesktopSsoStatus) => void;
   onReturnToAppRequested?: () => void | Promise<void>;
 };
@@ -148,6 +150,7 @@ type CallbackHooks = {
 type DesktopSsoStatusChangeContext = {
   provider?: string;
   idToken?: string;
+  ticket?: string;
 };
 
 type PendingLogin = {
@@ -220,6 +223,7 @@ const OIDC_CONFIG_STRING_FIELDS = [
   "provider",
   "issuer",
   "authorizeUrl",
+  "serverAuthorizeUrl",
   "loginUrl",
   "loginCompletionUrl",
   "tokenUrl",
@@ -234,6 +238,7 @@ const OIDC_CONFIG_STRING_FIELDS = [
 const OIDC_CONFIG_URL_FIELDS = [
   "issuer",
   "authorizeUrl",
+  "serverAuthorizeUrl",
   "loginUrl",
   "loginCompletionUrl",
   "tokenUrl",
@@ -288,6 +293,7 @@ let pendingLogin: PendingLogin | null = null;
 let desktopSsoProxyState: DesktopSsoProxyState | null = null;
 let currentAccessToken = "";
 const usedAuthorizationCodes = new Set<string>();
+const usedDesktopSsoTickets = new Set<string>();
 
 function createSignedOutStatus(message: string): DesktopSsoStatus {
   return {
@@ -441,6 +447,15 @@ function normalizeProviderName(value: string | undefined) {
   return (value || "").trim().toLowerCase();
 }
 
+function normalizeAuthMode(value: string) {
+  const normalizedValue = value.trim().toLowerCase();
+  return normalizedValue === "server" ? "server" : "oidc";
+}
+
+function isServerBrokerAuthMode(config: OidcConfig) {
+  return config.authMode === "server";
+}
+
 function getUrlHostname(value: string | undefined) {
   if (!value) {
     return "";
@@ -493,7 +508,7 @@ function shouldUsePkce(config: OidcConfig) {
 }
 
 function shouldUseSystemBrowser(config: OidcConfig) {
-  return isGoogleOidcConfig(config);
+  return isServerBrokerAuthMode(config) || isGoogleOidcConfig(config);
 }
 
 function parseDesktopSsoConfigContent(content: string) {
@@ -837,6 +852,7 @@ function normalizeWebSessionExchangeConfig(
   const rawCookieOrigins = getRecordStringArray(exchangeRecord, "cookieOrigins");
   const baseUrl = rawCookieOrigins[0] ||
     config.browserOrigin ||
+    config.serverAuthorizeUrl ||
     new URL(config.loginUrl || config.authorizeUrl).origin;
   const url = normalizeHttpUrl(rawUrl, baseUrl, "webSessionExchange.url");
   return {
@@ -871,6 +887,7 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
     }
   }
   config.provider = useGoogleDesktopFlow ? "google" : normalizeProviderName(config.provider);
+  config.authMode = normalizeAuthMode(getRecordString(record, "authMode"));
   const browserOrigin = useGoogleDesktopFlow ? "" : normalizeIdentityProviderOrigin(record);
   if (!useGoogleDesktopFlow && browserOrigin) {
     config.browserOrigin = browserOrigin;
@@ -913,6 +930,18 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
     } catch {
       throw new Error(`${field} 不是有效 URL。`);
     }
+  }
+  if (isServerBrokerAuthMode(config)) {
+    if (config.provider !== "google") {
+      throw new Error("server authMode 目前只支持 Google Desktop SSO。");
+    }
+    if (!config.serverAuthorizeUrl?.trim()) {
+      throw new Error("serverAuthorizeUrl 不能为空。");
+    }
+    if (!config.webSessionExchange) {
+      throw new Error("server authMode 需要配置 webSessionExchange。");
+    }
+    return config;
   }
   if (!config.clientId.trim()) {
     throw new Error("clientId 不能为空。");
@@ -1178,6 +1207,16 @@ function buildAuthorizeUrl(
   } else {
     url.searchParams.set("prompt", "login");
   }
+  return url.toString();
+}
+
+function buildServerBrokerAuthorizeUrl(state: string, callbackUrl: string, config: OidcConfig) {
+  if (!config.serverAuthorizeUrl) {
+    throw new Error("serverAuthorizeUrl 不能为空。");
+  }
+  const url = new URL(config.serverAuthorizeUrl);
+  url.searchParams.set("callback", callbackUrl);
+  url.searchParams.set("state", state);
   return url.toString();
 }
 
@@ -1739,6 +1778,48 @@ function normalizeCallbackRequest(
   return { code, state };
 }
 
+function normalizeDesktopTicketCallbackRequest(
+  requestUrl: URL,
+  expectedState: string,
+  usedTickets: Set<string> = usedDesktopSsoTickets
+) {
+  const state = requestUrl.searchParams.get("state")?.trim() ?? "";
+  if (!state || state !== expectedState) {
+    throw new Error("state mismatch");
+  }
+  const error = requestUrl.searchParams.get("error")?.trim() ?? "";
+  if (error) {
+    throw new Error(error);
+  }
+  const ticket = requestUrl.searchParams.get("ticket")?.trim() ?? "";
+  if (!ticket) {
+    throw new Error("missing desktop SSO ticket");
+  }
+  if (usedTickets.has(ticket)) {
+    throw new Error("desktop SSO ticket has already been used");
+  }
+  usedTickets.add(ticket);
+  return { ticket, state };
+}
+
+function createDesktopTicketPlaceholderClaims(config: OidcConfig): DesktopSsoClaims {
+  return {
+    sub: "desktop-sso-ticket",
+    issuer: config.webSessionExchange ? new URL(config.webSessionExchange.url).origin : config.serverAuthorizeUrl || "desktop-sso-server",
+    audience: "zenmind-desktop"
+  };
+}
+
+function isDesktopSsoClaimsValue(value: unknown): value is DesktopSsoClaims {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.sub === "string" &&
+    typeof record.issuer === "string" &&
+    typeof record.audience === "string";
+}
+
 function loadElectronFetchRuntime(): ElectronFetchRuntime | null {
   try {
     const runtime = require("electron") as unknown;
@@ -1910,6 +1991,23 @@ async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchL
   if (!pendingLogin) {
     throw new Error("没有正在进行的单点登录。");
   }
+  if (isServerBrokerAuthMode(pendingLogin.config)) {
+    const { ticket } = normalizeDesktopTicketCallbackRequest(requestUrl, pendingLogin.state);
+    const statusContext: DesktopSsoStatusChangeContext = {
+      provider: pendingLogin.config.provider,
+      ticket
+    };
+    const status = createAuthenticatedStatus(createDesktopTicketPlaceholderClaims(pendingLogin.config));
+    pendingLogin = null;
+    const hookClaims = await callbackHooks.onBeforeStatusChanged?.(status, statusContext);
+    if (!isDesktopSsoClaimsValue(hookClaims)) {
+      throw new Error("Desktop SSO web session exchange did not return user claims.");
+    }
+    const exchangedStatus = createAuthenticatedStatus(hookClaims);
+    setCurrentStatus(exchangedStatus);
+    saveSession(app, exchangedStatus);
+    return exchangedStatus;
+  }
   const { code } = normalizeCallbackRequest(requestUrl, pendingLogin.state);
   const tokenClaims = await exchangeCodeForTokenClaims(code, fetchImpl, pendingLogin.config, {
     redirectUri: pendingLogin.redirectUri,
@@ -1921,8 +2019,11 @@ async function handleLoginCallback(app: App, requestUrl: URL, fetchImpl?: FetchL
     idToken: tokenClaims.idToken
   };
   pendingLogin = null;
-  const status = createAuthenticatedStatus(claims);
-  await callbackHooks.onBeforeStatusChanged?.(status, statusContext);
+  let status = createAuthenticatedStatus(claims);
+  const hookClaims = await callbackHooks.onBeforeStatusChanged?.(status, statusContext);
+  if (isDesktopSsoClaimsValue(hookClaims)) {
+    status = createAuthenticatedStatus(hookClaims);
+  }
   setCurrentStatus(status);
   saveSession(app, status);
   return status;
@@ -2160,7 +2261,8 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
       activateDesktopSsoProxy(oidcConfig, { resetCookies: true });
     }
     const state = randomUUID();
-    const codeVerifier = shouldUsePkce(oidcConfig) ? createPkceCodeVerifier() : undefined;
+    const useServerBroker = isServerBrokerAuthMode(oidcConfig);
+    const codeVerifier = !useServerBroker && shouldUsePkce(oidcConfig) ? createPkceCodeVerifier() : undefined;
     const redirectUri = useSystemBrowser ? callbackInfo.redirectUri : oidcConfig.redirectUri;
     const loginConfig = {
       ...oidcConfig,
@@ -2173,10 +2275,12 @@ export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}):
       redirectUri,
       ...(codeVerifier ? { codeVerifier } : {})
     };
-    const authorizeUrl = buildAuthorizeUrl(state, loginConfig, {
-      redirectUri,
-      ...(codeVerifier ? { codeChallenge: createPkceCodeChallenge(codeVerifier) } : {})
-    });
+    const authorizeUrl = useServerBroker
+      ? buildServerBrokerAuthorizeUrl(state, redirectUri, loginConfig)
+      : buildAuthorizeUrl(state, loginConfig, {
+        redirectUri,
+        ...(codeVerifier ? { codeChallenge: createPkceCodeChallenge(codeVerifier) } : {})
+      });
     const status = createPendingStatus("正在等待 IAM 单点登录完成。");
     setCurrentStatus(status);
     return {

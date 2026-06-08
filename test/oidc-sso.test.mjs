@@ -369,6 +369,53 @@ test("loadDesktopSsoConfig supports Google desktop web session exchange", (t) =>
   ]);
 });
 
+test("loadDesktopSsoConfig supports Google server broker auth without clientSecret", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-google-server-broker-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      provider: "google",
+      authMode: "server",
+      serverAuthorizeUrl: "https://www.zenmind.cc/api/auth/google/desktop/start",
+      webSessionExchange: {
+        url: "https://www.zenmind.cc/api/auth/desktop-sso/session",
+        cookieOrigins: ["https://www.zenmind.cc"],
+        clearCookies: [
+          {
+            url: "https://www.zenmind.cc",
+            name: "zenmind_session"
+          }
+        ]
+      }
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  const result = loadDesktopSsoConfig(app);
+
+  assert.equal(result.configured, true);
+  assert.equal(result.error, undefined);
+  assert.equal(result.config.provider, "google");
+  assert.equal(result.config.authMode, "server");
+  assert.equal(result.config.serverAuthorizeUrl, "https://www.zenmind.cc/api/auth/google/desktop/start");
+  assert.equal(result.config.clientSecret, "");
+  assert.deepEqual(getDesktopSsoWebSessionExchangeConfig(app), {
+    url: "https://www.zenmind.cc/api/auth/desktop-sso/session",
+    cookieOrigins: ["https://www.zenmind.cc"],
+    clearCookies: [
+      {
+        url: "https://www.zenmind.cc/",
+        name: "zenmind_session"
+      }
+    ]
+  });
+});
+
 test("loadDesktopSsoConfig infers Google desktop OAuth from Google endpoints and ignores legacy web login fields", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-google-inferred-config-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -547,6 +594,143 @@ test("startDesktopSsoLogin uses an ephemeral 127.0.0.1 loopback server for Googl
   assert.equal(redirectUri.pathname, "/api/auth/oidc/callback");
   assert.equal(url.searchParams.get("code_challenge_method"), "S256");
   assert.ok(url.searchParams.get("code_challenge"));
+});
+
+test("startDesktopSsoLogin opens server broker auth with loopback callback and no Google secret", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-google-server-broker-start-"));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      provider: "google",
+      authMode: "server",
+      serverAuthorizeUrl: "https://www.zenmind.cc/api/auth/google/desktop/start",
+      webSessionExchange: {
+        url: "https://www.zenmind.cc/api/auth/desktop-sso/session",
+        cookieOrigins: ["https://www.zenmind.cc"]
+      }
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  t.after(async () => {
+    await logoutDesktopSso(app);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const result = await startDesktopSsoLogin(app);
+  const url = new URL(result.authorizeUrl);
+  const callback = new URL(url.searchParams.get("callback"));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.openMode, "system");
+  assert.equal(url.origin, "https://www.zenmind.cc");
+  assert.equal(url.pathname, "/api/auth/google/desktop/start");
+  assert.equal(callback.hostname, "127.0.0.1");
+  assert.notEqual(callback.port, "");
+  assert.equal(callback.pathname, "/api/auth/oidc/callback");
+  assert.ok(url.searchParams.get("state"));
+  assert.equal(url.searchParams.has("client_secret"), false);
+  assert.equal(url.searchParams.has("code_challenge"), false);
+});
+
+test("server broker callback exchanges ticket through hook and saves returned user claims", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-google-server-broker-callback-"));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      provider: "google",
+      authMode: "server",
+      serverAuthorizeUrl: "https://www.zenmind.cc/api/auth/google/desktop/start",
+      webSessionExchange: {
+        url: "https://www.zenmind.cc/api/auth/desktop-sso/session",
+        cookieOrigins: ["https://www.zenmind.cc"]
+      }
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  const hookContexts = [];
+  const claims = {
+    sub: "zenmind-user:42",
+    email: "desktop@example.com",
+    name: "Desktop User",
+    issuer: "https://www.zenmind.cc",
+    audience: "zenmind-desktop"
+  };
+  t.after(async () => {
+    await logoutDesktopSso(app);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const result = await startDesktopSsoLogin(app, {
+    onBeforeStatusChanged: async (_status, context) => {
+      hookContexts.push(context);
+      return claims;
+    }
+  });
+  const authorizeUrl = new URL(result.authorizeUrl);
+  const callback = new URL(authorizeUrl.searchParams.get("callback"));
+  callback.searchParams.set("state", authorizeUrl.searchParams.get("state"));
+  callback.searchParams.set("ticket", "ticket-123");
+
+  const response = await fetch(callback);
+  const html = await response.text();
+  const status = getDesktopSsoStatus(app);
+
+  assert.equal(response.status, 200);
+  assert.match(html, /登录成功/);
+  assert.deepEqual(hookContexts, [{
+    provider: "google",
+    ticket: "ticket-123"
+  }]);
+  assert.equal(status.authenticated, true);
+  assert.deepEqual(status.user, claims);
+});
+
+test("server broker callback reports provider errors as failed desktop SSO status", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-google-server-broker-error-"));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      provider: "google",
+      authMode: "server",
+      serverAuthorizeUrl: "https://www.zenmind.cc/api/auth/google/desktop/start",
+      webSessionExchange: {
+        url: "https://www.zenmind.cc/api/auth/desktop-sso/session"
+      }
+    }),
+    "utf8"
+  );
+  const app = createTestApp(homePath);
+  t.after(async () => {
+    await logoutDesktopSso(app);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const result = await startDesktopSsoLogin(app);
+  const authorizeUrl = new URL(result.authorizeUrl);
+  const callback = new URL(authorizeUrl.searchParams.get("callback"));
+  callback.searchParams.set("state", authorizeUrl.searchParams.get("state"));
+  callback.searchParams.set("error", "account_disabled");
+
+  const response = await fetch(callback);
+  const status = getDesktopSsoStatus(app);
+
+  assert.equal(response.status, 400);
+  assert.equal(status.authenticated, false);
+  assert.equal(status.error, "account_disabled");
 });
 
 test("OIDC return-to-app endpoint responds without consuming the auth callback", async (t) => {

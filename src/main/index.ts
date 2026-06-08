@@ -96,17 +96,7 @@ import {
   removeCustomSidebarItem,
   updateCustomSidebarItem
 } from "./navigation/custom-sidebar-store";
-import {
-  createTaskBoardIssue,
-  listTaskBoardIssues,
-  moveTaskBoardIssue,
-  updateTaskBoardIssue
-} from "./task-board-store";
-import {
-  deleteTaskBoardIssueWithAutomation,
-  syncTaskBoardIssueAutomation,
-  syncTaskBoardIssueFromAssistantEvent
-} from "./task-board-sync";
+import { createTaskBoardRuntime } from "./task-board-runtime";
 import {
   getAgentPlatformMinimaxSettingsPublic,
   loadAgentPlatformMinimaxSettings
@@ -712,7 +702,7 @@ function clearDesktopPetActiveRuns() {
 
 function getTaskBoardActiveRunIdsForDesktopPet() {
   try {
-    return listTaskBoardIssues(app).issues
+    return (appState.taskBoardRuntime?.listIssues().issues ?? [])
       .filter((issue) => issue.status === "in_progress" && Boolean(issue.runId))
       .map((issue) => issue.runId)
       .filter((runId): runId is string => Boolean(runId));
@@ -1742,7 +1732,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     getServiceState: getResponsiveServiceState,
     issueAccessToken: issueAgentAccessToken,
     onEvent: (event) => {
-      syncTaskBoardIssueFromAssistantEvent(app, event);
+      state.taskBoardRuntime?.sendAssistantEvent(event);
       for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
         if (!targetWindow || targetWindow.isDestroyed()) {
           continue;
@@ -1752,12 +1742,21 @@ function registerIpcHandlers(context: MainProcessContext) {
       handleDesktopPetAssistantEvent(event);
     }
   });
+  state.taskBoardRuntime = createTaskBoardRuntime({
+    app,
+    assistantBridge,
+    callAgentPlatform,
+    onDebug: (message) => {
+      console.warn(`[task-board] ${message}`);
+    }
+  });
+  state.taskBoardRuntime.start();
   state.assistantNavigationStatusClient = new AssistantNavigationStatusClient({
     app,
     getServiceState: getResponsiveServiceState,
     issueAccessToken: issueAgentAccessToken,
     onSnapshot: emitAssistantNavigationAgentsChanged,
-    onPushEvent: (event) => syncTaskBoardIssueFromAssistantEvent(app, event),
+    onPushEvent: (event) => state.taskBoardRuntime?.sendAssistantEvent(event),
     onDebug: (message) => {
       console.warn(`[assistant-navigation] status unavailable: ${message}`);
     }
@@ -1895,12 +1894,38 @@ function registerIpcHandlers(context: MainProcessContext) {
     issueAgentAccessToken
   }));
   registerTaskBoardIpcHandlers(ipcMain, createTaskBoardIpcHandlerOptions(context, {
-    listTaskBoardIssues,
-    createTaskBoardIssue,
-    updateTaskBoardIssue,
-    deleteTaskBoardIssueWithAutomation,
-    moveTaskBoardIssue,
-    syncTaskBoardIssueAutomation,
+    listTaskBoardIssues: () => state.taskBoardRuntime?.listIssues() ?? {
+      ok: false,
+      message: "任务看板尚未初始化。",
+      issues: []
+    },
+    createTaskBoardIssue: (_app: any, input: any) => state.taskBoardRuntime?.createIssue(input) ?? {
+      ok: false,
+      message: "任务看板尚未初始化。",
+      issues: []
+    },
+    updateTaskBoardIssue: (_app: any, issueId: string, input: any) => state.taskBoardRuntime?.updateIssue(issueId, input) ?? {
+      ok: false,
+      message: "任务看板尚未初始化。",
+      issues: []
+    },
+    deleteTaskBoardIssueWithAutomation: (_app: any, issueId: string, agentPlatformCaller: any) =>
+      state.taskBoardRuntime?.deleteIssueWithAutomation(issueId, agentPlatformCaller) ?? {
+        ok: false,
+        message: "任务看板尚未初始化。",
+        issues: []
+      },
+    moveTaskBoardIssue: (_app: any, input: any) => state.taskBoardRuntime?.moveIssue(input) ?? {
+      ok: false,
+      message: "任务看板尚未初始化。",
+      issues: []
+    },
+    syncTaskBoardIssueAutomation: (_app: any, issueId: string, agentPlatformCaller: any) =>
+      state.taskBoardRuntime?.syncIssueAutomation(issueId, agentPlatformCaller) ?? {
+        ok: false,
+        message: "任务看板尚未初始化。",
+        issues: []
+      },
     callAgentPlatform,
     listCustomSidebarItems,
     addCustomSidebarItem,
@@ -2167,6 +2192,8 @@ app.on("before-quit", (event) => {
 app.on("will-quit", () => {
   clearDesktopPetIdleResetTimer();
   void cdpIntegration.stop();
+  appState.taskBoardRuntime?.stop();
+  appState.taskBoardRuntime = null;
   appState.assistantNavigationStatusClient?.stop();
   appState.assistantNavigationStatusClient = null;
   stopAgentPlatformPetStatusClient();

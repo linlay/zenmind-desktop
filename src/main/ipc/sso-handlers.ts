@@ -1,3 +1,5 @@
+import { safeConsoleError } from "../safe-console";
+
 export interface SsoIpcHandlerOptions {
   app: any;
   desktopSsoController: {
@@ -6,6 +8,8 @@ export interface SsoIpcHandlerOptions {
     syncBrowserCookies: () => Promise<void>;
     exchangeBrowserCookieAccessToken: () => Promise<string>;
     exchangeWebSession: (idToken: string) => Promise<boolean>;
+    exchangeWebSessionTicket?: (ticket: string) => Promise<any>;
+    logoutWebSession?: () => Promise<boolean>;
     clearBrowserCookies: () => Promise<void>;
     clearWebSessionCookies: () => Promise<void>;
     openBrowserUrl: (input: {
@@ -21,7 +25,7 @@ export interface SsoIpcHandlerOptions {
   };
   getDesktopSsoStatus: (app: any) => any | Promise<any>;
   startDesktopSsoLogin: (app: any, options: {
-    onBeforeStatusChanged: (status: any, context?: { idToken?: string }) => Promise<void>;
+    onBeforeStatusChanged: (status: any, context?: { idToken?: string; ticket?: string }) => Promise<any>;
     onStatusChanged: (status: any) => void;
     onReturnToAppRequested: () => void;
   }) => Promise<any>;
@@ -51,12 +55,16 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
 
   ipcMain.handle("sso.startLogin", async () => {
     const result = await startDesktopSsoLogin(app, {
-      onBeforeStatusChanged: async (status: any, context?: { idToken?: string }) => {
+      onBeforeStatusChanged: async (status: any, context?: { idToken?: string; ticket?: string }) => {
         if (status.authenticated) {
+          if (context?.ticket) {
+            return desktopSsoController.exchangeWebSessionTicket?.(context.ticket);
+          }
           await desktopSsoController.syncBrowserCookies();
           await desktopSsoController.exchangeBrowserCookieAccessToken();
           await desktopSsoController.exchangeWebSession(context?.idToken || "");
         }
+        return undefined;
       },
       onStatusChanged: desktopSsoController.broadcastStatus,
       onReturnToAppRequested: desktopSsoController.returnToApp
@@ -89,6 +97,11 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
   });
 
   ipcMain.handle("sso.logout", async () => {
+    try {
+      await desktopSsoController.logoutWebSession?.();
+    } catch (error) {
+      safeConsoleError("failed to logout desktop sso web session", error);
+    }
     const result = await logoutDesktopSso(app, {
       onStatusChanged: desktopSsoController.broadcastStatus
     });

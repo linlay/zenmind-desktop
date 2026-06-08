@@ -11,6 +11,7 @@ import type {
   DesktopPetLocalStatus,
   readDesktopPetStoredState
 } from "./copilot/pet-copilot/desktop-pet";
+import type { TaskBoardRuntime } from "./task-board-runtime";
 
 type DesktopPetSettingsState = ReturnType<typeof readDesktopPetStoredState>;
 
@@ -34,6 +35,7 @@ export interface MainAppState {
   desktopPetPendingProgrammaticBoundsSignature: string | null;
   desktopPetProgrammaticBoundsGuardTimer: ReturnType<typeof setTimeout> | null;
   desktopPetMouseInteractive: boolean;
+  taskBoardRuntime: TaskBoardRuntime | null;
   desktopActionRendererRequests: Map<string, {
     resolve: (response: DesktopActionRendererResponse) => void;
     timeout: ReturnType<typeof setTimeout>;
@@ -65,6 +67,7 @@ export function createMainAppState(initialState: Partial<MainAppState> = {}): Ma
     desktopPetPendingProgrammaticBoundsSignature: initialState.desktopPetPendingProgrammaticBoundsSignature ?? null,
     desktopPetProgrammaticBoundsGuardTimer: initialState.desktopPetProgrammaticBoundsGuardTimer ?? null,
     desktopPetMouseInteractive: initialState.desktopPetMouseInteractive ?? true,
+    taskBoardRuntime: initialState.taskBoardRuntime ?? null,
     desktopActionRendererRequests: initialState.desktopActionRendererRequests ?? new Map(),
     logStreamSubscriptions: initialState.logStreamSubscriptions ?? new Map()
   };

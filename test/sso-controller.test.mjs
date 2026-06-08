@@ -419,6 +419,172 @@ test("desktop SSO controller exchanges Google id_token for web session cookies a
   assert.deepEqual(await ssoSession.cookies.get({ url: webOrigin }), []);
 });
 
+test("desktop SSO controller exchanges server broker ticket for web session cookies and claims", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-controller-web-session-ticket-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  const webOrigin = "https://www.zenmind.cc";
+  const exchangeUrl = `${webOrigin}/api/auth/desktop-sso/session`;
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      provider: "google",
+      authMode: "server",
+      serverAuthorizeUrl: `${webOrigin}/api/auth/google/desktop/start`,
+      webSessionExchange: {
+        url: exchangeUrl,
+        cookieOrigins: [webOrigin]
+      }
+    }),
+    "utf8"
+  );
+  const defaultSession = new FakeElectronSession();
+  const ssoSession = new FakeElectronSession();
+  const controller = createDesktopSsoController({
+    app: createTestApp(homePath),
+    platform: "darwin",
+    session: {
+      defaultSession,
+      fromPartition() {
+        return ssoSession;
+      }
+    },
+    getMainWindow: () => null,
+    openBrowserUrl: async () => ({ ok: true }),
+    openExternal: async () => {}
+  });
+  const fetchCalls = [];
+  const claims = await controller.exchangeWebSessionTicket("ticket-123", async (url, init) => {
+    fetchCalls.push({ url, init });
+    return {
+      ok: true,
+      headers: new Headers({
+        "set-cookie": "zenmind_session=session-123; Path=/; Secure; HttpOnly; SameSite=Lax"
+      }),
+      json: async () => ({
+        ok: true,
+        user: {
+          id: 42,
+          email: "desktop@example.com",
+          displayName: "Desktop User"
+        }
+      })
+    };
+  });
+
+  assert.deepEqual(fetchCalls, [{
+    url: exchangeUrl,
+    init: {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        provider: "google",
+        ticket: "ticket-123"
+      })
+    }
+  }]);
+  assert.deepEqual(claims, {
+    sub: "zenmind-user:42",
+    email: "desktop@example.com",
+    name: "Desktop User",
+    issuer: webOrigin,
+    audience: "zenmind-desktop"
+  });
+  assert.deepEqual(await defaultSession.cookies.get({ url: webOrigin }), [{
+    url: webOrigin,
+    name: "zenmind_session",
+    value: "session-123",
+    path: "/",
+    secure: true,
+    httpOnly: true,
+    sameSite: "lax"
+  }]);
+  assert.deepEqual(await ssoSession.cookies.get({ url: webOrigin }), [{
+    url: webOrigin,
+    name: "zenmind_session",
+    value: "session-123",
+    path: "/",
+    secure: true,
+    httpOnly: true,
+    sameSite: "lax"
+  }]);
+});
+
+test("desktop SSO controller posts web session logout with current session cookie", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-controller-web-session-logout-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const configRoot = path.join(homePath, ".zenmind");
+  const webOrigin = "https://www.zenmind.cc";
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(configRoot, DESKTOP_SSO_CONFIG_FILE_NAME),
+    JSON.stringify({
+      enabled: true,
+      provider: "google",
+      authMode: "server",
+      serverAuthorizeUrl: `${webOrigin}/api/auth/google/desktop/start`,
+      webSessionExchange: {
+        url: `${webOrigin}/api/auth/desktop-sso/session`,
+        cookieOrigins: [webOrigin]
+      }
+    }),
+    "utf8"
+  );
+  const defaultSession = new FakeElectronSession();
+  const ssoSession = new FakeElectronSession();
+  await ssoSession.cookies.set({
+    url: webOrigin,
+    name: "zenmind_session",
+    value: "session-123",
+    path: "/",
+    secure: true,
+    httpOnly: true,
+    sameSite: "lax"
+  });
+  const controller = createDesktopSsoController({
+    app: createTestApp(homePath),
+    platform: "darwin",
+    session: {
+      defaultSession,
+      fromPartition() {
+        return ssoSession;
+      }
+    },
+    getMainWindow: () => null,
+    openBrowserUrl: async () => ({ ok: true }),
+    openExternal: async () => {}
+  });
+  const fetchCalls = [];
+
+  const loggedOut = await controller.logoutWebSession(async (url, init) => {
+    fetchCalls.push({ url, init });
+    return {
+      ok: true,
+      headers: new Headers()
+    };
+  });
+
+  assert.equal(loggedOut, true);
+  assert.deepEqual(fetchCalls, [{
+    url: `${webOrigin}/api/auth/logout`,
+    init: {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Cookie: "zenmind_session=session-123"
+      },
+      body: ""
+    }
+  }]);
+});
+
 test("desktop SSO controller uses the SSO session fetch by default for access_token exchange", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-controller-session-fetch-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

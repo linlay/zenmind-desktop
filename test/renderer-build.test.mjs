@@ -1721,14 +1721,15 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardSync, /\/api\/automation\/update/);
   assert.match(taskBoardSync, /\/api\/automation\/delete/);
   assert.doesNotMatch(taskBoardSync, /\/api\/schedule(?:\/|-)(?:create|update|delete)/);
-  assert.match(mainProcess, /syncTaskBoardIssueFromAssistantEvent/);
+  assert.match(mainProcess, /createTaskBoardRuntime/);
+  assert.match(mainProcess, /state\.taskBoardRuntime\?\.sendAssistantEvent\(event\)/);
   assert.match(taskBoardSync, /event\.type === "done" \|\| event\.type === "run\.complete"[\s\S]{0,120}return "completed"/);
   assert.match(taskBoardSync, /event\.type === "run\.error"/);
   assert.match(taskBoardSync, /event\.status === "timeout"[\s\S]{0,220}return "failed"/);
   assert.match(taskBoardSync, /updateTaskBoardIssueByRunId\(app, event\.runId/);
   assert.match(taskBoardSync, /updateTaskBoardIssueByChatId/);
   assert.match(taskBoardSync, /updateTaskBoardIssueByChatId\(app,\s*event\.chatId/);
-  assert.match(mainProcess, /onPushEvent:\s*\(event\) => syncTaskBoardIssueFromAssistantEvent\(app, event\)/);
+  assert.match(mainProcess, /onPushEvent:\s*\(event\) => state\.taskBoardRuntime\?\.sendAssistantEvent\(event\)/);
   assert.match(taskBoardStore, /export function updateTaskBoardIssueByChatId/);
   assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);
   assert.match(assistantNavigationStatusClient, /this\.options\.onPushEvent\?\./);
@@ -1894,14 +1895,15 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.task-board-page\s*\{/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.task-board-toolbar,[\s\S]{0,120}\.task-board-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
-  assert.match(globalStyles, /--task-board-column-fit-width:\s*calc\(\(100% - 32px\) \/ 3\);/);
-  assert.match(globalStyles, /--task-board-column-width:\s*max\(\s*calc\(\(100% - 48px\) \/ 4\),\s*min\(var\(--task-board-column-min-width\), var\(--task-board-column-fit-width\)\)\s*\);/);
-  assert.match(globalStyles, /--task-board-columns-total-width:\s*calc\(\s*var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+\s*var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\)\s*\);/);
+  assert.match(globalStyles, /--task-board-column-fit-width:\s*calc\(\(100% - 48px\) \/ 4\);/);
+  assert.match(globalStyles, /--task-board-column-width:\s*max\(\s*calc\(\(100% - 64px\) \/ 5\),\s*min\(var\(--task-board-column-min-width\), var\(--task-board-column-fit-width\)\)\s*\);/);
+  assert.match(globalStyles, /--task-board-columns-total-width:\s*calc\(\s*var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+\s*var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\)\s*\);/);
   assert.match(globalStyles, /--task-board-column-fold-offset:\s*max\(0px,\s*calc\(var\(--task-board-columns-total-width\) - 100%\)\);/);
   assert.match(globalStyles, /\.task-board-columns\s*\{[\s\S]{0,220}overflow-x:\s*hidden;/);
   assert.match(globalStyles, /\.task-board-column\s*\{/);
   assert.match(globalStyles, /\.task-board-column\.is-todo\s*\{[\s\S]{0,260}margin-left:\s*calc\(var\(--task-board-column-fold-offset\) \* -1\);/);
   assert.doesNotMatch(globalStyles, /\.task-board-column\.is-in_progress\s*\{[^}]*margin-left:/);
+  assert.doesNotMatch(globalStyles, /\.task-board-column\.is-in_review\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(globalStyles, /\.task-board-column\.is-completed\s*\{[^}]*margin-left:/);
   assert.match(taskBoardPage, /const \[backlogExpanded,\s*setBacklogExpanded\] = useState\(false\)/);
   assert.match(taskBoardPage, /className=\{`task-board-columns \$\{backlogExpanded \? "is-backlog-expanded" : ""\}`\}/);
@@ -1953,11 +1955,11 @@ test("task board status order places completed after in progress", () => {
 
   assert.match(
     contracts,
-    /TASK_BOARD_STATUSES\s*=\s*\[[\s\S]*?"backlog",[\s\S]*?"todo",[\s\S]*?"in_progress",[\s\S]*?"completed"[\s\S]*?\]/,
+    /TASK_BOARD_STATUSES\s*=\s*\[[\s\S]*?"backlog",[\s\S]*?"todo",[\s\S]*?"in_progress",[\s\S]*?"in_review",[\s\S]*?"completed"[\s\S]*?\]/,
   );
   assert.match(
     taskBoardDb,
-    /WHEN 'in_progress' THEN 2[\s\S]*?WHEN 'completed' THEN 3/,
+    /WHEN 'in_progress' THEN 2[\s\S]*?WHEN 'in_review' THEN 3[\s\S]*?WHEN 'completed' THEN 4/,
   );
 });
 

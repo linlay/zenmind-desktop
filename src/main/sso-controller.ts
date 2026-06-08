@@ -12,6 +12,7 @@ import {
 import { getDesktopSsoBrowserUserAgent, type DesktopPlatform } from "./platform-adapter";
 import { safeConsoleError } from "./safe-console";
 import { STORAGE_NAMESPACE } from "../shared/generated/brand";
+import type { DesktopSsoClaims } from "../shared/contracts";
 
 export const DESKTOP_SSO_WEBVIEW_PARTITION = `persist:${STORAGE_NAMESPACE}-sso`;
 
@@ -27,6 +28,7 @@ type WebSessionExchangeFetch = (url: string, init: {
   status?: number;
   statusText?: string;
   headers: Headers;
+  json?: () => Promise<unknown>;
   text?: () => Promise<string>;
 }>;
 
@@ -223,6 +225,44 @@ async function readDesktopSsoWebSessionExchangeError(response: {
   return [status ? String(status) : "", statusText, detail]
     .filter(Boolean)
     .join(" - ") || "unknown error";
+}
+
+function getRecordValue(value: unknown, key: string) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)[key]
+    : undefined;
+}
+
+function getRecordString(value: unknown, key: string) {
+  const rawValue = getRecordValue(value, key);
+  return typeof rawValue === "string" && rawValue.trim() ? rawValue.trim() : "";
+}
+
+function getRecordIdString(value: unknown, key: string) {
+  const rawValue = getRecordValue(value, key);
+  if (typeof rawValue === "string" && rawValue.trim()) {
+    return rawValue.trim();
+  }
+  if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+    return String(rawValue);
+  }
+  return "";
+}
+
+function createWebSessionClaims(user: unknown, exchangeUrl: string): DesktopSsoClaims | null {
+  const id = getRecordIdString(user, "id");
+  if (!id) {
+    return null;
+  }
+  const email = getRecordString(user, "email");
+  const displayName = getRecordString(user, "displayName") || getRecordString(user, "name");
+  return {
+    sub: `zenmind-user:${id}`,
+    issuer: new URL(exchangeUrl).origin,
+    audience: "zenmind-desktop",
+    ...(email ? { email } : {}),
+    ...(displayName ? { name: displayName } : {})
+  };
 }
 
 async function buildDesktopSsoCookieHeader(ssoSession: Session, targetUrl: string) {
@@ -454,6 +494,69 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         [exchangeConfig.url, ...exchangeConfig.cookieOrigins],
         setCookieHeaders
       );
+      return true;
+    },
+    async exchangeWebSessionTicket(ticket: string, fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
+      const exchangeConfig = getDesktopSsoWebSessionExchangeConfig(options.app);
+      const normalizedTicket = ticket.trim();
+      if (!exchangeConfig || !normalizedTicket) {
+        return null;
+      }
+      const response = await fetchImpl(exchangeConfig.url, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          provider: "google",
+          ticket: normalizedTicket
+        })
+      });
+      if (!response.ok) {
+        throw new Error(`Desktop SSO web session exchange failed: ${await readDesktopSsoWebSessionExchangeError(response)}`);
+      }
+      const setCookieHeaders = getDesktopSsoSetCookieHeaders(response.headers);
+      if (setCookieHeaders.length === 0) {
+        return null;
+      }
+      const targetSessions = [
+        options.session.defaultSession,
+        options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
+      ];
+      await applyDesktopSsoSetCookieHeadersToSessions(
+        targetSessions,
+        [exchangeConfig.url, ...exchangeConfig.cookieOrigins],
+        setCookieHeaders
+      );
+      if (typeof response.json !== "function") {
+        return null;
+      }
+      const responseBody = await response.json();
+      return createWebSessionClaims(getRecordValue(responseBody, "user"), exchangeConfig.url);
+    },
+    async logoutWebSession(fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
+      const exchangeConfig = getDesktopSsoWebSessionExchangeConfig(options.app);
+      if (!exchangeConfig) {
+        return false;
+      }
+      const logoutUrl = new URL("/api/auth/logout", exchangeConfig.url).toString();
+      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+      const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, logoutUrl);
+      const headers: Record<string, string> = {
+        Accept: "application/json"
+      };
+      if (cookieHeader) {
+        headers.Cookie = cookieHeader;
+      }
+      const response = await fetchImpl(logoutUrl, {
+        method: "POST",
+        headers,
+        body: ""
+      });
+      if (!response.ok) {
+        throw new Error(`Desktop SSO web session logout failed: ${await readDesktopSsoWebSessionExchangeError(response)}`);
+      }
       return true;
     },
     async clearBrowserCookies() {

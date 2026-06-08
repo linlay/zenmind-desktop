@@ -24,6 +24,8 @@ function makeBaseOptions(overrides = {}) {
       syncBrowserCookies: async () => {},
       exchangeBrowserCookieAccessToken: async () => "",
       exchangeWebSession: async () => false,
+      exchangeWebSessionTicket: async () => null,
+      logoutWebSession: async () => false,
       clearBrowserCookies: async () => {},
       clearWebSessionCookies: async () => {},
       openBrowserUrl: async () => ({ ok: true }),
@@ -139,6 +141,61 @@ test("sso.startLogin opens Google flows in the system browser", async () => {
   assert.deepEqual(calls, [
     ["system", {
       url: "https://accounts.google.com/o/oauth2/v2/auth?client_id=desktop",
+      label: "Google 登录"
+    }]
+  ]);
+});
+
+test("sso.startLogin returns ticket exchange claims for server broker callbacks", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const calls = [];
+  const authenticatedStatus = { configured: true, authenticated: true, pending: false };
+  const claims = {
+    sub: "zenmind-user:42",
+    email: "desktop@example.com",
+    issuer: "https://www.zenmind.cc",
+    audience: "zenmind-desktop"
+  };
+
+  registerSsoIpcHandlers(ipc, makeBaseOptions({
+    desktopSsoController: {
+      broadcastStatus: (status) => calls.push(["broadcast", status]),
+      returnToApp: () => {},
+      syncBrowserCookies: async () => { calls.push("sync"); },
+      exchangeBrowserCookieAccessToken: async () => { calls.push("exchange"); return ""; },
+      exchangeWebSession: async (idToken) => { calls.push(["web-session", idToken]); return false; },
+      exchangeWebSessionTicket: async (ticket) => {
+        calls.push(["ticket", ticket]);
+        return claims;
+      },
+      clearBrowserCookies: async () => {},
+      clearWebSessionCookies: async () => {},
+      openBrowserUrl: async () => ({ ok: true }),
+      openSystemBrowserUrl: async (input) => {
+        calls.push(["system", input]);
+        return { ok: true };
+      }
+    },
+    startDesktopSsoLogin: async (_app, options) => {
+      const returnedClaims = await options.onBeforeStatusChanged(authenticatedStatus, { ticket: "ticket-123" });
+      assert.deepEqual(returnedClaims, claims);
+      options.onStatusChanged({ ...authenticatedStatus, user: returnedClaims });
+      return {
+        ok: true,
+        openMode: "system",
+        authorizeUrl: "https://www.zenmind.cc/api/auth/google/desktop/start"
+      };
+    }
+  }));
+
+  const result = await handlers["sso.startLogin"]({});
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [
+    ["ticket", "ticket-123"],
+    ["broadcast", { ...authenticatedStatus, user: claims }],
+    ["system", {
+      url: "https://www.zenmind.cc/api/auth/google/desktop/start",
       label: "Google 登录"
     }]
   ]);

@@ -68,6 +68,7 @@ type IssueFormState = {
   automationCron: string;
   automationMessage: string;
   automationTimezone: string;
+  syncToCloud: boolean;
 };
 
 type DisplayState = {
@@ -115,6 +116,7 @@ const VISIBLE_TASK_BOARD_STATUSES = [
   "backlog",
   "todo",
   "in_progress",
+  "in_review",
   "completed"
 ] satisfies ReadonlyArray<TaskBoardStatus>;
 const VISIBLE_TASK_BOARD_STATUS_SET = new Set<TaskBoardStatus>(VISIBLE_TASK_BOARD_STATUSES);
@@ -123,6 +125,7 @@ const STATUS_META: Record<TaskBoardStatus, { labelKey: TranslationKey; tone: str
   backlog: { labelKey: "taskBoard.status.backlog", tone: "neutral" },
   todo: { labelKey: "taskBoard.status.todo", tone: "muted" },
   in_progress: { labelKey: "taskBoard.status.inProgress", tone: "warning" },
+  in_review: { labelKey: "taskBoard.status.inReview", tone: "review" },
   completed: { labelKey: "taskBoard.status.completed", tone: "info" }
 };
 
@@ -165,7 +168,8 @@ const emptyForm: IssueFormState = {
   automationTime: DEFAULT_TASK_BOARD_AUTOMATION_TIME,
   automationCron: DEFAULT_TASK_BOARD_AUTOMATION_CRON,
   automationMessage: "",
-  automationTimezone: "Asia/Shanghai"
+  automationTimezone: "Asia/Shanghai",
+  syncToCloud: false
 };
 
 const defaultDisplayState: DisplayState = {
@@ -458,7 +462,7 @@ function buildAssistantPrompt(issue: TaskBoardIssue, t: TranslateFunction) {
   const parts = [
     t("taskBoard.prompt.intro"),
     t("taskBoard.prompt.rule"),
-    t("taskBoard.prompt.id", { value: issue.id }),
+    t("taskBoard.prompt.id", { value: issue.remoteIssueId ?? issue.id }),
     t("taskBoard.prompt.title", { value: issue.title }),
     t("taskBoard.prompt.status", { value: t(STATUS_META[issue.status].labelKey) }),
     t("taskBoard.prompt.priority", { value: t(PRIORITY_META[issue.priority].labelKey) })
@@ -521,7 +525,8 @@ function createFormFromIssue(issue: TaskBoardIssue): IssueFormState {
     automationTime: automationForm.automationTime,
     automationCron: automationForm.automationCron,
     automationMessage: issue.automationMessage ?? "",
-    automationTimezone: issue.automationTimezone ?? "Asia/Shanghai"
+    automationTimezone: issue.automationTimezone ?? "Asia/Shanghai",
+    syncToCloud: issue.syncMode === "cloud"
   };
 }
 
@@ -715,6 +720,7 @@ function getTaskBoardColumnSummary(status: TaskBoardStatus, count: number, t: Tr
     backlog: "taskBoard.column.summary.backlog",
     todo: "taskBoard.column.summary.todo",
     in_progress: "taskBoard.column.summary.inProgress",
+    in_review: "taskBoard.column.summary.inReview",
     completed: "taskBoard.column.summary.completed"
   };
   return {
@@ -728,6 +734,7 @@ function getTaskBoardEmptyHint(status: TaskBoardStatus, t: TranslateFunction) {
     backlog: "taskBoard.column.emptyBacklog",
     todo: "taskBoard.column.emptyTodo",
     in_progress: "taskBoard.column.emptyInProgress",
+    in_review: "taskBoard.column.emptyInReview",
     completed: "taskBoard.column.emptyCompleted"
   };
   return t(hintKey[status]);
@@ -891,10 +898,32 @@ function issueHasPendingAwaiting(issue: TaskBoardIssue, agents: AssistantNavAgen
     return false;
   }
 
-  return agents.some((agent) => {
+    return agents.some((agent) => {
     const matchingChat = getAssistantNavAgentRecentChats(agent).find((chat) => chat.chatId === chatId);
     return matchingChat?.hasPendingAwaiting === true;
   });
+}
+
+function getTaskBoardIssueDisplayId(issue: TaskBoardIssue) {
+  return issue.syncMode === "cloud" && issue.remoteIssueId ? issue.remoteIssueId : issue.id;
+}
+
+function getTaskBoardIssueSyncTone(issue: TaskBoardIssue) {
+  if (issue.syncMode !== "cloud") {
+    return "private";
+  }
+  return issue.origin === "cloud_dispatch" ? "dispatched" : "cloud";
+}
+
+function getTaskBoardIssueSyncLabel(issue: TaskBoardIssue, t: TranslateFunction) {
+  const tone = getTaskBoardIssueSyncTone(issue);
+  if (tone === "dispatched") {
+    return t("taskBoard.sync.dispatched");
+  }
+  if (tone === "cloud") {
+    return t("taskBoard.sync.cloud");
+  }
+  return t("taskBoard.sync.private");
 }
 
 function resolveIssueAgentKey(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
@@ -1140,6 +1169,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       }
       const haystack = [
         issue.id,
+        issue.remoteIssueId ?? "",
         issue.title,
         issue.description,
         issue.assigneeAgentKey ?? "",
@@ -1331,7 +1361,8 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
       automationMessage: form.automationEnabled ? resolvedAutomationMessage : null,
       automationTimezone: form.automationEnabled ? form.automationTimezone : null,
       attachmentChatId: form.attachments.length > 0 ? form.attachmentChatId : null,
-      attachments: form.attachments
+      attachments: form.attachments,
+      syncToCloud: form.syncToCloud
     };
 
     try {
@@ -1580,6 +1611,7 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   }
 
   const modalStatusLocked = modal?.mode === "edit" && Boolean(modal.issue?.runId);
+  const modalSyncLocked = modal?.mode === "edit" && modal.issue?.syncMode === "cloud";
   const visibleFormAttachments = getVisibleTaskBoardAttachments(form.attachments);
 
   return (
@@ -1896,6 +1928,18 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="task-board-check-row task-board-sync-toggle">
+              <input
+                type="checkbox"
+                checked={form.syncToCloud}
+                disabled={modalSyncLocked}
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  syncToCloud: event.target.checked
+                }))}
+              />
+              <span>{t("taskBoard.form.syncToCloud")}</span>
             </label>
             {!formCompact ? (
               <section className="task-board-automation-panel" aria-label={t("taskBoard.form.automationPanel")}>
@@ -2296,11 +2340,17 @@ function TaskBoardCardContent({
     },
     t
   );
+  const displayIssueId = getTaskBoardIssueDisplayId(issue);
+  const syncTone = getTaskBoardIssueSyncTone(issue);
+  const syncLabel = getTaskBoardIssueSyncLabel(issue, t);
   const mainContent = (
     <>
       <div className="task-board-card-line task-board-card-line-top">
         <span className="task-board-card-id-group">
-          <span className="task-board-card-id">{issue.id}</span>
+          <span className="task-board-card-id" title={issue.remoteIssueId ? `${issue.id} / ${issue.remoteIssueId}` : issue.id}>
+            {displayIssueId}
+          </span>
+          <span className={`task-board-sync-badge is-${syncTone}`} title={syncLabel}>{syncLabel}</span>
           {display.priority ? <PriorityBadge priority={issue.priority} t={t} /> : null}
         </span>
         <span

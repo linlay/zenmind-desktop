@@ -184,14 +184,14 @@ test("task board columns and cards adapt to the available board width", () => {
 
   assert.match(pageRule, /--task-board-column-gap:\s*16px;/);
   assert.match(pageRule, /--task-board-column-min-width:\s*260px;/);
-  assert.match(pageRule, /--task-board-column-fit-width:\s*calc\(\(100% - 32px\) \/ 3\);/);
+  assert.match(pageRule, /--task-board-column-fit-width:\s*calc\(\(100% - 48px\) \/ 4\);/);
   assert.match(
     pageRule,
-    /--task-board-column-width:\s*max\(\s*calc\(\(100% - 48px\) \/ 4\),\s*min\(var\(--task-board-column-min-width\), var\(--task-board-column-fit-width\)\)\s*\);/
+    /--task-board-column-width:\s*max\(\s*calc\(\(100% - 64px\) \/ 5\),\s*min\(var\(--task-board-column-min-width\), var\(--task-board-column-fit-width\)\)\s*\);/
   );
   assert.match(
     pageRule,
-    /--task-board-columns-total-width:\s*calc\(\s*var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+\s*var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\)\s*\);/
+    /--task-board-columns-total-width:\s*calc\(\s*var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+ var\(--task-board-column-width\) \+\s*var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\) \+ var\(--task-board-column-gap\)\s*\);/
   );
   assert.match(
     pageRule,
@@ -202,6 +202,7 @@ test("task board columns and cards adapt to the available board width", () => {
   assert.match(styles, /\.task-board-columns\.is-backlog-expanded \.task-board-column\.is-todo\s*\{[\s\S]*?margin-left:\s*0;/);
   assert.match(readRule(".task-board-column.is-todo"), /margin-left:\s*calc\(var\(--task-board-column-fold-offset\) \* -1\);/);
   assert.doesNotMatch(readRule(".task-board-column.is-in_progress"), /margin-left:/);
+  assert.doesNotMatch(readRule(".task-board-column.is-in_review"), /margin-left:/);
   assert.doesNotMatch(readRule(".task-board-column.is-completed"), /margin-left:/);
   assert.match(columnRule, /flex:\s*0\s+0\s+var\(--task-board-column-width\);/);
   assert.match(columnRule, /width:\s*var\(--task-board-column-width\);/);
