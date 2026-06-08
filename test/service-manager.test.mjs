@@ -4739,6 +4739,9 @@ test("ensurePreStartRequirements removes deprecated agent platform config keys",
   const configsDir = path.join(platformConfigDir, "configs");
   const bashConfigPath = path.join(configsDir, "bash.yml");
   const fileToolsConfigPath = path.join(configsDir, "file-tools.yml");
+  const runtimeConfigPath = path.join(configsDir, "runtime.yml");
+  const hostToolsConfigPath = path.join(configsDir, "host-tools.yml");
+  const aiToolsConfigPath = path.join(configsDir, "ai-tools.yml");
 
   fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
   fs.mkdirSync(configsDir, { recursive: true });
@@ -4767,6 +4770,42 @@ test("ensurePreStartRequirements removes deprecated agent platform config keys",
     ].join("\n") + "\n",
     "utf8"
   );
+  fs.writeFileSync(
+    runtimeConfigPath,
+    [
+      "container-hub:",
+      "  request-timeout-ms: 300000",
+      "  agent-idle-timeout-ms: 600000",
+      "  destroy-queue-delay-ms: 5000",
+      "desktop:",
+      "  action:",
+      "    request-timeout-ms: 20000",
+      "  cdp:",
+      "    request-timeout-ms: 20000"
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    hostToolsConfigPath,
+    [
+      "bash:",
+      "  working-directory: .",
+      "  shell-timeout-ms: 30000",
+      "  max-command-chars: 16000"
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    aiToolsConfigPath,
+    [
+      "tools:",
+      "  image:",
+      "    timeout-ms: 60000",
+      "  web:",
+      "    timeout-ms: 90000"
+    ].join("\n") + "\n",
+    "utf8"
+  );
   writeTestEnv(
     userDataRoot,
     platformService.id,
@@ -4778,6 +4817,9 @@ test("ensurePreStartRequirements removes deprecated agent platform config keys",
 
     const bashConfig = fs.readFileSync(bashConfigPath, "utf8");
     const fileToolsConfig = fs.readFileSync(fileToolsConfigPath, "utf8");
+    const runtimeConfig = fs.readFileSync(runtimeConfigPath, "utf8");
+    const hostToolsConfig = fs.readFileSync(hostToolsConfigPath, "utf8");
+    const aiToolsConfig = fs.readFileSync(aiToolsConfigPath, "utf8");
     assert.match(bashConfig, /^allowed-commands: ls,pwd,git$/m);
     assert.doesNotMatch(bashConfig, /^allowed-paths:/m);
     assert.doesNotMatch(bashConfig, /^path-checked-commands:/m);
@@ -4785,6 +4827,18 @@ test("ensurePreStartRequirements removes deprecated agent platform config keys",
     assert.match(fileToolsConfig, /^max-read-bytes: 1048576$/m);
     assert.doesNotMatch(fileToolsConfig, /^allowed-read-paths:/m);
     assert.doesNotMatch(fileToolsConfig, /^allowed-write-paths:/m);
+    assert.match(runtimeConfig, /^  request-timeout: 300$/m);
+    assert.match(runtimeConfig, /^  agent-idle-timeout: 600$/m);
+    assert.match(runtimeConfig, /^  destroy-queue-delay: 5$/m);
+    assert.match(runtimeConfig, /^    request-timeout: 20$/m);
+    assert.doesNotMatch(runtimeConfig, /request-timeout-ms:/m);
+    assert.doesNotMatch(runtimeConfig, /agent-idle-timeout-ms:/m);
+    assert.doesNotMatch(runtimeConfig, /destroy-queue-delay-ms:/m);
+    assert.match(hostToolsConfig, /^  shell-timeout: 30$/m);
+    assert.doesNotMatch(hostToolsConfig, /shell-timeout-ms:/m);
+    assert.match(aiToolsConfig, /^    timeout: 60$/m);
+    assert.match(aiToolsConfig, /^    timeout: 90$/m);
+    assert.doesNotMatch(aiToolsConfig, /timeout-ms:/m);
   } finally {
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });

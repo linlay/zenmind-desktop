@@ -57,6 +57,34 @@ const AGENT_PLATFORM_DEPRECATED_FILE_TOOLS_CONFIG_KEYS = [
   "allowed-read-paths",
   "allowed-write-paths"
 ] as const;
+const AGENT_PLATFORM_DURATION_CONFIG_FILES = [
+  {
+    relativePath: path.join("configs", "runtime.yml"),
+    keys: [
+      ["request-timeout-ms", "request-timeout"],
+      ["agent-idle-timeout-ms", "agent-idle-timeout"],
+      ["destroy-queue-delay-ms", "destroy-queue-delay"]
+    ]
+  },
+  {
+    relativePath: path.join("configs", "host-tools.yml"),
+    keys: [
+      ["shell-timeout-ms", "shell-timeout"]
+    ]
+  },
+  {
+    relativePath: path.join("configs", "ai-tools.yml"),
+    keys: [
+      ["timeout-ms", "timeout"]
+    ]
+  },
+  {
+    relativePath: path.join("configs", "coder-settings.yml"),
+    keys: [
+      ["timeout-ms", "timeout"]
+    ]
+  }
+] as const;
 const AGENT_PLATFORM_DEPRECATED_ENV_KEYS = [
   "GATEWAY_USER_ID",
   "GATEWAY_TICKET",
@@ -304,6 +332,33 @@ export function normalizeAgentPlatformFileToolsConfigContent(content: string) {
   return removeDeprecatedTopLevelYamlKeys(content, AGENT_PLATFORM_DEPRECATED_FILE_TOOLS_CONFIG_KEYS);
 }
 
+function formatMillisecondsAsSeconds(value: string) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return value;
+  }
+  return String(numericValue / 1000);
+}
+
+function migrateYamlDurationKey(content: string, legacyKey: string, nextKey: string) {
+  const escapedLegacyKey = legacyKey.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const pattern = new RegExp(`^(\\s*)${escapedLegacyKey}\\s*:\\s*([^#\\r\\n]*?)(\\s*(?:#.*)?)$`, "gmu");
+  return content.replace(pattern, (_line, indent: string, rawValue: string, suffix: string) => {
+    const trimmedValue = rawValue.trim();
+    return `${indent}${nextKey}: ${formatMillisecondsAsSeconds(trimmedValue)}${suffix}`;
+  });
+}
+
+export function normalizeAgentPlatformDurationConfigContent(
+  content: string,
+  keyMigrations: readonly (readonly [string, string])[]
+) {
+  return keyMigrations.reduce(
+    (nextContent, [legacyKey, nextKey]) => migrateYamlDurationKey(nextContent, legacyKey, nextKey),
+    content
+  );
+}
+
 function normalizeAgentPlatformDeprecatedConfigFile(filePath: string, normalize: (content: string) => string) {
   if (!fs.existsSync(filePath)) {
     return false;
@@ -327,6 +382,12 @@ export function normalizeAgentPlatformDeprecatedConfigFiles(layout: ServiceLayou
     normalizeAgentPlatformDeprecatedConfigFile(
       path.join(configsDir, "file-tools.yml"),
       normalizeAgentPlatformFileToolsConfigContent
+    ),
+    ...AGENT_PLATFORM_DURATION_CONFIG_FILES.map((configFile) =>
+      normalizeAgentPlatformDeprecatedConfigFile(
+        path.join(layout.configDir, configFile.relativePath),
+        (content) => normalizeAgentPlatformDurationConfigContent(content, configFile.keys)
+      )
     )
   ].some(Boolean);
 }
