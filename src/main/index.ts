@@ -1747,6 +1747,13 @@ function registerIpcHandlers(context: MainProcessContext) {
     app,
     assistantBridge,
     callAgentPlatform,
+    onChanged: () => {
+      const targetWindow = appState.mainWindow;
+      if (!targetWindow || targetWindow.isDestroyed()) {
+        return;
+      }
+      targetWindow.webContents.send("taskBoard.changed");
+    },
     onDebug: (message) => {
       console.warn(`[task-board] ${message}`);
     }
@@ -1899,6 +1906,18 @@ function registerIpcHandlers(context: MainProcessContext) {
       ok: false,
       message: "任务看板尚未初始化。",
       issues: []
+    },
+    getTaskBoardCloudConfig: () => state.taskBoardRuntime?.getCloudConfig() ?? {
+      ok: false,
+      message: "任务看板尚未初始化。",
+      config: { serverUrl: "", token: "", selectedProjectId: "default" },
+      connectionState: "disabled"
+    },
+    saveTaskBoardCloudConfig: (_app: any, input: any) => state.taskBoardRuntime?.saveCloudConfig(input) ?? {
+      ok: false,
+      message: "任务看板尚未初始化。",
+      config: { serverUrl: "", token: "", selectedProjectId: "default" },
+      connectionState: "disabled"
     },
     createTaskBoardIssue: (_app: any, input: any) => state.taskBoardRuntime?.createIssue(input) ?? {
       ok: false,

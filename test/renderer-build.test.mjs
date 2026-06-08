@@ -1692,6 +1692,7 @@ test("task board route exposes native desktop api and page styles", () => {
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const taskBoardHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "task-board-handlers.ts"), "utf8");
   const taskBoardSync = fs.readFileSync(path.join(projectRoot, "src", "main", "task-board-sync.ts"), "utf8");
+  const taskBoardRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "task-board-runtime.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
@@ -1729,6 +1730,8 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardSync, /updateTaskBoardIssueByRunId\(app, event\.runId/);
   assert.match(taskBoardSync, /updateTaskBoardIssueByChatId/);
   assert.match(taskBoardSync, /updateTaskBoardIssueByChatId\(app,\s*event\.chatId/);
+  assert.match(taskBoardRuntime, /function toCloudIssueInput/);
+  assert.match(taskBoardRuntime, /"chatId"[\s\S]{0,80}"runId"[\s\S]{0,80}"runState"/);
   assert.match(mainProcess, /onPushEvent:\s*\(event\) => state\.taskBoardRuntime\?\.sendAssistantEvent\(event\)/);
   assert.match(taskBoardStore, /export function updateTaskBoardIssueByChatId/);
   assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);

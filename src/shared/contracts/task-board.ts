@@ -152,6 +152,20 @@ export interface TaskBoardListResult {
   connectionState?: "disabled" | "connecting" | "open" | "closed" | "error";
 }
 
+export interface TaskBoardCloudConfig {
+  serverUrl: string;
+  token: string;
+  selectedProjectId: string;
+}
+
+export interface TaskBoardCloudConfigResult {
+  ok: boolean;
+  message: string;
+  config: TaskBoardCloudConfig;
+  configPath?: string;
+  connectionState?: TaskBoardListResult["connectionState"];
+}
+
 export interface TaskBoardIssueResult {
   ok: boolean;
   message: string;
@@ -165,3 +179,5 @@ export interface TaskBoardDeleteResult {
   deletedIssueId?: string;
   issues: TaskBoardIssue[];
 }
+
+export type TaskBoardChangedListener = () => void;

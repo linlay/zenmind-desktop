@@ -19,6 +19,8 @@ function makeBaseOptions(overrides = {}) {
     app: {},
     // task board
     listTaskBoardIssues: async () => ({ items: [] }),
+    getTaskBoardCloudConfig: async () => ({ ok: true, config: { serverUrl: "", token: "", selectedProjectId: "default" } }),
+    saveTaskBoardCloudConfig: async (_app, input) => ({ ok: true, config: input }),
     createTaskBoardIssue: async () => ({ ok: true }),
     updateTaskBoardIssue: async () => ({ ok: true }),
     deleteTaskBoardIssueWithAutomation: async () => ({ ok: true }),
@@ -56,6 +58,33 @@ test("taskBoard.listIssues returns issue list", async () => {
   assert.ok(handlers["taskBoard.listIssues"], "Should register taskBoard.listIssues");
   const result = await handlers["taskBoard.listIssues"]({});
   assert.deepEqual(result, issues);
+});
+
+test("taskBoard cloud config handlers delegate to runtime options", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const config = { serverUrl: "http://127.0.0.1:8080", token: "", selectedProjectId: "default" };
+  let savedInput = null;
+
+  registerTaskBoardIpcHandlers(ipc, makeBaseOptions({
+    getTaskBoardCloudConfig: async () => ({ ok: true, config, path: "/tmp/kanban.json" }),
+    saveTaskBoardCloudConfig: async (_app, input) => {
+      savedInput = input;
+      return { ok: true, config: input, path: "/tmp/kanban.json" };
+    }
+  }));
+
+  assert.ok(handlers["taskBoard.getCloudConfig"], "Should register taskBoard.getCloudConfig");
+  assert.ok(handlers["taskBoard.saveCloudConfig"], "Should register taskBoard.saveCloudConfig");
+  assert.deepEqual(await handlers["taskBoard.getCloudConfig"]({}), {
+    ok: true,
+    config,
+    path: "/tmp/kanban.json"
+  });
+
+  const nextConfig = { ...config, selectedProjectId: "project-a" };
+  const result = await handlers["taskBoard.saveCloudConfig"]({}, nextConfig);
+  assert.deepEqual(savedInput, nextConfig);
+  assert.deepEqual(result, { ok: true, config: nextConfig, path: "/tmp/kanban.json" });
 });
 
 // ---------------------------------------------------------------------------

@@ -39,6 +39,8 @@ import type {
   TaskBoardIssueInput,
   TaskBoardIssueMoveInput,
   TaskBoardIssueUpdateInput,
+  TaskBoardChangedListener,
+  TaskBoardCloudConfig,
   WebviewOpenTabListener,
   WebviewOpenTabRequest
 } from "../shared/contracts";
@@ -71,12 +73,24 @@ const api: DesktopApi = {
   },
   taskBoard: {
     listIssues: () => ipcRenderer.invoke("taskBoard.listIssues"),
+    getCloudConfig: () => ipcRenderer.invoke("taskBoard.getCloudConfig"),
+    saveCloudConfig: (input: TaskBoardCloudConfig) => ipcRenderer.invoke("taskBoard.saveCloudConfig", input),
     createIssue: (input: TaskBoardIssueInput) => ipcRenderer.invoke("taskBoard.createIssue", input),
     updateIssue: (id: string, input: TaskBoardIssueUpdateInput) =>
       ipcRenderer.invoke("taskBoard.updateIssue", id, input),
     deleteIssue: (id: string) => ipcRenderer.invoke("taskBoard.deleteIssue", id),
     moveIssue: (input: TaskBoardIssueMoveInput) => ipcRenderer.invoke("taskBoard.moveIssue", input),
-    syncIssueAutomation: (issueId: string) => ipcRenderer.invoke("taskBoard.syncIssueAutomation", issueId)
+    syncIssueAutomation: (issueId: string) => ipcRenderer.invoke("taskBoard.syncIssueAutomation", issueId),
+    onChanged: (listener: TaskBoardChangedListener) => {
+      const handleTaskBoardChanged = () => {
+        listener();
+      };
+
+      ipcRenderer.on("taskBoard.changed", handleTaskBoardChanged);
+      return () => {
+        ipcRenderer.off("taskBoard.changed", handleTaskBoardChanged);
+      };
+    }
   },
   assistant: {
     getSettings: () => ipcRenderer.invoke("assistant.getSettings"),

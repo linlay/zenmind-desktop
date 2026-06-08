@@ -312,6 +312,8 @@ export interface TaskBoardIpcHandlerContextDependencies {
   showFileDialog: (...args: any[]) => unknown;
   showSaveDialog: (...args: any[]) => unknown;
   getDataRoot: (...args: any[]) => unknown;
+  getTaskBoardCloudConfig: (...args: any[]) => unknown;
+  saveTaskBoardCloudConfig: (...args: any[]) => unknown;
 }
 
 export function createTaskBoardIpcHandlerOptions(
@@ -321,6 +323,8 @@ export function createTaskBoardIpcHandlerOptions(
   return {
     app: context.app,
     listTaskBoardIssues: dependencies.listTaskBoardIssues,
+    getTaskBoardCloudConfig: dependencies.getTaskBoardCloudConfig,
+    saveTaskBoardCloudConfig: dependencies.saveTaskBoardCloudConfig,
     createTaskBoardIssue: dependencies.createTaskBoardIssue,
     updateTaskBoardIssue: dependencies.updateTaskBoardIssue,
     deleteTaskBoardIssueWithAutomation: dependencies.deleteTaskBoardIssueWithAutomation,
