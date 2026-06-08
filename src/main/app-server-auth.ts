@@ -232,7 +232,7 @@ function isSqliteBusyError(reason: unknown) {
 
 function isUnsupportedDeviceIdArgumentError(reason: unknown) {
   const message = reason instanceof Error ? reason.message : String(reason);
-  return /unknown argument:\s*(?:--device-id|-DeviceId)|unrecognized (?:option|argument).*?(?:--device-id|-DeviceId)/iu.test(message);
+  return /unknown argument:\s*(?:--device-id|-DeviceId)|unrecognized (?:option|argument).*?(?:--device-id|-DeviceId)|parameter cannot be found.*?(?:--device-id|-DeviceId|DeviceId)/iu.test(message);
 }
 
 async function runAppServerAuthScript(

@@ -3651,10 +3651,11 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
     const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
     assert.match(envContent, /^AUTH_ENABLED=true$/m);
     assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
-    assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
+    assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
     assert.match(envContent, /^SERVER_PORT=7078$/m);
     assert.doesNotMatch(envContent, /^PROVIDER_APIKEY_KEY_PART=/m);
-    assert.match(envContent, /^RUNTIME_DIR=~\/\.zenmind$/m);
+    const expectedRuntimeRoot = process.platform === "win32" ? path.join(homeRoot, ".zenmind") : "~/.zenmind";
+    assert.match(envContent, new RegExp(`^RUNTIME_DIR=${escapeRegExp(expectedRuntimeRoot)}$`, "m"));
     assert.doesNotMatch(envContent, /^REGISTRIES_DIR=/m);
     assert.doesNotMatch(envContent, /^TOOLS_DIR=/m);
     assert.doesNotMatch(envContent, /^OWNER_DIR=/m);
@@ -3669,7 +3670,7 @@ test("installBuiltinService lets agent platform deploy initialize canonical conf
     assert.doesNotMatch(envContent, /^# RUNTIME_DIR=/m);
     assert.match(envContent, /^# REGISTRIES_DIR=\.\/runtime\/registries$/m);
     const runtimeSectionIndex = envContent.indexOf("# Runtime directories");
-    const runtimeDirIndex = envContent.indexOf("RUNTIME_DIR=~/.zenmind");
+    const runtimeDirIndex = envContent.indexOf(`RUNTIME_DIR=${expectedRuntimeRoot}`);
     assert.ok(runtimeSectionIndex < runtimeDirIndex);
     assert.equal(fs.existsSync(path.join(configDir, "configs", "local-public-key.pem")), true);
     assert.deepEqual(
@@ -4524,10 +4525,12 @@ test("startService waits for delayed container hub runtime-info readiness", asyn
 });
 
 test("ensurePreStartRequirements does not rewrite agent platform desktop env bindings", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-prestart-"));
+  const fixture = createStartupCoreAssetsFixture();
+  addContainerHubAssetToFixture(fixture, { bindAddr: "127.0.0.1:12960" });
+  const tempRoot = fixture.tempRoot;
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, {
     homePath: homeRoot,
     desktopPath: path.join(homeRoot, "Desktop")
   });
@@ -4559,10 +4562,10 @@ test("ensurePreStartRequirements does not rewrite agent platform desktop env bin
 
   const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
   assert.match(envContent, /^CONTAINER_HUB_BASE_URL=http:\/\/127\.0\.0\.1:12960$/m);
-  assert.match(envContent, /^SERVER_PORT=7078$/m);
+  assert.match(envContent, new RegExp(`^SERVER_PORT=${platformService.web.defaultPort}$`, "m"));
   assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
   assert.match(envContent, /^AUTH_ENABLED=true$/m);
-  assert.doesNotMatch(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=/m);
+  assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
   assert.doesNotMatch(envContent, /^PROVIDER_APIKEY_KEY_PART=/m);
   assert.doesNotMatch(envContent, /^GATEWAY_WS_URL=/m);
   assert.doesNotMatch(envContent, /^GATEWAY_USER_ID=/m);
@@ -4757,6 +4760,7 @@ test("ensurePreStartRequirements preserves custom agent platform auth public key
       envContent,
       new RegExp(`^AUTH_LOCAL_PUBLIC_KEY_FILE=${customPublicKeyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
     );
+    assert.match(envContent, /^AUTH_ENABLED=true$/m);
   } finally {
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -4784,9 +4788,12 @@ test("ensurePreStartRequirements syncs agent-platform public key from zenmind-ap
 
     await __testInternals.ensurePreStartRequirements(app, platformService);
 
-    assert.equal(fs.readFileSync(appServerPublicKeyPath, "utf8"), "APP_SERVER_PUBLIC_KEY\n");
-    assert.equal(fs.readFileSync(platformPublicKeyPath, "utf8"), "APP_SERVER_PUBLIC_KEY\n");
-    assert.match(fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8"), /^AUTH_ENABLED=true$/m);
+    assert.equal(fs.readFileSync(appServerPublicKeyPath, "utf8").replace(/\r\n/gu, "\n"), "APP_SERVER_PUBLIC_KEY\n");
+    assert.equal(fs.readFileSync(platformPublicKeyPath, "utf8").replace(/\r\n/gu, "\n"), "APP_SERVER_PUBLIC_KEY\n");
+    const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
+    assert.match(envContent, /^AUTH_ENABLED=true$/m);
+    assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
+    assert.doesNotMatch(envContent, /^AGENT_WS_ENABLED=/m);
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });

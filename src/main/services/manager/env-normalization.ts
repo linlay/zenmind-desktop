@@ -373,35 +373,6 @@ export function isManagedAgentPlatformAuthLocalPublicKeyPath(value: string, layo
   return normalized === managedPath;
 }
 
-function removeManagedAgentPlatformAuthLocalPublicKey(content: string, layout?: ServiceLayout) {
-  const nextLines = content
-    .split(/\r?\n/u)
-    .filter((line) => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) {
-        return true;
-      }
-
-      const separatorIndex = trimmed.indexOf("=");
-      if (separatorIndex <= 0) {
-        return true;
-      }
-
-      const key = trimmed.slice(0, separatorIndex).trim();
-      if (key !== "AUTH_LOCAL_PUBLIC_KEY_FILE") {
-        return true;
-      }
-
-      const value = trimmed.slice(separatorIndex + 1).trim();
-      return !isManagedAgentPlatformAuthLocalPublicKeyPath(value, layout);
-    });
-
-  if (nextLines.length === 0) {
-    return "";
-  }
-  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
-}
-
 function removeLegacyProviderApiKeyDefault(content: string) {
   const nextLines = content
     .split(/\r?\n/u)
@@ -431,12 +402,9 @@ function removeLegacyProviderApiKeyDefault(content: string) {
   return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
 }
 
-function removeDesktopManagedAgentPlatformEnvContent(content: string, layout?: ServiceLayout) {
-  return removeManagedAgentPlatformAuthLocalPublicKey(
-    removeLegacyProviderApiKeyDefault(
-      removeEnvKeysFromContent(content, AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS)
-    ),
-    layout
+function removeDesktopManagedAgentPlatformEnvContent(content: string) {
+  return removeLegacyProviderApiKeyDefault(
+    removeEnvKeysFromContent(content, AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS)
   );
 }
 
@@ -448,7 +416,7 @@ export function normalizeAgentWebclientEnvContentForDesktop(content: string) {
   );
 }
 
-export function normalizeAgentPlatformEnvContentForRuntime(content: string, layout?: ServiceLayout) {
+export function normalizeAgentPlatformEnvContentForRuntime(content: string, _layout?: ServiceLayout) {
   const removedRuntimePathKeys = agentPlatformDesktopRuntimePaths.map(([key]) => key);
   return removeDesktopManagedAgentPlatformEnvContent(
     removeEnvKeysFromContent(
@@ -457,8 +425,7 @@ export function normalizeAgentPlatformEnvContentForRuntime(content: string, layo
         AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS
       ),
       removedRuntimePathKeys
-    ),
-    layout
+    )
   );
 }
 

@@ -152,12 +152,21 @@ function registerAppServerFixture(root, options = {}) {
 
     const escapedDesktopDeviceId = desktopDeviceId.replace(/'/g, "''");
     const issueScriptLines = [
-      "param([string]$db, [string]$issuer, [string]$username, [string]$deviceName, [string]$deviceId)",
-      `$expectedDeviceId = '${escapedDesktopDeviceId}'`,
-      "if ($deviceId -ne $expectedDeviceId) {",
-      "  [Console]::Error.WriteLine(\"missing or unexpected DeviceId: $deviceId\")",
-      "  exit 1",
-      "}"
+      options.legacyIssueScript
+        ? "param([string]$db, [string]$issuer, [string]$username, [string]$deviceName)"
+        : "param([string]$db, [string]$issuer, [string]$username, [string]$deviceName, [string]$deviceId)",
+      ...(options.legacyIssueScript ? [
+        "if ($args -contains '-DeviceId') {",
+        "  [Console]::Error.WriteLine('[issue-bridge-access-token] unknown argument: -DeviceId')",
+        "  exit 1",
+        "}"
+      ] : [
+        `$expectedDeviceId = '${escapedDesktopDeviceId}'`,
+        "if ($deviceId -ne $expectedDeviceId) {",
+        "  [Console]::Error.WriteLine(\"missing or unexpected DeviceId: $deviceId\")",
+        "  exit 1",
+        "}"
+      ])
     ];
     if (options.lockedIssueAttempts) {
       const markerPath = path.join(root, "issue-attempts.txt");

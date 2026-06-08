@@ -256,3 +256,50 @@ test("ensureDesktopRegisterApiKey keeps enabled true when the response has no ke
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("ensureDesktopRegisterApiKey reapplies disabled registration when providers still need keys", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-register-disabled-placeholder-"));
+  const app = createApp(root);
+  const homeRoot = path.join(root, "home");
+  const providerPath = writeProvider(
+    homeRoot,
+    "th-minimax",
+    [
+      "key: th-minimax",
+      "baseUrl: https://transit-hub.zenmind.cc",
+      "apiKey: YOUR_API_KEY",
+      "defaultModel: th-minimax-m3"
+    ].join("\n") + "\n"
+  );
+  const registerPath = writeRegister(
+    homeRoot,
+    JSON.stringify({
+      version: 1,
+      enabled: false,
+      endpoint: "https://transit-hub.zenmind.cc/api/apply-apikey",
+      grant: { type: "jwt", token: "jwt-token" },
+      providers: ["th-minimax"]
+    }, null, 2) + "\n"
+  );
+
+  try {
+    const result = await ensureDesktopRegisterApiKey(app, {
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        text: async () => JSON.stringify({ key: "dk_RecoveredKey123" })
+      })
+    });
+
+    assert.deepEqual(result, {
+      status: "applied",
+      providers: ["th-minimax"],
+      updatedProviders: ["th-minimax"]
+    });
+    assert.match(fs.readFileSync(providerPath, "utf8"), /^apiKey: dk_RecoveredKey123$/m);
+    assert.equal(JSON.parse(fs.readFileSync(registerPath, "utf8")).enabled, false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
