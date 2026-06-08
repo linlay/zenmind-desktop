@@ -719,12 +719,14 @@ function resolveCapabilityRequirement(value: unknown): ManifestDesktopCapability
     throw new Error(`invalid Desktop capability requirement action: ${String(requirement.action)}`);
   }
   const target = asOptionalString(requirement.target);
+  const authCapability = asOptionalString(requirement.authCapability);
   return {
     phase,
     ...(capability ? { capability } : {}),
     ...(service ? { service } : {}),
     ...(action ? { action } : {}),
-    ...(target ? { target } : {})
+    ...(target ? { target } : {}),
+    ...(authCapability ? { authCapability } : {})
   };
 }
 

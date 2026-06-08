@@ -20,6 +20,7 @@ import {
 
 const DESKTOP_DEVICE_NAME = `${PRODUCT_NAME} Desktop`;
 const SQLITE_BUSY_RETRY_DELAYS_MS = [150, 350, 700, 1_200];
+const AUTH_PUBLIC_KEY_SIDECAR_FILE_NAMES = ["jwk-private.pem", "jwk-public.pem"] as const;
 
 export type DesktopCapabilityResult = {
   id: string;
@@ -45,6 +46,16 @@ function delay(ms: number) {
 
 function ensureDir(targetPath: string) {
   fs.mkdirSync(targetPath, { recursive: true });
+}
+
+function removeFileIfExists(targetPath: string) {
+  try {
+    if (fs.existsSync(targetPath) && fs.statSync(targetPath).isFile()) {
+      fs.unlinkSync(targetPath);
+    }
+  } catch {
+    // Best-effort cleanup only; capability validation below still reports missing outputs.
+  }
 }
 
 function normalizeCommand(command: ManifestCommand | undefined) {
@@ -175,6 +186,23 @@ function renderStringRecord(record: Record<string, string> | undefined, values: 
 
 function renderCommand(command: string[], values: Record<string, string>) {
   return command.map((part) => renderTemplate(part, values));
+}
+
+function cleanupDesktopCapabilitySidecars(
+  provider: ManifestDesktopCapabilityProvider,
+  values: Record<string, string>
+) {
+  if (provider.id !== "auth.publicKey") {
+    return;
+  }
+  const outputPath = values["output.path"];
+  if (!outputPath) {
+    return;
+  }
+  const outputDir = path.dirname(outputPath);
+  for (const fileName of AUTH_PUBLIC_KEY_SIDECAR_FILE_NAMES) {
+    removeFileIfExists(path.join(outputDir, fileName));
+  }
 }
 
 function isSqliteBusyError(reason: unknown) {
@@ -309,6 +337,8 @@ async function resolveDesktopCapabilityInternal(
     }
     validateExactDeviceId = false;
     result = await runCapabilityCommand(provider, layout, removeDeviceIdArgs(renderedCommand), renderedEnv);
+  } finally {
+    cleanupDesktopCapabilitySidecars(provider, values);
   }
 
   const output = provider.output ?? "stdoutLastLine";

@@ -435,8 +435,7 @@ function validateAgentPlatformBundleArchive(service, archivePath) {
     "AGENT_WS_ENABLED",
     "AGENT_CONTAINER_HUB_BASE_URL",
     "AGENT_AUTH_ENABLED",
-    "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE",
-    "AUTH_LOCAL_PUBLIC_KEY_FILE"
+    "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE"
   ]);
   const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
     ? manifest.desktop.envBindings
@@ -449,6 +448,41 @@ function validateAgentPlatformBundleArchive(service, archivePath) {
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
         `Detected legacy desktop env binding ${legacyEnvBinding} in manifest.json.\n` +
       `This usually means a pre-runtime or stale agent-platform bundle was selected instead of the clean Desktop release bundle.`
+    );
+  }
+
+  const authPublicKeyBinding = Array.isArray(manifest?.desktop?.envBindings)
+    ? manifest.desktop.envBindings.find(
+      (binding) =>
+        binding &&
+        typeof binding.key === "string" &&
+        binding.key.trim() === "AUTH_LOCAL_PUBLIC_KEY_FILE"
+    )
+    : undefined;
+  if (!authPublicKeyBinding || authPublicKeyBinding.value !== "configs/local-public-key.pem") {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Missing desktop env binding AUTH_LOCAL_PUBLIC_KEY_FILE=configs/local-public-key.pem in manifest.json.\n` +
+        `Please rebuild the Desktop-ready agent-platform bundle with manifest-declared auth.publicKey startup dependencies.`
+    );
+  }
+
+  const requirements = Array.isArray(manifest?.desktop?.capabilities?.requires)
+    ? manifest.desktop.capabilities.requires
+    : [];
+  const hasAuthPublicKeyRequirement = requirements.some(
+    (requirement) =>
+      requirement &&
+      requirement.phase === "preStart" &&
+      requirement.capability === "auth.publicKey" &&
+      requirement.action === "copyFile" &&
+      requirement.target === "configs/local-public-key.pem"
+  );
+  if (!hasAuthPublicKeyRequirement) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Missing desktop capability requirement preStart auth.publicKey copyFile configs/local-public-key.pem in manifest.json.\n` +
+        `Please rebuild the Desktop-ready agent-platform bundle with manifest-declared auth.publicKey startup dependencies.`
     );
   }
 
@@ -575,6 +609,40 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
         `Unexpected non-runtime file ${forbiddenEntry} in final bundle.\n` +
         `Please rebuild the Desktop-ready agent-webclient bundle.`
+    );
+  }
+
+  const requirements = Array.isArray(manifest?.desktop?.capabilities?.requires)
+    ? manifest.desktop.capabilities.requires
+    : [];
+  const hasAccessTokenPreload = requirements.some(
+    (requirement) =>
+      requirement &&
+      requirement.phase === "verifyRunning" &&
+      requirement.capability === "auth.accessToken" &&
+      requirement.action === "preload"
+  );
+  if (!hasAccessTokenPreload) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Missing desktop capability requirement verifyRunning auth.accessToken preload in manifest.json.\n` +
+        `Please rebuild the Desktop-ready agent-webclient bundle with manifest-declared auth startup dependencies.`
+    );
+  }
+  const hasAgentPlatformWaitHttp = requirements.some(
+    (requirement) =>
+      requirement &&
+      requirement.phase === "verifyRunning" &&
+      requirement.service === "agent-platform" &&
+      requirement.action === "waitHttp" &&
+      requirement.target === "/api/runtime-info" &&
+      requirement.authCapability === "auth.accessToken"
+  );
+  if (!hasAgentPlatformWaitHttp) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Missing desktop capability requirement verifyRunning agent-platform waitHttp /api/runtime-info with auth.accessToken in manifest.json.\n` +
+        `Please rebuild the Desktop-ready agent-webclient bundle with manifest-declared platform readiness dependencies.`
     );
   }
 }

@@ -223,6 +223,9 @@ function registerAppServerFixture(root, options = {}) {
           "  exit 1",
           "}"
         ] : []),
+        "New-Item -ItemType Directory -Path $out -Force | Out-Null",
+        "[System.IO.File]::WriteAllText((Join-Path $out 'jwk-private.pem'), \"APP_SERVER_PRIVATE_KEY`n\")",
+        "[System.IO.File]::WriteAllText((Join-Path $out 'jwk-public.pem'), \"APP_SERVER_PUBLIC_KEY`n\")",
         "New-Item -ItemType Directory -Path (Split-Path -Parent $publicOut) -Force | Out-Null",
         "[System.IO.File]::WriteAllText($publicOut, \"APP_SERVER_PUBLIC_KEY`n\")"
     ];
@@ -304,13 +307,18 @@ function registerAppServerFixture(root, options = {}) {
           "  exit 1",
           "fi"
         ] : []),
+        "out_dir=''",
         "public_out=''",
         "while [ $# -gt 0 ]; do",
         "  case \"$1\" in",
+        "    --out) out_dir=\"$2\"; shift 2 ;;",
         "    --public-out) public_out=\"$2\"; shift 2 ;;",
         "    *) shift ;;",
         "  esac",
         "done",
+        "mkdir -p \"$out_dir\"",
+        "printf 'APP_SERVER_PRIVATE_KEY\\n' > \"$out_dir/jwk-private.pem\"",
+        "printf 'APP_SERVER_PUBLIC_KEY\\n' > \"$out_dir/jwk-public.pem\"",
         "mkdir -p \"$(dirname \"$public_out\")\"",
         "printf 'APP_SERVER_PUBLIC_KEY\\n' > \"$public_out\""
       ].join("\n") + "\n",
@@ -397,6 +405,8 @@ test("issueAgentAccessToken uses zenmind-app-server to issue an app token", asyn
       fs.readFileSync(publicKeyPath, "utf8"),
       "APP_SERVER_PUBLIC_KEY\n"
     );
+    assert.equal(fs.existsSync(path.join(path.dirname(publicKeyPath), "jwk-private.pem")), false);
+    assert.equal(fs.existsSync(path.join(path.dirname(publicKeyPath), "jwk-public.pem")), false);
   } finally {
     registryInternals.clearServices();
     fs.rmSync(tempRoot, { recursive: true, force: true });

@@ -469,6 +469,30 @@ test("Windows env.zip target root is the user .zenmind directory", () => {
   assert.equal(resolveRuntimeRoot(app, "win32"), String.raw`C:\Users\alice\.zenmind`);
 });
 
+test("Windows env.zip test fixtures keep POSIX temp homes inside the fixture", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-win-posix-home-"));
+  const app = createApp(root);
+
+  try {
+    assert.equal(resolveRuntimeRoot(app, "win32"), path.join(root, "home", ".zenmind"));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("macOS env.zip target root stays in the POSIX user home", () => {
+  const app = {
+    getPath(name) {
+      if (name === "home") {
+        return "/Users/alice";
+      }
+      assert.fail(`unexpected app.getPath(${name})`);
+    }
+  };
+
+  assert.equal(resolveRuntimeRoot(app, "darwin"), "/Users/alice/.zenmind");
+});
+
 test("macOS generateBackupDirName creates .zenmind-<timestamp> backup path", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-backup-"));
   const runtimeRoot = path.join(root, "home", ".zenmind");
@@ -527,13 +551,14 @@ test("migrateOldRootToBackup renames existing .zenmind and returns backup path",
   }
 });
 
-test("Windows migrateOldRootToBackup uses win32 path API", () => {
+test("Windows migrateOldRootToBackup keeps POSIX temp fixtures inside the fixture", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-windows-"));
   const runtimeRoot = path.join(root, "home", ".zenmind");
   fs.mkdirSync(runtimeRoot, { recursive: true });
 
   try {
     const backupPath = generateBackupDirName(runtimeRoot, "win32", 1_778_899_004);
+    assert.equal(backupPath, `${runtimeRoot}-1778899004`);
     assert.equal(migrateOldRootToBackup("win32", runtimeRoot, backupPath), backupPath);
     assert.equal(fs.existsSync(runtimeRoot), false, "original dir should no longer exist");
     assert.equal(fs.existsSync(backupPath), true, "backup dir should exist");

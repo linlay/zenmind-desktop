@@ -33,7 +33,12 @@ export type HttpProbeResult = {
   bodyPreview?: string;
 };
 
-export function probeHttpUrl(target: string, timeoutMs = 1200): Promise<HttpProbeResult> {
+export type HttpProbeOptions = {
+  timeoutMs?: number;
+  headers?: Record<string, string>;
+};
+
+export function probeHttpUrl(target: string, optionsOrTimeoutMs: HttpProbeOptions | number = 1200): Promise<HttpProbeResult> {
   return new Promise((resolve) => {
     let parsed: URL;
     try {
@@ -43,9 +48,14 @@ export function probeHttpUrl(target: string, timeoutMs = 1200): Promise<HttpProb
       return;
     }
 
+    const options = typeof optionsOrTimeoutMs === "number"
+      ? { timeoutMs: optionsOrTimeoutMs }
+      : optionsOrTimeoutMs;
+    const timeoutMs = options.timeoutMs ?? 1200;
     const client = parsed.protocol === "https:" ? https : http;
     const request = client.request(parsed, {
       method: "GET",
+      headers: options.headers,
       timeout: timeoutMs
     }, (response) => {
       const chunks: Buffer[] = [];

@@ -133,6 +133,7 @@ export interface ManifestDesktopCapabilityRequirement {
   service?: string;
   action?: ManifestDesktopCapabilityRequirementAction;
   target?: string;
+  authCapability?: string;
 }
 
 export interface ManifestDesktopCapabilities {

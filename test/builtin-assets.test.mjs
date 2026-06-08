@@ -348,6 +348,26 @@ test("agent-webclient release asset remains available for manual install", () =>
   const manifest = readManifestFromArchive(assetPath);
   assert.equal(manifest?.frontend?.hostManaged, true);
   assert.equal(manifest?.backend?.entry, undefined);
+  assert.ok(
+    manifest?.desktop?.capabilities?.requires?.some(
+      (requirement) =>
+        requirement?.phase === "verifyRunning" &&
+        requirement?.capability === "auth.accessToken" &&
+        requirement?.action === "preload"
+    ),
+    "expected agent-webclient manifest to preload auth.accessToken during verification"
+  );
+  assert.ok(
+    manifest?.desktop?.capabilities?.requires?.some(
+      (requirement) =>
+        requirement?.phase === "verifyRunning" &&
+        requirement?.service === "agent-platform" &&
+        requirement?.action === "waitHttp" &&
+        requirement?.target === "/api/runtime-info" &&
+        requirement?.authCapability === "auth.accessToken"
+    ),
+    "expected agent-webclient manifest to verify agent-platform runtime-info with auth.accessToken"
+  );
   assert.equal(entries.has("agent-webclient/README.txt"), false);
   assert.equal(
     [...entries].some((entry) => entry.startsWith("agent-webclient/backend/")),
@@ -371,6 +391,17 @@ test("synced builtin assets include agent-webclient so assistant entry is availa
   assert.equal(manifest?.backend?.entry, undefined);
   assert.equal(manifest?.frontend?.embedPath, "/");
   assert.equal(manifest?.frontend?.embedParams?.desktopApp, undefined);
+  assert.ok(
+    manifest?.desktop?.capabilities?.requires?.some(
+      (requirement) =>
+        requirement?.phase === "verifyRunning" &&
+        requirement?.service === "agent-platform" &&
+        requirement?.action === "waitHttp" &&
+        requirement?.target === "/api/runtime-info" &&
+        requirement?.authCapability === "auth.accessToken"
+    ),
+    "expected synced agent-webclient manifest to verify agent-platform runtime-info with auth.accessToken"
+  );
   const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
     ? manifest.desktop.envBindings.map((binding) => binding?.key)
     : [];
@@ -600,14 +631,30 @@ test("actual synced agent-platform asset no longer bundles the local relay", () 
     "AGENT_WS_ENABLED",
     "AGENT_CONTAINER_HUB_BASE_URL",
     "AGENT_AUTH_ENABLED",
-    "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE",
-    "AUTH_LOCAL_PUBLIC_KEY_FILE"
+    "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE"
   ]);
   assert.ok(
     manifest.desktop.envBindings.every(
       (binding) => typeof binding?.key === "string" && !disallowedLegacyEnvBindings.has(binding.key)
     ),
     "expected bundled agent-platform manifest to avoid legacy desktop env bindings"
+  );
+  assert.deepEqual(
+    manifest.desktop.envBindings.find((binding) => binding?.key === "AUTH_LOCAL_PUBLIC_KEY_FILE"),
+    {
+      key: "AUTH_LOCAL_PUBLIC_KEY_FILE",
+      value: "configs/local-public-key.pem"
+    }
+  );
+  assert.ok(
+    manifest.desktop.capabilities?.requires?.some(
+      (requirement) =>
+        requirement?.phase === "preStart" &&
+        requirement?.capability === "auth.publicKey" &&
+        requirement?.action === "copyFile" &&
+        requirement?.target === "configs/local-public-key.pem"
+    ),
+    "expected bundled agent-platform manifest to require auth.publicKey before start"
   );
 });
 

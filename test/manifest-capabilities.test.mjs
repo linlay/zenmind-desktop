@@ -71,7 +71,8 @@ test("normalizeManifest parses desktop capability providers and requirements", (
           phase: "verifyRunning",
           service: "other-service",
           action: "waitHttp",
-          target: "/health"
+          target: "/health",
+          authCapability: "fixture.token"
         }
       ]
     }
@@ -97,7 +98,8 @@ test("normalizeManifest parses desktop capability providers and requirements", (
       phase: "verifyRunning",
       service: "other-service",
       action: "waitHttp",
-      target: "/health"
+      target: "/health",
+      authCapability: "fixture.token"
     }
   ]);
 });

@@ -64,11 +64,27 @@ function isEnvArchiveWrapperDir(dirName: string) {
 }
 
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
-  return platform === "win32" ? path.win32 : path.posix;
+  if (platform === "win32") {
+    return path.win32;
+  }
+  if (platform === "darwin") {
+    return path.posix;
+  }
+  return path.posix;
 }
 
 function pathApiForResolvedRoot(platform: NodeJS.Platform | undefined, rootPath: string) {
-  return path.win32.isAbsolute(rootPath) ? path.win32 : pathApiForPlatform(platform);
+  if (platform === "win32") {
+    // Cross-platform tests inject POSIX temp directories while simulating Windows behavior.
+    if (path.posix.isAbsolute(rootPath)) {
+      return path.posix;
+    }
+    return path.win32;
+  }
+  if (platform === "darwin") {
+    return path.posix;
+  }
+  return path.posix;
 }
 
 function getHomePath(app: AppPathReader) {
@@ -682,7 +698,7 @@ export function generateBackupDirName(
   platform: NodeJS.Platform = process.platform,
   nowSeconds = Math.floor(Date.now() / 1000)
 ): string {
-  const pathApi = pathApiForPlatform(platform);
+  const pathApi = pathApiForResolvedRoot(platform, rootPath);
   const dirName = pathApi.basename(rootPath);
   const parentDir = pathApi.dirname(rootPath);
   let backupName = `${dirName}-${nowSeconds}`;

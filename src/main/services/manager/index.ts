@@ -261,6 +261,23 @@ function prepareServiceExecutionLayout(_service: ServiceDefinition, layout: Serv
   ensureDir(layout.logDir);
 }
 
+function removeEmptyDirectoryIfExists(targetPath: string) {
+  try {
+    if (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory() && fs.readdirSync(targetPath).length === 0) {
+      fs.rmdirSync(targetPath);
+    }
+  } catch {
+    // Leave non-empty or unreadable directories untouched.
+  }
+}
+
+function cleanupAgentPlatformServiceDataRuntimeSkeleton(layout: ServiceLayout) {
+  for (const relativePath of AGENT_PLATFORM_SERVICE_DATA_RUNTIME_SKELETON_DIRS) {
+    removeEmptyDirectoryIfExists(path.join(layout.dataDir, relativePath));
+  }
+  removeEmptyDirectoryIfExists(layout.dataDir);
+}
+
 function isAssetNewerThanInstall(
   assetPath: string,
   layoutOrInstallDir: ServiceLayout | string,
@@ -344,6 +361,25 @@ const CORE_SERVICE_IDS = new Set<ServiceId>([
 ]);
 const MAX_TCP_PORT = 65535;
 const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL"] as const;
+const AGENT_PLATFORM_SERVICE_DATA_RUNTIME_SKELETON_DIRS = [
+  path.join("registries", "providers"),
+  path.join("registries", "models"),
+  path.join("registries", "mcp-servers"),
+  path.join("registries", "viewport-servers"),
+  "registries",
+  "tools",
+  "viewports",
+  "owner",
+  "agents",
+  "teams",
+  "root",
+  "schedules",
+  "automations",
+  "chats",
+  "memory",
+  "pan",
+  "skills-market"
+] as const;
 
 function isHostManagedService(service: ServiceDefinition) {
   return isHostManagedAgentWebclientService(service);
@@ -1488,6 +1524,9 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
   }
 
   await applyDesktopCapabilityRequirements(app, service, layout, "preStart");
+  if (service.id === "agent-platform") {
+    cleanupAgentPlatformServiceDataRuntimeSkeleton(layout);
+  }
 }
 
 function shouldReinitializeMissingCoreServiceConfig(service: ServiceDefinition, state: ServiceState) {
@@ -1589,7 +1628,18 @@ async function ensureRequiredServiceHttpReachable(
   }
 
   const target = resolveRequirementHttpTarget(requiredService, webUrl, requirement.target);
-  const probe = await probeHttpUrl(target);
+  const authCapability = requirement.authCapability?.trim() ?? "";
+  const authResult = authCapability
+    ? await resolveDesktopCapability(app, authCapability, {
+      ensureProviderInstall: async (providerService) => {
+        await ensureMutableInstallDir(app, providerService);
+      }
+    })
+    : null;
+  const authToken = authResult?.token || authResult?.text || "";
+  const probe = await probeHttpUrl(target, {
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
+  });
   if (!probe.ok) {
     throw new Error(`${target} 探测失败：${probe.message || "HTTP 不可用"}`);
   }
@@ -1710,6 +1760,8 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
     normalizeShellSourcedAgentPlatformEnvUpdates(updates);
     writeEnvFileUpdates(envPath, updates);
   }
+
+  cleanupAgentPlatformServiceDataRuntimeSkeleton(layout);
 }
 
 async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {

@@ -212,7 +212,9 @@ function createCoreDesktopManifest(serviceId, assetFileName) {
           {
             phase: "verifyRunning",
             service: "agent-platform",
-            action: "waitHttp"
+            action: "waitHttp",
+            target: "/api/runtime-info",
+            authCapability: "auth.accessToken"
           }
         ]
       }
@@ -618,6 +620,9 @@ function createStartupCoreAssetsFixture(options = {}) {
           path.join(bundleRoot, "scripts", "setup-public-key.ps1"),
           [
             "param([string]$mode, [string]$db, [string]$out, [string]$publicOut)",
+            "New-Item -ItemType Directory -Path $out -Force | Out-Null",
+            "Set-Content -LiteralPath (Join-Path $out 'jwk-private.pem') -Value 'APP_SERVER_PRIVATE_KEY'",
+            "Set-Content -LiteralPath (Join-Path $out 'jwk-public.pem') -Value 'APP_SERVER_PUBLIC_KEY'",
             "New-Item -ItemType Directory -Path (Split-Path -Parent $publicOut) -Force | Out-Null",
             "Set-Content -LiteralPath $publicOut -Value 'APP_SERVER_PUBLIC_KEY'"
           ].join("\r\n"),
@@ -652,6 +657,8 @@ function createStartupCoreAssetsFixture(options = {}) {
             "  esac",
             "done",
             "mkdir -p \"$(dirname \"$public_out\")\"",
+            "printf 'APP_SERVER_PRIVATE_KEY\\n' > \"$(dirname \"$public_out\")/jwk-private.pem\"",
+            "printf 'APP_SERVER_PUBLIC_KEY\\n' > \"$(dirname \"$public_out\")/jwk-public.pem\"",
             "printf 'APP_SERVER_PUBLIC_KEY\\n' > \"$public_out\""
           ].join("\n") + "\n",
           "utf8"
@@ -720,6 +727,15 @@ function createStartupCoreAssetsFixture(options = {}) {
                   ? [
                       "  const server = http.createServer((req, res) => {",
                       "    if (req.url === '/api/runtime-info') {",
+                      options.platformRuntimeInfoRequiresAuth
+                        ? [
+                            "      if (!String(req.headers.authorization || '').startsWith('Bearer ')) {",
+                            "        res.writeHead(401, { 'content-type': 'application/json' });",
+                            "        res.end(JSON.stringify({ error: 'unauthorized' }));",
+                            "        return;",
+                            "      }"
+                          ].join("\r\n")
+                        : "",
                       "      res.writeHead(200, { 'content-type': 'application/json' });",
                       "      res.end(JSON.stringify({ ok: true }));",
                       "      return;",
@@ -820,6 +836,15 @@ function createStartupCoreAssetsFixture(options = {}) {
                   ? [
                       "  const server = http.createServer((req, res) => {",
                       "    if (req.url === '/api/runtime-info') {",
+                      options.platformRuntimeInfoRequiresAuth
+                        ? [
+                            "      if (!String(req.headers.authorization || '').startsWith('Bearer ')) {",
+                            "        res.writeHead(401, { 'content-type': 'application/json' });",
+                            "        res.end(JSON.stringify({ error: 'unauthorized' }));",
+                            "        return;",
+                            "      }"
+                          ].join("\n")
+                        : "",
                       "      res.writeHead(200, { 'content-type': 'application/json' });",
                       "      res.end(JSON.stringify({ ok: true }));",
                       "      return;",
@@ -2340,6 +2365,72 @@ test("patchProgramCommonForLayeredLayout repairs agent-platform deploy diagnosti
     assert.match(patchedDeployPs1, /\[program-deploy\] initializing config under \{0\}/);
     assert.match(patchedDeployPs1, /\[program-deploy\] loading env: \{0\}/);
     assert.match(patchedDeployPs1, /\[program-deploy\] deploy complete/);
+  } finally {
+    fs.rmSync(programDir, { recursive: true, force: true });
+  }
+});
+
+test("patchProgramCommonForLayeredLayout prepares agent-platform runtime dirs under RUNTIME_DIR", () => {
+  const programDir = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-runtime-root-"));
+  const scriptPath = path.join(programDir, "scripts", "program-common.sh");
+  const powerShellPath = path.join(programDir, "scripts", "program-common.ps1");
+  const homeRoot = path.join(programDir, "home");
+  const serviceDataRoot = path.join(programDir, "service-data");
+
+  try {
+    fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
+    fs.writeFileSync(
+      path.join(programDir, "manifest.json"),
+      `${JSON.stringify({ id: "agent-platform" }, null, 2)}\n`,
+      "utf8"
+    );
+    fs.writeFileSync(
+      scriptPath,
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        'BUNDLE_ROOT="$PWD"',
+        'RUNTIME_ROOT="${SERVICE_DATA_DIR:-$BUNDLE_ROOT/runtime}"',
+        "program_prepare_runtime_dirs() {",
+        '  mkdir -p "$RUNTIME_ROOT/registries/providers" "$RUNTIME_ROOT/tools"',
+        "}"
+      ].join("\n") + "\n",
+      "utf8"
+    );
+    fs.writeFileSync(
+      powerShellPath,
+      [
+        "$Script:BundleRoot = $PSScriptRoot",
+        '$Script:RuntimeRoot = if ($env:SERVICE_DATA_DIR) { $env:SERVICE_DATA_DIR } else { Join-Path $Script:BundleRoot "runtime" }',
+        "function Initialize-ProgramRuntime {",
+        '  New-Item -ItemType Directory -Path (Join-Path $Script:RuntimeRoot "tools") -Force | Out-Null',
+        "}"
+      ].join("\r\n") + "\r\n",
+      "utf8"
+    );
+
+    __testInternals.patchProgramCommonForLayeredLayout(programDir);
+
+    const patched = fs.readFileSync(scriptPath, "utf8");
+    assert.match(patched, /program_resolve_runtime_root\(\)/);
+    assert.match(patched, /program_prepare_runtime_dirs\(\) \{\n  program_resolve_runtime_root/);
+    if (process.platform !== "win32") {
+      execFileSync("bash", ["-c", '. "$1"; program_prepare_runtime_dirs', "bash", scriptPath], {
+        env: {
+          ...process.env,
+          HOME: homeRoot,
+          SERVICE_DATA_DIR: serviceDataRoot,
+          RUNTIME_DIR: "~/.zenmind"
+        }
+      });
+      assert.equal(fs.existsSync(path.join(homeRoot, ".zenmind", "tools")), true);
+      assert.equal(fs.existsSync(path.join(serviceDataRoot, "tools")), false);
+    }
+
+    const patchedPowerShell = fs.readFileSync(powerShellPath, "utf8");
+    assert.match(patchedPowerShell, /function Resolve-ProgramRuntimeRoot/);
+    assert.match(patchedPowerShell, /function Initialize-ProgramRuntime \{\r?\n  Resolve-ProgramRuntimeRoot/);
+    assert.match(patchedPowerShell, /\[System\.IO\.Path\]::IsPathRooted\(\$trimmed\)/);
   } finally {
     fs.rmSync(programDir, { recursive: true, force: true });
   }
@@ -5103,6 +5194,7 @@ test("ensurePreStartRequirements syncs agent-platform public key from zenmind-ap
   });
   const platformService = getBuiltinService("agent-platform");
   const platformConfigDir = getTestConfigDir(userDataRoot, platformService.id);
+  const platformDataDir = getTestDataDir(userDataRoot, platformService.id);
   const platformPublicKeyPath = path.join(platformConfigDir, "configs", "local-public-key.pem");
   const appServerPublicKeyPath = path.join(getTestDataDir(userDataRoot, "zenmind-app-server"), "keys", "publicKey.pem");
 
@@ -5111,10 +5203,16 @@ test("ensurePreStartRequirements syncs agent-platform public key from zenmind-ap
     await installBuiltinService(app, "agent-platform");
     fs.mkdirSync(path.dirname(platformPublicKeyPath), { recursive: true });
     fs.writeFileSync(platformPublicKeyPath, "STALE_PUBLIC_KEY\n", "utf8");
+    fs.mkdirSync(path.join(platformDataDir, "registries", "providers"), { recursive: true });
+    fs.mkdirSync(path.join(platformDataDir, "tools"), { recursive: true });
 
     await __testInternals.ensurePreStartRequirements(app, platformService);
 
     assert.equal(fs.readFileSync(appServerPublicKeyPath, "utf8").replace(/\r\n/gu, "\n"), "APP_SERVER_PUBLIC_KEY\n");
+    assert.equal(fs.existsSync(path.join(path.dirname(appServerPublicKeyPath), "jwk-private.pem")), false);
+    assert.equal(fs.existsSync(path.join(path.dirname(appServerPublicKeyPath), "jwk-public.pem")), false);
+    assert.equal(fs.existsSync(path.join(platformDataDir, "tools")), false);
+    assert.equal(fs.existsSync(path.join(platformDataDir, "registries")), false);
     assert.equal(fs.readFileSync(platformPublicKeyPath, "utf8").replace(/\r\n/gu, "\n"), "APP_SERVER_PUBLIC_KEY\n");
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
     assert.match(envContent, /^AUTH_ENABLED=true$/m);
@@ -6986,8 +7084,11 @@ test("runStartupPreparation prepares packaged first-launch core services in para
   }
 });
 
-test("runStartupPreparation accepts agent-platform runtime-info readiness when root returns 404", async () => {
-  const fixture = createStartupCoreAssetsFixture({ platformRootReturns404: true });
+test("runStartupPreparation uses manifest auth capability for agent-platform runtime-info readiness", async () => {
+  const fixture = createStartupCoreAssetsFixture({
+    platformRootReturns404: true,
+    platformRuntimeInfoRequiresAuth: true
+  });
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
   const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
@@ -7002,9 +7103,14 @@ test("runStartupPreparation accepts agent-platform runtime-info readiness when r
     const platformRuntimeProbe = await __testInternals.probeHttpUrl(
       new URL("/api/runtime-info", platformState.healthMeta.webUrl).toString()
     );
+    const authenticatedPlatformRuntimeProbe = await __testInternals.probeHttpUrl(
+      new URL("/api/runtime-info", platformState.healthMeta.webUrl).toString(),
+      { headers: { Authorization: "Bearer fixture-token" } }
+    );
 
     assert.equal(platformRootProbe.statusCode, 404);
-    assert.equal(platformRuntimeProbe.ok, true);
+    assert.equal(platformRuntimeProbe.statusCode, 401);
+    assert.equal(authenticatedPlatformRuntimeProbe.ok, true);
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
     assert.equal(webclientState.status, "running");
