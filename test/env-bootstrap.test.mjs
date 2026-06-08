@@ -211,6 +211,50 @@ test("bundled env.zip import returns null when no packaged env exists", async ()
   }
 });
 
+test("importEnvZipToRuntime migrates legacy bootstrap agent seed schema on Windows", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-agent-seed-"));
+  const app = createApp(root);
+  const zipPath = path.join(root, "env.zip");
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  const migratedAssistantPath = path.join(runtimeRoot, "agents", "desktopAssistant", "agent.yml");
+  const migratedZenmiPath = path.join(runtimeRoot, "agents", "zenmi", "agent.yml");
+
+  try {
+    await writeZip(zipPath, {
+      "zenmind-env/VERSION": DESKTOP_VERSION,
+      "zenmind-env/agents/desktopAssistant.bootstrap/agent.yml": [
+        "key: desktopAssistant",
+        "name: Desktop Assistant",
+        "budget:",
+        "  runTimeoutMs: 1800000",
+        "  maxSteps: 50",
+        ""
+      ].join("\n"),
+      "zenmind-env/agents/zenmi.bootstrap/agent.yml": [
+        "key: zenmi",
+        "name: Zenmi",
+        "runtimeConfig:",
+        "  workspaceRoot: /",
+        ""
+      ].join("\n")
+    });
+
+    await importEnvZipToRuntime(app, zipPath, "win32", DESKTOP_VERSION);
+
+    assert.equal(fs.existsSync(path.join(runtimeRoot, "agents", "desktopAssistant.bootstrap")), false);
+    assert.equal(fs.existsSync(path.join(runtimeRoot, "agents", "zenmi.bootstrap")), false);
+
+    const assistantContent = fs.readFileSync(migratedAssistantPath, "utf8");
+    assert.match(assistantContent, /timeout:\s*1800/u);
+    assert.doesNotMatch(assistantContent, /runTimeoutMs/u);
+
+    const zenmiContent = fs.readFileSync(migratedZenmiPath, "utf8");
+    assert.match(zenmiContent, /workspaceRoot:\s*'@chat'|workspaceRoot:\s*"@chat"|workspaceRoot:\s*@chat/u);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("bundled env.zip refreshes bootstrap registry seed files without overwriting user data", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-seed-refresh-"));
   const app = createApp(root);
