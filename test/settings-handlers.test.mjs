@@ -48,9 +48,9 @@ test("settings handlers expose data root and platform", async () => {
   assert.equal(await handlers["settings.getPlatform"]({}), "win32");
 });
 
-test("settings.setNativeThemeSource maps dark to dark and other values to light", async () => {
+test("settings.setNativeThemeSource maps dark, system, and other values to light", async () => {
   const { ipc, handlers } = makeMockIpcMain();
-  const nativeTheme = { themeSource: "system" };
+  const nativeTheme = { themeSource: "light" };
 
   registerSettingsIpcHandlers(ipc, makeBaseOptions({ nativeTheme }));
 
@@ -59,6 +59,12 @@ test("settings.setNativeThemeSource maps dark to dark and other values to light"
     themeSource: "dark"
   });
   assert.equal(nativeTheme.themeSource, "dark");
+
+  assert.deepEqual(await handlers["settings.setNativeThemeSource"]({}, "system"), {
+    ok: true,
+    themeSource: "system"
+  });
+  assert.equal(nativeTheme.themeSource, "system");
 
   assert.deepEqual(await handlers["settings.setNativeThemeSource"]({}, "sepia"), {
     ok: true,

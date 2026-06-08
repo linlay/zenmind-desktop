@@ -28,8 +28,13 @@ export function getStartupBlockingService(startupServices: Array<ServiceState | 
 
 export function shouldShowStartupProgressCard(
   startupRestoreState: StartupRestoreState | null,
-  startupAllReady: boolean
+  startupAllReady: boolean,
+  currentPathname = "/"
 ) {
+  if (currentPathname === "/settings") {
+    return false;
+  }
+
   if (!startupRestoreState) {
     return !startupAllReady;
   }
@@ -58,14 +63,19 @@ export function shouldAutoOpenAssistant(
   startupAllReady: boolean,
   currentPathname = "/"
 ) {
-  const isBootstrapOwnedRoute =
-    currentPathname === "/" ||
-    currentPathname === "/control-center";
-
   return startupRestoreState?.mode === "bootstrap" &&
     startupRestoreState.phase === "succeeded" &&
     startupAllReady &&
-    isBootstrapOwnedRoute;
+    isBootstrapOwnedRoute(currentPathname);
+}
+
+export function shouldRedirectStartupFailureToControlCenter(
+  startupRestoreState: StartupRestoreState | null,
+  currentPathname = "/"
+) {
+  return startupRestoreState?.mode === "bootstrap" &&
+    startupRestoreState.phase === "failed" &&
+    isBootstrapOwnedRoute(currentPathname);
 }
 
 export function resolveStartupRootPath(startupRestoreState: StartupRestoreState | null, startupAllReady: boolean) {
@@ -82,4 +92,8 @@ export function resolveStartupRootPath(startupRestoreState: StartupRestoreState 
   }
 
   return "/kanban";
+}
+
+function isBootstrapOwnedRoute(currentPathname: string) {
+  return currentPathname === "/" || currentPathname === "/control-center";
 }

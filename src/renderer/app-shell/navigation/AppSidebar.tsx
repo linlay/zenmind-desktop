@@ -6,7 +6,7 @@ import {
   type FormEvent,
   type MouseEvent,
 } from "react";
-import { LeftOutlined, LogoutOutlined, RightOutlined } from "@ant-design/icons";
+import { LeftOutlined, RightOutlined, SortAscendingOutlined } from "@ant-design/icons";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import {
@@ -40,6 +40,8 @@ import {
 import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/generated/brand";
 import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
+import type { SettingsSectionId } from "../../../shared/settings-sections";
+import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -65,6 +67,8 @@ type SidebarStatusSummary = {
   unreadCount: number;
   pendingCount: number;
 };
+
+type AssistantNavSortMode = "byName" | "byTime";
 
 type AssistantChatMenuState = {
   chat: AssistantNavChatItem;
@@ -114,6 +118,7 @@ type CoderAcpProjectDialogState = {
 };
 
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-groups`;
+const SIDEBAR_ASSISTANT_SORT_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-assistant-sort`;
 
 const defaultSidebarGroupState: SidebarGroupState = {
   assistants: true,
@@ -141,7 +146,7 @@ const taskBoardNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
 
 const schedulesNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   orderKey: "schedules",
-  to: "/schedules",
+  to: "/automations",
   icon: "schedule",
 };
 
@@ -260,6 +265,23 @@ function readInitialSidebarGroupState() {
   }
 }
 
+function normalizeAssistantNavSortMode(value: unknown): AssistantNavSortMode {
+  return value === "byName" || value === "byTime" ? value : "byTime";
+}
+
+function readInitialAssistantNavSortMode(): AssistantNavSortMode {
+  if (typeof window === "undefined") {
+    return "byTime";
+  }
+  try {
+    return normalizeAssistantNavSortMode(
+      window.localStorage.getItem(SIDEBAR_ASSISTANT_SORT_STORAGE_KEY),
+    );
+  } catch {
+    return "byTime";
+  }
+}
+
 function getRunningCoderAcpProxyOptions(
   services: ServiceState[],
 ): RunningCoderAcpProxyOption[] {
@@ -369,24 +391,14 @@ function createAgentSelectionRoute(
   agent: AssistantNavAgentItem,
   options: AgentSelectionOptions = {},
 ) {
+  const attentionChat = getAssistantAttentionChat(agent);
+  const attentionChatId = attentionChat?.chatId.trim() ?? "";
+  if (attentionChatId) {
+    return createAgentChatRoute(agent.agentKey, attentionChatId);
+  }
+
   if (!options.preferNewChat) {
     return createAgentDefaultRoute(agent);
-  }
-
-  const recentChats = getAssistantNavAgentRecentChats(agent);
-  const activeChat = recentChats.find((chat) => chat.hasActiveRun === true);
-  const activeChatId = activeChat?.chatId.trim() ?? "";
-  if (activeChatId) {
-    return createAgentChatRoute(agent.agentKey, activeChatId);
-  }
-
-  const latestChat = recentChats[0];
-  const latestChatId = latestChat?.chatId.trim() ?? "";
-  if (
-    latestChatId &&
-    (latestChat.hasPendingAwaiting === true || latestChat.isRead === false)
-  ) {
-    return createAgentChatRoute(agent.agentKey, latestChatId);
   }
 
   return createAgentNewChatRoute(agent.agentKey);
@@ -469,6 +481,83 @@ function isAssistantRunningPreview(value: string) {
   return normalized === "思考中" || normalized === "思考中...";
 }
 
+function toAssistantSortTimestamp(value: string | undefined) {
+  const timestamp = value ? Date.parse(value) : 0;
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
+  const latestChat = getAssistantNavAgentRecentChats(agent)[0];
+  if (latestChat) {
+    return toAssistantSortTimestamp(latestChat.updatedAt);
+  }
+  return agent.latestChatId ? toAssistantSortTimestamp(agent.updatedAt) : 0;
+}
+
+function compareAssistantAgentsByTime(
+  left: AssistantNavAgentItem,
+  right: AssistantNavAgentItem,
+) {
+  const rightTime = readAssistantAgentLatestTimestamp(right);
+  const leftTime = readAssistantAgentLatestTimestamp(left);
+  if (rightTime !== leftTime) {
+    return rightTime - leftTime;
+  }
+  return compareAssistantAgentsByName(left, right);
+}
+
+function compareAssistantAgentsByName(
+  left: AssistantNavAgentItem,
+  right: AssistantNavAgentItem,
+) {
+  const displayNameComparison = left.displayName.localeCompare(
+    right.displayName,
+    "zh-CN",
+  );
+  if (displayNameComparison !== 0) {
+    return displayNameComparison;
+  }
+  return left.agentKey.localeCompare(right.agentKey);
+}
+
+function sortAssistantNavAgentsForMode(
+  items: AssistantNavAgentItem[],
+  sortMode: AssistantNavSortMode,
+) {
+  const compare =
+    sortMode === "byName"
+      ? compareAssistantAgentsByName
+      : compareAssistantAgentsByTime;
+  return [...items].sort(compare);
+}
+
+function getAssistantAwaitingStatusKey(
+  mode?: AssistantNavChatItem["awaitingMode"],
+) {
+  switch (mode) {
+    case "plan":
+      return "sidebar.assistants.awaitingStatus.plan";
+    case "question":
+      return "sidebar.assistants.awaitingStatus.question";
+    case "approval":
+      return "sidebar.assistants.awaitingStatus.approval";
+    case "form":
+      return "sidebar.assistants.awaitingStatus.form";
+    default:
+      return "taskBoard.run.awaitingApproval";
+  }
+}
+
+function getAssistantAttentionChat(agent: AssistantNavAgentItem) {
+  const recentChats = getAssistantNavAgentRecentChats(agent).slice(0, 5);
+  return (
+    recentChats.find((chat) => chat.hasPendingAwaiting === true) ||
+    recentChats.find((chat) => chat.hasActiveRun === true) ||
+    recentChats.find((chat) => chat.isRead === false) ||
+    null
+  );
+}
+
 type SidebarCollapseToggleVariant = "compact" | "nav";
 
 type SidebarCollapseToggleProps = {
@@ -535,6 +624,11 @@ function SidebarCollapseToggle({
   );
 }
 
+type SettingsSidebarSection = {
+  id: SettingsSectionId;
+  label: string;
+};
+
 type AppSidebarProps = {
   isCollapsed: boolean;
   isMac: boolean;
@@ -569,6 +663,11 @@ type AppSidebarProps = {
   onSidebarNavigateForward?: () => void;
   onNavigateItem?: () => void;
   onToggleCollapsed?: () => void;
+  isSettingsMode?: boolean;
+  settingsSections?: SettingsSidebarSection[];
+  activeSettingsSectionId?: SettingsSectionId | null;
+  onSelectSettingsSection?: (sectionId: SettingsSectionId) => void;
+  onExitSettingsMode?: () => void;
 };
 
 export function AppSidebar({
@@ -603,11 +702,19 @@ export function AppSidebar({
   onSidebarNavigateForward,
   onNavigateItem,
   onToggleCollapsed,
+  isSettingsMode = false,
+  settingsSections = [],
+  activeSettingsSectionId = null,
+  onSelectSettingsSection,
+  onExitSettingsMode,
 }: AppSidebarProps) {
   const { t } = useI18n();
   const [sidebarGroupState, setSidebarGroupState] = useState<SidebarGroupState>(
     readInitialSidebarGroupState,
   );
+  const [assistantNavSortMode, setAssistantNavSortMode] =
+    useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
+  const [assistantSortMenuOpen, setAssistantSortMenuOpen] = useState(false);
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
     useState("");
@@ -648,6 +755,14 @@ export function AppSidebar({
     () => summarizeAgentStatus(assistantNavAgents),
     [assistantNavAgents],
   );
+  const sortedAssistantNavAgents = useMemo(
+    () => sortAssistantNavAgentsForMode(assistantNavAgents, assistantNavSortMode),
+    [assistantNavAgents, assistantNavSortMode],
+  );
+  const assistantNavSortLabel =
+    assistantNavSortMode === "byName"
+      ? t("sidebar.assistants.sortByName")
+      : t("sidebar.assistants.sortByTime");
 
   const customItems: SidebarNavItem[] = useMemo(() => {
     const orderIndex = new Map(
@@ -676,7 +791,7 @@ export function AppSidebar({
         label: t("nav.taskBoard"),
         collapsedLabel: t("nav.taskBoardCollapsed"),
       },
-      { ...schedulesNavItemBase, label: t("nav.schedules") },
+      { ...schedulesNavItemBase, label: t("nav.schedules"), collapsedLabel: t("nav.schedulesCollapsed") },
       {
         ...assistantGroupNavItemBase,
         label: t("nav.assistants"),
@@ -710,6 +825,17 @@ export function AppSidebar({
       // Ignore localStorage failures in restricted renderer contexts.
     }
   }, [sidebarGroupState]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SIDEBAR_ASSISTANT_SORT_STORAGE_KEY,
+        assistantNavSortMode,
+      );
+    } catch {
+      // Ignore localStorage failures in restricted renderer contexts.
+    }
+  }, [assistantNavSortMode]);
 
   useEffect(() => {
     if (!websiteDialogOpen) {
@@ -1300,6 +1426,68 @@ export function AppSidebar({
     );
   }
 
+  function renderAssistantSortMenu() {
+    const options: Array<{ mode: AssistantNavSortMode; label: string }> = [
+      { mode: "byTime", label: t("sidebar.assistants.sortByTime") },
+      { mode: "byName", label: t("sidebar.assistants.sortByName") },
+    ];
+    return (
+      <div
+        className="sidebar-assistant-sort-menu"
+        role="menu"
+        aria-label={t("sidebar.assistants.sortMenu")}
+      >
+        {options.map((option) => (
+          <button
+            key={option.mode}
+            type="button"
+            className={[
+              "sidebar-assistant-sort-item",
+              assistantNavSortMode === option.mode ? "is-active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            role="menuitemradio"
+            aria-checked={assistantNavSortMode === option.mode}
+            onClick={() => {
+              setAssistantNavSortMode(option.mode);
+              setAssistantSortMenuOpen(false);
+            }}
+          >
+            <span>{option.label}</span>
+            {assistantNavSortMode === option.mode ? (
+              <span
+                className="sidebar-assistant-sort-check"
+                aria-hidden="true"
+              />
+            ) : null}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  function renderAssistantSortButton() {
+    return (
+      <Popover
+        open={assistantSortMenuOpen}
+        onOpenChange={setAssistantSortMenuOpen}
+        placement="bottom-end"
+        content={renderAssistantSortMenu()}
+      >
+        <button
+          type="button"
+          className="assistant-worker-icon-button sidebar-assistant-sort-button"
+          aria-label={t("sidebar.assistants.sort")}
+          title={assistantNavSortLabel}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <SortAscendingOutlined aria-hidden="true" />
+        </button>
+      </Popover>
+    );
+  }
+
   function renderStatusBadges(summary: SidebarStatusSummary, className = "") {
     const unreadLabel = formatUnreadCount(summary.unreadCount);
     if (summary.pendingCount <= 0 && !unreadLabel) {
@@ -1388,10 +1576,10 @@ export function AppSidebar({
     activeChatId: string,
   ) {
     const isActive = activeChatId === chat.chatId;
-    const action = chat.hasActiveRun
-      ? "loading"
-      : chat.hasPendingAwaiting
+    const action = chat.hasPendingAwaiting
       ? "awaiting"
+      : chat.hasActiveRun
+      ? "loading"
       : !chat.isRead
         ? "unread"
         : "time";
@@ -1417,17 +1605,13 @@ export function AppSidebar({
           <span className="worker-chat-name">{previewText}</span>
           {chat.hasPendingAwaiting ? (
             <span className="chat-awaiting-status">
-              {t("taskBoard.run.awaitingApproval")}
+              {t(getAssistantAwaitingStatusKey(chat.awaitingMode))}
             </span>
           ) : null}
           <span className="assistant-worker-chat-action" data-action={action}>
             <span
               className="assistant-worker-unread-dot chat-unread-dot is-unread"
               aria-label="未读"
-            />
-            <span
-              className="assistant-worker-awaiting-ring"
-              aria-label="待审批"
             />
             <span className="worker-panel-time-label">
               {formatAssistantChatTime(chat.updatedAt)}
@@ -1468,8 +1652,25 @@ export function AppSidebar({
       getAssistantNavAgentNonNegativeInteger(agent.unreadCount),
       getAssistantNavAgentNonNegativeInteger(agent.unreadChatCount),
     );
-    const latestPreview =
-      agent.latestPreview || (chatCount > 0 ? "" : "暂无会话");
+    const awaitingChat = recentChats.find(
+      (chat) => chat.hasPendingAwaiting === true,
+    );
+    const activeRunChat = recentChats.find(
+      (chat) => chat.hasActiveRun === true,
+    );
+    const previewChat = awaitingChat || activeRunChat || recentChats[0] || null;
+    const previewText = previewChat
+      ? previewChat.hasActiveRun &&
+        isAssistantRunningPreview(previewChat.lastRunContent)
+        ? previewChat.chatName || "暂无预览"
+        : previewChat.lastRunContent || previewChat.chatName || "暂无预览"
+      : agent.latestPreview || (chatCount > 0 ? "" : "暂无会话");
+    const previewStatus =
+      awaitingChat || agent.hasPendingAwaiting
+        ? "awaiting"
+        : activeRunChat
+          ? "running"
+          : "";
     const activeChatId = getActiveSidebarChatId(agent.agentKey);
     return (
       <Collapse
@@ -1499,9 +1700,11 @@ export function AppSidebar({
                   <span className="worker-panel-header-body">
                     <span className="assistant-worker-name">
                       <span>{agent.displayName}</span>
-                      <span className="worker-panel-role">
-                        {agent.role || "--"}
-                      </span>
+                      {agent.mode !== "CODER" && (
+                        <span className="worker-panel-role">
+                          {agent.role || "--"}
+                        </span>
+                      )}
                     </span>
                     {unreadCount > 0 ? (
                       <span className="assistant-worker-badge">
@@ -1555,18 +1758,30 @@ export function AppSidebar({
                   </span>
                   <span className="worker-panel-preview">
                     <span className="assistant-worker-preview">
-                      {latestPreview}
+                      {previewText}
                     </span>
-                    {agent.hasPendingAwaiting ? (
+                    {previewStatus === "awaiting" ? (
                       <span className="chat-awaiting-status">
-                        {t("taskBoard.run.awaitingApproval")}
+                        {t(
+                          getAssistantAwaitingStatusKey(
+                            awaitingChat?.awaitingMode,
+                          ),
+                        )}
                       </span>
                     ) : null}
-                    <span className="worker-panel-time-label">
-                      {formatAssistantChatTime(
-                        getAssistantNavAgentRecentChats(agent)[0]?.updatedAt,
-                      )}
-                    </span>
+                    {previewStatus ? (
+                      <span
+                        className="assistant-material-icon is-loading sidebar-assistant-preview-loading"
+                        aria-label={
+                          previewStatus === "awaiting" ? "等待中" : "运行中"
+                        }
+                      />
+                    ) : null}
+                    {!previewStatus && previewChat ? (
+                      <span className="worker-panel-time-label">
+                        {formatAssistantChatTime(previewChat.updatedAt)}
+                      </span>
+                    ) : null}
                   </span>
                 </span>
               </span>
@@ -1643,8 +1858,16 @@ export function AppSidebar({
           >
             {args.groupId === "assistants" ? (
               <div className="assistant-worker-collapse worker-collapse">
-                {assistantNavAgents.length > 0 ? (
-                  assistantNavAgents.map((agent) => renderAssistantAgent(agent))
+                <div className="sidebar-assistant-popover-tools">
+                  <span className="sidebar-assistant-sort-label">
+                    {assistantNavSortLabel}
+                  </span>
+                  {renderAssistantSortButton()}
+                </div>
+                {sortedAssistantNavAgents.length > 0 ? (
+                  sortedAssistantNavAgents.map((agent) =>
+                    renderAssistantAgent(agent),
+                  )
                 ) : assistantNavAgentsLoaded ? (
                   <div className="status-line">
                     {t("sidebar.assistants.empty")}
@@ -1686,6 +1909,9 @@ export function AppSidebar({
             title={args.label}
           >
             <span className="sidebar-group-heading-main">
+              <span className="sidebar-link-icon">
+                <SidebarIllustration kind={args.icon} />
+              </span>
               <span className="sidebar-link-label">{args.label}</span>
               <ArrowIcon
                 className="sidebar-group-heading-arrow"
@@ -1696,6 +1922,9 @@ export function AppSidebar({
                 ? renderStatusBadges(args.status, "sidebar-group-status")
                 : null}
             </span>
+            {args.groupId === "assistants" ? (
+              renderAssistantSortButton()
+            ) : null}
             {args.groupId === "assistants" ? (
               <Tooltip content="新增项目">
                 <button
@@ -1740,8 +1969,10 @@ export function AppSidebar({
         >
           {args.groupId === "assistants" ? (
             <div className="assistant-worker-collapse worker-collapse">
-              {assistantNavAgents.length > 0 ? (
-                assistantNavAgents.map((agent) => renderAssistantAgent(agent))
+              {sortedAssistantNavAgents.length > 0 ? (
+                sortedAssistantNavAgents.map((agent) =>
+                  renderAssistantAgent(agent),
+                )
               ) : assistantNavAgentsLoaded ? (
                 <div className="status-line">
                   {t("sidebar.assistants.empty")}
@@ -1821,31 +2052,24 @@ export function AppSidebar({
 
     if (desktopSsoStatus?.authenticated) {
       return (
-        <div
+        <button
+          type="button"
           className={[
             "sidebar-account-menu-item",
-            "is-disabled",
+            "sidebar-account-menu-action",
             "sidebar-account-menu-user",
-            "sidebar-account-menu-user-with-action",
           ]
             .filter(Boolean)
             .join(" ")}
-          role="none"
+          onClick={handleDesktopSsoLogoutClick}
+          disabled={desktopSsoBusy}
+          role="menuitem"
+          aria-label={desktopSsoLogoutLabel}
+          title={desktopSsoUserLabel}
         >
           {renderAccountMenuIcon("account")}
-          <span className="sidebar-account-menu-label">{desktopSsoUserLabel}</span>
-          <button
-            type="button"
-            className="sidebar-account-menu-logout"
-            onClick={handleDesktopSsoLogoutClick}
-            disabled={desktopSsoBusy}
-            role="menuitem"
-            aria-label={desktopSsoLogoutLabel}
-            title={desktopSsoLogoutLabel}
-          >
-            <LogoutOutlined />
-          </button>
-        </div>
+          <span className="sidebar-account-menu-label">{desktopSsoLogoutLabel}</span>
+        </button>
       );
     }
 
@@ -1877,7 +2101,7 @@ export function AppSidebar({
 
   function getDesktopSsoUserLabel() {
     if (!desktopSsoStatus) {
-      return t("sidebar.sso.signedOut");
+      return t("sidebar.sso.signIn");
     }
     if (desktopSsoStatus.authenticated) {
       return (
@@ -1888,7 +2112,7 @@ export function AppSidebar({
     }
     return desktopSsoStatus.pending
       ? t("sidebar.sso.signingIn")
-      : t("sidebar.sso.signedOut");
+      : t("sidebar.sso.signIn");
   }
 
   function getDesktopSsoActionLabel() {
@@ -1915,16 +2139,15 @@ export function AppSidebar({
     setToolMenuOpen(false);
   }
 
-  function renderDesktopSsoAccountMenuSection() {
-    return (
-      <>
-        {renderAccountMenuUserItem()}
-        <div className="sidebar-account-menu-divider" aria-hidden="true" />
-      </>
-    );
-  }
-
   function renderToolMenu() {
+    const topToolItems = fixedToolItems.filter((item) =>
+      item.to === "/agents" || item.to === "/market"
+    );
+    const middleToolItems = fixedToolItems.filter((item) =>
+      item.to === "/control-center" || item.to === "/help"
+    );
+    const settingsToolItems = fixedToolItems.filter((item) => item.to === "/settings");
+
     return (
       <div
         className={[
@@ -1939,8 +2162,12 @@ export function AppSidebar({
         role="menu"
         aria-label={t("nav.sidebar.fixedTools")}
       >
-        {renderDesktopSsoAccountMenuSection()}
-        {fixedToolItems.map((item) => renderToolLink(item))}
+        {topToolItems.map((item) => renderToolLink(item))}
+        <div className="sidebar-account-menu-divider" aria-hidden="true" />
+        {middleToolItems.map((item) => renderToolLink(item))}
+        <div className="sidebar-account-menu-divider" aria-hidden="true" />
+        {settingsToolItems.map((item) => renderToolLink(item))}
+        {renderAccountMenuUserItem()}
       </div>
     );
   }
@@ -1973,12 +2200,8 @@ export function AppSidebar({
     return "";
   }
 
-  function isAgentRow(agent: AssistantNavAgentItem) {
-    return agent.rowType === "agent";
-  }
-
   function isCoderAgent(agent: AssistantNavAgentItem) {
-    return isAgentRow(agent) && agent.agentType === "coder";
+    return agent.agentType === "coder";
   }
 
   function asPlainRecord(value: unknown): Record<string, unknown> {
@@ -2332,8 +2555,7 @@ export function AppSidebar({
       return null;
     }
     const agent = agentMenu.agent;
-    const agentRow = isAgentRow(agent);
-    const coderAgent = isCoderAgent(agent);
+    const coderAgent = agent.agentType === "coder";
     const openWorkspaceDisabledReason = getOpenWorkspaceDisabledReason(agent);
     return createPortal(
       <div
@@ -2353,24 +2575,20 @@ export function AppSidebar({
         >
           <span>打开工作目录</span>
         </button>
-        {agentRow ? (
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => void handleRenameAgent(agent)}
-          >
-            <span>修改名称</span>
-          </button>
-        ) : null}
-        {agentRow ? (
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => handleEditAgent(agent)}
-          >
-            <span>编辑智能体</span>
-          </button>
-        ) : null}
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => void handleRenameAgent(agent)}
+        >
+          <span>修改名称</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => handleEditAgent(agent)}
+        >
+          <span>编辑智能体</span>
+        </button>
         {coderAgent ? (
           <button
             type="button"
@@ -2674,18 +2892,91 @@ export function AppSidebar({
     );
   }
 
+  function getSettingsSectionIcon(sectionId: SettingsSectionId): SidebarIllustrationKind {
+    switch (sectionId) {
+      case "appearance":
+        return "appearance";
+      case "navigation":
+        return "sidebar-assistant-closed";
+      case "quickAssistant":
+        return "assistant";
+      case "embeddedWebsites":
+        return "website";
+      case "dataRoot":
+        return "service";
+      case "debug":
+        return "control";
+      case "memory":
+        return "memory";
+      case "about":
+        return "about";
+      default:
+        return "settings";
+    }
+  }
+
+  function renderSettingsNav() {
+    return (
+      <div className="sidebar-settings-nav">
+        <button
+          type="button"
+          className="sidebar-link sidebar-link-utility sidebar-settings-back"
+          onClick={() => onExitSettingsMode?.()}
+        >
+          <span className="sidebar-link-icon" aria-hidden="true">
+            <LeftOutlined />
+          </span>
+          <span className="sidebar-link-label">{t("settings.backToApp")}</span>
+        </button>
+        <nav className="sidebar-settings-directory" aria-label={t("settings.directory")}>
+          {settingsSections.map((section) => {
+            const targetPath = buildSettingsSectionPath(section.id);
+            const isActive = activeSettingsSectionId === section.id;
+            return (
+              <NavLink
+                key={section.id}
+                to={targetPath}
+                className={({ isActive: routeActive }) =>
+                  [
+                    "sidebar-link",
+                    routeActive || isActive ? "sidebar-link-active" : "",
+                    pendingPath === targetPath ? "is-pending" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")
+                }
+                onClick={(event) => {
+                  event.preventDefault();
+                  onSelectSettingsSection?.(section.id);
+                }}
+              >
+                <span className="sidebar-link-icon" aria-hidden="true">
+                  <SidebarIllustration kind={getSettingsSectionIcon(section.id)} />
+                </span>
+                <span className="sidebar-link-label">{section.label}</span>
+              </NavLink>
+            );
+          })}
+        </nav>
+      </div>
+    );
+  }
+
   return (
     <aside className={isCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
       <div className="sidebar-chrome">
         <div className="sidebar-chrome-drag-region" aria-hidden="true" />
         <div className={chromeToolbarClassName}>
           <div className="sidebar-top-actions">
+            {!isSettingsMode ? (
             <SidebarCollapseToggle
               className="sidebar-collapsed-toggle-button"
               isCollapsed={isCollapsed}
               variant="compact"
               onToggleCollapsed={onToggleCollapsed}
             />
+            ) : null}
+            {!isSettingsMode ? (
             <div className="sidebar-history-controls">
               <button
                 type="button"
@@ -2708,7 +2999,8 @@ export function AppSidebar({
                 <RightOutlined aria-hidden="true" />
               </button>
             </div>
-            {assistantLauncherVisible ? (
+            ) : null}
+            {!isSettingsMode && assistantLauncherVisible ? (
               <button
                 type="button"
                 className={[
@@ -2750,9 +3042,10 @@ export function AppSidebar({
       </div>
 
       <nav className="sidebar-nav" aria-label="Primary Navigation">
-        {navItems.map((item) => renderPrimaryNavEntry(item))}
+        {isSettingsMode ? renderSettingsNav() : navItems.map((item) => renderPrimaryNavEntry(item))}
       </nav>
 
+      {!isSettingsMode ? (
       <div className="sidebar-footer">
         <div className="sidebar-footer-divider" aria-hidden="true" />
         <div className="sidebar-footer-actions">
@@ -2762,6 +3055,7 @@ export function AppSidebar({
               content={renderToolMenu()}
               open={toolMenuOpen}
               onOpenChange={setToolMenuOpen}
+              className="sidebar-tool-menu-popover"
             >
               <button
                 type="button"
@@ -2792,12 +3086,6 @@ export function AppSidebar({
                 >
                   {getCollapsedSidebarLabel(t("nav.settings"))}
                 </span>
-                <span
-                  className="sidebar-tool-status-label"
-                  aria-hidden="true"
-                >
-                  {getDesktopSsoUserLabel()}
-                </span>
               </button>
             </Popover>
           </div>
@@ -2809,6 +3097,7 @@ export function AppSidebar({
           {renderWebsiteDialog()}
         </div>
       </div>
+      ) : null}
     </aside>
   );
 }

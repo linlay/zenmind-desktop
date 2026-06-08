@@ -480,6 +480,7 @@ function validateAgentPlatformBundleArchive(service, archivePath) {
 function validateAgentWebclientBundleArchive(service, archivePath) {
   const manifest = readManifestFromArchive(archivePath);
   const isWindowsArchive = archivePath.endsWith(".zip");
+  const entries = listArchiveEntries(archivePath);
   const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
     ? manifest.desktop.envBindings
       .map((binding) => (binding && typeof binding.key === "string" ? binding.key.trim() : ""))
@@ -505,15 +506,34 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
     );
   }
 
-  if (manifest?.backend?.entry !== "backend/server.cjs") {
+  if (manifest?.frontend?.hostManaged !== true) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Expected backend.entry to be backend/server.cjs, got ${JSON.stringify(manifest?.backend?.entry)}.\n` +
+        `Expected frontend.hostManaged to be true so Desktop can host agent-webclient.\n` +
         `Please rebuild the Desktop-ready agent-webclient bundle.`
     );
   }
 
-  const entries = listArchiveEntries(archivePath);
+  if (manifest?.backend?.entry) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Unexpected backend.entry ${JSON.stringify(manifest.backend.entry)}; Desktop-ready agent-webclient bundles must not ship a backend server.\n` +
+        `Please rebuild the Desktop-ready agent-webclient bundle.`
+    );
+  }
+
+  const requiredPaths = Array.isArray(manifest?.runtime?.requiredPaths)
+    ? manifest.runtime.requiredPaths.filter((entry) => typeof entry === "string")
+    : [];
+  const backendRequiredPath = requiredPaths.find((entry) => entry.replace(/\\/g, "/").startsWith("backend/"));
+  if (backendRequiredPath) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Unexpected backend runtime required path ${backendRequiredPath}; Desktop hosts agent-webclient itself.\n` +
+        `Please rebuild the Desktop-ready agent-webclient bundle.`
+    );
+  }
+
   const programCommonPath = isWindowsArchive
     ? `${service.bundleTopLevelDir}/scripts/program-common.ps1`
     : `${service.bundleTopLevelDir}/scripts/program-common.sh`;
@@ -526,66 +546,35 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
   }
 
   const staleRuntimeMarkers = isWindowsArchive
-    ? ["BackendPackageFile", "BackendModulesDir", "backend\\package.json", "backend\\node_modules"]
-    : ["BACKEND_PACKAGE_FILE", "BACKEND_NODE_MODULES_DIR", "backend/package.json", "backend/node_modules"];
+    ? ["BackendEntry", "BackendPackageFile", "BackendModulesDir", "backend\\server.cjs", "backend\\server.js", "backend\\package.json", "backend\\node_modules"]
+    : ["BACKEND_ENTRY", "BACKEND_PACKAGE_FILE", "BACKEND_NODE_MODULES_DIR", "backend/server.cjs", "backend/server.js", "backend/package.json", "backend/node_modules"];
   const staleRuntimeMarker = staleRuntimeMarkers.find((marker) => programCommon.includes(marker));
   if (staleRuntimeMarker) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
         `Detected stale launcher runtime check ${JSON.stringify(staleRuntimeMarker)} in ${programCommonPath}.\n` +
-        `The Desktop-ready agent-webclient bundle is self-contained in backend/server.cjs and must not require backend/package.json or backend/node_modules.`
+        `Desktop-ready agent-webclient launchers must not reference backend runtime files.`
     );
   }
-  const hasBundleRelativeBackendEntry = isWindowsArchive
-    ? /\$Script:BackendEntry\s*=\s*Join-Path\s+\(Join-Path\s+\$Script:BundleRoot\s+['"]backend['"]\)\s+['"]server\.cjs['"]/u.test(programCommon)
-    : /BACKEND_ENTRY=["']\$\{?BUNDLE_ROOT\}?\/backend\/server\.cjs["']/u.test(programCommon);
-  if (!hasBundleRelativeBackendEntry) {
+
+  const backendEntry = [...entries].find((entry) => entry.startsWith(`${service.bundleTopLevelDir}/backend/`));
+  if (backendEntry) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Expected ${programCommonPath} to launch $BUNDLE_ROOT/backend/server.cjs instead of an absolute or legacy backend path.\n` +
+        `Unexpected backend runtime file ${backendEntry}; Desktop hosts agent-webclient itself.\n` +
         `Please rebuild the Desktop-ready agent-webclient bundle.`
     );
   }
 
   const forbiddenEntries = [
-    `${service.bundleTopLevelDir}/backend/package.json`,
-    `${service.bundleTopLevelDir}/backend/package-lock.json`,
     `${service.bundleTopLevelDir}/README.txt`
-  ];
-  const forbiddenPrefixes = [
-    `${service.bundleTopLevelDir}/backend/node_modules/`
   ];
   const forbiddenEntry = forbiddenEntries.find((entry) => entries.has(entry));
   if (forbiddenEntry) {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Unexpected legacy runtime file ${forbiddenEntry} in bundled backend.\n` +
+        `Unexpected non-runtime file ${forbiddenEntry} in final bundle.\n` +
         `Please rebuild the Desktop-ready agent-webclient bundle.`
-    );
-  }
-  const forbiddenPrefix = forbiddenPrefixes.find((prefix) => [...entries].some((entry) => entry.startsWith(prefix)));
-  if (forbiddenPrefix) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Unexpected legacy runtime directory ${forbiddenPrefix} in bundled backend.\n` +
-        `Please rebuild the Desktop-ready agent-webclient bundle.`
-    );
-  }
-
-  const serverPath = `${service.bundleTopLevelDir}/${manifest.backend.entry}`;
-  const serverContent = readArchiveEntryText(archivePath, serverPath);
-  if (
-    !serverContent ||
-    serverContent.includes("(secure ? https : http).request") ||
-    serverContent.includes("function buildUpgradeRequest(") ||
-    !serverContent.includes("function createWebSocketProxy(") ||
-    !serverContent.includes("proxy.upgrade(req, socket, head)") ||
-    !serverContent.includes("server.on('upgrade'")
-  ) {
-    throw new Error(
-      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
-        `Detected a stale agent-webclient websocket proxy in bundled backend entry ${manifest.backend.entry}.\n` +
-        `Please rebuild the bundle with the http-proxy-middleware WebSocket upgrade proxy.`
     );
   }
 }

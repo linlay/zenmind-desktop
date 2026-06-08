@@ -125,6 +125,7 @@ export interface AssistantNavChatItem {
   isRead: boolean;
   hasActiveRun: boolean;
   hasPendingAwaiting: boolean;
+  awaitingMode?: AssistantAwaitingMode;
 }
 
 export interface AssistantNavAgentItem {
@@ -140,7 +141,6 @@ export interface AssistantNavAgentItem {
   latestPreview: string;
   updatedAt: string;
   recentChats: AssistantNavChatItem[];
-  rowType?: "agent";
   agentType?: string;
   mode?: string;
   workspaceDir?: string;
@@ -343,7 +343,7 @@ export interface AssistantVoiceTranscriptionResult {
   uncertainTerms?: string[];
 }
 
-export type AssistantAwaitingMode = "approval" | "question" | "form";
+export type AssistantAwaitingMode = "approval" | "question" | "form" | "plan";
 
 export interface AssistantAwaitingQuestion {
   id: string;
@@ -470,8 +470,10 @@ export type AssistantRunEventType =
   | "action.end"
   | "awaiting.confirm"
   | "awaiting.ask"
+  | "awaiting.asking"
   | "awaiting.payload"
   | "awaiting.answer"
+  | "awaiting.answered"
   | "artifact.publish"
   | "plan.create"
   | "plan.update"
@@ -523,8 +525,10 @@ export const ASSISTANT_RUN_EVENT_TYPES = [
   "action.end",
   "awaiting.confirm",
   "awaiting.ask",
+  "awaiting.asking",
   "awaiting.payload",
   "awaiting.answer",
+  "awaiting.answered",
   "artifact.publish",
   "plan.create",
   "plan.update",

@@ -651,3 +651,203 @@ test("services.importEnvZip executes bootstrap process when dialog is confirmed"
   assert.equal(finishedSessionMode, "restore");
   assert.ok(servicesChangedCalled > 0);
 });
+
+test("services.importEnvZip skips env.zip when oldRootDecisionRef is 'keep'", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  let sessionMode = null;
+  let finishedSessionMode = null;
+  let envZipWasCalled = false;
+  let servicesChangedCalled = 0;
+  let runStartupPrepCalled = false;
+
+  registerServicesIpcHandlers(ipc, makeBaseOptions({
+    oldRootDecisionRef: { current: "keep" },
+    showFileDialog: async () => ({ canceled: false, filePaths: ["/path/to/env.zip"] }),
+    app: { getPath: (name) => name === "home" ? "/user/home" : "" },
+    startupRestoreController: {
+      getState: () => ({}),
+      beginSession: (mode) => { sessionMode = mode; },
+      updateService: () => {},
+      finishSession: (mode) => { finishedSessionMode = mode; },
+      failCurrentSession: () => {},
+      setEnvImportRequired: () => {}
+    },
+    importEnvZipToRuntime: async () => {
+      envZipWasCalled = true;
+      return { copiedFiles: 0, skippedFiles: 0 };
+    },
+    loadBuiltinServices: () => {},
+    loadInstalledPlugins: () => {},
+    notifyServicesChanged: () => { servicesChangedCalled++; },
+    runStartupPreparation: async (app, callbacks) => {
+      runStartupPrepCalled = true;
+      callbacks.onModeResolved("restore");
+      return { mode: "restore", failures: [] };
+    }
+  }));
+
+  const result = await handlers["services.importEnvZip"]({});
+  assert.equal(result.ok, true);
+  assert.equal(envZipWasCalled, false, "should not call importEnvZipToRuntime when keeping old data");
+
+  // Wait for the asynchronous runStartupPreparation promise chain to settle
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(runStartupPrepCalled, true, "should still call runStartupPreparation");
+  assert.equal(finishedSessionMode, "restore");
+  assert.ok(servicesChangedCalled > 0);
+});
+
+test("services.importEnvZip migrates old root through injected dialog before importing env.zip", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const oldRootDecisionRef = { current: undefined };
+  let envZipWasCalled = false;
+  let migrateWasCalled = false;
+  let showMessageBoxCalled = false;
+  let receivedBackupPath = "";
+
+  registerServicesIpcHandlers(ipc, makeBaseOptions({
+    oldRootDecisionRef,
+    shouldPromptEnvRootConflict: (input) => {
+      assert.equal(input.platform, "darwin");
+      assert.equal(input.isFirstDesktopInstall, true);
+      assert.equal(input.bundledEnvZipExists, true);
+      assert.equal(input.runtimeRootExistedAtStartup, true);
+      return true;
+    },
+    generateBackupDirName: (rootPath, platform) => {
+      assert.equal(rootPath, "/user/home/.zenmind");
+      assert.equal(platform, "darwin");
+      return "/user/home/.zenmind-1778899005";
+    },
+    migrateOldRootToBackup: (platform, rootPath, backupPath) => {
+      migrateWasCalled = true;
+      receivedBackupPath = backupPath;
+      assert.equal(platform, "darwin");
+      assert.equal(rootPath, "/user/home/.zenmind");
+      return backupPath;
+    },
+    showMessageBox: async () => {
+      showMessageBoxCalled = true;
+      return { response: 0 };
+    },
+    platform: "darwin",
+    isFirstDesktopInstall: true,
+    bundledEnvZipExistsAtStartup: true,
+    runtimeRootExistedAtStartup: true,
+    runtimeRootAtProcessStart: "/user/home/.zenmind",
+    showFileDialog: async () => ({ canceled: false, filePaths: ["/path/to/env.zip"] }),
+    app: { getPath: (name) => name === "home" ? "/user/home" : "" },
+    startupRestoreController: {
+      getState: () => ({}),
+      beginSession: () => {},
+      updateService: () => {},
+      finishSession: () => {},
+      failCurrentSession: () => {},
+      setEnvImportRequired: () => {}
+    },
+    importEnvZipToRuntime: async () => {
+      envZipWasCalled = true;
+      return { copiedFiles: 5, skippedFiles: 2 };
+    },
+    loadBuiltinServices: () => {},
+    loadInstalledPlugins: () => {},
+    notifyServicesChanged: () => {},
+    runStartupPreparation: async (app, callbacks) => {
+      return { mode: "restore", failures: [] };
+    }
+  }));
+
+  const result = await handlers["services.importEnvZip"]({});
+  assert.equal(result.ok, true);
+  assert.equal(showMessageBoxCalled, true);
+  assert.equal(migrateWasCalled, true);
+  assert.equal(receivedBackupPath, "/user/home/.zenmind-1778899005");
+  assert.equal(oldRootDecisionRef.current, "migrate");
+  assert.equal(envZipWasCalled, true);
+});
+
+test("services.importEnvZip keeps old root through injected dialog and skips env.zip", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const oldRootDecisionRef = { current: undefined };
+  let envZipWasCalled = false;
+  let fileDialogWasCalled = false;
+  let runStartupPrepCalled = false;
+
+  registerServicesIpcHandlers(ipc, makeBaseOptions({
+    oldRootDecisionRef,
+    shouldPromptEnvRootConflict: () => true,
+    generateBackupDirName: () => "/user/home/.zenmind-1778899006",
+    migrateOldRootToBackup: () => {
+      assert.fail("migration should not run when user keeps old data");
+    },
+    showMessageBox: async () => ({ response: 1 }),
+    platform: "darwin",
+    isFirstDesktopInstall: true,
+    bundledEnvZipExistsAtStartup: true,
+    runtimeRootExistedAtStartup: true,
+    runtimeRootAtProcessStart: "/user/home/.zenmind",
+    showFileDialog: async () => {
+      fileDialogWasCalled = true;
+      return { canceled: false, filePaths: ["/path/to/env.zip"] };
+    },
+    startupRestoreController: {
+      getState: () => ({}),
+      beginSession: () => {},
+      updateService: () => {},
+      finishSession: () => {},
+      failCurrentSession: () => {},
+      setEnvImportRequired: () => {}
+    },
+    importEnvZipToRuntime: async () => {
+      envZipWasCalled = true;
+      return { copiedFiles: 5, skippedFiles: 2 };
+    },
+    loadBuiltinServices: () => {},
+    loadInstalledPlugins: () => {},
+    notifyServicesChanged: () => {},
+    runStartupPreparation: async () => {
+      runStartupPrepCalled = true;
+      return { mode: "restore", failures: [] };
+    }
+  }));
+
+  const result = await handlers["services.importEnvZip"]({});
+  assert.equal(result.ok, true);
+  assert.equal(oldRootDecisionRef.current, "keep");
+  assert.equal(fileDialogWasCalled, false);
+  assert.equal(envZipWasCalled, false);
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(runStartupPrepCalled, true);
+});
+
+test("services.importEnvZip cancels old root dialog without opening env.zip picker", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const oldRootDecisionRef = { current: undefined };
+  let fileDialogWasCalled = false;
+
+  registerServicesIpcHandlers(ipc, makeBaseOptions({
+    oldRootDecisionRef,
+    shouldPromptEnvRootConflict: () => true,
+    generateBackupDirName: () => "/user/home/.zenmind-1778899007",
+    migrateOldRootToBackup: () => {
+      assert.fail("migration should not run when dialog is canceled");
+    },
+    showMessageBox: async () => ({ response: 2 }),
+    platform: "darwin",
+    isFirstDesktopInstall: true,
+    bundledEnvZipExistsAtStartup: true,
+    runtimeRootExistedAtStartup: true,
+    runtimeRootAtProcessStart: "/user/home/.zenmind",
+    showFileDialog: async () => {
+      fileDialogWasCalled = true;
+      return { canceled: false, filePaths: ["/path/to/env.zip"] };
+    }
+  }));
+
+  const result = await handlers["services.importEnvZip"]({});
+  assert.equal(result.ok, false);
+  assert.match(result.message, /已取消/);
+  assert.equal(oldRootDecisionRef.current, undefined);
+  assert.equal(fileDialogWasCalled, false);
+});

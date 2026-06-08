@@ -19,7 +19,7 @@ export function resolveDesktopCopilotPageKey(pathname: string): DesktopCopilotPa
       return "help";
     case "/agents":
       return "agents";
-    case "/schedules":
+    case "/automations":
       return "schedules";
     case "/memory":
       return "memory";

@@ -5,6 +5,8 @@ import type { App } from "electron";
 import JSZip from "jszip";
 import { APP_BRAND } from "../shared/generated/brand";
 
+export type EnvRootConflictDecision = "migrate" | "keep" | "cancel";
+
 type AppPathReader = Pick<App, "getPath">;
 type AppVersionReader = Partial<Pick<App, "getAppPath" | "getVersion">>;
 type AppPackageReader = Partial<Pick<App, "isPackaged">>;
@@ -47,7 +49,7 @@ function isEnvArchiveWrapperDir(dirName: string) {
 }
 
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
-  return platform === "win32" ? path.win32 : path;
+  return platform === "win32" ? path.win32 : path.posix;
 }
 
 function getHomePath(app: AppPathReader) {
@@ -158,6 +160,15 @@ export function resolveBundledEnvZipPath(
     return path.join(resourcesRoot, BUNDLED_ENV_RESOURCES_DIR_NAME, ENV_ZIP_FILE_NAME);
   }
   return null;
+}
+
+export function bundledEnvZipExists(
+  app: AppPackageReader,
+  platform: NodeJS.Platform = process.platform,
+  resourcesRootOverride?: string
+) {
+  const zipPath = resolveBundledEnvZipPath(app, platform, resourcesRootOverride);
+  return Boolean(zipPath && fileExists(zipPath));
 }
 
 export async function importBundledEnvZipToRuntime(
@@ -523,4 +534,56 @@ export async function importEnvZipToRuntime(
     overwrittenFiles,
     createdDirectories
   };
+}
+
+export function generateBackupDirName(
+  rootPath: string,
+  platform: NodeJS.Platform = process.platform,
+  nowSeconds = Math.floor(Date.now() / 1000)
+): string {
+  const pathApi = pathApiForPlatform(platform);
+  const dirName = pathApi.basename(rootPath);
+  const parentDir = pathApi.dirname(rootPath);
+  let backupName = `${dirName}-${nowSeconds}`;
+  let backupPath = pathApi.join(parentDir, backupName);
+  let counter = 0;
+  while (fs.existsSync(backupPath)) {
+    counter += 1;
+    backupName = `${dirName}-${nowSeconds}-${counter}`;
+    backupPath = pathApi.join(parentDir, backupName);
+  }
+  return backupPath;
+}
+
+export function migrateOldRootToBackup(
+  platform: NodeJS.Platform,
+  rootPath: string,
+  backupPath = generateBackupDirName(rootPath, platform)
+): string {
+  if (fs.existsSync(backupPath)) {
+    throw new Error(`旧环境备份目录已存在：${backupPath}`);
+  }
+  fs.renameSync(rootPath, backupPath);
+  return backupPath;
+}
+
+export function shouldPromptEnvRootConflict(input: {
+  platform: NodeJS.Platform;
+  isFirstDesktopInstall: boolean;
+  bundledEnvZipExists: boolean;
+  runtimeRootExistedAtStartup: boolean;
+}): boolean {
+  if (input.platform !== "darwin" && input.platform !== "win32") {
+    return false;
+  }
+  if (!input.isFirstDesktopInstall) {
+    return false;
+  }
+  if (!input.bundledEnvZipExists) {
+    return false;
+  }
+  if (!input.runtimeRootExistedAtStartup) {
+    return false;
+  }
+  return true;
 }

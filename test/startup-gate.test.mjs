@@ -10,6 +10,7 @@ const {
   isStartupServiceWaiting,
   resolveStartupRootPath,
   shouldAutoOpenAssistant,
+  shouldRedirectStartupFailureToControlCenter,
   shouldShowStartupProgressCard
 } = require("../dist-electron/shared/startup-gate.js");
 
@@ -54,6 +55,7 @@ test("startup gate shows the bootstrap progress card only while bootstrap needs 
   assert.equal(shouldShowStartupProgressCard({ mode: "restore", phase: "running" }, true), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "running" }, false), true);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "failed" }, false), true);
+  assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "failed" }, false, "/settings"), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "succeeded" }, false), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "succeeded" }, true), false);
   assert.equal(shouldShowStartupProgressCard({ mode: "bootstrap", phase: "env-import-required" }, false), false);
@@ -76,6 +78,17 @@ test("startup gate only auto-opens the assistant after bootstrap succeeds", () =
   assert.equal(shouldAutoOpenAssistant({ mode: "bootstrap", phase: "succeeded" }, true, "/market"), false);
 });
 
+test("startup gate does not pull settings back into bootstrap failure handling", () => {
+  const failedBootstrapState = {
+    mode: "bootstrap",
+    phase: "failed"
+  };
+
+  assert.equal(shouldRedirectStartupFailureToControlCenter(failedBootstrapState, "/"), true);
+  assert.equal(shouldRedirectStartupFailureToControlCenter(failedBootstrapState, "/control-center"), true);
+  assert.equal(shouldRedirectStartupFailureToControlCenter(failedBootstrapState, "/settings"), false);
+});
+
 test("startup loading only shows previous-service waiting while app-server is starting", () => {
   const source = fs.readFileSync(
     path.resolve(import.meta.dirname, "../src/renderer/app-shell/startup/StartupGate.tsx"),
@@ -95,9 +108,37 @@ test("startup shell avoids a blank white first frame", () => {
     path.resolve(import.meta.dirname, "../src/renderer/styles/navigation.css"),
     "utf8"
   );
+  const startupGateSource = fs.readFileSync(
+    path.resolve(import.meta.dirname, "../src/renderer/app-shell/startup/StartupGate.tsx"),
+    "utf8"
+  );
   const readyToShowBlock = mainProcessSource.match(/app\.whenReady\(\)\.then\([\s\S]*?app\.on\("activate"/u)?.[0] ?? "";
 
   assert.doesNotMatch(readyToShowBlock, /ready-to-show[\s\S]{0,240}handleStartupPipeline/u);
   assert.match(readyToShowBlock, /void handleStartupPipeline\(\);/u);
-  assert.match(startupStyles, /\.startup-loading-screen\s*\{[\s\S]*?background:\s*#f6f8fc;/u);
+  assert.doesNotMatch(startupGateSource, /PRODUCT_NAME/u);
+  assert.doesNotMatch(startupGateSource, /BrandMark/u);
+  assert.doesNotMatch(startupGateSource, /startup-loading-brand-layer/u);
+  assert.match(startupStyles, /\.startup-loading-screen\s*\{[\s\S]*?background:\s*rgba\(246,\s*248,\s*252,\s*0\.72\);/u);
+  assert.match(startupStyles, /\.startup-loading-screen::before\s*\{[\s\S]*?linear-gradient\(0\.25turn/u);
+  assert.match(startupStyles, /\.startup-loading-screen::before\s*\{[\s\S]*?animation:\s*startup-loading-background-shimmer/u);
+  assert.match(startupStyles, /@keyframes startup-loading-background-shimmer/u);
+  assert.match(startupStyles, /prefers-reduced-motion:\s*reduce/u);
+  assert.doesNotMatch(startupStyles, /@keyframes startup-loading-skeleton/u);
+  assert.doesNotMatch(startupStyles, /@keyframes startup-loading-brand-breathe/u);
+  assert.doesNotMatch(startupStyles, /startup-loading-brand-layer/u);
+  assert.doesNotMatch(startupStyles, /startup-loading-brand-mark/u);
+});
+
+test("startup pipeline imports bundled env.zip after old root migration", () => {
+  const mainProcessSource = fs.readFileSync(
+    path.resolve(import.meta.dirname, "../src/main/index.ts"),
+    "utf8"
+  );
+  const importDecisionBlock = mainProcessSource.match(
+    /const shouldImportBundledEnvZip =[\s\S]*?if \(shouldImportBundledEnvZip\)/u
+  )?.[0] ?? "";
+
+  assert.match(importDecisionBlock, /oldRootDecisionRef\.current === "migrate"/u);
+  assert.match(importDecisionBlock, /requireEnvZipImportAtStartup/u);
 });

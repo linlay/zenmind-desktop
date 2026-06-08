@@ -751,7 +751,11 @@ export class DesktopPetPreviewProjector {
       return undefined;
     }
 
-    if (event.type === "awaiting.ask" || event.type === "awaiting.confirm") {
+    if (
+      event.type === "awaiting.ask" ||
+      event.type === "awaiting.asking" ||
+      event.type === "awaiting.confirm"
+    ) {
       const preview = buildAwaitingPreview(event);
       this.panel.status = "waiting";
       this.panel.title = "等待你确认";
@@ -767,7 +771,7 @@ export class DesktopPetPreviewProjector {
       return undefined;
     }
 
-    if (event.type === "awaiting.answer") {
+    if (event.type === "awaiting.answer" || event.type === "awaiting.answered") {
       const title = buildAwaitingAnswerTitle(event);
       const status: DesktopPetPreviewItemStatus = title.includes("失败") || title.includes("超时") ? "error" : title.includes("取消") || title.includes("拒绝") ? "cancelled" : "success";
       this.panel.status = "running";

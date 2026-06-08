@@ -42,8 +42,8 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
   },
   {
     key: "schedules",
-    routePath: "/schedules",
-    embedPath: "/schedules",
+    routePath: "/automations",
+    embedPath: "/automations",
     labelKey: "nav.schedules",
     kind: "management",
     mode: "native"

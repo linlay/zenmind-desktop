@@ -22,6 +22,7 @@ import type {
 import type { ServiceDefinition } from "../../manifest-utils";
 import { getAllServices, getService } from "../service-registry";
 import { ensureAppServerJwk } from "../../app-server-auth";
+import { issueAgentAccessToken } from "../../agent-auth";
 import { readEnvFile, parseEnvFileContent } from "../../env-file";
 import { extractArchiveToDir } from "../../archive-utils";
 import {
@@ -188,6 +189,12 @@ import {
   reconcileBuiltinSiblingInstallDirs,
   stopBuiltinInstallDir
 } from "./builtin-install";
+import {
+  getAgentWebclientHostState,
+  isHostManagedAgentWebclientService,
+  startAgentWebclientHost,
+  stopAgentWebclientHost
+} from "../agent-webclient-host";
 
 export { getInstallDir } from "./layout";
 export { fixShellScriptPermissions } from "./program-layout";
@@ -336,6 +343,10 @@ const CORE_SERVICE_IDS = new Set<ServiceId>([
 ]);
 const MAX_TCP_PORT = 65535;
 const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL"] as const;
+
+function isHostManagedService(service: ServiceDefinition) {
+  return isHostManagedAgentWebclientService(service);
+}
 
 function collectPrerequisites(
   service: ServiceDefinition,
@@ -771,22 +782,35 @@ export async function getServiceState(
         cacheContainerEngineProbe: options.cacheContainerEngineProbe
       })
       : [];
-  let pid = pidFromFile;
-  let running = installed && missingRuntimeFiles.length === 0 && isProcessRunning(pid);
+  const hostManaged = isHostManagedService(service);
+  const hostState = hostManaged ? getAgentWebclientHostState(service.id) : null;
+  const hostRunning = Boolean(
+    hostManaged &&
+    hostState?.running &&
+    hostState.port === port
+  );
+  let pid = hostRunning ? process.pid : pidFromFile;
+  let running = hostManaged
+    ? installed && missingRuntimeFiles.length === 0 && hostRunning
+    : installed && missingRuntimeFiles.length === 0 && isProcessRunning(pid);
   let conflictingPortPid: number | null = null;
 
-  if (running && pidFromFile) {
+  if (!hostManaged && running && pidFromFile) {
     writeManagedPidFiles(pidFilePaths, pidFromFile);
   }
 
   if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !running && port > 0 && !responsiveRead) {
-    const detectedPid = detectManagedServicePid(installDir, port);
-    if (detectedPid) {
-      pid = detectedPid;
-      running = true;
-      writeManagedPidFiles(pidFilePaths, detectedPid);
+    if (hostManaged) {
+      conflictingPortPid = listListeningPids(port).find((candidatePid) => candidatePid !== process.pid) ?? null;
     } else {
-      conflictingPortPid = listListeningPids(port).find((candidatePid) => candidatePid !== pidFromFile) ?? null;
+      const detectedPid = detectManagedServicePid(installDir, port);
+      if (detectedPid) {
+        pid = detectedPid;
+        running = true;
+        writeManagedPidFiles(pidFilePaths, detectedPid);
+      } else {
+        conflictingPortPid = listListeningPids(port).find((candidatePid) => candidatePid !== pidFromFile) ?? null;
+      }
     }
   }
 
@@ -894,13 +918,19 @@ function buildVerificationResult(
     options.skipManagedPortProbe === true &&
     desired === "running" &&
     service.id !== "agent-container-hub";
-  const listeningPids = port > 0 && !skipManagedPortProbe ? listListeningPids(port) : [];
-  const managedPortPid = skipManagedPortProbe
+  const hostManagedState = isHostManagedService(service) ? getAgentWebclientHostState(service.id) : null;
+  const hostManagedPortPid = hostManagedState?.running && hostManagedState.port === port
+    ? process.pid
+    : null;
+  const listeningPids = port > 0 && !skipManagedPortProbe && !hostManagedPortPid ? listListeningPids(port) : [];
+  const managedPortPid = hostManagedPortPid ?? (skipManagedPortProbe
     ? null
     : listeningPids.find((candidatePid) => (
       installDir ? pidMatchesInstallDir(candidatePid, installDir) : true
-    )) ?? null;
-  const portListening = skipManagedPortProbe
+    )) ?? null);
+  const portListening = hostManagedPortPid
+    ? true
+    : skipManagedPortProbe
     ? state.status === "running"
     : port > 0 ? Boolean(managedPortPid) : desired === "running";
   const httpProbe = probes.find((probe) => probe.target === state.healthMeta.webUrl);
@@ -1597,7 +1627,6 @@ function yieldStartupScheduler() {
 }
 
 const NODE_BIN_START_ENV_SERVICE_IDS = new Set<ServiceId>([
-  "agent-webclient",
   LOCAL_CLI_ACP_RELAY_PLUGIN_ID
 ]);
 
@@ -1810,16 +1839,34 @@ async function startServiceInternal(
         service: preStartState
       };
     } else {
-      result = await runServiceCommand(
-        app,
-        service,
-        getDesktopStartCommand(service),
-        `${service.name} 已启动。`,
-        {
-          ...getDesktopStartCommandOptions(app, service),
-          stateReadOptions: options.commandStateReadOptions ?? options.stateReadOptions
-        }
-      );
+      if (isHostManagedService(service)) {
+        const layout = getServiceLayout(app, service);
+        const env = readEnvFile(layout.envPath);
+        const port = parsePort(service, env);
+        await startAgentWebclientHost({
+          service,
+          layout,
+          env,
+          port,
+          issueAccessToken: (reason) => issueAgentAccessToken(app, reason)
+        });
+        result = {
+          ok: true,
+          message: `${service.name} 已启动。`,
+          service: await getServiceState(app, service.id, options.commandStateReadOptions ?? options.stateReadOptions)
+        };
+      } else {
+        result = await runServiceCommand(
+          app,
+          service,
+          getDesktopStartCommand(service),
+          `${service.name} 已启动。`,
+          {
+            ...getDesktopStartCommandOptions(app, service),
+            stateReadOptions: options.commandStateReadOptions ?? options.stateReadOptions
+          }
+        );
+      }
       startedThisSession.add(serviceId);
     }
   }
@@ -1855,6 +1902,17 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
       message: `${service.name} 当前未运行。`,
       service: current
     };
+  }
+
+  if (isHostManagedService(service)) {
+    await stopAgentWebclientHost(service.id);
+    startedThisSession.delete(serviceId);
+    const result = {
+      ok: true,
+      message: `${service.name} 已停止。`,
+      service: await getServiceState(app, serviceId)
+    } satisfies ServiceCommandResult;
+    return attachServiceVerification(app, serviceId, result, "stopped", `${service.name} 停止命令已执行`);
   }
 
   const result = await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`, {
@@ -2231,10 +2289,14 @@ async function stopServiceForShutdown(
   const startedAt = Date.now();
 
   try {
-    await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`, {
-      refreshBuiltinAsset: false,
-      timeoutMs
-    });
+    if (isHostManagedService(service)) {
+      await stopAgentWebclientHost(service.id);
+    } else {
+      await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`, {
+        refreshBuiltinAsset: false,
+        timeoutMs
+      });
+    }
     startedThisSession.delete(service.id);
     const elapsedMs = Date.now() - startedAt;
     console.log(`[service-manager] shutdown stop succeeded for ${service.id} in ${elapsedMs}ms`);
@@ -2951,6 +3013,7 @@ export const __testInternals = {
   containerEngineAvailable,
   probeContainerEngines,
   fixShellScriptPermissions,
+  patchProgramCommonForLayeredLayout,
   listMissingRuntimeFiles,
   isInstallHealthy,
   listMissingBundleEntries,

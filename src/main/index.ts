@@ -174,12 +174,18 @@ import {
   getElectronUserDataRoot
 } from "./user-paths";
 import {
+  bundledEnvZipExists,
+  generateBackupDirName,
   importBundledEnvZipToRuntime,
   importEnvZipToRuntime,
+  migrateOldRootToBackup,
   resolveRuntimeRoot,
   runtimeEnvExists,
   runtimeEnvNeedsBundledSeedRefresh,
-  shouldRequireEnvZipImport
+  runtimeRootExists,
+  shouldPromptEnvRootConflict,
+  shouldRequireEnvZipImport,
+  type EnvRootConflictDecision
 } from "./env-bootstrap";
 import { DESKTOP_PET_ROUTE } from "../shared/desktop-pet";
 import { safeConsoleError } from "./safe-console";
@@ -376,39 +382,54 @@ function getServiceWebviewPreloadUrl() {
 
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName(PRODUCT_NAME);
+applyPlatformAppInit(mainProcessContext.platform, app, APP_ID);
 const isFirstDesktopInstall = !desktopDataRootExists(app);
-const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
-if (isFirstDesktopInstall) {
-  setMainLocale(app, initialLocaleSettings.locale);
-}
 const runtimeRootAtProcessStart = resolveRuntimeRoot(app, mainProcessContext.platform);
+const runtimeRootExistedAtStartup = runtimeRootExists(app, mainProcessContext.platform);
+const runtimeEnvExistedAtStartup = runtimeEnvExists(app, mainProcessContext.platform);
+const bundledEnvZipExistsAtStartup = bundledEnvZipExists(app, mainProcessContext.platform);
 const requireEnvZipImportAtStartup = shouldRequireEnvZipImport({
   platform: mainProcessContext.platform,
-  runtimeEnvExistedAtStartup: runtimeEnvExists(app, mainProcessContext.platform)
+  runtimeEnvExistedAtStartup
 });
+const envZipConflictNeedsDecision = shouldPromptEnvRootConflict({
+  platform: mainProcessContext.platform,
+  isFirstDesktopInstall,
+  bundledEnvZipExists: bundledEnvZipExistsAtStartup,
+  runtimeRootExistedAtStartup
+});
+const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
 const refreshBundledEnvSeedFilesAtStartup = runtimeEnvNeedsBundledSeedRefresh(
   app,
   mainProcessContext.platform
 );
-const electronUserDataRoot = getElectronUserDataRoot(app);
-fs.mkdirSync(electronUserDataRoot, { recursive: true });
-app.setPath("userData", electronUserDataRoot);
-applyPlatformAppInit(mainProcessContext.platform, app, APP_ID);
 
-appState.desktopPetSettings = readDesktopPetStoredState(app, mainProcessContext.platform, { isFirstInstall: isFirstDesktopInstall });
-if (isFirstDesktopInstall) {
-  appState.desktopPetSettings = saveDesktopPetSettings(app, appState.desktopPetSettings, mainProcessContext.platform);
+function initializeUserDataRootsAndSettings() {
+  const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
+  if (isFirstDesktopInstall) {
+    setMainLocale(app, initialLocaleSettings.locale);
+  }
+
+  const electronUserDataRoot = getElectronUserDataRoot(app);
+  fs.mkdirSync(electronUserDataRoot, { recursive: true });
+  app.setPath("userData", electronUserDataRoot);
+
+  appState.desktopPetSettings = readDesktopPetStoredState(app, mainProcessContext.platform, { isFirstInstall: isFirstDesktopInstall });
+  if (isFirstDesktopInstall) {
+    appState.desktopPetSettings = saveDesktopPetSettings(app, appState.desktopPetSettings, mainProcessContext.platform);
+  }
+  appState.desktopPetLocalStatus = createDefaultDesktopPetLocalStatus(appState.desktopPetSettings);
+  appState.desktopPetAgentStatus = null;
+  appState.desktopPetAgentOptions = [];
+  appState.desktopPetState = createDesktopPetState(appState.desktopPetSettings, {
+    supported: isDesktopPetSupportedPlatform(mainProcessContext.platform),
+    visible: false,
+    localStatus: appState.desktopPetLocalStatus,
+    agentStatus: appState.desktopPetAgentStatus,
+    agentOptions: appState.desktopPetAgentOptions
+  });
 }
-appState.desktopPetLocalStatus = createDefaultDesktopPetLocalStatus(appState.desktopPetSettings);
-appState.desktopPetAgentStatus = null;
-appState.desktopPetAgentOptions = [];
-appState.desktopPetState = createDesktopPetState(appState.desktopPetSettings, {
-  supported: isDesktopPetSupportedPlatform(mainProcessContext.platform),
-  visible: false,
-  localStatus: appState.desktopPetLocalStatus,
-  agentStatus: appState.desktopPetAgentStatus,
-  agentOptions: appState.desktopPetAgentOptions
-});
+
 const desktopPetPreviewProjector = new DesktopPetPreviewProjector();
 const desktopPetDonePreviewDismissalTracker = createDesktopPetDonePreviewDismissalTracker();
 const desktopPetActiveRunTracker = createDesktopPetActiveRunTracker();
@@ -1501,6 +1522,13 @@ async function showSaveDialog(
   return nativeDialogController.showSaveDialog(options, ownerWindow);
 }
 
+async function showMessageBox(
+  options: Parameters<NativeDialogVisibilityController["showMessageBox"]>[0],
+  ownerWindow: BrowserWindow | null = appState.mainWindow
+) {
+  return nativeDialogController.showMessageBox(options, ownerWindow);
+}
+
 function emitAssistantAttachmentProgress(progress: AssistantAttachmentTaskProgress) {
   for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
     if (!targetWindow || targetWindow.isDestroyed()) {
@@ -1534,70 +1562,54 @@ function emitLocaleChanged(settings: ReturnType<typeof setMainLocale>) {
   }
 }
 
-async function ensureFirstInstallEnvZipImported() {
-  if (!requireEnvZipImportAtStartup) {
+async function handleStartupEnvRootConflict() {
+  if (!envZipConflictNeedsDecision) {
     return true;
   }
 
-  while (true) {
-    const choice = await nativeDialogController.showMessageBox({
-      type: "warning",
-      title: "首次安装需要导入 env.zip",
-      message: "检测到 ~/.zenmind 环境未初始化，请先导入 env.zip。",
-      detail: `Target directory: ${runtimeRootAtProcessStart}\nImport only fills missing files and does not overwrite existing content.`,
-      buttons: ["选择 env.zip", `退出 ${PRODUCT_NAME}`],
+  const backupPath = generateBackupDirName(runtimeRootAtProcessStart, mainProcessContext.platform);
+  const choice = await nativeDialogController.showMessageBox({
+    type: "warning",
+    title: "检测到旧环境目录",
+    message: `目录 ${runtimeRootAtProcessStart} 已存在，是否迁移旧数据？`,
+    detail: `迁移后旧目录将重命名为 ${backupPath}，然后导入全新环境。\n选择“使用旧数据”将跳过环境导入，直接使用现有目录。`,
+    buttons: ["迁移旧数据并初始化", "使用旧数据", `退出 ${PRODUCT_NAME}`],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true
+  });
+
+  if (choice.response === 1) {
+    oldRootDecisionRef.current = "keep";
+    return true;
+  }
+  if (choice.response !== 0) {
+    oldRootDecisionRef.current = "cancel";
+    return false;
+  }
+
+  try {
+    migrateOldRootToBackup(mainProcessContext.platform, runtimeRootAtProcessStart, backupPath);
+    oldRootDecisionRef.current = "migrate";
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const retryChoice = await nativeDialogController.showMessageBox({
+      type: "error",
+      title: "旧环境迁移失败",
+      message,
+      detail: `旧目录：${runtimeRootAtProcessStart}\n目标备份：${backupPath}`,
+      buttons: [`退出 ${PRODUCT_NAME}`, "使用旧数据"],
       defaultId: 0,
-      cancelId: 1,
+      cancelId: 0,
       noLink: true
     });
-
-    if (choice.response !== 0) {
-      return false;
-    }
-
-    const result = await showFileDialog({
-      title: "选择 env.zip",
-      properties: ["openFile"],
-      filters: [{ name: "env.zip", extensions: ["zip"] }]
-    }, null);
-
-    if (result.canceled || result.filePaths.length === 0) {
-      const retryChoice = await nativeDialogController.showMessageBox({
-        type: "warning",
-        title: "未导入 env.zip",
-        message: "首次安装必须导入 env.zip 后才能继续。",
-        buttons: ["重新选择", `退出 ${PRODUCT_NAME}`],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true
-      });
-      if (retryChoice.response === 0) {
-        continue;
-      }
-      return false;
-    }
-
-    try {
-      const importResult = await importEnvZipToRuntime(app, result.filePaths[0], mainProcessContext.platform);
-      console.info(
-        `[main] imported env.zip into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
-      );
+    if (retryChoice.response === 1) {
+      oldRootDecisionRef.current = "keep";
       return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const retryChoice = await nativeDialogController.showMessageBox({
-        type: "error",
-        title: "env.zip 导入失败",
-        message,
-        buttons: ["重新选择", `退出 ${PRODUCT_NAME}`],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true
-      });
-      if (retryChoice.response !== 0) {
-        return false;
-      }
     }
+    oldRootDecisionRef.current = "cancel";
+    return false;
   }
 }
 
@@ -1823,6 +1835,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     runServiceMutation,
     handleServiceStart,
     showFileDialog,
+    showMessageBox,
     showArchiveDialog,
     openLogViewerWindow,
     closeLogViewerWindow,
@@ -1838,7 +1851,15 @@ function registerIpcHandlers(context: MainProcessContext) {
     loadBuiltinServices,
     loadInstalledPlugins,
     notifyServicesChanged,
-    runStartupPreparation
+    runStartupPreparation,
+    oldRootDecisionRef,
+    generateBackupDirName,
+    migrateOldRootToBackup,
+    shouldPromptEnvRootConflict,
+    isFirstDesktopInstall,
+    bundledEnvZipExistsAtStartup,
+    runtimeRootExistedAtStartup,
+    runtimeRootAtProcessStart
   }));
 
   registerMarketplaceIpcHandlers(ipcMain, createMarketplaceIpcHandlerOptions(context, {
@@ -1949,8 +1970,16 @@ if (gotSingleInstanceLock) {
     showMainWindow();
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     ensureDarwinDockIdentity();
+
+    const canContinueStartup = await handleStartupEnvRootConflict();
+    if (!canContinueStartup) {
+      app.exit(0);
+      return;
+    }
+
+    initializeUserDataRootsAndSettings();
     ensureDataRoot(app);
     registerIpcHandlers(mainProcessContext);
     configureAppMediaPermissions();
@@ -1978,14 +2007,17 @@ if (gotSingleInstanceLock) {
 
 async function handleStartupPipeline() {
   try {
-    if (requireEnvZipImportAtStartup) {
+    const shouldImportBundledEnvZip =
+      oldRootDecisionRef.current === "migrate" ||
+      (requireEnvZipImportAtStartup && oldRootDecisionRef.current !== "keep");
+    if (shouldImportBundledEnvZip) {
       const bundledEnvImport = await tryImportBundledEnvZipAtStartup();
       if (!bundledEnvImport.ok) {
         startupRestoreController.setEnvImportRequired(bundledEnvImport.message);
         notifyServicesChanged();
         return;
       }
-    } else if (refreshBundledEnvSeedFilesAtStartup) {
+    } else if (oldRootDecisionRef.current !== "keep" && refreshBundledEnvSeedFilesAtStartup) {
       await tryImportBundledEnvSeedFilesAtStartup();
     }
     loadBuiltinServices(app);

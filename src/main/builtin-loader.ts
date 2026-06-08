@@ -198,7 +198,7 @@ export function loadBuiltinServices(app: App) {
       const assetFileName = path.basename(archivePath);
       const indexedAsset = assetIndex.get(assetFileName);
       const installed = indexedAsset ? registeredByServiceId.get(indexedAsset.id) : undefined;
-      if (indexedAsset && installed && installed.version.localeCompare(indexedAsset.version) >= 0) {
+      if (indexedAsset && installed && installed.version.localeCompare(indexedAsset.version) > 0) {
         continue;
       }
 

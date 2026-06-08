@@ -175,7 +175,7 @@ test("assistant navigation snapshot ignores finished awaiting payloads", () => {
           chatName: "已结束等待项",
           updatedAt: 1000,
           awaiting: {
-            type: "awaiting.answer",
+            type: "awaiting.answered",
             status: "error",
             awaitingId: "await-1"
           }
@@ -200,7 +200,7 @@ test("assistant navigation snapshot ignores empty approval awaitings", () => {
           chatName: "空审批",
           updatedAt: 1000,
           awaiting: {
-            type: "awaiting.ask",
+            type: "awaiting.asking",
             mode: "approval",
             runId: "run-1",
             awaitingId: "await-1"
@@ -212,6 +212,33 @@ test("assistant navigation snapshot ignores empty approval awaitings", () => {
 
   assert.equal(items[0].hasPendingAwaiting, false);
   assert.equal(items[0].recentChats[0].hasPendingAwaiting, false);
+});
+
+test("assistant navigation snapshot preserves pending awaiting modes", () => {
+  const items = buildAssistantNavigationAgentsFromPlatformAgents([
+    {
+      key: "zenmi",
+      name: "小宅",
+      stats: { totalCount: 1, unreadCount: 0 },
+      chats: [
+        {
+          chatId: "chat-form",
+          chatName: "业务表单",
+          updatedAt: 1000,
+          awaiting: {
+            type: "awaiting.asking",
+            mode: "form",
+            runId: "run-1",
+            awaitingId: "await-1"
+          }
+        }
+      ]
+    }
+  ]);
+
+  assert.equal(items[0].hasPendingAwaiting, true);
+  assert.equal(items[0].recentChats[0].hasPendingAwaiting, true);
+  assert.equal(items[0].recentChats[0].awaitingMode, "form");
 });
 
 test("assistant navigation snapshot reads compatible agent chat fields", () => {
@@ -308,7 +335,6 @@ test("assistant navigation snapshot resolves and validates workspace directories
       {
         key: "runtime-config",
         name: "Runtime Config",
-        type: "agent",
         mode: "CODER",
         runtimeConfig: { workspaceRoot },
         stats: { totalCount: 0, unreadCount: 0 }
@@ -330,7 +356,6 @@ test("assistant navigation snapshot resolves and validates workspace directories
     const byKey = new Map(items.map((item) => [item.agentKey, item]));
     assert.equal(byKey.get("runtime-config")?.workspaceDir, workspaceRoot);
     assert.equal(byKey.get("runtime-config")?.workspaceDirExists, true);
-    assert.equal(byKey.get("runtime-config")?.rowType, "agent");
     assert.equal(byKey.get("runtime-config")?.agentType, "coder");
     assert.equal(byKey.get("chat-agent")?.workspaceDir, "@chat");
     assert.equal(byKey.get("chat-agent")?.workspaceDirExists, false);
@@ -415,17 +440,54 @@ test("assistant navigation push reducer handles awaiting, run lifecycle and arch
   assert.equal(started.items[0].recentChats[0].hasActiveRun, true);
   assert.equal(started.items[0].recentChats[0].hasPendingAwaiting, false);
 
-  const awaiting = applyAssistantNavigationPush(started.items, {
+  const legacyAsk = applyAssistantNavigationPush(started.items, {
     frame: "push",
     type: "awaiting.ask",
     chatId: "chat-1",
     agentKey: "codeAssistant",
+    timestamp: 2500
+  });
+  assert.equal(legacyAsk.changed, false);
+  assert.equal(legacyAsk.shouldRefresh, true);
+  assert.equal(legacyAsk.items[0].hasPendingAwaiting, false);
+  assert.equal(legacyAsk.items[0].recentChats[0].hasPendingAwaiting, false);
+
+  const awaiting = applyAssistantNavigationPush(started.items, {
+    frame: "push",
+    type: "awaiting.asking",
+    chatId: "chat-1",
+    agentKey: "codeAssistant",
+    mode: "question",
     timestamp: 3000
   });
   assert.equal(awaiting.items[0].hasPendingAwaiting, true);
   assert.equal(awaiting.items[0].recentChats[0].hasPendingAwaiting, true);
+  assert.equal(awaiting.items[0].recentChats[0].awaitingMode, "question");
 
-  const finished = applyAssistantNavigationPush(awaiting.items, {
+  const legacyAnswer = applyAssistantNavigationPush(awaiting.items, {
+    frame: "push",
+    type: "awaiting.answer",
+    chatId: "chat-1",
+    agentKey: "codeAssistant",
+    timestamp: 3250
+  });
+  assert.equal(legacyAnswer.changed, false);
+  assert.equal(legacyAnswer.shouldRefresh, true);
+  assert.equal(legacyAnswer.items[0].hasPendingAwaiting, true);
+  assert.equal(legacyAnswer.items[0].recentChats[0].hasPendingAwaiting, true);
+
+  const answered = applyAssistantNavigationPush(awaiting.items, {
+    frame: "push",
+    type: "awaiting.answered",
+    chatId: "chat-1",
+    agentKey: "codeAssistant",
+    timestamp: 3500
+  });
+  assert.equal(answered.items[0].hasPendingAwaiting, false);
+  assert.equal(answered.items[0].recentChats[0].hasPendingAwaiting, false);
+  assert.equal(answered.items[0].recentChats[0].awaitingMode, undefined);
+
+  const finished = applyAssistantNavigationPush(answered.items, {
     frame: "push",
     type: "run.finished",
     chatId: "chat-1",

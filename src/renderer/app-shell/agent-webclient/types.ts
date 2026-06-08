@@ -41,7 +41,6 @@ export interface AgentSource {
 export interface AgentDetailResponse {
   key: string;
   name: string;
-  type?: "agent" | "coder";
   workspaceDir?: string;
   workspaceName?: string;
   icon?: AssistantNavAgentIcon | unknown;

@@ -20,6 +20,7 @@ function makeBaseOptions(overrides = {}) {
     app: { name: "test-app" },
     desktopSsoController: {
       broadcastStatus: () => {},
+      returnToApp: () => {},
       syncBrowserCookies: async () => {},
       exchangeBrowserCookieAccessToken: async () => "",
       exchangeWebSession: async () => false,
@@ -141,6 +142,34 @@ test("sso.startLogin opens Google flows in the system browser", async () => {
       label: "Google 登录"
     }]
   ]);
+});
+
+test("sso.startLogin passes return-to-app requests to the desktop SSO controller", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const calls = [];
+
+  registerSsoIpcHandlers(ipc, makeBaseOptions({
+    desktopSsoController: {
+      broadcastStatus: () => {},
+      returnToApp: () => { calls.push("return"); },
+      syncBrowserCookies: async () => {},
+      exchangeBrowserCookieAccessToken: async () => "",
+      exchangeWebSession: async () => false,
+      clearBrowserCookies: async () => {},
+      clearWebSessionCookies: async () => {},
+      openBrowserUrl: async () => ({ ok: true }),
+      openSystemBrowserUrl: async () => ({ ok: true })
+    },
+    startDesktopSsoLogin: async (_app, options) => {
+      options.onReturnToAppRequested();
+      return { ok: true };
+    }
+  }));
+
+  const result = await handlers["sso.startLogin"]({});
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, ["return"]);
 });
 
 test("sso.startLogin fails the flow when system browser opening fails", async () => {

@@ -105,7 +105,8 @@ function patchAgentPlatformRuntimeNames(programDir: string) {
     const original = content;
     content = content
       .replace(/LOG_FILE="\$LOG_DIR\/\$APP_NAME\.log"/gu, 'LOG_FILE="$LOG_DIR/agent-platform.log"')
-      .replace(/PID_FILE="\$RUN_DIR\/\$APP_NAME\.pid"/gu, 'PID_FILE="$RUN_DIR/agent-platform.pid"');
+      .replace(/PID_FILE="\$RUN_DIR\/\$APP_NAME\.pid"/gu, 'PID_FILE="$RUN_DIR/agent-platform.pid"')
+      .replace(/(\n\s*else\n\s*)return(\n\s*fi\n\n\s*timeout_ms=)/u, "$1return 0$2");
     if (!content.includes('mkdir -p "$(dirname "$PID_FILE")"')) {
       content = content.replace(
         /program_clear_stale_pid_file "\$PID_FILE" "\$APP_NAME"/gu,
@@ -159,6 +160,98 @@ function patchAgentPlatformRuntimeNames(programDir: string) {
   }
 }
 
+function replaceScriptLines(content: string, searchLines: string[], replacementLines: string[]) {
+  const lfSearch = searchLines.join("\n");
+  if (content.includes(lfSearch)) {
+    return content.replace(lfSearch, replacementLines.join("\n"));
+  }
+
+  const crlfSearch = searchLines.join("\r\n");
+  return content.replace(crlfSearch, replacementLines.join("\r\n"));
+}
+
+function patchAgentPlatformDeployDiagnostics(programDir: string) {
+  const shellPath = path.join(programDir, "deploy.sh");
+  if (fs.existsSync(shellPath)) {
+    let content = fs.readFileSync(shellPath, "utf8");
+    const original = content;
+    content = replaceScriptLines(
+      content,
+      [
+        'cd "$SCRIPT_DIR"',
+        "program_validate_bundle",
+        "program_initialize_config",
+        "program_load_env",
+        "program_prepare_runtime_dirs",
+        "",
+        'echo "[program-deploy] bundle validated"',
+        'echo "[program-deploy] backend binary: $BACKEND_BIN"',
+        'echo "[program-deploy] runtime directories prepared under $RUNTIME_ROOT and $RUN_DIR"'
+      ],
+      [
+        'cd "$SCRIPT_DIR"',
+        'echo "[program-deploy] validating bundle"',
+        "program_validate_bundle",
+        'echo "[program-deploy] bundle validated"',
+        'echo "[program-deploy] backend binary: $BACKEND_BIN"',
+        'echo "[program-deploy] initializing config under $CONFIG_DIR"',
+        "program_initialize_config",
+        'echo "[program-deploy] config initialized: $CONFIG_DIR"',
+        'echo "[program-deploy] loading env: $ENV_FILE"',
+        "program_load_env",
+        'echo "[program-deploy] env loaded"',
+        'echo "[program-deploy] preparing runtime dirs under $RUNTIME_ROOT and $RUN_DIR"',
+        "program_prepare_runtime_dirs",
+        'echo "[program-deploy] runtime directories prepared under $RUNTIME_ROOT and $RUN_DIR"',
+        'echo "[program-deploy] deploy complete"'
+      ]
+    );
+    if (content !== original) {
+      fs.writeFileSync(shellPath, content, "utf8");
+    }
+  }
+
+  const powerShellPath = path.join(programDir, "deploy.ps1");
+  if (fs.existsSync(powerShellPath)) {
+    let content = fs.readFileSync(powerShellPath, "utf8");
+    const original = content;
+    content = replaceScriptLines(
+      content,
+      [
+        "Set-Location $ScriptDir",
+        "Test-ProgramBundle",
+        "Initialize-ProgramConfig",
+        "Import-ProgramEnv",
+        "Initialize-ProgramRuntime",
+        "",
+        "Write-Host '[program-deploy] bundle validated'",
+        'Write-Host ("[program-deploy] backend binary: {0}" -f $Script:BackendBin)',
+        'Write-Host ("[program-deploy] runtime directories prepared under {0} and {1}" -f $Script:RuntimeRoot, $Script:RunDir)'
+      ],
+      [
+        "Set-Location $ScriptDir",
+        "Write-Host '[program-deploy] validating bundle'",
+        "Test-ProgramBundle",
+        "Write-Host '[program-deploy] bundle validated'",
+        'Write-Host ("[program-deploy] backend binary: {0}" -f $Script:BackendBin)',
+        'Write-Host ("[program-deploy] initializing config under {0}" -f $Script:ConfigDir)',
+        "Initialize-ProgramConfig",
+        'Write-Host ("[program-deploy] config initialized: {0}" -f $Script:ConfigDir)',
+        'Write-Host ("[program-deploy] loading env: {0}" -f $Script:EnvFile)',
+        "Import-ProgramEnv",
+        "Write-Host '[program-deploy] env loaded'",
+        'Write-Host ("[program-deploy] preparing runtime dirs under {0} and {1}" -f $Script:RuntimeRoot, $Script:RunDir)',
+        "Initialize-ProgramRuntime",
+        'Write-Host ("[program-deploy] runtime directories prepared under {0} and {1}" -f $Script:RuntimeRoot, $Script:RunDir)',
+        "Write-Host '[program-deploy] deploy complete'"
+      ]
+    );
+    if (content !== original) {
+      fs.writeFileSync(powerShellPath, content, "utf8");
+    }
+  }
+}
+
 export function patchProgramCommonForLayeredLayout(programDir: string) {
   patchShellProgramCommonForLayeredLayout(programDir);
   patchPowerShellProgramCommonForLayeredLayout(programDir);
@@ -170,6 +263,7 @@ export function patchProgramCommonForLayeredLayout(programDir: string) {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as { id?: string };
     if (manifest.id === "agent-platform") {
       patchAgentPlatformRuntimeNames(programDir);
+      patchAgentPlatformDeployDiagnostics(programDir);
     }
   } catch {
     // Invalid manifests are reported by the install health checks.

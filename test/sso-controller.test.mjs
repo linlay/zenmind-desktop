@@ -158,6 +158,72 @@ test("desktop SSO controller opens URLs with the system browser", async () => {
   assert.deepEqual(openedUrls, ["https://accounts.google.com/o/oauth2/v2/auth?client_id=desktop"]);
 });
 
+test("desktop SSO controller returnToApp focuses the main window on macOS", () => {
+  const calls = [];
+  const mainWindow = {
+    isDestroyed: () => false,
+    isMinimized: () => true,
+    restore: () => calls.push("restore"),
+    show: () => calls.push("show"),
+    focus: () => calls.push("window-focus")
+  };
+  const controller = createDesktopSsoController({
+    app: {
+      ...createTestApp("/tmp/zenmind-sso-return-darwin"),
+      focus: (options) => calls.push(["app-focus", options])
+    },
+    platform: "darwin",
+    session: {
+      defaultSession: new FakeElectronSession(),
+      fromPartition: () => new FakeElectronSession()
+    },
+    getMainWindow: () => mainWindow,
+    openBrowserUrl: async () => ({ ok: true }),
+    openExternal: async () => {}
+  });
+
+  controller.returnToApp();
+
+  assert.deepEqual(calls, [
+    "restore",
+    "show",
+    ["app-focus", { steal: true }],
+    "window-focus"
+  ]);
+});
+
+test("desktop SSO controller returnToApp raises and focuses the main window on Windows", () => {
+  const calls = [];
+  const mainWindow = {
+    isDestroyed: () => false,
+    isMinimized: () => false,
+    restore: () => calls.push("restore"),
+    show: () => calls.push("show"),
+    setAlwaysOnTop: (enabled) => calls.push(["always-on-top", enabled]),
+    focus: () => calls.push("window-focus")
+  };
+  const controller = createDesktopSsoController({
+    app: createTestApp("C:\\Users\\tester"),
+    platform: "win32",
+    session: {
+      defaultSession: new FakeElectronSession(),
+      fromPartition: () => new FakeElectronSession()
+    },
+    getMainWindow: () => mainWindow,
+    openBrowserUrl: async () => ({ ok: true }),
+    openExternal: async () => {}
+  });
+
+  controller.returnToApp();
+
+  assert.deepEqual(calls, [
+    "show",
+    ["always-on-top", true],
+    "window-focus",
+    ["always-on-top", false]
+  ]);
+});
+
 test("desktop SSO controller exchanges browser cookies for access_token and injects token cookies", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-controller-cookie-token-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

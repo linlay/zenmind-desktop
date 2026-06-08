@@ -338,24 +338,19 @@ test("agent-webclient release asset remains available for manual install", () =>
     assert.ok(entries.has("agent-webclient/stop.sh"));
     assert.ok(entries.has("agent-webclient/deploy.sh"));
   }
-  assert.ok(entries.has("agent-webclient/backend/server.cjs"));
   assert.ok(entries.has("agent-webclient/manifest.json"));
   assert.ok(entries.has("agent-webclient/frontend/dist/index.html"));
   const programCommonName = assetPath.endsWith(".zip") ? "program-common.ps1" : "program-common.sh";
   const programCommon = readArchiveEntryText(assetPath, `agent-webclient/scripts/${programCommonName}`);
   assert.ok(programCommon, `expected agent-webclient ${programCommonName} to be readable`);
-  assert.doesNotMatch(programCommon, /BACKEND_PACKAGE_FILE|BACKEND_NODE_MODULES_DIR|BackendPackageFile|BackendModulesDir/);
-  assert.doesNotMatch(programCommon, /backend[\\/]package\.json|backend[\\/]node_modules/);
-  if (assetPath.endsWith(".zip")) {
-    assert.match(programCommon, /\$Script:BackendEntry\s*=\s*Join-Path\s+\(Join-Path\s+\$Script:BundleRoot\s+['"]backend['"]\)\s+['"]server\.cjs['"]/);
-  } else {
-    assert.match(programCommon, /BACKEND_ENTRY=["']\$\{?BUNDLE_ROOT\}?\/backend\/server\.cjs["']/);
-  }
+  assert.doesNotMatch(programCommon, /BACKEND_ENTRY|BackendEntry|BACKEND_PACKAGE_FILE|BACKEND_NODE_MODULES_DIR|BackendPackageFile|BackendModulesDir/);
+  assert.doesNotMatch(programCommon, /backend[\\/]server\.(?:cjs|js)|backend[\\/]package\.json|backend[\\/]node_modules/);
+  const manifest = readManifestFromArchive(assetPath);
+  assert.equal(manifest?.frontend?.hostManaged, true);
+  assert.equal(manifest?.backend?.entry, undefined);
   assert.equal(entries.has("agent-webclient/README.txt"), false);
-  assert.equal(entries.has("agent-webclient/backend/package.json"), false);
-  assert.equal(entries.has("agent-webclient/backend/package-lock.json"), false);
   assert.equal(
-    [...entries].some((entry) => entry.startsWith("agent-webclient/backend/node_modules/")),
+    [...entries].some((entry) => entry.startsWith("agent-webclient/backend/")),
     false
   );
 });
@@ -372,7 +367,8 @@ test("synced builtin assets include agent-webclient so assistant entry is availa
   assert.doesNotMatch(envExample, /^DESKTOP_APP=/m);
 
   const manifest = readManifestFromArchive(assetPath);
-  assert.equal(manifest?.backend?.entry, "backend/server.cjs");
+  assert.equal(manifest?.frontend?.hostManaged, true);
+  assert.equal(manifest?.backend?.entry, undefined);
   assert.equal(manifest?.frontend?.embedPath, "/");
   assert.equal(manifest?.frontend?.embedParams?.desktopApp, undefined);
   const envBindingKeys = Array.isArray(manifest?.desktop?.envBindings)
@@ -425,7 +421,6 @@ test("synced builtin service launchers derive .env from SERVICE_CONFIG_DIR", () 
 test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with stale launcher checks", () => {
   const { service: discoveredService } = getWorkspaceAsset("agent-webclient", currentManifestOs());
   const requiredBundleEntries = [
-    "backend/server.cjs",
     "start.sh",
     "stop.sh",
     "deploy.sh",
@@ -440,15 +435,6 @@ test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with s
   };
 
   const fixture = createTarBundle(service, {
-    "backend/server.cjs": [
-      "const http = require('http');",
-      "const server = http.createServer();",
-      "function createWebSocketProxy() {",
-      "  return { upgrade(req, socket, head) { proxy.upgrade(req, socket, head); } };",
-      "}",
-      "const proxy = createWebSocketProxy();",
-      "server.on('upgrade', (req, socket, head) => proxy.upgrade(req, socket, head));"
-    ].join("\n") + "\n",
     "frontend/dist/index.html": "<!doctype html><html></html>\n",
     "start.sh": "#!/usr/bin/env bash\nexit 0\n",
     "stop.sh": "#!/usr/bin/env bash\nexit 0\n",
@@ -464,8 +450,10 @@ test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with s
       id: "agent-webclient",
       kind: "builtin",
       version: "v0.1.0",
-      backend: {
-        entry: "backend/server.cjs"
+      frontend: {
+        mode: "standalone",
+        entry: "/",
+        hostManaged: true
       },
       runtime: {
         requiredPaths: requiredBundleEntries
@@ -494,10 +482,9 @@ test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with s
   fs.rmSync(fixture.root, { recursive: true, force: true });
 });
 
-test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with absolute backend entry", () => {
+test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with backend entries", () => {
   const { service: discoveredService } = getWorkspaceAsset("agent-webclient", currentManifestOs());
   const requiredBundleEntries = [
-    "backend/server.cjs",
     "start.sh",
     "stop.sh",
     "deploy.sh",
@@ -525,12 +512,17 @@ test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with a
     "start.sh": "#!/usr/bin/env bash\nexit 0\n",
     "stop.sh": "#!/usr/bin/env bash\nexit 0\n",
     "deploy.sh": "#!/usr/bin/env bash\nexit 0\n",
-    "scripts/program-common.sh": "#!/usr/bin/env bash\nBACKEND_ENTRY=\"/backend/server.cjs\"\n",
+    "scripts/program-common.sh": "#!/usr/bin/env bash\n# hosted by desktop\n",
     ".env.example": "PORT=11948\n# DESKTOP_APP=true\n",
     "manifest.json": JSON.stringify({
       id: "agent-webclient",
       kind: "builtin",
       version: "v0.1.0",
+      frontend: {
+        mode: "standalone",
+        entry: "/",
+        hostManaged: true
+      },
       backend: {
         entry: "backend/server.cjs"
       },
@@ -555,7 +547,7 @@ test("validateBundleArchive rejects Desktop-ready agent-webclient bundles with a
 
   assert.throws(
     () => validateBundleArchive(service, fixture.tarPath),
-    /Expected agent-webclient\/scripts\/program-common\.sh to launch \$BUNDLE_ROOT\/backend\/server\.cjs/
+    /Unexpected backend\.entry/
   );
 
   fs.rmSync(fixture.root, { recursive: true, force: true });

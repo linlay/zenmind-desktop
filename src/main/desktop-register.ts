@@ -334,27 +334,30 @@ function applyProviderApiKey(input: {
   return updatedProviders;
 }
 
-function setRegisterEnabledFalseContent(content: string, config: DesktopRegisterConfig) {
-  const replaced = content.replace(/("enabled"\s*:\s*)true\b/u, "$1false");
-  if (replaced !== content) {
-    try {
-      const parsed = JSON.parse(replaced) as DesktopRegisterConfig;
-      if (parsed?.enabled === false) {
-        return replaced;
-      }
-    } catch {
-      // Fall back to normalized JSON below.
+function buildResetContent(config: DesktopRegisterConfig) {
+  const grant: Record<string, unknown> = {};
+  if (typeof config.grant === "object" && config.grant !== null && !Array.isArray(config.grant)) {
+    const grantIn = config.grant as Record<string, unknown>;
+    if (typeof grantIn.type === "string") {
+      grant.type = grantIn.type;
     }
   }
-  return `${JSON.stringify({ ...config, enabled: false }, null, 2)}\n`;
+  grant.token = "";
+  const { version: _version, ...rest } = config as Record<string, unknown>;
+  return `${JSON.stringify({ ...rest, enabled: false, grant }, null, 2)}\n`;
 }
 
-function writeRegisterDisabled(registerPath: string, content: string, config: DesktopRegisterConfig, platform: NodeJS.Platform) {
-  fs.writeFileSync(registerPath, setRegisterEnabledFalseContent(content, config), "utf8");
-  if (platform === "win32") {
-    return;
+function safetyCleanRegister(registerPath: string, config: DesktopRegisterConfig, platform: NodeJS.Platform) {
+  fs.writeFileSync(registerPath, buildResetContent(config), "utf8");
+  if (platform !== "win32") {
+    fs.chmodSync(registerPath, 0o600);
   }
-  fs.chmodSync(registerPath, 0o600);
+  try {
+    fs.rmSync(registerPath, { force: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`desktop-register 清理失败：${message}`);
+  }
 }
 
 function defaultFetchImpl(): DesktopRegisterFetch {
@@ -374,7 +377,7 @@ export async function ensureDesktopRegisterApiKey(
     return { status: "skipped", reason: "missing" };
   }
 
-  const { content, config } = readRegisterConfig(registerPath);
+  const { config } = readRegisterConfig(registerPath);
   const providers = normalizeProviders(config.providers);
   let targets: ReturnType<typeof readProviderTargets>;
   if (config.enabled !== true) {
@@ -400,7 +403,7 @@ export async function ensureDesktopRegisterApiKey(
     fetchImpl: options.fetchImpl ?? defaultFetchImpl()
   });
   const updatedProviders = applyProviderApiKey({ targets, apiKey });
-  writeRegisterDisabled(registerPath, content, config, platform);
+  safetyCleanRegister(registerPath, config, platform);
   console.info(
     `[desktop-register] applied registration key for providers=${providers.join(",")} updated=${updatedProviders.join(",") || "none"}`
   );
@@ -414,6 +417,6 @@ export const __testInternals = {
   looksLikePlaceholderProviderApiKey,
   normalizeProviders,
   resolveDesktopRegisterPath,
-  setRegisterEnabledFalseContent,
+  buildResetContent,
   upsertProviderApiKeyContent
 };

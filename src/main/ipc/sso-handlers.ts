@@ -2,6 +2,7 @@ export interface SsoIpcHandlerOptions {
   app: any;
   desktopSsoController: {
     broadcastStatus: (status: any) => void;
+    returnToApp: () => void;
     syncBrowserCookies: () => Promise<void>;
     exchangeBrowserCookieAccessToken: () => Promise<string>;
     exchangeWebSession: (idToken: string) => Promise<boolean>;
@@ -22,6 +23,7 @@ export interface SsoIpcHandlerOptions {
   startDesktopSsoLogin: (app: any, options: {
     onBeforeStatusChanged: (status: any, context?: { idToken?: string }) => Promise<void>;
     onStatusChanged: (status: any) => void;
+    onReturnToAppRequested: () => void;
   }) => Promise<any>;
   logoutDesktopSso: (app: any, options: {
     onStatusChanged: (status: any) => void;
@@ -56,7 +58,8 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
           await desktopSsoController.exchangeWebSession(context?.idToken || "");
         }
       },
-      onStatusChanged: desktopSsoController.broadcastStatus
+      onStatusChanged: desktopSsoController.broadcastStatus,
+      onReturnToAppRequested: desktopSsoController.returnToApp
     });
     if (result.ok && result.authorizeUrl) {
       const browserOpenResult = result.openMode === "system"
