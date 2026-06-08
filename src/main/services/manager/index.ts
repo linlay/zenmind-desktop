@@ -1480,6 +1480,10 @@ async function ensureAgentPlatformAppServerPublicKey(app: App, layout: ServiceLa
     return;
   }
 
+  if (publicKeyEnvValue !== AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE) {
+    updates.set("AUTH_LOCAL_PUBLIC_KEY_FILE", AGENT_PLATFORM_DEFAULT_AUTH_LOCAL_PUBLIC_KEY_FILE);
+  }
+
   const appServerService = getService("zenmind-app-server");
   await ensureMutableInstallDir(app, appServerService);
   const { publicKeyPem } = await ensureAppServerJwk(app);
