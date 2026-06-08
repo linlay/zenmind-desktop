@@ -2159,9 +2159,25 @@ test("desktop start commands skip a second builtin asset refresh", () => {
 });
 
 test("prepared startup starts without repeating builtin asset refresh", () => {
+  const responsiveStateReadOptions = process.platform === "win32"
+    ? {
+        mode: "responsive",
+        cacheContainerEngineProbe: true
+      }
+    : {
+        cacheContainerEngineProbe: true
+      };
   assert.deepEqual(__testInternals.getPreparedStartupStartOptions(), {
     skipPreStartRequirements: true,
-    skipBuiltinAssetRefresh: true
+    skipBuiltinAssetRefresh: true,
+    stateReadOptions: {
+      cacheContainerEngineProbe: true
+    },
+    commandStateReadOptions: responsiveStateReadOptions,
+    verificationOptions: {
+      stateReadOptions: responsiveStateReadOptions,
+      skipManagedPortProbe: true
+    }
   });
 });
 
@@ -4128,7 +4144,7 @@ test("initializeService recreates Desktop defaults for core services after confi
 
     for (const serviceId of serviceIds) {
       const result = await initializeService(app, serviceId);
-      assert.equal(result.ok, true, `${serviceId} should reinitialize after config deletion`);
+      assert.equal(result.ok, true, `${serviceId} should reinitialize after config deletion: ${result.message}`);
     }
 
     const hubEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "agent-container-hub"), "utf8");
@@ -6760,6 +6776,7 @@ test("runStartupPreparation bootstraps packaged first launch with the three core
 	    const hubEnv = fs.readFileSync(getTestEnvPath(userDataRoot, hubService.id), "utf8");
 
     assert.equal(result.mode, "bootstrap");
+    assert.equal(result.preparedChanged, true);
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
     assert.equal(fs.existsSync(hubInstallDir), true);
@@ -6801,6 +6818,7 @@ test("runStartupPreparation prepares packaged first-launch core services in para
     const spreadMs = Math.max(...installStartTimes) - Math.min(...installStartTimes);
 
     assert.equal(result.mode, "bootstrap");
+    assert.equal(result.preparedChanged, true);
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
     assert.ok(spreadMs < 400, `expected parallel install progress, got spread ${spreadMs}ms`);
@@ -6831,6 +6849,7 @@ test("runStartupPreparation repairs partial app-server env preserved before pack
     const appServerEnv = fs.readFileSync(getTestEnvPath(userDataRoot, "zenmind-app-server"), "utf8");
 
     assert.equal(result.mode, "bootstrap");
+    assert.equal(result.preparedChanged, true);
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
     assert.match(appServerEnv, new RegExp(`^SERVER_PORT=${fixture.ports.appServer}$`, "m"));
@@ -6869,6 +6888,7 @@ test("runStartupPreparation does not reinstall healthy packaged core services wh
 
     const result = await runStartupPreparation(app);
     assert.equal(result.mode, "restore");
+    assert.equal(result.preparedChanged, false);
     assert.deepEqual(result.failures, []);
     assert.equal(fs.existsSync(markerPath), true);
   } finally {
@@ -6980,6 +7000,7 @@ test("runStartupPreparation restores second-launch core services in parallel", a
     assert.equal((await getServiceState(app, "agent-webclient")).status, "running");
 
     assert.equal(result.mode, "restore");
+    assert.equal(result.preparedChanged, false);
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
     assert.equal(succeededTimes.has("zenmind-app-server"), true, "zenmind-app-server should reach succeeded phase");
@@ -7050,6 +7071,7 @@ test("runStartupPreparation prepares packaged first-launch core services in para
       }
     });
     assert.equal(result.mode, "bootstrap");
+    assert.equal(result.preparedChanged, true);
     const installTimes = ["zenmind-app-server", "agent-platform", "agent-webclient"].map((serviceId) => {
       assert.equal(installingTimes.has(serviceId), true, `${serviceId} should reach installing phase`);
       return installingTimes.get(serviceId);
@@ -7152,6 +7174,7 @@ test("runStartupPreparation reuses a running app-server during restore", async (
 
     assert.equal(firstStart.ok, true, firstStart.message);
     assert.equal(result.mode, "restore");
+    assert.equal(result.preparedChanged, false);
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
     assert.equal(appServerState.status, "running");
@@ -7187,6 +7210,7 @@ test("runStartupPreparation collects parallel restore failures without cancellin
     const result = await runStartupPreparation(app);
 
     assert.equal(result.mode, "restore");
+    assert.equal(result.preparedChanged, false);
     assert.equal(result.failures.length, 2);
     assert.match(result.failures.join("\n"), /agent-platform/u);
     assert.match(result.failures.join("\n"), /agent-webclient/u);
@@ -7233,6 +7257,7 @@ test("runStartupPreparation prepares missing container hub in the background whe
     const hubState = await getServiceState(app, "agent-container-hub");
 
     assert.equal(result.mode, "restore");
+    assert.equal(result.preparedChanged, false);
     assert.deepEqual(result.failures, []);
     assert.deepEqual([...result.started].sort(), ["agent-platform", "agent-webclient", "zenmind-app-server"]);
     assert.equal(fs.existsSync(markerPath), true);
@@ -7262,6 +7287,7 @@ test("runStartupPreparation does not block core services when optional container
     const hubState = await getServiceState(app, "agent-container-hub");
 
     assert.equal(result.mode, "bootstrap");
+    assert.equal(result.preparedChanged, true);
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
     assert.ok(
@@ -7295,6 +7321,7 @@ test("runStartupPreparation reinitializes packaged core services that are missin
 
     const result = await runStartupPreparation(app);
     assert.equal(result.mode, "bootstrap");
+    assert.equal(result.preparedChanged, true);
     assert.deepEqual(result.failures, []);
     assert.equal(fs.existsSync(getTestInitializationStatePath(userDataRoot, platformService.id)), true);
   } finally {
@@ -7312,6 +7339,7 @@ test("runStartupPreparation reports one bootstrap failure without blocking indep
   try {
     const result = await runStartupPreparation(app);
     assert.equal(result.mode, "bootstrap");
+    assert.equal(result.preparedChanged, true);
     assert.equal(result.failures.length, 1);
     assert.match(result.failures[0], /zenmind-app-server/u);
     assert.deepEqual(result.started, ["agent-platform", "agent-webclient"]);
@@ -7337,6 +7365,7 @@ test("runStartupPreparation bootstraps development first launch with core servic
     const hubState = await getServiceState(app, "agent-container-hub");
 
     assert.equal(result.mode, "bootstrap");
+    assert.equal(result.preparedChanged, true);
     assert.deepEqual(result.failures, []);
     assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
     assert.equal(readInitializationStatePath(getTestInitializationStatePath(userDataRoot, hubService.id))?.status, "succeeded");

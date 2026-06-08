@@ -222,6 +222,7 @@ type StartupPreparationResult = {
   mode: StartupRestoreMode;
   started: ServiceId[];
   failures: string[];
+  preparedChanged: boolean;
 };
 
 type StartupPreparationOptions = {
@@ -1833,13 +1834,6 @@ type StartServiceOptions = {
 };
 
 function getPreparedStartupStartOptions(): StartServiceOptions {
-  return {
-    skipPreStartRequirements: true,
-    skipBuiltinAssetRefresh: true
-  };
-}
-
-function getRestoreStartupStartOptions(): StartServiceOptions {
   const stateReadOptions = getStartupServiceStateReadOptions();
   const responsiveReadOptions = getStartupResponsiveServiceStateReadOptions();
   return {
@@ -1991,7 +1985,7 @@ async function startServiceInternal(
     if (current.status === "running") {
       await stopService(app, serviceId);
     }
-    await installBuiltinService(app, serviceId, { source: "prepareBuiltinServiceForStartup" });
+    await installBuiltinService(app, serviceId, { source: "startServiceInternal:bundled-asset-refresh" });
   }
 
   const refreshedState = shouldRefreshFromBundledAsset
@@ -2663,7 +2657,7 @@ export async function restoreRunningServices(
   };
 }
 
-type StartupRestoreOptions = {
+type StartupPipelineOptions = {
   onStarting?: (serviceId: ServiceId) => void;
   onProgress?: (serviceId: ServiceId, phase: StartupPreparationProgressPhase, message: string) => void;
 };
@@ -2679,190 +2673,13 @@ type StartupPreparationServiceResult = {
   serviceId: ServiceId;
   ok: boolean;
   message: string;
+  changed: boolean;
   service?: ServiceState;
 };
 
-async function prepareDefaultStartupServiceForParallelRestore(
-  app: App,
-  serviceId: ServiceId,
-  options: StartupRestoreOptions
-): Promise<StartupServiceResult> {
-  try {
-    const responsiveCurrent = await getServiceState(app, serviceId, getStartupResponsiveServiceStateReadOptions());
-    if (responsiveCurrent.status === "running") {
-      return {
-        serviceId,
-        ok: true,
-        message: `${responsiveCurrent.name} 已在运行。`,
-        running: true
-      };
-    }
-
-    const current = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
-    if (current.status === "running") {
-      return {
-        serviceId,
-        ok: true,
-        message: `${current.name} 已在运行。`,
-        running: true
-      };
-    }
-
-    if (
-      current.status === "not-installed" ||
-      current.status === "initialization-required"
-    ) {
-      options.onProgress?.(serviceId, "skipped", current.message);
-      return {
-        serviceId,
-        ok: false,
-        message: current.message,
-        running: false
-      };
-    }
-
-    await ensurePreStartRequirements(app, getService(serviceId));
-    const prepared = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
-    if (
-      prepared.status === "config-required" ||
-      prepared.status === "dependency-missing" ||
-      prepared.status === "error"
-    ) {
-      options.onProgress?.(serviceId, "failed", prepared.message);
-      return {
-        serviceId,
-        ok: false,
-        message: prepared.message,
-        running: false
-      };
-    }
-
-    return {
-      serviceId,
-      ok: true,
-      message: `${prepared.name} 已准备就绪。`,
-      running: false
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    options.onProgress?.(serviceId, "failed", message);
-    return {
-      serviceId,
-      ok: false,
-      message,
-      running: false
-    };
-  }
-}
-
-async function startDefaultStartupServiceForParallelRestore(
-  app: App,
-  serviceId: ServiceId,
-  options: StartupRestoreOptions
-): Promise<StartupServiceResult> {
-  try {
-    const current = await getServiceState(app, serviceId, getStartupResponsiveServiceStateReadOptions());
-    options.onStarting?.(serviceId);
-
-    if (current.status === "running") {
-      const message = `${current.name} 已在运行。`;
-      console.info(`[service-manager] reused running startup service ${serviceId}`);
-      options.onProgress?.(serviceId, "succeeded", message);
-      return {
-        serviceId,
-        ok: true,
-        message,
-        running: true
-      };
-    }
-
-    options.onProgress?.(serviceId, "starting", `${current.name} 启动中...`);
-    const startedAt = Date.now();
-    const result = await startServiceInternal(app, serviceId, getRestoreStartupStartOptions());
-    const elapsedMs = Date.now() - startedAt;
-    if (result.ok && result.service.status === "running") {
-      console.info(`[service-manager] restored ${serviceId} in ${elapsedMs}ms`);
-      options.onProgress?.(serviceId, "succeeded", result.message);
-      return {
-        serviceId,
-        ok: true,
-        message: result.message,
-        running: true
-      };
-    }
-
-    const failureMessage = result.ok
-      ? `${result.service.name} 启动后未进入运行中状态。`
-      : result.message;
-    console.warn(`[service-manager] failed to restore ${serviceId} after ${elapsedMs}ms: ${failureMessage}`);
-    options.onProgress?.(serviceId, "failed", failureMessage);
-    return {
-      serviceId,
-      ok: false,
-      message: failureMessage,
-      running: false
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    options.onProgress?.(serviceId, "failed", message);
-    return {
-      serviceId,
-      ok: false,
-      message,
-      running: false
-    };
-  }
-}
-
-async function restoreDefaultStartupServicesInParallel(
-  app: App,
-  options: StartupRestoreOptions = {}
-) {
-  const started: ServiceId[] = [];
-  const failures: string[] = [];
-  const preflightResults = await Promise.all(
-    DEFAULT_STARTUP_SERVICE_IDS.map((serviceId) =>
-      prepareDefaultStartupServiceForParallelRestore(app, serviceId, options)
-    )
-  );
-
-  const preflightFailures = new Set<ServiceId>();
-  for (const result of preflightResults) {
-    if (!result.ok) {
-      preflightFailures.add(result.serviceId);
-      failures.push(`${result.serviceId}: ${result.message}`);
-    }
-  }
-
-  const startResults = await Promise.all(
-    DEFAULT_STARTUP_SERVICE_IDS
-      .filter((serviceId) => !preflightFailures.has(serviceId))
-      .map((serviceId) => startDefaultStartupServiceForParallelRestore(app, serviceId, options))
-  );
-
-  const startResultById = new Map(startResults.map((result) => [result.serviceId, result]));
-
-  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
-    const result = startResultById.get(serviceId);
-    if (!result) {
-      continue;
-    }
-    if (result.ok && result.running) {
-      started.push(serviceId);
-    } else {
-      failures.push(`${serviceId}: ${result.message}`);
-    }
-  }
-
-  return {
-    started,
-    failures
-  };
-}
-
 async function restoreOptionalStartupServices(
   app: App,
-  options: StartupRestoreOptions = {}
+  options: StartupPipelineOptions = {}
 ) {
   const started: ServiceId[] = [];
   const failures: string[] = [];
@@ -2923,21 +2740,143 @@ async function restoreOptionalStartupServices(
   };
 }
 
-async function startPreparedDefaultStartupServiceForBootstrap(
+function isStartupPreparationBlockingStatus(status: ServiceState["status"]) {
+  return (
+    status === "not-installed" ||
+    status === "initialization-required" ||
+    status === "config-required" ||
+    status === "dependency-missing" ||
+    status === "error"
+  );
+}
+
+async function resolveStartupPreparationMode(app: App): Promise<StartupRestoreMode> {
+  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
+    const service = getService(serviceId);
+    const current = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
+    if (
+      current.status === "not-installed" ||
+      current.status === "initialization-required" ||
+      shouldReinitializeMissingCoreServiceConfig(service, current)
+    ) {
+      return "bootstrap";
+    }
+
+    if (service.kind === "builtin" && needsBundledAssetRefresh(app, service)) {
+      return "bootstrap";
+    }
+
+    if (current.status === "error" && installedBuiltinNeedsStartupRepair(app, service, current)) {
+      return "bootstrap";
+    }
+  }
+
+  return "restore";
+}
+
+async function prepareStartupService(
   app: App,
   serviceId: ServiceId,
-  current: ServiceState,
-  options: StartupRestoreOptions = {}
+  options: StartupPipelineOptions = {}
+): Promise<StartupPreparationServiceResult> {
+  let changed = false;
+  try {
+    const service = getService(serviceId);
+    let current = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
+    const bundledAssetNeedsRefresh = service.kind === "builtin" && needsBundledAssetRefresh(app, service);
+    const installNeedsRepair =
+      current.status === "error" && installedBuiltinNeedsStartupRepair(app, service, current);
+
+    if (
+      current.status === "not-installed" ||
+      bundledAssetNeedsRefresh ||
+      installNeedsRepair
+    ) {
+      options.onProgress?.(serviceId, "installing", `${current.name} 安装中...`);
+      if (bundledAssetNeedsRefresh && current.status === "running") {
+        await stopService(app, serviceId);
+      }
+      await installBuiltinService(app, serviceId, { source: "prepareStartupService" });
+      changed = true;
+      current = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
+    }
+
+    if (current.status === "initialization-required" || shouldReinitializeMissingCoreServiceConfig(service, current)) {
+      options.onProgress?.(serviceId, "initializing", `${current.name} 初始化中...`);
+      changed = true;
+      const initialization = await initializeService(app, serviceId);
+      if (!initialization.ok) {
+        return {
+          serviceId,
+          ok: false,
+          changed,
+          message: initialization.message,
+          service: initialization.service
+        };
+      }
+      current = initialization.service;
+    }
+
+    await ensurePreStartRequirements(app, service);
+    current = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
+    if (isStartupPreparationBlockingStatus(current.status)) {
+      options.onProgress?.(serviceId, "failed", current.message);
+      return {
+        serviceId,
+        ok: false,
+        changed,
+        message: current.message,
+        service: current
+      };
+    }
+
+    return {
+      serviceId,
+      ok: true,
+      changed,
+      message: `${current.name} 已准备就绪。`,
+      service: current
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    options.onProgress?.(serviceId, "failed", message);
+    return {
+      serviceId,
+      ok: false,
+      changed,
+      message
+    };
+  }
+}
+
+async function startPreparedStartupService(
+  app: App,
+  serviceId: ServiceId,
+  options: StartupPipelineOptions = {}
 ): Promise<StartupServiceResult> {
   try {
+    const current = await getServiceState(app, serviceId, getStartupResponsiveServiceStateReadOptions());
     options.onStarting?.(serviceId);
-    options.onProgress?.(serviceId, "starting", `${current.name} starting...`);
+
+    if (current.status === "running") {
+      const message = `${current.name} 已在运行。`;
+      console.info(`[service-manager] reused running startup service ${serviceId}`);
+      options.onProgress?.(serviceId, "succeeded", message);
+      return {
+        serviceId,
+        ok: true,
+        message,
+        running: true
+      };
+    }
+
+    options.onProgress?.(serviceId, "starting", `${current.name} 启动中...`);
     await yieldStartupScheduler();
     const startedAt = Date.now();
     const result = await startServiceInternal(app, serviceId, getPreparedStartupStartOptions());
     const elapsedMs = Date.now() - startedAt;
     if (result.ok && result.service.status === "running") {
-      console.info(`[service-manager] bootstrapped ${serviceId} in ${elapsedMs}ms`);
+      console.info(`[service-manager] started ${serviceId} in ${elapsedMs}ms`);
       options.onProgress?.(serviceId, "succeeded", result.message);
       return {
         serviceId,
@@ -2950,7 +2889,7 @@ async function startPreparedDefaultStartupServiceForBootstrap(
     const failureMessage = result.ok
       ? `${result.service.name} did not enter running state after start`
       : result.message;
-    console.warn(`[service-manager] failed to bootstrap ${serviceId} after ${elapsedMs}ms: ${failureMessage}`);
+    console.warn(`[service-manager] failed to start ${serviceId} after ${elapsedMs}ms: ${failureMessage}`);
     options.onProgress?.(serviceId, "failed", failureMessage);
     return {
       serviceId,
@@ -2970,125 +2909,13 @@ async function startPreparedDefaultStartupServiceForBootstrap(
   }
 }
 
-function shouldEnableBuiltinBootstrap(_app: App) {
-  return true;
-}
-
-async function shouldRunBuiltinBootstrap(app: App) {
-  if (!shouldEnableBuiltinBootstrap(app)) {
-    return false;
-  }
-
-  for (const serviceId of DEFAULT_STARTUP_SERVICE_IDS) {
-    const current = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
-    if (
-      current.status === "not-installed" ||
-      current.status === "initialization-required" ||
-      shouldReinitializeMissingCoreServiceConfig(getService(serviceId), current)
-    ) {
-      return true;
-    }
-
-    const service = getService(serviceId);
-    if (service.kind === "builtin" && needsBundledAssetRefresh(app, service)) {
-      return true;
-    }
-
-    if (current.status === "error" && installedBuiltinNeedsStartupRepair(app, service, current)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-async function prepareBuiltinServiceForStartup(
-  app: App,
-  serviceId: ServiceId,
-  options: {
-    onProgress?: (serviceId: ServiceId, phase: StartupPreparationProgressPhase, message: string) => void;
-  } = {}
-) {
-  const service = getService(serviceId);
-  let current = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
-  const bundledAssetNeedsRefresh = service.kind === "builtin" && needsBundledAssetRefresh(app, service);
-  const installNeedsRepair =
-    current.status === "error" && installedBuiltinNeedsStartupRepair(app, service, current);
-
-  if (
-    current.status === "not-installed" ||
-    bundledAssetNeedsRefresh ||
-    installNeedsRepair
-  ) {
-    options.onProgress?.(serviceId, "installing", `${current.name} 安装中...`);
-    if (bundledAssetNeedsRefresh && current.status === "running") {
-      await stopService(app, serviceId);
-    }
-    await installBuiltinService(app, serviceId, { source: "prepareBuiltinServiceForStartup" });
-    current = await getServiceState(app, serviceId, getStartupServiceStateReadOptions());
-  } else if (current.status === "initialization-required" || shouldReinitializeMissingCoreServiceConfig(service, current)) {
-    options.onProgress?.(serviceId, "initializing", `${current.name} 初始化中...`);
-    const initialization = await initializeService(app, serviceId);
-    if (!initialization.ok) {
-      return {
-        ok: false,
-        message: initialization.message,
-        service: initialization.service
-      };
-    }
-    current = initialization.service;
-  }
-
-  return {
-    ok: true,
-    message: `${current.name} 已准备就绪。`,
-    service: current
-  };
-}
-
-async function prepareDefaultStartupServiceForBootstrap(
-  app: App,
-  serviceId: ServiceId,
-  options: Pick<StartupPreparationOptions, "onProgress"> = {}
-): Promise<StartupPreparationServiceResult> {
-  try {
-    const preparation = await prepareBuiltinServiceForStartup(app, serviceId, {
-      onProgress: options.onProgress
-    });
-    if (!preparation.ok) {
-      options.onProgress?.(serviceId, "failed", preparation.message);
-      return {
-        serviceId,
-        ok: false,
-        message: preparation.message,
-        service: preparation.service
-      };
-    }
-
-    return {
-      serviceId,
-      ok: true,
-      message: preparation.message,
-      service: preparation.service
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    options.onProgress?.(serviceId, "failed", message);
-    return {
-      serviceId,
-      ok: false,
-      message
-    };
-  }
-}
-
 async function prepareInstallOnlyStartupServices(
   app: App,
   options: Pick<StartupPreparationOptions, "onProgress"> = {}
 ) {
   for (const serviceId of INSTALL_ONLY_STARTUP_SERVICE_IDS) {
     try {
-      const result = await prepareBuiltinServiceForStartup(app, serviceId, {
+      const result = await prepareStartupService(app, serviceId, {
         onProgress: options.onProgress
       });
       if (!result.ok) {
@@ -3138,38 +2965,20 @@ export async function runStartupPreparation(
   try {
     await ensureDesktopRegisterApiKey(app);
 
-    if (!(await shouldRunBuiltinBootstrap(app))) {
-      options.onModeResolved?.("restore");
-      const defaultRestoreResult = await restoreDefaultStartupServicesInParallel(app, {
-        onStarting: options.onStarting,
-        onProgress: options.onProgress
-      });
-      const optionalRestoreResult = await restoreOptionalStartupServices(app, {
-        onStarting: options.onStarting,
-        onProgress: options.onProgress
-      });
-      prepareInstallOnlyStartupServicesInBackground(app, {
-        onProgress: options.onProgress
-      });
-      return {
-        mode: "restore",
-        started: [...defaultRestoreResult.started, ...optionalRestoreResult.started],
-        failures: [...defaultRestoreResult.failures, ...optionalRestoreResult.failures]
-      };
-    }
-
-    options.onModeResolved?.("bootstrap");
+    const initialMode = await resolveStartupPreparationMode(app);
+    options.onModeResolved?.(initialMode);
     const started: ServiceId[] = [];
     const failures: string[] = [];
 
     const preparedDefaultServices = new Map<ServiceId, ServiceState>();
     const preparationResults = await Promise.all(
       DEFAULT_STARTUP_SERVICE_IDS.map((serviceId) =>
-        prepareDefaultStartupServiceForBootstrap(app, serviceId, {
+        prepareStartupService(app, serviceId, {
           onProgress: options.onProgress
         })
       )
     );
+    const preparedChanged = preparationResults.some((result) => result.changed);
 
     for (const result of preparationResults) {
       if (!result.ok || !result.service) {
@@ -3188,10 +2997,9 @@ export async function runStartupPreparation(
       DEFAULT_STARTUP_SERVICE_IDS
         .filter((serviceId) => preparedDefaultServices.has(serviceId))
         .map((serviceId) =>
-          startPreparedDefaultStartupServiceForBootstrap(
+          startPreparedStartupService(
             app,
             serviceId,
-            preparedDefaultServices.get(serviceId)!,
             startOptions
           )
         )
@@ -3220,9 +3028,10 @@ export async function runStartupPreparation(
     });
 
     return {
-      mode: "bootstrap",
+      mode: initialMode === "bootstrap" || preparedChanged ? "bootstrap" : "restore",
       started,
-      failures
+      failures,
+      preparedChanged
     };
   } finally {
     flushStartupTimingSummary();
@@ -3293,8 +3102,9 @@ export const __testInternals = {
   getOptionalServiceIdsToRestore,
   orderServiceIdsForRestore,
   needsBundledAssetRefresh,
-  shouldEnableBuiltinBootstrap,
-  shouldRunBuiltinBootstrap,
+  resolveStartupPreparationMode,
+  prepareStartupService,
+  startPreparedStartupService,
   readLastRunningServices,
   watchServiceLog,
   writeLastRunningServices
