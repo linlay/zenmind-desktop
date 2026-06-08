@@ -1543,10 +1543,17 @@ function describeCapabilityRequirement(requirement: ManifestDesktopCapabilityReq
   return `service ${requirement.service ?? "(unknown)"}`;
 }
 
-function resolveRequirementHttpTarget(webUrl: string, target: string | undefined) {
+function getDefaultRequirementHttpTarget(requiredService: ServiceDefinition, webUrl: string) {
+  if (requiredService.id === "agent-platform" || requiredService.id === "agent-container-hub") {
+    return normalizeProbeUrl(webUrl, "/api/runtime-info");
+  }
+  return webUrl;
+}
+
+function resolveRequirementHttpTarget(requiredService: ServiceDefinition, webUrl: string, target: string | undefined) {
   const trimmed = target?.trim() ?? "";
   if (!trimmed) {
-    return webUrl;
+    return getDefaultRequirementHttpTarget(requiredService, webUrl);
   }
   if (/^https?:\/\//iu.test(trimmed)) {
     return trimmed;
@@ -1581,7 +1588,7 @@ async function ensureRequiredServiceHttpReachable(
     throw new Error(`${requiredService.name} does not expose a Desktop web URL.`);
   }
 
-  const target = resolveRequirementHttpTarget(webUrl, requirement.target);
+  const target = resolveRequirementHttpTarget(requiredService, webUrl, requirement.target);
   const probe = await probeHttpUrl(target);
   if (!probe.ok) {
     throw new Error(`${target} 探测失败：${probe.message || "HTTP 不可用"}`);

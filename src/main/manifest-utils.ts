@@ -325,43 +325,6 @@ function applyCoreServiceEnvBindingOverrides(serviceId: string, envBindings: Man
   return nextBindings;
 }
 
-function mergeDesktopEnvBindings(defaults: ManifestEnvBinding[], declared: ManifestEnvBinding[]) {
-  const bindingsByKey = new Map<string, ManifestEnvBinding>();
-  for (const binding of defaults) {
-    bindingsByKey.set(binding.key, binding);
-  }
-  for (const binding of declared) {
-    bindingsByKey.set(binding.key, binding);
-  }
-  return [...bindingsByKey.values()];
-}
-
-function resolveDefaultDesktopEnvBindings(serviceId: string): ManifestEnvBinding[] {
-  if (serviceId !== "agent-platform") {
-    return [];
-  }
-
-  return [
-    {
-      key: "AUTH_ENABLED",
-      value: "true",
-      onlyIfDefault: true,
-      defaults: ["", "false", "0"]
-    },
-    {
-      key: "AUTH_LOCAL_PUBLIC_KEY_FILE",
-      value: "configs/local-public-key.pem",
-      onlyIfDefault: true,
-      defaults: [
-        "",
-        "local-public-key.pem",
-        "configs/local-public-key.pem",
-        "{{service.configDir}}/configs/local-public-key.pem"
-      ]
-    }
-  ];
-}
-
 function isFrontendMode(value: unknown): value is FrontendMode {
   return value === "none" || value === "embedded" || value === "standalone";
 }
@@ -780,165 +743,6 @@ function resolveDesktopCapabilities(raw: Record<string, unknown>): ManifestDeskt
   return { provides, requires };
 }
 
-function mergeDesktopCapabilities(
-  defaults: ManifestDesktopCapabilities | undefined,
-  declared: ManifestDesktopCapabilities & {
-    provides: ManifestDesktopCapabilityProvider[];
-    requires: ManifestDesktopCapabilityRequirement[];
-  }
-) {
-  const providesById = new Map<string, ManifestDesktopCapabilityProvider>();
-  for (const provider of defaults?.provides ?? []) {
-    providesById.set(provider.id, provider);
-  }
-  for (const provider of declared.provides) {
-    providesById.set(provider.id, provider);
-  }
-
-  const requirementKeys = new Set<string>();
-  const requires: ManifestDesktopCapabilityRequirement[] = [];
-  for (const requirement of [...(defaults?.requires ?? []), ...declared.requires]) {
-    const key = JSON.stringify(requirement);
-    if (requirementKeys.has(key)) {
-      continue;
-    }
-    requirementKeys.add(key);
-    requires.push(requirement);
-  }
-
-  return {
-    provides: [...providesById.values()],
-    requires
-  };
-}
-
-function authPublicKeyCapability(): ManifestDesktopCapabilityProvider {
-  const commonArgs = [
-    "--mode",
-    "bootstrap",
-    "--db",
-    "{{auth.dbPath}}",
-    "--out",
-    "{{provider.dataDir}}/keys",
-    "--public-out",
-    "{{output.path}}"
-  ];
-  return {
-    id: "auth.publicKey",
-    command: ["scripts/setup-public-key.sh", ...commonArgs],
-    darwinCommand: ["scripts/setup-public-key.sh", ...commonArgs],
-    linuxCommand: ["scripts/setup-public-key.sh", ...commonArgs],
-    windowsCommand: [
-      "scripts/setup-public-key.ps1",
-      "-Mode",
-      "bootstrap",
-      "-Db",
-      "{{auth.dbPath}}",
-      "-Out",
-      "{{provider.dataDir}}/keys",
-      "-PublicOut",
-      "{{output.path}}"
-    ],
-    env: {
-      AUTH_DB_PATH: "{{auth.dbPath}}"
-    },
-    output: "file",
-    outputPath: "{{provider.dataDir}}/keys/publicKey.pem",
-    retryOnSqliteBusy: true
-  };
-}
-
-function authAccessTokenCapability(): ManifestDesktopCapabilityProvider {
-  const commonArgs = [
-    "--db",
-    "{{auth.dbPath}}",
-    "--issuer",
-    "{{auth.issuer}}",
-    "--username",
-    "{{auth.username}}",
-    "--device-name",
-    "{{desktop.deviceName}}",
-    "--device-id",
-    "{{desktop.deviceId}}"
-  ];
-  return {
-    id: "auth.accessToken",
-    command: ["scripts/issue-bridge-access-token.sh", ...commonArgs],
-    darwinCommand: ["scripts/issue-bridge-access-token.sh", ...commonArgs],
-    linuxCommand: ["scripts/issue-bridge-access-token.sh", ...commonArgs],
-    windowsCommand: [
-      "scripts/issue-bridge-access-token.ps1",
-      "-Db",
-      "{{auth.dbPath}}",
-      "-Issuer",
-      "{{auth.issuer}}",
-      "-Username",
-      "{{auth.username}}",
-      "-DeviceName",
-      "{{desktop.deviceName}}",
-      "-DeviceId",
-      "{{desktop.deviceId}}"
-    ],
-    env: {
-      AUTH_DB_PATH: "{{auth.dbPath}}",
-      AUTH_ISSUER: "{{auth.issuer}}",
-      AUTH_APP_USERNAME: "{{auth.username}}",
-      DESKTOP_DEVICE_ID: "{{desktop.deviceId}}"
-    },
-    output: "stdoutLastLine",
-    dependsOn: ["auth.publicKey"],
-    retryOnSqliteBusy: true,
-    validateJwtDeviceId: true,
-    allowDeviceIdFallback: true
-  };
-}
-
-function resolveDefaultDesktopCapabilities(serviceId: string): ManifestDesktopCapabilities | undefined {
-  if (serviceId === "zenmind-app-server") {
-    return {
-      provides: [
-        authPublicKeyCapability(),
-        authAccessTokenCapability()
-      ],
-      requires: []
-    };
-  }
-
-  if (serviceId === "agent-platform") {
-    return {
-      provides: [],
-      requires: [
-        {
-          phase: "preStart",
-          capability: "auth.publicKey",
-          action: "copyFile",
-          target: "configs/local-public-key.pem"
-        }
-      ]
-    };
-  }
-
-  if (serviceId === "agent-webclient") {
-    return {
-      provides: [],
-      requires: [
-        {
-          phase: "verifyRunning",
-          capability: "auth.accessToken",
-          action: "preload"
-        },
-        {
-          phase: "verifyRunning",
-          service: "agent-platform",
-          action: "waitHttp"
-        }
-      ]
-    };
-  }
-
-  return undefined;
-}
-
 function resolveDesktop(
   raw: Record<string, unknown>,
   options: NormalizeManifestOptions,
@@ -952,18 +756,12 @@ function resolveDesktop(
     options.desktop?.bundleTopLevelDir ??
     asOptionalString(desktop.bundleTopLevelDir) ??
     serviceId;
-  const envBindings = mergeDesktopEnvBindings(
-    resolveDefaultDesktopEnvBindings(serviceId),
-    resolveEnvBindings(raw)
-  );
+  const envBindings = resolveEnvBindings(raw);
   const hosting =
     (options.desktop?.hosting ? cloneDesktopHosting(options.desktop.hosting) : undefined) ??
     resolveDesktopHosting(raw) ??
     resolveDefaultDesktopHosting(serviceId, frontend);
-  const capabilities = mergeDesktopCapabilities(
-    resolveDefaultDesktopCapabilities(serviceId),
-    resolveDesktopCapabilities(raw)
-  );
+  const capabilities = resolveDesktopCapabilities(raw);
 
   return {
     assetFileName,

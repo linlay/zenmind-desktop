@@ -38,6 +38,195 @@ const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const TEST_APP_SERVER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
 const TEST_APP_SERVER_CUSTOM_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1uf";
 
+function createAuthCapabilityProviders() {
+  const publicKeyArgs = [
+    "--mode",
+    "bootstrap",
+    "--db",
+    "{{auth.dbPath}}",
+    "--out",
+    "{{provider.dataDir}}/keys",
+    "--public-out",
+    "{{output.path}}"
+  ];
+  const accessTokenArgs = [
+    "--db",
+    "{{auth.dbPath}}",
+    "--issuer",
+    "{{auth.issuer}}",
+    "--username",
+    "{{auth.username}}",
+    "--device-name",
+    "{{desktop.deviceName}}",
+    "--device-id",
+    "{{desktop.deviceId}}"
+  ];
+  return [
+    {
+      id: "auth.publicKey",
+      darwinCommand: ["scripts/setup-public-key.sh", ...publicKeyArgs],
+      linuxCommand: ["scripts/setup-public-key.sh", ...publicKeyArgs],
+      windowsCommand: [
+        "scripts/setup-public-key.ps1",
+        "-Mode",
+        "bootstrap",
+        "-Db",
+        "{{auth.dbPath}}",
+        "-Out",
+        "{{provider.dataDir}}/keys",
+        "-PublicOut",
+        "{{output.path}}"
+      ],
+      env: {
+        AUTH_DB_PATH: "{{auth.dbPath}}"
+      },
+      output: "file",
+      outputPath: "{{provider.dataDir}}/keys/publicKey.pem",
+      retryOnSqliteBusy: true
+    },
+    {
+      id: "auth.accessToken",
+      darwinCommand: ["scripts/issue-bridge-access-token.sh", ...accessTokenArgs],
+      linuxCommand: ["scripts/issue-bridge-access-token.sh", ...accessTokenArgs],
+      windowsCommand: [
+        "scripts/issue-bridge-access-token.ps1",
+        "-Db",
+        "{{auth.dbPath}}",
+        "-Issuer",
+        "{{auth.issuer}}",
+        "-Username",
+        "{{auth.username}}",
+        "-DeviceName",
+        "{{desktop.deviceName}}",
+        "-DeviceId",
+        "{{desktop.deviceId}}"
+      ],
+      env: {
+        AUTH_DB_PATH: "{{auth.dbPath}}",
+        AUTH_ISSUER: "{{auth.issuer}}",
+        AUTH_APP_USERNAME: "{{auth.username}}",
+        DESKTOP_DEVICE_ID: "{{desktop.deviceId}}"
+      },
+      output: "stdoutLastLine",
+      dependsOn: ["auth.publicKey"],
+      retryOnSqliteBusy: true,
+      validateJwtDeviceId: true,
+      allowDeviceIdFallback: true
+    }
+  ];
+}
+
+function createCoreDesktopManifest(serviceId, assetFileName) {
+  const desktop = {
+    assetFileName,
+    bundleTopLevelDir: serviceId
+  };
+  if (serviceId === "zenmind-app-server") {
+    return {
+      ...desktop,
+      envBindings: [
+        {
+          key: "SERVER_PORT",
+          value: "{{serviceDefaultPort}}",
+          onlyIfDefault: true
+        }
+      ],
+      capabilities: {
+        provides: createAuthCapabilityProviders(),
+        requires: []
+      }
+    };
+  }
+  if (serviceId === "agent-platform") {
+    return {
+      ...desktop,
+      envBindings: [
+        {
+          key: "CONTAINER_HUB_BASE_URL",
+          fromService: "agent-container-hub",
+          template: "http://127.0.0.1:{{port}}",
+          onlyIfDefault: true,
+          defaults: [
+            "",
+            "http://127.0.0.1:11960",
+            "http://localhost:11960",
+            "http://host.docker.internal:11960"
+          ]
+        },
+        {
+          key: "SERVER_PORT",
+          value: "{{serviceDefaultPort}}",
+          onlyIfDefault: true
+        },
+        {
+          key: "AUTH_ENABLED",
+          value: "true"
+        },
+        {
+          key: "AUTH_LOCAL_PUBLIC_KEY_FILE",
+          value: "configs/local-public-key.pem"
+        }
+      ],
+      capabilities: {
+        provides: [],
+        requires: [
+          {
+            phase: "preStart",
+            capability: "auth.publicKey",
+            action: "copyFile",
+            target: "configs/local-public-key.pem"
+          }
+        ]
+      }
+    };
+  }
+  if (serviceId === "agent-webclient") {
+    return {
+      ...desktop,
+      envBindings: [
+        {
+          key: "BASE_URL",
+          fromService: "agent-platform",
+          template: "http://127.0.0.1:{{port}}",
+          onlyIfDefault: true,
+          defaults: [
+            "",
+            "http://127.0.0.1:11949",
+            "http://localhost:11949"
+          ]
+        },
+        {
+          key: "PORT",
+          value: "{{serviceDefaultPort}}",
+          onlyIfDefault: true
+        }
+      ],
+      capabilities: {
+        provides: [],
+        requires: [
+          {
+            phase: "verifyRunning",
+            capability: "auth.accessToken",
+            action: "preload"
+          },
+          {
+            phase: "verifyRunning",
+            service: "agent-platform",
+            action: "waitHttp"
+          }
+        ]
+      }
+    };
+  }
+  return {
+    ...desktop,
+    capabilities: {
+      provides: [],
+      requires: []
+    }
+  };
+}
+
 function getAvailableLocalPort(host = "127.0.0.1") {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -77,8 +266,8 @@ function currentManifestOs() {
 function findCurrentPlatformReleaseArchive(serviceId) {
   const currentOs = currentManifestOs();
   const candidateDirs = [
-    path.join(process.cwd(), "build", "resources", "services", serviceId),
     path.join(WORKSPACE_ROOT, serviceId, "dist", "release"),
+    path.join(process.cwd(), "build", "resources", "services", serviceId),
     path.join(WORKSPACE_ROOT, serviceId),
     path.join(WORKSPACE_ROOT, "zenmind-dist", serviceId)
   ];
@@ -527,7 +716,19 @@ function createStartupCoreAssetsFixture(options = {}) {
                 "const port = Number(process.argv[2] || 0);",
                 `if (${service.id === "agent-platform" ? "true" : "false"} && port > 0) {`,
                 "  const http = require('node:http');",
-                "  const server = http.createServer((_req, res) => res.end('ok'));",
+                options.platformRootReturns404 && service.id === "agent-platform"
+                  ? [
+                      "  const server = http.createServer((req, res) => {",
+                      "    if (req.url === '/api/runtime-info') {",
+                      "      res.writeHead(200, { 'content-type': 'application/json' });",
+                      "      res.end(JSON.stringify({ ok: true }));",
+                      "      return;",
+                      "    }",
+                      "    res.writeHead(404, { 'content-type': 'text/plain' });",
+                      "    res.end('not found');",
+                      "  });"
+                    ].join("\r\n")
+                  : "  const server = http.createServer((_req, res) => res.end('ok'));",
                 "  server.on('error', () => {});",
                 "  server.listen(port, '127.0.0.1');",
                 "}",
@@ -615,7 +816,19 @@ function createStartupCoreAssetsFixture(options = {}) {
                 "const port = Number(process.argv[2] || 0);",
                 `if (${service.id === "agent-platform" ? "true" : "false"} && port > 0) {`,
                 "  const http = require('node:http');",
-                "  const server = http.createServer((_req, res) => res.end('ok'));",
+                options.platformRootReturns404 && service.id === "agent-platform"
+                  ? [
+                      "  const server = http.createServer((req, res) => {",
+                      "    if (req.url === '/api/runtime-info') {",
+                      "      res.writeHead(200, { 'content-type': 'application/json' });",
+                      "      res.end(JSON.stringify({ ok: true }));",
+                      "      return;",
+                      "    }",
+                      "    res.writeHead(404, { 'content-type': 'text/plain' });",
+                      "    res.end('not found');",
+                      "  });"
+                    ].join("\n")
+                  : "  const server = http.createServer((_req, res) => res.end('ok'));",
                 "  server.on('error', () => {});",
                 "  server.listen(port, '127.0.0.1');",
                 "}",
@@ -753,10 +966,7 @@ function createStartupCoreAssetsFixture(options = {}) {
           ]
         },
         web: service.web,
-        desktop: {
-          assetFileName: archiveFileName,
-          bundleTopLevelDir: service.id
-        }
+        desktop: createCoreDesktopManifest(service.id, archiveFileName)
       }, null, 2)}\n`,
       "utf8"
     );
@@ -1158,7 +1368,11 @@ function writeContainerHubBundleRoot(bundleRoot, options = {}) {
         },
         desktop: {
           assetFileName,
-          bundleTopLevelDir: "agent-container-hub"
+          bundleTopLevelDir: "agent-container-hub",
+          capabilities: {
+            provides: [],
+            requires: []
+          }
         }
       },
       null,
@@ -4845,18 +5059,20 @@ test("ensurePreStartRequirements removes deprecated agent platform config keys",
   }
 });
 
-test("ensurePreStartRequirements preserves custom agent platform auth public key path", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-custom-auth-key-"));
-  const userDataRoot = path.join(tempRoot, "user-data");
-  const homeRoot = path.join(tempRoot, "home");
-  const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
+test("ensurePreStartRequirements applies manifest agent platform auth public key path", async () => {
+  const fixture = createStartupCoreAssetsFixture();
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const homeRoot = path.join(fixture.tempRoot, "home");
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, fixture.assetsRoot, {
     homePath: homeRoot,
     desktopPath: path.join(homeRoot, "Desktop")
   });
   const platformService = getBuiltinService("agent-platform");
   const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
-  const customPublicKeyPath = path.join(tempRoot, "custom", "public-key.pem");
+  const customPublicKeyPath = path.join(fixture.tempRoot, "custom", "public-key.pem");
 
+  await installBuiltinService(app, "zenmind-app-server");
+  await installBuiltinService(app, "agent-platform");
   fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
   writeTestEnv(
     userDataRoot,
@@ -4868,14 +5084,12 @@ test("ensurePreStartRequirements preserves custom agent platform auth public key
     await __testInternals.ensurePreStartRequirements(app, platformService);
 
     const envContent = fs.readFileSync(getTestEnvPath(userDataRoot, platformService.id), "utf8");
-    assert.match(
-      envContent,
-      new RegExp(`^AUTH_LOCAL_PUBLIC_KEY_FILE=${customPublicKeyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
-    );
+    assert.doesNotMatch(envContent, new RegExp(`^AUTH_LOCAL_PUBLIC_KEY_FILE=${customPublicKeyPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+    assert.match(envContent, /^AUTH_LOCAL_PUBLIC_KEY_FILE=configs\/local-public-key\.pem$/m);
     assert.match(envContent, /^AUTH_ENABLED=true$/m);
   } finally {
     restore();
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   }
 });
 
@@ -6769,6 +6983,40 @@ test("runStartupPreparation prepares packaged first-launch core services in para
     } catch {
       // Windows may keep synthetic child-process directories busy briefly after failed starts.
     }
+  }
+});
+
+test("runStartupPreparation accepts agent-platform runtime-info readiness when root returns 404", async () => {
+  const fixture = createStartupCoreAssetsFixture({ platformRootReturns404: true });
+  const userDataRoot = path.join(fixture.tempRoot, "user-data");
+  const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
+  const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
+
+  process.env.SERVICE_VERIFY_DELAY_MS = "0";
+
+  try {
+    const result = await runStartupPreparation(app);
+    const platformState = await getServiceState(app, "agent-platform");
+    const webclientState = await getServiceState(app, "agent-webclient");
+    const platformRootProbe = await __testInternals.probeHttpUrl(platformState.healthMeta.webUrl);
+    const platformRuntimeProbe = await __testInternals.probeHttpUrl(
+      new URL("/api/runtime-info", platformState.healthMeta.webUrl).toString()
+    );
+
+    assert.equal(platformRootProbe.statusCode, 404);
+    assert.equal(platformRuntimeProbe.ok, true);
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.started, ["zenmind-app-server", "agent-platform", "agent-webclient"]);
+    assert.equal(webclientState.status, "running");
+  } finally {
+    if (previousVerifyDelay === undefined) {
+      delete process.env.SERVICE_VERIFY_DELAY_MS;
+    } else {
+      process.env.SERVICE_VERIFY_DELAY_MS = previousVerifyDelay;
+    }
+    await stopStartupCoreProcesses(app);
+    restore();
+    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
   }
 });
 

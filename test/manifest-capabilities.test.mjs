@@ -122,6 +122,21 @@ test("normalizeManifest rejects invalid desktop capability declarations", () => 
   );
 });
 
+test("normalizeManifest does not synthesize core service capabilities", () => {
+  const appServer = normalizeManifest(createManifest("zenmind-app-server"));
+  const platform = normalizeManifest(createManifest("agent-platform"));
+  const webclient = normalizeManifest(createManifest("agent-webclient"));
+
+  assert.deepEqual(appServer.desktop.capabilities.provides, []);
+  assert.deepEqual(appServer.desktop.capabilities.requires, []);
+  assert.deepEqual(platform.desktop.capabilities.provides, []);
+  assert.deepEqual(platform.desktop.capabilities.requires, []);
+  assert.equal(platform.desktop.envBindings.some((binding) => binding.key === "AUTH_ENABLED"), false);
+  assert.equal(platform.desktop.envBindings.some((binding) => binding.key === "AUTH_LOCAL_PUBLIC_KEY_FILE"), false);
+  assert.deepEqual(webclient.desktop.capabilities.provides, []);
+  assert.deepEqual(webclient.desktop.capabilities.requires, []);
+});
+
 test("resolveDesktopCapability reports a missing provider clearly", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-capability-missing-"));
   const app = createAppStub(tempRoot);

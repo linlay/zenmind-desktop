@@ -60,6 +60,84 @@ function createFixtureJwt(deviceId) {
   ].join(".");
 }
 
+function createAuthCapabilityProviders() {
+  const publicKeyArgs = [
+    "--mode",
+    "bootstrap",
+    "--db",
+    "{{auth.dbPath}}",
+    "--out",
+    "{{provider.dataDir}}/keys",
+    "--public-out",
+    "{{output.path}}"
+  ];
+  const accessTokenArgs = [
+    "--db",
+    "{{auth.dbPath}}",
+    "--issuer",
+    "{{auth.issuer}}",
+    "--username",
+    "{{auth.username}}",
+    "--device-name",
+    "{{desktop.deviceName}}",
+    "--device-id",
+    "{{desktop.deviceId}}"
+  ];
+  return [
+    {
+      id: "auth.publicKey",
+      darwinCommand: ["scripts/setup-public-key.sh", ...publicKeyArgs],
+      linuxCommand: ["scripts/setup-public-key.sh", ...publicKeyArgs],
+      windowsCommand: [
+        "scripts/setup-public-key.ps1",
+        "-Mode",
+        "bootstrap",
+        "-Db",
+        "{{auth.dbPath}}",
+        "-Out",
+        "{{provider.dataDir}}/keys",
+        "-PublicOut",
+        "{{output.path}}"
+      ],
+      env: {
+        AUTH_DB_PATH: "{{auth.dbPath}}"
+      },
+      output: "file",
+      outputPath: "{{provider.dataDir}}/keys/publicKey.pem",
+      retryOnSqliteBusy: true
+    },
+    {
+      id: "auth.accessToken",
+      darwinCommand: ["scripts/issue-bridge-access-token.sh", ...accessTokenArgs],
+      linuxCommand: ["scripts/issue-bridge-access-token.sh", ...accessTokenArgs],
+      windowsCommand: [
+        "scripts/issue-bridge-access-token.ps1",
+        "-Db",
+        "{{auth.dbPath}}",
+        "-Issuer",
+        "{{auth.issuer}}",
+        "-Username",
+        "{{auth.username}}",
+        "-DeviceName",
+        "{{desktop.deviceName}}",
+        "-DeviceId",
+        "{{desktop.deviceId}}"
+      ],
+      env: {
+        AUTH_DB_PATH: "{{auth.dbPath}}",
+        AUTH_ISSUER: "{{auth.issuer}}",
+        AUTH_APP_USERNAME: "{{auth.username}}",
+        DESKTOP_DEVICE_ID: "{{desktop.deviceId}}"
+      },
+      output: "stdoutLastLine",
+      dependsOn: ["auth.publicKey"],
+      retryOnSqliteBusy: true,
+      validateJwtDeviceId: true,
+      allowDeviceIdFallback: true
+    }
+  ];
+}
+
 function writeDesktopDeviceIdentityFixture(app, deviceId = TEST_DESKTOP_DEVICE_ID) {
   const identityPath = path.join(getDesktopConfigRoot(app), "device-identity.json");
   fs.mkdirSync(path.dirname(identityPath), { recursive: true });
@@ -101,7 +179,11 @@ function registerAppServerFixture(root, options = {}) {
       defaultPort: 7076
     },
     desktop: {
-      bundleTopLevelDir: "zenmind-app-server"
+      bundleTopLevelDir: "zenmind-app-server",
+      capabilities: {
+        provides: createAuthCapabilityProviders(),
+        requires: []
+      }
     }
   });
   const programDir = path.join(getServicesRoot(app), service.id, service.version);
