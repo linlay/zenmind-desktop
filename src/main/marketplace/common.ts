@@ -8,6 +8,7 @@ import type {
   MarketInstallState,
   MarketItem,
   MarketItemType,
+  MarketListOptions,
   MarketSettings,
   MarketSettingsInput
 } from "../../shared/contracts";
@@ -38,7 +39,7 @@ export type InstalledRecord = {
   installedAt: string;
 };
 
-export type MarketplaceOptions = {
+export type MarketplaceOptions = MarketListOptions & {
   catalogUrl?: string;
   catalog?: Catalog;
   skillsApiBaseUrl?: string;

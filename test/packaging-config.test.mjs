@@ -51,6 +51,7 @@ test("electron-builder packaging uses staged app input, restricted locales, and 
   assert.ok(!builderConfig.asarUnpack?.includes("node_modules/@ffmpeg-installer/*/ffmpeg.exe"));
   assert.equal(builderConfig.appId, "cc.zenmind.desktop");
   assert.equal(builderConfig.productName, "ZenMind");
+  assert.equal(builderConfig.win?.icon, "build/icons/icon.ico");
   assert.deepEqual(uninstallResource, {
     from: "scripts",
     to: ".",
@@ -169,10 +170,12 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
     distWinHostScript,
     /await runAndWait\(npmCmd, \["run", "stage:app", "--", "--os=win32", "--arch=x64"\], \{/
   );
+  assert.match(distWinHostScript, /"--config\.win\.signAndEditExecutable=false"/);
   assert.match(
     distWinHostScript,
     /await runAndWait\(nodeBin\(\), \["\.\/scripts\/verify-win-package\.mjs"\], \{ cwd: projectRoot \}\);/
   );
+  assert.match(distWinHostScript, /CSC_IDENTITY_AUTO_DISCOVERY:\s*"false"/);
   assert.match(stageAppScript, /"build", "bundle", "dist-electron"/);
   assert.match(stageAppScript, /"build", "app"/);
   assert.match(stageAppScript, /"dist-renderer"/);
@@ -190,6 +193,10 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   assert.match(stageAppScript, /"--no-package-lock"/);
   assert.match(stageAppScript, /@napi-rs\/canvas-win32-x64-msvc/);
   assert.equal(loadElectronBuilderConfig().afterPack, "./scripts/fix-mac-sign.js");
+  assert.match(afterPackScript, /function patchWindowsExecutableIcon\(context\)/);
+  assert.match(afterPackScript, /function getRceditExecutable\(\)/);
+  assert.match(afterPackScript, /process\.env\.RCEDIT_EXE/);
+  assert.match(afterPackScript, /\[exePath, "--set-icon", iconPath\]/);
   assert.match(afterPackScript, /case "darwin\/arm64":\s*\n\s*return "canvas-darwin-arm64";/);
   assert.match(afterPackScript, /case "win32\/x64":\s*\n\s*return "canvas-win32-x64-msvc";/);
   assert.match(afterPackScript, /function pruneUnusedCanvasRuntimes\(context, resourcesRoot\)/);

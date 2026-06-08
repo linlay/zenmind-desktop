@@ -443,19 +443,50 @@ function normalizeSkillDownloadCommand(command: string, args: string[]) {
 }
 
 function windowsCommandLineArg(value: string) {
-  return `"${value.replace(/"/gu, "\\\"").replace(/%/gu, "%%")}"`;
+  return `"${value.replace(/"/gu, "\"\"").replace(/%/gu, "%%")}"`;
+}
+
+function splitPathList(value: string | undefined) {
+  return (value ?? "").split(path.delimiter).map((entry) => entry.trim()).filter(Boolean);
+}
+
+function resolveWindowsPackageCommandPath(command: string) {
+  if (path.isAbsolute(command) && fs.existsSync(command)) {
+    return command;
+  }
+  const basenames = path.extname(command) ? [command] : [`${command}.cmd`, `${command}.exe`, command];
+  for (const dirPath of splitPathList(process.env.PATH ?? process.env.Path)) {
+    for (const basename of basenames) {
+      const candidate = path.join(dirPath, basename);
+      try {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          return candidate;
+        }
+      } catch {
+        // Keep scanning when a PATH entry is unreadable.
+      }
+    }
+  }
+  return command;
 }
 
 function resolvePackageManagerExecution(command: string, args: string[]) {
   const name = ensureSupportedPackageCommand(command);
   if (process.platform === "win32") {
     // npm/npx on Windows are normally .cmd shims, so execute them through cmd.exe explicitly.
-    const executable = command.toLowerCase().endsWith(".cmd") || command.toLowerCase().endsWith(".exe")
+    const executableName = command.toLowerCase().endsWith(".cmd") || command.toLowerCase().endsWith(".exe")
       ? command
       : `${name}.cmd`;
+    const executable = resolveWindowsPackageCommandPath(executableName);
     return {
       command: process.env.ComSpec || "cmd.exe",
-      args: ["/d", "/s", "/c", [executable, ...args].map(windowsCommandLineArg).join(" ")]
+      args: [
+        "/d",
+        "/s",
+        "/c",
+        ["call", windowsCommandLineArg(executable), ...args.map(windowsCommandLineArg)].join(" ")
+      ],
+      windowsVerbatimArguments: true
     };
   }
 
@@ -669,6 +700,7 @@ export async function installSkillFromCommand(app: App, commandText: string): Pr
       encoding: "utf8",
       timeout: COMMAND_INSTALL_TIMEOUT_MS,
       maxBuffer: COMMAND_INSTALL_MAX_BUFFER,
+      windowsVerbatimArguments: execution.windowsVerbatimArguments,
       windowsHide: true
     });
     const sourcePath = findDownloadedSkillSource(downloadRoot);

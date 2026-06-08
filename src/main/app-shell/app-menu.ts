@@ -13,6 +13,11 @@ export type BuildApplicationMenuOptions = {
 };
 
 export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
+  if (options.platform === "win32") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+
   const isMac = options.platform === "darwin";
   const settingsItem: MenuItemConstructorOptions = {
     label: isMac ? options.t("menu.settingsEllipsis") : options.t("menu.settings"),

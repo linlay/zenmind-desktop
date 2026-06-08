@@ -2792,6 +2792,10 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
   assert.match(mainProcess, /await runServiceMutation\(\(\) => ensureAssistantTargetServicesRunning\(source\)\)/);
   assert.match(mainProcess, /async function showAssistantTargetWindow/);
+  assert.match(
+    mainProcess,
+    /async function showAssistantTargetWindow[\s\S]*?showMainWindow\(targetPath\);[\s\S]*?await runServiceMutation\(\(\) => ensureAssistantTargetServicesRunning\(source\)\)/
+  );
   assert.match(mainProcess, /const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;/);
   assert.doesNotMatch(mainProcess, /const ASSISTANT_TARGET_PATH = "\/service\/agent-webclient";/);
   assert.match(quickRouting, /function createAgentWebclientRoute/);

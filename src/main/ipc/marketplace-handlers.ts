@@ -14,8 +14,8 @@ export interface MarketplaceIpcHandlerOptions {
   handlePluginUninstall: (app: any, serviceId: any, mainWindow: any, options: { t: MarketplaceIpcHandlerOptions["t"] }) => Promise<any>;
   getMarketSettings: (app: any) => any;
   saveMarketSettings: (app: any, input: any) => any;
-  listMarketItems: (app: any) => any;
-  refreshMarketCatalog: (app: any) => Promise<any>;
+  listMarketItems: (app: any, options?: any) => any;
+  refreshMarketCatalog: (app: any, options?: any) => Promise<any>;
   installMarketItem: (app: any, itemId: string) => Promise<any>;
   updateMarketItem: (app: any, itemId: string) => Promise<any>;
   uninstallMarketItem: (app: any, itemId: string) => Promise<any>;
@@ -83,8 +83,8 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
 
   ipcMain.handle("market.getSettings", async () => getMarketSettings(app));
   ipcMain.handle("market.saveSettings", async (_event: any, input: any) => saveMarketSettings(app, input));
-  ipcMain.handle("market.list", async () => listMarketItems(app));
-  ipcMain.handle("market.refresh", async () => refreshMarketCatalog(app));
+  ipcMain.handle("market.list", async (_event: any, listOptions: any) => listMarketItems(app, listOptions));
+  ipcMain.handle("market.refresh", async (_event: any, listOptions: any) => refreshMarketCatalog(app, listOptions));
 
   ipcMain.handle("market.install", async (_event: any, itemId: string) => runServiceMutation(async () => {
     const result = await installMarketItem(app, itemId);

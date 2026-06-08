@@ -1,4 +1,4 @@
-const { execSync } = require("child_process");
+const { execFileSync, execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
@@ -76,6 +76,76 @@ function getResourcesRoot(context, appPath) {
   return path.join(appPath, "resources");
 }
 
+function getProjectRoot(context) {
+  return context.packager?.projectDir || process.cwd();
+}
+
+function findFileRecursive(rootDir, fileName) {
+  if (!rootDir || !fs.existsSync(rootDir)) {
+    return "";
+  }
+  const entries = fs.readdirSync(rootDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = path.join(rootDir, entry.name);
+    if (entry.isFile() && entry.name === fileName) {
+      return entryPath;
+    }
+    if (entry.isDirectory()) {
+      const result = findFileRecursive(entryPath, fileName);
+      if (result) {
+        return result;
+      }
+    }
+  }
+  return "";
+}
+
+function getRceditExecutable() {
+  const explicitPath = process.env.RCEDIT_EXE;
+  if (explicitPath && fs.existsSync(explicitPath)) {
+    return explicitPath;
+  }
+
+  const fileName = process.arch === "ia32" ? "rcedit-ia32.exe" : "rcedit-x64.exe";
+  const cacheRoots = [
+    process.env.ELECTRON_BUILDER_CACHE,
+    process.env.ELECTRON_BUILDER_CACHE ? path.join(process.env.ELECTRON_BUILDER_CACHE, "winCodeSign") : "",
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "electron-builder", "Cache", "winCodeSign") : "",
+    process.env.HOME ? path.join(process.env.HOME, ".cache", "electron-builder", "winCodeSign") : ""
+  ];
+
+  for (const cacheRoot of cacheRoots) {
+    const result = findFileRecursive(cacheRoot, fileName);
+    if (result) {
+      return result;
+    }
+  }
+  return "";
+}
+
+function patchWindowsExecutableIcon(context) {
+  if (context.electronPlatformName !== "win32") {
+    return;
+  }
+
+  const exePath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.exe`);
+  const iconPath = path.join(getProjectRoot(context), "build", "icons", "icon.ico");
+  if (!fs.existsSync(exePath)) {
+    throw new Error(`Windows executable not found for icon patch: ${exePath}`);
+  }
+  if (!fs.existsSync(iconPath)) {
+    throw new Error(`Windows app icon not found for icon patch: ${iconPath}`);
+  }
+
+  const rceditPath = getRceditExecutable();
+  if (!rceditPath) {
+    throw new Error("Unable to find cached rcedit executable. Build once with a populated electron-builder winCodeSign cache or set RCEDIT_EXE.");
+  }
+
+  execFileSync(rceditPath, [exePath, "--set-icon", iconPath], { stdio: "inherit" });
+  console.log(`[after-pack-cleanup] Applied Windows app icon to ${exePath}`);
+}
+
 function pruneUnusedCanvasRuntimes(context, resourcesRoot) {
   const expectedRuntime = expectedCanvasRuntimePackage(context.electronPlatformName, context.arch);
   if (!expectedRuntime) {
@@ -148,6 +218,7 @@ function formatBytes(bytes) {
 exports.default = async function (context) {
   const appPath = getAppPath(context);
   pruneUnusedCanvasRuntimes(context, getResourcesRoot(context, appPath));
+  patchWindowsExecutableIcon(context);
 
   if (context.electronPlatformName !== "darwin") return;
 

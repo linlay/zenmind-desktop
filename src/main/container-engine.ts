@@ -12,6 +12,12 @@ export type ContainerEngineResolution = {
   env: NodeJS.ProcessEnv;
 };
 
+export type ContainerEngineCommandInvocation = {
+  command: string;
+  args: string[];
+  windowsVerbatimArguments?: boolean;
+};
+
 type ContainerEnginePathOptions = {
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
@@ -87,7 +93,9 @@ function commandBasenames(command: string, platform: NodeJS.Platform) {
   if (platform !== "win32") {
     return [command];
   }
-  return command.toLowerCase().endsWith(".exe") ? [command] : [`${command}.exe`, command];
+  return /\.[a-z0-9]+$/iu.test(command)
+    ? [command]
+    : [`${command}.exe`, `${command}.cmd`, `${command}.bat`, command];
 }
 
 function findCommandInPathEntries(command: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform) {
@@ -124,6 +132,33 @@ function resolveCommandPath(command: string, env: NodeJS.ProcessEnv, platform: N
     .find(Boolean) ?? findCommandInPathEntries(command, env, platform);
 }
 
+function quoteWindowsCommandLineArg(value: string) {
+  return `"${value.replace(/"/gu, "\"\"")}"`;
+}
+
+export function buildContainerEngineInvocation(
+  engine: ContainerEngineResolution,
+  args: string[],
+  platform: NodeJS.Platform = process.platform
+): ContainerEngineCommandInvocation {
+  if (platform === "win32" && /\.(?:cmd|bat)$/iu.test(engine.command)) {
+    return {
+      command: process.env.ComSpec || "cmd.exe",
+      args: [
+        "/d",
+        "/s",
+        "/c",
+        ["call", quoteWindowsCommandLineArg(engine.command), ...args.map(quoteWindowsCommandLineArg)].join(" ")
+      ],
+      windowsVerbatimArguments: true
+    };
+  }
+  return {
+    command: engine.command,
+    args
+  };
+}
+
 export function resolveContainerEngine(options: ContainerEngineResolveOptions = {}): ContainerEngineResolution | null {
   const platform = options.platform ?? process.platform;
   const env = buildContainerEngineEnv(options);
@@ -134,18 +169,22 @@ export function resolveContainerEngine(options: ContainerEngineResolveOptions = 
     if (!command) {
       continue;
     }
-    const result = spawnSync(command, ["info"], {
+    const engine = {
+      name,
+      command,
+      env
+    };
+    const invocation = buildContainerEngineInvocation(engine, ["info"], platform);
+    const result = spawnSync(invocation.command, invocation.args, {
       encoding: "utf8",
       env,
       stdio: "ignore",
-      timeout: timeoutMs
+      timeout: timeoutMs,
+      windowsHide: true,
+      windowsVerbatimArguments: invocation.windowsVerbatimArguments
     });
     if (result.status === 0) {
-      return {
-        name,
-        command,
-        env
-      };
+      return engine;
     }
   }
 

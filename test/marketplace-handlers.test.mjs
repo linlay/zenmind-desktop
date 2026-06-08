@@ -104,6 +104,32 @@ test("plugins.install installs selected archive through mutation queue and clear
   ]);
 });
 
+test("market.list and market.refresh forward section options", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const calls = [];
+
+  registerMarketplaceIpcHandlers(ipc, makeBaseOptions({
+    listMarketItems: async (app, options) => {
+      calls.push(["list", app.name, options]);
+      return { ok: true, items: [] };
+    },
+    refreshMarketCatalog: async (app, options) => {
+      calls.push(["refresh", app.name, options]);
+      return { ok: true, items: [] };
+    }
+  }));
+
+  const listOptions = { sections: ["plugins"] };
+  const refreshOptions = { sections: ["sandboxImages"] };
+  await handlers["market.list"]({}, listOptions);
+  await handlers["market.refresh"]({}, refreshOptions);
+
+  assert.deepEqual(calls, [
+    ["list", "test-app", listOptions],
+    ["refresh", "test-app", refreshOptions]
+  ]);
+});
+
 test("market.install clears session cache only after successful install", async () => {
   const { ipc, handlers } = makeMockIpcMain();
   const calls = [];

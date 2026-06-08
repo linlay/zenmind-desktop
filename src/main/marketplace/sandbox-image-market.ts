@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import { execFile, spawn, spawnSync } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import type { App } from "electron";
 import type {
   MarketCommandResult,
@@ -12,12 +12,13 @@ import type {
 import {
   type ContainerEngineName,
   type ContainerEngineResolution,
+  buildContainerEngineInvocation,
   resolveContainerEngine
 } from "../container-engine";
 import { ContainerHubClient, type ContainerHubConfig, type ContainerHubEnvironment } from "../copilot/core/container-hub";
 import { extractArchiveToDir, listArchiveEntries } from "../archive-utils";
 import { readEnvFile } from "../env-file";
-import { getServiceState } from "../services/manager";
+import { getResponsiveServiceState } from "../services/manager";
 import { t } from "../i18n/main-i18n";
 import {
   asString,
@@ -28,6 +29,13 @@ import {
 
 const CONTAINER_HUB_SERVICE_ID = "agent-container-hub";
 const IMAGE_COMMAND_TIMEOUT_MS = 300_000;
+const LIST_IMAGE_COMMAND_TIMEOUT_MS = 30_000;
+const CONTAINER_ENGINE_CACHE_SUCCESS_MS = 30_000;
+const CONTAINER_ENGINE_CACHE_MISS_MS = 10_000;
+
+let cachedContainerEngine:
+  | { engine: ContainerEngineResolution | null; expiresAt: number; cacheKey: string }
+  | null = null;
 
 interface SandboxImageImportOptions {
   taskId?: string;
@@ -57,7 +65,7 @@ async function resolveContainerHubConfig(app: App, options: MarketplaceOptions =
   }
 
   try {
-    const state = await getServiceState(app, CONTAINER_HUB_SERVICE_ID);
+    const state = await getResponsiveServiceState(app, CONTAINER_HUB_SERVICE_ID);
     if (state.status !== "running" || !state.healthMeta.webUrl) {
       return null;
     }
@@ -166,8 +174,39 @@ function localContainerImageToMarketItem(image: LocalContainerImage, engine: Con
   };
 }
 
-function listLocalContainerImages(): { engine: ContainerEngineResolution | null; items: MarketItem[]; message: string } {
+function resolveCachedContainerEngine() {
+  const now = Date.now();
+  const cacheKey = [
+    process.platform,
+    process.env.PATH ?? "",
+    process.env.Path ?? "",
+    process.env.DESKTOP_CONTAINER_ENGINE_PATHS ?? "",
+    process.env.ZENMIND_CONTAINER_ENGINE_PATHS ?? "",
+    process.env.ProgramFiles ?? "",
+    process.env.LOCALAPPDATA ?? ""
+  ].join("\u0000");
+  if (
+    cachedContainerEngine &&
+    cachedContainerEngine.cacheKey === cacheKey &&
+    cachedContainerEngine.expiresAt > now
+  ) {
+    return cachedContainerEngine.engine;
+  }
   const engine = resolveContainerEngine();
+  cachedContainerEngine = {
+    engine,
+    expiresAt: now + (engine ? CONTAINER_ENGINE_CACHE_SUCCESS_MS : CONTAINER_ENGINE_CACHE_MISS_MS),
+    cacheKey
+  };
+  return engine;
+}
+
+async function listLocalContainerImages(): Promise<{
+  engine: ContainerEngineResolution | null;
+  items: MarketItem[];
+  message: string;
+}> {
+  const engine = resolveCachedContainerEngine();
   if (!engine) {
     return {
       engine: null,
@@ -176,39 +215,41 @@ function listLocalContainerImages(): { engine: ContainerEngineResolution | null;
     };
   }
 
-  const result = spawnSync(engine.command, [
-    "image",
-    "ls",
-    "--format",
-    "{{.ID}}\t{{.Repository}}\t{{.Tag}}\t{{.Size}}"
-  ], {
-    encoding: "utf8",
-    env: engine.env,
-    timeout: 30_000
-  });
-  if (result.status !== 0) {
-    const detail = String(result.stderr || result.stdout || "").trim();
+  try {
+    const result = await runEngineCommand(engine, [
+      "image",
+      "ls",
+      "--format",
+      "{{.ID}}\t{{.Repository}}\t{{.Tag}}\t{{.Size}}"
+    ], LIST_IMAGE_COMMAND_TIMEOUT_MS);
+    return {
+      engine,
+      items: parseContainerImageList(result.stdout).map((image) => localContainerImageToMarketItem(image, engine.name)),
+      message: ""
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
     return {
       engine,
       items: [],
       message: detail || t("market.sandbox.engineCommandFailed", { engine: engine.name, command: "image ls" })
     };
   }
-
-  return {
-    engine,
-    items: parseContainerImageList(result.stdout).map((image) => localContainerImageToMarketItem(image, engine.name)),
-    message: ""
-  };
 }
 
-function runEngineCommand(engine: ContainerEngineResolution, args: string[]): Promise<{ stdout: string; stderr: string }> {
+function runEngineCommand(
+  engine: ContainerEngineResolution,
+  args: string[],
+  timeoutMs = IMAGE_COMMAND_TIMEOUT_MS
+): Promise<{ stdout: string; stderr: string }> {
+  const invocation = buildContainerEngineInvocation(engine, args);
   return new Promise((resolve, reject) => {
-    execFile(engine.command, args, {
+    execFile(invocation.command, invocation.args, {
       encoding: "utf8",
       env: engine.env,
-      timeout: IMAGE_COMMAND_TIMEOUT_MS,
-      windowsHide: true
+      timeout: timeoutMs,
+      windowsHide: true,
+      windowsVerbatimArguments: invocation.windowsVerbatimArguments
     }, (error, stdout, stderr) => {
       if (error) {
         const detail = String(stderr || stdout || error.message).trim();
@@ -254,11 +295,13 @@ function runStreamingEngineCommand(
   args: string[],
   onOutput: (event: { line: string; stream: "stdout" | "stderr" }) => void
 ): Promise<{ stdout: string; stderr: string }> {
+  const invocation = buildContainerEngineInvocation(engine, args);
   return new Promise((resolve, reject) => {
-    const child = spawn(engine.command, args, {
+    const child = spawn(invocation.command, invocation.args, {
       env: engine.env,
       stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true
+      windowsHide: true,
+      windowsVerbatimArguments: invocation.windowsVerbatimArguments
     });
     let settled = false;
     let stdout = "";
@@ -400,8 +443,10 @@ export async function listSandboxImageMarketItems(
   app: App,
   options: MarketplaceOptions = {}
 ): Promise<MarketSectionResult> {
-  const localImages = listLocalContainerImages();
-  const config = await resolveContainerHubConfig(app, options);
+  const [localImages, config] = await Promise.all([
+    listLocalContainerImages(),
+    resolveContainerHubConfig(app, options)
+  ]);
   if (!config?.baseURL) {
     if (localImages.engine) {
       return {

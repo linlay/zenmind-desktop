@@ -64,11 +64,30 @@ assert.equal(calls.menu.template, calls.template);
 `);
 });
 
-test("non-macOS application menu keeps the default Electron quit role", () => {
+test("Windows hides the native application menu so custom chrome stays one row", () => {
   runMenuAssertion(`
 buildApplicationMenu({
   appName: "ZenMind",
   platform: "win32",
+  t,
+  openSettings: () => {
+    calls.settingsCount += 1;
+  },
+  requestQuit: () => {
+    calls.quitCount += 1;
+  }
+});
+assert.equal(calls.template, null);
+assert.equal(calls.menu, null);
+assert.equal(calls.quitCount, 0);
+`);
+});
+
+test("Linux application menu keeps the default Electron quit role", () => {
+  runMenuAssertion(`
+buildApplicationMenu({
+  appName: "ZenMind",
+  platform: "linux",
   t,
   openSettings: () => {
     calls.settingsCount += 1;

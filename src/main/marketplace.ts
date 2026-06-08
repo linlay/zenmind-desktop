@@ -1,5 +1,5 @@
 import type { App } from "electron";
-import type { MarketCommandResult, MarketListResult, MarketItemType } from "../shared/contracts";
+import type { MarketCommandResult, MarketListResult, MarketItemType, MarketSection } from "../shared/contracts";
 import {
   DEFAULT_MARKETPLACE_CATALOG_URL,
   DEFAULT_SKILLS_API_BASE_URL,
@@ -45,6 +45,14 @@ export {
   saveMarketSettings
 };
 
+const EMPTY_MARKET_SECTION: MarketSectionResult = {
+  items: [],
+  offline: false,
+  message: ""
+};
+
+const MARKET_SECTIONS: readonly MarketSection[] = ["plugins", "skills", "sandboxImages"];
+
 function combineMarketSections(
   pluginMarket: MarketSectionResult,
   skillMarket: MarketSectionResult,
@@ -70,11 +78,24 @@ function combineMarketSections(
   };
 }
 
+function shouldLoadMarketSection(options: MarketplaceOptions, section: MarketSection) {
+  return !options.sections || options.sections.includes(section);
+}
+
 async function loadMarketSections(app: App, options: MarketplaceOptions = {}) {
+  const sections = new Set((options.sections ?? MARKET_SECTIONS).filter((section) =>
+    MARKET_SECTIONS.includes(section)
+  ));
   const [pluginMarket, skillMarket, sandboxImageMarket] = await Promise.all([
-    listPluginMarketItems(app, options),
-    listSkillMarketItems(app, options),
-    listSandboxImageMarketItems(app, options)
+    shouldLoadMarketSection({ ...options, sections: [...sections] }, "plugins")
+      ? listPluginMarketItems(app, options)
+      : EMPTY_MARKET_SECTION,
+    shouldLoadMarketSection({ ...options, sections: [...sections] }, "skills")
+      ? listSkillMarketItems(app, options)
+      : EMPTY_MARKET_SECTION,
+    shouldLoadMarketSection({ ...options, sections: [...sections] }, "sandboxImages")
+      ? listSandboxImageMarketItems(app, options)
+      : EMPTY_MARKET_SECTION
   ]);
   return { pluginMarket, skillMarket, sandboxImageMarket };
 }

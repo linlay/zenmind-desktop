@@ -74,7 +74,7 @@ export function PluginMarket({ activeTab, onTabChange }: MarketViewProps) {
       if (!command) {
         throw createMissingMarketApiError(commandName, t);
       }
-      setMarketResult(await command());
+      setMarketResult(await command({ sections: ["plugins"] }));
     } catch (reason) {
       console.warn("[plugin-market] failed to load market data", reason);
     } finally {

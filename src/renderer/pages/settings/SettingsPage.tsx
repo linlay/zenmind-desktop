@@ -105,6 +105,7 @@ const SETTINGS_ACTION_PATCH_FIELDS = [
   "desktopCopilotPages"
 ] as const;
 const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
+  "navigation",
   "quickAssistant",
   "embeddedWebsites"
 ];
@@ -464,6 +465,9 @@ export function SettingsPage({
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
   const desktopPetSupported = isMac || isWindows;
   const contentRef = useRef<HTMLDivElement>(null);
+  const memoryDataLoadedRef = useRef(false);
+  const assistantSettingsLoadedRef = useRef(false);
+  const desktopPetStateLoadedRef = useRef(false);
   const sectionDefinitions = useMemo(
     () => buildLocalizedSettingsSections({ isWindows, t }),
     [isWindows, t]
@@ -480,6 +484,11 @@ export function SettingsPage({
     `/settings/${sectionIdParam ?? ""}`,
     visibleSectionIds
   );
+  const shouldReadMemoryData = activeSection === "memory";
+  const shouldReadAssistantSettings = Boolean(
+    activeSection && ASSISTANT_SETTINGS_SECTION_IDS.includes(activeSection)
+  );
+  const shouldReadDesktopPetState = desktopPetSupported && activeSection === "desktopPet";
 
   function setReadErrorSections(sectionIds: SettingsSectionId[], message: string) {
     setSectionReadErrors((current) => {
@@ -539,6 +548,10 @@ export function SettingsPage({
   }, [activeSection]);
 
   useEffect(() => {
+    if (!shouldReadMemoryData || memoryDataLoadedRef.current) {
+      return;
+    }
+    memoryDataLoadedRef.current = true;
     let cancelled = false;
     Promise.all([
       window.electronAPI.assistant.getMemorySummary(),
@@ -546,6 +559,7 @@ export function SettingsPage({
     ])
       .then(([summary, memoryList]) => {
         if (cancelled) {
+          memoryDataLoadedRef.current = false;
           return;
         }
         setMemorySettings(summary.settings);
@@ -556,6 +570,7 @@ export function SettingsPage({
         setReadErrorSections(["memory"], "");
       })
       .catch((reason) => {
+        memoryDataLoadedRef.current = false;
         if (!cancelled) {
           setReadErrorSections(["memory"], reason instanceof Error ? reason.message : String(reason));
         }
@@ -564,9 +579,13 @@ export function SettingsPage({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [shouldReadMemoryData]);
 
   useEffect(() => {
+    if (!shouldReadAssistantSettings || assistantSettingsLoadedRef.current) {
+      return;
+    }
+    assistantSettingsLoadedRef.current = true;
     let cancelled = false;
     Promise.all([
       window.electronAPI.assistant.getSettings(),
@@ -574,6 +593,7 @@ export function SettingsPage({
     ])
       .then(([settings, agentsResult]) => {
         if (cancelled) {
+          assistantSettingsLoadedRef.current = false;
           return;
         }
         if (!agentsResult.ok) {
@@ -588,6 +608,7 @@ export function SettingsPage({
         setReadErrorSections(ASSISTANT_SETTINGS_SECTION_IDS, "");
       })
       .catch((reason) => {
+        assistantSettingsLoadedRef.current = false;
         if (!cancelled) {
           setReadErrorSections(
             ASSISTANT_SETTINGS_SECTION_IDS,
@@ -599,31 +620,37 @@ export function SettingsPage({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [shouldReadAssistantSettings]);
 
   useEffect(() => {
-    if (!desktopPetSupported) {
+    if (!shouldReadDesktopPetState) {
       return;
     }
 
     let cancelled = false;
-    window.electronAPI.desktopPet.getState()
-      .then((state) => {
-        if (!cancelled) {
+    if (!desktopPetStateLoadedRef.current) {
+      window.electronAPI.desktopPet.getState()
+        .then((state) => {
+          if (cancelled) {
+            return;
+          }
+          desktopPetStateLoadedRef.current = true;
           setDesktopPetState(state);
-          setReadErrorSections(["appearance"], "");
-        }
-      })
-      .catch((reason) => {
-        if (!cancelled) {
-          setReadErrorSections(["appearance"], reason instanceof Error ? reason.message : String(reason));
-        }
-      });
+          setReadErrorSections(["desktopPet"], "");
+        })
+        .catch((reason) => {
+          desktopPetStateLoadedRef.current = false;
+          if (!cancelled) {
+            setReadErrorSections(["desktopPet"], reason instanceof Error ? reason.message : String(reason));
+          }
+        });
+    }
 
     const dispose = window.electronAPI.desktopPet.onStateChanged((state) => {
       if (!cancelled) {
+        desktopPetStateLoadedRef.current = true;
         setDesktopPetState(state);
-        setReadErrorSections(["appearance"], "");
+        setReadErrorSections(["desktopPet"], "");
       }
     });
 
@@ -631,7 +658,7 @@ export function SettingsPage({
       cancelled = true;
       dispose();
     };
-  }, [desktopPetSupported]);
+  }, [shouldReadDesktopPetState]);
 
   useEffect(() => {
     if (desktopPetState?.boundAgentKey) {
@@ -1386,7 +1413,10 @@ export function SettingsPage({
   }
 
   async function handleSelectDesktopPetAppearance(appearanceId: string) {
-    if (!desktopPetSupported || !desktopPetState || appearanceId === currentDesktopPetAppearanceId) {
+    if (!desktopPetSupported) {
+      return;
+    }
+    if (!desktopPetState || appearanceId === currentDesktopPetAppearanceId) {
       return;
     }
     const selectedAppearance = desktopPetAppearanceOptions.find((appearance) => appearance.id === appearanceId);

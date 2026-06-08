@@ -88,7 +88,7 @@ export function SkillMarket({ activeTab, onTabChange }: MarketViewProps) {
       if (!command) {
         throw createMissingMarketApiError(commandName, t);
       }
-      const next = await command();
+      const next = await command({ sections: ["skills"] });
       const skillMarketOffline = Boolean(next.skillOffline);
       setMarketResult(next);
       setMarketFeedback(skillMarketOffline ? next.skillMessage ?? "" : "");

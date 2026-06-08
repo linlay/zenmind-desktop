@@ -273,7 +273,12 @@ test("window manager builds platform-specific main window options", () => {
   assert.equal(macOptions.webPreferences.preload, "C:/app/preload/index.js");
   assert.equal(macOptions.webPreferences.contextIsolation, true);
   assert.equal(macOptions.webPreferences.webviewTag, true);
-  assert.equal(Object.hasOwn(winOptions, "titleBarStyle"), false);
+  assert.equal(winOptions.titleBarStyle, "hidden");
+  assert.deepEqual(winOptions.titleBarOverlay, {
+    color: "#F6F8FC",
+    symbolColor: "#475569",
+    height: 44
+  });
   assert.equal(winOptions.backgroundColor, "#F6F8FC");
 });
 

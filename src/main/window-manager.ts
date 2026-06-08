@@ -118,7 +118,16 @@ export function buildMainWindowOptions(input: {
           vibrancy: "under-window" as const,
           visualEffectState: "active" as const
         }
-      : {}),
+      : input.platform === "win32"
+        ? {
+            titleBarStyle: "hidden" as const,
+            titleBarOverlay: {
+              color: "#F6F8FC",
+              symbolColor: "#475569",
+              height: 44
+            }
+          }
+        : {}),
     webPreferences: {
       preload: input.preloadPath,
       contextIsolation: true,

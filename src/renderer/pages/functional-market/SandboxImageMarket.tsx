@@ -172,7 +172,7 @@ export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) 
       if (!command) {
         throw createMissingMarketApiError(commandName, t);
       }
-      const next = await command();
+      const next = await command({ sections: ["sandboxImages"] });
       setMarketResult(next);
       setMarketFeedback(null);
     } catch (reason) {

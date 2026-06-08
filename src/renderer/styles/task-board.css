@@ -24,6 +24,7 @@
   --task-board-radius: 8px;
   height: 100%;
   min-height: 0;
+  box-sizing: border-box;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -31,6 +32,21 @@
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.78) 0%, rgba(244, 247, 251, 0.96) 46%, var(--task-board-bg) 100%);
   color: var(--task-board-ink);
+}
+
+.app-shell.is-windows-platform.has-task-board-controls .task-board-page {
+  padding-top: 44px;
+}
+
+.app-shell.is-windows-platform.has-task-board-controls .task-board-page::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 138px;
+  height: 44px;
+  app-region: drag;
+  -webkit-app-region: drag;
 }
 
 :root[data-theme="dark"] .task-board-page {

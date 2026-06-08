@@ -219,8 +219,8 @@ const api: DesktopApi = {
   market: {
     getSettings: () => ipcRenderer.invoke("market.getSettings"),
     saveSettings: (input) => ipcRenderer.invoke("market.saveSettings", input),
-    list: () => ipcRenderer.invoke("market.list"),
-    refresh: () => ipcRenderer.invoke("market.refresh"),
+    list: (options) => ipcRenderer.invoke("market.list", options),
+    refresh: (options) => ipcRenderer.invoke("market.refresh", options),
     install: (itemId: string) => ipcRenderer.invoke("market.install", itemId),
     update: (itemId: string) => ipcRenderer.invoke("market.update", itemId),
     uninstall: (itemId: string) => ipcRenderer.invoke("market.uninstall", itemId),

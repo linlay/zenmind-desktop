@@ -35,6 +35,18 @@ const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop"
 const BUNDLED_ENV_RESOURCES_DIR_NAME = "env";
 const ENV_ZIP_FILE_NAME = "env.zip";
 const VERSION_FILE_NAME = "VERSION";
+const OWNER_BOOTSTRAP_RELATIVE_PATH = path.join("owner", "BOOTSTRAP.md");
+const OWNER_PROFILE_RELATIVE_PATHS = [
+  path.join("owner", "OWNER.md"),
+  path.join("owner", "profile.yml"),
+  path.join("owner", "profile.yaml")
+];
+const COMPLETED_OWNER_BOOTSTRAP_RELATIVE_PATH = path.join(
+  ".desktop",
+  "state",
+  "desktop",
+  "owner-bootstrap.completed.md"
+);
 
 type EnvZipImportOptions = {
   shouldOverwriteExistingFile?: (relativePath: string) => boolean;
@@ -52,6 +64,10 @@ function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
   return platform === "win32" ? path.win32 : path.posix;
 }
 
+function pathApiForResolvedRoot(platform: NodeJS.Platform | undefined, rootPath: string) {
+  return path.win32.isAbsolute(rootPath) ? path.win32 : pathApiForPlatform(platform);
+}
+
 function getHomePath(app: AppPathReader) {
   try {
     const homePath = app.getPath("home");
@@ -65,8 +81,9 @@ function getHomePath(app: AppPathReader) {
 }
 
 export function resolveRuntimeRoot(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
-  const pathApi = pathApiForPlatform(platform);
-  return pathApi.resolve(pathApi.join(getHomePath(app), APP_BRAND.paths.runtimeRootDirName));
+  const homePath = getHomePath(app);
+  const pathApi = pathApiForResolvedRoot(platform, homePath);
+  return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName));
 }
 
 export function runtimeRootExists(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
@@ -100,6 +117,53 @@ function runtimeSeedPathExists(root: string, relativePath: string) {
   try {
     const targetPath = path.join(root, relativePath);
     return fs.existsSync(targetPath);
+  } catch {
+    return false;
+  }
+}
+
+function hasMeaningfulOwnerContent(content: string) {
+  return content
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .some((line) =>
+      line &&
+      !line.startsWith("#") &&
+      !/^(?:todo|tbd|placeholder|example|待填写|未填写|请填写|请补充)(?:\b|[:：])/iu.test(line)
+    );
+}
+
+function runtimeHasCompletedOwnerProfile(root: string) {
+  for (const relativePath of OWNER_PROFILE_RELATIVE_PATHS) {
+    const ownerPath = path.join(root, relativePath);
+    try {
+      if (fileExists(ownerPath) && hasMeaningfulOwnerContent(fs.readFileSync(ownerPath, "utf8"))) {
+        return true;
+      }
+    } catch {
+      // Keep BOOTSTRAP.md in place when the existing owner file cannot be read safely.
+    }
+  }
+  return false;
+}
+
+function archiveCompletedOwnerBootstrap(targetRoot: string) {
+  const bootstrapPath = path.join(targetRoot, OWNER_BOOTSTRAP_RELATIVE_PATH);
+  if (!fileExists(bootstrapPath) || !runtimeHasCompletedOwnerProfile(targetRoot)) {
+    return false;
+  }
+
+  const archivePath = path.join(targetRoot, COMPLETED_OWNER_BOOTSTRAP_RELATIVE_PATH);
+  const archiveTarget = fileExists(archivePath)
+    ? path.join(
+        path.dirname(archivePath),
+        `owner-bootstrap.completed-${Date.now()}.md`
+      )
+    : archivePath;
+  try {
+    fs.mkdirSync(path.dirname(archiveTarget), { recursive: true });
+    fs.renameSync(bootstrapPath, archiveTarget);
+    return true;
   } catch {
     return false;
   }
@@ -196,6 +260,9 @@ export async function importBundledEnvZipToRuntime(
         : undefined
     }
   );
+  if (options.refreshRuntimeSeedFiles) {
+    archiveCompletedOwnerBootstrap(result.targetRoot);
+  }
   return {
     ...result,
     sourceZipPath: zipPath

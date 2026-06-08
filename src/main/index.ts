@@ -978,6 +978,8 @@ async function ensureAssistantTargetServicesRunning(source: string) {
 }
 
 async function showAssistantTargetWindow(source: string, targetPath = ASSISTANT_TARGET_PATH) {
+  // Keep Windows tray activation responsive while service probes/startup finish.
+  showMainWindow(targetPath);
   const failures = await runServiceMutation(() => ensureAssistantTargetServicesRunning(source));
   if (failures.length > 0) {
     showMainWindow("/control-center");
@@ -988,7 +990,6 @@ async function showAssistantTargetWindow(source: string, targetPath = ASSISTANT_
     };
   }
 
-  showMainWindow(targetPath);
   return {
     ok: true,
     message: "智能助理已打开。",

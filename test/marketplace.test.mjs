@@ -110,6 +110,93 @@ function writeRootSkillArchive(root, options = {}) {
 
 function writeFakeContainerEngine(binDir, name, script) {
   fs.mkdirSync(binDir, { recursive: true });
+  if (process.platform === "win32") {
+    const runnerName = `fake-${name}-engine.cjs`;
+    const runnerPath = path.join(binDir, runnerName);
+    const enginePath = path.join(binDir, `${name}.cmd`);
+    fs.writeFileSync(
+      runnerPath,
+      `const fs = require("node:fs");
+const script = ${JSON.stringify(script)};
+const args = process.argv.slice(2);
+
+function decodePrintf(value) {
+  return value.replace(/\\\\t/g, "\\t").replace(/\\\\n/g, "\\n");
+}
+
+function appendLogIfNeeded() {
+  const match = />>\\s+"([^"]+)"/u.exec(script);
+  if (match) {
+    fs.appendFileSync(match[1], args.join(" ") + "\\n", "utf8");
+  }
+}
+
+function imageCommandBlock(command) {
+  const marker = 'if [ "$1" = "image" ] && [ "$2" = "' + command + '" ]; then';
+  const start = script.indexOf(marker);
+  if (start < 0) {
+    return "";
+  }
+  const rest = script.slice(start + marker.length);
+  const end = rest.indexOf("\\nfi");
+  return end >= 0 ? rest.slice(0, end) : rest;
+}
+
+async function main() {
+  appendLogIfNeeded();
+  if (/^#!\\/bin\\/sh\\s+set -eu\\s+exit 1\\s*$/u.test(script.trim())) {
+    process.exit(1);
+  }
+  if (args[0] === "info") {
+    const match = /if \\[ "\\$1" = "info" \\]; then\\s+exit ([0-9]+)/u.exec(script);
+    process.exit(match ? Number(match[1]) : 2);
+  }
+  if (args[0] === "image" && args[1] === "ls") {
+    const match = /printf '([^']*)'/u.exec(imageCommandBlock("ls"));
+    if (match) {
+      process.stdout.write(decodePrintf(match[1]));
+      process.exit(0);
+    }
+  }
+  if (args[0] === "image" && args[1] === "load") {
+    const block = imageCommandBlock("load");
+    if (/Loading layer 1\\/2/u.test(block)) {
+      process.stderr.write("Loading layer 1/2\\n");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    const match = /Loaded image: ([^\\\\']+)/u.exec(block);
+    if (match) {
+      process.stdout.write("Loaded image: " + match[1] + "\\n");
+      process.exit(0);
+    }
+  }
+  if (args[0] === "image" && args[1] === "rm") {
+    const match = /Untagged: ([^\\\\']+)/u.exec(imageCommandBlock("rm"));
+    if (match) {
+      process.stdout.write("Untagged: " + match[1] + "\\n");
+      process.exit(0);
+    }
+  }
+  if (args[0] === "image" && args[1] === "save") {
+    if (/fake image archive/u.test(imageCommandBlock("save"))) {
+      fs.writeFileSync(args[3], "fake image archive", "utf8");
+      process.exit(0);
+    }
+  }
+  process.stderr.write("unexpected " + ${JSON.stringify(name)} + " command: " + args.join(" ") + "\\n");
+  process.exit(2);
+}
+
+main().catch((error) => {
+  process.stderr.write(String(error && error.stack ? error.stack : error) + "\\n");
+  process.exit(1);
+});
+`,
+      "utf8"
+    );
+    fs.writeFileSync(enginePath, `@echo off\r\n"${process.execPath}" "%~dp0${runnerName}" %*\r\n`, "utf8");
+    return enginePath;
+  }
   const enginePath = path.join(binDir, name);
   fs.writeFileSync(enginePath, script, "utf8");
   fs.chmodSync(enginePath, 0o755);
@@ -378,6 +465,66 @@ test("listMarketItems reports plugin and skill marketplace status separately", a
     assert.equal(result.skillOffline, false);
     assert.doesNotMatch(result.skillMessage, /403/);
     assert.ok(result.items.some((item) => item.id === "visible-skill" && item.type === "skill"));
+  });
+});
+
+test("listMarketItems can load plugin and skill sections without sandbox probing", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-section-filter-"));
+  const app = createApp(root);
+  const isolatedPath = path.join(root, "empty-path");
+  const missingProgramFiles = path.join(root, "missing-program-files");
+  const missingLocalAppData = path.join(root, "missing-local-app-data");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  fs.mkdirSync(isolatedPath, { recursive: true });
+
+  await withEnvPatch({
+    PATH: isolatedPath,
+    ProgramFiles: missingProgramFiles,
+    LOCALAPPDATA: missingLocalAppData,
+    DESKTOP_CONTAINER_ENGINE_PATHS: isolatedPath,
+    ZENMIND_CONTAINER_ENGINE_PATHS: isolatedPath
+  }, async () => {
+    await withFixtureServer(new Map([
+      ["/api/v1/skills?page=1&limit=100", skillsEnvelope([
+        { name: "visible-skill", display_name: "Visible Skill", description: "Visible", latest_version: "1.0.0" }
+      ])]
+    ]), async (skillsBaseUrl) => {
+      const catalog = {
+        schemaVersion: 1,
+        items: [{
+          id: "visible-plugin",
+          type: "plugin",
+          name: "Visible Plugin",
+          version: "1.0.0",
+          description: "Visible",
+          tags: [],
+          assets: {}
+        }]
+      };
+
+      const pluginOnly = await listMarketItems(app, {
+        catalog,
+        skillsApiBaseUrl: skillsBaseUrl,
+        sections: ["plugins"]
+      });
+      assert.equal(pluginOnly.ok, true);
+      assert.equal(pluginOnly.sandboxOffline, false);
+      assert.equal(pluginOnly.sandboxMessage, "");
+      assert.deepEqual(pluginOnly.items.map((item) => item.type), ["plugin"]);
+      assert.equal(pluginOnly.items[0]?.id, "visible-plugin");
+
+      const skillOnly = await listMarketItems(app, {
+        catalog,
+        skillsApiBaseUrl: skillsBaseUrl,
+        sections: ["skills"]
+      });
+      assert.equal(skillOnly.ok, true);
+      assert.equal(skillOnly.sandboxOffline, false);
+      assert.equal(skillOnly.sandboxMessage, "");
+      assert.deepEqual(skillOnly.items.map((item) => item.type), ["skill"]);
+      assert.equal(skillOnly.items[0]?.id, "visible-skill");
+    });
   });
 });
 
@@ -784,9 +931,9 @@ exit 2
 
     assert.equal(result.ok, true);
     assert.equal(result.imageRef, "agent-container-hub:v0.3.0-linux-arm64");
-    const log = fs.readFileSync(logPath, "utf8");
+    const log = fs.readFileSync(logPath, "utf8").replace(/\\/g, "/");
     assert.match(log, /image load -i .*agent-container-hub\/images\/agent-container-hub-image-v0\.3\.0-linux-arm64\.tar\.gz/);
-    assert.doesNotMatch(log, new RegExp(bundlePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(log, new RegExp(bundlePath.replace(/\\/g, "/").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   });
 });
 
@@ -1037,8 +1184,10 @@ test("importSkillFromCommand maps old Anthropic skill ids before running skills 
   const script = process.platform === "win32"
     ? `@echo off
 echo %*>"${logPath}"
-echo %* | findstr /C:"--skill docx-manipulation" >nul && exit /b 7
-echo %* | findstr /C:"--skill docx" >nul || exit /b 8
+set args=%*
+set args=%args:"=%
+echo %args% | findstr /C:"--skill docx-manipulation" >nul && exit /b 7
+echo %args% | findstr /C:"--skill docx" >nul || exit /b 8
 set target=%USERPROFILE%\\.codex\\skills\\docx
 mkdir "%target%"
 echo # DOCX>"%target%\\SKILL.md"
@@ -1071,8 +1220,9 @@ printf '{"id":"docx","name":"DOCX","version":"1.0.0","description":"Anthropic sk
     assert.equal(result.ok, true);
     assert.equal(result.itemId, "docx");
     assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "docx"), "SKILL.md")), true);
-    assert.match(fs.readFileSync(logPath, "utf8"), /--skill docx(?:\s|$)/);
-    assert.doesNotMatch(fs.readFileSync(logPath, "utf8"), /docx-manipulation/);
+    const log = fs.readFileSync(logPath, "utf8").replace(/"/g, "");
+    assert.match(log, /--skill docx(?:\s|$)/);
+    assert.doesNotMatch(log, /docx-manipulation/);
   });
 });
 

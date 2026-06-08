@@ -7,6 +7,7 @@ import type {
   DesktopActionRendererRequest,
   DesktopActionRendererResponse,
   DesktopPageContextSnapshot,
+  MarketListOptions,
   ServiceId,
   ServiceLogTarget,
   ServiceOpenLogViewerRequest
@@ -229,6 +230,21 @@ function readItemId(args: Record<string, unknown>) {
     throw new Error("itemId is required");
   }
   return itemId;
+}
+
+function isMarketSection(value: unknown): value is NonNullable<MarketListOptions["sections"]>[number] {
+  return value === "plugins" || value === "skills" || value === "sandboxImages";
+}
+
+function readMarketListOptions(args: Record<string, unknown>): MarketListOptions {
+  const rawOptions = asRecord(args.options);
+  const rawSections = Array.isArray(args.sections)
+    ? args.sections
+    : Array.isArray(rawOptions.sections)
+      ? rawOptions.sections
+      : [];
+  const sections = rawSections.filter(isMarketSection);
+  return sections.length > 0 ? { sections } : {};
 }
 
 function readAutomationId(args: Record<string, unknown>) {
@@ -802,12 +818,12 @@ async function executeAction(
     case "desktop.market.applySettingsPatch":
       return ok(action, saveMarketSettings(options.app, saveMarketSettingsPreview(asRecord(args.patch))));
     case "desktop.market.listItems":
-      return ok(action, await listMarketItems(options.app));
+      return ok(action, await listMarketItems(options.app, readMarketListOptions(args)));
     case "desktop.market.refresh":
-      return ok(action, await refreshMarketCatalog(options.app));
+      return ok(action, await refreshMarketCatalog(options.app, readMarketListOptions(args)));
     case "desktop.market.getItemDetail": {
       const itemId = readItemId(args);
-      const market = await listMarketItems(options.app);
+      const market = await listMarketItems(options.app, readMarketListOptions(args));
       const item = market.items.find((candidate) => candidate.id === itemId);
       return item ? ok(action, item) : fail(action, "not_found", `market item not found: ${itemId}`);
     }

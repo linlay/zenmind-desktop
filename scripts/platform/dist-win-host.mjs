@@ -25,10 +25,15 @@ export async function buildOnWindowsHost(brand = syncBrandArtifacts({ brandId: r
     "--",
     "--config",
     electronBuilderConfigPath(projectRoot, brand.id),
+    "--config.win.signAndEditExecutable=false",
     "--win",
     "--x64"
   ], {
-    cwd: projectRoot
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    }
   });
   await runAndWait(nodeBin(), ["./scripts/verify-win-package.mjs"], { cwd: projectRoot });
 }

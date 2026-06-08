@@ -282,6 +282,73 @@ test("bundled env.zip refreshes bootstrap registry seed files without overwritin
   }
 });
 
+test("bundled env.zip refresh archives stale owner bootstrap when owner is already complete", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-owner-complete-"));
+  const app = createApp(root);
+  const resourcesRoot = path.join(root, "resources");
+  const bundledZipPath = path.join(resourcesRoot, "env", "env.zip");
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  const bootstrapPath = path.join(runtimeRoot, "owner", "BOOTSTRAP.md");
+  const ownerPath = path.join(runtimeRoot, "owner", "OWNER.md");
+
+  try {
+    fs.mkdirSync(path.dirname(bundledZipPath), { recursive: true });
+    fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
+    fs.writeFileSync(bootstrapPath, "# Bootstrap\n\nAsk the user to create OWNER.md.\n", "utf8");
+    fs.writeFileSync(ownerPath, "# Owner\n\nname: keep-user-owner\n", "utf8");
+
+    await writeZip(bundledZipPath, {
+      "env/VERSION": DESKTOP_VERSION,
+      "env/agents/bootstrap/agent.yml": "modelKey: th-minimax-m2_7-highspeed\n"
+    });
+
+    await importBundledEnvZipToRuntime(app, "win32", {
+      resourcesRoot,
+      expectedDesktopVersion: DESKTOP_VERSION,
+      refreshRuntimeSeedFiles: true
+    });
+
+    assert.equal(fs.existsSync(bootstrapPath), false);
+    assert.equal(fs.readFileSync(ownerPath, "utf8"), "# Owner\n\nname: keep-user-owner\n");
+    assert.equal(
+      fs.existsSync(path.join(runtimeRoot, ".desktop", "state", "desktop", "owner-bootstrap.completed.md")),
+      true
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("bundled env.zip refresh keeps owner bootstrap when owner is not complete", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-owner-incomplete-"));
+  const app = createApp(root);
+  const resourcesRoot = path.join(root, "resources");
+  const bundledZipPath = path.join(resourcesRoot, "env", "env.zip");
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  const bootstrapPath = path.join(runtimeRoot, "owner", "BOOTSTRAP.md");
+
+  try {
+    fs.mkdirSync(path.dirname(bundledZipPath), { recursive: true });
+    fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
+    fs.writeFileSync(bootstrapPath, "# Bootstrap\n\nAsk the user to create OWNER.md.\n", "utf8");
+
+    await writeZip(bundledZipPath, {
+      "env/VERSION": DESKTOP_VERSION,
+      "env/agents/bootstrap/agent.yml": "modelKey: th-minimax-m2_7-highspeed\n"
+    });
+
+    await importBundledEnvZipToRuntime(app, "win32", {
+      resourcesRoot,
+      expectedDesktopVersion: DESKTOP_VERSION,
+      refreshRuntimeSeedFiles: true
+    });
+
+    assert.equal(fs.existsSync(bootstrapPath), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("importEnvZipToRuntime rejects env.zip without VERSION", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-missing-version-"));
   const app = createApp(root);

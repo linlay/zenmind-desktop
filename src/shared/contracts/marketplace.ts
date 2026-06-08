@@ -1,4 +1,5 @@
 export type MarketItemType = "plugin" | "skill" | "sandbox-image";
+export type MarketSection = "plugins" | "skills" | "sandboxImages";
 export type MarketInstallState =
   | "not-installed"
   | "installed"
@@ -63,6 +64,10 @@ export interface MarketListResult {
   skillOffline?: boolean;
   sandboxMessage?: string;
   sandboxOffline?: boolean;
+}
+
+export interface MarketListOptions {
+  sections?: MarketSection[];
 }
 
 export interface MarketCommandResult {
