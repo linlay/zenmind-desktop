@@ -2138,6 +2138,23 @@ test("assistant navigation agents refresh immediately after startup services bec
   assert.match(appShell, /if \(agentPlatformRunning\) \{[\s\S]*?refreshAssistantNavAgents\(\)/);
 });
 
+test("bootstrap success opens the first available navigation agent", () => {
+  const appShell = readAppShellSource();
+  const startupAutoOpenBlock = appShell.match(
+    /useEffect\(\(\) => \{[\s\S]*?shouldAutoOpenAssistant\(startupRestoreState, startupAllReady, location\.pathname\)[\s\S]*?\}, \[location\.pathname, navigate, startupAllReady, startupRestoreState\]\);/u
+  )?.[0] ?? "";
+
+  assert.match(startupAutoOpenBlock, /assistant\.listNavigationAgents\(\)/);
+  assert.match(startupAutoOpenBlock, /normalizeAssistantNavAgents\(result\.items\)/);
+  assert.match(startupAutoOpenBlock, /setAssistantNavAgents\(nextItems\)/);
+  assert.match(startupAutoOpenBlock, /createStartupAgentRoute\(firstAgentKey\)/);
+  assert.doesNotMatch(startupAutoOpenBlock, /navigate\("\/kanban",\s*\{\s*replace:\s*true\s*\}\)/);
+  assert.match(
+    appShell,
+    /function createStartupAgentRoute\(agentKey: string\)[\s\S]*?`\/agent\/\$\{encodeURIComponent\(agentKey\)\}`/
+  );
+});
+
 test("desktop action bridge exposes localhost api and renderer action providers", () => {
   const actionCatalog = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
   const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");

@@ -706,9 +706,39 @@ export function AppShell() {
       return;
     }
 
-    startupNavigationDoneRef.current = true;
+    let cancelled = false;
     setStartupTimedOut(false);
-    navigate("/kanban", { replace: true });
+
+    void (async () => {
+      let targetPath = "/kanban";
+      try {
+        const result = await window.electronAPI.assistant.listNavigationAgents();
+        if (cancelled) {
+          return;
+        }
+        if (result.ok) {
+          const nextItems = normalizeAssistantNavAgents(result.items);
+          setAssistantNavAgentsLoaded(true);
+          setAssistantNavAgents(nextItems);
+          const firstAgentKey = nextItems.find((agent) => agent.agentKey.trim())?.agentKey.trim() ?? "";
+          if (firstAgentKey) {
+            targetPath = createStartupAgentRoute(firstAgentKey);
+          }
+        }
+      } catch {
+        // Keep bootstrap completion useful even if agent-platform has not returned navigation data yet.
+      }
+
+      if (cancelled) {
+        return;
+      }
+      startupNavigationDoneRef.current = true;
+      navigate(targetPath, { replace: true });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [location.pathname, navigate, startupAllReady, startupRestoreState]);
 
   useEffect(() => {
@@ -1643,6 +1673,10 @@ function resolvePluginRouteId(pathname: string) {
   return matchPath("/service/:serviceId", pathname)?.params.serviceId ??
     matchPath("/plugin/:pluginId", pathname)?.params.pluginId ??
     null;
+}
+
+function createStartupAgentRoute(agentKey: string) {
+  return `/agent/${encodeURIComponent(agentKey)}`;
 }
 
 function resolveAgentWebclientRoute(

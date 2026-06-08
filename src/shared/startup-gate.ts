@@ -95,5 +95,5 @@ export function resolveStartupRootPath(startupRestoreState: StartupRestoreState 
 }
 
 function isBootstrapOwnedRoute(currentPathname: string) {
-  return currentPathname === "/" || currentPathname === "/control-center";
+  return currentPathname === "/" || currentPathname === "/control-center" || currentPathname === "/kanban";
 }
