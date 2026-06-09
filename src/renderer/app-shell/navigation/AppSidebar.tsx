@@ -1391,7 +1391,12 @@ export function AppSidebar({
     if (activeAgentKey !== agentKey) {
       return "";
     }
-    return pendingPath ? pendingChatId : currentChatId;
+    const routeChatId = pendingPath ? pendingChatId : currentChatId;
+    if (routeChatId) {
+      return routeChatId;
+    }
+    const agent = assistantNavAgents.find((item) => item.agentKey === agentKey);
+    return agent?.latestChatId || getAssistantNavAgentRecentChats(agent)[0]?.chatId || "";
   }
 
   function isRouteActive(targetPath: string) {
@@ -1599,6 +1604,7 @@ export function AppSidebar({
         ]
           .filter(Boolean)
           .join(" ")}
+        aria-current={isActive ? "page" : undefined}
         onClick={() => handleAssistantOpenChat(chat)}
       >
         <span className="worker-chat-item-head">

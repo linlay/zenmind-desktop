@@ -1122,11 +1122,12 @@
 
 .assistant-worker-chat-item:hover,
 .assistant-worker-chat-item.is-active {
+  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
   color: var(--ink);
 }
 
 .assistant-worker-chat-item.is-active {
-  background: transparent;
+  background: color-mix(in srgb, var(--ink-muted) 18%, transparent);
   font-weight: 700;
 }
 
@@ -1764,6 +1765,7 @@
 
 :root[data-theme="dark"] .assistant-worker-chat-item:hover,
 :root[data-theme="dark"] .assistant-worker-chat-item.is-active {
+  background: rgba(255, 255, 255, 0.07);
   color: #f5f5f5;
 }
 
