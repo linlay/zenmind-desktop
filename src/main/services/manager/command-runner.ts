@@ -91,7 +91,31 @@ function Add-CapturedText([System.Collections.Generic.List[string]]$Lines, [obje
   $Lines.Add($text.TrimEnd([char]13, [char]10))
 }
 try {
-  $output = & $scriptPath @scriptArgs 2>&1
+  $commandInfo = Get-Command $scriptPath
+  $commonParams = @('Verbose','Debug','ErrorAction','WarningAction','InformationAction','ErrorVariable','WarningVariable','InformationVariable','OutVariable','OutBuffer','PipelineVariable','WhatIf','Confirm')
+  $customParams = $commandInfo.Parameters.Keys | Where-Object { $commonParams -notcontains $_ }
+  if ($customParams) {
+    $scriptHash = @{}
+    $scriptPos = @()
+    for ($i = 0; $i -lt $scriptArgs.Length; $i += 2) {
+      $name = $scriptArgs[$i].TrimStart('-')
+      if ($commandInfo.Parameters.Keys -contains $name) {
+        if ($i + 1 -lt $scriptArgs.Length) {
+          $scriptHash[$name] = $scriptArgs[$i+1]
+        } else {
+          $scriptHash[$name] = $true
+        }
+      } else {
+        $scriptPos += $scriptArgs[$i]
+        if ($i + 1 -lt $scriptArgs.Length) {
+          $scriptPos += $scriptArgs[$i+1]
+        }
+      }
+    }
+    $output = & $scriptPath @scriptHash @scriptPos 2>&1
+  } else {
+    $output = & $scriptPath @scriptArgs 2>&1
+  }
   foreach ($item in @($output)) {
     if ($item -is [System.Management.Automation.ErrorRecord]) {
       $hadError = $true
@@ -198,6 +222,9 @@ function runPowerShellScript(scriptPath: string, args: string[], cwd: string, op
       const stdout = Buffer.concat(stdoutChunks).toString("utf8");
       const stderr = Buffer.concat(stderrChunks).toString("utf8");
       const decoded = decodePowerShellCapturePayload(stdout);
+      if (decoded) {
+        decoded.stderr = [decoded.stderr.trim(), coerceExecText(stderr).trim()].filter(Boolean).join("\n");
+      }
       const result = decoded ?? {
         stdout: "",
         stderr: [coerceExecText(stderr).trim(), coerceExecText(stdout).trim()].filter(Boolean).join("\n")
