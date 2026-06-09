@@ -1601,6 +1601,26 @@ function resolveRequirementHttpTarget(requiredService: ServiceDefinition, webUrl
   return normalizeProbeUrl(webUrl, trimmed);
 }
 
+function resolveAgentPlatformReadinessFallbackTarget(
+  requiredServiceId: string,
+  target: string,
+  probe: Pick<HttpProbeResult, "statusCode">
+) {
+  if (requiredServiceId !== "agent-platform" || probe.statusCode !== 404) {
+    return null;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(target);
+  } catch {
+    return null;
+  }
+  if (parsed.pathname !== "/api/runtime-info") {
+    return null;
+  }
+  return normalizeProbeUrl(target, "/api/agents");
+}
+
 async function ensureRequiredServiceHttpReachable(
   app: App,
   requirement: ManifestDesktopCapabilityRequirement,
@@ -1642,6 +1662,19 @@ async function ensureRequiredServiceHttpReachable(
     headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
   });
   if (!probe.ok) {
+    const fallbackTarget = resolveAgentPlatformReadinessFallbackTarget(requiredService.id, target, probe);
+    if (fallbackTarget) {
+      const fallbackProbe = await probeHttpUrl(fallbackTarget, {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
+      });
+      if (fallbackProbe.ok) {
+        return;
+      }
+      throw new Error(
+        `${target} 探测失败：${probe.message || "HTTP 不可用"}；` +
+        `${fallbackTarget} 探测失败：${fallbackProbe.message || "HTTP 不可用"}`
+      );
+    }
     throw new Error(`${target} 探测失败：${probe.message || "HTTP 不可用"}`);
   }
 }
@@ -3089,6 +3122,7 @@ export const __testInternals = {
   probeHttpUrl,
   verifyServiceState,
   buildVerificationResult,
+  resolveAgentPlatformReadinessFallbackTarget,
   clearContainerEngineProbeCache,
   matchProcessInstallDir,
   readManagedPidFile,
