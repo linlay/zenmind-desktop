@@ -71,6 +71,13 @@ export function createSettingsSectionDefinitions({
       visible: false
     },
     {
+      id: "runtimeReset",
+      label: "runtimeReset",
+      description: "",
+      layout: "measure",
+      visible: true
+    },
+    {
       id: "about",
       label: "about",
       description: "",
@@ -100,6 +107,7 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   dataRoot: { label: "settings.dataRoot.label", description: "settings.dataRoot.description" },
   debug: { label: "settings.debug.label", description: "settings.debug.description" },
   memory: { label: "settings.memory.label", description: "settings.memory.description" },
+  runtimeReset: { label: "settings.reset.label", description: "settings.reset.description" },
   about: { label: "settings.about.label", description: "settings.about.description" }
 };
 

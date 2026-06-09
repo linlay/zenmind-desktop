@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -20,6 +21,14 @@ function readIcoSizes(buffer) {
     sizes.push(`${width}x${height}`);
   }
   return sizes;
+}
+
+async function readAlphaAt(filePath, x, y) {
+  const image = await loadImage(filePath);
+  const canvas = createCanvas(image.width, image.height);
+  const context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0);
+  return context.getImageData(x, y, 1, 1).data[3];
 }
 
 test("public brand icon assets exist in the public directory", () => {
@@ -44,4 +53,17 @@ test("windows app icon contains the expected multi-size ICO entries", () => {
     "128x128",
     "256x256"
   ]);
+});
+
+test("generated app icon PNGs keep the outer canvas transparent", async () => {
+  const iconPaths = [
+    path.join(projectRoot, "build", "icons", "icon-1024.png"),
+    path.join(projectRoot, "public", "brand-icon.png")
+  ];
+
+  for (const iconPath of iconPaths) {
+    assert.equal(await readAlphaAt(iconPath, 0, 0), 0, `${iconPath} top-left corner is opaque`);
+    assert.equal(await readAlphaAt(iconPath, 0, 10), 0, `${iconPath} left edge is opaque`);
+    assert.equal(await readAlphaAt(iconPath, 10, 0), 0, `${iconPath} top edge is opaque`);
+  }
 });

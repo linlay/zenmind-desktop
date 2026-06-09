@@ -40,6 +40,10 @@ import {
   stopService
 } from "./services/manager";
 import {
+  StaticSiteHostError,
+  staticSiteHostManager
+} from "./static-site-host-manager";
+import {
   buildSandboxImage,
   deleteSandboxImage,
   exportSandboxImageToPath,
@@ -222,6 +226,14 @@ function readServiceId(args: Record<string, unknown>) {
     throw new Error("serviceId is required");
   }
   return serviceId as ServiceId;
+}
+
+function readStaticSiteId(args: Record<string, unknown>) {
+  const siteId = readString(args, "siteId");
+  if (!siteId) {
+    throw new StaticSiteHostError("invalid_args", "siteId is required.");
+  }
+  return siteId;
 }
 
 function readItemId(args: Record<string, unknown>) {
@@ -463,9 +475,10 @@ export async function callAgentPlatform<T>(
 }
 
 async function confirmMutatingAction(action: string, args: Record<string, unknown>, owner: BrowserWindow | null) {
-  const summary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
+  const providedSummary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
     ? args.confirmationSummary.trim()
-    : `允许智能体执行 ${action}？`;
+    : "";
+  const summary = providedSummary || buildStaticServerConfirmationSummary(action, args) || `允许智能体执行 ${action}？`;
   const dialogOptions = {
     type: "question" as const,
     buttons: ["执行", "取消"],
@@ -479,6 +492,24 @@ async function confirmMutatingAction(action: string, args: Record<string, unknow
     ? await dialog.showMessageBox(owner, dialogOptions)
     : await dialog.showMessageBox(dialogOptions);
   return result.response === 0;
+}
+
+function buildStaticServerConfirmationSummary(action: string, args: Record<string, unknown>) {
+  if (action === "desktop.staticServer.start") {
+    const rootDir = readString(args, "rootDir") || "(未提供)";
+    const rawPort = args.port === undefined || args.port === null || args.port === "" ? "" : String(args.port);
+    const target = rawPort ? `http://127.0.0.1:${rawPort}/` : "http://127.0.0.1:<auto>/";
+    return `启动 Desktop 静态服务器？\n目录：${rootDir}\n目标：${target}`;
+  }
+  if (action === "desktop.staticServer.stop" || action === "desktop.staticServer.restart") {
+    const siteId = readString(args, "siteId");
+    const state = staticSiteHostManager.list().find((item) => item.siteId === siteId);
+    const verb = action.endsWith(".restart") ? "重启" : "停止";
+    const rootDir = state?.rootDir || "(未知)";
+    const target = state?.webUrl || (state?.requestedPort ? `http://127.0.0.1:${state.requestedPort}/` : "(未运行)");
+    return `${verb} Desktop 静态服务器？\n站点：${siteId || "(未提供)"}\n目录：${rootDir}\n目标：${target}`;
+  }
+  return "";
 }
 
 async function confirmPageControlAction(
@@ -711,6 +742,26 @@ async function callRendererPageAction(
   } satisfies DesktopActionCallResponse;
 }
 
+async function executeStaticServerAction(action: string, args: Record<string, unknown>) {
+  try {
+    if (action === "desktop.staticServer.start") {
+      return ok(action, await staticSiteHostManager.start(args));
+    }
+    if (action === "desktop.staticServer.stop") {
+      return ok(action, await staticSiteHostManager.stop(readStaticSiteId(args)));
+    }
+    if (action === "desktop.staticServer.restart") {
+      return ok(action, await staticSiteHostManager.restart(readStaticSiteId(args)));
+    }
+    return ok(action, staticSiteHostManager.list());
+  } catch (error) {
+    if (error instanceof StaticSiteHostError) {
+      return fail(action, error.code, error.message, error.details);
+    }
+    throw error;
+  }
+}
+
 async function executeAction(
   options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest
@@ -801,6 +852,11 @@ async function executeAction(
       return ok(action, await stopService(options.app, readServiceId(args)));
     case "desktop.controlCenter.restartService":
       return ok(action, await restartService(options.app, readServiceId(args)));
+    case "desktop.staticServer.list":
+    case "desktop.staticServer.start":
+    case "desktop.staticServer.stop":
+    case "desktop.staticServer.restart":
+      return executeStaticServerAction(action, args);
     case "desktop.market.getSettings":
       return ok(action, getMarketSettings(options.app));
     case "desktop.market.validateSettings":

@@ -48,6 +48,63 @@ test("settings handlers expose data root and platform", async () => {
   assert.equal(await handlers["settings.getPlatform"]({}), "win32");
 });
 
+test("settings.resetRuntimeEnv returns structured success details", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const calls = [];
+
+  registerSettingsIpcHandlers(ipc, makeBaseOptions({
+    platform: "darwin",
+    resetRuntimeEnv: async (app, platform) => {
+      calls.push([app.name, platform]);
+      return {
+        targetRoot: "/Users/alice/.zenmind",
+        backupPath: "/Users/alice/.zenmind-1778899101",
+        copiedFiles: 2,
+        skippedFiles: 0,
+        sourceZipPath: "/Applications/ZenMind.app/Contents/Resources/env/env.zip"
+      };
+    }
+  }));
+
+  const result = await handlers["settings.resetRuntimeEnv"]({});
+
+  assert.deepEqual(calls, [["test-app", "darwin"]]);
+  assert.deepEqual(result, {
+    ok: true,
+    message: "运行环境已重置。旧目录已备份到：/Users/alice/.zenmind-1778899101。请重启应用。",
+    runtimeRoot: "/Users/alice/.zenmind",
+    backupPath: "/Users/alice/.zenmind-1778899101",
+    copiedFiles: 2,
+    skippedFiles: 0,
+    sourceZipPath: "/Applications/ZenMind.app/Contents/Resources/env/env.zip"
+  });
+});
+
+test("settings.resetRuntimeEnv returns structured failure details", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const failure = new Error("安装包内置 env.zip 不存在，无法重置运行环境。");
+  failure.runtimeRoot = "/Users/alice/.zenmind";
+  failure.sourceZipPath = "/Applications/ZenMind.app/Contents/Resources/env/env.zip";
+
+  registerSettingsIpcHandlers(ipc, makeBaseOptions({
+    resetRuntimeEnv: async () => {
+      throw failure;
+    }
+  }));
+
+  const result = await handlers["settings.resetRuntimeEnv"]({});
+
+  assert.deepEqual(result, {
+    ok: false,
+    message: "安装包内置 env.zip 不存在，无法重置运行环境。",
+    runtimeRoot: "/Users/alice/.zenmind",
+    backupPath: undefined,
+    copiedFiles: 0,
+    skippedFiles: 0,
+    sourceZipPath: "/Applications/ZenMind.app/Contents/Resources/env/env.zip"
+  });
+});
+
 test("settings.setNativeThemeSource maps dark, system, and other values to light", async () => {
   const { ipc, handlers } = makeMockIpcMain();
   const nativeTheme = { themeSource: "light" };

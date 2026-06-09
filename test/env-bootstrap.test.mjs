@@ -18,6 +18,7 @@ const {
   shouldRequireEnvZipImport,
   generateBackupDirName,
   migrateOldRootToBackup,
+  resetBundledRuntimeEnv,
   shouldPromptEnvRootConflict
 } = require("../dist-electron/main/env-bootstrap.js");
 
@@ -372,6 +373,160 @@ test("bundled env.zip leaves owner bootstrap files in place", async () => {
     assert.equal(fs.readFileSync(bootstrapPath, "utf8"), "# Bootstrap\n\nAsk the user to create OWNER.md.\n");
     assert.equal(fs.readFileSync(ownerPath, "utf8"), "# Owner\n\nname: keep-user-owner\n");
     assert.equal(fs.existsSync(path.join(runtimeRoot, ".desktop", "state", "desktop", "owner-bootstrap.completed.md")), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resetBundledRuntimeEnv backs up macOS runtime root with timestamp and imports bundled env.zip", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-reset-mac-"));
+  const app = createApp(root);
+  const resourcesRoot = path.join(root, "resources");
+  const bundledZipPath = path.join(resourcesRoot, "env", "env.zip");
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  const oldFilePath = path.join(runtimeRoot, "agents", "old", "agent.yml");
+  const newFilePath = path.join(runtimeRoot, "agents", "demo", "agent.yml");
+
+  try {
+    fs.mkdirSync(path.dirname(bundledZipPath), { recursive: true });
+    fs.mkdirSync(path.dirname(oldFilePath), { recursive: true });
+    fs.writeFileSync(oldFilePath, "name: old\n", "utf8");
+    await writeZip(bundledZipPath, {
+      "env/VERSION": `v${DESKTOP_VERSION}\n`,
+      "env/agents/demo/agent.yml": "name: demo\n"
+    });
+
+    const result = await resetBundledRuntimeEnv(app, "darwin", {
+      resourcesRoot,
+      expectedDesktopVersion: DESKTOP_VERSION,
+      nowSeconds: 1_778_899_101
+    });
+
+    assert.equal(result.targetRoot, runtimeRoot);
+    assert.equal(result.backupPath, `${runtimeRoot}-1778899101`);
+    assert.equal(result.sourceZipPath, bundledZipPath);
+    assert.equal(fs.existsSync(path.join(result.backupPath, "agents", "old", "agent.yml")), true);
+    assert.equal(fs.readFileSync(path.join(result.backupPath, "agents", "old", "agent.yml"), "utf8"), "name: old\n");
+    assert.equal(fs.existsSync(oldFilePath), false);
+    assert.equal(fs.readFileSync(newFilePath, "utf8"), "name: demo\n");
+    assert.equal(fs.readFileSync(path.join(runtimeRoot, "VERSION"), "utf8"), `v${DESKTOP_VERSION}\n`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resetBundledRuntimeEnv uses Windows runtime root and timestamp collision suffixes", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-reset-win-"));
+  const app = createApp(root);
+  const resourcesRoot = path.join(root, "resources");
+  const bundledZipPath = path.join(resourcesRoot, "env", "env.zip");
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  const collidingBackupPath = `${runtimeRoot}-1778899102`;
+
+  try {
+    fs.mkdirSync(path.dirname(bundledZipPath), { recursive: true });
+    fs.mkdirSync(path.join(runtimeRoot, "old-data"), { recursive: true });
+    fs.mkdirSync(collidingBackupPath, { recursive: true });
+    await writeZip(bundledZipPath, {
+      "env/VERSION": DESKTOP_VERSION,
+      "env/registries/providers/demo.yml": "name: provider\n"
+    });
+
+    const result = await resetBundledRuntimeEnv(app, "win32", {
+      resourcesRoot,
+      expectedDesktopVersion: DESKTOP_VERSION,
+      nowSeconds: 1_778_899_102
+    });
+
+    assert.equal(result.targetRoot, runtimeRoot);
+    assert.equal(result.backupPath, `${runtimeRoot}-1778899102-1`);
+    assert.equal(fs.existsSync(collidingBackupPath), true);
+    assert.equal(fs.existsSync(path.join(result.backupPath, "old-data")), true);
+    assert.equal(
+      fs.readFileSync(path.join(runtimeRoot, "registries", "providers", "demo.yml"), "utf8"),
+      "name: provider\n"
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resetBundledRuntimeEnv rejects missing bundled env.zip without moving runtime root", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-reset-missing-"));
+  const app = createApp(root);
+  const resourcesRoot = path.join(root, "resources");
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  const oldFilePath = path.join(runtimeRoot, "agents", "old", "agent.yml");
+
+  try {
+    fs.mkdirSync(path.dirname(oldFilePath), { recursive: true });
+    fs.writeFileSync(oldFilePath, "name: old\n", "utf8");
+
+    await assert.rejects(
+      () => resetBundledRuntimeEnv(app, "darwin", {
+        resourcesRoot,
+        expectedDesktopVersion: DESKTOP_VERSION,
+        nowSeconds: 1_778_899_103
+      }),
+      /内置 env\.zip 不存在/
+    );
+    assert.equal(fs.readFileSync(oldFilePath, "utf8"), "name: old\n");
+    assert.equal(fs.existsSync(`${runtimeRoot}-1778899103`), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resetBundledRuntimeEnv rejects unsupported platforms", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-reset-linux-"));
+  const app = createApp(root);
+
+  try {
+    await assert.rejects(
+      () => resetBundledRuntimeEnv(app, "linux", {
+        resourcesRoot: path.join(root, "resources"),
+        expectedDesktopVersion: DESKTOP_VERSION
+      }),
+      /不支持/
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resetBundledRuntimeEnv keeps timestamped backup metadata when bundled import fails", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-bootstrap-reset-failure-"));
+  const app = createApp(root);
+  const resourcesRoot = path.join(root, "resources");
+  const bundledZipPath = path.join(resourcesRoot, "env", "env.zip");
+  const runtimeRoot = path.join(root, "home", ".zenmind");
+  const oldFilePath = path.join(runtimeRoot, "agents", "old", "agent.yml");
+
+  try {
+    fs.mkdirSync(path.dirname(bundledZipPath), { recursive: true });
+    fs.mkdirSync(path.dirname(oldFilePath), { recursive: true });
+    fs.writeFileSync(oldFilePath, "name: old\n", "utf8");
+    await writeZip(bundledZipPath, {
+      "env/VERSION": "v9.9.9\n",
+      "env/agents/demo/agent.yml": "name: demo\n"
+    });
+
+    try {
+      await resetBundledRuntimeEnv(app, "darwin", {
+        resourcesRoot,
+        expectedDesktopVersion: DESKTOP_VERSION,
+        nowSeconds: 1_778_899_104
+      });
+      assert.fail("reset should reject when bundled env.zip VERSION mismatches");
+    } catch (error) {
+      assert.match(error instanceof Error ? error.message : String(error), /VERSION 不匹配/);
+      assert.equal(error.backupPath, `${runtimeRoot}-1778899104`);
+      assert.equal(error.runtimeRoot, runtimeRoot);
+      assert.equal(error.sourceZipPath, bundledZipPath);
+    }
+
+    assert.equal(fs.existsSync(runtimeRoot), false);
+    assert.equal(fs.readFileSync(`${runtimeRoot}-1778899104/agents/old/agent.yml`, "utf8"), "name: old\n");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

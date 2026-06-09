@@ -21,8 +21,21 @@ import { readEnvFile } from "../env-file";
 import { getResponsiveServiceState } from "../services/manager";
 import { t } from "../i18n/main-i18n";
 import {
+  asObject,
   asString,
+  catalogCachePath,
+  DEFAULT_MARKETPLACE_CATALOG_URL,
+  downloadAsset,
+  fetchJson,
+  findCatalogItem,
+  mergeCatalogItems,
   normalizeContainerHubBaseUrl,
+  normalizeCatalog,
+  readJsonFile,
+  selectAsset,
+  upsertInstalledRecord,
+  writeJsonFile,
+  type Catalog,
   type MarketplaceOptions,
   type MarketSectionResult
 } from "./common";
@@ -50,10 +63,75 @@ type LocalContainerImage = {
   createdAt: string;
 };
 
+type SandboxTemplateCatalogResult = {
+  catalog: Catalog;
+  offline: boolean;
+  message: string;
+  sourceUrl: string;
+};
+
 function sandboxImageImportedMessage(engineName: string, imageRef: string) {
   return imageRef
     ? t("market.sandbox.importedWithRef", { engine: engineName, imageRef })
     : t("market.sandbox.imported", { engine: engineName });
+}
+
+function sandboxTemplateCatalogOnly(catalog: Catalog): Catalog {
+  return {
+    ...catalog,
+    items: catalog.items.filter((item) => item.type === "sandbox-image" && item.sandboxKind === "environment-template")
+  };
+}
+
+function sandboxTemplateCatalogCachePath(app: App) {
+  return path.join(path.dirname(catalogCachePath(app)), "sandbox-template-catalog-cache.json");
+}
+
+async function loadSandboxTemplateCatalog(app: App, options: MarketplaceOptions = {}): Promise<SandboxTemplateCatalogResult> {
+  if (options.catalog) {
+    const catalog = sandboxTemplateCatalogOnly(normalizeCatalog(options.catalog));
+    return {
+      catalog,
+      offline: false,
+      message: catalog.items.length > 0 ? t("market.main.catalogLoaded") : "",
+      sourceUrl: options.catalogUrl ?? DEFAULT_MARKETPLACE_CATALOG_URL
+    };
+  }
+
+  const catalogUrl = options.catalogUrl ?? DEFAULT_MARKETPLACE_CATALOG_URL;
+  try {
+    const fullCatalog = normalizeCatalog(await fetchJson(catalogUrl, "sandbox template market request"));
+    const catalog = sandboxTemplateCatalogOnly(fullCatalog);
+    writeJsonFile(sandboxTemplateCatalogCachePath(app), fullCatalog);
+    return {
+      catalog,
+      offline: false,
+      message: catalog.items.length > 0 ? t("market.main.catalogRefreshed") : "",
+      sourceUrl: catalogUrl
+    };
+  } catch (error) {
+    const cached = readJsonFile<Catalog | null>(
+      sandboxTemplateCatalogCachePath(app),
+      readJsonFile<Catalog | null>(catalogCachePath(app), null)
+    );
+    if (cached) {
+      const catalog = sandboxTemplateCatalogOnly(normalizeCatalog(cached));
+      return {
+        catalog,
+        offline: true,
+        message: catalog.items.length > 0
+          ? t("market.main.cachedCatalog", { reason: error instanceof Error ? error.message : String(error) })
+          : "",
+        sourceUrl: catalogUrl
+      };
+    }
+    return {
+      catalog: { schemaVersion: 1, items: [] },
+      offline: true,
+      message: t("market.sandbox.unavailable", { reason: error instanceof Error ? error.message : String(error) }),
+      sourceUrl: catalogUrl
+    };
+  }
 }
 
 async function resolveContainerHubConfig(app: App, options: MarketplaceOptions = {}): Promise<ContainerHubConfig | null> {
@@ -439,26 +517,62 @@ function mergeSandboxMarketItems(localItems: MarketItem[], environmentItems: Mar
   return [...merged.values()];
 }
 
+function mergeSandboxTemplateItems(app: App, templateCatalog: Catalog, runtimeItems: MarketItem[]) {
+  if (templateCatalog.items.length === 0) {
+    return runtimeItems;
+  }
+
+  const runtimeByKey = new Map(runtimeItems.map((item) => [`${item.type}:${item.id}`, item]));
+  return mergeCatalogItems(app, templateCatalog.items, runtimeItems).map((item) => {
+    const runtime = runtimeByKey.get(`${item.type}:${item.id}`);
+    if (!runtime || item.type !== "sandbox-image") {
+      return item;
+    }
+    return {
+      ...item,
+      state: runtime.state,
+      source: runtime.source,
+      installedVersion: runtime.installedVersion ?? item.installedVersion,
+      installPath: runtime.installPath ?? item.installPath,
+      serviceId: runtime.serviceId ?? item.serviceId,
+      environmentName: runtime.environmentName ?? item.environmentName,
+      imageRef: runtime.imageRef ?? item.imageRef,
+      imageId: runtime.imageId ?? item.imageId,
+      imageSize: runtime.imageSize ?? item.imageSize,
+      imageCreatedAt: runtime.imageCreatedAt ?? item.imageCreatedAt,
+      containerEngine: runtime.containerEngine ?? item.containerEngine,
+      buildStatus: runtime.buildStatus ?? item.buildStatus,
+      buildJobId: runtime.buildJobId ?? item.buildJobId,
+      buildTargetCount: runtime.buildTargetCount ?? item.buildTargetCount,
+      message: runtime.message ?? item.message,
+      tags: Array.from(new Set([...item.tags, ...runtime.tags]))
+    };
+  });
+}
+
 export async function listSandboxImageMarketItems(
   app: App,
   options: MarketplaceOptions = {}
 ): Promise<MarketSectionResult> {
-  const [localImages, config] = await Promise.all([
+  const [templateMarket, localImages, config] = await Promise.all([
+    loadSandboxTemplateCatalog(app, options),
     listLocalContainerImages(),
     resolveContainerHubConfig(app, options)
   ]);
+  const combineTemplateItems = (localItems: MarketItem[]) =>
+    mergeSandboxTemplateItems(app, templateMarket.catalog, localItems);
   if (!config?.baseURL) {
     if (localImages.engine) {
       return {
-        items: localImages.items,
-        offline: false,
-        message: localImages.message
+        items: combineTemplateItems(localImages.items),
+        offline: templateMarket.offline,
+        message: [templateMarket.message, localImages.message].filter(Boolean).join(" ")
       };
     }
     return {
-      items: [],
+      items: combineTemplateItems([]),
       offline: true,
-      message: localImages.message || t("market.sandbox.requiresContainerHub")
+      message: [templateMarket.message, localImages.message || t("market.sandbox.requiresContainerHub")].filter(Boolean).join(" ")
     };
   }
 
@@ -469,22 +583,28 @@ export async function listSandboxImageMarketItems(
       .filter((environment) => environment.available)
       .map(sandboxEnvironmentToMarketItem);
     return {
-      items: mergeSandboxMarketItems(localImages.items, environmentItems),
-      offline: false,
-      message: localImages.message
+      items: combineTemplateItems(mergeSandboxMarketItems(localImages.items, environmentItems)),
+      offline: templateMarket.offline,
+      message: [templateMarket.message, localImages.message].filter(Boolean).join(" ")
     };
   } catch (error) {
     if (localImages.engine) {
       return {
-        items: localImages.items,
-        offline: false,
-        message: t("market.sandbox.hubUnavailableLocalOnly", { reason: error instanceof Error ? error.message : String(error) })
+        items: combineTemplateItems(localImages.items),
+        offline: templateMarket.offline,
+        message: [
+          templateMarket.message,
+          t("market.sandbox.hubUnavailableLocalOnly", { reason: error instanceof Error ? error.message : String(error) })
+        ].filter(Boolean).join(" ")
       };
     }
     return {
-      items: [],
+      items: combineTemplateItems([]),
       offline: true,
-      message: t("market.sandbox.unavailable", { reason: error instanceof Error ? error.message : String(error) })
+      message: [
+        templateMarket.message,
+        t("market.sandbox.unavailable", { reason: error instanceof Error ? error.message : String(error) })
+      ].filter(Boolean).join(" ")
     };
   }
 }
@@ -519,6 +639,136 @@ export async function buildSandboxImage(
     buildStatus: job.status,
     buildTarget: job.target
   };
+}
+
+function findFirstFile(root: string, basename: string): string {
+  const entries = fs.readdirSync(root, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isFile() && entry.name === basename) {
+      return fullPath;
+    }
+    if (entry.isDirectory() && entry.name !== "__MACOSX") {
+      const found = findFirstFile(fullPath, basename);
+      if (found) {
+        return found;
+      }
+    }
+  }
+  return "";
+}
+
+function listTemplateFiles(filesRoot: string) {
+  if (!fs.existsSync(filesRoot)) {
+    return [] as Array<{ relativePath: string; content: string }>;
+  }
+  const files: Array<{ relativePath: string; content: string }> = [];
+  function walk(currentDir: string) {
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      const relativePath = path.relative(filesRoot, fullPath).replace(/\\/gu, "/");
+      if (!relativePath || relativePath.startsWith("../") || path.isAbsolute(relativePath)) {
+        continue;
+      }
+      files.push({
+        relativePath,
+        content: fs.readFileSync(fullPath, "utf8")
+      });
+    }
+  }
+  walk(filesRoot);
+  return files;
+}
+
+async function readSandboxTemplatePackage(archivePath: string) {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sandbox-template-"));
+  try {
+    await extractArchiveToDir(archivePath, tempRoot);
+    const environmentPath = findFirstFile(tempRoot, "environment.json");
+    if (!environmentPath) {
+      throw new Error("Sandbox template package must contain environment.json.");
+    }
+    const environment = asObject(JSON.parse(fs.readFileSync(environmentPath, "utf8")));
+    const environmentName = asString(environment.name).trim();
+    if (!environmentName) {
+      throw new Error("Sandbox template environment.json must declare name.");
+    }
+    const filesRoot = path.join(path.dirname(environmentPath), "files");
+    return {
+      environmentName,
+      environment,
+      files: listTemplateFiles(filesRoot),
+      cleanup: () => fs.rmSync(tempRoot, { recursive: true, force: true })
+    };
+  } catch (error) {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+export async function installSandboxTemplateMarketItem(
+  app: App,
+  itemId: string,
+  options: MarketplaceOptions = {}
+): Promise<MarketCommandResult> {
+  const [market, config] = await Promise.all([
+    loadSandboxTemplateCatalog(app, options),
+    resolveContainerHubConfig(app, options)
+  ]);
+  const item = findCatalogItem(market.catalog, itemId, "sandbox-image");
+  const selected = selectAsset(item);
+  if (!selected) {
+    throw new Error(t("market.main.platformUnavailable"));
+  }
+  if (!config?.baseURL) {
+    throw new Error(t("market.sandbox.buildRequiresContainerHub"));
+  }
+  const archivePath = await downloadAsset(app, item, selected.asset);
+  const template = await readSandboxTemplatePackage(archivePath);
+  try {
+    const client = new ContainerHubClient(config);
+    await client.upsertEnvironment(template.environment as { name: string } & Record<string, unknown>);
+    for (const file of template.files) {
+      await client.putEnvironmentFile(template.environmentName, file.relativePath, file.content);
+    }
+    const job = await client.startBuildJob(template.environmentName);
+    upsertInstalledRecord(app, {
+      id: item.id,
+      type: "sandbox-image",
+      version: item.version,
+      source: "cloud",
+      assetUrl: selected.asset.url,
+      sha256: selected.asset.sha256,
+      installPath: template.environmentName,
+      installedAt: new Date().toISOString()
+    });
+    return {
+      ok: true,
+      itemId: item.id,
+      type: "sandbox-image",
+      state: "installing",
+      message: job.id
+        ? t("market.sandbox.buildStarted", { environmentName: template.environmentName })
+        : t("market.sandbox.buildSubmitted", { environmentName: template.environmentName }),
+      serviceId: CONTAINER_HUB_SERVICE_ID,
+      environmentName: template.environmentName,
+      imageRef: job.imageRef,
+      buildJobId: job.id,
+      buildStatus: job.status,
+      buildTarget: job.target,
+      sandboxKind: "environment-template"
+    };
+  } finally {
+    template.cleanup();
+    fs.rmSync(archivePath, { force: true });
+  }
 }
 
 export async function importSandboxImageFromPath(

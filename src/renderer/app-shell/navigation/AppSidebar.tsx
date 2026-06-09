@@ -3019,6 +3019,8 @@ export function AppSidebar({
         return "control";
       case "memory":
         return "memory";
+      case "runtimeReset":
+        return "service";
       case "about":
         return "about";
       default:

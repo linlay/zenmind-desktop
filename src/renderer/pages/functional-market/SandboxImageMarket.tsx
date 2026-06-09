@@ -32,6 +32,7 @@ interface SandboxImageMarketSectionProps {
   onDeleteSandboxImage: (item: MarketItem) => void;
   onDismissImportProgress: () => void;
   onExportSandboxImage: (item: MarketItem) => void;
+  onInstallOrBuildSandboxImage: (item: MarketItem) => void;
   onImportSandboxImage: () => void;
   onQueryChange: (query: string) => void;
   onRefresh: () => void;
@@ -260,6 +261,27 @@ export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) 
     }
   }
 
+  async function handleInstallOrBuildSandboxImage(item: MarketItem) {
+    setBusyItemId(item.id);
+    try {
+      const commandName = item.source === "cloud" && item.sandboxKind === "environment-template"
+        ? "install"
+        : "buildSandboxImage";
+      const action = getMarketMethod(commandName);
+      if (!action) {
+        throw createMissingMarketApiError(commandName, t);
+      }
+      const result = await action(item.id);
+      await loadMarket(true);
+      setMarketFeedback(createFeedback(result.ok ? "success" : "error", result.message));
+    } catch (reason) {
+      console.warn(`[sandbox-image-market] failed to install/build sandbox image ${item.id}`, reason);
+      setMarketFeedback(createFeedback("error", normalizeError(reason)));
+    } finally {
+      setBusyItemId("");
+    }
+  }
+
   const activeDefinition = getMarketTabDefinition(activeTab, t);
 
   return (
@@ -283,6 +305,7 @@ export function SandboxImageMarket({ activeTab, onTabChange }: MarketViewProps) 
         onDeleteSandboxImage={(item) => void handleDeleteSandboxImage(item)}
         onDismissImportProgress={() => setImportProgressDismissed(true)}
         onExportSandboxImage={(item) => void handleExportSandboxImage(item)}
+        onInstallOrBuildSandboxImage={(item) => void handleInstallOrBuildSandboxImage(item)}
         onImportSandboxImage={() => void handleImportSandboxImage()}
         onQueryChange={setQuery}
         onRefresh={() => void loadMarket(true)}
@@ -308,6 +331,7 @@ export function SandboxImageMarketSection({
   onDeleteSandboxImage,
   onDismissImportProgress,
   onExportSandboxImage,
+  onInstallOrBuildSandboxImage,
   onImportSandboxImage,
   onQueryChange,
   onRefresh,
@@ -333,9 +357,23 @@ export function SandboxImageMarketSection({
 
   function renderSandboxActions(item: MarketItem) {
     const deleting = busyItemId === item.id;
+    const building = busyItemId === item.id;
     const exporting = exportingItemId === item.id;
+    const canInstallOrBuild = item.sandboxKind === "environment-template" || Boolean(item.environmentName && item.buildTargetCount);
     return (
       <div className="market-card-inline-actions">
+        {canInstallOrBuild ? (
+          <button
+            type="button"
+            className="market-image-action-button"
+            aria-label={`${building ? t("market.action.installing") : t("market.action.install")} ${item.name}`}
+            title={building ? t("market.action.installing") : t("market.action.install")}
+            disabled={building}
+            onClick={() => onInstallOrBuildSandboxImage(item)}
+          >
+            <ImportIcon />
+          </button>
+        ) : null}
         <button
           type="button"
           className="market-image-action-button"
@@ -351,6 +389,7 @@ export function SandboxImageMarketSection({
           aria-label={`${exporting ? t("market.sandbox.action.exporting") : t("market.sandbox.action.export")} ${item.name}`}
           title={exporting ? t("market.sandbox.action.exporting") : t("market.sandbox.action.export")}
           disabled={exporting}
+          hidden={item.source === "cloud"}
           onClick={() => onExportSandboxImage(item)}
         >
           <ExportIcon />
@@ -361,6 +400,7 @@ export function SandboxImageMarketSection({
           aria-label={`${deleting ? t("market.sandbox.action.deleting") : t("market.sandbox.action.delete")} ${item.name}`}
           title={deleting ? t("market.sandbox.action.deleting") : t("market.sandbox.action.delete")}
           disabled={deleting}
+          hidden={item.source === "cloud"}
           onClick={() => onDeleteSandboxImage(item)}
         >
           <TrashIcon />
@@ -546,7 +586,7 @@ export function SandboxImageMarketSection({
                 <div className="market-plugin-meta">
                   <div className="market-card-footer-main sandbox-image-footer-tags">
                     <span className="market-meta-pill sandbox-engine-pill">
-                      {image.containerEngine ?? t("market.source.localImage")}
+                      {image.containerEngine ?? (image.source === "cloud" ? t("market.source.cloud") : t("market.source.localImage"))}
                     </span>
                     <span className="market-meta-pill">{marketVersionLabel(image)}</span>
                     <span className="market-meta-pill">{image.imageSize ?? t("market.sandbox.unknownSize")}</span>

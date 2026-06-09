@@ -1149,6 +1149,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /id:\s*"embeddedWebsites"[\s\S]*?label:\s*"embeddedWebsites"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"dataRoot"/);
   assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"memory"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsSections, /id:\s*"runtimeReset"[\s\S]*?label:\s*"runtimeReset"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"about"[\s\S]*?label:\s*"about"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
 
   assert.match(sidebarSource, /isSettingsMode\?: boolean;/);
@@ -1158,6 +1159,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(sidebarSource, /settings\.backToApp/);
   assert.match(sidebarSource, /onExitSettingsMode/);
   assert.match(sidebarSource, /case "appearance"[\s\S]*?return "appearance"/);
+  assert.match(sidebarSource, /case "runtimeReset"[\s\S]*?return "service"/);
   assert.match(sidebarSource, /case "about"[\s\S]*?return "about"/);
   assert.match(brandMarkSource, /about:\s*aboutIcon/);
   assert.match(brandMarkSource, /appearance:\s*appearanceIcon/);
@@ -1196,6 +1198,10 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsStyles, /\.settings-theme-segment/);
   assert.doesNotMatch(settingsPage, /case "desktopPet"/);
   assert.match(settingsPage, /case "memory"/);
+  assert.match(settingsPage, /case "runtimeReset"/);
+  assert.match(settingsPage, /window\.electronAPI\.settings\.resetRuntimeEnv\(\)/);
+  assert.match(settingsPage, /settings-reset-card/);
+  assert.match(settingsPage, /settings\.reset\.backupPath/);
   assert.match(settingsPage, /case "about"/);
   assert.match(settingsPage, /<AboutAppCard \/>/);
   assert.match(settingsPage, /settings-item-card settings-about-card/);
@@ -1203,6 +1209,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /settings\.about\.versionDescription/);
   assert.doesNotMatch(settingsPage, /settings-about-meta/);
   assert.match(settingsStyles, /\.settings-about-version\s*\{[\s\S]*?border-radius:\s*8px;/);
+  assert.match(settingsStyles, /\.settings-page \.settings-reset-card/);
   assert.match(settingsPage, /settings-page-single/);
   assert.match(settingsPage, /settings-content-panel/);
   assert.doesNotMatch(settingsPage, /settings-directory-nav/);
@@ -1513,12 +1520,15 @@ test("sidebar translucency is fixed and not user configurable", () => {
 
   assert.doesNotMatch(preload, /setSidebarTranslucency/);
   assert.match(preload, /getAppInfo:\s*\(\) => ipcRenderer\.invoke\("settings\.getAppInfo"\)/);
+  assert.match(preload, /resetRuntimeEnv:\s*\(\) => ipcRenderer\.invoke\("settings\.resetRuntimeEnv"\)/);
   assert.match(preload, /setNativeThemeSource:\s*\(themeMode\) => ipcRenderer\.invoke\("settings\.setNativeThemeSource", themeMode\)/);
   assert.match(preload, /getLocale:\s*\(\) => ipcRenderer\.invoke\("settings\.getLocale"\)/);
   assert.match(preload, /setLocale:\s*\(locale\) => ipcRenderer\.invoke\("settings\.setLocale", locale\)/);
   assert.match(preload, /ipcRenderer\.on\("settings\.localeChanged"/);
   assert.match(contracts, /interface DesktopAppInfo/);
+  assert.match(contracts, /interface DesktopRuntimeEnvResetResult/);
   assert.match(contracts, /getAppInfo: \(\) => Promise<DesktopAppInfo>/);
+  assert.match(contracts, /resetRuntimeEnv: \(\) => Promise<DesktopRuntimeEnvResetResult>/);
   assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark" \| "system"\)/);
   assert.match(contracts, /getLocale: \(\) => Promise<LocaleSettings>/);
   assert.match(contracts, /setLocale: \(locale: SupportedLocale\) => Promise<LocaleSettings>/);
@@ -1526,6 +1536,7 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(settingsHandlers, /nativeTheme/);
   assert.match(settingsHandlers, /nativeTheme\.themeSource = themeMode === "dark" \? "dark" : themeMode === "system" \? "system" : "light"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getAppInfo"[\s\S]*?app\.getVersion\(\)/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.resetRuntimeEnv"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setNativeThemeSource"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getLocale", async \(\) => initializeMainI18n\(app\)\)/);
   assert.match(mainProcess, /registerSettingsIpcHandlers\(/);

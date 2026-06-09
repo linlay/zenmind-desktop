@@ -405,6 +405,7 @@ test("settings ipc options use context runtime dependencies and injected refresh
   });
   const dependencies = {
     getDataRoot: () => "data-root",
+    resetRuntimeEnv: () => "reset-runtime",
     initializeMainI18n: () => "i18n",
     isSupportedLocale: () => true,
     setMainLocale: () => "locale",
@@ -419,6 +420,7 @@ test("settings ipc options use context runtime dependencies and injected refresh
   assert.equal(options.platform, "darwin");
   assert.equal(options.nativeTheme, nativeTheme);
   assert.equal(options.getDataRoot(), "data-root");
+  assert.equal(options.resetRuntimeEnv(), "reset-runtime");
   assert.equal(options.refreshTrayContextMenu(), "tray");
   assert.equal(options.emitLocaleChanged(), "emit");
 });

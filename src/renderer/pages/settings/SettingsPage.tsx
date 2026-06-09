@@ -16,6 +16,7 @@ import type {
   DesktopAppInfo,
   DesktopPetAgentOption,
   DesktopPetState,
+  DesktopRuntimeEnvResetResult,
   TaskBoardCloudConfig,
   TaskBoardDesktopOnlineResult,
   TaskBoardProject
@@ -506,6 +507,8 @@ export function SettingsPage({
   const [controlConnectionState, setControlConnectionState] = useState<TaskBoardConnectionState>("disabled");
   const [controlOnlineSummary, setControlOnlineSummary] = useState<TaskBoardDesktopOnlineResult>(defaultTaskBoardOnlineSummary);
   const [controlConfigSaving, setControlConfigSaving] = useState(false);
+  const [runtimeResetPending, setRuntimeResetPending] = useState(false);
+  const [runtimeResetResult, setRuntimeResetResult] = useState<DesktopRuntimeEnvResetResult | null>(null);
   const desktopPetSupported = isMac || isWindows;
   const contentRef = useRef<HTMLDivElement>(null);
   const memoryDataLoadedRef = useRef(false);
@@ -1708,6 +1711,29 @@ export function SettingsPage({
     });
   }
 
+  async function handleResetRuntimeEnv() {
+    if (!window.confirm(t("settings.reset.confirmMessage"))) {
+      return;
+    }
+
+    setRuntimeResetPending(true);
+    setRuntimeResetResult(null);
+    try {
+      const result = await window.electronAPI.settings.resetRuntimeEnv();
+      if (!result.ok) {
+        showSectionNotice("runtimeReset", result.message || t("settings.reset.failed"), "error");
+        setRuntimeResetResult(result);
+        return;
+      }
+      setRuntimeResetResult(result);
+      setReadErrorSections(["runtimeReset"], "");
+    } catch (reason) {
+      showSectionNotice("runtimeReset", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setRuntimeResetPending(false);
+    }
+  }
+
   const sidebarNavOrderLabels = new Map(availableSidebarNavOrderItems.map((item) => [item.key, item.label]));
   const activeSectionDefinition = activeSection
     ? visibleSections.find((definition) => definition.id === activeSection) ?? null
@@ -2517,6 +2543,41 @@ export function SettingsPage({
                 </details>
                 </div>
               </div>
+            </div>
+          </div>
+        );
+      case "runtimeReset":
+        return (
+          <div className="data-root-card settings-reset-card">
+            <div className="settings-reset-copy">
+              <h2>{t("settings.reset.title")}</h2>
+              <p className="page-copy">{t("settings.reset.warning")}</p>
+              <p className="settings-inline-note">{t("settings.reset.restartReminder")}</p>
+            </div>
+            {runtimeResetResult?.ok ? (
+              <div className="feedback-banner settings-reset-result" role="status">
+                <strong>{t("settings.reset.success")}</strong>
+                {runtimeResetResult.backupPath ? (
+                  <span>{t("settings.reset.backupPath", { path: runtimeResetResult.backupPath })}</span>
+                ) : null}
+                <span>{t("settings.reset.runtimeRoot", { path: runtimeResetResult.runtimeRoot })}</span>
+                <span>
+                  {t("settings.reset.importSummary", {
+                    copied: runtimeResetResult.copiedFiles,
+                    skipped: runtimeResetResult.skippedFiles
+                  })}
+                </span>
+              </div>
+            ) : null}
+            <div className="settings-reset-actions">
+              <button
+                type="button"
+                className="danger-text-button settings-reset-button"
+                disabled={runtimeResetPending}
+                onClick={() => void handleResetRuntimeEnv()}
+              >
+                {runtimeResetPending ? t("settings.reset.running") : t("settings.reset.action")}
+              </button>
             </div>
           </div>
         );

@@ -24,6 +24,7 @@ import {
   deleteSandboxImage,
   exportSandboxImageToPath,
   importSandboxImageFromPath,
+  installSandboxTemplateMarketItem,
   listSandboxImageMarketItems
 } from "./marketplace/sandbox-image-market";
 import {
@@ -101,7 +102,11 @@ async function loadMarketSections(app: App, options: MarketplaceOptions = {}) {
 }
 
 function isMarketNotFoundError(error: unknown) {
-  return error instanceof Error && error.message.startsWith("市场中未找到 ");
+  return error instanceof Error && (
+    error.message.startsWith("市场中未找到 ") ||
+    error.message.startsWith("Market item not found:") ||
+    /market item not found/iu.test(error.message)
+  );
 }
 
 async function resolveInstalledItemType(
@@ -144,6 +149,13 @@ export async function installMarketItem(
 ): Promise<MarketCommandResult> {
   try {
     return await installPluginMarketItem(app, itemId, options);
+  } catch (error) {
+    if (!isMarketNotFoundError(error)) {
+      throw error;
+    }
+  }
+  try {
+    return await installSandboxTemplateMarketItem(app, itemId, options);
   } catch (error) {
     if (!isMarketNotFoundError(error)) {
       throw error;

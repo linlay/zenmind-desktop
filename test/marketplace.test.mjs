@@ -339,9 +339,9 @@ async function withFixtureServer(files, fn) {
   }
 }
 
-test("DEFAULT_MARKETPLACE_CATALOG_URL points at the example marketplace catalog", () => {
-  assert.equal(DEFAULT_MARKETPLACE_CATALOG_URL, "https://marketplace.example.com/marketplace/index.json");
-  assert.equal(DEFAULT_SKILLS_API_BASE_URL, "http://127.0.0.1:8080");
+test("DEFAULT_MARKETPLACE_CATALOG_URL points at the official marketplace catalog", () => {
+  assert.equal(DEFAULT_MARKETPLACE_CATALOG_URL, "https://zenmind.cc/market/api/v1/desktop/catalog");
+  assert.equal(DEFAULT_SKILLS_API_BASE_URL, "https://zenmind.cc/market/api/v1");
 });
 
 test("refreshMarketCatalog combines catalog plugins with Skills API skills", async (t) => {
@@ -1044,7 +1044,7 @@ test("listMarketItems falls back to cached catalog when the remote catalog is un
   });
   assert.equal(result.ok, true);
   assert.equal(result.offline, true);
-  assert.equal(result.items[0].id, "cached-plugin");
+  assert.ok(result.items.some((item) => item.id === "cached-plugin"));
 });
 
 test("installMarketItem downloads and installs Skills API cloud skills", async (t) => {
