@@ -81,6 +81,8 @@ export type TaskBoardCloudSnapshot = {
   boardId?: string;
   projectId?: string;
   revision?: number;
+  complete?: boolean;
+  scope?: string;
   issues?: unknown[];
 };
 
@@ -1055,6 +1057,62 @@ function findLocalSyncForRemote(db: DatabaseSync, remoteIssueId: string) {
   };
 }
 
+function markIssueSyncState(
+  db: DatabaseSync,
+  currentUser: TaskBoardCurrentUser,
+  issueId: string,
+  syncState: TaskBoardSyncState,
+  syncError: string | null
+) {
+  const issue = selectIssues(db, currentUser).find((candidate) => candidate.id === issueId);
+  if (!issue) {
+    return null;
+  }
+  insertOrReplaceIssue(db, issue, {
+    syncMode: issue.syncMode ?? "private",
+    syncState,
+    origin: issue.origin ?? "desktop",
+    ownerUserId: issue.ownerUserId ?? currentUser.id,
+    lastRemoteRevision: issue.lastRemoteRevision,
+    lastSyncedAt: issue.lastSyncedAt,
+    syncError
+  });
+  return selectIssues(db, currentUser).find((candidate) => candidate.id === issueId) ?? issue;
+}
+
+export function markDesktopKanbanIssueSyncing(
+  app: AppPathProvider,
+  currentUser: TaskBoardCurrentUser,
+  issueId: string
+): TaskBoardIssueResult {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const issue = markIssueSyncState(db, currentUser, issueId, "syncing", null);
+    return {
+      ok: Boolean(issue),
+      message: issue ? "云同步任务正在同步。" : "任务不存在。",
+      issue: issue ?? undefined,
+      issues: selectIssues(db, currentUser)
+    };
+  });
+}
+
+export function markDesktopKanbanIssueSyncError(
+  app: AppPathProvider,
+  currentUser: TaskBoardCurrentUser,
+  issueId: string,
+  message: string
+): TaskBoardIssueResult {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const issue = markIssueSyncState(db, currentUser, issueId, "error", message);
+    return {
+      ok: false,
+      message,
+      issue: issue ?? undefined,
+      issues: selectIssues(db, currentUser)
+    };
+  });
+}
+
 export function applyDesktopKanbanCloudSnapshot(
   app: AppPathProvider,
   currentUser: TaskBoardCurrentUser,
@@ -1063,6 +1121,8 @@ export function applyDesktopKanbanCloudSnapshot(
 ): TaskBoardListResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const revision = typeof snapshot.revision === "number" ? snapshot.revision : readDesktopKanbanRevision(db);
+    const snapshotProjectId = trimText(snapshot.projectId);
+    const canTombstoneMissing = snapshot.complete === true && snapshot.scope === "project" && Boolean(snapshotProjectId);
     const remoteIds = new Set<string>();
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -1086,14 +1146,17 @@ export function applyDesktopKanbanCloudSnapshot(
           syncError: null
         });
       }
-      const cloudRows = db.prepare(`
-        SELECT LOCAL_ISSUE_ID_ AS localIssueId, REMOTE_ISSUE_ID_ AS remoteIssueId
-        FROM desktop_issue_sync
-        WHERE SYNC_MODE_ = 'cloud'
-      `).all() as Array<{ localIssueId: string; remoteIssueId: string | null }>;
-      for (const row of cloudRows) {
-        if (row.remoteIssueId && !remoteIds.has(row.remoteIssueId)) {
-          db.prepare("UPDATE issue SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE ID_ = ?").run(nowIso(), nowIso(), row.localIssueId);
+      if (canTombstoneMissing) {
+        const cloudRows = db.prepare(`
+        SELECT sync.LOCAL_ISSUE_ID_ AS localIssueId, sync.REMOTE_ISSUE_ID_ AS remoteIssueId, issue.PROJECT_ID_ AS projectId
+        FROM desktop_issue_sync sync
+        JOIN issue ON issue.ID_ = sync.LOCAL_ISSUE_ID_
+        WHERE sync.SYNC_MODE_ = 'cloud'
+      `).all() as Array<{ localIssueId: string; remoteIssueId: string | null; projectId: string }>;
+        for (const row of cloudRows) {
+          if (row.projectId === snapshotProjectId && row.remoteIssueId && !remoteIds.has(row.remoteIssueId)) {
+            db.prepare("UPDATE issue SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE ID_ = ?").run(nowIso(), nowIso(), row.localIssueId);
+          }
         }
       }
       writeDesktopKanbanRevision(db, revision);
@@ -1108,7 +1171,7 @@ export function applyDesktopKanbanCloudSnapshot(
       issues: selectIssues(db, currentUser),
       storagePath: getDesktopKanbanDatabasePath(app),
       boardId: BOARD_ID,
-      projectId: PROJECT_ID,
+      projectId: snapshotProjectId || PROJECT_ID,
       revision,
       currentUser,
       connectionState: "open"

@@ -180,6 +180,18 @@
   min-width: 96px;
 }
 
+.task-board-cloud-error-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 16px;
+}
+
 .task-board-cloud-dot {
   width: 8px;
   height: 8px;
@@ -355,6 +367,19 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.task-board-cloud-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--task-board-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.task-board-cloud-summary .is-error {
+  color: #dc2626;
 }
 
 .task-board-cloud-state {
@@ -1022,6 +1047,16 @@
 .task-board-sync-badge.is-dispatched {
   background: rgba(15, 118, 110, 0.12);
   color: #0f766e;
+}
+
+.task-board-sync-badge.is-syncing {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+
+.task-board-sync-badge.is-error {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
 }
 
 .task-board-card-status {

@@ -126,3 +126,79 @@ test("desktop kanban cloud snapshot maps remote issue to stable local issue", (t
   assert.equal(updatedCloudIssue.status, "in_review");
   assert.equal(getDesktopKanbanIssue(app, user, cloudIssue.id).remoteIssueId, "ISS-1");
 });
+
+test("desktop kanban only tombstones missing cloud issues for complete project snapshots", (t) => {
+  const app = createTempApp(t);
+  const user = currentUser();
+  const timestamp = new Date().toISOString();
+
+  applyDesktopKanbanCloudSnapshot(app, user, {
+    projectId: "default",
+    revision: 10,
+    complete: true,
+    scope: "project",
+    issues: [
+      {
+        id: "ISS-1",
+        title: "Cloud task one",
+        status: "todo",
+        priority: "medium",
+        position: 1,
+        revision: 10,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      },
+      {
+        id: "ISS-2",
+        title: "Cloud task two",
+        status: "todo",
+        priority: "medium",
+        position: 2,
+        revision: 10,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ]
+  });
+
+  const partial = applyDesktopKanbanCloudSnapshot(app, user, {
+    projectId: "default",
+    revision: 11,
+    complete: false,
+    scope: "current_user",
+    issues: [
+      {
+        id: "ISS-1",
+        title: "Cloud task one partial",
+        status: "todo",
+        priority: "medium",
+        position: 1,
+        revision: 11,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ]
+  });
+  assert.ok(partial.issues.some((issue) => issue.remoteIssueId === "ISS-2"));
+
+  const complete = applyDesktopKanbanCloudSnapshot(app, user, {
+    projectId: "default",
+    revision: 12,
+    complete: true,
+    scope: "project",
+    issues: [
+      {
+        id: "ISS-1",
+        title: "Cloud task one complete",
+        status: "todo",
+        priority: "medium",
+        position: 1,
+        revision: 12,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ]
+  });
+  assert.ok(complete.issues.some((issue) => issue.remoteIssueId === "ISS-1"));
+  assert.equal(complete.issues.some((issue) => issue.remoteIssueId === "ISS-2"), false);
+});

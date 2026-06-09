@@ -658,6 +658,96 @@ test("actual synced agent-platform asset no longer bundles the local relay", () 
   );
 });
 
+test("actual synced zenmind-app-server asset declares auth capability providers", () => {
+  const { service, assetPath } = getSyncedAsset("zenmind-app-server");
+  validateBundleArchive(service, assetPath);
+
+  const manifest = readManifestFromArchive(assetPath);
+  const providers = Array.isArray(manifest?.desktop?.capabilities?.provides)
+    ? manifest.desktop.capabilities.provides
+    : [];
+  const commandKey = assetPath.endsWith(".zip")
+    ? "windowsCommand"
+    : manifest?.platform?.os === "linux"
+      ? "linuxCommand"
+      : "darwinCommand";
+  const publicKeyProvider = providers.find((provider) => provider?.id === "auth.publicKey");
+  assert.equal(publicKeyProvider?.output, "file");
+  assert.equal(publicKeyProvider?.outputPath, "{{provider.dataDir}}/keys/publicKey.pem");
+  assert.equal(publicKeyProvider?.retryOnSqliteBusy, true);
+  assert.ok(Array.isArray(publicKeyProvider?.[commandKey]));
+
+  const accessTokenProvider = providers.find((provider) => provider?.id === "auth.accessToken");
+  assert.equal(accessTokenProvider?.output, "stdoutLastLine");
+  assert.equal(accessTokenProvider?.retryOnSqliteBusy, true);
+  assert.equal(accessTokenProvider?.validateJwtDeviceId, true);
+  assert.equal(accessTokenProvider?.allowDeviceIdFallback, true);
+  assert.ok(accessTokenProvider?.dependsOn?.includes("auth.publicKey"));
+  assert.ok(Array.isArray(accessTokenProvider?.[commandKey]));
+});
+
+test("validateBundleArchive rejects zenmind-app-server bundles without auth providers", () => {
+  const service = findBuiltinServiceForCurrentPlatform("zenmind-app-server");
+  const requiredPaths = [
+    "backend/zenmind-app-server",
+    "start.sh",
+    "stop.sh",
+    "deploy.sh",
+    "scripts/program-common.sh",
+    ".env.example",
+    "manifest.json",
+    "frontend/dist/index.html"
+  ];
+  const fixture = createTarBundle(service, {
+    "backend/zenmind-app-server": "fixture backend\n",
+    "start.sh": "#!/bin/sh\nexit 0\n",
+    "stop.sh": "#!/bin/sh\nexit 0\n",
+    "deploy.sh": "#!/bin/sh\nexit 0\n",
+    "scripts/program-common.sh": [
+      'FRONTEND_DIST_DIR="${FRONTEND_DIST_DIR:-./frontend/dist}"',
+      'nohup "$BACKEND_BIN"'
+    ].join("\n"),
+    ".env.example": "SERVER_PORT=11950\nFRONTEND_DIST_DIR=./frontend/dist\n",
+    "frontend/dist/index.html": "<!doctype html>\n",
+    "manifest.json": JSON.stringify({
+      id: "zenmind-app-server",
+      kind: "builtin",
+      version: "v1.0.0",
+      platform: {
+        os: currentManifestOs(),
+        arch: currentManifestArch()
+      },
+      runtime: {
+        requiredPaths
+      },
+      desktop: {
+        bundleTopLevelDir: "zenmind-app-server",
+        assetFileName: "zenmind-app-server-v1.0.0-darwin-arm64.tar.gz",
+        envBindings: [
+          {
+            key: "SERVER_PORT",
+            value: "{{serviceDefaultPort}}",
+            onlyIfDefault: true
+          }
+        ],
+        capabilities: {
+          provides: [],
+          requires: []
+        }
+      }
+    }, null, 2)
+  });
+
+  try {
+    assert.throws(
+      () => validateBundleArchive(service, fixture.tarPath),
+      /Missing desktop capability provider auth\.publicKey[\s\S]*Desktop-ready zenmind-app-server bundle/u
+    );
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test("validateBundleArchive fails when required entries are missing", () => {
   const service = findBuiltinServiceForCurrentPlatform("agent-platform");
 

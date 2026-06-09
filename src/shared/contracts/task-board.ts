@@ -132,12 +132,14 @@ export interface TaskBoardIssueUpdateInput {
   attachmentChatId?: string | null;
   attachments?: AssistantAttachment[];
   syncToCloud?: boolean;
+  baseIssueRevision?: number;
 }
 
 export interface TaskBoardIssueMoveInput {
   id: string;
   status: TaskBoardStatus;
   position: number;
+  baseIssueRevision?: number;
 }
 
 export interface TaskBoardListResult {

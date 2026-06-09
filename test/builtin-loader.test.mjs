@@ -519,6 +519,108 @@ test("loadBuiltinServices lets same-version bundled manifests repair stale insta
   }
 });
 
+test("loadBuiltinServices compares builtin versions numerically", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-loader-version-order-"));
+  const previousAssetsRoot = process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+  const assetsRoot = path.join(tempRoot, "assets");
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const archiveExtension = process.platform === "win32" ? ".zip" : ".tar.gz";
+  const matchedOs = getCurrentManifestOs();
+  const serviceAssetDir = path.join(assetsRoot, "agent-webclient");
+  const bundledVersion = "v0.2.13";
+  const installedVersion = "v0.2.3";
+  const archiveName = `agent-webclient-${bundledVersion}${archiveExtension}`;
+  const archivePath = path.join(serviceAssetDir, archiveName);
+  const installedManifestPath = path.join(getLayeredBuiltinInstallDir(userDataRoot, "agent-webclient", installedVersion), "manifest.json");
+
+  fs.mkdirSync(serviceAssetDir, { recursive: true });
+  writeServiceArchive(archivePath, {
+    id: "agent-webclient",
+    name: "智能助理",
+    kind: "builtin",
+    version: bundledVersion,
+    description: "bundled numeric newer webclient",
+    platform: {
+      os: matchedOs,
+      arch: "test"
+    },
+    frontend: {
+      mode: "standalone",
+      hostManaged: true
+    },
+    scripts: {
+      start: process.platform === "win32" ? "start.ps1" : "start.sh",
+      stop: process.platform === "win32" ? "stop.ps1" : "stop.sh"
+    },
+    runtime: {
+      requiredPaths: ["manifest.json", "frontend/dist/index.html"]
+    }
+  }, {
+    "frontend/dist/index.html": "<!doctype html>\n"
+  });
+  fs.writeFileSync(
+    path.join(assetsRoot, "manifest.json"),
+    `${JSON.stringify({
+      generatedAt: "2026-06-09T00:00:00.000Z",
+      services: [{
+        id: "agent-webclient",
+        version: bundledVersion,
+        assetFileName: archiveName,
+        assetSignature: "numeric-version-fixture"
+      }]
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  fs.mkdirSync(path.dirname(installedManifestPath), { recursive: true });
+  fs.writeFileSync(
+    installedManifestPath,
+    `${JSON.stringify({
+      id: "agent-webclient",
+      name: "智能助理",
+      kind: "builtin",
+      version: installedVersion,
+      description: "installed lexicographic trap webclient",
+      platform: {
+        os: matchedOs,
+        arch: "test"
+      },
+      frontend: {
+        mode: "standalone",
+        hostManaged: false
+      },
+      scripts: {
+        start: process.platform === "win32" ? "start.ps1" : "start.sh",
+        stop: process.platform === "win32" ? "stop.ps1" : "stop.sh"
+      },
+      runtime: {
+        requiredPaths: ["manifest.json"]
+      }
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = assetsRoot;
+  registryInternals.clearServices();
+
+  try {
+    const loaded = loadBuiltinServices(createApp(userDataRoot));
+    const service = getBuiltinService("agent-webclient");
+
+    assert.equal(loaded.length, 1);
+    assert.equal(service.version, bundledVersion);
+    assert.equal(service.description, "bundled numeric newer webclient");
+    assert.equal(service.assetFileName, archiveName);
+  } finally {
+    registryInternals.clearServices();
+    if (previousAssetsRoot) {
+      process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT = previousAssetsRoot;
+    } else {
+      delete process.env.ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT;
+    }
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("listArchiveEntries preserves UTF-8 zip entry names on Windows", { skip: process.platform !== "win32" }, () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-archive-utils-utf8-"));
   const archivePath = path.join(tempRoot, "utf8-service.zip");

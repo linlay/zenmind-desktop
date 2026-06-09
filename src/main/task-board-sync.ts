@@ -52,7 +52,11 @@ export function resolveTaskBoardStatusFromAssistantEvent(
 function isCancelledTaskBoardAssistantEvent(event: TaskBoardAssistantSyncEvent) {
   return (
     event.type === "run.cancel" ||
+    event.type === "run.cancelled" ||
+    event.type === "run.canceled" ||
     event.type === "task.cancel" ||
+    event.type === "task.cancelled" ||
+    event.type === "task.canceled" ||
     event.type === "stopped" ||
     event.type === "run.stopped" ||
     event.type === "run.interrupt" ||
@@ -75,8 +79,14 @@ export function resolveTaskBoardRunStateFromAssistantEvent(
   if (
     event.type === "error" ||
     event.type === "run.error" ||
+    event.type === "run.fail" ||
+    event.type === "run.failed" ||
+    event.type === "task.fail" ||
+    event.type === "task.failed" ||
     event.type === "run.expired" ||
     event.status === "error" ||
+    event.status === "failed" ||
+    event.status === "fail" ||
     event.status === "timeout"
   ) {
     return "failed";

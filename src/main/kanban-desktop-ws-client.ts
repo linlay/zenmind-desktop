@@ -106,6 +106,8 @@ function normalizeSnapshot(payload: unknown, env: KanbanEnvelope): TaskBoardClou
     boardId: readText(record.boardId) || readText(env.boardId),
     projectId: readText(record.projectId) || readText(env.projectId),
     revision: typeof record.revision === "number" ? record.revision : env.revision,
+    complete: record.complete === true,
+    scope: readText(record.scope),
     issues: Array.isArray(record.issues) ? record.issues : []
   };
 }

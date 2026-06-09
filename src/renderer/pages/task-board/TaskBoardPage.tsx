@@ -936,11 +936,23 @@ function getTaskBoardIssueSyncTone(issue: TaskBoardIssue) {
   if (issue.syncMode !== "cloud") {
     return "private";
   }
+  if (issue.syncState === "error") {
+    return "error";
+  }
+  if (issue.syncState === "syncing") {
+    return "syncing";
+  }
   return issue.origin === "cloud_dispatch" ? "dispatched" : "cloud";
 }
 
 function getTaskBoardIssueSyncLabel(issue: TaskBoardIssue, t: TranslateFunction) {
   const tone = getTaskBoardIssueSyncTone(issue);
+  if (tone === "error") {
+    return t("taskBoard.sync.error");
+  }
+  if (tone === "syncing") {
+    return t("taskBoard.sync.syncing");
+  }
   if (tone === "dispatched") {
     return t("taskBoard.sync.dispatched");
   }
@@ -948,6 +960,14 @@ function getTaskBoardIssueSyncLabel(issue: TaskBoardIssue, t: TranslateFunction)
     return t("taskBoard.sync.cloud");
   }
   return t("taskBoard.sync.private");
+}
+
+function formatTaskBoardLastSyncedAt(value: string | null | undefined, t: TranslateFunction) {
+  if (!value) {
+    return t("taskBoard.cloud.neverSynced");
+  }
+  const formatted = formatIssueUpdatedTime(value);
+  return formatted ? t("taskBoard.cloud.lastSyncedAt", { time: formatted }) : t("taskBoard.cloud.neverSynced");
 }
 
 function resolveIssueAgentKey(issue: TaskBoardIssue, agents: AssistantNavAgentItem[]) {
@@ -1241,6 +1261,22 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     () => issues.filter((issue) => VISIBLE_TASK_BOARD_STATUS_SET.has(issue.status)),
     [issues]
   );
+
+  const cloudSyncSummary = useMemo(() => {
+    const cloudIssues = visibleIssues.filter((issue) => issue.syncMode === "cloud");
+    const errorCount = cloudIssues.filter((issue) => issue.syncState === "error").length;
+    const syncingCount = cloudIssues.filter((issue) => issue.syncState === "syncing").length;
+    const lastSyncedAt = cloudIssues
+      .map((issue) => issue.lastSyncedAt)
+      .filter((value): value is string => Boolean(value))
+      .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? null;
+    return {
+      cloudCount: cloudIssues.length,
+      errorCount,
+      syncingCount,
+      lastSyncedAt
+    };
+  }, [visibleIssues]);
 
   const filteredIssues = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -1736,6 +1772,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
           >
             <span className="task-board-cloud-dot" aria-hidden="true" />
             <span className="task-board-tool-label">{getTaskBoardConnectionLabel(connectionState, t)}</span>
+            {cloudSyncSummary.errorCount > 0 ? (
+              <span className="task-board-cloud-error-count" title={t("taskBoard.cloud.syncErrors", { count: cloudSyncSummary.errorCount })}>
+                {cloudSyncSummary.errorCount}
+              </span>
+            ) : null}
           </button>
           <span className="task-board-count">{t("taskBoard.toolbar.issueCount", { filtered: filteredCount, total: totalCount })}</span>
           <button
@@ -1797,6 +1838,12 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 <span className={`task-board-cloud-state is-${getTaskBoardConnectionTone(connectionState)}`}>
                   {getTaskBoardConnectionLabel(connectionState, t)}
                 </span>
+              </div>
+              <div className="task-board-cloud-summary">
+                <span>{t("taskBoard.cloud.syncedIssues", { count: cloudSyncSummary.cloudCount })}</span>
+                <span>{formatTaskBoardLastSyncedAt(cloudSyncSummary.lastSyncedAt, t)}</span>
+                {cloudSyncSummary.syncingCount > 0 ? <span>{t("taskBoard.cloud.syncingIssues", { count: cloudSyncSummary.syncingCount })}</span> : null}
+                {cloudSyncSummary.errorCount > 0 ? <span className="is-error">{t("taskBoard.cloud.syncErrors", { count: cloudSyncSummary.errorCount })}</span> : null}
               </div>
               <label className="task-board-field">
                 <span>{t("taskBoard.cloud.serverUrl")}</span>
@@ -2478,6 +2525,7 @@ function TaskBoardCardContent({
   const displayIssueId = getTaskBoardIssueDisplayId(issue);
   const syncTone = getTaskBoardIssueSyncTone(issue);
   const syncLabel = getTaskBoardIssueSyncLabel(issue, t);
+  const syncTitle = issue.syncState === "error" && issue.syncError ? `${syncLabel}：${issue.syncError}` : syncLabel;
   const mainContent = (
     <>
       <div className="task-board-card-line task-board-card-line-top">
@@ -2485,7 +2533,7 @@ function TaskBoardCardContent({
           <span className="task-board-card-id" title={issue.remoteIssueId ? `${issue.id} / ${issue.remoteIssueId}` : issue.id}>
             {displayIssueId}
           </span>
-          <span className={`task-board-sync-badge is-${syncTone}`} title={syncLabel}>{syncLabel}</span>
+          <span className={`task-board-sync-badge is-${syncTone}`} title={syncTitle}>{syncLabel}</span>
           {display.priority ? <PriorityBadge priority={issue.priority} t={t} /> : null}
         </span>
         <span

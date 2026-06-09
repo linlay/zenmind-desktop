@@ -346,7 +346,12 @@ export function discoverBuiltinServices({ os, arch } = {}) {
   const services = [];
 
   for (const archivePath of listReleaseArchives()) {
-    const manifest = readManifestFromArchive(archivePath);
+    let manifest;
+    try {
+      manifest = readManifestFromArchive(archivePath);
+    } catch {
+      continue;
+    }
     if (!manifest || manifest.kind !== "builtin") {
       continue;
     }
@@ -664,6 +669,7 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
 }
 
 function validateZenmindAppServerBundleArchive(service, archivePath) {
+  const manifest = readManifestFromArchive(archivePath);
   const envExamplePath = `${service.bundleTopLevelDir}/.env.example`;
   const envExample = readArchiveEntryText(archivePath, envExamplePath);
   if (!envExample || !envExample.includes("FRONTEND_DIST_DIR=./frontend/dist")) {
@@ -694,6 +700,7 @@ function validateZenmindAppServerBundleArchive(service, archivePath) {
           `Please rebuild or reselect the Desktop-ready program bundle.`
       );
     }
+    validateZenmindAppServerAuthCapabilities(service, archivePath, manifest, "windowsCommand");
     return;
   }
 
@@ -705,6 +712,51 @@ function validateZenmindAppServerBundleArchive(service, archivePath) {
       `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
         `Detected a stale zenmind-app-server launcher without Desktop compatibility markers.\n` +
         `Please rebuild or reselect the Desktop-ready program bundle.`
+    );
+  }
+
+  const commandKey = manifest?.platform?.os === "linux" ? "linuxCommand" : "darwinCommand";
+  validateZenmindAppServerAuthCapabilities(service, archivePath, manifest, commandKey);
+}
+
+function hasNonEmptyStringArray(value) {
+  return Array.isArray(value) && value.every((item) => typeof item === "string" && item.trim());
+}
+
+function validateZenmindAppServerAuthCapabilities(service, archivePath, manifest, commandKey) {
+  const providers = Array.isArray(manifest?.desktop?.capabilities?.provides)
+    ? manifest.desktop.capabilities.provides
+    : [];
+  const authPublicKeyProvider = providers.find((provider) => provider?.id === "auth.publicKey");
+  if (
+    !authPublicKeyProvider ||
+    authPublicKeyProvider.output !== "file" ||
+    authPublicKeyProvider.outputPath !== "{{provider.dataDir}}/keys/publicKey.pem" ||
+    authPublicKeyProvider.retryOnSqliteBusy !== true ||
+    !hasNonEmptyStringArray(authPublicKeyProvider[commandKey])
+  ) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Missing desktop capability provider auth.publicKey in manifest.json.\n` +
+        `Please rebuild the Desktop-ready zenmind-app-server bundle with manifest-declared auth providers.`
+    );
+  }
+
+  const authAccessTokenProvider = providers.find((provider) => provider?.id === "auth.accessToken");
+  if (
+    !authAccessTokenProvider ||
+    authAccessTokenProvider.output !== "stdoutLastLine" ||
+    authAccessTokenProvider.retryOnSqliteBusy !== true ||
+    authAccessTokenProvider.validateJwtDeviceId !== true ||
+    authAccessTokenProvider.allowDeviceIdFallback !== true ||
+    !Array.isArray(authAccessTokenProvider.dependsOn) ||
+    !authAccessTokenProvider.dependsOn.includes("auth.publicKey") ||
+    !hasNonEmptyStringArray(authAccessTokenProvider[commandKey])
+  ) {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${archivePath}\n` +
+        `Missing desktop capability provider auth.accessToken in manifest.json.\n` +
+        `Please rebuild the Desktop-ready zenmind-app-server bundle with manifest-declared auth providers.`
     );
   }
 }

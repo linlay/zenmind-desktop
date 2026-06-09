@@ -11,6 +11,8 @@ test("task board sync maps assistant terminal events to task board run state", (
   assert.equal(resolveTaskBoardStatusFromAssistantEvent({ type: "run.complete" }), "completed");
   assert.equal(resolveTaskBoardRunStateFromAssistantEvent({ type: "run.complete" }), "completed");
   assert.equal(resolveTaskBoardRunStateFromAssistantEvent({ status: "cancelled" }), "cancelled");
+  assert.equal(resolveTaskBoardRunStateFromAssistantEvent({ type: "run.cancelled" }), "cancelled");
+  assert.equal(resolveTaskBoardRunStateFromAssistantEvent({ type: "run.failed" }), "failed");
   assert.equal(resolveTaskBoardRunStateFromAssistantEvent({ type: "run.expired" }), "failed");
   assert.equal(resolveTaskBoardRunStateFromAssistantEvent({ type: "run.start" }), null);
 });

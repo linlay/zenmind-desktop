@@ -28,6 +28,8 @@ import {
   getDesktopKanbanIssue,
   listDesktopKanbanIssues,
   linkDesktopKanbanIssueToRemote,
+  markDesktopKanbanIssueSyncError,
+  markDesktopKanbanIssueSyncing,
   moveDesktopKanbanIssue,
   setDesktopKanbanIssuePosition,
   updateDesktopKanbanIssue,
@@ -213,8 +215,28 @@ function resultRevision(payload: unknown) {
   return isRecord(payload) && typeof payload.revision === "number" ? payload.revision : 0;
 }
 
+function resultProjectId(payload: unknown) {
+  return isRecord(payload) ? readText(payload.projectId) : "";
+}
+
+function resultComplete(payload: unknown) {
+  return isRecord(payload) && payload.complete === true;
+}
+
+function resultScope(payload: unknown) {
+  return isRecord(payload) ? readText(payload.scope) : "";
+}
+
+function resultOk(payload: unknown) {
+  return !isRecord(payload) || payload.ok !== false;
+}
+
 function resultMessage(payload: unknown, fallback: string) {
   return isRecord(payload) ? readText(payload.message) || fallback : fallback;
+}
+
+function baseIssueRevision(issue: TaskBoardIssue) {
+  return typeof issue.revision === "number" && issue.revision > 0 ? issue.revision : undefined;
 }
 
 function buildListLikeIssueResult(list: TaskBoardListResult, message: string, issue?: TaskBoardIssue): TaskBoardIssueResult {
@@ -403,6 +425,7 @@ export class TaskBoardRuntime {
         if (!localResult.ok || !localResult.issue) {
           return localResult;
         }
+        markDesktopKanbanIssueSyncing(this.options.app, currentUser, localResult.issue.id);
         try {
           const response = await this.wsClient.request("kanban.issue.create", toCloudIssueInput(localResult.issue));
           const remoteIssue = resultIssuePayload(response);
@@ -417,9 +440,11 @@ export class TaskBoardRuntime {
             resultRevision(response)
           );
         } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          markDesktopKanbanIssueSyncError(this.options.app, currentUser, localResult.issue.id, message);
           return {
             ok: false,
-            message: error instanceof Error ? error.message : String(error),
+            message,
             issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
           };
         }
@@ -435,15 +460,21 @@ export class TaskBoardRuntime {
       };
     }
     try {
+      markDesktopKanbanIssueSyncing(this.options.app, currentUser, issue.id);
       const response = await this.wsClient.request("kanban.issue.update", {
         id: getRemoteIssueId(issue),
-        input: toCloudIssueInput(input)
+        input: {
+          ...toCloudIssueInput(input),
+          baseIssueRevision: baseIssueRevision(issue)
+        }
       });
       return this.applyCloudIssueResponse(response, "云同步任务已更新。", issue.origin ?? "cloud_dispatch");
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      markDesktopKanbanIssueSyncError(this.options.app, currentUser, issue.id, message);
       return {
         ok: false,
-        message: error instanceof Error ? error.message : String(error),
+        message,
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
@@ -471,16 +502,20 @@ export class TaskBoardRuntime {
       };
     }
     try {
+      markDesktopKanbanIssueSyncing(this.options.app, currentUser, issue.id);
       const response = await this.wsClient.request("kanban.issue.move", {
         id: getRemoteIssueId(issue),
         status: input.status,
-        position: input.position
+        position: input.position,
+        baseIssueRevision: baseIssueRevision(issue)
       });
       return this.applyCloudIssueResponse(response, "云同步任务已移动。", issue.origin ?? "cloud_dispatch");
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      markDesktopKanbanIssueSyncError(this.options.app, currentUser, issue.id, message);
       return {
         ok: false,
-        message: error instanceof Error ? error.message : String(error),
+        message,
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
@@ -522,15 +557,23 @@ export class TaskBoardRuntime {
       return deleteDesktopKanbanIssue(this.options.app, currentUser, issue.id);
     }
     try {
-      const response = await this.wsClient.request("kanban.issue.delete", { id: getRemoteIssueId(issue) });
+      markDesktopKanbanIssueSyncing(this.options.app, currentUser, issue.id);
+      const response = await this.wsClient.request("kanban.issue.delete", {
+        id: getRemoteIssueId(issue),
+        baseIssueRevision: baseIssueRevision(issue)
+      });
       const snapshotIssues = resultIssuesPayload(response);
       if (snapshotIssues) {
         const list = applyDesktopKanbanCloudSnapshot(this.options.app, currentUser, {
+          boardId: isRecord(response) ? readText(response.boardId) : "",
+          projectId: resultProjectId(response),
           revision: resultRevision(response),
+          complete: resultComplete(response),
+          scope: resultScope(response),
           issues: snapshotIssues
         });
         return {
-          ok: true,
+          ok: resultOk(response),
           message: resultMessage(response, "云同步任务已删除。"),
           deletedIssueId: issue.id,
           issues: list.issues
@@ -538,9 +581,11 @@ export class TaskBoardRuntime {
       }
       return deleteDesktopKanbanIssue(this.options.app, currentUser, issue.id);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      markDesktopKanbanIssueSyncError(this.options.app, currentUser, issue.id, message);
       return {
         ok: false,
-        message: error instanceof Error ? error.message : String(error),
+        message,
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
@@ -572,21 +617,27 @@ export class TaskBoardRuntime {
       return localResult;
     }
     try {
+      markDesktopKanbanIssueSyncing(this.options.app, currentUser, localResult.issue.id);
       const response = await this.wsClient.request("kanban.issue.update", {
         id: getRemoteIssueId(localResult.issue),
-        input: toCloudIssueInput({
-          automationId: localResult.issue.automationId,
-          automationEnabled: localResult.issue.automationEnabled,
-          automationCron: localResult.issue.automationCron,
-          automationMessage: localResult.issue.automationMessage,
-          automationTimezone: localResult.issue.automationTimezone
-        })
+        input: {
+          ...toCloudIssueInput({
+            automationId: localResult.issue.automationId,
+            automationEnabled: localResult.issue.automationEnabled,
+            automationCron: localResult.issue.automationCron,
+            automationMessage: localResult.issue.automationMessage,
+            automationTimezone: localResult.issue.automationTimezone
+          }),
+          baseIssueRevision: baseIssueRevision(localResult.issue)
+        }
       });
       return this.applyCloudIssueResponse(response, "云同步任务自动化已同步。", localResult.issue.origin ?? "cloud_dispatch");
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      markDesktopKanbanIssueSyncError(this.options.app, currentUser, localResult.issue.id, message);
       return {
         ok: false,
-        message: error instanceof Error ? error.message : String(error),
+        message,
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
@@ -675,10 +726,15 @@ export class TaskBoardRuntime {
     const issues = resultIssuesPayload(payload);
     if (issues) {
       const list = applyDesktopKanbanCloudSnapshot(this.options.app, currentUser, {
+        boardId: isRecord(payload) ? readText(payload.boardId) : "",
+        projectId: resultProjectId(payload),
         revision: resultRevision(payload),
+        complete: resultComplete(payload),
+        scope: resultScope(payload),
         issues
       }, origin);
-      return buildListLikeIssueResult(list, resultMessage(payload, fallbackMessage), resultIssuePayload(payload) as TaskBoardIssue | undefined);
+      const result = buildListLikeIssueResult(list, resultMessage(payload, fallbackMessage), resultIssuePayload(payload) as TaskBoardIssue | undefined);
+      return { ...result, ok: result.ok && resultOk(payload) };
     }
     const issue = resultIssuePayload(payload);
     if (issue) {

@@ -120,6 +120,42 @@ function isPlatformMatch(manifestOs: string) {
   return manifestOs.trim().toLowerCase() === getCurrentManifestOs();
 }
 
+function normalizeBuiltinVersion(version: string) {
+  return version
+    .trim()
+    .replace(/^v/iu, "")
+    .split(".")
+    .map((segment) => {
+      const match = segment.match(/^(\d+)(.*)$/u);
+      if (!match) {
+        return { number: Number.NaN, suffix: segment };
+      }
+      return {
+        number: Number.parseInt(match[1], 10),
+        suffix: match[2] ?? ""
+      };
+    });
+}
+
+function compareBuiltinVersions(leftVersion: string, rightVersion: string) {
+  const left = normalizeBuiltinVersion(leftVersion);
+  const right = normalizeBuiltinVersion(rightVersion);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = left[index] ?? { number: 0, suffix: "" };
+    const rightPart = right[index] ?? { number: 0, suffix: "" };
+    const leftNumber = Number.isFinite(leftPart.number) ? leftPart.number : -1;
+    const rightNumber = Number.isFinite(rightPart.number) ? rightPart.number : -1;
+    if (leftNumber !== rightNumber) {
+      return leftNumber - rightNumber;
+    }
+    if (leftPart.suffix !== rightPart.suffix) {
+      return leftPart.suffix.localeCompare(rightPart.suffix);
+    }
+  }
+  return 0;
+}
+
 function listInstalledBuiltinManifestPaths(app: App) {
   const servicesRoot = getServicesRoot(app);
   if (!fs.existsSync(servicesRoot)) {
@@ -162,7 +198,7 @@ function loadInstalledBuiltinServices(app: App, ignoredServiceIds: Set<string> =
         continue;
       }
       const current = latestByServiceId.get(manifest.id);
-      if (!current || manifest.version.localeCompare(current.manifest.version) > 0) {
+      if (!current || compareBuiltinVersions(manifest.version, current.manifest.version) > 0) {
         latestByServiceId.set(manifest.id, { manifestPath, manifest });
       }
     } catch (error) {
@@ -198,7 +234,7 @@ export function loadBuiltinServices(app: App) {
       const assetFileName = path.basename(archivePath);
       const indexedAsset = assetIndex.get(assetFileName);
       const installed = indexedAsset ? registeredByServiceId.get(indexedAsset.id) : undefined;
-      if (indexedAsset && installed && installed.version.localeCompare(indexedAsset.version) > 0) {
+      if (indexedAsset && installed && compareBuiltinVersions(installed.version, indexedAsset.version) > 0) {
         continue;
       }
 
