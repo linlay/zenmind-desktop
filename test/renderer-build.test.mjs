@@ -531,7 +531,7 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(appShell, /isMac=\{isMac\}/);
   assert.match(appShell, /isWindows=\{isWindows\}/);
   assert.match(appShell, /const renderedSidebarWidth = resolveRenderedSidebarWidth\(sidebarState\);/);
-  assert.match(appShell, /const appShellStyle = \{[\s\S]*?"--app-sidebar-width": `\$\{renderedSidebarWidth\}px`[\s\S]*?\} as CSSProperties;/);
+  assert.match(appShell, /const appShellStyle = \{[\s\S]*?"--app-sidebar-width": `\$\{effectiveSidebarWidth\}px`[\s\S]*?\} as CSSProperties;/);
   assert.doesNotMatch(appShell, /className="app-sidebar-collapse-button"/);
   assert.doesNotMatch(appShell, /app-sidebar-drag-region/);
   assert.doesNotMatch(appShell, /is-sidebar-expanded/);
@@ -543,7 +543,7 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(appShell, /onPointerDown=\{isSettingsRoute \? undefined : handleSidebarResizerPointerDown\}/);
   assert.match(appShell, /isSettingsRoute \? "is-disabled" : ""/);
   assert.match(globalStyles, /\.app-shell\.is-settings-mode \.app-sidebar-resizer/);
-  assert.match(appShell, /sidebarCollapsed \? "is-sidebar-collapsed" : ""/);
+  assert.match(appShell, /effectiveSidebarCollapsed \? "is-sidebar-collapsed" : ""/);
   assert.match(appShell, /isSidebarResizing \? "is-sidebar-resizing" : ""/);
   assert.match(sidebarSource, /onToggleCollapsed\?:\s*\(\)\s*=>\s*void;/);
   assert.match(sidebarSource, /type SidebarCollapseToggleVariant = "compact" \| "nav";/);
@@ -962,7 +962,8 @@ test("assistant sidebar chat history selection follows pending navigation", () =
   assert.match(sidebarSource, /const activeAgentChanged =\s*lastAutoExpandedAssistantAgentKeyRef\.current !== matched\.agentKey;/);
   assert.match(sidebarSource, /if \(activeAgentChanged\) \{[\s\S]{0,220}setExpandedAssistantAgentKey\(matched\.agentKey\);/);
   assert.match(sidebarSource, /\}, \[assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKey\]\);/);
-  assert.match(sidebarSource, /return pendingPath \? pendingChatId : currentChatId;/);
+  assert.match(sidebarSource, /const routeChatId = pendingPath \? pendingChatId : currentChatId;/);
+  assert.match(sidebarSource, /if \(routeChatId\) \{[\s\S]{0,80}return routeChatId;/);
   assert.match(sidebarSource, /const selected =\s*getActiveSidebarAgentKey\(\) === agent\.agentKey;/);
   assert.match(sidebarSource, /const activeChatId = getActiveSidebarChatId\(agent\.agentKey\);/);
   assert.doesNotMatch(sidebarSource, /const activeChatId = currentChatId \|\| "";/);
@@ -2091,7 +2092,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(appSidebar, /window\.electronAPI\.services\.list\(\)/);
   assert.match(appSidebar, /proxy-acp-claudecode[\s\S]*?acpProxyId:\s*"claude"/);
   assert.match(appSidebar, /proxy-acp-codex[\s\S]*?acpProxyId:\s*"codex"/);
-  assert.match(appSidebar, /<option value="">[\s\S]*?不使用 ACP/);
+  assert.match(appSidebar, /value="builtin"[\s\S]*?内置编程/);
+  assert.match(appSidebar, /value="acp"[\s\S]*?ACP 代理编程/);
   assert.match(appSidebar, /if \(selectedAcpProxy\) \{[\s\S]*?createInput\.acpProxyId = selectedAcpProxy\.acpProxyId/);
   assert.match(appSidebar, /window\.electronAPI\.assistant\.createCoderProject\(createInput\)/);
   assert.doesNotMatch(appSidebar, /没有检测到正在运行的 ACP 工具/);
