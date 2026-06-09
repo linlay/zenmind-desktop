@@ -407,6 +407,42 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-status-message\.danger\s*\{/);
 });
 
+test("control center internal endpoint opens service frontend entrypoints", () => {
+  const controlCenter = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "control-center", "ControlCenterPage.tsx"),
+    "utf8"
+  );
+
+  assert.match(controlCenter, /function shouldOpenControlCenterEndpointInternally\(/);
+  assert.match(controlCenter, /service\.frontendMode !== "none" \|\| service\.id === "agent-platform"/);
+  assert.match(controlCenter, /function resolveControlCenterEndpoint\(/);
+  assert.match(controlCenter, /service\.id === "zenmind-app-server"[\s\S]*?return appendEndpointPath\(baseUrl, "\/admin\/"\)/);
+  assert.match(controlCenter, /service\.id === "agent-platform"[\s\S]*?return appendEndpointPath\(baseUrl, "\/monitor"\)/);
+  assert.match(controlCenter, /const detailEndpoint = activeDetailService\s*\?\s*resolveControlCenterEndpoint\(activeDetailService\)\s*:\s*"";/);
+  assert.match(controlCenter, /if \(\s*!shouldOpenControlCenterEndpointInternally\(activeDetailService\)\s*\)/);
+  assert.doesNotMatch(controlCenter, /const detailEndpoint = activeDetailService\?\.healthMeta\.webUrl \?\? "";/);
+});
+
+test("embedded service previews load auth and platform entrypoints directly", () => {
+  const embeddedSurfaceHosts = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx"
+  );
+  const pluginPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
+    "utf8"
+  );
+
+  assert.match(embeddedSurfaceHosts, /function shouldLoadInitialServiceUrlDirectly\(/);
+  assert.match(embeddedSurfaceHosts, /pluginId === "zenmind-app-server" \|\| pluginId === "agent-platform"/);
+  assert.match(embeddedSurfaceHosts, /loadInitialEmbeddedUrlDirectly=\{shouldLoadInitialServiceUrlDirectly\(pluginId\)\}/);
+  assert.match(pluginPage, /service\.id !== "agent-platform"/);
+  assert.match(pluginPage, /agentPlatformMonitorAccessToken/);
+});
+
 test("startup loading screen uses localized copy", () => {
   const startupGate = readSourceFile(
     "src",
@@ -3020,47 +3056,37 @@ test("service log viewer renderer text is routed through i18n", () => {
   assert.doesNotMatch(logViewerPage, /[\p{Script=Han}]/u);
 });
 
-test("agent-platform monitor opens the platform /monitor page in a separate window", () => {
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
-  const servicesHandlers = readSourceFile("src", "main", "ipc", "services-handlers.ts");
-  const monitorWindow = readSourceFile("src", "main", "app-shell", "agent-platform-monitor-window.ts");
-  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const contracts = readSharedContractsSource();
+test("agent-platform monitor opens inside the service preview surface", () => {
+  const authBridge = readSourceFile("src", "shared", "auth-bridge.ts");
   const app = readSourceFile("src", "renderer", "App.tsx");
   const controlCenter = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "control-center", "ControlCenterPage.tsx"),
+    "utf8"
+  );
+  const embeddedSurfaceHosts = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx"
+  );
+  const pluginPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
     "utf8"
   );
   const globalStyles = readRendererStyles();
   const monitorPagePath = path.join(projectRoot, "src", "renderer", "pages", "AgentPlatformMonitorPage.tsx");
   const monitorStylesPath = path.join(projectRoot, "src", "renderer", "styles", "agent-platform-monitor.css");
 
-  assert.match(mainProcess, /AgentPlatformMonitorWindowController/);
-  assert.match(mainProcess, /openAgentPlatformMonitorWindow\(url: string\)/);
-  assert.match(monitorWindow, /loadURL\(url\)/);
-  assert.match(monitorWindow, /access_token/);
-  assert.match(monitorWindow, /frame:\s*true/);
-  assert.doesNotMatch(monitorWindow, /parent:\s*ownerWindow/);
-  assert.doesNotMatch(monitorWindow, /modal:\s*false/);
-  assert.doesNotMatch(monitorWindow, /getOwnerWindow/);
-  assert.match(monitorWindow, /if \(this\.options\.platform === "darwin"\)/);
-  assert.match(monitorWindow, /else if \(this\.options\.platform === "win32"\)/);
-  assert.match(monitorWindow, /else \{/);
-  assert.match(servicesHandlers, /services\.openAgentPlatformMonitor/);
-  assert.match(servicesHandlers, /issueAgentPlatformAccessToken/);
-  assert.match(servicesHandlers, /new URL\("\/monitor"/);
-  assert.match(servicesHandlers, /searchParams\.set\("access_token"/);
-  assert.doesNotMatch(servicesHandlers, /services\.readAgentPlatformMonitor/);
-  assert.doesNotMatch(servicesHandlers, /\/api\/monitor\/ws\/connections/);
-  assert.doesNotMatch(servicesHandlers, /\/api\/monitor\/ws\/messages/);
-  assert.match(preload, /openAgentPlatformMonitor/);
-  assert.doesNotMatch(preload, /readAgentPlatformMonitor/);
-  assert.doesNotMatch(preload, /onAgentPlatformMonitorMaximized/);
-  assert.doesNotMatch(contracts, /AgentPlatformMonitorReadOptions/);
-  assert.doesNotMatch(contracts, /AgentPlatformMonitorSnapshot/);
+  assert.match(authBridge, /serviceId === "agent-platform"[\s\S]{0,180}url\.pathname = "\/monitor"/);
+  assert.match(authBridge, /accessToken[\s\S]{0,180}searchParams\.set\("access_token"/);
+  assert.match(embeddedSurfaceHosts, /pluginId === "zenmind-app-server" \|\| pluginId === "agent-platform"/);
+  assert.match(pluginPage, /service\.id !== "agent-platform"/);
+  assert.match(pluginPage, /issueAccessToken\("missing"\)/);
   assert.doesNotMatch(app, /location\.pathname === "\/agent-platform-monitor"/);
   assert.match(controlCenter, /activeDetailService\.id === "agent-platform"/);
-  assert.match(controlCenter, /window\.electronAPI\.services\.openAgentPlatformMonitor/);
+  assert.match(controlCenter, /navigate\(\s*`\/service\/\$\{activeDetailService\.id\}`/);
+  assert.doesNotMatch(controlCenter, /window\.electronAPI\.services\.openAgentPlatformMonitor/);
   assert.match(controlCenter, /activeDetailService\.status !== "running"/);
   assert.equal(fs.existsSync(monitorPagePath), false);
   assert.equal(fs.existsSync(monitorStylesPath), false);

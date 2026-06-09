@@ -43,6 +43,10 @@ function resolveAgentWebclientRouteKind(
   return route?.kind ?? null;
 }
 
+function shouldLoadInitialServiceUrlDirectly(pluginId: string) {
+  return pluginId === "zenmind-app-server" || pluginId === "agent-platform";
+}
+
 export function PluginSurfaceHost({
   activePluginId,
   activeAgentWebclientRoute,
@@ -115,6 +119,7 @@ export function PluginSurfaceHost({
           key={pluginId}
           active={activePluginId === pluginId}
           hostTheme={hostTheme}
+          loadInitialEmbeddedUrlDirectly={shouldLoadInitialServiceUrlDirectly(pluginId)}
           pluginId={pluginId}
         />
       ))}

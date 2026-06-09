@@ -27,6 +27,7 @@ type BuildPluginEmbeddedUrlOptions = {
   hostTheme?: "light" | "dark";
   hostLocale?: "zh-CN" | "en-US";
   desktopAuthContext?: string;
+  accessToken?: string;
   baseUrl?: string;
   embedPath?: string;
   wsSource?: string;
@@ -108,6 +109,19 @@ export function buildPluginEmbeddedUrl(
     return "";
   }
 
+  if (serviceId === "zenmind-app-server") {
+    url.pathname = "/admin/";
+    url.search = "";
+    url.hash = "";
+  }
+  if (serviceId === "agent-platform") {
+    url.pathname = "/monitor";
+    url.search = "";
+    url.hash = "";
+    if (options.accessToken?.trim()) {
+      url.searchParams.set("access_token", options.accessToken.trim());
+    }
+  }
   if (serviceId === "agent-webclient") {
     const embedPath = options.embedPath?.trim() || "/";
     const embeddedUrl = new URL(embedPath.startsWith("/") ? embedPath : `/${embedPath}`, "http://agent-webclient.local");

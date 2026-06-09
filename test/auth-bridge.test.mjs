@@ -22,6 +22,22 @@ test("buildPluginEmbeddedUrl rewrites agent-webclient to root without desktopApp
   );
 });
 
+test("buildPluginEmbeddedUrl opens authentication service at its admin frontend", () => {
+  assert.equal(
+    buildPluginEmbeddedUrl("zenmind-app-server", "http://127.0.0.1:7076"),
+    "http://127.0.0.1:7076/admin/"
+  );
+});
+
+test("buildPluginEmbeddedUrl opens agent-platform at its monitor frontend with access token", () => {
+  assert.equal(
+    buildPluginEmbeddedUrl("agent-platform", "http://127.0.0.1:7077", {
+      accessToken: "token_123"
+    }),
+    "http://127.0.0.1:7077/monitor?access_token=token_123"
+  );
+});
+
 test("buildPluginEmbeddedUrl keeps hostTheme for agent-webclient without desktopApp query", () => {
   assert.equal(
     buildPluginEmbeddedUrl("agent-webclient", "http://127.0.0.1:9090/agent/", {
