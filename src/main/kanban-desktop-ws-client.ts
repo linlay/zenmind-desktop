@@ -5,7 +5,8 @@ import type {
   DesktopPetAgentOption,
   TaskBoardCurrentUser,
   TaskBoardIssueResult,
-  TaskBoardListResult
+  TaskBoardListResult,
+  TaskBoardProject
 } from "../shared/contracts";
 import type { TaskBoardCloudSnapshot } from "./task-board-local-store";
 
@@ -61,6 +62,10 @@ export type KanbanDesktopWsClientOptions = {
   onListAgents: () => Promise<DesktopPetAgentOption[]>;
   onStartRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
   onAutomationSync: (payload: unknown) => Promise<unknown>;
+  onListLocalProjects: () => Promise<{ ok: boolean; projects: TaskBoardProject[]; message?: string }>;
+  onCreateLocalProject: (payload: unknown) => Promise<unknown>;
+  onBindProject: (payload: unknown) => Promise<unknown>;
+  onUnbindProject: (payload: unknown) => Promise<unknown>;
   onStateChanged?: (state: KanbanDesktopConnectionState) => void;
   onDebug?: (message: string) => void;
 };
@@ -108,6 +113,8 @@ function normalizeSnapshot(payload: unknown, env: KanbanEnvelope): TaskBoardClou
     revision: typeof record.revision === "number" ? record.revision : env.revision,
     complete: record.complete === true,
     scope: readText(record.scope),
+    projects: Array.isArray(record.projects) ? record.projects : [],
+    projectBindings: Array.isArray(record.projectBindings) ? record.projectBindings : [],
     issues: Array.isArray(record.issues) ? record.issues : []
   };
 }
@@ -290,6 +297,14 @@ export class KanbanDesktopWsClient {
         payload = await this.options.onStartRun(normalizeStartRunPayload(env.payload));
       } else if (env.op === "desktop.automation.sync") {
         payload = await this.options.onAutomationSync(env.payload);
+      } else if (env.op === "desktop.project.listLocal") {
+        payload = await this.options.onListLocalProjects();
+      } else if (env.op === "desktop.project.createLocal") {
+        payload = await this.options.onCreateLocalProject(env.payload);
+      } else if (env.op === "desktop.project.bind") {
+        payload = await this.options.onBindProject(env.payload);
+      } else if (env.op === "desktop.project.unbind") {
+        payload = await this.options.onUnbindProject(env.payload);
       } else {
         throw new Error(`Desktop 不支持 ${env.op || "unknown"}。`);
       }

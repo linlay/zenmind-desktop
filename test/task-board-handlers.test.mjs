@@ -19,7 +19,7 @@ function makeBaseOptions(overrides = {}) {
     app: {},
     // task board
     listTaskBoardIssues: async () => ({ items: [] }),
-    getTaskBoardCloudConfig: async () => ({ ok: true, config: { serverUrl: "", token: "", selectedProjectId: "default" } }),
+    getTaskBoardCloudConfig: async () => ({ ok: true, config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false } }),
     saveTaskBoardCloudConfig: async (_app, input) => ({ ok: true, config: input }),
     createTaskBoardIssue: async () => ({ ok: true }),
     updateTaskBoardIssue: async () => ({ ok: true }),
@@ -62,7 +62,7 @@ test("taskBoard.listIssues returns issue list", async () => {
 
 test("taskBoard cloud config handlers delegate to runtime options", async () => {
   const { ipc, handlers } = makeMockIpcMain();
-  const config = { serverUrl: "http://127.0.0.1:8080", token: "", selectedProjectId: "default" };
+  const config = { serverUrl: "http://127.0.0.1:8080", token: "", selectedProjectId: "default", remoteControlEnabled: false };
   let savedInput = null;
 
   registerTaskBoardIpcHandlers(ipc, makeBaseOptions({

@@ -73,6 +73,7 @@ const api: DesktopApi = {
   },
   taskBoard: {
     listIssues: () => ipcRenderer.invoke("taskBoard.listIssues"),
+    listOnlineDevices: () => ipcRenderer.invoke("taskBoard.listOnlineDevices"),
     getCloudConfig: () => ipcRenderer.invoke("taskBoard.getCloudConfig"),
     saveCloudConfig: (input: TaskBoardCloudConfig) => ipcRenderer.invoke("taskBoard.saveCloudConfig", input),
     createIssue: (input: TaskBoardIssueInput) => ipcRenderer.invoke("taskBoard.createIssue", input),

@@ -82,6 +82,37 @@ export interface TaskBoardIssue {
   updatedAt: string;
 }
 
+export interface TaskBoardProject {
+  id: string;
+  parentId: string | null;
+  slug: string;
+  key?: string;
+  name: string;
+  description?: string;
+  path: string;
+  depth: number;
+  position: number;
+  visibility?: string;
+  defaultWorkflowId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskBoardProjectBinding {
+  id: string;
+  projectId: string;
+  deviceId: string;
+  currentUserId?: string;
+  localProjectId: string;
+  localDisplayName: string;
+  syncPolicy: "future" | "select" | "all";
+  controlMode: "dispatch" | "observe" | "disabled";
+  status: "active" | "paused" | "error";
+  lastRemoteRevision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TaskBoardIssueInput {
   title: string;
   projectId?: string | null;
@@ -146,6 +177,8 @@ export interface TaskBoardListResult {
   ok: boolean;
   message: string;
   issues: TaskBoardIssue[];
+  projects?: TaskBoardProject[];
+  projectBindings?: TaskBoardProjectBinding[];
   storagePath?: string;
   boardId?: string;
   projectId?: string;
@@ -158,6 +191,7 @@ export interface TaskBoardCloudConfig {
   serverUrl: string;
   token: string;
   selectedProjectId: string;
+  remoteControlEnabled: boolean;
 }
 
 export interface TaskBoardCloudConfigResult {
@@ -166,6 +200,45 @@ export interface TaskBoardCloudConfigResult {
   config: TaskBoardCloudConfig;
   configPath?: string;
   connectionState?: TaskBoardListResult["connectionState"];
+}
+
+export interface TaskBoardDesktopSessionStatus {
+  sessionId: string;
+  deviceId?: string;
+  currentUserId?: string;
+  currentUserName?: string;
+  selectedProjectId?: string;
+  capabilities: string[];
+  lastSeenAt?: string;
+}
+
+export interface TaskBoardDesktopOnlineAgent {
+  agentKey: string;
+  displayName: string;
+  role?: string;
+  icon?: Record<string, unknown>;
+}
+
+export interface TaskBoardDesktopOnlineDevice {
+  deviceId: string;
+  currentUserId?: string;
+  currentUserName?: string;
+  selectedProjectId?: string;
+  capabilities: string[];
+  lastSeenAt?: string;
+  sessions: TaskBoardDesktopSessionStatus[];
+  agents: TaskBoardDesktopOnlineAgent[];
+  agentError?: string;
+}
+
+export interface TaskBoardDesktopOnlineResult {
+  ok: boolean;
+  online: boolean;
+  deviceCount: number;
+  sessionCount: number;
+  agentCount: number;
+  devices: TaskBoardDesktopOnlineDevice[];
+  message?: string;
 }
 
 export interface TaskBoardIssueResult {

@@ -9,12 +9,14 @@ import type {
   TaskBoardCloudConfigResult,
   TaskBoardCurrentUser,
   TaskBoardDeleteResult,
+  TaskBoardDesktopOnlineResult,
   TaskBoardIssue,
   TaskBoardIssueInput,
   TaskBoardIssueMoveInput,
   TaskBoardIssueResult,
   TaskBoardIssueUpdateInput,
   TaskBoardListResult,
+  TaskBoardProject,
   TaskBoardRunState,
   TaskBoardStatus
 } from "../shared/contracts";
@@ -71,6 +73,7 @@ type TaskBoardDesktopConfigFile = {
   serverUrl?: unknown;
   token?: unknown;
   selectedProjectId?: unknown;
+  remoteControlEnabled?: unknown;
 };
 
 type TaskBoardAssistantSyncEvent = {
@@ -113,7 +116,8 @@ function normalizeTaskBoardCloudConfig(input: TaskBoardDesktopConfigFile): TaskB
   return {
     serverUrl: readText(input.serverUrl),
     token: readText(input.token),
-    selectedProjectId: readText(input.selectedProjectId) || DEFAULT_SELECTED_PROJECT_ID
+    selectedProjectId: readText(input.selectedProjectId) || DEFAULT_SELECTED_PROJECT_ID,
+    remoteControlEnabled: readBoolean(input.remoteControlEnabled)
   };
 }
 
@@ -132,7 +136,9 @@ function readTaskBoardConfigFile(app: App): TaskBoardDesktopConfigFile {
 export function readTaskBoardWsConfig(app: App): KanbanDesktopWsConfig | null {
   const config = normalizeTaskBoardCloudConfig(readTaskBoardConfigFile(app));
   const serverUrl = readText(process.env.ZENMIND_KANBAN_SERVER_URL) || readText(config.serverUrl);
-  if (!serverUrl) {
+  const remoteControlEnabled = process.env.ZENMIND_KANBAN_REMOTE_CONTROL_ENABLED === "true" ||
+    config.remoteControlEnabled;
+  if (!remoteControlEnabled || !serverUrl) {
     return null;
   }
   return {
@@ -320,6 +326,7 @@ export class TaskBoardRuntime {
       capabilities: [
         "kanban.issue.dispatch",
         "kanban.issue.sync",
+        "desktop.project.bind",
         "desktop.assistant.listAgents",
         "desktop.assistant.startRun",
         "desktop.automation.sync"
@@ -331,6 +338,21 @@ export class TaskBoardRuntime {
       onListAgents: () => this.options.assistantBridge.listAgents(),
       onStartRun: (request) => this.options.assistantBridge.startRun(request),
       onAutomationSync: (payload) => this.syncRemoteAutomationPayload(payload),
+      onListLocalProjects: () => this.listLocalProjects(),
+      onCreateLocalProject: () => Promise.resolve({
+        ok: false,
+        message: "当前桌面端尚未开放远程创建本地项目。请先在本地创建项目，再从云端绑定。"
+      }),
+      onBindProject: (payload) => Promise.resolve({
+        ok: true,
+        message: "本地项目绑定请求已确认。",
+        payload
+      }),
+      onUnbindProject: (payload) => Promise.resolve({
+        ok: true,
+        message: "本地项目解绑请求已确认。",
+        payload
+      }),
       onStateChanged: (state) => {
         this.connectionState = state;
         this.notifyChanged();
@@ -360,6 +382,45 @@ export class TaskBoardRuntime {
       config: readTaskBoardCloudConfig(this.options.app),
       configPath: getTaskBoardConfigPath(this.options.app),
       connectionState: this.connectionState
+    };
+  }
+
+  async listOnlineDevices(): Promise<TaskBoardDesktopOnlineResult> {
+    this.refreshConnection();
+    if (!this.wsClient.isOpen()) {
+      return {
+        ok: false,
+        online: false,
+        deviceCount: 0,
+        sessionCount: 0,
+        agentCount: 0,
+        devices: [],
+        message: "云端看板服务未连接。"
+      };
+    }
+    try {
+      return await this.wsClient.request<TaskBoardDesktopOnlineResult>("desktop.online.list", {
+        projectId: readTaskBoardCloudConfig(this.options.app).selectedProjectId || "default"
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        online: false,
+        deviceCount: 0,
+        sessionCount: 0,
+        agentCount: 0,
+        devices: [],
+        message: error instanceof Error ? error.message : "在线设备列表读取失败。"
+      };
+    }
+  }
+
+  async listLocalProjects(): Promise<{ ok: boolean; projects: TaskBoardProject[]; message: string }> {
+    const result = this.listIssues();
+    return {
+      ok: true,
+      projects: result.projects ?? [],
+      message: "本地项目列表已读取。"
     };
   }
 

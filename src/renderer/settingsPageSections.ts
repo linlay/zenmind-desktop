@@ -22,6 +22,13 @@ export function createSettingsSectionDefinitions({
       visible: true
     },
     {
+      id: "control",
+      label: "control",
+      description: "",
+      layout: "measure",
+      visible: true
+    },
+    {
       id: "navigation",
       label: "navigation",
       description: "",
@@ -86,6 +93,7 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   { label: TranslationKey; description: TranslationKey }
 > = {
   appearance: { label: "settings.appearance.label", description: "settings.appearance.description" },
+  control: { label: "settings.control.label", description: "settings.control.description" },
   navigation: { label: "settings.navigation.label", description: "settings.navigation.description" },
   quickAssistant: { label: "settings.quickAssistant.label", description: "settings.quickAssistant.description" },
   embeddedWebsites: { label: "settings.embeddedWebsites.label", description: "settings.embeddedWebsites.description" },

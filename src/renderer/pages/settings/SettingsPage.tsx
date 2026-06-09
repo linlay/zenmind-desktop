@@ -15,7 +15,10 @@ import type {
   CustomSidebarItem,
   DesktopAppInfo,
   DesktopPetAgentOption,
-  DesktopPetState
+  DesktopPetState,
+  TaskBoardCloudConfig,
+  TaskBoardDesktopOnlineResult,
+  TaskBoardProject
 } from "../../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
@@ -46,6 +49,7 @@ import { useI18n } from "../../i18n/useI18n";
 import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
 
 type ThemePreference = "light" | "dark" | "system";
+type TaskBoardConnectionState = "disabled" | "connecting" | "open" | "closed" | "error";
 
 type SettingsPageProps = {
   themeMode: ThemePreference;
@@ -84,6 +88,24 @@ function getThemePreferenceLabel(themeMode: ThemePreference, t: TranslateFunctio
   }
 }
 
+function getTaskBoardProjectOptionLabel(project: TaskBoardProject) {
+  const path = project.path.trim();
+  if (path && path !== project.name) {
+    return `${project.name} · ${path}`;
+  }
+  return project.name;
+}
+
+function sortTaskBoardProjectOptions(projects: TaskBoardProject[]) {
+  return [...projects]
+    .filter((project) => project.id.trim())
+    .sort((left, right) => {
+      const leftLabel = left.path || left.name || left.id;
+      const rightLabel = right.path || right.name || right.id;
+      return leftLabel.localeCompare(rightLabel, "zh-Hans-CN");
+    });
+}
+
 function ThemePreferenceIcon({ themeMode }: { themeMode: ThemePreference }) {
   if (themeMode === "light") {
     return <SunOutlined aria-hidden="true" />;
@@ -109,6 +131,22 @@ const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
   "quickAssistant",
   "embeddedWebsites"
 ];
+
+const defaultTaskBoardCloudConfig: TaskBoardCloudConfig = {
+  serverUrl: "",
+  token: "",
+  selectedProjectId: "default",
+  remoteControlEnabled: false
+};
+
+const defaultTaskBoardOnlineSummary: TaskBoardDesktopOnlineResult = {
+  ok: false,
+  online: false,
+  deviceCount: 0,
+  sessionCount: 0,
+  agentCount: 0,
+  devices: []
+};
 
 function asRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -463,6 +501,11 @@ export function SettingsPage({
   const [desktopPetBoundAgentKey, setDesktopPetBoundAgentKey] = useState(DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY);
   const [desktopPetBoundAgentPending, setDesktopPetBoundAgentPending] = useState(false);
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
+  const [controlCloudConfig, setControlCloudConfig] = useState<TaskBoardCloudConfig>(defaultTaskBoardCloudConfig);
+  const [controlCloudProjects, setControlCloudProjects] = useState<TaskBoardProject[]>([]);
+  const [controlConnectionState, setControlConnectionState] = useState<TaskBoardConnectionState>("disabled");
+  const [controlOnlineSummary, setControlOnlineSummary] = useState<TaskBoardDesktopOnlineResult>(defaultTaskBoardOnlineSummary);
+  const [controlConfigSaving, setControlConfigSaving] = useState(false);
   const desktopPetSupported = isMac || isWindows;
   const contentRef = useRef<HTMLDivElement>(null);
   const memoryDataLoadedRef = useRef(false);
@@ -485,10 +528,19 @@ export function SettingsPage({
     visibleSectionIds
   );
   const shouldReadMemoryData = activeSection === "memory";
+  const shouldReadControlData = activeSection === "control";
   const shouldReadAssistantSettings = Boolean(
     activeSection && ASSISTANT_SETTINGS_SECTION_IDS.includes(activeSection)
   );
   const shouldReadDesktopPetState = desktopPetSupported && activeSection === "desktopPet";
+  const controlProjectOptions = useMemo(
+    () => sortTaskBoardProjectOptions(controlCloudProjects),
+    [controlCloudProjects]
+  );
+  const selectedControlProjectId = controlCloudConfig.selectedProjectId.trim();
+  const selectedControlProjectMissing = Boolean(
+    selectedControlProjectId && !controlProjectOptions.some((project) => project.id === selectedControlProjectId)
+  );
 
   function setReadErrorSections(sectionIds: SettingsSectionId[], message: string) {
     setSectionReadErrors((current) => {
@@ -546,6 +598,48 @@ export function SettingsPage({
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [activeSection]);
+
+  useEffect(() => {
+    if (!shouldReadControlData) {
+      return;
+    }
+
+    let cancelled = false;
+    async function refreshControlState() {
+      try {
+        const [configResult, onlineResult, issueResult] = await Promise.all([
+          window.electronAPI.taskBoard.getCloudConfig(),
+          window.electronAPI.taskBoard.listOnlineDevices(),
+          window.electronAPI.taskBoard.listIssues()
+        ]);
+        if (cancelled) {
+          return;
+        }
+        setControlCloudConfig({
+          ...defaultTaskBoardCloudConfig,
+          ...configResult.config
+        });
+        setControlCloudProjects(issueResult.projects ?? []);
+        setControlConnectionState(configResult.connectionState ?? issueResult.connectionState ?? "disabled");
+        setControlOnlineSummary(onlineResult);
+        setReadErrorSections(["control"], "");
+      } catch (reason) {
+        if (!cancelled) {
+          setReadErrorSections(["control"], reason instanceof Error ? reason.message : String(reason));
+        }
+      }
+    }
+
+    void refreshControlState();
+    const intervalId = window.setInterval(() => {
+      void refreshControlState();
+    }, 15_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [shouldReadControlData]);
 
   useEffect(() => {
     if (!shouldReadMemoryData || memoryDataLoadedRef.current) {
@@ -1560,6 +1654,60 @@ export function SettingsPage({
     }
   }
 
+  function getControlConnectionLabel(state: TaskBoardConnectionState) {
+    switch (state) {
+      case "connecting":
+        return t("taskBoard.cloud.status.connecting");
+      case "open":
+        return t("taskBoard.cloud.status.open");
+      case "closed":
+        return t("taskBoard.cloud.status.closed");
+      case "error":
+        return t("taskBoard.cloud.status.error");
+      default:
+        return t("taskBoard.cloud.status.disabled");
+    }
+  }
+
+  async function saveControlCloudConfig(nextConfig: TaskBoardCloudConfig) {
+    setControlConfigSaving(true);
+    try {
+      const result = await window.electronAPI.taskBoard.saveCloudConfig(nextConfig);
+      if (!result.ok) {
+        throw new Error(result.message || t("settings.control.saveFailed"));
+      }
+      setControlCloudConfig({
+        ...defaultTaskBoardCloudConfig,
+        ...result.config
+      });
+      setControlConnectionState(result.connectionState ?? "disabled");
+      const [onlineResult, issueResult] = await Promise.all([
+        window.electronAPI.taskBoard.listOnlineDevices(),
+        window.electronAPI.taskBoard.listIssues()
+      ]);
+      setControlCloudProjects(issueResult.projects ?? []);
+      setControlOnlineSummary(onlineResult);
+      setReadErrorSections(["control"], "");
+      showSectionNotice("control", result.message, "success");
+    } catch (reason) {
+      showSectionNotice("control", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setControlConfigSaving(false);
+    }
+  }
+
+  async function handleSaveControlCloudConfig(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await saveControlCloudConfig(controlCloudConfig);
+  }
+
+  async function handleToggleControlRemoteControl() {
+    await saveControlCloudConfig({
+      ...controlCloudConfig,
+      remoteControlEnabled: !controlCloudConfig.remoteControlEnabled
+    });
+  }
+
   const sidebarNavOrderLabels = new Map(availableSidebarNavOrderItems.map((item) => [item.key, item.label]));
   const activeSectionDefinition = activeSection
     ? visibleSections.find((definition) => definition.id === activeSection) ?? null
@@ -1697,6 +1845,103 @@ export function SettingsPage({
               </div>
             ) : null}
           </>
+        );
+      case "control":
+        return (
+          <div className="settings-item-card settings-control-card" aria-label={t("settings.control.panelAria")}>
+            <div className="settings-item-header settings-control-permission-row">
+              <span className="settings-control-app-icon" aria-hidden="true">
+                <span />
+              </span>
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.control.remoteControlEnabled")}</strong>
+                <span>{t("settings.control.remoteControlDescription")}</span>
+                <em>
+                  {controlCloudConfig.remoteControlEnabled
+                    ? t("settings.control.remoteControlOn")
+                    : t("settings.control.remoteControlOff")}
+                </em>
+              </div>
+              <button
+                type="button"
+                className={controlCloudConfig.remoteControlEnabled ? "settings-switch is-on" : "settings-switch"}
+                role="switch"
+                aria-checked={controlCloudConfig.remoteControlEnabled}
+                aria-label={t("settings.control.remoteControlEnabled")}
+                disabled={controlConfigSaving}
+                onClick={() => void handleToggleControlRemoteControl()}
+              >
+                <span aria-hidden="true" />
+              </button>
+            </div>
+            <div className="settings-item-section-head custom-sidebar-list-head">
+              <div>
+                <strong>{t("settings.control.statusTitle")}</strong>
+                <span>{getControlConnectionLabel(controlConnectionState)}</span>
+              </div>
+            </div>
+            <div className="settings-control-summary">
+              {t("settings.control.onlineSummary", {
+                devices: controlOnlineSummary.deviceCount,
+                sessions: controlOnlineSummary.sessionCount,
+                agents: controlOnlineSummary.agentCount
+              })}
+            </div>
+            <form className="settings-control-form" onSubmit={(event) => void handleSaveControlCloudConfig(event)}>
+              <label className="settings-control-field">
+                <span>{t("taskBoard.cloud.serverUrl")}</span>
+                <input
+                  value={controlCloudConfig.serverUrl}
+                  onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
+                  placeholder="http://127.0.0.1:8080"
+                />
+              </label>
+              <label className="settings-control-field">
+                <span>{t("taskBoard.cloud.token")}</span>
+                <input
+                  value={controlCloudConfig.token}
+                  onChange={(event) => setControlCloudConfig((current) => ({ ...current, token: event.target.value }))}
+                  placeholder={t("taskBoard.cloud.tokenPlaceholder")}
+                />
+              </label>
+              <label className="settings-control-field">
+                <span>{t("taskBoard.cloud.projectId")}</span>
+                {controlProjectOptions.length > 0 ? (
+                  <select
+                    value={controlCloudConfig.selectedProjectId}
+                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
+                  >
+                    {selectedControlProjectMissing ? (
+                      <option value={controlCloudConfig.selectedProjectId}>
+                        {t("taskBoard.cloud.currentProject", { id: controlCloudConfig.selectedProjectId })}
+                      </option>
+                    ) : null}
+                    {controlProjectOptions.map((project) => (
+                      <option value={project.id} key={project.id}>
+                        {getTaskBoardProjectOptionLabel(project)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={controlCloudConfig.selectedProjectId}
+                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
+                    placeholder="default"
+                  />
+                )}
+                <small>
+                  {controlProjectOptions.length > 0
+                    ? t("taskBoard.cloud.projectSelectHelp", { count: controlProjectOptions.length })
+                    : t("taskBoard.cloud.projectFallbackHelp")}
+                </small>
+              </label>
+              <div className="settings-control-actions">
+                <button type="submit" className="settings-control-primary-button" disabled={controlConfigSaving}>
+                  {controlConfigSaving ? t("settings.control.saving") : t("settings.control.save")}
+                </button>
+              </div>
+            </form>
+          </div>
         );
       case "navigation": {
         const defaultCopilotPages = createDefaultDesktopCopilotPagePreferences();

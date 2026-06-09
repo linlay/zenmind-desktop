@@ -1901,16 +1901,25 @@ function registerIpcHandlers(context: MainProcessContext) {
       message: "任务看板尚未初始化。",
       issues: []
     },
+    listTaskBoardOnlineDevices: () => state.taskBoardRuntime?.listOnlineDevices() ?? {
+      ok: false,
+      online: false,
+      deviceCount: 0,
+      sessionCount: 0,
+      agentCount: 0,
+      devices: [],
+      message: "任务看板尚未初始化。"
+    },
     getTaskBoardCloudConfig: () => state.taskBoardRuntime?.getCloudConfig() ?? {
       ok: false,
       message: "任务看板尚未初始化。",
-      config: { serverUrl: "", token: "", selectedProjectId: "default" },
+      config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false },
       connectionState: "disabled"
     },
     saveTaskBoardCloudConfig: (_app: any, input: any) => state.taskBoardRuntime?.saveCloudConfig(input) ?? {
       ok: false,
       message: "任务看板尚未初始化。",
-      config: { serverUrl: "", token: "", selectedProjectId: "default" },
+      config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false },
       connectionState: "disabled"
     },
     createTaskBoardIssue: (_app: any, input: any) => state.taskBoardRuntime?.createIssue(input) ?? {

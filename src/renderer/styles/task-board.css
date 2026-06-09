@@ -177,7 +177,18 @@
 }
 
 .task-board-cloud-status {
-  min-width: 96px;
+  min-width: 150px;
+}
+
+.task-board-online-count {
+  max-width: 116px;
+  overflow: hidden;
+  color: var(--task-board-muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-board-cloud-error-count {
@@ -380,6 +391,29 @@
 
 .task-board-cloud-summary .is-error {
   color: #dc2626;
+}
+
+.task-board-cloud-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 0;
+  color: var(--task-board-text);
+  font-size: 12px;
+}
+
+.task-board-cloud-toggle-row > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.task-board-cloud-toggle-row small {
+  color: var(--task-board-muted);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .task-board-cloud-state {
@@ -1824,6 +1858,13 @@
   cursor: not-allowed;
 }
 
+.task-board-field small {
+  color: var(--task-board-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
 .task-board-attachment-add-button {
   flex: 0 0 auto;
   min-height: 26px;
@@ -2099,6 +2140,10 @@
   .task-board-search-wrap {
     flex: 1 1 150px;
     width: auto;
+  }
+
+  .task-board-cloud-status {
+    min-width: 0;
   }
 
   .task-board-field-grid {

@@ -1,5 +1,6 @@
 export type SettingsSectionId =
   | "appearance"
+  | "control"
   | "navigation"
   | "quickAssistant"
   | "embeddedWebsites"

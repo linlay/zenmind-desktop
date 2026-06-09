@@ -127,6 +127,70 @@ test("desktop kanban cloud snapshot maps remote issue to stable local issue", (t
   assert.equal(getDesktopKanbanIssue(app, user, cloudIssue.id).remoteIssueId, "ISS-1");
 });
 
+test("desktop kanban cloud snapshot caches cloud projects and project bindings", (t) => {
+  const app = createTempApp(t);
+  const user = currentUser();
+  const timestamp = new Date().toISOString();
+
+  const result = applyDesktopKanbanCloudSnapshot(app, user, {
+    projectId: "project-a",
+    revision: 9,
+    complete: true,
+    scope: "project",
+    projects: [
+      {
+        id: "default",
+        parentId: null,
+        slug: "default",
+        name: "全部项目",
+        path: "default",
+        depth: 0,
+        position: 0,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      },
+      {
+        id: "project-a",
+        parentId: "default",
+        slug: "alpha",
+        name: "Alpha 项目",
+        path: "default/alpha",
+        depth: 1,
+        position: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ],
+    projectBindings: [
+      {
+        id: "pbind-1",
+        projectId: "project-a",
+        deviceId: "device-1",
+        currentUserId: user.id,
+        localProjectId: "local-alpha",
+        localDisplayName: "Alpha Local",
+        syncPolicy: "future",
+        controlMode: "dispatch",
+        status: "active",
+        lastRemoteRevision: 9,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ],
+    issues: []
+  });
+
+  assert.equal(result.projectId, "project-a");
+  assert.equal(result.projects.length, 2);
+  assert.equal(result.projects.find((project) => project.id === "project-a").name, "Alpha 项目");
+  assert.equal(result.projectBindings.length, 1);
+  assert.equal(result.projectBindings[0].localDisplayName, "Alpha Local");
+
+  const listed = listDesktopKanbanIssues(app, user);
+  assert.equal(listed.projects.find((project) => project.id === "project-a").path, "default/alpha");
+  assert.equal(listed.projectBindings[0].projectId, "project-a");
+});
+
 test("desktop kanban only tombstones missing cloud issues for complete project snapshots", (t) => {
   const app = createTempApp(t);
   const user = currentUser();

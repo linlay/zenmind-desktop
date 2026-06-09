@@ -129,6 +129,7 @@ const THEME_STORAGE_KEY = `${STORAGE_NAMESPACE}.theme`;
 const SIDEBAR_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar`;
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-nav-order`;
 const CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.custom-sidebar-group-order`;
+const SETTINGS_SIDEBAR_WIDTH = 200;
 const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
 const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "/service/agent-webclient";
 const SIDEBAR_NAVIGATION_LOCK_MS = 900;
@@ -407,6 +408,8 @@ export function AppShell() {
   const assistantCopilotOpen = assistantDockOpen && assistantDockOpenPath === location.pathname && !isAgentWebclientMainRoute;
   const sidebarCollapsed = sidebarState.mode === "collapsed";
   const renderedSidebarWidth = resolveRenderedSidebarWidth(sidebarState);
+  const effectiveSidebarCollapsed = sidebarCollapsed && !isSettingsRoute;
+  const effectiveSidebarWidth = isSettingsRoute ? SETTINGS_SIDEBAR_WIDTH : renderedSidebarWidth;
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
     return createDefaultSidebarNavOrderItems({
       serviceItems: [],
@@ -1438,7 +1441,7 @@ export function AppShell() {
   ]);
 
   const appShellStyle = {
-    "--app-sidebar-width": `${renderedSidebarWidth}px`
+    "--app-sidebar-width": `${effectiveSidebarWidth}px`
   } as CSSProperties;
 
   return (
@@ -1457,7 +1460,7 @@ export function AppShell() {
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
-        sidebarCollapsed ? "is-sidebar-collapsed" : "",
+        effectiveSidebarCollapsed ? "is-sidebar-collapsed" : "",
         isSidebarResizing ? "is-sidebar-resizing" : "",
         isSettingsRoute ? "is-settings-mode" : "",
         "has-translucent-sidebar",
@@ -1467,7 +1470,7 @@ export function AppShell() {
       <div className="app-window-drag-region" aria-hidden="true" />
       <div className="app-sidebar-shell">
         <AppSidebar
-          isCollapsed={sidebarCollapsed}
+          isCollapsed={effectiveSidebarCollapsed}
           isMac={isMac}
           isWindows={isWindows}
           currentPathname={location.pathname}

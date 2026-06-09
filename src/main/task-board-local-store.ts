@@ -15,6 +15,8 @@ import type {
   TaskBoardListResult,
   TaskBoardOrigin,
   TaskBoardPriority,
+  TaskBoardProject,
+  TaskBoardProjectBinding,
   TaskBoardRunState,
   TaskBoardStatus,
   TaskBoardSyncMode,
@@ -77,12 +79,45 @@ type TaskBoardIssueRow = {
   sync_error: string | null;
 };
 
+type TaskBoardProjectRow = {
+  id: string;
+  parent_id: string | null;
+  slug: string;
+  key: string;
+  name: string;
+  description: string;
+  path: string;
+  depth: number;
+  position: number;
+  visibility: string;
+  default_workflow_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type TaskBoardProjectBindingRow = {
+  id: string;
+  project_id: string;
+  device_id: string;
+  current_user_id: string;
+  local_project_id: string;
+  local_display_name: string;
+  sync_policy: TaskBoardProjectBinding["syncPolicy"];
+  control_mode: TaskBoardProjectBinding["controlMode"];
+  status: TaskBoardProjectBinding["status"];
+  last_remote_revision: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export type TaskBoardCloudSnapshot = {
   boardId?: string;
   projectId?: string;
   revision?: number;
   complete?: boolean;
   scope?: string;
+  projects?: unknown[];
+  projectBindings?: unknown[];
   issues?: unknown[];
 };
 
@@ -356,9 +391,29 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       SYNC_ERROR_ TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS project_desktop_binding (
+      ID_ TEXT PRIMARY KEY,
+      PROJECT_ID_ TEXT NOT NULL,
+      DEVICE_ID_ TEXT NOT NULL,
+      CURRENT_USER_ID_ TEXT NOT NULL DEFAULT '',
+      LOCAL_PROJECT_ID_ TEXT NOT NULL,
+      LOCAL_DISPLAY_NAME_ TEXT NOT NULL,
+      SYNC_POLICY_ TEXT NOT NULL DEFAULT 'future' CHECK (SYNC_POLICY_ IN ('future','select','all')),
+      CONTROL_MODE_ TEXT NOT NULL DEFAULT 'dispatch' CHECK (CONTROL_MODE_ IN ('dispatch','observe','disabled')),
+      STATUS_ TEXT NOT NULL DEFAULT 'active' CHECK (STATUS_ IN ('active','paused','error')),
+      LAST_REMOTE_REVISION_ INTEGER NOT NULL DEFAULT 0,
+      CREATED_AT_ TEXT NOT NULL,
+      UPDATED_AT_ TEXT NOT NULL,
+      DELETED_AT_ TEXT
+    );
+
     CREATE UNIQUE INDEX IF NOT EXISTS idx_desktop_issue_sync_remote
       ON desktop_issue_sync(REMOTE_ISSUE_ID_)
       WHERE REMOTE_ISSUE_ID_ IS NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_project_desktop_binding_project
+      ON project_desktop_binding(PROJECT_ID_, STATUS_, UPDATED_AT_)
+      WHERE DELETED_AT_ IS NULL;
 
     CREATE INDEX IF NOT EXISTS idx_issue_status_position
       ON issue(STATUS_, POSITION_, ID_)
@@ -484,6 +539,96 @@ function issueFromRow(row: TaskBoardIssueRow): TaskBoardIssue {
   };
 }
 
+function projectFromRow(row: TaskBoardProjectRow): TaskBoardProject {
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    slug: row.slug,
+    key: row.key || undefined,
+    name: row.name,
+    description: row.description || undefined,
+    path: row.path,
+    depth: row.depth,
+    position: row.position,
+    visibility: row.visibility || undefined,
+    defaultWorkflowId: row.default_workflow_id || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function projectBindingFromRow(row: TaskBoardProjectBindingRow): TaskBoardProjectBinding {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    deviceId: row.device_id,
+    currentUserId: row.current_user_id || undefined,
+    localProjectId: row.local_project_id,
+    localDisplayName: row.local_display_name,
+    syncPolicy: row.sync_policy,
+    controlMode: row.control_mode,
+    status: row.status,
+    lastRemoteRevision: row.last_remote_revision,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function parseCloudProject(value: unknown): TaskBoardProject | null {
+  const record = parseCloudIssue(value);
+  if (!record) return null;
+  const id = trimText(record.id);
+  const name = trimText(record.name) || id;
+  if (!id || !name) return null;
+  const timestamp = trimText(record.updatedAt) || nowIso();
+  return {
+    id,
+    parentId: nullableTrimmedText(record.parentId),
+    slug: trimText(record.slug) || id.toLowerCase(),
+    key: trimText(record.key) || undefined,
+    name,
+    description: trimText(record.description) || undefined,
+    path: trimText(record.path) || id,
+    depth: typeof record.depth === "number" && Number.isFinite(record.depth) ? record.depth : 0,
+    position: typeof record.position === "number" && Number.isFinite(record.position) ? record.position : 0,
+    visibility: trimText(record.visibility) || undefined,
+    defaultWorkflowId: trimText(record.defaultWorkflowId) || WORKFLOW_ID,
+    createdAt: trimText(record.createdAt) || timestamp,
+    updatedAt: timestamp
+  };
+}
+
+function parseCloudProjectBinding(value: unknown): TaskBoardProjectBinding | null {
+  const record = parseCloudIssue(value);
+  if (!record) return null;
+  const id = trimText(record.id);
+  const projectId = trimText(record.projectId);
+  const deviceId = trimText(record.deviceId);
+  const localProjectId = trimText(record.localProjectId);
+  const localDisplayName = trimText(record.localDisplayName) || localProjectId;
+  if (!id || !projectId || !deviceId || !localProjectId || !localDisplayName) return null;
+  const timestamp = trimText(record.updatedAt) || nowIso();
+  const syncPolicy = record.syncPolicy === "select" || record.syncPolicy === "all" ? record.syncPolicy : "future";
+  const controlMode = record.controlMode === "observe" || record.controlMode === "disabled" ? record.controlMode : "dispatch";
+  const status = record.status === "paused" || record.status === "error" ? record.status : "active";
+  return {
+    id,
+    projectId,
+    deviceId,
+    currentUserId: trimText(record.currentUserId) || undefined,
+    localProjectId,
+    localDisplayName,
+    syncPolicy,
+    controlMode,
+    status,
+    lastRemoteRevision: typeof record.lastRemoteRevision === "number" && Number.isFinite(record.lastRemoteRevision)
+      ? record.lastRemoteRevision
+      : 0,
+    createdAt: trimText(record.createdAt) || timestamp,
+    updatedAt: timestamp
+  };
+}
+
 function readDesktopKanbanRevision(db: DatabaseSync) {
   const row = db.prepare(`
     SELECT VALUE_ AS value FROM board_meta
@@ -567,12 +712,127 @@ function selectIssues(db: DatabaseSync, currentUser: TaskBoardCurrentUser): Task
   return rows.map(issueFromRow);
 }
 
+function selectProjects(db: DatabaseSync): TaskBoardProject[] {
+  const rows = db.prepare(`
+    SELECT
+      ID_ AS id,
+      PARENT_ID_ AS parent_id,
+      SLUG_ AS slug,
+      KEY_ AS key,
+      NAME_ AS name,
+      DESCRIPTION_ AS description,
+      PATH_ AS path,
+      DEPTH_ AS depth,
+      POSITION_ AS position,
+      VISIBILITY_ AS visibility,
+      DEFAULT_WORKFLOW_ID_ AS default_workflow_id,
+      CREATED_AT_ AS created_at,
+      UPDATED_AT_ AS updated_at
+    FROM project
+    WHERE DELETED_AT_ IS NULL
+    ORDER BY DEPTH_ ASC, POSITION_ ASC, NAME_ ASC, ID_ ASC
+  `).all() as TaskBoardProjectRow[];
+  return rows.map(projectFromRow);
+}
+
+function selectProjectBindings(db: DatabaseSync): TaskBoardProjectBinding[] {
+  const rows = db.prepare(`
+    SELECT
+      ID_ AS id,
+      PROJECT_ID_ AS project_id,
+      DEVICE_ID_ AS device_id,
+      CURRENT_USER_ID_ AS current_user_id,
+      LOCAL_PROJECT_ID_ AS local_project_id,
+      LOCAL_DISPLAY_NAME_ AS local_display_name,
+      SYNC_POLICY_ AS sync_policy,
+      CONTROL_MODE_ AS control_mode,
+      STATUS_ AS status,
+      LAST_REMOTE_REVISION_ AS last_remote_revision,
+      CREATED_AT_ AS created_at,
+      UPDATED_AT_ AS updated_at
+    FROM project_desktop_binding
+    WHERE DELETED_AT_ IS NULL
+    ORDER BY UPDATED_AT_ DESC, ID_ ASC
+  `).all() as TaskBoardProjectBindingRow[];
+  return rows.map(projectBindingFromRow);
+}
+
 function nextIssuePosition(db: DatabaseSync, status: TaskBoardStatus) {
   const row = db.prepare(`
     SELECT MAX(POSITION_) AS maxPosition FROM issue
     WHERE STATUS_ = ? AND DELETED_AT_ IS NULL
   `).get(status) as { maxPosition?: number | null } | undefined;
   return typeof row?.maxPosition === "number" && Number.isFinite(row.maxPosition) ? row.maxPosition + 1 : 1;
+}
+
+function insertOrReplaceProject(db: DatabaseSync, project: TaskBoardProject) {
+  db.prepare(`
+    INSERT INTO project (
+      ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, PATH_, DEPTH_, POSITION_,
+      VISIBILITY_, DEFAULT_WORKFLOW_ID_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+    ON CONFLICT(ID_) DO UPDATE SET
+      PARENT_ID_ = excluded.PARENT_ID_,
+      SLUG_ = excluded.SLUG_,
+      KEY_ = excluded.KEY_,
+      NAME_ = excluded.NAME_,
+      DESCRIPTION_ = excluded.DESCRIPTION_,
+      PATH_ = excluded.PATH_,
+      DEPTH_ = excluded.DEPTH_,
+      POSITION_ = excluded.POSITION_,
+      VISIBILITY_ = excluded.VISIBILITY_,
+      DEFAULT_WORKFLOW_ID_ = excluded.DEFAULT_WORKFLOW_ID_,
+      UPDATED_AT_ = excluded.UPDATED_AT_,
+      DELETED_AT_ = NULL
+  `).run(
+    project.id,
+    project.parentId,
+    project.slug,
+    project.key ?? project.slug.toUpperCase(),
+    project.name,
+    project.description ?? "",
+    project.path,
+    project.depth,
+    project.position,
+    project.visibility ?? "workspace",
+    project.defaultWorkflowId ?? WORKFLOW_ID,
+    project.createdAt,
+    project.updatedAt
+  );
+}
+
+function insertOrReplaceProjectBinding(db: DatabaseSync, binding: TaskBoardProjectBinding) {
+  db.prepare(`
+    INSERT INTO project_desktop_binding (
+      ID_, PROJECT_ID_, DEVICE_ID_, CURRENT_USER_ID_, LOCAL_PROJECT_ID_, LOCAL_DISPLAY_NAME_,
+      SYNC_POLICY_, CONTROL_MODE_, STATUS_, LAST_REMOTE_REVISION_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+    ON CONFLICT(ID_) DO UPDATE SET
+      PROJECT_ID_ = excluded.PROJECT_ID_,
+      DEVICE_ID_ = excluded.DEVICE_ID_,
+      CURRENT_USER_ID_ = excluded.CURRENT_USER_ID_,
+      LOCAL_PROJECT_ID_ = excluded.LOCAL_PROJECT_ID_,
+      LOCAL_DISPLAY_NAME_ = excluded.LOCAL_DISPLAY_NAME_,
+      SYNC_POLICY_ = excluded.SYNC_POLICY_,
+      CONTROL_MODE_ = excluded.CONTROL_MODE_,
+      STATUS_ = excluded.STATUS_,
+      LAST_REMOTE_REVISION_ = excluded.LAST_REMOTE_REVISION_,
+      UPDATED_AT_ = excluded.UPDATED_AT_,
+      DELETED_AT_ = NULL
+  `).run(
+    binding.id,
+    binding.projectId,
+    binding.deviceId,
+    binding.currentUserId ?? "",
+    binding.localProjectId,
+    binding.localDisplayName,
+    binding.syncPolicy,
+    binding.controlMode,
+    binding.status,
+    binding.lastRemoteRevision,
+    binding.createdAt,
+    binding.updatedAt
+  );
 }
 
 function insertOrReplaceIssue(db: DatabaseSync, issue: TaskBoardIssue, sync: {
@@ -808,6 +1068,8 @@ export function listDesktopKanbanIssues(
     ok: true,
     message: connectionState === "open" ? "任务看板已同步。" : "任务看板已从本地缓存加载。",
     issues: selectIssues(db, currentUser),
+    projects: selectProjects(db),
+    projectBindings: selectProjectBindings(db),
     storagePath: getDesktopKanbanDatabasePath(app),
     boardId: BOARD_ID,
     projectId: PROJECT_ID,
@@ -1126,6 +1388,18 @@ export function applyDesktopKanbanCloudSnapshot(
     const remoteIds = new Set<string>();
     db.exec("BEGIN IMMEDIATE");
     try {
+      for (const rawProject of snapshot.projects ?? []) {
+        const project = parseCloudProject(rawProject);
+        if (project) {
+          insertOrReplaceProject(db, project);
+        }
+      }
+      for (const rawBinding of snapshot.projectBindings ?? []) {
+        const binding = parseCloudProjectBinding(rawBinding);
+        if (binding) {
+          insertOrReplaceProjectBinding(db, binding);
+        }
+      }
       for (const raw of snapshot.issues ?? []) {
         const cloudIssue = parseCloudIssue(raw);
         if (!cloudIssue) continue;
@@ -1169,6 +1443,8 @@ export function applyDesktopKanbanCloudSnapshot(
       ok: true,
       message: "云端任务快照已同步。",
       issues: selectIssues(db, currentUser),
+      projects: selectProjects(db),
+      projectBindings: selectProjectBindings(db),
       storagePath: getDesktopKanbanDatabasePath(app),
       boardId: BOARD_ID,
       projectId: snapshotProjectId || PROJECT_ID,

@@ -28,10 +28,12 @@ import type {
   DesktopApi,
   DesktopPetAgentOption,
   TaskBoardCloudConfig,
+  TaskBoardDesktopOnlineResult,
   TaskBoardIssue,
   TaskBoardIssueInput,
   TaskBoardIssueUpdateInput,
   TaskBoardPriority,
+  TaskBoardProject,
   TaskBoardStatus
 } from "../../../shared/contracts";
 import { TASK_BOARD_PRIORITIES, TASK_BOARD_STATUSES } from "../../../shared/contracts";
@@ -178,7 +180,17 @@ const emptyForm: IssueFormState = {
 const defaultCloudConfig: TaskBoardCloudConfig = {
   serverUrl: "",
   token: "",
-  selectedProjectId: "default"
+  selectedProjectId: "default",
+  remoteControlEnabled: false
+};
+
+const defaultDesktopOnlineSummary: TaskBoardDesktopOnlineResult = {
+  ok: false,
+  online: false,
+  deviceCount: 0,
+  sessionCount: 0,
+  agentCount: 0,
+  devices: []
 };
 
 const defaultDisplayState: DisplayState = {
@@ -883,6 +895,24 @@ function getTaskBoardConnectionLabel(state: TaskBoardConnectionState, t: Transla
   return t("taskBoard.cloud.status.disabled");
 }
 
+function getTaskBoardProjectOptionLabel(project: TaskBoardProject) {
+  const path = project.path.trim();
+  if (path && path !== project.name) {
+    return `${project.name} · ${path}`;
+  }
+  return project.name;
+}
+
+function sortTaskBoardProjectOptions(projects: TaskBoardProject[]) {
+  return [...projects]
+    .filter((project) => project.id.trim())
+    .sort((left, right) => {
+      const leftLabel = left.path || left.name || left.id;
+      const rightLabel = right.path || right.name || right.id;
+      return leftLabel.localeCompare(rightLabel, "zh-Hans-CN");
+    });
+}
+
 function isIssueDragLocked(issue: TaskBoardIssue | null | undefined) {
   return Boolean(issue?.runId);
 }
@@ -1016,7 +1046,9 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const [menu, setMenu] = useState<MenuKind>(null);
   const [query, setQuery] = useState("");
   const [cloudConfig, setCloudConfig] = useState<TaskBoardCloudConfig>(defaultCloudConfig);
+  const [cloudProjects, setCloudProjects] = useState<TaskBoardProject[]>([]);
   const [connectionState, setConnectionState] = useState<TaskBoardConnectionState>("disabled");
+  const [desktopOnlineSummary, setDesktopOnlineSummary] = useState<TaskBoardDesktopOnlineResult>(defaultDesktopOnlineSummary);
   const [cloudConfigSaving, setCloudConfigSaving] = useState(false);
   const [priorityFilters, setPriorityFilters] = useState<TaskBoardPriority[]>([]);
   const [todoAutomationFilter, setTodoAutomationFilter] = useState<TaskBoardTodoAutomationFilter>("all");
@@ -1036,6 +1068,11 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const taskBoardReady = readTaskBoardApi() !== null;
   const missingTaskBoardApiMessage = t("taskBoard.missingApi", { appName: t("app.name") });
+  const cloudProjectOptions = useMemo(() => sortTaskBoardProjectOptions(cloudProjects), [cloudProjects]);
+  const selectedCloudProjectId = cloudConfig.selectedProjectId.trim();
+  const selectedCloudProjectMissing = Boolean(
+    selectedCloudProjectId && !cloudProjectOptions.some((project) => project.id === selectedCloudProjectId)
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -1059,16 +1096,21 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
             config: defaultCloudConfig,
             connectionState: "disabled" as TaskBoardConnectionState
           });
-        const [issueResult, configResult, agentResult] = await Promise.all([
+        const [issueResult, configResult, agentResult, onlineResult] = await Promise.all([
           taskBoardApi.listIssues(),
           configTask,
-          loadTaskBoardAgents()
+          loadTaskBoardAgents(),
+          typeof taskBoardApi.listOnlineDevices === "function"
+            ? taskBoardApi.listOnlineDevices()
+            : Promise.resolve(defaultDesktopOnlineSummary)
         ]);
         if (cancelled) return;
         setIssues(sortIssues(issueResult.issues));
+        setCloudProjects(issueResult.projects ?? []);
         setConnectionState(issueResult.connectionState ?? configResult.connectionState ?? "disabled");
         setCloudConfig(configResult.config);
         setAgents(agentResult);
+        setDesktopOnlineSummary(onlineResult);
       } catch (error) {
         if (!cancelled) {
           setFeedback({
@@ -1091,9 +1133,16 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
   async function reloadTaskBoard() {
     const taskBoardApi = readTaskBoardApi();
     if (!taskBoardApi) return;
-    const issueResult = await taskBoardApi.listIssues();
+    const [issueResult, onlineResult] = await Promise.all([
+      taskBoardApi.listIssues(),
+      typeof taskBoardApi.listOnlineDevices === "function"
+        ? taskBoardApi.listOnlineDevices()
+        : Promise.resolve(defaultDesktopOnlineSummary)
+    ]);
     setIssues(sortIssues(issueResult.issues));
+    setCloudProjects(issueResult.projects ?? []);
     setConnectionState(issueResult.connectionState ?? "disabled");
+    setDesktopOnlineSummary(onlineResult);
   }
 
   async function saveCloudConfig(event: FormEvent<HTMLFormElement>) {
@@ -1160,6 +1209,15 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
     const intervalId = window.setInterval(() => {
       setTaskBoardCountdownNow(Date.now());
     }, TASK_BOARD_COUNTDOWN_REFRESH_MS);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void reloadTaskBoard();
+    }, 15_000);
     return () => {
       window.clearInterval(intervalId);
     };
@@ -1772,6 +1830,9 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
           >
             <span className="task-board-cloud-dot" aria-hidden="true" />
             <span className="task-board-tool-label">{getTaskBoardConnectionLabel(connectionState, t)}</span>
+            <span className="task-board-online-count">
+              {t("taskBoard.cloud.onlineDevices", { count: desktopOnlineSummary.deviceCount })}
+            </span>
             {cloudSyncSummary.errorCount > 0 ? (
               <span className="task-board-cloud-error-count" title={t("taskBoard.cloud.syncErrors", { count: cloudSyncSummary.errorCount })}>
                 {cloudSyncSummary.errorCount}
@@ -1840,11 +1901,25 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                 </span>
               </div>
               <div className="task-board-cloud-summary">
+                <span>{t("taskBoard.cloud.onlineDevices", { count: desktopOnlineSummary.deviceCount })}</span>
+                <span>{t("taskBoard.cloud.onlineSessions", { count: desktopOnlineSummary.sessionCount })}</span>
+                <span>{t("taskBoard.cloud.onlineAgents", { count: desktopOnlineSummary.agentCount })}</span>
                 <span>{t("taskBoard.cloud.syncedIssues", { count: cloudSyncSummary.cloudCount })}</span>
                 <span>{formatTaskBoardLastSyncedAt(cloudSyncSummary.lastSyncedAt, t)}</span>
                 {cloudSyncSummary.syncingCount > 0 ? <span>{t("taskBoard.cloud.syncingIssues", { count: cloudSyncSummary.syncingCount })}</span> : null}
                 {cloudSyncSummary.errorCount > 0 ? <span className="is-error">{t("taskBoard.cloud.syncErrors", { count: cloudSyncSummary.errorCount })}</span> : null}
               </div>
+              <label className="task-board-cloud-toggle-row">
+                <span>
+                  <strong>{t("settings.control.remoteControlEnabled")}</strong>
+                  <small>{t("settings.control.remoteControlDescription")}</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={cloudConfig.remoteControlEnabled}
+                  onChange={(event) => setCloudConfig((current) => ({ ...current, remoteControlEnabled: event.target.checked }))}
+                />
+              </label>
               <label className="task-board-field">
                 <span>{t("taskBoard.cloud.serverUrl")}</span>
                 <input
@@ -1863,11 +1938,34 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
               </label>
               <label className="task-board-field">
                 <span>{t("taskBoard.cloud.projectId")}</span>
-                <input
-                  value={cloudConfig.selectedProjectId}
-                  onChange={(event) => setCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
-                  placeholder="default"
-                />
+                {cloudProjectOptions.length > 0 ? (
+                  <select
+                    value={cloudConfig.selectedProjectId}
+                    onChange={(event) => setCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
+                  >
+                    {selectedCloudProjectMissing ? (
+                      <option value={cloudConfig.selectedProjectId}>
+                        {t("taskBoard.cloud.currentProject", { id: cloudConfig.selectedProjectId })}
+                      </option>
+                    ) : null}
+                    {cloudProjectOptions.map((project) => (
+                      <option value={project.id} key={project.id}>
+                        {getTaskBoardProjectOptionLabel(project)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={cloudConfig.selectedProjectId}
+                    onChange={(event) => setCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
+                    placeholder="default"
+                  />
+                )}
+                <small>
+                  {cloudProjectOptions.length > 0
+                    ? t("taskBoard.cloud.projectSelectHelp", { count: cloudProjectOptions.length })
+                    : t("taskBoard.cloud.projectFallbackHelp")}
+                </small>
               </label>
               <div className="task-board-cloud-actions">
                 <button type="submit" className="task-board-primary-button" disabled={cloudConfigSaving}>

@@ -184,6 +184,112 @@
   width: 100%;
 }
 
+.settings-page .settings-control-permission-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.settings-page .settings-control-app-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 75% 78%, rgba(255, 190, 217, 0.95), transparent 38%),
+    radial-gradient(circle at 20% 20%, rgba(42, 208, 255, 0.95), transparent 42%),
+    linear-gradient(135deg, #1d9bf0, #c7f8ff 43%, #f6b3df);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7), 0 6px 16px rgba(20, 83, 134, 0.14);
+}
+
+.settings-page .settings-control-app-icon span {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px 14px 8px 14px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 16px rgba(17, 24, 39, 0.16);
+  transform: rotate(-42deg) skewX(10deg);
+}
+
+.settings-page .settings-control-summary {
+  padding: 0 16px 14px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-page .settings-control-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.settings-page .settings-control-field {
+  display: grid;
+  gap: 7px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-page .settings-control-field input,
+.settings-page .settings-control-field select {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-select-bg);
+  color: var(--ink);
+  outline: none;
+  font-size: 12px;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.settings-page .settings-control-field small {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.settings-page .settings-control-field input:focus,
+.settings-page .settings-control-field select:focus {
+  border-color: var(--accent-border);
+  box-shadow: var(--control-focus-ring);
+}
+
+.settings-page .settings-control-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.settings-page .settings-control-primary-button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.settings-page .settings-control-primary-button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+:root[data-theme="dark"] .settings-page .settings-control-field input,
+:root[data-theme="dark"] .settings-page .settings-control-field select {
+  background: var(--control-select-bg);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
 .settings-page .quick-assistant-settings-panel {
   display: block;
   padding: 0;

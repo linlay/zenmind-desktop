@@ -166,12 +166,13 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   });
 
   ipcMain.handle("assistant.createCoderProject", async (_event: any, input: any): Promise<any> => {
+    const name = String(input?.name || "").trim();
     const workspaceDir = String(input?.workspaceDir || "").trim();
     const acpProxyId = String(input?.acpProxyId || "").trim();
     if (!workspaceDir) {
       return { ok: false, message: "缺少项目目录，无法创建 CODER 智能体。" };
     }
-    const request = buildCoderProjectAgentCreateRequest(workspaceDir, { acpProxyId });
+    const request = buildCoderProjectAgentCreateRequest(workspaceDir, { name, acpProxyId });
     try {
       const response = await callAgentPlatform?.(app, "/api/agent/create", {
         method: "POST",

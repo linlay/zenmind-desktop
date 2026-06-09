@@ -5,8 +5,9 @@ export function workspaceNameFromPath(workspaceDir: string): string {
 
 export function buildCoderProjectAgentCreateRequest(
   workspaceDir: string,
-  options: { acpProxyId?: string } = {}
+  options: { name?: string; acpProxyId?: string } = {}
 ) {
+  const name = String(options.name || "").trim() || workspaceNameFromPath(workspaceDir);
   const acpProxyId = String(options.acpProxyId || "").trim();
   const runtimeConfig: Record<string, string> = {
     workspaceRoot: workspaceDir
@@ -18,7 +19,7 @@ export function buildCoderProjectAgentCreateRequest(
 
   return {
     definition: {
-      name: workspaceNameFromPath(workspaceDir),
+      name,
       mode: "CODER",
       icon: {
         name: "folder"

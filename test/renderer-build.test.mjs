@@ -1369,6 +1369,31 @@ test("settings page memory section routes visible text through i18n", () => {
   );
 });
 
+test("settings page exposes cloud board control as a global section", () => {
+  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
+  const settingsSections = readSourceFile("src", "renderer", "settingsPageSections.ts");
+  const sharedSettingsSections = readSourceFile("src", "shared", "settings-sections.ts");
+  const taskBoardContracts = readSourceFile("src", "shared", "contracts", "task-board.ts");
+  const taskBoardRuntime = readSourceFile("src", "main", "task-board-runtime.ts");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(sharedSettingsSections, /"control"/);
+  assert.match(settingsSections, /id:\s*"control"[\s\S]*?settings\.control\.label/);
+  assert.match(settingsPage, /case "control"/);
+  assert.match(settingsPage, /settings\.control\.remoteControlEnabled/);
+  assert.match(settingsPage, /settings\.control\.remoteControlDescription/);
+  assert.match(settingsPage, /window\.electronAPI\.taskBoard\.getCloudConfig/);
+  assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveCloudConfig/);
+  assert.match(settingsPage, /window\.electronAPI\.taskBoard\.listOnlineDevices/);
+  assert.match(taskBoardContracts, /remoteControlEnabled:\s*boolean/);
+  assert.match(taskBoardRuntime, /remoteControlEnabled/);
+  assert.match(taskBoardRuntime, /config\.remoteControlEnabled/);
+  assert.match(zhCN, /"settings\.control\.label":\s*"控制"/);
+  assert.match(zhCN, /"settings\.control\.remoteControlEnabled":\s*"允许云看板控制此桌面端"/);
+  assert.match(enUS, /"settings\.control\.label":\s*"Control"/);
+});
+
 test("settings page hides assistant memory while the module is disabled", () => {
   const settingsSections = readSourceFile(
     "src",

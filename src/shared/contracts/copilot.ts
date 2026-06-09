@@ -155,6 +155,7 @@ export interface AssistantNavAgentItemsResult {
 }
 
 export interface AssistantCreateCoderProjectRequest {
+  name?: string;
   workspaceDir: string;
   acpProxyId?: string;
 }

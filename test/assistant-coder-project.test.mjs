@@ -16,7 +16,10 @@ function loadCoderProjectHelpers() {
   const helperSource = source
     .slice(start, end)
     .replaceAll("export ", "")
-    .replace(/,\s*options:\s*\{\s*acpProxyId\?: string\s*\}\s*=\s*\{\}/u, ", options = {}")
+    .replace(
+      /,\s*options:\s*\{\s*name\?: string;\s*acpProxyId\?: string\s*\}\s*=\s*\{\}/u,
+      ", options = {}"
+    )
     .replaceAll(": Record<string, string>", "")
     .replaceAll(": string", "")
     .replaceAll(": string[]", "");
@@ -67,4 +70,15 @@ test("CODER project helper can target an ACP proxy backend", () => {
     coderBackend: "acp",
     acpProxyId: "codex"
   });
+});
+
+test("CODER project helper uses an explicit project name when provided", () => {
+  const { buildCoderProjectAgentCreateRequest } = loadCoderProjectHelpers();
+  const payload = buildCoderProjectAgentCreateRequest("/Users/demo/Project/agent-coder", {
+    name: "自定义 CODER 名称"
+  });
+
+  assert.equal(payload.definition.name, "自定义 CODER 名称");
+  assert.equal(payload.definition.workspace.root, "/Users/demo/Project/agent-coder");
+  assert.equal(payload.definition.runtimeConfig.workspaceRoot, "/Users/demo/Project/agent-coder");
 });

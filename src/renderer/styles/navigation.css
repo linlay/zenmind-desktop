@@ -1048,6 +1048,49 @@
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.14);
 }
 
+.sidebar-coder-programming-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sidebar-coder-programming-mode label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar-coder-programming-mode input {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar-coder-programming-mode label:has(input:checked) {
+  border-color: #1677ff;
+  background: rgba(22, 119, 255, 0.08);
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
+}
+
+.sidebar-coder-programming-mode label:has(input:disabled) {
+  cursor: default;
+  opacity: 0.68;
+}
+
+:root[data-theme="dark"] .sidebar-coder-programming-mode label {
+  background: #2a2b2f;
+}
+
 .sidebar-website-dialog-error {
   padding: 9px 10px;
   border: 1px solid rgba(220, 38, 38, 0.26);
@@ -1189,10 +1232,17 @@
 }
 
 .assistant-worker-unread-dot {
+  display: block;
+  flex: 0 0 auto;
   width: 8px;
   height: 8px;
   border-radius: 999px;
   background: #1677ff;
+  opacity: 0;
+}
+
+.assistant-worker-unread-dot.is-unread {
+  opacity: 1;
 }
 
 .assistant-worker-chat-action[data-action="unread"] .assistant-worker-unread-dot {
@@ -3394,13 +3444,33 @@
 .sidebar-settings-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   width: 100%;
   padding: 0;
 }
 
 .sidebar-settings-back {
   width: 100%;
+}
+
+.app-shell.is-settings-mode .app-sidebar {
+  padding: 0 10px 12px 8px;
+}
+
+.app-shell.is-settings-mode .sidebar-nav {
+  padding: 0;
+  scrollbar-gutter: auto;
+}
+
+.app-shell.is-settings-mode .sidebar-settings-back,
+.app-shell.is-settings-mode .sidebar-settings-directory .sidebar-link {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.app-shell.is-settings-mode .sidebar-settings-directory .sidebar-link {
+  justify-content: flex-start;
 }
 
 .sidebar-settings-back .sidebar-link-icon svg {
@@ -3412,20 +3482,16 @@
 .sidebar-settings-directory {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   width: 100%;
 }
 
 .app-shell.is-settings-mode .app-sidebar-shell {
-  min-width: max(var(--app-sidebar-width, 200px), 200px);
+  width: var(--app-sidebar-width, 200px);
+  min-width: var(--app-sidebar-width, 200px);
 }
 
 .app-shell.is-settings-mode .app-sidebar-resizer {
   display: none;
   pointer-events: none;
-}
-
-.app-shell.is-settings-mode.is-sidebar-collapsed .sidebar-settings-nav .sidebar-link-label,
-.app-shell.is-settings-mode.is-sidebar-collapsed .sidebar-settings-back .sidebar-link-label {
-  display: none;
 }

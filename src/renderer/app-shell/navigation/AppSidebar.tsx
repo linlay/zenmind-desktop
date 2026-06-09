@@ -109,8 +109,12 @@ type RunningCoderAcpProxyOption = CoderAcpProxyOption & {
   statusLabel: string;
 };
 
+type CoderProjectProgrammingMode = "builtin" | "acp";
+
 type CoderAcpProjectDialogState = {
+  name: string;
   workspaceDir: string;
+  programmingMode: CoderProjectProgrammingMode;
   options: RunningCoderAcpProxyOption[];
   selectedAcpProxyId: string;
   pending: boolean;
@@ -298,6 +302,11 @@ function getRunningCoderAcpProxyOptions(
       },
     ];
   });
+}
+
+function getWorkspaceNameFromPath(workspaceDir: string) {
+  const normalized = String(workspaceDir || "").trim();
+  return normalized.split(/[\\/]+/).filter(Boolean).pop() || "project";
 }
 
 function getRoutePathname(route: string) {
@@ -1120,7 +1129,9 @@ export function AppSidebar({
         console.warn("[assistant] failed to list CODER ACP proxy services", error);
       }
       setCoderAcpProjectDialog({
+        name: getWorkspaceNameFromPath(selection.path),
         workspaceDir: selection.path,
+        programmingMode: "builtin",
         options: runningAcpProxies,
         selectedAcpProxyId: runningAcpProxies[0]?.acpProxyId ?? "",
         pending: false,
@@ -1139,21 +1150,31 @@ export function AppSidebar({
     if (!dialog || dialog.pending) {
       return;
     }
-    const selectedAcpProxy = dialog.selectedAcpProxyId
-      ? dialog.options.find(
-          (option) => option.acpProxyId === dialog.selectedAcpProxyId,
-        )
-      : null;
-    if (dialog.selectedAcpProxyId && !selectedAcpProxy) {
+    const name = dialog.name.trim();
+    if (!name) {
       setCoderAcpProjectDialog({
         ...dialog,
-        error: "请选择一个正在运行的 ACP 工具，或选择不使用 ACP。",
+        error: "请输入项目名称。",
+      });
+      return;
+    }
+    const selectedAcpProxy =
+      dialog.programmingMode === "acp" && dialog.selectedAcpProxyId
+        ? dialog.options.find(
+            (option) => option.acpProxyId === dialog.selectedAcpProxyId,
+          )
+        : null;
+    if (dialog.programmingMode === "acp" && !selectedAcpProxy) {
+      setCoderAcpProjectDialog({
+        ...dialog,
+        error: "请选择一个正在运行的 ACP 工具，或切换为内置编程。",
       });
       return;
     }
     setCoderAcpProjectDialog({ ...dialog, pending: true, error: "" });
     try {
       const createInput: AssistantCreateCoderProjectRequest = {
+        name,
         workspaceDir: dialog.workspaceDir,
       };
       if (selectedAcpProxy) {
@@ -1585,9 +1606,7 @@ export function AppSidebar({
       ? "awaiting"
       : chat.hasActiveRun
       ? "loading"
-      : !chat.isRead
-        ? "unread"
-        : "time";
+      : "time";
     const previewText =
       chat.hasActiveRun && isAssistantRunningPreview(chat.lastRunContent)
         ? chat.chatName || "暂无预览"
@@ -1608,6 +1627,17 @@ export function AppSidebar({
         onClick={() => handleAssistantOpenChat(chat)}
       >
         <span className="worker-chat-item-head">
+          <span
+            className={[
+              "assistant-worker-unread-dot",
+              "chat-unread-dot",
+              !chat.isRead ? "is-unread" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            aria-label={!chat.isRead ? "未读" : undefined}
+            aria-hidden={chat.isRead ? "true" : undefined}
+          />
           <span className="worker-chat-name">{previewText}</span>
           {chat.hasPendingAwaiting ? (
             <span className="chat-awaiting-status">
@@ -1615,10 +1645,6 @@ export function AppSidebar({
             </span>
           ) : null}
           <span className="assistant-worker-chat-action" data-action={action}>
-            <span
-              className="assistant-worker-unread-dot chat-unread-dot is-unread"
-              aria-label="未读"
-            />
             <span className="worker-panel-time-label">
               {formatAssistantChatTime(chat.updatedAt)}
             </span>
@@ -2740,19 +2766,15 @@ export function AppSidebar({
             </button>
           </div>
           <label className="sidebar-website-dialog-field">
-            <span>项目目录</span>
-            <input value={coderAcpProjectDialog.workspaceDir} readOnly />
-          </label>
-          <label className="sidebar-website-dialog-field">
-            <span>ACP 工具（可选）</span>
-            <select
-              value={coderAcpProjectDialog.selectedAcpProxyId}
+            <span>项目名称</span>
+            <input
+              value={coderAcpProjectDialog.name}
               onChange={(event) =>
                 setCoderAcpProjectDialog((current) =>
                   current
                     ? {
                         ...current,
-                        selectedAcpProxyId: event.target.value,
+                        name: event.target.value,
                         error: "",
                       }
                     : current,
@@ -2760,15 +2782,99 @@ export function AppSidebar({
               }
               disabled={coderAcpProjectDialog.pending}
               autoFocus
-            >
-              <option value="">不使用 ACP（直接创建）</option>
-              {coderAcpProjectDialog.options.map((option) => (
-                <option value={option.acpProxyId} key={option.serviceId}>
-                  {option.label} · {option.statusLabel}
-                </option>
-              ))}
-            </select>
+            />
           </label>
+          <label className="sidebar-website-dialog-field">
+            <span>项目目录</span>
+            <input value={coderAcpProjectDialog.workspaceDir} readOnly />
+          </label>
+          <div className="sidebar-website-dialog-field">
+            <span>编程方式</span>
+            <div
+              className="sidebar-coder-programming-mode"
+              role="radiogroup"
+              aria-label="编程方式"
+            >
+              <label>
+                <input
+                  type="radio"
+                  name="coder-programming-mode"
+                  value="builtin"
+                  checked={coderAcpProjectDialog.programmingMode === "builtin"}
+                  onChange={() =>
+                    setCoderAcpProjectDialog((current) =>
+                      current
+                        ? {
+                            ...current,
+                            programmingMode: "builtin",
+                            error: "",
+                          }
+                        : current,
+                    )
+                  }
+                  disabled={coderAcpProjectDialog.pending}
+                />
+                <span>内置编程</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="coder-programming-mode"
+                  value="acp"
+                  checked={coderAcpProjectDialog.programmingMode === "acp"}
+                  onChange={() =>
+                    setCoderAcpProjectDialog((current) =>
+                      current
+                        ? {
+                            ...current,
+                            programmingMode: "acp",
+                            selectedAcpProxyId:
+                              current.selectedAcpProxyId ||
+                              current.options[0]?.acpProxyId ||
+                              "",
+                            error: "",
+                          }
+                        : current,
+                    )
+                  }
+                  disabled={coderAcpProjectDialog.pending}
+                />
+                <span>ACP 代理编程</span>
+              </label>
+            </div>
+          </div>
+          {coderAcpProjectDialog.programmingMode === "acp" ? (
+            <label className="sidebar-website-dialog-field">
+              <span>ACP 工具</span>
+              <select
+                value={coderAcpProjectDialog.selectedAcpProxyId}
+                onChange={(event) =>
+                  setCoderAcpProjectDialog((current) =>
+                    current
+                      ? {
+                          ...current,
+                          selectedAcpProxyId: event.target.value,
+                          error: "",
+                        }
+                      : current,
+                  )
+                }
+                disabled={
+                  coderAcpProjectDialog.pending ||
+                  coderAcpProjectDialog.options.length === 0
+                }
+              >
+                {coderAcpProjectDialog.options.length === 0 ? (
+                  <option value="">暂无正在运行的 ACP 工具</option>
+                ) : null}
+                {coderAcpProjectDialog.options.map((option) => (
+                  <option value={option.acpProxyId} key={option.serviceId}>
+                    {option.label} · {option.statusLabel}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           {coderAcpProjectDialog.error ? (
             <div className="sidebar-website-dialog-error" role="alert">
               {coderAcpProjectDialog.error}
@@ -2899,6 +3005,8 @@ export function AppSidebar({
     switch (sectionId) {
       case "appearance":
         return "appearance";
+      case "control":
+        return "control";
       case "navigation":
         return "sidebar-assistant-closed";
       case "quickAssistant":
@@ -2965,8 +3073,10 @@ export function AppSidebar({
     );
   }
 
+  const shouldRenderCollapsed = isCollapsed && !isSettingsMode;
+
   return (
-    <aside className={isCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
+    <aside className={shouldRenderCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
       <div className="sidebar-chrome">
         <div className="sidebar-chrome-drag-region" aria-hidden="true" />
         <div className={chromeToolbarClassName}>
