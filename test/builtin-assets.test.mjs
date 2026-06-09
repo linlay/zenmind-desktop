@@ -841,6 +841,40 @@ test("DESKTOP_BUILTIN_ASSETS_SOURCE overrides workspace fallback and legacy sour
   }
 });
 
+test("discoverBuiltinServices skips unreadable workspace directories", () => {
+  const workspaceRoot = path.resolve(desktopProjectRoot, "..");
+  const blockedRoot = path.join(workspaceRoot, `zenmind-unreadable-assets-${Date.now()}`);
+  const originalReaddirSync = fs.readdirSync;
+
+  fs.mkdirSync(blockedRoot, { recursive: true });
+  fs.readdirSync = function readdirSyncWithBlockedDirectory(directoryPath, options) {
+    if (path.resolve(directoryPath) === blockedRoot) {
+      throw Object.assign(new Error(`EPERM: operation not permitted, scandir '${blockedRoot}'`), {
+        code: "EPERM",
+        errno: -1,
+        path: blockedRoot,
+        syscall: "scandir"
+      });
+    }
+    return originalReaddirSync.call(this, directoryPath, options);
+  };
+
+  try {
+    const services = withEnv(BUILTIN_ASSETS_SOURCE_ENV, null, () =>
+      withEnv(LEGACY_BUILTIN_ASSETS_SOURCE_ENV, null, () =>
+        discoverBuiltinServices({
+          os: `unreadable-os-${Date.now()}`,
+          arch: `unreadable-arch-${Date.now()}`
+        })
+      )
+    );
+    assert.deepEqual(services, []);
+  } finally {
+    fs.readdirSync = originalReaddirSync;
+    fs.rmSync(blockedRoot, { recursive: true, force: true });
+  }
+});
+
 test("syncBuiltinAssets fails with an actionable error when required Desktop core assets are missing", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-missing-core-"));
   const sourceRoot = path.join(tempRoot, "source");

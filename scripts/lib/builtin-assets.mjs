@@ -19,6 +19,23 @@ function isArchiveFileName(fileName) {
   return fileName.endsWith(".tar.gz") || fileName.endsWith(".zip");
 }
 
+function isIgnorableDirectoryReadError(error) {
+  return error &&
+    typeof error === "object" &&
+    ["EACCES", "EPERM", "ENOENT", "ENOTDIR"].includes(error.code);
+}
+
+function readDirectoryEntries(directoryPath, { optional = false } = {}) {
+  try {
+    return fs.readdirSync(directoryPath, { withFileTypes: true });
+  } catch (error) {
+    if (optional && isIgnorableDirectoryReadError(error)) {
+      return [];
+    }
+    throw error;
+  }
+}
+
 function computeAssetSignature(assetPath) {
   const stat = fs.statSync(assetPath);
   const sha256 = createHash("sha256").update(fs.readFileSync(assetPath)).digest("hex");
@@ -30,7 +47,7 @@ function scanArchiveDirectory(dirPath, tryAddArchive) {
     return;
   }
 
-  for (const asset of fs.readdirSync(dirPath, { withFileTypes: true })) {
+  for (const asset of readDirectoryEntries(dirPath, { optional: true })) {
     if (!asset.isFile() || !isArchiveFileName(asset.name)) {
       continue;
     }
@@ -165,8 +182,7 @@ function listArchivesInDirectory(directoryPath) {
     return [];
   }
 
-  return fs
-    .readdirSync(directoryPath, { withFileTypes: true })
+  return readDirectoryEntries(directoryPath, { optional: true })
     .filter((entry) => entry.isFile() && isArchiveFileName(entry.name))
     .map((entry) => path.join(directoryPath, entry.name));
 }
@@ -181,7 +197,7 @@ function listConfiguredReleaseArchives(sourceRoot) {
   }
 
   const archives = [];
-  for (const entry of fs.readdirSync(sourceRoot, { withFileTypes: true })) {
+  for (const entry of readDirectoryEntries(sourceRoot)) {
     if (entry.isDirectory()) {
       archives.push(...listArchivesInDirectory(path.join(sourceRoot, entry.name)));
       continue;
@@ -198,7 +214,7 @@ function listConfiguredReleaseArchives(sourceRoot) {
 function listWorkspaceReleaseArchives() {
   const archives = [];
 
-  for (const entry of fs.readdirSync(WORKSPACE_ROOT, { withFileTypes: true })) {
+  for (const entry of readDirectoryEntries(WORKSPACE_ROOT)) {
     if (!entry.isDirectory()) {
       continue;
     }
@@ -207,7 +223,7 @@ function listWorkspaceReleaseArchives() {
     archives.push(...listArchivesInDirectory(path.join(entryRoot, "dist", "release")));
     archives.push(...listArchivesInDirectory(entryRoot));
 
-    for (const child of fs.readdirSync(entryRoot, { withFileTypes: true })) {
+    for (const child of readDirectoryEntries(entryRoot, { optional: true })) {
       if (!child.isDirectory()) {
         continue;
       }
@@ -218,7 +234,7 @@ function listWorkspaceReleaseArchives() {
     }
   }
 
-  for (const entry of fs.readdirSync(WORKSPACE_ROOT, { withFileTypes: true })) {
+  for (const entry of readDirectoryEntries(WORKSPACE_ROOT)) {
     if (!entry.isFile() || !isArchiveFileName(entry.name)) {
       continue;
     }
