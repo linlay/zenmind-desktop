@@ -175,6 +175,21 @@ test("task board constrains its page height so columns can scroll vertically", (
   assert.match(readRule(".task-board-column.is-completed .task-board-column-body::-webkit-scrollbar"), /display:\s*block;/);
 });
 
+test("task board reserves platform titlebar space before rendering its toolbar", () => {
+  const macPageRule = readRule(".app-shell.is-mac-platform.has-task-board-controls .task-board-page");
+  const macDragRule = readRule(".app-shell.is-mac-platform.has-task-board-controls .task-board-page::before");
+  const windowsPageRule = readRule(".app-shell.is-windows-platform.has-task-board-controls .task-board-page");
+  const windowsDragRule = readRule(".app-shell.is-windows-platform.has-task-board-controls .task-board-page::before");
+
+  assert.match(macPageRule, /padding-top:\s*36px;/);
+  assert.match(macDragRule, /height:\s*36px;/);
+  assert.match(macDragRule, /app-region:\s*drag;/);
+  assert.match(macDragRule, /-webkit-app-region:\s*drag;/);
+  assert.match(windowsPageRule, /padding-top:\s*44px;/);
+  assert.match(windowsDragRule, /height:\s*44px;/);
+  assert.match(windowsDragRule, /right:\s*138px;/);
+});
+
 test("task board columns and cards adapt to the available board width", () => {
   const pageRule = readRule(".task-board-page");
   const columnsRule = readRule(".task-board-columns");
