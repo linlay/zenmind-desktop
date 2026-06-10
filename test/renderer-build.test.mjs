@@ -595,8 +595,8 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.doesNotMatch(sidebarSource, /sidebar-collapsed-toggle-slot/);
   assert.doesNotMatch(sidebarSource, /sidebar-collapse-control/);
   assert.ok(appSidebarRule, "missing .app-sidebar rule");
-  assert.match(appSidebarRule, /app-region:\s*drag;/);
-  assert.match(appSidebarRule, /-webkit-app-region:\s*drag;/);
+  assert.doesNotMatch(appSidebarRule, /app-region:\s*drag;/);
+  assert.doesNotMatch(appSidebarRule, /-webkit-app-region:\s*drag;/);
   assert.ok(collapseButtonRule, "missing .app-sidebar-collapse-button rule");
   assert.match(collapseButtonRule, /appearance:\s*none;/);
   assert.doesNotMatch(globalStyles, /\.app-shell\.is-sidebar-expanded\s*\{/);

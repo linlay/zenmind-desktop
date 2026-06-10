@@ -111,8 +111,6 @@
   backdrop-filter: blur(18px) saturate(130%);
   -webkit-backdrop-filter: blur(18px) saturate(130%);
   overflow: hidden;
-  app-region: drag;
-  -webkit-app-region: drag;
   -webkit-user-select: none;
   user-select: none;
 }
