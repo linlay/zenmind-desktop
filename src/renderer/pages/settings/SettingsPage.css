@@ -633,19 +633,6 @@
   border-color: rgba(255, 255, 255, 0.12);
 }
 
-.settings-page .settings-debug-card {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.settings-page .debug-settings-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .settings-content-shell {
   display: flex;
   flex-direction: column;
@@ -992,15 +979,6 @@
 
   .settings-language-select {
     width: 100%;
-  }
-
-  .settings-page .settings-debug-card {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .settings-page .settings-debug-card .text-button {
-    align-self: flex-end;
   }
 
   .settings-page-head h1 {

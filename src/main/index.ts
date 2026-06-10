@@ -85,7 +85,6 @@ import { revealPathInFileManager } from "./reveal-path";
 import { buildApplicationMenu as installApplicationMenu } from "./app-shell/app-menu";
 import { createQuitConfirmationController } from "./app-shell/quit-confirmation";
 import { AgentPlatformMonitorWindowController } from "./app-shell/agent-platform-monitor-window";
-import { DebugViewerWindowController } from "./app-shell/debug-viewer-window";
 import { LogViewerWindowController } from "./app-shell/log-viewer-window";
 import { NativeDialogVisibilityController } from "./app-shell/native-dialogs";
 import { AppTrayController } from "./app-shell/tray";
@@ -127,7 +126,6 @@ import type {
   AssistantSubmitAwaitingRequest,
   AssistantVoiceCorrectionRequest,
   AssistantVoiceTranscriptionRequest,
-  DebugEvent,
   DesktopPetAgentOption,
   DesktopPetSettingsInput,
   RendererDiagnosticReport,
@@ -231,7 +229,7 @@ import { registerTaskBoardIpcHandlers } from "./ipc/task-board-handlers";
 import { registerSsoIpcHandlers } from "./ipc/sso-handlers";
 import { registerSettingsIpcHandlers } from "./ipc/settings-handlers";
 import { registerMarketplaceIpcHandlers } from "./ipc/marketplace-handlers";
-import { registerDebugIpcHandlers } from "./ipc/debug-handlers";
+import { registerWebviewDevToolsIpcHandlers } from "./ipc/webview-devtools-handlers";
 import {
   isQuickAssistantMediaPermissionAllowed,
 } from "./copilot/quick-copilot/quick-copilot";
@@ -252,8 +250,6 @@ import {
 import { getMainLocaleSettings, initializeMainI18n, setMainLocale, t } from "./i18n/main-i18n";
 import { isSupportedLocale } from "../shared/i18n";
 import { createStartupRestoreController, STARTUP_RESTORE_SERVICE_ORDER } from "./startup-restore";
-import { createDebugEventStore } from "./debug/debug-events";
-import { WebviewDebugManager } from "./debug/webview-debug-manager";
 import {
   applyPlatformAppInit,
   getFocusedWebviewDevToolsShortcut,
@@ -584,20 +580,6 @@ const logViewerWindowController = new LogViewerWindowController({
 const agentPlatformMonitorWindowController = new AgentPlatformMonitorWindowController({
   platform: mainProcessContext.platform,
   onRendererError: safeConsoleError
-});
-
-const debugEventStore = createDebugEventStore({ maxEvents: 1000 });
-const debugViewerWindowController = new DebugViewerWindowController({
-  preloadPath: path.join(__dirname, "..", "preload", "index.js"),
-  platform: mainProcessContext.platform,
-  getOwnerWindow: () => appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null,
-  loadRendererRoute,
-  onRendererError: safeConsoleError
-});
-const webviewDebugManager = new WebviewDebugManager({
-  store: debugEventStore,
-  emitEvent: emitDebugEvent,
-  onError: safeConsoleError
 });
 
 const nativeDialogController = new NativeDialogVisibilityController({
@@ -1162,22 +1144,6 @@ async function openAgentPlatformMonitorWindow(url: string) {
   return agentPlatformMonitorWindowController.open(url);
 }
 
-function emitDebugEvent(event: DebugEvent) {
-  const targetWindow = debugViewerWindowController.getWindow();
-  if (!targetWindow || targetWindow.isDestroyed()) {
-    return;
-  }
-  targetWindow.webContents.send("debug.event", event);
-}
-
-async function openDebugViewerWindow() {
-  return debugViewerWindowController.open();
-}
-
-function closeDebugViewerWindow() {
-  return debugViewerWindowController.close();
-}
-
 function closeLogViewerWindow() {
   return logViewerWindowController.close();
 }
@@ -1292,10 +1258,6 @@ function createWindow() {
     openExternal: shell.openExternal,
     schedule: setImmediate
   });
-  targetWindow.webContents.on("did-attach-webview", (_event, contents) => {
-    webviewDebugManager.attachWebContents(contents);
-  });
-
   void loadMainWindowRenderer(targetWindow, {
     mode: process.env.VITE_DEV_SERVER_URL ? "dev" : "file",
     rendererEntry: getRendererEntry(),
@@ -1762,8 +1724,6 @@ async function renderAssistantPdf(html: string) {
 
 function registerIpcHandlers(context: MainProcessContext) {
   const state = context.state;
-  webviewDebugManager.start();
-  webviewDebugManager.attachSession(session.defaultSession);
   const assistantBridge = new AgentPlatformAssistantBridge({
     app,
     getServiceState: getResponsiveServiceState,
@@ -1828,13 +1788,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     revealPathInFileManager,
     reportRendererDiagnostic
   }));
-  registerDebugIpcHandlers(ipcMain, {
-    openViewer: openDebugViewerWindow,
-    closeViewer: closeDebugViewerWindow,
-    debugEventStore,
-    webviewDebugManager,
-    webContents
-  });
+  registerWebviewDevToolsIpcHandlers(ipcMain, { webContents });
 
   registerAssistantIpcHandlers(ipcMain, createAssistantIpcHandlerOptions(context, {
     assistantBridge,
@@ -2254,7 +2208,6 @@ app.on("will-quit", () => {
     globalShortcut
   });
   globalShortcut.unregister(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT);
-  webviewDebugManager.stop();
 });
 
 app.on("window-all-closed", () => {

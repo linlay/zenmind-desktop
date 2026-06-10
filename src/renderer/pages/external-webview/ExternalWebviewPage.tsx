@@ -361,7 +361,6 @@ function ExternalWebviewPane({
 }: ExternalWebviewPaneProps) {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const initialSrcRef = useRef(tab.currentUrl);
-  const registeredDebugWebContentsIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     const webview = webviewRef.current;
@@ -412,17 +411,6 @@ function ExternalWebviewPane({
 
       onTabStateChange(tab.id, nextPatch);
 
-      if (nextWebContentsId) {
-        registeredDebugWebContentsIdRef.current = nextWebContentsId;
-        void window.electronAPI.debug.registerWebviewSurface({
-          webContentsId: nextWebContentsId,
-          kind: "external",
-          ...(surfaceId ? { surfaceId } : {}),
-          ...(surfaceLabel ? { surfaceLabel } : {}),
-          tabId: tab.id,
-          url: nextPatch.currentUrl ?? tab.currentUrl
-        });
-      }
     };
 
     const handleDomReady = () => {
@@ -464,10 +452,6 @@ function ExternalWebviewPane({
     syncFromWebview();
 
     return () => {
-      if (registeredDebugWebContentsIdRef.current) {
-        void window.electronAPI.debug.unregisterWebviewSurface(registeredDebugWebContentsIdRef.current);
-        registeredDebugWebContentsIdRef.current = null;
-      }
       webview.removeEventListener("dom-ready", handleDomReady);
       webview.removeEventListener("did-start-loading", handleDidStartLoading);
       webview.removeEventListener("did-stop-loading", handleDidStopLoading);
@@ -476,7 +460,7 @@ function ExternalWebviewPane({
       webview.removeEventListener("page-title-updated", handlePageTitleUpdated);
       webview.removeEventListener("page-favicon-updated", handlePageFaviconUpdated);
     };
-  }, [onTabStateChange, surfaceId, surfaceLabel, tab.currentUrl, tab.id]);
+  }, [onTabStateChange, tab.currentUrl, tab.id]);
 
   return (
     <div
@@ -1654,7 +1638,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
       return;
     }
 
-    void window.electronAPI.debug.openWebviewDevTools(webContentsId);
+    void window.electronAPI.webview.openDevTools(webContentsId);
   };
 
   const handleNavigateToInputUrl = () => {

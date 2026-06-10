@@ -14,9 +14,6 @@ const DesktopPet = lazy(() =>
 const QuickCopilotRoute = lazy(() =>
   import("./copilot/quick-copilot/QuickCopilotRoute").then((module) => ({ default: module.QuickCopilotRoute }))
 );
-const DebugViewerPage = lazy(() =>
-  import("./pages/DebugViewerPage").then((module) => ({ default: module.DebugViewerPage }))
-);
 const LogViewerPage = lazy(() =>
   import("./pages/LogViewerPage").then((module) => ({ default: module.LogViewerPage }))
 );
@@ -55,18 +52,6 @@ export function App() {
       </AppErrorBoundary>
     );
   }
-  if (location.pathname === "/debug-viewer") {
-    return (
-      <AppErrorBoundary resetKey={resetKey}>
-        <I18nProvider>
-          <Suspense fallback={null}>
-            <DebugViewerPage />
-          </Suspense>
-        </I18nProvider>
-      </AppErrorBoundary>
-    );
-  }
-
   return (
     <AppErrorBoundary resetKey={resetKey}>
       <I18nProvider>

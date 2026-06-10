@@ -1201,8 +1201,8 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /case "memory"/);
   assert.doesNotMatch(settingsPage, /case "runtimeReset"/);
   assert.doesNotMatch(settingsPage, /case "debug"/);
-  assert.match(settingsPage, /settings\.debug\.openViewer/);
-  assert.match(settingsPage, /window\.electronAPI\.debug\.openViewer/);
+  assert.doesNotMatch(settingsPage, /settings\.debug/u);
+  assert.doesNotMatch(settingsPage, /window\.electronAPI\.debug/u);
   assert.match(settingsPage, /window\.electronAPI\.settings\.resetRuntimeEnv\(\)/);
   assert.match(settingsPage, /settings-reset-card/);
   assert.match(settingsPage, /settings\.reset\.backupPath/);
@@ -1210,7 +1210,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /case "about"/);
   assert.match(settingsPage, /<AboutAppCard[\s\S]*?runtimeResetPending=\{runtimeResetPending\}[\s\S]*?runtimeResetResult=\{runtimeResetResult\}[\s\S]*?onResetRuntimeEnv=\{handleResetRuntimeEnv\}/);
   assert.match(settingsPage, /settings-item-card settings-about-card/);
-  assert.match(settingsPage, /settings-debug-card/);
+  assert.doesNotMatch(settingsPage, /settings-debug-card/);
   assert.match(settingsPage, /settings-about-version/);
   assert.match(settingsPage, /settings\.about\.versionDescription/);
   assert.doesNotMatch(settingsPage, /settings-about-meta/);

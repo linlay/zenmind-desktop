@@ -25,7 +25,7 @@ test("settings route helpers build and detect section paths", () => {
   assert.equal(isSettingsRoute("/settings/appearance"), true);
   assert.equal(isSettingsRoute("/kanban"), false);
   assert.equal(parseSettingsSectionId("/settings/appearance"), "appearance");
-  assert.equal(parseSettingsSectionId("/settings/debug"), "about");
+  assert.equal(parseSettingsSectionId("/settings/debug"), "debug");
   assert.equal(parseSettingsSectionId("/settings/runtimeReset"), "about");
   assert.equal(parseSettingsSectionId("/settings"), null);
   assert.equal(parseSettingsSectionId("/settings/foo/extra"), "foo");
@@ -34,6 +34,7 @@ test("settings route helpers build and detect section paths", () => {
 test("settings route helpers resolve invalid sections to the default", () => {
   assert.equal(resolveSettingsSectionId("/settings", visibleSectionIds), "appearance");
   assert.equal(resolveSettingsSectionId("/settings/appearance", visibleSectionIds), "appearance");
+  assert.equal(resolveSettingsSectionId("/settings/debug", visibleSectionIds), "appearance");
   assert.equal(resolveSettingsSectionId("/settings/desktopPet", visibleSectionIds), "appearance");
   assert.equal(getDefaultSettingsSectionPath(visibleSectionIds), "/settings/appearance");
   assert.equal(getDefaultSettingsSectionPath([]), "/settings");

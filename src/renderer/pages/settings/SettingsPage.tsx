@@ -461,20 +461,6 @@ function AboutAppCard({
           </div>
         </div>
       </div>
-      <div className="data-root-card settings-debug-card">
-        <div className="debug-settings-copy">
-          <h2>{t("settings.debug.label")}</h2>
-          <p className="page-copy">{t("settings.debug.sectionDescription")}</p>
-          <p className="settings-inline-note">{t("settings.debug.shortcut")}</p>
-        </div>
-        <button
-          type="button"
-          className="text-button"
-          onClick={() => void window.electronAPI.debug.openViewer()}
-        >
-          {t("settings.debug.openViewer")}
-        </button>
-      </div>
       <div className="data-root-card settings-reset-card">
         <div className="settings-reset-copy">
           <h2>{t("settings.reset.title")}</h2>
