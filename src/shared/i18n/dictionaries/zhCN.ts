@@ -346,6 +346,7 @@ export const zhCNMessages = {
   "settings.desktopPet.selectedAppearance": "已选择 {name}",
   "settings.desktopPet.select": "选择",
   "settings.desktopPet.selected": "已选",
+  "settings.desktopPet.saved": "已保存",
   "settings.desktopPet.currentAppearance": "当前：{name}",
   "settings.desktopPet.switching": "切换中...",
   "settings.desktopPet.selectAgent": "选择智能体",

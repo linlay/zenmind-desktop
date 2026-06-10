@@ -654,6 +654,13 @@
   opacity: 1;
 }
 
+.settings-page .desktop-pet-appearance-list.is-disabled .desktop-pet-appearance-select.is-selected {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--ink-muted);
+  box-shadow: none;
+}
+
 .settings-page .desktop-pet-appearance-select:disabled:not(.is-selected) {
   border-color: var(--line);
   background: var(--surface-soft);

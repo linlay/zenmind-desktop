@@ -608,7 +608,8 @@ test("sidebar collapse toggle moves into the top chrome with expanded and collap
   assert.match(globalStyles, /\.app-sidebar-resizer\s*\{[\s\S]*?cursor:\s*col-resize;/);
   assert.match(globalStyles, /\.app-sidebar-resizer-line\s*\{/);
   assert.match(globalStyles, /\.app-sidebar-resizer:hover \.app-sidebar-resizer-line,[\s\S]*?\.app-sidebar-resizer\.is-active \.app-sidebar-resizer-line\s*\{/);
-  assert.match(globalStyles, /\.app-shell\.is-mac-platform\.is-sidebar-collapsed \.app-sidebar-resizer\s*\{[\s\S]*?flex:\s*0 0 0;/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.is-mac-platform\.is-sidebar-collapsed \.app-sidebar-resizer\s*\{[\s\S]*?flex:\s*0 0 0;/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.is-mac-platform\.is-sidebar-collapsed \.app-sidebar-resizer\s*\{[\s\S]*?pointer-events:\s*none;/);
   assert.ok(collapsedMacChromeToolbarRule, "missing mac collapsed chrome toolbar rule");
   assert.match(collapsedMacChromeToolbarRule, /padding:\s*0;/);
   assert.match(collapsedMacChromeToolbarRule, /justify-content:\s*center;/);
@@ -2568,8 +2569,9 @@ test("window drag uses css-only app-region approach", () => {
   assert.doesNotMatch(globalStyles, /\.app-sidebar-drag-region/);
   assert.match(sidebarSource, /sidebar-chrome-drag-region/);
   assert.doesNotMatch(appShell, /app-sidebar-drag-region/);
-  assert.doesNotMatch(appShell, /WINDOW_DRAG_EXCLUDED_SELECTOR/);
-  assert.doesNotMatch(appShell, /onPointerDownCapture=\{handleDesktopWindowPointerDown\}/);
+  assert.doesNotMatch(appShell, /SIDEBAR_WINDOW_DRAG_START_THRESHOLD_PX/);
+  assert.doesNotMatch(appShell, /handleSidebarWindowPointerDownCapture/);
+  assert.doesNotMatch(appShell, /onPointerDownCapture=\{handleSidebarWindowPointerDownCapture\}/);
   assert.doesNotMatch(appShell, /window\.electronAPI\.windowDrag\.begin/);
   assert.doesNotMatch(contracts, /windowDrag:\s*\{/);
   assert.doesNotMatch(preload, /windowDrag:\s*\{/);
@@ -2845,6 +2847,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(contracts, /getServiceWebviewPreloadUrl:\s*\(\) => Promise<string>/);
   assert.match(contracts, /desktopDialog:[\s\S]{0,120}selectDirectory:\s*\(\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
   assert.match(contracts, /desktopShell:[\s\S]{0,120}openPath:\s*\(targetPath: string\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
+  assert.match(contracts, /desktopShell:[\s\S]{0,220}moveWindowBy:\s*\(delta: \{ x: number; y: number \}\) => Promise<\{ ok: boolean; message\?: string \}>/);
   assert.match(contracts, /desktopDownloads:[\s\S]{0,220}saveFile:\s*\(input: \{[\s\S]{0,160}dataBase64\?: string;[\s\S]{0,120}\}\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
   assert.match(globalStyles, /\.embedded-plugin-error\s*\{/);
 });
@@ -3209,7 +3212,10 @@ test("desktop pet appearance picker confirms persistence before success feedback
   assert.match(settingsPage, /nextState\.appearanceId === appearanceId/);
   assert.match(settingsPage, /settings\.desktopPet\.noticeAppearanceFailed/);
   assert.match(settingsPage, /desktop-pet-appearance-list/);
-  assert.match(settingsPage, /disabled=\{selected \|\| Boolean\(desktopPetAppearancePending\)\}/);
+  assert.match(settingsPage, /aria-disabled=\{!desktopPetEnabled\}/);
+  assert.match(settingsPage, /disabled=\{!desktopPetEnabled \|\| selected \|\| Boolean\(desktopPetAppearancePending\)\}/);
+  assert.match(settingsPage, /let actionLabel = t\("settings\.desktopPet\.select"\)/);
+  assert.match(settingsPage, /actionLabel = desktopPetEnabled \? t\("settings\.desktopPet\.selected"\) : t\("settings\.desktopPet\.saved"\)/);
   assert.doesNotMatch(settingsPage, /disabled=\{Boolean\(desktopPetAppearancePending\) && !selected\}/);
   assert.doesNotMatch(settingsPage, /\?\?\s*"小宅"/);
 });

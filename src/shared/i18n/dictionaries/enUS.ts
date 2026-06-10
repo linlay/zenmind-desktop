@@ -346,6 +346,7 @@ export const enUSMessages = {
   "settings.desktopPet.selectedAppearance": "Selected: {name}",
   "settings.desktopPet.select": "Select",
   "settings.desktopPet.selected": "Selected",
+  "settings.desktopPet.saved": "Saved",
   "settings.desktopPet.currentAppearance": "Current: {name}",
   "settings.desktopPet.switching": "Switching...",
   "settings.desktopPet.selectAgent": "Select agent",

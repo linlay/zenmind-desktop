@@ -1901,12 +1901,25 @@ export function SettingsPage({
                     <span aria-hidden="true" />
                   </button>
                 </div>
-                <div className="settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list" aria-label={t("settings.desktopPet.appearance")}>
+                <div
+                  className={desktopPetEnabled
+                    ? "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list"
+                    : "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list is-disabled"}
+                  aria-label={t("settings.desktopPet.appearance")}
+                  aria-disabled={!desktopPetEnabled}
+                >
                   {desktopPetAppearanceOptions.map((appearance) => {
                     const selected = appearance.id === currentDesktopPetAppearanceId;
                     const pending = desktopPetAppearancePending === appearance.id;
                     const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
                     const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
+                    let actionLabel = t("settings.desktopPet.select");
+                    if (selected) {
+                      actionLabel = desktopPetEnabled ? t("settings.desktopPet.selected") : t("settings.desktopPet.saved");
+                    }
+                    if (pending) {
+                      actionLabel = t("settings.desktopPet.switching");
+                    }
                     return (
                       <div className="settings-pet-appearance-row desktop-pet-appearance-row" key={appearance.id}>
                         <span className="desktop-pet-appearance-preview" aria-hidden="true">
@@ -1920,10 +1933,10 @@ export function SettingsPage({
                           type="button"
                           className={selected ? "desktop-pet-appearance-select is-selected" : "desktop-pet-appearance-select"}
                           aria-pressed={selected}
-                          disabled={selected || Boolean(desktopPetAppearancePending)}
+                          disabled={!desktopPetEnabled || selected || Boolean(desktopPetAppearancePending)}
                           onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
                         >
-                          {pending ? t("settings.desktopPet.switching") : selected ? t("settings.desktopPet.selected") : t("settings.desktopPet.select")}
+                          {actionLabel}
                         </button>
                       </div>
                     );

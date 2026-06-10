@@ -63,7 +63,8 @@ const api: DesktopApi = {
     selectDirectory: () => ipcRenderer.invoke("desktopDialog.selectDirectory")
   },
   desktopShell: {
-    openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath)
+    openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath),
+    moveWindowBy: (delta: { x: number; y: number }) => ipcRenderer.invoke("desktopShell.moveWindowBy", delta)
   },
   desktopDownloads: {
     saveFile: (input) => ipcRenderer.invoke("desktopDownloads.saveFile", input)

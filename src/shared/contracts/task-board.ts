@@ -109,8 +109,86 @@ export interface TaskBoardProjectBinding {
   controlMode: "dispatch" | "observe" | "disabled";
   status: "active" | "paused" | "error";
   lastRemoteRevision: number;
+  syncSinceAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TaskBoardProjectBindingIssue {
+  bindingId: string;
+  issueId: string;
+  source?: "select" | "dispatch" | "desktop_sync";
+  createdAt?: string;
+}
+
+export interface TaskBoardDispatchBindingContext {
+  id: string;
+  localProjectId: string;
+  localDisplayName?: string;
+}
+
+export interface TaskBoardIssueSyncUpsert {
+  localIssueId: string;
+  remoteIssueId?: string | null;
+  baseIssueRevision?: number;
+  input: Record<string, unknown>;
+}
+
+export interface TaskBoardIssueSyncDelete {
+  localIssueId: string;
+  remoteIssueId: string;
+  baseIssueRevision?: number;
+}
+
+export interface TaskBoardIssueSyncRequest {
+  deviceId: string;
+  projectId: string;
+  localProjectId: string;
+  baseRevision?: number;
+  upserts?: TaskBoardIssueSyncUpsert[];
+  deletes?: TaskBoardIssueSyncDelete[];
+}
+
+export type TaskBoardIssueSyncItemStatus =
+  | "created"
+  | "updated"
+  | "deleted"
+  | "conflict"
+  | "skipped"
+  | "error";
+
+export interface TaskBoardIssueSyncItemResult {
+  localIssueId: string;
+  remoteIssueId?: string;
+  status: TaskBoardIssueSyncItemStatus;
+  issue?: Record<string, unknown>;
+  message?: string;
+}
+
+export interface TaskBoardIssueSyncResult {
+  ok: boolean;
+  message?: string;
+  boardId?: string;
+  projectId?: string;
+  revision?: number;
+  results: TaskBoardIssueSyncItemResult[];
+}
+
+export interface TaskBoardCreateLocalProjectRequest {
+  name: string;
+  localProjectId?: string;
+  cloudProjectId?: string;
+}
+
+export interface TaskBoardCreateLocalProjectResult {
+  ok: boolean;
+  message?: string;
+  project?: {
+    id: string;
+    name: string;
+    slug?: string;
+    path?: string;
+  };
 }
 
 export interface TaskBoardIssueInput {
@@ -179,6 +257,7 @@ export interface TaskBoardListResult {
   issues: TaskBoardIssue[];
   projects?: TaskBoardProject[];
   projectBindings?: TaskBoardProjectBinding[];
+  projectBindingIssues?: TaskBoardProjectBindingIssue[];
   storagePath?: string;
   boardId?: string;
   projectId?: string;
