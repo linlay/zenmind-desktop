@@ -294,7 +294,7 @@ function composeTransparentAppIcon(originalCanvas, backgroundlessCanvas) {
   return originalCanvas.toBuffer("image/png");
 }
 
-async function renderAppIconToPng(svg, size) {
+async function renderTransparentAppIconToPng(svg, size) {
   const backgroundless = removeRootWhiteBackground(svg);
   if (!backgroundless.removed) {
     return renderSvgToPng(svg, size);
@@ -453,7 +453,7 @@ async function main() {
 
   const renderedAppPngs = new Map();
   for (const size of pngSizes) {
-    const png = await renderAppIconToPng(appIconSvg, size);
+    const png = await renderSvgToPng(appIconSvg, size);
     renderedAppPngs.set(size, png);
     writeFileIfChanged(path.join(buildIconsDir, `icon-${size}.png`), png);
   }
@@ -468,15 +468,17 @@ async function main() {
     fs.rmSync(iconsetDir, { recursive: true, force: true });
     fs.mkdirSync(iconsetDir, { recursive: true });
     for (const [filename, size] of iconsetEntries) {
-      const png = renderedAppPngs.get(size) ?? (await renderAppIconToPng(appIconSvg, size));
+      const png = renderedAppPngs.get(size) ?? (await renderSvgToPng(appIconSvg, size));
       writeFileIfChanged(path.join(iconsetDir, filename), png);
     }
     warnSkippedMacIcns();
   }
 
+  const renderedTransparentAppPngs = new Map();
   const icoPngEntries = [];
   for (const size of icoSizes) {
-    const png = renderedAppPngs.get(size) ?? (await renderAppIconToPng(appIconSvg, size));
+    const png = renderedTransparentAppPngs.get(size) ?? (await renderTransparentAppIconToPng(appIconSvg, size));
+    renderedTransparentAppPngs.set(size, png);
     icoPngEntries.push({ size, png });
   }
   writeFileIfChanged(path.join(buildIconsDir, "icon.ico"), createIco(icoPngEntries));
