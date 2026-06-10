@@ -1907,19 +1907,6 @@
   display: none;
 }
 
-.app-shell.is-mac-platform.is-sidebar-collapsed .app-sidebar-resizer {
-  flex: 0 0 0;
-  width: 0;
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.app-shell.is-mac-platform.is-sidebar-collapsed .app-sidebar-resizer .app-sidebar-resizer-line {
-  display: none;
-}
-
 .app-sidebar.is-collapsed .sidebar-nav {
   align-items: center;
   gap: 4px;
@@ -2896,6 +2883,36 @@
   height: 100%;
   margin: 0;
   overflow: hidden;
+}
+
+.app-shell.is-mac-platform .pan-page-embedded.pan-page-agent-webclient {
+  padding-top: 36px;
+}
+
+.app-shell.is-windows-platform .pan-page-embedded.pan-page-agent-webclient {
+  padding-top: 44px;
+}
+
+.app-shell.is-mac-platform .pan-page-embedded.pan-page-agent-webclient::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
+.app-shell.is-windows-platform .pan-page-embedded.pan-page-agent-webclient::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 138px;
+  height: 44px;
+  app-region: drag;
+  -webkit-app-region: drag;
 }
 
 /* ── 悬浮返回按钮样式 ── */

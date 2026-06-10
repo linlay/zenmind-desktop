@@ -1542,7 +1542,14 @@ export function PluginPage({
   }
 
   return (
-    <section className="pan-page pan-page-embedded" {...surfaceVisibilityProps}>
+    <section
+      className={[
+        "pan-page",
+        "pan-page-embedded",
+        service.id === "agent-webclient" ? "pan-page-agent-webclient" : ""
+      ].filter(Boolean).join(" ")}
+      {...surfaceVisibilityProps}
+    >
       <div className="pan-drag-region" aria-hidden="true" />
       {active && pluginId !== "agent-webclient" && (
         <button

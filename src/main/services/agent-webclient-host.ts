@@ -534,7 +534,8 @@ function writeMissingTargetHttpResponse(
 
 async function issueRouteAccessToken(
   record: AgentWebclientHostRecord,
-  route: ManifestDesktopProxyRoute
+  route: ManifestDesktopProxyRoute,
+  reason: AgentAuthRefreshReason = "missing"
 ) {
   if (route.auth !== "agent-platform-access-token") {
     return { ok: true, token: "", message: "" } satisfies AgentAuthIssueResult;
@@ -546,7 +547,7 @@ async function issueRouteAccessToken(
       message: "desktop access token issuer unavailable"
     } satisfies AgentAuthIssueResult;
   }
-  return record.issueAccessToken("missing");
+  return record.issueAccessToken(reason);
 }
 
 async function resolveHttpRouteAccessToken(
@@ -558,6 +559,14 @@ async function resolveHttpRouteAccessToken(
     return null;
   }
   const tokenResult = await issueRouteAccessToken(record, route);
+  return tokenResult.ok && tokenResult.token.trim() ? tokenResult.token.trim() : null;
+}
+
+async function refreshHttpRouteAccessToken(
+  record: AgentWebclientHostRecord,
+  route: ManifestDesktopProxyRoute
+) {
+  const tokenResult = await issueRouteAccessToken(record, route, "unauthorized");
   return tokenResult.ok && tokenResult.token.trim() ? tokenResult.token.trim() : null;
 }
 
@@ -625,14 +634,18 @@ async function proxyHttpRequest(
   const client = upstreamUrl.protocol === "https:" ? https : http;
   const sseRequest = isSseProxyRequest(route, req.url);
   const accessToken = await resolveHttpRouteAccessToken(record, route, req);
-  if (route.auth === "agent-platform-access-token" && !accessToken && !getHeaderValue(req.headers, "authorization").trim()) {
+  const requestHasAuthorization = Boolean(getHeaderValue(req.headers, "authorization").trim());
+  if (route.auth === "agent-platform-access-token" && !accessToken && !requestHasAuthorization) {
     writeHttpTokenIssueFailure(record, req, res, route);
     return;
   }
-  const proxyReq = client.request(upstreamUrl, {
-    method: req.method,
-    headers: getProxyRequestHeaders(req, target, { sseRequest, accessToken })
-  }, (proxyRes) => {
+  const canRetryUnauthorized =
+    route.auth === "agent-platform-access-token" &&
+    Boolean(accessToken) &&
+    !requestHasAuthorization &&
+    (req.method === "GET" || req.method === "HEAD");
+
+  const forwardResponse = (proxyRes: http.IncomingMessage) => {
     const headers = { ...proxyRes.headers };
     if (
       sseRequest &&
@@ -652,12 +665,42 @@ async function proxyHttpRequest(
       return;
     }
     proxyRes.pipe(res);
-  });
+  };
 
-  proxyReq.on("error", (error) => {
-    handleProxyError(record, error, req, res);
-  });
-  req.pipe(proxyReq);
+  const send = (token: string | null | undefined, allowUnauthorizedRetry: boolean) => {
+    const proxyReq = client.request(upstreamUrl, {
+      method: req.method,
+      headers: getProxyRequestHeaders(req, target, { sseRequest, accessToken: token })
+    }, (proxyRes) => {
+      if (allowUnauthorizedRetry && proxyRes.statusCode === 401) {
+        void refreshHttpRouteAccessToken(record, route)
+          .then((nextToken) => {
+            if (nextToken) {
+              proxyRes.resume();
+              send(nextToken, false);
+              return;
+            }
+            forwardResponse(proxyRes);
+          })
+          .catch(() => {
+            forwardResponse(proxyRes);
+          });
+        return;
+      }
+      forwardResponse(proxyRes);
+    });
+
+    proxyReq.on("error", (error) => {
+      handleProxyError(record, error, req, res);
+    });
+    if (req.method === "GET" || req.method === "HEAD") {
+      proxyReq.end();
+      return;
+    }
+    req.pipe(proxyReq);
+  };
+
+  send(accessToken, canRetryUnauthorized);
 }
 
 function targetPort(target: URL) {

@@ -119,6 +119,29 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
     }
   });
 
+  ipcMain.handle("desktopShell.moveWindowBy", async (event: IpcMainInvokeEvent, delta: unknown) => {
+    try {
+      const input = delta && typeof delta === "object" ? delta as Record<string, unknown> : {};
+      const x = Number(input.x);
+      const y = Number(input.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return { ok: false as const, message: "invalid_delta" };
+      }
+      const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+      if (!ownerWindow || ownerWindow.isDestroyed() || ownerWindow.isFullScreen()) {
+        return { ok: false as const, message: "window_unavailable" };
+      }
+      const [currentX, currentY] = ownerWindow.getPosition();
+      ownerWindow.setPosition(currentX + Math.round(x), currentY + Math.round(y));
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+
   ipcMain.handle("clipboard.writeText", async (_event: IpcMainInvokeEvent, text: string) => {
     try {
       clipboard.writeText(String(text ?? ""));

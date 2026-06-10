@@ -19,6 +19,7 @@ import {
   type WebContents,
 } from "electron";
 import { issueAgentAccessToken } from "./agent-auth";
+import { createAppPairingPayload } from "./app-pairing";
 import { getPanAuthStatus, importPanPrivateKey } from "./pan-auth";
 import {
   completeDesktopSsoBrowserLogin,
@@ -2045,7 +2046,8 @@ function registerIpcHandlers(context: MainProcessContext) {
     getAppInfo: () => desktopAppInfo,
     buildApplicationMenu,
     refreshTrayContextMenu: () => appTrayController.refreshContextMenu(),
-    emitLocaleChanged
+    emitLocaleChanged,
+    createAppPairingPayload
   }));
 }
 

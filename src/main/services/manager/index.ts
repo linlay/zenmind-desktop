@@ -1491,6 +1491,28 @@ async function syncAgentWebclientPlatformUrls(
   syncAgentWebclientPlatformUrlsToPort(env, updates, platformPort, [], options);
 }
 
+async function syncZenmindAppServerAPUpstream(
+  app: App,
+  env: Map<string, string>,
+  updates: Map<string, string>
+) {
+  const webclientPort = await getServicePortForEnvSync(app, "agent-webclient");
+  if (!webclientPort) {
+    return;
+  }
+  const upstreamBaseURL = `http://127.0.0.1:${webclientPort}`;
+  const upstreamWSURL = `${upstreamBaseURL}/ws`;
+  if (getEnvValueWithUpdates(env, updates, "AP_UPSTREAM_BASE_URL") !== upstreamBaseURL) {
+    updates.set("AP_UPSTREAM_BASE_URL", upstreamBaseURL);
+  }
+  if (getEnvValueWithUpdates(env, updates, "CHAT_WS_UPSTREAM_URL") !== upstreamWSURL) {
+    updates.set("CHAT_WS_UPSTREAM_URL", upstreamWSURL);
+  }
+  if (getEnvValueWithUpdates(env, updates, "AP_UPSTREAM_ACCESS_TOKEN")) {
+    updates.set("AP_UPSTREAM_ACCESS_TOKEN", "");
+  }
+}
+
 async function syncCoreServiceDesktopInitializationConfig(app: App, service: ServiceDefinition, layout: ServiceLayout) {
   if (service.id === "agent-container-hub") {
     ensureAgentContainerHubDesktopConfig(layout);
@@ -1522,6 +1544,7 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
 
   if (service.id === "zenmind-app-server") {
     syncZenmindAppServerDesktopEnv(layout, content, updates);
+    await syncZenmindAppServerAPUpstream(app, env, updates);
   }
 
   if (service.id === "agent-platform") {
@@ -1863,6 +1886,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     const updates = new Map<string, string>();
     syncCoreServiceDefaultPortEnv(service, env, updates, { force: true });
     syncZenmindAppServerDesktopEnv(layout, content, updates);
+    await syncZenmindAppServerAPUpstream(app, env, updates);
     if (updates.size > 0) {
       writeEnvFileUpdates(envPath, updates);
     }

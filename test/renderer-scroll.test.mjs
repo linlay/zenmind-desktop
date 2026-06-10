@@ -190,6 +190,25 @@ test("task board reserves platform titlebar space before rendering its toolbar",
   assert.match(windowsDragRule, /right:\s*138px;/);
 });
 
+test("embedded agent webclient reserves platform titlebar space above webview controls", () => {
+  const macPageRule = readRule(".app-shell.is-mac-platform .pan-page-embedded.pan-page-agent-webclient");
+  const macDragRule = readRule(".app-shell.is-mac-platform .pan-page-embedded.pan-page-agent-webclient::before");
+  const windowsPageRule = readRule(".app-shell.is-windows-platform .pan-page-embedded.pan-page-agent-webclient");
+  const windowsDragRule = readRule(".app-shell.is-windows-platform .pan-page-embedded.pan-page-agent-webclient::before");
+  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
+
+  assert.match(pluginPage, /service\.id === "agent-webclient" \? "pan-page-agent-webclient" : ""/);
+  assert.match(macPageRule, /padding-top:\s*36px;/);
+  assert.match(macDragRule, /height:\s*36px;/);
+  assert.match(macDragRule, /app-region:\s*drag;/);
+  assert.match(macDragRule, /-webkit-app-region:\s*drag;/);
+  assert.match(windowsPageRule, /padding-top:\s*44px;/);
+  assert.match(windowsDragRule, /height:\s*44px;/);
+  assert.match(windowsDragRule, /right:\s*138px;/);
+  assert.match(windowsDragRule, /app-region:\s*drag;/);
+  assert.match(windowsDragRule, /-webkit-app-region:\s*drag;/);
+});
+
 test("task board columns and cards adapt to the available board width", () => {
   const pageRule = readRule(".task-board-page");
   const columnsRule = readRule(".task-board-columns");

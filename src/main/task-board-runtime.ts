@@ -43,6 +43,12 @@ import {
 } from "./task-board-local-store";
 import { getDesktopConfigRoot } from "./user-paths";
 import {
+  convertLocalProjectIssuesToPrivate,
+  createLocalDesktopProject,
+  findLocalDesktopProject
+} from "./task-board-local-projects";
+import { DesktopCloudSyncEngine } from "./task-board-cloud-sync";
+import {
   KanbanDesktopWsClient,
   type KanbanDesktopConnectionState,
   type KanbanDesktopWsConfig
@@ -330,6 +336,7 @@ function taskBoardIssueFromAutomationPayload(payload: unknown): TaskBoardIssue |
 
 export class TaskBoardRuntime {
   private readonly wsClient: KanbanDesktopWsClient;
+  private readonly cloudSync: DesktopCloudSyncEngine;
   private connectionState: KanbanDesktopConnectionState = "disabled";
 
   constructor(private readonly options: TaskBoardRuntimeOptions) {
@@ -337,7 +344,10 @@ export class TaskBoardRuntime {
       capabilities: [
         "kanban.issue.dispatch",
         "kanban.issue.sync",
+        "desktop.issue.sync",
         "desktop.project.bind",
+        "desktop.project.createLocal",
+        "desktop.project.select",
         "desktop.assistant.listAgents",
         "desktop.assistant.startRun",
         "desktop.automation.sync"
@@ -350,24 +360,25 @@ export class TaskBoardRuntime {
       onStartRun: (request) => this.startRemoteRun(request),
       onAutomationSync: (payload) => this.syncRemoteAutomationPayload(payload),
       onListLocalProjects: () => this.listLocalProjects(),
-      onCreateLocalProject: () => Promise.resolve({
-        ok: false,
-        message: "当前桌面端尚未开放远程创建本地项目。请先在本地创建项目，再从云端绑定。"
-      }),
-      onBindProject: (payload) => Promise.resolve({
-        ok: true,
-        message: "本地项目绑定请求已确认。",
-        payload
-      }),
-      onUnbindProject: (payload) => Promise.resolve({
-        ok: true,
-        message: "本地项目解绑请求已确认。",
-        payload
-      }),
+      onCreateLocalProject: (payload) => Promise.resolve(this.createLocalProject(payload)),
+      onBindProject: (payload) => Promise.resolve(this.bindLocalProject(payload)),
+      onUnbindProject: (payload) => Promise.resolve(this.unbindLocalProject(payload)),
+      onConnected: () => {
+        // 重连对账:下行差异已由快照覆盖,上行补 pending 的本地 issue。
+        void this.cloudSync.run();
+      },
       onStateChanged: (state) => {
         this.connectionState = state;
         this.notifyChanged();
       },
+      onDebug: this.options.onDebug
+    });
+    this.cloudSync = new DesktopCloudSyncEngine({
+      app: this.options.app,
+      getCurrentUser: () => this.currentUser(),
+      getDeviceId: () => getDesktopDeviceId(this.options.app),
+      wsClient: this.wsClient,
+      onChanged: () => this.notifyChanged(),
       onDebug: this.options.onDebug
     });
   }
@@ -377,6 +388,7 @@ export class TaskBoardRuntime {
   }
 
   stop() {
+    this.cloudSync.stop();
     this.wsClient.stop();
   }
 
@@ -451,7 +463,12 @@ export class TaskBoardRuntime {
     this.refreshConnection();
     const currentUser = this.currentUser();
     if (input.syncToCloud !== true) {
-      return createPrivateDesktopKanbanIssue(this.options.app, currentUser, input);
+      const result = createPrivateDesktopKanbanIssue(this.options.app, currentUser, input);
+      if (result.ok) {
+        // 新私有 issue 若落在活动绑定的本地项目下,自动触发上行同步
+        void this.cloudSync.run();
+      }
+      return result;
     }
     if (!this.wsClient.isOpen()) {
       return {
@@ -521,7 +538,12 @@ export class TaskBoardRuntime {
           };
         }
       }
-      return updateDesktopKanbanIssue(this.options.app, currentUser, issue.id, input);
+      const localUpdate = updateDesktopKanbanIssue(this.options.app, currentUser, issue.id, input);
+      if (localUpdate.ok) {
+        // 私有 issue 更新后若命中活动绑定,自动触发上行同步
+        void this.cloudSync.run();
+      }
+      return localUpdate;
     }
 
     if (!this.wsClient.isOpen()) {
@@ -790,6 +812,55 @@ export class TaskBoardRuntime {
     const result = upsertDispatchedDesktopKanbanIssue(this.options.app, this.currentUser(), issue, revision, "cloud_dispatch");
     this.notifyChanged();
     return result;
+  }
+
+  // 响应云端 desktop.project.createLocal:在本地真正创建项目。
+  private createLocalProject(payload: unknown) {
+    const record = isRecord(payload) ? payload : {};
+    const result = createLocalDesktopProject(this.options.app, this.currentUser(), {
+      id: readText(record.localProjectId),
+      name: readText(record.name)
+    });
+    if (result.ok) {
+      this.notifyChanged();
+    }
+    return result;
+  }
+
+  // 响应云端 desktop.project.bind:校验本地项目存在并返回项目信息。
+  private bindLocalProject(payload: unknown) {
+    const record = isRecord(payload) ? payload : {};
+    const localProjectId = readText(record.localProjectId);
+    if (!localProjectId) {
+      return { ok: false, message: "缺少本地项目 ID。" };
+    }
+    const project = findLocalDesktopProject(this.options.app, this.currentUser(), localProjectId);
+    if (!project) {
+      return { ok: false, message: "本地项目不存在，请先在桌面端创建。" };
+    }
+    return {
+      ok: true,
+      message: "本地项目绑定已确认。",
+      project: { id: project.id, name: project.name, slug: project.slug, path: project.path }
+    };
+  }
+
+  // 响应云端 desktop.project.unbind:把该本地项目下的 cloud issue 转为 private 保留副本。
+  private unbindLocalProject(payload: unknown) {
+    const record = isRecord(payload) ? payload : {};
+    const localProjectId = readText(record.localProjectId);
+    const converted = localProjectId
+      ? convertLocalProjectIssuesToPrivate(this.options.app, this.currentUser(), localProjectId)
+      : 0;
+    if (converted > 0) {
+      this.notifyChanged();
+    }
+    return {
+      ok: true,
+      message: converted > 0
+        ? `本地项目已解绑，${converted} 个云端任务已转为本地私有任务。`
+        : "本地项目解绑已确认。"
+    };
   }
 
   private async listAgents(): Promise<DesktopPetAgentOption[]> {

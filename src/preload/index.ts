@@ -63,7 +63,8 @@ const api: DesktopApi = {
     selectDirectory: () => ipcRenderer.invoke("desktopDialog.selectDirectory")
   },
   desktopShell: {
-    openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath)
+    openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath),
+    moveWindowBy: (delta: { x: number; y: number }) => ipcRenderer.invoke("desktopShell.moveWindowBy", delta)
   },
   desktopDownloads: {
     saveFile: (input) => ipcRenderer.invoke("desktopDownloads.saveFile", input)
@@ -298,6 +299,7 @@ const api: DesktopApi = {
     getInitialLocale: () => ({ ...initialLocaleSettings }),
     getLocale: () => ipcRenderer.invoke("settings.getLocale"),
     setLocale: (locale) => ipcRenderer.invoke("settings.setLocale", locale),
+    createAppPairingPayload: () => ipcRenderer.invoke("settings.createAppPairingPayload"),
     onLocaleChanged: (listener: LocaleChangedListener) => {
       const handleLocaleChanged = (
         _event: Electron.IpcRendererEvent,

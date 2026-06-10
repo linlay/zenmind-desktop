@@ -50,6 +50,45 @@ test("settings handlers expose data root and platform", async () => {
   assert.equal(await handlers["settings.getPlatform"]({}), "win32");
 });
 
+test("settings.createAppPairingPayload delegates to injected pairing creator", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const payloadResult = {
+    ok: true,
+    payload: {
+      desktopDeviceId: "9d8f4d98-14e6-4af9-b60e-6f949560dbb6",
+      desktopIdentityCreatedAt: "2026-06-01T00:00:00.000Z",
+      desktopUsername: "alice",
+      desktopHostname: "workstation",
+      appServerIssuer: "http://127.0.0.1:7076",
+      appServerPublicKeySha256: "abc123",
+      apiBaseUrl: "http://192.168.1.8:7076",
+      pairingId: "55823d81-647c-4108-a035-cdff249e2e40",
+      secret: "secret",
+      expiresAt: "2026-06-10T10:00:00.000Z"
+    },
+    payloadText: "{}"
+  };
+
+  registerSettingsIpcHandlers(ipc, makeBaseOptions({
+    createAppPairingPayload: async (app) => {
+      assert.equal(app.name, "test-app");
+      return payloadResult;
+    }
+  }));
+
+  assert.deepEqual(await handlers["settings.createAppPairingPayload"]({}), payloadResult);
+});
+
+test("settings.createAppPairingPayload reports unavailable creator", async () => {
+  const { ipc, handlers } = makeMockIpcMain();
+  registerSettingsIpcHandlers(ipc, makeBaseOptions());
+
+  assert.deepEqual(await handlers["settings.createAppPairingPayload"]({}), {
+    ok: false,
+    message: "App 配对功能不可用。"
+  });
+});
+
 test("settings.resetRuntimeEnv returns structured success details", async () => {
   const { ipc, handlers } = makeMockIpcMain();
   const calls = [];

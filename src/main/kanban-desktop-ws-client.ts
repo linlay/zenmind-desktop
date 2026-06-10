@@ -69,6 +69,7 @@ export type KanbanDesktopWsClientOptions = {
   onCreateLocalProject: (payload: unknown) => Promise<unknown>;
   onBindProject: (payload: unknown) => Promise<unknown>;
   onUnbindProject: (payload: unknown) => Promise<unknown>;
+  onConnected?: () => void;
   onStateChanged?: (state: KanbanDesktopConnectionState) => void;
   onDebug?: (message: string) => void;
 };
@@ -223,7 +224,27 @@ export class KanbanDesktopWsClient {
     if (this.ws && previousUrl === nextUrl && previousProjectId === normalizedConfig.selectedProjectId) {
       return;
     }
+    if (
+      this.ws &&
+      previousUrl === nextUrl &&
+      previousProjectId !== normalizedConfig.selectedProjectId &&
+      this.state === "open"
+    ) {
+      // 仅项目变化且连接已打开:走轻量 desktop.project.select,避免整条 WS 重连。
+      void this.selectProject(normalizedConfig.selectedProjectId);
+      return;
+    }
     this.connect();
+  }
+
+  private async selectProject(selectedProjectId: string) {
+    try {
+      await this.request("desktop.project.select", { selectedProjectId });
+      this.options.onDebug?.(`云端看板已切换项目：${selectedProjectId}`);
+    } catch (error) {
+      this.options.onDebug?.(`云端看板项目切换失败，回落重连：${errorMessage(error)}`);
+      this.connect();
+    }
   }
 
   stop() {
@@ -353,6 +374,7 @@ export class KanbanDesktopWsClient {
         projectId: this.config?.selectedProjectId ?? "default"
       });
       this.options.onSnapshot(snapshot);
+      this.options.onConnected?.();
     } catch (error) {
       this.options.onDebug?.(errorMessage(error));
     }

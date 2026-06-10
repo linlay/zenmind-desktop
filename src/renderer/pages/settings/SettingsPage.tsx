@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
+import { QRCode } from "antd";
 import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import "./SettingsPage.css";
@@ -13,6 +14,7 @@ import type {
   AssistantNavAgentItem,
   AssistantSettingsPublic,
   CustomSidebarItem,
+  DesktopAppPairingPayloadResult,
   DesktopAppInfo,
   DesktopPetAgentOption,
   DesktopPetState,
@@ -112,6 +114,19 @@ function sortTaskBoardProjectOptions(projects: TaskBoardProject[]) {
       const rightLabel = right.path || right.name || right.id;
       return leftLabel.localeCompare(rightLabel, "zh-Hans-CN");
     });
+}
+
+function formatPairingExpiresAt(value: string, locale: SupportedLocale) {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(locale, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(timestamp);
 }
 
 function ThemePreferenceIcon({ themeMode }: { themeMode: ThemePreference }) {
@@ -582,6 +597,8 @@ export function SettingsPage({
   const [tunnelHubAgentToken, setTunnelHubAgentToken] = useState("");
   const [tunnelHubClearToken, setTunnelHubClearToken] = useState(false);
   const [tunnelHubSaving, setTunnelHubSaving] = useState(false);
+  const [appPairingPending, setAppPairingPending] = useState(false);
+  const [appPairingResult, setAppPairingResult] = useState<DesktopAppPairingPayloadResult | null>(null);
   const [runtimeResetPending, setRuntimeResetPending] = useState(false);
   const [runtimeResetResult, setRuntimeResetResult] = useState<DesktopRuntimeEnvResetResult | null>(null);
   const desktopPetSupported = isMac || isWindows;
@@ -1846,6 +1863,35 @@ export function SettingsPage({
     }
   }
 
+  async function handleCreateAppPairingPayload() {
+    setAppPairingPending(true);
+    try {
+      const result = await window.electronAPI.settings.createAppPairingPayload();
+      setAppPairingResult(result);
+      if (!result.ok) {
+        showSectionNotice("control", result.message || t("settings.mobilePairing.failed"), "error");
+        return;
+      }
+      setReadErrorSections(["control"], "");
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setAppPairingResult({ ok: false, message });
+      showSectionNotice("control", message, "error");
+    } finally {
+      setAppPairingPending(false);
+    }
+  }
+
+  async function handleCopyAppPairingPayload() {
+    if (!appPairingResult?.ok) {
+      return;
+    }
+    const result = await window.electronAPI.clipboard.writeText(appPairingResult.payloadText);
+    if (!result.ok) {
+      showSectionNotice("control", result.message || t("settings.mobilePairing.copyFailed"), "error");
+    }
+  }
+
   async function handleResetRuntimeEnv() {
     if (!window.confirm(t("settings.reset.confirmMessage"))) {
       return;
@@ -1946,12 +1992,25 @@ export function SettingsPage({
                     <span aria-hidden="true" />
                   </button>
                 </div>
-                <div className="settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list" aria-label={t("settings.desktopPet.appearance")}>
+                <div
+                  className={desktopPetEnabled
+                    ? "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list"
+                    : "settings-item-list settings-pet-appearance-panel desktop-pet-appearance-list is-disabled"}
+                  aria-label={t("settings.desktopPet.appearance")}
+                  aria-disabled={!desktopPetEnabled}
+                >
                   {desktopPetAppearanceOptions.map((appearance) => {
                     const selected = appearance.id === currentDesktopPetAppearanceId;
                     const pending = desktopPetAppearancePending === appearance.id;
                     const appearanceLabel = getDesktopPetAppearanceLabel(appearance.id, appearance.displayName, t);
                     const appearanceDescription = getDesktopPetAppearanceDescription(appearance.id, appearance.description, t);
+                    let actionLabel = t("settings.desktopPet.select");
+                    if (selected) {
+                      actionLabel = desktopPetEnabled ? t("settings.desktopPet.selected") : t("settings.desktopPet.saved");
+                    }
+                    if (pending) {
+                      actionLabel = t("settings.desktopPet.switching");
+                    }
                     return (
                       <div className="settings-pet-appearance-row desktop-pet-appearance-row" key={appearance.id}>
                         <span className="desktop-pet-appearance-preview" aria-hidden="true">
@@ -1965,10 +2024,10 @@ export function SettingsPage({
                           type="button"
                           className={selected ? "desktop-pet-appearance-select is-selected" : "desktop-pet-appearance-select"}
                           aria-pressed={selected}
-                          disabled={selected || Boolean(desktopPetAppearancePending)}
+                          disabled={!desktopPetEnabled || selected || Boolean(desktopPetAppearancePending)}
                           onClick={() => void handleSelectDesktopPetAppearance(appearance.id)}
                         >
-                          {pending ? t("settings.desktopPet.switching") : selected ? t("settings.desktopPet.selected") : t("settings.desktopPet.select")}
+                          {actionLabel}
                         </button>
                       </div>
                     );
@@ -2007,103 +2066,166 @@ export function SettingsPage({
             ) : null}
           </>
         );
-      case "control":
+      case "control": {
+        const pairingPayloadResult = appPairingResult?.ok ? appPairingResult : null;
+        const pairingErrorMessage = appPairingResult && !appPairingResult.ok ? appPairingResult.message : "";
         return (
-          <div className="settings-item-card settings-control-card" aria-label={t("settings.control.panelAria")}>
-            <div className="settings-item-header settings-control-permission-row">
-              <span className="settings-control-app-icon" aria-hidden="true">
-                <span />
-              </span>
-              <div className="settings-appearance-row-copy">
-                <strong>{t("settings.control.remoteControlEnabled")}</strong>
-                <span>{t("settings.control.remoteControlDescription")}</span>
-                <em>
-                  {controlCloudConfig.remoteControlEnabled
-                    ? t("settings.control.remoteControlOn")
-                    : t("settings.control.remoteControlOff")}
-                </em>
-              </div>
-              <button
-                type="button"
-                className={controlCloudConfig.remoteControlEnabled ? "settings-switch is-on" : "settings-switch"}
-                role="switch"
-                aria-checked={controlCloudConfig.remoteControlEnabled}
-                aria-label={t("settings.control.remoteControlEnabled")}
-                disabled={controlConfigSaving}
-                onClick={() => void handleToggleControlRemoteControl()}
-              >
-                <span aria-hidden="true" />
-              </button>
-            </div>
-            <div className="settings-item-section-head custom-sidebar-list-head">
-              <div>
-                <strong>{t("settings.control.statusTitle")}</strong>
-                <span>{getControlConnectionLabel(controlConnectionState)}</span>
-              </div>
-            </div>
-            <div className="settings-control-summary">
-              {t("settings.control.onlineSummary", {
-                devices: controlOnlineSummary.deviceCount,
-                sessions: controlOnlineSummary.sessionCount,
-                agents: controlOnlineSummary.agentCount
-              })}
-            </div>
-            <form className="settings-control-form" onSubmit={(event) => void handleSaveControlCloudConfig(event)}>
-              <label className="settings-control-field">
-                <span>{t("taskBoard.cloud.serverUrl")}</span>
-                <input
-                  value={controlCloudConfig.serverUrl}
-                  onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
-                  placeholder="http://127.0.0.1:8080"
-                />
-              </label>
-              <label className="settings-control-field">
-                <span>{t("taskBoard.cloud.token")}</span>
-                <input
-                  value={controlCloudConfig.token}
-                  onChange={(event) => setControlCloudConfig((current) => ({ ...current, token: event.target.value }))}
-                  placeholder={t("taskBoard.cloud.tokenPlaceholder")}
-                />
-              </label>
-              <label className="settings-control-field">
-                <span>{t("taskBoard.cloud.projectId")}</span>
-                {controlProjectOptions.length > 0 ? (
-                  <select
-                    value={controlCloudConfig.selectedProjectId}
-                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
-                  >
-                    {selectedControlProjectMissing ? (
-                      <option value={controlCloudConfig.selectedProjectId}>
-                        {t("taskBoard.cloud.currentProject", { id: controlCloudConfig.selectedProjectId })}
-                      </option>
-                    ) : null}
-                    {controlProjectOptions.map((project) => (
-                      <option value={project.id} key={project.id}>
-                        {getTaskBoardProjectOptionLabel(project)}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    value={controlCloudConfig.selectedProjectId}
-                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
-                    placeholder="default"
-                  />
-                )}
-                <small>
-                  {controlProjectOptions.length > 0
-                    ? t("taskBoard.cloud.projectSelectHelp", { count: controlProjectOptions.length })
-                    : t("taskBoard.cloud.projectFallbackHelp")}
-                </small>
-              </label>
-              <div className="settings-control-actions">
-                <button type="submit" className="settings-control-primary-button" disabled={controlConfigSaving}>
-                  {controlConfigSaving ? t("settings.control.saving") : t("settings.control.save")}
+          <>
+            <div className="settings-item-card settings-control-card" aria-label={t("settings.control.panelAria")}>
+              <div className="settings-item-header settings-control-permission-row">
+                <span className="settings-control-app-icon" aria-hidden="true">
+                  <span />
+                </span>
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.control.remoteControlEnabled")}</strong>
+                  <span>{t("settings.control.remoteControlDescription")}</span>
+                  <em>
+                    {controlCloudConfig.remoteControlEnabled
+                      ? t("settings.control.remoteControlOn")
+                      : t("settings.control.remoteControlOff")}
+                  </em>
+                </div>
+                <button
+                  type="button"
+                  className={controlCloudConfig.remoteControlEnabled ? "settings-switch is-on" : "settings-switch"}
+                  role="switch"
+                  aria-checked={controlCloudConfig.remoteControlEnabled}
+                  aria-label={t("settings.control.remoteControlEnabled")}
+                  disabled={controlConfigSaving}
+                  onClick={() => void handleToggleControlRemoteControl()}
+                >
+                  <span aria-hidden="true" />
                 </button>
               </div>
-            </form>
-          </div>
+              <div className="settings-item-section-head custom-sidebar-list-head">
+                <div>
+                  <strong>{t("settings.control.statusTitle")}</strong>
+                  <span>{getControlConnectionLabel(controlConnectionState)}</span>
+                </div>
+              </div>
+              <div className="settings-control-summary">
+                {t("settings.control.onlineSummary", {
+                  devices: controlOnlineSummary.deviceCount,
+                  sessions: controlOnlineSummary.sessionCount,
+                  agents: controlOnlineSummary.agentCount
+                })}
+              </div>
+              <form className="settings-control-form" onSubmit={(event) => void handleSaveControlCloudConfig(event)}>
+                <label className="settings-control-field">
+                  <span>{t("taskBoard.cloud.serverUrl")}</span>
+                  <input
+                    value={controlCloudConfig.serverUrl}
+                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
+                    placeholder="http://127.0.0.1:8080"
+                  />
+                </label>
+                <label className="settings-control-field">
+                  <span>{t("taskBoard.cloud.token")}</span>
+                  <input
+                    value={controlCloudConfig.token}
+                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, token: event.target.value }))}
+                    placeholder={t("taskBoard.cloud.tokenPlaceholder")}
+                  />
+                </label>
+                <label className="settings-control-field">
+                  <span>{t("taskBoard.cloud.projectId")}</span>
+                  {controlProjectOptions.length > 0 ? (
+                    <select
+                      value={controlCloudConfig.selectedProjectId}
+                      onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
+                    >
+                      {selectedControlProjectMissing ? (
+                        <option value={controlCloudConfig.selectedProjectId}>
+                          {t("taskBoard.cloud.currentProject", { id: controlCloudConfig.selectedProjectId })}
+                        </option>
+                      ) : null}
+                      {controlProjectOptions.map((project) => (
+                        <option value={project.id} key={project.id}>
+                          {getTaskBoardProjectOptionLabel(project)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={controlCloudConfig.selectedProjectId}
+                      onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
+                      placeholder="default"
+                    />
+                  )}
+                  <small>
+                    {controlProjectOptions.length > 0
+                      ? t("taskBoard.cloud.projectSelectHelp", { count: controlProjectOptions.length })
+                      : t("taskBoard.cloud.projectFallbackHelp")}
+                  </small>
+                </label>
+                <div className="settings-control-actions">
+                  <button type="submit" className="settings-control-primary-button" disabled={controlConfigSaving}>
+                    {controlConfigSaving ? t("settings.control.saving") : t("settings.control.save")}
+                  </button>
+                </div>
+              </form>
+            </div>
+            <div className="settings-item-card settings-mobile-pairing-card">
+              <div className="settings-item-header settings-mobile-pairing-header">
+                <div className="settings-appearance-row-copy">
+                  <strong>{t("settings.mobilePairing.title")}</strong>
+                  <span>{t("settings.mobilePairing.description")}</span>
+                </div>
+                <button
+                  type="button"
+                  className="settings-control-primary-button"
+                  disabled={appPairingPending}
+                  onClick={() => void handleCreateAppPairingPayload()}
+                >
+                  {appPairingPending ? t("settings.mobilePairing.generating") : t("settings.mobilePairing.action")}
+                </button>
+              </div>
+              {pairingErrorMessage ? (
+                <div className="settings-item-empty settings-mobile-pairing-error" role="alert">
+                  {pairingErrorMessage}
+                </div>
+              ) : null}
+              {pairingPayloadResult ? (
+                <div className="settings-mobile-pairing-body">
+                  <div className="settings-mobile-pairing-qr" aria-label={t("settings.mobilePairing.qrCode")}>
+                    <QRCode
+                      value={pairingPayloadResult.payloadText}
+                      size={196}
+                      bordered={false}
+                      errorLevel="M"
+                    />
+                  </div>
+                  <div className="settings-mobile-pairing-details">
+                    <div className="settings-mobile-pairing-meta">
+                      <span>{t("settings.mobilePairing.apiBaseUrl")}</span>
+                      <code>{pairingPayloadResult.payload.apiBaseUrl}</code>
+                    </div>
+                    <div className="settings-mobile-pairing-meta">
+                      <span>{t("settings.mobilePairing.expiresAt")}</span>
+                      <code>{formatPairingExpiresAt(pairingPayloadResult.payload.expiresAt, locale)}</code>
+                    </div>
+                    <label className="settings-mobile-pairing-payload">
+                      <span>{t("settings.mobilePairing.payload")}</span>
+                      <textarea value={pairingPayloadResult.payloadText} readOnly spellCheck={false} />
+                    </label>
+                    <div className="settings-control-actions">
+                      <button
+                        type="button"
+                        className="settings-control-primary-button"
+                        onClick={() => void handleCopyAppPairingPayload()}
+                      >
+                        {t("settings.mobilePairing.copy")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="settings-item-empty">{t("settings.mobilePairing.empty")}</div>
+              )}
+            </div>
+          </>
         );
+      }
       case "tunnelHub":
         return (
           <div className="settings-item-card settings-control-card" aria-label={t("settings.tunnelHub.panelAria")}>

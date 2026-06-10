@@ -98,6 +98,23 @@ export interface DesktopRuntimeEnvResetResult {
   sourceZipPath?: string;
 }
 
+export interface DesktopAppPairingPayload {
+  desktopDeviceId: string;
+  desktopIdentityCreatedAt: string;
+  desktopUsername: string;
+  desktopHostname: string;
+  appServerIssuer: string;
+  appServerPublicKeySha256: string;
+  apiBaseUrl: string;
+  pairingId: string;
+  secret: string;
+  expiresAt: string;
+}
+
+export type DesktopAppPairingPayloadResult =
+  | { ok: true; payload: DesktopAppPairingPayload; payloadText: string }
+  | { ok: false; message: string };
+
 export type NativeDialogVisibilityListener = (state: { open: boolean }) => void;
 export type SandboxImageImportProgressListener = (event: SandboxImageImportProgressEvent) => void;
 export type LocaleChangedListener = (settings: LocaleSettings) => void;
@@ -121,6 +138,7 @@ export interface DesktopApi {
   };
   desktopShell: {
     openPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;
+    moveWindowBy: (delta: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
   };
   desktopDownloads: {
     saveFile: (input: {
@@ -270,6 +288,7 @@ export interface DesktopApi {
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;
     setLocale: (locale: SupportedLocale) => Promise<LocaleSettings>;
+    createAppPairingPayload: () => Promise<DesktopAppPairingPayloadResult>;
     onLocaleChanged: (listener: LocaleChangedListener) => () => void;
   };
   desktopActions: {

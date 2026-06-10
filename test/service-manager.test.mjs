@@ -4224,6 +4224,9 @@ test("initializeService repairs partial zenmind-app-server env with bcrypt defau
       new RegExp(`^AUTH_DB_PATH=${escapeRegExp(path.join(getTestDataDir(userDataRoot, "zenmind-app-server"), "auth.db"))}$`, "m")
     );
     assertAppServerDefaultBcryptEnv(envContent);
+    assert.match(envContent, /^AP_UPSTREAM_BASE_URL=http:\/\/127\.0\.0\.1:\d+$/m);
+    assert.match(envContent, /^CHAT_WS_UPSTREAM_URL=http:\/\/127\.0\.0\.1:\d+\/ws$/m);
+    assert.doesNotMatch(envContent, /^AP_UPSTREAM_ACCESS_TOKEN=.+$/m);
   } finally {
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });

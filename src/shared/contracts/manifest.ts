@@ -217,6 +217,7 @@ export const DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING: ManifestDesktopHosting = {
       path: "/api",
       targetEnv: "BASE_URL",
       websocket: true,
+      auth: "agent-platform-access-token",
       ssePaths: ["/api/query", "/api/attach"],
       disableProxyBuffering: true,
       stripRequestHeaders: ["sec-websocket-extensions"]

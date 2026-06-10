@@ -86,6 +86,7 @@ test("registerShellIpcHandlers registers dialog, path and clipboard handlers", a
 
   assert.ok(handlers["desktopDialog.selectDirectory"], "Should register desktopDialog.selectDirectory");
   assert.ok(handlers["desktopShell.openPath"], "Should register desktopShell.openPath");
+  assert.ok(handlers["desktopShell.moveWindowBy"], "Should register desktopShell.moveWindowBy");
   assert.ok(handlers["clipboard.writeText"], "Should register clipboard.writeText");
 
   // 1. Test selectDirectory success
@@ -135,6 +136,42 @@ test("registerShellIpcHandlers registers dialog, path and clipboard handlers", a
   revealResult = new Error("reveal error");
   const resRevealError = await handlers["desktopShell.openPath"]({}, "/open/path");
   assert.deepEqual(resRevealError, { ok: false, path: "/open/path", message: "reveal error" });
+
+  // 6. Test moveWindowBy moves the sender window only
+  let windowPosition = [100, 200];
+  let nextWindowPosition = null;
+  const mockMovableWindow = {
+    isDestroyed: () => false,
+    isFullScreen: () => false,
+    getPosition: () => windowPosition,
+    setPosition(x, y) {
+      nextWindowPosition = [x, y];
+      windowPosition = [x, y];
+    }
+  };
+  const moveHandlers = {};
+  registerShellIpcHandlers({
+    handle(channel, callback) {
+      moveHandlers[channel] = callback;
+    },
+    on() {}
+  }, {
+    ...mockOptions,
+    platform: "darwin",
+    BrowserWindow: {
+      fromWebContents(sender) {
+        assert.equal(sender, mockSender);
+        return mockMovableWindow;
+      }
+    }
+  });
+  const resMove = await moveHandlers["desktopShell.moveWindowBy"]({ sender: mockSender }, { x: 12.4, y: -7.6 });
+  assert.deepEqual(resMove, { ok: true });
+  assert.deepEqual(nextWindowPosition, [112, 192]);
+
+  const resInvalidMove = await moveHandlers["desktopShell.moveWindowBy"]({ sender: mockSender }, { x: Number.POSITIVE_INFINITY, y: 1 });
+  assert.deepEqual(resInvalidMove, { ok: false, message: "invalid_delta" });
+  assert.deepEqual(nextWindowPosition, [112, 192]);
 
   // 6. Test clipboard success
   const resClip = await handlers["clipboard.writeText"]({}, "hello");
