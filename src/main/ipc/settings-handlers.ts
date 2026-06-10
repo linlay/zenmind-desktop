@@ -16,6 +16,7 @@ export interface SettingsIpcHandlerOptions {
   buildApplicationMenu: () => void;
   refreshTrayContextMenu: () => void;
   emitLocaleChanged: (settings: any) => void;
+  createAppPairingPayload?: (app: any) => Promise<any>;
 }
 
 export function setNativeThemeSource(nativeTheme: { themeSource: string }, themeMode: string) {
@@ -38,7 +39,8 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     setMainLocale,
     buildApplicationMenu,
     refreshTrayContextMenu,
-    emitLocaleChanged
+    emitLocaleChanged,
+    createAppPairingPayload
   } = options;
 
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
@@ -98,5 +100,11 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     refreshTrayContextMenu();
     emitLocaleChanged(settings);
     return settings;
+  });
+  ipcMain.handle("settings.createAppPairingPayload", async () => {
+    if (!createAppPairingPayload) {
+      return { ok: false, message: "App 配对功能不可用。" };
+    }
+    return createAppPairingPayload(app);
   });
 }

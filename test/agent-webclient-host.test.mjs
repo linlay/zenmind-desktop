@@ -180,7 +180,8 @@ test("agent webclient host serves frontend, runtime config, and HTTP proxies", a
         ["BASE_URL", api.url],
         ["PORT", String(port)]
       ]),
-      port
+      port,
+      issueAccessToken: async () => ({ ok: true, token: "desktop-token", message: "" })
     });
 
     assert.match(await readBody(await fetch(`http://127.0.0.1:${port}/`)), /id="root"/);
@@ -320,6 +321,50 @@ test("agent webclient host proxies configured voice routes", async () => {
     await stopAgentWebclientHost();
     await closeServer(api.server);
     await closeServer(voice.server);
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("agent webclient host refreshes injected HTTP access token after upstream unauthorized", async () => {
+  const fixture = createFixture();
+  const port = await getAvailableLocalPort();
+  const issuedReasons = [];
+  const upstreamAuthorizations = [];
+  const api = await listenHttp((req, res) => {
+    upstreamAuthorizations.push(String(req.headers.authorization || ""));
+    if (upstreamAuthorizations.length === 1) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "unauthorized" }));
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, url: req.url }));
+  });
+
+  try {
+    fs.writeFileSync(fixture.layout.envPath, `PORT=${port}\nDESKTOP_APP=true\nBASE_URL=${api.url}\n`, "utf8");
+    await startAgentWebclientHost({
+      service: fixture.service,
+      layout: fixture.layout,
+      env: new Map([["BASE_URL", api.url]]),
+      port,
+      issueAccessToken: async (reason) => {
+        issuedReasons.push(reason);
+        return { ok: true, token: `${reason}-token`, message: "" };
+      }
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat?chatId=c1`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, url: "/api/chat?chatId=c1" });
+    assert.deepEqual(issuedReasons, ["missing", "unauthorized"]);
+    assert.deepEqual(upstreamAuthorizations, [
+      "Bearer missing-token",
+      "Bearer unauthorized-token"
+    ]);
+  } finally {
+    await stopAgentWebclientHost();
+    await closeServer(api.server);
     fs.rmSync(fixture.root, { recursive: true, force: true });
   }
 });
