@@ -29,6 +29,16 @@ export type BundledEnvZipImportResult = EnvZipImportResult & {
   sourceZipPath: string;
 };
 
+export type RuntimeEnvResetResult = BundledEnvZipImportResult & {
+  backupPath?: string;
+};
+
+export type RuntimeEnvResetFailure = Error & {
+  runtimeRoot?: string;
+  backupPath?: string;
+  sourceZipPath?: string;
+};
+
 const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-market"] as const;
 const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-bootstrap.json");
 const BUNDLED_ENV_RESOURCES_DIR_NAME = "env";
@@ -177,6 +187,82 @@ export async function importBundledEnvZipToRuntime(
     ...result,
     sourceZipPath: zipPath
   };
+}
+
+function createRuntimeEnvResetFailure(
+  message: string,
+  metadata: {
+    runtimeRoot?: string;
+    backupPath?: string;
+    sourceZipPath?: string;
+  },
+  cause?: unknown
+): RuntimeEnvResetFailure {
+  const error = new Error(message) as RuntimeEnvResetFailure;
+  error.runtimeRoot = metadata.runtimeRoot;
+  error.backupPath = metadata.backupPath;
+  error.sourceZipPath = metadata.sourceZipPath;
+  if (cause) {
+    (error as RuntimeEnvResetFailure & { cause?: unknown }).cause = cause;
+  }
+  return error;
+}
+
+export async function resetBundledRuntimeEnv(
+  app: AppPathReader & AppPackageReader,
+  platform: NodeJS.Platform = process.platform,
+  options: {
+    resourcesRoot?: string;
+    expectedDesktopVersion?: string;
+    nowSeconds?: number;
+  } = {}
+): Promise<RuntimeEnvResetResult> {
+  let sourceZipPath: string | null = null;
+  if (platform === "darwin") {
+    sourceZipPath = resolveBundledEnvZipPath(app, "darwin", options.resourcesRoot);
+  } else if (platform === "win32") {
+    sourceZipPath = resolveBundledEnvZipPath(app, "win32", options.resourcesRoot);
+  } else {
+    throw createRuntimeEnvResetFailure("当前平台不支持从内置 env.zip 重置运行环境。", {});
+  }
+
+  const runtimeRoot = resolveRuntimeRoot(app, platform);
+  if (!sourceZipPath || !fileExists(sourceZipPath)) {
+    throw createRuntimeEnvResetFailure("安装包内置 env.zip 不存在，无法重置运行环境。", {
+      runtimeRoot,
+      sourceZipPath: sourceZipPath ?? undefined
+    });
+  }
+
+  let backupPath: string | undefined;
+  try {
+    if (fs.existsSync(runtimeRoot)) {
+      if (!fs.statSync(runtimeRoot).isDirectory()) {
+        throw new Error(`运行环境路径不是目录：${runtimeRoot}`);
+      }
+      backupPath = generateBackupDirName(runtimeRoot, platform, options.nowSeconds);
+      migrateOldRootToBackup(platform, runtimeRoot, backupPath);
+    }
+
+    const importResult = await importEnvZipToRuntime(
+      app,
+      sourceZipPath,
+      platform,
+      options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader)
+    );
+    return {
+      ...importResult,
+      backupPath,
+      sourceZipPath
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw createRuntimeEnvResetFailure(`运行环境重置失败：${message}`, {
+      runtimeRoot,
+      backupPath,
+      sourceZipPath
+    }, error);
+  }
 }
 
 function normalizeArchiveEntryName(entryName: string) {

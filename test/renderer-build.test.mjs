@@ -407,6 +407,42 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.service-status-message\.danger\s*\{/);
 });
 
+test("control center internal endpoint opens service frontend entrypoints", () => {
+  const controlCenter = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "control-center", "ControlCenterPage.tsx"),
+    "utf8"
+  );
+
+  assert.match(controlCenter, /function shouldOpenControlCenterEndpointInternally\(/);
+  assert.match(controlCenter, /service\.frontendMode !== "none" \|\| service\.id === "agent-platform"/);
+  assert.match(controlCenter, /function resolveControlCenterEndpoint\(/);
+  assert.match(controlCenter, /service\.id === "zenmind-app-server"[\s\S]*?return appendEndpointPath\(baseUrl, "\/admin\/"\)/);
+  assert.match(controlCenter, /service\.id === "agent-platform"[\s\S]*?return appendEndpointPath\(baseUrl, "\/monitor"\)/);
+  assert.match(controlCenter, /const detailEndpoint = activeDetailService\s*\?\s*resolveControlCenterEndpoint\(activeDetailService\)\s*:\s*"";/);
+  assert.match(controlCenter, /if \(\s*!shouldOpenControlCenterEndpointInternally\(activeDetailService\)\s*\)/);
+  assert.doesNotMatch(controlCenter, /const detailEndpoint = activeDetailService\?\.healthMeta\.webUrl \?\? "";/);
+});
+
+test("embedded service previews load auth and platform entrypoints directly", () => {
+  const embeddedSurfaceHosts = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx"
+  );
+  const pluginPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
+    "utf8"
+  );
+
+  assert.match(embeddedSurfaceHosts, /function shouldLoadInitialServiceUrlDirectly\(/);
+  assert.match(embeddedSurfaceHosts, /pluginId === "zenmind-app-server" \|\| pluginId === "agent-platform"/);
+  assert.match(embeddedSurfaceHosts, /loadInitialEmbeddedUrlDirectly=\{shouldLoadInitialServiceUrlDirectly\(pluginId\)\}/);
+  assert.match(pluginPage, /service\.id !== "agent-platform"/);
+  assert.match(pluginPage, /agentPlatformMonitorAccessToken/);
+});
+
 test("startup loading screen uses localized copy", () => {
   const startupGate = readSourceFile(
     "src",
@@ -1113,6 +1149,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /id:\s*"embeddedWebsites"[\s\S]*?label:\s*"embeddedWebsites"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"dataRoot"/);
   assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"memory"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsSections, /id:\s*"runtimeReset"[\s\S]*?label:\s*"runtimeReset"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
   assert.match(settingsSections, /id:\s*"about"[\s\S]*?label:\s*"about"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
 
   assert.match(sidebarSource, /isSettingsMode\?: boolean;/);
@@ -1122,6 +1159,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(sidebarSource, /settings\.backToApp/);
   assert.match(sidebarSource, /onExitSettingsMode/);
   assert.match(sidebarSource, /case "appearance"[\s\S]*?return "appearance"/);
+  assert.match(sidebarSource, /case "runtimeReset"[\s\S]*?return "service"/);
   assert.match(sidebarSource, /case "about"[\s\S]*?return "about"/);
   assert.match(brandMarkSource, /about:\s*aboutIcon/);
   assert.match(brandMarkSource, /appearance:\s*appearanceIcon/);
@@ -1160,6 +1198,10 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsStyles, /\.settings-theme-segment/);
   assert.doesNotMatch(settingsPage, /case "desktopPet"/);
   assert.match(settingsPage, /case "memory"/);
+  assert.match(settingsPage, /case "runtimeReset"/);
+  assert.match(settingsPage, /window\.electronAPI\.settings\.resetRuntimeEnv\(\)/);
+  assert.match(settingsPage, /settings-reset-card/);
+  assert.match(settingsPage, /settings\.reset\.backupPath/);
   assert.match(settingsPage, /case "about"/);
   assert.match(settingsPage, /<AboutAppCard \/>/);
   assert.match(settingsPage, /settings-item-card settings-about-card/);
@@ -1167,6 +1209,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsPage, /settings\.about\.versionDescription/);
   assert.doesNotMatch(settingsPage, /settings-about-meta/);
   assert.match(settingsStyles, /\.settings-about-version\s*\{[\s\S]*?border-radius:\s*8px;/);
+  assert.match(settingsStyles, /\.settings-page \.settings-reset-card/);
   assert.match(settingsPage, /settings-page-single/);
   assert.match(settingsPage, /settings-content-panel/);
   assert.doesNotMatch(settingsPage, /settings-directory-nav/);
@@ -1477,12 +1520,15 @@ test("sidebar translucency is fixed and not user configurable", () => {
 
   assert.doesNotMatch(preload, /setSidebarTranslucency/);
   assert.match(preload, /getAppInfo:\s*\(\) => ipcRenderer\.invoke\("settings\.getAppInfo"\)/);
+  assert.match(preload, /resetRuntimeEnv:\s*\(\) => ipcRenderer\.invoke\("settings\.resetRuntimeEnv"\)/);
   assert.match(preload, /setNativeThemeSource:\s*\(themeMode\) => ipcRenderer\.invoke\("settings\.setNativeThemeSource", themeMode\)/);
   assert.match(preload, /getLocale:\s*\(\) => ipcRenderer\.invoke\("settings\.getLocale"\)/);
   assert.match(preload, /setLocale:\s*\(locale\) => ipcRenderer\.invoke\("settings\.setLocale", locale\)/);
   assert.match(preload, /ipcRenderer\.on\("settings\.localeChanged"/);
   assert.match(contracts, /interface DesktopAppInfo/);
+  assert.match(contracts, /interface DesktopRuntimeEnvResetResult/);
   assert.match(contracts, /getAppInfo: \(\) => Promise<DesktopAppInfo>/);
+  assert.match(contracts, /resetRuntimeEnv: \(\) => Promise<DesktopRuntimeEnvResetResult>/);
   assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark" \| "system"\)/);
   assert.match(contracts, /getLocale: \(\) => Promise<LocaleSettings>/);
   assert.match(contracts, /setLocale: \(locale: SupportedLocale\) => Promise<LocaleSettings>/);
@@ -1490,6 +1536,7 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(settingsHandlers, /nativeTheme/);
   assert.match(settingsHandlers, /nativeTheme\.themeSource = themeMode === "dark" \? "dark" : themeMode === "system" \? "system" : "light"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getAppInfo"[\s\S]*?app\.getVersion\(\)/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.resetRuntimeEnv"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setNativeThemeSource"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getLocale", async \(\) => initializeMainI18n\(app\)\)/);
   assert.match(mainProcess, /registerSettingsIpcHandlers\(/);
@@ -3020,47 +3067,37 @@ test("service log viewer renderer text is routed through i18n", () => {
   assert.doesNotMatch(logViewerPage, /[\p{Script=Han}]/u);
 });
 
-test("agent-platform monitor opens the platform /monitor page in a separate window", () => {
-  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
-  const servicesHandlers = readSourceFile("src", "main", "ipc", "services-handlers.ts");
-  const monitorWindow = readSourceFile("src", "main", "app-shell", "agent-platform-monitor-window.ts");
-  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const contracts = readSharedContractsSource();
+test("agent-platform monitor opens inside the service preview surface", () => {
+  const authBridge = readSourceFile("src", "shared", "auth-bridge.ts");
   const app = readSourceFile("src", "renderer", "App.tsx");
   const controlCenter = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "control-center", "ControlCenterPage.tsx"),
+    "utf8"
+  );
+  const embeddedSurfaceHosts = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx"
+  );
+  const pluginPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
     "utf8"
   );
   const globalStyles = readRendererStyles();
   const monitorPagePath = path.join(projectRoot, "src", "renderer", "pages", "AgentPlatformMonitorPage.tsx");
   const monitorStylesPath = path.join(projectRoot, "src", "renderer", "styles", "agent-platform-monitor.css");
 
-  assert.match(mainProcess, /AgentPlatformMonitorWindowController/);
-  assert.match(mainProcess, /openAgentPlatformMonitorWindow\(url: string\)/);
-  assert.match(monitorWindow, /loadURL\(url\)/);
-  assert.match(monitorWindow, /access_token/);
-  assert.match(monitorWindow, /frame:\s*true/);
-  assert.doesNotMatch(monitorWindow, /parent:\s*ownerWindow/);
-  assert.doesNotMatch(monitorWindow, /modal:\s*false/);
-  assert.doesNotMatch(monitorWindow, /getOwnerWindow/);
-  assert.match(monitorWindow, /if \(this\.options\.platform === "darwin"\)/);
-  assert.match(monitorWindow, /else if \(this\.options\.platform === "win32"\)/);
-  assert.match(monitorWindow, /else \{/);
-  assert.match(servicesHandlers, /services\.openAgentPlatformMonitor/);
-  assert.match(servicesHandlers, /issueAgentPlatformAccessToken/);
-  assert.match(servicesHandlers, /new URL\("\/monitor"/);
-  assert.match(servicesHandlers, /searchParams\.set\("access_token"/);
-  assert.doesNotMatch(servicesHandlers, /services\.readAgentPlatformMonitor/);
-  assert.doesNotMatch(servicesHandlers, /\/api\/monitor\/ws\/connections/);
-  assert.doesNotMatch(servicesHandlers, /\/api\/monitor\/ws\/messages/);
-  assert.match(preload, /openAgentPlatformMonitor/);
-  assert.doesNotMatch(preload, /readAgentPlatformMonitor/);
-  assert.doesNotMatch(preload, /onAgentPlatformMonitorMaximized/);
-  assert.doesNotMatch(contracts, /AgentPlatformMonitorReadOptions/);
-  assert.doesNotMatch(contracts, /AgentPlatformMonitorSnapshot/);
+  assert.match(authBridge, /serviceId === "agent-platform"[\s\S]{0,180}url\.pathname = "\/monitor"/);
+  assert.match(authBridge, /accessToken[\s\S]{0,180}searchParams\.set\("access_token"/);
+  assert.match(embeddedSurfaceHosts, /pluginId === "zenmind-app-server" \|\| pluginId === "agent-platform"/);
+  assert.match(pluginPage, /service\.id !== "agent-platform"/);
+  assert.match(pluginPage, /issueAccessToken\("missing"\)/);
   assert.doesNotMatch(app, /location\.pathname === "\/agent-platform-monitor"/);
   assert.match(controlCenter, /activeDetailService\.id === "agent-platform"/);
-  assert.match(controlCenter, /window\.electronAPI\.services\.openAgentPlatformMonitor/);
+  assert.match(controlCenter, /navigate\(\s*`\/service\/\$\{activeDetailService\.id\}`/);
+  assert.doesNotMatch(controlCenter, /window\.electronAPI\.services\.openAgentPlatformMonitor/);
   assert.match(controlCenter, /activeDetailService\.status !== "running"/);
   assert.equal(fs.existsSync(monitorPagePath), false);
   assert.equal(fs.existsSync(monitorStylesPath), false);
@@ -3242,6 +3279,7 @@ test("task running sprite uses the smooth high-frame strip", () => {
   assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,220}background-size:\s*1440px\s+104px;/);
   assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,260}background-position:\s*0\s+0;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-task-run-animation\s+\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,180}animation:\s*desktop-pet-pony-run-frames var\(--desktop-pet-task-run-animation-duration,\s*1500ms\) steps\(15,\s*end\) infinite;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-appearance-classic\.has-task-run-animation\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-appearance-xiao\.has-task-run-animation\s+\.desktop-pet-image/);
   assert.match(globalStyles, /@keyframes desktop-pet-pony-run-frames\s*\{[\s\S]{0,120}to\s*\{\s*background-position:\s*-1440px\s+0;/);
   assert.doesNotMatch(globalStyles, /background-position:\s*0\s+-200%;/);
@@ -3313,6 +3351,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /isDragging[\s\S]{0,180}\? dragDirection === "left"/);
   assert.match(desktopPet, /window\.addEventListener\("pointermove", handleWindowPointerMove\)/);
   assert.match(desktopPet, /shouldShowDanceSpriteAnimation[\s\S]{0,220}getDesktopPetDanceSpritePath\(appearanceId\)/);
+  assert.match(desktopPet, /getDesktopPetSpriteAssetBasePath\(appearanceId\)/);
   assert.match(desktopPet, /isDancing && isDesktopPetDanceAppearance\(appearanceId\)[\s\S]{0,80}\? "dancing"/);
   assert.match(desktopPet, /displayStatus === "running" \|\| displayStatus === "awaiting"/);
   assert.match(desktopPet, /hasMessageReaction[\s\S]{0,80}\? "message"/);
@@ -3389,6 +3428,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /id:\s*"xiao"/);
   assert.match(petAssetScript, /spritesheet-source\.png/);
   assert.match(petAssetScript, /task-run-left-source\.png/);
+  assert.match(petAssetScript, /copyDefaultZenmiAssets/);
   assert.match(sharedDesktopPet, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /"dragging-left":\s*\{\s*row:\s*1,\s*column:\s*2\s*\}/);

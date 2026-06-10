@@ -182,6 +182,47 @@ function getErrorLogDisplay(service: ServiceState, t: TranslateFunction) {
   return t("service.notDeclared");
 }
 
+function appendEndpointPath(baseUrl: string, endpointPath: string) {
+  const normalizedBaseUrl = baseUrl.trim();
+  if (!normalizedBaseUrl) {
+    return "";
+  }
+
+  try {
+    const url = new URL(normalizedBaseUrl);
+    const normalizedEndpointPath = endpointPath.startsWith("/")
+      ? endpointPath
+      : `/${endpointPath}`;
+    if (url.pathname === normalizedEndpointPath) {
+      return url.toString();
+    }
+    url.pathname = normalizedEndpointPath;
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    const trimmedEndpointPath = endpointPath.startsWith("/")
+      ? endpointPath
+      : `/${endpointPath}`;
+    return `${normalizedBaseUrl.replace(/\/+$/u, "")}${trimmedEndpointPath}`;
+  }
+}
+
+function resolveControlCenterEndpoint(service: ServiceState) {
+  const baseUrl = service.healthMeta.webUrl;
+  if (service.id === "zenmind-app-server") {
+    return appendEndpointPath(baseUrl, "/admin/");
+  }
+  if (service.id === "agent-platform") {
+    return appendEndpointPath(baseUrl, "/monitor");
+  }
+  return baseUrl;
+}
+
+function shouldOpenControlCenterEndpointInternally(service: ServiceState) {
+  return service.frontendMode !== "none" || service.id === "agent-platform";
+}
+
 function getConfigSourceLabel(
   configFile: ServiceConfigFile,
   t: TranslateFunction,
@@ -713,7 +754,9 @@ export function ControlCenterPage() {
   const errorLogDisplay = activeDetailService
     ? getErrorLogDisplay(activeDetailService, t)
     : t("service.notDeclared");
-  const detailEndpoint = activeDetailService?.healthMeta.webUrl ?? "";
+  const detailEndpoint = activeDetailService
+    ? resolveControlCenterEndpoint(activeDetailService)
+    : "";
   const configDirectoryPaths = activeDetailService
     ? getConfigDirectoryPaths(activeDetailService.configFiles)
     : [];
@@ -886,19 +929,6 @@ export function ControlCenterPage() {
       target,
       title,
     });
-  }
-
-  async function openAgentPlatformMonitor() {
-    try {
-      const result = await window.electronAPI.services.openAgentPlatformMonitor();
-      if (!result.ok) {
-        setFeedback(result.message || t("controlCenter.feedback.monitorOpenFailed"));
-      }
-    } catch (reason) {
-      setFeedback(
-        reason instanceof Error ? reason.message : String(reason),
-      );
-    }
   }
 
   async function revealServicePath(
@@ -1707,7 +1737,9 @@ export function ControlCenterPage() {
                       type="button"
                       className="service-title-text-button service-action-button is-primary"
                       onClick={() =>
-                        void openAgentPlatformMonitor()
+                        navigate(
+                          `/service/${activeDetailService.id}`,
+                        )
                       }
                       disabled={
                         activeDetailService.status !== "running"
@@ -1903,8 +1935,7 @@ export function ControlCenterPage() {
                       onClick={(event) => {
                         event.preventDefault();
                         if (
-                          activeDetailService.frontendMode ===
-                          "none"
+                          !shouldOpenControlCenterEndpointInternally(activeDetailService)
                         ) {
                           if (detailEndpoint) {
                             void window.electronAPI.shell.openExternal(detailEndpoint);

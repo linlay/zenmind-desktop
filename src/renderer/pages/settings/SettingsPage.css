@@ -708,6 +708,44 @@
   line-height: 1.55;
 }
 
+.settings-page .settings-reset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-page .settings-reset-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-page .settings-reset-result {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.settings-page .settings-reset-result strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.settings-page .settings-reset-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.settings-page .settings-reset-button {
+  min-height: 34px;
+}
+
 .settings-page .settings-theme-actions {
   gap: 10px;
 }

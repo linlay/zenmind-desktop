@@ -49,6 +49,10 @@ export type ContainerHubEnvironment = {
   lastBuild?: ContainerHubBuildJob;
 };
 
+export type ContainerHubEnvironmentUpsertInput = Record<string, unknown> & {
+  name: string;
+};
+
 export class ContainerHubClient {
   private readonly baseURL: string;
   private readonly authToken: string;
@@ -91,6 +95,28 @@ export class ContainerHubClient {
       target,
       status: ""
     };
+  }
+
+  async upsertEnvironment(input: ContainerHubEnvironmentUpsertInput): Promise<ContainerHubEnvironment> {
+    const result = await this.requestJSON("POST", "/api/environments", input);
+    return normalizeEnvironment(result) ?? {
+      name: input.name,
+      description: "",
+      imageRepository: "",
+      imageTag: "",
+      imageRef: "",
+      available: false,
+      enabled: false,
+      availableBuildTargets: []
+    };
+  }
+
+  async putEnvironmentFile(environmentName: string, relativePath: string, content: string) {
+    return this.requestJSON(
+      "PUT",
+      `/api/environments/${encodeURIComponent(environmentName)}/files/${encodeURI(relativePath).replace(/#/gu, "%23")}`,
+      { content }
+    );
   }
 
   async createSession(input: {

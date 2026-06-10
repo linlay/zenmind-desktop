@@ -87,6 +87,16 @@ export interface DesktopAppInfo {
   version: string;
 }
 
+export interface DesktopRuntimeEnvResetResult {
+  ok: boolean;
+  message: string;
+  runtimeRoot: string;
+  backupPath?: string;
+  copiedFiles: number;
+  skippedFiles: number;
+  sourceZipPath?: string;
+}
+
 export type NativeDialogVisibilityListener = (state: { open: boolean }) => void;
 export type SandboxImageImportProgressListener = (event: SandboxImageImportProgressEvent) => void;
 export type LocaleChangedListener = (settings: LocaleSettings) => void;
@@ -252,6 +262,7 @@ export interface DesktopApi {
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
     getAppInfo: () => Promise<DesktopAppInfo>;
+    resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
     setNativeThemeSource: (themeMode: "light" | "dark" | "system") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;

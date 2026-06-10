@@ -56,6 +56,7 @@ import {
   runWithShutdownDeadline,
   prepareQuitUi as prepareQuitUiFromCleanup
 } from "./shutdown-cleanup";
+import { stopAllStaticSiteHosts } from "./static-site-host-manager";
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
@@ -169,6 +170,7 @@ import {
   importBundledEnvZipToRuntime,
   importEnvZipToRuntime,
   migrateOldRootToBackup,
+  resetBundledRuntimeEnv,
   resolveRuntimeRoot,
   runtimeEnvExists,
   runtimeRootExists,
@@ -2039,6 +2041,7 @@ function registerIpcHandlers(context: MainProcessContext) {
   }));
   registerSettingsIpcHandlers(ipcMain, createSettingsIpcHandlerOptions(context, {
     getDataRoot,
+    resetRuntimeEnv: resetBundledRuntimeEnv,
     initializeMainI18n,
     isSupportedLocale,
     setMainLocale,
@@ -2171,7 +2174,11 @@ function runShutdownCleanup(): Promise<void> {
   const shutdownStartedAt = Date.now();
   const processCleanupSnapshot = captureManagedProcessCleanupSnapshot(app);
   appState.shutdownCleanupPromise = runWithShutdownDeadline(
-    () => stopRunningServicesForShutdown(app)
+    () => stopAllStaticSiteHosts()
+      .catch((error) => {
+        console.error("failed while shutting down static site hosts", error);
+      })
+      .then(() => stopRunningServicesForShutdown(app))
       .catch((error) => {
         console.error("failed while shutting down desktop services", error);
       })

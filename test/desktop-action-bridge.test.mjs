@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 
@@ -12,6 +14,19 @@ const {
   __testInternals
 } = require("../dist-electron/main/desktop-action-bridge.js");
 const { DESKTOP_ACTION_DEFINITIONS } = require("../dist-electron/shared/desktop-actions.js");
+const { staticSiteHostManager } = require("../dist-electron/main/static-site-host-manager.js");
+
+async function getFreePort() {
+  const server = net.createServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
 
 function createBridgeOptions(overrides = {}) {
   return {
@@ -38,6 +53,10 @@ test("Desktop action catalog exposes embedded web actions but not page actions",
   assert.ok(names.includes("desktop.embeddedWeb.navigate"));
   assert.ok(names.includes("desktop.embeddedWeb.interactElement"));
   assert.ok(names.includes("desktop.controlCenter.listServices"));
+  assert.ok(names.includes("desktop.staticServer.list"));
+  assert.ok(names.includes("desktop.staticServer.start"));
+  assert.ok(names.includes("desktop.staticServer.stop"));
+  assert.ok(names.includes("desktop.staticServer.restart"));
   assert.ok(names.includes("desktop.agents.deleteAgent"));
 });
 
@@ -176,6 +195,50 @@ test("Desktop Action Bridge forwards embedded web actions to renderer providers"
     args: { surfaceId: "browser" },
     source: undefined
   });
+});
+
+test("Desktop Action Bridge dispatches static server actions", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-static-action-"));
+  fs.writeFileSync(path.join(root, "index.html"), "<!doctype html><h1>Bridge</h1>\n", "utf8");
+  const port = await getFreePort();
+
+  try {
+    const started = await handleDesktopActionRequest(createBridgeOptions(), {
+      action: "desktop.staticServer.start",
+      permissionMode: "full_access",
+      args: {
+        rootDir: root,
+        siteId: "bridge-preview",
+        port
+      }
+    });
+    assert.equal(started.ok, true);
+    assert.equal(started.result.siteId, "bridge-preview");
+    assert.equal(started.result.port, port);
+    assert.equal(started.result.webUrl, `http://127.0.0.1:${port}/`);
+
+    const page = await fetch(started.result.webUrl);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /Bridge/u);
+
+    const listed = await handleDesktopActionRequest(createBridgeOptions(), {
+      action: "desktop.staticServer.list",
+      args: {}
+    });
+    assert.equal(listed.ok, true);
+    assert.equal(listed.result.some((site) => site.siteId === "bridge-preview" && site.running), true);
+
+    const stopped = await handleDesktopActionRequest(createBridgeOptions(), {
+      action: "desktop.staticServer.stop",
+      permissionMode: "full_access",
+      args: { siteId: "bridge-preview" }
+    });
+    assert.equal(stopped.ok, true);
+    assert.equal(stopped.result.running, false);
+  } finally {
+    await staticSiteHostManager.stopAll();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("Desktop CDP Bridge executes CDP calls", async () => {

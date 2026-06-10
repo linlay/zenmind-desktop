@@ -392,6 +392,7 @@ export function createDesktopPetIpcHandlerOptions(
 
 export interface SettingsIpcHandlerContextDependencies {
   getDataRoot: (...args: any[]) => unknown;
+  resetRuntimeEnv: (...args: any[]) => unknown;
   initializeMainI18n: (...args: any[]) => unknown;
   isSupportedLocale: (...args: any[]) => unknown;
   setMainLocale: (...args: any[]) => unknown;
@@ -409,6 +410,7 @@ export function createSettingsIpcHandlerOptions(
     platform: context.platform,
     nativeTheme: context.nativeTheme,
     getDataRoot: dependencies.getDataRoot,
+    resetRuntimeEnv: dependencies.resetRuntimeEnv,
     initializeMainI18n: dependencies.initializeMainI18n,
     isSupportedLocale: dependencies.isSupportedLocale,
     setMainLocale: dependencies.setMainLocale,

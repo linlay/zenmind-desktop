@@ -46,6 +46,11 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.controlCenter.stopService", kind: "execute", category: "controlCenter", description: "Stop a service." },
   { name: "desktop.controlCenter.restartService", kind: "execute", category: "controlCenter", description: "Restart a service." },
 
+  { name: "desktop.staticServer.list", kind: "read", category: "staticServer", description: "List Desktop-managed static servers." },
+  { name: "desktop.staticServer.start", kind: "execute", category: "staticServer", description: "Start a Desktop-managed static server." },
+  { name: "desktop.staticServer.stop", kind: "execute", category: "staticServer", description: "Stop a Desktop-managed static server." },
+  { name: "desktop.staticServer.restart", kind: "execute", category: "staticServer", description: "Restart a Desktop-managed static server." },
+
   { name: "desktop.market.getSettings", kind: "read", category: "market", description: "Read market settings." },
   { name: "desktop.market.validateSettings", kind: "validate", category: "market", description: "Validate market settings." },
   { name: "desktop.market.previewSettingsPatch", kind: "preview", category: "market", description: "Preview market settings changes." },

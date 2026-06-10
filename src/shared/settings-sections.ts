@@ -7,6 +7,7 @@ export type SettingsSectionId =
   | "dataRoot"
   | "debug"
   | "memory"
+  | "runtimeReset"
   | "about";
 
 export type SettingsSectionLayout = "measure" | "wide";

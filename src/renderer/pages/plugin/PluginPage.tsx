@@ -493,6 +493,8 @@ export function PluginPage({
   const [webviewLoadError, setWebviewLoadError] = useState(false);
   const [webviewCurrentUrl, setWebviewCurrentUrl] = useState("");
   const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] = useState("");
+  const [agentPlatformMonitorAccessToken, setAgentPlatformMonitorAccessToken] =
+    useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const registeredDebugWebContentsIdRef = useRef<number | null>(null);
   const lastDirectWebviewRouteRef = useRef("");
@@ -547,6 +549,10 @@ export function PluginPage({
       hostLocale: service?.id === "agent-webclient" ? locale : undefined,
       desktopAuthContext:
         service?.id === "agent-webclient" ? webviewReloadKey : undefined,
+      accessToken:
+        service?.id === "agent-platform"
+          ? agentPlatformMonitorAccessToken
+          : undefined,
       embedPath: effectiveEmbedPath,
       wsSource,
       baseUrl: service?.healthMeta.port
@@ -554,6 +560,7 @@ export function PluginPage({
         : undefined,
     });
   }, [
+    agentPlatformMonitorAccessToken,
     effectiveEmbedPath,
     hostTheme,
     locale,
@@ -1242,6 +1249,44 @@ export function PluginPage({
   ]);
 
   useEffect(() => {
+    if (service?.id !== "agent-platform") {
+      setAgentPlatformMonitorAccessToken("");
+      return undefined;
+    }
+    if (active === false || service.status !== "running") {
+      return undefined;
+    }
+
+    let cancelled = false;
+    setBridgeError("");
+    void window.electronAPI.agentAuth
+      .issueAccessToken("missing")
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        const token = result.ok ? result.token.trim() : "";
+        if (token) {
+          setAgentPlatformMonitorAccessToken(token);
+          return;
+        }
+        setBridgeError(result.message);
+      })
+      .catch((reason) => {
+        if (cancelled) {
+          return;
+        }
+        setBridgeError(
+          reason instanceof Error ? reason.message : String(reason),
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [active, service?.id, service?.status, webviewReloadKey]);
+
+  useEffect(() => {
     if (service?.id !== "agent-webclient" || active === false || !embeddedUrl) {
       return undefined;
     }
@@ -1489,7 +1534,11 @@ export function PluginPage({
     );
   }
 
-  if (service.frontendMode === "none" || !webUrl || !embeddedUrl) {
+  if (
+    (service.frontendMode === "none" && service.id !== "agent-platform") ||
+    !webUrl ||
+    !embeddedUrl
+  ) {
     return (
       <section className="empty-state" {...surfaceVisibilityProps}>
         <h1>{serviceDisplayName}</h1>
@@ -1513,6 +1562,17 @@ export function PluginPage({
       </section>
     );
   }
+
+  if (service.id === "agent-platform" && !agentPlatformMonitorAccessToken) {
+    return (
+      <section className="empty-state" {...surfaceVisibilityProps}>
+        <p className="eyebrow">PLUGIN</p>
+        <h1>{serviceDisplayName}</h1>
+        <p>Preparing secure monitor preview.</p>
+      </section>
+    );
+  }
+
   return (
     <section className="pan-page pan-page-embedded" {...surfaceVisibilityProps}>
       <div className="pan-drag-region" aria-hidden="true" />

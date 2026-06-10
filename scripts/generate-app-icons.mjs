@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import { loadBrandConfig, resolveBrandId } from "./lib/brand-config.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -11,6 +12,17 @@ const buildIconsDir = path.join(projectRoot, "build", "icons");
 const iconsetDir = path.join(buildIconsDir, "icon.iconset");
 const publicDir = path.join(projectRoot, "public");
 const brand = loadBrandConfig(projectRoot, resolveBrandId());
+const svgParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "",
+  preserveOrder: true
+});
+const svgBuilder = new XMLBuilder({
+  ignoreAttributes: false,
+  attributeNamePrefix: "",
+  preserveOrder: true,
+  suppressEmptyNode: true
+});
 
 const appIconSvgPath = path.join(projectRoot, brand.icons.appIconSvg);
 const trayIconSourceSvgPath = path.join(projectRoot, brand.icons.trayIconSvg);
@@ -43,13 +55,255 @@ const icnsEntries = [
   ["icon_512x512@2x.png", "ic10"]
 ];
 
-async function renderSvgToPng(svg, size) {
+function parseSvgNumber(value) {
+  const match = String(value ?? "")
+    .trim()
+    .match(/^-?(?:\d+\.?\d*|\.\d+)/u);
+  if (!match) {
+    return Number.NaN;
+  }
+  return Number(match[0]);
+}
+
+function nearlyEqual(left, right) {
+  return Math.abs(left - right) < 0.001;
+}
+
+function parseStyleAttribute(style, name) {
+  for (const part of String(style ?? "").split(";")) {
+    const separatorIndex = part.indexOf(":");
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = part.slice(0, separatorIndex).trim().toLowerCase();
+    if (key === name) {
+      return part.slice(separatorIndex + 1).trim();
+    }
+  }
+  return undefined;
+}
+
+function readSvgAttribute(attributes, name) {
+  return attributes[name] ?? parseStyleAttribute(attributes.style, name);
+}
+
+function isWhitePaint(value) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/gu, "");
+
+  if (normalized === "white" || normalized === "#fff" || normalized === "#ffffff") {
+    return true;
+  }
+
+  const rgbMatch = normalized.match(/^rgba?\((\d+),(\d+),(\d+)(?:,([01](?:\.\d+)?))?\)$/u);
+  if (!rgbMatch) {
+    return false;
+  }
+
+  const [, red, green, blue, alpha = "1"] = rgbMatch;
+  return Number(red) === 255 && Number(green) === 255 && Number(blue) === 255 && Number(alpha) >= 0.99;
+}
+
+function isOpaque(attributes) {
+  const opacity = readSvgAttribute(attributes, "opacity");
+  const fillOpacity = readSvgAttribute(attributes, "fill-opacity");
+  return (
+    (opacity === undefined || parseSvgNumber(opacity) >= 0.99) &&
+    (fillOpacity === undefined || parseSvgNumber(fillOpacity) >= 0.99)
+  );
+}
+
+function parseSvgViewport(attributes) {
+  const viewBox = String(attributes.viewBox ?? "")
+    .trim()
+    .split(/[\s,]+/u)
+    .map(Number);
+
+  if (viewBox.length === 4 && viewBox.every(Number.isFinite)) {
+    const [x, y, width, height] = viewBox;
+    return { x, y, width, height };
+  }
+
+  const width = parseSvgNumber(attributes.width);
+  const height = parseSvgNumber(attributes.height);
+  if (Number.isFinite(width) && Number.isFinite(height)) {
+    return { x: 0, y: 0, width, height };
+  }
+
+  return null;
+}
+
+function coordinateCovers(value, expected) {
+  if (value === undefined) {
+    return nearlyEqual(expected, 0);
+  }
+  const parsed = parseSvgNumber(value);
+  return Number.isFinite(parsed) && nearlyEqual(parsed, expected);
+}
+
+function sizeCovers(value, expected) {
+  if (String(value ?? "").trim() === "100%") {
+    return true;
+  }
+  const parsed = parseSvgNumber(value);
+  return Number.isFinite(parsed) && nearlyEqual(parsed, expected);
+}
+
+function preserveOrderNodeName(node) {
+  return Object.keys(node).find((key) => key !== ":@");
+}
+
+function isFullCanvasWhiteRect(node, viewport) {
+  if (preserveOrderNodeName(node) !== "rect") {
+    return false;
+  }
+
+  const attributes = node[":@"] ?? {};
+  const fill = readSvgAttribute(attributes, "fill");
+  return (
+    isWhitePaint(fill) &&
+    isOpaque(attributes) &&
+    coordinateCovers(attributes.x, viewport.x) &&
+    coordinateCovers(attributes.y, viewport.y) &&
+    sizeCovers(attributes.width, viewport.width) &&
+    sizeCovers(attributes.height, viewport.height)
+  );
+}
+
+function removeRootWhiteBackground(svg) {
+  let parsed;
+  try {
+    parsed = svgParser.parse(svg);
+  } catch {
+    return { svg, removed: false };
+  }
+
+  let removed = false;
+  for (const node of parsed) {
+    if (!Array.isArray(node.svg)) {
+      continue;
+    }
+
+    const viewport = parseSvgViewport(node[":@"] ?? {});
+    if (!viewport) {
+      continue;
+    }
+
+    node.svg = node.svg.filter((child) => {
+      if (!isFullCanvasWhiteRect(child, viewport)) {
+        return true;
+      }
+      removed = true;
+      return false;
+    });
+  }
+
+  return {
+    svg: removed ? svgBuilder.build(parsed) : svg,
+    removed
+  };
+}
+
+async function renderSvgToCanvas(svg, size) {
   const image = await loadImage(Buffer.from(svg));
   const canvas = createCanvas(size, size);
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, size, size);
   context.drawImage(image, 0, 0, size, size);
+  return canvas;
+}
+
+async function renderSvgToPng(svg, size) {
+  const canvas = await renderSvgToCanvas(svg, size);
   return canvas.toBuffer("image/png");
+}
+
+function connectedTransparentPixels(imageData, width, height) {
+  const alpha = imageData.data;
+  const totalPixels = width * height;
+  const connected = new Uint8Array(totalPixels);
+  const queue = new Uint32Array(totalPixels);
+  let head = 0;
+  let tail = 0;
+
+  const enqueue = (pixelIndex) => {
+    if (connected[pixelIndex] || alpha[pixelIndex * 4 + 3] === 255) {
+      return;
+    }
+    connected[pixelIndex] = 1;
+    queue[tail] = pixelIndex;
+    tail += 1;
+  };
+
+  for (let x = 0; x < width; x += 1) {
+    enqueue(x);
+    enqueue((height - 1) * width + x);
+  }
+  for (let y = 1; y < height - 1; y += 1) {
+    enqueue(y * width);
+    enqueue(y * width + width - 1);
+  }
+
+  while (head < tail) {
+    const pixelIndex = queue[head];
+    head += 1;
+
+    const x = pixelIndex % width;
+    const y = Math.floor(pixelIndex / width);
+    if (x > 0) {
+      enqueue(pixelIndex - 1);
+    }
+    if (x < width - 1) {
+      enqueue(pixelIndex + 1);
+    }
+    if (y > 0) {
+      enqueue(pixelIndex - width);
+    }
+    if (y < height - 1) {
+      enqueue(pixelIndex + width);
+    }
+  }
+
+  return connected;
+}
+
+function composeTransparentAppIcon(originalCanvas, backgroundlessCanvas) {
+  const width = originalCanvas.width;
+  const height = originalCanvas.height;
+  const originalContext = originalCanvas.getContext("2d");
+  const backgroundlessContext = backgroundlessCanvas.getContext("2d");
+  const originalImage = originalContext.getImageData(0, 0, width, height);
+  const backgroundlessImage = backgroundlessContext.getImageData(0, 0, width, height);
+  const backgroundPixels = connectedTransparentPixels(backgroundlessImage, width, height);
+
+  for (let pixelIndex = 0; pixelIndex < backgroundPixels.length; pixelIndex += 1) {
+    if (!backgroundPixels[pixelIndex]) {
+      continue;
+    }
+    const offset = pixelIndex * 4;
+    originalImage.data[offset] = backgroundlessImage.data[offset];
+    originalImage.data[offset + 1] = backgroundlessImage.data[offset + 1];
+    originalImage.data[offset + 2] = backgroundlessImage.data[offset + 2];
+    originalImage.data[offset + 3] = backgroundlessImage.data[offset + 3];
+  }
+
+  originalContext.putImageData(originalImage, 0, 0);
+  return originalCanvas.toBuffer("image/png");
+}
+
+async function renderAppIconToPng(svg, size) {
+  const backgroundless = removeRootWhiteBackground(svg);
+  if (!backgroundless.removed) {
+    return renderSvgToPng(svg, size);
+  }
+
+  // Preserve internal white marks from the supplied SVG while clearing only the outer canvas.
+  const originalCanvas = await renderSvgToCanvas(svg, size);
+  const backgroundlessCanvas = await renderSvgToCanvas(backgroundless.svg, size);
+  return composeTransparentAppIcon(originalCanvas, backgroundlessCanvas);
 }
 
 async function countOpaquePixels(png) {
@@ -199,7 +453,7 @@ async function main() {
 
   const renderedAppPngs = new Map();
   for (const size of pngSizes) {
-    const png = await renderSvgToPng(appIconSvg, size);
+    const png = await renderAppIconToPng(appIconSvg, size);
     renderedAppPngs.set(size, png);
     writeFileIfChanged(path.join(buildIconsDir, `icon-${size}.png`), png);
   }
@@ -214,7 +468,7 @@ async function main() {
     fs.rmSync(iconsetDir, { recursive: true, force: true });
     fs.mkdirSync(iconsetDir, { recursive: true });
     for (const [filename, size] of iconsetEntries) {
-      const png = renderedAppPngs.get(size) ?? (await renderSvgToPng(appIconSvg, size));
+      const png = renderedAppPngs.get(size) ?? (await renderAppIconToPng(appIconSvg, size));
       writeFileIfChanged(path.join(iconsetDir, filename), png);
     }
     warnSkippedMacIcns();
@@ -222,7 +476,7 @@ async function main() {
 
   const icoPngEntries = [];
   for (const size of icoSizes) {
-    const png = renderedAppPngs.get(size) ?? (await renderSvgToPng(appIconSvg, size));
+    const png = renderedAppPngs.get(size) ?? (await renderAppIconToPng(appIconSvg, size));
     icoPngEntries.push({ size, png });
   }
   writeFileIfChanged(path.join(buildIconsDir, "icon.ico"), createIco(icoPngEntries));

@@ -19,8 +19,8 @@ import {
 } from "../user-paths";
 import { t } from "../i18n/main-i18n";
 
-export const DEFAULT_MARKETPLACE_CATALOG_URL = "https://marketplace.example.com/marketplace/index.json";
-export const DEFAULT_SKILLS_API_BASE_URL = "http://127.0.0.1:8080";
+export const DEFAULT_MARKETPLACE_CATALOG_URL = "https://zenmind.cc/market/api/v1/desktop/catalog";
+export const DEFAULT_SKILLS_API_BASE_URL = "https://zenmind.cc/market/api/v1";
 
 export type Catalog = {
   schemaVersion: number;
@@ -47,7 +47,7 @@ export type MarketplaceOptions = MarketListOptions & {
   containerHubAuthToken?: string;
 };
 
-export type InstallableMarketType = Extract<MarketItemType, "plugin" | "skill">;
+export type InstallableMarketType = Extract<MarketItemType, "plugin" | "skill" | "sandbox-image">;
 
 export type MarketSectionResult = {
   items: MarketItem[];
@@ -112,7 +112,13 @@ function normalizeAsset(value: unknown): MarketAsset | null {
     return null;
   }
   const archiveType = asString(raw.archiveType);
-  if (archiveType !== "tar.gz" && archiveType !== "zip" && archiveType !== "skill" && archiveType !== "md") {
+  if (
+    archiveType !== "tar.gz" &&
+    archiveType !== "zip" &&
+    archiveType !== "skill" &&
+    archiveType !== "md" &&
+    archiveType !== "sandbox-template"
+  ) {
     return null;
   }
   return {
@@ -150,6 +156,9 @@ export function normalizeCatalog(input: unknown): Catalog {
       description: asString(item.description),
       tags: asStringArray(item.tags),
       minDesktopVersion: asString(item.minDesktopVersion).trim() || undefined,
+      sandboxKind: asString(item.sandboxKind).trim() === "environment-template"
+        ? "environment-template"
+        : asString(item.sandboxKind).trim() === "container-image" ? "container-image" : undefined,
       assets
     });
   }
@@ -194,8 +203,8 @@ export function normalizeSkillsApiBaseUrl(value: unknown) {
   if (pathname === "/") {
     return parsed.origin;
   }
-  if (pathname === "/api/v1") {
-    return `${parsed.origin}/api/v1`;
+  if (pathname === "/api/v1" || pathname.endsWith("/api/v1")) {
+    return `${parsed.origin}${pathname}`;
   }
   throw new Error(t("market.main.skillsApiInvalidPath"));
 }
@@ -276,6 +285,7 @@ function extensionForAsset(asset: MarketAsset) {
   if (asset.archiveType === "zip") return ".zip";
   if (asset.archiveType === "md") return ".md";
   if (asset.archiveType === "skill") return ".skill";
+  if (asset.archiveType === "sandbox-template") return ".tar.gz";
   return ".tar.gz";
 }
 
@@ -366,6 +376,7 @@ function catalogItemToMarketItem(item: MarketCatalogItem, record: InstalledRecor
     installedVersion,
     installPath,
     serviceId: item.type === "plugin" ? item.id : undefined,
+    sandboxKind: item.sandboxKind,
     message: state === "incompatible" ? t("market.main.platformUnavailable") : undefined
   };
 }

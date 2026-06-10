@@ -13,7 +13,7 @@ export interface MarketAsset {
   url: string;
   sha256?: string;
   sizeBytes: number;
-  archiveType: "tar.gz" | "zip" | "skill" | "md";
+  archiveType: "tar.gz" | "zip" | "skill" | "md" | "sandbox-template";
   platform?: string;
 }
 
@@ -25,6 +25,7 @@ export interface MarketCatalogItem {
   description: string;
   tags: string[];
   minDesktopVersion?: string;
+  sandboxKind?: "environment-template" | "container-image";
   assets: Record<string, MarketAsset>;
 }
 
@@ -50,6 +51,7 @@ export interface MarketItem {
   buildStatus?: string;
   buildJobId?: string;
   buildTargetCount?: number;
+  sandboxKind?: "environment-template" | "container-image";
 }
 
 export interface MarketListResult {
@@ -84,6 +86,7 @@ export interface MarketCommandResult {
   buildStatus?: string;
   buildTarget?: string;
   filePath?: string;
+  sandboxKind?: "environment-template" | "container-image";
 }
 
 export type SandboxImageImportProgressStage =

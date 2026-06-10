@@ -50,7 +50,7 @@ const LEGACY_DESKTOP_PET_BOUND_AGENT_KEY_ALIASES: Record<string, string> = {
 };
 
 const DESKTOP_PET_APPEARANCE_IDS: Set<string> = new Set(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id));
-const DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS: Set<string> = new Set(["pony", "xiao"]);
+const DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID, "pony", "xiao"]);
 const DESKTOP_PET_DANCE_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID, "pony"]);
 
 const DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {

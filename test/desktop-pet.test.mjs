@@ -300,6 +300,21 @@ test("desktop pet generated resources cover all visual states", () => {
     }
   }
   assert.equal(
+    fs.existsSync(path.join(root, "spritesheet.webp")),
+    true,
+    "classic missing spritesheet.webp for generated zenmi atlas"
+  );
+  assert.equal(
+    fs.existsSync(path.join(root, "task-run-left.webp")),
+    true,
+    "classic missing high-frame task-run-left.webp for smooth task running animation"
+  );
+  assert.equal(
+    fs.existsSync(path.join(root, "dance.webp")),
+    true,
+    "classic missing high-frame dance.webp for right-click dance animation"
+  );
+  assert.equal(
     fs.existsSync(path.join(root, "pony", "spritesheet.webp")),
     true,
     "pony missing spritesheet.webp for frame-based running animation"
@@ -557,11 +572,12 @@ test("desktop pet active run events count running tasks idempotently", () => {
 });
 
 test("animated pets use task running animation and speed up with more tasks", () => {
+  assert.equal(shouldUseDesktopPetTaskRunningAnimation(DEFAULT_DESKTOP_PET_APPEARANCE_ID, 1), true);
+  assert.equal(shouldUseDesktopPetTaskRunningAnimation(DEFAULT_DESKTOP_PET_APPEARANCE_ID, 0), false);
   assert.equal(shouldUseDesktopPetTaskRunningAnimation("pony", 1), true);
   assert.equal(shouldUseDesktopPetTaskRunningAnimation("pony", 0), false);
   assert.equal(shouldUseDesktopPetTaskRunningAnimation("xiao", 1), true);
   assert.equal(shouldUseDesktopPetTaskRunningAnimation("xiao", 0), false);
-  assert.equal(shouldUseDesktopPetTaskRunningAnimation(DEFAULT_DESKTOP_PET_APPEARANCE_ID, 3), false);
 
   const oneTaskDuration = getDesktopPetRunningTaskAnimationDurationMs(1);
   const twoTaskDuration = getDesktopPetRunningTaskAnimationDurationMs(2);
