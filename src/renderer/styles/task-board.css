@@ -38,6 +38,21 @@
   padding-top: 44px;
 }
 
+.app-shell.is-mac-platform.has-task-board-controls .task-board-page {
+  padding-top: 36px;
+}
+
+.app-shell.is-mac-platform.has-task-board-controls .task-board-page::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
 .app-shell.is-windows-platform.has-task-board-controls .task-board-page::before {
   content: "";
   position: absolute;
