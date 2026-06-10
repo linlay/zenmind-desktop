@@ -344,6 +344,29 @@ function isPlatformEventType(type: string): type is AssistantRunEventType {
   return Boolean(type);
 }
 
+function readErrorPayloadText(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  const record = value as Record<string, unknown>;
+  const direct = readString(record.message)
+    || readString(record.msg)
+    || readString(record.detail)
+    || readString(record.code)
+    || readString(record.type);
+  if (direct) {
+    return direct;
+  }
+  try {
+    return JSON.stringify(record);
+  } catch {
+    return "";
+  }
+}
+
 function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
   runId: string;
   chatId: string;
@@ -355,6 +378,8 @@ function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
   }
   const runId = readString(raw.runId) || fallback.runId;
   const chatId = readString(raw.chatId) || fallback.chatId;
+  const errorText = readErrorPayloadText(raw.error);
+  const message = readString(raw.message) || errorText;
   const event: AssistantEvent = {
     ...(typeof raw.id === "string" ? { id: raw.id } : {}),
     ...(typeof raw.seq === "number" ? { seq: raw.seq } : {}),
@@ -365,12 +390,12 @@ function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
     ...(fallback.source ? { source: fallback.source } : {}),
     ...(typeof raw.status === "string" ? { status: raw.status as AssistantEvent["status"] } : {}),
     ...(typeof raw.delta === "string" ? { delta: raw.delta } : {}),
-    ...(typeof raw.message === "string" ? { message: raw.message } : {}),
+    ...(message ? { message } : {}),
     ...(typeof raw.toolCallId === "string" ? { toolCallId: raw.toolCallId } : {}),
     ...(typeof raw.toolName === "string" ? { toolName: raw.toolName } : {}),
     ...(typeof raw.action === "string" ? { action: raw.action } : {}),
     ...(typeof raw.target === "string" ? { target: raw.target } : {}),
-    ...(typeof raw.error === "string" ? { error: raw.error } : {}),
+    ...(errorText ? { error: errorText } : {}),
     ...(typeof raw.awaitingId === "string" ? { awaitingId: raw.awaitingId } : {}),
     ...(typeof raw.mode === "string" ? { mode: raw.mode as AssistantAwaitingMode } : {}),
     ...(typeof raw.viewportType === "string" ? { viewportType: raw.viewportType } : {}),

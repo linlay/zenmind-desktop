@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import type { App } from "electron";
 import type {
   AssistantStartRunRequest,
@@ -65,6 +66,7 @@ type TaskBoardRuntimeOptions = {
   app: App;
   assistantBridge: AssistantBridgeLike;
   callAgentPlatform: AgentPlatformCaller<App>;
+  listLocalAgents?: () => DesktopPetAgentOption[];
   onChanged?: () => void;
   onDebug?: (message: string) => void;
 };
@@ -81,10 +83,19 @@ type TaskBoardAssistantSyncEvent = {
   status?: string | null;
   chatId?: string | null;
   runId?: string | null;
+  message?: string | null;
+  error?: string | null;
 };
 
 const KANBAN_CONFIG_FILE = "kanban.json";
 const DEFAULT_SELECTED_PROJECT_ID = "default";
+const ASSISTANT_AGENT_LIST_TIMEOUT_MS = 2_000;
+const REMOTE_START_RUN_ACK_TIMEOUT_MS = readPositiveIntegerEnv("ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS", 5_000);
+
+function readPositiveIntegerEnv(name: string, fallback: number) {
+  const value = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -335,8 +346,8 @@ export class TaskBoardRuntime {
       getDeviceId: () => getDesktopDeviceId(this.options.app),
       onSnapshot: (snapshot) => this.applySnapshot(snapshot),
       onDispatchIssue: (issue, revision) => this.applyDispatch(issue, revision),
-      onListAgents: () => this.options.assistantBridge.listAgents(),
-      onStartRun: (request) => this.options.assistantBridge.startRun(request),
+      onListAgents: () => this.listAgents(),
+      onStartRun: (request) => this.startRemoteRun(request),
       onAutomationSync: (payload) => this.syncRemoteAutomationPayload(payload),
       onListLocalProjects: () => this.listLocalProjects(),
       onCreateLocalProject: () => Promise.resolve({
@@ -711,6 +722,9 @@ export class TaskBoardRuntime {
     if (!runState || (!event.runId && !event.chatId)) {
       return;
     }
+    this.options.onDebug?.(
+      `云端看板同步智能体终态事件：type=${event.type || ""} status=${event.status || ""} runState=${runState || ""} runId=${event.runId || ""} chatId=${event.chatId || ""} message=${event.message || event.error || ""}`
+    );
     const currentUser = this.currentUser();
     const input: TaskBoardIssueUpdateInput = {
       runId: null,
@@ -776,6 +790,119 @@ export class TaskBoardRuntime {
     const result = upsertDispatchedDesktopKanbanIssue(this.options.app, this.currentUser(), issue, revision, "cloud_dispatch");
     this.notifyChanged();
     return result;
+  }
+
+  private async listAgents(): Promise<DesktopPetAgentOption[]> {
+    this.options.onDebug?.("云端看板正在读取本地智能体列表。");
+    const localAgents = normalizeDesktopPetAgentOptions(this.options.listLocalAgents?.() ?? []);
+    if (localAgents.length > 0) {
+      this.options.onDebug?.(`云端看板返回本地缓存智能体：${localAgents.length} 个。`);
+      return localAgents;
+    }
+    try {
+      const agents = normalizeDesktopPetAgentOptions(await withTimeout(
+        () => this.options.assistantBridge.listAgents(),
+        ASSISTANT_AGENT_LIST_TIMEOUT_MS,
+        "agent-platform 智能体列表读取超时。"
+      ));
+      if (agents.length > 0) {
+        return agents;
+      }
+    } catch (error) {
+      this.options.onDebug?.(`agent-platform 智能体列表读取失败，改用本地缓存：${error instanceof Error ? error.message : String(error)}`);
+    }
+    this.options.onDebug?.("云端看板返回本地缓存智能体：0 个。");
+    return [];
+  }
+
+  private async startRemoteRun(request: AssistantStartRunRequest): Promise<AssistantStartRunResult> {
+    const currentUser = this.currentUser();
+    let localIssueId = "";
+    if (request.issue !== undefined) {
+      const dispatchResult = upsertDispatchedDesktopKanbanIssue(
+        this.options.app,
+        currentUser,
+        request.issue,
+        request.revision ?? 0,
+        "cloud_dispatch"
+      );
+      this.notifyChanged();
+      if (!dispatchResult.ok || !dispatchResult.issue) {
+        return {
+          ok: false,
+          runId: "",
+          chatId: request.chatId?.trim() || "",
+          message: dispatchResult.message
+        };
+      }
+      localIssueId = dispatchResult.issue.id;
+    }
+
+    const chatId = request.chatId?.trim() || createTaskBoardRemoteChatId();
+    const fallbackRunId = createTaskBoardRemoteRunId();
+    const startRequest = { ...request, chatId };
+    const startRun = this.options.assistantBridge.startRun(startRequest);
+    const applyRunResult = (runResult: AssistantStartRunResult) => {
+      if (runResult.ok && localIssueId) {
+        updateDesktopKanbanIssue(this.options.app, currentUser, localIssueId, {
+          status: "in_progress",
+          chatId: runResult.chatId,
+          runId: runResult.runId,
+          runState: "running"
+        });
+        this.notifyChanged();
+      }
+    };
+
+    try {
+      const runResult = await waitForRemoteStartRunAck(startRun, REMOTE_START_RUN_ACK_TIMEOUT_MS);
+      if (runResult) {
+        applyRunResult(runResult);
+        return runResult;
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        runId: "",
+        chatId,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+
+    if (localIssueId) {
+      updateDesktopKanbanIssue(this.options.app, currentUser, localIssueId, {
+        status: "in_progress",
+        chatId,
+        runId: fallbackRunId,
+        runState: "running"
+      });
+      this.notifyChanged();
+    }
+    void startRun.then((runResult) => {
+      applyRunResult(runResult);
+      if (!runResult.ok) {
+        this.sendAssistantEvent({ type: "error", status: "failed", chatId, runId: fallbackRunId });
+      }
+    }).catch((error) => {
+      if (localIssueId) {
+        updateDesktopKanbanIssue(this.options.app, currentUser, localIssueId, {
+          status: "todo",
+          chatId,
+          runId: fallbackRunId,
+          runState: "failed"
+        });
+        this.notifyChanged();
+      }
+      this.sendAssistantEvent({ type: "error", status: "failed", chatId, runId: fallbackRunId });
+      this.options.onDebug?.(`云端看板后台启动智能体失败：${error instanceof Error ? error.message : String(error)}`);
+    });
+    this.options.onDebug?.("云端看板远程 startRun 启动较慢，已先返回运行中状态。");
+    return {
+      ok: true,
+      runId: fallbackRunId,
+      chatId,
+      message: "已派发到桌面端，智能体正在启动。"
+    };
   }
 
   private notifyChanged() {
@@ -940,4 +1067,64 @@ export class TaskBoardRuntime {
 
 export function createTaskBoardRuntime(options: TaskBoardRuntimeOptions) {
   return new TaskBoardRuntime(options);
+}
+
+function normalizeDesktopPetAgentOptions(agents: DesktopPetAgentOption[]) {
+  const seen = new Set<string>();
+  const result: DesktopPetAgentOption[] = [];
+  for (const agent of agents) {
+    const agentKey = typeof agent?.agentKey === "string" ? agent.agentKey.trim() : "";
+    if (!agentKey || seen.has(agentKey)) {
+      continue;
+    }
+    seen.add(agentKey);
+    const displayName = typeof agent.displayName === "string" && agent.displayName.trim() ? agent.displayName.trim() : agentKey;
+    const role = typeof agent.role === "string" ? agent.role.trim() : "";
+    const unreadCount = Number.isFinite(agent.unreadCount) ? Math.max(0, Math.round(agent.unreadCount)) : 0;
+    result.push({
+      agentKey,
+      displayName,
+      role,
+      ...(agent.icon ? { icon: agent.icon } : {}),
+      unreadCount
+    });
+  }
+  return result;
+}
+
+function createTaskBoardRemoteChatId() {
+  return `chat_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
+}
+
+function createTaskBoardRemoteRunId() {
+  return `run_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
+}
+
+function waitForRemoteStartRunAck(startRun: Promise<AssistantStartRunResult>, timeoutMs: number) {
+  return new Promise<AssistantStartRunResult | null>((resolve, reject) => {
+    const timeout = setTimeout(() => resolve(null), timeoutMs);
+    startRun.then((result) => {
+      clearTimeout(timeout);
+      resolve(result);
+    }).catch((error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+  });
+}
+
+async function withTimeout<T>(producer: () => Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(producer),
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
 }
