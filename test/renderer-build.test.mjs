@@ -3220,6 +3220,8 @@ test("desktop pet appearance picker confirms persistence before success feedback
   assert.match(settingsPage, /settings-appearance-pet-card/);
   assert.doesNotMatch(settingsPage, /settings\.desktopPet\.currentStatus/);
   assert.match(settingsPage, /case "appearance"[\s\S]*?desktopPetSupported \? \(/);
+  assert.match(settingsPage, /const shouldReadDesktopPetState = desktopPetSupported && activeSection === "appearance";/);
+  assert.doesNotMatch(settingsPage, /activeSection === "desktopPet"/);
   assert.match(settingsPage, /nextState\.appearanceId === appearanceId/);
   assert.match(settingsPage, /settings\.desktopPet\.noticeAppearanceFailed/);
   assert.match(settingsPage, /desktop-pet-appearance-list/);

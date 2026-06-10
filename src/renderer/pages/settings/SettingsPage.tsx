@@ -625,7 +625,7 @@ export function SettingsPage({
   const shouldReadAssistantSettings = Boolean(
     activeSection && ASSISTANT_SETTINGS_SECTION_IDS.includes(activeSection)
   );
-  const shouldReadDesktopPetState = desktopPetSupported && activeSection === "desktopPet";
+  const shouldReadDesktopPetState = desktopPetSupported && activeSection === "appearance";
   const controlProjectOptions = useMemo(
     () => sortTaskBoardProjectOptions(controlCloudProjects),
     [controlCloudProjects]
@@ -853,12 +853,12 @@ export function SettingsPage({
           }
           desktopPetStateLoadedRef.current = true;
           setDesktopPetState(state);
-          setReadErrorSections(["desktopPet"], "");
+          setReadErrorSections(["appearance"], "");
         })
         .catch((reason) => {
           desktopPetStateLoadedRef.current = false;
           if (!cancelled) {
-            setReadErrorSections(["desktopPet"], reason instanceof Error ? reason.message : String(reason));
+            setReadErrorSections(["appearance"], reason instanceof Error ? reason.message : String(reason));
           }
         });
     }
@@ -867,7 +867,7 @@ export function SettingsPage({
       if (!cancelled) {
         desktopPetStateLoadedRef.current = true;
         setDesktopPetState(state);
-        setReadErrorSections(["desktopPet"], "");
+        setReadErrorSections(["appearance"], "");
       }
     });
 
@@ -1633,7 +1633,7 @@ export function SettingsPage({
       setReadErrorSections(["appearance"], "");
       if (nextState.appearanceId === appearanceId) {
         showSectionNotice(
-          "desktopPet",
+          "appearance",
           t("settings.desktopPet.noticeAppearanceChanged", {
             name: getDesktopPetAppearanceLabel(appearanceId, selectedAppearance?.displayName ?? appearanceId, t)
           }),
