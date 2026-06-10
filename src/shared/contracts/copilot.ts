@@ -289,6 +289,8 @@ export interface AssistantStartRunRequest {
   source?: AssistantRunSource;
   pageContext?: AssistantPageContext | null;
   attachments?: AssistantAttachment[];
+  issue?: unknown;
+  revision?: number;
 }
 
 export interface AssistantStartRunResult {

@@ -1382,7 +1382,8 @@ export function applyDesktopKanbanCloudSnapshot(
   origin: TaskBoardOrigin = "cloud_dispatch"
 ): TaskBoardListResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
-    const revision = typeof snapshot.revision === "number" ? snapshot.revision : readDesktopKanbanRevision(db);
+    const currentRevision = readDesktopKanbanRevision(db);
+    const revision = typeof snapshot.revision === "number" ? snapshot.revision : currentRevision;
     const snapshotProjectId = trimText(snapshot.projectId);
     const canTombstoneMissing = snapshot.complete === true && snapshot.scope === "project" && Boolean(snapshotProjectId);
     const remoteIds = new Set<string>();
@@ -1422,18 +1423,23 @@ export function applyDesktopKanbanCloudSnapshot(
       }
       if (canTombstoneMissing) {
         const cloudRows = db.prepare(`
-        SELECT sync.LOCAL_ISSUE_ID_ AS localIssueId, sync.REMOTE_ISSUE_ID_ AS remoteIssueId, issue.PROJECT_ID_ AS projectId
+        SELECT sync.LOCAL_ISSUE_ID_ AS localIssueId, sync.REMOTE_ISSUE_ID_ AS remoteIssueId, sync.LAST_REMOTE_REVISION_ AS lastRemoteRevision, issue.PROJECT_ID_ AS projectId
         FROM desktop_issue_sync sync
         JOIN issue ON issue.ID_ = sync.LOCAL_ISSUE_ID_
         WHERE sync.SYNC_MODE_ = 'cloud'
-      `).all() as Array<{ localIssueId: string; remoteIssueId: string | null; projectId: string }>;
+      `).all() as Array<{ localIssueId: string; remoteIssueId: string | null; lastRemoteRevision: number; projectId: string }>;
         for (const row of cloudRows) {
-          if (row.projectId === snapshotProjectId && row.remoteIssueId && !remoteIds.has(row.remoteIssueId)) {
+          if (
+            row.projectId === snapshotProjectId &&
+            row.remoteIssueId &&
+            !remoteIds.has(row.remoteIssueId) &&
+            row.lastRemoteRevision <= revision
+          ) {
             db.prepare("UPDATE issue SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE ID_ = ?").run(nowIso(), nowIso(), row.localIssueId);
           }
         }
       }
-      writeDesktopKanbanRevision(db, revision);
+      writeDesktopKanbanRevision(db, Math.max(currentRevision, revision));
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -1486,6 +1492,7 @@ export function upsertDispatchedDesktopKanbanIssue(
       lastSyncedAt: nowIso(),
       syncError: null
     });
+    writeDesktopKanbanRevision(db, Math.max(readDesktopKanbanRevision(db), revision));
     return { ok: true, message: "云端任务已派发到 Desktop。", issue: localIssue, issues: selectIssues(db, currentUser) };
   });
 }

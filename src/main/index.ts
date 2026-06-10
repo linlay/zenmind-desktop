@@ -721,6 +721,44 @@ function getDesktopPetAgentStatusForState() {
   return desktopPetDonePreviewDismissalTracker.filterAgentStatus(appState.desktopPetAgentStatus);
 }
 
+function listTaskBoardLocalAgents(): DesktopPetAgentOption[] {
+  const agents = new Map<string, DesktopPetAgentOption>();
+  const fallbackTaskBoardAgentKey = "cutej";
+  for (const agent of appState.desktopPetAgentOptions) {
+    const agentKey = agent.agentKey?.trim();
+    if (!agentKey || agents.has(agentKey)) {
+      continue;
+    }
+    agents.set(agentKey, {
+      ...agent,
+      agentKey,
+      displayName: agent.displayName?.trim() || agentKey,
+      role: agent.role?.trim() || "",
+      unreadCount: Math.max(0, Math.round(agent.unreadCount ?? 0))
+    });
+  }
+
+  const status = getDesktopPetAgentStatusForState();
+  const statusAgentKey = status?.agentKey?.trim() ?? "";
+  if (status && !status.stale && statusAgentKey && !agents.has(statusAgentKey)) {
+    agents.set(statusAgentKey, {
+      agentKey: statusAgentKey,
+      displayName: status.displayName?.trim() || statusAgentKey,
+      role: status.role?.trim() || "",
+      unreadCount: Math.max(0, Math.round(status.unreadCount ?? 0))
+    });
+  }
+  if (agents.size === 0) {
+    agents.set(fallbackTaskBoardAgentKey, {
+      agentKey: fallbackTaskBoardAgentKey,
+      displayName: "小君",
+      role: "桌面智能体",
+      unreadCount: 0
+    });
+  }
+  return [...agents.values()];
+}
+
 function getDesktopPetWindowMode(): DesktopPetWindowMode {
   return resolveDesktopPetWindowMode({
     dragging: desktopPetDragController.isDragging(),
@@ -1741,6 +1779,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     app,
     assistantBridge,
     callAgentPlatform,
+    listLocalAgents: listTaskBoardLocalAgents,
     onChanged: () => {
       const targetWindow = appState.mainWindow;
       if (!targetWindow || targetWindow.isDestroyed()) {
