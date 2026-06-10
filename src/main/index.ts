@@ -256,9 +256,11 @@ import { createDebugEventStore } from "./debug/debug-events";
 import { WebviewDebugManager } from "./debug/webview-debug-manager";
 import {
   applyPlatformAppInit,
+  getFocusedWebviewDevToolsShortcut,
   getArchiveExtensions,
   isDevToolsShortcut
 } from "./platform-adapter";
+import { openFocusedWebviewDevTools } from "./focused-webview-devtools";
 import { createDesktopSsoController } from "./sso-controller";
 import { createBrowserSurfaceRegistry } from "./browser-surface-registry";
 import { createCdpIntegration } from "./cdp-integration";
@@ -303,7 +305,7 @@ const mainProcessContext = createMainProcessContext({
 });
 const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
 const LOG_VIEWER_ROUTE = "/log-viewer";
-const DEBUG_VIEWER_SHORTCUT = "CommandOrControl+Shift+D";
+const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut(mainProcessContext.platform);
 const SHUTDOWN_CLEANUP_DEADLINE_MS = 10_000;
 const INSTALLER_SHUTDOWN_ARGS = new Set<string>([
   INSTALLER_SHUTDOWN_ARG,
@@ -1191,12 +1193,12 @@ function registerQuickAssistantShortcut() {
   });
 }
 
-function registerDebugViewerShortcut() {
-  const registered = globalShortcut.register(DEBUG_VIEWER_SHORTCUT, () => {
-    void openDebugViewerWindow();
+function registerFocusedWebviewDevToolsShortcut() {
+  const registered = globalShortcut.register(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT, () => {
+    openFocusedWebviewDevTools(webContents.getFocusedWebContents());
   });
   if (!registered) {
-    console.warn(`failed to register debug viewer shortcut: ${DEBUG_VIEWER_SHORTCUT}`);
+    console.warn(`failed to register focused webview DevTools shortcut: ${FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT}`);
   }
 }
 
@@ -2043,7 +2045,7 @@ if (gotSingleInstanceLock) {
     createAppTray();
     buildApplicationMenu();
     registerQuickAssistantShortcut();
-    registerDebugViewerShortcut();
+    registerFocusedWebviewDevToolsShortcut();
 
     void handleStartupPipeline();
 
@@ -2212,7 +2214,7 @@ app.on("will-quit", () => {
     platform: mainProcessContext.platform,
     globalShortcut
   });
-  globalShortcut.unregister(DEBUG_VIEWER_SHORTCUT);
+  globalShortcut.unregister(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT);
   webviewDebugManager.stop();
 });
 

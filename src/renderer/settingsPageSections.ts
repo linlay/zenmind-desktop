@@ -61,7 +61,7 @@ export function createSettingsSectionDefinitions({
       label: "debug",
       description: "",
       layout: "measure",
-      visible: true
+      visible: false
     },
     {
       id: "memory",

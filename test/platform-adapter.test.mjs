@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 const {
   getArchiveExtensions,
   getDesktopSsoBrowserUserAgent,
+  getFocusedWebviewDevToolsShortcut,
   isDevToolsShortcut
 } = await import("../dist-electron/main/platform-adapter.js");
 
@@ -35,6 +36,12 @@ test("platform adapter resolves desktop DevTools shortcuts per platform", () => 
     shift: false,
     isAutoRepeat: false
   }), false);
+});
+
+test("platform adapter resolves focused webview DevTools shortcuts per platform", () => {
+  assert.equal(getFocusedWebviewDevToolsShortcut("darwin"), "Command+Shift+D");
+  assert.equal(getFocusedWebviewDevToolsShortcut("win32"), "Control+Shift+D");
+  assert.equal(getFocusedWebviewDevToolsShortcut("linux"), "Control+Shift+D");
 });
 
 test("platform adapter hides Electron from Desktop SSO user agents", () => {

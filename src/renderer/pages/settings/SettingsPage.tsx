@@ -2380,22 +2380,7 @@ export function SettingsPage({
       case "dataRoot":
         return isWindows ? <WindowsDataRootCard /> : null;
       case "debug":
-        return (
-          <div className="data-root-card">
-            <div className="debug-settings-copy">
-              <h2>{t("settings.debug.label")}</h2>
-              <p className="page-copy">{t("settings.debug.sectionDescription")}</p>
-              <p className="settings-inline-note">{t("settings.debug.shortcut")}</p>
-            </div>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => void window.electronAPI.debug.openViewer()}
-            >
-              {t("settings.debug.openViewer")}
-            </button>
-          </div>
-        );
+        return null;
       case "memory":
         return (
           <div className="data-root-card assistant-memory-card">

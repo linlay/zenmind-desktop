@@ -53,7 +53,7 @@ test("renderer registers embedded webview surfaces and exposes the debug route",
   assert.match(externalWebview, /unregisterWebviewSurface/);
   assert.match(pluginPage, /registerWebviewSurface/);
   assert.match(pluginPage, /unregisterWebviewSurface/);
-  assert.match(settingsSections, /"debug"/);
-  assert.match(settingsPage, /settings\.debug\.openViewer/);
-  assert.match(settingsPage, /window\.electronAPI\.debug\.openViewer/);
+  assert.match(settingsSections, /id:\s*"debug"[\s\S]*?visible:\s*false/u);
+  assert.doesNotMatch(settingsPage, /settings\.debug\.openViewer/u);
+  assert.doesNotMatch(settingsPage, /window\.electronAPI\.debug\.openViewer/u);
 });

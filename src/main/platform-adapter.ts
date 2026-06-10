@@ -30,6 +30,16 @@ export function isDevToolsShortcut(platform: DesktopPlatform, input: DevToolsSho
   return Boolean(input.control && input.shift && !input.meta && !input.alt);
 }
 
+export function getFocusedWebviewDevToolsShortcut(platform: DesktopPlatform) {
+  if (platform === "darwin") {
+    return "Command+Shift+D";
+  }
+  if (platform === "win32") {
+    return "Control+Shift+D";
+  }
+  return "Control+Shift+D";
+}
+
 export function getDesktopSsoBrowserUserAgent(
   platform: DesktopPlatform,
   versions: { chromeVersion?: string; electronVersion?: string } = {}
