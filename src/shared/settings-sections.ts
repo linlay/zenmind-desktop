@@ -5,9 +5,7 @@ export type SettingsSectionId =
   | "quickAssistant"
   | "embeddedWebsites"
   | "dataRoot"
-  | "debug"
   | "memory"
-  | "runtimeReset"
   | "about";
 
 export type SettingsSectionLayout = "measure" | "wide";

@@ -247,7 +247,7 @@ export const zhCNMessages = {
   "settings.memory.label": "助手记忆",
   "settings.memory.description": "管理本地记忆召回、自动学习和存储内容。",
   "settings.about.label": "关于软件",
-  "settings.about.description": "查看桌面端应用版本信息。",
+  "settings.about.description": "查看版本信息、开发调试工具和运行环境重置选项。",
   "settings.about.version": "版本号",
   "settings.about.versionDescription": "当前安装的桌面端版本。",
   "settings.memory.sectionDescription": "侧边助手会在本机静默学习长期偏好和可复用结论，并在后续回答中按需引用。",

@@ -57,25 +57,11 @@ export function createSettingsSectionDefinitions({
       visible: isWindows
     },
     {
-      id: "debug",
-      label: "debug",
-      description: "",
-      layout: "measure",
-      visible: false
-    },
-    {
       id: "memory",
       label: "memory",
       description: "",
       layout: "wide",
       visible: false
-    },
-    {
-      id: "runtimeReset",
-      label: "runtimeReset",
-      description: "",
-      layout: "measure",
-      visible: true
     },
     {
       id: "about",
@@ -105,9 +91,7 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   quickAssistant: { label: "settings.quickAssistant.label", description: "settings.quickAssistant.description" },
   embeddedWebsites: { label: "settings.embeddedWebsites.label", description: "settings.embeddedWebsites.description" },
   dataRoot: { label: "settings.dataRoot.label", description: "settings.dataRoot.description" },
-  debug: { label: "settings.debug.label", description: "settings.debug.description" },
   memory: { label: "settings.memory.label", description: "settings.memory.description" },
-  runtimeReset: { label: "settings.reset.label", description: "settings.reset.description" },
   about: { label: "settings.about.label", description: "settings.about.description" }
 };
 

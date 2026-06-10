@@ -1,6 +1,10 @@
 import type { SettingsSectionId } from "./settings-sections";
 
 const SETTINGS_ROUTE_PREFIX = "/settings";
+const LEGACY_SETTINGS_SECTION_ALIASES: Record<string, SettingsSectionId> = {
+  debug: "about",
+  runtimeReset: "about"
+};
 
 export function buildSettingsSectionPath(sectionId: SettingsSectionId): string {
   return `${SETTINGS_ROUTE_PREFIX}/${sectionId}`;
@@ -16,7 +20,11 @@ export function parseSettingsSectionId(pathname: string): SettingsSectionId | nu
   }
 
   const sectionId = pathname.slice(`${SETTINGS_ROUTE_PREFIX}/`.length).split("/")[0]?.trim();
-  return sectionId ? (sectionId as SettingsSectionId) : null;
+  if (!sectionId) {
+    return null;
+  }
+
+  return LEGACY_SETTINGS_SECTION_ALIASES[sectionId] ?? (sectionId as SettingsSectionId);
 }
 
 export function resolveSettingsSectionId(
