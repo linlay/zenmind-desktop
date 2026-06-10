@@ -247,7 +247,7 @@ export const enUSMessages = {
   "settings.memory.label": "Assistant Memory",
   "settings.memory.description": "Manage local memory recall, automatic learning, and stored content.",
   "settings.about.label": "About",
-  "settings.about.description": "View desktop app version information.",
+  "settings.about.description": "View version information, developer debug tools, and runtime reset options.",
   "settings.about.version": "Version",
   "settings.about.versionDescription": "Installed desktop app version.",
   "settings.memory.sectionDescription": "The side assistant quietly learns durable preferences and reusable conclusions on this device, then cites them when useful.",

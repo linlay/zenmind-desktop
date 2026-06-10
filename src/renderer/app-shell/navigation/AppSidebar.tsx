@@ -3015,12 +3015,8 @@ export function AppSidebar({
         return "website";
       case "dataRoot":
         return "service";
-      case "debug":
-        return "control";
       case "memory":
         return "memory";
-      case "runtimeReset":
-        return "service";
       case "about":
         return "about";
       default:

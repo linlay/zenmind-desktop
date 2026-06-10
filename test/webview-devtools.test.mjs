@@ -17,6 +17,17 @@ test("webview guest contents expose platform-specific DevTools shortcut", () => 
   assert.match(windowManagerSource, /event\.preventDefault\(\);[\s\S]*contents\.openDevTools\(\{\s*mode: "detach"\s*\}\)/u);
 });
 
+test("focused webview shortcut reads the focused webContents instead of opening DebugViewer", () => {
+  const source = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+
+  assert.match(source, /const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut\(mainProcessContext\.platform\)/u);
+  assert.match(source, /function registerFocusedWebviewDevToolsShortcut\(\)/u);
+  assert.match(source, /globalShortcut\.register\(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT/u);
+  assert.match(source, /openFocusedWebviewDevTools\(webContents\.getFocusedWebContents\(\)\)/u);
+  assert.doesNotMatch(source, /const DEBUG_VIEWER_SHORTCUT/u);
+  assert.doesNotMatch(source, /registerDebugViewerShortcut/u);
+});
+
 test("webview guest contents download generated artifacts instead of opening blank tabs", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
   const windowManagerSource = fs.readFileSync(path.join(projectRoot, "src", "main", "window-manager.ts"), "utf8");
@@ -35,7 +46,8 @@ test("external webview toolbar opens DevTools for the active tab", () => {
     "utf8"
   );
 
-  assert.match(source, /const handleOpenDevTools = \(\) => \{[\s\S]*webviewRefs\.current\.get\(activeTab\.id\)[\s\S]*activeWebview\.openDevTools\(\);/u);
+  assert.match(source, /const handleOpenDevTools = \(\) => \{[\s\S]*webviewRefs\.current\.get\(activeTab\.id\)[\s\S]*window\.electronAPI\.debug\.openWebviewDevTools\(webContentsId\);/u);
+  assert.doesNotMatch(source, /activeWebview\.openDevTools\(\);/u);
   assert.match(source, /className="external-webview-devtools-toggle"/u);
   assert.match(source, /onClick=\{handleOpenDevTools\}/u);
   assert.match(source, /aria-label="打开当前网页 DevTools"/u);

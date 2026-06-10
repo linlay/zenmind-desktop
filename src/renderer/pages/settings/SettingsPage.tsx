@@ -76,6 +76,12 @@ type SettingsNotice = {
 
 type SectionReadErrorMap = Partial<Record<SettingsSectionId, string>>;
 
+type AboutAppCardProps = {
+  runtimeResetPending: boolean;
+  runtimeResetResult: DesktopRuntimeEnvResetResult | null;
+  onResetRuntimeEnv: () => void | Promise<void>;
+};
+
 const THEME_PREFERENCE_OPTIONS: ThemePreference[] = ["light", "dark", "system"];
 
 function getThemePreferenceLabel(themeMode: ThemePreference, t: TranslateFunction) {
@@ -403,7 +409,11 @@ function WindowsDataRootCard() {
   );
 }
 
-function AboutAppCard() {
+function AboutAppCard({
+  runtimeResetPending,
+  runtimeResetResult,
+  onResetRuntimeEnv
+}: AboutAppCardProps) {
   const { t } = useI18n();
   const [appInfo, setAppInfo] = useState<DesktopAppInfo | null>(null);
 
@@ -439,14 +449,62 @@ function AboutAppCard() {
   }, [appInfo, t]);
 
   return (
-    <div className="settings-item-card settings-about-card" aria-label={t("settings.about.label")}>
-      <div className="settings-item-row settings-about-row">
-        <div className="settings-about-copy">
-          <strong>{t("settings.about.version")}</strong>
-          <span>{t("settings.about.versionDescription")}</span>
+    <div className="settings-about-stack" aria-label={t("settings.about.label")}>
+      <div className="settings-item-card settings-about-card">
+        <div className="settings-item-row settings-about-row">
+          <div className="settings-about-copy">
+            <strong>{t("settings.about.version")}</strong>
+            <span>{t("settings.about.versionDescription")}</span>
+          </div>
+          <div className="settings-about-version" aria-live="polite">
+            {version}
+          </div>
         </div>
-        <div className="settings-about-version" aria-live="polite">
-          {version}
+      </div>
+      <div className="data-root-card settings-debug-card">
+        <div className="debug-settings-copy">
+          <h2>{t("settings.debug.label")}</h2>
+          <p className="page-copy">{t("settings.debug.sectionDescription")}</p>
+          <p className="settings-inline-note">{t("settings.debug.shortcut")}</p>
+        </div>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => void window.electronAPI.debug.openViewer()}
+        >
+          {t("settings.debug.openViewer")}
+        </button>
+      </div>
+      <div className="data-root-card settings-reset-card">
+        <div className="settings-reset-copy">
+          <h2>{t("settings.reset.title")}</h2>
+          <p className="page-copy">{t("settings.reset.warning")}</p>
+          <p className="settings-inline-note">{t("settings.reset.restartReminder")}</p>
+        </div>
+        {runtimeResetResult?.ok ? (
+          <div className="feedback-banner settings-reset-result" role="status">
+            <strong>{t("settings.reset.success")}</strong>
+            {runtimeResetResult.backupPath ? (
+              <span>{t("settings.reset.backupPath", { path: runtimeResetResult.backupPath })}</span>
+            ) : null}
+            <span>{t("settings.reset.runtimeRoot", { path: runtimeResetResult.runtimeRoot })}</span>
+            <span>
+              {t("settings.reset.importSummary", {
+                copied: runtimeResetResult.copiedFiles,
+                skipped: runtimeResetResult.skippedFiles
+              })}
+            </span>
+          </div>
+        ) : null}
+        <div className="settings-reset-actions">
+          <button
+            type="button"
+            className="danger-text-button settings-reset-button"
+            disabled={runtimeResetPending}
+            onClick={() => void onResetRuntimeEnv()}
+          >
+            {runtimeResetPending ? t("settings.reset.running") : t("settings.reset.action")}
+          </button>
         </div>
       </div>
     </div>
@@ -1721,14 +1779,14 @@ export function SettingsPage({
     try {
       const result = await window.electronAPI.settings.resetRuntimeEnv();
       if (!result.ok) {
-        showSectionNotice("runtimeReset", result.message || t("settings.reset.failed"), "error");
+        showSectionNotice("about", result.message || t("settings.reset.failed"), "error");
         setRuntimeResetResult(result);
         return;
       }
       setRuntimeResetResult(result);
-      setReadErrorSections(["runtimeReset"], "");
+      setReadErrorSections(["about"], "");
     } catch (reason) {
-      showSectionNotice("runtimeReset", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("about", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setRuntimeResetPending(false);
     }
@@ -2379,23 +2437,6 @@ export function SettingsPage({
         );
       case "dataRoot":
         return isWindows ? <WindowsDataRootCard /> : null;
-      case "debug":
-        return (
-          <div className="data-root-card">
-            <div className="debug-settings-copy">
-              <h2>{t("settings.debug.label")}</h2>
-              <p className="page-copy">{t("settings.debug.sectionDescription")}</p>
-              <p className="settings-inline-note">{t("settings.debug.shortcut")}</p>
-            </div>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => void window.electronAPI.debug.openViewer()}
-            >
-              {t("settings.debug.openViewer")}
-            </button>
-          </div>
-        );
       case "memory":
         return (
           <div className="data-root-card assistant-memory-card">
@@ -2546,43 +2587,14 @@ export function SettingsPage({
             </div>
           </div>
         );
-      case "runtimeReset":
-        return (
-          <div className="data-root-card settings-reset-card">
-            <div className="settings-reset-copy">
-              <h2>{t("settings.reset.title")}</h2>
-              <p className="page-copy">{t("settings.reset.warning")}</p>
-              <p className="settings-inline-note">{t("settings.reset.restartReminder")}</p>
-            </div>
-            {runtimeResetResult?.ok ? (
-              <div className="feedback-banner settings-reset-result" role="status">
-                <strong>{t("settings.reset.success")}</strong>
-                {runtimeResetResult.backupPath ? (
-                  <span>{t("settings.reset.backupPath", { path: runtimeResetResult.backupPath })}</span>
-                ) : null}
-                <span>{t("settings.reset.runtimeRoot", { path: runtimeResetResult.runtimeRoot })}</span>
-                <span>
-                  {t("settings.reset.importSummary", {
-                    copied: runtimeResetResult.copiedFiles,
-                    skipped: runtimeResetResult.skippedFiles
-                  })}
-                </span>
-              </div>
-            ) : null}
-            <div className="settings-reset-actions">
-              <button
-                type="button"
-                className="danger-text-button settings-reset-button"
-                disabled={runtimeResetPending}
-                onClick={() => void handleResetRuntimeEnv()}
-              >
-                {runtimeResetPending ? t("settings.reset.running") : t("settings.reset.action")}
-              </button>
-            </div>
-          </div>
-        );
       case "about":
-        return <AboutAppCard />;
+        return (
+          <AboutAppCard
+            runtimeResetPending={runtimeResetPending}
+            runtimeResetResult={runtimeResetResult}
+            onResetRuntimeEnv={handleResetRuntimeEnv}
+          />
+        );
       default:
         return null;
     }

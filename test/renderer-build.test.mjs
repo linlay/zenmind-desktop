@@ -1149,7 +1149,8 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /id:\s*"embeddedWebsites"[\s\S]*?label:\s*"embeddedWebsites"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"dataRoot"/);
   assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"memory"[\s\S]*?layout:\s*"wide"/);
-  assert.match(settingsSections, /id:\s*"runtimeReset"[\s\S]*?label:\s*"runtimeReset"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
+  assert.doesNotMatch(settingsSections, /id:\s*"debug"/);
+  assert.doesNotMatch(settingsSections, /id:\s*"runtimeReset"/);
   assert.match(settingsSections, /id:\s*"about"[\s\S]*?label:\s*"about"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*true/);
 
   assert.match(sidebarSource, /isSettingsMode\?: boolean;/);
@@ -1159,7 +1160,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(sidebarSource, /settings\.backToApp/);
   assert.match(sidebarSource, /onExitSettingsMode/);
   assert.match(sidebarSource, /case "appearance"[\s\S]*?return "appearance"/);
-  assert.match(sidebarSource, /case "runtimeReset"[\s\S]*?return "service"/);
+  assert.doesNotMatch(sidebarSource, /case "runtimeReset"/);
   assert.match(sidebarSource, /case "about"[\s\S]*?return "about"/);
   assert.match(brandMarkSource, /about:\s*aboutIcon/);
   assert.match(brandMarkSource, /appearance:\s*appearanceIcon/);
@@ -1198,13 +1199,18 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsStyles, /\.settings-theme-segment/);
   assert.doesNotMatch(settingsPage, /case "desktopPet"/);
   assert.match(settingsPage, /case "memory"/);
-  assert.match(settingsPage, /case "runtimeReset"/);
+  assert.doesNotMatch(settingsPage, /case "runtimeReset"/);
+  assert.doesNotMatch(settingsPage, /case "debug"/);
+  assert.match(settingsPage, /settings\.debug\.openViewer/);
+  assert.match(settingsPage, /window\.electronAPI\.debug\.openViewer/);
   assert.match(settingsPage, /window\.electronAPI\.settings\.resetRuntimeEnv\(\)/);
   assert.match(settingsPage, /settings-reset-card/);
   assert.match(settingsPage, /settings\.reset\.backupPath/);
+  assert.match(settingsPage, /showSectionNotice\("about", result\.message \|\| t\("settings\.reset\.failed"\), "error"\)/);
   assert.match(settingsPage, /case "about"/);
-  assert.match(settingsPage, /<AboutAppCard \/>/);
+  assert.match(settingsPage, /<AboutAppCard[\s\S]*?runtimeResetPending=\{runtimeResetPending\}[\s\S]*?runtimeResetResult=\{runtimeResetResult\}[\s\S]*?onResetRuntimeEnv=\{handleResetRuntimeEnv\}/);
   assert.match(settingsPage, /settings-item-card settings-about-card/);
+  assert.match(settingsPage, /settings-debug-card/);
   assert.match(settingsPage, /settings-about-version/);
   assert.match(settingsPage, /settings\.about\.versionDescription/);
   assert.doesNotMatch(settingsPage, /settings-about-meta/);

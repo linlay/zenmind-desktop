@@ -578,6 +578,12 @@
   border-color: var(--line);
 }
 
+.settings-about-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .settings-about-row {
   display: flex;
   align-items: center;
@@ -625,6 +631,19 @@
 :root[data-theme="dark"] .settings-about-version {
   background: var(--control-select-bg);
   border-color: rgba(255, 255, 255, 0.12);
+}
+
+.settings-page .settings-debug-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.settings-page .debug-settings-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .settings-content-shell {
@@ -973,6 +992,15 @@
 
   .settings-language-select {
     width: 100%;
+  }
+
+  .settings-page .settings-debug-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-page .settings-debug-card .text-button {
+    align-self: flex-end;
   }
 
   .settings-page-head h1 {

@@ -1638,15 +1638,23 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     }
 
     const activeWebview = webviewRefs.current.get(activeTab.id);
-    if (!activeWebview) {
+    let webContentsId = activeTab.guestId;
+    if (activeWebview) {
+      try {
+        const nextWebContentsId = activeWebview.getWebContentsId();
+        if (Number.isFinite(nextWebContentsId)) {
+          webContentsId = nextWebContentsId;
+        }
+      } catch {
+        // Keep the last synced guest id if Electron has not attached yet.
+      }
+    }
+
+    if (typeof webContentsId !== "number") {
       return;
     }
 
-    try {
-      activeWebview.openDevTools();
-    } catch {
-      // Ignore attempts before the guest contents are ready.
-    }
+    void window.electronAPI.debug.openWebviewDevTools(webContentsId);
   };
 
   const handleNavigateToInputUrl = () => {

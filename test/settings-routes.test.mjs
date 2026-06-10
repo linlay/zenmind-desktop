@@ -16,7 +16,6 @@ const visibleSectionIds = [
   "navigation",
   "quickAssistant",
   "embeddedWebsites",
-  "debug",
   "about"
 ];
 
@@ -26,6 +25,8 @@ test("settings route helpers build and detect section paths", () => {
   assert.equal(isSettingsRoute("/settings/appearance"), true);
   assert.equal(isSettingsRoute("/kanban"), false);
   assert.equal(parseSettingsSectionId("/settings/appearance"), "appearance");
+  assert.equal(parseSettingsSectionId("/settings/debug"), "about");
+  assert.equal(parseSettingsSectionId("/settings/runtimeReset"), "about");
   assert.equal(parseSettingsSectionId("/settings"), null);
   assert.equal(parseSettingsSectionId("/settings/foo/extra"), "foo");
 });
