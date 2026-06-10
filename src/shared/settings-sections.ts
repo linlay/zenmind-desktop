@@ -1,6 +1,7 @@
 export type SettingsSectionId =
   | "appearance"
   | "control"
+  | "tunnelHub"
   | "navigation"
   | "quickAssistant"
   | "embeddedWebsites"

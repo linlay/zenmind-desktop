@@ -164,3 +164,26 @@ export interface ServiceImportResult {
   targetPath: string;
   service: ServiceState;
 }
+
+export interface TunnelHubAgentSettings {
+  relayUrl: string;
+  hasAgentToken: boolean;
+  agentTokenPreview: string;
+  tlsInsecureSkipVerify: boolean;
+  reconnectSeconds: number;
+}
+
+export interface TunnelHubAgentSettingsInput {
+  relayUrl?: string;
+  agentToken?: string;
+  clearAgentToken?: boolean;
+  tlsInsecureSkipVerify?: boolean;
+  reconnectSeconds?: number;
+}
+
+export interface TunnelHubAgentSettingsResult {
+  ok: boolean;
+  message: string;
+  settings: TunnelHubAgentSettings;
+  configPath?: string;
+}

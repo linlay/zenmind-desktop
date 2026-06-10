@@ -257,6 +257,10 @@ import {
   getArchiveExtensions,
   isDevToolsShortcut
 } from "./platform-adapter";
+import {
+  configureNativeAboutPanel,
+  resolveDesktopAppInfo
+} from "./app-metadata";
 import { openFocusedWebviewDevTools } from "./focused-webview-devtools";
 import { createDesktopSsoController } from "./sso-controller";
 import { createBrowserSurfaceRegistry } from "./browser-surface-registry";
@@ -373,6 +377,8 @@ function getServiceWebviewPreloadUrl() {
 // Keep dev Electron runs on the same data root as packaged builds.
 app.setName(PRODUCT_NAME);
 applyPlatformAppInit(mainProcessContext.platform, app, APP_ID);
+const desktopAppInfo = resolveDesktopAppInfo(app);
+configureNativeAboutPanel(mainProcessContext.platform, app, desktopAppInfo);
 const isFirstDesktopInstall = !desktopDataRootExists(app);
 const runtimeRootAtProcessStart = resolveRuntimeRoot(app, mainProcessContext.platform);
 const runtimeRootExistedAtStartup = runtimeRootExists(app, mainProcessContext.platform);
@@ -2036,6 +2042,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     initializeMainI18n,
     isSupportedLocale,
     setMainLocale,
+    getAppInfo: () => desktopAppInfo,
     buildApplicationMenu,
     refreshTrayContextMenu: () => appTrayController.refreshContextMenu(),
     emitLocaleChanged

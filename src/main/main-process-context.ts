@@ -398,6 +398,7 @@ export interface SettingsIpcHandlerContextDependencies {
   initializeMainI18n: (...args: any[]) => unknown;
   isSupportedLocale: (...args: any[]) => unknown;
   setMainLocale: (...args: any[]) => unknown;
+  getAppInfo?: (...args: any[]) => unknown;
   buildApplicationMenu: (...args: any[]) => unknown;
   refreshTrayContextMenu: (...args: any[]) => unknown;
   emitLocaleChanged: (...args: any[]) => unknown;
@@ -416,6 +417,11 @@ export function createSettingsIpcHandlerOptions(
     initializeMainI18n: dependencies.initializeMainI18n,
     isSupportedLocale: dependencies.isSupportedLocale,
     setMainLocale: dependencies.setMainLocale,
+    getAppInfo: dependencies.getAppInfo ?? (() => ({
+      productName: "",
+      version: "",
+      buildTime: ""
+    })),
     buildApplicationMenu: dependencies.buildApplicationMenu,
     refreshTrayContextMenu: dependencies.refreshTrayContextMenu,
     emitLocaleChanged: dependencies.emitLocaleChanged

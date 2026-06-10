@@ -23,9 +23,15 @@ type LastRunningServicesState = {
 
 const LAST_RUNNING_SERVICES_FILE = "last-running-services.json";
 export const INSTALL_ONLY_STARTUP_SERVICE_IDS = ["agent-container-hub"] as const;
+export const OPTIONAL_AUTO_STARTUP_SERVICE_IDS = ["tunnel-hub-agent"] as const;
 export const DEFAULT_STARTUP_SERVICE_IDS = ["zenmind-app-server", "agent-platform", "agent-webclient"] as const;
-const RESTORE_PRIORITY = ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient"] as const;
+const RESTORE_PRIORITY = ["agent-container-hub", "zenmind-app-server", "agent-platform", "agent-webclient", "tunnel-hub-agent"] as const;
 const INSTALL_ONLY_STARTUP_SERVICE_ID_SET = new Set<ServiceId>(INSTALL_ONLY_STARTUP_SERVICE_IDS);
+const OPTIONAL_AUTO_STARTUP_SERVICE_ID_SET = new Set<ServiceId>(OPTIONAL_AUTO_STARTUP_SERVICE_IDS);
+const NON_BLOCKING_RESTORE_SERVICE_ID_SET = new Set<ServiceId>([
+  ...INSTALL_ONLY_STARTUP_SERVICE_IDS,
+  ...OPTIONAL_AUTO_STARTUP_SERVICE_IDS
+]);
 const DEFAULT_STARTUP_SERVICE_ID_SET = new Set<ServiceId>(DEFAULT_STARTUP_SERVICE_IDS);
 
 export function readInitializationState(layoutOrInstallDir: ServiceLayout | string): InitializationState | null {
@@ -87,7 +93,10 @@ export function getDefaultStartupServiceIds() {
 export function getServiceIdsToRestore(app: App) {
   return orderServiceIdsForRestore([
     ...getDefaultStartupServiceIds(),
-    ...readLastRunningServices(app).filter((serviceId) => !INSTALL_ONLY_STARTUP_SERVICE_ID_SET.has(serviceId))
+    ...readLastRunningServices(app).filter((serviceId) =>
+      !INSTALL_ONLY_STARTUP_SERVICE_ID_SET.has(serviceId) &&
+      !OPTIONAL_AUTO_STARTUP_SERVICE_ID_SET.has(serviceId)
+    )
   ]);
 }
 
@@ -95,13 +104,14 @@ export function getOptionalServiceIdsToRestore(app: App) {
   return orderServiceIdsForRestore(
     readLastRunningServices(app).filter((serviceId) =>
       !DEFAULT_STARTUP_SERVICE_ID_SET.has(serviceId) &&
-      !INSTALL_ONLY_STARTUP_SERVICE_ID_SET.has(serviceId)
+      !INSTALL_ONLY_STARTUP_SERVICE_ID_SET.has(serviceId) &&
+      !OPTIONAL_AUTO_STARTUP_SERVICE_ID_SET.has(serviceId)
     )
   );
 }
 
 export function isNonBlockingRestoreFailure(serviceId: ServiceId) {
-  return INSTALL_ONLY_STARTUP_SERVICE_ID_SET.has(serviceId);
+  return NON_BLOCKING_RESTORE_SERVICE_ID_SET.has(serviceId);
 }
 
 export function readLastRunningServices(app: App): ServiceId[] {

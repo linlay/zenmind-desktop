@@ -19,7 +19,8 @@ import type {
   DesktopRuntimeEnvResetResult,
   TaskBoardCloudConfig,
   TaskBoardDesktopOnlineResult,
-  TaskBoardProject
+  TaskBoardProject,
+  TunnelHubAgentSettings
 } from "../../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
@@ -153,6 +154,14 @@ const defaultTaskBoardOnlineSummary: TaskBoardDesktopOnlineResult = {
   sessionCount: 0,
   agentCount: 0,
   devices: []
+};
+
+const defaultTunnelHubAgentSettings: TunnelHubAgentSettings = {
+  relayUrl: "wss://tunnel-hub.zenmind.cc/tunnel",
+  hasAgentToken: false,
+  agentTokenPreview: "",
+  tlsInsecureSkipVerify: false,
+  reconnectSeconds: 3
 };
 
 function asRecord(value: unknown) {
@@ -429,7 +438,7 @@ function AboutAppCard({
       })
       .catch(() => {
         if (!cancelled) {
-          setAppInfo({ version: "" });
+          setAppInfo({ productName: "", version: "", buildTime: "" });
         }
       });
 
@@ -447,6 +456,15 @@ function AboutAppCard({
     }
     return appInfo.version.startsWith("v") ? appInfo.version : `v${appInfo.version}`;
   }, [appInfo, t]);
+  const buildTime = useMemo(() => {
+    if (appInfo === null) {
+      return t("common.loading");
+    }
+    if (!appInfo.buildTime) {
+      return t("common.error");
+    }
+    return appInfo.buildTime;
+  }, [appInfo, t]);
 
   return (
     <div className="settings-about-stack" aria-label={t("settings.about.label")}>
@@ -458,6 +476,15 @@ function AboutAppCard({
           </div>
           <div className="settings-about-version" aria-live="polite">
             {version}
+          </div>
+        </div>
+        <div className="settings-item-row settings-about-row">
+          <div className="settings-about-copy">
+            <strong>{t("settings.about.buildTime")}</strong>
+            <span>{t("settings.about.buildTimeDescription")}</span>
+          </div>
+          <div className="settings-about-version settings-about-build-time" aria-live="polite">
+            {buildTime}
           </div>
         </div>
       </div>
@@ -551,6 +578,10 @@ export function SettingsPage({
   const [controlConnectionState, setControlConnectionState] = useState<TaskBoardConnectionState>("disabled");
   const [controlOnlineSummary, setControlOnlineSummary] = useState<TaskBoardDesktopOnlineResult>(defaultTaskBoardOnlineSummary);
   const [controlConfigSaving, setControlConfigSaving] = useState(false);
+  const [tunnelHubSettings, setTunnelHubSettings] = useState<TunnelHubAgentSettings>(defaultTunnelHubAgentSettings);
+  const [tunnelHubAgentToken, setTunnelHubAgentToken] = useState("");
+  const [tunnelHubClearToken, setTunnelHubClearToken] = useState(false);
+  const [tunnelHubSaving, setTunnelHubSaving] = useState(false);
   const [runtimeResetPending, setRuntimeResetPending] = useState(false);
   const [runtimeResetResult, setRuntimeResetResult] = useState<DesktopRuntimeEnvResetResult | null>(null);
   const desktopPetSupported = isMac || isWindows;
@@ -576,6 +607,7 @@ export function SettingsPage({
   );
   const shouldReadMemoryData = activeSection === "memory";
   const shouldReadControlData = activeSection === "control";
+  const shouldReadTunnelHubData = activeSection === "tunnelHub";
   const shouldReadAssistantSettings = Boolean(
     activeSection && ASSISTANT_SETTINGS_SECTION_IDS.includes(activeSection)
   );
@@ -687,6 +719,36 @@ export function SettingsPage({
       window.clearInterval(intervalId);
     };
   }, [shouldReadControlData]);
+
+  useEffect(() => {
+    if (!shouldReadTunnelHubData) {
+      return;
+    }
+
+    let cancelled = false;
+    window.electronAPI.settings.getTunnelHubAgentSettings()
+      .then((settings) => {
+        if (cancelled) {
+          return;
+        }
+        setTunnelHubSettings({
+          ...defaultTunnelHubAgentSettings,
+          ...settings
+        });
+        setTunnelHubAgentToken("");
+        setTunnelHubClearToken(false);
+        setReadErrorSections(["tunnelHub"], "");
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setReadErrorSections(["tunnelHub"], reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldReadTunnelHubData]);
 
   useEffect(() => {
     if (!shouldReadMemoryData || memoryDataLoadedRef.current) {
@@ -1755,6 +1817,35 @@ export function SettingsPage({
     });
   }
 
+  async function handleSaveTunnelHubSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setTunnelHubSaving(true);
+    try {
+      const result = await window.electronAPI.settings.saveTunnelHubAgentSettings({
+        relayUrl: tunnelHubSettings.relayUrl,
+        agentToken: tunnelHubAgentToken,
+        clearAgentToken: tunnelHubClearToken,
+        tlsInsecureSkipVerify: tunnelHubSettings.tlsInsecureSkipVerify,
+        reconnectSeconds: tunnelHubSettings.reconnectSeconds
+      });
+      if (!result.ok) {
+        throw new Error(result.message || t("settings.tunnelHub.saveFailed"));
+      }
+      setTunnelHubSettings({
+        ...defaultTunnelHubAgentSettings,
+        ...result.settings
+      });
+      setTunnelHubAgentToken("");
+      setTunnelHubClearToken(false);
+      setReadErrorSections(["tunnelHub"], "");
+      showSectionNotice("tunnelHub", result.message, "success");
+    } catch (reason) {
+      showSectionNotice("tunnelHub", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setTunnelHubSaving(false);
+    }
+  }
+
   async function handleResetRuntimeEnv() {
     if (!window.confirm(t("settings.reset.confirmMessage"))) {
       return;
@@ -2013,6 +2104,91 @@ export function SettingsPage({
             </form>
           </div>
         );
+      case "tunnelHub":
+        return (
+          <div className="settings-item-card settings-control-card" aria-label={t("settings.tunnelHub.panelAria")}>
+            <div className="settings-item-header settings-control-permission-row">
+              <span className="settings-control-app-icon" aria-hidden="true">
+                <span />
+              </span>
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.tunnelHub.connectionTitle")}</strong>
+                <span>{t("settings.tunnelHub.description")}</span>
+                <em>
+                  {tunnelHubSettings.hasAgentToken
+                    ? t("settings.tunnelHub.tokenConfigured", { preview: tunnelHubSettings.agentTokenPreview })
+                    : t("settings.tunnelHub.tokenMissing")}
+                </em>
+              </div>
+            </div>
+            <form className="settings-control-form" onSubmit={(event) => void handleSaveTunnelHubSettings(event)}>
+              <label className="settings-control-field">
+                <span>{t("settings.tunnelHub.relayUrl")}</span>
+                <input
+                  value={tunnelHubSettings.relayUrl}
+                  onChange={(event) => setTunnelHubSettings((current) => ({ ...current, relayUrl: event.target.value }))}
+                  placeholder="wss://tunnel-hub.zenmind.cc/tunnel"
+                />
+              </label>
+              <label className="settings-control-field">
+                <span>{t("settings.tunnelHub.token")}</span>
+                <input
+                  value={tunnelHubAgentToken}
+                  onChange={(event) => {
+                    setTunnelHubAgentToken(event.target.value);
+                    if (event.target.value.trim()) {
+                      setTunnelHubClearToken(false);
+                    }
+                  }}
+                  placeholder={t("settings.tunnelHub.tokenPlaceholder")}
+                  type="password"
+                />
+                <small>
+                  {tunnelHubSettings.hasAgentToken
+                    ? t("settings.tunnelHub.tokenConfigured", { preview: tunnelHubSettings.agentTokenPreview })
+                    : t("settings.tunnelHub.tokenMissing")}
+                </small>
+              </label>
+              <label className="settings-control-field settings-checkbox-field">
+                <input
+                  checked={tunnelHubClearToken}
+                  disabled={Boolean(tunnelHubAgentToken.trim())}
+                  onChange={(event) => setTunnelHubClearToken(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>{t("settings.tunnelHub.clearToken")}</span>
+              </label>
+              <label className="settings-control-field settings-checkbox-field">
+                <input
+                  checked={tunnelHubSettings.tlsInsecureSkipVerify}
+                  onChange={(event) => setTunnelHubSettings((current) => ({ ...current, tlsInsecureSkipVerify: event.target.checked }))}
+                  type="checkbox"
+                />
+                <span>{t("settings.tunnelHub.tlsInsecure")}</span>
+              </label>
+              <label className="settings-control-field">
+                <span>{t("settings.tunnelHub.reconnectSeconds")}</span>
+                <input
+                  min={1}
+                  max={3600}
+                  type="number"
+                  value={tunnelHubSettings.reconnectSeconds}
+                  onChange={(event) => setTunnelHubSettings((current) => ({
+                    ...current,
+                    reconnectSeconds: Number.parseInt(event.target.value, 10) || 3
+                  }))}
+                />
+                <small>{t("settings.tunnelHub.reconnectUnit")}</small>
+              </label>
+              <div className="settings-control-actions">
+                <button type="submit" className="settings-control-primary-button" disabled={tunnelHubSaving}>
+                  {tunnelHubSaving ? t("settings.tunnelHub.saving") : t("settings.tunnelHub.save")}
+                </button>
+              </div>
+            </form>
+          </div>
+        );
+
       case "navigation": {
         const defaultCopilotPages = createDefaultDesktopCopilotPagePreferences();
         function renderFixedNavigationToolRow(tool: FixedNavigationToolConfig) {

@@ -375,6 +375,24 @@ test("agent-webclient release asset remains available for manual install", () =>
   );
 });
 
+test("tunnel-hub-agent release asset is Desktop-ready", () => {
+  const { service, assetPath } = getWorkspaceAsset("tunnel-hub-agent", currentManifestOs());
+  validateBundleArchive(service, assetPath);
+
+  const entries = listArchiveEntries(assetPath);
+  const manifest = readManifestFromArchive(assetPath);
+  const programCommonName = assetPath.endsWith(".zip") ? "program-common.ps1" : "program-common.sh";
+  const binaryName = assetPath.endsWith(".zip") ? "tunnel-hub-agent.exe" : "tunnel-hub-agent";
+  assert.equal(manifest?.kind, "builtin");
+  assert.equal(manifest?.frontend?.mode, "none");
+  assert.equal(manifest?.web?.defaultPort, 0);
+  assert.ok(entries.has("tunnel-hub-agent/manifest.json"));
+  assert.ok(entries.has("tunnel-hub-agent/.env.example"));
+  assert.ok(entries.has(`tunnel-hub-agent/backend/${binaryName}`));
+  assert.ok(entries.has(`tunnel-hub-agent/scripts/${programCommonName}`));
+});
+
+
 test("synced builtin assets include agent-webclient so assistant entry is available in desktop", () => {
   const { service, assetPath } = getSyncedAsset("agent-webclient");
   validateBundleArchive(service, assetPath);

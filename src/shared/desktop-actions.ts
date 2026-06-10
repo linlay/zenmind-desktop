@@ -34,6 +34,15 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.embeddedWeb.closeTab", kind: "execute", category: "embeddedWeb", description: "Close an embedded website tab." },
   { name: "desktop.embeddedWeb.switchTab", kind: "execute", category: "embeddedWeb", description: "Switch the active embedded website tab." },
 
+  { name: "desktop.tunnelHub.getSettings", kind: "read", category: "tunnelHub", description: "Read Tunnel Hub Agent settings." },
+  { name: "desktop.tunnelHub.validateSettings", kind: "validate", category: "tunnelHub", description: "Validate Tunnel Hub Agent settings." },
+  { name: "desktop.tunnelHub.applySettings", kind: "apply", category: "tunnelHub", description: "Apply Tunnel Hub Agent settings." },
+  { name: "desktop.tunnelHub.getStatus", kind: "read", category: "tunnelHub", description: "Read Tunnel Hub Agent status." },
+  { name: "desktop.tunnelHub.start", kind: "execute", category: "tunnelHub", description: "Start Tunnel Hub Agent." },
+  { name: "desktop.tunnelHub.stop", kind: "execute", category: "tunnelHub", description: "Stop Tunnel Hub Agent." },
+  { name: "desktop.tunnelHub.restart", kind: "execute", category: "tunnelHub", description: "Restart Tunnel Hub Agent." },
+  { name: "desktop.tunnelHub.readLog", kind: "read", category: "tunnelHub", description: "Read Tunnel Hub Agent logs." },
+
   { name: "desktop.controlCenter.listServices", kind: "read", category: "controlCenter", description: "List Desktop services." },
   { name: "desktop.controlCenter.getServiceStatus", kind: "read", category: "controlCenter", description: "Read one service status." },
   { name: "desktop.controlCenter.getServiceDetail", kind: "read", category: "controlCenter", description: "Read one service detail." },

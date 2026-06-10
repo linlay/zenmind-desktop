@@ -84,6 +84,7 @@ import {
   getOptionalServiceIdsToRestore,
   getServiceIdsToRestore,
   INSTALL_ONLY_STARTUP_SERVICE_IDS,
+  OPTIONAL_AUTO_STARTUP_SERVICE_IDS,
   isNonBlockingRestoreFailure,
   orderServiceIdsForRestore,
   readInitializationState,
@@ -172,6 +173,10 @@ import {
 import {
   syncZenmindAppServerDesktopEnv
 } from "./app-server-env";
+import {
+  TUNNEL_HUB_AGENT_SERVICE_ID,
+  syncTunnelHubAgentSettingsToEnv
+} from "../../tunnel-hub-agent-settings";
 import {
   captureManagedProcessCleanupSnapshot,
   collectManagedRootPids,
@@ -404,6 +409,13 @@ function collectPrerequisites(
     }
   }
 
+  if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID) {
+    const token = fs.existsSync(envPath) ? readEnvFile(envPath).get("AGENT_TOKEN")?.trim() ?? "" : "";
+    if (!token) {
+      prerequisites.push("Tunnel Hub Agent 缺少 AGENT_TOKEN，请先在设置中配置 token");
+    }
+  }
+
   if (service.id === "agent-container-hub") {
     const engineProbe = probeContainerEngines({ cache: options.cacheContainerEngineProbe });
     if (!engineProbe.engine) {
@@ -476,6 +488,10 @@ async function ensureInitializationRequirements(app: App, service: ServiceDefini
   if (CORE_SERVICE_IDS.has(service.id)) {
     await syncCoreServiceDesktopInitializationConfig(app, service, layout);
     return;
+  }
+
+  if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID) {
+    syncTunnelHubAgentSettingsToEnv(app);
   }
 
   const envPath = layout.envPath;
@@ -1814,6 +1830,10 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     await ensureLocalCliAcpRelayDesktopConfig(app, layout);
   }
 
+  if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID) {
+    syncTunnelHubAgentSettingsToEnv(app);
+  }
+
   if (service.id === "agent-webclient") {
     const assetPath = getOptionalBundleAssetPath(app, service);
     const forceRefresh = agentWebclientInstallNeedsRefresh(installDir);
@@ -2965,6 +2985,59 @@ async function prepareInstallOnlyStartupServices(
   }
 }
 
+async function startOptionalAutoStartupServices(
+  app: App,
+  options: Pick<StartupPreparationOptions, "onStarting" | "onProgress"> = {}
+) {
+  for (const serviceId of OPTIONAL_AUTO_STARTUP_SERVICE_IDS) {
+    try {
+      getService(serviceId);
+    } catch {
+      continue;
+    }
+
+    try {
+      const prepared = await prepareStartupService(app, serviceId, {
+        onProgress: options.onProgress
+      });
+      if (!prepared.ok) {
+        console.warn(`[service-manager] optional auto-start service ${serviceId} is unavailable: ${prepared.message}`);
+        continue;
+      }
+
+      const started = await startPreparedStartupService(app, serviceId, {
+        onStarting: options.onStarting,
+        onProgress: options.onProgress
+      });
+      if (!started.ok || !started.running) {
+        console.warn(`[service-manager] optional auto-start service ${serviceId} failed start: ${started.message}`);
+      }
+    } catch (error) {
+      console.warn(
+        `[service-manager] optional auto-start service ${serviceId} failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+}
+
+function startOptionalAutoStartupServicesInBackground(
+  app: App,
+  options: Pick<StartupPreparationOptions, "onStarting" | "onProgress"> = {}
+) {
+  trackBackgroundStartupPreparation(
+    startOptionalAutoStartupServices(app, options).catch((error) => {
+      console.warn(
+        `[service-manager] optional auto-start background task failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    })
+  );
+}
+
+
 function trackBackgroundStartupPreparation(task: Promise<void>) {
   const trackedTask = task.finally(() => {
     backgroundStartupPreparationTasks.delete(trackedTask);
@@ -3057,6 +3130,10 @@ export async function runStartupPreparation(
     started.push(...optionalRestoreResult.started);
     failures.push(...optionalRestoreResult.failures);
     prepareInstallOnlyStartupServicesInBackground(app, {
+      onProgress: options.onProgress
+    });
+    startOptionalAutoStartupServicesInBackground(app, {
+      onStarting: options.onStarting,
       onProgress: options.onProgress
     });
 

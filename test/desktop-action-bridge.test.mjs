@@ -58,7 +58,25 @@ test("Desktop action catalog exposes embedded web actions but not page actions",
   assert.ok(names.includes("desktop.staticServer.stop"));
   assert.ok(names.includes("desktop.staticServer.restart"));
   assert.ok(names.includes("desktop.agents.deleteAgent"));
+  assert.ok(names.includes("desktop.tunnelHub.getSettings"));
+  assert.ok(names.includes("desktop.tunnelHub.start"));
+  assert.ok(names.includes("desktop.tunnelHub.readLog"));
 });
+
+test("Desktop Action Bridge validates Tunnel Hub settings", async () => {
+  const response = await handleDesktopActionRequest(createBridgeOptions(), {
+    action: "desktop.tunnelHub.validateSettings",
+    args: {
+      relayUrl: "https://example.test/tunnel",
+      reconnectSeconds: "5"
+    }
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.result.valid, false);
+  assert.match(response.result.issues.join(" "), /ws:\/\/ or wss:\/\//);
+});
+
 
 test("Desktop Action Bridge uses current agent-platform agent CRUD API paths", () => {
   const source = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");

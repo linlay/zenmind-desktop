@@ -1474,6 +1474,7 @@ test("sidebar translucency is fixed and not user configurable", () => {
   );
   const globalStyles = readRendererStyles();
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const appMetadata = fs.readFileSync(path.join(projectRoot, "src", "main", "app-metadata.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const settingsHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "settings-handlers.ts"), "utf8");
   const contracts = readSharedContractsSource();
@@ -1532,6 +1533,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(preload, /setLocale:\s*\(locale\) => ipcRenderer\.invoke\("settings\.setLocale", locale\)/);
   assert.match(preload, /ipcRenderer\.on\("settings\.localeChanged"/);
   assert.match(contracts, /interface DesktopAppInfo/);
+  assert.match(contracts, /productName:\s*string/);
+  assert.match(contracts, /buildTime:\s*string/);
   assert.match(contracts, /interface DesktopRuntimeEnvResetResult/);
   assert.match(contracts, /getAppInfo: \(\) => Promise<DesktopAppInfo>/);
   assert.match(contracts, /resetRuntimeEnv: \(\) => Promise<DesktopRuntimeEnvResetResult>/);
@@ -1541,7 +1544,15 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(contracts, /onLocaleChanged: \(listener: LocaleChangedListener\) => \(\) => void/);
   assert.match(settingsHandlers, /nativeTheme/);
   assert.match(settingsHandlers, /nativeTheme\.themeSource = themeMode === "dark" \? "dark" : themeMode === "system" \? "system" : "light"/);
-  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getAppInfo"[\s\S]*?app\.getVersion\(\)/);
+  assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getAppInfo"[\s\S]*?getAppInfo\?\.\(\)/);
+  assert.match(settingsPage, /settings\.about\.buildTime/);
+  assert.match(settingsPage, /settings-about-build-time/);
+  assert.match(mainProcess, /const desktopAppInfo = resolveDesktopAppInfo\(app\);/);
+  assert.match(mainProcess, /configureNativeAboutPanel\(mainProcessContext\.platform, app, desktopAppInfo\);/);
+  assert.match(mainProcess, /getAppInfo:\s*\(\) => desktopAppInfo/);
+  assert.match(appMetadata, /resolveDesktopBuildTime/);
+  assert.match(appMetadata, /if \(platform === "darwin"\)[\s\S]*?app\.setAboutPanelOptions\(\{[\s\S]*?applicationName: appInfo\.productName[\s\S]*?applicationVersion: appInfo\.version[\s\S]*?version: appInfo\.buildTime/);
+  assert.match(appMetadata, /if \(platform === "win32"\)[\s\S]*?app\.setAboutPanelOptions/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.resetRuntimeEnv"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setNativeThemeSource"/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.getLocale", async \(\) => initializeMainI18n\(app\)\)/);

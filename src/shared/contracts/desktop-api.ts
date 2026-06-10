@@ -1,5 +1,5 @@
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
-import type { ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult } from "./services";
+import type { ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubAgentSettings, TunnelHubAgentSettingsInput, TunnelHubAgentSettingsResult } from "./services";
 import type { PluginInstallResult } from "./manifest";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { CustomSidebarDeleteResult, CustomSidebarItemInput, CustomSidebarItemResult, CustomSidebarItemsResult, CustomSidebarTransferResult, CustomSidebarUpdateInput } from "./navigation";
@@ -83,7 +83,9 @@ export interface DesktopSsoLogoutResult {
 export type DesktopSsoStatusListener = (status: DesktopSsoStatus) => void;
 
 export interface DesktopAppInfo {
+  productName: string;
   version: string;
+  buildTime: string;
 }
 
 export interface DesktopRuntimeEnvResetResult {
@@ -261,6 +263,8 @@ export interface DesktopApi {
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
     getAppInfo: () => Promise<DesktopAppInfo>;
+    getTunnelHubAgentSettings: () => Promise<TunnelHubAgentSettings>;
+    saveTunnelHubAgentSettings: (input: TunnelHubAgentSettingsInput) => Promise<TunnelHubAgentSettingsResult>;
     resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
     setNativeThemeSource: (themeMode: "light" | "dark" | "system") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
     getInitialLocale: () => LocaleSettings;

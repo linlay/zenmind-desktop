@@ -211,15 +211,22 @@ function listConfiguredReleaseArchives(sourceRoot) {
   return archives.sort((left, right) => left.localeCompare(right));
 }
 
-function listWorkspaceReleaseArchives() {
+function getWorkspaceReleaseRoots() {
+  return [
+    WORKSPACE_ROOT,
+    path.resolve(WORKSPACE_ROOT, "..", "zenmind-tunnel-hub")
+  ].filter((root, index, roots) => roots.indexOf(root) === index);
+}
+
+function listWorkspaceReleaseArchivesInRoot(workspaceRoot) {
   const archives = [];
 
-  for (const entry of readDirectoryEntries(WORKSPACE_ROOT)) {
+  for (const entry of readDirectoryEntries(workspaceRoot, { optional: true })) {
     if (!entry.isDirectory()) {
       continue;
     }
 
-    const entryRoot = path.join(WORKSPACE_ROOT, entry.name);
+    const entryRoot = path.join(workspaceRoot, entry.name);
     archives.push(...listArchivesInDirectory(path.join(entryRoot, "dist", "release")));
     archives.push(...listArchivesInDirectory(entryRoot));
 
@@ -234,15 +241,22 @@ function listWorkspaceReleaseArchives() {
     }
   }
 
-  for (const entry of readDirectoryEntries(WORKSPACE_ROOT)) {
+  for (const entry of readDirectoryEntries(workspaceRoot, { optional: true })) {
     if (!entry.isFile() || !isArchiveFileName(entry.name)) {
       continue;
     }
-    archives.push(path.join(WORKSPACE_ROOT, entry.name));
+    archives.push(path.join(workspaceRoot, entry.name));
   }
 
-  return archives.sort((left, right) => left.localeCompare(right));
+  return archives;
 }
+
+function listWorkspaceReleaseArchives() {
+  return getWorkspaceReleaseRoots()
+    .flatMap((workspaceRoot) => listWorkspaceReleaseArchivesInRoot(workspaceRoot))
+    .sort((left, right) => left.localeCompare(right));
+}
+
 
 function listReleaseArchives() {
   const archivesByBuildKey = new Map();

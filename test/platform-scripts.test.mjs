@@ -28,16 +28,21 @@ test("darwin dev launcher prepares a branded app bundle instead of showing Elect
     productName: "CuteJ",
     appId: "cc.cutej.desktop"
   };
+  const iconBytes = Buffer.from("branded-icon");
   try {
     const electronAppRoot = path.join(tempRoot, "node_modules", "electron", "dist", "Electron.app");
     const electronContents = path.join(electronAppRoot, "Contents");
     const electronBinary = path.join(electronContents, "MacOS", "Electron");
     const electronPlist = path.join(electronContents, "Info.plist");
     const frameworkRoot = path.join(electronContents, "Frameworks", "Electron Framework.framework");
+    const sourceIconPath = path.join(tempRoot, "build", "icons", "icon.icns");
 
     fs.mkdirSync(path.dirname(electronBinary), { recursive: true });
     fs.mkdirSync(path.join(frameworkRoot, "Versions", "A"), { recursive: true });
+    fs.mkdirSync(path.dirname(sourceIconPath), { recursive: true });
     fs.symlinkSync("Versions/A/Electron Framework", path.join(frameworkRoot, "Electron Framework"));
+    fs.writeFileSync(path.join(tempRoot, "VERSION"), "v0.2.8\n");
+    fs.writeFileSync(sourceIconPath, iconBytes);
     fs.writeFileSync(electronBinary, "");
     fs.chmodSync(electronBinary, 0o755);
     fs.writeFileSync(
@@ -48,17 +53,25 @@ test("darwin dev launcher prepares a branded app bundle instead of showing Elect
 <key>CFBundleDisplayName</key><string>Electron</string>
 <key>CFBundleIdentifier</key><string>org.electronjs.Electron</string>
 <key>CFBundleExecutable</key><string>Electron</string>
+<key>CFBundleIconFile</key><string>electron.icns</string>
+<key>CFBundleShortVersionString</key><string>36.9.5</string>
+<key>CFBundleVersion</key><string>36.9.5</string>
 </dict></plist>`
     );
 
     const preparedBinary = prepareDarwinDevElectronBinary(electronBinary, tempRoot, brand);
     const preparedPlist = fs.readFileSync(path.join(tempRoot, "build", "dev", "CuteJ.app", "Contents", "Info.plist"), "utf8");
+    const preparedIcon = fs.readFileSync(path.join(tempRoot, "build", "dev", "CuteJ.app", "Contents", "Resources", "icon.icns"));
 
     assert.equal(preparedBinary, path.join(tempRoot, "build", "dev", "CuteJ.app", "Contents", "MacOS", "CuteJ"));
     assert.match(preparedPlist, /<key>CFBundleName<\/key><string>CuteJ<\/string>/);
     assert.match(preparedPlist, /<key>CFBundleDisplayName<\/key><string>CuteJ<\/string>/);
     assert.match(preparedPlist, /<key>CFBundleIdentifier<\/key><string>cc\.cutej\.desktop\.dev<\/string>/);
     assert.match(preparedPlist, /<key>CFBundleExecutable<\/key><string>CuteJ<\/string>/);
+    assert.match(preparedPlist, /<key>CFBundleIconFile<\/key><string>icon\.icns<\/string>/);
+    assert.match(preparedPlist, /<key>CFBundleShortVersionString<\/key><string>0\.2\.8<\/string>/);
+    assert.match(preparedPlist, /<key>CFBundleVersion<\/key><string>0\.2\.8<\/string>/);
+    assert.deepEqual(preparedIcon, iconBytes);
     assert.match(
       fs.readFileSync(path.join(projectRoot, "scripts", "platform", "dev-darwin.mjs"), "utf8"),
       /DESKTOP_BUILTIN_ASSETS_ROOT:\s*path\.join\(projectRoot, "build", "resources", "services"\)[\s\S]*?ZENMIND_DESKTOP_BUILTIN_ASSETS_ROOT:\s*path\.join\(projectRoot, "build", "resources", "services"\)/

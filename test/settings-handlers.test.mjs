@@ -44,6 +44,8 @@ test("settings handlers expose data root and platform", async () => {
 
   assert.ok(handlers["settings.getDataRoot"], "Should register settings.getDataRoot");
   assert.ok(handlers["settings.getPlatform"], "Should register settings.getPlatform");
+  assert.ok(handlers["settings.getTunnelHubAgentSettings"], "Should register settings.getTunnelHubAgentSettings");
+  assert.ok(handlers["settings.saveTunnelHubAgentSettings"], "Should register settings.saveTunnelHubAgentSettings");
   assert.equal(await handlers["settings.getDataRoot"]({}), "C:/ZenMind/Data");
   assert.equal(await handlers["settings.getPlatform"]({}), "win32");
 });

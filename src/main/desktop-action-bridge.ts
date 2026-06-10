@@ -56,6 +56,12 @@ import {
   updateMarketItem
 } from "./marketplace";
 import {
+  TUNNEL_HUB_AGENT_SERVICE_ID,
+  readTunnelHubAgentSettings,
+  saveTunnelHubAgentSettings,
+  validateTunnelHubAgentSettingsInput
+} from "./tunnel-hub-agent-settings";
+import {
   executeCurrentPageCdpAction,
   inspectCurrentPageCdpElement,
   readCurrentPageCdpLocation,
@@ -219,6 +225,28 @@ function asRecord(value: unknown): Record<string, unknown> {
 function readString(args: Record<string, unknown>, key: string) {
   return typeof args[key] === "string" ? args[key].trim() : "";
 }
+
+function hasObjectKeys(value: Record<string, unknown>) {
+  return Object.keys(value).length > 0;
+}
+
+function readTunnelHubSettingsInput(args: Record<string, unknown>) {
+  const settings = asRecord(args.settings);
+  const patch = asRecord(args.patch);
+  const source = hasObjectKeys(settings) ? settings : hasObjectKeys(patch) ? patch : args;
+  return {
+    relayUrl: typeof source.relayUrl === "string" ? source.relayUrl : undefined,
+    agentToken: typeof source.agentToken === "string" ? source.agentToken : undefined,
+    clearAgentToken: source.clearAgentToken === true,
+    tlsInsecureSkipVerify: source.tlsInsecureSkipVerify === true,
+    reconnectSeconds: typeof source.reconnectSeconds === "number"
+      ? source.reconnectSeconds
+      : typeof source.reconnectSeconds === "string" && source.reconnectSeconds.trim()
+        ? Number(source.reconnectSeconds)
+        : undefined
+  };
+}
+
 
 function readServiceId(args: Record<string, unknown>) {
   const serviceId = readString(args, "serviceId");
@@ -820,6 +848,48 @@ async function executeAction(
       options.navigate(route);
       return ok(action, { route });
     }
+    case "desktop.tunnelHub.getSettings":
+      return ok(action, readTunnelHubAgentSettings(options.app));
+    case "desktop.tunnelHub.validateSettings": {
+      const validation = validateTunnelHubAgentSettingsInput(readTunnelHubSettingsInput(args));
+      return ok(action, {
+        valid: validation.valid,
+        issues: validation.issues,
+        settings: validation.settings
+      });
+    }
+    case "desktop.tunnelHub.applySettings": {
+      const result = saveTunnelHubAgentSettings(options.app, readTunnelHubSettingsInput(args));
+      if (!result.ok) {
+        return ok(action, result);
+      }
+
+      const current = await getResponsiveServiceState(options.app, TUNNEL_HUB_AGENT_SERVICE_ID);
+      const restart = args.restartIfRunning !== false && current.status === "running"
+        ? await restartService(options.app, TUNNEL_HUB_AGENT_SERVICE_ID)
+        : null;
+      return ok(action, {
+        ...result,
+        restart
+      });
+    }
+    case "desktop.tunnelHub.getStatus":
+      return ok(action, await getResponsiveServiceState(options.app, TUNNEL_HUB_AGENT_SERVICE_ID));
+    case "desktop.tunnelHub.start":
+      return ok(action, await startService(options.app, TUNNEL_HUB_AGENT_SERVICE_ID));
+    case "desktop.tunnelHub.stop":
+      return ok(action, await stopService(options.app, TUNNEL_HUB_AGENT_SERVICE_ID));
+    case "desktop.tunnelHub.restart":
+      return ok(action, await restartService(options.app, TUNNEL_HUB_AGENT_SERVICE_ID));
+    case "desktop.tunnelHub.readLog": {
+      const target = readString(args, "target") === "error" ? "error" : "main";
+      return ok(action, await readServiceLog(options.app, TUNNEL_HUB_AGENT_SERVICE_ID, target as ServiceLogTarget, {
+        limitBytes: typeof args.limitBytes === "number" ? args.limitBytes : undefined,
+        beforeOffset: typeof args.beforeOffset === "number" ? args.beforeOffset : undefined
+      }));
+    }
+
+
     case "desktop.controlCenter.listServices":
       return ok(action, await listServices(options.app));
     case "desktop.controlCenter.getServiceStatus":

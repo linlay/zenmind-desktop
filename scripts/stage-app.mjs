@@ -4,6 +4,11 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { npmCmd, runAndWait } from "./platform/spawn.mjs";
 import { loadBrandConfig, resolveBrandId } from "./lib/brand-config.mjs";
+import {
+  createDesktopBuildMetadata,
+  normalizeDesktopVersion,
+  readDesktopVersion
+} from "./lib/build-metadata.mjs";
 
 const projectRoot = process.cwd();
 const bundleRoot = path.join(projectRoot, "build", "bundle", "dist-electron");
@@ -97,25 +102,16 @@ function readDesktopPackageJson(rootDir = projectRoot) {
   return JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf8"));
 }
 
-function readDesktopVersion(rootDir = projectRoot) {
-  const versionFile = path.join(rootDir, "VERSION");
-  if (!fs.existsSync(versionFile)) {
-    return readDesktopPackageJson(rootDir).version;
-  }
-
-  const version = fs.readFileSync(versionFile, "utf8").trim();
-  if (!version) {
-    throw new Error(`empty VERSION file: ${versionFile}`);
-  }
-
-  return version.replace(/^v/iu, "");
-}
-
 function writeStagePackageJson(rootDir, target) {
   const desktopPackage = readDesktopPackageJson(rootDir);
+  const desktopVersion = readDesktopVersion(rootDir);
+  const desktopBuildMetadata = createDesktopBuildMetadata({
+    productName: brand.productName,
+    version: desktopVersion
+  });
   const stagePackage = {
     name: brand.packageName,
-    version: readDesktopVersion(rootDir),
+    version: normalizeDesktopVersion(desktopVersion).replace(/^v/iu, ""),
     description: brand.description,
     main: "dist-electron/main/index.js",
     productName: brand.productName,
@@ -126,7 +122,8 @@ function writeStagePackageJson(rootDir, target) {
     desktopBuildTarget: {
       os: target.os,
       arch: target.arch
-    }
+    },
+    desktopBuildMetadata
   };
 
   fs.writeFileSync(

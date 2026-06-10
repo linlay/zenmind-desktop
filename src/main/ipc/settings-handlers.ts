@@ -1,3 +1,6 @@
+import type { TunnelHubAgentSettingsInput } from "../../shared/contracts";
+import { readTunnelHubAgentSettings, saveTunnelHubAgentSettings } from "../tunnel-hub-agent-settings";
+
 export interface SettingsIpcHandlerOptions {
   app: any;
   platform?: string;
@@ -13,6 +16,7 @@ export interface SettingsIpcHandlerOptions {
   initializeMainI18n: (app: any) => any;
   isSupportedLocale: (locale: unknown) => boolean;
   setMainLocale: (app: any, locale: any) => any;
+  getAppInfo?: () => any;
   buildApplicationMenu: () => void;
   refreshTrayContextMenu: () => void;
   emitLocaleChanged: (settings: any) => void;
@@ -36,6 +40,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     initializeMainI18n,
     isSupportedLocale,
     setMainLocale,
+    getAppInfo,
     buildApplicationMenu,
     refreshTrayContextMenu,
     emitLocaleChanged
@@ -43,9 +48,15 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
 
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
   ipcMain.handle("settings.getPlatform", async () => platform);
-  ipcMain.handle("settings.getAppInfo", async () => ({
-    version: app.getVersion()
-  }));
+  ipcMain.handle("settings.getAppInfo", async () => getAppInfo?.() ?? {
+    productName: app.name ?? "",
+    version: typeof app.getVersion === "function" ? app.getVersion() : "",
+    buildTime: ""
+  });
+  ipcMain.handle("settings.getTunnelHubAgentSettings", async () => readTunnelHubAgentSettings(app));
+  ipcMain.handle("settings.saveTunnelHubAgentSettings", async (_event: any, input: TunnelHubAgentSettingsInput) =>
+    saveTunnelHubAgentSettings(app, input)
+  );
   ipcMain.handle("settings.resetRuntimeEnv", async () => {
     if (!resetRuntimeEnv) {
       return {
