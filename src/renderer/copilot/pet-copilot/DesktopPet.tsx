@@ -8,7 +8,7 @@ import {
   type FocusEvent as ReactFocusEvent,
   type PointerEvent as ReactPointerEvent
 } from "react";
-import type { DesktopPetPreviewItemStatus, DesktopPetState, DesktopPetStatus } from "../../../shared/contracts";
+import type { DesktopPetPreviewItemStatus, DesktopPetState, DesktopPetStatus, DesktopPetTaskItem } from "../../../shared/contracts";
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
@@ -39,6 +39,7 @@ function createFallbackDesktopPetState(): DesktopPetState {
     agentPresence: "offline",
     agentStatusStale: true,
     agentOptions: [],
+    activeTasks: [],
     previewPanel: null,
     runningTaskCount: 0,
     edgeDock: null,
@@ -93,7 +94,26 @@ function formatPreviewStatus(status: DesktopPetPreviewItemStatus) {
   }
 }
 
+function formatTaskStatus(task: DesktopPetTaskItem) {
+  if (task.status !== "awaiting") {
+    return "运行中";
+  }
+  switch (task.awaitingMode) {
+    case "plan":
+      return "待确认计划";
+    case "question":
+      return "待回答";
+    case "approval":
+      return "待审批";
+    case "form":
+      return "待填写";
+    default:
+      return "待确认";
+  }
+}
+
 const DESKTOP_PET_INLINE_PREVIEW_MAX_LENGTH = 30;
+const DESKTOP_PET_TASK_VISIBLE_LIMIT = 3;
 
 function formatInlinePetPreview(value: string) {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -152,6 +172,7 @@ function pointIntersectsVisiblePetArea(x: number, y: number) {
   return pointIntersectsElement(".desktop-pet-image", x, y, DESKTOP_PET_IMAGE_HIT_MARGIN) ||
     pointIntersectsElement(".desktop-pet-unread-badge", x, y, 4) ||
     pointIntersectsElement(".desktop-pet-speech", x, y) ||
+    pointIntersectsElement(".desktop-pet-task-panel", x, y) ||
     pointIntersectsElement(".desktop-pet-preview", x, y);
 }
 
@@ -338,6 +359,9 @@ export function DesktopPet() {
   const displayStatus = useMemo(() => normalizePetStatus(petState.status), [petState.status]);
   const unreadCount = Math.max(0, Math.round(Number(petState.unreadCount) || 0));
   const messagePreview = typeof petState.messagePreview === "string" ? petState.messagePreview.trim() : "";
+  const activeTasks = Array.isArray(petState.activeTasks) ? petState.activeTasks : [];
+  const visibleTasks = activeTasks.slice(0, DESKTOP_PET_TASK_VISIBLE_LIMIT);
+  const hiddenTaskCount = Math.max(0, activeTasks.length - visibleTasks.length);
   const previewPanel = petState.previewPanel?.visible ? petState.previewPanel : null;
   const hasMessageReaction = displayStatus === "idle" && !isDragging && (messagePreview.length > 0 || unreadCount > 0);
   const canShowHoverReaction = displayStatus === "idle" && !isDragging && !hasMessageReaction;
@@ -406,18 +430,32 @@ export function DesktopPet() {
     ? messagePreview || "有新消息"
     : statusBubbleText;
   const inlineBubbleText = formatInlinePetPreview(bubbleText);
-  const showPreviewPanel = !isDragging && Boolean(previewPanel);
+  const showTaskPanel = !isDragging && activeTasks.length > 0;
+  const showPreviewPanel = !isDragging && !showTaskPanel && Boolean(previewPanel);
   const previewTitle = previewPanel ? formatInlinePetPreview(previewPanel.title) : "";
   const previewSummary = previewPanel && previewPanel.expanded
     ? formatInlinePetPreview(previewPanel.summary)
     : "";
   const showPreviewSummary = shouldShowSecondaryPreview(previewTitle, previewSummary);
-  const showBubble = !isDragging && !showPreviewPanel && bubbleText.length > 0;
+  const showBubble = !isDragging && !showTaskPanel && !showPreviewPanel && bubbleText.length > 0;
   const showUnreadBadge = unreadCount > 0;
   const unreadText = unreadCount > 99 ? "99+" : String(unreadCount);
 
   function handlePreviewPointerDown(event: ReactPointerEvent<HTMLElement>) {
     event.stopPropagation();
+  }
+
+  function handleTaskPointerDown(event: ReactPointerEvent<HTMLElement>) {
+    event.stopPropagation();
+  }
+
+  function handleTaskClick(event: ReactMouseEvent<HTMLButtonElement>, task: DesktopPetTaskItem) {
+    event.preventDefault();
+    event.stopPropagation();
+    void window.electronAPI.desktopPet.openTaskChat({
+      agentKey: task.agentKey,
+      chatId: task.chatId
+    });
   }
 
   function handlePreviewClick(event: ReactMouseEvent<HTMLElement>) {
@@ -564,6 +602,7 @@ export function DesktopPet() {
         `is-appearance-${appearanceId}`,
         shouldShowDanceSpriteAnimation ? "has-dance-animation" : "",
         shouldShowTaskRunAnimation ? "has-task-run-animation" : "",
+        showTaskPanel ? "has-tasks" : "",
         showPreviewPanel ? "has-preview" : "",
         showBubble ? "has-bubble" : "",
         petState.edgeDock === "top" ? "is-edge-dock-top" : "",
@@ -580,7 +619,38 @@ export function DesktopPet() {
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
       >
-        {showPreviewPanel && previewPanel ? (
+        {showTaskPanel ? (
+          <section
+            className="desktop-pet-task-panel"
+            aria-live="polite"
+            onPointerDown={handleTaskPointerDown}
+          >
+            <div className="desktop-pet-task-head">
+              <span className="desktop-pet-task-head-dot" aria-hidden="true" />
+              <strong>进行中 {activeTasks.length}</strong>
+            </div>
+            <div className="desktop-pet-task-list">
+              {visibleTasks.map((task) => (
+                <button
+                  type="button"
+                  key={task.id}
+                  className={`desktop-pet-task-row is-${task.status}`}
+                  onClick={(event) => handleTaskClick(event, task)}
+                >
+                  <span className="desktop-pet-task-dot" aria-hidden="true" />
+                  <span className="desktop-pet-task-copy">
+                    <strong>{task.title}</strong>
+                    <span>{task.agentDisplayName}</span>
+                  </span>
+                  <small>{formatTaskStatus(task)}</small>
+                </button>
+              ))}
+            </div>
+            {hiddenTaskCount > 0 ? (
+              <div className="desktop-pet-task-more">+{hiddenTaskCount}</div>
+            ) : null}
+          </section>
+        ) : showPreviewPanel && previewPanel ? (
           <section
             className={[
               "desktop-pet-preview",

@@ -12,6 +12,11 @@ export interface DesktopPetSettingsInput {
   enabled?: unknown;
 }
 
+export interface DesktopPetOpenTaskChatInput {
+  agentKey?: unknown;
+  chatId?: unknown;
+}
+
 export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
   ipcMain.handle("desktopPet.getSettings", async () => {
     return toDesktopPetSettings(options.getSettings());
@@ -66,6 +71,9 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
   ipcMain.handle("desktopPet.show", async () => options.showWindow());
   ipcMain.handle("desktopPet.hide", async () => options.hideWindow(true));
   ipcMain.handle("desktopPet.openAssistant", async () => options.openAssistant());
+  ipcMain.handle("desktopPet.openTaskChat", async (_event: any, input: DesktopPetOpenTaskChatInput) =>
+    options.openTaskChat(input)
+  );
 
   ipcMain.handle("desktopPet.moveBy", async (event: any, delta: { x?: unknown; y?: unknown }) => {
     const win = options.getWindow();

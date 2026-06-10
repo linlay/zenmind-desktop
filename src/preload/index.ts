@@ -347,6 +347,7 @@ const api: DesktopApi = {
     show: () => ipcRenderer.invoke("desktopPet.show"),
     hide: () => ipcRenderer.invoke("desktopPet.hide"),
     openAssistant: () => ipcRenderer.invoke("desktopPet.openAssistant"),
+    openTaskChat: (input) => ipcRenderer.invoke("desktopPet.openTaskChat", input),
     moveBy: (delta) => ipcRenderer.invoke("desktopPet.moveBy", delta),
     beginDrag: (point) => ipcRenderer.invoke("desktopPet.beginDrag", point),
     endDrag: () => ipcRenderer.invoke("desktopPet.endDrag"),

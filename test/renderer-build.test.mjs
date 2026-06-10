@@ -3264,12 +3264,49 @@ test("desktop pet base mode stays sprite-sized while bubble and preview modes ex
   assert.match(petGeometry, /width:\s*176,/);
   assert.match(petGeometry, /height:\s*198/);
   assert.match(petGeometry, /bubble:\s*\{\s*width:\s*224,\s*height:\s*228/s);
+  assert.match(petGeometry, /"task-list":\s*\{\s*width:\s*392,\s*height:\s*360/s);
+  assert.match(desktopPetController, /activeTasks\.length > 0[\s\S]{0,80}return "task-list";/);
   assert.match(globalStyles, /\.desktop-pet-hitbox\s*\{[\s\S]{0,220}width:\s*174px;[\s\S]{0,120}min-height:\s*134px;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-bubble\s+\.desktop-pet-hitbox\s*\{[\s\S]{0,80}width:\s*220px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-tasks\s+\.desktop-pet-hitbox\s*\{[\s\S]{0,120}width:\s*min\(100%,\s*376px\);/);
   assert.match(globalStyles, /\.desktop-pet-speech\s*\{[\s\S]{0,80}width:\s*min\(216px,\s*calc\(100% - 4px\)\);/);
   assert.match(globalStyles, /\.desktop-pet-speech\s*\{[\s\S]{0,520}box-shadow:\s*none;/);
   assert.match(globalStyles, /\.desktop-pet-image\s*\{[\s\S]{0,120}width:\s*96px;/);
   assert.doesNotMatch(globalStyles, /\.desktop-pet-root:not\(\.has-bubble\):not\(\.has-preview\)\s+\.desktop-pet-image[\s\S]{0,120}width:\s*100%/);
+});
+
+test("desktop pet active task panel lists all agent tasks and opens chat rows", () => {
+  const desktopPet = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
+    "utf8"
+  );
+  const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const desktopPetHandlers = readSourceFile("src", "main", "ipc", "desktop-pet-handlers.ts");
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const contracts = readSharedContractsSource();
+  const globalStyles = readRendererStyles();
+
+  assert.match(contracts, /interface DesktopPetTaskItem/);
+  assert.match(contracts, /activeTasks:\s*DesktopPetTaskItem\[\]/);
+  assert.match(contracts, /openTaskChat:\s*\(input:\s*\{ agentKey: string; chatId: string \}\)/);
+  assert.match(desktopPetController, /createDesktopPetActiveTasksFromNavigationSnapshot/);
+  assert.match(desktopPetController, /chat\.hasPendingAwaiting \? "awaiting" : "running"/);
+  assert.match(desktopPetController, /DESKTOP_PET_TASK_TITLE_FALLBACK = "未命名任务"/);
+  assert.match(desktopPetController, /left\.status === "awaiting" \? -1 : 1/);
+  assert.match(mainProcess, /appState\.assistantNavigationStatusClient\?\.getSnapshot\(\)/);
+  assert.match(mainProcess, /function emitAssistantNavigationAgentsChanged[\s\S]*?refreshDesktopPetState\(\);/);
+  assert.match(mainProcess, /openDesktopPetTaskChat/);
+  assert.match(desktopPetHandlers, /desktopPet\.openTaskChat/);
+  assert.match(preload, /openTaskChat: \(input\) => ipcRenderer\.invoke\("desktopPet\.openTaskChat", input\)/);
+  assert.match(desktopPet, /DESKTOP_PET_TASK_VISIBLE_LIMIT = 3/);
+  assert.match(desktopPet, /const showTaskPanel = !isDragging && activeTasks\.length > 0/);
+  assert.match(desktopPet, /const showPreviewPanel = !isDragging && !showTaskPanel && Boolean\(previewPanel\)/);
+  assert.match(desktopPet, /desktop-pet-task-panel/);
+  assert.match(desktopPet, /desktopPet\.openTaskChat\(\{/);
+  assert.match(globalStyles, /\.desktop-pet-task-panel/);
+  assert.match(globalStyles, /\.desktop-pet-task-row/);
+  assert.match(globalStyles, /\.desktop-pet-task-more/);
 });
 
 test("task running sprite uses the smooth high-frame strip", () => {
@@ -3373,8 +3410,8 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /handlePreviewClick[\s\S]{0,360}desktopPet\.setPreviewExpanded\(!previewPanel\.expanded\)/);
   assert.match(desktopPet, /messagePreview \|\| "有新消息"/);
   assert.match(desktopPet, /const previewPanel = petState\.previewPanel\?\.visible \? petState\.previewPanel : null/);
-  assert.match(desktopPet, /const showPreviewPanel = !isDragging && Boolean\(previewPanel\)/);
-  assert.match(desktopPet, /const showBubble = !isDragging && !showPreviewPanel && bubbleText\.length > 0/);
+  assert.match(desktopPet, /const showPreviewPanel = !isDragging && !showTaskPanel && Boolean\(previewPanel\)/);
+  assert.match(desktopPet, /const showBubble = !isDragging && !showTaskPanel && !showPreviewPanel && bubbleText\.length > 0/);
   assert.match(desktopPet, /desktop-pet-preview-toggle/);
   assert.match(desktopPet, /desktopPet\.setPreviewExpanded/);
   assert.match(desktopPet, /onPointerEnter=\{handlePointerEnter\}/);

@@ -205,6 +205,8 @@ test("desktop pet exposes anchored preview window sizes", () => {
 
   assert.equal(DESKTOP_PET_WINDOW_SIZES["preview-collapsed"].width, 380);
   assert.equal(DESKTOP_PET_WINDOW_SIZES["preview-expanded"].height, 412);
+  assert.equal(DESKTOP_PET_WINDOW_SIZES["task-list"].width, 392);
+  assert.equal(DESKTOP_PET_WINDOW_SIZES["task-list"].height, 360);
   assert.deepEqual(logical, { x: base.x, y: base.y });
   assert.equal(expanded.x + expanded.width, base.x + DESKTOP_PET_WINDOW_SIZE.width);
   assert.equal(expanded.y + expanded.height, base.y + DESKTOP_PET_WINDOW_SIZE.height);
@@ -483,6 +485,7 @@ test("desktop pet shows bound agent unread count while idle", () => {
   assert.equal(state.agentStatusStale, false);
   assert.equal(state.appearanceId, DEFAULT_DESKTOP_PET_APPEARANCE_ID);
   assert.equal(state.appearanceOptions.length, 5);
+  assert.deepEqual(state.activeTasks, []);
 });
 
 test("desktop pet state exposes selectable agent options", () => {
@@ -503,6 +506,35 @@ test("desktop pet state exposes selectable agent options", () => {
   assert.deepEqual(state.agentOptions, [
     { agentKey: "zenmi", displayName: "小宅", role: "平台总管", unreadCount: 8 }
   ]);
+});
+
+test("desktop pet state exposes active task items", () => {
+  const state = createDesktopPetState({
+    enabled: true,
+    lastVisible: true,
+    unreadCount: 0,
+    boundAgentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY
+  }, {
+    supported: true,
+    visible: true,
+    localStatus: createDefaultDesktopPetLocalStatus(),
+    activeTasks: [
+      {
+        id: "zenmi:chat-1",
+        agentKey: "zenmi",
+        agentDisplayName: "小宅",
+        chatId: "chat-1",
+        runId: "run-1",
+        title: "整理项目",
+        preview: "",
+        status: "running",
+        updatedAt: "2026-06-10T00:00:00.000Z"
+      }
+    ]
+  });
+
+  assert.equal(state.activeTasks.length, 1);
+  assert.equal(state.activeTasks[0].title, "整理项目");
 });
 
 test("desktop pet state exposes a safe running task count", () => {

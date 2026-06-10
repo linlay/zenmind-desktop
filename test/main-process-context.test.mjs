@@ -368,6 +368,7 @@ test("desktop pet ipc options read and update desktop pet state through the cont
     showWindow: () => "shown",
     hideWindow: () => "hidden",
     openAssistant: () => "assistant",
+    openTaskChat: () => "task-chat",
     moveWindowBy: () => "moved",
     beginDrag: () => "begin",
     endDrag: () => "end",
@@ -389,6 +390,7 @@ test("desktop pet ipc options read and update desktop pet state through the cont
   assert.deepEqual(state.desktopPetAgentStatus, { presence: "busy" });
   assert.equal(options.getWindow(), window);
   assert.equal(options.openAssistant(), "assistant");
+  assert.equal(options.openTaskChat(), "task-chat");
 });
 
 test("settings ipc options use context runtime dependencies and injected refresh actions", () => {

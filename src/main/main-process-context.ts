@@ -350,6 +350,7 @@ export interface DesktopPetIpcHandlerContextDependencies {
   showWindow: (...args: any[]) => unknown;
   hideWindow: (...args: any[]) => unknown;
   openAssistant: (...args: any[]) => unknown;
+  openTaskChat: (...args: any[]) => unknown;
   moveWindowBy: (...args: any[]) => unknown;
   beginDrag: (...args: any[]) => unknown;
   endDrag: (...args: any[]) => unknown;
@@ -378,6 +379,7 @@ export function createDesktopPetIpcHandlerOptions(
     showWindow: dependencies.showWindow,
     hideWindow: dependencies.hideWindow,
     openAssistant: dependencies.openAssistant,
+    openTaskChat: dependencies.openTaskChat,
     moveWindowBy: dependencies.moveWindowBy,
     beginDrag: dependencies.beginDrag,
     endDrag: dependencies.endDrag,

@@ -291,6 +291,7 @@ export interface DesktopApi {
     show: () => Promise<DesktopPetState>;
     hide: () => Promise<DesktopPetState>;
     openAssistant: () => Promise<{ ok: boolean }>;
+    openTaskChat: (input: { agentKey: string; chatId: string }) => Promise<{ ok: boolean; message?: string }>;
     moveBy: (delta: { x: number; y: number }) => Promise<{ ok: boolean }>;
     beginDrag: (point: { x: number; y: number }) => Promise<{ ok: boolean }>;
     endDrag: () => Promise<{ ok: boolean; moved: boolean }>;

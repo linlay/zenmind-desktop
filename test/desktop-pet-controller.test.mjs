@@ -6,6 +6,7 @@ const {
   computeDesktopPetPositionPersistence,
   computeDesktopPetStateRefresh,
   createDesktopPetActiveRunTracker,
+  createDesktopPetActiveTasksFromNavigationSnapshot,
   createDesktopPetDonePreviewDismissalTracker,
   createDesktopPetIdleResetAction,
   resolveDesktopPetWindowMode,
@@ -103,6 +104,75 @@ test("desktop pet active run tracker updates idempotently and combines task-boar
   assert.equal(tracker.getRunningTaskCount({ fallbackRunning: true }), 1);
 });
 
+test("desktop pet active tasks are built from all navigation agents with awaiting first", () => {
+  const tasks = createDesktopPetActiveTasksFromNavigationSnapshot({
+    ok: true,
+    items: [
+      {
+        agentKey: "writer",
+        displayName: "写作助手",
+        updatedAt: "2026-06-10T10:00:00.000Z",
+        recentChats: [
+          {
+            chatId: "chat-running",
+            chatName: "整理周报",
+            agentKey: "writer",
+            updatedAt: "2026-06-10T10:00:00.000Z",
+            lastRunId: "run-1",
+            lastRunContent: "思考中",
+            isRead: true,
+            hasActiveRun: true,
+            hasPendingAwaiting: false
+          }
+        ]
+      },
+      {
+        agentKey: "coder",
+        displayName: "开发助手",
+        updatedAt: "2026-06-10T09:00:00.000Z",
+        recentChats: [
+          {
+            chatId: "chat-awaiting",
+            chatName: "",
+            agentKey: "coder",
+            updatedAt: "2026-06-10T09:00:00.000Z",
+            lastRunId: "run-2",
+            lastRunContent: "需要确认发布计划",
+            isRead: true,
+            hasActiveRun: true,
+            hasPendingAwaiting: true,
+            awaitingMode: "plan"
+          },
+          {
+            chatId: "chat-idle",
+            chatName: "已完成任务",
+            agentKey: "coder",
+            updatedAt: "2026-06-10T11:00:00.000Z",
+            lastRunId: "",
+            lastRunContent: "done",
+            isRead: false,
+            hasActiveRun: false,
+            hasPendingAwaiting: false
+          }
+        ]
+      }
+    ]
+  });
+
+  assert.deepEqual(tasks.map((task) => task.id), ["coder:chat-awaiting", "writer:chat-running"]);
+  assert.equal(tasks[0].status, "awaiting");
+  assert.equal(tasks[0].awaitingMode, "plan");
+  assert.equal(tasks[0].title, "需要确认发布计划");
+  assert.equal(tasks[0].agentDisplayName, "开发助手");
+  assert.equal(tasks[1].title, "整理周报");
+  assert.equal(tasks[1].preview, "");
+});
+
+test("desktop pet active tasks are empty for unavailable navigation snapshots", () => {
+  assert.deepEqual(createDesktopPetActiveTasksFromNavigationSnapshot(null), []);
+  assert.deepEqual(createDesktopPetActiveTasksFromNavigationSnapshot({ ok: false, items: [] }), []);
+});
+
 test("desktop pet state refresh applies local patches and reports settings persistence changes", () => {
   const result = computeDesktopPetStateRefresh({
     settings: {
@@ -127,6 +197,17 @@ test("desktop pet state refresh applies local patches and reports settings persi
     },
     agentStatus: null,
     agentOptions: [],
+    activeTasks: [{
+      id: "zenmi:chat-1",
+      agentKey: "zenmi",
+      agentDisplayName: "小宅",
+      chatId: "chat-1",
+      runId: "run-1",
+      title: "整理项目",
+      preview: "",
+      status: "running",
+      updatedAt: "2026-06-10T00:00:00.000Z"
+    }],
     previewPanel: null,
     runningTaskCount: 1,
     edgeDock: "top"
@@ -141,6 +222,7 @@ test("desktop pet state refresh applies local patches and reports settings persi
   assert.equal(result.state.status, "running");
   assert.equal(result.state.visible, true);
   assert.equal(result.state.runningTaskCount, 1);
+  assert.equal(result.state.activeTasks[0].title, "整理项目");
   assert.equal(result.state.edgeDock, "top");
   assert.deepEqual(result.settingsPatch, {
     unreadCount: 2,
@@ -212,6 +294,12 @@ test("desktop pet window mode resolves drag, preview and bubble states", () => {
     state: { status: "idle", hint: "", messagePreview: "", unreadCount: 0 },
     previewPanel: null
   }), "base");
+
+  assert.equal(resolveDesktopPetWindowMode({
+    dragging: false,
+    state: { status: "idle", hint: "", messagePreview: "", unreadCount: 0, activeTasks: [{ id: "task-1" }] },
+    previewPanel: { visible: true, expanded: true }
+  }), "task-list");
 });
 
 test("desktop pet idle reset action describes preview clearing and idle patch", () => {
@@ -933,5 +1021,3 @@ test("createDesktopPetPreviewController refreshCompletedPreviewFromAgentStatus b
   assert.equal(ingestedEvent.chatId, "chat-1");
   assert.equal(ingestedEvent.runId, "run-1");
 });
-
-

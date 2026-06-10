@@ -212,6 +212,7 @@ import {
   computeDesktopPetPositionPersistence,
   computeDesktopPetStateRefresh,
   createDesktopPetActiveRunTracker,
+  createDesktopPetActiveTasksFromNavigationSnapshot,
   createDesktopPetDonePreviewDismissalTracker,
   createDesktopPetIdleResetAction,
   resolveDesktopPetWindowMode,
@@ -703,6 +704,12 @@ function getDesktopPetRunningTaskCountForState() {
   });
 }
 
+function getDesktopPetActiveTasksForState() {
+  return createDesktopPetActiveTasksFromNavigationSnapshot(
+    appState.assistantNavigationStatusClient?.getSnapshot()
+  );
+}
+
 function getDesktopPetAgentStatusForState() {
   return desktopPetDonePreviewDismissalTracker.filterAgentStatus(appState.desktopPetAgentStatus);
 }
@@ -779,6 +786,7 @@ function scheduleAgentPlatformPetStatusRefresh(delayMs = 0, force = false) {
 
 function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
   const visible = getDesktopPetVisible();
+  const activeTasks = getDesktopPetActiveTasksForState();
   const refresh = computeDesktopPetStateRefresh({
     settings: appState.desktopPetSettings,
     supported: isDesktopPetSupportedPlatform(mainProcessContext.platform),
@@ -787,8 +795,9 @@ function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
     patch,
     agentStatus: getDesktopPetAgentStatusForState(),
     agentOptions: appState.desktopPetAgentOptions,
+    activeTasks,
     previewPanel: desktopPetPreviewController.getPanel(),
-    runningTaskCount: getDesktopPetRunningTaskCountForState(),
+    runningTaskCount: Math.max(getDesktopPetRunningTaskCountForState(), activeTasks.length),
     edgeDock: resolveDesktopPetEdgeDock(
       appState.desktopPetSettings.position,
       getDesktopPetDisplayBounds(appState.desktopPetSettings.position)
@@ -1079,6 +1088,26 @@ async function openAssistantFromDesktopPet() {
   };
 }
 
+async function openDesktopPetTaskChat(input: { agentKey?: unknown; chatId?: unknown } = {}) {
+  const agentKey = typeof input.agentKey === "string" ? input.agentKey.trim() : "";
+  const chatId = typeof input.chatId === "string" ? input.chatId.trim() : "";
+  if (!agentKey || !chatId) {
+    return {
+      ok: false,
+      message: "任务缺少智能体或聊天标识。"
+    };
+  }
+  await openAssistantWorker({
+    agentKey,
+    chatId,
+    focusComposerOnComplete: false
+  });
+  return {
+    ok: true,
+    message: "已打开任务聊天。"
+  };
+}
+
 function requestDesktopPetDance() {
   if (!appState.desktopPetWindow || appState.desktopPetWindow.isDestroyed()) {
     return { ok: false };
@@ -1332,6 +1361,9 @@ function emitAssistantNavigationAgentsChanged(result: AssistantNavAgentItemsResu
       continue;
     }
     targetWindow.webContents.send("assistant.navigationAgentsChanged", result);
+  }
+  if (getDesktopPetVisible()) {
+    refreshDesktopPetState();
   }
 }
 
@@ -1969,6 +2001,9 @@ function registerIpcHandlers(context: MainProcessContext) {
     },
     openAssistant: () => {
       return openAssistantFromDesktopPet();
+    },
+    openTaskChat: (input: any) => {
+      return openDesktopPetTaskChat(input);
     },
     moveWindowBy: (delta: any) => {
       return moveDesktopPetWindowBy(delta);

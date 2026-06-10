@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { App, Rectangle } from "electron";
 import type {
+  DesktopPetTaskItem,
   DesktopPetAgentOption,
   DesktopPetAgentPresence,
   DesktopPetEdgeDock,
@@ -47,7 +48,7 @@ export const DESKTOP_PET_VISIBLE_FOOTPRINT = {
   height: 108
 } as const;
 
-export type DesktopPetWindowMode = "base" | "bubble" | "preview-collapsed" | "preview-expanded";
+export type DesktopPetWindowMode = "base" | "bubble" | "preview-collapsed" | "preview-expanded" | "task-list";
 
 export const DESKTOP_PET_WINDOW_SIZES: Record<DesktopPetWindowMode, { width: number; height: number }> = {
   base: DESKTOP_PET_WINDOW_SIZE,
@@ -62,6 +63,10 @@ export const DESKTOP_PET_WINDOW_SIZES: Record<DesktopPetWindowMode, { width: num
   "preview-expanded": {
     width: 420,
     height: 412
+  },
+  "task-list": {
+    width: 392,
+    height: 360
   }
 } as const;
 
@@ -408,6 +413,7 @@ export function createDesktopPetState(
     localStatus?: DesktopPetLocalStatus;
     agentStatus?: DesktopPetBoundAgentStatus | null;
     agentOptions?: DesktopPetAgentOption[];
+    activeTasks?: DesktopPetTaskItem[];
     previewPanel?: DesktopPetPreviewPanel | null;
     runningTaskCount?: unknown;
     edgeDock?: DesktopPetEdgeDock;
@@ -435,6 +441,7 @@ export function createDesktopPetState(
     agentPresence: agentStatus?.presence ?? agentDefaults.presence,
     agentStatusStale: agentStatus?.stale ?? agentDefaults.stale,
     agentOptions: options.agentOptions ?? [],
+    activeTasks: options.activeTasks ?? [],
     previewPanel: options.previewPanel ?? null,
     runningTaskCount: sanitizeDesktopPetRunningTaskCount(options.runningTaskCount),
     edgeDock: options.edgeDock ?? null,

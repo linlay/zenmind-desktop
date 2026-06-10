@@ -32,6 +32,21 @@ export interface DesktopPetAgentOption {
   unreadCount: number;
 }
 
+export type DesktopPetTaskStatus = "running" | "awaiting";
+
+export interface DesktopPetTaskItem {
+  id: string;
+  agentKey: string;
+  agentDisplayName: string;
+  chatId: string;
+  runId: string | null;
+  title: string;
+  preview: string;
+  status: DesktopPetTaskStatus;
+  awaitingMode?: AssistantAwaitingMode;
+  updatedAt: string;
+}
+
 export type DesktopPetPreviewItemKind =
   | "thinking"
   | "content"
@@ -102,6 +117,7 @@ export interface DesktopPetState {
   agentPresence: DesktopPetAgentPresence;
   agentStatusStale: boolean;
   agentOptions: DesktopPetAgentOption[];
+  activeTasks: DesktopPetTaskItem[];
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
   edgeDock: DesktopPetEdgeDock;

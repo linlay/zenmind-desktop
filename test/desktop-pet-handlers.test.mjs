@@ -185,6 +185,7 @@ test("registerDesktopPetIpcHandlers registers other window and interaction handl
   let showWindowCalled = false;
   let hideWindowVal = null;
   let openAssistantCalled = false;
+  let openTaskChatVal = null;
   let moveByVal = null;
   let beginDragVal = null;
   let endDragCalled = false;
@@ -205,6 +206,10 @@ test("registerDesktopPetIpcHandlers registers other window and interaction handl
     openAssistant() {
       openAssistantCalled = true;
       return Promise.resolve("assistant-opened");
+    },
+    openTaskChat(input) {
+      openTaskChatVal = input;
+      return Promise.resolve({ ok: true });
     },
     moveWindowBy(delta) {
       moveByVal = delta;
@@ -250,6 +255,10 @@ test("registerDesktopPetIpcHandlers registers other window and interaction handl
   const openRes = await handlers["desktopPet.openAssistant"]();
   assert.equal(openAssistantCalled, true);
   assert.equal(openRes, "assistant-opened");
+
+  const openTaskRes = await handlers["desktopPet.openTaskChat"](null, { agentKey: "zenmi", chatId: "chat-1" });
+  assert.deepEqual(openTaskChatVal, { agentKey: "zenmi", chatId: "chat-1" });
+  assert.deepEqual(openTaskRes, { ok: true });
 
   // Verification checks for event.sender (moveBy, beginDrag, endDrag, setPreviewExpanded, dismissPreview, setMouseInteractive)
   // Case 1: no window

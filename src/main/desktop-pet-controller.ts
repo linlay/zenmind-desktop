@@ -3,9 +3,12 @@ import {
   resolveDesktopPetRunningTaskCount
 } from "../shared/desktop-pet";
 import type {
+  AssistantNavAgentItem,
+  AssistantNavChatItem,
   DesktopPetAgentOption,
   DesktopPetEdgeDock,
-  DesktopPetPreviewPanel
+  DesktopPetPreviewPanel,
+  DesktopPetTaskItem
 } from "../shared/contracts";
 import type {
   DesktopPetBoundAgentStatus,
@@ -61,6 +64,7 @@ type DesktopPetWindowModeStateLike = {
   hint?: unknown;
   messagePreview?: unknown;
   unreadCount?: unknown;
+  activeTasks?: unknown;
 };
 
 type DesktopPetBoundsLike = {
@@ -179,6 +183,99 @@ export function createDesktopPetActiveRunTracker() {
   };
 }
 
+const DESKTOP_PET_TASK_TITLE_FALLBACK = "未命名任务";
+const DESKTOP_PET_GENERIC_TASK_PREVIEWS = new Set([
+  "",
+  "思考中",
+  "思考中...",
+  "正在生成回复",
+  "回复生成中",
+  "回复已生成",
+  "已完成",
+  "完成",
+  "打开对话查看完整回复"
+]);
+
+function toDesktopPetTaskText(value: unknown) {
+  return typeof value === "string" ? value.replace(/\s+/gu, " ").trim() : "";
+}
+
+function getDesktopPetTaskTimestamp(value: unknown) {
+  const text = toDesktopPetTaskText(value);
+  if (!text) {
+    return 0;
+  }
+  const numeric = Number(text);
+  if (Number.isFinite(numeric)) {
+    return numeric;
+  }
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getUsableDesktopPetTaskPreview(value: unknown) {
+  const preview = toDesktopPetTaskText(value);
+  return DESKTOP_PET_GENERIC_TASK_PREVIEWS.has(preview) ? "" : preview;
+}
+
+function resolveDesktopPetTaskTitle(chat: AssistantNavChatItem) {
+  return toDesktopPetTaskText(chat.chatName) ||
+    getUsableDesktopPetTaskPreview(chat.lastRunContent) ||
+    DESKTOP_PET_TASK_TITLE_FALLBACK;
+}
+
+export function createDesktopPetActiveTasksFromNavigationSnapshot(
+  snapshot: { ok?: unknown; items?: unknown } | null | undefined
+): DesktopPetTaskItem[] {
+  if (!snapshot?.ok || !Array.isArray(snapshot.items)) {
+    return [];
+  }
+
+  const tasks: DesktopPetTaskItem[] = [];
+  for (const agent of snapshot.items as AssistantNavAgentItem[]) {
+    const agentKey = toDesktopPetTaskText(agent?.agentKey);
+    if (!agentKey || !Array.isArray(agent?.recentChats)) {
+      continue;
+    }
+    const agentDisplayName = toDesktopPetTaskText(agent.displayName) || agentKey;
+    for (const chat of agent.recentChats) {
+      if (!chat?.hasPendingAwaiting && !chat?.hasActiveRun) {
+        continue;
+      }
+      const chatId = toDesktopPetTaskText(chat.chatId);
+      if (!chatId) {
+        continue;
+      }
+      const taskAgentKey = toDesktopPetTaskText(chat.agentKey) || agentKey;
+      const status = chat.hasPendingAwaiting ? "awaiting" : "running";
+      const updatedAt = toDesktopPetTaskText(chat.updatedAt) || toDesktopPetTaskText(agent.updatedAt);
+      tasks.push({
+        id: `${taskAgentKey}:${chatId}`,
+        agentKey: taskAgentKey,
+        agentDisplayName,
+        chatId,
+        runId: toDesktopPetTaskText(chat.lastRunId) || null,
+        title: resolveDesktopPetTaskTitle(chat),
+        preview: getUsableDesktopPetTaskPreview(chat.lastRunContent),
+        status,
+        ...(chat.awaitingMode ? { awaitingMode: chat.awaitingMode } : {}),
+        updatedAt
+      });
+    }
+  }
+
+  return tasks.sort((left, right) => {
+    if (left.status !== right.status) {
+      return left.status === "awaiting" ? -1 : 1;
+    }
+    const timeDelta = getDesktopPetTaskTimestamp(right.updatedAt) - getDesktopPetTaskTimestamp(left.updatedAt);
+    if (timeDelta !== 0) {
+      return timeDelta;
+    }
+    return left.title.localeCompare(right.title, "zh-CN");
+  });
+}
+
 export function computeDesktopPetStateRefresh(input: {
   settings: DesktopPetSettingsLike;
   supported: boolean;
@@ -187,6 +284,7 @@ export function computeDesktopPetStateRefresh(input: {
   patch?: Partial<DesktopPetLocalStatus>;
   agentStatus: DesktopPetBoundAgentStatus | null;
   agentOptions: DesktopPetAgentOption[];
+  activeTasks?: DesktopPetTaskItem[];
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
   edgeDock: DesktopPetEdgeDock;
@@ -203,6 +301,7 @@ export function computeDesktopPetStateRefresh(input: {
     localStatus,
     agentStatus: input.agentStatus,
     agentOptions: input.agentOptions,
+    activeTasks: input.activeTasks,
     previewPanel: input.previewPanel,
     runningTaskCount: input.runningTaskCount,
     edgeDock: input.edgeDock
@@ -228,6 +327,10 @@ export function resolveDesktopPetWindowMode(input: {
 }): DesktopPetWindowMode {
   if (input.dragging) {
     return "base";
+  }
+  const activeTasks = Array.isArray(input.state.activeTasks) ? input.state.activeTasks : [];
+  if (activeTasks.length > 0) {
+    return "task-list";
   }
   const panel = input.previewPanel;
   if (panel?.visible) {
@@ -1111,5 +1214,3 @@ export function createDesktopPetPreviewController(
     dismissPreview
   };
 }
-
-
