@@ -892,11 +892,11 @@ test("direct AI login defaults cookie access_token exchange to the authorization
 test("resolveDesktopSsoConfigPath uses platform-specific home paths", () => {
   assert.equal(
     resolveDesktopSsoConfigPath(createTestApp("/Users/tester"), "darwin"),
-    "/Users/tester/.zenmind/desktop-sso.json"
+    "/Users/tester/.zenmind/.desktop/config/desktop/sso.json"
   );
   assert.equal(
     resolveDesktopSsoConfigPath(createTestApp("C:\\Users\\tester"), "win32"),
-    "C:\\Users\\tester\\.zenmind\\desktop-sso.json"
+    "C:\\Users\\tester\\.zenmind\\.desktop\\config\\desktop\\sso.json"
   );
 });
 

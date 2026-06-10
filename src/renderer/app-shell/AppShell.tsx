@@ -81,6 +81,10 @@ import {
 type ThemePreference = "light" | "dark" | "system";
 type ResolvedThemeMode = "light" | "dark";
 
+function isThemePreference(value: unknown): value is ThemePreference {
+  return value === "light" || value === "dark" || value === "system";
+}
+
 function readStoredThemePreference(): ThemePreference {
   if (typeof window === "undefined") {
     return "light";
@@ -268,6 +272,7 @@ export function AppShell() {
   const assistantNavAgentsRefreshIdRef = useRef(0);
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
   const [themeMode, setThemeMode] = useState<ThemePreference>(() => readStoredThemePreference());
+  const [themePreferenceLoaded, setThemePreferenceLoaded] = useState(false);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedThemeMode>(() => resolveThemePreference(readStoredThemePreference()));
   const [sidebarState, setSidebarState] = useState<SidebarLayoutState>(() => {
     if (typeof window === "undefined") {
@@ -287,6 +292,7 @@ export function AppShell() {
     readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY)
   );
   const [customSidebarGroupOrder, setCustomSidebarGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialCustomSidebarGroupOrder);
+  const [navigationPreferencesLoaded, setNavigationPreferencesLoaded] = useState(false);
   const [assistantDockOpenPath, setAssistantDockOpenPath] = useState<string | null>(null);
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [assistantRunningRunId, setAssistantRunningRunId] = useState<string | null>(null);
@@ -834,10 +840,31 @@ export function AppShell() {
   }, [showStartupCard, startupRestoreState]);
 
   useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.settings.getThemePreference()
+      .then((profileTheme) => {
+        if (!cancelled && isThemePreference(profileTheme)) {
+          setThemeMode(profileTheme);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          setThemePreferenceLoaded(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const resolved = resolveThemePreference(themeMode);
     setResolvedTheme(resolved);
     document.documentElement.dataset.theme = resolved;
-    window.electronAPI.settings.setNativeThemeSource(themeMode).catch(() => undefined);
+    if (themePreferenceLoaded) {
+      window.electronAPI.settings.setNativeThemeSource(themeMode).catch(() => undefined);
+    }
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
     } catch {
@@ -858,7 +885,7 @@ export function AppShell() {
     return () => {
       media.removeEventListener("change", handleSystemThemeChange);
     };
-  }, [themeMode]);
+  }, [themeMode, themePreferenceLoaded]);
 
   useEffect(() => {
     const shouldApply = isMac;
@@ -870,6 +897,31 @@ export function AppShell() {
   }, [isMac]);
 
   useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.settings.getNavigationPreferences()
+      .then((preferences) => {
+        if (cancelled) {
+          return;
+        }
+        if (Array.isArray(preferences?.mainOrder)) {
+          setSidebarNavOrder(preferences.mainOrder as SidebarNavOrderItemKey[]);
+        }
+        if (Array.isArray(preferences?.websiteOrder)) {
+          setCustomSidebarGroupOrder(preferences.websiteOrder as SidebarNavOrderItemKey[]);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          setNavigationPreferencesLoaded(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(
         SIDEBAR_NAV_ORDER_STORAGE_KEY,
@@ -878,7 +930,12 @@ export function AppShell() {
     } catch {
       // Ignore persistence failures and keep the in-memory navigation order usable.
     }
-  }, [normalizedSidebarNavOrder]);
+    if (navigationPreferencesLoaded) {
+      window.electronAPI.settings.saveNavigationPreferences({
+        mainOrder: normalizedSidebarNavOrder
+      }).catch(() => undefined);
+    }
+  }, [navigationPreferencesLoaded, normalizedSidebarNavOrder]);
 
   useEffect(() => {
     try {
@@ -889,7 +946,12 @@ export function AppShell() {
     } catch {
       // Ignore persistence failures and keep the in-memory website order usable.
     }
-  }, [normalizedCustomSidebarGroupOrder]);
+    if (navigationPreferencesLoaded) {
+      window.electronAPI.settings.saveNavigationPreferences({
+        websiteOrder: normalizedCustomSidebarGroupOrder
+      }).catch(() => undefined);
+    }
+  }, [navigationPreferencesLoaded, normalizedCustomSidebarGroupOrder]);
 
   useEffect(() => {
     document.body.classList.toggle("embedded-surface-body", usesEmbeddedSurface);
@@ -1272,12 +1334,6 @@ export function AppShell() {
           issues.push({ field: "desktopPet.appearanceId", value: desktopPetPatch.appearanceId, message: "请选择可用的桌面宠物形象。" });
         }
       }
-      if ("boundAgentKey" in desktopPetPatch) {
-        const boundAgentKey = typeof desktopPetPatch.boundAgentKey === "string" ? desktopPetPatch.boundAgentKey.trim() : "";
-        if (!state.desktopPet.agentOptions.some((agent) => agent.agentKey === boundAgentKey)) {
-          issues.push({ field: "desktopPet.boundAgentKey", value: desktopPetPatch.boundAgentKey, message: "请选择可用的桌面宠物绑定智能体。" });
-        }
-      }
       if ("desktopHelperAgentKey" in patch) {
         const agentKey = typeof patch.desktopHelperAgentKey === "string" ? patch.desktopHelperAgentKey.trim() : "";
         if (!state.assistantAgents.some((agent) => agent.agentKey === agentKey)) {
@@ -1319,9 +1375,6 @@ export function AppShell() {
       }
       if ("appearanceId" in desktopPetPatch) {
         changes.push({ field: "desktopPet.appearanceId", from: state.desktopPet.appearanceId, to: desktopPetPatch.appearanceId });
-      }
-      if ("boundAgentKey" in desktopPetPatch) {
-        changes.push({ field: "desktopPet.boundAgentKey", from: state.desktopPet.boundAgentKey, to: desktopPetPatch.boundAgentKey });
       }
       if ("desktopHelperAgentKey" in patch) {
         changes.push({
@@ -1385,8 +1438,7 @@ export function AppShell() {
           if (Object.keys(desktopPetPatch).length > 0) {
             await window.electronAPI.desktopPet.saveSettings({
               ...(typeof desktopPetPatch.enabled === "boolean" ? { enabled: desktopPetPatch.enabled } : {}),
-              ...(typeof desktopPetPatch.appearanceId === "string" ? { appearanceId: desktopPetPatch.appearanceId } : {}),
-              ...(typeof desktopPetPatch.boundAgentKey === "string" ? { boundAgentKey: desktopPetPatch.boundAgentKey } : {})
+              ...(typeof desktopPetPatch.appearanceId === "string" ? { appearanceId: desktopPetPatch.appearanceId } : {})
             });
           }
           if ("desktopHelperAgentKey" in patch || "desktopCopilotPages" in patch) {

@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import type { App } from "electron";
 import type { AssistantSettingsInput, AssistantSettingsPublic } from "../../../shared/contracts";
 import {
@@ -10,9 +9,15 @@ import {
 } from "../../../shared/assistant-settings";
 import { sanitizeDesktopCopilotPagePreferences } from "../../../shared/page-copilot";
 import { getAssistantSettingsRoot } from "../../user-paths";
+import {
+  DEFAULT_VOICE_CORRECTION_ENABLED,
+  DESKTOP_PROFILE_FILE,
+  getDesktopProfilePath,
+  readDesktopProfileFromRoot,
+  updateDesktopProfileInRoot
+} from "../../desktop-profile-store";
 
-const SETTINGS_FILE = "settings.json";
-const DEFAULT_VOICE_CORRECTION_ENABLED = true;
+const SETTINGS_FILE = DESKTOP_PROFILE_FILE;
 
 export type AssistantSettingsPrivate = {
   baseURL: string;
@@ -30,7 +35,7 @@ function getAssistantRoot(app: App) {
 }
 
 function getSettingsPath(rootDir: string) {
-  return path.join(rootDir, SETTINGS_FILE);
+  return getDesktopProfilePath(rootDir);
 }
 
 function ensureRoot(rootDir: string) {
@@ -72,14 +77,6 @@ function toStoredAssistantSettings(settings: AssistantSettingsPrivate) {
     quickAssistantAgentKey: settings.quickAssistantAgentKey,
     desktopCopilotPages: settings.desktopCopilotPages
   };
-}
-
-function needsSanitizedWrite(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-  const candidate = value as Record<string, unknown>;
-  return "apiKey" in candidate || "baseURL" in candidate || "model" in candidate || "clearApiKey" in candidate;
 }
 
 function mergeDesktopCopilotPagePreferences(
@@ -125,21 +122,15 @@ export function toPublicAssistantSettings(
 
 export function readAssistantSettingsFromRoot(rootDir: string): AssistantSettingsPrivate {
   ensureRoot(rootDir);
-  const settingsPath = getSettingsPath(rootDir);
-  try {
-    const raw = fs.readFileSync(settingsPath, "utf8");
-    const parsed = JSON.parse(raw);
-    const settings = normalizeStoredSettings(parsed);
-    if (needsSanitizedWrite(parsed)) {
-      fs.writeFileSync(settingsPath, `${JSON.stringify(toStoredAssistantSettings(settings), null, 2)}\n`, "utf8");
-    }
-    return settings;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return normalizeStoredSettings(null);
-    }
-    throw error;
-  }
+  const profile = readDesktopProfileFromRoot(rootDir);
+  const settings = normalizeStoredSettings({
+    voiceCorrectionEnabled: profile.assistant.voiceCorrectionEnabled,
+    desktopHelperAgentKey: profile.assistant.desktopHelperAgentKey,
+    quickAssistantEnabled: profile.assistant.quickAssistant.enabled,
+    quickAssistantAgentKey: profile.assistant.quickAssistant.agentKey,
+    desktopCopilotPages: profile.navigation.desktopCopilotPages
+  });
+  return settings;
 }
 
 export function getAssistantSettingsFromRoot(rootDir: string): AssistantSettingsPublic {
@@ -171,7 +162,19 @@ export function saveAssistantSettingsToRoot(
     desktopCopilotPages: mergeDesktopCopilotPagePreferences(current.desktopCopilotPages, input.desktopCopilotPages)
   };
 
-  fs.writeFileSync(getSettingsPath(rootDir), `${JSON.stringify(toStoredAssistantSettings(next), null, 2)}\n`, "utf8");
+  updateDesktopProfileInRoot(rootDir, {
+    assistant: {
+      voiceCorrectionEnabled: next.voiceCorrectionEnabled,
+      desktopHelperAgentKey: next.desktopHelperAgentKey,
+      quickAssistant: {
+        enabled: next.quickAssistantEnabled,
+        agentKey: next.quickAssistantAgentKey
+      }
+    },
+    navigation: {
+      desktopCopilotPages: next.desktopCopilotPages
+    }
+  });
   return toPublicAssistantSettings(next);
 }
 
@@ -189,7 +192,9 @@ export function saveAssistantSettings(app: App, input: AssistantSettingsInput): 
 
 export const __testInternals = {
   DEFAULT_VOICE_CORRECTION_ENABLED,
+  SETTINGS_FILE,
   getAssistantRoot,
+  getSettingsPath,
   normalizeStoredSettings,
   toStoredAssistantSettings
 };

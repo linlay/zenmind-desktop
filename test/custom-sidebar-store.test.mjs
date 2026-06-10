@@ -55,7 +55,7 @@ test("custom sidebar items persist locally with normalized URLs", (t) => {
   assert.equal(added.item?.url, "https://www.baidu.com/");
   assert.equal("iconId" in added.item, false);
   assert.equal(added.items.length, 1);
-  assert.equal(fs.existsSync(__testInternals.getCustomSidebarPath(app)), true);
+  assert.equal(fs.existsSync(__testInternals.getWebsitePath(app, added.item.id)), true);
 
   const loaded = listCustomSidebarItems(app);
   assert.equal(loaded.ok, true);

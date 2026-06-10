@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -113,6 +114,18 @@ test("importEnvZipToRuntime strips env wrapper and only copies missing files", a
     assert.equal(result.overwrittenFiles, 0);
     assert.equal(fs.existsSync(path.join(runtimeRoot, "env")), false);
     assert.equal(fs.existsSync(markerPath), true);
+    const retainedZipPath = path.join(runtimeRoot, ".desktop", "data", "env-initial", "env.zip");
+    const retainedManifestPath = path.join(runtimeRoot, ".desktop", "data", "env-initial", "manifest.json");
+    const retainedZip = fs.readFileSync(retainedZipPath);
+    const retainedSha = createHash("sha256").update(retainedZip).digest("hex");
+    const manifest = JSON.parse(fs.readFileSync(retainedManifestPath, "utf8"));
+    const marker = JSON.parse(fs.readFileSync(markerPath, "utf8"));
+    assert.equal(manifest.schemaVersion, 1);
+    assert.equal(manifest.source, "manual");
+    assert.equal(manifest.sha256, retainedSha);
+    assert.equal(marker.initialEnvPackage.relativePath, ".desktop/data/env-initial/env.zip");
+    assert.equal(marker.initialEnvPackage.manifestRelativePath, ".desktop/data/env-initial/manifest.json");
+    assert.equal(marker.initialEnvPackage.sha256, retainedSha);
     assert.equal(runtimeEnvExists(app, "darwin"), true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

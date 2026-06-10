@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const { registerSettingsIpcHandlers } = await import("../dist-electron/main/ipc/settings-handlers.js");
 
@@ -146,29 +149,69 @@ test("settings.resetRuntimeEnv returns structured failure details", async () => 
   });
 });
 
-test("settings.setNativeThemeSource maps dark, system, and other values to light", async () => {
+test("settings.setNativeThemeSource persists theme preference into profile", async (t) => {
   const { ipc, handlers } = makeMockIpcMain();
   const nativeTheme = { themeSource: "light" };
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-settings-theme-"));
+  const app = {
+    name: "test-app",
+    getPath(name) {
+      if (name === "home") return path.join(root, "home");
+      if (name === "appData") return path.join(root, "app-data");
+      assert.fail(`unexpected app.getPath(${name})`);
+    }
+  };
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  registerSettingsIpcHandlers(ipc, makeBaseOptions({ nativeTheme }));
+  registerSettingsIpcHandlers(ipc, makeBaseOptions({ app, nativeTheme }));
 
   assert.deepEqual(await handlers["settings.setNativeThemeSource"]({}, "dark"), {
     ok: true,
     themeSource: "dark"
   });
   assert.equal(nativeTheme.themeSource, "dark");
+  assert.equal(await handlers["settings.getThemePreference"]({}), "dark");
 
   assert.deepEqual(await handlers["settings.setNativeThemeSource"]({}, "system"), {
     ok: true,
     themeSource: "system"
   });
   assert.equal(nativeTheme.themeSource, "system");
+  assert.equal(await handlers["settings.getThemePreference"]({}), "system");
 
   assert.deepEqual(await handlers["settings.setNativeThemeSource"]({}, "sepia"), {
     ok: true,
-    themeSource: "light"
+    themeSource: "system"
   });
-  assert.equal(nativeTheme.themeSource, "light");
+  assert.equal(nativeTheme.themeSource, "system");
+  assert.equal(await handlers["settings.getThemePreference"]({}), "system");
+});
+
+test("settings navigation preferences persist into profile", async (t) => {
+  const { ipc, handlers } = makeMockIpcMain();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-settings-navigation-"));
+  const app = {
+    name: "test-app",
+    getPath(name) {
+      if (name === "home") return path.join(root, "home");
+      if (name === "appData") return path.join(root, "app-data");
+      assert.fail(`unexpected app.getPath(${name})`);
+    }
+  };
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  registerSettingsIpcHandlers(ipc, makeBaseOptions({ app }));
+
+  const saved = await handlers["settings.saveNavigationPreferences"]({}, {
+    mainOrder: ["group:main", "item:kanban"],
+    websiteOrder: ["custom:docs"]
+  });
+  const restored = await handlers["settings.getNavigationPreferences"]({});
+
+  assert.deepEqual(saved.mainOrder, ["group:main", "item:kanban"]);
+  assert.deepEqual(saved.websiteOrder, ["custom:docs"]);
+  assert.deepEqual(restored.mainOrder, ["group:main", "item:kanban"]);
+  assert.deepEqual(restored.websiteOrder, ["custom:docs"]);
 });
 
 test("settings.getLocale returns initialized main locale settings", async () => {

@@ -209,9 +209,12 @@ const GOOGLE_LOOPBACK_HOST = "127.0.0.1";
 const CALLBACK_PATH = "/api/auth/oidc/callback";
 const LOGOUT_CALLBACK_PATH = "/api/auth/oidc/logout-callback";
 const RETURN_TO_APP_PATH = "/api/auth/oidc/return-to-app";
-const SESSION_FILE_NAME = "oidc-sso-session.json";
-const ACCESS_TOKEN_FILE_NAME = "desktop-sso-access-token.txt";
-export const DESKTOP_SSO_CONFIG_FILE_NAME = "desktop-sso.json";
+const SESSION_FILE_NAME = "sso-session.json";
+const LEGACY_SESSION_FILE_NAME = "oidc-sso-session.json";
+const ACCESS_TOKEN_FILE_NAME = "sso-access-token.txt";
+const LEGACY_ACCESS_TOKEN_FILE_NAME = "desktop-sso-access-token.txt";
+export const DESKTOP_SSO_CONFIG_FILE_NAME = "sso.json";
+export const LEGACY_DESKTOP_SSO_CONFIG_FILE_NAME = "desktop-sso.json";
 const IDENTITY_PROVIDER_URL_FIELDS = [
   "issuer",
   "authorizeUrl",
@@ -367,8 +370,16 @@ function getSessionPath(app: App) {
   return path.join(getDesktopStateRoot(app), SESSION_FILE_NAME);
 }
 
+function getLegacySessionPath(app: App) {
+  return path.join(getDesktopStateRoot(app), LEGACY_SESSION_FILE_NAME);
+}
+
 export function getDesktopSsoAccessTokenFilePath(app: Pick<App, "getPath">) {
   return path.join(getDesktopStateRoot(app as App), ACCESS_TOKEN_FILE_NAME);
+}
+
+function getLegacyDesktopSsoAccessTokenFilePath(app: Pick<App, "getPath">) {
+  return path.join(getDesktopStateRoot(app as App), LEGACY_ACCESS_TOKEN_FILE_NAME);
 }
 
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
@@ -376,6 +387,16 @@ function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
 }
 
 export function resolveDesktopSsoConfigPath(app: Pick<App, "getPath">, platform: NodeJS.Platform = process.platform) {
+  const pathApi = pathApiForPlatform(platform);
+  return pathApi.join(resolveRuntimeRoot(app, platform), ".desktop", "config", "desktop", DESKTOP_SSO_CONFIG_FILE_NAME);
+}
+
+export function resolveLegacyDesktopSsoConfigPath(app: Pick<App, "getPath">, platform: NodeJS.Platform = process.platform) {
+  const pathApi = pathApiForPlatform(platform);
+  return pathApi.join(resolveRuntimeRoot(app, platform), LEGACY_DESKTOP_SSO_CONFIG_FILE_NAME);
+}
+
+export function resolveRootDesktopSsoConfigPath(app: Pick<App, "getPath">, platform: NodeJS.Platform = process.platform) {
   const pathApi = pathApiForPlatform(platform);
   return pathApi.join(resolveRuntimeRoot(app, platform), DESKTOP_SSO_CONFIG_FILE_NAME);
 }
@@ -957,7 +978,16 @@ function buildOidcConfigFromRecord(record: Record<string, unknown>) {
 
 export function loadDesktopSsoConfig(app: Pick<App, "getPath">, platform: NodeJS.Platform = process.platform): DesktopSsoConfigLoadResult {
   const configPath = resolveDesktopSsoConfigPath(app, platform);
-  if (!fs.existsSync(configPath)) {
+  const legacyConfigPath = resolveLegacyDesktopSsoConfigPath(app, platform);
+  const rootConfigPath = resolveRootDesktopSsoConfigPath(app, platform);
+  const sourceConfigPath = fs.existsSync(configPath)
+    ? configPath
+    : fs.existsSync(legacyConfigPath)
+      ? legacyConfigPath
+      : fs.existsSync(rootConfigPath)
+        ? rootConfigPath
+        : "";
+  if (!sourceConfigPath) {
     return {
       configured: false,
       configPath,
@@ -965,7 +995,12 @@ export function loadDesktopSsoConfig(app: Pick<App, "getPath">, platform: NodeJS
     };
   }
   try {
-    const record = parseDesktopSsoConfigContent(fs.readFileSync(configPath, "utf8"));
+    const content = fs.readFileSync(sourceConfigPath, "utf8");
+    const record = parseDesktopSsoConfigContent(content);
+    if (sourceConfigPath !== configPath && !fs.existsSync(configPath)) {
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, content.endsWith("\n") ? content : `${content}\n`, { encoding: "utf8", mode: 0o600 });
+    }
     if (!isConfigEnabled(record)) {
       return {
         configured: false,
@@ -1014,10 +1049,17 @@ function removeAccessTokenFile(app: Pick<App, "getPath">) {
   } catch {
     // Token file cleanup is best effort; logout still clears in-memory state.
   }
+  try {
+    fs.rmSync(getLegacyDesktopSsoAccessTokenFilePath(app), { force: true });
+  } catch {
+    // Legacy token cleanup is best effort.
+  }
 }
 
 function loadSession(app: App) {
-  const filePath = getSessionPath(app);
+  const filePath = fs.existsSync(getSessionPath(app))
+    ? getSessionPath(app)
+    : getLegacySessionPath(app);
   if (!fs.existsSync(filePath)) {
     return;
   }
@@ -1047,6 +1089,11 @@ function clearSession(app: App) {
     fs.rmSync(filePath, { force: true });
   } catch {
     // Session cleanup is best effort; the in-memory state is authoritative for this run.
+  }
+  try {
+    fs.rmSync(getLegacySessionPath(app), { force: true });
+  } catch {
+    // Legacy session cleanup is best effort.
   }
 }
 
@@ -2521,6 +2568,7 @@ export const __testInternals = {
   DEFAULT_OIDC_CONFIG,
   DEFAULT_GOOGLE_OIDC_CONFIG,
   DESKTOP_SSO_CONFIG_FILE_NAME,
+  LEGACY_DESKTOP_SSO_CONFIG_FILE_NAME,
   buildAuthorizeUrl,
   createPkceCodeChallenge,
   buildDesktopSsoProxyUrl,
@@ -2533,6 +2581,8 @@ export const __testInternals = {
   getIdentityProviderCookieHosts,
   loadDesktopSsoConfig,
   resolveDesktopSsoConfigPath,
+  resolveLegacyDesktopSsoConfigPath,
+  resolveRootDesktopSsoConfigPath,
   buildLogoutUrl,
   buildConfiguredLoginUrl,
   buildTokenExchangeRequest,

@@ -374,18 +374,29 @@ async function readApiJson<T>(url: string, token: string): Promise<T> {
 }
 
 export function buildAgentPlatformPetStatus(input: {
-  boundAgentKey: string;
+  boundAgentKey?: string;
   agents: unknown;
   chats: unknown;
   updatedAt?: string;
 }): DesktopPetBoundAgentStatus {
   const agents = toArray(input.agents) as AgentSummary[];
-  const resolved = resolveAgentPlatformPetBoundAgentKey(input.boundAgentKey, agents);
-  const boundAgentKey = resolved.resolvedKey;
-  const chats = (toArray(input.chats) as ChatSummary[])
-    .filter((chat) => toText(chat.agentKey) === boundAgentKey)
-    .sort(compareChatFreshness);
-  const matchedAgent = resolved.agent;
+  const requestedBoundAgentKey = input.boundAgentKey ? sanitizeDesktopPetBoundAgentKey(input.boundAgentKey) : "";
+  const allChats = (toArray(input.chats) as ChatSummary[]).sort(compareChatFreshness);
+  const resolved = requestedBoundAgentKey
+    ? resolveAgentPlatformPetBoundAgentKey(requestedBoundAgentKey, agents)
+    : null;
+  const latestPendingChat = allChats.find((chat) => Boolean(chat.awaiting || chat.hasPendingAwaiting)) ?? null;
+  const latestChat = requestedBoundAgentKey
+    ? allChats.find((chat) => toText(chat.agentKey) === resolved?.resolvedKey) ?? null
+    : latestPendingChat ?? allChats[0] ?? null;
+  const boundAgentKey = resolved?.resolvedKey ||
+    toText(latestChat?.agentKey) ||
+    getAgentKey(agents[0]) ||
+    DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
+  const chats = requestedBoundAgentKey
+    ? allChats.filter((chat) => toText(chat.agentKey) === boundAgentKey)
+    : allChats;
+  const matchedAgent = resolved?.agent || findAgentByKey(agents, boundAgentKey);
   const updatedAt = input.updatedAt ?? new Date().toISOString();
 
   if (!matchedAgent) {
@@ -403,8 +414,10 @@ export function buildAgentPlatformPetStatus(input: {
     };
   }
 
-  const latestChat = chats[0] ?? null;
-  const hasPendingAwaiting = Boolean(latestChat?.awaiting || latestChat?.hasPendingAwaiting);
+  const relevantChat = latestPendingChat ?? latestChat ?? chats[0] ?? null;
+  const hasPendingAwaiting = requestedBoundAgentKey
+    ? Boolean(relevantChat?.awaiting || relevantChat?.hasPendingAwaiting)
+    : chats.some((chat) => Boolean(chat.awaiting || chat.hasPendingAwaiting));
   const chatUnreadCount = countUnreadChatsFromReadState(chats);
 
   return {
@@ -413,8 +426,8 @@ export function buildAgentPlatformPetStatus(input: {
     role: toText(matchedAgent.role),
     presence: hasPendingAwaiting ? "busy" : "available",
     unreadCount: chatUnreadCount ?? toUnreadCount(matchedAgent.stats?.unreadCount),
-    latestPreview: toText(latestChat?.lastRunContent) || toText(latestChat?.chatName),
-    chatId: toText(latestChat?.chatId) || null,
+    latestPreview: toText(relevantChat?.lastRunContent) || toText(relevantChat?.chatName),
+    chatId: toText(relevantChat?.chatId) || null,
     hasPendingAwaiting,
     stale: false,
     updatedAt
@@ -429,8 +442,9 @@ export function applyAgentPlatformPetPush(
   const frameType = toText(frame.type);
   const data = readFrameData(frame);
   const eventAgentKey = readFrameAgentKey(data);
-  const normalizedBoundAgentKey = current?.agentKey || sanitizeDesktopPetBoundAgentKey(boundAgentKey);
-  if (eventAgentKey && eventAgentKey !== normalizedBoundAgentKey) {
+  const configuredBoundAgentKey = sanitizeDesktopPetBoundAgentKey(boundAgentKey);
+  const normalizedBoundAgentKey = current?.agentKey || configuredBoundAgentKey || eventAgentKey;
+  if (configuredBoundAgentKey && eventAgentKey && eventAgentKey !== normalizedBoundAgentKey) {
     return current;
   }
 
@@ -440,7 +454,7 @@ export function applyAgentPlatformPetPush(
     }
     return {
       ...(current ?? buildAgentPlatformPetStatus({ boundAgentKey: normalizedBoundAgentKey, agents: [], chats: [] })),
-      agentKey: normalizedBoundAgentKey,
+      agentKey: normalizedBoundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
       unreadCount: 0,
       presence: current?.presence ?? "available",
       stale: false,
@@ -455,7 +469,7 @@ export function applyAgentPlatformPetPush(
     const currentPresence = current?.presence;
     return {
       ...(current ?? buildAgentPlatformPetStatus({ boundAgentKey: normalizedBoundAgentKey, agents: [], chats: [] })),
-      agentKey: normalizedBoundAgentKey,
+      agentKey: normalizedBoundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
       chatId: toText(data.chatId) || current?.chatId || null,
       unreadCount: readUnreadCountFromPush(
         data,
@@ -479,7 +493,7 @@ export function applyAgentPlatformPetPush(
     }
     return {
       ...(current ?? buildAgentPlatformPetStatus({ boundAgentKey: normalizedBoundAgentKey, agents: [], chats: [] })),
-      agentKey: normalizedBoundAgentKey,
+      agentKey: normalizedBoundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
       chatId: chatId || current?.chatId || null,
       presence: "away",
       unreadCount: readUnreadCountFromPush(data, current?.unreadCount ?? 0),
@@ -491,12 +505,12 @@ export function applyAgentPlatformPetPush(
   }
 
   if (frameType === "run.started") {
-    if (!eventAgentKey || eventAgentKey !== normalizedBoundAgentKey) {
+    if (configuredBoundAgentKey && (!eventAgentKey || eventAgentKey !== normalizedBoundAgentKey)) {
       return current;
     }
     return {
       ...(current ?? buildAgentPlatformPetStatus({ boundAgentKey: normalizedBoundAgentKey, agents: [], chats: [] })),
-      agentKey: normalizedBoundAgentKey,
+      agentKey: eventAgentKey || normalizedBoundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
       chatId: toText(data.chatId) || current?.chatId || null,
       presence: "busy",
       unreadCount: readUnreadCountFromPush(data, current?.unreadCount ?? 0),
@@ -508,7 +522,7 @@ export function applyAgentPlatformPetPush(
 
   if (frameType === "run.finished") {
     const chatId = toText(data.chatId);
-    if (eventAgentKey && eventAgentKey !== normalizedBoundAgentKey) {
+    if (configuredBoundAgentKey && eventAgentKey && eventAgentKey !== normalizedBoundAgentKey) {
       return current;
     }
     if (!eventAgentKey && (!current?.chatId || !chatId || current.chatId !== chatId)) {
@@ -516,7 +530,7 @@ export function applyAgentPlatformPetPush(
     }
     return {
       ...(current ?? buildAgentPlatformPetStatus({ boundAgentKey: normalizedBoundAgentKey, agents: [], chats: [] })),
-      agentKey: normalizedBoundAgentKey,
+      agentKey: eventAgentKey || normalizedBoundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
       chatId: chatId || current?.chatId || null,
       presence: "away",
       unreadCount: readUnreadCountFromPush(data, current?.unreadCount ?? 0),
@@ -542,8 +556,9 @@ export function applyAgentPlatformCompletionReminder(
   }
   const data = readFrameData(frame);
   const eventAgentKey = readFrameAgentKey(data);
-  const normalizedBoundAgentKey = current?.agentKey || sanitizeDesktopPetBoundAgentKey(boundAgentKey);
-  if (eventAgentKey && eventAgentKey !== normalizedBoundAgentKey) {
+  const configuredBoundAgentKey = sanitizeDesktopPetBoundAgentKey(boundAgentKey);
+  const normalizedBoundAgentKey = current?.agentKey || configuredBoundAgentKey || eventAgentKey;
+  if (configuredBoundAgentKey && eventAgentKey && eventAgentKey !== normalizedBoundAgentKey) {
     return current;
   }
   const chatId = toText(data.chatId) || current?.chatId || "";
@@ -561,7 +576,7 @@ export function applyAgentPlatformCompletionReminder(
       agents: [],
       chats: []
     })),
-    agentKey: normalizedBoundAgentKey,
+    agentKey: normalizedBoundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
     chatId,
     presence: "away",
     unreadCount: readUnreadCountFromPush(data, current?.unreadCount ?? 0),
@@ -585,12 +600,10 @@ export class AgentPlatformPetStatusClient {
 
   constructor(private readonly options: {
     app: App;
-    getBoundAgentKey: () => string;
     getServiceState: (app: App, serviceId: ServiceId) => Promise<ServiceState>;
     issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
     onStatus: (status: DesktopPetBoundAgentStatus | null) => void;
     onAgents?: (agents: DesktopPetAgentOption[]) => void;
-    onBoundAgentKeyResolved?: (resolvedKey: string, previousKey: string) => void;
     onRunStarted?: (input: { runId: string; chatId: string | null; agentKey: string }) => void;
     onRunFinished?: (input: { runId: string; chatId: string | null; agentKey: string; message: string }) => void;
     onDebug?: (message: string) => void;
@@ -642,20 +655,10 @@ export class AgentPlatformPetStatusClient {
       }
 
       const token = tokenResult.token.trim();
-      const requestedBoundAgentKey = sanitizeDesktopPetBoundAgentKey(this.options.getBoundAgentKey());
       const agents = await readApiJson<unknown[]>(createApiUrl(baseUrl, "/api/agents"), token);
       this.options.onAgents?.(toDesktopPetAgentOptions(agents));
-      const resolved = resolveAgentPlatformPetBoundAgentKey(requestedBoundAgentKey, agents);
-      const boundAgentKey = resolved.resolvedKey;
-      if (boundAgentKey !== requestedBoundAgentKey) {
-        this.options.onBoundAgentKeyResolved?.(boundAgentKey, requestedBoundAgentKey);
-      }
-      const chats = await readApiJson<unknown[]>(
-        `${createApiUrl(baseUrl, "/api/chats")}?agentKey=${encodeURIComponent(boundAgentKey)}`,
-        token
-      );
+      const chats = await readApiJson<unknown[]>(createApiUrl(baseUrl, "/api/chats"), token);
       const nextStatus = buildAgentPlatformPetStatus({
-        boundAgentKey,
         agents,
         chats
       });
@@ -737,7 +740,7 @@ export class AgentPlatformPetStatusClient {
       return;
     }
     const frameType = toText(frame.type);
-    const boundAgentKey = sanitizeDesktopPetBoundAgentKey(this.options.getBoundAgentKey());
+    const boundAgentKey = "";
     const frameData = readFrameData(frame);
     let nextStatus = applyAgentPlatformPetPush(this.latestStatus, boundAgentKey, frame);
     if (frameType === "run.started") {
@@ -747,28 +750,28 @@ export class AgentPlatformPetStatusClient {
       }
       const runId = toText(frameData.runId);
       const eventAgentKey = readFrameAgentKey(frameData);
-      const matchedAgentKey = nextStatus?.agentKey || boundAgentKey;
-      if (runId && eventAgentKey && eventAgentKey === matchedAgentKey) {
+      const matchedAgentKey = nextStatus?.agentKey || eventAgentKey || boundAgentKey;
+      if (runId && eventAgentKey && (!matchedAgentKey || eventAgentKey === matchedAgentKey)) {
         this.options.onRunStarted?.({
           runId,
           chatId: chatId || null,
           agentKey: eventAgentKey
         });
       }
-    } else if (frameType === "run.finished" && nextStatus?.presence === "away") {
-      const chatId = getFrameChatId(frame) || nextStatus.chatId || "";
+    } else if (frameType === "run.finished") {
+      const chatId = getFrameChatId(frame) || nextStatus?.chatId || "";
       if (chatId) {
         this.rememberFinishedChat(chatId);
       }
       const runId = toText(frameData.runId);
       const eventAgentKey = readFrameAgentKey(frameData);
-      const matchedAgentKey = nextStatus.agentKey || boundAgentKey;
+      const matchedAgentKey = eventAgentKey || nextStatus?.agentKey || boundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
       if ((runId || chatId) && (!eventAgentKey || eventAgentKey === matchedAgentKey)) {
         this.options.onRunFinished?.({
           runId,
           chatId: chatId || null,
           agentKey: matchedAgentKey,
-          message: nextStatus.latestPreview
+          message: readCompletionPreview(frameData, nextStatus?.latestPreview)
         });
       }
     } else if (frameType === "chat.read" || frameType === "chat.unread") {

@@ -830,7 +830,6 @@ export interface DesktopPetClientLifecycleControllerOptions {
   getServiceState: (app: any, serviceId: string) => Promise<any>;
   issueAccessToken: (app: any, reason: any) => Promise<any>;
   getSettings: () => DesktopPetSettingsLike;
-  saveSettings: (settings: Partial<DesktopPetSettingsLike>) => void;
   setAgentStatus: (status: any) => void;
   setAgentOptions: (options: any[]) => void;
   clearActiveRuns: () => void;
@@ -875,7 +874,6 @@ export function createDesktopPetClientLifecycleController(
     }
     statusClient = new options.AgentStatusClientClass({
       app: options.app,
-      getBoundAgentKey: () => options.getSettings().boundAgentKey,
       getServiceState: options.getServiceState,
       issueAccessToken: options.issueAccessToken,
       onStatus: (status: any) => {
@@ -890,15 +888,6 @@ export function createDesktopPetClientLifecycleController(
       },
       onAgents: (agents: any) => {
         options.setAgentOptions(agents);
-        options.refreshState();
-      },
-      onBoundAgentKeyResolved: (resolvedKey: string, previousKey: string) => {
-        if (resolvedKey === previousKey || resolvedKey === options.getSettings().boundAgentKey) {
-          return;
-        }
-        options.saveSettings({
-          boundAgentKey: resolvedKey
-        });
         options.refreshState();
       },
       onRunStarted: ({ runId, chatId }: { runId: string; chatId: string | null }) => {

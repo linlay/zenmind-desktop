@@ -25,7 +25,12 @@ import {
   sanitizeDesktopPetRunningTaskCount,
   shouldUseDesktopPetTaskRunningAnimation
 } from "../../../shared/desktop-pet";
-import { getDesktopPetSettingsPath as resolveDesktopPetSettingsPath } from "../../user-paths";
+import {
+  getDesktopConfigRoot,
+  getDesktopPetSettingsPath as resolveDesktopPetSettingsPath,
+  getDesktopPetsDataRoot,
+  getDesktopStateRoot
+} from "../../user-paths";
 export {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
@@ -72,15 +77,22 @@ export const DESKTOP_PET_WINDOW_SIZES: Record<DesktopPetWindowMode, { width: num
 
 type Platform = NodeJS.Platform | string;
 
-type DesktopPetStoredState = {
+export type DesktopPetStoredState = {
+  schemaVersion?: 1;
   enabled: boolean;
   lastVisible: boolean;
   unreadCount: number;
   boundAgentKey: string;
   appearanceId: string;
+  selectedPetId?: string;
   position?: {
     x: number;
     y: number;
+    displayId?: string;
+  };
+  window?: {
+    edgeDock: "none" | "top";
+    previewExpanded: boolean;
   };
 };
 
@@ -120,10 +132,23 @@ export type DesktopPetContextMenuItem = {
   label: string;
 };
 
+export type UserDesktopPetAsset = {
+  id: string;
+  petId: string;
+  rootPath: string;
+  manifestPath: string;
+  manifest: Record<string, unknown>;
+};
+
 const DEFAULT_OFFSET = {
   x: 20,
   y: 78
 } as const;
+const DESKTOP_PET_SCHEMA_VERSION = 1;
+const DEFAULT_DESKTOP_PET_ID = "builtin:zenmi";
+const DESKTOP_PET_CONFIG_FILE = "pet.json";
+const LEGACY_DESKTOP_PET_CONFIG_FILE = "desktop-pet.json";
+const DESKTOP_PET_STATE_FILE = "pet-state.json";
 const DESKTOP_PET_EDGE_STICK_DISTANCE_PX = 24;
 const DESKTOP_PET_MESSAGE_PREVIEW_MAX_LENGTH = 30;
 const DESKTOP_PET_DONE_FALLBACK_HINT = "暂无回复预览";
@@ -137,8 +162,20 @@ function getDesktopPetSettingsPath(app: App) {
   return resolveDesktopPetSettingsPath(app);
 }
 
+function getLegacyDesktopPetSettingsPath(app: App) {
+  return path.join(getDesktopConfigRoot(app), LEGACY_DESKTOP_PET_CONFIG_FILE);
+}
+
+function getDesktopPetStatePath(app: App) {
+  return path.join(getDesktopStateRoot(app), DESKTOP_PET_STATE_FILE);
+}
+
 function ensureDesktopPetRoot(app: App) {
   fs.mkdirSync(getDesktopPetRoot(app), { recursive: true });
+}
+
+function ensureDesktopPetStateRoot(app: App) {
+  fs.mkdirSync(path.dirname(getDesktopPetStatePath(app)), { recursive: true });
 }
 
 export function sanitizeDesktopPetBoundAgentKey(value: unknown) {
@@ -200,17 +237,143 @@ function sanitizeDesktopPetStoredState(
   const position = candidate.position && Number.isFinite(candidate.position.x) && Number.isFinite(candidate.position.y)
     ? {
         x: Math.round(candidate.position.x),
-        y: Math.round(candidate.position.y)
+        y: Math.round(candidate.position.y),
+        displayId: typeof candidate.position.displayId === "string" && candidate.position.displayId.trim()
+          ? candidate.position.displayId.trim()
+          : "primary"
       }
     : undefined;
+  const windowState = candidate.window && typeof candidate.window === "object"
+    ? candidate.window as { edgeDock?: unknown; previewExpanded?: unknown }
+    : {};
+  const appearanceId = typeof candidate.appearanceId === "string" && candidate.appearanceId.trim()
+    ? sanitizeDesktopPetAppearanceId(candidate.appearanceId)
+    : (typeof candidate.selectedPetId === "string" && candidate.selectedPetId.trim()
+      ? candidate.selectedPetId.trim()
+      : DEFAULT_DESKTOP_PET_ID) === DEFAULT_DESKTOP_PET_ID
+      ? DEFAULT_DESKTOP_PET_APPEARANCE_ID
+      : sanitizeDesktopPetAppearanceId(String(candidate.selectedPetId).replace(/^builtin:/u, ""));
+  const selectedPetId = typeof candidate.selectedPetId === "string" && candidate.selectedPetId.trim()
+    ? candidate.selectedPetId.trim()
+    : selectedPetIdForAppearance(appearanceId);
   return {
-    enabled: supported ? candidate.enabled ?? !options.isFirstInstall : false,
-    lastVisible: supported ? candidate.lastVisible ?? !options.isFirstInstall : false,
+    schemaVersion: DESKTOP_PET_SCHEMA_VERSION,
+    enabled: supported ? candidate.enabled === true : false,
+    lastVisible: supported ? candidate.lastVisible === true : false,
     unreadCount: sanitizeDesktopPetUnreadCount(candidate.unreadCount),
     boundAgentKey: sanitizeDesktopPetBoundAgentKey(candidate.boundAgentKey),
-    appearanceId: sanitizeDesktopPetAppearanceId(candidate.appearanceId),
-    ...(position ? { position } : {})
+    appearanceId,
+    selectedPetId,
+    position: position ?? {
+      x: DEFAULT_OFFSET.x,
+      y: DEFAULT_OFFSET.y,
+      displayId: "primary"
+    },
+    window: {
+      edgeDock: windowState.edgeDock === "top" ? "top" : "none",
+      previewExpanded: windowState.previewExpanded === true
+    }
   };
+}
+
+function selectedPetIdForAppearance(appearanceId: string) {
+  return appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID
+    ? DEFAULT_DESKTOP_PET_ID
+    : `builtin:${appearanceId}`;
+}
+
+function readJsonFile(filePath: string) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT" || (error as Error).name === "SyntaxError") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function toDesktopPetConfigFile(state: DesktopPetStoredState) {
+  return {
+    schemaVersion: DESKTOP_PET_SCHEMA_VERSION,
+    enabled: state.enabled,
+    selectedPetId: state.selectedPetId,
+    lastVisible: state.lastVisible,
+    position: {
+      x: state.position?.x ?? DEFAULT_OFFSET.x,
+      y: state.position?.y ?? DEFAULT_OFFSET.y,
+      displayId: state.position?.displayId || "primary"
+    },
+    window: {
+      edgeDock: state.window?.edgeDock ?? "none",
+      previewExpanded: state.window?.previewExpanded === true
+    }
+  };
+}
+
+function toDesktopPetStateFile(state: DesktopPetStoredState) {
+  return {
+    schemaVersion: DESKTOP_PET_SCHEMA_VERSION,
+    unreadCount: state.unreadCount,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function mergeDesktopPetRuntimeState(config: unknown, runtimeState: unknown) {
+  if (!runtimeState || typeof runtimeState !== "object" || Array.isArray(runtimeState)) {
+    return config;
+  }
+  return {
+    ...(config && typeof config === "object" && !Array.isArray(config) ? config as Record<string, unknown> : {}),
+    unreadCount: (runtimeState as { unreadCount?: unknown }).unreadCount
+  };
+}
+
+function sanitizeUserPetDirectoryName(value: unknown) {
+  const normalized = typeof value === "string"
+    ? value.trim().replace(/^user:/u, "")
+    : "";
+  return normalized
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 80);
+}
+
+function normalizeUserDesktopPetId(value: unknown, fallbackDirectoryName: string) {
+  const directoryName = sanitizeUserPetDirectoryName(value) || sanitizeUserPetDirectoryName(fallbackDirectoryName);
+  return directoryName ? `user:${directoryName}` : "";
+}
+
+export function listUserDesktopPets(app: App): UserDesktopPetAsset[] {
+  const root = getDesktopPetsDataRoot(app);
+  if (!fs.existsSync(root)) {
+    return [];
+  }
+  const pets: UserDesktopPetAsset[] = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const rootPath = path.join(root, entry.name);
+    const manifestPath = path.join(rootPath, "pet.json");
+    const manifest = readJsonFile(manifestPath);
+    if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+      continue;
+    }
+    const id = normalizeUserDesktopPetId((manifest as { id?: unknown }).id, entry.name);
+    if (!id) {
+      continue;
+    }
+    pets.push({
+      id,
+      petId: id.replace(/^user:/u, ""),
+      rootPath,
+      manifestPath,
+      manifest: manifest as Record<string, unknown>
+    });
+  }
+  return pets.sort((a, b) => a.petId.localeCompare(b.petId, "zh-CN"));
 }
 
 export function isDesktopPetSupportedPlatform(platform: Platform) {
@@ -228,15 +391,25 @@ export function readDesktopPetStoredState(
   }
 
   ensureDesktopPetRoot(app);
-  try {
-    const raw = fs.readFileSync(getDesktopPetSettingsPath(app), "utf8");
-    return sanitizeDesktopPetStoredState(JSON.parse(raw), supported);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT" || (error as Error).name === "SyntaxError") {
-      return sanitizeDesktopPetStoredState(null, supported, options);
-    }
-    throw error;
+  const settingsPath = getDesktopPetSettingsPath(app);
+  const statePath = getDesktopPetStatePath(app);
+  const parsed = readJsonFile(settingsPath);
+  if (parsed) {
+    return sanitizeDesktopPetStoredState(
+      mergeDesktopPetRuntimeState(parsed, readJsonFile(statePath)),
+      supported,
+      options
+    );
   }
+
+  const legacyPath = getLegacyDesktopPetSettingsPath(app);
+  const legacy = readJsonFile(legacyPath);
+  if (legacy) {
+    const migrated = sanitizeDesktopPetStoredState(legacy, supported, options);
+    writeDesktopPetStoredState(app, migrated, platform);
+    return migrated;
+  }
+  return sanitizeDesktopPetStoredState(null, supported, options);
 }
 
 export function writeDesktopPetStoredState(
@@ -251,7 +424,9 @@ export function writeDesktopPetStoredState(
   }
 
   ensureDesktopPetRoot(app);
-  fs.writeFileSync(getDesktopPetSettingsPath(app), `${JSON.stringify(sanitized, null, 2)}\n`, "utf8");
+  ensureDesktopPetStateRoot(app);
+  fs.writeFileSync(getDesktopPetSettingsPath(app), `${JSON.stringify(toDesktopPetConfigFile(sanitized), null, 2)}\n`, "utf8");
+  fs.writeFileSync(getDesktopPetStatePath(app), `${JSON.stringify(toDesktopPetStateFile(sanitized), null, 2)}\n`, "utf8");
   return sanitized;
 }
 
@@ -261,9 +436,18 @@ export function saveDesktopPetSettings(
   platform: Platform = process.platform
 ) {
   const current = readDesktopPetStoredState(app, platform);
+  const nextAppearanceId = typeof input.appearanceId === "string"
+    ? sanitizeDesktopPetAppearanceId(input.appearanceId)
+    : current.appearanceId;
   return writeDesktopPetStoredState(app, {
     ...current,
     ...input,
+    appearanceId: nextAppearanceId,
+    selectedPetId: typeof input.selectedPetId === "string" && input.selectedPetId.trim()
+      ? input.selectedPetId.trim()
+      : typeof input.appearanceId === "string"
+        ? selectedPetIdForAppearance(nextAppearanceId)
+        : current.selectedPetId,
     ...(input.position ? { position: input.position } : {})
   }, platform);
 }
@@ -426,7 +610,8 @@ export function createDesktopPetState(
   const agentUnreadCount = agentStatus && !agentStatus.stale
     ? sanitizeDesktopPetUnreadCount(agentStatus.unreadCount)
     : 0;
-  const agentDefaults = createDefaultDesktopPetAgentStatus(settings.boundAgentKey);
+  const activeAgentKey = agentStatus?.agentKey || settings.boundAgentKey;
+  const agentDefaults = createDefaultDesktopPetAgentStatus(activeAgentKey);
   return {
     supported: options.supported ?? isDesktopPetSupportedPlatform(process.platform),
     enabled: settings.enabled,
@@ -435,7 +620,7 @@ export function createDesktopPetState(
     unreadCount: Math.max(mergedStatus.unreadCount, agentUnreadCount),
     appearanceId,
     appearanceOptions: [...DESKTOP_PET_APPEARANCE_OPTIONS],
-    boundAgentKey: settings.boundAgentKey,
+    boundAgentKey: activeAgentKey,
     agentDisplayName: agentStatus?.displayName ?? agentDefaults.displayName,
     agentRole: agentStatus?.role ?? agentDefaults.role,
     agentPresence: agentStatus?.presence ?? agentDefaults.presence,
@@ -552,17 +737,27 @@ export function getDesktopPetLogicalPositionFromBounds(
 
 export const __testInternals = {
   DEFAULT_OFFSET,
+  DEFAULT_DESKTOP_PET_ID,
+  DESKTOP_PET_CONFIG_FILE,
+  LEGACY_DESKTOP_PET_CONFIG_FILE,
+  DESKTOP_PET_STATE_FILE,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_VISIBLE_FOOTPRINT,
   DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS,
   DESKTOP_PET_WINDOW_SIZES,
   sanitizeDesktopPetStoredState,
   sanitizeDesktopPetAppearanceId,
+  selectedPetIdForAppearance,
+  sanitizeUserPetDirectoryName,
+  normalizeUserDesktopPetId,
   sanitizeDesktopPetMessagePreview,
   sanitizeDesktopPetUnreadCount,
   resolveMergedDesktopPetStatus,
   resolveDesktopPetEdgeDock,
   getAnchoredDesktopPetBounds,
   getDesktopPetLogicalPositionFromBounds,
-  getDesktopPetRoot
+  getDesktopPetRoot,
+  getLegacyDesktopPetSettingsPath,
+  getDesktopPetStatePath,
+  listUserDesktopPets
 };

@@ -45,6 +45,20 @@ test("desktop locale store saves preferences under desktop config root", () => {
   assert.deepEqual(readDesktopLocaleSettings(app, { isFirstInstall: true }), { locale: "en-US", source: "stored" });
   assert.equal(
     __testInternals.getPreferencesPath(app),
-    path.join(root, "home", ".zenmind", ".desktop", "config", "desktop", "preferences.json")
+    path.join(root, "home", ".zenmind", ".desktop", "config", "desktop", "profile.json")
   );
+});
+
+test("desktop locale store migrates legacy preferences.json into profile.json", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-locale-store-legacy-"));
+  const app = createApp(root, "zh-CN");
+  const configRoot = path.join(root, "home", ".zenmind", ".desktop", "config", "desktop");
+  fs.mkdirSync(configRoot, { recursive: true });
+  fs.writeFileSync(path.join(configRoot, "preferences.json"), JSON.stringify({ locale: "en-US" }), "utf8");
+
+  const settings = readDesktopLocaleSettings(app);
+  const profile = JSON.parse(fs.readFileSync(path.join(configRoot, "profile.json"), "utf8"));
+
+  assert.deepEqual(settings, { locale: "en-US", source: "stored" });
+  assert.equal(profile.appearance.locale, "en-US");
 });

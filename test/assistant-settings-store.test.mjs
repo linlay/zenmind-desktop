@@ -93,3 +93,30 @@ test("assistant settings ignores unknown copilot page keys and falls back empty 
   assert.equal(saved.desktopCopilotPages.help.agentKey, "desktopAssistant");
   assert.equal("unknownPage" in saved.desktopCopilotPages, false);
 });
+
+test("assistant settings migrates legacy settings.json into profile.json", () => {
+  const root = makeTempRoot();
+  fs.writeFileSync(path.join(root, "settings.json"), `${JSON.stringify({
+    desktopHelperAgentKey: "helper",
+    quickAssistantEnabled: false,
+    quickAssistantAgentKey: "quick",
+    voiceCorrectionEnabled: false,
+    desktopCopilotPages: {
+      help: {
+        enabled: false,
+        agentKey: "helper"
+      }
+    }
+  }, null, 2)}\n`, "utf8");
+
+  const settings = readAssistantSettingsFromRoot(root);
+  const profile = JSON.parse(fs.readFileSync(path.join(root, "profile.json"), "utf8"));
+
+  assert.equal(settings.desktopHelperAgentKey, "helper");
+  assert.equal(settings.quickAssistantEnabled, false);
+  assert.equal(settings.quickAssistantAgentKey, "quick");
+  assert.equal(settings.voiceCorrectionEnabled, false);
+  assert.equal(profile.assistant.desktopHelperAgentKey, "helper");
+  assert.equal(profile.assistant.quickAssistant.enabled, false);
+  assert.equal(profile.navigation.desktopCopilotPages.help.enabled, false);
+});

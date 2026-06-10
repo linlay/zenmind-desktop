@@ -362,8 +362,11 @@ test("desktop pet persists state on Windows", (t) => {
   assert.equal(state.enabled, true);
   assert.equal(restored.enabled, true);
   assert.equal(restored.unreadCount, 7);
-  assert.equal(restored.boundAgentKey, "custom-agent");
+  assert.equal(restored.boundAgentKey, DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY);
   assert.equal(restored.appearanceId, "dario");
+  const persistedPet = JSON.parse(fs.readFileSync(path.join(desktopPetInternals.getDesktopPetRoot(app), "pet.json"), "utf8"));
+  assert.equal("boundAgentKey" in persistedPet, false);
+  assert.equal(persistedPet.selectedPetId, "builtin:dario");
   assert.equal(fs.existsSync(desktopPetInternals.getDesktopPetRoot(app)), true);
 });
 
@@ -382,7 +385,7 @@ test("desktop pet defaults to disabled on first install", (t) => {
   assert.equal(state.appearanceId, DEFAULT_DESKTOP_PET_APPEARANCE_ID);
 });
 
-test("desktop pet keeps the legacy missing-file default for existing installs", (t) => {
+test("desktop pet defaults to disabled when no pet config exists", (t) => {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-pet-existing-install-"));
   t.after(() => {
     fs.rmSync(userData, { recursive: true, force: true });
@@ -391,8 +394,8 @@ test("desktop pet keeps the legacy missing-file default for existing installs", 
 
   const state = readDesktopPetStoredState(app, "darwin");
 
-  assert.equal(state.enabled, true);
-  assert.equal(state.lastVisible, true);
+  assert.equal(state.enabled, false);
+  assert.equal(state.lastVisible, false);
 });
 
 test("desktop pet ignores state files on unsupported platforms", (t) => {
@@ -414,7 +417,7 @@ test("desktop pet ignores state files on unsupported platforms", (t) => {
   assert.equal(readState.enabled, false);
   assert.equal(writtenState.enabled, false);
   assert.equal(writtenState.appearanceId, "dario");
-  assert.equal(fs.existsSync(path.join(desktopPetInternals.getDesktopPetRoot(app), "desktop-pet.json")), false);
+  assert.equal(fs.existsSync(path.join(desktopPetInternals.getDesktopPetRoot(app), "pet.json")), false);
 });
 
 test("desktop pet recovers from a corrupt state file", (t) => {
@@ -429,7 +432,7 @@ test("desktop pet recovers from a corrupt state file", (t) => {
 
   const state = readDesktopPetStoredState(app, "darwin");
 
-  assert.equal(state.enabled, true);
+  assert.equal(state.enabled, false);
   assert.equal(state.boundAgentKey, DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY);
   assert.equal(state.appearanceId, DEFAULT_DESKTOP_PET_APPEARANCE_ID);
 });
@@ -452,6 +455,29 @@ test("desktop pet persists selected appearance", (t) => {
 
   assert.equal(state.appearanceId, "dario");
   assert.equal(restored.appearanceId, "dario");
+});
+
+test("desktop pet scans user pet directories directly under data/pets", (t) => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-pet-user-assets-"));
+  t.after(() => {
+    fs.rmSync(userData, { recursive: true, force: true });
+  });
+  const app = createPathApp(userData);
+  const petDir = path.join(userData, "home", ".zenmind", ".desktop", "data", "pets", "my-pet");
+  fs.mkdirSync(petDir, { recursive: true });
+  fs.writeFileSync(path.join(petDir, "pet.json"), `${JSON.stringify({
+    schemaVersion: 1,
+    id: "user:my-pet",
+    label: "My Pet",
+    spritesheet: "spritesheet.webp"
+  }, null, 2)}\n`, "utf8");
+
+  const pets = desktopPetInternals.listUserDesktopPets(app);
+
+  assert.equal(pets.length, 1);
+  assert.equal(pets[0].id, "user:my-pet");
+  assert.equal(pets[0].petId, "my-pet");
+  assert.equal(pets[0].rootPath, petDir);
 });
 
 test("desktop pet shows bound agent unread count while idle", () => {
@@ -1340,7 +1366,7 @@ test("agent-platform chat updated push refreshes reply preview after generic fin
   assert.equal(state.hint, "你指的重写是指：告诉我哪里不对，我再改。");
 });
 
-test("agent-platform status client attaches only bound agent runs", () => {
+test("agent-platform status client attaches runs from all agents", () => {
   const startedRuns = [];
   const finishedRuns = [];
   const statusUpdates = [];
@@ -1379,7 +1405,7 @@ test("agent-platform status client attaches only bound agent runs", () => {
       runId: "run_other",
       chatId: "chat_other",
       agentKey: "other-agent",
-      lastRunContent: "不该收尾"
+      lastRunContent: "其他 agent 也完成。"
     }
   }));
   client.handleWebSocketMessage(JSON.stringify({
@@ -1394,17 +1420,32 @@ test("agent-platform status client attaches only bound agent runs", () => {
   }));
   client.stop();
 
-  assert.deepEqual(startedRuns, [{
-    runId: "run_bound",
-    chatId: "chat_bound",
-    agentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY
-  }]);
-  assert.deepEqual(finishedRuns, [{
-    runId: "run_bound",
-    chatId: "chat_bound",
-    agentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
-    message: "好的，已经完成。"
-  }]);
+  assert.deepEqual(startedRuns, [
+    {
+      runId: "run_other",
+      chatId: "chat_other",
+      agentKey: "other-agent"
+    },
+    {
+      runId: "run_bound",
+      chatId: "chat_bound",
+      agentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY
+    }
+  ]);
+  assert.deepEqual(finishedRuns, [
+    {
+      runId: "run_other",
+      chatId: "chat_other",
+      agentKey: "other-agent",
+      message: "其他 agent 也完成。"
+    },
+    {
+      runId: "run_bound",
+      chatId: "chat_bound",
+      agentKey: DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+      message: "好的，已经完成。"
+    }
+  ]);
   assert.equal(statusUpdates.at(-1)?.presence, "away");
 });
 

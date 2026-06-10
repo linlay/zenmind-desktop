@@ -1,6 +1,5 @@
 import {
   isDesktopPetSupportedPlatform,
-  sanitizeDesktopPetBoundAgentKey,
   sanitizeDesktopPetAppearanceId,
   saveDesktopPetSettings,
   toDesktopPetSettings
@@ -36,24 +35,15 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
       return options.refreshState();
     }
     const desktopPetSettings = options.getSettings();
-    const nextBoundAgentKey = typeof input.boundAgentKey === "string"
-      ? sanitizeDesktopPetBoundAgentKey(input.boundAgentKey)
-      : desktopPetSettings.boundAgentKey;
     const nextAppearanceId = typeof input.appearanceId === "string"
       ? sanitizeDesktopPetAppearanceId(input.appearanceId)
       : desktopPetSettings.appearanceId;
-    const boundAgentChanged = nextBoundAgentKey !== desktopPetSettings.boundAgentKey;
     const appearanceChanged = nextAppearanceId !== desktopPetSettings.appearanceId;
-    if (boundAgentChanged || appearanceChanged) {
+    if (appearanceChanged) {
       const nextSettings = saveDesktopPetSettings(options.app, {
-        boundAgentKey: nextBoundAgentKey,
         appearanceId: nextAppearanceId
       }, platform);
       options.saveSettingsInState(nextSettings);
-    }
-    if (boundAgentChanged) {
-      options.setAgentStatus(null);
-      options.clearActiveRuns();
     }
     if (typeof input.enabled === "boolean") {
       if (input.enabled) {
@@ -61,9 +51,6 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
       } else {
         options.hideWindow(true);
       }
-    }
-    if (boundAgentChanged) {
-      options.scheduleStatusRefresh(0);
     }
     return options.refreshState();
   });

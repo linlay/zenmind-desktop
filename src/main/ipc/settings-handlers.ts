@@ -1,5 +1,7 @@
 import type { TunnelHubAgentSettingsInput } from "../../shared/contracts";
 import { readTunnelHubAgentSettings, saveTunnelHubAgentSettings } from "../tunnel-hub-agent-settings";
+import { readDesktopProfileFromRoot, updateDesktopProfileInRoot, type DesktopThemePreference } from "../desktop-profile-store";
+import { getDesktopConfigRoot } from "../user-paths";
 
 export interface SettingsIpcHandlerOptions {
   app: any;
@@ -29,6 +31,19 @@ export function setNativeThemeSource(nativeTheme: { themeSource: string }, theme
     ok: true,
     themeSource: nativeTheme.themeSource
   };
+}
+
+function normalizeThemePreference(themeMode: unknown): DesktopThemePreference {
+  return themeMode === "dark" || themeMode === "light" || themeMode === "system" ? themeMode : "system";
+}
+
+function normalizeStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => typeof item === "string" ? item.trim() : "")
+    .filter(Boolean);
 }
 
 export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHandlerOptions) {
@@ -98,9 +113,38 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
       };
     }
   });
-  ipcMain.handle("settings.setNativeThemeSource", async (_event: any, themeMode: string) =>
-    setNativeThemeSource(nativeTheme, themeMode)
+  ipcMain.handle("settings.getThemePreference", async () =>
+    readDesktopProfileFromRoot(getDesktopConfigRoot(app)).appearance.theme
   );
+  ipcMain.handle("settings.getNavigationPreferences", async () => {
+    const profile = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
+    return profile.navigation;
+  });
+  ipcMain.handle("settings.saveNavigationPreferences", async (_event: any, input: any) => {
+    const current = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
+    const profile = updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
+      navigation: {
+        mainOrder: Array.isArray(input?.mainOrder)
+          ? normalizeStringArray(input.mainOrder)
+          : current.navigation.mainOrder,
+        websiteOrder: Array.isArray(input?.websiteOrder)
+          ? normalizeStringArray(input.websiteOrder)
+          : current.navigation.websiteOrder,
+        desktopCopilotPages: current.navigation.desktopCopilotPages
+      }
+    });
+    return profile.navigation;
+  });
+  ipcMain.handle("settings.setNativeThemeSource", async (_event: any, themeMode: string) => {
+    const normalizedThemeMode = normalizeThemePreference(themeMode);
+    const result = setNativeThemeSource(nativeTheme, normalizedThemeMode);
+    updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
+      appearance: {
+        theme: normalizedThemeMode
+      }
+    });
+    return result;
+  });
   ipcMain.handle("settings.getLocale", async () => initializeMainI18n(app));
   ipcMain.handle("settings.setLocale", async (_event: any, locale: unknown) => {
     if (!isSupportedLocale(locale)) {

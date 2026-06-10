@@ -9,6 +9,7 @@ import type { TaskBoardChangedListener, TaskBoardCloudConfig, TaskBoardCloudConf
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
 import type { AssistantChatDetail, AssistantChatSummary, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, DesktopActionCallListener, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
+import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 
 export interface PanAuthStatus {
   configured: boolean;
@@ -284,6 +285,9 @@ export interface DesktopApi {
     getTunnelHubAgentSettings: () => Promise<TunnelHubAgentSettings>;
     saveTunnelHubAgentSettings: (input: TunnelHubAgentSettingsInput) => Promise<TunnelHubAgentSettingsResult>;
     resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
+    getThemePreference: () => Promise<"light" | "dark" | "system">;
+    getNavigationPreferences: () => Promise<{ mainOrder: string[]; websiteOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    saveNavigationPreferences: (input: { mainOrder?: string[]; websiteOrder?: string[] }) => Promise<{ mainOrder: string[]; websiteOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
     setNativeThemeSource: (themeMode: "light" | "dark" | "system") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;

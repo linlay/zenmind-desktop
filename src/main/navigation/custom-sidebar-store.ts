@@ -2,17 +2,51 @@ import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import type { CustomSidebarItem, CustomSidebarItemInput, CustomSidebarUpdateInput } from "../../shared/contracts";
-import { getDesktopConfigRoot } from "../user-paths";
+import { getDesktopConfigRoot, getDesktopWebsitesDataRoot } from "../user-paths";
 
-const CUSTOM_SIDEBAR_FILE = "custom-sidebar-items.json";
+const WEBSITE_FILE = "website.json";
+const LEGACY_CUSTOM_SIDEBAR_FILE = "custom-sidebar-items.json";
 const MAX_CUSTOM_SIDEBAR_ITEMS = 14;
 
 type StoredCustomSidebarItems = {
   items: CustomSidebarItem[];
 };
 
+type StoredWebsite = {
+  schemaVersion?: unknown;
+  id?: unknown;
+  label?: unknown;
+  url?: unknown;
+  agentKey?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
 function getCustomSidebarPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), CUSTOM_SIDEBAR_FILE);
+  return path.join(getDesktopConfigRoot(app), LEGACY_CUSTOM_SIDEBAR_FILE);
+}
+
+function getWebsitesRoot(app: App) {
+  return getDesktopWebsitesDataRoot(app);
+}
+
+function normalizeWebsiteId(value: string) {
+  const normalized = value
+    .trim()
+    .replace(/^user:/u, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 80);
+  return normalized || createItemId();
+}
+
+function getWebsiteDir(app: App, id: string) {
+  return path.join(getWebsitesRoot(app), normalizeWebsiteId(id));
+}
+
+function getWebsitePath(app: App, id: string) {
+  return path.join(getWebsiteDir(app, id), WEBSITE_FILE);
 }
 
 function createItemId() {
@@ -71,6 +105,21 @@ function normalizeAgentKey(inputAgentKey: unknown) {
   return normalized || undefined;
 }
 
+function toTimestamp(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : Date.now();
+  }
+  return Date.now();
+}
+
+function toIsoTimestamp(value: number) {
+  return new Date(Number.isFinite(value) ? value : Date.now()).toISOString();
+}
+
 function normalizeItem(item: Partial<CustomSidebarItem>): CustomSidebarItem | null {
   if (typeof item.id !== "string" || typeof item.label !== "string" || typeof item.url !== "string") {
     return null;
@@ -81,12 +130,12 @@ function normalizeItem(item: Partial<CustomSidebarItem>): CustomSidebarItem | nu
     const now = Date.now();
     const agentKey = normalizeAgentKey(item.agentKey);
     return {
-      id: item.id.trim() || createItemId(),
+      id: normalizeWebsiteId(item.id.trim() || createItemId()),
       label: normalizeLabel(item.label, url),
       url,
       ...(agentKey ? { agentKey } : {}),
-      createdAt: typeof item.createdAt === "number" ? item.createdAt : now,
-      updatedAt: typeof item.updatedAt === "number" ? item.updatedAt : now
+      createdAt: item.createdAt === undefined ? now : toTimestamp(item.createdAt),
+      updatedAt: item.updatedAt === undefined ? now : toTimestamp(item.updatedAt)
     };
   } catch {
     return null;
@@ -131,14 +180,61 @@ function parseItemsFileContent(content: string) {
   return sanitizeItems(parseItemsPayload(parsed));
 }
 
+function normalizeWebsiteFile(value: unknown): CustomSidebarItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const website = value as StoredWebsite;
+  return normalizeItem({
+    id: typeof website.id === "string" ? website.id : "",
+    label: typeof website.label === "string" ? website.label : "",
+    url: typeof website.url === "string" ? website.url : "",
+    agentKey: typeof website.agentKey === "string" ? website.agentKey : undefined,
+    createdAt: toTimestamp(website.createdAt),
+    updatedAt: toTimestamp(website.updatedAt)
+  });
+}
+
+function readWebsiteItems(app: App) {
+  const root = getWebsitesRoot(app);
+  if (!fs.existsSync(root)) {
+    return [];
+  }
+  const items: CustomSidebarItem[] = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const websitePath = path.join(root, entry.name, WEBSITE_FILE);
+    try {
+      const item = normalizeWebsiteFile(JSON.parse(fs.readFileSync(websitePath, "utf8")));
+      if (item) {
+        items.push(item);
+      }
+    } catch (error) {
+      console.warn("failed to read website item", websitePath, error);
+    }
+  }
+  return sanitizeItems(items).sort((a, b) => a.createdAt - b.createdAt || a.label.localeCompare(b.label, "zh-CN"));
+}
+
 function readItems(app: App): CustomSidebarItem[] {
+  const websiteItems = readWebsiteItems(app);
+  if (websiteItems.length > 0) {
+    return websiteItems;
+  }
+
   const targetPath = getCustomSidebarPath(app);
   if (!fs.existsSync(targetPath)) {
     return [];
   }
 
   try {
-    return parseItemsFileContent(fs.readFileSync(targetPath, "utf8"));
+    const legacyItems = parseItemsFileContent(fs.readFileSync(targetPath, "utf8"));
+    if (legacyItems.length > 0) {
+      writeItems(app, legacyItems);
+    }
+    return legacyItems;
   } catch (error) {
     console.warn("failed to read custom sidebar items", error);
     return [];
@@ -146,9 +242,29 @@ function readItems(app: App): CustomSidebarItem[] {
 }
 
 function writeItems(app: App, items: CustomSidebarItem[]) {
-  const targetPath = getCustomSidebarPath(app);
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, `${JSON.stringify({ items }, null, 2)}\n`, "utf8");
+  const root = getWebsitesRoot(app);
+  fs.mkdirSync(root, { recursive: true });
+  const normalizedItems = sanitizeItems(items);
+  const expectedDirs = new Set(normalizedItems.map((item) => normalizeWebsiteId(item.id)));
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (entry.isDirectory() && !expectedDirs.has(entry.name)) {
+      fs.rmSync(path.join(root, entry.name), { recursive: true, force: true });
+    }
+  }
+  for (const item of normalizedItems) {
+    const websiteId = normalizeWebsiteId(item.id);
+    const targetPath = getWebsitePath(app, websiteId);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, `${JSON.stringify({
+      schemaVersion: 1,
+      id: websiteId,
+      label: item.label,
+      url: item.url,
+      ...(item.agentKey ? { agentKey: item.agentKey } : {}),
+      createdAt: toIsoTimestamp(item.createdAt),
+      updatedAt: toIsoTimestamp(item.updatedAt)
+    }, null, 2)}\n`, "utf8");
+  }
 }
 
 export function listCustomSidebarItems(app: App) {
@@ -185,7 +301,7 @@ export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
     const now = Date.now();
     const agentKey = normalizeAgentKey(input.agentKey);
     const item: CustomSidebarItem = {
-      id: createItemId(),
+      id: normalizeWebsiteId(createItemId()),
       label: normalizeLabel(input.label, url),
       url,
       ...(agentKey ? { agentKey } : {}),
@@ -354,8 +470,13 @@ export function exportCustomSidebarItems(app: App) {
 
 export const __testInternals = {
   getCustomSidebarPath,
+  getWebsitesRoot,
+  getWebsitePath,
+  WEBSITE_FILE,
+  LEGACY_CUSTOM_SIDEBAR_FILE,
   normalizeUrl,
   normalizeLabel,
+  normalizeWebsiteId,
   normalizeAgentKey,
   parseItemsFileContent
 };

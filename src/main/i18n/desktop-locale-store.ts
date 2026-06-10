@@ -3,8 +3,14 @@ import path from "node:path";
 import type { App } from "electron";
 import { DEFAULT_LOCALE, normalizeLocale, type LocaleSettings, type SupportedLocale } from "../../shared/i18n";
 import { getDesktopConfigRoot } from "../user-paths";
+import {
+  DESKTOP_PROFILE_FILE,
+  LEGACY_DESKTOP_PREFERENCES_FILE,
+  readDesktopProfileFromRoot,
+  updateDesktopProfileInRoot
+} from "../desktop-profile-store";
 
-const PREFERENCES_FILE = "preferences.json";
+const PREFERENCES_FILE = DESKTOP_PROFILE_FILE;
 const FIRST_INSTALL_DEFAULT_LOCALE: SupportedLocale = "en-US";
 
 export type DesktopPreferences = {
@@ -19,23 +25,20 @@ function getPreferencesPath(app: App) {
   return path.join(getDesktopConfigRoot(app), PREFERENCES_FILE);
 }
 
-function ensurePreferencesRoot(app: App) {
-  fs.mkdirSync(getDesktopConfigRoot(app), { recursive: true });
+function getLegacyPreferencesPath(app: App) {
+  return path.join(getDesktopConfigRoot(app), LEGACY_DESKTOP_PREFERENCES_FILE);
 }
 
-function readStoredPreferences(app: App): Partial<DesktopPreferences> {
-  try {
-    const raw = fs.readFileSync(getPreferencesPath(app), "utf8");
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Partial<DesktopPreferences>
-      : {};
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return {};
-    }
-    throw error;
-  }
+function hasStoredPreferences(app: App) {
+  return fs.existsSync(getPreferencesPath(app)) || fs.existsSync(getLegacyPreferencesPath(app));
+}
+
+function readStoredPreferences(app: App, options: DesktopLocaleReadOptions = {}): DesktopPreferences {
+  return {
+    locale: readDesktopProfileFromRoot(getDesktopConfigRoot(app), {
+      defaultLocale: options.isFirstInstall ? FIRST_INSTALL_DEFAULT_LOCALE : undefined
+    }).appearance.locale
+  };
 }
 
 function getSystemLocale(app: App) {
@@ -47,9 +50,11 @@ function getSystemLocale(app: App) {
 }
 
 export function readDesktopLocaleSettings(app: App, options: DesktopLocaleReadOptions = {}): LocaleSettings {
-  const storedLocale = normalizeLocale(readStoredPreferences(app).locale);
-  if (storedLocale) {
-    return { locale: storedLocale, source: "stored" };
+  if (hasStoredPreferences(app)) {
+    const storedLocale = normalizeLocale(readStoredPreferences(app, options).locale);
+    if (storedLocale) {
+      return { locale: storedLocale, source: "stored" };
+    }
   }
   if (options.isFirstInstall) {
     return { locale: FIRST_INSTALL_DEFAULT_LOCALE, source: "default" };
@@ -66,13 +71,16 @@ export function readDesktopPreferences(app: App): DesktopPreferences {
 }
 
 export function saveDesktopPreferences(app: App, patch: Partial<DesktopPreferences>): DesktopPreferences {
-  ensurePreferencesRoot(app);
   const current = readDesktopPreferences(app);
   const next: DesktopPreferences = {
     ...current,
     ...(normalizeLocale(patch.locale) ? { locale: normalizeLocale(patch.locale) as SupportedLocale } : {})
   };
-  fs.writeFileSync(getPreferencesPath(app), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
+    appearance: {
+      locale: next.locale
+    }
+  });
   return next;
 }
 
@@ -84,5 +92,6 @@ export function saveDesktopLocale(app: App, locale: SupportedLocale): LocaleSett
 export const __testInternals = {
   FIRST_INSTALL_DEFAULT_LOCALE,
   PREFERENCES_FILE,
+  LEGACY_DESKTOP_PREFERENCES_FILE,
   getPreferencesPath
 };

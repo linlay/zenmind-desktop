@@ -161,14 +161,14 @@ test("registerDesktopPetIpcHandlers registers desktopPet.saveSettings", async ()
   assert.equal(windowShown, true);
   assert.equal(savedSettings, null);
 
-  // Case 3: boundAgent change / appearanceId change
+  // Case 3: boundAgent input is ignored; appearanceId still changes
   windowShown = false;
   const resWinAgent = await handlers["desktopPet.saveSettings"]({}, { boundAgentKey: "test-agent", appearanceId: "dario" });
-  assert.equal(savedSettings.boundAgentKey, "test-agent");
+  assert.equal(savedSettings.boundAgentKey, "zenmi");
   assert.equal(savedSettings.appearanceId, "dario");
-  assert.equal(clearedActiveRuns, true);
-  assert.equal(agentStatusVal, null);
-  assert.equal(statusRefreshVal, 0);
+  assert.equal(clearedActiveRuns, false);
+  assert.equal(agentStatusVal, undefined);
+  assert.equal(statusRefreshVal, null);
 
   // Clean up
   fs.rmSync(testHome, { recursive: true, force: true });

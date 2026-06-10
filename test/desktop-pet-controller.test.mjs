@@ -610,7 +610,6 @@ test("createDesktopPetClientLifecycleController handles unsupported platform", (
     getServiceState: async () => {},
     issueAccessToken: async () => {},
     getSettings: () => ({ enabled: true, boundAgentKey: "agent-1" }),
-    saveSettings: () => {},
     setAgentStatus: () => {},
     setAgentOptions: () => {},
     clearActiveRuns: () => {},
@@ -655,7 +654,6 @@ test("createDesktopPetClientLifecycleController manages start and stop lifecycle
     getServiceState: async () => {},
     issueAccessToken: async () => {},
     getSettings: () => settings,
-    saveSettings: () => {},
     setAgentStatus: (status) => { agentStatus = status; },
     setAgentOptions: (options) => { agentOptions = options; },
     clearActiveRuns: () => { activeRunsCleared = true; },
@@ -696,7 +694,6 @@ test("createDesktopPetClientLifecycleController manages start and stop lifecycle
 });
 
 test("createDesktopPetClientLifecycleController propagates callbacks", () => {
-  let savedSettings = null;
   let agentStatus = null;
   let agentOptions = null;
   let activeRunsCleared = false;
@@ -711,7 +708,6 @@ test("createDesktopPetClientLifecycleController propagates callbacks", () => {
 
   let savedOnStatus = null;
   let savedOnAgents = null;
-  let savedOnBoundAgentKeyResolved = null;
   let savedOnRunStarted = null;
   let savedOnRunFinished = null;
 
@@ -719,7 +715,6 @@ test("createDesktopPetClientLifecycleController propagates callbacks", () => {
     constructor(opts) {
       savedOnStatus = opts.onStatus;
       savedOnAgents = opts.onAgents;
-      savedOnBoundAgentKeyResolved = opts.onBoundAgentKeyResolved;
       savedOnRunStarted = opts.onRunStarted;
       savedOnRunFinished = opts.onRunFinished;
     }
@@ -749,7 +744,6 @@ test("createDesktopPetClientLifecycleController propagates callbacks", () => {
     getServiceState: async () => {},
     issueAccessToken: async () => {},
     getSettings: () => ({ enabled: true, boundAgentKey: "agent-initial" }),
-    saveSettings: (settings) => { savedSettings = settings; },
     setAgentStatus: (status) => { agentStatus = status; },
     setAgentOptions: (options) => { agentOptions = options; },
     clearActiveRuns: () => { activeRunsCleared = true; },
@@ -771,7 +765,6 @@ test("createDesktopPetClientLifecycleController propagates callbacks", () => {
 
   assert.ok(savedOnStatus);
   assert.ok(savedOnAgents);
-  assert.ok(savedOnBoundAgentKeyResolved);
   assert.ok(savedOnRunStarted);
   assert.ok(savedOnRunFinished);
 
@@ -795,18 +788,13 @@ test("createDesktopPetClientLifecycleController propagates callbacks", () => {
   assert.deepEqual(agentOptions, ["agent-opt-1"]);
   assert.equal(refreshedState, 1);
 
-  // 5. Test onBoundAgentKeyResolved
-  savedOnBoundAgentKeyResolved("agent-resolved", "agent-initial");
-  assert.deepEqual(savedSettings, { boundAgentKey: "agent-resolved" });
-  assert.equal(refreshedState, 2);
-
-  // 6. Test onRunStarted
+  // 5. Test onRunStarted
   savedOnRunStarted({ runId: "run-started-1", chatId: "chat-started-1" });
   assert.deepEqual(activeRunsUpdated, { type: "run.started", runId: "run-started-1" });
   assert.deepEqual(dismissedPreviewCleared, { chatId: "chat-started-1", runId: "run-started-1" });
   assert.deepEqual(streamAttached, { runId: "run-started-1", chatId: "chat-started-1" });
 
-  // 7. Test onRunFinished
+  // 6. Test onRunFinished
   savedOnRunFinished({ runId: "run-finished-1", chatId: "chat-finished-1", message: "finished message" });
   assert.deepEqual(activeRunsUpdated, { type: "run.finished", runId: "run-finished-1" });
   assert.equal(ingestedAgentEvent.runId, "run-finished-1");
@@ -814,7 +802,7 @@ test("createDesktopPetClientLifecycleController propagates callbacks", () => {
   assert.equal(ingestedAgentEvent.message, "finished message");
   assert.deepEqual(ingestedContext, { source: "agent-platform-status", transportMode: "ws" });
 
-  // 8. Test stream event ingestion
+  // 7. Test stream event ingestion
   assert.ok(streamClientInstance);
   streamClientInstance.onEvent("sse-event");
   assert.equal(ingestedAgentEvent, "sse-event");

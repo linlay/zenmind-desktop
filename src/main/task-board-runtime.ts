@@ -78,6 +78,8 @@ type TaskBoardRuntimeOptions = {
 };
 
 type TaskBoardDesktopConfigFile = {
+  schemaVersion?: unknown;
+  taskBoard?: unknown;
   serverUrl?: unknown;
   token?: unknown;
   selectedProjectId?: unknown;
@@ -93,7 +95,8 @@ type TaskBoardAssistantSyncEvent = {
   error?: string | null;
 };
 
-const KANBAN_CONFIG_FILE = "kanban.json";
+const CONTROL_CONFIG_FILE = "control.json";
+const LEGACY_KANBAN_CONFIG_FILE = "kanban.json";
 const DEFAULT_SELECTED_PROJECT_ID = "default";
 const ASSISTANT_AGENT_LIST_TIMEOUT_MS = 2_000;
 const REMOTE_START_RUN_ACK_TIMEOUT_MS = readPositiveIntegerEnv("ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS", 5_000);
@@ -126,7 +129,20 @@ function readBoolean(value: unknown) {
 }
 
 function getTaskBoardConfigPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), KANBAN_CONFIG_FILE);
+  return path.join(getDesktopConfigRoot(app), CONTROL_CONFIG_FILE);
+}
+
+function getLegacyTaskBoardConfigPath(app: App) {
+  return path.join(getDesktopConfigRoot(app), LEGACY_KANBAN_CONFIG_FILE);
+}
+
+function readTaskBoardOwnerConfig(input: unknown): TaskBoardDesktopConfigFile {
+  if (!isRecord(input)) {
+    return {};
+  }
+  return isRecord(input.taskBoard)
+    ? input.taskBoard as TaskBoardDesktopConfigFile
+    : input as TaskBoardDesktopConfigFile;
 }
 
 function normalizeTaskBoardCloudConfig(input: TaskBoardDesktopConfigFile): TaskBoardCloudConfig {
@@ -140,11 +156,36 @@ function normalizeTaskBoardCloudConfig(input: TaskBoardDesktopConfigFile): TaskB
 
 function readTaskBoardConfigFile(app: App): TaskBoardDesktopConfigFile {
   const configPath = getTaskBoardConfigPath(app);
-  if (!fs.existsSync(configPath)) {
+  const legacyPath = getLegacyTaskBoardConfigPath(app);
+  if (fs.existsSync(configPath)) {
+    if (fs.existsSync(legacyPath)) {
+      try {
+        const legacyMtime = fs.statSync(legacyPath).mtimeMs;
+        const configMtime = fs.statSync(configPath).mtimeMs;
+        if (legacyMtime > configMtime) {
+          const legacy = readTaskBoardOwnerConfig(JSON.parse(fs.readFileSync(legacyPath, "utf8")));
+          writeTaskBoardCloudConfig(app, legacy);
+          return legacy;
+        }
+      } catch {
+        // Fall back to the canonical control.json below.
+      }
+    }
+    try {
+      return readTaskBoardOwnerConfig(JSON.parse(fs.readFileSync(configPath, "utf8")));
+    } catch {
+      return {};
+    }
+  }
+
+  if (!fs.existsSync(legacyPath)) {
     return {};
   }
+
   try {
-    return JSON.parse(fs.readFileSync(configPath, "utf8")) as TaskBoardDesktopConfigFile;
+    const legacy = readTaskBoardOwnerConfig(JSON.parse(fs.readFileSync(legacyPath, "utf8")));
+    writeTaskBoardCloudConfig(app, legacy);
+    return legacy;
   } catch {
     return {};
   }
@@ -175,7 +216,10 @@ function writeTaskBoardCloudConfig(app: App, input: TaskBoardDesktopConfigFile):
   const config = normalizeTaskBoardCloudConfig(input);
   const configPath = getTaskBoardConfigPath(app);
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  fs.writeFileSync(configPath, `${JSON.stringify({
+    schemaVersion: 1,
+    taskBoard: config
+  }, null, 2)}\n`, "utf8");
   return config;
 }
 

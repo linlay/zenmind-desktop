@@ -163,6 +163,7 @@ import {
   getDataRoot,
   getElectronUserDataRoot
 } from "./user-paths";
+import { applyDesktopDefaultBootstrap } from "./desktop-default-bootstrap";
 import {
   bundledEnvZipExists,
   generateBackupDirName,
@@ -397,6 +398,8 @@ const envZipConflictNeedsDecision = shouldPromptEnvRootConflict({
 });
 const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
 function initializeUserDataRootsAndSettings() {
+  ensureDataRoot(app);
+  applyDesktopDefaultBootstrap(app, mainProcessContext.platform);
   const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
   if (isFirstDesktopInstall) {
     setMainLocale(app, initialLocaleSettings.locale);
@@ -519,9 +522,6 @@ const desktopPetClientLifecycleController = createDesktopPetClientLifecycleContr
   getServiceState: getResponsiveServiceState,
   issueAccessToken: issueAgentAccessToken,
   getSettings: () => appState.desktopPetSettings,
-  saveSettings: (settings) => {
-    appState.desktopPetSettings = saveDesktopPetSettings(app, settings, mainProcessContext.platform);
-  },
   setAgentStatus: (status) => {
     appState.desktopPetAgentStatus = status;
   },

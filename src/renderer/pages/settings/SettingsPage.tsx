@@ -39,7 +39,6 @@ import { publishCurrentPageContextSnapshot } from "../../services/currentPageCon
 import { registerDesktopActionProvider } from "../../services/desktopActionRegistry";
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
-  DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_APPEARANCE_OPTIONS
 } from "../../../shared/desktop-pet";
 import {
@@ -585,8 +584,6 @@ export function SettingsPage({
   const [desktopCopilotPagePending, setDesktopCopilotPagePending] = useState("");
   const [desktopPetState, setDesktopPetState] = useState<DesktopPetState | null>(null);
   const [desktopPetPending, setDesktopPetPending] = useState(false);
-  const [desktopPetBoundAgentKey, setDesktopPetBoundAgentKey] = useState(DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY);
-  const [desktopPetBoundAgentPending, setDesktopPetBoundAgentPending] = useState(false);
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
   const [controlCloudConfig, setControlCloudConfig] = useState<TaskBoardCloudConfig>(defaultTaskBoardCloudConfig);
   const [controlCloudProjects, setControlCloudProjects] = useState<TaskBoardProject[]>([]);
@@ -880,14 +877,6 @@ export function SettingsPage({
     };
   }, [shouldReadDesktopPetState]);
 
-  useEffect(() => {
-    if (desktopPetState?.boundAgentKey) {
-      setDesktopPetBoundAgentKey(desktopPetState.boundAgentKey);
-    }
-  }, [desktopPetState?.boundAgentKey]);
-
-  const currentDesktopPetBoundAgentKey = desktopPetState?.boundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
-  const desktopPetAgentOptions = desktopPetState?.agentOptions ?? [];
   const desktopPetEnabled = Boolean(desktopPetState?.enabled);
   const desktopPetAppearanceOptions = desktopPetState?.appearanceOptions?.length
     ? desktopPetState.appearanceOptions
@@ -949,10 +938,6 @@ export function SettingsPage({
           valid: Boolean(assistantAgentOptions.find((agent) => agent.agentKey === quickAssistantAgentKey))
         },
         desktopCopilotPages,
-        desktopPetBoundAgentKey: {
-          value: currentDesktopPetBoundAgentKey,
-          saved: currentDesktopPetBoundAgentKey
-        },
         memory: {
           enabled: memorySettings?.enabled ?? null,
           autoLearn: memorySettings?.autoLearn ?? null
@@ -1404,7 +1389,6 @@ export function SettingsPage({
     assistantSettings?.desktopHelperAgentKey,
     assistantSettings?.quickAssistantAgentKey,
     assistantSettings?.quickAssistantEnabled,
-    currentDesktopPetBoundAgentKey,
     desktopHelperAgentKey,
     desktopCopilotPages,
     quickAssistantAgentKey,
@@ -1662,31 +1646,6 @@ export function SettingsPage({
       showSectionNotice("appearance", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setDesktopPetAppearancePending("");
-    }
-  }
-
-  async function handleSelectDesktopPetBoundAgentKey(nextBoundAgentKey: string) {
-    const normalizedBoundAgentKey = nextBoundAgentKey.trim();
-    const previousBoundAgentKey = desktopPetState?.boundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
-    if (!desktopPetSupported || !desktopPetState || !normalizedBoundAgentKey || normalizedBoundAgentKey === desktopPetState.boundAgentKey) {
-      return;
-    }
-
-    setDesktopPetBoundAgentPending(true);
-    try {
-      const nextState = await window.electronAPI.desktopPet.saveSettings({
-        boundAgentKey: normalizedBoundAgentKey
-      });
-      const nextAgent = nextState.agentOptions.find((agent) => agent.agentKey === nextState.boundAgentKey);
-      setDesktopPetState(nextState);
-      setDesktopPetBoundAgentKey(nextState.boundAgentKey);
-      setReadErrorSections(["appearance"], "");
-      showSectionNotice("appearance", t("settings.desktopPet.noticeBoundAgentChanged", { name: nextAgent?.displayName ?? nextState.boundAgentKey }), "success");
-    } catch (reason) {
-      setDesktopPetBoundAgentKey(previousBoundAgentKey);
-      showSectionNotice("appearance", reason instanceof Error ? reason.message : String(reason), "error");
-    } finally {
-      setDesktopPetBoundAgentPending(false);
     }
   }
 
@@ -2032,35 +1991,6 @@ export function SettingsPage({
                       </div>
                     );
                   })}
-                </div>
-                <div className="settings-item-form desktop-pet-agent-form">
-                  <label className="desktop-pet-agent-field">
-                    <span>{t("settings.desktopPet.selectAgent")}</span>
-                    <span className="desktop-pet-agent-select-wrap">
-                      <select
-                        value={desktopPetAgentOptions.some((agent) => agent.agentKey === desktopPetBoundAgentKey) ? desktopPetBoundAgentKey : ""}
-                        onChange={(event) => {
-                          const nextBoundAgentKey = event.target.value;
-                          setDesktopPetBoundAgentKey(nextBoundAgentKey);
-                          void handleSelectDesktopPetBoundAgentKey(nextBoundAgentKey);
-                        }}
-                        disabled={!desktopPetEnabled || desktopPetAgentOptions.length === 0 || desktopPetBoundAgentPending}
-                      >
-                        <option value="">
-                          {!desktopPetEnabled
-                            ? t("settings.desktopPet.loadAgentsAfterEnabled")
-                            : desktopPetAgentOptions.length === 0
-                              ? t("settings.navigation.agentsLoading")
-                              : t("settings.navigation.selectAgent")}
-                        </option>
-                        {desktopPetAgentOptions.map((agent) => (
-                          <option value={agent.agentKey} key={agent.agentKey}>
-                            {agent.displayName}{agent.role ? ` · ${agent.role}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </span>
-                  </label>
                 </div>
               </div>
             ) : null}

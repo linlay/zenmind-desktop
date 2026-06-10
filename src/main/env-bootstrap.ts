@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
@@ -25,6 +26,27 @@ export type EnvZipImportResult = {
   createdDirectories: number;
 };
 
+type InitialEnvPackageSource = "manual" | "bundled" | "reset";
+
+type InitialEnvPackageManifest = {
+  schemaVersion: 1;
+  source: InitialEnvPackageSource;
+  sourcePath: string;
+  desktopVersion: string;
+  sha256: string;
+  size: number;
+  storedAt: string;
+  envZipRelativePath: string;
+};
+
+type InitialEnvPackageRecord = {
+  relativePath: string;
+  manifestRelativePath: string;
+  sha256: string;
+  source: InitialEnvPackageSource;
+  storedAt: string;
+};
+
 export type BundledEnvZipImportResult = EnvZipImportResult & {
   sourceZipPath: string;
 };
@@ -43,6 +65,10 @@ const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-mark
 const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-bootstrap.json");
 const BUNDLED_ENV_RESOURCES_DIR_NAME = "env";
 const ENV_ZIP_FILE_NAME = "env.zip";
+const ENV_INITIAL_DATA_RELATIVE_DIR = path.join(".desktop", "data", "env-initial");
+const ENV_INITIAL_PACKAGE_RELATIVE_PATH = path.join(ENV_INITIAL_DATA_RELATIVE_DIR, ENV_ZIP_FILE_NAME);
+const ENV_INITIAL_MANIFEST_FILE_NAME = "manifest.json";
+const ENV_INITIAL_MANIFEST_RELATIVE_PATH = path.join(ENV_INITIAL_DATA_RELATIVE_DIR, ENV_INITIAL_MANIFEST_FILE_NAME);
 const VERSION_FILE_NAME = "VERSION";
 const ENV_ZIP_ROOT_DIR_NAME = "env";
 
@@ -181,7 +207,8 @@ export async function importBundledEnvZipToRuntime(
     app,
     zipPath,
     platform,
-    options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader)
+    options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader),
+    { source: "bundled" }
   );
   return {
     ...result,
@@ -248,7 +275,8 @@ export async function resetBundledRuntimeEnv(
       app,
       sourceZipPath,
       platform,
-      options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader)
+      options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader),
+      { source: "reset" }
     );
     return {
       ...importResult,
@@ -357,6 +385,58 @@ function readVersionFileIfExists(filePath: string) {
   }
 }
 
+function toPosixRelativePath(relativePath: string) {
+  return relativePath.split(path.sep).join("/");
+}
+
+function sha256Hex(buffer: Buffer) {
+  return createHash("sha256").update(buffer).digest("hex");
+}
+
+function writeFileModeBestEffort(filePath: string, mode: number) {
+  try {
+    fs.chmodSync(filePath, mode);
+  } catch {
+    // File permissions are best-effort across packaged platforms and filesystems.
+  }
+}
+
+async function persistInitialEnvPackage(input: {
+  targetRoot: string;
+  zipPath: string;
+  zipBuffer: Buffer;
+  source: InitialEnvPackageSource;
+  desktopVersion: string;
+}): Promise<InitialEnvPackageRecord> {
+  const storedAt = new Date().toISOString();
+  const sha256 = sha256Hex(input.zipBuffer);
+  const packagePath = path.join(input.targetRoot, ENV_INITIAL_PACKAGE_RELATIVE_PATH);
+  const manifestPath = path.join(input.targetRoot, ENV_INITIAL_MANIFEST_RELATIVE_PATH);
+  fs.mkdirSync(path.dirname(packagePath), { recursive: true });
+  if (path.resolve(input.zipPath) !== path.resolve(packagePath)) {
+    await fs.promises.writeFile(packagePath, input.zipBuffer);
+  }
+  writeFileModeBestEffort(packagePath, 0o600);
+  const manifest: InitialEnvPackageManifest = {
+    schemaVersion: 1,
+    source: input.source,
+    sourcePath: input.zipPath,
+    desktopVersion: normalizeVersion(input.desktopVersion),
+    sha256,
+    size: input.zipBuffer.byteLength,
+    storedAt,
+    envZipRelativePath: ENV_ZIP_FILE_NAME
+  };
+  await fs.promises.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  return {
+    relativePath: toPosixRelativePath(ENV_INITIAL_PACKAGE_RELATIVE_PATH),
+    manifestRelativePath: toPosixRelativePath(ENV_INITIAL_MANIFEST_RELATIVE_PATH),
+    sha256,
+    source: input.source,
+    storedAt
+  };
+}
+
 export function resolveDesktopVersion(app: AppVersionReader = {}) {
   const candidateRoots = [
     typeof app.getAppPath === "function" ? app.getAppPath() : "",
@@ -422,7 +502,11 @@ async function validateEnvZipVersion(entries: EnvZipEntry[], expectedDesktopVers
   }
 }
 
-function writeEnvImportMarker(targetRoot: string, result: Omit<EnvZipImportResult, "targetRoot">) {
+function writeEnvImportMarker(
+  targetRoot: string,
+  result: Omit<EnvZipImportResult, "targetRoot">,
+  initialEnvPackage?: InitialEnvPackageRecord
+) {
   const markerPath = path.join(targetRoot, ENV_IMPORT_MARKER_RELATIVE_PATH);
   fs.mkdirSync(path.dirname(markerPath), { recursive: true });
   fs.writeFileSync(
@@ -431,7 +515,8 @@ function writeEnvImportMarker(targetRoot: string, result: Omit<EnvZipImportResul
       importedAt: new Date().toISOString(),
       copiedFiles: result.copiedFiles,
       skippedFiles: result.skippedFiles,
-      overwrittenFiles: result.overwrittenFiles
+      overwrittenFiles: result.overwrittenFiles,
+      ...(initialEnvPackage ? { initialEnvPackage } : {})
     }, null, 2)}\n`,
     "utf8"
   );
@@ -441,13 +526,17 @@ export async function importEnvZipToRuntime(
   app: AppPathReader,
   zipPath: string,
   platform: NodeJS.Platform = process.platform,
-  expectedDesktopVersion: string = resolveDesktopVersion(app as AppVersionReader)
+  expectedDesktopVersion: string = resolveDesktopVersion(app as AppVersionReader),
+  options: {
+    source?: InitialEnvPackageSource;
+  } = {}
 ): Promise<EnvZipImportResult> {
   if (path.extname(zipPath).toLowerCase() !== ".zip") {
     throw new Error("首次安装只能导入 env.zip。");
   }
 
-  const zip = await JSZip.loadAsync(await fs.promises.readFile(zipPath));
+  const zipBuffer = await fs.promises.readFile(zipPath);
+  const zip = await JSZip.loadAsync(zipBuffer);
   const entries = normalizeZipEntries(zip);
   await validateEnvZipVersion(entries, expectedDesktopVersion);
   const targetRoot = resolveRuntimeRoot(app, platform);
@@ -482,12 +571,20 @@ export async function importEnvZipToRuntime(
     throw new Error("env.zip 内没有可导入的文件。");
   }
 
+  const initialEnvPackage = await persistInitialEnvPackage({
+    targetRoot,
+    zipPath,
+    zipBuffer,
+    source: options.source ?? "manual",
+    desktopVersion: expectedDesktopVersion
+  });
+
   writeEnvImportMarker(targetRoot, {
     copiedFiles,
     skippedFiles,
     overwrittenFiles,
     createdDirectories
-  });
+  }, initialEnvPackage);
 
   return {
     targetRoot,

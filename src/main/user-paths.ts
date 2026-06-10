@@ -109,6 +109,9 @@ function ensureDesktopDirs(dataRoot: string) {
   ensureDirectory(path.join(dataRoot, "config", "plugins"));
   ensureDirectory(path.join(dataRoot, "data", "services"));
   ensureDirectory(path.join(dataRoot, "data", "plugins"));
+  ensureDirectory(path.join(dataRoot, "data", "pets"));
+  ensureDirectory(path.join(dataRoot, "data", "websites"));
+  ensureDirectory(path.join(dataRoot, "data", "env-initial"));
   ensureDirectory(path.join(dataRoot, "state", "desktop"));
   ensureDirectory(path.join(dataRoot, "state", "services"));
   ensureDirectory(path.join(dataRoot, "logs", "services"));
@@ -162,7 +165,7 @@ export function getDesktopConfigRoot(app: App) {
 }
 
 export function getDesktopPetSettingsPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), "desktop-pet.json");
+  return path.join(getDesktopConfigRoot(app), "pet.json");
 }
 
 export function getAssistantSettingsRoot(app: App) {
@@ -175,6 +178,18 @@ export function getServiceConfigRoot(app: App, serviceId: ServiceId, kind: Servi
 
 export function getRuntimeDataRoot(app: App) {
   return path.join(getDataRoot(app), "data");
+}
+
+export function getDesktopPetsDataRoot(app: App) {
+  return path.join(getRuntimeDataRoot(app), "pets");
+}
+
+export function getDesktopWebsitesDataRoot(app: App) {
+  return path.join(getRuntimeDataRoot(app), "websites");
+}
+
+export function getDesktopInitialEnvDataRoot(app: App) {
+  return path.join(getRuntimeDataRoot(app), "env-initial");
 }
 
 export function getServiceDataRoot(app: App, serviceId: ServiceId, kind: ServiceKind = "builtin") {

@@ -154,7 +154,7 @@ export function registerTaskBoardIpcHandlers(ipcMain: any, options: TaskBoardIpc
     const path = await import("node:path");
     const saveResult = await showSaveDialog({
       title: "导出内嵌网站配置",
-      defaultPath: path.join(getDataRoot(app), "custom-sidebar-items.json"),
+      defaultPath: path.join(getDataRoot(app), "websites.json"),
       filters: [{ name: "JSON", extensions: ["json"] }]
     });
 

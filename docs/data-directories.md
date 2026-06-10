@@ -13,13 +13,48 @@ ZenMind Desktop 会把本机运行数据保存在分层的桌面端数据根目�
 ## 目录结构
 
 ```text
+~/.zenmind/
+├── desktop-default.json
+├── desktop-register.json
+└── .desktop/
+    ├── config/
+    │   └── desktop/
+    │       ├── profile.json
+    │       ├── pet.json
+    │       ├── sso.json
+    │       └── control.json
+    ├── data/
+    │   ├── pets/
+    │   │   └── <pet-id>/
+    │   │       ├── pet.json
+    │   │       └── ...
+    │   ├── websites/
+    │   │   └── <website-id>/
+    │   │       ├── website.json
+    │   │       └── icon.png
+    │   ├── env-initial/
+    │   │   ├── env.zip
+    │   │   └── manifest.json
+    │   ├── services/
+    │   └── plugins/
+    └── state/
+        └── desktop/
+            ├── bootstrap.json
+            ├── env-bootstrap.json
+            ├── pet-state.json
+            └── sso-session.json
+```
+
+完整 Desktop 数据根目录还包含服务、插件、日志、缓存、凭据和浏览器 profile：
+
+```text
 ~/.zenmind/.desktop/
 ├── config/
 │   ├── desktop/
-│   │   ├── custom-sidebar-items.json
-│   │   ├── desktop-pet.json
-│   │   ├── preferences.json
-│   │   └── settings.json
+│   │   ├── profile.json
+│   │   ├── pet.json
+│   │   ├── sso.json
+│   │   └── control.json
 │   ├── services/
 │   │   └── <service-id>/
 │   │       └── .env
@@ -29,14 +64,24 @@ ZenMind Desktop 会把本机运行数据保存在分层的桌面端数据根目�
 │   └── marketplace/
 │       └── settings.json
 ├── data/
+│   ├── pets/
+│   │   └── <pet-id>/
+│   ├── websites/
+│   │   └── <website-id>/
+│   ├── env-initial/
+│   │   ├── env.zip
+│   │   └── manifest.json
 │   ├── services/
 │   │   └── <service-id>/
 │   └── plugins/
 │       └── <plugin-id>/
 ├── state/
 │   ├── desktop/
+│   │   ├── bootstrap.json
+│   │   ├── env-bootstrap.json
 │   │   ├── last-running-services.json
-│   │   └── desktop-sso-session.json
+│   │   ├── pet-state.json
+│   │   └── sso-session.json
 │   ├── services/
 │   │   └── <service-id>/
 │   │       ├── init-state.json
@@ -64,7 +109,7 @@ ZenMind Desktop 会把本机运行数据保存在分层的桌面端数据根目�
 | 目录 | 用途 |
 | --- | --- |
 | `config/` | 用户可编辑或 Desktop 管理的配置。 |
-| `data/` | 服务和插件的持久化运行数据，例如数据库、生成的密钥、业务数据文件。 |
+| `data/` | 用户内容和资产，以及服务/插件持久化运行数据，例如用户导入 pet、网站入口、初始 env.zip 留档、数据库、生成的密钥、业务数据文件。 |
 | `state/` | 可由应用重建或更新的运行状态，例如初始化状态、PID 文件、SSO 会话状态、启动恢复状态。 |
 | `logs/` | 服务和插件日志。 |
 | `cache/` | 可重建缓存，目前包含 marketplace 缓存。 |
@@ -73,14 +118,23 @@ ZenMind Desktop 会把本机运行数据保存在分层的桌面端数据根目�
 
 ## 关键文件
 
-- `config/desktop/custom-sidebar-items.json`：保存侧边栏“内嵌网站”分组中的自定义网站入口。
-- `config/desktop/desktop-pet.json`：保存桌宠设置。
-- `config/desktop/preferences.json`：保存桌面端语言和偏好设置。
-- `config/desktop/settings.json`：保存助手和 Desktop Copilot 设置。
+- `~/.zenmind/desktop-default.json`：env 包携带的初始化模板。首启拆写到 `.desktop/` 下的 canonical 文件后不再作为运行时真相。
+- `~/.zenmind/desktop-register.json`：一次性 registration token 文件，用完后清 token 或删除，不合并进 profile。
+- `config/desktop/profile.json`：保存长期用户偏好，包括外观、语言、助手默认值、Quick Assistant 和导航偏好。
+- `config/desktop/pet.json`：保存桌宠设置，包括 enabled、selectedPetId、lastVisible、position 和窗口偏好；不保存 `boundAgentKey`。
+- `config/desktop/sso.json`：保存 Desktop SSO 登录配置。session/token 进入 `state/desktop/`。
+- `config/desktop/control.json`：保存控制类设置，目前包含 task board 远端控制配置。
+- `data/pets/<pet-id>/pet.json`：用户导入 pet 的资产描述。内置 pet 使用 `builtin:<id>` 指向应用内置资源，用户 pet 使用 `user:<pet-id>` 指向该目录。
+- `data/websites/<website-id>/website.json`：每个网站一个目录，保存 label、url、agentKey、创建/更新时间等入口信息。
+- `data/env-initial/env.zip`：首个导入或内置的 env.zip 留档。
+- `data/env-initial/manifest.json`：记录 env.zip 来源、版本、sha256、大小和留档时间。
 - `config/services/<service-id>/.env`：保存从服务模板复制或派生出的服务配置。
 - `config/plugins/<plugin-id>/.env`：保存从插件模板复制或派生出的插件配置。
 - `state/desktop/last-running-services.json`：保存下次启动时需要恢复的服务列表。
-- `state/desktop/desktop-sso-session.json`：保存 Desktop SSO 会话状态。
+- `state/desktop/bootstrap.json`：记录 `desktop-default.json` 的一次性应用结果，包括 bootstrapAssistant。
+- `state/desktop/env-bootstrap.json`：记录 env.zip 实际导入结果，并指向 `data/env-initial/` 留档。
+- `state/desktop/pet-state.json`：保存桌宠运行状态，例如 unreadCount。
+- `state/desktop/sso-session.json`：保存 Desktop SSO 会话状态。
 - `state/services/<service-id>/init-state.json`：保存服务初始化状态。
 - `state/plugins/<plugin-id>/init-state.json`：保存插件初始化状态。
 - `secrets/pan-private-key.pem`：保存 Desktop 管理的 pan-webclient RSA 私钥。
@@ -88,31 +142,30 @@ ZenMind Desktop 会把本机运行数据保存在分层的桌面端数据根目�
 
 ## 内嵌网站存储
 
-内嵌网站入口以 JSON 列表形式保存在：
+内嵌网站入口按网站拆分到 `data/websites/`，一个网站一个目录：
 
 ```text
-~/.zenmind/.desktop/config/desktop/custom-sidebar-items.json
+~/.zenmind/.desktop/data/websites/
+└── docs/
+    ├── website.json
+    └── icon.png
 ```
 
 文件结构如下：
 
 ```json
 {
-  "items": [
-    {
-      "id": "custom-...",
-      "label": "网站名称",
-      "url": "https://example.com/",
-      "iconId": "custom-...",
-      "agentKey": "optional-agent-key",
-      "createdAt": 1710000000000,
-      "updatedAt": 1710000000000
-    }
-  ]
+  "schemaVersion": 1,
+  "id": "docs",
+  "label": "Docs",
+  "url": "https://docs.example.com/",
+  "agentKey": "desktopAssistant",
+  "createdAt": "2026-06-10T00:00:00.000Z",
+  "updatedAt": "2026-06-10T00:00:00.000Z"
 }
 ```
 
-网站自身的浏览器数据不保存在这个 JSON 文件中。cookie、localStorage、IndexedDB、webview session 数据和缓存由 Electron/Chromium 管理，位于：
+旧 `config/desktop/custom-sidebar-items.json` 会在首次读取时迁移到新目录。网站自身的浏览器数据不保存在 `website.json` 中。cookie、localStorage、IndexedDB、webview session 数据和缓存由 Electron/Chromium 管理，位于：
 
 ```text
 ~/.zenmind/.desktop/profiles/electron/
