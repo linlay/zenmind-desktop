@@ -3279,6 +3279,7 @@ test("task running sprite uses the smooth high-frame strip", () => {
   assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,220}background-size:\s*1440px\s+104px;/);
   assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,260}background-position:\s*0\s+0;/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-task-run-animation\s+\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,180}animation:\s*desktop-pet-pony-run-frames var\(--desktop-pet-task-run-animation-duration,\s*1500ms\) steps\(15,\s*end\) infinite;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-appearance-classic\.has-task-run-animation\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-appearance-xiao\.has-task-run-animation\s+\.desktop-pet-image/);
   assert.match(globalStyles, /@keyframes desktop-pet-pony-run-frames\s*\{[\s\S]{0,120}to\s*\{\s*background-position:\s*-1440px\s+0;/);
   assert.doesNotMatch(globalStyles, /background-position:\s*0\s+-200%;/);
@@ -3350,6 +3351,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /isDragging[\s\S]{0,180}\? dragDirection === "left"/);
   assert.match(desktopPet, /window\.addEventListener\("pointermove", handleWindowPointerMove\)/);
   assert.match(desktopPet, /shouldShowDanceSpriteAnimation[\s\S]{0,220}getDesktopPetDanceSpritePath\(appearanceId\)/);
+  assert.match(desktopPet, /getDesktopPetSpriteAssetBasePath\(appearanceId\)/);
   assert.match(desktopPet, /isDancing && isDesktopPetDanceAppearance\(appearanceId\)[\s\S]{0,80}\? "dancing"/);
   assert.match(desktopPet, /displayStatus === "running" \|\| displayStatus === "awaiting"/);
   assert.match(desktopPet, /hasMessageReaction[\s\S]{0,80}\? "message"/);
@@ -3426,6 +3428,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /id:\s*"xiao"/);
   assert.match(petAssetScript, /spritesheet-source\.png/);
   assert.match(petAssetScript, /task-run-left-source\.png/);
+  assert.match(petAssetScript, /copyDefaultZenmiAssets/);
   assert.match(sharedDesktopPet, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /displayName:\s*"小凌"/);
   assert.match(petAssetScript, /"dragging-left":\s*\{\s*row:\s*1,\s*column:\s*2\s*\}/);

@@ -155,16 +155,24 @@ function pointIntersectsVisiblePetArea(x: number, y: number) {
     pointIntersectsElement(".desktop-pet-preview", x, y);
 }
 
+function getDesktopPetSpriteAssetBasePath(appearanceId: string) {
+  return appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID
+    ? "./desktop-pet"
+    : `./desktop-pet/${appearanceId}`;
+}
+
 function getDesktopPetTaskRunSpritePath(appearanceId: string) {
-  return `./desktop-pet/${appearanceId}/task-run-left.webp`;
+  return `${getDesktopPetSpriteAssetBasePath(appearanceId)}/task-run-left.webp`;
 }
 
 function getDesktopPetDanceSpritePath(appearanceId: string) {
-  return `./desktop-pet/${appearanceId}/dance.webp`;
+  return `${getDesktopPetSpriteAssetBasePath(appearanceId)}/dance.webp`;
 }
 
 function getDesktopPetDanceDurationMs(appearanceId: string) {
-  return appearanceId === "pony" ? DESKTOP_PET_IDOL_PONY_DANCE_DURATION_MS : DESKTOP_PET_DANCE_DURATION_MS;
+  return appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID || appearanceId === "pony"
+    ? DESKTOP_PET_IDOL_PONY_DANCE_DURATION_MS
+    : DESKTOP_PET_DANCE_DURATION_MS;
 }
 
 export function DesktopPet() {
@@ -338,7 +346,7 @@ export function DesktopPet() {
     [petState.appearanceId]
   );
   const runningTaskCount = Math.max(0, Math.round(Number(petState.runningTaskCount) || 0));
-  const shouldShowDanceSpriteAnimation = isDancing && appearanceId === "pony";
+  const shouldShowDanceSpriteAnimation = isDancing && isDesktopPetDanceAppearance(appearanceId);
   const shouldShowTaskRunAnimation = !isDragging && !isDancing &&
     shouldUseDesktopPetTaskRunningAnimation(appearanceId, runningTaskCount);
   const taskRunAnimationDurationMs = getDesktopPetRunningTaskAnimationDurationMs(runningTaskCount);

@@ -6,6 +6,7 @@ import { createCanvas, loadImage } from "@napi-rs/canvas";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outputDirectory = path.resolve(__dirname, "..", "public", "desktop-pet");
 const sourceAssetDirectory = path.resolve(__dirname, "assets", "desktop-pet");
+const defaultSourceAssetDirectory = path.join(sourceAssetDirectory, "zenmi");
 
 const size = {
   width: 320,
@@ -34,13 +35,15 @@ const communityAppearances = [
     id: "dario",
     displayName: "Dario",
     sourceUrl: "https://github.com/az9713/Clade-Design/tree/main/assets/community-pets/dario",
-    spritesheetSourceUrl: "https://gitpets.com/api/assets/pets/dario-a7bdc389/spritesheet.webp"
+    spritesheetSourceUrl: "https://gitpets.com/api/assets/pets/dario-a7bdc389/spritesheet.webp",
+    publishSpritesheet: false
   },
   {
     id: "sama",
     displayName: "Mini Sama",
     sourceUrl: "https://github.com/xpert-ai/chatkit-js/tree/main/packages/chatkit-ui/public/pets/mini-sama",
-    spritesheetSourceUrl: "https://gitpets.com/api/assets/pets/mini-sama-3ee267a2/spritesheet.webp"
+    spritesheetSourceUrl: "https://gitpets.com/api/assets/pets/mini-sama-3ee267a2/spritesheet.webp",
+    publishSpritesheet: false
   },
   {
     id: "pony",
@@ -74,6 +77,13 @@ const taskRunSprite = {
 const optionalCommunityAssetNames = [
   "task-run-left.webp",
   "dance.webp"
+];
+
+const defaultSourceAssetNames = [
+  ...classicVisualVariants.map((variant) => `pet-${variant}.png`),
+  ...Object.keys(compatibilityVariantAliases).map((variant) => `pet-${variant}.png`),
+  ...optionalCommunityAssetNames,
+  "spritesheet.webp"
 ];
 
 const communityFrameSelections = {
@@ -988,13 +998,18 @@ async function writeVariantFiles(directory, buffers) {
   }
 }
 
-await fs.mkdir(outputDirectory, { recursive: true });
-const defaultBuffers = new Map();
-for (const variant of classicVisualVariants) {
-  const buffer = renderPetVariant(variant);
-  defaultBuffers.set(variant, buffer);
+async function copyDefaultZenmiAssets() {
+  await fs.mkdir(outputDirectory, { recursive: true });
+  for (const assetName of defaultSourceAssetNames) {
+    await fs.copyFile(
+      path.join(defaultSourceAssetDirectory, assetName),
+      path.join(outputDirectory, assetName)
+    );
+  }
 }
-await writeVariantFiles(outputDirectory, defaultBuffers);
+
+await fs.mkdir(outputDirectory, { recursive: true });
+await copyDefaultZenmiAssets();
 
 for (const appearance of scriptedAppearances) {
   const renderedAppearance = await renderScriptedAppearance(appearance);
@@ -1014,10 +1029,12 @@ for (const appearance of communityAppearances) {
   communityBuffersById.set(appearance.id, buffers);
   const appearanceOutputDirectory = path.join(outputDirectory, appearance.id);
   await writeVariantFiles(appearanceOutputDirectory, buffers);
-  await fs.copyFile(
-    path.join(sourceAssetDirectory, appearance.id, "spritesheet.webp"),
-    path.join(appearanceOutputDirectory, "spritesheet.webp")
-  );
+  if (appearance.publishSpritesheet !== false) {
+    await fs.copyFile(
+      path.join(sourceAssetDirectory, appearance.id, "spritesheet.webp"),
+      path.join(appearanceOutputDirectory, "spritesheet.webp")
+    );
+  }
   for (const assetName of optionalCommunityAssetNames) {
     const sourcePath = path.join(sourceAssetDirectory, appearance.id, assetName);
     try {
