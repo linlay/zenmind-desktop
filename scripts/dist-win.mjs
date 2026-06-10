@@ -1,8 +1,10 @@
+import process from "node:process";
 import { isWindows } from "./platform/detect.mjs";
 import { syncBrandArtifacts, resolveBrandId } from "./lib/brand-config.mjs";
 
 const forceDocker = process.argv.includes("--docker");
 const brand = syncBrandArtifacts({ brandId: resolveBrandId() });
+process.env.BRAND = brand.id;
 
 if (isWindows() && !forceDocker) {
   const { buildOnWindowsHost } = await import("./platform/dist-win-host.mjs");

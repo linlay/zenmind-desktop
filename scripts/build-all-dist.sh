@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DESKTOP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULT_ZENMIND_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ZENMIND_ROOT="${ZENMIND_ROOT:-$DEFAULT_ZENMIND_ROOT}"
 
@@ -9,6 +10,9 @@ CLEAN_FIRST=1
 DRY_RUN=0
 ONLY_PROJECTS=""
 SKIP_PROJECTS=""
+SYNC_AFTER_BUILD=1
+SYNC_OS=""
+SYNC_ARCH=""
 
 usage() {
   cat <<'EOF'
@@ -21,10 +25,17 @@ Build latest dist/release packages for:
   platform        -> agent-platform
   app-server      -> zenmind-app-server
 
+After the selected builds finish, the script syncs Desktop builtin service
+assets into:
+  build/resources/services
+
 Options:
   --only a,b,c     Build only selected short names.
   --skip a,b,c     Skip selected short names.
   --no-clean       Do not remove previous dist output first.
+  --no-sync        Do not copy/sync built packages into this Desktop project.
+  --sync-os os     Sync only one target OS (darwin, windows, linux).
+  --sync-arch arch Sync only one target arch (arm64, amd64).
   --dry-run        Print commands without running them.
   -h, --help       Show this help.
 
@@ -88,6 +99,51 @@ run_cmd() {
   "$@"
 }
 
+run_cmd_in_dir() {
+  local workdir="$1"
+  shift
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    printf '  (cd %q && ' "$workdir"
+    printf '%q ' "$@"
+    printf ')\n'
+    return
+  fi
+
+  (cd "$workdir" && "$@")
+}
+
+normalize_sync_os() {
+  case "$1" in
+    darwin|macos)
+      printf 'darwin\n'
+      ;;
+    windows|win32)
+      printf 'windows\n'
+      ;;
+    linux)
+      printf 'linux\n'
+      ;;
+    *)
+      die "unsupported sync OS: $1"
+      ;;
+  esac
+}
+
+normalize_sync_arch() {
+  case "$1" in
+    amd64|x64)
+      printf 'amd64\n'
+      ;;
+    arm64|aarch64)
+      printf 'arm64\n'
+      ;;
+    *)
+      die "unsupported sync arch: $1"
+      ;;
+  esac
+}
+
 clean_dist_dir() {
   local project_dir="$1"
   local dist_dir="$project_dir/dist"
@@ -122,6 +178,23 @@ build_project() {
   log "done $short_name"
 }
 
+sync_desktop_assets() {
+  if [[ "$SYNC_AFTER_BUILD" != "1" ]]; then
+    return
+  fi
+
+  local sync_args=("./scripts/sync-builtin-assets.mjs")
+  if [[ -n "$SYNC_OS" ]]; then
+    sync_args+=("--os=$SYNC_OS")
+  fi
+  if [[ -n "$SYNC_ARCH" ]]; then
+    sync_args+=("--arch=$SYNC_ARCH")
+  fi
+
+  log "sync builtin packages into $DESKTOP_ROOT/build/resources/services"
+  run_cmd_in_dir "$DESKTOP_ROOT" node "${sync_args[@]}"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --only)
@@ -137,6 +210,20 @@ while [[ $# -gt 0 ]]; do
     --no-clean)
       CLEAN_FIRST=0
       shift
+      ;;
+    --no-sync)
+      SYNC_AFTER_BUILD=0
+      shift
+      ;;
+    --sync-os)
+      [[ $# -ge 2 ]] || die "--sync-os requires a value"
+      SYNC_OS="$(normalize_sync_os "$2")"
+      shift 2
+      ;;
+    --sync-arch)
+      [[ $# -ge 2 ]] || die "--sync-arch requires a value"
+      SYNC_ARCH="$(normalize_sync_arch "$2")"
+      shift 2
       ;;
     --dry-run)
       DRY_RUN=1
@@ -156,15 +243,22 @@ HOST_OS="$(detect_host_os)"
 case "$HOST_OS" in
   macos|linux)
     require_command make
+    if [[ "$SYNC_AFTER_BUILD" == "1" ]]; then
+      require_command node
+    fi
     ;;
   windows)
     require_command make
+    if [[ "$SYNC_AFTER_BUILD" == "1" ]]; then
+      require_command node
+    fi
     ;;
 esac
 
 [[ -d "$ZENMIND_ROOT" ]] || die "ZENMIND_ROOT does not exist: $ZENMIND_ROOT"
+[[ -d "$DESKTOP_ROOT" ]] || die "Desktop root does not exist: $DESKTOP_ROOT"
 
-log "host=$HOST_OS root=$ZENMIND_ROOT"
+log "host=$HOST_OS root=$ZENMIND_ROOT desktop=$DESKTOP_ROOT"
 
 PROJECT_SPECS=(
   "container-hub|agent-container-hub|release"
@@ -187,5 +281,7 @@ for spec in "${PROJECT_SPECS[@]}"; do
 
   build_project "$short_name" "$repo_name" "$make_target"
 done
+
+sync_desktop_assets
 
 log "all requested dist packages finished"

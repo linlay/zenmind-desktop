@@ -7,11 +7,13 @@ import {
 } from "./lib/electron-installation.mjs";
 import { syncBrandArtifacts, resolveBrandId } from "./lib/brand-config.mjs";
 import { hostArch, hostPlatform, isWindows, syncOsLabel } from "./platform/detect.mjs";
-import { npmCmd, run, runAndWait } from "./platform/spawn.mjs";
+import { npmCmd, run, runAndWait, withBrandEnv } from "./platform/spawn.mjs";
 
 const projectRoot = process.cwd();
 const brand = syncBrandArtifacts({ brandId: resolveBrandId() });
-await runAndWait("node", ["./scripts/generate-app-icons.mjs"], { cwd: projectRoot });
+process.env.BRAND = brand.id;
+const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
+await runAndWait("node", ["./scripts/generate-app-icons.mjs"], brandProcessOptions({ cwd: projectRoot }));
 const electronBinary = resolveValidatedElectronBinaryPath();
 
 // 把当前 Node 的目录顶到 PATH 最前，并显式声明 NODE_BIN，
@@ -64,9 +66,9 @@ process.on("SIGTERM", () => shutdown(0));
 const syncOs = syncOsLabel();
 const syncArch = hostArch();
 try {
-  await runAndWait("node", ["./scripts/sync-builtin-assets.mjs", `--os=${syncOs}`, `--arch=${syncArch}`], {
+  await runAndWait("node", ["./scripts/sync-builtin-assets.mjs", `--os=${syncOs}`, `--arch=${syncArch}`], brandProcessOptions({
     cwd: projectRoot
-  });
+  }));
 } catch (error) {
   console.error(
     `[dev] builtin asset sync failed; dev startup requires a complete core builtin asset set.\n` +
@@ -74,9 +76,9 @@ try {
   );
   shutdown(1);
 }
-await runAndWait(npmCmd, ["run", "build:main"], { cwd: projectRoot });
+await runAndWait(npmCmd, ["run", "build:main"], brandProcessOptions({ cwd: projectRoot }));
 
-track(run(npmCmd, ["exec", "vite", "--", "--host", "127.0.0.1"], { cwd: projectRoot }));
+track(run(npmCmd, ["exec", "vite", "--", "--host", "127.0.0.1"], brandProcessOptions({ cwd: projectRoot })));
 await waitForUrl("http://127.0.0.1:5173");
 
 const platform = hostPlatform();

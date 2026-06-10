@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { electronBuilderConfigPath, syncBrandArtifacts, resolveBrandId } from "../lib/brand-config.mjs";
-import { npmCmd, runAndWait } from "./spawn.mjs";
+import { npmCmd, runAndWait, withBrandEnv } from "./spawn.mjs";
 
 const projectRoot = process.cwd();
 
@@ -19,18 +19,20 @@ function getElectronBuilderCacheDir() {
   return null;
 }
 
-async function syncWindowsBuiltinAssets() {
-  await runAndWait(npmCmd, ["run", "sync:assets", "--", "--os=windows", "--arch=amd64"], {
+async function syncWindowsBuiltinAssets(brand) {
+  await runAndWait(npmCmd, ["run", "sync:assets", "--", "--os=windows", "--arch=amd64"], withBrandEnv(brand, {
     cwd: projectRoot
-  });
+  }));
 }
 
 export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: resolveBrandId() })) {
-  await runAndWait(npmCmd, ["run", "sync:version"], { cwd: projectRoot });
-  await runAndWait(npmCmd, ["run", "sync:env"], { cwd: projectRoot });
+  const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
+
+  await runAndWait(npmCmd, ["run", "sync:version"], brandProcessOptions({ cwd: projectRoot }));
+  await runAndWait(npmCmd, ["run", "sync:env"], brandProcessOptions({ cwd: projectRoot }));
   syncBrandArtifacts({ brandId: brand.id });
-  await syncWindowsBuiltinAssets();
-  await runAndWait(npmCmd, ["run", "build"], { cwd: projectRoot });
+  await syncWindowsBuiltinAssets(brand);
+  await runAndWait(npmCmd, ["run", "build"], brandProcessOptions({ cwd: projectRoot }));
 
   const npmCacheDir = path.join(os.homedir(), ".npm");
   const electronBuilderCacheDir = getElectronBuilderCacheDir();
@@ -48,7 +50,9 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
     "--volume",
     `${brand.packageName}-node-modules:/project/node_modules`,
     "--volume",
-    `${npmCacheDir}:/root/.npm`
+    `${npmCacheDir}:/root/.npm`,
+    "--env",
+    `BRAND=${brand.id}`
   ];
 
   if (electronBuilderCacheDir != null) {
@@ -70,5 +74,5 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
     ].join(" && ")
   );
 
-  await runAndWait("docker", dockerArgs, { cwd: projectRoot, shell: false });
+  await runAndWait("docker", dockerArgs, brandProcessOptions({ cwd: projectRoot, shell: false }));
 }

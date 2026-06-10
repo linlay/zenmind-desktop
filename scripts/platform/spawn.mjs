@@ -3,6 +3,25 @@ import { isWindows } from "./detect.mjs";
 
 export const npmCmd = isWindows() ? "npm.cmd" : "npm";
 
+function brandIdForEnv(brand) {
+  const brandId = typeof brand === "string" ? brand : brand?.id;
+  if (typeof brandId !== "string" || !brandId.trim()) {
+    throw new Error("withBrandEnv requires a brand id");
+  }
+  return brandId;
+}
+
+export function withBrandEnv(brand, options = {}) {
+  const brandId = brandIdForEnv(brand);
+  return {
+    ...options,
+    env: {
+      ...(options.env ?? process.env),
+      BRAND: brandId
+    }
+  };
+}
+
 export function run(cmd, args, options = {}) {
   const {
     cwd,

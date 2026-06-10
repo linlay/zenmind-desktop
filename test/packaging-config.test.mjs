@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { withBrandEnv } from "../scripts/platform/spawn.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageJsonPath = path.join(projectRoot, "package.json");
@@ -33,6 +34,21 @@ test("renderer declares Ant Design component libraries used by native webclient 
   assert.match(dependencies["@ant-design/icons"] ?? "", /^\^6\./);
   assert.match(dependencies["@ant-design/x"] ?? "", /^\^1\./);
   assert.match(dependencies["@ant-design/x-markdown"] ?? "", /^\^2\./);
+});
+
+test("brand env helper pins child processes to the selected brand", () => {
+  const options = withBrandEnv({ id: "cutej" }, {
+    cwd: "/tmp/project",
+    env: {
+      BRAND: "zenmind",
+      KEEP_ME: "yes"
+    }
+  });
+
+  assert.equal(options.cwd, "/tmp/project");
+  assert.equal(options.env.BRAND, "cutej");
+  assert.equal(options.env.KEEP_ME, "yes");
+  assert.throws(() => withBrandEnv({}), /brand id/);
 });
 
 test("electron-builder packaging uses staged app input, restricted locales, and NSIS uninstall hook", () => {
@@ -149,14 +165,21 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   assert.match(distWinScript, /isWindows\(\)/);
   assert.match(distWinScript, /import\("\.\/platform\/dist-win-host\.mjs"\)/);
   assert.match(distWinScript, /import\("\.\/platform\/dist-win-docker\.mjs"\)/);
-  assert.match(distMacScript, /await runAndWait\(npmCmd, \["run", "sync:env"\], \{ cwd: projectRoot \}\);/);
-  assert.match(distWinDockerScript, /async function syncWindowsBuiltinAssets\(\)/);
-  assert.match(distWinDockerScript, /await runAndWait\(npmCmd, \["run", "sync:env"\], \{ cwd: projectRoot \}\);/);
-  assert.match(distWinHostScript, /await runAndWait\(npmCmd, \["run", "sync:env"\], \{ cwd: projectRoot \}\);/);
+  assert.match(distWinScript, /process\.env\.BRAND = brand\.id;/);
+  assert.match(distMacScript, /process\.env\.BRAND = brand\.id;/);
+  assert.match(distMacScript, /const brandProcessOptions = \(options = \{\}\) => withBrandEnv\(brand, options\);/);
+  assert.match(distMacScript, /await runAndWait\(npmCmd, \["run", "icons"\], brandProcessOptions\(\{ cwd: projectRoot \}\)\);/);
+  assert.match(distMacScript, /await runAndWait\(npmCmd, \["run", "build"\], brandProcessOptions\(\{ cwd: projectRoot \}\)\);/);
+  assert.match(distMacScript, /await runAndWait\(npmCmd, \["run", "stage:app", "--", "--os=darwin", "--arch=arm64"\], brandProcessOptions\(\{ cwd: projectRoot \}\)\);/);
+  assert.match(distWinDockerScript, /async function syncWindowsBuiltinAssets\(brand\)/);
+  assert.match(distWinDockerScript, /const brandProcessOptions = \(options = \{\}\) => withBrandEnv\(brand, options\);/);
+  assert.match(distWinDockerScript, /await runAndWait\(npmCmd, \["run", "sync:env"\], brandProcessOptions\(\{ cwd: projectRoot \}\)\);/);
+  assert.match(distWinHostScript, /const brandProcessOptions = \(options = \{\}\) => withBrandEnv\(brand, options\);/);
+  assert.match(distWinHostScript, /await runAndWait\(npmCmd, \["run", "sync:env"\], brandProcessOptions\(\{ cwd: projectRoot \}\)\);/);
   assert.doesNotMatch(distWinDockerScript, /prepareWindowsVoiceAsrAssets/);
   assert.match(
     distWinDockerScript,
-    /await syncWindowsBuiltinAssets\(\);\s*\n\s*await runAndWait\(npmCmd, \["run", "build"\], \{ cwd: projectRoot \}\);\s*\n\s*const npmCacheDir/
+    /await syncWindowsBuiltinAssets\(brand\);\s*\n\s*await runAndWait\(npmCmd, \["run", "build"\], brandProcessOptions\(\{ cwd: projectRoot \}\)\);\s*\n\s*const npmCacheDir/
   );
   assert.match(
     distWinDockerScript,
@@ -164,16 +187,20 @@ test("dist-win docker flow syncs builtin assets on the host before entering Dock
   );
   assert.match(
     distWinDockerScript,
+    /"--env",\s*\n\s*`BRAND=\$\{brand\.id\}`/
+  );
+  assert.match(
+    distWinDockerScript,
     /"npm install --no-package-lock --ignore-scripts",\s*\n\s*`node \.\/scripts\/sync-brand\.mjs --brand=\$\{brand\.id\}`,\s*\n\s*"node \.\/scripts\/stage-app\.mjs --os=win32 --arch=x64",\s*\n\s*`npx electron-builder --config \$\{path\.posix\.relative\("\/project", electronBuilderConfigPath\("\/project", brand\.id\)\)\} --win --x64`,\s*\n\s*"node \.\/scripts\/verify-win-package\.mjs"/
   );
   assert.match(
     distWinHostScript,
-    /await runAndWait\(npmCmd, \["run", "stage:app", "--", "--os=win32", "--arch=x64"\], \{/
+    /await runAndWait\(npmCmd, \["run", "stage:app", "--", "--os=win32", "--arch=x64"\], brandProcessOptions\(\{/
   );
   assert.match(distWinHostScript, /"--config\.win\.signAndEditExecutable=false"/);
   assert.match(
     distWinHostScript,
-    /await runAndWait\(nodeBin\(\), \["\.\/scripts\/verify-win-package\.mjs"\], \{ cwd: projectRoot \}\);/
+    /await runAndWait\(nodeBin\(\), \["\.\/scripts\/verify-win-package\.mjs"\], brandProcessOptions\(\{ cwd: projectRoot \}\)\);/
   );
   assert.match(distWinHostScript, /CSC_IDENTITY_AUTO_DISCOVERY:\s*"false"/);
   assert.match(stageAppScript, /"build", "bundle", "dist-electron"/);
