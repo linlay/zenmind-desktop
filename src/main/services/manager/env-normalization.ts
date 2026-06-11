@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import type { ServiceDefinition } from "../../manifest-utils";
@@ -27,8 +26,6 @@ export const LOCAL_CLI_ACP_RELAY_PLUGIN_ID = "local-cli-acp-relay";
 const DEFAULT_CLAUDE_CODE_ACP_ARGS = "-y @zed-industries/claude-code-acp";
 const DEFAULT_LOCAL_CLI_ACP_HANDSHAKE_TIMEOUT_MS = "60000";
 const DEFAULT_LOCAL_CLI_ACP_RUN_TIMEOUT_MS = "600000";
-export const LEGACY_PROVIDER_APIKEY_KEY_PART = "PROVIDER_APIKEY_KEY_PART";
-export const LEGACY_PROVIDER_APIKEY_KEY_PART_DEFAULT = "0.1.0";
 const AGENT_BASH_SHELL_EXECUTABLE_KEY = "AGENT_BASH_SHELL_EXECUTABLE";
 const AGENT_BASH_SHELL_ARGS_KEY = "AGENT_BASH_SHELL_ARGS";
 const WINDOWS_AGENT_BASH_SHELL_EXECUTABLE = "powershell.exe";
@@ -47,97 +44,6 @@ const AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS = [
 ] as const;
 const AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS = [
   "AGENT_WS_ENABLED"
-] as const;
-const AGENT_PLATFORM_DEPRECATED_BASH_CONFIG_KEYS = [
-  "allowed-paths",
-  "path-checked-commands",
-  "path-check-bypass-commands"
-] as const;
-const AGENT_PLATFORM_DEPRECATED_FILE_TOOLS_CONFIG_KEYS = [
-  "allowed-read-paths",
-  "allowed-write-paths"
-] as const;
-const AGENT_PLATFORM_DURATION_CONFIG_FILES = [
-  {
-    relativePath: path.join("configs", "runtime.yml"),
-    keys: [
-      ["request-timeout-ms", "request-timeout"],
-      ["agent-idle-timeout-ms", "agent-idle-timeout"],
-      ["destroy-queue-delay-ms", "destroy-queue-delay"]
-    ]
-  },
-  {
-    relativePath: path.join("configs", "host-tools.yml"),
-    keys: [
-      ["shell-timeout-ms", "shell-timeout"]
-    ]
-  },
-  {
-    relativePath: path.join("configs", "ai-tools.yml"),
-    keys: [
-      ["timeout-ms", "timeout"]
-    ]
-  },
-  {
-    relativePath: path.join("configs", "coder-settings.yml"),
-    keys: [
-      ["timeout-ms", "timeout"]
-    ]
-  }
-] as const;
-const AGENT_PLATFORM_DEPRECATED_ENV_KEYS = [
-  "GATEWAY_USER_ID",
-  "GATEWAY_TICKET",
-  "GATEWAY_AGENT_KEY",
-  "GATEWAY_CHANNEL",
-  "GATEWAY_UPLOAD_PATH",
-  "GATEWAY_DOWNLOAD_PATH",
-  "GATEWAY_AUTH_TOKEN",
-  "GATEWAY_WS_URL",
-  "AGENT_GATEWAY_WS_URL",
-  "GATEWAY_JWT_TOKEN",
-  "GATEWAY_BASE_URL",
-  "AGENT_GATEWAY_WS_TOKEN",
-  "AGENT_GATEWAY_WS_HANDSHAKE_TIMEOUT_MS",
-  "AGENT_GATEWAY_WS_RECONNECT_MIN_MS",
-  "AGENT_GATEWAY_WS_RECONNECT_MAX_MS",
-  "AGENT_AUTH_ENABLED",
-  "AGENT_AUTH_JWKS_URI",
-  "AGENT_AUTH_ISSUER",
-  "AGENT_AUTH_JWKS_CACHE_SECONDS",
-  "AGENT_AUTH_LOCAL_PUBLIC_KEY_FILE",
-  "AGENT_CONTAINER_HUB_ENABLED",
-  "AGENT_CONTAINER_HUB_BASE_URL",
-  "AGENT_CONTAINER_HUB_AUTH_TOKEN",
-  "AGENT_CONTAINER_HUB_DEFAULT_ENVIRONMENT_ID",
-  "AGENT_CONTAINER_HUB_REQUEST_TIMEOUT_MS",
-  "AGENT_CONTAINER_HUB_DEFAULT_SANDBOX_LEVEL",
-  "AGENT_CONTAINER_HUB_AGENT_IDLE_TIMEOUT_MS",
-  "AGENT_CONTAINER_HUB_DESTROY_QUEUE_DELAY_MS",
-  "AGENT_STREAM_INCLUDE_TOOL_PAYLOAD_EVENTS",
-  "AGENT_STREAM_INCLUDE_DEBUG_EVENTS",
-  "AGENT_CONFIG_DIR",
-  "AGENT_AGENTS_EXTERNAL_DIR",
-  "AGENT_TEAMS_EXTERNAL_DIR",
-  "AGENT_MODELS_EXTERNAL_DIR",
-  "AGENT_PROVIDERS_EXTERNAL_DIR",
-  "AGENT_TOOLS_EXTERNAL_DIR",
-  "AGENT_SKILLS_EXTERNAL_DIR",
-  "AGENT_VIEWPORTS_EXTERNAL_DIR",
-  "AGENT_MCP_SERVERS_REGISTRY_EXTERNAL_DIR",
-  "AGENT_VIEWPORT_SERVERS_REGISTRY_EXTERNAL_DIR",
-  "AGENT_SCHEDULE_EXTERNAL_DIR",
-  "AGENT_DATA_EXTERNAL_DIR",
-  "AGENT_MEMORY_STORAGE_DIR",
-  "CHAT_IMAGE_TOKEN_SECRET",
-  "CHAT_IMAGE_TOKEN_TTL_SECONDS",
-  "CHAT_RESOURCE_TICKET_ENABLED",
-  "MEMORY_CHATS_DIR",
-  "MEMORY_CHATS_K",
-  "MEMORY_CHATS_CHARSET",
-  "MEMORY_CHATS_ACTION_TOOLS",
-  "MEMORY_CHATS_INDEX_SQLITE_FILE",
-  "MEMORY_CHATS_INDEX_AUTO_REBUILD_ON_INCOMPATIBLE_SCHEMA"
 ] as const;
 
 export const PROCESS_EXEC_PATH_PLACEHOLDER = "{{processExecPath}}";
@@ -293,105 +199,6 @@ function removeEnvKeysFromContent(content: string, keys: readonly string[]) {
   return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
 }
 
-function getTopLevelYamlKey(line: string) {
-  const match = /^([A-Za-z0-9_-]+)\s*:/u.exec(line);
-  return match?.[1] ?? "";
-}
-
-function removeDeprecatedTopLevelYamlKeys(content: string, keys: readonly string[]) {
-  const blocked = new Set(keys);
-  const nextLines: string[] = [];
-  let skippingRemovedBlock = false;
-
-  for (const line of content.split(/\r?\n/u)) {
-    const key = getTopLevelYamlKey(line);
-    if (key) {
-      skippingRemovedBlock = false;
-      if (blocked.has(key)) {
-        skippingRemovedBlock = true;
-        continue;
-      }
-    } else if (skippingRemovedBlock && /^[ \t]/u.test(line)) {
-      continue;
-    }
-
-    nextLines.push(line);
-  }
-
-  if (nextLines.length === 0) {
-    return "";
-  }
-  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
-}
-
-export function normalizeAgentPlatformBashConfigContent(content: string) {
-  return removeDeprecatedTopLevelYamlKeys(content, AGENT_PLATFORM_DEPRECATED_BASH_CONFIG_KEYS);
-}
-
-export function normalizeAgentPlatformFileToolsConfigContent(content: string) {
-  return removeDeprecatedTopLevelYamlKeys(content, AGENT_PLATFORM_DEPRECATED_FILE_TOOLS_CONFIG_KEYS);
-}
-
-function formatMillisecondsAsSeconds(value: string) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    return value;
-  }
-  return String(numericValue / 1000);
-}
-
-function migrateYamlDurationKey(content: string, legacyKey: string, nextKey: string) {
-  const escapedLegacyKey = legacyKey.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const pattern = new RegExp(`^(\\s*)${escapedLegacyKey}\\s*:\\s*([^#\\r\\n]*?)(\\s*(?:#.*)?)$`, "gmu");
-  return content.replace(pattern, (_line, indent: string, rawValue: string, suffix: string) => {
-    const trimmedValue = rawValue.trim();
-    return `${indent}${nextKey}: ${formatMillisecondsAsSeconds(trimmedValue)}${suffix}`;
-  });
-}
-
-export function normalizeAgentPlatformDurationConfigContent(
-  content: string,
-  keyMigrations: readonly (readonly [string, string])[]
-) {
-  return keyMigrations.reduce(
-    (nextContent, [legacyKey, nextKey]) => migrateYamlDurationKey(nextContent, legacyKey, nextKey),
-    content
-  );
-}
-
-function normalizeAgentPlatformDeprecatedConfigFile(filePath: string, normalize: (content: string) => string) {
-  if (!fs.existsSync(filePath)) {
-    return false;
-  }
-  const current = fs.readFileSync(filePath, "utf8");
-  const next = normalize(current);
-  if (next === current) {
-    return false;
-  }
-  fs.writeFileSync(filePath, next, "utf8");
-  return true;
-}
-
-export function normalizeAgentPlatformDeprecatedConfigFiles(layout: ServiceLayout) {
-  const configsDir = path.join(layout.configDir, "configs");
-  return [
-    normalizeAgentPlatformDeprecatedConfigFile(
-      path.join(configsDir, "bash.yml"),
-      normalizeAgentPlatformBashConfigContent
-    ),
-    normalizeAgentPlatformDeprecatedConfigFile(
-      path.join(configsDir, "file-tools.yml"),
-      normalizeAgentPlatformFileToolsConfigContent
-    ),
-    ...AGENT_PLATFORM_DURATION_CONFIG_FILES.map((configFile) =>
-      normalizeAgentPlatformDeprecatedConfigFile(
-        path.join(layout.configDir, configFile.relativePath),
-        (content) => normalizeAgentPlatformDurationConfigContent(content, configFile.keys)
-      )
-    )
-  ].some(Boolean);
-}
-
 function removeAgentWebclientManagedNodeBinPlaceholder(content: string) {
   const nextLines = content
     .split(/\r?\n/u)
@@ -434,39 +241,8 @@ export function isManagedAgentPlatformAuthLocalPublicKeyPath(value: string, layo
   return normalized === managedPath;
 }
 
-function removeLegacyProviderApiKeyDefault(content: string) {
-  const nextLines = content
-    .split(/\r?\n/u)
-    .filter((line) => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) {
-        return true;
-      }
-
-      const separatorIndex = trimmed.indexOf("=");
-      if (separatorIndex <= 0) {
-        return true;
-      }
-
-      const key = trimmed.slice(0, separatorIndex).trim();
-      if (key !== LEGACY_PROVIDER_APIKEY_KEY_PART) {
-        return true;
-      }
-
-      const value = trimmed.slice(separatorIndex + 1).trim().replace(/^['"]|['"]$/gu, "");
-      return value !== LEGACY_PROVIDER_APIKEY_KEY_PART_DEFAULT;
-    });
-
-  if (nextLines.length === 0) {
-    return "";
-  }
-  return `${nextLines.join("\n").replace(/\n+$/u, "")}\n`;
-}
-
 function removeDesktopManagedAgentPlatformEnvContent(content: string) {
-  return removeLegacyProviderApiKeyDefault(
-    removeEnvKeysFromContent(content, AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS)
-  );
+  return removeEnvKeysFromContent(content, AGENT_PLATFORM_DESKTOP_REMOVED_ENV_KEYS);
 }
 
 export function normalizeAgentWebclientEnvContentForDesktop(content: string) {
@@ -481,10 +257,7 @@ export function normalizeAgentPlatformEnvContentForRuntime(content: string, _lay
   const removedRuntimePathKeys = agentPlatformDesktopRuntimePaths.map(([key]) => key);
   return removeDesktopManagedAgentPlatformEnvContent(
     removeEnvKeysFromContent(
-      removeEnvKeysFromContent(
-        removeEnvKeysFromContent(content, AGENT_PLATFORM_DEPRECATED_ENV_KEYS),
-        AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS
-      ),
+      removeEnvKeysFromContent(content, AGENT_PLATFORM_LEGACY_RELAY_ENV_KEYS),
       removedRuntimePathKeys
     )
   );

@@ -49,18 +49,13 @@ import {
   flushStartupTimingSummary
 } from "../../startup-timing";
 import {
-  agentPlatformInstallNeedsRefresh,
-  agentWebclientInstallNeedsRefresh,
-  serviceInstallNeedsRefresh,
-  zenmindAppServerInstallNeedsRefresh
+  serviceInstallNeedsRefresh
 } from "./install-refresh";
 import {
   formatDesktopAgentPlatformRuntimeRoot,
-  expandHomeShortcut,
   hasConfiguredAgentPlatformRuntimePath,
   resolveAgentPlatformAgentsDir,
   resolveAgentPlatformInitializationRuntimeRoot,
-  resolveHomeDir,
   resolvePreferredAgentPlatformRuntimeRoot
 } from "./runtime-paths";
 import {
@@ -124,18 +119,13 @@ import {
 } from "./process-identity";
 import {
   AGENT_WEBCLIENT_LEGACY_PLATFORM_URL_KEYS,
-  LEGACY_PROVIDER_APIKEY_KEY_PART,
-  LEGACY_PROVIDER_APIKEY_KEY_PART_DEFAULT,
   LOCAL_CLI_ACP_RELAY_PLUGIN_ID,
   PROCESS_EXEC_PATH_PLACEHOLDER,
   applyAgentPlatformWindowsHostShellDefaults,
   ensureLocalCliAcpRelayDesktopConfig,
   normalizeAgentContainerHubEnvContentForDesktop,
-  normalizeAgentPlatformBashConfigContent,
-  normalizeAgentPlatformDeprecatedConfigFiles,
   normalizeAgentPlatformEnvContentForRuntime,
   normalizeAgentPlatformEnvContentForSave,
-  normalizeAgentPlatformFileToolsConfigContent,
   normalizeAgentWebclientEnvContentForDesktop,
   normalizePreservedBuiltinEnvForInstall,
   normalizeShellSourcedAgentPlatformEnvUpdates,
@@ -267,23 +257,6 @@ function prepareServiceExecutionLayout(_service: ServiceDefinition, layout: Serv
   ensureDir(layout.logDir);
 }
 
-function removeEmptyDirectoryIfExists(targetPath: string) {
-  try {
-    if (fs.existsSync(targetPath) && fs.statSync(targetPath).isDirectory() && fs.readdirSync(targetPath).length === 0) {
-      fs.rmdirSync(targetPath);
-    }
-  } catch {
-    // Leave non-empty or unreadable directories untouched.
-  }
-}
-
-function cleanupAgentPlatformServiceDataRuntimeSkeleton(layout: ServiceLayout) {
-  for (const relativePath of AGENT_PLATFORM_SERVICE_DATA_RUNTIME_SKELETON_DIRS) {
-    removeEmptyDirectoryIfExists(path.join(layout.dataDir, relativePath));
-  }
-  removeEmptyDirectoryIfExists(layout.dataDir);
-}
-
 function isAssetNewerThanInstall(
   assetPath: string,
   layoutOrInstallDir: ServiceLayout | string,
@@ -367,25 +340,6 @@ const CORE_SERVICE_IDS = new Set<ServiceId>([
 ]);
 const MAX_TCP_PORT = 65535;
 const AGENT_WEBCLIENT_PLATFORM_URL_KEYS = ["BASE_URL"] as const;
-const AGENT_PLATFORM_SERVICE_DATA_RUNTIME_SKELETON_DIRS = [
-  path.join("registries", "providers"),
-  path.join("registries", "models"),
-  path.join("registries", "mcp-servers"),
-  path.join("registries", "viewport-servers"),
-  "registries",
-  "tools",
-  "viewports",
-  "owner",
-  "agents",
-  "teams",
-  "root",
-  "schedules",
-  "automations",
-  "chats",
-  "memory",
-  "pan",
-  "skills-market"
-] as const;
 
 function isHostManagedService(service: ServiceDefinition) {
   return isHostManagedAgentWebclientService(service);
@@ -1297,67 +1251,6 @@ function getEnvValueWithUpdates(env: Map<string, string>, updates: Map<string, s
   return updates.get(key) ?? env.get(key) ?? "";
 }
 
-function resolveAgentPlatformEnvPath(app: App, value: string) {
-  return path.resolve(expandHomeShortcut(value, resolveHomeDir(app)));
-}
-
-function resolveAgentPlatformProviderRegistryDir(
-  app: App,
-  env: Map<string, string>,
-  updates: Map<string, string>,
-  fallbackRuntimeRoot: string
-) {
-  const registriesDir = getEnvValueWithUpdates(env, updates, "REGISTRIES_DIR").trim();
-  if (registriesDir) {
-    return path.join(resolveAgentPlatformEnvPath(app, registriesDir), "providers");
-  }
-
-  const runtimeRoot = getEnvValueWithUpdates(env, updates, "RUNTIME_DIR").trim();
-  const resolvedRuntimeRoot = runtimeRoot
-    ? resolveAgentPlatformEnvPath(app, runtimeRoot)
-    : fallbackRuntimeRoot;
-  return path.join(resolvedRuntimeRoot, "registries", "providers");
-}
-
-function providerRegistryHasAesWrappedApiKey(providersDir: string) {
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(providersDir, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
-
-  return entries
-    .filter((entry) => entry.isFile() && /\.ya?ml$/iu.test(entry.name))
-    .some((entry) => {
-      const providerPath = path.join(providersDir, entry.name);
-      const content = fs.readFileSync(providerPath, "utf8");
-      return /^(?!\s*#)\s*apiKey\s*:\s*['"]?AES\(/imu.test(content);
-    });
-}
-
-function syncAgentPlatformProviderApiKeyEnvPart(
-  app: App,
-  env: Map<string, string>,
-  updates: Map<string, string>,
-  fallbackRuntimeRoot: string
-) {
-  if (getEnvValueWithUpdates(env, updates, LEGACY_PROVIDER_APIKEY_KEY_PART).trim()) {
-    return false;
-  }
-
-  const providersDir = resolveAgentPlatformProviderRegistryDir(app, env, updates, fallbackRuntimeRoot);
-  if (!providerRegistryHasAesWrappedApiKey(providersDir)) {
-    return false;
-  }
-
-  updates.set(LEGACY_PROVIDER_APIKEY_KEY_PART, LEGACY_PROVIDER_APIKEY_KEY_PART_DEFAULT);
-  return true;
-}
-
 function resolveEnvBindingValue(service: ServiceDefinition, bindingKey: string) {
   const binding = service.desktop.envBindings.find((item) => {
     return item.key === bindingKey && item.value !== undefined;
@@ -1564,9 +1457,6 @@ async function syncCoreServiceDesktopInitializationConfig(app: App, service: Ser
   }
 
   await applyDesktopCapabilityRequirements(app, service, layout, "preStart");
-  if (service.id === "agent-platform") {
-    cleanupAgentPlatformServiceDataRuntimeSkeleton(layout);
-  }
 }
 
 function shouldReinitializeMissingCoreServiceConfig(service: ServiceDefinition, state: ServiceState) {
@@ -1805,8 +1695,6 @@ async function collectDesktopCapabilityRequirementIssues(
 }
 
 async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefinition, layout: ServiceLayout) {
-  normalizeAgentPlatformDeprecatedConfigFiles(layout);
-
   const envPath = layout.envPath;
   const currentContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
   const normalizedContent = normalizeAgentPlatformEnvContentForRuntime(currentContent, layout);
@@ -1827,18 +1715,13 @@ async function ensureAgentPlatformDesktopConfig(app: App, service: ServiceDefini
     updates.set("RUNTIME_DIR", formatDesktopAgentPlatformRuntimeRoot(app, desktopRuntimeRoot));
   }
 
-  syncAgentPlatformProviderApiKeyEnvPart(app, env, updates, desktopRuntimeRoot);
-
   if (updates.size > 0) {
     normalizeShellSourcedAgentPlatformEnvUpdates(updates);
     writeEnvFileUpdates(envPath, updates);
   }
-
-  cleanupAgentPlatformServiceDataRuntimeSkeleton(layout);
 }
 
 async function ensurePreStartRequirements(app: App, service: ServiceDefinition) {
-  const installDir = getInstallDir(app, service);
   const layout = getServiceLayout(app, service);
   prepareServiceExecutionLayout(service, layout);
   patchProgramCommonForLayeredLayout(layout.programDir);
@@ -1855,28 +1738,6 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 
   if (service.id === TUNNEL_HUB_AGENT_SERVICE_ID) {
     syncTunnelHubAgentSettingsToEnv(app);
-  }
-
-  if (service.id === "agent-webclient") {
-    const assetPath = getOptionalBundleAssetPath(app, service);
-    const forceRefresh = agentWebclientInstallNeedsRefresh(installDir);
-    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, layout, app, service))) {
-      await installBuiltinService(app, service.id, {
-        force: forceRefresh,
-        source: "ensurePreStartRequirements:agent-webclient-refresh"
-      });
-    }
-  }
-
-  if (service.id === "zenmind-app-server") {
-    const assetPath = getOptionalBundleAssetPath(app, service);
-    const forceRefresh = zenmindAppServerInstallNeedsRefresh(installDir);
-    if (assetPath && (forceRefresh || isAssetNewerThanInstall(assetPath, layout, app, service))) {
-      await installBuiltinService(app, service.id, {
-        force: forceRefresh,
-        source: "ensurePreStartRequirements:app-server-refresh"
-      });
-    }
   }
 
   if (service.id === "zenmind-app-server") {
@@ -3187,9 +3048,6 @@ export const __testInternals = {
   ensureBundleAssetHealthy,
   upsertEnvFileContent,
   ensurePreStartRequirements,
-  agentPlatformInstallNeedsRefresh,
-  agentWebclientInstallNeedsRefresh,
-  zenmindAppServerInstallNeedsRefresh,
   resolveNodeBin,
   getStartCommandEnvOverrides,
   buildDesktopServiceCommandEnv,
@@ -3199,8 +3057,6 @@ export const __testInternals = {
   resolveAcpCommandForDesktop,
   normalizeAgentPlatformEnvContentForRuntime,
   normalizeAgentPlatformEnvContentForSave,
-  normalizeAgentPlatformBashConfigContent,
-  normalizeAgentPlatformFileToolsConfigContent,
   normalizeAgentContainerHubEnvContentForDesktop,
   normalizeAgentWebclientEnvContentForDesktop,
   applyAgentPlatformWindowsHostShellDefaults,
