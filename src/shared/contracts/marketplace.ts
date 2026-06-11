@@ -1,5 +1,5 @@
-export type MarketItemType = "plugin" | "skill" | "sandbox-image";
-export type MarketSection = "plugins" | "skills" | "sandboxImages";
+export type MarketItemType = "plugin" | "skill" | "sandbox-image" | "pet" | "cli";
+export type MarketSection = "plugins" | "skills" | "sandboxImages" | "pets" | "cli";
 export type MarketInstallState =
   | "not-installed"
   | "installed"
@@ -13,7 +13,7 @@ export interface MarketAsset {
   url: string;
   sha256?: string;
   sizeBytes: number;
-  archiveType: "tar.gz" | "zip" | "skill" | "md" | "sandbox-template";
+  archiveType: "tar.gz" | "zip" | "skill" | "md" | "sandbox-template" | "pet" | "cli";
   platform?: string;
 }
 
@@ -26,6 +26,7 @@ export interface MarketCatalogItem {
   tags: string[];
   minDesktopVersion?: string;
   sandboxKind?: "environment-template" | "container-image";
+  metadata?: Record<string, string>;
   assets: Record<string, MarketAsset>;
 }
 
@@ -52,6 +53,12 @@ export interface MarketItem {
   buildJobId?: string;
   buildTargetCount?: number;
   sandboxKind?: "environment-template" | "container-image";
+  metadata?: Record<string, string>;
+  homepageUrl?: string;
+  cliInstallCommand?: string;
+  cliUninstallCommand?: string;
+  cliDetailCommand?: string;
+  petPreviewAssetPath?: string;
 }
 
 export interface MarketListResult {
@@ -66,6 +73,10 @@ export interface MarketListResult {
   skillOffline?: boolean;
   sandboxMessage?: string;
   sandboxOffline?: boolean;
+  petMessage?: string;
+  petOffline?: boolean;
+  cliMessage?: string;
+  cliOffline?: boolean;
 }
 
 export interface MarketListOptions {
@@ -111,9 +122,11 @@ export interface SandboxImageImportProgressEvent {
 }
 
 export interface MarketSettings {
+  marketApiBaseUrl: string;
   skillsApiBaseUrl: string;
 }
 
 export interface MarketSettingsInput {
-  skillsApiBaseUrl: string;
+  marketApiBaseUrl?: string;
+  skillsApiBaseUrl?: string;
 }

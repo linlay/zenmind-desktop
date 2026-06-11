@@ -27,6 +27,7 @@ export interface MarketplaceIpcHandlerOptions {
   importSkillFromCommand: (app: any, commandText: string) => Promise<any>;
   getPanAuthStatus: (app: any) => any;
   importPanPrivateKey: (app: any, keyPath: string) => any;
+  onMarketCommandResult?: (result: any) => void;
   now?: () => number;
   random?: () => number;
 }
@@ -59,6 +60,7 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
     importSkillFromCommand,
     getPanAuthStatus,
     importPanPrivateKey,
+    onMarketCommandResult,
     now = Date.now,
     random = Math.random
   } = options;
@@ -90,6 +92,7 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
     const result = await installMarketItem(app, itemId);
     if (result.ok) {
       await clearSessionCache();
+      onMarketCommandResult?.(result);
     }
     return result;
   }));
@@ -98,12 +101,19 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
     const result = await updateMarketItem(app, itemId);
     if (result.ok) {
       await clearSessionCache();
+      onMarketCommandResult?.(result);
     }
     return result;
   }));
 
   ipcMain.handle("market.uninstall", async (_event: any, itemId: string) =>
-    runServiceMutation(() => uninstallMarketItem(app, itemId)));
+    runServiceMutation(async () => {
+      const result = await uninstallMarketItem(app, itemId);
+      if (result.ok) {
+        onMarketCommandResult?.(result);
+      }
+      return result;
+    }));
   ipcMain.handle("market.buildSandboxImage", async (_event: any, itemId: string) =>
     runServiceMutation(() => buildSandboxImage(app, itemId)));
   ipcMain.handle("market.deleteSandboxImage", async (_event: any, itemId: string) =>

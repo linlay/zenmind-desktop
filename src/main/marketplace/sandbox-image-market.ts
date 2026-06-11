@@ -23,18 +23,15 @@ import { t } from "../i18n/main-i18n";
 import {
   asObject,
   asString,
-  catalogCachePath,
   DEFAULT_MARKETPLACE_CATALOG_URL,
   downloadAsset,
-  fetchJson,
   findCatalogItem,
+  loadMarketplaceCatalog,
   mergeCatalogItems,
   normalizeContainerHubBaseUrl,
   normalizeCatalog,
-  readJsonFile,
   selectAsset,
   upsertInstalledRecord,
-  writeJsonFile,
   type Catalog,
   type MarketplaceOptions,
   type MarketSectionResult
@@ -83,10 +80,6 @@ function sandboxTemplateCatalogOnly(catalog: Catalog): Catalog {
   };
 }
 
-function sandboxTemplateCatalogCachePath(app: App) {
-  return path.join(path.dirname(catalogCachePath(app)), "sandbox-template-catalog-cache.json");
-}
-
 async function loadSandboxTemplateCatalog(app: App, options: MarketplaceOptions = {}): Promise<SandboxTemplateCatalogResult> {
   if (options.catalog) {
     const catalog = sandboxTemplateCatalogOnly(normalizeCatalog(options.catalog));
@@ -98,40 +91,13 @@ async function loadSandboxTemplateCatalog(app: App, options: MarketplaceOptions 
     };
   }
 
-  const catalogUrl = options.catalogUrl ?? DEFAULT_MARKETPLACE_CATALOG_URL;
-  try {
-    const fullCatalog = normalizeCatalog(await fetchJson(catalogUrl, "sandbox template market request"));
-    const catalog = sandboxTemplateCatalogOnly(fullCatalog);
-    writeJsonFile(sandboxTemplateCatalogCachePath(app), fullCatalog);
-    return {
-      catalog,
-      offline: false,
-      message: catalog.items.length > 0 ? t("market.main.catalogRefreshed") : "",
-      sourceUrl: catalogUrl
-    };
-  } catch (error) {
-    const cached = readJsonFile<Catalog | null>(
-      sandboxTemplateCatalogCachePath(app),
-      readJsonFile<Catalog | null>(catalogCachePath(app), null)
-    );
-    if (cached) {
-      const catalog = sandboxTemplateCatalogOnly(normalizeCatalog(cached));
-      return {
-        catalog,
-        offline: true,
-        message: catalog.items.length > 0
-          ? t("market.main.cachedCatalog", { reason: error instanceof Error ? error.message : String(error) })
-          : "",
-        sourceUrl: catalogUrl
-      };
-    }
-    return {
-      catalog: { schemaVersion: 1, items: [] },
-      offline: true,
-      message: t("market.sandbox.unavailable", { reason: error instanceof Error ? error.message : String(error) }),
-      sourceUrl: catalogUrl
-    };
-  }
+  const result = await loadMarketplaceCatalog(app, options, "sandbox template market request");
+  const catalog = sandboxTemplateCatalogOnly(result.catalog);
+  return {
+    ...result,
+    catalog,
+    message: catalog.items.length > 0 ? result.message : result.offline ? t("market.sandbox.unavailable", { reason: result.message }) : ""
+  };
 }
 
 async function resolveContainerHubConfig(app: App, options: MarketplaceOptions = {}): Promise<ContainerHubConfig | null> {

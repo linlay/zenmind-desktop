@@ -8,11 +8,18 @@ import {
   type FocusEvent as ReactFocusEvent,
   type PointerEvent as ReactPointerEvent
 } from "react";
-import type { DesktopPetPreviewItemStatus, DesktopPetState, DesktopPetStatus, DesktopPetTaskItem } from "../../../shared/contracts";
+import type {
+  DesktopPetAppearanceOption,
+  DesktopPetPreviewItemStatus,
+  DesktopPetState,
+  DesktopPetStatus,
+  DesktopPetTaskItem
+} from "../../../shared/contracts";
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_APPEARANCE_OPTIONS,
+  DESKTOP_PET_STATUS_ASSET_NAMES,
   getDesktopPetRunningTaskAnimationDurationMs,
   getDesktopPetStatusAssetPath,
   isDesktopPetDanceAppearance,
@@ -194,6 +201,29 @@ function getDesktopPetDanceDurationMs(appearanceId: string) {
   return appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID || appearanceId === "pony"
     ? DESKTOP_PET_IDOL_PONY_DANCE_DURATION_MS
     : DESKTOP_PET_DANCE_DURATION_MS;
+}
+
+function resolveDesktopPetAppearanceOption(
+  state: DesktopPetState,
+  appearanceId: string
+): DesktopPetAppearanceOption | null {
+  return state.appearanceOptions.find((option) => option.id === appearanceId) ?? null;
+}
+
+function resolveDesktopPetStatusAssetPath(
+  state: DesktopPetState,
+  appearanceId: string,
+  status: string
+) {
+  const customAppearance = resolveDesktopPetAppearanceOption(state, appearanceId);
+  if (customAppearance && !DESKTOP_PET_APPEARANCE_OPTIONS.some((option) => option.id === customAppearance.id)) {
+    const basePath = customAppearance.assetBasePath.endsWith("/")
+      ? customAppearance.assetBasePath
+      : `${customAppearance.assetBasePath}/`;
+    const fileName = DESKTOP_PET_STATUS_ASSET_NAMES[status] ?? DESKTOP_PET_STATUS_ASSET_NAMES.idle;
+    return `${basePath}${fileName}`;
+  }
+  return getDesktopPetStatusAssetPath(appearanceId, status);
 }
 
 export function DesktopPet() {
@@ -422,8 +452,8 @@ export function DesktopPet() {
             ? "hover"
             : "idle";
   const assetPath = useMemo(
-    () => getDesktopPetStatusAssetPath(appearanceId, visualStatus),
-    [appearanceId, visualStatus]
+    () => resolveDesktopPetStatusAssetPath(petState, appearanceId, visualStatus),
+    [appearanceId, petState, visualStatus]
   );
   const statusBubbleText = petState.hint.trim() || formatPetHint(displayStatus);
   const bubbleText = visualStatus === "message"

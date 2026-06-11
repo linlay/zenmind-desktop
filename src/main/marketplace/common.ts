@@ -21,6 +21,7 @@ import { t } from "../i18n/main-i18n";
 
 export const DEFAULT_MARKETPLACE_CATALOG_URL = "https://zenmind.cc/market/api/v1/desktop/catalog";
 export const DEFAULT_SKILLS_API_BASE_URL = "https://zenmind.cc/market/api/v1";
+export const DEFAULT_MARKET_API_BASE_URL = "https://zenmind.cc/market/api/v1";
 
 export type Catalog = {
   schemaVersion: number;
@@ -35,25 +36,33 @@ export type InstalledRecord = {
   source: "cloud" | "local";
   assetUrl?: string;
   sha256?: string;
-  installPath: string;
+  installPath?: string;
   installedAt: string;
 };
 
 export type MarketplaceOptions = MarketListOptions & {
   catalogUrl?: string;
   catalog?: Catalog;
+  marketApiBaseUrl?: string;
   skillsApiBaseUrl?: string;
   containerHubBaseUrl?: string;
   containerHubAuthToken?: string;
 };
 
-export type InstallableMarketType = Extract<MarketItemType, "plugin" | "skill" | "sandbox-image">;
+export type InstallableMarketType = Extract<MarketItemType, "plugin" | "skill" | "sandbox-image" | "pet" | "cli">;
 
 export type MarketSectionResult = {
   items: MarketItem[];
   offline: boolean;
   message: string;
   sourceUrl?: string;
+};
+
+export type MarketplaceCatalogResult = {
+  catalog: Catalog;
+  offline: boolean;
+  message: string;
+  sourceUrl: string;
 };
 
 function ensureMarketplaceRoots(app: App) {
@@ -102,7 +111,7 @@ export function asNumber(value: unknown) {
 }
 
 export function isMarketItemType(value: unknown): value is MarketItemType {
-  return value === "plugin" || value === "skill" || value === "sandbox-image";
+  return value === "plugin" || value === "skill" || value === "sandbox-image" || value === "pet" || value === "cli";
 }
 
 function normalizeAsset(value: unknown): MarketAsset | null {
@@ -117,7 +126,9 @@ function normalizeAsset(value: unknown): MarketAsset | null {
     archiveType !== "zip" &&
     archiveType !== "skill" &&
     archiveType !== "md" &&
-    archiveType !== "sandbox-template"
+    archiveType !== "sandbox-template" &&
+    archiveType !== "pet" &&
+    archiveType !== "cli"
   ) {
     return null;
   }
@@ -148,6 +159,31 @@ export function normalizeCatalog(input: unknown): Catalog {
         assets[key] = asset;
       }
     }
+    const rawMetadata = asObject(item.metadata);
+    const metadata: Record<string, string> = Object.fromEntries(
+      Object.entries(rawMetadata)
+        .map(([key, value]) => [key, asString(value).trim()])
+        .filter(([, value]) => value)
+    );
+    const rawScripts = asObject(rawMetadata.scripts || item.scripts);
+    const scriptPlatforms = [
+      ["macos", "macos"],
+      ["darwin", "darwin"],
+      ["windows", "windows"],
+      ["win32", "win32"],
+      ["linux", "linux"]
+    ] as const;
+    for (const [sourceKey, metadataPrefix] of scriptPlatforms) {
+      const script = asObject(rawScripts[sourceKey]);
+      const installCommand = asString(script.installCommand).trim();
+      const uninstallCommand = asString(script.uninstallCommand).trim();
+      const installScriptUrl = asString(script.installScriptUrl || script.installUrl).trim();
+      const uninstallScriptUrl = asString(script.uninstallScriptUrl || script.uninstallUrl).trim();
+      if (installCommand) metadata[`${metadataPrefix}InstallCommand`] = installCommand;
+      if (uninstallCommand) metadata[`${metadataPrefix}UninstallCommand`] = uninstallCommand;
+      if (installScriptUrl) metadata[`${metadataPrefix}InstallScriptUrl`] = installScriptUrl;
+      if (uninstallScriptUrl) metadata[`${metadataPrefix}UninstallScriptUrl`] = uninstallScriptUrl;
+    }
     items.push({
       id,
       type,
@@ -159,6 +195,7 @@ export function normalizeCatalog(input: unknown): Catalog {
       sandboxKind: asString(item.sandboxKind).trim() === "environment-template"
         ? "environment-template"
         : asString(item.sandboxKind).trim() === "container-image" ? "container-image" : undefined,
+      metadata,
       assets
     });
   }
@@ -209,6 +246,41 @@ export function normalizeSkillsApiBaseUrl(value: unknown) {
   throw new Error(t("market.main.skillsApiInvalidPath"));
 }
 
+export function normalizeMarketApiBaseUrl(value: unknown) {
+  const input = asString(value).trim() || DEFAULT_MARKET_API_BASE_URL;
+  let parsed: URL;
+  try {
+    parsed = new URL(input);
+  } catch {
+    throw new Error(t("market.main.marketApiInvalidUrl"));
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(t("market.main.marketApiUnsupportedProtocol"));
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error(t("market.main.marketApiNoSearch"));
+  }
+  const pathname = parsed.pathname.replace(/\/+$/u, "") || "/";
+  if (pathname === "/") {
+    return parsed.origin;
+  }
+  if (pathname === "/api/v1" || pathname.endsWith("/api/v1")) {
+    return `${parsed.origin}${pathname}`;
+  }
+  throw new Error(t("market.main.marketApiInvalidPath"));
+}
+
+export function catalogUrlFromMarketApiBaseUrl(value: unknown) {
+  return `${normalizeMarketApiBaseUrl(value).replace(/\/+$/u, "")}/desktop/catalog`;
+}
+
+export function getMarketplaceCatalogUrl(app: App, options: MarketplaceOptions = {}) {
+  if (options.catalogUrl) {
+    return options.catalogUrl;
+  }
+  return catalogUrlFromMarketApiBaseUrl(options.marketApiBaseUrl ?? getMarketSettings(app).marketApiBaseUrl);
+}
+
 export function normalizeContainerHubBaseUrl(value: unknown) {
   const input = asString(value).trim().replace(/\/+$/u, "");
   if (!input) {
@@ -233,19 +305,33 @@ export function getMarketSettings(app: App): MarketSettings {
   const saved = readJsonFile<Partial<MarketSettings>>(marketplaceSettingsPath(app), {});
   try {
     return {
+      marketApiBaseUrl: normalizeMarketApiBaseUrl(saved.marketApiBaseUrl),
       skillsApiBaseUrl: normalizeSkillsApiBaseUrl(saved.skillsApiBaseUrl)
     };
   } catch {
-    return { skillsApiBaseUrl: DEFAULT_SKILLS_API_BASE_URL };
+    return {
+      marketApiBaseUrl: DEFAULT_MARKET_API_BASE_URL,
+      skillsApiBaseUrl: DEFAULT_SKILLS_API_BASE_URL
+    };
   }
 }
 
 export function saveMarketSettings(app: App, input: MarketSettingsInput): MarketSettings {
   const settings = {
+    marketApiBaseUrl: normalizeMarketApiBaseUrl(input.marketApiBaseUrl),
     skillsApiBaseUrl: normalizeSkillsApiBaseUrl(input.skillsApiBaseUrl)
   };
   writeJsonFile(marketplaceSettingsPath(app), settings);
   return settings;
+}
+
+export function writeMarketSettingsIfAbsent(app: App, input: MarketSettingsInput) {
+  const settingsPath = marketplaceSettingsPath(app);
+  if (fs.existsSync(settingsPath)) {
+    return false;
+  }
+  saveMarketSettings(app, input);
+  return true;
 }
 
 export function readInstalledRecords(app: App) {
@@ -286,6 +372,8 @@ function extensionForAsset(asset: MarketAsset) {
   if (asset.archiveType === "md") return ".md";
   if (asset.archiveType === "skill") return ".skill";
   if (asset.archiveType === "sandbox-template") return ".tar.gz";
+  if (asset.archiveType === "pet") return ".tar.gz";
+  if (asset.archiveType === "cli") return ".tar.gz";
   return ".tar.gz";
 }
 
@@ -345,6 +433,45 @@ export function selectAsset(item: MarketCatalogItem) {
   return null;
 }
 
+export async function loadMarketplaceCatalog(app: App, options: MarketplaceOptions = {}, label = "market catalog request"): Promise<MarketplaceCatalogResult> {
+  if (options.catalog) {
+    return {
+      catalog: normalizeCatalog(options.catalog),
+      offline: false,
+      message: t("market.main.catalogLoaded"),
+      sourceUrl: options.catalogUrl ?? getMarketplaceCatalogUrl(app, options)
+    };
+  }
+
+  const catalogUrl = getMarketplaceCatalogUrl(app, options);
+  try {
+    const catalog = normalizeCatalog(await fetchJson(catalogUrl, label));
+    writeJsonFile(catalogCachePath(app), catalog);
+    return {
+      catalog,
+      offline: false,
+      message: t("market.main.catalogRefreshed"),
+      sourceUrl: catalogUrl
+    };
+  } catch (error) {
+    const cached = readJsonFile<Catalog | null>(catalogCachePath(app), null);
+    if (cached) {
+      return {
+        catalog: normalizeCatalog(cached),
+        offline: true,
+        message: t("market.main.cachedCatalog", { reason: error instanceof Error ? error.message : String(error) }),
+        sourceUrl: catalogUrl
+      };
+    }
+    return {
+      catalog: { schemaVersion: 1, items: [] },
+      offline: true,
+      message: t("market.main.catalogUnavailable", { reason: error instanceof Error ? error.message : String(error) }),
+      sourceUrl: catalogUrl
+    };
+  }
+}
+
 function catalogItemToMarketItem(item: MarketCatalogItem, record: InstalledRecord | undefined, localItem?: MarketItem): MarketItem {
   let state: MarketInstallState = "not-installed";
   let installedVersion: string | undefined;
@@ -377,6 +504,8 @@ function catalogItemToMarketItem(item: MarketCatalogItem, record: InstalledRecor
     installPath,
     serviceId: item.type === "plugin" ? item.id : undefined,
     sandboxKind: item.sandboxKind,
+    metadata: item.metadata,
+    homepageUrl: item.metadata?.homepageUrl,
     message: state === "incompatible" ? t("market.main.platformUnavailable") : undefined
   };
 }

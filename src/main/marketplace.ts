@@ -1,6 +1,7 @@
 import type { App } from "electron";
 import type { MarketCommandResult, MarketListResult, MarketItemType, MarketSection } from "../shared/contracts";
 import {
+  DEFAULT_MARKET_API_BASE_URL,
   DEFAULT_MARKETPLACE_CATALOG_URL,
   DEFAULT_SKILLS_API_BASE_URL,
   getMarketSettings,
@@ -11,9 +12,20 @@ import {
   removeInstalledRecord,
   saveMarketSettings,
   selectAsset,
+  writeMarketSettingsIfAbsent,
   type MarketplaceOptions,
   type MarketSectionResult
 } from "./marketplace/common";
+import {
+  installCliMarketItem,
+  listCliMarketItems,
+  uninstallCliMarketItem
+} from "./marketplace/cli-market";
+import {
+  installPetMarketItem,
+  listPetMarketItems,
+  uninstallPetMarketItem
+} from "./marketplace/pet-market";
 import {
   installPluginMarketItem,
   listPluginMarketItems,
@@ -40,10 +52,12 @@ import {
 } from "./skill-installer";
 
 export {
+  DEFAULT_MARKET_API_BASE_URL,
   DEFAULT_MARKETPLACE_CATALOG_URL,
   DEFAULT_SKILLS_API_BASE_URL,
   getMarketSettings,
-  saveMarketSettings
+  saveMarketSettings,
+  writeMarketSettingsIfAbsent
 };
 
 const EMPTY_MARKET_SECTION: MarketSectionResult = {
@@ -52,30 +66,44 @@ const EMPTY_MARKET_SECTION: MarketSectionResult = {
   message: ""
 };
 
-const MARKET_SECTIONS: readonly MarketSection[] = ["plugins", "skills", "sandboxImages"];
+const MARKET_SECTIONS: readonly MarketSection[] = ["plugins", "skills", "sandboxImages", "pets", "cli"];
 
 function combineMarketSections(
   pluginMarket: MarketSectionResult,
   skillMarket: MarketSectionResult,
-  sandboxImageMarket: MarketSectionResult
+  sandboxImageMarket: MarketSectionResult,
+  petMarket: MarketSectionResult,
+  cliMarket: MarketSectionResult
 ): MarketListResult {
-  const message = [pluginMarket.message, skillMarket.message].filter(Boolean).join(" ");
+  const message = [
+    pluginMarket.message,
+    skillMarket.message,
+    sandboxImageMarket.message,
+    petMarket.message,
+    cliMarket.message
+  ].filter(Boolean).join(" ");
   return {
     ok: true,
-    sourceUrl: skillMarket.sourceUrl || pluginMarket.sourceUrl || DEFAULT_MARKETPLACE_CATALOG_URL,
-    offline: pluginMarket.offline || skillMarket.offline,
+    sourceUrl: cliMarket.sourceUrl || petMarket.sourceUrl || sandboxImageMarket.sourceUrl || skillMarket.sourceUrl || pluginMarket.sourceUrl || DEFAULT_MARKETPLACE_CATALOG_URL,
+    offline: pluginMarket.offline || skillMarket.offline || sandboxImageMarket.offline || petMarket.offline || cliMarket.offline,
     message,
     items: [
       ...pluginMarket.items,
       ...skillMarket.items,
-      ...sandboxImageMarket.items
+      ...sandboxImageMarket.items,
+      ...petMarket.items,
+      ...cliMarket.items
     ],
     pluginMessage: pluginMarket.message,
     pluginOffline: pluginMarket.offline,
     skillMessage: skillMarket.message,
     skillOffline: skillMarket.offline,
     sandboxMessage: sandboxImageMarket.message,
-    sandboxOffline: sandboxImageMarket.offline
+    sandboxOffline: sandboxImageMarket.offline,
+    petMessage: petMarket.message,
+    petOffline: petMarket.offline,
+    cliMessage: cliMarket.message,
+    cliOffline: cliMarket.offline
   };
 }
 
@@ -87,7 +115,7 @@ async function loadMarketSections(app: App, options: MarketplaceOptions = {}) {
   const sections = new Set((options.sections ?? MARKET_SECTIONS).filter((section) =>
     MARKET_SECTIONS.includes(section)
   ));
-  const [pluginMarket, skillMarket, sandboxImageMarket] = await Promise.all([
+  const [pluginMarket, skillMarket, sandboxImageMarket, petMarket, cliMarket] = await Promise.all([
     shouldLoadMarketSection({ ...options, sections: [...sections] }, "plugins")
       ? listPluginMarketItems(app, options)
       : EMPTY_MARKET_SECTION,
@@ -96,9 +124,15 @@ async function loadMarketSections(app: App, options: MarketplaceOptions = {}) {
       : EMPTY_MARKET_SECTION,
     shouldLoadMarketSection({ ...options, sections: [...sections] }, "sandboxImages")
       ? listSandboxImageMarketItems(app, options)
+      : EMPTY_MARKET_SECTION,
+    shouldLoadMarketSection({ ...options, sections: [...sections] }, "pets")
+      ? listPetMarketItems(app, options)
+      : EMPTY_MARKET_SECTION,
+    shouldLoadMarketSection({ ...options, sections: [...sections] }, "cli")
+      ? listCliMarketItems(app, options)
       : EMPTY_MARKET_SECTION
   ]);
-  return { pluginMarket, skillMarket, sandboxImageMarket };
+  return { pluginMarket, skillMarket, sandboxImageMarket, petMarket, cliMarket };
 }
 
 function isMarketNotFoundError(error: unknown) {
@@ -120,9 +154,12 @@ async function resolveInstalledItemType(
     return record.type;
   }
 
-  const [pluginMarket, skillMarket] = await Promise.all([
+  const [pluginMarket, skillMarket, sandboxImageMarket, petMarket, cliMarket] = await Promise.all([
     listPluginMarketItems(app, options),
-    listSkillMarketItems(app, options)
+    listSkillMarketItems(app, options),
+    listSandboxImageMarketItems(app, options),
+    listPetMarketItems(app, options),
+    listCliMarketItems(app, options)
   ]);
   if (pluginMarket.items.some((item) => item.id === itemId)) {
     return "plugin";
@@ -130,12 +167,21 @@ async function resolveInstalledItemType(
   if (skillMarket.items.some((item) => item.id === itemId)) {
     return "skill";
   }
+  if (sandboxImageMarket.items.some((item) => item.id === itemId)) {
+    return "sandbox-image";
+  }
+  if (petMarket.items.some((item) => item.id === itemId)) {
+    return "pet";
+  }
+  if (cliMarket.items.some((item) => item.id === itemId)) {
+    return "cli";
+  }
   return "skill";
 }
 
 export async function refreshMarketCatalog(app: App, options: MarketplaceOptions = {}): Promise<MarketListResult> {
-  const { pluginMarket, skillMarket, sandboxImageMarket } = await loadMarketSections(app, options);
-  return combineMarketSections(pluginMarket, skillMarket, sandboxImageMarket);
+  const { pluginMarket, skillMarket, sandboxImageMarket, petMarket, cliMarket } = await loadMarketSections(app, options);
+  return combineMarketSections(pluginMarket, skillMarket, sandboxImageMarket, petMarket, cliMarket);
 }
 
 export async function listMarketItems(app: App, options: MarketplaceOptions = {}): Promise<MarketListResult> {
@@ -156,6 +202,20 @@ export async function installMarketItem(
   }
   try {
     return await installSandboxTemplateMarketItem(app, itemId, options);
+  } catch (error) {
+    if (!isMarketNotFoundError(error)) {
+      throw error;
+    }
+  }
+  try {
+    return await installPetMarketItem(app, itemId, options);
+  } catch (error) {
+    if (!isMarketNotFoundError(error)) {
+      throw error;
+    }
+  }
+  try {
+    return await installCliMarketItem(app, itemId, options);
   } catch (error) {
     if (!isMarketNotFoundError(error)) {
       throw error;
@@ -196,7 +256,11 @@ export async function uninstallMarketItem(
   const type = await resolveInstalledItemType(app, itemId, options);
   const result = type === "plugin"
     ? await uninstallPluginMarketItem(app, itemId)
-    : await uninstallSkillMarketItem(app, itemId);
+    : type === "pet"
+      ? await uninstallPetMarketItem(app, itemId)
+      : type === "cli"
+        ? await uninstallCliMarketItem(app, itemId, options)
+        : await uninstallSkillMarketItem(app, itemId);
   if (result.ok) {
     removeInstalledRecord(app, itemId, type);
   }

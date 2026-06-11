@@ -39,10 +39,10 @@
 .market-tabs {
   grid-column: 2;
   display: grid;
-  grid-template-columns: repeat(3, minmax(110px, 1fr));
+  grid-template-columns: repeat(5, minmax(88px, 1fr));
   align-items: center;
   justify-self: center;
-  width: min(520px, 100%);
+  width: min(760px, 100%);
   gap: 4px;
   padding: 4px;
   border-radius: 10px;
@@ -59,7 +59,7 @@
 .market-tab {
   min-height: 42px;
   min-width: 0;
-  padding: 0 18px;
+  padding: 0 12px;
   border: 0;
   border-radius: 8px;
   background: transparent;

@@ -1,13 +1,13 @@
 import type { ComponentType } from "react";
 import { DEFAULT_MARKET_TAB, type MarketTab, type MarketViewProps } from "./marketPageModel";
-import { PluginMarket } from "./PluginMarket";
-import { SandboxImageMarket } from "./SandboxImageMarket";
-import { SkillMarket } from "./SkillMarket";
+import { StorefrontMarket } from "./StorefrontMarket";
 
 const MARKET_VIEWS = {
-  plugins: PluginMarket,
-  skills: SkillMarket,
-  sandboxImages: SandboxImageMarket
+  plugins: StorefrontMarket,
+  skills: StorefrontMarket,
+  sandboxImages: StorefrontMarket,
+  pets: StorefrontMarket,
+  cli: StorefrontMarket
 } satisfies Record<MarketTab, ComponentType<MarketViewProps>>;
 
 export function getMarketView(tab: MarketTab) {

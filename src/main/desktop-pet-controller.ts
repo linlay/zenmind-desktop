@@ -6,6 +6,7 @@ import type {
   AssistantNavAgentItem,
   AssistantNavChatItem,
   DesktopPetAgentOption,
+  DesktopPetAppearanceOption,
   DesktopPetEdgeDock,
   DesktopPetPreviewPanel,
   DesktopPetTaskItem
@@ -285,6 +286,7 @@ export function computeDesktopPetStateRefresh(input: {
   agentStatus: DesktopPetBoundAgentStatus | null;
   agentOptions: DesktopPetAgentOption[];
   activeTasks?: DesktopPetTaskItem[];
+  appearanceOptions?: DesktopPetAppearanceOption[];
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
   edgeDock: DesktopPetEdgeDock;
@@ -302,6 +304,7 @@ export function computeDesktopPetStateRefresh(input: {
     agentStatus: input.agentStatus,
     agentOptions: input.agentOptions,
     activeTasks: input.activeTasks,
+    appearanceOptions: input.appearanceOptions,
     previewPanel: input.previewPanel,
     runningTaskCount: input.runningTaskCount,
     edgeDock: input.edgeDock

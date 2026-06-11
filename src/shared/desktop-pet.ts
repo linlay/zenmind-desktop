@@ -52,8 +52,9 @@ const LEGACY_DESKTOP_PET_BOUND_AGENT_KEY_ALIASES: Record<string, string> = {
 const DESKTOP_PET_APPEARANCE_IDS: Set<string> = new Set(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id));
 const DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID, "pony", "xiao"]);
 const DESKTOP_PET_DANCE_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID, "pony"]);
+const USER_DESKTOP_PET_APPEARANCE_PATTERN = /^user:[a-z0-9][a-z0-9._-]{0,79}$/u;
 
-const DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
+export const DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
   awaiting: "pet-awaiting.png",
   dancing: "pet-idle.png",
   done: "pet-done.png",
@@ -188,6 +189,9 @@ export function normalizeDesktopPetBoundAgentKey(value: unknown) {
 export function normalizeDesktopPetAppearanceId(value: unknown) {
   const normalized = typeof value === "string" ? value.trim() : "";
   if (DESKTOP_PET_APPEARANCE_IDS.has(normalized)) {
+    return normalized;
+  }
+  if (USER_DESKTOP_PET_APPEARANCE_PATTERN.test(normalized)) {
     return normalized;
   }
   return DEFAULT_DESKTOP_PET_APPEARANCE_ID;

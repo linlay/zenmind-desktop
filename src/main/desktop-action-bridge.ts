@@ -56,6 +56,10 @@ import {
   updateMarketItem
 } from "./marketplace";
 import {
+  normalizeMarketApiBaseUrl,
+  normalizeSkillsApiBaseUrl
+} from "./marketplace/common";
+import {
   TUNNEL_HUB_AGENT_SERVICE_ID,
   readTunnelHubAgentSettings,
   saveTunnelHubAgentSettings,
@@ -273,7 +277,7 @@ function readItemId(args: Record<string, unknown>) {
 }
 
 function isMarketSection(value: unknown): value is NonNullable<MarketListOptions["sections"]>[number] {
-  return value === "plugins" || value === "skills" || value === "sandboxImages";
+  return value === "plugins" || value === "skills" || value === "sandboxImages" || value === "pets" || value === "cli";
 }
 
 function readMarketListOptions(args: Record<string, unknown>): MarketListOptions {
@@ -305,7 +309,10 @@ function readAgentKey(args: Record<string, unknown>) {
 
 function validateMarketSettings(input: Record<string, unknown>) {
   try {
-    const settings = saveMarketSettingsPreview(input);
+    const settings = saveMarketSettingsPreview(input, {
+      marketApiBaseUrl: "",
+      skillsApiBaseUrl: ""
+    });
     return {
       valid: true,
       issues: [],
@@ -315,31 +322,23 @@ function validateMarketSettings(input: Record<string, unknown>) {
     return {
       valid: false,
       issues: [{
-        field: "skillsApiBaseUrl",
+        field: "marketApiBaseUrl",
         message: error instanceof Error ? error.message : String(error)
       }]
     };
   }
 }
 
-function saveMarketSettingsPreview(input: Record<string, unknown>) {
-  const rawUrl = typeof input.skillsApiBaseUrl === "string" ? input.skillsApiBaseUrl.trim() : "";
-  if (!rawUrl) {
-    throw new Error("skillsApiBaseUrl is required");
-  }
-  const parsed = new URL(rawUrl);
-  const pathname = parsed.pathname.replace(/\/+$/u, "") || "/";
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("技能市场地址仅支持 http 或 https。");
-  }
-  if (parsed.search || parsed.hash) {
-    throw new Error("技能市场地址不应包含查询参数或锚点。");
-  }
-  if (pathname !== "/" && pathname !== "/api/v1") {
-    throw new Error("技能市场地址请输入服务根地址，或以 /api/v1 结尾。");
-  }
+function saveMarketSettingsPreview(
+  input: Record<string, unknown>,
+  current: { marketApiBaseUrl: string; skillsApiBaseUrl: string }
+) {
+  const rawMarketUrl = typeof input.marketApiBaseUrl === "string" ? input.marketApiBaseUrl.trim() : "";
+  const legacyMarketUrl = typeof input.apiBaseUrl === "string" ? input.apiBaseUrl.trim() : "";
+  const rawSkillsUrl = typeof input.skillsApiBaseUrl === "string" ? input.skillsApiBaseUrl.trim() : "";
   return {
-    skillsApiBaseUrl: pathname === "/" ? parsed.origin : `${parsed.origin}/api/v1`
+    marketApiBaseUrl: normalizeMarketApiBaseUrl(rawMarketUrl || legacyMarketUrl || current.marketApiBaseUrl),
+    skillsApiBaseUrl: normalizeSkillsApiBaseUrl(rawSkillsUrl || current.skillsApiBaseUrl)
   };
 }
 
@@ -933,16 +932,25 @@ async function executeAction(
       return ok(action, validateMarketSettings(args));
     case "desktop.market.previewSettingsPatch": {
       const patch = asRecord(args.patch);
+      const current = getMarketSettings(options.app);
+      const next = saveMarketSettingsPreview(patch, current);
       return preview(action, {
-        changes: [{
-          field: "skillsApiBaseUrl",
-          from: getMarketSettings(options.app).skillsApiBaseUrl,
-          to: saveMarketSettingsPreview(patch)
-        }]
+        changes: [
+          {
+            field: "marketApiBaseUrl",
+            from: current.marketApiBaseUrl,
+            to: next.marketApiBaseUrl
+          },
+          {
+            field: "skillsApiBaseUrl",
+            from: current.skillsApiBaseUrl,
+            to: next.skillsApiBaseUrl
+          }
+        ]
       });
     }
     case "desktop.market.applySettingsPatch":
-      return ok(action, saveMarketSettings(options.app, saveMarketSettingsPreview(asRecord(args.patch))));
+      return ok(action, saveMarketSettings(options.app, saveMarketSettingsPreview(asRecord(args.patch), getMarketSettings(options.app))));
     case "desktop.market.listItems":
       return ok(action, await listMarketItems(options.app, readMarketListOptions(args)));
     case "desktop.market.refresh":

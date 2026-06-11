@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import type { App, Rectangle } from "electron";
 import type {
+  DesktopPetAppearanceOption,
   DesktopPetTaskItem,
   DesktopPetAgentOption,
   DesktopPetAgentPresence,
@@ -277,6 +279,9 @@ function sanitizeDesktopPetStoredState(
 }
 
 function selectedPetIdForAppearance(appearanceId: string) {
+  if (appearanceId.startsWith("user:")) {
+    return appearanceId;
+  }
   return appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID
     ? DEFAULT_DESKTOP_PET_ID
     : `builtin:${appearanceId}`;
@@ -374,6 +379,32 @@ export function listUserDesktopPets(app: App): UserDesktopPetAsset[] {
     });
   }
   return pets.sort((a, b) => a.petId.localeCompare(b.petId, "zh-CN"));
+}
+
+function readUserPetText(manifest: Record<string, unknown>, keys: string[], fallback = "") {
+  for (const key of keys) {
+    const value = manifest[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return fallback;
+}
+
+function userPetAssetUrl(rootPath: string, manifest: Record<string, unknown>, keys: string[], fallbackFileName: string) {
+  const relative = readUserPetText(manifest, keys, fallbackFileName);
+  const safeRelative = relative.replace(/\\/gu, "/").replace(/^\/+/u, "");
+  return pathToFileURL(path.join(rootPath, safeRelative)).toString();
+}
+
+export function listUserDesktopPetAppearanceOptions(app: App): DesktopPetAppearanceOption[] {
+  return listUserDesktopPets(app).map((pet) => ({
+    id: pet.id,
+    displayName: readUserPetText(pet.manifest, ["displayName", "name"], pet.petId),
+    description: readUserPetText(pet.manifest, ["description"], ""),
+    assetBasePath: pathToFileURL(pet.rootPath).toString().replace(/\/?$/u, "/"),
+    previewAssetPath: userPetAssetUrl(pet.rootPath, pet.manifest, ["previewAssetPath", "preview"], "pet-idle.png")
+  }));
 }
 
 export function isDesktopPetSupportedPlatform(platform: Platform) {
@@ -598,6 +629,7 @@ export function createDesktopPetState(
     agentStatus?: DesktopPetBoundAgentStatus | null;
     agentOptions?: DesktopPetAgentOption[];
     activeTasks?: DesktopPetTaskItem[];
+    appearanceOptions?: DesktopPetAppearanceOption[];
     previewPanel?: DesktopPetPreviewPanel | null;
     runningTaskCount?: unknown;
     edgeDock?: DesktopPetEdgeDock;
@@ -606,7 +638,14 @@ export function createDesktopPetState(
   const localStatus = options.localStatus ?? createDefaultDesktopPetLocalStatus(settings);
   const agentStatus = options.agentStatus ?? null;
   const mergedStatus = resolveMergedDesktopPetStatus(localStatus, agentStatus);
-  const appearanceId = sanitizeDesktopPetAppearanceId(settings.appearanceId);
+  const appearanceOptions = [
+    ...DESKTOP_PET_APPEARANCE_OPTIONS,
+    ...(options.appearanceOptions ?? [])
+  ];
+  const sanitizedAppearanceId = sanitizeDesktopPetAppearanceId(settings.appearanceId);
+  const appearanceId = appearanceOptions.some((appearance) => appearance.id === sanitizedAppearanceId)
+    ? sanitizedAppearanceId
+    : DEFAULT_DESKTOP_PET_APPEARANCE_ID;
   const agentUnreadCount = agentStatus && !agentStatus.stale
     ? sanitizeDesktopPetUnreadCount(agentStatus.unreadCount)
     : 0;
@@ -619,7 +658,7 @@ export function createDesktopPetState(
     ...mergedStatus,
     unreadCount: Math.max(mergedStatus.unreadCount, agentUnreadCount),
     appearanceId,
-    appearanceOptions: [...DESKTOP_PET_APPEARANCE_OPTIONS],
+    appearanceOptions,
     boundAgentKey: activeAgentKey,
     agentDisplayName: agentStatus?.displayName ?? agentDefaults.displayName,
     agentRole: agentStatus?.role ?? agentDefaults.role,
@@ -759,5 +798,6 @@ export const __testInternals = {
   getDesktopPetRoot,
   getLegacyDesktopPetSettingsPath,
   getDesktopPetStatePath,
-  listUserDesktopPets
+  listUserDesktopPets,
+  listUserDesktopPetAppearanceOptions
 };

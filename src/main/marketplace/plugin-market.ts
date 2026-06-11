@@ -6,17 +6,14 @@ import { getPluginInstallDir, installPluginFromArchive, uninstallPlugin } from "
 import { getAllServices } from "../services/service-registry";
 import { t } from "../i18n/main-i18n";
 import {
-  catalogCachePath,
   DEFAULT_MARKETPLACE_CATALOG_URL,
   downloadAsset,
-  fetchJson,
   findCatalogItem,
+  loadMarketplaceCatalog,
   mergeCatalogItems,
   normalizeCatalog,
-  readJsonFile,
   selectAsset,
   upsertInstalledRecord,
-  writeJsonFile,
   type Catalog,
   type MarketplaceOptions,
   type MarketSectionResult
@@ -46,33 +43,11 @@ async function loadPluginCatalog(app: App, options: MarketplaceOptions = {}): Pr
     };
   }
 
-  const catalogUrl = options.catalogUrl ?? DEFAULT_MARKETPLACE_CATALOG_URL;
-  try {
-    const catalog = normalizeCatalog(await fetchJson(catalogUrl, "market catalog request"));
-    writeJsonFile(catalogCachePath(app), catalog);
-    return {
-      catalog: pluginOnlyCatalog(catalog),
-      offline: false,
-      message: t("market.main.catalogRefreshed"),
-      sourceUrl: catalogUrl
-    };
-  } catch (error) {
-    const cached = readJsonFile<Catalog | null>(catalogCachePath(app), null);
-    if (cached) {
-      return {
-        catalog: pluginOnlyCatalog(normalizeCatalog(cached)),
-        offline: true,
-        message: t("market.main.cachedCatalog", { reason: error instanceof Error ? error.message : String(error) }),
-        sourceUrl: catalogUrl
-      };
-    }
-    return {
-      catalog: { schemaVersion: 1, items: [] },
-      offline: true,
-      message: t("market.main.catalogUnavailable", { reason: error instanceof Error ? error.message : String(error) }),
-      sourceUrl: catalogUrl
-    };
-  }
+  const result = await loadMarketplaceCatalog(app, options, "market catalog request");
+  return {
+    ...result,
+    catalog: pluginOnlyCatalog(result.catalog)
+  };
 }
 
 function listLocalPlugins(app: App): MarketItem[] {

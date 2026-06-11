@@ -1,11 +1,12 @@
 import type {
   MarketInstallState,
   MarketItem,
+  MarketItemType,
   MarketListResult
 } from "@shared/contracts";
 import type { TranslateFunction, TranslationKey } from "@shared/i18n";
 
-export type MarketTab = "plugins" | "skills" | "sandboxImages";
+export type MarketTab = "plugins" | "skills" | "sandboxImages" | "pets" | "cli";
 export type SkillScope = "all" | "cloud" | "local";
 
 export interface MarketTabDefinition {
@@ -38,7 +39,25 @@ const MARKET_TAB_KEYS: Record<MarketTab, { label: TranslationKey; title: Transla
     label: "market.tab.sandboxImages.label",
     title: "market.tab.sandboxImages.title",
     subtitle: "market.tab.sandboxImages.subtitle"
+  },
+  pets: {
+    label: "market.tab.pets.label",
+    title: "market.tab.pets.title",
+    subtitle: "market.tab.pets.subtitle"
+  },
+  cli: {
+    label: "market.tab.cli.label",
+    title: "market.tab.cli.title",
+    subtitle: "market.tab.cli.subtitle"
   }
+};
+
+export const MARKET_TAB_ITEM_TYPES: Record<MarketTab, MarketItemType> = {
+  plugins: "plugin",
+  skills: "skill",
+  sandboxImages: "sandbox-image",
+  pets: "pet",
+  cli: "cli"
 };
 
 export function getMarketTabDefinitions(t: TranslateFunction): MarketTabDefinition[] {
@@ -106,7 +125,11 @@ export function createEmptyMarketResult(): MarketListResult {
     skillMessage: "",
     skillOffline: false,
     sandboxMessage: "",
-    sandboxOffline: false
+    sandboxOffline: false,
+    petMessage: "",
+    petOffline: false,
+    cliMessage: "",
+    cliOffline: false
   };
 }
 

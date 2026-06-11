@@ -18,7 +18,9 @@ import {
   fetchJson,
   findCatalogItem,
   getMarketSettings,
+  loadMarketplaceCatalog,
   mergeCatalogItems,
+  normalizeCatalog,
   normalizeSkillsApiBaseUrl,
   selectAsset,
   upsertInstalledRecord,
@@ -42,6 +44,13 @@ type SkillCatalogResult = {
   message: string;
   sourceUrl: string;
 };
+
+function skillOnlyCatalog(catalog: Catalog): Catalog {
+  return {
+    ...catalog,
+    items: catalog.items.filter((item) => item.type === "skill")
+  };
+}
 
 function skillsApiPrefix(baseUrl: string) {
   return baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
@@ -118,10 +127,27 @@ function skillsApiItemToCatalogItem(baseUrl: string, value: unknown): MarketCata
 }
 
 async function loadSkillCatalog(app: App, options: MarketplaceOptions = {}): Promise<SkillCatalogResult> {
+  const explicitSkillsApiBaseUrl = Boolean(options.skillsApiBaseUrl);
   const baseUrl = options.skillsApiBaseUrl
     ? normalizeSkillsApiBaseUrl(options.skillsApiBaseUrl)
     : getMarketSettings(app).skillsApiBaseUrl;
-  if (!options.skillsApiBaseUrl && baseUrl === DEFAULT_SKILLS_API_BASE_URL) {
+  if (!explicitSkillsApiBaseUrl && options.catalog && baseUrl === DEFAULT_SKILLS_API_BASE_URL) {
+    return {
+      catalog: skillOnlyCatalog(normalizeCatalog(options.catalog)),
+      offline: false,
+      message: t("market.main.catalogLoaded"),
+      sourceUrl: options.catalogUrl ?? getMarketSettings(app).marketApiBaseUrl
+    };
+  }
+  if (!explicitSkillsApiBaseUrl && baseUrl === DEFAULT_SKILLS_API_BASE_URL) {
+    const result = await loadMarketplaceCatalog(app, options, "skill market catalog request");
+    const catalog = skillOnlyCatalog(result.catalog);
+    if (catalog.items.length > 0 || result.offline) {
+      return {
+        ...result,
+        catalog
+      };
+    }
     return {
       catalog: { schemaVersion: 1, items: [] },
       offline: false,

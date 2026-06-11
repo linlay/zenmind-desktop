@@ -197,6 +197,7 @@ import {
   getAnchoredDesktopPetBounds,
   getDesktopPetLogicalPositionFromBounds,
   getDesktopPetWindowSize,
+  listUserDesktopPetAppearanceOptions,
   resolveDesktopPetEdgeDock,
   type DesktopPetBoundAgentStatus,
   type DesktopPetLocalStatus,
@@ -421,7 +422,8 @@ function initializeUserDataRootsAndSettings() {
     visible: false,
     localStatus: appState.desktopPetLocalStatus,
     agentStatus: appState.desktopPetAgentStatus,
-    agentOptions: appState.desktopPetAgentOptions
+    agentOptions: appState.desktopPetAgentOptions,
+    appearanceOptions: listUserDesktopPetAppearanceOptions(app)
   });
 }
 
@@ -802,6 +804,7 @@ function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
     patch,
     agentStatus: getDesktopPetAgentStatusForState(),
     agentOptions: appState.desktopPetAgentOptions,
+    appearanceOptions: listUserDesktopPetAppearanceOptions(app),
     activeTasks,
     previewPanel: desktopPetPreviewController.getPanel(),
     runningTaskCount: Math.max(getDesktopPetRunningTaskCountForState(), activeTasks.length),
@@ -1921,7 +1924,13 @@ function registerIpcHandlers(context: MainProcessContext) {
     importSkillFromPath,
     importSkillFromCommand,
     getPanAuthStatus,
-    importPanPrivateKey
+    importPanPrivateKey,
+    onMarketCommandResult: (result) => {
+      if (result?.type === "pet") {
+        appState.desktopPetSettings = readDesktopPetStoredState(app, mainProcessContext.platform);
+        refreshDesktopPetState();
+      }
+    }
   }));
   registerSsoIpcHandlers(ipcMain, createSsoIpcHandlerOptions(context, {
     desktopSsoController,

@@ -15,6 +15,7 @@ import { resolveRuntimeRoot } from "./env-bootstrap";
 import { resolveDesktopSsoConfigPath } from "./oidc-sso";
 import { getDesktopConfigRoot, getDesktopStateRoot } from "./user-paths";
 import { writeDesktopPetStoredState } from "./copilot/pet-copilot/desktop-pet";
+import { writeMarketSettingsIfAbsent } from "./marketplace/common";
 
 const DESKTOP_DEFAULT_FILE = "desktop-default.json";
 const BOOTSTRAP_STATE_FILE = "bootstrap.json";
@@ -24,6 +25,7 @@ type AppPathReader = Pick<App, "getPath">;
 type BootstrapApplyResult = {
   profile: "applied" | "skipped" | "absent";
   pet: "applied" | "skipped" | "absent";
+  market: "applied" | "skipped" | "absent";
   sso: "applied" | "skipped" | "absent";
   websites: "applied" | "skipped" | "absent";
   bootstrapAssistant: "recorded" | "absent";
@@ -153,6 +155,21 @@ function applyPetDefaults(app: App, petDefaults: unknown, platform: NodeJS.Platf
   return "applied";
 }
 
+function applyMarketDefaults(app: App, marketDefaults: unknown): BootstrapApplyResult["market"] {
+  if (!isRecord(marketDefaults)) {
+    return "absent";
+  }
+  const marketApiBaseUrl = readText(marketDefaults.apiBaseUrl) || readText(marketDefaults.marketApiBaseUrl);
+  const skillsApiBaseUrl = readText(marketDefaults.skillsApiBaseUrl);
+  if (!marketApiBaseUrl && !skillsApiBaseUrl) {
+    return "absent";
+  }
+  return writeMarketSettingsIfAbsent(app, {
+    marketApiBaseUrl: marketApiBaseUrl || undefined,
+    skillsApiBaseUrl: skillsApiBaseUrl || undefined
+  }) ? "applied" : "skipped";
+}
+
 function applySsoDefaults(app: App, ssoDefaults: unknown, platform: NodeJS.Platform): BootstrapApplyResult["sso"] {
   if (!isRecord(ssoDefaults)) {
     return "absent";
@@ -204,6 +221,7 @@ export function applyDesktopDefaultBootstrap(
   const applied: BootstrapApplyResult = {
     profile: applyProfileDefaults(app, defaults.profile),
     pet: applyPetDefaults(app, defaults.pet, platform),
+    market: applyMarketDefaults(app, defaults.market),
     sso: applySsoDefaults(app, defaults.sso, platform),
     websites: applyWebsiteDefaults(app, defaults.websites),
     bootstrapAssistant: isRecord(defaults.bootstrapAssistant) ? "recorded" : "absent"
@@ -225,6 +243,7 @@ export const __testInternals = {
   BOOTSTRAP_STATE_FILE,
   applyProfileDefaults,
   applyPetDefaults,
+  applyMarketDefaults,
   applySsoDefaults,
   applyWebsiteDefaults
 };

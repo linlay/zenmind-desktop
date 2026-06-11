@@ -49,6 +49,9 @@ test("desktop-default bootstrap applies once into canonical desktop files", () =
         displayId: "primary"
       }
     },
+    market: {
+      apiBaseUrl: "https://zenmind.cc/market/api/v1"
+    },
     sso: {
       enabled: true,
       identityProviderHost: "business.example.com"
@@ -74,6 +77,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", () =
     const desktopRoot = path.join(root, "home", ".zenmind", ".desktop");
     const profile = JSON.parse(fs.readFileSync(path.join(desktopRoot, "config", "desktop", "profile.json"), "utf8"));
     const pet = JSON.parse(fs.readFileSync(path.join(desktopRoot, "config", "desktop", "pet.json"), "utf8"));
+    const market = JSON.parse(fs.readFileSync(path.join(desktopRoot, "config", "marketplace", "settings.json"), "utf8"));
     const sso = JSON.parse(fs.readFileSync(path.join(desktopRoot, "config", "desktop", "sso.json"), "utf8"));
     const website = JSON.parse(fs.readFileSync(path.join(desktopRoot, "data", "websites", "docs", "website.json"), "utf8"));
     const bootstrap = JSON.parse(fs.readFileSync(resolveDesktopBootstrapStatePath(app), "utf8"));
@@ -84,6 +88,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", () =
     assert.equal(pet.enabled, false);
     assert.equal(pet.selectedPetId, "builtin:zenmi");
     assert.equal("boundAgentKey" in pet, false);
+    assert.equal(market.marketApiBaseUrl, "https://zenmind.cc/market/api/v1");
     assert.equal(sso.enabled, true);
     assert.equal(website.id, "docs");
     assert.equal(website.agentKey, "desktopAssistant");

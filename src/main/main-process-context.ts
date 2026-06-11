@@ -235,6 +235,7 @@ export interface MarketplaceIpcHandlerContextDependencies {
   importSkillFromCommand: (...args: any[]) => unknown;
   getPanAuthStatus: (...args: any[]) => unknown;
   importPanPrivateKey: (...args: any[]) => unknown;
+  onMarketCommandResult?: (...args: any[]) => unknown;
 }
 
 export function createMarketplaceIpcHandlerOptions(
@@ -267,7 +268,8 @@ export function createMarketplaceIpcHandlerOptions(
     importSkillFromPath: dependencies.importSkillFromPath,
     importSkillFromCommand: dependencies.importSkillFromCommand,
     getPanAuthStatus: dependencies.getPanAuthStatus,
-    importPanPrivateKey: dependencies.importPanPrivateKey
+    importPanPrivateKey: dependencies.importPanPrivateKey,
+    onMarketCommandResult: dependencies.onMarketCommandResult
   };
 }
 

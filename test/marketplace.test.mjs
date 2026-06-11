@@ -26,6 +26,8 @@ const {
 } = require("../dist-electron/main/marketplace.js");
 const { getPluginInstallDir } = require("../dist-electron/main/plugin-loader.js");
 const { getSkillInstallDir } = require("../dist-electron/main/skill-installer.js");
+const { readDesktopPetStoredState } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
+const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
 const { __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
 
 function createApp(root) {
@@ -35,6 +37,7 @@ function createApp(root) {
       if (name === "userData") return path.join(root, "user-data");
       if (name === "home") return path.join(root, "home");
       if (name === "desktop") return path.join(root, "home", "Desktop");
+      if (name === "temp") return path.join(root, "temp");
       throw new Error(`unexpected getPath(${name})`);
     }
   };
@@ -105,6 +108,27 @@ function writeRootSkillArchive(root, options = {}) {
   fs.mkdirSync(fixtureRoot, { recursive: true });
   fs.writeFileSync(path.join(fixtureRoot, "SKILL.md"), `# ${skillId}\n\nRoot skill.\n`, "utf8");
   execFileSync("tar", ["-czf", archivePath, "-C", fixtureRoot, "SKILL.md"]);
+  return archivePath;
+}
+
+function writePetArchive(root, options = {}) {
+  const petId = options.id ?? "cloud-pet";
+  const fixtureRoot = path.join(root, `fixture-${petId}`);
+  const petRoot = path.join(fixtureRoot, petId);
+  const archivePath = path.join(root, `${petId}.tar.gz`);
+  fs.mkdirSync(petRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(petRoot, "pet.json"),
+    `${JSON.stringify({
+      id: petId,
+      displayName: options.displayName ?? "Cloud Pet",
+      version: options.version ?? "1.0.0",
+      description: "Cloud desktop pet"
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  fs.writeFileSync(path.join(petRoot, "pet-idle.png"), "fake png", "utf8");
+  execFileSync("tar", ["-czf", archivePath, "-C", fixtureRoot, petId]);
   return archivePath;
 }
 
@@ -1045,6 +1069,128 @@ test("listMarketItems falls back to cached catalog when the remote catalog is un
   assert.equal(result.ok, true);
   assert.equal(result.offline, true);
   assert.ok(result.items.some((item) => item.id === "cached-plugin"));
+});
+
+test("listMarketItems exposes pet and cli catalog sections", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-five-types-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const catalog = {
+    schemaVersion: 1,
+    items: [
+      {
+        id: "desk-cat",
+        type: "pet",
+        name: "Desk Cat",
+        version: "1.0.0",
+        description: "A polished desktop pet.",
+        tags: ["pet"],
+        metadata: {
+          previewUrl: "https://assets.example.test/desk-cat.png"
+        },
+        assets: {
+          universal: {
+            url: "https://assets.example.test/desk-cat.tar.gz",
+            sha256: "",
+            sizeBytes: 0,
+            archiveType: "pet"
+          }
+        }
+      },
+      {
+        id: "zenmind-cli",
+        type: "cli",
+        name: "ZenMind CLI",
+        version: "2.0.0",
+        description: "Command line companion.",
+        tags: ["cli"],
+        metadata: {
+          macosInstallCommand: "curl -fsSL https://cli.example.test/install.sh | sh",
+          macosUninstallCommand: "curl -fsSL https://cli.example.test/uninstall.sh | sh"
+        },
+        assets: {}
+      }
+    ]
+  };
+
+  const result = await listMarketItems(app, {
+    catalog,
+    sections: ["pets", "cli"]
+  });
+  const pet = result.items.find((item) => item.id === "desk-cat");
+  const cli = result.items.find((item) => item.id === "zenmind-cli");
+  assert.equal(pet?.type, "pet");
+  assert.equal(pet?.petPreviewAssetPath, "https://assets.example.test/desk-cat.png");
+  assert.equal(cli?.type, "cli");
+  assert.match(cli?.cliInstallCommand ?? "", /install\.sh/);
+  assert.match(cli?.cliUninstallCommand ?? "", /uninstall\.sh/);
+});
+
+test("installMarketItem installs pet packages into desktop pet data", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-pet-install-"));
+  const app = createApp(root);
+  const archivePath = writePetArchive(root, { id: "desk-cat", displayName: "Desk Cat" });
+  const archiveBytes = fs.readFileSync(archivePath);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/desk-cat.tar.gz", archiveBytes]
+  ]), async (baseUrl) => {
+    const result = await installMarketItem(app, "desk-cat", {
+      catalog: {
+        schemaVersion: 1,
+        items: [{
+          id: "desk-cat",
+          type: "pet",
+          name: "Desk Cat",
+          version: "1.0.0",
+          description: "A polished desktop pet.",
+          tags: ["pet"],
+          assets: {
+            universal: {
+              url: `${baseUrl}/desk-cat.tar.gz`,
+              sha256: sha256(archivePath),
+              sizeBytes: archiveBytes.length,
+              archiveType: "pet"
+            }
+          }
+        }]
+      }
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.type, "pet");
+    assert.equal(fs.existsSync(path.join(getDesktopPetsDataRoot(app), "desk-cat", "pet.json")), true);
+    assert.equal(readDesktopPetStoredState(app).appearanceId, "user:desk-cat");
+  });
+});
+
+test("installMarketItem does not execute cli installs from Desktop", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-cli-install-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const result = await installMarketItem(app, "zenmind-cli", {
+    catalog: {
+      schemaVersion: 1,
+      items: [{
+        id: "zenmind-cli",
+        type: "cli",
+        name: "ZenMind CLI",
+        version: "2.0.0",
+        description: "Command line companion.",
+        tags: ["cli"],
+        metadata: {
+          macosInstallCommand: "touch should-not-run"
+        },
+        assets: {}
+      }]
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.type, "cli");
+  assert.equal(fs.existsSync(path.join(root, "should-not-run")), false);
 });
 
 test("installMarketItem downloads and installs Skills API cloud skills", async (t) => {
