@@ -143,6 +143,7 @@ export interface ServicesIpcHandlerContextDependencies {
   getServiceWebviewPreloadUrl: (...args: any[]) => unknown;
   startupRestoreController: unknown;
   importEnvZipToRuntime?: (...args: any[]) => unknown;
+  applyDesktopDefaultSsoDefaults?: (...args: any[]) => unknown;
   loadBuiltinServices?: (...args: any[]) => unknown;
   loadInstalledPlugins?: (...args: any[]) => unknown;
   notifyServicesChanged?: (...args: any[]) => unknown;
@@ -196,6 +197,7 @@ export function createServicesIpcHandlerOptions(
     logStreamSubscriptions: context.state.logStreamSubscriptions,
     startupRestoreController: dependencies.startupRestoreController,
     importEnvZipToRuntime: dependencies.importEnvZipToRuntime,
+    applyDesktopDefaultSsoDefaults: dependencies.applyDesktopDefaultSsoDefaults,
     loadBuiltinServices: dependencies.loadBuiltinServices,
     loadInstalledPlugins: dependencies.loadInstalledPlugins,
     notifyServicesChanged: dependencies.notifyServicesChanged,

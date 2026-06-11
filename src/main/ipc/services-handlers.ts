@@ -7,7 +7,7 @@ type AgentPlatformAvailability =
 export interface ServicesIpcHandlerOptions {
   app: any;
   shell: { showItemInFolder: (p: string) => void; openPath: (p: string) => Promise<string> };
-  platform?: string;
+  platform?: NodeJS.Platform;
 
   // Service manager operations
   listServices: (app: any) => Promise<any[]>;
@@ -68,6 +68,7 @@ export interface ServicesIpcHandlerOptions {
 
   // Environment zip import operations (TDD index-ts-slimming)
   importEnvZipToRuntime?: (app: any, zipPath: string, platform: string) => Promise<{ copiedFiles: number; skippedFiles: number }>;
+  applyDesktopDefaultSsoDefaults?: (app: any, platform: NodeJS.Platform) => unknown;
   loadBuiltinServices?: (app: any) => void;
   loadInstalledPlugins?: (app: any) => void;
   notifyServicesChanged?: () => void;
@@ -176,6 +177,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     startupRestoreController,
     clearSessionCache,
     importEnvZipToRuntime,
+    applyDesktopDefaultSsoDefaults,
     loadBuiltinServices,
     loadInstalledPlugins,
     notifyServicesChanged,
@@ -353,6 +355,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       console.info(
         `[main] imported env.zip: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
       );
+      applyDesktopDefaultSsoDefaults?.(app, platform);
 
       scheduleStartupPreparationAfterEnvDecision();
 

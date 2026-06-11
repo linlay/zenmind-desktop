@@ -163,7 +163,10 @@ import {
   getDataRoot,
   getElectronUserDataRoot
 } from "./user-paths";
-import { applyDesktopDefaultBootstrap } from "./desktop-default-bootstrap";
+import {
+  applyDesktopDefaultBootstrap,
+  applyDesktopDefaultSsoDefaults
+} from "./desktop-default-bootstrap";
 import {
   bundledEnvZipExists,
   generateBackupDirName,
@@ -401,6 +404,7 @@ const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { c
 function initializeUserDataRootsAndSettings() {
   ensureDataRoot(app);
   applyDesktopDefaultBootstrap(app, mainProcessContext.platform);
+  applyDesktopDefaultSsoDefaults(app, mainProcessContext.platform);
   const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
   if (isFirstDesktopInstall) {
     setMainLocale(app, initialLocaleSettings.locale);
@@ -1892,6 +1896,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     loadInstalledPlugins,
     notifyServicesChanged,
     runStartupPreparation,
+    applyDesktopDefaultSsoDefaults,
     oldRootDecisionRef,
     generateBackupDirName,
     migrateOldRootToBackup,
@@ -2165,6 +2170,7 @@ async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: f
     console.info(
       `[main] imported bundled env.zip from ${importResult.sourceZipPath} into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
     );
+    applyDesktopDefaultSsoDefaults(app, mainProcessContext.platform);
     return { ok: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
