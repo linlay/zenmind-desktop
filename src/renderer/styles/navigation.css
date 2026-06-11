@@ -2886,7 +2886,7 @@
 }
 
 .app-shell.is-mac-platform .pan-page-embedded.pan-page-agent-webclient {
-  padding-top: 36px;
+  padding-top: 0;
 }
 
 .app-shell.is-windows-platform .pan-page-embedded.pan-page-agent-webclient {
@@ -2894,14 +2894,7 @@
 }
 
 .app-shell.is-mac-platform .pan-page-embedded.pan-page-agent-webclient::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 36px;
-  app-region: drag;
-  -webkit-app-region: drag;
+  display: none;
 }
 
 .app-shell.is-windows-platform .pan-page-embedded.pan-page-agent-webclient::before {
