@@ -2191,12 +2191,13 @@ export function AppSidebar({
         role="menu"
         aria-label={t("nav.sidebar.fixedTools")}
       >
+        {renderAccountMenuUserItem()}
+        <div className="sidebar-account-menu-divider" aria-hidden="true" />
         {topToolItems.map((item) => renderToolLink(item))}
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
         {middleToolItems.map((item) => renderToolLink(item))}
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
         {settingsToolItems.map((item) => renderToolLink(item))}
-        {renderAccountMenuUserItem()}
       </div>
     );
   }
