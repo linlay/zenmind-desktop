@@ -43,7 +43,6 @@ export function buildServiceWebviewMainWorldScript() {
       return "";
     }
   })();
-  const originalWindowPostMessage = window.postMessage.bind(window);
   const fromMainListeners = new Map();
 
   function emitFromMain(channel, payload) {
@@ -224,31 +223,11 @@ export function buildServiceWebviewMainWorldScript() {
     window.__AGENT_APP_ACCESS_TOKEN = token || undefined;
   }
 
-  function postMessageCompat(original, value, targetOrigin, transfer) {
-    if (isDesktopBridgeRequest(value)) {
-      dispatchToPreload(value);
-      return;
-    }
-    if (transfer === undefined) {
-      original(value, targetOrigin);
-      return;
-    }
-    original(value, targetOrigin, transfer);
-  }
-
   installWebSocketMonitorMetadata();
   installElectronAPICompat();
 
-  try {
-    window.postMessage = function zenmindWindowPostMessage(value, targetOrigin, transfer) {
-      postMessageCompat(originalWindowPostMessage, value, targetOrigin, transfer);
-    };
-  } catch {
-    // Ignore non-writable postMessage environments.
-  }
-
-  // Do not mutate window.parent.postMessage: awaiting form iframes depend on
-  // the browser's native child-to-parent postMessage source semantics.
+  // Keep postMessage native: awaiting form iframes rely on browser-provided
+  // child-to-parent event.source semantics.
   window.addEventListener("message", (event) => {
     if (isDesktopBridgeRequest(event.data)) {
       dispatchToPreload(event.data);

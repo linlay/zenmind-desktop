@@ -44,6 +44,9 @@ function createEventTarget() {
     },
     removeEventListener(type, listener) {
       listeners.get(type)?.delete(listener);
+    },
+    listenerCount(type) {
+      return listeners.get(type)?.size ?? 0;
     }
   };
 }
@@ -73,6 +76,12 @@ function createFakeWindow(options = {}) {
         targetOrigin,
         transfer,
         value
+      });
+      eventTarget.dispatchEvent({
+        data: value,
+        origin: this.location?.origin ?? "",
+        source: this,
+        type: "message"
       });
     },
     sessionStorage: createStorage(),
@@ -134,20 +143,34 @@ test("service webview main-world script does not overwrite parent postMessage", 
   assert.equal(window.parent.postMessage, originalParentPostMessage);
 });
 
+test("service webview main-world script does not overwrite window postMessage", () => {
+  const { window } = createFakeWindow();
+  const originalWindowPostMessage = window.postMessage;
+
+  runMainWorldScript(window);
+
+  assert.equal(window.postMessage, originalWindowPostMessage);
+});
+
 test("service webview main-world script forwards ordinary postMessage calls", () => {
   const { originalPostMessageCalls, window } = createFakeWindow();
+  const captured = [];
   const payload = { type: "ordinary-message" };
 
   runMainWorldScript(window);
+  window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
+    captured.push(event.detail);
+  });
   window.postMessage(payload, "*");
 
   assert.equal(originalPostMessageCalls.length, 1);
   assert.equal(originalPostMessageCalls[0].receiver, window);
   assert.equal(originalPostMessageCalls[0].targetOrigin, "*");
   assert.equal(originalPostMessageCalls[0].value, payload);
+  assert.deepEqual(captured, []);
 });
 
-test("service webview main-world script still dispatches desktop bridge requests", () => {
+test("service webview main-world script dispatches desktop bridge requests from native message events", () => {
   const { originalPostMessageCalls, window } = createFakeWindow();
   const captured = [];
   const payload = {
@@ -162,6 +185,7 @@ test("service webview main-world script still dispatches desktop bridge requests
   });
   window.postMessage(payload, "*");
 
-  assert.equal(originalPostMessageCalls.length, 0);
+  assert.equal(originalPostMessageCalls.length, 1);
+  assert.equal(originalPostMessageCalls[0].value, payload);
   assert.deepEqual(captured, [payload]);
 });
