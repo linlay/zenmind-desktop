@@ -1149,12 +1149,11 @@
   position: relative;
   display: flex;
   align-items: center;
-  width: calc(100% - 20px);
-  margin: 0 10px;
+  width: 100%;
   min-height: 34px;
   padding: 9px 9px 9px 18px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   background: transparent;
   box-shadow: none;
   color: var(--ink-soft);
@@ -1325,8 +1324,7 @@
 }
 
 .assistant-worker-more {
-  width: calc(100% - 20px);
-  margin: 0 10px;
+  width: 100%;
   border: 0;
   background: transparent;
   padding: 0 9px 9px;

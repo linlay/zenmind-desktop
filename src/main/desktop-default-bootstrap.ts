@@ -53,8 +53,24 @@ function writeJsonFile(filePath: string, value: unknown) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
+function pathApiForRuntimeRoot(platform: NodeJS.Platform, runtimeRoot: string) {
+  if (platform === "win32") {
+    // Cross-platform tests inject POSIX temp directories while simulating Windows behavior.
+    if (path.posix.isAbsolute(runtimeRoot)) {
+      return path.posix;
+    }
+    return path.win32;
+  }
+  if (platform === "darwin") {
+    return path.posix;
+  }
+  return path.posix;
+}
+
 export function resolveDesktopDefaultPath(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
-  return path.join(resolveRuntimeRoot(app, platform), DESKTOP_DEFAULT_FILE);
+  const runtimeRoot = resolveRuntimeRoot(app, platform);
+  const pathApi = pathApiForRuntimeRoot(platform, runtimeRoot);
+  return pathApi.join(runtimeRoot, DESKTOP_DEFAULT_FILE);
 }
 
 export function resolveDesktopBootstrapStatePath(app: AppPathReader) {
@@ -158,14 +174,27 @@ function applySsoDefaults(app: App, ssoDefaults: unknown, platform: NodeJS.Platf
     return "absent";
   }
   const ssoPath = resolveDesktopSsoConfigPath(app, platform);
-  const runtimeRoot = path.dirname(resolveDesktopDefaultPath(app, platform));
-  const legacySsoPath = path.join(runtimeRoot, "desktop-sso.json");
-  const rootSsoPath = path.join(runtimeRoot, "sso.json");
+  const runtimeRoot = resolveRuntimeRoot(app, platform);
+  const pathApi = pathApiForRuntimeRoot(platform, runtimeRoot);
+  const legacySsoPath = pathApi.join(runtimeRoot, "desktop-sso.json");
+  const rootSsoPath = pathApi.join(runtimeRoot, "sso.json");
   if (fs.existsSync(ssoPath) || fs.existsSync(legacySsoPath) || fs.existsSync(rootSsoPath)) {
     return "skipped";
   }
   writeJsonFile(ssoPath, ssoDefaults);
   return "applied";
+}
+
+export function applyDesktopDefaultSsoDefaults(
+  app: App,
+  platform: NodeJS.Platform = process.platform
+): BootstrapApplyResult["sso"] {
+  const defaultPath = resolveDesktopDefaultPath(app, platform);
+  const defaults = readJsonFile(defaultPath);
+  if (!isRecord(defaults)) {
+    return "absent";
+  }
+  return applySsoDefaults(app, defaults.sso, platform);
 }
 
 function normalizeWebsiteDefaults(websites: unknown) {
@@ -223,6 +252,7 @@ export function applyDesktopDefaultBootstrap(
 export const __testInternals = {
   DESKTOP_DEFAULT_FILE,
   BOOTSTRAP_STATE_FILE,
+  pathApiForRuntimeRoot,
   applyProfileDefaults,
   applyPetDefaults,
   applySsoDefaults,
