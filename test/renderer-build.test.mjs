@@ -49,6 +49,7 @@ function readSharedContractsSource() {
     readSourceFile("src", "shared", "contracts", "attachments.ts"),
     readSourceFile("src", "shared", "contracts", "marketplace.ts"),
     readSourceFile("src", "shared", "contracts", "task-board.ts"),
+    readSourceFile("src", "shared", "contracts", "websites.ts"),
     readSourceFile("src", "shared", "contracts", "desktop-api.ts")
   ].join("\n");
 }
@@ -2086,6 +2087,37 @@ test("custom sidebar agent association is exposed across desktop api layers", ()
   assert.match(appSidebar, /网站名[\s\S]*?网页地址[\s\S]*?侧边智能助手/);
   assert.match(appSidebar, /onCreateCustomSidebarItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}\)/);
   assert.match(appSidebar, /requestNavigate\(`\/custom-sidebar\/\$\{result\.item\.id\}`\)/);
+});
+
+test("local website apps expose desktop api and start from sidebar route", () => {
+  const contracts = readSharedContractsSource();
+  const websiteContracts = readSourceFile("src", "shared", "contracts", "websites.ts");
+  const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
+  const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
+  const websiteHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "website-handlers.ts"), "utf8");
+  const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
+  const desktopActionBridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
+  const appShell = readAppShellSource();
+  const embeddedSurfaceHosts = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx"),
+    "utf8"
+  );
+
+  assert.match(websiteContracts, /export interface WebsiteLocalAppEntry/);
+  assert.match(contracts, /websites:\s*\{[\s\S]*list: \(\) => Promise<WebsiteListResult>/);
+  assert.match(contracts, /start: \(id: string\) => Promise<WebsiteCommandResult>/);
+  assert.match(preload, /websites:\s*\{[\s\S]*list: \(\) => ipcRenderer\.invoke\("websites\.list"\)/);
+  assert.match(preload, /start: \(id: string\) => ipcRenderer\.invoke\("websites\.start", id\)/);
+  assert.match(websiteHandlers, /ipcMain\.handle\("websites\.start"[\s\S]*websiteAppRuntime\.start\(app, id\)/);
+  assert.match(appShell, /window\.electronAPI\.websites\.list\(\)/);
+  assert.match(appShell, /item\.kind !== "local-app"/);
+  assert.match(appShell, /window\.electronAPI\.websites\.start\(item\.id\)/);
+  assert.match(embeddedSurfaceHosts, /runtimeStatus/);
+  assert.match(embeddedSurfaceHosts, /正在启动/);
+  assert.match(mainProcess, /installBundledWebsiteTemplates\(app\)/);
+  assert.match(mainProcess, /stopAllWebsiteApps\(app\)/);
+  assert.match(desktopActions, /"desktop\.websites\.start"/);
+  assert.match(desktopActionBridge, /case "desktop\.websites\.restart"/);
 });
 
 test("assistant navigation agents are exposed through dedicated ipc without changing pet agents", () => {

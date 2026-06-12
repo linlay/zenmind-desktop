@@ -1,25 +1,25 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
-import type { CustomSidebarItem, CustomSidebarItemInput, CustomSidebarUpdateInput } from "../../shared/contracts";
+import type { CustomSidebarItem, CustomSidebarItemInput, CustomSidebarUpdateInput, WebsiteExternalEntry } from "../../shared/contracts";
 import { getDesktopConfigRoot, getDesktopWebsitesDataRoot } from "../user-paths";
+import {
+  WEBSITE_FILE,
+  createExternalWebsiteItem,
+  getWebsitePath,
+  normalizeAgentKey,
+  normalizeWebsiteId,
+  normalizeWebsiteLabel,
+  normalizeWebsiteUrl,
+  readExternalWebsiteItems,
+  writeExternalWebsiteItems
+} from "../websites/website-store";
 
-const WEBSITE_FILE = "website.json";
 const LEGACY_CUSTOM_SIDEBAR_FILE = "custom-sidebar-items.json";
 const MAX_CUSTOM_SIDEBAR_ITEMS = 14;
 
 type StoredCustomSidebarItems = {
   items: CustomSidebarItem[];
-};
-
-type StoredWebsite = {
-  schemaVersion?: unknown;
-  id?: unknown;
-  label?: unknown;
-  url?: unknown;
-  agentKey?: unknown;
-  createdAt?: unknown;
-  updatedAt?: unknown;
 };
 
 function getCustomSidebarPath(app: App) {
@@ -30,94 +30,54 @@ function getWebsitesRoot(app: App) {
   return getDesktopWebsitesDataRoot(app);
 }
 
-function normalizeWebsiteId(value: string) {
-  const normalized = value
-    .trim()
-    .replace(/^user:/u, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, 80);
-  return normalized || createItemId();
+function toCustomSidebarItem(item: WebsiteExternalEntry): CustomSidebarItem {
+  return {
+    id: item.id,
+    label: item.label,
+    url: item.url,
+    ...(item.agentKey ? { agentKey: item.agentKey } : {}),
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  };
 }
 
-function getWebsiteDir(app: App, id: string) {
-  return path.join(getWebsitesRoot(app), normalizeWebsiteId(id));
+function toExternalWebsiteItem(item: CustomSidebarItem): WebsiteExternalEntry {
+  return {
+    id: item.id,
+    kind: "external",
+    label: item.label,
+    url: item.url,
+    ...(item.agentKey ? { agentKey: item.agentKey } : {}),
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  };
 }
 
-function getWebsitePath(app: App, id: string) {
-  return path.join(getWebsiteDir(app, id), WEBSITE_FILE);
-}
-
-function createItemId() {
-  return `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function normalizeUrl(inputUrl: string) {
-  const raw = inputUrl.trim();
-  if (!raw) {
-    throw new Error("网站地址不能为空。");
+function readItems(app: App): CustomSidebarItem[] {
+  const websiteItems = readExternalWebsiteItems(app).map(toCustomSidebarItem);
+  if (websiteItems.length > 0) {
+    return websiteItems;
   }
 
-  const withProtocol = /^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`;
-  let parsed: URL;
-  try {
-    parsed = new URL(withProtocol);
-  } catch {
-    throw new Error("请输入有效的网站地址，例如 www.baidu.com。");
-  }
-
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("仅支持 http 或 https 网站地址。");
-  }
-  if (!parsed.hostname) {
-    throw new Error("请输入有效的网站地址，例如 www.baidu.com。");
-  }
-  return parsed.toString();
-}
-
-function normalizeLabel(inputLabel: string | undefined, url: string) {
-  const trimmed = (inputLabel ?? "").trim();
-  if (trimmed) {
-    return trimmed.slice(0, 24);
+  const targetPath = getCustomSidebarPath(app);
+  if (!fs.existsSync(targetPath)) {
+    return [];
   }
 
   try {
-    const hostname = new URL(url).hostname.replace(/^www\./i, "");
-    const knownLabels: Record<string, string> = {
-      "baidu.com": "百度"
-    };
-    if (knownLabels[hostname]) {
-      return knownLabels[hostname];
+    const legacyItems = parseItemsFileContent(fs.readFileSync(targetPath, "utf8"));
+    if (legacyItems.length > 0) {
+      writeItems(app, legacyItems);
     }
-    const firstPart = hostname.split(".")[0];
-    return firstPart ? firstPart.slice(0, 24) : "自定义网站";
-  } catch {
-    return "自定义网站";
+    return legacyItems;
+  } catch (error) {
+    console.warn("failed to read custom sidebar items", error);
+    return [];
   }
 }
 
-function normalizeAgentKey(inputAgentKey: unknown) {
-  if (typeof inputAgentKey !== "string") {
-    return undefined;
-  }
-  const normalized = inputAgentKey.trim();
-  return normalized || undefined;
-}
-
-function toTimestamp(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) ? parsed : Date.now();
-  }
-  return Date.now();
-}
-
-function toIsoTimestamp(value: number) {
-  return new Date(Number.isFinite(value) ? value : Date.now()).toISOString();
+function writeItems(app: App, items: CustomSidebarItem[]) {
+  writeExternalWebsiteItems(app, sanitizeItems(items).map(toExternalWebsiteItem));
 }
 
 function normalizeItem(item: Partial<CustomSidebarItem>): CustomSidebarItem | null {
@@ -126,17 +86,14 @@ function normalizeItem(item: Partial<CustomSidebarItem>): CustomSidebarItem | nu
   }
 
   try {
-    const url = normalizeUrl(item.url);
-    const now = Date.now();
-    const agentKey = normalizeAgentKey(item.agentKey);
-    return {
-      id: normalizeWebsiteId(item.id.trim() || createItemId()),
-      label: normalizeLabel(item.label, url),
-      url,
-      ...(agentKey ? { agentKey } : {}),
-      createdAt: item.createdAt === undefined ? now : toTimestamp(item.createdAt),
-      updatedAt: item.updatedAt === undefined ? now : toTimestamp(item.updatedAt)
-    };
+    return toCustomSidebarItem(createExternalWebsiteItem({
+      id: item.id.trim() || normalizeWebsiteId(""),
+      label: item.label,
+      url: item.url,
+      agentKey: item.agentKey,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    }));
   } catch {
     return null;
   }
@@ -180,93 +137,6 @@ function parseItemsFileContent(content: string) {
   return sanitizeItems(parseItemsPayload(parsed));
 }
 
-function normalizeWebsiteFile(value: unknown): CustomSidebarItem | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const website = value as StoredWebsite;
-  return normalizeItem({
-    id: typeof website.id === "string" ? website.id : "",
-    label: typeof website.label === "string" ? website.label : "",
-    url: typeof website.url === "string" ? website.url : "",
-    agentKey: typeof website.agentKey === "string" ? website.agentKey : undefined,
-    createdAt: toTimestamp(website.createdAt),
-    updatedAt: toTimestamp(website.updatedAt)
-  });
-}
-
-function readWebsiteItems(app: App) {
-  const root = getWebsitesRoot(app);
-  if (!fs.existsSync(root)) {
-    return [];
-  }
-  const items: CustomSidebarItem[] = [];
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-    const websitePath = path.join(root, entry.name, WEBSITE_FILE);
-    try {
-      const item = normalizeWebsiteFile(JSON.parse(fs.readFileSync(websitePath, "utf8")));
-      if (item) {
-        items.push(item);
-      }
-    } catch (error) {
-      console.warn("failed to read website item", websitePath, error);
-    }
-  }
-  return sanitizeItems(items).sort((a, b) => a.createdAt - b.createdAt || a.label.localeCompare(b.label, "zh-CN"));
-}
-
-function readItems(app: App): CustomSidebarItem[] {
-  const websiteItems = readWebsiteItems(app);
-  if (websiteItems.length > 0) {
-    return websiteItems;
-  }
-
-  const targetPath = getCustomSidebarPath(app);
-  if (!fs.existsSync(targetPath)) {
-    return [];
-  }
-
-  try {
-    const legacyItems = parseItemsFileContent(fs.readFileSync(targetPath, "utf8"));
-    if (legacyItems.length > 0) {
-      writeItems(app, legacyItems);
-    }
-    return legacyItems;
-  } catch (error) {
-    console.warn("failed to read custom sidebar items", error);
-    return [];
-  }
-}
-
-function writeItems(app: App, items: CustomSidebarItem[]) {
-  const root = getWebsitesRoot(app);
-  fs.mkdirSync(root, { recursive: true });
-  const normalizedItems = sanitizeItems(items);
-  const expectedDirs = new Set(normalizedItems.map((item) => normalizeWebsiteId(item.id)));
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (entry.isDirectory() && !expectedDirs.has(entry.name)) {
-      fs.rmSync(path.join(root, entry.name), { recursive: true, force: true });
-    }
-  }
-  for (const item of normalizedItems) {
-    const websiteId = normalizeWebsiteId(item.id);
-    const targetPath = getWebsitePath(app, websiteId);
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    fs.writeFileSync(targetPath, `${JSON.stringify({
-      schemaVersion: 1,
-      id: websiteId,
-      label: item.label,
-      url: item.url,
-      ...(item.agentKey ? { agentKey: item.agentKey } : {}),
-      createdAt: toIsoTimestamp(item.createdAt),
-      updatedAt: toIsoTimestamp(item.updatedAt)
-    }, null, 2)}\n`, "utf8");
-  }
-}
-
 export function listCustomSidebarItems(app: App) {
   return {
     ok: true,
@@ -287,7 +157,7 @@ export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
   }
 
   try {
-    const url = normalizeUrl(input.url);
+    const url = normalizeWebsiteUrl(input.url);
     const existing = items.find((item) => item.url === url);
     if (existing) {
       return {
@@ -301,8 +171,8 @@ export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
     const now = Date.now();
     const agentKey = normalizeAgentKey(input.agentKey);
     const item: CustomSidebarItem = {
-      id: normalizeWebsiteId(createItemId()),
-      label: normalizeLabel(input.label, url),
+      id: normalizeWebsiteId(""),
+      label: normalizeWebsiteLabel(input.label, url),
       url,
       ...(agentKey ? { agentKey } : {}),
       createdAt: now,
@@ -347,7 +217,7 @@ export function updateCustomSidebarItem(app: App, id: string, input: CustomSideb
 
   try {
     if (typeof input.url === "string") {
-      const nextUrl = normalizeUrl(input.url);
+      const nextUrl = normalizeWebsiteUrl(input.url);
       const duplicate = items.find((item) => item.id !== normalizedId && item.url === nextUrl);
       if (duplicate) {
         return {
@@ -361,7 +231,7 @@ export function updateCustomSidebarItem(app: App, id: string, input: CustomSideb
     }
 
     if (typeof input.label === "string" || typeof input.url === "string") {
-      updated.label = normalizeLabel(input.label ?? target.label, updated.url);
+      updated.label = normalizeWebsiteLabel(input.label ?? target.label, updated.url);
     }
 
     if (typeof input.agentKey === "string") {
@@ -474,8 +344,8 @@ export const __testInternals = {
   getWebsitePath,
   WEBSITE_FILE,
   LEGACY_CUSTOM_SIDEBAR_FILE,
-  normalizeUrl,
-  normalizeLabel,
+  normalizeUrl: normalizeWebsiteUrl,
+  normalizeLabel: normalizeWebsiteLabel,
   normalizeWebsiteId,
   normalizeAgentKey,
   parseItemsFileContent

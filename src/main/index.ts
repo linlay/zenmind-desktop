@@ -58,6 +58,8 @@ import {
   prepareQuitUi as prepareQuitUiFromCleanup
 } from "./shutdown-cleanup";
 import { stopAllStaticSiteHosts } from "./static-site-host-manager";
+import { stopAllWebsiteApps, websiteAppRuntime } from "./websites/website-app-runtime";
+import { installBundledWebsiteTemplates } from "./websites/website-template-installer";
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
@@ -237,6 +239,7 @@ import { registerSsoIpcHandlers } from "./ipc/sso-handlers";
 import { registerSettingsIpcHandlers } from "./ipc/settings-handlers";
 import { registerMarketplaceIpcHandlers } from "./ipc/marketplace-handlers";
 import { registerWebviewDevToolsIpcHandlers } from "./ipc/webview-devtools-handlers";
+import { listWebsiteEntries, registerWebsiteIpcHandlers } from "./ipc/website-handlers";
 import {
   isQuickAssistantMediaPermissionAllowed,
 } from "./copilot/quick-copilot/quick-copilot";
@@ -338,9 +341,24 @@ const startupRestoreController = createStartupRestoreController({
     appState.mainWindow.webContents.send("services.startupRestoreState", state);
   }
 });
+function listBrowserRegistryWebsiteItems() {
+  const entries = listWebsiteEntries(app).items;
+  return {
+    items: entries.flatMap((item) => {
+      if (item.kind === "external") {
+        return [{ id: item.id, label: item.label, url: item.url, agentKey: item.agentKey }];
+      }
+      const state = websiteAppRuntime.getStatus(app, item.id);
+      if (!state?.webUrl) {
+        return [];
+      }
+      return [{ id: item.id, label: item.label, url: state.webUrl, agentKey: item.agentKey }];
+    })
+  };
+}
 const browserSurfaceRegistry = createBrowserSurfaceRegistry({
   webContents,
-  listCustomSidebarItems: () => listCustomSidebarItems(app),
+  listCustomSidebarItems: listBrowserRegistryWebsiteItems,
   getCurrentPageSnapshot: () => appState.currentPageSnapshot
 });
 const cdpIntegration = createCdpIntegration({
@@ -403,6 +421,10 @@ const envZipConflictNeedsDecision = shouldPromptEnvRootConflict({
 const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
 function initializeUserDataRootsAndSettings() {
   ensureDataRoot(app);
+  const websiteTemplateResult = installBundledWebsiteTemplates(app);
+  if (!websiteTemplateResult.ok) {
+    console.warn(`[main] ${websiteTemplateResult.message}`);
+  }
   applyDesktopDefaultBootstrap(app, mainProcessContext.platform);
   applyDesktopDefaultSsoDefaults(app, mainProcessContext.platform);
   const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
@@ -2010,6 +2032,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     showSaveDialog,
     getDataRoot
   }));
+  registerWebsiteIpcHandlers(ipcMain, { app });
   registerDesktopPetIpcHandlers(ipcMain, createDesktopPetIpcHandlerOptions(context, {
     clearActiveRuns: () => {
       clearDesktopPetActiveRuns();
@@ -2192,6 +2215,10 @@ function runShutdownCleanup(): Promise<void> {
     () => stopAllStaticSiteHosts()
       .catch((error) => {
         console.error("failed while shutting down static site hosts", error);
+      })
+      .then(() => stopAllWebsiteApps(app))
+      .catch((error) => {
+        console.error("failed while shutting down website apps", error);
       })
       .then(() => stopRunningServicesForShutdown(app))
       .catch((error) => {

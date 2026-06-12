@@ -3,6 +3,7 @@ import type { ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadRe
 import type { PluginInstallResult } from "./manifest";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { CustomSidebarDeleteResult, CustomSidebarItemInput, CustomSidebarItemResult, CustomSidebarItemsResult, CustomSidebarTransferResult, CustomSidebarUpdateInput } from "./navigation";
+import type { WebsiteCommandResult, WebsiteListResult, WebsiteLogReadOptions, WebsiteLogReadResult, WebsiteLogTarget, WebsiteStatusResult } from "./websites";
 import type { DesktopPetAgentOption, DesktopPetDanceRequestedListener, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetState, DesktopPetStateListener } from "./pet-copilot";
 import type { MarketCommandResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { TaskBoardChangedListener, TaskBoardCloudConfig, TaskBoardCloudConfigResult, TaskBoardDeleteResult, TaskBoardDesktopOnlineResult, TaskBoardIssueInput, TaskBoardIssueMoveInput, TaskBoardIssueResult, TaskBoardIssueUpdateInput, TaskBoardListResult } from "./task-board";
@@ -339,6 +340,18 @@ export interface DesktopApi {
     remove: (id: string) => Promise<CustomSidebarDeleteResult>;
     import: () => Promise<CustomSidebarTransferResult>;
     export: () => Promise<CustomSidebarTransferResult>;
+  };
+  websites: {
+    list: () => Promise<WebsiteListResult>;
+    start: (id: string) => Promise<WebsiteCommandResult>;
+    stop: (id: string) => Promise<WebsiteCommandResult>;
+    restart: (id: string) => Promise<WebsiteCommandResult>;
+    getStatus: (id: string) => Promise<WebsiteStatusResult>;
+    readLog: (
+      id: string,
+      target: WebsiteLogTarget,
+      options?: WebsiteLogReadOptions
+    ) => Promise<WebsiteLogReadResult>;
   };
   onNavigate: (listener: NavigateListener) => () => void;
   onServicesChanged: (listener: ServicesChangedListener) => () => void;

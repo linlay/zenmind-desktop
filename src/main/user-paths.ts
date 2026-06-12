@@ -107,6 +107,7 @@ function ensureDesktopDirs(dataRoot: string) {
   ensureDirectory(path.join(dataRoot, "config", "desktop"));
   ensureDirectory(path.join(dataRoot, "config", "services"));
   ensureDirectory(path.join(dataRoot, "config", "plugins"));
+  ensureDirectory(path.join(dataRoot, "config", "websites"));
   ensureDirectory(path.join(dataRoot, "data", "services"));
   ensureDirectory(path.join(dataRoot, "data", "plugins"));
   ensureDirectory(path.join(dataRoot, "data", "pets"));
@@ -114,8 +115,10 @@ function ensureDesktopDirs(dataRoot: string) {
   ensureDirectory(path.join(dataRoot, "data", "env-initial"));
   ensureDirectory(path.join(dataRoot, "state", "desktop"));
   ensureDirectory(path.join(dataRoot, "state", "services"));
+  ensureDirectory(path.join(dataRoot, "state", "websites"));
   ensureDirectory(path.join(dataRoot, "logs", "services"));
   ensureDirectory(path.join(dataRoot, "logs", "plugins"));
+  ensureDirectory(path.join(dataRoot, "logs", "websites"));
   ensureDirectory(path.join(dataRoot, "cache", "marketplace"));
   ensureDirectory(path.join(dataRoot, "profiles", "electron"));
 }
@@ -186,6 +189,26 @@ export function getDesktopPetsDataRoot(app: App) {
 
 export function getDesktopWebsitesDataRoot(app: App) {
   return path.join(getRuntimeDataRoot(app), "websites");
+}
+
+export function getDesktopWebsitesConfigRoot(app: App) {
+  return path.join(getDataRoot(app), "config", "websites");
+}
+
+export function getDesktopWebsitesStateRoot(app: App) {
+  return path.join(getDataRoot(app), "state", "websites");
+}
+
+export function getDesktopWebsiteStateRoot(app: App, websiteId: string) {
+  return path.join(getDesktopWebsitesStateRoot(app), websiteId);
+}
+
+export function getDesktopWebsitesLogsRoot(app: App) {
+  return path.join(getDataRoot(app), "logs", "websites");
+}
+
+export function getDesktopWebsiteLogsRoot(app: App, websiteId: string) {
+  return path.join(getDesktopWebsitesLogsRoot(app), websiteId);
 }
 
 export function getDesktopInitialEnvDataRoot(app: App) {

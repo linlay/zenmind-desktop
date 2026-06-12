@@ -2,6 +2,7 @@ export * from "./contracts/services";
 export * from "./contracts/manifest";
 export * from "./contracts/startup";
 export * from "./contracts/navigation";
+export * from "./contracts/websites";
 export * from "./contracts/pet-copilot";
 export * from "./contracts/copilot";
 export * from "./contracts/attachments";

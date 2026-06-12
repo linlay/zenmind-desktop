@@ -22,6 +22,7 @@ import type {
   CustomSidebarItemResult,
   DesktopSsoStatus,
   ServiceState,
+  WebsiteListItem,
 } from "../../../shared/contracts";
 import {
   createCustomSidebarNavOrderKey,
@@ -650,7 +651,7 @@ type AppSidebarProps = {
   assistantLauncherVisible?: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
   customSidebarNavOrder?: SidebarNavOrderItemKey[];
-  customSidebarItems: CustomSidebarItem[];
+  customSidebarItems: WebsiteListItem[];
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantNavAgentsLoaded?: boolean;
   copilotAgentOptions?: AssistantNavAgentItem[];

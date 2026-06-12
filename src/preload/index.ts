@@ -397,6 +397,14 @@ const api: DesktopApi = {
     import: () => ipcRenderer.invoke("customSidebar.import"),
     export: () => ipcRenderer.invoke("customSidebar.export")
   },
+  websites: {
+    list: () => ipcRenderer.invoke("websites.list"),
+    start: (id: string) => ipcRenderer.invoke("websites.start", id),
+    stop: (id: string) => ipcRenderer.invoke("websites.stop", id),
+    restart: (id: string) => ipcRenderer.invoke("websites.restart", id),
+    getStatus: (id: string) => ipcRenderer.invoke("websites.getStatus", id),
+    readLog: (id, target, options) => ipcRenderer.invoke("websites.readLog", id, target, options)
+  },
   onNavigate: (listener: NavigateListener) => {
     const handleNavigate = (_event: Electron.IpcRendererEvent, path: string) => {
       listener(path);

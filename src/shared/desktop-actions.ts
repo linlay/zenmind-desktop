@@ -60,6 +60,12 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.staticServer.stop", kind: "execute", category: "staticServer", description: "Stop a Desktop-managed static server." },
   { name: "desktop.staticServer.restart", kind: "execute", category: "staticServer", description: "Restart a Desktop-managed static server." },
 
+  { name: "desktop.websites.list", kind: "read", category: "websites", description: "List Desktop website entries and local apps." },
+  { name: "desktop.websites.getStatus", kind: "read", category: "websites", description: "Read a local website app runtime status." },
+  { name: "desktop.websites.start", kind: "execute", category: "websites", description: "Start a local website app." },
+  { name: "desktop.websites.stop", kind: "execute", category: "websites", description: "Stop a local website app." },
+  { name: "desktop.websites.restart", kind: "execute", category: "websites", description: "Restart a local website app." },
+
   { name: "desktop.market.getSettings", kind: "read", category: "market", description: "Read market settings." },
   { name: "desktop.market.validateSettings", kind: "validate", category: "market", description: "Validate market settings." },
   { name: "desktop.market.previewSettingsPatch", kind: "preview", category: "market", description: "Preview market settings changes." },

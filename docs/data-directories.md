@@ -36,18 +36,28 @@ CuteJ 品牌对应：
     │   ├── websites/
     │   │   └── <website-id>/
     │   │       ├── website.json
+    │   │       ├── frontend/
+    │   │       ├── backend/
     │   │       └── icon.png
     │   ├── env-initial/
     │   │   ├── env.zip
     │   │   └── manifest.json
     │   ├── services/
     │   └── plugins/
-    └── state/
-        └── desktop/
-            ├── bootstrap.json
-            ├── env-bootstrap.json
-            ├── pet-state.json
-            └── sso-session.json
+    ├── state/
+    │   ├── desktop/
+    │   │   ├── bootstrap.json
+    │   │   ├── env-bootstrap.json
+    │   │   ├── pet-state.json
+    │   │   └── sso-session.json
+    │   └── websites/
+    │       └── <website-id>/
+    │           └── runtime.json
+    └── logs/
+        └── websites/
+            └── <website-id>/
+                ├── main.log
+                └── error.log
 ```
 
 完整 Desktop 数据根目录还包含服务、插件、日志、缓存、凭据和浏览器 profile：
@@ -60,6 +70,8 @@ CuteJ 品牌对应：
 │   │   ├── pet.json
 │   │   ├── sso.json
 │   │   └── control.json
+│   ├── websites/
+│   │   └── order.json
 │   ├── services/
 │   │   └── <service-id>/
 │   │       └── .env
@@ -73,6 +85,9 @@ CuteJ 品牌对应：
 │   │   └── <pet-id>/
 │   ├── websites/
 │   │   └── <website-id>/
+│   │       ├── website.json
+│   │       ├── frontend/
+│   │       └── backend/
 │   ├── env-initial/
 │   │   ├── env.zip
 │   │   └── manifest.json
@@ -95,12 +110,19 @@ CuteJ 品牌对应：
 │   │   └── <plugin-id>/
 │   │       ├── init-state.json
 │   │       └── pid/
+│   ├── websites/
+│   │   └── <website-id>/
+│   │       └── runtime.json
 │   └── marketplace/
 ├── logs/
 │   ├── services/
 │   │   └── <service-id>/
-│   └── plugins/
-│       └── <plugin-id>/
+│   ├── plugins/
+│   │   └── <plugin-id>/
+│   └── websites/
+│       └── <website-id>/
+│           ├── main.log
+│           └── error.log
 ├── cache/
 │   └── marketplace/
 ├── secrets/
@@ -116,7 +138,7 @@ CuteJ 品牌对应：
 | `config/` | 用户可编辑或 Desktop 管理的配置。 |
 | `data/` | 用户内容和资产，以及服务/插件持久化运行数据，例如用户导入 pet、网站入口、初始 env.zip 留档、数据库、生成的密钥、业务数据文件。 |
 | `state/` | 可由应用重建或更新的运行状态，例如初始化状态、PID 文件、SSO 会话状态、启动恢复状态。 |
-| `logs/` | 服务和插件日志。 |
+| `logs/` | 服务、插件和本地网站小应用日志。 |
 | `cache/` | 可重建缓存，目前包含 marketplace 缓存。 |
 | `secrets/` | Desktop 管理的本地凭据和私钥。 |
 | `profiles/` | Electron 和 Chromium 的浏览器配置数据。 |
@@ -130,7 +152,8 @@ CuteJ 品牌对应：
 - `config/desktop/sso.json`：保存 Desktop SSO 登录配置。session/token 进入 `state/desktop/`。
 - `config/desktop/control.json`：保存控制类设置，目前包含 task board 远端控制配置。
 - `data/pets/<pet-id>/pet.json`：用户导入 pet 的资产描述。内置 pet 使用 `builtin:<id>` 指向应用内置资源，用户 pet 使用 `user:<pet-id>` 指向该目录。
-- `data/websites/<website-id>/website.json`：每个网站一个目录，保存 label、url、agentKey、创建/更新时间等入口信息。
+- `config/websites/order.json`：网站/应用侧边栏排序 canonical 文件；旧 `profile.navigation.websiteOrder` 仅作为迁移来源和兼容返回值。
+- `data/websites/<website-id>/website.json`：每个网站或本地小应用一个目录，保存外部 URL 入口或本地前后端启动规范。
 - `data/env-initial/env.zip`：首个导入或内置的 env.zip 留档。
 - `data/env-initial/manifest.json`：记录 env.zip 来源、版本、sha256、大小和留档时间。
 - `config/services/<service-id>/.env`：保存从服务模板复制或派生出的服务配置。
@@ -142,21 +165,31 @@ CuteJ 品牌对应：
 - `state/desktop/sso-session.json`：保存 Desktop SSO 会话状态。
 - `state/services/<service-id>/init-state.json`：保存服务初始化状态。
 - `state/plugins/<plugin-id>/init-state.json`：保存插件初始化状态。
+- `state/websites/<website-id>/runtime.json`：保存本地网站小应用最近一次运行状态、端口、URL 和 PID。
+- `logs/websites/<website-id>/main.log`：本地网站小应用后端标准输出。
+- `logs/websites/<website-id>/error.log`：本地网站小应用后端错误输出和启动/停止错误。
 - `secrets/pan-private-key.pem`：保存 Desktop 管理的 pan-webclient RSA 私钥。
 - `profiles/electron/`：保存 Electron `userData` profile，包括 Chromium cookie、localStorage、webview session 数据、浏览器缓存等。
 
 ## 内嵌网站存储
 
-内嵌网站入口按网站拆分到 `data/websites/`，一个网站一个目录：
+内嵌网站入口和本地网站小应用统一按网站拆分到 `data/websites/`，一个网站或应用一个目录。外部 URL 网站只需要 `website.json`，本地小应用还可以包含前端、Node 后端和静态资产：
 
 ```text
 ~/<brand-runtime-root>/.desktop/data/websites/
-└── docs/
+├── docs/
+│   ├── website.json
+│   └── icon.png
+└── demo-node-html/
     ├── website.json
-    └── icon.png
+    ├── frontend/
+    │   ├── index.html
+    │   └── app.js
+    └── backend/
+        └── server.mjs
 ```
 
-文件结构如下：
+外部 URL 网站使用 schema v1：
 
 ```json
 {
@@ -170,7 +203,43 @@ CuteJ 品牌对应：
 }
 ```
 
-旧 `config/desktop/custom-sidebar-items.json` 会在首次读取时迁移到新目录。网站自身的浏览器数据不保存在 `website.json` 中。cookie、localStorage、IndexedDB、webview session 数据和缓存由 Electron/Chromium 管理，位于：
+本地网站小应用使用 schema v2：
+
+```json
+{
+  "schemaVersion": 2,
+  "id": "demo-node-html",
+  "kind": "local-app",
+  "label": "Demo App",
+  "frontend": {
+    "root": "frontend",
+    "index": "index.html",
+    "spa": true,
+    "apiPrefix": "/api"
+  },
+  "backend": {
+    "runtime": "node",
+    "entry": "backend/server.mjs",
+    "args": [],
+    "env": {},
+    "port": 0,
+    "healthPath": "/api/health"
+  },
+  "agentKey": "desktopAssistant"
+}
+```
+
+Desktop 点击本地小应用入口时按需启动 Node 后端和本地前端 server。`backend.port: 0` 表示自动分配空闲端口；后端进程会收到 `PORT`、`HOST=127.0.0.1`、`WEBSITE_ID`、`WEBSITE_ROOT`、`WEBSITE_STATE_DIR` 和 `WEBSITE_LOG_DIR`。前端 server 绑定 `127.0.0.1`，并把 `frontend.apiPrefix` 下的请求代理到同一个应用的后端。
+
+Manifest 中的路径必须是项目目录内的相对路径。Desktop 会拒绝绝对路径、`..`、隐藏逃逸、symlink 逃逸和非 `node` 后端 runtime。运行状态和日志分别写入：
+
+```text
+~/<brand-runtime-root>/.desktop/state/websites/<website-id>/runtime.json
+~/<brand-runtime-root>/.desktop/logs/websites/<website-id>/main.log
+~/<brand-runtime-root>/.desktop/logs/websites/<website-id>/error.log
+```
+
+内置 `demo-node-html` 模板在首次启动时复制到 `data/websites/demo-node-html/`，目标已存在时绝不覆盖。旧 `config/desktop/custom-sidebar-items.json` 会在首次读取时迁移到新目录；旧 `customSidebar.*` API 继续只管理外部 URL 网站。网站自身的浏览器数据不保存在 `website.json` 中。cookie、localStorage、IndexedDB、webview session 数据和缓存由 Electron/Chromium 管理，位于：
 
 ```text
 ~/<brand-runtime-root>/.desktop/profiles/electron/

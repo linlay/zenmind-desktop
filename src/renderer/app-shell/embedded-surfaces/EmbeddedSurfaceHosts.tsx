@@ -27,6 +27,8 @@ const PluginPage = lazy(() =>
 type EmbeddedSidebarItem = {
   label: string;
   url: string;
+  runtimeStatus?: "idle" | "starting" | "running" | "error";
+  runtimeMessage?: string;
 };
 
 const AGENT_WEBCLIENT_PLUGIN_ID = AGENT_WEBCLIENT_SERVICE_ID;
@@ -212,6 +214,19 @@ export function CustomSidebarSurfaceHost({
         if (!item) {
           return null;
         }
+        if (!item.url) {
+          if (activeItemId !== itemId) {
+            return null;
+          }
+          const starting = item.runtimeStatus === "starting" || item.runtimeStatus === "idle";
+          return (
+            <PlaceholderPage
+              key={itemId}
+              title={starting ? "正在启动" : "启动失败"}
+              description={item.runtimeMessage || (starting ? "本地网站小应用正在启动。" : "本地网站小应用启动失败，请检查日志。")}
+            />
+          );
+        }
 
         return (
           <ExternalWebviewPage
@@ -241,6 +256,15 @@ export function ExternalItemRoute({
       <PlaceholderPage
         title="入口不存在"
         description="该内嵌网站不存在或已被删除，请在设置中检查。"
+      />
+    );
+  }
+  if (!item.url) {
+    const starting = item.runtimeStatus === "starting" || item.runtimeStatus === "idle";
+    return (
+      <PlaceholderPage
+        title={starting ? "正在启动" : "启动失败"}
+        description={item.runtimeMessage || (starting ? "本地网站小应用正在启动。" : "本地网站小应用启动失败，请检查日志。")}
       />
     );
   }

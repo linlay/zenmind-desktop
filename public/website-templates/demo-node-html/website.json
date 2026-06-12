@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "id": "demo-node-html",
+  "kind": "local-app",
+  "label": "Demo App",
+  "frontend": {
+    "root": "frontend",
+    "index": "index.html",
+    "spa": true,
+    "apiPrefix": "/api"
+  },
+  "backend": {
+    "runtime": "node",
+    "entry": "backend/server.mjs",
+    "args": [],
+    "env": {},
+    "port": 0,
+    "healthPath": "/api/health"
+  },
+  "agentKey": "desktopAssistant"
+}
