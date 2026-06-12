@@ -1777,6 +1777,17 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
     }
   }
 
+  if (service.id === "agent-webclient") {
+    const envPath = layout.envPath;
+    const content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+    const env = parseEnvFileContent(content);
+    const updates = new Map<string, string>();
+    await syncAgentWebclientPlatformUrls(app, env, updates, { force: true });
+    if (updates.size > 0) {
+      writeEnvFileUpdates(envPath, updates);
+    }
+  }
+
   await applyDesktopCapabilityRequirements(app, service, layout, "preStart");
 }
 
