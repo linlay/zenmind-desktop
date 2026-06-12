@@ -1,12 +1,19 @@
 import type { App } from "electron";
 import type { AgentAuthIssueResult, AssistantNavAgentIcon, DesktopPetAgentOption, ServiceId, ServiceState } from "../../../shared/contracts";
+import {
+  DESKTOP_PET_DONE_FALLBACK_TEXT,
+  DESKTOP_PET_STATUS_HINT_TEXTS,
+  sanitizeDesktopPetUnreadCount,
+  toDesktopPetText as toText
+} from "../../../shared/desktop-pet";
 import { getDesktopDeviceId } from "../../device-identity";
+import { createApiUrl } from "./agent-platform-api";
 import type { DesktopPetBoundAgentStatus } from "./desktop-pet";
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_APPEARANCE_OPTIONS,
-  sanitizeDesktopPetBoundAgentKey
+  normalizeDesktopPetBoundAgentKey
 } from "./desktop-pet";
 
 type AgentPlatformApiResponse<T> = {
@@ -62,7 +69,6 @@ const AGENT_PLATFORM_REFRESH_DEBOUNCE_MS = 350;
 const AGENT_PLATFORM_UNAVAILABLE_RETRY_MS = 12_000;
 const AGENT_PLATFORM_DONE_REFRESH_MS = 4_200;
 const AGENT_PLATFORM_DONE_REMINDER_MAX_AGE_MS = 10 * 60 * 1000;
-const AGENT_PLATFORM_DONE_FALLBACK_PREVIEW = "暂无回复预览";
 const DEFAULT_DESKTOP_PET_AGENT_DISPLAY_NAME =
   DESKTOP_PET_APPEARANCE_OPTIONS.find((appearance) => appearance.id === DEFAULT_DESKTOP_PET_APPEARANCE_ID)?.displayName ??
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
@@ -70,20 +76,6 @@ const LEGACY_DESKTOP_PET_BOUND_AGENT_REQUEST_KEYS = new Set([
   "zen",
   DEFAULT_DESKTOP_PET_AGENT_DISPLAY_NAME
 ]);
-const AGENT_PLATFORM_STATUS_PREVIEWS = new Set(["思考中", "已完成", "回复已生成", "出错了", "目标智能体未在线", "打开对话查看完整回复", AGENT_PLATFORM_DONE_FALLBACK_PREVIEW]);
-
-function toText(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function toFiniteNumber(value: unknown) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : 0;
-}
-
-function toUnreadCount(value: unknown) {
-  return Math.max(0, Math.round(toFiniteNumber(value)));
-}
 
 function readUnreadCountFromPush(
   data: Record<string, unknown>,
@@ -91,16 +83,16 @@ function readUnreadCountFromPush(
   fallbackChange: "increment" | "decrement" | "preserve" = "preserve"
 ) {
   if (data.agentUnreadCount !== undefined) {
-    return toUnreadCount(data.agentUnreadCount);
+    return sanitizeDesktopPetUnreadCount(data.agentUnreadCount);
   }
   if (data.unreadCount !== undefined) {
-    return toUnreadCount(data.unreadCount);
+    return sanitizeDesktopPetUnreadCount(data.unreadCount);
   }
   if (fallbackChange === "increment") {
-    return toUnreadCount(fallback + 1);
+    return sanitizeDesktopPetUnreadCount(fallback + 1);
   }
   if (fallbackChange === "decrement") {
-    return toUnreadCount(fallback - 1);
+    return sanitizeDesktopPetUnreadCount(fallback - 1);
   }
   return fallback;
 }
@@ -130,11 +122,6 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 function toArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
-}
-
-function createApiUrl(baseUrl: string, pathname: string) {
-  const url = new URL(pathname, baseUrl);
-  return url.toString();
 }
 
 const DESKTOP_PET_STATUS_WS_SOURCE = "desktop-pet";
@@ -239,7 +226,7 @@ export function toDesktopPetAgentOptions(agentsInput: unknown): DesktopPetAgentO
         displayName: getAgentDisplayName(agent) || agentKey,
         role: toText(agent.role),
         ...(icon ? { icon } : {}),
-        unreadCount: Math.max(0, Math.round(toFiniteNumber(agent.stats?.unreadCount)))
+        unreadCount: sanitizeDesktopPetUnreadCount(agent.stats?.unreadCount)
       };
     })
     .filter((agent): agent is DesktopPetAgentOption => Boolean(agent))
@@ -262,7 +249,7 @@ export function resolveAgentPlatformPetBoundAgentKey(
   resolvedKey: string;
   agent: AgentSummary | null;
 } {
-  const requestedKey = sanitizeDesktopPetBoundAgentKey(boundAgentKey);
+  const requestedKey = normalizeDesktopPetBoundAgentKey(boundAgentKey);
   const agents = toArray(agentsInput) as AgentSummary[];
   const exactAgent = findAgentByKey(agents, requestedKey);
   if (exactAgent) {
@@ -348,9 +335,9 @@ function readCompletionPreview(data: Record<string, unknown>, fallback = "") {
     return directPreview;
   }
   const fallbackPreview = toText(fallback);
-  return fallbackPreview && !AGENT_PLATFORM_STATUS_PREVIEWS.has(fallbackPreview)
+  return fallbackPreview && !DESKTOP_PET_STATUS_HINT_TEXTS.has(fallbackPreview)
     ? fallbackPreview
-    : AGENT_PLATFORM_DONE_FALLBACK_PREVIEW;
+    : DESKTOP_PET_DONE_FALLBACK_TEXT;
 }
 
 function getFrameChatId(frame: AgentPlatformPetPushFrame) {
@@ -380,7 +367,7 @@ export function buildAgentPlatformPetStatus(input: {
   updatedAt?: string;
 }): DesktopPetBoundAgentStatus {
   const agents = toArray(input.agents) as AgentSummary[];
-  const requestedBoundAgentKey = input.boundAgentKey ? sanitizeDesktopPetBoundAgentKey(input.boundAgentKey) : "";
+  const requestedBoundAgentKey = input.boundAgentKey ? normalizeDesktopPetBoundAgentKey(input.boundAgentKey) : "";
   const allChats = (toArray(input.chats) as ChatSummary[]).sort(compareChatFreshness);
   const resolved = requestedBoundAgentKey
     ? resolveAgentPlatformPetBoundAgentKey(requestedBoundAgentKey, agents)
@@ -425,7 +412,7 @@ export function buildAgentPlatformPetStatus(input: {
     displayName: getAgentDisplayName(matchedAgent) || boundAgentKey,
     role: toText(matchedAgent.role),
     presence: hasPendingAwaiting ? "busy" : "available",
-    unreadCount: chatUnreadCount ?? toUnreadCount(matchedAgent.stats?.unreadCount),
+    unreadCount: chatUnreadCount ?? sanitizeDesktopPetUnreadCount(matchedAgent.stats?.unreadCount),
     latestPreview: toText(relevantChat?.lastRunContent) || toText(relevantChat?.chatName),
     chatId: toText(relevantChat?.chatId) || null,
     hasPendingAwaiting,
@@ -442,7 +429,7 @@ export function applyAgentPlatformPetPush(
   const frameType = toText(frame.type);
   const data = readFrameData(frame);
   const eventAgentKey = readFrameAgentKey(data);
-  const configuredBoundAgentKey = sanitizeDesktopPetBoundAgentKey(boundAgentKey);
+  const configuredBoundAgentKey = normalizeDesktopPetBoundAgentKey(boundAgentKey);
   const normalizedBoundAgentKey = current?.agentKey || configuredBoundAgentKey || eventAgentKey;
   if (configuredBoundAgentKey && eventAgentKey && eventAgentKey !== normalizedBoundAgentKey) {
     return current;
@@ -556,7 +543,7 @@ export function applyAgentPlatformCompletionReminder(
   }
   const data = readFrameData(frame);
   const eventAgentKey = readFrameAgentKey(data);
-  const configuredBoundAgentKey = sanitizeDesktopPetBoundAgentKey(boundAgentKey);
+  const configuredBoundAgentKey = normalizeDesktopPetBoundAgentKey(boundAgentKey);
   const normalizedBoundAgentKey = current?.agentKey || configuredBoundAgentKey || eventAgentKey;
   if (configuredBoundAgentKey && eventAgentKey && eventAgentKey !== normalizedBoundAgentKey) {
     return current;
@@ -572,7 +559,7 @@ export function applyAgentPlatformCompletionReminder(
 
   return {
     ...(current ?? buildAgentPlatformPetStatus({
-      boundAgentKey: sanitizeDesktopPetBoundAgentKey(boundAgentKey),
+      boundAgentKey: normalizeDesktopPetBoundAgentKey(boundAgentKey),
       agents: [],
       chats: []
     })),
@@ -740,9 +727,9 @@ export class AgentPlatformPetStatusClient {
       return;
     }
     const frameType = toText(frame.type);
-    const boundAgentKey = "";
     const frameData = readFrameData(frame);
-    let nextStatus = applyAgentPlatformPetPush(this.latestStatus, boundAgentKey, frame);
+    const currentBoundAgentKey = this.latestStatus?.agentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
+    let nextStatus = applyAgentPlatformPetPush(this.latestStatus, currentBoundAgentKey, frame);
     if (frameType === "run.started") {
       const chatId = getFrameChatId(frame);
       if (chatId) {
@@ -750,7 +737,7 @@ export class AgentPlatformPetStatusClient {
       }
       const runId = toText(frameData.runId);
       const eventAgentKey = readFrameAgentKey(frameData);
-      const matchedAgentKey = nextStatus?.agentKey || eventAgentKey || boundAgentKey;
+      const matchedAgentKey = nextStatus?.agentKey || eventAgentKey;
       if (runId && eventAgentKey && (!matchedAgentKey || eventAgentKey === matchedAgentKey)) {
         this.options.onRunStarted?.({
           runId,
@@ -765,7 +752,7 @@ export class AgentPlatformPetStatusClient {
       }
       const runId = toText(frameData.runId);
       const eventAgentKey = readFrameAgentKey(frameData);
-      const matchedAgentKey = eventAgentKey || nextStatus?.agentKey || boundAgentKey || DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
+      const matchedAgentKey = eventAgentKey || nextStatus?.agentKey || currentBoundAgentKey;
       if ((runId || chatId) && (!eventAgentKey || eventAgentKey === matchedAgentKey)) {
         this.options.onRunFinished?.({
           runId,
@@ -775,7 +762,7 @@ export class AgentPlatformPetStatusClient {
         });
       }
     } else if (frameType === "chat.read" || frameType === "chat.unread") {
-      nextStatus = applyAgentPlatformCompletionReminder(nextStatus, boundAgentKey, frame, this.finishedChats);
+      nextStatus = applyAgentPlatformCompletionReminder(nextStatus, currentBoundAgentKey, frame, this.finishedChats);
     }
     if (nextStatus !== this.latestStatus) {
       this.setStatus(nextStatus);

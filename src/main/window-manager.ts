@@ -1,4 +1,5 @@
 import type { BrowserWindow } from "electron";
+import { PRODUCT_NAME } from "../shared/generated/brand";
 import { createInitialLocaleArguments } from "../shared/i18n/initial-locale-args";
 import type { LocaleSettings } from "../shared/i18n/types";
 import type { DesktopPlatform } from "./platform-adapter";
@@ -109,6 +110,7 @@ export function buildMainWindowOptions(input: {
     height: 920,
     minWidth: 1180,
     minHeight: 760,
+    title: PRODUCT_NAME,
     show: false,
     backgroundColor: input.platform === "darwin" ? "#00000000" : "#F6F8FC",
     ...(input.platform === "darwin"

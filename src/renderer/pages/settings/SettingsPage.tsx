@@ -158,7 +158,8 @@ const defaultTaskBoardCloudConfig: TaskBoardCloudConfig = {
   serverUrl: "",
   token: "",
   selectedProjectId: "default",
-  remoteControlEnabled: false
+  remoteControlEnabled: false,
+  deviceAlias: ""
 };
 
 const defaultTaskBoardOnlineSummary: TaskBoardDesktopOnlineResult = {
@@ -2041,6 +2042,14 @@ export function SettingsPage({
                 })}
               </div>
               <form className="settings-control-form" onSubmit={(event) => void handleSaveControlCloudConfig(event)}>
+                <label className="settings-control-field">
+                  <span>{t("taskBoard.cloud.deviceAlias")}</span>
+                  <input
+                    value={controlCloudConfig.deviceAlias ?? ""}
+                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, deviceAlias: event.target.value }))}
+                    placeholder={t("taskBoard.cloud.deviceAliasPlaceholder")}
+                  />
+                </label>
                 <label className="settings-control-field">
                   <span>{t("taskBoard.cloud.serverUrl")}</span>
                   <input

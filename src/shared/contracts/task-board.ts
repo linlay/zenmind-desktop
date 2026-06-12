@@ -271,6 +271,7 @@ export interface TaskBoardCloudConfig {
   token: string;
   selectedProjectId: string;
   remoteControlEnabled: boolean;
+  deviceAlias?: string;
 }
 
 export interface TaskBoardCloudConfigResult {
@@ -284,6 +285,10 @@ export interface TaskBoardCloudConfigResult {
 export interface TaskBoardDesktopSessionStatus {
   sessionId: string;
   deviceId?: string;
+  deviceName?: string;
+  deviceAlias?: string;
+  hostname?: string;
+  username?: string;
   currentUserId?: string;
   currentUserName?: string;
   selectedProjectId?: string;
@@ -300,6 +305,10 @@ export interface TaskBoardDesktopOnlineAgent {
 
 export interface TaskBoardDesktopOnlineDevice {
   deviceId: string;
+  deviceName?: string;
+  deviceAlias?: string;
+  hostname?: string;
+  username?: string;
   currentUserId?: string;
   currentUserName?: string;
   selectedProjectId?: string;

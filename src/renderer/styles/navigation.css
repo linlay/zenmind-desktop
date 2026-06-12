@@ -1282,7 +1282,7 @@
   cursor: pointer;
 }
 
-.assistant-worker-chat-item:hover .assistant-worker-chat-action:not([data-action="loading"]):not([data-action="awaiting"])~.assistant-worker-chat-menu-button {
+.assistant-worker-chat-item:hover .assistant-worker-chat-action:not([data-action="loading"]):not([data-action="awaiting"]) ~ .assistant-worker-chat-menu-button {
   display: inline-flex;
 }
 

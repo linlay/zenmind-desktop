@@ -731,6 +731,8 @@ export const enUSMessages = {
   "taskBoard.cloud.configure": "Cloud board connection",
   "taskBoard.cloud.title": "Cloud board connection",
   "taskBoard.cloud.serverUrl": "Server URL",
+  "taskBoard.cloud.deviceAlias": "Device note",
+  "taskBoard.cloud.deviceAliasPlaceholder": "For example: Jialin's MacBook",
   "taskBoard.cloud.token": "Access token",
   "taskBoard.cloud.tokenPlaceholder": "Leave empty when auth is disabled",
   "taskBoard.cloud.projectId": "Cloud project",

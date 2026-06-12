@@ -50,7 +50,7 @@ type MenuKind = "filter" | "display" | "cloud" | null;
 type ModalMode = "create" | "edit";
 type ThemeMode = "light" | "dark";
 type TaskBoardAutomationPlan = "hourly" | "daily" | "weekdays" | "weekly" | "custom";
-type TaskBoardTodoAutomationFilter = "all" | "scheduled" | "manual";
+type TaskBoardTodoAutomationFilter = "all" | "scheduled";
 type AutomationMenuKind = "plan" | "time";
 type ModalState = {
   mode: ModalMode;
@@ -154,8 +154,7 @@ const TASK_BOARD_AUTOMATION_PLANS = [
 
 const TASK_BOARD_TODO_AUTOMATION_FILTERS = [
   { labelKey: "taskBoard.filter.all", value: "all" },
-  { labelKey: "taskBoard.filter.scheduledOnly", value: "scheduled" },
-  { labelKey: "taskBoard.filter.manualOnly", value: "manual" }
+  { labelKey: "taskBoard.filter.scheduledOnly", value: "scheduled" }
 ] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: TaskBoardTodoAutomationFilter }>;
 
 const TASK_BOARD_AUTOMATION_TIME_OPTIONS = buildAutomationTimeOptions();
@@ -181,7 +180,8 @@ const defaultCloudConfig: TaskBoardCloudConfig = {
   serverUrl: "",
   token: "",
   selectedProjectId: "default",
-  remoteControlEnabled: false
+  remoteControlEnabled: false,
+  deviceAlias: ""
 };
 
 const defaultDesktopOnlineSummary: TaskBoardDesktopOnlineResult = {
@@ -641,8 +641,7 @@ function shouldShowIssueForTodoAutomationFilter(
   if (issue.status !== "todo" || filter === "all") {
     return true;
   }
-  const automated = hasIssueAutomation(issue);
-  return filter === "scheduled" ? automated : !automated;
+  return hasIssueAutomation(issue);
 }
 
 function getAutomationDisplayLabel(issue: TaskBoardIssue, t: TranslateFunction) {
@@ -1918,6 +1917,14 @@ export function TaskBoardPage({ hostTheme }: TaskBoardPageProps) {
                   type="checkbox"
                   checked={cloudConfig.remoteControlEnabled}
                   onChange={(event) => setCloudConfig((current) => ({ ...current, remoteControlEnabled: event.target.checked }))}
+                />
+              </label>
+              <label className="task-board-field">
+                <span>{t("taskBoard.cloud.deviceAlias")}</span>
+                <input
+                  value={cloudConfig.deviceAlias ?? ""}
+                  onChange={(event) => setCloudConfig((current) => ({ ...current, deviceAlias: event.target.value }))}
+                  placeholder={t("taskBoard.cloud.deviceAliasPlaceholder")}
                 />
               </label>
               <label className="task-board-field">

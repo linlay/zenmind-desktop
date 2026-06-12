@@ -280,10 +280,13 @@ export interface AssistantPastedImageInput {
   data: ArrayBuffer;
 }
 
+export type AssistantAccessLevel = "default" | "auto_approve" | "full_access";
+
 export interface AssistantStartRunRequest {
   chatId?: string | null;
   agentKey?: string;
   message: string;
+  accessLevel?: AssistantAccessLevel;
   action?: AssistantRunAction;
   permissionMode?: AssistantPermissionMode;
   source?: AssistantRunSource;

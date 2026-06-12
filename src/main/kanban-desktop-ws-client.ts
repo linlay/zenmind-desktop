@@ -56,10 +56,18 @@ export type KanbanDesktopWsConfig = {
   selectedProjectId?: string;
 };
 
+export type KanbanDesktopDeviceInfo = {
+  deviceName: string;
+  deviceAlias?: string;
+  hostname?: string;
+  username?: string;
+};
+
 export type KanbanDesktopWsClientOptions = {
   capabilities: string[];
   getCurrentUser: () => TaskBoardCurrentUser;
   getDeviceId: () => string;
+  getDeviceInfo?: () => KanbanDesktopDeviceInfo;
   onSnapshot: (snapshot: TaskBoardCloudSnapshot) => void;
   onDispatchIssue: (issue: unknown, revision: number) => TaskBoardIssueResult;
   onListAgents: () => Promise<DesktopPetAgentOption[]>;
@@ -180,6 +188,7 @@ function normalizeStartRunPayload(payload: unknown, env: KanbanEnvelope): Assist
   const request: AssistantStartRunRequest = {
     message: readText(record.message),
     agentKey: readText(record.agentKey) || undefined,
+    accessLevel: normalizeAccessLevel(record.accessLevel),
     chatId: readText(record.chatId) || null,
     source: "sidebar"
   };
@@ -192,6 +201,11 @@ function normalizeStartRunPayload(payload: unknown, env: KanbanEnvelope): Assist
   return request;
 }
 
+function normalizeAccessLevel(value: unknown): AssistantStartRunRequest["accessLevel"] | undefined {
+  const text = readText(value);
+  return text === "default" || text === "auto_approve" || text === "full_access" ? text : undefined;
+}
+
 export class KanbanDesktopWsClient {
   private ws: MinimalWebSocket | null = null;
   private config: KanbanDesktopWsConfig | null = null;
@@ -202,7 +216,7 @@ export class KanbanDesktopWsClient {
 
   constructor(private readonly options: KanbanDesktopWsClientOptions) {}
 
-  start(config: KanbanDesktopWsConfig | null) {
+  start(config: KanbanDesktopWsConfig | null, options: { forceReconnect?: boolean } = {}) {
     const normalizedConfig = config && config.serverUrl.trim()
       ? {
         serverUrl: config.serverUrl.trim(),
@@ -222,6 +236,9 @@ export class KanbanDesktopWsClient {
     const previousProjectId = this.config?.selectedProjectId ?? "";
     this.config = normalizedConfig;
     if (this.ws && previousUrl === nextUrl && previousProjectId === normalizedConfig.selectedProjectId) {
+      if (options.forceReconnect) {
+        this.connect();
+      }
       return;
     }
     if (
@@ -230,6 +247,10 @@ export class KanbanDesktopWsClient {
       previousProjectId !== normalizedConfig.selectedProjectId &&
       this.state === "open"
     ) {
+      if (options.forceReconnect) {
+        this.connect();
+        return;
+      }
       // 仅项目变化且连接已打开:走轻量 desktop.project.select,避免整条 WS 重连。
       void this.selectProject(normalizedConfig.selectedProjectId);
       return;
@@ -365,6 +386,7 @@ export class KanbanDesktopWsClient {
       await this.request("desktop.hello", {
         capabilities: this.options.capabilities,
         deviceId: this.options.getDeviceId(),
+        ...this.options.getDeviceInfo?.(),
         selectedProjectId: this.config?.selectedProjectId ?? "default",
         currentUser: this.options.getCurrentUser(),
         scope: "project",

@@ -731,6 +731,8 @@ export const zhCNMessages = {
   "taskBoard.cloud.configure": "云端看板连接",
   "taskBoard.cloud.title": "云端看板连接",
   "taskBoard.cloud.serverUrl": "服务地址",
+  "taskBoard.cloud.deviceAlias": "设备备注",
+  "taskBoard.cloud.deviceAliasPlaceholder": "例如：佳林的 MacBook",
   "taskBoard.cloud.token": "访问令牌",
   "taskBoard.cloud.tokenPlaceholder": "未启用鉴权时留空",
   "taskBoard.cloud.projectId": "云端项目",

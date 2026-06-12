@@ -1963,13 +1963,13 @@ function registerIpcHandlers(context: MainProcessContext) {
     getTaskBoardCloudConfig: () => state.taskBoardRuntime?.getCloudConfig() ?? {
       ok: false,
       message: "任务看板尚未初始化。",
-      config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false },
+      config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" },
       connectionState: "disabled"
     },
     saveTaskBoardCloudConfig: (_app: any, input: any) => state.taskBoardRuntime?.saveCloudConfig(input) ?? {
       ok: false,
       message: "任务看板尚未初始化。",
-      config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false },
+      config: { serverUrl: "", token: "", selectedProjectId: "default", remoteControlEnabled: false, deviceAlias: "" },
       connectionState: "disabled"
     },
     createTaskBoardIssue: (_app: any, input: any) => state.taskBoardRuntime?.createIssue(input) ?? {

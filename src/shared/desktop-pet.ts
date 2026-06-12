@@ -1,6 +1,20 @@
 export const DESKTOP_PET_ROUTE = "/desktop-pet";
 export const DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY = "zenmi";
 export const DEFAULT_DESKTOP_PET_APPEARANCE_ID = "classic";
+export const DESKTOP_PET_DONE_FALLBACK_TEXT = "暂无回复预览";
+export const DESKTOP_PET_REPLY_PREVIEW_MAX_LENGTH = 30;
+export const DESKTOP_PET_GENERIC_PREVIEW_TEXTS = [
+  "思考中",
+  "已完成",
+  "回复已生成",
+  "打开对话查看完整回复"
+] as const;
+export const DESKTOP_PET_STATUS_HINT_TEXTS: ReadonlySet<string> = new Set([
+  ...DESKTOP_PET_GENERIC_PREVIEW_TEXTS,
+  "出错了",
+  "目标智能体未在线",
+  DESKTOP_PET_DONE_FALLBACK_TEXT
+]);
 export const DESKTOP_PET_RUNNING_TASK_ANIMATION_BASE_MS = 1500;
 export const DESKTOP_PET_RUNNING_TASK_ANIMATION_STEP_MS = 250;
 export const DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS = 900;
@@ -88,8 +102,20 @@ type DesktopPetActiveRunEvent = {
   data?: unknown;
 };
 
-function toDesktopPetText(value: unknown) {
+export function toDesktopPetText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+export function normalizeDesktopPetWhitespaceText(value: unknown) {
+  return typeof value === "string" ? value.replace(/\s+/gu, " ").trim() : "";
+}
+
+export function truncateDesktopPetReplyPreview(value: unknown, maxLength = DESKTOP_PET_REPLY_PREVIEW_MAX_LENGTH) {
+  const normalized = normalizeDesktopPetWhitespaceText(value);
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
 
 function readDesktopPetEventRunId(event: DesktopPetActiveRunEvent) {
@@ -105,6 +131,10 @@ function readDesktopPetEventRunId(event: DesktopPetActiveRunEvent) {
 export function sanitizeDesktopPetRunningTaskCount(value: unknown) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
+}
+
+export function sanitizeDesktopPetUnreadCount(value: unknown) {
+  return sanitizeDesktopPetRunningTaskCount(value);
 }
 
 export function getDesktopPetRunningTaskAnimationDurationMs(runningTaskCount: unknown) {

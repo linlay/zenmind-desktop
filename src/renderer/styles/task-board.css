@@ -780,12 +780,12 @@
 }
 
 .task-board-column-filter {
-  flex: 1 1 132px;
-  min-width: 132px;
+  flex: 0 1 112px;
+  min-width: 112px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
-  max-width: 196px;
+  max-width: 136px;
   margin: 0 0 0 auto;
   padding: 3px;
   border: 1px solid color-mix(in srgb, var(--task-board-accent) 18%, rgba(148, 163, 184, 0.24));

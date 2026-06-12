@@ -1,6 +1,8 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import yaml from "js-yaml";
 import type { App } from "electron";
 import type {
   AssistantStartRunRequest,
@@ -84,6 +86,7 @@ type TaskBoardDesktopConfigFile = {
   token?: unknown;
   selectedProjectId?: unknown;
   remoteControlEnabled?: unknown;
+  deviceAlias?: unknown;
 };
 
 type TaskBoardAssistantSyncEvent = {
@@ -100,6 +103,7 @@ const LEGACY_KANBAN_CONFIG_FILE = "kanban.json";
 const DEFAULT_SELECTED_PROJECT_ID = "default";
 const ASSISTANT_AGENT_LIST_TIMEOUT_MS = 2_000;
 const REMOTE_START_RUN_ACK_TIMEOUT_MS = readPositiveIntegerEnv("ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS", 5_000);
+const INSTALLED_AGENTS_DIR = path.join(".zenmind", "agents");
 
 function readPositiveIntegerEnv(name: string, fallback: number) {
   const value = Number.parseInt(process.env[name] ?? "", 10);
@@ -128,6 +132,36 @@ function readBoolean(value: unknown) {
   return value === true;
 }
 
+function shortDeviceId(deviceId: string) {
+  const text = readText(deviceId);
+  return text ? text.slice(0, 8) : "";
+}
+
+function getHostname() {
+  try {
+    return readText(os.hostname());
+  } catch {
+    return "";
+  }
+}
+
+function getUsername() {
+  try {
+    return readText(os.userInfo().username);
+  } catch {
+    return "";
+  }
+}
+
+function buildDeviceName(input: { deviceAlias?: string; hostname?: string; username?: string; deviceId?: string }) {
+  const deviceAlias = readText(input.deviceAlias);
+  if (deviceAlias) {
+    return deviceAlias;
+  }
+  const systemName = [readText(input.hostname), readText(input.username)].filter(Boolean).join(" · ");
+  return systemName || shortDeviceId(readText(input.deviceId)) || "桌面端设备";
+}
+
 function getTaskBoardConfigPath(app: App) {
   return path.join(getDesktopConfigRoot(app), CONTROL_CONFIG_FILE);
 }
@@ -145,12 +179,52 @@ function readTaskBoardOwnerConfig(input: unknown): TaskBoardDesktopConfigFile {
     : input as TaskBoardDesktopConfigFile;
 }
 
+function readInstalledAgentOptions(app: App): DesktopPetAgentOption[] {
+  const agentsRoot = path.join(app.getPath("home"), INSTALLED_AGENTS_DIR);
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(agentsRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const agents: DesktopPetAgentOption[] = [];
+  for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+    const agentFile = ["agent.yml", "agent.yaml"]
+      .map((fileName) => path.join(agentsRoot, entry.name, fileName))
+      .find((filePath) => fs.existsSync(filePath));
+    if (!agentFile) {
+      continue;
+    }
+    let parsed: unknown;
+    try {
+      parsed = yaml.load(fs.readFileSync(agentFile, "utf8"));
+    } catch {
+      continue;
+    }
+    if (!isRecord(parsed)) {
+      continue;
+    }
+    const agentKey = readText(parsed.key) || entry.name.trim();
+    if (!agentKey) {
+      continue;
+    }
+    agents.push({
+      agentKey,
+      displayName: readText(parsed.name) || agentKey,
+      role: readText(parsed.role),
+      unreadCount: 0
+    });
+  }
+  return normalizeDesktopPetAgentOptions(agents);
+}
+
 function normalizeTaskBoardCloudConfig(input: TaskBoardDesktopConfigFile): TaskBoardCloudConfig {
   return {
     serverUrl: readText(input.serverUrl),
     token: readText(input.token),
     selectedProjectId: readText(input.selectedProjectId) || DEFAULT_SELECTED_PROJECT_ID,
-    remoteControlEnabled: readBoolean(input.remoteControlEnabled)
+    remoteControlEnabled: readBoolean(input.remoteControlEnabled),
+    deviceAlias: readText(input.deviceAlias)
   };
 }
 
@@ -221,6 +295,20 @@ function writeTaskBoardCloudConfig(app: App, input: TaskBoardDesktopConfigFile):
     taskBoard: config
   }, null, 2)}\n`, "utf8");
   return config;
+}
+
+function getTaskBoardDeviceInfo(app: App) {
+  const config = readTaskBoardCloudConfig(app);
+  const deviceId = getDesktopDeviceId(app);
+  const hostname = getHostname();
+  const username = getUsername();
+  const deviceAlias = readText(config.deviceAlias);
+  return {
+    deviceName: buildDeviceName({ deviceAlias, hostname, username, deviceId }),
+    deviceAlias: deviceAlias || undefined,
+    hostname: hostname || undefined,
+    username: username || undefined
+  };
 }
 
 function issueSyncMode(issue: TaskBoardIssue | null | undefined) {
@@ -398,6 +486,7 @@ export class TaskBoardRuntime {
       ],
       getCurrentUser: () => this.currentUser(),
       getDeviceId: () => getDesktopDeviceId(this.options.app),
+      getDeviceInfo: () => getTaskBoardDeviceInfo(this.options.app),
       onSnapshot: (snapshot) => this.applySnapshot(snapshot),
       onDispatchIssue: (issue, revision) => this.applyDispatch(issue, revision),
       onListAgents: () => this.listAgents(),
@@ -493,7 +582,7 @@ export class TaskBoardRuntime {
 
   saveCloudConfig(input: TaskBoardCloudConfig): TaskBoardCloudConfigResult {
     const config = writeTaskBoardCloudConfig(this.options.app, input);
-    this.refreshConnection();
+    this.refreshConnection({ forceReconnect: true });
     return {
       ok: true,
       message: config.serverUrl ? "云端看板配置已保存，正在重新连接。" : "云端看板配置已保存，连接已关闭。",
@@ -834,16 +923,17 @@ export class TaskBoardRuntime {
       };
     }
     const deviceId = getDesktopDeviceId(this.options.app);
+    const deviceInfo = getTaskBoardDeviceInfo(this.options.app);
     return {
       id: `device:${deviceId}`,
-      name: "Desktop User",
+      name: deviceInfo.deviceName,
       email: "",
       source: "device"
     };
   }
 
-  private refreshConnection() {
-    this.wsClient.start(readTaskBoardWsConfig(this.options.app));
+  private refreshConnection(options: { forceReconnect?: boolean } = {}) {
+    this.wsClient.start(readTaskBoardWsConfig(this.options.app), options.forceReconnect ? { forceReconnect: true } : undefined);
     this.connectionState = this.wsClient.getState();
   }
 
@@ -909,25 +999,25 @@ export class TaskBoardRuntime {
 
   private async listAgents(): Promise<DesktopPetAgentOption[]> {
     this.options.onDebug?.("云端看板正在读取本地智能体列表。");
+    const installedAgents = readInstalledAgentOptions(this.options.app);
     const localAgents = normalizeDesktopPetAgentOptions(this.options.listLocalAgents?.() ?? []);
-    if (localAgents.length > 0) {
-      this.options.onDebug?.(`云端看板返回本地缓存智能体：${localAgents.length} 个。`);
-      return localAgents;
-    }
+    let platformAgents: DesktopPetAgentOption[] = [];
     try {
-      const agents = normalizeDesktopPetAgentOptions(await withTimeout(
+      platformAgents = normalizeDesktopPetAgentOptions(await withTimeout(
         () => this.options.assistantBridge.listAgents(),
         ASSISTANT_AGENT_LIST_TIMEOUT_MS,
         "agent-platform 智能体列表读取超时。"
       ));
-      if (agents.length > 0) {
-        return agents;
-      }
     } catch (error) {
-      this.options.onDebug?.(`agent-platform 智能体列表读取失败，改用本地缓存：${error instanceof Error ? error.message : String(error)}`);
+      this.options.onDebug?.(`agent-platform 智能体列表读取失败，改用本地安装目录/缓存：${error instanceof Error ? error.message : String(error)}`);
     }
-    this.options.onDebug?.("云端看板返回本地缓存智能体：0 个。");
-    return [];
+    const agents = normalizeDesktopPetAgentOptions([
+      ...installedAgents,
+      ...platformAgents,
+      ...localAgents
+    ]);
+    this.options.onDebug?.(`云端看板返回智能体：${agents.length} 个（安装目录 ${installedAgents.length}，平台 ${platformAgents.length}，缓存 ${localAgents.length}）。`);
+    return agents;
   }
 
   private async startRemoteRun(request: AssistantStartRunRequest): Promise<AssistantStartRunResult> {

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { App } from "electron";
 import type {
@@ -367,6 +368,131 @@ function readErrorPayloadText(value: unknown): string {
   }
 }
 
+const PLATFORM_OUTPUT_TEXT_KEYS = [
+  "result",
+  "answer",
+  "finalMessage",
+  "assistantText",
+  "lastRunContent",
+  "output",
+  "stdout",
+  "content",
+  "text",
+  "summary"
+] as const;
+
+function readOutputTextFromRecord(record: Record<string, unknown>, keys: readonly string[] = PLATFORM_OUTPUT_TEXT_KEYS): string {
+  for (const key of keys) {
+    const value = readString(record[key]);
+    if (value) {
+      return value;
+    }
+  }
+  const data = record.data;
+  if (typeof data === "string") {
+    return data.trim();
+  }
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const nested = readOutputTextFromRecord(data as Record<string, unknown>, keys);
+    if (nested) {
+      return nested;
+    }
+  }
+  return "";
+}
+
+function readAssistantEventOutputText(event: AssistantEvent): string {
+  if (event.message?.trim()) {
+    return event.message.trim();
+  }
+  if (event.delta?.trim()) {
+    return event.delta.trim();
+  }
+  const data = event.data;
+  if (typeof data === "string") {
+    return data.trim();
+  }
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    return readOutputTextFromRecord(data as Record<string, unknown>);
+  }
+  return "";
+}
+
+function readAssistantTextContent(content: unknown): string {
+  if (typeof content === "string") {
+    return content.trim();
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return content
+    .map((part) => {
+      if (typeof part === "string") {
+        return part;
+      }
+      if (part && typeof part === "object") {
+        return readString((part as Record<string, unknown>).text);
+      }
+      return "";
+    })
+    .join("")
+    .trim();
+}
+
+function readFinalAssistantTextFromMessages(messages: unknown): string {
+  if (!Array.isArray(messages)) {
+    return "";
+  }
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || typeof message !== "object") {
+      continue;
+    }
+    const record = message as Record<string, unknown>;
+    if (record.role !== "assistant") {
+      continue;
+    }
+    const text = readAssistantTextContent(record.content);
+    if (text) {
+      return text;
+    }
+  }
+  return "";
+}
+
+function resolvePlatformChatFile(app: App, chatId: string): string {
+  const safeChatId = /^[A-Za-z0-9_-]+$/u.test(chatId) ? chatId : "";
+  return safeChatId ? path.join(app.getPath("home"), ".zenmind", "chats", `${safeChatId}.jsonl`) : "";
+}
+
+function readFinalAssistantTextFromChatFile(filePath: string, runId: string): string {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return "";
+  }
+  let lines: string[];
+  try {
+    lines = fs.readFileSync(filePath, "utf8").trim().split(/\n+/u).filter(Boolean);
+  } catch {
+    return "";
+  }
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    let record: Record<string, unknown>;
+    try {
+      record = JSON.parse(lines[index]) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (runId && readString(record.runId) && readString(record.runId) !== runId) {
+      continue;
+    }
+    const text = readFinalAssistantTextFromMessages(record.messages);
+    if (text) {
+      return text;
+    }
+  }
+  return "";
+}
+
 function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
   runId: string;
   chatId: string;
@@ -379,7 +505,9 @@ function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
   const runId = readString(raw.runId) || fallback.runId;
   const chatId = readString(raw.chatId) || fallback.chatId;
   const errorText = readErrorPayloadText(raw.error);
-  const message = readString(raw.message) || errorText;
+  const outputText = readOutputTextFromRecord(raw);
+  const message = outputText || readString(raw.message) || readString(raw.msg) || errorText;
+  const delta = readString(raw.delta) || (type === "content.delta" ? outputText || readString(raw.message) : "");
   const event: AssistantEvent = {
     ...(typeof raw.id === "string" ? { id: raw.id } : {}),
     ...(typeof raw.seq === "number" ? { seq: raw.seq } : {}),
@@ -389,7 +517,7 @@ function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : timestampToIso(raw.timestamp),
     ...(fallback.source ? { source: fallback.source } : {}),
     ...(typeof raw.status === "string" ? { status: raw.status as AssistantEvent["status"] } : {}),
-    ...(typeof raw.delta === "string" ? { delta: raw.delta } : {}),
+    ...(delta ? { delta } : {}),
     ...(message ? { message } : {}),
     ...(typeof raw.toolCallId === "string" ? { toolCallId: raw.toolCallId } : {}),
     ...(typeof raw.toolName === "string" ? { toolName: raw.toolName } : {}),
@@ -574,6 +702,10 @@ function createUnsupportedVoiceCorrectionResult(rawText: string): AssistantVoice
 
 function normalizeAssistantPermissionMode(value: unknown): AssistantStartRunRequest["permissionMode"] {
   return value === "full_access" || value === "page_control" ? value : "default";
+}
+
+function normalizeAssistantAccessLevel(value: unknown): AssistantStartRunRequest["accessLevel"] | undefined {
+  return value === "default" || value === "auto_approve" || value === "full_access" ? value : undefined;
 }
 
 export class AgentPlatformAssistantBridge {
@@ -943,6 +1075,7 @@ export class AgentPlatformAssistantBridge {
   ) {
     try {
       const references = await this.uploadAttachments(baseUrl, token, run.chatId, run.runId, request.attachments ?? []);
+      const accessLevel = normalizeAssistantAccessLevel(request.accessLevel);
       const response = await this.platformFetch(baseUrl, "/api/query", {
         method: "POST",
         headers: this.jsonHeaders(token, { Accept: "text/event-stream" }),
@@ -951,6 +1084,7 @@ export class AgentPlatformAssistantBridge {
           chatId: run.chatId,
           agentKey: request.agentKey?.trim() || undefined,
           message: request.message.trim(),
+          ...(accessLevel ? { accessLevel } : {}),
           references,
           params: {
             desktop: {
@@ -972,17 +1106,28 @@ export class AgentPlatformAssistantBridge {
       if (!response.ok) {
         throw new Error(await readErrorText(response));
       }
-      const sawTerminalEvent = await this.consumeQueryStream(response, {
+      const streamResult = await this.consumeQueryStream(response, {
         runId: run.runId,
         chatId: run.chatId,
         source: request.source
       });
-      if (!sawTerminalEvent) {
+      const finalMessage = streamResult.finalMessage || await this.readPersistedFinalAssistantMessage(run.chatId, run.runId);
+      if (!streamResult.sawTerminalEvent) {
         this.options.onEvent({
           runId: run.runId,
           chatId: run.chatId,
           type: "run.complete",
           createdAt: nowIso(),
+          ...(finalMessage ? { message: finalMessage } : {}),
+          ...(request.source ? { source: request.source } : {})
+        });
+      } else if (!streamResult.terminalMessageEmitted && finalMessage) {
+        this.options.onEvent({
+          runId: run.runId,
+          chatId: run.chatId,
+          type: "run.complete",
+          createdAt: nowIso(),
+          message: finalMessage,
           ...(request.source ? { source: request.source } : {})
         });
       }
@@ -1015,14 +1160,16 @@ export class AgentPlatformAssistantBridge {
     runId: string;
     chatId: string;
     source?: AssistantStartRunRequest["source"];
-  }) {
+  }): Promise<{ sawTerminalEvent: boolean; finalMessage: string; terminalMessageEmitted: boolean }> {
     if (!response.body) {
-      return false;
+      return { sawTerminalEvent: false, finalMessage: "", terminalMessageEmitted: false };
     }
     const parser = new DesktopPetSseParser();
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let sawTerminalEvent = false;
+    let terminalMessageEmitted = false;
+    let finalMessage = "";
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -1036,8 +1183,26 @@ export class AgentPlatformAssistantBridge {
             createdAt: nowIso(),
             delta: event.delta || event.text || event.content || ""
           };
+          const eventText = readAssistantEventOutputText(normalizedEvent);
+          const delta = normalizedEvent.type === "content.delta" ? normalizedEvent.delta || eventText : "";
+          if (delta) {
+            finalMessage += delta;
+          }
           if (isAssistantRunTerminalEvent(normalizedEvent)) {
             sawTerminalEvent = true;
+            const terminalMessage = normalizedEvent.message ||
+              eventText ||
+              finalMessage.trim() ||
+              await this.readPersistedFinalAssistantMessage(fallback.chatId, fallback.runId);
+            if (!finalMessage && terminalMessage) {
+              finalMessage = terminalMessage;
+            }
+            if (!normalizedEvent.message && terminalMessage) {
+              normalizedEvent.message = terminalMessage;
+            }
+            if (normalizedEvent.message?.trim()) {
+              terminalMessageEmitted = true;
+            }
           }
           this.options.onEvent(normalizedEvent);
         }
@@ -1051,7 +1216,18 @@ export class AgentPlatformAssistantBridge {
     } finally {
       reader.releaseLock();
     }
-    return sawTerminalEvent;
+    return { sawTerminalEvent, finalMessage: finalMessage.trim(), terminalMessageEmitted };
+  }
+
+  private async readPersistedFinalAssistantMessage(chatId: string, runId: string): Promise<string> {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const text = readFinalAssistantTextFromChatFile(resolvePlatformChatFile(this.options.app, chatId), runId);
+      if (text || attempt === 3) {
+        return text;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    return "";
   }
 
   private async uploadAttachments(baseUrl: string, token: string, chatId: string, runId: string, attachments: AssistantAttachment[]) {

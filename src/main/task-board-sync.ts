@@ -43,26 +43,56 @@ type TaskBoardAutomationDetail = {
 export function resolveTaskBoardStatusFromAssistantEvent(
   event: TaskBoardAssistantSyncEvent
 ): TaskBoardStatus | null {
-  if (event.type === "done" || event.type === "run.complete") {
+  const type = (event.type ?? "").trim().toLowerCase();
+  const status = (event.status ?? "").trim().toLowerCase();
+  if (
+    type === "done" ||
+    type === "complete" ||
+    type === "completed" ||
+    type === "success" ||
+    type === "succeeded" ||
+    type === "finish" ||
+    type === "finished" ||
+    type === "run.complete" ||
+    type === "run.completed" ||
+    type === "run.success" ||
+    type === "run.succeeded" ||
+    type === "task.complete" ||
+    type === "task.completed" ||
+    type === "task.success" ||
+    type === "task.succeeded" ||
+    status === "done" ||
+    status === "complete" ||
+    status === "completed" ||
+    status === "success" ||
+    status === "succeeded" ||
+    status === "finish" ||
+    status === "finished"
+  ) {
     return "completed";
   }
   return null;
 }
 
 function isCancelledTaskBoardAssistantEvent(event: TaskBoardAssistantSyncEvent) {
+  const type = (event.type ?? "").trim().toLowerCase();
+  const status = (event.status ?? "").trim().toLowerCase();
   return (
-    event.type === "run.cancel" ||
-    event.type === "run.cancelled" ||
-    event.type === "run.canceled" ||
-    event.type === "task.cancel" ||
-    event.type === "task.cancelled" ||
-    event.type === "task.canceled" ||
-    event.type === "stopped" ||
-    event.type === "run.stopped" ||
-    event.type === "run.interrupt" ||
-    event.status === "cancelled" ||
-    event.status === "canceled" ||
-    event.status === "stopped"
+    type === "cancel" ||
+    type === "cancelled" ||
+    type === "canceled" ||
+    type === "run.cancel" ||
+    type === "run.cancelled" ||
+    type === "run.canceled" ||
+    type === "task.cancel" ||
+    type === "task.cancelled" ||
+    type === "task.canceled" ||
+    type === "stopped" ||
+    type === "run.stopped" ||
+    type === "run.interrupt" ||
+    status === "cancelled" ||
+    status === "canceled" ||
+    status === "stopped"
   );
 }
 
@@ -73,21 +103,26 @@ export function resolveTaskBoardRunStateFromAssistantEvent(
   if (status === "completed") {
     return "completed";
   }
+  const typeValue = (event.type ?? "").trim().toLowerCase();
+  const statusValue = (event.status ?? "").trim().toLowerCase();
   if (isCancelledTaskBoardAssistantEvent(event)) {
     return "cancelled";
   }
   if (
-    event.type === "error" ||
-    event.type === "run.error" ||
-    event.type === "run.fail" ||
-    event.type === "run.failed" ||
-    event.type === "task.fail" ||
-    event.type === "task.failed" ||
-    event.type === "run.expired" ||
-    event.status === "error" ||
-    event.status === "failed" ||
-    event.status === "fail" ||
-    event.status === "timeout"
+    typeValue === "error" ||
+    typeValue === "failed" ||
+    typeValue === "fail" ||
+    typeValue === "timeout" ||
+    typeValue === "run.error" ||
+    typeValue === "run.fail" ||
+    typeValue === "run.failed" ||
+    typeValue === "task.fail" ||
+    typeValue === "task.failed" ||
+    typeValue === "run.expired" ||
+    statusValue === "error" ||
+    statusValue === "failed" ||
+    statusValue === "fail" ||
+    statusValue === "timeout"
   ) {
     return "failed";
   }

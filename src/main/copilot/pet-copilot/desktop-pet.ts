@@ -16,16 +16,21 @@ import type {
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  DESKTOP_PET_DONE_FALLBACK_TEXT,
   DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS,
   DESKTOP_PET_APPEARANCE_OPTIONS,
+  DESKTOP_PET_STATUS_HINT_TEXTS,
   applyDesktopPetActiveRunEvent,
   getDesktopPetRunningTaskAnimationDurationMs,
   isDesktopPetDanceAppearance,
   normalizeDesktopPetAppearanceId,
   normalizeDesktopPetBoundAgentKey,
+  normalizeDesktopPetWhitespaceText,
   resolveDesktopPetRunningTaskCount,
   sanitizeDesktopPetRunningTaskCount,
-  shouldUseDesktopPetTaskRunningAnimation
+  sanitizeDesktopPetUnreadCount,
+  shouldUseDesktopPetTaskRunningAnimation,
+  truncateDesktopPetReplyPreview
 } from "../../../shared/desktop-pet";
 import {
   getDesktopConfigRoot,
@@ -39,9 +44,14 @@ export {
   DESKTOP_PET_APPEARANCE_OPTIONS,
   applyDesktopPetActiveRunEvent,
   getDesktopPetRunningTaskAnimationDurationMs,
+  normalizeDesktopPetAppearanceId,
+  normalizeDesktopPetBoundAgentKey,
   resolveDesktopPetRunningTaskCount,
   shouldUseDesktopPetTaskRunningAnimation
 } from "../../../shared/desktop-pet";
+
+export const sanitizeDesktopPetAppearanceId = normalizeDesktopPetAppearanceId;
+export const sanitizeDesktopPetBoundAgentKey = normalizeDesktopPetBoundAgentKey;
 
 export const DESKTOP_PET_WINDOW_SIZE = {
   width: 176,
@@ -152,9 +162,6 @@ const DESKTOP_PET_CONFIG_FILE = "pet.json";
 const LEGACY_DESKTOP_PET_CONFIG_FILE = "desktop-pet.json";
 const DESKTOP_PET_STATE_FILE = "pet-state.json";
 const DESKTOP_PET_EDGE_STICK_DISTANCE_PX = 24;
-const DESKTOP_PET_MESSAGE_PREVIEW_MAX_LENGTH = 30;
-const DESKTOP_PET_DONE_FALLBACK_HINT = "暂无回复预览";
-const DESKTOP_PET_STATUS_HINTS = new Set(["思考中", "已完成", "回复已生成", "出错了", "目标智能体未在线", "打开对话查看完整回复", DESKTOP_PET_DONE_FALLBACK_HINT]);
 
 function getDesktopPetRoot(app: App) {
   return path.dirname(getDesktopPetSettingsPath(app));
@@ -180,16 +187,8 @@ function ensureDesktopPetStateRoot(app: App) {
   fs.mkdirSync(path.dirname(getDesktopPetStatePath(app)), { recursive: true });
 }
 
-export function sanitizeDesktopPetBoundAgentKey(value: unknown) {
-  return normalizeDesktopPetBoundAgentKey(value);
-}
-
-export function sanitizeDesktopPetAppearanceId(value: unknown) {
-  return normalizeDesktopPetAppearanceId(value);
-}
-
 export function getDesktopPetContextMenuItems(appearanceId: unknown): DesktopPetContextMenuItem[] {
-  const normalizedAppearanceId = sanitizeDesktopPetAppearanceId(appearanceId);
+  const normalizedAppearanceId = normalizeDesktopPetAppearanceId(appearanceId);
   return [
     ...(isDesktopPetDanceAppearance(normalizedAppearanceId)
       ? [{
@@ -204,28 +203,17 @@ export function getDesktopPetContextMenuItems(appearanceId: unknown): DesktopPet
   ];
 }
 
-function sanitizeDesktopPetUnreadCount(value: unknown) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
-}
-
 function sanitizeDesktopPetMessagePreview(value: unknown) {
-  const normalized = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
-  if (!normalized) {
+  const normalized = normalizeDesktopPetWhitespaceText(value);
+  if (!normalized || DESKTOP_PET_STATUS_HINT_TEXTS.has(normalized)) {
     return "";
   }
-  if (DESKTOP_PET_STATUS_HINTS.has(normalized)) {
-    return "";
-  }
-  if (normalized.length > DESKTOP_PET_MESSAGE_PREVIEW_MAX_LENGTH) {
-    return `${normalized.slice(0, Math.max(0, DESKTOP_PET_MESSAGE_PREVIEW_MAX_LENGTH - 3)).trimEnd()}...`;
-  }
-  return normalized;
+  return truncateDesktopPetReplyPreview(normalized);
 }
 
 function isGenericDesktopPetDoneHint(value: unknown) {
-  const normalized = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
-  return !normalized || DESKTOP_PET_STATUS_HINTS.has(normalized);
+  const normalized = normalizeDesktopPetWhitespaceText(value);
+  return !normalized || DESKTOP_PET_STATUS_HINT_TEXTS.has(normalized);
 }
 
 function sanitizeDesktopPetStoredState(
@@ -249,12 +237,12 @@ function sanitizeDesktopPetStoredState(
     ? candidate.window as { edgeDock?: unknown; previewExpanded?: unknown }
     : {};
   const appearanceId = typeof candidate.appearanceId === "string" && candidate.appearanceId.trim()
-    ? sanitizeDesktopPetAppearanceId(candidate.appearanceId)
+    ? normalizeDesktopPetAppearanceId(candidate.appearanceId)
     : (typeof candidate.selectedPetId === "string" && candidate.selectedPetId.trim()
       ? candidate.selectedPetId.trim()
       : DEFAULT_DESKTOP_PET_ID) === DEFAULT_DESKTOP_PET_ID
       ? DEFAULT_DESKTOP_PET_APPEARANCE_ID
-      : sanitizeDesktopPetAppearanceId(String(candidate.selectedPetId).replace(/^builtin:/u, ""));
+      : normalizeDesktopPetAppearanceId(String(candidate.selectedPetId).replace(/^builtin:/u, ""));
   const selectedPetId = typeof candidate.selectedPetId === "string" && candidate.selectedPetId.trim()
     ? candidate.selectedPetId.trim()
     : selectedPetIdForAppearance(appearanceId);
@@ -263,7 +251,7 @@ function sanitizeDesktopPetStoredState(
     enabled: supported ? candidate.enabled === true : false,
     lastVisible: supported ? candidate.lastVisible === true : false,
     unreadCount: sanitizeDesktopPetUnreadCount(candidate.unreadCount),
-    boundAgentKey: sanitizeDesktopPetBoundAgentKey(candidate.boundAgentKey),
+    boundAgentKey: normalizeDesktopPetBoundAgentKey(candidate.boundAgentKey),
     appearanceId,
     selectedPetId,
     position: position ?? {
@@ -468,7 +456,7 @@ export function saveDesktopPetSettings(
 ) {
   const current = readDesktopPetStoredState(app, platform);
   const nextAppearanceId = typeof input.appearanceId === "string"
-    ? sanitizeDesktopPetAppearanceId(input.appearanceId)
+    ? normalizeDesktopPetAppearanceId(input.appearanceId)
     : current.appearanceId;
   return writeDesktopPetStoredState(app, {
     ...current,
@@ -505,7 +493,7 @@ export function createDefaultDesktopPetAgentStatus(boundAgentKey: string): Pick<
   "agentKey" | "displayName" | "role" | "presence" | "stale"
 > {
   return {
-    agentKey: sanitizeDesktopPetBoundAgentKey(boundAgentKey),
+    agentKey: normalizeDesktopPetBoundAgentKey(boundAgentKey),
     displayName: "",
     role: "",
     presence: "offline",
@@ -521,7 +509,7 @@ function getAgentStatusHint(agentStatus: DesktopPetBoundAgentStatus | null) {
     return "思考中";
   }
   if (agentStatus.presence === "away") {
-    return sanitizeDesktopPetMessagePreview(agentStatus.latestPreview) || DESKTOP_PET_DONE_FALLBACK_HINT;
+    return sanitizeDesktopPetMessagePreview(agentStatus.latestPreview) || DESKTOP_PET_DONE_FALLBACK_TEXT;
   }
   return "";
 }
@@ -532,7 +520,7 @@ function normalizeLocalDesktopPetStatus(
   if (localStatus.status === "done") {
     return {
       status: "done",
-      hint: localStatus.hint.trim() || DESKTOP_PET_DONE_FALLBACK_HINT,
+      hint: localStatus.hint.trim() || DESKTOP_PET_DONE_FALLBACK_TEXT,
       messagePreview: "",
       unreadCount: sanitizeDesktopPetUnreadCount(localStatus.unreadCount),
       chatId: localStatus.chatId
@@ -785,7 +773,7 @@ export const __testInternals = {
   DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS,
   DESKTOP_PET_WINDOW_SIZES,
   sanitizeDesktopPetStoredState,
-  sanitizeDesktopPetAppearanceId,
+  normalizeDesktopPetAppearanceId,
   selectedPetIdForAppearance,
   sanitizeUserPetDirectoryName,
   normalizeUserDesktopPetId,
