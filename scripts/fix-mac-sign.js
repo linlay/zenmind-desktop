@@ -142,7 +142,12 @@ function patchWindowsExecutableIcon(context) {
     throw new Error("Unable to find cached rcedit executable. Build once with a populated electron-builder winCodeSign cache or set RCEDIT_EXE.");
   }
 
-  execFileSync(rceditPath, [exePath, "--set-icon", iconPath], { stdio: "inherit" });
+  if (process.platform === "win32") {
+    execFileSync(rceditPath, [exePath, "--set-icon", iconPath], { stdio: "inherit" });
+  } else {
+    // rcedit 是 Windows 程序，非 Windows 主机（如 wine 打包容器）需通过 wine 执行
+    execFileSync("wine", [rceditPath, exePath, "--set-icon", iconPath], { stdio: "inherit" });
+  }
   console.log(`[after-pack-cleanup] Applied Windows app icon to ${exePath}`);
 }
 
