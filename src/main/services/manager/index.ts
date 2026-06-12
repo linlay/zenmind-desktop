@@ -1247,6 +1247,30 @@ async function applyEnvBindings(app: App, service: ServiceDefinition, env: Map<s
   }
 }
 
+async function refreshHostManagedEnvBindings(app: App, service: ServiceDefinition) {
+  if (!isHostManagedService(service)) {
+    return false;
+  }
+
+  const layout = getServiceLayout(app, service);
+  const env = readEnvFile(layout.envPath);
+  const updates = new Map<string, string>();
+  await applyEnvBindings(app, service, env, updates);
+
+  for (const [key, value] of updates) {
+    if ((env.get(key) ?? "") === value) {
+      updates.delete(key);
+    }
+  }
+
+  if (updates.size === 0) {
+    return false;
+  }
+
+  writeEnvFileUpdates(layout.envPath, updates);
+  return true;
+}
+
 function getEnvValueWithUpdates(env: Map<string, string>, updates: Map<string, string>, key: string) {
   return updates.get(key) ?? env.get(key) ?? "";
 }
@@ -1963,7 +1987,13 @@ async function startServiceInternal(
   ) {
     await installBuiltinService(app, serviceId, { source: "startServiceInternal:asset-refresh" });
   }
-  const nextState = await getServiceState(app, serviceId, options.stateReadOptions);
+  let nextState = await getServiceState(app, serviceId, options.stateReadOptions);
+  if (nextState.installed && await refreshHostManagedEnvBindings(app, service)) {
+    if (nextState.status === "running") {
+      await stopAgentWebclientHost(service.id);
+    }
+    nextState = await getServiceState(app, serviceId, options.stateReadOptions);
+  }
   if (
     nextState.status === "config-required" ||
     nextState.status === "dependency-missing" ||
