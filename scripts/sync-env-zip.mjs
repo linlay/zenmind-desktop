@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadBrandConfig, resolveBrandId } from "./lib/brand-config.mjs";
 
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
@@ -32,6 +33,18 @@ function readDesktopVersion(rootDir) {
 
 function bundledEnvRoot(rootDir) {
   return path.join(rootDir, "build", "resources", "env");
+}
+
+function resolveBrandRuntimeRootDirName(rootDir, env) {
+  const brandId = resolveBrandId([], env);
+  try {
+    return loadBrandConfig(rootDir, brandId).paths.runtimeRootDirName;
+  } catch (error) {
+    if (fs.existsSync(path.join(rootDir, "brands"))) {
+      throw error;
+    }
+    return `.${brandId}`;
+  }
 }
 
 function normalizeArchiveEntryName(entryName) {
@@ -68,10 +81,14 @@ function normalizeSafeRelativePath(relativePath) {
   return normalized;
 }
 
-function isNestedEnvWrapperSegment(segment) {
+function isNestedEnvWrapperSegment(segment, runtimeRootDirName) {
   const normalized = segment.trim().toLowerCase();
+  const normalizedRuntimeRootDirName = runtimeRootDirName.trim().toLowerCase();
+  const normalizedRuntimeRootName = normalizedRuntimeRootDirName.replace(/^\./u, "");
   return (
     normalized === ENV_ZIP_ROOT_DIR_NAME ||
+    normalized === normalizedRuntimeRootDirName ||
+    normalized === normalizedRuntimeRootName ||
     normalized === ".zenmind" ||
     normalized === "zenmind" ||
     normalized === "zenmind-env" ||
@@ -79,7 +96,7 @@ function isNestedEnvWrapperSegment(segment) {
   );
 }
 
-function normalizeEnvZipEntryRelativePath(entryName) {
+function normalizeEnvZipEntryRelativePath(entryName, runtimeRootDirName) {
   const segments = entrySegments(entryName);
   if (segments.length === 0) {
     return null;
@@ -90,19 +107,23 @@ function normalizeEnvZipEntryRelativePath(entryName) {
   if (segments.length === 1) {
     return null;
   }
-  if (isNestedEnvWrapperSegment(segments[1] ?? "")) {
+  if (isNestedEnvWrapperSegment(segments[1] ?? "", runtimeRootDirName)) {
     throw new Error(`ENV_ZIP must not contain a nested environment wrapper under env/: ${entryName}`);
   }
   return normalizeSafeRelativePath(segments.slice(1).join("/"));
 }
 
-export async function readEnvZipVersion(zipPath) {
+export async function readEnvZipVersion(zipPath, options = {}) {
+  const runtimeRootDirName = options.runtimeRootDirName ?? resolveBrandRuntimeRootDirName(
+    options.rootDir ?? projectRoot,
+    options.env ?? process.env
+  );
   const zip = await JSZip.loadAsync(await fs.promises.readFile(zipPath));
   const usableEntries = Object.values(zip.files).filter((entry) => !shouldSkipArchiveEntry(entry.name));
   let versionEntry = null;
 
   for (const entry of usableEntries) {
-    const relativePath = normalizeEnvZipEntryRelativePath(entry.name);
+    const relativePath = normalizeEnvZipEntryRelativePath(entry.name, runtimeRootDirName);
     if (!entry.dir && relativePath === VERSION_FILE_NAME) {
       versionEntry = entry;
       break;
@@ -115,8 +136,8 @@ export async function readEnvZipVersion(zipPath) {
   return normalizeVersion(await versionEntry.async("string")) || null;
 }
 
-async function validateEnvZipVersion(zipPath, expectedVersion) {
-  const actualVersion = await readEnvZipVersion(zipPath);
+async function validateEnvZipVersion(zipPath, expectedVersion, options) {
+  const actualVersion = await readEnvZipVersion(zipPath, options);
   if (!actualVersion) {
     throw new Error("ENV_ZIP is missing a VERSION file.");
   }
@@ -158,6 +179,7 @@ export async function prepareBundledEnvZip({
   const envRoot = bundledEnvRoot(rootDir);
   const expectedVersion = readDesktopVersion(rootDir);
   const sourceZipPath = resolveEnvZipPath(rootDir, env);
+  const runtimeRootDirName = resolveBrandRuntimeRootDirName(rootDir, env);
 
   if (sourceZipPath) {
     if (isPathInside(envRoot, sourceZipPath)) {
@@ -188,7 +210,7 @@ export async function prepareBundledEnvZip({
     };
   }
 
-  await validateEnvZipVersion(sourceZipPath, expectedVersion);
+  await validateEnvZipVersion(sourceZipPath, expectedVersion, { rootDir, env, runtimeRootDirName });
   const outputPath = path.join(envRoot, BUNDLED_ENV_FILE_NAME);
   fs.copyFileSync(sourceZipPath, outputPath);
   const stat = fs.statSync(outputPath);

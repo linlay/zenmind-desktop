@@ -329,8 +329,12 @@ function normalizeSafeRelativePath(relativePath: string) {
 
 function isNestedEnvWrapperSegment(segment: string) {
   const normalized = segment.trim().toLowerCase();
+  const runtimeRootDirName = APP_BRAND.paths.runtimeRootDirName.trim().toLowerCase();
+  const runtimeRootName = runtimeRootDirName.replace(/^\./u, "");
   return (
     normalized === ENV_ZIP_ROOT_DIR_NAME ||
+    normalized === runtimeRootDirName ||
+    normalized === runtimeRootName ||
     normalized === ".zenmind" ||
     normalized === "zenmind" ||
     normalized === "zenmind-env" ||

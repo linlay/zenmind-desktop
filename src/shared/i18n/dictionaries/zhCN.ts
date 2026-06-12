@@ -1,6 +1,7 @@
 import { APP_BRAND, PRODUCT_NAME } from "../../generated/brand";
 
 const brandMessages: Partial<Record<string, string>> = APP_BRAND.i18n["zh-CN"];
+const runtimeRootDisplay = `~/${APP_BRAND.paths.runtimeRootDirName}`;
 
 export const zhCNMessages = {
   "app.name": brandMessages["app.name"] ?? PRODUCT_NAME,
@@ -256,10 +257,10 @@ export const zhCNMessages = {
   "settings.dataRoot.unset": "未配置",
   "settings.reset.label": "重置运行环境",
   "settings.reset.description": "使用安装包内置 env.zip 还原本机运行环境。",
-  "settings.reset.title": "还原 ~/.zenmind",
-  "settings.reset.warning": "重置会先把当前 ~/.zenmind 重命名为带时间戳的备份目录，然后从安装包内置 env.zip 重新生成运行环境。",
+  "settings.reset.title": `还原 ${runtimeRootDisplay}`,
+  "settings.reset.warning": `重置会先把当前 ${runtimeRootDisplay} 重命名为带时间戳的备份目录，然后从安装包内置 env.zip 重新生成运行环境。`,
   "settings.reset.restartReminder": "重置完成后请手动重启应用，再启动服务。",
-  "settings.reset.confirmMessage": "确定要重置运行环境吗？当前 ~/.zenmind 会先备份为带时间戳的目录。",
+  "settings.reset.confirmMessage": `确定要重置运行环境吗？当前 ${runtimeRootDisplay} 会先备份为带时间戳的目录。`,
   "settings.reset.action": "重置运行环境",
   "settings.reset.running": "正在重置...",
   "settings.reset.failed": "运行环境重置失败。",
@@ -952,7 +953,7 @@ export const zhCNMessages = {
   "plugin.uninstall.done": "插件 {name} 已卸载。",
 
   "dialog.envZipRequired.title": "首次安装需要导入 env.zip",
-  "dialog.envZipRequired.message": "~/.zenmind 尚未初始化，请先导入 env.zip。",
+  "dialog.envZipRequired.message": `${runtimeRootDisplay} 尚未初始化，请先导入 env.zip。`,
   "dialog.envZipRequired.detail": "目标目录：{path}\n导入只会补齐缺失文件，不会覆盖已有内容。",
   "dialog.envZipRequired.choose": "选择 env.zip",
   "dialog.envZipRequired.quit": "退出 {appName}",

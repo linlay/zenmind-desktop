@@ -1,9 +1,14 @@
 # ZenMind Desktop 数据目录
 
-ZenMind Desktop 会把本机运行数据保存在分层的桌面端数据根目录中。根目录按平台区分：
+ZenMind Desktop 会把本机运行数据保存在分层的桌面端数据根目录中。运行根目录按品牌 id 派生：`BRAND=zenmind` 使用 `.zenmind`，`BRAND=cutej` 使用 `.cutej`。根目录按平台区分，例如 ZenMind 默认品牌为：
 
 - macOS：`~/.zenmind/.desktop/`
 - Windows：`%USERPROFILE%\.zenmind\.desktop\`
+
+CuteJ 品牌对应：
+
+- macOS：`~/.cutej/.desktop/`
+- Windows：`%USERPROFILE%\.cutej\.desktop\`
 
 服务和插件的程序文件不存放在这个目录中，而是安装到平台应用支持目录：
 
@@ -13,7 +18,7 @@ ZenMind Desktop 会把本机运行数据保存在分层的桌面端数据根目�
 ## 目录结构
 
 ```text
-~/.zenmind/
+~/<brand-runtime-root>/
 ├── desktop-default.json
 ├── desktop-register.json
 └── .desktop/
@@ -48,7 +53,7 @@ ZenMind Desktop 会把本机运行数据保存在分层的桌面端数据根目�
 完整 Desktop 数据根目录还包含服务、插件、日志、缓存、凭据和浏览器 profile：
 
 ```text
-~/.zenmind/.desktop/
+~/<brand-runtime-root>/.desktop/
 ├── config/
 │   ├── desktop/
 │   │   ├── profile.json
@@ -118,8 +123,8 @@ ZenMind Desktop 会把本机运行数据保存在分层的桌面端数据根目�
 
 ## 关键文件
 
-- `~/.zenmind/desktop-default.json`：env 包携带的初始化模板。首启拆写到 `.desktop/` 下的 canonical 文件后不再作为运行时真相。
-- `~/.zenmind/desktop-register.json`：一次性 registration token 文件，用完后清 token 或删除，不合并进 profile。
+- `~/<brand-runtime-root>/desktop-default.json`：env 包携带的初始化模板。首启拆写到 `.desktop/` 下的 canonical 文件后不再作为运行时真相。
+- `~/<brand-runtime-root>/desktop-register.json`：一次性 registration token 文件，用完后清 token 或删除，不合并进 profile。
 - `config/desktop/profile.json`：保存长期用户偏好，包括外观、语言、助手默认值、Quick Assistant 和导航偏好。
 - `config/desktop/pet.json`：保存桌宠设置，包括 enabled、selectedPetId、lastVisible、position 和窗口偏好；不保存 `boundAgentKey`。
 - `config/desktop/sso.json`：保存 Desktop SSO 登录配置。session/token 进入 `state/desktop/`。
@@ -145,7 +150,7 @@ ZenMind Desktop 会把本机运行数据保存在分层的桌面端数据根目�
 内嵌网站入口按网站拆分到 `data/websites/`，一个网站一个目录：
 
 ```text
-~/.zenmind/.desktop/data/websites/
+~/<brand-runtime-root>/.desktop/data/websites/
 └── docs/
     ├── website.json
     └── icon.png
@@ -168,7 +173,7 @@ ZenMind Desktop 会把本机运行数据保存在分层的桌面端数据根目�
 旧 `config/desktop/custom-sidebar-items.json` 会在首次读取时迁移到新目录。网站自身的浏览器数据不保存在 `website.json` 中。cookie、localStorage、IndexedDB、webview session 数据和缓存由 Electron/Chromium 管理，位于：
 
 ```text
-~/.zenmind/.desktop/profiles/electron/
+~/<brand-runtime-root>/.desktop/profiles/electron/
 ```
 
 ## 程序安装目录

@@ -1,6 +1,7 @@
 import { APP_BRAND, PRODUCT_NAME } from "../../generated/brand";
 
 const brandMessages: Partial<Record<string, string>> = APP_BRAND.i18n["en-US"];
+const runtimeRootDisplay = `~/${APP_BRAND.paths.runtimeRootDirName}`;
 
 export const enUSMessages = {
   "app.name": brandMessages["app.name"] ?? PRODUCT_NAME,
@@ -256,10 +257,10 @@ export const enUSMessages = {
   "settings.dataRoot.unset": "Not configured",
   "settings.reset.label": "Reset Runtime",
   "settings.reset.description": "Restore the local runtime environment from the packaged env.zip.",
-  "settings.reset.title": "Restore ~/.zenmind",
-  "settings.reset.warning": "Reset first renames the current ~/.zenmind directory to a timestamped backup, then recreates the runtime environment from the packaged env.zip.",
+  "settings.reset.title": `Restore ${runtimeRootDisplay}`,
+  "settings.reset.warning": `Reset first renames the current ${runtimeRootDisplay} directory to a timestamped backup, then recreates the runtime environment from the packaged env.zip.`,
   "settings.reset.restartReminder": "Restart the app manually after reset before starting services.",
-  "settings.reset.confirmMessage": "Reset the runtime environment? The current ~/.zenmind directory will be backed up with a timestamp first.",
+  "settings.reset.confirmMessage": `Reset the runtime environment? The current ${runtimeRootDisplay} directory will be backed up with a timestamp first.`,
   "settings.reset.action": "Reset runtime",
   "settings.reset.running": "Resetting...",
   "settings.reset.failed": "Runtime reset failed.",
@@ -952,7 +953,7 @@ export const enUSMessages = {
   "plugin.uninstall.done": "Plugin {name} uninstalled.",
 
   "dialog.envZipRequired.title": "env.zip required for first install",
-  "dialog.envZipRequired.message": "~/.zenmind is not initialized. Import env.zip first.",
+  "dialog.envZipRequired.message": `${runtimeRootDisplay} is not initialized. Import env.zip first.`,
   "dialog.envZipRequired.detail": "Target directory: {path}\nImport only fills missing files and does not overwrite existing content.",
   "dialog.envZipRequired.choose": "Choose env.zip",
   "dialog.envZipRequired.quit": "Quit {appName}",

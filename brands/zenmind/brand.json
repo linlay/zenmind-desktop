@@ -6,7 +6,6 @@
   "appId": "cc.zenmind.desktop",
   "description": "ZenMind 应用壳",
   "paths": {
-    "runtimeRootDirName": ".zenmind",
     "desktopDataSubdir": ".desktop",
     "programDataDirName": "ZenMind"
   },

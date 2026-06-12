@@ -81,8 +81,8 @@ DevTools 可用于查看控制台日志、网络请求、DOM 结构以及页面�
 - 需要认证的服务或插件（如 `agent-webclient`、`pan-webclient`）通过 `auth-bridge.ts` 构建带参数的嵌入 URL，并通过 postMessage Token Bridge 获取 JWT。
 
 ### 服务配置文件
-- 新安装的 Desktop 配置与运行数据根目录为 macOS `~/.zenmind/.desktop`、Windows `%USERPROFILE%\.zenmind\.desktop`，按 `config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；这里不存放可替换程序产物。
-- 首次启动导入 `env.zip` 时，解压生成的环境目录为 macOS `~/.zenmind`、Windows `%USERPROFILE%\.zenmind`，不放在 AppData 下。
+- 新安装的 Desktop 配置与运行数据根目录按品牌 id 派生：`BRAND=zenmind` 为 macOS `~/.zenmind/.desktop`、Windows `%USERPROFILE%\.zenmind\.desktop`；`BRAND=cutej` 为 macOS `~/.cutej/.desktop`、Windows `%USERPROFILE%\.cutej\.desktop`。目录按 `config/`、`data/`、`state/`、`logs/`、`cache/`、`secrets/`、`profiles/` 分层；这里不存放可替换程序产物。
+- 首次启动导入 `env.zip` 时，解压生成的环境目录为品牌运行根目录，例如 `~/.zenmind` 或 `~/.cutej`，不放在 AppData 下。
 - 服务程序安装到 macOS `~/Library/Application Support/ZenMind/services/<service-id>/<version>/` 或 Windows `%APPDATA%\ZenMind\services\<service-id>\<version>\`，服务配置保存到 Desktop 配置根目录的 `config/services/<service-id>/`，运行数据保存到 `data/services/<service-id>/`。
 - 每个内置服务会在安装时自动完成初始化；缺失的 `.env` 会从 `.env.example` 复制生成，随后由桌面端进行读写。
 - 插件程序安装到 macOS `~/Library/Application Support/ZenMind/plugins/<plugin-id>/<version>/` 或 Windows `%APPDATA%\ZenMind\plugins\<plugin-id>\<version>\`，插件配置保存到 Desktop 配置根目录的 `config/plugins/<plugin-id>/`。
@@ -151,20 +151,20 @@ npm run dist:win-docker
 如果机器上已经残留旧的 per-user/per-machine 双安装记录，建议先手动清理旧版本，再验证新包的安装和卸载。
 
 ### 卸载
-- macOS：运行 `/Applications/ZenMind.app/Contents/Resources/uninstall.sh`。脚本会先检查应用是否仍在运行，随后删除 `/Applications/ZenMind.app`，并弹窗询问是否清理 `~/.zenmind/.desktop` 和 `~/Library/Application Support/ZenMind`；默认保留数据。
+- macOS：运行 `/Applications/ZenMind.app/Contents/Resources/uninstall.sh`。脚本会先检查应用是否仍在运行，随后删除 `/Applications/ZenMind.app`，并弹窗询问是否清理当前品牌数据目录（例如 `~/.zenmind/.desktop` 或 `~/.cutej/.desktop`）和 `~/Library/Application Support/ZenMind`；默认保留数据。
 - Windows：通过控制面板或开始菜单中的卸载入口执行 NSIS 卸载器。卸载会删除安装目录，并询问是否清理 `%APPDATA%\ZenMind`；默认保留数据。
 
 ### 打包资源约定
 - `package.json` 中的 `build.files` 会打入桌面应用运行所需代码。
 - `build.extraResources` 会把 `build/resources/services` 下的内置服务资源复制进应用包。
-- `build.extraResources` 会把 `build/resources/env` 复制进应用包；设置 `ENV_ZIP=/path/to/env.zip` 打包时会生成 `build/resources/env/env.zip`，首启缺少运行环境时优先自动导入。`sync:env` 会拒绝 `.zenmind/`、`zenmind-env/`、裸顶层文件或嵌套 `env/env/` 结构。
+- `build.extraResources` 会把 `build/resources/env` 复制进应用包；设置 `ENV_ZIP=/path/to/env.zip` 打包时会生成 `build/resources/env/env.zip`，首启缺少运行环境时优先自动导入。`sync:env` 会拒绝当前品牌运行根包装目录（如 `.zenmind/`、`.cutej/`）、历史 `zenmind-env/`、裸顶层文件或嵌套 `env/env/` 结构。
 - `build.extraResources` 同时会把 `scripts/uninstall.sh` 放入 macOS 应用包资源目录，供完整卸载使用。
 - `build/installer.nsh` 会注入 NSIS 卸载流程，在 Windows 上给用户选择是否清理应用数据。
 - `npm run sync:assets` 会扫描工作区内各服务目录以及聚合产物目录中的 `.tar.gz` / `.zip` 发布包，只同步 `manifest.json.kind === "builtin"` 的产物。支持 `--os` 和 `--arch` 参数按平台过滤。
 - 如设置 `ZENMIND_BUILTIN_ASSETS_SOURCE`，`sync:assets` 会优先从该目录扫描 `<service-id>/<archive-file>` 结构的预收集产物，再 fallback 到工作区自动发现。`../zenmind-dist` 就符合这个目录结构。
 - Desktop 通过 bundle 内的 `manifest.json.desktop.bundleTopLevelDir` 和 `runtime.requiredPaths` 校验资源完整性。
 - 如新增内置服务，需要保证 release bundle 内自带完整 `manifest.json`，再执行打包。
-- 如需覆盖已有 `~/.zenmind` 运行环境，使用 env 包内的显式脚本 `env/scripts/overwrite-env.sh` 或 `env/scripts/overwrite-env.ps1`。Desktop 不会自动调用覆盖脚本，也不提供自动覆盖入口。
+- 如需覆盖已有品牌运行环境（例如 `~/.zenmind` 或 `~/.cutej`），使用 env 包内的显式脚本 `env/scripts/overwrite-env.sh` 或 `env/scripts/overwrite-env.ps1`。Desktop 不会自动调用覆盖脚本，也不提供自动覆盖入口。
 
 ## 6. 运维
 ### 常用命令

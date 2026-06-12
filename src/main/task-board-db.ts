@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { TaskBoardIssue } from "../shared/contracts";
+import { APP_BRAND } from "../shared/generated/brand";
 
 type AppPathProvider = {
   getPath(name: "home"): string;
@@ -29,11 +30,14 @@ type TaskBoardIssueRow = {
   updated_at: string;
 };
 
-const TASK_BOARD_DIRECTORY = path.join(".zenmind", ".desktop");
 const TASK_BOARD_DATABASE_FILENAME = "task-board.db";
 
 export function getTaskBoardRoot(app: AppPathProvider) {
-  return path.join(app.getPath("home"), TASK_BOARD_DIRECTORY);
+  return path.join(
+    app.getPath("home"),
+    APP_BRAND.paths.runtimeRootDirName,
+    APP_BRAND.paths.desktopDataSubdir
+  );
 }
 
 export function getTaskBoardDatabasePath(app: AppPathProvider) {

@@ -1,0 +1,174 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import {
+  loadBrandConfig,
+  syncBrandArtifacts
+} from "../scripts/lib/brand-config.mjs";
+import { prepareBundledEnvZip } from "../scripts/sync-env-zip.mjs";
+
+const require = createRequire(import.meta.url);
+const JSZip = require("jszip");
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+const silentLogger = {
+  log() {}
+};
+
+function readJson(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+function createBrandFixture(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-brand-runtime-"));
+  fs.cpSync(path.join(projectRoot, "brands"), path.join(root, "brands"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "package.json"),
+    `${JSON.stringify({
+      name: "placeholder",
+      version: "0.0.0",
+      description: "placeholder",
+      build: { appId: "legacy.hardcoded" }
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(root, "package-lock.json"),
+    `${JSON.stringify({
+      name: "placeholder",
+      lockfileVersion: 3,
+      packages: {
+        "": {
+          name: "placeholder"
+        }
+      }
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+
+function writeBrandManifest(root, brandId, update) {
+  const manifestPath = path.join(root, "brands", brandId, "brand.json");
+  const manifest = readJson(manifestPath);
+  fs.writeFileSync(
+    manifestPath,
+    `${JSON.stringify(update(manifest), null, 2)}\n`,
+    "utf8"
+  );
+}
+
+async function writeZip(zipPath, entries) {
+  const zip = new JSZip();
+  for (const [entryPath, content] of Object.entries(entries)) {
+    zip.file(entryPath, content);
+  }
+  fs.mkdirSync(path.dirname(zipPath), { recursive: true });
+  fs.writeFileSync(zipPath, await zip.generateAsync({ type: "nodebuffer" }));
+}
+
+test("brand runtime root directory is derived from brand id", () => {
+  const zenmind = loadBrandConfig(projectRoot, "zenmind");
+  const cutej = loadBrandConfig(projectRoot, "cutej");
+
+  assert.equal(zenmind.paths.runtimeRootDirName, ".zenmind");
+  assert.equal(cutej.paths.runtimeRootDirName, ".cutej");
+  assert.equal("runtimeRootDirName" in readJson(path.join(projectRoot, "brands", "zenmind", "brand.json")).paths, false);
+  assert.equal("runtimeRootDirName" in readJson(path.join(projectRoot, "brands", "cutej", "brand.json")).paths, false);
+});
+
+test("brand sync writes CuteJ runtime paths into generated artifacts", (t) => {
+  const root = createBrandFixture(t);
+
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
+  const generatedBrand = readJson(path.join(root, "build", "generated", "brand.json"));
+  const installerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
+  const uninstallScript = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
+
+  assert.equal(brand.paths.runtimeRootDirName, ".cutej");
+  assert.equal(generatedBrand.paths.runtimeRootDirName, ".cutej");
+  assert.match(installerInclude, /%USERPROFILE%\\\.cutej\\\.desktop\\state/u);
+  assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.cutej\/\.desktop"/u);
+});
+
+test("brand manifest rejects mismatched explicit runtimeRootDirName", (t) => {
+  const root = createBrandFixture(t);
+
+  writeBrandManifest(root, "cutej", (manifest) => ({
+    ...manifest,
+    paths: {
+      ...manifest.paths,
+      runtimeRootDirName: ".zenmind"
+    }
+  }));
+
+  assert.throws(
+    () => loadBrandConfig(root, "cutej"),
+    /paths\.runtimeRootDirName" must be "\.cutej"/u
+  );
+});
+
+test("sync-env rejects current brand and legacy env wrapper directories", async (t) => {
+  const root = createBrandFixture(t);
+  fs.writeFileSync(path.join(root, "VERSION"), "v1.2.3\n", "utf8");
+
+  const cutejWrapperZipPath = path.join(root, "fixtures", "cutej-wrapper.zip");
+  await writeZip(cutejWrapperZipPath, {
+    "env/.cutej/VERSION": "1.2.3\n",
+    "env/.cutej/agents/demo/agent.yml": "name: demo\n"
+  });
+  await assert.rejects(
+    () => prepareBundledEnvZip({
+      rootDir: root,
+      env: { BRAND: "cutej", ENV_ZIP: cutejWrapperZipPath },
+      logger: silentLogger
+    }),
+    /nested environment wrapper/u
+  );
+
+  const legacyWrapperZipPath = path.join(root, "fixtures", "legacy-wrapper.zip");
+  await writeZip(legacyWrapperZipPath, {
+    "env/.zenmind/VERSION": "1.2.3\n",
+    "env/.zenmind/agents/demo/agent.yml": "name: demo\n"
+  });
+  await assert.rejects(
+    () => prepareBundledEnvZip({
+      rootDir: root,
+      env: { BRAND: "cutej", ENV_ZIP: legacyWrapperZipPath },
+      logger: silentLogger
+    }),
+    /nested environment wrapper/u
+  );
+});
+
+test("critical runtime path modules read APP_BRAND runtimeRootDirName", () => {
+  const files = [
+    "src/main/task-board-db.ts",
+    "src/main/task-board-runtime.ts",
+    "src/main/copilot/core/agent-platform-config.ts",
+    "src/main/copilot/core/agent-platform-bridge.ts"
+  ];
+
+  for (const relativePath of files) {
+    const content = fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
+    assert.match(content, /APP_BRAND\.paths\.runtimeRootDirName/u, relativePath);
+    assert.doesNotMatch(content, /["'`]\.zenmind["'`]/u, relativePath);
+  }
+});
+
+test("skill installer keeps legacy runtime roots gated to the ZenMind brand", () => {
+  const content = fs.readFileSync(path.join(projectRoot, "src/main/skill-installer.ts"), "utf8");
+
+  assert.match(
+    content,
+    /const preferredRuntimeRoot = path\.join\(homeDir, APP_BRAND\.paths\.runtimeRootDirName\);/u
+  );
+  assert.match(content, /if \(String\(APP_BRAND\.id\) === "zenmind"\) \{/u);
+  assert.match(content, /return preferredRuntimeRoot;/u);
+  assert.equal([...content.matchAll(/path\.join\([^)]*"\.zenmind"[^)]*\)/gu)].length, 2);
+});

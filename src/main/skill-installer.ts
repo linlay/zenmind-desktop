@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../shared/contracts";
+import { APP_BRAND } from "../shared/generated/brand";
 import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
 import { getService } from "./services/service-registry";
 import { getInstallDir, getServiceState } from "./services/manager";
@@ -127,22 +128,25 @@ function scoreRuntimeRoot(runtimeRoot: string) {
 
 function resolveDesktopRuntimeRoot(app: App) {
   const homeDir = resolveHomeDir(app);
+  const preferredRuntimeRoot = path.join(homeDir, APP_BRAND.paths.runtimeRootDirName);
   const desktopDir = resolveDesktopDir(app, homeDir);
   const legacyDesktopDir = path.join(homeDir, "Desktop");
-  const candidates = [...new Set([
-    path.join(homeDir, ".zenmind"),
-    path.join(desktopDir, ".zenmind"),
-    path.join(legacyDesktopDir, ".zenmind"),
-    path.join(desktopDir, "zenmind-env"),
-    path.join(legacyDesktopDir, "zenmind-env"),
-    path.join(homeDir, "zenmind")
-  ])];
+  const candidates = [preferredRuntimeRoot];
+  if (String(APP_BRAND.id) === "zenmind") {
+    candidates.push(
+      path.join(desktopDir, ".zenmind"),
+      path.join(legacyDesktopDir, ".zenmind"),
+      path.join(desktopDir, "zenmind-env"),
+      path.join(legacyDesktopDir, "zenmind-env"),
+      path.join(homeDir, "zenmind")
+    );
+  }
   for (const candidate of candidates) {
     if (scoreRuntimeRoot(candidate) > 0) {
       return candidate;
     }
   }
-  return path.join(homeDir, ".zenmind");
+  return preferredRuntimeRoot;
 }
 
 export function getSkillsMarketDir(app: App) {

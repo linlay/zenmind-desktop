@@ -23,6 +23,7 @@ import type {
   TaskBoardRunState,
   TaskBoardStatus
 } from "../shared/contracts";
+import { APP_BRAND } from "../shared/generated/brand";
 import { getDesktopDeviceId } from "./device-identity";
 import { getDesktopSsoStatus } from "./oidc-sso";
 import { buildTaskBoardAutomationPayload, resolveTaskBoardRunStateFromAssistantEvent, resolveTaskBoardStatusFromAssistantEvent } from "./task-board-sync";
@@ -103,7 +104,6 @@ const LEGACY_KANBAN_CONFIG_FILE = "kanban.json";
 const DEFAULT_SELECTED_PROJECT_ID = "default";
 const ASSISTANT_AGENT_LIST_TIMEOUT_MS = 2_000;
 const REMOTE_START_RUN_ACK_TIMEOUT_MS = readPositiveIntegerEnv("ZENMIND_TASK_BOARD_REMOTE_START_ACK_TIMEOUT_MS", 5_000);
-const INSTALLED_AGENTS_DIR = path.join(".zenmind", "agents");
 
 function readPositiveIntegerEnv(name: string, fallback: number) {
   const value = Number.parseInt(process.env[name] ?? "", 10);
@@ -180,7 +180,7 @@ function readTaskBoardOwnerConfig(input: unknown): TaskBoardDesktopConfigFile {
 }
 
 function readInstalledAgentOptions(app: App): DesktopPetAgentOption[] {
-  const agentsRoot = path.join(app.getPath("home"), INSTALLED_AGENTS_DIR);
+  const agentsRoot = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, "agents");
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(agentsRoot, { withFileTypes: true });

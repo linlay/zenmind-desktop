@@ -6,7 +6,6 @@
   "appId": "cc.cutej.desktop",
   "description": "CuteJ 应用壳",
   "paths": {
-    "runtimeRootDirName": ".zenmind",
     "desktopDataSubdir": ".desktop",
     "programDataDirName": "ZenMind"
   },

@@ -32,6 +32,7 @@ import type {
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
+import { APP_BRAND } from "../../../shared/generated/brand";
 import { toDesktopPetAgentOptions } from "../pet-copilot/pet-status-client";
 import { DesktopPetSseParser } from "../pet-copilot/desktop-pet-preview";
 import { resolveAssistantAttachmentPath } from "../attachments/attachment-store";
@@ -462,7 +463,9 @@ function readFinalAssistantTextFromMessages(messages: unknown): string {
 
 function resolvePlatformChatFile(app: App, chatId: string): string {
   const safeChatId = /^[A-Za-z0-9_-]+$/u.test(chatId) ? chatId : "";
-  return safeChatId ? path.join(app.getPath("home"), ".zenmind", "chats", `${safeChatId}.jsonl`) : "";
+  return safeChatId
+    ? path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, "chats", `${safeChatId}.jsonl`)
+    : "";
 }
 
 function readFinalAssistantTextFromChatFile(filePath: string, runId: string): string {

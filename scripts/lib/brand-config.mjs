@@ -108,6 +108,17 @@ function requireNestedString(manifest, group, key) {
   return value.trim();
 }
 
+function optionalNestedString(manifest, group, key) {
+  const value = manifest[group]?.[key];
+  if (value === undefined) {
+    return null;
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`Brand manifest field "${group}.${key}" must be a non-empty string when provided.`);
+  }
+  return value.trim();
+}
+
 function normalizeManifest(rootDir, brandRoot, manifest, i18n, icons) {
   const id = requireString(manifest, "id").toLowerCase();
   if (!BRAND_ID_PATTERN.test(id)) {
@@ -133,7 +144,13 @@ function normalizeManifest(rootDir, brandRoot, manifest, i18n, icons) {
 
   const productName = requireString(manifest, "productName");
   const description = requireString(manifest, "description");
-  const runtimeRootDirName = requireNestedString(manifest, "paths", "runtimeRootDirName");
+  const runtimeRootDirName = `.${id}`;
+  const configuredRuntimeRootDirName = optionalNestedString(manifest, "paths", "runtimeRootDirName");
+  if (configuredRuntimeRootDirName && configuredRuntimeRootDirName !== runtimeRootDirName) {
+    throw new Error(
+      `Brand manifest field "paths.runtimeRootDirName" must be "${runtimeRootDirName}" when provided.`
+    );
+  }
   const desktopDataSubdir = requireNestedString(manifest, "paths", "desktopDataSubdir");
   const programDataDirName = requireNestedString(manifest, "paths", "programDataDirName");
   const microphoneUsageDescription = requireNestedString(manifest, "mac", "microphoneUsageDescription");

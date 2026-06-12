@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import type { App } from "electron";
 import yaml from "js-yaml";
 import type { AssistantSettingsPublic } from "../../../shared/contracts";
+import { APP_BRAND } from "../../../shared/generated/brand";
 import { getServiceConfigRoot, getServicesRoot } from "../../user-paths";
 import type { AssistantSettingsPrivate } from "./settings-store";
 import { readAssistantSettings, toPublicAssistantSettings } from "./settings-store";
@@ -215,7 +216,7 @@ function resolveProviderConfigLocation(app: App, providerKey = "minimax"): Provi
     });
   }
 
-  const runtimeRegistriesDir = path.join(homePath, ".zenmind", "registries");
+  const runtimeRegistriesDir = path.join(homePath, APP_BRAND.paths.runtimeRootDirName, "registries");
   candidates.push({
     providerPath: path.join(runtimeRegistriesDir, "providers", `${providerKey}.yml`),
     modelDirs: [path.join(runtimeRegistriesDir, "models")]
