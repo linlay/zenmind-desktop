@@ -336,36 +336,16 @@
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  padding: 0;
+  padding: 0 6px 0 0;
   margin: 0;
   flex: 1;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
   position: relative;
   z-index: 1;
   app-region: no-drag;
   -webkit-app-region: no-drag;
-}
-
-.sidebar-nav::-webkit-scrollbar {
-  width: 6px;
-}
-
-.sidebar-nav::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.sidebar-nav::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.32);
-}
-
-.sidebar-nav::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.48);
 }
 
 .sidebar-link {
@@ -1161,14 +1141,12 @@
   cursor: pointer;
 }
 
-.assistant-worker-chat-item:hover,
-.assistant-worker-chat-item.is-active {
+.assistant-worker-chat-item:hover {
   background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
   color: var(--ink);
 }
 
 .assistant-worker-chat-item.is-active {
-  background: color-mix(in srgb, var(--ink-muted) 18%, transparent);
   font-weight: 700;
 }
 
@@ -1304,7 +1282,7 @@
   cursor: pointer;
 }
 
-.assistant-worker-chat-item:hover .assistant-worker-chat-action:not([data-action="loading"]):not([data-action="awaiting"]) ~ .assistant-worker-chat-menu-button {
+.assistant-worker-chat-item:hover .assistant-worker-chat-action:not([data-action="loading"]):not([data-action="awaiting"])~.assistant-worker-chat-menu-button {
   display: inline-flex;
 }
 
