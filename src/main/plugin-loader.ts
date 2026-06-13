@@ -21,6 +21,12 @@ function readManifest(pluginDir: string) {
   }
 }
 
+function readManifestKind(manifest: unknown) {
+  return manifest && typeof manifest === "object" && !Array.isArray(manifest)
+    ? (manifest as { kind?: unknown }).kind
+    : undefined;
+}
+
 function preserveExistingConfigFiles(targetDir: string, relativePaths: string[]) {
   const preserved = new Map<string, string>();
   for (const relativePath of relativePaths) {
@@ -74,7 +80,7 @@ export function loadInstalledPlugins(app: App) {
       .sort((left, right) => left.localeCompare(right));
     for (const candidateDir of candidateDirs) {
       const manifest = readManifest(candidateDir);
-      if (manifest && manifest.kind !== "builtin") {
+      if (manifest && readManifestKind(manifest) !== "builtin") {
         registerService(manifest, { defaultKind: "plugin" });
       }
     }
@@ -121,7 +127,7 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
     if (!manifest) {
       throw new Error("插件包缺少 manifest.json");
     }
-    if (manifest.kind === "builtin") {
+    if (readManifestKind(manifest) === "builtin") {
       throw new Error("插件导入入口不接受内置服务 manifest");
     }
     const definition = normalizeManifest(manifest, { defaultKind: "plugin" });

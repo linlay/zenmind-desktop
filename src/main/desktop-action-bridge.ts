@@ -1059,11 +1059,11 @@ async function executeAction(
         agentsPrompt: typeof args.agentsPrompt === "string" ? args.agentsPrompt : ""
       });
     case "desktop.agents.createAgent":
-      return ok(action, await callAgentPlatform(options.app, "/api/agent/create", { method: "POST", body: args }));
+      return ok(action, await callAgentPlatform(options.app, "/api/admin/agents/create", { method: "POST", body: args }));
     case "desktop.agents.updateAgent":
-      return ok(action, await callAgentPlatform(options.app, "/api/agent/update", { method: "POST", body: args }));
+      return ok(action, await callAgentPlatform(options.app, "/api/admin/agents/update", { method: "POST", body: args }));
     case "desktop.agents.deleteAgent":
-      return ok(action, await callAgentPlatform(options.app, "/api/agent/delete", { method: "POST", body: { key: readAgentKey(args) } }));
+      return ok(action, await callAgentPlatform(options.app, "/api/admin/agents/delete", { method: "POST", body: { key: readAgentKey(args) } }));
     case "desktop.agents.cloneAgent":
     case "desktop.agents.disableAgent":
     case "desktop.agents.reloadAgents":
@@ -1077,17 +1077,17 @@ async function executeAction(
     case "desktop.automations.previewAutomation":
       return preview(action, { automation: args, validation: validateAutomation(args) });
     case "desktop.automations.createAutomation":
-      return ok(action, await callAgentPlatform(options.app, "/api/automation/create", { method: "POST", body: args }));
+      return ok(action, await callAgentPlatform(options.app, "/api/admin/automations/create", { method: "POST", body: args }));
     case "desktop.automations.updateAutomation":
-      return ok(action, await callAgentPlatform(options.app, "/api/automation/update", { method: "POST", body: args }));
+      return ok(action, await callAgentPlatform(options.app, "/api/admin/automations/update", { method: "POST", body: args }));
     case "desktop.automations.pauseAutomation":
     case "desktop.automations.resumeAutomation":
-      return ok(action, await callAgentPlatform(options.app, "/api/automation/toggle", {
+      return ok(action, await callAgentPlatform(options.app, "/api/admin/automations/toggle", {
         method: "POST",
         body: { id: readAutomationId(args), enabled: action === "desktop.automations.resumeAutomation" }
       }));
     case "desktop.automations.deleteAutomation":
-      return ok(action, await callAgentPlatform(options.app, "/api/automation/delete", { method: "POST", body: { id: readAutomationId(args) } }));
+      return ok(action, await callAgentPlatform(options.app, "/api/admin/automations/delete", { method: "POST", body: { id: readAutomationId(args) } }));
     case "desktop.automations.explainNextRun": {
       const id = readAutomationId(args);
       const detail = await callAgentPlatform<Record<string, unknown>>(options.app, "/api/automation", { method: "POST", body: { id } });

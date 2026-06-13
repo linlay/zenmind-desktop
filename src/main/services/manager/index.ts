@@ -354,7 +354,10 @@ function collectPrerequisites(
 ) {
   const prerequisites: string[] = [];
   const envPath = layout.envPath;
-  if (service.serviceMode === "service" && !fs.existsSync(envPath)) {
+  const requiresEnvFile = service.configFiles.some((configFile) =>
+    configFile.required && path.normalize(configFile.relativePath) === ".env"
+  );
+  if (requiresEnvFile && !fs.existsSync(envPath)) {
     prerequisites.push("缺少 .env 配置文件");
   }
 

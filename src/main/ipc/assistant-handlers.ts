@@ -174,7 +174,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     }
     const request = buildCoderProjectAgentCreateRequest(workspaceDir, { name, acpProxyId });
     try {
-      const response = await callAgentPlatform?.(app, "/api/agent/create", {
+      const response = await callAgentPlatform?.(app, "/api/admin/agents/create", {
         method: "POST",
         body: request
       });

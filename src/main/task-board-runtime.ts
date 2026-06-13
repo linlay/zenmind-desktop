@@ -768,7 +768,7 @@ export class TaskBoardRuntime {
     }
     if (issue.automationId) {
       try {
-        await callAgentPlatform(this.options.app, "/api/automation/delete", {
+        await callAgentPlatform(this.options.app, "/api/admin/automations/delete", {
           method: "POST",
           body: { id: issue.automationId }
         });
@@ -1153,7 +1153,7 @@ export class TaskBoardRuntime {
     const currentUser = this.currentUser();
     if (!issue.automationEnabled) {
       if (issue.automationId) {
-        await callAgentPlatform(this.options.app, "/api/automation/delete", {
+        await callAgentPlatform(this.options.app, "/api/admin/automations/delete", {
           method: "POST",
           body: { id: issue.automationId }
         });
@@ -1186,11 +1186,11 @@ export class TaskBoardRuntime {
     }
     const payload = buildTaskBoardAutomationPayload(issue);
     const detail = issue.automationId
-      ? await callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/automation/update", {
+      ? await callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/admin/automations/update", {
         method: "POST",
         body: { id: issue.automationId, ...payload }
       })
-      : await callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/automation/create", {
+      : await callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/admin/automations/create", {
         method: "POST",
         body: payload
       });
@@ -1215,7 +1215,7 @@ export class TaskBoardRuntime {
     }
     if (!issue.automationEnabled) {
       if (issue.automationId) {
-        await this.options.callAgentPlatform(this.options.app, "/api/automation/delete", {
+        await this.options.callAgentPlatform(this.options.app, "/api/admin/automations/delete", {
           method: "POST",
           body: { id: issue.automationId }
         });
@@ -1241,11 +1241,11 @@ export class TaskBoardRuntime {
     }
     const automationPayload = buildTaskBoardAutomationPayload(issue);
     const detail = issue.automationId
-      ? await this.options.callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/automation/update", {
+      ? await this.options.callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/admin/automations/update", {
         method: "POST",
         body: { id: issue.automationId, ...automationPayload }
       })
-      : await this.options.callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/automation/create", {
+      : await this.options.callAgentPlatform<{ id?: string; scheduleId?: string }>(this.options.app, "/api/admin/automations/create", {
         method: "POST",
         body: automationPayload
       });

@@ -188,7 +188,10 @@ function loadInstalledBuiltinServices(app: App, ignoredServiceIds: Set<string> =
   for (const manifestPath of listInstalledBuiltinManifestPaths(app)) {
     try {
       const manifest = readManifestFile(manifestPath);
-      if (manifest.kind !== "builtin") {
+      const manifestKind = manifest && typeof manifest === "object" && !Array.isArray(manifest)
+        ? (manifest as { kind?: unknown }).kind
+        : undefined;
+      if (manifestKind !== "builtin") {
         continue;
       }
       if (ignoredServiceIds.has(manifest.id)) {

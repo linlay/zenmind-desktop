@@ -1607,7 +1607,10 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /availableSidebarNavOrderItems/);
   assert.match(appShell, /normalizeSidebarNavOrder\(sidebarNavOrder, availableSidebarNavOrderItems\)/);
   assert.match(appShell, /websiteNavOrder=\{normalizedWebGroupOrder\}/);
+  assert.match(appShell, /webItems=\{webItems\}/);
   assert.match(sidebarSource, /sidebarNavOrder:\s*SidebarNavOrderItemKey\[\]/);
+  assert.match(sidebarSource, /webItems:\s*WebEntry\[\]/);
+  assert.doesNotMatch(sidebarSource, /websiteItems/);
   assert.match(sidebarSource, /sortSidebarNavItems\(/);
 });
 
@@ -1810,9 +1813,9 @@ test("task board route exposes native desktop api and page styles", () => {
   assert.match(taskBoardHandlers, /ipcMain\.handle\("taskBoard\.moveIssue"/);
   assert.match(taskBoardHandlers, /ipcMain\.handle\("taskBoard\.syncIssueAutomation"/);
   assert.match(taskBoardSync, /syncTaskBoardIssueAutomation/);
-  assert.match(taskBoardSync, /\/api\/automation\/create/);
-  assert.match(taskBoardSync, /\/api\/automation\/update/);
-  assert.match(taskBoardSync, /\/api\/automation\/delete/);
+  assert.match(taskBoardSync, /\/api\/admin\/automations\/create/);
+  assert.match(taskBoardSync, /\/api\/admin\/automations\/update/);
+  assert.match(taskBoardSync, /\/api\/admin\/automations\/delete/);
   assert.doesNotMatch(taskBoardSync, /\/api\/schedule(?:\/|-)(?:create|update|delete)/);
   assert.match(mainProcess, /createTaskBoardRuntime/);
   assert.match(mainProcess, /state\.taskBoardRuntime\?\.sendAssistantEvent\(event\)/);
@@ -2209,7 +2212,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listNavigationAgents"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listCopilotAgents"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.createCoderProject"/);
-  assert.match(assistantHandlers, /callAgentPlatform\?\.?\(app, "\/api\/agent\/create"/);
+  assert.match(assistantHandlers, /callAgentPlatform\?\.?\(app, "\/api\/admin\/agents\/create"/);
   assert.match(assistantHandlers, /assistantNavigationStatusClient\?\.scheduleRefresh\(0\)/);
   assert.match(mainProcess, /AssistantNavigationStatusClient/);
   assert.match(mainProcess, /assistant\.navigationAgentsChanged/);
@@ -2265,7 +2268,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(appSidebar, /className="is-danger"/);
   assert.match(desktopActions, /desktop\.agents\.deleteAgent/);
   assert.match(desktopActionBridge, /case "desktop\.agents\.deleteAgent"/);
-  assert.match(desktopActionBridge, /"\/api\/agent\/delete"[\s\S]*?body:\s*\{\s*key: readAgentKey\(args\)\s*\}/);
+  assert.match(desktopActionBridge, /"\/api\/admin\/agents\/delete"[\s\S]*?body:\s*\{\s*key: readAgentKey\(args\)\s*\}/);
   assert.doesNotMatch(appShell, /setInterval\([\s\S]*?listNavigationAgents/);
 });
 

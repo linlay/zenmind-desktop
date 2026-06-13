@@ -1542,13 +1542,17 @@ function writePluginInstallRoot(installDir, options = {}) {
       {
         id: pluginId,
         name: pluginName,
-        kind: "plugin",
         version,
         description: "fixture plugin",
-        frontend: {
-          mode: "none"
+        service: {
+          ui: "none",
+          web: {
+            healthPath: "",
+            portEnvKey: "PORT",
+            defaultPort: port
+          }
         },
-        scripts,
+        lifecycle: scripts,
         configFiles: [
           {
             key: "env",
@@ -1563,11 +1567,6 @@ function writePluginInstallRoot(installDir, options = {}) {
           logRelativePath: "run/test-plugin.log",
           ...(errorLogRelativePath ? { errorLogRelativePath } : {}),
           requiredPaths
-        },
-        web: {
-          routePath: "",
-          portEnvKey: "PORT",
-          defaultPort: port
         }
       },
       null,
@@ -2010,7 +2009,7 @@ test("parsePort reads Desktop core service ports from their config keys", () => 
       portEnvKey: "SERVER_PORT",
       defaultPort: 18080
     }
-  });
+  }, { defaultKind: "builtin" });
   const webclientPort = __testInternals.parsePort(
     getBuiltinService("agent-webclient"),
     new Map([["PORT", "7080"]])
@@ -2058,6 +2057,56 @@ test("parsePort reads Desktop core service ports from their config keys", () => 
   assert.equal(platformFallbackPort, 7078);
   assert.equal(platformBadPort, 7078);
   restore();
+});
+
+test("plugin services without configFiles do not require .env", async () => {
+  const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-no-env-"));
+  try {
+    registryInternals.clearServices();
+    const app = createApp(userDataRoot);
+    const manifest = {
+      pluginApiVersion: 1,
+      id: "no-env-plugin",
+      name: "No Env Plugin",
+      version: "v0.1.0",
+      description: "fixture plugin without config files",
+      lifecycle: {
+        start: "start.sh",
+        stop: "stop.sh"
+      },
+      runtime: {
+        pidRelativePath: "run/no-env-plugin.pid",
+        logRelativePath: "run/no-env-plugin.log",
+        requiredPaths: ["manifest.json"]
+      },
+      service: {
+        ui: "none"
+      }
+    };
+    const service = registerPlugin(manifest);
+    const installDir = getInstallDir(app, service);
+    fs.mkdirSync(installDir, { recursive: true });
+    fs.writeFileSync(path.join(installDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    const stateDir = path.join(userDataRoot, "home", ".zenmind", ".desktop", "state", "plugins", service.id);
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(stateDir, "init-state.json"),
+      `${JSON.stringify({
+        version: service.version,
+        status: "succeeded",
+        updatedAt: "2026-06-13T00:00:00.000Z"
+      }, null, 2)}\n`,
+      "utf8"
+    );
+
+    const state = await getServiceState(app, service.id);
+    assert.equal(state.configFiles.length, 0);
+    assert.notEqual(state.status, "config-required");
+    assert.doesNotMatch(state.message, /缺少 \.env/u);
+  } finally {
+    registryInternals.clearServices();
+    fs.rmSync(userDataRoot, { recursive: true, force: true });
+  }
 });
 
 test("agent-platform start env does not inject NODE_BIN or port overrides", async () => {
@@ -6591,13 +6640,17 @@ test("restoreRunningServices skips services that still need foreground install o
   registerPlugin({
     id: "plugin-a",
     name: "Plugin A",
-    kind: "plugin",
     version: "v1.0.0",
     description: "missing fixture plugin",
-    frontend: {
-      mode: "none"
+    service: {
+      ui: "none",
+      web: {
+        healthPath: "",
+        portEnvKey: "PORT",
+        defaultPort: 9310
+      }
     },
-    scripts: {
+    lifecycle: {
       start: "start.sh",
       stop: "stop.sh"
     },
@@ -6605,11 +6658,6 @@ test("restoreRunningServices skips services that still need foreground install o
       pidRelativePath: "run/plugin-a.pid",
       logRelativePath: "run/plugin-a.log",
       requiredPaths: ["start.sh", "stop.sh", "manifest.json"]
-    },
-    web: {
-      routePath: "",
-      portEnvKey: "PORT",
-      defaultPort: 9310
     }
   });
   __testInternals.writeLastRunningServices(app, ["plugin-a"]);

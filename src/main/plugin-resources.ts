@@ -123,13 +123,13 @@ async function upsertAgentResource(
 ) {
   const payload = normalizeAgentPayload(agent);
   if (!owned) {
-    await callAgentPlatform(app, "/api/agent/create", payload);
+    await callAgentPlatform(app, "/api/admin/agents/create", payload);
     return;
   }
   try {
-    await callAgentPlatform(app, "/api/agent/create", payload);
+    await callAgentPlatform(app, "/api/admin/agents/create", payload);
   } catch {
-    await callAgentPlatform(app, "/api/agent/update", payload);
+    await callAgentPlatform(app, "/api/admin/agents/update", payload);
   }
 }
 
@@ -140,13 +140,13 @@ async function upsertAutomationResource(
 ) {
   const payload = normalizeAutomationPayload(automation);
   if (!owned) {
-    await callAgentPlatform(app, "/api/automation/create", payload);
+    await callAgentPlatform(app, "/api/admin/automations/create", payload);
     return;
   }
   try {
-    await callAgentPlatform(app, "/api/automation/create", payload);
+    await callAgentPlatform(app, "/api/admin/automations/create", payload);
   } catch {
-    await callAgentPlatform(app, "/api/automation/update", payload);
+    await callAgentPlatform(app, "/api/admin/automations/update", payload);
   }
 }
 
@@ -205,12 +205,12 @@ export async function removePluginResources(app: App, service: ServiceDefinition
   }
   for (const automationId of Object.keys(ownership.automations ?? {})) {
     if (callAgentPlatformCallback) {
-      await callAgentPlatform(app, "/api/automation/delete", { id: automationId }).catch(() => undefined);
+      await callAgentPlatform(app, "/api/admin/automations/delete", { id: automationId }).catch(() => undefined);
     }
   }
   for (const agentKey of Object.keys(ownership.agents ?? {})) {
     if (callAgentPlatformCallback) {
-      await callAgentPlatform(app, "/api/agent/delete", { key: agentKey }).catch(() => undefined);
+      await callAgentPlatform(app, "/api/admin/agents/delete", { key: agentKey }).catch(() => undefined);
     }
   }
   fs.rmSync(getOwnershipPath(app, service.id), { force: true });

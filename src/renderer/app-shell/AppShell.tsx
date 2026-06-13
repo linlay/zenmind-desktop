@@ -728,6 +728,14 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    return window.electronAPI.onServicesChanged(() => {
+      refreshWebItems().catch(() => undefined);
+      void refreshAssistantNavAgents();
+      void refreshCopilotAgentOptions();
+    });
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     window.electronAPI.settings
       .getPlatform()

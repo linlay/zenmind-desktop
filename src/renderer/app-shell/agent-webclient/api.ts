@@ -100,7 +100,7 @@ export function getAgent(agentKey: string) {
 
 export function createAgent(params: CreateAgentRequest) {
   return requestAgentPlatform<AgentDetailResponse>({
-    path: "/api/agent/create",
+    path: "/api/admin/agents/create",
     method: "POST",
     body: params
   });
@@ -108,7 +108,7 @@ export function createAgent(params: CreateAgentRequest) {
 
 export function updateAgent(params: UpdateAgentRequest) {
   return requestAgentPlatform<AgentDetailResponse>({
-    path: "/api/agent/update",
+    path: "/api/admin/agents/update",
     method: "POST",
     body: params
   });
@@ -116,7 +116,7 @@ export function updateAgent(params: UpdateAgentRequest) {
 
 export function deleteAgent(params: DeleteAgentRequest) {
   return requestAgentPlatform<{ key: string; deleted: boolean }>({
-    path: "/api/agent/delete",
+    path: "/api/admin/agents/delete",
     method: "POST",
     body: params
   });
@@ -124,7 +124,7 @@ export function deleteAgent(params: DeleteAgentRequest) {
 
 export function getAgentEditorOptions() {
   return requestAgentPlatform<AgentEditorOptionsResponse>({
-    path: "/api/agent/editor-options"
+    path: "/api/admin/agents/editor-options"
   });
 }
 
@@ -169,7 +169,7 @@ export function getAutomation(id: string) {
 
 export function createAutomation(params: CreateAutomationRequest) {
   return requestAgentPlatform<AutomationDetailResponse>({
-    path: "/api/automation/create",
+    path: "/api/admin/automations/create",
     method: "POST",
     body: params
   });
@@ -177,7 +177,7 @@ export function createAutomation(params: CreateAutomationRequest) {
 
 export function updateAutomation(params: UpdateAutomationRequest) {
   return requestAgentPlatform<AutomationDetailResponse>({
-    path: "/api/automation/update",
+    path: "/api/admin/automations/update",
     method: "POST",
     body: params
   });
@@ -185,7 +185,7 @@ export function updateAutomation(params: UpdateAutomationRequest) {
 
 export function deleteAutomation(params: DeleteAutomationRequest) {
   return requestAgentPlatform<{ id: string; deleted: boolean }>({
-    path: "/api/automation/delete",
+    path: "/api/admin/automations/delete",
     method: "POST",
     body: params
   });
@@ -193,7 +193,7 @@ export function deleteAutomation(params: DeleteAutomationRequest) {
 
 export function toggleAutomation(params: ToggleAutomationRequest) {
   return requestAgentPlatform<AutomationDetailResponse>({
-    path: "/api/automation/toggle",
+    path: "/api/admin/automations/toggle",
     method: "POST",
     body: params
   });

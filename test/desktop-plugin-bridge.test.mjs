@@ -90,39 +90,42 @@ test("plugin manifest v2 registers from plugin directory without kind", () => {
   assert.deepEqual(service.bridge.requests, ["service.getStatus", "agentPlatform.upsertAcpProxy"]);
 });
 
-test("legacy plugin manifest still normalizes scripts frontend and web", () => {
-  registryInternals.clearServices();
-  const service = registerPlugin({
-    kind: "plugin",
-    id: "legacy-proxy",
-    name: "Legacy Proxy",
+test("plugin manifest rejects legacy public fields", () => {
+  const baseManifest = {
+    pluginApiVersion: 1,
+    id: "strict-plugin",
+    name: "Strict Plugin",
     version: "v1",
-    description: "legacy",
-    frontend: {
-      mode: "embedded"
-    },
-    scripts: {
+    description: "strict",
+    lifecycle: {
       start: "start.sh",
       stop: "stop.sh"
     },
     runtime: {
-      pidRelativePath: "run/legacy.pid",
-      logRelativePath: "run/legacy.log"
+      requiredPaths: ["manifest.json"]
     },
-    web: {
-      routePath: "/",
-      portEnvKey: "PORT",
-      defaultPort: 9000
+    service: {
+      ui: "none",
+      web: {
+        healthPath: "/healthz",
+        portEnvKey: "PORT",
+        defaultPort: 9000
+      }
     }
-  });
+  };
 
-  assert.equal(service.kind, "plugin");
-  assert.equal(service.frontendMode, "embedded");
-  assert.deepEqual(service.startCommand, ["./start.sh"]);
-  assert.deepEqual(service.stopCommand, ["./stop.sh"]);
-  assert.equal(service.web.routePath, "/");
-  assert.deepEqual(service.hooks.subscribe, []);
-  assert.deepEqual(service.bridge.requests, []);
+  for (const [field, value] of Object.entries({
+    kind: "plugin",
+    scripts: { start: "start.sh", stop: "stop.sh" },
+    frontend: { mode: "embedded" },
+    web: { routePath: "/", portEnvKey: "PORT", defaultPort: 9000 }
+  })) {
+    registryInternals.clearServices();
+    assert.throws(
+      () => registerPlugin({ ...baseManifest, [field]: value }),
+      new RegExp(`plugin manifest field "${field}" is not supported`, "u")
+    );
+  }
 });
 
 test("resource plugin manifest does not require lifecycle commands", () => {
@@ -314,6 +317,57 @@ test("plugin webapp resources do not overwrite unowned webapps", async () => {
   }
 });
 
+test("plugin agent and automation resources use current admin routes", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-resource-admin-routes-"));
+  try {
+    const app = createApp(root);
+    const calls = [];
+    configurePluginResources({
+      callAgentPlatform: async (_app, endpoint, options) => {
+        calls.push({ endpoint, body: options?.body });
+        return { ok: true };
+      }
+    });
+    await syncPluginResources(app, {
+      kind: "plugin",
+      id: "happy-agent",
+      resources: {
+        webapps: [],
+        agents: [{ key: "happy-agent", definition: { name: "Happy Agent" } }],
+        automations: [{
+          id: "happy-agent-happy-story",
+          name: "Happy Agent 开心故事",
+          cron: "*/2 * * * *",
+          agentKey: "happy-agent",
+          query: { message: "给我讲一个简短、开心、温暖的小故事。" }
+        }]
+      }
+    }, root);
+
+    assert.deepEqual(calls.map((call) => call.endpoint), [
+      "/api/admin/agents/create",
+      "/api/admin/automations/create"
+    ]);
+    const ownershipPath = path.join(
+      root,
+      "home",
+      ".zenmind",
+      ".desktop",
+      "state",
+      "plugins",
+      "happy-agent",
+      "plugin-resources.json"
+    );
+    const ownership = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
+    assert.equal(ownership.pendingAgentPlatformSync, false);
+    assert.equal(Boolean(ownership.agents?.["happy-agent"]), true);
+    assert.equal(Boolean(ownership.automations?.["happy-agent-happy-story"]), true);
+  } finally {
+    configurePluginResources({ callAgentPlatform: null });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("plugin agent resources only update owned agent-platform records", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-resource-agent-"));
   try {
@@ -337,7 +391,7 @@ test("plugin agent resources only update owned agent-platform records", async ()
         automations: []
       }
     }, root);
-    assert.deepEqual(calls.map((call) => call.endpoint), ["/api/agent/create"]);
+    assert.deepEqual(calls.map((call) => call.endpoint), ["/api/admin/agents/create"]);
 
     const ownershipPath = path.join(
       root,

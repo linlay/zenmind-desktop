@@ -59,17 +59,19 @@ function writePluginArchive(root, options = {}) {
     `${JSON.stringify({
       id: pluginId,
       name: "Cloud Plugin",
-      kind: options.kind ?? "plugin",
+      ...(options.kind ? { kind: options.kind } : {}),
       version: "1.0.0",
       description: "Cloud plugin",
-      frontend: { mode: "none" },
-      scripts: { start: "start.sh", stop: "stop.sh" },
+      service: {
+        ui: "none",
+        web: { healthPath: "", portEnvKey: "PORT", defaultPort: 9300 }
+      },
+      lifecycle: { start: "start.sh", stop: "stop.sh" },
       runtime: {
         pidRelativePath: "run/cloud-plugin.pid",
         logRelativePath: "run/cloud-plugin.log",
         requiredPaths: ["manifest.json", "start.sh", "stop.sh", ".env.example", "run"]
-      },
-      web: { routePath: "", portEnvKey: "PORT", defaultPort: 9300 }
+      }
     }, null, 2)}\n`,
     "utf8"
   );

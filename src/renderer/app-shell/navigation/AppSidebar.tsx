@@ -652,7 +652,7 @@ type AppSidebarProps = {
   assistantLauncherVisible?: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
   websiteNavOrder?: SidebarNavOrderItemKey[];
-  websiteItems: WebEntry[];
+  webItems: WebEntry[];
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantNavAgentsLoaded?: boolean;
   copilotAgentOptions?: AssistantNavAgentItem[];
@@ -693,7 +693,7 @@ export function AppSidebar({
   assistantLauncherVisible = true,
   sidebarNavOrder,
   websiteNavOrder = [],
-  websiteItems,
+  webItems,
   assistantNavAgents = [],
   assistantNavAgentsLoaded = true,
   copilotAgentOptions = [],
@@ -779,7 +779,7 @@ export function AppSidebar({
     const orderIndex = new Map(
       websiteNavOrder.map((key, index) => [key, index] as const),
     );
-    return websiteItems
+    return webItems
       .map((item) => ({
         orderKey: createWebNavOrderKey(item.entryKey),
         to: `/webs/${item.entryKey}`,
@@ -793,7 +793,7 @@ export function AppSidebar({
           orderIndex.get(right.orderKey) ?? Number.MAX_SAFE_INTEGER;
         return leftIndex - rightIndex;
       });
-  }, [websiteItems, websiteNavOrder]);
+  }, [webItems, websiteNavOrder]);
 
   const navItems: SidebarPrimaryEntry[] = sortSidebarNavItems(
     [

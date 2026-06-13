@@ -47,6 +47,7 @@ export interface ServiceDefinition extends Manifest {
   serviceMode: ServiceMode;
   frontend: ManifestFrontend & { mode: FrontendMode };
   frontendMode: FrontendMode;
+  scripts: ManifestScripts;
   configFiles: ManifestConfigFile[];
   runtime: ManifestRuntime & {
     pidRelativePath: string;
@@ -120,6 +121,29 @@ function asBoolean(value: unknown) {
 
 function asNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function isPluginManifestInput(raw: Record<string, unknown>, options: NormalizeManifestOptions) {
+  return options.defaultKind !== "builtin";
+}
+
+function assertNoPluginManifestLegacyFields(raw: Record<string, unknown>, options: NormalizeManifestOptions) {
+  if (!isPluginManifestInput(raw, options)) {
+    return;
+  }
+
+  const legacyFields: Record<string, string> = {
+    kind: "插件身份由导入入口决定，请删除 kind。",
+    scripts: "请使用 lifecycle.start / lifecycle.stop / lifecycle.deploy。",
+    frontend: "请使用 service.ui；插件 manifest 不再支持 frontend。",
+    web: "请使用 service.web.healthPath / service.web.portEnvKey / service.web.defaultPort。"
+  };
+
+  for (const [field, message] of Object.entries(legacyFields)) {
+    if (Object.prototype.hasOwnProperty.call(raw, field)) {
+      throw new Error(`plugin manifest field "${field}" is not supported. ${message}`);
+    }
+  }
 }
 
 function asStringRecord(value: unknown) {
@@ -940,6 +964,7 @@ function resolveCommand(command: ManifestCommand | undefined) {
 
 export function normalizeManifest(manifest: Manifest, options: NormalizeManifestOptions = {}): ServiceDefinition {
   const raw = asObject(manifest);
+  assertNoPluginManifestLegacyFields(raw, options);
   const id = asOptionalString(raw.id);
   if (!id) {
     throw new Error("manifest id is required");

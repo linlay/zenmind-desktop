@@ -1,4 +1,4 @@
-import type { FrontendMode, ServiceKind } from "./services";
+import type { FrontendMode } from "./services";
 
 export interface ManifestPlatform {
   os: string;
@@ -212,18 +212,14 @@ export interface Manifest {
   pluginApiVersion?: number;
   id: string;
   name: string;
-  kind?: ServiceKind;
   version: string;
   description: string;
   platform?: ManifestPlatform;
-  frontend?: ManifestFrontend;
   api?: ManifestApi;
   backend?: ManifestBackend;
-  scripts?: ManifestScripts;
   lifecycle?: ManifestLifecycle;
   configFiles?: ManifestConfigFile[];
   runtime?: ManifestRuntime;
-  web?: ManifestWeb;
   service?: ManifestPluginService;
   prerequisites?: string[];
   desktop?: ManifestDesktop;

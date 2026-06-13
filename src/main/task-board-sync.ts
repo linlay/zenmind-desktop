@@ -228,7 +228,7 @@ export async function syncTaskBoardIssueAutomation<TApp extends AppPathProvider>
 
   if (!issue.automationEnabled) {
     if (issue.automationId) {
-      await callAgentPlatform(app, "/api/automation/delete", {
+      await callAgentPlatform(app, "/api/admin/automations/delete", {
         method: "POST",
         body: { id: issue.automationId }
       });
@@ -263,11 +263,11 @@ export async function syncTaskBoardIssueAutomation<TApp extends AppPathProvider>
 
   const payload = buildTaskBoardAutomationPayload(issue);
   const detail = issue.automationId
-    ? await callAgentPlatform<TaskBoardAutomationDetail>(app, "/api/automation/update", {
+    ? await callAgentPlatform<TaskBoardAutomationDetail>(app, "/api/admin/automations/update", {
       method: "POST",
       body: { id: issue.automationId, ...payload }
     })
-    : await callAgentPlatform<TaskBoardAutomationDetail>(app, "/api/automation/create", {
+    : await callAgentPlatform<TaskBoardAutomationDetail>(app, "/api/admin/automations/create", {
       method: "POST",
       body: payload
     });
@@ -294,7 +294,7 @@ export async function deleteTaskBoardIssueWithAutomation<TApp extends AppPathPro
   const issue = currentIssues.find((candidate) => candidate.id === String(issueId ?? "").trim());
   if (issue?.automationId) {
     try {
-      await callAgentPlatform(app, "/api/automation/delete", {
+      await callAgentPlatform(app, "/api/admin/automations/delete", {
         method: "POST",
         body: { id: issue.automationId }
       });
