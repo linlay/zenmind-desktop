@@ -92,7 +92,7 @@ export async function installPluginMarketItem(
   const archivePath = await downloadAsset(app, item, selected.asset);
   try {
     const manifest = readManifestFromArchive(archivePath);
-    if (manifest.kind !== "plugin") {
+    if (manifest.kind === "builtin") {
       throw new Error(t("market.main.pluginKindRequired"));
     }
     if (manifest.id !== item.id) {

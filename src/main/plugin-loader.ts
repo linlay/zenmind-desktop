@@ -57,7 +57,7 @@ export function loadInstalledPlugins(app: App) {
       .sort((left, right) => left.localeCompare(right));
     for (const candidateDir of candidateDirs) {
       const manifest = readManifest(candidateDir);
-      if (manifest?.kind === "plugin") {
+      if (manifest && manifest.kind !== "builtin") {
         registerService(manifest, { defaultKind: "plugin" });
       }
     }
@@ -105,16 +105,7 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
       throw new Error("插件包缺少 manifest.json");
     }
     if (manifest.kind === "builtin") {
-      registerService(manifest, {
-        defaultKind: "builtin",
-        desktop: {
-          assetFileName: path.basename(archivePath),
-          bundleTopLevelDir: manifest.desktop?.bundleTopLevelDir ?? entries[0]
-        }
-      });
-      const { installBuiltinService } = await import("./services/manager");
-      await installBuiltinService(app, manifest.id, { force: true, archivePath });
-      return { ok: true, message: `内置服务 ${manifest.name} 已安装。`, serviceId: manifest.id };
+      throw new Error("插件导入入口不接受内置服务 manifest");
     }
     const definition = normalizeManifest(manifest, { defaultKind: "plugin" });
 

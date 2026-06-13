@@ -19,6 +19,8 @@ import type {
   ManifestDesktopProxyRoute,
   ManifestEnvBinding,
   ManifestFrontend,
+  ManifestPluginBridge,
+  ManifestPluginHooks,
   ManifestRuntime,
   ManifestScripts,
   ManifestWeb,
@@ -36,7 +38,9 @@ export interface ServiceImportTarget {
 
 export interface ServiceDefinition extends Manifest {
   id: ServiceId;
+  kind: ServiceKind;
   description: string;
+  pluginApiVersion: number;
   frontend: ManifestFrontend & { mode: FrontendMode };
   frontendMode: FrontendMode;
   configFiles: ManifestConfigFile[];
@@ -55,6 +59,12 @@ export interface ServiceDefinition extends Manifest {
       provides: ManifestDesktopCapabilityProvider[];
       requires: ManifestDesktopCapabilityRequirement[];
     };
+  };
+  hooks: ManifestPluginHooks & {
+    subscribe: string[];
+  };
+  bridge: ManifestPluginBridge & {
+    requests: string[];
   };
   assetFileName: string;
   bundleTopLevelDir: string;
@@ -345,7 +355,12 @@ function toManifestCommand(value: unknown): ManifestCommand | undefined {
 
 function resolveFrontend(raw: Record<string, unknown>) {
   const frontend = asObject(raw.frontend);
-  const mode = isFrontendMode(frontend.mode) ? frontend.mode : "none";
+  const service = asObject(raw.service);
+  const mode = isFrontendMode(frontend.mode)
+    ? frontend.mode
+    : isFrontendMode(service.ui)
+    ? service.ui
+    : "none";
 
   return {
     mode,
@@ -361,13 +376,14 @@ function resolveFrontend(raw: Record<string, unknown>) {
 
 function resolveScripts(raw: Record<string, unknown>) {
   const scripts = asObject(raw.scripts);
+  const lifecycle = asObject(raw.lifecycle);
 
-  const start = toManifestCommand(scripts.start);
-  const stop = toManifestCommand(scripts.stop);
-  const deploy = toManifestCommand(scripts.deploy);
+  const start = toManifestCommand(lifecycle.start) ?? toManifestCommand(scripts.start);
+  const stop = toManifestCommand(lifecycle.stop) ?? toManifestCommand(scripts.stop);
+  const deploy = toManifestCommand(lifecycle.deploy) ?? toManifestCommand(scripts.deploy);
 
   if (!start || !stop) {
-    throw new Error("manifest scripts.start/stop are required");
+    throw new Error("manifest lifecycle.start/stop are required");
   }
 
   return {
@@ -448,7 +464,9 @@ function resolveBackend(raw: Record<string, unknown>) {
 }
 
 function resolveWeb(raw: Record<string, unknown>) {
-  if (raw.web === undefined) {
+  const service = asObject(raw.service);
+  const serviceWeb = asObject(service.web);
+  if (raw.web === undefined && service.web === undefined) {
     return {
       routePath: "",
       portEnvKey: "",
@@ -458,10 +476,24 @@ function resolveWeb(raw: Record<string, unknown>) {
 
   const web = asObject(raw.web);
   return {
-    routePath: asString(web.routePath),
-    portEnvKey: asString(web.portEnvKey),
-    defaultPort: asNumber(web.defaultPort) ?? 0
+    routePath: asString(serviceWeb.healthPath) || asString(web.routePath),
+    portEnvKey: asString(serviceWeb.portEnvKey) || asString(web.portEnvKey),
+    defaultPort: asNumber(serviceWeb.defaultPort) ?? asNumber(web.defaultPort) ?? 0
   } satisfies ManifestWeb;
+}
+
+function resolvePluginHooks(raw: Record<string, unknown>): ManifestPluginHooks & { subscribe: string[] } {
+  const hooks = asObject(raw.hooks);
+  return {
+    subscribe: asStringArray(hooks.subscribe)
+  };
+}
+
+function resolvePluginBridge(raw: Record<string, unknown>): ManifestPluginBridge & { requests: string[] } {
+  const bridge = asObject(raw.bridge);
+  return {
+    requests: asStringArray(bridge.requests)
+  };
 }
 
 function normalizeRoutePath(value: unknown) {
@@ -819,8 +851,10 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
   const desktop = resolveDesktop(raw, options, id, frontend);
   const web = applyCoreServiceWebOverride(id, resolveWeb(raw));
   const envBindings = applyCoreServiceEnvBindingOverrides(id, desktop.envBindings);
+  const pluginApiVersion = asNumber(raw.pluginApiVersion) ?? 0;
 
   return {
+    pluginApiVersion,
     id,
     name: asOptionalString(raw.name) ?? id,
     kind: isServiceKind(raw.kind) ? raw.kind : (options.defaultKind ?? "plugin"),
@@ -846,6 +880,8 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
       ...desktop,
       envBindings
     },
+    hooks: resolvePluginHooks(raw),
+    bridge: resolvePluginBridge(raw),
     assetFileName: desktop.assetFileName ?? "",
     bundleTopLevelDir: desktop.bundleTopLevelDir,
     startCommand: resolveCommand(scripts.start) ?? [],

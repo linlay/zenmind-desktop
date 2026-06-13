@@ -35,6 +35,12 @@ export interface ManifestScripts {
   deploy?: ManifestCommand;
 }
 
+export interface ManifestLifecycle {
+  start?: ManifestCommand;
+  stop?: ManifestCommand;
+  deploy?: ManifestCommand;
+}
+
 export interface ManifestConfigFile {
   key: string;
   label: string;
@@ -54,6 +60,17 @@ export interface ManifestWeb {
   routePath: string;
   portEnvKey: string;
   defaultPort: number;
+}
+
+export interface ManifestPluginServiceWeb {
+  healthPath?: string;
+  portEnvKey?: string;
+  defaultPort?: number;
+}
+
+export interface ManifestPluginService {
+  web?: ManifestPluginServiceWeb;
+  ui?: FrontendMode;
 }
 
 export interface ManifestDesktopRuntimeConfig {
@@ -141,22 +158,35 @@ export interface ManifestDesktopCapabilities {
   requires?: ManifestDesktopCapabilityRequirement[];
 }
 
+export interface ManifestPluginHooks {
+  subscribe?: string[];
+}
+
+export interface ManifestPluginBridge {
+  requests?: string[];
+}
+
 export interface Manifest {
+  pluginApiVersion?: number;
   id: string;
   name: string;
-  kind: ServiceKind;
+  kind?: ServiceKind;
   version: string;
   description: string;
   platform?: ManifestPlatform;
-  frontend: ManifestFrontend;
+  frontend?: ManifestFrontend;
   api?: ManifestApi;
   backend?: ManifestBackend;
-  scripts: ManifestScripts;
+  scripts?: ManifestScripts;
+  lifecycle?: ManifestLifecycle;
   configFiles?: ManifestConfigFile[];
-  runtime: ManifestRuntime;
+  runtime?: ManifestRuntime;
   web?: ManifestWeb;
+  service?: ManifestPluginService;
   prerequisites?: string[];
   desktop?: ManifestDesktop;
+  hooks?: ManifestPluginHooks;
+  bridge?: ManifestPluginBridge;
 }
 
 export interface PluginInstallResult {

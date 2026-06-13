@@ -24,6 +24,7 @@ import type {
 import type { ServiceDefinition } from "../../manifest-utils";
 import { getAllServices, getService } from "../service-registry";
 import { issueAgentAccessToken } from "../../agent-auth";
+import { emitPluginBridgeHook, getPluginBridgeEnv } from "../../plugin-bridge";
 import { readEnvFile, parseEnvFileContent } from "../../env-file";
 import { extractArchiveToDir } from "../../archive-utils";
 import {
@@ -677,7 +678,7 @@ async function initializeServiceInternal(
       }
       if (service.deployCommand) {
         await runExecFile(service.deployCommand[0], service.deployCommand.slice(1), installDir, {
-          env: buildServiceLayoutEnv(layout)
+          env: buildDesktopServiceCommandEnv(app, service, layout, undefined)
         });
       }
       await ensureInitializationRequirements(app, service, layout);
@@ -688,6 +689,9 @@ async function initializeServiceInternal(
         updatedAt: new Date().toISOString(),
         ...(assetSignature ? { assetSignature } : {})
       });
+      if (service.kind === "plugin") {
+        emitPluginBridgeHook("plugin.initialized", { pluginId: service.id });
+      }
     } catch (error) {
       writeInitializationState(layout, {
         version: service.version,
@@ -1857,14 +1861,37 @@ function getDesktopStartCommandOptions(app: App, service: ServiceDefinition): Ru
 
 function buildDesktopServiceCommandEnv(
   app: App,
+  service: ServiceDefinition,
   layout: ServiceLayout,
   overrides: NodeJS.ProcessEnv | undefined
 ) {
   return {
     ...buildServiceLayoutEnv(layout),
+    ...getPluginBridgeEnv(app, service),
     ...(overrides ?? {}),
     DESKTOP_DEVICE_ID: getDesktopDeviceId(app)
   };
+}
+
+function buildDesktopServiceCommandEnvForTests(
+  app: App,
+  serviceOrLayout: ServiceDefinition | ServiceLayout,
+  layoutOrOverrides: ServiceLayout | NodeJS.ProcessEnv | undefined,
+  overrides?: NodeJS.ProcessEnv
+) {
+  if ("programDir" in serviceOrLayout) {
+    return {
+      ...buildServiceLayoutEnv(serviceOrLayout),
+      ...((layoutOrOverrides as NodeJS.ProcessEnv | undefined) ?? {}),
+      DESKTOP_DEVICE_ID: getDesktopDeviceId(app)
+    };
+  }
+  return buildDesktopServiceCommandEnv(
+    app,
+    serviceOrLayout,
+    layoutOrOverrides as ServiceLayout,
+    overrides
+  );
 }
 
 function isDaemonStartArg(value: string) {
@@ -1929,7 +1956,7 @@ async function runServiceCommand(
     prepareServiceExecutionLayout(service, layout);
     await runExecFile(command[0], command.slice(1), installDir, {
       timeoutMs: options.timeoutMs,
-      env: buildDesktopServiceCommandEnv(app, layout, options.env)
+      env: buildDesktopServiceCommandEnv(app, service, layout, options.env)
     });
     return {
       ok: true,
@@ -2086,6 +2113,9 @@ async function startServiceInternal(
     `${service.name} 启动命令已执行`,
     options.verificationOptions
   );
+  if (service.kind === "plugin" && verifiedResult.ok) {
+    emitPluginBridgeHook("plugin.started", { pluginId: service.id, service: verifiedResult.service });
+  }
   return verifiedResult;
 }
 
@@ -2119,7 +2149,11 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
       message: `${service.name} 已停止。`,
       service: await getServiceState(app, serviceId)
     } satisfies ServiceCommandResult;
-    return attachServiceVerification(app, serviceId, result, "stopped", `${service.name} 停止命令已执行`);
+    const verified = await attachServiceVerification(app, serviceId, result, "stopped", `${service.name} 停止命令已执行`);
+    if (service.kind === "plugin" && verified.ok) {
+      emitPluginBridgeHook("plugin.stopped", { pluginId: service.id, service: verified.service });
+    }
+    return verified;
   }
 
   const result = await runServiceCommand(app, service, service.stopCommand, `${service.name} 已停止。`, {
@@ -2135,7 +2169,11 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
   }
   startedThisSession.delete(serviceId);
 
-  return attachServiceVerification(app, serviceId, result, "stopped", `${service.name} 停止命令已执行`);
+  const verified = await attachServiceVerification(app, serviceId, result, "stopped", `${service.name} 停止命令已执行`);
+  if (service.kind === "plugin" && verified.ok) {
+    emitPluginBridgeHook("plugin.stopped", { pluginId: service.id, service: verified.service });
+  }
+  return verified;
 }
 
 async function runServiceRestart(
@@ -2229,11 +2267,15 @@ export async function writeServiceConfig(
       ? `${service.name} 配置已保存。端口修改需重启服务后生效。`
       : `${service.name} 配置已保存。`;
 
-  return {
+  const result = {
     ok: true,
     message,
     service: await getServiceState(app, serviceId)
   };
+  if (service.kind === "plugin") {
+    emitPluginBridgeHook("plugin.configChanged", { pluginId: service.id, key, service: result.service });
+  }
+  return result;
 }
 
 export async function importServiceFile(
@@ -2256,12 +2298,16 @@ export async function importServiceFile(
   fs.copyFileSync(sourcePath, targetPath);
   prepareServiceExecutionLayout(service, layout);
 
-  return {
+  const result = {
     ok: true,
     message: `${target.label} 已导入。`,
     targetPath,
     service: await getServiceState(app, serviceId)
   };
+  if (service.kind === "plugin") {
+    emitPluginBridgeHook("plugin.configChanged", { pluginId: service.id, key: targetKey, service: result.service });
+  }
+  return result;
 }
 
 export async function getServiceLogsMeta(app: App, serviceId: ServiceId): Promise<ServiceLogsMeta> {
@@ -3091,7 +3137,7 @@ export const __testInternals = {
   ensurePreStartRequirements,
   resolveNodeBin,
   getStartCommandEnvOverrides,
-  buildDesktopServiceCommandEnv,
+  buildDesktopServiceCommandEnv: buildDesktopServiceCommandEnvForTests,
   getDesktopStartCommand,
   getDesktopStartCommandOptions,
   getPreparedStartupStartOptions,

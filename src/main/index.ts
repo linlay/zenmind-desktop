@@ -63,6 +63,13 @@ import { installBundledWebappTemplates } from "./webs/webapp-template-installer"
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
+  configurePluginBridge,
+  emitPluginBridgeHook,
+  publishPluginBridgeServiceState,
+  setPluginBridgeDesktopReady,
+  stopPluginBridgeServers
+} from "./plugin-bridge";
+import {
   buildSandboxImage,
   deleteSandboxImage,
   exportSandboxImageToPath,
@@ -1373,6 +1380,7 @@ function ensureDarwinDockIdentity() {
 }
 
 function notifyServicesChanged() {
+  void publishPluginBridgeServiceStates();
   scheduleAgentPlatformPetStatusRefresh(1000);
   appState.assistantNavigationStatusClient?.scheduleRefresh(1000);
   for (const targetWindow of [appState.mainWindow, quickCopilotWindowController.getWindow()]) {
@@ -1380,6 +1388,19 @@ function notifyServicesChanged() {
       continue;
     }
     targetWindow.webContents.send("services.changed");
+  }
+}
+
+async function publishPluginBridgeServiceStates() {
+  try {
+    const services = await listServices(app);
+    for (const service of services) {
+      publishPluginBridgeServiceState(service);
+    }
+  } catch (error) {
+    safeConsoleError("failed to publish plugin bridge service states", {
+      error: error instanceof Error ? error.message : String(error)
+    });
   }
 }
 
@@ -2096,6 +2117,10 @@ if (gotSingleInstanceLock) {
 
     initializeUserDataRootsAndSettings();
     ensureDataRoot(app);
+    configurePluginBridge({
+      getServiceState: (serviceId) => getServiceState(app, serviceId),
+      notifyAgentPlatformConfigChanged: () => notifyServicesChanged()
+    });
     registerIpcHandlers(mainProcessContext);
     configureAppMediaPermissions();
     createWindow();
@@ -2108,6 +2133,7 @@ if (gotSingleInstanceLock) {
     buildApplicationMenu();
     registerQuickAssistantShortcut();
     registerFocusedWebviewDevToolsShortcut();
+    setPluginBridgeDesktopReady();
 
     void handleStartupPipeline();
 
@@ -2262,6 +2288,7 @@ app.on("before-quit", (event) => {
   }
   event.preventDefault();
   appState.isHandlingQuit = true;
+  emitPluginBridgeHook("desktop.beforeQuit", {});
   prepareQuitUi();
   hideWindowsForShutdown(appState);
   void runShutdownCleanup().finally(() => {
@@ -2282,6 +2309,7 @@ app.on("will-quit", () => {
     globalShortcut
   });
   globalShortcut.unregister(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT);
+  stopPluginBridgeServers();
 });
 
 app.on("window-all-closed", () => {

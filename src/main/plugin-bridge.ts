@@ -1,0 +1,496 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import type { App } from "electron";
+import yaml from "js-yaml";
+import type { ServiceState } from "../shared/contracts";
+import type { ServiceDefinition } from "./manifest-utils";
+import { getServiceConfigRoot, getServiceStateRoot } from "./user-paths";
+
+const PLUGIN_BRIDGE_VERSION = "1";
+const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
+const CODER_SETTINGS_RELATIVE_PATH = path.join("configs", "coder-settings.yml");
+const OWNERSHIP_FILE_NAME = "plugin-bridge-acp-proxies.json";
+
+type BridgeEnvelope = Record<string, unknown>;
+type BridgeClient = {
+  socket: net.Socket;
+  authenticated: boolean;
+  buffer: string;
+};
+
+type BridgeRecord = {
+  service: ServiceDefinition;
+  path: string;
+  token: string;
+  server: net.Server;
+  clients: Set<BridgeClient>;
+};
+
+type PluginBridgeRequestContext = {
+  sourcePluginId: string;
+  method: string;
+  params: unknown;
+};
+
+type PluginBridgeRequestResult = {
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+};
+
+type AcpProxyInput = {
+  proxyId: string;
+  baseUrl: string;
+  timeoutMs: number;
+};
+
+const bridgeRecords = new Map<string, BridgeRecord>();
+const latestServiceStates = new Map<string, ServiceState>();
+
+let desktopReady = false;
+let getServiceStateCallback: ((serviceId: string) => Promise<ServiceState>) | null = null;
+let notifyAgentPlatformConfigChangedCallback: (() => void) | null = null;
+
+function asObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function asString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function asNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function hasPluginBridge(service: ServiceDefinition) {
+  return service.kind === "plugin" && (
+    service.hooks.subscribe.length > 0 ||
+    service.bridge.requests.length > 0
+  );
+}
+
+function hashPluginId(pluginId: string) {
+  return crypto.createHash("sha1").update(pluginId).digest("hex").slice(0, 12);
+}
+
+function getTempPath(app: Pick<App, "getPath">) {
+  try {
+    return app.getPath("temp");
+  } catch {
+    return os.tmpdir();
+  }
+}
+
+export function createPluginBridgePath(
+  app: Pick<App, "getPath">,
+  pluginId: string,
+  options: { platform?: NodeJS.Platform; instanceId?: string } = {}
+) {
+  const platform = options.platform ?? process.platform;
+  const instanceId = options.instanceId ?? `${process.pid}`;
+  const pluginHash = hashPluginId(pluginId);
+
+  if (platform === "win32") {
+    return `\\\\.\\pipe\\ZenMind.PluginBridge.${pluginHash}.${instanceId}`;
+  }
+
+  if (platform === "darwin") {
+    return path.join(getTempPath(app), `zm-pb-${pluginHash}-${instanceId}.sock`);
+  }
+
+  return path.join(getTempPath(app), `zm-pb-${pluginHash}-${instanceId}.sock`);
+}
+
+function sendEnvelope(client: BridgeClient, envelope: BridgeEnvelope) {
+  if (client.socket.destroyed) {
+    return;
+  }
+  client.socket.write(`${JSON.stringify(envelope)}\n`);
+}
+
+function sendEvent(client: BridgeClient, name: string, data: unknown) {
+  sendEnvelope(client, {
+    type: "event",
+    name,
+    createdAt: new Date().toISOString(),
+    data
+  });
+}
+
+function isHookSubscribed(service: ServiceDefinition, hookName: string) {
+  return service.hooks.subscribe.includes(hookName);
+}
+
+function isRequestAllowed(service: ServiceDefinition, method: string) {
+  return service.bridge.requests.includes(method);
+}
+
+function serviceStatusHookName(serviceId: string) {
+  return `service.statusChanged:${serviceId}`;
+}
+
+function maybeSendInitialEvents(record: BridgeRecord, client: BridgeClient) {
+  if (desktopReady && isHookSubscribed(record.service, "desktop.ready")) {
+    sendEvent(client, "desktop.ready", {});
+  }
+
+  for (const hookName of record.service.hooks.subscribe) {
+    if (!hookName.startsWith("service.statusChanged:")) {
+      continue;
+    }
+    const serviceId = hookName.slice("service.statusChanged:".length);
+    const state = latestServiceStates.get(serviceId);
+    if (state) {
+      sendEvent(client, hookName, { service: state });
+    }
+  }
+
+  const agentPlatformState = latestServiceStates.get(AGENT_PLATFORM_SERVICE_ID);
+  if (
+    agentPlatformState?.status === "running" &&
+    agentPlatformState.healthMeta.webUrl &&
+    isHookSubscribed(record.service, "agentPlatform.ready")
+  ) {
+    sendEvent(client, "agentPlatform.ready", {
+      webUrl: agentPlatformState.healthMeta.webUrl,
+      port: agentPlatformState.healthMeta.port
+    });
+  }
+}
+
+function respondToRequest(client: BridgeClient, id: string, response: PluginBridgeRequestResult) {
+  sendEnvelope(client, {
+    type: "response",
+    id,
+    ok: response.ok,
+    ...(response.result === undefined ? {} : { result: response.result }),
+    ...(response.error === undefined ? {} : { error: response.error })
+  });
+}
+
+function normalizeAcpProxyInput(params: unknown): AcpProxyInput {
+  const record = asObject(params);
+  const proxyId = asString(record.proxyId);
+  const baseUrl = asString(record.baseUrl);
+  const timeoutMs = asNumber(record.timeoutMs) ?? 300_000;
+  if (!/^[a-z0-9][a-z0-9._-]*$/iu.test(proxyId)) {
+    throw new Error("proxyId must be a non-empty identifier");
+  }
+  const parsed = new URL(baseUrl);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("baseUrl must be an HTTP URL");
+  }
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("timeoutMs must be a positive integer");
+  }
+  return {
+    proxyId,
+    baseUrl: parsed.toString().replace(/\/$/u, ""),
+    timeoutMs
+  };
+}
+
+function readYamlObject(filePath: string) {
+  if (!fs.existsSync(filePath)) {
+    return {};
+  }
+  const parsed = yaml.load(fs.readFileSync(filePath, "utf8"));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${filePath} must contain a YAML object`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function writeYamlObject(filePath: string, value: Record<string, unknown>) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, yaml.dump(value, { lineWidth: 120, noRefs: true }), "utf8");
+}
+
+function getAgentPlatformCoderSettingsPath(app: App) {
+  return path.join(getServiceConfigRoot(app, AGENT_PLATFORM_SERVICE_ID, "builtin"), CODER_SETTINGS_RELATIVE_PATH);
+}
+
+function getPluginBridgeOwnershipPath(app: App, pluginId: string) {
+  return path.join(getServiceStateRoot(app, pluginId, "plugin"), OWNERSHIP_FILE_NAME);
+}
+
+function readOwnership(app: App, pluginId: string) {
+  const filePath = getPluginBridgeOwnershipPath(app, pluginId);
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8")) as { acpProxies?: Record<string, { updatedAt: string }> };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { acpProxies: {} };
+    }
+    throw error;
+  }
+}
+
+function writeOwnership(app: App, pluginId: string, ownership: { acpProxies?: Record<string, { updatedAt: string }> }) {
+  const filePath = getPluginBridgeOwnershipPath(app, pluginId);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify({ acpProxies: ownership.acpProxies ?? {} }, null, 2)}\n`, "utf8");
+}
+
+function ensureAcpProxies(config: Record<string, unknown>) {
+  const existing = config["acp-proxies"];
+  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+    return existing as Record<string, unknown>;
+  }
+  const next: Record<string, unknown> = {};
+  config["acp-proxies"] = next;
+  return next;
+}
+
+function upsertAgentPlatformAcpProxy(app: App, sourcePluginId: string, params: unknown) {
+  const input = normalizeAcpProxyInput(params);
+  const configPath = getAgentPlatformCoderSettingsPath(app);
+  const config = readYamlObject(configPath);
+  const acpProxies = ensureAcpProxies(config);
+  const nextEntry = {
+    "base-url": input.baseUrl,
+    "timeout-ms": input.timeoutMs
+  };
+  const changed = JSON.stringify(acpProxies[input.proxyId] ?? null) !== JSON.stringify(nextEntry);
+  acpProxies[input.proxyId] = nextEntry;
+  writeYamlObject(configPath, config);
+
+  const ownership = readOwnership(app, sourcePluginId);
+  ownership.acpProxies = {
+    ...(ownership.acpProxies ?? {}),
+    [input.proxyId]: { updatedAt: new Date().toISOString() }
+  };
+  writeOwnership(app, sourcePluginId, ownership);
+  notifyAgentPlatformConfigChangedCallback?.();
+  emitPluginBridgeHook("agentPlatform.configChanged", { sourcePluginId, proxyId: input.proxyId });
+  return { changed, path: configPath };
+}
+
+function removeAgentPlatformAcpProxy(app: App, sourcePluginId: string, params: unknown) {
+  const proxyId = asString(asObject(params).proxyId);
+  if (!proxyId) {
+    throw new Error("proxyId is required");
+  }
+  const ownership = readOwnership(app, sourcePluginId);
+  if (!ownership.acpProxies?.[proxyId]) {
+    return { changed: false, removed: false };
+  }
+  const configPath = getAgentPlatformCoderSettingsPath(app);
+  const config = readYamlObject(configPath);
+  const acpProxies = ensureAcpProxies(config);
+  const hadProxy = Object.prototype.hasOwnProperty.call(acpProxies, proxyId);
+  delete acpProxies[proxyId];
+  delete ownership.acpProxies[proxyId];
+  writeYamlObject(configPath, config);
+  writeOwnership(app, sourcePluginId, ownership);
+  notifyAgentPlatformConfigChangedCallback?.();
+  emitPluginBridgeHook("agentPlatform.configChanged", { sourcePluginId, proxyId });
+  return { changed: hadProxy, removed: hadProxy };
+}
+
+async function handleBridgeRequest(
+  app: App,
+  context: PluginBridgeRequestContext
+): Promise<PluginBridgeRequestResult> {
+  try {
+    if (context.method === "service.getStatus") {
+      const serviceId = asString(asObject(context.params).serviceId);
+      if (!serviceId) {
+        throw new Error("serviceId is required");
+      }
+      const state = getServiceStateCallback
+        ? await getServiceStateCallback(serviceId)
+        : latestServiceStates.get(serviceId) ?? null;
+      return { ok: true, result: { service: state } };
+    }
+    if (context.method === "agentPlatform.upsertAcpProxy") {
+      return { ok: true, result: upsertAgentPlatformAcpProxy(app, context.sourcePluginId, context.params) };
+    }
+    if (context.method === "agentPlatform.removeAcpProxy") {
+      return { ok: true, result: removeAgentPlatformAcpProxy(app, context.sourcePluginId, context.params) };
+    }
+    throw new Error(`unsupported bridge request: ${context.method}`);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function handleAuthenticatedEnvelope(app: App, record: BridgeRecord, client: BridgeClient, envelope: BridgeEnvelope) {
+  if (envelope.type !== "request") {
+    return;
+  }
+  const id = asString(envelope.id);
+  const method = asString(envelope.method);
+  if (!id || !method) {
+    return;
+  }
+  if (!isRequestAllowed(record.service, method)) {
+    respondToRequest(client, id, { ok: false, error: `bridge request is not allowed: ${method}` });
+    return;
+  }
+  void handleBridgeRequest(app, {
+    sourcePluginId: record.service.id,
+    method,
+    params: envelope.params
+  }).then((response) => respondToRequest(client, id, response));
+}
+
+function handleBridgeLine(app: App, record: BridgeRecord, client: BridgeClient, line: string) {
+  let envelope: BridgeEnvelope;
+  try {
+    envelope = JSON.parse(line) as BridgeEnvelope;
+  } catch {
+    client.socket.destroy();
+    return;
+  }
+
+  if (!client.authenticated) {
+    if (
+      envelope.type !== "hello" ||
+      asString(envelope.pluginId) !== record.service.id ||
+      asString(envelope.token) !== record.token ||
+      String(envelope.protocolVersion || "") !== PLUGIN_BRIDGE_VERSION
+    ) {
+      client.socket.destroy();
+      return;
+    }
+    client.authenticated = true;
+    maybeSendInitialEvents(record, client);
+    return;
+  }
+
+  handleAuthenticatedEnvelope(app, record, client, envelope);
+}
+
+function handleBridgeData(app: App, record: BridgeRecord, client: BridgeClient, chunk: Buffer) {
+  client.buffer += chunk.toString("utf8");
+  for (;;) {
+    const lineEnd = client.buffer.indexOf("\n");
+    if (lineEnd < 0) {
+      break;
+    }
+    const line = client.buffer.slice(0, lineEnd).trim();
+    client.buffer = client.buffer.slice(lineEnd + 1);
+    if (line) {
+      handleBridgeLine(app, record, client, line);
+    }
+  }
+}
+
+function createBridgeRecord(app: App, service: ServiceDefinition): BridgeRecord {
+  const instanceId = crypto.randomBytes(4).toString("hex");
+  const bridgePath = createPluginBridgePath(app, service.id, { instanceId });
+  const token = crypto.randomBytes(24).toString("base64url");
+  const clients = new Set<BridgeClient>();
+  if (process.platform !== "win32") {
+    fs.rmSync(bridgePath, { force: true });
+  }
+  const server = net.createServer((socket) => {
+    const client: BridgeClient = { socket, authenticated: false, buffer: "" };
+    clients.add(client);
+    socket.on("data", (chunk) => handleBridgeData(app, record, client, chunk));
+    socket.on("close", () => clients.delete(client));
+    socket.on("error", () => clients.delete(client));
+  });
+  const record: BridgeRecord = {
+    service,
+    path: bridgePath,
+    token,
+    server,
+    clients
+  };
+  server.listen(bridgePath);
+  server.on("error", (error) => {
+    console.warn(`[plugin-bridge] ${service.id} bridge failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
+  return record;
+}
+
+export function configurePluginBridge(options: {
+  getServiceState?: (serviceId: string) => Promise<ServiceState>;
+  notifyAgentPlatformConfigChanged?: () => void;
+}) {
+  getServiceStateCallback = options.getServiceState ?? null;
+  notifyAgentPlatformConfigChangedCallback = options.notifyAgentPlatformConfigChanged ?? null;
+}
+
+export function getPluginBridgeEnv(app: App, service: ServiceDefinition): NodeJS.ProcessEnv {
+  if (!hasPluginBridge(service)) {
+    return {};
+  }
+  let record = bridgeRecords.get(service.id);
+  if (!record) {
+    record = createBridgeRecord(app, service);
+    bridgeRecords.set(service.id, record);
+  } else {
+    record.service = service;
+  }
+  return {
+    DESKTOP_PLUGIN_ID: service.id,
+    DESKTOP_PLUGIN_BRIDGE_VERSION: PLUGIN_BRIDGE_VERSION,
+    DESKTOP_PLUGIN_BRIDGE_PATH: record.path,
+    DESKTOP_PLUGIN_BRIDGE_TOKEN: record.token
+  };
+}
+
+export function emitPluginBridgeHook(name: string, data: unknown = {}) {
+  for (const record of bridgeRecords.values()) {
+    if (!isHookSubscribed(record.service, name)) {
+      continue;
+    }
+    for (const client of record.clients) {
+      if (client.authenticated) {
+        sendEvent(client, name, data);
+      }
+    }
+  }
+}
+
+export function publishPluginBridgeServiceState(state: ServiceState) {
+  latestServiceStates.set(state.id, state);
+  emitPluginBridgeHook(serviceStatusHookName(state.id), { service: state });
+  if (state.id !== AGENT_PLATFORM_SERVICE_ID) {
+    return;
+  }
+  if (state.status === "running" && state.healthMeta.webUrl) {
+    emitPluginBridgeHook("agentPlatform.ready", {
+      webUrl: state.healthMeta.webUrl,
+      port: state.healthMeta.port
+    });
+    return;
+  }
+  emitPluginBridgeHook("agentPlatform.stopped", { service: state });
+}
+
+export function setPluginBridgeDesktopReady() {
+  desktopReady = true;
+  emitPluginBridgeHook("desktop.ready", {});
+}
+
+export function stopPluginBridgeServers() {
+  for (const record of bridgeRecords.values()) {
+    for (const client of record.clients) {
+      client.socket.destroy();
+    }
+    record.server.close();
+    if (process.platform !== "win32") {
+      fs.rmSync(record.path, { force: true });
+    }
+  }
+  bridgeRecords.clear();
+}
+
+export const __testInternals = {
+  createPluginBridgePath,
+  isHookSubscribed,
+  isRequestAllowed,
+  normalizeAcpProxyInput,
+  upsertAgentPlatformAcpProxy,
+  removeAgentPlatformAcpProxy
+};
