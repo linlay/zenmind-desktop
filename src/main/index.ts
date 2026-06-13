@@ -69,6 +69,8 @@ import {
   setPluginBridgeDesktopReady,
   stopPluginBridgeServers
 } from "./plugin-bridge";
+import { configurePluginResources, retryPendingPluginResourceSync } from "./plugin-resources";
+import { showDesktopPetBanner, showSystemUpdateOverlay } from "./plugin-desktop-effects";
 import {
   buildSandboxImage,
   deleteSandboxImage,
@@ -1397,6 +1399,14 @@ async function publishPluginBridgeServiceStates() {
     for (const service of services) {
       publishPluginBridgeServiceState(service);
     }
+    const agentPlatform = services.find((service) => service.id === "agent-platform");
+    if (agentPlatform?.status === "running") {
+      void retryPendingPluginResourceSync(app).catch((error) => {
+        safeConsoleError("failed to retry pending plugin resource sync", {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
+    }
   } catch (error) {
     safeConsoleError("failed to publish plugin bridge service states", {
       error: error instanceof Error ? error.message : String(error)
@@ -2119,8 +2129,11 @@ if (gotSingleInstanceLock) {
     ensureDataRoot(app);
     configurePluginBridge({
       getServiceState: (serviceId) => getServiceState(app, serviceId),
-      notifyAgentPlatformConfigChanged: () => notifyServicesChanged()
+      notifyAgentPlatformConfigChanged: () => notifyServicesChanged(),
+      runDesktopPetBanner: (params) => showDesktopPetBanner(app, params as any),
+      showSystemUpdateOverlay: (params) => showSystemUpdateOverlay(params as any)
     });
+    configurePluginResources({ callAgentPlatform });
     registerIpcHandlers(mainProcessContext);
     configureAppMediaPermissions();
     createWindow();

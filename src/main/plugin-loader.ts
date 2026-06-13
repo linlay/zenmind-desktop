@@ -3,10 +3,11 @@ import path from "node:path";
 import type { App } from "electron";
 import { normalizeManifest, readManifestFile } from "./manifest-utils";
 import { clearServices, getService, registerService, unregisterService } from "./services/service-registry";
-import { fixShellScriptPermissions } from "./services/manager";
+import { fixShellScriptPermissions, initializeService } from "./services/manager";
 import { extractArchiveToDir } from "./archive-utils";
 import { getPluginsRoot, getServiceConfigRoot, getServiceStateRoot } from "./user-paths";
 import { STORAGE_NAMESPACE } from "../shared/generated/brand";
+import { removePluginResources } from "./plugin-resources";
 
 function readManifest(pluginDir: string) {
   const manifestPath = path.join(pluginDir, "manifest.json");
@@ -38,6 +39,22 @@ function restorePreservedConfigFiles(targetDir: string, preserved: Map<string, s
     fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
     fs.writeFileSync(absolutePath, content, "utf8");
   }
+}
+
+function preservePluginResourceOwnership(stateDir: string) {
+  const ownershipPath = path.join(stateDir, "plugin-resources.json");
+  if (!fs.existsSync(ownershipPath)) {
+    return "";
+  }
+  return fs.readFileSync(ownershipPath, "utf8");
+}
+
+function restorePluginResourceOwnership(stateDir: string, content: string) {
+  if (!content) {
+    return;
+  }
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, "plugin-resources.json"), content, "utf8");
 }
 
 export function loadInstalledPlugins(app: App) {
@@ -116,14 +133,24 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
       configDir,
       definition.configFiles.map((configFile) => configFile.relativePath)
     );
+    const preservedPluginResourceOwnership = preservePluginResourceOwnership(stateDir);
     fs.rmSync(targetDir, { recursive: true, force: true });
     fs.rmSync(stateDir, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(targetDir), { recursive: true });
     fs.cpSync(extractedDir, targetDir, { recursive: true });
     restorePreservedConfigFiles(configDir, preservedConfigFiles);
+    restorePluginResourceOwnership(stateDir, preservedPluginResourceOwnership);
     fs.rmSync(path.join(targetDir, `.${STORAGE_NAMESPACE}`), { recursive: true, force: true });
     fixShellScriptPermissions(targetDir);
     registerService(manifest, { defaultKind: "plugin" });
+    if (definition.serviceMode === "resource") {
+      const initialization = await initializeService(app, manifest.id);
+      return {
+        ok: initialization.ok,
+        message: initialization.ok ? `插件 ${manifest.name} 已导入并初始化。` : initialization.message,
+        serviceId: manifest.id
+      };
+    }
     return { ok: true, message: `插件 ${manifest.name} 已导入，请完成初始化。`, serviceId: manifest.id };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -141,6 +168,7 @@ export async function uninstallPlugin(app: App, serviceId: string) {
   if (currentState.status === "running") {
     await stopService(app, serviceId);
   }
+  await removePluginResources(app, def);
   const dir = getPluginInstallDir(app, serviceId, def.version);
   fs.rmSync(dir, { recursive: true, force: true });
   unregisterService(serviceId);

@@ -1,6 +1,7 @@
 export type ServiceId = string;
 export type ServiceKind = "builtin" | "plugin";
 export type FrontendMode = "none" | "embedded" | "standalone";
+export type ServiceMode = "service" | "resource";
 export type ServiceLogTarget = "main" | "error";
 export type ServiceStatus =
   | "not-installed"
@@ -42,6 +43,7 @@ export interface ServiceState {
   id: ServiceId;
   name: string;
   kind: ServiceKind;
+  serviceMode: ServiceMode;
   version: string;
   description: string;
   installDir: string;
@@ -51,8 +53,17 @@ export interface ServiceState {
   statusLabel: string;
   message: string;
   frontendMode: FrontendMode;
+  pluginActions: ServicePluginAction[];
   configFiles: ServiceConfigFile[];
   healthMeta: ServiceHealthMeta;
+}
+
+export interface ServicePluginAction {
+  id: string;
+  label: string;
+  icon?: string;
+  placement: "controlCenter";
+  requiresRunning: boolean;
 }
 
 export interface ServiceCommandResult {

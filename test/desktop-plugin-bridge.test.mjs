@@ -15,6 +15,18 @@ const {
 const {
   __testInternals: bridgeInternals
 } = require("../dist-electron/main/plugin-bridge.js");
+const {
+  configurePluginResources,
+  syncPluginResources,
+  __testInternals: resourceInternals
+} = require("../dist-electron/main/plugin-resources.js");
+const {
+  __testInternals: desktopEffectsInternals
+} = require("../dist-electron/main/plugin-desktop-effects.js");
+const {
+  getDesktopPetSettingsPath,
+  getDesktopPetsDataRoot
+} = require("../dist-electron/main/user-paths.js");
 
 function createApp(root) {
   return {
@@ -113,6 +125,45 @@ test("legacy plugin manifest still normalizes scripts frontend and web", () => {
   assert.deepEqual(service.bridge.requests, []);
 });
 
+test("resource plugin manifest does not require lifecycle commands", () => {
+  registryInternals.clearServices();
+  const service = registerPlugin({
+    pluginApiVersion: 1,
+    id: "happy-agent",
+    name: "Happy Agent",
+    version: "v0.1.0",
+    description: "Happy agent resource plugin",
+    runtime: {
+      requiredPaths: ["manifest.json"]
+    },
+    resources: {
+      agents: [{
+        key: "happy-agent",
+        definition: {
+          name: "Happy Agent"
+        }
+      }],
+      automations: [{
+        id: "happy-agent-happy-story",
+        name: "Happy Agent 开心故事",
+        cron: "*/2 * * * *",
+        agentKey: "happy-agent",
+        zoneId: "Asia/Shanghai",
+        query: {
+          message: "给我讲一个简短、开心、温暖的小故事。"
+        }
+      }]
+    }
+  });
+
+  assert.equal(service.kind, "plugin");
+  assert.equal(service.serviceMode, "resource");
+  assert.deepEqual(service.startCommand, []);
+  assert.deepEqual(service.stopCommand, []);
+  assert.equal(service.resources.agents[0].key, "happy-agent");
+  assert.equal(service.resources.automations[0].id, "happy-agent-happy-story");
+});
+
 test("plugin bridge path generation is platform explicit", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-bridge-path-"));
   try {
@@ -137,17 +188,209 @@ test("plugin bridge path generation is platform explicit", () => {
 test("plugin bridge filters hooks and requests by manifest declarations", () => {
   const service = {
     hooks: {
-      subscribe: ["desktop.ready"]
+      subscribe: ["desktop.ready", "plugin.actionInvoked:run-system-update"]
     },
     bridge: {
-      requests: ["service.getStatus"]
+      requests: ["service.getStatus", "desktopOverlay.showSystemUpdate"]
     }
   };
 
   assert.equal(bridgeInternals.isHookSubscribed(service, "desktop.ready"), true);
+  assert.equal(bridgeInternals.isHookSubscribed(service, "plugin.actionInvoked:run-system-update"), true);
   assert.equal(bridgeInternals.isHookSubscribed(service, "agentPlatform.ready"), false);
   assert.equal(bridgeInternals.isRequestAllowed(service, "service.getStatus"), true);
+  assert.equal(bridgeInternals.isRequestAllowed(service, "desktopOverlay.showSystemUpdate"), true);
   assert.equal(bridgeInternals.isRequestAllowed(service, "agentPlatform.upsertAcpProxy"), false);
+  assert.equal(bridgeInternals.isRequestAllowed(service, "desktopPet.runBanner"), false);
+});
+
+test("plugin desktop actions normalize for control center", () => {
+  registryInternals.clearServices();
+  const service = registerPlugin({
+    pluginApiVersion: 1,
+    id: "system-update",
+    name: "系统升级提示",
+    version: "v0.1.0",
+    description: "system update overlay",
+    lifecycle: {
+      start: "start.sh",
+      stop: "stop.sh"
+    },
+    runtime: {
+      requiredPaths: ["manifest.json"]
+    },
+    hooks: {
+      subscribe: ["plugin.actionInvoked:run-system-update"]
+    },
+    bridge: {
+      requests: ["desktopOverlay.showSystemUpdate"]
+    },
+    desktop: {
+      actions: [{
+        id: "run-system-update",
+        label: "运行",
+        icon: "play",
+        placement: "controlCenter",
+        requiresRunning: true
+      }]
+    }
+  });
+
+  assert.equal(service.desktop.actions.length, 1);
+  assert.deepEqual(service.desktop.actions[0], {
+    id: "run-system-update",
+    label: "运行",
+    icon: "play",
+    placement: "controlCenter",
+    requiresRunning: true
+  });
+});
+
+test("plugin resource payload normalization is stable", () => {
+  const agent = resourceInternals.normalizeAgentPayload({
+    key: "happy-agent",
+    definition: {
+      name: "Happy Agent"
+    }
+  });
+  assert.equal(agent.key, "happy-agent");
+  assert.equal(agent.definition.key, "happy-agent");
+  assert.equal(agent.definition.name, "Happy Agent");
+
+  const automation = resourceInternals.normalizeAutomationPayload({
+    id: "happy-agent-happy-story",
+    name: "Happy Agent 开心故事",
+    cron: "*/2 * * * *",
+    agentKey: "happy-agent",
+    enabled: true,
+    zoneId: "Asia/Shanghai",
+    query: {
+      message: "给我讲一个简短、开心、温暖的小故事。"
+    }
+  });
+  assert.equal(automation.id, "happy-agent-happy-story");
+  assert.equal(automation.enabled, true);
+  assert.equal(automation.zoneId, "Asia/Shanghai");
+  assert.equal(automation.query.message, "给我讲一个简短、开心、温暖的小故事。");
+});
+
+test("plugin webapp resources do not overwrite unowned webapps", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-resource-webapp-"));
+  try {
+    const app = createApp(root);
+    const pluginDir = path.join(root, "plugin");
+    const sourceDir = path.join(pluginDir, "webapp", "calendar");
+    fs.mkdirSync(path.join(sourceDir, "frontend"), { recursive: true });
+    fs.mkdirSync(path.join(sourceDir, "backend"), { recursive: true });
+    fs.writeFileSync(path.join(sourceDir, "webapp.json"), JSON.stringify({
+      id: "calendar",
+      kind: "webapp",
+      label: "日历",
+      frontend: { root: "frontend", index: "index.html" },
+      backend: { runtime: "node", entry: "backend/server.mjs" }
+    }), "utf8");
+    fs.writeFileSync(path.join(sourceDir, "frontend", "index.html"), "<!doctype html>\n", "utf8");
+    fs.writeFileSync(path.join(sourceDir, "backend", "server.mjs"), "console.log('calendar')\n", "utf8");
+
+    const userWebappDir = path.join(root, "home", ".zenmind", ".desktop", "data", "webs", "webapps", "calendar");
+    fs.mkdirSync(userWebappDir, { recursive: true });
+    fs.writeFileSync(path.join(userWebappDir, "webapp.json"), "{\"id\":\"calendar\",\"label\":\"User Calendar\"}\n", "utf8");
+
+    await assert.rejects(
+      () => syncPluginResources(app, {
+        kind: "plugin",
+        id: "calendar",
+        resources: {
+          webapps: [{ id: "calendar", source: "webapp/calendar" }],
+          agents: [],
+          automations: []
+        }
+      }, pluginDir),
+      /already exists and is not owned by plugin/u
+    );
+    assert.match(fs.readFileSync(path.join(userWebappDir, "webapp.json"), "utf8"), /User Calendar/u);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("plugin agent resources only update owned agent-platform records", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-resource-agent-"));
+  try {
+    const app = createApp(root);
+    const calls = [];
+    configurePluginResources({
+      callAgentPlatform: async (_app, endpoint, options) => {
+        calls.push({ endpoint, body: options?.body });
+        if (endpoint.endsWith("/create")) {
+          throw new Error("already exists");
+        }
+        return { ok: true };
+      }
+    });
+    await syncPluginResources(app, {
+      kind: "plugin",
+      id: "happy-agent",
+      resources: {
+        webapps: [],
+        agents: [{ key: "happy-agent", definition: { name: "Happy Agent" } }],
+        automations: []
+      }
+    }, root);
+    assert.deepEqual(calls.map((call) => call.endpoint), ["/api/agent/create"]);
+
+    const ownershipPath = path.join(
+      root,
+      "home",
+      ".zenmind",
+      ".desktop",
+      "state",
+      "plugins",
+      "happy-agent",
+      "plugin-resources.json"
+    );
+    const ownership = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
+    assert.equal(ownership.pendingAgentPlatformSync, true);
+    assert.equal(ownership.agents?.["happy-agent"], undefined);
+  } finally {
+    configurePluginResources({ callAgentPlatform: null });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("desktop pet banner resolves builtin and user pet assets", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-pet-banner-"));
+  try {
+    const app = createApp(root);
+    const builtin = desktopEffectsInternals.resolveDesktopPetBannerAsset(app, "default");
+    assert.equal(builtin.source, "builtin");
+    assert.equal(builtin.label, "小宅");
+    assert.match(builtin.url, /^file:\/\//u);
+    assert.equal(fs.existsSync(new URL(builtin.url)), true);
+
+    const settingsPath = getDesktopPetSettingsPath(app);
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, `${JSON.stringify({
+      schemaVersion: 1,
+      enabled: true,
+      selectedPetId: "user:desk-cat",
+      lastVisible: true
+    }, null, 2)}\n`, "utf8");
+    const petRoot = path.join(getDesktopPetsDataRoot(app), "desk-cat");
+    fs.mkdirSync(petRoot, { recursive: true });
+    fs.writeFileSync(path.join(petRoot, "pet.json"), `${JSON.stringify({
+      id: "desk-cat",
+      displayName: "Desk Cat"
+    }, null, 2)}\n`, "utf8");
+    fs.writeFileSync(path.join(petRoot, "pet-idle.png"), "fake png", "utf8");
+
+    const userPet = desktopEffectsInternals.resolveDesktopPetBannerAsset(app, "current");
+    assert.equal(userPet.source, "user");
+    assert.equal(userPet.label, "Desk Cat");
+    assert.equal(fs.readFileSync(new URL(userPet.url), "utf8"), "fake png");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("agentPlatform ACP proxy bridge request preserves YAML and ownership", () => {

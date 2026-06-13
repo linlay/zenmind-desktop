@@ -216,6 +216,7 @@ export interface DesktopApi {
     start: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
     stop: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
     restart: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
+    invokePluginAction: (serviceId: ServiceId, actionId: string) => Promise<ServiceCommandResult>;
     readConfig: (serviceId: ServiceId, key: string) => Promise<ServiceConfigReadResult>;
     writeConfig: (serviceId: ServiceId, key: string, content: string) => Promise<ServiceCommandResult>;
     importFile: (serviceId: ServiceId, targetKey: string) => Promise<ServiceImportResult>;

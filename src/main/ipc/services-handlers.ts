@@ -1,3 +1,6 @@
+import { emitPluginBridgeHook } from "../plugin-bridge";
+import { getService } from "../services/service-registry";
+
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 
 type AgentPlatformAvailability =
@@ -390,6 +393,36 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
 
   ipcMain.handle("services.restart", async (_event: any, serviceId: string) =>
     runServiceMutation(() => restartService(app, serviceId))
+  );
+
+  ipcMain.handle("services.invokePluginAction", async (_event: any, serviceId: string, actionId: string) =>
+    runServiceMutation(async () => {
+      const service = getService(String(serviceId || ""));
+      if (service.kind !== "plugin") {
+        throw new Error(`service ${serviceId} is not a plugin`);
+      }
+      const action = service.desktop.actions.find((item) => item.id === String(actionId || "").trim());
+      if (!action) {
+        throw new Error(`unknown plugin action: ${actionId}`);
+      }
+      let current = await getServiceState(app, service.id);
+      if (action.requiresRunning && current.status !== "running") {
+        const startResult = await handleServiceStart(service.id);
+        if (!startResult.ok) {
+          return startResult;
+        }
+        current = startResult.service ?? await getServiceState(app, service.id);
+      }
+      emitPluginBridgeHook(`plugin.actionInvoked:${action.id}`, {
+        pluginId: service.id,
+        actionId: action.id
+      });
+      return {
+        ok: true,
+        message: `${service.name} 已执行 ${action.label}。`,
+        service: current
+      };
+    })
   );
 
   // ---------------------------------------------------------------------------

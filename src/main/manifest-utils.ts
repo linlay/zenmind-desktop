@@ -11,6 +11,7 @@ import type {
   ManifestCommand,
   ManifestConfigFile,
   ManifestDesktop,
+  ManifestDesktopAction,
   ManifestDesktopCapabilities,
   ManifestDesktopCapabilityProvider,
   ManifestDesktopCapabilityRequirement,
@@ -21,11 +22,13 @@ import type {
   ManifestFrontend,
   ManifestPluginBridge,
   ManifestPluginHooks,
+  ManifestPluginResources,
   ManifestRuntime,
   ManifestScripts,
   ManifestWeb,
   ServiceId,
-  ServiceKind
+  ServiceKind,
+  ServiceMode
 } from "../shared/contracts";
 import { listArchiveEntries, readFileFromArchive } from "./archive-utils";
 
@@ -41,6 +44,7 @@ export interface ServiceDefinition extends Manifest {
   kind: ServiceKind;
   description: string;
   pluginApiVersion: number;
+  serviceMode: ServiceMode;
   frontend: ManifestFrontend & { mode: FrontendMode };
   frontendMode: FrontendMode;
   configFiles: ManifestConfigFile[];
@@ -55,6 +59,7 @@ export interface ServiceDefinition extends Manifest {
   desktop: ManifestDesktop & {
     bundleTopLevelDir: string;
     envBindings: ManifestEnvBinding[];
+    actions: ManifestDesktopAction[];
     capabilities: ManifestDesktopCapabilities & {
       provides: ManifestDesktopCapabilityProvider[];
       requires: ManifestDesktopCapabilityRequirement[];
@@ -65,6 +70,11 @@ export interface ServiceDefinition extends Manifest {
   };
   bridge: ManifestPluginBridge & {
     requests: string[];
+  };
+  resources: ManifestPluginResources & {
+    webapps: NonNullable<ManifestPluginResources["webapps"]>;
+    agents: NonNullable<ManifestPluginResources["agents"]>;
+    automations: NonNullable<ManifestPluginResources["automations"]>;
   };
   assetFileName: string;
   bundleTopLevelDir: string;
@@ -374,7 +384,27 @@ function resolveFrontend(raw: Record<string, unknown>) {
   } satisfies ManifestFrontend;
 }
 
-function resolveScripts(raw: Record<string, unknown>) {
+function hasPluginResources(raw: Record<string, unknown>) {
+  const resources = asObject(raw.resources);
+  return (
+    Array.isArray(resources.webapps) ||
+    Array.isArray(resources.agents) ||
+    Array.isArray(resources.automations)
+  );
+}
+
+function resolveServiceMode(raw: Record<string, unknown>): ServiceMode {
+  const scripts = asObject(raw.scripts);
+  const lifecycle = asObject(raw.lifecycle);
+  const hasStartOrStop =
+    lifecycle.start !== undefined ||
+    lifecycle.stop !== undefined ||
+    scripts.start !== undefined ||
+    scripts.stop !== undefined;
+  return hasStartOrStop || !hasPluginResources(raw) ? "service" : "resource";
+}
+
+function resolveScripts(raw: Record<string, unknown>, serviceMode: ServiceMode) {
   const scripts = asObject(raw.scripts);
   const lifecycle = asObject(raw.lifecycle);
 
@@ -382,13 +412,13 @@ function resolveScripts(raw: Record<string, unknown>) {
   const stop = toManifestCommand(lifecycle.stop) ?? toManifestCommand(scripts.stop);
   const deploy = toManifestCommand(lifecycle.deploy) ?? toManifestCommand(scripts.deploy);
 
-  if (!start || !stop) {
+  if ((!start || !stop) && serviceMode === "service") {
     throw new Error("manifest lifecycle.start/stop are required");
   }
 
   return {
-    start,
-    stop,
+    start: start ?? [],
+    stop: stop ?? [],
     deploy
   } satisfies ManifestScripts;
 }
@@ -494,6 +524,73 @@ function resolvePluginBridge(raw: Record<string, unknown>): ManifestPluginBridge
   return {
     requests: asStringArray(bridge.requests)
   };
+}
+
+function resolvePluginResources(raw: Record<string, unknown>): ServiceDefinition["resources"] {
+  const resources = asObject(raw.resources);
+  const webapps = Array.isArray(resources.webapps)
+    ? resources.webapps.map((item) => {
+        const webapp = asObject(item);
+        return {
+          id: asString(webapp.id),
+          source: asString(webapp.source)
+        };
+      }).filter((item) => item.id && item.source)
+    : [];
+  const agents = Array.isArray(resources.agents)
+    ? resources.agents.map((item) => {
+        const agent = asObject(item);
+        return {
+          key: asString(agent.key),
+          definition: asObject(agent.definition),
+          soulPrompt: asOptionalString(agent.soulPrompt),
+          agentsPrompt: asOptionalString(agent.agentsPrompt)
+        };
+      }).filter((item) => item.key)
+    : [];
+  const automations = Array.isArray(resources.automations)
+    ? resources.automations.map((item) => {
+        const automation = asObject(item);
+        return {
+          id: asString(automation.id),
+          name: asString(automation.name),
+          description: asOptionalString(automation.description),
+          cron: asString(automation.cron),
+          agentKey: asString(automation.agentKey),
+          enabled: asBoolean(automation.enabled),
+          teamId: asOptionalString(automation.teamId),
+          zoneId: asOptionalString(automation.zoneId),
+          remainingRuns: asNumber(automation.remainingRuns),
+          query: asObject(automation.query)
+        };
+      }).filter((item) => item.id && item.name && item.cron && item.agentKey)
+    : [];
+  return { webapps, agents, automations };
+}
+
+function resolveDesktopActions(raw: Record<string, unknown>): ManifestDesktopAction[] {
+  const desktop = asObject(raw.desktop);
+  if (!Array.isArray(desktop.actions)) {
+    return [];
+  }
+  const actions: ManifestDesktopAction[] = [];
+  for (const item of desktop.actions) {
+    const action = asObject(item);
+    const id = asString(action.id);
+    const label = asString(action.label);
+    const icon = asOptionalString(action.icon);
+    if (!id || !label) {
+      continue;
+    }
+    actions.push({
+      id,
+      label,
+      ...(icon ? { icon } : {}),
+      placement: "controlCenter",
+      requiresRunning: action.requiresRunning === true
+    });
+  }
+  return actions;
 }
 
 function normalizeRoutePath(value: unknown) {
@@ -796,16 +893,19 @@ function resolveDesktop(
     resolveDesktopHosting(raw) ??
     resolveDefaultDesktopHosting(serviceId, frontend);
   const capabilities = resolveDesktopCapabilities(raw);
+  const actions = resolveDesktopActions(raw);
 
   return {
     assetFileName,
     bundleTopLevelDir,
     envBindings,
+    actions,
     capabilities,
     ...(hosting ? { hosting } : {})
   } satisfies ManifestDesktop & {
     bundleTopLevelDir: string;
     envBindings: ManifestEnvBinding[];
+    actions: ManifestDesktopAction[];
     capabilities: ManifestDesktopCapabilities & {
       provides: ManifestDesktopCapabilityProvider[];
       requires: ManifestDesktopCapabilityRequirement[];
@@ -845,7 +945,8 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
     throw new Error("manifest id is required");
   }
 
-  const scripts = resolveScripts(raw);
+  const serviceMode = resolveServiceMode(raw);
+  const scripts = resolveScripts(raw, serviceMode);
   const runtime = applyCoreServiceRuntimeOverride(id, resolveRuntime(raw));
   const frontend = resolveFrontend(raw);
   const desktop = resolveDesktop(raw, options, id, frontend);
@@ -858,6 +959,7 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
     id,
     name: asOptionalString(raw.name) ?? id,
     kind: isServiceKind(raw.kind) ? raw.kind : (options.defaultKind ?? "plugin"),
+    serviceMode,
     version: asOptionalString(raw.version) ?? "",
     description: asOptionalString(raw.description) ?? "",
     platform:
@@ -882,6 +984,7 @@ export function normalizeManifest(manifest: Manifest, options: NormalizeManifest
     },
     hooks: resolvePluginHooks(raw),
     bridge: resolvePluginBridge(raw),
+    resources: resolvePluginResources(raw),
     assetFileName: desktop.assetFileName ?? "",
     bundleTopLevelDir: desktop.bundleTopLevelDir,
     startCommand: resolveCommand(scripts.start) ?? [],

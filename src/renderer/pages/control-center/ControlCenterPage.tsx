@@ -525,6 +525,10 @@ export function ControlCenterPage() {
   const [configOriginalCache, setConfigOriginalCache] = useState<ConfigCache>(
     {},
   );
+
+  async function invokePluginAction(serviceId: ServiceId, actionId: string) {
+    return window.electronAPI.services.invokePluginAction(serviceId, actionId);
+  }
   const [configMeta, setConfigMeta] = useState<ConfigMetaCache>({});
   const [activeConfigKeyByService, setActiveConfigKeyByService] = useState<
     Record<ServiceId, string>
@@ -1652,69 +1656,100 @@ export function ControlCenterPage() {
                       <ReinstallServiceIcon />
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    className="service-title-text-button service-action-button is-primary"
-                    onClick={() =>
-                      runAction(
-                        activeDetailService.id,
-                        "lifecycle",
-                        () =>
-                          start(
+                  {activeDetailService.serviceMode === "service" ? (
+                    <>
+                      <button
+                        type="button"
+                        className="service-title-text-button service-action-button is-primary"
+                        onClick={() =>
+                          runAction(
                             activeDetailService.id,
-                          ),
-                      )
-                    }
-                    disabled={
-                      activeId === activeDetailService.id
-                    }
-                    aria-label={t("controlCenter.actions.start")}
-                    data-tooltip={t("controlCenter.actions.start")}
-                  >
-                    <StartServiceIcon />
-                  </button>
-                  <button
-                    type="button"
-                    className="service-title-text-button service-action-button is-danger"
-                    onClick={() =>
-                      runAction(
-                        activeDetailService.id,
-                        "lifecycle",
-                        () =>
-                          stop(
+                            "lifecycle",
+                            () =>
+                              start(
+                                activeDetailService.id,
+                              ),
+                          )
+                        }
+                        disabled={
+                          activeId === activeDetailService.id
+                        }
+                        aria-label={t("controlCenter.actions.start")}
+                        data-tooltip={t("controlCenter.actions.start")}
+                      >
+                        <StartServiceIcon />
+                      </button>
+                      <button
+                        type="button"
+                        className="service-title-text-button service-action-button is-danger"
+                        onClick={() =>
+                          runAction(
                             activeDetailService.id,
-                          ),
-                      )
-                    }
-                    disabled={
-                      activeId === activeDetailService.id
-                    }
-                    aria-label={t("controlCenter.actions.stop")}
-                    data-tooltip={t("controlCenter.actions.stop")}
-                  >
-                    <StopServiceIcon />
-                  </button>
-                  <button
-                    type="button"
-                    className="service-title-text-button service-action-button is-warning"
-                    onClick={() =>
-                      runAction(
-                        activeDetailService.id,
-                        "lifecycle",
-                        () =>
-                          restart(
+                            "lifecycle",
+                            () =>
+                              stop(
+                                activeDetailService.id,
+                              ),
+                          )
+                        }
+                        disabled={
+                          activeId === activeDetailService.id
+                        }
+                        aria-label={t("controlCenter.actions.stop")}
+                        data-tooltip={t("controlCenter.actions.stop")}
+                      >
+                        <StopServiceIcon />
+                      </button>
+                      <button
+                        type="button"
+                        className="service-title-text-button service-action-button is-warning"
+                        onClick={() =>
+                          runAction(
                             activeDetailService.id,
-                          ),
-                      )
-                    }
-                    disabled={
-                      activeId === activeDetailService.id
-                    }
-                    aria-label={t("controlCenter.actions.restart")}
-                    data-tooltip={t("controlCenter.actions.restart")}
-                  >
-                    <RestartServiceIcon />
-                  </button>
+                            "lifecycle",
+                            () =>
+                              restart(
+                                activeDetailService.id,
+                              ),
+                          )
+                        }
+                        disabled={
+                          activeId === activeDetailService.id
+                        }
+                        aria-label={t("controlCenter.actions.restart")}
+                        data-tooltip={t("controlCenter.actions.restart")}
+                      >
+                        <RestartServiceIcon />
+                      </button>
+                    </>
+                  ) : null}
+                  {activeDetailService.pluginActions
+                    .filter((action) => action.placement === "controlCenter")
+                    .map((action) => (
+                      <button
+                        key={action.id}
+                        type="button"
+                        className="service-title-text-button service-action-button is-primary"
+                        onClick={() =>
+                          runAction(
+                            activeDetailService.id,
+                            "lifecycle",
+                            () =>
+                              invokePluginAction(
+                                activeDetailService.id,
+                                action.id,
+                              ),
+                          )
+                        }
+                        disabled={
+                          activeId === activeDetailService.id
+                        }
+                        aria-label={action.label}
+                        data-tooltip={action.label}
+                      >
+                        <StartServiceIcon />
+                      </button>
+                    ))}
                   {activeDetailService.frontendMode !==
                     "none" &&
                     activeDetailService.status === "running" ? (

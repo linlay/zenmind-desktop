@@ -25,6 +25,7 @@ import type { ServiceDefinition } from "../../manifest-utils";
 import { getAllServices, getService } from "../service-registry";
 import { issueAgentAccessToken } from "../../agent-auth";
 import { emitPluginBridgeHook, getPluginBridgeEnv } from "../../plugin-bridge";
+import { syncPluginResources } from "../../plugin-resources";
 import { readEnvFile, parseEnvFileContent } from "../../env-file";
 import { extractArchiveToDir } from "../../archive-utils";
 import {
@@ -353,7 +354,7 @@ function collectPrerequisites(
 ) {
   const prerequisites: string[] = [];
   const envPath = layout.envPath;
-  if (!fs.existsSync(envPath)) {
+  if (service.serviceMode === "service" && !fs.existsSync(envPath)) {
     prerequisites.push("缺少 .env 配置文件");
   }
 
@@ -682,6 +683,7 @@ async function initializeServiceInternal(
         });
       }
       await ensureInitializationRequirements(app, service, layout);
+      await syncPluginResources(app, service, installDir);
       const assetSignature = options.assetSignatureOverride ?? readBuiltinAssetSignature(app, service);
       writeInitializationState(layout, {
         version: service.version,
@@ -887,6 +889,7 @@ export async function getServiceState(
     id: service.id,
     name: service.name,
     kind: service.kind,
+    serviceMode: service.serviceMode,
     version: service.version,
     description: service.description,
     installDir,
@@ -902,6 +905,13 @@ export async function getServiceState(
     statusLabel,
     message,
     frontendMode: service.frontend.mode,
+    pluginActions: service.desktop.actions.map((action) => ({
+      id: action.id,
+      label: action.label,
+      ...(action.icon ? { icon: action.icon } : {}),
+      placement: action.placement ?? "controlCenter",
+      requiresRunning: action.requiresRunning === true
+    })),
     configFiles,
     healthMeta: {
       pid,
@@ -1975,6 +1985,13 @@ async function startServiceInternal(
 ): Promise<ServiceCommandResult> {
   const current = await getServiceState(app, serviceId, options.stateReadOptions);
   const service = getService(serviceId);
+  if (service.serviceMode === "resource") {
+    return {
+      ok: false,
+      message: `${service.name} 是资源型插件，不需要启动。`,
+      service: current
+    };
+  }
   const installDir = getInstallDir(app, service);
   const shouldRefreshFromBundledAsset =
     service.kind === "builtin" &&
@@ -2126,6 +2143,13 @@ export async function startService(app: App, serviceId: ServiceId): Promise<Serv
 export async function stopService(app: App, serviceId: ServiceId): Promise<ServiceCommandResult> {
   const service = getService(serviceId);
   const current = await getServiceState(app, serviceId);
+  if (service.serviceMode === "resource") {
+    return {
+      ok: true,
+      message: `${service.name} 是资源型插件，不需要停止。`,
+      service: current
+    };
+  }
   if (!current.installed) {
     return {
       ok: true,

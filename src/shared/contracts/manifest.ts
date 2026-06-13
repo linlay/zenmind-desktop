@@ -114,6 +114,7 @@ export interface ManifestDesktop {
   envBindings?: ManifestEnvBinding[];
   hosting?: ManifestDesktopHosting;
   capabilities?: ManifestDesktopCapabilities;
+  actions?: ManifestDesktopAction[];
 }
 
 export interface ManifestEnvBinding {
@@ -158,12 +159,53 @@ export interface ManifestDesktopCapabilities {
   requires?: ManifestDesktopCapabilityRequirement[];
 }
 
+export type ManifestDesktopActionPlacement = "controlCenter";
+
+export interface ManifestDesktopAction {
+  id: string;
+  label: string;
+  icon?: string;
+  placement?: ManifestDesktopActionPlacement;
+  requiresRunning?: boolean;
+}
+
 export interface ManifestPluginHooks {
   subscribe?: string[];
 }
 
 export interface ManifestPluginBridge {
   requests?: string[];
+}
+
+export interface ManifestPluginWebappResource {
+  id: string;
+  source: string;
+}
+
+export interface ManifestPluginAgentResource {
+  key: string;
+  definition: Record<string, unknown>;
+  soulPrompt?: string;
+  agentsPrompt?: string;
+}
+
+export interface ManifestPluginAutomationResource {
+  id: string;
+  name: string;
+  description?: string;
+  cron: string;
+  agentKey: string;
+  enabled?: boolean;
+  teamId?: string;
+  zoneId?: string;
+  remainingRuns?: number;
+  query: Record<string, unknown>;
+}
+
+export interface ManifestPluginResources {
+  webapps?: ManifestPluginWebappResource[];
+  agents?: ManifestPluginAgentResource[];
+  automations?: ManifestPluginAutomationResource[];
 }
 
 export interface Manifest {
@@ -187,6 +229,7 @@ export interface Manifest {
   desktop?: ManifestDesktop;
   hooks?: ManifestPluginHooks;
   bridge?: ManifestPluginBridge;
+  resources?: ManifestPluginResources;
 }
 
 export interface PluginInstallResult {

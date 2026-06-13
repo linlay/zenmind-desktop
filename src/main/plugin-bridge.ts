@@ -29,6 +29,12 @@ type BridgeRecord = {
   clients: Set<BridgeClient>;
 };
 
+type PendingPluginEvent = {
+  name: string;
+  createdAt: string;
+  data: unknown;
+};
+
 type PluginBridgeRequestContext = {
   sourcePluginId: string;
   method: string;
@@ -49,10 +55,14 @@ type AcpProxyInput = {
 
 const bridgeRecords = new Map<string, BridgeRecord>();
 const latestServiceStates = new Map<string, ServiceState>();
+const pendingPluginEvents = new Map<string, PendingPluginEvent[]>();
+const MAX_PENDING_PLUGIN_EVENTS = 20;
 
 let desktopReady = false;
 let getServiceStateCallback: ((serviceId: string) => Promise<ServiceState>) | null = null;
 let notifyAgentPlatformConfigChangedCallback: (() => void) | null = null;
+let runDesktopPetBannerCallback: ((params: unknown) => unknown) | null = null;
+let showSystemUpdateOverlayCallback: ((params: unknown) => unknown) | null = null;
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -114,11 +124,11 @@ function sendEnvelope(client: BridgeClient, envelope: BridgeEnvelope) {
   client.socket.write(`${JSON.stringify(envelope)}\n`);
 }
 
-function sendEvent(client: BridgeClient, name: string, data: unknown) {
+function sendEvent(client: BridgeClient, name: string, data: unknown, createdAt = new Date().toISOString()) {
   sendEnvelope(client, {
     type: "event",
     name,
-    createdAt: new Date().toISOString(),
+    createdAt,
     data
   });
 }
@@ -133,6 +143,40 @@ function isRequestAllowed(service: ServiceDefinition, method: string) {
 
 function serviceStatusHookName(serviceId: string) {
   return `service.statusChanged:${serviceId}`;
+}
+
+function isTargetedPluginHook(name: string) {
+  return name.startsWith("plugin.actionInvoked:");
+}
+
+function getTargetPluginIdForHook(name: string, data: unknown) {
+  if (!isTargetedPluginHook(name)) {
+    return "";
+  }
+  return asString(asObject(data).pluginId);
+}
+
+function queuePendingPluginEvent(pluginId: string, name: string, data: unknown) {
+  const pending = pendingPluginEvents.get(pluginId) ?? [];
+  pending.push({
+    name,
+    createdAt: new Date().toISOString(),
+    data
+  });
+  pendingPluginEvents.set(pluginId, pending.slice(-MAX_PENDING_PLUGIN_EVENTS));
+}
+
+function flushPendingPluginEvents(record: BridgeRecord, client: BridgeClient) {
+  const pending = pendingPluginEvents.get(record.service.id);
+  if (!pending?.length) {
+    return;
+  }
+  for (const event of pending) {
+    if (isHookSubscribed(record.service, event.name)) {
+      sendEvent(client, event.name, event.data, event.createdAt);
+    }
+  }
+  pendingPluginEvents.delete(record.service.id);
 }
 
 function maybeSendInitialEvents(record: BridgeRecord, client: BridgeClient) {
@@ -162,6 +206,8 @@ function maybeSendInitialEvents(record: BridgeRecord, client: BridgeClient) {
       port: agentPlatformState.healthMeta.port
     });
   }
+
+  flushPendingPluginEvents(record, client);
 }
 
 function respondToRequest(client: BridgeClient, id: string, response: PluginBridgeRequestResult) {
@@ -315,6 +361,18 @@ async function handleBridgeRequest(
     if (context.method === "agentPlatform.removeAcpProxy") {
       return { ok: true, result: removeAgentPlatformAcpProxy(app, context.sourcePluginId, context.params) };
     }
+    if (context.method === "desktopPet.runBanner") {
+      if (!runDesktopPetBannerCallback) {
+        throw new Error("desktop pet banner bridge is unavailable");
+      }
+      return { ok: true, result: runDesktopPetBannerCallback(context.params) };
+    }
+    if (context.method === "desktopOverlay.showSystemUpdate") {
+      if (!showSystemUpdateOverlayCallback) {
+        throw new Error("desktop overlay bridge is unavailable");
+      }
+      return { ok: true, result: showSystemUpdateOverlayCallback(context.params) };
+    }
     throw new Error(`unsupported bridge request: ${context.method}`);
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -415,9 +473,13 @@ function createBridgeRecord(app: App, service: ServiceDefinition): BridgeRecord 
 export function configurePluginBridge(options: {
   getServiceState?: (serviceId: string) => Promise<ServiceState>;
   notifyAgentPlatformConfigChanged?: () => void;
+  runDesktopPetBanner?: (params: unknown) => unknown;
+  showSystemUpdateOverlay?: (params: unknown) => unknown;
 }) {
   getServiceStateCallback = options.getServiceState ?? null;
   notifyAgentPlatformConfigChangedCallback = options.notifyAgentPlatformConfigChanged ?? null;
+  runDesktopPetBannerCallback = options.runDesktopPetBanner ?? null;
+  showSystemUpdateOverlayCallback = options.showSystemUpdateOverlay ?? null;
 }
 
 export function getPluginBridgeEnv(app: App, service: ServiceDefinition): NodeJS.ProcessEnv {
@@ -440,14 +502,30 @@ export function getPluginBridgeEnv(app: App, service: ServiceDefinition): NodeJS
 }
 
 export function emitPluginBridgeHook(name: string, data: unknown = {}) {
+  const targetPluginId = getTargetPluginIdForHook(name, data);
+  let delivered = false;
+  let targetCanReceive = false;
+
   for (const record of bridgeRecords.values()) {
+    if (targetPluginId && record.service.id !== targetPluginId) {
+      continue;
+    }
     if (!isHookSubscribed(record.service, name)) {
       continue;
     }
+    targetCanReceive = true;
     for (const client of record.clients) {
       if (client.authenticated) {
         sendEvent(client, name, data);
+        delivered = true;
       }
+    }
+  }
+
+  if (targetPluginId && !delivered) {
+    const targetRecord = bridgeRecords.get(targetPluginId);
+    if (!targetRecord || targetCanReceive || isHookSubscribed(targetRecord.service, name)) {
+      queuePendingPluginEvent(targetPluginId, name, data);
     }
   }
 }
@@ -484,6 +562,7 @@ export function stopPluginBridgeServers() {
     }
   }
   bridgeRecords.clear();
+  pendingPluginEvents.clear();
 }
 
 export const __testInternals = {
