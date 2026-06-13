@@ -115,7 +115,7 @@ BRAND=cutej ENV_ZIP=/path/to/env.zip DEMO=1 npm run dist:mac
 ```
 
 `ENV_ZIP` 必须是标准环境包：解压后只能有一个顶层 `env/` 目录，实际运行内容位于 `env/VERSION`、`env/agents/`、`env/registries/` 等路径下。Desktop 首启导入只复制缺失文件；已存在的 agent、provider、owner 等文件会跳过，不会覆盖、迁移或自动修复旧 seed。
-`DEMO` 默认不包含 demo；支持 `1/true/yes/on` 和 `0/false/no/off`，非法值会终止打包。当前 demo 只包含 websites app，启动时会在 `.desktop` 目录生成后、`ENV_ZIP` 导入前复制到 `data/websites/`。
+`DEMO` 默认不包含 demo；支持 `1/true/yes/on` 和 `0/false/no/off`，非法值会终止打包。当前 demo 只包含 webapp 模板，启动时会在 `.desktop` 目录生成后、`ENV_ZIP` 导入前复制到 `data/webs/webapps/`。
 
 也可以使用 Makefile 入口：
 
@@ -159,7 +159,7 @@ npm run dist:win-docker
 - `package.json` 中的 `build.files` 会打入桌面应用运行所需代码。
 - `build.extraResources` 会把 `build/resources/services` 下的内置服务资源复制进应用包。
 - `build.extraResources` 会把 `build/resources/env` 复制进应用包；设置 `ENV_ZIP=/path/to/env.zip` 打包时会生成 `build/resources/env/env.zip`，首启缺少运行环境时优先自动导入。`sync:env` 会拒绝当前品牌运行根包装目录（如 `.zenmind/`、`.cutej/`）、历史 `zenmind-env/`、裸顶层文件或嵌套 `env/env/` 结构。
-- `build.extraResources` 会把 `build/resources/demo` 复制进应用包；设置 `DEMO=1` 或 `DEMO=true` 打包时会把 `public/website-templates/` 同步为内置 demo，未设置时只写 manifest 且不包含 demo 资源。
+- `build.extraResources` 会把 `build/resources/demo` 复制进应用包；设置 `DEMO=1` 或 `DEMO=true` 打包时会把 `public/webapp-templates/` 同步为内置 demo，未设置时只写 manifest 且不包含 demo 资源。
 - `build.extraResources` 同时会把 `scripts/uninstall.sh` 放入 macOS 应用包资源目录，供完整卸载使用。
 - `build/installer.nsh` 会注入 NSIS 卸载流程，在 Windows 上给用户选择是否清理应用数据。
 - `npm run sync:assets` 会扫描工作区内各服务目录以及聚合产物目录中的 `.tar.gz` / `.zip` 发布包，只同步 `manifest.json.kind === "builtin"` 的产物。支持 `--os` 和 `--arch` 参数按平台过滤。

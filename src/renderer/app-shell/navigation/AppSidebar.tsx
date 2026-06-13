@@ -17,15 +17,14 @@ import type {
   AssistantCreateCoderProjectRequest,
   AssistantNavAgentItem,
   AssistantNavChatItem,
-  CustomSidebarItem,
-  CustomSidebarItemInput,
-  CustomSidebarItemResult,
   DesktopSsoStatus,
   ServiceState,
-  WebsiteListItem,
+  WebEntry,
+  WebsiteInput,
+  WebsiteResult,
 } from "../../../shared/contracts";
 import {
-  createCustomSidebarNavOrderKey,
+  createWebNavOrderKey,
   sortSidebarNavItems,
   type SidebarNavOrderItemKey,
 } from "./sidebarNavOrder";
@@ -57,10 +56,10 @@ type SidebarToolItem = Omit<SidebarNavItem, "orderKey"> & {
 };
 
 type SidebarPrimaryEntry = SidebarNavItem & {
-  entryType?: "link" | "assistants" | "websites";
+  entryType?: "link" | "assistants" | "webs";
 };
 
-type SidebarGroupId = "assistants" | "websites";
+type SidebarGroupId = "assistants" | "webs";
 
 type SidebarGroupState = Record<SidebarGroupId, boolean>;
 
@@ -127,7 +126,7 @@ const SIDEBAR_ASSISTANT_SORT_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-assista
 
 const defaultSidebarGroupState: SidebarGroupState = {
   assistants: true,
-  websites: true,
+  webs: true,
 };
 
 const CODER_ACP_PROXY_SERVICE_OPTIONS: CoderAcpProxyOption[] = [
@@ -162,11 +161,11 @@ const assistantGroupNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
   entryType: "assistants",
 };
 
-const websitesGroupNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
-  orderKey: "group:websites",
+const websGroupNavItemBase: Omit<SidebarPrimaryEntry, "label"> = {
+  orderKey: "group:webs",
   to: "",
   icon: "website",
-  entryType: "websites",
+  entryType: "webs",
 };
 
 const fixedToolRowsBase: Array<
@@ -247,10 +246,12 @@ function normalizeSidebarGroupState(candidate: unknown): SidebarGroupState {
       typeof record.assistants === "boolean"
         ? record.assistants
         : defaultSidebarGroupState.assistants,
-    websites:
-      typeof record.websites === "boolean"
-        ? record.websites
-        : defaultSidebarGroupState.websites,
+    webs:
+      typeof record.webs === "boolean"
+        ? record.webs
+        : typeof record.websites === "boolean"
+          ? record.websites
+          : defaultSidebarGroupState.webs,
   };
 }
 
@@ -650,8 +651,8 @@ type AppSidebarProps = {
   assistantLauncherDisabled?: boolean;
   assistantLauncherVisible?: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
-  customSidebarNavOrder?: SidebarNavOrderItemKey[];
-  customSidebarItems: WebsiteListItem[];
+  websiteNavOrder?: SidebarNavOrderItemKey[];
+  websiteItems: WebEntry[];
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantNavAgentsLoaded?: boolean;
   copilotAgentOptions?: AssistantNavAgentItem[];
@@ -665,9 +666,9 @@ type AppSidebarProps = {
   onDesktopSsoLogout?: () => void;
   onRefreshAssistantNavAgents?: () => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
-  onCreateCustomSidebarItem?: (
-    input: CustomSidebarItemInput,
-  ) => Promise<CustomSidebarItemResult>;
+  onCreateWebsiteItem?: (
+    input: WebsiteInput,
+  ) => Promise<WebsiteResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
   onSidebarNavigateBack?: () => void;
   onSidebarNavigateForward?: () => void;
@@ -691,8 +692,8 @@ export function AppSidebar({
   assistantLauncherDisabled = false,
   assistantLauncherVisible = true,
   sidebarNavOrder,
-  customSidebarNavOrder = [],
-  customSidebarItems,
+  websiteNavOrder = [],
+  websiteItems,
   assistantNavAgents = [],
   assistantNavAgentsLoaded = true,
   copilotAgentOptions = [],
@@ -706,7 +707,7 @@ export function AppSidebar({
   onDesktopSsoLogout,
   onRefreshAssistantNavAgents,
   onRefreshCopilotAgentOptions,
-  onCreateCustomSidebarItem,
+  onCreateWebsiteItem,
   onRequestNavigate,
   onSidebarNavigateBack,
   onSidebarNavigateForward,
@@ -774,14 +775,14 @@ export function AppSidebar({
       ? t("sidebar.assistants.sortByName")
       : t("sidebar.assistants.sortByTime");
 
-  const customItems: SidebarNavItem[] = useMemo(() => {
+  const webNavItems: SidebarNavItem[] = useMemo(() => {
     const orderIndex = new Map(
-      customSidebarNavOrder.map((key, index) => [key, index] as const),
+      websiteNavOrder.map((key, index) => [key, index] as const),
     );
-    return customSidebarItems
+    return websiteItems
       .map((item) => ({
-        orderKey: createCustomSidebarNavOrderKey(item.id),
-        to: `/custom-sidebar/${item.id}`,
+        orderKey: createWebNavOrderKey(item.entryKey),
+        to: `/webs/${item.entryKey}`,
         label: item.label,
         icon: "website" as const,
       }))
@@ -792,7 +793,7 @@ export function AppSidebar({
           orderIndex.get(right.orderKey) ?? Number.MAX_SAFE_INTEGER;
         return leftIndex - rightIndex;
       });
-  }, [customSidebarItems, customSidebarNavOrder]);
+  }, [websiteItems, websiteNavOrder]);
 
   const navItems: SidebarPrimaryEntry[] = sortSidebarNavItems(
     [
@@ -808,9 +809,9 @@ export function AppSidebar({
         collapsedLabel: t("nav.assistantsCollapsed"),
       },
       {
-        ...websitesGroupNavItemBase,
-        label: t("nav.embeddedWebsites"),
-        collapsedLabel: t("nav.embeddedWebsitesCollapsed"),
+        ...websGroupNavItemBase,
+        label: t("nav.embeddedWebs"),
+        collapsedLabel: t("nav.embeddedWebsCollapsed"),
       },
     ],
     sidebarNavOrder,
@@ -1220,13 +1221,13 @@ export function AppSidebar({
 
   async function handleCreateWebsite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (websiteCreatePending || !onCreateCustomSidebarItem) {
+    if (websiteCreatePending || !onCreateWebsiteItem) {
       return;
     }
     setWebsiteCreatePending(true);
     setWebsiteCreateError("");
     try {
-      const result = await onCreateCustomSidebarItem({
+      const result = await onCreateWebsiteItem({
         label: websiteLabel,
         url: websiteUrl,
         agentKey: websiteAgentKey,
@@ -1239,8 +1240,8 @@ export function AppSidebar({
       setWebsiteLabel("");
       setWebsiteUrl("");
       setWebsiteAgentKey("");
-      setSidebarGroupState((current) => ({ ...current, websites: true }));
-      requestNavigate(`/custom-sidebar/${result.item.id}`);
+      setSidebarGroupState((current) => ({ ...current, webs: true }));
+      requestNavigate(`/webs/${result.item.entryKey}`);
     } catch (error) {
       setWebsiteCreateError(
         error instanceof Error ? error.message : String(error),
@@ -1448,8 +1449,8 @@ export function AppSidebar({
 
   function isWebsiteGroupActive() {
     return (
-      currentPathname.startsWith("/custom-sidebar/") ||
-      Boolean(pendingPath?.startsWith("/custom-sidebar/"))
+      currentPathname.startsWith("/webs/") ||
+      Boolean(pendingPath?.startsWith("/webs/"))
     );
   }
 
@@ -1874,7 +1875,7 @@ export function AppSidebar({
           .join(" ");
     const groupChildrenClassName = [
       "sidebar-group-children",
-      args.groupId === "websites" ? "sidebar-website-children" : "",
+      args.groupId === "webs" ? "sidebar-website-children" : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -1976,7 +1977,7 @@ export function AppSidebar({
                 </button>
               </Tooltip>
             ) : null}
-            {args.groupId === "websites" ? (
+            {args.groupId === "webs" ? (
               <Tooltip content="新增内嵌网站">
                 <button
                   type="button"
@@ -2029,14 +2030,14 @@ export function AppSidebar({
         children: [],
       });
     }
-    if (item.entryType === "websites") {
+    if (item.entryType === "webs") {
       return renderSidebarGroup({
-        groupId: "websites",
+        groupId: "webs",
         label: item.label,
         collapsedLabel: item.collapsedLabel,
         icon: item.icon,
         active: isWebsiteGroupActive(),
-        children: customItems,
+        children: webNavItems,
       });
     }
     return renderSidebarLink(item);
@@ -3013,7 +3014,7 @@ export function AppSidebar({
         return "sidebar-assistant-closed";
       case "quickAssistant":
         return "assistant";
-      case "embeddedWebsites":
+      case "embeddedWebs":
         return "website";
       case "dataRoot":
         return "service";

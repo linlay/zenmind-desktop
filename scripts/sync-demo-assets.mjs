@@ -7,7 +7,7 @@ const projectRoot = process.cwd();
 
 export const DEMO_ENV_VAR = "DEMO";
 export const BUNDLED_DEMO_MANIFEST_FILE_NAME = "manifest.json";
-export const BUNDLED_DEMO_WEBSITE_TEMPLATES_DIR_NAME = "website-templates";
+export const BUNDLED_DEMO_WEBAPP_TEMPLATES_DIR_NAME = "webapp-templates";
 
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 const FALSE_VALUES = new Set(["", "0", "false", "no", "off"]);
@@ -16,8 +16,8 @@ function bundledDemoRoot(rootDir) {
   return path.join(rootDir, "build", "resources", "demo");
 }
 
-function websiteTemplatesSourceRoot(rootDir) {
-  return path.join(rootDir, "public", BUNDLED_DEMO_WEBSITE_TEMPLATES_DIR_NAME);
+function webappTemplatesSourceRoot(rootDir) {
+  return path.join(rootDir, "public", BUNDLED_DEMO_WEBAPP_TEMPLATES_DIR_NAME);
 }
 
 function writeManifest(demoRoot, manifest) {
@@ -39,7 +39,7 @@ export function parseDemoFlag(env = process.env) {
   throw new Error(`${DEMO_ENV_VAR} must be one of: 1, true, yes, on, 0, false, no, off.`);
 }
 
-function listWebsiteTemplateIds(templateRoot) {
+function listWebappTemplateIds(templateRoot) {
   if (!fs.existsSync(templateRoot) || !fs.statSync(templateRoot).isDirectory()) {
     return [];
   }
@@ -65,7 +65,7 @@ export async function prepareBundledDemoAssets({
     const manifest = {
       schemaVersion: 1,
       bundled: false,
-      websiteTemplates: []
+      webappTemplates: []
     };
     writeManifest(demoRoot, manifest);
     logger.log(`no ${DEMO_ENV_VAR} requested; packaged app will not include demo assets`);
@@ -75,22 +75,22 @@ export async function prepareBundledDemoAssets({
     };
   }
 
-  const sourceRoot = websiteTemplatesSourceRoot(rootDir);
+  const sourceRoot = webappTemplatesSourceRoot(rootDir);
   if (!fs.existsSync(sourceRoot) || !fs.statSync(sourceRoot).isDirectory()) {
-    throw new Error(`missing website demo templates: ${sourceRoot}`);
+    throw new Error(`missing webapp demo templates: ${sourceRoot}`);
   }
 
-  const targetRoot = path.join(demoRoot, BUNDLED_DEMO_WEBSITE_TEMPLATES_DIR_NAME);
+  const targetRoot = path.join(demoRoot, BUNDLED_DEMO_WEBAPP_TEMPLATES_DIR_NAME);
   fs.cpSync(sourceRoot, targetRoot, {
     recursive: true,
     force: true
   });
 
-  const websiteTemplates = listWebsiteTemplateIds(targetRoot);
+  const webappTemplates = listWebappTemplateIds(targetRoot);
   const manifest = {
     schemaVersion: 1,
     bundled: true,
-    websiteTemplates
+    webappTemplates
   };
   writeManifest(demoRoot, manifest);
   logger.log(`bundled ${DEMO_ENV_VAR} demo assets into ${path.relative(rootDir, demoRoot)}`);

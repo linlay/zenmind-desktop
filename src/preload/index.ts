@@ -389,21 +389,23 @@ const api: DesktopApi = {
     hide: () => ipcRenderer.invoke("quickAssistant.hide"),
     openControlCenter: () => ipcRenderer.invoke("quickAssistant.openControlCenter")
   },
-  customSidebar: {
-    list: () => ipcRenderer.invoke("customSidebar.list"),
-    add: (input) => ipcRenderer.invoke("customSidebar.add", input),
-    update: (id, input) => ipcRenderer.invoke("customSidebar.update", id, input),
-    remove: (id: string) => ipcRenderer.invoke("customSidebar.remove", id),
-    import: () => ipcRenderer.invoke("customSidebar.import"),
-    export: () => ipcRenderer.invoke("customSidebar.export")
-  },
-  websites: {
-    list: () => ipcRenderer.invoke("websites.list"),
-    start: (id: string) => ipcRenderer.invoke("websites.start", id),
-    stop: (id: string) => ipcRenderer.invoke("websites.stop", id),
-    restart: (id: string) => ipcRenderer.invoke("websites.restart", id),
-    getStatus: (id: string) => ipcRenderer.invoke("websites.getStatus", id),
-    readLog: (id, target, options) => ipcRenderer.invoke("websites.readLog", id, target, options)
+  webs: {
+    list: () => ipcRenderer.invoke("webs.list"),
+    websites: {
+      list: () => ipcRenderer.invoke("webs.websites.list"),
+      add: (input) => ipcRenderer.invoke("webs.websites.add", input),
+      update: (id, input) => ipcRenderer.invoke("webs.websites.update", id, input),
+      remove: (id: string) => ipcRenderer.invoke("webs.websites.remove", id),
+      import: () => ipcRenderer.invoke("webs.websites.import"),
+      export: () => ipcRenderer.invoke("webs.websites.export")
+    },
+    webapps: {
+      start: (id: string) => ipcRenderer.invoke("webs.webapps.start", id),
+      stop: (id: string) => ipcRenderer.invoke("webs.webapps.stop", id),
+      restart: (id: string) => ipcRenderer.invoke("webs.webapps.restart", id),
+      getStatus: (id: string) => ipcRenderer.invoke("webs.webapps.getStatus", id),
+      readLog: (id, target, options) => ipcRenderer.invoke("webs.webapps.readLog", id, target, options)
+    }
   },
   onNavigate: (listener: NavigateListener) => {
     const handleNavigate = (_event: Electron.IpcRendererEvent, path: string) => {

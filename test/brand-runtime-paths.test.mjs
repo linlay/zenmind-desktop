@@ -11,7 +11,7 @@ import {
 } from "../scripts/lib/brand-config.mjs";
 import { prepareBundledDemoAssets } from "../scripts/sync-demo-assets.mjs";
 import { prepareBundledEnvZip } from "../scripts/sync-env-zip.mjs";
-import { removeRendererWebsiteTemplatesFromStage } from "../scripts/stage-app.mjs";
+import { removeRendererWebappTemplatesFromStage } from "../scripts/stage-app.mjs";
 
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
@@ -153,11 +153,11 @@ test("sync-env rejects current brand and legacy env wrapper directories", async 
   );
 });
 
-test("sync-demo defaults to manifest only and copies website templates when enabled", async (t) => {
+test("sync-demo defaults to manifest only and copies webapp templates when enabled", async (t) => {
   const root = createBrandFixture(t);
-  const sourceDir = path.join(root, "public", "website-templates", "demo-node-html");
+  const sourceDir = path.join(root, "public", "webapp-templates", "demo-node-html");
   fs.mkdirSync(sourceDir, { recursive: true });
-  fs.writeFileSync(path.join(sourceDir, "website.json"), "{}\n", "utf8");
+  fs.writeFileSync(path.join(sourceDir, "webapp.json"), "{}\n", "utf8");
 
   const defaultResult = await prepareBundledDemoAssets({
     rootDir: root,
@@ -165,7 +165,8 @@ test("sync-demo defaults to manifest only and copies website templates when enab
     logger: silentLogger
   });
   assert.equal(defaultResult.bundled, false);
-  assert.equal(fs.existsSync(path.join(root, "build", "resources", "demo", "website-templates")), false);
+  assert.deepEqual(defaultResult.webappTemplates, []);
+  assert.equal(fs.existsSync(path.join(root, "build", "resources", "demo", "webapp-templates")), false);
   assert.equal(readJson(path.join(root, "build", "resources", "demo", "manifest.json")).bundled, false);
 
   const enabledResult = await prepareBundledDemoAssets({
@@ -174,9 +175,9 @@ test("sync-demo defaults to manifest only and copies website templates when enab
     logger: silentLogger
   });
   assert.equal(enabledResult.bundled, true);
-  assert.deepEqual(enabledResult.websiteTemplates, ["demo-node-html"]);
+  assert.deepEqual(enabledResult.webappTemplates, ["demo-node-html"]);
   assert.equal(
-    fs.existsSync(path.join(root, "build", "resources", "demo", "website-templates", "demo-node-html", "website.json")),
+    fs.existsSync(path.join(root, "build", "resources", "demo", "webapp-templates", "demo-node-html", "webapp.json")),
     true
   );
 
@@ -190,16 +191,16 @@ test("sync-demo defaults to manifest only and copies website templates when enab
   );
 });
 
-test("stage-app removes renderer website templates from staged app", (t) => {
+test("stage-app removes renderer webapp templates from staged app", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-stage-demo-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const stagedTemplatePath = path.join(root, "dist-renderer", "website-templates", "demo-node-html", "website.json");
+  const stagedTemplatePath = path.join(root, "dist-renderer", "webapp-templates", "demo-node-html", "webapp.json");
   fs.mkdirSync(path.dirname(stagedTemplatePath), { recursive: true });
   fs.writeFileSync(stagedTemplatePath, "{}\n", "utf8");
 
-  removeRendererWebsiteTemplatesFromStage(root);
+  removeRendererWebappTemplatesFromStage(root);
 
-  assert.equal(fs.existsSync(path.join(root, "dist-renderer", "website-templates")), false);
+  assert.equal(fs.existsSync(path.join(root, "dist-renderer", "webapp-templates")), false);
 });
 
 test("critical runtime path modules read APP_BRAND runtimeRootDirName", () => {

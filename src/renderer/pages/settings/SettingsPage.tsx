@@ -13,7 +13,7 @@ import type {
   AssistantMemoryStats,
   AssistantNavAgentItem,
   AssistantSettingsPublic,
-  CustomSidebarItem,
+  WebsiteEntry,
   DesktopAppPairingPayloadResult,
   DesktopAppInfo,
   DesktopPetAgentOption,
@@ -62,8 +62,8 @@ type SettingsPageProps = {
   sidebarNavOrder: SidebarNavOrderItemKey[];
   availableSidebarNavOrderItems: SidebarNavOrderItem[];
   onSidebarNavOrderChange: (order: SidebarNavOrderItemKey[]) => void;
-  customSidebarItems: CustomSidebarItem[];
-  onCustomSidebarItemsChange: (items: CustomSidebarItem[]) => void;
+  websiteItems: WebsiteEntry[];
+  onWebsiteItemsChange: (items: WebsiteEntry[]) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
 };
 
@@ -151,7 +151,7 @@ const SETTINGS_ACTION_PATCH_FIELDS = [
 const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
   "navigation",
   "quickAssistant",
-  "embeddedWebsites"
+  "embeddedWebs"
 ];
 
 const defaultTaskBoardCloudConfig: TaskBoardCloudConfig = {
@@ -266,11 +266,11 @@ function getFixedAssistantLabelForSidebarNavOrderItem(itemKey: SidebarNavOrderIt
   if (itemKey === "kanban") {
     return t("settings.reservedEntry");
   }
-  if (itemKey === "group:assistants" || itemKey === "group:websites") {
+  if (itemKey === "group:assistants" || itemKey === "group:webs") {
     return t("nav.group.fixedEntry");
   }
   if (itemKey.startsWith("custom:")) {
-    return t("settings.configuredInEmbeddedWebsites");
+    return t("settings.configuredInEmbeddedWebs");
   }
   if (itemKey.startsWith("service:")) {
     return t("settings.servicePageDefault");
@@ -547,8 +547,8 @@ export function SettingsPage({
   sidebarNavOrder,
   availableSidebarNavOrderItems,
   onSidebarNavOrderChange,
-  customSidebarItems,
-  onCustomSidebarItemsChange,
+  websiteItems,
+  onWebsiteItemsChange,
   onAssistantSettingsChange
 }: SettingsPageProps) {
   const { locale, setLocale, t } = useI18n();
@@ -558,13 +558,13 @@ export function SettingsPage({
   const noticeIdRef = useRef(0);
   const [notice, setNotice] = useState<SettingsNotice | null>(null);
   const [sectionReadErrors, setSectionReadErrors] = useState<SectionReadErrorMap>({});
-  const [customSidebarLabel, setCustomSidebarLabel] = useState("");
-  const [customSidebarUrl, setCustomSidebarUrl] = useState("");
-  const [editingCustomSidebarId, setEditingCustomSidebarId] = useState("");
-  const [customSidebarPending, setCustomSidebarPending] = useState(false);
-  const [customSidebarTransferPending, setCustomSidebarTransferPending] = useState("");
-  const [customSidebarAgentPendingId, setCustomSidebarAgentPendingId] = useState("");
-  const [deletingCustomSidebarId, setDeletingCustomSidebarId] = useState("");
+  const [websiteLabel, setWebsiteLabel] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [editingWebsiteId, setEditingWebsiteId] = useState("");
+  const [websitePending, setWebsitePending] = useState(false);
+  const [websiteTransferPending, setWebsiteTransferPending] = useState("");
+  const [websiteAgentPendingId, setWebsiteAgentPendingId] = useState("");
+  const [deletingWebsiteId, setDeletingWebsiteId] = useState("");
   const [memorySettings, setMemorySettings] = useState<AssistantMemorySettings | null>(null);
   const [memoryStats, setMemoryStats] = useState<AssistantMemoryStats | null>(null);
   const [memoryStorage, setMemoryStorage] = useState<AssistantMemoryStorage | null>(null);
@@ -1413,121 +1413,121 @@ export function SettingsPage({
     return summary;
   }
 
-  async function handleAddCustomSidebarItem(event: FormEvent<HTMLFormElement>) {
+  async function handleAddWebsiteItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    setCustomSidebarPending(true);
+    setWebsitePending(true);
     try {
-      const result = await window.electronAPI.customSidebar.add({
-        label: customSidebarLabel,
-        url: customSidebarUrl
+      const result = await window.electronAPI.webs.websites.add({
+        label: websiteLabel,
+        url: websiteUrl
       });
-      showSectionResultNotice("embeddedWebsites", result);
-      onCustomSidebarItemsChange(result.items);
+      showSectionResultNotice("embeddedWebs", result);
+      onWebsiteItemsChange(result.items);
       if (result.ok) {
-        setCustomSidebarLabel("");
-        setCustomSidebarUrl("");
+        setWebsiteLabel("");
+        setWebsiteUrl("");
       }
     } catch (reason) {
-      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("embeddedWebs", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
-      setCustomSidebarPending(false);
+      setWebsitePending(false);
     }
   }
 
-  function resetCustomSidebarForm() {
-    setEditingCustomSidebarId("");
-    setCustomSidebarLabel("");
-    setCustomSidebarUrl("");
+  function resetWebsiteForm() {
+    setEditingWebsiteId("");
+    setWebsiteLabel("");
+    setWebsiteUrl("");
   }
 
-  function handleStartEditCustomSidebarItem(item: CustomSidebarItem) {
-    setEditingCustomSidebarId(item.id);
-    setCustomSidebarLabel(item.label);
-    setCustomSidebarUrl(item.url);
-    setNotice((current) => current?.sectionId === "embeddedWebsites" ? null : current);
+  function handleStartEditWebsiteItem(item: WebsiteEntry) {
+    setEditingWebsiteId(item.id);
+    setWebsiteLabel(item.label);
+    setWebsiteUrl(item.url);
+    setNotice((current) => current?.sectionId === "embeddedWebs" ? null : current);
   }
 
-  function handleCancelEditCustomSidebarItem() {
-    resetCustomSidebarForm();
+  function handleCancelEditWebsiteItem() {
+    resetWebsiteForm();
   }
 
-  async function handleUpdateCustomSidebarItem(itemId: string) {
-    setCustomSidebarPending(true);
+  async function handleUpdateWebsiteItem(itemId: string) {
+    setWebsitePending(true);
     try {
-      const result = await window.electronAPI.customSidebar.update(itemId, {
-        label: customSidebarLabel,
-        url: customSidebarUrl
+      const result = await window.electronAPI.webs.websites.update(itemId, {
+        label: websiteLabel,
+        url: websiteUrl
       });
-      showSectionResultNotice("embeddedWebsites", result);
-      onCustomSidebarItemsChange(result.items);
+      showSectionResultNotice("embeddedWebs", result);
+      onWebsiteItemsChange(result.items);
       if (result.ok) {
-        resetCustomSidebarForm();
+        resetWebsiteForm();
       }
     } catch (reason) {
-      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("embeddedWebs", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
-      setCustomSidebarPending(false);
+      setWebsitePending(false);
     }
   }
 
-  async function handleDeleteCustomSidebarItem(item: CustomSidebarItem) {
-    setDeletingCustomSidebarId(item.id);
+  async function handleDeleteWebsiteItem(item: WebsiteEntry) {
+    setDeletingWebsiteId(item.id);
     try {
-      const result = await window.electronAPI.customSidebar.remove(item.id);
-      showSectionResultNotice("embeddedWebsites", result);
-      onCustomSidebarItemsChange(result.items);
-      if (editingCustomSidebarId === item.id) {
-        resetCustomSidebarForm();
+      const result = await window.electronAPI.webs.websites.remove(item.id);
+      showSectionResultNotice("embeddedWebs", result);
+      onWebsiteItemsChange(result.items);
+      if (editingWebsiteId === item.id) {
+        resetWebsiteForm();
       }
     } catch (reason) {
-      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("embeddedWebs", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
-      setDeletingCustomSidebarId("");
+      setDeletingWebsiteId("");
     }
   }
 
-  async function handleUpdateCustomSidebarAgent(itemId: string, agentKey: string) {
-    setCustomSidebarAgentPendingId(itemId);
+  async function handleUpdateWebsiteAgent(itemId: string, agentKey: string) {
+    setWebsiteAgentPendingId(itemId);
     try {
-      const result = await window.electronAPI.customSidebar.update(itemId, { agentKey });
-      showSectionResultNotice("embeddedWebsites", result);
-      onCustomSidebarItemsChange(result.items);
+      const result = await window.electronAPI.webs.websites.update(itemId, { agentKey });
+      showSectionResultNotice("embeddedWebs", result);
+      onWebsiteItemsChange(result.items);
     } catch (reason) {
-      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("embeddedWebs", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
-      setCustomSidebarAgentPendingId("");
+      setWebsiteAgentPendingId("");
     }
   }
 
-  async function handleImportCustomSidebarItems() {
-    setCustomSidebarTransferPending("import");
+  async function handleImportWebsiteItems() {
+    setWebsiteTransferPending("import");
     try {
-      const result = await window.electronAPI.customSidebar.import();
-      showSectionResultNotice("embeddedWebsites", result);
-      onCustomSidebarItemsChange(result.items);
-      resetCustomSidebarForm();
+      const result = await window.electronAPI.webs.websites.import();
+      showSectionResultNotice("embeddedWebs", result);
+      onWebsiteItemsChange(result.items);
+      resetWebsiteForm();
     } catch (reason) {
-      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("embeddedWebs", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
-      setCustomSidebarTransferPending("");
+      setWebsiteTransferPending("");
     }
   }
 
-  async function handleExportCustomSidebarItems() {
-    setCustomSidebarTransferPending("export");
+  async function handleExportWebsiteItems() {
+    setWebsiteTransferPending("export");
     try {
-      const result = await window.electronAPI.customSidebar.export();
+      const result = await window.electronAPI.webs.websites.export();
       showSectionNotice(
-        "embeddedWebsites",
+        "embeddedWebs",
         result.path ? `${result.message} ${result.path}` : result.message,
         result.ok ? "success" : "error"
       );
-      onCustomSidebarItemsChange(result.items);
+      onWebsiteItemsChange(result.items);
     } catch (reason) {
-      showSectionNotice("embeddedWebsites", reason instanceof Error ? reason.message : String(reason), "error");
+      showSectionNotice("embeddedWebs", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
-      setCustomSidebarTransferPending("");
+      setWebsiteTransferPending("");
     }
   }
 
@@ -2028,7 +2028,7 @@ export function SettingsPage({
                   <span aria-hidden="true" />
                 </button>
               </div>
-              <div className="settings-item-section-head custom-sidebar-list-head">
+              <div className="settings-item-section-head website-list-head">
                 <div>
                   <strong>{t("settings.control.statusTitle")}</strong>
                   <span>{getControlConnectionLabel(controlConnectionState)}</span>
@@ -2311,7 +2311,7 @@ export function SettingsPage({
         }
           return (
             <div className="settings-item-card navigation-settings-card" aria-label={t("settings.navigation.panelAria")}>
-              <div className="settings-item-section-head custom-sidebar-list-head navigation-assistant-default-head">
+              <div className="settings-item-section-head website-list-head navigation-assistant-default-head">
                 <div>
                   <strong>{t("settings.navigation.defaultAssistant")}</strong>
                   <span>{t("settings.navigation.defaultAssistantDescription")}</span>
@@ -2336,7 +2336,7 @@ export function SettingsPage({
                   </select>
                 </span>
               </div>
-              <div className="settings-item-section-head custom-sidebar-list-head">
+              <div className="settings-item-section-head website-list-head">
                 <div>
                   <strong>{t("settings.navigation.fixedMain")}</strong>
                   <span>{t("settings.navigation.fixedMainDescription")}</span>
@@ -2415,7 +2415,7 @@ export function SettingsPage({
                     );
                   })}
               </div>
-              <div className="settings-item-section-head custom-sidebar-list-head navigation-fixed-tools-head">
+              <div className="settings-item-section-head website-list-head navigation-fixed-tools-head">
                 <div>
                   <strong>{t("settings.navigation.fixedTools")}</strong>
                   <span>{t("settings.navigation.fixedToolsDescription")}</span>
@@ -2482,40 +2482,40 @@ export function SettingsPage({
             </div>
           </div>
         );
-      case "embeddedWebsites":
+      case "embeddedWebs":
         return (
-          <div className="settings-item-card custom-sidebar-card">
-            {!editingCustomSidebarId ? (
+          <div className="settings-item-card website-card">
+            {!editingWebsiteId ? (
               <>
-                <div className="settings-item-section-head custom-sidebar-list-head custom-sidebar-add-head">
+                <div className="settings-item-section-head website-list-head website-add-head">
                   <div>
-                    <strong>{t("settings.embeddedWebsites.addTitle")}</strong>
-                    <span>{t("settings.embeddedWebsites.addDescription")}</span>
+                    <strong>{t("settings.embeddedWebs.addTitle")}</strong>
+                    <span>{t("settings.embeddedWebs.addDescription")}</span>
                   </div>
                 </div>
-                <div className="settings-item-form custom-sidebar-add-form">
-                  <form className="custom-sidebar-form" onSubmit={(event) => void handleAddCustomSidebarItem(event)}>
+                <div className="settings-item-form website-add-form">
+                  <form className="website-form" onSubmit={(event) => void handleAddWebsiteItem(event)}>
                     <label>
-                      <span>{t("settings.embeddedWebsites.displayName")}</span>
+                      <span>{t("settings.embeddedWebs.displayName")}</span>
                       <input
-                        value={customSidebarLabel}
-                        onChange={(event) => setCustomSidebarLabel(event.target.value)}
-                        placeholder={t("settings.embeddedWebsites.displayNamePlaceholder")}
+                        value={websiteLabel}
+                        onChange={(event) => setWebsiteLabel(event.target.value)}
+                        placeholder={t("settings.embeddedWebs.displayNamePlaceholder")}
                         maxLength={24}
                       />
                     </label>
                     <label>
-                      <span>{t("settings.embeddedWebsites.url")}</span>
+                      <span>{t("settings.embeddedWebs.url")}</span>
                       <input
-                        value={customSidebarUrl}
-                        onChange={(event) => setCustomSidebarUrl(event.target.value)}
-                        placeholder={t("settings.embeddedWebsites.urlPlaceholder")}
+                        value={websiteUrl}
+                        onChange={(event) => setWebsiteUrl(event.target.value)}
+                        placeholder={t("settings.embeddedWebs.urlPlaceholder")}
                         required
                       />
                     </label>
-                    <div className="custom-sidebar-submit-wrap">
-                      <button type="submit" className="text-button custom-sidebar-submit" disabled={customSidebarPending}>
-                        {customSidebarPending ? t("settings.embeddedWebsites.adding") : t("settings.embeddedWebsites.add")}
+                    <div className="website-submit-wrap">
+                      <button type="submit" className="text-button website-submit" disabled={websitePending}>
+                        {websitePending ? t("settings.embeddedWebs.adding") : t("settings.embeddedWebs.add")}
                       </button>
                     </div>
                   </form>
@@ -2523,101 +2523,101 @@ export function SettingsPage({
               </>
             ) : null}
 
-            <div className="settings-item-section-head custom-sidebar-list-head custom-sidebar-added-head">
+            <div className="settings-item-section-head website-list-head website-added-head">
               <div>
-                <strong>{t("settings.embeddedWebsites.addedTitle")}</strong>
-                <span>{t("settings.embeddedWebsites.addedDescription")}</span>
+                <strong>{t("settings.embeddedWebs.addedTitle")}</strong>
+                <span>{t("settings.embeddedWebs.addedDescription")}</span>
               </div>
               <div className="settings-item-section-actions">
                 <button
                   type="button"
                   className="text-button"
-                  onClick={() => void handleImportCustomSidebarItems()}
-                  disabled={customSidebarTransferPending !== "" || Boolean(editingCustomSidebarId)}
+                  onClick={() => void handleImportWebsiteItems()}
+                  disabled={websiteTransferPending !== "" || Boolean(editingWebsiteId)}
                 >
-                  {customSidebarTransferPending === "import" ? t("settings.embeddedWebsites.importing") : t("settings.embeddedWebsites.import")}
+                  {websiteTransferPending === "import" ? t("settings.embeddedWebs.importing") : t("settings.embeddedWebs.import")}
                 </button>
                 <button
                   type="button"
                   className="text-button"
-                  onClick={() => void handleExportCustomSidebarItems()}
-                  disabled={customSidebarTransferPending !== "" || Boolean(editingCustomSidebarId)}
+                  onClick={() => void handleExportWebsiteItems()}
+                  disabled={websiteTransferPending !== "" || Boolean(editingWebsiteId)}
                 >
-                  {customSidebarTransferPending === "export" ? t("settings.embeddedWebsites.exporting") : t("settings.embeddedWebsites.export")}
+                  {websiteTransferPending === "export" ? t("settings.embeddedWebs.exporting") : t("settings.embeddedWebs.export")}
                 </button>
               </div>
             </div>
-            {customSidebarItems.length === 0 ? (
-              <div className="settings-item-empty custom-sidebar-empty">{t("settings.embeddedWebsites.empty")}</div>
+            {websiteItems.length === 0 ? (
+              <div className="settings-item-empty website-empty">{t("settings.embeddedWebs.empty")}</div>
             ) : (
-              <div className="settings-item-list custom-sidebar-list" role="list" aria-label={t("settings.embeddedWebsites.addedTitle")}>
-                {customSidebarItems.map((item) => {
+              <div className="settings-item-list website-list" role="list" aria-label={t("settings.embeddedWebs.addedTitle")}>
+                {websiteItems.map((item) => {
                   const itemAgentKey = item.agentKey || "";
                   const itemAgentKnown = !itemAgentKey || assistantAgentOptions.some((agent) => agent.agentKey === itemAgentKey);
-                  const itemAgentPending = customSidebarAgentPendingId === item.id;
-                  const itemEditing = editingCustomSidebarId === item.id;
+                  const itemAgentPending = websiteAgentPendingId === item.id;
+                  const itemEditing = editingWebsiteId === item.id;
                   return (
                     <div
-                      className={itemEditing ? "settings-item-row custom-sidebar-row is-editing" : "settings-item-row custom-sidebar-row"}
+                      className={itemEditing ? "settings-item-row website-row is-editing" : "settings-item-row website-row"}
                       key={item.id}
                       role="listitem"
                     >
                       {itemEditing ? (
                         <form
-                          className="custom-sidebar-row-edit-form"
+                          className="website-row-edit-form"
                           onSubmit={(event) => {
                             event.preventDefault();
-                            void handleUpdateCustomSidebarItem(item.id);
+                            void handleUpdateWebsiteItem(item.id);
                           }}
                         >
                           <label>
-                            <span>{t("settings.embeddedWebsites.displayName")}</span>
+                            <span>{t("settings.embeddedWebs.displayName")}</span>
                             <input
-                              value={customSidebarLabel}
-                              onChange={(event) => setCustomSidebarLabel(event.target.value)}
-                              placeholder={t("settings.embeddedWebsites.displayNamePlaceholder")}
+                              value={websiteLabel}
+                              onChange={(event) => setWebsiteLabel(event.target.value)}
+                              placeholder={t("settings.embeddedWebs.displayNamePlaceholder")}
                               maxLength={24}
                               required
                             />
                           </label>
                           <label>
-                            <span>{t("settings.embeddedWebsites.url")}</span>
+                            <span>{t("settings.embeddedWebs.url")}</span>
                             <input
-                              value={customSidebarUrl}
-                              onChange={(event) => setCustomSidebarUrl(event.target.value)}
-                              placeholder={t("settings.embeddedWebsites.urlPlaceholder")}
+                              value={websiteUrl}
+                              onChange={(event) => setWebsiteUrl(event.target.value)}
+                              placeholder={t("settings.embeddedWebs.urlPlaceholder")}
                               required
                             />
                           </label>
-                          <div className="custom-sidebar-row-actions">
-                            <button type="submit" className="text-button" disabled={customSidebarPending}>
-                              {customSidebarPending ? t("settings.embeddedWebsites.updating") : t("settings.embeddedWebsites.save")}
+                          <div className="website-row-actions">
+                            <button type="submit" className="text-button" disabled={websitePending}>
+                              {websitePending ? t("settings.embeddedWebs.updating") : t("settings.embeddedWebs.save")}
                             </button>
                             <button
                               type="button"
                               className="text-button"
-                              onClick={handleCancelEditCustomSidebarItem}
-                              disabled={customSidebarPending}
+                              onClick={handleCancelEditWebsiteItem}
+                              disabled={websitePending}
                             >
-                              {t("settings.embeddedWebsites.cancel")}
+                              {t("settings.embeddedWebs.cancel")}
                             </button>
                           </div>
                         </form>
                       ) : (
                         <>
-                          <div className="custom-sidebar-site-cell">
+                          <div className="website-site-cell">
                             <strong>{item.label}</strong>
-                            <span className="custom-sidebar-site-url" title={item.url}>
+                            <span className="website-site-url" title={item.url}>
                               {item.url}
                             </span>
                           </div>
-                          <label className="custom-sidebar-agent-field">
+                          <label className="website-agent-field">
                             <span className="desktop-pet-agent-select-wrap">
                               <select
                                 value={itemAgentKey}
-                                onChange={(event) => void handleUpdateCustomSidebarAgent(item.id, event.target.value)}
-                                disabled={assistantAgentOptions.length === 0 || itemAgentPending || Boolean(editingCustomSidebarId)}
-                                aria-label={t("settings.embeddedWebsites.linkedAgentFor", { label: item.label })}
+                                onChange={(event) => void handleUpdateWebsiteAgent(item.id, event.target.value)}
+                                disabled={assistantAgentOptions.length === 0 || itemAgentPending || Boolean(editingWebsiteId)}
+                                aria-label={t("settings.embeddedWebs.linkedAgentFor", { label: item.label })}
                               >
                                 <option value="">{t("settings.defaultAssistant")}</option>
                                 {itemAgentKey && !itemAgentKnown ? (
@@ -2631,22 +2631,22 @@ export function SettingsPage({
                               </select>
                             </span>
                           </label>
-                          <div className="custom-sidebar-row-actions">
+                          <div className="website-row-actions">
                             <button
                               type="button"
                               className="text-button"
-                              onClick={() => handleStartEditCustomSidebarItem(item)}
-                              disabled={customSidebarPending || deletingCustomSidebarId === item.id || Boolean(editingCustomSidebarId)}
+                              onClick={() => handleStartEditWebsiteItem(item)}
+                              disabled={websitePending || deletingWebsiteId === item.id || Boolean(editingWebsiteId)}
                             >
-                              {t("settings.embeddedWebsites.edit")}
+                              {t("settings.embeddedWebs.edit")}
                             </button>
                             <button
                               type="button"
                               className="danger-text-button"
-                              onClick={() => void handleDeleteCustomSidebarItem(item)}
-                              disabled={deletingCustomSidebarId === item.id || Boolean(editingCustomSidebarId)}
+                              onClick={() => void handleDeleteWebsiteItem(item)}
+                              disabled={deletingWebsiteId === item.id || Boolean(editingWebsiteId)}
                             >
-                              {deletingCustomSidebarId === item.id ? t("settings.embeddedWebsites.deleting") : t("settings.embeddedWebsites.delete")}
+                              {deletingWebsiteId === item.id ? t("settings.embeddedWebs.deleting") : t("settings.embeddedWebs.delete")}
                             </button>
                           </div>
                         </>
@@ -2663,7 +2663,7 @@ export function SettingsPage({
       case "memory":
         return (
           <div className="data-root-card assistant-memory-card">
-            <div className="custom-sidebar-copy assistant-memory-copy">
+            <div className="website-copy assistant-memory-copy">
               <h2>{t("settings.memory.label")}</h2>
               <p className="page-copy">
                 {t("settings.memory.sectionDescription")}
@@ -2728,7 +2728,7 @@ export function SettingsPage({
                     </button>
                   </div>
                 </div>
-                <div className="settings-item-section-head custom-sidebar-list-head assistant-memory-section-head">
+                <div className="settings-item-section-head website-list-head assistant-memory-section-head">
                   <div>
                     <strong>{t("settings.memory.recent")}</strong>
                     <span>

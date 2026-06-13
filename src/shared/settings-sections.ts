@@ -4,7 +4,7 @@ export type SettingsSectionId =
   | "tunnelHub"
   | "navigation"
   | "quickAssistant"
-  | "embeddedWebsites"
+  | "embeddedWebs"
   | "dataRoot"
   | "memory"
   | "about";

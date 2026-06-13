@@ -152,8 +152,9 @@ CuteJ 品牌对应：
 - `config/desktop/sso.json`：保存 Desktop SSO 登录配置。session/token 进入 `state/desktop/`。
 - `config/desktop/control.json`：保存控制类设置，目前包含 task board 远端控制配置。
 - `data/pets/<pet-id>/pet.json`：用户导入 pet 的资产描述。内置 pet 使用 `builtin:<id>` 指向应用内置资源，用户 pet 使用 `user:<pet-id>` 指向该目录。
-- `config/websites/order.json`：网站/应用侧边栏排序 canonical 文件；旧 `profile.navigation.websiteOrder` 仅作为迁移来源和兼容返回值。
-- `data/websites/<website-id>/website.json`：每个网站或本地小应用一个目录，保存外部 URL 入口或本地前后端启动规范。
+- `config/webs/order.json`：网站/网站应用侧边栏排序 canonical 文件，条目使用 `website:<id>` 或 `webapp:<id>` entryKey。
+- `data/webs/websites/<website-id>/website.json`：外部 URL 网站 manifest。
+- `data/webs/webapps/<webapp-id>/webapp.json`：本地网站应用 manifest 和资产目录。
 - `data/env-initial/env.zip`：首个导入或内置的 env.zip 留档。
 - `data/env-initial/manifest.json`：记录 env.zip 来源、版本、sha256、大小和留档时间。
 - `config/services/<service-id>/.env`：保存从服务模板复制或派生出的服务配置。
@@ -165,28 +166,30 @@ CuteJ 品牌对应：
 - `state/desktop/sso-session.json`：保存 Desktop SSO 会话状态。
 - `state/services/<service-id>/init-state.json`：保存服务初始化状态。
 - `state/plugins/<plugin-id>/init-state.json`：保存插件初始化状态。
-- `state/websites/<website-id>/runtime.json`：保存本地网站小应用最近一次运行状态、端口、URL 和 PID。
-- `logs/websites/<website-id>/main.log`：本地网站小应用后端标准输出。
-- `logs/websites/<website-id>/error.log`：本地网站小应用后端错误输出和启动/停止错误。
+- `state/webs/webapps/<webapp-id>/runtime.json`：保存本地网站应用最近一次运行状态、端口、URL 和 PID。
+- `logs/webs/webapps/<webapp-id>/main.log`：本地网站应用后端标准输出。
+- `logs/webs/webapps/<webapp-id>/error.log`：本地网站应用后端错误输出和启动/停止错误。
 - `secrets/pan-private-key.pem`：保存 Desktop 管理的 pan-webclient RSA 私钥。
 - `profiles/electron/`：保存 Electron `userData` profile，包括 Chromium cookie、localStorage、webview session 数据、浏览器缓存等。
 
-## 内嵌网站存储
+## 内嵌网站与网站应用存储
 
-内嵌网站入口和本地网站小应用统一按网站拆分到 `data/websites/`，一个网站或应用一个目录。外部 URL 网站只需要 `website.json`，本地小应用还可以包含前端、Node 后端和静态资产：
+内嵌网站入口和本地网站应用归入内部 `webs` 域，并拆成两个子目录。外部 URL 网站只写 `data/webs/websites/<website-id>/website.json`；本地网站应用写 `data/webs/webapps/<webapp-id>/webapp.json`，并在同一目录携带前端、Node 后端和静态资产：
 
 ```text
-~/<brand-runtime-root>/.desktop/data/websites/
-├── docs/
-│   ├── website.json
-│   └── icon.png
-└── demo-node-html/
-    ├── website.json
-    ├── frontend/
-    │   ├── index.html
-    │   └── app.js
-    └── backend/
-        └── server.mjs
+~/<brand-runtime-root>/.desktop/data/webs/
+├── websites/
+│   └── docs/
+│       ├── website.json
+│       └── icon.png
+└── webapps/
+    └── demo-node-html/
+        ├── webapp.json
+        ├── frontend/
+        │   ├── index.html
+        │   └── app.js
+        └── backend/
+            └── server.mjs
 ```
 
 外部 URL 网站使用 schema v1：
@@ -195,6 +198,7 @@ CuteJ 品牌对应：
 {
   "schemaVersion": 1,
   "id": "docs",
+  "kind": "website",
   "label": "Docs",
   "url": "https://docs.example.com/",
   "agentKey": "desktopAssistant",
@@ -203,13 +207,13 @@ CuteJ 品牌对应：
 }
 ```
 
-本地网站小应用使用 schema v2：
+本地网站应用使用 schema v1：
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 1,
   "id": "demo-node-html",
-  "kind": "local-app",
+  "kind": "webapp",
   "label": "Demo App",
   "frontend": {
     "root": "frontend",
@@ -229,17 +233,17 @@ CuteJ 品牌对应：
 }
 ```
 
-Desktop 点击本地小应用入口时按需启动 Node 后端和本地前端 server。`backend.port: 0` 表示自动分配空闲端口；后端进程会收到 `PORT`、`HOST=127.0.0.1`、`WEBSITE_ID`、`WEBSITE_ROOT`、`WEBSITE_STATE_DIR` 和 `WEBSITE_LOG_DIR`。前端 server 绑定 `127.0.0.1`，并把 `frontend.apiPrefix` 下的请求代理到同一个应用的后端。
+Desktop 点击本地网站应用入口时按需启动 Node 后端和本地前端 server。`backend.port: 0` 表示自动分配空闲端口；后端进程会收到 `PORT`、`HOST=127.0.0.1`、`WEBAPP_ID`、`WEBAPP_ROOT`、`WEBAPP_STATE_DIR` 和 `WEBAPP_LOG_DIR`。前端 server 绑定 `127.0.0.1`，并把 `frontend.apiPrefix` 下的请求代理到同一个应用的后端。
 
 Manifest 中的路径必须是项目目录内的相对路径。Desktop 会拒绝绝对路径、`..`、隐藏逃逸、symlink 逃逸和非 `node` 后端 runtime。运行状态和日志分别写入：
 
 ```text
-~/<brand-runtime-root>/.desktop/state/websites/<website-id>/runtime.json
-~/<brand-runtime-root>/.desktop/logs/websites/<website-id>/main.log
-~/<brand-runtime-root>/.desktop/logs/websites/<website-id>/error.log
+~/<brand-runtime-root>/.desktop/state/webs/webapps/<webapp-id>/runtime.json
+~/<brand-runtime-root>/.desktop/logs/webs/webapps/<webapp-id>/main.log
+~/<brand-runtime-root>/.desktop/logs/webs/webapps/<webapp-id>/error.log
 ```
 
-打包时设置 `DEMO=1` 或 `DEMO=true` 后，内置 `demo-node-html` 模板会在启动时复制到 `data/websites/demo-node-html/`；目标已存在时按安装包内模板强制刷新。未设置 `DEMO` 时安装包不包含 demo，启动时也不会创建 demo 网站。旧 `config/desktop/custom-sidebar-items.json` 会在首次读取时迁移到新目录；旧 `customSidebar.*` API 继续只管理外部 URL 网站。网站自身的浏览器数据不保存在 `website.json` 中。cookie、localStorage、IndexedDB、webview session 数据和缓存由 Electron/Chromium 管理，位于：
+打包时设置 `DEMO=1` 或 `DEMO=true` 后，内置 `demo-node-html` 模板会在启动时复制到 `data/webs/webapps/demo-node-html/`；目标已存在时按安装包内模板强制刷新。未设置 `DEMO` 时安装包不包含 demo，启动时也不会创建 demo 网站应用。旧 `data/websites/`、`config/websites/order.json`、`state/websites/`、`logs/websites/` 和 `config/desktop/custom-sidebar-items.json` 只作为一次性迁移来源，迁移记录写入 `state/webs/migration.json`，旧目录保留为备份。网站自身的浏览器数据不保存在 manifest 中。cookie、localStorage、IndexedDB、webview session 数据和缓存由 Electron/Chromium 管理，位于：
 
 ```text
 ~/<brand-runtime-root>/.desktop/profiles/electron/

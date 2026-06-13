@@ -107,18 +107,22 @@ function ensureDesktopDirs(dataRoot: string) {
   ensureDirectory(path.join(dataRoot, "config", "desktop"));
   ensureDirectory(path.join(dataRoot, "config", "services"));
   ensureDirectory(path.join(dataRoot, "config", "plugins"));
-  ensureDirectory(path.join(dataRoot, "config", "websites"));
+  ensureDirectory(path.join(dataRoot, "config", "webs"));
   ensureDirectory(path.join(dataRoot, "data", "services"));
   ensureDirectory(path.join(dataRoot, "data", "plugins"));
   ensureDirectory(path.join(dataRoot, "data", "pets"));
-  ensureDirectory(path.join(dataRoot, "data", "websites"));
+  ensureDirectory(path.join(dataRoot, "data", "webs"));
+  ensureDirectory(path.join(dataRoot, "data", "webs", "websites"));
+  ensureDirectory(path.join(dataRoot, "data", "webs", "webapps"));
   ensureDirectory(path.join(dataRoot, "data", "env-initial"));
   ensureDirectory(path.join(dataRoot, "state", "desktop"));
   ensureDirectory(path.join(dataRoot, "state", "services"));
-  ensureDirectory(path.join(dataRoot, "state", "websites"));
+  ensureDirectory(path.join(dataRoot, "state", "webs"));
+  ensureDirectory(path.join(dataRoot, "state", "webs", "webapps"));
   ensureDirectory(path.join(dataRoot, "logs", "services"));
   ensureDirectory(path.join(dataRoot, "logs", "plugins"));
-  ensureDirectory(path.join(dataRoot, "logs", "websites"));
+  ensureDirectory(path.join(dataRoot, "logs", "webs"));
+  ensureDirectory(path.join(dataRoot, "logs", "webs", "webapps"));
   ensureDirectory(path.join(dataRoot, "cache", "marketplace"));
   ensureDirectory(path.join(dataRoot, "profiles", "electron"));
 }
@@ -187,28 +191,64 @@ export function getDesktopPetsDataRoot(app: App) {
   return path.join(getRuntimeDataRoot(app), "pets");
 }
 
+export function getDesktopWebsDataRoot(app: App) {
+  return path.join(getRuntimeDataRoot(app), "webs");
+}
+
 export function getDesktopWebsitesDataRoot(app: App) {
-  return path.join(getRuntimeDataRoot(app), "websites");
+  return path.join(getDesktopWebsDataRoot(app), "websites");
+}
+
+export function getDesktopWebappsDataRoot(app: App) {
+  return path.join(getDesktopWebsDataRoot(app), "webapps");
+}
+
+export function getDesktopWebsConfigRoot(app: App) {
+  return path.join(getDataRoot(app), "config", "webs");
 }
 
 export function getDesktopWebsitesConfigRoot(app: App) {
+  return getDesktopWebsConfigRoot(app);
+}
+
+export function getDesktopWebsStateRoot(app: App) {
+  return path.join(getDataRoot(app), "state", "webs");
+}
+
+export function getDesktopWebappsStateRoot(app: App) {
+  return path.join(getDesktopWebsStateRoot(app), "webapps");
+}
+
+export function getDesktopWebappStateRoot(app: App, webappId: string) {
+  return path.join(getDesktopWebappsStateRoot(app), webappId);
+}
+
+export function getDesktopWebsLogsRoot(app: App) {
+  return path.join(getDataRoot(app), "logs", "webs");
+}
+
+export function getDesktopWebappsLogsRoot(app: App) {
+  return path.join(getDesktopWebsLogsRoot(app), "webapps");
+}
+
+export function getDesktopWebappLogsRoot(app: App, webappId: string) {
+  return path.join(getDesktopWebappsLogsRoot(app), webappId);
+}
+
+export function getLegacyDesktopWebsitesDataRoot(app: App) {
+  return path.join(getRuntimeDataRoot(app), "websites");
+}
+
+export function getLegacyDesktopWebsitesConfigRoot(app: App) {
   return path.join(getDataRoot(app), "config", "websites");
 }
 
-export function getDesktopWebsitesStateRoot(app: App) {
+export function getLegacyDesktopWebsitesStateRoot(app: App) {
   return path.join(getDataRoot(app), "state", "websites");
 }
 
-export function getDesktopWebsiteStateRoot(app: App, websiteId: string) {
-  return path.join(getDesktopWebsitesStateRoot(app), websiteId);
-}
-
-export function getDesktopWebsitesLogsRoot(app: App) {
+export function getLegacyDesktopWebsitesLogsRoot(app: App) {
   return path.join(getDataRoot(app), "logs", "websites");
-}
-
-export function getDesktopWebsiteLogsRoot(app: App, websiteId: string) {
-  return path.join(getDesktopWebsitesLogsRoot(app), websiteId);
 }
 
 export function getDesktopInitialEnvDataRoot(app: App) {

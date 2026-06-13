@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
-import { BuiltinBrowserSurfaceHost, CustomSidebarRouteFallback, CustomSidebarSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
+import { BuiltinBrowserSurfaceHost, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
 import { AgentWebclientNativeRouteOutlet } from "./agent-webclient/AgentWebclientNativeRouteOutlet";
 import { RootRouteRedirect, StartupLoadingScreen } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
@@ -13,7 +13,7 @@ import {
   registerDesktopActionProviderForScope,
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
-import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, CustomSidebarItem, CustomSidebarItemInput, CustomSidebarItemResult, DesktopSsoStatus, ServiceId, StartupRestoreState, WebsiteListItem, WebsiteRuntimeState } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopSsoStatus, ServiceId, StartupRestoreState, WebEntry, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   DESKTOP_COPILOT_PAGE_KEYS,
@@ -46,7 +46,7 @@ import {
 } from "../../shared/sidebar-layout";
 import { getServiceDisplayName } from "../service-display";
 import {
-  createCustomSidebarNavOrderKey,
+  createWebNavOrderKey,
   createDefaultSidebarNavOrderItems,
   normalizeSidebarNavOrder,
   type SidebarNavOrderItem,
@@ -80,11 +80,11 @@ import {
 
 type ThemePreference = "light" | "dark" | "system";
 type ResolvedThemeMode = "light" | "dark";
-type LocalWebsiteRuntimeViewState = {
+type WebappRuntimeViewState = {
   status: "idle" | "starting" | "running" | "error";
   webUrl: string;
   message: string;
-  state: WebsiteRuntimeState | null;
+  state: WebappRuntimeState | null;
 };
 
 function isThemePreference(value: unknown): value is ThemePreference {
@@ -138,7 +138,7 @@ const TaskBoardPage = lazy(() =>
 const THEME_STORAGE_KEY = `${STORAGE_NAMESPACE}.theme`;
 const SIDEBAR_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar`;
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-nav-order`;
-const CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.custom-sidebar-group-order`;
+const WEB_GROUP_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.web-group-order`;
 const SETTINGS_SIDEBAR_WIDTH = 200;
 const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
 const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "/service/agent-webclient";
@@ -199,22 +199,24 @@ function readStoredSidebarNavOrder(storageKey: string): SidebarNavOrderItemKey[]
   }
 }
 
-function readInitialCustomSidebarGroupOrder(): SidebarNavOrderItemKey[] {
-  const savedGroupOrder = readStoredSidebarNavOrder(CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY);
+function readInitialWebGroupOrder(): SidebarNavOrderItemKey[] {
+  const savedGroupOrder = readStoredSidebarNavOrder(WEB_GROUP_ORDER_STORAGE_KEY);
   if (savedGroupOrder.length > 0) {
     return savedGroupOrder;
   }
-  return readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY).filter((key) => key.startsWith("custom:"));
+  return readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY)
+    .map((key) => key.startsWith("custom:") ? `website:${key.slice("custom:".length)}` as SidebarNavOrderItemKey : key)
+    .filter((key) => key.startsWith("website:") || key.startsWith("webapp:"));
 }
 
-function normalizeCustomSidebarGroupOrder(
+function normalizeWebGroupOrder(
   candidate: SidebarNavOrderItemKey[],
-  customItems: WebsiteListItem[]
+  webItems: WebEntry[]
 ) {
-  const availableKeys = new Set(customItems.map((item) => createCustomSidebarNavOrderKey(item.id)));
-  const normalized = candidate.filter((key) => key.startsWith("custom:") && availableKeys.has(key));
-  for (const item of customItems) {
-    const key = createCustomSidebarNavOrderKey(item.id);
+  const availableKeys = new Set(webItems.map((item) => createWebNavOrderKey(item.entryKey)));
+  const normalized = candidate.filter((key) => availableKeys.has(key));
+  for (const item of webItems) {
+    const key = createWebNavOrderKey(item.entryKey);
     if (!normalized.includes(key)) {
       normalized.push(key);
     }
@@ -224,8 +226,8 @@ function normalizeCustomSidebarGroupOrder(
 
 export const EXTERNAL_EXPERIMENTAL_ITEMS = [] as const;
 
-function isExternalWebsiteItem(item: WebsiteListItem): item is WebsiteListItem & CustomSidebarItem {
-  return item.kind === "external";
+function isWebsiteEntry(item: WebEntry): item is WebsiteEntry {
+  return item.kind === "website";
 }
 
 type SidebarResizeDragState = {
@@ -301,7 +303,7 @@ export function AppShell() {
   const [sidebarNavOrder, setSidebarNavOrder] = useState<SidebarNavOrderItemKey[]>(() =>
     readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY)
   );
-  const [customSidebarGroupOrder, setCustomSidebarGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialCustomSidebarGroupOrder);
+  const [webGroupOrder, setWebGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialWebGroupOrder);
   const [navigationPreferencesLoaded, setNavigationPreferencesLoaded] = useState(false);
   const [assistantDockOpenPath, setAssistantDockOpenPath] = useState<string | null>(null);
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
@@ -313,10 +315,10 @@ export function AppShell() {
   const [nativeDialogVisible, setNativeDialogVisible] = useState(false);
   const [desktopSsoStatus, setDesktopSsoStatus] = useState<DesktopSsoStatus | null>(null);
   const [desktopSsoBusy, setDesktopSsoBusy] = useState(false);
-  const [customSidebarItems, setCustomSidebarItems] = useState<WebsiteListItem[]>([]);
-  const [customSidebarItemsLoaded, setCustomSidebarItemsLoaded] = useState(false);
-  const [localWebsiteRuntimeById, setLocalWebsiteRuntimeById] = useState<Record<string, LocalWebsiteRuntimeViewState>>({});
-  const localWebsiteStartInFlightRef = useRef<Set<string>>(new Set());
+  const [webItems, setWebItems] = useState<WebEntry[]>([]);
+  const [webItemsLoaded, setWebItemsLoaded] = useState(false);
+  const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeViewState>>({});
+  const webappStartInFlightRef = useRef<Set<string>>(new Set());
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
   const [sidebarNavigationHistory, setSidebarNavigationHistory] = useState<SidebarNavigationHistory>({
     back: [],
@@ -349,12 +351,12 @@ export function AppShell() {
     : bareAgentWebclientServiceRoute
       ? null
       : resolvePluginRouteId(location.pathname);
-  const activeCustomSidebarItemId = resolveCustomSidebarRouteId(location.pathname);
+  const activeWebEntryKey = resolveWebRouteEntryKey(location.pathname);
   const [mountedPluginIds, setMountedPluginIds] = useState<string[]>(() =>
     activePluginId ? [activePluginId] : []
   );
-  const [mountedCustomSidebarItemIds, setMountedCustomSidebarItemIds] = useState<string[]>(() =>
-    activeCustomSidebarItemId ? [activeCustomSidebarItemId] : []
+  const [mountedWebEntryKeys, setMountedWebEntryKeys] = useState<string[]>(() =>
+    activeWebEntryKey ? [activeWebEntryKey] : []
   );
   const [builtinBrowserSurfaceMounted, setBuiltinBrowserSurfaceMounted] = useState(
     () => location.pathname === BUILTIN_BROWSER_ROUTE
@@ -365,7 +367,7 @@ export function AppShell() {
     location.pathname.startsWith("/plugin/") ||
     location.pathname.startsWith("/external/") ||
     location.pathname === BUILTIN_BROWSER_ROUTE ||
-    location.pathname.startsWith("/custom-sidebar/");
+    location.pathname.startsWith("/webs/");
   const usesBuiltinBrowserSurface = location.pathname === BUILTIN_BROWSER_ROUTE;
   const shouldMountBuiltinBrowserSurface = builtinBrowserSurfaceMounted || usesBuiltinBrowserSurface;
   const usesPluginSurface =
@@ -411,11 +413,11 @@ export function AppShell() {
   const showStartupCard =
     !startupCardDismissed &&
     shouldShowStartupProgressCard(startupRestoreState, startupAllReady, location.pathname);
-  const customSidebarItemMap = useMemo(() => {
-    return new Map(customSidebarItems.map((item) => {
-      if (item.kind === "local-app") {
-        const runtime = localWebsiteRuntimeById[item.id];
-        return [item.id, {
+  const webItemMap = useMemo(() => {
+    return new Map(webItems.map((item) => {
+      if (item.kind === "webapp") {
+        const runtime = webappRuntimeById[item.id];
+        return [item.entryKey, {
           ...item,
           url: runtime?.webUrl ?? "",
           chrome: "app",
@@ -423,18 +425,18 @@ export function AppShell() {
           runtimeMessage: runtime?.message ?? ""
         }] as const;
       }
-      return [item.id, item] as const;
+      return [item.entryKey, item] as const;
     }));
-  }, [customSidebarItems, localWebsiteRuntimeById]);
-  const externalCustomSidebarItems = useMemo(
-    () => customSidebarItems.filter(isExternalWebsiteItem),
-    [customSidebarItems]
+  }, [webItems, webappRuntimeById]);
+  const externalWebItems = useMemo(
+    () => webItems.filter(isWebsiteEntry),
+    [webItems]
   );
   const currentCopilotPreference = resolveDesktopCopilotPreference(assistantSettings?.desktopCopilotPages, location.pathname);
-  const customSidebarAgentKey = activeCustomSidebarItemId
-    ? customSidebarItemMap.get(activeCustomSidebarItemId)?.agentKey || ""
+  const websiteAgentKey = activeWebEntryKey
+    ? webItemMap.get(activeWebEntryKey)?.agentKey || ""
     : "";
-  const resolvedCopilotAgentKey = customSidebarAgentKey || currentCopilotPreference?.agentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
+  const resolvedCopilotAgentKey = websiteAgentKey || currentCopilotPreference?.agentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
   const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
   const isAgentWebclientMainRoute =
     location.pathname === ASSISTANT_TARGET_PATH ||
@@ -450,12 +452,12 @@ export function AppShell() {
     return createDefaultSidebarNavOrderItems({
       serviceItems: [],
       experimentalItems: [],
-      customItems: []
+      webItems: []
     }).map((item) => {
       if (item.key === "kanban") return { ...item, label: t("nav.taskBoard") };
       if (item.key === "schedules") return { ...item, label: t("nav.schedules") };
       if (item.key === "group:assistants") return { ...item, label: t("nav.assistants") };
-      if (item.key === "group:websites") return { ...item, label: t("nav.embeddedWebsites") };
+      if (item.key === "group:webs") return { ...item, label: t("nav.embeddedWebs") };
       return item;
     });
   }, [t]);
@@ -463,33 +465,33 @@ export function AppShell() {
     () => normalizeSidebarNavOrder(sidebarNavOrder, availableSidebarNavOrderItems),
     [availableSidebarNavOrderItems, sidebarNavOrder]
   );
-  const normalizedCustomSidebarGroupOrder = useMemo(
-    () => normalizeCustomSidebarGroupOrder(customSidebarGroupOrder, customSidebarItems),
-    [customSidebarGroupOrder, customSidebarItems]
+  const normalizedWebGroupOrder = useMemo(
+    () => normalizeWebGroupOrder(webGroupOrder, webItems),
+    [webGroupOrder, webItems]
   );
 
-  async function refreshCustomSidebarItems() {
-    const result = await window.electronAPI.websites.list();
+  async function refreshWebItems() {
+    const result = await window.electronAPI.webs.list();
     if (result.ok) {
-      updateCustomSidebarItems(result.items);
+      updateWebItems(result.items);
     }
     return result;
   }
 
-  async function createCustomSidebarItem(input: CustomSidebarItemInput): Promise<CustomSidebarItemResult> {
-    const result = await window.electronAPI.customSidebar.add(input);
-    await refreshCustomSidebarItems().catch(() => undefined);
+  async function createWebsiteItem(input: WebsiteInput): Promise<WebsiteResult> {
+    const result = await window.electronAPI.webs.websites.add(input);
+    await refreshWebItems().catch(() => undefined);
     return result;
   }
 
-  function updateCustomSidebarItems(items: WebsiteListItem[]) {
-    setCustomSidebarItems(items);
-    setCustomSidebarItemsLoaded(true);
-    setCustomSidebarGroupOrder((currentOrder) => normalizeCustomSidebarGroupOrder(currentOrder, items));
+  function updateWebItems(items: WebEntry[]) {
+    setWebItems(items);
+    setWebItemsLoaded(true);
+    setWebGroupOrder((currentOrder) => normalizeWebGroupOrder(currentOrder, items));
   }
 
-  function handleExternalCustomSidebarItemsChange(_items: CustomSidebarItem[]) {
-    refreshCustomSidebarItems().catch(() => undefined);
+  function handleExternalWebItemsChange(_items: WebsiteEntry[]) {
+    refreshWebItems().catch(() => undefined);
   }
 
   async function refreshAssistantNavAgents() {
@@ -722,7 +724,7 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    refreshCustomSidebarItems().catch(() => undefined);
+    refreshWebItems().catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -940,8 +942,8 @@ export function AppShell() {
         if (Array.isArray(preferences?.mainOrder)) {
           setSidebarNavOrder(preferences.mainOrder as SidebarNavOrderItemKey[]);
         }
-        if (Array.isArray(preferences?.websiteOrder)) {
-          setCustomSidebarGroupOrder(preferences.websiteOrder as SidebarNavOrderItemKey[]);
+        if (Array.isArray(preferences?.webOrder)) {
+          setWebGroupOrder(preferences.webOrder as SidebarNavOrderItemKey[]);
         }
       })
       .catch(() => undefined)
@@ -974,18 +976,18 @@ export function AppShell() {
   useEffect(() => {
     try {
       window.localStorage.setItem(
-        CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY,
-        JSON.stringify(normalizedCustomSidebarGroupOrder)
+        WEB_GROUP_ORDER_STORAGE_KEY,
+        JSON.stringify(normalizedWebGroupOrder)
       );
     } catch {
-      // Ignore persistence failures and keep the in-memory website order usable.
+      // Ignore persistence failures and keep the in-memory web order usable.
     }
     if (navigationPreferencesLoaded) {
       window.electronAPI.settings.saveNavigationPreferences({
-        websiteOrder: normalizedCustomSidebarGroupOrder
+        webOrder: normalizedWebGroupOrder
       }).catch(() => undefined);
     }
-  }, [navigationPreferencesLoaded, normalizedCustomSidebarGroupOrder]);
+  }, [navigationPreferencesLoaded, normalizedWebGroupOrder]);
 
   useEffect(() => {
     document.body.classList.toggle("embedded-surface-body", usesEmbeddedSurface);
@@ -1087,35 +1089,35 @@ export function AppShell() {
   }, [activePluginId]);
 
   useEffect(() => {
-    if (!activeCustomSidebarItemId) {
+    if (!activeWebEntryKey) {
       return;
     }
 
-    setMountedCustomSidebarItemIds((current) =>
-      current.includes(activeCustomSidebarItemId)
+    setMountedWebEntryKeys((current) =>
+      current.includes(activeWebEntryKey)
         ? current
-        : [...current, activeCustomSidebarItemId]
+        : [...current, activeWebEntryKey]
     );
-  }, [activeCustomSidebarItemId]);
+  }, [activeWebEntryKey]);
 
   useEffect(() => {
-    if (!activeCustomSidebarItemId) {
+    if (!activeWebEntryKey) {
       return;
     }
-    const item = customSidebarItems.find((candidate) => candidate.id === activeCustomSidebarItemId);
-    if (!item || item.kind !== "local-app") {
+    const item = webItems.find((candidate) => candidate.entryKey === activeWebEntryKey);
+    if (!item || item.kind !== "webapp") {
       return;
     }
-    const runtime = localWebsiteRuntimeById[item.id];
+    const runtime = webappRuntimeById[item.id];
     if (runtime?.status === "starting" || runtime?.status === "running" || runtime?.status === "error") {
       return;
     }
-    if (localWebsiteStartInFlightRef.current.has(item.id)) {
+    if (webappStartInFlightRef.current.has(item.id)) {
       return;
     }
 
-    localWebsiteStartInFlightRef.current.add(item.id);
-    setLocalWebsiteRuntimeById((current) => ({
+    webappStartInFlightRef.current.add(item.id);
+    setWebappRuntimeById((current) => ({
       ...current,
       [item.id]: {
         status: "starting",
@@ -1124,9 +1126,9 @@ export function AppShell() {
         state: current[item.id]?.state ?? null
       }
     }));
-    window.electronAPI.websites.start(item.id)
+    window.electronAPI.webs.webapps.start(item.id)
       .then((result) => {
-        setLocalWebsiteRuntimeById((current) => ({
+        setWebappRuntimeById((current) => ({
           ...current,
           [item.id]: {
             status: result.ok && result.state?.webUrl ? "running" : "error",
@@ -1137,7 +1139,7 @@ export function AppShell() {
         }));
       })
       .catch((error) => {
-        setLocalWebsiteRuntimeById((current) => ({
+        setWebappRuntimeById((current) => ({
           ...current,
           [item.id]: {
             status: "error",
@@ -1148,9 +1150,9 @@ export function AppShell() {
         }));
       })
       .finally(() => {
-        localWebsiteStartInFlightRef.current.delete(item.id);
+        webappStartInFlightRef.current.delete(item.id);
       });
-  }, [activeCustomSidebarItemId, customSidebarItems, localWebsiteRuntimeById]);
+  }, [activeWebEntryKey, webItems, webappRuntimeById]);
 
   useEffect(() => {
     if (!usesBuiltinBrowserSurface) {
@@ -1161,15 +1163,15 @@ export function AppShell() {
   }, [usesBuiltinBrowserSurface]);
 
   useEffect(() => {
-    if (!customSidebarItemsLoaded) {
+    if (!webItemsLoaded) {
       return;
     }
 
-    const availableItemIds = new Set(customSidebarItems.map((item) => item.id));
-    setMountedCustomSidebarItemIds((current) =>
-      current.filter((itemId) => availableItemIds.has(itemId))
+    const availableEntryKeys = new Set(webItems.map((item) => item.entryKey));
+    setMountedWebEntryKeys((current) =>
+      current.filter((entryKey) => availableEntryKeys.has(entryKey))
     );
-  }, [customSidebarItems, customSidebarItemsLoaded]);
+  }, [webItems, webItemsLoaded]);
 
   function handleThemeModeChange(nextThemeMode: ThemePreference) {
     setThemeMode(nextThemeMode);
@@ -1352,12 +1354,12 @@ export function AppShell() {
           route: BUILTIN_BROWSER_ROUTE,
           active: location.pathname === BUILTIN_BROWSER_ROUTE
         },
-        ...customSidebarItems.map((item) => ({
-          id: item.id,
+        ...[...webItemMap.entries()].map(([entryKey, item]) => ({
+          id: entryKey,
           label: item.label,
           url: item.url,
-          route: `/custom-sidebar/${item.id}`,
-          active: activeCustomSidebarItemId === item.id
+          route: `/webs/${entryKey}`,
+          active: activeWebEntryKey === entryKey
         })),
         ...serviceSurfaces
       ];
@@ -1570,10 +1572,10 @@ export function AppShell() {
       }
     });
   }, [
-    activeCustomSidebarItemId,
+    activeWebEntryKey,
     activeAgentWebclientRoute,
     activePluginId,
-    customSidebarItems,
+    webItems,
     location.pathname,
     navigate,
     services,
@@ -1620,8 +1622,8 @@ export function AppShell() {
           assistantLauncherDisabled={isAgentWebclientMainRoute}
           assistantLauncherVisible={assistantLauncherVisible}
           sidebarNavOrder={normalizedSidebarNavOrder}
-          customSidebarNavOrder={normalizedCustomSidebarGroupOrder}
-          customSidebarItems={customSidebarItems}
+          websiteNavOrder={normalizedWebGroupOrder}
+          webItems={webItems}
           assistantNavAgents={assistantNavAgents}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           copilotAgentOptions={copilotAgentOptions}
@@ -1639,7 +1641,7 @@ export function AppShell() {
           onDesktopSsoLogout={handleDesktopSsoLogout}
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
           onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
-          onCreateCustomSidebarItem={createCustomSidebarItem}
+          onCreateWebsiteItem={createWebsiteItem}
           onRequestNavigate={requestSidebarNavigation}
           onSidebarNavigateBack={handleSidebarBackNavigation}
           onSidebarNavigateForward={handleSidebarForwardNavigation}
@@ -1683,10 +1685,10 @@ export function AppShell() {
             active={usesBuiltinBrowserSurface}
             mounted={shouldMountBuiltinBrowserSurface}
           />
-          <CustomSidebarSurfaceHost
-            activeItemId={activeCustomSidebarItemId}
-            itemMap={customSidebarItemMap}
-            mountedItemIds={mountedCustomSidebarItemIds}
+          <WebSurfaceHost
+            activeEntryKey={activeWebEntryKey}
+            itemMap={webItemMap}
+            mountedEntryKeys={mountedWebEntryKeys}
           />
           <Routes>
             <Route
@@ -1716,8 +1718,8 @@ export function AppShell() {
                     sidebarNavOrder={normalizedSidebarNavOrder}
                     availableSidebarNavOrderItems={availableSidebarNavOrderItems}
                     onSidebarNavOrderChange={setSidebarNavOrder}
-                    customSidebarItems={externalCustomSidebarItems}
-                    onCustomSidebarItemsChange={handleExternalCustomSidebarItemsChange}
+                    webItems={externalWebItems}
+                    onWebItemsChange={handleExternalWebItemsChange}
                     onAssistantSettingsChange={setAssistantSettings}
                   />
                 </RouteSuspense>
@@ -1747,7 +1749,7 @@ export function AppShell() {
             ))}
             <Route path="/external/:itemId" element={<ExternalItemRoute itemMap={experimentalItemMap} />} />
             <Route path={BUILTIN_BROWSER_ROUTE} element={null} />
-            <Route path="/custom-sidebar/:itemId" element={<CustomSidebarRouteFallback itemMap={customSidebarItemMap} />} />
+            <Route path="/webs/:entryKey" element={<WebRouteFallback itemMap={webItemMap} />} />
             <Route path="/service/:serviceId" element={null} />
             <Route path="/plugin/:pluginId" element={null} />
             <Route path="/market" element={<RouteSuspense><FunctionalMarketPage /></RouteSuspense>} />
@@ -1963,6 +1965,6 @@ function resolveSingleAgentWebclientRoute(pathname: string, search: string) {
   };
 }
 
-function resolveCustomSidebarRouteId(pathname: string) {
-  return matchPath("/custom-sidebar/:itemId", pathname)?.params.itemId ?? null;
+function resolveWebRouteEntryKey(pathname: string) {
+  return matchPath("/webs/:entryKey", pathname)?.params.entryKey ?? null;
 }

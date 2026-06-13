@@ -190,39 +190,39 @@ export function BuiltinBrowserSurfaceHost({
   );
 }
 
-export function CustomSidebarSurfaceHost({
-  activeItemId,
+export function WebSurfaceHost({
+  activeEntryKey,
   itemMap,
-  mountedItemIds
+  mountedEntryKeys
 }: {
-  activeItemId: string | null;
+  activeEntryKey: string | null;
   itemMap: Map<string, EmbeddedSidebarItem>;
-  mountedItemIds: string[];
+  mountedEntryKeys: string[];
 }) {
-  const visibleItemIds =
-    activeItemId && itemMap.has(activeItemId) && !mountedItemIds.includes(activeItemId)
-      ? [...mountedItemIds, activeItemId]
-      : mountedItemIds;
+  const visibleEntryKeys =
+    activeEntryKey && itemMap.has(activeEntryKey) && !mountedEntryKeys.includes(activeEntryKey)
+      ? [...mountedEntryKeys, activeEntryKey]
+      : mountedEntryKeys;
 
-  if (visibleItemIds.length === 0) {
+  if (visibleEntryKeys.length === 0) {
     return null;
   }
 
   return (
     <EmbeddedSurfaceSuspense>
-      {visibleItemIds.map((itemId) => {
-        const item = itemMap.get(itemId);
+      {visibleEntryKeys.map((entryKey) => {
+        const item = itemMap.get(entryKey);
         if (!item) {
           return null;
         }
         if (!item.url) {
-          if (activeItemId !== itemId) {
+          if (activeEntryKey !== entryKey) {
             return null;
           }
           const starting = item.runtimeStatus === "starting" || item.runtimeStatus === "idle";
           return (
             <PlaceholderPage
-              key={itemId}
+              key={entryKey}
               title={starting ? "正在启动" : "启动失败"}
               description={item.runtimeMessage || (starting ? "本地网站小应用正在启动。" : "本地网站小应用启动失败，请检查日志。")}
             />
@@ -231,9 +231,9 @@ export function CustomSidebarSurfaceHost({
 
         return (
           <ExternalWebviewPage
-            key={itemId}
-            active={activeItemId === itemId}
-            surfaceId={itemId}
+            key={entryKey}
+            active={activeEntryKey === entryKey}
+            surfaceId={entryKey}
             surfaceLabel={item.label}
             title={item.label}
             url={item.url}
@@ -278,13 +278,13 @@ export function ExternalItemRoute({
   );
 }
 
-export function CustomSidebarRouteFallback({
+export function WebRouteFallback({
   itemMap
 }: {
   itemMap: Map<string, EmbeddedSidebarItem>;
 }) {
-  const { itemId = "" } = useParams<{ itemId: string }>();
-  if (itemMap.has(itemId)) {
+  const { entryKey = "" } = useParams<{ entryKey: string }>();
+  if (itemMap.has(entryKey)) {
     return null;
   }
 

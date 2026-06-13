@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
-import { getDesktopWebsitesDataRoot } from "../user-paths";
+import { getDesktopWebappsDataRoot } from "../user-paths";
 
 const DEMO_RESOURCES_ROOT_NAME = "demo";
 const DEMO_MANIFEST_FILE_NAME = "manifest.json";
-const TEMPLATE_ROOT_NAME = "website-templates";
+const TEMPLATE_ROOT_NAME = "webapp-templates";
 const BUNDLED_DEMO_ID = "demo-node-html";
 
 type AppWithPath = Pick<App, "getPath"> & Partial<Pick<App, "getAppPath" | "isPackaged">>;
@@ -14,7 +14,7 @@ type BundledDemoManifest = {
   bundled?: unknown;
 };
 
-type InstallBundledWebsiteTemplateOptions = {
+type InstallBundledWebappTemplateOptions = {
   platform?: NodeJS.Platform;
   resourcesRoot?: string;
 };
@@ -61,7 +61,7 @@ function listTemplateRootCandidates(
 function findTemplateDir(
   app: AppWithPath,
   templateId: string,
-  options: InstallBundledWebsiteTemplateOptions = {}
+  options: InstallBundledWebappTemplateOptions = {}
 ) {
   const resourcesRoot = bundledResourcesRoot(app, options.resourcesRoot);
   if (!isBundledDemoEnabled(resourcesRoot)) {
@@ -90,11 +90,11 @@ function findTemplateDir(
   };
 }
 
-export function installBundledWebsiteTemplates(
+export function installBundledWebappTemplates(
   app: AppWithPath,
-  options: InstallBundledWebsiteTemplateOptions = {}
+  options: InstallBundledWebappTemplateOptions = {}
 ) {
-  const targetRoot = getDesktopWebsitesDataRoot(app as App);
+  const targetRoot = getDesktopWebappsDataRoot(app as App);
   const targetDir = path.join(targetRoot, BUNDLED_DEMO_ID);
 
   const source = findTemplateDir(app, BUNDLED_DEMO_ID, options);

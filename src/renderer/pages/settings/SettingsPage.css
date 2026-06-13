@@ -78,7 +78,7 @@
 }
 
 .settings-item-section-head,
-.settings-page .custom-sidebar-list-head {
+.settings-page .website-list-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -88,14 +88,14 @@
 }
 
 .settings-item-section-head strong,
-.settings-page .custom-sidebar-list-head strong {
+.settings-page .website-list-head strong {
   font-size: 13px;
   line-height: 1.35;
   font-weight: 600;
 }
 
 .settings-item-section-head span,
-.settings-page .custom-sidebar-list-head span {
+.settings-page .website-list-head span {
   display: block;
   margin-top: 4px;
   color: var(--ink-soft);
@@ -111,7 +111,7 @@
 }
 
 .settings-item-empty,
-.settings-page .custom-sidebar-empty {
+.settings-page .website-empty {
   padding: 14px 16px;
   border: none;
   border-radius: 0;
@@ -124,7 +124,7 @@
 .settings-page .settings-item-list,
 .settings-page .desktop-pet-appearance-list,
 .settings-page .navigation-order-list,
-.settings-page .custom-sidebar-list,
+.settings-page .website-list,
 .settings-page .assistant-memory-list {
   display: flex;
   flex-direction: column;
@@ -136,7 +136,7 @@
 .settings-page .settings-pet-appearance-row,
 .settings-page .desktop-pet-appearance-row,
 .settings-page .navigation-order-row,
-.settings-page .custom-sidebar-row,
+.settings-page .website-row,
 .settings-page .assistant-memory-row,
 .settings-page .assistant-memory-switch-row {
   border: none;
@@ -149,13 +149,13 @@
 .settings-page .settings-pet-appearance-row + .settings-pet-appearance-row,
 .settings-page .desktop-pet-appearance-row + .desktop-pet-appearance-row,
 .settings-page .navigation-order-list > * + *,
-.settings-page .custom-sidebar-list > * + *,
+.settings-page .website-list > * + *,
 .settings-page .assistant-memory-list > * + * {
   border-top: 1px solid var(--line);
 }
 
 .settings-page .navigation-order-row,
-.settings-page .custom-sidebar-row,
+.settings-page .website-row,
 .settings-page .assistant-memory-row,
 .settings-page .assistant-memory-switch-row {
   padding: 14px 16px;
@@ -399,37 +399,37 @@
 }
 
 .settings-page .navigation-assistant-default-field,
-.settings-page .custom-sidebar-agent-field {
+.settings-page .website-agent-field {
   margin: 0;
   min-width: 0;
 }
 
-.settings-page .custom-sidebar-row {
+.settings-page .website-row {
   display: grid;
   grid-template-columns: minmax(140px, 1fr) minmax(180px, 240px) auto;
   align-items: center;
   gap: 12px;
 }
 
-.settings-page .custom-sidebar-row.is-editing {
+.settings-page .website-row.is-editing {
   display: block;
 }
 
-.settings-page .custom-sidebar-site-cell {
+.settings-page .website-site-cell {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 2px;
 }
 
-.settings-page .custom-sidebar-site-cell > strong {
+.settings-page .website-site-cell > strong {
   font-size: 13px;
   line-height: 1.35;
   font-weight: 700;
   color: var(--ink);
 }
 
-.settings-page .custom-sidebar-site-url {
+.settings-page .website-site-url {
   font-size: 12px;
   line-height: 1.45;
   color: var(--ink-muted);
@@ -438,12 +438,12 @@
   white-space: nowrap;
 }
 
-.settings-page .custom-sidebar-agent-field {
+.settings-page .website-agent-field {
   display: block;
   min-width: 0;
 }
 
-.settings-page .custom-sidebar-row-edit-form {
+.settings-page .website-row-edit-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 12px;
@@ -451,7 +451,7 @@
   width: 100%;
 }
 
-.settings-page .custom-sidebar-row-edit-form label {
+.settings-page .website-row-edit-form label {
   display: grid;
   align-content: start;
   gap: 8px;
@@ -461,8 +461,8 @@
   font-weight: 600;
 }
 
-.settings-page .custom-sidebar-form input,
-.settings-page .custom-sidebar-row-edit-form input {
+.settings-page .website-form input,
+.settings-page .website-row-edit-form input {
   width: 100%;
   min-height: 38px;
   padding: 0 12px;
@@ -477,19 +477,19 @@
     box-shadow 0.16s ease;
 }
 
-.settings-page .custom-sidebar-form input:focus,
-.settings-page .custom-sidebar-row-edit-form input:focus {
+.settings-page .website-form input:focus,
+.settings-page .website-row-edit-form input:focus {
   border-color: var(--accent-border);
   box-shadow: var(--control-focus-ring);
 }
 
-:root[data-theme="dark"] .settings-page .custom-sidebar-form input,
-:root[data-theme="dark"] .settings-page .custom-sidebar-row-edit-form input {
+:root[data-theme="dark"] .settings-page .website-form input,
+:root[data-theme="dark"] .settings-page .website-row-edit-form input {
   background: var(--control-select-bg);
   border-color: rgba(255, 255, 255, 0.12);
 }
 
-.settings-page .custom-sidebar-row-actions {
+.settings-page .website-row-actions {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
@@ -500,23 +500,23 @@
   min-height: 0;
 }
 
-.settings-page .custom-sidebar-add-form {
+.settings-page .website-add-form {
   padding: 10px 16px 14px;
 }
 
-.settings-page .custom-sidebar-add-head {
+.settings-page .website-add-head {
   padding-bottom: 12px;
 }
 
-.settings-page .custom-sidebar-added-head {
+.settings-page .website-added-head {
   border-top: 1px solid var(--line);
 }
 
-.settings-page .custom-sidebar-card > .custom-sidebar-added-head:first-child {
+.settings-page .website-card > .website-added-head:first-child {
   border-top: none;
 }
 
-.settings-page .custom-sidebar-form {
+.settings-page .website-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 12px;
@@ -1043,32 +1043,32 @@
 
 .settings-page .navigation-order-row,
 .settings-page .navigation-assistant-default,
-.settings-page .custom-sidebar-row {
+.settings-page .website-row {
   box-shadow: none;
 }
 
-.settings-page .custom-sidebar-form label,
+.settings-page .website-form label,
 .settings-page .navigation-order-grid-head,
-.settings-page .custom-sidebar-list-head,
+.settings-page .website-list-head,
 .settings-page .navigation-order-fixed-label {
   font-size: 12px;
 }
 
-.settings-page .custom-sidebar-form input,
-.settings-page .custom-sidebar-agent-select,
+.settings-page .website-form input,
+.settings-page .website-agent-select,
 .settings-page .text-button,
 .settings-page .danger-text-button {
   font-size: 12px;
 }
 
-.settings-page .custom-sidebar-site-cell > strong,
+.settings-page .website-site-cell > strong,
 .settings-page .navigation-order-title {
   font-size: 13px;
   line-height: 1.35;
 }
 
-.settings-page .custom-sidebar-site-url,
-.settings-page .custom-sidebar-empty {
+.settings-page .website-site-url,
+.settings-page .website-empty {
   font-size: 12px;
 }
 

@@ -18,7 +18,7 @@ const server = http.createServer((req, res) => {
   if (req.url === "/api/health") {
     sendJson(res, 200, {
       ok: true,
-      websiteId: process.env.WEBSITE_ID || "",
+      webappId: process.env.WEBAPP_ID || "",
       serverTime: new Date().toISOString()
     });
     return;
@@ -29,8 +29,8 @@ const server = http.createServer((req, res) => {
     sendJson(res, 200, {
       ok: true,
       visits,
-      websiteId: process.env.WEBSITE_ID || "",
-      websiteRoot: process.env.WEBSITE_ROOT || "",
+      webappId: process.env.WEBAPP_ID || "",
+      webappRoot: process.env.WEBAPP_ROOT || "",
       serverTime: new Date().toISOString()
     });
     return;

@@ -10,7 +10,7 @@ import {
   readDesktopProfileFromRoot,
   updateDesktopProfileInRoot
 } from "./desktop-profile-store";
-import { importCustomSidebarItems } from "./navigation/custom-sidebar-store";
+import { importWebsiteItems } from "./webs/website-actions";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 import { resolveDesktopSsoConfigPath } from "./oidc-sso";
 import { getDesktopConfigRoot, getDesktopStateRoot } from "./user-paths";
@@ -27,7 +27,7 @@ type BootstrapApplyResult = {
   pet: "applied" | "skipped" | "absent";
   market: "applied" | "skipped" | "absent";
   sso: "applied" | "skipped" | "absent";
-  websites: "applied" | "skipped" | "absent";
+  webs: "applied" | "skipped" | "absent";
   bootstrapAssistant: "recorded" | "absent";
 };
 
@@ -123,9 +123,11 @@ function applyProfileDefaults(app: App, profileDefaults: unknown): BootstrapAppl
       mainOrder: Array.isArray(navigation.mainOrder)
         ? navigation.mainOrder.map(readText).filter(Boolean)
         : current.navigation.mainOrder,
-      websiteOrder: Array.isArray(navigation.websiteOrder)
-        ? navigation.websiteOrder.map(readText).filter(Boolean)
-        : current.navigation.websiteOrder,
+      webOrder: Array.isArray(navigation.webOrder)
+        ? navigation.webOrder.map(readText).filter(Boolean)
+        : Array.isArray(navigation.websiteOrder)
+          ? navigation.websiteOrder.map(readText).filter(Boolean)
+          : current.navigation.webOrder,
       desktopCopilotPages: isRecord(navigation.desktopCopilotPages)
         ? navigation.desktopCopilotPages as never
         : current.navigation.desktopCopilotPages
@@ -214,22 +216,28 @@ export function applyDesktopDefaultSsoDefaults(
   return applySsoDefaults(app, defaults.sso, platform);
 }
 
-function normalizeWebsiteDefaults(websites: unknown) {
-  if (Array.isArray(websites)) {
-    return websites;
+function normalizeWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
+  if (isRecord(webs) && Array.isArray(webs.websites)) {
+    return webs.websites;
   }
-  if (isRecord(websites) && Array.isArray(websites.items)) {
-    return websites.items;
+  if (Array.isArray(webs)) {
+    return webs;
+  }
+  if (Array.isArray(legacyWebsites)) {
+    return legacyWebsites;
+  }
+  if (isRecord(legacyWebsites) && Array.isArray(legacyWebsites.items)) {
+    return legacyWebsites.items;
   }
   return [];
 }
 
-function applyWebsiteDefaults(app: App, websites: unknown): BootstrapApplyResult["websites"] {
-  const items = normalizeWebsiteDefaults(websites);
+function applyWebsiteDefaults(app: App, webs: unknown, legacyWebsites: unknown): BootstrapApplyResult["webs"] {
+  const items = normalizeWebsiteDefaults(webs, legacyWebsites);
   if (items.length === 0) {
     return "absent";
   }
-  const result = importCustomSidebarItems(app, JSON.stringify({ items }));
+  const result = importWebsiteItems(app, JSON.stringify({ items }));
   return result.ok ? "applied" : "skipped";
 }
 
@@ -252,7 +260,7 @@ export function applyDesktopDefaultBootstrap(
     pet: applyPetDefaults(app, defaults.pet, platform),
     market: applyMarketDefaults(app, defaults.market),
     sso: applySsoDefaults(app, defaults.sso, platform),
-    websites: applyWebsiteDefaults(app, defaults.websites),
+    webs: applyWebsiteDefaults(app, defaults.webs, defaults.websites),
     bootstrapAssistant: isRecord(defaults.bootstrapAssistant) ? "recorded" : "absent"
   };
   writeJsonFile(statePath, {

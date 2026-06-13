@@ -58,8 +58,8 @@ import {
   prepareQuitUi as prepareQuitUiFromCleanup
 } from "./shutdown-cleanup";
 import { stopAllStaticSiteHosts } from "./static-site-host-manager";
-import { stopAllWebsiteApps, websiteAppRuntime } from "./websites/website-app-runtime";
-import { installBundledWebsiteTemplates } from "./websites/website-template-installer";
+import { stopAllWebapps, webappRuntime } from "./webs/webapp-runtime";
+import { installBundledWebappTemplates } from "./webs/webapp-template-installer";
 import { installPluginFromArchive, loadInstalledPlugins } from "./plugin-loader";
 import { handlePluginUninstall } from "./plugin-uninstall";
 import {
@@ -91,14 +91,6 @@ import { AgentPlatformMonitorWindowController } from "./app-shell/agent-platform
 import { LogViewerWindowController } from "./app-shell/log-viewer-window";
 import { NativeDialogVisibilityController } from "./app-shell/native-dialogs";
 import { AppTrayController } from "./app-shell/tray";
-import {
-  addCustomSidebarItem,
-  exportCustomSidebarItems,
-  importCustomSidebarItems,
-  listCustomSidebarItems,
-  removeCustomSidebarItem,
-  updateCustomSidebarItem
-} from "./navigation/custom-sidebar-store";
 import { createTaskBoardRuntime } from "./task-board-runtime";
 import {
   getAgentPlatformMinimaxSettingsPublic,
@@ -134,8 +126,6 @@ import type {
   RendererDiagnosticReport,
   AssistantPastedImageInput,
   AssistantWorkerOpenRequest,
-  CustomSidebarItemInput,
-  CustomSidebarUpdateInput,
   ServiceId,
   ServiceLogReadOptions,
   ServiceOpenLogViewerRequest,
@@ -239,7 +229,7 @@ import { registerSsoIpcHandlers } from "./ipc/sso-handlers";
 import { registerSettingsIpcHandlers } from "./ipc/settings-handlers";
 import { registerMarketplaceIpcHandlers } from "./ipc/marketplace-handlers";
 import { registerWebviewDevToolsIpcHandlers } from "./ipc/webview-devtools-handlers";
-import { listWebsiteEntries, registerWebsiteIpcHandlers } from "./ipc/website-handlers";
+import { listWebEntries, registerWebIpcHandlers } from "./ipc/web-handlers";
 import {
   isQuickAssistantMediaPermissionAllowed,
 } from "./copilot/quick-copilot/quick-copilot";
@@ -341,24 +331,26 @@ const startupRestoreController = createStartupRestoreController({
     appState.mainWindow.webContents.send("services.startupRestoreState", state);
   }
 });
-function listBrowserRegistryWebsiteItems() {
-  const entries = listWebsiteEntries(app).items;
+function listBrowserRegistryWebItems() {
+  const entries = listWebEntries(app).items;
+  const items: Array<{ id: string; entryKey: string; label: string; url: string; agentKey?: string }> = [];
+  for (const item of entries) {
+    if (item.kind === "website") {
+      items.push({ id: item.id, entryKey: item.entryKey, label: item.label, url: item.url, agentKey: item.agentKey });
+      continue;
+    }
+    const state = webappRuntime.getStatus(app, item.id);
+    if (state?.webUrl) {
+      items.push({ id: item.id, entryKey: item.entryKey, label: item.label, url: state.webUrl, agentKey: item.agentKey });
+    }
+  }
   return {
-    items: entries.flatMap((item) => {
-      if (item.kind === "external") {
-        return [{ id: item.id, label: item.label, url: item.url, agentKey: item.agentKey }];
-      }
-      const state = websiteAppRuntime.getStatus(app, item.id);
-      if (!state?.webUrl) {
-        return [];
-      }
-      return [{ id: item.id, label: item.label, url: state.webUrl, agentKey: item.agentKey }];
-    })
+    items
   };
 }
 const browserSurfaceRegistry = createBrowserSurfaceRegistry({
   webContents,
-  listCustomSidebarItems: listBrowserRegistryWebsiteItems,
+  listWebEntries: listBrowserRegistryWebItems,
   getCurrentPageSnapshot: () => appState.currentPageSnapshot
 });
 const cdpIntegration = createCdpIntegration({
@@ -421,9 +413,9 @@ const envZipConflictNeedsDecision = shouldPromptEnvRootConflict({
 const oldRootDecisionRef: { current: EnvRootConflictDecision | undefined } = { current: undefined };
 function initializeUserDataRootsAndSettings() {
   ensureDataRoot(app);
-  const websiteTemplateResult = installBundledWebsiteTemplates(app);
-  if (!websiteTemplateResult.ok) {
-    console.warn(`[main] ${websiteTemplateResult.message}`);
+  const webappTemplateResult = installBundledWebappTemplates(app);
+  if (!webappTemplateResult.ok) {
+    console.warn(`[main] ${webappTemplateResult.message}`);
   }
   applyDesktopDefaultBootstrap(app, mainProcessContext.platform);
   applyDesktopDefaultSsoDefaults(app, mainProcessContext.platform);
@@ -1480,7 +1472,7 @@ async function activateBrowserSurface(target: string) {
     return openBrowserUrl(resolveBuiltinBrowserUrl(target));
   }
   const surfaces = browserSurfaceRegistry.listBrowserSurfaces();
-  const surface = surfaces.find((candidate) => browserSurfaceRegistry.customSidebarItemMatchesSurfaceTarget(candidate, target));
+  const surface = surfaces.find((candidate) => browserSurfaceRegistry.webEntryMatchesSurfaceTarget(candidate, target));
   if (!surface) {
     return {
       ok: false,
@@ -1494,7 +1486,7 @@ async function activateBrowserSurface(target: string) {
     };
   }
 
-  navigateMainWindow(`/custom-sidebar/${surface.id}`);
+  navigateMainWindow(`/webs/${surface.id}`);
   for (let attempt = 0; attempt < 24; attempt += 1) {
     await delay(250);
     const contents = browserSurfaceRegistry.findWebContentsForSurfaceUrl(surface.url);
@@ -2021,18 +2013,14 @@ function registerIpcHandlers(context: MainProcessContext) {
         message: "任务看板尚未初始化。",
         issues: []
       },
-    callAgentPlatform,
-    listCustomSidebarItems,
-    addCustomSidebarItem,
-    updateCustomSidebarItem,
-    removeCustomSidebarItem,
-    importCustomSidebarItems,
-    exportCustomSidebarItems,
+    callAgentPlatform
+  }));
+  registerWebIpcHandlers(ipcMain, {
+    app,
     showFileDialog,
     showSaveDialog,
     getDataRoot
-  }));
-  registerWebsiteIpcHandlers(ipcMain, { app });
+  });
   registerDesktopPetIpcHandlers(ipcMain, createDesktopPetIpcHandlerOptions(context, {
     clearActiveRuns: () => {
       clearDesktopPetActiveRuns();
@@ -2216,9 +2204,9 @@ function runShutdownCleanup(): Promise<void> {
       .catch((error) => {
         console.error("failed while shutting down static site hosts", error);
       })
-      .then(() => stopAllWebsiteApps(app))
+      .then(() => stopAllWebapps(app))
       .catch((error) => {
-        console.error("failed while shutting down website apps", error);
+        console.error("failed while shutting down webapps", error);
       })
       .then(() => stopRunningServicesForShutdown(app))
       .catch((error) => {

@@ -43,8 +43,8 @@ import {
   StaticSiteHostError,
   staticSiteHostManager
 } from "./static-site-host-manager";
-import { listWebsiteEntries } from "./ipc/website-handlers";
-import { websiteAppRuntime } from "./websites/website-app-runtime";
+import { listWebEntries } from "./ipc/web-handlers";
+import { webappRuntime } from "./webs/webapp-runtime";
 import {
   buildSandboxImage,
   deleteSandboxImage,
@@ -270,12 +270,12 @@ function readStaticSiteId(args: Record<string, unknown>) {
   return siteId;
 }
 
-function readWebsiteId(args: Record<string, unknown>) {
-  const websiteId = readString(args, "websiteId") || readString(args, "id");
-  if (!websiteId) {
-    throw new Error("websiteId is required");
+function readWebappId(args: Record<string, unknown>) {
+  const webappId = readString(args, "webappId") || readString(args, "id");
+  if (!webappId) {
+    throw new Error("webappId is required");
   }
-  return websiteId;
+  return webappId;
 }
 
 function readItemId(args: Record<string, unknown>) {
@@ -799,20 +799,20 @@ async function executeStaticServerAction(action: string, args: Record<string, un
   }
 }
 
-async function executeWebsiteAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
-  if (action === "desktop.websites.list") {
-    return ok(action, listWebsiteEntries(options.app));
+async function executeWebsAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
+  if (action === "desktop.webs.list") {
+    return ok(action, listWebEntries(options.app));
   }
-  if (action === "desktop.websites.getStatus") {
-    return ok(action, websiteAppRuntime.getStatus(options.app, readWebsiteId(args)));
+  if (action === "desktop.webs.webapps.getStatus") {
+    return ok(action, webappRuntime.getStatus(options.app, readWebappId(args)));
   }
-  if (action === "desktop.websites.start") {
-    return ok(action, await websiteAppRuntime.start(options.app, readWebsiteId(args)));
+  if (action === "desktop.webs.webapps.start") {
+    return ok(action, await webappRuntime.start(options.app, readWebappId(args)));
   }
-  if (action === "desktop.websites.stop") {
-    return ok(action, await websiteAppRuntime.stop(options.app, readWebsiteId(args)));
+  if (action === "desktop.webs.webapps.stop") {
+    return ok(action, await webappRuntime.stop(options.app, readWebappId(args)));
   }
-  return ok(action, await websiteAppRuntime.restart(options.app, readWebsiteId(args)));
+  return ok(action, await webappRuntime.restart(options.app, readWebappId(args)));
 }
 
 async function executeAction(
@@ -952,12 +952,12 @@ async function executeAction(
     case "desktop.staticServer.stop":
     case "desktop.staticServer.restart":
       return executeStaticServerAction(action, args);
-    case "desktop.websites.list":
-    case "desktop.websites.getStatus":
-    case "desktop.websites.start":
-    case "desktop.websites.stop":
-    case "desktop.websites.restart":
-      return executeWebsiteAction(options, action, args);
+    case "desktop.webs.list":
+    case "desktop.webs.webapps.getStatus":
+    case "desktop.webs.webapps.start":
+    case "desktop.webs.webapps.stop":
+    case "desktop.webs.webapps.restart":
+      return executeWebsAction(options, action, args);
     case "desktop.market.getSettings":
       return ok(action, getMarketSettings(options.app));
     case "desktop.market.validateSettings":

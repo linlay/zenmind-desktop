@@ -1,0 +1,125 @@
+import type { ServiceLogReadOptions, ServiceLogReadResult } from "./services";
+
+export type WebKind = "website" | "webapp";
+export type WebEntryKey = `website:${string}` | `webapp:${string}`;
+export type WebappRuntimeStatus = "stopped" | "starting" | "running" | "error";
+export type WebappLogTarget = "main" | "error";
+
+export interface WebappFrontendConfig {
+  root: string;
+  index: string;
+  spa: boolean;
+  apiPrefix: string;
+}
+
+export interface WebappBackendConfig {
+  runtime: "node";
+  entry: string;
+  args: string[];
+  env: Record<string, string>;
+  port: number;
+  healthPath: string;
+}
+
+export interface WebEntryBase {
+  id: string;
+  entryKey: WebEntryKey;
+  label: string;
+  kind: WebKind;
+  agentKey?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface WebsiteEntry extends WebEntryBase {
+  kind: "website";
+  entryKey: `website:${string}`;
+  url: string;
+}
+
+export interface WebappEntry extends WebEntryBase {
+  kind: "webapp";
+  entryKey: `webapp:${string}`;
+  frontend: WebappFrontendConfig;
+  backend: WebappBackendConfig;
+}
+
+export type WebEntry = WebsiteEntry | WebappEntry;
+
+export interface WebappRuntimeState {
+  id: string;
+  entryKey: `webapp:${string}`;
+  kind: "webapp";
+  status: WebappRuntimeStatus;
+  webUrl: string;
+  backendUrl: string;
+  frontendPort: number | null;
+  backendPort: number | null;
+  pid: number | null;
+  message: string;
+  startedAt?: string;
+  updatedAt: string;
+}
+
+export interface WebListResult {
+  ok: boolean;
+  items: WebEntry[];
+  message: string;
+}
+
+export interface WebsiteInput {
+  id?: string;
+  label?: string;
+  url: string;
+  agentKey?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface WebsiteUpdateInput {
+  label?: string;
+  url?: string;
+  agentKey?: string;
+}
+
+export interface WebsiteItemsResult {
+  ok: boolean;
+  items: WebsiteEntry[];
+  message: string;
+}
+
+export interface WebsiteResult {
+  ok: boolean;
+  item: WebsiteEntry | null;
+  items: WebsiteEntry[];
+  message: string;
+}
+
+export interface WebsiteDeleteResult {
+  ok: boolean;
+  items: WebsiteEntry[];
+  message: string;
+}
+
+export interface WebsiteTransferResult {
+  ok: boolean;
+  items: WebsiteEntry[];
+  path: string;
+  message: string;
+}
+
+export interface WebappStatusResult {
+  ok: boolean;
+  state: WebappRuntimeState | null;
+  message: string;
+}
+
+export interface WebappCommandResult {
+  ok: boolean;
+  item: WebappEntry | null;
+  state: WebappRuntimeState | null;
+  message: string;
+}
+
+export interface WebappLogReadResult extends ServiceLogReadResult {}
+export interface WebappLogReadOptions extends ServiceLogReadOptions {}

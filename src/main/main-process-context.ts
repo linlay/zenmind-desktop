@@ -308,15 +308,6 @@ export interface TaskBoardIpcHandlerContextDependencies {
   moveTaskBoardIssue: (...args: any[]) => unknown;
   syncTaskBoardIssueAutomation: (...args: any[]) => unknown;
   callAgentPlatform: (...args: any[]) => unknown;
-  listCustomSidebarItems: (...args: any[]) => unknown;
-  addCustomSidebarItem: (...args: any[]) => unknown;
-  updateCustomSidebarItem: (...args: any[]) => unknown;
-  removeCustomSidebarItem: (...args: any[]) => unknown;
-  importCustomSidebarItems: (...args: any[]) => unknown;
-  exportCustomSidebarItems: (...args: any[]) => unknown;
-  showFileDialog: (...args: any[]) => unknown;
-  showSaveDialog: (...args: any[]) => unknown;
-  getDataRoot: (...args: any[]) => unknown;
   getTaskBoardCloudConfig: (...args: any[]) => unknown;
   saveTaskBoardCloudConfig: (...args: any[]) => unknown;
 }
@@ -336,16 +327,7 @@ export function createTaskBoardIpcHandlerOptions(
     deleteTaskBoardIssueWithAutomation: dependencies.deleteTaskBoardIssueWithAutomation,
     moveTaskBoardIssue: dependencies.moveTaskBoardIssue,
     syncTaskBoardIssueAutomation: dependencies.syncTaskBoardIssueAutomation,
-    callAgentPlatform: dependencies.callAgentPlatform,
-    listCustomSidebarItems: () => dependencies.listCustomSidebarItems(context.app),
-    addCustomSidebarItem: dependencies.addCustomSidebarItem,
-    updateCustomSidebarItem: dependencies.updateCustomSidebarItem,
-    removeCustomSidebarItem: dependencies.removeCustomSidebarItem,
-    importCustomSidebarItems: dependencies.importCustomSidebarItems,
-    exportCustomSidebarItems: dependencies.exportCustomSidebarItems,
-    showFileDialog: dependencies.showFileDialog,
-    showSaveDialog: dependencies.showSaveDialog,
-    getDataRoot: dependencies.getDataRoot
+    callAgentPlatform: dependencies.callAgentPlatform
   };
 }
 

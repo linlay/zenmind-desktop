@@ -50,8 +50,8 @@ export function createSettingsSectionDefinitions({
       visible: true
     },
     {
-      id: "embeddedWebsites",
-      label: "embeddedWebsites",
+      id: "embeddedWebs",
+      label: "embeddedWebs",
       description: "",
       layout: "wide",
       visible: true
@@ -97,7 +97,7 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   tunnelHub: { label: "settings.tunnelHub.label", description: "settings.tunnelHub.description" },
   navigation: { label: "settings.navigation.label", description: "settings.navigation.description" },
   quickAssistant: { label: "settings.quickAssistant.label", description: "settings.quickAssistant.description" },
-  embeddedWebsites: { label: "settings.embeddedWebsites.label", description: "settings.embeddedWebsites.description" },
+  embeddedWebs: { label: "settings.embeddedWebs.label", description: "settings.embeddedWebs.description" },
   dataRoot: { label: "settings.dataRoot.label", description: "settings.dataRoot.description" },
   memory: { label: "settings.memory.label", description: "settings.memory.description" },
   about: { label: "settings.about.label", description: "settings.about.description" }

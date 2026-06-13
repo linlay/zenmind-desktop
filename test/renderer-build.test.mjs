@@ -49,7 +49,7 @@ function readSharedContractsSource() {
     readSourceFile("src", "shared", "contracts", "attachments.ts"),
     readSourceFile("src", "shared", "contracts", "marketplace.ts"),
     readSourceFile("src", "shared", "contracts", "task-board.ts"),
-    readSourceFile("src", "shared", "contracts", "websites.ts"),
+    readSourceFile("src", "shared", "contracts", "webs.ts"),
     readSourceFile("src", "shared", "contracts", "desktop-api.ts")
   ].join("\n");
 }
@@ -691,10 +691,10 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
 
   assert.match(sidebarSource, /taskBoardNavItemBase[\s\S]*?orderKey:\s*"kanban"[\s\S]*?to:\s*"\/kanban"/);
   assert.match(sidebarSource, /assistantGroupNavItemBase[\s\S]*?orderKey:\s*"group:assistants"[\s\S]*?entryType:\s*"assistants"/);
-  assert.match(sidebarSource, /websitesGroupNavItemBase[\s\S]*?orderKey:\s*"group:websites"[\s\S]*?entryType:\s*"websites"/);
+  assert.match(sidebarSource, /websGroupNavItemBase[\s\S]*?orderKey:\s*"group:webs"[\s\S]*?entryType:\s*"webs"/);
   assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)/);
   assert.match(sidebarSource, /label:\s*t\("nav\.assistants"\)/);
-  assert.match(sidebarSource, /label:\s*t\("nav\.embeddedWebsites"\)/);
+  assert.match(sidebarSource, /label:\s*t\("nav\.embeddedWebs"\)/);
   assert.match(sidebarSource, /SIDEBAR_GROUP_STATE_STORAGE_KEY/);
   assert.match(sidebarSource, /SIDEBAR_ASSISTANT_SORT_STORAGE_KEY/);
   assert.match(sidebarSource, /type AssistantNavSortMode = "byName" \| "byTime"/);
@@ -829,7 +829,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.doesNotMatch(sidebarSource, /sidebar-tool-grid/);
   assert.doesNotMatch(sidebarSource, /sidebar-assistant-launcher/);
   assert.match(sidebarSource, /sortSidebarNavItems\(/);
-  assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)[\s\S]*?label:\s*t\("nav\.schedules"\)[\s\S]*?label:\s*t\("nav\.assistants"\)[\s\S]*?label:\s*t\("nav\.embeddedWebsites"\)/);
+  assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)[\s\S]*?label:\s*t\("nav\.schedules"\)[\s\S]*?label:\s*t\("nav\.assistants"\)[\s\S]*?label:\s*t\("nav\.embeddedWebs"\)/);
   assert.match(globalStyles, /\.sidebar-tool-menu\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(globalStyles, /\.sidebar-group-heading\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
@@ -1150,7 +1150,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(settingsSections, /id:\s*"quickAssistant"[\s\S]*?label:\s*"quickAssistant"[\s\S]*?layout:\s*"measure"/);
   assert.doesNotMatch(settingsSections, /id:\s*"sideAssistant"/);
   assert.doesNotMatch(settingsSections, /id:\s*"desktopPet"/);
-  assert.match(settingsSections, /id:\s*"embeddedWebsites"[\s\S]*?label:\s*"embeddedWebsites"[\s\S]*?layout:\s*"wide"/);
+  assert.match(settingsSections, /id:\s*"embeddedWebs"[\s\S]*?label:\s*"embeddedWebs"[\s\S]*?layout:\s*"wide"/);
   assert.match(settingsSections, /id:\s*"dataRoot"[\s\S]*?label:\s*"dataRoot"/);
   assert.match(settingsSections, /id:\s*"memory"[\s\S]*?label:\s*"memory"[\s\S]*?layout:\s*"wide"/);
   assert.doesNotMatch(settingsSections, /id:\s*"debug"/);
@@ -1344,18 +1344,18 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /handleSidebarNavPointerDown/);
   assert.doesNotMatch(settingsPage, /document\.addEventListener\("pointermove"/);
   assert.doesNotMatch(settingsPage, /navigation-order-drag-handle/);
-  assert.match(settingsPageSections, /settings\.embeddedWebsites\.label/);
-  assert.match(settingsPage, /settings\.embeddedWebsites\.linkedAgentFor/);
-  assert.match(settingsPage, /handleUpdateCustomSidebarAgent/);
-  assert.match(settingsPage, /editingCustomSidebarId/);
-  assert.match(settingsPage, /handleStartEditCustomSidebarItem/);
-  assert.match(settingsPage, /handleUpdateCustomSidebarItem/);
-  assert.match(settingsPage, /label:\s*customSidebarLabel/);
-  assert.match(settingsPage, /url:\s*customSidebarUrl/);
-  assert.match(settingsPage, /settings\.embeddedWebsites\.edit/);
-  assert.match(settingsPage, /settings\.embeddedWebsites\.save/);
-  assert.match(settingsPage, /settings\.embeddedWebsites\.cancel/);
-  assert.match(settingsPage, /window\.electronAPI\.customSidebar\.update/);
+  assert.match(settingsPageSections, /settings\.embeddedWebs\.label/);
+  assert.match(settingsPage, /settings\.embeddedWebs\.linkedAgentFor/);
+  assert.match(settingsPage, /handleUpdateWebsiteAgent/);
+  assert.match(settingsPage, /editingWebsiteId/);
+  assert.match(settingsPage, /handleStartEditWebsiteItem/);
+  assert.match(settingsPage, /handleUpdateWebsiteItem/);
+  assert.match(settingsPage, /label:\s*websiteLabel/);
+  assert.match(settingsPage, /url:\s*websiteUrl/);
+  assert.match(settingsPage, /settings\.embeddedWebs\.edit/);
+  assert.match(settingsPage, /settings\.embeddedWebs\.save/);
+  assert.match(settingsPage, /settings\.embeddedWebs\.cancel/);
+  assert.match(settingsPage, /window\.electronAPI\.webs\.websites\.update/);
   assert.doesNotMatch(settingsPage, /自定义侧边栏/);
   assert.doesNotMatch(settingsPage, /添加到侧边栏/);
   assert.doesNotMatch(settingsPage, /已添加的入口/);
@@ -1366,7 +1366,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /宠物只服务侧边助手，会在等待回答、完成或出错时做轻提醒。右键宠物可直接关闭/);
   assert.doesNotMatch(settingsPage, /将常用网页作为内嵌网站固定至导航栏便捷访问。内嵌网站仅保存在本地，支持导入导出，系统入口不可修改/);
   assert.doesNotMatch(settingsPage, /按模块管理桌面工作台、助手能力和本地数据行为/);
-  assert.doesNotMatch(settingsPage, /className="custom-sidebar-copy"/);
+  assert.doesNotMatch(settingsPage, /className="website-copy"/);
   assert.match(settingsPageSections, /settings\.quickAssistant\.label/);
   assert.doesNotMatch(settingsPage, /case "sideAssistant"/);
   assert.doesNotMatch(settingsPage, /SIDE ASSISTANT/);
@@ -1393,7 +1393,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /handleSelectDesktopHelperAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*desktopHelperAgentKey: normalizedAgentKey\s*\}\)/);
   assert.match(settingsPage, /desktopCopilotPages: nextPages/);
-  assert.match(settingsPage, /settings-item-section-head custom-sidebar-list-head navigation-assistant-default-head/);
+  assert.match(settingsPage, /settings-item-section-head website-list-head navigation-assistant-default-head/);
   assert.match(settingsPage, /settings-item-form navigation-assistant-default/);
   assert.match(settingsPage, /settings\.navigation\.defaultAssistantDescription/);
   assert.match(settingsPage, /settings\.navigation\.fixedMainDescription/);
@@ -1585,7 +1585,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(orderHelper, /"kanban"/);
   assert.match(orderHelper, /"schedules"/);
   assert.match(orderHelper, /"group:assistants"/);
-  assert.match(orderHelper, /"group:websites"/);
+  assert.match(orderHelper, /"group:webs"/);
   assert.match(orderHelper, /STATIC_SIDEBAR_NAV_ORDER_ITEMS/);
   assert.match(orderHelper, /createDefaultSidebarNavOrderItems/);
   assert.match(orderHelper, /staticItems\.get\("kanban"\)/);
@@ -1600,13 +1600,13 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(orderHelper, /return availableItems\.map\(\(item\) => item\.key\)/);
   assert.match(orderHelper, /sortSidebarNavItems/);
   assert.match(appShell, /SIDEBAR_NAV_ORDER_STORAGE_KEY/);
-  assert.match(appShell, /CUSTOM_SIDEBAR_GROUP_ORDER_STORAGE_KEY/);
-  assert.match(appShell, /readInitialCustomSidebarGroupOrder/);
-  assert.match(appShell, /readStoredSidebarNavOrder\(SIDEBAR_NAV_ORDER_STORAGE_KEY\)\.filter\(\(key\) => key\.startsWith\("custom:"\)\)/);
-  assert.match(appShell, /normalizeCustomSidebarGroupOrder/);
+  assert.match(appShell, /WEB_GROUP_ORDER_STORAGE_KEY/);
+  assert.match(appShell, /readInitialWebGroupOrder/);
+  assert.match(appShell, /key\.startsWith\("custom:"\) \? `website:\$\{key\.slice\("custom:"\.length\)\}`/);
+  assert.match(appShell, /normalizeWebGroupOrder/);
   assert.match(appShell, /availableSidebarNavOrderItems/);
   assert.match(appShell, /normalizeSidebarNavOrder\(sidebarNavOrder, availableSidebarNavOrderItems\)/);
-  assert.match(appShell, /customSidebarNavOrder=\{normalizedCustomSidebarGroupOrder\}/);
+  assert.match(appShell, /websiteNavOrder=\{normalizedWebGroupOrder\}/);
   assert.match(sidebarSource, /sidebarNavOrder:\s*SidebarNavOrderItemKey\[\]/);
   assert.match(sidebarSource, /sortSidebarNavItems\(/);
 });
@@ -1637,8 +1637,8 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /assistantLauncherVisible=\{assistantLauncherVisible\}/);
   assert.match(appShell, /onRunningRunIdChange=\{setAssistantRunningRunId\}/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
-  assert.match(appShell, /customSidebarAgentKey = activeCustomSidebarItemId/);
-  assert.match(appShell, /resolvedCopilotAgentKey = customSidebarAgentKey \|\| currentCopilotPreference\?\.agentKey \|\| DEFAULT_DESKTOP_HELPER_AGENT_KEY/);
+  assert.match(appShell, /websiteAgentKey = activeWebEntryKey/);
+  assert.match(appShell, /resolvedCopilotAgentKey = websiteAgentKey \|\| currentCopilotPreference\?\.agentKey \|\| DEFAULT_DESKTOP_HELPER_AGENT_KEY/);
   assert.match(appShell, /resolvedAgentKey=\{resolvedCopilotAgentKey\}/);
   assert.match(appShell, /assistantDockOpenRequestPathRef = useRef<string \| null>\(null\)/);
   assert.match(appShell, /assistantDockOpenRequestPathRef\.current !== location\.pathname[\s\S]*?setAssistantDockOpenRequest\(null\)/);
@@ -2058,54 +2058,54 @@ test("task board status order places completed after in progress", () => {
   );
 });
 
-test("custom sidebar agent association is exposed across desktop api layers", () => {
+test("website agent association is exposed across webs desktop api layers", () => {
   const contracts = readSharedContractsSource();
-  const store = fs.readFileSync(path.join(projectRoot, "src", "main", "navigation", "custom-sidebar-store.ts"), "utf8");
+  const store = fs.readFileSync(path.join(projectRoot, "src", "main", "webs", "website-actions.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
-  const taskBoardHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "task-board-handlers.ts"), "utf8");
+  const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
 
   assert.match(contracts, /agentKey\?: string/);
-  assert.match(contracts, /interface CustomSidebarUpdateInput/);
-  assert.match(contracts, /update: \(id: string, input: CustomSidebarUpdateInput\) => Promise<CustomSidebarItemResult>/);
-  assert.match(contracts, /add: \(input: CustomSidebarItemInput\) => Promise<CustomSidebarItemResult>/);
-  assert.match(store, /export function updateCustomSidebarItem/);
+  assert.match(contracts, /interface WebsiteUpdateInput/);
+  assert.match(contracts, /update: \(id: string, input: WebsiteUpdateInput\) => Promise<WebsiteResult>/);
+  assert.match(contracts, /add: \(input: WebsiteInput\) => Promise<WebsiteResult>/);
+  assert.match(store, /export function updateWebsiteItem/);
   assert.match(store, /delete updated\.agentKey/);
-  assert.match(store, /export function addCustomSidebarItem/);
-  assert.match(mainProcess, /registerTaskBoardIpcHandlers\(ipcMain,/);
-  assert.match(taskBoardHandlers, /ipcMain\.handle\("customSidebar\.update"/);
-  assert.match(preload, /update: \(id, input\) => ipcRenderer\.invoke\("customSidebar\.update", id, input\)/);
-  assert.match(preload, /add: \(input\) => ipcRenderer\.invoke\("customSidebar\.add", input\)/);
+  assert.match(store, /export function addWebsiteItem/);
+  assert.match(mainProcess, /registerWebIpcHandlers\(ipcMain,/);
+  assert.match(webHandlers, /ipcMain\.handle\("webs\.websites\.update"/);
+  assert.match(preload, /update: \(id, input\) => ipcRenderer\.invoke\("webs\.websites\.update", id, input\)/);
+  assert.match(preload, /add: \(input\) => ipcRenderer\.invoke\("webs\.websites\.add", input\)/);
   assert.match(appShell, /resolvedCopilotAgentKey/);
-  assert.match(appShell, /function createCustomSidebarItem\(input: CustomSidebarItemInput\): Promise<CustomSidebarItemResult>[\s\S]*?window\.electronAPI\.customSidebar\.add\(input\)/);
-  assert.match(appShell, /onCreateCustomSidebarItem=\{createCustomSidebarItem\}/);
-  assert.match(appSidebar, /args\.groupId === "websites"/);
+  assert.match(appShell, /function createWebsiteItem\(input: WebsiteInput\): Promise<WebsiteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.add\(input\)/);
+  assert.match(appShell, /onCreateWebsiteItem=\{createWebsiteItem\}/);
+  assert.match(appSidebar, /args\.groupId === "webs"/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
   assert.match(appSidebar, /function renderWebsiteDialog\(\)/);
   assert.match(appSidebar, /网站名[\s\S]*?网页地址[\s\S]*?侧边智能助手/);
-  assert.match(appSidebar, /onCreateCustomSidebarItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}\)/);
-  assert.match(appSidebar, /requestNavigate\(`\/custom-sidebar\/\$\{result\.item\.id\}`\)/);
+  assert.match(appSidebar, /onCreateWebsiteItem\(\{[\s\S]*?label: websiteLabel,[\s\S]*?url: websiteUrl,[\s\S]*?agentKey: websiteAgentKey[\s\S]*?\}\)/);
+  assert.match(appSidebar, /requestNavigate\(`\/webs\/\$\{result\.item\.entryKey\}`\)/);
 });
 
-test("local website apps expose desktop api and start from sidebar route", () => {
+test("webapps expose desktop api and start from webs sidebar route", () => {
   const contracts = readSharedContractsSource();
-  const websiteContracts = readSourceFile("src", "shared", "contracts", "websites.ts");
+  const webContracts = readSourceFile("src", "shared", "contracts", "webs.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = fs.readFileSync(path.join(projectRoot, "src", "main", "index.ts"), "utf8");
-  const websiteHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "website-handlers.ts"), "utf8");
+  const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
   const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
   const desktopActionBridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
   const appShell = readAppShellSource();
-  const localWebsiteStartEffectStart = appShell.indexOf(
-    "const item = customSidebarItems.find((candidate) => candidate.id === activeCustomSidebarItemId);"
+  const webappStartEffectStart = appShell.indexOf(
+    "const item = webItems.find((candidate) => candidate.entryKey === activeWebEntryKey);"
   );
-  const localWebsiteStartEffect = appShell.slice(
-    localWebsiteStartEffectStart,
+  const webappStartEffect = appShell.slice(
+    webappStartEffectStart,
     appShell.indexOf(
-      "}, [activeCustomSidebarItemId, customSidebarItems, localWebsiteRuntimeById]",
-      localWebsiteStartEffectStart
+      "}, [activeWebEntryKey, webItems, webappRuntimeById]",
+      webappStartEffectStart
     )
   );
   const embeddedSurfaceHosts = fs.readFileSync(
@@ -2117,22 +2117,22 @@ test("local website apps expose desktop api and start from sidebar route", () =>
     "utf8"
   );
 
-  assert.match(websiteContracts, /export interface WebsiteLocalAppEntry/);
-  assert.match(contracts, /websites:\s*\{[\s\S]*list: \(\) => Promise<WebsiteListResult>/);
-  assert.match(contracts, /start: \(id: string\) => Promise<WebsiteCommandResult>/);
-  assert.match(preload, /websites:\s*\{[\s\S]*list: \(\) => ipcRenderer\.invoke\("websites\.list"\)/);
-  assert.match(preload, /start: \(id: string\) => ipcRenderer\.invoke\("websites\.start", id\)/);
-  assert.match(websiteHandlers, /ipcMain\.handle\("websites\.start"[\s\S]*websiteAppRuntime\.start\(app, id\)/);
-  assert.match(appShell, /window\.electronAPI\.websites\.list\(\)/);
-  assert.match(appShell, /item\.kind !== "local-app"/);
+  assert.match(webContracts, /export interface WebappEntry/);
+  assert.match(contracts, /webs:\s*\{[\s\S]*list: \(\) => Promise<WebListResult>/);
+  assert.match(contracts, /webapps:\s*\{[\s\S]*start: \(id: string\) => Promise<WebappCommandResult>/);
+  assert.match(preload, /webs:\s*\{[\s\S]*list: \(\) => ipcRenderer\.invoke\("webs\.list"\)/);
+  assert.match(preload, /start: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.start", id\)/);
+  assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.start"[\s\S]*webappRuntime\.start\(app, id\)/);
+  assert.match(appShell, /window\.electronAPI\.webs\.list\(\)/);
+  assert.match(appShell, /item\.kind !== "webapp"/);
   assert.match(appShell, /chrome:\s*"app"/);
-  assert.notEqual(localWebsiteStartEffectStart, -1);
-  assert.match(appShell, /localWebsiteStartInFlightRef = useRef<Set<string>>\(new Set\(\)\)/);
-  assert.match(localWebsiteStartEffect, /localWebsiteStartInFlightRef\.current\.has\(item\.id\)/);
-  assert.match(localWebsiteStartEffect, /localWebsiteStartInFlightRef\.current\.add\(item\.id\)/);
-  assert.match(localWebsiteStartEffect, /window\.electronAPI\.websites\.start\(item\.id\)/);
-  assert.match(localWebsiteStartEffect, /\.finally\(\(\) => \{[\s\S]*?localWebsiteStartInFlightRef\.current\.delete\(item\.id\)/);
-  assert.doesNotMatch(localWebsiteStartEffect, /let cancelled = false/);
+  assert.notEqual(webappStartEffectStart, -1);
+  assert.match(appShell, /webappStartInFlightRef = useRef<Set<string>>\(new Set\(\)\)/);
+  assert.match(webappStartEffect, /webappStartInFlightRef\.current\.has\(item\.id\)/);
+  assert.match(webappStartEffect, /webappStartInFlightRef\.current\.add\(item\.id\)/);
+  assert.match(webappStartEffect, /window\.electronAPI\.webs\.webapps\.start\(item\.id\)/);
+  assert.match(webappStartEffect, /\.finally\(\(\) => \{[\s\S]*?webappStartInFlightRef\.current\.delete\(item\.id\)/);
+  assert.doesNotMatch(webappStartEffect, /let cancelled = false/);
   assert.match(externalWebviewPage, /chrome\?: "browser" \| "app"/);
   assert.match(externalWebviewPage, /chrome = "browser"/);
   assert.match(externalWebviewPage, /const appChrome = chrome === "app"/);
@@ -2143,10 +2143,10 @@ test("local website apps expose desktop api and start from sidebar route", () =>
   assert.match(embeddedSurfaceHosts, /runtimeStatus/);
   assert.match(embeddedSurfaceHosts, /chrome=\{item\.chrome\}/);
   assert.match(embeddedSurfaceHosts, /正在启动/);
-  assert.match(mainProcess, /installBundledWebsiteTemplates\(app\)/);
+  assert.match(mainProcess, /installBundledWebappTemplates\(app\)/);
   const initializeUserDataIndex = mainProcess.indexOf("function initializeUserDataRootsAndSettings()");
   const ensureDataRootIndex = mainProcess.indexOf("ensureDataRoot(app);", initializeUserDataIndex);
-  const installDemoIndex = mainProcess.indexOf("installBundledWebsiteTemplates(app)", initializeUserDataIndex);
+  const installDemoIndex = mainProcess.indexOf("installBundledWebappTemplates(app)", initializeUserDataIndex);
   const importBundledEnvIndex = mainProcess.indexOf("importBundledEnvZipToRuntime(app", initializeUserDataIndex);
   assert.notEqual(initializeUserDataIndex, -1);
   assert.notEqual(ensureDataRootIndex, -1);
@@ -2154,9 +2154,10 @@ test("local website apps expose desktop api and start from sidebar route", () =>
   assert.notEqual(importBundledEnvIndex, -1);
   assert.equal(ensureDataRootIndex < installDemoIndex, true);
   assert.equal(installDemoIndex < importBundledEnvIndex, true);
-  assert.match(mainProcess, /stopAllWebsiteApps\(app\)/);
-  assert.match(desktopActions, /"desktop\.websites\.start"/);
-  assert.match(desktopActionBridge, /case "desktop\.websites\.restart"/);
+  assert.match(mainProcess, /stopAllWebapps\(app\)/);
+  assert.match(desktopActions, /"desktop\.webs\.webapps\.start"/);
+  assert.match(desktopActionBridge, /case "desktop\.webs\.webapps\.restart"/);
+  assert.match(desktopActionBridge, /readWebappId\(args\)/);
 });
 
 test("assistant navigation agents are exposed through dedicated ipc without changing pet agents", () => {
@@ -3240,11 +3241,11 @@ test("option-space quick assistant route opens the agent webclient copilot surfa
   );
   const preloadQuickAssistantApi = preload.slice(
     preload.indexOf("quickAssistant: {"),
-    preload.indexOf("customSidebar:", preload.indexOf("quickAssistant: {"))
+    preload.indexOf("webs:", preload.indexOf("quickAssistant: {"))
   );
   const contractQuickAssistantApi = contracts.slice(
     contracts.indexOf("quickAssistant: {"),
-    contracts.indexOf("customSidebar:", contracts.indexOf("quickAssistant: {"))
+    contracts.indexOf("webs:", contracts.indexOf("quickAssistant: {"))
   );
 
   assert.equal(fs.existsSync(nativeQuickAssistantPath), false);
@@ -3785,21 +3786,21 @@ test("embedded websites use compact rows and inline edit", () => {
     "utf8"
   );
 
-  assert.match(settingsPage, /settings\.embeddedWebsites\.addTitle/);
-  assert.match(settingsPage, /settings\.embeddedWebsites\.addDescription/);
-  assert.match(settingsPage, /settings\.embeddedWebsites\.addedDescription/);
-  assert.match(settingsPage, /custom-sidebar-add-head/);
-  assert.match(settingsPage, /custom-sidebar-row-edit-form/);
-  assert.match(settingsPage, /!editingCustomSidebarId \?/);
-  assert.match(settingsPage, /itemEditing \? \([\s\S]*?custom-sidebar-row-edit-form/);
-  assert.doesNotMatch(settingsPage, /custom-sidebar-editing-note/);
-  assert.doesNotMatch(settingsPage, /settings\.embeddedWebsites\.agentEnhancement/);
-  assert.match(settingsPage, /settings\.embeddedWebsites\.linkedAgentFor/);
-  assert.match(settingsPageCss, /\.settings-page \.custom-sidebar-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(140px,\s*1fr\)\s+minmax\(180px,\s*240px\)\s+auto;/u);
-  assert.match(settingsPageCss, /\.settings-page \.custom-sidebar-form input,[\s\S]*?\.settings-page \.custom-sidebar-row-edit-form input\s*\{[\s\S]*?border-radius:\s*8px;/u);
-  assert.match(settingsPageCss, /\.settings-page \.custom-sidebar-row-edit-form input:focus\s*\{[\s\S]*?box-shadow:\s*var\(--control-focus-ring\);/u);
-  assert.match(settingsPageCss, /\.settings-page \.custom-sidebar-add-form\s*\{[\s\S]*?padding:\s*10px 16px 14px;/u);
-  assert.match(settingsPageCss, /\.settings-page \.custom-sidebar-row-actions\s*\{[\s\S]*?flex-direction:\s*row;/u);
+  assert.match(settingsPage, /settings\.embeddedWebs\.addTitle/);
+  assert.match(settingsPage, /settings\.embeddedWebs\.addDescription/);
+  assert.match(settingsPage, /settings\.embeddedWebs\.addedDescription/);
+  assert.match(settingsPage, /website-add-head/);
+  assert.match(settingsPage, /website-row-edit-form/);
+  assert.match(settingsPage, /!editingWebsiteId \?/);
+  assert.match(settingsPage, /itemEditing \? \([\s\S]*?website-row-edit-form/);
+  assert.doesNotMatch(settingsPage, /website-editing-note/);
+  assert.doesNotMatch(settingsPage, /settings\.embeddedWebs\.agentEnhancement/);
+  assert.match(settingsPage, /settings\.embeddedWebs\.linkedAgentFor/);
+  assert.match(settingsPageCss, /\.settings-page \.website-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(140px,\s*1fr\)\s+minmax\(180px,\s*240px\)\s+auto;/u);
+  assert.match(settingsPageCss, /\.settings-page \.website-form input,[\s\S]*?\.settings-page \.website-row-edit-form input\s*\{[\s\S]*?border-radius:\s*8px;/u);
+  assert.match(settingsPageCss, /\.settings-page \.website-row-edit-form input:focus\s*\{[\s\S]*?box-shadow:\s*var\(--control-focus-ring\);/u);
+  assert.match(settingsPageCss, /\.settings-page \.website-add-form\s*\{[\s\S]*?padding:\s*10px 16px 14px;/u);
+  assert.match(settingsPageCss, /\.settings-page \.website-row-actions\s*\{[\s\S]*?flex-direction:\s*row;/u);
   assert.match(settingsPage, /desktop-pet-agent-select-wrap/);
 });
 

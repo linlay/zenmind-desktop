@@ -85,14 +85,16 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
       enabled: true,
       identityProviderHost: "business.example.com"
     },
-    websites: [
-      {
-        id: "docs",
-        label: "Docs",
-        url: "https://docs.example.com/",
-        agentKey: "desktopAssistant"
-      }
-    ],
+    webs: {
+      websites: [
+        {
+          id: "docs",
+          label: "Docs",
+          url: "https://docs.example.com/",
+          agentKey: "desktopAssistant"
+        }
+      ]
+    },
     bootstrapAssistant: {
       agentKey: "zenmi",
       prompt: "hello once"
@@ -107,7 +109,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
   const pet = readJson(path.join(desktopRoot, "config", "desktop", "pet.json"));
   const market = readJson(path.join(desktopRoot, "config", "marketplace", "settings.json"));
   const sso = readJson(path.join(desktopRoot, "config", "desktop", "sso.json"));
-  const website = readJson(path.join(desktopRoot, "data", "websites", "docs", "website.json"));
+  const website = readJson(path.join(desktopRoot, "data", "webs", "websites", "docs", "website.json"));
   const bootstrap = readJson(resolveDesktopBootstrapStatePath(app));
 
   assert.equal(profile.appearance.theme, "dark");
@@ -119,6 +121,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
   assert.equal(market.marketApiBaseUrl, "https://zenmind.cc/market/api/v1");
   assert.equal(sso.enabled, true);
   assert.equal(website.id, "docs");
+  assert.equal(website.kind, "website");
   assert.equal(website.agentKey, "desktopAssistant");
   assert.equal(bootstrap.bootstrapAssistant.agentKey, "zenmi");
 

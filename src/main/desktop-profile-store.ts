@@ -33,7 +33,7 @@ export type DesktopProfile = {
   };
   navigation: {
     mainOrder: string[];
-    websiteOrder: string[];
+    webOrder: string[];
     desktopCopilotPages: DesktopCopilotPagePreferences;
   };
 };
@@ -114,6 +114,8 @@ function normalizeDesktopProfile(
   const assistant = isRecord(record.assistant) ? record.assistant : {};
   const quickAssistant = isRecord(assistant.quickAssistant) ? assistant.quickAssistant : {};
   const navigation = isRecord(record.navigation) ? record.navigation : {};
+  const webOrder = normalizeTextArray(navigation.webOrder);
+  const legacyWebsiteOrder = normalizeTextArray(navigation.websiteOrder);
   const legacyLocale = normalizeLocale(legacyPreferences.locale);
   const profileLocale = normalizeLocale(appearance.locale);
   const desktopHelperAgentKey =
@@ -151,7 +153,7 @@ function normalizeDesktopProfile(
     },
     navigation: {
       mainOrder: normalizeTextArray(navigation.mainOrder),
-      websiteOrder: normalizeTextArray(navigation.websiteOrder),
+      webOrder: webOrder.length > 0 ? webOrder : legacyWebsiteOrder,
       desktopCopilotPages: sanitizeDesktopCopilotPagePreferences(
         navigation.desktopCopilotPages ?? legacySettings.desktopCopilotPages
       )

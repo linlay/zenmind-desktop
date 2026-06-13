@@ -2,8 +2,7 @@ import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopAction
 import type { ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubAgentSettings, TunnelHubAgentSettingsInput, TunnelHubAgentSettingsResult } from "./services";
 import type { PluginInstallResult } from "./manifest";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
-import type { CustomSidebarDeleteResult, CustomSidebarItemInput, CustomSidebarItemResult, CustomSidebarItemsResult, CustomSidebarTransferResult, CustomSidebarUpdateInput } from "./navigation";
-import type { WebsiteCommandResult, WebsiteListResult, WebsiteLogReadOptions, WebsiteLogReadResult, WebsiteLogTarget, WebsiteStatusResult } from "./websites";
+import type { WebListResult, WebappCommandResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappStatusResult, WebsiteDeleteResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
 import type { DesktopPetAgentOption, DesktopPetDanceRequestedListener, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetState, DesktopPetStateListener } from "./pet-copilot";
 import type { MarketCommandResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { TaskBoardChangedListener, TaskBoardCloudConfig, TaskBoardCloudConfigResult, TaskBoardDeleteResult, TaskBoardDesktopOnlineResult, TaskBoardIssueInput, TaskBoardIssueMoveInput, TaskBoardIssueResult, TaskBoardIssueUpdateInput, TaskBoardListResult } from "./task-board";
@@ -287,8 +286,8 @@ export interface DesktopApi {
     saveTunnelHubAgentSettings: (input: TunnelHubAgentSettingsInput) => Promise<TunnelHubAgentSettingsResult>;
     resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
     getThemePreference: () => Promise<"light" | "dark" | "system">;
-    getNavigationPreferences: () => Promise<{ mainOrder: string[]; websiteOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
-    saveNavigationPreferences: (input: { mainOrder?: string[]; websiteOrder?: string[] }) => Promise<{ mainOrder: string[]; websiteOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    saveNavigationPreferences: (input: { mainOrder?: string[]; webOrder?: string[] }) => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
     setNativeThemeSource: (themeMode: "light" | "dark" | "system") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;
@@ -333,25 +332,27 @@ export interface DesktopApi {
     hide: () => Promise<{ ok: boolean }>;
     openControlCenter: () => Promise<{ ok: boolean }>;
   };
-  customSidebar: {
-    list: () => Promise<CustomSidebarItemsResult>;
-    add: (input: CustomSidebarItemInput) => Promise<CustomSidebarItemResult>;
-    update: (id: string, input: CustomSidebarUpdateInput) => Promise<CustomSidebarItemResult>;
-    remove: (id: string) => Promise<CustomSidebarDeleteResult>;
-    import: () => Promise<CustomSidebarTransferResult>;
-    export: () => Promise<CustomSidebarTransferResult>;
-  };
-  websites: {
-    list: () => Promise<WebsiteListResult>;
-    start: (id: string) => Promise<WebsiteCommandResult>;
-    stop: (id: string) => Promise<WebsiteCommandResult>;
-    restart: (id: string) => Promise<WebsiteCommandResult>;
-    getStatus: (id: string) => Promise<WebsiteStatusResult>;
-    readLog: (
-      id: string,
-      target: WebsiteLogTarget,
-      options?: WebsiteLogReadOptions
-    ) => Promise<WebsiteLogReadResult>;
+  webs: {
+    list: () => Promise<WebListResult>;
+    websites: {
+      list: () => Promise<WebsiteItemsResult>;
+      add: (input: WebsiteInput) => Promise<WebsiteResult>;
+      update: (id: string, input: WebsiteUpdateInput) => Promise<WebsiteResult>;
+      remove: (id: string) => Promise<WebsiteDeleteResult>;
+      import: () => Promise<WebsiteTransferResult>;
+      export: () => Promise<WebsiteTransferResult>;
+    };
+    webapps: {
+      start: (id: string) => Promise<WebappCommandResult>;
+      stop: (id: string) => Promise<WebappCommandResult>;
+      restart: (id: string) => Promise<WebappCommandResult>;
+      getStatus: (id: string) => Promise<WebappStatusResult>;
+      readLog: (
+        id: string,
+        target: WebappLogTarget,
+        options?: WebappLogReadOptions
+      ) => Promise<WebappLogReadResult>;
+    };
   };
   onNavigate: (listener: NavigateListener) => () => void;
   onServicesChanged: (listener: ServicesChangedListener) => () => void;

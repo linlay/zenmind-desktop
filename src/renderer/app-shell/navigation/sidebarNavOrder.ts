@@ -1,7 +1,7 @@
 export type SidebarNavOrderItemKey =
   | "kanban"
   | "group:assistants"
-  | "group:websites"
+  | "group:webs"
   | "assistant"
   | "agents"
   | "schedules"
@@ -10,7 +10,8 @@ export type SidebarNavOrderItemKey =
   | "help"
   | `service:${string}`
   | `experimental:${string}`
-  | `custom:${string}`;
+  | `website:${string}`
+  | `webapp:${string}`;
 
 export type SidebarNavOrderItem = {
   key: SidebarNavOrderItemKey;
@@ -20,14 +21,14 @@ export type SidebarNavOrderItem = {
 type SidebarNavOrderInput = {
   serviceItems: SidebarNavOrderItem[];
   experimentalItems: SidebarNavOrderItem[];
-  customItems: SidebarNavOrderItem[];
+  webItems: SidebarNavOrderItem[];
 };
 
 export const STATIC_SIDEBAR_NAV_ORDER_ITEMS: SidebarNavOrderItem[] = [
   { key: "kanban", label: "看板" },
   { key: "schedules", label: "自动化" },
   { key: "group:assistants", label: "助理 / 项目" },
-  { key: "group:websites", label: "网站 / 应用" },
+  { key: "group:webs", label: "网站 / 应用" },
 ];
 
 export function createServiceSidebarNavOrderKey(serviceId: string): SidebarNavOrderItemKey {
@@ -38,8 +39,8 @@ export function createExperimentalSidebarNavOrderKey(itemId: string): SidebarNav
   return `experimental:${itemId}`;
 }
 
-export function createCustomSidebarNavOrderKey(itemId: string): SidebarNavOrderItemKey {
-  return `custom:${itemId}`;
+export function createWebNavOrderKey(entryKey: string): SidebarNavOrderItemKey {
+  return entryKey as SidebarNavOrderItemKey;
 }
 
 export function createDefaultSidebarNavOrderItems({
@@ -51,7 +52,7 @@ export function createDefaultSidebarNavOrderItems({
     staticItems.get("kanban")!,
     staticItems.get("schedules")!,
     staticItems.get("group:assistants")!,
-    staticItems.get("group:websites")!
+    staticItems.get("group:webs")!
   ];
 }
 

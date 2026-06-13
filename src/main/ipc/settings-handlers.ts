@@ -2,7 +2,7 @@ import type { TunnelHubAgentSettingsInput } from "../../shared/contracts";
 import { readTunnelHubAgentSettings, saveTunnelHubAgentSettings } from "../tunnel-hub-agent-settings";
 import { readDesktopProfileFromRoot, updateDesktopProfileInRoot, type DesktopThemePreference } from "../desktop-profile-store";
 import { getDesktopConfigRoot } from "../user-paths";
-import { readWebsiteOrderKeys, writeWebsiteOrderKeys } from "../websites/website-order-store";
+import { readWebOrderKeys, writeWebOrderKeys } from "../webs/web-order-store";
 
 export interface SettingsIpcHandlerOptions {
   app: any;
@@ -121,26 +121,26 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     const profile = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
     return {
       ...profile.navigation,
-      websiteOrder: readWebsiteOrderKeys(app)
+      webOrder: readWebOrderKeys(app)
     };
   });
   ipcMain.handle("settings.saveNavigationPreferences", async (_event: any, input: any) => {
     const current = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
-    const websiteOrder = Array.isArray(input?.websiteOrder)
-      ? writeWebsiteOrderKeys(app, normalizeStringArray(input.websiteOrder))
-      : readWebsiteOrderKeys(app);
+    const webOrder = Array.isArray(input?.webOrder)
+      ? writeWebOrderKeys(app, normalizeStringArray(input.webOrder))
+      : readWebOrderKeys(app);
     const profile = updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
       navigation: {
         mainOrder: Array.isArray(input?.mainOrder)
           ? normalizeStringArray(input.mainOrder)
           : current.navigation.mainOrder,
-        websiteOrder,
+        webOrder,
         desktopCopilotPages: current.navigation.desktopCopilotPages
       }
     });
     return {
       ...profile.navigation,
-      websiteOrder
+      webOrder
     };
   });
   ipcMain.handle("settings.setNativeThemeSource", async (_event: any, themeMode: string) => {

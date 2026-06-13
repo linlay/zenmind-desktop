@@ -5,13 +5,12 @@ import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { App } from "electron";
 import type {
-  WebsiteCommandResult,
-  WebsiteListItem,
-  WebsiteLocalAppEntry,
-  WebsiteLogReadOptions,
-  WebsiteLogReadResult,
-  WebsiteLogTarget,
-  WebsiteRuntimeState
+  WebappCommandResult,
+  WebappEntry,
+  WebappLogReadOptions,
+  WebappLogReadResult,
+  WebappLogTarget,
+  WebappRuntimeState
 } from "../../shared/contracts";
 import { buildServiceEnv, resolveNodeBin } from "../services/manager/command-env";
 import { readServiceLogFile } from "../services/manager/logs";
@@ -19,14 +18,14 @@ import { isProcessRunning, terminateProcessTree } from "../services/manager/proc
 import { pidMatchesInstallDir } from "../services/manager/process-identity";
 import { delay, probeHttpUrl } from "../services/manager/service-probes";
 import {
-  getDesktopWebsiteLogsRoot,
-  getDesktopWebsiteStateRoot
+  getDesktopWebappLogsRoot,
+  getDesktopWebappStateRoot
 } from "../user-paths";
+import { resolveWebappRelativePath } from "./web-common";
 import {
-  getWebsiteDir,
-  readWebsiteItems,
-  resolveWebsiteRelativePath
-} from "./website-store";
+  getWebappDir,
+  readWebappItems
+} from "./webapp-store";
 
 const HOST = "127.0.0.1";
 const STATE_FILE = "runtime.json";
@@ -36,50 +35,49 @@ const HEALTH_TIMEOUT_MS = 10_000;
 const HEALTH_INTERVAL_MS = 250;
 
 type RuntimeRecord = {
-  item: WebsiteLocalAppEntry;
-  websiteDir: string;
+  item: WebappEntry;
+  webappDir: string;
   child: ChildProcess | null;
   server: http.Server | null;
   sockets: Set<net.Socket>;
-  state: WebsiteRuntimeState;
+  state: WebappRuntimeState;
 };
 
 type ResolvedStaticFile =
   | { ok: true; filePath: string; stat: fs.Stats }
   | { ok: false; status: number; message: string; allowSpaFallback?: boolean };
 
-function isLocalApp(item: WebsiteListItem): item is WebsiteLocalAppEntry {
-  return item.kind === "local-app";
-}
-
 function nowIso() {
   return new Date().toISOString();
 }
 
-function getStatePath(app: App, websiteId: string) {
-  return path.join(getDesktopWebsiteStateRoot(app, websiteId), STATE_FILE);
+function getStatePath(app: App, webappId: string) {
+  return path.join(getDesktopWebappStateRoot(app, webappId), STATE_FILE);
 }
 
-function getLogPath(app: App, websiteId: string, target: WebsiteLogTarget) {
-  return path.join(getDesktopWebsiteLogsRoot(app, websiteId), target === "error" ? ERROR_LOG_FILE : MAIN_LOG_FILE);
+function getLogPath(app: App, webappId: string, target: WebappLogTarget) {
+  return path.join(getDesktopWebappLogsRoot(app, webappId), target === "error" ? ERROR_LOG_FILE : MAIN_LOG_FILE);
 }
 
-function writeState(app: App, state: WebsiteRuntimeState) {
+function writeState(app: App, state: WebappRuntimeState) {
   const statePath = getStatePath(app, state.id);
   fs.mkdirSync(path.dirname(statePath), { recursive: true });
   fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
 
-function readStoredState(app: App, websiteId: string): WebsiteRuntimeState | null {
-  const statePath = getStatePath(app, websiteId);
+function readStoredState(app: App, webappId: string): WebappRuntimeState | null {
+  const statePath = getStatePath(app, webappId);
   try {
-    const parsed = JSON.parse(fs.readFileSync(statePath, "utf8")) as Partial<WebsiteRuntimeState>;
+    const parsed = JSON.parse(fs.readFileSync(statePath, "utf8")) as Partial<WebappRuntimeState>;
     if (typeof parsed.id !== "string") {
       return null;
     }
     return {
       id: parsed.id,
-      kind: "local-app",
+      entryKey: typeof parsed.entryKey === "string" && parsed.entryKey.startsWith("webapp:")
+        ? parsed.entryKey as `webapp:${string}`
+        : `webapp:${parsed.id}`,
+      kind: "webapp",
       status: parsed.status === "running" || parsed.status === "starting" || parsed.status === "error"
         ? parsed.status
         : "stopped",
@@ -97,10 +95,11 @@ function readStoredState(app: App, websiteId: string): WebsiteRuntimeState | nul
   }
 }
 
-function createStoppedState(item: WebsiteLocalAppEntry, message = "网站小应用未运行。"): WebsiteRuntimeState {
+function createStoppedState(item: WebappEntry, message = "网站小应用未运行。"): WebappRuntimeState {
   return {
     id: item.id,
-    kind: "local-app",
+    entryKey: item.entryKey,
+    kind: "webapp",
     status: "stopped",
     webUrl: "",
     backendUrl: "",
@@ -117,9 +116,9 @@ function writeLogLine(logPath: string, line: string) {
   fs.appendFileSync(logPath, `${line.endsWith("\n") ? line : `${line}\n`}`, "utf8");
 }
 
-function pipeChildLogs(app: App, websiteId: string, child: ChildProcess) {
-  const mainLogPath = getLogPath(app, websiteId, "main");
-  const errorLogPath = getLogPath(app, websiteId, "error");
+function pipeChildLogs(app: App, webappId: string, child: ChildProcess) {
+  const mainLogPath = getLogPath(app, webappId, "main");
+  const errorLogPath = getLogPath(app, webappId, "error");
   fs.mkdirSync(path.dirname(mainLogPath), { recursive: true });
   child.stdout?.on("data", (chunk: Buffer) => {
     fs.appendFileSync(mainLogPath, chunk);
@@ -283,7 +282,7 @@ async function handleStaticRequest(
     writeText(res, 404, "not found");
     return;
   }
-  const frontendRoot = resolveWebsiteRelativePath(record.websiteDir, record.item.frontend.root);
+  const frontendRoot = resolveWebappRelativePath(record.webappDir, record.item.frontend.root);
   const frontendRealRoot = fs.realpathSync(frontendRoot);
   const resolved = await resolveFile(
     frontendRealRoot,
@@ -400,23 +399,21 @@ function closeServer(record: RuntimeRecord) {
   });
 }
 
-function findLocalWebsite(app: App, websiteId: string) {
-  return readWebsiteItems(app).find((item): item is WebsiteLocalAppEntry =>
-    item.kind === "local-app" && item.id === websiteId.trim()
-  ) ?? null;
+function findWebapp(app: App, webappId: string) {
+  return readWebappItems(app).find((item) => item.id === webappId.trim()) ?? null;
 }
 
-export class WebsiteAppRuntime {
+export class WebappRuntime {
   private readonly records = new Map<string, RuntimeRecord>();
 
-  getStatus(app: App, websiteId: string) {
-    const id = websiteId.trim();
+  getStatus(app: App, webappId: string) {
+    const id = webappId.trim();
     const record = this.records.get(id);
     if (record) {
       this.refreshRecordProcessState(app, record);
       return record.state;
     }
-    const item = findLocalWebsite(app, id);
+    const item = findWebapp(app, id);
     if (!item) {
       return null;
     }
@@ -428,14 +425,14 @@ export class WebsiteAppRuntime {
         webUrl: "",
         message: "发现旧的网站小应用进程，但当前 Desktop 未管理它。",
         updatedAt: nowIso()
-      } satisfies WebsiteRuntimeState;
+      } satisfies WebappRuntimeState;
     }
     return createStoppedState(item);
   }
 
-  async start(app: App, websiteId: string): Promise<WebsiteCommandResult> {
-    const id = websiteId.trim();
-    const item = findLocalWebsite(app, id);
+  async start(app: App, webappId: string): Promise<WebappCommandResult> {
+    const id = webappId.trim();
+    const item = findWebapp(app, id);
     if (!item) {
       return { ok: false, item: null, state: null, message: "未找到这个本地网站小应用。" };
     }
@@ -448,9 +445,9 @@ export class WebsiteAppRuntime {
       await this.stop(app, id);
     }
 
-    const websiteDir = getWebsiteDir(app, id);
-    const logDir = getDesktopWebsiteLogsRoot(app, id);
-    const stateDir = getDesktopWebsiteStateRoot(app, id);
+    const webappDir = getWebappDir(app, id);
+    const logDir = getDesktopWebappLogsRoot(app, id);
+    const stateDir = getDesktopWebappStateRoot(app, id);
     fs.mkdirSync(logDir, { recursive: true });
     fs.mkdirSync(stateDir, { recursive: true });
     writeLogLine(getLogPath(app, id, "main"), `[${nowIso()}] starting ${id}`);
@@ -460,9 +457,10 @@ export class WebsiteAppRuntime {
       const backendPort = item.backend.port === 0 ? await reservePort(0) : await reservePort(item.backend.port);
       const backendUrl = `http://${HOST}:${backendPort}`;
       const healthUrl = `${backendUrl}${item.backend.healthPath}`;
-      const state: WebsiteRuntimeState = {
+      const state: WebappRuntimeState = {
         id,
-        kind: "local-app",
+        entryKey: item.entryKey,
+        kind: "webapp",
         status: "starting",
         webUrl: "",
         backendUrl,
@@ -475,19 +473,19 @@ export class WebsiteAppRuntime {
       };
       writeState(app, state);
 
-      const entryPath = resolveWebsiteRelativePath(websiteDir, item.backend.entry);
+      const entryPath = resolveWebappRelativePath(webappDir, item.backend.entry);
       const nodeBin = resolveNodeBin();
       const child = spawn(nodeBin, [entryPath, ...item.backend.args], {
-        cwd: websiteDir,
+        cwd: webappDir,
         env: {
           ...buildServiceEnv(),
           ...item.backend.env,
           HOST,
           PORT: String(backendPort),
-          WEBSITE_ID: id,
-          WEBSITE_ROOT: websiteDir,
-          WEBSITE_STATE_DIR: stateDir,
-          WEBSITE_LOG_DIR: logDir
+          WEBAPP_ID: id,
+          WEBAPP_ROOT: webappDir,
+          WEBAPP_STATE_DIR: stateDir,
+          WEBAPP_LOG_DIR: logDir
         },
         stdio: ["ignore", "pipe", "pipe"]
       });
@@ -504,7 +502,7 @@ export class WebsiteAppRuntime {
 
       const runningRecord: RuntimeRecord = {
         item,
-        websiteDir,
+        webappDir,
         child,
         server: null,
         sockets: new Set(),
@@ -569,16 +567,16 @@ export class WebsiteAppRuntime {
         webUrl: "",
         message,
         updatedAt: nowIso()
-      } satisfies WebsiteRuntimeState;
+      } satisfies WebappRuntimeState;
       writeState(app, state);
       writeLogLine(getLogPath(app, id, "error"), `[${nowIso()}] start failed: ${message}`);
       return { ok: false, item, state, message };
     }
   }
 
-  async stop(app: App, websiteId: string, message = "网站小应用已停止。"): Promise<WebsiteCommandResult> {
-    const id = websiteId.trim();
-    const item = findLocalWebsite(app, id);
+  async stop(app: App, webappId: string, message = "网站小应用已停止。"): Promise<WebappCommandResult> {
+    const id = webappId.trim();
+    const item = findWebapp(app, id);
     const record = this.records.get(id);
     if (record) {
       record.state = {
@@ -602,7 +600,7 @@ export class WebsiteAppRuntime {
       return { ok: false, item: null, state: null, message: "未找到这个本地网站小应用。" };
     }
     const stored = readStoredState(app, id);
-    if (stored?.pid && isProcessRunning(stored.pid) && pidMatchesInstallDir(stored.pid, getWebsiteDir(app, id))) {
+    if (stored?.pid && isProcessRunning(stored.pid) && pidMatchesInstallDir(stored.pid, getWebappDir(app, id))) {
       terminateProcessTree(stored.pid);
     }
     const state = createStoppedState(item, message);
@@ -610,17 +608,17 @@ export class WebsiteAppRuntime {
     return { ok: true, item, state, message };
   }
 
-  async restart(app: App, websiteId: string) {
-    await this.stop(app, websiteId);
-    return this.start(app, websiteId);
+  async restart(app: App, webappId: string) {
+    await this.stop(app, webappId);
+    return this.start(app, webappId);
   }
 
   async stopAll(app: App) {
     await Promise.all([...this.records.keys()].map((id) => this.stop(app, id)));
   }
 
-  readLog(app: App, websiteId: string, target: WebsiteLogTarget, options: WebsiteLogReadOptions = {}): WebsiteLogReadResult {
-    return readServiceLogFile(getLogPath(app, websiteId.trim(), target), options);
+  readLog(app: App, webappId: string, target: WebappLogTarget, options: WebappLogReadOptions = {}): WebappLogReadResult {
+    return readServiceLogFile(getLogPath(app, webappId.trim(), target), options);
   }
 
   private refreshRecordProcessState(app: App, record: RuntimeRecord) {
@@ -640,10 +638,10 @@ export class WebsiteAppRuntime {
   }
 }
 
-export const websiteAppRuntime = new WebsiteAppRuntime();
+export const webappRuntime = new WebappRuntime();
 
-export function stopAllWebsiteApps(app: App) {
-  return websiteAppRuntime.stopAll(app);
+export function stopAllWebapps(app: App) {
+  return webappRuntime.stopAll(app);
 }
 
 export const __testInternals = {

@@ -25,7 +25,7 @@ type WebContentsAccess = {
 
 export type BrowserSurfaceRegistryOptions = {
   webContents: WebContentsAccess;
-  listCustomSidebarItems(): { items: Array<{ id: string; label: string; url: string; agentKey?: string }> };
+  listWebEntries(): { items: Array<{ id: string; entryKey: string; label: string; url: string; agentKey?: string }> };
   getCurrentPageSnapshot(): DesktopPageContextSnapshot | null;
 };
 
@@ -38,7 +38,7 @@ export function normalizeSurfaceMatchText(value: string) {
     .replace(/\/+$/u, "");
 }
 
-export function customSidebarItemMatchesSurfaceTarget(item: BrowserSurface, target: string) {
+export function webEntryMatchesSurfaceTarget(item: BrowserSurface, target: string) {
   const normalizedTarget = normalizeSurfaceMatchText(target);
   if (!normalizedTarget) {
     return false;
@@ -118,14 +118,14 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     const builtinContents = findWebContentsForSurfaceUrl(BUILTIN_BROWSER_DEFAULT_URL);
     return [
       builtinBrowserSurface(builtinContents),
-      ...options.listCustomSidebarItems().items.map((item) => {
+      ...options.listWebEntries().items.map((item) => {
         const contents = findWebContentsForSurfaceUrl(item.url);
         return {
-          id: item.id,
+          id: item.entryKey,
           label: item.label,
           url: item.url,
           agentKey: item.agentKey,
-          active: currentPageSnapshotMatchesSurface(item.id, contents),
+          active: currentPageSnapshotMatchesSurface(item.entryKey, contents),
           currentUrl: contents?.getURL(),
           title: contents?.getTitle(),
           webContentsId: contents?.id
@@ -139,7 +139,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     findWebContentsForSurfaceUrl,
     builtinBrowserSurface,
     listBrowserSurfaces,
-    customSidebarItemMatchesSurfaceTarget
+    webEntryMatchesSurfaceTarget
   };
 }
 

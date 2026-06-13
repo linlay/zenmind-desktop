@@ -108,7 +108,7 @@ code {
   .data-root-card,
   .data-root-actions,
   .settings-theme-actions,
-  .custom-sidebar-form,
+  .website-form,
   .config-head,
   .inline-actions,
   .service-card-head,
@@ -124,7 +124,7 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .custom-sidebar-panel {
+  .website-panel {
     width: 100%;
   }
 
@@ -150,16 +150,16 @@ code {
     justify-content: flex-start;
   }
 
-  .custom-sidebar-form {
+  .website-form {
     grid-template-columns: 1fr;
     width: 100%;
   }
 
-  .custom-sidebar-submit-wrap {
+  .website-submit-wrap {
     width: 100%;
   }
 
-  .custom-sidebar-submit {
+  .website-submit {
     width: 100%;
   }
 

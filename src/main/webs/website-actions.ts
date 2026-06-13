@@ -1,108 +1,47 @@
-import fs from "node:fs";
-import path from "node:path";
 import type { App } from "electron";
-import type { CustomSidebarItem, CustomSidebarItemInput, CustomSidebarUpdateInput, WebsiteExternalEntry } from "../../shared/contracts";
-import { getDesktopConfigRoot, getDesktopWebsitesDataRoot } from "../user-paths";
+import type { WebsiteEntry, WebsiteInput, WebsiteUpdateInput } from "../../shared/contracts";
 import {
-  WEBSITE_FILE,
-  createExternalWebsiteItem,
-  getWebsitePath,
+  createWebsiteItem,
+  readWebsiteItems,
+  writeWebsiteItems
+} from "./website-store";
+import {
+  isRecord,
   normalizeAgentKey,
-  normalizeWebsiteId,
+  normalizeWebId,
   normalizeWebsiteLabel,
-  normalizeWebsiteUrl,
-  readExternalWebsiteItems,
-  writeExternalWebsiteItems
-} from "../websites/website-store";
+  normalizeWebsiteUrl
+} from "./web-common";
 
-const LEGACY_CUSTOM_SIDEBAR_FILE = "custom-sidebar-items.json";
-const MAX_CUSTOM_SIDEBAR_ITEMS = 14;
+const MAX_WEBSITE_ITEMS = 14;
 
-type StoredCustomSidebarItems = {
-  items: CustomSidebarItem[];
+type StoredWebsiteItems = {
+  items: WebsiteEntry[];
 };
 
-function getCustomSidebarPath(app: App) {
-  return path.join(getDesktopConfigRoot(app), LEGACY_CUSTOM_SIDEBAR_FILE);
-}
-
-function getWebsitesRoot(app: App) {
-  return getDesktopWebsitesDataRoot(app);
-}
-
-function toCustomSidebarItem(item: WebsiteExternalEntry): CustomSidebarItem {
-  return {
-    id: item.id,
-    label: item.label,
-    url: item.url,
-    ...(item.agentKey ? { agentKey: item.agentKey } : {}),
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt
-  };
-}
-
-function toExternalWebsiteItem(item: CustomSidebarItem): WebsiteExternalEntry {
-  return {
-    id: item.id,
-    kind: "external",
-    label: item.label,
-    url: item.url,
-    ...(item.agentKey ? { agentKey: item.agentKey } : {}),
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt
-  };
-}
-
-function readItems(app: App): CustomSidebarItem[] {
-  const websiteItems = readExternalWebsiteItems(app).map(toCustomSidebarItem);
-  if (websiteItems.length > 0) {
-    return websiteItems;
-  }
-
-  const targetPath = getCustomSidebarPath(app);
-  if (!fs.existsSync(targetPath)) {
-    return [];
-  }
-
-  try {
-    const legacyItems = parseItemsFileContent(fs.readFileSync(targetPath, "utf8"));
-    if (legacyItems.length > 0) {
-      writeItems(app, legacyItems);
-    }
-    return legacyItems;
-  } catch (error) {
-    console.warn("failed to read custom sidebar items", error);
-    return [];
-  }
-}
-
-function writeItems(app: App, items: CustomSidebarItem[]) {
-  writeExternalWebsiteItems(app, sanitizeItems(items).map(toExternalWebsiteItem));
-}
-
-function normalizeItem(item: Partial<CustomSidebarItem>): CustomSidebarItem | null {
+function normalizeItem(item: Partial<WebsiteEntry>): WebsiteEntry | null {
   if (typeof item.id !== "string" || typeof item.label !== "string" || typeof item.url !== "string") {
     return null;
   }
 
   try {
-    return toCustomSidebarItem(createExternalWebsiteItem({
-      id: item.id.trim() || normalizeWebsiteId(""),
+    return createWebsiteItem({
+      id: item.id.trim() || normalizeWebId(""),
       label: item.label,
       url: item.url,
       agentKey: item.agentKey,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt
-    }));
+    });
   } catch {
     return null;
   }
 }
 
-function sanitizeItems(rawItems: Partial<CustomSidebarItem>[]) {
+function sanitizeItems(rawItems: Partial<WebsiteEntry>[]) {
   const seenIds = new Set<string>();
   const seenUrls = new Set<string>();
-  const items: CustomSidebarItem[] = [];
+  const items: WebsiteEntry[] = [];
 
   for (const rawItem of rawItems) {
     if (typeof rawItem?.id === "string" && seenIds.has(rawItem.id)) {
@@ -124,10 +63,10 @@ function sanitizeItems(rawItems: Partial<CustomSidebarItem>[]) {
 
 function parseItemsPayload(raw: unknown) {
   if (Array.isArray(raw)) {
-    return raw as Partial<CustomSidebarItem>[];
+    return raw as Partial<WebsiteEntry>[];
   }
-  if (raw && typeof raw === "object" && Array.isArray((raw as Partial<StoredCustomSidebarItems>).items)) {
-    return (raw as Partial<StoredCustomSidebarItems>).items as Partial<CustomSidebarItem>[];
+  if (isRecord(raw) && Array.isArray((raw as Partial<StoredWebsiteItems>).items)) {
+    return (raw as Partial<StoredWebsiteItems>).items as Partial<WebsiteEntry>[];
   }
   return [];
 }
@@ -137,22 +76,22 @@ function parseItemsFileContent(content: string) {
   return sanitizeItems(parseItemsPayload(parsed));
 }
 
-export function listCustomSidebarItems(app: App) {
+export function listWebsiteItems(app: App) {
   return {
     ok: true,
-    items: readItems(app),
+    items: readWebsiteItems(app),
     message: "已读取内嵌网站。"
   };
 }
 
-export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
-  const items = readItems(app);
-  if (items.length >= MAX_CUSTOM_SIDEBAR_ITEMS) {
+export function addWebsiteItem(app: App, input: WebsiteInput) {
+  const items = readWebsiteItems(app);
+  if (items.length >= MAX_WEBSITE_ITEMS) {
     return {
       ok: false,
       item: null,
       items,
-      message: `最多可添加 ${MAX_CUSTOM_SIDEBAR_ITEMS} 个内嵌网站。`
+      message: `最多可添加 ${MAX_WEBSITE_ITEMS} 个内嵌网站。`
     };
   }
 
@@ -168,18 +107,13 @@ export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
       };
     }
 
-    const now = Date.now();
-    const agentKey = normalizeAgentKey(input.agentKey);
-    const item: CustomSidebarItem = {
-      id: normalizeWebsiteId(""),
-      label: normalizeWebsiteLabel(input.label, url),
+    const item = createWebsiteItem({
+      label: input.label,
       url,
-      ...(agentKey ? { agentKey } : {}),
-      createdAt: now,
-      updatedAt: now
-    };
+      agentKey: input.agentKey
+    });
     const nextItems = [...items, item];
-    writeItems(app, nextItems);
+    writeWebsiteItems(app, nextItems);
     return {
       ok: true,
       item,
@@ -196,8 +130,8 @@ export function addCustomSidebarItem(app: App, input: CustomSidebarItemInput) {
   }
 }
 
-export function updateCustomSidebarItem(app: App, id: string, input: CustomSidebarUpdateInput) {
-  const items = readItems(app);
+export function updateWebsiteItem(app: App, id: string, input: WebsiteUpdateInput) {
+  const items = readWebsiteItems(app);
   const normalizedId = id.trim();
   const targetIndex = items.findIndex((item) => item.id === normalizedId);
   if (targetIndex === -1) {
@@ -210,7 +144,7 @@ export function updateCustomSidebarItem(app: App, id: string, input: CustomSideb
   }
 
   const target = items[targetIndex];
-  const updated: CustomSidebarItem = {
+  const updated: WebsiteEntry = {
     ...target,
     updatedAt: Date.now()
   };
@@ -244,7 +178,7 @@ export function updateCustomSidebarItem(app: App, id: string, input: CustomSideb
     }
 
     items[targetIndex] = updated;
-    writeItems(app, items);
+    writeWebsiteItems(app, items);
     return {
       ok: true,
       item: updated,
@@ -261,8 +195,8 @@ export function updateCustomSidebarItem(app: App, id: string, input: CustomSideb
   }
 }
 
-export function removeCustomSidebarItem(app: App, id: string) {
-  const items = readItems(app);
+export function removeWebsiteItem(app: App, id: string) {
+  const items = readWebsiteItems(app);
   const normalizedId = id.trim();
   const target = items.find((item) => item.id === normalizedId);
   if (!target) {
@@ -274,7 +208,7 @@ export function removeCustomSidebarItem(app: App, id: string) {
   }
 
   const nextItems = items.filter((item) => item.id !== normalizedId);
-  writeItems(app, nextItems);
+  writeWebsiteItems(app, nextItems);
   return {
     ok: true,
     items: nextItems,
@@ -282,8 +216,8 @@ export function removeCustomSidebarItem(app: App, id: string) {
   };
 }
 
-export function importCustomSidebarItems(app: App, fileContent: string) {
-  const currentItems = readItems(app);
+export function importWebsiteItems(app: App, fileContent: string) {
+  const currentItems = readWebsiteItems(app);
 
   try {
     const importedItems = parseItemsFileContent(fileContent);
@@ -311,7 +245,7 @@ export function importCustomSidebarItems(app: App, fileContent: string) {
       };
     }
 
-    writeItems(app, nextItems);
+    writeWebsiteItems(app, nextItems);
     return {
       ok: true,
       items: nextItems,
@@ -326,8 +260,8 @@ export function importCustomSidebarItems(app: App, fileContent: string) {
   }
 }
 
-export function exportCustomSidebarItems(app: App) {
-  const items = readItems(app);
+export function exportWebsiteItems(app: App) {
+  const items = readWebsiteItems(app);
   return JSON.stringify(
     {
       exportedAt: new Date().toISOString(),
@@ -339,14 +273,6 @@ export function exportCustomSidebarItems(app: App) {
 }
 
 export const __testInternals = {
-  getCustomSidebarPath,
-  getWebsitesRoot,
-  getWebsitePath,
-  WEBSITE_FILE,
-  LEGACY_CUSTOM_SIDEBAR_FILE,
-  normalizeUrl: normalizeWebsiteUrl,
-  normalizeLabel: normalizeWebsiteLabel,
-  normalizeWebsiteId,
-  normalizeAgentKey,
+  MAX_WEBSITE_ITEMS,
   parseItemsFileContent
 };

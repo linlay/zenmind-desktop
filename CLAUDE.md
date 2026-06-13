@@ -94,7 +94,7 @@ Important modules include `services/manager`, `plugin-loader`, `plugin-uninstall
 
 - `src/main/index.ts`: app lifecycle, window creation, IPC handlers, menu/tray hooks, shortcuts.
 - `src/main/user-paths.ts`: platform-aware data, config, state, logs, cache, secrets, and profile roots.
-- `src/main/navigation/custom-sidebar-store.ts`: embedded website configuration storage.
+- `src/main/webs/`: website/webapp stores, order, migration, runtime, and template installation.
 - `src/main/task-board-db.ts`: task board SQLite storage path and schema.
 - `src/preload`: renderer-facing Desktop API and service webview bridges.
 - `src/renderer/app-shell`: main shell, navigation, mounted embedded surfaces.
@@ -120,7 +120,7 @@ Layers:
 - `secrets/`: local credentials and private keys.
 - `profiles/`: Electron/Chromium profile data.
 
-Embedded website entries are stored in `config/desktop/custom-sidebar-items.json`.
+Embedded website entries are stored in `data/webs/websites/<website-id>/website.json`; local website apps are stored in `data/webs/webapps/<webapp-id>/webapp.json`.
 
 Electron cookies, localStorage, webview session data, and browser cache are stored under `profiles/electron/`.
 
@@ -177,7 +177,7 @@ Keep main, preload, renderer, and shared contracts in sync when changing APIs.
 - Keep `HashRouter`; it avoids route issues under Electron file protocol.
 - Navigation includes fixed Control Center, plugin market, help, assistants, and embedded website groups.
 - Running services with `frontendMode === "standalone"` may appear as navigation entries.
-- Custom embedded websites are managed through the `customSidebar` API and rendered with `ExternalWebviewPage`.
+- Custom embedded websites are managed through the `webs.websites` API and rendered with `ExternalWebviewPage`.
 
 ## 10. Development And Packaging
 

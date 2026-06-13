@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 1,
   "id": "demo-node-html",
-  "kind": "local-app",
+  "kind": "webapp",
   "label": "Demo App",
   "frontend": {
     "root": "frontend",
