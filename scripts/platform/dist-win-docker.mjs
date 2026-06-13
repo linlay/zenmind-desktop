@@ -30,6 +30,7 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
 
   await runAndWait(npmCmd, ["run", "sync:version"], brandProcessOptions({ cwd: projectRoot }));
   await runAndWait(npmCmd, ["run", "sync:env"], brandProcessOptions({ cwd: projectRoot }));
+  await runAndWait(npmCmd, ["run", "sync:demo"], brandProcessOptions({ cwd: projectRoot }));
   syncBrandArtifacts({ brandId: brand.id });
   await syncWindowsBuiltinAssets(brand);
   await runAndWait(npmCmd, ["run", "build"], brandProcessOptions({ cwd: projectRoot }));
@@ -52,7 +53,9 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
     "--volume",
     `${npmCacheDir}:/root/.npm`,
     "--env",
-    `BRAND=${brand.id}`
+    `BRAND=${brand.id}`,
+    "--env",
+    `DEMO=${process.env.DEMO ?? ""}`
   ];
 
   if (electronBuilderCacheDir != null) {
@@ -68,6 +71,7 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
     [
       "npm install --no-package-lock --ignore-scripts",
       `node ./scripts/sync-brand.mjs --brand=${brand.id}`,
+      "node ./scripts/sync-demo-assets.mjs",
       "node ./scripts/stage-app.mjs --os=win32 --arch=x64",
       `npx electron-builder --config ${path.posix.relative("/project", electronBuilderConfigPath("/project", brand.id))} --win --x64`,
       "node ./scripts/verify-win-package.mjs"

@@ -239,7 +239,7 @@ Manifest 中的路径必须是项目目录内的相对路径。Desktop 会拒绝
 ~/<brand-runtime-root>/.desktop/logs/websites/<website-id>/error.log
 ```
 
-内置 `demo-node-html` 模板在首次启动时复制到 `data/websites/demo-node-html/`，目标已存在时绝不覆盖。旧 `config/desktop/custom-sidebar-items.json` 会在首次读取时迁移到新目录；旧 `customSidebar.*` API 继续只管理外部 URL 网站。网站自身的浏览器数据不保存在 `website.json` 中。cookie、localStorage、IndexedDB、webview session 数据和缓存由 Electron/Chromium 管理，位于：
+打包时设置 `DEMO=1` 或 `DEMO=true` 后，内置 `demo-node-html` 模板会在启动时复制到 `data/websites/demo-node-html/`；目标已存在时按安装包内模板强制刷新。未设置 `DEMO` 时安装包不包含 demo，启动时也不会创建 demo 网站。旧 `config/desktop/custom-sidebar-items.json` 会在首次读取时迁移到新目录；旧 `customSidebar.*` API 继续只管理外部 URL 网站。网站自身的浏览器数据不保存在 `website.json` 中。cookie、localStorage、IndexedDB、webview session 数据和缓存由 Electron/Chromium 管理，位于：
 
 ```text
 ~/<brand-runtime-root>/.desktop/profiles/electron/

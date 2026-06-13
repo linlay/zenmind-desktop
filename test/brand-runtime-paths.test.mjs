@@ -9,7 +9,9 @@ import {
   loadBrandConfig,
   syncBrandArtifacts
 } from "../scripts/lib/brand-config.mjs";
+import { prepareBundledDemoAssets } from "../scripts/sync-demo-assets.mjs";
 import { prepareBundledEnvZip } from "../scripts/sync-env-zip.mjs";
+import { removeRendererWebsiteTemplatesFromStage } from "../scripts/stage-app.mjs";
 
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
@@ -87,11 +89,16 @@ test("brand sync writes CuteJ runtime paths into generated artifacts", (t) => {
 
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
   const generatedBrand = readJson(path.join(root, "build", "generated", "brand.json"));
+  const electronBuilderConfig = readJson(path.join(root, "build", "electron-builder.cutej.json"));
   const installerInclude = fs.readFileSync(path.join(root, "build", "installer.nsh"), "utf8");
   const uninstallScript = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
 
   assert.equal(brand.paths.runtimeRootDirName, ".cutej");
   assert.equal(generatedBrand.paths.runtimeRootDirName, ".cutej");
+  assert.equal(
+    electronBuilderConfig.extraResources.some((item) => item.from === "build/resources/demo" && item.to === "demo"),
+    true
+  );
   assert.match(installerInclude, /%USERPROFILE%\\\.cutej\\\.desktop\\state/u);
   assert.match(uninstallScript, /DATA_PATH="\$\{HOME\}\/\.cutej\/\.desktop"/u);
 });
@@ -144,6 +151,55 @@ test("sync-env rejects current brand and legacy env wrapper directories", async 
     }),
     /nested environment wrapper/u
   );
+});
+
+test("sync-demo defaults to manifest only and copies website templates when enabled", async (t) => {
+  const root = createBrandFixture(t);
+  const sourceDir = path.join(root, "public", "website-templates", "demo-node-html");
+  fs.mkdirSync(sourceDir, { recursive: true });
+  fs.writeFileSync(path.join(sourceDir, "website.json"), "{}\n", "utf8");
+
+  const defaultResult = await prepareBundledDemoAssets({
+    rootDir: root,
+    env: {},
+    logger: silentLogger
+  });
+  assert.equal(defaultResult.bundled, false);
+  assert.equal(fs.existsSync(path.join(root, "build", "resources", "demo", "website-templates")), false);
+  assert.equal(readJson(path.join(root, "build", "resources", "demo", "manifest.json")).bundled, false);
+
+  const enabledResult = await prepareBundledDemoAssets({
+    rootDir: root,
+    env: { DEMO: "1" },
+    logger: silentLogger
+  });
+  assert.equal(enabledResult.bundled, true);
+  assert.deepEqual(enabledResult.websiteTemplates, ["demo-node-html"]);
+  assert.equal(
+    fs.existsSync(path.join(root, "build", "resources", "demo", "website-templates", "demo-node-html", "website.json")),
+    true
+  );
+
+  await assert.rejects(
+    () => prepareBundledDemoAssets({
+      rootDir: root,
+      env: { DEMO: "maybe" },
+      logger: silentLogger
+    }),
+    /DEMO must be one of/u
+  );
+});
+
+test("stage-app removes renderer website templates from staged app", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-stage-demo-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const stagedTemplatePath = path.join(root, "dist-renderer", "website-templates", "demo-node-html", "website.json");
+  fs.mkdirSync(path.dirname(stagedTemplatePath), { recursive: true });
+  fs.writeFileSync(stagedTemplatePath, "{}\n", "utf8");
+
+  removeRendererWebsiteTemplatesFromStage(root);
+
+  assert.equal(fs.existsSync(path.join(root, "dist-renderer", "website-templates")), false);
 });
 
 test("critical runtime path modules read APP_BRAND runtimeRootDirName", () => {

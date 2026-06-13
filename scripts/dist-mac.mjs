@@ -9,6 +9,7 @@ const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
 
 await runAndWait(npmCmd, ["run", "sync:version"], brandProcessOptions({ cwd: projectRoot }));
 await runAndWait(npmCmd, ["run", "sync:env"], brandProcessOptions({ cwd: projectRoot }));
+await runAndWait(npmCmd, ["run", "sync:demo"], brandProcessOptions({ cwd: projectRoot }));
 syncBrandArtifacts({ brandId: brand.id });
 await runAndWait("node", ["./scripts/sync-builtin-assets.mjs", "--os=darwin", "--arch=arm64"], brandProcessOptions({ cwd: projectRoot }));
 await runAndWait(npmCmd, ["run", "icons"], brandProcessOptions({ cwd: projectRoot }));

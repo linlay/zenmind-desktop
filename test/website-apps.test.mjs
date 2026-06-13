@@ -220,23 +220,37 @@ test("website runtime starts frontend, proxies api, writes logs, and stops", asy
   assert.equal(stopResult.state?.status, "stopped");
 });
 
-test("bundled website template installer copies demo once", (t) => {
+test("bundled website template installer is gated by demo manifest and refreshes demo", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-websites-template-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const appPath = path.join(root, "app");
   const homePath = path.join(root, "home");
-  const sourceDir = path.join(appPath, "public", "website-templates", "demo-node-html");
+  const resourcesRoot = path.join(root, "resources");
+  const app = createApp(homePath, path.join(root, "app"));
+
+  const absent = installBundledWebsiteTemplates(app, { resourcesRoot, platform: "darwin" });
+  assert.equal(absent.ok, true);
+  assert.equal(absent.installed, false);
+  assert.equal(fs.existsSync(path.join(websitesRoot(homePath), "demo-node-html", "website.json")), false);
+
+  const sourceDir = path.join(resourcesRoot, "demo", "website-templates", "demo-node-html");
   fs.mkdirSync(sourceDir, { recursive: true });
   fs.writeFileSync(path.join(sourceDir, "website.json"), "{}\n", "utf8");
+  fs.writeFileSync(path.join(sourceDir, "marker.txt"), "packaged", "utf8");
+  writeJson(path.join(resourcesRoot, "demo", "manifest.json"), {
+    schemaVersion: 1,
+    bundled: true,
+    websiteTemplates: ["demo-node-html"]
+  });
 
-  const app = createApp(homePath, appPath);
-  const first = installBundledWebsiteTemplates(app);
+  const first = installBundledWebsiteTemplates(app, { resourcesRoot, platform: "darwin" });
   assert.equal(first.ok, true);
   assert.equal(first.installed, true);
   assert.equal(fs.existsSync(path.join(websitesRoot(homePath), "demo-node-html", "website.json")), true);
 
   fs.writeFileSync(path.join(websitesRoot(homePath), "demo-node-html", "marker.txt"), "user", "utf8");
-  const second = installBundledWebsiteTemplates(app);
-  assert.equal(second.installed, false);
-  assert.equal(fs.readFileSync(path.join(websitesRoot(homePath), "demo-node-html", "marker.txt"), "utf8"), "user");
+  fs.writeFileSync(path.join(websitesRoot(homePath), "demo-node-html", "stale.txt"), "stale", "utf8");
+  const second = installBundledWebsiteTemplates(app, { resourcesRoot, platform: "darwin" });
+  assert.equal(second.installed, true);
+  assert.equal(fs.readFileSync(path.join(websitesRoot(homePath), "demo-node-html", "marker.txt"), "utf8"), "packaged");
+  assert.equal(fs.existsSync(path.join(websitesRoot(homePath), "demo-node-html", "stale.txt")), false);
 });

@@ -98,6 +98,13 @@ function copyDir(sourceDir, targetDir) {
   });
 }
 
+export function removeRendererWebsiteTemplatesFromStage(rootDir = stageRoot) {
+  fs.rmSync(path.join(rootDir, "dist-renderer", "website-templates"), {
+    recursive: true,
+    force: true
+  });
+}
+
 function readDesktopPackageJson(rootDir = projectRoot) {
   return JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf8"));
 }
@@ -296,6 +303,7 @@ export async function stageApp(rootDir = projectRoot, target = parseArgs(process
   fs.mkdirSync(stageRoot, { recursive: true });
 
   copyDir(rendererRoot, path.join(stageRoot, "dist-renderer"));
+  removeRendererWebsiteTemplatesFromStage(stageRoot);
   copyDir(bundleRoot, path.join(stageRoot, "dist-electron"));
   writeStagePackageJson(rootDir, target);
   await installRuntimeDependencies(target);

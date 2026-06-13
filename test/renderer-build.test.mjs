@@ -2144,6 +2144,16 @@ test("local website apps expose desktop api and start from sidebar route", () =>
   assert.match(embeddedSurfaceHosts, /chrome=\{item\.chrome\}/);
   assert.match(embeddedSurfaceHosts, /正在启动/);
   assert.match(mainProcess, /installBundledWebsiteTemplates\(app\)/);
+  const initializeUserDataIndex = mainProcess.indexOf("function initializeUserDataRootsAndSettings()");
+  const ensureDataRootIndex = mainProcess.indexOf("ensureDataRoot(app);", initializeUserDataIndex);
+  const installDemoIndex = mainProcess.indexOf("installBundledWebsiteTemplates(app)", initializeUserDataIndex);
+  const importBundledEnvIndex = mainProcess.indexOf("importBundledEnvZipToRuntime(app", initializeUserDataIndex);
+  assert.notEqual(initializeUserDataIndex, -1);
+  assert.notEqual(ensureDataRootIndex, -1);
+  assert.notEqual(installDemoIndex, -1);
+  assert.notEqual(importBundledEnvIndex, -1);
+  assert.equal(ensureDataRootIndex < installDemoIndex, true);
+  assert.equal(installDemoIndex < importBundledEnvIndex, true);
   assert.match(mainProcess, /stopAllWebsiteApps\(app\)/);
   assert.match(desktopActions, /"desktop\.websites\.start"/);
   assert.match(desktopActionBridge, /case "desktop\.websites\.restart"/);
