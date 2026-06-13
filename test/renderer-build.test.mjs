@@ -2098,8 +2098,22 @@ test("local website apps expose desktop api and start from sidebar route", () =>
   const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
   const desktopActionBridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
   const appShell = readAppShellSource();
+  const localWebsiteStartEffectStart = appShell.indexOf(
+    "const item = customSidebarItems.find((candidate) => candidate.id === activeCustomSidebarItemId);"
+  );
+  const localWebsiteStartEffect = appShell.slice(
+    localWebsiteStartEffectStart,
+    appShell.indexOf(
+      "}, [activeCustomSidebarItemId, customSidebarItems, localWebsiteRuntimeById]",
+      localWebsiteStartEffectStart
+    )
+  );
   const embeddedSurfaceHosts = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx"),
+    "utf8"
+  );
+  const externalWebviewPage = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx"),
     "utf8"
   );
 
@@ -2111,8 +2125,23 @@ test("local website apps expose desktop api and start from sidebar route", () =>
   assert.match(websiteHandlers, /ipcMain\.handle\("websites\.start"[\s\S]*websiteAppRuntime\.start\(app, id\)/);
   assert.match(appShell, /window\.electronAPI\.websites\.list\(\)/);
   assert.match(appShell, /item\.kind !== "local-app"/);
-  assert.match(appShell, /window\.electronAPI\.websites\.start\(item\.id\)/);
+  assert.match(appShell, /chrome:\s*"app"/);
+  assert.notEqual(localWebsiteStartEffectStart, -1);
+  assert.match(appShell, /localWebsiteStartInFlightRef = useRef<Set<string>>\(new Set\(\)\)/);
+  assert.match(localWebsiteStartEffect, /localWebsiteStartInFlightRef\.current\.has\(item\.id\)/);
+  assert.match(localWebsiteStartEffect, /localWebsiteStartInFlightRef\.current\.add\(item\.id\)/);
+  assert.match(localWebsiteStartEffect, /window\.electronAPI\.websites\.start\(item\.id\)/);
+  assert.match(localWebsiteStartEffect, /\.finally\(\(\) => \{[\s\S]*?localWebsiteStartInFlightRef\.current\.delete\(item\.id\)/);
+  assert.doesNotMatch(localWebsiteStartEffect, /let cancelled = false/);
+  assert.match(externalWebviewPage, /chrome\?: "browser" \| "app"/);
+  assert.match(externalWebviewPage, /chrome = "browser"/);
+  assert.match(externalWebviewPage, /const appChrome = chrome === "app"/);
+  assert.match(externalWebviewPage, /\{appChrome \? null : \([\s\S]*?external-webview-browser-chrome/);
+  assert.match(externalWebviewPage, /appChrome \? null : debugSidebarNode/);
+  assert.match(externalWebviewPage, /!appChrome && bookmarkMenuNode/);
+  assert.match(externalWebviewPage, /onWebviewOpenTab[\s\S]*?if \(appChrome\) \{[\s\S]*?return;[\s\S]*?\}/);
   assert.match(embeddedSurfaceHosts, /runtimeStatus/);
+  assert.match(embeddedSurfaceHosts, /chrome=\{item\.chrome\}/);
   assert.match(embeddedSurfaceHosts, /正在启动/);
   assert.match(mainProcess, /installBundledWebsiteTemplates\(app\)/);
   assert.match(mainProcess, /stopAllWebsiteApps\(app\)/);

@@ -65,6 +65,7 @@ type ExternalWebviewPageProps = {
   active?: boolean;
   surfaceId?: string;
   surfaceLabel?: string;
+  chrome?: "browser" | "app";
 };
 
 type ExternalWebviewTabState = {
@@ -485,15 +486,17 @@ function ExternalWebviewPane({
   );
 }
 
-export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabel }: ExternalWebviewPageProps) {
+export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabel, chrome = "browser" }: ExternalWebviewPageProps) {
   const location = useLocation();
   const currentRoute = `${location.pathname}${location.search}`;
+  const appChrome = chrome === "app";
   const tabSequenceRef = useRef(0);
   const webviewRefs = useRef(new Map<string, Electron.WebviewTag>());
   const surfaceKeyRef = useRef(`${title}\u0000${url}`);
   const activeRef = useRef(active !== false);
   const surfaceClassName = [
     "pan-page external-webview-page",
+    appChrome ? "is-app-surface" : "",
     active === false ? "is-inactive-surface" : ""
   ].filter(Boolean).join(" ");
   const surfaceVisibilityProps = active === undefined
@@ -839,6 +842,9 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
 
   useEffect(() => {
     return window.electronAPI.onWebviewOpenTab(({ sourceGuestId, url: nextUrl, partition, userAgent }) => {
+      if (appChrome) {
+        return;
+      }
       const currentState = browserStateRef.current;
       const sourceTab = currentState.tabs.find((tab) => tab.guestId === sourceGuestId);
       const isHostOpenRequest = sourceGuestId < 0;
@@ -868,7 +874,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
 
       openTab(nextUrl, "", { afterTabId: sourceTab?.id });
     });
-  }, []);
+  }, [appChrome]);
 
   useEffect(() => {
     if (!window.electronAPI.sso?.onStatusChanged) {
@@ -2170,6 +2176,7 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
     <>
     <section className={surfaceClassName} {...surfaceVisibilityProps}>
       <div className="pan-drag-region" aria-hidden="true" />
+      {appChrome ? null : (
       <div className="external-webview-browser-chrome">
         <div className="external-webview-tabbar">
           <div
@@ -2382,7 +2389,8 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
             ) : null}
         </div>
         </div>
-      <div className="pan-frame-shell external-webview-frame-shell">
+      )}
+      <div className={`pan-frame-shell external-webview-frame-shell${appChrome ? " is-app-surface" : ""}`}>
         {browserState.tabs.map((tab) => (
           <ExternalWebviewPane
             key={tab.id}
@@ -2401,10 +2409,10 @@ export function ExternalWebviewPage({ title, url, active, surfaceId, surfaceLabe
           />
         ))}
       </div>
-      {debugSidebarNode}
+      {appChrome ? null : debugSidebarNode}
     </section>
-    {bookmarkMenuNode ? createPortal(bookmarkMenuNode, document.body) : null}
-    {bookmarkEditorNode ? createPortal(bookmarkEditorNode, document.body) : null}
+    {!appChrome && bookmarkMenuNode ? createPortal(bookmarkMenuNode, document.body) : null}
+    {!appChrome && bookmarkEditorNode ? createPortal(bookmarkEditorNode, document.body) : null}
     </>
   );
 }

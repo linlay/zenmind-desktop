@@ -316,6 +316,7 @@ export function AppShell() {
   const [customSidebarItems, setCustomSidebarItems] = useState<WebsiteListItem[]>([]);
   const [customSidebarItemsLoaded, setCustomSidebarItemsLoaded] = useState(false);
   const [localWebsiteRuntimeById, setLocalWebsiteRuntimeById] = useState<Record<string, LocalWebsiteRuntimeViewState>>({});
+  const localWebsiteStartInFlightRef = useRef<Set<string>>(new Set());
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
   const [sidebarNavigationHistory, setSidebarNavigationHistory] = useState<SidebarNavigationHistory>({
     back: [],
@@ -417,6 +418,7 @@ export function AppShell() {
         return [item.id, {
           ...item,
           url: runtime?.webUrl ?? "",
+          chrome: "app",
           runtimeStatus: runtime?.status ?? "idle",
           runtimeMessage: runtime?.message ?? ""
         }] as const;
@@ -1108,8 +1110,11 @@ export function AppShell() {
     if (runtime?.status === "starting" || runtime?.status === "running" || runtime?.status === "error") {
       return;
     }
+    if (localWebsiteStartInFlightRef.current.has(item.id)) {
+      return;
+    }
 
-    let cancelled = false;
+    localWebsiteStartInFlightRef.current.add(item.id);
     setLocalWebsiteRuntimeById((current) => ({
       ...current,
       [item.id]: {
@@ -1121,9 +1126,6 @@ export function AppShell() {
     }));
     window.electronAPI.websites.start(item.id)
       .then((result) => {
-        if (cancelled) {
-          return;
-        }
         setLocalWebsiteRuntimeById((current) => ({
           ...current,
           [item.id]: {
@@ -1135,9 +1137,6 @@ export function AppShell() {
         }));
       })
       .catch((error) => {
-        if (cancelled) {
-          return;
-        }
         setLocalWebsiteRuntimeById((current) => ({
           ...current,
           [item.id]: {
@@ -1147,10 +1146,10 @@ export function AppShell() {
             state: null
           }
         }));
+      })
+      .finally(() => {
+        localWebsiteStartInFlightRef.current.delete(item.id);
       });
-    return () => {
-      cancelled = true;
-    };
   }, [activeCustomSidebarItemId, customSidebarItems, localWebsiteRuntimeById]);
 
   useEffect(() => {

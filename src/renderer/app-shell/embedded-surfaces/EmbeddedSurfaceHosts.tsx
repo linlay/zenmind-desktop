@@ -27,6 +27,7 @@ const PluginPage = lazy(() =>
 type EmbeddedSidebarItem = {
   label: string;
   url: string;
+  chrome?: "browser" | "app";
   runtimeStatus?: "idle" | "starting" | "running" | "error";
   runtimeMessage?: string;
 };
@@ -236,6 +237,7 @@ export function CustomSidebarSurfaceHost({
             surfaceLabel={item.label}
             title={item.label}
             url={item.url}
+            chrome={item.chrome}
           />
         );
       })}
@@ -271,7 +273,7 @@ export function ExternalItemRoute({
 
   return (
     <EmbeddedSurfaceSuspense>
-      <ExternalWebviewPage surfaceId={itemId} surfaceLabel={item.label} title={item.label} url={item.url} />
+      <ExternalWebviewPage surfaceId={itemId} surfaceLabel={item.label} title={item.label} url={item.url} chrome={item.chrome} />
     </EmbeddedSurfaceSuspense>
   );
 }
