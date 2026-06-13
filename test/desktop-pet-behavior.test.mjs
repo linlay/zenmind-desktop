@@ -1,0 +1,259 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
+const {
+  createDesktopPetState,
+  createDefaultDesktopPetLocalStatus,
+  getDesktopPetContextMenuItems
+} = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
+const {
+  resolveDesktopPetSignatureActions
+} = require("../dist-electron/shared/desktop-pet.js");
+
+function createSettings(overrides = {}) {
+  return {
+    enabled: true,
+    lastVisible: true,
+    unreadCount: 0,
+    boundAgentKey: "zenmi",
+    appearanceId: "classic",
+    ...overrides
+  };
+}
+
+function createAgentStatus(overrides = {}) {
+  return {
+    agentKey: "zenmi",
+    displayName: "小宅",
+    role: "assistant",
+    presence: "busy",
+    unreadCount: 0,
+    latestPreview: "",
+    chatId: "chat-1",
+    hasPendingAwaiting: false,
+    stale: false,
+    updatedAt: "2026-06-13T00:00:00.000Z",
+    ...overrides
+  };
+}
+
+test("desktop pet state exposes awaiting when the bound agent has a pending awaiting prompt", () => {
+  const state = createDesktopPetState(createSettings(), {
+    supported: true,
+    visible: true,
+    localStatus: createDefaultDesktopPetLocalStatus(),
+    agentStatus: createAgentStatus({
+      presence: "busy",
+      hasPendingAwaiting: true,
+      latestPreview: "需要你确认计划"
+    })
+  });
+
+  assert.equal(state.status, "awaiting");
+  assert.equal(state.hint, "需要你确认计划");
+});
+
+test("desktop pet state exposes awaiting when any active task is awaiting", () => {
+  const state = createDesktopPetState(createSettings(), {
+    supported: true,
+    visible: true,
+    localStatus: createDefaultDesktopPetLocalStatus(),
+    agentStatus: createAgentStatus({
+      presence: "busy",
+      hasPendingAwaiting: false
+    }),
+    activeTasks: [
+      {
+        id: "task-1",
+        agentKey: "zenmi",
+        agentDisplayName: "小宅",
+        chatId: "chat-1",
+        runId: "run-1",
+        title: "确认计划",
+        preview: "等待你审批",
+        status: "awaiting",
+        awaitingMode: "approval",
+        updatedAt: "2026-06-13T00:00:00.000Z"
+      }
+    ]
+  });
+
+  assert.equal(state.status, "awaiting");
+});
+
+test("desktop pet visual arbitration keeps awaiting above task-run, message, hover, and signature", () => {
+  const {
+    deriveDesktopPetVisualStatus
+  } = require("../dist-electron/shared/desktop-pet-visual.js");
+
+  const visualStatus = deriveDesktopPetVisualStatus({
+    displayStatus: "awaiting",
+    isDragging: false,
+    dragDirection: null,
+    hasActiveSignature: true,
+    shouldShowTaskRunAnimation: true,
+    hasMessageReaction: true,
+    canShowHoverReaction: true,
+    isHovering: true,
+    isKeyboardFocused: false
+  });
+
+  assert.equal(visualStatus, "awaiting");
+});
+
+test("desktop pet visual arbitration keeps idle-random signature below idle reactions", () => {
+  const {
+    deriveDesktopPetVisualStatus
+  } = require("../dist-electron/shared/desktop-pet-visual.js");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    displayStatus: "idle",
+    isDragging: false,
+    dragDirection: null,
+    hasActiveSignature: true,
+    activeSignatureTrigger: "idle-random",
+    shouldShowTaskRunAnimation: false,
+    hasMessageReaction: true,
+    canShowHoverReaction: true,
+    isHovering: true,
+    isKeyboardFocused: false
+  }), "message");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    displayStatus: "idle",
+    isDragging: false,
+    dragDirection: null,
+    hasActiveSignature: true,
+    activeSignatureTrigger: "idle-random",
+    shouldShowTaskRunAnimation: false,
+    hasMessageReaction: false,
+    canShowHoverReaction: true,
+    isHovering: true,
+    isKeyboardFocused: false
+  }), "hover");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    displayStatus: "idle",
+    isDragging: false,
+    dragDirection: null,
+    hasActiveSignature: true,
+    activeSignatureTrigger: "idle-random",
+    shouldShowTaskRunAnimation: false,
+    hasMessageReaction: false,
+    canShowHoverReaction: true,
+    isHovering: false,
+    isKeyboardFocused: false
+  }), "signature");
+});
+
+test("desktop pet visual arbitration lets manual signature surface over message and hover", () => {
+  const {
+    deriveDesktopPetVisualStatus
+  } = require("../dist-electron/shared/desktop-pet-visual.js");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    displayStatus: "idle",
+    isDragging: false,
+    dragDirection: null,
+    hasActiveSignature: true,
+    activeSignatureTrigger: "manual",
+    shouldShowTaskRunAnimation: false,
+    hasMessageReaction: true,
+    canShowHoverReaction: true,
+    isHovering: true,
+    isKeyboardFocused: false
+  }), "signature");
+});
+
+test("desktop pet context menu exposes manual signature actions", () => {
+  assert.deepEqual(getDesktopPetContextMenuItems("classic")[0], {
+    action: "signature",
+    signatureActionId: "dance",
+    label: "跳舞"
+  });
+
+  assert.deepEqual(getDesktopPetContextMenuItems("user:desk-cat", [
+    {
+      id: "chant",
+      label: "念经",
+      trigger: ["manual", "idle-random"],
+      variants: [
+        {
+          path: "signatures/chant-1.webp",
+          frameCount: 30,
+          durationMs: 4200,
+          weight: 2
+        }
+      ]
+    },
+    {
+      id: "sleep",
+      label: "打盹",
+      trigger: ["idle-random"],
+      variants: [
+        {
+          path: "signatures/sleep-1.webp",
+          frameCount: 18,
+          durationMs: 3000
+        }
+      ]
+    }
+  ]), [
+    {
+      action: "signature",
+      signatureActionId: "chant",
+      label: "念经"
+    },
+    {
+      action: "hide",
+      label: "关闭宠物"
+    }
+  ]);
+});
+
+test("desktop pet keeps built-in dance available when state signature actions are empty", () => {
+  assert.deepEqual(resolveDesktopPetSignatureActions("classic", [])[0], {
+    id: "dance",
+    label: "跳舞",
+    trigger: ["manual", "idle-random"],
+    variants: [
+      {
+        path: "dance.webp",
+        frameCount: 30,
+        durationMs: 5200,
+        weight: 1
+      }
+    ]
+  });
+
+  assert.deepEqual(getDesktopPetContextMenuItems("pony", [])[0], {
+    action: "signature",
+    signatureActionId: "dance",
+    label: "跳舞"
+  });
+});
+
+test("desktop pet visual maps dragging movement onto a single mirrored state", () => {
+  const {
+    deriveDesktopPetVisualStatus
+  } = require("../dist-electron/shared/desktop-pet-visual.js");
+
+  const base = {
+    displayStatus: "idle",
+    isDragging: true,
+    dragDirection: null,
+    hasActiveSignature: false,
+    shouldShowTaskRunAnimation: false,
+    hasMessageReaction: false,
+    canShowHoverReaction: false,
+    isHovering: false,
+    isKeyboardFocused: false
+  };
+
+  assert.equal(deriveDesktopPetVisualStatus(base), "dragging-moving");
+  assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "left" }), "dragging-moving");
+  assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "right" }), "dragging-moving");
+});

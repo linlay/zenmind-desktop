@@ -1,3 +1,8 @@
+import type {
+  DesktopPetCapabilities,
+  DesktopPetSignatureAction
+} from "./contracts/pet-copilot";
+
 export const DESKTOP_PET_ROUTE = "/desktop-pet";
 export const DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY = "zenmi";
 export const DEFAULT_DESKTOP_PET_APPEARANCE_ID = "classic";
@@ -67,14 +72,45 @@ const DESKTOP_PET_APPEARANCE_IDS: Set<string> = new Set(DESKTOP_PET_APPEARANCE_O
 const DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID, "pony", "xiao"]);
 const DESKTOP_PET_DANCE_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID, "pony"]);
 const USER_DESKTOP_PET_APPEARANCE_PATTERN = /^user:[a-z0-9][a-z0-9._-]{0,79}$/u;
+const DESKTOP_PET_SIGNATURE_ACTIONS_BY_APPEARANCE_ID: Record<string, DesktopPetSignatureAction[]> = {
+  [DEFAULT_DESKTOP_PET_APPEARANCE_ID]: [
+    {
+      id: "dance",
+      label: "跳舞",
+      trigger: ["manual", "idle-random"],
+      variants: [
+        {
+          path: "dance.webp",
+          frameCount: 30,
+          durationMs: 5200,
+          weight: 1
+        }
+      ]
+    }
+  ],
+  pony: [
+    {
+      id: "dance",
+      label: "跳舞",
+      trigger: ["manual", "idle-random"],
+      variants: [
+        {
+          path: "dance.webp",
+          frameCount: 30,
+          durationMs: 5200,
+          weight: 1
+        }
+      ]
+    }
+  ]
+};
 
 export const DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
   awaiting: "pet-awaiting.png",
   dancing: "pet-idle.png",
   done: "pet-done.png",
   dragging: "pet-dragging.png",
-  "dragging-left": "pet-dragging-left.png",
-  "dragging-right": "pet-dragging-right.png",
+  "dragging-moving": "pet-dragging-moving.png",
   error: "pet-error.png",
   hover: "pet-hover.png",
   idle: "pet-idle.png",
@@ -149,8 +185,37 @@ export function getDesktopPetRunningTaskAnimationDurationMs(runningTaskCount: un
   );
 }
 
-export function shouldUseDesktopPetTaskRunningAnimation(appearanceId: unknown, runningTaskCount: unknown) {
-  return DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS.has(normalizeDesktopPetAppearanceId(appearanceId)) &&
+export function getDesktopPetCapabilities(appearanceId: unknown): DesktopPetCapabilities {
+  const normalized = normalizeDesktopPetAppearanceId(appearanceId);
+  return {
+    taskRun: DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS.has(normalized),
+    dance: DESKTOP_PET_DANCE_APPEARANCE_IDS.has(normalized)
+  };
+}
+
+export function getDesktopPetSignatureActions(appearanceId: unknown): DesktopPetSignatureAction[] {
+  return DESKTOP_PET_SIGNATURE_ACTIONS_BY_APPEARANCE_ID[normalizeDesktopPetAppearanceId(appearanceId)] ?? [];
+}
+
+export function resolveDesktopPetSignatureActions(
+  appearanceId: unknown,
+  signatureActions?: readonly DesktopPetSignatureAction[] | null
+): DesktopPetSignatureAction[] {
+  if (Array.isArray(signatureActions) && signatureActions.length > 0) {
+    return [...signatureActions];
+  }
+  return getDesktopPetSignatureActions(appearanceId);
+}
+
+export function shouldUseDesktopPetTaskRunningAnimation(
+  appearanceId: unknown,
+  runningTaskCount: unknown,
+  capabilities?: DesktopPetCapabilities
+) {
+  const supportsTaskRun = typeof capabilities?.taskRun === "boolean"
+    ? capabilities.taskRun
+    : DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS.has(normalizeDesktopPetAppearanceId(appearanceId));
+  return supportsTaskRun &&
     sanitizeDesktopPetRunningTaskCount(runningTaskCount) > 0;
 }
 

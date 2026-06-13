@@ -11,6 +11,9 @@ import {
 import type {
   DesktopPetAppearanceOption,
   DesktopPetPreviewItemStatus,
+  DesktopPetSignatureAction,
+  DesktopPetSignatureTrigger,
+  DesktopPetSignatureVariant,
   DesktopPetState,
   DesktopPetStatus,
   DesktopPetTaskItem
@@ -22,10 +25,15 @@ import {
   DESKTOP_PET_STATUS_ASSET_NAMES,
   getDesktopPetRunningTaskAnimationDurationMs,
   getDesktopPetStatusAssetPath,
-  isDesktopPetDanceAppearance,
   normalizeDesktopPetAppearanceId,
+  resolveDesktopPetSignatureActions,
   shouldUseDesktopPetTaskRunningAnimation
 } from "../../../shared/desktop-pet";
+import {
+  deriveDesktopPetVisualStatus,
+  type DesktopPetDragDirection,
+  type DesktopPetVisualStatus
+} from "../../../shared/desktop-pet-visual";
 import { PRODUCT_NAME } from "../../../shared/generated/brand";
 
 function createFallbackDesktopPetState(): DesktopPetState {
@@ -50,6 +58,8 @@ function createFallbackDesktopPetState(): DesktopPetState {
     previewPanel: null,
     runningTaskCount: 0,
     edgeDock: null,
+    capabilities: {},
+    signatureActions: [],
     updatedAt: ""
   };
 }
@@ -71,7 +81,10 @@ function normalizePetStatus(status: DesktopPetStatus): DesktopPetStatus {
 }
 
 function formatPetHint(status: DesktopPetStatus) {
-  if (status === "running" || status === "awaiting") {
+  if (status === "awaiting") {
+    return "等待你确认";
+  }
+  if (status === "running") {
     return "思考中";
   }
   if (status === "done") {
@@ -140,19 +153,16 @@ type DesktopPetDragState = {
   lastScreenX: number;
 };
 
-type DesktopPetDragDirection = "left" | "right" | null;
-type DesktopPetVisualStatus =
-  | DesktopPetStatus
-  | "dragging"
-  | "dragging-left"
-  | "dragging-right"
-  | "hover"
-  | "message"
-  | "thinking"
-  | "dancing";
+type ActiveDesktopPetSignature = {
+  actionId: string;
+  trigger: DesktopPetSignatureTrigger;
+  variant: DesktopPetSignatureVariant;
+  assetPath: string;
+};
 
-const DESKTOP_PET_DANCE_DURATION_MS = 3000;
-const DESKTOP_PET_IDOL_PONY_DANCE_DURATION_MS = 5200;
+const DESKTOP_PET_DONE_VISUAL_HOLD_MS = 2500;
+const DESKTOP_PET_ERROR_VISUAL_HOLD_MS = 3000;
+const DESKTOP_PET_IDLE_RANDOM_DELAY_MS = 25000;
 const DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX = 3;
 const DESKTOP_PET_IMAGE_HIT_MARGIN = 8;
 
@@ -193,14 +203,9 @@ function getDesktopPetTaskRunSpritePath(appearanceId: string) {
   return `${getDesktopPetSpriteAssetBasePath(appearanceId)}/task-run-left.webp`;
 }
 
-function getDesktopPetDanceSpritePath(appearanceId: string) {
-  return `${getDesktopPetSpriteAssetBasePath(appearanceId)}/dance.webp`;
-}
-
-function getDesktopPetDanceDurationMs(appearanceId: string) {
-  return appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID || appearanceId === "pony"
-    ? DESKTOP_PET_IDOL_PONY_DANCE_DURATION_MS
-    : DESKTOP_PET_DANCE_DURATION_MS;
+function joinDesktopPetAssetPath(basePath: string, relativePath: string) {
+  const normalizedBasePath = basePath.endsWith("/") ? basePath : `${basePath}/`;
+  return `${normalizedBasePath}${relativePath.replace(/^\/+/u, "")}`;
 }
 
 function resolveDesktopPetAppearanceOption(
@@ -226,19 +231,52 @@ function resolveDesktopPetStatusAssetPath(
   return getDesktopPetStatusAssetPath(appearanceId, status);
 }
 
+function resolveDesktopPetSignatureAssetPath(
+  state: DesktopPetState,
+  appearanceId: string,
+  variantPath: string
+) {
+  const appearance = resolveDesktopPetAppearanceOption(state, appearanceId);
+  const basePath = appearance?.assetBasePath ?? getDesktopPetSpriteAssetBasePath(appearanceId);
+  return joinDesktopPetAssetPath(basePath, variantPath);
+}
+
+function chooseDesktopPetSignatureVariant(action: DesktopPetSignatureAction): DesktopPetSignatureVariant | null {
+  const variants = action.variants.filter((variant) => variant.frameCount > 1 && variant.durationMs > 0 && variant.path.trim());
+  if (variants.length === 0) {
+    return null;
+  }
+  const totalWeight = variants.reduce((sum, variant) => sum + Math.max(1, Math.round(Number(variant.weight) || 1)), 0);
+  let cursor = Math.random() * totalWeight;
+  for (const variant of variants) {
+    cursor -= Math.max(1, Math.round(Number(variant.weight) || 1));
+    if (cursor <= 0) {
+      return variant;
+    }
+  }
+  return variants[variants.length - 1];
+}
+
 export function DesktopPet() {
   const [petState, setPetState] = useState<DesktopPetState>(createFallbackDesktopPetState);
   const [isHovering, setIsHovering] = useState(false);
   const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragDirection, setDragDirection] = useState<DesktopPetDragDirection>(null);
-  const [isDancing, setIsDancing] = useState(false);
+  const [activeSignature, setActiveSignature] = useState<ActiveDesktopPetSignature | null>(null);
+  const [terminalVisualStatus, setTerminalVisualStatus] = useState<"done" | "error" | null>(null);
   const dragStateRef = useRef<DesktopPetDragState | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
-  const danceTimeoutRef = useRef<number | null>(null);
+  const signatureTimeoutRef = useRef<number | null>(null);
+  const idleRandomTimeoutRef = useRef<number | null>(null);
+  const terminalVisualTimeoutRef = useRef<number | null>(null);
   const appearanceIdRef = useRef(DEFAULT_DESKTOP_PET_APPEARANCE_ID);
   const draggingRef = useRef(false);
   const mouseInteractiveRef = useRef(true);
+  const activeSignatureRef = useRef<ActiveDesktopPetSignature | null>(activeSignature);
+  const petStateRef = useRef<DesktopPetState>(petState);
+  activeSignatureRef.current = activeSignature;
+  petStateRef.current = petState;
 
   function clearDragCleanup() {
     dragCleanupRef.current?.();
@@ -266,16 +304,30 @@ export function DesktopPet() {
     setDragDirection(null);
   }
 
-  function clearDanceTimer() {
-    if (danceTimeoutRef.current !== null) {
-      window.clearTimeout(danceTimeoutRef.current);
-      danceTimeoutRef.current = null;
+  function clearSignatureTimer() {
+    if (signatureTimeoutRef.current !== null) {
+      window.clearTimeout(signatureTimeoutRef.current);
+      signatureTimeoutRef.current = null;
     }
   }
 
-  function stopDancing() {
-    clearDanceTimer();
-    setIsDancing(false);
+  function clearIdleRandomTimer() {
+    if (idleRandomTimeoutRef.current !== null) {
+      window.clearTimeout(idleRandomTimeoutRef.current);
+      idleRandomTimeoutRef.current = null;
+    }
+  }
+
+  function clearTerminalVisualTimer() {
+    if (terminalVisualTimeoutRef.current !== null) {
+      window.clearTimeout(terminalVisualTimeoutRef.current);
+      terminalVisualTimeoutRef.current = null;
+    }
+  }
+
+  function stopSignature() {
+    clearSignatureTimer();
+    setActiveSignature(null);
   }
 
   function setMouseInteractive(interactive: boolean) {
@@ -295,17 +347,54 @@ export function DesktopPet() {
     setIsHovering(interactive && !draggingRef.current);
   }
 
-  function startDance() {
-    if (!isDesktopPetDanceAppearance(appearanceIdRef.current) || draggingRef.current) {
+  function startSignature(actionId?: string, trigger: "manual" | "idle-random" = "manual") {
+    if (draggingRef.current) {
       return;
     }
-    const durationMs = getDesktopPetDanceDurationMs(appearanceIdRef.current);
-    clearDanceTimer();
-    setIsDancing(true);
-    danceTimeoutRef.current = window.setTimeout(() => {
-      danceTimeoutRef.current = null;
-      setIsDancing(false);
-    }, durationMs);
+    const currentPetState = petStateRef.current;
+    const currentStatus = normalizePetStatus(currentPetState.status);
+    if (currentStatus !== "idle") {
+      return;
+    }
+    const actions = resolveDesktopPetSignatureActions(
+      appearanceIdRef.current,
+      currentPetState.signatureActions
+    );
+    const action = actions.find((candidate) =>
+      (!actionId || candidate.id === actionId) && candidate.trigger.includes(trigger)
+    );
+    if (!action) {
+      return;
+    }
+    const variant = chooseDesktopPetSignatureVariant(action);
+    if (!variant) {
+      return;
+    }
+    clearSignatureTimer();
+    clearIdleRandomTimer();
+    setActiveSignature({
+      actionId: action.id,
+      trigger,
+      variant,
+      assetPath: resolveDesktopPetSignatureAssetPath(currentPetState, appearanceIdRef.current, variant.path)
+    });
+    signatureTimeoutRef.current = window.setTimeout(() => {
+      signatureTimeoutRef.current = null;
+      setActiveSignature(null);
+    }, variant.durationMs);
+  }
+
+  function shouldInterruptSignature(nextState: DesktopPetState) {
+    const currentSignature = activeSignatureRef.current;
+    const nextStatus = normalizePetStatus(nextState.status);
+    const nextMessagePreview = typeof nextState.messagePreview === "string" ? nextState.messagePreview.trim() : "";
+    return nextStatus !== "idle" ||
+      Math.max(0, Math.round(Number(nextState.runningTaskCount) || 0)) > 0 ||
+      (Array.isArray(nextState.activeTasks) && nextState.activeTasks.length > 0) ||
+      (currentSignature?.trigger !== "manual" && (
+        nextMessagePreview.length > 0 ||
+        Math.max(0, Math.round(Number(nextState.unreadCount) || 0)) > 0
+      ));
   }
 
   function beginDrag(point: { x: number; y: number }) {
@@ -330,18 +419,20 @@ export function DesktopPet() {
     setMouseInteractive(false);
     void window.electronAPI.desktopPet.getState().then((nextState) => {
       setPetState(nextState);
-      if (!nextState.visible || !isDesktopPetDanceAppearance(nextState.appearanceId)) {
-        stopDancing();
+      if (!nextState.visible || shouldInterruptSignature(nextState)) {
+        stopSignature();
       }
     }).catch(() => undefined);
     const dispose = window.electronAPI.desktopPet.onStateChanged((nextState) => {
       setPetState(nextState);
-      if (!nextState.visible || !isDesktopPetDanceAppearance(nextState.appearanceId)) {
-        stopDancing();
+      if (!nextState.visible || shouldInterruptSignature(nextState)) {
+        stopSignature();
       }
     });
     const disposeDanceRequested = typeof window.electronAPI.desktopPet.onDanceRequested === "function"
-      ? window.electronAPI.desktopPet.onDanceRequested(startDance)
+      ? window.electronAPI.desktopPet.onDanceRequested((signatureActionId) => {
+          startSignature(signatureActionId, "manual");
+        })
       : () => undefined;
     const handleWindowMouseMove = (event: globalThis.MouseEvent) => {
       updateMouseInteractivityFromPoint({
@@ -379,34 +470,81 @@ export function DesktopPet() {
       setMouseInteractive(false);
       dispose();
       disposeDanceRequested();
-      clearDanceTimer();
+      clearSignatureTimer();
+      clearIdleRandomTimer();
+      clearTerminalVisualTimer();
       resetLocalDragState();
       void endDrag();
       document.body.classList.remove("desktop-pet-body");
     };
   }, []);
 
-  const displayStatus = useMemo(() => normalizePetStatus(petState.status), [petState.status]);
+  const rawDisplayStatus = useMemo(() => normalizePetStatus(petState.status), [petState.status]);
+  useEffect(() => {
+    clearTerminalVisualTimer();
+    if (rawDisplayStatus !== "done" && rawDisplayStatus !== "error") {
+      setTerminalVisualStatus(null);
+      return undefined;
+    }
+    setTerminalVisualStatus(rawDisplayStatus);
+    terminalVisualTimeoutRef.current = window.setTimeout(() => {
+      terminalVisualTimeoutRef.current = null;
+      setTerminalVisualStatus(null);
+    }, rawDisplayStatus === "done" ? DESKTOP_PET_DONE_VISUAL_HOLD_MS : DESKTOP_PET_ERROR_VISUAL_HOLD_MS);
+    return clearTerminalVisualTimer;
+  }, [rawDisplayStatus]);
+  const displayStatus: DesktopPetStatus = rawDisplayStatus === "done" || rawDisplayStatus === "error"
+    ? terminalVisualStatus ?? "idle"
+    : rawDisplayStatus;
   const unreadCount = Math.max(0, Math.round(Number(petState.unreadCount) || 0));
   const messagePreview = typeof petState.messagePreview === "string" ? petState.messagePreview.trim() : "";
   const activeTasks = Array.isArray(petState.activeTasks) ? petState.activeTasks : [];
   const visibleTasks = activeTasks.slice(0, DESKTOP_PET_TASK_VISIBLE_LIMIT);
   const hiddenTaskCount = Math.max(0, activeTasks.length - visibleTasks.length);
   const previewPanel = petState.previewPanel?.visible ? petState.previewPanel : null;
+  const showTaskPanel = !isDragging && activeTasks.length > 0;
+  const showPreviewPanel = !isDragging && !showTaskPanel && Boolean(previewPanel);
   const hasMessageReaction = displayStatus === "idle" && !isDragging && (messagePreview.length > 0 || unreadCount > 0);
   const canShowHoverReaction = displayStatus === "idle" && !isDragging && !hasMessageReaction;
   const appearanceId = useMemo(
     () => normalizeDesktopPetAppearanceId(petState.appearanceId),
     [petState.appearanceId]
   );
+  const signatureActions = resolveDesktopPetSignatureActions(appearanceId, petState.signatureActions);
   const runningTaskCount = Math.max(0, Math.round(Number(petState.runningTaskCount) || 0));
-  const shouldShowDanceSpriteAnimation = isDancing && isDesktopPetDanceAppearance(appearanceId);
-  const shouldShowTaskRunAnimation = !isDragging && !isDancing &&
-    shouldUseDesktopPetTaskRunningAnimation(appearanceId, runningTaskCount);
+  const canUseTaskRunAnimation = shouldUseDesktopPetTaskRunningAnimation(
+    appearanceId,
+    runningTaskCount,
+    petState.capabilities
+  );
+  const visualStatus: DesktopPetVisualStatus = deriveDesktopPetVisualStatus({
+    displayStatus,
+    isDragging,
+    dragDirection,
+    hasActiveSignature: Boolean(activeSignature),
+    activeSignatureTrigger: activeSignature?.trigger ?? null,
+    shouldShowTaskRunAnimation: canUseTaskRunAnimation,
+    hasMessageReaction,
+    canShowHoverReaction,
+    isHovering,
+    isKeyboardFocused
+  });
+  const shouldShowSignatureSpriteAnimation = visualStatus === "signature" && Boolean(activeSignature);
+  const shouldShowTaskRunAnimation = visualStatus === "running" && canUseTaskRunAnimation;
   const taskRunAnimationDurationMs = getDesktopPetRunningTaskAnimationDurationMs(runningTaskCount);
-  const rootStyle = shouldShowTaskRunAnimation
+  const rootStyle = shouldShowTaskRunAnimation || (shouldShowSignatureSpriteAnimation && activeSignature)
     ? ({
+        ...(shouldShowSignatureSpriteAnimation && activeSignature
+          ? {
+              "--desktop-pet-signature-duration": `${activeSignature.variant.durationMs}ms`,
+              "--desktop-pet-signature-frames": String(activeSignature.variant.frameCount)
+            }
+          : {}),
+        ...(shouldShowTaskRunAnimation
+          ? {
         "--desktop-pet-task-run-animation-duration": `${taskRunAnimationDurationMs}ms`
+            }
+          : {})
       } as CSSProperties)
     : undefined;
   const taskRunSpriteStyle = shouldShowTaskRunAnimation
@@ -414,54 +552,60 @@ export function DesktopPet() {
         backgroundImage: `url("${getDesktopPetTaskRunSpritePath(appearanceId)}")`
       }
     : undefined;
-  const danceSpriteStyle = shouldShowDanceSpriteAnimation
+  const signatureSpriteStyle = shouldShowSignatureSpriteAnimation && activeSignature
     ? {
-        backgroundImage: `url("${getDesktopPetDanceSpritePath(appearanceId)}")`
+        backgroundImage: `url("${activeSignature.assetPath}")`
       }
     : undefined;
   useEffect(() => {
     appearanceIdRef.current = appearanceId;
-    if (!isDesktopPetDanceAppearance(appearanceId)) {
-      stopDancing();
-    }
   }, [appearanceId]);
   useEffect(() => {
     draggingRef.current = isDragging;
     if (isDragging) {
       setMouseInteractive(true);
-      stopDancing();
+      stopSignature();
     }
   }, [isDragging]);
-  const visualStatus: DesktopPetVisualStatus = isDragging
-    ? dragDirection === "left"
-      ? "dragging-left"
-      : dragDirection === "right"
-        ? "dragging-right"
-        : "dragging"
-    : isDancing && isDesktopPetDanceAppearance(appearanceId)
-      ? "dancing"
-    : shouldShowTaskRunAnimation
-      ? "running"
-    : displayStatus === "running" || displayStatus === "awaiting"
-      ? "thinking"
-      : displayStatus === "done" || displayStatus === "error"
-        ? displayStatus
-        : hasMessageReaction
-          ? "message"
-          : canShowHoverReaction && (isHovering || isKeyboardFocused)
-            ? "hover"
-            : "idle";
+  useEffect(() => {
+    clearIdleRandomTimer();
+    if (
+      displayStatus !== "idle" ||
+      isDragging ||
+      activeSignature ||
+      hasMessageReaction ||
+      showTaskPanel ||
+      showPreviewPanel ||
+      !signatureActions.some((action) => action.trigger.includes("idle-random"))
+    ) {
+      return undefined;
+    }
+    idleRandomTimeoutRef.current = window.setTimeout(() => {
+      idleRandomTimeoutRef.current = null;
+      startSignature(undefined, "idle-random");
+    }, DESKTOP_PET_IDLE_RANDOM_DELAY_MS);
+    return clearIdleRandomTimer;
+  }, [
+    displayStatus,
+    isDragging,
+    activeSignature,
+    hasMessageReaction,
+    showTaskPanel,
+    showPreviewPanel,
+    signatureActions,
+    appearanceId
+  ]);
   const assetPath = useMemo(
     () => resolveDesktopPetStatusAssetPath(petState, appearanceId, visualStatus),
     [appearanceId, petState, visualStatus]
   );
-  const statusBubbleText = petState.hint.trim() || formatPetHint(displayStatus);
+  const statusBubbleText = displayStatus === "idle"
+    ? ""
+    : petState.hint.trim() || formatPetHint(displayStatus);
   const bubbleText = visualStatus === "message"
     ? messagePreview || "有新消息"
     : statusBubbleText;
   const inlineBubbleText = formatInlinePetPreview(bubbleText);
-  const showTaskPanel = !isDragging && activeTasks.length > 0;
-  const showPreviewPanel = !isDragging && !showTaskPanel && Boolean(previewPanel);
   const previewTitle = previewPanel ? formatInlinePetPreview(previewPanel.title) : "";
   const previewSummary = previewPanel && previewPanel.expanded
     ? formatInlinePetPreview(previewPanel.summary)
@@ -526,7 +670,7 @@ export function DesktopPet() {
       return;
     }
     setMouseInteractive(true);
-    stopDancing();
+    stopSignature();
     void finishDrag(null, false);
     const target = event.currentTarget;
     dragStateRef.current = {
@@ -630,13 +774,15 @@ export function DesktopPet() {
         "desktop-pet-root",
         `is-${visualStatus}`,
         `is-appearance-${appearanceId}`,
-        shouldShowDanceSpriteAnimation ? "has-dance-animation" : "",
+        shouldShowSignatureSpriteAnimation ? "has-signature-animation" : "",
+        shouldShowSignatureSpriteAnimation && activeSignature?.actionId === "dance" ? "has-dance-animation" : "",
         shouldShowTaskRunAnimation ? "has-task-run-animation" : "",
         showTaskPanel ? "has-tasks" : "",
         showPreviewPanel ? "has-preview" : "",
         showBubble ? "has-bubble" : "",
         petState.edgeDock === "top" ? "is-edge-dock-top" : "",
-        isDragging ? "is-dragging" : ""
+        isDragging ? "is-dragging" : "",
+        visualStatus === "dragging-moving" && dragDirection === "right" ? "is-drag-mirror" : ""
       ].filter(Boolean).join(" ")}
       style={rootStyle}
       aria-label={`${PRODUCT_NAME} 桌面宠物`}
@@ -752,11 +898,11 @@ export function DesktopPet() {
             }
           }}
         >
-          {shouldShowDanceSpriteAnimation ? (
+          {shouldShowSignatureSpriteAnimation ? (
             <span
               aria-hidden="true"
-              className="desktop-pet-image desktop-pet-dance-sprite"
-              style={danceSpriteStyle}
+              className="desktop-pet-image desktop-pet-signature-sprite"
+              style={signatureSpriteStyle}
             />
           ) : shouldShowTaskRunAnimation ? (
             <span

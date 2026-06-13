@@ -377,8 +377,11 @@ const api: DesktopApi = {
       };
     },
     onDanceRequested: (listener: DesktopPetDanceRequestedListener) => {
-      const handleDesktopPetDanceRequested = () => {
-        listener();
+      const handleDesktopPetDanceRequested = (
+        _event: Electron.IpcRendererEvent,
+        signatureActionId?: string
+      ) => {
+        listener(signatureActionId);
       };
 
       ipcRenderer.on("desktopPet.danceRequested", handleDesktopPetDanceRequested);

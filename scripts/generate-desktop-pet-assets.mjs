@@ -17,8 +17,7 @@ const classicVisualVariants = [
   "idle",
   "hover",
   "dragging",
-  "dragging-left",
-  "dragging-right",
+  "dragging-moving",
   "thinking",
   "message",
   "done",
@@ -88,8 +87,7 @@ const defaultSourceAssetNames = [
 
 const communityFrameSelections = {
   dragging: { row: 4, column: 2 },
-  "dragging-left": { row: 1, column: 2 },
-  "dragging-right": { row: 1, column: 2, mirrorX: true },
+  "dragging-moving": { row: 1, column: 2 },
   done: { row: 4, column: 3 },
   error: { row: 5, column: 5 },
   hover: { row: 3, column: 1 },
@@ -100,8 +98,7 @@ const communityFrameSelections = {
 
 const xiaoFrameSelections = {
   dragging: { row: 7, column: 2 },
-  "dragging-left": { row: 7, column: 2 },
-  "dragging-right": { row: 7, column: 2, mirrorX: true },
+  "dragging-moving": { row: 7, column: 2 },
   done: { row: 6, column: 4 },
   error: { row: 5, column: 3 },
   hover: { row: 6, column: 1 },
@@ -622,15 +619,9 @@ function drawSpark(ctx) {
 }
 
 function renderPetVariant(variant) {
-  const resolvedVariant = variant === "dragging-left" || variant === "dragging-right"
-    ? "dragging"
-    : variant;
+  const resolvedVariant = variant === "dragging-moving" ? "dragging" : variant;
   const canvas = createCanvas(size.width, size.height);
   const ctx = canvas.getContext("2d");
-  if (variant === "dragging-right") {
-    ctx.translate(size.width, 0);
-    ctx.scale(-1, 1);
-  }
   drawBackdrop(ctx);
   drawHead(ctx, resolvedVariant);
   drawBody(ctx, resolvedVariant);
@@ -961,8 +952,7 @@ async function renderScriptedAppearance(appearance) {
     buffers.set(variant, crispSourceBuffer);
   }
   buffers.set("dragging", drawXiaoSourceVariant(subjectCanvas, { rotate: -0.04 }));
-  buffers.set("dragging-left", drawXiaoSourceVariant(subjectCanvas, { offsetX: -8, rotate: -0.05 }));
-  buffers.set("dragging-right", drawXiaoSourceVariant(subjectCanvas, { mirrorX: true, offsetX: 8, rotate: 0.05 }));
+  buffers.set("dragging-moving", drawXiaoSourceVariant(subjectCanvas, { offsetX: -8, rotate: -0.05 }));
   return {
     buffers,
     spritesheetBuffer: spritesheet.toBuffer("image/webp"),
