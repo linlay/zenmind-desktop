@@ -4,7 +4,7 @@ import path from "node:path";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../../shared/contracts";
 import { DEFAULT_DESKTOP_PET_APPEARANCE_ID } from "../../shared/desktop-pet";
-import { extractArchiveToDir, listArchiveEntries } from "../archive-utils";
+import { extractArchiveToDir, listArchiveEntriesAsync } from "../archive-utils";
 import {
   listUserDesktopPetAppearanceOptions,
   listUserDesktopPets,
@@ -184,7 +184,7 @@ export async function installPetMarketItem(
     throw new Error(t("market.pet.invalidId"));
   }
   try {
-    const entries = listArchiveEntries(archivePath);
+    const entries = await listArchiveEntriesAsync(archivePath);
     assertSafeArchiveEntries(entries);
     if (!hasPetBaseAssets(entries)) {
       throw new Error(t("market.pet.invalidPackage"));

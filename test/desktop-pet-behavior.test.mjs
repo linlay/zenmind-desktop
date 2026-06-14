@@ -10,6 +10,7 @@ const {
   getDesktopPetContextMenuItems
 } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
 const {
+  DESKTOP_PET_APPEARANCE_OPTIONS,
   resolveDesktopPetSignatureActions
 } = require("../dist-electron/shared/desktop-pet.js");
 
@@ -214,7 +215,8 @@ test("desktop pet context menu exposes manual signature actions", () => {
   ]);
 });
 
-test("desktop pet keeps built-in dance available when state signature actions are empty", () => {
+test("desktop pet keeps built-in dance available only for the default pet", () => {
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id), ["classic"]);
   assert.deepEqual(resolveDesktopPetSignatureActions("classic", [])[0], {
     id: "dance",
     label: "跳舞",
@@ -229,7 +231,22 @@ test("desktop pet keeps built-in dance available when state signature actions ar
     ]
   });
 
-  assert.deepEqual(getDesktopPetContextMenuItems("pony", [])[0], {
+  assert.deepEqual(resolveDesktopPetSignatureActions("user:pony", []), []);
+  const ponyDanceAction = {
+    id: "dance",
+    label: "跳舞",
+    trigger: ["manual", "idle-random"],
+    variants: [
+      {
+        path: "dance.webp",
+        frameCount: 30,
+        durationMs: 5200,
+        weight: 1
+      }
+    ]
+  };
+  assert.deepEqual(resolveDesktopPetSignatureActions("user:pony", [ponyDanceAction]), [ponyDanceAction]);
+  assert.deepEqual(getDesktopPetContextMenuItems("user:pony", [ponyDanceAction])[0], {
     action: "signature",
     signatureActionId: "dance",
     label: "跳舞"

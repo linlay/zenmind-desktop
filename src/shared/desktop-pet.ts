@@ -32,34 +32,6 @@ export const DESKTOP_PET_APPEARANCE_OPTIONS = [
     description: "默认蓝色形象，保持现有宠物外观。",
     assetBasePath: "./desktop-pet",
     previewAssetPath: "./desktop-pet/pet-idle.png"
-  },
-  {
-    id: "dario",
-    displayName: "Dario",
-    description: "皱眉卷发的宠物，适合高压专注时刻。",
-    assetBasePath: "./desktop-pet/dario",
-    previewAssetPath: "./desktop-pet/dario/pet-idle.png"
-  },
-  {
-    id: "sama",
-    displayName: "Mini Sama",
-    description: "焦虑又机灵的宠物，适合董事会混乱能量。",
-    assetBasePath: "./desktop-pet/sama",
-    previewAssetPath: "./desktop-pet/sama/pet-idle.png"
-  },
-  {
-    id: "xiao",
-    displayName: "小肖",
-    description: "黑发西装形象，带着花束和金色奖杯。",
-    assetBasePath: "./desktop-pet/xiao",
-    previewAssetPath: "./desktop-pet/xiao/pet-idle.png"
-  },
-  {
-    id: "pony",
-    displayName: "小凌",
-    description: "侧马尾 Q 版形象，带着爱心和麦克风。",
-    assetBasePath: "./desktop-pet/pony",
-    previewAssetPath: "./desktop-pet/pony/pet-idle.png"
   }
 ] as const;
 
@@ -69,26 +41,11 @@ const LEGACY_DESKTOP_PET_BOUND_AGENT_KEY_ALIASES: Record<string, string> = {
 };
 
 const DESKTOP_PET_APPEARANCE_IDS: Set<string> = new Set(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id));
-const DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID, "pony", "xiao"]);
-const DESKTOP_PET_DANCE_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID, "pony"]);
+const DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID]);
+const DESKTOP_PET_DANCE_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID]);
 const USER_DESKTOP_PET_APPEARANCE_PATTERN = /^user:[a-z0-9][a-z0-9._-]{0,79}$/u;
 const DESKTOP_PET_SIGNATURE_ACTIONS_BY_APPEARANCE_ID: Record<string, DesktopPetSignatureAction[]> = {
   [DEFAULT_DESKTOP_PET_APPEARANCE_ID]: [
-    {
-      id: "dance",
-      label: "跳舞",
-      trigger: ["manual", "idle-random"],
-      variants: [
-        {
-          path: "dance.webp",
-          frameCount: 30,
-          durationMs: 5200,
-          weight: 1
-        }
-      ]
-    }
-  ],
-  pony: [
     {
       id: "dance",
       label: "跳舞",

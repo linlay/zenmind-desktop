@@ -2,9 +2,20 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
+import JSZip from "jszip";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outputDirectory = path.resolve(__dirname, "..", "public", "desktop-pet");
+const configuredMarketPetsRoot = process.env.ZENMIND_PETS_ROOT
+  ? path.resolve(process.env.ZENMIND_PETS_ROOT)
+  : null;
+const marketPetRootDirectory = configuredMarketPetsRoot ?? path.resolve(__dirname, "..", "build", "market-pets");
+const marketPetPackageDirectory = configuredMarketPetsRoot
+  ? path.join(marketPetRootDirectory, "dist")
+  : marketPetRootDirectory;
+const marketPetSourceDirectory = configuredMarketPetsRoot
+  ? marketPetRootDirectory
+  : path.join(marketPetRootDirectory, "expanded");
 const sourceAssetDirectory = path.resolve(__dirname, "assets", "desktop-pet");
 const defaultSourceAssetDirectory = path.join(sourceAssetDirectory, "zenmi");
 
@@ -77,6 +88,57 @@ const optionalCommunityAssetNames = [
   "task-run-left.webp",
   "dance.webp"
 ];
+
+const marketPetDefinitions = [
+  {
+    id: "dario",
+    displayName: "Dario",
+    description: "皱眉卷发的宠物，适合高压专注时刻。",
+    tags: ["desktop-pet", "focus"]
+  },
+  {
+    id: "sama",
+    displayName: "Mini Sama",
+    description: "焦虑又机灵的宠物，适合董事会混乱能量。",
+    tags: ["desktop-pet", "assistant"]
+  },
+  {
+    id: "xiao",
+    displayName: "小肖",
+    description: "黑发西装形象，带着花束和金色奖杯。",
+    tags: ["desktop-pet", "task-run"],
+    capabilities: {
+      taskRun: true
+    }
+  },
+  {
+    id: "pony",
+    displayName: "小凌",
+    description: "侧马尾 Q 版形象，带着爱心和麦克风。",
+    tags: ["desktop-pet", "task-run", "dance"],
+    capabilities: {
+      taskRun: true,
+      dance: true
+    },
+    signatureActions: [
+      {
+        id: "dance",
+        label: "跳舞",
+        trigger: ["manual", "idle-random"],
+        variants: [
+          {
+            path: "dance.webp",
+            frameCount: 30,
+            durationMs: 5200,
+            weight: 1
+          }
+        ]
+      }
+    ]
+  }
+];
+
+const marketPetDefinitionById = new Map(marketPetDefinitions.map((definition) => [definition.id, definition]));
 
 const defaultSourceAssetNames = [
   ...classicVisualVariants.map((variant) => `pet-${variant}.png`),
@@ -998,12 +1060,81 @@ async function copyDefaultZenmiAssets() {
   }
 }
 
+async function writeMarketPetManifest(directory, petId) {
+  const definition = marketPetDefinitionById.get(petId);
+  if (!definition) {
+    throw new Error(`Missing market pet definition for ${petId}`);
+  }
+  const manifest = {
+    id: definition.id,
+    displayName: definition.displayName,
+    version: "1.0.0",
+    description: definition.description,
+    tags: definition.tags,
+    previewAssetPath: "pet-idle.png",
+    ...(definition.capabilities ? { capabilities: definition.capabilities } : {}),
+    ...(definition.signatureActions ? { signatureActions: definition.signatureActions } : {})
+  };
+  await fs.writeFile(path.join(directory, "pet.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
+async function addDirectoryToZip(zip, directory, zipPrefix) {
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name === ".DS_Store") {
+      continue;
+    }
+    const sourcePath = path.join(directory, entry.name);
+    const zipPath = `${zipPrefix}/${entry.name}`;
+    if (entry.isDirectory()) {
+      zip.folder(zipPath);
+      await addDirectoryToZip(zip, sourcePath, zipPath);
+      continue;
+    }
+    if (entry.isFile()) {
+      zip.file(zipPath, await fs.readFile(sourcePath));
+    }
+  }
+}
+
+async function writeMarketPetZip(petId) {
+  const sourceDirectory = path.join(marketPetSourceDirectory, petId);
+  const zip = new JSZip();
+  zip.folder(petId);
+  await addDirectoryToZip(zip, sourceDirectory, petId);
+  const content = await zip.generateAsync({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+    compressionOptions: {
+      level: 9
+    }
+  });
+  await fs.writeFile(path.join(marketPetPackageDirectory, `${petId}.zip`), content);
+}
+
+async function resetMarketPetOutput() {
+  if (!configuredMarketPetsRoot) {
+    await fs.rm(marketPetRootDirectory, { recursive: true, force: true });
+    return;
+  }
+
+  await fs.mkdir(marketPetRootDirectory, { recursive: true });
+  for (const definition of marketPetDefinitions) {
+    await fs.rm(path.join(marketPetRootDirectory, definition.id), { recursive: true, force: true });
+  }
+  await fs.rm(marketPetPackageDirectory, { recursive: true, force: true });
+}
+
+await fs.rm(outputDirectory, { recursive: true, force: true });
+await resetMarketPetOutput();
 await fs.mkdir(outputDirectory, { recursive: true });
+await fs.mkdir(marketPetSourceDirectory, { recursive: true });
+await fs.mkdir(marketPetPackageDirectory, { recursive: true });
 await copyDefaultZenmiAssets();
 
 for (const appearance of scriptedAppearances) {
   const renderedAppearance = await renderScriptedAppearance(appearance);
-  const appearanceOutputDirectory = path.join(outputDirectory, appearance.id);
+  const appearanceOutputDirectory = path.join(marketPetSourceDirectory, appearance.id);
   await writeVariantFiles(appearanceOutputDirectory, renderedAppearance.buffers);
   if (renderedAppearance.spritesheetBuffer) {
     await fs.writeFile(path.join(appearanceOutputDirectory, "spritesheet.webp"), renderedAppearance.spritesheetBuffer);
@@ -1017,7 +1148,7 @@ const communityBuffersById = new Map();
 for (const appearance of communityAppearances) {
   const buffers = await renderCommunityAppearance(appearance);
   communityBuffersById.set(appearance.id, buffers);
-  const appearanceOutputDirectory = path.join(outputDirectory, appearance.id);
+  const appearanceOutputDirectory = path.join(marketPetSourceDirectory, appearance.id);
   await writeVariantFiles(appearanceOutputDirectory, buffers);
   if (appearance.publishSpritesheet !== false) {
     await fs.copyFile(
@@ -1038,4 +1169,9 @@ for (const appearance of communityAppearances) {
       }
     }
   }
+}
+
+for (const definition of marketPetDefinitions) {
+  await writeMarketPetManifest(path.join(marketPetSourceDirectory, definition.id), definition.id);
+  await writeMarketPetZip(definition.id);
 }

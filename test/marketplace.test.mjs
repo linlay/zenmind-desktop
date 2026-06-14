@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const JSZip = require("jszip");
 const {
   buildSandboxImage,
   DEFAULT_MARKETPLACE_CATALOG_URL,
@@ -113,24 +114,21 @@ function writeRootSkillArchive(root, options = {}) {
   return archivePath;
 }
 
-function writePetArchive(root, options = {}) {
+async function writePetArchive(root, options = {}) {
   const petId = options.id ?? "cloud-pet";
-  const fixtureRoot = path.join(root, `fixture-${petId}`);
-  const petRoot = path.join(fixtureRoot, petId);
-  const archivePath = path.join(root, `${petId}.tar.gz`);
-  fs.mkdirSync(petRoot, { recursive: true });
-  fs.writeFileSync(
-    path.join(petRoot, "pet.json"),
+  const archivePath = path.join(root, `${petId}.zip`);
+  const zip = new JSZip();
+  zip.file(
+    `${petId}/pet.json`,
     `${JSON.stringify({
       id: petId,
       displayName: options.displayName ?? "Cloud Pet",
       version: options.version ?? "1.0.0",
       description: "Cloud desktop pet"
     }, null, 2)}\n`,
-    "utf8"
   );
-  fs.writeFileSync(path.join(petRoot, "pet-idle.png"), "fake png", "utf8");
-  execFileSync("tar", ["-czf", archivePath, "-C", fixtureRoot, petId]);
+  zip.file(`${petId}/pet-idle.png`, "fake png");
+  fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
   return archivePath;
 }
 
@@ -1122,10 +1120,10 @@ test("listMarketItems exposes pet and cli catalog sections", async (t) => {
         },
         assets: {
           universal: {
-            url: "https://assets.example.test/desk-cat.tar.gz",
+            url: "https://assets.example.test/desk-cat.zip",
             sha256: "",
             sizeBytes: 0,
-            archiveType: "pet"
+            archiveType: "zip"
           }
         }
       },
@@ -1161,12 +1159,12 @@ test("listMarketItems exposes pet and cli catalog sections", async (t) => {
 test("installMarketItem installs pet packages into desktop pet data", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-pet-install-"));
   const app = createApp(root);
-  const archivePath = writePetArchive(root, { id: "desk-cat", displayName: "Desk Cat" });
+  const archivePath = await writePetArchive(root, { id: "desk-cat", displayName: "Desk Cat" });
   const archiveBytes = fs.readFileSync(archivePath);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   await withFixtureServer(new Map([
-    ["/desk-cat.tar.gz", archiveBytes]
+    ["/desk-cat.zip", archiveBytes]
   ]), async (baseUrl) => {
     const result = await installMarketItem(app, "desk-cat", {
       catalog: {
@@ -1180,10 +1178,10 @@ test("installMarketItem installs pet packages into desktop pet data", async (t) 
           tags: ["pet"],
           assets: {
             universal: {
-              url: `${baseUrl}/desk-cat.tar.gz`,
+              url: `${baseUrl}/desk-cat.zip`,
               sha256: sha256(archivePath),
               sizeBytes: archiveBytes.length,
-              archiveType: "pet"
+              archiveType: "zip"
             }
           }
         }]

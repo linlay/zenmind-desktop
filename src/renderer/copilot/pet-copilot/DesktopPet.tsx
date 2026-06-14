@@ -199,8 +199,10 @@ function getDesktopPetSpriteAssetBasePath(appearanceId: string) {
     : `./desktop-pet/${appearanceId}`;
 }
 
-function getDesktopPetTaskRunSpritePath(appearanceId: string) {
-  return `${getDesktopPetSpriteAssetBasePath(appearanceId)}/task-run-left.webp`;
+function resolveDesktopPetTaskRunAssetPath(state: DesktopPetState, appearanceId: string) {
+  const appearance = resolveDesktopPetAppearanceOption(state, appearanceId);
+  const basePath = appearance?.assetBasePath ?? getDesktopPetSpriteAssetBasePath(appearanceId);
+  return joinDesktopPetAssetPath(basePath, "task-run-left.webp");
 }
 
 function joinDesktopPetAssetPath(basePath: string, relativePath: string) {
@@ -549,7 +551,7 @@ export function DesktopPet() {
     : undefined;
   const taskRunSpriteStyle = shouldShowTaskRunAnimation
     ? {
-        backgroundImage: `url("${getDesktopPetTaskRunSpritePath(appearanceId)}")`
+        backgroundImage: `url("${resolveDesktopPetTaskRunAssetPath(petState, appearanceId)}")`
       }
     : undefined;
   const signatureSpriteStyle = shouldShowSignatureSpriteAnimation && activeSignature
