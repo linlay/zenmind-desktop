@@ -84,8 +84,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
       }
     },
     market: {
-      apiBaseUrl: "https://market.zenmind.cc/api/v1",
-      skillsApiBaseUrl: "https://market.zenmind.cc/api/v1"
+      apiBaseUrl: "https://market.example.test/api/v1"
     },
     sso: {
       enabled: true,
@@ -125,8 +124,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
   assert.equal(pet.enabled, false);
   assert.equal(pet.selectedPetId, "builtin:zenmi");
   assert.equal("boundAgentKey" in pet, false);
-  assert.equal(market.marketApiBaseUrl, "https://market.zenmind.cc/api/v1");
-  assert.equal(market.skillsApiBaseUrl, "https://market.zenmind.cc/api/v1");
+  assert.equal(market.marketApiBaseUrl, "https://market.example.test/api/v1");
   assert.equal(sso.enabled, true);
   assert.equal(website.id, "docs");
   assert.equal(website.kind, "website");
@@ -266,8 +264,7 @@ test("desktop-default SSO helper fills missing SSO even after bootstrap was mark
       }
     },
     market: {
-      apiBaseUrl: "https://market.zenmind.cc/api/v1",
-      skillsApiBaseUrl: "https://market.zenmind.cc/api/v1"
+      apiBaseUrl: "https://market.example.test/api/v1"
     },
     sso: {
       enabled: true,

@@ -57,10 +57,7 @@ import {
   uninstallMarketItem,
   updateMarketItem
 } from "./marketplace";
-import {
-  normalizeMarketApiBaseUrl,
-  normalizeSkillsApiBaseUrl
-} from "./marketplace/common";
+import { normalizeMarketApiBaseUrl } from "./marketplace/common";
 import {
   TUNNEL_HUB_AGENT_SERVICE_ID,
   readTunnelHubAgentSettings,
@@ -326,8 +323,7 @@ function readAgentKey(args: Record<string, unknown>) {
 function validateMarketSettings(input: Record<string, unknown>) {
   try {
     const settings = saveMarketSettingsPreview(input, {
-      marketApiBaseUrl: "",
-      skillsApiBaseUrl: ""
+      marketApiBaseUrl: ""
     });
     return {
       valid: true,
@@ -347,14 +343,12 @@ function validateMarketSettings(input: Record<string, unknown>) {
 
 function saveMarketSettingsPreview(
   input: Record<string, unknown>,
-  current: { marketApiBaseUrl: string; skillsApiBaseUrl: string }
+  current: { marketApiBaseUrl: string }
 ) {
   const rawMarketUrl = typeof input.marketApiBaseUrl === "string" ? input.marketApiBaseUrl.trim() : "";
   const legacyMarketUrl = typeof input.apiBaseUrl === "string" ? input.apiBaseUrl.trim() : "";
-  const rawSkillsUrl = typeof input.skillsApiBaseUrl === "string" ? input.skillsApiBaseUrl.trim() : "";
   return {
-    marketApiBaseUrl: normalizeMarketApiBaseUrl(rawMarketUrl || legacyMarketUrl || current.marketApiBaseUrl),
-    skillsApiBaseUrl: normalizeSkillsApiBaseUrl(rawSkillsUrl || current.skillsApiBaseUrl)
+    marketApiBaseUrl: normalizeMarketApiBaseUrl(rawMarketUrl || legacyMarketUrl || current.marketApiBaseUrl)
   };
 }
 
@@ -978,13 +972,8 @@ async function executeAction(
             field: "marketApiBaseUrl",
             from: current.marketApiBaseUrl,
             to: next.marketApiBaseUrl
-          },
-          {
-            field: "skillsApiBaseUrl",
-            from: current.skillsApiBaseUrl,
-            to: next.skillsApiBaseUrl
           }
-        ]
+        ].filter((change) => change.from !== change.to)
       });
     }
     case "desktop.market.applySettingsPatch":

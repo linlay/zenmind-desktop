@@ -11,7 +11,7 @@ import { getDesktopConfigRoot, getSecretsRoot, getServiceConfigRoot } from "./us
 import { writeEnvFileUpdates } from "./services/manager/env-content";
 
 export const TUNNEL_HUB_AGENT_SERVICE_ID = "tunnel-hub-agent";
-export const DEFAULT_TUNNEL_HUB_AGENT_RELAY_URL = "wss://tunnel-hub.zenmind.cc/tunnel";
+export const DEFAULT_TUNNEL_HUB_AGENT_RELAY_URL = "";
 const DEFAULT_RECONNECT_SECONDS = 3;
 const MIN_RECONNECT_SECONDS = 1;
 const MAX_RECONNECT_SECONDS = 3600;

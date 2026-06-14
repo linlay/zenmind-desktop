@@ -23,7 +23,6 @@ export interface MarketViewProps {
 }
 
 export const DEFAULT_MARKET_TAB: MarketTab = "plugins";
-export const DEFAULT_SKILLS_API_BASE_URL = "https://market.zenmind.cc/api/v1";
 
 const MARKET_TAB_KEYS: Record<MarketTab, { label: TranslationKey; title: TranslationKey; subtitle: TranslationKey }> = {
   plugins: {

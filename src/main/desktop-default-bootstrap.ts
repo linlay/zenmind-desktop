@@ -189,13 +189,11 @@ function applyMarketDefaults(app: App, marketDefaults: unknown): BootstrapApplyR
     return "absent";
   }
   const marketApiBaseUrl = readText(marketDefaults.apiBaseUrl) || readText(marketDefaults.marketApiBaseUrl);
-  const skillsApiBaseUrl = readText(marketDefaults.skillsApiBaseUrl);
-  if (!marketApiBaseUrl && !skillsApiBaseUrl) {
+  if (!marketApiBaseUrl) {
     return "absent";
   }
   return writeMarketSettingsIfAbsent(app, {
-    marketApiBaseUrl: marketApiBaseUrl || undefined,
-    skillsApiBaseUrl: skillsApiBaseUrl || undefined
+    marketApiBaseUrl
   }) ? "applied" : "skipped";
 }
 

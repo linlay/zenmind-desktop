@@ -3,11 +3,9 @@ import type { MarketCommandResult, MarketListResult, MarketItemType, MarketSecti
 import {
   DEFAULT_MARKET_API_BASE_URL,
   DEFAULT_MARKETPLACE_CATALOG_URL,
-  DEFAULT_SKILLS_API_BASE_URL,
   getMarketSettings,
   upsertInstalledRecord,
   normalizeCatalog,
-  normalizeSkillsApiBaseUrl,
   readInstalledRecords,
   removeInstalledRecord,
   saveMarketSettings,
@@ -55,7 +53,6 @@ import {
 export {
   DEFAULT_MARKET_API_BASE_URL,
   DEFAULT_MARKETPLACE_CATALOG_URL,
-  DEFAULT_SKILLS_API_BASE_URL,
   getMarketSettings,
   saveMarketSettings,
   writeMarketSettingsIfAbsent
@@ -86,7 +83,7 @@ function combineMarketSections(
   cliMarket: MarketSectionResult,
   websiteAppMarket: MarketSectionResult
 ): MarketListResult {
-  const message = [
+  const message = [...new Set([
     pluginMarket.message,
     skillMarket.message,
     agentMarket.message,
@@ -94,7 +91,7 @@ function combineMarketSections(
     petMarket.message,
     cliMarket.message,
     websiteAppMarket.message
-  ].filter(Boolean).join(" ");
+  ].filter(Boolean))].join(" ");
   return {
     ok: true,
     sourceUrl: websiteAppMarket.sourceUrl || cliMarket.sourceUrl || petMarket.sourceUrl || sandboxImageMarket.sourceUrl || agentMarket.sourceUrl || skillMarket.sourceUrl || pluginMarket.sourceUrl || DEFAULT_MARKETPLACE_CATALOG_URL,
@@ -304,7 +301,6 @@ export { buildSandboxImage, deleteSandboxImage, exportSandboxImageToPath, import
 
 export const __testInternals = {
   normalizeCatalog,
-  normalizeSkillsApiBaseUrl,
   selectAsset,
   readInstalledRecords
 };

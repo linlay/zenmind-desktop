@@ -12,7 +12,6 @@ const require = createRequire(import.meta.url);
 const {
   buildSandboxImage,
   DEFAULT_MARKETPLACE_CATALOG_URL,
-  DEFAULT_SKILLS_API_BASE_URL,
   deleteSandboxImage,
   exportSandboxImageToPath,
   getMarketSettings,
@@ -324,18 +323,6 @@ async function withEnvPatch(patch, fn) {
   }
 }
 
-function skillsEnvelope(items, pagination = {}) {
-  return JSON.stringify({
-    success: true,
-    data: items,
-    pagination: {
-      page: pagination.page ?? 1,
-      limit: pagination.limit ?? items.length,
-      total: pagination.total ?? items.length
-    }
-  });
-}
-
 async function withFixtureServer(files, fn) {
   const server = http.createServer((req, res) => {
     const requestUrl = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -366,9 +353,8 @@ async function withFixtureServer(files, fn) {
   }
 }
 
-test("DEFAULT_MARKETPLACE_CATALOG_URL points at the official marketplace catalog", () => {
-  assert.equal(DEFAULT_MARKETPLACE_CATALOG_URL, "https://market.zenmind.cc/api/v1/desktop/catalog");
-  assert.equal(DEFAULT_SKILLS_API_BASE_URL, "https://market.zenmind.cc/api/v1");
+test("DEFAULT_MARKETPLACE_CATALOG_URL is empty until env config provides a market API", () => {
+  assert.equal(DEFAULT_MARKETPLACE_CATALOG_URL, "");
 });
 
 test("normalizeCatalog keeps the seven public market types", () => {
@@ -424,103 +410,106 @@ test("normalizeCatalog keeps the seven public market types", () => {
   ]);
 });
 
-test("refreshMarketCatalog combines catalog plugins with Skills API skills", async (t) => {
+test("refreshMarketCatalog combines catalog plugins with catalog skills", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-list-"));
   const app = createApp(root);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  await withFixtureServer(new Map([[
-    "/api/v1/skills?page=1&limit=100",
-    skillsEnvelope([
+  const catalog = JSON.stringify({
+    schemaVersion: 1,
+    items: [
       {
-        id: 1,
-        name: "remote-skill",
-        display_name: "Remote Skill",
+        id: "remote-skill",
+        type: "skill",
+        name: "Remote Skill",
+        version: "1.0.0",
         description: "Remote skill",
-        latest_version: "1.0.0",
         tags: ["remote"],
-        status: "active"
-      }
-    ])
-  ]]), async (skillsBaseUrl) => {
-    const catalog = JSON.stringify({
-      schemaVersion: 1,
-      items: [
-        {
-          id: "old-catalog-skill",
-          type: "skill",
-          name: "Old Catalog Skill",
-          version: "1.0.0",
-          description: "Should be ignored",
-          tags: [],
-          assets: {}
-        },
-        {
-          id: "remote-plugin",
-          type: "plugin",
-          name: "Remote Plugin",
-          version: "1.0.0",
-          description: "Remote plugin",
-          tags: [],
-          assets: {}
+        assets: {
+          universal: {
+            url: "https://assets.example.test/remote-skill.tar.gz",
+            sha256: "",
+            sizeBytes: 0,
+            archiveType: "tar.gz"
+          }
         }
-      ]
-    });
-    const files = new Map([["/marketplace/index.json", catalog]]);
-    await withFixtureServer(files, async (catalogBaseUrl) => {
-      const catalogUrl = `${catalogBaseUrl}/marketplace/index.json`;
-      const refreshed = await refreshMarketCatalog(app, { catalogUrl, skillsApiBaseUrl: skillsBaseUrl });
-      const listed = await listMarketItems(app, { catalogUrl, skillsApiBaseUrl: skillsBaseUrl });
+      },
+      {
+        id: "remote-plugin",
+        type: "plugin",
+        name: "Remote Plugin",
+        version: "1.0.0",
+        description: "Remote plugin",
+        tags: [],
+        assets: {}
+      }
+    ]
+  });
+  const files = new Map([["/marketplace/index.json", catalog]]);
+  await withFixtureServer(files, async (catalogBaseUrl) => {
+    const catalogUrl = `${catalogBaseUrl}/marketplace/index.json`;
+    const refreshed = await refreshMarketCatalog(app, { catalogUrl, sections: ["plugins", "skills"] });
+    const listed = await listMarketItems(app, { catalogUrl, sections: ["plugins", "skills"] });
 
-      assert.equal(refreshed.ok, true);
-      assert.equal(listed.ok, true);
-      assert.equal(listed.items.some((item) => item.id === "old-catalog-skill"), false);
-      assert.equal(listed.items.find((item) => item.id === "remote-skill")?.type, "skill");
-      assert.equal(listed.items.find((item) => item.id === "remote-skill")?.state, "not-installed");
-      assert.equal(listed.items.find((item) => item.id === "remote-plugin")?.type, "plugin");
-    });
+    assert.equal(refreshed.ok, true);
+    assert.equal(listed.ok, true);
+    assert.equal(listed.items.find((item) => item.id === "remote-skill")?.type, "skill");
+    assert.equal(listed.items.find((item) => item.id === "remote-skill")?.state, "not-installed");
+    assert.equal(listed.items.find((item) => item.id === "remote-plugin")?.type, "plugin");
   });
 });
 
-test("listMarketItems reads all Skills API pages", async (t) => {
+test("listMarketItems reads skill entries from the catalog", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-pages-"));
   const app = createApp(root);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  await withFixtureServer(new Map([
-    ["/api/v1/skills?page=1&limit=100", skillsEnvelope([
-      { name: "first-skill", display_name: "First Skill", description: "First", latest_version: "1.0.0" }
-    ], { page: 1, limit: 1, total: 2 })],
-    ["/api/v1/skills?page=2&limit=100", skillsEnvelope([
-      { name: "second-skill", display_name: "Second Skill", description: "Second", latest_version: "1.0.0" }
-    ], { page: 2, limit: 1, total: 2 })]
-  ]), async (skillsBaseUrl) => {
-    const result = await listMarketItems(app, {
-      catalog: { schemaVersion: 1, items: [] },
-      skillsApiBaseUrl: skillsBaseUrl
-    });
-
-    assert.equal(result.items.filter((item) => item.type === "skill").length, 2);
-    assert.ok(result.items.some((item) => item.id === "first-skill"));
-    assert.ok(result.items.some((item) => item.id === "second-skill"));
+  const result = await listMarketItems(app, {
+    catalog: {
+      schemaVersion: 1,
+      items: [
+        {
+          id: "first-skill",
+          type: "skill",
+          name: "First Skill",
+          version: "1.0.0",
+          description: "First",
+          tags: [],
+          assets: {}
+        },
+        {
+          id: "second-skill",
+          type: "skill",
+          name: "Second Skill",
+          version: "1.0.0",
+          description: "Second",
+          tags: [],
+          assets: {}
+        }
+      ]
+    },
+    sections: ["skills"]
   });
+
+  assert.equal(result.items.filter((item) => item.type === "skill").length, 2);
+  assert.ok(result.items.some((item) => item.id === "first-skill"));
+  assert.ok(result.items.some((item) => item.id === "second-skill"));
 });
 
-test("listMarketItems keeps skill cloud download command-only when no Skills API is configured", async (t) => {
+test("listMarketItems reports an offline market when no market API is configured", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-command-only-"));
   const app = createApp(root);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  const result = await listMarketItems(app, {
-    catalog: { schemaVersion: 1, items: [] }
-  });
+  const result = await listMarketItems(app, { sections: ["skills"] });
 
   assert.equal(result.ok, true);
-  assert.equal(result.offline, false);
-  assert.doesNotMatch(result.message, /技能市场暂不可用/);
+  assert.equal(result.offline, true);
+  assert.equal(result.sourceUrl, "");
+  assert.equal(result.items.length, 0);
 });
 
-test("listMarketItems reports plugin and skill marketplace status separately", async (t) => {
+test("listMarketItems reports marketplace status for selected catalog sections", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-section-status-"));
   const app = createApp(root);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -529,22 +518,19 @@ test("listMarketItems reports plugin and skill marketplace status separately", a
     ["/marketplace/index.json", (_req, res) => {
       res.statusCode = 403;
       res.end("forbidden");
-    }],
-    ["/api/v1/skills?page=1&limit=100", skillsEnvelope([
-      { name: "visible-skill", display_name: "Visible Skill", description: "Visible", latest_version: "1.0.0" }
-    ])]
+    }]
   ]), async (baseUrl) => {
     const result = await listMarketItems(app, {
       catalogUrl: `${baseUrl}/marketplace/index.json`,
-      skillsApiBaseUrl: baseUrl
+      sections: ["plugins", "skills"]
     });
 
     assert.equal(result.offline, true);
     assert.equal(result.pluginOffline, true);
     assert.match(result.pluginMessage, /403/);
-    assert.equal(result.skillOffline, false);
-    assert.doesNotMatch(result.skillMessage, /403/);
-    assert.ok(result.items.some((item) => item.id === "visible-skill" && item.type === "skill"));
+    assert.equal(result.skillOffline, true);
+    assert.match(result.skillMessage, /403/);
+    assert.equal(result.items.some((item) => item.type === "skill"), false);
   });
 });
 
@@ -565,14 +551,10 @@ test("listMarketItems can load plugin and skill sections without sandbox probing
     DESKTOP_CONTAINER_ENGINE_PATHS: isolatedPath,
     ZENMIND_CONTAINER_ENGINE_PATHS: isolatedPath
   }, async () => {
-    await withFixtureServer(new Map([
-      ["/api/v1/skills?page=1&limit=100", skillsEnvelope([
-        { name: "visible-skill", display_name: "Visible Skill", description: "Visible", latest_version: "1.0.0" }
-      ])]
-    ]), async (skillsBaseUrl) => {
-      const catalog = {
-        schemaVersion: 1,
-        items: [{
+    const catalog = {
+      schemaVersion: 1,
+      items: [
+        {
           id: "visible-plugin",
           type: "plugin",
           name: "Visible Plugin",
@@ -580,31 +562,38 @@ test("listMarketItems can load plugin and skill sections without sandbox probing
           description: "Visible",
           tags: [],
           assets: {}
-        }]
-      };
+        },
+        {
+          id: "visible-skill",
+          type: "skill",
+          name: "Visible Skill",
+          version: "1.0.0",
+          description: "Visible",
+          tags: [],
+          assets: {}
+        }
+      ]
+    };
 
-      const pluginOnly = await listMarketItems(app, {
-        catalog,
-        skillsApiBaseUrl: skillsBaseUrl,
-        sections: ["plugins"]
-      });
-      assert.equal(pluginOnly.ok, true);
-      assert.equal(pluginOnly.sandboxOffline, false);
-      assert.equal(pluginOnly.sandboxMessage, "");
-      assert.deepEqual(pluginOnly.items.map((item) => item.type), ["plugin"]);
-      assert.equal(pluginOnly.items[0]?.id, "visible-plugin");
-
-      const skillOnly = await listMarketItems(app, {
-        catalog,
-        skillsApiBaseUrl: skillsBaseUrl,
-        sections: ["skills"]
-      });
-      assert.equal(skillOnly.ok, true);
-      assert.equal(skillOnly.sandboxOffline, false);
-      assert.equal(skillOnly.sandboxMessage, "");
-      assert.deepEqual(skillOnly.items.map((item) => item.type), ["skill"]);
-      assert.equal(skillOnly.items[0]?.id, "visible-skill");
+    const pluginOnly = await listMarketItems(app, {
+      catalog,
+      sections: ["plugins"]
     });
+    assert.equal(pluginOnly.ok, true);
+    assert.equal(pluginOnly.sandboxOffline, false);
+    assert.equal(pluginOnly.sandboxMessage, "");
+    assert.deepEqual(pluginOnly.items.map((item) => item.type), ["plugin"]);
+    assert.equal(pluginOnly.items[0]?.id, "visible-plugin");
+
+    const skillOnly = await listMarketItems(app, {
+      catalog,
+      sections: ["skills"]
+    });
+    assert.equal(skillOnly.ok, true);
+    assert.equal(skillOnly.sandboxOffline, false);
+    assert.equal(skillOnly.sandboxMessage, "");
+    assert.deepEqual(skillOnly.items.map((item) => item.type), ["skill"]);
+    assert.equal(skillOnly.items[0]?.id, "visible-skill");
   });
 });
 
@@ -633,23 +622,19 @@ exit 2
     PATH: inheritedPathDir,
     ZENMIND_CONTAINER_ENGINE_PATHS: enginePathDir
   }, async () => {
-    await withFixtureServer(new Map([
-      ["/api/v1/skills?page=1&limit=100", skillsEnvelope([])]
-    ]), async (skillsBaseUrl) => {
-      const result = await listMarketItems(app, {
-        catalog: { schemaVersion: 1, items: [] },
-        skillsApiBaseUrl: skillsBaseUrl
-      });
-      const image = result.items.find((item) =>
-        item.type === "sandbox-image" && item.id === "daily-office:latest"
-      );
-
-      assert.equal(result.sandboxOffline, false);
-      assert.equal(result.sandboxMessage, "");
-      assert.equal(image?.containerEngine, "docker");
-      assert.equal(image?.imageRef, "daily-office:latest");
-      assert.equal(image?.imageSize, "3.06GB");
+    const result = await listMarketItems(app, {
+      catalog: { schemaVersion: 1, items: [] },
+      sections: ["sandboxImages"]
     });
+    const image = result.items.find((item) =>
+      item.type === "sandbox-image" && item.id === "daily-office:latest"
+    );
+
+    assert.equal(result.sandboxOffline, false);
+    assert.equal(result.sandboxMessage, "");
+    assert.equal(image?.containerEngine, "docker");
+    assert.equal(image?.imageRef, "daily-office:latest");
+    assert.equal(image?.imageSize, "3.06GB");
   });
 });
 
@@ -659,7 +644,6 @@ test("listMarketItems maps Container Hub environments into sandbox image market 
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   await withFixtureServer(new Map([
-    ["/api/v1/skills?page=1&limit=100", skillsEnvelope([])],
     ["/api/environments", JSON.stringify([
       {
         name: "daily-office",
@@ -682,8 +666,8 @@ test("listMarketItems maps Container Hub environments into sandbox image market 
   ]), async (baseUrl) => {
     const result = await listMarketItems(app, {
       catalog: { schemaVersion: 1, items: [] },
-      skillsApiBaseUrl: baseUrl,
-      containerHubBaseUrl: baseUrl
+      containerHubBaseUrl: baseUrl,
+      sections: ["sandboxImages"]
     });
     const image = result.items.find((item) => item.type === "sandbox-image" && item.id === "daily-office");
 
@@ -713,7 +697,6 @@ exit 1
 
   await withPathPrefix(binDir, async () => {
     await withFixtureServer(new Map([
-      ["/api/v1/skills?page=1&limit=100", skillsEnvelope([])],
       ["/api/environments", JSON.stringify([
         {
           name: "daily-office",
@@ -741,8 +724,8 @@ exit 1
     ]), async (baseUrl) => {
       const result = await listMarketItems(app, {
         catalog: { schemaVersion: 1, items: [] },
-        skillsApiBaseUrl: baseUrl,
-        containerHubBaseUrl: baseUrl
+        containerHubBaseUrl: baseUrl,
+        sections: ["sandboxImages"]
       });
 
       assert.equal(result.sandboxOffline, false);
@@ -772,26 +755,22 @@ exit 2
 `);
 
   await withPathPrefix(binDir, async () => {
-    await withFixtureServer(new Map([
-      ["/api/v1/skills?page=1&limit=100", skillsEnvelope([])]
-    ]), async (skillsBaseUrl) => {
-      const result = await listMarketItems(app, {
-        catalog: { schemaVersion: 1, items: [] },
-        skillsApiBaseUrl: skillsBaseUrl
-      });
-      const image = result.items.find((item) =>
-        item.type === "sandbox-image" && item.id === "agent-container-hub:v0.2.0-linux-arm64"
-      );
-
-      assert.equal(result.sandboxOffline, false);
-      assert.equal(image?.name, "agent-container-hub");
-      assert.equal(image?.version, "v0.2.0-linux-arm64");
-      assert.equal(image?.state, "installed");
-      assert.equal(image?.source, "local");
-      assert.equal(image?.imageRef, "agent-container-hub:v0.2.0-linux-arm64");
-      assert.equal(image?.imageId, "sha256:abc123");
-      assert.equal(image?.containerEngine, "docker");
+    const result = await listMarketItems(app, {
+      catalog: { schemaVersion: 1, items: [] },
+      sections: ["sandboxImages"]
     });
+    const image = result.items.find((item) =>
+      item.type === "sandbox-image" && item.id === "agent-container-hub:v0.2.0-linux-arm64"
+    );
+
+    assert.equal(result.sandboxOffline, false);
+    assert.equal(image?.name, "agent-container-hub");
+    assert.equal(image?.version, "v0.2.0-linux-arm64");
+    assert.equal(image?.state, "installed");
+    assert.equal(image?.source, "local");
+    assert.equal(image?.imageRef, "agent-container-hub:v0.2.0-linux-arm64");
+    assert.equal(image?.imageId, "sha256:abc123");
+    assert.equal(image?.containerEngine, "docker");
   });
 });
 
@@ -823,21 +802,17 @@ exit 2
 `);
 
   await withPathPrefix(binDir, async () => {
-    await withFixtureServer(new Map([
-      ["/api/v1/skills?page=1&limit=100", skillsEnvelope([])]
-    ]), async (skillsBaseUrl) => {
-      const result = await listMarketItems(app, {
-        catalog: { schemaVersion: 1, items: [] },
-        skillsApiBaseUrl: skillsBaseUrl
-      });
-      const image = result.items.find((item) =>
-        item.type === "sandbox-image" && item.id === "daily-office:2026.05"
-      );
-
-      assert.equal(result.sandboxOffline, false);
-      assert.equal(image?.containerEngine, "podman");
-      assert.equal(image?.imageRef, "daily-office:2026.05");
+    const result = await listMarketItems(app, {
+      catalog: { schemaVersion: 1, items: [] },
+      sections: ["sandboxImages"]
     });
+    const image = result.items.find((item) =>
+      item.type === "sandbox-image" && item.id === "daily-office:2026.05"
+    );
+
+    assert.equal(result.sandboxOffline, false);
+    assert.equal(image?.containerEngine, "podman");
+    assert.equal(image?.imageRef, "daily-office:2026.05");
   });
 });
 
@@ -1114,13 +1089,13 @@ test("listMarketItems falls back to cached catalog when the remote catalog is un
   await withFixtureServer(new Map([["/marketplace/index.json", catalog]]), async (baseUrl) => {
     await refreshMarketCatalog(app, {
       catalogUrl: `${baseUrl}/marketplace/index.json`,
-      skillsApiBaseUrl: "http://127.0.0.1:1"
+      sections: ["plugins"]
     });
   });
 
   const result = await listMarketItems(app, {
     catalogUrl: "http://127.0.0.1:1/missing.json",
-    skillsApiBaseUrl: "http://127.0.0.1:1"
+    sections: ["plugins"]
   });
   assert.equal(result.ok, true);
   assert.equal(result.offline, true);
@@ -1249,7 +1224,7 @@ test("installMarketItem does not execute cli installs from Desktop", async (t) =
   assert.equal(fs.existsSync(path.join(root, "should-not-run")), false);
 });
 
-test("installMarketItem downloads and installs Skills API cloud skills", async (t) => {
+test("installMarketItem downloads and installs catalog cloud skills", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-skill-install-"));
   const app = createApp(root);
   const archivePath = writeRootSkillArchive(root, { id: "cloud-skill" });
@@ -1257,33 +1232,30 @@ test("installMarketItem downloads and installs Skills API cloud skills", async (
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   await withFixtureServer(new Map([
-    ["/api/v1/skills?page=1&limit=100", skillsEnvelope([
-      {
-        name: "cloud-skill",
-        display_name: "Cloud Skill",
-        description: "Cloud skill",
-        latest_version: "1.0.0",
-        tags: ["cloud"]
-      }
-    ])],
-    ["/api/v1/skills/cloud-skill/download?version=1.0.0", archiveBytes]
-  ]), async (skillsBaseUrl) => {
+    ["/cloud-skill.tar.gz", archiveBytes]
+  ]), async (baseUrl) => {
     const result = await installMarketItem(app, "cloud-skill", {
       catalog: {
         schemaVersion: 1,
         items: [
           {
-            id: "catalog-plugin",
-            type: "plugin",
-            name: "Catalog Plugin",
+            id: "cloud-skill",
+            type: "skill",
+            name: "Cloud Skill",
             version: "1.0.0",
-            description: "Catalog plugin",
-            tags: [],
-            assets: {}
+            description: "Cloud skill",
+            tags: ["cloud"],
+            assets: {
+              universal: {
+                url: `${baseUrl}/cloud-skill.tar.gz`,
+                sha256: sha256(archivePath),
+                sizeBytes: archiveBytes.length,
+                archiveType: "tar.gz"
+              }
+            }
           }
         ]
-      },
-      skillsApiBaseUrl: skillsBaseUrl
+      }
     });
 
     assert.equal(result.ok, true);
@@ -1295,7 +1267,7 @@ test("installMarketItem downloads and installs Skills API cloud skills", async (
   });
 });
 
-test("saved skillsApiBaseUrl is used by list and install", async (t) => {
+test("saved marketApiBaseUrl is used by list and install", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-settings-"));
   const app = createApp(root);
   const archivePath = writeRootSkillArchive(root, { id: "saved-skill" });
@@ -1303,19 +1275,41 @@ test("saved skillsApiBaseUrl is used by list and install", async (t) => {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   await withFixtureServer(new Map([
-    ["/api/v1/skills?page=1&limit=100", skillsEnvelope([
-      { name: "saved-skill", display_name: "Saved Skill", description: "Saved", latest_version: "1.0.0" }
-    ])],
-    ["/api/v1/skills/saved-skill/download?version=1.0.0", archiveBytes]
-  ]), async (skillsBaseUrl) => {
-    const settings = saveMarketSettings(app, { skillsApiBaseUrl: `${skillsBaseUrl}/api/v1` });
-    assert.equal(settings.skillsApiBaseUrl, `${skillsBaseUrl}/api/v1`);
-    assert.equal(getMarketSettings(app).skillsApiBaseUrl, `${skillsBaseUrl}/api/v1`);
+    ["/api/v1/desktop/catalog", (req, res) => {
+      const origin = `http://${req.headers.host}`;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        schemaVersion: 1,
+        items: [
+          {
+            id: "saved-skill",
+            type: "skill",
+            name: "Saved Skill",
+            version: "1.0.0",
+            description: "Saved",
+            tags: [],
+            assets: {
+              universal: {
+                url: `${origin}/saved-skill.tar.gz`,
+                sha256: sha256(archivePath),
+                sizeBytes: archiveBytes.length,
+                archiveType: "tar.gz"
+              }
+            }
+          }
+        ]
+      }));
+    }],
+    ["/saved-skill.tar.gz", archiveBytes]
+  ]), async (baseUrl) => {
+    const settings = saveMarketSettings(app, { marketApiBaseUrl: `${baseUrl}/api/v1` });
+    assert.equal(settings.marketApiBaseUrl, `${baseUrl}/api/v1`);
+    assert.equal(getMarketSettings(app).marketApiBaseUrl, `${baseUrl}/api/v1`);
 
-    const listed = await listMarketItems(app, { catalog: { schemaVersion: 1, items: [] } });
+    const listed = await listMarketItems(app, { sections: ["skills"] });
     assert.equal(listed.items.find((item) => item.id === "saved-skill")?.name, "Saved Skill");
 
-    const result = await installMarketItem(app, "saved-skill", { catalog: { schemaVersion: 1, items: [] } });
+    const result = await installMarketItem(app, "saved-skill");
     assert.equal(result.ok, true);
     assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "saved-skill"), "SKILL.md")), true);
   });
@@ -1366,7 +1360,7 @@ printf '{"id":"downloaded-skill","name":"Downloaded Skill","version":"1.2.3","de
 
     const listed = await listMarketItems(app, {
       catalog: { schemaVersion: 1, items: [] },
-      skillsApiBaseUrl: "http://127.0.0.1:1"
+      sections: ["skills"]
     });
     const installed = listed.items.find((item) => item.id === "downloaded-skill");
     assert.equal(installed?.source, "cloud");
@@ -1520,7 +1514,7 @@ test("installMarketItem downloads plugin archives but rejects builtin manifests"
     };
 
     await assert.rejects(
-      () => installMarketItem(app, "cloud-builtin", { catalog, skillsApiBaseUrl: "http://127.0.0.1:1" }),
+      () => installMarketItem(app, "cloud-builtin", { catalog }),
       /云端插件包必须声明为插件类型。/
     );
     assert.equal(fs.existsSync(getPluginInstallDir(app, "cloud-builtin")), false);
@@ -1535,12 +1529,31 @@ test("uninstallMarketItem removes skill installs and marketplace records", async
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   await withFixtureServer(new Map([
-    ["/api/v1/skills?page=1&limit=100", skillsEnvelope([
-      { name: "remove-skill", display_name: "Remove Skill", description: "Remove skill", latest_version: "1.0.0" }
-    ])],
-    ["/api/v1/skills/remove-skill/download?version=1.0.0", archiveBytes]
-  ]), async (skillsBaseUrl) => {
-    const options = { catalog: { schemaVersion: 1, items: [] }, skillsApiBaseUrl: skillsBaseUrl };
+    ["/remove-skill.tar.gz", archiveBytes]
+  ]), async (baseUrl) => {
+    const options = {
+      catalog: {
+        schemaVersion: 1,
+        items: [
+          {
+            id: "remove-skill",
+            type: "skill",
+            name: "Remove Skill",
+            version: "1.0.0",
+            description: "Remove skill",
+            tags: [],
+            assets: {
+              universal: {
+                url: `${baseUrl}/remove-skill.tar.gz`,
+                sha256: sha256(archivePath),
+                sizeBytes: archiveBytes.length,
+                archiveType: "tar.gz"
+              }
+            }
+          }
+        ]
+      }
+    };
     await installMarketItem(app, "remove-skill", options);
     const result = await uninstallMarketItem(app, "remove-skill", options);
 

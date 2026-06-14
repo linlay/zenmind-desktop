@@ -2487,15 +2487,20 @@ test("main marketplace user-facing text is routed through i18n", () => {
   }
 });
 
-test("storefront market uses website-style product cards", () => {
+test("storefront market uses compact responsive component item cards", () => {
   const storefront = readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
   const storefrontStyles = readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.css");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
 
-  assert.match(storefront, /market-store-category-pill/);
-  assert.match(storefront, /market-store-readiness/);
-  assert.match(storefront, /storefrontReadinessLabel/);
+  assert.match(storefront, /function marketItemDepsCount\(item: MarketItem\)/);
+  assert.match(storefront, /"depsCount",\s*"dependencyCount",\s*"missingDepsCount",\s*"requiredDepsCount"/);
+  assert.match(storefront, /t\("market\.action\.installDeps",\s*\{\s*count:\s*depsCount\s*\}\)/);
+  assert.match(storefront, /market-store-title-line/);
+  assert.match(storefront, /market-store-version/);
+  assert.match(storefront, /market-store-description/);
+  assert.match(storefront, /market-store-tags/);
+  assert.match(storefront, /market-store-card-footer/);
   assert.match(storefront, /t\("market\.storefront\.detailsDemo"\)/);
   assert.match(storefront, /market-store-detail-link/);
   assert.match(storefront, /market-store-detail-dialog/);
@@ -2507,22 +2512,36 @@ test("storefront market uses website-style product cards", () => {
   assert.match(storefront, /market-store-toolbar-actions/);
   assert.match(storefront, /market\.toolbar\.refreshMarket/);
   assert.match(storefront, /market\.sandbox\.import/);
+  assert.doesNotMatch(storefront, /market-store-category-pill/);
+  assert.doesNotMatch(storefront, /market-store-readiness/);
+  assert.doesNotMatch(storefront, /storefrontReadinessLabel/);
   assert.doesNotMatch(storefront, /market-store-overview/);
   assert.doesNotMatch(storefront, /market-store-metric/);
   assert.doesNotMatch(storefront, /market-store-compatibility/);
-  assert.match(storefrontStyles, /\.market-store-grid\s*\{[\s\S]*?minmax\(min\(100%,\s*620px\),\s*1fr\)/);
-  assert.match(storefrontStyles, /\.market-store-card\s*\{[\s\S]*?padding:\s*36px;[\s\S]*?border-radius:\s*8px;/);
+  assert.match(storefrontStyles, /\.market-store-scroll\s*\{[\s\S]*?container-type:\s*inline-size;/);
+  assert.match(storefrontStyles, /\.market-store-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(storefrontStyles, /@container\s*\(max-width:\s*1120px\)\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(storefrontStyles, /@container\s*\(max-width:\s*720px\)\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+  assert.doesNotMatch(storefrontStyles, /620px/);
+  assert.match(storefrontStyles, /\.market-store-card\s*\{[\s\S]*?padding:\s*24px;[\s\S]*?border-radius:\s*8px;/);
+  assert.match(storefrontStyles, /\.market-store-title-line\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
+  assert.match(storefrontStyles, /\.market-store-description\s*\{[\s\S]*?-webkit-line-clamp:\s*2;/);
   assert.match(storefrontStyles, /\.market-store-card-footer\s*\{[\s\S]*?border-top:\s*1px solid #e5e5ea;/);
   assert.match(storefrontStyles, /\.market-store-toolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(260px,\s*1fr\)\s*168px\s*168px\s*auto;/);
   assert.match(storefrontStyles, /\.market-store-toolbar-actions\s*\{[\s\S]*?justify-content:\s*flex-end;/);
   assert.match(storefrontStyles, /\.market-store-toolbar-button\s*\{[\s\S]*?border-radius:\s*8px;/);
   assert.match(storefrontStyles, /\.market-store-action\.is-primary\s*\{[\s\S]*?background:\s*var\(--market-store-purple\);/);
   assert.match(storefrontStyles, /\.market-store-detail-dialog\s*\{[\s\S]*?width:\s*min\(680px,\s*100%\);/);
+  assert.match(storefrontStyles, /\.market-store-detail-category-pill/);
+  assert.doesNotMatch(storefrontStyles, /\.market-store-category-pill/);
+  assert.doesNotMatch(storefrontStyles, /\.market-store-readiness/);
   assert.doesNotMatch(storefrontStyles, /\.market-store-overview/);
   assert.doesNotMatch(storefrontStyles, /\.market-store-compatibility/);
+  assert.match(enUS, /"market\.action\.installDeps":\s*"Install \{count\} deps"/);
   assert.match(enUS, /"market\.storefront\.detailsDemo":\s*"Details & demo"/);
   assert.match(enUS, /"market\.tab\.sandboxImages\.label":\s*"Sandboxes"/);
   assert.doesNotMatch(enUS, /"market\.tab\.sandboxImages\.meta"/);
+  assert.match(zhCN, /"market\.action\.installDeps":\s*"安装 \{count\} 个依赖"/);
   assert.match(zhCN, /"market\.storefront\.detailsDemo":\s*"详情与演示"/);
   assert.match(zhCN, /"market\.tab\.sandboxImages\.label":\s*"沙箱"/);
   assert.doesNotMatch(zhCN, /"market\.tab\.sandboxImages\.meta"/);

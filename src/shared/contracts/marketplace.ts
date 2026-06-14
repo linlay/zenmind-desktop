@@ -137,10 +137,8 @@ export interface SandboxImageImportProgressEvent {
 
 export interface MarketSettings {
   marketApiBaseUrl: string;
-  skillsApiBaseUrl: string;
 }
 
 export interface MarketSettingsInput {
   marketApiBaseUrl?: string;
-  skillsApiBaseUrl?: string;
 }

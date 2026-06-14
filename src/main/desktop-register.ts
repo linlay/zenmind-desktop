@@ -7,7 +7,7 @@ import { getDesktopDeviceId } from "./device-identity";
 import { APP_BRAND } from "../shared/generated/brand";
 
 const DESKTOP_REGISTER_FILE = "desktop-register.json";
-const DEFAULT_ENDPOINT = "https://transit-hub.zenmind.cc/api/apply-apikey";
+const DEFAULT_ENDPOINT = "";
 const DEFAULT_PROVIDERS = ["th-deepseek", "th-minimax"] as const;
 const MAX_ERROR_BODY_LENGTH = 240;
 const PROVIDER_KEY_PATTERN = /^[A-Za-z0-9._-]+$/u;

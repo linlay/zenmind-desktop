@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRightOutlined,
   AppstoreOutlined,
-  CheckCircleFilled,
   CloudDownloadOutlined,
   CopyOutlined,
   CloseOutlined,
@@ -172,21 +171,18 @@ function compatibilityLabel(item: MarketItem, t: ReturnType<typeof useI18n>["t"]
   return t("market.storefront.compatible");
 }
 
-function storefrontReadinessClass(item: MarketItem) {
-  if (item.state === "failed" || item.state === "incompatible") {
-    return "is-error";
+function marketItemDepsCount(item: MarketItem) {
+  for (const key of ["depsCount", "dependencyCount", "missingDepsCount", "requiredDepsCount"]) {
+    const raw = item.metadata?.[key]?.trim();
+    if (!raw) {
+      continue;
+    }
+    const value = Number.parseInt(raw, 10);
+    if (Number.isInteger(value) && value > 0) {
+      return value;
+    }
   }
-  if (item.state === "installing" || item.state === "update-available") {
-    return "is-warning";
-  }
-  return "is-ready";
-}
-
-function storefrontReadinessLabel(item: MarketItem, t: ReturnType<typeof useI18n>["t"]) {
-  if (item.state === "failed" || item.state === "incompatible" || item.state === "installing") {
-    return marketItemStateLabel(item, t);
-  }
-  return t("market.action.ready");
+  return 0;
 }
 
 function tagLabel(tag: string) {
@@ -424,6 +420,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       );
     }
     if (item.state === "not-installed") {
+      const depsCount = marketItemDepsCount(item);
       return (
         <button
           type="button"
@@ -431,8 +428,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
           disabled={busy || item.state === "incompatible"}
           onClick={() => void runMarketAction(item, "install")}
         >
-          <CloudDownloadOutlined />
-          <span>{busy ? t("market.action.installing") : t("market.action.install")}</span>
+          <span>{busy ? t("market.action.installing") : depsCount > 0 ? t("market.action.installDeps", { count: depsCount }) : t("market.action.install")}</span>
         </button>
       );
     }
@@ -444,17 +440,14 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
           disabled={busy}
           onClick={() => void runMarketAction(item, "update")}
         >
-          <CloudDownloadOutlined />
           <span>{busy ? t("market.action.installing") : t("market.action.update")}</span>
         </button>
       );
     }
     if (item.type === "plugin") {
-      const service = serviceById.get(item.id) ?? null;
       return (
         <button type="button" className="market-store-action" onClick={() => openPlugin(item)}>
-          <AppstoreOutlined />
-          <span>{canOpenPlugin(service) ? t("market.action.open") : t("market.action.manage")}</span>
+          <span>{t("market.action.manage")}</span>
         </button>
       );
     }
@@ -466,16 +459,14 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
           disabled={busy}
           onClick={() => void runMarketAction(item, "uninstall")}
         >
-          <CheckCircleFilled />
           <span>{busy ? t("market.action.installing") : t("market.action.uninstall")}</span>
         </button>
       );
     }
     return (
-      <span className="market-store-ready-pill">
-        <CheckCircleFilled />
-        {t("market.action.ready")}
-      </span>
+      <button type="button" className="market-store-action" onClick={() => void openDetail(item)}>
+        <span>{t("market.action.manage")}</span>
+      </button>
     );
   }
 
@@ -501,7 +492,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
         >
           <div className="market-store-detail-head">
             <div className="market-store-detail-title">
-              <span className="market-store-category-pill">{marketTypeLabel(selectedDetailItem.type, t)}</span>
+              <span className="market-store-detail-category-pill">{marketTypeLabel(selectedDetailItem.type, t)}</span>
               <h2>{displayName}</h2>
             </div>
             <button
@@ -540,16 +531,9 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     ].filter(Boolean))).slice(0, 3);
     return (
       <article key={`${item.type}:${item.id}`} className={`market-store-card is-${item.type}`}>
-        <div className="market-store-card-head">
-          <span className="market-store-category-pill">{marketTypeLabel(item.type, t)}</span>
-          <span className={`market-store-readiness ${storefrontReadinessClass(item)}`}>
-            <span aria-hidden="true" />
-            {storefrontReadinessLabel(item, t)}
-          </span>
-        </div>
         <div className="market-store-title-line">
           <h2>{displayName}</h2>
-          <span>{marketVersionLabel(item)}</span>
+          <span className="market-store-version">{marketVersionLabel(item)}</span>
         </div>
         {description ? <p className="market-store-description">{description}</p> : null}
         {chips.length > 0 ? (

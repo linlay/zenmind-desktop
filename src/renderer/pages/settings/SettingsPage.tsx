@@ -174,7 +174,7 @@ const defaultTaskBoardOnlineSummary: TaskBoardDesktopOnlineResult = {
 };
 
 const defaultTunnelHubAgentSettings: TunnelHubAgentSettings = {
-  relayUrl: "wss://tunnel-hub.zenmind.cc/tunnel",
+  relayUrl: "",
   hasAgentToken: false,
   agentTokenPreview: "",
   tlsInsecureSkipVerify: false,
@@ -2219,7 +2219,7 @@ export function SettingsPage({
                 <input
                   value={tunnelHubSettings.relayUrl}
                   onChange={(event) => setTunnelHubSettings((current) => ({ ...current, relayUrl: event.target.value }))}
-                  placeholder="wss://tunnel-hub.zenmind.cc/tunnel"
+                  placeholder={t("settings.tunnelHub.relayUrlPlaceholder")}
                 />
               </label>
               <label className="settings-control-field">

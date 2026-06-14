@@ -19,9 +19,8 @@ import {
 } from "../user-paths";
 import { t } from "../i18n/main-i18n";
 
-export const DEFAULT_MARKETPLACE_CATALOG_URL = "https://market.zenmind.cc/api/v1/desktop/catalog";
-export const DEFAULT_SKILLS_API_BASE_URL = "https://market.zenmind.cc/api/v1";
-export const DEFAULT_MARKET_API_BASE_URL = "https://market.zenmind.cc/api/v1";
+export const DEFAULT_MARKET_API_BASE_URL = "";
+export const DEFAULT_MARKETPLACE_CATALOG_URL = "";
 
 export type Catalog = {
   schemaVersion: number;
@@ -44,7 +43,6 @@ export type MarketplaceOptions = MarketListOptions & {
   catalogUrl?: string;
   catalog?: Catalog;
   marketApiBaseUrl?: string;
-  skillsApiBaseUrl?: string;
   containerHubBaseUrl?: string;
   containerHubAuthToken?: string;
 };
@@ -251,32 +249,11 @@ export function writeJsonFile(filePath: string, value: unknown) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-export function normalizeSkillsApiBaseUrl(value: unknown) {
-  const input = asString(value).trim() || DEFAULT_SKILLS_API_BASE_URL;
-  let parsed: URL;
-  try {
-    parsed = new URL(input);
-  } catch {
-    throw new Error(t("market.main.skillsApiInvalidUrl"));
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(t("market.main.skillsApiUnsupportedProtocol"));
-  }
-  if (parsed.search || parsed.hash) {
-    throw new Error(t("market.main.skillsApiNoSearch"));
-  }
-  const pathname = parsed.pathname.replace(/\/+$/u, "") || "/";
-  if (pathname === "/") {
-    return parsed.origin;
-  }
-  if (pathname === "/api/v1" || pathname.endsWith("/api/v1")) {
-    return `${parsed.origin}${pathname}`;
-  }
-  throw new Error(t("market.main.skillsApiInvalidPath"));
-}
-
 export function normalizeMarketApiBaseUrl(value: unknown) {
   const input = asString(value).trim() || DEFAULT_MARKET_API_BASE_URL;
+  if (!input) {
+    return "";
+  }
   let parsed: URL;
   try {
     parsed = new URL(input);
@@ -300,7 +277,8 @@ export function normalizeMarketApiBaseUrl(value: unknown) {
 }
 
 export function catalogUrlFromMarketApiBaseUrl(value: unknown) {
-  return `${normalizeMarketApiBaseUrl(value).replace(/\/+$/u, "")}/desktop/catalog`;
+  const baseUrl = normalizeMarketApiBaseUrl(value).replace(/\/+$/u, "");
+  return baseUrl ? `${baseUrl}/desktop/catalog` : "";
 }
 
 export function getMarketplaceCatalogUrl(app: App, options: MarketplaceOptions = {}) {
@@ -334,21 +312,18 @@ export function getMarketSettings(app: App): MarketSettings {
   const saved = readJsonFile<Partial<MarketSettings>>(marketplaceSettingsPath(app), {});
   try {
     return {
-      marketApiBaseUrl: normalizeMarketApiBaseUrl(saved.marketApiBaseUrl),
-      skillsApiBaseUrl: normalizeSkillsApiBaseUrl(saved.skillsApiBaseUrl)
+      marketApiBaseUrl: normalizeMarketApiBaseUrl(saved.marketApiBaseUrl)
     };
   } catch {
     return {
-      marketApiBaseUrl: DEFAULT_MARKET_API_BASE_URL,
-      skillsApiBaseUrl: DEFAULT_SKILLS_API_BASE_URL
+      marketApiBaseUrl: DEFAULT_MARKET_API_BASE_URL
     };
   }
 }
 
 export function saveMarketSettings(app: App, input: MarketSettingsInput): MarketSettings {
   const settings = {
-    marketApiBaseUrl: normalizeMarketApiBaseUrl(input.marketApiBaseUrl),
-    skillsApiBaseUrl: normalizeSkillsApiBaseUrl(input.skillsApiBaseUrl)
+    marketApiBaseUrl: normalizeMarketApiBaseUrl(input.marketApiBaseUrl)
   };
   writeJsonFile(marketplaceSettingsPath(app), settings);
   return settings;
@@ -480,6 +455,14 @@ export async function loadMarketplaceCatalog(app: App, options: MarketplaceOptio
   }
 
   const catalogUrl = getMarketplaceCatalogUrl(app, options);
+  if (!catalogUrl) {
+    return {
+      catalog: { schemaVersion: 1, items: [] },
+      offline: true,
+      message: t("market.main.marketApiNotConfigured"),
+      sourceUrl: ""
+    };
+  }
   try {
     const catalog = normalizeCatalog(await fetchJson(catalogUrl, label));
     writeJsonFile(catalogCachePath(app), catalog);
