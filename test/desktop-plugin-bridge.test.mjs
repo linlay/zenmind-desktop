@@ -17,6 +17,9 @@ const {
 } = require("../dist-electron/main/plugin-bridge.js");
 const {
   configurePluginResources,
+  initializePluginResourceState,
+  retryPendingPluginResourceSync,
+  stopPluginResources,
   syncPluginResources,
   __testInternals: resourceInternals
 } = require("../dist-electron/main/plugin-resources.js");
@@ -364,6 +367,102 @@ test("plugin agent and automation resources use current admin routes", async () 
     assert.equal(Boolean(ownership.automations?.["happy-agent-happy-story"]), true);
   } finally {
     configurePluginResources({ callAgentPlatform: null });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resource plugin state defaults stopped and migrates legacy ownership to running", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-resource-desired-"));
+  try {
+    const app = createApp(root);
+    const calendarService = {
+      kind: "plugin",
+      id: "calendar",
+      resources: {
+        webapps: [{ id: "calendar", source: "webapp/calendar" }],
+        agents: [],
+        automations: []
+      }
+    };
+    assert.equal(initializePluginResourceState(app, calendarService), "stopped");
+    assert.equal(resourceInternals.readPluginResourceDesiredStatus(app, calendarService), "stopped");
+
+    const happyService = {
+      kind: "plugin",
+      id: "happy-agent",
+      resources: {
+        webapps: [],
+        agents: [{ key: "happy-agent", definition: { name: "Happy Agent" } }],
+        automations: []
+      }
+    };
+    resourceInternals.writeOwnership(app, "happy-agent", {
+      agents: { "happy-agent": { updatedAt: "2026-06-13T00:00:00.000Z" } }
+    });
+    assert.equal(initializePluginResourceState(app, happyService), "running");
+    const ownership = resourceInternals.readOwnership(app, "happy-agent");
+    assert.equal(ownership.desiredStatus, "running");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("stopped resource plugin records pending agent-platform removal and retries on ready", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-resource-remove-"));
+  try {
+    registryInternals.clearServices();
+    const app = createApp(root);
+    const service = registerPlugin({
+      pluginApiVersion: 1,
+      id: "happy-agent",
+      name: "Happy Agent",
+      version: "v0.1.0",
+      description: "Happy resource",
+      runtime: { requiredPaths: ["manifest.json"] },
+      resources: {
+        agents: [{ key: "happy-agent", definition: { name: "Happy Agent" } }],
+        automations: [{
+          id: "happy-agent-happy-story",
+          name: "Happy Agent 开心故事",
+          cron: "*/2 * * * *",
+          agentKey: "happy-agent",
+          query: { message: "开心故事" }
+        }]
+      }
+    });
+    resourceInternals.writeOwnership(app, "happy-agent", {
+      desiredStatus: "running",
+      agents: { "happy-agent": { updatedAt: "2026-06-13T00:00:00.000Z" } },
+      automations: { "happy-agent-happy-story": { updatedAt: "2026-06-13T00:00:00.000Z" } }
+    });
+
+    configurePluginResources({ callAgentPlatform: null });
+    await stopPluginResources(app, service);
+    let ownership = resourceInternals.readOwnership(app, "happy-agent");
+    assert.equal(ownership.desiredStatus, "stopped");
+    assert.equal(ownership.pendingAgentPlatformRemoval, true);
+    assert.equal(Boolean(ownership.agents?.["happy-agent"]), true);
+
+    const calls = [];
+    configurePluginResources({
+      callAgentPlatform: async (_app, endpoint, options) => {
+        calls.push({ endpoint, body: options?.body });
+        return { ok: true };
+      }
+    });
+    await retryPendingPluginResourceSync(app);
+
+    assert.deepEqual(calls.map((call) => call.endpoint), [
+      "/api/admin/automations/delete",
+      "/api/admin/agents/delete"
+    ]);
+    ownership = resourceInternals.readOwnership(app, "happy-agent");
+    assert.equal(ownership.pendingAgentPlatformRemoval, false);
+    assert.equal(ownership.pendingAgentPlatformSync, false);
+    assert.equal(ownership.desiredStatus, "stopped");
+  } finally {
+    configurePluginResources({ callAgentPlatform: null });
+    registryInternals.clearServices();
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

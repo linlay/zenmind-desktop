@@ -25,7 +25,12 @@ import type { ServiceDefinition } from "../../manifest-utils";
 import { getAllServices, getService } from "../service-registry";
 import { issueAgentAccessToken } from "../../agent-auth";
 import { emitPluginBridgeHook, getPluginBridgeEnv } from "../../plugin-bridge";
-import { syncPluginResources } from "../../plugin-resources";
+import {
+  initializePluginResourceState,
+  readPluginResourceDesiredStatus,
+  stopPluginResources,
+  syncPluginResources
+} from "../../plugin-resources";
 import { readEnvFile, parseEnvFileContent } from "../../env-file";
 import { extractArchiveToDir } from "../../archive-utils";
 import {
@@ -686,7 +691,14 @@ async function initializeServiceInternal(
         });
       }
       await ensureInitializationRequirements(app, service, layout);
-      await syncPluginResources(app, service, installDir);
+      if (service.kind === "plugin" && service.serviceMode === "resource") {
+        const desiredStatus = initializePluginResourceState(app, service);
+        if (desiredStatus === "running") {
+          await syncPluginResources(app, service, installDir);
+        }
+      } else {
+        await syncPluginResources(app, service, installDir);
+      }
       const assetSignature = options.assetSignatureOverride ?? readBuiltinAssetSignature(app, service);
       writeInitializationState(layout, {
         version: service.version,
@@ -874,6 +886,25 @@ export async function getServiceState(
     status = hasDependencyError ? "dependency-missing" : "config-required";
     statusLabel = hasDependencyError ? "依赖未满足" : "待配置";
     message = prerequisites.join("；");
+  }
+
+  if (
+    service.kind === "plugin" &&
+    service.serviceMode === "resource" &&
+    installed &&
+    missingRuntimeFiles.length === 0 &&
+    initializationSucceeded &&
+    prerequisites.length === 0
+  ) {
+    if (readPluginResourceDesiredStatus(app, service) === "running") {
+      status = "running";
+      statusLabel = "已加载";
+      message = "插件资源已加载。";
+    } else {
+      status = "stopped";
+      statusLabel = "已停止";
+      message = "插件资源未加载，可手动启动。";
+    }
   }
 
   if (installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !running && conflictingPortPid) {
@@ -1989,11 +2020,31 @@ async function startServiceInternal(
   const current = await getServiceState(app, serviceId, options.stateReadOptions);
   const service = getService(serviceId);
   if (service.serviceMode === "resource") {
-    return {
-      ok: false,
-      message: `${service.name} 是资源型插件，不需要启动。`,
-      service: current
-    };
+    if (
+      !current.installed ||
+      current.status === "initialization-required" ||
+      current.status === "config-required" ||
+      current.status === "dependency-missing" ||
+      current.status === "error"
+    ) {
+      return {
+        ok: false,
+        message: current.message,
+        service: current
+      };
+    }
+    const installDir = getInstallDir(app, service);
+    await syncPluginResources(app, service, installDir);
+    const nextState = await getServiceState(app, serviceId, options.stateReadOptions);
+    const result = {
+      ok: true,
+      message: `${service.name} 已加载。`,
+      service: nextState
+    } satisfies ServiceCommandResult;
+    if (service.kind === "plugin") {
+      emitPluginBridgeHook("plugin.started", { pluginId: service.id, service: result.service });
+    }
+    return result;
   }
   const installDir = getInstallDir(app, service);
   const shouldRefreshFromBundledAsset =
@@ -2147,11 +2198,37 @@ export async function stopService(app: App, serviceId: ServiceId): Promise<Servi
   const service = getService(serviceId);
   const current = await getServiceState(app, serviceId);
   if (service.serviceMode === "resource") {
-    return {
+    if (!current.installed) {
+      return {
+        ok: true,
+        message: `${service.name} 尚未安装。`,
+        service: current
+      };
+    }
+    if (current.status === "initialization-required" || current.status === "error") {
+      return {
+        ok: false,
+        message: current.message,
+        service: current
+      };
+    }
+    if (current.status !== "running") {
+      return {
+        ok: true,
+        message: `${service.name} 当前未加载。`,
+        service: current
+      };
+    }
+    await stopPluginResources(app, service);
+    const result = {
       ok: true,
-      message: `${service.name} 是资源型插件，不需要停止。`,
-      service: current
-    };
+      message: `${service.name} 已停止。`,
+      service: await getServiceState(app, serviceId)
+    } satisfies ServiceCommandResult;
+    if (service.kind === "plugin") {
+      emitPluginBridgeHook("plugin.stopped", { pluginId: service.id, service: result.service });
+    }
+    return result;
   }
   if (!current.installed) {
     return {
@@ -2609,32 +2686,33 @@ export async function stopRunningServicesForShutdown(
   const timeoutMs = getShutdownStopCommandTimeoutMs(options.stopCommandTimeoutMs);
   const services = await listServices(app);
   const runningServices = services.filter((service) => service.status === "running");
+  const servicesToStop = runningServices.filter((service) => service.serviceMode !== "resource");
   writeLastRunningServices(
     app,
     runningServices.map((service) => service.id)
   );
 
-  if (runningServices.length === 0) {
-    console.log("[service-manager] shutdown stop skipped: no running services");
+  if (servicesToStop.length === 0) {
+    console.log("[service-manager] shutdown stop skipped: no stoppable running services");
     return {
       ok: true,
       timeoutMs,
       elapsedMs: Date.now() - startedAt,
-      runningServiceIds: [] as ServiceId[],
+      runningServiceIds: runningServices.map((service) => service.id),
       stopped: [] as ShutdownServiceStopResult[],
       failures: [] as ShutdownServiceStopResult[]
     };
   }
 
   const results = await Promise.all(
-    runningServices.map((service) => stopServiceForShutdown(app, service, timeoutMs))
+    servicesToStop.map((service) => stopServiceForShutdown(app, service, timeoutMs))
   );
   const stopped = results.filter((result) => result.ok);
   const failures = results.filter((result) => !result.ok);
   const elapsedMs = Date.now() - startedAt;
 
   console.log(
-    `[service-manager] shutdown stop summary: services=${runningServices.length} stopped=${stopped.length} failed=${failures.length} elapsedMs=${elapsedMs} timeoutMs=${timeoutMs}`
+    `[service-manager] shutdown stop summary: services=${servicesToStop.length} stopped=${stopped.length} failed=${failures.length} elapsedMs=${elapsedMs} timeoutMs=${timeoutMs}`
   );
 
   return {
@@ -2647,6 +2725,25 @@ export async function stopRunningServicesForShutdown(
   };
 }
 
+function getResourcePluginServiceIdsToRestore(app: App) {
+  return getAllServices()
+    .filter((service) =>
+      service.kind === "plugin" &&
+      service.serviceMode === "resource" &&
+      readPluginResourceDesiredStatus(app, service) === "running"
+    )
+    .map((service) => service.id);
+}
+
+function isResourcePluginServiceId(serviceId: ServiceId) {
+  try {
+    const service = getService(serviceId);
+    return service.kind === "plugin" && service.serviceMode === "resource";
+  } catch {
+    return false;
+  }
+}
+
 export async function restoreRunningServices(
   app: App,
   options: {
@@ -2654,7 +2751,10 @@ export async function restoreRunningServices(
     onProgress?: (serviceId: ServiceId, phase: "succeeded" | "failed" | "skipped", message: string) => void;
   } = {}
 ) {
-  const serviceIds = getServiceIdsToRestore(app);
+  const serviceIds = orderServiceIdsForRestore([
+    ...getServiceIdsToRestore(app),
+    ...getResourcePluginServiceIdsToRestore(app)
+  ]);
   const restored: ServiceId[] = [];
   const failures: string[] = [];
 
@@ -2686,7 +2786,7 @@ export async function restoreRunningServices(
       } else {
         console.warn(`[service-manager] failed to restore ${serviceId} after ${elapsedMs}ms: ${result.message}`);
         options.onProgress?.(serviceId, "failed", result.message);
-        if (isNonBlockingRestoreFailure(serviceId)) {
+        if (isNonBlockingRestoreFailure(serviceId) || isResourcePluginServiceId(serviceId)) {
           continue;
         }
         failures.push(`${serviceId}: ${result.message}`);
@@ -2695,7 +2795,7 @@ export async function restoreRunningServices(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       options.onProgress?.(serviceId, "failed", message);
-      if (isNonBlockingRestoreFailure(serviceId)) {
+      if (isNonBlockingRestoreFailure(serviceId) || isResourcePluginServiceId(serviceId)) {
         continue;
       }
       failures.push(`${serviceId}: ${message}`);
@@ -2735,8 +2835,12 @@ async function restoreOptionalStartupServices(
 ) {
   const started: ServiceId[] = [];
   const failures: string[] = [];
+  const serviceIds = orderServiceIdsForRestore([
+    ...getOptionalServiceIdsToRestore(app),
+    ...getResourcePluginServiceIdsToRestore(app)
+  ]);
 
-  for (const serviceId of getOptionalServiceIdsToRestore(app)) {
+  for (const serviceId of serviceIds) {
     try {
       getService(serviceId);
     } catch {
@@ -2770,7 +2874,7 @@ async function restoreOptionalStartupServices(
         : result.message;
       console.warn(`[service-manager] failed to restore optional startup service ${serviceId} after ${elapsedMs}ms: ${failureMessage}`);
       options.onProgress?.(serviceId, "failed", failureMessage);
-      if (isNonBlockingRestoreFailure(serviceId)) {
+      if (isNonBlockingRestoreFailure(serviceId) || isResourcePluginServiceId(serviceId)) {
         continue;
       }
       failures.push(`${serviceId}: ${failureMessage}`);
@@ -2778,7 +2882,7 @@ async function restoreOptionalStartupServices(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       options.onProgress?.(serviceId, "failed", message);
-      if (isNonBlockingRestoreFailure(serviceId)) {
+      if (isNonBlockingRestoreFailure(serviceId) || isResourcePluginServiceId(serviceId)) {
         continue;
       }
       failures.push(`${serviceId}: ${message}`);
@@ -2908,9 +3012,10 @@ async function startPreparedStartupService(
 ): Promise<StartupServiceResult> {
   try {
     const current = await getServiceState(app, serviceId, getStartupResponsiveServiceStateReadOptions());
+    const service = getService(serviceId);
     options.onStarting?.(serviceId);
 
-    if (current.status === "running") {
+    if (current.status === "running" && service.serviceMode !== "resource") {
       const message = `${current.name} 已在运行。`;
       console.info(`[service-manager] reused running startup service ${serviceId}`);
       options.onProgress?.(serviceId, "succeeded", message);
@@ -3205,6 +3310,7 @@ export const __testInternals = {
   getDefaultStartupServiceIds,
   getServiceIdsToRestore,
   getOptionalServiceIdsToRestore,
+  getResourcePluginServiceIdsToRestore,
   orderServiceIdsForRestore,
   needsBundledAssetRefresh,
   resolveStartupPreparationMode,

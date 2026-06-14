@@ -1656,7 +1656,8 @@ export function ControlCenterPage() {
                       <ReinstallServiceIcon />
                     </button>
                   ) : null}
-                  {activeDetailService.serviceMode === "service" ? (
+                  {activeDetailService.serviceMode === "service" ||
+                    activeDetailService.serviceMode === "resource" ? (
                     <>
                       <button
                         type="button"

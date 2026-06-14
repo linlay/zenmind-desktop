@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
 import yaml from "js-yaml";
-import type { ServiceState } from "../shared/contracts";
+import type { DesktopPetTaskItem, ServiceState } from "../shared/contracts";
 import type { ServiceDefinition } from "./manifest-utils";
 import { getServiceConfigRoot, getServiceStateRoot } from "./user-paths";
 
@@ -63,6 +63,16 @@ let getServiceStateCallback: ((serviceId: string) => Promise<ServiceState>) | nu
 let notifyAgentPlatformConfigChangedCallback: (() => void) | null = null;
 let runDesktopPetBannerCallback: ((params: unknown) => unknown) | null = null;
 let showSystemUpdateOverlayCallback: ((params: unknown) => unknown) | null = null;
+let getAssistantActiveTasksCallback: (() => unknown) | null = null;
+let updateDesktopActivityIslandCallback: ((params: unknown) => unknown) | null = null;
+let hideDesktopActivityIslandCallback: ((params: unknown) => unknown) | null = null;
+let readDesktopClipboardTextCallback: (() => unknown) | null = null;
+let writeDesktopClipboardTextCallback: ((params: unknown) => unknown) | null = null;
+let registerDesktopClipboardShortcutCallback: ((pluginId: string, params: unknown) => unknown) | null = null;
+let unregisterDesktopClipboardShortcutCallback: ((pluginId: string, params: unknown) => unknown) | null = null;
+let showDesktopClipboardPaletteCallback: ((pluginId: string, params: unknown) => unknown) | null = null;
+let hideDesktopClipboardPaletteCallback: ((pluginId: string, params: unknown) => unknown) | null = null;
+let cleanupPluginBridgePluginCallback: ((pluginId: string) => void) | null = null;
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -373,6 +383,60 @@ async function handleBridgeRequest(
       }
       return { ok: true, result: showSystemUpdateOverlayCallback(context.params) };
     }
+    if (context.method === "assistantRuns.getActiveTasks") {
+      if (!getAssistantActiveTasksCallback) {
+        throw new Error("assistant runs bridge is unavailable");
+      }
+      return { ok: true, result: getAssistantActiveTasksCallback() };
+    }
+    if (context.method === "desktopActivityIsland.update") {
+      if (!updateDesktopActivityIslandCallback) {
+        throw new Error("desktop activity island bridge is unavailable");
+      }
+      return { ok: true, result: updateDesktopActivityIslandCallback(context.params) };
+    }
+    if (context.method === "desktopActivityIsland.hide") {
+      if (!hideDesktopActivityIslandCallback) {
+        throw new Error("desktop activity island bridge is unavailable");
+      }
+      return { ok: true, result: hideDesktopActivityIslandCallback(context.params) };
+    }
+    if (context.method === "desktopClipboard.readText") {
+      if (!readDesktopClipboardTextCallback) {
+        throw new Error("desktop clipboard bridge is unavailable");
+      }
+      return { ok: true, result: readDesktopClipboardTextCallback() };
+    }
+    if (context.method === "desktopClipboard.writeText") {
+      if (!writeDesktopClipboardTextCallback) {
+        throw new Error("desktop clipboard bridge is unavailable");
+      }
+      return { ok: true, result: writeDesktopClipboardTextCallback(context.params) };
+    }
+    if (context.method === "desktopClipboard.registerShortcut") {
+      if (!registerDesktopClipboardShortcutCallback) {
+        throw new Error("desktop clipboard shortcut bridge is unavailable");
+      }
+      return { ok: true, result: registerDesktopClipboardShortcutCallback(context.sourcePluginId, context.params) };
+    }
+    if (context.method === "desktopClipboard.unregisterShortcut") {
+      if (!unregisterDesktopClipboardShortcutCallback) {
+        throw new Error("desktop clipboard shortcut bridge is unavailable");
+      }
+      return { ok: true, result: unregisterDesktopClipboardShortcutCallback(context.sourcePluginId, context.params) };
+    }
+    if (context.method === "desktopClipboard.showPalette") {
+      if (!showDesktopClipboardPaletteCallback) {
+        throw new Error("desktop clipboard palette bridge is unavailable");
+      }
+      return { ok: true, result: showDesktopClipboardPaletteCallback(context.sourcePluginId, context.params) };
+    }
+    if (context.method === "desktopClipboard.hidePalette") {
+      if (!hideDesktopClipboardPaletteCallback) {
+        throw new Error("desktop clipboard palette bridge is unavailable");
+      }
+      return { ok: true, result: hideDesktopClipboardPaletteCallback(context.sourcePluginId, context.params) };
+    }
     throw new Error(`unsupported bridge request: ${context.method}`);
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -475,11 +539,31 @@ export function configurePluginBridge(options: {
   notifyAgentPlatformConfigChanged?: () => void;
   runDesktopPetBanner?: (params: unknown) => unknown;
   showSystemUpdateOverlay?: (params: unknown) => unknown;
+  getAssistantActiveTasks?: () => unknown;
+  updateDesktopActivityIsland?: (params: unknown) => unknown;
+  hideDesktopActivityIsland?: (params: unknown) => unknown;
+  readDesktopClipboardText?: () => unknown;
+  writeDesktopClipboardText?: (params: unknown) => unknown;
+  registerDesktopClipboardShortcut?: (pluginId: string, params: unknown) => unknown;
+  unregisterDesktopClipboardShortcut?: (pluginId: string, params: unknown) => unknown;
+  showDesktopClipboardPalette?: (pluginId: string, params: unknown) => unknown;
+  hideDesktopClipboardPalette?: (pluginId: string, params: unknown) => unknown;
+  cleanupPluginBridgePlugin?: (pluginId: string) => void;
 }) {
   getServiceStateCallback = options.getServiceState ?? null;
   notifyAgentPlatformConfigChangedCallback = options.notifyAgentPlatformConfigChanged ?? null;
   runDesktopPetBannerCallback = options.runDesktopPetBanner ?? null;
   showSystemUpdateOverlayCallback = options.showSystemUpdateOverlay ?? null;
+  getAssistantActiveTasksCallback = options.getAssistantActiveTasks ?? null;
+  updateDesktopActivityIslandCallback = options.updateDesktopActivityIsland ?? null;
+  hideDesktopActivityIslandCallback = options.hideDesktopActivityIsland ?? null;
+  readDesktopClipboardTextCallback = options.readDesktopClipboardText ?? null;
+  writeDesktopClipboardTextCallback = options.writeDesktopClipboardText ?? null;
+  registerDesktopClipboardShortcutCallback = options.registerDesktopClipboardShortcut ?? null;
+  unregisterDesktopClipboardShortcutCallback = options.unregisterDesktopClipboardShortcut ?? null;
+  showDesktopClipboardPaletteCallback = options.showDesktopClipboardPalette ?? null;
+  hideDesktopClipboardPaletteCallback = options.hideDesktopClipboardPalette ?? null;
+  cleanupPluginBridgePluginCallback = options.cleanupPluginBridgePlugin ?? null;
 }
 
 export function getPluginBridgeEnv(app: App, service: ServiceDefinition): NodeJS.ProcessEnv {
@@ -546,6 +630,14 @@ export function publishPluginBridgeServiceState(state: ServiceState) {
   emitPluginBridgeHook("agentPlatform.stopped", { service: state });
 }
 
+export function publishPluginBridgeAssistantActiveTasks(tasks: DesktopPetTaskItem[], runningTaskCount: number) {
+  emitPluginBridgeHook("assistant.activeTasksChanged", {
+    tasks,
+    runningTaskCount,
+    updatedAt: new Date().toISOString()
+  });
+}
+
 export function setPluginBridgeDesktopReady() {
   desktopReady = true;
   emitPluginBridgeHook("desktop.ready", {});
@@ -553,6 +645,7 @@ export function setPluginBridgeDesktopReady() {
 
 export function stopPluginBridgeServers() {
   for (const record of bridgeRecords.values()) {
+    cleanupPluginBridgePluginCallback?.(record.service.id);
     for (const client of record.clients) {
       client.socket.destroy();
     }

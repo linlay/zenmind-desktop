@@ -153,7 +153,7 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
       const initialization = await initializeService(app, manifest.id);
       return {
         ok: initialization.ok,
-        message: initialization.ok ? `插件 ${manifest.name} 已导入并初始化。` : initialization.message,
+        message: initialization.ok ? `插件 ${manifest.name} 已导入并初始化，可手动启动。` : initialization.message,
         serviceId: manifest.id
       };
     }

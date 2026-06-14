@@ -4,14 +4,18 @@ import type { App } from "electron";
 import type { ServiceDefinition } from "./manifest-utils";
 import { getAllServices } from "./services/service-registry";
 import { getDesktopWebappsDataRoot, getServiceStateRoot } from "./user-paths";
+import { webappRuntime } from "./webs/webapp-runtime";
 
 type AgentPlatformCaller = (app: App, path: string, options?: { method?: string; body?: unknown }) => Promise<unknown>;
+export type PluginResourceDesiredStatus = "running" | "stopped";
 
 type PluginResourceOwnership = {
   webapps?: Record<string, { updatedAt: string }>;
   agents?: Record<string, { updatedAt: string }>;
   automations?: Record<string, { updatedAt: string }>;
+  desiredStatus?: PluginResourceDesiredStatus;
   pendingAgentPlatformSync?: boolean;
+  pendingAgentPlatformRemoval?: boolean;
   lastError?: string;
 };
 
@@ -26,6 +30,14 @@ function hasResources(service: ServiceDefinition) {
     service.resources.webapps.length > 0 ||
     service.resources.agents.length > 0 ||
     service.resources.automations.length > 0
+  );
+}
+
+function hasOwnedResources(ownership: PluginResourceOwnership) {
+  return (
+    Object.keys(ownership.webapps ?? {}).length > 0 ||
+    Object.keys(ownership.agents ?? {}).length > 0 ||
+    Object.keys(ownership.automations ?? {}).length > 0
   );
 }
 
@@ -48,6 +60,36 @@ function writeOwnership(app: App, pluginId: string, ownership: PluginResourceOwn
   const filePath = getOwnershipPath(app, pluginId);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(ownership, null, 2)}\n`, "utf8");
+}
+
+function resolveDesiredStatus(ownership: PluginResourceOwnership): PluginResourceDesiredStatus {
+  if (ownership.desiredStatus === "running" || ownership.desiredStatus === "stopped") {
+    return ownership.desiredStatus;
+  }
+  return hasOwnedResources(ownership) ? "running" : "stopped";
+}
+
+function ensureDesiredStatus(app: App, service: ServiceDefinition) {
+  const ownership = readOwnership(app, service.id);
+  const desiredStatus = resolveDesiredStatus(ownership);
+  if (ownership.desiredStatus !== desiredStatus) {
+    ownership.desiredStatus = desiredStatus;
+    writeOwnership(app, service.id, ownership);
+  }
+  return desiredStatus;
+}
+
+function updateDesiredStatus(
+  app: App,
+  service: ServiceDefinition,
+  desiredStatus: PluginResourceDesiredStatus,
+  changes: Partial<PluginResourceOwnership> = {}
+) {
+  const ownership = readOwnership(app, service.id);
+  ownership.desiredStatus = desiredStatus;
+  Object.assign(ownership, changes);
+  writeOwnership(app, service.id, ownership);
+  return ownership;
 }
 
 function resolvePluginResourceDir(pluginDir: string, relativePath: string) {
@@ -78,6 +120,14 @@ function copyWebappResource(app: App, service: ServiceDefinition, pluginDir: str
     ownership.webapps[webapp.id] = { updatedAt: nowIso() };
   }
   writeOwnership(app, service.id, ownership);
+}
+
+async function removeWebappResources(app: App, service: ServiceDefinition, ownership: PluginResourceOwnership) {
+  const webappsRoot = getDesktopWebappsDataRoot(app);
+  for (const webappId of Object.keys(ownership.webapps ?? {})) {
+    await webappRuntime.stop(app, webappId, "插件已停止，网站小应用已卸载。").catch(() => undefined);
+    fs.rmSync(path.join(webappsRoot, webappId), { recursive: true, force: true });
+  }
 }
 
 function normalizeAgentPayload(agent: ServiceDefinition["resources"]["agents"][number]) {
@@ -154,6 +204,7 @@ async function syncAgentPlatformResources(app: App, service: ServiceDefinition) 
   const ownership = readOwnership(app, service.id);
   ownership.agents = ownership.agents ?? {};
   ownership.automations = ownership.automations ?? {};
+  ownership.desiredStatus = "running";
   try {
     for (const agent of service.resources.agents) {
       await upsertAgentResource(app, agent, Boolean(ownership.agents[agent.key]));
@@ -164,10 +215,37 @@ async function syncAgentPlatformResources(app: App, service: ServiceDefinition) 
       ownership.automations[automation.id] = { updatedAt: nowIso() };
     }
     ownership.pendingAgentPlatformSync = false;
+    ownership.pendingAgentPlatformRemoval = false;
     delete ownership.lastError;
   } catch (error) {
     ownership.pendingAgentPlatformSync = true;
+    ownership.pendingAgentPlatformRemoval = false;
     ownership.lastError = error instanceof Error ? error.message : String(error);
+  }
+  writeOwnership(app, service.id, ownership);
+}
+
+async function removeAgentPlatformResources(app: App, service: ServiceDefinition, options: { deleteOwnership?: boolean } = {}) {
+  const ownership = readOwnership(app, service.id);
+  ownership.desiredStatus = "stopped";
+  try {
+    for (const automationId of Object.keys(ownership.automations ?? {})) {
+      await callAgentPlatform(app, "/api/admin/automations/delete", { id: automationId });
+    }
+    for (const agentKey of Object.keys(ownership.agents ?? {})) {
+      await callAgentPlatform(app, "/api/admin/agents/delete", { key: agentKey });
+    }
+    ownership.pendingAgentPlatformRemoval = false;
+    ownership.pendingAgentPlatformSync = false;
+    delete ownership.lastError;
+  } catch (error) {
+    ownership.pendingAgentPlatformRemoval = true;
+    ownership.pendingAgentPlatformSync = false;
+    ownership.lastError = error instanceof Error ? error.message : String(error);
+  }
+  if (options.deleteOwnership && !ownership.pendingAgentPlatformRemoval) {
+    fs.rmSync(getOwnershipPath(app, service.id), { force: true });
+    return;
   }
   writeOwnership(app, service.id, ownership);
 }
@@ -176,13 +254,40 @@ export function configurePluginResources(options: { callAgentPlatform?: AgentPla
   callAgentPlatformCallback = options.callAgentPlatform ?? null;
 }
 
+export function initializePluginResourceState(app: App, service: ServiceDefinition) {
+  if (service.kind !== "plugin" || !hasResources(service)) {
+    return "stopped" satisfies PluginResourceDesiredStatus;
+  }
+  return ensureDesiredStatus(app, service);
+}
+
+export function readPluginResourceDesiredStatus(app: App, service: ServiceDefinition) {
+  if (service.kind !== "plugin" || !hasResources(service)) {
+    return "stopped" satisfies PluginResourceDesiredStatus;
+  }
+  return ensureDesiredStatus(app, service);
+}
+
 export async function syncPluginResources(app: App, service: ServiceDefinition, pluginDir: string) {
   if (service.kind !== "plugin" || !hasResources(service)) {
     return { ok: true, message: "插件未声明资源。" };
   }
+  updateDesiredStatus(app, service, "running");
   copyWebappResource(app, service, pluginDir);
   await syncAgentPlatformResources(app, service);
   return { ok: true, message: "插件资源已同步。" };
+}
+
+export async function stopPluginResources(app: App, service: ServiceDefinition) {
+  if (service.kind !== "plugin" || !hasResources(service)) {
+    return { ok: true, message: "插件未声明资源。" };
+  }
+  const ownership = updateDesiredStatus(app, service, "stopped", {
+    pendingAgentPlatformSync: false
+  });
+  await removeWebappResources(app, service, ownership);
+  await removeAgentPlatformResources(app, service);
+  return { ok: true, message: "插件资源已卸载。" };
 }
 
 export async function retryPendingPluginResourceSync(app: App) {
@@ -191,33 +296,29 @@ export async function retryPendingPluginResourceSync(app: App) {
       continue;
     }
     const ownership = readOwnership(app, service.id);
-    if (ownership.pendingAgentPlatformSync) {
+    const desiredStatus = resolveDesiredStatus(ownership);
+    if (desiredStatus === "running" && (ownership.pendingAgentPlatformSync || ownership.pendingAgentPlatformRemoval)) {
       await syncAgentPlatformResources(app, service);
+    } else if (desiredStatus === "stopped" && ownership.pendingAgentPlatformRemoval) {
+      await removeAgentPlatformResources(app, service);
     }
   }
 }
 
 export async function removePluginResources(app: App, service: ServiceDefinition) {
   const ownership = readOwnership(app, service.id);
-  const webappsRoot = getDesktopWebappsDataRoot(app);
-  for (const webappId of Object.keys(ownership.webapps ?? {})) {
-    fs.rmSync(path.join(webappsRoot, webappId), { recursive: true, force: true });
-  }
-  for (const automationId of Object.keys(ownership.automations ?? {})) {
-    if (callAgentPlatformCallback) {
-      await callAgentPlatform(app, "/api/admin/automations/delete", { id: automationId }).catch(() => undefined);
-    }
-  }
-  for (const agentKey of Object.keys(ownership.agents ?? {})) {
-    if (callAgentPlatformCallback) {
-      await callAgentPlatform(app, "/api/admin/agents/delete", { key: agentKey }).catch(() => undefined);
-    }
+  await removeWebappResources(app, service, ownership);
+  if (callAgentPlatformCallback) {
+    await removeAgentPlatformResources(app, service, { deleteOwnership: true });
   }
   fs.rmSync(getOwnershipPath(app, service.id), { force: true });
 }
 
 export const __testInternals = {
   resolvePluginResourceDir,
+  readOwnership,
+  writeOwnership,
+  readPluginResourceDesiredStatus,
   normalizeAgentPayload,
   normalizeAutomationPayload
 };

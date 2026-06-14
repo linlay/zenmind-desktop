@@ -1631,7 +1631,7 @@ export function AppShell() {
           assistantLauncherVisible={assistantLauncherVisible}
           sidebarNavOrder={normalizedSidebarNavOrder}
           websiteNavOrder={normalizedWebGroupOrder}
-          websiteItems={webItems}
+          webItems={webItems}
           assistantNavAgents={assistantNavAgents}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           copilotAgentOptions={copilotAgentOptions}

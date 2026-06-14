@@ -34,6 +34,10 @@ const {
   getService,
   registerPlugin
 } = require("../dist-electron/main/services/service-registry.js");
+const {
+  configurePluginResources,
+  __testInternals: pluginResourceInternals
+} = require("../dist-electron/main/plugin-resources.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const TEST_APP_SERVER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
 const TEST_APP_SERVER_CUSTOM_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1uf";
@@ -1582,6 +1586,59 @@ function writePluginInstallRoot(installDir, options = {}) {
       fs.chmodSync(scriptPath, 0o755);
     }
   }
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
+  registerPlugin(manifest);
+  return manifest;
+}
+
+function writeResourcePluginInstallRoot(installDir, options = {}) {
+  const pluginId = options.id ?? "calendar";
+  const pluginName = options.name ?? "Calendar";
+  const version = options.version ?? "v1.0.0";
+  const resources = options.resources ?? {
+    webapps: [{ id: "calendar", source: "webapp/calendar" }]
+  };
+  const requiredPaths = options.requiredPaths ?? ["manifest.json"];
+
+  fs.mkdirSync(installDir, { recursive: true });
+  if (resources.webapps?.some((webapp) => webapp.id === "calendar")) {
+    const sourceDir = path.join(installDir, "webapp", "calendar");
+    fs.mkdirSync(path.join(sourceDir, "frontend"), { recursive: true });
+    fs.mkdirSync(path.join(sourceDir, "backend"), { recursive: true });
+    fs.writeFileSync(path.join(sourceDir, "webapp.json"), `${JSON.stringify({
+      id: "calendar",
+      kind: "webapp",
+      label: "日历",
+      frontend: { root: "frontend", index: "index.html", apiPrefix: "/api" },
+      backend: { runtime: "node", entry: "backend/server.mjs", healthPath: "/api/health" }
+    }, null, 2)}\n`, "utf8");
+    fs.writeFileSync(path.join(sourceDir, "frontend", "index.html"), "<!doctype html>\n", "utf8");
+    fs.writeFileSync(path.join(sourceDir, "backend", "server.mjs"), "console.log('calendar')\n", "utf8");
+    for (const relativePath of [
+      "webapp/calendar/webapp.json",
+      "webapp/calendar/frontend/index.html",
+      "webapp/calendar/backend/server.mjs"
+    ]) {
+      if (!requiredPaths.includes(relativePath)) {
+        requiredPaths.push(relativePath);
+      }
+    }
+  }
+
+  fs.writeFileSync(
+    path.join(installDir, "manifest.json"),
+    `${JSON.stringify({
+      pluginApiVersion: 1,
+      id: pluginId,
+      name: pluginName,
+      version,
+      description: "fixture resource plugin",
+      runtime: { requiredPaths },
+      resources
+    }, null, 2)}\n`,
+    "utf8"
+  );
 
   const manifest = JSON.parse(fs.readFileSync(path.join(installDir, "manifest.json"), "utf8"));
   registerPlugin(manifest);
@@ -4030,6 +4087,115 @@ test("initializeService copies template, runs deploy hook, and records success s
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test("resource plugin initializes stopped and start-stop manages webapp resources without deleting state", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-resource-plugin-webapp-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = getTestPluginProgramDir(userDataRoot, "calendar");
+  const app = createApp(userDataRoot);
+  const webappDir = path.join(getTestDesktopRoot(userDataRoot), "data", "webs", "webapps", "calendar");
+  const webappStateDir = path.join(getTestDesktopRoot(userDataRoot), "state", "webs", "webapps", "calendar");
+  const eventsPath = path.join(webappStateDir, "events.json");
+
+  registryInternals.clearServices();
+  configurePluginResources({ callAgentPlatform: null });
+  try {
+    writeResourcePluginInstallRoot(installDir, {
+      id: "calendar",
+      name: "日历"
+    });
+
+    const initResult = await initializeService(app, "calendar");
+    assert.equal(initResult.ok, true);
+    assert.equal(initResult.service.status, "stopped");
+    assert.equal(fs.existsSync(webappDir), false);
+    assert.equal(pluginResourceInternals.readPluginResourceDesiredStatus(app, getService("calendar")), "stopped");
+
+    const startResult = await startService(app, "calendar");
+    assert.equal(startResult.ok, true);
+    assert.equal(startResult.service.status, "running");
+    assert.equal(startResult.service.statusLabel, "已加载");
+    assert.equal(fs.existsSync(path.join(webappDir, "webapp.json")), true);
+    assert.equal(pluginResourceInternals.readPluginResourceDesiredStatus(app, getService("calendar")), "running");
+
+    fs.mkdirSync(webappStateDir, { recursive: true });
+    fs.writeFileSync(eventsPath, "[{\"title\":\"keep me\"}]\n", "utf8");
+
+    const stopResult = await stopService(app, "calendar");
+    assert.equal(stopResult.ok, true);
+    assert.equal(stopResult.service.status, "stopped");
+    assert.equal(fs.existsSync(webappDir), false);
+    assert.equal(fs.readFileSync(eventsPath, "utf8"), "[{\"title\":\"keep me\"}]\n");
+    assert.equal(pluginResourceInternals.readPluginResourceDesiredStatus(app, getService("calendar")), "stopped");
+  } finally {
+    configurePluginResources({ callAgentPlatform: null });
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("resource plugin start-stop manages agent-platform resources and preserves ownership", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-resource-plugin-agent-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = getTestPluginProgramDir(userDataRoot, "happy-agent");
+  const app = createApp(userDataRoot);
+  const calls = [];
+
+  registryInternals.clearServices();
+  configurePluginResources({
+    callAgentPlatform: async (_app, endpoint, options) => {
+      calls.push({ endpoint, body: options?.body });
+      return { ok: true };
+    }
+  });
+  try {
+    writeResourcePluginInstallRoot(installDir, {
+      id: "happy-agent",
+      name: "Happy Agent",
+      resources: {
+        agents: [{ key: "happy-agent", definition: { name: "Happy Agent" } }],
+        automations: [{
+          id: "happy-agent-happy-story",
+          name: "Happy Agent 开心故事",
+          cron: "*/2 * * * *",
+          agentKey: "happy-agent",
+          query: { message: "开心故事" }
+        }]
+      }
+    });
+
+    const initResult = await initializeService(app, "happy-agent");
+    assert.equal(initResult.ok, true);
+    assert.equal(initResult.service.status, "stopped");
+    assert.deepEqual(calls, []);
+
+    const startResult = await startService(app, "happy-agent");
+    assert.equal(startResult.ok, true);
+    assert.equal(startResult.service.status, "running");
+    assert.deepEqual(calls.map((call) => call.endpoint), [
+      "/api/admin/agents/create",
+      "/api/admin/automations/create"
+    ]);
+
+    const stopResult = await stopService(app, "happy-agent");
+    assert.equal(stopResult.ok, true);
+    assert.equal(stopResult.service.status, "stopped");
+    assert.deepEqual(calls.map((call) => call.endpoint), [
+      "/api/admin/agents/create",
+      "/api/admin/automations/create",
+      "/api/admin/automations/delete",
+      "/api/admin/agents/delete"
+    ]);
+    const ownership = pluginResourceInternals.readOwnership(app, "happy-agent");
+    assert.equal(ownership.desiredStatus, "stopped");
+    assert.equal(Boolean(ownership.agents?.["happy-agent"]), true);
+    assert.equal(Boolean(ownership.automations?.["happy-agent-happy-story"]), true);
+  } finally {
+    configurePluginResources({ callAgentPlatform: null });
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("initializeService records failed state and surfaces initialization error", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-init-failure-"));
   const userDataRoot = path.join(tempRoot, "user-data");
@@ -6476,6 +6642,87 @@ test("startup restore skips install-only services that were running at shutdown"
   ]);
 
   fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test("shutdown records running resource plugins without unloading their resources", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-resource-plugin-shutdown-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = getTestPluginProgramDir(userDataRoot, "happy-agent");
+  const app = createApp(userDataRoot);
+  const calls = [];
+
+  registryInternals.clearServices();
+  configurePluginResources({
+    callAgentPlatform: async (_app, endpoint, options) => {
+      calls.push({ endpoint, body: options?.body });
+      return { ok: true };
+    }
+  });
+  try {
+    writeResourcePluginInstallRoot(installDir, {
+      id: "happy-agent",
+      name: "Happy Agent",
+      resources: {
+        agents: [{ key: "happy-agent", definition: { name: "Happy Agent" } }],
+        automations: [{
+          id: "happy-agent-happy-story",
+          name: "Happy Agent 开心故事",
+          cron: "*/2 * * * *",
+          agentKey: "happy-agent",
+          query: { message: "开心故事" }
+        }]
+      }
+    });
+    assert.equal((await initializeService(app, "happy-agent")).ok, true);
+    assert.equal((await startService(app, "happy-agent")).service.status, "running");
+    calls.length = 0;
+
+    const result = await stopRunningServicesForShutdown(app, { stopCommandTimeoutMs: 50 });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.runningServiceIds, ["happy-agent"]);
+    assert.deepEqual(result.stopped, []);
+    assert.deepEqual(calls, []);
+    assert.deepEqual(__testInternals.readLastRunningServices(app), ["happy-agent"]);
+    assert.equal(pluginResourceInternals.readOwnership(app, "happy-agent").desiredStatus, "running");
+  } finally {
+    configurePluginResources({ callAgentPlatform: null });
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("restoreRunningServices restores desired running resource plugins even without shutdown state", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-resource-plugin-restore-"));
+  const userDataRoot = path.join(tempRoot, "user-data");
+  const installDir = getTestPluginProgramDir(userDataRoot, "calendar");
+  const app = createApp(userDataRoot);
+  const webappDir = path.join(getTestDesktopRoot(userDataRoot), "data", "webs", "webapps", "calendar");
+
+  registryInternals.clearServices();
+  configurePluginResources({ callAgentPlatform: null });
+  try {
+    writeResourcePluginInstallRoot(installDir, {
+      id: "calendar",
+      name: "日历"
+    });
+    markInitializationState(getTestInitializationStatePath(userDataRoot, "calendar", "plugins"));
+    pluginResourceInternals.writeOwnership(app, "calendar", {
+      desiredStatus: "running",
+      webapps: { calendar: { updatedAt: "2026-06-13T00:00:00.000Z" } }
+    });
+
+    assert.deepEqual(__testInternals.readLastRunningServices(app), []);
+    assert.deepEqual(__testInternals.getResourcePluginServiceIdsToRestore(app), ["calendar"]);
+
+    const result = await restoreRunningServices(app);
+    assert.deepEqual(result.restored, ["calendar"]);
+    assert.deepEqual(result.failures, []);
+    assert.equal(fs.existsSync(path.join(webappDir, "webapp.json")), true);
+  } finally {
+    configurePluginResources({ callAgentPlatform: null });
+    registryInternals.clearServices();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("restoreRunningServices skips install-only container hub and restores other optional services", async () => {

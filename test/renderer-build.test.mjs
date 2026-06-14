@@ -373,6 +373,7 @@ test("control center keeps service operations in the prototype dashboard layout"
   assert.doesNotMatch(darkServiceNavHelpTipRule, /background:\s*#20242b;/);
   assert.match(controlCenter, /data-tooltip=\{t\("controlCenter\.help\.viewDescription"\)\}/);
   assert.match(controlCenter, /data-tooltip=\{t\("controlCenter\.actions\.openFrontend"\)\}/);
+  assert.match(controlCenter, /activeDetailService\.serviceMode === "service" \|\|[\s\S]*?activeDetailService\.serviceMode === "resource" \? \(/);
   assert.match(
     controlCenter,
     /data-tooltip=\{\s*activeDetailService\.status ===\s*"initialization-required"\s*\?\s*t\("controlCenter\.actions\.initialize"\)\s*:\s*t\("controlCenter\.actions\.reinitialize"\)\s*\}/
