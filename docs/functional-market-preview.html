@@ -1,0 +1,1005 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZenMind 功能市场视觉稿</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --panel-soft: #f1f4f8;
+      --panel-muted: #f8fafc;
+      --line: #d9e0e8;
+      --line-strong: #c6d0dc;
+      --text: #172033;
+      --muted: #5f6f83;
+      --faint: #8a98aa;
+      --accent: #2563eb;
+      --accent-soft: #e8f0ff;
+      --green: #0f8a5f;
+      --green-soft: #e7f6ef;
+      --orange: #b7791f;
+      --orange-soft: #fff3dc;
+      --rose: #c2415d;
+      --rose-soft: #fde9ee;
+      --cyan: #047c91;
+      --cyan-soft: #e4f6f8;
+      --shadow: 0 18px 38px rgba(23, 32, 51, 0.10);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        linear-gradient(180deg, #fbfcfe 0%, var(--bg) 260px),
+        var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: default;
+    }
+
+    .page {
+      min-height: 100vh;
+      padding: 18px 20px 24px;
+    }
+
+    .market-shell {
+      width: min(1280px, 100%);
+      min-height: calc(100vh - 42px);
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .market-header {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto;
+      gap: 16px;
+      align-items: start;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--panel) 92%, transparent);
+      box-shadow: 0 1px 0 rgba(23, 32, 51, 0.04);
+    }
+
+    .title-block {
+      min-width: 0;
+    }
+
+    .eyebrow {
+      margin: 0 0 6px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.22;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      max-width: 760px;
+      margin: 7px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .button {
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #ffffff;
+    }
+
+    .button .button-mark {
+      width: 16px;
+      height: 16px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 4px;
+      background: color-mix(in srgb, currentColor 16%, transparent);
+      font-size: 11px;
+      line-height: 1;
+    }
+
+    .market-tabs {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(116px, 1fr));
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      overflow-x: auto;
+    }
+
+    .market-tab {
+      min-width: 116px;
+      min-height: 48px;
+      padding: 7px 9px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+    }
+
+    .market-tab.is-active {
+      border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+      background: var(--panel);
+      color: var(--text);
+      box-shadow: 0 8px 18px rgba(23, 32, 51, 0.08);
+    }
+
+    .tab-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .tab-count {
+      color: var(--faint);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .tab-meta {
+      display: block;
+      margin-top: 4px;
+      color: var(--faint);
+      font-size: 11px;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .search {
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 11px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--faint);
+    }
+
+    .search input {
+      width: 100%;
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .search input::placeholder {
+      color: var(--faint);
+    }
+
+    .select-wrap {
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .select-wrap span {
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .select-wrap select {
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .market-body {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 336px;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .main-column {
+      min-width: 0;
+      display: grid;
+      gap: 12px;
+    }
+
+    .overview {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      min-height: 76px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 8px;
+      color: var(--text);
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 2px 6px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section-head h2 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .section-head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .section-head .section-count {
+      min-width: 28px;
+      min-height: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .catalog-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+      gap: 10px;
+    }
+
+    .market-card {
+      min-height: 204px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 1px 0 rgba(23, 32, 51, 0.04);
+    }
+
+    .card-top {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+    }
+
+    .item-mark {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .market-card.skill .item-mark {
+      color: #684ab0;
+      background: #f0edfb;
+    }
+
+    .market-card.agent .item-mark {
+      color: var(--cyan);
+      background: var(--cyan-soft);
+    }
+
+    .market-card.sandbox .item-mark,
+    .market-card.website .item-mark {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+
+    .market-card.pet .item-mark,
+    .market-card.cli .item-mark {
+      color: var(--orange);
+      background: var(--orange-soft);
+    }
+
+    .card-title {
+      min-width: 0;
+    }
+
+    .card-title h3 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.28;
+      letter-spacing: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .submeta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 6px;
+    }
+
+    .chip {
+      min-height: 20px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 7px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--muted);
+      background: var(--panel-muted);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .chip.green {
+      border-color: color-mix(in srgb, var(--green) 20%, var(--line));
+      background: var(--green-soft);
+      color: var(--green);
+    }
+
+    .chip.orange {
+      border-color: color-mix(in srgb, var(--orange) 22%, var(--line));
+      background: var(--orange-soft);
+      color: var(--orange);
+    }
+
+    .chip.rose {
+      border-color: color-mix(in srgb, var(--rose) 18%, var(--line));
+      background: var(--rose-soft);
+      color: var(--rose);
+    }
+
+    .description {
+      margin: 10px 0 0;
+      min-height: 42px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.48;
+      overflow-wrap: anywhere;
+    }
+
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 10px;
+    }
+
+    .tag {
+      min-height: 21px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 7px;
+      border-radius: 6px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .card-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .card-actions .button {
+      min-height: 30px;
+      padding: 0 10px;
+    }
+
+    .detail-panel {
+      position: sticky;
+      top: 16px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .panel-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 1px 0 rgba(23, 32, 51, 0.04);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 13px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-muted);
+    }
+
+    .panel-head span {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .panel-head h2 {
+      margin: 5px 0 0;
+      font-size: 16px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .panel-body {
+      padding: 13px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .info-row {
+      display: grid;
+      grid-template-columns: 88px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .info-row strong {
+      color: var(--text);
+      font-weight: 750;
+    }
+
+    .dependency-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .dependency-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 36px;
+      padding: 8px 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-muted);
+    }
+
+    .dependency-row strong {
+      display: block;
+      font-size: 12px;
+      line-height: 1.3;
+    }
+
+    .dependency-row span {
+      display: block;
+      margin-top: 2px;
+      color: var(--faint);
+      font-size: 11px;
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    .status-dot.warn {
+      background: var(--orange);
+    }
+
+    .terminal-preview {
+      padding: 12px;
+      border-radius: 8px;
+      background: #121826;
+      color: #dbe7ff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.65;
+      overflow: hidden;
+    }
+
+    .terminal-preview .muted-line {
+      color: #8ea0bd;
+    }
+
+    .terminal-preview .ok-line {
+      color: #76e4b8;
+    }
+
+    @media (max-width: 1080px) {
+      .market-body {
+        grid-template-columns: 1fr;
+      }
+
+      .detail-panel {
+        position: static;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 820px) {
+      .page {
+        padding: 12px;
+      }
+
+      .market-header,
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+
+      .header-actions {
+        justify-content: flex-start;
+      }
+
+      .overview,
+      .detail-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .market-tabs {
+        grid-template-columns: repeat(7, 128px);
+      }
+    }
+
+    @media (max-width: 560px) {
+      .catalog-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section-head {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="market-shell" aria-label="ZenMind 功能市场">
+      <header class="market-header">
+        <div class="title-block">
+          <p class="eyebrow">ZenMind 官方市场</p>
+          <h1>功能市场</h1>
+          <p class="subtitle">从官方目录安装插件、技能、智能体、沙箱镜像、桌宠、CLI 工具和网站应用。当前页面作为 Desktop 内部市场视觉确认稿。</p>
+        </div>
+        <div class="header-actions" aria-label="市场操作">
+          <button class="button" type="button"><span class="button-mark">R</span>刷新市场</button>
+          <button class="button" type="button"><span class="button-mark">I</span>本地导入</button>
+          <button class="button primary" type="button"><span class="button-mark">P</span>开发者发布</button>
+        </div>
+      </header>
+
+      <nav class="market-tabs" aria-label="市场分类">
+        <button class="market-tab is-active" type="button">
+          <span class="tab-label">插件 <span class="tab-count">12</span></span>
+          <span class="tab-meta">Desktop 已支持</span>
+        </button>
+        <button class="market-tab" type="button">
+          <span class="tab-label">技能 <span class="tab-count">18</span></span>
+          <span class="tab-meta">本地/云端安装</span>
+        </button>
+        <button class="market-tab" type="button">
+          <span class="tab-label">智能体 <span class="tab-count">7</span></span>
+          <span class="tab-meta">新增类目</span>
+        </button>
+        <button class="market-tab" type="button">
+          <span class="tab-label">沙箱 <span class="tab-count">9</span></span>
+          <span class="tab-meta">模板与镜像</span>
+        </button>
+        <button class="market-tab" type="button">
+          <span class="tab-label">宠物 <span class="tab-count">6</span></span>
+          <span class="tab-meta">桌宠外观</span>
+        </button>
+        <button class="market-tab" type="button">
+          <span class="tab-label">CLI <span class="tab-count">11</span></span>
+          <span class="tab-meta">复制脚本</span>
+        </button>
+        <button class="market-tab" type="button">
+          <span class="tab-label">网站应用 <span class="tab-count">5</span></span>
+          <span class="tab-meta">WebApp 运行时</span>
+        </button>
+      </nav>
+
+      <div class="toolbar" aria-label="市场筛选">
+        <label class="search">
+          <span aria-hidden="true">⌕</span>
+          <input value="" placeholder="搜索组件、依赖、标签或开发者">
+        </label>
+        <label class="select-wrap">
+          <span>排序</span>
+          <select>
+            <option>热门推荐</option>
+            <option>最新发布</option>
+            <option>评分最高</option>
+          </select>
+        </label>
+        <label class="select-wrap">
+          <span>范围</span>
+          <select>
+            <option>全部状态</option>
+            <option>已安装</option>
+            <option>可更新</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="market-body">
+        <div class="main-column">
+          <section class="overview" aria-label="市场概览">
+            <div class="metric">
+              <span>已安装</span>
+              <strong>14</strong>
+            </div>
+            <div class="metric">
+              <span>官方精选</span>
+              <strong>42</strong>
+            </div>
+            <div class="metric">
+              <span>可更新</span>
+              <strong>3</strong>
+            </div>
+            <div class="metric">
+              <span>缺少依赖</span>
+              <strong>2</strong>
+            </div>
+          </section>
+
+          <section aria-label="官方精选">
+            <div class="section-head">
+              <div>
+                <h2>官方精选</h2>
+                <p>按当前分类展示可安装内容，保留依赖状态和平台兼容信息。</p>
+              </div>
+              <span class="section-count">6</span>
+            </div>
+          </section>
+
+          <section class="catalog-grid" aria-label="市场卡片">
+            <article class="market-card plugin">
+              <div>
+                <div class="card-top">
+                  <div class="item-mark" aria-hidden="true">PL</div>
+                  <div class="card-title">
+                    <h3>Browser</h3>
+                    <div class="submeta">
+                      <span class="chip green">已安装</span>
+                      <span class="chip">v0.1.0</span>
+                      <span class="chip">插件</span>
+                    </div>
+                  </div>
+                </div>
+                <p class="description">浏览器自动化与页面检查插件，可为 Desktop 提供网页打开、截图和交互验证能力。</p>
+                <div class="tags">
+                  <span class="tag">browser</span>
+                  <span class="tag">automation</span>
+                  <span class="tag">desktop</span>
+                </div>
+              </div>
+              <div class="card-actions">
+                <button class="button primary" type="button">打开</button>
+                <button class="button" type="button">详情</button>
+              </div>
+            </article>
+
+            <article class="market-card skill">
+              <div>
+                <div class="card-top">
+                  <div class="item-mark" aria-hidden="true">SK</div>
+                  <div class="card-title">
+                    <h3>DOCX 文档处理</h3>
+                    <div class="submeta">
+                      <span class="chip">未安装</span>
+                      <span class="chip">v1.0.0</span>
+                      <span class="chip orange">依赖检查</span>
+                    </div>
+                  </div>
+                </div>
+                <p class="description">读取、生成和校验 Word 文档内容，适合报告、合同和结构化文档工作流。</p>
+                <div class="tags">
+                  <span class="tag">documents</span>
+                  <span class="tag">office</span>
+                  <span class="tag">skill</span>
+                </div>
+              </div>
+              <div class="card-actions">
+                <button class="button primary" type="button">安装</button>
+                <button class="button" type="button">依赖</button>
+              </div>
+            </article>
+
+            <article class="market-card agent">
+              <div>
+                <div class="card-top">
+                  <div class="item-mark" aria-hidden="true">AG</div>
+                  <div class="card-title">
+                    <h3>产品研究智能体</h3>
+                    <div class="submeta">
+                      <span class="chip rose">待接入</span>
+                      <span class="chip">v0.8.2</span>
+                      <span class="chip">智能体</span>
+                    </div>
+                  </div>
+                </div>
+                <p class="description">提供竞品观察、用户反馈归纳和产品需求草拟能力，后续接入 Agent 配置同步。</p>
+                <div class="tags">
+                  <span class="tag">research</span>
+                  <span class="tag">agent</span>
+                  <span class="tag">workflow</span>
+                </div>
+              </div>
+              <div class="card-actions">
+                <button class="button primary" type="button">查看</button>
+                <button class="button" type="button">详情</button>
+              </div>
+            </article>
+
+            <article class="market-card sandbox">
+              <div>
+                <div class="card-top">
+                  <div class="item-mark" aria-hidden="true">SB</div>
+                  <div class="card-title">
+                    <h3>Python 3.12 沙箱</h3>
+                    <div class="submeta">
+                      <span class="chip">未安装</span>
+                      <span class="chip">v1.0.0</span>
+                      <span class="chip orange">Docker 缺失</span>
+                    </div>
+                  </div>
+                </div>
+                <p class="description">预置 Python 运行环境和常用数据工具，适合代码执行、分析和自动化任务。</p>
+                <div class="tags">
+                  <span class="tag">environment</span>
+                  <span class="tag">python</span>
+                  <span class="tag">sandbox</span>
+                </div>
+              </div>
+              <div class="card-actions">
+                <button class="button primary" type="button">安装依赖</button>
+                <button class="button" type="button">详情</button>
+              </div>
+            </article>
+
+            <article class="market-card pet">
+              <div>
+                <div class="card-top">
+                  <div class="item-mark" aria-hidden="true">PT</div>
+                  <div class="card-title">
+                    <h3>Sama 桌宠外观</h3>
+                    <div class="submeta">
+                      <span class="chip green">可用</span>
+                      <span class="chip">v1.2.0</span>
+                      <span class="chip">宠物</span>
+                    </div>
+                  </div>
+                </div>
+                <p class="description">桌宠状态图、运行图和消息图资源包，安装后进入桌宠外观选项。</p>
+                <div class="tags">
+                  <span class="tag">visual</span>
+                  <span class="tag">pet</span>
+                  <span class="tag">appearance</span>
+                </div>
+              </div>
+              <div class="card-actions">
+                <button class="button primary" type="button">安装</button>
+                <button class="button" type="button">预览</button>
+              </div>
+            </article>
+
+            <article class="market-card cli">
+              <div>
+                <div class="card-top">
+                  <div class="item-mark" aria-hidden="true">CL</div>
+                  <div class="card-title">
+                    <h3>ripgrep 工具链</h3>
+                    <div class="submeta">
+                      <span class="chip">脚本安装</span>
+                      <span class="chip">v14.1.1</span>
+                      <span class="chip">CLI</span>
+                    </div>
+                  </div>
+                </div>
+                <p class="description">高性能文本搜索工具，Desktop 复制平台脚本并读取安装状态，不直接修改 PATH。</p>
+                <div class="tags">
+                  <span class="tag">search</span>
+                  <span class="tag">terminal</span>
+                  <span class="tag">developer</span>
+                </div>
+              </div>
+              <div class="card-actions">
+                <button class="button primary" type="button">复制脚本</button>
+                <button class="button" type="button">详情</button>
+              </div>
+            </article>
+          </section>
+        </div>
+
+        <aside class="detail-panel" aria-label="静态详情预览">
+          <section class="panel-card">
+            <div class="panel-head">
+              <span>详情预览</span>
+              <h2>Python 3.12 沙箱</h2>
+            </div>
+            <div class="panel-body">
+              <div class="info-row">
+                <strong>类型</strong>
+                <span>沙箱 · environment-template</span>
+              </div>
+              <div class="info-row">
+                <strong>版本</strong>
+                <span>1.0.0 · universal artifact</span>
+              </div>
+              <div class="info-row">
+                <strong>制品</strong>
+                <span>python-sandbox.tar.gz · SHA256 校验</span>
+              </div>
+              <div class="info-row">
+                <strong>入口</strong>
+                <span>安装后写入 Container Hub 环境模板。</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-card">
+            <div class="panel-head">
+              <span>依赖自愈</span>
+              <h2>安装前检查</h2>
+            </div>
+            <div class="panel-body">
+              <div class="dependency-list">
+                <div class="dependency-row">
+                  <div>
+                    <strong>ZenMind Agent Platform</strong>
+                    <span>builtin-service · required</span>
+                  </div>
+                  <span class="status-dot" aria-label="已就绪"></span>
+                </div>
+                <div class="dependency-row">
+                  <div>
+                    <strong>Docker / Podman</strong>
+                    <span>system-runtime · required</span>
+                  </div>
+                  <span class="status-dot warn" aria-label="未安装"></span>
+                </div>
+                <div class="dependency-row">
+                  <div>
+                    <strong>Desktop Capability</strong>
+                    <span>sandbox-build · optional</span>
+                  </div>
+                  <span class="status-dot" aria-label="已就绪"></span>
+                </div>
+              </div>
+              <button class="button primary" type="button">安装缺失依赖</button>
+            </div>
+          </section>
+
+          <section class="panel-card">
+            <div class="panel-head">
+              <span>终端反馈</span>
+              <h2>安装过程预览</h2>
+            </div>
+            <div class="panel-body">
+              <div class="terminal-preview" aria-label="安装日志">
+                <div>$ zenmind-installer install python@1.0.0</div>
+                <div class="muted-line">[INFO] resolving artifact for darwin-arm64</div>
+                <div class="muted-line">[INFO] verifying SHA256 integrity</div>
+                <div>[INFO] registering sandbox template</div>
+                <div class="ok-line">[OK] dependency graph refreshed</div>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

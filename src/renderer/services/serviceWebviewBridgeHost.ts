@@ -1,4 +1,5 @@
 import type { PluginAuthBridgeProtocol } from "../../shared/auth-bridge";
+import type { PluginSettingsValues } from "../../shared/contracts";
 import {
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
@@ -8,6 +9,10 @@ import {
   DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
   DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE,
   DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,
+  PLUGIN_SETTINGS_READ_REQUEST_TYPE,
+  PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
+  PLUGIN_SETTINGS_WRITE_REQUEST_TYPE,
+  PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
   type ServiceWebviewBridgeMessage
 } from "../../shared/service-webview-bridge";
@@ -150,6 +155,59 @@ export function handleServiceWebviewBridgeMessage(
       })
       .catch((reason) => {
         sendFailure(context, DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
+      });
+    return true;
+  }
+
+  if (payload.type === PLUGIN_SETTINGS_READ_REQUEST_TYPE) {
+    const serviceId = context.serviceId?.trim() ?? "";
+    if (!serviceId) {
+      sendFailure(context, PLUGIN_SETTINGS_READ_RESPONSE_TYPE, payload.requestId, "plugin settings service id is unavailable");
+      return true;
+    }
+    void window.electronAPI.services
+      .readPluginSettings(serviceId)
+      .then((result) => {
+        context.sendBridgeMessageToWebview({
+          type: PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
+          requestId: payload.requestId,
+          ok: result.ok,
+          values: result.values,
+          defaults: result.defaults,
+          schema: result.schema,
+          shortcutStatuses: result.shortcutStatuses
+        });
+      })
+      .catch((reason) => {
+        sendFailure(context, PLUGIN_SETTINGS_READ_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
+      });
+    return true;
+  }
+
+  if (payload.type === PLUGIN_SETTINGS_WRITE_REQUEST_TYPE) {
+    const serviceId = context.serviceId?.trim() ?? "";
+    if (!serviceId) {
+      sendFailure(context, PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE, payload.requestId, "plugin settings service id is unavailable");
+      return true;
+    }
+    void window.electronAPI.services
+      .writePluginSettings(serviceId, (payload.values ?? {}) as PluginSettingsValues)
+      .then((result) => {
+        context.sendBridgeMessageToWebview({
+          type: PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
+          requestId: payload.requestId,
+          ok: result.ok,
+          message: result.message,
+          values: result.values,
+          defaults: result.defaults,
+          schema: result.schema,
+          shortcutStatuses: result.shortcutStatuses,
+          restartRequired: result.restartRequired,
+          changedKeys: result.changedKeys
+        });
+      })
+      .catch((reason) => {
+        sendFailure(context, PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE, payload.requestId, errorMessage(reason));
       });
     return true;
   }

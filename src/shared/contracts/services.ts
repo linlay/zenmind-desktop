@@ -1,3 +1,10 @@
+import type {
+  ManifestPluginSettingField,
+  ManifestPluginSettings,
+  ManifestPluginSettingValue,
+  ManifestPluginSettingsUi
+} from "./manifest";
+
 export type ServiceId = string;
 export type ServiceKind = "builtin" | "plugin";
 export type FrontendMode = "none" | "embedded" | "standalone";
@@ -64,6 +71,49 @@ export interface ServicePluginAction {
   icon?: string;
   placement: "controlCenter";
   requiresRunning: boolean;
+  globalShortcut?: {
+    settingKey: string;
+  };
+}
+
+export type PluginSettingValue = ManifestPluginSettingValue;
+export type PluginSettingsValues = Record<string, PluginSettingValue>;
+
+export interface PluginGlobalShortcutStatus {
+  pluginId: ServiceId;
+  actionId: string;
+  settingKey: string;
+  accelerator: string;
+  enabled: boolean;
+  reason?: "missing" | "conflict" | "invalid" | "registration-failed" | "settings-error";
+  message?: string;
+}
+
+export interface PluginSettingsReadResult {
+  ok: boolean;
+  serviceId: ServiceId;
+  settingsPath: string;
+  schema: ManifestPluginSettings & {
+    schemaVersion: number;
+    fields: ManifestPluginSettingField[];
+    ui: ManifestPluginSettingsUi;
+  };
+  values: PluginSettingsValues;
+  defaults: PluginSettingsValues;
+  shortcutStatuses: PluginGlobalShortcutStatus[];
+}
+
+export interface PluginSettingsWriteResult extends PluginSettingsReadResult {
+  message: string;
+  restartRequired: boolean;
+  changedKeys: string[];
+}
+
+export interface PluginSettingsPageResult {
+  ok: boolean;
+  message: string;
+  serviceId: ServiceId;
+  url?: string;
 }
 
 export interface ServiceCommandResult {

@@ -47,6 +47,15 @@ function normalizeStringArray(value: unknown) {
     .filter(Boolean);
 }
 
+function normalizeKanbanNavigationInput(value: unknown, current: { enabled: boolean }) {
+  const record = value && typeof value === "object" && !Array.isArray(value)
+    ? value as { enabled?: unknown }
+    : {};
+  return {
+    enabled: typeof record.enabled === "boolean" ? record.enabled : current.enabled
+  };
+}
+
 export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHandlerOptions) {
   const {
     app,
@@ -135,6 +144,9 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
           ? normalizeStringArray(input.mainOrder)
           : current.navigation.mainOrder,
         webOrder,
+        kanban: input?.kanban !== undefined
+          ? normalizeKanbanNavigationInput(input.kanban, current.navigation.kanban)
+          : current.navigation.kanban,
         desktopCopilotPages: current.navigation.desktopCopilotPages
       }
     });

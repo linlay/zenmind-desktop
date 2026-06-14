@@ -121,6 +121,10 @@ export interface ServicesIpcHandlerContextDependencies {
   startService: (...args: any[]) => unknown;
   stopService: (...args: any[]) => unknown;
   restartService: (...args: any[]) => unknown;
+  readPluginSettings: (...args: any[]) => unknown;
+  writePluginSettings: (...args: any[]) => unknown;
+  openPluginSettingsPage: (...args: any[]) => unknown;
+  refreshPluginGlobalShortcuts?: (...args: any[]) => unknown;
   readServiceConfig: (...args: any[]) => unknown;
   writeServiceConfig: (...args: any[]) => unknown;
   importServiceFile: (...args: any[]) => unknown;
@@ -174,6 +178,10 @@ export function createServicesIpcHandlerOptions(
     startService: dependencies.startService,
     stopService: dependencies.stopService,
     restartService: dependencies.restartService,
+    readPluginSettings: dependencies.readPluginSettings,
+    writePluginSettings: dependencies.writePluginSettings,
+    openPluginSettingsPage: dependencies.openPluginSettingsPage,
+    refreshPluginGlobalShortcuts: dependencies.refreshPluginGlobalShortcuts,
     readServiceConfig: dependencies.readServiceConfig,
     writeServiceConfig: dependencies.writeServiceConfig,
     importServiceFile: dependencies.importServiceFile,

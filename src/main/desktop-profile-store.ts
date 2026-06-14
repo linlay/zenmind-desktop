@@ -34,6 +34,9 @@ export type DesktopProfile = {
   navigation: {
     mainOrder: string[];
     webOrder: string[];
+    kanban: {
+      enabled: boolean;
+    };
     desktopCopilotPages: DesktopCopilotPagePreferences;
   };
 };
@@ -85,6 +88,13 @@ function normalizeTextArray(value: unknown) {
   return value
     .map((item) => readText(item))
     .filter(Boolean);
+}
+
+function normalizeKanbanNavigation(value: unknown): DesktopProfile["navigation"]["kanban"] {
+  const record = isRecord(value) ? value : {};
+  return {
+    enabled: typeof record.enabled === "boolean" ? record.enabled : true
+  };
 }
 
 function readLegacyPreferences(rootDir: string) {
@@ -154,6 +164,7 @@ function normalizeDesktopProfile(
     navigation: {
       mainOrder: normalizeTextArray(navigation.mainOrder),
       webOrder: webOrder.length > 0 ? webOrder : legacyWebsiteOrder,
+      kanban: normalizeKanbanNavigation(navigation.kanban),
       desktopCopilotPages: sanitizeDesktopCopilotPagePreferences(
         navigation.desktopCopilotPages ?? legacySettings.desktopCopilotPages
       )

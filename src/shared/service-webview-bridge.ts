@@ -12,6 +12,10 @@ export const DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE = "zenmind:desktop-shell:open-
 export const DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE = "zenmind:desktop-shell:open-path:response";
 export const DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE = "zenmind:desktop-download:file";
 export const DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE = "zenmind:desktop-download:file:response";
+export const PLUGIN_SETTINGS_READ_REQUEST_TYPE = "zenmind:plugin-settings:read";
+export const PLUGIN_SETTINGS_READ_RESPONSE_TYPE = "zenmind:plugin-settings:read:response";
+export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "zenmind:plugin-settings:write";
+export const PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE = "zenmind:plugin-settings:write:response";
 export const DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE = "desktopContextChanged";
 export const DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE = "desktopRouteChanged";
 
@@ -19,7 +23,9 @@ export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE,
   DESKTOP_SHELL_OPEN_PATH_REQUEST_TYPE,
-  DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE
+  DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE,
+  PLUGIN_SETTINGS_READ_REQUEST_TYPE,
+  PLUGIN_SETTINGS_WRITE_REQUEST_TYPE
 ] as const;
 
 export const SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES = [
@@ -27,6 +33,8 @@ export const SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES = [
   DESKTOP_DIALOG_SELECT_DIRECTORY_RESPONSE_TYPE,
   DESKTOP_SHELL_OPEN_PATH_RESPONSE_TYPE,
   DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
+  PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
+  PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE
 ] as const;
@@ -49,6 +57,12 @@ export type ServiceWebviewBridgeMessage = {
   filename?: string;
   mimeType?: string;
   dataBase64?: string;
+  values?: Record<string, unknown>;
+  defaults?: Record<string, unknown>;
+  schema?: unknown;
+  shortcutStatuses?: unknown;
+  restartRequired?: boolean;
+  changedKeys?: string[];
   token?: string | null;
   desktop?: unknown;
   stage?: string;

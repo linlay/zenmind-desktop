@@ -25,6 +25,7 @@ import type { ServiceDefinition } from "../../manifest-utils";
 import { getAllServices, getService } from "../service-registry";
 import { issueAgentAccessToken } from "../../agent-auth";
 import { emitPluginBridgeHook, getPluginBridgeEnv } from "../../plugin-bridge";
+import { getPluginSettingsEnv } from "../../plugin-settings";
 import {
   initializePluginResourceState,
   readPluginResourceDesiredStatus,
@@ -944,7 +945,8 @@ export async function getServiceState(
       label: action.label,
       ...(action.icon ? { icon: action.icon } : {}),
       placement: action.placement ?? "controlCenter",
-      requiresRunning: action.requiresRunning === true
+      requiresRunning: action.requiresRunning === true,
+      ...(action.globalShortcut ? { globalShortcut: { settingKey: action.globalShortcut.settingKey } } : {})
     })),
     configFiles,
     healthMeta: {
@@ -1912,6 +1914,7 @@ function buildDesktopServiceCommandEnv(
   return {
     ...buildServiceLayoutEnv(layout),
     ...getPluginBridgeEnv(app, service),
+    ...getPluginSettingsEnv(app, service),
     ...(overrides ?? {}),
     DESKTOP_DEVICE_ID: getDesktopDeviceId(app)
   };

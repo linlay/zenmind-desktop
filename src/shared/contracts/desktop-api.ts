@@ -1,5 +1,5 @@
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
-import type { ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubAgentSettings, TunnelHubAgentSettingsInput, TunnelHubAgentSettingsResult } from "./services";
+import type { ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubAgentSettings, TunnelHubAgentSettingsInput, TunnelHubAgentSettingsResult, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
 import type { PluginInstallResult } from "./manifest";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
 import type { WebListResult, WebappCommandResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappStatusResult, WebsiteDeleteResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
@@ -217,6 +217,9 @@ export interface DesktopApi {
     stop: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
     restart: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
     invokePluginAction: (serviceId: ServiceId, actionId: string) => Promise<ServiceCommandResult>;
+    readPluginSettings: (serviceId: ServiceId) => Promise<PluginSettingsReadResult>;
+    writePluginSettings: (serviceId: ServiceId, values: PluginSettingsValues) => Promise<PluginSettingsWriteResult>;
+    openPluginSettingsPage: (serviceId: ServiceId) => Promise<PluginSettingsPageResult>;
     readConfig: (serviceId: ServiceId, key: string) => Promise<ServiceConfigReadResult>;
     writeConfig: (serviceId: ServiceId, key: string, content: string) => Promise<ServiceCommandResult>;
     importFile: (serviceId: ServiceId, targetKey: string) => Promise<ServiceImportResult>;
@@ -287,8 +290,8 @@ export interface DesktopApi {
     saveTunnelHubAgentSettings: (input: TunnelHubAgentSettingsInput) => Promise<TunnelHubAgentSettingsResult>;
     resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
     getThemePreference: () => Promise<"light" | "dark" | "system">;
-    getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
-    saveNavigationPreferences: (input: { mainOrder?: string[]; webOrder?: string[] }) => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; kanban: { enabled: boolean }; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    saveNavigationPreferences: (input: { mainOrder?: string[]; webOrder?: string[]; kanban?: { enabled?: boolean } }) => Promise<{ mainOrder: string[]; webOrder: string[]; kanban: { enabled: boolean }; desktopCopilotPages: DesktopCopilotPagePreferences }>;
     setNativeThemeSource: (themeMode: "light" | "dark" | "system") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;

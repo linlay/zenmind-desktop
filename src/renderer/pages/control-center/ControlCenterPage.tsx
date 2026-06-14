@@ -6,6 +6,10 @@ import type {
   ServiceId,
   ServiceLogTarget,
   ServiceState,
+  PluginSettingsReadResult,
+  PluginSettingsValues,
+  PluginSettingValue,
+  ManifestPluginSettingField,
 } from "@shared/contracts";
 import { useServices } from "../../services/ServicesContext";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -90,6 +94,8 @@ type ActionScope = "lifecycle" | "detail";
 type ConfigMeta = Pick<ServiceConfigReadResult, "path" | "exists" | "source">;
 type ConfigCache = Record<ServiceId, Record<string, string>>;
 type ConfigMetaCache = Record<ServiceId, Record<string, ConfigMeta>>;
+type PluginSettingsCache = Record<ServiceId, PluginSettingsReadResult>;
+type PluginSettingsDraftCache = Record<ServiceId, PluginSettingsValues>;
 type ServiceGroupKey = "core" | "market";
 type HelpTipState = {
   serviceId: ServiceId;
@@ -260,6 +266,40 @@ function getConfigSourceClass(
     return "is-file";
   }
   return "is-pending";
+}
+
+function serializePluginSettingsValues(values: PluginSettingsValues | undefined) {
+  return JSON.stringify(values ?? {}, Object.keys(values ?? {}).sort());
+}
+
+function readPluginFieldTextValue(value: PluginSettingValue | undefined) {
+  return typeof value === "string" ? value : "";
+}
+
+function readPluginFieldNumberValue(value: PluginSettingValue | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
+function readPluginFieldBooleanValue(value: PluginSettingValue | undefined) {
+  return value === true;
+}
+
+function readPluginFieldListValue(value: PluginSettingValue | undefined) {
+  return Array.isArray(value) ? value : [];
+}
+
+function getShortcutStatusLabel(
+  settings: PluginSettingsReadResult | undefined,
+  fieldKey: string,
+  t: TranslateFunction,
+) {
+  const status = settings?.shortcutStatuses.find((item) => item.settingKey === fieldKey);
+  if (!status) {
+    return "";
+  }
+  return status.message || (status.enabled
+    ? t("controlCenter.pluginSettings.shortcutEnabled")
+    : t("controlCenter.pluginSettings.shortcutDisabled"));
 }
 
 function getParentDirectory(filePath: string) {
@@ -500,6 +540,8 @@ export function ControlCenterPage() {
     start,
     stop,
     restart,
+    readPluginSettings,
+    writePluginSettings,
     readConfig,
     writeConfig,
     refresh,
@@ -525,6 +567,10 @@ export function ControlCenterPage() {
   const [configOriginalCache, setConfigOriginalCache] = useState<ConfigCache>(
     {},
   );
+  const [pluginSettingsCache, setPluginSettingsCache] = useState<PluginSettingsCache>({});
+  const [pluginSettingsDraftCache, setPluginSettingsDraftCache] = useState<PluginSettingsDraftCache>({});
+  const [pluginSettingsLoading, setPluginSettingsLoading] = useState<Record<ServiceId, boolean>>({});
+  const [pluginSettingsError, setPluginSettingsError] = useState<Record<ServiceId, string>>({});
 
   async function invokePluginAction(serviceId: ServiceId, actionId: string) {
     return window.electronAPI.services.invokePluginAction(serviceId, actionId);
@@ -703,6 +749,41 @@ export function ControlCenterPage() {
     setSelectedServiceId(selectedServiceIdFromNavigation);
   }, [selectedServiceIdFromNavigation]);
 
+  useEffect(() => {
+    const service = selectedServiceId ? serviceById.get(selectedServiceId) : null;
+    if (!service || service.kind !== "plugin") {
+      return;
+    }
+    let cancelled = false;
+    setPluginSettingsLoading((current) => ({ ...current, [service.id]: true }));
+    setPluginSettingsError((current) => ({ ...current, [service.id]: "" }));
+    void readPluginSettings(service.id)
+      .then((settings) => {
+        if (cancelled) {
+          return;
+        }
+        setPluginSettingsCache((current) => ({ ...current, [service.id]: settings }));
+        setPluginSettingsDraftCache((current) => ({ ...current, [service.id]: settings.values }));
+      })
+      .catch((reason) => {
+        if (cancelled) {
+          return;
+        }
+        setPluginSettingsError((current) => ({
+          ...current,
+          [service.id]: reason instanceof Error ? reason.message : String(reason),
+        }));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPluginSettingsLoading((current) => ({ ...current, [service.id]: false }));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedServiceId, serviceById]);
+
   const serviceCounts = {
     total: services.length,
     running: services.filter((service) => service.status === "running")
@@ -775,6 +856,27 @@ export function ControlCenterPage() {
     ? activeCoreModule?.description ||
     getLocalizedServiceDescription(activeDetailService, t)
     : "";
+  const activePluginSettings =
+    activeDetailService?.kind === "plugin"
+      ? pluginSettingsCache[activeDetailService.id]
+      : undefined;
+  const activePluginSettingsDraft =
+    activeDetailService && activePluginSettings
+      ? (pluginSettingsDraftCache[activeDetailService.id] ?? activePluginSettings.values)
+      : {};
+  const activePluginSettingsDirty = Boolean(
+    activeDetailService &&
+    activePluginSettings &&
+    serializePluginSettingsValues(activePluginSettingsDraft) !== serializePluginSettingsValues(activePluginSettings.values),
+  );
+  const activePluginSettingsLoading =
+    activeDetailService ? Boolean(pluginSettingsLoading[activeDetailService.id]) : false;
+  const activePluginSettingsError =
+    activeDetailService ? (pluginSettingsError[activeDetailService.id] ?? "") : "";
+  const activePluginSettingsHasContent = Boolean(
+    activePluginSettings &&
+    (activePluginSettings.schema.fields.length > 0 || activePluginSettings.schema.ui.customHtmlPath),
+  );
 
   function selectService(cardId: ServiceId) {
     setSelectedServiceId(cardId);
@@ -791,6 +893,154 @@ export function ControlCenterPage() {
       [activeDetailService.id]: configKey,
     }));
     setConfigFileSelectOpen(false);
+  }
+
+  function updatePluginSettingValue(key: string, value: PluginSettingValue | undefined) {
+    if (!activeDetailService) {
+      return;
+    }
+    setPluginSettingsDraftCache((current) => {
+      const existing = current[activeDetailService.id] ?? activePluginSettings?.values ?? {};
+      const next = { ...existing };
+      if (value === undefined) {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
+      return {
+        ...current,
+        [activeDetailService.id]: next,
+      };
+    });
+  }
+
+  async function savePluginSettings() {
+    if (!activeDetailService || !activePluginSettings) {
+      return { ok: false, message: t("controlCenter.pluginSettings.unavailable") };
+    }
+    const result = await writePluginSettings(activeDetailService.id, activePluginSettingsDraft);
+    setPluginSettingsCache((current) => ({ ...current, [activeDetailService.id]: result }));
+    setPluginSettingsDraftCache((current) => ({ ...current, [activeDetailService.id]: result.values }));
+    return {
+      ok: result.ok,
+      message: result.message,
+      service: activeDetailService
+    };
+  }
+
+  function renderPluginSettingField(field: ManifestPluginSettingField) {
+    const value = activePluginSettingsDraft[field.key];
+    const fieldId = `plugin-setting-${activeDetailService?.id ?? "plugin"}-${field.key}`;
+    const shortcutStatusLabel = field.type === "shortcut"
+      ? getShortcutStatusLabel(activePluginSettings, field.key, t)
+      : "";
+    const fieldNote = [
+      field.description,
+      field.restartRequired ? t("controlCenter.pluginSettings.restartRequired") : "",
+      shortcutStatusLabel,
+    ].filter(Boolean).join(" ");
+
+    let control;
+    switch (field.type) {
+      case "textarea":
+        control = (
+          <textarea
+            id={fieldId}
+            className="plugin-setting-textarea"
+            value={readPluginFieldTextValue(value)}
+            placeholder={field.placeholder}
+            onChange={(event) => updatePluginSettingValue(field.key, event.target.value)}
+          />
+        );
+        break;
+      case "number":
+      case "duration":
+        control = (
+          <input
+            id={fieldId}
+            type="number"
+            value={readPluginFieldNumberValue(value)}
+            min={field.min}
+            max={field.max}
+            step={field.step ?? (field.type === "duration" ? 1000 : undefined)}
+            placeholder={field.placeholder}
+            onChange={(event) => {
+              const raw = event.target.value.trim();
+              updatePluginSettingValue(field.key, raw ? Number(raw) : undefined);
+            }}
+          />
+        );
+        break;
+      case "boolean":
+        control = (
+          <button
+            id={fieldId}
+            type="button"
+            className={readPluginFieldBooleanValue(value) ? "settings-switch is-on" : "settings-switch"}
+            role="switch"
+            aria-checked={readPluginFieldBooleanValue(value)}
+            onClick={() => updatePluginSettingValue(field.key, !readPluginFieldBooleanValue(value))}
+          >
+            <span />
+          </button>
+        );
+        break;
+      case "select":
+        control = (
+          <select
+            id={fieldId}
+            value={readPluginFieldTextValue(value)}
+            onChange={(event) => updatePluginSettingValue(field.key, event.target.value)}
+          >
+            {!field.required ? <option value="">{t("controlCenter.pluginSettings.unset")}</option> : null}
+            {(field.options ?? []).map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        );
+        break;
+      case "multiselect":
+        control = (
+          <select
+            id={fieldId}
+            multiple
+            value={readPluginFieldListValue(value)}
+            onChange={(event) => updatePluginSettingValue(
+              field.key,
+              Array.from(event.target.selectedOptions).map((option) => option.value),
+            )}
+          >
+            {(field.options ?? []).map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        );
+        break;
+      case "text":
+      case "shortcut":
+      default:
+        control = (
+          <input
+            id={fieldId}
+            type="text"
+            value={readPluginFieldTextValue(value)}
+            placeholder={field.placeholder}
+            onChange={(event) => updatePluginSettingValue(field.key, event.target.value)}
+          />
+        );
+        break;
+    }
+
+    return (
+      <label key={field.key} className="plugin-setting-field" htmlFor={fieldId}>
+        <span className="plugin-setting-label">
+          <strong>{field.label}</strong>
+          {field.required ? <em>{t("controlCenter.pluginSettings.required")}</em> : null}
+        </span>
+        {control}
+        {fieldNote ? <span className="plugin-setting-note">{fieldNote}</span> : null}
+      </label>
+    );
   }
 
   function openServiceHelp(
@@ -2000,6 +2250,59 @@ export function ControlCenterPage() {
                 </div>
               ) : null}
             </section>
+
+            {activeDetailService.kind === "plugin" && (activePluginSettingsLoading || activePluginSettingsError || activePluginSettingsHasContent) ? (
+              <section className="config-panel plugin-settings-panel">
+                <div className="config-head">
+                  <div className="config-title-main">
+                    <div className="config-title-label">
+                      <span className="config-terminal-icon" aria-hidden="true">
+                        <ConfigTerminalIcon />
+                      </span>
+                      <h3>{t("controlCenter.pluginSettings.title")}</h3>
+                    </div>
+                  </div>
+                  <div className="config-select-wrap">
+                    {activePluginSettings?.schema.ui.customHtmlPath ? (
+                      <button
+                        type="button"
+                        className="action-button"
+                        onClick={() => navigate(`/plugin-settings/${activeDetailService.id}`)}
+                      >
+                        {t("controlCenter.pluginSettings.openCustom")}
+                      </button>
+                    ) : null}
+                    {activePluginSettings?.schema.fields.length ? (
+                      <button
+                        type="button"
+                        className="action-button primary config-save-button"
+                        onClick={() =>
+                          runAction(
+                            activeDetailService.id,
+                            "detail",
+                            savePluginSettings,
+                          )
+                        }
+                        disabled={activeId === activeDetailService.id || !activePluginSettingsDirty}
+                      >
+                        {t("common.save")}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                {activePluginSettingsLoading ? (
+                  <p className="service-message">{t("controlCenter.pluginSettings.loading")}</p>
+                ) : activePluginSettingsError ? (
+                  <p className="service-message">{activePluginSettingsError}</p>
+                ) : activePluginSettings?.schema.fields.length ? (
+                  <div className="plugin-settings-form">
+                    {activePluginSettings.schema.fields.map(renderPluginSettingField)}
+                  </div>
+                ) : (
+                  <p className="service-message">{t("controlCenter.pluginSettings.customOnly")}</p>
+                )}
+              </section>
+            ) : null}
 
             <section className="config-panel">
               <div className="config-head">

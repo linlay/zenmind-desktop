@@ -3888,6 +3888,103 @@
   background: var(--control-center-card);
 }
 
+.plugin-settings-panel {
+  flex: 0 0 auto;
+}
+
+.plugin-settings-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  padding: 18px 24px 22px;
+}
+
+.plugin-setting-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: var(--control-center-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.plugin-setting-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.plugin-setting-label strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--control-center-text);
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-setting-label em {
+  flex: none;
+  color: var(--warning);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.plugin-setting-field input,
+.plugin-setting-field select,
+.plugin-setting-textarea {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--control-center-border);
+  border-radius: 4px;
+  background: var(--control-center-bg);
+  color: var(--control-center-text);
+  font: inherit;
+  outline: none;
+}
+
+.plugin-setting-field select[multiple] {
+  min-height: 92px;
+  padding: 8px 11px;
+}
+
+.plugin-setting-textarea {
+  min-height: 92px;
+  padding: 9px 11px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.plugin-setting-field input:focus,
+.plugin-setting-field select:focus,
+.plugin-setting-textarea:focus {
+  border-color: rgba(37, 99, 235, 0.42);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.08);
+}
+
+.plugin-setting-field .settings-switch {
+  justify-self: start;
+}
+
+.plugin-setting-note {
+  color: var(--control-center-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+:root[data-theme="dark"] .plugin-setting-field input,
+:root[data-theme="dark"] .plugin-setting-field select,
+:root[data-theme="dark"] .plugin-setting-textarea {
+  border-color: rgba(148, 163, 184, 0.16);
+  background: var(--control-center-bg);
+  color: var(--control-center-text);
+}
+
 @media (max-width: 1320px) {
   .control-center-service-head {
     align-items: flex-start;

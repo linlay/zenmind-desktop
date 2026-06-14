@@ -60,8 +60,19 @@ export function normalizeSidebarNavOrder(
   candidate: unknown,
   availableItems: SidebarNavOrderItem[]
 ): SidebarNavOrderItemKey[] {
-  void candidate;
-  return availableItems.map((item) => item.key);
+  const availableKeys = new Set(availableItems.map((item) => item.key));
+  const normalizedCandidate = Array.isArray(candidate)
+    ? candidate.filter((key): key is SidebarNavOrderItemKey =>
+        typeof key === "string" && availableKeys.has(key as SidebarNavOrderItemKey)
+      )
+    : [];
+  const orderedKeys = normalizedCandidate.length > 0 ? normalizedCandidate : [];
+  for (const item of availableItems) {
+    if (!orderedKeys.includes(item.key)) {
+      orderedKeys.push(item.key);
+    }
+  }
+  return orderedKeys;
 }
 
 export function sortSidebarNavItems<T extends { orderKey: SidebarNavOrderItemKey }>(

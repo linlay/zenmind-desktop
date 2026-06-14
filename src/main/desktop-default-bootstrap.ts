@@ -39,6 +39,16 @@ function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function readKanbanNavigationDefault(
+  value: unknown,
+  current: { enabled: boolean }
+) {
+  const record = isRecord(value) ? value : {};
+  return {
+    enabled: typeof record.enabled === "boolean" ? record.enabled : current.enabled
+  };
+}
+
 function readJsonFile(filePath: string) {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
@@ -128,6 +138,7 @@ function applyProfileDefaults(app: App, profileDefaults: unknown): BootstrapAppl
         : Array.isArray(navigation.websiteOrder)
           ? navigation.websiteOrder.map(readText).filter(Boolean)
           : current.navigation.webOrder,
+      kanban: readKanbanNavigationDefault(navigation.kanban, current.navigation.kanban),
       desktopCopilotPages: isRecord(navigation.desktopCopilotPages)
         ? navigation.desktopCopilotPages as never
         : current.navigation.desktopCopilotPages

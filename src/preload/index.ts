@@ -181,6 +181,11 @@ const api: DesktopApi = {
     restart: (serviceId: ServiceId) => ipcRenderer.invoke("services.restart", serviceId),
     invokePluginAction: (serviceId: ServiceId, actionId: string) =>
       ipcRenderer.invoke("services.invokePluginAction", serviceId, actionId),
+    readPluginSettings: (serviceId: ServiceId) => ipcRenderer.invoke("services.readPluginSettings", serviceId),
+    writePluginSettings: (serviceId: ServiceId, values) =>
+      ipcRenderer.invoke("services.writePluginSettings", serviceId, values),
+    openPluginSettingsPage: (serviceId: ServiceId) =>
+      ipcRenderer.invoke("services.openPluginSettingsPage", serviceId),
     readConfig: (serviceId: ServiceId, key: string) => ipcRenderer.invoke("services.readConfig", serviceId, key),
     writeConfig: (serviceId: ServiceId, key: string, content: string) =>
       ipcRenderer.invoke("services.writeConfig", serviceId, key, content),

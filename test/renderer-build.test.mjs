@@ -1333,6 +1333,11 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, /type="range"/);
   assert.match(settingsPage, /settings\.navigation\.fixedMain/);
   assert.match(settingsPage, /settings\.navigation\.fixedTools/);
+  assert.match(settingsPage, /settings\.navigation\.kanbanToggle/);
+  assert.match(settingsPage, /settings\.navigation\.kanbanVisible/);
+  assert.match(settingsPage, /settings\.navigation\.kanbanHidden/);
+  assert.match(settingsPage, /handleToggleKanbanVisibility/);
+  assert.match(settingsPage, /saveNavigationPreferences\(\{\s*kanban: \{ enabled: nextEnabled \}/);
   assert.match(settingsPage, /settings-item-card navigation-settings-card/);
   assert.match(settingsPage, /settings-item-list navigation-order-list/);
   assert.doesNotMatch(settingsPage, /navigation-order-grid-head/);
@@ -1389,7 +1394,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /copilotPageKey:\s*"market"/);
   assert.match(settingsPage, /navigation-order-fixed-label/);
   assert.doesNotMatch(settingsPage, /navigation-order-fixed-dot/);
-  assert.match(settingsPage, /\{sidebarNavOrder\.map/);
+  assert.match(settingsPage, /navigationSettingsOrder\.map/);
   assert.match(settingsPage, /\{fixedNavigationTools\.map\(\(tool\) => renderFixedNavigationToolRow\(tool\)\)\}/);
   assert.match(settingsPage, /handleSelectDesktopHelperAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*desktopHelperAgentKey: normalizedAgentKey\s*\}\)/);
@@ -1544,6 +1549,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(contracts, /getAppInfo: \(\) => Promise<DesktopAppInfo>/);
   assert.match(contracts, /resetRuntimeEnv: \(\) => Promise<DesktopRuntimeEnvResetResult>/);
   assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark" \| "system"\)/);
+  assert.match(contracts, /getNavigationPreferences: \(\) => Promise<\{ mainOrder: string\[\]; webOrder: string\[\]; kanban: \{ enabled: boolean \}; desktopCopilotPages: DesktopCopilotPagePreferences \}>/);
+  assert.match(contracts, /saveNavigationPreferences: \(input: \{ mainOrder\?: string\[\]; webOrder\?: string\[\]; kanban\?: \{ enabled\?: boolean \} \}\)/);
   assert.match(contracts, /getLocale: \(\) => Promise<LocaleSettings>/);
   assert.match(contracts, /setLocale: \(locale: SupportedLocale\) => Promise<LocaleSettings>/);
   assert.match(contracts, /onLocaleChanged: \(listener: LocaleChangedListener\) => \(\) => void/);
@@ -1565,6 +1572,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);/);
   assert.match(mainProcess, /initializeMainI18n\(app, \{ isFirstInstall: isFirstDesktopInstall \}\)/);
   assert.match(settingsHandlers, /ipcMain\.handle\("settings\.setLocale", async \(_event: any, locale: unknown\) => \{/);
+  assert.match(settingsHandlers, /normalizeKanbanNavigationInput/);
+  assert.match(settingsHandlers, /kanban: input\?\.kanban !== undefined[\s\S]*?current\.navigation\.kanban/);
   assert.match(settingsHandlers, /buildApplicationMenu\(\);[\s\S]{0,120}refreshTrayContextMenu\(\);[\s\S]{0,120}emitLocaleChanged\(settings\);/);
   assert.doesNotMatch(contracts, /setSidebarTranslucency/);
   assert.doesNotMatch(mainProcess, /settings\.setSidebarTranslucency/);
@@ -1598,7 +1607,10 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.doesNotMatch(orderHelper, /\.\.\.serviceItems/);
   assert.doesNotMatch(orderHelper, /\.\.\.experimentalItems/);
   assert.match(orderHelper, /normalizeSidebarNavOrder/);
-  assert.match(orderHelper, /return availableItems\.map\(\(item\) => item\.key\)/);
+  assert.match(orderHelper, /const availableKeys = new Set\(availableItems\.map\(\(item\) => item\.key\)\)/);
+  assert.match(orderHelper, /availableKeys\.has\(key as SidebarNavOrderItemKey\)/);
+  assert.match(orderHelper, /orderedKeys\.push\(item\.key\)/);
+  assert.doesNotMatch(orderHelper, /return availableItems\.map\(\(item\) => item\.key\)/);
   assert.match(orderHelper, /sortSidebarNavItems/);
   assert.match(appShell, /SIDEBAR_NAV_ORDER_STORAGE_KEY/);
   assert.match(appShell, /WEB_GROUP_ORDER_STORAGE_KEY/);
@@ -1606,6 +1618,10 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /key\.startsWith\("custom:"\) \? `website:\$\{key\.slice\("custom:"\.length\)\}`/);
   assert.match(appShell, /normalizeWebGroupOrder/);
   assert.match(appShell, /availableSidebarNavOrderItems/);
+  assert.match(appShell, /const \[kanbanEnabled, setKanbanEnabled\] = useState\(true\)/);
+  assert.match(appShell, /\.filter\(\(item\) => item\.key !== "kanban" \|\| kanbanEnabled\)/);
+  assert.match(appShell, /typeof preferences\?\.kanban\?\.enabled === "boolean"/);
+  assert.match(appShell, /onKanbanEnabledChange=\{setKanbanEnabled\}/);
   assert.match(appShell, /normalizeSidebarNavOrder\(sidebarNavOrder, availableSidebarNavOrderItems\)/);
   assert.match(appShell, /websiteNavOrder=\{normalizedWebGroupOrder\}/);
   assert.match(appShell, /webItems=\{webItems\}/);
@@ -2309,9 +2325,11 @@ test("assistant navigation agents refresh immediately after startup services bec
 test("bootstrap success opens the first available navigation agent", () => {
   const appShell = readAppShellSource();
   const startupAutoOpenBlock = appShell.match(
-    /useEffect\(\(\) => \{[\s\S]*?shouldAutoOpenAssistant\(startupRestoreState, startupAllReady, location\.pathname\)[\s\S]*?\}, \[location\.pathname, navigate, startupAllReady, startupRestoreState\]\);/u
+    /useEffect\(\(\) => \{[\s\S]*?shouldAutoOpenAssistant\(startupRestoreState, startupAllReady, location\.pathname\)[\s\S]*?\}, \[kanbanEnabled, location\.pathname, navigate, navigationPreferencesLoaded, startupAllReady, startupRestoreState\]\);/u
   )?.[0] ?? "";
 
+  assert.match(startupAutoOpenBlock, /!navigationPreferencesLoaded/);
+  assert.match(startupAutoOpenBlock, /getKanbanAwareFallbackPath\(kanbanEnabled\)/);
   assert.match(startupAutoOpenBlock, /assistant\.listNavigationAgents\(\)/);
   assert.match(startupAutoOpenBlock, /normalizeAssistantNavAgents\(result\.items\)/);
   assert.match(startupAutoOpenBlock, /setAssistantNavAgents\(nextItems\)/);

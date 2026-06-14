@@ -1,5 +1,6 @@
 import { emitPluginBridgeHook } from "../plugin-bridge";
-import { getService } from "../services/service-registry";
+import { getPluginGlobalShortcutStatuses } from "../plugin-global-shortcuts";
+import { invokePluginDesktopAction } from "../plugin-actions";
 
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 
@@ -21,6 +22,10 @@ export interface ServicesIpcHandlerOptions {
   startService: (app: any, serviceId: string) => Promise<any>;
   stopService: (app: any, serviceId: string) => Promise<any>;
   restartService: (app: any, serviceId: string) => Promise<any>;
+  readPluginSettings: (app: any, serviceId: string, shortcutStatuses?: any[]) => Promise<any> | any;
+  writePluginSettings: (app: any, serviceId: string, values: any, shortcutStatuses?: any[]) => Promise<any> | any;
+  openPluginSettingsPage: (app: any, serviceId: string) => Promise<any> | any;
+  refreshPluginGlobalShortcuts?: () => unknown;
   readServiceConfig: (app: any, serviceId: string, key: string) => Promise<any>;
   writeServiceConfig: (app: any, serviceId: string, key: string, content: string) => Promise<any>;
   importServiceFile: (app: any, serviceId: string, targetKey: string, filePath: string) => Promise<any>;
@@ -156,6 +161,10 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     startService,
     stopService,
     restartService,
+    readPluginSettings,
+    writePluginSettings,
+    openPluginSettingsPage,
+    refreshPluginGlobalShortcuts,
     readServiceConfig,
     writeServiceConfig,
     importServiceFile,
@@ -396,38 +405,44 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
   );
 
   ipcMain.handle("services.invokePluginAction", async (_event: any, serviceId: string, actionId: string) =>
-    runServiceMutation(async () => {
-      const service = getService(String(serviceId || ""));
-      if (service.kind !== "plugin") {
-        throw new Error(`service ${serviceId} is not a plugin`);
-      }
-      const action = service.desktop.actions.find((item) => item.id === String(actionId || "").trim());
-      if (!action) {
-        throw new Error(`unknown plugin action: ${actionId}`);
-      }
-      let current = await getServiceState(app, service.id);
-      if (action.requiresRunning && current.status !== "running") {
-        const startResult = await handleServiceStart(service.id);
-        if (!startResult.ok) {
-          return startResult;
-        }
-        current = startResult.service ?? await getServiceState(app, service.id);
-      }
-      emitPluginBridgeHook(`plugin.actionInvoked:${action.id}`, {
-        pluginId: service.id,
-        actionId: action.id
-      });
-      return {
-        ok: true,
-        message: `${service.name} 已执行 ${action.label}。`,
-        service: current
-      };
-    })
+    runServiceMutation(() => invokePluginDesktopAction({
+      app,
+      serviceId,
+      actionId,
+      getServiceState,
+      handleServiceStart
+    }))
   );
 
   // ---------------------------------------------------------------------------
   // services — config
   // ---------------------------------------------------------------------------
+  ipcMain.handle("services.readPluginSettings", async (_event: any, serviceId: string) =>
+    readPluginSettings(app, serviceId, getPluginGlobalShortcutStatuses(serviceId))
+  );
+
+  ipcMain.handle("services.writePluginSettings", async (_event: any, serviceId: string, values: any) =>
+    runServiceMutation(async () => {
+      const result = await writePluginSettings(app, serviceId, values, getPluginGlobalShortcutStatuses(serviceId));
+      refreshPluginGlobalShortcuts?.();
+      const refreshed = await readPluginSettings(app, serviceId, getPluginGlobalShortcutStatuses(serviceId));
+      emitPluginBridgeHook("plugin.settingsChanged", {
+        pluginId: serviceId,
+        values: refreshed.values,
+        changedKeys: result.changedKeys,
+        restartRequired: result.restartRequired
+      });
+      return {
+        ...result,
+        shortcutStatuses: refreshed.shortcutStatuses
+      };
+    })
+  );
+
+  ipcMain.handle("services.openPluginSettingsPage", async (_event: any, serviceId: string) =>
+    openPluginSettingsPage(app, serviceId)
+  );
+
   ipcMain.handle("services.readConfig", async (_event: any, serviceId: string, key: string) =>
     readServiceConfig(app, serviceId, key)
   );

@@ -161,12 +161,61 @@ export interface ManifestDesktopCapabilities {
 
 export type ManifestDesktopActionPlacement = "controlCenter";
 
+export interface ManifestDesktopActionGlobalShortcut {
+  settingKey: string;
+}
+
 export interface ManifestDesktopAction {
   id: string;
   label: string;
   icon?: string;
   placement?: ManifestDesktopActionPlacement;
   requiresRunning?: boolean;
+  globalShortcut?: ManifestDesktopActionGlobalShortcut;
+}
+
+export type ManifestPluginSettingType =
+  | "text"
+  | "textarea"
+  | "number"
+  | "boolean"
+  | "select"
+  | "multiselect"
+  | "shortcut"
+  | "duration";
+
+export type ManifestPluginSettingValue = string | number | boolean | string[];
+export type ManifestPluginSettingPlatform = "darwin" | "win32" | "linux";
+
+export interface ManifestPluginSettingOption {
+  label: string;
+  value: string;
+}
+
+export interface ManifestPluginSettingField {
+  key: string;
+  type: ManifestPluginSettingType;
+  label: string;
+  description?: string;
+  defaultValue?: ManifestPluginSettingValue;
+  defaultValueByPlatform?: Partial<Record<ManifestPluginSettingPlatform, ManifestPluginSettingValue>>;
+  required?: boolean;
+  placeholder?: string;
+  options?: ManifestPluginSettingOption[];
+  min?: number;
+  max?: number;
+  step?: number;
+  restartRequired?: boolean;
+}
+
+export interface ManifestPluginSettingsUi {
+  customHtmlPath?: string;
+}
+
+export interface ManifestPluginSettings {
+  schemaVersion?: number;
+  fields?: ManifestPluginSettingField[];
+  ui?: ManifestPluginSettingsUi;
 }
 
 export interface ManifestPluginHooks {
@@ -226,6 +275,7 @@ export interface Manifest {
   hooks?: ManifestPluginHooks;
   bridge?: ManifestPluginBridge;
   resources?: ManifestPluginResources;
+  settings?: ManifestPluginSettings;
 }
 
 export interface PluginInstallResult {

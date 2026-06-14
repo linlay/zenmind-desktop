@@ -78,7 +78,11 @@ export function shouldRedirectStartupFailureToControlCenter(
     isBootstrapOwnedRoute(currentPathname);
 }
 
-export function resolveStartupRootPath(startupRestoreState: StartupRestoreState | null, startupAllReady: boolean) {
+export function resolveStartupRootPath(
+  startupRestoreState: StartupRestoreState | null,
+  startupAllReady: boolean,
+  kanbanEnabled = true
+) {
   if (!startupRestoreState) {
     return null;
   }
@@ -91,7 +95,7 @@ export function resolveStartupRootPath(startupRestoreState: StartupRestoreState 
     return "/control-center";
   }
 
-  return "/kanban";
+  return kanbanEnabled ? "/kanban" : "/control-center";
 }
 
 function isBootstrapOwnedRoute(currentPathname: string) {

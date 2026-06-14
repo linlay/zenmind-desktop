@@ -65,12 +65,20 @@ import { handlePluginUninstall } from "./plugin-uninstall";
 import {
   configurePluginBridge,
   emitPluginBridgeHook,
+  publishPluginBridgeAssistantActiveTasks,
   publishPluginBridgeServiceState,
   setPluginBridgeDesktopReady,
   stopPluginBridgeServers
 } from "./plugin-bridge";
 import { configurePluginResources, retryPendingPluginResourceSync } from "./plugin-resources";
-import { showDesktopPetBanner, showSystemUpdateOverlay } from "./plugin-desktop-effects";
+import {
+  hideDesktopActivityIsland,
+  hideDesktopClipboardPalette,
+  showDesktopClipboardPalette,
+  showDesktopPetBanner,
+  showSystemUpdateOverlay,
+  updateDesktopActivityIsland
+} from "./plugin-desktop-effects";
 import {
   buildSandboxImage,
   deleteSandboxImage,
@@ -132,6 +140,7 @@ import type {
   AssistantVoiceTranscriptionRequest,
   DesktopPetAgentOption,
   DesktopPetSettingsInput,
+  DesktopPetTaskItem,
   RendererDiagnosticReport,
   AssistantPastedImageInput,
   AssistantWorkerOpenRequest,
@@ -301,6 +310,16 @@ import {
   loadRendererRoute
 } from "./renderer-route";
 import { parseSafeLoopbackWebUrl } from "./loopback-url";
+import {
+  openPluginSettingsPage,
+  readPluginSettingsSnapshot,
+  writePluginSettingsValues
+} from "./plugin-settings";
+import {
+  refreshPluginGlobalShortcuts,
+  unregisterPluginGlobalShortcuts
+} from "./plugin-global-shortcuts";
+import { invokePluginDesktopAction } from "./plugin-actions";
 
 const appState = createMainAppState();
 const mainProcessContext = createMainProcessContext({
@@ -331,6 +350,9 @@ const DESKTOP_PET_GENERIC_DONE_PREVIEWS = new Set([
   "打开对话查看完整回复",
   DESKTOP_PET_DONE_PREVIEW_FALLBACK
 ]);
+const DEFAULT_CLIPBOARD_PLUGIN_SHORTCUT = "Alt+V";
+const pluginClipboardShortcuts = new Map<string, { accelerator: string; url: string; width: number; height: number }>();
+let lastPluginAssistantActiveTasksSignature = "";
 
 const startupRestoreController = createStartupRestoreController({
   onChange: (state) => {
@@ -595,6 +617,145 @@ function delay(ms: number) {
   });
 }
 
+function asPluginRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function normalizePluginShortcutAccelerator(value: unknown) {
+  const raw = typeof value === "string" && value.trim()
+    ? value.trim()
+    : DEFAULT_CLIPBOARD_PLUGIN_SHORTCUT;
+  return raw.replace(/^Option\+/iu, "Alt+");
+}
+
+function normalizePluginLocalHttpUrl(value: unknown) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) {
+    throw new Error("url is required");
+  }
+  const parsed = new URL(raw);
+  if (parsed.protocol !== "http:") {
+    throw new Error("url must use http");
+  }
+  if (parsed.hostname !== "127.0.0.1" && parsed.hostname !== "localhost") {
+    throw new Error("url must point to localhost");
+  }
+  return parsed.toString();
+}
+
+function clampPluginWindowDimension(value: unknown, fallback: number, min: number, max: number) {
+  const numberValue = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numberValue)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(Math.trunc(numberValue), max));
+}
+
+function getDesktopClipboardTextForPlugin() {
+  if (mainProcessContext.platform === "darwin") {
+    return { text: clipboard.readText(), platform: "darwin" };
+  }
+  if (mainProcessContext.platform === "win32") {
+    return { text: clipboard.readText(), platform: "win32" };
+  }
+  return { text: clipboard.readText(), platform: mainProcessContext.platform };
+}
+
+function writeDesktopClipboardTextForPlugin(params: unknown) {
+  const text = String(asPluginRecord(params).text ?? "");
+  if (mainProcessContext.platform === "darwin") {
+    clipboard.writeText(text);
+    return { written: true, platform: "darwin" };
+  }
+  if (mainProcessContext.platform === "win32") {
+    clipboard.writeText(text);
+    return { written: true, platform: "win32" };
+  }
+  clipboard.writeText(text);
+  return { written: true, platform: mainProcessContext.platform };
+}
+
+function showDesktopClipboardPaletteForPlugin(pluginId: string, params: unknown) {
+  if (mainProcessContext.platform !== "darwin") {
+    return { shown: false, unsupported: true, platform: mainProcessContext.platform };
+  }
+  const record = asPluginRecord(params);
+  return showDesktopClipboardPalette(pluginId, {
+    url: normalizePluginLocalHttpUrl(record.url),
+    width: clampPluginWindowDimension(record.width, 520, 360, 760),
+    height: clampPluginWindowDimension(record.height, 520, 320, 760)
+  });
+}
+
+function hideDesktopClipboardPaletteForPlugin(pluginId: string) {
+  return hideDesktopClipboardPalette(pluginId);
+}
+
+function unregisterDesktopClipboardShortcutForPlugin(pluginId: string) {
+  const owned = pluginClipboardShortcuts.get(pluginId);
+  if (!owned) {
+    return { unregistered: false };
+  }
+  globalShortcut.unregister(owned.accelerator);
+  pluginClipboardShortcuts.delete(pluginId);
+  hideDesktopClipboardPaletteForPlugin(pluginId);
+  return { unregistered: true, accelerator: owned.accelerator };
+}
+
+function cleanupPluginBridgePlugin(pluginId: string) {
+  unregisterDesktopClipboardShortcutForPlugin(pluginId);
+}
+
+function registerDesktopClipboardShortcutForPlugin(pluginId: string, params: unknown) {
+  if (mainProcessContext.platform !== "darwin") {
+    return { registered: false, unsupported: true, platform: mainProcessContext.platform };
+  }
+  const record = asPluginRecord(params);
+  const accelerator = normalizePluginShortcutAccelerator(record.accelerator);
+  const url = normalizePluginLocalHttpUrl(record.url);
+  const width = clampPluginWindowDimension(record.width, 520, 360, 760);
+  const height = clampPluginWindowDimension(record.height, 520, 320, 760);
+  unregisterDesktopClipboardShortcutForPlugin(pluginId);
+  const registered = globalShortcut.register(accelerator, () => {
+    showDesktopClipboardPalette(pluginId, { url, width, height });
+  });
+  if (!registered) {
+    return { registered: false, accelerator };
+  }
+  pluginClipboardShortcuts.set(pluginId, { accelerator, url, width, height });
+  return { registered: true, accelerator };
+}
+
+function getAssistantActiveTasksSnapshotForPlugins() {
+  const tasks = getDesktopPetActiveTasksForState();
+  return {
+    tasks,
+    runningTaskCount: Math.max(getDesktopPetRunningTaskCountForState(), tasks.length),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function publishPluginAssistantActiveTasks(tasks: DesktopPetTaskItem[], runningTaskCount: number) {
+  const signature = JSON.stringify({
+    runningTaskCount,
+    tasks: tasks.map((task) => ({
+      id: task.id,
+      runId: task.runId,
+      status: task.status,
+      title: task.title,
+      preview: task.preview,
+      updatedAt: task.updatedAt
+    }))
+  });
+  if (signature === lastPluginAssistantActiveTasksSignature) {
+    return;
+  }
+  lastPluginAssistantActiveTasksSignature = signature;
+  publishPluginBridgeAssistantActiveTasks(tasks, runningTaskCount);
+}
+
 const quickCopilotWindowController = new QuickCopilotWindowController({
   app,
   platform: () => mainProcessContext.platform,
@@ -823,6 +984,7 @@ function scheduleAgentPlatformPetStatusRefresh(delayMs = 0, force = false) {
 function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
   const visible = getDesktopPetVisible();
   const activeTasks = getDesktopPetActiveTasksForState();
+  const runningTaskCount = Math.max(getDesktopPetRunningTaskCountForState(), activeTasks.length);
   const refresh = computeDesktopPetStateRefresh({
     settings: appState.desktopPetSettings,
     supported: isDesktopPetSupportedPlatform(mainProcessContext.platform),
@@ -834,7 +996,7 @@ function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
     appearanceOptions: listUserDesktopPetAppearanceOptions(app),
     activeTasks,
     previewPanel: desktopPetPreviewController.getPanel(),
-    runningTaskCount: Math.max(getDesktopPetRunningTaskCountForState(), activeTasks.length),
+    runningTaskCount,
     edgeDock: resolveDesktopPetEdgeDock(
       appState.desktopPetSettings.position,
       getDesktopPetDisplayBounds(appState.desktopPetSettings.position)
@@ -855,6 +1017,7 @@ function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
     }
     targetWindow.webContents.send("desktopPet.state", appState.desktopPetState);
   }
+  publishPluginAssistantActiveTasks(refresh.state.activeTasks, refresh.state.runningTaskCount);
   appTrayController.refreshContextMenu();
   return appState.desktopPetState;
 }
@@ -1266,6 +1429,29 @@ function registerQuickAssistantShortcut() {
   });
 }
 
+function refreshPluginDesktopGlobalShortcuts() {
+  return refreshPluginGlobalShortcuts({
+    app,
+    globalShortcut,
+    platform: mainProcessContext.platform,
+    invokePluginAction: (serviceId, actionId) => {
+      void runServiceMutation(() => invokePluginDesktopAction({
+        app,
+        serviceId,
+        actionId,
+        getServiceState,
+        handleServiceStart
+      })).catch((error) => {
+        safeConsoleError("failed to invoke plugin global shortcut", {
+          serviceId,
+          actionId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
+    }
+  });
+}
+
 function registerFocusedWebviewDevToolsShortcut() {
   const registered = globalShortcut.register(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT, () => {
     openFocusedWebviewDevTools(webContents.getFocusedWebContents());
@@ -1385,6 +1571,9 @@ function ensureDarwinDockIdentity() {
 }
 
 function notifyServicesChanged() {
+  if (app.isReady()) {
+    refreshPluginDesktopGlobalShortcuts();
+  }
   void publishPluginBridgeServiceStates();
   scheduleAgentPlatformPetStatusRefresh(1000);
   appState.assistantNavigationStatusClient?.scheduleRefresh(1000);
@@ -1918,6 +2107,10 @@ function registerIpcHandlers(context: MainProcessContext) {
     startService,
     stopService,
     restartService,
+    readPluginSettings: readPluginSettingsSnapshot,
+    writePluginSettings: writePluginSettingsValues,
+    openPluginSettingsPage,
+    refreshPluginGlobalShortcuts: refreshPluginDesktopGlobalShortcuts,
     readServiceConfig,
     writeServiceConfig,
     importServiceFile,
@@ -2134,7 +2327,21 @@ if (gotSingleInstanceLock) {
       getServiceState: (serviceId) => getServiceState(app, serviceId),
       notifyAgentPlatformConfigChanged: () => notifyServicesChanged(),
       runDesktopPetBanner: (params) => showDesktopPetBanner(app, params as any),
-      showSystemUpdateOverlay: (params) => showSystemUpdateOverlay(params as any)
+      showSystemUpdateOverlay: (params) => showSystemUpdateOverlay(params as any),
+      getAssistantActiveTasks: () => getAssistantActiveTasksSnapshotForPlugins(),
+      updateDesktopActivityIsland: (params) => updateDesktopActivityIsland(params as any),
+      hideDesktopActivityIsland: () => hideDesktopActivityIsland(),
+      readDesktopClipboardText: () => getDesktopClipboardTextForPlugin(),
+      writeDesktopClipboardText: (params) => writeDesktopClipboardTextForPlugin(params),
+      registerDesktopClipboardShortcut: (pluginId, params) =>
+        registerDesktopClipboardShortcutForPlugin(pluginId, params),
+      unregisterDesktopClipboardShortcut: (pluginId) =>
+        unregisterDesktopClipboardShortcutForPlugin(pluginId),
+      showDesktopClipboardPalette: (pluginId, params) =>
+        showDesktopClipboardPaletteForPlugin(pluginId, params),
+      hideDesktopClipboardPalette: (pluginId) =>
+        hideDesktopClipboardPaletteForPlugin(pluginId),
+      cleanupPluginBridgePlugin
     });
     configurePluginResources({ callAgentPlatform });
     registerIpcHandlers(mainProcessContext);
@@ -2324,7 +2531,10 @@ app.on("will-quit", () => {
     platform: mainProcessContext.platform,
     globalShortcut
   });
+  unregisterPluginGlobalShortcuts(globalShortcut);
   globalShortcut.unregister(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT);
+  hideDesktopActivityIsland();
+  hideDesktopClipboardPalette();
   stopPluginBridgeServers();
 });
 

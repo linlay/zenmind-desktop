@@ -9,6 +9,7 @@ const helpRoot = path.join(projectRoot, "help-content");
 const allowedLatinTerms = [
   /ZenMind/g,
   /Docker Desktop/g,
+  /Desktop/g,
   /Application Support/g,
   /Node\.js/g,
   /macOS/g,
@@ -34,6 +35,8 @@ const allowedLatinTerms = [
   /UTF-8/g,
   /DevTools/g,
   /PowerShell/g,
+  /CLI/g,
+  /PATH/g,
   /stderr/g,
   /webview/g,
   /postMessage/g,
@@ -122,7 +125,7 @@ function stripNonProse(text) {
     .replace(/\{[A-Za-z0-9_.-]+\}/g, "")
     .replace(/\[[^\]]+\]\([^)]+\)/g, "")
     .replace(/(?:^|\s)[~./%A-Za-z0-9_-]+(?:[\\/][~./%A-Za-z0-9_-]+)+/g, " ")
-    .replace(/\b[A-Za-z0-9_.-]+\.(?:zip|tar\.gz|skill|json|md|dmg|ps1|sh|example)\b/g, " ");
+    .replace(/\b[A-Za-z0-9_.-]+\.(?:zip|tar\.gz|skill|json|md|png|dmg|ps1|sh|example)\b/g, " ");
 }
 
 function removeAllowedLatinTerms(text) {

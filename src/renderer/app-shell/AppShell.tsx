@@ -128,6 +128,9 @@ const HelpPage = lazy(() =>
 const FunctionalMarketPage = lazy(() =>
   import("../pages/functional-market").then((module) => ({ default: module.FunctionalMarketPage }))
 );
+const PluginSettingsPage = lazy(() =>
+  import("../pages/plugin/PluginSettingsPage").then((module) => ({ default: module.PluginSettingsPage }))
+);
 const SettingsPage = lazy(() =>
   import("../pages/settings/SettingsPage").then((module) => ({ default: module.SettingsPage }))
 );
@@ -197,6 +200,20 @@ function readStoredSidebarNavOrder(storageKey: string): SidebarNavOrderItemKey[]
   } catch {
     return [];
   }
+}
+
+function getRoutePathname(route: string) {
+  return route.split(/[?#]/)[0] || "/";
+}
+
+function getKanbanAwareFallbackPath(kanbanEnabled: boolean) {
+  return kanbanEnabled ? "/kanban" : "/control-center";
+}
+
+function resolveKanbanAwareNavigationPath(targetPath: string, kanbanEnabled: boolean) {
+  return !kanbanEnabled && getRoutePathname(targetPath) === "/kanban"
+    ? "/control-center"
+    : targetPath;
 }
 
 function readInitialWebGroupOrder(): SidebarNavOrderItemKey[] {
@@ -303,6 +320,7 @@ export function AppShell() {
   const [sidebarNavOrder, setSidebarNavOrder] = useState<SidebarNavOrderItemKey[]>(() =>
     readStoredSidebarNavOrder(SIDEBAR_NAV_ORDER_STORAGE_KEY)
   );
+  const [kanbanEnabled, setKanbanEnabled] = useState(true);
   const [webGroupOrder, setWebGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialWebGroupOrder);
   const [navigationPreferencesLoaded, setNavigationPreferencesLoaded] = useState(false);
   const [assistantDockOpenPath, setAssistantDockOpenPath] = useState<string | null>(null);
@@ -453,14 +471,15 @@ export function AppShell() {
       serviceItems: [],
       experimentalItems: [],
       webItems: []
-    }).map((item) => {
+    }).filter((item) => item.key !== "kanban" || kanbanEnabled)
+      .map((item) => {
       if (item.key === "kanban") return { ...item, label: t("nav.taskBoard") };
       if (item.key === "schedules") return { ...item, label: t("nav.schedules") };
       if (item.key === "group:assistants") return { ...item, label: t("nav.assistants") };
       if (item.key === "group:webs") return { ...item, label: t("nav.embeddedWebs") };
       return item;
     });
-  }, [t]);
+  }, [kanbanEnabled, t]);
   const normalizedSidebarNavOrder = useMemo(
     () => normalizeSidebarNavOrder(sidebarNavOrder, availableSidebarNavOrderItems),
     [availableSidebarNavOrderItems, sidebarNavOrder]
@@ -753,6 +772,7 @@ export function AppShell() {
 
   useEffect(() => {
     if (
+      !navigationPreferencesLoaded ||
       !shouldAutoOpenAssistant(startupRestoreState, startupAllReady, location.pathname) ||
       startupNavigationDoneRef.current
     ) {
@@ -763,7 +783,7 @@ export function AppShell() {
     setStartupTimedOut(false);
 
     void (async () => {
-      let targetPath = "/kanban";
+      let targetPath = getKanbanAwareFallbackPath(kanbanEnabled);
       try {
         const result = await window.electronAPI.assistant.listNavigationAgents();
         if (cancelled) {
@@ -792,7 +812,7 @@ export function AppShell() {
     return () => {
       cancelled = true;
     };
-  }, [location.pathname, navigate, startupAllReady, startupRestoreState]);
+  }, [kanbanEnabled, location.pathname, navigate, navigationPreferencesLoaded, startupAllReady, startupRestoreState]);
 
   useEffect(() => {
     if (startupRestoreState?.mode !== "bootstrap") {
@@ -952,6 +972,9 @@ export function AppShell() {
         }
         if (Array.isArray(preferences?.webOrder)) {
           setWebGroupOrder(preferences.webOrder as SidebarNavOrderItemKey[]);
+        }
+        if (typeof preferences?.kanban?.enabled === "boolean") {
+          setKanbanEnabled(preferences.kanban.enabled);
         }
       })
       .catch(() => undefined)
@@ -1276,7 +1299,12 @@ export function AppShell() {
   }
 
   function handleExitSettingsMode() {
-    requestSidebarNavigation(lastNonSettingsRouteRef.current || "/kanban");
+    requestSidebarNavigation(
+      resolveKanbanAwareNavigationPath(
+        lastNonSettingsRouteRef.current || getKanbanAwareFallbackPath(kanbanEnabled),
+        kanbanEnabled
+      )
+    );
   }
 
   useEffect(() => {
@@ -1705,6 +1733,8 @@ export function AppShell() {
                 <RootRouteRedirect
                   startupRestoreState={startupRestoreState}
                   startupAllReady={startupAllReady}
+                  kanbanEnabled={kanbanEnabled}
+                  navigationPreferencesLoaded={navigationPreferencesLoaded}
                 />
               }
             />
@@ -1726,8 +1756,10 @@ export function AppShell() {
                     sidebarNavOrder={normalizedSidebarNavOrder}
                     availableSidebarNavOrderItems={availableSidebarNavOrderItems}
                     onSidebarNavOrderChange={setSidebarNavOrder}
-                    webItems={externalWebItems}
-                    onWebItemsChange={handleExternalWebItemsChange}
+                    kanbanEnabled={kanbanEnabled}
+                    onKanbanEnabledChange={setKanbanEnabled}
+                    websiteItems={externalWebItems}
+                    onWebsiteItemsChange={handleExternalWebItemsChange}
                     onAssistantSettingsChange={setAssistantSettings}
                   />
                 </RouteSuspense>
@@ -1760,6 +1792,7 @@ export function AppShell() {
             <Route path="/webs/:entryKey" element={<WebRouteFallback itemMap={webItemMap} />} />
             <Route path="/service/:serviceId" element={null} />
             <Route path="/plugin/:pluginId" element={null} />
+            <Route path="/plugin-settings/:pluginId" element={<RouteSuspense><PluginSettingsPage hostTheme={resolvedTheme} /></RouteSuspense>} />
             <Route path="/market" element={<RouteSuspense><FunctionalMarketPage /></RouteSuspense>} />
             <Route path="/help" element={<RouteSuspense><HelpPage isWindows={isWindows} /></RouteSuspense>} />
           </Routes>

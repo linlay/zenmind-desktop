@@ -1054,6 +1054,13 @@
   font-size: 12px;
 }
 
+.settings-page .navigation-kanban-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .settings-page .website-form input,
 .settings-page .website-agent-select,
 .settings-page .text-button,

@@ -18,6 +18,10 @@ import type {
   ServiceLogTarget,
   ServiceLogsMeta,
   ServiceState,
+  PluginSettingsReadResult,
+  PluginSettingsValues,
+  PluginSettingsWriteResult,
+  PluginSettingsPageResult,
   PluginInstallResult
 } from "@shared/contracts";
 
@@ -32,6 +36,9 @@ interface ServicesContextValue {
   start: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
   stop: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
   restart: (serviceId: ServiceId) => Promise<ServiceCommandResult>;
+  readPluginSettings: (serviceId: ServiceId) => Promise<PluginSettingsReadResult>;
+  writePluginSettings: (serviceId: ServiceId, values: PluginSettingsValues) => Promise<PluginSettingsWriteResult>;
+  openPluginSettingsPage: (serviceId: ServiceId) => Promise<PluginSettingsPageResult>;
   readConfig: (serviceId: ServiceId, key: string) => Promise<ServiceConfigReadResult>;
   writeConfig: (serviceId: ServiceId, key: string, content: string) => Promise<ServiceCommandResult>;
   importFile: (serviceId: ServiceId, key: string) => Promise<ServiceImportResult>;
@@ -151,6 +158,13 @@ export function ServicesProvider({ children }: PropsWithChildren) {
     start: (serviceId) => wrapCommand(() => window.electronAPI.services.start(serviceId)),
     stop: (serviceId) => wrapCommand(() => window.electronAPI.services.stop(serviceId)),
     restart: (serviceId) => wrapCommand(() => window.electronAPI.services.restart(serviceId)),
+    readPluginSettings: (serviceId) => window.electronAPI.services.readPluginSettings(serviceId),
+    writePluginSettings: async (serviceId, values) => {
+      const result = await window.electronAPI.services.writePluginSettings(serviceId, values);
+      await refresh();
+      return result;
+    },
+    openPluginSettingsPage: (serviceId) => window.electronAPI.services.openPluginSettingsPage(serviceId),
     readConfig: (serviceId, key) => window.electronAPI.services.readConfig(serviceId, key),
     writeConfig: (serviceId, key, content) =>
       wrapCommand(() => window.electronAPI.services.writeConfig(serviceId, key, content)),

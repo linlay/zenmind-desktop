@@ -62,6 +62,8 @@ type SettingsPageProps = {
   sidebarNavOrder: SidebarNavOrderItemKey[];
   availableSidebarNavOrderItems: SidebarNavOrderItem[];
   onSidebarNavOrderChange: (order: SidebarNavOrderItemKey[]) => void;
+  kanbanEnabled: boolean;
+  onKanbanEnabledChange: (enabled: boolean) => void;
   websiteItems: WebsiteEntry[];
   onWebsiteItemsChange: (items: WebsiteEntry[]) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
@@ -547,6 +549,8 @@ export function SettingsPage({
   sidebarNavOrder,
   availableSidebarNavOrderItems,
   onSidebarNavOrderChange,
+  kanbanEnabled,
+  onKanbanEnabledChange,
   websiteItems,
   onWebsiteItemsChange,
   onAssistantSettingsChange
@@ -580,6 +584,7 @@ export function SettingsPage({
     createDefaultDesktopCopilotPagePreferences
   );
   const [desktopHelperAgentPending, setDesktopHelperAgentPending] = useState(false);
+  const [kanbanVisibilityPending, setKanbanVisibilityPending] = useState(false);
   const [quickAssistantPending, setQuickAssistantPending] = useState(false);
   const [quickAssistantAgentPending, setQuickAssistantAgentPending] = useState(false);
   const [desktopCopilotPagePending, setDesktopCopilotPagePending] = useState("");
@@ -1681,6 +1686,32 @@ export function SettingsPage({
     }
   }
 
+  async function handleToggleKanbanVisibility() {
+    const previousEnabled = kanbanEnabled;
+    const nextEnabled = !kanbanEnabled;
+    onKanbanEnabledChange(nextEnabled);
+    setKanbanVisibilityPending(true);
+    try {
+      const preferences = await window.electronAPI.settings.saveNavigationPreferences({
+        kanban: { enabled: nextEnabled }
+      });
+      onKanbanEnabledChange(preferences.kanban.enabled);
+      setReadErrorSections(["navigation"], "");
+      showSectionNotice(
+        "navigation",
+        preferences.kanban.enabled
+          ? t("settings.navigation.kanbanVisible")
+          : t("settings.navigation.kanbanHidden"),
+        "success"
+      );
+    } catch (reason) {
+      onKanbanEnabledChange(previousEnabled);
+      showSectionNotice("navigation", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setKanbanVisibilityPending(false);
+    }
+  }
+
   async function handleToggleQuickAssistantEnabled() {
     const previousEnabled = quickAssistantEnabled;
     const nextEnabled = !quickAssistantEnabled;
@@ -2252,6 +2283,9 @@ export function SettingsPage({
 
       case "navigation": {
         const defaultCopilotPages = createDefaultDesktopCopilotPagePreferences();
+        const navigationSettingsOrder = kanbanEnabled || sidebarNavOrder.includes("kanban")
+          ? sidebarNavOrder
+          : (["kanban", ...sidebarNavOrder] as SidebarNavOrderItemKey[]);
         function renderFixedNavigationToolRow(tool: FixedNavigationToolConfig) {
           const copilotPageKey = tool.copilotPageKey;
           const toolLabel = t(tool.labelKey);
@@ -2343,8 +2377,10 @@ export function SettingsPage({
                 </div>
               </div>
               <div className="settings-item-list navigation-order-list" role="list" aria-label={t("settings.navigation.fixedMainOrder")}>
-                {sidebarNavOrder.map((itemKey, index) => {
-                    const itemLabel = sidebarNavOrderLabels.get(itemKey) ?? itemKey;
+                {navigationSettingsOrder.map((itemKey, index) => {
+                    const itemLabel = itemKey === "kanban"
+                      ? t("nav.taskBoard")
+                      : sidebarNavOrderLabels.get(itemKey) ?? itemKey;
                     const copilotPageKey = getCopilotPageKeyForSidebarNavOrderItem(itemKey);
                     const copilotPreference = copilotPageKey
                       ? desktopCopilotPages[copilotPageKey] ?? createDefaultDesktopCopilotPagePreferences()[copilotPageKey]
@@ -2408,8 +2444,29 @@ export function SettingsPage({
                             </select>
                           </span>
                         </label>
-                        <div className="navigation-order-actions">
-                          <span className="navigation-order-fixed-label">{t("settings.navigation.itemIndex", { index: index + 1 })}</span>
+                        <div className={itemKey === "kanban" ? "navigation-order-actions navigation-kanban-actions" : "navigation-order-actions"}>
+                          {itemKey === "kanban" ? (
+                            <>
+                              <span className="navigation-order-fixed-label">
+                                {kanbanEnabled
+                                  ? t("settings.navigation.kanbanVisible")
+                                  : t("settings.navigation.kanbanHidden")}
+                              </span>
+                              <button
+                                type="button"
+                                className={kanbanEnabled ? "settings-switch is-on" : "settings-switch"}
+                                role="switch"
+                                aria-checked={kanbanEnabled}
+                                aria-label={t("settings.navigation.kanbanToggle")}
+                                disabled={kanbanVisibilityPending}
+                                onClick={() => void handleToggleKanbanVisibility()}
+                              >
+                                <span aria-hidden="true" />
+                              </button>
+                            </>
+                          ) : (
+                            <span className="navigation-order-fixed-label">{t("settings.navigation.itemIndex", { index: index + 1 })}</span>
+                          )}
                         </div>
                       </div>
                     );

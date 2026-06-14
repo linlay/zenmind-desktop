@@ -6,12 +6,20 @@ import { useI18n } from "../../i18n/useI18n";
 
 export function RootRouteRedirect({
   startupRestoreState,
-  startupAllReady
+  startupAllReady,
+  kanbanEnabled,
+  navigationPreferencesLoaded
 }: {
   startupRestoreState: StartupRestoreState | null;
   startupAllReady: boolean;
+  kanbanEnabled: boolean;
+  navigationPreferencesLoaded: boolean;
 }) {
-  const targetPath = resolveStartupRootPath(startupRestoreState, startupAllReady);
+  if (!navigationPreferencesLoaded) {
+    return null;
+  }
+
+  const targetPath = resolveStartupRootPath(startupRestoreState, startupAllReady, kanbanEnabled);
   if (!targetPath) {
     return null;
   }

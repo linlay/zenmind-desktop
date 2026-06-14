@@ -27,6 +27,20 @@ const {
   __testInternals: desktopEffectsInternals
 } = require("../dist-electron/main/plugin-desktop-effects.js");
 const {
+  readPluginSettingsSnapshot,
+  writePluginSettingsValues,
+  getPluginSettingsPath,
+  openPluginSettingsPage
+} = require("../dist-electron/main/plugin-settings.js");
+const {
+  refreshPluginGlobalShortcuts,
+  getPluginGlobalShortcutStatuses,
+  unregisterPluginGlobalShortcuts
+} = require("../dist-electron/main/plugin-global-shortcuts.js");
+const {
+  stopAllStaticSiteHosts
+} = require("../dist-electron/main/static-site-host-manager.js");
+const {
   getDesktopPetSettingsPath,
   getDesktopPetsDataRoot
 } = require("../dist-electron/main/user-paths.js");
@@ -194,20 +208,74 @@ test("plugin bridge path generation is platform explicit", () => {
 test("plugin bridge filters hooks and requests by manifest declarations", () => {
   const service = {
     hooks: {
-      subscribe: ["desktop.ready", "plugin.actionInvoked:run-system-update"]
+      subscribe: ["desktop.ready", "assistant.activeTasksChanged", "plugin.actionInvoked:run-system-update"]
     },
     bridge: {
-      requests: ["service.getStatus", "desktopOverlay.showSystemUpdate"]
+      requests: [
+        "service.getStatus",
+        "desktopOverlay.showSystemUpdate",
+        "assistantRuns.getActiveTasks",
+        "desktopActivityIsland.update",
+        "desktopClipboard.readText"
+      ]
     }
   };
 
   assert.equal(bridgeInternals.isHookSubscribed(service, "desktop.ready"), true);
+  assert.equal(bridgeInternals.isHookSubscribed(service, "assistant.activeTasksChanged"), true);
   assert.equal(bridgeInternals.isHookSubscribed(service, "plugin.actionInvoked:run-system-update"), true);
   assert.equal(bridgeInternals.isHookSubscribed(service, "agentPlatform.ready"), false);
   assert.equal(bridgeInternals.isRequestAllowed(service, "service.getStatus"), true);
   assert.equal(bridgeInternals.isRequestAllowed(service, "desktopOverlay.showSystemUpdate"), true);
+  assert.equal(bridgeInternals.isRequestAllowed(service, "assistantRuns.getActiveTasks"), true);
+  assert.equal(bridgeInternals.isRequestAllowed(service, "desktopActivityIsland.update"), true);
+  assert.equal(bridgeInternals.isRequestAllowed(service, "desktopClipboard.readText"), true);
   assert.equal(bridgeInternals.isRequestAllowed(service, "agentPlatform.upsertAcpProxy"), false);
   assert.equal(bridgeInternals.isRequestAllowed(service, "desktopPet.runBanner"), false);
+  assert.equal(bridgeInternals.isRequestAllowed(service, "desktopClipboard.writeText"), false);
+});
+
+test("plugin desktop effects normalize activity island input and local palette URLs", () => {
+  const tasks = desktopEffectsInternals.normalizeActivityIslandTasks([
+    {
+      title: "  ",
+      preview: " 正在读取文件 ",
+      agentDisplayName: " Codex ",
+      status: "awaiting"
+    },
+    {
+      title: "实现插件",
+      agentDisplayName: "",
+      status: "running"
+    }
+  ]);
+
+  assert.deepEqual(tasks, [
+    {
+      title: "正在读取文件",
+      agentDisplayName: "Codex",
+      preview: "正在读取文件",
+      status: "awaiting"
+    },
+    {
+      title: "实现插件",
+      agentDisplayName: "Agent",
+      preview: "",
+      status: "running"
+    }
+  ]);
+  assert.match(
+    desktopEffectsInternals.getActivityIslandHtml({ tasks, runningTaskCount: 4 }),
+    /还有 2 个任务/u
+  );
+  assert.equal(
+    desktopEffectsInternals.normalizeLocalHttpUrl("http://127.0.0.1:1234/palette"),
+    "http://127.0.0.1:1234/palette"
+  );
+  assert.throws(
+    () => desktopEffectsInternals.normalizeLocalHttpUrl("https://example.com"),
+    /must use http/u
+  );
 });
 
 test("plugin desktop actions normalize for control center", () => {
@@ -250,6 +318,307 @@ test("plugin desktop actions normalize for control center", () => {
     placement: "controlCenter",
     requiresRunning: true
   });
+});
+
+test("plugin manifest settings and action global shortcuts normalize", () => {
+  registryInternals.clearServices();
+  const service = registerPlugin({
+    pluginApiVersion: 1,
+    id: "settings-plugin",
+    name: "Settings Plugin",
+    version: "v1",
+    description: "settings",
+    lifecycle: {
+      start: "start.sh",
+      stop: "stop.sh"
+    },
+    runtime: {
+      requiredPaths: ["manifest.json"]
+    },
+    settings: {
+      schemaVersion: 1,
+      ui: {
+        customHtmlPath: "settings/index.html"
+      },
+      fields: [
+        {
+          key: "runShortcut",
+          type: "shortcut",
+          label: "Run shortcut",
+          defaultValueByPlatform: {
+            darwin: "CommandOrControl+Shift+R",
+            win32: "Control+Shift+R"
+          },
+          restartRequired: true
+        },
+        {
+          key: "mode",
+          type: "select",
+          label: "Mode",
+          defaultValue: "fast",
+          options: [
+            { label: "Fast", value: "fast" },
+            { label: "Careful", value: "careful" }
+          ]
+        },
+        {
+          key: "timeoutMs",
+          type: "duration",
+          label: "Timeout",
+          defaultValue: 3000,
+          min: 1000,
+          step: 1000
+        }
+      ]
+    },
+    desktop: {
+      actions: [{
+        id: "run",
+        label: "Run",
+        globalShortcut: {
+          settingKey: "runShortcut"
+        }
+      }]
+    }
+  });
+
+  assert.equal(service.settings.schemaVersion, 1);
+  assert.equal(service.settings.ui.customHtmlPath, "settings/index.html");
+  assert.equal(service.settings.fields.length, 3);
+  assert.equal(service.desktop.actions[0].globalShortcut.settingKey, "runShortcut");
+});
+
+test("plugin manifest rejects action shortcut references to non-shortcut settings", () => {
+  registryInternals.clearServices();
+  assert.throws(
+    () => registerPlugin({
+      pluginApiVersion: 1,
+      id: "bad-shortcut-plugin",
+      name: "Bad Shortcut Plugin",
+      version: "v1",
+      description: "bad shortcut",
+      lifecycle: {
+        start: "start.sh",
+        stop: "stop.sh"
+      },
+      runtime: {
+        requiredPaths: ["manifest.json"]
+      },
+      settings: {
+        fields: [{
+          key: "label",
+          type: "text",
+          label: "Label"
+        }]
+      },
+      desktop: {
+        actions: [{
+          id: "run",
+          label: "Run",
+          globalShortcut: {
+            settingKey: "label"
+          }
+        }]
+      }
+    }),
+    /globalShortcut\.settingKey must reference a shortcut setting field/u
+  );
+});
+
+test("plugin settings store merges defaults, validates writes, and preserves corrupt files", () => {
+  registryInternals.clearServices();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-settings-"));
+  try {
+    const app = createApp(root);
+    const service = registerPlugin({
+      pluginApiVersion: 1,
+      id: "settings-store-plugin",
+      name: "Settings Store Plugin",
+      version: "v1",
+      description: "settings store",
+      lifecycle: {
+        start: "start.sh",
+        stop: "stop.sh"
+      },
+      runtime: {
+        requiredPaths: ["manifest.json"]
+      },
+      settings: {
+        fields: [
+          { key: "title", type: "text", label: "Title", defaultValue: "Hello" },
+          { key: "count", type: "number", label: "Count", defaultValue: 2, min: 1, max: 5 },
+          { key: "enabled", type: "boolean", label: "Enabled", defaultValue: true },
+          { key: "tags", type: "multiselect", label: "Tags", options: [{ label: "A", value: "a" }] }
+        ]
+      }
+    });
+
+    const initial = readPluginSettingsSnapshot(app, service.id);
+    assert.deepEqual(initial.values, { title: "Hello", count: 2, enabled: true });
+
+    const written = writePluginSettingsValues(app, service.id, {
+      title: "Updated",
+      count: 4,
+      enabled: false,
+      tags: ["a"],
+      unknown: "ignored"
+    });
+    assert.deepEqual(written.values, { title: "Updated", count: 4, enabled: false, tags: ["a"] });
+    assert.deepEqual(written.changedKeys.sort(), ["count", "enabled", "tags", "title"]);
+
+    assert.throws(
+      () => writePluginSettingsValues(app, service.id, { count: 9 }),
+      /less than or equal to 5/u
+    );
+
+    const settingsPath = getPluginSettingsPath(app, service);
+    fs.writeFileSync(settingsPath, "{ bad json", "utf8");
+    assert.throws(
+      () => readPluginSettingsSnapshot(app, service.id),
+      /JSON|Unexpected|Expected/u
+    );
+    assert.equal(fs.readFileSync(settingsPath, "utf8"), "{ bad json");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("plugin custom settings page is served from loopback and rejects escaping paths", async () => {
+  registryInternals.clearServices();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-settings-page-"));
+  try {
+    const app = createApp(root);
+    const service = registerPlugin({
+      pluginApiVersion: 1,
+      id: "settings-page-plugin",
+      name: "Settings Page Plugin",
+      version: "v1",
+      description: "settings page",
+      lifecycle: {
+        start: "start.sh",
+        stop: "stop.sh"
+      },
+      runtime: {
+        requiredPaths: ["manifest.json"]
+      },
+      settings: {
+        ui: {
+          customHtmlPath: "settings/index.html"
+        }
+      }
+    });
+    const installDir = path.join(root, "app-data", "ZenMind", "plugins", service.id, service.version);
+    fs.mkdirSync(path.join(installDir, "settings"), { recursive: true });
+    fs.writeFileSync(path.join(installDir, "settings", "index.html"), "<!doctype html><title>Settings</title>", "utf8");
+
+    const result = await openPluginSettingsPage(app, service.id);
+    assert.equal(result.ok, true);
+    assert.match(result.url, /^http:\/\/127\.0\.0\.1:\d+\//u);
+
+    registryInternals.clearServices();
+    registerPlugin({
+      pluginApiVersion: 1,
+      id: "settings-page-plugin",
+      name: "Settings Page Plugin",
+      version: "v1",
+      description: "settings page",
+      lifecycle: {
+        start: "start.sh",
+        stop: "stop.sh"
+      },
+      runtime: {
+        requiredPaths: ["manifest.json"]
+      },
+      settings: {
+        ui: {
+          customHtmlPath: "../outside.html"
+        }
+      }
+    });
+    await assert.rejects(
+      () => openPluginSettingsPage(app, service.id),
+      /customHtmlPath must be a visible relative path/u
+    );
+  } finally {
+    await stopAllStaticSiteHosts();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("plugin global shortcuts register enabled shortcuts and disable conflicts", () => {
+  registryInternals.clearServices();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-plugin-shortcuts-"));
+  const app = createApp(root);
+  const registered = new Set();
+  const globalShortcut = {
+    register(accelerator, callback) {
+      if (registered.has(accelerator)) {
+        return false;
+      }
+      registered.add(accelerator);
+      this.callbacks.set(accelerator, callback);
+      return true;
+    },
+    unregister(accelerator) {
+      registered.delete(accelerator);
+      this.callbacks.delete(accelerator);
+    },
+    callbacks: new Map()
+  };
+  try {
+    const baseManifest = {
+      pluginApiVersion: 1,
+      version: "v1",
+      description: "shortcut",
+      lifecycle: {
+        start: "start.sh",
+        stop: "stop.sh"
+      },
+      runtime: {
+        requiredPaths: ["manifest.json"]
+      },
+      settings: {
+        fields: [{
+          key: "runShortcut",
+          type: "shortcut",
+          label: "Run Shortcut",
+          defaultValueByPlatform: {
+            darwin: "CommandOrControl+Shift+P",
+            win32: "Control+Shift+P"
+          }
+        }]
+      },
+      desktop: {
+        actions: [{
+          id: "run",
+          label: "Run",
+          globalShortcut: {
+            settingKey: "runShortcut"
+          }
+        }]
+      }
+    };
+    registerPlugin({ ...baseManifest, id: "shortcut-one", name: "Shortcut One" });
+    registerPlugin({ ...baseManifest, id: "shortcut-two", name: "Shortcut Two" });
+
+    refreshPluginGlobalShortcuts({
+      app,
+      globalShortcut,
+      platform: "darwin",
+      invokePluginAction: () => undefined
+    });
+
+    const statuses = getPluginGlobalShortcutStatuses().sort((left, right) => left.pluginId.localeCompare(right.pluginId));
+    assert.equal(statuses.length, 2);
+    assert.equal(statuses[0].enabled, false);
+    assert.equal(statuses[0].reason, "conflict");
+    assert.equal(statuses[1].enabled, false);
+    assert.equal(statuses[1].reason, "conflict");
+    assert.equal(registered.size, 0);
+  } finally {
+    unregisterPluginGlobalShortcuts(globalShortcut);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("plugin resource payload normalization is stable", () => {

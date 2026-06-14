@@ -588,5 +588,8 @@ ${allowEscape ? '<div class="hint">Press Esc to close</div>' : ""}
 }
 
 export const __testInternals = {
+  getActivityIslandHtml,
+  normalizeActivityIslandTasks,
+  normalizeLocalHttpUrl,
   resolveDesktopPetBannerAsset
 };

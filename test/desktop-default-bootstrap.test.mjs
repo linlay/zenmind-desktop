@@ -67,6 +67,11 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
           enabled: true,
           agentKey: "zenmi"
         }
+      },
+      navigation: {
+        kanban: {
+          enabled: false
+        }
       }
     },
     pet: {
@@ -114,6 +119,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
 
   assert.equal(profile.appearance.theme, "dark");
   assert.equal(profile.appearance.locale, "en-US");
+  assert.equal(profile.navigation.kanban.enabled, false);
   assert.equal("bootstrapAssistant" in profile, false);
   assert.equal(pet.enabled, false);
   assert.equal(pet.selectedPetId, "builtin:zenmi");
@@ -140,6 +146,29 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
   assert.equal(second.reason, "already-applied");
   assert.equal(profileAfterSecondRun.appearance.theme, "dark");
   assert.equal(profileAfterSecondRun.appearance.locale, "en-US");
+  assert.equal(profileAfterSecondRun.navigation.kanban.enabled, false);
+});
+
+test("desktop-default bootstrap keeps kanban enabled when navigation default is absent", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-default-kanban-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopDefault(app, "darwin", {
+    profile: {
+      appearance: {
+        theme: "system",
+        locale: "zh-CN"
+      }
+    }
+  });
+
+  const result = applyDesktopDefaultBootstrap(app, "darwin");
+  assert.equal(result.applied, true);
+
+  const profile = readJson(path.join(homePath, ".zenmind", ".desktop", "config", "desktop", "profile.json"));
+  assert.equal(profile.navigation.kanban.enabled, true);
 });
 
 test("desktop-default SSO helper writes canonical macOS config without bootstrap state", (t) => {
