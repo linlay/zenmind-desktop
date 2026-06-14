@@ -2487,6 +2487,47 @@ test("main marketplace user-facing text is routed through i18n", () => {
   }
 });
 
+test("storefront market uses website-style product cards", () => {
+  const storefront = readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+  const storefrontStyles = readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.css");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+
+  assert.match(storefront, /market-store-category-pill/);
+  assert.match(storefront, /market-store-readiness/);
+  assert.match(storefront, /storefrontReadinessLabel/);
+  assert.match(storefront, /t\("market\.storefront\.detailsDemo"\)/);
+  assert.match(storefront, /market-store-detail-link/);
+  assert.match(storefront, /market-store-detail-dialog/);
+  assert.match(storefront, /storefrontDetailRows/);
+  assert.match(storefront, /setSelectedDetailItem\(item\)/);
+  assert.match(storefront, /ReloadOutlined/);
+  assert.match(storefront, /handleToolbarImport/);
+  assert.match(storefront, /getPluginMethod\("install"\)/);
+  assert.match(storefront, /market-store-toolbar-actions/);
+  assert.match(storefront, /market\.toolbar\.refreshMarket/);
+  assert.match(storefront, /market\.sandbox\.import/);
+  assert.doesNotMatch(storefront, /market-store-overview/);
+  assert.doesNotMatch(storefront, /market-store-metric/);
+  assert.doesNotMatch(storefront, /market-store-compatibility/);
+  assert.match(storefrontStyles, /\.market-store-grid\s*\{[\s\S]*?minmax\(min\(100%,\s*620px\),\s*1fr\)/);
+  assert.match(storefrontStyles, /\.market-store-card\s*\{[\s\S]*?padding:\s*36px;[\s\S]*?border-radius:\s*8px;/);
+  assert.match(storefrontStyles, /\.market-store-card-footer\s*\{[\s\S]*?border-top:\s*1px solid #e5e5ea;/);
+  assert.match(storefrontStyles, /\.market-store-toolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(260px,\s*1fr\)\s*168px\s*168px\s*auto;/);
+  assert.match(storefrontStyles, /\.market-store-toolbar-actions\s*\{[\s\S]*?justify-content:\s*flex-end;/);
+  assert.match(storefrontStyles, /\.market-store-toolbar-button\s*\{[\s\S]*?border-radius:\s*8px;/);
+  assert.match(storefrontStyles, /\.market-store-action\.is-primary\s*\{[\s\S]*?background:\s*var\(--market-store-purple\);/);
+  assert.match(storefrontStyles, /\.market-store-detail-dialog\s*\{[\s\S]*?width:\s*min\(680px,\s*100%\);/);
+  assert.doesNotMatch(storefrontStyles, /\.market-store-overview/);
+  assert.doesNotMatch(storefrontStyles, /\.market-store-compatibility/);
+  assert.match(enUS, /"market\.storefront\.detailsDemo":\s*"Details & demo"/);
+  assert.match(enUS, /"market\.tab\.sandboxImages\.label":\s*"Sandboxes"/);
+  assert.doesNotMatch(enUS, /"market\.tab\.sandboxImages\.meta"/);
+  assert.match(zhCN, /"market\.storefront\.detailsDemo":\s*"详情与演示"/);
+  assert.match(zhCN, /"market\.tab\.sandboxImages\.label":\s*"沙箱"/);
+  assert.doesNotMatch(zhCN, /"market\.tab\.sandboxImages\.meta"/);
+});
+
 test("sandbox image market is a local image management surface", () => {
   const sandboxMarket = readSourceFile(
     "src",
@@ -2496,8 +2537,22 @@ test("sandbox image market is a local image management surface", () => {
     "SandboxImageMarket.tsx"
   );
   const marketModel = readSourceFile("src", "renderer", "pages", "functional-market", "marketPageModel.ts");
+  const marketFrame = readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.tsx");
+  const marketStyles = readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css");
 
   assert.match(marketModel, /market\.tab\.sandboxImages\.subtitle/);
+  assert.doesNotMatch(marketModel, /market\.tab\.[^.]+\.meta/);
+  assert.match(marketFrame, /function marketTabIcon\(tab: MarketTab\)/);
+  assert.match(marketFrame, /AppstoreOutlined/);
+  assert.match(marketFrame, /SafetyCertificateOutlined/);
+  assert.match(marketFrame, /RobotOutlined/);
+  assert.match(marketFrame, /ApiOutlined/);
+  assert.match(marketFrame, /SmileOutlined/);
+  assert.match(marketFrame, /CodeOutlined/);
+  assert.match(marketFrame, /GlobalOutlined/);
+  assert.match(marketFrame, /market-tab-icon/);
+  assert.match(marketFrame, /market-tab-text/);
+  assert.doesNotMatch(marketFrame, /market-tab-meta/);
   assert.match(sandboxMarket, /PageFeedbackStack/);
   assert.match(sandboxMarket, /sandboxImageDescription/);
   assert.match(sandboxMarket, /description === t\("market\.sandbox\.localDescription"\) \? "" : description/);
@@ -2523,79 +2578,95 @@ test("sandbox image market is a local image management surface", () => {
   assert.match(sandboxMarket, /Docker \/ Podman/);
   assert.match(readSourceFile("src", "renderer", "pages", "functional-market", "marketDisplay.tsx"), /market-sandbox-image-symbol/);
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(320px,\s*1fr\)\)/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /\.sandbox-image-panel\s*\{[\s\S]*?align-items:\s*start;/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /\.market-skill-card\.sandbox-image-card\s*\{[\s\S]*?min-height:\s*100px;[\s\S]*?padding:\s*10px 12px;/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /\.sandbox-image-card\s+\.market-plugin-meta\s*\{[\s\S]*?margin-top:\s*4px;[\s\S]*?padding-top:\s*7px;/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /\.sandbox-image-card\s*\{[\s\S]*?background:\s*var\(--market-control-card\);[\s\S]*?box-shadow:\s*0 2px 6px rgba\(15,\s*23,\s*42,\s*0\.08\);/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /:root\[data-theme="dark"\]\s+\.sandbox-image-card\s*\{[\s\S]*?background:\s*var\(--market-control-card\);[\s\S]*?box-shadow:\s*none;/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /\.sandbox-image-card\s+\.market-card-icon,[\s\S]*?\.market-image-detail-title\s+\.market-card-icon\s*\{[\s\S]*?background:\s*#e9eefc;[\s\S]*?color:\s*var\(--market-control-blue\);/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /:root\[data-theme="dark"\]\s+\.sandbox-image-card\s+\.market-card-icon,[\s\S]*?:root\[data-theme="dark"\]\s+\.market-image-detail-title\s+\.market-card-icon\s*\{[\s\S]*?background:\s*rgba\(87,\s*144,\s*255,\s*0\.15\);[\s\S]*?color:\s*#7facff;/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
-    /\.market-topbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto/
+    marketStyles,
+    /\.market-topbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
-    /\.market-tabs\s*\{[\s\S]*?grid-column:\s*1[\s\S]*?grid-template-columns:\s*repeat\(7,\s*minmax\(92px,\s*1fr\)\)[\s\S]*?width:\s*100%/
+    marketStyles,
+    /\.market-topbar\.has-toolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
-    /\.market-tab\s*\{[\s\S]*?flex-direction:\s*column[\s\S]*?min-height:\s*42px[\s\S]*?font-size:\s*14px[\s\S]*?font-weight:\s*800/
+    marketStyles,
+    /\.market-tabs\s*\{[\s\S]*?grid-column:\s*1[\s\S]*?grid-template-columns:\s*repeat\(7,\s*minmax\(88px,\s*1fr\)\)[\s\S]*?width:\s*100%/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
+    /\.market-tab\s*\{[\s\S]*?min-height:\s*40px[\s\S]*?font-size:\s*14px[\s\S]*?font-weight:\s*800/
+  );
+  assert.match(
+    marketStyles,
+    /\.market-tab-icon\s*\{[\s\S]*?font-size:\s*16px;/
+  );
+  assert.match(
+    marketStyles,
+    /\.market-tab-text\s*\{[\s\S]*?text-overflow:\s*ellipsis;/
+  );
+  assert.doesNotMatch(
+    marketStyles,
+    /\.market-tab-meta/
+  );
+  assert.match(
+    marketStyles,
     /:root\[data-theme="dark"\]\s+\.market-tabs\s*\{[\s\S]*?background:\s*rgba\(255,\s*255,\s*255,\s*0\.045\)[\s\S]*?box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.04\)/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /:root\[data-theme="dark"\]\s+\.market-tab\.is-active\s*\{[\s\S]*?background:\s*rgba\(87,\s*144,\s*255,\s*0\.18\)[\s\S]*?inset 0 0 0 1px rgba\(158,\s*197,\s*255,\s*0\.24\)/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /\.market-empty-state\s*\{[\s\S]*?align-self:\s*center;/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /\.market-import-progress-backdrop\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*90;[\s\S]*?backdrop-filter:\s*blur\(8px\);/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /\.market-import-progress-panel\s*\{[\s\S]*?width:\s*min\(520px,\s*100%\);[\s\S]*?max-height:\s*min\(520px,\s*calc\(100vh - 48px\)\);/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /\.market-import-progress-panel\s*\{[\s\S]*?background:\s*rgba\(255,\s*255,\s*255,\s*0\.98\);[\s\S]*?box-shadow:\s*0 24px 70px rgba\(15,\s*23,\s*42,\s*0\.24\);/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /\.market-import-progress-close\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;/
   );
   assert.match(
-    readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
+    marketStyles,
     /\.market-import-progress-log\s*\{[\s\S]*?font-family:\s*ui-monospace/
   );
   assert.match(sandboxMarket, /t\("market\.sandbox\.action\.view"/);

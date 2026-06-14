@@ -1,17 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ApiOutlined,
+  ArrowRightOutlined,
   AppstoreOutlined,
   CheckCircleFilled,
   CloudDownloadOutlined,
-  CodeOutlined,
   CopyOutlined,
-  GlobalOutlined,
+  CloseOutlined,
   InfoCircleOutlined,
-  ReloadOutlined,
-  RobotOutlined,
-  SafetyCertificateOutlined,
-  SmileOutlined
+  ReloadOutlined
 } from "@ant-design/icons";
 import type { MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
@@ -36,7 +32,6 @@ import {
 } from "./marketPageModel";
 import {
   canOpenPlugin,
-  getMarketItemStatusClass,
   marketCardDescription,
   marketItemStateLabel,
   marketSourceLabel,
@@ -73,45 +68,6 @@ function marketOfflineForTab(result: ReturnType<typeof createEmptyMarketResult>,
   if (tab === "pets") return Boolean(result.petOffline);
   if (tab === "websiteApps") return Boolean(result.websiteAppOffline);
   return Boolean(result.cliOffline);
-}
-
-function categoryIcon(tab: MarketTab) {
-  switch (tab) {
-    case "skills":
-      return <SafetyCertificateOutlined />;
-    case "agents":
-      return <RobotOutlined />;
-    case "sandboxImages":
-      return <ApiOutlined />;
-    case "pets":
-      return <SmileOutlined />;
-    case "cli":
-      return <CodeOutlined />;
-    case "websiteApps":
-      return <GlobalOutlined />;
-    case "plugins":
-    default:
-      return <AppstoreOutlined />;
-  }
-}
-
-function itemIcon(item: MarketItem, activeTab: MarketTab) {
-  if (item.type === "pet" && item.petPreviewAssetPath) {
-    return <img src={item.petPreviewAssetPath} alt="" aria-hidden="true" />;
-  }
-  if (item.type === "agent") {
-    return <RobotOutlined />;
-  }
-  if (item.type === "website-app") {
-    return <GlobalOutlined />;
-  }
-  if (item.type === "cli") {
-    return <CodeOutlined />;
-  }
-  if (item.type === "sandbox-image") {
-    return <ApiOutlined />;
-  }
-  return categoryIcon(activeTab);
 }
 
 function serviceMetric(service: ServiceState | null) {
@@ -216,6 +172,61 @@ function compatibilityLabel(item: MarketItem, t: ReturnType<typeof useI18n>["t"]
   return t("market.storefront.compatible");
 }
 
+function storefrontReadinessClass(item: MarketItem) {
+  if (item.state === "failed" || item.state === "incompatible") {
+    return "is-error";
+  }
+  if (item.state === "installing" || item.state === "update-available") {
+    return "is-warning";
+  }
+  return "is-ready";
+}
+
+function storefrontReadinessLabel(item: MarketItem, t: ReturnType<typeof useI18n>["t"]) {
+  if (item.state === "failed" || item.state === "incompatible" || item.state === "installing") {
+    return marketItemStateLabel(item, t);
+  }
+  return t("market.action.ready");
+}
+
+function tagLabel(tag: string) {
+  const normalized = tag.trim().replace(/^#+/u, "");
+  return normalized ? `#${normalized}` : "";
+}
+
+function storefrontDetailRows(
+  item: MarketItem,
+  service: ServiceState | null,
+  t: ReturnType<typeof useI18n>["t"]
+) {
+  const commercialMeta = itemCommercialMeta(item, t);
+  const rows = [
+    [t("market.storefront.detail.type"), marketTypeLabel(item.type, t)],
+    [t("market.storefront.detail.version"), marketVersionLabel(item)],
+    [t("market.storefront.detail.status"), marketItemStateLabel(item, t)],
+    [t("market.storefront.detail.source"), marketSourceLabel(item, t)],
+    [t("market.storefront.detail.compatibility"), compatibilityLabel(item, t)],
+    [t("market.storefront.detail.plan"), commercialMeta],
+    [t("market.storefront.detail.tags"), item.tags.map(tagLabel).filter(Boolean).join(" ")],
+    [t("market.storefront.detail.desktopStatus"), serviceMetric(service)],
+    [t("market.storefront.detail.environment"), item.environmentName ?? ""],
+    [t("market.storefront.detail.engine"), item.containerEngine ?? ""],
+    [t("market.storefront.detail.image"), item.imageRef ?? ""],
+    [t("market.storefront.detail.imageId"), item.imageId ?? ""],
+    [t("market.storefront.detail.size"), item.imageSize ?? ""],
+    [t("market.storefront.detail.createdAt"), item.imageCreatedAt ?? ""],
+    [t("market.storefront.detail.buildStatus"), item.buildStatus ?? ""],
+    [t("market.storefront.detail.installPath"), item.installPath ?? ""],
+    [t("market.storefront.detail.minDesktopVersion"), item.minDesktopVersion ?? ""],
+    [t("market.storefront.detail.installCommand"), item.cliInstallCommand ?? ""],
+    [t("market.storefront.detail.uninstallCommand"), item.cliUninstallCommand ?? ""]
+  ];
+
+  return rows
+    .map(([label, value]) => ({ label, value: value.trim() }))
+    .filter((row) => row.value.length > 0);
+}
+
 export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -228,6 +239,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
   const [busyItemId, setBusyItemId] = useState("");
   const [feedback, setFeedback] = useState("");
   const [isImporting, setIsImporting] = useState(false);
+  const [selectedDetailItem, setSelectedDetailItem] = useState<MarketItem | null>(null);
 
   const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services]);
   const itemType = MARKET_TAB_ITEM_TYPES[activeTab];
@@ -255,10 +267,6 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     ),
     [activeItems, query, rangeMode, sortMode, t]
   );
-  const installedCount = activeItems.filter(isInstalledMarketItem).length;
-  const officialCount = activeItems.filter((item) => item.source === "cloud").length;
-  const updateCount = activeItems.filter((item) => item.state === "update-available").length;
-  const missingCount = activeItems.filter((item) => item.state === "incompatible" || Boolean(item.message)).length;
   const marketStatusMessage = feedback || marketMessageForTab(marketResult, activeTab);
   const marketOffline = marketOfflineForTab(marketResult, activeTab);
 
@@ -320,7 +328,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
   async function openDetail(item: MarketItem) {
     const detailUrl = itemDetailUrl(item);
     if (!detailUrl) {
-      setFeedback(t("market.storefront.dialogPlanned"));
+      setSelectedDetailItem(item);
       return;
     }
     if (detailUrl.startsWith("http")) {
@@ -380,16 +388,14 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
   function renderPrimaryAction(item: MarketItem) {
     const busy = busyItemId === item.id;
     if (isListOnlyMarketItem(item)) {
-      const hasDetail = Boolean(itemDetailUrl(item));
       return (
         <button
           type="button"
           className="market-store-action"
-          disabled={!hasDetail}
           onClick={() => void openDetail(item)}
         >
           <InfoCircleOutlined />
-          <span>{hasDetail ? t("market.action.details") : t("market.action.pendingIntegration")}</span>
+          <span>{t("market.action.details")}</span>
         </button>
       );
     }
@@ -406,6 +412,14 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
         >
           <CopyOutlined />
           <span>{copyLabel}</span>
+        </button>
+      );
+    }
+    if (item.state === "failed" || item.state === "incompatible") {
+      return (
+        <button type="button" className="market-store-action" disabled>
+          <InfoCircleOutlined />
+          <span>{marketItemStateLabel(item, t)}</span>
         </button>
       );
     }
@@ -465,52 +479,96 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     );
   }
 
+  function renderDetailDialog() {
+    if (!selectedDetailItem) {
+      return null;
+    }
+    const service = selectedDetailItem.type === "plugin" ? serviceById.get(selectedDetailItem.id) ?? null : null;
+    const displayName = selectedDetailItem.type === "plugin"
+      ? getServiceDisplayName(selectedDetailItem.id, selectedDetailItem.name)
+      : selectedDetailItem.name;
+    const description = marketCardDescription(selectedDetailItem);
+    const rows = storefrontDetailRows(selectedDetailItem, service, t);
+
+    return (
+      <div className="market-store-detail-backdrop" onClick={() => setSelectedDetailItem(null)}>
+        <section
+          className="market-store-detail-dialog"
+          aria-label={t("market.storefront.detail.dialogLabel")}
+          aria-modal="true"
+          role="dialog"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="market-store-detail-head">
+            <div className="market-store-detail-title">
+              <span className="market-store-category-pill">{marketTypeLabel(selectedDetailItem.type, t)}</span>
+              <h2>{displayName}</h2>
+            </div>
+            <button
+              type="button"
+              className="market-store-detail-close"
+              aria-label={t("common.close")}
+              title={t("common.close")}
+              onClick={() => setSelectedDetailItem(null)}
+            >
+              <CloseOutlined />
+            </button>
+          </div>
+          {description ? <p className="market-store-detail-description">{description}</p> : null}
+          <dl className="market-store-detail-grid">
+            {rows.map((row) => (
+              <div key={row.label}>
+                <dt>{row.label}</dt>
+                <dd>{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      </div>
+    );
+  }
+
   function renderCard(item: MarketItem) {
     const service = item.type === "plugin" ? serviceById.get(item.id) ?? null : null;
     const displayName = item.type === "plugin" ? getServiceDisplayName(item.id, item.name) : item.name;
     const description = marketCardDescription(item);
-    const commercialMeta = itemCommercialMeta(item, t);
-    const metric = serviceMetric(service);
-    const chips = [
+    const chips = Array.from(new Set([
       ...item.tags,
       item.sandboxKind === "environment-template" ? t("market.detail.environmentTemplate") : "",
       item.type === "cli" ? t("market.detail.scriptedInstall") : "",
       item.type === "pet" ? t("market.detail.desktopPet") : ""
-    ].filter(Boolean).slice(0, 4);
+    ].filter(Boolean))).slice(0, 3);
     return (
       <article key={`${item.type}:${item.id}`} className={`market-store-card is-${item.type}`}>
         <div className="market-store-card-head">
-          <div className="market-store-item-icon" aria-hidden="true">
-            {itemIcon(item, activeTab)}
-          </div>
-          <div className="market-store-card-title">
-            <div className="market-store-card-title-row">
-              <h2>{displayName}</h2>
-              <span className={`market-state-pill ${getMarketItemStatusClass(item.state)}`}>
-                {marketItemStateLabel(item, t)}
-              </span>
-            </div>
-            <div className="market-store-submeta">
-              <span>{marketTypeLabel(item.type, t)}</span>
-              <span>{marketVersionLabel(item)}</span>
-              <span>{marketSourceLabel(item, t)}</span>
-              {commercialMeta ? <span>{commercialMeta}</span> : null}
-              {metric ? <span>{metric}</span> : null}
-            </div>
-          </div>
+          <span className="market-store-category-pill">{marketTypeLabel(item.type, t)}</span>
+          <span className={`market-store-readiness ${storefrontReadinessClass(item)}`}>
+            <span aria-hidden="true" />
+            {storefrontReadinessLabel(item, t)}
+          </span>
+        </div>
+        <div className="market-store-title-line">
+          <h2>{displayName}</h2>
+          <span>{marketVersionLabel(item)}</span>
         </div>
         {description ? <p className="market-store-description">{description}</p> : null}
-        <div className="market-store-compatibility">
-          <span>{t("market.storefront.compatibility")}</span>
-          <strong>{compatibilityLabel(item, t)}</strong>
-        </div>
         {chips.length > 0 ? (
           <div className="market-store-tags" aria-label={t("market.tags.aria", { name: displayName })}>
-            {chips.map((chip) => <span key={chip}>{chip}</span>)}
+            {chips.map((chip) => <span key={chip}>{tagLabel(chip)}</span>)}
           </div>
         ) : null}
         <div className="market-store-card-footer">
-          {renderPrimaryAction(item)}
+          <button
+            type="button"
+            className="market-store-detail-link"
+            onClick={() => void openDetail(item)}
+          >
+            <span>{t("market.storefront.detailsDemo")}</span>
+            <ArrowRightOutlined />
+          </button>
+          <div className="market-store-card-action">
+            {renderPrimaryAction(item)}
+          </div>
         </div>
       </article>
     );
@@ -529,27 +587,10 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       activeTab={activeTab}
       onTabChange={onTabChange}
       tabs={tabDefinitions}
-      toolbar={(
-        <>
-          <button type="button" className="market-toolbar-btn" onClick={() => void loadMarket(true)}>
-            <ReloadOutlined />
-            <span>{isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}</span>
-          </button>
-          {toolbarImportLabel ? (
-            <button
-              type="button"
-              className="market-toolbar-btn market-toolbar-btn-primary"
-              onClick={() => void handleToolbarImport()}
-              disabled={isImporting}
-            >
-              <CloudDownloadOutlined />
-              <span>{isImporting ? t("market.toolbar.importing") : toolbarImportLabel}</span>
-            </button>
-          ) : null}
-        </>
-      )}
     >
       <div className="market-content market-storefront">
+        {renderDetailDialog()}
+
         <div className="market-filter-bar market-store-toolbar" aria-label={t("market.toolbar.filters")}>
           <label className="market-search">
             <AppstoreOutlined />
@@ -575,26 +616,29 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
               <option value="updates">{t("market.scope.updates")}</option>
             </select>
           </label>
+          <div className="market-store-toolbar-actions">
+            <button
+              type="button"
+              className="market-store-toolbar-button"
+              onClick={() => void refreshEverything(true)}
+              disabled={isLoadingMarket}
+            >
+              <ReloadOutlined />
+              <span>{isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}</span>
+            </button>
+            {toolbarImportLabel ? (
+              <button
+                type="button"
+                className="market-store-toolbar-button is-primary"
+                onClick={() => void handleToolbarImport()}
+                disabled={isImporting}
+              >
+                <CloudDownloadOutlined />
+                <span>{isImporting ? t("market.toolbar.importing") : toolbarImportLabel}</span>
+              </button>
+            ) : null}
+          </div>
         </div>
-
-        <section className="market-store-overview" aria-label={t("market.storefront.overview")}>
-          <div className="market-store-metric">
-            <span>{t("market.storefront.installedCount")}</span>
-            <strong>{installedCount}</strong>
-          </div>
-          <div className="market-store-metric">
-            <span>{t("market.storefront.officialCount")}</span>
-            <strong>{officialCount}</strong>
-          </div>
-          <div className="market-store-metric">
-            <span>{t("market.storefront.updateCount")}</span>
-            <strong>{updateCount}</strong>
-          </div>
-          <div className="market-store-metric">
-            <span>{t("market.storefront.missingCount")}</span>
-            <strong>{missingCount}</strong>
-          </div>
-        </section>
 
         {marketStatusMessage ? (
           <div className={marketOffline ? "market-status is-warning" : "market-status"} aria-live="polite">
