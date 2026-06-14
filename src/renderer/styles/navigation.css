@@ -1641,13 +1641,42 @@
 }
 
 .sidebar-account-menu-user {
-  min-height: 28px;
+  min-height: 32px;
   font-size: 14px;
   font-weight: 500;
 }
 
 .sidebar-account-menu-user-with-action {
-  padding-right: 2px;
+  padding-right: 4px;
+  cursor: default;
+}
+
+.sidebar-account-menu-avatar {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(22, 119, 255, 0.1);
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.sidebar-account-menu-avatar-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.sidebar-account-menu-avatar-fallback {
+  transform: translateY(0.5px);
 }
 
 .sidebar-account-menu-label {
@@ -1668,18 +1697,29 @@
 }
 
 .sidebar-account-menu-logout {
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
+  flex: 0 0 auto;
+  min-width: 58px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   margin-left: auto;
+  padding: 0 8px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--ink-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 600;
   cursor: pointer;
+}
+
+.sidebar-account-menu-logout-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-account-menu-logout:hover,

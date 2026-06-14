@@ -67,7 +67,7 @@ export const enUSMessages = {
   "nav.sidebar.openSettings": "Open settings",
   "nav.group.fixedEntry": "Group entry",
 
-  "sidebar.sso.signedIn": "Log out",
+  "sidebar.sso.signedIn": "Signed in",
   "sidebar.sso.signingIn": "Log in",
   "sidebar.sso.signedOut": "Log in",
   "sidebar.sso.signIn": "Log in",

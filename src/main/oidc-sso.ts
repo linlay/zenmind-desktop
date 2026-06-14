@@ -1132,6 +1132,18 @@ function normalizeAudience(value: unknown) {
   return "";
 }
 
+const DESKTOP_SSO_AVATAR_CLAIM_KEYS = ["avatarUrl", "picture", "avatar_url", "avatar"] as const;
+
+function normalizeDesktopSsoAvatarUrlClaim(payload: Record<string, unknown>) {
+  for (const key of DESKTOP_SSO_AVATAR_CLAIM_KEYS) {
+    const avatarUrl = normalizeStringClaim(payload[key]);
+    if (avatarUrl) {
+      return avatarUrl;
+    }
+  }
+  return "";
+}
+
 function includesAudience(value: unknown, expected: string) {
   if (typeof value === "string") {
     return value === expected;
@@ -1151,11 +1163,15 @@ function createClaims(payload: Record<string, unknown>): DesktopSsoClaims {
   };
   const name = normalizeStringClaim(payload.name);
   const email = normalizeStringClaim(payload.email);
+  const avatarUrl = normalizeDesktopSsoAvatarUrlClaim(payload);
   if (name) {
     claims.name = name;
   }
   if (email) {
     claims.email = email;
+  }
+  if (avatarUrl) {
+    claims.avatarUrl = avatarUrl;
   }
   return claims;
 }
@@ -1762,12 +1778,16 @@ function getJwtPayload(token: string) {
 
 function createCookieAccessTokenClaims(accessToken: string, config: OidcConfig): DesktopSsoClaims {
   const payload = getJwtPayload(accessToken);
+  const name = normalizeStringClaim(payload.name);
+  const email = normalizeStringClaim(payload.email);
+  const avatarUrl = normalizeDesktopSsoAvatarUrlClaim(payload);
   return {
     sub: normalizeStringClaim(payload.sub) || "desktop-sso-cookie",
     issuer: normalizeStringClaim(payload.iss) || config.browserOrigin || new URL(config.loginUrl || config.authorizeUrl).origin,
     audience: normalizeAudience(payload.aud) || config.cookieAccessTokenExchange?.url || config.clientId,
-    ...(normalizeStringClaim(payload.name) ? { name: normalizeStringClaim(payload.name) } : {}),
-    ...(normalizeStringClaim(payload.email) ? { email: normalizeStringClaim(payload.email) } : {})
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(avatarUrl ? { avatarUrl } : {})
   };
 }
 

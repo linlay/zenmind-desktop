@@ -674,6 +674,41 @@ test("fixed sidebar tool menu uses controlled popover state", () => {
   assert.doesNotMatch(sidebarSource, /toolMenuPanelRef/);
 });
 
+test("fixed sidebar settings trigger labels the active fixed tool without changing action semantics", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+
+  assert.match(
+    sidebarSource,
+    /function isFixedToolRouteActive\(targetPath: string\) \{[\s\S]*?targetPathname === "\/agents"[\s\S]*?currentPathname\.startsWith\(`\$\{targetPathname\}\/`\)[\s\S]*?pendingPathname\.startsWith\(`\$\{targetPathname\}\/`\)[\s\S]*?return currentPathname === targetPathname \|\| pendingPathname === targetPathname;/
+  );
+  assert.match(
+    sidebarSource,
+    /const activeFixedToolItem = fixedToolItems\.find\(\(item\) =>\s*isFixedToolRouteActive\(item\.to\),\s*\);[\s\S]{0,120}const settingsToolTriggerLabel = activeFixedToolItem\?\.label \?\? t\("nav\.settings"\);/
+  );
+  assert.match(
+    sidebarSource,
+    /function renderToolLink\(item: SidebarToolItem\)[\s\S]*?isFixedToolRouteActive\(item\.to\) \? "sidebar-link-active" : ""/
+  );
+  assert.match(
+    sidebarSource,
+    /activeFixedToolItem[\s\S]{0,80}\? "sidebar-link-active"\s*:\s*""/
+  );
+  assert.match(
+    sidebarSource,
+    /aria-label=\{t\("nav\.sidebar\.openSettings"\)\}[\s\S]{0,220}title=\{t\("nav\.settings"\)\}[\s\S]{0,220}<span className="sidebar-link-label">\{settingsToolTriggerLabel\}<\/span>/
+  );
+  assert.match(
+    sidebarSource,
+    /sidebar-link-label-collapsed"[\s\S]{0,80}\{getCollapsedSidebarLabel\(t\("nav\.settings"\)\)\}/
+  );
+});
+
 test("sidebar renders task board and section groups above the fixed tool menu", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
@@ -820,7 +855,7 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(sidebarSource, /aria-label=\{t\("nav\.sidebar\.fixedTools"\)\}/);
   assert.match(sidebarSource, /aria-label=\{t\("nav\.sidebar\.openSettings"\)\}/);
   assert.match(sidebarSource, /title=\{t\("nav\.settings"\)\}/);
-  assert.match(sidebarSource, /<span className="sidebar-link-label">\{t\("nav\.settings"\)\}<\/span>/);
+  assert.match(sidebarSource, /<span className="sidebar-link-label">\{settingsToolTriggerLabel\}<\/span>/);
   assert.match(sidebarSource, /getCollapsedSidebarLabel\(t\("nav\.settings"\)\)/);
   assert.match(sidebarSource, /createPortal/);
   assert.match(sidebarSource, /sidebar-tool-menu-trigger/);
@@ -3708,11 +3743,19 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
     "utf8"
   );
   const contracts = readSharedContractsSource();
+  const oidcSso = readSourceFile("src", "main", "oidc-sso.ts");
+  const ssoController = readSourceFile("src", "main", "sso-controller.ts");
   const globalStyles = readRendererStyles();
   const accountMenuRule = globalStyles.match(/\.sidebar-tool-menu\.sidebar-account-menu\s*\{(?<body>[\s\S]*?)^\}/m);
 
   assert.match(contracts, /browserOrigin\?: string;/);
   assert.match(contracts, /browserUrl\?: string;/);
+  assert.match(contracts, /avatarUrl\?: string;/);
+  assert.match(oidcSso, /DESKTOP_SSO_AVATAR_CLAIM_KEYS = \["avatarUrl",\s*"picture",\s*"avatar_url",\s*"avatar"\] as const;/);
+  assert.match(oidcSso, /function normalizeDesktopSsoAvatarUrlClaim\(payload: Record<string, unknown>\)/);
+  assert.match(oidcSso, /\.\.\.\(avatarUrl \? \{ avatarUrl \} : \{\}\)/);
+  assert.match(ssoController, /function getRecordAvatarUrl\(value: unknown\)/);
+  assert.match(ssoController, /\.\.\.\(avatarUrl \? \{ avatarUrl \} : \{\}\)/);
   assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
   assert.doesNotMatch(appShell, /void handleDesktopSsoLogin\(\);/);
   assert.match(appShell, /desktopSsoStatus=\{desktopSsoStatus\}/);
@@ -3728,6 +3771,9 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /shouldRenderDesktopSso/);
   assert.doesNotMatch(sidebarSource, /visibleToolItems/);
   assert.doesNotMatch(sidebarSource, /function renderDesktopSsoEntry\(\)/);
+  assert.match(sidebarSource, /function AccountMenuAvatar\(\{ avatarUrl = "", label \}: AccountMenuAvatarProps\)/);
+  assert.match(sidebarSource, /sidebar-account-menu-avatar-image/);
+  assert.match(sidebarSource, /sidebar-account-menu-avatar-fallback/);
   assert.match(sidebarSource, /function getDesktopSsoUserLabel\(\)/);
   assert.match(sidebarSource, /if \(!desktopSsoStatus\) \{[\s\S]{0,80}return t\("sidebar\.sso\.signIn"\);/);
   assert.match(sidebarSource, /desktopSsoStatus\.user\?\.name\?\.trim\(\)\s*\|\|[\s\S]{0,120}desktopSsoStatus\.user\?\.email\?\.trim\(\)/);
@@ -3747,10 +3793,14 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(sidebarSource, /className="sidebar-tool-menu-popover"/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoActionLabel\}/);
   assert.match(sidebarSource, /aria-label=\{desktopSsoLogoutLabel\}/);
+  assert.match(sidebarSource, /avatarUrl=\{desktopSsoStatus\.user\?\.avatarUrl\}/);
+  assert.match(sidebarSource, /className="sidebar-account-menu-logout"/);
+  assert.match(sidebarSource, /className="sidebar-account-menu-logout-label"/);
   assert.match(sidebarSource, /window\.confirm\(t\("sidebar\.sso\.confirmSignOut"\)\)/);
   assert.match(sidebarSource, /onDesktopSsoLogout\?\.\(\)/);
   assert.match(sidebarSource, /onDesktopSsoLogin\?\.\(\);/);
   assert.doesNotMatch(sidebarSource, /desktopSsoStatus\.authenticated[\s\S]{0,140}\? onDesktopSsoLogout\?\.\(\)[\s\S]{0,140}: onDesktopSsoLogin\?\.\(\)/);
+  assert.doesNotMatch(sidebarSource, /"sidebar-account-menu-action",[\s\S]{0,80}"sidebar-account-menu-user",[\s\S]{0,260}onClick=\{handleDesktopSsoLogoutClick\}/);
   assert.match(sidebarSource, /disabled=\{desktopSsoBusy\}/);
   assert.match(sidebarSource, /t\("sidebar\.sso\.signedIn"\)/);
   assert.doesNotMatch(sidebarSource, /desktopSsoStatus\.user\?\.name\s*\|\|\s*desktopSsoStatus\.user\?\.email\s*\|\|\s*desktopSsoStatus\.user\?\.sub/);
@@ -3762,7 +3812,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /"登录中"|"重新打开"/);
   assert.doesNotMatch(sidebarSource, /\{renderDesktopSsoEntry\(\)\}/);
   assert.match(sidebarSource, /<SidebarIllustration kind="settings" \/>/);
-  assert.match(sidebarSource, /fixedToolItems\.some\(\(item\) => isRouteActive\(item\.to\)\)/);
+  assert.match(sidebarSource, /activeFixedToolItem[\s\S]{0,80}\? "sidebar-link-active"/);
 
   assert.doesNotMatch(globalStyles, /\.sidebar-sso-entry\s*\{/);
   assert.ok(accountMenuRule?.groups?.body, "missing .sidebar-tool-menu.sidebar-account-menu rule");
@@ -3786,6 +3836,12 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(globalStyles, /\.sidebar-account-menu-action:hover \.sidebar-account-menu-icon[\s\S]*?color:\s*var\(--accent\);/);
   assert.doesNotMatch(globalStyles, /\.sidebar-account-menu-action:focus-visible \.sidebar-account-menu-icon[\s\S]*?color:\s*var\(--accent\);/);
   assert.match(globalStyles, /\.sidebar-account-menu-user\s*\{[\s\S]*?font-size:\s*14px;[\s\S]*?font-weight:\s*500;/);
+  assert.match(globalStyles, /\.sidebar-account-menu-user-with-action\s*\{[\s\S]*?cursor:\s*default;/);
+  assert.match(globalStyles, /\.sidebar-account-menu-avatar\s*\{[\s\S]*?flex:\s*0 0 24px;[\s\S]*?border-radius:\s*999px;/);
+  assert.match(globalStyles, /\.sidebar-account-menu-avatar-image\s*\{[\s\S]*?object-fit:\s*cover;/);
+  assert.match(globalStyles, /\.sidebar-account-menu-avatar-fallback\s*\{/);
+  assert.match(globalStyles, /\.sidebar-account-menu-logout\s*\{[\s\S]*?min-width:\s*58px;[\s\S]*?font-size:\s*12px;/);
+  assert.match(globalStyles, /\.sidebar-account-menu-logout-label\s*\{[\s\S]*?white-space:\s*nowrap;/);
   assert.doesNotMatch(globalStyles, /\.sidebar-tool-status-label\s*\{/);
   assert.doesNotMatch(globalStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-status-label/);
   assert.match(globalStyles, /\.sidebar-account-menu-label\s*\{[\s\S]*?text-overflow:\s*ellipsis;/);

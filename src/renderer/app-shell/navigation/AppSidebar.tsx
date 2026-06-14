@@ -211,6 +211,41 @@ const fixedToolRowsBase: Array<
   [{ orderKey: "help", to: "/help", labelKey: "nav.help", icon: "help" }],
 ];
 
+type AccountMenuAvatarProps = {
+  avatarUrl?: string;
+  label: string;
+};
+
+function getAccountMenuAvatarFallback(label: string) {
+  return Array.from(label.trim())[0]?.toUpperCase() || "?";
+}
+
+function AccountMenuAvatar({ avatarUrl = "", label }: AccountMenuAvatarProps) {
+  const imageSource = avatarUrl.trim();
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageSource]);
+
+  return (
+    <span className="sidebar-account-menu-avatar" aria-hidden="true">
+      {imageSource && !imageFailed ? (
+        <img
+          className="sidebar-account-menu-avatar-image"
+          src={imageSource}
+          alt=""
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <span className="sidebar-account-menu-avatar-fallback">
+          {getAccountMenuAvatarFallback(label)}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function getCollapsedSidebarLabel(label: string) {
   const Segmenter =
     typeof Intl === "undefined"
@@ -1436,6 +1471,20 @@ export function AppSidebar({
     return targetAgentKey === activeAgentKey;
   }
 
+  function isFixedToolRouteActive(targetPath: string) {
+    const targetPathname = getRoutePathname(targetPath);
+    const pendingPathname = pendingPath ? getRoutePathname(pendingPath) : "";
+    if (targetPathname === "/agents") {
+      return (
+        currentPathname === targetPathname ||
+        currentPathname.startsWith(`${targetPathname}/`) ||
+        pendingPathname === targetPathname ||
+        pendingPathname.startsWith(`${targetPathname}/`)
+      );
+    }
+    return currentPathname === targetPathname || pendingPathname === targetPathname;
+  }
+
   function isAssistantGroupActive() {
     return (
       currentPathname === "/service/agent-webclient" ||
@@ -2053,7 +2102,13 @@ export function AppSidebar({
         title={item.label}
         role="menuitem"
         className={() =>
-          getSidebarLinkClassName(item.to, "sidebar-tool-menu-item")
+          [
+            "sidebar-link",
+            "sidebar-tool-menu-item",
+            isFixedToolRouteActive(item.to) ? "sidebar-link-active" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")
         }
       >
         <span className="sidebar-link-icon">
@@ -2083,24 +2138,37 @@ export function AppSidebar({
 
     if (desktopSsoStatus?.authenticated) {
       return (
-        <button
-          type="button"
+        <div
           className={[
             "sidebar-account-menu-item",
-            "sidebar-account-menu-action",
             "sidebar-account-menu-user",
+            "sidebar-account-menu-user-with-action",
           ]
             .filter(Boolean)
             .join(" ")}
-          onClick={handleDesktopSsoLogoutClick}
-          disabled={desktopSsoBusy}
-          role="menuitem"
-          aria-label={desktopSsoLogoutLabel}
+          role="group"
+          aria-label={desktopSsoUserLabel}
           title={desktopSsoUserLabel}
         >
-          {renderAccountMenuIcon("account")}
-          <span className="sidebar-account-menu-label">{desktopSsoLogoutLabel}</span>
-        </button>
+          <AccountMenuAvatar
+            avatarUrl={desktopSsoStatus.user?.avatarUrl}
+            label={desktopSsoUserLabel}
+          />
+          <span className="sidebar-account-menu-label">{desktopSsoUserLabel}</span>
+          <button
+            type="button"
+            className="sidebar-account-menu-logout"
+            onClick={handleDesktopSsoLogoutClick}
+            disabled={desktopSsoBusy}
+            role="menuitem"
+            aria-label={desktopSsoLogoutLabel}
+            title={desktopSsoLogoutLabel}
+          >
+            <span className="sidebar-account-menu-logout-label">
+              {desktopSsoLogoutLabel}
+            </span>
+          </button>
+        </div>
       );
     }
 
@@ -3075,6 +3143,10 @@ export function AppSidebar({
   }
 
   const shouldRenderCollapsed = isCollapsed && !isSettingsMode;
+  const activeFixedToolItem = fixedToolItems.find((item) =>
+    isFixedToolRouteActive(item.to),
+  );
+  const settingsToolTriggerLabel = activeFixedToolItem?.label ?? t("nav.settings");
 
   return (
     <aside className={shouldRenderCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"}>
@@ -3177,7 +3249,7 @@ export function AppSidebar({
                   "sidebar-link",
                   "sidebar-link-utility",
                   "sidebar-tool-menu-trigger",
-                  fixedToolItems.some((item) => isRouteActive(item.to))
+                  activeFixedToolItem
                     ? "sidebar-link-active"
                     : "",
                   toolMenuOpen ? "is-open" : "",
@@ -3193,7 +3265,7 @@ export function AppSidebar({
                 <span className="sidebar-link-icon">
                   <SidebarIllustration kind="settings" />
                 </span>
-                <span className="sidebar-link-label">{t("nav.settings")}</span>
+                <span className="sidebar-link-label">{settingsToolTriggerLabel}</span>
                 <span
                   className="sidebar-link-label-collapsed"
                   aria-hidden="true"

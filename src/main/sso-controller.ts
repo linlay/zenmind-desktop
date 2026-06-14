@@ -249,6 +249,18 @@ function getRecordIdString(value: unknown, key: string) {
   return "";
 }
 
+const DESKTOP_SSO_AVATAR_CLAIM_KEYS = ["avatarUrl", "picture", "avatar_url", "avatar"] as const;
+
+function getRecordAvatarUrl(value: unknown) {
+  for (const key of DESKTOP_SSO_AVATAR_CLAIM_KEYS) {
+    const avatarUrl = getRecordString(value, key);
+    if (avatarUrl) {
+      return avatarUrl;
+    }
+  }
+  return "";
+}
+
 function createWebSessionClaims(user: unknown, exchangeUrl: string): DesktopSsoClaims | null {
   const id = getRecordIdString(user, "id");
   if (!id) {
@@ -256,12 +268,14 @@ function createWebSessionClaims(user: unknown, exchangeUrl: string): DesktopSsoC
   }
   const email = getRecordString(user, "email");
   const displayName = getRecordString(user, "displayName") || getRecordString(user, "name");
+  const avatarUrl = getRecordAvatarUrl(user);
   return {
     sub: `zenmind-user:${id}`,
     issuer: new URL(exchangeUrl).origin,
     audience: "zenmind-desktop",
     ...(email ? { email } : {}),
-    ...(displayName ? { name: displayName } : {})
+    ...(displayName ? { name: displayName } : {}),
+    ...(avatarUrl ? { avatarUrl } : {})
   };
 }
 

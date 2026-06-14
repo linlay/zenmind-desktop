@@ -48,6 +48,7 @@ export interface DesktopSsoClaims {
   sub: string;
   name?: string;
   email?: string;
+  avatarUrl?: string;
   issuer: string;
   audience: string;
 }
