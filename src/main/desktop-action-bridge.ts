@@ -287,7 +287,13 @@ function readItemId(args: Record<string, unknown>) {
 }
 
 function isMarketSection(value: unknown): value is NonNullable<MarketListOptions["sections"]>[number] {
-  return value === "plugins" || value === "skills" || value === "sandboxImages" || value === "pets" || value === "cli";
+  return value === "plugins" ||
+    value === "skills" ||
+    value === "agents" ||
+    value === "sandboxImages" ||
+    value === "pets" ||
+    value === "cli" ||
+    value === "websiteApps";
 }
 
 function readMarketListOptions(args: Record<string, unknown>): MarketListOptions {

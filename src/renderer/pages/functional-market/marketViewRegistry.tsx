@@ -5,9 +5,11 @@ import { StorefrontMarket } from "./StorefrontMarket";
 const MARKET_VIEWS = {
   plugins: StorefrontMarket,
   skills: StorefrontMarket,
+  agents: StorefrontMarket,
   sandboxImages: StorefrontMarket,
   pets: StorefrontMarket,
-  cli: StorefrontMarket
+  cli: StorefrontMarket,
+  websiteApps: StorefrontMarket
 } satisfies Record<MarketTab, ComponentType<MarketViewProps>>;
 
 export function getMarketView(tab: MarketTab) {

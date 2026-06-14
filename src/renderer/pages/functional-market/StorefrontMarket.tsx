@@ -6,12 +6,14 @@ import {
   CloudDownloadOutlined,
   CodeOutlined,
   CopyOutlined,
+  GlobalOutlined,
   InfoCircleOutlined,
   ReloadOutlined,
+  RobotOutlined,
   SafetyCertificateOutlined,
   SmileOutlined
 } from "@ant-design/icons";
-import type { MarketItem, ServiceState } from "@shared/contracts";
+import type { MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
 import { useNavigate } from "react-router-dom";
 import { getServiceDisplayName } from "../../service-display";
 import { useI18n } from "../../i18n/useI18n";
@@ -27,7 +29,6 @@ import {
 import {
   createEmptyMarketResult,
   getMarketTabDefinitions,
-  getMarketTabDefinition,
   MARKET_TAB_ITEM_TYPES,
   matchesMarketItemQuery,
   type MarketTab,
@@ -43,25 +44,34 @@ import {
 } from "./marketDisplay";
 import "./StorefrontMarket.css";
 
-const RECOMMENDED_PREVIEW_LIMIT = 6;
+type RangeMode = "all" | "installed" | "updates";
+type SortMode = "popular" | "latest" | "rating";
 
 function isInstalledMarketItem(item: MarketItem) {
   return item.state === "installed" || item.state === "update-available" || item.state === "local-imported";
 }
 
+function isListOnlyMarketItem(item: MarketItem) {
+  return item.type === "agent" || item.type === "website-app";
+}
+
 function marketMessageForTab(result: ReturnType<typeof createEmptyMarketResult>, tab: MarketTab) {
   if (tab === "plugins") return result.pluginMessage ?? "";
   if (tab === "skills") return result.skillMessage ?? "";
+  if (tab === "agents") return result.agentMessage ?? "";
   if (tab === "sandboxImages") return result.sandboxMessage ?? "";
   if (tab === "pets") return result.petMessage ?? "";
+  if (tab === "websiteApps") return result.websiteAppMessage ?? "";
   return result.cliMessage ?? "";
 }
 
 function marketOfflineForTab(result: ReturnType<typeof createEmptyMarketResult>, tab: MarketTab) {
   if (tab === "plugins") return Boolean(result.pluginOffline);
   if (tab === "skills") return Boolean(result.skillOffline);
+  if (tab === "agents") return Boolean(result.agentOffline);
   if (tab === "sandboxImages") return Boolean(result.sandboxOffline);
   if (tab === "pets") return Boolean(result.petOffline);
+  if (tab === "websiteApps") return Boolean(result.websiteAppOffline);
   return Boolean(result.cliOffline);
 }
 
@@ -69,12 +79,16 @@ function categoryIcon(tab: MarketTab) {
   switch (tab) {
     case "skills":
       return <SafetyCertificateOutlined />;
+    case "agents":
+      return <RobotOutlined />;
     case "sandboxImages":
-      return <CloudDownloadOutlined />;
+      return <ApiOutlined />;
     case "pets":
       return <SmileOutlined />;
     case "cli":
       return <CodeOutlined />;
+    case "websiteApps":
+      return <GlobalOutlined />;
     case "plugins":
     default:
       return <AppstoreOutlined />;
@@ -84,6 +98,12 @@ function categoryIcon(tab: MarketTab) {
 function itemIcon(item: MarketItem, activeTab: MarketTab) {
   if (item.type === "pet" && item.petPreviewAssetPath) {
     return <img src={item.petPreviewAssetPath} alt="" aria-hidden="true" />;
+  }
+  if (item.type === "agent") {
+    return <RobotOutlined />;
+  }
+  if (item.type === "website-app") {
+    return <GlobalOutlined />;
   }
   if (item.type === "cli") {
     return <CodeOutlined />;
@@ -106,8 +126,94 @@ function itemCommercialMeta(item: MarketItem, t: ReturnType<typeof useI18n>["t"]
 }
 
 function itemDetailUrl(item: MarketItem) {
-  const value = item.cliDetailCommand || item.homepageUrl || item.metadata?.readmeUrl || item.metadata?.manifestUrl || "";
-  return value.trim();
+  return (item.homepageUrl || item.metadata?.readmeUrl || item.metadata?.manifestUrl || item.cliDetailCommand || "").trim();
+}
+
+function numberFromMetadata(item: MarketItem, keys: string[]) {
+  for (const key of keys) {
+    const raw = item.metadata?.[key];
+    const value = raw ? Number.parseFloat(raw) : Number.NaN;
+    if (Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return 0;
+}
+
+function dateFromMetadata(item: MarketItem) {
+  for (const key of ["publishedAt", "releasedAt", "updatedAt", "createdAt"]) {
+    const raw = item.metadata?.[key];
+    if (!raw) {
+      continue;
+    }
+    const value = Date.parse(raw);
+    if (Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return 0;
+}
+
+function sortMarketItems(items: MarketItem[], sortMode: SortMode) {
+  const sorted = [...items];
+  sorted.sort((a, b) => {
+    if (sortMode === "latest") {
+      const diff = dateFromMetadata(b) - dateFromMetadata(a);
+      if (diff !== 0) return diff;
+    } else if (sortMode === "rating") {
+      const diff = numberFromMetadata(b, ["rating", "score"]) - numberFromMetadata(a, ["rating", "score"]);
+      if (diff !== 0) return diff;
+    } else {
+      const diff = numberFromMetadata(b, ["featuredOrder", "popularity", "downloads", "installCount"]) -
+        numberFromMetadata(a, ["featuredOrder", "popularity", "downloads", "installCount"]);
+      if (diff !== 0) return diff;
+    }
+    return a.name.localeCompare(b.name, "zh-Hans-CN");
+  });
+  return sorted;
+}
+
+function rangeMatches(item: MarketItem, rangeMode: RangeMode) {
+  if (rangeMode === "installed") {
+    return isInstalledMarketItem(item);
+  }
+  if (rangeMode === "updates") {
+    return item.state === "update-available";
+  }
+  return true;
+}
+
+function marketTypeLabel(type: MarketItemType, t: ReturnType<typeof useI18n>["t"]) {
+  switch (type) {
+    case "skill":
+      return t("market.type.skill");
+    case "agent":
+      return t("market.type.agent");
+    case "sandbox-image":
+      return t("market.type.sandboxImage");
+    case "pet":
+      return t("market.type.pet");
+    case "cli":
+      return t("market.type.cli");
+    case "website-app":
+      return t("market.type.websiteApp");
+    case "plugin":
+    default:
+      return t("market.type.plugin");
+  }
+}
+
+function compatibilityLabel(item: MarketItem, t: ReturnType<typeof useI18n>["t"]) {
+  if (item.message) {
+    return item.message;
+  }
+  if (item.state === "incompatible") {
+    return t("market.storefront.compatibilityMissing");
+  }
+  if (item.minDesktopVersion) {
+    return t("market.storefront.minDesktopVersion", { version: item.minDesktopVersion });
+  }
+  return t("market.storefront.compatible");
 }
 
 export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
@@ -115,33 +221,44 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
   const { t } = useI18n();
   const { services, refresh: refreshServices } = useServices();
   const [query, setQuery] = useState("");
+  const [rangeMode, setRangeMode] = useState<RangeMode>("all");
+  const [sortMode, setSortMode] = useState<SortMode>("popular");
   const [marketResult, setMarketResult] = useState(createEmptyMarketResult);
   const [isLoadingMarket, setIsLoadingMarket] = useState(true);
   const [busyItemId, setBusyItemId] = useState("");
-  const [expandedRecommended, setExpandedRecommended] = useState(false);
-  const [detailItemId, setDetailItemId] = useState("");
   const [feedback, setFeedback] = useState("");
   const [isImporting, setIsImporting] = useState(false);
 
-  const activeDefinition = getMarketTabDefinition(activeTab, t);
   const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services]);
   const itemType = MARKET_TAB_ITEM_TYPES[activeTab];
+  const tabDefinitions = useMemo(() => {
+    const counts = new Map<MarketItemType, number>();
+    for (const item of marketResult.items) {
+      counts.set(item.type, (counts.get(item.type) ?? 0) + 1);
+    }
+    return getMarketTabDefinitions(t).map((tab) => ({
+      ...tab,
+      count: counts.get(MARKET_TAB_ITEM_TYPES[tab.id]) ?? 0
+    }));
+  }, [marketResult.items, t]);
 
-  const items = useMemo(
-    () => marketResult.items.filter((item) =>
-      item.type === itemType && matchesMarketItemQuery(item, query, t)
+  const activeItems = useMemo(
+    () => marketResult.items.filter((item) => item.type === itemType),
+    [itemType, marketResult.items]
+  );
+  const visibleItems = useMemo(
+    () => sortMarketItems(
+      activeItems.filter((item) =>
+        rangeMatches(item, rangeMode) && matchesMarketItemQuery(item, query, t)
+      ),
+      sortMode
     ),
-    [itemType, marketResult.items, query, t]
+    [activeItems, query, rangeMode, sortMode, t]
   );
-  const installedItems = useMemo(() => items.filter(isInstalledMarketItem), [items]);
-  const recommendedItems = useMemo(
-    () => items.filter((item) => item.source === "cloud" && !isInstalledMarketItem(item)),
-    [items]
-  );
-  const visibleRecommendedItems = expandedRecommended
-    ? recommendedItems
-    : recommendedItems.slice(0, RECOMMENDED_PREVIEW_LIMIT);
-  const hasMoreRecommended = recommendedItems.length > RECOMMENDED_PREVIEW_LIMIT;
+  const installedCount = activeItems.filter(isInstalledMarketItem).length;
+  const officialCount = activeItems.filter((item) => item.source === "cloud").length;
+  const updateCount = activeItems.filter((item) => item.state === "update-available").length;
+  const missingCount = activeItems.filter((item) => item.state === "incompatible" || Boolean(item.message)).length;
   const marketStatusMessage = feedback || marketMessageForTab(marketResult, activeTab);
   const marketOffline = marketOfflineForTab(marketResult, activeTab);
 
@@ -153,7 +270,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       if (!command) {
         throw createMissingMarketApiError(commandName, t);
       }
-      const next = await command({ sections: [activeTab] });
+      const next = await command();
       setMarketResult(next);
       setFeedback("");
     } catch (reason) {
@@ -165,11 +282,8 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
   }
 
   useEffect(() => {
-    setExpandedRecommended(false);
-    setDetailItemId("");
-    setFeedback("");
     void loadMarket(false);
-  }, [activeTab]);
+  }, []);
 
   async function refreshEverything(force = false) {
     await refreshServices();
@@ -201,6 +315,19 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     }
     const result = await window.electronAPI.clipboard.writeText(value);
     setFeedback(result.ok ? t("market.cli.copied", { label }) : (result.message ?? t("market.cli.copyFailed")));
+  }
+
+  async function openDetail(item: MarketItem) {
+    const detailUrl = itemDetailUrl(item);
+    if (!detailUrl) {
+      setFeedback(t("market.storefront.dialogPlanned"));
+      return;
+    }
+    if (detailUrl.startsWith("http")) {
+      await window.electronAPI.shell.openExternal(detailUrl);
+      return;
+    }
+    await copyText(detailUrl, t("market.action.details"));
   }
 
   async function handleToolbarImport() {
@@ -252,30 +379,34 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
 
   function renderPrimaryAction(item: MarketItem) {
     const busy = busyItemId === item.id;
+    if (isListOnlyMarketItem(item)) {
+      const hasDetail = Boolean(itemDetailUrl(item));
+      return (
+        <button
+          type="button"
+          className="market-store-action"
+          disabled={!hasDetail}
+          onClick={() => void openDetail(item)}
+        >
+          <InfoCircleOutlined />
+          <span>{hasDetail ? t("market.action.details") : t("market.action.pendingIntegration")}</span>
+        </button>
+      );
+    }
     if (item.type === "cli") {
       const installed = isInstalledMarketItem(item);
       const copyLabel = installed ? t("market.cli.uninstallScript") : t("market.cli.installScript");
       const copyValue = installed ? item.cliUninstallCommand : item.cliInstallCommand;
       return (
-        <>
-          <button
-            type="button"
-            className="market-store-action is-primary"
-            disabled={busy || !copyValue}
-            onClick={() => void copyText(copyValue ?? "", copyLabel)}
-          >
-            <CopyOutlined />
-            <span>{copyLabel}</span>
-          </button>
-          <button
-            type="button"
-            className="market-store-action"
-            onClick={() => setDetailItemId(detailItemId === item.id ? "" : item.id)}
-          >
-            <InfoCircleOutlined />
-            <span>{t("market.cli.viewDetails")}</span>
-          </button>
-        </>
+        <button
+          type="button"
+          className="market-store-action is-primary"
+          disabled={busy || !copyValue}
+          onClick={() => void copyText(copyValue ?? "", copyLabel)}
+        >
+          <CopyOutlined />
+          <span>{copyLabel}</span>
+        </button>
       );
     }
     if (item.state === "not-installed") {
@@ -334,38 +465,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     );
   }
 
-  function renderCliDetail(item: MarketItem) {
-    if (item.type !== "cli" || detailItemId !== item.id) {
-      return null;
-    }
-    const detailUrl = itemDetailUrl(item);
-    return (
-      <div className="market-cli-detail">
-        <div>
-          <span>{t("market.cli.installScript")}</span>
-          <code>{item.cliInstallCommand || t("market.cli.commandUnavailable")}</code>
-        </div>
-        <div>
-          <span>{t("market.cli.uninstallScript")}</span>
-          <code>{item.cliUninstallCommand || t("market.cli.commandUnavailable")}</code>
-        </div>
-        {detailUrl ? (
-          <button
-            type="button"
-            className="market-store-action"
-            onClick={() => detailUrl.startsWith("http")
-              ? void window.electronAPI.shell.openExternal(detailUrl)
-              : void copyText(detailUrl, t("market.cli.details"))}
-          >
-            <InfoCircleOutlined />
-            <span>{t("market.cli.details")}</span>
-          </button>
-        ) : null}
-      </div>
-    );
-  }
-
-  function renderCard(item: MarketItem, section: "installed" | "recommended") {
+  function renderCard(item: MarketItem) {
     const service = item.type === "plugin" ? serviceById.get(item.id) ?? null : null;
     const displayName = item.type === "plugin" ? getServiceDisplayName(item.id, item.name) : item.name;
     const description = marketCardDescription(item);
@@ -378,7 +478,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       item.type === "pet" ? t("market.detail.desktopPet") : ""
     ].filter(Boolean).slice(0, 4);
     return (
-      <article key={`${section}:${item.type}:${item.id}`} className={`market-store-card is-${item.type}`}>
+      <article key={`${item.type}:${item.id}`} className={`market-store-card is-${item.type}`}>
         <div className="market-store-card-head">
           <div className="market-store-item-icon" aria-hidden="true">
             {itemIcon(item, activeTab)}
@@ -391,14 +491,19 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
               </span>
             </div>
             <div className="market-store-submeta">
-              <span>{marketSourceLabel(item, t)}</span>
+              <span>{marketTypeLabel(item.type, t)}</span>
               <span>{marketVersionLabel(item)}</span>
+              <span>{marketSourceLabel(item, t)}</span>
               {commercialMeta ? <span>{commercialMeta}</span> : null}
               {metric ? <span>{metric}</span> : null}
             </div>
           </div>
         </div>
         {description ? <p className="market-store-description">{description}</p> : null}
+        <div className="market-store-compatibility">
+          <span>{t("market.storefront.compatibility")}</span>
+          <strong>{compatibilityLabel(item, t)}</strong>
+        </div>
         {chips.length > 0 ? (
           <div className="market-store-tags" aria-label={t("market.tags.aria", { name: displayName })}>
             {chips.map((chip) => <span key={chip}>{chip}</span>)}
@@ -407,39 +512,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
         <div className="market-store-card-footer">
           {renderPrimaryAction(item)}
         </div>
-        {renderCliDetail(item)}
       </article>
-    );
-  }
-
-  function renderSection(
-    title: string,
-    subtitle: string,
-    sectionItems: MarketItem[],
-    section: "installed" | "recommended",
-    emptyTitle: string,
-    emptyDescription: string
-  ) {
-    return (
-      <section className="market-store-section">
-        <div className="market-store-section-head">
-          <div>
-            <h2>{title}</h2>
-            <p>{subtitle}</p>
-          </div>
-          <span>{sectionItems.length}</span>
-        </div>
-        {sectionItems.length > 0 ? (
-          <div className="market-store-grid">
-            {sectionItems.map((item) => renderCard(item, section))}
-          </div>
-        ) : (
-          <div className="market-store-empty">
-            <strong>{emptyTitle}</strong>
-            <span>{emptyDescription}</span>
-          </div>
-        )}
-      </section>
     );
   }
 
@@ -455,9 +528,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
     <MarketPageFrame
       activeTab={activeTab}
       onTabChange={onTabChange}
-      subtitle={activeDefinition.subtitle}
-      tabs={getMarketTabDefinitions(t)}
-      title={activeDefinition.title}
+      tabs={tabDefinitions}
       toolbar={(
         <>
           <button type="button" className="market-toolbar-btn" onClick={() => void loadMarket(true)}>
@@ -479,35 +550,7 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       )}
     >
       <div className="market-content market-storefront">
-        <div className="market-store-overview">
-          <div className="market-store-category-mark" aria-hidden="true">{categoryIcon(activeTab)}</div>
-          <div>
-            <p>{t("market.storefront.official")}</p>
-            <h2>{activeDefinition.label}</h2>
-          </div>
-          <dl>
-            <div>
-              <dt>{t("market.storefront.installedCount")}</dt>
-              <dd>{installedItems.length}</dd>
-            </div>
-            <div>
-              <dt>{t("market.storefront.recommendedCount")}</dt>
-              <dd>{recommendedItems.length}</dd>
-            </div>
-            <div>
-              <dt>{t("market.storefront.updateCount")}</dt>
-              <dd>{items.filter((item) => item.state === "update-available").length}</dd>
-            </div>
-          </dl>
-        </div>
-
-        {marketStatusMessage ? (
-          <div className={marketOffline ? "market-status is-warning" : "market-status"} aria-live="polite">
-            {marketStatusMessage}
-          </div>
-        ) : null}
-
-        <div className="market-filter-bar market-filter-bar-single">
+        <div className="market-filter-bar market-store-toolbar" aria-label={t("market.toolbar.filters")}>
           <label className="market-search">
             <AppstoreOutlined />
             <input
@@ -516,38 +559,60 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
               placeholder={t("market.search.storefront")}
             />
           </label>
+          <label className="market-select">
+            <span>{t("market.toolbar.sort")}</span>
+            <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
+              <option value="popular">{t("market.sort.popular")}</option>
+              <option value="latest">{t("market.sort.latest")}</option>
+              <option value="rating">{t("market.sort.rating")}</option>
+            </select>
+          </label>
+          <label className="market-select">
+            <span>{t("market.toolbar.scope")}</span>
+            <select value={rangeMode} onChange={(event) => setRangeMode(event.target.value as RangeMode)}>
+              <option value="all">{t("market.scope.all")}</option>
+              <option value="installed">{t("market.scope.installed")}</option>
+              <option value="updates">{t("market.scope.updates")}</option>
+            </select>
+          </label>
         </div>
 
+        <section className="market-store-overview" aria-label={t("market.storefront.overview")}>
+          <div className="market-store-metric">
+            <span>{t("market.storefront.installedCount")}</span>
+            <strong>{installedCount}</strong>
+          </div>
+          <div className="market-store-metric">
+            <span>{t("market.storefront.officialCount")}</span>
+            <strong>{officialCount}</strong>
+          </div>
+          <div className="market-store-metric">
+            <span>{t("market.storefront.updateCount")}</span>
+            <strong>{updateCount}</strong>
+          </div>
+          <div className="market-store-metric">
+            <span>{t("market.storefront.missingCount")}</span>
+            <strong>{missingCount}</strong>
+          </div>
+        </section>
+
+        {marketStatusMessage ? (
+          <div className={marketOffline ? "market-status is-warning" : "market-status"} aria-live="polite">
+            {marketStatusMessage}
+          </div>
+        ) : null}
+
         <div className="market-store-scroll">
-          {renderSection(
-            t("market.storefront.installed"),
-            t("market.storefront.installedSubtitle"),
-            installedItems,
-            "installed",
-            isLoadingMarket ? t("market.storefront.loading") : t("market.storefront.noInstalled"),
-            t("market.storefront.noInstalledDescription")
+          {visibleItems.length > 0 ? (
+            <div className="market-store-grid">
+              {visibleItems.map((item) => renderCard(item))}
+            </div>
+          ) : (
+            <div className="market-store-empty">
+              <strong>{isLoadingMarket ? t("market.storefront.loading") : t("market.storefront.emptyTitle")}</strong>
+              <span>{t("market.storefront.emptyDescription")}</span>
+            </div>
           )}
-
-          {renderSection(
-            t("market.storefront.recommended"),
-            t("market.storefront.recommendedSubtitle"),
-            visibleRecommendedItems,
-            "recommended",
-            isLoadingMarket ? t("market.storefront.loading") : t("market.storefront.noRecommended"),
-            t("market.storefront.noRecommendedDescription")
-          )}
-
-          {hasMoreRecommended ? (
-            <button
-              type="button"
-              className="market-store-more"
-              onClick={() => setExpandedRecommended((expanded) => !expanded)}
-            >
-              {expandedRecommended
-                ? t("market.storefront.showLess")
-                : t("market.storefront.showMore", { count: recommendedItems.length - RECOMMENDED_PREVIEW_LIMIT })}
-            </button>
-          ) : null}
         </div>
       </div>
     </MarketPageFrame>

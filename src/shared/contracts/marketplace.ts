@@ -1,5 +1,5 @@
-export type MarketItemType = "plugin" | "skill" | "sandbox-image" | "pet" | "cli";
-export type MarketSection = "plugins" | "skills" | "sandboxImages" | "pets" | "cli";
+export type MarketItemType = "plugin" | "skill" | "agent" | "sandbox-image" | "pet" | "cli" | "website-app";
+export type MarketSection = "plugins" | "skills" | "agents" | "sandboxImages" | "pets" | "cli" | "websiteApps";
 export type MarketInstallState =
   | "not-installed"
   | "installed"
@@ -13,7 +13,17 @@ export interface MarketAsset {
   url: string;
   sha256?: string;
   sizeBytes: number;
-  archiveType: "tar.gz" | "zip" | "skill" | "md" | "sandbox-template" | "pet" | "cli";
+  archiveType:
+    | "tar.gz"
+    | "zip"
+    | "skill"
+    | "md"
+    | "agent"
+    | "sandbox-template"
+    | "container-image"
+    | "pet"
+    | "cli"
+    | "website-app";
   platform?: string;
 }
 
@@ -71,12 +81,16 @@ export interface MarketListResult {
   pluginOffline?: boolean;
   skillMessage?: string;
   skillOffline?: boolean;
+  agentMessage?: string;
+  agentOffline?: boolean;
   sandboxMessage?: string;
   sandboxOffline?: boolean;
   petMessage?: string;
   petOffline?: boolean;
   cliMessage?: string;
   cliOffline?: boolean;
+  websiteAppMessage?: string;
+  websiteAppOffline?: boolean;
 }
 
 export interface MarketListOptions {

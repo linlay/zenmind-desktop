@@ -6,12 +6,14 @@ import type {
 } from "@shared/contracts";
 import type { TranslateFunction, TranslationKey } from "@shared/i18n";
 
-export type MarketTab = "plugins" | "skills" | "sandboxImages" | "pets" | "cli";
+export type MarketTab = "plugins" | "skills" | "agents" | "sandboxImages" | "pets" | "cli" | "websiteApps";
 export type SkillScope = "all" | "cloud" | "local";
 
 export interface MarketTabDefinition {
   id: MarketTab;
   label: string;
+  meta: string;
+  count?: number;
   title: string;
   subtitle: string;
 }
@@ -22,48 +24,68 @@ export interface MarketViewProps {
 }
 
 export const DEFAULT_MARKET_TAB: MarketTab = "plugins";
-export const DEFAULT_SKILLS_API_BASE_URL = "http://127.0.0.1:8080";
+export const DEFAULT_SKILLS_API_BASE_URL = "https://market.zenmind.cc/api/v1";
 
-const MARKET_TAB_KEYS: Record<MarketTab, { label: TranslationKey; title: TranslationKey; subtitle: TranslationKey }> = {
+const MARKET_TAB_KEYS: Record<MarketTab, { label: TranslationKey; meta: TranslationKey; title: TranslationKey; subtitle: TranslationKey }> = {
   plugins: {
     label: "market.tab.plugins.label",
+    meta: "market.tab.plugins.meta",
     title: "market.tab.plugins.title",
     subtitle: "market.tab.plugins.subtitle"
   },
   skills: {
     label: "market.tab.skills.label",
+    meta: "market.tab.skills.meta",
     title: "market.tab.skills.title",
     subtitle: "market.tab.skills.subtitle"
   },
+  agents: {
+    label: "market.tab.agents.label",
+    meta: "market.tab.agents.meta",
+    title: "market.tab.agents.title",
+    subtitle: "market.tab.agents.subtitle"
+  },
   sandboxImages: {
     label: "market.tab.sandboxImages.label",
+    meta: "market.tab.sandboxImages.meta",
     title: "market.tab.sandboxImages.title",
     subtitle: "market.tab.sandboxImages.subtitle"
   },
   pets: {
     label: "market.tab.pets.label",
+    meta: "market.tab.pets.meta",
     title: "market.tab.pets.title",
     subtitle: "market.tab.pets.subtitle"
   },
   cli: {
     label: "market.tab.cli.label",
+    meta: "market.tab.cli.meta",
     title: "market.tab.cli.title",
     subtitle: "market.tab.cli.subtitle"
+  },
+  websiteApps: {
+    label: "market.tab.websiteApps.label",
+    meta: "market.tab.websiteApps.meta",
+    title: "market.tab.websiteApps.title",
+    subtitle: "market.tab.websiteApps.subtitle"
   }
 };
 
 export const MARKET_TAB_ITEM_TYPES: Record<MarketTab, MarketItemType> = {
   plugins: "plugin",
   skills: "skill",
+  agents: "agent",
   sandboxImages: "sandbox-image",
   pets: "pet",
-  cli: "cli"
+  cli: "cli",
+  websiteApps: "website-app"
 };
 
 export function getMarketTabDefinitions(t: TranslateFunction): MarketTabDefinition[] {
   return (Object.keys(MARKET_TAB_KEYS) as MarketTab[]).map((id) => ({
     id,
     label: t(MARKET_TAB_KEYS[id].label),
+    meta: t(MARKET_TAB_KEYS[id].meta),
     title: t(MARKET_TAB_KEYS[id].title),
     subtitle: t(MARKET_TAB_KEYS[id].subtitle)
   }));
@@ -98,7 +120,7 @@ export function matchesMarketItemQuery(item: MarketItem, query: string, t: Trans
   if (!normalized) {
     return true;
   }
-  return `${item.name} ${item.description} ${item.version} ${item.tags.join(" ")} ${marketStateLabel(item.state, t)} ${item.imageRef ?? ""} ${item.environmentName ?? ""}`
+  return `${item.name} ${item.type} ${item.description} ${item.version} ${item.tags.join(" ")} ${Object.values(item.metadata ?? {}).join(" ")} ${marketStateLabel(item.state, t)} ${item.imageRef ?? ""} ${item.environmentName ?? ""}`
     .toLowerCase()
     .includes(normalized);
 }
@@ -124,12 +146,16 @@ export function createEmptyMarketResult(): MarketListResult {
     pluginOffline: false,
     skillMessage: "",
     skillOffline: false,
+    agentMessage: "",
+    agentOffline: false,
     sandboxMessage: "",
     sandboxOffline: false,
     petMessage: "",
     petOffline: false,
     cliMessage: "",
-    cliOffline: false
+    cliOffline: false,
+    websiteAppMessage: "",
+    websiteAppOffline: false
   };
 }
 

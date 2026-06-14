@@ -19,9 +19,9 @@ import {
 } from "../user-paths";
 import { t } from "../i18n/main-i18n";
 
-export const DEFAULT_MARKETPLACE_CATALOG_URL = "https://zenmind.cc/market/api/v1/desktop/catalog";
-export const DEFAULT_SKILLS_API_BASE_URL = "https://zenmind.cc/market/api/v1";
-export const DEFAULT_MARKET_API_BASE_URL = "https://zenmind.cc/market/api/v1";
+export const DEFAULT_MARKETPLACE_CATALOG_URL = "https://market.zenmind.cc/api/v1/desktop/catalog";
+export const DEFAULT_SKILLS_API_BASE_URL = "https://market.zenmind.cc/api/v1";
+export const DEFAULT_MARKET_API_BASE_URL = "https://market.zenmind.cc/api/v1";
 
 export type Catalog = {
   schemaVersion: number;
@@ -111,7 +111,33 @@ export function asNumber(value: unknown) {
 }
 
 export function isMarketItemType(value: unknown): value is MarketItemType {
-  return value === "plugin" || value === "skill" || value === "sandbox-image" || value === "pet" || value === "cli";
+  return (
+    value === "plugin" ||
+    value === "skill" ||
+    value === "agent" ||
+    value === "sandbox-image" ||
+    value === "pet" ||
+    value === "cli" ||
+    value === "website-app"
+  );
+}
+
+export function normalizeMarketItemType(value: unknown): MarketItemType | null {
+  if (value === "cli-tool") {
+    return "cli";
+  }
+  if (
+    value === "plugin" ||
+    value === "skill" ||
+    value === "agent" ||
+    value === "sandbox-image" ||
+    value === "pet" ||
+    value === "cli" ||
+    value === "website-app"
+  ) {
+    return value;
+  }
+  return null;
 }
 
 function normalizeAsset(value: unknown): MarketAsset | null {
@@ -126,9 +152,12 @@ function normalizeAsset(value: unknown): MarketAsset | null {
     archiveType !== "zip" &&
     archiveType !== "skill" &&
     archiveType !== "md" &&
+    archiveType !== "agent" &&
     archiveType !== "sandbox-template" &&
+    archiveType !== "container-image" &&
     archiveType !== "pet" &&
-    archiveType !== "cli"
+    archiveType !== "cli" &&
+    archiveType !== "website-app"
   ) {
     return null;
   }
@@ -148,8 +177,8 @@ export function normalizeCatalog(input: unknown): Catalog {
   for (const itemRaw of itemsRaw) {
     const item = asObject(itemRaw);
     const id = asString(item.id).trim();
-    const type = item.type;
-    if (!id || !isMarketItemType(type)) {
+    const type = normalizeMarketItemType(item.type);
+    if (!id || !type) {
       continue;
     }
     const assets: Record<string, MarketAsset> = {};
@@ -337,7 +366,14 @@ export function writeMarketSettingsIfAbsent(app: App, input: MarketSettingsInput
 export function readInstalledRecords(app: App) {
   const parsed = readJsonFile<{ records?: InstalledRecord[] } | InstalledRecord[]>(installedRecordsPath(app), []);
   const records = Array.isArray(parsed) ? parsed : Array.isArray(parsed.records) ? parsed.records : [];
-  return records.filter((record) => record && typeof record.id === "string" && isMarketItemType(record.type));
+  return records
+    .map((record) => {
+      const type = normalizeMarketItemType(record?.type);
+      return record && typeof record.id === "string" && type
+        ? { ...record, type }
+        : null;
+    })
+    .filter((record): record is InstalledRecord => Boolean(record));
 }
 
 function writeInstalledRecords(app: App, records: InstalledRecord[]) {

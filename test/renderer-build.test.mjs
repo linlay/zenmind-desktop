@@ -2460,6 +2460,7 @@ test("functional market renderer text is routed through i18n", () => {
     "PluginMarket.tsx",
     "SkillMarket.tsx",
     "SandboxImageMarket.tsx",
+    "StorefrontMarket.tsx",
     "marketDisplay.tsx",
     "marketPageApi.ts",
     "marketPageModel.ts"
@@ -2473,6 +2474,7 @@ test("functional market renderer text is routed through i18n", () => {
 
 test("main marketplace user-facing text is routed through i18n", () => {
   const marketplaceFiles = [
+    "catalog-only-market.ts",
     "common.ts",
     "plugin-market.ts",
     "skill-market.ts",
@@ -2554,15 +2556,15 @@ test("sandbox image market is a local image management surface", () => {
   );
   assert.match(
     readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
-    /\.market-topbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto\s*minmax\(0,\s*1fr\)/
+    /\.market-topbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto/
   );
   assert.match(
     readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
-    /\.market-tabs\s*\{[\s\S]*?grid-column:\s*2[\s\S]*?justify-self:\s*center[\s\S]*?width:\s*min\(520px,\s*100%\)/
+    /\.market-tabs\s*\{[\s\S]*?grid-column:\s*1[\s\S]*?grid-template-columns:\s*repeat\(7,\s*minmax\(92px,\s*1fr\)\)[\s\S]*?width:\s*100%/
   );
   assert.match(
     readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),
-    /\.market-tab\s*\{[\s\S]*?min-height:\s*42px[\s\S]*?font-size:\s*14px[\s\S]*?font-weight:\s*800/
+    /\.market-tab\s*\{[\s\S]*?flex-direction:\s*column[\s\S]*?min-height:\s*42px[\s\S]*?font-size:\s*14px[\s\S]*?font-weight:\s*800/
   );
   assert.match(
     readSourceFile("src", "renderer", "pages", "functional-market", "MarketPageFrame.css"),

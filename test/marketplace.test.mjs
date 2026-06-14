@@ -22,7 +22,8 @@ const {
   listMarketItems,
   refreshMarketCatalog,
   saveMarketSettings,
-  uninstallMarketItem
+  uninstallMarketItem,
+  __testInternals
 } = require("../dist-electron/main/marketplace.js");
 const { getPluginInstallDir } = require("../dist-electron/main/plugin-loader.js");
 const { getSkillInstallDir } = require("../dist-electron/main/skill-installer.js");
@@ -366,8 +367,61 @@ async function withFixtureServer(files, fn) {
 }
 
 test("DEFAULT_MARKETPLACE_CATALOG_URL points at the official marketplace catalog", () => {
-  assert.equal(DEFAULT_MARKETPLACE_CATALOG_URL, "https://zenmind.cc/market/api/v1/desktop/catalog");
-  assert.equal(DEFAULT_SKILLS_API_BASE_URL, "https://zenmind.cc/market/api/v1");
+  assert.equal(DEFAULT_MARKETPLACE_CATALOG_URL, "https://market.zenmind.cc/api/v1/desktop/catalog");
+  assert.equal(DEFAULT_SKILLS_API_BASE_URL, "https://market.zenmind.cc/api/v1");
+});
+
+test("normalizeCatalog keeps the seven public market types", () => {
+  const catalog = __testInternals.normalizeCatalog({
+    schemaVersion: 1,
+    items: [
+      {
+        id: "agent-demo",
+        type: "agent",
+        name: "Agent Demo",
+        version: "1.0.0",
+        assets: {
+          universal: {
+            url: "https://example.com/agent.zip",
+            sizeBytes: 1,
+            archiveType: "agent"
+          }
+        }
+      },
+      {
+        id: "cli-demo",
+        type: "cli-tool",
+        name: "CLI Demo",
+        version: "1.0.0",
+        assets: {
+          universal: {
+            url: "https://example.com/cli.tar.gz",
+            sizeBytes: 1,
+            archiveType: "tar.gz"
+          }
+        }
+      },
+      {
+        id: "webapp-demo",
+        type: "website-app",
+        name: "WebApp Demo",
+        version: "1.0.0",
+        assets: {
+          universal: {
+            url: "https://example.com/webapp.zip",
+            sizeBytes: 1,
+            archiveType: "website-app"
+          }
+        }
+      }
+    ]
+  });
+
+  assert.deepEqual(catalog.items.map((item) => [item.id, item.type]), [
+    ["agent-demo", "agent"],
+    ["cli-demo", "cli"],
+    ["webapp-demo", "website-app"]
+  ]);
 });
 
 test("refreshMarketCatalog combines catalog plugins with Skills API skills", async (t) => {
