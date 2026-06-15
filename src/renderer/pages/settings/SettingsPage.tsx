@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
-import { QRCode } from "antd";
+import { Button, Card, Form, Input, QRCode, Select, Space, Switch, Typography } from "antd";
 import { useLocation, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import "./SettingsPage.css";
@@ -204,6 +204,19 @@ function toAssistantAgentOptions(items: AssistantNavAgentItem[]): DesktopPetAgen
     icon: agent.icon,
     unreadCount: agent.unreadCount
   }));
+}
+
+function readAssistantAgentOptions(
+  copilotResult: Awaited<ReturnType<NonNullable<typeof window.electronAPI>["assistant"]["listCopilotAgents"]>>,
+  fallbackAgents: DesktopPetAgentOption[]
+) {
+  if (copilotResult.ok) {
+    const copilotAgents = toAssistantAgentOptions(Array.isArray(copilotResult.items) ? copilotResult.items : []);
+    if (copilotAgents.length > 0) {
+      return copilotAgents;
+    }
+  }
+  return Array.isArray(fallbackAgents) ? fallbackAgents : [];
 }
 
 function buildSettingsActionPatch(
@@ -595,7 +608,6 @@ export function SettingsPage({
     createDefaultDesktopCopilotPagePreferences
   );
   const [desktopHelperAgentPending, setDesktopHelperAgentPending] = useState(false);
-  const [kanbanVisibilityPending, setKanbanVisibilityPending] = useState(false);
   const [quickAssistantPending, setQuickAssistantPending] = useState(false);
   const [quickAssistantAgentPending, setQuickAssistantAgentPending] = useState(false);
   const [desktopCopilotPagePending, setDesktopCopilotPagePending] = useState("");
@@ -654,6 +666,18 @@ export function SettingsPage({
   const selectedControlProjectMissing = Boolean(
     selectedControlProjectId && !controlProjectOptions.some((project) => project.id === selectedControlProjectId)
   );
+  const controlProjectSelectOptions = useMemo(() => [
+    ...(selectedControlProjectMissing
+      ? [{
+          value: selectedControlProjectId,
+          label: t("taskBoard.cloud.currentProject", { id: selectedControlProjectId })
+        }]
+      : []),
+    ...controlProjectOptions.map((project) => ({
+      value: project.id,
+      label: getTaskBoardProjectOptionLabel(project)
+    }))
+  ], [controlProjectOptions, selectedControlProjectId, selectedControlProjectMissing, t]);
 
   function setReadErrorSections(sectionIds: SettingsSectionId[], message: string) {
     setSectionReadErrors((current) => {
@@ -853,14 +877,16 @@ export function SettingsPage({
     let cancelled = false;
     Promise.all([
       window.electronAPI.assistant.getSettings(),
-      window.electronAPI.assistant.listCopilotAgents()
+      window.electronAPI.assistant.listCopilotAgents(),
+      window.electronAPI.assistant.listAgents()
     ])
-      .then(([settings, agentsResult]) => {
+      .then(([settings, agentsResult, fallbackAgents]) => {
         if (cancelled) {
           assistantSettingsLoadedRef.current = false;
           return;
         }
-        if (!agentsResult.ok) {
+        const assistantAgents = readAssistantAgentOptions(agentsResult, fallbackAgents);
+        if (!agentsResult.ok && assistantAgents.length === 0) {
           throw new Error(agentsResult.message);
         }
         setAssistantSettings(settings);
@@ -868,7 +894,7 @@ export function SettingsPage({
         setQuickAssistantEnabled(settings.quickAssistantEnabled);
         setQuickAssistantAgentKey(settings.quickAssistantAgentKey || DEFAULT_QUICK_ASSISTANT_AGENT_KEY);
         setDesktopCopilotPages(settings.desktopCopilotPages || createDefaultDesktopCopilotPagePreferences());
-        setAssistantAgentOptions(toAssistantAgentOptions(Array.isArray(agentsResult.items) ? agentsResult.items : []));
+        setAssistantAgentOptions(assistantAgents);
         setReadErrorSections(ASSISTANT_SETTINGS_SECTION_IDS, "");
       })
       .catch((reason) => {
@@ -1735,46 +1761,6 @@ export function SettingsPage({
     }
   }
 
-  async function handleToggleKanbanVisibility() {
-    const previousEnabled = kanbanEnabled;
-    const nextEnabled = !kanbanEnabled;
-    if (!nextEnabled) {
-      onKanbanEnabledChange(false);
-    }
-    setKanbanVisibilityPending(true);
-    try {
-      const result = await window.electronAPI.taskBoard.saveSettings({
-        enabled: nextEnabled,
-        cloud: controlCloudConfig
-      });
-      if (!result.ok) {
-        throw new Error(result.message || t("settings.kanban.saveFailed"));
-      }
-      onKanbanEnabledChange(result.settings.enabled);
-      setControlCloudConfig({
-        ...defaultTaskBoardCloudConfig,
-        ...result.settings.cloud
-      });
-      setControlConnectionState(result.connectionState ?? "disabled");
-      setReadErrorSections(["kanban"], "");
-      if (nextEnabled && !result.settings.enabled) {
-        throw new Error(result.message || t("settings.kanban.enableIncomplete"));
-      }
-      showSectionNotice(
-        "kanban",
-        result.settings.enabled
-          ? t("settings.kanban.noticeEnabled")
-          : t("settings.kanban.noticeDisabled"),
-        "success"
-      );
-    } catch (reason) {
-      onKanbanEnabledChange(previousEnabled);
-      showSectionNotice("kanban", reason instanceof Error ? reason.message : String(reason), "error");
-    } finally {
-      setKanbanVisibilityPending(false);
-    }
-  }
-
   async function handleToggleQuickAssistantEnabled() {
     const previousEnabled = quickAssistantEnabled;
     const nextEnabled = !quickAssistantEnabled;
@@ -1878,11 +1864,6 @@ export function SettingsPage({
     } finally {
       setControlConfigSaving(false);
     }
-  }
-
-  async function handleSaveControlCloudConfig(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await saveControlCloudConfig(controlCloudConfig);
   }
 
   async function handleToggleControlRemoteControl() {
@@ -2123,13 +2104,6 @@ export function SettingsPage({
           label: t("settings.desktopPet.label"),
           onClick: () => void handleToggleDesktopPet()
         }) : null;
-      case "kanban":
-        return renderHeaderSwitch({
-          enabled: kanbanEnabled,
-          disabled: kanbanVisibilityPending,
-          label: t("settings.kanban.enabled"),
-          onClick: () => void handleToggleKanbanVisibility()
-        });
       case "market":
         return renderHeaderSwitch({
           enabled: marketSettings.enabled,
@@ -2250,108 +2224,100 @@ export function SettingsPage({
         ) : null;
       case "kanban":
         return (
-          <div className="settings-item-card settings-control-card" aria-label={t("settings.kanban.panelAria")}>
+          <Card
+            className="settings-item-card settings-control-card settings-kanban-ant-card"
+            aria-label={t("settings.kanban.panelAria")}
+            styles={{ body: { padding: 0 } }}
+          >
             <div className="settings-item-header settings-control-permission-row">
               <span className="settings-control-app-icon" aria-hidden="true">
                 <span />
               </span>
-              <div className="settings-appearance-row-copy">
-                <strong>{t("settings.control.remoteControlEnabled")}</strong>
-                <span>{t("settings.control.remoteControlDescription")}</span>
-                <em>
+              <Space className="settings-kanban-copy" direction="vertical" size={3}>
+                <Typography.Text strong>{t("settings.control.remoteControlEnabled")}</Typography.Text>
+                <Typography.Text type="secondary">{t("settings.control.remoteControlDescription")}</Typography.Text>
+                <Typography.Text className="settings-kanban-remote-state">
                   {controlCloudConfig.remoteControlEnabled
                     ? t("settings.control.remoteControlOn")
                     : t("settings.control.remoteControlOff")}
-                </em>
-              </div>
-              <button
-                type="button"
-                className={controlCloudConfig.remoteControlEnabled ? "settings-switch is-on" : "settings-switch"}
-                role="switch"
-                aria-checked={controlCloudConfig.remoteControlEnabled}
+                </Typography.Text>
+              </Space>
+              <Switch
+                checked={controlCloudConfig.remoteControlEnabled}
                 aria-label={t("settings.control.remoteControlEnabled")}
                 disabled={controlConfigSaving}
-                onClick={() => void handleToggleControlRemoteControl()}
-              >
-                <span aria-hidden="true" />
-              </button>
+                loading={controlConfigSaving}
+                onChange={() => void handleToggleControlRemoteControl()}
+              />
             </div>
-            <div className="settings-item-section-head website-list-head">
-              <div>
-                <strong>{t("settings.control.statusTitle")}</strong>
-                <span>{getControlConnectionLabel(controlConnectionState)}</span>
-              </div>
+            <div className="settings-kanban-status">
+              <Space direction="vertical" size={4}>
+                <Typography.Text strong>{t("settings.control.statusTitle")}</Typography.Text>
+                <Typography.Text type="secondary">{getControlConnectionLabel(controlConnectionState)}</Typography.Text>
+              </Space>
+              <Typography.Text type="secondary">
+                {t("settings.control.onlineSummary", {
+                  devices: controlOnlineSummary.deviceCount,
+                  sessions: controlOnlineSummary.sessionCount,
+                  agents: controlOnlineSummary.agentCount
+                })}
+              </Typography.Text>
             </div>
-            <div className="settings-control-summary">
-              {t("settings.control.onlineSummary", {
-                devices: controlOnlineSummary.deviceCount,
-                sessions: controlOnlineSummary.sessionCount,
-                agents: controlOnlineSummary.agentCount
-              })}
-            </div>
-            <form className="settings-control-form" onSubmit={(event) => void handleSaveControlCloudConfig(event)}>
-              <label className="settings-control-field">
-                <span>{t("taskBoard.cloud.deviceAlias")}</span>
-                <input
+            <Form
+              className="settings-control-form settings-kanban-ant-form"
+              layout="vertical"
+              requiredMark={false}
+              onFinish={() => void saveControlCloudConfig(controlCloudConfig)}
+            >
+              <Form.Item label={t("taskBoard.cloud.deviceAlias")}>
+                <Input
                   value={controlCloudConfig.deviceAlias ?? ""}
                   onChange={(event) => setControlCloudConfig((current) => ({ ...current, deviceAlias: event.target.value }))}
                   placeholder={t("taskBoard.cloud.deviceAliasPlaceholder")}
                 />
-              </label>
-              <label className="settings-control-field">
-                <span>{t("taskBoard.cloud.serverUrl")}</span>
-                <input
+              </Form.Item>
+              <Form.Item label={t("taskBoard.cloud.serverUrl")}>
+                <Input
                   value={controlCloudConfig.serverUrl}
                   onChange={(event) => setControlCloudConfig((current) => ({ ...current, serverUrl: event.target.value }))}
                   placeholder="http://127.0.0.1:8080"
                 />
-              </label>
-              <label className="settings-control-field">
-                <span>{t("taskBoard.cloud.token")}</span>
-                <input
+              </Form.Item>
+              <Form.Item label={t("taskBoard.cloud.token")}>
+                <Input.Password
                   value={controlCloudConfig.token}
                   onChange={(event) => setControlCloudConfig((current) => ({ ...current, token: event.target.value }))}
                   placeholder={t("taskBoard.cloud.tokenPlaceholder")}
+                  visibilityToggle
                 />
-              </label>
-              <label className="settings-control-field">
-                <span>{t("taskBoard.cloud.projectId")}</span>
+              </Form.Item>
+              <Form.Item
+                label={t("taskBoard.cloud.projectId")}
+                extra={controlProjectOptions.length > 0
+                  ? t("taskBoard.cloud.projectSelectHelp", { count: controlProjectOptions.length })
+                  : t("taskBoard.cloud.projectFallbackHelp")}
+              >
                 {controlProjectOptions.length > 0 ? (
-                  <select
+                  <Select
                     value={controlCloudConfig.selectedProjectId}
-                    onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
-                  >
-                    {selectedControlProjectMissing ? (
-                      <option value={controlCloudConfig.selectedProjectId}>
-                        {t("taskBoard.cloud.currentProject", { id: controlCloudConfig.selectedProjectId })}
-                      </option>
-                    ) : null}
-                    {controlProjectOptions.map((project) => (
-                      <option value={project.id} key={project.id}>
-                        {getTaskBoardProjectOptionLabel(project)}
-                      </option>
-                    ))}
-                  </select>
+                    options={controlProjectSelectOptions}
+                    onChange={(value) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: value }))}
+                  />
                 ) : (
-                  <input
+                  <Input
                     value={controlCloudConfig.selectedProjectId}
                     onChange={(event) => setControlCloudConfig((current) => ({ ...current, selectedProjectId: event.target.value }))}
                     placeholder="default"
                   />
                 )}
-                <small>
-                  {controlProjectOptions.length > 0
-                    ? t("taskBoard.cloud.projectSelectHelp", { count: controlProjectOptions.length })
-                    : t("taskBoard.cloud.projectFallbackHelp")}
-                </small>
-              </label>
-              <div className="settings-control-actions">
-                <button type="submit" className="settings-control-primary-button" disabled={controlConfigSaving}>
-                  {controlConfigSaving ? t("settings.kanban.saving") : t("settings.kanban.save")}
-                </button>
-              </div>
-            </form>
-          </div>
+              </Form.Item>
+              <Form.Item className="settings-control-actions settings-kanban-actions">
+                <Button type="primary" htmlType="submit" loading={controlConfigSaving} disabled={controlConfigSaving}>
+                  {t("settings.kanban.save")}
+                </Button>
+              </Form.Item>
+            </Form>
+          </Card>
         );
       case "market":
         return (

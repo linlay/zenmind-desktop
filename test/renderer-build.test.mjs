@@ -1181,8 +1181,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(appShell, /is-settings-mode/);
 
   assert.match(settingsSections, /buildLocalizedSettingsSections/);
-  assert.match(settingsSections, /id:\s*"appearance"[\s\S]*?label:\s*"appearance"[\s\S]*?layout:\s*"measure"/);
-  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?label:\s*"kanban"[\s\S]*?layout:\s*"measure"/);
+  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"kanban"[\s\S]*?label:\s*"kanban"[\s\S]*?layout:\s*"measure"[\s\S]*?id:\s*"appearance"[\s\S]*?label:\s*"appearance"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"desktopPet"[\s\S]*?label:\s*"desktopPet"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*desktopPetSupported/);
   assert.match(settingsSections, /id:\s*"market"[\s\S]*?label:\s*"market"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"navigation"[\s\S]*?layout:\s*"wide"/);
@@ -1384,15 +1383,24 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPageSections, /settings\.desktopPet\.label/);
   assert.match(settingsPageSections, /settings\.market\.label/);
   assert.match(settingsPage, /case "kanban"/);
-  assert.match(settingsPage, /settings\.kanban\.enabled/);
+  assert.doesNotMatch(settingsPage, /settings\.kanban\.enabled/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.getSettings/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveSettings/);
+  assert.match(settingsPage, /import \{ Button, Card, Form, Input, QRCode, Select, Space, Switch, Typography \} from "antd"/);
+  assert.match(settingsPage, /<Card[\s\S]*className="settings-item-card settings-control-card settings-kanban-ant-card"/);
+  assert.match(settingsPage, /<Switch[\s\S]*handleToggleControlRemoteControl/);
+  assert.match(settingsPage, /<Form[\s\S]*className="settings-control-form settings-kanban-ant-form"[\s\S]*onFinish=\{\(\) => void saveControlCloudConfig\(controlCloudConfig\)\}/);
+  assert.match(settingsPage, /<Input[\s\S]*taskBoard\.cloud\.deviceAliasPlaceholder/);
+  assert.match(settingsPage, /<Input\.Password[\s\S]*taskBoard\.cloud\.tokenPlaceholder/);
+  assert.match(settingsPage, /<Select[\s\S]*options=\{controlProjectSelectOptions\}/);
+  assert.match(settingsPage, /<Button[\s\S]*htmlType="submit"[\s\S]*settings\.kanban\.save/);
   assert.match(settingsPage, /case "desktopPet"/);
   assert.match(settingsPage, /activeSection === "desktopPet"/);
   assert.match(settingsPage, /case "market"/);
   assert.match(settingsPage, /settings\.market\.apiBaseUrl/);
   assert.match(settingsPage, /window\.electronAPI\.market\.saveSettings/);
-  assert.match(settingsPage, /handleToggleKanbanVisibility/);
+  assert.doesNotMatch(settingsPage, /handleToggleKanbanVisibility/);
+  assert.doesNotMatch(settingsPage, /handleSaveControlCloudConfig/);
   assert.doesNotMatch(settingsPage, /saveNavigationPreferences\(\{\s*kanban/);
   assert.match(settingsPage, /settings-item-card navigation-settings-card/);
   assert.match(settingsPage, /settings-item-list navigation-order-list/);
@@ -1437,6 +1445,8 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /handleToggleDesktopPet/);
   assert.match(settingsPage, /quickAssistantEnabled/);
   assert.match(settingsPage, /quickAssistantAgentKey/);
+  assert.match(settingsPage, /window\.electronAPI\.assistant\.listCopilotAgents\(\),[\s\S]*?window\.electronAPI\.assistant\.listAgents\(\)/);
+  assert.match(settingsPage, /readAssistantAgentOptions\(agentsResult, fallbackAgents\)/);
   assert.match(settingsPage, /handleToggleQuickAssistantEnabled/);
   assert.match(settingsPage, /handleSelectQuickAssistantAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*quickAssistantAgentKey: normalizedAgentKey\s*\}\)/);
@@ -1444,7 +1454,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
   assert.match(settingsPage, /function isMarketVisible\(settings: MarketSettings\) \{\s*return settings\.enabled === true;\s*\}/);
-  assert.match(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "desktopPet"[\s\S]*handleToggleDesktopPet[\s\S]*case "kanban"[\s\S]*handleToggleKanbanVisibility[\s\S]*case "market"[\s\S]*handleToggleMarketEnabled[\s\S]*case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
+  assert.match(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "desktopPet"[\s\S]*handleToggleDesktopPet[\s\S]*case "market"[\s\S]*handleToggleMarketEnabled[\s\S]*case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
   assert.match(settingsPage, /className="settings-page-head"[\s\S]*settings-page-head-copy[\s\S]*settings-page-head-action[\s\S]*renderSectionHeaderAction\(\)/);
   assert.match(settingsStyles, /\.settings-page-head\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;/);
   assert.match(settingsStyles, /\.settings-page-head-action\s*\{[\s\S]*justify-content:\s*flex-end;/);

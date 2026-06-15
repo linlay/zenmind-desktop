@@ -230,6 +230,34 @@
   line-height: 1.45;
 }
 
+.settings-page .settings-kanban-ant-card {
+  background: var(--surface-soft);
+}
+
+.settings-page .settings-kanban-copy {
+  min-width: 0;
+}
+
+.settings-page .settings-kanban-remote-state {
+  color: var(--ink);
+  font-style: italic;
+}
+
+.settings-page .settings-kanban-status {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-page .settings-kanban-ant-form {
+  border-top: 1px solid var(--line);
+}
+
+.settings-page .settings-kanban-actions {
+  margin-bottom: 0;
+}
+
 .settings-page .settings-control-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

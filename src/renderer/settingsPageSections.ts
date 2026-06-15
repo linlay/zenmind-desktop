@@ -16,15 +16,15 @@ export function createSettingsSectionDefinitions({
 }): SettingsSectionDefinition[] {
   return [
     {
-      id: "appearance",
-      label: "appearance",
+      id: "kanban",
+      label: "kanban",
       description: "",
       layout: "measure",
       visible: true
     },
     {
-      id: "kanban",
-      label: "kanban",
+      id: "appearance",
+      label: "appearance",
       description: "",
       layout: "measure",
       visible: true
