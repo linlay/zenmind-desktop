@@ -38,27 +38,53 @@ function writeDesktopConfig(app, fileName, value) {
   return configPath;
 }
 
-test("task board websocket config is disabled until remote control is allowed", (t) => {
+test("task board websocket config requires remote control but not token", (t) => {
   const app = createTempApp(t);
 
   writeKanbanConfig(app, {
     serverUrl: "http://127.0.0.1:8080",
-    token: "secret",
     selectedProjectId: "project-a"
   });
   assert.equal(readTaskBoardWsConfig(app), null);
 
   writeKanbanConfig(app, {
     serverUrl: "http://127.0.0.1:8080",
-    token: "secret",
+    token: "",
     selectedProjectId: "project-a",
     remoteControlEnabled: true
   });
   assert.deepEqual(readTaskBoardWsConfig(app), {
     serverUrl: "http://127.0.0.1:8080",
-    token: "secret",
+    token: "",
     selectedProjectId: "project-a"
   });
+});
+
+test("task board server URL ignores removed legacy enabled toggle even without token", (t) => {
+  const app = createTempApp(t);
+
+  writeKanbanConfig(app, {
+    schemaVersion: 1,
+    enabled: false,
+    cloud: {
+      serverUrl: "http://47.90.247.3",
+      token: "",
+      selectedProjectId: "default",
+      remoteControlEnabled: true,
+      deviceAlias: "家林"
+    }
+  });
+
+  assert.equal(readTaskBoardSettings(app).enabled, true);
+  assert.deepEqual(readTaskBoardWsConfig(app), {
+    serverUrl: "http://47.90.247.3",
+    token: "",
+    selectedProjectId: "default"
+  });
+
+  const configPath = path.join(app.getPath("home"), ".zenmind", ".desktop", "config", "desktop", "kanban.json");
+  const migrated = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  assert.equal(migrated.enabled, true);
 });
 
 test("task board settings read and save enabled plus cloud config", (t) => {
@@ -85,7 +111,7 @@ test("task board settings read and save enabled plus cloud config", (t) => {
       deviceAlias: ""
     });
 
-    const incomplete = runtime.saveSettings({
+    const serverOnly = runtime.saveSettings({
       enabled: true,
       cloud: {
         serverUrl: "http://127.0.0.1:3000",
@@ -94,10 +120,10 @@ test("task board settings read and save enabled plus cloud config", (t) => {
         deviceAlias: "桌面 A"
       }
     });
-    assert.equal(incomplete.settings.enabled, false);
-    assert.equal(incomplete.settings.cloud.serverUrl, "http://127.0.0.1:3000");
-    assert.equal(incomplete.settings.cloud.token, "");
-    assert.equal(readTaskBoardSettings(app).enabled, false);
+    assert.equal(serverOnly.settings.enabled, true);
+    assert.equal(serverOnly.settings.cloud.serverUrl, "http://127.0.0.1:3000");
+    assert.equal(serverOnly.settings.cloud.token, "");
+    assert.equal(readTaskBoardSettings(app).enabled, true);
 
     const saved = runtime.saveSettings({
       enabled: true,
@@ -300,6 +326,136 @@ test("task board runtime stores remote startRun issue locally before executing",
     assert.equal(localIssue.runId, "run-remote-1");
     assert.equal(localIssue.chatId, "chat-remote-1");
     assert.equal(localIssue.runState, "running");
+  } finally {
+    runtime.stop();
+  }
+});
+
+test("task board runtime stores legacy cloud dispatch issue without auto-starting", async (t) => {
+  const originalWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url;
+      this.sent = [];
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      this.readyState = 0;
+      sockets.push(this);
+    }
+
+    send(data) {
+      this.sent.push(JSON.parse(data));
+    }
+
+    close() {
+      this.readyState = 3;
+    }
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  t.after(() => {
+    globalThis.WebSocket = originalWebSocket;
+  });
+
+  const app = createTempApp(t);
+  const startRuns = [];
+  const runtime = new TaskBoardRuntime({
+    app,
+    assistantBridge: {
+      listAgents: async () => [{ agentKey: "codeAssistant", displayName: "小君" }],
+      startRun: async (request) => {
+        startRuns.push(request);
+        return { ok: true, runId: "run-dispatch-1", chatId: "chat-dispatch-1", message: "started" };
+      }
+    },
+    callAgentPlatform: async () => ({ ok: true }),
+    onChanged: () => {}
+  });
+
+  runtime.saveCloudConfig({
+    serverUrl: "http://127.0.0.1:3000",
+    token: "secret",
+    selectedProjectId: "project-1",
+    remoteControlEnabled: true,
+    deviceAlias: "测试桌面"
+  });
+
+  const socket = sockets[0];
+  socket.readyState = 1;
+  socket.onopen();
+  await waitFor(() => socket.sent.length === 1, "desktop.hello", 3000);
+  const hello = socket.sent[0];
+  socket.onmessage({ data: JSON.stringify({ type: "rpc.res", id: hello.id, op: "desktop.hello", ok: true, payload: { ok: true } }) });
+  await waitFor(() => socket.sent.length === 2, "snapshot request");
+  const snapshotRequest = socket.sent[1];
+  socket.onmessage({
+    data: JSON.stringify({
+      type: "rpc.res",
+      id: snapshotRequest.id,
+      op: "kanban.snapshot",
+      ok: true,
+      payload: {
+        boardId: "default",
+        projectId: "project-1",
+        revision: 30,
+        complete: true,
+        scope: "project",
+        issues: []
+      }
+    })
+  });
+
+  try {
+    socket.onmessage({
+      data: JSON.stringify({
+        type: "rpc.req",
+        id: "legacy-dispatch-run",
+        op: "desktop.kanban.issue.dispatch",
+        boardId: "default",
+        projectId: "project-1",
+        revision: 32,
+        payload: {
+          issue: {
+            id: "ISS-DISPATCH",
+            boardId: "default",
+            projectId: "project-1",
+            workflowId: "workflow-standard-requirement",
+            title: "旧派发协议待本机确认",
+            description: "云端派发只展示任务，本机人员拖到进行中后才执行",
+            status: "todo",
+            priority: "medium",
+            severity: "medium",
+            assigneeAgentKey: "codeAssistant",
+            position: 1,
+            revision: 32,
+            createdAt: "2026-06-09T00:00:00.000Z",
+            updatedAt: "2026-06-09T00:00:00.000Z"
+          },
+          agentKey: "codeAssistant",
+          accessLevel: "full_access",
+          message: "执行旧派发任务"
+        }
+      })
+    });
+
+    await waitFor(() => socket.sent.some((frame) => frame.id === "legacy-dispatch-run"), "legacy dispatch ACK");
+    const ack = socket.sent.find((frame) => frame.id === "legacy-dispatch-run");
+    assert.equal(ack.ok, true);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(startRuns.length, 0);
+
+    const localIssue = runtime.listIssues().issues.find((issue) => issue.remoteIssueId === "ISS-DISPATCH");
+    assert.ok(localIssue);
+    assert.equal(localIssue.status, "todo");
+    assert.equal(localIssue.origin, "cloud_dispatch");
+    assert.equal(localIssue.syncMode, "cloud");
+    assert.equal(localIssue.assigneeAgentKey, "codeAssistant");
+    assert.equal(localIssue.runId, null);
+    assert.equal(localIssue.chatId, null);
+    assert.equal(localIssue.runState, null);
   } finally {
     runtime.stop();
   }

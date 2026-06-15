@@ -10,7 +10,10 @@ export type DesktopPetVisualStatus =
   | "dragging"
   | "drag-moving"
   | "hover"
+<<<<<<< HEAD
   | "message"
+=======
+>>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   | "signature";
 
 export type DesktopPetVisualStatusInput = {
@@ -20,7 +23,6 @@ export type DesktopPetVisualStatusInput = {
   hasActiveSignature: boolean;
   activeSignatureTrigger?: DesktopPetSignatureTrigger | null;
   shouldShowTaskRunAnimation: boolean;
-  hasMessageReaction: boolean;
   canShowHoverReaction: boolean;
   isHovering: boolean;
   isKeyboardFocused: boolean;
@@ -44,9 +46,6 @@ export function deriveDesktopPetVisualStatus(input: DesktopPetVisualStatusInput)
   }
   if (input.hasActiveSignature && input.activeSignatureTrigger === "manual") {
     return "signature";
-  }
-  if (input.hasMessageReaction) {
-    return "message";
   }
   if (input.canShowHoverReaction && (input.isHovering || input.isKeyboardFocused)) {
     return "hover";

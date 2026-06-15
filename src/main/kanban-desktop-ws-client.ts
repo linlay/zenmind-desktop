@@ -70,7 +70,10 @@ export type KanbanDesktopWsClientOptions = {
   getDeviceId: () => string;
   getDeviceInfo?: () => KanbanDesktopDeviceInfo;
   onSnapshot: (snapshot: TaskBoardCloudSnapshot) => void;
-  onDispatchIssue: (issue: unknown, revision: number) => TaskBoardIssueResult;
+  onDispatchIssue: (
+    issue: unknown,
+    revision: number
+  ) => TaskBoardIssueResult;
   onListAgents: () => Promise<DesktopPetAgentOption[]>;
   onStartRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
   onAutomationSync: (payload: unknown) => Promise<unknown>;

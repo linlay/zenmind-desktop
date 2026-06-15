@@ -29,16 +29,11 @@ const classicVisualVariants = [
   "hover",
   "dragging",
   "dragging-moving",
-  "thinking",
-  "message",
+  "awaiting",
+  "running",
   "done",
   "error"
 ];
-
-const compatibilityVariantAliases = {
-  awaiting: "thinking",
-  running: "thinking"
-};
 
 const communityAppearances = [
   {
@@ -141,6 +136,7 @@ const marketPetDefinitions = [
 const marketPetDefinitionById = new Map(marketPetDefinitions.map((definition) => [definition.id, definition]));
 
 const defaultSourceAssetNames = [
+<<<<<<< HEAD
   "awaiting.png",
   "done.png",
   "drag-moving.png",
@@ -154,30 +150,33 @@ const defaultSourceAssetNames = [
   "running-alt.png",
   "running.png",
   "signature/chant.webp",
+=======
+  ...classicVisualVariants.map((variant) => `pet-${variant}.png`),
+  ...optionalCommunityAssetNames,
+>>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   "spritesheet.webp"
 ];
 
 const communityFrameSelections = {
+  awaiting: { row: 8, column: 2 },
   dragging: { row: 4, column: 2 },
   "dragging-moving": { row: 1, column: 2 },
   done: { row: 4, column: 3 },
   error: { row: 5, column: 5 },
   hover: { row: 3, column: 1 },
   idle: { row: 0, column: 0 },
-  message: { row: 3, column: 2 },
-  thinking: { row: 8, column: 2 }
+  running: { row: 8, column: 2 }
 };
 
 const xiaoFrameSelections = {
+  awaiting: { row: 8, column: 2 },
   dragging: { row: 7, column: 2 },
   "dragging-moving": { row: 7, column: 2 },
   done: { row: 6, column: 4 },
   error: { row: 5, column: 3 },
   hover: { row: 6, column: 1 },
   idle: { row: 0, column: 0 },
-  message: { row: 6, column: 3 },
-  running: { row: 1, column: 2 },
-  thinking: { row: 8, column: 2 }
+  running: { row: 1, column: 2 }
 };
 
 function roundRectPath(ctx, x, y, width, height, radius) {
@@ -229,12 +228,6 @@ function drawBackdrop(ctx) {
 }
 
 function resolveClassicExpressionVariant(variant) {
-  if (variant === "thinking") {
-    return "awaiting";
-  }
-  if (variant === "message") {
-    return "hover";
-  }
   return variant;
 }
 
@@ -538,7 +531,7 @@ function drawBody(ctx, variant) {
 
   if (variant === "dragging") {
     drawDraggingArms(ctx);
-  } else if (variant === "hover" || variant === "message") {
+  } else if (variant === "hover") {
     drawHoverArm(ctx);
     drawRestingArm(ctx, "left");
   } else {
@@ -1050,13 +1043,6 @@ async function writeVariantFiles(directory, buffers) {
   await fs.mkdir(directory, { recursive: true });
   for (const [variant, buffer] of buffers.entries()) {
     await fs.writeFile(path.join(directory, `pet-${variant}.png`), buffer);
-  }
-  for (const [alias, sourceVariant] of Object.entries(compatibilityVariantAliases)) {
-    const buffer = buffers.get(sourceVariant);
-    if (!buffer) {
-      throw new Error(`Missing ${sourceVariant} buffer for ${alias} compatibility asset`);
-    }
-    await fs.writeFile(path.join(directory, `pet-${alias}.png`), buffer);
   }
 }
 

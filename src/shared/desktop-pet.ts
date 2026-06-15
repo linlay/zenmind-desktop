@@ -127,10 +127,14 @@ export const LEGACY_DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
   error: "pet-error.png",
   hover: "pet-hover.png",
   idle: "pet-idle.png",
+<<<<<<< HEAD
   message: "pet-message.png",
   running: "pet-running.png",
   thinking: "pet-thinking.png",
   unread: "pet-message.png"
+=======
+  running: "pet-running.png"
+>>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
 };
 
 const DESKTOP_PET_RUN_START_EVENT_TYPES = new Set(["run.started", "run.start", "request.query"]);

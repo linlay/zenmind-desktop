@@ -255,15 +255,14 @@ function normalizeTaskBoardSettings(
   const cloud = hasCloudInput
     ? normalizeTaskBoardCloudConfig(cloudInput)
     : defaults.cloud ?? normalizeTaskBoardCloudConfig({});
-  const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : defaults.enabled ?? hasCloudInput;
   return {
-    enabled: requestedEnabled && isTaskBoardCloudConfigComplete(cloud),
+    enabled: isTaskBoardCloudConfigComplete(cloud),
     cloud
   };
 }
 
 function isTaskBoardCloudConfigComplete(config: TaskBoardCloudConfig) {
-  return Boolean(config.serverUrl.trim() && config.token.trim());
+  return Boolean(config.serverUrl.trim());
 }
 
 function readJsonConfigFile(filePath: string) {
@@ -297,7 +296,7 @@ export function readTaskBoardSettings(app: App): TaskBoardSettings {
     const raw = readJsonConfigFile(configPath);
     const parsed = readTaskBoardOwnerConfig(raw);
     const settings = normalizeTaskBoardSettings(parsed, legacyDefaults);
-    if (!isRecord(raw) || !isRecord(raw.cloud)) {
+    if (!isRecord(raw) || !isRecord(raw.cloud) || raw.enabled !== settings.enabled) {
       writeTaskBoardSettings(app, settings);
     }
     return settings;

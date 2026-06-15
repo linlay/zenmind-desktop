@@ -85,7 +85,7 @@ test("desktop pet state exposes awaiting when any active task is awaiting", () =
   assert.equal(state.status, "awaiting");
 });
 
-test("desktop pet visual arbitration keeps awaiting above task-run, message, hover, and signature", () => {
+test("desktop pet visual arbitration keeps awaiting above task-run, hover, and signature", () => {
   const {
     deriveDesktopPetVisualStatus
   } = require("../dist-electron/shared/desktop-pet-visual.js");
@@ -96,7 +96,6 @@ test("desktop pet visual arbitration keeps awaiting above task-run, message, hov
     dragDirection: null,
     hasActiveSignature: true,
     shouldShowTaskRunAnimation: true,
-    hasMessageReaction: true,
     canShowHoverReaction: true,
     isHovering: true,
     isKeyboardFocused: false
@@ -117,20 +116,6 @@ test("desktop pet visual arbitration keeps idle-random signature below idle reac
     hasActiveSignature: true,
     activeSignatureTrigger: "idle-random",
     shouldShowTaskRunAnimation: false,
-    hasMessageReaction: true,
-    canShowHoverReaction: true,
-    isHovering: true,
-    isKeyboardFocused: false
-  }), "message");
-
-  assert.equal(deriveDesktopPetVisualStatus({
-    displayStatus: "idle",
-    isDragging: false,
-    dragDirection: null,
-    hasActiveSignature: true,
-    activeSignatureTrigger: "idle-random",
-    shouldShowTaskRunAnimation: false,
-    hasMessageReaction: false,
     canShowHoverReaction: true,
     isHovering: true,
     isKeyboardFocused: false
@@ -143,14 +128,51 @@ test("desktop pet visual arbitration keeps idle-random signature below idle reac
     hasActiveSignature: true,
     activeSignatureTrigger: "idle-random",
     shouldShowTaskRunAnimation: false,
-    hasMessageReaction: false,
+    canShowHoverReaction: true,
+    isHovering: true,
+    isKeyboardFocused: false
+  }), "hover");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    displayStatus: "idle",
+    isDragging: false,
+    dragDirection: null,
+    hasActiveSignature: true,
+    activeSignatureTrigger: "idle-random",
+    shouldShowTaskRunAnimation: false,
     canShowHoverReaction: true,
     isHovering: false,
     isKeyboardFocused: false
   }), "signature");
 });
 
-test("desktop pet visual arbitration lets manual signature surface over message and hover", () => {
+test("desktop pet visual arbitration does not emit thinking or message states", () => {
+  const {
+    deriveDesktopPetVisualStatus
+  } = require("../dist-electron/shared/desktop-pet-visual.js");
+
+  const base = {
+    isDragging: false,
+    dragDirection: null,
+    hasActiveSignature: false,
+    shouldShowTaskRunAnimation: false,
+    canShowHoverReaction: false,
+    isHovering: false,
+    isKeyboardFocused: false
+  };
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    ...base,
+    displayStatus: "running"
+  }), "running");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    ...base,
+    displayStatus: "idle"
+  }), "idle");
+});
+
+test("desktop pet visual arbitration lets manual signature surface over hover", () => {
   const {
     deriveDesktopPetVisualStatus
   } = require("../dist-electron/shared/desktop-pet-visual.js");
@@ -162,7 +184,6 @@ test("desktop pet visual arbitration lets manual signature surface over message 
     hasActiveSignature: true,
     activeSignatureTrigger: "manual",
     shouldShowTaskRunAnimation: false,
-    hasMessageReaction: true,
     canShowHoverReaction: true,
     isHovering: true,
     isKeyboardFocused: false
@@ -273,7 +294,6 @@ test("desktop pet visual maps dragging movement onto a single mirrored state", (
     dragDirection: null,
     hasActiveSignature: false,
     shouldShowTaskRunAnimation: false,
-    hasMessageReaction: false,
     canShowHoverReaction: false,
     isHovering: false,
     isKeyboardFocused: false

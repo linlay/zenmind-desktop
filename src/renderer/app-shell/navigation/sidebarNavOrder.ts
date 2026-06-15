@@ -72,6 +72,9 @@ export function normalizeSidebarNavOrder(
       orderedKeys.push(item.key);
     }
   }
+  if (availableKeys.has("kanban")) {
+    return ["kanban", ...orderedKeys.filter((key) => key !== "kanban")];
+  }
   return orderedKeys;
 }
 

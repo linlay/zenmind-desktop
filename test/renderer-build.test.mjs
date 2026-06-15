@@ -901,7 +901,8 @@ test("sidebar renders task board and section groups above the fixed tool menu", 
   assert.match(appShell, /key: AgentWebclientRouteKey;/);
   assert.match(appShell, /kind: AgentWebclientRouteKind;/);
   assert.match(appShell, /mode: AgentWebclientRouteMode;/);
-  assert.match(appShell, /path="\/kanban"[\s\S]*?kanbanSettingsLoaded[\s\S]*?kanbanEnabled[\s\S]*?<RouteSuspense><TaskBoardPage hostTheme=\{resolvedTheme\} \/><\/RouteSuspense>[\s\S]*?<Navigate to="\/control-center" replace \/>/);
+  assert.match(appShell, /path="\/kanban"[\s\S]*?kanbanSettingsLoaded[\s\S]*?<RouteSuspense><TaskBoardPage hostTheme=\{resolvedTheme\} \/><\/RouteSuspense>/);
+  assert.doesNotMatch(appShell, /path="\/kanban"[\s\S]*?kanbanEnabled[\s\S]*?<Navigate to="\/control-center" replace \/>/);
   assert.doesNotMatch(appShell, /KanbanPlaceholderPage/);
   assert.match(sidebarSource, /label:\s*t\("nav\.taskBoard"\)/);
   assert.match(appShell, /assistantNavAgents/);
@@ -1181,8 +1182,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(appShell, /is-settings-mode/);
 
   assert.match(settingsSections, /buildLocalizedSettingsSections/);
-  assert.match(settingsSections, /id:\s*"appearance"[\s\S]*?label:\s*"appearance"[\s\S]*?layout:\s*"measure"/);
-  assert.match(settingsSections, /id:\s*"kanban"[\s\S]*?label:\s*"kanban"[\s\S]*?layout:\s*"measure"/);
+  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"kanban"[\s\S]*?label:\s*"kanban"[\s\S]*?layout:\s*"measure"[\s\S]*?id:\s*"appearance"[\s\S]*?label:\s*"appearance"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"desktopPet"[\s\S]*?label:\s*"desktopPet"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*desktopPetSupported/);
   assert.match(settingsSections, /id:\s*"market"[\s\S]*?label:\s*"market"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"navigation"[\s\S]*?layout:\s*"wide"/);
@@ -1384,15 +1384,24 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPageSections, /settings\.desktopPet\.label/);
   assert.match(settingsPageSections, /settings\.market\.label/);
   assert.match(settingsPage, /case "kanban"/);
-  assert.match(settingsPage, /settings\.kanban\.enabled/);
+  assert.doesNotMatch(settingsPage, /settings\.kanban\.enabled/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.getSettings/);
   assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveSettings/);
+  assert.match(settingsPage, /import \{ Button, Card, Form, Input, QRCode, Select, Space, Switch, Typography \} from "antd"/);
+  assert.match(settingsPage, /<Card[\s\S]*className="settings-item-card settings-control-card settings-kanban-ant-card"/);
+  assert.match(settingsPage, /<Switch[\s\S]*handleToggleControlRemoteControl/);
+  assert.match(settingsPage, /<Form[\s\S]*className="settings-control-form settings-kanban-ant-form"[\s\S]*onFinish=\{\(\) => void saveControlCloudConfig\(controlCloudConfig\)\}/);
+  assert.match(settingsPage, /<Input[\s\S]*taskBoard\.cloud\.deviceAliasPlaceholder/);
+  assert.match(settingsPage, /<Input\.Password[\s\S]*taskBoard\.cloud\.tokenPlaceholder/);
+  assert.match(settingsPage, /<Select[\s\S]*options=\{controlProjectSelectOptions\}/);
+  assert.match(settingsPage, /<Button[\s\S]*htmlType="submit"[\s\S]*settings\.kanban\.save/);
   assert.match(settingsPage, /case "desktopPet"/);
   assert.match(settingsPage, /activeSection === "desktopPet"/);
   assert.match(settingsPage, /case "market"/);
   assert.match(settingsPage, /settings\.market\.apiBaseUrl/);
   assert.match(settingsPage, /window\.electronAPI\.market\.saveSettings/);
-  assert.match(settingsPage, /handleToggleKanbanVisibility/);
+  assert.doesNotMatch(settingsPage, /handleToggleKanbanVisibility/);
+  assert.doesNotMatch(settingsPage, /handleSaveControlCloudConfig/);
   assert.doesNotMatch(settingsPage, /saveNavigationPreferences\(\{\s*kanban/);
   assert.match(settingsPage, /settings-item-card navigation-settings-card/);
   assert.match(settingsPage, /settings-item-list navigation-order-list/);
@@ -1437,6 +1446,8 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /handleToggleDesktopPet/);
   assert.match(settingsPage, /quickAssistantEnabled/);
   assert.match(settingsPage, /quickAssistantAgentKey/);
+  assert.match(settingsPage, /window\.electronAPI\.assistant\.listCopilotAgents\(\),[\s\S]*?window\.electronAPI\.assistant\.listAgents\(\)/);
+  assert.match(settingsPage, /readAssistantAgentOptions\(agentsResult, fallbackAgents\)/);
   assert.match(settingsPage, /handleToggleQuickAssistantEnabled/);
   assert.match(settingsPage, /handleSelectQuickAssistantAgentKey/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.saveSettings\(\{\s*quickAssistantAgentKey: normalizedAgentKey\s*\}\)/);
@@ -1444,7 +1455,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
   assert.match(settingsPage, /function isMarketVisible\(settings: MarketSettings\) \{\s*return settings\.enabled === true;\s*\}/);
-  assert.match(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "desktopPet"[\s\S]*handleToggleDesktopPet[\s\S]*case "kanban"[\s\S]*handleToggleKanbanVisibility[\s\S]*case "market"[\s\S]*handleToggleMarketEnabled[\s\S]*case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
+  assert.match(settingsPage, /function renderSectionHeaderAction\(\)[\s\S]*case "desktopPet"[\s\S]*handleToggleDesktopPet[\s\S]*case "market"[\s\S]*handleToggleMarketEnabled[\s\S]*case "tunnelHub"[\s\S]*handleToggleTunnelHubEnabled/);
   assert.match(settingsPage, /className="settings-page-head"[\s\S]*settings-page-head-copy[\s\S]*settings-page-head-action[\s\S]*renderSectionHeaderAction\(\)/);
   assert.match(settingsStyles, /\.settings-page-head\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;/);
   assert.match(settingsStyles, /\.settings-page-head-action\s*\{[\s\S]*justify-content:\s*flex-end;/);
@@ -1676,6 +1687,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
     path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8"
   );
+  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
 
   assert.match(orderHelper, /export type SidebarNavOrderItemKey/);
   assert.match(orderHelper, /"kanban"/);
@@ -1696,6 +1708,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(orderHelper, /const availableKeys = new Set\(availableItems\.map\(\(item\) => item\.key\)\)/);
   assert.match(orderHelper, /availableKeys\.has\(key as SidebarNavOrderItemKey\)/);
   assert.match(orderHelper, /orderedKeys\.push\(item\.key\)/);
+  assert.match(orderHelper, /return \["kanban", \.\.\.orderedKeys\.filter\(\(key\) => key !== "kanban"\)\]/);
   assert.doesNotMatch(orderHelper, /return availableItems\.map\(\(item\) => item\.key\)/);
   assert.match(orderHelper, /sortSidebarNavItems/);
   assert.match(appShell, /SIDEBAR_NAV_ORDER_STORAGE_KEY/);
@@ -1704,19 +1717,19 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /key\.startsWith\("custom:"\) \? `website:\$\{key\.slice\("custom:"\.length\)\}`/);
   assert.match(appShell, /normalizeWebGroupOrder/);
   assert.match(appShell, /availableSidebarNavOrderItems/);
-  assert.match(appShell, /const \[kanbanEnabled, setKanbanEnabled\] = useState\(true\)/);
   assert.match(appShell, /const \[kanbanSettingsLoaded, setKanbanSettingsLoaded\] = useState\(false\)/);
   assert.match(appShell, /const \[marketEnabled, setMarketEnabled\] = useState\(false\)/);
   assert.match(appShell, /function isMarketSettingsVisible\(settings:[\s\S]*?return settings\?\.enabled === true;/);
   assert.match(appShell, /window\.electronAPI\.taskBoard\.getSettings\(\)/);
-  assert.match(appShell, /setKanbanEnabled\(result\.settings\.enabled\)/);
+  assert.doesNotMatch(appShell, /setKanbanEnabled/);
   assert.match(appShell, /window\.electronAPI\.market\.getSettings\(\)/);
   assert.match(appShell, /setMarketEnabled\(isMarketSettingsVisible\(settings\)\)/);
   assert.match(appShell, /<Navigate to="\/control-center" replace \/>/);
-  assert.match(appShell, /\.filter\(\(item\) => item\.key !== "kanban" \|\| kanbanEnabled\)/);
+  assert.doesNotMatch(appShell, /item\.key !== "kanban" \|\| kanbanEnabled/);
   assert.match(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);
   assert.doesNotMatch(appShell, /preferences\?\.kanban/);
-  assert.match(appShell, /onKanbanEnabledChange=\{setKanbanEnabled\}/);
+  assert.doesNotMatch(appShell, /onKanbanEnabledChange/);
+  assert.match(settingsPage, /window\.electronAPI\.taskBoard\.saveSettings\(\{\s*enabled:\s*true,/);
   assert.match(appShell, /onMarketEnabledChange=\{setMarketEnabled\}/);
   assert.match(appShell, /marketEnabled=\{marketEnabled\}/);
   assert.match(appShell, /normalizeSidebarNavOrder\(sidebarNavOrder, availableSidebarNavOrderItems\)/);
@@ -2425,11 +2438,11 @@ test("assistant navigation agents refresh immediately after startup services bec
 test("bootstrap success opens the first available navigation agent", () => {
   const appShell = readAppShellSource();
   const startupAutoOpenBlock = appShell.match(
-    /useEffect\(\(\) => \{[\s\S]*?shouldAutoOpenAssistant\(startupRestoreState, startupAllReady, location\.pathname\)[\s\S]*?\}, \[kanbanEnabled, location\.pathname, navigate, navigationStateLoaded, startupAllReady, startupRestoreState\]\);/u
+    /useEffect\(\(\) => \{[\s\S]*?shouldAutoOpenAssistant\(startupRestoreState, startupAllReady, location\.pathname\)[\s\S]*?\}, \[location\.pathname, navigate, navigationStateLoaded, startupAllReady, startupRestoreState\]\);/u
   )?.[0] ?? "";
 
   assert.match(startupAutoOpenBlock, /!navigationStateLoaded/);
-  assert.match(startupAutoOpenBlock, /getKanbanAwareFallbackPath\(kanbanEnabled\)/);
+  assert.match(startupAutoOpenBlock, /getKanbanAwareFallbackPath\(\)/);
   assert.match(startupAutoOpenBlock, /assistant\.listNavigationAgents\(\)/);
   assert.match(startupAutoOpenBlock, /normalizeAssistantNavAgents\(result\.items\)/);
   assert.match(startupAutoOpenBlock, /setAssistantNavAgents\(nextItems\)/);
@@ -3701,7 +3714,13 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /deriveDesktopPetVisualStatus\(\{/);
   assert.match(desktopPetVisual, /input\.displayStatus === "awaiting"[\s\S]{0,80}return "awaiting"/);
   assert.match(desktopPetVisual, /input\.displayStatus === "running"[\s\S]{0,80}return "running"/);
+<<<<<<< HEAD
   assert.match(desktopPetVisual, /input\.hasMessageReaction[\s\S]{0,80}return "message"/);
+=======
+  assert.doesNotMatch(desktopPetVisual, /return "thinking"/);
+  assert.doesNotMatch(desktopPetVisual, /return "message"/);
+  assert.doesNotMatch(desktopPetVisual, /hasMessageReaction/);
+>>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   assert.match(desktopPetVisual, /input\.hasActiveSignature[\s\S]{0,80}return "signature"/);
   assert.match(desktopPet, /displayStatus === "idle" && !isDragging && !hasMessageReaction/);
   assert.match(desktopPetVisual, /input\.isHovering \|\| input\.isKeyboardFocused/);
@@ -3740,6 +3759,13 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(sharedDesktopPet, /thinking:\s*"running\.png"/);
   assert.match(sharedDesktopPet, /unread:\s*"done\.png"/);
   assert.match(sharedDesktopPet, /"dragging-moving":\s*"pet-dragging-moving\.png"/);
+<<<<<<< HEAD
+=======
+  assert.match(sharedDesktopPet, /hover:\s*"pet-hover\.png"/);
+  assert.doesNotMatch(sharedDesktopPet, /message:\s*"pet-message\.png"/);
+  assert.doesNotMatch(sharedDesktopPet, /thinking:\s*"pet-thinking\.png"/);
+  assert.match(sharedDesktopPet, /dancing:\s*"pet-idle\.png"/);
+>>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   assert.match(sharedDesktopPet, /getDesktopPetSignatureActions/);
   assert.match(sharedDesktopPet, /id:\s*"chant"/);
   assert.match(sharedDesktopPet, /path:\s*"signature\/chant\.webp"/);
@@ -3753,18 +3779,28 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(globalStyles, /\.desktop-pet-root\.is-awaiting\s+\.desktop-pet-image[\s\S]{0,120}desktop-pet-awaiting/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-dragging\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-running\s+\.desktop-pet-image/);
+<<<<<<< HEAD
   assert.match(globalStyles, /\.desktop-pet-root\.is-drag-moving\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-root\.has-state-animation\s+\.desktop-pet-state-sprite/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-message\s+\.desktop-pet-image/);
+=======
+  assert.match(globalStyles, /\.desktop-pet-root\.is-dragging-moving\s+\.desktop-pet-image/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-thinking\s+\.desktop-pet-image/);
+  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-message\s+\.desktop-pet-image/);
+>>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   assert.match(globalStyles, /\.desktop-pet-preview/);
   assert.match(globalStyles, /\.desktop-pet-preview-toggle/);
   assert.match(globalStyles, /@keyframes desktop-pet-hover-reaction/);
   assert.match(globalStyles, /@keyframes desktop-pet-dance/);
   assert.match(globalStyles, /@keyframes desktop-pet-dragging/);
   assert.match(globalStyles, /@keyframes desktop-pet-running/);
+<<<<<<< HEAD
   assert.match(globalStyles, /@keyframes desktop-pet-state-frames/);
+=======
+>>>>>>> 3074908ee17d8e4b624b43a3a7f90f3cb07fe468
   assert.match(globalStyles, /@keyframes desktop-pet-awaiting/);
-  assert.match(globalStyles, /@keyframes desktop-pet-message-nudge/);
+  assert.doesNotMatch(globalStyles, /@keyframes desktop-pet-thinking/);
+  assert.doesNotMatch(globalStyles, /@keyframes desktop-pet-message-nudge/);
   assert.match(mainProcess, /getDesktopPetContextMenuItems\(\s*appState\.desktopPetState\.appearanceId,\s*appState\.desktopPetState\.signatureActions \?\? \[\]\s*\)/);
   assert.match(mainProcess, /desktopPet\.danceRequested", signatureActionId/);
   assert.match(mainProcess, /function setDesktopPetWindowMouseInteractive\(interactive: boolean\)/);
@@ -3809,8 +3845,10 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(petAssetScript, /dance\.webp/);
   assert.match(petAssetScript, /function renderXiaoTaskRunSprite/);
   assert.match(petAssetScript, /function renderXiaoSpritesheet/);
-  assert.match(petAssetScript, /awaiting:\s*"thinking"/);
-  assert.match(petAssetScript, /running:\s*"thinking"/);
+  assert.match(petAssetScript, /"awaiting"/);
+  assert.match(petAssetScript, /"running"/);
+  assert.doesNotMatch(petAssetScript, /"thinking"/);
+  assert.doesNotMatch(petAssetScript, /"message"/);
   assert.match(petAssetScript, /function drawHoverArm/);
 });
 
