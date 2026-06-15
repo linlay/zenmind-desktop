@@ -145,7 +145,7 @@ CuteJ 品牌对应：
 
 ## 关键文件
 
-- `~/<brand-runtime-root>/desktop-default.json`：env 包携带的初始化模板。首启拆写到 `.desktop/` 下的 canonical 文件后不再作为运行时真相；可用 `profile.navigation.kanban.enabled: false` 首启隐藏看板入口。
+- `~/<brand-runtime-root>/desktop-default.json`：env 包携带的一次性初始化模板。首启拆写到 `.desktop/` 下的 canonical 文件并记录 `state/desktop/bootstrap.json` 后会删除运行时副本，后续不再作为运行时真相；可用 `kanban.enabled: false` 首启隐藏看板入口。
 - `~/<brand-runtime-root>/desktop-register.json`：一次性 registration token 文件，用完后清 token 或删除，不合并进 profile。
 - `config/desktop/profile.json`：保存长期用户偏好，包括外观、语言、助手默认值、Quick Assistant 和导航偏好。
 - `config/desktop/pet.json`：保存桌宠设置，包括 enabled、selectedPetId、lastVisible、position 和窗口偏好；不保存 `boundAgentKey`。

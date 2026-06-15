@@ -28,7 +28,7 @@ const {
 const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/plugin-loader.js");
 const { getSkillInstallDir, installSkillFromPath } = require("../dist-electron/main/skill-installer.js");
 const { readDesktopPetStoredState } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
-const { getDesktopPetsDataRoot, getMarketplaceConfigRoot } = require("../dist-electron/main/user-paths.js");
+const { getDesktopConfigRoot, getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
 const { __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
 
 function createApp(root) {
@@ -1660,6 +1660,11 @@ test("saved marketApiBaseUrl is used by list and install when market is enabled"
     assert.equal(settings.marketApiBaseUrl, `${baseUrl}/api/v1`);
     assert.equal(getMarketSettings(app).enabled, true);
     assert.equal(getMarketSettings(app).marketApiBaseUrl, `${baseUrl}/api/v1`);
+    assert.equal(
+      JSON.parse(fs.readFileSync(path.join(getDesktopConfigRoot(app), "market.json"), "utf8")).marketApiBaseUrl,
+      `${baseUrl}/api/v1`
+    );
+    assert.equal(fs.existsSync(path.join(root, "home", ".zenmind", ".desktop", "config", "marketplace", "settings.json")), false);
 
     const listed = await listMarketItems(app, { sections: ["skills"] });
     assert.equal(listed.items.find((item) => item.id === "saved-skill")?.name, "Saved Skill");
@@ -1683,7 +1688,7 @@ test("saved marketApiBaseUrl without enabled true does not request the market ca
       res.end(JSON.stringify({ schemaVersion: 1, items: [] }));
     }]
   ]), async (baseUrl) => {
-    const settingsPath = path.join(getMarketplaceConfigRoot(app), "settings.json");
+    const settingsPath = path.join(getDesktopConfigRoot(app), "market.json");
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     fs.writeFileSync(settingsPath, `${JSON.stringify({ marketApiBaseUrl: `${baseUrl}/api/v1` }, null, 2)}\n`, "utf8");
 
@@ -1696,6 +1701,23 @@ test("saved marketApiBaseUrl without enabled true does not request the market ca
     assert.equal(listed.items.length, 0);
     assert.equal(catalogRequests, 0);
   });
+});
+
+test("legacy marketplace settings path is ignored", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-settings-legacy-ignored-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const legacySettingsPath = path.join(root, "home", ".zenmind", ".desktop", "config", "marketplace", "settings.json");
+  fs.mkdirSync(path.dirname(legacySettingsPath), { recursive: true });
+  fs.writeFileSync(legacySettingsPath, `${JSON.stringify({
+    enabled: true,
+    marketApiBaseUrl: "https://legacy.example.test/api/v1"
+  }, null, 2)}\n`, "utf8");
+
+  const settings = getMarketSettings(app);
+  assert.equal(settings.enabled, false);
+  assert.equal(settings.marketApiBaseUrl, "");
 });
 
 test("market settings can enable the entry without an API address", (t) => {

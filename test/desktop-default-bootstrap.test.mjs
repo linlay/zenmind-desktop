@@ -81,7 +81,10 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
       }
     },
     kanban: {
-      enabled: false
+      enabled: false,
+      cloud: {
+        serverUrl: "https://kanban.example.test"
+      }
     },
     pet: {
       enabled: false,
@@ -100,16 +103,14 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
       enabled: true,
       identityProviderHost: "business.example.com"
     },
-    webs: {
-      websites: [
-        {
-          id: "docs",
-          label: "Docs",
-          url: "https://docs.example.com/",
-          agentKey: "desktopAssistant"
-        }
-      ]
-    },
+    webs: [
+      {
+        id: "docs",
+        label: "Docs",
+        url: "https://docs.example.com/",
+        agentKey: "desktopAssistant"
+      }
+    ],
     bootstrapAssistant: {
       agentKey: "zenmi",
       prompt: "hello once"
@@ -123,7 +124,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
   const profile = readJson(path.join(desktopRoot, "config", "desktop", "profile.json"));
   const kanban = readJson(path.join(desktopRoot, "config", "desktop", "kanban.json"));
   const pet = readJson(path.join(desktopRoot, "config", "desktop", "pet.json"));
-  const market = readJson(path.join(desktopRoot, "config", "marketplace", "settings.json"));
+  const market = readJson(path.join(desktopRoot, "config", "desktop", "market.json"));
   const sso = readJson(path.join(desktopRoot, "config", "desktop", "sso.json"));
   const website = readJson(path.join(desktopRoot, "data", "webs", "websites", "docs", "website.json"));
   const bootstrap = readJson(resolveDesktopBootstrapStatePath(app));
@@ -133,7 +134,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
   assert.equal("kanban" in profile.navigation, false);
   assert.equal(kanban.enabled, false);
   assert.deepEqual(kanban.cloud, {
-    serverUrl: "",
+    serverUrl: "https://kanban.example.test",
     token: "",
     selectedProjectId: "default",
     remoteControlEnabled: false,
@@ -145,11 +146,13 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
   assert.equal("boundAgentKey" in pet, false);
   assert.equal(market.enabled, true);
   assert.equal(market.marketApiBaseUrl, "https://market.example.test/api/v1");
+  assert.equal(fs.existsSync(path.join(desktopRoot, "config", "marketplace", "settings.json")), false);
   assert.equal(sso.enabled, true);
   assert.equal(website.id, "docs");
   assert.equal(website.kind, "website");
   assert.equal(website.agentKey, "desktopAssistant");
   assert.equal(bootstrap.bootstrapAssistant.agentKey, "zenmi");
+  assert.equal(fs.existsSync(defaultPath), false);
 
   fs.writeFileSync(defaultPath, JSON.stringify({
     profile: {
@@ -215,9 +218,39 @@ test("desktop-default bootstrap skips market settings without a market API", (t)
   const result = applyDesktopDefaultBootstrap(app, "darwin");
   assert.equal(result.applied, true);
 
-  const marketPath = path.join(homePath, ".zenmind", ".desktop", "config", "marketplace", "settings.json");
+  const marketPath = path.join(homePath, ".zenmind", ".desktop", "config", "desktop", "market.json");
+  const legacyMarketPath = path.join(homePath, ".zenmind", ".desktop", "config", "marketplace", "settings.json");
   assert.equal(result.appliedResult.market, "absent");
   assert.equal(fs.existsSync(marketPath), false);
+  assert.equal(fs.existsSync(legacyMarketPath), false);
+});
+
+test("desktop-default bootstrap does not overwrite existing desktop market settings", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-default-market-existing-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const marketPath = path.join(homePath, ".zenmind", ".desktop", "config", "desktop", "market.json");
+  fs.mkdirSync(path.dirname(marketPath), { recursive: true });
+  fs.writeFileSync(marketPath, `${JSON.stringify({
+    enabled: false,
+    marketApiBaseUrl: "https://existing.example.test/api/v1"
+  }, null, 2)}\n`, "utf8");
+  writeDesktopDefault(app, "darwin", {
+    market: {
+      enabled: true,
+      apiBaseUrl: "https://market.example.test/api/v1"
+    }
+  });
+
+  const result = applyDesktopDefaultBootstrap(app, "darwin");
+  const market = readJson(marketPath);
+
+  assert.equal(result.applied, true);
+  assert.equal(result.appliedResult.market, "skipped");
+  assert.equal(market.enabled, false);
+  assert.equal(market.marketApiBaseUrl, "https://existing.example.test/api/v1");
 });
 
 test("desktop-default SSO helper writes canonical macOS config without bootstrap state", (t) => {
@@ -332,9 +365,10 @@ test("desktop-default SSO helper fills missing SSO even after bootstrap was mark
   assert.equal(fullBootstrap.reason, "already-applied");
   assert.equal(ssoResult, "applied");
   assert.equal(readJson(canonicalSsoPath(homePath)).provider, "google");
+  assert.equal(fs.existsSync(resolveDesktopDefaultPath(app, "darwin")), false);
 });
 
-test("manual env.zip import applies desktop-default SSO before startup preparation", async () => {
+test("manual env.zip import applies desktop-default bootstrap and SSO before startup preparation", async () => {
   const handlers = new Map();
   const calls = [];
   const app = createApp("/tmp/zenmind-services-home");
@@ -380,6 +414,10 @@ test("manual env.zip import applies desktop-default SSO before startup preparati
       calls.push(["import", zipPath, platform]);
       return { copiedFiles: 1, skippedFiles: 0 };
     },
+    applyDesktopDefaultBootstrap: (_app, platform) => {
+      calls.push(["bootstrap", platform]);
+      return { ok: true, applied: true };
+    },
     applyDesktopDefaultSsoDefaults: (_app, platform) => {
       calls.push(["sso", platform]);
       return "applied";
@@ -404,8 +442,9 @@ test("manual env.zip import applies desktop-default SSO before startup preparati
   const result = await handlers.get("services.importEnvZip")();
 
   assert.deepEqual(result, { ok: true });
-  assert.deepEqual(calls.slice(0, 4), [
+  assert.deepEqual(calls.slice(0, 5), [
     ["import", "/tmp/env.zip", "darwin"],
+    ["bootstrap", "darwin"],
     ["sso", "darwin"],
     ["loadBuiltin"],
     ["loadPlugins"]

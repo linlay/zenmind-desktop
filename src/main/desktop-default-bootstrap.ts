@@ -57,6 +57,14 @@ function writeJsonFile(filePath: string, value: unknown) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
+function removeDesktopDefaultFile(defaultPath: string) {
+  try {
+    fs.rmSync(defaultPath, { force: true });
+  } catch (error) {
+    console.warn(`[desktop-default] failed to remove consumed ${DESKTOP_DEFAULT_FILE}:`, error);
+  }
+}
+
 function pathApiForRuntimeRoot(platform: NodeJS.Platform, runtimeRoot: string) {
   if (platform === "win32") {
     // Cross-platform tests inject POSIX temp directories while simulating Windows behavior.
@@ -275,7 +283,11 @@ export function applyDesktopDefaultSsoDefaults(
   if (!isRecord(defaults)) {
     return "absent";
   }
-  return applySsoDefaults(app, defaults.sso, platform);
+  const result = applySsoDefaults(app, defaults.sso, platform);
+  if (fs.existsSync(resolveDesktopBootstrapStatePath(app))) {
+    removeDesktopDefaultFile(defaultPath);
+  }
+  return result;
 }
 
 function normalizeWebsiteDefaults(webs: unknown, legacyWebsites: unknown) {
@@ -335,6 +347,7 @@ export function applyDesktopDefaultBootstrap(
       ? { bootstrapAssistant: defaults.bootstrapAssistant }
       : {})
   });
+  removeDesktopDefaultFile(defaultPath);
   return { ok: true, applied: true, statePath, appliedResult: applied };
 }
 

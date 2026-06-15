@@ -2137,6 +2137,7 @@ function registerIpcHandlers(context: MainProcessContext) {
     loadInstalledPlugins,
     notifyServicesChanged,
     runStartupPreparation,
+    applyDesktopDefaultBootstrap,
     applyDesktopDefaultSsoDefaults,
     oldRootDecisionRef,
     generateBackupDirName,
@@ -2448,6 +2449,7 @@ async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: f
     console.info(
       `[main] imported bundled env.zip from ${importResult.sourceZipPath} into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
     );
+    applyDesktopDefaultBootstrap(app, mainProcessContext.platform);
     applyDesktopDefaultSsoDefaults(app, mainProcessContext.platform);
     return { ok: true };
   } catch (error) {

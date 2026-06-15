@@ -16,8 +16,8 @@ import type {
   MarketSettingsInput
 } from "../../shared/contracts";
 import {
+  getDesktopConfigRoot,
   getMarketplaceCacheRoot,
-  getMarketplaceConfigRoot,
   getMarketplaceStateRoot
 } from "../user-paths";
 import { t } from "../i18n/main-i18n";
@@ -69,13 +69,11 @@ export type MarketplaceCatalogResult = {
 
 function ensureMarketplaceRoots(app: App) {
   const cacheRoot = getMarketplaceCacheRoot(app);
-  const configRoot = getMarketplaceConfigRoot(app);
   const stateRoot = getMarketplaceStateRoot(app);
   fs.mkdirSync(path.join(cacheRoot, "downloads"), { recursive: true });
   fs.mkdirSync(path.join(cacheRoot, "backups"), { recursive: true });
-  fs.mkdirSync(configRoot, { recursive: true });
   fs.mkdirSync(stateRoot, { recursive: true });
-  return { cacheRoot, configRoot, stateRoot };
+  return { cacheRoot, stateRoot };
 }
 
 export function catalogCachePath(app: App) {
@@ -87,7 +85,7 @@ function installedRecordsPath(app: App) {
 }
 
 function marketplaceSettingsPath(app: App) {
-  return path.join(ensureMarketplaceRoots(app).configRoot, "settings.json");
+  return path.join(getDesktopConfigRoot(app), "market.json");
 }
 
 function downloadsRoot(app: App) {
