@@ -184,10 +184,10 @@ export interface SandboxImageImportProgressEvent {
 
 export interface MarketSettings {
   enabled: boolean;
-  marketApiBaseUrl: string;
+  apiBaseUrl: string;
 }
 
 export interface MarketSettingsInput {
   enabled?: boolean;
-  marketApiBaseUrl?: string;
+  apiBaseUrl?: string;
 }

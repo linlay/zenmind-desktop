@@ -42,7 +42,7 @@ async function loadSkillCatalog(app: App, options: MarketplaceOptions = {}): Pro
       catalog: skillOnlyCatalog(normalizeCatalog(options.catalog)),
       offline: false,
       message: t("market.main.catalogLoaded"),
-      sourceUrl: options.catalogUrl ?? getMarketSettings(app).marketApiBaseUrl
+      sourceUrl: options.catalogUrl ?? getMarketSettings(app).apiBaseUrl
     };
   }
   const result = await loadMarketplaceCatalog(app, options, "skill market catalog request");

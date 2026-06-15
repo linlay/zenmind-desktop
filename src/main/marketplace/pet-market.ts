@@ -100,11 +100,54 @@ function hasPetBaseAssets(entries: Set<string>) {
     if (entry.endsWith("/pet.json") || entry === "pet.json") {
       hasManifest = true;
     }
-    if (entry.endsWith("/pet-idle.png") || entry === "pet-idle.png") {
+    if (
+      entry.endsWith("/idle.png") ||
+      entry === "idle.png" ||
+      entry.endsWith("/pet-idle.png") ||
+      entry === "pet-idle.png"
+    ) {
       hasIdleImage = true;
     }
   }
   return hasManifest && hasIdleImage;
+}
+
+function readManifestText(manifest: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = manifest[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function readManifestStatePath(manifest: Record<string, unknown>, state: string) {
+  const states = manifest.states && typeof manifest.states === "object" && !Array.isArray(manifest.states)
+    ? manifest.states as Record<string, unknown>
+    : {};
+  const asset = states[state];
+  if (typeof asset === "string") {
+    return asset.trim();
+  }
+  if (asset && typeof asset === "object" && !Array.isArray(asset)) {
+    const pathValue = (asset as { path?: unknown }).path;
+    return typeof pathValue === "string" ? pathValue.trim() : "";
+  }
+  return "";
+}
+
+function petIdleAssetExists(petRoot: string, manifest: Record<string, unknown>) {
+  const candidates = [
+    readManifestText(manifest, ["preview", "previewAssetPath", "idleAssetPath", "idle"]),
+    readManifestStatePath(manifest, "idle"),
+    "idle.png",
+    "pet-idle.png"
+  ].filter(Boolean);
+  return candidates.some((relative) => {
+    const safeRelative = relative.replace(/\\/gu, "/").replace(/^\/+/u, "");
+    return fs.existsSync(path.join(petRoot, safeRelative));
+  });
 }
 
 function findExtractedPetRoot(rootPath: string): string | null {
@@ -202,7 +245,7 @@ export async function installPetMarketItem(
     if (manifestId && normalizePetDirectoryName(manifestId) !== safePetDirName) {
       throw new Error(t("market.pet.idMismatch", { expected: item.id, actual: manifestId }));
     }
-    if (!fs.existsSync(path.join(petRoot, "pet-idle.png"))) {
+    if (!petIdleAssetExists(petRoot, manifest as Record<string, unknown>)) {
       throw new Error(t("market.pet.invalidPackage"));
     }
 

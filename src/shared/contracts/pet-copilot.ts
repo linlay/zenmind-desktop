@@ -21,8 +21,11 @@ export interface DesktopPetAppearanceOption {
   displayName: string;
   description: string;
   assetBasePath: string;
+  preview?: string;
   previewAssetPath: string;
   capabilities?: DesktopPetCapabilities;
+  states?: DesktopPetStateAssets;
+  signature?: DesktopPetSignatureAction[];
   signatureActions?: DesktopPetSignatureAction[];
 }
 
@@ -122,6 +125,18 @@ export interface DesktopPetSignatureAction {
   trigger: DesktopPetSignatureTrigger[];
   variants: DesktopPetSignatureVariant[];
 }
+
+export interface DesktopPetStateAsset {
+  path: string;
+  frameCount?: number;
+  durationMs?: number;
+  loop?: boolean;
+  mirror?: boolean;
+  holdMs?: number;
+  alts?: DesktopPetSignatureAction[];
+}
+
+export type DesktopPetStateAssets = Partial<Record<string, DesktopPetStateAsset>>;
 
 export interface DesktopPetState {
   supported: boolean;

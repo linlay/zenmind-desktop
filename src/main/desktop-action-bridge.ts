@@ -334,7 +334,7 @@ function validateMarketSettings(input: Record<string, unknown>) {
   try {
     const settings = saveMarketSettingsPreview(input, {
       enabled: false,
-      marketApiBaseUrl: ""
+      apiBaseUrl: ""
     });
     return {
       valid: true,
@@ -345,7 +345,7 @@ function validateMarketSettings(input: Record<string, unknown>) {
     return {
       valid: false,
       issues: [{
-        field: "marketApiBaseUrl",
+        field: "apiBaseUrl",
         message: error instanceof Error ? error.message : String(error)
       }]
     };
@@ -354,18 +354,21 @@ function validateMarketSettings(input: Record<string, unknown>) {
 
 function saveMarketSettingsPreview(
   input: Record<string, unknown>,
-  current: { enabled: boolean; marketApiBaseUrl: string }
+  current: { enabled: boolean; apiBaseUrl: string }
 ) {
-  const rawMarketUrl = typeof input.marketApiBaseUrl === "string" ? input.marketApiBaseUrl.trim() : "";
-  const legacyMarketUrl = typeof input.apiBaseUrl === "string" ? input.apiBaseUrl.trim() : "";
+  const hasApiBaseUrlPatch = "apiBaseUrl" in input;
+  const rawMarketUrl = typeof input.apiBaseUrl === "string" ? input.apiBaseUrl.trim() : "";
   if ("enabled" in input && typeof input.enabled !== "boolean") {
     throw new Error("market.enabled must be boolean");
   }
+  if ("apiBaseUrl" in input && typeof input.apiBaseUrl !== "string") {
+    throw new Error("market.apiBaseUrl must be string");
+  }
   const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
-  const marketApiBaseUrl = normalizeMarketApiBaseUrl(rawMarketUrl || legacyMarketUrl || current.marketApiBaseUrl);
+  const apiBaseUrl = normalizeMarketApiBaseUrl(hasApiBaseUrlPatch ? rawMarketUrl : current.apiBaseUrl);
   return {
-    enabled: requestedEnabled && Boolean(marketApiBaseUrl),
-    marketApiBaseUrl
+    enabled: requestedEnabled && Boolean(apiBaseUrl),
+    apiBaseUrl
   };
 }
 
@@ -991,9 +994,9 @@ async function executeAction(
             to: next.enabled
           },
           {
-            field: "marketApiBaseUrl",
-            from: current.marketApiBaseUrl,
-            to: next.marketApiBaseUrl
+            field: "apiBaseUrl",
+            from: current.apiBaseUrl,
+            to: next.apiBaseUrl
           }
         ].filter((change) => change.from !== change.to)
       });

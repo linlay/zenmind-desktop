@@ -216,7 +216,7 @@ function resolveKanbanAwareNavigationPath(targetPath: string, kanbanEnabled: boo
     : targetPath;
 }
 
-function isMarketSettingsVisible(settings: { enabled?: boolean; marketApiBaseUrl?: string } | null | undefined) {
+function isMarketSettingsVisible(settings: { enabled?: boolean; apiBaseUrl?: string } | null | undefined) {
   return settings?.enabled === true;
 }
 

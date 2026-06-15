@@ -1630,8 +1630,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(contracts, /productName:\s*string/);
   assert.match(contracts, /buildTime:\s*string/);
   assert.match(contracts, /interface DesktopRuntimeEnvResetResult/);
-  assert.match(contracts, /interface MarketSettings[\s\S]*?enabled:\s*boolean;[\s\S]*?marketApiBaseUrl:\s*string;/);
-  assert.match(contracts, /interface MarketSettingsInput[\s\S]*?enabled\?:\s*boolean;[\s\S]*?marketApiBaseUrl\?:\s*string;/);
+  assert.match(contracts, /interface MarketSettings[\s\S]*?enabled:\s*boolean;[\s\S]*?apiBaseUrl:\s*string;/);
+  assert.match(contracts, /interface MarketSettingsInput[\s\S]*?enabled\?:\s*boolean;[\s\S]*?apiBaseUrl\?:\s*string;/);
   assert.match(contracts, /getAppInfo: \(\) => Promise<DesktopAppInfo>/);
   assert.match(contracts, /resetRuntimeEnv: \(\) => Promise<DesktopRuntimeEnvResetResult>/);
   assert.match(contracts, /setNativeThemeSource:\s*\(themeMode:\s*"light" \| "dark" \| "system"\)/);
@@ -3614,22 +3614,18 @@ test("desktop pet active task panel lists all agent tasks and opens chat rows", 
   assert.match(globalStyles, /\.desktop-pet-task-more/);
 });
 
-test("task running sprite uses the smooth high-frame strip", () => {
+test("desktop pet drag-moving state uses the smooth high-frame strip", () => {
   const globalStyles = readRendererStyles();
   const desktopPetSource = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
     "utf8"
   );
 
-  assert.match(desktopPetSource, /task-run-left\.webp/);
-  assert.match(desktopPetSource, /resolveDesktopPetTaskRunAssetPath\(petState,\s*appearanceId\)/);
-  assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,180}height:\s*104px;/);
-  assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,220}background-size:\s*1440px\s+104px;/);
-  assert.match(globalStyles, /\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,260}background-position:\s*0\s+0;/);
-  assert.match(globalStyles, /\.desktop-pet-root\.has-task-run-animation\s+\.desktop-pet-task-run-sprite\s*\{[\s\S]{0,180}animation:\s*desktop-pet-pony-run-frames var\(--desktop-pet-task-run-animation-duration,\s*1500ms\) steps\(15,\s*end\) infinite;/);
-  assert.match(globalStyles, /\.desktop-pet-root\.has-task-run-animation\s+\.desktop-pet-image/);
-  assert.doesNotMatch(globalStyles, /\.desktop-pet-root\.is-appearance-xiao\.has-task-run-animation\s+\.desktop-pet-image/);
-  assert.match(globalStyles, /@keyframes desktop-pet-pony-run-frames\s*\{[\s\S]{0,120}to\s*\{\s*background-position:\s*-1440px\s+0;/);
+  assert.match(desktopPetSource, /getDesktopPetStateAsset/);
+  assert.match(desktopPetSource, /desktop-pet-state-sprite/);
+  assert.match(globalStyles, /\.desktop-pet-state-sprite\s*\{[\s\S]{0,160}background-size:\s*calc\(96px \* var\(--desktop-pet-state-frames,\s*1\)\) 104px;/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-state-animation\s+\.desktop-pet-state-sprite\s*\{[\s\S]{0,220}animation:\s*desktop-pet-state-frames var\(--desktop-pet-state-duration,\s*900ms\) steps\(var\(--desktop-pet-state-frames,\s*1\),\s*end\) var\(--desktop-pet-state-loop-count,\s*infinite\);/);
+  assert.match(globalStyles, /@keyframes desktop-pet-state-frames\s*\{[\s\S]{0,120}background-position:\s*calc\(-96px \* var\(--desktop-pet-state-frames,\s*1\)\) 0;/);
   assert.doesNotMatch(globalStyles, /background-position:\s*0\s+-200%;/);
   assert.doesNotMatch(globalStyles, /background-position:\s*-800%\s+-200%;/);
   assert.doesNotMatch(globalStyles, /background-position:\s*-768px\s+-216px;/);
@@ -3685,7 +3681,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
     "utf8"
   );
 
-  assert.match(desktopPetVisual, /"dragging-moving"/);
+  assert.match(desktopPetVisual, /"drag-moving"/);
   assert.match(desktopPet, /DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX = 3/);
   assert.match(desktopPet, /const \[isHovering, setIsHovering\] = useState\(false\)/);
   assert.match(desktopPet, /const \[isKeyboardFocused, setIsKeyboardFocused\] = useState\(false\)/);
@@ -3696,7 +3692,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /desktopPet\.setMouseInteractive\(interactive\)/);
   assert.match(desktopPet, /typeof window\.electronAPI\.desktopPet\.onDanceRequested === "function"/);
   assert.match(desktopPet, /desktopPet\.onDanceRequested\(\(signatureActionId\) => \{[\s\S]{0,120}startSignature\(signatureActionId,\s*"manual"\);/);
-  assert.match(desktopPetVisual, /if \(input\.isDragging\)[\s\S]{0,80}return "dragging-moving"/);
+  assert.match(desktopPetVisual, /if \(input\.isDragging\)[\s\S]{0,80}return "drag-moving"/);
   assert.match(desktopPet, /window\.addEventListener\("pointermove", handleWindowPointerMove\)/);
   assert.match(desktopPet, /shouldShowSignatureSpriteAnimation[\s\S]{0,220}activeSignature\.assetPath/);
   assert.match(sharedDesktopPet, /export function resolveDesktopPetSignatureActions/);
@@ -3704,12 +3700,15 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /getDesktopPetSpriteAssetBasePath\(appearanceId\)/);
   assert.match(desktopPet, /deriveDesktopPetVisualStatus\(\{/);
   assert.match(desktopPetVisual, /input\.displayStatus === "awaiting"[\s\S]{0,80}return "awaiting"/);
-  assert.match(desktopPetVisual, /input\.displayStatus === "running"[\s\S]{0,80}return "thinking"/);
+  assert.match(desktopPetVisual, /input\.displayStatus === "running"[\s\S]{0,80}return "running"/);
   assert.match(desktopPetVisual, /input\.hasMessageReaction[\s\S]{0,80}return "message"/);
   assert.match(desktopPetVisual, /input\.hasActiveSignature[\s\S]{0,80}return "signature"/);
   assert.match(desktopPet, /displayStatus === "idle" && !isDragging && !hasMessageReaction/);
   assert.match(desktopPetVisual, /input\.isHovering \|\| input\.isKeyboardFocused/);
-  assert.match(desktopPet, /resolveDesktopPetStatusAssetPath\(petState, appearanceId, visualStatus\)/);
+  assert.match(desktopPet, /function resolveDesktopPetVisualAsset/);
+  assert.match(desktopPet, /getDesktopPetStateAsset\(customAppearance\?\.states, status\)/);
+  assert.match(desktopPet, /getDesktopPetLegacyStatusAssetName\(status\)/);
+  assert.match(desktopPet, /const visualAsset = useMemo\(\s*\(\) => resolveDesktopPetVisualAsset\(petState, appearanceId, visualStatus\)/);
   assert.match(desktopPet, /DESKTOP_PET_INLINE_PREVIEW_MAX_LENGTH = 30/);
   assert.match(desktopPet, /formatInlinePetPreview\(bubbleText\)/);
   assert.match(desktopPet, /const statusBubbleText = displayStatus === "idle"[\s\S]{0,120}: petState\.hint\.trim\(\) \|\| formatPetHint\(displayStatus\);/);
@@ -3733,13 +3732,17 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.doesNotMatch(sharedDesktopPet, /id:\s*"pony"/);
   assert.doesNotMatch(sharedDesktopPet, /assetBasePath:\s*"\.\/desktop-pet\/dario"/);
   assert.doesNotMatch(sharedDesktopPet, /assetBasePath:\s*"\.\/desktop-pet\/sama"/);
-  assert.match(sharedDesktopPet, /dragging:\s*"pet-dragging\.png"/);
+  assert.match(sharedDesktopPet, /dragging:\s*\{\s*path:\s*"dragging\.png"/);
+  assert.match(sharedDesktopPet, /"drag-moving":\s*\{\s*path:\s*"drag-moving\.webp"/);
+  assert.match(sharedDesktopPet, /frameCount:\s*15/);
+  assert.match(sharedDesktopPet, /running:\s*\{\s*path:\s*"running\.png"/);
+  assert.match(sharedDesktopPet, /message:\s*"done\.png"/);
+  assert.match(sharedDesktopPet, /thinking:\s*"running\.png"/);
+  assert.match(sharedDesktopPet, /unread:\s*"done\.png"/);
   assert.match(sharedDesktopPet, /"dragging-moving":\s*"pet-dragging-moving\.png"/);
-  assert.match(sharedDesktopPet, /hover:\s*"pet-hover\.png"/);
-  assert.match(sharedDesktopPet, /message:\s*"pet-message\.png"/);
-  assert.match(sharedDesktopPet, /thinking:\s*"pet-thinking\.png"/);
-  assert.match(sharedDesktopPet, /dancing:\s*"pet-idle\.png"/);
   assert.match(sharedDesktopPet, /getDesktopPetSignatureActions/);
+  assert.match(sharedDesktopPet, /id:\s*"chant"/);
+  assert.match(sharedDesktopPet, /path:\s*"signature\/chant\.webp"/);
   assert.match(sharedDesktopPet, /trigger:\s*\["manual",\s*"idle-random"\]/);
   assert.doesNotMatch(sharedDesktopPet, /"pony"/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-hover\s+\.desktop-pet-image/);
@@ -3749,15 +3752,17 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(globalStyles, /@keyframes desktop-pet-signature-frames\s*\{[\s\S]*?background-position:\s*calc\(-96px \* var\(--desktop-pet-signature-frames,\s*30\)\) 0;/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-awaiting\s+\.desktop-pet-image[\s\S]{0,120}desktop-pet-awaiting/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-dragging\s+\.desktop-pet-image/);
-  assert.match(globalStyles, /\.desktop-pet-root\.is-thinking\s+\.desktop-pet-image/);
-  assert.match(globalStyles, /\.desktop-pet-root\.is-dragging-moving\s+\.desktop-pet-image/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-running\s+\.desktop-pet-image/);
+  assert.match(globalStyles, /\.desktop-pet-root\.is-drag-moving\s+\.desktop-pet-image/);
+  assert.match(globalStyles, /\.desktop-pet-root\.has-state-animation\s+\.desktop-pet-state-sprite/);
   assert.match(globalStyles, /\.desktop-pet-root\.is-message\s+\.desktop-pet-image/);
   assert.match(globalStyles, /\.desktop-pet-preview/);
   assert.match(globalStyles, /\.desktop-pet-preview-toggle/);
   assert.match(globalStyles, /@keyframes desktop-pet-hover-reaction/);
   assert.match(globalStyles, /@keyframes desktop-pet-dance/);
   assert.match(globalStyles, /@keyframes desktop-pet-dragging/);
-  assert.match(globalStyles, /@keyframes desktop-pet-thinking/);
+  assert.match(globalStyles, /@keyframes desktop-pet-running/);
+  assert.match(globalStyles, /@keyframes desktop-pet-state-frames/);
   assert.match(globalStyles, /@keyframes desktop-pet-awaiting/);
   assert.match(globalStyles, /@keyframes desktop-pet-message-nudge/);
   assert.match(mainProcess, /getDesktopPetContextMenuItems\(\s*appState\.desktopPetState\.appearanceId,\s*appState\.desktopPetState\.signatureActions \?\? \[\]\s*\)/);

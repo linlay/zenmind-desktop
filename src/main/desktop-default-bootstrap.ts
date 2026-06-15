@@ -248,13 +248,13 @@ function applyMarketDefaults(app: App, marketDefaults: unknown): BootstrapApplyR
   if (!isRecord(marketDefaults)) {
     return "absent";
   }
-  const marketApiBaseUrl = readText(marketDefaults.apiBaseUrl) || readText(marketDefaults.marketApiBaseUrl);
-  if (!marketApiBaseUrl) {
+  const apiBaseUrl = readText(marketDefaults.apiBaseUrl);
+  if (!apiBaseUrl) {
     return "absent";
   }
   return writeMarketSettingsIfAbsent(app, {
     enabled: marketDefaults.enabled !== false,
-    marketApiBaseUrl
+    apiBaseUrl
   }) ? "applied" : "skipped";
 }
 

@@ -145,7 +145,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
   assert.equal(pet.selectedPetId, "builtin:zenmi");
   assert.equal("boundAgentKey" in pet, false);
   assert.equal(market.enabled, true);
-  assert.equal(market.marketApiBaseUrl, "https://market.example.test/api/v1");
+  assert.equal(market.apiBaseUrl, "https://market.example.test/api/v1");
   assert.equal(fs.existsSync(path.join(desktopRoot, "config", "marketplace", "settings.json")), false);
   assert.equal(sso.enabled, true);
   assert.equal(website.id, "docs");
@@ -235,7 +235,7 @@ test("desktop-default bootstrap does not overwrite existing desktop market setti
   fs.mkdirSync(path.dirname(marketPath), { recursive: true });
   fs.writeFileSync(marketPath, `${JSON.stringify({
     enabled: false,
-    marketApiBaseUrl: "https://existing.example.test/api/v1"
+    apiBaseUrl: "https://existing.example.test/api/v1"
   }, null, 2)}\n`, "utf8");
   writeDesktopDefault(app, "darwin", {
     market: {
@@ -250,7 +250,7 @@ test("desktop-default bootstrap does not overwrite existing desktop market setti
   assert.equal(result.applied, true);
   assert.equal(result.appliedResult.market, "skipped");
   assert.equal(market.enabled, false);
-  assert.equal(market.marketApiBaseUrl, "https://existing.example.test/api/v1");
+  assert.equal(market.apiBaseUrl, "https://existing.example.test/api/v1");
 });
 
 test("desktop-default SSO helper writes canonical macOS config without bootstrap state", (t) => {

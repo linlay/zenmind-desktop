@@ -951,7 +951,7 @@ test("desktop pet banner resolves builtin and user pet assets", () => {
     const app = createApp(root);
     const builtin = desktopEffectsInternals.resolveDesktopPetBannerAsset(app, "default");
     assert.equal(builtin.source, "builtin");
-    assert.equal(builtin.label, "小宅");
+    assert.equal(builtin.label, "小禅");
     assert.match(builtin.url, /^file:\/\//u);
     assert.equal(fs.existsSync(new URL(builtin.url)), true);
 

@@ -1620,7 +1620,7 @@ test("installMarketItem downloads and installs catalog cloud skills", async (t) 
   });
 });
 
-test("saved marketApiBaseUrl is used by list and install when market is enabled", async (t) => {
+test("saved apiBaseUrl is used by list and install when market is enabled", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-settings-"));
   const app = createApp(root);
   const archivePath = writeRootSkillArchive(root, { id: "saved-skill" });
@@ -1655,13 +1655,13 @@ test("saved marketApiBaseUrl is used by list and install when market is enabled"
     }],
     ["/saved-skill.zip", archiveBytes]
   ]), async (baseUrl) => {
-    const settings = saveMarketSettings(app, { enabled: true, marketApiBaseUrl: `${baseUrl}/api/v1` });
+    const settings = saveMarketSettings(app, { enabled: true, apiBaseUrl: `${baseUrl}/api/v1` });
     assert.equal(settings.enabled, true);
-    assert.equal(settings.marketApiBaseUrl, `${baseUrl}/api/v1`);
+    assert.equal(settings.apiBaseUrl, `${baseUrl}/api/v1`);
     assert.equal(getMarketSettings(app).enabled, true);
-    assert.equal(getMarketSettings(app).marketApiBaseUrl, `${baseUrl}/api/v1`);
+    assert.equal(getMarketSettings(app).apiBaseUrl, `${baseUrl}/api/v1`);
     assert.equal(
-      JSON.parse(fs.readFileSync(path.join(getDesktopConfigRoot(app), "market.json"), "utf8")).marketApiBaseUrl,
+      JSON.parse(fs.readFileSync(path.join(getDesktopConfigRoot(app), "market.json"), "utf8")).apiBaseUrl,
       `${baseUrl}/api/v1`
     );
     assert.equal(fs.existsSync(path.join(root, "home", ".zenmind", ".desktop", "config", "marketplace", "settings.json")), false);
@@ -1675,7 +1675,7 @@ test("saved marketApiBaseUrl is used by list and install when market is enabled"
   });
 });
 
-test("saved marketApiBaseUrl without enabled true does not request the market catalog", async (t) => {
+test("saved apiBaseUrl without enabled true does not request the market catalog", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-settings-disabled-"));
   const app = createApp(root);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -1690,17 +1690,34 @@ test("saved marketApiBaseUrl without enabled true does not request the market ca
   ]), async (baseUrl) => {
     const settingsPath = path.join(getDesktopConfigRoot(app), "market.json");
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-    fs.writeFileSync(settingsPath, `${JSON.stringify({ marketApiBaseUrl: `${baseUrl}/api/v1` }, null, 2)}\n`, "utf8");
+    fs.writeFileSync(settingsPath, `${JSON.stringify({ apiBaseUrl: `${baseUrl}/api/v1` }, null, 2)}\n`, "utf8");
 
     const settings = getMarketSettings(app);
     assert.equal(settings.enabled, false);
-    assert.equal(settings.marketApiBaseUrl, `${baseUrl}/api/v1`);
+    assert.equal(settings.apiBaseUrl, `${baseUrl}/api/v1`);
 
     const listed = await listMarketItems(app, { sections: ["skills"] });
     assert.equal(listed.offline, true);
     assert.equal(listed.items.length, 0);
     assert.equal(catalogRequests, 0);
   });
+});
+
+test("legacy marketApiBaseUrl in desktop market settings is ignored", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-settings-legacy-field-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const settingsPath = path.join(getDesktopConfigRoot(app), "market.json");
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, `${JSON.stringify({
+    enabled: true,
+    marketApiBaseUrl: "https://legacy-field.example.test/api/v1"
+  }, null, 2)}\n`, "utf8");
+
+  const settings = getMarketSettings(app);
+  assert.equal(settings.enabled, true);
+  assert.equal(settings.apiBaseUrl, "");
 });
 
 test("legacy marketplace settings path is ignored", (t) => {
@@ -1712,12 +1729,12 @@ test("legacy marketplace settings path is ignored", (t) => {
   fs.mkdirSync(path.dirname(legacySettingsPath), { recursive: true });
   fs.writeFileSync(legacySettingsPath, `${JSON.stringify({
     enabled: true,
-    marketApiBaseUrl: "https://legacy.example.test/api/v1"
+    apiBaseUrl: "https://legacy.example.test/api/v1"
   }, null, 2)}\n`, "utf8");
 
   const settings = getMarketSettings(app);
   assert.equal(settings.enabled, false);
-  assert.equal(settings.marketApiBaseUrl, "");
+  assert.equal(settings.apiBaseUrl, "");
 });
 
 test("market settings can enable the entry without an API address", (t) => {
@@ -1725,9 +1742,9 @@ test("market settings can enable the entry without an API address", (t) => {
   const app = createApp(root);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  const settings = saveMarketSettings(app, { enabled: true, marketApiBaseUrl: "" });
+  const settings = saveMarketSettings(app, { enabled: true, apiBaseUrl: "" });
   assert.equal(settings.enabled, true);
-  assert.equal(settings.marketApiBaseUrl, "");
+  assert.equal(settings.apiBaseUrl, "");
   assert.equal(getMarketSettings(app).enabled, true);
 });
 

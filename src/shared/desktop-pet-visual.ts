@@ -8,10 +8,9 @@ export type DesktopPetDragDirection = "left" | "right" | null;
 export type DesktopPetVisualStatus =
   | DesktopPetStatus
   | "dragging"
-  | "dragging-moving"
+  | "drag-moving"
   | "hover"
   | "message"
-  | "thinking"
   | "signature";
 
 export type DesktopPetVisualStatusInput = {
@@ -29,7 +28,7 @@ export type DesktopPetVisualStatusInput = {
 
 export function deriveDesktopPetVisualStatus(input: DesktopPetVisualStatusInput): DesktopPetVisualStatus {
   if (input.isDragging) {
-    return "dragging-moving";
+    return "drag-moving";
   }
   if (input.displayStatus === "awaiting") {
     return "awaiting";
@@ -38,7 +37,7 @@ export function deriveDesktopPetVisualStatus(input: DesktopPetVisualStatusInput)
     return "running";
   }
   if (input.displayStatus === "running") {
-    return "thinking";
+    return "running";
   }
   if (input.displayStatus === "done" || input.displayStatus === "error") {
     return input.displayStatus;

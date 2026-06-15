@@ -172,8 +172,8 @@ test("desktop pet visual arbitration lets manual signature surface over message 
 test("desktop pet context menu exposes manual signature actions", () => {
   assert.deepEqual(getDesktopPetContextMenuItems("classic")[0], {
     action: "signature",
-    signatureActionId: "dance",
-    label: "跳舞"
+    signatureActionId: "chant",
+    label: "念经"
   });
 
   assert.deepEqual(getDesktopPetContextMenuItems("user:desk-cat", [
@@ -215,15 +215,24 @@ test("desktop pet context menu exposes manual signature actions", () => {
   ]);
 });
 
-test("desktop pet keeps built-in dance available only for the default pet", () => {
+test("desktop pet keeps built-in chant available only for the default pet", () => {
   assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id), ["classic"]);
+  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].displayName, "小禅");
+  assert.equal(DESKTOP_PET_APPEARANCE_OPTIONS[0].preview, "idle.png");
+  assert.deepEqual(DESKTOP_PET_APPEARANCE_OPTIONS[0].states["drag-moving"], {
+    path: "drag-moving.webp",
+    frameCount: 15,
+    durationMs: 900,
+    loop: true,
+    mirror: true
+  });
   assert.deepEqual(resolveDesktopPetSignatureActions("classic", [])[0], {
-    id: "dance",
-    label: "跳舞",
+    id: "chant",
+    label: "念经",
     trigger: ["manual", "idle-random"],
     variants: [
       {
-        path: "dance.webp",
+        path: "signature/chant.webp",
         frameCount: 30,
         durationMs: 5200,
         weight: 1
@@ -270,7 +279,25 @@ test("desktop pet visual maps dragging movement onto a single mirrored state", (
     isKeyboardFocused: false
   };
 
-  assert.equal(deriveDesktopPetVisualStatus(base), "dragging-moving");
-  assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "left" }), "dragging-moving");
-  assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "right" }), "dragging-moving");
+  assert.equal(deriveDesktopPetVisualStatus(base), "drag-moving");
+  assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "left" }), "drag-moving");
+  assert.equal(deriveDesktopPetVisualStatus({ ...base, dragDirection: "right" }), "drag-moving");
+});
+
+test("desktop pet visual keeps running as the running state", () => {
+  const {
+    deriveDesktopPetVisualStatus
+  } = require("../dist-electron/shared/desktop-pet-visual.js");
+
+  assert.equal(deriveDesktopPetVisualStatus({
+    displayStatus: "running",
+    isDragging: false,
+    dragDirection: null,
+    hasActiveSignature: false,
+    shouldShowTaskRunAnimation: false,
+    hasMessageReaction: false,
+    canShowHoverReaction: false,
+    isHovering: false,
+    isKeyboardFocused: false
+  }), "running");
 });

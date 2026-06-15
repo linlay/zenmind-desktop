@@ -15,6 +15,7 @@ import type {
   DesktopPetSignatureTrigger,
   DesktopPetSignatureVariant,
   DesktopPetState,
+  DesktopPetStateAsset,
   DesktopPetStatus,
   DesktopPetTaskItem
 } from "../../../shared/contracts";
@@ -22,9 +23,11 @@ import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DESKTOP_PET_APPEARANCE_OPTIONS,
-  DESKTOP_PET_STATUS_ASSET_NAMES,
+  getDesktopPetLegacyStatusAssetName,
   getDesktopPetRunningTaskAnimationDurationMs,
+  getDesktopPetStateAsset,
   getDesktopPetStatusAssetPath,
+  isDesktopPetAnimatedAsset,
   normalizeDesktopPetAppearanceId,
   resolveDesktopPetSignatureActions,
   shouldUseDesktopPetTaskRunningAnimation
@@ -222,15 +225,36 @@ function resolveDesktopPetStatusAssetPath(
   appearanceId: string,
   status: string
 ) {
+  return resolveDesktopPetVisualAsset(state, appearanceId, status).assetPath;
+}
+
+function resolveDesktopPetVisualAsset(
+  state: DesktopPetState,
+  appearanceId: string,
+  status: string
+): { assetPath: string; asset: DesktopPetStateAsset | null } {
   const customAppearance = resolveDesktopPetAppearanceOption(state, appearanceId);
+  const stateAsset = getDesktopPetStateAsset(customAppearance?.states, status);
+  if (stateAsset) {
+    const basePath = customAppearance?.assetBasePath ?? getDesktopPetSpriteAssetBasePath(appearanceId);
+    return {
+      assetPath: joinDesktopPetAssetPath(basePath, stateAsset.path),
+      asset: stateAsset
+    };
+  }
   if (customAppearance && !DESKTOP_PET_APPEARANCE_OPTIONS.some((option) => option.id === customAppearance.id)) {
     const basePath = customAppearance.assetBasePath.endsWith("/")
       ? customAppearance.assetBasePath
       : `${customAppearance.assetBasePath}/`;
-    const fileName = DESKTOP_PET_STATUS_ASSET_NAMES[status] ?? DESKTOP_PET_STATUS_ASSET_NAMES.idle;
-    return `${basePath}${fileName}`;
+    return {
+      assetPath: `${basePath}${getDesktopPetLegacyStatusAssetName(status)}`,
+      asset: null
+    };
   }
-  return getDesktopPetStatusAssetPath(appearanceId, status);
+  return {
+    assetPath: getDesktopPetStatusAssetPath(appearanceId, status),
+    asset: null
+  };
 }
 
 function resolveDesktopPetSignatureAssetPath(
@@ -531,15 +555,31 @@ export function DesktopPet() {
     isHovering,
     isKeyboardFocused
   });
+  const visualAsset = useMemo(
+    () => resolveDesktopPetVisualAsset(petState, appearanceId, visualStatus),
+    [appearanceId, petState, visualStatus]
+  );
   const shouldShowSignatureSpriteAnimation = visualStatus === "signature" && Boolean(activeSignature);
-  const shouldShowTaskRunAnimation = visualStatus === "running" && canUseTaskRunAnimation;
+  const shouldShowStateSpriteAnimation = !shouldShowSignatureSpriteAnimation && isDesktopPetAnimatedAsset(visualAsset.asset);
+  const shouldShowTaskRunAnimation = visualStatus === "running" && canUseTaskRunAnimation && !visualAsset.asset;
   const taskRunAnimationDurationMs = getDesktopPetRunningTaskAnimationDurationMs(runningTaskCount);
-  const rootStyle = shouldShowTaskRunAnimation || (shouldShowSignatureSpriteAnimation && activeSignature)
+  const stateAnimationFrameCount = Math.max(1, Math.round(Number(visualAsset.asset?.frameCount) || 1));
+  const stateAnimationDurationMs = Math.max(100, Math.round(Number(visualAsset.asset?.durationMs) || 0));
+  const rootStyle = shouldShowTaskRunAnimation ||
+    shouldShowStateSpriteAnimation ||
+    (shouldShowSignatureSpriteAnimation && activeSignature)
     ? ({
         ...(shouldShowSignatureSpriteAnimation && activeSignature
           ? {
               "--desktop-pet-signature-duration": `${activeSignature.variant.durationMs}ms`,
               "--desktop-pet-signature-frames": String(activeSignature.variant.frameCount)
+            }
+          : {}),
+        ...(shouldShowStateSpriteAnimation
+          ? {
+              "--desktop-pet-state-duration": `${stateAnimationDurationMs}ms`,
+              "--desktop-pet-state-frames": String(stateAnimationFrameCount),
+              "--desktop-pet-state-loop-count": visualAsset.asset?.loop === false ? "1" : "infinite"
             }
           : {}),
         ...(shouldShowTaskRunAnimation
@@ -557,6 +597,11 @@ export function DesktopPet() {
   const signatureSpriteStyle = shouldShowSignatureSpriteAnimation && activeSignature
     ? {
         backgroundImage: `url("${activeSignature.assetPath}")`
+      }
+    : undefined;
+  const stateSpriteStyle = shouldShowStateSpriteAnimation
+    ? {
+        backgroundImage: `url("${visualAsset.assetPath}")`
       }
     : undefined;
   useEffect(() => {
@@ -597,10 +642,7 @@ export function DesktopPet() {
     signatureActions,
     appearanceId
   ]);
-  const assetPath = useMemo(
-    () => resolveDesktopPetStatusAssetPath(petState, appearanceId, visualStatus),
-    [appearanceId, petState, visualStatus]
-  );
+  const assetPath = visualAsset.assetPath;
   const statusBubbleText = displayStatus === "idle"
     ? ""
     : petState.hint.trim() || formatPetHint(displayStatus);
@@ -778,13 +820,14 @@ export function DesktopPet() {
         `is-appearance-${appearanceId}`,
         shouldShowSignatureSpriteAnimation ? "has-signature-animation" : "",
         shouldShowSignatureSpriteAnimation && activeSignature?.actionId === "dance" ? "has-dance-animation" : "",
+        shouldShowStateSpriteAnimation ? "has-state-animation" : "",
         shouldShowTaskRunAnimation ? "has-task-run-animation" : "",
         showTaskPanel ? "has-tasks" : "",
         showPreviewPanel ? "has-preview" : "",
         showBubble ? "has-bubble" : "",
         petState.edgeDock === "top" ? "is-edge-dock-top" : "",
         isDragging ? "is-dragging" : "",
-        visualStatus === "dragging-moving" && dragDirection === "right" ? "is-drag-mirror" : ""
+        visualStatus === "drag-moving" && dragDirection === "right" && (visualAsset.asset?.mirror ?? true) ? "is-drag-mirror" : ""
       ].filter(Boolean).join(" ")}
       style={rootStyle}
       aria-label={`${PRODUCT_NAME} 桌面宠物`}
@@ -905,6 +948,12 @@ export function DesktopPet() {
               aria-hidden="true"
               className="desktop-pet-image desktop-pet-signature-sprite"
               style={signatureSpriteStyle}
+            />
+          ) : shouldShowStateSpriteAnimation ? (
+            <span
+              aria-hidden="true"
+              className="desktop-pet-image desktop-pet-state-sprite"
+              style={stateSpriteStyle}
             />
           ) : shouldShowTaskRunAnimation ? (
             <span

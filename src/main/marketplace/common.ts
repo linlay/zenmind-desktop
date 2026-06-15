@@ -45,7 +45,7 @@ export type InstalledRecord = {
 export type MarketplaceOptions = MarketListOptions & {
   catalogUrl?: string;
   catalog?: Catalog;
-  marketApiBaseUrl?: string;
+  apiBaseUrl?: string;
   marketEnabled?: boolean;
   containerHubBaseUrl?: string;
   containerHubAuthToken?: string;
@@ -405,7 +405,7 @@ export function normalizeMarketApiBaseUrl(value: unknown) {
   throw new Error(t("market.main.marketApiInvalidPath"));
 }
 
-export function catalogUrlFromMarketApiBaseUrl(value: unknown) {
+export function catalogUrlFromApiBaseUrl(value: unknown) {
   const baseUrl = normalizeMarketApiBaseUrl(value).replace(/\/+$/u, "");
   return baseUrl ? `${baseUrl}/desktop/catalog` : "";
 }
@@ -414,14 +414,14 @@ export function getMarketplaceCatalogUrl(app: App, options: MarketplaceOptions =
   if (options.catalogUrl) {
     return options.catalogUrl;
   }
-  if (options.marketApiBaseUrl !== undefined) {
-    return options.marketEnabled === false ? "" : catalogUrlFromMarketApiBaseUrl(options.marketApiBaseUrl);
+  if (options.apiBaseUrl !== undefined) {
+    return options.marketEnabled === false ? "" : catalogUrlFromApiBaseUrl(options.apiBaseUrl);
   }
   const settings = getMarketSettings(app);
   if (settings.enabled !== true) {
     return "";
   }
-  return catalogUrlFromMarketApiBaseUrl(settings.marketApiBaseUrl);
+  return catalogUrlFromApiBaseUrl(settings.apiBaseUrl);
 }
 
 export function normalizeContainerHubBaseUrl(value: unknown) {
@@ -445,26 +445,26 @@ export function normalizeContainerHubBaseUrl(value: unknown) {
 }
 
 export function getMarketSettings(app: App): MarketSettings {
-  const saved = readJsonFile<Partial<MarketSettings> & { apiBaseUrl?: string }>(marketplaceSettingsPath(app), {});
+  const saved = readJsonFile<Partial<MarketSettings>>(marketplaceSettingsPath(app), {});
   try {
-    const marketApiBaseUrl = normalizeMarketApiBaseUrl(saved.marketApiBaseUrl || saved.apiBaseUrl);
+    const apiBaseUrl = normalizeMarketApiBaseUrl(saved.apiBaseUrl);
     return {
       enabled: saved.enabled === true,
-      marketApiBaseUrl
+      apiBaseUrl
     };
   } catch {
     return {
       enabled: false,
-      marketApiBaseUrl: DEFAULT_MARKET_API_BASE_URL
+      apiBaseUrl: DEFAULT_MARKET_API_BASE_URL
     };
   }
 }
 
 export function saveMarketSettings(app: App, input: MarketSettingsInput): MarketSettings {
-  const marketApiBaseUrl = normalizeMarketApiBaseUrl(input.marketApiBaseUrl);
+  const apiBaseUrl = normalizeMarketApiBaseUrl(input.apiBaseUrl);
   const settings = {
     enabled: input.enabled === true,
-    marketApiBaseUrl
+    apiBaseUrl
   };
   writeJsonFile(marketplaceSettingsPath(app), settings);
   return settings;

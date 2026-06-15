@@ -602,7 +602,7 @@ export function SettingsPage({
   const [desktopPetState, setDesktopPetState] = useState<DesktopPetState | null>(null);
   const [desktopPetPending, setDesktopPetPending] = useState(false);
   const [desktopPetAppearancePending, setDesktopPetAppearancePending] = useState("");
-  const [marketSettings, setMarketSettings] = useState<MarketSettings>({ enabled: false, marketApiBaseUrl: "" });
+  const [marketSettings, setMarketSettings] = useState<MarketSettings>({ enabled: false, apiBaseUrl: "" });
   const [marketSettingsSaving, setMarketSettingsSaving] = useState(false);
   const [controlCloudConfig, setControlCloudConfig] = useState<TaskBoardCloudConfig>(defaultTaskBoardCloudConfig);
   const [controlCloudProjects, setControlCloudProjects] = useState<TaskBoardProject[]>([]);
@@ -2360,8 +2360,8 @@ export function SettingsPage({
               <label className="settings-control-field">
                 <span>{t("settings.market.apiBaseUrl")}</span>
                 <input
-                  value={marketSettings.marketApiBaseUrl}
-                  onChange={(event) => setMarketSettings((current) => ({ ...current, marketApiBaseUrl: event.target.value }))}
+                  value={marketSettings.apiBaseUrl}
+                  onChange={(event) => setMarketSettings((current) => ({ ...current, apiBaseUrl: event.target.value }))}
                   placeholder={t("settings.market.apiBaseUrlPlaceholder")}
                 />
                 <small>{t("settings.market.visibilityRule")}</small>

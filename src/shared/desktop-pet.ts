@@ -1,6 +1,8 @@
 import type {
   DesktopPetCapabilities,
-  DesktopPetSignatureAction
+  DesktopPetSignatureAction,
+  DesktopPetStateAsset,
+  DesktopPetStateAssets
 } from "./contracts/pet-copilot";
 
 export const DESKTOP_PET_ROUTE = "/desktop-pet";
@@ -25,13 +27,65 @@ export const DESKTOP_PET_RUNNING_TASK_ANIMATION_STEP_MS = 250;
 export const DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS = 900;
 export const DESKTOP_PET_RUNNING_TASK_ANIMATION_MAX_TASKS = 4;
 
+const DEFAULT_DESKTOP_PET_STATES: DesktopPetStateAssets = {
+  awaiting: {
+    path: "awaiting.png"
+  },
+  done: {
+    path: "done.png",
+    holdMs: 2500
+  },
+  "drag-moving": {
+    path: "drag-moving.webp",
+    frameCount: 15,
+    durationMs: 900,
+    loop: true,
+    mirror: true
+  },
+  dragging: {
+    path: "dragging.png"
+  },
+  error: {
+    path: "error.png",
+    holdMs: 3000
+  },
+  hover: {
+    path: "hover.png"
+  },
+  idle: {
+    path: "idle.png"
+  },
+  running: {
+    path: "running.png"
+  }
+};
+
+const DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS: DesktopPetSignatureAction[] = [
+  {
+    id: "chant",
+    label: "念经",
+    trigger: ["manual", "idle-random"],
+    variants: [
+      {
+        path: "signature/chant.webp",
+        frameCount: 30,
+        durationMs: 5200,
+        weight: 1
+      }
+    ]
+  }
+];
+
 export const DESKTOP_PET_APPEARANCE_OPTIONS = [
   {
     id: DEFAULT_DESKTOP_PET_APPEARANCE_ID,
-    displayName: "小宅",
-    description: "默认蓝色形象，保持现有宠物外观。",
+    displayName: "小禅",
+    description: "戴圆眼镜、灰袍念珠的小和尚桌面宠物。",
     assetBasePath: "./desktop-pet",
-    previewAssetPath: "./desktop-pet/pet-idle.png"
+    preview: "idle.png",
+    previewAssetPath: "./desktop-pet/idle.png",
+    states: DEFAULT_DESKTOP_PET_STATES,
+    signature: DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS
   }
 ] as const;
 
@@ -41,39 +95,42 @@ const LEGACY_DESKTOP_PET_BOUND_AGENT_KEY_ALIASES: Record<string, string> = {
 };
 
 const DESKTOP_PET_APPEARANCE_IDS: Set<string> = new Set(DESKTOP_PET_APPEARANCE_OPTIONS.map((option) => option.id));
-const DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID]);
-const DESKTOP_PET_DANCE_APPEARANCE_IDS: Set<string> = new Set([DEFAULT_DESKTOP_PET_APPEARANCE_ID]);
+const DESKTOP_PET_TASK_RUNNING_APPEARANCE_IDS: Set<string> = new Set();
+const DESKTOP_PET_DANCE_APPEARANCE_IDS: Set<string> = new Set();
 const USER_DESKTOP_PET_APPEARANCE_PATTERN = /^user:[a-z0-9][a-z0-9._-]{0,79}$/u;
 const DESKTOP_PET_SIGNATURE_ACTIONS_BY_APPEARANCE_ID: Record<string, DesktopPetSignatureAction[]> = {
-  [DEFAULT_DESKTOP_PET_APPEARANCE_ID]: [
-    {
-      id: "dance",
-      label: "跳舞",
-      trigger: ["manual", "idle-random"],
-      variants: [
-        {
-          path: "dance.webp",
-          frameCount: 30,
-          durationMs: 5200,
-          weight: 1
-        }
-      ]
-    }
-  ]
+  [DEFAULT_DESKTOP_PET_APPEARANCE_ID]: DEFAULT_DESKTOP_PET_SIGNATURE_ACTIONS
 };
 
 export const DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
+  awaiting: "awaiting.png",
+  dancing: "idle.png",
+  done: "done.png",
+  "drag-moving": "drag-moving.webp",
+  dragging: "dragging.png",
+  error: "error.png",
+  hover: "hover.png",
+  idle: "idle.png",
+  message: "done.png",
+  running: "running.png",
+  thinking: "running.png",
+  unread: "done.png"
+};
+
+export const LEGACY_DESKTOP_PET_STATUS_ASSET_NAMES: Record<string, string> = {
   awaiting: "pet-awaiting.png",
   dancing: "pet-idle.png",
   done: "pet-done.png",
+  "drag-moving": "pet-dragging-moving.png",
   dragging: "pet-dragging.png",
   "dragging-moving": "pet-dragging-moving.png",
   error: "pet-error.png",
   hover: "pet-hover.png",
   idle: "pet-idle.png",
   message: "pet-message.png",
+  running: "pet-running.png",
   thinking: "pet-thinking.png",
-  running: "pet-running.png"
+  unread: "pet-message.png"
 };
 
 const DESKTOP_PET_RUN_START_EVENT_TYPES = new Set(["run.started", "run.start", "request.query"]);
@@ -162,6 +219,56 @@ export function resolveDesktopPetSignatureActions(
     return [...signatureActions];
   }
   return getDesktopPetSignatureActions(appearanceId);
+}
+
+export function normalizeDesktopPetStateAssetKey(value: unknown) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (normalized === "dragging-moving") {
+    return "drag-moving";
+  }
+  if (normalized === "thinking") {
+    return "running";
+  }
+  if (normalized === "message" || normalized === "unread") {
+    return "done";
+  }
+  return normalized || "idle";
+}
+
+export function getDesktopPetStateAsset(
+  states: DesktopPetStateAssets | null | undefined,
+  status: unknown
+): DesktopPetStateAsset | null {
+  if (!states || typeof states !== "object") {
+    return null;
+  }
+  const key = normalizeDesktopPetStateAssetKey(status);
+  return states[key] ?? null;
+}
+
+export function getDesktopPetLegacyStatusAssetName(status: unknown) {
+  const raw = typeof status === "string" ? status.trim() : "";
+  const normalized = normalizeDesktopPetStateAssetKey(raw);
+  return LEGACY_DESKTOP_PET_STATUS_ASSET_NAMES[raw] ??
+    LEGACY_DESKTOP_PET_STATUS_ASSET_NAMES[normalized] ??
+    LEGACY_DESKTOP_PET_STATUS_ASSET_NAMES.idle;
+}
+
+export function getDesktopPetStatusAssetName(status: unknown) {
+  const raw = typeof status === "string" ? status.trim() : "";
+  const normalized = normalizeDesktopPetStateAssetKey(raw);
+  return DESKTOP_PET_STATUS_ASSET_NAMES[raw] ??
+    DESKTOP_PET_STATUS_ASSET_NAMES[normalized] ??
+    DESKTOP_PET_STATUS_ASSET_NAMES.idle;
+}
+
+export function isDesktopPetAnimatedAsset(asset: DesktopPetStateAsset | null | undefined) {
+  return Boolean(
+    asset &&
+    asset.path.trim() &&
+    Math.max(1, Math.round(Number(asset.frameCount) || 1)) > 1 &&
+    Math.max(0, Math.round(Number(asset.durationMs) || 0)) > 0
+  );
 }
 
 export function shouldUseDesktopPetTaskRunningAnimation(
@@ -257,6 +364,7 @@ export function getDesktopPetAppearanceOption(value: unknown) {
 
 export function getDesktopPetStatusAssetPath(appearanceId: unknown, status: string) {
   const appearance = getDesktopPetAppearanceOption(appearanceId);
-  const fileName = DESKTOP_PET_STATUS_ASSET_NAMES[status] ?? DESKTOP_PET_STATUS_ASSET_NAMES.idle;
+  const stateAsset = getDesktopPetStateAsset(appearance.states, status);
+  const fileName = stateAsset?.path ?? getDesktopPetStatusAssetName(status);
   return `${appearance.assetBasePath}/${fileName}`;
 }

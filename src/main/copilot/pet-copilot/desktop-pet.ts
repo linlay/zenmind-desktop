@@ -6,6 +6,8 @@ import type {
   DesktopPetAppearanceOption,
   DesktopPetCapabilities,
   DesktopPetSignatureAction,
+  DesktopPetStateAsset,
+  DesktopPetStateAssets,
   DesktopPetTaskItem,
   DesktopPetAgentOption,
   DesktopPetAgentPresence,
@@ -391,8 +393,32 @@ function readUserPetText(manifest: Record<string, unknown>, keys: string[], fall
   return fallback;
 }
 
-function userPetAssetUrl(rootPath: string, manifest: Record<string, unknown>, keys: string[], fallbackFileName: string) {
-  const relative = readUserPetText(manifest, keys, fallbackFileName);
+function readDesktopPetManifestStatePath(manifest: Record<string, unknown>, state: string) {
+  const states = manifest.states && typeof manifest.states === "object" && !Array.isArray(manifest.states)
+    ? manifest.states as Record<string, unknown>
+    : {};
+  const asset = states[state];
+  if (typeof asset === "string") {
+    return asset.trim();
+  }
+  if (asset && typeof asset === "object" && !Array.isArray(asset)) {
+    const pathValue = (asset as { path?: unknown }).path;
+    return typeof pathValue === "string" ? pathValue.trim() : "";
+  }
+  return "";
+}
+
+function userPetPreviewAssetUrl(rootPath: string, manifest: Record<string, unknown>) {
+  const candidates = [
+    readUserPetText(manifest, ["preview", "previewAssetPath"]),
+    readDesktopPetManifestStatePath(manifest, "idle"),
+    "idle.png",
+    "pet-idle.png"
+  ].filter(Boolean);
+  const relative = candidates.find((candidate) => {
+    const safeRelative = candidate.replace(/\\/gu, "/").replace(/^\/+/u, "");
+    return fs.existsSync(path.join(rootPath, safeRelative));
+  }) ?? candidates[0] ?? "idle.png";
   const safeRelative = relative.replace(/\\/gu, "/").replace(/^\/+/u, "");
   return pathToFileURL(path.join(rootPath, safeRelative)).toString();
 }
@@ -468,14 +494,67 @@ function sanitizeDesktopPetSignatureActions(value: unknown): DesktopPetSignature
   return actions.length > 0 ? actions : undefined;
 }
 
+function sanitizeDesktopPetStateAsset(value: unknown): DesktopPetStateAsset | undefined {
+  if (typeof value === "string") {
+    const path = sanitizeDesktopPetSignaturePath(value);
+    return path ? { path } : undefined;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as Record<string, unknown>;
+  const path = sanitizeDesktopPetSignaturePath(candidate.path);
+  if (!path) {
+    return undefined;
+  }
+  const frameCount = Math.max(1, Math.round(Number(candidate.frameCount) || 1));
+  const durationMs = Math.max(0, Math.round(Number(candidate.durationMs) || 0));
+  const holdMs = Math.max(0, Math.round(Number(candidate.holdMs) || 0));
+  return {
+    path,
+    ...(frameCount > 1 ? { frameCount } : {}),
+    ...(durationMs > 0 ? { durationMs } : {}),
+    ...(typeof candidate.loop === "boolean" ? { loop: candidate.loop } : {}),
+    ...(typeof candidate.mirror === "boolean" ? { mirror: candidate.mirror } : {}),
+    ...(holdMs > 0 ? { holdMs } : {})
+  };
+}
+
+function sanitizeDesktopPetStates(value: unknown): DesktopPetStateAssets | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const states: DesktopPetStateAssets = {};
+  for (const [key, rawAsset] of Object.entries(value)) {
+    const normalizedKey = key === "dragging-moving"
+      ? "drag-moving"
+      : key === "thinking"
+        ? "running"
+        : key === "message" || key === "unread"
+          ? "done"
+          : key;
+    if (!normalizedKey) {
+      continue;
+    }
+    const asset = sanitizeDesktopPetStateAsset(rawAsset);
+    if (asset) {
+      states[normalizedKey] = asset;
+    }
+  }
+  return Object.keys(states).length > 0 ? states : undefined;
+}
+
 export function listUserDesktopPetAppearanceOptions(app: App): DesktopPetAppearanceOption[] {
   return listUserDesktopPets(app).map((pet) => ({
     id: pet.id,
     displayName: readUserPetText(pet.manifest, ["displayName", "name"], pet.petId),
     description: readUserPetText(pet.manifest, ["description"], ""),
     assetBasePath: pathToFileURL(pet.rootPath).toString().replace(/\/?$/u, "/"),
-    previewAssetPath: userPetAssetUrl(pet.rootPath, pet.manifest, ["previewAssetPath", "preview"], "pet-idle.png"),
+    preview: readUserPetText(pet.manifest, ["preview", "previewAssetPath"], "idle.png"),
+    previewAssetPath: userPetPreviewAssetUrl(pet.rootPath, pet.manifest),
     capabilities: sanitizeDesktopPetCapabilities(pet.manifest.capabilities),
+    states: sanitizeDesktopPetStates(pet.manifest.states),
+    signature: sanitizeDesktopPetSignatureActions(pet.manifest.signature),
     signatureActions: sanitizeDesktopPetSignatureActions(pet.manifest.signatureActions)
   }));
 }
@@ -741,7 +820,10 @@ export function createDesktopPetState(
     : DEFAULT_DESKTOP_PET_APPEARANCE_ID;
   const appearanceOption = appearanceOptions.find((appearance) => appearance.id === appearanceId);
   const capabilities = appearanceOption?.capabilities ?? getDesktopPetCapabilities(appearanceId);
-  const signatureActions = resolveDesktopPetSignatureActions(appearanceId, appearanceOption?.signatureActions);
+  const signatureActions = resolveDesktopPetSignatureActions(
+    appearanceId,
+    appearanceOption?.signature ?? appearanceOption?.signatureActions
+  );
   const agentUnreadCount = agentStatus && !agentStatus.stale
     ? sanitizeDesktopPetUnreadCount(agentStatus.unreadCount)
     : 0;

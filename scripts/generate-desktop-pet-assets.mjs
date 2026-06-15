@@ -141,9 +141,19 @@ const marketPetDefinitions = [
 const marketPetDefinitionById = new Map(marketPetDefinitions.map((definition) => [definition.id, definition]));
 
 const defaultSourceAssetNames = [
-  ...classicVisualVariants.map((variant) => `pet-${variant}.png`),
-  ...Object.keys(compatibilityVariantAliases).map((variant) => `pet-${variant}.png`),
-  ...optionalCommunityAssetNames,
+  "awaiting.png",
+  "done.png",
+  "drag-moving.png",
+  "drag-moving.webp",
+  "dragging.png",
+  "error.png",
+  "hover.png",
+  "idle.png",
+  "message.png",
+  "pet.json",
+  "running-alt.png",
+  "running.png",
+  "signature/chant.webp",
   "spritesheet.webp"
 ];
 
@@ -1053,6 +1063,7 @@ async function writeVariantFiles(directory, buffers) {
 async function copyDefaultZenmiAssets() {
   await fs.mkdir(outputDirectory, { recursive: true });
   for (const assetName of defaultSourceAssetNames) {
+    await fs.mkdir(path.dirname(path.join(outputDirectory, assetName)), { recursive: true });
     await fs.copyFile(
       path.join(defaultSourceAssetDirectory, assetName),
       path.join(outputDirectory, assetName)
