@@ -60,7 +60,7 @@ test("task board websocket config requires remote control but not token", (t) =>
   });
 });
 
-test("task board server URL ignores removed legacy enabled toggle even without token", (t) => {
+test("task board server URL preserves explicit disabled setting", (t) => {
   const app = createTempApp(t);
 
   writeKanbanConfig(app, {
@@ -75,16 +75,12 @@ test("task board server URL ignores removed legacy enabled toggle even without t
     }
   });
 
-  assert.equal(readTaskBoardSettings(app).enabled, true);
-  assert.deepEqual(readTaskBoardWsConfig(app), {
-    serverUrl: "http://47.90.247.3",
-    token: "",
-    selectedProjectId: "default"
-  });
+  assert.equal(readTaskBoardSettings(app).enabled, false);
+  assert.equal(readTaskBoardWsConfig(app), null);
 
   const configPath = path.join(app.getPath("home"), ".zenmind", ".desktop", "config", "desktop", "kanban.json");
   const migrated = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  assert.equal(migrated.enabled, true);
+  assert.equal(migrated.enabled, false);
 });
 
 test("task board settings read and save enabled plus cloud config", (t) => {

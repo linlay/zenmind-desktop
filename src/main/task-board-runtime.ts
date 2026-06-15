@@ -255,8 +255,13 @@ function normalizeTaskBoardSettings(
   const cloud = hasCloudInput
     ? normalizeTaskBoardCloudConfig(cloudInput)
     : defaults.cloud ?? normalizeTaskBoardCloudConfig({});
+  const enabled = typeof input.enabled === "boolean"
+    ? input.enabled
+    : typeof defaults.enabled === "boolean"
+      ? defaults.enabled
+      : isTaskBoardCloudConfigComplete(cloud);
   return {
-    enabled: isTaskBoardCloudConfigComplete(cloud),
+    enabled,
     cloud
   };
 }

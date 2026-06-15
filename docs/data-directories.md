@@ -19,7 +19,7 @@ CuteJ 品牌对应：
 
 ```text
 ~/<brand-runtime-root>/
-├── desktop-default.json
+├── desktop-init.json
 ├── desktop-register.json
 └── .desktop/
     ├── config/
@@ -145,7 +145,7 @@ CuteJ 品牌对应：
 
 ## 关键文件
 
-- `~/<brand-runtime-root>/desktop-default.json`：env 包携带的一次性初始化模板。首启拆写到 `.desktop/` 下的 canonical 文件并记录 `state/desktop/bootstrap.json` 后会删除运行时副本，后续不再作为运行时真相；可用 `kanban.enabled: false` 首启隐藏看板入口。
+- `~/<brand-runtime-root>/desktop-init.json`：env 包携带的一次性初始化模板。首启拆写到 `.desktop/` 下的 canonical 文件并记录 `state/desktop/bootstrap.json` 后会删除运行时副本，后续不再作为运行时真相；可用 `kanban.enabled: false` 首启隐藏看板入口。
 - `~/<brand-runtime-root>/desktop-register.json`：一次性 registration token 文件，用完后清 token 或删除，不合并进 profile。
 - `config/desktop/profile.json`：保存长期用户偏好，包括外观、语言、助手默认值、Quick Assistant 和导航偏好。
 - `config/desktop/pet.json`：保存桌宠设置，包括 enabled、selectedPetId、lastVisible、position 和窗口偏好；不保存 `boundAgentKey`。
@@ -160,7 +160,7 @@ CuteJ 品牌对应：
 - `config/services/<service-id>/.env`：保存从服务模板复制或派生出的服务配置。
 - `config/plugins/<plugin-id>/.env`：保存从插件模板复制或派生出的插件配置。
 - `state/desktop/last-running-services.json`：保存下次启动时需要恢复的服务列表。
-- `state/desktop/bootstrap.json`：记录 `desktop-default.json` 的一次性应用结果，包括 bootstrapAssistant。
+- `state/desktop/bootstrap.json`：记录 `desktop-init.json` 的一次性应用结果，包括初始化 `assistant`。
 - `state/desktop/env-bootstrap.json`：记录 env.zip 实际导入结果，并指向 `data/env-initial/` 留档。
 - `state/desktop/pet-state.json`：保存桌宠运行状态，例如 unreadCount。
 - `state/desktop/sso-session.json`：保存 Desktop SSO 会话状态。

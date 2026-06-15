@@ -76,8 +76,8 @@ export interface ServicesIpcHandlerOptions {
 
   // Environment zip import operations (TDD index-ts-slimming)
   importEnvZipToRuntime?: (app: any, zipPath: string, platform: string) => Promise<{ copiedFiles: number; skippedFiles: number }>;
-  applyDesktopDefaultBootstrap?: (app: any, platform: NodeJS.Platform) => unknown;
-  applyDesktopDefaultSsoDefaults?: (app: any, platform: NodeJS.Platform) => unknown;
+  applyDesktopInitBootstrap?: (app: any, platform: NodeJS.Platform) => unknown;
+  applyDesktopInitSsoDefaults?: (app: any, platform: NodeJS.Platform) => unknown;
   loadBuiltinServices?: (app: any) => void;
   loadInstalledPlugins?: (app: any) => void;
   notifyServicesChanged?: () => void;
@@ -190,8 +190,8 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     startupRestoreController,
     clearSessionCache,
     importEnvZipToRuntime,
-    applyDesktopDefaultBootstrap,
-    applyDesktopDefaultSsoDefaults,
+    applyDesktopInitBootstrap,
+    applyDesktopInitSsoDefaults,
     loadBuiltinServices,
     loadInstalledPlugins,
     notifyServicesChanged,
@@ -369,8 +369,8 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       console.info(
         `[main] imported env.zip: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
       );
-      applyDesktopDefaultBootstrap?.(app, platform);
-      applyDesktopDefaultSsoDefaults?.(app, platform);
+      applyDesktopInitBootstrap?.(app, platform);
+      applyDesktopInitSsoDefaults?.(app, platform);
 
       scheduleStartupPreparationAfterEnvDecision();
 

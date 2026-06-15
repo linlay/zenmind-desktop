@@ -8,11 +8,11 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const {
-  applyDesktopDefaultBootstrap,
-  applyDesktopDefaultSsoDefaults,
+  applyDesktopInitBootstrap,
+  applyDesktopInitSsoDefaults,
   resolveDesktopBootstrapStatePath,
-  resolveDesktopDefaultPath
-} = require("../dist-electron/main/desktop-default-bootstrap.js");
+  resolveDesktopInitPath
+} = require("../dist-electron/main/desktop-init-bootstrap.js");
 
 const { registerServicesIpcHandlers } = require("../dist-electron/main/ipc/services-handlers.js");
 const { getArchiveExtensions } = require("../dist-electron/main/platform-adapter.js");
@@ -31,11 +31,11 @@ function createApp(homePath) {
   };
 }
 
-function writeDesktopDefault(app, platform, value) {
-  const defaultPath = resolveDesktopDefaultPath(app, platform);
-  fs.mkdirSync(path.dirname(defaultPath), { recursive: true });
-  fs.writeFileSync(defaultPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  return defaultPath;
+function writeDesktopInit(app, platform, value) {
+  const initPath = resolveDesktopInitPath(app, platform);
+  fs.mkdirSync(path.dirname(initPath), { recursive: true });
+  fs.writeFileSync(initPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  return initPath;
 }
 
 function canonicalSsoPath(homePath) {
@@ -56,44 +56,34 @@ test("archive import filters follow internal service package platform formats", 
   assert.deepEqual(getArchiveExtensions("win32"), ["zip"]);
 });
 
-test("desktop-default bootstrap applies once into canonical desktop files", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-default-"));
+test("desktop-init bootstrap applies once into canonical desktop files", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
-  const defaultPath = writeDesktopDefault(app, "darwin", {
+  const initPath = writeDesktopInit(app, "darwin", {
     profile: {
       appearance: {
         theme: "dark",
         locale: "en-US"
-      },
-      assistant: {
-        desktopHelperAgentKey: "desktopAssistant",
-        quickAssistant: {
-          enabled: true,
-          agentKey: "zenmi"
-        }
       },
       navigation: {
         mainOrder: [],
         websiteOrder: []
       }
     },
+    assistant: {
+      defaultAgentKey: "desktopAssistant",
+      bootstrapAgentKey: "zenmi"
+    },
     kanban: {
       enabled: false,
-      cloud: {
-        serverUrl: "https://kanban.example.test"
-      }
+      serverUrl: "https://kanban.example.test"
     },
     pet: {
       enabled: false,
-      selectedPetId: "builtin:zenmi",
-      position: {
-        x: 20,
-        y: 78,
-        displayId: "primary"
-      }
+      selectedPetId: "builtin:zenmi"
     },
     market: {
       enabled: true,
@@ -111,13 +101,9 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
         agentKey: "desktopAssistant"
       }
     ],
-    bootstrapAssistant: {
-      agentKey: "zenmi",
-      prompt: "hello once"
-    }
   });
 
-  const first = applyDesktopDefaultBootstrap(app, "darwin");
+  const first = applyDesktopInitBootstrap(app, "darwin");
   assert.equal(first.applied, true);
 
   const desktopRoot = path.join(homePath, ".zenmind", ".desktop");
@@ -131,6 +117,9 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
 
   assert.equal(profile.appearance.theme, "dark");
   assert.equal(profile.appearance.locale, "en-US");
+  assert.equal(profile.assistant.desktopHelperAgentKey, "desktopAssistant");
+  assert.equal(profile.assistant.quickAssistant.enabled, true);
+  assert.equal(profile.assistant.quickAssistant.agentKey, "desktopAssistant");
   assert.equal("kanban" in profile.navigation, false);
   assert.equal(kanban.enabled, false);
   assert.deepEqual(kanban.cloud, {
@@ -151,10 +140,13 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
   assert.equal(website.id, "docs");
   assert.equal(website.kind, "website");
   assert.equal(website.agentKey, "desktopAssistant");
-  assert.equal(bootstrap.bootstrapAssistant.agentKey, "zenmi");
-  assert.equal(fs.existsSync(defaultPath), false);
+  assert.equal(bootstrap.applied.assistant, "recorded");
+  assert.equal(bootstrap.assistant.defaultAgentKey, "desktopAssistant");
+  assert.equal(bootstrap.assistant.bootstrapAgentKey, "zenmi");
+  assert.equal("bootstrapAssistant" in bootstrap, false);
+  assert.equal(fs.existsSync(initPath), false);
 
-  fs.writeFileSync(defaultPath, JSON.stringify({
+  fs.writeFileSync(initPath, JSON.stringify({
     profile: {
       appearance: {
         theme: "light",
@@ -163,7 +155,7 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
     }
   }), "utf8");
 
-  const second = applyDesktopDefaultBootstrap(app, "darwin");
+  const second = applyDesktopInitBootstrap(app, "darwin");
   const profileAfterSecondRun = readJson(path.join(desktopRoot, "config", "desktop", "profile.json"));
   assert.equal(second.applied, false);
   assert.equal(second.reason, "already-applied");
@@ -172,13 +164,39 @@ test("desktop-default bootstrap applies once into canonical desktop files", (t) 
   assert.equal("kanban" in profileAfterSecondRun.navigation, false);
 });
 
-test("desktop-default bootstrap migrates legacy navigation kanban fallback", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-default-kanban-"));
+test("desktop-init bootstrap ignores legacy desktop-default file names", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-old-name-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
-  writeDesktopDefault(app, "darwin", {
+  const legacyPath = path.join(runtimeRoot(homePath), "desktop-default.json");
+  fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
+  fs.writeFileSync(legacyPath, `${JSON.stringify({
+    profile: {
+      appearance: {
+        theme: "dark",
+        locale: "en-US"
+      }
+    }
+  }, null, 2)}\n`, "utf8");
+
+  const result = applyDesktopInitBootstrap(app, "darwin");
+  const profilePath = path.join(homePath, ".zenmind", ".desktop", "config", "desktop", "profile.json");
+
+  assert.equal(result.applied, false);
+  assert.equal(result.reason, "missing");
+  assert.equal(fs.existsSync(profilePath), false);
+  assert.equal(fs.existsSync(legacyPath), true);
+});
+
+test("desktop-init bootstrap migrates legacy navigation kanban fallback", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-kanban-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeDesktopInit(app, "darwin", {
     profile: {
       appearance: {
         theme: "system",
@@ -192,7 +210,7 @@ test("desktop-default bootstrap migrates legacy navigation kanban fallback", (t)
     }
   });
 
-  const result = applyDesktopDefaultBootstrap(app, "darwin");
+  const result = applyDesktopInitBootstrap(app, "darwin");
   assert.equal(result.applied, true);
 
   const desktopConfigRoot = path.join(homePath, ".zenmind", ".desktop", "config", "desktop");
@@ -203,19 +221,19 @@ test("desktop-default bootstrap migrates legacy navigation kanban fallback", (t)
   assert.equal(result.appliedResult.kanban, "applied");
 });
 
-test("desktop-default bootstrap skips market settings without a market API", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-default-market-disabled-"));
+test("desktop-init bootstrap skips market settings without a market API", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-market-disabled-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
-  writeDesktopDefault(app, "darwin", {
+  writeDesktopInit(app, "darwin", {
     market: {
       enabled: false
     }
   });
 
-  const result = applyDesktopDefaultBootstrap(app, "darwin");
+  const result = applyDesktopInitBootstrap(app, "darwin");
   assert.equal(result.applied, true);
 
   const marketPath = path.join(homePath, ".zenmind", ".desktop", "config", "desktop", "market.json");
@@ -225,8 +243,8 @@ test("desktop-default bootstrap skips market settings without a market API", (t)
   assert.equal(fs.existsSync(legacyMarketPath), false);
 });
 
-test("desktop-default bootstrap does not overwrite existing desktop market settings", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-default-market-existing-"));
+test("desktop-init bootstrap does not overwrite existing desktop market settings", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-market-existing-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const homePath = path.join(root, "home");
@@ -237,14 +255,14 @@ test("desktop-default bootstrap does not overwrite existing desktop market setti
     enabled: false,
     apiBaseUrl: "https://existing.example.test/api/v1"
   }, null, 2)}\n`, "utf8");
-  writeDesktopDefault(app, "darwin", {
+  writeDesktopInit(app, "darwin", {
     market: {
       enabled: true,
       apiBaseUrl: "https://market.example.test/api/v1"
     }
   });
 
-  const result = applyDesktopDefaultBootstrap(app, "darwin");
+  const result = applyDesktopInitBootstrap(app, "darwin");
   const market = readJson(marketPath);
 
   assert.equal(result.applied, true);
@@ -253,13 +271,13 @@ test("desktop-default bootstrap does not overwrite existing desktop market setti
   assert.equal(market.apiBaseUrl, "https://existing.example.test/api/v1");
 });
 
-test("desktop-default SSO helper writes canonical macOS config without bootstrap state", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-default-sso-"));
+test("desktop-init SSO helper writes canonical macOS config without bootstrap state", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-sso-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
-  writeDesktopDefault(app, "darwin", {
+  writeDesktopInit(app, "darwin", {
     sso: {
       enabled: true,
       provider: "google",
@@ -271,7 +289,7 @@ test("desktop-default SSO helper writes canonical macOS config without bootstrap
     }
   });
 
-  const result = applyDesktopDefaultSsoDefaults(app, "darwin");
+  const result = applyDesktopInitSsoDefaults(app, "darwin");
   const ssoPath = canonicalSsoPath(homePath);
 
   assert.equal(result, "applied");
@@ -279,17 +297,17 @@ test("desktop-default SSO helper writes canonical macOS config without bootstrap
   assert.equal(fs.statSync(ssoPath).mode & 0o777, 0o600);
 });
 
-test("desktop-default SSO helper uses explicit Windows path branches", () => {
+test("desktop-init SSO helper uses explicit Windows path branches", () => {
   const app = createApp("C:\\Users\\tester");
 
   assert.equal(
-    resolveDesktopDefaultPath(app, "win32"),
-    "C:\\Users\\tester\\.zenmind\\desktop-default.json"
+    resolveDesktopInitPath(app, "win32"),
+    "C:\\Users\\tester\\.zenmind\\desktop-init.json"
   );
 });
 
-test("desktop-default SSO helper does not overwrite existing SSO configs", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-default-sso-existing-"));
+test("desktop-init SSO helper does not overwrite existing SSO configs", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-sso-existing-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const cases = [
@@ -313,7 +331,7 @@ test("desktop-default SSO helper does not overwrite existing SSO configs", (t) =
   for (const item of cases) {
     const homePath = path.join(root, item.name);
     const app = createApp(homePath);
-    writeDesktopDefault(app, "darwin", {
+    writeDesktopInit(app, "darwin", {
       sso: {
         enabled: true,
         provider: "google",
@@ -324,7 +342,7 @@ test("desktop-default SSO helper does not overwrite existing SSO configs", (t) =
     fs.mkdirSync(path.dirname(existingPath), { recursive: true });
     fs.writeFileSync(existingPath, `${JSON.stringify({ enabled: true, marker: item.name })}\n`, "utf8");
 
-    const result = applyDesktopDefaultSsoDefaults(app, "darwin");
+    const result = applyDesktopInitSsoDefaults(app, "darwin");
 
     assert.equal(result, "skipped", item.name);
     assert.equal(readJson(existingPath).marker, item.name);
@@ -332,13 +350,13 @@ test("desktop-default SSO helper does not overwrite existing SSO configs", (t) =
   }
 });
 
-test("desktop-default SSO helper fills missing SSO even after bootstrap was marked applied", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-default-sso-after-bootstrap-"));
+test("desktop-init SSO helper fills missing SSO even after bootstrap was marked applied", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-sso-after-bootstrap-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
-  writeDesktopDefault(app, "darwin", {
+  writeDesktopInit(app, "darwin", {
     profile: {
       appearance: {
         theme: "dark",
@@ -358,17 +376,17 @@ test("desktop-default SSO helper fills missing SSO even after bootstrap was mark
   fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
   fs.writeFileSync(bootstrapPath, `${JSON.stringify({ schemaVersion: 1 })}\n`, "utf8");
 
-  const fullBootstrap = applyDesktopDefaultBootstrap(app, "darwin");
-  const ssoResult = applyDesktopDefaultSsoDefaults(app, "darwin");
+  const fullBootstrap = applyDesktopInitBootstrap(app, "darwin");
+  const ssoResult = applyDesktopInitSsoDefaults(app, "darwin");
 
   assert.equal(fullBootstrap.applied, false);
   assert.equal(fullBootstrap.reason, "already-applied");
   assert.equal(ssoResult, "applied");
   assert.equal(readJson(canonicalSsoPath(homePath)).provider, "google");
-  assert.equal(fs.existsSync(resolveDesktopDefaultPath(app, "darwin")), false);
+  assert.equal(fs.existsSync(resolveDesktopInitPath(app, "darwin")), false);
 });
 
-test("manual env.zip import applies desktop-default bootstrap and SSO before startup preparation", async () => {
+test("manual env.zip import applies desktop-init bootstrap and SSO before startup preparation", async () => {
   const handlers = new Map();
   const calls = [];
   const app = createApp("/tmp/zenmind-services-home");
@@ -414,11 +432,11 @@ test("manual env.zip import applies desktop-default bootstrap and SSO before sta
       calls.push(["import", zipPath, platform]);
       return { copiedFiles: 1, skippedFiles: 0 };
     },
-    applyDesktopDefaultBootstrap: (_app, platform) => {
+    applyDesktopInitBootstrap: (_app, platform) => {
       calls.push(["bootstrap", platform]);
       return { ok: true, applied: true };
     },
-    applyDesktopDefaultSsoDefaults: (_app, platform) => {
+    applyDesktopInitSsoDefaults: (_app, platform) => {
       calls.push(["sso", platform]);
       return "applied";
     },

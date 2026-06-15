@@ -174,9 +174,9 @@ import {
   getElectronUserDataRoot
 } from "./user-paths";
 import {
-  applyDesktopDefaultBootstrap,
-  applyDesktopDefaultSsoDefaults
-} from "./desktop-default-bootstrap";
+  applyDesktopInitBootstrap,
+  applyDesktopInitSsoDefaults
+} from "./desktop-init-bootstrap";
 import {
   bundledEnvZipExists,
   generateBackupDirName,
@@ -448,8 +448,8 @@ function initializeUserDataRootsAndSettings() {
   if (!webappTemplateResult.ok) {
     console.warn(`[main] ${webappTemplateResult.message}`);
   }
-  applyDesktopDefaultBootstrap(app, mainProcessContext.platform);
-  applyDesktopDefaultSsoDefaults(app, mainProcessContext.platform);
+  applyDesktopInitBootstrap(app, mainProcessContext.platform);
+  applyDesktopInitSsoDefaults(app, mainProcessContext.platform);
   const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
   if (isFirstDesktopInstall) {
     setMainLocale(app, initialLocaleSettings.locale);
@@ -2137,8 +2137,8 @@ function registerIpcHandlers(context: MainProcessContext) {
     loadInstalledPlugins,
     notifyServicesChanged,
     runStartupPreparation,
-    applyDesktopDefaultBootstrap,
-    applyDesktopDefaultSsoDefaults,
+    applyDesktopInitBootstrap,
+    applyDesktopInitSsoDefaults,
     oldRootDecisionRef,
     generateBackupDirName,
     migrateOldRootToBackup,
@@ -2449,8 +2449,8 @@ async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: f
     console.info(
       `[main] imported bundled env.zip from ${importResult.sourceZipPath} into ${importResult.targetRoot}: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
     );
-    applyDesktopDefaultBootstrap(app, mainProcessContext.platform);
-    applyDesktopDefaultSsoDefaults(app, mainProcessContext.platform);
+    applyDesktopInitBootstrap(app, mainProcessContext.platform);
+    applyDesktopInitSsoDefaults(app, mainProcessContext.platform);
     return { ok: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
