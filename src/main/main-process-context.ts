@@ -403,6 +403,7 @@ export interface SettingsIpcHandlerContextDependencies {
   refreshTrayContextMenu: (...args: any[]) => unknown;
   emitLocaleChanged: (...args: any[]) => unknown;
   createAppPairingPayload?: (...args: any[]) => unknown;
+  onGeneralSettingsChanged?: (...args: any[]) => unknown;
 }
 
 export function createSettingsIpcHandlerOptions(
@@ -426,6 +427,7 @@ export function createSettingsIpcHandlerOptions(
     buildApplicationMenu: dependencies.buildApplicationMenu,
     refreshTrayContextMenu: dependencies.refreshTrayContextMenu,
     emitLocaleChanged: dependencies.emitLocaleChanged,
-    createAppPairingPayload: dependencies.createAppPairingPayload
+    createAppPairingPayload: dependencies.createAppPairingPayload,
+    onGeneralSettingsChanged: dependencies.onGeneralSettingsChanged
   };
 }

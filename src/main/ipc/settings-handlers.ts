@@ -1,4 +1,4 @@
-import type { TunnelHubAgentSettingsInput } from "../../shared/contracts";
+import type { DesktopGeneralSettings, DesktopGeneralSettingsInput, TunnelHubAgentSettingsInput } from "../../shared/contracts";
 import { readTunnelHubAgentSettings, saveTunnelHubAgentSettings } from "../tunnel-hub-agent-settings";
 import { readDesktopProfileFromRoot, updateDesktopProfileInRoot, type DesktopThemePreference } from "../desktop-profile-store";
 import { getDesktopConfigRoot } from "../user-paths";
@@ -24,6 +24,7 @@ export interface SettingsIpcHandlerOptions {
   refreshTrayContextMenu: () => void;
   emitLocaleChanged: (settings: any) => void;
   createAppPairingPayload?: (app: any) => Promise<any>;
+  onGeneralSettingsChanged?: (settings: DesktopGeneralSettings) => void;
 }
 
 export function setNativeThemeSource(nativeTheme: { themeSource: string }, themeMode: string) {
@@ -61,7 +62,8 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     buildApplicationMenu,
     refreshTrayContextMenu,
     emitLocaleChanged,
-    createAppPairingPayload
+    createAppPairingPayload,
+    onGeneralSettingsChanged
   } = options;
 
   ipcMain.handle("settings.getDataRoot", async () => getDataRoot(app));
@@ -70,6 +72,21 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     productName: app.name ?? "",
     version: typeof app.getVersion === "function" ? app.getVersion() : "",
     buildTime: ""
+  });
+  ipcMain.handle("settings.getGeneralSettings", async () =>
+    readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general
+  );
+  ipcMain.handle("settings.saveGeneralSettings", async (_event: any, input: DesktopGeneralSettingsInput) => {
+    const current = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
+    const profile = updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
+      general: {
+        preventSleepWhileRunning: typeof input?.preventSleepWhileRunning === "boolean"
+          ? input.preventSleepWhileRunning
+          : current.general.preventSleepWhileRunning
+      }
+    });
+    onGeneralSettingsChanged?.(profile.general);
+    return profile.general;
   });
   ipcMain.handle("settings.getTunnelHubAgentSettings", async () => readTunnelHubAgentSettings(app));
   ipcMain.handle("settings.saveTunnelHubAgentSettings", async (_event: any, input: TunnelHubAgentSettingsInput) =>

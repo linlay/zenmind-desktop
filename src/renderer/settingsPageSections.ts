@@ -16,6 +16,13 @@ export function createSettingsSectionDefinitions({
 }): SettingsSectionDefinition[] {
   return [
     {
+      id: "general",
+      label: "general",
+      description: "",
+      layout: "measure",
+      visible: true
+    },
+    {
       id: "kanban",
       label: "kanban",
       description: "",
@@ -114,6 +121,7 @@ const SETTINGS_SECTION_LABEL_KEYS: Record<
   SettingsSectionDefinition["id"],
   { label: TranslationKey; description: TranslationKey }
 > = {
+  general: { label: "settings.general.label", description: "settings.general.description" },
   appearance: { label: "settings.appearance.label", description: "settings.appearance.description" },
   kanban: { label: "settings.kanban.label", description: "settings.kanban.description" },
   desktopPet: { label: "settings.desktopPet.label", description: "settings.desktopPet.description" },

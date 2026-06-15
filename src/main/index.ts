@@ -119,6 +119,7 @@ import {
   readAssistantSettings,
   saveAssistantSettings
 } from "./copilot/core/settings-store";
+import { readDesktopProfileFromRoot } from "./desktop-profile-store";
 import { AgentPlatformAssistantBridge } from "./copilot/core/agent-platform-bridge";
 import { AssistantNavigationStatusClient } from "./copilot/core/assistant-navigation-status-client";
 import {
@@ -171,6 +172,7 @@ import {
 import {
   desktopDataRootExists,
   ensureDataRoot,
+  getDesktopConfigRoot,
   getDataRoot,
   getElectronUserDataRoot
 } from "./user-paths";
@@ -341,7 +343,9 @@ const INSTALLER_SHUTDOWN_ARGS = new Set<string>([
   ...LEGACY_INSTALLER_SHUTDOWN_ARGS
 ]);
 
-function createAssistantRunWakeLock(platform: NodeJS.Platform) {
+function createAssistantRunWakeLock(platform: NodeJS.Platform, options: {
+  isEnabled?: () => boolean;
+} = {}) {
   const isMac = platform === "darwin";
   const isWindows = platform === "win32";
   const blockerType = (() => {
@@ -355,30 +359,61 @@ function createAssistantRunWakeLock(platform: NodeJS.Platform) {
     return null;
   })();
   let blockerId: number | null = null;
+  let requested = false;
+
+  function isEnabled() {
+    try {
+      return options.isEnabled?.() ?? true;
+    } catch (error) {
+      console.warn("[assistant] failed to read wake lock setting", error);
+      return true;
+    }
+  }
+
+  function startBlockerIfNeeded() {
+    if (!blockerType || !requested || !isEnabled()) {
+      return;
+    }
+    if (blockerId !== null && powerSaveBlocker.isStarted(blockerId)) {
+      return;
+    }
+    blockerId = powerSaveBlocker.start(blockerType);
+  }
+
+  function stopBlockerIfNeeded() {
+    if (blockerId === null) {
+      return;
+    }
+    if (powerSaveBlocker.isStarted(blockerId)) {
+      powerSaveBlocker.stop(blockerId);
+    }
+    blockerId = null;
+  }
+
+  function sync() {
+    if (requested && isEnabled()) {
+      startBlockerIfNeeded();
+      return;
+    }
+    stopBlockerIfNeeded();
+  }
 
   return {
     acquire() {
-      if (!blockerType) {
-        return;
-      }
-      if (blockerId !== null && powerSaveBlocker.isStarted(blockerId)) {
-        return;
-      }
-      blockerId = powerSaveBlocker.start(blockerType);
+      requested = true;
+      startBlockerIfNeeded();
     },
     release() {
-      if (blockerId === null) {
-        return;
-      }
-      if (powerSaveBlocker.isStarted(blockerId)) {
-        powerSaveBlocker.stop(blockerId);
-      }
-      blockerId = null;
-    }
+      requested = false;
+      stopBlockerIfNeeded();
+    },
+    sync
   };
 }
 
-const assistantRunWakeLock = createAssistantRunWakeLock(mainProcessContext.platform);
+const assistantRunWakeLock = createAssistantRunWakeLock(mainProcessContext.platform, {
+  isEnabled: () => readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.preventSleepWhileRunning
+});
 const DESKTOP_PET_DONE_PREVIEW_FALLBACK = "暂无回复预览";
 const DESKTOP_PET_GENERIC_DONE_PREVIEWS = new Set([
   "思考中",
@@ -2358,7 +2393,8 @@ function registerIpcHandlers(context: MainProcessContext) {
     buildApplicationMenu,
     refreshTrayContextMenu: () => appTrayController.refreshContextMenu(),
     emitLocaleChanged,
-    createAppPairingPayload
+    createAppPairingPayload,
+    onGeneralSettingsChanged: () => assistantRunWakeLock.sync()
   }));
 }
 

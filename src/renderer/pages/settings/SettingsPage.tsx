@@ -16,6 +16,7 @@ import type {
   WebsiteEntry,
   DesktopAppPairingPayloadResult,
   DesktopAppInfo,
+  DesktopGeneralSettings,
   DesktopPetAgentOption,
   DesktopPetState,
   DesktopRuntimeEnvResetResult,
@@ -172,6 +173,10 @@ const defaultTaskBoardOnlineSummary: TaskBoardDesktopOnlineResult = {
   sessionCount: 0,
   agentCount: 0,
   devices: []
+};
+
+const defaultGeneralSettings: DesktopGeneralSettings = {
+  preventSleepWhileRunning: true
 };
 
 const defaultTunnelHubAgentSettings: TunnelHubAgentSettings = {
@@ -582,6 +587,8 @@ export function SettingsPage({
   const noticeIdRef = useRef(0);
   const [notice, setNotice] = useState<SettingsNotice | null>(null);
   const [sectionReadErrors, setSectionReadErrors] = useState<SectionReadErrorMap>({});
+  const [generalSettings, setGeneralSettings] = useState<DesktopGeneralSettings>(defaultGeneralSettings);
+  const [generalSettingsSaving, setGeneralSettingsSaving] = useState(false);
   const [websiteLabel, setWebsiteLabel] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [editingWebsiteId, setEditingWebsiteId] = useState("");
@@ -647,6 +654,7 @@ export function SettingsPage({
     visibleSectionIds
   );
   const shouldReadMemoryData = activeSection === "memory";
+  const shouldReadGeneralSettings = activeSection === "general";
   const shouldReadControlData = activeSection === "kanban";
   const shouldReadTunnelHubData = activeSection === "tunnelHub";
   const shouldReadMarketSettings = activeSection === "market";
@@ -731,6 +739,34 @@ export function SettingsPage({
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [activeSection]);
+
+  useEffect(() => {
+    if (!shouldReadGeneralSettings) {
+      return;
+    }
+
+    let cancelled = false;
+    window.electronAPI.settings.getGeneralSettings()
+      .then((settings) => {
+        if (cancelled) {
+          return;
+        }
+        setGeneralSettings({
+          ...defaultGeneralSettings,
+          ...settings
+        });
+        setReadErrorSections(["general"], "");
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setReadErrorSections(["general"], reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldReadGeneralSettings]);
 
   useEffect(() => {
     if (!shouldReadControlData) {
@@ -1480,6 +1516,36 @@ export function SettingsPage({
     return summary;
   }
 
+  async function handleTogglePreventSleepWhileRunning() {
+    const previousSettings = generalSettings;
+    const nextSettings = {
+      ...generalSettings,
+      preventSleepWhileRunning: !generalSettings.preventSleepWhileRunning
+    };
+    setGeneralSettings(nextSettings);
+    setGeneralSettingsSaving(true);
+    try {
+      const savedSettings = await window.electronAPI.settings.saveGeneralSettings(nextSettings);
+      setGeneralSettings({
+        ...defaultGeneralSettings,
+        ...savedSettings
+      });
+      setReadErrorSections(["general"], "");
+      showSectionNotice(
+        "general",
+        savedSettings.preventSleepWhileRunning
+          ? t("settings.general.noticePreventSleepEnabled")
+          : t("settings.general.noticePreventSleepDisabled"),
+        "success"
+      );
+    } catch (reason) {
+      setGeneralSettings(previousSettings);
+      showSectionNotice("general", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setGeneralSettingsSaving(false);
+    }
+  }
+
   async function handleAddWebsiteItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -2119,6 +2185,28 @@ export function SettingsPage({
 
   function renderActiveSection() {
     switch (activeSection) {
+      case "general":
+        return (
+          <div className="settings-appearance-panel" aria-label={t("settings.general.panelAria")}>
+            <div className="settings-appearance-row">
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.general.preventSleepWhileRunning")}</strong>
+                <span>{t("settings.general.preventSleepWhileRunningDescription")}</span>
+              </div>
+              <button
+                type="button"
+                className={generalSettings.preventSleepWhileRunning ? "settings-switch is-on" : "settings-switch"}
+                role="switch"
+                aria-checked={generalSettings.preventSleepWhileRunning}
+                aria-label={t("settings.general.preventSleepWhileRunning")}
+                disabled={generalSettingsSaving}
+                onClick={() => void handleTogglePreventSleepWhileRunning()}
+              >
+                <span aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        );
       case "appearance":
         return (
           <>

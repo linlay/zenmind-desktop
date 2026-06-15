@@ -3080,6 +3080,8 @@ export function AppSidebar({
 
   function getSettingsSectionIcon(sectionId: SettingsSectionId): SidebarIllustrationKind {
     switch (sectionId) {
+      case "general":
+        return "settings";
       case "appearance":
         return "appearance";
       case "kanban":

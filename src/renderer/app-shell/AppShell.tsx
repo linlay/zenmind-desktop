@@ -337,6 +337,7 @@ export function AppShell() {
   const [webItemsLoaded, setWebItemsLoaded] = useState(false);
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeViewState>>({});
   const webappStartInFlightRef = useRef<Set<string>>(new Set());
+  const marketSettingsRefreshIdRef = useRef(0);
   const [pendingSidebarNavigationPath, setPendingSidebarNavigationPath] = useState<string | null>(null);
   const [sidebarNavigationHistory, setSidebarNavigationHistory] = useState<SidebarNavigationHistory>({
     back: [],
@@ -746,8 +747,30 @@ export function AppShell() {
     refreshWebItems().catch(() => undefined);
   }, []);
 
+  async function refreshMarketSettingsVisibility() {
+    const requestId = marketSettingsRefreshIdRef.current + 1;
+    marketSettingsRefreshIdRef.current = requestId;
+    try {
+      const settings = await window.electronAPI.market.getSettings();
+      if (marketSettingsRefreshIdRef.current !== requestId) {
+        return;
+      }
+      setMarketEnabled(isMarketSettingsVisible(settings));
+    } catch {
+      if (marketSettingsRefreshIdRef.current !== requestId) {
+        return;
+      }
+      setMarketEnabled(false);
+    } finally {
+      if (marketSettingsRefreshIdRef.current === requestId) {
+        setMarketSettingsLoaded(true);
+      }
+    }
+  }
+
   useEffect(() => {
     return window.electronAPI.onServicesChanged(() => {
+      void refreshMarketSettingsVisibility();
       refreshWebItems().catch(() => undefined);
       void refreshAssistantNavAgents();
       void refreshCopilotAgentOptions();
@@ -1008,26 +1031,9 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    window.electronAPI.market.getSettings()
-      .then((settings) => {
-        if (cancelled) {
-          return;
-        }
-        setMarketEnabled(isMarketSettingsVisible(settings));
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setMarketEnabled(false);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setMarketSettingsLoaded(true);
-        }
-      });
+    void refreshMarketSettingsVisibility();
     return () => {
-      cancelled = true;
+      marketSettingsRefreshIdRef.current += 1;
     };
   }, []);
 

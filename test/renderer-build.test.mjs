@@ -1182,7 +1182,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(appShell, /is-settings-mode/);
 
   assert.match(settingsSections, /buildLocalizedSettingsSections/);
-  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"kanban"[\s\S]*?label:\s*"kanban"[\s\S]*?layout:\s*"measure"[\s\S]*?id:\s*"appearance"[\s\S]*?label:\s*"appearance"[\s\S]*?layout:\s*"measure"/);
+  assert.match(settingsSections, /return \[[\s\S]*?id:\s*"general"[\s\S]*?label:\s*"general"[\s\S]*?layout:\s*"measure"[\s\S]*?id:\s*"kanban"[\s\S]*?label:\s*"kanban"[\s\S]*?layout:\s*"measure"[\s\S]*?id:\s*"appearance"[\s\S]*?label:\s*"appearance"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"desktopPet"[\s\S]*?label:\s*"desktopPet"[\s\S]*?layout:\s*"measure"[\s\S]*?visible:\s*desktopPetSupported/);
   assert.match(settingsSections, /id:\s*"market"[\s\S]*?label:\s*"market"[\s\S]*?layout:\s*"measure"/);
   assert.match(settingsSections, /id:\s*"navigation"[\s\S]*?label:\s*"navigation"[\s\S]*?layout:\s*"wide"/);
@@ -1201,6 +1201,7 @@ test("settings route moves section navigation into the app sidebar and uses sect
   assert.match(sidebarSource, /sidebar-settings-nav/);
   assert.match(sidebarSource, /settings\.backToApp/);
   assert.match(sidebarSource, /onExitSettingsMode/);
+  assert.match(sidebarSource, /case "general"[\s\S]*?return "settings"/);
   assert.match(sidebarSource, /case "appearance"[\s\S]*?return "appearance"/);
   assert.match(sidebarSource, /case "kanban"[\s\S]*?return "futures"/);
   assert.match(sidebarSource, /case "desktopPet"[\s\S]*?return "assistant"/);
@@ -1719,11 +1720,13 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(appShell, /availableSidebarNavOrderItems/);
   assert.match(appShell, /const \[kanbanSettingsLoaded, setKanbanSettingsLoaded\] = useState\(false\)/);
   assert.match(appShell, /const \[marketEnabled, setMarketEnabled\] = useState\(false\)/);
+  assert.match(appShell, /const marketSettingsRefreshIdRef = useRef\(0\)/);
   assert.match(appShell, /function isMarketSettingsVisible\(settings:[\s\S]*?return settings\?\.enabled === true;/);
   assert.match(appShell, /window\.electronAPI\.taskBoard\.getSettings\(\)/);
   assert.doesNotMatch(appShell, /setKanbanEnabled/);
-  assert.match(appShell, /window\.electronAPI\.market\.getSettings\(\)/);
-  assert.match(appShell, /setMarketEnabled\(isMarketSettingsVisible\(settings\)\)/);
+  assert.match(appShell, /async function refreshMarketSettingsVisibility\(\)[\s\S]*?const requestId = marketSettingsRefreshIdRef\.current \+ 1;[\s\S]*?window\.electronAPI\.market\.getSettings\(\)[\s\S]*?setMarketEnabled\(isMarketSettingsVisible\(settings\)\)[\s\S]*?setMarketSettingsLoaded\(true\)/);
+  assert.match(appShell, /useEffect\(\(\) => \{\s*void refreshMarketSettingsVisibility\(\);\s*return \(\) => \{\s*marketSettingsRefreshIdRef\.current \+= 1;\s*\};\s*\}, \[\]\);/);
+  assert.match(appShell, /window\.electronAPI\.onServicesChanged\(\(\) => \{[\s\S]*?void refreshMarketSettingsVisibility\(\);[\s\S]*?refreshWebItems\(\)\.catch\(\(\) => undefined\);[\s\S]*?void refreshAssistantNavAgents\(\);/);
   assert.match(appShell, /<Navigate to="\/control-center" replace \/>/);
   assert.doesNotMatch(appShell, /item\.key !== "kanban" \|\| kanbanEnabled/);
   assert.match(appShell, /const navigationStateLoaded = navigationPreferencesLoaded && kanbanSettingsLoaded/);

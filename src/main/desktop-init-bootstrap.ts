@@ -176,6 +176,7 @@ function applyProfileDefaults(
     return "skipped";
   }
   const profile = isRecord(profileDefaults) ? profileDefaults : {};
+  const general = isRecord(profile.general) ? profile.general : {};
   const appearance = isRecord(profile.appearance) ? profile.appearance : {};
   const legacyAssistant = isRecord(profile.assistant) ? profile.assistant : {};
   const assistantCopilot = isRecord(legacyAssistant.copilot) ? legacyAssistant.copilot : {};
@@ -184,6 +185,11 @@ function applyProfileDefaults(
   const navigation = isRecord(profile.navigation) ? profile.navigation : {};
   const current = readDesktopProfileFromRoot(profileRoot);
   updateDesktopProfileInRoot(profileRoot, {
+    general: {
+      preventSleepWhileRunning: typeof general.preventSleepWhileRunning === "boolean"
+        ? general.preventSleepWhileRunning
+        : current.general.preventSleepWhileRunning
+    },
     appearance: {
       theme: appearance.theme === "light" || appearance.theme === "dark" || appearance.theme === "system"
         ? appearance.theme

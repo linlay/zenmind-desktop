@@ -17,8 +17,13 @@ export const DEFAULT_VOICE_CORRECTION_ENABLED = true;
 
 export type DesktopThemePreference = "system" | "light" | "dark";
 
+export type DesktopGeneralSettings = {
+  preventSleepWhileRunning: boolean;
+};
+
 export type DesktopProfile = {
   schemaVersion: 1;
+  general: DesktopGeneralSettings;
   appearance: {
     theme: DesktopThemePreference;
     locale: SupportedLocale;
@@ -45,6 +50,7 @@ type DesktopProfileReadOptions = {
 };
 
 type DesktopProfilePatch = Partial<{
+  general: Partial<DesktopProfile["general"]>;
   appearance: Partial<DesktopProfile["appearance"]>;
   assistant: Partial<Omit<DesktopProfile["assistant"], "copilot" | "quick">> & {
     copilot?: Partial<DesktopProfile["assistant"]["copilot"]>;
@@ -120,6 +126,7 @@ function normalizeDesktopProfile(
   const record = isRecord(value) ? value : {};
   const legacyPreferences = value ? {} : readLegacyPreferences(rootDir);
   const legacySettings = value ? {} : readLegacyAssistantSettings(rootDir);
+  const general = isRecord(record.general) ? record.general : {};
   const appearance = isRecord(record.appearance) ? record.appearance : {};
   const assistant = isRecord(record.assistant) ? record.assistant : {};
   const copilot = isRecord(assistant.copilot) ? assistant.copilot : {};
@@ -149,6 +156,11 @@ function normalizeDesktopProfile(
 
   return {
     schemaVersion: 1,
+    general: {
+      preventSleepWhileRunning: typeof general.preventSleepWhileRunning === "boolean"
+        ? general.preventSleepWhileRunning
+        : true
+    },
     appearance: {
       theme: normalizeTheme(appearance.theme),
       locale: profileLocale || legacyLocale || options.defaultLocale || DEFAULT_LOCALE
@@ -214,6 +226,10 @@ export function updateDesktopProfileInRoot(rootDir: string, patch: DesktopProfil
   const current = readDesktopProfileFromRoot(rootDir);
   return writeDesktopProfileToRoot(rootDir, {
     ...current,
+    general: {
+      ...current.general,
+      ...patch.general
+    },
     appearance: {
       ...current.appearance,
       ...patch.appearance

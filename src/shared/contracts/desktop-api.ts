@@ -100,6 +100,14 @@ export interface DesktopRuntimeEnvResetResult {
   sourceZipPath?: string;
 }
 
+export interface DesktopGeneralSettings {
+  preventSleepWhileRunning: boolean;
+}
+
+export interface DesktopGeneralSettingsInput {
+  preventSleepWhileRunning?: boolean;
+}
+
 export interface DesktopAppPairingPayload {
   desktopDeviceId: string;
   desktopIdentityCreatedAt: string;
@@ -289,6 +297,8 @@ export interface DesktopApi {
     getDataRoot: () => Promise<string>;
     getPlatform: () => Promise<string>;
     getAppInfo: () => Promise<DesktopAppInfo>;
+    getGeneralSettings: () => Promise<DesktopGeneralSettings>;
+    saveGeneralSettings: (input: DesktopGeneralSettingsInput) => Promise<DesktopGeneralSettings>;
     getTunnelHubAgentSettings: () => Promise<TunnelHubAgentSettings>;
     saveTunnelHubAgentSettings: (input: TunnelHubAgentSettingsInput) => Promise<TunnelHubAgentSettingsResult>;
     resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
