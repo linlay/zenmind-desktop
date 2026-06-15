@@ -9,6 +9,11 @@ const require = createRequire(import.meta.url);
 const yaml = require("js-yaml");
 
 const {
+  loadInstalledPlugins,
+  getPluginInstallDir
+} = require("../dist-electron/main/plugin-loader.js");
+const {
+  getService,
   registerPlugin,
   __testInternals: registryInternals
 } = require("../dist-electron/main/services/service-registry.js");
@@ -60,6 +65,11 @@ function readYaml(filePath) {
   return yaml.load(fs.readFileSync(filePath, "utf8"));
 }
 
+function writePluginManifest(targetDir, manifest) {
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.writeFileSync(path.join(targetDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
 test("plugin manifest v2 registers from plugin directory without kind", () => {
   registryInternals.clearServices();
   const service = registerPlugin({
@@ -105,6 +115,61 @@ test("plugin manifest v2 registers from plugin directory without kind", () => {
   assert.equal(service.web.defaultPort, 17071);
   assert.deepEqual(service.hooks.subscribe, ["desktop.ready", "service.statusChanged:agent-platform"]);
   assert.deepEqual(service.bridge.requests, ["service.getStatus", "agentPlatform.upsertAcpProxy"]);
+});
+
+test("installed plugin loader skips invalid legacy manifests", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-installed-plugin-loader-"));
+  const app = createApp(root);
+  const originalWarn = console.warn;
+  const warnings = [];
+  try {
+    registryInternals.clearServices();
+    console.warn = (...args) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    writePluginManifest(getPluginInstallDir(app, "legacy-plugin", "v0.1.0"), {
+      kind: "plugin",
+      id: "legacy-plugin",
+      name: "Legacy Plugin",
+      version: "v0.1.0",
+      description: "legacy",
+      frontend: { mode: "none" },
+      scripts: { start: "start.sh", stop: "stop.sh" }
+    });
+
+    writePluginManifest(getPluginInstallDir(app, "valid-plugin", "v0.1.0"), {
+      pluginApiVersion: 1,
+      id: "valid-plugin",
+      name: "Valid Plugin",
+      version: "v0.1.0",
+      description: "valid",
+      lifecycle: {
+        start: "start.sh",
+        stop: "stop.sh"
+      },
+      runtime: {
+        requiredPaths: ["manifest.json"]
+      },
+      service: {
+        ui: "none",
+        web: {
+          healthPath: "/healthz",
+          portEnvKey: "VALID_PLUGIN_PORT",
+          defaultPort: 18080
+        }
+      }
+    });
+
+    assert.doesNotThrow(() => loadInstalledPlugins(app));
+    assert.equal(getService("valid-plugin").kind, "plugin");
+    assert.throws(() => getService("legacy-plugin"), /unknown service id/u);
+    assert.match(warnings.join("\n"), /Skipping invalid installed plugin manifest/u);
+  } finally {
+    console.warn = originalWarn;
+    registryInternals.clearServices();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("plugin manifest rejects legacy public fields", () => {
