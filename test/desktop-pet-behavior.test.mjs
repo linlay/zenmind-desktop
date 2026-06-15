@@ -17,7 +17,6 @@ const {
 function createSettings(overrides = {}) {
   return {
     enabled: true,
-    lastVisible: true,
     unreadCount: 0,
     boundAgentKey: "zenmi",
     appearanceId: "classic",

@@ -69,7 +69,7 @@ import {
 import {
   resolveNodeBin
 } from "./command-env";
-import { ensureDesktopRegisterApiKey } from "../../desktop-register";
+import { ensureProviderRegisterApiKey } from "../../provider-register";
 import { getDesktopDeviceId } from "../../device-identity";
 import {
   decodePowerShellCapturePayload,
@@ -1803,7 +1803,7 @@ async function ensurePreStartRequirements(app: App, service: ServiceDefinition) 
 
   if (service.id === "agent-platform") {
     await ensureAgentPlatformDesktopConfig(app, service, layout);
-    await ensureDesktopRegisterApiKey(app);
+    await ensureProviderRegisterApiKey(app);
     await ensureAgentPlatformContainerHubDependency(app, layout);
   }
 
@@ -3180,7 +3180,7 @@ export async function runStartupPreparation(
   options: StartupPreparationOptions = {}
 ): Promise<StartupPreparationResult> {
   try {
-    await ensureDesktopRegisterApiKey(app);
+    await ensureProviderRegisterApiKey(app);
 
     const initialMode = await resolveStartupPreparationMode(app);
     options.onModeResolved?.(initialMode);

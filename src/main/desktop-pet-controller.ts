@@ -53,7 +53,6 @@ type DesktopPetDismissedPreview = {
 
 export interface DesktopPetSettingsLike {
   enabled: boolean;
-  lastVisible: boolean;
   unreadCount: number;
   boundAgentKey: string;
   appearanceId: string;
@@ -309,11 +308,9 @@ export function computeDesktopPetStateRefresh(input: {
     runningTaskCount: input.runningTaskCount,
     edgeDock: input.edgeDock
   });
-  const settingsPatch = input.settings.unreadCount !== state.unreadCount ||
-    input.settings.lastVisible !== input.visible
+  const settingsPatch = input.settings.unreadCount !== state.unreadCount
     ? {
-        unreadCount: state.unreadCount,
-        lastVisible: input.visible
+        unreadCount: state.unreadCount
       }
     : null;
   return {
@@ -777,8 +774,7 @@ export function createDesktopPetWindowController(
       return options.refreshState();
     }
     options.saveSettings({
-      enabled: true,
-      lastVisible: true
+      enabled: true
     });
     options.startStatusClient();
     const targetWindow = createWindow();
@@ -802,7 +798,6 @@ export function createDesktopPetWindowController(
       options.clearPreview();
       options.saveSettings({
         enabled: false,
-        lastVisible: false,
         unreadCount: 0
       });
       options.stopStatusClient();

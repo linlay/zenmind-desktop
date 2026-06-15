@@ -960,8 +960,7 @@ test("desktop pet banner resolves builtin and user pet assets", () => {
     fs.writeFileSync(settingsPath, `${JSON.stringify({
       schemaVersion: 1,
       enabled: true,
-      selectedPetId: "user:desk-cat",
-      lastVisible: true
+      selectedPetId: "user:desk-cat"
     }, null, 2)}\n`, "utf8");
     const petRoot = path.join(getDesktopPetsDataRoot(app), "desk-cat");
     fs.mkdirSync(petRoot, { recursive: true });

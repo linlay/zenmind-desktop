@@ -24,9 +24,11 @@ export type DesktopProfile = {
     locale: SupportedLocale;
   };
   assistant: {
-    desktopHelperAgentKey: string;
     voiceCorrectionEnabled: boolean;
-    quickAssistant: {
+    copilot: {
+      agentKey: string;
+    };
+    quick: {
       enabled: boolean;
       agentKey: string;
     };
@@ -44,8 +46,9 @@ type DesktopProfileReadOptions = {
 
 type DesktopProfilePatch = Partial<{
   appearance: Partial<DesktopProfile["appearance"]>;
-  assistant: Partial<Omit<DesktopProfile["assistant"], "quickAssistant">> & {
-    quickAssistant?: Partial<DesktopProfile["assistant"]["quickAssistant"]>;
+  assistant: Partial<Omit<DesktopProfile["assistant"], "copilot" | "quick">> & {
+    copilot?: Partial<DesktopProfile["assistant"]["copilot"]>;
+    quick?: Partial<DesktopProfile["assistant"]["quick"]>;
   };
   navigation: Partial<DesktopProfile["navigation"]>;
 }>;
@@ -119,18 +122,22 @@ function normalizeDesktopProfile(
   const legacySettings = value ? {} : readLegacyAssistantSettings(rootDir);
   const appearance = isRecord(record.appearance) ? record.appearance : {};
   const assistant = isRecord(record.assistant) ? record.assistant : {};
-  const quickAssistant = isRecord(assistant.quickAssistant) ? assistant.quickAssistant : {};
+  const copilot = isRecord(assistant.copilot) ? assistant.copilot : {};
+  const quick = isRecord(assistant.quick) ? assistant.quick : {};
+  const legacyQuickAssistant = isRecord(assistant.quickAssistant) ? assistant.quickAssistant : {};
   const navigation = isRecord(record.navigation) ? record.navigation : {};
   const webOrder = normalizeTextArray(navigation.webOrder);
   const legacyWebsiteOrder = normalizeTextArray(navigation.websiteOrder);
   const legacyLocale = normalizeLocale(legacyPreferences.locale);
   const profileLocale = normalizeLocale(appearance.locale);
-  const desktopHelperAgentKey =
+  const copilotAgentKey =
+    readText(copilot.agentKey) ||
     readText(assistant.desktopHelperAgentKey) ||
     readText(legacySettings.desktopHelperAgentKey) ||
     DEFAULT_DESKTOP_HELPER_AGENT_KEY;
-  const quickAssistantAgentKey =
-    readText(quickAssistant.agentKey) ||
+  const quickAgentKey =
+    readText(quick.agentKey) ||
+    readText(legacyQuickAssistant.agentKey) ||
     readText(legacySettings.quickAssistantAgentKey) ||
     DEFAULT_QUICK_ASSISTANT_AGENT_KEY;
   const legacyQuickAssistantEnabled = typeof legacySettings.quickAssistantEnabled === "boolean"
@@ -147,15 +154,19 @@ function normalizeDesktopProfile(
       locale: profileLocale || legacyLocale || options.defaultLocale || DEFAULT_LOCALE
     },
     assistant: {
-      desktopHelperAgentKey,
       voiceCorrectionEnabled: typeof assistant.voiceCorrectionEnabled === "boolean"
         ? assistant.voiceCorrectionEnabled
         : legacyVoiceCorrectionEnabled,
-      quickAssistant: {
-        enabled: typeof quickAssistant.enabled === "boolean"
-          ? quickAssistant.enabled
+      copilot: {
+        agentKey: copilotAgentKey
+      },
+      quick: {
+        enabled: typeof quick.enabled === "boolean"
+          ? quick.enabled
+          : typeof legacyQuickAssistant.enabled === "boolean"
+            ? legacyQuickAssistant.enabled
           : legacyQuickAssistantEnabled,
-        agentKey: quickAssistantAgentKey
+        agentKey: quickAgentKey
       }
     },
     navigation: {
@@ -210,9 +221,13 @@ export function updateDesktopProfileInRoot(rootDir: string, patch: DesktopProfil
     assistant: {
       ...current.assistant,
       ...patch.assistant,
-      quickAssistant: {
-        ...current.assistant.quickAssistant,
-        ...patch.assistant?.quickAssistant
+      copilot: {
+        ...current.assistant.copilot,
+        ...patch.assistant?.copilot
+      },
+      quick: {
+        ...current.assistant.quick,
+        ...patch.assistant?.quick
       }
     },
     navigation: {

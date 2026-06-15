@@ -117,9 +117,11 @@ test("desktop-init bootstrap applies once into canonical desktop files", (t) => 
 
   assert.equal(profile.appearance.theme, "dark");
   assert.equal(profile.appearance.locale, "en-US");
-  assert.equal(profile.assistant.desktopHelperAgentKey, "desktopAssistant");
-  assert.equal(profile.assistant.quickAssistant.enabled, true);
-  assert.equal(profile.assistant.quickAssistant.agentKey, "desktopAssistant");
+  assert.equal(profile.assistant.copilot.agentKey, "desktopAssistant");
+  assert.equal(profile.assistant.quick.enabled, true);
+  assert.equal(profile.assistant.quick.agentKey, "desktopAssistant");
+  assert.equal("desktopHelperAgentKey" in profile.assistant, false);
+  assert.equal("quickAssistant" in profile.assistant, false);
   assert.equal("kanban" in profile.navigation, false);
   assert.equal(kanban.enabled, false);
   assert.deepEqual(kanban.cloud, {
@@ -132,6 +134,7 @@ test("desktop-init bootstrap applies once into canonical desktop files", (t) => 
   assert.equal("bootstrapAssistant" in profile, false);
   assert.equal(pet.enabled, false);
   assert.equal(pet.selectedPetId, "builtin:zenmi");
+  assert.equal("lastVisible" in pet, false);
   assert.equal("boundAgentKey" in pet, false);
   assert.equal(market.enabled, true);
   assert.equal(market.apiBaseUrl, "https://market.example.test/api/v1");

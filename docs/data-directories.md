@@ -20,7 +20,7 @@ CuteJ 品牌对应：
 ```text
 ~/<brand-runtime-root>/
 ├── desktop-init.json
-├── desktop-register.json
+├── provider-register.json
 └── .desktop/
     ├── config/
     │   └── desktop/
@@ -146,9 +146,9 @@ CuteJ 品牌对应：
 ## 关键文件
 
 - `~/<brand-runtime-root>/desktop-init.json`：env 包携带的一次性初始化模板。首启拆写到 `.desktop/` 下的 canonical 文件并记录 `state/desktop/bootstrap.json` 后会删除运行时副本，后续不再作为运行时真相；可用 `kanban.enabled: false` 首启隐藏看板入口。
-- `~/<brand-runtime-root>/desktop-register.json`：一次性 registration token 文件，用完后清 token 或删除，不合并进 profile。
-- `config/desktop/profile.json`：保存长期用户偏好，包括外观、语言、助手默认值、Quick Assistant 和导航偏好。
-- `config/desktop/pet.json`：保存桌宠设置，包括 enabled、selectedPetId、lastVisible、position 和窗口偏好；不保存 `boundAgentKey`。
+- `~/<brand-runtime-root>/provider-register.json`：一次性 registration token 文件，用完后清 token 或删除，不合并进 profile。
+- `config/desktop/profile.json`：保存长期用户偏好，包括外观、语言、Copilot/Quick 助手默认值和导航偏好。
+- `config/desktop/pet.json`：保存桌宠设置，包括 enabled、selectedPetId、position 和窗口偏好；不保存 `boundAgentKey`。
 - `config/desktop/sso.json`：保存 Desktop SSO 登录配置。session/token 进入 `state/desktop/`。
 - `config/desktop/control.json`：保存控制类设置，目前包含 task board 远端控制配置。
 - `data/pets/<pet-id>/pet.json`：用户导入 pet 的资产描述。内置 pet 使用 `builtin:<id>` 指向应用内置资源，用户 pet 使用 `user:<pet-id>` 指向该目录。

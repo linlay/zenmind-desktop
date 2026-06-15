@@ -1007,8 +1007,7 @@ function refreshDesktopPetState(patch: Partial<DesktopPetLocalStatus> = {}) {
   applyDesktopPetWindowBounds();
   if (refresh.settingsPatch) {
     appState.desktopPetSettings = saveDesktopPetSettings(app, {
-      unreadCount: refresh.settingsPatch.unreadCount,
-      lastVisible: refresh.settingsPatch.lastVisible
+      unreadCount: refresh.settingsPatch.unreadCount
     }, mainProcessContext.platform);
   }
   for (const targetWindow of [appState.mainWindow, appState.desktopPetWindow]) {

@@ -98,7 +98,6 @@ type Platform = NodeJS.Platform | string;
 export type DesktopPetStoredState = {
   schemaVersion?: 1;
   enabled: boolean;
-  lastVisible: boolean;
   unreadCount: number;
   boundAgentKey: string;
   appearanceId: string;
@@ -263,7 +262,6 @@ function sanitizeDesktopPetStoredState(
   return {
     schemaVersion: DESKTOP_PET_SCHEMA_VERSION,
     enabled: supported ? candidate.enabled === true : false,
-    lastVisible: supported ? candidate.lastVisible === true : false,
     unreadCount: sanitizeDesktopPetUnreadCount(candidate.unreadCount),
     boundAgentKey: normalizeDesktopPetBoundAgentKey(candidate.boundAgentKey),
     appearanceId,
@@ -305,7 +303,6 @@ function toDesktopPetConfigFile(state: DesktopPetStoredState) {
     schemaVersion: DESKTOP_PET_SCHEMA_VERSION,
     enabled: state.enabled,
     selectedPetId: state.selectedPetId,
-    lastVisible: state.lastVisible,
     position: {
       x: state.position?.x ?? DEFAULT_OFFSET.x,
       y: state.position?.y ?? DEFAULT_OFFSET.y,

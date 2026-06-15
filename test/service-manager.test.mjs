@@ -5172,8 +5172,8 @@ test("ensurePreStartRequirements does not rewrite agent platform desktop env bin
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test("ensurePreStartRequirements applies desktop-register before agent-platform starts", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-desktop-register-"));
+test("ensurePreStartRequirements applies provider-register before agent-platform starts", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-agent-platform-provider-register-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const homeRoot = path.join(tempRoot, "home");
   const { app, restore } = loadBuiltinsForTest(userDataRoot, undefined, {
@@ -5183,9 +5183,9 @@ test("ensurePreStartRequirements applies desktop-register before agent-platform 
   const platformService = getBuiltinService("agent-platform");
   const platformInstallDir = getTestServiceProgramDir(userDataRoot, platformService.id, platformService.version);
   const providersRoot = path.join(homeRoot, ".zenmind", "registries", "providers");
-  const registerPath = path.join(homeRoot, ".zenmind", "desktop-register.json");
+  const registerPath = path.join(homeRoot, ".zenmind", "provider-register.json");
   const originalFetch = globalThis.fetch;
-  const issuedKey = "dk_DesktopRegisterIntegrationKey";
+  const issuedKey = "dk_ProviderRegisterIntegrationKey";
   let requestBody = null;
 
   fs.mkdirSync(path.join(platformInstallDir, "configs"), { recursive: true });
@@ -5233,11 +5233,11 @@ test("ensurePreStartRequirements applies desktop-register before agent-platform 
     assert.deepEqual(requestBody, { name: deviceIdentity.deviceId });
     assert.match(
       fs.readFileSync(path.join(providersRoot, "th-deepseek.yml"), "utf8"),
-      /^apiKey: dk_DesktopRegisterIntegrationKey$/m
+      /^apiKey: dk_ProviderRegisterIntegrationKey$/m
     );
     assert.match(
       fs.readFileSync(path.join(providersRoot, "th-minimax.yml"), "utf8"),
-      /^apiKey: dk_DesktopRegisterIntegrationKey$/m
+      /^apiKey: dk_ProviderRegisterIntegrationKey$/m
     );
     assert.equal(fs.existsSync(registerPath), false);
   } finally {
@@ -7003,13 +7003,13 @@ test("restoreRunningServices auto-installs and starts builtin services that are 
   }
 });
 
-test("runStartupPreparation applies desktop-register before preparing builtin services", async () => {
+test("runStartupPreparation applies provider-register before preparing builtin services", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const homeRoot = getTestHomeRoot(userDataRoot);
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
   const providersRoot = path.join(homeRoot, ".zenmind", "registries", "providers");
-  const registerPath = path.join(homeRoot, ".zenmind", "desktop-register.json");
+  const registerPath = path.join(homeRoot, ".zenmind", "provider-register.json");
   const originalFetch = globalThis.fetch;
   const issuedKey = "dk_RunStartupPreparationKey";
   let requestBody = null;

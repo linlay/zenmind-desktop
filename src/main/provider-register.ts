@@ -6,7 +6,7 @@ import yaml from "js-yaml";
 import { getDesktopDeviceId } from "./device-identity";
 import { APP_BRAND } from "../shared/generated/brand";
 
-const DESKTOP_REGISTER_FILE = "desktop-register.json";
+const PROVIDER_REGISTER_FILE = "provider-register.json";
 const DEFAULT_ENDPOINT = "";
 const DEFAULT_PROVIDERS = ["th-deepseek", "th-minimax"] as const;
 const MAX_ERROR_BODY_LENGTH = 240;
@@ -14,7 +14,7 @@ const PROVIDER_KEY_PATTERN = /^[A-Za-z0-9._-]+$/u;
 
 type AppPathReader = Pick<App, "getPath">;
 
-type DesktopRegisterConfig = {
+type ProviderRegisterConfig = {
   version?: unknown;
   enabled?: unknown;
   endpoint?: unknown;
@@ -23,38 +23,38 @@ type DesktopRegisterConfig = {
   [key: string]: unknown;
 };
 
-type DesktopRegisterGrant = {
+type ProviderRegisterGrant = {
   type?: unknown;
   token?: unknown;
 };
 
-type DesktopRegisterFetchResponse = {
+type ProviderRegisterFetchResponse = {
   ok: boolean;
   status: number;
   statusText?: string;
   text: () => Promise<string>;
 };
 
-type DesktopRegisterFetch = (
+type ProviderRegisterFetch = (
   input: string,
   init: {
     method: "POST";
     headers: Record<string, string>;
     body: string;
   }
-) => Promise<DesktopRegisterFetchResponse>;
+) => Promise<ProviderRegisterFetchResponse>;
 
 type ProviderYaml = {
   apiKey?: unknown;
 };
 
-export type DesktopRegisterResult =
+export type ProviderRegisterResult =
   | { status: "skipped"; reason: "missing" | "disabled" }
   | { status: "applied"; providers: string[]; updatedProviders: string[] };
 
-export type DesktopRegisterOptions = {
+export type ProviderRegisterOptions = {
   platform?: NodeJS.Platform;
-  fetchImpl?: DesktopRegisterFetch;
+  fetchImpl?: ProviderRegisterFetch;
 };
 
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
@@ -73,19 +73,19 @@ function getHomePath(app: AppPathReader) {
   return process.env.HOME || os.homedir();
 }
 
-export function resolveDesktopRegisterPath(
+export function resolveProviderRegisterPath(
   app: AppPathReader,
   platform: NodeJS.Platform = process.platform
 ) {
   const pathApi = pathApiForPlatform(platform);
   const homePath = getHomePath(app);
   if (platform === "win32") {
-    return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName, DESKTOP_REGISTER_FILE));
+    return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName, PROVIDER_REGISTER_FILE));
   }
   if (platform === "darwin") {
-    return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName, DESKTOP_REGISTER_FILE));
+    return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName, PROVIDER_REGISTER_FILE));
   }
-  return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName, DESKTOP_REGISTER_FILE));
+  return pathApi.resolve(pathApi.join(homePath, APP_BRAND.paths.runtimeRootDirName, PROVIDER_REGISTER_FILE));
 }
 
 function resolveRuntimeRoot(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
@@ -103,14 +103,14 @@ function resolveRuntimeRoot(app: AppPathReader, platform: NodeJS.Platform = proc
 function readRegisterConfig(registerPath: string) {
   const content = fs.readFileSync(registerPath, "utf8");
   try {
-    const parsed = JSON.parse(content) as DesktopRegisterConfig;
+    const parsed = JSON.parse(content) as ProviderRegisterConfig;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       throw new Error("root must be an object");
     }
     return { content, config: parsed };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`${DESKTOP_REGISTER_FILE} 格式不正确：${message}`);
+    throw new Error(`${PROVIDER_REGISTER_FILE} 格式不正确：${message}`);
   }
 }
 
@@ -120,26 +120,26 @@ function normalizeEndpoint(value: unknown) {
   try {
     parsed = new URL(endpoint);
   } catch {
-    throw new Error(`${DESKTOP_REGISTER_FILE} endpoint 不是有效 URL。`);
+    throw new Error(`${PROVIDER_REGISTER_FILE} endpoint 不是有效 URL。`);
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error(`${DESKTOP_REGISTER_FILE} endpoint 只支持 http/https。`);
+    throw new Error(`${PROVIDER_REGISTER_FILE} endpoint 只支持 http/https。`);
   }
   return endpoint;
 }
 
 function normalizeGrant(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${DESKTOP_REGISTER_FILE} grant 不能为空。`);
+    throw new Error(`${PROVIDER_REGISTER_FILE} grant 不能为空。`);
   }
-  const grant = value as DesktopRegisterGrant;
+  const grant = value as ProviderRegisterGrant;
   const grantType = typeof grant.type === "string" ? grant.type.trim().toLowerCase() : "jwt";
   if (grantType !== "jwt") {
-    throw new Error(`${DESKTOP_REGISTER_FILE} grant.type 仅支持 jwt。`);
+    throw new Error(`${PROVIDER_REGISTER_FILE} grant.type 仅支持 jwt。`);
   }
   const token = typeof grant.token === "string" ? grant.token.trim() : "";
   if (!token) {
-    throw new Error(`${DESKTOP_REGISTER_FILE} grant.token 不能为空。`);
+    throw new Error(`${PROVIDER_REGISTER_FILE} grant.token 不能为空。`);
   }
   return token;
 }
@@ -149,23 +149,23 @@ function normalizeProviders(value: unknown) {
     return [...DEFAULT_PROVIDERS];
   }
   if (!Array.isArray(value)) {
-    throw new Error(`${DESKTOP_REGISTER_FILE} providers 必须是字符串数组。`);
+    throw new Error(`${PROVIDER_REGISTER_FILE} providers 必须是字符串数组。`);
   }
   const providers: string[] = [];
   for (const entry of value) {
     if (typeof entry !== "string") {
-      throw new Error(`${DESKTOP_REGISTER_FILE} providers 只能包含字符串。`);
+      throw new Error(`${PROVIDER_REGISTER_FILE} providers 只能包含字符串。`);
     }
     const provider = entry.trim();
     if (!provider || !PROVIDER_KEY_PATTERN.test(provider)) {
-      throw new Error(`${DESKTOP_REGISTER_FILE} providers 包含无效 provider key。`);
+      throw new Error(`${PROVIDER_REGISTER_FILE} providers 包含无效 provider key。`);
     }
     if (!providers.includes(provider)) {
       providers.push(provider);
     }
   }
   if (providers.length === 0) {
-    throw new Error(`${DESKTOP_REGISTER_FILE} providers 不能为空。`);
+    throw new Error(`${PROVIDER_REGISTER_FILE} providers 不能为空。`);
   }
   return providers;
 }
@@ -191,9 +191,9 @@ async function requestApiKey(input: {
   endpoint: string;
   token: string;
   deviceId: string;
-  fetchImpl: DesktopRegisterFetch;
+  fetchImpl: ProviderRegisterFetch;
 }) {
-  let response: DesktopRegisterFetchResponse;
+  let response: ProviderRegisterFetchResponse;
   try {
     response = await input.fetchImpl(input.endpoint, {
       method: "POST",
@@ -205,14 +205,14 @@ async function requestApiKey(input: {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`desktop-register 申请 apikey 失败：${redactSensitiveText(message)}`);
+    throw new Error(`provider-register 申请 apikey 失败：${redactSensitiveText(message)}`);
   }
 
   const responseText = await response.text();
   if (!response.ok) {
     const suffix = summarizeResponseBody(responseText);
     throw new Error(
-      `desktop-register 申请 apikey 失败：HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}${suffix ? `：${suffix}` : ""}`
+      `provider-register 申请 apikey 失败：HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}${suffix ? `：${suffix}` : ""}`
     );
   }
 
@@ -220,14 +220,14 @@ async function requestApiKey(input: {
   try {
     parsed = JSON.parse(responseText);
   } catch {
-    throw new Error("desktop-register 申请 apikey 失败：响应不是 JSON。");
+    throw new Error("provider-register 申请 apikey 失败：响应不是 JSON。");
   }
 
   const key = typeof (parsed as { key?: unknown })?.key === "string"
     ? (parsed as { key: string }).key.trim()
     : "";
   if (!key) {
-    throw new Error("desktop-register 申请 apikey 失败：响应缺少 key。");
+    throw new Error("provider-register 申请 apikey 失败：响应缺少 key。");
   }
   return key;
 }
@@ -303,7 +303,7 @@ function readProviderTargets(input: {
   return input.providers.map((providerKey) => {
     const providerPath = pathApi.join(runtimeRoot, "registries", "providers", `${providerKey}.yml`);
     if (!fs.existsSync(providerPath)) {
-      throw new Error(`desktop-register provider 文件不存在：${providerKey}`);
+      throw new Error(`provider-register provider 文件不存在：${providerKey}`);
     }
     const content = fs.readFileSync(providerPath, "utf8");
     return {
@@ -334,7 +334,7 @@ function applyProviderApiKey(input: {
   return updatedProviders;
 }
 
-function buildResetContent(config: DesktopRegisterConfig) {
+function buildResetContent(config: ProviderRegisterConfig) {
   const grant: Record<string, unknown> = {};
   if (typeof config.grant === "object" && config.grant !== null && !Array.isArray(config.grant)) {
     const grantIn = config.grant as Record<string, unknown>;
@@ -347,7 +347,7 @@ function buildResetContent(config: DesktopRegisterConfig) {
   return `${JSON.stringify({ ...rest, enabled: false, grant }, null, 2)}\n`;
 }
 
-function safetyCleanRegister(registerPath: string, config: DesktopRegisterConfig, platform: NodeJS.Platform) {
+function safetyCleanRegister(registerPath: string, config: ProviderRegisterConfig, platform: NodeJS.Platform) {
   fs.writeFileSync(registerPath, buildResetContent(config), "utf8");
   if (platform !== "win32") {
     fs.chmodSync(registerPath, 0o600);
@@ -359,23 +359,23 @@ function safetyCleanRegister(registerPath: string, config: DesktopRegisterConfig
     fs.rmSync(registerPath, { force: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`desktop-register 清理失败：${message}`);
+    throw new Error(`provider-register 清理失败：${message}`);
   }
 }
 
-function defaultFetchImpl(): DesktopRegisterFetch {
+function defaultFetchImpl(): ProviderRegisterFetch {
   if (typeof globalThis.fetch !== "function") {
-    throw new Error("desktop-register 申请 apikey 失败：当前运行时不支持 fetch。");
+    throw new Error("provider-register 申请 apikey 失败：当前运行时不支持 fetch。");
   }
-  return globalThis.fetch as unknown as DesktopRegisterFetch;
+  return globalThis.fetch as unknown as ProviderRegisterFetch;
 }
 
-export async function ensureDesktopRegisterApiKey(
+export async function ensureProviderRegisterApiKey(
   app: App,
-  options: DesktopRegisterOptions = {}
-): Promise<DesktopRegisterResult> {
+  options: ProviderRegisterOptions = {}
+): Promise<ProviderRegisterResult> {
   const platform = options.platform ?? process.platform;
-  const registerPath = resolveDesktopRegisterPath(app, platform);
+  const registerPath = resolveProviderRegisterPath(app, platform);
   if (!fs.existsSync(registerPath)) {
     return { status: "skipped", reason: "missing" };
   }
@@ -408,7 +408,7 @@ export async function ensureDesktopRegisterApiKey(
   const updatedProviders = applyProviderApiKey({ targets, apiKey });
   safetyCleanRegister(registerPath, config, platform);
   console.info(
-    `[desktop-register] applied registration key for providers=${providers.join(",")} updated=${updatedProviders.join(",") || "none"}`
+    `[provider-register] applied registration key for providers=${providers.join(",")} updated=${updatedProviders.join(",") || "none"}`
   );
   return { status: "applied", providers, updatedProviders };
 }
@@ -416,10 +416,10 @@ export async function ensureDesktopRegisterApiKey(
 export const __testInternals = {
   DEFAULT_ENDPOINT,
   DEFAULT_PROVIDERS,
-  DESKTOP_REGISTER_FILE,
+  PROVIDER_REGISTER_FILE,
   looksLikePlaceholderProviderApiKey,
   normalizeProviders,
-  resolveDesktopRegisterPath,
+  resolveProviderRegisterPath,
   buildResetContent,
   upsertProviderApiKeyContent
 };

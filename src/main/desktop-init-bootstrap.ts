@@ -178,6 +178,9 @@ function applyProfileDefaults(
   const profile = isRecord(profileDefaults) ? profileDefaults : {};
   const appearance = isRecord(profile.appearance) ? profile.appearance : {};
   const legacyAssistant = isRecord(profile.assistant) ? profile.assistant : {};
+  const assistantCopilot = isRecord(legacyAssistant.copilot) ? legacyAssistant.copilot : {};
+  const assistantQuick = isRecord(legacyAssistant.quick) ? legacyAssistant.quick : {};
+  const legacyQuickAssistant = isRecord(legacyAssistant.quickAssistant) ? legacyAssistant.quickAssistant : {};
   const navigation = isRecord(profile.navigation) ? profile.navigation : {};
   const current = readDesktopProfileFromRoot(profileRoot);
   updateDesktopProfileInRoot(profileRoot, {
@@ -188,16 +191,25 @@ function applyProfileDefaults(
       locale: normalizeLocale(appearance.locale) || current.appearance.locale || DEFAULT_LOCALE
     },
     assistant: {
-      desktopHelperAgentKey: readText(assistantDefaults?.defaultAgentKey) ||
-        readText(legacyAssistant.desktopHelperAgentKey) ||
-        current.assistant.desktopHelperAgentKey ||
-        DEFAULT_DESKTOP_HELPER_AGENT_KEY,
       voiceCorrectionEnabled: typeof legacyAssistant.voiceCorrectionEnabled === "boolean"
         ? legacyAssistant.voiceCorrectionEnabled
         : current.assistant.voiceCorrectionEnabled,
-      quickAssistant: {
-        enabled: current.assistant.quickAssistant.enabled,
-        agentKey: current.assistant.quickAssistant.agentKey ||
+      copilot: {
+        agentKey: readText(assistantDefaults?.defaultAgentKey) ||
+          readText(assistantCopilot.agentKey) ||
+          readText(legacyAssistant.desktopHelperAgentKey) ||
+          current.assistant.copilot.agentKey ||
+          DEFAULT_DESKTOP_HELPER_AGENT_KEY
+      },
+      quick: {
+        enabled: typeof assistantQuick.enabled === "boolean"
+          ? assistantQuick.enabled
+          : typeof legacyQuickAssistant.enabled === "boolean"
+            ? legacyQuickAssistant.enabled
+            : current.assistant.quick.enabled,
+        agentKey: readText(assistantQuick.agentKey) ||
+          readText(legacyQuickAssistant.agentKey) ||
+          current.assistant.quick.agentKey ||
           DEFAULT_QUICK_ASSISTANT_AGENT_KEY
       }
     },
@@ -242,7 +254,6 @@ function applyPetDefaults(app: App, petDefaults: unknown, platform: NodeJS.Platf
   writeDesktopPetStoredState(app, {
     schemaVersion: 1,
     enabled: petDefaults.enabled === true,
-    lastVisible: petDefaults.lastVisible === true,
     unreadCount: 0,
     boundAgentKey: "",
     appearanceId: "",

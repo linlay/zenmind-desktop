@@ -125,9 +125,9 @@ export function readAssistantSettingsFromRoot(rootDir: string): AssistantSetting
   const profile = readDesktopProfileFromRoot(rootDir);
   const settings = normalizeStoredSettings({
     voiceCorrectionEnabled: profile.assistant.voiceCorrectionEnabled,
-    desktopHelperAgentKey: profile.assistant.desktopHelperAgentKey,
-    quickAssistantEnabled: profile.assistant.quickAssistant.enabled,
-    quickAssistantAgentKey: profile.assistant.quickAssistant.agentKey,
+    desktopHelperAgentKey: profile.assistant.copilot.agentKey,
+    quickAssistantEnabled: profile.assistant.quick.enabled,
+    quickAssistantAgentKey: profile.assistant.quick.agentKey,
     desktopCopilotPages: profile.navigation.desktopCopilotPages
   });
   return settings;
@@ -165,8 +165,10 @@ export function saveAssistantSettingsToRoot(
   updateDesktopProfileInRoot(rootDir, {
     assistant: {
       voiceCorrectionEnabled: next.voiceCorrectionEnabled,
-      desktopHelperAgentKey: next.desktopHelperAgentKey,
-      quickAssistant: {
+      copilot: {
+        agentKey: next.desktopHelperAgentKey
+      },
+      quick: {
         enabled: next.quickAssistantEnabled,
         agentKey: next.quickAssistantAgentKey
       }
