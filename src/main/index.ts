@@ -8,8 +8,10 @@ import {
   globalShortcut,
   ipcMain,
   Menu,
+  net,
   nativeTheme,
   powerSaveBlocker,
+  protocol,
   screen,
   shell,
   session,
@@ -203,6 +205,10 @@ import { AGENT_WEBCLIENT_TARGET_PATH } from "../shared/agent-webclient-routes";
 import { AgentPlatformPetStatusClient } from "./copilot/pet-copilot/pet-status-client";
 import { AgentPlatformPetStreamClient } from "./copilot/pet-copilot/pet-stream-client";
 import { createDesktopPetBrowserWindow } from "./copilot/pet-copilot/window";
+import {
+  registerDesktopPetAssetProtocol,
+  registerDesktopPetAssetProtocolScheme
+} from "./copilot/pet-copilot/pet-asset-protocol";
 import {
   clampDesktopPetPosition,
   createDesktopPetState,
@@ -436,6 +442,9 @@ const startupRestoreController = createStartupRestoreController({
     appState.mainWindow.webContents.send("services.startupRestoreState", state);
   }
 });
+
+registerDesktopPetAssetProtocolScheme(protocol);
+
 function listBrowserRegistryWebItems() {
   const entries = listWebEntries(app).items;
   const items: Array<{ id: string; entryKey: string; label: string; url: string; agentKey?: string }> = [];
@@ -2403,6 +2412,7 @@ if (gotSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     ensureDarwinDockIdentity();
+    registerDesktopPetAssetProtocol(app, protocol, net, mainProcessContext.platform);
 
     const canContinueStartup = await handleStartupEnvRootConflict();
     if (!canContinueStartup) {

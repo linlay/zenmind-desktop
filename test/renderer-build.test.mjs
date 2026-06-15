@@ -2535,10 +2535,13 @@ test("desktop action bridge exposes localhost api and renderer action providers"
 
 test("built index uses relative asset paths", () => {
   const builtIndex = fs.readFileSync(path.join(projectRoot, "dist-renderer", "index.html"), "utf8");
+  const sourceIndex = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
 
   assert.doesNotMatch(builtIndex, /src="\/assets\//);
   assert.doesNotMatch(builtIndex, /href="\/assets\//);
   assert.match(builtIndex, /(src|href)="\.?\/?assets\//);
+  assert.match(sourceIndex, /img-src[^"]*zenmind-pet:/);
+  assert.match(builtIndex, /img-src[^"]*zenmind-pet:/);
 });
 
 test("plugin market guards stale preload market api before skill import", () => {

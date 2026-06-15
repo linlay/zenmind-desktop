@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import type { App, Rectangle } from "electron";
 import type {
   DesktopPetAppearanceOption,
@@ -20,6 +19,7 @@ import type {
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
+  DESKTOP_PET_USER_ASSET_PROTOCOL,
   DESKTOP_PET_DONE_FALLBACK_TEXT,
   DESKTOP_PET_RUNNING_TASK_ANIMATION_MIN_MS,
   DESKTOP_PET_APPEARANCE_OPTIONS,
@@ -349,6 +349,38 @@ function normalizeUserDesktopPetId(value: unknown, fallbackDirectoryName: string
   return directoryName ? `user:${directoryName}` : "";
 }
 
+function sanitizeDesktopPetAssetRelativePath(value: unknown) {
+  const normalized = typeof value === "string"
+    ? value.trim().replace(/\\/gu, "/").replace(/^\/+/u, "")
+    : "";
+  if (!normalized) {
+    return "";
+  }
+  const parts = normalized.split("/").filter(Boolean);
+  if (
+    parts.length === 0 ||
+    parts.some((part) => part === "." || part === ".." || part.startsWith("."))
+  ) {
+    return "";
+  }
+  return parts.join("/");
+}
+
+function encodeDesktopPetAssetPath(relativePath: string) {
+  return relativePath.split("/").map((part) => encodeURIComponent(part)).join("/");
+}
+
+function userPetAssetBaseUrl(petId: string) {
+  const safePetId = sanitizeUserPetDirectoryName(petId);
+  return safePetId ? `${DESKTOP_PET_USER_ASSET_PROTOCOL}://${encodeURIComponent(safePetId)}/` : "";
+}
+
+function userPetAssetUrl(petId: string, relativePath: string) {
+  const baseUrl = userPetAssetBaseUrl(petId);
+  const safeRelative = sanitizeDesktopPetAssetRelativePath(relativePath);
+  return baseUrl && safeRelative ? `${baseUrl}${encodeDesktopPetAssetPath(safeRelative)}` : "";
+}
+
 export function listUserDesktopPets(app: App): UserDesktopPetAsset[] {
   const root = getDesktopPetsDataRoot(app);
   if (!fs.existsSync(root)) {
@@ -416,8 +448,8 @@ function userPetPreviewAssetUrl(rootPath: string, manifest: Record<string, unkno
     const safeRelative = candidate.replace(/\\/gu, "/").replace(/^\/+/u, "");
     return fs.existsSync(path.join(rootPath, safeRelative));
   }) ?? candidates[0] ?? "idle.png";
-  const safeRelative = relative.replace(/\\/gu, "/").replace(/^\/+/u, "");
-  return pathToFileURL(path.join(rootPath, safeRelative)).toString();
+  return userPetAssetUrl(readUserPetText(manifest, ["id"], path.basename(rootPath)), relative) ||
+    userPetAssetUrl(path.basename(rootPath), "idle.png");
 }
 
 function sanitizeDesktopPetCapabilities(value: unknown): DesktopPetCapabilities | undefined {
@@ -432,13 +464,7 @@ function sanitizeDesktopPetCapabilities(value: unknown): DesktopPetCapabilities 
 }
 
 function sanitizeDesktopPetSignaturePath(value: unknown) {
-  const normalized = typeof value === "string"
-    ? value.trim().replace(/\\/gu, "/").replace(/^\/+/u, "")
-    : "";
-  if (!normalized || normalized.includes("../") || normalized === "..") {
-    return "";
-  }
-  return normalized;
+  return sanitizeDesktopPetAssetRelativePath(value);
 }
 
 function sanitizeDesktopPetSignatureActions(value: unknown): DesktopPetSignatureAction[] | undefined {
@@ -546,7 +572,7 @@ export function listUserDesktopPetAppearanceOptions(app: App): DesktopPetAppeara
     id: pet.id,
     displayName: readUserPetText(pet.manifest, ["displayName", "name"], pet.petId),
     description: readUserPetText(pet.manifest, ["description"], ""),
-    assetBasePath: pathToFileURL(pet.rootPath).toString().replace(/\/?$/u, "/"),
+    assetBasePath: userPetAssetBaseUrl(pet.petId),
     preview: readUserPetText(pet.manifest, ["preview", "previewAssetPath"], "idle.png"),
     previewAssetPath: userPetPreviewAssetUrl(pet.rootPath, pet.manifest),
     capabilities: sanitizeDesktopPetCapabilities(pet.manifest.capabilities),
@@ -965,6 +991,9 @@ export const __testInternals = {
   normalizeDesktopPetAppearanceId,
   selectedPetIdForAppearance,
   sanitizeUserPetDirectoryName,
+  sanitizeDesktopPetAssetRelativePath,
+  userPetAssetBaseUrl,
+  userPetAssetUrl,
   normalizeUserDesktopPetId,
   sanitizeDesktopPetMessagePreview,
   sanitizeDesktopPetUnreadCount,

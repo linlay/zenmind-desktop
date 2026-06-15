@@ -135,6 +135,33 @@ const marketPetDefinitions = [
 
 const marketPetDefinitionById = new Map(marketPetDefinitions.map((definition) => [definition.id, definition]));
 
+const marketPetStaticStates = {
+  awaiting: {
+    path: "pet-awaiting.png"
+  },
+  done: {
+    path: "pet-done.png",
+    holdMs: 2500
+  },
+  "drag-moving": {
+    path: "pet-dragging-moving.png",
+    mirror: true
+  },
+  dragging: {
+    path: "pet-dragging.png"
+  },
+  error: {
+    path: "pet-error.png",
+    holdMs: 3000
+  },
+  hover: {
+    path: "pet-hover.png"
+  },
+  idle: {
+    path: "pet-idle.png"
+  }
+};
+
 const defaultSourceAssetNames = [
   "awaiting.png",
   "done.png",
@@ -1057,6 +1084,16 @@ async function writeMarketPetManifest(directory, petId) {
   if (!definition) {
     throw new Error(`Missing market pet definition for ${petId}`);
   }
+  const states = {
+    ...marketPetStaticStates,
+    ...(definition.capabilities?.taskRun
+      ? {}
+      : {
+          running: {
+            path: "pet-running.png"
+          }
+        })
+  };
   const manifest = {
     id: definition.id,
     displayName: definition.displayName,
@@ -1064,6 +1101,7 @@ async function writeMarketPetManifest(directory, petId) {
     description: definition.description,
     tags: definition.tags,
     previewAssetPath: "pet-idle.png",
+    states,
     ...(definition.capabilities ? { capabilities: definition.capabilities } : {}),
     ...(definition.signatureActions ? { signatureActions: definition.signatureActions } : {})
   };

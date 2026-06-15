@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -7,12 +10,28 @@ const require = createRequire(import.meta.url);
 const {
   createDesktopPetState,
   createDefaultDesktopPetLocalStatus,
-  getDesktopPetContextMenuItems
+  getDesktopPetContextMenuItems,
+  listUserDesktopPetAppearanceOptions
 } = require("../dist-electron/main/copilot/pet-copilot/desktop-pet.js");
+const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
 const {
   DESKTOP_PET_APPEARANCE_OPTIONS,
+  DESKTOP_PET_USER_ASSET_PROTOCOL,
   resolveDesktopPetSignatureActions
 } = require("../dist-electron/shared/desktop-pet.js");
+
+function createApp(root) {
+  return {
+    getPath(name) {
+      if (name === "home") return path.join(root, "home");
+      if (name === "desktop") return path.join(root, "home", "Desktop");
+      if (name === "appData") return path.join(root, "app-data");
+      if (name === "userData") return path.join(root, "user-data");
+      if (name === "temp") return path.join(root, "temp");
+      throw new Error(`unexpected getPath(${name})`);
+    }
+  };
+}
 
 function createSettings(overrides = {}) {
   return {
@@ -280,6 +299,55 @@ test("desktop pet keeps built-in chant available only for the default pet", () =
     signatureActionId: "dance",
     label: "跳舞"
   });
+});
+
+test("user desktop pet appearances expose renderer-safe asset protocol URLs", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-user-pet-assets-"));
+  try {
+    const app = createApp(root);
+    const petRoot = path.join(getDesktopPetsDataRoot(app), "pony");
+    fs.mkdirSync(petRoot, { recursive: true });
+    fs.writeFileSync(path.join(petRoot, "pet-idle.png"), "fake png", "utf8");
+    fs.writeFileSync(path.join(petRoot, "dance.webp"), "fake webp", "utf8");
+    fs.writeFileSync(path.join(petRoot, "pet.json"), `${JSON.stringify({
+      id: "pony",
+      displayName: "小凌",
+      previewAssetPath: "pet-idle.png",
+      states: {
+        idle: {
+          path: "pet-idle.png"
+        }
+      },
+      signatureActions: [
+        {
+          id: "dance",
+          label: "跳舞",
+          trigger: ["manual"],
+          variants: [
+            {
+              path: "dance.webp",
+              frameCount: 30,
+              durationMs: 5200
+            }
+          ]
+        }
+      ]
+    }, null, 2)}\n`, "utf8");
+
+    const options = listUserDesktopPetAppearanceOptions(app);
+    assert.equal(options.length, 1);
+    assert.equal(options[0].id, "user:pony");
+    assert.equal(options[0].assetBasePath, `${DESKTOP_PET_USER_ASSET_PROTOCOL}://pony/`);
+    assert.equal(options[0].previewAssetPath, `${DESKTOP_PET_USER_ASSET_PROTOCOL}://pony/pet-idle.png`);
+    assert.deepEqual(options[0].states, {
+      idle: {
+        path: "pet-idle.png"
+      }
+    });
+    assert.equal(options[0].signatureActions?.[0]?.variants[0]?.path, "dance.webp");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("desktop pet visual maps dragging movement onto a single mirrored state", () => {
